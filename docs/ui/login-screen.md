@@ -1,8 +1,21 @@
 # Login screen
 
 The login and loading screens are one dark screen with the MetaList logo (the
-teaser's block **M** over two bars, static). The logo sits at a fixed distance
-from the top and never moves; everything else happens in the panel under it.
+teaser's block **M** over two bars as wide as the M, static; `brand/README.md`). The
+logo sits at a fixed distance from the top and never moves; everything else happens in
+the panel under it.
+
+## Logo
+
+The stage is `min(300px, 62vw)` wide. The M is 279/340 of that width, starting 30/340
+in, and the logo is 223/340 of it tall: the place and size it had when the bars spanned
+the whole stage (until 2026-10-24), so trimming the bars moved nothing. Everything under
+the logo lines up with the M's edges, like the bars: the vault picker, password field, OK,
+the notes under them, the progress bar, Session locked and its button, and the
+"Starting…" line (`--login-mark-width` and `--login-mark-inset` on `.login-stage`).
+`scripts/browser-validation/login-logo-geometry.mjs` checks this on the login screen (core
+smoke and the installed-package check), the Session locked page and the tab that opens
+another vault (`BROWSER_TEST_SUITE=login-logo`), in a wide and a narrow window.
 
 ## Panel under the logo
 - At first only the logo shows. Once the namespace list has loaded, the panel
@@ -19,8 +32,8 @@ from the top and never moves; everything else happens in the panel under it.
 | Press OK (or Enter) | Nothing moves. The button reads "Checking…" and is disabled |
 | An upgrade is due (`/auth/status` `database_upgrade_pending`) | While checking, a grey italic note under OK: "Backing up and upgrading this vault…" |
 | Wrong password, too many attempts, or the request fails | The reason appears under OK; the field is emptied and focused. Nothing moved |
-| Password accepted | The form slides out to the left while the loading view slides in from the right (350 ms, within the logo's width) |
-| Loading | A progress bar the logo's width that never moves backwards; under it, in grey italics, the current step and the seconds elapsed ("Decrypting notes into memory… · 4s") |
+| Password accepted | The form slides out to the left while the loading view slides in from the right (350 ms, within the M's width) |
+| Loading | A progress bar as wide as the logo's bars, like a third bar, that never moves backwards; under it, in grey italics, the current step and the seconds elapsed ("Decrypting notes into memory… · 4s") |
 | Loading done | The app appears |
 | Loading fails | The error replaces the step line in red, with the elapsed time frozen; the app does not open |
 
@@ -74,9 +87,8 @@ a failed change, a lost session locks the page as usual.
 
 ## Code
 - Markup: `app/templates/index.html`, `app/templates/locked.html`, shared logo
-  `app/templates/_logo_mark.html`. A refined mark (bars as wide as the M), a
-  one-bar variant for tiny sizes and the icon set are planned:
-  `docs/ready-to-build/brand-mark-and-icons.md`.
+  `app/templates/_logo_mark.html` (from `brand/metalist-mark-white.svg`). The favicon,
+  touch and manifest icons are generated from `brand/` (`brand/README.md`).
 - Behaviour: `app/static/js/modules/auth.js` (form, busy state, slide, progress,
   elapsed time), `app/static/js/locked.js`.
 - Styles: the login section at the top of `app/static/css/main.css`.

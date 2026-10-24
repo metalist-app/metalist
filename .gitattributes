@@ -5,3 +5,6 @@ app/static/js/vendor/** -text
 # The ShockHarness contracts runtime copies, pinned by checksum in .shockharness-contracts.json.
 app/static/js/shockharness/** -text
 app/contracts.py -text
+# Generated from brand/ by scripts/generate_brand_icons.py and compared byte for byte by
+# tests/unit/test_brand_icons.py, so every platform checks out the bytes the script writes.
+app/static/img/favicon.svg -text

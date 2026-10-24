@@ -9,7 +9,7 @@ import {
 // The tab opening another namespace shows the login screen's logo screen, so the
 // namespace's own login screen arrives without a different page in between.
 
-const LOGO = '<svg class="login-logo-mark" viewBox="0 0 340 223"><rect></rect></svg>';
+const LOGO = '<svg class="login-logo-mark" viewBox="0 0 279 223"><rect></rect></svg>';
 const CSS = '.login-stage { margin-top: max(48px, 16vh); }';
 
 globalThis.CSSRule = { STYLE_RULE: 1, MEDIA_RULE: 4, KEYFRAMES_RULE: 7 };

@@ -80,6 +80,12 @@ html:has(> body > .login-page[style*="display: flex"]) {
 }
 
 .login-stage {
+    /* The M's box within the stage: 279 of 340 units wide, from unit 30. The M keeps the
+       size and place it had when the old mark's bars spanned the stage, and the bars and
+       everything under the logo line up with its edges (brand/README.md;
+       scripts/browser-validation/login-logo-geometry.mjs). */
+    --login-mark-width: calc(100% * 279 / 340);
+    --login-mark-inset: calc(100% * 30 / 340);
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -109,14 +115,21 @@ html:has(> body > .login-page[style*="display: flex"]) {
 
 .login-logo-mark {
     display: block;
-    width: 100%;
+    /* The bars stop where the M stops, so the mark is the M's box; its height, and so
+       everything under it, stays put. */
+    align-self: flex-start;
+    width: var(--login-mark-width);
+    margin-left: var(--login-mark-inset);
     height: auto;
     overflow: visible;
     fill: #ffffff;
 }
 
+/* Everything under the logo lines up with the M's edges. */
 .login-panel {
-    width: 100%;
+    align-self: flex-start;
+    width: var(--login-mark-width);
+    margin-left: var(--login-mark-inset);
 }
 
 /* Nothing under the logo until the namespace list has loaded; then the form and
@@ -148,7 +161,7 @@ html:has(> body > .login-page[style*="display: flex"]) {
 
 /* The form and the loading view occupy the same place. When the password is
    accepted the form slides out to the left while the loading view slides in from
-   the right, within the logo's width; the logo does not move. */
+   the right, within the M's width; the logo does not move. */
 .login-views {
     display: grid;
     overflow: hidden;
@@ -313,7 +326,7 @@ html:has(> body > .login-page[style*="display: flex"]) {
     font-size: 14px;
 }
 
-/* The progress bar is the logo's width, like a third bar. */
+/* The progress bar is as wide as the logo's bars, like a third bar. */
 .login-progress-track {
     width: 100%;
     height: 6px;
@@ -344,7 +357,9 @@ html:has(> body > .login-page[style*="display: flex"]) {
 /* The tab opening another namespace (namespace-loading-page.js): only the logo,
    and this line once the wait takes long enough to need it (a namespace starting). */
 .login-opening-note {
-    margin: 0;
+    align-self: flex-start;
+    width: var(--login-mark-width);
+    margin: 0 0 0 var(--login-mark-inset);
     font-size: 14px;
     font-style: italic;
     text-align: center;

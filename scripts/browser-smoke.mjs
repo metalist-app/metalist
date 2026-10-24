@@ -62,6 +62,8 @@ import {checkPaletteActivation} from './browser-palette-activation-regressions.m
 import {checkSearchHighlight} from './browser-search-highlight-regressions.mjs';
 import {checkReferenceViews} from './browser-reference-view-regressions.mjs';
 import {installRequestMonitor, waitForAppQuiet} from './browser-app-idle.mjs';
+import {checkLoginLogo} from './browser-login-logo-regressions.mjs';
+import {assertLoginLogoGeometry} from './browser-validation/login-logo-geometry.mjs';
 
 // Requests count as quiet after this long without one starting or ending: after a
 // step, and longer before the document mouse-movement checks.
@@ -304,6 +306,10 @@ try {
     await checkBackupReminder(page);
     assert.deepEqual(errors, []);
     console.log(`PASS backup reminder regressions in ${await browser.version()}`);
+  } else if (process.env.BROWSER_TEST_SUITE === 'login-logo') {
+    await checkLoginLogo(browser, page, origin);
+    assert.deepEqual(errors, []);
+    console.log(`PASS login logo regressions in ${await browser.version()}`);
   } else if (process.env.BROWSER_TEST_SUITE === 'collapse-outlines') {
     await checkCollapseOutlines(page);
     assert.deepEqual(errors, []);
@@ -769,6 +775,7 @@ try {
   console.log('PASS empty undo history shows an explanatory banner');
   await page.evaluate(async () => { const {Auth} = await import('/static/js/modules/auth.js'); await Auth.logout(); });
   await page.waitForSelector('#login-panel[data-revealed="true"] #login-password', {visible:true});
+  await assertLoginLogoGeometry(page, 'login screen after logout');
   console.log('PASS password setup, login, hydration, and logout');
   assert.deepEqual(errors, []);
   await writeFile(join(directory,'result.json'), JSON.stringify({passed:true,noteId,fileId}));
