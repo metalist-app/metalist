@@ -436,7 +436,7 @@ def test_openai_models_and_reasoning_levels_are_strict() -> None:
     assert resolve_openai_reasoning_effort("high") == "high"
 
     for invalid_model in ("gpt-5.6", "gpt-4o"):
-        with pytest.raises(ValueError, match="Unsupported OpenAI model"):
+        with pytest.raises(ValueError, match="not one of the OpenAI models MetaList offers"):
             require_shipped_model("openai", invalid_model)
     # Any well-formed name is a model name; whether a vault may use it is checked where it is used.
     assert validate_model_name(" gpt-5.7-nova ") == "gpt-5.7-nova"

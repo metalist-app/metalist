@@ -1,18 +1,18 @@
 """The AI providers and models MetaList ships with (docs/ready-to-build/ai-providers.md).
 
-Part of the program, updated with each release, never stored in a vault. A vault can
-add models of its own (ai_added_models.py); a provider's API address is fixed here and
-never editable, so a key goes only to its provider, and a hosted deployment can build
-its outbound allowlist from these addresses.
+Part of the program, updated with each release, never stored in a vault. These are the
+only models a vault can use: a model is offered once it has been tested with MetaList's
+prompts (the regression evals), never typed in by a user (the maintainer, 2026-10-23).
+A provider's API address is fixed here and never editable, so a key goes only to its
+provider, and a hosted deployment can build its outbound allowlist from these addresses.
 
 A provider is listed here once its adapter exists. The maintainer chose (2026-10-23)
-to offer Claude and Gemini before their eval pass rates are recorded.
+to offer Anthropic and Google before their eval pass rates are recorded.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-import json
 import re
 
 from app.services.agent.openai_models import OPENAI_API_BASE_URL, OPENAI_MODEL_CONTEXT_TOKENS
@@ -51,7 +51,7 @@ AI_CATALOG: dict[str, AiProviderCatalogEntry] = {
     # Anthropic's Messages API (anthropic_inference.py). Every shipped model has a
     # 1M-token context.
     "anthropic": AiProviderCatalogEntry(
-        label="Claude",
+        label="Anthropic",
         base_url="https://api.anthropic.com",
         billing_url="https://platform.claude.com/usage",
         models=("claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"),
@@ -61,7 +61,7 @@ AI_CATALOG: dict[str, AiProviderCatalogEntry] = {
     # Google's OpenAI-compatible endpoint (openai_compatible_inference.py), Chat
     # Completions only.
     "gemini": AiProviderCatalogEntry(
-        label="Gemini",
+        label="Google",
         base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
         billing_url="https://aistudio.google.com/usage",
         models=("gemini-4-argon", "gemini-3.8-flash", "gemini-3.5-flash-lite"),
@@ -98,38 +98,9 @@ def validate_model_name(model: str) -> str:
 
 
 def require_shipped_model(provider: str, model: str) -> str:
-    """One of the models MetaList ships for the provider (the evals run only on these)."""
+    """One of the models MetaList ships for the provider: the only ones a request may name."""
     normalized = validate_model_name(model)
     entry = catalog_entry(provider)
     if normalized not in entry.models:
-        raise InputRejected(f"Unsupported {entry.label} model: {model}")
+        raise InputRejected(f"{model} is not one of the {entry.label} models MetaList offers. Pick one in the chat's model picker.")
     return normalized
-
-
-# A vault's own models for a provider, beside the shipped ones: a JSON list of names
-# in this preference (ai_models.py reads it).
-ADDED_MODELS_PREFERENCE_KEYS: dict[str, str] = {provider: f"pref.ai.{provider}.added_models" for provider in AI_CATALOG}
-MAX_ADDED_MODELS = 20
-
-
-def parse_added_models(provider: str, value: str) -> tuple[str, ...]:
-    """The added models a preference value names: distinct, well-formed, none shipped already."""
-    entry = catalog_entry(provider)
-    if not isinstance(value, str):
-        raise TypeError("Added models must be stored as text")
-    parsed = json.loads(value)
-    if not isinstance(parsed, list) or not all(isinstance(name, str) for name in parsed):
-        raise InputRejected("Added models must be a list of model names")
-    if len(parsed) > MAX_ADDED_MODELS:
-        raise InputRejected(f"At most {MAX_ADDED_MODELS} added models per provider")
-    models = tuple(validate_model_name(name) for name in parsed)
-    if len(set(models)) != len(models):
-        raise InputRejected("An added model is listed twice")
-    shipped = set(models) & set(entry.models)
-    if shipped:
-        raise InputRejected(f"{sorted(shipped)[0]} is already one of {entry.label}'s models")
-    return models
-
-
-def serialize_added_models(models: tuple[str, ...]) -> str:
-    return json.dumps(list(models), separators=(",", ":"))

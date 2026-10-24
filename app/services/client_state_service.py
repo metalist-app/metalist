@@ -29,8 +29,8 @@ from app.services.agent.retrieval_settings import OPENAI_MAX_PAGE_APPROXIMATE_TO
 from app.services.agent.retrieval_settings import validate_openai_max_page_approximate_tokens_preference
 from app.services.agent.web_settings import WEB_ACCESS_MODE_PREFERENCE_KEY
 from app.services.agent.web_settings import WEB_ACCESS_MODES
-from app.services.ai_catalog import ADDED_MODELS_PREFERENCE_KEYS, AI_CATALOG
-from app.services.ai_catalog import parse_added_models, serialize_added_models, validate_model_name
+from app.services.ai_catalog import AI_CATALOG
+from app.services.ai_catalog import validate_model_name
 
 _DICTATION_PHRASE_MIN_CHARS = 2
 _DICTATION_PHRASE_MAX_CHARS = 64
@@ -44,9 +44,6 @@ AI_CHAT_COMPOSER_MINIMUM_HEIGHT = 74
 AI_CHAT_COMPOSER_MAXIMUM_HEIGHT = 220
 _MAX_SEARCH_SUGGESTION_WINDOW_SLOTS = 20
 _MAX_SEARCH_SUGGESTION_WINDOW_DAYS = 365
-
-# The kind of value each provider's added-models preference holds, and its provider.
-_ADDED_MODELS_KINDS = {f"{provider}_added_models": provider for provider in AI_CATALOG}
 
 _ALLOWED_CLIENT_PREFERENCES = {
     "pref.ai.tagging.vocabulary": {"existing", "new"},
@@ -83,11 +80,10 @@ _ALLOWED_CLIENT_PREFERENCES = {
     "pref.limit_note_credits_per_search_context": {"true", "false"},
     # The provider of the model picked in the chat.
     "pref.ai.provider": set(AI_CATALOG),
-    # Each provider's picked model; whether this vault can use it is checked where it is
-    # used (ai_models.py).
+    # Each provider's picked model. Whether MetaList still offers it is checked where it is
+    # used (ai_catalog.require_shipped_model), so a release that drops a model never stops
+    # a vault from loading.
     **{f"pref.ai.{provider}_model": "model_name" for provider in AI_CATALOG},
-    # Each provider's own models beside the shipped ones: a JSON list of names (ai_catalog.py).
-    **{key: f"{provider}_added_models" for provider, key in ADDED_MODELS_PREFERENCE_KEYS.items()},
     "pref.ai.thinking_level": {"off", "low", "medium", "high"},
     "pref.ai.show_diagnostics": {"true", "false"},
     "pref.ai.show_spend": {"true", "false"},
@@ -104,6 +100,9 @@ _OBSOLETE_CLIENT_PREFERENCES = frozenset(
     {
         # Tagging batches now read as much as an answer does: one limit (2026-10-23).
         "pref.ai.openai.tagging.batch_tokens",
+        # Models a vault typed in (2026-10-23, removed the same day): MetaList offers
+        # only the models it has tested.
+        *(f"pref.ai.{provider}.added_models" for provider in AI_CATALOG),
         # The interface sound effects tried in October 2026 and not kept: a namespace
         # that tried them may still hold their settings.
         "pref.sound_effects",
@@ -290,8 +289,6 @@ def _validate_client_preferences(preferences: dict[str, object]) -> dict[str, st
                 )
         elif allowed_values == "model_name":
             value = validate_model_name(value)
-        elif isinstance(allowed_values, str) and allowed_values in _ADDED_MODELS_KINDS:
-            value = serialize_added_models(parse_added_models(_ADDED_MODELS_KINDS[allowed_values], value))
         elif allowed_values == "ai_chat_width":
             _validate_ai_chat_width_preference(key=key, value=value)
         elif allowed_values == "ai_chat_composer_height":

@@ -3,10 +3,10 @@
 Explain MetaList from this reference, without pretending to inspect the user's
 saved settings or notes. Defaults below do not establish their current values.
 
-MetaList's AI runs on the user's own key from OpenAI, Claude (Anthropic) or Gemini
-(Google); Ollama/local model support has been removed. AI agent settings (also found
+MetaList's AI runs on the user's own key from OpenAI, Anthropic (Claude models) or
+Google (Gemini models); Ollama/local model support has been removed. AI agent settings (also found
 by searching AI, LLM, or OpenAI in the menu) has a folder tab per provider holding its
-API key and **Your models**; the Gemini tab warns that on Google's free tier what is
+API key and a link to the provider's usage and billing page; the Google tab warns that on Gemini's free tier what is
 sent may be used to improve Google's products and read by people, so a key with
 billing turned on is the one to use. Below it are
 **Web access** (Off, Links in your notes, Any public page), the privacy rules **Never
@@ -18,11 +18,11 @@ The defaults are gpt-5.6-luna and 500,000 tokens; the limit accepts 500–500,00
 The model and thinking level are picked only beside chat Send, and the last choice
 sticks; picking a model also picks its provider. The picker lists the models of every
 provider with a saved key, under the provider's name: the ones MetaList ships
-(OpenAI: gpt-5.6-sol, gpt-5.6-terra, gpt-5.6-luna; Claude: claude-opus-5-5,
-claude-sonnet-5-5, claude-haiku-5-5; Gemini: gemini-4-argon, gemini-3.8-flash,
-gemini-3.5-flash-lite) and the user's own. **Your models** in a provider's tab takes a model
-name exactly as the provider writes it; its × removes it, and Save keeps the list with
-the vault's settings. Use it for a newer model MetaList does not list yet.
+(OpenAI: gpt-5.6-sol, gpt-5.6-terra, gpt-5.6-luna; Anthropic: claude-opus-5-5,
+claude-sonnet-5-5, claude-haiku-5-5; Google: gemini-4-argon, gemini-3.8-flash,
+gemini-3.5-flash-lite). These are the only models MetaList offers: each is tested with
+MetaList's prompts first, so a user cannot add another model by name. A newer model
+arrives with a MetaList update once it has passed those tests.
 
 Web access has three modes and defaults to **No web access**. In that mode the
 agent cannot open pages. **Open links from permitted context** lets it

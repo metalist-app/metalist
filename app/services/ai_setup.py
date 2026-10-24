@@ -3,7 +3,7 @@
 Features ask whether an AI is set up (describe_ai_setup) and for a connection
 to it (connect_to_ai); they never look for a particular provider's key. Each
 provider is registered here, with how to tell it is set up and how to talk to
-it: OpenAI, Claude (Anthropic) and Gemini.
+it: OpenAI, Anthropic (Claude models) and Google (Gemini models).
 """
 
 from __future__ import annotations

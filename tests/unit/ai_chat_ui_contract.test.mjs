@@ -867,7 +867,8 @@ test('AI settings persist and submit a required thinking level', () => {
     assert.match(chatApi, /thinking_level:\s*thinkingLevel/);
     // The dialog does not pick the model: the chat does.
     assert.doesNotMatch(modal, /id="ai-agent-installed-model"|<select/);
-    assert.match(modal, /id="ai-agent-add-model"/);
+    // Nor can a user type a model in: MetaList offers only the models it has tested.
+    assert.doesNotMatch(modal, /ai-agent-add-model|Your models/);
     const agentSettingsSave = commandController.slice(
         commandController.indexOf('async _saveAiAgentSettings('),
         commandController.indexOf('isOpen() {'),
@@ -912,7 +913,7 @@ test('AI settings offer the registered providers and no local model downloads', 
     const controller = readFileSync(CONTROLLER_URL, 'utf8');
     assert.match(modal, /const PROVIDER_TABS = AI_PROVIDERS;/);
     const providers = readFileSync(new URL('../../app/static/js/modules/ai-chat/ai-providers.js', import.meta.url), 'utf8');
-    for (const label of ['OpenAI', 'Claude', 'Gemini']) assert.match(providers, new RegExp(`label: '${label}'`));
+    for (const label of ['OpenAI', 'Anthropic', 'Google']) assert.match(providers, new RegExp(`label: '${label}'`));
     // Gemini's free tier may train on what is sent: its tab says so under the key.
     assert.match(modal, /gemini: Object\.freeze\(\{\s*text: 'Use a key with billing turned on/);
     assert.doesNotMatch(modal, /Ollama|ai-agent-provider|id="ai-agent-download/);

@@ -37,9 +37,8 @@ from app.services.agent.cloud_privacy import resolve_cloud_privacy_boundary
 from app.services.agent.inference import InferenceAdapter
 from app.services.agent.model_policy import SingleModelPolicy
 from app.services.ai_catalog import catalog_entry
+from app.services.ai_catalog import require_shipped_model
 from app.services.ai_catalog import validate_model_name
-from app.services.ai_models import added_models
-from app.services.ai_models import require_available_model
 from app.services.agent.openai_cost_tracking import OpenAICostSnapshot
 from app.services.agent.openai_cost_tracking import openai_cost_tracker
 from app.services.agent.prompt_settings import AgentPromptSet
@@ -103,8 +102,8 @@ agent_context_builder = AgentContextBuilder()
 
 
 def _require_ai_connection(*, provider: AiProvider, model: str, token: str, session_key: str) -> AiConnection:
-    """A connection to the AI, for a model this vault can use with it (shipped or added)."""
-    require_available_model(provider, model, token=token)
+    """A connection to the AI, for one of the models MetaList offers for it."""
+    require_shipped_model(provider, model)
     # lint: allow-PY001 rationale="the user removed or never added the AI's key: an expected 409, not a defect"
     try:
         return connect_to_ai(provider=provider, token=token, session_key=session_key)
@@ -121,22 +120,6 @@ def _agent_runtime(*, inference: InferenceAdapter) -> AgentRuntime:
         trace_store=agent_trace_store,
         provider_label=inference.provider_label,
     )
-
-
-class AiModelsRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    provider: AiProvider
-
-
-class AiModelsResponse(BaseModel):
-    # How the provider is named on screen, and where its users see what they spent.
-    label: str
-    billing_url: str
-    # Every model the vault can pick: the shipped ones, then its own.
-    models: list[str]
-    # The vault's own (AI Agent Settings can remove these).
-    added_models: list[str]
 
 
 class AiModelChoicesRequest(BaseModel):
@@ -174,7 +157,6 @@ class OpenAICostResponse(BaseModel):
     cached_input_tokens: int = Field(..., ge=0)
     cache_write_tokens: int = Field(..., ge=0)
     output_tokens: int = Field(..., ge=0)
-    includes_unpriced_models: bool
 
 
 class CloudPrivacyPreviewRequest(BaseModel):
@@ -391,20 +373,6 @@ def _render_ai_response_note_content(*, markdown_text: str, session_key: str) ->
     )
 
 
-@router.post("/models", response_model=AiModelsResponse)
-@transactional_route
-async def list_ai_models(
-    payload: AiModelsRequest,
-    token: Annotated[str, Depends(require_request_auth_token)],
-) -> AiModelsResponse:
-    entry = catalog_entry(payload.provider)
-    added = added_models(payload.provider, token=token)
-    return AiModelsResponse(
-        label=entry.label, billing_url=entry.billing_url,
-        models=[*entry.models, *added], added_models=list(added),
-    )
-
-
 # The chat's model picker: every model of every provider with a key, so picking a
 # model picks its provider too (docs/ui/ai-chat.md, "Model picker").
 @router.post("/model-choices", response_model=AiModelChoicesResponse)
@@ -421,7 +389,7 @@ async def list_ai_model_choices(
         entry = catalog_entry(provider)
         groups.append(AiModelChoiceGroup(
             provider=provider, label=entry.label,
-            models=[*entry.models, *added_models(provider, token=token)],
+            models=list(entry.models),
         ))
     assert groups, "the current provider is always listed"
     return AiModelChoicesResponse(groups=groups)
@@ -704,7 +672,6 @@ def _openai_cost_response(snapshot: OpenAICostSnapshot) -> OpenAICostResponse:
         cached_input_tokens=snapshot.cached_input_tokens,
         cache_write_tokens=snapshot.cache_write_tokens,
         output_tokens=snapshot.output_tokens,
-        includes_unpriced_models=snapshot.includes_unpriced_models,
     )
 
 

@@ -160,7 +160,7 @@ def test_the_next_turn_hands_back_thinking_first_and_groups_tool_results() -> No
 
 
 def test_another_providers_state_is_never_handed_to_claude() -> None:
-    with pytest.raises(ValueError, match="Cannot hand openai state to Claude"):
+    with pytest.raises(ValueError, match="Cannot hand openai state to Anthropic"):
         claude_request_messages([*QUESTION, {"role": "assistant", "content": "Hi",
                                              "provider_state": {"provider": "openai", "items": []}}])
 
@@ -176,7 +176,7 @@ def test_an_answer_ends_the_turn_and_streams_its_text(monkeypatch) -> None:
 @pytest.mark.parametrize(("stop_reason", "stop_details", "message"), [
     ("max_tokens", None, "maximum output-token limit"),
     ("refusal", {"type": "refusal", "category": "cyber", "explanation": "This looks like malware."},
-     "Claude declined to answer this request: This looks like malware."),
+     "Anthropic declined to answer this request: This looks like malware."),
 ])
 def test_a_reply_cut_off_or_declined_fails_loudly(monkeypatch, stop_reason, stop_details, message) -> None:
     _serve(monkeypatch, _reply(_text("Partial"), stop_reason=stop_reason, stop_details=stop_details))

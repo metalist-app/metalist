@@ -70,7 +70,7 @@ class OpenAICompatibleProvider:
 # (Google's thinking guide, 2026-10-23), so Off asks for the least.
 GEMINI = OpenAICompatibleProvider(
     provider="gemini",
-    label="Gemini",
+    label="Google",
     reasoning_effort={"off": "low", "low": "low", "medium": "medium", "high": "high"},
 )
 

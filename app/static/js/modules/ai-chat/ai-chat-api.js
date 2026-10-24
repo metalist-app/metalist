@@ -344,21 +344,6 @@ export async function listAiModelChoices(currentProvider) {
 }
 
 
-export async function listAiModels(settings) {
-    if (!settings || typeof settings !== 'object') {
-        throw new Error('listAiModels requires settings object');
-    }
-    const response = await fetchAi(CONFIG.API.AI.MODELS, {
-        method: 'POST',
-        headers: buildSessionHeaders(true),
-        body: JSON.stringify({
-            provider: settings.provider,
-        }),
-    });
-    return await readJsonResponse(response, 'Failed to list AI models');
-}
-
-
 function aiCredentialUrl(provider) {
     if (typeof provider !== 'string' || !/^[a-z]+$/.test(provider)) {
         throw new Error(`aiCredentialUrl requires a provider, not ${provider}`);

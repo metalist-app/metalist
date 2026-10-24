@@ -1,24 +1,7 @@
-// Model names typed into AI Agent Settings' Add a model, checked as the server checks
-// them (app/services/ai_catalog.py), so a mistake is explained before saving.
+// Model names in the chat's model picker (app/services/ai_catalog.py checks them the same way).
 
 // A model name as providers write them.
 const MODEL_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:/-]*$/;
-export const MAX_MODEL_NAME_CHARACTERS = 128;
-const MAX_ADDED_MODELS = 20;
-
-// Why a name typed into Add a model cannot be added, or '' when it can.
-export function addedModelNameProblem(name, { installedModels, addedModels }) {
-    if (typeof name !== 'string' || !Array.isArray(installedModels) || !Array.isArray(addedModels)) {
-        throw new Error('addedModelNameProblem requires a name and the model lists');
-    }
-    if (name === '') return 'Type the model\'s name first.';
-    if (name.length > MAX_MODEL_NAME_CHARACTERS || !MODEL_NAME_PATTERN.test(name)) {
-        return `${name} is not a model name. Use the name the provider gives, like gpt-5.6-luna.`;
-    }
-    if (installedModels.includes(name)) return `${name} is already in the list.`;
-    if (addedModels.length >= MAX_ADDED_MODELS) return `At most ${MAX_ADDED_MODELS} added models.`;
-    return '';
-}
 
 // The chat's model picker lists every provider's models (POST /ai/model-choices); an
 // option names both, since picking a model picks its provider. A provider id is

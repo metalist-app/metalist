@@ -67,7 +67,7 @@ from app.utils.time_units import MS_PER_SECOND
 
 
 _PROVIDER = "anthropic"
-_LABEL = "Claude"
+_LABEL = "Anthropic"
 # provider_state written and read only by this adapter.
 _ANTHROPIC_PROVIDER_STATE = "anthropic"
 _THINKING_BLOCK_TYPES = frozenset({"thinking", "redacted_thinking"})
@@ -108,14 +108,14 @@ def claude_silence_limit_seconds(thinking_level: str) -> float:
 
 
 def _silence_message(seconds: float) -> str:
-    return f"Claude did not respond for {seconds:g} seconds. Check your internet connection and ask again."
+    return f"Anthropic did not respond for {seconds:g} seconds. Check your internet connection and ask again."
 
 
 def _provider_error_message(exc: APIError) -> str:
     detail = " ".join(str(exc).split())
     if detail == "":
-        return "Claude API request failed"
-    return f"Claude API request failed: {detail[:_PROVIDER_ERROR_DETAIL_CHARS]}"
+        return "Anthropic API request failed"
+    return f"Anthropic API request failed: {detail[:_PROVIDER_ERROR_DETAIL_CHARS]}"
 
 
 def claude_strict_schema(schema: object) -> object:
@@ -210,7 +210,7 @@ def _assistant_blocks(message: Mapping[str, object]) -> list[dict[str, object]]:
         state = message["provider_state"]
         assert isinstance(state, dict), "validate_tool_conversation checked provider_state"
         if state["provider"] != _ANTHROPIC_PROVIDER_STATE:
-            raise ValueError(f"Cannot hand {state['provider']} state to Claude")
+            raise ValueError(f"Cannot hand {state['provider']} state to Anthropic")
         blocks.extend(dict(item) for item in _objects(state, "items"))
     content = _text(message, "content")
     if content != "":
@@ -252,13 +252,13 @@ def _raise_unless_finished(final: Message) -> None:
     if final.stop_reason in ("end_turn", "tool_use"):
         return
     if final.stop_reason == "max_tokens":
-        raise AnthropicProviderError("Claude reached the maximum output-token limit before finishing the response")
+        raise AnthropicProviderError("Anthropic reached the maximum output-token limit before finishing the response")
     if final.stop_reason == "refusal":
         explanation = ""
         if final.stop_details is not None and final.stop_details.explanation is not None:
             explanation = f": {final.stop_details.explanation}"
-        raise AnthropicProviderError(f"Claude declined to answer this request{explanation}")
-    raise AnthropicProviderError(f"Claude ended the response with stop reason {final.stop_reason!r}")
+        raise AnthropicProviderError(f"Anthropic declined to answer this request{explanation}")
+    raise AnthropicProviderError(f"Anthropic ended the response with stop reason {final.stop_reason!r}")
 
 
 class AnthropicInferenceAdapter:

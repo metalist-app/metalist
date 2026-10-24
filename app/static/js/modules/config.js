@@ -165,7 +165,6 @@ export const CONFIG = {
             EVALUATE: `${API_REMINDERS_BASE}/evaluate`,
         },
         AI: {
-            MODELS: `${API_AI_BASE}/models`,
             MODEL_CHOICES: `${API_AI_BASE}/model-choices`,
             // A provider's API-key slot: `${CREDENTIAL_BASE}/${provider}/credential`.
             CREDENTIAL_BASE: API_AI_BASE,

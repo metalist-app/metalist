@@ -1,10 +1,10 @@
 // The AI providers MetaList offers, in the order it lists them, with the model a vault
-// starts on: the browser's copy of app/services/ai_catalog.py (test_ai_models.py checks
-// that the two match).
+// starts on and where its users see what they spent: the browser's copy of
+// app/services/ai_catalog.py (test_ai_models.py checks that the two match).
 export const AI_PROVIDERS = Object.freeze([
-    Object.freeze({ provider: 'openai', label: 'OpenAI', defaultModel: 'gpt-5.6-luna' }),
-    Object.freeze({ provider: 'anthropic', label: 'Claude', defaultModel: 'claude-sonnet-5-5' }),
-    Object.freeze({ provider: 'gemini', label: 'Gemini', defaultModel: 'gemini-3.8-flash' }),
+    Object.freeze({ provider: 'openai', label: 'OpenAI', defaultModel: 'gpt-5.6-luna', billingUrl: 'https://platform.openai.com/usage' }),
+    Object.freeze({ provider: 'anthropic', label: 'Anthropic', defaultModel: 'claude-sonnet-5-5', billingUrl: 'https://platform.claude.com/usage' }),
+    Object.freeze({ provider: 'gemini', label: 'Google', defaultModel: 'gemini-3.8-flash', billingUrl: 'https://aistudio.google.com/usage' }),
 ]);
 
 export function isAiProvider(provider) {

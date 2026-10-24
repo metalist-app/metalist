@@ -235,8 +235,8 @@ read returns. Tagging batches use the same limit; there is no separate tagging w
 
 ## Providers and Configuration
 
-- Three providers on the user's own keys: OpenAI, Claude (Anthropic) and Gemini
-  (Google), registered in `app/services/ai_setup.py` with their models in
+- Three providers on the user's own keys, named by company: OpenAI, Anthropic (Claude
+  models) and Google (Gemini models), registered in `app/services/ai_setup.py` with their models in
   `app/services/ai_catalog.py` (design and what is not yet verified live:
   `docs/ready-to-build/ai-providers.md`). The chat's model picker lists the models of
   each provider with a key, under the provider's name; picking a model picks its
@@ -251,14 +251,14 @@ read returns. Tagging batches use the same limit; there is no separate tagging w
   - One folder tab per provider; it opens on the provider the chat uses. A tab only
     shows that provider's settings and picks nothing. It holds the API key (saved,
     changed or removed at once, apart from Save: "Key saved, encrypted in this
-    vault" or "Key saved for this session"), **Your models**, and a **Usage and
-    billing** link to the provider's own page.
+    vault" or "Key saved for this session") and a **Usage and billing** link to the
+    provider's own page.
   - **Web access**: three segments, Off / Links in your notes / Any public page,
     each explained in its tooltip.
   - The privacy rules (below).
   - **Max token window**, in tokens, with a `?` whose tooltip explains it.
 - The dialog has no model or thinking picker: both are chosen beside chat Send.
-- The Gemini tab says under the key, with Google's terms in its tooltip: "Use a key
+- The Google tab says under the key, with Google's terms in its tooltip: "Use a key
   with billing turned on: on the free tier, Google may use what you send to improve its
   products, and people may read it." (Not in the EEA, Switzerland or the UK.)
 - **Model picker** (chat composer): the models of every provider with a saved key,
@@ -266,16 +266,15 @@ read returns. Tagging batches use the same limit; there is no separate tagging w
   (`POST /api2/ai/model-choices`), each provider's under its name, even when there is
   only one. Picking a model picks its provider too (an option's
   value is `provider model`, `ai-model-names.js`). Saving or removing a key reloads
-  the picker. Each provider lists the models MetaList ships
-  (`app/services/ai_catalog.py`: `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna`), then
-  the vault's own, added in the provider's tab under **Your models**: a model name as
-  the provider writes it (checked as a name, up to 20 per provider), shown as a chip
-  whose `×` removes it. They are saved with the other settings in the vault's
-  encrypted preferences (`pref.ai.openai.added_models`). A removed model that was
-  picked leaves the picker blank; the picker has no "Select model" prompt. A request names a model this vault can use or is refused politely
-  (`app/services/ai_models.py`); a provider's API address is never editable. An
-  added model uses its provider's limits and has no price in the development cost
-  estimate (`+ unpriced models`).
+  the picker. Each provider lists only the models MetaList ships
+  (`app/services/ai_catalog.py`). A user never types a model in: a model is offered
+  once it has been tested with MetaList's prompts (the regression evals), because a
+  model can be too weak to give reliable results, or need model-specific prompts
+  (decided 2026-10-23; a typed-in "Your models" list existed for a day and its saved
+  preferences, `pref.ai.<provider>.added_models`, are dropped when a vault loads). A
+  saved model a later release no longer offers leaves the picker blank; the picker has
+  no "Select model" prompt. A request naming any other model is refused politely
+  (`ai_catalog.require_shipped_model`); a provider's API address is never editable.
 - The same settings modal has one privacy section shared by all cloud providers:
   **Never send notes with (blacklist)** and, behind its checkbox, **Only send notes
   with (whitelist)**. Each is a row of chips with one input: Enter adds the entry, a

@@ -47,7 +47,6 @@ JS_ALLOWED_TRY_CALLEE_NAMES = (
     "JSON.parse",
     "clearAiChatSession",
     "copyAiChatResponse",
-    "listAiModels",
     "listAiModelChoices",
     "loadAiDebugSnapshot",
     "loadAiChatSession",

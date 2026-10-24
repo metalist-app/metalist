@@ -85,7 +85,7 @@ import {
     readAgentRetrievalSettings,
     validateAgentRetrievalSettings,
 } from '../ai-chat/agent-retrieval-settings.js';
-import { AI_PROVIDERS, aiProvider, isAiProvider } from '../ai-chat/ai-providers.js';
+import { AI_PROVIDERS, aiProvider } from '../ai-chat/ai-providers.js';
 import {
     CLOUD_PRIVACY_POLICY_PREFERENCE_KEY,
     readCloudPrivacyPolicy,
@@ -891,17 +891,8 @@ class CommandPaletteController {
             settings.cloudPrivacyPolicy,
         );
         const webAccessMode = validateAgentWebAccessMode(settings.webAccessMode);
-        // The model in use is picked in the chat (saveAiSettings); this saves each viewed
-        // provider's own models (app/services/ai_catalog.py, ADDED_MODELS_PREFERENCE_KEYS).
-        const addedModelPreferences = {};
-        for (const [provider, models] of Object.entries(settings.addedModelsByProvider)) {
-            if (!isAiProvider(provider) || !Array.isArray(models) || !models.every((model) => typeof model === 'string')) {
-                throw new Error(`AI agent settings hold malformed added models for ${provider}`);
-            }
-            addedModelPreferences[`pref.ai.${provider}.added_models`] = JSON.stringify(models);
-        }
+        // The model in use is picked in the chat (saveAiSettings).
         await this._preferences.setMany({
-            ...addedModelPreferences,
             [OPENAI_AGENT_RETRIEVAL_PREFERENCE_KEYS.maxPageApproximateTokens]: String(
                 openAiRetrievalSettings.maxPageApproximateTokens,
             ),

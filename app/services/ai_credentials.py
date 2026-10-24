@@ -40,7 +40,7 @@ class AiKeyFormat:
 AI_KEY_FORMATS: dict[str, AiKeyFormat] = {
     "openai": AiKeyFormat(label="OpenAI", prefix="sk-"),
     "anthropic": AiKeyFormat(label="Anthropic", prefix="sk-ant-"),
-    "gemini": AiKeyFormat(label="Gemini", prefix="AIza"),
+    "gemini": AiKeyFormat(label="Google", prefix="AIza"),
 }
 
 

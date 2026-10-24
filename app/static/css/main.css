@@ -3441,30 +3441,6 @@ details.ai-chat-thinking > .ai-chat-thinking-heading {
     margin-left: 92px;
 }
 
-/* A row whose control is taller than one line keeps its label at the top. */
-.ai-settings-row-top {
-    align-items: flex-start;
-}
-
-.ai-settings-row-top > .ai-settings-row-label {
-    padding-top: 9px;
-}
-
-.ai-settings-stack {
-    flex: 1;
-    min-width: 0;
-}
-
-.ai-settings-inline {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
-.ai-settings-inline > input {
-    flex: 1;
-    min-width: 0;
-}
 
 .ai-settings-key-status {
     flex: 1;

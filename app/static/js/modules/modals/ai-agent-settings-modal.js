@@ -4,7 +4,6 @@ import { BaseModal } from './base-modal.js';
 import {
     AiApiError,
     clearAiCredential,
-    listAiModels,
     loadAiCredentialStatus,
     saveAiCredential,
 } from '../ai-chat/ai-chat-api.js';
@@ -19,11 +18,10 @@ import {
 } from '../ai-chat/cloud-privacy-policy.js';
 import { validateAgentWebAccessMode } from '../ai-chat/agent-web-settings.js';
 import { escapeHtml } from '../html-escape.js';
-import { MAX_MODEL_NAME_CHARACTERS, addedModelNameProblem } from '../ai-chat/ai-model-names.js';
-import { AI_PROVIDERS } from '../ai-chat/ai-providers.js';
+import { AI_PROVIDERS, aiProvider } from '../ai-chat/ai-providers.js';
 
 // AI Agent Settings (docs/ui/ai-chat.md, "AI Agent Settings"): one folder tab per
-// provider holding its key and the models the vault added; then web access, the rules
+// provider holding its key; then web access, the rules
 // for what the AI may see, and the token window. Picking a model (and so
 // a provider) happens in the chat. Explanations live in tooltips.
 
@@ -38,7 +36,6 @@ const KEY_WARNINGS = Object.freeze({
             + 'Use a key from a Google Cloud project with billing enabled.',
     }),
 });
-const ADDED_MODELS_TOOLTIP = 'Models MetaList does not list yet. They appear in the chat\'s model picker.';
 const WEB_ACCESS_CHOICES = Object.freeze([
     ['none', 'Off', 'The AI never opens web pages.'],
     ['contextual', 'Links in your notes', 'The AI may open links that appear in the notes it can see or in your message.'],
@@ -110,32 +107,8 @@ function renderKeyRow(state) {
         </div>`;
 }
 
-function renderAddedModels(state) {
-    // Until the tab's models arrive, the row shows empty and waits.
-    const isLoaded = state.provider in state.addedModelsByProvider;
-    const disabled = isLoaded && !state.isLoadingModels ? '' : 'disabled';
-    let added = [];
-    if (isLoaded) added = state.addedModelsByProvider[state.provider];
-    const chips = added.map((model) => `
-        <span class="ai-settings-chip">${escapeHtml(model)}<button type="button" class="ai-settings-chip-remove" data-model="${escapeHtml(model)}" aria-label="Remove ${escapeHtml(model)}" title="Remove">×</button></span>`).join('');
-    return `
-        <div class="ai-settings-row ai-settings-row-top">
-            <label class="ai-settings-row-label" for="ai-agent-add-model" title="${escapeHtml(ADDED_MODELS_TOOLTIP)}">Your models</label>
-            <div class="ai-settings-stack">
-                <div class="ai-settings-chips" id="ai-agent-added-models">${chips}</div>
-                <div class="ai-settings-inline">
-                    <input id="ai-agent-add-model" type="text" value="" placeholder="Model name, as ${escapeHtml(state.providerLabel)} writes it" maxlength="${MAX_MODEL_NAME_CHARACTERS}" autocomplete="off" spellcheck="false" ${disabled}>
-                    <button type="button" class="secondary-btn" id="ai-agent-add-model-button" ${disabled}>Add</button>
-                </div>
-            </div>
-        </div>`;
-}
-
 function renderProviderPanel(state) {
-    let billing = '';
-    if (state.billingUrl !== '') {
-        billing = `<a class="ai-settings-indented ai-settings-link" href="${escapeHtml(state.billingUrl)}" target="_blank" rel="noopener noreferrer">Usage and billing</a>`;
-    }
+    const billing = `<a class="ai-settings-indented ai-settings-link" href="${escapeHtml(aiProvider(state.provider).billingUrl)}" target="_blank" rel="noopener noreferrer">Usage and billing</a>`;
     let keyWarning = '';
     if (state.provider in KEY_WARNINGS) {
         const warning = KEY_WARNINGS[state.provider];
@@ -145,7 +118,6 @@ function renderProviderPanel(state) {
         <div class="ai-settings-tab-panel" role="tabpanel" aria-labelledby="ai-agent-tab-${escapeHtml(state.provider)}">
             ${renderKeyRow(state)}
             ${keyWarning}
-            ${renderAddedModels(state)}
             ${billing}
         </div>`;
 }
@@ -205,16 +177,10 @@ export class AiAgentSettingsModal extends BaseModal {
             // The token window belongs to the provider the chat uses, whichever tab is open.
             chatProvider: settings.provider,
             providerLabel: tab.label,
-            billingUrl: '',
             webAccessMode: validateAgentWebAccessMode(settings.webAccessMode),
             ...cloudPrivacyPolicyToTextFields(settings.cloudPrivacyPolicy),
             ...retrievalStateFields(settings.openAiRetrievalSettings, settings.provider),
-            // The open tab's shipped models, so an added name cannot repeat one.
-            shippedModels: [],
-            // Each viewed provider's own models, saved with the other settings.
-            addedModelsByProvider: {},
             isWhitelistShown: false,
-            isLoadingModels: false,
             isLoadingCredential: false,
             isChangingKey: false,
             credentialConfigured: false,
@@ -284,7 +250,7 @@ export class AiAgentSettingsModal extends BaseModal {
                 </section>
                 <p class="error-message" role="alert">${escapeHtml(state.error)}</p>
                 <div class="form-actions">
-                    <button type="button" class="primary-btn" id="ai-agent-save" data-modal-enter-action ${state.isLoadingModels ? 'disabled' : ''}>Save</button>
+                    <button type="button" class="primary-btn" id="ai-agent-save" data-modal-enter-action>Save</button>
                     <button type="button" class="secondary-btn" id="ai-agent-cancel">Cancel</button>
                 </div>
             </div>
@@ -306,7 +272,6 @@ export class AiAgentSettingsModal extends BaseModal {
             tab.onclick = () => void this._selectProvider(tab.dataset.provider);
         }
         this._setupKeyControls(state);
-        this._setupAddedModelControls();
         for (const segment of document.querySelectorAll('#ai-agent-web-access .ai-settings-segment')) {
             segment.onclick = () => this._update({ webAccessMode: validateAgentWebAccessMode(segment.dataset.mode) });
         }
@@ -335,20 +300,6 @@ export class AiAgentSettingsModal extends BaseModal {
         };
         if (state.isChangingKey) {
             this._element('ai-agent-key-cancel', HTMLButtonElement).onclick = () => this._update({ isChangingKey: false });
-        }
-    }
-
-    _setupAddedModelControls() {
-        const input = this._element('ai-agent-add-model', HTMLInputElement);
-        this._element('ai-agent-add-model-button', HTMLButtonElement).onclick = () => this._addModel(input.value.trim());
-        input.onkeydown = (event) => {
-            if (event.key !== 'Enter') return;
-            event.preventDefault();
-            event.stopPropagation();
-            this._addModel(input.value.trim());
-        };
-        for (const removeButton of document.querySelectorAll('#ai-agent-added-models .ai-settings-chip-remove')) {
-            removeButton.onclick = () => this._removeModel(removeButton.dataset.model);
         }
     }
 
@@ -423,34 +374,7 @@ export class AiAgentSettingsModal extends BaseModal {
         this._update({ [field]: nonEmptyLines(state[field]).filter((line) => line !== value).join('\n') });
     }
 
-    // An added model joins the open tab's list; Save keeps it with the other settings.
-    _addModel(name) {
-        const state = this.getModalState();
-        const added = state.addedModelsByProvider[state.provider];
-        const problem = addedModelNameProblem(name, {
-            installedModels: [...state.shippedModels, ...added], addedModels: added,
-        });
-        if (problem !== '') {
-            this._setState({ error: problem });
-            this.renderModalContent();
-            return;
-        }
-        this._update({ addedModelsByProvider: { ...state.addedModelsByProvider, [state.provider]: [...added, name] } });
-        this._element('ai-agent-add-model', HTMLInputElement).focus();
-    }
-
-    _removeModel(name) {
-        const state = this.getModalState();
-        const added = state.addedModelsByProvider[state.provider];
-        if (!added.includes(name)) {
-            throw new Error(`Only an added model can be removed, not ${name}`);
-        }
-        this._update({
-            addedModelsByProvider: { ...state.addedModelsByProvider, [state.provider]: added.filter((model) => model !== name) },
-        });
-    }
-
-    // A tab shows one provider's key and models; it does not pick the provider the chat uses.
+    // A tab shows one provider's key; it does not pick the provider the chat uses.
     async _selectProvider(provider) {
         const tab = PROVIDER_TABS.find((entry) => entry.provider === provider);
         if (tab === undefined) {
@@ -458,62 +382,14 @@ export class AiAgentSettingsModal extends BaseModal {
         }
         if (provider === this.getModalState().provider) return;
         this._update({
-            provider, providerLabel: tab.label, billingUrl: '', shippedModels: [],
+            provider, providerLabel: tab.label,
             isChangingKey: false, credentialConfigured: false, credentialPersistent: false,
         });
-        await this._loadProviderState();
+        await this._loadCredentialStatus();
     }
 
     onOpen() {
-        return this._loadProviderState();
-    }
-
-    async _loadProviderState() {
-        const generation = this._openGeneration;
-        await this._loadCredentialStatus();
-        if (this.isCurrentOpen(generation)) await this._loadInstalledModels();
-    }
-
-    async _loadInstalledModels() {
-        const generation = this._openGeneration;
-        const state = this.getModalState();
-        if (state.isLoadingModels) {
-            return;
-        }
-        this._setState({ isLoadingModels: true, error: '' });
-        this.renderModalContent();
-        try {
-            const payload = await listAiModels({ provider: state.provider });
-            if (!this.isCurrentOpen(generation)) return;
-            if (!payload || !Array.isArray(payload.models) || !Array.isArray(payload.added_models)
-                || typeof payload.billing_url !== 'string' || typeof payload.label !== 'string') {
-                throw new Error('AI model response missing models');
-            }
-            // Edits made on a tab survive switching away and back.
-            let addedModelsByProvider = state.addedModelsByProvider;
-            if (!(state.provider in addedModelsByProvider)) {
-                addedModelsByProvider = { ...addedModelsByProvider, [state.provider]: payload.added_models };
-            }
-            this._setState({
-                shippedModels: payload.models.filter((model) => !payload.added_models.includes(model)),
-                addedModelsByProvider,
-                billingUrl: payload.billing_url,
-                providerLabel: payload.label,
-            });
-        // lint: allow-JS001 rationale="late external responses belong to the closed dialog generation; internal errors rethrow"
-        } catch (error) {
-            rethrowUnexpectedError(error);
-            if (!this.isCurrentOpen(generation)) return;
-            if (!(error instanceof AiApiError)) {
-                throw error;
-            }
-            this._setState({ error: error.message });
-        } finally {
-            if (this.isCurrentOpen(generation)) {
-                this._setState({ isLoadingModels: false });
-                this.renderModalContent();
-            }
-        }
+        return this._loadCredentialStatus();
     }
 
     async _loadCredentialStatus() {
@@ -617,7 +493,6 @@ export class AiAgentSettingsModal extends BaseModal {
             return;
         }
         await this._saveSettings({
-            addedModelsByProvider: state.addedModelsByProvider,
             webAccessMode: validateAgentWebAccessMode(state.webAccessMode),
             openAiRetrievalSettings: validateAgentRetrievalSettings(retrievalSettings, state.chatProvider),
             cloudPrivacyPolicy: parseCloudPrivacyTextFields(state),

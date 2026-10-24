@@ -46,14 +46,9 @@ test('OpenAI cost display validates every token category and preserves small cos
         cached_input_tokens: 200,
         cache_write_tokens: 100,
         output_tokens: 50,
-        includes_unpriced_models: false,
     };
 
     assert.equal(validateOpenAiCostSnapshot(snapshot), snapshot);
-    assert.throws(
-        () => validateOpenAiCostSnapshot({ ...snapshot, includes_unpriced_models: undefined }),
-        /unpriced models/,
-    );
     assert.equal(formatOpenAiCostUsd(0), '$0.00');
     assert.equal(formatOpenAiCostUsd(snapshot.estimated_cost_usd), '$0.00438');
     assert.throws(

@@ -19,7 +19,7 @@ import app.services.ai_credentials as credentials_module
 _KEYS = {
     "openai": ("sk-test-0123456789abcdefghijklmnop", "OpenAI"),
     "anthropic": ("sk-ant-test-0123456789abcdefghijk", "Anthropic"),
-    "gemini": ("AIzaTest0123456789abcdefghijklmnopqr", "Gemini"),
+    "gemini": ("AIzaTest0123456789abcdefghijklmnopqr", "Google"),
 }
 
 
@@ -142,7 +142,7 @@ def test_encrypted_namespace_persists_only_ciphertext(
 @pytest.mark.parametrize(("provider", "api_key", "message"), [
     ("openai", "AIzaTest0123456789abcdefghijklmnopqr", "OpenAI API key must start with sk-"),
     ("anthropic", "sk-test-0123456789abcdefghijklmnop", "Anthropic API key must start with sk-ant-"),
-    ("gemini", "sk-ant-test-0123456789abcdefghijk", "Gemini API key must start with AIza"),
+    ("gemini", "sk-ant-test-0123456789abcdefghijk", "Google API key must start with AIza"),
     ("anthropic", "sk-ant-short", "Anthropic API key is too short"),
 ])
 def test_a_key_for_another_provider_is_refused_by_name(provider: str, api_key: str, message: str) -> None:

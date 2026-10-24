@@ -982,10 +982,7 @@ class AiChatPanelController {
 
     _renderOpenAiCostSnapshot(snapshot) {
         validateOpenAiCostSnapshot(snapshot);
-        // A model the vault added has no price: its tokens count, its cost does not.
-        let amount = formatOpenAiCostUsd(snapshot.estimated_cost_usd);
-        if (snapshot.includes_unpriced_models) amount = `${amount} + unpriced models`;
-        this._elements.openAiCostAmount.textContent = amount;
+        this._elements.openAiCostAmount.textContent = formatOpenAiCostUsd(snapshot.estimated_cost_usd);
         this._elements.openAiUncachedInputTokens.textContent = (
             snapshot.uncached_input_tokens.toLocaleString()
         );
