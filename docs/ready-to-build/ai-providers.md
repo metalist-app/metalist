@@ -4,6 +4,17 @@ Status: agreed design, ready to build, not started. Decided 2026-10-23. Code ref
 
 Vocabulary as in `docs/AI-SUMMARY.md`: users see **vault**; code and APIs say **namespace**.
 
+## Progress
+
+Built on `feature/ai-providers` (2026-10-23), with OpenAI behaving as before:
+
+- **Cost estimate in development only** (Design §4): `is_development_environment()` in `app/startup_environment.py`; the cost routes answer 404 in production, and the chat panel shows the `$` only where the page says the estimate is offered (`data-shows-cost-estimate`).
+- **One encrypted key slot per provider, per vault** (Design §3): `app/services/ai_credentials.py` (replaces `openai_credentials.py`); `app_settings` columns `anthropic_api_key_*` and `gemini_api_key_*` beside `openai_api_key_*`; database version 11 (`add_ai_provider_credential_columns`), the encryption audit and `docs/security/README.md` updated. Erasing a vault's encryption clears every provider's key.
+- **Per-provider credential routes** (Design §3): `/api2/ai/{provider}/credential`, for registered providers only. OpenAI's URL is unchanged.
+- **Route models take the registered provider type** (`AiProvider`) instead of a fixed `"openai"` (Design §2).
+
+Not built yet: the provider configuration file (an open question below), the registry entry and adapter for Claude and for Gemini, their eval runs, the key fields with billing links and the Gemini warning in AI Agent Settings, and the demo vault parts.
+
 ## Background
 
 MetaList's AI works only with OpenAI today, on the user's own API key. Users want Claude (Anthropic) and Gemini (Google) too. AI stays optional; MetaList is complete without it.

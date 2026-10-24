@@ -239,6 +239,18 @@ _OPENAI_CREDENTIAL_COLUMNS = frozenset(
     }
 )
 
+# Claude's and Gemini's API keys, from database version 11 (openai's are above).
+_AI_PROVIDER_CREDENTIAL_COLUMNS = frozenset(
+    {
+        "anthropic_api_key_ciphertext",
+        "anthropic_api_key_encryption_nonce",
+        "anthropic_api_key_encryption_tag",
+        "gemini_api_key_ciphertext",
+        "gemini_api_key_encryption_nonce",
+        "gemini_api_key_encryption_tag",
+    }
+)
+
 _PROPOSED_TAG_COLUMNS = frozenset(
     {
         "proposed_tags",
@@ -270,6 +282,7 @@ _MAIN_SCHEMA_BEFORE_CONTENT_MIGRATIONS = {
             "command_palette_usage_encryption_tag", "tag_prefix_settings_json",
             "tag_prefix_settings_encryption_nonce", "tag_prefix_settings_encryption_tag",
             *_OPENAI_CREDENTIAL_COLUMNS,
+            *_AI_PROVIDER_CREDENTIAL_COLUMNS,
             "session_timeout_minutes", "created_at", "updated_at",
         }
     ),
@@ -348,6 +361,7 @@ _OPAQUE_SEARCH_HISTORY_DATABASE_VERSION = 3
 _OPENAI_CREDENTIALS_DATABASE_VERSION = 5
 # Migration 5→6 added the proposed-tag columns.
 _PROPOSED_TAGS_DATABASE_VERSION = 6
+_AI_PROVIDER_CREDENTIALS_DATABASE_VERSION = 11
 # Migration 6→7 created embedded_documents; migration 7→8 dropped it.
 _EMBEDDED_DOCUMENTS_DATABASE_VERSION = 7
 _EMBEDDED_DOCUMENTS_RETIRED_DATABASE_VERSION = 8
@@ -397,6 +411,16 @@ _MAIN_PAYLOADS_WITHOUT_SEARCH_HISTORY = (
     _PayloadSpec(
         "app_settings", "openai_api_key_ciphertext",
         "openai_api_key_encryption_nonce", "openai_api_key_encryption_tag",
+        "text", is_nullable=True,
+    ),
+    _PayloadSpec(
+        "app_settings", "anthropic_api_key_ciphertext",
+        "anthropic_api_key_encryption_nonce", "anthropic_api_key_encryption_tag",
+        "text", is_nullable=True,
+    ),
+    _PayloadSpec(
+        "app_settings", "gemini_api_key_ciphertext",
+        "gemini_api_key_encryption_nonce", "gemini_api_key_encryption_tag",
         "text", is_nullable=True,
     ),
     _PayloadSpec(
@@ -487,6 +511,8 @@ _MIGRATION_DEFERRED_PLAINTEXT_FIELDS_BY_DATABASE_VERSION = dict(enumerate((
     frozenset(),
     # version 9
     frozenset(),
+    # version 10
+    frozenset(),
 )))
 
 
@@ -531,6 +557,17 @@ def _main_schema_for_database_version(
         resolved_schema = {
             **resolved_schema,
             "notes": note_columns - _PROPOSED_TAG_COLUMNS,
+        }
+    # Before version 11 the Claude and Gemini key slots may be absent, or already added
+    # by the on-open schema helper.
+    if database_version < _AI_PROVIDER_CREDENTIALS_DATABASE_VERSION and _AI_PROVIDER_CREDENTIAL_COLUMNS.isdisjoint(
+        actual_app_settings_columns
+    ):
+        if not _AI_PROVIDER_CREDENTIAL_COLUMNS.issubset(resolved_schema["app_settings"]):
+            raise RuntimeError("Current audit schema is missing AI provider credential columns")
+        resolved_schema = {
+            **resolved_schema,
+            "app_settings": resolved_schema["app_settings"] - _AI_PROVIDER_CREDENTIAL_COLUMNS,
         }
     if database_version >= _OPENAI_CREDENTIALS_DATABASE_VERSION or not _OPENAI_CREDENTIAL_COLUMNS.isdisjoint(
         actual_app_settings_columns
@@ -985,7 +1022,7 @@ def _audit_namespace(*, namespace: str, database_path: Path) -> NamespaceAuditRe
         and search_history_columns == _LEGACY_SEARCH_HISTORY_COLUMNS
     )
     expected_main_schema = _OPAQUE_MAIN_SCHEMA_BEFORE_CONTENT_MIGRATIONS
-    payload_specs = (
+    payload_specs: tuple[_PayloadSpec, ...] = (
         _MAIN_PAYLOADS_WITHOUT_SEARCH_HISTORY + _OPAQUE_SEARCH_HISTORY_PAYLOADS
     )
     if uses_legacy_search_history:

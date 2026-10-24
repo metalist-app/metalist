@@ -253,7 +253,10 @@ approximate evidence-token count.
   descendants are blurred too.
 - The compact composer controls choose model and Thinking Off/Low/Medium/High.
   Selection persists immediately.
-- A compact estimated-spend tracker appears directly below the
+- A compact estimated-spend tracker, a developer tool: it exists only when
+  `METALIST_ENVIRONMENT=development` (the panel's `data-shows-cost-estimate`; in
+  production the **$** button never shows and the cost routes answer 404). Users see
+  what they spent on their provider's own billing page. It appears directly below the
   chat header when the header's **$** button is on (off by default, remembered per
   namespace as `pref.ai.show_spend`; it keeps counting while hidden). Its four token totals are New input, Cached input, Cache writes, and
   Output. Values come from OpenAI's response usage rather than MetaList's prompt

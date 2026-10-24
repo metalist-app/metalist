@@ -19,7 +19,7 @@ PY_ALLOWED_TRY_CALLEE_PREFIXES = (
     "client.create_with_completion",
     "client.stream",
     "client.chat.completions.create",
-    "validate_openai_api_key",
+    "validate_ai_api_key",
     "_create_structured_completion",
     "self._inference.infer_structured",
     "json.",
@@ -36,7 +36,7 @@ PY_ALLOWED_EXCEPTION_NAMES = (
     "InstructorRetryException",
     "APIError",
     "InferenceProviderError",
-    "OpenAICredentialInputError",
+    "AiCredentialInputError",
 )
 
 JS_ALLOWED_TRY_CALLEE_NAMES = (

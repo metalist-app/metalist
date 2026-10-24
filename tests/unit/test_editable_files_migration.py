@@ -50,7 +50,7 @@ def _migrate(notes: Path, *, encrypted: bool) -> tuple[int, ...]:
     with closing(sqlite3.connect(notes)) as connection:
         with connection:
             result = run_database_migrations(connection=connection, encryption_enabled=encrypted, encryption_service=service)
-        assert connection.execute("PRAGMA user_version").fetchone()[0] == 10
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == CURRENT_DATABASE_VERSION
         return result.applied_versions
 
 
@@ -62,7 +62,7 @@ def _files_schema(files: Path) -> tuple[set[str], set[str]]:
 
 
 def test_current_database_version_includes_editable_files() -> None:
-    assert CURRENT_DATABASE_VERSION == 10
+    assert CURRENT_DATABASE_VERSION >= 10
 
 
 @pytest.mark.parametrize("encrypted", [False, True])
@@ -77,7 +77,7 @@ def test_migration_upgrades_a_legacy_files_database_and_keeps_attachments(tmp_pa
         )
         connection.commit()
 
-    assert _migrate(notes, encrypted=encrypted) == (10,)
+    assert _migrate(notes, encrypted=encrypted) == (10, 11)
 
     tables, columns = _files_schema(files)
     assert "file_previews" in tables
@@ -94,7 +94,7 @@ def test_migration_accepts_a_files_database_the_app_already_upgraded(tmp_path: P
         initialize_file_schema(connection)
         connection.commit()
 
-    assert _migrate(notes, encrypted=True) == (10,)
+    assert _migrate(notes, encrypted=True) == (10, 11)
     assert _migrate(notes, encrypted=True) == ()
     tables, columns = _files_schema(files)
     assert "file_previews" in tables and "content_revision" in columns
@@ -103,5 +103,5 @@ def test_migration_accepts_a_files_database_the_app_already_upgraded(tmp_path: P
 def test_migration_does_not_create_a_missing_files_database(tmp_path: Path) -> None:
     notes = _version_9_namespace(tmp_path)
 
-    assert _migrate(notes, encrypted=False) == (10,)
+    assert _migrate(notes, encrypted=False) == (10, 11)
     assert not (tmp_path / "fixture.metalist.files.db").exists()

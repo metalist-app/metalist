@@ -45,7 +45,8 @@ from app.services.file_registry import file_registry
 from app.services.input_errors import InputRejected
 from app.services.note_store import store
 from app.services.ontology_rules_store import bootstrap_ontology_rules_store
-from app.services.openai_credentials import OpenAICredentialStatus
+from app.services.ai_credentials import AiCredentialStatus
+import app.services.ai_credentials as ai_credentials_module
 from app.services.tag_suggestions import suggest_tags_with_reasons_for_note
 from app.usecases.create_note import apply_insert_note
 from app.usecases.delete_subtree import apply_delete_subtree
@@ -99,9 +100,9 @@ def _draft_reason(note_id: str, *, tags: str, content: str, boundary: CloudPriva
 
 
 def _set_ai_ready(monkeypatch, *, is_ready: bool) -> None:
-    monkeypatch.setattr(ai_setup_module.openai_credential_store, "status",
-                        lambda **kwargs: OpenAICredentialStatus(configured=is_ready, persistent=False))
-    monkeypatch.setattr(ai_setup_module.openai_credential_store, "resolve",
+    monkeypatch.setattr(ai_credentials_module.ai_credential_stores["openai"], "status",
+                        lambda **kwargs: AiCredentialStatus(configured=is_ready, persistent=False))
+    monkeypatch.setattr(ai_credentials_module.ai_credential_stores["openai"], "resolve",
                         lambda **kwargs: "sk-test-0123456789abcdefghijklmnop")
 
 

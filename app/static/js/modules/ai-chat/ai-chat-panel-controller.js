@@ -948,15 +948,25 @@ class AiChatPanelController {
         this._syncOpenAiCostVisibility();
     }
 
+    // The estimated spend is a developer tool: the server offers it in development only
+    // (data-shows-cost-estimate on the panel); elsewhere the $ never shows.
     _syncOpenAiCostVisibility() {
         const settings = this._getSettings();
-        const isOpenAi = settings.provider === 'openai';
+        const isOpenAi = settings.provider === 'openai' && this._showsCostEstimate();
         // Spend keeps updating while hidden; the $ button only shows or hides it.
         let isSpendShown = false;
         if (isOpenAi) isSpendShown = this._showSpend;
         this._elements.openAiCost.hidden = !isSpendShown;
         this._elements.spendToggle.hidden = !isOpenAi;
         return isOpenAi;
+    }
+
+    _showsCostEstimate() {
+        const offered = this._elements.panel.dataset.showsCostEstimate;
+        if (offered !== 'true' && offered !== 'false') {
+            throw new Error('AI chat panel missing data-shows-cost-estimate');
+        }
+        return offered === 'true';
     }
 
     _renderOpenAiCostSnapshot(snapshot) {

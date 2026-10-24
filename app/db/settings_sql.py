@@ -4,14 +4,19 @@ from __future__ import annotations
 
 import sqlite3
 from datetime import datetime, timezone
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from .engine import GuardedConnection
 from .raw_connection import raw_sqlite_connection
 from .schema import APP_SETTINGS_TABLE
 
+if TYPE_CHECKING:
+    # Writers (begin_writer) hand out session's wrapper; importing it at run time
+    # would be an import cycle (raw_connection.py).
+    from .session import GuardedConnection as SessionGuardedConnection
 
-def _conn(connection: GuardedConnection | sqlite3.Connection) -> sqlite3.Connection:
+
+def _conn(connection: GuardedConnection | SessionGuardedConnection | sqlite3.Connection) -> sqlite3.Connection:
     return raw_sqlite_connection(connection)
 
 
@@ -67,13 +72,19 @@ def fetch_settings(connection: GuardedConnection | sqlite3.Connection) -> Option
         "openai_api_key_ciphertext": row["openai_api_key_ciphertext"],
         "openai_api_key_encryption_nonce": row["openai_api_key_encryption_nonce"],
         "openai_api_key_encryption_tag": row["openai_api_key_encryption_tag"],
+        "anthropic_api_key_ciphertext": row["anthropic_api_key_ciphertext"],
+        "anthropic_api_key_encryption_nonce": row["anthropic_api_key_encryption_nonce"],
+        "anthropic_api_key_encryption_tag": row["anthropic_api_key_encryption_tag"],
+        "gemini_api_key_ciphertext": row["gemini_api_key_ciphertext"],
+        "gemini_api_key_encryption_nonce": row["gemini_api_key_encryption_nonce"],
+        "gemini_api_key_encryption_tag": row["gemini_api_key_encryption_tag"],
         "session_timeout_minutes": row["session_timeout_minutes"],
         "created_at": datetime.fromisoformat(row["created_at"]),
         "updated_at": datetime.fromisoformat(row["updated_at"]),
     }
 
 
-def insert_default_settings(connection: GuardedConnection | sqlite3.Connection) -> None:
+def insert_default_settings(connection: GuardedConnection | SessionGuardedConnection | sqlite3.Connection) -> None:
     conn = _conn(connection)
     now = datetime.now(timezone.utc)
     conn.execute(
@@ -171,6 +182,12 @@ def clear_password_settings(connection: GuardedConnection | sqlite3.Connection) 
             openai_api_key_ciphertext = NULL,
             openai_api_key_encryption_nonce = NULL,
             openai_api_key_encryption_tag = NULL,
+            anthropic_api_key_ciphertext = NULL,
+            anthropic_api_key_encryption_nonce = NULL,
+            anthropic_api_key_encryption_tag = NULL,
+            gemini_api_key_ciphertext = NULL,
+            gemini_api_key_encryption_nonce = NULL,
+            gemini_api_key_encryption_tag = NULL,
             encryption_enabled = 0,
             encryption_algorithm = NULL,
             updated_at = ?
@@ -182,26 +199,45 @@ def clear_password_settings(connection: GuardedConnection | sqlite3.Connection) 
     )
 
 
-def update_openai_api_key(
-    connection: GuardedConnection | sqlite3.Connection,
+# Each AI provider's encrypted API-key columns in app_settings: <prefix>_ciphertext,
+# <prefix>_encryption_nonce and <prefix>_encryption_tag (app/services/ai_credentials.py).
+AI_API_KEY_COLUMN_PREFIXES = {
+    "openai": "openai_api_key",
+    "anthropic": "anthropic_api_key",
+    "gemini": "gemini_api_key",
+}
+
+
+def ai_api_key_columns(provider: str) -> tuple[str, str, str]:
+    """The provider's ciphertext, nonce and tag columns."""
+    if provider not in AI_API_KEY_COLUMN_PREFIXES:
+        raise ValueError(f"No API-key columns for AI provider {provider!r}")
+    prefix = AI_API_KEY_COLUMN_PREFIXES[provider]
+    return f"{prefix}_ciphertext", f"{prefix}_encryption_nonce", f"{prefix}_encryption_tag"
+
+
+def update_ai_api_key(
+    connection: GuardedConnection | SessionGuardedConnection | sqlite3.Connection,
     *,
+    provider: str,
     ciphertext: str,
     nonce: bytes,
     tag: bytes,
 ) -> None:
     if not isinstance(ciphertext, str) or ciphertext == "":
-        raise TypeError("OpenAI API key ciphertext must be non-empty text")
+        raise TypeError("AI API key ciphertext must be non-empty text")
     if not isinstance(nonce, bytes) or len(nonce) == 0:
-        raise TypeError("OpenAI API key nonce must be non-empty bytes")
+        raise TypeError("AI API key nonce must be non-empty bytes")
     if not isinstance(tag, bytes) or len(tag) == 0:
-        raise TypeError("OpenAI API key tag must be non-empty bytes")
+        raise TypeError("AI API key tag must be non-empty bytes")
+    ciphertext_column, nonce_column, tag_column = ai_api_key_columns(provider)
     conn = _conn(connection)
     conn.execute(
         f"""
         UPDATE {APP_SETTINGS_TABLE}
-        SET openai_api_key_ciphertext = ?,
-            openai_api_key_encryption_nonce = ?,
-            openai_api_key_encryption_tag = ?,
+        SET {ciphertext_column} = ?,
+            {nonce_column} = ?,
+            {tag_column} = ?,
             updated_at = ?
         WHERE id = 1
         """,
@@ -209,16 +245,19 @@ def update_openai_api_key(
     )
 
 
-def clear_openai_api_key(
-    connection: GuardedConnection | sqlite3.Connection,
+def clear_ai_api_key(
+    connection: GuardedConnection | SessionGuardedConnection | sqlite3.Connection,
+    *,
+    provider: str,
 ) -> None:
+    ciphertext_column, nonce_column, tag_column = ai_api_key_columns(provider)
     conn = _conn(connection)
     conn.execute(
         f"""
         UPDATE {APP_SETTINGS_TABLE}
-        SET openai_api_key_ciphertext = NULL,
-            openai_api_key_encryption_nonce = NULL,
-            openai_api_key_encryption_tag = NULL,
+        SET {ciphertext_column} = NULL,
+            {nonce_column} = NULL,
+            {tag_column} = NULL,
             updated_at = ?
         WHERE id = 1
         """,

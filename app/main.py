@@ -15,6 +15,7 @@ import json
 import secrets
 from app.api.upload_limits import UploadLimitMiddleware
 from app.presentation.templates import get_templates
+from .startup_environment import is_development_environment
 from .api import dev
 from .api.middleware.auth import AuthMiddleware
 from app.config import ACTIVE_NAMESPACE, VERSION
@@ -531,6 +532,7 @@ async def home(request: Request, db: Annotated[SafeSession, Depends(get_db)]):
             page_title=_resolve_page_title(base_title="MetaList"),
             needs_auth=True,
             shows_login_at_once=login_is_certainly_needed(request),
+            shows_ai_cost_estimate=is_development_environment(),
         )
     return template.render(
         request=request,
@@ -540,6 +542,7 @@ async def home(request: Request, db: Annotated[SafeSession, Depends(get_db)]):
         page_title=_resolve_page_title(base_title="MetaList"),
         needs_auth=False,
         shows_login_at_once=False,
+        shows_ai_cost_estimate=is_development_environment(),
     )
 
 

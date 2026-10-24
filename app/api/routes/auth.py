@@ -95,7 +95,7 @@ from app.services.client_state_service import load_client_state
 from app.services.client_state_service import _validate_client_preferences, _validate_usage_state
 from app.services.client_state_service import save_client_preferences
 from app.services.client_state_service import save_command_palette_usage
-from app.services.openai_credentials import openai_credential_store
+from app.services.ai_credentials import clear_ai_credential_sessions, reset_ai_credentials
 from app.services.input_errors import NamespaceInputRejected
 from app.services.link_title_retry import stop_link_title_retry
 
@@ -386,7 +386,7 @@ def _reset_runtime_state_after_restore() -> bool:
     web_evidence_store.reset()
     summary_batch_store.reset()
     agent_trace_store.reset()
-    openai_credential_store.reset()
+    reset_ai_credentials()
     view_cache.clear()
     tab_state_store.reset()
     link_title_store.reset()
@@ -573,7 +573,7 @@ def login(
     web_evidence_store.reset()
     summary_batch_store.reset()
     agent_trace_store.reset()
-    openai_credential_store.reset()
+    reset_ai_credentials()
     view_cache.clear()
     reset_all_undo_state()
     reset_sync_state()
@@ -599,7 +599,7 @@ def logout(
     web_evidence_store.clear_session(session_key=session_key)
     summary_batch_store.clear_session(session_key=session_key)
     agent_trace_store.clear_session(session_key=session_key)
-    openai_credential_store.clear_session(session_key=session_key)
+    clear_ai_credential_sessions(session_key=session_key)
     token_service.revoke_token(token)
     shell_session_service.reset()
     # Lock and login end a retry through the runtime generation; a passwordless
@@ -668,7 +668,7 @@ def create_passwordless_session(
     web_evidence_store.reset()
     summary_batch_store.reset()
     agent_trace_store.reset()
-    openai_credential_store.reset()
+    reset_ai_credentials()
     view_cache.clear()
     reset_all_undo_state()
     reset_sync_state()
@@ -1088,7 +1088,7 @@ def create_password(
     web_evidence_store.reset()
     summary_batch_store.reset()
     agent_trace_store.reset()
-    openai_credential_store.reset()
+    reset_ai_credentials()
     clear_all_locks()
     return {"message": message}
 
@@ -1115,7 +1115,7 @@ def change_password(
     web_evidence_store.reset()
     summary_batch_store.reset()
     agent_trace_store.reset()
-    openai_credential_store.reset()
+    reset_ai_credentials()
     clear_all_locks()
     return {"message": message}
 
@@ -1138,7 +1138,7 @@ def remove_password(
     web_evidence_store.reset()
     summary_batch_store.reset()
     agent_trace_store.reset()
-    openai_credential_store.reset()
+    reset_ai_credentials()
     clear_all_locks()
     clear_encryption_key()
     deactivate_authenticated_logging()

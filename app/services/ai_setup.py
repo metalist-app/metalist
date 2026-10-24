@@ -14,7 +14,7 @@ from typing import Literal
 from app.services.agent.inference import InferenceAdapter
 from app.services.agent.openai_cost_tracking import openai_cost_tracker
 from app.services.agent.openai_models import OPENAI_API_BASE_URL
-from app.services.openai_credentials import openai_credential_store
+from app.services.ai_credentials import ai_credential_store
 from app.services.agent.privacy_guard import PrivacyGuardedInference, cloud_privacy_revision
 
 
@@ -50,9 +50,8 @@ class AiConnection:
 
 
 def _is_provider_ready(provider: AiProvider, *, token: str, session_key: str) -> bool:
-    if provider == "openai":
-        return openai_credential_store.status(token=token, session_key=session_key).configured
-    raise AssertionError(f"Unregistered AI provider: {provider}")
+    assert provider in AI_PROVIDERS, f"Unregistered AI provider: {provider}"
+    return ai_credential_store(provider).status(token=token, session_key=session_key).configured
 
 
 def describe_ai_setup(*, token: str, session_key: str) -> AiSetup:
@@ -72,7 +71,7 @@ def connect_to_ai(*, provider: AiProvider, token: str, session_key: str) -> AiCo
         # Imported on first use, not at the top: it loads the OpenAI SDK (about 250 ms),
         # and every namespace server would pay for it at startup (openai_models.py).
         from app.services.agent.openai_inference import OpenAIInferenceAdapter
-        api_key = openai_credential_store.resolve(token=token, session_key=session_key)
+        api_key = ai_credential_store("openai").resolve(token=token, session_key=session_key)
         return AiConnection(
             provider="openai",
             label="OpenAI",

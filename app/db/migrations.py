@@ -370,6 +370,39 @@ def _migration_7_to_8(
     return rewritten_count
 
 
+# The encrypted API-key columns of the AI providers added beside OpenAI (version 11).
+AI_PROVIDER_CREDENTIAL_COLUMNS: tuple[tuple[str, str], ...] = (
+    ("anthropic_api_key_ciphertext", "TEXT"),
+    ("anthropic_api_key_encryption_nonce", "BLOB"),
+    ("anthropic_api_key_encryption_tag", "BLOB"),
+    ("gemini_api_key_ciphertext", "TEXT"),
+    ("gemini_api_key_encryption_nonce", "BLOB"),
+    ("gemini_api_key_encryption_tag", "BLOB"),
+)
+
+
+def add_ai_provider_credential_columns(
+    *,
+    connection: sqlite3.Connection,
+    encryption_enabled: bool,  # noqa: ARG001
+    encryption_service: EncryptionService | None,  # noqa: ARG001
+) -> int:
+    """Version 10→11: an encrypted API-key slot for Claude (anthropic) and Gemini beside
+    OpenAI's (docs/ready-to-build/ai-providers.md). The on-open schema helper may have
+    added some or all of the columns already; the missing ones are added, then the shape
+    is checked."""
+    columns = _table_columns(connection, table="app_settings")
+    for column, sql_type in AI_PROVIDER_CREDENTIAL_COLUMNS:
+        if column not in columns:
+            connection.execute(f"ALTER TABLE app_settings ADD COLUMN {column} {sql_type}")
+    missing = {column for column, _sql_type in AI_PROVIDER_CREDENTIAL_COLUMNS} - _table_columns(
+        connection, table="app_settings",
+    )
+    if missing:
+        raise RuntimeError(f"Database migration 10→11 left AI credential columns missing: {sorted(missing)}")
+    return 0
+
+
 # One step per database version, in order: the step at position N upgrades version N to N + 1.
 _MIGRATION_STEPS: tuple[Callable[..., int], ...] = (
     _migration_0_to_1,
@@ -382,6 +415,7 @@ _MIGRATION_STEPS: tuple[Callable[..., int], ...] = (
     _migration_7_to_8,
     retire_sounds,
     add_editable_file_schema,
+    add_ai_provider_credential_columns,
 )
 _MIGRATIONS: dict[int, Callable[..., int]] = dict(enumerate(_MIGRATION_STEPS))
 assert len(_MIGRATION_STEPS) == CURRENT_DATABASE_VERSION, "every database version below the current one needs a step"

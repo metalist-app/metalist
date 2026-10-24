@@ -141,7 +141,7 @@ reason = "reject invalid external menu acknowledgment with a conflict response"
 [[tool.shockharness.rules.exceptions.boundaries]]
 path = "app/api/routes/ai.py"
 language = "python"
-exception = "app.services.openai_credentials.OpenAICredentialInputError"
+exception = "app.services.ai_credentials.AiCredentialInputError"
 reason = "return a concise validation error without echoing the secret"
 
 [[tool.shockharness.rules.exceptions.boundaries]]

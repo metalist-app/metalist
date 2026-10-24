@@ -373,19 +373,25 @@ so the References entries open the actual destinations.
 
 ## Provider Details
 
-OpenAI calls set `store: false`. Encrypted namespaces store the API key encrypted
-with the namespace DEK; plaintext namespaces hold it only in authenticated server
-session memory. The raw key is never returned to the browser or included in traces.
+OpenAI calls set `store: false`. Each provider has its own API-key slot per vault
+(`app/services/ai_credentials.py`, routes `/api2/ai/{provider}/credential` for
+registered providers): encrypted namespaces store the key encrypted with the
+namespace DEK in its `app_settings` columns (`openai_api_key_*`; `anthropic_api_key_*`
+and `gemini_api_key_*` from database version 11); plaintext namespaces hold it only in
+authenticated server session memory. The raw key is never returned to the browser or
+included in traces.
 
 Completed OpenAI calls contribute API-reported uncached input, cached input,
 cache-write input, and output usage to a process-memory cost tracker. The tracker
 uses model-specific and long-context pricing, is labeled estimated because an
 interrupted request may not return final usage, and is cleared only by Reset or
-process restart.
+process restart. It is a developer tool: its routes and the chat's `$` exist only in
+development (`app/startup_environment.is_development_environment`); production
+answers 404.
 
-Planned, not built: Claude and Gemini beside OpenAI, each on the user's own key
-in its own encrypted slot per vault, through the same disclosure boundary, and the
-cost estimate limited to development (`docs/ready-to-build/ai-providers.md`).
+Planned, not built: Claude and Gemini adapters beside OpenAI's, through the same
+disclosure boundary; their key slots exist already
+(`docs/ready-to-build/ai-providers.md`).
 
 ## Main Files
 

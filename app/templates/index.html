@@ -86,7 +86,8 @@
     </div>
     <div id="tab-indicator">0</div>
     <div id="search-contexts-list"></div>
-    <aside id="ai-chat-panel" class="ai-chat-panel" aria-label="AI chat">
+    ## The estimated spend ($) is a developer tool: offered in development only.
+    <aside id="ai-chat-panel" class="ai-chat-panel" aria-label="AI chat" data-shows-cost-estimate="${'true' if shows_ai_cost_estimate else 'false'}">
         <div
             id="ai-chat-resizer"
             class="ai-chat-resizer"
