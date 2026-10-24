@@ -161,7 +161,7 @@ html:has(> body > .login-page[style*="display: flex"]) {
 
 /* The form and the loading view occupy the same place. When the password is
    accepted the form slides out to the left while the loading view slides in from
-   the right, within the logo's width; the logo does not move. */
+   the right, within the M's width; the logo does not move. */
 .login-views {
     display: grid;
     overflow: hidden;
