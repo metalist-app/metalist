@@ -50,6 +50,7 @@ from app.services.agent.history import record_tool_turn
 from app.services.agent.inference import InferenceAttempt
 from app.services.agent.inference import InferenceContextWindow
 from app.services.agent.inference import InferenceProviderError
+from app.services.agent.inference import OutputLimitReached
 from app.services.agent.inference import InferenceResponse
 from app.services.agent.inference import StructuredInferenceError
 from app.services.agent.inference import StructuredInferenceProgress
@@ -61,6 +62,7 @@ from app.services.agent.structured_inference import structured_retry_messages
 from app.services.agent.token_estimation import estimate_text_tokens
 from app.services.agent.tool_calling import AgentTool
 from app.services.agent.tool_calling import validate_tool_conversation
+from app.services.ai_catalog import CLAUDE_MODEL_MAX_OUTPUT_TOKENS
 from app.services.ai_catalog import catalog_entry
 from app.services.ai_catalog import validate_model_name
 from app.utils.time_units import MS_PER_SECOND
@@ -252,7 +254,7 @@ def _raise_unless_finished(final: Message) -> None:
     if final.stop_reason in ("end_turn", "tool_use"):
         return
     if final.stop_reason == "max_tokens":
-        raise AnthropicProviderError("Anthropic reached the maximum output-token limit before finishing the response")
+        raise OutputLimitReached(model=final.model)
     if final.stop_reason == "refusal":
         explanation = ""
         if final.stop_details is not None and final.stop_details.explanation is not None:
@@ -402,12 +404,11 @@ class AnthropicInferenceAdapter:
         model: str,
         thinking_level: str,
         messages: list[dict[str, str]],
-        max_output_tokens: int,
         on_request: Callable[[dict[str, object]], None],
     ) -> AsyncIterator[dict[str, object]]:
         async for event in self._stream(
             base_url=base_url, model=model, thinking_level=thinking_level, messages=messages,
-            tools=(), max_output_tokens=max_output_tokens, on_request=on_request,
+            tools=(), on_request=on_request,
         ):
             if event["type"] == "done":
                 yield {"type": "done", "usage": event["usage"]}
@@ -423,7 +424,6 @@ class AnthropicInferenceAdapter:
         thinking_level: str,
         messages: list[dict[str, object]],
         tools: tuple[AgentTool, ...],
-        max_output_tokens: int,
         on_request: Callable[[dict[str, object]], None],
     ) -> AsyncIterator[dict[str, object]]:
         if not isinstance(tools, tuple) or not tools or not all(isinstance(tool, AgentTool) for tool in tools):
@@ -432,7 +432,7 @@ class AnthropicInferenceAdapter:
             raise ValueError("Tool names must be unique")
         async for event in self._stream(
             base_url=base_url, model=model, thinking_level=thinking_level, messages=messages,
-            tools=tools, max_output_tokens=max_output_tokens, on_request=on_request,
+            tools=tools, on_request=on_request,
         ):
             yield event
 
@@ -444,18 +444,16 @@ class AnthropicInferenceAdapter:
         thinking_level: str,
         messages: Sequence[Mapping[str, object]],
         tools: tuple[AgentTool, ...],
-        max_output_tokens: int,
         on_request: Callable[[dict[str, object]], None],
     ) -> AsyncIterator[dict[str, object]]:
         self._validate_base_url(base_url)
         normalized_model = validate_model_name(model)
         effort = resolve_claude_effort(thinking_level)
-        if not isinstance(max_output_tokens, int) or isinstance(max_output_tokens, bool) or max_output_tokens < 1:
-            raise ValueError("Claude maximum output tokens must be positive")
         system, request_messages = claude_request_messages(messages)
         request: dict[str, Any] = {
             "model": normalized_model,
-            "max_tokens": max_output_tokens,
+            # Claude requires a limit: its models' own maximum, so an answer is never cut short.
+            "max_tokens": CLAUDE_MODEL_MAX_OUTPUT_TOKENS,
             "system": system,
             "messages": request_messages,
             "thinking": _ADAPTIVE_THINKING,

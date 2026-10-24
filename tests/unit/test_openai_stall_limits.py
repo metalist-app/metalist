@@ -78,7 +78,7 @@ def _tool_turn(thinking_level: str) -> list[dict[str, object]]:
         return [event async for event in adapter.stream_tool_turn(
             base_url=OPENAI_API_BASE_URL, model="gpt-5.6-luna", thinking_level=thinking_level,
             messages=[{"role": "user", "content": "What's new in MetaList?"}], tools=(_SEARCH_TOOL,),
-            max_output_tokens=8_192, on_request=lambda request: None,
+            on_request=lambda request: None,
         )]
 
     return asyncio.run(collect())
@@ -90,8 +90,7 @@ def _text_stream(thinking_level: str) -> list[dict[str, object]]:
     async def collect():
         return [event async for event in adapter.stream_text(
             base_url=OPENAI_API_BASE_URL, model="gpt-5.6-luna", thinking_level=thinking_level,
-            messages=[{"role": "user", "content": "Summarize."}], max_output_tokens=8_192,
-            on_request=lambda request: None,
+            messages=[{"role": "user", "content": "Summarize."}], on_request=lambda request: None,
         )]
 
     return asyncio.run(collect())

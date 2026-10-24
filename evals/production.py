@@ -180,4 +180,4 @@ def prepare_step(step, *, prompts, skills) -> PreparedStep:
         kind = "structured"
         schema = RESPONSE_MODELS[response_model].model_json_schema()
     return PreparedStep(kind=kind, messages=prepared_messages, response_model=response_model,
-        response_schema=schema, max_output_tokens=step.max_output_tokens, expectation=step.expectation)
+        response_schema=schema, expectation=step.expectation)

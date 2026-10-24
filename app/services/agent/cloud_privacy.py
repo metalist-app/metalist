@@ -332,7 +332,9 @@ class CloudPrivacyEvaluator:
         note_ids = tuple(self._notes.list_note_ids())
         hidden_ids = self.hidden_note_ids(note_ids=note_ids, boundary=boundary)
         permitted_ids = sorted(set(note_ids) - hidden_ids)
-        payload = (boundary.provider, serialize_cloud_privacy_policy(boundary.policy), permitted_ids)
+        # What the AI may see, not which company it is: one policy covers every provider,
+        # so switching provider keeps the conversation (the maintainer, 2026-10-24).
+        payload = (boundary.apply_cloud_policy, serialize_cloud_privacy_policy(boundary.policy), permitted_ids)
         return hashlib.sha256(json.dumps(payload, separators=(",", ":")).encode()).hexdigest()
 
     def hidden_note_ids(

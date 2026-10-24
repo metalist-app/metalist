@@ -10,6 +10,7 @@ import httpx
 import pytest
 
 import app.services.agent.openai_compatible_inference as compatible
+from app.services.agent.inference import InferenceProviderError
 from app.services.agent.judging import OutputJudgment
 from app.services.agent.openai_compatible_inference import GEMINI
 from app.services.agent.openai_compatible_inference import OpenAICompatibleInferenceAdapter
@@ -60,7 +61,7 @@ def _tool_turn(messages: list[dict], thinking_level: str) -> list[dict]:
     async def run() -> list[dict]:
         return [event async for event in adapter.stream_tool_turn(
             base_url=BASE_URL, model=MODEL, thinking_level=thinking_level, messages=messages,
-            tools=(READ_TOOL,), max_output_tokens=8192, on_request=lambda request: None,
+            tools=(READ_TOOL,), on_request=lambda request: None,
         )]
     return asyncio.run(run())
 
@@ -82,6 +83,8 @@ def test_a_gemini_tool_turn_returns_the_call_with_its_thought_signature(monkeypa
     assert body["stream_options"] == {"include_usage": True}
     assert body["tool_choice"] == "auto"
     assert "store" not in body
+    # No answer limit of MetaList's own: the model writes as much as it can.
+    assert "max_completion_tokens" not in body
     assert body["tools"][0]["function"]["parameters"]["additionalProperties"] is False
     assert events == [
         {"type": "provider_started"},
@@ -118,13 +121,13 @@ def test_the_next_turn_sends_each_call_back_with_its_signature() -> None:
 
 
 @pytest.mark.parametrize(("finish_reason", "usage", "message"), [
-    ("length", USAGE, "maximum output-token limit"),
+    ("length", USAGE, "gemini-3.8-flash reached the longest answer it can write"),
     ("content_filter", USAGE, "finish reason 'content_filter'"),
     ("stop", None, "before reporting its usage"),
 ])
 def test_a_gemini_reply_cut_off_or_incomplete_fails_loudly(monkeypatch, finish_reason, usage, message) -> None:
     _serve(monkeypatch, _stream(_chunk({"content": "Partial"}, finish_reason), usage=usage))
-    with pytest.raises(OpenAICompatibleProviderError, match=message):
+    with pytest.raises(InferenceProviderError, match=message):
         _tool_turn(QUESTION, "low")
 
 

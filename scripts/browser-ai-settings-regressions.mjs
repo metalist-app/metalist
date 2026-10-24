@@ -54,5 +54,17 @@ export async function checkOpenAiSettings(page) {
   assert.equal(saved.webAccessMode, 'contextual');
   assert.equal(saved.maxPageApproximateTokens, 500000);
   assert.equal('taggingBatchTokens' in saved, false);
-  console.log('PASS AI settings: provider tabs, the shipped models in the chat picker, web access and the token window save');
+  // Save with nothing changed (or changed back) closes the dialog like any Save.
+  await page.evaluate(async () => {
+    const {CommandPalette} = await import('/static/js/modules/command-palette/command-palette-controller.js');
+    await CommandPalette.openAiAgentSettings(false);
+  });
+  await page.waitForFunction(() => {
+    const keyInput = document.getElementById('ai-agent-api-key');
+    return keyInput && !keyInput.disabled;
+  });
+  await page.click('#ai-agent-save');
+  await page.waitForSelector('#ai-agent-settings-modal', {hidden: true});
+  assert.equal(await page.$('#fatal-error-overlay'), null, 'Saving unchanged AI settings must not raise a fatal error');
+  console.log('PASS AI settings: provider tabs, the shipped models in the chat picker, web access and the token window save; an unchanged Save closes quietly');
 }

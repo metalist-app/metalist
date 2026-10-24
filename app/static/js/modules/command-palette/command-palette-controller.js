@@ -734,16 +734,29 @@ class CommandPaletteController {
         });
     }
 
+    // A dialog's Save writes the settings it shows. Only the ones that changed are written,
+    // and nothing when none did: the store rejects a write that changes nothing, and Save
+    // with nothing changed (or changed back) must close the dialog like any Save.
+    // Returns whether anything changed.
+    async _saveChangedPreferences(updates) {
+        const changed = Object.fromEntries(
+            Object.entries(updates).filter(([key, value]) => this._preferences.getRaw(key) !== value),
+        );
+        if (Object.keys(changed).length === 0) return false;
+        await this._preferences.setMany(changed);
+        return true;
+    }
+
     async _saveNoteLayoutSettings(settings) {
         const validated = validateNoteLayoutSettings(settings);
-        await this._preferences.setMany({
+        const didChange = await this._saveChangedPreferences({
             [NOTE_LAYOUT_PREFERENCE_KEYS.topLevelNoteSize]: validated.topLevelNoteSize,
             [NOTE_LAYOUT_PREFERENCE_KEYS.childIndentation]: validated.childIndentation,
             [NOTE_LAYOUT_PREFERENCE_KEYS.verticalSpacing]: validated.verticalSpacing,
             [NOTE_LAYOUT_PREFERENCE_KEYS.noteCorners]: validated.noteCorners,
             [NOTE_LAYOUT_PREFERENCE_KEYS.tagStyle]: validated.tagStyle,
         });
-        this._applyPreferenceEffectsFromStorage();
+        if (didChange) this._applyPreferenceEffectsFromStorage();
     }
 
     getAiSettings() {
@@ -892,7 +905,7 @@ class CommandPaletteController {
         );
         const webAccessMode = validateAgentWebAccessMode(settings.webAccessMode);
         // The model in use is picked in the chat (saveAiSettings).
-        await this._preferences.setMany({
+        const didChange = await this._saveChangedPreferences({
             [OPENAI_AGENT_RETRIEVAL_PREFERENCE_KEYS.maxPageApproximateTokens]: String(
                 openAiRetrievalSettings.maxPageApproximateTokens,
             ),
@@ -901,6 +914,7 @@ class CommandPaletteController {
             ),
             [AGENT_WEB_ACCESS_MODE_PREFERENCE_KEY]: webAccessMode,
         });
+        if (!didChange) return;
         document.dispatchEvent(new CustomEvent(
             'metalist:ai-settings-changed',
             { detail: { reloadModels: true } },
@@ -1389,14 +1403,14 @@ class CommandPaletteController {
             throw new Error('limitNoteCreditsPerSearchContext must be boolean');
         }
         const serialized = serializeSearchSuggestionWindows(windowDays);
-        await this._preferences.setMany({
+        const didChange = await this._saveChangedPreferences({
             'pref.search_suggestion_windows': serialized,
             'pref.show_search_suggestion_window_labels': showWindowLabels ? 'true' : 'false',
             'pref.limit_note_credits_per_search_context': (
                 limitNoteCreditsPerSearchContext ? 'true' : 'false'
             ),
         });
-        this._applyPreferenceEffectsFromStorage();
+        if (didChange) this._applyPreferenceEffectsFromStorage();
     }
 
     getSortMode() {
@@ -2582,13 +2596,13 @@ class CommandPaletteController {
     }
 
     async _saveDictationPhrases({ tagPhrase, quoteOpen, quoteClose, negate }) {
-        await this._preferences.setMany({
+        const didChange = await this._saveChangedPreferences({
             [DICTATION_TAG_PHRASE_PREFERENCE]: tagPhrase,
             [DICTATION_QUOTE_OPEN_PREFERENCE]: quoteOpen,
             [DICTATION_QUOTE_CLOSE_PREFERENCE]: quoteClose,
             [DICTATION_NEGATE_PREFERENCE]: negate,
         });
-        this._applyPreferenceEffectsFromStorage();
+        if (didChange) this._applyPreferenceEffectsFromStorage();
     }
 
     async openDictationSettings() {

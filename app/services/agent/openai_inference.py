@@ -21,6 +21,7 @@ from app.services.agent.tool_calling import AgentTool, validate_tool_conversatio
 from app.services.agent.inference import InferenceContextWindow
 from app.services.agent.inference import InferenceAttempt
 from app.services.agent.inference import InferenceProviderError
+from app.services.agent.inference import OutputLimitReached
 from app.services.agent.inference import InferenceResponse
 from app.services.agent.inference import StructuredInferenceProgress
 from app.services.agent.inference import TARGET_AGENT_CONTEXT_TOKENS
@@ -374,18 +375,11 @@ class OpenAIInferenceAdapter:
         model: str,
         thinking_level: str,
         messages: list[dict[str, str]],
-        max_output_tokens: int,
         on_request: Callable[[dict[str, object]], None],
     ) -> AsyncIterator[dict[str, object]]:
         _validate_base_url(base_url)
         normalized_model = validate_model_name(model)
         reasoning_effort = resolve_openai_reasoning_effort(thinking_level)
-        if (
-            not isinstance(max_output_tokens, int)
-            or isinstance(max_output_tokens, bool)
-            or max_output_tokens < 1
-        ):
-            raise ValueError("OpenAI maximum output tokens must be positive")
 
         async def capture_wire_request(request: httpx.Request) -> None:
             raw_body = await request.aread()
@@ -421,7 +415,6 @@ class OpenAIInferenceAdapter:
                 model=normalized_model,
                 messages=cast(object, messages),
                 reasoning_effort=cast(object, reasoning_effort),
-                max_completion_tokens=max_output_tokens,
                 timeout=openai_silence_limit_seconds(thinking_level),
                 stream=True,
                 stream_options={"include_usage": True},
@@ -438,10 +431,7 @@ class OpenAIInferenceAdapter:
                     usage = _extract_openai_token_usage({"usage": usage_payload})
                     self._cost_tracker.record(model=normalized_model, usage=usage)
                     if finish_reason == "length":
-                        raise OpenAIProviderError(
-                            "OpenAI reached the maximum output-token limit before "
-                            "finishing the response"
-                        )
+                        raise OutputLimitReached(model=normalized_model)
                     if finish_reason != "stop":
                         raise OpenAIProviderError(
                             f"OpenAI ended the response with finish reason "
@@ -487,7 +477,6 @@ class OpenAIInferenceAdapter:
         thinking_level: str,
         messages: list[dict[str, object]],
         tools: tuple[AgentTool, ...],
-        max_output_tokens: int,
         on_request: Callable[[dict[str, object]], None],
     ) -> AsyncIterator[dict[str, object]]:
         # Tool turns use the Responses API: Chat Completions rejects function
@@ -501,8 +490,6 @@ class OpenAIInferenceAdapter:
             raise TypeError("A tool turn needs a non-empty tuple of AgentTool")
         if len({tool.name for tool in tools}) != len(tools):
             raise ValueError("Tool names must be unique")
-        if not isinstance(max_output_tokens, int) or isinstance(max_output_tokens, bool) or max_output_tokens < 1:
-            raise ValueError("OpenAI maximum output tokens must be positive")
         provider_input = _responses_input(messages)
 
         async def capture_wire_request(request: httpx.Request) -> None:
@@ -529,7 +516,6 @@ class OpenAIInferenceAdapter:
                 input=cast(object, provider_input),
                 tools=cast(object, [_openai_tool(tool) for tool in tools]),
                 reasoning=cast(object, {"effort": reasoning_effort}),
-                max_output_tokens=max_output_tokens,
                 timeout=openai_silence_limit_seconds(thinking_level),
                 stream=True,
                 store=False,
@@ -557,9 +543,7 @@ class OpenAIInferenceAdapter:
                     if event.type == "response.incomplete":
                         reason = event.response.incomplete_details.reason
                         if reason == "max_output_tokens":
-                            raise OpenAIProviderError(
-                                "OpenAI reached the maximum output-token limit before finishing the response"
-                            )
+                            raise OutputLimitReached(model=normalized_model)
                         raise OpenAIProviderError(f"OpenAI left the response incomplete: {reason}")
                     finish_reason = "stop"
                     if tool_calls:

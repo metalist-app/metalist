@@ -111,10 +111,12 @@ again or ask why it failed. Failed requests have no `EARLIER_ACTIONS` record.
 
 ## Conversation disclosure boundaries
 
-The display transcript stays visible when the provider or disclosure boundary
-changes. Model-visible history starts fresh at that boundary. The server hashes
-the provider, configured privacy policy, and the namespace-wide set of permitted
-note IDs before each turn. A policy edit, newly applied/inherited `@password`
+The display transcript stays visible when the disclosure boundary changes.
+Model-visible history starts fresh at that boundary. The server hashes whether
+the cloud policy applies, the configured privacy policy, and the namespace-wide
+set of permitted note IDs before each turn. The provider is not part of it: one
+policy covers OpenAI, Anthropic and Google, so switching provider keeps the
+conversation (decided 2026-10-24). A policy edit, newly applied/inherited `@password`
 restriction, changed ontology/content match, or removal of previously permitted
 notes invalidates prior history. Unknown history provenance is excluded
 conservatively. Every agent request consumes this filtered

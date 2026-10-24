@@ -47,13 +47,12 @@ def send_text_stream(
     model: str,
     thinking_level: str,
     messages: list[dict[str, str]],
-    max_output_tokens: int,
     on_request: Callable[[dict[str, object]], None],
 ) -> AsyncIterator[dict[str, object]]:
     requires(messages, "cloud_disclosable")
     return inference.stream_text(
         base_url=base_url, model=model, thinking_level=thinking_level, messages=messages,
-        max_output_tokens=max_output_tokens, on_request=on_request,
+        on_request=on_request,
     )
 
 
@@ -65,11 +64,10 @@ def send_tool_turn(
     thinking_level: str,
     messages: list[dict[str, object]],
     tools: tuple[AgentTool, ...],
-    max_output_tokens: int,
     on_request: Callable[[dict[str, object]], None],
 ) -> AsyncIterator[dict[str, object]]:
     requires(messages, "cloud_disclosable")
     return inference.stream_tool_turn(
         base_url=base_url, model=model, thinking_level=thinking_level, messages=messages,
-        tools=tools, max_output_tokens=max_output_tokens, on_request=on_request,
+        tools=tools, on_request=on_request,
     )

@@ -20,12 +20,15 @@
 - While a provider generates, the active eye-mode panel shows an approximate output-token
   count that updates in place with a subtle pulse; completed panels retain the final
   count separately from their input estimate.
-- Every generation is bounded over the wire. Each agent turn and each structured
-  step (summaries, tag work) allows at least 8,192 output tokens with OpenAI: its
-  reasoning models count hidden thinking against that limit, so even a short reply
-  needs room to think first. If OpenAI reports that the
-  limit truncated its output, the run fails visibly instead of presenting partial prose
-  as complete.
+- Answers have no output limit of MetaList's own (decided 2026-10-24): OpenAI and
+  Gemini are sent none, and Claude, whose API requires one, its models' maximum
+  (128,000 tokens). Only a runaway reply reaches a model's maximum; then the chat keeps
+  what was written and says under it: "<model> reached the longest answer it can write
+  before finishing (its thinking counts toward that), so the answer stopped there.
+  Anything it wrote is kept above. Ask it to continue, or ask for a shorter answer."
+  (`OutputLimitReached`). Structured steps (summaries, tag work) keep their own budgets,
+  at least 8,192 tokens, since thinking counts against them; a cut-off there is retried
+  and explained (below).
 - When a structured step's reply is rejected on every attempt (cut off at the output
   limit, not matching the required format, empty, or refused), the chat explains the
   failure in the error itself: which step failed, what went wrong on each attempt in plain words (including the

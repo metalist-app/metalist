@@ -36,6 +36,10 @@ class AiProviderCatalogEntry:
 # Claude Opus, Sonnet and Haiku 5.5, and Gemini 4 Argon and 3.8 Flash (Google's model page,
 # 2026-10-23), read a million tokens.
 CLAUDE_MODEL_CONTEXT_TOKENS = 1_000_000
+# The most each shipped Claude model writes in one reply. Claude's API requires a limit on
+# every request, so it gets its models' own maximum (claude-api reference, 2026-10-06);
+# OpenAI and Gemini are sent none.
+CLAUDE_MODEL_MAX_OUTPUT_TOKENS = 128_000
 GEMINI_MODEL_CONTEXT_TOKENS = 1_000_000
 
 

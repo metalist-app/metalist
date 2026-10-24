@@ -17,6 +17,7 @@ from app.services.agent.anthropic_inference import AnthropicProviderError
 from app.services.agent.anthropic_inference import claude_request_messages
 from app.services.agent.anthropic_inference import claude_strict_schema
 from app.services.agent.inference import StructuredInferenceError
+from app.services.agent.inference import InferenceProviderError
 from app.services.agent.judging import OutputJudgment
 from app.services.agent.tool_calling import AgentTool
 from app.services.ai_catalog import catalog_entry
@@ -85,7 +86,7 @@ def _tool_turn(messages: list[dict], thinking_level: str) -> list[dict]:
     adapter = AnthropicInferenceAdapter(api_key="sk-ant-test")
     return _collect(adapter.stream_tool_turn(
         base_url=BASE_URL, model=MODEL, thinking_level=thinking_level, messages=messages,
-        tools=(READ_TOOL,), max_output_tokens=8192, on_request=lambda request: None,
+        tools=(READ_TOOL,), on_request=lambda request: None,
     ))
 
 
@@ -109,6 +110,8 @@ def test_a_tool_turn_sends_strict_tools_and_returns_calls_with_thinking_state(mo
     assert body["thinking"] == {"type": "adaptive", "display": "omitted"}
     assert body["output_config"] == {"effort": "low"}
     assert body["cache_control"] == {"type": "ephemeral"}
+    # Claude requires a limit: its models' own maximum, so no answer is cut short by MetaList.
+    assert body["max_tokens"] == 128_000
     assert body["tool_choice"] == {"type": "auto"}
     assert body["tools"] == [{
         "name": "read_view_notes", "description": "Read notes in the view.", "strict": True,
@@ -174,13 +177,13 @@ def test_an_answer_ends_the_turn_and_streams_its_text(monkeypatch) -> None:
 
 
 @pytest.mark.parametrize(("stop_reason", "stop_details", "message"), [
-    ("max_tokens", None, "maximum output-token limit"),
+    ("max_tokens", None, "claude-sonnet-5-5 reached the longest answer it can write"),
     ("refusal", {"type": "refusal", "category": "cyber", "explanation": "This looks like malware."},
      "Anthropic declined to answer this request: This looks like malware."),
 ])
 def test_a_reply_cut_off_or_declined_fails_loudly(monkeypatch, stop_reason, stop_details, message) -> None:
     _serve(monkeypatch, _reply(_text("Partial"), stop_reason=stop_reason, stop_details=stop_details))
-    with pytest.raises(AnthropicProviderError, match=message):
+    with pytest.raises(InferenceProviderError, match=message):
         _tool_turn(QUESTION, "low")
 
 
@@ -189,7 +192,7 @@ def test_plain_text_streams_and_reports_usage(monkeypatch) -> None:
     adapter = AnthropicInferenceAdapter(api_key="sk-ant-test")
     events = _collect(adapter.stream_text(
         base_url=BASE_URL, model=MODEL, thinking_level="high", messages=QUESTION,
-        max_output_tokens=4096, on_request=lambda request: None,
+        on_request=lambda request: None,
     ))
     assert "tools" not in sent[0]
     assert sent[0]["output_config"] == {"effort": "high"}

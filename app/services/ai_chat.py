@@ -173,8 +173,9 @@ class AiChatSessionStore:
             session_activities = session.activities
             if any(message["status"] == "streaming" for message in messages):
                 raise RuntimeError("AI chat session already streaming a turn")
-            if messages and messages[-1]["provider"] != provider:
-                session.history_start = len(messages)
+            # Switching provider keeps the conversation: one privacy policy covers every
+            # provider (synchronize_disclosure_boundary resets it when what the AI may see
+            # changes; the maintainer, 2026-10-24).
             if len(messages) + _MESSAGES_PER_TURN > _MAX_MESSAGES_PER_SESSION:
                 removed_message_ids = [message["id"] for message in messages[:_MESSAGES_PER_TURN]]
                 del messages[:_MESSAGES_PER_TURN]

@@ -45,8 +45,8 @@ class _ScriptedModel:
                                       required_tokens=32_768)
 
     async def stream_tool_turn(self, *, base_url, model, thinking_level, messages, tools,
-                               max_output_tokens, on_request):
-        del base_url, model, thinking_level, max_output_tokens
+                               on_request):
+        del base_url, model, thinking_level
         validate_tool_conversation(messages)
         self.conversations.append([dict(message) for message in messages])
         self.tool_names.append(tuple(tool.name for tool in tools))

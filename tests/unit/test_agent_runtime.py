@@ -3,7 +3,6 @@ from __future__ import annotations
 from app.services.agent.inference import StructuredInferenceProgress
 from app.services.agent.model_policy import InferencePurpose
 from app.services.agent.runtime import AgentRuntime
-from app.services.agent.runtime import _final_response_max_output_tokens
 
 
 def test_structured_progress_reports_output_without_naming_removed_routes() -> None:
@@ -31,6 +30,3 @@ def test_structured_progress_reports_output_without_naming_removed_routes() -> N
     assert event["output_tokens_received"] == 24
     assert event["label"] == "OpenAI writing a structured reply"
 
-
-def test_final_response_output_limit_is_provider_specific() -> None:
-    assert _final_response_max_output_tokens(provider_label="OpenAI") == 8_192

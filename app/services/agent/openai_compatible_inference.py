@@ -39,6 +39,7 @@ from app.services.agent.history import record_text_call
 from app.services.agent.history import record_tool_turn
 from app.services.agent.inference import InferenceContextWindow
 from app.services.agent.inference import InferenceProviderError
+from app.services.agent.inference import OutputLimitReached
 from app.services.agent.inference import InferenceResponse
 from app.services.agent.inference import StructuredInferenceProgress
 from app.services.agent.inference import TARGET_AGENT_CONTEXT_TOKENS
@@ -306,12 +307,11 @@ class OpenAICompatibleInferenceAdapter:
         model: str,
         thinking_level: str,
         messages: list[dict[str, str]],
-        max_output_tokens: int,
         on_request: Callable[[dict[str, object]], None],
     ) -> AsyncIterator[dict[str, object]]:
         async for event in self._stream(
             base_url=base_url, model=model, thinking_level=thinking_level, messages=messages,
-            tools=(), max_output_tokens=max_output_tokens, on_request=on_request,
+            tools=(), on_request=on_request,
         ):
             if event["type"] == "done":
                 yield {"type": "done", "usage": event["usage"]}
@@ -327,7 +327,6 @@ class OpenAICompatibleInferenceAdapter:
         thinking_level: str,
         messages: list[dict[str, object]],
         tools: tuple[AgentTool, ...],
-        max_output_tokens: int,
         on_request: Callable[[dict[str, object]], None],
     ) -> AsyncIterator[dict[str, object]]:
         if not isinstance(tools, tuple) or not tools or not all(isinstance(tool, AgentTool) for tool in tools):
@@ -336,7 +335,7 @@ class OpenAICompatibleInferenceAdapter:
             raise ValueError("Tool names must be unique")
         async for event in self._stream(
             base_url=base_url, model=model, thinking_level=thinking_level, messages=messages,
-            tools=tools, max_output_tokens=max_output_tokens, on_request=on_request,
+            tools=tools, on_request=on_request,
         ):
             yield event
 
@@ -348,18 +347,14 @@ class OpenAICompatibleInferenceAdapter:
         thinking_level: str,
         messages: Sequence[Mapping[str, object]],
         tools: tuple[AgentTool, ...],
-        max_output_tokens: int,
         on_request: Callable[[dict[str, object]], None],
     ) -> AsyncIterator[dict[str, object]]:
         self._validate_base_url(base_url)
         normalized_model = validate_model_name(model)
-        if not isinstance(max_output_tokens, int) or isinstance(max_output_tokens, bool) or max_output_tokens < 1:
-            raise ValueError(f"{self._provider.label} maximum output tokens must be positive")
         request: dict[str, Any] = {
             "model": normalized_model,
             "messages": chat_completions_messages(self._provider.provider, messages),
             "reasoning_effort": self._reasoning_effort(thinking_level),
-            "max_completion_tokens": max_output_tokens,
             "timeout": compatible_silence_limit_seconds(thinking_level),
             "stream": True,
             "stream_options": {"include_usage": True},
@@ -401,9 +396,7 @@ class OpenAICompatibleInferenceAdapter:
         finally:
             await client.close()
         if finish_reason == "length":
-            raise OpenAICompatibleProviderError(
-                f"{self._provider.label} reached the maximum output-token limit before finishing the response"
-            )
+            raise OutputLimitReached(model=normalized_model)
         if finish_reason not in ("stop", "tool_calls"):
             raise OpenAICompatibleProviderError(f"{self._provider.label} ended the response with finish reason {finish_reason!r}")
         if not usage:
