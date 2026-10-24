@@ -1,3 +1,5 @@
+import { isAiProvider } from './ai-providers.js';
+
 // One limit: how much an answer, or a tagging batch, reads at once.
 export const OPENAI_AGENT_RETRIEVAL_PREFERENCE_KEYS = Object.freeze({
     maxPageApproximateTokens: 'pref.ai.openai.retrieval.max_page_approximate_tokens',
@@ -58,10 +60,7 @@ export function readAgentRetrievalSettings(getPreference, provider) {
         getPreference(preferenceKeys.maxPageApproximateTokens),
         defaults.maxPageApproximateTokens,
     );
-    if (
-        provider === 'openai'
-        && storedValue === LEGACY_DEFAULT_OPENAI_MAX_PAGE_APPROXIMATE_TOKENS
-    ) {
+    if (storedValue === LEGACY_DEFAULT_OPENAI_MAX_PAGE_APPROXIMATE_TOKENS) {
         storedValue = DEFAULT_OPENAI_AGENT_RETRIEVAL_SETTINGS
             .maxPageApproximateTokens;
     }
@@ -90,8 +89,10 @@ function parseStoredInteger(value, defaultValue) {
 }
 
 
+// The max token window is one setting for every provider, kept under its original
+// OpenAI key (app/services/agent/retrieval_settings.py).
 function maximumForProvider(provider) {
-    if (provider === 'openai') {
+    if (isAiProvider(provider)) {
         return MAXIMUM_OPENAI_PAGE_APPROXIMATE_TOKENS;
     }
     throw new Error(`Unsupported agent retrieval provider: ${provider}`);
@@ -99,7 +100,7 @@ function maximumForProvider(provider) {
 
 
 function configurationForProvider(provider) {
-    if (provider === 'openai') {
+    if (isAiProvider(provider)) {
         return {
             preferenceKeys: OPENAI_AGENT_RETRIEVAL_PREFERENCE_KEYS,
             defaults: DEFAULT_OPENAI_AGENT_RETRIEVAL_SETTINGS,

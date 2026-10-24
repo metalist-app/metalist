@@ -4,6 +4,8 @@ it added, kept in its preferences (ai_models.py)."""
 from __future__ import annotations
 
 import asyncio
+import re
+from pathlib import Path
 
 import pytest
 
@@ -11,7 +13,9 @@ import app.api.routes.ai as ai_routes
 import app.services.ai_models as ai_models_module
 from app.services.ai_catalog import AI_CATALOG, parse_added_models, serialize_added_models
 from app.services.ai_models import available_models, require_available_model
-from app.services.ai_setup import AiSetup
+import app.services.ai_setup as ai_setup_module
+from app.services.ai_credentials import AiCredentialStatus
+from app.services.ai_setup import AI_PROVIDERS, AiSetup
 from app.services.client_state_service import _validate_client_preferences
 from app.services.input_errors import InputRejected
 
@@ -85,3 +89,47 @@ def test_the_chat_picker_lists_the_models_of_each_provider_with_a_key(vault_pref
     assert response.model_dump() == {"groups": [
         {"provider": "openai", "label": "OpenAI", "models": [*_SHIPPED_OPENAI, "gpt-5.7-nova"]},
     ]}
+
+
+def test_the_browsers_provider_list_matches_the_catalog() -> None:
+    # ai-providers.js copies each provider's label and default model, in the catalog's order.
+    source = (Path(__file__).resolve().parents[2] / "app/static/js/modules/ai-chat/ai-providers.js").read_text()
+    listed = re.findall(r"\{ provider: '([a-z]+)', label: '([^']+)', defaultModel: '([^']+)' \}", source)
+    assert listed == [(provider, entry.label, entry.default_model) for provider, entry in AI_CATALOG.items()]
+    assert tuple(AI_CATALOG) == AI_PROVIDERS
+
+
+@pytest.mark.parametrize(("provider", "adapter_class"), [
+    ("openai", "OpenAIInferenceAdapter"),
+    ("anthropic", "AnthropicInferenceAdapter"),
+    ("gemini", "OpenAICompatibleInferenceAdapter"),
+])
+def test_each_provider_connects_through_its_own_adapter(monkeypatch, provider, adapter_class) -> None:
+    class KeyStore:
+        def status(self, **kwargs):
+            return AiCredentialStatus(configured=True, persistent=False)
+
+        def resolve(self, **kwargs):
+            return "test-key"
+
+    monkeypatch.setattr(ai_setup_module, "ai_credential_store", lambda name: KeyStore())
+    connection = ai_setup_module.connect_to_ai(provider=provider, token="token", session_key="session")
+    entry = AI_CATALOG[provider]
+    assert (connection.label, connection.base_url) == (entry.label, entry.base_url)
+    assert connection.ready_label == f"{entry.label} API ready · {entry.context_tokens:,}-token context"
+    assert type(connection.inference._inner).__name__ == adapter_class
+
+
+def test_a_vault_saves_the_picked_provider_and_each_providers_models() -> None:
+    saved = _validate_client_preferences({
+        "pref.ai.provider": "anthropic",
+        "pref.ai.anthropic_model": "claude-sonnet-5-5",
+        "pref.ai.gemini.added_models": '["gemini-3.9-flash"]',
+    })
+    assert saved == {
+        "pref.ai.provider": "anthropic",
+        "pref.ai.anthropic_model": "claude-sonnet-5-5",
+        "pref.ai.gemini.added_models": '["gemini-3.9-flash"]',
+    }
+    with pytest.raises(InputRejected, match="already one of Claude's models"):
+        _validate_client_preferences({"pref.ai.anthropic.added_models": '["claude-haiku-5-5"]'})

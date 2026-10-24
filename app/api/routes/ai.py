@@ -258,7 +258,6 @@ class NoteTagSuggestionRequest(BaseModel):
 
     @model_validator(mode="after")
     def validate_model_for_provider(self) -> Self:
-        assert self.provider == "openai"
         validate_model_name(self.model)
         return self
 
@@ -295,7 +294,6 @@ class ExportTitleSuggestionRequest(ExportTitleScope):
 
     @model_validator(mode="after")
     def validate_model_for_provider(self) -> Self:
-        assert self.provider == "openai"
         validate_model_name(self.model)
         return self
 

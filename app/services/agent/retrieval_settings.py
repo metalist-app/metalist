@@ -1,9 +1,13 @@
-"""Validated provider-specific limit for one agent evidence payload."""
+"""The max token window: the most one agent evidence payload holds, for every provider.
+
+One setting (AI Agent Settings), kept under its original OpenAI key so saved values carry
+over; every provider's shipped models read far more than its maximum.
+"""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal
+from app.services.ai_catalog import AI_CATALOG
 from app.services.preference_values import preference_or_default
 
 
@@ -34,9 +38,7 @@ class AgentRetrievalSettings:
 
 def resolve_tagging_batch_tokens(preferences: dict[str, str], provider: str) -> int:
     """A tagging batch reads as much as an answer does: one limit, set in AI Agent Settings."""
-    if provider == "openai":
-        return resolve_agent_retrieval_settings(preferences=preferences, provider="openai").max_page_approximate_tokens
-    raise ValueError(f"Unsupported tagging provider: {provider}")
+    return resolve_agent_retrieval_settings(preferences=preferences, provider=provider).max_page_approximate_tokens
 
 
 def validate_openai_max_page_approximate_tokens_preference(value: str) -> str:
@@ -51,17 +53,14 @@ def validate_openai_max_page_approximate_tokens_preference(value: str) -> str:
 def resolve_agent_retrieval_settings(
     *,
     preferences: dict[str, str],
-    provider: Literal["openai"],
+    provider: str,
 ) -> AgentRetrievalSettings:
     if not isinstance(preferences, dict):
         raise TypeError("preferences must be a dict")
     preference_key = _preference_key_for_provider(provider=provider)
     default = _default_for_provider(provider=provider)
     raw_value = preference_or_default(preferences, preference_key, default=str(default.max_page_approximate_tokens))
-    if (
-        provider == "openai"
-        and raw_value == str(LEGACY_DEFAULT_OPENAI_MAX_PAGE_APPROXIMATE_TOKENS)
-    ):
+    if raw_value == str(LEGACY_DEFAULT_OPENAI_MAX_PAGE_APPROXIMATE_TOKENS):
         raw_value = str(DEFAULT_OPENAI_MAX_PAGE_APPROXIMATE_TOKENS)
     validator = validate_openai_max_page_approximate_tokens_preference
     return AgentRetrievalSettings(
@@ -115,17 +114,17 @@ DEFAULT_OPENAI_AGENT_RETRIEVAL_SETTINGS = AgentRetrievalSettings(
 
 def _preference_key_for_provider(
     *,
-    provider: Literal["openai"],
+    provider: str,
 ) -> str:
-    if provider == "openai":
+    if provider in AI_CATALOG:
         return OPENAI_MAX_PAGE_APPROXIMATE_TOKENS_PREFERENCE_KEY
     raise ValueError(f"Unsupported agent retrieval provider: {provider}")
 
 
 def _default_for_provider(
     *,
-    provider: Literal["openai"],
+    provider: str,
 ) -> AgentRetrievalSettings:
-    if provider == "openai":
+    if provider in AI_CATALOG:
         return DEFAULT_OPENAI_AGENT_RETRIEVAL_SETTINGS
     raise ValueError(f"Unsupported agent retrieval provider: {provider}")

@@ -233,10 +233,14 @@ The only retrieval control in `AI Agent Settings…` is **Max token window** (it
 explains it in a tooltip): the provider-specific maximum approximate token count of what one
 read returns. Tagging batches use the same limit; there is no separate tagging window.
 
-## OpenAI Configuration
+## Providers and Configuration
 
-- OpenAI is the only provider today. Claude and Gemini are planned
-  (`docs/ready-to-build/ai-providers.md`).
+- Three providers on the user's own keys: OpenAI, Claude (Anthropic) and Gemini
+  (Google), registered in `app/services/ai_setup.py` with their models in
+  `app/services/ai_catalog.py` (design and what is not yet verified live:
+  `docs/ready-to-build/ai-providers.md`). The chat's model picker lists the models of
+  each provider with a key, under the provider's name; picking a model picks its
+  provider.
 
 - Defaults: `gpt-5.6-luna` and 500,000 approximate tokens read at once. Saved model
   and limit overrides are retained; the retired tagging batch preference
@@ -254,6 +258,9 @@ read returns. Tagging batches use the same limit; there is no separate tagging w
   - The privacy rules (below).
   - **Max token window**, in tokens, with a `?` whose tooltip explains it.
 - The dialog has no model or thinking picker: both are chosen beside chat Send.
+- The Gemini tab says under the key, with Google's terms in its tooltip: "Use a key
+  with billing turned on: on the free tier, Google may use what you send to improve its
+  products, and people may read it." (Not in the EEA, Switzerland or the UK.)
 - **Model picker** (chat composer): the models of every provider with a saved key,
   plus the provider of the model picked last even without one
   (`POST /api2/ai/model-choices`), each provider's under its name, even when there is

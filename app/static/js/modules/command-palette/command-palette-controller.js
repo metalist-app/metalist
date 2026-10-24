@@ -85,6 +85,7 @@ import {
     readAgentRetrievalSettings,
     validateAgentRetrievalSettings,
 } from '../ai-chat/agent-retrieval-settings.js';
+import { AI_PROVIDERS, aiProvider, isAiProvider } from '../ai-chat/ai-providers.js';
 import {
     CLOUD_PRIVACY_POLICY_PREFERENCE_KEY,
     readCloudPrivacyPolicy,
@@ -151,7 +152,6 @@ import {
 } from './note-layout-preferences.js';
 import { MS_PER_SECOND } from '../time-units.js';
 
-const DEFAULT_OPENAI_MODEL = 'gpt-5.6-luna';
 
 // Bounds on the stored AI chat panel width and composer height, in pixels.
 
@@ -751,13 +751,17 @@ class CommandPaletteController {
             (key) => this._preferences.getRaw(key),
             'openai',
         );
-        const provider = 'openai';
+        // The provider and model last picked in the chat; a vault that never picked one
+        // starts on the first provider's default model.
+        const provider = this._getSelect(
+            'pref.ai.provider',
+            AI_PROVIDERS.map((entry) => entry.provider),
+            AI_PROVIDERS[0].provider,
+        );
         const retrievalSettings = openAiRetrievalSettings;
-        const modelPreferenceKey = 'pref.ai.openai_model';
         return {
             provider,
-            // A user who never chose a model uses the default one.
-            model: this._getText(modelPreferenceKey, DEFAULT_OPENAI_MODEL),
+            model: this._getText(`pref.ai.${provider}_model`, aiProvider(provider).defaultModel),
             thinkingLevel: this._getSelect(
                 'pref.ai.thinking_level',
                 AI_THINKING_LEVEL_OPTIONS.map((option) => option.value),
@@ -855,17 +859,14 @@ class CommandPaletteController {
         if (!settings || typeof settings !== 'object') {
             throw new Error('_saveAiSettings requires settings object');
         }
-        if (settings.provider !== 'openai') {
-            throw new Error('Unsupported AI provider');
-        }
+        aiProvider(settings.provider);
         if (typeof settings.model !== 'string' || settings.model.trim() === '') {
             throw new Error('AI settings require model');
         }
         const thinkingLevel = validateAiThinkingLevel(settings.thinkingLevel);
-        const modelPreferenceKey = 'pref.ai.openai_model';
         await this._preferences.setMany({
             'pref.ai.provider': settings.provider,
-            [modelPreferenceKey]: settings.model.trim(),
+            [`pref.ai.${settings.provider}_model`]: settings.model.trim(),
             'pref.ai.thinking_level': thinkingLevel,
         });
         document.dispatchEvent(new CustomEvent(
@@ -894,7 +895,7 @@ class CommandPaletteController {
         // provider's own models (app/services/ai_catalog.py, ADDED_MODELS_PREFERENCE_KEYS).
         const addedModelPreferences = {};
         for (const [provider, models] of Object.entries(settings.addedModelsByProvider)) {
-            if (provider !== 'openai' || !Array.isArray(models) || !models.every((model) => typeof model === 'string')) {
+            if (!isAiProvider(provider) || !Array.isArray(models) || !models.every((model) => typeof model === 'string')) {
                 throw new Error(`AI agent settings hold malformed added models for ${provider}`);
             }
             addedModelPreferences[`pref.ai.${provider}.added_models`] = JSON.stringify(models);

@@ -184,6 +184,10 @@ def test_the_answer_is_one_short_line(live_database) -> None:
 def _set_ai_ready(monkeypatch, *, is_ready: bool) -> None:
     monkeypatch.setattr(ai_credentials_module.ai_credential_stores["openai"], "status",
                         lambda **kwargs: AiCredentialStatus(configured=is_ready, persistent=False))
+    # Claude and Gemini have no key here.
+    for other_provider in ("anthropic", "gemini"):
+        monkeypatch.setattr(ai_credentials_module.ai_credential_stores[other_provider], "status",
+                            lambda **kwargs: AiCredentialStatus(configured=False, persistent=False))
     monkeypatch.setattr(ai_credentials_module.ai_credential_stores["openai"], "resolve",
                         lambda **kwargs: "sk-test-0123456789abcdefghijklmnop")
 

@@ -5,8 +5,8 @@ add models of its own (ai_added_models.py); a provider's API address is fixed he
 never editable, so a key goes only to its provider, and a hosted deployment can build
 its outbound allowlist from these addresses.
 
-A provider is listed here once it can be offered: its adapter exists and its eval pass
-rates are recorded. Claude and Gemini join with their adapters.
+A provider is listed here once its adapter exists. The maintainer chose (2026-10-23)
+to offer Claude and Gemini before their eval pass rates are recorded.
 """
 
 from __future__ import annotations
@@ -33,6 +33,12 @@ class AiProviderCatalogEntry:
     context_tokens: int
 
 
+# Claude Opus, Sonnet and Haiku 5.5, and Gemini 4 Argon and 3.8 Flash (Google's model page,
+# 2026-10-23), read a million tokens.
+CLAUDE_MODEL_CONTEXT_TOKENS = 1_000_000
+GEMINI_MODEL_CONTEXT_TOKENS = 1_000_000
+
+
 AI_CATALOG: dict[str, AiProviderCatalogEntry] = {
     "openai": AiProviderCatalogEntry(
         label="OpenAI",
@@ -41,6 +47,26 @@ AI_CATALOG: dict[str, AiProviderCatalogEntry] = {
         models=("gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"),
         default_model="gpt-5.6-luna",
         context_tokens=OPENAI_MODEL_CONTEXT_TOKENS,
+    ),
+    # Anthropic's Messages API (anthropic_inference.py). Every shipped model has a
+    # 1M-token context.
+    "anthropic": AiProviderCatalogEntry(
+        label="Claude",
+        base_url="https://api.anthropic.com",
+        billing_url="https://platform.claude.com/usage",
+        models=("claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"),
+        default_model="claude-sonnet-5-5",
+        context_tokens=CLAUDE_MODEL_CONTEXT_TOKENS,
+    ),
+    # Google's OpenAI-compatible endpoint (openai_compatible_inference.py), Chat
+    # Completions only.
+    "gemini": AiProviderCatalogEntry(
+        label="Gemini",
+        base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+        billing_url="https://aistudio.google.com/usage",
+        models=("gemini-4-argon", "gemini-3.8-flash", "gemini-3.5-flash-lite"),
+        default_model="gemini-3.8-flash",
+        context_tokens=GEMINI_MODEL_CONTEXT_TOKENS,
     ),
 }
 

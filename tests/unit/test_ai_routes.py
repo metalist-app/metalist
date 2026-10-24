@@ -74,6 +74,9 @@ def _without_activity_token_counts(
 @pytest.fixture(autouse=True)
 def use_fake_chat_dependencies(monkeypatch):
     monkeypatch.setattr(ai_credentials_module.ai_credential_stores["openai"], "status", lambda **kwargs: AiCredentialStatus(configured=True, persistent=False))
+    # Claude and Gemini have no key here.
+    for other_provider in ("anthropic", "gemini"):
+        monkeypatch.setattr(ai_credentials_module.ai_credential_stores[other_provider], "status", lambda **kwargs: AiCredentialStatus(configured=False, persistent=False))
     monkeypatch.setattr(ai_credentials_module.ai_credential_stores["openai"], "resolve", lambda **kwargs: "sk-test-0123456789abcdefghijklmnop")
     monkeypatch.setattr(
         ai_routes.tab_state_store,

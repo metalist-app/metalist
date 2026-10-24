@@ -18,7 +18,13 @@ Built on `feature/ai-providers` (2026-10-23), with OpenAI behaving as before:
 
 Before the release: run the evals on each shipped model, not only Luna. Sol and Terra are listed but have not been through them (needs the maintainer's go-ahead, since live evals normally run on Luna Low only).
 
-Not built yet: the catalog entry and adapter for Claude and for Gemini (their model lists and default models are chosen once the maintainer has keys, from each provider's own model list), their eval runs, the key fields with billing links and the Gemini warning in AI Agent Settings, provider logos in the chat (below), and the demo vault parts.
+- **Claude and Gemini adapters** (Design §1, 2026-10-23), offered everywhere at once: the maintainer dropped Invariant 4 for them (no waiting for eval pass rates). Chosen with the maintainer:
+  - Claude: `claude-opus-5-5`, `claude-sonnet-5-5`, `claude-haiku-5-5`, default Sonnet 5.5. `app/services/agent/anthropic_inference.py` on the native `anthropic` SDK, pinned to 1.12.1 (the newest release at least two weeks old) with its HTTP stack held to older releases by `[tool.uv] constraint-dependencies` in `pyproject.toml`. Streaming Messages, strict tools with `tool_choice: auto`, adaptive thinking with effort from the thinking level (Off and Low both "low": Opus 5.5 cannot turn thinking off), thinking blocks handed back as `provider_state`, top-level prompt caching, structured replies through `output_config.format` with MetaList's own retry (the shared `structured_retry_messages` wording). System messages before the first reply become `system`; later ones stay as mid-conversation system messages; an empty assistant reply is left out.
+  - Gemini: `gemini-4-argon`, `gemini-3.8-flash`, `gemini-3.5-flash-lite`, default 3.8 Flash. `app/services/agent/openai_compatible_inference.py` (`GEMINI` row) on Google's OpenAI-compatible Chat Completions endpoint, no new dependency. Extra fields on a streamed tool call (Gemini's thought signatures) are kept in `provider_state` and sent back with that call. Structured replies through Instructor with strict schemas, as OpenAI's.
+  - Registered in `ai_setup.py` (`AI_PROVIDERS`), `ai_catalog.py` (models, billing pages, 1M-token contexts) and the browser's copy `ai-providers.js` (a test checks they match). The chat's model picker lists every provider with a key under its name; picking a model picks its provider. Each provider's tab in AI Agent Settings holds its key and added models; the Gemini tab warns about the free tier under the key. The max token window stays one setting for all providers.
+  - **Not verified against the live APIs yet** (no keys): mocked tests drive both adapters through the real SDKs with recorded wire formats. To check with a key: that Gemini's endpoint accepts `max_completion_tokens`, `additionalProperties: false` in tool parameters and strict `response_format`, and returns thought signatures where expected; that Claude's adaptive thinking and effort behave as mapped on each model; the silence limits (`UNMEASURED_SILENCE_LIMIT_SECONDS`, 30/60/120 s), not measured for either.
+
+Not built yet: eval runs for Claude and Gemini (the eval schema is fixed to `gpt-5.6-luna`; needs the maintainer's keys and go-ahead), provider logos in the chat (below), and the demo vault parts.
 
 ## Background
 
@@ -100,7 +106,7 @@ Ollama stays removed. A hosted vault process can't reach a model on the user's o
 1. The code contains no AI key belonging to MetaList, and no path where one is configured for users.
 2. AI keys are per vault, per provider, encrypted with the namespace DEK (session memory only in plaintext namespaces), and never leave the vault's own process except to their provider.
 3. Every AI request goes through the one outbound boundary with the exclusion filter and canary, whatever the provider.
-4. A provider appears in the UI only after its eval pass rates are recorded.
+4. ~~A provider appears in the UI only after its eval pass rates are recorded.~~ Dropped by the maintainer 2026-10-23: Claude and Gemini are offered before their evals run.
 5. No AI cost figure is shown in production.
 6. Provider hosts, base URLs and model lists are configuration.
 

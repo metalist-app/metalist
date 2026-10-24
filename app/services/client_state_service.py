@@ -29,6 +29,7 @@ from app.services.agent.retrieval_settings import OPENAI_MAX_PAGE_APPROXIMATE_TO
 from app.services.agent.retrieval_settings import validate_openai_max_page_approximate_tokens_preference
 from app.services.agent.web_settings import WEB_ACCESS_MODE_PREFERENCE_KEY
 from app.services.agent.web_settings import WEB_ACCESS_MODES
+from app.services.ai_catalog import ADDED_MODELS_PREFERENCE_KEYS, AI_CATALOG
 from app.services.ai_catalog import parse_added_models, serialize_added_models, validate_model_name
 
 _DICTATION_PHRASE_MIN_CHARS = 2
@@ -43,6 +44,9 @@ AI_CHAT_COMPOSER_MINIMUM_HEIGHT = 74
 AI_CHAT_COMPOSER_MAXIMUM_HEIGHT = 220
 _MAX_SEARCH_SUGGESTION_WINDOW_SLOTS = 20
 _MAX_SEARCH_SUGGESTION_WINDOW_DAYS = 365
+
+# The kind of value each provider's added-models preference holds, and its provider.
+_ADDED_MODELS_KINDS = {f"{provider}_added_models": provider for provider in AI_CATALOG}
 
 _ALLOWED_CLIENT_PREFERENCES = {
     "pref.ai.tagging.vocabulary": {"existing", "new"},
@@ -77,11 +81,13 @@ _ALLOWED_CLIENT_PREFERENCES = {
     "pref.search_suggestion_windows": "tag_activity_windows",
     "pref.show_search_suggestion_window_labels": {"true", "false"},
     "pref.limit_note_credits_per_search_context": {"true", "false"},
-    "pref.ai.provider": {"openai"},
-    # The model picked; whether this vault can use it is checked where it is used (ai_models.py).
-    "pref.ai.openai_model": "model_name",
-    # The vault's own OpenAI models beside the shipped ones: a JSON list of names (ai_catalog.py).
-    "pref.ai.openai.added_models": "openai_added_models",
+    # The provider of the model picked in the chat.
+    "pref.ai.provider": set(AI_CATALOG),
+    # Each provider's picked model; whether this vault can use it is checked where it is
+    # used (ai_models.py).
+    **{f"pref.ai.{provider}_model": "model_name" for provider in AI_CATALOG},
+    # Each provider's own models beside the shipped ones: a JSON list of names (ai_catalog.py).
+    **{key: f"{provider}_added_models" for provider, key in ADDED_MODELS_PREFERENCE_KEYS.items()},
     "pref.ai.thinking_level": {"off", "low", "medium", "high"},
     "pref.ai.show_diagnostics": {"true", "false"},
     "pref.ai.show_spend": {"true", "false"},
@@ -284,8 +290,8 @@ def _validate_client_preferences(preferences: dict[str, object]) -> dict[str, st
                 )
         elif allowed_values == "model_name":
             value = validate_model_name(value)
-        elif allowed_values == "openai_added_models":
-            value = serialize_added_models(parse_added_models("openai", value))
+        elif isinstance(allowed_values, str) and allowed_values in _ADDED_MODELS_KINDS:
+            value = serialize_added_models(parse_added_models(_ADDED_MODELS_KINDS[allowed_values], value))
         elif allowed_values == "ai_chat_width":
             _validate_ai_chat_width_preference(key=key, value=value)
         elif allowed_values == "ai_chat_composer_height":

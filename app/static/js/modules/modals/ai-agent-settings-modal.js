@@ -20,14 +20,24 @@ import {
 import { validateAgentWebAccessMode } from '../ai-chat/agent-web-settings.js';
 import { escapeHtml } from '../html-escape.js';
 import { MAX_MODEL_NAME_CHARACTERS, addedModelNameProblem } from '../ai-chat/ai-model-names.js';
+import { AI_PROVIDERS } from '../ai-chat/ai-providers.js';
 
 // AI Agent Settings (docs/ui/ai-chat.md, "AI Agent Settings"): one folder tab per
 // provider holding its key and the models the vault added; then web access, the rules
 // for what the AI may see, and the token window. Picking a model (and so
 // a provider) happens in the chat. Explanations live in tooltips.
 
-// The providers MetaList offers, in tab order (the server's catalog, app/services/ai_catalog.py).
-const PROVIDER_TABS = Object.freeze([{ provider: 'openai', label: 'OpenAI' }]);
+// One tab per provider MetaList offers, in its order (app/services/ai_catalog.py).
+const PROVIDER_TABS = AI_PROVIDERS;
+// Shown under a provider's key when what it does with the user's data depends on the key.
+const KEY_WARNINGS = Object.freeze({
+    gemini: Object.freeze({
+        text: 'Use a key with billing turned on: on the free tier, Google may use what you send to improve its products, and people may read it.',
+        tooltip: 'Google\'s Gemini API terms (Unpaid Services): prompts and responses sent on free quota may be used to improve '
+            + 'Google\'s products and read by human reviewers. This does not apply in the EEA, Switzerland or the UK. '
+            + 'Use a key from a Google Cloud project with billing enabled.',
+    }),
+});
 const ADDED_MODELS_TOOLTIP = 'Models MetaList does not list yet. They appear in the chat\'s model picker.';
 const WEB_ACCESS_CHOICES = Object.freeze([
     ['none', 'Off', 'The AI never opens web pages.'],
@@ -126,9 +136,15 @@ function renderProviderPanel(state) {
     if (state.billingUrl !== '') {
         billing = `<a class="ai-settings-indented ai-settings-link" href="${escapeHtml(state.billingUrl)}" target="_blank" rel="noopener noreferrer">Usage and billing</a>`;
     }
+    let keyWarning = '';
+    if (state.provider in KEY_WARNINGS) {
+        const warning = KEY_WARNINGS[state.provider];
+        keyWarning = `<p class="ai-settings-hint ai-settings-indented ai-settings-key-warning" title="${escapeHtml(warning.tooltip)}">${escapeHtml(warning.text)}</p>`;
+    }
     return `
         <div class="ai-settings-tab-panel" role="tabpanel" aria-labelledby="ai-agent-tab-${escapeHtml(state.provider)}">
             ${renderKeyRow(state)}
+            ${keyWarning}
             ${renderAddedModels(state)}
             ${billing}
         </div>`;

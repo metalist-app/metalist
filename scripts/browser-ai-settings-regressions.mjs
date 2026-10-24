@@ -27,7 +27,7 @@ export async function checkOpenAiSettings(page) {
   }));
   assert.match(initial.text, /\(blacklist\)[\s\S]*\(whitelist\)[\s\S]*Max token window/);
   assert.doesNotMatch(initial.text, /Ollama|Download an/);
-  assert.deepEqual(initial.tabs, ['OpenAI:true']);
+  assert.deepEqual(initial.tabs, ['OpenAI:true', 'Claude:false', 'Gemini:false']);
   assert.equal(initial.modelPicker, false);
   assert.equal(initial.download, false);
   assert.equal(initial.addedModels, '');

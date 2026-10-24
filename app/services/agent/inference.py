@@ -15,6 +15,18 @@ from app.services.agent.tool_calling import AgentTool
 MINIMUM_AGENT_CONTEXT_TOKENS = 16_384
 TARGET_AGENT_CONTEXT_TOKENS = 32_768
 
+# How long a provider not yet timed may stay silent before a request fails (OpenAI's
+# limits are measured, openai_inference.py). As generous as OpenAI's Medium and High.
+_UNMEASURED_LOW_THINKING_SILENCE_SECONDS = 30.0
+_UNMEASURED_MEDIUM_THINKING_SILENCE_SECONDS = 60.0
+_UNMEASURED_HIGH_THINKING_SILENCE_SECONDS = 120.0
+UNMEASURED_SILENCE_LIMIT_SECONDS = {
+    "off": _UNMEASURED_LOW_THINKING_SILENCE_SECONDS,
+    "low": _UNMEASURED_LOW_THINKING_SILENCE_SECONDS,
+    "medium": _UNMEASURED_MEDIUM_THINKING_SILENCE_SECONDS,
+    "high": _UNMEASURED_HIGH_THINKING_SILENCE_SECONDS,
+}
+
 
 @dataclass(frozen=True, slots=True)
 class InferenceAttempt:

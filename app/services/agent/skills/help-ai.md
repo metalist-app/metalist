@@ -3,9 +3,12 @@
 Explain MetaList from this reference, without pretending to inspect the user's
 saved settings or notes. Defaults below do not establish their current values.
 
-MetaList uses OpenAI; Ollama/local model support has been removed. AI agent
-settings (also found by searching AI, LLM, or OpenAI in the menu) has a folder tab
-per provider (only OpenAI today) holding its API key and **Your models**. Below it are
+MetaList's AI runs on the user's own key from OpenAI, Claude (Anthropic) or Gemini
+(Google); Ollama/local model support has been removed. AI agent settings (also found
+by searching AI, LLM, or OpenAI in the menu) has a folder tab per provider holding its
+API key and **Your models**; the Gemini tab warns that on Google's free tier what is
+sent may be used to improve Google's products and read by people, so a key with
+billing turned on is the one to use. Below it are
 **Web access** (Off, Links in your notes, Any public page), the privacy rules **Never
 send notes with (blacklist)** and **Only send notes with (whitelist)**, and **Max token
 window**: the one context limit, in tokens,
@@ -14,8 +17,10 @@ The defaults are gpt-5.6-luna and 500,000 tokens; the limit accepts 500–500,00
 "250k context" means Max token window = 250000.
 The model and thinking level are picked only beside chat Send, and the last choice
 sticks; picking a model also picks its provider. The picker lists the models of every
-provider with a saved key: the ones MetaList ships (gpt-5.6-sol, gpt-5.6-terra,
-gpt-5.6-luna) and the user's own. **Your models** in a provider's tab takes a model
+provider with a saved key, under the provider's name: the ones MetaList ships
+(OpenAI: gpt-5.6-sol, gpt-5.6-terra, gpt-5.6-luna; Claude: claude-opus-5-5,
+claude-sonnet-5-5, claude-haiku-5-5; Gemini: gemini-4-argon, gemini-3.8-flash,
+gemini-3.5-flash-lite) and the user's own. **Your models** in a provider's tab takes a model
 name exactly as the provider writes it; its × removes it, and Save keeps the list with
 the vault's settings. Use it for a newer model MetaList does not list yet.
 
@@ -138,7 +143,7 @@ Agent Debug shows the latest run. When an AI step fails, the red message in the
 chat explains it on its own: the step that failed, what went wrong on each attempt
 (for example the reply was cut off at the output limit after the model spent its
 budget thinking, or its answer broke a format rule, with what it chose), the model,
-thinking level and web access, and what to try (such as a lower thinking level). If OpenAI sends nothing, the request fails after 15 seconds at Off or Low thinking (60 s Medium, 120 s High) with a message to check the internet connection; until OpenAI's first signal the chat says "Waiting for OpenAI". Failure messages end with where the run stopped. The AI remembers the failed request and that explanation, so the user can say "try that again" or ask why it failed. A whole-view summary that fails or is stopped keeps the batches it finished for the chat; saying "try that again" continues it, running only the remaining batches. The separate opt-in regression suite lives in
+thinking level and web access, and what to try (such as a lower thinking level). If OpenAI sends nothing, the request fails after 15 seconds at Off or Low thinking (60 s Medium, 120 s High) with a message to check the internet connection (Claude and Gemini: 30 s at Off or Low, 60 s Medium, 120 s High); until OpenAI's first signal the chat says "Waiting for OpenAI". Failure messages end with where the run stopped. The AI remembers the failed request and that explanation, so the user can say "try that again" or ask why it failed. A whole-view summary that fails or is stopped keeps the batches it finished for the chat; saying "try that again" continues it, running only the remaining batches. The separate opt-in regression suite lives in
 the source repo, excluded from PyPI; cases default to five trials with up to four
 concurrent requests and report percentages and cached-token usage.
 Neither export nor ordinary tests automatically sends a test suite to OpenAI.

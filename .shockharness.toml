@@ -319,6 +319,36 @@ exception = "openai.APIError"
 reason = "translate external OpenAI stream failures into the provider-neutral contract"
 
 [[tool.shockharness.rules.exceptions.boundaries]]
+path = "app/services/agent/anthropic_inference.py"
+language = "python"
+exception = "anthropic.APITimeoutError"
+reason = "a request Claude never answers is a network failure, explained plainly"
+
+[[tool.shockharness.rules.exceptions.boundaries]]
+path = "app/services/agent/anthropic_inference.py"
+language = "python"
+exception = "anthropic.APIError"
+reason = "translate external Claude API and stream failures into the provider-neutral contract"
+
+[[tool.shockharness.rules.exceptions.boundaries]]
+path = "app/services/agent/anthropic_inference.py"
+language = "python"
+exception = "pydantic.ValidationError"
+reason = "a structured reply that breaks the schema's rules is explained to the model on one retry"
+
+[[tool.shockharness.rules.exceptions.boundaries]]
+path = "app/services/agent/openai_compatible_inference.py"
+language = "python"
+exception = "openai.APITimeoutError"
+reason = "a request the provider never answers is a network failure, explained plainly"
+
+[[tool.shockharness.rules.exceptions.boundaries]]
+path = "app/services/agent/openai_compatible_inference.py"
+language = "python"
+exception = "openai.APIError"
+reason = "translate the provider's API and stream failures into the provider-neutral contract"
+
+[[tool.shockharness.rules.exceptions.boundaries]]
 path = "app/services/agent/runtime.py"
 language = "python"
 exception = "ValueError"

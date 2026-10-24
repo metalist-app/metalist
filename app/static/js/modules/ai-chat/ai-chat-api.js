@@ -3,6 +3,7 @@ import { CONFIG } from '../config.js';
 import { buildSessionHeaders } from '../session-auth.js';
 import { parseAiChatNdjsonBuffer } from './ai-chat-panel-service.js';
 import { validateAiThinkingLevel } from './ai-thinking-level-service.js';
+import { isAiProvider } from './ai-providers.js';
 
 // Each LLM history entry is an [input, output] pair.
 const HISTORY_PAIR_LENGTH = 2;
@@ -280,7 +281,7 @@ export async function requestExportTitle({ provider, model, thinkingLevel, scope
 
 
 export async function previewCloudPrivacy({ provider, noteIds, signal }) {
-    if (provider !== 'openai') {
+    if (!isAiProvider(provider)) {
         throw new Error('previewCloudPrivacy requires supported provider');
     }
     if (!Array.isArray(noteIds)) {
