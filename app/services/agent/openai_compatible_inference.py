@@ -1,6 +1,6 @@
 """Inference through a provider's OpenAI-compatible Chat Completions endpoint.
 
-Gemini is the first such provider (docs/ready-to-build/ai-providers.md, Design §1):
+Gemini is the first such provider (docs/design/ai-providers.md, §1):
 Google's compatibility endpoint offers Chat Completions only, not the Responses API
 the OpenAI adapter uses for tool turns. A later OpenAI-dialect provider is one more
 OpenAICompatibleProvider row.

@@ -1,4 +1,4 @@
-"""Each AI provider's API key, kept per vault (docs/ready-to-build/ai-providers.md).
+"""Each AI provider's API key, kept per vault (docs/design/ai-providers.md).
 
 One slot per provider: in an encrypted namespace the key is encrypted with the
 namespace DEK into its app_settings columns (settings_sql.AI_API_KEY_COLUMN_PREFIXES);

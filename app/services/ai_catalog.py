@@ -1,4 +1,4 @@
-"""The AI providers and models MetaList ships with (docs/ready-to-build/ai-providers.md).
+"""The AI providers and models MetaList ships with (docs/design/ai-providers.md).
 
 Part of the program, updated with each release, never stored in a vault. These are the
 only models a vault can use: a model is offered once it has been tested with MetaList's

@@ -388,7 +388,7 @@ def add_ai_provider_credential_columns(
     encryption_service: EncryptionService | None,  # noqa: ARG001
 ) -> int:
     """Version 10→11: an encrypted API-key slot for Claude (anthropic) and Gemini beside
-    OpenAI's (docs/ready-to-build/ai-providers.md). The on-open schema helper may have
+    OpenAI's (docs/design/ai-providers.md). The on-open schema helper may have
     added some or all of the columns already; the missing ones are added, then the shape
     is checked."""
     columns = _table_columns(connection, table="app_settings")

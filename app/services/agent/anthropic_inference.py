@@ -1,7 +1,7 @@
 """Claude inference adapter: Anthropic's Messages API through the native SDK.
 
 Native, not Anthropic's OpenAI-compatible endpoint, which ignores strict tools,
-prompt caching and thinking (docs/ready-to-build/ai-providers.md, Design §1).
+prompt caching and thinking (docs/design/ai-providers.md, §1).
 
 How MetaList's provider-neutral shapes (tool_calling.py) become Claude's:
 

@@ -396,9 +396,8 @@ process restart. It is a developer tool: its routes and the chat's `$` exist onl
 development (`app/startup_environment.is_development_environment`); production
 answers 404.
 
-Planned, not built: Claude and Gemini adapters beside OpenAI's, through the same
-disclosure boundary; their key slots exist already
-(`docs/ready-to-build/ai-providers.md`).
+Claude (`anthropic_inference.py`) and Gemini (`openai_compatible_inference.py`) adapters
+sit beside OpenAI's, through the same disclosure boundary (`docs/design/ai-providers.md`).
 
 ## Main Files
 

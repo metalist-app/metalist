@@ -2,7 +2,7 @@
 
 ## Scope
 
-- MetaList chats with one user-selected OpenAI model through an
+- MetaList chats with one user-selected model (OpenAI, Anthropic or Google) through an
   authenticated, application-owned agent runtime.
 - Every Send freezes the currently displayed MetaList result scope. The agent can
   investigate only matching notes inside that boundary; it cannot run a new
@@ -241,8 +241,8 @@ read returns. Tagging batches use the same limit; there is no separate tagging w
 
 - Three providers on the user's own keys, named by company: OpenAI, Anthropic (Claude
   models) and Google (Gemini models), registered in `app/services/ai_setup.py` with their models in
-  `app/services/ai_catalog.py` (design and what is not yet verified live:
-  `docs/ready-to-build/ai-providers.md`). The chat's model picker lists the models of
+  `app/services/ai_catalog.py` (design and what is verified live:
+  `docs/design/ai-providers.md`; what is left: `docs/future-plans/ai-providers-remaining.md`). The chat's model picker lists the models of
   each provider with a key, under the provider's name; picking a model picks its
   provider.
 

@@ -77,3 +77,5 @@ The own-copy download works in every account state (trial, active, lapsed, cance
 - **File storage layout.** If hosted file storage differs from the single files database in today's archive (for example, sealed shards), either pack it into the self-hosted format on download or teach self-hosted restore to read the hosted layout.
 - **Large vaults.** Archives with many files could be many GB. Offer "notes only" and "notes and files" separately? Make the download resumable?
 - **Upload back in.** Can a hosted user restore from a copy they downloaded (upload it as a new vault), or only from retained snapshots?
+
+The demo vault's AI (off by default, a visitor's own key held only in memory) and the hosted outbound-allowlist questions: `docs/future-plans/ai-providers-remaining.md`.
