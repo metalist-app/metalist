@@ -102,7 +102,7 @@ match).
 
 Agreed 2026-10-23. AI Agent Settings no longer picks a model or provider. The chat's model
 picker lists the models of every provider with a key, each under its provider's name, and
-picking a model picks its provider (`POST /api2/ai/model-choices`). The last model and
+picking a model picks its provider (`GET /api2/ai/model-choices`, a read, so it never holds the one mutation slot). The last model and
 thinking level picked are the next default (`pref.ai.provider`, `pref.ai.<provider>_model`).
 The reading limit is one number for every provider (**Max token window**).
 

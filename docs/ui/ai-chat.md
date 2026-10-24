@@ -267,7 +267,7 @@ read returns. Tagging batches use the same limit; there is no separate tagging w
   products, and people may read it." (Not in the EEA, Switzerland or the UK.)
 - **Model picker** (chat composer): the models of every provider with a saved key,
   plus the provider of the model picked last even without one
-  (`POST /api2/ai/model-choices`), each provider's under its name, even when there is
+  (`GET /api2/ai/model-choices`, a read that never blocks a note change), each provider's under its name, even when there is
   only one. Picking a model picks its provider too (an option's
   value is `provider model`, `ai-model-names.js`). Saving or removing a key reloads
   the picker. Each provider lists only the models MetaList ships

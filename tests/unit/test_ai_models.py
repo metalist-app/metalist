@@ -14,6 +14,7 @@ import app.services.ai_setup as ai_setup_module
 from app.services.ai_catalog import AI_CATALOG, require_shipped_model
 from app.services.ai_credentials import AiCredentialStatus
 from app.services.ai_setup import AI_PROVIDERS, AiSetup
+from app.services.bulk_operation import bulk_operation_guard
 from app.services.client_state_service import _validate_client_preferences
 from app.services.input_errors import InputRejected
 
@@ -33,7 +34,7 @@ def test_the_chat_picker_lists_the_models_of_each_provider_with_a_key(monkeypatc
     monkeypatch.setattr(ai_routes.token_service, "get_session_key", lambda token: "session")
     monkeypatch.setattr(ai_routes, "describe_ai_setup", lambda *, token, session_key: AiSetup(ready_providers=ready_providers))
     response = asyncio.run(ai_routes.list_ai_model_choices(
-        payload=ai_routes.AiModelChoicesRequest(current_provider="openai"), token="token"))
+        current_provider="openai", token="token"))
     assert response.model_dump() == {"groups": [
         {"provider": "openai", "label": "OpenAI", "models": list(AI_CATALOG["openai"].models)},
     ]}
@@ -44,11 +45,23 @@ def test_the_chat_picker_lists_every_provider_with_a_key_in_order(monkeypatch) -
     monkeypatch.setattr(ai_routes, "describe_ai_setup",
                         lambda *, token, session_key: AiSetup(ready_providers=("anthropic", "gemini")))
     response = asyncio.run(ai_routes.list_ai_model_choices(
-        payload=ai_routes.AiModelChoicesRequest(current_provider="gemini"), token="token"))
+        current_provider="gemini", token="token"))
     assert [(group.label, group.models) for group in response.groups] == [
         ("Anthropic", ["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"]),
         ("Google", ["gemini-4-argon", "gemini-3.8-flash", "gemini-3.5-flash-lite"]),
     ]
+
+
+def test_listing_the_models_works_while_another_request_changes_the_vault(monkeypatch) -> None:
+    # The chat refreshes its picker while the user edits; a read that took the one
+    # mutation slot made a note save at that moment fail with 409 (2026-10-24).
+    route = next(route for route in ai_routes.router.routes if route.path.endswith("/model-choices"))
+    assert route.methods == {"GET"}
+    monkeypatch.setattr(ai_routes.token_service, "get_session_key", lambda token: "session")
+    monkeypatch.setattr(ai_routes, "describe_ai_setup", lambda *, token, session_key: AiSetup(ready_providers=("openai",)))
+    with bulk_operation_guard.track_mutation():
+        response = asyncio.run(ai_routes.list_ai_model_choices(current_provider="openai", token="token"))
+    assert [group.provider for group in response.groups] == ["openai"]
 
 
 def test_the_browsers_provider_list_matches_the_catalog() -> None:

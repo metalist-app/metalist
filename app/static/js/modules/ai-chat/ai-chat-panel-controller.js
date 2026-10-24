@@ -266,7 +266,7 @@ class AiChatPanelController {
         this._isBusy = false;
         this._thinkingStartedAtMs = 0;
         this._thinkingTimerId = 0;
-        // One group per provider with a key: { provider, label, models } (POST /ai/model-choices).
+        // One group per provider with a key: { provider, label, models } (GET /ai/model-choices).
         this._modelGroups = [];
         this._localTurnCount = 0;
         this._isLoadingModels = false;

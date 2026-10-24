@@ -122,13 +122,6 @@ def _agent_runtime(*, inference: InferenceAdapter) -> AgentRuntime:
     )
 
 
-class AiModelChoicesRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    # The provider of the model picked last: its models stay listed even without a key.
-    current_provider: AiProvider
-
-
 class AiModelChoiceGroup(BaseModel):
     provider: AiProvider
     label: str
@@ -374,17 +367,18 @@ def _render_ai_response_note_content(*, markdown_text: str, session_key: str) ->
 
 
 # The chat's model picker: every model of every provider with a key, so picking a
-# model picks its provider too (docs/ui/ai-chat.md, "Model picker").
-@router.post("/model-choices", response_model=AiModelChoicesResponse)
-@transactional_route
+# model picks its provider too (docs/ui/ai-chat.md, "Model picker"). A read, so it takes
+# no mutation slot: the chat refreshes it while the user edits notes. current_provider is
+# the provider of the model picked last; its models stay listed even without a key.
+@router.get("/model-choices", response_model=AiModelChoicesResponse)
 async def list_ai_model_choices(
-    payload: AiModelChoicesRequest,
+    current_provider: AiProvider,
     token: Annotated[str, Depends(require_request_auth_token)],
 ) -> AiModelChoicesResponse:
     setup = describe_ai_setup(token=token, session_key=token_service.get_session_key(token))
     groups = []
     for provider in AI_PROVIDERS:
-        if not setup.is_ready_for(provider) and provider != payload.current_provider:
+        if not setup.is_ready_for(provider) and provider != current_provider:
             continue
         entry = catalog_entry(provider)
         groups.append(AiModelChoiceGroup(

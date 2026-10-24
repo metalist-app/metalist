@@ -335,10 +335,10 @@ export async function listAiModelChoices(currentProvider) {
     if (typeof currentProvider !== 'string' || currentProvider === '') {
         throw new Error('listAiModelChoices requires the current provider');
     }
-    const response = await fetchAi(CONFIG.API.AI.MODEL_CHOICES, {
-        method: 'POST',
-        headers: buildSessionHeaders(true),
-        body: JSON.stringify({ current_provider: currentProvider }),
+    const query = new URLSearchParams({ current_provider: currentProvider });
+    const response = await fetchAi(`${CONFIG.API.AI.MODEL_CHOICES}?${query}`, {
+        headers: buildSessionHeaders(false),
+        cache: 'no-store',
     });
     return await readJsonResponse(response, 'Failed to list AI models');
 }

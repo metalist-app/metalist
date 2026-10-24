@@ -3,7 +3,7 @@
 // A model name as providers write them.
 const MODEL_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:/-]*$/;
 
-// The chat's model picker lists every provider's models (POST /ai/model-choices); an
+// The chat's model picker lists every provider's models (GET /ai/model-choices); an
 // option names both, since picking a model picks its provider. A provider id is
 // lowercase letters and a model name has no space, so a space separates them.
 const PROVIDER_ID_PATTERN = /^[a-z]+$/;
