@@ -32,15 +32,16 @@ _FIRST_NON_CONTROL_CODE = ord(" ")
 class AiKeyFormat:
     # How the provider is named in messages ("OpenAI API key must ...").
     label: str
-    # Every key the provider issues starts with this.
-    prefix: str
+    # Every key the provider issues starts with one of these.
+    prefixes: tuple[str, ...]
 
 
 # The providers with a key slot, and what their keys look like.
 AI_KEY_FORMATS: dict[str, AiKeyFormat] = {
-    "openai": AiKeyFormat(label="OpenAI", prefix="sk-"),
-    "anthropic": AiKeyFormat(label="Anthropic", prefix="sk-ant-"),
-    "gemini": AiKeyFormat(label="Google", prefix="AIza"),
+    "openai": AiKeyFormat(label="OpenAI", prefixes=("sk-",)),
+    "anthropic": AiKeyFormat(label="Anthropic", prefixes=("sk-ant-",)),
+    # Google AI Studio issues keys starting with AQ. (2026); older keys start with AIza.
+    "gemini": AiKeyFormat(label="Google", prefixes=("AIza", "AQ.")),
 }
 
 
@@ -67,8 +68,8 @@ def validate_ai_api_key(provider: str, api_key: str) -> str:
         raise TypeError(f"{name} must be text")
     if api_key != api_key.strip():
         raise AiCredentialInputError(f"{name} must not contain surrounding whitespace")
-    if not api_key.startswith(key_format.prefix):
-        raise AiCredentialInputError(f"{name} must start with {key_format.prefix}")
+    if not api_key.startswith(key_format.prefixes):
+        raise AiCredentialInputError(f"{name} must start with {' or '.join(key_format.prefixes)}")
     if len(api_key) < _MINIMUM_API_KEY_CHARACTERS:
         raise AiCredentialInputError(f"{name} is too short")
     if len(api_key) > _MAXIMUM_API_KEY_CHARACTERS:

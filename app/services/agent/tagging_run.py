@@ -122,8 +122,8 @@ async def infer_with_progress(inference, run, messages, response_model, on_progr
         raise InferenceProviderError(explain_structured_failure(
             response_model=response_model,
             attempts=exc.attempts,
-            setup=FailureSetup(model=run.selected_model, thinking_level=run.thinking_level,
-                               web_mode=run.web_settings.mode),
+            setup=FailureSetup(provider_label=inference.provider_label, model=run.selected_model,
+                               thinking_level=run.thinking_level, web_mode=run.web_settings.mode),
         )) from exc
     for attempt in response.attempts:
         agent_trace_store.append_event(session_key=run.session_key, run_id=run.run_id,

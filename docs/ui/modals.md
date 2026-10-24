@@ -134,6 +134,8 @@ function handleKeyDown(event) {
 5. Hide modal UI
 6. Return focus to application
 
+Planned (ready to build): button order, labels, focus and menu rules in `docs/ready-to-build/dialog-and-menu-conventions.md`, and errors and status shown above the layout, never inserted into it, in `docs/ready-to-build/errors-and-status-rule.md` (which replaces the next sentence).
+
 Dismiss-only footer buttons labeled `Close` or `OK` are not used. Workflow actions such as `Save`, `Cancel`, `Back`, and destructive confirmations remain visible when they carry meaning beyond dismissing the modal.
 
 ### Modal Stacking

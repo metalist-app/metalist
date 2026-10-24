@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from http import HTTPStatus
 
 from app.services.agent.inference import InferenceAttempt
 
@@ -32,11 +33,16 @@ _FREE_TEXT_FIELDS = frozenset({"reason", "basis", "rationale", "answer"})
 _JSON_QUOTE = '"'
 _SIMPLE_FIELD_RE = re.compile(r'"([A-Za-z_]+)"\s*:\s*("(?:[^"\\]|\\.)*"|\[[^\[\]]*\]|-?\d+(?:\.\d+)?|true|false|null)')
 
-_CUT_OFF, _FORMAT, _EMPTY, _REFUSED, _SILENT, _OTHER = "cut_off", "format", "empty", "refused", "silent", "other"
+_CUT_OFF, _FORMAT, _EMPTY, _REFUSED, _SILENT, _BUSY, _OTHER = (
+    "cut_off", "format", "empty", "refused", "silent", "busy", "other"
+)
+# How the OpenAI SDK words a provider's "busy" answer, as Instructor records it.
+_BUSY_ERROR_PREFIX = f"InternalServerError: Error code: {HTTPStatus.SERVICE_UNAVAILABLE.value} "
 
 
 @dataclass(frozen=True, slots=True)
 class FailureSetup:
+    provider_label: str
     model: str
     thinking_level: str
     web_mode: str
@@ -47,7 +53,7 @@ def explain_structured_failure(*, response_model: type, attempts: list[Inference
     lines = [f"MetaList's AI could not finish this request: it failed while {step}."]
     causes = []
     for number, attempt in enumerate(attempts, 1):
-        cause, sentence = _describe_attempt(attempt)
+        cause, sentence = _describe_attempt(attempt, setup)
         causes.append(cause)
         lines.append(f"Attempt {number}: {sentence}")
     lines.append(
@@ -58,7 +64,7 @@ def explain_structured_failure(*, response_model: type, attempts: list[Inference
     return "\n".join(lines)
 
 
-def _describe_attempt(attempt: InferenceAttempt) -> tuple[str, str]:
+def _describe_attempt(attempt: InferenceAttempt, setup: FailureSetup) -> tuple[str, str]:
     choice = _first_choice(attempt.response)
     content = _message_field(choice, "content")
     finish_reason = ""
@@ -68,7 +74,7 @@ def _describe_attempt(attempt: InferenceAttempt) -> tuple[str, str]:
     if finish_reason == "length":
         return _CUT_OFF, _describe_cut_off(attempt, content)
     if finish_reason == "content_filter" or _message_field(choice, "refusal") != "":
-        return _REFUSED, "OpenAI declined to produce an answer."
+        return _REFUSED, f"{setup.provider_label} declined to produce an answer."
     if attempt.validation_errors:
         problems = "; ".join(_describe_broken_rule(rule) for rule in attempt.validation_errors)
         sentence = f"the answer did not match the required format: {problems}."
@@ -77,10 +83,12 @@ def _describe_attempt(attempt: InferenceAttempt) -> tuple[str, str]:
             sentence += f" It chose: {chosen}."
         return _FORMAT, sentence
     if attempt.error.startswith("APITimeoutError"):
-        # The silence limit ran out (openai_silence_limit_seconds): no reply arrived.
+        # The silence limit ran out (the adapter's silence limit): no reply arrived.
         if "timeout" not in attempt.request or not isinstance(attempt.request["timeout"], (int, float)):
             raise RuntimeError("A timed-out structured attempt must record its timeout")
-        return _SILENT, f"OpenAI did not respond for {attempt.request['timeout']:g} seconds."
+        return _SILENT, f"{setup.provider_label} did not respond for {attempt.request['timeout']:g} seconds."
+    if attempt.error.startswith(_BUSY_ERROR_PREFIX):
+        return _BUSY, f"{setup.provider_label} said {setup.model} is busy right now."
     if content.strip() == "":
         return _EMPTY, "the reply was empty."
     return _OTHER, f"it failed: {attempt.error}."
@@ -132,8 +140,11 @@ def _suggestion(causes: list[str]) -> str:
         suggestions.append("ask again, or rephrase the request more specifically")
     if _REFUSED in causes:
         suggestions.append("rephrase the request")
+    # Overloaded models can hang instead of saying they are busy (Google, 2026-10-24).
     if _SILENT in causes:
-        suggestions.append("check your internet connection and ask again")
+        suggestions.append("ask again later or pick another model; if none answers, check your internet connection")
+    elif _BUSY in causes:
+        suggestions.append("ask again later or pick another model")
     if not suggestions:
         suggestions.append("ask again")
     text = "; or ".join(suggestions)

@@ -22,7 +22,11 @@ Every OpenAI request has a silence limit (`openai_silence_limit_seconds`: 15 s a
 Off and Low, measured; 60 s Medium and 120 s High, unmeasured), passed as the
 request timeout so the library's 600 s default never applies; a timeout becomes
 "OpenAI did not respond for N seconds…" (agent turns, final answers) or, for a
-structured step, that sentence per attempt (`failure_explanations.py`). Streams
+structured step, that sentence per attempt (`failure_explanations.py`, which names
+the provider from `FailureSetup.provider_label`). Google's adapter says the model may be
+busy instead of blaming the connection, since its overloaded models hang silently, and
+turns an HTTP 503 into "Google says <model> is busy right now…"; a structured step's
+explanation recognizes the 503 by Instructor's recorded error. Streams
 yield `provider_started` on OpenAI's first event; the agent loop and the final
 answer wrap each request in a `provider_wait` activity that the chat shows as
 "Waiting for OpenAI". `ChatTurnStream` records the run's steps and appends

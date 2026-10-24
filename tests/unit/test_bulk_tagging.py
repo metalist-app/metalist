@@ -1032,7 +1032,7 @@ def test_a_failed_tagging_call_explains_itself_like_the_chat_steps() -> None:
     )
     with pytest.raises(InferenceProviderError) as failure:
         asyncio.run(runs.infer_with_progress(
-            SimpleNamespace(infer_structured=infer_structured), run, [], TagBatchResult, lambda progress: None,
+            SimpleNamespace(provider_label="OpenAI", infer_structured=infer_structured), run, [], TagBatchResult, lambda progress: None,
         ))
 
     message = str(failure.value)

@@ -32,6 +32,36 @@ export async function checkOpenAiSettings(page) {
   assert.equal(initial.webAccessMode, 'none');
   assert.equal(initial.tokenWindow, '500000');
   assert.equal(initial.taggingLimit, false);
+  // A key in the wrong format is explained under the key, in its tab; Google's AQ. keys
+  // (AI Studio, 2026) are accepted. Test keys reach only this test server.
+  await page.click('#ai-agent-tab-gemini');
+  await page.waitForFunction(() => {
+    const keyInput = document.getElementById('ai-agent-api-key');
+    return document.getElementById('ai-agent-tab-gemini').getAttribute('aria-selected') === 'true'
+      && keyInput && !keyInput.disabled;
+  });
+  await page.type('#ai-agent-api-key', 'not-a-google-key-0123456789abcdef');
+  await page.click('#ai-agent-key-save');
+  await page.waitForSelector('.ai-settings-tab-panel .ai-settings-key-error');
+  const keyMessages = await page.evaluate(() => ({
+    underKey: document.querySelector('.ai-settings-tab-panel .ai-settings-key-error').textContent,
+    atBottom: document.querySelector('#ai-agent-settings-modal .error-message').textContent,
+  }));
+  assert.equal(keyMessages.underKey, 'Google API key must start with AIza or AQ.');
+  assert.equal(keyMessages.atBottom, '');
+  await page.click('#ai-agent-api-key', {clickCount: 3});
+  await page.type('#ai-agent-api-key', 'AQ.Test0123456789abcdefghijklmnopqrs');
+  await page.click('#ai-agent-key-save');
+  await page.waitForSelector('#ai-agent-key-remove');
+  assert.equal(await page.$('.ai-settings-key-error'), null, 'An accepted key leaves no key message');
+  await page.click('#ai-agent-key-remove');
+  await page.waitForSelector('#ai-agent-api-key');
+  await page.click('#ai-agent-tab-openai');
+  await page.waitForFunction(() => {
+    const keyInput = document.getElementById('ai-agent-api-key');
+    return document.getElementById('ai-agent-tab-openai').getAttribute('aria-selected') === 'true'
+      && keyInput && !keyInput.disabled;
+  });
   await page.click('#ai-agent-web-access [data-mode="contextual"]');
   await page.click('#ai-agent-save');
   await page.waitForSelector('#ai-agent-settings-modal', {hidden: true});

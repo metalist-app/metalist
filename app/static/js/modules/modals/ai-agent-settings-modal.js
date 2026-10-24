@@ -114,9 +114,14 @@ function renderProviderPanel(state) {
         const warning = KEY_WARNINGS[state.provider];
         keyWarning = `<p class="ai-settings-hint ai-settings-indented ai-settings-key-warning" title="${escapeHtml(warning.tooltip)}">${escapeHtml(warning.text)}</p>`;
     }
+    let keyError = '';
+    if (state.keyError !== '') {
+        keyError = `<p class="ai-settings-indented ai-settings-key-error" role="alert">${escapeHtml(state.keyError)}</p>`;
+    }
     return `
         <div class="ai-settings-tab-panel" role="tabpanel" aria-labelledby="ai-agent-tab-${escapeHtml(state.provider)}">
             ${renderKeyRow(state)}
+            ${keyError}
             ${keyWarning}
             ${billing}
         </div>`;
@@ -186,6 +191,8 @@ export class AiAgentSettingsModal extends BaseModal {
             credentialConfigured: false,
             credentialPersistent: false,
             error: '',
+            // A message about the key, shown under the key in its tab.
+            keyError: '',
         };
     }
 
@@ -383,7 +390,7 @@ export class AiAgentSettingsModal extends BaseModal {
         if (provider === this.getModalState().provider) return;
         this._update({
             provider, providerLabel: tab.label,
-            isChangingKey: false, credentialConfigured: false, credentialPersistent: false,
+            isChangingKey: false, credentialConfigured: false, credentialPersistent: false, keyError: '',
         });
         await this._loadCredentialStatus();
     }
@@ -398,7 +405,7 @@ export class AiAgentSettingsModal extends BaseModal {
         if (state.isLoadingCredential) {
             return;
         }
-        this._setState({ isLoadingCredential: true, error: '' });
+        this._setState({ isLoadingCredential: true, keyError: '' });
         this.renderModalContent();
         try {
             const payload = await loadAiCredentialStatus(state.provider);
@@ -411,7 +418,7 @@ export class AiAgentSettingsModal extends BaseModal {
             if (!(error instanceof AiApiError)) {
                 throw error;
             }
-            this._setState({ error: error.message });
+            this._setState({ keyError: error.message });
         } finally {
             if (this.isCurrentOpen(generation)) {
                 this._setState({ isLoadingCredential: false });
@@ -439,11 +446,11 @@ export class AiAgentSettingsModal extends BaseModal {
     async _handleSaveKey(apiKey) {
         const state = this.getModalState();
         if (apiKey.trim() === '') {
-            this._setState({ error: `Paste your ${state.providerLabel} API key first.` });
+            this._setState({ keyError: `Paste your ${state.providerLabel} API key first.` });
             this.renderModalContent();
             return;
         }
-        this._setState({ isLoadingCredential: true, error: '' });
+        this._setState({ isLoadingCredential: true, keyError: '' });
         this.renderModalContent();
         try {
             this._applyCredentialStatus(await saveAiCredential(state.provider, apiKey));
@@ -454,7 +461,7 @@ export class AiAgentSettingsModal extends BaseModal {
             if (!(error instanceof AiApiError)) {
                 throw error;
             }
-            this._setState({ error: error.message });
+            this._setState({ keyError: error.message });
         } finally {
             this._setState({ isLoadingCredential: false });
             this.renderModalContent();
@@ -472,7 +479,7 @@ export class AiAgentSettingsModal extends BaseModal {
             if (!(error instanceof AiApiError)) {
                 throw error;
             }
-            this._setState({ error: error.message });
+            this._setState({ keyError: error.message });
             this.renderModalContent();
         }
     }

@@ -1,9 +1,7 @@
-# Unify dialogs and menus, and put the new mark into use
+# Dialog and menu conventions
 
-**Status:** Agreed with the maintainer 2026-10-23. **Ready to build now.**
-**Scope:** Two pieces of work in one pass:
-- **A.** Write down one set of conventions for every dialog's buttons and for menus, bring every existing dialog and menu in line with them, and add a check so new ones can't drift.
-- **B.** Build `docs/ready-to-build/brand-mark-and-icons.md`, already filed in this repo: the trimmed-bar mark, the one-bar favicon on a black tile, and the generated icon set.
+**Status:** Agreed with the maintainer 2026-10-23. Ready to build, not started. Filed here from `docs/inbox/2026-10-23-dialog-conventions-and-new-mark.md` on 2026-10-24 (its part B, the new mark, was filed 2026-10-23 as `docs/ready-to-build/brand-mark-and-icons.md`). Build it in the same pass as `docs/ready-to-build/errors-and-status-rule.md`, which extends it, and document both in the same place.
+**Scope:** One set of conventions for every dialog's buttons and for menus, every existing dialog and menu brought in line with them, and a check so new ones can't drift.
 
 Written from a read of the repo on 2026-10-23. Check every reference before relying on it; build only what is missing.
 
@@ -116,19 +114,17 @@ Also review:
 
 ---
 
-## B. Put the new mark and favicon into use
+## B. The new mark
 
-Build **`docs/ready-to-build/brand-mark-and-icons.md`** (filed 2026-10-23) in this same pass. Its decisions already settled with the maintainer:
-- **The mark:** today's M with **the bars trimmed to the M's width** (thin over thick, as now).
-- **The one-bar variant** at 24 px and below, as the **favicon on a small black rounded tile**, never transparent.
-- **The generated set:** favicons, apple-touch, manifest, store masters and avatar, from SVG sources and one script.
-- **The wordmark:** later.
-- **The old padded logo files** are replaced.
-- **The login progress bar** gets narrower along with the logo. That's an on-screen change, so list the cases and agree them under `docs/ui/interaction-principles.md` before changing it, as that note says.
-
-When B is built, delete `docs/ready-to-build/brand-mark-and-icons.md` in the same change, once its content is in the permanent docs, per "Design Inbox" in `AGENTS.md`.
+Build `docs/ready-to-build/brand-mark-and-icons.md` in the same pass (the original note asked for both together).
 
 ---
+
+## Found when filed (2026-10-24)
+
+- The `.form-actions` line numbers in A3 match the code, except `ai-agent-settings-modal.js`: its row is now at line 259 (the dialog was redesigned on `feature/ai-providers`), still Save · Cancel.
+- `reminder-modal.js:956` uses `.reminder-form-actions`, not `.form-actions`.
+- The "dismiss-only Close/OK buttons are not used" line that `errors-and-status-rule.md` replaces is `docs/ui/modals.md:137`.
 
 ## Questions for the maintainer
 

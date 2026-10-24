@@ -183,7 +183,7 @@ async def suggest_export_title(
     except StructuredInferenceError as exc:
         raise InferenceProviderError(explain_structured_failure(
             response_model=ExportTitleAnswer, attempts=exc.attempts,
-            setup=FailureSetup(model=model, thinking_level=thinking_level, web_mode=web_mode),
+            setup=FailureSetup(provider_label=inference.provider_label, model=model, thinking_level=thinking_level, web_mode=web_mode),
         )) from exc
     for attempt in response.attempts:
         agent_trace_store.append_event(

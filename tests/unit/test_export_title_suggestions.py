@@ -141,6 +141,8 @@ def test_asking_again_names_the_titles_already_given(live_database) -> None:
 
 
 class _Answers:
+    provider_label = "OpenAI"
+
     def __init__(self, title: str) -> None:
         self.title = title
         self.requests: list[list[dict[str, str]]] = []

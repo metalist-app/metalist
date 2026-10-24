@@ -21,6 +21,7 @@ from collections.abc import Callable
 from collections.abc import Mapping
 from collections.abc import Sequence
 from dataclasses import dataclass
+from http import HTTPStatus
 from typing import Any
 from typing import cast
 
@@ -28,6 +29,7 @@ import httpx
 import instructor
 from instructor.v2.core.client import AsyncInstructor
 from openai import APIError
+from openai import APIStatusError
 from openai import APITimeoutError
 from openai import AsyncOpenAI
 from pydantic import BaseModel
@@ -206,13 +208,21 @@ class OpenAICompatibleInferenceAdapter:
             raise ValueError(f"Unsupported thinking level: {thinking_level}")
         return self._provider.reasoning_effort[thinking_level]
 
-    def _silence_error(self, thinking_level: str) -> OpenAICompatibleProviderError:
+    def _silence_error(self, thinking_level: str, model: str) -> OpenAICompatibleProviderError:
+        # Google's overloaded models hang without sending a byte (2026-10-24, 3.8 Flash), so
+        # silence is more often a busy model than a broken connection.
         seconds = compatible_silence_limit_seconds(thinking_level)
+        label = self._provider.label
         return OpenAICompatibleProviderError(
-            f"{self._provider.label} did not respond for {seconds:g} seconds. Check your internet connection and ask again."
+            f"{label} did not respond for {seconds:g} seconds. {model} may be busy at {label}: "
+            "ask again later or pick another model."
         )
 
-    def _api_error(self, exc: APIError) -> OpenAICompatibleProviderError:
+    def _api_error(self, exc: APIError, model: str) -> OpenAICompatibleProviderError:
+        if isinstance(exc, APIStatusError) and exc.status_code == HTTPStatus.SERVICE_UNAVAILABLE:
+            return OpenAICompatibleProviderError(
+                f"{self._provider.label} says {model} is busy right now. Ask again later or pick another model."
+            )
         detail = " ".join(str(exc).split())
         if detail == "":
             return OpenAICompatibleProviderError(f"{self._provider.label} API request failed")
@@ -275,10 +285,10 @@ class OpenAICompatibleInferenceAdapter:
             )
         # lint: allow-PY001 rationale="a request the provider never answers is a network failure, explained plainly"
         except APITimeoutError as exc:
-            raise self._silence_error(thinking_level) from exc
+            raise self._silence_error(thinking_level, normalized_model) from exc
         # lint: allow-PY001 rationale="translate the provider's API failures into the provider-neutral contract"
         except APIError as exc:
-            raise self._api_error(exc) from exc
+            raise self._api_error(exc, normalized_model) from exc
         finally:
             for number, attempt in enumerate(capture.freeze(), 1):
                 record_provider_event("LLM_ATTEMPT_OUTPUT", {
@@ -389,10 +399,10 @@ class OpenAICompatibleInferenceAdapter:
                         finish_reason = choice.finish_reason
         # lint: allow-PY001 rationale="a request the provider never answers is a network failure, explained plainly"
         except APITimeoutError as exc:
-            raise self._silence_error(thinking_level) from exc
+            raise self._silence_error(thinking_level, normalized_model) from exc
         # lint: allow-PY001 rationale="translate the provider's stream failures into the provider-neutral contract"
         except APIError as exc:
-            raise self._api_error(exc) from exc
+            raise self._api_error(exc, normalized_model) from exc
         finally:
             await client.close()
         if finish_reason == "length":

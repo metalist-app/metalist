@@ -3556,6 +3556,13 @@ details.ai-chat-thinking > .ai-chat-thinking-heading {
     font-size: 12px;
 }
 
+/* What went wrong with the key, right under it. */
+#ai-agent-settings-modal .ai-settings-key-error {
+    margin: 0 0 0 92px;
+    color: var(--modal-danger);
+    font-size: 13px;
+}
+
 /* A warning under a provider's key, lined up with the fields. */
 .ai-settings-hint.ai-settings-key-warning {
     margin: 0 0 0 92px;

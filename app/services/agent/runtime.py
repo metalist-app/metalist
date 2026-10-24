@@ -1153,7 +1153,8 @@ class AgentRuntime(AgentLoopMixin):
             raise AgentExecutionError(explain_structured_failure(
                 response_model=response_model,
                 attempts=exc.attempts,
-                setup=FailureSetup(model=model, thinking_level=run.thinking_level, web_mode=run.web_settings.mode),
+                setup=FailureSetup(provider_label=self._provider_label, model=model, thinking_level=run.thinking_level,
+                                   web_mode=run.web_settings.mode),
             )) from exc
 
     def _record_inference_progress(

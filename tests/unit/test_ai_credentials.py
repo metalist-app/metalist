@@ -142,9 +142,15 @@ def test_encrypted_namespace_persists_only_ciphertext(
 @pytest.mark.parametrize(("provider", "api_key", "message"), [
     ("openai", "AIzaTest0123456789abcdefghijklmnopqr", "OpenAI API key must start with sk-"),
     ("anthropic", "sk-test-0123456789abcdefghijklmnop", "Anthropic API key must start with sk-ant-"),
-    ("gemini", "sk-ant-test-0123456789abcdefghijk", "Google API key must start with AIza"),
+    ("gemini", "sk-ant-test-0123456789abcdefghijk", "Google API key must start with AIza or AQ."),
     ("anthropic", "sk-ant-short", "Anthropic API key is too short"),
 ])
 def test_a_key_for_another_provider_is_refused_by_name(provider: str, api_key: str, message: str) -> None:
     with pytest.raises(AiCredentialInputError, match=message):
         validate_ai_api_key(provider, api_key)
+
+
+# Google AI Studio issues keys starting with AQ. (2026); older keys start with AIza.
+@pytest.mark.parametrize("api_key", ["AIzaTest0123456789abcdefghijklmnopqr", "AQ.Test0123456789abcdefghijklmnopqrs"])
+def test_both_google_key_formats_are_accepted(api_key: str) -> None:
+    assert validate_ai_api_key("gemini", api_key) == api_key

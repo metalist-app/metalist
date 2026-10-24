@@ -8,7 +8,7 @@ from app.services.agent.staged_summary import SummaryFindingsResult
 from app.services.agent.tagging import TagBatchResult
 
 
-_SETUP = FailureSetup(model="gpt-5.6-terra", thinking_level="medium", web_mode="none")
+_SETUP = FailureSetup(provider_label="OpenAI", model="gpt-5.6-terra", thinking_level="medium", web_mode="none")
 
 
 def _cut_off_attempt(*, limit: int, reasoning: int, content: str) -> InferenceAttempt:
@@ -93,7 +93,7 @@ def test_other_steps_and_setups_are_named() -> None:
             duration_ms=900.0,
             validation_errors=(),
         )],
-        setup=FailureSetup(model="gpt-5.6-sol", thinking_level="high", web_mode="full"),
+        setup=FailureSetup(provider_label="OpenAI", model="gpt-5.6-sol", thinking_level="high", web_mode="full"),
     )
     assert "proposing tags" in tag_message
     assert "Setup: gpt-5.6-sol, High thinking, full web access." in tag_message
@@ -120,14 +120,14 @@ def _silent_attempt(*, seconds: float) -> InferenceAttempt:
     )
 
 
-def test_a_step_openai_never_answered_says_so_and_suggests_the_connection() -> None:
+def test_a_step_openai_never_answered_says_so_and_suggests_another_model_or_the_connection() -> None:
     message = explain_structured_failure(
         response_model=SummaryFindingsResult,
         attempts=[_silent_attempt(seconds=15.0), _silent_attempt(seconds=15.0)],
-        setup=FailureSetup(model="gpt-5.6-luna", thinking_level="low", web_mode="none"),
+        setup=FailureSetup(provider_label="OpenAI", model="gpt-5.6-luna", thinking_level="low", web_mode="none"),
     )
 
     assert "Attempt 1: OpenAI did not respond for 15 seconds." in message
     assert "Attempt 2: OpenAI did not respond for 15 seconds." in message
     assert "the reply was empty" not in message
-    assert "What you can try: Check your internet connection and ask again." in message
+    assert "What you can try: Ask again later or pick another model; if none answers, check your internet connection." in message

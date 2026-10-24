@@ -10,7 +10,10 @@ import httpx
 import pytest
 
 import app.services.agent.openai_compatible_inference as compatible
+from app.services.agent.failure_explanations import FailureSetup
+from app.services.agent.failure_explanations import explain_structured_failure
 from app.services.agent.inference import InferenceProviderError
+from app.services.agent.inference import StructuredInferenceError
 from app.services.agent.judging import OutputJudgment
 from app.services.agent.openai_compatible_inference import GEMINI
 from app.services.agent.openai_compatible_inference import OpenAICompatibleInferenceAdapter
@@ -147,3 +150,71 @@ def test_a_gemini_structured_reply_uses_a_strict_schema(monkeypatch) -> None:
     assert "store" not in sent[0]
     assert OutputJudgment.model_validate_json(result.content) == OutputJudgment.model_validate(judgment)
     assert result.usage["prompt_tokens"] == 1000
+
+
+GOOGLE_BUSY = [{"error": {"code": 503, "status": "UNAVAILABLE", "message": (
+    "This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later."
+)}}]
+
+
+def _fail(monkeypatch: pytest.MonkeyPatch, handle) -> None:
+    def client(on_wire_request) -> httpx.AsyncClient:
+        return httpx.AsyncClient(event_hooks={"request": [on_wire_request]}, transport=httpx.MockTransport(handle))
+    monkeypatch.setattr(compatible, "http_client", client)
+
+
+def _silent(request: httpx.Request) -> httpx.Response:
+    raise httpx.ReadTimeout("no reply", request=request)
+
+
+def _busy(request: httpx.Request) -> httpx.Response:
+    return httpx.Response(503, json=GOOGLE_BUSY)
+
+
+def test_google_staying_silent_says_the_model_may_be_busy(monkeypatch) -> None:
+    # Google's overloaded models hang without a byte rather than refuse, so silence is
+    # more often a busy model than a broken connection.
+    _fail(monkeypatch, _silent)
+    with pytest.raises(OpenAICompatibleProviderError) as raised:
+        _tool_turn(QUESTION, "low")
+    assert str(raised.value) == (
+        "Google did not respond for 30 seconds. gemini-3.8-flash may be busy at Google: "
+        "ask again later or pick another model."
+    )
+
+
+def test_google_answering_busy_says_so_plainly(monkeypatch) -> None:
+    _fail(monkeypatch, _busy)
+    with pytest.raises(OpenAICompatibleProviderError) as raised:
+        _tool_turn(QUESTION, "low")
+    assert str(raised.value) == "Google says gemini-3.8-flash is busy right now. Ask again later or pick another model."
+
+
+def _structured_failure(monkeypatch: pytest.MonkeyPatch, handle) -> str:
+    _fail(monkeypatch, handle)
+    adapter = OpenAICompatibleInferenceAdapter(api_key="AIza-test", provider=GEMINI)
+    with pytest.raises(StructuredInferenceError) as raised:
+        asyncio.run(adapter.infer_structured(
+            base_url=BASE_URL, model=MODEL, thinking_level="low", messages=QUESTION,
+            response_model=OutputJudgment, on_progress=lambda progress: None,
+        ))
+    return explain_structured_failure(
+        response_model=OutputJudgment, attempts=raised.value.attempts,
+        setup=FailureSetup(provider_label="Google", model=MODEL, thinking_level="low", web_mode="none"),
+    )
+
+
+def test_a_structured_step_google_never_answered_names_google(monkeypatch) -> None:
+    message = _structured_failure(monkeypatch, _silent)
+    assert "Attempt 1: Google did not respond for 30 seconds." in message
+    assert "Attempt 2: Google did not respond for 30 seconds." in message
+    assert "OpenAI" not in message
+    assert "What you can try: Ask again later or pick another model; if none answers, check your internet connection." in message
+
+
+def test_a_structured_step_google_was_too_busy_for_says_so(monkeypatch) -> None:
+    message = _structured_failure(monkeypatch, _busy)
+    assert "Attempt 1: Google said gemini-3.8-flash is busy right now." in message
+    assert "Attempt 2: Google said gemini-3.8-flash is busy right now." in message
+    assert "the reply was empty" not in message
+    assert "What you can try: Ask again later or pick another model." in message
