@@ -36,6 +36,9 @@ CLEAR = (0, 0, 0, 0)
 SUPERSAMPLE = 8
 # The mark fills about this share of a square tile's width (brand/README.md).
 TILE_MARK_WIDTH = 0.6
+# A favicon shows at 16 px beside other sites' icons, which fill their square: its mark
+# fills more of its tile (the maintainer, 2026-10-24). The tile still frames it on light tab bars.
+FAVICON_MARK_WIDTH = 0.84
 # The bars make the mark bottom-heavy, so it sits this share of the tile above center.
 OPTICAL_LIFT = 0.02
 # A maskable icon may be cut to a circle 80% of its side: a smaller mark keeps every
@@ -154,7 +157,7 @@ def square_icon(mark: Mark, side: int, mark_width_share: float) -> Image.Image:
 
 
 def favicon_tile(mark: Mark, side: int) -> Image.Image:
-    return draw(mark, size=(side, side), placement=tile_placement(mark, side, TILE_MARK_WIDTH),
+    return draw(mark, size=(side, side), placement=tile_placement(mark, side, FAVICON_MARK_WIDTH),
                 color=WHITE, paint_background=black_rounded_tile)
 
 
@@ -183,7 +186,7 @@ def _number(value: float) -> str:
 
 def favicon_svg(mark: Mark) -> bytes:
     side = FAVICON_SVG_UNITS
-    placement = tile_placement(mark, side, TILE_MARK_WIDTH)
+    placement = tile_placement(mark, side, FAVICON_MARK_WIDTH)
     shapes = "\n".join(
         f'    <polygon points="{" ".join(f"{_number(x)},{_number(y)}" for x, y in polygon)}"/>'
         for polygon in mark.polygons

@@ -17,7 +17,10 @@ Never show both versions side by side.
 - **Clear space:** at least the gap between the two bars, on every side.
 - **Don't** recolor, stretch, outline, rotate, or add shadows or other effects.
 - **On a square tile** the mark is about 60% of the tile's width, centered, and lifted
-  slightly (2% of the tile) because the bars make it bottom-heavy.
+  slightly (2% of the tile) because the bars make it bottom-heavy. Platforms crop or round
+  app icons, so they keep that margin.
+- **The favicon** is the exception: its mark is 84% of its tile, as big as other sites'
+  icons beside it in a tab bar (2026-10-24); the black tile still frames it on light tab bars.
 
 ## Generated files
 
