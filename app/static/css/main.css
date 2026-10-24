@@ -3342,174 +3342,257 @@ details.ai-chat-thinking > .ai-chat-thinking-heading {
     width: min(560px, 94vw);
 }
 
-.ai-agent-settings-controls {
-    display: grid;
-    gap: 14px;
+/* AI Agent Settings: folder tabs per provider, then sections; the dialog's own colors. */
+.ai-settings-tabs {
+    display: flex;
+    gap: 4px;
+    margin: 4px 0 0;
+    border-bottom: 1px solid var(--modal-border);
 }
 
-.ai-agent-settings-controls > label {
-    display: grid;
-    gap: 6px;
-    color: #334155;
-    font-size: 13px;
-    font-weight: 600;
-}
-
-.ai-agent-connection {
-    display: grid;
-    grid-template-columns: auto 1fr;
-    gap: 3px 12px;
-    align-items: baseline;
-    padding: 12px 14px;
-    border: 1px solid #67e8f9;
-    border-radius: 8px;
-    background: #ecfeff;
-    color: #155e75;
-}
-
-.ai-agent-connection > span {
-    grid-row: 1 / 3;
-    font-size: 12px;
-    font-weight: 700;
-    letter-spacing: 0.05em;
-    text-transform: uppercase;
-}
-
-.ai-agent-connection > strong {
+#ai-agent-settings-modal button.ai-settings-tab {
+    margin-bottom: -1px;
+    padding: 8px 16px;
+    border: 1px solid transparent;
+    border-radius: 8px 8px 0 0;
+    background: transparent;
+    box-shadow: none;
+    color: var(--modal-text-muted);
     font-size: 14px;
 }
 
-.ai-agent-connection > small {
-    color: #0e7490;
-}
-
-.ai-agent-retrieval-settings {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 12px;
-    margin: 4px 0 0;
-    padding: 14px;
-    border: 1px solid #cbd5e1;
-    border-radius: 8px;
-}
-
-.ai-agent-retrieval-settings legend {
-    padding: 0 5px;
-    color: #334155;
-    font-size: 13px;
-    font-weight: 700;
-}
-
-.ai-agent-retrieval-settings > p {
-    grid-column: 1 / -1;
-    margin: 0;
-    color: #64748b;
-    font-size: 12px;
-    line-height: 1.45;
-}
-
-.ai-agent-retrieval-settings > label {
-    display: grid;
-    gap: 6px;
-    color: #334155;
-    font-size: 13px;
+#ai-agent-settings-modal button.ai-settings-tab[aria-selected="true"] {
+    border-color: var(--modal-border);
+    border-bottom-color: var(--modal-surface);
+    background: var(--modal-surface);
+    color: var(--modal-text);
     font-weight: 600;
 }
 
-.ai-agent-cloud-privacy-settings {
+.ai-settings-tab-panel {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 12px;
-    margin: 4px 0 0;
-    padding: 14px;
-    border: 1px solid #cbd5e1;
-    border-radius: 8px;
-}
-
-.ai-agent-cloud-privacy-settings legend {
-    padding: 0 5px;
-    color: #334155;
-    font-size: 13px;
-    font-weight: 700;
-}
-
-.ai-agent-cloud-privacy-settings > p {
-    grid-column: 1 / -1;
-    margin: 0;
-    color: #64748b;
-    font-size: 12px;
-    line-height: 1.45;
-}
-
-.ai-agent-cloud-privacy-settings > label {
-    display: grid;
-    gap: 6px;
-    color: #334155;
-    font-size: 13px;
-    font-weight: 600;
-}
-
-.ai-agent-settings-controls input,
-.ai-agent-settings-controls select,
-.ai-agent-settings-controls textarea,
-.ai-agent-credential-row input {
-    width: 100%;
-    box-sizing: border-box;
-    padding: 9px 10px;
-    border: 1px solid #cbd5e1;
-    border-radius: 7px;
-    background: #ffffff;
-    color: #1e293b;
-    font: inherit;
-}
-
-.ai-agent-settings-controls textarea {
-    min-height: 90px;
-    resize: vertical;
-    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-    font-size: 12px;
-    line-height: 1.45;
-}
-
-.ai-agent-credential {
-    margin-top: 18px;
-    padding-top: 16px;
-    border-top: 1px solid #e2e8f0;
-}
-
-.ai-agent-credential h3 {
-    margin: 0 0 6px;
-    font-size: 16px;
-}
-
-.ai-agent-credential > p {
-    margin: 0 0 12px;
-    color: #64748b;
-    line-height: 1.45;
-}
-
-.ai-agent-credential-row {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    align-items: end;
     gap: 10px;
+    padding: 14px 14px 12px;
+    border: 1px solid var(--modal-border);
+    border-top: 0;
+    border-radius: 0 0 8px 8px;
 }
 
-.ai-agent-credential-row label {
-    display: grid;
-    gap: 6px;
-    color: #334155;
+.ai-settings-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.ai-settings-row > input,
+.ai-settings-row > select {
+    flex: 1;
+    min-width: 0;
+}
+
+.ai-settings-row-label {
+    flex: none;
+    width: 84px;
+    color: var(--modal-text-muted);
     font-size: 13px;
+}
+
+.ai-settings-wide-label {
+    flex: 1;
+    color: var(--modal-text);
+    font-size: 13px;
+}
+
+/* A label with its field right under it, both at the left edge. */
+.ai-settings-stacked {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+}
+
+#ai-agent-settings-modal .ai-settings-stacked > input {
+    margin: 6px 0 0;
+}
+
+/* A "?" whose tooltip explains the setting beside it. */
+.ai-settings-help {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    margin-left: 4px;
+    border: 1px solid var(--modal-border-strong);
+    border-radius: 50%;
+    color: var(--modal-text-muted);
+    font-size: 11px;
+    font-weight: 600;
+    cursor: help;
+    vertical-align: 1px;
+}
+
+.ai-settings-help:hover,
+.ai-settings-help:focus-visible {
+    border-color: var(--modal-text-muted);
+    color: var(--modal-text);
+}
+
+.ai-settings-indented {
+    margin-left: 92px;
+}
+
+
+.ai-settings-key-status {
+    flex: 1;
+    color: var(--modal-text);
+    font-size: 13px;
+}
+
+.ai-settings-link {
+    color: var(--modal-accent);
+    font-size: 13px;
+}
+
+.ai-settings-section {
+    margin-top: 18px;
+    padding-top: 14px;
+    border-top: 1px solid var(--modal-border);
+}
+
+.ai-settings-section > h3 {
+    margin: 0 0 8px;
+    color: var(--modal-text);
+    font-size: 14px;
     font-weight: 600;
 }
 
-.ai-agent-credential-row button {
-    min-height: 40px;
+.ai-settings-term {
+    color: var(--modal-text-muted);
+    font-weight: 400;
 }
 
-.ai-agent-credential-status {
-    min-height: 1.4em;
-    margin-top: 6px !important;
+.ai-settings-segments {
+    display: flex;
+    overflow: hidden;
+    border: 1px solid var(--modal-border-strong);
+    border-radius: 8px;
+}
+
+#ai-agent-settings-modal button.ai-settings-segment {
+    flex: 1;
+    padding: 8px 6px;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    color: var(--modal-text-muted);
+    font-size: 13px;
+}
+
+#ai-agent-settings-modal button.ai-settings-segment + button.ai-settings-segment {
+    border-left: 1px solid var(--modal-border);
+}
+
+#ai-agent-settings-modal button.ai-settings-segment[aria-checked="true"] {
+    background: rgba(138, 180, 255, 0.28);
+    color: var(--modal-text);
+    font-weight: 600;
+}
+
+#ai-agent-settings-modal button.ai-settings-tab[aria-selected="false"]:hover,
+#ai-agent-settings-modal button.ai-settings-segment[aria-checked="false"]:hover {
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--modal-text);
+}
+
+.ai-settings-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 6px;
+}
+
+.ai-settings-chips:empty {
+    display: none;
+}
+
+.ai-settings-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    padding: 2px 4px 2px 10px;
+    border: 1px solid var(--modal-border);
+    border-radius: 999px;
+    color: var(--modal-text);
+    font-size: 13px;
+}
+
+#ai-agent-settings-modal button.ai-settings-chip-remove {
+    padding: 0 6px;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+    color: var(--modal-text-muted);
+    font-size: 13px;
+}
+
+#ai-agent-settings-modal button.ai-settings-chip-remove:hover {
+    background: transparent;
+    color: var(--modal-danger);
+}
+
+.ai-settings-check {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 12px 0 8px;
+    color: var(--modal-text);
+    font-size: 13px;
+}
+
+.ai-settings-hint {
+    margin: 8px 0 0;
+    color: var(--modal-text-subtle);
+    font-size: 12px;
+}
+
+/* What went wrong with the key, right under it. */
+#ai-agent-settings-modal .ai-settings-key-error {
+    margin: 0 0 0 92px;
+    color: var(--modal-danger);
+    font-size: 13px;
+}
+
+/* A warning under a provider's key, lined up with the fields. */
+.ai-settings-hint.ai-settings-key-warning {
+    margin: 0 0 0 92px;
+}
+
+.ai-settings-limits input {
+    flex: none;
+    width: 120px;
+}
+
+.ai-agent-settings-modal-content input[type="text"],
+.ai-agent-settings-modal-content input[type="password"],
+.ai-agent-settings-modal-content input[type="number"],
+.ai-agent-settings-modal-content select {
+    box-sizing: border-box;
+    padding: 8px 10px;
+    border: 1px solid var(--modal-border);
+    border-radius: 7px;
+    background: var(--modal-surface-inset);
+    color: var(--modal-text);
+    font: inherit;
+    font-size: 14px;
+}
+
+.ai-agent-settings-modal-content > input[type="text"] {
+    width: 100%;
+}
+
+.ai-settings-section > input[type="text"] {
+    width: 100%;
 }
 
 html[data-theme="dark"] .ai-chat-panel,
@@ -3658,58 +3741,10 @@ html[data-theme="dark"] .ai-chat-working-indicator {
     color: #d4d4d4;
 }
 
-html[data-theme="dark"] .ai-chat-composer textarea,
-html[data-theme="dark"] .ai-agent-settings-controls input,
-html[data-theme="dark"] .ai-agent-settings-controls select,
-html[data-theme="dark"] .ai-agent-settings-controls textarea,
-html[data-theme="dark"] .ai-agent-credential-row input {
+html[data-theme="dark"] .ai-chat-composer textarea {
     border-color: #4f4f4f;
     background: #141414;
     color: #e5e5e5;
-}
-
-html[data-theme="dark"] .ai-agent-connection {
-    border-color: #0e7490;
-    background: #083344;
-    color: #cffafe;
-}
-
-html[data-theme="dark"] .ai-agent-connection > small {
-    color: #67e8f9;
-}
-
-html[data-theme="dark"] .ai-agent-retrieval-settings {
-    border-color: #4f4f4f;
-}
-
-html[data-theme="dark"] .ai-agent-retrieval-settings legend,
-html[data-theme="dark"] .ai-agent-retrieval-settings > label {
-    color: #d4d4d4;
-}
-
-html[data-theme="dark"] .ai-agent-retrieval-settings > p {
-    color: #a3a3a3;
-}
-
-html[data-theme="dark"] .ai-agent-cloud-privacy-settings {
-    border-color: #4f4f4f;
-}
-
-html[data-theme="dark"] .ai-agent-cloud-privacy-settings legend,
-html[data-theme="dark"] .ai-agent-cloud-privacy-settings > label {
-    color: #d4d4d4;
-}
-
-html[data-theme="dark"] .ai-agent-cloud-privacy-settings > p {
-    color: #a3a3a3;
-}
-
-html[data-theme="dark"] .ai-agent-credential {
-    border-color: #3a3a3a;
-}
-
-html[data-theme="dark"] .ai-agent-credential-row label {
-    color: #d4d4d4;
 }
 
 html[data-theme="dark"] .ai-chat-composer-actions select {

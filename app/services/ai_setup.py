@@ -3,7 +3,7 @@
 Features ask whether an AI is set up (describe_ai_setup) and for a connection
 to it (connect_to_ai); they never look for a particular provider's key. Each
 provider is registered here, with how to tell it is set up and how to talk to
-it. Today that is OpenAI only.
+it: OpenAI, Anthropic (Claude models) and Google (Gemini models).
 """
 
 from __future__ import annotations
@@ -13,15 +13,15 @@ from typing import Literal
 
 from app.services.agent.inference import InferenceAdapter
 from app.services.agent.openai_cost_tracking import openai_cost_tracker
-from app.services.agent.openai_models import OPENAI_API_BASE_URL
-from app.services.openai_credentials import openai_credential_store
+from app.services.ai_catalog import catalog_entry
+from app.services.ai_credentials import ai_credential_store
 from app.services.agent.privacy_guard import PrivacyGuardedInference, cloud_privacy_revision
 
 
-AiProvider = Literal["openai"]
+AiProvider = Literal["openai", "anthropic", "gemini"]
 
-# The providers MetaList can use, in the order it prefers them.
-AI_PROVIDERS: tuple[AiProvider, ...] = ("openai",)
+# The providers MetaList can use, in the order it prefers them (and lists them).
+AI_PROVIDERS: tuple[AiProvider, ...] = ("openai", "anthropic", "gemini")
 
 
 class AiNotSetUp(RuntimeError):
@@ -50,9 +50,8 @@ class AiConnection:
 
 
 def _is_provider_ready(provider: AiProvider, *, token: str, session_key: str) -> bool:
-    if provider == "openai":
-        return openai_credential_store.status(token=token, session_key=session_key).configured
-    raise AssertionError(f"Unregistered AI provider: {provider}")
+    assert provider in AI_PROVIDERS, f"Unregistered AI provider: {provider}"
+    return ai_credential_store(provider).status(token=token, session_key=session_key).configured
 
 
 def describe_ai_setup(*, token: str, session_key: str) -> AiSetup:
@@ -68,20 +67,31 @@ def connect_to_ai(*, provider: AiProvider, token: str, session_key: str) -> AiCo
     """A connection to the named AI; AiNotSetUp when it has no credentials."""
     if not describe_ai_setup(token=token, session_key=session_key).is_ready_for(provider):
         raise AiNotSetUp(f"{provider} is not set up")
+    entry = catalog_entry(provider)
+    api_key = ai_credential_store(provider).resolve(token=token, session_key=session_key)
+    return AiConnection(
+        provider=provider,
+        label=entry.label,
+        ready_label=f"{entry.label} API ready · {entry.context_tokens:,}-token context",
+        base_url=entry.base_url,
+        # Stops sending once the cloud privacy settings change during the request.
+        inference=PrivacyGuardedInference(
+            inner=_adapter(provider, api_key=api_key),
+            privacy_revision_at_start=cloud_privacy_revision.current(),
+        ),
+    )
+
+
+def _adapter(provider: AiProvider, *, api_key: str) -> InferenceAdapter:
+    # Each SDK is imported on first use, not at the top: loading one takes hundreds of
+    # milliseconds, and every namespace server would pay for all of them at startup.
     if provider == "openai":
-        # Imported on first use, not at the top: it loads the OpenAI SDK (about 250 ms),
-        # and every namespace server would pay for it at startup (openai_models.py).
         from app.services.agent.openai_inference import OpenAIInferenceAdapter
-        api_key = openai_credential_store.resolve(token=token, session_key=session_key)
-        return AiConnection(
-            provider="openai",
-            label="OpenAI",
-            ready_label="OpenAI API ready · 1,050,000-token context",
-            base_url=OPENAI_API_BASE_URL,
-            # Stops sending once the cloud privacy settings change during the request.
-            inference=PrivacyGuardedInference(
-                inner=OpenAIInferenceAdapter(api_key=api_key, cost_tracker=openai_cost_tracker),
-                privacy_revision_at_start=cloud_privacy_revision.current(),
-            ),
-        )
+        return OpenAIInferenceAdapter(api_key=api_key, cost_tracker=openai_cost_tracker)
+    if provider == "anthropic":
+        from app.services.agent.anthropic_inference import AnthropicInferenceAdapter
+        return AnthropicInferenceAdapter(api_key=api_key)
+    if provider == "gemini":
+        from app.services.agent.openai_compatible_inference import GEMINI, OpenAICompatibleInferenceAdapter
+        return OpenAICompatibleInferenceAdapter(api_key=api_key, provider=GEMINI)
     raise AssertionError(f"Unregistered AI provider: {provider}")

@@ -58,7 +58,6 @@ def _call(kind: str, arguments: dict):
         "messages": deepcopy(arguments["messages"]),
         "response_model": response_model.__name__ if response_model else "",
         "response_schema": response_model.model_json_schema() if response_model else {},
-        "max_output_tokens": arguments["max_output_tokens"] if kind in {"text", "tool"} else 0,
         "tools": [
             {"name": tool.name, "description": tool.description, "schema": tool.arguments_schema()}
             for tool in arguments["tools"]

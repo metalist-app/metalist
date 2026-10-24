@@ -712,3 +712,44 @@ def test_version_10_requires_the_editable_files_schema(tmp_path: Path, version: 
             ("file_previews", "*"),
             ("files", "content_revision"),
         }
+
+
+_AI_PROVIDER_KEY_COLUMNS = (
+    "anthropic_api_key_ciphertext", "anthropic_api_key_encryption_nonce", "anthropic_api_key_encryption_tag",
+    "gemini_api_key_ciphertext", "gemini_api_key_encryption_nonce", "gemini_api_key_encryption_tag",
+)
+
+
+@pytest.mark.parametrize(("version", "has_slots", "allowed"), [(10, False, True), (10, True, True), (11, True, True), (11, False, False)])
+def test_version_11_requires_the_claude_and_gemini_key_slots(tmp_path: Path, version: int, has_slots: bool, allowed: bool) -> None:
+    # Before version 11 the slots may be absent, or already added by the on-open schema helper.
+    namespaces_directory = tmp_path / "namespaces"
+    database_path = _create_namespace_database(namespaces_directory, namespace="private", encryption_enabled=True)
+    with sqlite3.connect(database_path) as connection:
+        if not has_slots:
+            for column in _AI_PROVIDER_KEY_COLUMNS:
+                connection.execute(f"ALTER TABLE app_settings DROP COLUMN {column}")
+        connection.execute(f"PRAGMA user_version = {version}")
+
+    report = audit_all_namespaces(namespaces_directory=namespaces_directory)
+
+    assert report.startup_allowed is allowed, report.render_text()
+    if not allowed:
+        assert {(finding.table, finding.field) for finding in report.fatal_findings} == {
+            ("app_settings", column) for column in _AI_PROVIDER_KEY_COLUMNS
+        }
+
+
+def test_a_plaintext_claude_key_in_an_encrypted_namespace_is_reported(tmp_path: Path) -> None:
+    namespaces_directory = tmp_path / "namespaces"
+    database_path = _create_namespace_database(namespaces_directory, namespace="private", encryption_enabled=True)
+    with sqlite3.connect(database_path) as connection:
+        connection.execute("UPDATE app_settings SET anthropic_api_key_ciphertext = 'sk-ant-secret-key-in-the-clear'")
+
+    report = audit_all_namespaces(namespaces_directory=namespaces_directory)
+
+    assert report.startup_allowed is False
+    assert ("app_settings", "anthropic_api_key_ciphertext") in {
+        (finding.table, finding.field) for finding in report.fatal_findings
+    }
+    assert "sk-ant-secret" not in report.render_text()

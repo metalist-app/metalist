@@ -239,10 +239,14 @@ def test_batches_share_whole_context_vocabulary_and_keep_large_roots():
     assert batches[0].tokens > 50  # Target window never splits a root tree.
 
 
-def test_tagging_window_is_provider_specific_and_validated():
-    preferences = {"pref.ai.tagging.batch_tokens": "3000", "pref.ai.openai.tagging.batch_tokens": "12000"}
+def test_a_tagging_batch_reads_as_much_as_an_answer():
+    # One limit (AI Agent Settings): the old separate tagging window is ignored.
+    preferences = {
+        "pref.ai.openai.retrieval.max_page_approximate_tokens": "12000",
+        "pref.ai.openai.tagging.batch_tokens": "3000",
+    }
     assert resolve_tagging_batch_tokens(preferences, "openai") == 12000
-    assert resolve_tagging_batch_tokens({}, "openai") == 100000
+    assert resolve_tagging_batch_tokens({}, "openai") == 500000
     with pytest.raises(ValueError):
         resolve_tagging_batch_tokens({"pref.ai.tagging.batch_tokens": "499"}, "ollama")
 
@@ -1028,7 +1032,7 @@ def test_a_failed_tagging_call_explains_itself_like_the_chat_steps() -> None:
     )
     with pytest.raises(InferenceProviderError) as failure:
         asyncio.run(runs.infer_with_progress(
-            SimpleNamespace(infer_structured=infer_structured), run, [], TagBatchResult, lambda progress: None,
+            SimpleNamespace(provider_label="OpenAI", infer_structured=infer_structured), run, [], TagBatchResult, lambda progress: None,
         ))
 
     message = str(failure.value)

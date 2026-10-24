@@ -22,8 +22,9 @@ async function installFakeServer(page) {
     await page.evaluate(async ({status, detail, answer}) => {
         const {AiChatPanel} = await import('/static/js/modules/ai-chat/ai-chat-panel-controller.js');
         const {stateValuesEqual} = await import('/static/js/modules/application-state.js');
-        const models = [AiChatPanel._getSettings().model];
-        if (!stateValuesEqual(AiChatPanel._models, models)) AiChatPanel._models = models;
+        const {provider, model} = AiChatPanel._getSettings();
+        const groups = [{provider, label: 'OpenAI', models: [model]}];
+        if (!stateValuesEqual(AiChatPanel._modelGroups, groups)) AiChatPanel._modelGroups = groups;
         AiChatPanel._syncSettingsControls();
         const originalFetch = window.fetch;
         const fake = {originalFetch, refuseNext: false, chats: 0, transcript: []};

@@ -2,7 +2,7 @@
 
 ## Scope
 
-- MetaList chats with one user-selected OpenAI model through an
+- MetaList chats with one user-selected model (OpenAI, Anthropic or Google) through an
   authenticated, application-owned agent runtime.
 - Every Send freezes the currently displayed MetaList result scope. The agent can
   investigate only matching notes inside that boundary; it cannot run a new
@@ -20,12 +20,15 @@
 - While a provider generates, the active eye-mode panel shows an approximate output-token
   count that updates in place with a subtle pulse; completed panels retain the final
   count separately from their input estimate.
-- Every generation is bounded over the wire. Each agent turn and each structured
-  step (summaries, tag work) allows at least 8,192 output tokens with OpenAI: its
-  reasoning models count hidden thinking against that limit, so even a short reply
-  needs room to think first. If OpenAI reports that the
-  limit truncated its output, the run fails visibly instead of presenting partial prose
-  as complete.
+- Answers have no output limit of MetaList's own (decided 2026-10-24): OpenAI and
+  Gemini are sent none, and Claude, whose API requires one, its models' maximum
+  (128,000 tokens). Only a runaway reply reaches a model's maximum; then the chat keeps
+  what was written and says under it: "<model> reached the longest answer it can write
+  before finishing (its thinking counts toward that), so the answer stopped there.
+  Anything it wrote is kept above. Ask it to continue, or ask for a shorter answer."
+  (`OutputLimitReached`). Structured steps (summaries, tag work) keep their own budgets,
+  at least 8,192 tokens, since thinking counts against them; a cut-off there is retried
+  and explained (below).
 - When a structured step's reply is rejected on every attempt (cut off at the output
   limit, not matching the required format, empty, or refused), the chat explains the
   failure in the error itself: which step failed, what went wrong on each attempt in plain words (including the
@@ -37,6 +40,7 @@
 - A whole-view summary that fails or is stopped keeps its finished batches for the chat (the explanation says how many); asking again ("try that again") continues it: only the remaining batches run, with the original question, and the progress shows "Reused N of M batches from your earlier attempt". A different question starts fresh.
 - Until OpenAI sends its first signal for a request, the heading reads "Waiting for OpenAI…" with the elapsed seconds instead of "Thinking…", so a network stall does not look like thinking.
 - A request OpenAI never answers fails after a silence limit instead of the library's 10 minutes: 15 s at Off and Low thinking (measured on Luna: first signal in 0.7–2 s and streaming gaps under 0.4 s, also with a 180,000-token input), 60 s at Medium and 120 s at High (generous, not measured, since a model may think silently before its first word). The explanation says "OpenAI did not respond for 15 seconds. Check your internet connection and ask again."
+- Google's overloaded models hang without sending anything (3.8 Flash, 2026-10-24: no answer in two minutes while 3.5 Flash-Lite answered in 3 s), so when Google stays silent the message says "Google did not respond for 30 seconds. gemini-3.8-flash may be busy at Google: ask again later or pick another model." When Google answers that the model is busy (HTTP 503), it says "Google says gemini-3.8-flash is busy right now. Ask again later or pick another model." A failed structured step names its provider on each attempt ("Google did not respond…", "Google said … is busy right now") and suggests asking again later or picking another model, then checking the connection if no model answers.
 - Every failure explanation ends with where the run stopped: the step it was in (and for how long) or had just finished, the step before, and an operation's latest progress, for example `Where it stopped: during "Thinking" (15.2 s into that step), step 3 of the run; before that: "Scope ready · …".`
 - The first activity line says how long preparing the view took ("Scope ready · All notes · 45,479 notes in … result trees · prepared in 0.2 s"). Preparing records which notes are in view and their content as of Send, but extracts a note's text only when a tool first reads it, so a question that reads no notes does not pay for the whole view. Cloud privacy rules that match phrases still read every note's text at Send to decide what is private.
 - A step that extracted note text says how much on its line, for example "Search complete · … · text extracted for 45,480 notes in 3.8 s" (the first search in an answer reads every note in view; later steps reuse the text). A whole-view summary reports it on its "Planned N evidence batches" line.
@@ -89,7 +93,7 @@ MetaList does not have.
 
 Examples: “How does tag inheritance work?” explains from the tags skill.
 “Open AI settings” opens that dialog. “How do I change context to 250k?” opens
-AI settings and identifies Maximum approximate evidence tokens = 250000, leaving
+AI settings and identifies Max token window = 250000, leaving
 the user to save. “Open Create backup in the menu” highlights its command without
 creating a backup.
 
@@ -229,31 +233,72 @@ The agent cannot expand beyond the frozen scope or cite an undisclosed note ID. 
   Contentless `is_evidence: false` ancestors preserve paths to nested matches
   without disclosing gray/redacted note information.
 
-The only retrieval control in `AI Agent Settings…` is the provider-specific maximum
-approximate evidence-token count.
+The only retrieval control in `AI Agent Settings…` is **Max token window** (its `?`
+explains it in a tooltip): the provider-specific maximum approximate token count of what one
+read returns. Tagging batches use the same limit; there is no separate tagging window.
 
-## OpenAI Configuration
+## Providers and Configuration
 
-- OpenAI is the only provider today. Claude and Gemini are planned
-  (`docs/ready-to-build/ai-providers.md`).
+- Three providers on the user's own keys, named by company: OpenAI, Anthropic (Claude
+  models) and Google (Gemini models), registered in `app/services/ai_setup.py` with their models in
+  `app/services/ai_catalog.py` (design and what is verified live:
+  `docs/design/ai-providers.md`; what is left: `docs/future-plans/ai-providers-remaining.md`). The chat's model picker lists the models of
+  each provider with a key, under the provider's name; picking a model picks its
+  provider.
 
-- Defaults: `gpt-5.6-luna`, 500,000 approximate evidence tokens, and 100,000
-  tagging batch tokens. Saved model and token-limit overrides are retained.
+- Defaults: `gpt-5.6-luna` and 500,000 approximate tokens read at once. Saved model
+  and limit overrides are retained; the retired tagging batch preference
+  (`pref.ai.openai.tagging.batch_tokens`) is dropped from the vault.
 
-- Open `AI Agent Settings…` from the command palette or chat gear to select an
-  supported OpenAI model, configure an API key, and edit the evidence-token limit.
-- The same settings modal has one Cloud privacy section shared by all cloud
-  providers. Its four one-entry-per-line fields configure whitelisted tags,
-  whitelisted text phrases, blacklisted tags, and blacklisted text phrases.
-  The automatic `@password` and `@username` boundaries also apply. The policy is namespace-scoped and is encrypted with client preferences
+- Open `AI Agent Settings…` from the command palette or chat gear. Its layout, top
+  to bottom:
+  - One folder tab per provider; it opens on the provider the chat uses. A tab only
+    shows that provider's settings and picks nothing. It holds the API key (saved,
+    changed or removed at once, apart from Save: "Key saved, encrypted in this
+    vault" or "Key saved for this session") and a **Usage and billing** link to the
+    provider's own page.
+  - **Web access**: three segments, Off / Links in your notes / Any public page,
+    each explained in its tooltip.
+  - The privacy rules (below).
+  - **Max token window**, in tokens, with a `?` whose tooltip explains it.
+- The dialog has no model or thinking picker: both are chosen beside chat Send.
+- The Google tab says under the key, with Google's terms in its tooltip: "Use a key
+  with billing turned on: on the free tier, Google may use what you send to improve its
+  products, and people may read it." (Not in the EEA, Switzerland or the UK.)
+- **Model picker** (chat composer): the models of every provider with a saved key,
+  plus the provider of the model picked last even without one
+  (`GET /api2/ai/model-choices`, a read that never blocks a note change), each provider's under its name, even when there is
+  only one. Picking a model picks its provider too (an option's
+  value is `provider model`, `ai-model-names.js`). Saving or removing a key reloads
+  the picker. Each provider lists only the models MetaList ships
+  (`app/services/ai_catalog.py`). A user never types a model in: a model is offered
+  once it has been tested with MetaList's prompts (the regression evals), because a
+  model can be too weak to give reliable results, or need model-specific prompts
+  (decided 2026-10-23; a typed-in "Your models" list existed for a day and its saved
+  preferences, `pref.ai.<provider>.added_models`, are dropped when a vault loads). A
+  saved model a later release no longer offers leaves the picker blank; the picker has
+  no "Select model" prompt. A request naming any other model is refused politely
+  (`ai_catalog.require_shipped_model`); a provider's API address is never editable.
+- The same settings modal has one privacy section shared by all cloud providers:
+  **Never send notes with (blacklist)** and, behind its checkbox, **Only send notes
+  with (whitelist)**. Each is a row of chips with one input: Enter adds the entry, a
+  tag as typed or "a phrase" in quotes; a pasted list becomes one chip per line; a
+  chip's × removes it. The whitelist stays open while it has entries. They are
+  stored as four lists (whitelisted tags and phrases, blacklisted tags and
+  phrases). The automatic `@password` and `@username` boundaries also apply, as the
+  section's one line says. The policy is namespace-scoped and is encrypted with client preferences
   when the namespace is password-protected.
 - Hovering the AI chat column asks the server to preview that boundary over the
   current note view. Notes the selected provider cannot receive have a gray
   background and blurred content until the pointer leaves chat. Excluded
   descendants are blurred too.
-- The compact composer controls choose model and Thinking Off/Low/Medium/High.
-  Selection persists immediately.
-- A compact estimated-spend tracker appears directly below the
+- The compact composer controls choose model and thinking (High, Medium, Low, Off,
+  listed most thinking first).
+  Selection persists immediately: the last choice is the one used next time.
+- A compact estimated-spend tracker, a developer tool: it exists only when
+  `METALIST_ENVIRONMENT=development` (the panel's `data-shows-cost-estimate`; in
+  production the **$** button never shows and the cost routes answer 404). Users see
+  what they spent on their provider's own billing page. It appears directly below the
   chat header when the header's **$** button is on (off by default, remembered per
   namespace as `pref.ai.show_spend`; it keeps counting while hidden). Its four token totals are New input, Cached input, Cache writes, and
   Output. Values come from OpenAI's response usage rather than MetaList's prompt

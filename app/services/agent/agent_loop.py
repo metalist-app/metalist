@@ -62,7 +62,6 @@ MAX_AGENT_TURNS = 8
 # A turn whose tool calls all fail is explained back once; a second such turn
 # in a row makes the next turn the last.
 MAX_FAILED_TOOL_TURNS = 2
-AGENT_TURN_MAX_OUTPUT_TOKENS = 16_384
 _ANSWER_NOW = (
     "AGENT_STEP_LIMIT: Do not call more tools. Answer now from the results you have, "
     "and say plainly what you could not find out or do."
@@ -317,7 +316,7 @@ class AgentLoopMixin:
         is_first_delta = True
         async for event in send_tool_turn(
             self._inference, base_url=run.base_url, model=run.selected_model, thinking_level=run.thinking_level,
-            messages=messages, tools=tools, max_output_tokens=AGENT_TURN_MAX_OUTPUT_TOKENS,
+            messages=messages, tools=tools,
             on_request=lambda wire_request: self._record_wire_request(
                 run=run, purpose=InferencePurpose.AGENT_TURN, attempt=1, max_attempts=1,
                 wire_request=wire_request),

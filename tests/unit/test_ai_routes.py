@@ -1,5 +1,6 @@
 import asyncio
 import json
+from http import HTTPStatus
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -19,7 +20,8 @@ from app.services.agent.skill_settings import DEFAULT_AGENT_SKILLS
 from app.services.agent.trace import AgentTraceStore
 from app.services.agent.inference import InferenceProviderError
 from app.services.agent.web_evidence import WebEvidenceStore
-from app.services.openai_credentials import OpenAICredentialStatus
+from app.services.ai_credentials import AiCredentialStatus
+import app.services.ai_credentials as ai_credentials_module
 from app.services.agent.privacy_guard import PrivacyGuardedInference
 
 
@@ -71,8 +73,11 @@ def _without_activity_token_counts(
 
 @pytest.fixture(autouse=True)
 def use_fake_chat_dependencies(monkeypatch):
-    monkeypatch.setattr(ai_routes.openai_credential_store, "status", lambda **kwargs: OpenAICredentialStatus(configured=True, persistent=False))
-    monkeypatch.setattr(ai_routes.openai_credential_store, "resolve", lambda **kwargs: "sk-test-0123456789abcdefghijklmnop")
+    monkeypatch.setattr(ai_credentials_module.ai_credential_stores["openai"], "status", lambda **kwargs: AiCredentialStatus(configured=True, persistent=False))
+    # Claude and Gemini have no key here.
+    for other_provider in ("anthropic", "gemini"):
+        monkeypatch.setattr(ai_credentials_module.ai_credential_stores[other_provider], "status", lambda **kwargs: AiCredentialStatus(configured=False, persistent=False))
+    monkeypatch.setattr(ai_credentials_module.ai_credential_stores["openai"], "resolve", lambda **kwargs: "sk-test-0123456789abcdefghijklmnop")
     monkeypatch.setattr(
         ai_routes.tab_state_store,
         "get_active_tab_id",
@@ -151,25 +156,10 @@ def test_ai_session_snapshot_uses_authenticated_session_key(monkeypatch) -> None
     assert http_response.headers["Cache-Control"] == "no-store"
 
 
-def test_openai_model_discovery_returns_supported_models() -> None:
-    response = asyncio.run(
-        ai_routes.list_ai_models(
-            payload=ai_routes.AiModelsRequest(provider="openai"),
-            token="auth-token",
-        )
-    )
-
-    assert response.models == [
-        "gpt-5.6-sol",
-        "gpt-5.6-terra",
-        "gpt-5.6-luna",
-    ]
-
-
 def test_openai_credential_request_masks_key_in_representations() -> None:
     api_key = "sk-test-0123456789abcdefghijklmnop"
 
-    payload = ai_routes.OpenAICredentialRequest(api_key=api_key)
+    payload = ai_routes.AiCredentialRequest(api_key=api_key)
 
     assert api_key not in repr(payload)
     assert api_key not in str(payload)
@@ -187,8 +177,9 @@ def test_openai_credential_route_rejects_invalid_key_without_echoing_it(
     )
 
     with pytest.raises(HTTPException) as error:
-        ai_routes.put_openai_credential(
-            payload=ai_routes.OpenAICredentialRequest(api_key=invalid_key),
+        ai_routes.put_ai_credential(
+            provider="openai",
+            payload=ai_routes.AiCredentialRequest(api_key=invalid_key),
             response=Response(),
             token="auth-token",
         )
@@ -205,20 +196,21 @@ def test_openai_credential_routes_use_authenticated_session(
     class FakeCredentialStore:
         def status(self, *, token, session_key):
             calls.append(("status", {"token": token, "session_key": session_key}))
-            return OpenAICredentialStatus(configured=False, persistent=False)
+            return AiCredentialStatus(configured=False, persistent=False)
 
         def configure(self, *, token, session_key, api_key):
             calls.append((
                 "configure",
                 {"token": token, "session_key": session_key, "api_key": api_key},
             ))
-            return OpenAICredentialStatus(configured=True, persistent=False)
+            return AiCredentialStatus(configured=True, persistent=False)
 
         def clear(self, *, session_key):
             calls.append(("clear", {"session_key": session_key}))
-            return OpenAICredentialStatus(configured=False, persistent=False)
+            return AiCredentialStatus(configured=False, persistent=False)
 
-    monkeypatch.setattr(ai_routes, "openai_credential_store", FakeCredentialStore())
+    fake_store = FakeCredentialStore()
+    monkeypatch.setattr(ai_routes, "ai_credential_store", lambda provider: fake_store)
     monkeypatch.setattr(
         ai_routes.token_service,
         "get_session_key",
@@ -227,18 +219,21 @@ def test_openai_credential_routes_use_authenticated_session(
     api_key = "sk-test-0123456789abcdefghijklmnop"
 
     status_response = Response()
-    status = ai_routes.get_openai_credential_status(
+    status = ai_routes.get_ai_credential_status(
+        provider="openai",
         response=status_response,
         token="auth-token",
     )
     save_response = Response()
-    saved = ai_routes.put_openai_credential(
-        payload=ai_routes.OpenAICredentialRequest(api_key=api_key),
+    saved = ai_routes.put_ai_credential(
+        provider="openai",
+        payload=ai_routes.AiCredentialRequest(api_key=api_key),
         response=save_response,
         token="auth-token",
     )
     clear_response = Response()
-    cleared = ai_routes.delete_openai_credential(
+    cleared = ai_routes.delete_ai_credential(
+        provider="openai",
         response=clear_response,
         token="auth-token",
     )
@@ -263,6 +258,15 @@ def test_openai_credential_routes_use_authenticated_session(
     assert clear_response.headers["Cache-Control"] == "no-store"
 
 
+def test_the_cost_estimate_does_not_exist_in_production(monkeypatch) -> None:
+    # A developer tool (docs/ui/ai-chat.md): production answers as for an unknown route.
+    monkeypatch.setattr(ai_routes, "is_development_environment", lambda: False)
+    for route in (ai_routes.get_openai_cost, ai_routes.reset_openai_cost):
+        with pytest.raises(HTTPException) as raised:
+            route(response=Response(), token="auth-token")
+        assert raised.value.status_code == HTTPStatus.NOT_FOUND
+
+
 def test_openai_cost_routes_report_all_categories_and_reset(monkeypatch) -> None:
     cost_tracker = OpenAICostTracker()
     cost_tracker.record(
@@ -276,6 +280,7 @@ def test_openai_cost_routes_report_all_categories_and_reset(monkeypatch) -> None
         ),
     )
     monkeypatch.setattr(ai_routes, "openai_cost_tracker", cost_tracker)
+    monkeypatch.setattr(ai_routes, "is_development_environment", lambda: True)
 
     get_response = Response()
     snapshot = ai_routes.get_openai_cost(
@@ -314,10 +319,10 @@ def test_openai_chat_requires_a_configured_api_key_before_starting_turn(
     class MissingCredentialStore:
         def status(self, *, token, session_key):
             del token, session_key
-            return OpenAICredentialStatus(configured=False, persistent=False)
+            return AiCredentialStatus(configured=False, persistent=False)
 
     monkeypatch.setattr(ai_routes, "ai_chat_store", store)
-    monkeypatch.setattr(ai_setup_module, "openai_credential_store", MissingCredentialStore())
+    monkeypatch.setattr(ai_setup_module, "ai_credential_store", lambda provider: MissingCredentialStore())
     monkeypatch.setattr(
         ai_routes.token_service,
         "get_session_key",
@@ -863,7 +868,7 @@ def test_stream_chat_uses_openai_provider_with_cloud_boundary(
         def status(self, *, token, session_key):
             assert token == "auth-token"
             assert session_key == "session-key"
-            return OpenAICredentialStatus(configured=True, persistent=False)
+            return AiCredentialStatus(configured=True, persistent=False)
 
         def resolve(self, *, token, session_key):
             assert token == "auth-token"
@@ -892,11 +897,7 @@ def test_stream_chat_uses_openai_provider_with_cloud_boundary(
             yield {"type": "done", "reference_note_ids": [], "reference_web_ids": [], "actions": []}
 
     monkeypatch.setattr(ai_routes, "ai_chat_store", store)
-    monkeypatch.setattr(
-        ai_routes,
-        "openai_credential_store",
-        ConfiguredCredentialStore(),
-    )
+    monkeypatch.setattr(ai_setup_module, "ai_credential_store", lambda provider: ConfiguredCredentialStore())
     monkeypatch.setattr(
         ai_routes.token_service,
         "get_session_key",
@@ -1456,7 +1457,6 @@ def test_stream_chat_persists_data_free_diagnostic_for_internal_failure(
 
 
 @pytest.mark.parametrize("request_type, fields", [
-    (ai_routes.AiModelsRequest, {}),
     (ai_routes.CloudPrivacyPreviewRequest, {"note_ids": []}),
     (ai_routes.AiChatRequest, {"model": "qwen3:8b", "thinking_level": "low",
         "show_diagnostics": False, "message": "Hello", "scope": _all_notes_scope()}),

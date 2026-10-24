@@ -364,9 +364,9 @@ def test_load_legacy_provider_preferences_from_live_storage(
         )
     # Legacy values are already stored when a session first reads them.
     clear_sensitive_caches()
+    # The separate tagging window is retired: one limit covers both (2026-10-23).
     expected = {
         "pref.ai.openai.retrieval.max_page_approximate_tokens": "10000",
-        "pref.ai.openai.tagging.batch_tokens": "8000",
         "pref.theme": "dark",
     }
     if provider == "openai":

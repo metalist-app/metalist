@@ -8,6 +8,7 @@ from types import MappingProxyType
 
 import pytest
 
+from app.services.ai_catalog import AI_CATALOG
 from app.services.agent.context import AgentContextBuilder
 from app.services.agent.inference import InferenceAttempt
 from app.services.agent.inference import InferenceContextWindow
@@ -257,8 +258,8 @@ class _FakeInference:
         raise AssertionError(f"Unexpected structured request: {response_model.__name__}")
 
     async def stream_tool_turn(self, *, base_url, model, thinking_level, messages, tools,
-                               max_output_tokens, on_request):
-        del base_url, model, thinking_level, max_output_tokens
+                               on_request):
+        del base_url, model, thinking_level
         assert self.agent_messages == [], "The summary operation ends the agent's turn"
         assert "summarize_view" in {tool.name for tool in tools}
         self.agent_messages = [dict(message) for message in messages]
@@ -287,7 +288,8 @@ def _runtime(inference: _FakeInference) -> AgentRuntime:
         inference=inference,
         model_policy=SingleModelPolicy(),
         trace_store=AgentTraceStore(),
-        provider_label="OpenAI",
+        # As in production (app/api/routes/ai.py, _agent_runtime): the adapter's own name.
+        provider_label=inference.provider_label,
     )
 
 
@@ -449,6 +451,23 @@ def test_complete_scope_summary_asks_before_any_batch_and_then_runs_in_parallel(
         for summary in final_payload["authoritative_batch_findings"]
         for root_id in summary["covered_root_ids"]
     ) == _multi_batch_summary_snapshot().ordered_root_ids
+
+
+# Every provider MetaList offers reaches the final answer: a summary once failed under
+# Claude because the final answer's length limit was looked up by the name "OpenAI".
+@pytest.mark.parametrize("provider_label", [entry.label for entry in AI_CATALOG.values()])
+def test_a_summary_reaches_its_final_answer_with_every_provider(provider_label: str) -> None:
+    inference = _FakeInference()
+    inference.provider_label = provider_label
+    events, _ = _events_with_summary_answer(
+        inference=inference,
+        snapshot=_multi_batch_summary_snapshot(),
+        message="Summarize all of these notes.",
+        token_limit=900,
+        answer="summarize_all",
+    )
+    assert [event for event in events if event["type"] == "error"] == []
+    assert inference.final_messages, "the final answer was asked for"
 
 
 def test_staged_summary_previews_show_writing_before_each_completion() -> None:

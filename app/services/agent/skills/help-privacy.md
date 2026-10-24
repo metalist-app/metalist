@@ -1,7 +1,9 @@
 # MetaList privacy and security controls
 
-Cloud AI privacy opens the privacy section of AI agent settings. Four fields,
-one entry per line, configure whitelist tags/phrases and blacklist tags/phrases.
+Cloud AI privacy opens the privacy section of AI agent settings: **Never send
+notes with (blacklist)** and, behind its checkbox, **Only send notes with
+(whitelist)**. Each takes entries one at a time as chips: a tag as typed, or "a
+phrase" in quotes; a pasted list becomes one chip per line.
 The policy is vault-scoped. Whitelist entries use OR, blacklist entries use
 OR, and a blacklist match wins. Effective tag matching includes inheritance and
 ontology relationships; text phrases are case-insensitive literal phrases.

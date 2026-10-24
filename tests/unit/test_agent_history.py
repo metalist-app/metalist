@@ -7,6 +7,7 @@ from fastapi import Response
 
 import app.api.routes.ai as ai_routes
 import app.services.agent.openai_inference as provider
+from app.services.agent.inference import OutputLimitReached
 from app.services.agent.staged_summary import SummaryFindingsResult
 from app.services.agent.history import record_history
 from app.services.agent.openai_cost_tracking import OpenAICostTracker
@@ -88,11 +89,11 @@ def test_text_partial_failure_and_running_export_are_preserved(monkeypatch):
 
     async def run():
         with record_history(traces, session_key="a", run_id=run_id):
-            with pytest.raises(provider.OpenAIProviderError):
+            with pytest.raises(OutputLimitReached):
                 async for event in adapter.stream_text(
                     base_url=provider.OPENAI_API_BASE_URL, model="gpt-5.6-luna",
                     thinking_level="off", messages=[{"role": "user", "content": "Hi"}],
-                    max_output_tokens=10, on_request=lambda request: None,
+                    on_request=lambda request: None,
                 ):
                     if event["type"] == "content_delta":
                         assert traces.export_history(session_key="a")[0][1]["status"] == "running"
@@ -101,7 +102,7 @@ def test_text_partial_failure_and_running_export_are_preserved(monkeypatch):
     output = traces.export_history(session_key="a")[0][1]
     assert output["status"] == "error"
     assert output["chunks"][0]["choices"][0]["delta"]["content"] == "partial answer"
-    assert "output-token" in output["error"]
+    assert "reached the longest answer it can write" in output["error"]
 
 
 def test_cancelled_structured_stream_keeps_partial_response(monkeypatch):

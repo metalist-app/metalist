@@ -31,7 +31,8 @@ Namespace password protection uses field-level AES-256-GCM encryption, not
 whole-file SQLite encryption. Protected payloads include note bodies and
 accepted/proposed tags, ontology text, attachment titles/metadata/bytes, saved
 tab state, tag activity, reminders, cached link URLs/titles, client preferences
-and persisted OpenAI credentials. The authoritative payload/schema inventory is
+and persisted AI API keys (one slot per provider: OpenAI, and from database
+version 11 Claude and Gemini). The authoritative payload/schema inventory is
 in `app/encryption_audit.py`.
 
 Structural and operational metadata remain readable: note IDs, hierarchy/order,

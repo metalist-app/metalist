@@ -22,7 +22,11 @@ Every OpenAI request has a silence limit (`openai_silence_limit_seconds`: 15 s a
 Off and Low, measured; 60 s Medium and 120 s High, unmeasured), passed as the
 request timeout so the library's 600 s default never applies; a timeout becomes
 "OpenAI did not respond for N seconds…" (agent turns, final answers) or, for a
-structured step, that sentence per attempt (`failure_explanations.py`). Streams
+structured step, that sentence per attempt (`failure_explanations.py`, which names
+the provider from `FailureSetup.provider_label`). Google's adapter says the model may be
+busy instead of blaming the connection, since its overloaded models hang silently, and
+turns an HTTP 503 into "Google says <model> is busy right now…"; a structured step's
+explanation recognizes the 503 by Instructor's recorded error. Streams
 yield `provider_started` on OpenAI's first event; the agent loop and the final
 answer wrap each request in a `provider_wait` activity that the chat shows as
 "Waiting for OpenAI". `ChatTurnStream` records the run's steps and appends
@@ -111,10 +115,12 @@ again or ask why it failed. Failed requests have no `EARLIER_ACTIONS` record.
 
 ## Conversation disclosure boundaries
 
-The display transcript stays visible when the provider or disclosure boundary
-changes. Model-visible history starts fresh at that boundary. The server hashes
-the provider, configured privacy policy, and the namespace-wide set of permitted
-note IDs before each turn. A policy edit, newly applied/inherited `@password`
+The display transcript stays visible when the disclosure boundary changes.
+Model-visible history starts fresh at that boundary. The server hashes whether
+the cloud policy applies, the configured privacy policy, and the namespace-wide
+set of permitted note IDs before each turn. The provider is not part of it: one
+policy covers OpenAI, Anthropic and Google, so switching provider keeps the
+conversation (decided 2026-10-24). A policy edit, newly applied/inherited `@password`
 restriction, changed ontology/content match, or removal of previously permitted
 notes invalidates prior history. Unknown history provenance is excluded
 conservatively. Every agent request consumes this filtered
@@ -285,7 +291,8 @@ coverage.
 ## Configuration
 
 The only retrieval setting is a provider-specific maximum approximate evidence
-token count:
+token count (AI Agent Settings › **Max token window**); tagging batches
+use the same limit:
 
 - OpenAI default 500,000; allowed 500–500,000.
 
@@ -373,19 +380,24 @@ so the References entries open the actual destinations.
 
 ## Provider Details
 
-OpenAI calls set `store: false`. Encrypted namespaces store the API key encrypted
-with the namespace DEK; plaintext namespaces hold it only in authenticated server
-session memory. The raw key is never returned to the browser or included in traces.
+OpenAI calls set `store: false`. Each provider has its own API-key slot per vault
+(`app/services/ai_credentials.py`, routes `/api2/ai/{provider}/credential` for
+registered providers): encrypted namespaces store the key encrypted with the
+namespace DEK in its `app_settings` columns (`openai_api_key_*`; `anthropic_api_key_*`
+and `gemini_api_key_*` from database version 11); plaintext namespaces hold it only in
+authenticated server session memory. The raw key is never returned to the browser or
+included in traces.
 
 Completed OpenAI calls contribute API-reported uncached input, cached input,
 cache-write input, and output usage to a process-memory cost tracker. The tracker
 uses model-specific and long-context pricing, is labeled estimated because an
 interrupted request may not return final usage, and is cleared only by Reset or
-process restart.
+process restart. It is a developer tool: its routes and the chat's `$` exist only in
+development (`app/startup_environment.is_development_environment`); production
+answers 404.
 
-Planned, not built: Claude and Gemini beside OpenAI, each on the user's own key
-in its own encrypted slot per vault, through the same disclosure boundary, and the
-cost estimate limited to development (`docs/ready-to-build/ai-providers.md`).
+Claude (`anthropic_inference.py`) and Gemini (`openai_compatible_inference.py`) adapters
+sit beside OpenAI's, through the same disclosure boundary (`docs/design/ai-providers.md`).
 
 ## Main Files
 

@@ -75,10 +75,6 @@ _SUMMARY_CITATION_CORRECTIONS = 1
 # Streamed batch previews are throttled per batch and trimmed to a compact tail.
 _SUMMARY_STREAM_INTERVAL_SECONDS = 0.3
 _SUMMARY_PREVIEW_TAIL_CHARACTERS = 240
-_OPENAI_FINAL_RESPONSE_MAX_OUTPUT_TOKENS = 8_192
-_FINAL_RESPONSE_MAX_OUTPUT_TOKENS_BY_PROVIDER = {
-    "OpenAI": _OPENAI_FINAL_RESPONSE_MAX_OUTPUT_TOKENS,
-}
 # While the final response streams, its output-token count is reported again
 # after at least this many more tokens.
 _OUTPUT_PROGRESS_REPORT_TOKENS = 8
@@ -112,12 +108,6 @@ class _SummaryBatchCompleted:
 _SummaryBatchTransition = (
     _SummaryBatchStarted | _SummaryBatchStreaming | _SummaryBatchCompleted
 )
-
-
-def _final_response_max_output_tokens(*, provider_label: str) -> int:
-    if provider_label not in _FINAL_RESPONSE_MAX_OUTPUT_TOKENS_BY_PROVIDER:
-        raise ValueError(f"Unsupported inference provider: {provider_label}")
-    return _FINAL_RESPONSE_MAX_OUTPUT_TOKENS_BY_PROVIDER[provider_label]
 
 
 @dataclass(frozen=True, slots=True)
@@ -1163,7 +1153,8 @@ class AgentRuntime(AgentLoopMixin):
             raise AgentExecutionError(explain_structured_failure(
                 response_model=response_model,
                 attempts=exc.attempts,
-                setup=FailureSetup(model=model, thinking_level=run.thinking_level, web_mode=run.web_settings.mode),
+                setup=FailureSetup(provider_label=self._provider_label, model=model, thinking_level=run.thinking_level,
+                                   web_mode=run.web_settings.mode),
             )) from exc
 
     def _record_inference_progress(
@@ -1292,9 +1283,6 @@ class AgentRuntime(AgentLoopMixin):
                     model=model,
                     thinking_level=run.thinking_level,
                     messages=final_messages,
-                    max_output_tokens=_final_response_max_output_tokens(
-                        provider_label=self._provider_label
-                    ),
                     on_request=self._final_response_request_recorder(run=run, attempt=attempt),
                 ):
                     if is_waiting_for_provider:

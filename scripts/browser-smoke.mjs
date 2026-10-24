@@ -20,6 +20,7 @@ import {prepareUpdateFixture, checkAppUpdates} from './browser-update-regression
 import {checkFloatingNotes} from './browser-floating-note-regressions.mjs';
 import {checkAiHistoryExport} from './browser-ai-history-regressions.mjs';
 import {checkOpenAiSettings} from './browser-ai-settings-regressions.mjs';
+import {checkUnchangedSettingsSaves} from './browser-unchanged-save-regressions.mjs';
 import {checkWritingAssistantCorrections} from './browser-writing-assistant-regressions.mjs';
 import {checkExitEditScroll} from './browser-scroll-regressions.mjs';
 import {checkMoveToBottom} from './browser-move-to-bottom-regressions.mjs';
@@ -339,6 +340,7 @@ try {
   const runsSuitesInline = process.env.BROWSER_TEST_SUITE === undefined;
   await checkAppUpdates(page, updateFixture);
   await checkOpenAiSettings(page);
+  await checkUnchangedSettingsSaves(page);
   if (runsSuitesInline) {
     await checkAiHistoryExport(page);
     await checkWritingAssistantCorrections(page);

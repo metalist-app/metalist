@@ -132,7 +132,6 @@ class Step(StrictModel):
         SummaryBatchContext | SummaryFinalContext,
         Field(discriminator="stage"),
     ]
-    max_output_tokens: int = Field(ge=0)
     expectation: ActionExpectation | OutputExpectation
 
     @model_validator(mode="after")
@@ -140,8 +139,6 @@ class Step(StrictModel):
         if self.conversation[-1].role != "user":
             raise ValueError("Conversation must end with the current user request")
         is_structured = self.context.stage == "summary_batch"
-        if is_structured != (self.max_output_tokens == 0):
-            raise ValueError("Structured steps use zero; text steps require a positive output limit")
         if self.expectation.kind == "action" and not is_structured:
             raise ValueError("Action expectations require a structured step")
         if self.expectation.kind == "action" and any(not item for item in self.expectation.alternatives):
@@ -173,7 +170,6 @@ class PreparedStep(StrictModel):
     messages: list[Message | PreviousOutput]
     response_model: str
     response_schema: dict
-    max_output_tokens: int
     expectation: ActionExpectation | OutputExpectation
 
 

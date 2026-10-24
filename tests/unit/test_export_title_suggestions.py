@@ -35,7 +35,8 @@ from app.services.file_registry import file_registry
 from app.services.input_errors import InputRejected
 from app.services.note_store import store
 from app.services.ontology_rules_store import bootstrap_ontology_rules_store
-from app.services.openai_credentials import OpenAICredentialStatus
+from app.services.ai_credentials import AiCredentialStatus
+import app.services.ai_credentials as ai_credentials_module
 from app.usecases.create_note import apply_insert_note
 
 
@@ -140,6 +141,8 @@ def test_asking_again_names_the_titles_already_given(live_database) -> None:
 
 
 class _Answers:
+    provider_label = "OpenAI"
+
     def __init__(self, title: str) -> None:
         self.title = title
         self.requests: list[list[dict[str, str]]] = []
@@ -181,9 +184,13 @@ def test_the_answer_is_one_short_line(live_database) -> None:
 
 
 def _set_ai_ready(monkeypatch, *, is_ready: bool) -> None:
-    monkeypatch.setattr(ai_setup_module.openai_credential_store, "status",
-                        lambda **kwargs: OpenAICredentialStatus(configured=is_ready, persistent=False))
-    monkeypatch.setattr(ai_setup_module.openai_credential_store, "resolve",
+    monkeypatch.setattr(ai_credentials_module.ai_credential_stores["openai"], "status",
+                        lambda **kwargs: AiCredentialStatus(configured=is_ready, persistent=False))
+    # Claude and Gemini have no key here.
+    for other_provider in ("anthropic", "gemini"):
+        monkeypatch.setattr(ai_credentials_module.ai_credential_stores[other_provider], "status",
+                            lambda **kwargs: AiCredentialStatus(configured=False, persistent=False))
+    monkeypatch.setattr(ai_credentials_module.ai_credential_stores["openai"], "resolve",
                         lambda **kwargs: "sk-test-0123456789abcdefghijklmnop")
 
 

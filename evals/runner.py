@@ -55,7 +55,7 @@ async def call_step(adapter, *, case, step, messages):
     chunks = []
     finished = False
     async for event in adapter.stream_text(
-        **arguments, max_output_tokens=step.max_output_tokens,
+        **arguments,
         on_request=lambda request: None,
     ):
         if event["type"] == "content_delta":

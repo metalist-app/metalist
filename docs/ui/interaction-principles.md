@@ -72,3 +72,6 @@ changes), and has a test per case that checks exact positions. Tests for cases t
 today are written and run against the unchanged code first, so a regression fails a test
 before anyone sees it. Browser checks: `scripts/browser-scroll-regressions.mjs`
 (`BROWSER_TEST_SUITE=exit-edit-scroll npm run test:browser`).
+
+Errors and status messages follow from principles 1, 2, 3 and 5: nothing that reports
+one may change the layout (planned: `docs/ready-to-build/errors-and-status-rule.md`).

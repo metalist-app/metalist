@@ -72,15 +72,6 @@ def test_password_creation_failure_restores_sidecar_and_key_metadata(live_databa
     assert row == (b'fixture', None)
 
 
-def test_switching_provider_does_not_replay_local_answer():
-    chat = AiChatSessionStore()
-    turn = chat.start_turn(session_key='fixture', user_content='Read local notes', provider='retired-provider', model='local')
-    chat.complete_turn(session_key='fixture', turn_id=turn, final_content='LOCAL_ONLY_CANARY', actions=[])
-    chat.start_turn(session_key='fixture', user_content='Hello cloud', provider='openai', model='cloud')
-    assert chat.provider_messages(session_key='fixture') == [{'role':'user', 'content':'Hello cloud'}]
-    assert 'LOCAL_ONLY_CANARY' in str(chat.snapshot(session_key='fixture'))
-
-
 def test_logout_clears_sensitive_function_caches(monkeypatch):
     set_encryption_required(True)
     set_session_dek(b'0' * 32)
@@ -184,6 +175,28 @@ def test_commit_failure_restores_search_content_sync_and_undo(live_database, mon
     assert capture_sync_state() == original_sync
     assert capture_undo_state() == original_undo
     assert live_database.connection().execute('SELECT content FROM notes').fetchone()[0] == 'before'
+
+
+@pytest.mark.parametrize('next_provider', ['anthropic', 'gemini'])
+def test_switching_provider_under_the_same_rules_keeps_the_conversation(live_database, next_provider):
+    # One privacy policy covers every provider (the maintainer, 2026-10-24): what one may
+    # see, the next may too, so a switch is not a privacy change and the history follows.
+    apply_insert_note('fixture', None, None, None, '', content='Permitted note', tags='', proposed_tags='')
+    evaluator = CloudPrivacyEvaluator(notes=store, effective_tags_provider=lambda note_id: store.get_note(note_id).tag_terms, accepted_tags_provider=lambda note_id: store.get_note(note_id).tag_terms)
+    chat = AiChatSessionStore()
+    first_key = evaluator.history_disclosure_key(boundary=resolve_cloud_privacy_boundary(preferences={}, provider='openai'))
+    chat.synchronize_disclosure_boundary(session_key='fixture', disclosure_key=first_key)
+    turn = chat.start_turn(session_key='fixture', user_content='Summarize the papers', provider='openai', model='gpt-5.6-luna')
+    chat.complete_turn(session_key='fixture', turn_id=turn, final_content='Here is the summary', actions=[])
+    next_key = evaluator.history_disclosure_key(boundary=resolve_cloud_privacy_boundary(preferences={}, provider=next_provider))
+    assert next_key == first_key
+    assert chat.synchronize_disclosure_boundary(session_key='fixture', disclosure_key=next_key) is False
+    chat.start_turn(session_key='fixture', user_content='Can we try that again?', provider=next_provider, model='next')
+    assert chat.provider_messages(session_key='fixture') == [
+        {'role': 'user', 'content': 'Summarize the papers'},
+        {'role': 'assistant', 'content': 'Here is the summary'},
+        {'role': 'user', 'content': 'Can we try that again?'},
+    ]
 
 
 @pytest.mark.parametrize('change', ['policy', 'password_tag', 'deleted_note'])

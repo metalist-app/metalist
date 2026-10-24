@@ -18,11 +18,13 @@ from app.services.search_index import extract_ordered_tags_for_agent
 from app.services.tag_ontology import is_valid_tag_token
 from app.services.tag_properties import PROPERTY_SEPARATOR, has_property_syntax, split_property_segments, tag_part_of_token
 from app.services.content_formatting import extract_note_text_for_agent
+from app.services.ai_catalog import AI_CATALOG
 
 
 CLOUD_PRIVACY_POLICY_PREFERENCE_KEY = "pref.ai.cloud_privacy_policy"
-_CLOUD_PROVIDERS = frozenset({"openai"})
-_SUPPORTED_PROVIDERS = frozenset({"openai"})
+# Every provider MetaList offers is a cloud provider (ai_catalog.py).
+_CLOUD_PROVIDERS = frozenset(AI_CATALOG)
+_SUPPORTED_PROVIDERS = frozenset(AI_CATALOG)
 _MAX_POLICY_ENTRIES_PER_LIST = 200
 _MAX_POLICY_TAG_LENGTH = 256
 _MAX_POLICY_PHRASE_LENGTH = 500
@@ -330,7 +332,9 @@ class CloudPrivacyEvaluator:
         note_ids = tuple(self._notes.list_note_ids())
         hidden_ids = self.hidden_note_ids(note_ids=note_ids, boundary=boundary)
         permitted_ids = sorted(set(note_ids) - hidden_ids)
-        payload = (boundary.provider, serialize_cloud_privacy_policy(boundary.policy), permitted_ids)
+        # What the AI may see, not which company it is: one policy covers every provider,
+        # so switching provider keeps the conversation (the maintainer, 2026-10-24).
+        payload = (boundary.apply_cloud_policy, serialize_cloud_privacy_policy(boundary.policy), permitted_ids)
         return hashlib.sha256(json.dumps(payload, separators=(",", ":")).encode()).hexdigest()
 
     def hidden_note_ids(

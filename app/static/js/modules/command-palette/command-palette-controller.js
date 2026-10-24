@@ -85,6 +85,7 @@ import {
     readAgentRetrievalSettings,
     validateAgentRetrievalSettings,
 } from '../ai-chat/agent-retrieval-settings.js';
+import { AI_PROVIDERS, aiProvider } from '../ai-chat/ai-providers.js';
 import {
     CLOUD_PRIVACY_POLICY_PREFERENCE_KEY,
     readCloudPrivacyPolicy,
@@ -151,7 +152,6 @@ import {
 } from './note-layout-preferences.js';
 import { MS_PER_SECOND } from '../time-units.js';
 
-const DEFAULT_OPENAI_MODEL = 'gpt-5.6-luna';
 
 // Bounds on the stored AI chat panel width and composer height, in pixels.
 
@@ -734,16 +734,29 @@ class CommandPaletteController {
         });
     }
 
+    // A dialog's Save writes the settings it shows. Only the ones that changed are written,
+    // and nothing when none did: the store rejects a write that changes nothing, and Save
+    // with nothing changed (or changed back) must close the dialog like any Save.
+    // Returns whether anything changed.
+    async _saveChangedPreferences(updates) {
+        const changed = Object.fromEntries(
+            Object.entries(updates).filter(([key, value]) => this._preferences.getRaw(key) !== value),
+        );
+        if (Object.keys(changed).length === 0) return false;
+        await this._preferences.setMany(changed);
+        return true;
+    }
+
     async _saveNoteLayoutSettings(settings) {
         const validated = validateNoteLayoutSettings(settings);
-        await this._preferences.setMany({
+        const didChange = await this._saveChangedPreferences({
             [NOTE_LAYOUT_PREFERENCE_KEYS.topLevelNoteSize]: validated.topLevelNoteSize,
             [NOTE_LAYOUT_PREFERENCE_KEYS.childIndentation]: validated.childIndentation,
             [NOTE_LAYOUT_PREFERENCE_KEYS.verticalSpacing]: validated.verticalSpacing,
             [NOTE_LAYOUT_PREFERENCE_KEYS.noteCorners]: validated.noteCorners,
             [NOTE_LAYOUT_PREFERENCE_KEYS.tagStyle]: validated.tagStyle,
         });
-        this._applyPreferenceEffectsFromStorage();
+        if (didChange) this._applyPreferenceEffectsFromStorage();
     }
 
     getAiSettings() {
@@ -751,13 +764,17 @@ class CommandPaletteController {
             (key) => this._preferences.getRaw(key),
             'openai',
         );
-        const provider = 'openai';
+        // The provider and model last picked in the chat; a vault that never picked one
+        // starts on the first provider's default model.
+        const provider = this._getSelect(
+            'pref.ai.provider',
+            AI_PROVIDERS.map((entry) => entry.provider),
+            AI_PROVIDERS[0].provider,
+        );
         const retrievalSettings = openAiRetrievalSettings;
-        const modelPreferenceKey = 'pref.ai.openai_model';
         return {
             provider,
-            // A user who never chose a model uses the default one.
-            model: this._getText(modelPreferenceKey, DEFAULT_OPENAI_MODEL),
+            model: this._getText(`pref.ai.${provider}_model`, aiProvider(provider).defaultModel),
             thinkingLevel: this._getSelect(
                 'pref.ai.thinking_level',
                 AI_THINKING_LEVEL_OPTIONS.map((option) => option.value),
@@ -855,17 +872,14 @@ class CommandPaletteController {
         if (!settings || typeof settings !== 'object') {
             throw new Error('_saveAiSettings requires settings object');
         }
-        if (settings.provider !== 'openai') {
-            throw new Error('Unsupported AI provider');
-        }
+        aiProvider(settings.provider);
         if (typeof settings.model !== 'string' || settings.model.trim() === '') {
             throw new Error('AI settings require model');
         }
         const thinkingLevel = validateAiThinkingLevel(settings.thinkingLevel);
-        const modelPreferenceKey = 'pref.ai.openai_model';
         await this._preferences.setMany({
             'pref.ai.provider': settings.provider,
-            [modelPreferenceKey]: settings.model.trim(),
+            [`pref.ai.${settings.provider}_model`]: settings.model.trim(),
             'pref.ai.thinking_level': thinkingLevel,
         });
         document.dispatchEvent(new CustomEvent(
@@ -882,12 +896,6 @@ class CommandPaletteController {
         if (!settings || typeof settings !== 'object') {
             throw new Error('_saveAiAgentSettings requires settings object');
         }
-        if (settings.provider !== 'openai') {
-            throw new Error('Unsupported AI provider');
-        }
-        if (typeof settings.model !== 'string' || settings.model.trim() === '') {
-            throw new Error('AI connection settings require model');
-        }
         const openAiRetrievalSettings = validateAgentRetrievalSettings(
             settings.openAiRetrievalSettings,
             'openai',
@@ -896,19 +904,17 @@ class CommandPaletteController {
             settings.cloudPrivacyPolicy,
         );
         const webAccessMode = validateAgentWebAccessMode(settings.webAccessMode);
-        const modelPreferenceKey = 'pref.ai.openai_model';
-        await this._preferences.setMany({
-            'pref.ai.provider': settings.provider,
-            [modelPreferenceKey]: settings.model.trim(),
+        // The model in use is picked in the chat (saveAiSettings).
+        const didChange = await this._saveChangedPreferences({
             [OPENAI_AGENT_RETRIEVAL_PREFERENCE_KEYS.maxPageApproximateTokens]: String(
                 openAiRetrievalSettings.maxPageApproximateTokens,
             ),
-            [OPENAI_AGENT_RETRIEVAL_PREFERENCE_KEYS.taggingBatchTokens]: String(openAiRetrievalSettings.taggingBatchTokens),
             [CLOUD_PRIVACY_POLICY_PREFERENCE_KEY]: serializeCloudPrivacyPolicy(
                 cloudPrivacyPolicy,
             ),
             [AGENT_WEB_ACCESS_MODE_PREFERENCE_KEY]: webAccessMode,
         });
+        if (!didChange) return;
         document.dispatchEvent(new CustomEvent(
             'metalist:ai-settings-changed',
             { detail: { reloadModels: true } },
@@ -1397,14 +1403,14 @@ class CommandPaletteController {
             throw new Error('limitNoteCreditsPerSearchContext must be boolean');
         }
         const serialized = serializeSearchSuggestionWindows(windowDays);
-        await this._preferences.setMany({
+        const didChange = await this._saveChangedPreferences({
             'pref.search_suggestion_windows': serialized,
             'pref.show_search_suggestion_window_labels': showWindowLabels ? 'true' : 'false',
             'pref.limit_note_credits_per_search_context': (
                 limitNoteCreditsPerSearchContext ? 'true' : 'false'
             ),
         });
-        this._applyPreferenceEffectsFromStorage();
+        if (didChange) this._applyPreferenceEffectsFromStorage();
     }
 
     getSortMode() {
@@ -2590,13 +2596,13 @@ class CommandPaletteController {
     }
 
     async _saveDictationPhrases({ tagPhrase, quoteOpen, quoteClose, negate }) {
-        await this._preferences.setMany({
+        const didChange = await this._saveChangedPreferences({
             [DICTATION_TAG_PHRASE_PREFERENCE]: tagPhrase,
             [DICTATION_QUOTE_OPEN_PREFERENCE]: quoteOpen,
             [DICTATION_QUOTE_CLOSE_PREFERENCE]: quoteClose,
             [DICTATION_NEGATE_PREFERENCE]: negate,
         });
-        this._applyPreferenceEffectsFromStorage();
+        if (didChange) this._applyPreferenceEffectsFromStorage();
     }
 
     async openDictationSettings() {

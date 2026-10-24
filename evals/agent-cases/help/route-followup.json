@@ -12,7 +12,7 @@
     },
     {
       "role": "assistant",
-      "content": "In AI agent settings, Maximum approximate evidence tokens."
+      "content": "In AI agent settings, Max token window."
     },
     {
       "role": "user",

@@ -21,6 +21,7 @@ from app.api.transactions import transactional_route
 from app.models.utils import note_data_to_html
 from app.models.utils import render_note_data_read_only
 from app.services.ai_chat_stream import ChatTurnStream
+from app.services.ai_setup import AI_PROVIDERS
 from app.services.ai_setup import AiConnection
 from app.services.ai_setup import AiNotSetUp
 from app.services.ai_setup import AiProvider
@@ -35,8 +36,9 @@ from app.services.agent.cloud_privacy import cloud_privacy_evaluator
 from app.services.agent.cloud_privacy import resolve_cloud_privacy_boundary
 from app.services.agent.inference import InferenceAdapter
 from app.services.agent.model_policy import SingleModelPolicy
-from app.services.agent.openai_models import OPENAI_MODELS
-from app.services.agent.openai_models import validate_openai_model
+from app.services.ai_catalog import catalog_entry
+from app.services.ai_catalog import require_shipped_model
+from app.services.ai_catalog import validate_model_name
 from app.services.agent.openai_cost_tracking import OpenAICostSnapshot
 from app.services.agent.openai_cost_tracking import openai_cost_tracker
 from app.services.agent.prompt_settings import AgentPromptSet
@@ -54,9 +56,9 @@ from app.services.agent.trace import agent_trace_store
 from app.services.agent.menu_actions import MenuResult, menu_action_store
 from app.services.client_state_service import load_client_preferences
 from app.services.note_store import store as note_store
-from app.services.openai_credentials import OpenAICredentialInputError
-from app.services.openai_credentials import openai_credential_store
-from app.services.openai_credentials import validate_openai_api_key
+from app.services.ai_credentials import AiCredentialInputError
+from app.services.ai_credentials import ai_credential_store
+from app.services.ai_credentials import validate_ai_api_key
 from app.services.sync import set_clipboard, get_current_sync_uuid
 from app.services.agent.tagging_run import TaggingRun, proposal_scope_ids
 from app.services.agent.retrieval_settings import resolve_tagging_batch_tokens
@@ -84,6 +86,7 @@ from app.services.input_errors import InputRejected
 from app.utils.text_utils import strip_html
 from app.services.preference_values import preference_or_default
 from app.contracts import requires
+from app.startup_environment import is_development_environment
 
 
 router = APIRouter(prefix="/ai", tags=["ai"])
@@ -98,7 +101,9 @@ _MAX_TAG_FILTER_LENGTH = 256
 agent_context_builder = AgentContextBuilder()
 
 
-def _require_ai_connection(*, provider: AiProvider, token: str, session_key: str) -> AiConnection:
+def _require_ai_connection(*, provider: AiProvider, model: str, token: str, session_key: str) -> AiConnection:
+    """A connection to the AI, for one of the models MetaList offers for it."""
+    require_shipped_model(provider, model)
     # lint: allow-PY001 rationale="the user removed or never added the AI's key: an expected 409, not a defect"
     try:
         return connect_to_ai(provider=provider, token=token, session_key=session_key)
@@ -117,23 +122,24 @@ def _agent_runtime(*, inference: InferenceAdapter) -> AgentRuntime:
     )
 
 
-class AiModelsRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    provider: Literal["openai"]
-
-
-class AiModelsResponse(BaseModel):
+class AiModelChoiceGroup(BaseModel):
+    provider: AiProvider
+    label: str
     models: list[str]
 
 
-class OpenAICredentialRequest(BaseModel):
+class AiModelChoicesResponse(BaseModel):
+    # One group per provider with a key, in the registry's order.
+    groups: list[AiModelChoiceGroup]
+
+
+class AiCredentialRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     api_key: SecretStr
 
 
-class OpenAICredentialStatusResponse(BaseModel):
+class AiCredentialStatusResponse(BaseModel):
     configured: bool
     persistent: bool
 
@@ -149,7 +155,7 @@ class OpenAICostResponse(BaseModel):
 class CloudPrivacyPreviewRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    provider: Literal["openai"]
+    provider: AiProvider
     note_ids: list[str] = Field(..., max_length=_MAX_PRIVACY_PREVIEW_NOTE_IDS)
 
     @field_validator("note_ids")
@@ -170,7 +176,7 @@ class CloudPrivacyPreviewResponse(BaseModel):
 class AiChatRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    provider: Literal["openai"]
+    provider: AiProvider
     model: str
     thinking_level: Literal["off", "low", "medium", "high"]
     show_diagnostics: bool
@@ -195,7 +201,7 @@ class AiChatRequest(BaseModel):
 
     @model_validator(mode="after")
     def validate_thinking_level_for_model(self) -> Self:
-        validate_openai_model(self.model)
+        validate_model_name(self.model)
         return self
 
 
@@ -227,8 +233,7 @@ class NoteTagSuggestionRequest(BaseModel):
 
     @model_validator(mode="after")
     def validate_model_for_provider(self) -> Self:
-        assert self.provider == "openai"
-        validate_openai_model(self.model)
+        validate_model_name(self.model)
         return self
 
 
@@ -264,8 +269,7 @@ class ExportTitleSuggestionRequest(ExportTitleScope):
 
     @model_validator(mode="after")
     def validate_model_for_provider(self) -> Self:
-        assert self.provider == "openai"
-        validate_openai_model(self.model)
+        validate_model_name(self.model)
         return self
 
 
@@ -295,7 +299,7 @@ class AiChatMessage(BaseModel):
     rendered_thinking: str
     status: Literal["complete", "streaming", "error"]
     error: str
-    provider: Literal["openai"]
+    provider: AiProvider
     model: str
     activities: list[AiChatActivity]
 
@@ -362,76 +366,94 @@ def _render_ai_response_note_content(*, markdown_text: str, session_key: str) ->
     )
 
 
-@router.post("/models", response_model=AiModelsResponse)
-@transactional_route
-async def list_ai_models(
-    payload: AiModelsRequest,
+# The chat's model picker: every model of every provider with a key, so picking a
+# model picks its provider too (docs/ui/ai-chat.md, "Model picker"). A read, so it takes
+# no mutation slot: the chat refreshes it while the user edits notes. current_provider is
+# the provider of the model picked last; its models stay listed even without a key.
+@router.get("/model-choices", response_model=AiModelChoicesResponse)
+async def list_ai_model_choices(
+    current_provider: AiProvider,
     token: Annotated[str, Depends(require_request_auth_token)],
-) -> AiModelsResponse:
-    del token, payload
-    return AiModelsResponse(models=list(OPENAI_MODELS))
+) -> AiModelChoicesResponse:
+    setup = describe_ai_setup(token=token, session_key=token_service.get_session_key(token))
+    groups = []
+    for provider in AI_PROVIDERS:
+        if not setup.is_ready_for(provider) and provider != current_provider:
+            continue
+        entry = catalog_entry(provider)
+        groups.append(AiModelChoiceGroup(
+            provider=provider, label=entry.label,
+            models=list(entry.models),
+        ))
+    assert groups, "the current provider is always listed"
+    return AiModelChoicesResponse(groups=groups)
 
 
+# One key slot per provider, per vault (app/services/ai_credentials.py); a provider
+# that is not registered has no route.
 @router.get(
-    "/openai/credential",
-    response_model=OpenAICredentialStatusResponse,
+    "/{provider}/credential",
+    response_model=AiCredentialStatusResponse,
 )
-def get_openai_credential_status(
+def get_ai_credential_status(
+    provider: AiProvider,
     response: Response,
     token: Annotated[str, Depends(require_request_auth_token)],
-) -> OpenAICredentialStatusResponse:
+) -> AiCredentialStatusResponse:
     response.headers["Cache-Control"] = "no-store"
     session_key = token_service.get_session_key(token)
-    status = openai_credential_store.status(token=token, session_key=session_key)
-    return OpenAICredentialStatusResponse(
+    status = ai_credential_store(provider).status(token=token, session_key=session_key)
+    return AiCredentialStatusResponse(
         configured=status.configured,
         persistent=status.persistent,
     )
 
 
 @router.put(
-    "/openai/credential",
-    response_model=OpenAICredentialStatusResponse,
+    "/{provider}/credential",
+    response_model=AiCredentialStatusResponse,
 )
 @transactional_route
-def put_openai_credential(
-    payload: OpenAICredentialRequest,
+def put_ai_credential(
+    provider: AiProvider,
+    payload: AiCredentialRequest,
     response: Response,
     token: Annotated[str, Depends(require_request_auth_token)],
-) -> OpenAICredentialStatusResponse:
+) -> AiCredentialStatusResponse:
     response.headers["Cache-Control"] = "no-store"
     session_key = token_service.get_session_key(token)
     submitted_api_key = payload.api_key.get_secret_value()
     # lint: allow-PY001 rationale="validate user-supplied secret after Pydantic has masked it"
     try:
-        api_key = validate_openai_api_key(submitted_api_key)
+        api_key = validate_ai_api_key(provider, submitted_api_key)
     # lint: allow-PY001 rationale="return a concise validation error without echoing the secret"
-    except OpenAICredentialInputError as exc:
+    except AiCredentialInputError as exc:
         raise HTTPException(status_code=HTTPStatus.UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
-    status = openai_credential_store.configure(
+    status = ai_credential_store(provider).configure(
         token=token,
         session_key=session_key,
         api_key=api_key,
     )
-    return OpenAICredentialStatusResponse(
+    return AiCredentialStatusResponse(
         configured=status.configured,
         persistent=status.persistent,
     )
 
 
 @router.delete(
-    "/openai/credential",
-    response_model=OpenAICredentialStatusResponse,
+    "/{provider}/credential",
+    response_model=AiCredentialStatusResponse,
 )
 @transactional_route
-def delete_openai_credential(
+def delete_ai_credential(
+    provider: AiProvider,
     response: Response,
     token: Annotated[str, Depends(require_request_auth_token)],
-) -> OpenAICredentialStatusResponse:
+) -> AiCredentialStatusResponse:
     response.headers["Cache-Control"] = "no-store"
     session_key = token_service.get_session_key(token)
-    status = openai_credential_store.clear(session_key=session_key)
-    return OpenAICredentialStatusResponse(
+    status = ai_credential_store(provider).clear(session_key=session_key)
+    return AiCredentialStatusResponse(
         configured=status.configured,
         persistent=status.persistent,
     )
@@ -488,7 +510,9 @@ def suggest_tags_for_note_with_ai(
     if not note_store.has_note(note_id):
         raise HTTPException(status_code=HTTPStatus.NOT_FOUND, detail=f"Note not found: {note_id}")
     session_key = token_service.get_session_key(token)
-    connection = _require_ai_connection(provider=payload.provider, token=token, session_key=session_key)
+    connection = _require_ai_connection(
+        provider=payload.provider, model=payload.model, token=token, session_key=session_key,
+    )
     preferences = load_client_preferences(token=token)
     boundary = resolve_cloud_privacy_boundary(preferences=preferences, provider=payload.provider)
     if cloud_privacy_evaluator.exclusion_reason(note_id=note_id, boundary=boundary) != "":
@@ -593,7 +617,9 @@ def suggest_export_title_with_ai(
     """Ask the AI for an export's or print's title: one {"type": "title"} or {"type": "failed"} line.
     Streamed, so Stop (the client going away) ends the request."""
     session_key = token_service.get_session_key(token)
-    connection = _require_ai_connection(provider=payload.provider, token=token, session_key=session_key)
+    connection = _require_ai_connection(
+        provider=payload.provider, model=payload.model, token=token, session_key=session_key,
+    )
     request = _export_title_request(payload, token)
     if not request.notes:
         raise InputRejected("These notes are private, so the AI can't suggest a title")
@@ -643,12 +669,19 @@ def _openai_cost_response(snapshot: OpenAICostSnapshot) -> OpenAICostResponse:
     )
 
 
+def _require_cost_estimate_offered() -> None:
+    """The cost estimate is a developer tool (docs/ui/ai-chat.md): in production it does not exist."""
+    if not is_development_environment():
+        raise HTTPException(status_code=HTTPStatus.NOT_FOUND, detail="Not Found")
+
+
 @router.get("/openai/cost", response_model=OpenAICostResponse)
 def get_openai_cost(
     response: Response,
     token: Annotated[str, Depends(require_request_auth_token)],
 ) -> OpenAICostResponse:
     del token
+    _require_cost_estimate_offered()
     response.headers["Cache-Control"] = "no-store"
     return _openai_cost_response(openai_cost_tracker.snapshot())
 
@@ -660,6 +693,7 @@ def reset_openai_cost(
     token: Annotated[str, Depends(require_request_auth_token)],
 ) -> OpenAICostResponse:
     del token
+    _require_cost_estimate_offered()
     response.headers["Cache-Control"] = "no-store"
     openai_cost_tracker.reset()
     return _openai_cost_response(openai_cost_tracker.snapshot())
@@ -882,7 +916,9 @@ def stream_ai_chat(
     token: Annotated[str, Depends(require_request_auth_token)],
 ) -> StreamingResponse:
     session_key = token_service.get_session_key(token)
-    connection = _require_ai_connection(provider=payload.provider, token=token, session_key=session_key)
+    connection = _require_ai_connection(
+        provider=payload.provider, model=payload.model, token=token, session_key=session_key,
+    )
     preferences = load_client_preferences(token=token)
     prompts = DEFAULT_AGENT_PROMPTS
     skills = DEFAULT_AGENT_SKILLS

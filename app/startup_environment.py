@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+import os
 from pathlib import Path
 
 from dotenv import dotenv_values
@@ -15,6 +16,11 @@ _ALLOWED_ENVIRONMENTS = frozenset(
         PRODUCTION_ENVIRONMENT,
     }
 )
+
+
+# The checkout (or installed package) root, where a development .env sits, as the
+# launcher's main.py finds it.
+_REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
 def _normalize_environment(raw_environment: str, *, source: str) -> str:
@@ -53,3 +59,10 @@ def resolve_startup_environment(
         dotenv_environment,
         source=str(dotenv_path),
     )
+
+
+def is_development_environment() -> bool:
+    """Whether this process runs in development, resolved as the launcher resolves it:
+    the process environment, else the checkout's .env, else production. Developer
+    tools (the AI cost estimate) exist only in development."""
+    return resolve_startup_environment(repo_root=_REPO_ROOT, environ=os.environ) == DEVELOPMENT_ENVIRONMENT

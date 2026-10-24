@@ -9,10 +9,9 @@ import {
 } from '../../app/static/js/modules/ai-chat/agent-retrieval-settings.js';
 
 
-test('retrieval settings contain evidence and tagging token limits', () => {
+test('one limit covers answers and tagging batches', () => {
     assert.deepEqual(DEFAULT_OPENAI_AGENT_RETRIEVAL_SETTINGS, {
         maxPageApproximateTokens: 500000,
-        taggingBatchTokens: 100000,
     });
 });
 
@@ -22,12 +21,11 @@ test('retired local settings do not affect OpenAI limits', () => {
         ['pref.ai.retrieval.max_page_approximate_tokens', '7000'],
         [OPENAI_AGENT_RETRIEVAL_PREFERENCE_KEYS.maxPageApproximateTokens, '500000'],
         ['pref.ai.tagging.batch_tokens', '3000'],
-        [OPENAI_AGENT_RETRIEVAL_PREFERENCE_KEYS.taggingBatchTokens, '12000'],
+        ['pref.ai.openai.tagging.batch_tokens', '12000'],
     ]);
     const getPreference = (key) => values.get(key) ?? null;
     assert.deepEqual(readAgentRetrievalSettings(getPreference, 'openai'), {
         maxPageApproximateTokens: 500000,
-        taggingBatchTokens: 12000,
     });
 });
 

@@ -3,15 +3,26 @@
 Explain MetaList from this reference, without pretending to inspect the user's
 saved settings or notes. Defaults below do not establish their current values.
 
-MetaList uses OpenAI; Ollama/local model support has been removed. AI agent
-settings (also found by searching AI, LLM, or OpenAI in the menu) configures the
-API key, model, **Maximum approximate evidence tokens**, tagging batch token
-window, and **Web access**. **Maximum approximate evidence tokens** is the exact evidence/context
-field label shown in the dialog; use this label when directing the user to it.
-The defaults are gpt-5.6-luna, 500,000 evidence tokens and 100,000 tagging
-batch tokens. The evidence field accepts 500–500,000. Evidence/context and tagging
-batch window are different controls: 250k context means evidence 250,000, not
-250,000 tagging tokens. Composer controls can change model and thinking level.
+MetaList's AI runs on the user's own key from OpenAI, Anthropic (Claude models) or
+Google (Gemini models); Ollama/local model support has been removed. AI agent settings (also found
+by searching AI, LLM, or OpenAI in the menu) has a folder tab per provider holding its
+API key and a link to the provider's usage and billing page; the Google tab warns that on Gemini's free tier what is
+sent may be used to improve Google's products and read by people, so a key with
+billing turned on is the one to use. Below it are
+**Web access** (Off, Links in your notes, Any public page), the privacy rules **Never
+send notes with (blacklist)** and **Only send notes with (whitelist)**, and **Max token
+window**: the one context limit, in tokens,
+for answers and tagging batches alike. Use these exact labels when directing the user.
+The defaults are gpt-5.6-luna and 500,000 tokens; the limit accepts 500–500,000, so
+"250k context" means Max token window = 250000.
+The model and thinking level are picked only beside chat Send, and the last choice
+sticks; picking a model also picks its provider. The picker lists the models of every
+provider with a saved key, under the provider's name: the ones MetaList ships
+(OpenAI: gpt-5.6-sol, gpt-5.6-terra, gpt-5.6-luna; Anthropic: claude-opus-5-5,
+claude-sonnet-5-5, claude-haiku-5-5; Google: gemini-4-argon, gemini-3.8-flash,
+gemini-3.5-flash-lite). These are the only models MetaList offers: each is tested with
+MetaList's prompts first, so a user cannot add another model by name. A newer model
+arrives with a MetaList update once it has passed those tests.
 
 Web access has three modes and defaults to **No web access**. In that mode the
 agent cannot open pages. **Open links from permitted context** lets it
@@ -132,12 +143,18 @@ Agent Debug shows the latest run. When an AI step fails, the red message in the
 chat explains it on its own: the step that failed, what went wrong on each attempt
 (for example the reply was cut off at the output limit after the model spent its
 budget thinking, or its answer broke a format rule, with what it chose), the model,
-thinking level and web access, and what to try (such as a lower thinking level). If OpenAI sends nothing, the request fails after 15 seconds at Off or Low thinking (60 s Medium, 120 s High) with a message to check the internet connection; until OpenAI's first signal the chat says "Waiting for OpenAI". Failure messages end with where the run stopped. The AI remembers the failed request and that explanation, so the user can say "try that again" or ask why it failed. A whole-view summary that fails or is stopped keeps the batches it finished for the chat; saying "try that again" continues it, running only the remaining batches. The separate opt-in regression suite lives in
+thinking level and web access, and what to try (such as a lower thinking level). If OpenAI sends nothing, the request fails after 15 seconds at Off or Low thinking (60 s Medium, 120 s High) with a message to check the internet connection (Claude and Google: 30 s at Off or Low, 60 s Medium, 120 s High; Google's message says the model may be busy, since its overloaded models go silent, and when Google answers that a model is busy the chat says so: ask again later or pick another model, such as Gemini 3.5 Flash-Lite); until OpenAI's first signal the chat says "Waiting for OpenAI". MetaList sets no length limit of its own on answers; a reply that reaches the longest
+the model can write (only a runaway does) stops there, keeps what it wrote, and says so;
+the user can ask it to continue or for a shorter answer. Failure messages end with where
+the run stopped. The AI remembers the failed request and that explanation, so the user can say "try that again" or ask why it failed. A whole-view summary that fails or is stopped keeps the batches it finished for the chat; saying "try that again" continues it, running only the remaining batches. The separate opt-in regression suite lives in
 the source repo, excluded from PyPI; cases default to five trials with up to four
 concurrent requests and report percentages and cached-token usage.
 Neither export nor ordinary tests automatically sends a test suite to OpenAI.
 
-The estimated spend display is hidden by default; the $ button in the chat
+The estimated spend display is a developer tool: it appears only when MetaList
+runs in development (`METALIST_ENVIRONMENT=development`); otherwise there is no $
+button, and what the AI cost shows on the provider's own billing page (for OpenAI,
+platform.openai.com). In development it is hidden by default; the $ button in the chat
 header shows or hides it (remembered per vault) and it keeps counting while
 hidden. It uses provider usage, tracks new/cached input, cache writes and output,
 and is process-local. Resetting it does not affect billing.

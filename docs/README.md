@@ -20,7 +20,7 @@
 - Search semantics (server behavior): `docs/ui/search-semantics.md`
 - Tag bar grammar (tags/comments/wrappers): `docs/ui/tag-bar.md`
 - Reminders: `docs/ui/reminders.md`
-- OpenAI chat: `docs/ui/ai-chat.md`
+- AI chat: `docs/ui/ai-chat.md`; AI providers (OpenAI, Anthropic, Google): `docs/design/ai-providers.md`
 - Modal architecture pattern: `docs/ui/modals.md`
 - Client state-handling philosophy: `docs/ui/state-handling.md`
 
@@ -46,7 +46,8 @@
 - TODO list: `docs/TODO.md`
 - Future UI plan (toolbar): `docs/future-plans/PLAN.toolbar.md`
 - Future plan (hosted MetaList: downloading your own copy, the backup reminder): `docs/future-plans/hosted-own-copy.md`
-- Agreed designs ready to build, not started: `docs/ready-to-build/` (AI providers: `docs/ready-to-build/ai-providers.md`)
+- Future plan (AI providers, what is left: evals for Claude and Gemini, the demo vault, hosted questions): `docs/future-plans/ai-providers-remaining.md`
+- Agreed designs ready to build, not started: `docs/ready-to-build/` (the MetaList mark and icon set: `docs/ready-to-build/brand-mark-and-icons.md`; dialog and menu conventions: `docs/ready-to-build/dialog-and-menu-conventions.md`; errors and status never rearrange the layout: `docs/ready-to-build/errors-and-status-rule.md`)
 - Incoming design notes, processed into the folders above as soon as they are seen: `docs/inbox/` (see AGENTS.md, "Design Inbox")
 
 ## Clients

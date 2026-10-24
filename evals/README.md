@@ -136,8 +136,8 @@ free-form reasons unless needed. Output cases specify stable criterion IDs,
 instructions, and reference facts. Every criterion must pass; missing or duplicate
 judge criteria count as errors. Do not revise expectations simply to pass a new prompt.
 
-Each step has `conversation`, a tagged `context`, `max_output_tokens`, and
-`expectation`. Supported contexts are `summary_batch` and `summary_final`.
+Each step has `conversation`, a tagged `context`, and `expectation` (a text step
+sends no output limit, as production does). Supported contexts are `summary_batch` and `summary_final`.
 Scope metadata and selected-note state are explicit. Selection fixtures can provide
 a complete containing tree with required node IDs, parent IDs, content, and tags;
 production code derives the edited-node marker from the selected ID.

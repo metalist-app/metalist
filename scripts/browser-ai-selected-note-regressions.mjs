@@ -27,7 +27,8 @@ export async function checkAiSelectedNote(page) {
         const {AiChatPanel} = await import('/static/js/modules/ai-chat/ai-chat-panel-controller.js');
         const {stateValuesEqual} = await import('/static/js/modules/application-state.js');
         const settings = AiChatPanel._getSettings();
-        if (!stateValuesEqual(AiChatPanel._models, [settings.model])) AiChatPanel._models = [settings.model];
+        const groups = [{provider: settings.provider, label: 'OpenAI', models: [settings.model]}];
+        if (!stateValuesEqual(AiChatPanel._modelGroups, groups)) AiChatPanel._modelGroups = groups;
         AiChatPanel._syncSettingsControls();
         const originalFetch = window.fetch;
         window.selectedNoteTest = {requests: [], saves: [], originalFetch};
@@ -163,8 +164,9 @@ export async function checkAiSelectedNote(page) {
     await page.evaluate(async () => {
         const {AiChatPanel} = await import('/static/js/modules/ai-chat/ai-chat-panel-controller.js');
         const {stateValuesEqual} = await import('/static/js/modules/application-state.js');
-        const models = [AiChatPanel._getSettings().model];
-        if (!stateValuesEqual(AiChatPanel._models, models)) AiChatPanel._models = models;
+        const {provider, model} = AiChatPanel._getSettings();
+        const groups = [{provider, label: 'OpenAI', models: [model]}];
+        if (!stateValuesEqual(AiChatPanel._modelGroups, groups)) AiChatPanel._modelGroups = groups;
         AiChatPanel._syncSettingsControls();
     });
     await page.click('#ai-chat-input');

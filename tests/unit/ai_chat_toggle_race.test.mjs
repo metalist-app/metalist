@@ -53,3 +53,24 @@ for (const [method, field, saver] of [
         assert.deepEqual(panel.synced, [true, false]);
     });
 }
+
+// The estimated spend is a developer tool: where the server does not offer it
+// (production), the $ never shows, whatever the saved choice.
+for (const [offered, shown] of [['true', true], ['false', false]]) {
+    test(`the $ shows only where the server offers the cost estimate (${offered})`, () => {
+        const elements = {
+            panel: { dataset: { showsCostEstimate: offered } },
+            openAiCost: { hidden: true },
+            spendToggle: { hidden: true },
+        };
+        const panel = {
+            _elements: elements,
+            _showSpend: true,
+            _getSettings: () => ({ provider: 'openai' }),
+            _showsCostEstimate: controllerClass._showsCostEstimate,
+        };
+        assert.equal(controllerClass._syncOpenAiCostVisibility.call(panel), shown);
+        assert.equal(elements.spendToggle.hidden, !shown);
+        assert.equal(elements.openAiCost.hidden, !shown);
+    });
+}

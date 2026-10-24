@@ -16,11 +16,12 @@ from app.services.agent.tool_calling import AgentTool
 from app.services.agent.history import record_history
 from app.services.agent.trace import AgentTraceStore
 from app.services.agent.inference import InferenceAttempt
+from app.services.agent.inference import OutputLimitReached
 from app.services.agent.inference import StructuredInferenceProgress
 from app.services.agent.openai_inference import OPENAI_API_BASE_URL
 from app.services.agent.openai_inference import OpenAIInferenceAdapter
 from app.services.agent.openai_inference import resolve_openai_reasoning_effort
-from app.services.agent.openai_inference import validate_openai_model
+from app.services.ai_catalog import require_shipped_model, validate_model_name
 from app.services.agent.openai_cost_tracking import OpenAICostTracker
 import app.services.agent.openai_inference as openai_inference_module
 from app.services.agent.staged_summary import SummaryFinding
@@ -326,7 +327,6 @@ def test_openai_text_stream_disables_storage_and_reports_usage(monkeypatch) -> N
                 model="gpt-5.6-luna",
                 thinking_level="off",
                 messages=[{"role": "user", "content": "Hello"}],
-                max_output_tokens=256,
                 on_request=wire_requests.append,
             )
         ]
@@ -335,7 +335,8 @@ def test_openai_text_stream_disables_storage_and_reports_usage(monkeypatch) -> N
 
     assert created["model"] == "gpt-5.6-luna"
     assert created["reasoning_effort"] == "none"
-    assert created["max_completion_tokens"] == 256
+    # MetaList sets no answer limit of its own: the model writes as much as it can.
+    assert "max_completion_tokens" not in created
     assert created["stream"] is True
     assert created["store"] is False
     assert events == [
@@ -417,27 +418,28 @@ def test_openai_text_stream_rejects_output_limit_truncation(monkeypatch) -> None
                 model="gpt-5.6-sol",
                 thinking_level="off",
                 messages=[{"role": "user", "content": "Summarize"}],
-                max_output_tokens=256,
                 on_request=lambda request: None,
             )
         ]
 
-    with pytest.raises(
-        openai_inference_module.OpenAIProviderError,
-        match="maximum output-token limit",
-    ):
+    with pytest.raises(OutputLimitReached, match="gpt-5.6-sol reached the longest answer it can write"):
         asyncio.run(collect_events())
     assert cost_tracker.snapshot().output_tokens == 256
 
 
 def test_openai_models_and_reasoning_levels_are_strict() -> None:
-    assert validate_openai_model(" gpt-5.6-terra ") == "gpt-5.6-terra"
+    assert require_shipped_model("openai", " gpt-5.6-terra ") == "gpt-5.6-terra"
     assert resolve_openai_reasoning_effort("off") == "none"
     assert resolve_openai_reasoning_effort("high") == "high"
 
-    for invalid_model in ("gpt-5.6", "gpt-4o", ""):
-        with pytest.raises(ValueError, match="Unsupported OpenAI model"):
-            validate_openai_model(invalid_model)
+    for invalid_model in ("gpt-5.6", "gpt-4o"):
+        with pytest.raises(ValueError, match="not one of the OpenAI models MetaList offers"):
+            require_shipped_model("openai", invalid_model)
+    # Any well-formed name is a model name; whether a vault may use it is checked where it is used.
+    assert validate_model_name(" gpt-5.7-nova ") == "gpt-5.7-nova"
+    for not_a_name in ("", " ", "gpt 5", "-gpt", "gpt<script>"):
+        with pytest.raises(ValueError, match="Not a model name"):
+            validate_model_name(not_a_name)
 
 
 def test_structured_output_progress_carries_latest_partial_object() -> None:
@@ -566,7 +568,7 @@ def _run_tool_turn(monkeypatch, events, messages):
     async def collect():
         return [event async for event in adapter.stream_tool_turn(
             base_url=OPENAI_API_BASE_URL, model="gpt-5.6-luna", thinking_level="low",
-            messages=messages, tools=(_SEARCH_TOOL,), max_output_tokens=8_192, on_request=lambda request: None,
+            messages=messages, tools=(_SEARCH_TOOL,), on_request=lambda request: None,
         )]
 
     return asyncio.run(collect()), created
@@ -624,7 +626,7 @@ def test_a_tool_turn_sends_strict_tools_and_returns_tool_calls_with_reasoning_st
         {"type": "function_call_output", "call_id": "call-0", "output": "No matches."},
     ]
     assert created["reasoning"] == {"effort": "low"}
-    assert created["max_output_tokens"] == 8_192
+    assert "max_output_tokens" not in created
     assert created["store"] is False
     assert created["stream"] is True
     assert created["include"] == ["reasoning.encrypted_content"]
@@ -641,7 +643,7 @@ def test_a_tool_turn_that_answers_streams_its_text(monkeypatch) -> None:
 
 
 def test_a_tool_turn_cut_off_at_the_output_limit_fails_loudly(monkeypatch) -> None:
-    with pytest.raises(openai_inference_module.OpenAIProviderError, match="output-token limit"):
+    with pytest.raises(OutputLimitReached, match="reached the longest answer it can write"):
         _run_tool_turn(monkeypatch, [_text_delta("Partial"), _incomplete("max_output_tokens")],
                        [{"role": "user", "content": "Summarize"}])
 

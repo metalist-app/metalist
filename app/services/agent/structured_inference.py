@@ -625,7 +625,23 @@ def _structured_retry_messages(
     """The retry: the original request, what the failed attempt wrote (complete,
     or as far as it got before a rule stopped it), and what was wrong."""
     failed_content, finish_reason = capture.reply_so_far()
-    if finish_reason == "length":
+    return structured_retry_messages(
+        original_messages=original_messages,
+        failed_content=failed_content,
+        was_cut_off=finish_reason == "length",
+        failure=failure,
+    )
+
+
+def structured_retry_messages(
+    *,
+    original_messages: list[dict[str, str]],
+    failed_content: str,
+    was_cut_off: bool,
+    failure: Exception,
+) -> list[dict[str, str]]:
+    """The retry every provider sends after a structured reply failed (see _structured_retry_messages)."""
+    if was_cut_off:
         return [
             *original_messages,
             {

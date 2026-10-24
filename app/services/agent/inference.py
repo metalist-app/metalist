@@ -15,6 +15,18 @@ from app.services.agent.tool_calling import AgentTool
 MINIMUM_AGENT_CONTEXT_TOKENS = 16_384
 TARGET_AGENT_CONTEXT_TOKENS = 32_768
 
+# How long a provider not yet timed may stay silent before a request fails (OpenAI's
+# limits are measured, openai_inference.py). As generous as OpenAI's Medium and High.
+_UNMEASURED_LOW_THINKING_SILENCE_SECONDS = 30.0
+_UNMEASURED_MEDIUM_THINKING_SILENCE_SECONDS = 60.0
+_UNMEASURED_HIGH_THINKING_SILENCE_SECONDS = 120.0
+UNMEASURED_SILENCE_LIMIT_SECONDS = {
+    "off": _UNMEASURED_LOW_THINKING_SILENCE_SECONDS,
+    "low": _UNMEASURED_LOW_THINKING_SILENCE_SECONDS,
+    "medium": _UNMEASURED_MEDIUM_THINKING_SILENCE_SECONDS,
+    "high": _UNMEASURED_HIGH_THINKING_SILENCE_SECONDS,
+}
+
 
 @dataclass(frozen=True, slots=True)
 class InferenceAttempt:
@@ -87,6 +99,19 @@ class InferenceProviderError(RuntimeError):
     """Expected failure while communicating with an external model provider."""
 
 
+class OutputLimitReached(InferenceProviderError):
+    """A reply reached the longest the model can write. MetaList sets no limit of its own
+    on answers (the maintainer, 2026-10-24): this happens only to a runaway reply, and
+    the chat says so plainly, under whatever the model wrote."""
+
+    def __init__(self, *, model: str) -> None:
+        super().__init__(
+            f"{model} reached the longest answer it can write before finishing (its thinking "
+            "counts toward that), so the answer stopped there. Anything it wrote is kept above. "
+            "Ask it to continue, or ask for a shorter answer."
+        )
+
+
 class StructuredInferenceError(InferenceProviderError):
     def __init__(self, *, attempts: list[InferenceAttempt]) -> None:
         assert attempts, "Structured inference failure must contain at least one attempt"
@@ -134,7 +159,6 @@ class InferenceAdapter(Protocol):
         model: str,
         thinking_level: str,
         messages: list[dict[str, str]],
-        max_output_tokens: int,
         on_request: Callable[[dict[str, object]], None],
     ) -> AsyncIterator[dict[str, object]]:
         ...
@@ -147,7 +171,6 @@ class InferenceAdapter(Protocol):
         thinking_level: str,
         messages: list[dict[str, object]],
         tools: tuple[AgentTool, ...],
-        max_output_tokens: int,
         on_request: Callable[[dict[str, object]], None],
     ) -> AsyncIterator[dict[str, object]]:
         """One model turn in a tool conversation (see tool_calling.py for shapes).
@@ -158,7 +181,8 @@ class InferenceAdapter(Protocol):
         ``{"type": "done", "finish_reason": "stop" | "tool_calls", "usage"}``,
         which also carries ``"provider_state"`` when the provider returned state
         to hand back on the next turn (put it on the assistant message).
-        A reply cut off by the output limit, or ended any other way, raises
-        ``InferenceProviderError``.
+        Text and tool turns send no output limit of MetaList's own: the model may write
+        as much as it can. A reply cut off at that maximum raises ``OutputLimitReached``;
+        one ended any other way raises ``InferenceProviderError``.
         """
         ...

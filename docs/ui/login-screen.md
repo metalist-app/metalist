@@ -74,7 +74,9 @@ a failed change, a lost session locks the page as usual.
 
 ## Code
 - Markup: `app/templates/index.html`, `app/templates/locked.html`, shared logo
-  `app/templates/_logo_mark.html`.
+  `app/templates/_logo_mark.html`. A refined mark (bars as wide as the M), a
+  one-bar variant for tiny sizes and the icon set are planned:
+  `docs/ready-to-build/brand-mark-and-icons.md`.
 - Behaviour: `app/static/js/modules/auth.js` (form, busy state, slide, progress,
   elapsed time), `app/static/js/locked.js`.
 - Styles: the login section at the top of `app/static/css/main.css`.

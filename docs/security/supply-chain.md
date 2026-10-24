@@ -74,6 +74,14 @@ Every third-party Action now uses the full commit obtained from its official rep
 
 ## Updating dependencies
 
+### New dependencies wait two weeks
+
+A newly added package is pinned to its newest release at least two weeks old, and so
+are its own new dependencies. The `anthropic` SDK (added 2026-10-23 for Claude) is
+pinned at 1.12.1; its HTTP stack (`httpx2`, `httpcore2`, `truststore`) is held to
+older releases by `[tool.uv] constraint-dependencies` in `pyproject.toml`, since the
+newest of each was days old. Raise those pins deliberately, through the same check.
+
 ### Managed update installer
 
 `app/services/update_installer.py` pins official [uv 0.12.17](https://github.com/astral-sh/uv/releases/tag/0.12.17)
