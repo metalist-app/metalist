@@ -4,7 +4,7 @@ from http import HTTPStatus
 from functools import wraps
 from contextlib import ExitStack, nullcontext, contextmanager
 import inspect
-from typing import Any, Awaitable, Callable, ParamSpec, TypeVar, cast, get_type_hints
+from typing import Any, Awaitable, Callable, ParamSpec, TypeVar, cast, get_type_hints, overload
 
 from fastapi import FastAPI, HTTPException
 from app.services.bulk_operation import bulk_operation_guard, BulkOperationBusy
@@ -59,28 +59,38 @@ def _resolved_signature(func: Callable[..., Any]) -> inspect.Signature:
     )
 
 
-def transactional_route(func: Callable[P, R] | Callable[P, Awaitable[R]]) -> Callable[P, R] | Callable[P, Awaitable[R]]:
-    resolved_signature = _resolved_signature(cast(Callable[..., Any], func))
+# Overloads keep each route's own type: a union parameter leaves mypy unable to tell an
+# async route from a sync one returning an awaitable.
+@overload
+def transactional_route(func: Callable[P, Awaitable[R]]) -> Callable[P, Awaitable[R]]: ...
+
+
+@overload
+def transactional_route(func: Callable[P, R]) -> Callable[P, R]: ...
+
+
+def transactional_route(func: Callable[..., Any]) -> Callable[..., Any]:
+    resolved_signature = _resolved_signature(func)
 
     if inspect.iscoroutinefunction(func):
-        async_func = cast(Callable[P, Awaitable[R]], func)
+        async_func = cast(Callable[..., Awaitable[Any]], func)
 
         @wraps(async_func)
-        async def async_wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
+        async def async_wrapper(*args: Any, **kwargs: Any) -> Any:
             with _mutation_slot():
                 _check_bulk_guard(func.__name__)
                 with begin_request_transaction():
                     register_runtime_recovery()
                     return await async_func(*args, **kwargs)
 
-        async_wrapper.__signature__ = resolved_signature
+        setattr(async_wrapper, "__signature__", resolved_signature)
         setattr(async_wrapper, _TRANSACTIONAL_ROUTE_MARKER, True)
         return async_wrapper
 
-    sync_func = cast(Callable[P, R], func)
+    sync_func = func
 
     @wraps(sync_func)
-    def sync_wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
+    def sync_wrapper(*args: Any, **kwargs: Any) -> Any:
         with bulk_operation_guard.lock:
             with _mutation_slot():
                 _check_bulk_guard(func.__name__)
@@ -92,7 +102,7 @@ def transactional_route(func: Callable[P, R] | Callable[P, Awaitable[R]]) -> Cal
                         register_runtime_recovery()
                         return sync_func(*args, **kwargs)
 
-    sync_wrapper.__signature__ = resolved_signature
+    setattr(sync_wrapper, "__signature__", resolved_signature)
     setattr(sync_wrapper, _TRANSACTIONAL_ROUTE_MARKER, True)
     return sync_wrapper
 

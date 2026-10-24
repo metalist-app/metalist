@@ -1,19 +1,16 @@
+// One limit: how much an answer, or a tagging batch, reads at once.
 export const OPENAI_AGENT_RETRIEVAL_PREFERENCE_KEYS = Object.freeze({
     maxPageApproximateTokens: 'pref.ai.openai.retrieval.max_page_approximate_tokens',
-    taggingBatchTokens: 'pref.ai.openai.tagging.batch_tokens',
 });
 
 // The same limits as app/services/agent/retrieval_settings.py.
 const DEFAULT_OPENAI_MAX_PAGE_APPROXIMATE_TOKENS = 500000;
-const DEFAULT_OPENAI_TAGGING_BATCH_TOKENS = 100000;
 
 export const DEFAULT_OPENAI_AGENT_RETRIEVAL_SETTINGS = Object.freeze({
     maxPageApproximateTokens: DEFAULT_OPENAI_MAX_PAGE_APPROXIMATE_TOKENS,
-    taggingBatchTokens: DEFAULT_OPENAI_TAGGING_BATCH_TOKENS,
 });
 
 const LEGACY_DEFAULT_OPENAI_MAX_PAGE_APPROXIMATE_TOKENS = 24000;
-// The tagging batch is validated against the same range as the evidence payload.
 const MINIMUM_PAGE_APPROXIMATE_TOKENS = 500;
 const MAXIMUM_OPENAI_PAGE_APPROXIMATE_TOKENS = 500000;
 
@@ -34,7 +31,6 @@ export function validateAgentRetrievalSettings(settings, provider) {
     }
     return {
         maxPageApproximateTokens: settings.maxPageApproximateTokens,
-        taggingBatchTokens: settings.taggingBatchTokens,
     };
 }
 
@@ -44,14 +40,12 @@ export function getAgentRetrievalSettingsValidationMessage(settings, provider) {
         throw new TypeError('Agent retrieval settings must be an object');
     }
     const maximum = maximumForProvider(provider);
-    const evidenceError = integerRangeError(
+    return integerRangeError(
         settings.maxPageApproximateTokens,
-        'Maximum approximate tokens per evidence payload',
+        'Max token window',
         MINIMUM_PAGE_APPROXIMATE_TOKENS,
         maximum,
     );
-    if (evidenceError !== '') return evidenceError;
-    return integerRangeError(settings.taggingBatchTokens, 'Tagging batch tokens', MINIMUM_PAGE_APPROXIMATE_TOKENS, maximum);
 }
 
 
@@ -73,7 +67,6 @@ export function readAgentRetrievalSettings(getPreference, provider) {
     }
     return validateAgentRetrievalSettings({
         maxPageApproximateTokens: storedValue,
-        taggingBatchTokens: parseStoredInteger(getPreference(preferenceKeys.taggingBatchTokens), defaults.taggingBatchTokens),
     }, provider);
 }
 

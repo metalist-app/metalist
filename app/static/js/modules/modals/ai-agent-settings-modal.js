@@ -1,12 +1,12 @@
-import { ApplicationState } from '../application-state.js';
+import { ApplicationState, stateValuesEqual } from '../application-state.js';
 import { rethrowUnexpectedError } from '../expected-errors.js';
 import { BaseModal } from './base-modal.js';
 import {
     AiApiError,
-    clearOpenAiCredential,
+    clearAiCredential,
     listAiModels,
-    loadOpenAiCredentialStatus,
-    saveOpenAiCredential,
+    loadAiCredentialStatus,
+    saveAiCredential,
 } from '../ai-chat/ai-chat-api.js';
 import {
     getAgentRetrievalSettingsValidationMessage,
@@ -18,52 +18,149 @@ import {
     parseCloudPrivacyTextFields,
 } from '../ai-chat/cloud-privacy-policy.js';
 import { validateAgentWebAccessMode } from '../ai-chat/agent-web-settings.js';
-import { handleDictationPasteEvent } from '../mode-manager/services/dictation-paste-service.js';
 import { escapeHtml } from '../html-escape.js';
+import { MAX_MODEL_NAME_CHARACTERS, addedModelNameProblem } from '../ai-chat/ai-model-names.js';
 
+// AI Agent Settings (docs/ui/ai-chat.md, "AI Agent Settings"): one folder tab per
+// provider holding its key and the models the vault added; then web access, the rules
+// for what the AI may see, and the token window. Picking a model (and so
+// a provider) happens in the chat. Explanations live in tooltips.
 
-
-function renderInstalledModelOptions(state) {
-    if (!Array.isArray(state.installedModels)) {
-        throw new Error('AI settings installed models must be an array');
-    }
-    if (state.isLoadingModels) {
-        return '<option value="">Loading models…</option>';
-    }
-    if (state.installedModels.length === 0) {
-        return '<option value="">No available models</option>';
-    }
-    const hasSelectedModel = state.installedModels.includes(state.model);
-    const placeholderSelected = hasSelectedModel ? '' : 'selected';
-    // Built with map and join: ShockHarness 0.15 never finishes on a template that
-    // accumulates in a loop (docs/design/shockharness-0.13-markup-feedback.md).
-    const modelOptions = state.installedModels.map((model) => {
-        if (typeof model !== 'string' || model === '') {
-            throw new Error('AI settings installed model name is invalid');
-        }
-        const selected = model === state.model ? 'selected' : '';
-        return `<option value="${escapeHtml(model)}" ${selected}>${escapeHtml(model)}</option>`;
-    }).join('');
-    return `<option value="" disabled ${placeholderSelected}>Select model</option>${modelOptions}`;
-}
-
+// The providers MetaList offers, in tab order (the server's catalog, app/services/ai_catalog.py).
+const PROVIDER_TABS = Object.freeze([{ provider: 'openai', label: 'OpenAI' }]);
+const ADDED_MODELS_TOOLTIP = 'Models MetaList does not list yet. They appear in the chat\'s model picker.';
+const WEB_ACCESS_CHOICES = Object.freeze([
+    ['none', 'Off', 'The AI never opens web pages.'],
+    ['contextual', 'Links in your notes', 'The AI may open links that appear in the notes it can see or in your message.'],
+    ['full', 'Any public page', 'The AI may open any public web page it chooses. Web pages are treated as untrusted.'],
+]);
+const PRIVACY_RULES_TOOLTIP = [
+    'Tags count with everything MetaList infers: inherited tags, implications and synonyms.',
+    'A hidden note hides everything under it, and never-send wins over only-send.',
+    'Phrase rules read every note in view each time you send, so many notes start the chat more slowly.',
+].join(' ');
+const TOKEN_WINDOW_TOOLTIP = 'The most the AI reads from your notes at once, in tokens (about ¾ of a word each), '
+    + 'for one answer or one batch of tag suggestions. A note is never split from its children; '
+    + 'notes past the limit are left out.';
+const SEARCH_STRIP_QUOTES = /^["“](.*)["”]$/;
 
 function retrievalStateFields(settings, provider) {
-    const validated = validateAgentRetrievalSettings(settings, provider);
-    return {
-        maxPageApproximateTokens: validated.maxPageApproximateTokens,
-        taggingBatchTokens: validated.taggingBatchTokens,
-    };
+    return { maxPageApproximateTokens: validateAgentRetrievalSettings(settings, provider).maxPageApproximateTokens };
 }
 
+function nonEmptyLines(text) {
+    return text.split('\n').map((line) => line.trim()).filter((line) => line !== '');
+}
 
-function retrievalSettingsKey(provider) {
-    if (provider === 'openai') {
-        return 'openAiRetrievalSettings';
+// A rule typed into a chip field: "a phrase" in quotes, or a tag.
+export function parsePrivacyRuleEntry(text) {
+    if (typeof text !== 'string') {
+        throw new Error('parsePrivacyRuleEntry requires text');
     }
-    throw new Error(`Unsupported AI provider: ${provider}`);
+    const trimmed = text.trim();
+    const quoted = SEARCH_STRIP_QUOTES.exec(trimmed);
+    if (quoted !== null) {
+        return { kind: 'phrase', value: quoted[1].trim() };
+    }
+    return { kind: 'tag', value: trimmed };
 }
 
+function renderRuleChips(tagsText, phrasesText, side) {
+    const tags = nonEmptyLines(tagsText).map((tag) => ({ kind: 'tag', value: tag, shown: tag }));
+    const phrases = nonEmptyLines(phrasesText).map((phrase) => ({ kind: 'phrase', value: phrase, shown: `“${phrase}”` }));
+    return [...tags, ...phrases].map((rule) => `
+        <span class="ai-settings-chip">${escapeHtml(rule.shown)}<button type="button" class="ai-settings-chip-remove" data-side="${side}" data-kind="${rule.kind}" data-value="${escapeHtml(rule.value)}" aria-label="Remove ${escapeHtml(rule.shown)}" title="Remove">×</button></span>`).join('');
+}
+
+function credentialStatusText(state) {
+    if (state.credentialPersistent) return 'Key saved, encrypted in this vault';
+    if (state.credentialConfigured) return 'Key saved for this session';
+    return 'No key yet';
+}
+
+function renderKeyRow(state) {
+    const busy = state.isLoadingCredential ? 'disabled' : '';
+    if (state.credentialConfigured && !state.isChangingKey) {
+        return `
+            <div class="ai-settings-row">
+                <span class="ai-settings-row-label">Key</span>
+                <span class="ai-settings-key-status" role="status">${escapeHtml(credentialStatusText(state))}</span>
+                <button type="button" class="secondary-btn" id="ai-agent-key-change" ${busy}>Change</button>
+                <button type="button" class="secondary-btn" id="ai-agent-key-remove" ${busy}>Remove</button>
+            </div>`;
+    }
+    let cancel = '';
+    if (state.isChangingKey) cancel = `<button type="button" class="secondary-btn" id="ai-agent-key-cancel" ${busy}>Cancel</button>`;
+    return `
+        <div class="ai-settings-row">
+            <label class="ai-settings-row-label" for="ai-agent-api-key">Key</label>
+            <input id="ai-agent-api-key" type="password" value="" placeholder="Paste your API key" maxlength="512" autocomplete="new-password" data-1p-ignore data-lpignore="true" ${busy}>
+            <button type="button" id="ai-agent-key-save" ${busy}>Save key</button>
+            ${cancel}
+        </div>`;
+}
+
+function renderAddedModels(state) {
+    // Until the tab's models arrive, the row shows empty and waits.
+    const isLoaded = state.provider in state.addedModelsByProvider;
+    const disabled = isLoaded && !state.isLoadingModels ? '' : 'disabled';
+    let added = [];
+    if (isLoaded) added = state.addedModelsByProvider[state.provider];
+    const chips = added.map((model) => `
+        <span class="ai-settings-chip">${escapeHtml(model)}<button type="button" class="ai-settings-chip-remove" data-model="${escapeHtml(model)}" aria-label="Remove ${escapeHtml(model)}" title="Remove">×</button></span>`).join('');
+    return `
+        <div class="ai-settings-row ai-settings-row-top">
+            <label class="ai-settings-row-label" for="ai-agent-add-model" title="${escapeHtml(ADDED_MODELS_TOOLTIP)}">Your models</label>
+            <div class="ai-settings-stack">
+                <div class="ai-settings-chips" id="ai-agent-added-models">${chips}</div>
+                <div class="ai-settings-inline">
+                    <input id="ai-agent-add-model" type="text" value="" placeholder="Model name, as ${escapeHtml(state.providerLabel)} writes it" maxlength="${MAX_MODEL_NAME_CHARACTERS}" autocomplete="off" spellcheck="false" ${disabled}>
+                    <button type="button" class="secondary-btn" id="ai-agent-add-model-button" ${disabled}>Add</button>
+                </div>
+            </div>
+        </div>`;
+}
+
+function renderProviderPanel(state) {
+    let billing = '';
+    if (state.billingUrl !== '') {
+        billing = `<a class="ai-settings-indented ai-settings-link" href="${escapeHtml(state.billingUrl)}" target="_blank" rel="noopener noreferrer">Usage and billing</a>`;
+    }
+    return `
+        <div class="ai-settings-tab-panel" role="tabpanel" aria-labelledby="ai-agent-tab-${escapeHtml(state.provider)}">
+            ${renderKeyRow(state)}
+            ${renderAddedModels(state)}
+            ${billing}
+        </div>`;
+}
+
+function renderRulesSection(state) {
+    const hasWhitelistRules = nonEmptyLines(state.whitelistTagsText).length + nonEmptyLines(state.whitelistPhrasesText).length > 0;
+    const showsWhitelist = [state.isWhitelistShown, hasWhitelistRules].includes(true);
+    let whitelist = '';
+    if (showsWhitelist) {
+        whitelist = `
+            <div class="ai-settings-chips">${renderRuleChips(state.whitelistTagsText, state.whitelistPhrasesText, 'whitelist')}</div>
+            <input id="ai-agent-whitelist-input" type="text" placeholder="Tag, or &quot;a phrase&quot; in quotes" autocomplete="off" aria-label="Add an only-send rule">`;
+    }
+    return `
+        <section class="ai-settings-section ai-agent-cloud-privacy-settings">
+            <h3 title="${escapeHtml(PRIVACY_RULES_TOOLTIP)}">Never send notes with <span class="ai-settings-term">(blacklist)</span></h3>
+            <div class="ai-settings-chips">${renderRuleChips(state.blacklistTagsText, state.blacklistPhrasesText, 'blacklist')}</div>
+            <input id="ai-agent-blacklist-input" type="text" placeholder="Tag, or &quot;a phrase&quot; in quotes" autocomplete="off" aria-label="Add a never-send rule">
+            <label class="ai-settings-check" title="${escapeHtml(PRIVACY_RULES_TOOLTIP)}">
+                <input type="checkbox" id="ai-agent-whitelist-toggle" ${showsWhitelist ? 'checked' : ''}>
+                <span>Only send notes with <span class="ai-settings-term">(whitelist)</span></span>
+            </label>
+            ${whitelist}
+            <p class="ai-settings-hint">@password and @username notes are never sent.</p>
+        </section>`;
+}
+
+// A key saved or removed changes which models the chat offers, Save or not.
+function announceKeyChange() {
+    document.dispatchEvent(new CustomEvent('metalist:ai-settings-changed', { detail: { reloadModels: true } }));
+}
 
 export class AiAgentSettingsModal extends BaseModal {
     constructor(readSettings, saveSettings) {
@@ -82,41 +179,45 @@ export class AiAgentSettingsModal extends BaseModal {
 
     getInitialModalState() {
         const settings = this._readSettings();
-        const retrievalSettings = settings.openAiRetrievalSettings;
+        const tab = PROVIDER_TABS.find((entry) => entry.provider === settings.provider);
+        if (tab === undefined) {
+            throw new Error(`Unsupported AI provider: ${settings.provider}`);
+        }
         return {
+            // The open tab: it starts on the provider the chat uses.
             provider: settings.provider,
-            model: settings.model,
+            // The token window belongs to the provider the chat uses, whichever tab is open.
+            chatProvider: settings.provider,
+            providerLabel: tab.label,
+            billingUrl: '',
             webAccessMode: validateAgentWebAccessMode(settings.webAccessMode),
-            openAiRetrievalSettings: retrievalStateFields(
-                settings.openAiRetrievalSettings,
-                'openai',
-            ),
             ...cloudPrivacyPolicyToTextFields(settings.cloudPrivacyPolicy),
-            ...retrievalStateFields(retrievalSettings, settings.provider),
-            installedModels: [],
+            ...retrievalStateFields(settings.openAiRetrievalSettings, settings.provider),
+            // The open tab's shipped models, so an added name cannot repeat one.
+            shippedModels: [],
+            // Each viewed provider's own models, saved with the other settings.
+            addedModelsByProvider: {},
+            isWhitelistShown: false,
             isLoadingModels: false,
             isLoadingCredential: false,
-            openAiCredentialConfigured: false,
-            openAiCredentialPersistent: false,
+            isChangingKey: false,
+            credentialConfigured: false,
+            credentialPersistent: false,
             error: '',
         };
     }
 
+    // The right-click menu's Cloud privacy item opens the dialog at its rules.
     focusCloudPrivacySettings() {
         if (!this.isOpen) {
             throw new Error('Cloud privacy settings cannot be focused while the modal is closed');
         }
-        const fieldset = document.querySelector(
-            '#ai-agent-settings-modal .ai-agent-cloud-privacy-settings',
-        );
-        const firstInput = document.getElementById('ai-agent-cloud-whitelist-tags');
-        if (!(fieldset instanceof HTMLElement)) {
-            throw new Error('AI settings cloud privacy fieldset missing');
+        const section = document.querySelector('#ai-agent-settings-modal .ai-agent-cloud-privacy-settings');
+        const firstInput = document.getElementById('ai-agent-blacklist-input');
+        if (!(section instanceof HTMLElement) || !(firstInput instanceof HTMLInputElement)) {
+            throw new Error('AI settings privacy rules missing');
         }
-        if (!(firstInput instanceof HTMLTextAreaElement)) {
-            throw new Error('AI settings cloud privacy first input missing');
-        }
-        fieldset.scrollIntoView({ block: 'start' });
+        section.scrollIntoView({ block: 'start' });
         firstInput.focus({ preventScroll: true });
     }
 
@@ -139,128 +240,35 @@ export class AiAgentSettingsModal extends BaseModal {
             throw new Error(`Modal element missing: ${this.modalElementId}`);
         }
         const state = this.getModalState();
-        if (state.provider !== 'openai') {
-            throw new Error(`Unsupported AI provider: ${state.provider}`);
-        }
-        const installedModelOptions = renderInstalledModelOptions(state);
-        const modelSelectDisabled = (
-            state.isLoadingModels
-            || state.installedModels.length === 0
-        ) ? 'disabled' : '';
-        const saveDisabled = (
-            state.isLoadingModels
-        ) ? 'disabled' : '';
-        const runtimeMarkup = `
-            <div class="ai-agent-connection" role="status">
-                <span>Connection</span>
-                <strong>OpenAI API</strong>
-                <small>Official API · requests are sent with store disabled</small>
-            </div>
-        `;
-        const credentialStatus = state.openAiCredentialPersistent
-            ? 'Configured · encrypted in this vault'
-            : (state.openAiCredentialConfigured
-                ? 'Configured · session only'
-                : 'Not configured');
-        const credentialControlsDisabled = (
-            state.isLoadingCredential
-        ) ? 'disabled' : '';
-        const saveCredentialDisabled = (
-            state.isLoadingCredential
-        ) ? 'disabled' : '';
-        const providerSpecificMarkup = `
-            <section class="ai-agent-credential" aria-labelledby="ai-agent-openai-title">
-                <h3 id="ai-agent-openai-title">OpenAI API key</h3>
-                <p>
-                    The key is sent only to the MetaList server. Encrypted vaults
-                    persist it encrypted; unencrypted vaults keep it for this
-                    server session only.
-                </p>
-                <div class="ai-agent-credential-row">
-                    <label for="ai-agent-openai-api-key">
-                        <span>API key</span>
-                        <input id="ai-agent-openai-api-key" type="password" value="" placeholder="${escapeHtml(credentialStatus)}" maxlength="512" autocomplete="new-password" ${credentialControlsDisabled}>
-                    </label>
-                    <button type="button" id="ai-agent-openai-save" ${saveCredentialDisabled}>Save key</button>
-                </div>
-                <p class="ai-agent-credential-status" role="status">${escapeHtml(credentialStatus)}</p>
-                <button type="button" class="secondary-btn" id="ai-agent-openai-remove" ${state.openAiCredentialConfigured && !state.isLoadingCredential ? '' : 'disabled'}>Remove key</button>
-            </section>
-        `;
+        const tabs = PROVIDER_TABS.map((tab) => {
+            const selected = tab.provider === state.provider;
+            return `<button type="button" role="tab" id="ai-agent-tab-${tab.provider}" class="ai-settings-tab" aria-selected="${selected}" data-provider="${tab.provider}">${escapeHtml(tab.label)}</button>`;
+        }).join('');
+        const webChoices = WEB_ACCESS_CHOICES.map(([mode, label, tooltip]) => (
+            `<button type="button" role="radio" class="ai-settings-segment" aria-checked="${state.webAccessMode === mode}" data-mode="${mode}" title="${escapeHtml(tooltip)}">${escapeHtml(label)}</button>`
+        )).join('');
         modalElement.innerHTML = `
             <div class="modal-content ai-agent-settings-modal-content">
                 <h2>AI Agent Settings</h2>
-                <div class="ai-agent-settings-controls">
-                    ${runtimeMarkup}
-                    <label for="ai-agent-installed-model">
-                        <span>OpenAI model</span>
-                        <select id="ai-agent-installed-model" ${modelSelectDisabled}>
-                            ${installedModelOptions}
-                        </select>
-                    </label>
-                    <fieldset class="ai-agent-web-settings">
-                        <legend>Web access</legend>
-                        <p>
-                            Controls which public web sources the agent may retrieve.
-                            Content from web pages is treated as untrusted evidence.
-                        </p>
-                        <label for="ai-agent-web-access-mode">
-                            <span>Browsing mode</span>
-                            <select id="ai-agent-web-access-mode">
-                                <option value="none" ${state.webAccessMode === 'none' ? 'selected' : ''}>No web access</option>
-                                <option value="contextual" ${state.webAccessMode === 'contextual' ? 'selected' : ''}>Open links from permitted context</option>
-                                <option value="full" ${state.webAccessMode === 'full' ? 'selected' : ''}>Open any public web page</option>
-                            </select>
-                        </label>
-                    </fieldset>
-                    <fieldset class="ai-agent-retrieval-settings">
-                        <legend>OpenAI evidence limit</legend>
-                        <p>
-                            One evidence payload contains complete result trees in
-                            user-visible order up to this approximate token limit.
-                            A result tree is never divided; trailing trees are omitted.
-                        </p>
-                        <label for="ai-agent-max-page-approximate-tokens">
-                            <span>Maximum approximate evidence tokens</span>
-                            <input id="ai-agent-max-page-approximate-tokens" name="ai-agent-max-page-approximate-tokens" type="number" autocomplete="off" data-1p-ignore data-lpignore="true" min="500" max="500000" step="100" value="${escapeHtml(String(state.maxPageApproximateTokens))}">
-                        </label>
-                        <label for="ai-agent-tagging-batch-tokens">
-                            <span>Tagging batch token window</span>
-                            <input id="ai-agent-tagging-batch-tokens" name="ai-agent-tagging-batch-tokens" type="number" autocomplete="off" data-1p-ignore data-lpignore="true" min="500" max="500000" step="100" value="${escapeHtml(String(state.taggingBatchTokens))}">
-                        </label>
-                    </fieldset>
-                    <fieldset class="ai-agent-cloud-privacy-settings">
-                        <legend>Cloud privacy</legend>
-                        <p>
-                            Applies to every cloud AI provider. Each whitelist is OR;
-                            each blacklist is OR; blacklists win. Tag rules use MetaList
-                            inheritance, implications, and synonyms. A hidden ancestor
-                            hides its entire subtree. <code>@password</code> is always hidden.
-                            Phrase rules read the text of every note in view each time you send
-                            a message, so with many notes they make the chat slower to start.
-                        </p>
-                        <label for="ai-agent-cloud-whitelist-tags">
-                            <span>Whitelisted tags · one per line</span>
-                            <textarea id="ai-agent-cloud-whitelist-tags" rows="4" maxlength="51400" placeholder="project-tag&#10;another-tag">${escapeHtml(state.whitelistTagsText)}</textarea>
-                        </label>
-                        <label for="ai-agent-cloud-whitelist-phrases">
-                            <span>Whitelisted text phrases · one per line</span>
-                            <textarea id="ai-agent-cloud-whitelist-phrases" rows="4" maxlength="100200" placeholder="allowed phrase">${escapeHtml(state.whitelistPhrasesText)}</textarea>
-                        </label>
-                        <label for="ai-agent-cloud-blacklist-tags">
-                            <span>Blacklisted tags · one per line</span>
-                            <textarea id="ai-agent-cloud-blacklist-tags" rows="4" maxlength="51400" placeholder="private-tag">${escapeHtml(state.blacklistTagsText)}</textarea>
-                        </label>
-                        <label for="ai-agent-cloud-blacklist-phrases">
-                            <span>Blacklisted text phrases · one per line</span>
-                            <textarea id="ai-agent-cloud-blacklist-phrases" rows="4" maxlength="100200" placeholder="sensitive phrase">${escapeHtml(state.blacklistPhrasesText)}</textarea>
-                        </label>
-                    </fieldset>
-                </div>
-                ${providerSpecificMarkup}
-                <p class="error-message">${escapeHtml(state.error)}</p>
+                <div class="ai-settings-tabs" role="tablist" aria-label="AI provider">${tabs}</div>
+                ${renderProviderPanel(state)}
+                <section class="ai-settings-section">
+                    <h3>Web access</h3>
+                    <div class="ai-settings-segments" role="radiogroup" aria-label="Web access" id="ai-agent-web-access">${webChoices}</div>
+                </section>
+                ${renderRulesSection(state)}
+                <section class="ai-settings-section ai-settings-limits">
+                    <div class="ai-settings-stacked">
+                        <span class="ai-settings-wide-label">
+                            <label for="ai-agent-max-page-approximate-tokens">Max token window</label>
+                            <span class="ai-settings-help" tabindex="0" role="img" aria-label="${escapeHtml(TOKEN_WINDOW_TOOLTIP)}" title="${escapeHtml(TOKEN_WINDOW_TOOLTIP)}">?</span>
+                        </span>
+                        <input id="ai-agent-max-page-approximate-tokens" type="number" autocomplete="off" data-1p-ignore data-lpignore="true" min="500" max="500000" step="100" value="${escapeHtml(String(state.maxPageApproximateTokens))}">
+                    </div>
+                </section>
+                <p class="error-message" role="alert">${escapeHtml(state.error)}</p>
                 <div class="form-actions">
-                    <button type="button" class="primary-btn" id="ai-agent-save" data-modal-enter-action ${saveDisabled}>Save</button>
+                    <button type="button" class="primary-btn" id="ai-agent-save" data-modal-enter-action ${state.isLoadingModels ? 'disabled' : ''}>Save</button>
                     <button type="button" class="secondary-btn" id="ai-agent-cancel">Cancel</button>
                 </div>
             </div>
@@ -268,144 +276,176 @@ export class AiAgentSettingsModal extends BaseModal {
         this._setupControls();
     }
 
-    _setupControls() {
-        const installedModelSelect = document.getElementById('ai-agent-installed-model');
-        const openAiApiKeyInput = document.getElementById('ai-agent-openai-api-key');
-        const openAiSaveButton = document.getElementById('ai-agent-openai-save');
-        const openAiRemoveButton = document.getElementById('ai-agent-openai-remove');
-        const maxPageApproximateTokensInput = document.getElementById(
-            'ai-agent-max-page-approximate-tokens',
-        );
-        const webAccessModeSelect = document.getElementById('ai-agent-web-access-mode');
-        const whitelistTagsInput = document.getElementById(
-            'ai-agent-cloud-whitelist-tags',
-        );
-        const whitelistPhrasesInput = document.getElementById(
-            'ai-agent-cloud-whitelist-phrases',
-        );
-        const blacklistTagsInput = document.getElementById(
-            'ai-agent-cloud-blacklist-tags',
-        );
-        const blacklistPhrasesInput = document.getElementById(
-            'ai-agent-cloud-blacklist-phrases',
-        );
-        const saveButton = document.getElementById('ai-agent-save');
-        const cancelButton = document.getElementById('ai-agent-cancel');
-        const state = this.getModalState();
-        if (state.provider === 'openai' && !(openAiApiKeyInput instanceof HTMLInputElement)) {
-            throw new Error('AI settings OpenAI API key input missing');
+    _element(id, type) {
+        const element = document.getElementById(id);
+        if (!(element instanceof type)) {
+            throw new Error(`AI settings control missing: ${id}`);
         }
-        if (state.provider === 'openai' && !(openAiSaveButton instanceof HTMLButtonElement)) {
-            throw new Error('AI settings OpenAI save button missing');
-        }
-        if (state.provider === 'openai' && !(openAiRemoveButton instanceof HTMLButtonElement)) {
-            throw new Error('AI settings OpenAI remove button missing');
-        }
-        if (!(maxPageApproximateTokensInput instanceof HTMLInputElement)) {
-            throw new Error('AI settings approximate evidence tokens input missing');
-        }
-        if (!(webAccessModeSelect instanceof HTMLSelectElement)) {
-            throw new Error('AI settings web access selector missing');
-        }
-        for (const [input, label] of [
-            [whitelistTagsInput, 'whitelisted tags'],
-            [whitelistPhrasesInput, 'whitelisted phrases'],
-            [blacklistTagsInput, 'blacklisted tags'],
-            [blacklistPhrasesInput, 'blacklisted phrases'],
-        ]) {
-            if (!(input instanceof HTMLTextAreaElement)) {
-                throw new Error(`AI settings cloud privacy ${label} input missing`);
-            }
-        }
-        if (!(installedModelSelect instanceof HTMLSelectElement)) {
-            throw new Error('AI settings installed model selector missing');
-        }
-        if (!(saveButton instanceof HTMLButtonElement)) {
-            throw new Error('AI settings save button missing');
-        }
-        if (!(cancelButton instanceof HTMLButtonElement)) {
-            throw new Error('AI settings cancel button missing');
-        }
-
-        installedModelSelect.onchange = () => {
-            this.updateModalState({ model: installedModelSelect.value, error: '' });
-            this.renderModalContent();
-        };
-        webAccessModeSelect.onchange = () => {
-            this.updateModalState({
-                webAccessMode: validateAgentWebAccessMode(webAccessModeSelect.value),
-                error: '',
-            });
-        };
-        if (openAiApiKeyInput instanceof HTMLInputElement) {
-            openAiApiKeyInput.oninput = () => {
-                this.updateModalState({ error: '' });
-                const error = document.querySelector(
-                    '#ai-agent-settings-modal .error-message',
-                );
-                if (!(error instanceof HTMLElement)) {
-                    throw new Error('AI settings error message missing');
-                }
-                error.textContent = '';
-            };
-        }
-        const taggingBatchInput = document.getElementById('ai-agent-tagging-batch-tokens');
-        if (!(taggingBatchInput instanceof HTMLInputElement)) throw new Error('Tagging batch input missing');
-        taggingBatchInput.oninput = () => {
-            this._updateRetrievalSetting('taggingBatchTokens', Number(taggingBatchInput.value));
-        };
-        maxPageApproximateTokensInput.oninput = () => {
-            this._updateRetrievalSetting(
-                'maxPageApproximateTokens',
-                Number(maxPageApproximateTokensInput.value),
-            );
-        };
-        // Dictated text pasted into a tag list becomes tags, one per line.
-        whitelistTagsInput.onpaste = (event) => handleDictationPasteEvent(event, 'tag-lines');
-        blacklistTagsInput.onpaste = (event) => handleDictationPasteEvent(event, 'tag-lines');
-        whitelistTagsInput.oninput = () => {
-            this.updateModalState({ whitelistTagsText: whitelistTagsInput.value, error: '' });
-        };
-        whitelistPhrasesInput.oninput = () => {
-            this.updateModalState({
-                whitelistPhrasesText: whitelistPhrasesInput.value,
-                error: '',
-            });
-        };
-        blacklistTagsInput.oninput = () => {
-            this.updateModalState({ blacklistTagsText: blacklistTagsInput.value, error: '' });
-        };
-        blacklistPhrasesInput.oninput = () => {
-            this.updateModalState({
-                blacklistPhrasesText: blacklistPhrasesInput.value,
-                error: '',
-            });
-        };
-        if (openAiRemoveButton instanceof HTMLButtonElement) {
-            openAiRemoveButton.onclick = () => void this._handleRemoveOpenAiKey();
-        }
-        if (openAiSaveButton instanceof HTMLButtonElement) {
-            openAiSaveButton.onclick = () => void this._handleSaveOpenAiKey();
-        }
-        saveButton.onclick = () => void this._handleSave();
-        cancelButton.onclick = () => this.requestClose();
+        return element;
     }
 
-    _updateRetrievalSetting(fieldName, value) {
+    _setupControls() {
         const state = this.getModalState();
-        const settingsKey = retrievalSettingsKey(state.provider);
-        const providerSettings = state[settingsKey];
-        if (!providerSettings || typeof providerSettings !== 'object') {
-            throw new Error(`AI ${state.provider} retrieval settings missing`);
+        for (const tab of document.querySelectorAll('#ai-agent-settings-modal .ai-settings-tab')) {
+            tab.onclick = () => void this._selectProvider(tab.dataset.provider);
         }
-        this.updateModalState({
-            [fieldName]: value,
-            [settingsKey]: {
-                ...providerSettings,
-                [fieldName]: value,
-            },
-            error: '',
+        this._setupKeyControls(state);
+        this._setupAddedModelControls();
+        for (const segment of document.querySelectorAll('#ai-agent-web-access .ai-settings-segment')) {
+            segment.onclick = () => this._update({ webAccessMode: validateAgentWebAccessMode(segment.dataset.mode) });
+        }
+        this._setupRuleControls();
+        const limitInput = this._element('ai-agent-max-page-approximate-tokens', HTMLInputElement);
+        limitInput.oninput = () => {
+            this._setState({ maxPageApproximateTokens: Number(limitInput.value), error: '' });
+        };
+        this._element('ai-agent-save', HTMLButtonElement).onclick = () => void this._handleSave();
+        this._element('ai-agent-cancel', HTMLButtonElement).onclick = () => this.requestClose();
+    }
+
+    _setupKeyControls(state) {
+        if (state.credentialConfigured && !state.isChangingKey) {
+            this._element('ai-agent-key-change', HTMLButtonElement).onclick = () => this._update({ isChangingKey: true });
+            this._element('ai-agent-key-remove', HTMLButtonElement).onclick = () => void this._handleRemoveKey();
+            return;
+        }
+        const input = this._element('ai-agent-api-key', HTMLInputElement);
+        this._element('ai-agent-key-save', HTMLButtonElement).onclick = () => void this._handleSaveKey(input.value);
+        input.onkeydown = (event) => {
+            if (event.key !== 'Enter') return;
+            event.preventDefault();
+            event.stopPropagation();
+            void this._handleSaveKey(input.value);
+        };
+        if (state.isChangingKey) {
+            this._element('ai-agent-key-cancel', HTMLButtonElement).onclick = () => this._update({ isChangingKey: false });
+        }
+    }
+
+    _setupAddedModelControls() {
+        const input = this._element('ai-agent-add-model', HTMLInputElement);
+        this._element('ai-agent-add-model-button', HTMLButtonElement).onclick = () => this._addModel(input.value.trim());
+        input.onkeydown = (event) => {
+            if (event.key !== 'Enter') return;
+            event.preventDefault();
+            event.stopPropagation();
+            this._addModel(input.value.trim());
+        };
+        for (const removeButton of document.querySelectorAll('#ai-agent-added-models .ai-settings-chip-remove')) {
+            removeButton.onclick = () => this._removeModel(removeButton.dataset.model);
+        }
+    }
+
+    _setupRuleControls() {
+        for (const side of ['blacklist', 'whitelist']) {
+            const input = document.getElementById(`ai-agent-${side}-input`);
+            if (!(input instanceof HTMLInputElement)) continue;
+            input.onkeydown = (event) => {
+                if (event.key !== 'Enter') return;
+                event.preventDefault();
+                event.stopPropagation();
+                this._addRules(side, [input.value], `ai-agent-${side}-input`);
+            };
+            // A pasted list (one rule per line, or comma-separated) adds every rule.
+            input.onpaste = (event) => {
+                const text = event.clipboardData.getData('text/plain');
+                if (!/[\n,]/.test(text)) return;
+                event.preventDefault();
+                this._addRules(side, text.split(/[\n,]/), `ai-agent-${side}-input`);
+            };
+        }
+        for (const removeButton of document.querySelectorAll('#ai-agent-settings-modal .ai-agent-cloud-privacy-settings .ai-settings-chip-remove')) {
+            removeButton.onclick = () => this._removeRule(removeButton.dataset.side, removeButton.dataset.kind, removeButton.dataset.value);
+        }
+        const toggle = this._element('ai-agent-whitelist-toggle', HTMLInputElement);
+        toggle.onchange = () => {
+            if (toggle.checked) {
+                this._update({ isWhitelistShown: true });
+                this._element('ai-agent-whitelist-input', HTMLInputElement).focus();
+                return;
+            }
+            // Off sends every note again: its rules go.
+            this._update({ isWhitelistShown: false, whitelistTagsText: '', whitelistPhrasesText: '' });
+        };
+    }
+
+    // The state store rejects a write that changes nothing; a repeated status or error is one.
+    _setState(fields) {
+        const current = this.getModalState();
+        if (!stateValuesEqual(current, { ...current, ...fields })) this.updateModalState(fields);
+    }
+
+    _update(fields) {
+        this._setState({ ...fields, error: '' });
+        this.renderModalContent();
+    }
+
+    _addRules(side, entries, focusId) {
+        const state = this.getModalState();
+        let tags = nonEmptyLines(state[`${side}TagsText`]);
+        let phrases = nonEmptyLines(state[`${side}PhrasesText`]);
+        for (const entry of entries) {
+            if (entry.trim() === '') continue;
+            const rule = parsePrivacyRuleEntry(entry);
+            if (rule.kind === 'phrase' && !phrases.includes(rule.value)) phrases = [...phrases, rule.value];
+            if (rule.kind === 'tag' && !tags.includes(rule.value)) tags = [...tags, rule.value];
+        }
+        const fields = { [`${side}TagsText`]: tags.join('\n'), [`${side}PhrasesText`]: phrases.join('\n') };
+        const problem = getCloudPrivacyTextFieldsValidationMessage({ ...state, ...fields });
+        if (problem !== '') {
+            this._setState({ error: problem });
+            this.renderModalContent();
+            return;
+        }
+        this._update(fields);
+        this._element(focusId, HTMLInputElement).focus();
+    }
+
+    _removeRule(side, kind, value) {
+        const field = kind === 'tag' ? `${side}TagsText` : `${side}PhrasesText`;
+        const state = this.getModalState();
+        this._update({ [field]: nonEmptyLines(state[field]).filter((line) => line !== value).join('\n') });
+    }
+
+    // An added model joins the open tab's list; Save keeps it with the other settings.
+    _addModel(name) {
+        const state = this.getModalState();
+        const added = state.addedModelsByProvider[state.provider];
+        const problem = addedModelNameProblem(name, {
+            installedModels: [...state.shippedModels, ...added], addedModels: added,
         });
+        if (problem !== '') {
+            this._setState({ error: problem });
+            this.renderModalContent();
+            return;
+        }
+        this._update({ addedModelsByProvider: { ...state.addedModelsByProvider, [state.provider]: [...added, name] } });
+        this._element('ai-agent-add-model', HTMLInputElement).focus();
+    }
+
+    _removeModel(name) {
+        const state = this.getModalState();
+        const added = state.addedModelsByProvider[state.provider];
+        if (!added.includes(name)) {
+            throw new Error(`Only an added model can be removed, not ${name}`);
+        }
+        this._update({
+            addedModelsByProvider: { ...state.addedModelsByProvider, [state.provider]: added.filter((model) => model !== name) },
+        });
+    }
+
+    // A tab shows one provider's key and models; it does not pick the provider the chat uses.
+    async _selectProvider(provider) {
+        const tab = PROVIDER_TABS.find((entry) => entry.provider === provider);
+        if (tab === undefined) {
+            throw new Error(`Unsupported AI provider: ${provider}`);
+        }
+        if (provider === this.getModalState().provider) return;
+        this._update({
+            provider, providerLabel: tab.label, billingUrl: '', shippedModels: [],
+            isChangingKey: false, credentialConfigured: false, credentialPersistent: false,
+        });
+        await this._loadProviderState();
     }
 
     onOpen() {
@@ -414,10 +454,7 @@ export class AiAgentSettingsModal extends BaseModal {
 
     async _loadProviderState() {
         const generation = this._openGeneration;
-        const state = this.getModalState();
-        if (state.provider === 'openai') {
-            await this._loadOpenAiCredentialStatus();
-        }
+        await this._loadCredentialStatus();
         if (this.isCurrentOpen(generation)) await this._loadInstalledModels();
     }
 
@@ -427,21 +464,26 @@ export class AiAgentSettingsModal extends BaseModal {
         if (state.isLoadingModels) {
             return;
         }
-        this.updateModalState({ isLoadingModels: true, error: '' });
+        this._setState({ isLoadingModels: true, error: '' });
         this.renderModalContent();
         try {
-            const payload = await listAiModels({
-                provider: state.provider,
-            });
+            const payload = await listAiModels({ provider: state.provider });
             if (!this.isCurrentOpen(generation)) return;
-            if (!payload || !Array.isArray(payload.models)) {
+            if (!payload || !Array.isArray(payload.models) || !Array.isArray(payload.added_models)
+                || typeof payload.billing_url !== 'string' || typeof payload.label !== 'string') {
                 throw new Error('AI model response missing models');
             }
-            let model = state.model;
-            if (!payload.models.includes(model)) {
-                model = '';
+            // Edits made on a tab survive switching away and back.
+            let addedModelsByProvider = state.addedModelsByProvider;
+            if (!(state.provider in addedModelsByProvider)) {
+                addedModelsByProvider = { ...addedModelsByProvider, [state.provider]: payload.added_models };
             }
-            this.updateModalState({ installedModels: payload.models, model });
+            this._setState({
+                shippedModels: payload.models.filter((model) => !payload.added_models.includes(model)),
+                addedModelsByProvider,
+                billingUrl: payload.billing_url,
+                providerLabel: payload.label,
+            });
         // lint: allow-JS001 rationale="late external responses belong to the closed dialog generation; internal errors rethrow"
         } catch (error) {
             rethrowUnexpectedError(error);
@@ -449,27 +491,27 @@ export class AiAgentSettingsModal extends BaseModal {
             if (!(error instanceof AiApiError)) {
                 throw error;
             }
-            this.updateModalState({ installedModels: [], model: '', error: error.message });
+            this._setState({ error: error.message });
         } finally {
             if (this.isCurrentOpen(generation)) {
-                this.updateModalState({ isLoadingModels: false });
+                this._setState({ isLoadingModels: false });
                 this.renderModalContent();
             }
         }
     }
 
-    async _loadOpenAiCredentialStatus() {
+    async _loadCredentialStatus() {
         const generation = this._openGeneration;
         const state = this.getModalState();
         if (state.isLoadingCredential) {
             return;
         }
-        this.updateModalState({ isLoadingCredential: true, error: '' });
+        this._setState({ isLoadingCredential: true, error: '' });
         this.renderModalContent();
         try {
-            const payload = await loadOpenAiCredentialStatus();
+            const payload = await loadAiCredentialStatus(state.provider);
             if (!this.isCurrentOpen(generation)) return;
-            this._applyOpenAiCredentialStatus(payload);
+            this._applyCredentialStatus(payload);
         // lint: allow-JS001 rationale="late external responses belong to the closed dialog generation; internal errors rethrow"
         } catch (error) {
             rethrowUnexpectedError(error);
@@ -477,119 +519,92 @@ export class AiAgentSettingsModal extends BaseModal {
             if (!(error instanceof AiApiError)) {
                 throw error;
             }
-            this.updateModalState({ error: error.message });
+            this._setState({ error: error.message });
         } finally {
             if (this.isCurrentOpen(generation)) {
-                this.updateModalState({ isLoadingCredential: false });
+                this._setState({ isLoadingCredential: false });
                 this.renderModalContent();
             }
         }
     }
 
-    _applyOpenAiCredentialStatus(payload) {
+    _applyCredentialStatus(payload) {
         if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
-            throw new Error('OpenAI credential status must be an object');
+            throw new Error('AI key status must be an object');
         }
-        if (typeof payload.configured !== 'boolean') {
-            throw new Error('OpenAI credential status configured flag missing');
-        }
-        if (typeof payload.persistent !== 'boolean') {
-            throw new Error('OpenAI credential status persistent flag missing');
+        if (typeof payload.configured !== 'boolean' || typeof payload.persistent !== 'boolean') {
+            throw new Error('AI key status flags missing');
         }
         if (payload.persistent && !payload.configured) {
-            throw new Error('Persistent OpenAI credential must be configured');
+            throw new Error('A persistent AI key must be configured');
         }
-        const state = this.getModalState();
-        if (
-            state.openAiCredentialConfigured === payload.configured
-            && state.openAiCredentialPersistent === payload.persistent
-        ) return;
-        this.updateModalState({
-            openAiCredentialConfigured: payload.configured,
-            openAiCredentialPersistent: payload.persistent,
+        this._setState({
+            credentialConfigured: payload.configured,
+            credentialPersistent: payload.persistent,
         });
     }
 
-    async _handleSaveOpenAiKey() {
-        const input = document.getElementById('ai-agent-openai-api-key');
-        if (!(input instanceof HTMLInputElement)) {
-            throw new Error('AI settings OpenAI API key input missing');
-        }
-        const apiKey = input.value;
+    async _handleSaveKey(apiKey) {
+        const state = this.getModalState();
         if (apiKey.trim() === '') {
-            this.updateModalState({ error: 'Enter an OpenAI API key to save.' });
+            this._setState({ error: `Paste your ${state.providerLabel} API key first.` });
             this.renderModalContent();
             return;
         }
-        this.updateModalState({ isLoadingCredential: true, error: '' });
+        this._setState({ isLoadingCredential: true, error: '' });
         this.renderModalContent();
         try {
-            const payload = await saveOpenAiCredential(apiKey);
-            this._applyOpenAiCredentialStatus(payload);
+            this._applyCredentialStatus(await saveAiCredential(state.provider, apiKey));
+            this._setState({ isChangingKey: false });
+            announceKeyChange();
         } catch (error) {
             rethrowUnexpectedError(error);
             if (!(error instanceof AiApiError)) {
                 throw error;
             }
-            this.updateModalState({ error: error.message });
+            this._setState({ error: error.message });
         } finally {
-            this.updateModalState({ isLoadingCredential: false });
+            this._setState({ isLoadingCredential: false });
             this.renderModalContent();
         }
     }
 
-    async _handleRemoveOpenAiKey() {
+    async _handleRemoveKey() {
+        const state = this.getModalState();
         try {
-            const payload = await clearOpenAiCredential();
-            this._applyOpenAiCredentialStatus(payload);
+            this._applyCredentialStatus(await clearAiCredential(state.provider));
+            announceKeyChange();
             this.renderModalContent();
         } catch (error) {
             rethrowUnexpectedError(error);
             if (!(error instanceof AiApiError)) {
                 throw error;
             }
-            this.updateModalState({ error: error.message });
+            this._setState({ error: error.message });
             this.renderModalContent();
         }
     }
 
     async _handleSave() {
         const state = this.getModalState();
-        if (!state.installedModels.includes(state.model)) {
-            this.updateModalState({ error: 'Select an available model before saving.' });
+        const retrievalSettings = { maxPageApproximateTokens: state.maxPageApproximateTokens };
+        const limitProblem = getAgentRetrievalSettingsValidationMessage(retrievalSettings, state.chatProvider);
+        if (limitProblem !== '') {
+            this._setState({ error: limitProblem });
             this.renderModalContent();
             return;
         }
-        for (const provider of ['openai']) {
-            const providerSettings = state[retrievalSettingsKey(provider)];
-            const validationMessage = getAgentRetrievalSettingsValidationMessage(
-                providerSettings,
-                provider,
-            );
-            if (validationMessage !== '') {
-                this.updateModalState({
-                    error: `OpenAI: ${validationMessage}`,
-                });
-                this.renderModalContent();
-                return;
-            }
-        }
-        const privacyValidationMessage = getCloudPrivacyTextFieldsValidationMessage(state);
-        if (privacyValidationMessage !== '') {
-            this.updateModalState({ error: privacyValidationMessage });
+        const privacyProblem = getCloudPrivacyTextFieldsValidationMessage(state);
+        if (privacyProblem !== '') {
+            this._setState({ error: privacyProblem });
             this.renderModalContent();
             return;
         }
-        const cloudPrivacyPolicy = parseCloudPrivacyTextFields(state);
         await this._saveSettings({
-            provider: state.provider,
-            model: state.model,
+            addedModelsByProvider: state.addedModelsByProvider,
             webAccessMode: validateAgentWebAccessMode(state.webAccessMode),
-            openAiRetrievalSettings: validateAgentRetrievalSettings(
-                state.openAiRetrievalSettings,
-                'openai',
-            ),
-            cloudPrivacyPolicy,
+            openAiRetrievalSettings: validateAgentRetrievalSettings(retrievalSettings, state.chatProvider),
+            cloudPrivacyPolicy: parseCloudPrivacyTextFields(state),
         });
         this.close();
     }

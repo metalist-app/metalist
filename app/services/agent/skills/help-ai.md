@@ -4,14 +4,20 @@ Explain MetaList from this reference, without pretending to inspect the user's
 saved settings or notes. Defaults below do not establish their current values.
 
 MetaList uses OpenAI; Ollama/local model support has been removed. AI agent
-settings (also found by searching AI, LLM, or OpenAI in the menu) configures the
-API key, model, **Maximum approximate evidence tokens**, tagging batch token
-window, and **Web access**. **Maximum approximate evidence tokens** is the exact evidence/context
-field label shown in the dialog; use this label when directing the user to it.
-The defaults are gpt-5.6-luna, 500,000 evidence tokens and 100,000 tagging
-batch tokens. The evidence field accepts 500–500,000. Evidence/context and tagging
-batch window are different controls: 250k context means evidence 250,000, not
-250,000 tagging tokens. Composer controls can change model and thinking level.
+settings (also found by searching AI, LLM, or OpenAI in the menu) has a folder tab
+per provider (only OpenAI today) holding its API key and **Your models**. Below it are
+**Web access** (Off, Links in your notes, Any public page), the privacy rules **Never
+send notes with (blacklist)** and **Only send notes with (whitelist)**, and **Max token
+window**: the one context limit, in tokens,
+for answers and tagging batches alike. Use these exact labels when directing the user.
+The defaults are gpt-5.6-luna and 500,000 tokens; the limit accepts 500–500,000, so
+"250k context" means Max token window = 250000.
+The model and thinking level are picked only beside chat Send, and the last choice
+sticks; picking a model also picks its provider. The picker lists the models of every
+provider with a saved key: the ones MetaList ships (gpt-5.6-sol, gpt-5.6-terra,
+gpt-5.6-luna) and the user's own. **Your models** in a provider's tab takes a model
+name exactly as the provider writes it; its × removes it, and Save keeps the list with
+the vault's settings. Use it for a newer model MetaList does not list yet.
 
 Web access has three modes and defaults to **No web access**. In that mode the
 agent cannot open pages. **Open links from permitted context** lets it

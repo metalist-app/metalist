@@ -9,7 +9,8 @@ from pathlib import Path
 from dotenv import dotenv_values
 
 from app.services.agent.openai_cost_tracking import OpenAICostTracker
-from app.services.agent.openai_inference import OpenAIInferenceAdapter, validate_openai_model
+from app.services.agent.openai_inference import OpenAIInferenceAdapter
+from app.services.ai_catalog import require_shipped_model
 from evals.agent_models import AgentCase
 from evals.agent_runner import build_snapshot, run_agent_cases
 from evals.models import JudgeConfig, RegressionCase
@@ -52,12 +53,12 @@ async def run(arguments):
     # Validate everything before spending tokens or creating a report directory.
     prepared_cases = []
     for case in cases:
-        validate_openai_model(case.model)
+        require_shipped_model("openai", case.model)
         prepared_cases.append(prepare_case(case))
         if any(step.expectation.kind == "output" for step in case.steps) and judge is None:
             raise ValueError("Output cases require --judge")
     if judge is not None:
-        validate_openai_model(judge.model)
+        require_shipped_model("openai", judge.model)
     plan, baseline = plan_selection(cases, prepared_cases, judge=judge,
         repetitions=arguments.repetitions, baseline_path=arguments.changed_since)
     selected_ids = {entry["case_id"] for entry in plan["selected"]}
@@ -121,12 +122,12 @@ async def run_agent(arguments):
     judge = None
     if arguments.judge is not None:
         judge = JudgeConfig.model_validate_json(arguments.judge.read_text(encoding="utf-8"))
-        validate_openai_model(judge.model)
+        require_shipped_model("openai", judge.model)
     # Validate everything before spending tokens or creating a report directory.
     for case in cases:
         if not case.reviewed:
             raise ValueError(f"Review expected behavior and set reviewed=true: {case.id}")
-        validate_openai_model(case.model)
+        require_shipped_model("openai", case.model)
         build_snapshot(case, session_key="validation")
         if case.expectation.answer_criteria and judge is None:
             raise ValueError(f"Cases with answer criteria require --judge: {case.id}")

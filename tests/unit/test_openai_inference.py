@@ -20,7 +20,7 @@ from app.services.agent.inference import StructuredInferenceProgress
 from app.services.agent.openai_inference import OPENAI_API_BASE_URL
 from app.services.agent.openai_inference import OpenAIInferenceAdapter
 from app.services.agent.openai_inference import resolve_openai_reasoning_effort
-from app.services.agent.openai_inference import validate_openai_model
+from app.services.ai_catalog import require_shipped_model, validate_model_name
 from app.services.agent.openai_cost_tracking import OpenAICostTracker
 import app.services.agent.openai_inference as openai_inference_module
 from app.services.agent.staged_summary import SummaryFinding
@@ -431,13 +431,18 @@ def test_openai_text_stream_rejects_output_limit_truncation(monkeypatch) -> None
 
 
 def test_openai_models_and_reasoning_levels_are_strict() -> None:
-    assert validate_openai_model(" gpt-5.6-terra ") == "gpt-5.6-terra"
+    assert require_shipped_model("openai", " gpt-5.6-terra ") == "gpt-5.6-terra"
     assert resolve_openai_reasoning_effort("off") == "none"
     assert resolve_openai_reasoning_effort("high") == "high"
 
-    for invalid_model in ("gpt-5.6", "gpt-4o", ""):
+    for invalid_model in ("gpt-5.6", "gpt-4o"):
         with pytest.raises(ValueError, match="Unsupported OpenAI model"):
-            validate_openai_model(invalid_model)
+            require_shipped_model("openai", invalid_model)
+    # Any well-formed name is a model name; whether a vault may use it is checked where it is used.
+    assert validate_model_name(" gpt-5.7-nova ") == "gpt-5.7-nova"
+    for not_a_name in ("", " ", "gpt 5", "-gpt", "gpt<script>"):
+        with pytest.raises(ValueError, match="Not a model name"):
+            validate_model_name(not_a_name)
 
 
 def test_structured_output_progress_carries_latest_partial_object() -> None:

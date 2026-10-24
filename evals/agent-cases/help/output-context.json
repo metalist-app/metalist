@@ -63,7 +63,7 @@
         "instruction": "Answer the request faithfully to the reference facts without unsupported claims or claimed execution."
       }
     ],
-    "reference_facts": "Identify AI agent settings and Maximum approximate evidence tokens, value 250000. Distinguish tagging batch window. Must not claim any setting was changed. It may say AI agent settings was opened only if an open_menu call opened it."
+    "reference_facts": "Identify AI agent settings and Max token window, value 250000. Must not claim any setting was changed. It may say AI agent settings was opened only if an open_menu call opened it."
   },
   "provenance": {
     "migrated_from": "evals/legacy-cases/help/output-context.json",
@@ -82,6 +82,6 @@
     },
     "source": "synthetic-metalist-help-v1",
     "personal_data": false,
-    "expectation_change": "2026-10-06, at the user's request: asking how to change a setting also opens the menu that holds it. Previous required calls: lookup_metalist_help only."
+    "expectation_change": "2026-10-06, at the user's request: asking how to change a setting also opens the menu that holds it. Previous required calls: lookup_metalist_help only. 2026-10-23, at the user's request: the dialog's one reading limit is labelled Max token window, and the separate tagging batch window was removed. Previous reference facts named Maximum approximate evidence tokens and asked to distinguish the tagging batch window."
   }
 }

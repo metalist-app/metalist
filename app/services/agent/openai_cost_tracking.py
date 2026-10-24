@@ -76,6 +76,8 @@ class OpenAICostSnapshot:
     cached_input_tokens: int
     cache_write_tokens: int
     output_tokens: int
+    # A model a vault added has no price here: its tokens count, its cost does not.
+    includes_unpriced_models: bool
 
 
 _OPENAI_STANDARD_PRICING: dict[str, tuple[OpenAIPricing, OpenAIPricing]] = {
@@ -124,6 +126,10 @@ _OPENAI_STANDARD_PRICING: dict[str, tuple[OpenAIPricing, OpenAIPricing]] = {
 }
 
 
+def is_priced_openai_model(model: str) -> bool:
+    return model in _OPENAI_STANDARD_PRICING
+
+
 def _pricing_for_usage(*, model: str, usage: OpenAITokenUsage) -> OpenAIPricing:
     if model not in _OPENAI_STANDARD_PRICING:
         raise ValueError(f"OpenAI pricing is missing for model: {model}")
@@ -158,10 +164,16 @@ class OpenAICostTracker:
         self._cached_input_tokens = 0
         self._cache_write_tokens = 0
         self._output_tokens = 0
+        self._includes_unpriced_models = False
 
     def record(self, *, model: str, usage: OpenAITokenUsage) -> None:
-        request_cost = estimate_openai_request_cost(model=model, usage=usage)
+        is_priced = is_priced_openai_model(model)
+        request_cost = Decimal(0)
+        if is_priced:
+            request_cost = estimate_openai_request_cost(model=model, usage=usage)
         with self._lock:
+            if not is_priced and not self._includes_unpriced_models:
+                self._includes_unpriced_models = True
             self._estimated_cost_usd += request_cost
             self._uncached_input_tokens += usage.uncached_input_tokens
             self._cached_input_tokens += usage.cached_input_tokens
@@ -176,6 +188,7 @@ class OpenAICostTracker:
                 cached_input_tokens=self._cached_input_tokens,
                 cache_write_tokens=self._cache_write_tokens,
                 output_tokens=self._output_tokens,
+                includes_unpriced_models=self._includes_unpriced_models,
             )
 
     def reset(self) -> None:
@@ -185,6 +198,7 @@ class OpenAICostTracker:
             self._cached_input_tokens = 0
             self._cache_write_tokens = 0
             self._output_tokens = 0
+            self._includes_unpriced_models = False
 
 
 openai_cost_tracker = OpenAICostTracker()

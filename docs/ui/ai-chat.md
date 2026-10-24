@@ -89,7 +89,7 @@ MetaList does not have.
 
 Examples: “How does tag inheritance work?” explains from the tags skill.
 “Open AI settings” opens that dialog. “How do I change context to 250k?” opens
-AI settings and identifies Maximum approximate evidence tokens = 250000, leaving
+AI settings and identifies Max token window = 250000, leaving
 the user to save. “Open Create backup in the menu” highlights its command without
 creating a backup.
 
@@ -229,30 +229,62 @@ The agent cannot expand beyond the frozen scope or cite an undisclosed note ID. 
   Contentless `is_evidence: false` ancestors preserve paths to nested matches
   without disclosing gray/redacted note information.
 
-The only retrieval control in `AI Agent Settings…` is the provider-specific maximum
-approximate evidence-token count.
+The only retrieval control in `AI Agent Settings…` is **Max token window** (its `?`
+explains it in a tooltip): the provider-specific maximum approximate token count of what one
+read returns. Tagging batches use the same limit; there is no separate tagging window.
 
 ## OpenAI Configuration
 
 - OpenAI is the only provider today. Claude and Gemini are planned
   (`docs/ready-to-build/ai-providers.md`).
 
-- Defaults: `gpt-5.6-luna`, 500,000 approximate evidence tokens, and 100,000
-  tagging batch tokens. Saved model and token-limit overrides are retained.
+- Defaults: `gpt-5.6-luna` and 500,000 approximate tokens read at once. Saved model
+  and limit overrides are retained; the retired tagging batch preference
+  (`pref.ai.openai.tagging.batch_tokens`) is dropped from the vault.
 
-- Open `AI Agent Settings…` from the command palette or chat gear to select an
-  supported OpenAI model, configure an API key, and edit the evidence-token limit.
-- The same settings modal has one Cloud privacy section shared by all cloud
-  providers. Its four one-entry-per-line fields configure whitelisted tags,
-  whitelisted text phrases, blacklisted tags, and blacklisted text phrases.
-  The automatic `@password` and `@username` boundaries also apply. The policy is namespace-scoped and is encrypted with client preferences
+- Open `AI Agent Settings…` from the command palette or chat gear. Its layout, top
+  to bottom:
+  - One folder tab per provider; it opens on the provider the chat uses. A tab only
+    shows that provider's settings and picks nothing. It holds the API key (saved,
+    changed or removed at once, apart from Save: "Key saved, encrypted in this
+    vault" or "Key saved for this session"), **Your models**, and a **Usage and
+    billing** link to the provider's own page.
+  - **Web access**: three segments, Off / Links in your notes / Any public page,
+    each explained in its tooltip.
+  - The privacy rules (below).
+  - **Max token window**, in tokens, with a `?` whose tooltip explains it.
+- The dialog has no model or thinking picker: both are chosen beside chat Send.
+- **Model picker** (chat composer): the models of every provider with a saved key,
+  plus the provider of the model picked last even without one
+  (`POST /api2/ai/model-choices`), each provider's under its name, even when there is
+  only one. Picking a model picks its provider too (an option's
+  value is `provider model`, `ai-model-names.js`). Saving or removing a key reloads
+  the picker. Each provider lists the models MetaList ships
+  (`app/services/ai_catalog.py`: `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna`), then
+  the vault's own, added in the provider's tab under **Your models**: a model name as
+  the provider writes it (checked as a name, up to 20 per provider), shown as a chip
+  whose `×` removes it. They are saved with the other settings in the vault's
+  encrypted preferences (`pref.ai.openai.added_models`). A removed model that was
+  picked leaves the picker blank; the picker has no "Select model" prompt. A request names a model this vault can use or is refused politely
+  (`app/services/ai_models.py`); a provider's API address is never editable. An
+  added model uses its provider's limits and has no price in the development cost
+  estimate (`+ unpriced models`).
+- The same settings modal has one privacy section shared by all cloud providers:
+  **Never send notes with (blacklist)** and, behind its checkbox, **Only send notes
+  with (whitelist)**. Each is a row of chips with one input: Enter adds the entry, a
+  tag as typed or "a phrase" in quotes; a pasted list becomes one chip per line; a
+  chip's × removes it. The whitelist stays open while it has entries. They are
+  stored as four lists (whitelisted tags and phrases, blacklisted tags and
+  phrases). The automatic `@password` and `@username` boundaries also apply, as the
+  section's one line says. The policy is namespace-scoped and is encrypted with client preferences
   when the namespace is password-protected.
 - Hovering the AI chat column asks the server to preview that boundary over the
   current note view. Notes the selected provider cannot receive have a gray
   background and blurred content until the pointer leaves chat. Excluded
   descendants are blurred too.
-- The compact composer controls choose model and Thinking Off/Low/Medium/High.
-  Selection persists immediately.
+- The compact composer controls choose model and thinking (High, Medium, Low, Off,
+  listed most thinking first).
+  Selection persists immediately: the last choice is the one used next time.
 - A compact estimated-spend tracker, a developer tool: it exists only when
   `METALIST_ENVIRONMENT=development` (the panel's `data-shows-cost-estimate`; in
   production the **$** button never shows and the cost routes answer 404). Users see

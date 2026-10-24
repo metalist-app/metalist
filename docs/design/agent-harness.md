@@ -285,7 +285,8 @@ coverage.
 ## Configuration
 
 The only retrieval setting is a provider-specific maximum approximate evidence
-token count:
+token count (AI Agent Settings › **Max token window**); tagging batches
+use the same limit:
 
 - OpenAI default 500,000; allowed 500–500,000.
 

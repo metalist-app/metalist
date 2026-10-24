@@ -246,8 +246,8 @@ async function chooseItem(page, choice) {
 async function setTestKey(page, isSet) {
   await page.evaluate(async ({isSet, key}) => {
     const api = await import('/static/js/modules/ai-chat/ai-chat-api.js');
-    if (isSet) await api.saveOpenAiCredential(key);
-    else await api.clearOpenAiCredential();
+    if (isSet) await api.saveAiCredential('openai', key);
+    else await api.clearAiCredential('openai');
   }, {isSet, key: TEST_KEY});
 }
 

@@ -69,7 +69,7 @@ function chatHarness(events) {
     const panel = new Function(...Object.keys(dependencies), `${moduleSource('ai-chat/ai-chat-panel-controller.js')}
         captureActiveAgentScope = () => ({}); return AiChatPanel;`)(...Object.values(dependencies));
     panel._getSettings = () => ({ provider: 'openai', model: 'test-model' });
-    panel._models = ['test-model'];
+    panel._modelGroups = [{ provider: 'openai', label: 'OpenAI', models: ['test-model'] }];
     panel._elements = { input: new Input() };
     panel._render = () => {};
     panel._loadSession = async () => {};
@@ -141,6 +141,17 @@ test('streamed chat deltas and matching final snapshot complete and clean up exa
     assert.equal(h.panel._isBusy, false);
     assert.equal(h.panel._activeChatCompletion, null);
     assert.equal(h.timers.size, 0);
+});
+
+test('two Sends in the same millisecond keep apart', async (t) => {
+    t.mock.method(Date, 'now', () => 1792817359233);
+    const h = chatHarness([{ type: 'done', content: 'Answer', rendered_content: '<p>Answer</p>' }]);
+    await h.panel._submitMessage();
+    h.panel._elements.input.value = 'Test request';
+    await h.panel._submitMessage();
+    const ids = h.panel._messages.map((message) => message.id);
+    assert.equal(ids.length, 4);
+    assert.equal(new Set(ids).size, ids.length);
 });
 
 test('a final-only chat answer and repeated empty session clearing preserve strict state', async () => {

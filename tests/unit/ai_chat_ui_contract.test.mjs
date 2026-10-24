@@ -309,15 +309,19 @@ test('agent debugger retains the latest trace and toggles exact detail visibilit
 });
 
 
-test('AI agent settings expose one provider-specific evidence limit', () => {
+test('AI agent settings expose one token window, folded away', () => {
     const settingsModal = readFileSync(SETTINGS_MODAL_URL, 'utf8');
     const commandController = readFileSync(COMMAND_CONTROLLER_URL, 'utf8');
 
     assert.match(settingsModal, /id="ai-agent-max-page-approximate-tokens"/);
     assert.match(settingsModal, /max="500000"/);
-    assert.match(settingsModal, /Maximum approximate evidence tokens/);
-    assert.match(settingsModal, /A result tree is never divided/);
-    assert.match(settingsModal, /trailing trees are omitted/);
+    assert.match(settingsModal, /<label for="ai-agent-max-page-approximate-tokens">Max token window<\/label>/);
+    assert.match(settingsModal, /class="ai-settings-help" tabindex="0"[^>]*title="\$\{escapeHtml\(TOKEN_WINDOW_TOOLTIP\)\}">\?<\/span>/);
+    assert.doesNotMatch(settingsModal, /<details/);
+    assert.doesNotMatch(settingsModal, />tokens</);
+    assert.match(settingsModal, /A note is never split from its children/);
+    // Answers and tagging batches share the one limit.
+    assert.doesNotMatch(settingsModal, /tagging-batch-tokens|taggingBatchTokens/);
     assert.doesNotMatch(settingsModal, /max-note-characters/);
     assert.doesNotMatch(settingsModal, /max-notes-per-page/);
     assert.doesNotMatch(settingsModal, /max-ranked-tags-per-page/);
@@ -334,12 +338,12 @@ test('AI agent settings expose and persist all three web access modes', () => {
     const settingsModal = readFileSync(SETTINGS_MODAL_URL, 'utf8');
     const commandController = readFileSync(COMMAND_CONTROLLER_URL, 'utf8');
 
-    assert.match(settingsModal, /<legend>Web access<\/legend>/);
-    assert.match(settingsModal, /id="ai-agent-web-access-mode"/);
-    assert.match(settingsModal, /value="none"[^>]*>No web access/);
-    assert.match(settingsModal, /value="contextual"[^>]*>Open links from permitted context/);
-    assert.match(settingsModal, /value="full"[^>]*>Open any public web page/);
-    assert.match(settingsModal, /Content from web pages is treated as untrusted evidence/);
+    assert.match(settingsModal, /<h3>Web access<\/h3>/);
+    assert.match(settingsModal, /id="ai-agent-web-access"/);
+    assert.match(settingsModal, /\['none', 'Off'/);
+    assert.match(settingsModal, /\['contextual', 'Links in your notes'/);
+    assert.match(settingsModal, /\['full', 'Any public page'/);
+    assert.match(settingsModal, /Web pages are treated as untrusted/);
     assert.match(commandController, /AGENT_WEB_ACCESS_MODE_PREFERENCE_KEY/);
     assert.match(commandController, /readAgentWebAccessMode/);
     assert.match(commandController, /validateAgentWebAccessMode/);
@@ -353,15 +357,11 @@ test('cloud AI privacy settings and hover visualization share a server boundary'
     const chatApi = readFileSync(CHAT_API_URL, 'utf8');
     const css = readFileSync(CSS_URL, 'utf8');
 
-    for (const inputId of [
-        'ai-agent-cloud-whitelist-tags',
-        'ai-agent-cloud-whitelist-phrases',
-        'ai-agent-cloud-blacklist-tags',
-        'ai-agent-cloud-blacklist-phrases',
-    ]) {
-        assert.match(settingsModal, new RegExp(`id="${inputId}"`));
-    }
-    assert.match(settingsModal, /<code>@password<\/code> is always hidden/);
+    assert.match(settingsModal, /id="ai-agent-blacklist-input"/);
+    assert.match(settingsModal, /id="ai-agent-whitelist-input"/);
+    assert.match(settingsModal, /Never send notes with <span class="ai-settings-term">\(blacklist\)<\/span>/);
+    assert.match(settingsModal, /Only send notes with <span class="ai-settings-term">\(whitelist\)<\/span>/);
+    assert.match(settingsModal, /@password and @username notes are never sent/);
     assert.match(commandController, /CLOUD_PRIVACY_POLICY_PREFERENCE_KEY/);
     assert.match(commandController, /serializeCloudPrivacyPolicy/);
     assert.match(chatApi, /CLOUD_PRIVACY_PREVIEW/);
@@ -857,28 +857,38 @@ test('AI settings persist and submit a required thinking level', () => {
     assert.match(controller, /model:\s*requireElement\('ai-chat-model', HTMLSelectElement\)/);
     assert.match(controller, /thinkingLevel:\s*requireElement\('ai-chat-thinking-level', HTMLSelectElement\)/);
     assert.match(controller, /elements\.model\.addEventListener\('change', \(\) => void this\._selectModel\(\)\)/);
-    assert.match(controller, /await listAiModels\(settings\)/);
+    // Picking a model in the chat picks its provider too.
+    assert.match(controller, /await listAiModelChoices\(settings\.provider\)/);
+    assert.match(controller, /const \{ provider, model \} = parseModelChoiceValue\(this\._elements\.model\.value\)/);
     assert.doesNotMatch(modal, /id="ai-agent-model"/);
     assert.doesNotMatch(modal, /id="ai-agent-thinking-level"/);
     assert.match(commandController, /'pref\.ai\.thinking_level'/);
     assert.match(commandController, /DEFAULT_AI_THINKING_LEVEL/);
     assert.match(chatApi, /thinking_level:\s*thinkingLevel/);
-    assert.match(modal, /id="ai-agent-installed-model"/);
+    // The dialog does not pick the model: the chat does.
+    assert.doesNotMatch(modal, /id="ai-agent-installed-model"|<select/);
+    assert.match(modal, /id="ai-agent-add-model"/);
+    const agentSettingsSave = commandController.slice(
+        commandController.indexOf('async _saveAiAgentSettings('),
+        commandController.indexOf('isOpen() {'),
+    );
+    assert.doesNotMatch(agentSettingsSave, /settings\.model|'pref\.ai\.provider'/);
     assert.match(modal, /id="ai-agent-save"[^>]*>Save<\/button>/);
     assert.doesNotMatch(modal, /id="ai-agent-base-url"/);
     assert.doesNotMatch(chatApi, /base_url:/);
     assert.doesNotMatch(modal, /_saveConnection/);
-    assert.match(modal, /OpenAI API/);
-    assert.match(modal, /id="ai-agent-openai-api-key" type="password"/);
-    assert.match(modal, /Encrypted vaults[\s\S]*?persist it encrypted/);
-    assert.match(modal, /unencrypted vaults keep it[\s\S]*?server session only/);
-    assert.match(modal, /await saveOpenAiCredential\(apiKey\)/);
-    assert.match(chatApi, /export async function loadOpenAiCredentialStatus/);
-    assert.match(chatApi, /export async function clearOpenAiCredential/);
+    assert.match(modal, /role="tablist" aria-label="AI provider"/);
+    assert.match(modal, /role="tab" id="ai-agent-tab-\$\{tab\.provider\}" class="ai-settings-tab" aria-selected=/);
+    assert.match(modal, /id="ai-agent-api-key" type="password"/);
+    assert.match(modal, /Key saved, encrypted in this vault/);
+    assert.match(modal, /Key saved for this session/);
+    assert.match(modal, /await saveAiCredential\(state\.provider, apiKey\)/);
+    assert.match(chatApi, /export async function loadAiCredentialStatus\(provider\)/);
+    assert.match(chatApi, /export async function clearAiCredential\(provider\)/);
 });
 
 
-test('OpenAI API key storage is independent from provider model settings', () => {
+test('an API key is saved on its own, apart from the other settings', () => {
     const modal = readFileSync(SETTINGS_MODAL_URL, 'utf8');
     const renderMethod = modal.slice(
         modal.indexOf('renderModalContent()'),
@@ -889,25 +899,23 @@ test('OpenAI API key storage is independent from provider model settings', () =>
         modal.indexOf('\n}', modal.indexOf('async _handleSave()')),
     );
 
-    assert.match(modal, /id="ai-agent-openai-save"[^>]*>Save key<\/button>/);
-    assert.match(modal, /async _handleSaveOpenAiKey\(\)/);
-    assert.match(modal, /await saveOpenAiCredential\(apiKey\)/);
-    assert.doesNotMatch(renderMethod, /!state\.openAiCredentialConfigured/);
-    assert.doesNotMatch(renderMethod, /state\.openAiApiKey/);
-    assert.doesNotMatch(renderMethod, /!state\.installedModels\.includes\(state\.model\)/);
-    assert.doesNotMatch(settingsSaveHandler, /saveOpenAiCredential/);
+    assert.match(modal, /id="ai-agent-key-save"[^>]*>Save key<\/button>/);
+    assert.match(modal, /async _handleSaveKey\(apiKey\)/);
+    assert.doesNotMatch(renderMethod, /state\.apiKey/);
+    assert.doesNotMatch(settingsSaveHandler, /saveAiCredential/);
 });
 
 
-test('AI settings expose only OpenAI and no local model downloads', () => {
+test('AI settings offer the registered providers and no local model downloads', () => {
     const modal = readFileSync(SETTINGS_MODAL_URL, 'utf8');
     const chatApi = readFileSync(CHAT_API_URL, 'utf8');
     const controller = readFileSync(CONTROLLER_URL, 'utf8');
-    assert.match(modal, /OpenAI API/);
+    assert.match(modal, /PROVIDER_TABS = Object\.freeze\(\[\{ provider: 'openai', label: 'OpenAI' \}\]\)/);
     assert.doesNotMatch(modal, /Ollama|ai-agent-provider|id="ai-agent-download/);
     assert.doesNotMatch(chatApi, /PULL_MODEL|pullOllamaModel/);
     assert.doesNotMatch(controller, /model = this\._models\[0\]/);
-    assert.match(controller, /option\.textContent = 'Select model'/);
+    // Model names need no 'Select model' prompt.
+    assert.doesNotMatch(controller, /Select model/);
 });
 
 

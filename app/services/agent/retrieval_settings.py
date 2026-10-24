@@ -12,7 +12,6 @@ OPENAI_MAX_PAGE_APPROXIMATE_TOKENS_PREFERENCE_KEY = (
 )
 
 DEFAULT_OPENAI_MAX_PAGE_APPROXIMATE_TOKENS = 500_000
-DEFAULT_OPENAI_TAGGING_BATCH_TOKENS = 100_000
 LEGACY_DEFAULT_OPENAI_MAX_PAGE_APPROXIMATE_TOKENS = 24_000
 MIN_MAX_PAGE_APPROXIMATE_TOKENS = 500
 MAX_OPENAI_PAGE_APPROXIMATE_TOKENS = 500_000
@@ -34,10 +33,9 @@ class AgentRetrievalSettings:
 
 
 def resolve_tagging_batch_tokens(preferences: dict[str, str], provider: str) -> int:
+    """A tagging batch reads as much as an answer does: one limit, set in AI Agent Settings."""
     if provider == "openai":
-        return int(validate_openai_max_page_approximate_tokens_preference(
-            preference_or_default(
-                preferences, "pref.ai.openai.tagging.batch_tokens", default=str(DEFAULT_OPENAI_TAGGING_BATCH_TOKENS))))
+        return resolve_agent_retrieval_settings(preferences=preferences, provider="openai").max_page_approximate_tokens
     raise ValueError(f"Unsupported tagging provider: {provider}")
 
 

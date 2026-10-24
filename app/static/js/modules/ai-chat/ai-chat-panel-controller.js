@@ -22,13 +22,14 @@ import {
     acknowledgeAgentMenu,
     clearAiChatSession,
     copyAiChatResponse,
-    listAiModels,
+    listAiModelChoices,
     loadAiChatSession,
     loadOpenAiCostSnapshot,
     previewCloudPrivacy,
     resetOpenAiCostSnapshot,
     streamAiChat,
 } from './ai-chat-api.js';
+import { modelChoiceValue, parseModelChoiceValue, validateModelGroups } from './ai-model-names.js';
 import { AgentDebugView } from './ai-agent-debug-view.js';
 import {
     calculateAiChatMaximumWidth,
@@ -265,7 +266,9 @@ class AiChatPanelController {
         this._isBusy = false;
         this._thinkingStartedAtMs = 0;
         this._thinkingTimerId = 0;
-        this._models = [];
+        // One group per provider with a key: { provider, label, models } (POST /ai/model-choices).
+        this._modelGroups = [];
+        this._localTurnCount = 0;
         this._isLoadingModels = false;
         this._activeChatAbortController = null;
         this._activeChatCompletion = null;
@@ -893,35 +896,43 @@ class AiChatPanelController {
         await this._savePanelWidth(width);
     }
 
+    _hasModels() {
+        return this._modelGroups.some((group) => group.models.length > 0);
+    }
+
+    _isModelAvailable(settings) {
+        return this._modelGroups.some((group) => (
+            group.provider === settings.provider && group.models.includes(settings.model)
+        ));
+    }
+
     _syncSettingsControls() {
         const settings = this._getSettings();
         if (!settings || typeof settings !== 'object') {
             throw new Error('AI settings snapshot missing');
         }
         this._elements.model.replaceChildren();
-        const hasSelectedModel = this._models.includes(settings.model);
-        if (this._models.length === 0) {
+        const hasSelectedModel = this._isModelAvailable(settings);
+        if (!this._hasModels()) {
             const option = document.createElement('option');
             option.value = '';
             option.textContent = 'No models';
             this._elements.model.appendChild(option);
         } else {
-            const option = document.createElement('option');
-            option.value = '';
-            option.textContent = 'Select model';
-            option.disabled = true;
-            option.selected = !hasSelectedModel;
-            this._elements.model.appendChild(option);
-            for (const model of this._models) {
-                if (typeof model !== 'string' || model === '') {
-                    throw new Error('OpenAI model list contains invalid model');
+            // Each provider's models sit under its name, even when it is the only one.
+            for (const group of this._modelGroups) {
+                const parent = document.createElement('optgroup');
+                parent.label = group.label;
+                this._elements.model.appendChild(parent);
+                for (const model of group.models) {
+                    const option = document.createElement('option');
+                    option.value = modelChoiceValue(group.provider, model);
+                    option.textContent = model;
+                    parent.appendChild(option);
                 }
-                const option = document.createElement('option');
-                option.value = model;
-                option.textContent = model;
-                this._elements.model.appendChild(option);
             }
-            this._elements.model.value = hasSelectedModel ? settings.model : '';
+            // A saved model that is no longer offered leaves the picker blank (no option has '').
+            this._elements.model.value = hasSelectedModel ? modelChoiceValue(settings.provider, settings.model) : '';
         }
 
         const selectedModel = hasSelectedModel ? settings.model : '';
@@ -971,9 +982,10 @@ class AiChatPanelController {
 
     _renderOpenAiCostSnapshot(snapshot) {
         validateOpenAiCostSnapshot(snapshot);
-        this._elements.openAiCostAmount.textContent = formatOpenAiCostUsd(
-            snapshot.estimated_cost_usd,
-        );
+        // A model the vault added has no price: its tokens count, its cost does not.
+        let amount = formatOpenAiCostUsd(snapshot.estimated_cost_usd);
+        if (snapshot.includes_unpriced_models) amount = `${amount} + unpriced models`;
+        this._elements.openAiCostAmount.textContent = amount;
         this._elements.openAiUncachedInputTokens.textContent = (
             snapshot.uncached_input_tokens.toLocaleString()
         );
@@ -1049,12 +1061,12 @@ class AiChatPanelController {
 
     _syncComposerControlsDisabled() {
         const settings = this._getSettings();
-        const hasModel = this._models.includes(settings.model);
+        const hasModel = this._isModelAvailable(settings);
         let isModelDisabled = this._isBusy;
         if (this._isLoadingModels) {
             isModelDisabled = true;
         }
-        if (this._models.length === 0) {
+        if (!this._hasModels()) {
             isModelDisabled = true;
         }
         this._elements.model.disabled = isModelDisabled;
@@ -1075,7 +1087,7 @@ class AiChatPanelController {
             if (this._isLoadingModels) {
                 isSendDisabled = true;
             }
-            if (this._models.length === 0) {
+            if (!this._hasModels()) {
                 isSendDisabled = true;
             }
             if (!hasModel) {
@@ -1093,18 +1105,9 @@ class AiChatPanelController {
         this._syncComposerControlsDisabled();
         const settings = this._getSettings();
         try {
-            const payload = await listAiModels(settings);
-            if (!payload || !Array.isArray(payload.models)) {
-                throw new Error('AI model response missing models');
-            }
-            if (!stateValuesEqual(this._models, payload.models)) this._models = payload.models;
-            if (this._models.length === 0) {
-                this._appendLocalErrorPanel(
-                    'The selected AI provider has no available models.',
-                );
-                return;
-            }
-            if (this._models.includes(settings.model)) {
+            const groups = validateModelGroups(await listAiModelChoices(settings.provider));
+            if (!stateValuesEqual(this._modelGroups, groups)) this._modelGroups = groups;
+            if (this._isModelAvailable(settings)) {
                 const thinkingLevel = normalizeThinkingLevelForModel({
                     model: settings.model,
                     thinkingLevel: settings.thinkingLevel,
@@ -1122,7 +1125,7 @@ class AiChatPanelController {
             if (!(error instanceof AiApiError)) {
                 throw error;
             }
-            if (this._models.length > 0) this._models = [];
+            if (this._modelGroups.length > 0) this._modelGroups = [];
             this._appendLocalErrorPanel(error.message);
         } finally {
             this._isLoadingModels = false;
@@ -1132,16 +1135,14 @@ class AiChatPanelController {
 
     async _selectModel() {
         const settings = this._getSettings();
-        const model = this._elements.model.value;
-        if (model === '') {
-            throw new Error('AI model selection must not be empty');
-        }
+        // Picking a model picks its provider too.
+        const { provider, model } = parseModelChoiceValue(this._elements.model.value);
         const thinkingLevel = normalizeThinkingLevelForModel({
             model,
             thinkingLevel: settings.thinkingLevel,
         });
         await this._saveSettings({
-            provider: settings.provider,
+            provider,
             model,
             thinkingLevel,
         });
@@ -1232,7 +1233,7 @@ class AiChatPanelController {
         if (this._isLoadingModels) {
             return;
         }
-        if (this._models.length === 0) {
+        if (!this._hasModels()) {
             this._appendLocalErrorPanel('No AI models are available.');
             return;
         }
@@ -1244,14 +1245,16 @@ class AiChatPanelController {
         const scope = captureActiveAgentScope();
         const selectedNoteId = ModeContext.isEditing ? ModeContext.currentNoteId : '';
         const showDiagnostics = this._showDiagnosticActivities;
-        if (!this._models.includes(settings.model)) {
+        if (!this._isModelAvailable(settings)) {
             this._appendLocalErrorPanel('Select an available AI model first.');
             return;
         }
 
         // Where this turn goes back if MetaList refuses it.
         const afterMessageId = lastServerMessageId(this._messages);
-        const localTurnId = `${LOCAL_MESSAGE_ID_PREFIX}${Date.now()}`;
+        // The count keeps two Sends in one millisecond apart.
+        this._localTurnCount += 1;
+        const localTurnId = `${LOCAL_MESSAGE_ID_PREFIX}${Date.now()}-${this._localTurnCount}`;
         this._messages.push(
             {
                 id: `${localTurnId}-user`,

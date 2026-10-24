@@ -882,12 +882,6 @@ class CommandPaletteController {
         if (!settings || typeof settings !== 'object') {
             throw new Error('_saveAiAgentSettings requires settings object');
         }
-        if (settings.provider !== 'openai') {
-            throw new Error('Unsupported AI provider');
-        }
-        if (typeof settings.model !== 'string' || settings.model.trim() === '') {
-            throw new Error('AI connection settings require model');
-        }
         const openAiRetrievalSettings = validateAgentRetrievalSettings(
             settings.openAiRetrievalSettings,
             'openai',
@@ -896,14 +890,20 @@ class CommandPaletteController {
             settings.cloudPrivacyPolicy,
         );
         const webAccessMode = validateAgentWebAccessMode(settings.webAccessMode);
-        const modelPreferenceKey = 'pref.ai.openai_model';
+        // The model in use is picked in the chat (saveAiSettings); this saves each viewed
+        // provider's own models (app/services/ai_catalog.py, ADDED_MODELS_PREFERENCE_KEYS).
+        const addedModelPreferences = {};
+        for (const [provider, models] of Object.entries(settings.addedModelsByProvider)) {
+            if (provider !== 'openai' || !Array.isArray(models) || !models.every((model) => typeof model === 'string')) {
+                throw new Error(`AI agent settings hold malformed added models for ${provider}`);
+            }
+            addedModelPreferences[`pref.ai.${provider}.added_models`] = JSON.stringify(models);
+        }
         await this._preferences.setMany({
-            'pref.ai.provider': settings.provider,
-            [modelPreferenceKey]: settings.model.trim(),
+            ...addedModelPreferences,
             [OPENAI_AGENT_RETRIEVAL_PREFERENCE_KEYS.maxPageApproximateTokens]: String(
                 openAiRetrievalSettings.maxPageApproximateTokens,
             ),
-            [OPENAI_AGENT_RETRIEVAL_PREFERENCE_KEYS.taggingBatchTokens]: String(openAiRetrievalSettings.taggingBatchTokens),
             [CLOUD_PRIVACY_POLICY_PREFERENCE_KEY]: serializeCloudPrivacyPolicy(
                 cloudPrivacyPolicy,
             ),

@@ -270,6 +270,20 @@ def test_openai_credential_routes_use_authenticated_session(
     assert clear_response.headers["Cache-Control"] == "no-store"
 
 
+def test_a_model_the_vault_added_counts_its_tokens_but_has_no_price() -> None:
+    cost_tracker = OpenAICostTracker()
+    usage = OpenAITokenUsage(
+        prompt_tokens=1_000, cached_input_tokens=0, cache_write_tokens=0, output_tokens=50, total_tokens=1_050,
+    )
+    cost_tracker.record(model="gpt-5.7-nova", usage=usage)
+    snapshot = cost_tracker.snapshot()
+    assert snapshot.estimated_cost_usd == 0
+    assert snapshot.output_tokens == 50
+    assert snapshot.includes_unpriced_models is True
+    cost_tracker.reset()
+    assert cost_tracker.snapshot().includes_unpriced_models is False
+
+
 def test_the_cost_estimate_does_not_exist_in_production(monkeypatch) -> None:
     # A developer tool (docs/ui/ai-chat.md): production answers as for an unknown route.
     monkeypatch.setattr(ai_routes, "is_development_environment", lambda: False)
@@ -311,6 +325,7 @@ def test_openai_cost_routes_report_all_categories_and_reset(monkeypatch) -> None
         "cached_input_tokens": 200,
         "cache_write_tokens": 100,
         "output_tokens": 50,
+        "includes_unpriced_models": False,
     }
     assert reset_snapshot.model_dump() == {
         "estimated_cost_usd": 0.0,
@@ -318,6 +333,7 @@ def test_openai_cost_routes_report_all_categories_and_reset(monkeypatch) -> None
         "cached_input_tokens": 0,
         "cache_write_tokens": 0,
         "output_tokens": 0,
+        "includes_unpriced_models": False,
     }
     assert get_response.headers["Cache-Control"] == "no-store"
     assert reset_response.headers["Cache-Control"] == "no-store"

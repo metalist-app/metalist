@@ -328,6 +328,21 @@ export async function copyAiChatResponse({ messageId, clientId }) {
 }
 
 
+// The chat's model picker: the models of every provider with a key, and of the
+// provider picked last (app/api/routes/ai.py, list_ai_model_choices).
+export async function listAiModelChoices(currentProvider) {
+    if (typeof currentProvider !== 'string' || currentProvider === '') {
+        throw new Error('listAiModelChoices requires the current provider');
+    }
+    const response = await fetchAi(CONFIG.API.AI.MODEL_CHOICES, {
+        method: 'POST',
+        headers: buildSessionHeaders(true),
+        body: JSON.stringify({ current_provider: currentProvider }),
+    });
+    return await readJsonResponse(response, 'Failed to list AI models');
+}
+
+
 export async function listAiModels(settings) {
     if (!settings || typeof settings !== 'object') {
         throw new Error('listAiModels requires settings object');
@@ -343,34 +358,43 @@ export async function listAiModels(settings) {
 }
 
 
-export async function loadOpenAiCredentialStatus() {
-    const response = await fetchAi(CONFIG.API.AI.OPENAI_CREDENTIAL, {
-        headers: buildSessionHeaders(false),
-        cache: 'no-store',
-    });
-    return await readJsonResponse(response, 'Failed to load OpenAI credential status');
+function aiCredentialUrl(provider) {
+    if (typeof provider !== 'string' || !/^[a-z]+$/.test(provider)) {
+        throw new Error(`aiCredentialUrl requires a provider, not ${provider}`);
+    }
+    return `${CONFIG.API.AI.CREDENTIAL_BASE}/${provider}/credential`;
 }
 
 
-export async function saveOpenAiCredential(apiKey) {
+// Whether the provider has an API key in this vault (never the key itself).
+export async function loadAiCredentialStatus(provider) {
+    const response = await fetchAi(aiCredentialUrl(provider), {
+        headers: buildSessionHeaders(false),
+        cache: 'no-store',
+    });
+    return await readJsonResponse(response, 'Failed to load the API key status');
+}
+
+
+export async function saveAiCredential(provider, apiKey) {
     if (typeof apiKey !== 'string' || apiKey.trim() === '') {
-        throw new Error('saveOpenAiCredential requires API key');
+        throw new Error('saveAiCredential requires API key');
     }
-    const response = await fetchAi(CONFIG.API.AI.OPENAI_CREDENTIAL, {
+    const response = await fetchAi(aiCredentialUrl(provider), {
         method: 'PUT',
         headers: buildSessionHeaders(true),
         body: JSON.stringify({ api_key: apiKey }),
     });
-    return await readJsonResponse(response, 'Failed to save OpenAI API key');
+    return await readJsonResponse(response, 'Failed to save the API key');
 }
 
 
-export async function clearOpenAiCredential() {
-    const response = await fetchAi(CONFIG.API.AI.OPENAI_CREDENTIAL, {
+export async function clearAiCredential(provider) {
+    const response = await fetchAi(aiCredentialUrl(provider), {
         method: 'DELETE',
         headers: buildSessionHeaders(false),
     });
-    return await readJsonResponse(response, 'Failed to remove OpenAI API key');
+    return await readJsonResponse(response, 'Failed to remove the API key');
 }
 
 

@@ -269,7 +269,7 @@ metalist
 
 - Ollama retired: no runtime manager, provider, adapter, download endpoint/UI, or live Ollama evals. Only OpenAI is accepted by AI APIs. Client-preference normalization drops retired local settings; a saved Ollama provider also clears the old OpenAI model selection so the new default applies. Existing OpenAI settings remain; no external installations, model files, or historical backups are modified.
 
-- OpenAI defaults: `gpt-5.6-luna`, 500,000 evidence tokens, 100,000 tagging batch tokens; saved overrides are retained. Browser and backend token defaults must stay aligned.
+- OpenAI defaults: `gpt-5.6-luna`, 500,000 tokens read at once (one limit, answers and tagging batches alike); saved overrides are retained. Browser and backend token defaults must stay aligned.
 
 ## Product help and menu actions (September 17)
 - `agent/help_catalog.py` contains twelve compact topics (incl. `releases`, generated from README by `scripts/sync_release_notes_help.py`); `agent/skills/help-*.md` holds detailed knowledge. The agent's `lookup_metalist_help` tool returns only the selected skills; `open_menu` opens catalog destinations and reports the browser acknowledgment as its result. The formatting skill puts literal triple-backtick Mermaid source inside a closed four-backtick outer fence because direct Mermaid renders in chat. No note content is needed and skills never enter canonical history. Prompts and skills are packaged and not user-editable; old `pref.ai.prompt.*`/`pref.ai.skill.*` overrides are retired preference keys (ignored, dropped on save).

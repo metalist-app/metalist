@@ -29,7 +29,7 @@ from app.services.agent.retrieval_settings import OPENAI_MAX_PAGE_APPROXIMATE_TO
 from app.services.agent.retrieval_settings import validate_openai_max_page_approximate_tokens_preference
 from app.services.agent.web_settings import WEB_ACCESS_MODE_PREFERENCE_KEY
 from app.services.agent.web_settings import WEB_ACCESS_MODES
-from app.services.agent.openai_models import validate_openai_model
+from app.services.ai_catalog import parse_added_models, serialize_added_models, validate_model_name
 
 _DICTATION_PHRASE_MIN_CHARS = 2
 _DICTATION_PHRASE_MAX_CHARS = 64
@@ -78,7 +78,10 @@ _ALLOWED_CLIENT_PREFERENCES = {
     "pref.show_search_suggestion_window_labels": {"true", "false"},
     "pref.limit_note_credits_per_search_context": {"true", "false"},
     "pref.ai.provider": {"openai"},
-    "pref.ai.openai_model": "openai_model",
+    # The model picked; whether this vault can use it is checked where it is used (ai_models.py).
+    "pref.ai.openai_model": "model_name",
+    # The vault's own OpenAI models beside the shipped ones: a JSON list of names (ai_catalog.py).
+    "pref.ai.openai.added_models": "openai_added_models",
     "pref.ai.thinking_level": {"off", "low", "medium", "high"},
     "pref.ai.show_diagnostics": {"true", "false"},
     "pref.ai.show_spend": {"true", "false"},
@@ -87,13 +90,14 @@ _ALLOWED_CLIENT_PREFERENCES = {
     OPENAI_MAX_PAGE_APPROXIMATE_TOKENS_PREFERENCE_KEY: (
         "openai_agent_max_page_approximate_tokens"
     ),
-    "pref.ai.openai.tagging.batch_tokens": "openai_agent_max_page_approximate_tokens",
     "pref.ai.chat_width": "ai_chat_width",
     "pref.ai.composer_height": "ai_chat_composer_height",
 }
 
 _OBSOLETE_CLIENT_PREFERENCES = frozenset(
     {
+        # Tagging batches now read as much as an answer does: one limit (2026-10-23).
+        "pref.ai.openai.tagging.batch_tokens",
         # The interface sound effects tried in October 2026 and not kept: a namespace
         # that tried them may still hold their settings.
         "pref.sound_effects",
@@ -278,8 +282,10 @@ def _validate_client_preferences(preferences: dict[str, object]) -> dict[str, st
                     "Dictation phrases must be words of letters, "
                     f"{_DICTATION_PHRASE_MIN_CHARS} to {_DICTATION_PHRASE_MAX_CHARS} characters"
                 )
-        elif allowed_values == "openai_model":
-            value = validate_openai_model(value)
+        elif allowed_values == "model_name":
+            value = validate_model_name(value)
+        elif allowed_values == "openai_added_models":
+            value = serialize_added_models(parse_added_models("openai", value))
         elif allowed_values == "ai_chat_width":
             _validate_ai_chat_width_preference(key=key, value=value)
         elif allowed_values == "ai_chat_composer_height":

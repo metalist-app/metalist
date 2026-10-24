@@ -36,8 +36,7 @@ from app.services.agent.structured_inference import _json_object
 from app.services.agent.structured_inference import _structured_max_output_tokens
 from app.services.agent.openai_models import OPENAI_API_BASE_URL
 from app.services.agent.openai_models import OPENAI_MODEL_CONTEXT_TOKENS
-from app.services.agent.openai_models import OPENAI_MODELS
-from app.services.agent.openai_models import validate_openai_model
+from app.services.ai_catalog import validate_model_name
 
 
 
@@ -291,7 +290,7 @@ class OpenAIInferenceAdapter:
         model: str,
     ) -> InferenceContextWindow:
         _validate_base_url(base_url)
-        normalized_model = validate_openai_model(model)
+        normalized_model = validate_model_name(model)
         return InferenceContextWindow(
             model=normalized_model,
             maximum_tokens=OPENAI_MODEL_CONTEXT_TOKENS,
@@ -311,7 +310,7 @@ class OpenAIInferenceAdapter:
         on_progress: Callable[[StructuredInferenceProgress], None],
     ) -> InferenceResponse:
         _validate_base_url(base_url)
-        normalized_model = validate_openai_model(model)
+        normalized_model = validate_model_name(model)
         reasoning_effort = resolve_openai_reasoning_effort(thinking_level)
         capture = _InstructorTraceCapture(on_progress=on_progress)
         client = _create_instructor_client(
@@ -379,7 +378,7 @@ class OpenAIInferenceAdapter:
         on_request: Callable[[dict[str, object]], None],
     ) -> AsyncIterator[dict[str, object]]:
         _validate_base_url(base_url)
-        normalized_model = validate_openai_model(model)
+        normalized_model = validate_model_name(model)
         reasoning_effort = resolve_openai_reasoning_effort(thinking_level)
         if (
             not isinstance(max_output_tokens, int)
@@ -496,7 +495,7 @@ class OpenAIInferenceAdapter:
         # encrypted (store=False) and are handed to the next turn as
         # provider_state, so a thinking model keeps its train of thought.
         _validate_base_url(base_url)
-        normalized_model = validate_openai_model(model)
+        normalized_model = validate_model_name(model)
         reasoning_effort = resolve_openai_reasoning_effort(thinking_level)
         if not isinstance(tools, tuple) or not tools or not all(isinstance(tool, AgentTool) for tool in tools):
             raise TypeError("A tool turn needs a non-empty tuple of AgentTool")

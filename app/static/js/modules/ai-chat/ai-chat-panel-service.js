@@ -34,6 +34,9 @@ export function validateOpenAiCostSnapshot(snapshot) {
             throw new Error(`OpenAI ${fieldName} must be a non-negative integer`);
         }
     }
+    if (typeof snapshot.includes_unpriced_models !== 'boolean') {
+        throw new Error('OpenAI cost snapshot must say whether it includes unpriced models');
+    }
     return snapshot;
 }
 

@@ -65,7 +65,7 @@ export async function checkAdditionalStateTransitions(page) {
     const {CONFIG} = await import('/static/js/modules/config.js');
     const originalFetch = window.fetch;
     const originalSettings = panel._getSettings;
-    const originalModels = panel._models;
+    const originalModelGroups = panel._modelGroups;
     const completed = [];
     let scenario = 'stream';
     window.fetch = async (url, options) => {
@@ -84,7 +84,7 @@ export async function checkAdditionalStateTransitions(page) {
       return originalFetch(url, options);
     };
     panel._getSettings = () => ({provider:'openai', model:'state-smoke-model', thinkingLevel:'low'});
-    panel._models = ['state-smoke-model'];
+    panel._modelGroups = [{provider:'openai', label:'OpenAI', models:['state-smoke-model']}];
     try {
       for (scenario of ['stream', 'stream', 'bulk']) {
         panel._elements.input.value = 'Local simulated request';
@@ -97,7 +97,7 @@ export async function checkAdditionalStateTransitions(page) {
     } finally {
       window.fetch = originalFetch;
       panel._getSettings = originalSettings;
-      panel._models = originalModels;
+      panel._modelGroups = originalModelGroups;
     }
     return completed;
   });
@@ -110,7 +110,7 @@ export async function checkAdditionalStateTransitions(page) {
     const {CONFIG} = await import('/static/js/modules/config.js');
     const originalFetch = window.fetch;
     const originalSettings = panel._getSettings;
-    const originalModels = panel._models;
+    const originalModelGroups = panel._modelGroups;
     const explanation = [
       "MetaList's AI could not finish this request: it failed while deciding how to handle your request.",
       'Attempt 1: the reply was cut off at the 512-token output limit; all 512 tokens went to thinking, so no answer was written.',
@@ -126,7 +126,7 @@ export async function checkAdditionalStateTransitions(page) {
       return originalFetch(url, options);
     };
     panel._getSettings = () => ({provider:'openai', model:'state-smoke-model', thinkingLevel:'low'});
-    panel._models = ['state-smoke-model'];
+    panel._modelGroups = [{provider:'openai', label:'OpenAI', models:['state-smoke-model']}];
     try {
       panel._elements.input.value = 'Local simulated failing request';
       await panel._submitMessage();
@@ -138,7 +138,7 @@ export async function checkAdditionalStateTransitions(page) {
     } finally {
       window.fetch = originalFetch;
       panel._getSettings = originalSettings;
-      panel._models = originalModels;
+      panel._modelGroups = originalModelGroups;
     }
   });
   assert.equal(failure.status, 'error');
@@ -153,7 +153,7 @@ export async function checkAdditionalStateTransitions(page) {
     const {CONFIG} = await import('/static/js/modules/config.js');
     const originalFetch = window.fetch;
     const originalSettings = panel._getSettings;
-    const originalModels = panel._models;
+    const originalModelGroups = panel._modelGroups;
     const answerUrl = CONFIG.API.AI.CHAT.replace(/\/chat$/u, '/proposals/answer');
     const label = 'Accept 3 pending tag proposals across 2 notes in the current view?';
     const answers = [];
@@ -186,7 +186,7 @@ export async function checkAdditionalStateTransitions(page) {
       return originalFetch(url, options);
     };
     panel._getSettings = () => ({provider:'openai', model:'state-smoke-model', thinkingLevel:'low'});
-    panel._models = ['state-smoke-model'];
+    panel._modelGroups = [{provider:'openai', label:'OpenAI', models:['state-smoke-model']}];
     try {
       panel._elements.input.value = 'Accept all the tag proposals';
       const submitted = panel._submitMessage();
@@ -215,7 +215,7 @@ export async function checkAdditionalStateTransitions(page) {
     } finally {
       window.fetch = originalFetch;
       panel._getSettings = originalSettings;
-      panel._models = originalModels;
+      panel._modelGroups = originalModelGroups;
     }
   });
   assert.equal(confirmation.shownLabel, 'Accept 3 pending tag proposals across 2 notes in the current view?');

@@ -166,7 +166,9 @@ export const CONFIG = {
         },
         AI: {
             MODELS: `${API_AI_BASE}/models`,
-            OPENAI_CREDENTIAL: `${API_AI_BASE}/openai/credential`,
+            MODEL_CHOICES: `${API_AI_BASE}/model-choices`,
+            // A provider's API-key slot: `${CREDENTIAL_BASE}/${provider}/credential`.
+            CREDENTIAL_BASE: API_AI_BASE,
             OPENAI_COST: `${API_AI_BASE}/openai/cost`,
             OPENAI_COST_RESET: `${API_AI_BASE}/openai/cost/reset`,
             SESSION: `${API_AI_BASE}/session`,

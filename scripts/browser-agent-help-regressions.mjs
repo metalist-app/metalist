@@ -117,7 +117,7 @@ async function checkChatMenuAcknowledgment(page) {
     });
     await page.waitForFunction(async () => {
         const {AiChatPanel} = await import('/static/js/modules/ai-chat/ai-chat-panel-controller.js');
-        return !AiChatPanel._isLoadingModels && AiChatPanel._models.length > 0;
+        return !AiChatPanel._isLoadingModels && AiChatPanel._hasModels();
     });
     const result = await page.evaluate(async () => {
         const {AiChatPanel, captureActiveAgentScope} = await import('/static/js/modules/ai-chat/ai-chat-panel-controller.js');
