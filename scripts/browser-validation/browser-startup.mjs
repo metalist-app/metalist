@@ -1,5 +1,6 @@
 /** Validate the actual installed application in a release browser. */
 import assert from 'node:assert/strict';
+import {assertLoginLogoGeometry} from './login-logo-geometry.mjs';
 import {mkdir, writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import puppeteer from 'puppeteer-core';
@@ -121,6 +122,7 @@ async function assertLoginScreenUsesFullWidth(target, label) {
   assert.equal(layout.gutter, 'auto', `${label}: the login screen must not reserve a scrollbar strip`);
   assert.equal(layout.screenWidth, layout.windowWidth, `${label}: the login screen must fill the window`);
   assert.equal(layout.logoCenter, layout.windowWidth / 2, `${label}: the logo must be centered in the window`);
+  await assertLoginLogoGeometry(target, label);
 }
 
 async function assertAppKeepsScrollbarStrip(target, label) {
