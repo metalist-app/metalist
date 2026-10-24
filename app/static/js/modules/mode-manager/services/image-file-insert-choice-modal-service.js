@@ -157,7 +157,8 @@ export function promptForImageFileInsertMode(options) {
                 finish(null);
                 return;
             }
-            if (event.key === 'Enter') {
+            // Enter on a focused button presses it (Cancel cancels); elsewhere it pastes inline.
+            if (event.key === 'Enter' && !(event.target instanceof HTMLButtonElement)) {
                 event.preventDefault();
                 event.stopPropagation();
                 finish('embed');

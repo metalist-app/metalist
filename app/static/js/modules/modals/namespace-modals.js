@@ -224,7 +224,12 @@ class NamespaceModalBase extends BaseModal {
         }
         event.preventDefault();
         event.stopPropagation();
-        void this.handleSubmit();
+        void this.submitFromEnter();
+    }
+
+    // Enter runs the dialog's main action.
+    submitFromEnter() {
+        return this.handleSubmit();
     }
 
     _renderIntoModal(html) {
@@ -443,6 +448,11 @@ export class OpenNamespaceModal extends NamespaceModalBase {
             });
         }
         this.renderModalContent();
+    }
+
+    // Enter opens the vault in this tab, the main action (Open in This Tab).
+    submitFromEnter() {
+        return this.handleSubmit(false);
     }
 
     async handleSubmit(opensNewTab) {

@@ -56,6 +56,7 @@ export class BaseModal {
         // Show modal UI
         this.showModalElement();
         this._installModalCloseButton();
+        this._focusSafeStart();
         
         // Set up event listeners
         this.setupEventListeners();
@@ -246,6 +247,22 @@ export class BaseModal {
             return;
         }
         
+        if (event.key === 'Enter' && !event.isComposing) {
+            // Enter on a focused button presses that button (the browser does it), so Enter
+            // on Cancel cancels (docs/ready-to-build/dialog-and-menu-conventions.md, rule 4).
+            if (event.target instanceof HTMLButtonElement) {
+                return;
+            }
+            // Enter never triggers a destructive action (rule 5): beside one, it does only
+            // what the dialog allows (picking a suggestion), never the action itself.
+            if (this._showsDestructiveAction() && !(event.target instanceof HTMLTextAreaElement)) {
+                event.preventDefault();
+                event.stopPropagation();
+                this.onEnterBesideDestructiveAction(event);
+                return;
+            }
+        }
+
         // Pass to subclass for modal-specific handling
         this.onKeyDown(event);
         if (event.defaultPrevented || event.key !== 'Enter' || event.isComposing) {
@@ -295,6 +312,7 @@ export class BaseModal {
         this.renderModalContent = (...args) => {
             const result = renderModalContent.apply(this, args);
             this._installModalCloseButton();
+            this._focusSafeStart();
             return result;
         };
     }
@@ -373,6 +391,53 @@ export class BaseModal {
      */
     onKeyDown(event) {
         // Override in subclasses
+    }
+
+    /**
+     * Enter pressed in a dialog showing a destructive action, outside its buttons. It never
+     * triggers the action; a dialog may use it for something harmless (Prioritize picks the
+     * highlighted suggestion).
+     */
+    onEnterBesideDestructiveAction(event) {
+        if (!(event instanceof KeyboardEvent)) {
+            throw new Error(`${this.modalName} Enter handling requires KeyboardEvent`);
+        }
+    }
+
+    _showsDestructiveAction() {
+        const modalElement = document.getElementById(this.modalElementId);
+        if (!(modalElement instanceof HTMLElement)) {
+            throw new Error(`Modal element missing: ${this.modalElementId}`);
+        }
+        return Array.from(modalElement.querySelectorAll('[data-modal-destructive]'))
+            .some((button) => button.getClientRects().length > 0);
+    }
+
+    /**
+     * A view with a destructive action starts on its safe choice: the field the user must
+     * type in ([data-modal-initial-focus]), else Cancel or Back ([data-modal-safe-focus]),
+     * so a reflexive Enter never destroys anything (rule 5). Focus the user already put in
+     * a field of this dialog stays there.
+     */
+    _focusSafeStart() {
+        const modalElement = document.getElementById(this.modalElementId);
+        if (!(modalElement instanceof HTMLElement) || !this._showsDestructiveAction()) {
+            return;
+        }
+        const active = document.activeElement;
+        const isTyping = [HTMLInputElement, HTMLTextAreaElement, HTMLSelectElement]
+            .some((fieldType) => active instanceof fieldType);
+        if (isTyping && modalElement.contains(active)) {
+            return;
+        }
+        let start = modalElement.querySelector('[data-modal-initial-focus]');
+        if (start === null) {
+            start = modalElement.querySelector('[data-modal-safe-focus]');
+        }
+        if (!(start instanceof HTMLElement)) {
+            throw new Error(`${this.modalName} shows a destructive action without a safe first focus`);
+        }
+        start.focus();
     }
     
     /**

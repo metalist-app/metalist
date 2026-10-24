@@ -161,21 +161,6 @@ export class BackupRestoreModal extends BaseModal {
         super.requestClose();
     }
 
-    handleKeyDown(event) {
-        const topModal = ModeContext.topModal;
-        if (topModal !== this.modalName) {
-            return;
-        }
-
-        if (event.key === 'Escape') {
-            event.preventDefault();
-            event.stopPropagation();
-            this.requestClose();
-            return;
-        }
-        this.onKeyDown(event);
-    }
-
     handleClickOutside(event) {
         const modalContent = event.currentTarget.querySelector('.modal-content');
         if (!modalContent || modalContent.contains(event.target)) {
@@ -300,7 +285,7 @@ export class BackupRestoreModal extends BaseModal {
             <div class="namespace-delete-warning backup-restore-danger-warning">
                 <p><strong>BIG WARNING:</strong> this will overwrite existing vault <span class="namespace-delete-namespace">${escapeHtml(targetNamespaceText.trim())}</span> with backup data from <span class="namespace-delete-namespace">${escapeHtml(selectedNamespace)}</span>.</p>
                 <p>This is not the normal same-name restore path. Type <strong>${escapeHtml(targetNamespaceText.trim())}</strong> to enable the import.</p>
-                <input type="text" id="backup-overwrite-confirmation" value="${escapeHtml(overwriteConfirmText)}" placeholder="Type target vault">
+                <input type="text" id="backup-overwrite-confirmation" data-modal-initial-focus value="${escapeHtml(overwriteConfirmText)}" placeholder="Type target vault">
                 ${targetRequiresPassword ? `
                     <label class="backup-restore-target-password-label" for="backup-target-password">Target namespace password</label>
                     <input type="password" id="backup-target-password" value="${escapeHtml(targetPassword)}" autocomplete="current-password" placeholder="Password for ${escapeHtml(targetNamespaceText.trim())}">
@@ -315,7 +300,11 @@ export class BackupRestoreModal extends BaseModal {
         } else if (confirming) {
             restoreButtonLabel = 'Confirm Restore';
         }
-        const restoreButtonClass = confirming && isImport && targetExists ? 'danger-btn' : 'primary-btn';
+        const overwritesVault = confirming && isImport && targetExists;
+        const restoreButtonClass = overwritesVault ? 'danger-btn' : 'primary-btn';
+        // Overwriting another vault is destructive: Enter never does it, and its view starts
+        // in the field where the vault's name is typed (BaseModal).
+        const restoreButtonRole = overwritesVault ? 'data-modal-destructive' : '';
         const emptyBackupsHtml = !loading && backups.length === 0 ? `
             <div class="backup-restore-empty-state">
                 <p>No backups are available from this vault's configured backup folder.</p>
@@ -354,8 +343,8 @@ export class BackupRestoreModal extends BaseModal {
                     ${overwriteWarningHtml}
 
                     <div class="form-actions">
-                        <button type="button" class="${restoreButtonClass}" id="restore-backup-btn" ${restoring || backups.length === 0 ? 'disabled' : ''}>${restoreButtonLabel}</button>
-                        <button type="button" class="secondary-btn" id="close-backup-modal-btn" ${restoring ? 'disabled' : ''}>Back</button>
+                        <button type="button" class="${restoreButtonClass}" id="restore-backup-btn" ${restoreButtonRole} ${restoring || backups.length === 0 ? 'disabled' : ''}>${restoreButtonLabel}</button>
+                        <button type="button" class="secondary-btn" id="close-backup-modal-btn" data-modal-safe-focus ${restoring ? 'disabled' : ''}>Back</button>
                     </div>
 
                     <p id="backup-modal-status">${restoring ? 'Restoring backup...' : ''}</p>

@@ -99,8 +99,10 @@ export class ConfirmationModal extends BaseModal {
             throw new Error('Confirmation modal state requires isDangerous');
         }
         let confirmClass = 'primary-btn';
+        let confirmRole = 'data-modal-enter-action';
         if (state.isDangerous) {
             confirmClass = 'danger-btn';
+            confirmRole = 'data-modal-destructive';
         }
         modalElement.innerHTML = `
             <div class="modal-content alphabetize-root-notes-modal-content">
@@ -112,8 +114,8 @@ export class ConfirmationModal extends BaseModal {
                     <p>${escapeHtml(state.description)}</p>
                 </div>
                 <div class="form-actions alphabetize-root-notes-actions">
-                    <button type="button" class="secondary-btn" id="confirmation-cancel-btn">Cancel</button>
-                    <button type="button" class="${confirmClass}" id="confirmation-submit-btn" data-modal-enter-action>${escapeHtml(state.confirmLabel)}</button>
+                    <button type="button" class="secondary-btn" id="confirmation-cancel-btn" data-modal-safe-focus>Cancel</button>
+                    <button type="button" class="${confirmClass}" id="confirmation-submit-btn" ${confirmRole}>${escapeHtml(state.confirmLabel)}</button>
                 </div>
             </div>
         `;

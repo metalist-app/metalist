@@ -88,22 +88,6 @@ export class AlphabetizeRootNotesModal extends BaseModal {
         }
     }
 
-    onKeyDown(event) {
-        if (!(event instanceof KeyboardEvent)) {
-            throw new Error('AlphabetizeRootNotesModal.onKeyDown requires KeyboardEvent');
-        }
-        if (event.key !== 'Enter') {
-            return;
-        }
-        const activeElement = document.activeElement;
-        if (activeElement instanceof HTMLButtonElement) {
-            return;
-        }
-        event.preventDefault();
-        event.stopPropagation();
-        this.submit();
-    }
-
     renderModalContent() {
         const modalElement = document.getElementById(this.modalElementId);
         if (!(modalElement instanceof HTMLElement)) {
@@ -138,8 +122,8 @@ export class AlphabetizeRootNotesModal extends BaseModal {
                 </div>
 
                 <div class="form-actions alphabetize-root-notes-actions">
-                    <button type="button" class="secondary-btn" id="alphabetize-root-notes-cancel-btn">Cancel</button>
-                    <button type="button" class="danger-btn" id="alphabetize-root-notes-submit-btn">Alphabetize ${directionLabel}</button>
+                    <button type="button" class="secondary-btn" id="alphabetize-root-notes-cancel-btn" data-modal-safe-focus>Cancel</button>
+                    <button type="button" class="danger-btn" id="alphabetize-root-notes-submit-btn" data-modal-destructive>Alphabetize ${directionLabel}</button>
                 </div>
             </div>
         `;

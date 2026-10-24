@@ -111,22 +111,6 @@ export class DeleteNamespaceModal extends BaseModal {
         super.requestClose();
     }
 
-    handleKeyDown(event) {
-        const topModal = ModeContext.topModal;
-        if (topModal !== this.modalName) {
-            return;
-        }
-
-        if (event.key === 'Escape') {
-            event.preventDefault();
-            event.stopPropagation();
-            this.requestClose();
-            return;
-        }
-
-        this.onKeyDown(event);
-    }
-
     onKeyDown(event) {
         if (!(event instanceof KeyboardEvent)) {
             throw new Error('DeleteNamespaceModal.onKeyDown requires KeyboardEvent');
@@ -140,11 +124,6 @@ export class DeleteNamespaceModal extends BaseModal {
         }
         event.preventDefault();
         event.stopPropagation();
-        const state = this.getModalState();
-        if (state && state.confirming) {
-            void this.handleSubmit();
-            return;
-        }
         void this.prepareDeletionConfirmation();
     }
 
@@ -267,6 +246,7 @@ export class DeleteNamespaceModal extends BaseModal {
                     <input
                         id="delete-namespace-confirmation"
                         type="text"
+                        data-modal-initial-focus
                         value="${escapeHtml(confirmationText)}"
                         placeholder="${escapeHtml(namespace)}"
                         autocomplete="off"
@@ -278,10 +258,10 @@ export class DeleteNamespaceModal extends BaseModal {
                 </div>
 
                 <div class="form-actions">
-                    <button type="button" class="danger-btn" id="delete-namespace-submit-btn" ${deleting ? 'disabled' : ''}>
+                    <button type="button" class="danger-btn" id="delete-namespace-submit-btn" data-modal-destructive ${deleting ? 'disabled' : ''}>
                         Delete vault
                     </button>
-                    <button type="button" class="secondary-btn" id="delete-namespace-back-btn" ${deleting ? 'disabled' : ''}>Back</button>
+                    <button type="button" class="secondary-btn" id="delete-namespace-back-btn" data-modal-safe-focus ${deleting ? 'disabled' : ''}>Back</button>
                 </div>
 
                 <p class="namespace-delete-status">${escapeHtml(status)}</p>

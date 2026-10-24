@@ -83,22 +83,6 @@ export class ResetUpdatedAtModal extends BaseModal {
         }
     }
 
-    onKeyDown(event) {
-        if (!(event instanceof KeyboardEvent)) {
-            throw new Error('ResetUpdatedAtModal.onKeyDown requires KeyboardEvent');
-        }
-        if (event.key !== 'Enter') {
-            return;
-        }
-        const activeElement = document.activeElement;
-        if (activeElement instanceof HTMLButtonElement) {
-            return;
-        }
-        event.preventDefault();
-        event.stopPropagation();
-        this.submit();
-    }
-
     renderModalContent() {
         const modalElement = document.getElementById(this.modalElementId);
         if (!(modalElement instanceof HTMLElement)) {
@@ -128,8 +112,8 @@ export class ResetUpdatedAtModal extends BaseModal {
                 </div>
 
                 <div class="form-actions alphabetize-root-notes-actions">
-                    <button type="button" class="secondary-btn" id="reset-updated-at-cancel-btn">Cancel</button>
-                    <button type="button" class="danger-btn" id="reset-updated-at-submit-btn">Reset Timestamps</button>
+                    <button type="button" class="secondary-btn" id="reset-updated-at-cancel-btn" data-modal-safe-focus>Cancel</button>
+                    <button type="button" class="danger-btn" id="reset-updated-at-submit-btn" data-modal-destructive>Reset Timestamps</button>
                 </div>
             </div>
         `;

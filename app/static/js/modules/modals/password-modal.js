@@ -468,7 +468,7 @@ class PasswordOperationModal extends BaseModal {
                 <form id="password-form">
                     <div class="form-group">
                         <label for="current-password">Current Password:</label>
-                        <input type="password" id="current-password" required>
+                        <input type="password" id="current-password" data-modal-initial-focus required>
                     </div>
                     
                     <div class="form-group">
@@ -481,8 +481,8 @@ class PasswordOperationModal extends BaseModal {
                     <small class="form-help" id="password-form-validation" aria-live="polite"></small>
 
                     <div class="form-actions">
-                        <button type="submit" class="danger-btn" data-password-submit disabled>Remove Password</button>
-                        <button type="button" class="secondary-btn" id="cancel-btn">Cancel</button>
+                        <button type="submit" class="danger-btn" data-password-submit data-modal-destructive disabled>Remove Password</button>
+                        <button type="button" class="secondary-btn" id="cancel-btn" data-modal-safe-focus>Cancel</button>
                     </div>
                 </form>
                 

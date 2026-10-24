@@ -267,8 +267,8 @@ export class SearchSuggestionStatisticsModal extends BaseModal {
                     <p>Notes, tabs, saved searches, and the settings in this modal will not be changed.</p>
                 </div>
                 <div class="form-actions alphabetize-root-notes-actions">
-                    <button type="button" class="secondary-btn" id="search-suggestion-statistics-reset-cancel-btn"${disabled}>Cancel</button>
-                    <button type="button" class="danger-btn" id="search-suggestion-statistics-reset-confirm-btn" data-modal-enter-action${disabled}>${resetLabel}</button>
+                    <button type="button" class="secondary-btn" id="search-suggestion-statistics-reset-cancel-btn" data-modal-safe-focus${disabled}>Cancel</button>
+                    <button type="button" class="danger-btn" id="search-suggestion-statistics-reset-confirm-btn" data-modal-destructive${disabled}>${resetLabel}</button>
                 </div>
             </div>
         `;

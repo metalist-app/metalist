@@ -1020,6 +1020,10 @@ export class OntologyModal extends BaseModal {
         if (!(submitButton instanceof HTMLElement)) {
             throw new Error('ontology dialog submit button missing');
         }
+        const cancelButton = overlay.querySelector('.ontology-dialog-secondary');
+        if (!(cancelButton instanceof HTMLButtonElement)) {
+            throw new Error('ontology dialog cancel button missing');
+        }
         const deleteTagButton = overlay.querySelector('.ontology-dialog-danger');
         if (!(deleteTagButton instanceof HTMLElement)) {
             throw new Error('ontology dialog delete tag button missing');
@@ -1035,6 +1039,7 @@ export class OntologyModal extends BaseModal {
             suggestions,
             error,
             submitButton,
+            cancelButton,
             deleteTagButton,
         };
     }
@@ -1104,6 +1109,13 @@ export class OntologyModal extends BaseModal {
         if (typeof showDeleteTag !== 'boolean') {
             throw new Error('Dialog showDeleteTag must be boolean');
         }
+        const startsOnCancel = config.startsOnCancel;
+        if (typeof startsOnCancel !== 'boolean') {
+            throw new Error('Dialog startsOnCancel must be boolean');
+        }
+        if (startsOnCancel && mode !== 'confirm') {
+            throw new Error('Only a confirmation starts on Cancel');
+        }
         // What the field adds next to which tag, so its suggestions are tags linked to that
         // tag (GET /ontology/tags); null ranks them by use alone.
         const suggestFor = config.suggestFor;
@@ -1145,6 +1157,7 @@ export class OntologyModal extends BaseModal {
                 suggestOnEmpty,
                 autoSubmitOnSuggestion,
                 showDeleteTag,
+                startsOnCancel,
                 suggestFor,
             };
             this._renderDialog();
@@ -1167,6 +1180,11 @@ export class OntologyModal extends BaseModal {
         if (typeof confirmLabel !== 'string' || confirmLabel.trim() === '') {
             throw new Error('Confirm label must be non-empty string');
         }
+        // A destructive confirmation starts on Cancel, so Enter never confirms it.
+        const isDestructive = config.isDestructive;
+        if (typeof isDestructive !== 'boolean') {
+            throw new Error('Confirm isDestructive must be boolean');
+        }
 
         const result = await this._openDialog({
             title,
@@ -1184,6 +1202,7 @@ export class OntologyModal extends BaseModal {
             allowSuggestions: false,
             suggestFor: null,
             showDeleteTag: false,
+            startsOnCancel: isDestructive,
         });
         return result === true;
     }
@@ -1260,6 +1279,8 @@ export class OntologyModal extends BaseModal {
                     elements.input.setSelectionRange(length, length);
                 }
                 this._updateDialogSuggestions();
+            } else if (state.startsOnCancel) {
+                elements.cancelButton.focus();
             } else {
                 elements.submitButton.focus();
             }
@@ -2329,6 +2350,7 @@ export class OntologyModal extends BaseModal {
             autoSubmitOnSuggestion: false,
             showInput: true,
             showDeleteTag: false,
+            startsOnCancel: false,
         });
         if (next === null) {
             return;
@@ -2410,6 +2432,7 @@ export class OntologyModal extends BaseModal {
             autoSubmitOnSuggestion: false,
             showInput: true,
             showDeleteTag: false,
+            startsOnCancel: false,
         });
         if (updatedText === null) {
             return;
@@ -2459,6 +2482,7 @@ export class OntologyModal extends BaseModal {
             autoSubmitOnSuggestion: false,
             showInput: true,
             showDeleteTag: true,
+            startsOnCancel: false,
         });
         if (next === null) {
             return;
@@ -2479,6 +2503,7 @@ export class OntologyModal extends BaseModal {
             title: `Rename '${focusTag}' to '${trimmed}'?`,
             description: 'This renames the tag in ontology rules and note tag bars. This cannot be undone.',
             confirmLabel: 'Rename',
+            isDestructive: false,
         });
         if (!confirmed) {
             return;
@@ -2505,6 +2530,7 @@ export class OntologyModal extends BaseModal {
             title: `Delete '${focusTag}'?`,
             description: 'This removes the tag from all note tag bars and deletes every ontology relationship that references it. This cannot be undone.',
             confirmLabel: 'Delete tag',
+            isDestructive: true,
         });
         if (!confirmed) {
             return;
@@ -2663,6 +2689,7 @@ export class OntologyModal extends BaseModal {
                     autoSubmitOnSuggestion: false,
                     showInput: true,
                     showDeleteTag: false,
+                    startsOnCancel: false,
                 });
                 if (newTag === null) {
                     return;
@@ -2728,6 +2755,7 @@ export class OntologyModal extends BaseModal {
                 title,
                 description,
                 confirmLabel,
+                isDestructive: true,
             });
             if (!confirmed) {
                 return;
@@ -2805,6 +2833,7 @@ export class OntologyModal extends BaseModal {
                     autoSubmitOnSuggestion: false,
                     showInput: true,
                     showDeleteTag: false,
+                    startsOnCancel: false,
                 });
                 if (ruleText === null) {
                     return;
@@ -2830,6 +2859,7 @@ export class OntologyModal extends BaseModal {
                     autoSubmitOnSuggestion: false,
                     showInput: true,
                     showDeleteTag: false,
+                    startsOnCancel: false,
                 });
                 if (newTag === null) {
                     return;
@@ -2855,6 +2885,7 @@ export class OntologyModal extends BaseModal {
                     autoSubmitOnSuggestion: false,
                     showInput: true,
                     showDeleteTag: false,
+                    startsOnCancel: false,
                 });
                 if (newTag === null) {
                     return;

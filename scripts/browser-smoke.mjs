@@ -63,6 +63,7 @@ import {checkSearchHighlight} from './browser-search-highlight-regressions.mjs';
 import {checkReferenceViews} from './browser-reference-view-regressions.mjs';
 import {installRequestMonitor, waitForAppQuiet} from './browser-app-idle.mjs';
 import {checkLoginLogo} from './browser-login-logo-regressions.mjs';
+import {checkDialogKeys} from './browser-dialog-key-regressions.mjs';
 import {assertLoginLogoGeometry} from './browser-validation/login-logo-geometry.mjs';
 
 // Requests count as quiet after this long without one starting or ending: after a
@@ -306,6 +307,10 @@ try {
     await checkBackupReminder(page);
     assert.deepEqual(errors, []);
     console.log(`PASS backup reminder regressions in ${await browser.version()}`);
+  } else if (process.env.BROWSER_TEST_SUITE === 'dialog-keys') {
+    await checkDialogKeys(page);
+    assert.deepEqual(errors, []);
+    console.log(`PASS dialog key regressions in ${await browser.version()}`);
   } else if (process.env.BROWSER_TEST_SUITE === 'login-logo') {
     await checkLoginLogo(browser, page, origin);
     assert.deepEqual(errors, []);
