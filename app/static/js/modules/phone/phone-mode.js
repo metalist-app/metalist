@@ -19,6 +19,7 @@ import {
 import { DATE_RANGE_KINDS, DATE_RANGE_PRESETS } from '../mode-manager/services/date-range-kinds.js';
 import { FILE_FILTER_CHOICES, FILE_FILTER_KINDS } from '../mode-manager/services/file-filter-kinds.js';
 import { searchTermsOf, withSearchTerm, withoutSearchTerm } from './phone-search-terms.js';
+import { actionRowHtml } from '../modals/action-row.js';
 
 // The phone prototype (docs/ready-to-build/phone-prototype.md, phone-prototype-mocks.html):
 // under 640 px the body gets .phone-layout and the page becomes a read-only view of the notes
@@ -31,6 +32,7 @@ const TAG_PILL_SWITCH = 'metalist.dev.phoneTagPills';
 const NARROW_TAG_PILLS = 'narrow';
 // A capture with no tags is tagged @inbox: a reserved meta tag (the maintainer, 2026-10-24),
 // not inherited by children (docs/ui/search-semantics.md), so search @inbox for what to sort.
+const EMPTY_CAPTURE_REASON = 'Write the note first.';
 const INBOX_TAG = '@inbox';
 const SHEET_MODAL = 'phoneSheet';
 const CAPTURE_MODAL = 'phoneCapture';
@@ -390,11 +392,24 @@ function captureHtml() {
                 <input id="phone-capture-tags" type="text" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false">
             </div>
             <div class="phone-capture-suggestions"></div>
-            <div class="form-actions dialog-actions">
-                <button type="button" class="secondary-btn" id="phone-capture-cancel">Cancel</button>
-                <button type="button" class="primary-btn" id="phone-capture-save">Save</button>
-            </div>
+            ${actionRowHtml({
+                alternative: null,
+                cancel: { id: 'phone-capture-cancel', label: 'Cancel', disabled: false, attributes: [] },
+                main: {
+                    id: 'phone-capture-save', label: 'Save', disabled: true, attributes: [],
+                    isDestructive: false, isEnterAction: false, type: 'button',
+                },
+                rowClass: '',
+            })}
         </div>`;
+}
+
+// Save is dimmed, and says why, until the note has text.
+function syncCaptureSave() {
+    const isEmpty = requireElement('phone-capture-text').value.trim() === '';
+    const save = requireElement('phone-capture-save');
+    save.disabled = isEmpty;
+    save.title = isEmpty ? EMPTY_CAPTURE_REASON : '';
 }
 
 function renderCaptureTags() {
@@ -456,6 +471,8 @@ function openCapture() {
     ModeContext.pushModal(CAPTURE_MODAL);
     requireElement('phone-capture-tags').addEventListener('input', onCaptureTagsInput);
     requireElement('phone-capture-tags').addEventListener('keydown', onCaptureTagsKeyDown);
+    requireElement('phone-capture-text').addEventListener('input', syncCaptureSave);
+    syncCaptureSave();
     requireElement('phone-capture-text').focus();
 }
 
@@ -468,6 +485,7 @@ function closeCapture() {
 
 async function saveCapture() {
     const text = requireElement('phone-capture-text').value.trim();
+    // Save is dimmed then; some browsers still pass a tap on it to the sheet.
     if (text === '') {
         requireElement('phone-capture-text').focus();
         return;

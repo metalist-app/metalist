@@ -37,7 +37,9 @@ address, so the vault stays picked and getting back in is just the password.
 
 ## Capture (＋)
 A full-screen sheet: the text box (focused), "Tags (optional)" where typed tags become pills, with
-suggestions from the vault's tags, and Cancel · Save at the lower right. Save creates a new note at
+suggestions from the vault's tags, and Cancel · Save at the lower right (the shared dialog row,
+`modals/action-row.js`). Save is dimmed, its tooltip saying "Write the note first.", until the note
+has text. Save creates a new note at
 the top with the text and the tags; with no tags it is tagged **`@inbox`**, a reserved meta tag
 (meta tags are not inherited, so search `@inbox` for what to sort).
 
