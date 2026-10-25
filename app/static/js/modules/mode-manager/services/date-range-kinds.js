@@ -14,7 +14,7 @@ export const DATE_RANGE_KINDS = Object.freeze({
 export const OPEN_DATE = '';
 export const DATE_RANGE_PRESETS = Object.freeze([
     [DATE_RANGE_KINDS.TODAY, 'Today'],
-    [DATE_RANGE_KINDS.LAST_7_DAYS, 'Last 7 days'],
-    [DATE_RANGE_KINDS.LAST_30_DAYS, 'Last 30 days'],
-    [DATE_RANGE_KINDS.THIS_YEAR, 'This year'],
+    [DATE_RANGE_KINDS.LAST_7_DAYS, 'Last 7 Days'],
+    [DATE_RANGE_KINDS.LAST_30_DAYS, 'Last 30 Days'],
+    [DATE_RANGE_KINDS.THIS_YEAR, 'This Year'],
 ]);

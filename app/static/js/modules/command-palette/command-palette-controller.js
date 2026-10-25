@@ -133,7 +133,14 @@ import {
 import { shouldActivateCommandPaletteRowClick } from './click-activation-service.js';
 import { persistUsageBeforeActivation } from './activation-auth-policy.js';
 import { waitForCommandAvailability } from './backup-command-availability.js';
-import { buildCommandPaletteEndpoints } from './endpoint-registry.js';
+import {
+    COMMAND_SHORTCUTS,
+    DESTRUCTIVE_COMMAND_IDS,
+    buildCommandPaletteEndpoints,
+    isCommandAvailable,
+} from './endpoint-registry.js';
+import { formatMenuShortcut } from '../context-menu/context-menu-registry.js';
+import { Auth } from '../auth.js';
 import { PreferencesStore } from './preferences-store.js';
 import {
     collectCommandPaletteTags,
@@ -1066,7 +1073,8 @@ class CommandPaletteController {
         const committedTokens = tokenization.committed;
         const prefix = tokenization.prefix;
 
-        const baseMatches = this._endpoints.filter((e) => endpointMatchesTags(e, committedTokens));
+        // The same commands _getVisibleMatches offers, so a row's index is the command it shows.
+        const baseMatches = this._availableEndpoints().filter((e) => endpointMatchesTags(e, committedTokens));
 
         let matches = baseMatches;
         if (typeof prefix === 'string' && prefix.length > 0) {
@@ -1132,12 +1140,26 @@ class CommandPaletteController {
             const endpoint = matches[idx];
             const row = document.createElement('div');
             row.className = 'command-palette-row' + (idx === normalizedIndex ? ' selected' : '');
+            // A destructive command is red; it keeps its place in the list (endpoint-registry.js).
+            if (DESTRUCTIVE_COMMAND_IDS.has(endpoint.id)) {
+                row.classList.add('is-danger');
+            }
             row.dataset.endpointId = endpoint.id;
 
             const label = document.createElement('div');
             label.className = 'command-palette-row-label';
             label.textContent = endpoint.label;
             row.appendChild(label);
+
+            if (Object.hasOwn(COMMAND_SHORTCUTS, endpoint.id)) {
+                const shortcut = document.createElement('div');
+                shortcut.className = 'command-palette-row-shortcut';
+                shortcut.textContent = formatMenuShortcut({
+                    isMac: navigator.platform.toUpperCase().includes('MAC'),
+                    ...COMMAND_SHORTCUTS[endpoint.id],
+                });
+                row.appendChild(shortcut);
+            }
 
             const value = document.createElement('div');
             value.className = 'command-palette-row-value';
@@ -1167,12 +1189,25 @@ class CommandPaletteController {
         for (let idx = 0; idx < committedTokens.length; idx += 1) {
             const candidate = committedTokens[idx];
             const reduced = committedTokens.slice(0, idx).concat(committedTokens.slice(idx + 1));
-            const matches = this._endpoints.filter((e) => endpointMatchesTags(e, reduced));
+            const matches = this._availableEndpoints().filter((e) => endpointMatchesTags(e, reduced));
             if (matches.length > 0) {
                 return candidate;
             }
         }
         return null;
+    }
+
+    // The commands that can apply now: Add Password only without one, Change and Remove
+    // Password only with one, reordering root notes only in an unsorted tab.
+    _availableEndpoints() {
+        if (typeof Auth.hasPassword !== 'boolean') {
+            throw new Error('The palette needs to know whether the vault has a password');
+        }
+        const state = {
+            hasPassword: Auth.hasPassword,
+            isRootReorderLocked: isRootReorderLocked(this.getSortMode()),
+        };
+        return this._endpoints.filter((endpoint) => isCommandAvailable(endpoint.id, state));
     }
 
     _formatEndpointValue(endpoint) {
@@ -1195,8 +1230,9 @@ class CommandPaletteController {
             }
             return '↵';
         }
+        // The label says when a dialog asks for more ("…"); the value column only says Enter acts.
         if (endpoint.kind === 'form') {
-            return '…';
+            return '↵';
         }
         return '';
     }
@@ -1208,7 +1244,7 @@ class CommandPaletteController {
         const prefix = tokenization.prefix;
         const usageSnapshot = this._usage.getUsageSnapshot();
 
-        const baseMatches = this._endpoints.filter((e) => endpointMatchesTags(e, committed));
+        const baseMatches = this._availableEndpoints().filter((e) => endpointMatchesTags(e, committed));
         let matches = baseMatches;
         if (typeof prefix === 'string' && prefix.length > 0) {
             matches = baseMatches.filter((e) => endpointMatchesPrefix(e, prefix));

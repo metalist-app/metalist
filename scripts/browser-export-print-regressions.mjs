@@ -214,7 +214,7 @@ async function exportPasswordsCase(browser, page, ids) {
 
   // With one, the dialog asks too; Include Unredacted Passwords is unchecked, and Enter keeps them hidden.
   await openNoteMenu(page, ids.trip);
-  await chooseFromMenu(page, ['Export', 'Note as HTML']);
+  await chooseFromMenu(page, ['Export', 'Note as HTML…']);
   const asked = await optionsState(page);
   assert.deepEqual({...asked, box: null}, {
     dialogOpen: true, title: 'Kyoto trip', selected: [0, 'Kyoto trip'.length], passwords: 'Include Unredacted Usernames and Passwords', included: false,
@@ -244,14 +244,14 @@ async function exportPasswordsCase(browser, page, ids) {
 
   // Escape exports nothing.
   await openNoteMenu(page, ids.trip);
-  await chooseFromMenu(page, ['Export', 'Note as HTML']);
+  await chooseFromMenu(page, ['Export', 'Note as HTML…']);
   await page.keyboard.press('Escape');
   await pause(SETTLE_MS);
   assert.equal((await caughtDownloads(page)).length, 2, 'cancelled');
 
   // Include: the warning shows in the place kept for it, and nothing moves.
   await openNoteMenu(page, ids.trip);
-  await chooseFromMenu(page, ['Export', 'Note as HTML']);
+  await chooseFromMenu(page, ['Export', 'Note as HTML…']);
   const before = await optionsState(page);
   await page.click('#export-passwords-include');
   const including = await optionsState(page);
@@ -317,7 +317,7 @@ async function chooseFromMenu(page, path) {
 async function printNoteCase(page, ids) {
   const appTitle = await page.title();
   await openNoteMenu(page, ids.trip);
-  await chooseFromMenu(page, ['Print', 'Note']);
+  await chooseFromMenu(page, ['Print', 'Note…']);
   const asked = await optionsState(page);
   assert.equal(asked.dialogOpen, true, 'a title step first');
   assert.equal(asked.title, 'Kyoto trip', "the default is the note's first line");
@@ -397,7 +397,7 @@ async function answerAi(page, line) {
 
 async function openPrintDialog(page, ids) {
   await openNoteMenu(page, ids.trip);
-  await chooseFromMenu(page, ['Print', 'Note']);
+  await chooseFromMenu(page, ['Print', 'Note…']);
 }
 
 async function aiTitleCase(page, ids) {
@@ -455,7 +455,7 @@ async function aiTitleCase(page, ids) {
 
   // Export asks the same way, and its file is named after the title.
   await openNoteMenu(page, ids.trip);
-  await chooseFromMenu(page, ['Export', 'Note as HTML']);
+  await chooseFromMenu(page, ['Export', 'Note as HTML…']);
   assert.equal((await optionsState(page)).aiButton.disabled, false);
   await page.click('#export-title-ai-btn');
   assert.equal((await aiRequests(page)).at(-1).exported, 'note');
@@ -479,7 +479,7 @@ async function printViewCase(page) {
   // The background menu prints the view; Escape at the title step prints nothing.
   await page.mouse.click(5, 300, {button: 'right'});
   await pause(SETTLE_MS);
-  await chooseFromMenu(page, ['Print View']);
+  await chooseFromMenu(page, ['Print View…']);
   const asked = await optionsState(page);
   assert.equal(asked.dialogOpen, true);
   assert.equal(asked.title, 'MetaList', 'a view without a search');
@@ -492,7 +492,7 @@ async function printViewCase(page) {
   // Included passwords print readable, not blurred.
   await page.mouse.click(5, 300, {button: 'right'});
   await pause(SETTLE_MS);
-  await chooseFromMenu(page, ['Print View']);
+  await chooseFromMenu(page, ['Print View…']);
   await page.click('#export-passwords-include');
   await page.click('#export-options-submit-btn');
   await pause(SETTLE_MS);

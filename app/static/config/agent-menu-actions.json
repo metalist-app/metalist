@@ -1,109 +1,109 @@
 [
   {
     "id": "form.ai_agent_settings",
-    "label": "AI agent settings",
+    "label": "AI Agent Settings…",
     "selector": "#ai-agent-settings-modal",
     "presentation": "dialog"
   },
   {
     "id": "form.cloud_ai_privacy",
-    "label": "Cloud AI privacy",
+    "label": "Cloud AI Privacy…",
     "selector": "#ai-agent-settings-modal",
     "presentation": "dialog"
   },
   {
     "id": "form.proposals",
-    "label": "Accept or reject AI-proposed tags",
+    "label": "Accept or Reject AI-Proposed Tags…",
     "selector": "dialog[aria-label=\"AI-proposed tags\"]",
     "presentation": "dialog"
   },
   {
     "id": "form.tagging_vocabulary",
-    "label": "AI tagging vocabulary",
+    "label": "AI Tagging Vocabulary…",
     "selector": "dialog[aria-label=\"AI tagging vocabulary\"]",
     "presentation": "dialog"
   },
   {
     "id": "form.search_suggestion_statistics",
-    "label": "Search suggestion stats & settings",
+    "label": "Search Suggestion Stats & Settings…",
     "selector": "#search-suggestion-statistics-modal",
     "presentation": "dialog"
   },
   {
     "id": "form.note_layout_appearance",
-    "label": "Note Layout & Appearance",
+    "label": "Note Layout & Appearance…",
     "selector": "#note-layout-appearance-modal",
     "presentation": "dialog"
   },
   {
     "id": "form.visual_cues",
-    "label": "Visual Cues",
+    "label": "Visual Cues…",
     "selector": "#visual-cues-modal",
     "presentation": "dialog"
   },
   {
     "id": "form.dictation_settings",
-    "label": "Dictation Settings",
+    "label": "Dictation Settings…",
     "selector": "#dictation-settings-modal",
     "presentation": "dialog"
   },
   {
     "id": "action.find_in_list",
-    "label": "Find in list",
+    "label": "Find in List",
     "selector": "#find-in-list-bar",
     "presentation": "dialog"
   },
   {
     "id": "action.edit_tag_relationships",
-    "label": "Edit tag relationships",
+    "label": "Edit Tag Relationships…",
     "selector": "#ontology-modal",
     "presentation": "dialog"
   },
   {
     "id": "action.open_keyboard_shortcuts_help",
-    "label": "Keyboard Shortcuts / Cheatsheet",
+    "label": "Keyboard Shortcuts",
     "selector": "#help-modal",
     "presentation": "dialog"
   },
   {
     "id": "form.reminders",
-    "label": "Reminders",
+    "label": "Open Reminders",
     "selector": "#reminder-modal",
     "presentation": "dialog"
   },
   {
     "id": "form.version_info",
-    "label": "Version info",
+    "label": "Version Info",
     "selector": "#version-info-modal",
     "presentation": "dialog"
   },
   {
     "id": "form.memory_usage",
-    "label": "Memory usage",
+    "label": "Memory Usage",
     "selector": "#memory-usage-modal",
     "presentation": "dialog"
   },
   {
     "id": "form.restore_backup",
-    "label": "Restore from backup",
+    "label": "Restore from Backup…",
     "selector": "#backup-restore-modal",
     "presentation": "dialog"
   },
   {
     "id": "form.session_timeout",
-    "label": "Session idle timeout",
+    "label": "Session Idle Timeout…",
     "selector": "#session-timeout-modal",
     "presentation": "dialog"
   },
   {
     "id": "form.random_password_generator",
-    "label": "Generate random password",
+    "label": "Generate Random Password…",
     "selector": "#random-password-modal",
     "presentation": "dialog"
   },
   {
     "id": "form.open_namespace",
-    "label": "Open/Switch vault",
+    "label": "Open/Switch Vault…",
     "selector": "#open-namespace-modal",
     "presentation": "dialog",
     "alternate_dialog": {
@@ -114,199 +114,199 @@
   },
   {
     "id": "form.create_namespace",
-    "label": "Create vault",
+    "label": "Create Vault…",
     "selector": "#create-namespace-modal",
     "presentation": "dialog"
   },
   {
     "id": "form.manage_namespace_ports",
-    "label": "Manage vault ports",
+    "label": "Manage Vault Ports…",
     "selector": "#manage-namespace-ports-modal",
     "presentation": "dialog"
   },
   {
     "id": "form.rename_current_namespace",
-    "label": "Rename current vault",
+    "label": "Rename Current Vault…",
     "selector": "#rename-namespace-modal",
     "presentation": "dialog"
   },
   {
     "id": "form.delete_current_namespace",
-    "label": "Delete vault",
+    "label": "Delete Vault…",
     "selector": "#delete-namespace-modal",
     "presentation": "dialog"
   },
   {
     "id": "form.add_password",
-    "label": "Add password",
+    "label": "Add Password…",
     "selector": "#add-password-modal",
     "presentation": "dialog"
   },
   {
     "id": "form.change_password",
-    "label": "Change password",
+    "label": "Change Password…",
     "selector": "#change-password-modal",
     "presentation": "dialog"
   },
   {
     "id": "form.remove_password",
-    "label": "Remove password",
+    "label": "Remove Password…",
     "selector": "#remove-password-modal",
     "presentation": "dialog"
   },
   {
     "id": "pref.show_note_tags",
-    "label": "show note tags",
+    "label": "Show Tags in List",
     "selector": "#command-palette-modal",
     "presentation": "palette"
   },
   {
     "id": "pref.show_tab_ui",
-    "label": "show tab ui",
+    "label": "Show Tabs",
     "selector": "#command-palette-modal",
     "presentation": "palette"
   },
   {
     "id": "pref.show_search_results_count",
-    "label": "show search results count",
+    "label": "Hide Search Result Count",
     "selector": "#command-palette-modal",
     "presentation": "palette"
   },
   {
     "id": "pref.show_ai_chat",
-    "label": "show ai chat",
+    "label": "Show AI Chat",
     "selector": "#command-palette-modal",
     "presentation": "palette"
   },
   {
     "id": "pref.animated_transitions",
-    "label": "animated transitions",
+    "label": "Hide Animated Transitions",
     "selector": "#command-palette-modal",
     "presentation": "palette"
   },
   {
     "id": "view.sort_mode.normal",
-    "label": "Sort order: Normal",
+    "label": "Sort Order: Normal",
     "selector": "#command-palette-modal",
     "presentation": "palette"
   },
   {
     "id": "view.sort_mode.created",
-    "label": "Sort order: Datetime created",
+    "label": "Sort Order: Datetime Created",
     "selector": "#command-palette-modal",
     "presentation": "palette"
   },
   {
     "id": "view.sort_mode.updated",
-    "label": "Sort order: Datetime last updated",
+    "label": "Sort Order: Datetime Last Updated",
     "selector": "#command-palette-modal",
     "presentation": "palette"
   },
   {
     "id": "view.sort_mode.alphabetical",
-    "label": "Sort order: Alphabetical",
+    "label": "Sort Order: Alphabetical",
     "selector": "#command-palette-modal",
     "presentation": "palette"
   },
   {
     "id": "view.sort_mode.content_volume",
-    "label": "Sort order: Content volume",
+    "label": "Sort Order: Content Volume",
     "selector": "#command-palette-modal",
     "presentation": "palette"
   },
   {
     "id": "view.sort_mode.reverse",
-    "label": "Sort order: Reverse",
+    "label": "Sort Order: Reverse",
     "selector": "#command-palette-modal",
     "presentation": "palette"
   },
   {
     "id": "view.all_notes",
-    "label": "View: All notes",
+    "label": "View: All Notes",
     "selector": "#command-palette-modal",
     "presentation": "palette"
   },
   {
     "id": "view.untagged_notes",
-    "label": "View: Untagged notes",
+    "label": "View: Untagged Notes",
     "selector": "#command-palette-modal",
     "presentation": "palette"
   },
   {
     "id": "view.date_range.field.updated",
-    "label": "Date range: Last updated",
+    "label": "Date Range: Last Updated",
     "selector": "#command-palette-modal",
     "presentation": "palette"
   },
   {
     "id": "view.date_range.field.created",
-    "label": "Date range: Created",
+    "label": "Date Range: Created",
     "selector": "#command-palette-modal",
     "presentation": "palette"
   },
   {
     "id": "view.date_range.none",
-    "label": "Date range: Any date",
+    "label": "Date Range: Any Date",
     "selector": "#command-palette-modal",
     "presentation": "palette"
   },
   {
     "id": "view.date_range.today",
-    "label": "Date range: Today",
+    "label": "Date Range: Today",
     "selector": "#command-palette-modal",
     "presentation": "palette"
   },
   {
     "id": "view.date_range.last_7_days",
-    "label": "Date range: Last 7 days",
+    "label": "Date Range: Last 7 Days",
     "selector": "#command-palette-modal",
     "presentation": "palette"
   },
   {
     "id": "view.date_range.last_30_days",
-    "label": "Date range: Last 30 days",
+    "label": "Date Range: Last 30 Days",
     "selector": "#command-palette-modal",
     "presentation": "palette"
   },
   {
     "id": "view.date_range.this_year",
-    "label": "Date range: This year",
+    "label": "Date Range: This Year",
     "selector": "#command-palette-modal",
     "presentation": "palette"
   },
   {
     "id": "view.date_range.custom",
-    "label": "Date range: Custom range",
+    "label": "Date Range: Custom Range…",
     "selector": "#command-palette-modal",
     "presentation": "palette"
   },
   {
     "id": "view.files.none",
-    "label": "Notes with files: All notes",
+    "label": "Notes with Files: All Notes",
     "selector": "#command-palette-modal",
     "presentation": "palette"
   },
   {
     "id": "view.files.any",
-    "label": "Notes with files: Any file",
+    "label": "Notes with Files: Any File",
     "selector": "#command-palette-modal",
     "presentation": "palette"
   },
   {
     "id": "view.files.image",
-    "label": "Notes with files: Images",
+    "label": "Notes with Files: Images",
     "selector": "#command-palette-modal",
     "presentation": "palette"
   },
   {
     "id": "view.files.pdf",
-    "label": "Notes with files: PDFs",
+    "label": "Notes with Files: PDFs",
     "selector": "#command-palette-modal",
     "presentation": "palette"
   },
   {
     "id": "view.files.markdown",
-    "label": "Notes with files: Markdown files",
+    "label": "Notes with Files: Markdown Files",
     "selector": "#command-palette-modal",
     "presentation": "palette"
   },
@@ -318,127 +318,127 @@
   },
   {
     "id": "action.remove_all_tag_suggestions_current_context",
-    "label": "Reject all AI-proposed tags (current context)",
+    "label": "Reject All AI-Proposed Tags (Current Context)…",
     "selector": "#command-palette-modal",
     "presentation": "palette"
   },
   {
     "id": "action.fully_expand_all",
-    "label": "Fully expand all notes (current view)",
+    "label": "Fully Expand All Notes (Current View)",
     "selector": "#command-palette-modal",
     "presentation": "palette"
   },
   {
     "id": "action.fully_collapse_all",
-    "label": "Fully collapse all notes (current view)",
+    "label": "Fully Collapse All Notes (Current View)",
     "selector": "#command-palette-modal",
     "presentation": "palette"
   },
   {
     "id": "action.expand_all",
-    "label": "Expand all root notes (current view)",
+    "label": "Expand All Root Notes (Current View)",
     "selector": "#command-palette-modal",
     "presentation": "palette"
   },
   {
     "id": "action.collapse_all",
-    "label": "Collapse all root notes (current view)",
+    "label": "Collapse All Root Notes (Current View)",
     "selector": "#command-palette-modal",
     "presentation": "palette"
   },
   {
     "id": "action.reset_view_filters",
-    "label": "Reset current view filters",
+    "label": "Reset Current View Filters",
     "selector": "#command-palette-modal",
     "presentation": "palette"
   },
   {
     "id": "action.reset_all_preferences",
-    "label": "Reset all preferences",
+    "label": "Reset All Preferences",
     "selector": "#command-palette-modal",
     "presentation": "palette"
   },
   {
     "id": "action.create_backup",
-    "label": "Create backup now",
+    "label": "Back Up Now…",
     "selector": "#command-palette-modal",
     "presentation": "palette"
   },
   {
     "id": "pref.backup_reminder",
-    "label": "Backup reminder",
+    "label": "Backup Reminder",
     "selector": "#command-palette-modal",
     "presentation": "palette"
   },
   {
     "id": "action.logout",
-    "label": "Logout",
+    "label": "Log Out",
     "selector": "#command-palette-modal",
     "presentation": "palette"
   },
   {
     "id": "action.export_html",
-    "label": "Export as HTML",
+    "label": "Export View as HTML…",
     "selector": "#command-palette-modal",
     "presentation": "palette"
   },
   {
     "id": "action.print_view",
-    "label": "Print view",
+    "label": "Print View…",
     "selector": "#command-palette-modal",
     "presentation": "palette"
   },
   {
     "id": "action.attach_file_to_current_note",
-    "label": "Attach file",
+    "label": "Attach File…",
     "selector": "#command-palette-modal",
     "presentation": "palette"
   },
   {
     "id": "action.add_excalidraw_diagram",
-    "label": "Add Excalidraw diagram",
+    "label": "Add Excalidraw Diagram",
     "selector": "#command-palette-modal",
     "presentation": "palette"
   },
   {
     "id": "action.trim_unused_files",
-    "label": "Trim unused files",
+    "label": "Trim Unused Files…",
     "selector": "#command-palette-modal",
     "presentation": "palette"
   },
   {
     "id": "action.retry_failed_link_titles",
-    "label": "Retry failed link titles",
+    "label": "Retry Failed Link Titles…",
     "selector": "#link-title-retry-modal",
     "presentation": "dialog"
   },
   {
     "id": "action.prioritize_tag_front",
-    "label": "Prioritize tag to front (global)",
+    "label": "Prioritize Tag to Front (Global)…",
     "selector": "#command-palette-modal",
     "presentation": "palette"
   },
   {
     "id": "action.prioritize_tag_back",
-    "label": "Prioritize tag to back (global)",
+    "label": "Prioritize Tag to Back (Global)…",
     "selector": "#command-palette-modal",
     "presentation": "palette"
   },
   {
     "id": "action.alphabetize_root_notes_asc",
-    "label": "Alphabetize root notes A-Z (current view)",
+    "label": "Alphabetize Root Notes A-Z (Current View)…",
     "selector": "#command-palette-modal",
     "presentation": "palette"
   },
   {
     "id": "action.alphabetize_root_notes_desc",
-    "label": "Alphabetize root notes Z-A (current view)",
+    "label": "Alphabetize Root Notes Z-A (Current View)…",
     "selector": "#command-palette-modal",
     "presentation": "palette"
   },
   {
     "id": "action.reset_updated_at_to_created_at",
-    "label": "Repair: reset updated time to created time (current view)",
+    "label": "Repair: Reset Updated Time to Created Time (Current View)…",
     "selector": "#command-palette-modal",
     "presentation": "palette"
   },

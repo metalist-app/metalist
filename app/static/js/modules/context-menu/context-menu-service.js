@@ -432,6 +432,10 @@ function validateMenuItems(items, depth) {
         if (item.checked !== undefined && typeof item.checked !== 'boolean') {
             throw new Error(`Context menu item ${index} checked must be boolean when provided`);
         }
+        // A destructive item (Delete Note) is drawn red (dialog-and-menu-conventions.md, rule 8).
+        if (item.danger !== undefined && typeof item.danger !== 'boolean') {
+            throw new Error(`Context menu item ${index} danger must be boolean when provided`);
+        }
     });
 }
 
@@ -597,6 +601,9 @@ function renderMenuItems(menu, items, menuLevel) {
 
         if (item.separated === true) {
             button.classList.add('is-separated');
+        }
+        if (item.danger === true) {
+            button.classList.add('is-danger');
         }
         if (!item.enabled) {
             button.disabled = true;

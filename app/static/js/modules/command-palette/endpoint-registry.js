@@ -48,6 +48,61 @@ function visibilityLabel(preferencesStore, key, defaultValue, subject) {
     return `${isVisible ? 'Hide' : 'Show'} ${subject}`;
 }
 
+// Commands with a key of their own show it at the right of their row (rule 4): the
+// key alone, or with Cmd (Ctrl).
+export const COMMAND_SHORTCUTS = Object.freeze({
+    'action.find_in_list': Object.freeze({ mod: true, shift: false, key: 'F' }),
+    'action.open_keyboard_shortcuts_help': Object.freeze({ mod: false, shift: false, key: '?' }),
+});
+
+// Commands that lose what cannot be brought back are red (rule 3). The palette orders
+// commands by use and search, so they keep their place.
+export const DESTRUCTIVE_COMMAND_IDS = Object.freeze(new Set([
+    'action.alphabetize_root_notes_asc',
+    'action.alphabetize_root_notes_desc',
+    'action.prioritize_tag_back',
+    'action.prioritize_tag_front',
+    'action.remove_all_tag_suggestions_current_context',
+    'action.reset_all_preferences',
+    'action.reset_updated_at_to_created_at',
+    'action.trim_unused_files',
+    'form.delete_current_namespace',
+    'form.remove_password',
+    'form.restore_backup',
+]));
+
+const PASSWORD_COMMANDS_WITHOUT_ONE = new Set(['form.add_password']);
+const PASSWORD_COMMANDS_WITH_ONE = new Set(['form.change_password', 'form.remove_password']);
+const ROOT_REORDER_COMMANDS = new Set([
+    'action.prioritize_tag_front',
+    'action.prioritize_tag_back',
+    'action.alphabetize_root_notes_asc',
+    'action.alphabetize_root_notes_desc',
+]);
+
+/**
+ * Whether a command can apply now; one that cannot is left out of the palette (rule 5).
+ * `state` is { hasPassword, isRootReorderLocked } (a sorted tab orders its root notes itself).
+ */
+export function isCommandAvailable(commandId, state) {
+    if (typeof commandId !== 'string' || commandId === '') {
+        throw new Error('isCommandAvailable requires a command id');
+    }
+    if (typeof state.hasPassword !== 'boolean' || typeof state.isRootReorderLocked !== 'boolean') {
+        throw new Error('isCommandAvailable requires boolean hasPassword and isRootReorderLocked');
+    }
+    if (PASSWORD_COMMANDS_WITHOUT_ONE.has(commandId)) {
+        return !state.hasPassword;
+    }
+    if (PASSWORD_COMMANDS_WITH_ONE.has(commandId)) {
+        return state.hasPassword;
+    }
+    if (ROOT_REORDER_COMMANDS.has(commandId)) {
+        return !state.isRootReorderLocked;
+    }
+    return true;
+}
+
 export function buildCommandPaletteEndpoints(deps) {
     if (!deps || typeof deps !== 'object') {
         throw new Error('buildCommandPaletteEndpoints requires deps object');
@@ -140,7 +195,7 @@ export function buildCommandPaletteEndpoints(deps) {
             id: 'pref.show_note_tags',
             kind: 'boolean',
             get label() {
-                return visibilityLabel(preferencesStore, 'pref.show_note_tags', defaults.showNoteTags, 'tags in list');
+                return visibilityLabel(preferencesStore, 'pref.show_note_tags', defaults.showNoteTags, 'Tags in List');
             },
             persistenceKey: 'pref.show_note_tags',
             defaultValue: defaults.showNoteTags,
@@ -150,7 +205,7 @@ export function buildCommandPaletteEndpoints(deps) {
             id: 'pref.show_tab_ui',
             kind: 'boolean',
             get label() {
-                return visibilityLabel(preferencesStore, 'pref.show_tab_ui', defaults.showTabUi, 'tabs');
+                return visibilityLabel(preferencesStore, 'pref.show_tab_ui', defaults.showTabUi, 'Tabs');
             },
             persistenceKey: 'pref.show_tab_ui',
             defaultValue: defaults.showTabUi,
@@ -164,7 +219,7 @@ export function buildCommandPaletteEndpoints(deps) {
                     preferencesStore,
                     'pref.show_search_results_count',
                     defaults.showSearchResultsCount,
-                    'search result count',
+                    'Search Result Count',
                 );
             },
             persistenceKey: 'pref.show_search_results_count',
@@ -175,7 +230,7 @@ export function buildCommandPaletteEndpoints(deps) {
             id: 'pref.show_ai_chat',
             kind: 'boolean',
             get label() {
-                return visibilityLabel(preferencesStore, 'pref.show_ai_chat', defaults.showAiChat, 'AI chat');
+                return visibilityLabel(preferencesStore, 'pref.show_ai_chat', defaults.showAiChat, 'AI Chat');
             },
             persistenceKey: 'pref.show_ai_chat',
             defaultValue: defaults.showAiChat,
@@ -189,7 +244,7 @@ export function buildCommandPaletteEndpoints(deps) {
                     preferencesStore,
                     'pref.animated_transitions',
                     defaults.animatedTransitions,
-                    'animated transitions',
+                    'Animated Transitions',
                 );
             },
             persistenceKey: 'pref.animated_transitions',
@@ -199,7 +254,7 @@ export function buildCommandPaletteEndpoints(deps) {
         {
             id: 'view.sort_mode.normal',
             kind: 'action',
-            label: 'Sort order: Normal',
+            label: 'Sort Order: Normal',
             getValue: () => sortModeActionValue('normal'),
             closeOnExecute: true,
             execute: async () => setSortOrderKeepingDirection('normal'),
@@ -207,7 +262,7 @@ export function buildCommandPaletteEndpoints(deps) {
         {
             id: 'view.sort_mode.created',
             kind: 'action',
-            label: 'Sort order: Datetime created',
+            label: 'Sort Order: Datetime Created',
             getValue: () => sortModeActionValue('created'),
             closeOnExecute: true,
             execute: async () => setSortOrderKeepingDirection('created'),
@@ -215,7 +270,7 @@ export function buildCommandPaletteEndpoints(deps) {
         {
             id: 'view.sort_mode.updated',
             kind: 'action',
-            label: 'Sort order: Datetime last updated',
+            label: 'Sort Order: Datetime Last Updated',
             getValue: () => sortModeActionValue('updated'),
             closeOnExecute: true,
             execute: async () => setSortOrderKeepingDirection('updated'),
@@ -223,7 +278,7 @@ export function buildCommandPaletteEndpoints(deps) {
         {
             id: 'view.sort_mode.alphabetical',
             kind: 'action',
-            label: 'Sort order: Alphabetical',
+            label: 'Sort Order: Alphabetical',
             getValue: () => sortModeActionValue('alphabetical'),
             closeOnExecute: true,
             execute: async () => setSortOrderKeepingDirection('alphabetical'),
@@ -231,7 +286,7 @@ export function buildCommandPaletteEndpoints(deps) {
         {
             id: 'view.sort_mode.content_volume',
             kind: 'action',
-            label: 'Sort order: Content volume',
+            label: 'Sort Order: Content Volume',
             getValue: () => sortModeActionValue('content-volume'),
             closeOnExecute: true,
             execute: async () => setSortOrderKeepingDirection('content-volume'),
@@ -239,7 +294,7 @@ export function buildCommandPaletteEndpoints(deps) {
         {
             id: 'view.sort_mode.reverse',
             kind: 'action',
-            label: 'Sort order: Reverse',
+            label: 'Sort Order: Reverse',
             getValue: () => (isRootSortModeReversed(getSortMode()) ? 'On' : 'Off'),
             closeOnExecute: true,
             execute: async () => setSortMode(rootSortModeWithDirection(
@@ -250,7 +305,7 @@ export function buildCommandPaletteEndpoints(deps) {
         {
             id: 'view.all_notes',
             kind: 'action',
-            label: 'View: All notes',
+            label: 'View: All Notes',
             getValue: () => (getIsUntaggedView() ? '↵' : 'Current'),
             closeOnExecute: true,
             execute: async () => setIsUntaggedView(false),
@@ -258,30 +313,30 @@ export function buildCommandPaletteEndpoints(deps) {
         {
             id: 'view.untagged_notes',
             kind: 'action',
-            label: 'View: Untagged notes',
+            label: 'View: Untagged Notes',
             getValue: () => (getIsUntaggedView() ? 'Current' : '↵'),
             closeOnExecute: true,
             execute: async () => setIsUntaggedView(true),
         },
         // Date range (date-range-filter-service.js): which date, then its range.
-        ...[['updated', 'Last updated'], ['created', 'Created']].map(([field, label]) => ({
+        ...[['updated', 'Last Updated'], ['created', 'Created']].map(([field, label]) => ({
             id: `view.date_range.field.${field}`,
             kind: 'action',
-            label: `Date range: ${label}`,
+            label: `Date Range: ${label}`,
             getValue: () => (getDateRangeField() === field ? 'Current' : '↵'),
             closeOnExecute: true,
             execute: async () => setDateRangeField(field),
         })),
         ...[
-            ['none', 'none', 'Any date'],
+            ['none', 'none', 'Any Date'],
             ['today', 'today', 'Today'],
-            ['last_7_days', 'last-7-days', 'Last 7 days'],
-            ['last_30_days', 'last-30-days', 'Last 30 days'],
-            ['this_year', 'this-year', 'This year'],
+            ['last_7_days', 'last-7-days', 'Last 7 Days'],
+            ['last_30_days', 'last-30-days', 'Last 30 Days'],
+            ['this_year', 'this-year', 'This Year'],
         ].map(([idPart, rangeKind, label]) => ({
             id: `view.date_range.${idPart}`,
             kind: 'action',
-            label: `Date range: ${label}`,
+            label: `Date Range: ${label}`,
             getValue: () => (getDateRangeKind() === rangeKind ? 'Current' : '↵'),
             closeOnExecute: true,
             execute: async () => setDateRangePreset(rangeKind),
@@ -289,21 +344,21 @@ export function buildCommandPaletteEndpoints(deps) {
         {
             id: 'view.date_range.custom',
             kind: 'action',
-            label: 'Date range: Custom range',
+            label: 'Date Range: Custom Range…',
             getValue: () => (getDateRangeKind() === 'custom' ? 'Current' : '↵'),
             closeOnExecute: true,
             execute: async () => openCustomDateRange(),
         },
         ...[
-            ['none', 'All notes'],
-            ['any', 'Any file'],
+            ['none', 'All Notes'],
+            ['any', 'Any File'],
             ['image', 'Images'],
             ['pdf', 'PDFs'],
-            ['markdown', 'Markdown files'],
+            ['markdown', 'Markdown Files'],
         ].map(([kind, label]) => ({
             id: `view.files.${kind}`,
             kind: 'action',
-            label: `Notes with files: ${label}`,
+            label: `Notes with Files: ${label}`,
             getValue: () => (getFileFilterKind() === kind ? 'Current' : '↵'),
             closeOnExecute: true,
             execute: async () => setFileFilter(kind),
@@ -324,178 +379,178 @@ export function buildCommandPaletteEndpoints(deps) {
         {
             id: 'form.search_suggestion_statistics',
             kind: 'form',
-            label: 'Search suggestion stats & settings',
+            label: 'Search Suggestion Stats & Settings…',
             execute: async () => openSearchSuggestionStatistics(),
         },
         {
             id: 'form.ai_agent_settings',
             kind: 'form',
-            label: 'AI agent settings',
+            label: 'AI Agent Settings…',
             execute: async () => openAiAgentSettings(false),
         },
         {
             id: 'form.cloud_ai_privacy',
             kind: 'form',
-            label: 'Cloud AI privacy',
+            label: 'Cloud AI Privacy…',
             execute: async () => openCloudPrivacySettings(),
         },
         {
-            id: 'form.proposals', kind: 'form', label: 'Accept or reject AI-proposed tags',
+            id: 'form.proposals', kind: 'form', label: 'Accept or Reject AI-Proposed Tags…',
             execute: async () => openProposalManager(),
         },
         {
             id: 'action.remove_all_tag_suggestions_current_context',
             kind: 'action',
-            label: 'Reject all AI-proposed tags (current context)',
+            label: 'Reject All AI-Proposed Tags (Current Context)…',
             closeOnExecute: true,
             execute: async () => removeAllTagSuggestionsFromCurrentContext(),
         },
         {
-            id: 'form.tagging_vocabulary', kind: 'form', label: 'AI tagging vocabulary',
+            id: 'form.tagging_vocabulary', kind: 'form', label: 'AI Tagging Vocabulary…',
             execute: async () => openTaggingVocabulary(),
         },
         {
             id: 'action.fully_expand_all',
             kind: 'action',
-            label: 'Fully expand all notes (current view)',
+            label: 'Fully Expand All Notes (Current View)',
             closeOnExecute: true,
             execute: async () => fullyExpandAll(),
         },
         {
             id: 'action.fully_collapse_all',
             kind: 'action',
-            label: 'Fully collapse all notes (current view)',
+            label: 'Fully Collapse All Notes (Current View)',
             closeOnExecute: true,
             execute: async () => fullyCollapseAll(),
         },
         {
             id: 'action.expand_all',
             kind: 'action',
-            label: 'Expand all root notes (current view)',
+            label: 'Expand All Root Notes (Current View)',
             closeOnExecute: true,
             execute: async () => expandAll(),
         },
         {
             id: 'action.collapse_all',
             kind: 'action',
-            label: 'Collapse all root notes (current view)',
+            label: 'Collapse All Root Notes (Current View)',
             closeOnExecute: true,
             execute: async () => collapseAll(),
         },
         {
             id: 'action.reset_view_filters',
             kind: 'action',
-            label: 'Reset current view filters',
+            label: 'Reset Current View Filters',
             closeOnExecute: true,
             execute: async () => resetViewFilters(),
         },
         {
             id: 'action.reset_all_preferences',
             kind: 'action',
-            label: 'Reset all preferences',
+            label: 'Reset All Preferences',
             execute: async () => resetAllPreferences(),
         },
         {
             id: 'form.add_password',
             kind: 'form',
-            label: 'Add password',
+            label: 'Add Password…',
             execute: async () => openAddPassword(),
         },
         {
             id: 'form.change_password',
             kind: 'form',
-            label: 'Change password',
+            label: 'Change Password…',
             execute: async () => openChangePassword(),
         },
         {
             id: 'form.remove_password',
             kind: 'form',
-            label: 'Remove password',
+            label: 'Remove Password…',
             execute: async () => openRemovePassword(),
         },
         {
             id: 'form.session_timeout',
             kind: 'form',
-            label: 'Session idle timeout',
+            label: 'Session Idle Timeout…',
             execute: async () => openSessionTimeoutSettings(),
         },
         {
             id: 'form.reminders',
             kind: 'form',
-            label: 'Reminders',
+            label: 'Open Reminders',
             execute: async () => openReminders({ search: '' }),
         },
 
         {
             id: 'form.version_info',
             kind: 'form',
-            label: 'Version info',
+            label: 'Version Info',
             execute: async () => openVersionInfo(),
         },
         {
             id: 'form.memory_usage',
             kind: 'form',
-            label: 'Memory usage',
+            label: 'Memory Usage',
             execute: async () => openMemoryUsage(),
         },
         {
             id: 'form.note_layout_appearance',
             kind: 'form',
-            label: 'Note Layout & Appearance',
+            label: 'Note Layout & Appearance…',
             execute: async () => openNoteLayoutAppearance(),
         },
         {
             id: 'form.visual_cues',
             kind: 'form',
-            label: 'Visual Cues',
+            label: 'Visual Cues…',
             execute: async () => openVisualCues(),
         },
         {
             id: 'form.dictation_settings',
             kind: 'form',
-            label: 'Dictation Settings',
+            label: 'Dictation Settings…',
             execute: async () => openDictationSettings(),
         },
         {
             id: 'form.open_namespace',
             kind: 'form',
-            label: 'Open/Switch vault',
+            label: 'Open/Switch Vault…',
             execute: async () => openOpenNamespace(),
         },
         {
             id: 'form.create_namespace',
             kind: 'form',
-            label: 'Create vault',
+            label: 'Create Vault…',
             execute: async () => openCreateNamespace(),
         },
         {
             id: 'form.manage_namespace_ports',
             kind: 'form',
-            label: 'Manage vault ports',
+            label: 'Manage Vault Ports…',
             execute: async () => openManageNamespacePorts(),
         },
         {
             id: 'form.rename_current_namespace',
             kind: 'form',
-            label: 'Rename current vault',
+            label: 'Rename Current Vault…',
             execute: async () => openRenameCurrentNamespace(),
         },
         {
             id: 'form.delete_current_namespace',
             kind: 'form',
-            label: 'Delete vault',
+            label: 'Delete Vault…',
             execute: async () => openDeleteCurrentNamespace(),
         },
         {
             id: 'action.create_backup',
             kind: 'action',
-            label: 'Create backup now',
+            label: 'Back Up Now…',
             execute: async () => createBackup(),
         },
         {
             id: 'pref.backup_reminder',
             kind: 'select',
-            label: 'Backup reminder',
+            label: 'Backup Reminder',
             persistenceKey: BACKUP_REMINDER_PREFERENCE,
             defaultValue: BACKUP_REMINDER_DEFAULT,
             options: BACKUP_REMINDER_OPTIONS,
@@ -504,112 +559,112 @@ export function buildCommandPaletteEndpoints(deps) {
         {
             id: 'form.restore_backup',
             kind: 'form',
-            label: 'Restore from backup',
+            label: 'Restore from Backup…',
             execute: async () => openBackupRestore(),
         },
         {
             id: 'action.logout',
             kind: 'action',
-            label: 'Logout',
+            label: 'Log Out',
             execute: async () => logout(),
         },
         {
             id: 'form.random_password_generator',
             kind: 'form',
-            label: 'Generate random password',
+            label: 'Generate Random Password…',
             execute: async () => openRandomPasswordGenerator(),
         },
         {
             id: 'action.find_in_list',
             kind: 'action',
-            label: 'Find in list',
+            label: 'Find in List',
             execute: async () => openFindBar(),
         },
         {
             id: 'action.edit_tag_relationships',
             kind: 'action',
-            label: 'Edit tag relationships',
+            label: 'Edit Tag Relationships…',
             execute: async () => openOntologyEditor(),
         },
         {
             id: 'action.export_html',
             kind: 'action',
-            label: 'Export as HTML',
+            label: 'Export View as HTML…',
             execute: async () => exportCurrentViewAsHtml(),
         },
         {
             id: 'action.print_view',
             kind: 'action',
-            label: 'Print view',
+            label: 'Print View…',
             execute: async () => printView(),
         },
         {
             id: 'action.attach_file_to_current_note',
             kind: 'action',
-            label: 'Attach file',
+            label: 'Attach File…',
             closeOnExecute: true,
             execute: async () => attachFileToCurrentNote(),
         },
         {
             id: 'action.add_excalidraw_diagram',
             kind: 'action',
-            label: 'Add Excalidraw diagram',
+            label: 'Add Excalidraw Diagram',
             closeOnExecute: true,
             execute: async () => addExcalidrawDiagram(),
         },
         {
             id: 'action.trim_unused_files',
             kind: 'action',
-            label: 'Trim unused files',
+            label: 'Trim Unused Files…',
             closeOnExecute: true,
             execute: async () => trimUnusedFiles(),
         },
         {
             id: 'action.retry_failed_link_titles',
             kind: 'action',
-            label: 'Retry failed link titles',
+            label: 'Retry Failed Link Titles…',
             closeOnExecute: true,
             execute: async () => retryFailedLinkTitles(),
         },
         {
             id: 'action.prioritize_tag_front',
             kind: 'action',
-            label: 'Prioritize tag to front (global)',
+            label: 'Prioritize Tag to Front (Global)…',
             closeOnExecute: true,
             execute: async () => prioritizeTagToFront(),
         },
         {
             id: 'action.prioritize_tag_back',
             kind: 'action',
-            label: 'Prioritize tag to back (global)',
+            label: 'Prioritize Tag to Back (Global)…',
             closeOnExecute: true,
             execute: async () => prioritizeTagToBack(),
         },
         {
             id: 'action.alphabetize_root_notes_asc',
             kind: 'action',
-            label: 'Alphabetize root notes A-Z (current view)',
+            label: 'Alphabetize Root Notes A-Z (Current View)…',
             closeOnExecute: true,
             execute: async () => alphabetizeRootNotesAsc(),
         },
         {
             id: 'action.alphabetize_root_notes_desc',
             kind: 'action',
-            label: 'Alphabetize root notes Z-A (current view)',
+            label: 'Alphabetize Root Notes Z-A (Current View)…',
             closeOnExecute: true,
             execute: async () => alphabetizeRootNotesDesc(),
         },
         {
             id: 'action.reset_updated_at_to_created_at',
             kind: 'action',
-            label: 'Repair: reset updated time to created time (current view)',
+            label: 'Repair: Reset Updated Time to Created Time (Current View)…',
             closeOnExecute: true,
             execute: async () => resetUpdatedAtToCreatedAt(),
         },
         {
             id: 'action.open_keyboard_shortcuts_help',
             kind: 'action',
-            label: 'Keyboard Shortcuts / Cheatsheet',
+            label: 'Keyboard Shortcuts',
             execute: async () => openKeyboardShortcutsHelp(),
         },
     ];

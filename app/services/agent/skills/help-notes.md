@@ -12,7 +12,7 @@ Sources: docs/ui/controls.md, docs/ui/find.md
 
 # Note App Controls
 
-## Keyboard Shortcuts / Cheatsheet
+## Keyboard Shortcuts
 
 ### When Editing a Note
 | Shortcut | Action |
@@ -40,11 +40,11 @@ Sources: docs/ui/controls.md, docs/ui/find.md
 | `⇧ + ⌘ + Z` or `⌘ + Y` | Redo text/tag edits locally, or redo the latest saved mutation when the active editor has no local edit history |
 
 - What is pasted decides, never the last ⌘C: anything else (another app's text, dictated words) pastes as text, sanitizing external HTML.
-- Dictated text pasted into a note can end with tags: everything after the phrase "start tags" (set in `Dictation Settings`) is added to the note's tags. The full rules are in the dictation help topic.
+- Dictated text pasted into a note can end with tags: everything after the phrase "start tags" (set in `Dictation Settings…`) is added to the note's tags. The full rules are in the dictation help topic.
 - When note paste replaces an empty target, the target keeps its search-context tags and merges in copied root tags with case-insensitive dedupe.
 - A pasted copy keeps each copied note collapsed or expanded as it was when copied (the root and every child); filling an empty note gives it the copied root's state.
 - A saved whole-note paste resets the local editor history baseline so the next Undo reaches application history.
-- If the clipboard value came from `Generate random password…`, pasting into an empty note also adds `@password` automatically when that tag is not already present.
+- If the clipboard value came from `Generate Random Password…`, pasting into an empty note also adds `@password` automatically when that tag is not already present.
 - See `docs/ui/paste-sanitization.md` for the full policy.
 - `⌘ + R` and `⇧ + ⌘ + R` paste a reference (`[[UUID]]`, a note that embeds it) to the last copied note where `⌘ + V` and `⇧ + ⌘ + V` paste the note: a sibling below (or into an empty note without children) or the first child, saved and selected with no caret, caret or not. With no selected note, `⌘ + R` makes a new top note.
 - See `docs/ui/references.md` for full reference behavior.
@@ -82,7 +82,7 @@ On macOS, `⌘ + Y` normally opens Safari History rather than performing native 
 - It finds what notes show (their text, the text of expanded embeds, tag-bar comments), in any case and inside words, in the current tab's notes in list order. It does not find tag names (search does) or the grey placeholder lines a search leaves.
 - The count reads like `3 of 12`; `3 of 50+` means more may lie beyond what has been read, since find reads 50 matching notes at a time. `No matches` dims the arrows.
 - `Enter` / `⌘ + G`: next match; `⇧ + Enter` / `⇧ + ⌘ + G`: previous; both wrap. A match in view does not scroll; one out of view moves just into view. A match inside a folded note opens that note for the moment only (its saved collapse stays) and folds back when find moves on or closes.
-- `Esc`, the `×`, or clicking into a note closes find and clears its marks. The palette command `Find in list` opens it too.
+- `Esc`, the `×`, or clicking into a note closes find and clears its marks. The palette command `Find in List` opens it too.
 
 ### Tag Suggestions
 - Suggestions appear only when the tag bar is focused.
@@ -107,11 +107,11 @@ On macOS, `⌘ + Y` normally opens Safari History rather than performing native 
 - Show/Hide tabs (label reflects current visibility)
 - Show/Hide AI Chat (label reflects current visibility)
 - AI Agent Settings… (OpenAI API key, model, cloud privacy, evidence and tagging limits; model and thinking level are selected beside chat Send)
-- Create backup now (opens Backup Settings, where you choose one backup folder, select the vaults to include, set retention, and then run the backup; typing `backups` in the palette also matches it, and the completion modal shows archive size)
-- Restore from backup…
-- Logout
-- Generate random password…
-- Keyboard Shortcuts / Cheatsheet…
+- Back Up Now… (opens Backup Settings, where you choose one backup folder, select the vaults to include, set retention, and then run the backup; typing `backups` in the palette also matches it, and the completion modal shows archive size)
+- Restore from Backup…
+- Log Out
+- Generate Random Password…
+- Keyboard Shortcuts
 - Version info… (also found by typing `update`, `upgrade`, or `release`; checks PyPI and offers an update for supported uv installations when behind)
 - Memory usage… (also found by typing `memory`, `ram` or `mb`; the vault server's memory and the notes it holds decrypted)
 - Note Layout & Appearance… (top-level size, child indentation, vertical spacing, note corners, and tag style)
@@ -120,7 +120,7 @@ On macOS, `⌘ + Y` normally opens Safari History rather than performing native 
 
 App menus close with `Escape` (only the menu: a note being edited stays in edit mode) or an outside click. The right-click menu also closes once the pointer moves about 28px away from it and any open submenu, like the tab overlay; small movements just past its edge keep it open. Every modal has a standard upper-right circular `×` matching full-screen note view and also closes with `Escape` or an outside click. Dismiss-only footer `Close`/`OK` buttons are omitted; `Enter` still submits a modal's declared primary workflow action.
 
-When `Show tags in list` is enabled, the grey right-aligned tag column wraps and is capped at 25% of its note row so note content retains the majority of the available width.
+When `Show Tags in List` is enabled, the grey right-aligned tag column wraps and is capped at 25% of its note row so note content retains the majority of the available width.
 
 ## Tag Bar Syntax
 - See `docs/ui/tag-bar.md` for the full grammar (tokens, wrappers, and `/* ... */` comments).

@@ -129,7 +129,7 @@ async function openTagMenu(page, noteId) {
   const before = await startTyping(page, noteId);
   const point = await rightClickEntry(page);
   const after = await tagBarState(page);
-  assert.deepEqual(after.menu, ['Edit Tag Relationships'], 'right-click on an entry opens the tag menu');
+  assert.deepEqual(after.menu, ['Edit Tag Relationships…'], 'right-click on an entry opens the tag menu');
   assert.deepEqual(after.why, TARGET_REASONS, 'the tag menu says why the entry is suggested');
   assertTagBarUnchanged('right-click', before, after);
   return {before, point};
@@ -224,7 +224,7 @@ async function openSearchTagMenu(page) {
   await page.mouse.click(point.x, point.y, {button: 'right'});
   await pause(SETTLE_MS);
   const after = await searchState(page);
-  assert.deepEqual(after.menu, ['Edit Tag Relationships'], 'right-click on a search suggestion opens the tag menu');
+  assert.deepEqual(after.menu, ['Edit Tag Relationships…'], 'right-click on a search suggestion opens the tag menu');
   assert.equal(await page.$eval('.context-menu.is-visible', menu => menu.firstElementChild.classList.contains('context-menu-item')), true,
     'Edit Tag Relationships comes first, above the explanation');
   assert.deepEqual(after.why, SEARCH_REASONS, 'the tag menu says why the search suggestion is suggested');
@@ -273,7 +273,7 @@ async function searchPointerOntoMenuCase(page) {
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2, {steps: 6});
   await pause(SETTLE_MS);
   const after = await searchState(page);
-  assert.deepEqual(after.menu, ['Edit Tag Relationships'], 'the menu stays open under the pointer');
+  assert.deepEqual(after.menu, ['Edit Tag Relationships…'], 'the menu stays open under the pointer');
   assertTagBarUnchanged('search pointer onto menu', before, after);
   await page.keyboard.press('Escape');
   await pause(SETTLE_MS);
@@ -336,7 +336,7 @@ async function enteredTagBarTagCase(page, noteId) {
   const before = await tagBarState(page);
   await rightClickInputText(page, '.note.editing .note-tag-bar-input');
   const after = await tagBarState(page);
-  assert.deepEqual(after.menu, ['Edit Tag Relationships'], 'right-click on an entered tag opens the tag menu');
+  assert.deepEqual(after.menu, ['Edit Tag Relationships…'], 'right-click on an entered tag opens the tag menu');
   // This note is not saved with it yet; the other fixture note is.
   assert.deepEqual(after.why, ['About this tag', `Named in this note: "${ENTERED_TAG}"`, "You've tagged 1 note with it"]);
   assert.equal(after.editingNoteId, before.editingNoteId, 'still editing');
@@ -359,7 +359,7 @@ async function enteredSearchTagCase(page) {
   const before = await searchState(page);
   await rightClickInputText(page, '#search-input');
   const after = await searchState(page);
-  assert.deepEqual(after.menu, ['Edit Tag Relationships'], 'right-click on a searched tag opens the tag menu');
+  assert.deepEqual(after.menu, ['Edit Tag Relationships…'], 'right-click on a searched tag opens the tag menu');
   assert.deepEqual(after.why, ['About this tag', 'Searching for it finds 1 note']);
   assert.equal(after.value, before.value, 'the search is unchanged');
   assert.equal(after.isSearchFocused, true, 'the search box keeps focus');
@@ -407,7 +407,7 @@ export async function checkTagSuggestionMenu(page) {
     const noteId = ids[0];
     await check('Escape', () => escapeClosesMenuCase(page, noteId));
     await check('pointer away', () => pointerAwayClosesMenuCase(page, noteId));
-    await check('Edit Tag Relationships', () => editTagRelationshipsCase(page, noteId));
+    await check('Edit Tag Relationships…', () => editTagRelationshipsCase(page, noteId));
     await check('entered tag-bar tag', () => enteredTagBarTagCase(page, noteId));
     await leaveEditing(page);
     // The steps above earn search-activity credits; without them the reasons are the ranking's alone.

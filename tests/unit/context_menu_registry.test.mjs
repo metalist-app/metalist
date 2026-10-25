@@ -125,8 +125,8 @@ test('the note menu groups copy, add, move, outline, focus, export, and delete l
         ['Outline', ['Fully Expand', 'Fully Collapse', '— Indent ⌘→', 'Outdent ⌘←']],
         ['Focus', ['Full Screen', 'Floating Window']],
         // A note always comes with its children.
-        ['Export', ['Note as HTML', 'View as HTML']],
-        ['Print', ['Note', 'View']],
+        ['Export', ['Note as HTML…', 'View as HTML…']],
+        ['Print', ['Note…', 'View…']],
         '— Delete Note ⌘⌫',
     ]);
     assert.equal(items[items.length - 1].kind, 'info');
@@ -526,15 +526,15 @@ test('the background menu groups adding, history, the list, the view, opening, e
         'Fully Collapse All',
         '— View',
         'Sort by',
-        'Date range',
-        'Notes with files',
+        'Date Range',
+        'Notes with Files',
         'Show',
         'Theme',
         '— New Tab',
         'Open/Switch Vault…',
-        'Reminders…',
-        '— Export View as HTML',
-        'Print View',
+        'Open Reminders',
+        '— Export View as HTML…',
+        'Print View…',
         '— Log Out',
     ]);
 });
@@ -605,9 +605,10 @@ test('View, Show and Theme tick the current state', () => {
     const submenu = (id) => items.find((item) => item.id === id).submenu;
     const ticks = (id) => submenu(id).map((item) => [item.label, item.checked, item.enabled]);
 
-    assert.deepEqual(ticks('view'), [['All notes', false, true], ['Untagged notes', true, false]]);
+    // The current choice is ticked but not greyed: picking it changes nothing.
+    assert.deepEqual(ticks('view'), [['All Notes', false, true], ['Untagged Notes', true, true]]);
     assert.deepEqual(ticks('show'), [['Chat', true, true], ['Tabs', false, true], ['Tags in List', true, true]]);
-    assert.deepEqual(ticks('theme'), [['System', false, true], ['Light', false, true], ['Dark', true, false]]);
+    assert.deepEqual(ticks('theme'), [['System', false, true], ['Light', false, true], ['Dark', true, true]]);
 
     submenu('view')[0].onSelect();
     for (const item of submenu('show')) item.onSelect();
@@ -663,7 +664,8 @@ test('background sorting offers all modes and ticks only the current mode', () =
             );
             const checked = [`sort-by-${currentMode}`, ...(isReversed ? ['sort-by-reverse'] : [])];
             assert.deepEqual(submenu.filter((item) => item.checked).map((item) => item.id), checked);
-            assert.deepEqual(submenu.filter((item) => !item.enabled).map((item) => item.id), [`sort-by-${currentMode}`]);
+            // Nothing is greyed; picking the current order changes nothing.
+            assert.deepEqual(submenu.filter((item) => !item.enabled).map((item) => item.id), []);
             assert.ok(submenu.every((item) => !item.label.includes('(current)')));
             for (const item of submenu.filter((item) => item.enabled)) item.onSelect();
             // Picking another order keeps the direction; Reverse Order flips it.
@@ -739,7 +741,7 @@ test('buildContextMenuItems preserves tag menu behavior', () => {
     );
 
     assert.equal(items.length, 1);
-    assert.equal(items[0].label, 'Edit Tag Relationships');
+    assert.equal(items[0].label, 'Edit Tag Relationships…');
 
     items[0].onSelect();
     assert.deepEqual(calls, ['project-alpha']);
@@ -755,7 +757,7 @@ test('a tag menu says why a suggestion is suggested, or about an entered tag, be
         );
 
         // The action first, at a fixed place under the pointer; the explanation's length varies.
-        assert.equal(items[0].label, 'Edit Tag Relationships');
+        assert.equal(items[0].label, 'Edit Tag Relationships…');
         assert.deepEqual(items[1], { kind: 'explanation', id: 'tag-explanation', label: heading, lines });
         items[0].onSelect();
         assert.deepEqual(calls, ['project-alpha']);
@@ -895,17 +897,17 @@ test('Suggest Tags with AI follows Add Excalidraw Diagram, with the robot icon, 
 });
 
 // Notes with files: All notes, then the kinds; the current one ticked and not offered again.
-test('the Notes with files menu ticks its kind and calls its handler', () => {
+test('the Notes with Files menu ticks its kind and calls its handler', () => {
     const calls = [];
     const items = buildContextMenuItems(buildViewContext({ fileFilterKind: 'pdf' }), buildViewHandlers(calls));
     const files = items.find((item) => item.id === 'file-filter');
     assert.equal(files.icon, 'attachment');
     assert.deepEqual(files.submenu.map((item) => [item.label, item.checked, item.enabled]), [
-        ['All notes', false, true],
-        ['Any file', false, true],
+        ['All Notes', false, true],
+        ['Any File', false, true],
         ['Images', false, true],
-        ['PDFs', true, false],
-        ['Markdown files', false, true],
+        ['PDFs', true, true],
+        ['Markdown Files', false, true],
     ]);
     assert.equal(files.submenu.find((item) => item.id === 'file-filter-any').separated, true);
     files.submenu.find((item) => item.id === 'file-filter-image').onSelect();
@@ -913,7 +915,7 @@ test('the Notes with files menu ticks its kind and calls its handler', () => {
     assert.deepEqual(calls, [['onSetFileFilter', 'image'], ['onSetFileFilter', 'none']]);
 });
 
-// Date range: which date, then its range; the current ones ticked and not offered again.
+// Date range: which date, then its range; the current ones ticked (picking them changes nothing).
 test('the date range menu ticks its date and range and calls their handlers', () => {
     const calls = [];
     const items = buildContextMenuItems(
@@ -922,13 +924,13 @@ test('the date range menu ticks its date and range and calls their handlers', ()
     const dateRange = items.find((item) => item.id === 'date-range');
     assert.equal(dateRange.icon, 'date_range');
     assert.deepEqual(dateRange.submenu.map((item) => [item.label, item.checked, item.enabled]), [
-        ['Last updated', false, true],
-        ['Created', true, false],
-        ['Any date', false, true],
+        ['Last Updated', false, true],
+        ['Created', true, true],
+        ['Any Date', false, true],
         ['Today', false, true],
-        ['Last 7 days', true, false],
-        ['Last 30 days', false, true],
-        ['This year', false, true],
+        ['Last 7 Days', true, true],
+        ['Last 30 Days', false, true],
+        ['This Year', false, true],
         ['Custom Range…', false, true],
     ]);
     assert.equal(dateRange.submenu.find((item) => item.id === 'date-range-none').separated, true);

@@ -6107,6 +6107,16 @@ body.pref-show-tab-ui .controls .tab-hover-zone:hover .tab-ui-folder-icon {
     background: rgba(0, 0, 0, 0.06);
 }
 
+/* A destructive item (Delete Note): red, last in its own group. */
+.context-menu-item.is-danger {
+    color: #e5484d;
+}
+
+.context-menu-item.is-danger:hover:not(:disabled),
+.context-menu-item.is-danger:focus-visible {
+    color: #ff6369;
+}
+
 .context-menu-item.is-separated {
     margin-top: 6px;
     border-top: 1px solid var(--border-color);
@@ -8848,7 +8858,20 @@ html[data-theme="dark"] body.loading::after {
 }
 
 .command-palette-row-label {
+    flex: 1;
     color: #e6e6e6;
+}
+
+/* A command's own key, right-aligned and dimmed like the context menus' shortcuts. */
+.command-palette-row-shortcut {
+    color: #8f8f8f;
+    font-size: 12px;
+    white-space: nowrap;
+}
+
+/* A destructive command (endpoint-registry.js, DESTRUCTIVE_COMMAND_IDS). */
+.command-palette-row.is-danger .command-palette-row-label {
+    color: #ff6b6b;
 }
 
 .command-palette-row-value {

@@ -474,7 +474,7 @@ ModeContext = {
 - Command-palette preferences and usage history now follow the same namespace-scoped model:
   the browser loads them from `/api2/auth/client-state`, persists updates back to the
   main SQLite DB, and only keeps `sessionStorage` for per-tab ephemeral ids.
-- Session idle timeout is also namespace-scoped, but it is server-owned auth state in
+- Session Idle Timeout… is also namespace-scoped, but it is server-owned auth state in
   `app_settings`, not client-state mirrored into the browser. It is disabled by default;
   when explicitly enabled, expiry invalidates authentication without purging the hydrated
   server cache. Explicit logout still purges decrypted runtime state.

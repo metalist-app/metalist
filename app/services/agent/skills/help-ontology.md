@@ -188,7 +188,7 @@ Implementation note (DOM):
 
 - The add/edit dialogs for implications, synonyms, incoming conditions, and tags keep their visible submit button.
 - **Add new tag…** presents only the tag input and actions; it omits redundant introductory copy and a redundant field label.
-- **To delete a tag everywhere:** open Edit Tag Relationships (command palette `Edit tag relationships`, or right-click a tag → Edit Tag Relationships), search for the tag, then click the 🗑 trash button beside it at the top (or its ✎ → **Delete tag…**), and confirm.
+- **To delete a tag everywhere:** open Edit Tag Relationships (command palette `Edit Tag Relationships…`, or right-click a tag → Edit Tag Relationships), search for the tag, then click the 🗑 trash button beside it at the top (or its ✎ → **Delete tag…**), and confirm.
 - Editing the focused tag supports both rename and **Delete tag…**. Deletion requires a separate confirmation, removes the exact tag token from every note tag bar, and deletes every ontology rule that references the tag. Quoted text and regular-expression matchers with the same characters are not tag references and remain intact.
 - Suggestions open without an automatic selection; clicking a row selects it, and one `ArrowDown` selects the first row.
 - With no focus tag (nothing in the middle column), the three **+** buttons are dimmed and the condition and implied columns say "Pick a focus tag first: search for one above"; pressing a dimmed button does nothing.

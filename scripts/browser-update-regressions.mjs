@@ -69,7 +69,7 @@ export async function checkAppUpdates(page, fixture) {
         await CommandPalette.open();
     });
     await page.type('#command-palette-input', 'update');
-    await page.waitForFunction(() => document.querySelector('#command-palette-results').textContent.includes('Version info'));
+    await page.waitForFunction(() => document.querySelector('#command-palette-results').textContent.includes('Version Info'));
     await page.click('#command-palette-results [data-endpoint-id="form.version_info"]');
     await page.waitForSelector('#version-info-modal [data-update-action="install"]', {visible: true});
     await page.click('#version-info-modal [data-update-action="install"]');

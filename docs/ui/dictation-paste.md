@@ -60,14 +60,14 @@ leading or trailing "or", the exclusion phrase before an unknown word) is droppe
 
 | Field | Paste becomes |
 |---|---|
-| Edit Tag Relationships: search box, Add tag, Implied tag, Synonym tag, edit implied tag or synonym, Rename tag; Prioritize Tag To Front/Back; Accept or reject AI-proposed tags' tag filter | one tag: the whole paste, an existing tag when it matches (also one-word or meta tags), otherwise one new tag with its words joined by dashes ("Machine learning" gives `machine-learning`) |
+| Edit Tag Relationships: search box, Add tag, Implied tag, Synonym tag, edit implied tag or synonym, Rename tag; Prioritize Tag To Front/Back; Accept or Reject AI-Proposed Tags…' tag filter | one tag: the whole paste, an existing tag when it matches (also one-word or meta tags), otherwise one new tag with its words joined by dashes ("Machine learning" gives `machine-learning`) |
 | AI Agent Settings: whitelisted and blacklisted tags | the tag-bar rules, one tag per line |
 
 A paste into a condition (Edit Tag Relationships: Add condition, Edit incoming rule) or a rule-text field stays exactly as copied: a condition may hold several tags, quoted text, `/regexes/` and tags not used yet, which a dictation cleanup would drop or break (2026-10-22).
 
 ## Dictation Settings
 
-The command palette's **Dictation Settings** holds four phrases, each words of
+The command palette's **Dictation Settings…** holds four phrases, each words of
 letters (2 to 64 characters): the phrase that starts tags in a note (`start tags`),
 the phrases that start and end a quote (`quote`, `end quote`), and the phrase that
 excludes the next search term (`minus`). The quote and exclusion phrases must all

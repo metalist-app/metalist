@@ -547,7 +547,7 @@ async function tagBarCase(page, ids) {
   await page.mouse.click(tagPoint.x, tagPoint.y, {button: 'right'});
   await page.waitForSelector('.context-menu.is-visible', {timeout: 5_000});
   await pause(SETTLE_MS);
-  assert.deepEqual(await menuLabels(page), ['Edit Tag Relationships'], "a tag's letters open its tag menu");
+  assert.deepEqual(await menuLabels(page), ['Edit Tag Relationships…'], "a tag's letters open its tag menu");
   await closeMenu(page);
 
   // Past the tags: the tag bar's menu, and the tag bar stays as it was.

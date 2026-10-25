@@ -66,7 +66,7 @@ since this tab never owns a session there, so no white page shows while it
 checks a cookie from another tab's session. A refused switch fades the panel back
 in, with the reason under the dropdown and this namespace selected again.
 
-In the app, Open/Switch vault offers Open in This Tab (the same as here) and Open in
+In the app, Open/Switch Vault… offers Open in This Tab (the same as here) and Open in
 New Tab. A new tab shows this screen's logo, exactly where the namespace's login screen puts
 it, until the namespace answers
 (`app/static/js/modules/modals/namespace-loading-page.js`, which copies this

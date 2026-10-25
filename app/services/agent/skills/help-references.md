@@ -55,20 +55,20 @@ Sources: docs/ui/references.md
   - Saved-file image actions are not available from the raw token; they are available once the token renders as an image preview in view mode.
 
 ## File Attachment Workflow
-- `Attach file…` in the command palette opens the native file picker.
+- `Attach File…` in the command palette opens the native file picker.
 - If you are editing a note, the selected file is uploaded and its `![[UUID]]` token is inserted into that note.
 - If no note is active, the app creates a new note first, then inserts the file reference there.
 - Drag/drop follows the same attachment path for non-image files.
   - Dropping onto the actively edited note inserts into that note.
   - Dropping anywhere else creates a new top note first, then inserts there.
-- Dropping a `.txt`, `.md`, `.csv` or `.json` file also copies its text into a new child note under the note holding its pill, shown expanded. Markdown is tagged `@markdown`, CSV `@csv` and JSON `@json`, so they render as formatted text, a table and pretty-printed JSON. The child is the last child, one per file in drop order. It is an ordinary note: edit or delete it freely; the stored file is unchanged and clicking the pill still downloads it. Files over 200 KB or not in UTF-8 get only the pill, with a banner saying why. `Attach file…` adds no child.
+- Dropping a `.txt`, `.md`, `.csv` or `.json` file also copies its text into a new child note under the note holding its pill, shown expanded. Markdown is tagged `@markdown`, CSV `@csv` and JSON `@json`, so they render as formatted text, a table and pretty-printed JSON. The child is the last child, one per file in drop order. It is an ordinary note: edit or delete it freely; the stored file is unchanged and clicking the pill still downloads it. Files over 200 KB or not in UTF-8 get only the pill, with a banner saying why. `Attach File…` adds no child.
 - Named image files dropped or pasted into the editor prompt for one of two paths:
   - `Paste Inline`: embed the image into note HTML as compressed `data:image/...`.
   - `Save as File`: upload the original file without recompression and insert its `![[UUID]]` token.
 - Pasting a named image while no note is active uses the same prompt and creates the destination note at the top.
 - Clipboard image-pixel paste with no meaningful source filename keeps the direct inline embed path by default.
 - The attach flow saves the note immediately after insertion so the new reference survives refresh/reload.
-- `Add Excalidraw diagram` attaches a new, empty `.excalidraw` file the same way and opens the diagram editor.
+- `Add Excalidraw Diagram` attaches a new, empty `.excalidraw` file the same way and opens the diagram editor.
 - Files live in a sibling SQLite database derived from the main DB path (`*.files.db`).
 - Attachments are immutable except Excalidraw diagrams, which the diagram editor replaces in place.
 - Startup only loads the file UUID registry into memory; file metadata/blob rows are decrypted on demand for rendering/download.
@@ -77,7 +77,7 @@ Sources: docs/ui/references.md
 - Missing or deleted UUID: render a "missing reference" marker (subtly red-tinted).
 - Circular chain (A -> B -> A): render a "circular reference" marker and stop recursion at that point.
 - Removing every note reference to a file does not delete the file automatically.
-- `Trim unused files` is the explicit cleanup path for unreferenced file rows.
+- `Trim Unused Files…` is the explicit cleanup path for unreferenced file rows.
 
 ## Keyboard Workflow
 - `Cmd/Ctrl + C` with no text selection copies a note (server clipboard + system clipboard payload).
@@ -112,7 +112,7 @@ Sources: docs/ui/references.md
 - `docs/design/differential-view-protocol.md`
 
 ## Excalidraw Diagrams
-- Add one with **Add Excalidraw Diagram** in the right-click menu of the note being edited, or `Add Excalidraw diagram` in the command palette. The diagram is attached as a `.excalidraw` file and referenced with `![[UUID]]`; the editor opens immediately.
+- Add one with **Add Excalidraw Diagram** in the right-click menu of the note being edited, or `Add Excalidraw Diagram` in the command palette. The diagram is attached as a `.excalidraw` file and referenced with `![[UUID]]`; the editor opens immediately.
 - In view mode a diagram shows as a picture for the current light or dark theme. Double-click it, or right-click it and choose **Edit Diagram**, to open the full-screen editor. A single click anywhere on it edits its note, a moment later (so a double-click can still open the editor), and dragging from it moves the note.
 - Right-click a diagram for **Make Bigger**, **Make Smaller**, **Reset Size**, **Zoom Diagram**, and **Save Diagram File**. Size uses the same `@size` tag as images.
 - In edit mode the note shows only the raw `![[UUID]]` token.
