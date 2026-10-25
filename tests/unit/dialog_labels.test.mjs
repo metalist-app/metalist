@@ -28,7 +28,7 @@ const RENAMED = [
     ['app/static/js/modules/modals/ontology-modal.js', "confirmLabel: 'Delete tag'", "confirmLabel: 'Delete Tag'"],
     ['app/static/js/modules/modals/ontology-modal.js', 'Delete tag…', 'Delete Tag…'],
     ['app/static/js/modules/ai-chat/confirmation-card.js', "'Yes'", "'Apply'"],
-    ['app/static/js/modules/ai-chat/proposal-menu.js', '>Close</button>', '>Cancel</button>'],
+    ['app/static/js/modules/ai-chat/proposal-menu.js', '>Close</button>', "label: 'Cancel'"],
     ['app/templates/index.html', '>OK</button>', '>Log In</button>'],
 ];
 

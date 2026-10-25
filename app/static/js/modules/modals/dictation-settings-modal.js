@@ -2,6 +2,7 @@ import { ApplicationState } from '../application-state.js';
 import { BaseModal } from './base-modal.js';
 import { isValidDictationTagPhrase } from '../mode-manager/services/dictation-note-paste.js';
 import { showErrorDialog } from './error-dialog.js';
+import { actionRowHtml } from './action-row.js';
 
 // The phrases, in the order shown: the one that starts tags in a note, and the
 // two around a quoted phrase (docs/ui/dictation-paste.md).
@@ -71,9 +72,15 @@ export class DictationSettingsModal extends BaseModal {
                     relationship conditions) the quote phrases mark a text search, and the exclusion phrase
                     excludes the next term: "neural network minus python".</p>
                 ${fields}
-                <div class="form-actions">
-                    <button type="button" class="save-btn" data-dictation-save data-modal-enter-action${disabled}>Save</button>
-                </div>
+                ${actionRowHtml({
+                    alternative: null,
+                    cancel: null,
+                    main: {
+                        id: null, label: 'Save', disabled: state.saving === true, attributes: ['data-dictation-save'],
+                        isDestructive: false, isEnterAction: true, type: 'button',
+                    },
+                    rowClass: '',
+                })}
             </div>
         `;
         // Set as properties, never as markup: a rejected entry may hold any character.

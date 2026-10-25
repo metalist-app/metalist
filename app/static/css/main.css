@@ -447,7 +447,6 @@ html:has(> body > .login-page[style*="display: flex"]) {
 /* Shared modal shell. Modal contents are intentionally dark in every app theme. */
 .phone-sheet,
 .phone-capture,
-.bulk-proposal-dialog,
 .modal {
     --modal-surface: #10151d;
     --modal-surface-raised: #171e29;
@@ -9887,28 +9886,11 @@ html[data-theme="dark"] body.loading::after {
     }
 }
 
-/* Application-owned modal keeps batch progress usable while ordinary UI is inert. */
-.bulk-proposal-dialog {
-    color: var(--modal-text);
-    color-scheme: dark;
-    background: transparent;
-    border: 0;
-    padding: 0;
-    width: min(560px, calc(100vw - 32px));
-    max-height: calc(100vh - 48px);
-    overflow: visible;
-}
-.bulk-proposal-dialog::backdrop {
-    background: rgba(3, 7, 12, 0.76);
-    backdrop-filter: blur(8px);
-}
-.bulk-proposal-dialog .modal-content { width: 100%; }
-.bulk-proposal-dialog .form-actions { display: flex; }
-.bulk-proposal-dialog h2 { font-size: 22px; }
-.bulk-proposal-dialog p { font-size: 14px; line-height: 1.5; color: var(--modal-text-muted); }
-.bulk-proposal-dialog [data-elapsed] { font-variant-numeric: tabular-nums; }
-.bulk-proposal-dialog select,
-.bulk-proposal-dialog textarea {
+/* AI-Proposed Tags and AI Tagging Vocabulary (ai-chat/proposal-menu.js). */
+.modal-content.ai-tagging-modal-content { width: min(560px, 100%); }
+.ai-tagging-modal-content h2 { font-size: 22px; }
+.ai-tagging-modal-content p { font-size: 14px; line-height: 1.5; color: var(--modal-text-muted); }
+.ai-tagging-modal-content select {
     display: block;
     width: 100%;
     box-sizing: border-box;
@@ -9920,10 +9902,7 @@ html[data-theme="dark"] body.loading::after {
     font: inherit;
     font-size: 14px;
 }
-.bulk-proposal-dialog textarea { min-height: 180px; }
-.bulk-proposal-dialog label { display: block; margin: 16px 0; font-size: 14px; }
-.bulk-proposal-dialog [role="alert"] { color: var(--modal-danger); }
-.bulk-proposal-dialog [role="alert"]:empty { display: none; }
+.ai-tagging-modal-content label { display: block; margin: 16px 0; font-size: 14px; }
 
 #ai-chat-panel .ai-chat-operation-card {
     width: 100%;

@@ -19,7 +19,7 @@ Opening or dismissing the command palette does not clear undo/redo. Global actio
 
 ## Tag proposal controls
 
-- **Accept or Reject AI-Proposed Tags…** (tags the AI chat proposed, not yet accepted) selects acceptance/removal, current context/entire vault, and an exact case-insensitive tag filter (blank means all proposals). Apply executes directly without another confirmation, model call, or progress/cancellation modal; the normal busy spinner remains visible until completion.
+- **Accept or Reject AI-Proposed Tags…** (tags the AI chat proposed, not yet accepted) selects acceptance/removal, current context/entire vault, and an exact case-insensitive tag filter (blank means all proposals). Apply executes directly without another confirmation, model call, or progress/cancellation modal; the normal busy spinner remains visible until completion. How many proposals changed shows as a corner card and the dialog stays open; a refused Apply opens the error dialog over it.
 - **Reject All AI-Proposed Tags (Current Context)…** asks for confirmation, then removes every pending proposal in the active search context. It uses the same atomic bulk path and requires no configuration form or model call. After confirmation, the normal busy spinner replaces the confirmation without opening a second modal.
 - **AI Tagging Vocabulary…** sets one categorical preference: existing tags only or allow new tags. The tagging instructions themselves are built in and cannot be edited.
 - Generate proposals by explicitly requesting them in AI chat. Generation is not a menu action.

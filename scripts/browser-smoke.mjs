@@ -71,6 +71,7 @@ import {checkViewMenu} from './browser-view-menu-regressions.mjs';
 import {checkErrorDialogs} from './browser-error-dialog-regressions.mjs';
 import {checkFieldMessages} from './browser-field-message-regressions.mjs';
 import {checkProgressCards} from './browser-progress-card-regressions.mjs';
+import {checkAiTaggingDialogs} from './browser-ai-tagging-dialog-regressions.mjs';
 import {assertLoginLogoGeometry} from './browser-validation/login-logo-geometry.mjs';
 
 // Requests count as quiet after this long without one starting or ending: after a
@@ -322,6 +323,10 @@ try {
     await checkDialogKeys(page);
     assert.deepEqual(errors, []);
     console.log(`PASS dialog key regressions in ${await browser.version()}`);
+  } else if (process.env.BROWSER_TEST_SUITE === 'ai-tagging-dialogs') {
+    await checkAiTaggingDialogs(page);
+    assert.deepEqual(errors, []);
+    console.log(`PASS AI tagging dialog regressions in ${await browser.version()}`);
   } else if (process.env.BROWSER_TEST_SUITE === 'progress-cards') {
     await checkProgressCards(page);
     assert.deepEqual(errors, []);

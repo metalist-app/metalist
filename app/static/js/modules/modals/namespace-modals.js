@@ -174,9 +174,12 @@ function renderLoadingModal({ title, status, cancelId }) {
         <div class="modal-content namespace-modal-content">
             <h3>${escapeHtml(title)}</h3>
             <p class="namespace-modal-status">${escapeHtml(status)}</p>
-            <div class="form-actions namespace-modal-actions">
-                <button type="button" class="secondary-btn" id="${escapeHtml(cancelId)}">Cancel</button>
-            </div>
+            ${actionRowHtml({
+                alternative: null,
+                cancel: { id: cancelId, label: 'Cancel', disabled: false, attributes: [] },
+                main: null,
+                rowClass: 'namespace-modal-actions',
+            })}
         </div>
     `;
 }

@@ -160,6 +160,9 @@ What is wrong with a field's value while it is typed floats just under that fiel
 - Reminders: a past date or time, and "Months without the Nth use that month's last day.", in amber under the date (the time when the date is hidden).
 - Export and Print: "The AI couldn't suggest a title: …" under the title, until the next key or click.
 
+### The check
+`tests/unit/dialog_conventions_check.test.mjs` (the JS unit suite, so CI runs it on every OS) fails when a file writes a dialog button row by hand (`form-actions` / `dialog-actions` outside `modals/action-row.js`) or an error line into a dialog (`error-message`, `role="alert"`, `data-error`, a class ending in `-error`). Each failure names the file and line and what to use instead. Its exceptions name a file, a kind, an exact count and a reason (tool buttons such as Memory Usage's Copy and Refresh; AI chat content, §2.3 of the rule, such as the chat's tagging and summary operations), so a new line of that kind there fails too. It also fails on a deliberately wrong sample. A row with Cancel alone (a dialog still loading, or one that can only stop what runs) is `actionRowHtml({ ..., main: null })`.
+
 ### Modal Stacking
 - Modals can stack via `ModeContext.modalStack`
 - Top modal receives events

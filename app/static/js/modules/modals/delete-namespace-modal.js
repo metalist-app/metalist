@@ -175,9 +175,12 @@ export class DeleteNamespaceModal extends BaseModal {
                 <div class="modal-content namespace-delete-modal-content">
                     <h3>Delete vault</h3>
                     <p class="namespace-delete-status">${escapeHtml(status)}</p>
-                    <div class="form-actions">
-                        <button type="button" class="secondary-btn" id="delete-namespace-cancel-loading-btn">Cancel</button>
-                    </div>
+                    ${actionRowHtml({
+                        alternative: null,
+                        cancel: { id: 'delete-namespace-cancel-loading-btn', label: 'Cancel', disabled: false, attributes: [] },
+                        main: null,
+                        rowClass: '',
+                    })}
                 </div>
             `;
             const cancelButton = document.getElementById('delete-namespace-cancel-loading-btn');

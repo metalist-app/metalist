@@ -47,11 +47,19 @@ function buttonHtml(type, className, spec, extraNames) {
  * The row's HTML. Each button is { id (or null), label, disabled, attributes (plain
  * attribute names such as data-password-submit) }; `main` adds isDestructive, isEnterAction
  * and type ('button' or 'submit'); `alternative` may be null, and `cancel` too in a dialog
- * that its × alone closes (Reminders). `rowClass` adds the dialog's own layout class (or is '').
+ * that its × alone closes (Reminders). `main` may be null beside a Cancel while the dialog
+ * has nothing to do yet (loading) or only stops what runs. `rowClass` adds the dialog's own
+ * layout class (or is '').
  */
 export function actionRowHtml({ alternative, cancel, main, rowClass }) {
     if (typeof rowClass !== 'string') {
         throw new Error('actionRowHtml needs a rowClass string');
+    }
+    if (main === null) {
+        if (cancel === null || alternative !== null) {
+            throw new Error('A row without a main action has Cancel alone');
+        }
+        return rowHtml([buttonHtml('button', 'secondary-btn', cancel, ['data-modal-safe-focus'])], rowClass);
     }
     if (typeof main.isDestructive !== 'boolean' || typeof main.isEnterAction !== 'boolean') {
         throw new Error(`Main action ${main.label} needs boolean isDestructive and isEnterAction`);
@@ -80,6 +88,10 @@ export function actionRowHtml({ alternative, cancel, main, rowClass }) {
         mainRole.push('data-modal-enter-action');
     }
     buttons.push(buttonHtml(main.type, mainClass, main, mainRole));
+    return rowHtml(buttons, rowClass);
+}
+
+function rowHtml(buttons, rowClass) {
     const classes = ['form-actions', 'dialog-actions'];
     if (rowClass !== '') {
         classes.push(rowClass);
