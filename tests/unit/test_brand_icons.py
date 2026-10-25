@@ -54,8 +54,9 @@ def test_home_screen_icons_have_no_transparency(name: str) -> None:
 
 def test_the_manifest_lists_icons_that_exist_at_their_sizes() -> None:
     manifest = json.loads((ROOT / "app/static/manifest.json").read_text())
-    # A browser tab, not an installable app: installing MetaList is not offered.
-    assert manifest["display"] == "browser"
+    # Added to a phone's home screen, MetaList opens full screen with its own icon; desktop
+    # Chrome may offer to install it too (the maintainer, 2026-10-24, docs/ready-to-build/phone-prototype.md).
+    assert manifest["display"] == "standalone"
     for icon in manifest["icons"]:
         path = ROOT / "app" / icon["src"].removeprefix("/")
         width, height = (int(side) for side in icon["sizes"].split("x"))

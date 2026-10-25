@@ -533,6 +533,7 @@ async def home(request: Request, db: Annotated[SafeSession, Depends(get_db)]):
             needs_auth=True,
             shows_login_at_once=login_is_certainly_needed(request),
             shows_ai_cost_estimate=is_development_environment(),
+            vault_name=ACTIVE_NAMESPACE,
         )
     return template.render(
         request=request,
@@ -543,6 +544,7 @@ async def home(request: Request, db: Annotated[SafeSession, Depends(get_db)]):
         needs_auth=False,
         shows_login_at_once=False,
         shows_ai_cost_estimate=is_development_environment(),
+        vault_name=ACTIVE_NAMESPACE,
     )
 
 

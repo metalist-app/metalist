@@ -54,7 +54,7 @@ def test_an_empty_session_cookie_shows_the_login_screen_at_once() -> None:
 
 def test_the_page_renders_each_way() -> None:
     template = TEMPLATES.get_template("index.html")
-    shared = {"version": "0", "asset_version": "0", "page_title": "MetaList", "needs_auth": True}
+    shared = {"version": "0", "asset_version": "0", "page_title": "MetaList", "needs_auth": True, "vault_name": "thomas"}
 
     request = _request(query="", cookie="")
     request.state.csp_nonce = "n" * 32
@@ -64,3 +64,19 @@ def test_the_page_renders_each_way() -> None:
     assert '<div id="main-app" style="display: none;">' in at_once
     assert 'id="login-page" class="login-page" style="display: none;"' in later
     assert '<div id="main-app" style="display: block;">' in later
+
+
+def test_the_login_form_names_the_vault_so_a_phone_can_save_its_password() -> None:
+    # iOS saves a password only with a username: the vault's name, in a field that is
+    # never seen, keeps one saved password per vault (docs/ready-to-build/phone-prototype.md).
+    template = TEMPLATES.get_template("index.html")
+    request = _request(query="", cookie="")
+    request.state.csp_nonce = "n" * 32
+    page = template.render(request=request, version="0", asset_version="0", page_title="MetaList", needs_auth=True,
+                           shows_login_at_once=True, vault_name="thomas&co")
+    username = page.index('autocomplete="username"')
+    assert page.index('id="login-form"') < username < page.index('id="login-password"')
+    field = page[page.rindex("<input", 0, username):page.index(">", username)]
+    assert 'value="thomas&amp;co"' in field
+    assert 'class="login-username"' in field
+    assert "readonly" in field and 'tabindex="-1"' in field

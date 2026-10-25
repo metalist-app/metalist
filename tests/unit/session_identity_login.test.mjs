@@ -25,6 +25,7 @@ test('login and workspace requests retain the authenticated tab identity when br
     const {CommandPalette} = await import('../../app/static/js/modules/command-palette/command-palette-controller.js');
     const {AiChatPanel} = await import('../../app/static/js/modules/ai-chat/ai-chat-panel-controller.js');
     const {ReminderSurface} = await import('../../app/static/js/modules/reminder-surface-service.js');
+    const {PhoneMode} = await import('../../app/static/js/modules/phone/phone-mode.js');
     t.mock.method(Auth, 'setupEventListeners', () => {});
     t.mock.method(Auth, 'checkAuthStatus', async () => false);
     await Auth.init();
@@ -45,6 +46,7 @@ test('login and workspace requests retain the authenticated tab identity when br
     t.mock.method(CommandPalette, 'startUpdateNotice', () => {});
     t.mock.method(CommandPalette, 'startBackupReminder', async () => {});
     t.mock.method(AiChatPanel, 'init', async () => {});
+    t.mock.method(PhoneMode, 'init', () => {});
     t.mock.method(Auth, 'revealMainApp', () => {});
     t.mock.method(ReminderSurface, 'start', async () => {});
     await Auth.handleLogin({preventDefault() {}});
