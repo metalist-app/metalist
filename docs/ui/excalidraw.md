@@ -29,11 +29,11 @@ Hand-drawn diagrams drawn with the Excalidraw editor, stored as `.excalidraw` fi
 - The editor covers the window. Its bar shows the save status, **Discard Changes**, and **Done**.
 
 ## Saving and Closing
-- Changes autosave 2 seconds after drawing stops, one save at a time. The bar shows `Unsaved changes`, `Saving…`, `All changes saved`, or `Could not save. Retrying…` (failed saves retry after the same delay).
-- **Done** or `Cmd/Ctrl+Enter` saves anything pending, renders and stores both previews, closes the editor, and refreshes every copy of the diagram on screen. If a save cannot complete, the editor stays open and says so.
+- Changes autosave 2 seconds after drawing stops, one save at a time. The bar shows `Unsaved changes`, `Saving…` or `All changes saved` (`excalidraw-status-shown.js`). A failed save says `Unsaved changes` there and `Could not save the diagram. Retrying…` in a lasting corner card (failed saves retry after the same delay); still failing after 30 seconds, it opens a dialog over the editor, which closes once a save succeeds (`docs/ui/floating-messages.md`).
+- **Done** or `Cmd/Ctrl+Enter` saves anything pending, renders and stores both previews, closes the editor, and refreshes every copy of the diagram on screen. If a save cannot complete, the editor stays open and an error dialog says so (`docs/ui/modals.md`, "Errors").
 - `Escape` belongs to Excalidraw (for example to cancel a tool) and never closes the editor.
 - **Discard Changes** needs a second click within 4 seconds. It restores the diagram and previews exactly as they were when the editor opened, then closes.
-- If another window saves the same diagram, autosave stops with a message to close and reopen the diagram. Done then closes without overwriting the other save; Discard leaves the other window's version in place.
+- If another window saves the same diagram, autosave stops: the bar says `Not saved` and an error dialog says to close and reopen the diagram. Done then closes without overwriting the other save; Discard leaves the other window's version in place.
 - Closing or reloading the browser tab with unsaved changes asks for confirmation.
 - While the editor is open, MetaList keyboard shortcuts, clicks, and context menus are disabled so they reach Excalidraw instead.
 - Excalidraw's own file open/save and theme toggle are hidden; the editor follows the app theme.

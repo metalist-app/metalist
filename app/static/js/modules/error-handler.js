@@ -15,6 +15,7 @@ const HTTP_ERROR_BANNER_SECONDS = 5;
 const CONNECTION_CARD_KEY = 'connection';
 const CONNECTION_LOST_TEXT = 'Not saved, reconnecting…';
 const RECONNECTED_TEXT = 'Reconnected';
+const CONNECTION_ESCALATION_TEXT = "MetaList can't reach its server. Changes can't be saved until it's back; MetaList keeps trying.";
 
 
 function _isRestoreTransitionActive() {
@@ -116,6 +117,7 @@ export const ErrorHandler = {
                 isLasting: true,
                 key: CONNECTION_CARD_KEY,
             });
+            FloatingMessages.escalateAfter(CONNECTION_CARD_KEY, CONNECTION_ESCALATION_TEXT);
             this.disableEditingUI();
         }
         // If the card is already showing, don't create a new one
@@ -135,6 +137,7 @@ export const ErrorHandler = {
             
             if (ModeContext.connectionErrorBannerVisible) {
                 ModeContext.setConnectionErrorBannerVisible(false);
+                FloatingMessages.endEscalation(CONNECTION_CARD_KEY);
                 FloatingMessages.replace(CONNECTION_CARD_KEY, {
                     text: RECONNECTED_TEXT,
                     type: 'success',

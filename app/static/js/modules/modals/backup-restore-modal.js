@@ -12,6 +12,9 @@ import { settleResult } from '../async-result.js';
 import { escapeHtml } from '../html-escape.js';
 import { actionRowHtml } from './action-row.js';
 import { failureFieldId, showErrorDialogFor } from './error-dialog.js';
+import { FloatingMessages } from '../floating-messages.js';
+
+const PROGRESS_CARD_KEY = 'backup-restore-progress';
 
 
 const RESTORE_TRANSITION_SUPPRESS_MS = 30_000;
@@ -148,6 +151,7 @@ export class BackupRestoreModal extends BaseModal {
     }
 
     onClose() {
+        this._endProgress();
         // BaseModal disposes the state scope; clear retained form DOM as well.
         document.getElementById(this.modalElementId).replaceChildren();
         this._setReconnectCursor(false);
@@ -160,6 +164,21 @@ export class BackupRestoreModal extends BaseModal {
             return;
         }
         super.requestClose();
+    }
+
+    // What the dialog is doing shows as a card in the corner (floating-messages.js).
+    _showProgress(text) {
+        FloatingMessages.showProgress(PROGRESS_CARD_KEY, text);
+    }
+
+    _endProgress() {
+        FloatingMessages.end(PROGRESS_CARD_KEY);
+    }
+
+    // While a backup is restored or a folder chosen the dialog stays open.
+    canRequestClose() {
+        const state = this.getModalState();
+        return ![state.restoring, state.choosingFolder].includes(true);
     }
 
     handleClickOutside(event) {
@@ -352,7 +371,6 @@ export class BackupRestoreModal extends BaseModal {
                         rowClass: '',
                     })}
 
-                    <p id="backup-modal-status">${restoring ? 'Restoring backup...' : ''}</p>
                 </div>
             `;
             this.setupFormEventListeners();
@@ -391,7 +409,7 @@ export class BackupRestoreModal extends BaseModal {
                     rowClass: '',
                 })}
 
-                <p id="backup-modal-status">${loading ? 'Loading backups...' : ''}${choosingFolder ? ' Choosing a backup folder...' : ''}${restoring ? ' Restoring backup...' : ''}</p>
+                <p id="backup-modal-status">${loading ? 'Loading backups...' : ''}</p>
             </div>
         `;
 
@@ -634,7 +652,9 @@ export class BackupRestoreModal extends BaseModal {
             choosingFolder: true,
         });
         this.renderModalContent();
+        this._showProgress('Choosing a backup folder…');
         const choiceResult = await settleResult(() => this._pickAndPersistBackupFolder());
+        this._endProgress();
         if (!choiceResult.ok) {
             this.updateModalState({ choosingFolder: false });
             this.renderModalContent();
@@ -780,6 +800,7 @@ export class BackupRestoreModal extends BaseModal {
             restoring: true,
         });
         this.renderModalContent();
+        this._showProgress('Restoring backup…');
 
         const basePayload = this._buildRestoreBasePayload(selection.selectedBackup, selection.targetNamespace);
         if (targetIsActive) {
@@ -847,6 +868,7 @@ export class BackupRestoreModal extends BaseModal {
             }
             await this._submitConfirmedRestore();
         });
+        this._endProgress();
         if (!restoreResult.ok) {
             const restoreState = this.getModalState();
             if (restoreState.restoring) {

@@ -7,6 +7,9 @@ import { buildSessionHeaders } from '../session-auth.js';
 import { escapeHtml } from '../html-escape.js';
 import { actionRowHtml } from './action-row.js';
 import { failureFieldId, showErrorDialog, showErrorDialogFor } from './error-dialog.js';
+import { FloatingMessages } from '../floating-messages.js';
+
+const PROGRESS_CARD_KEY = 'backup-settings-progress';
 
 // The id of a vault's checkbox, so an error dialog can name it.
 function vaultCheckboxId(namespace) {
@@ -115,6 +118,7 @@ export class BackupSettingsModal extends BaseModal {
     }
 
     onClose() {
+        FloatingMessages.end(PROGRESS_CARD_KEY);
         const resolve = this._pendingResolve;
         const closeResult = this._decision.result;
         this._pendingResolve = null;
@@ -397,15 +401,14 @@ export class BackupSettingsModal extends BaseModal {
     }
 
     async pickFolderPath() {
-        this.updateModalState({
-            pickingFolder: true,
-            statusMessage: 'Choose a backup folder...',
-        });
+        this.updateModalState({ pickingFolder: true });
         this.renderModalContent();
+        FloatingMessages.showProgress(PROGRESS_CARD_KEY, 'Choosing a backup folder…');
         const settled = await this._authRequest(CONFIG.API.BACKUP.FOLDER_PICK, 'POST', {}).then(
             (payload) => ({ ok: true, payload }),
             (error) => { rethrowUnexpectedError(error); return ({ ok: false, error }); },
         );
+        FloatingMessages.end(PROGRESS_CARD_KEY);
         if (!settled.ok) {
             this.updateModalState({
                 pickingFolder: false,

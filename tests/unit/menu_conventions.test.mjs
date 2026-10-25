@@ -10,7 +10,7 @@ import { tabContextActionsHtml } from '../../app/static/js/modules/mode-manager/
 // no separator line above a menu's first item, Title Case labels.
 
 const VIEW_HANDLER_NAMES = [
-    'onAddNoteAtTop', 'onPasteNoteAtTop', 'onPasteReferenceAtTop', 'onUndo', 'onRedo', 'onGoToTop', 'onGoToBottom', 'onFullyExpandAll',
+    'onAddNoteAtTop', 'onPasteNoteAtTop', 'onPasteReferenceAtTop', 'onUndo', 'onRedo', 'onGoToTop', 'onGoToBottom', 'onExpandAll', 'onCollapseAll', 'onFullyExpandAll',
     'onFullyCollapseAll', 'onSetUntaggedView', 'onSetSortMode', 'onSetDateRangeField', 'onSetDateRangePreset',
     'onOpenCustomDateRange', 'onSetFileFilter', 'onToggleAiChat', 'onToggleTabs',
     'onToggleNoteTags', 'onSetTheme', 'onNewTab', 'onOpenNamespace', 'onOpenReminders',

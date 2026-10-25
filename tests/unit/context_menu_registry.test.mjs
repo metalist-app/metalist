@@ -497,7 +497,7 @@ function buildViewContext(overrides) {
 }
 
 const VIEW_HANDLER_NAMES = [
-    'onAddNoteAtTop', 'onPasteNoteAtTop', 'onPasteReferenceAtTop', 'onUndo', 'onRedo', 'onGoToTop', 'onGoToBottom', 'onFullyExpandAll',
+    'onAddNoteAtTop', 'onPasteNoteAtTop', 'onPasteReferenceAtTop', 'onUndo', 'onRedo', 'onGoToTop', 'onGoToBottom', 'onExpandAll', 'onCollapseAll', 'onFullyExpandAll',
     'onFullyCollapseAll', 'onSetUntaggedView', 'onSetSortMode', 'onSetDateRangeField', 'onSetDateRangePreset',
     'onOpenCustomDateRange', 'onSetFileFilter', 'onToggleAiChat', 'onToggleTabs',
     'onToggleNoteTags', 'onSetTheme', 'onNewTab', 'onOpenNamespace', 'onOpenReminders',
@@ -541,7 +541,7 @@ test('the background menu groups adding, going, the outline, the view, opening a
     const submenu = (id) => describeMenu(items.find((item) => item.id === id).submenu);
     assert.deepEqual(submenu('add'), ['Add Note at Top ↩', 'Paste Note at Top ⌘V', 'Paste Note as Reference at Top ⌘R']);
     assert.deepEqual(submenu('go-to'), ['Top', 'Bottom']);
-    assert.deepEqual(submenu('outline'), ['Fully Expand All', 'Fully Collapse All']);
+    assert.deepEqual(submenu('outline'), ['Expand All Root Notes', 'Collapse All Root Notes', '— Fully Expand All', 'Fully Collapse All']);
     assert.deepEqual(submenu('show'), ['Chat', 'Tabs', 'Tags in List', '— System Theme', 'Light Theme', 'Dark Theme']);
     assert.deepEqual(submenu('open'), ['New Tab', 'Vault…', 'Reminders']);
     assert.deepEqual(submenu('export-print'), ['View as HTML…', 'Print View…']);
@@ -608,7 +608,7 @@ test('background actions call their handlers', () => {
     }
     assert.deepEqual(calls.map((call) => call[0]), [
         'onAddNoteAtTop', 'onPasteNoteAtTop', 'onPasteReferenceAtTop', 'onUndo', 'onRedo', 'onGoToTop', 'onGoToBottom',
-        'onFullyExpandAll', 'onFullyCollapseAll', 'onNewTab', 'onOpenNamespace', 'onOpenReminders', 'onExportViewHtml', 'onPrintView', 'onLogOut',
+        'onExpandAll', 'onCollapseAll', 'onFullyExpandAll', 'onFullyCollapseAll', 'onNewTab', 'onOpenNamespace', 'onOpenReminders', 'onExportViewHtml', 'onPrintView', 'onLogOut',
     ]);
 });
 

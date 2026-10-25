@@ -7,6 +7,7 @@ import { BaseModal } from './base-modal.js';
 import { CONFIG } from '../config.js';
 import { ModeContextInstance as ModeContext } from '../mode-manager/mode-context.js';
 import { ErrorHandler } from '../error-handler.js';
+import { FloatingMessages } from '../floating-messages.js';
 import { settleResult } from '../async-result.js';
 import {
     buildNamespaceLoginUrl,
@@ -25,6 +26,7 @@ import { requires } from '../../shockharness/contracts.js';
 
 
 const STATUS_BANNER_SECONDS = 5;
+const PROGRESS_CARD_KEY = 'vault-dialog-progress';
 
 
 function parseResponseError(responseBody, statusCode) {
@@ -208,6 +210,7 @@ class NamespaceModalBase extends BaseModal {
     }
 
     onClose() {
+        this._endProgress();
         this.updateModalState(this.getInitialModalState());
     }
 
@@ -220,7 +223,7 @@ class NamespaceModalBase extends BaseModal {
         if (event.key === 'Escape') {
             event.preventDefault();
             event.stopPropagation();
-            this.close();
+            this.requestClose();
             return;
         }
 
@@ -291,6 +294,21 @@ class NamespaceModalBase extends BaseModal {
         return payload;
     }
 
+    // What the dialog is doing shows as a card in the corner (floating-messages.js).
+    _startProgress(text) {
+        FloatingMessages.showProgress(PROGRESS_CARD_KEY, text);
+    }
+
+    _endProgress() {
+        FloatingMessages.end(PROGRESS_CARD_KEY);
+    }
+
+    // While its action runs the dialog stays open (its Cancel is dimmed too).
+    canRequestClose() {
+        const state = this.getModalState();
+        return ![state.submitting, state.saving].includes(true);
+    }
+
     // A dialog that could not load has nothing to offer: the error dialog says why, and
     // closing it closes this dialog too.
     async _closeAfterLoadFailure(error) {
@@ -354,7 +372,6 @@ export class OpenNamespaceModal extends NamespaceModalBase {
         const submitting = Boolean(state.submitting);
         const catalog = state.catalog;
         const selectedNamespace = typeof state.selectedNamespace === 'string' ? state.selectedNamespace : '';
-        const status = typeof state.status === 'string' ? state.status : '';
 
         if (loading || !catalog) {
             this._renderLoading('Open Vault', 'open-namespace-cancel-loading-btn');
@@ -396,7 +413,6 @@ export class OpenNamespaceModal extends NamespaceModalBase {
                         },
                     rowClass: 'namespace-modal-actions',
                 })}
-                <p class="namespace-modal-status">${escapeHtml(status)}</p>
             </div>
         `);
         this.setupFormEventListeners();
@@ -503,9 +519,9 @@ export class OpenNamespaceModal extends NamespaceModalBase {
         const pendingTab = pendingTabResult.value;
         this.updateModalState({
             submitting: true,
-            status: 'Opening vault...',
         });
         this.renderModalContent();
+        this._startProgress('Opening vault…');
 
         const switchResult = await settleResult(async () => {
             const response = await this._authRequest(this.apiEndpoints.open, 'POST', payload);
@@ -522,6 +538,7 @@ export class OpenNamespaceModal extends NamespaceModalBase {
             if (!pendingTab.closed) {
                 pendingTab.close();
             }
+            this._endProgress();
             this.updateModalState({
                 submitting: false,
                 status: '',
@@ -537,9 +554,9 @@ export class OpenNamespaceModal extends NamespaceModalBase {
     async _openInThisTab(payload) {
         this.updateModalState({
             submitting: true,
-            status: 'Opening vault...',
         });
         this.renderModalContent();
+        this._startProgress('Opening vault…');
         const switchResult = await settleResult(async () => {
             const response = await this._authRequest(this.apiEndpoints.open, 'POST', payload);
             if (!response || typeof response !== 'object') {
@@ -551,6 +568,7 @@ export class OpenNamespaceModal extends NamespaceModalBase {
             window.location.assign(buildNamespaceLoginUrl(response.url, window.location));
         });
         if (!switchResult.ok) {
+            this._endProgress();
             this.updateModalState({
                 submitting: false,
                 status: '',
@@ -593,7 +611,6 @@ export class CreateNamespaceModal extends NamespaceModalBase {
         const namespace = typeof state.namespace === 'string' ? state.namespace : '';
         const port = typeof state.port === 'string' ? state.port : '';
         const httpsPort = typeof state.httpsPort === 'string' ? state.httpsPort : '';
-        const status = typeof state.status === 'string' ? state.status : '';
 
         if (loading || !catalog) {
             this._renderLoading('Create Vault', 'create-namespace-cancel-loading-btn');
@@ -629,7 +646,6 @@ export class CreateNamespaceModal extends NamespaceModalBase {
                         },
                     rowClass: 'namespace-modal-actions',
                 })}
-                <p class="namespace-modal-status">${escapeHtml(status)}</p>
             </div>
         `);
         this.setupFormEventListeners();
@@ -740,9 +756,9 @@ export class CreateNamespaceModal extends NamespaceModalBase {
         renderNamespaceLoadingTab(pendingTab, payload.namespace);
         this.updateModalState({
             submitting: true,
-            status: 'Creating vault...',
         });
         this.renderModalContent();
+        this._startProgress('Creating vault…');
 
         const createResult = await settleResult(async () => {
             const response = await this._authRequest(this.apiEndpoints.open, 'POST', payload);
@@ -764,6 +780,7 @@ export class CreateNamespaceModal extends NamespaceModalBase {
             if (pendingTab && !pendingTab.closed) {
                 pendingTab.close();
             }
+            this._endProgress();
             this.updateModalState({
                 submitting: false,
                 status: '',
@@ -810,7 +827,6 @@ export class RenameNamespaceModal extends NamespaceModalBase {
         }
         const submitting = Boolean(state.submitting);
         const targetNamespace = typeof state.targetNamespace === 'string' ? state.targetNamespace : '';
-        const status = typeof state.status === 'string' ? state.status : '';
         this._renderIntoModal(`
             <div class="modal-content namespace-modal-content create-namespace-modal-content">
                 <h3>Rename Current Vault</h3>
@@ -829,7 +845,6 @@ export class RenameNamespaceModal extends NamespaceModalBase {
                         },
                     rowClass: 'namespace-modal-actions',
                 })}
-                <p class="namespace-modal-status">${escapeHtml(status)}</p>
             </div>
         `);
         this.setupFormEventListeners();
@@ -904,8 +919,9 @@ export class RenameNamespaceModal extends NamespaceModalBase {
             await showErrorDialogFor(payloadResult.error, 'rename-namespace-name');
             return;
         }
-        this.updateModalState({ submitting: true, status: 'Preparing vault rename...' });
+        this.updateModalState({ submitting: true });
         this.renderModalContent();
+        this._startProgress('Preparing vault rename…');
         const result = await settleResult(async () => {
             const response = await this._authRequest(
                 this.apiEndpoints.renameCurrent,
@@ -921,6 +937,7 @@ export class RenameNamespaceModal extends NamespaceModalBase {
             window.location.assign(response.redirect_url);
         });
         if (!result.ok) {
+            this._endProgress();
             this.updateModalState({
                 submitting: false,
                 status: '',
@@ -959,7 +976,6 @@ export class ManageNamespacePortsModal extends NamespaceModalBase {
         const saving = Boolean(state.saving);
         const catalog = state.catalog;
         const rows = Array.isArray(state.rows) ? state.rows : [];
-        const status = typeof state.status === 'string' ? state.status : '';
 
         if (loading || !catalog) {
             this._renderLoading('Manage Vault Ports', 'manage-namespace-ports-cancel-loading-btn');
@@ -1011,7 +1027,6 @@ export class ManageNamespacePortsModal extends NamespaceModalBase {
                         },
                     rowClass: 'namespace-modal-actions',
                 })}
-                <p class="namespace-modal-status">${escapeHtml(status)}</p>
             </div>
         `);
         this.setupFormEventListeners();
@@ -1161,9 +1176,10 @@ export class ManageNamespacePortsModal extends NamespaceModalBase {
 
         this.updateModalState({
             saving: true,
-            status: 'Saving vault ports...',
         });
         this.renderModalContent();
+
+        this._startProgress('Saving vault ports…');
 
         const saveResult = await settleResult(async () => {
             const response = await this._authRequest(this.apiEndpoints.savePorts, 'POST', { profiles: this._profiles() });
@@ -1176,6 +1192,7 @@ export class ManageNamespacePortsModal extends NamespaceModalBase {
             return response;
         });
         if (!saveResult.ok) {
+            this._endProgress();
             this.updateModalState({
                 saving: false,
                 status: '',
@@ -1189,11 +1206,8 @@ export class ManageNamespacePortsModal extends NamespaceModalBase {
         const statusMessage = typeof response.message === 'string' && response.message.length > 0
             ? response.message
             : 'Saved vault ports.';
+        this._endProgress();
         ErrorHandler.showInfoBanner(statusMessage, STATUS_BANNER_SECONDS * MS_PER_SECOND);
         await this.loadCatalog();
-        this.updateModalState({
-            status: statusMessage,
-        });
-        this.renderModalContent();
     }
 }

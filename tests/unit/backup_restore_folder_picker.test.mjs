@@ -31,6 +31,9 @@ test('restore modal can choose and save a backup folder without creating a backu
         state = { ...state, ...updates };
     };
     modal.renderModalContent = () => {};
+    // The progress card (floating-messages.js) needs the page.
+    modal._showProgress = () => {};
+    modal._endProgress = () => {};
     modal.loadBackups = async () => {
         reloaded = true;
     };

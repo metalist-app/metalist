@@ -8,6 +8,9 @@ import { buildSessionHeaders } from '../session-auth.js';
 import { escapeHtml } from '../html-escape.js';
 import { actionRowHtml } from './action-row.js';
 import { failureFieldId, showErrorDialogFor } from './error-dialog.js';
+import { FloatingMessages } from '../floating-messages.js';
+
+const PROGRESS_CARD_KEY = 'idle-timeout-progress';
 
 
 const MIN_IDLE_TIMEOUT_MINUTES = 1;
@@ -60,6 +63,15 @@ export class SessionTimeoutModal extends BaseModal {
 
     async onOpen() {
         await this.loadSettings();
+    }
+
+    onClose() {
+        FloatingMessages.end(PROGRESS_CARD_KEY);
+    }
+
+    // While the timeout is saved the dialog stays open (its Cancel is dimmed too).
+    canRequestClose() {
+        return this.getModalState().saving !== true;
     }
 
     onKeyDown(event) {
@@ -137,7 +149,7 @@ export class SessionTimeoutModal extends BaseModal {
                     alternative: null,
                     cancel: { id: 'session-timeout-cancel-btn', label: 'Cancel', disabled: saving, attributes: [] },
                     main: {
-                        id: 'session-timeout-save-btn', label: saving ? 'Saving…' : 'Save',
+                        id: 'session-timeout-save-btn', label: 'Save',
                         disabled: [loading, saving].includes(true), attributes: [],
                         isDestructive: false, isEnterAction: false, type: 'button',
                     },
@@ -301,11 +313,9 @@ export class SessionTimeoutModal extends BaseModal {
 
         await (async () => {
             const timeoutMinutes = this._validateTimeoutMinutes();
-            this.updateModalState({
-                saving: true,
-                statusMessage: 'Saving idle timeout...',
-            });
+            this.updateModalState({ saving: true });
             this.renderModalContent();
+            FloatingMessages.showProgress(PROGRESS_CARD_KEY, 'Saving idle timeout…');
 
             const payload = await this._authRequest(
                 CONFIG.API.AUTH.SETTINGS.SESSION_TIMEOUT,
@@ -322,8 +332,9 @@ export class SessionTimeoutModal extends BaseModal {
             this.close();
         })().catch((error) => {
             rethrowUnexpectedError(error);
+            FloatingMessages.end(PROGRESS_CARD_KEY);
             if (this.getModalState().saving) {
-                this.updateModalState({ saving: false, statusMessage: '' });
+                this.updateModalState({ saving: false });
                 this.renderModalContent();
             }
             return showErrorDialogFor(error, failureFieldId(error));

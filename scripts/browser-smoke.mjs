@@ -70,6 +70,7 @@ import {checkFloatingMessages} from './browser-floating-message-regressions.mjs'
 import {checkViewMenu} from './browser-view-menu-regressions.mjs';
 import {checkErrorDialogs} from './browser-error-dialog-regressions.mjs';
 import {checkFieldMessages} from './browser-field-message-regressions.mjs';
+import {checkProgressCards} from './browser-progress-card-regressions.mjs';
 import {assertLoginLogoGeometry} from './browser-validation/login-logo-geometry.mjs';
 
 // Requests count as quiet after this long without one starting or ending: after a
@@ -321,6 +322,10 @@ try {
     await checkDialogKeys(page);
     assert.deepEqual(errors, []);
     console.log(`PASS dialog key regressions in ${await browser.version()}`);
+  } else if (process.env.BROWSER_TEST_SUITE === 'progress-cards') {
+    await checkProgressCards(page);
+    assert.deepEqual(errors, []);
+    console.log(`PASS progress card regressions in ${await browser.version()}`);
   } else if (process.env.BROWSER_TEST_SUITE === 'field-messages') {
     await checkFieldMessages(page);
     assert.deepEqual(errors, []);

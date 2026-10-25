@@ -925,10 +925,15 @@ function buildViewContextItems(context, handlers) {
         goToEntries.push({ id: 'go-to-bottom', label: 'Bottom', inlineLabel: 'Go to Bottom', icon: 'arrow_bottom', enabled: true, onSelect: () => onGoToBottom() });
     }
     pushGroup(items, { id: 'go-to', label: 'Go to', icon: 'arrow_top', separated: true }, goToEntries);
+    const onExpandAll = requireViewHandler(handlers, 'onExpandAll');
+    const onCollapseAll = requireViewHandler(handlers, 'onCollapseAll');
     const onFullyExpandAll = requireViewHandler(handlers, 'onFullyExpandAll');
     const onFullyCollapseAll = requireViewHandler(handlers, 'onFullyCollapseAll');
+    // The root notes alone (the notes inside keep theirs), then every level.
     pushGroup(items, { id: 'outline', label: 'Outline', icon: 'outline', separated: goToEntries.length === 0 }, [
-        { id: 'fully-expand-all', label: 'Fully Expand All', icon: 'expand_all', enabled: true, onSelect: () => onFullyExpandAll() },
+        { id: 'expand-all', label: 'Expand All Root Notes', icon: 'expand_all', enabled: true, onSelect: () => onExpandAll() },
+        { id: 'collapse-all', label: 'Collapse All Root Notes', icon: 'collapse_all', enabled: true, onSelect: () => onCollapseAll() },
+        { id: 'fully-expand-all', label: 'Fully Expand All', icon: 'expand_all', enabled: true, separated: true, onSelect: () => onFullyExpandAll() },
         { id: 'fully-collapse-all', label: 'Fully Collapse All', icon: 'collapse_all', enabled: true, onSelect: () => onFullyCollapseAll() },
     ]);
 

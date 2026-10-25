@@ -13,6 +13,9 @@ import { buildSessionHeaders } from '../session-auth.js';
 import { escapeHtml } from '../html-escape.js';
 import { actionRowHtml } from './action-row.js';
 import { showErrorDialog, showErrorDialogFor } from './error-dialog.js';
+import { FloatingMessages } from '../floating-messages.js';
+
+const PROGRESS_CARD_KEY = 'delete-vault-progress';
 
 
 
@@ -99,6 +102,7 @@ export class DeleteNamespaceModal extends BaseModal {
     }
 
     onClose() {
+        FloatingMessages.end(PROGRESS_CARD_KEY);
     }
 
     requestClose() {
@@ -108,6 +112,11 @@ export class DeleteNamespaceModal extends BaseModal {
             return;
         }
         super.requestClose();
+    }
+
+    // While the vault is deleted the dialog stays open (its Back is dimmed too).
+    canRequestClose() {
+        return this.getModalState().deleting !== true;
     }
 
     onKeyDown(event) {
@@ -206,7 +215,6 @@ export class DeleteNamespaceModal extends BaseModal {
                         },
                         rowClass: '',
                     })}
-                    <p class="namespace-delete-status">${escapeHtml(status)}</p>
                 </div>
             `;
             this.setupFormEventListeners();
@@ -268,7 +276,6 @@ export class DeleteNamespaceModal extends BaseModal {
                     rowClass: '',
                 })}
 
-                <p class="namespace-delete-status">${escapeHtml(status)}</p>
             </div>
         `;
 
@@ -435,11 +442,9 @@ export class DeleteNamespaceModal extends BaseModal {
             target_namespace: state.namespace,
         };
 
-        this.updateModalState({
-            deleting: true,
-            status: 'Deleting vault...',
-        });
+        this.updateModalState({ deleting: true });
         this.renderModalContent();
+        FloatingMessages.showProgress(PROGRESS_CARD_KEY, 'Deleting vault…');
 
         const deleteResult = await settleResult(async () => {
             const response = await this._authRequest(this.apiEndpoints.deleteNamespace, 'POST', payload);
@@ -453,6 +458,7 @@ export class DeleteNamespaceModal extends BaseModal {
                 throw new Error('Namespace delete response missing message');
             }
             if (!response.active_namespace_deleted) {
+                FloatingMessages.end(PROGRESS_CARD_KEY);
                 this.updateModalState({
                     deleting: false,
                     confirming: false,
@@ -480,6 +486,7 @@ export class DeleteNamespaceModal extends BaseModal {
             window.location.replace(redirectUrl);
         });
         if (!deleteResult.ok) {
+            FloatingMessages.end(PROGRESS_CARD_KEY);
             this.updateModalState({
                 deleting: false,
                 status: '',

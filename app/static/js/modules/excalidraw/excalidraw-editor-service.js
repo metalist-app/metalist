@@ -9,10 +9,13 @@ import { settleResult } from '../async-result.js';
 import { ErrorHandler } from '../error-handler.js';
 import { FileRevisionConflictError, UserInputRejected } from '../expected-errors.js';
 import { AUTOSAVE_STATUS, createAutosaveController } from './excalidraw-autosave.js';
+import { diagramStatusShown } from './excalidraw-status-shown.js';
 import { isExcalidrawEditorOpen, setExcalidrawEditorOpen } from './excalidraw-editor-state.js';
 import { loadExcalidraw } from './excalidraw-loader.js';
 import { refreshExcalidrawEmbeds } from './excalidraw-preview-service.js';
 import { MS_PER_SECOND } from '../time-units.js';
+import { FloatingMessages } from '../floating-messages.js';
+import { isErrorDialogOpen, showErrorDialog } from '../modals/error-dialog.js';
 import {
     EXCALIDRAW_AUTOSAVE_DELAY_MS,
     EXCALIDRAW_MIME_TYPE,
@@ -24,13 +27,25 @@ import {
     sceneFingerprint,
 } from './excalidraw-scene.js';
 
-const STATUS_TEXT = Object.freeze({
-    [AUTOSAVE_STATUS.SAVED]: 'All changes saved',
-    [AUTOSAVE_STATUS.UNSAVED]: 'Unsaved changes',
-    [AUTOSAVE_STATUS.SAVING]: 'Saving…',
-    [AUTOSAVE_STATUS.ERROR]: 'Could not save. Retrying…',
-    [AUTOSAVE_STATUS.CONFLICT]: 'This diagram was changed in another window. Close the editor and reopen the diagram to continue.',
-});
+const SAVE_CARD_KEY = 'diagram-save';
+const RETRYING_TEXT = 'Could not save the diagram. Retrying…';
+const RETRYING_ESCALATION_TEXT = "The diagram can't be saved. MetaList keeps trying; your edits stay in the editor until it can.";
+const CONFLICT_TEXT = 'This diagram was changed in another window. Close the editor and reopen the diagram to continue.';
+
+function showSaveProblem(problem) {
+    if (problem === 'retrying') {
+        FloatingMessages.show({
+            text: RETRYING_TEXT, type: 'connection', detail: '', isClosable: false, isLasting: true, key: SAVE_CARD_KEY,
+        });
+        FloatingMessages.escalateAfter(SAVE_CARD_KEY, RETRYING_ESCALATION_TEXT);
+        return;
+    }
+    FloatingMessages.endEscalation(SAVE_CARD_KEY);
+    FloatingMessages.end(SAVE_CARD_KEY);
+    if (problem === 'conflict' && !isErrorDialogOpen()) {
+        void showErrorDialog([{ text: CONFLICT_TEXT, fieldId: null }]);
+    }
+}
 const DISCARD_CONFIRM_MS = 4000;
 const EDITOR_START_TIMEOUT_MS = 10000;
 const EDITOR_START_POLL_MS = 25;
@@ -54,7 +69,7 @@ function buildOverlay(filename) {
     const bar = element('header', 'excalidraw-editor-bar', null);
     bar.append(
         element('span', 'excalidraw-editor-title', 'Diagram'),
-        element('span', 'excalidraw-editor-status', STATUS_TEXT[AUTOSAVE_STATUS.SAVED]),
+        element('span', 'excalidraw-editor-status', diagramStatusShown(AUTOSAVE_STATUS.SAVED).bar),
         element('button', 'excalidraw-editor-discard', 'Discard Changes'),
         element('button', 'excalidraw-editor-done', 'Done'),
     );
@@ -156,7 +171,11 @@ function startEditorSession(setup) {
         },
         schedule: (callback, delayMs) => window.setTimeout(callback, delayMs),
         cancel: (timer) => window.clearTimeout(timer),
-        onStatus: (status) => showStatus(STATUS_TEXT[status]),
+        onStatus: (status) => {
+            const shown = diagramStatusShown(status);
+            showStatus(shown.bar);
+            showSaveProblem(shown.problem);
+        },
     });
 
     function handleSceneChange(elements, appState, files) {
@@ -207,6 +226,7 @@ function startEditorSession(setup) {
         }
         session.closed = true;
         controller.stop();
+        showSaveProblem('none');
         if (session.discardTimer !== null) {
             window.clearTimeout(session.discardTimer);
         }
@@ -235,7 +255,8 @@ function startEditorSession(setup) {
         if (status !== AUTOSAVE_STATUS.SAVED) {
             session.finishing = false;
             setButtonsDisabled(false);
-            showStatus('Could not save the diagram. Check the connection and press Done again.');
+            showStatus(diagramStatusShown(status).bar);
+            await showErrorDialog([{ text: 'Could not save the diagram. Check the connection and press Done again.', fieldId: null }]);
             return;
         }
         showStatus('Rendering preview…');
@@ -243,7 +264,8 @@ function startEditorSession(setup) {
         if (!stored.ok && !stored.conflict) {
             session.finishing = false;
             setButtonsDisabled(false);
-            showStatus('The diagram is saved, but its preview could not be saved. Press Done to try again.');
+            showStatus(diagramStatusShown(AUTOSAVE_STATUS.SAVED).bar);
+            await showErrorDialog([{ text: 'The diagram is saved, but its preview could not be saved. Press Done to try again.', fieldId: null }]);
             return;
         }
         await endSession();

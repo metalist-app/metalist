@@ -15,7 +15,7 @@ const ELEMENT_ID = 'error-dialog';
 const FIELD_AT_FAULT_CLASS = 'field-at-fault';
 
 const errorDialogState = ApplicationState.createFields('error-dialog', {
-    // { element, problems, resolve, close } while one shows.
+    // { element, problems, resolve, close, returnFocus } while one shows.
     active: null,
 });
 
@@ -103,6 +103,9 @@ function closeErrorDialog() {
     }
     if (fields.length > 0) {
         fields[0].focus();
+    } else if (active.returnFocus instanceof HTMLElement && active.returnFocus.isConnected) {
+        // Nothing at fault: focus goes back where it was.
+        active.returnFocus.focus();
     }
     active.resolve();
 }
@@ -146,7 +149,7 @@ export function showErrorDialog(problems) {
     }
     const { layer, dialog, close } = buildElement(problems);
     return new Promise((resolve) => {
-        errorDialogState.active = { element: layer, problems, resolve, close };
+        errorDialogState.active = { element: layer, problems, resolve, close, returnFocus: document.activeElement };
         ModeContext.pushModal(MODAL_NAME);
         close.addEventListener('click', () => closeErrorDialog());
         layer.addEventListener('click', (event) => {
@@ -160,6 +163,21 @@ export function showErrorDialog(problems) {
         layer.style.display = 'block';
         close.focus();
     });
+}
+
+// A lasting problem's dialog (floating-messages.js): it closes when the problem ends, so the
+// caller gets a function that closes it, if it still shows.
+export function showErrorDialogClosedBy(problems) {
+    const done = showErrorDialog(problems);
+    const element = errorDialogState.active.element;
+    return {
+        done,
+        close: () => {
+            if (errorDialogState.active !== null && errorDialogState.active.element === element) {
+                closeErrorDialog();
+            }
+        },
+    };
 }
 
 // The field a refusal names, or null.
