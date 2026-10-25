@@ -180,6 +180,16 @@ export function showErrorDialogClosedBy(problems) {
     };
 }
 
+// A dialog that could not open has nothing to offer: the error dialog says why, and closing it
+// runs closeDialog. Opening is not held up while it shows, so what opened the dialog (the AI's
+// menu request, a palette command) learns at once that it did not open.
+export function showOpenFailure(error, closeDialog) {
+    if (typeof closeDialog !== 'function') {
+        throw new Error('showOpenFailure requires the function that closes the dialog');
+    }
+    void showErrorDialogFor(error, null).then(closeDialog);
+}
+
 // The field a refusal names, or null.
 export function failureFieldId(error) {
     if (error instanceof FieldInputRejected) {

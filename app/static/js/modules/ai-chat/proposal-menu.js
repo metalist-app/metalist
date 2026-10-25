@@ -5,7 +5,7 @@ import { CONFIG } from '../config.js';
 import { buildSessionHeaders } from '../session-auth.js';
 import { BaseModal } from '../modals/base-modal.js';
 import { actionRowHtml } from '../modals/action-row.js';
-import { showErrorDialogFor } from '../modals/error-dialog.js';
+import { showErrorDialogFor, showOpenFailure } from '../modals/error-dialog.js';
 import { ErrorHandler } from '../error-handler.js';
 import { escapeHtml } from '../html-escape.js';
 import { MS_PER_SECOND } from '../time-units.js';
@@ -115,8 +115,9 @@ class AiTaggingModal extends BaseModal {
         const loaded = await settleResult(() => loadVocabularyPolicy());
         if (!this.isCurrentOpen(generation)) return;
         if (!loaded.ok) {
-            await showErrorDialogFor(loaded.error, null);
-            if (this.isCurrentOpen(generation)) this.close();
+            showOpenFailure(loaded.error, () => {
+                if (this.isCurrentOpen(generation)) this.close();
+            });
             return;
         }
         if (loaded.value !== this.getModalState().policy) {

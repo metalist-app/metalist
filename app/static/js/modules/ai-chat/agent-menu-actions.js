@@ -1,6 +1,8 @@
 import { HttpRequestError, rethrowUnexpectedError } from '../expected-errors.js';
 
 // Dialog destinations open their forms; operation destinations only highlight a menu entry.
+const ERROR_DIALOG_TEXT = '#error-dialog .error-dialog-text';
+
 export async function openAgentMenu({ menuId, endpoints, isCurrent, hasOpenModal, queryElement, showMenuEntry, signal }) {
     const response = await fetch('/static/config/agent-menu-actions.json', { signal });
     if (!response.ok) throw new HttpRequestError('Could not load menu catalog');
@@ -22,6 +24,11 @@ export async function openAgentMenu({ menuId, endpoints, isCurrent, hasOpenModal
         const element = queryElement(selector);
         return Boolean(element) && element.getClientRects().length > 0;
     };
+    // A dialog that could not open says why in the error dialog (modals/error-dialog.js):
+    // the AI is told that reason, not that the dialog opened.
+    if (isShown(ERROR_DIALOG_TEXT)) {
+        return { status: 'unavailable', detail: queryElement(ERROR_DIALOG_TEXT).textContent };
+    }
     if (isShown(target.selector)) {
         return { status: 'opened', detail: target.label };
     }

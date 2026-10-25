@@ -4,6 +4,7 @@ import test from 'node:test';
 import { openAgentMenu, executeAgentMenuRequest } from '../../app/static/js/modules/ai-chat/agent-menu-actions.js';
 import { HttpRequestError } from '../../app/static/js/modules/expected-errors.js';
 
+const ERROR_DIALOG_TEXT = '#error-dialog .error-dialog-text';
 const catalog = JSON.parse(readFileSync(new URL('../../app/static/config/agent-menu-actions.json', import.meta.url)));
 
 async function withCatalog(callback) {
@@ -21,6 +22,7 @@ for (const target of catalog) {
             endpoints: catalog.map(entry => ({ id: entry.id, execute: async () => executed.push(entry.id) })),
             isCurrent: () => true, hasOpenModal: () => false,
             queryElement: selector => {
+                if (selector === ERROR_DIALOG_TEXT) return null;
                 assert.equal(selector, target.selector);
                 return { getClientRects: () => [1] };
             },
@@ -31,6 +33,21 @@ for (const target of catalog) {
         assert.deepEqual(selected, target.presentation === 'palette' ? [target.id] : []);
     }));
 }
+
+// A dialog that could not open shows the error dialog instead (modals/error-dialog.js, for
+// example Add Password when the vault has one): the AI hears the reason, not "opened", and
+// is not kept waiting while the error shows (2026-10-25).
+test('a dialog that could not open reports the error dialog\'s reason', async () => withCatalog(async () => {
+    const reason = 'A password is already set. Use Change Password or Remove Password.';
+    const result = await openAgentMenu({ menuId: 'form.add_password',
+        endpoints: [{ id: 'form.add_password', execute: async () => {} }],
+        isCurrent: () => true, hasOpenModal: () => false,
+        queryElement: selector => (selector === ERROR_DIALOG_TEXT
+            ? { getClientRects: () => [1], textContent: reason }
+            : { getClientRects: () => [1] }),
+        showMenuEntry: async () => assert.fail(), signal: new AbortController().signal });
+    assert.deepEqual(result, { status: 'unavailable', detail: reason });
+}));
 
 for (const blocked of ['stale', 'modal', 'cancelled', 'hidden']) {
     test(`menu execution handles ${blocked} without claiming success`, async () => withCatalog(async () => {

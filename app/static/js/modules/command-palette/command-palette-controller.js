@@ -2404,7 +2404,8 @@ class CommandPaletteController {
         // With no other namespace, opening one means creating one.
         const hasOtherResult = await settleResult(() => fetchHasOtherNamespace());
         if (!hasOtherResult.ok) {
-            await showErrorDialogFor(hasOtherResult.error, null);
+            // Not held up while it shows: what asked to open the vault picker learns at once.
+            void showErrorDialogFor(hasOtherResult.error, null);
             return;
         }
         if (!hasOtherResult.value) {

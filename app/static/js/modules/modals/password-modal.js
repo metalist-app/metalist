@@ -4,7 +4,7 @@ import { HttpRequestError, UserInputRejected, rethrowUnexpectedError } from '../
 
 import { BaseModal } from './base-modal.js';
 import { actionRowHtml } from './action-row.js';
-import { showErrorDialogFor } from './error-dialog.js';
+import { showErrorDialogFor, showOpenFailure } from './error-dialog.js';
 import { setFieldMessage } from './field-message.js';
 
 // "Passwords do not match." once the confirmation stops being the start of the new password,
@@ -108,14 +108,15 @@ class PasswordOperationModal extends BaseModal {
             if (this.mode !== 'remove') {
                 this.loadNewPasswordStrengthEstimator();
             }
-        })().catch(async (error) => {
+        })().catch((error) => {
             rethrowUnexpectedError(error);
             if (!this.isCurrentOpen(generation)) return;
             // Nothing to do here: the error dialog says why, and closing it closes this one.
-            await showErrorDialogFor(error, null);
-            if (this.isCurrentOpen(generation)) {
-                this.close();
-            }
+            showOpenFailure(error, () => {
+                if (this.isCurrentOpen(generation)) {
+                    this.close();
+                }
+            });
         });
     }
     

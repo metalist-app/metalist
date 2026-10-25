@@ -19,7 +19,7 @@ import { buildSessionHeaders } from '../session-auth.js';
 import { renderNamespaceLoadingTab } from './namespace-loading-page.js';
 import { selectNamespacePortsEditorProfile } from './namespace-ports-profile.js';
 import { buildNamespaceRenamePayload, vaultNameProblem } from './namespace-rename-validation.js';
-import { showErrorDialog, showErrorDialogFor } from './error-dialog.js';
+import { showErrorDialog, showErrorDialogFor, showOpenFailure } from './error-dialog.js';
 import { escapeHtml } from '../html-escape.js';
 import { actionRowHtml } from './action-row.js';
 import { requires } from '../../shockharness/contracts.js';
@@ -314,11 +314,12 @@ class NamespaceModalBase extends BaseModal {
 
     // A dialog that could not load has nothing to offer: the error dialog says why, and
     // closing it closes this dialog too.
-    async _closeAfterLoadFailure(error) {
-        await showErrorDialogFor(error, null);
-        if (this.isOpen) {
-            this.close();
-        }
+    _closeAfterLoadFailure(error) {
+        showOpenFailure(error, () => {
+            if (this.isOpen) {
+                this.close();
+            }
+        });
     }
 
     _renderLoading(title, cancelId) {
@@ -476,7 +477,7 @@ export class OpenNamespaceModal extends NamespaceModalBase {
         });
         if (!this.isCurrentOpen(generation)) return;
         if (!catalogResult.ok) {
-            await this._closeAfterLoadFailure(catalogResult.error);
+            this._closeAfterLoadFailure(catalogResult.error);
             return;
         }
         this.renderModalContent();
@@ -705,7 +706,7 @@ export class CreateNamespaceModal extends NamespaceModalBase {
         });
         if (!this.isCurrentOpen(generation)) return;
         if (!catalogResult.ok) {
-            await this._closeAfterLoadFailure(catalogResult.error);
+            this._closeAfterLoadFailure(catalogResult.error);
             return;
         }
         this.renderModalContent();
@@ -889,7 +890,7 @@ export class RenameNamespaceModal extends NamespaceModalBase {
         });
         if (!this.isCurrentOpen(generation)) return;
         if (!result.ok) {
-            await this._closeAfterLoadFailure(result.error);
+            this._closeAfterLoadFailure(result.error);
             return;
         }
         this.renderModalContent();
@@ -1102,7 +1103,7 @@ export class ManageNamespacePortsModal extends NamespaceModalBase {
         });
         if (!this.isCurrentOpen(generation)) return;
         if (!catalogResult.ok) {
-            await this._closeAfterLoadFailure(catalogResult.error);
+            this._closeAfterLoadFailure(catalogResult.error);
             return;
         }
         this.renderModalContent();

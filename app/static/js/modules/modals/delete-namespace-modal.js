@@ -12,7 +12,7 @@ import { rewriteNamespaceUrlPreservingCurrentHost } from '../login-namespace-pic
 import { buildSessionHeaders } from '../session-auth.js';
 import { escapeHtml } from '../html-escape.js';
 import { actionRowHtml } from './action-row.js';
-import { showErrorDialog, showErrorDialogFor } from './error-dialog.js';
+import { showErrorDialog, showErrorDialogFor, showOpenFailure } from './error-dialog.js';
 import { FloatingMessages } from '../floating-messages.js';
 
 const PROGRESS_CARD_KEY = 'delete-vault-progress';
@@ -92,10 +92,11 @@ export class DeleteNamespaceModal extends BaseModal {
         if (!this.isCurrentOpen(generation)) return;
         if (!catalogResult.ok) {
             // Nothing to delete from: the error dialog says why, and closing it closes this one.
-            await showErrorDialogFor(catalogResult.error, null);
-            if (this.isCurrentOpen(generation)) {
-                this.close();
-            }
+            showOpenFailure(catalogResult.error, () => {
+                if (this.isCurrentOpen(generation)) {
+                    this.close();
+                }
+            });
             return;
         }
         this.renderModalContent();
