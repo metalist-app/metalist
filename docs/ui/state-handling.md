@@ -142,7 +142,7 @@ This dual approach ensures:
 
 - An HTTP response proves that the server connection is working. `4xx` and `5xx` responses show an application/request error but do not set `ModeContext.isConnected` to false or tear down edit mode.
 - `401` responses retain the dedicated authentication/logout path.
-- Only transport failures such as a rejected `fetch` or request timeout enter disconnected mode, show the persistent soft-amber reconnecting banner, and disable editing. Their expected promise rejections are kept out of the fatal red stack overlay; unexpected client exceptions still surface there and fail loudly.
+- Only transport failures such as a rejected `fetch` or request timeout enter disconnected mode, show the lasting soft-amber "Not saved, reconnecting…" card (`docs/ui/floating-messages.md`), and disable editing. Their expected promise rejections are kept out of the fatal red stack overlay; unexpected client exceptions still surface there and fail loudly.
 - Unexpected client exceptions are rethrown instead of being relabeled as network failures.
 - Note selection sets `isEditing` and `currentNoteId` before awaiting the initial content refresh, so `currentContent` can legitimately still be `null` during that transition. Disconnect cleanup checks each nullable field before clearing it so strict state setters do not receive redundant writes.
 - A refresh can remove the edited note from the DOM and clear `currentContent` before deselection completes. Deselect cleanup therefore checks `currentContent` before clearing it while still requiring the editing and note-selection transitions.
@@ -474,7 +474,7 @@ ModeContext = {
 - Command-palette preferences and usage history now follow the same namespace-scoped model:
   the browser loads them from `/api2/auth/client-state`, persists updates back to the
   main SQLite DB, and only keeps `sessionStorage` for per-tab ephemeral ids.
-- Session idle timeout is also namespace-scoped, but it is server-owned auth state in
+- Session Idle Timeout… is also namespace-scoped, but it is server-owned auth state in
   `app_settings`, not client-state mirrored into the browser. It is disabled by default;
   when explicitly enabled, expiry invalidates authentication without purging the hydrated
   server cache. Explicit logout still purges decrypted runtime state.

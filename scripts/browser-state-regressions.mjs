@@ -225,7 +225,7 @@ export async function checkAdditionalStateTransitions(page) {
   assert.equal(confirmation.buttonSizing.flexGrow, '0', JSON.stringify(confirmation.buttonSizing));
   assert.equal(confirmation.buttonSizing.justify, 'flex-end');
   assert.equal(confirmation.buttonSizing.fontSize, '13px');
-  assert.deepEqual(confirmation.buttons, ['Yes', 'No']);
+  assert.deepEqual(confirmation.buttons, ['Cancel', 'Apply']);
   assert.deepEqual(confirmation.answers, [{question_id:'question-1', value:'yes'}]);
   assert.equal(confirmation.cardRemains, false, 'the card closes after the answer');
   assert.equal(confirmation.status, 'complete');

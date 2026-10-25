@@ -8,6 +8,7 @@ import { CONFIG } from '../config.js';
 import { buildSessionHeaders } from '../session-auth.js';
 import { MS_PER_SECOND } from '../time-units.js';
 import { escapeHtml } from '../html-escape.js';
+import { showErrorDialogFor } from './error-dialog.js';
 
 const UPDATE_POLL_INTERVAL_SECONDS = 2;
 
@@ -75,7 +76,6 @@ export class VersionInfoModal extends BaseModal {
     getInitialModalState() {
         return {
             loading: true,
-            error: '',
             info: null,
             release: null,
             updateMessage: 'Checking PyPI for updates…',
@@ -114,7 +114,6 @@ export class VersionInfoModal extends BaseModal {
 
         const state = this.getModalState();
         const loading = state.loading === true;
-        const error = typeof state.error === 'string' ? state.error : '';
         const info = state.info;
         let isUpdating = state.updatePending;
         if (state.updateJob !== null && !['complete', 'failed'].includes(state.updateJob.status)) {
@@ -125,7 +124,7 @@ export class VersionInfoModal extends BaseModal {
         if (!loading && info !== null) {
             bodyHtml = this.buildInfoTableHtml(info);
         }
-        if (!loading && info === null && error.length === 0) {
+        if (!loading && info === null) {
             throw new Error('Version info modal reached empty non-loading state');
         }
 
@@ -137,7 +136,6 @@ export class VersionInfoModal extends BaseModal {
                     <p>${escapeHtml(state.updateMessage)}</p>
                     ${this.buildUpdateControls(state)}
                 </section>
-                <p class="error-message">${escapeHtml(error)}</p>
             </div>
         `;
     }
@@ -194,7 +192,6 @@ export class VersionInfoModal extends BaseModal {
         }
         this.updateModalState({
             loading: false,
-            error: '',
             info: payload,
         });
         this.renderModalContent();
@@ -223,10 +220,10 @@ export class VersionInfoModal extends BaseModal {
             const job = state.updateJob;
             const log = `<p class="version-update-log">Update log on the server: ${escapeHtml(job.log_path)}</p>`;
             if (job.status === 'complete') return '<button type="button" data-update-action="reload">Reload MetaList</button>';
-            if (job.status === 'failed') return `${log}<button type="button" data-update-action="check">Check again</button>`;
+            if (job.status === 'failed') return `${log}<button type="button" data-update-action="check">Check Again</button>`;
             return log;
         }
-        if (state.release === null) return '<button type="button" data-update-action="check">Check again</button>';
+        if (state.release === null) return '<button type="button" data-update-action="check">Check Again</button>';
         if (!state.release.update_available || !state.release.supported) return '';
         return `<p>Checks the release, creates verified backups, and restarts all vaults. You may need to sign in again.</p>
             <button type="button" data-update-action="install" ${state.updatePending ? 'disabled' : ''}>Update to ${escapeHtml(state.release.target_version)}</button>`;
@@ -271,8 +268,9 @@ export class VersionInfoModal extends BaseModal {
         } catch (error) {
             rethrowUnexpectedError(error);
             if (this.isOpen && generation === this._loadGeneration) {
-                this.updateModalState({ updatePending: false, updateMessage: error.message });
+                this.updateModalState({ updatePending: false });
                 this.renderModalContent();
+                await showErrorDialogFor(error, null);
             }
         }
     }

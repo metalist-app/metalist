@@ -42,11 +42,11 @@ export async function checkBackgroundSortMenu(page) {
     assert.equal(buttons.length, modes.length + 1);
     assert.deepEqual(await buttons[modes.length].evaluate(node => [node.textContent.trim(), node.disabled]),
       ['Reverse Order', false]);
+    // The current mode is ticked, not greyed: picking it changes nothing.
     const disabledLabels = await page.$$eval('#context-submenu button:disabled', nodes => nodes.map(node => node.textContent));
-    assert.equal(disabledLabels.length, 1);
-    // The current mode is ticked (and disabled).
-    assert.match(disabledLabels[0], /^✓/);
-    assert.equal(await buttons[modes.indexOf(currentMode)].evaluate(node => node.disabled), true);
+    assert.deepEqual(disabledLabels, []);
+    assert.match(await buttons[modes.indexOf(currentMode)].evaluate(node => node.textContent.trim()), /^✓/);
+    assert.equal(await buttons[modes.indexOf(currentMode)].evaluate(node => node.disabled), false);
     await buttons[modes.indexOf(nextMode)].click();
     await waitForSortMode(page, nextMode);
     if (nextMode === 'content-volume') {

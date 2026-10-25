@@ -9,8 +9,11 @@
     --app-shell-width: 960px;
     --app-content-width: 800px;
     --app-page-padding: 1rem;
-    --app-min-visible-gutter: calc(var(--side-rail-edge) + 30px + 8px);
+    /* The floating buttons (≡, chat, scroll) are this wide. */
+    --floating-button-size: 30px;
+    --app-min-visible-gutter: calc(var(--side-rail-edge) + var(--floating-button-size) + 8px);
     --app-control-top: calc(1.5rem - 6px);
+    --global-controls-top: calc(var(--app-control-top) + 0.35rem);
     --side-rail-width: 260px;
     --side-rail-edge: 10px;
     --ai-chat-width: 33.333vw;
@@ -444,7 +447,6 @@ html:has(> body > .login-page[style*="display: flex"]) {
 /* Shared modal shell. Modal contents are intentionally dark in every app theme. */
 .phone-sheet,
 .phone-capture,
-.bulk-proposal-dialog,
 .modal {
     --modal-surface: #10151d;
     --modal-surface-raised: #171e29;
@@ -541,6 +543,12 @@ html:has(> body > .login-page[style*="display: flex"]) {
     min-width: 112px;
 }
 
+/* A rare alternative sits at the far left, apart from Cancel and the main action
+   (action-row.js; docs/ui/modals.md, "Dialog and menu conventions", rule 1). */
+.modal-content .dialog-actions .dialog-actions-alternative {
+    margin-right: auto;
+}
+
 .image-file-insert-choice-modal-content {
     width: min(460px, 92vw);
 }
@@ -548,12 +556,6 @@ html:has(> body > .login-page[style*="display: flex"]) {
 .image-file-insert-choice-modal-content p {
     margin: 0 0 18px;
     line-height: 1.45;
-}
-
-.image-file-insert-choice-actions {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
 }
 
 .link-title-retry-modal-content {
@@ -1549,15 +1551,6 @@ body.ontology-modal-open #ontology-modal {
     font-size: 0.85rem;
 }
 
-.ontology-error {
-    padding: 10px 12px;
-    border-radius: 10px;
-    border: 1px solid rgba(245, 101, 101, 0.35);
-    background: rgba(245, 101, 101, 0.12);
-    color: rgba(255, 255, 255, 0.9);
-    font-size: 0.9rem;
-}
-
 .ontology-dialog-overlay {
     position: absolute;
     inset: 0;
@@ -1718,15 +1711,6 @@ body.ontology-modal-open #ontology-modal {
     color: rgba(255, 255, 255, 0.75);
 }
 
-.ontology-dialog-error {
-    padding: 8px 10px;
-    border-radius: 10px;
-    border: 1px solid rgba(245, 101, 101, 0.35);
-    background: rgba(245, 101, 101, 0.12);
-    color: rgba(255, 255, 255, 0.9);
-    font-size: 0.85rem;
-}
-
 .ontology-dialog-footer {
     display: flex;
     justify-content: flex-end;
@@ -1764,6 +1748,17 @@ body.ontology-modal-open #ontology-modal {
     border-color: rgba(248, 113, 113, 0.72);
     background: rgba(153, 27, 27, 0.52);
     color: #fff;
+}
+
+/* A destructive confirmation's main button is red, in the main button's place. */
+#ontology-modal .ontology-dialog-footer .ontology-dialog-destructive {
+    border-color: rgba(248, 113, 113, 0.72);
+    background: #b91c1c;
+    color: #fff;
+}
+
+#ontology-modal .ontology-dialog-footer .ontology-dialog-destructive:hover {
+    background: #991b1b;
 }
 
 #ontology-modal .ontology-dialog-primary {
@@ -2024,10 +2019,8 @@ body.ontology-modal-open #ontology-modal {
     word-break: break-word;
 }
 
-#backup-modal-error:empty,
 #backup-modal-confirm-message:empty,
-#backup-retention-error:empty,
-#password-generator-error:empty {
+#backup-retention-error:empty {
     display: none;
 }
 
@@ -2391,10 +2384,6 @@ body.ontology-modal-open #ontology-modal {
     opacity: 0.78;
 }
 
-.prioritize-modal-content #prioritize-modal-error:empty {
-    display: none;
-}
-
 .prioritize-modal-actions {
     margin-top: 18px;
 }
@@ -2449,6 +2438,15 @@ html[data-theme="dark"] .prioritize-modal-content input.prioritize-modal-tag-inp
         align-items: stretch;
     }
 
+    /* Stacked, the main action is on top, then Cancel, then any alternative (rule 7). */
+    .modal-content .dialog-actions {
+        flex-direction: column-reverse;
+    }
+
+    .modal-content .dialog-actions .dialog-actions-alternative {
+        margin-right: 0;
+    }
+
     .modal-content .form-actions button {
         width: 100%;
     }
@@ -2497,8 +2495,14 @@ body.pref-show-ai-chat .container {
     );
 }
 
-body.pref-show-ai-chat .global-controls {
-    right: calc(var(--ai-chat-effective-width) + var(--ai-chat-control-edge));
+/* Where the floating buttons stand off the right edge: beside the chat when it shows.
+   The floating messages line up with them. */
+body {
+    --global-controls-right: var(--side-rail-edge);
+}
+
+body.pref-show-ai-chat {
+    --global-controls-right: calc(var(--ai-chat-effective-width) + var(--ai-chat-control-edge));
 }
 
 body:not(.pref-show-ai-chat) .ai-chat-panel {
@@ -3573,13 +3577,6 @@ details.ai-chat-thinking > .ai-chat-thinking-heading {
     margin: 8px 0 0;
     color: var(--modal-text-subtle);
     font-size: 12px;
-}
-
-/* What went wrong with the key, right under it. */
-#ai-agent-settings-modal .ai-settings-key-error {
-    margin: 0 0 0 92px;
-    color: var(--modal-danger);
-    font-size: 13px;
 }
 
 /* A warning under a provider's key, lined up with the fields. */
@@ -6091,6 +6088,16 @@ body.pref-show-tab-ui .controls .tab-hover-zone:hover .tab-ui-folder-icon {
     background: rgba(0, 0, 0, 0.06);
 }
 
+/* A destructive item (Delete Note): red, last in its own group. */
+.context-menu-item.is-danger {
+    color: #e5484d;
+}
+
+.context-menu-item.is-danger:hover:not(:disabled),
+.context-menu-item.is-danger:focus-visible {
+    color: #ff6369;
+}
+
 .context-menu-item.is-separated {
     margin-top: 6px;
     border-top: 1px solid var(--border-color);
@@ -6577,8 +6584,8 @@ html.reference-sliding body {
 /* Global Controls */
 .global-controls {
     position: fixed;
-    top: calc(1.5rem - 6px + 0.35rem);
-    right: var(--side-rail-edge);
+    top: var(--global-controls-top);
+    right: var(--global-controls-right);
     left: auto;
     display: flex;
     flex-direction: column;
@@ -6589,8 +6596,8 @@ html.reference-sliding body {
 
 .scroll-to-top-button,
 .chat-toggle-button {
-    width: 30px;
-    height: 30px;
+    width: var(--floating-button-size);
+    height: var(--floating-button-size);
     border: 1px solid var(--border-color);
     border-radius: 4px;
     background: rgba(255, 255, 255, 0.95);
@@ -6639,8 +6646,8 @@ body.pref-show-ai-chat .chat-toggle-button {
 
 .menu-button {
     composes: add-note;
-    width: 30px;
-    height: 30px;
+    width: var(--floating-button-size);
+    height: var(--floating-button-size);
     border: 1px solid var(--border-color);
     border-radius: 4px;
     display: flex;
@@ -6930,8 +6937,8 @@ body.tab-drag-active * {
         );
     }
 
-    body.pref-show-ai-chat .global-controls {
-        right: var(--side-rail-edge);
+    body.pref-show-ai-chat {
+        --global-controls-right: var(--side-rail-edge);
     }
 }
 
@@ -8117,84 +8124,174 @@ html[data-theme="dark"] .meta-code-code .tok-cpf { color: #8b949e; }
 }
 
 
-/* Error Banner Styles */
-.error-banner {
+/* Floating messages (floating-messages.js): cards in the upper-right corner, just left of
+   the floating buttons, each new one below the others. They float above the page and move
+   nothing; they fade rather than slide, so a card stands where it will stay. */
+.floating-messages {
     position: fixed;
-    top: -100px;
-    left: 0;
-    right: 0;
-    z-index: 20000; /* ensure status banners sit above tab overlays */
-    transition: transform 0.3s ease-in-out;
-    pointer-events: auto;
-}
-
-.error-banner.error-banner-visible {
-    transform: translateY(100px);
-}
-
-.error-banner-content {
+    top: var(--global-controls-top);
+    right: calc(var(--global-controls-right) + var(--floating-button-size) + 8px);
+    z-index: 20000; /* above tab overlays and dialogs */
     display: flex;
-    align-items: center;
-    padding: 12px 20px;
-    margin: 8px 16px;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 8px;
+    max-width: min(420px, calc(100vw - var(--global-controls-right) - var(--floating-button-size) - 24px));
+    pointer-events: none;
+}
+
+.floating-message {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    max-width: 100%;
+    box-sizing: border-box;
+    padding: 10px 14px;
     border-radius: 6px;
     font-size: 14px;
     font-weight: 500;
+    line-height: 1.4;
+    overflow-wrap: anywhere;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+    opacity: 0;
+    transition: opacity 200ms ease-out;
+    pointer-events: auto;
 }
 
-.error-banner-error .error-banner-content {
+.floating-message.is-shown {
+    opacity: 1;
+}
+
+.floating-message-error {
     background-color: var(--error-color);
     color: white;
 }
 
-.error-banner-success .error-banner-content {
+.floating-message-success {
     background-color: var(--success-color);
     color: white;
 }
 
-.error-banner-info .error-banner-content {
+.floating-message-info {
     background-color: var(--info-color);
     color: white;
 }
 
-.error-banner-connection .error-banner-content {
+.floating-message-connection {
     background-color: #fff8e6;
     color: #5b4820;
     border: 1px solid #e8d49a;
     box-shadow: 0 2px 8px rgba(91, 72, 32, 0.14);
 }
 
-.error-banner-icon {
-    margin-right: 8px;
-    font-size: 16px;
-}
-
-.error-banner-message {
+.floating-message-text {
     flex: 1;
 }
 
-.error-banner-close {
-    background: none;
+.floating-message-close {
+    flex: 0 0 auto;
+    width: 20px;
+    height: 20px;
+    padding: 0;
     border: none;
+    border-radius: 50%;
+    background: none;
     color: inherit;
     font-size: 18px;
     font-weight: bold;
+    line-height: 1;
     cursor: pointer;
-    margin-left: 12px;
-    padding: 0;
-    width: 20px;
-    height: 20px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 50%;
     opacity: 0.8;
 }
 
-.error-banner-close:hover {
+.floating-message-close:hover {
     opacity: 1;
     background-color: rgba(255, 255, 255, 0.2);
+}
+
+/* Error dialogs (modals/error-dialog.js): a small dialog over the one the user was in,
+   whose layout never changes for it. */
+.modal.error-dialog-layer {
+    z-index: 15500;
+    background: rgba(3, 7, 12, 0.45);
+    backdrop-filter: none;
+}
+
+.modal-content.error-dialog {
+    width: min(380px, 100%);
+    margin-top: 18vh;
+}
+
+.error-dialog-text {
+    margin: 4px 52px 0 0;
+    line-height: 1.45;
+}
+
+ul.error-dialog-text {
+    padding-left: 18px;
+}
+
+ul.error-dialog-text li + li {
+    margin-top: 6px;
+}
+
+/* A field the error dialog named: a red outline drawn outside it, so nothing changes size,
+   until its value changes. It wins over the dialogs' own focus styles, which remove the
+   outline. */
+.modal-content .field-at-fault,
+.modal-content .field-at-fault:focus {
+    outline: 2px solid var(--modal-danger) !important;
+    outline-offset: 1px;
+}
+
+/* Field messages (modals/field-message.js): what is wrong with a field's value, floating
+   just under it over what is below, so nothing moves. */
+.field-message-anchor {
+    position: relative;
+}
+
+.field-message {
+    position: absolute;
+    z-index: 3;
+    box-sizing: border-box;
+    max-width: 360px;
+    padding: 6px 10px;
+    border: 1px solid var(--modal-danger);
+    border-radius: 8px;
+    background: var(--modal-surface-raised);
+    color: var(--modal-text);
+    font-size: 13px;
+    line-height: 1.35;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+    pointer-events: none;
+}
+
+.field-message[data-kind="warning"] {
+    border-color: #e0b04a;
+}
+
+/* Recent Messages (recent-messages-modal.js): what the floating messages said, newest first. */
+.recent-messages-list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.recent-message {
+    display: flex;
+    gap: 12px;
+    padding: 6px 0;
+    border-bottom: 1px solid var(--modal-border);
+}
+
+.recent-message-time {
+    flex: 0 0 auto;
+    color: var(--modal-text-muted);
+    font-variant-numeric: tabular-nums;
+}
+
+.recent-message-error .recent-message-text {
+    color: var(--modal-danger);
 }
 
 /* Advanced Settings Modal Styles */
@@ -8832,7 +8929,20 @@ html[data-theme="dark"] body.loading::after {
 }
 
 .command-palette-row-label {
+    flex: 1;
     color: #e6e6e6;
+}
+
+/* A command's own key, right-aligned and dimmed like the context menus' shortcuts. */
+.command-palette-row-shortcut {
+    color: #8f8f8f;
+    font-size: 12px;
+    white-space: nowrap;
+}
+
+/* A destructive command (endpoint-registry.js, DESTRUCTIVE_COMMAND_IDS). */
+.command-palette-row.is-danger .command-palette-row-label {
+    color: #ff6b6b;
 }
 
 .command-palette-row-value {
@@ -9131,23 +9241,6 @@ html[data-theme="dark"] body.loading::after {
     margin: 12px 0 0 152px;
 }
 
-.reminder-modal-error {
-    color: #ff7777;
-    min-height: 1.2em;
-    margin-left: 152px;
-}
-
-.reminder-modal-warning {
-    min-height: 1.2em;
-    margin: 6px 0 0 152px;
-    color: #9a6500;
-    font-size: 14px;
-}
-
-.reminder-modal-warning:empty {
-    display: none;
-}
-
 .reminder-empty {
     margin: 12px 0;
     color: var(--muted-text-color, #aaa);
@@ -9174,9 +9267,7 @@ html[data-theme="dark"] body.loading::after {
         padding-top: 14px;
     }
 
-    .reminder-form-actions,
-    .reminder-modal-error,
-    .reminder-modal-warning {
+    .reminder-form-actions {
         margin-left: 0;
     }
 
@@ -9569,8 +9660,7 @@ html[data-theme="dark"] body.loading::after {
     margin-top: 18px;
 }
 
-.modal-content .error-message,
-.modal-content .reminder-modal-error {
+.modal-content .error-message {
     color: var(--modal-danger);
 }
 
@@ -9721,8 +9811,7 @@ html[data-theme="dark"] body.loading::after {
 
 .modal-content .reminder-row-past-due,
 .modal-content .reminder-row-due,
-.modal-content .reminder-row-overdue,
-.modal-content .reminder-modal-warning {
+.modal-content .reminder-row-overdue {
     color: #f4bd62;
 }
 
@@ -9797,28 +9886,11 @@ html[data-theme="dark"] body.loading::after {
     }
 }
 
-/* Application-owned modal keeps batch progress usable while ordinary UI is inert. */
-.bulk-proposal-dialog {
-    color: var(--modal-text);
-    color-scheme: dark;
-    background: transparent;
-    border: 0;
-    padding: 0;
-    width: min(560px, calc(100vw - 32px));
-    max-height: calc(100vh - 48px);
-    overflow: visible;
-}
-.bulk-proposal-dialog::backdrop {
-    background: rgba(3, 7, 12, 0.76);
-    backdrop-filter: blur(8px);
-}
-.bulk-proposal-dialog .modal-content { width: 100%; }
-.bulk-proposal-dialog .form-actions { display: flex; }
-.bulk-proposal-dialog h2 { font-size: 22px; }
-.bulk-proposal-dialog p { font-size: 14px; line-height: 1.5; color: var(--modal-text-muted); }
-.bulk-proposal-dialog [data-elapsed] { font-variant-numeric: tabular-nums; }
-.bulk-proposal-dialog select,
-.bulk-proposal-dialog textarea {
+/* AI-Proposed Tags and AI Tagging Vocabulary (ai-chat/proposal-menu.js). */
+.modal-content.ai-tagging-modal-content { width: min(560px, 100%); }
+.ai-tagging-modal-content h2 { font-size: 22px; }
+.ai-tagging-modal-content p { font-size: 14px; line-height: 1.5; color: var(--modal-text-muted); }
+.ai-tagging-modal-content select {
     display: block;
     width: 100%;
     box-sizing: border-box;
@@ -9830,10 +9902,7 @@ html[data-theme="dark"] body.loading::after {
     font: inherit;
     font-size: 14px;
 }
-.bulk-proposal-dialog textarea { min-height: 180px; }
-.bulk-proposal-dialog label { display: block; margin: 16px 0; font-size: 14px; }
-.bulk-proposal-dialog [role="alert"] { color: var(--modal-danger); }
-.bulk-proposal-dialog [role="alert"]:empty { display: none; }
+.ai-tagging-modal-content label { display: block; margin: 16px 0; font-size: 14px; }
 
 #ai-chat-panel .ai-chat-operation-card {
     width: 100%;
@@ -10225,27 +10294,6 @@ iframe.print-frame {
     margin: 6px 0 0;
     font-size: 13px;
     color: var(--modal-text-muted);
-}
-
-/* Why the AI gave no title: floats over what is below until the next action. */
-.export-title-ai-failure {
-    position: absolute;
-    top: 100%;
-    left: 0;
-    right: 0;
-    z-index: 2;
-    margin-top: 4px;
-    padding: 8px 10px;
-    border: 1px solid var(--modal-border-strong);
-    border-radius: 8px;
-    background: var(--modal-surface-raised);
-    color: var(--modal-text);
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
-    font-size: 13px;
-}
-
-.export-title-ai-failure[hidden] {
-    display: none;
 }
 
 /* Date range → Custom Range… (date-range-modal.js). */
@@ -10688,6 +10736,15 @@ suggestions as pills. */
         inset: 0;
         z-index: 14000;
         background: var(--modal-surface);
+    }
+
+    /* Floating messages hang under the search header, the page's width. */
+    .floating-messages {
+        top: calc(var(--search-header-bottom) + 8px);
+        left: 8px;
+        right: 8px;
+        max-width: none;
+        align-items: stretch;
     }
 
     /* Floating notices and reminders sit above the phone's bottom bar. */

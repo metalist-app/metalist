@@ -1,5 +1,6 @@
 import { ApplicationState } from '../application-state.js';
 import { BaseModal } from './base-modal.js';
+import { actionRowHtml } from './action-row.js';
 import { ModeContextInstance as ModeContext } from '../mode-manager/mode-context.js';
 import { DATE_RANGE_FIELDS, OPEN_DATE } from '../mode-manager/services/date-range-kinds.js';
 
@@ -113,10 +114,15 @@ export class DateRangeModal extends BaseModal {
                     <label>From <input type="date" id="date-range-from" title="Leave empty for no start"></label>
                     <label>To <input type="date" id="date-range-to" title="Leave empty for no end"></label>
                 </div>
-                <div class="form-actions">
-                    <button type="button" class="secondary-btn" id="date-range-cancel-btn">Cancel</button>
-                    <button type="button" class="primary-btn" id="date-range-apply-btn">Apply</button>
-                </div>
+                ${actionRowHtml({
+                    alternative: null,
+                    cancel: { id: 'date-range-cancel-btn', label: 'Cancel', disabled: false, attributes: [] },
+                    main: {
+                        id: 'date-range-apply-btn', label: 'Apply', disabled: false, attributes: [],
+                        isDestructive: false, isEnterAction: false, type: 'button',
+                    },
+                    rowClass: '',
+                })}
             </div>
         `;
         const fromInput = this._requireDateInput('date-range-from');

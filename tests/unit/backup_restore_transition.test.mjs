@@ -56,6 +56,9 @@ test('different-name import into the active namespace suppresses errors before t
     });
     modal.updateModalState = () => {};
     modal.renderModalContent = () => {};
+    // The progress card (floating-messages.js) needs the page.
+    modal._showProgress = () => {};
+    modal._endProgress = () => {};
     modal._authRequest = async () => {
         const rawUntil = storedValues.get(RESTORE_TRANSITION_UNTIL_KEY);
         assert.equal(typeof rawUntil, 'string');

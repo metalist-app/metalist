@@ -310,8 +310,8 @@ function isMouseDownOutsideEditExclusion(target) {
             '.app-notice-stack',
             // The Reminders popup (reminder-surface-service.js) handles its own presses too.
             '#reminder-surface',
-            // So do the error banner (its ×) and the image zoom (its × and backdrop).
-            '#error-banner',
+            // So do the floating messages (their ×) and the image zoom (its × and backdrop).
+            '#floating-messages',
             '.image-zoom-overlay',
             '#ai-chat-panel',
             '.add-note',
@@ -1331,7 +1331,7 @@ function handleClick(event) {
     // The card offering a format for a paste handles its own clicks (paste-format-offer-service.js).
     if (event.target instanceof Element && event.target.closest('.paste-format-offer')) return;
     // App notices (a new release, the backup reminder) and the Reminders popup handle their own clicks too.
-    if (event.target instanceof Element && event.target.closest('.app-notice-stack, #reminder-surface, #error-banner, .image-zoom-overlay')) return;
+    if (event.target instanceof Element && event.target.closest('.app-notice-stack, #reminder-surface, #floating-messages, .image-zoom-overlay')) return;
 
     if (isViewModeNoteDisclosureToggle(event.target)) {
         return;

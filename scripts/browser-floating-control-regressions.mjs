@@ -3,7 +3,7 @@ import { runThenCleanUp } from './suite-outcome.mjs';
 import { waitForAppQuiet } from './browser-app-idle.mjs';
 
 // Floating controls pressed while a note is being edited (docs/ui/interaction-principles.md):
-// - the error banner's × closes it on the first press and leaves the note in edit mode,
+// - a floating message's × closes it on the first press and leaves the note in edit mode,
 //   as the notice cards and the Reminders popup do;
 // - Zoom Image is full screen, so opening it saves and leaves the note first
 //   (principle 6), and its × then closes it on the first press.
@@ -66,15 +66,15 @@ async function bannerCase(page, noteId) {
     const {ErrorHandler} = await import('/static/js/modules/error-handler.js');
     ErrorHandler.showErrorBanner('Something went wrong (test)', 'error', 0, { closable: true });
   });
-  await page.waitForSelector('#error-banner.error-banner-visible .error-banner-close', {visible: true});
-  // The banner slides in; press its × once it has settled, with a real mouse press.
+  await page.waitForSelector('.floating-message.is-shown .floating-message-close', {visible: true});
+  // The card fades in; press its × once it has settled, with a real mouse press.
   await pause(SETTLE_MS);
-  const close = await (await page.$('#error-banner .error-banner-close')).boundingBox();
-  assert.notEqual(close, null, 'the banner shows its ×');
+  const close = await (await page.$('.floating-message .floating-message-close')).boundingBox();
+  assert.notEqual(close, null, 'the card shows its ×');
   await page.mouse.click(close.x + close.width / 2, close.y + close.height / 2);
   await pause(SETTLE_MS);
   await idle(page);
-  assert.equal(await page.$('#error-banner.error-banner-visible'), null, 'one press of × closes the banner');
+  assert.equal(await page.$('.floating-message'), null, 'one press of × closes the card');
   assert.deepEqual(await modeState(page), {editing: true, current: noteId}, 'the note stays in edit mode');
   await page.keyboard.press('Escape');
   await idle(page);

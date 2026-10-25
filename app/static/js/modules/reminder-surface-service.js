@@ -782,7 +782,7 @@ class ReminderSurfaceService {
             </div>
             <div class="reminder-surface-footer">
                 <span class="reminder-surface-status" data-reminder-surface-text>${escapeHtml(surfaceText)}</span>
-                <button type="button" data-reminder-surface-action="acknowledge" title="Clear this due or missed notice">Got it</button>
+                <button type="button" data-reminder-surface-action="acknowledge" title="Clear this due or missed notice">Dismiss</button>
             </div>
         `;
         this._startElapsedTimerIfNeeded(item, event);

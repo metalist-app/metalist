@@ -42,18 +42,18 @@ export async function checkOpenAiSettings(page) {
   });
   await page.type('#ai-agent-api-key', 'not-a-google-key-0123456789abcdef');
   await page.click('#ai-agent-key-save');
-  await page.waitForSelector('.ai-settings-tab-panel .ai-settings-key-error');
-  const keyMessages = await page.evaluate(() => ({
-    underKey: document.querySelector('.ai-settings-tab-panel .ai-settings-key-error').textContent,
-    atBottom: document.querySelector('#ai-agent-settings-modal .error-message').textContent,
-  }));
-  assert.equal(keyMessages.underKey, 'Google API key must start with AIza or AQ.');
-  assert.equal(keyMessages.atBottom, '');
+  // A refused key is told in an error dialog over the settings; closing it returns to the key.
+  await page.waitForSelector('#error-dialog .error-dialog-text');
+  assert.equal(await page.$eval('#error-dialog .error-dialog-text', node => node.textContent),
+    'Google API key must start with AIza or AQ.');
+  await page.keyboard.press('Escape');
+  await page.waitForSelector('#error-dialog', {hidden: true});
+  assert.equal(await page.evaluate(() => document.activeElement.id), 'ai-agent-api-key');
   await page.click('#ai-agent-api-key', {clickCount: 3});
   await page.type('#ai-agent-api-key', 'AQ.Test0123456789abcdefghijklmnopqrs');
   await page.click('#ai-agent-key-save');
   await page.waitForSelector('#ai-agent-key-remove');
-  assert.equal(await page.$('.ai-settings-key-error'), null, 'An accepted key leaves no key message');
+  assert.equal(await page.$('#error-dialog'), null, 'An accepted key shows no error');
   await page.click('#ai-agent-key-remove');
   await page.waitForSelector('#ai-agent-api-key');
   await page.click('#ai-agent-tab-openai');

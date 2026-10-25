@@ -63,7 +63,15 @@ import {checkSearchHighlight} from './browser-search-highlight-regressions.mjs';
 import {checkReferenceViews} from './browser-reference-view-regressions.mjs';
 import {installRequestMonitor, waitForAppQuiet} from './browser-app-idle.mjs';
 import {checkLoginLogo} from './browser-login-logo-regressions.mjs';
+import {checkDialogKeys} from './browser-dialog-key-regressions.mjs';
+import {checkDialogButtons} from './browser-dialog-button-regressions.mjs';
 import {checkPhone} from './browser-phone-regressions.mjs';
+import {checkFloatingMessages} from './browser-floating-message-regressions.mjs';
+import {checkViewMenu} from './browser-view-menu-regressions.mjs';
+import {checkErrorDialogs} from './browser-error-dialog-regressions.mjs';
+import {checkFieldMessages} from './browser-field-message-regressions.mjs';
+import {checkProgressCards} from './browser-progress-card-regressions.mjs';
+import {checkAiTaggingDialogs} from './browser-ai-tagging-dialog-regressions.mjs';
 import {assertLoginLogoGeometry} from './browser-validation/login-logo-geometry.mjs';
 
 // Requests count as quiet after this long without one starting or ending: after a
@@ -307,6 +315,38 @@ try {
     await checkBackupReminder(page);
     assert.deepEqual(errors, []);
     console.log(`PASS backup reminder regressions in ${await browser.version()}`);
+  } else if (process.env.BROWSER_TEST_SUITE === 'dialog-buttons') {
+    await checkDialogButtons(page);
+    assert.deepEqual(errors, []);
+    console.log(`PASS dialog button regressions in ${await browser.version()}`);
+  } else if (process.env.BROWSER_TEST_SUITE === 'dialog-keys') {
+    await checkDialogKeys(page);
+    assert.deepEqual(errors, []);
+    console.log(`PASS dialog key regressions in ${await browser.version()}`);
+  } else if (process.env.BROWSER_TEST_SUITE === 'ai-tagging-dialogs') {
+    await checkAiTaggingDialogs(page);
+    assert.deepEqual(errors, []);
+    console.log(`PASS AI tagging dialog regressions in ${await browser.version()}`);
+  } else if (process.env.BROWSER_TEST_SUITE === 'progress-cards') {
+    await checkProgressCards(page);
+    assert.deepEqual(errors, []);
+    console.log(`PASS progress card regressions in ${await browser.version()}`);
+  } else if (process.env.BROWSER_TEST_SUITE === 'field-messages') {
+    await checkFieldMessages(page);
+    assert.deepEqual(errors, []);
+    console.log(`PASS field message regressions in ${await browser.version()}`);
+  } else if (process.env.BROWSER_TEST_SUITE === 'error-dialogs') {
+    await checkErrorDialogs(page);
+    assert.deepEqual(errors, []);
+    console.log(`PASS error dialog regressions in ${await browser.version()}`);
+  } else if (process.env.BROWSER_TEST_SUITE === 'view-menu') {
+    await checkViewMenu(page);
+    assert.deepEqual(errors, []);
+    console.log(`PASS view menu regressions in ${await browser.version()}`);
+  } else if (process.env.BROWSER_TEST_SUITE === 'floating-messages') {
+    await checkFloatingMessages(page);
+    assert.deepEqual(errors, []);
+    console.log(`PASS floating message regressions in ${await browser.version()}`);
   } else if (process.env.BROWSER_TEST_SUITE === 'phone') {
     await checkPhone(browser, page, origin);
     assert.deepEqual(errors, []);

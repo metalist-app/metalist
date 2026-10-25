@@ -124,7 +124,7 @@ function screenState(page, noteId) {
     const card = tagBar === null ? null : tagBar.querySelector(':scope > .note-tag-bar-ai-status');
     const selection = window.getSelection();
     const indicator = note.querySelector(':scope > .note-proposal-indicator');
-    const banner = document.querySelector('#error-banner .error-banner-message');
+    const banner = document.querySelector('#floating-messages .floating-message:last-child .floating-message-text');
     const rect = element => {
       const box = element.getBoundingClientRect();
       return {top: box.top, bottom: box.bottom, height: box.height};
@@ -547,7 +547,7 @@ async function tagBarCase(page, ids) {
   await page.mouse.click(tagPoint.x, tagPoint.y, {button: 'right'});
   await page.waitForSelector('.context-menu.is-visible', {timeout: 5_000});
   await pause(SETTLE_MS);
-  assert.deepEqual(await menuLabels(page), ['Edit Tag Relationships'], "a tag's letters open its tag menu");
+  assert.deepEqual(await menuLabels(page), ['Edit Tag Relationships…'], "a tag's letters open its tag menu");
   await closeMenu(page);
 
   // Past the tags: the tag bar's menu, and the tag bar stays as it was.

@@ -2,6 +2,7 @@ import { ApplicationState } from '../application-state.js';
 import { BaseModal } from './base-modal.js';
 import { NotesAPI } from '../api-client.js';
 import { escapeHtml } from '../html-escape.js';
+import { actionRowHtml } from './action-row.js';
 
 // Progress of "Retry failed link titles" (docs/ui/command-palette.md). The retry
 // runs on the server; closing this dialog leaves it running, and opening the
@@ -223,7 +224,15 @@ export class LinkTitleRetryModal extends BaseModal {
         if (offer.startLabel !== '') {
             description = '<p class="link-title-retry-note">MetaList asks each site again, one request at a time per site. '
                 + 'Sites that ask MetaList to wait are skipped. You can keep working while it runs.</p>';
-            actions = `<button type="button" class="primary-btn" id="link-title-retry-start-btn" data-modal-enter-action>${escapeHtml(offer.startLabel)}</button>`;
+            actions = actionRowHtml({
+                alternative: null,
+                cancel: null,
+                main: {
+                    id: 'link-title-retry-start-btn', label: offer.startLabel, disabled: false, attributes: [],
+                    isDestructive: false, isEnterAction: true, type: 'button',
+                },
+                rowClass: '',
+            });
         }
         modalElement.innerHTML = `
             <div class="modal-content link-title-retry-modal-content">
@@ -233,7 +242,7 @@ export class LinkTitleRetryModal extends BaseModal {
                 </div>
                 <p class="link-title-retry-status">${escapeHtml(offer.statusLine)}</p>
                 ${description}
-                <div class="form-actions">${actions}</div>
+                ${actions}
             </div>
         `;
         const start = document.getElementById('link-title-retry-start-btn');
@@ -265,7 +274,12 @@ export class LinkTitleRetryModal extends BaseModal {
         }
         let stopButton = '';
         if (view.canStop) {
-            stopButton = '<button type="button" class="secondary-btn" id="link-title-retry-stop-btn">Stop</button>';
+            stopButton = actionRowHtml({
+                alternative: null,
+                cancel: { id: 'link-title-retry-stop-btn', label: 'Stop', disabled: false, attributes: [] },
+                main: null,
+                rowClass: '',
+            });
         }
         modalElement.innerHTML = `
             <div class="modal-content link-title-retry-modal-content">
@@ -277,7 +291,7 @@ export class LinkTitleRetryModal extends BaseModal {
                 <progress class="link-title-retry-progress" max="${escapeHtml(String(view.progressMax))}" value="${escapeHtml(String(view.progressValue))}"></progress>
                 <div class="link-title-retry-rows">${rows}</div>
                 ${note}
-                <div class="form-actions">${stopButton}</div>
+                ${stopButton}
             </div>
         `;
         const stop = document.getElementById('link-title-retry-stop-btn');

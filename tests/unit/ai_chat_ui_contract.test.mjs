@@ -524,7 +524,11 @@ test('chat layout defaults to one third and narrows the notes shell', () => {
     );
     assert.match(
         css,
-        /body\.pref-show-ai-chat \.global-controls\s*\{[\s\S]*?right:\s*calc\(var\(--ai-chat-effective-width\) \+ var\(--ai-chat-control-edge\)\);/,
+        /body\.pref-show-ai-chat\s*\{[^}]*--global-controls-right:\s*calc\(var\(--ai-chat-effective-width\) \+ var\(--ai-chat-control-edge\)\);/,
+    );
+    assert.match(
+        css,
+        /\.global-controls\s*\{[^}]*right:\s*var\(--global-controls-right\);/,
     );
     assert.match(
         css,
@@ -612,7 +616,7 @@ test('notes keep symmetric gutters and spend gutter space before note width', ()
 
     assert.match(
         css,
-        /--app-min-visible-gutter:\s*calc\(var\(--side-rail-edge\) \+ 30px \+ 8px\);/,
+        /--app-min-visible-gutter:\s*calc\(var\(--side-rail-edge\) \+ var\(--floating-button-size\) \+ 8px\);/,
     );
     assert.match(
         css,
@@ -643,7 +647,7 @@ test('small windows temporarily hide active chat without changing its preference
     );
     assert.match(
         css,
-        /@media \(max-width:\s*760px\), \(max-height:\s*300px\)[\s\S]*?body\.pref-show-ai-chat \.global-controls\s*\{[^}]*right:\s*var\(--side-rail-edge\);/,
+        /@media \(max-width:\s*760px\), \(max-height:\s*300px\)[\s\S]*?body\.pref-show-ai-chat\s*\{[^}]*--global-controls-right:\s*var\(--side-rail-edge\);/,
     );
     assert.doesNotMatch(controller, /ai-chat-responsive-hidden/);
 });
@@ -837,7 +841,7 @@ test('command menu contains chat, AI configuration, and proposal actions, but no
     const commandController = readFileSync(COMMAND_CONTROLLER_URL, 'utf8');
     assert.match(
         commandController,
-        /removeAllTagSuggestionsFromCurrentContext:\s*async[\s\S]*?_confirmAction\([\s\S]*?title:\s*'Remove all suggestions\?'[\s\S]*?confirmLabel:\s*'Remove all'[\s\S]*?isDangerous:\s*true[\s\S]*?if \(confirmed\)[\s\S]*?await removeAllTagSuggestionsFromCurrentContext\(\)/,
+        /removeAllTagSuggestionsFromCurrentContext:\s*async[\s\S]*?_confirmAction\([\s\S]*?title:\s*'Remove all suggestions\?'[\s\S]*?confirmLabel:\s*'Remove All'[\s\S]*?isDangerous:\s*true[\s\S]*?if \(confirmed\)[\s\S]*?await removeAllTagSuggestionsFromCurrentContext\(\)/,
     );
 });
 
@@ -874,7 +878,7 @@ test('AI settings persist and submit a required thinking level', () => {
         commandController.indexOf('isOpen() {'),
     );
     assert.doesNotMatch(agentSettingsSave, /settings\.model|'pref\.ai\.provider'/);
-    assert.match(modal, /id="ai-agent-save"[^>]*>Save<\/button>/);
+    assert.match(modal, /id: 'ai-agent-save', label: 'Save'/);
     assert.doesNotMatch(modal, /id="ai-agent-base-url"/);
     assert.doesNotMatch(chatApi, /base_url:/);
     assert.doesNotMatch(modal, /_saveConnection/);
@@ -900,7 +904,7 @@ test('an API key is saved on its own, apart from the other settings', () => {
         modal.indexOf('\n}', modal.indexOf('async _handleSave()')),
     );
 
-    assert.match(modal, /id="ai-agent-key-save"[^>]*>Save key<\/button>/);
+    assert.match(modal, /id="ai-agent-key-save"[^>]*>Save Key<\/button>/);
     assert.match(modal, /async _handleSaveKey\(apiKey\)/);
     assert.doesNotMatch(renderMethod, /state\.apiKey/);
     assert.doesNotMatch(settingsSaveHandler, /saveAiCredential/);

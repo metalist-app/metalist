@@ -1,6 +1,20 @@
+import { ApplicationState } from './application-state.js';
 import { isNetworkTransportError } from './api-failure-classification-service.js';
 
 export class UserInputRejected extends Error {}
+
+// Input refused because of one field, which the error dialog then names (modals/error-dialog.js).
+export class FieldInputRejected extends UserInputRejected {
+    constructor(message, fieldId) {
+        super(message);
+        if (typeof fieldId !== 'string' || fieldId.length === 0) {
+            throw new Error('FieldInputRejected requires the field id');
+        }
+        this.name = 'FieldInputRejected';
+        this.fieldId = fieldId;
+        ApplicationState.own(this, 'FieldInputRejected', new.target === FieldInputRejected);
+    }
+}
 
 export class HttpRequestError extends Error {
     constructor(message) {

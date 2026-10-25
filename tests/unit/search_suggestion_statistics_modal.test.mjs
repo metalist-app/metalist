@@ -71,7 +71,6 @@ function createOpenModalState(overrides) {
         windowDays: [1, 7, 30],
         showWindowLabels: true,
         limitNoteCreditsPerSearchContext: true,
-        error: '',
         statistics: { retentionPopulatedDayLimit: 365, days: [] },
         ...overrides,
     };
@@ -92,7 +91,6 @@ test('statistics modal initializes every search suggestion setting together', ()
         windowDays: [2, 14],
         showWindowLabels: false,
         limitNoteCreditsPerSearchContext: true,
-        error: '',
         statistics: null,
     });
 });
@@ -108,7 +106,11 @@ test('changing a suggestion window persists all settings immediately', async () 
         limitNoteCreditsPerSearchContext: false,
     }));
 
+    // The slot's message (field-message.js) needs the page; here only the saving is checked.
+    const shownProblems = [];
+    modal._showWindowProblem = (index, problem) => shownProblems.push([index, problem]);
     await modal._changeWindow(1, '21');
+    assert.deepEqual(shownProblems, [[1, '']], 'a good count clears its slot message');
 
     assert.deepEqual(savedSettings, [[[1, 21, 30], false, false]]);
     assert.deepEqual(harness.getState().windowDays, [1, 21, 30]);
@@ -151,6 +153,7 @@ test('combined modal renders window controls, suppression, statistics, and reset
     modal.getModalState = () => createOpenModalState({});
     modal._bindControls = (windowDays) => assert.deepEqual(windowDays, [1, 7, 30]);
     modal._installModalCloseButton = () => {};
+    modal._focusSafeStart = () => {};
 
     modal.renderModalContent();
 

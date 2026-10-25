@@ -9,6 +9,7 @@ import { buildSessionHeaders } from '../session-auth.js';
 import { handleDictationPasteEvent } from '../mode-manager/services/dictation-paste-service.js';
 import { escapeHtml } from '../html-escape.js';
 import { MS_PER_SECOND } from '../time-units.js';
+import { showErrorDialog } from './error-dialog.js';
 
 const ONTOLOGY_BASE = '/api2/ontology';
 const TAG_LIMIT = 20;
@@ -352,6 +353,14 @@ async function showRuleWarnings(payload) {
     ErrorHandler.showInfoBanner(payload.warnings.join(' '), RULE_WARNING_SECONDS * MS_PER_SECOND);
 }
 
+// How long a failed tag lookup is shown (floating-messages.js decides; any passing value).
+const LOOKUP_FAILURE_SECONDS = 10;
+
+async function showLookupFailure(message) {
+    const { ErrorHandler } = await import('../error-handler.js');
+    ErrorHandler.showErrorBanner(message, 'error', LOOKUP_FAILURE_SECONDS * MS_PER_SECOND, { closable: true });
+}
+
 function buildAuthHeaders() {
     return buildSessionHeaders(true);
 }
@@ -502,7 +511,6 @@ export class OntologyModal extends BaseModal {
                     <h2>Edit Tag Relationships</h2>
                 </div>
 
-                <div class="ontology-error" id="ontology-error" style="display:none"></div>
 
                 <div class="ontology-busy" id="ontology-busy">
                     <div class="ontology-spinner"></div>
@@ -564,10 +572,9 @@ export class OntologyModal extends BaseModal {
                             />
                             <div class="ontology-dialog-help" id="ontology-dialog-help"></div>
                             <div class="ontology-dialog-suggestions" id="ontology-dialog-suggestions"></div>
-                            <div class="ontology-dialog-error" id="ontology-dialog-error" style="display:none"></div>
                         </div>
                         <div class="ontology-dialog-footer">
-                            <button class="ontology-dialog-danger" data-action="dialog-delete-tag">Delete tag…</button>
+                            <button class="ontology-dialog-danger" data-action="dialog-delete-tag">Delete Tag…</button>
                             <button class="ontology-dialog-secondary" data-action="dialog-cancel">Cancel</button>
                             <button class="ontology-dialog-primary" data-action="dialog-submit">Save</button>
                         </div>
@@ -615,30 +622,6 @@ export class OntologyModal extends BaseModal {
         this.renderFocusView(null);
         this.renderTagSearchResults([]);
         this.renderTagCount(0);
-        this.renderError(null);
-    }
-
-    renderError(message) {
-        const modalElement = document.getElementById(this.modalElementId);
-        if (!modalElement) {
-            return;
-        }
-        const target = modalElement.querySelector('#ontology-error');
-        if (!target) {
-            return;
-        }
-
-        if (message === null) {
-            target.textContent = '';
-            target.style.display = 'none';
-            return;
-        }
-        if (typeof message !== 'string' || message.trim() === '') {
-            throw new Error('renderError requires string or null');
-        }
-
-        target.textContent = message;
-        target.style.display = 'block';
     }
 
     setBusy(isBusy) {
@@ -1012,13 +995,13 @@ export class OntologyModal extends BaseModal {
         if (!(suggestions instanceof HTMLElement)) {
             throw new Error('ontology dialog suggestions missing');
         }
-        const error = overlay.querySelector('#ontology-dialog-error');
-        if (!(error instanceof HTMLElement)) {
-            throw new Error('ontology dialog error missing');
-        }
         const submitButton = overlay.querySelector('.ontology-dialog-primary');
         if (!(submitButton instanceof HTMLElement)) {
             throw new Error('ontology dialog submit button missing');
+        }
+        const cancelButton = overlay.querySelector('.ontology-dialog-secondary');
+        if (!(cancelButton instanceof HTMLButtonElement)) {
+            throw new Error('ontology dialog cancel button missing');
         }
         const deleteTagButton = overlay.querySelector('.ontology-dialog-danger');
         if (!(deleteTagButton instanceof HTMLElement)) {
@@ -1033,8 +1016,8 @@ export class OntologyModal extends BaseModal {
             input,
             help,
             suggestions,
-            error,
             submitButton,
+            cancelButton,
             deleteTagButton,
         };
     }
@@ -1104,6 +1087,14 @@ export class OntologyModal extends BaseModal {
         if (typeof showDeleteTag !== 'boolean') {
             throw new Error('Dialog showDeleteTag must be boolean');
         }
+        // A destructive confirmation's button is red and it starts on Cancel, so Enter never confirms it.
+        const isDestructive = config.isDestructive;
+        if (typeof isDestructive !== 'boolean') {
+            throw new Error('Dialog isDestructive must be boolean');
+        }
+        if (isDestructive && mode !== 'confirm') {
+            throw new Error('Only a confirmation is destructive');
+        }
         // What the field adds next to which tag, so its suggestions are tags linked to that
         // tag (GET /ontology/tags); null ranks them by use alone.
         const suggestFor = config.suggestFor;
@@ -1145,6 +1136,7 @@ export class OntologyModal extends BaseModal {
                 suggestOnEmpty,
                 autoSubmitOnSuggestion,
                 showDeleteTag,
+                isDestructive,
                 suggestFor,
             };
             this._renderDialog();
@@ -1167,6 +1159,11 @@ export class OntologyModal extends BaseModal {
         if (typeof confirmLabel !== 'string' || confirmLabel.trim() === '') {
             throw new Error('Confirm label must be non-empty string');
         }
+        // A destructive confirmation starts on Cancel, so Enter never confirms it.
+        const isDestructive = config.isDestructive;
+        if (typeof isDestructive !== 'boolean') {
+            throw new Error('Confirm isDestructive must be boolean');
+        }
 
         const result = await this._openDialog({
             title,
@@ -1184,6 +1181,7 @@ export class OntologyModal extends BaseModal {
             allowSuggestions: false,
             suggestFor: null,
             showDeleteTag: false,
+            isDestructive,
         });
         return result === true;
     }
@@ -1219,6 +1217,7 @@ export class OntologyModal extends BaseModal {
         elements.input.value = state.initialValue;
         elements.input.setAttribute('aria-label', state.label.trim() === '' ? state.title : state.label);
         elements.submitButton.textContent = state.submitLabel;
+        elements.submitButton.classList.toggle('ontology-dialog-destructive', state.isDestructive);
         elements.deleteTagButton.style.display = state.showDeleteTag ? '' : 'none';
 
         if (!state.showInput) {
@@ -1248,7 +1247,6 @@ export class OntologyModal extends BaseModal {
             elements.help.style.display = 'block';
         }
 
-        this._clearDialogError();
         this._hideDialogSuggestions();
         this._attachDialogListeners(elements);
 
@@ -1260,6 +1258,8 @@ export class OntologyModal extends BaseModal {
                     elements.input.setSelectionRange(length, length);
                 }
                 this._updateDialogSuggestions();
+            } else if (state.isDestructive) {
+                elements.cancelButton.focus();
             } else {
                 elements.submitButton.focus();
             }
@@ -1311,7 +1311,6 @@ export class OntologyModal extends BaseModal {
         this._dialogState = null;
         this._hideDialogSuggestions();
         this._resetDialogSuggestionState();
-        this._clearDialogError();
         this._detachDialogListeners();
         this._hideDialogOverlay();
 
@@ -1322,19 +1321,12 @@ export class OntologyModal extends BaseModal {
         resolve(result);
     }
 
+    // A refused entry in the small dialog: an error dialog over it names its field.
     _setDialogError(message) {
         if (typeof message !== 'string' || message.trim() === '') {
             throw new Error('setDialogError requires non-empty string');
         }
-        const elements = this._getDialogElements();
-        elements.error.textContent = message;
-        elements.error.style.display = 'block';
-    }
-
-    _clearDialogError() {
-        const elements = this._getDialogElements();
-        elements.error.textContent = '';
-        elements.error.style.display = 'none';
+        void showErrorDialog([{ text: message, fieldId: 'ontology-dialog-input' }]);
     }
 
     _resetDialogSuggestionState() {
@@ -1539,7 +1531,6 @@ export class OntologyModal extends BaseModal {
             return;
         }
         this._clearDialogNavigation();
-        this._clearDialogError();
         this._updateDialogSuggestions();
     }
 
@@ -1746,9 +1737,9 @@ export class OntologyModal extends BaseModal {
                 if (!this._dialogState) {
                     return;
                 }
-                const message = error instanceof Error ? error.message : String(error);
-                this._setDialogError(message);
+                // Typing never opens a dialog: the failure floats in the corner.
                 this._hideDialogSuggestions();
+                return showLookupFailure(error.message);
             });
         }, DIALOG_SUGGESTION_DEBOUNCE_MS);
     }
@@ -1826,7 +1817,6 @@ export class OntologyModal extends BaseModal {
             throw new Error('Dialog input value missing');
         }
 
-        this._clearDialogError();
         const trimmed = rawValue.trim();
 
         if (state.mode === 'single-tag') {
@@ -2329,6 +2319,7 @@ export class OntologyModal extends BaseModal {
             autoSubmitOnSuggestion: false,
             showInput: true,
             showDeleteTag: false,
+            isDestructive: false,
         });
         if (next === null) {
             return;
@@ -2410,6 +2401,7 @@ export class OntologyModal extends BaseModal {
             autoSubmitOnSuggestion: false,
             showInput: true,
             showDeleteTag: false,
+            isDestructive: false,
         });
         if (updatedText === null) {
             return;
@@ -2459,6 +2451,7 @@ export class OntologyModal extends BaseModal {
             autoSubmitOnSuggestion: false,
             showInput: true,
             showDeleteTag: true,
+            isDestructive: false,
         });
         if (next === null) {
             return;
@@ -2479,6 +2472,7 @@ export class OntologyModal extends BaseModal {
             title: `Rename '${focusTag}' to '${trimmed}'?`,
             description: 'This renames the tag in ontology rules and note tag bars. This cannot be undone.',
             confirmLabel: 'Rename',
+            isDestructive: false,
         });
         if (!confirmed) {
             return;
@@ -2504,7 +2498,8 @@ export class OntologyModal extends BaseModal {
         const confirmed = await this._openConfirmDialog({
             title: `Delete '${focusTag}'?`,
             description: 'This removes the tag from all note tag bars and deletes every ontology relationship that references it. This cannot be undone.',
-            confirmLabel: 'Delete tag',
+            confirmLabel: 'Delete Tag',
+            isDestructive: true,
         });
         if (!confirmed) {
             return;
@@ -2602,8 +2597,6 @@ export class OntologyModal extends BaseModal {
                 return;
             }
 
-            this.renderError(null);
-
             if (action === 'dialog-cancel') {
                 this._closeDialog(null);
                 return;
@@ -2663,6 +2656,7 @@ export class OntologyModal extends BaseModal {
                     autoSubmitOnSuggestion: false,
                     showInput: true,
                     showDeleteTag: false,
+                    isDestructive: false,
                 });
                 if (newTag === null) {
                     return;
@@ -2728,6 +2722,7 @@ export class OntologyModal extends BaseModal {
                 title,
                 description,
                 confirmLabel,
+                isDestructive: true,
             });
             if (!confirmed) {
                 return;
@@ -2805,6 +2800,7 @@ export class OntologyModal extends BaseModal {
                     autoSubmitOnSuggestion: false,
                     showInput: true,
                     showDeleteTag: false,
+                    isDestructive: false,
                 });
                 if (ruleText === null) {
                     return;
@@ -2830,6 +2826,7 @@ export class OntologyModal extends BaseModal {
                     autoSubmitOnSuggestion: false,
                     showInput: true,
                     showDeleteTag: false,
+                    isDestructive: false,
                 });
                 if (newTag === null) {
                     return;
@@ -2855,6 +2852,7 @@ export class OntologyModal extends BaseModal {
                     autoSubmitOnSuggestion: false,
                     showInput: true,
                     showDeleteTag: false,
+                    isDestructive: false,
                 });
                 if (newTag === null) {
                     return;
@@ -2869,14 +2867,11 @@ export class OntologyModal extends BaseModal {
             }
         })().catch((error) => {
             rethrowUnexpectedError(error);
-            const message = error instanceof Error ? error.message : String(error);
-            console.error('Ontology modal action failed');
-            this.renderError(
-                message +
-                (message.includes('single tag')
-                    ? ' Use the LEFT column for text/regex/AND matchers.'
-                    : '')
-            );
+            const message = error.message;
+            return showErrorDialog([{
+                text: message + (message.includes('single tag') ? ' Use the LEFT column for text/regex/AND matchers.' : ''),
+                fieldId: null,
+            }]);
         });
     }
 

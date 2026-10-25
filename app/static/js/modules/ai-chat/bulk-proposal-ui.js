@@ -45,55 +45,44 @@ export async function proposalRequest(path, payload, signal) {
 
 function openProgress(abortController, chatHost, initialEvent) {
     const isSummary = initialEvent.kind === 'summary_confirmation';
-    const isModal = chatHost === null;
-    const dialog = document.createElement(isModal ? 'dialog' : 'section');
-    dialog.className = isModal
-        ? 'bulk-proposal-dialog'
-        : isSummary ? 'ai-chat-summary-operation' : 'ai-chat-tag-operation';
+    // The operation always runs inside the chat, in the panel the chat opened for it: it is
+    // the conversation's content (docs/ui/modals.md, "Errors and status").
+    if (!(chatHost instanceof HTMLElement)) {
+        throw new Error('A bulk operation needs the chat panel it runs in');
+    }
+    const dialog = document.createElement('section');
+    dialog.className = isSummary ? 'ai-chat-summary-operation' : 'ai-chat-tag-operation';
     const operationLabel = isSummary ? 'Complete scope summary' : 'Tag proposals';
     dialog.setAttribute('aria-label', operationLabel);
     dialog.innerHTML = `<div class="modal-content"><h2>${operationLabel}</h2><progress data-progress hidden aria-label="${isSummary ? 'Summary' : 'Tagging'} progress"></progress><p data-status role="status"></p><p data-elapsed hidden></p><div data-summary-batches class="summary-batch-stack" aria-live="polite" hidden></div><div data-question></div><p data-error role="alert"></p><div class="form-actions"><button type="button" data-cancel class="cancel-btn">Cancel</button><span data-submit></span></div></div>`;
-    if (!isModal) dialog.firstElementChild.className = 'ai-chat-tag-controls';
+    dialog.firstElementChild.className = 'ai-chat-tag-controls';
     const inertSiblings = [];
-    if (isModal) {
-        document.body.append(dialog);
-        ModeContext.pushModal('bulkProposals');
-    } else {
-        chatHost.append(dialog);
-        if (!isSummary) document.body.classList.add('ai-tagging-locked');
-        // Keep the active chat controls usable while freezing the surrounding app.
-        for (let branch = chatHost; branch.parentElement !== null; branch = branch.parentElement) {
-            for (const sibling of branch.parentElement.children) {
-                if (sibling === branch || sibling.inert) continue;
-                if (!isSummary) {
-                    sibling.inert = true;
-                    if (!sibling.closest('#ai-chat-panel')) sibling.classList.add('ai-tagging-locked-region');
-                    inertSiblings.push(sibling);
-                }
+    chatHost.append(dialog);
+    if (!isSummary) document.body.classList.add('ai-tagging-locked');
+    // Keep the active chat controls usable while freezing the surrounding app.
+    for (let branch = chatHost; branch.parentElement !== null; branch = branch.parentElement) {
+        for (const sibling of branch.parentElement.children) {
+            if (sibling === branch || sibling.inert) continue;
+            if (!isSummary) {
+                sibling.inert = true;
+                if (!sibling.closest('#ai-chat-panel')) sibling.classList.add('ai-tagging-locked-region');
+                inertSiblings.push(sibling);
             }
         }
     }
     const cancel = () => {
         if (!dialog.querySelector('[data-cancel]').disabled) abortController.abort();
     };
-    dialog.addEventListener('cancel', (event) => { event.preventDefault(); cancel(); });
-    dialog.addEventListener('click', (event) => {
-        if (!isModal || event.target !== dialog) return;
-        const bounds = dialog.getBoundingClientRect();
-        if (event.clientX < bounds.left || event.clientX > bounds.right
-            || event.clientY < bounds.top || event.clientY > bounds.bottom) cancel();
-    });
     dialog.querySelector('[data-cancel]').addEventListener('click', cancel);
     const clock = createBulkElapsedClock(() => performance.now());
     const timer = setInterval(() => {
         dialog.querySelector('[data-elapsed]').textContent = `Processing time: ${clock.seconds()}s`;
     }, MS_PER_SECOND);
-    if (isModal) dialog.showModal();
     let release;
     const waiting = new Promise((resolve) => { release = resolve; });
     const gate = CommandGate.run('bulkProposals', async () => waiting, { disableWatchdog: true });
     moduleState.active = {
-        dialog, timer, clock, completion: null, release, gate, isModal,
+        dialog, timer, clock, completion: null, release, gate,
         inertSiblings, operation: isSummary ? 'summary' : 'tagging',
     };
 }
@@ -267,16 +256,14 @@ export async function closeBulkProgress() {
         if (completion.changed) await refreshAfterBulkProposalChange();
         return;
     }
-    const { dialog, timer, completion, release, gate, isModal, inertSiblings } = moduleState.active;
+    const { dialog, timer, completion, release, gate, inertSiblings } = moduleState.active;
     clearInterval(timer);
-    if (isModal) dialog.close();
     dialog.remove();
-    if (isModal) ModeContext.removeModal('bulkProposals');
     for (const sibling of inertSiblings) {
         sibling.inert = false;
         sibling.classList.remove('ai-tagging-locked-region');
     }
-    if (!isModal) document.body.classList.remove('ai-tagging-locked');
+    document.body.classList.remove('ai-tagging-locked');
     moduleState.active = null;
     release();
     await gate;

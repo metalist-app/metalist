@@ -43,7 +43,7 @@
   - Saved-file image actions are not available from the raw token; they are available once the token renders as an image preview in view mode.
 
 ## File Attachment Workflow
-- `Attach file…` in the command palette opens the native file picker.
+- `Attach File…` in the command palette opens the native file picker.
 - If you are editing a note, the selected file is uploaded and its `![[UUID]]` token is inserted into that note.
 - If no note is active, the app creates a new note first, then inserts the file reference there.
 - Drag/drop follows the same attachment path for non-image files.
@@ -54,7 +54,7 @@
   - Markdown children get `@markdown`, CSV children `@csv`, JSON children `@json`, text children no render tag; a child also gets the tags a new child gets from the current search.
   - The child starts expanded, so the dropped text is visible; collapse the pill note's children to hide it.
   - The child is an ordinary note: editing, moving or deleting it never changes the stored file, and the pill still downloads the original.
-  - Files over 200 KB or not in UTF-8 keep only their pill; an info banner says why. Picking a file with `Attach file…` adds no child.
+  - Files over 200 KB or not in UTF-8 keep only their pill; an info banner says why. Picking a file with `Attach File…` adds no child.
   - The text is stored line for line as escaped plain text (`<br>` between lines), never read as HTML.
   - Implementation: `app/services/file_text_preview.py`, `POST /api2/notes/file-preview-child/{note_id}` (`app/usecases/create_file_preview_child.py`), `dropped-file-preview-service.js`. Tests: `tests/unit/test_file_text_preview.py`, `BROWSER_TEST_SUITE=file-drop-previews npm run test:browser`.
 - Named image files dropped or pasted into the editor prompt for one of two paths:
@@ -63,7 +63,7 @@
 - Pasting a named image while no note is active uses the same prompt and creates the destination note at the top.
 - Clipboard image-pixel paste with no meaningful source filename keeps the direct inline embed path by default.
 - The attach flow saves the note immediately after insertion so the new reference survives refresh/reload.
-- `Add Excalidraw diagram` attaches a new, empty `.excalidraw` file the same way and opens the diagram editor.
+- `Add Excalidraw Diagram` attaches a new, empty `.excalidraw` file the same way and opens the diagram editor.
 - Files live in a sibling SQLite database derived from the main DB path (`*.files.db`).
 - Attachments are immutable except Excalidraw diagrams, which the diagram editor replaces in place under a per-file content revision (see `docs/ui/excalidraw.md`).
 - Startup only loads the file UUID registry into memory; file metadata/blob rows are decrypted on demand for rendering/download.
@@ -72,7 +72,7 @@
 - Missing or deleted UUID: render a "missing reference" marker (subtly red-tinted).
 - Circular chain (A -> B -> A): render a "circular reference" marker and stop recursion at that point.
 - Removing every note reference to a file does not delete the file automatically.
-- `Trim unused files` is the explicit cleanup path for unreferenced file rows.
+- `Trim Unused Files…` is the explicit cleanup path for unreferenced file rows.
 
 ## Keyboard Workflow
 - `Cmd/Ctrl + C` with no text selection copies a note (server clipboard + system clipboard payload).

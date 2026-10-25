@@ -1,6 +1,6 @@
 # MetaList privacy and security controls
 
-Cloud AI privacy opens the privacy section of AI agent settings: **Never send
+Cloud AI Privacy… opens the privacy section of AI Agent Settings…: **Never send
 notes with (blacklist)** and, behind its checkbox, **Only send notes with
 (whitelist)**. Each takes entries one at a time as chips: a tag as typed, or "a
 phrase" in quotes; a pasted list becomes one chip per line.
@@ -32,7 +32,7 @@ private, tell the user to press Clear Chat, which removes that memory.
 
 OpenAI credentials persist encrypted when the vault is password-protected.
 For a plaintext vault they are held only in server session memory. Do not
-ask the user to paste an API key or password into chat: open AI agent settings
+ask the user to paste an API key or password into chat: open AI Agent Settings…
 or the appropriate password form. OpenAI requests use store:false; do not claim
 this guarantees zero provider retention or overrides the provider's policies.
 
@@ -143,7 +143,7 @@ password in a vault with no password opens the Add password form. Opening
 is not submitting. An encryption explanation alone does not request a form or a
 password change. Never ask for an actual password or API key in chat.
 
-Session idle timeout controls inactivity before reauthentication and can be
+Session Idle Timeout… controls inactivity before reauthentication and can be
 disabled. Explicit logout clears session AI state. The random password
 generator is a local dialog; do not invent or expose actual saved passwords.
 

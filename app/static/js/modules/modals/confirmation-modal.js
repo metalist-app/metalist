@@ -1,5 +1,6 @@
 import { ApplicationState } from '../application-state.js';
 import { BaseModal } from './base-modal.js';
+import { actionRowHtml } from './action-row.js';
 import { ModeContextInstance as ModeContext } from '../mode-manager/mode-context.js';
 import { escapeHtml } from '../html-escape.js';
 
@@ -98,10 +99,6 @@ export class ConfirmationModal extends BaseModal {
         if (typeof state.isDangerous !== 'boolean') {
             throw new Error('Confirmation modal state requires isDangerous');
         }
-        let confirmClass = 'primary-btn';
-        if (state.isDangerous) {
-            confirmClass = 'danger-btn';
-        }
         modalElement.innerHTML = `
             <div class="modal-content alphabetize-root-notes-modal-content">
                 <div class="prioritize-modal-header">
@@ -111,10 +108,15 @@ export class ConfirmationModal extends BaseModal {
                 <div class="alphabetize-root-notes-warning">
                     <p>${escapeHtml(state.description)}</p>
                 </div>
-                <div class="form-actions alphabetize-root-notes-actions">
-                    <button type="button" class="secondary-btn" id="confirmation-cancel-btn">Cancel</button>
-                    <button type="button" class="${confirmClass}" id="confirmation-submit-btn" data-modal-enter-action>${escapeHtml(state.confirmLabel)}</button>
-                </div>
+                ${actionRowHtml({
+                    alternative: null,
+                    cancel: { id: 'confirmation-cancel-btn', label: 'Cancel', disabled: false, attributes: [] },
+                    main: {
+                        id: 'confirmation-submit-btn', label: state.confirmLabel, disabled: false, attributes: [],
+                        isDestructive: state.isDangerous, isEnterAction: !state.isDangerous, type: 'button',
+                    },
+                    rowClass: 'alphabetize-root-notes-actions',
+                })}
             </div>
         `;
         const cancelButton = document.getElementById('confirmation-cancel-btn');

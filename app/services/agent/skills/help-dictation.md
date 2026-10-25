@@ -52,7 +52,7 @@ fixed rules, no AI, and it only reacts to pasting: typed text is never changed.
   like an acronym (`GPT`). Each word is its own tag unless the words together match
   one of the user's tags; a new multi-word tag has to be typed.
 - **Other one-tag fields** (Edit Tag Relationships' search box, Add tag, Implied
-  tag, Synonym tag, Rename tag; Prioritize Tag; Accept or reject AI-proposed tags' tag filter):
+  tag, Synonym tag, Rename tag; Prioritize Tag; Accept or Reject AI-Proposed Tags…' tag filter):
   the whole paste becomes one tag, "Machine learning" gives `machine-learning`.
 - **Tag relationship conditions:** no dictation cleanup: a paste goes in exactly as
   copied, so several tags, quoted text, `/regexes/` and tags not used yet all stay.
@@ -77,7 +77,7 @@ After a paste into a note, one undo removes both the pasted text and the added t
 
 ## Dictation Settings
 
-The command palette's **Dictation Settings** dialog sets four phrases, each words of
+The command palette's **Dictation Settings…** dialog sets four phrases, each words of
 letters (2 to 64 characters): the phrase that starts tags in a note ("start tags"),
 the phrases that start and end a quote ("quote", "end quote"), and the phrase that
 excludes the next search term ("minus"). One unusual word such as "armadillo" also

@@ -20,7 +20,7 @@ function chatToggle(isAiChatVisible, toggles) {
             areTabsVisible: false, isAiChatVisible, areNoteTagsVisible: false,
         },
         {
-            onAddNoteAtTop: noop, onUndo: noop, onRedo: noop, onFullyExpandAll: noop, onFullyCollapseAll: noop,
+            onAddNoteAtTop: noop, onUndo: noop, onRedo: noop, onExpandAll: noop, onCollapseAll: noop, onFullyExpandAll: noop, onFullyCollapseAll: noop,
             onSetUntaggedView: noop, onSetSortMode: noop, onToggleTabs: noop, onToggleNoteTags: noop,
             onSetDateRangeField: noop, onSetDateRangePreset: noop, onOpenCustomDateRange: noop, onSetFileFilter: noop,
             onToggleAiChat: (nextValue) => toggles.push(nextValue),

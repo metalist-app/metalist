@@ -206,10 +206,13 @@ async function editingCases(page) {
   await assertSavedAfterReload(page, 'editing, up arrow', 'Tall 20 line 3:');
 }
 
-// Go to Bottom in the background menu does what the down arrow does.
+// Go to › Bottom in the background menu does what the down arrow does. From the middle of
+// the list, so Go to holds both Top and Bottom.
 async function menuGoToBottomCase(page) {
   await search(page, '');
   await reload(page);
+  await page.evaluate(() => window.scrollTo(0, (document.documentElement.scrollHeight - window.innerHeight) / 2));
+  await idle(page);
   // The empty lane right of the notes column.
   const point = await page.evaluate(() => {
     const column = document.getElementById('notes-container').getBoundingClientRect();
@@ -217,11 +220,14 @@ async function menuGoToBottomCase(page) {
   });
   await page.mouse.click(point.x, point.y, {button: 'right'});
   await page.waitForSelector('#context-menu.is-visible');
-  const item = await page.evaluateHandle(() => [...document.querySelectorAll('#context-menu .context-menu-item')]  // shockharness: ignore[DEF003] reason="no matching menu item is null, as the assertion after it expects"
-    .find(node => node.textContent.trim() === 'Go to Bottom') || null);
-  const labels = await page.evaluate(() => [...document.querySelectorAll('#context-menu .context-menu-item')].map(node => node.textContent.trim()));
-  assert.notEqual(item.asElement(), null, `menu: the background menu should offer Go to Bottom, got ${labels.join(' | ')}`);
-  await item.asElement().click();
+  for (const [menu, label] of [['#context-menu', 'Go to'], ['#context-submenu', 'Bottom']]) {
+    const labels = await page.$$eval(`${menu} .context-menu-item-label`, nodes => nodes.map(node => node.textContent.trim()));
+    assert.ok(labels.includes(label), `menu: the background menu should offer ${label}, got ${labels.join(' | ')}`);
+    const item = await page.evaluateHandle(({menu, label}) => [...document.querySelectorAll(`${menu} .context-menu-item`)]
+      .find(node => node.querySelector('.context-menu-item-label').textContent.trim() === label), {menu, label});
+    await item.asElement().click();
+    await pause(SETTLE_MS);
+  }
   await idle(page);
   await pause(SETTLE_MS);
   assertAtBottom('menu Go to Bottom', await pageState(page), 'Short 3');

@@ -39,18 +39,19 @@ export function showConfirmationCard({ event, host, signal }) {
     }
     const error = document.createElement('p');
     error.setAttribute('role', 'alert');
+    // Cancel, then the main action rightmost (docs/ui/modals.md, "Dialog and menu conventions").
     const yes = document.createElement('button');
     yes.type = 'button';
-    yes.textContent = 'Yes';
+    yes.textContent = 'Apply';
     yes.dataset.answer = 'yes';
     const no = document.createElement('button');
     no.type = 'button';
     no.className = 'secondary-btn';
-    no.textContent = 'No';
+    no.textContent = 'Cancel';
     no.dataset.answer = 'no';
     const actions = document.createElement('div');
     actions.className = 'form-actions';
-    actions.append(yes, no);
+    actions.append(no, yes);
     card.append(heading, label);
     if (question.items.length > 0) card.append(items);
     card.append(actions, error);

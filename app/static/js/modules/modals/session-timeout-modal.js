@@ -1,11 +1,16 @@
 import { parseDecimalInteger } from '../decimal-integer.js';
 import { HTTP_STATUS } from '../http-status.js';
 import { ApplicationState } from '../application-state.js';
-import { HttpRequestError, rethrowUnexpectedError } from '../expected-errors.js';
+import { FieldInputRejected, HttpRequestError, rethrowUnexpectedError } from '../expected-errors.js';
 import { BaseModal } from './base-modal.js';
 import { CONFIG } from '../config.js';
 import { buildSessionHeaders } from '../session-auth.js';
 import { escapeHtml } from '../html-escape.js';
+import { actionRowHtml } from './action-row.js';
+import { failureFieldId, showErrorDialogFor } from './error-dialog.js';
+import { FloatingMessages } from '../floating-messages.js';
+
+const PROGRESS_CARD_KEY = 'idle-timeout-progress';
 
 
 const MIN_IDLE_TIMEOUT_MINUTES = 1;
@@ -39,7 +44,6 @@ export class SessionTimeoutModal extends BaseModal {
             saving: false,
             timeoutDisabled: false,
             idleTimeoutMinutesText: '',
-            error: '',
             statusMessage: '',
         };
     }
@@ -59,6 +63,15 @@ export class SessionTimeoutModal extends BaseModal {
 
     async onOpen() {
         await this.loadSettings();
+    }
+
+    onClose() {
+        FloatingMessages.end(PROGRESS_CARD_KEY);
+    }
+
+    // While the timeout is saved the dialog stays open (its Cancel is dimmed too).
+    canRequestClose() {
+        return this.getModalState().saving !== true;
     }
 
     onKeyDown(event) {
@@ -90,7 +103,6 @@ export class SessionTimeoutModal extends BaseModal {
         const idleTimeoutMinutesText = typeof state.idleTimeoutMinutesText === 'string'
             ? state.idleTimeoutMinutesText
             : '';
-        const error = typeof state.error === 'string' ? state.error : '';
         let statusMessage = typeof state.statusMessage === 'string' ? state.statusMessage : '';
         if (statusMessage.length === 0 && loading) {
             statusMessage = 'Loading idle timeout...';
@@ -133,13 +145,18 @@ export class SessionTimeoutModal extends BaseModal {
 
                 ${timeoutControlsHtml}
 
-                <div class="form-actions">
-                    <button type="button" class="primary-btn" id="session-timeout-save-btn" ${loading || saving ? 'disabled' : ''}>${saving ? 'Saving...' : 'Save'}</button>
-                    <button type="button" class="secondary-btn" id="session-timeout-cancel-btn" ${saving ? 'disabled' : ''}>Cancel</button>
-                </div>
+                ${actionRowHtml({
+                    alternative: null,
+                    cancel: { id: 'session-timeout-cancel-btn', label: 'Cancel', disabled: saving, attributes: [] },
+                    main: {
+                        id: 'session-timeout-save-btn', label: 'Save',
+                        disabled: [loading, saving].includes(true), attributes: [],
+                        isDestructive: false, isEnterAction: false, type: 'button',
+                    },
+                    rowClass: '',
+                })}
 
                 <p id="session-timeout-status">${escapeHtml(statusMessage)}</p>
-                <p id="session-timeout-error" class="error-message">${escapeHtml(error)}</p>
             </div>
         `;
 
@@ -159,7 +176,6 @@ export class SessionTimeoutModal extends BaseModal {
             timeoutInput.oninput = () => {
                 this.updateModalState({
                     idleTimeoutMinutesText: timeoutInput.value,
-                    error: '',
                     statusMessage: '',
                 });
             };
@@ -170,7 +186,6 @@ export class SessionTimeoutModal extends BaseModal {
             disabledCheckbox.onchange = () => {
                 this.updateModalState({
                     timeoutDisabled: disabledCheckbox.checked,
-                    error: '',
                     statusMessage: '',
                 });
                 this.renderModalContent();
@@ -225,7 +240,6 @@ export class SessionTimeoutModal extends BaseModal {
         this.updateModalState({
             loading: true,
             saving: false,
-            error: '',
             statusMessage: '',
         });
         this.renderModalContent();
@@ -248,20 +262,18 @@ export class SessionTimeoutModal extends BaseModal {
                 loading: false,
                 timeoutDisabled,
                 idleTimeoutMinutesText: timeoutDisabled ? '30' : String(payload.idle_timeout_minutes),
-                error: '',
                 statusMessage: '',
             });
             this.renderModalContent();
-        })().catch((error) => {
+        })().catch(async (error) => {
             rethrowUnexpectedError(error);
             if (!this.isCurrentOpen(generation)) return;
-            const message = error instanceof Error ? error.message : String(error);
-            this.updateModalState({
-                loading: false,
-                error: message,
-                statusMessage: '',
-            });
-            this.renderModalContent();
+            // Nothing to change without the setting: the error dialog says why, and closing
+            // it closes this one.
+            await showErrorDialogFor(error, null);
+            if (this.isCurrentOpen(generation)) {
+                this.close();
+            }
         });
     }
 
@@ -274,19 +286,20 @@ export class SessionTimeoutModal extends BaseModal {
             ? state.idleTimeoutMinutesText.trim()
             : '';
         if (rawText.length === 0) {
-            throw new Error('Idle timeout is required');
+            throw new FieldInputRejected('Enter the idle timeout in minutes.', 'session-timeout-minutes');
         }
         if (!/^[0-9]+$/.test(rawText)) {
-            throw new Error('Idle timeout must be a whole number of minutes');
+            throw new FieldInputRejected('The idle timeout must be a whole number of minutes.', 'session-timeout-minutes');
         }
 
         const timeoutMinutes = parseDecimalInteger(rawText);
         if (!Number.isInteger(timeoutMinutes)) {
-            throw new Error('Idle timeout must be a whole number of minutes');
+            throw new FieldInputRejected('The idle timeout must be a whole number of minutes.', 'session-timeout-minutes');
         }
         if (timeoutMinutes < MIN_IDLE_TIMEOUT_MINUTES || timeoutMinutes > MAX_IDLE_TIMEOUT_MINUTES) {
-            throw new Error(
-                `Idle timeout must be between ${MIN_IDLE_TIMEOUT_MINUTES} and ${MAX_IDLE_TIMEOUT_MINUTES} minutes`
+            throw new FieldInputRejected(
+                `The idle timeout must be between ${MIN_IDLE_TIMEOUT_MINUTES} and ${MAX_IDLE_TIMEOUT_MINUTES} minutes.`,
+                'session-timeout-minutes',
             );
         }
         return timeoutMinutes;
@@ -300,12 +313,9 @@ export class SessionTimeoutModal extends BaseModal {
 
         await (async () => {
             const timeoutMinutes = this._validateTimeoutMinutes();
-            this.updateModalState({
-                saving: true,
-                error: '',
-                statusMessage: 'Saving idle timeout...',
-            });
+            this.updateModalState({ saving: true });
             this.renderModalContent();
+            FloatingMessages.showProgress(PROGRESS_CARD_KEY, 'Saving idle timeout…');
 
             const payload = await this._authRequest(
                 CONFIG.API.AUTH.SETTINGS.SESSION_TIMEOUT,
@@ -322,13 +332,12 @@ export class SessionTimeoutModal extends BaseModal {
             this.close();
         })().catch((error) => {
             rethrowUnexpectedError(error);
-            const message = error instanceof Error ? error.message : String(error);
-            this.updateModalState({
-                saving: false,
-                error: message,
-                statusMessage: '',
-            });
-            this.renderModalContent();
+            FloatingMessages.end(PROGRESS_CARD_KEY);
+            if (this.getModalState().saving) {
+                this.updateModalState({ saving: false });
+                this.renderModalContent();
+            }
+            return showErrorDialogFor(error, failureFieldId(error));
         });
     }
 }

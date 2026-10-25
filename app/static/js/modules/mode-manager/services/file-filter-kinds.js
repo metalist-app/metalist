@@ -8,10 +8,10 @@ export const FILE_FILTER_KINDS = Object.freeze({
     PDF: 'pdf',
     MARKDOWN: 'markdown',
 });
-// The kinds the Notes with files menus offer after All notes, in order, with their labels.
+// The kinds the Notes with Files menus offer after All Notes, in order, with their labels.
 export const FILE_FILTER_CHOICES = Object.freeze([
-    [FILE_FILTER_KINDS.ANY, 'Any file'],
+    [FILE_FILTER_KINDS.ANY, 'Any File'],
     [FILE_FILTER_KINDS.IMAGE, 'Images'],
     [FILE_FILTER_KINDS.PDF, 'PDFs'],
-    [FILE_FILTER_KINDS.MARKDOWN, 'Markdown files'],
+    [FILE_FILTER_KINDS.MARKDOWN, 'Markdown Files'],
 ]);

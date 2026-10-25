@@ -1,7 +1,8 @@
 import { ApplicationState } from '../application-state.js';
 import { BaseModal } from './base-modal.js';
 import { isValidDictationTagPhrase } from '../mode-manager/services/dictation-note-paste.js';
-import { escapeHtml } from '../html-escape.js';
+import { showErrorDialog } from './error-dialog.js';
+import { actionRowHtml } from './action-row.js';
 
 // The phrases, in the order shown: the one that starts tags in a note, and the
 // two around a quoted phrase (docs/ui/dictation-paste.md).
@@ -30,7 +31,7 @@ export class DictationSettingsModal extends BaseModal {
     }
 
     getInitialModalState() {
-        return { phrases: this._readPhrases(), error: '', saving: false };
+        return { phrases: this._readPhrases(), saving: false };
     }
 
     showModalElement() {
@@ -59,8 +60,6 @@ export class DictationSettingsModal extends BaseModal {
         const state = this.getModalState();
         let disabled = '';
         if (state.saving === true) disabled = ' disabled';
-        let errorHtml = '';
-        if (state.error !== '') errorHtml = `<p class="dictation-settings-error" role="alert">${escapeHtml(state.error)}</p>`;
         const fields = FIELDS.map((field) => `
                 <label class="dictation-settings-field" for="${field.id}">${field.label}</label>
                 <input type="text" id="${field.id}" spellcheck="false" autocomplete="off"${disabled}>`).join('');
@@ -73,10 +72,15 @@ export class DictationSettingsModal extends BaseModal {
                     relationship conditions) the quote phrases mark a text search, and the exclusion phrase
                     excludes the next term: "neural network minus python".</p>
                 ${fields}
-                ${errorHtml}
-                <div class="form-actions">
-                    <button type="button" class="save-btn" data-dictation-save data-modal-enter-action${disabled}>Save</button>
-                </div>
+                ${actionRowHtml({
+                    alternative: null,
+                    cancel: null,
+                    main: {
+                        id: null, label: 'Save', disabled: state.saving === true, attributes: ['data-dictation-save'],
+                        isDestructive: false, isEnterAction: true, type: 'button',
+                    },
+                    rowClass: '',
+                })}
             </div>
         `;
         // Set as properties, never as markup: a rejected entry may hold any character.
@@ -102,29 +106,30 @@ export class DictationSettingsModal extends BaseModal {
         return phrases;
     }
 
-    _validationError(phrases) {
-        for (const field of FIELDS) {
-            if (!isValidDictationTagPhrase(phrases[field.key])) {
-                return `${field.label}: use words of letters only (2 to 64 characters), such as "start tags" or "armadillo".`;
-            }
-        }
+    // Every problem, each with its field.
+    _problems(phrases) {
+        const problems = FIELDS
+            .filter((field) => !isValidDictationTagPhrase(phrases[field.key]))
+            .map((field) => ({
+                text: `${field.label}: use words of letters only (2 to 64 characters), such as "start tags" or "armadillo".`,
+                fieldId: field.id,
+            }));
         const mustDiffer = [phrases.quoteOpen, phrases.quoteClose, phrases.negate];
         const distinct = new Set(mustDiffer.map((phrase) => phrase.toLowerCase()));
         if (distinct.size !== mustDiffer.length) {
-            return 'The quote and exclusion phrases must all differ.';
+            problems.push({ text: 'The quote and exclusion phrases must all differ.', fieldId: null });
         }
-        return '';
+        return problems;
     }
 
     async _handleSave() {
         const phrases = this._readFields();
-        const error = this._validationError(phrases);
-        if (error !== '') {
-            this.updateModalState({ phrases, error });
-            this.renderModalContent();
+        const problems = this._problems(phrases);
+        if (problems.length > 0) {
+            await showErrorDialog(problems);
             return;
         }
-        this.updateModalState({ phrases, error: '', saving: true });
+        this.updateModalState({ phrases, saving: true });
         this.renderModalContent();
         await this._savePhrases(phrases);
         this.close();

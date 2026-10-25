@@ -1,5 +1,6 @@
 import {
     baseRootSortMode,
+    isRootReorderLocked,
     isRootSortModeReversed,
     normalizeRootSortMode,
     ROOT_SORT_MODES,
@@ -11,6 +12,33 @@ import {
     DATE_RANGE_PRESETS,
 } from '../mode-manager/services/date-range-kinds.js';
 import { FILE_FILTER_CHOICES, FILE_FILTER_KINDS } from '../mode-manager/services/file-filter-kinds.js';
+
+// Menu rules (docs/ui/modals.md, "Dialog and menu conventions", rule 8): a trailing "…"
+// means a dialog asks for more before anything happens; destructive items come last, red
+// (danger); items that cannot apply are left out; labels are in Title Case.
+
+// The current choice in a submenu is ticked and can be picked like any other; picking it
+// changes nothing (it is already in effect).
+function keepCurrentChoice() {}
+
+function choiceItem({ id, label, icon, isCurrent, onChoose, separated }) {
+    const item = { id, label, checked: isCurrent, enabled: true, onSelect: isCurrent ? keepCurrentChoice : onChoose };
+    if (icon !== null) {
+        item.icon = icon;
+    }
+    if (separated) {
+        item.separated = true;
+    }
+    return item;
+}
+
+// A menu never opens with a separator line above its first item.
+function withoutLeadingSeparator(items) {
+    if (items.length === 0 || items[0].separated !== true) {
+        return items;
+    }
+    return [{ ...items[0], separated: false }, ...items.slice(1)];
+}
 
 function buildTagContextItems(context, handlers) {
     if (!context || typeof context !== 'object') {
@@ -35,7 +63,7 @@ function buildTagContextItems(context, handlers) {
 
     const editTagRelationships = {
         id: 'edit-tag-relationships',
-        label: 'Edit Tag Relationships',
+        label: 'Edit Tag Relationships…',
         icon: 'link',
         enabled: true,
         onSelect: () => onEditTagRelationships(tag),
@@ -427,8 +455,8 @@ function buildNoteContextItems(context, handlers) {
         icon: 'download',
         enabled: true,
         submenu: [
-            { id: 'export-note-html', label: 'Note as HTML', icon: 'download', enabled: true, onSelect: () => onExportNoteHtml(noteId) },
-            { id: 'export-view-html', label: 'View as HTML', icon: 'download', enabled: true, onSelect: () => onExportViewHtml() },
+            { id: 'export-note-html', label: 'Note as HTML…', icon: 'download', enabled: true, onSelect: () => onExportNoteHtml(noteId) },
+            { id: 'export-view-html', label: 'View as HTML…', icon: 'download', enabled: true, onSelect: () => onExportViewHtml() },
         ],
     });
     // Print: the browser's print dialog (Save as PDF too), after a title step.
@@ -441,8 +469,8 @@ function buildNoteContextItems(context, handlers) {
         icon: 'print',
         enabled: true,
         submenu: [
-            { id: 'print-note', label: 'Note', icon: 'print', enabled: true, onSelect: () => handlers.onPrintNote(noteId) },
-            { id: 'print-view', label: 'View', icon: 'print', enabled: true, onSelect: () => handlers.onPrintView() },
+            { id: 'print-note', label: 'Note…', icon: 'print', enabled: true, onSelect: () => handlers.onPrintNote(noteId) },
+            { id: 'print-view', label: 'View…', icon: 'print', enabled: true, onSelect: () => handlers.onPrintView() },
         ],
     });
 
@@ -478,6 +506,7 @@ function buildNoteContextItems(context, handlers) {
         icon: 'trash',
         enabled: true,
         separated: true,
+        danger: true,
         shortcut: commandKey('Backspace'),
         onSelect: () => onDeleteNote(noteId),
     });
@@ -664,10 +693,10 @@ function buildSortModeItem(sortMode, onSetSortMode) {
     }
     const options = [
         [ROOT_SORT_MODES.NORMAL, 'Normal', 'manual_order'],
-        [ROOT_SORT_MODES.CREATED, 'Datetime created', 'calendar'],
-        [ROOT_SORT_MODES.UPDATED, 'Datetime last updated', 'clock'],
+        [ROOT_SORT_MODES.CREATED, 'Datetime Created', 'calendar'],
+        [ROOT_SORT_MODES.UPDATED, 'Datetime Last Updated', 'clock'],
         [ROOT_SORT_MODES.ALPHABETICAL, 'Alphabetical', 'alphabetical'],
-        [ROOT_SORT_MODES.CONTENT_VOLUME, 'Content volume', 'volume'],
+        [ROOT_SORT_MODES.CONTENT_VOLUME, 'Content Volume', 'volume'],
     ];
     return {
         id: 'sort-by',
@@ -675,13 +704,9 @@ function buildSortModeItem(sortMode, onSetSortMode) {
         icon: 'sort',
         enabled: true,
         submenu: [
-            ...options.map(([mode, label, icon]) => ({
-                id: `sort-by-${mode}`,
-                label,
-                icon,
-                checked: mode === currentMode,
-                enabled: mode !== currentMode,
-                onSelect: () => onSetSortMode(rootSortModeWithDirection(mode, isReversed)),
+            ...options.map(([mode, label, icon]) => choiceItem({
+                id: `sort-by-${mode}`, label, icon, isCurrent: mode === currentMode, separated: false,
+                onChoose: () => onSetSortMode(rootSortModeWithDirection(mode, isReversed)),
             })),
             {
                 id: 'sort-by-reverse',
@@ -710,28 +735,21 @@ function buildDateRangeItem(context, handlers) {
     const onSetDateRangeField = requireViewHandler(handlers, 'onSetDateRangeField');
     const onSetDateRangePreset = requireViewHandler(handlers, 'onSetDateRangePreset');
     const onOpenCustomDateRange = requireViewHandler(handlers, 'onOpenCustomDateRange');
-    const fields = [[DATE_RANGE_FIELDS.UPDATED, 'Last updated'], [DATE_RANGE_FIELDS.CREATED, 'Created']];
-    const ranges = [[DATE_RANGE_KINDS.NONE, 'Any date'], ...DATE_RANGE_PRESETS];
+    const fields = [[DATE_RANGE_FIELDS.UPDATED, 'Last Updated'], [DATE_RANGE_FIELDS.CREATED, 'Created']];
+    const ranges = [[DATE_RANGE_KINDS.NONE, 'Any Date'], ...DATE_RANGE_PRESETS];
     return {
         id: 'date-range',
-        label: 'Date range',
+        label: 'Date Range',
         icon: 'date_range',
         enabled: true,
         submenu: [
-            ...fields.map(([value, label]) => ({
-                id: `date-range-field-${value}`,
-                label,
-                checked: value === field,
-                enabled: value !== field,
-                onSelect: () => onSetDateRangeField(value),
+            ...fields.map(([value, label]) => choiceItem({
+                id: `date-range-field-${value}`, label, icon: null, isCurrent: value === field, separated: false,
+                onChoose: () => onSetDateRangeField(value),
             })),
-            ...ranges.map(([value, label], index) => ({
-                id: `date-range-${value}`,
-                label,
-                separated: index === 0,
-                checked: value === rangeKind,
-                enabled: value !== rangeKind,
-                onSelect: () => onSetDateRangePreset(value),
+            ...ranges.map(([value, label], index) => choiceItem({
+                id: `date-range-${value}`, label, icon: null, isCurrent: value === rangeKind, separated: index === 0,
+                onChoose: () => onSetDateRangePreset(value),
             })),
             {
                 id: 'date-range-custom',
@@ -752,19 +770,15 @@ function buildFileFilterItem(context, handlers) {
         throw new Error('View context missing fileFilterKind');
     }
     const onSetFileFilter = requireViewHandler(handlers, 'onSetFileFilter');
-    const choices = [[FILE_FILTER_KINDS.NONE, 'All notes'], ...FILE_FILTER_CHOICES];
+    const choices = [[FILE_FILTER_KINDS.NONE, 'All Notes'], ...FILE_FILTER_CHOICES];
     return {
         id: 'file-filter',
-        label: 'Notes with files',
+        label: 'Notes with Files',
         icon: 'attachment',
         enabled: true,
-        submenu: choices.map(([value, label], index) => ({
-            id: `file-filter-${value}`,
-            label,
-            separated: index === 1,
-            checked: value === kind,
-            enabled: value !== kind,
-            onSelect: () => onSetFileFilter(value),
+        submenu: choices.map(([value, label], index) => choiceItem({
+            id: `file-filter-${value}`, label, icon: null, isCurrent: value === kind, separated: index === 1,
+            onChoose: () => onSetFileFilter(value),
         })),
     };
 }
@@ -814,8 +828,14 @@ function buildViewModeItem(isUntaggedView, onSetUntaggedView) {
     return {
         id: 'view', label: 'View', icon: 'view', enabled: true,
         submenu: [
-            { id: 'view-all-notes', label: 'All notes', checked: !isUntaggedView, enabled: isUntaggedView, onSelect: () => onSetUntaggedView(false) },
-            { id: 'view-untagged-notes', label: 'Untagged notes', checked: isUntaggedView, enabled: !isUntaggedView, onSelect: () => onSetUntaggedView(true) },
+            choiceItem({
+                id: 'view-all-notes', label: 'All Notes', icon: null, isCurrent: !isUntaggedView, separated: false,
+                onChoose: () => onSetUntaggedView(false),
+            }),
+            choiceItem({
+                id: 'view-untagged-notes', label: 'Untagged Notes', icon: null, isCurrent: isUntaggedView, separated: false,
+                onChoose: () => onSetUntaggedView(true),
+            }),
         ],
     };
 }
@@ -854,25 +874,33 @@ function buildViewContextItems(context, handlers) {
     const commandKey = (key) => formatMenuShortcut({ isMac, mod: true, shift: false, key });
     const commandShiftKey = (key) => formatMenuShortcut({ isMac, mod: true, shift: true, key });
 
+    // Related actions sit in submenus so the menu fits a window 800 px tall; a group with
+    // one action that applies shows that action in place (pushGroup).
     const items = [];
+    // A sorted tab places root notes by its order, so nothing is added at the top there
+    // (the keys still say why, root-note-creation-service.js).
+    const canAddAtTop = !isRootReorderLocked(context.sortMode);
     if (!isEditing) {
-        const onAddNoteAtTop = requireViewHandler(handlers, 'onAddNoteAtTop');
-        items.push({
-            id: 'add-note-at-top', label: 'Add Note at Top', icon: 'add_top', enabled: true,
-            shortcut: plainKey('Enter'), onSelect: () => onAddNoteAtTop(),
-        });
-        if (canPasteNoteAtTop) {
+        const addEntries = [];
+        if (canAddAtTop) {
+            const onAddNoteAtTop = requireViewHandler(handlers, 'onAddNoteAtTop');
+            addEntries.push({
+                id: 'add-note-at-top', label: 'Add Note at Top', icon: 'add_top', enabled: true,
+                shortcut: plainKey('Enter'), onSelect: () => onAddNoteAtTop(),
+            });
+        }
+        if (canPasteNoteAtTop && canAddAtTop) {
             const onPasteNoteAtTop = requireViewHandler(handlers, 'onPasteNoteAtTop');
-            items.push({
+            const onPasteReferenceAtTop = requireViewHandler(handlers, 'onPasteReferenceAtTop');
+            addEntries.push({
                 id: 'paste-note-at-top', label: 'Paste Note at Top', icon: 'paste', enabled: true,
                 shortcut: commandKey('V'), onSelect: () => onPasteNoteAtTop(),
-            });
-            const onPasteReferenceAtTop = requireViewHandler(handlers, 'onPasteReferenceAtTop');
-            items.push({
+            }, {
                 id: 'paste-reference-at-top', label: 'Paste Note as Reference at Top', icon: 'note_reference',
                 enabled: true, shortcut: commandKey('R'), onSelect: () => onPasteReferenceAtTop(),
             });
         }
+        pushGroup(items, { id: 'add', label: 'Add', icon: 'add_top', separated: false }, addEntries);
         // While a note is edited, its own editor undoes typing (⌘Z).
         const onUndo = requireViewHandler(handlers, 'onUndo');
         const onRedo = requireViewHandler(handlers, 'onRedo');
@@ -887,31 +915,34 @@ function buildViewContextItems(context, handlers) {
             },
         );
     }
-    const goToItems = [];
+    const goToEntries = [];
     if (canGoToTop) {
         const onGoToTop = requireViewHandler(handlers, 'onGoToTop');
-        goToItems.push({ id: 'go-to-top', label: 'Go to Top', icon: 'arrow_top', enabled: true, onSelect: () => onGoToTop() });
+        goToEntries.push({ id: 'go-to-top', label: 'Top', inlineLabel: 'Go to Top', icon: 'arrow_top', enabled: true, onSelect: () => onGoToTop() });
     }
     if (canGoToBottom) {
         const onGoToBottom = requireViewHandler(handlers, 'onGoToBottom');
-        goToItems.push({ id: 'go-to-bottom', label: 'Go to Bottom', icon: 'arrow_bottom', enabled: true, onSelect: () => onGoToBottom() });
+        goToEntries.push({ id: 'go-to-bottom', label: 'Bottom', inlineLabel: 'Go to Bottom', icon: 'arrow_bottom', enabled: true, onSelect: () => onGoToBottom() });
     }
-    if (goToItems.length > 0) {
-        goToItems[0].separated = true;
-        items.push(...goToItems);
-    }
+    pushGroup(items, { id: 'go-to', label: 'Go to', icon: 'arrow_top', separated: true }, goToEntries);
+    const onExpandAll = requireViewHandler(handlers, 'onExpandAll');
+    const onCollapseAll = requireViewHandler(handlers, 'onCollapseAll');
     const onFullyExpandAll = requireViewHandler(handlers, 'onFullyExpandAll');
     const onFullyCollapseAll = requireViewHandler(handlers, 'onFullyCollapseAll');
-    items.push(
-        { id: 'fully-expand-all', label: 'Fully Expand All', icon: 'expand_all', enabled: true, separated: goToItems.length === 0, onSelect: () => onFullyExpandAll() },
+    // The root notes alone (the notes inside keep theirs), then every level.
+    pushGroup(items, { id: 'outline', label: 'Outline', icon: 'outline', separated: goToEntries.length === 0 }, [
+        { id: 'expand-all', label: 'Expand All Root Notes', icon: 'expand_all', enabled: true, onSelect: () => onExpandAll() },
+        { id: 'collapse-all', label: 'Collapse All Root Notes', icon: 'collapse_all', enabled: true, onSelect: () => onCollapseAll() },
+        { id: 'fully-expand-all', label: 'Fully Expand All', icon: 'expand_all', enabled: true, separated: true, onSelect: () => onFullyExpandAll() },
         { id: 'fully-collapse-all', label: 'Fully Collapse All', icon: 'collapse_all', enabled: true, onSelect: () => onFullyCollapseAll() },
-    );
+    ]);
 
     const onSetUntaggedView = requireViewHandler(handlers, 'onSetUntaggedView');
     const onToggleAiChat = requireViewHandler(handlers, 'onToggleAiChat');
     const onToggleTabs = requireViewHandler(handlers, 'onToggleTabs');
     const onToggleNoteTags = requireViewHandler(handlers, 'onToggleNoteTags');
     const onSetTheme = requireViewHandler(handlers, 'onSetTheme');
+    const themeChoices = [['system', 'System Theme'], ['light', 'Light Theme'], ['dark', 'Dark Theme']];
     items.push(
         { ...buildViewModeItem(isUntaggedView, onSetUntaggedView), separated: true },
         buildSortModeItem(context.sortMode, handlers.onSetSortMode),
@@ -923,14 +954,11 @@ function buildViewContextItems(context, handlers) {
                 { id: 'show-chat', label: 'Chat', icon: 'chat', checked: isAiChatVisible, enabled: true, onSelect: () => onToggleAiChat(!isAiChatVisible) },
                 { id: 'show-tabs', label: 'Tabs', icon: 'tabs', checked: areTabsVisible, enabled: true, onSelect: () => onToggleTabs(!areTabsVisible) },
                 { id: 'show-note-tags', label: 'Tags in List', icon: 'tag', checked: areNoteTagsVisible, enabled: true, onSelect: () => onToggleNoteTags(!areNoteTagsVisible) },
+                ...themeChoices.map(([value, label], index) => choiceItem({
+                    id: `theme-${value}`, label, icon: null, isCurrent: context.theme === value, separated: index === 0,
+                    onChoose: () => onSetTheme(value),
+                })),
             ],
-        },
-        {
-            id: 'theme', label: 'Theme', icon: 'theme', enabled: true,
-            submenu: [['system', 'System'], ['light', 'Light'], ['dark', 'Dark']].map(([value, label]) => ({
-                id: `theme-${value}`, label, checked: context.theme === value, enabled: context.theme !== value,
-                onSelect: () => onSetTheme(value),
-            })),
         },
     );
 
@@ -941,11 +969,21 @@ function buildViewContextItems(context, handlers) {
     const onPrintView = requireViewHandler(handlers, 'onPrintView');
     const onLogOut = requireViewHandler(handlers, 'onLogOut');
     items.push(
-        { id: 'new-tab', label: 'New Tab', icon: 'tabs', enabled: true, separated: true, onSelect: () => onNewTab() },
-        { id: 'open-namespace', label: 'Open/Switch Vault…', icon: 'namespace', enabled: true, onSelect: () => onOpenNamespace() },
-        { id: 'reminders', label: 'Reminders…', icon: 'reminder', enabled: true, onSelect: () => onOpenReminders() },
-        { id: 'export-view-html', label: 'Export View as HTML', icon: 'download', enabled: true, separated: true, onSelect: () => onExportViewHtml() },
-        { id: 'print-view', label: 'Print View', icon: 'print', enabled: true, onSelect: () => onPrintView() },
+        {
+            id: 'open', label: 'Open', icon: 'external', enabled: true, separated: true,
+            submenu: [
+                { id: 'new-tab', label: 'New Tab', icon: 'tabs', enabled: true, onSelect: () => onNewTab() },
+                { id: 'open-namespace', label: 'Vault…', icon: 'namespace', enabled: true, onSelect: () => onOpenNamespace() },
+                { id: 'reminders', label: 'Reminders', icon: 'reminder', enabled: true, onSelect: () => onOpenReminders() },
+            ],
+        },
+        {
+            id: 'export-print', label: 'Export & Print', icon: 'download', enabled: true,
+            submenu: [
+                { id: 'export-view-html', label: 'View as HTML…', icon: 'download', enabled: true, onSelect: () => onExportViewHtml() },
+                { id: 'print-view', label: 'Print View…', icon: 'print', enabled: true, onSelect: () => onPrintView() },
+            ],
+        },
         { id: 'log-out', label: 'Log Out', icon: 'log_out', enabled: true, separated: true, onSelect: () => onLogOut() },
     );
     return items;
@@ -997,7 +1035,7 @@ function buildTagProposalsContextItems(context, handlers) {
     ];
 }
 
-export function buildContextMenuItems(context, handlers) {
+function buildMenuForKind(context, handlers) {
     if (!context || typeof context !== 'object') {
         throw new Error('buildContextMenuItems requires context object');
     }
@@ -1029,4 +1067,8 @@ export function buildContextMenuItems(context, handlers) {
     }
 
     return [];
+}
+
+export function buildContextMenuItems(context, handlers) {
+    return withoutLeadingSeparator(buildMenuForKind(context, handlers));
 }

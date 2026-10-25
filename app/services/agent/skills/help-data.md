@@ -2,22 +2,22 @@
 
 Vaults isolate notes, preferences, tags, reminders, and authentication. A
 vault is not a search tab. Search tabs are views within the same vault.
-Open/Switch vault opens a picker of reachable vaults with two buttons: Open in
+Open/Switch Vault… opens a picker of reachable vaults with two buttons: Open in
 This Tab (switching keeps one tab) and Open in New Tab; with no other vault
-yet it opens Create vault instead. Create vault opens
-a name/port form. Rename current vault opens a rename form. Delete vault
+yet it opens Create Vault… instead. Create Vault… opens
+a name/port form. Rename Current Vault… opens a rename form. Delete Vault…
 opens a confirmation form; do not execute deletion or imply it has happened.
-Manage vault ports edits saved future launch profiles; saving does not launch,
+Manage Vault Ports… edits saved future launch profiles; saving does not launch,
 switch to, or restart a vault. Port changes take effect on a later launch.
 
-Create backup now is an operation, not merely opening a dialog. It can prompt for
+Back Up Now… is an operation, not merely opening a dialog. It can prompt for
 backup folder/settings and creates one versioned .tar.gz archive per vault
 containing its notes database and sibling files database when present. The result
 shows one row per vault. The help action cannot invoke backup creation.
 Backup reminder (menu: Off, Daily, Weekly, Every 2 weeks, Monthly; Weekly by
 default) floats a card when this vault's newest backup is older than that;
 its Back Up Now opens Backup Settings and × hides it for a day.
-Restore from backup opens a picker for configured-folder snapshots. The user
+Restore from Backup… opens a picker for configured-folder snapshots. The user
 chooses and confirms a restore; success is confirmed with OK before reloading.
 Opening this picker neither restores data nor changes backups. Existing backup
 files are immutable recovery artifacts: no rewriting/repackaging/migration of
@@ -29,8 +29,8 @@ the current live password or choose a new password. A later explicit password
 change affects only that restored live copy. A backup is not the same
 as an HTML export.
 
-Export as HTML exports the current view for viewing/sharing, not a full restorable
-database backup. It and Print (note menu, view menu, palette `Print view`) show
+Export View as HTML… exports the current view for viewing/sharing, not a full restorable
+database backup. It and Print (note menu, view menu, palette `Print View…`) show
 the view as it is shown (search, sort, Untagged; notes a search leaves out are
 absent), after a dialog setting the title (it heads the file and names it;
 Suggest with AI can propose one). An exported file starts collapsed and expanded
@@ -40,8 +40,8 @@ When @password or @username notes would show, an Include Unredacted Passwords
 (Usernames, or Usernames and Passwords) checkbox appears (unchecked: shown as
 ••••••••; checked: readable, and the file or print is not encrypted).
 Exported files copy usernames, included passwords and copyable values on click.
-Attach file stores an attachment in the vault's sibling files database. Default upload limit is 100 MiB and is server-configurable.
-Trim unused files removes unused attachments and is not an opening action.
+Attach File… stores an attachment in the vault's sibling files database. Default upload limit is 100 MiB and is server-configurable.
+Trim Unused Files… removes unused attachments and is not an opening action.
 The agent can explain these operations but cannot execute them through help.
 
 Version info shows application/database/runtime/vault and encryption status.

@@ -5,7 +5,7 @@ import {
     validateNoteLayoutSettings,
 } from '../command-palette/note-layout-preferences.js';
 import { BaseModal } from './base-modal.js';
-import { escapeHtml } from '../html-escape.js';
+import { actionRowHtml } from './action-row.js';
 
 
 
@@ -37,7 +37,6 @@ export class NoteLayoutAppearanceModal extends BaseModal {
         return {
             ...settings,
             saving: false,
-            error: '',
         };
     }
 
@@ -66,7 +65,6 @@ export class NoteLayoutAppearanceModal extends BaseModal {
         const state = this.getModalState();
         const settings = validateNoteLayoutSettings(state);
         const saving = state.saving === true;
-        const error = typeof state.error === 'string' ? state.error : '';
         const disabled = saving ? ' disabled' : '';
 
         modalElement.innerHTML = `
@@ -113,11 +111,15 @@ export class NoteLayoutAppearanceModal extends BaseModal {
                     <div class="note-layout-preview-child"><span>Another child note</span><span class="note-layout-preview-tags"><span class="note-tag note-tag--meta">@todo</span></span></div>
                 </div>
 
-                <div class="form-actions">
-                    <button type="button" class="primary-btn" id="note-layout-save-btn" data-modal-enter-action${disabled}>${saving ? 'Saving…' : 'Save'}</button>
-                    <button type="button" class="secondary-btn" id="note-layout-cancel-btn"${disabled}>Cancel</button>
-                </div>
-                <p class="error-message">${escapeHtml(error)}</p>
+                ${actionRowHtml({
+                    alternative: null,
+                    cancel: { id: 'note-layout-cancel-btn', label: 'Cancel', disabled: saving, attributes: [] },
+                    main: {
+                        id: 'note-layout-save-btn', label: saving ? 'Saving…' : 'Save', disabled: saving, attributes: [],
+                        isDestructive: false, isEnterAction: true, type: 'button',
+                    },
+                    rowClass: '',
+                })}
             </div>
         `;
 
@@ -143,7 +145,7 @@ export class NoteLayoutAppearanceModal extends BaseModal {
                 throw new Error(`Note layout select missing: ${elementId}`);
             }
             select.onchange = () => {
-                this.updateModalState({ [stateKey]: select.value, error: '' });
+                this.updateModalState({ [stateKey]: select.value });
                 this.renderModalContent();
                 const refreshedSelect = document.getElementById(elementId);
                 if (refreshedSelect instanceof HTMLSelectElement) {
@@ -167,7 +169,7 @@ export class NoteLayoutAppearanceModal extends BaseModal {
 
     async _handleSave() {
         const settings = validateNoteLayoutSettings(this.getModalState());
-        this.updateModalState({ saving: true, error: '' });
+        this.updateModalState({ saving: true });
         this.renderModalContent();
         await this._saveSettings(settings);
         this.close();

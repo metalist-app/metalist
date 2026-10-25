@@ -13,7 +13,7 @@ const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 function bannerText(page) {
   return page.evaluate(() => {
-    const message = document.querySelector('#error-banner .error-banner-message');
+    const message = document.querySelector('#floating-messages .floating-message:last-child .floating-message-text');
     return message ? message.textContent : '';
   });
 }
@@ -120,7 +120,7 @@ async function rightClickSearch(page, where) {
   return labels;
 }
 
-const SEARCH_BOX_MENU = ['View', 'Sort by', 'Date range', 'Notes with files'];
+const SEARCH_BOX_MENU = ['View', 'Sort by', 'Date Range', 'Notes with Files'];
 
 export async function checkSearchBarMenu(page) {
   await page.reload();
@@ -132,7 +132,7 @@ export async function checkSearchBarMenu(page) {
   await idle(page);
   await page.keyboard.press('Escape');
   assert.deepEqual(await rightClickSearch(page, 'past-text'), SEARCH_BOX_MENU, 'past the typed tag: the view menus');
-  assert.deepEqual(await rightClickSearch(page, 'on-text'), ['Edit Tag Relationships'], 'on the typed tag: its own menu');
+  assert.deepEqual(await rightClickSearch(page, 'on-text'), ['Edit Tag Relationships…'], 'on the typed tag: its own menu');
   await clearSearch(page);
 }
 
@@ -145,7 +145,7 @@ function dateRangeChip(page) {
 
 // Picks Date range → <range> from the search box's menu past the typed text.
 async function pickDateRange(page, label) {
-  await pickFromSearchBoxMenu(page, 'Date range', label);
+  await pickFromSearchBoxMenu(page, 'Date Range', label);
 }
 
 // Picks <menu> → <label> from the search box's menu.
@@ -253,7 +253,7 @@ export async function checkFileFilter(page) {
   const all = await rootCount(page);
   assert.equal(await fileFilterChip(page), '', 'no Files filter at first');
 
-  await pickFromSearchBoxMenu(page, 'Notes with files', 'Images');
+  await pickFromSearchBoxMenu(page, 'Notes with Files', 'Images');
   assert.equal(await fileFilterChip(page), 'With images', 'the chip names the kind');
   assert.ok((await shownRootTexts(page)).includes('filecheck picture'), 'a picture pasted inline is an image');
   assert.ok(await rootCount(page) < all, 'notes without a picture leave the view');

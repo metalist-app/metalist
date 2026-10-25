@@ -35,14 +35,14 @@ Ontology rules also add **inferred tags** before search matching:
 - See `docs/design/ontology-rules-v1.md` for the rule language and semantics.
 
 ### Untagged Notes View
-- `View: Untagged notes` is a temporary, tab-agnostic view selected from the command palette, not an `@untagged` search token.
+- `View: Untagged Notes` is a temporary, tab-agnostic view selected from the command palette, not an `@untagged` search token.
 - Selecting it preserves the active tab and its search while temporarily showing notes whose full effective tag set has no non-meta tags. The search box is visually blank while this override is active because the preserved tab query is not being applied.
 - Inherited and ontology-inferred tags count as tags; formatting/meta tags beginning with `@` do not.
-- The dismissible `Untagged notes` pill returns to the underlying tab view and restores its query in the search box. Clicking any tab or changing the search input also dismisses the temporary view.
+- The dismissible `Untagged Notes` pill returns to the underlying tab view and restores its query in the search box. Clicking any tab or changing the search input also dismisses the temporary view.
 - Changing the search input additionally resets the active tab's sort mode to Normal before executing the search.
 
 ### Notes With Files
-- **Notes with files** in the right-click menus and the palette (`Notes with files: Images`, …) keeps a search to the matches whose own text links to or embeds an attached file, or a file of one kind (images, PDFs, Markdown files; Images also counts a picture pasted into the note), with the notes above them. Without a search it alone picks the notes. It is not a search term: a chip in the search box shows it, and a new search keeps it (`docs/ui/command-palette.md`, Notes With Files).
+- **Notes with Files** in the right-click menus and the palette (`Notes with Files: Images`, …) keeps a search to the matches whose own text links to or embeds an attached file, or a file of one kind (images, PDFs, Markdown files; Images also counts a picture pasted into the note), with the notes above them. Without a search it alone picks the notes. It is not a search term: a chip in the search box shows it, and a new search keeps it (`docs/ui/command-palette.md`, Notes With Files).
 
 ### Search Suggestions
 - Search-bar tag suggestions are segment-aware for connector-separated tags.

@@ -392,6 +392,11 @@ preferences are saved (`RETIRED_PROMPT_PREFERENCE_KEYS` and
 
 ## Session and Debug Boundaries
 
+- A session keeps at most 100 messages (50 turns); a new turn past that drops the oldest
+  one without telling the user, and nothing checks that the conversation fits the model's
+  context. Planned instead: a token budget, with the oldest turns replaced by a summary the
+  user can open and read (`docs/ready-to-build/ai-conversation-compaction.md`).
+
 - The agent keeps a private record of what each answer did (tools, searches and pages
   opened, notes read), so questions such as "did you search the web?" are answered
   from what actually happened. Only the model sees it; it is cleared with the chat

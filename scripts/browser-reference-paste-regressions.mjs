@@ -139,7 +139,7 @@ async function savedEmbeds(page, noteId) {
 
 function bannerText(page) {
   return page.evaluate(() => {
-    const message = document.querySelector('#error-banner .error-banner-message');
+    const message = document.querySelector('#floating-messages .floating-message:last-child .floating-message-text');
     return message ? message.textContent : '';
   });
 }

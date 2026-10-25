@@ -22,6 +22,7 @@ test('buildCommandPaletteEndpoints includes utility action endpoints', async () 
             openSoundManager: noop,
             openVersionInfo: noop,
             openMemoryUsage: noop,
+            openRecentMessages: noop,
             openNoteLayoutAppearance: noop,
             openVisualCues: noop,
             openDictationSettings: noop,
@@ -75,10 +76,7 @@ test('buildCommandPaletteEndpoints includes utility action endpoints', async () 
     });
 
     const endpointIds = new Set(endpoints.map((endpoint) => endpoint.id));
-    const labelsWithTrailingEllipses = endpoints
-        .map((endpoint) => endpoint.label)
-        .filter((label) => /(?:\u2026|\.\.\.)$/.test(label));
-    assert.deepEqual(labelsWithTrailingEllipses, []);
+    // Every label, "…" included, is checked in command_palette_conventions.test.mjs.
     const attachFileEndpoint = endpoints.find((endpoint) => endpoint.id === 'action.attach_file_to_current_note');
     const animatedTransitionsEndpoint = endpoints.find((endpoint) => endpoint.id === 'pref.animated_transitions');
     assert.equal(endpointIds.has('action.create_backup'), true);
@@ -90,7 +88,7 @@ test('buildCommandPaletteEndpoints includes utility action endpoints', async () 
     assert.equal(endpointIds.has('form.delete_current_namespace'), true);
     assert.equal(
         endpoints.find((endpoint) => endpoint.id === 'form.delete_current_namespace').label,
-        'Delete vault',
+        'Delete Vault…',
     );
     assert.equal(endpointIds.has('form.restore_backup'), true);
     assert.equal(endpointIds.has('form.add_password'), true);
@@ -99,85 +97,86 @@ test('buildCommandPaletteEndpoints includes utility action endpoints', async () 
     assert.equal(endpointIds.has('form.password_protection'), false);
     assert.equal(
         endpoints.find((endpoint) => endpoint.id === 'form.add_password').label,
-        'Add password',
+        'Add Password…',
     );
     assert.equal(
         endpoints.find((endpoint) => endpoint.id === 'form.change_password').label,
-        'Change password',
+        'Change Password…',
     );
     assert.equal(
         endpoints.find((endpoint) => endpoint.id === 'form.remove_password').label,
-        'Remove password',
+        'Remove Password…',
     );
     assert.equal(endpointIds.has('form.session_timeout'), true);
     assert.equal(endpointIds.has('pref.show_rhs_panel'), false);
     assert.equal(endpointIds.has('pref.show_note_timestamps'), false);
     assert.equal(animatedTransitionsEndpoint.defaultValue, true);
-    assert.equal(animatedTransitionsEndpoint.label, 'Hide animated transitions');
+    assert.equal(animatedTransitionsEndpoint.label, 'Hide Animated Transitions');
     assert.equal(endpointIds.has('form.reminders'), true);
     assert.equal(endpointIds.has('form.version_info'), true);
     assert.equal(endpointIds.has('form.memory_usage'), true);
+    assert.equal(endpointIds.has('form.recent_messages'), true);
     assert.equal(endpointIds.has('form.note_layout_appearance'), true);
     assert.equal(endpointIds.has('form.agent_prompts'), false);
     assert.equal(endpointIds.has('form.tagging_vocabulary'), true);
     const removeAllTagSuggestionsEndpoint = endpoints.find(
         (endpoint) => endpoint.id === 'action.remove_all_tag_suggestions_current_context',
     );
-    assert.equal(removeAllTagSuggestionsEndpoint.label, 'Reject all AI-proposed tags (current context)');
+    assert.equal(removeAllTagSuggestionsEndpoint.label, 'Reject All AI-Proposed Tags (Current Context)…');
     assert.equal(removeAllTagSuggestionsEndpoint.closeOnExecute, true);
     await removeAllTagSuggestionsEndpoint.execute();
     assert.equal(removeAllTagSuggestionsCalls, 1);
     assert.equal(endpointIds.has('form.cloud_ai_privacy'), true);
     assert.equal(
         endpoints.find((endpoint) => endpoint.id === 'form.cloud_ai_privacy').label,
-        'Cloud AI privacy',
+        'Cloud AI Privacy…',
     );
     assert.equal(
         endpoints.find((endpoint) => endpoint.id === 'form.note_layout_appearance').label,
-        'Note Layout & Appearance',
+        'Note Layout & Appearance…',
     );
     assert.equal(endpointIds.has('action.logout'), true);
     assert.equal(
         endpoints.find((endpoint) => endpoint.id === 'action.expand_all').label,
-        'Expand all root notes (current view)',
+        'Expand All Root Notes (Current View)',
     );
     assert.equal(
         endpoints.find((endpoint) => endpoint.id === 'action.collapse_all').label,
-        'Collapse all root notes (current view)',
+        'Collapse All Root Notes (Current View)',
     );
     assert.equal(
         endpoints.find((endpoint) => endpoint.id === 'action.fully_expand_all').label,
-        'Fully expand all notes (current view)',
+        'Fully Expand All Notes (Current View)',
     );
     assert.equal(
         endpoints.find((endpoint) => endpoint.id === 'action.fully_collapse_all').label,
-        'Fully collapse all notes (current view)',
+        'Fully Collapse All Notes (Current View)',
     );
     assert.equal(endpointIds.has('form.random_password_generator'), true);
     assert.equal(endpointIds.has('pref.auto_collapse_long_notes'), false);
     assert.equal(endpointIds.has('action.export_html'), true);
     assert.equal(endpointIds.has('action.attach_file_to_current_note'), true);
-    assert.equal(attachFileEndpoint.label, 'Attach file');
+    assert.equal(attachFileEndpoint.label, 'Attach File…');
     assert.equal(endpointIds.has('action.trim_unused_files'), true);
     assert.equal(endpointIds.has('form.search_suggestion_statistics'), true);
     assert.equal(
         endpoints.find((endpoint) => endpoint.id === 'form.search_suggestion_statistics').label,
-        'Search suggestion stats & settings',
+        'Search Suggestion Stats & Settings…',
     );
     assert.equal(endpointIds.has('action.prioritize_tag_front'), true);
     assert.equal(endpointIds.has('action.prioritize_tag_back'), true);
     assert.equal(
         endpoints.find((endpoint) => endpoint.id === 'action.prioritize_tag_front').label,
-        'Prioritize tag to front (global)',
+        'Prioritize Tag to Front (Global)…',
     );
     assert.equal(
         endpoints.find((endpoint) => endpoint.id === 'action.prioritize_tag_back').label,
-        'Prioritize tag to back (global)',
+        'Prioritize Tag to Back (Global)…',
     );
     assert.equal(endpointIds.has('action.open_keyboard_shortcuts_help'), true);
     assert.equal(
         endpoints.find((endpoint) => endpoint.id === 'action.open_keyboard_shortcuts_help').label,
-        'Keyboard Shortcuts / Cheatsheet',
+        'Keyboard Shortcuts',
     );
     assert.equal(endpointIds.has('action.run_mcp_client'), false);
     assert.equal(endpointIds.has('view.sort_mode'), false);
@@ -193,11 +192,11 @@ test('buildCommandPaletteEndpoints includes utility action endpoints', async () 
     }
     assert.equal(
         endpoints.find((endpoint) => endpoint.id === 'view.sort_mode.alphabetical').label,
-        'Sort order: Alphabetical',
+        'Sort Order: Alphabetical',
     );
     assert.equal(
         endpoints.find((endpoint) => endpoint.id === 'view.sort_mode.content_volume').label,
-        'Sort order: Content volume',
+        'Sort Order: Content Volume',
     );
     assert.equal(endpointIds.has('view.sort_mode.reverse'), true);
     assert.equal(
@@ -228,11 +227,11 @@ test('buildCommandPaletteEndpoints includes utility action endpoints', async () 
 
     // The Backlinks panel is gone; ↖ and Referenced by replace it.
     assert.equal(endpointIds.has('pref.show_backlinks'), false);
-    assert.equal(endpoints.find((endpoint) => endpoint.id === 'pref.show_note_tags').label, 'Show tags in list');
-    assert.equal(endpoints.find((endpoint) => endpoint.id === 'pref.show_tab_ui').label, 'Show tabs');
+    assert.equal(endpoints.find((endpoint) => endpoint.id === 'pref.show_note_tags').label, 'Show Tags in List');
+    assert.equal(endpoints.find((endpoint) => endpoint.id === 'pref.show_tab_ui').label, 'Show Tabs');
     assert.equal(
         endpoints.find((endpoint) => endpoint.id === 'pref.show_search_results_count').label,
-        'Hide search result count',
+        'Hide Search Result Count',
     );
     assert.equal(endpoints.some((endpoint) => endpoint.id === 'pref.show_perf_overlay'), false);
 
@@ -242,12 +241,12 @@ test('buildCommandPaletteEndpoints includes utility action endpoints', async () 
     storedPreferences.set('pref.show_perf_overlay', 'true');
     storedPreferences.set('pref.animated_transitions', 'false');
 
-    assert.equal(endpoints.find((endpoint) => endpoint.id === 'pref.show_note_tags').label, 'Hide tags in list');
-    assert.equal(endpoints.find((endpoint) => endpoint.id === 'pref.show_tab_ui').label, 'Hide tabs');
+    assert.equal(endpoints.find((endpoint) => endpoint.id === 'pref.show_note_tags').label, 'Hide Tags in List');
+    assert.equal(endpoints.find((endpoint) => endpoint.id === 'pref.show_tab_ui').label, 'Hide Tabs');
     assert.equal(
         endpoints.find((endpoint) => endpoint.id === 'pref.show_search_results_count').label,
-        'Show search result count',
+        'Show Search Result Count',
     );
     assert.equal(endpoints.some((endpoint) => endpoint.id === 'pref.show_perf_overlay'), false);
-    assert.equal(animatedTransitionsEndpoint.label, 'Show animated transitions');
+    assert.equal(animatedTransitionsEndpoint.label, 'Show Animated Transitions');
 });

@@ -1,14 +1,20 @@
 import { NEXT_ROW, NO_SELECTION, PREVIOUS_ROW } from '../list-selection.js';
-import { ApplicationState } from '../application-state.js';
+import { ApplicationState, stateValuesEqual } from '../application-state.js';
 import { HttpRequestError, rethrowUnexpectedError } from '../expected-errors.js';
 import { BaseModal } from './base-modal.js';
+import { actionRowHtml } from './action-row.js';
 import { CONFIG } from '../config.js';
 import { buildSessionHeaders } from '../session-auth.js';
 import { isValidTagToken } from '../tag-token.js';
 import { handleDictationPasteEvent } from '../mode-manager/services/dictation-paste-service.js';
 import { escapeHtml } from '../html-escape.js';
+import { showErrorDialog } from './error-dialog.js';
+import { ErrorHandler } from '../error-handler.js';
+import { MS_PER_SECOND } from '../time-units.js';
 
 const SUGGESTION_LIMIT = 20;
+// How long a failed tag lookup is shown (floating-messages.js decides; any passing value).
+const SUGGESTION_FAILURE_SECONDS = 10;
 
 export class PrioritizeModal extends BaseModal {
     constructor() {
@@ -34,7 +40,6 @@ export class PrioritizeModal extends BaseModal {
             selectedIndex: NO_SELECTION,
             loadingSuggestions: true,
             isDropdownOpen: true,
-            error: '',
         };
     }
 
@@ -113,15 +118,10 @@ export class PrioritizeModal extends BaseModal {
         if (!(suggestions instanceof HTMLElement)) {
             throw new Error('prioritize-modal-suggestions missing');
         }
-        const error = modalElement.querySelector('#prioritize-modal-error');
-        if (!(error instanceof HTMLElement)) {
-            throw new Error('prioritize-modal-error missing');
-        }
         return {
             modalElement,
             input,
             suggestions,
-            error,
         };
     }
 
@@ -137,15 +137,13 @@ export class PrioritizeModal extends BaseModal {
             return;
         }
         const state = this.getModalState();
-        const { input, suggestions, error } = this.getElements();
+        const { input, suggestions } = this.getElements();
         const isDropdownOpen = state.isDropdownOpen === true;
         const loadingSuggestions = state.loadingSuggestions === true;
         const selectedIndex = Number.isInteger(state.selectedIndex) ? state.selectedIndex : -1;
         const suggestionList = Array.isArray(state.suggestions) ? state.suggestions : [];
-        const errorText = typeof state.error === 'string' ? state.error : '';
 
         input.setAttribute('aria-expanded', isDropdownOpen ? 'true' : 'false');
-        error.textContent = errorText;
 
         if (!isDropdownOpen) {
             suggestions.hidden = true;
@@ -204,24 +202,18 @@ export class PrioritizeModal extends BaseModal {
             this.moveSelection(PREVIOUS_ROW);
             return;
         }
-        if (event.key !== 'Enter') {
-            return;
-        }
+    }
 
-        const target = event.target;
-        if (target instanceof HTMLButtonElement) {
-            return;
-        }
-
+    // Apply Global Reorder is destructive, so Enter never submits it (BaseModal): Enter
+    // only takes the highlighted suggestion.
+    onEnterBesideDestructiveAction(event) {
+        super.onEnterBesideDestructiveAction(event);
+        const state = this.getModalState();
         const suggestions = Array.isArray(state.suggestions) ? state.suggestions : [];
         const selectedIndex = Number.isInteger(state.selectedIndex) ? state.selectedIndex : -1;
-        event.preventDefault();
-        event.stopPropagation();
-        if (isDropdownOpen && selectedIndex >= 0 && selectedIndex < suggestions.length) {
+        if (state.isDropdownOpen === true && selectedIndex >= 0 && selectedIndex < suggestions.length) {
             this.applySuggestion(suggestions[selectedIndex]);
-            return;
         }
-        this.submit();
     }
 
     moveSelection(delta) {
@@ -264,7 +256,6 @@ export class PrioritizeModal extends BaseModal {
         const selectedIndex = Number.isInteger(state.selectedIndex) ? state.selectedIndex : -1;
         const loadingSuggestions = state.loadingSuggestions === true;
         const isDropdownOpen = state.isDropdownOpen === true;
-        const error = typeof state.error === 'string' ? state.error : '';
         const showSuggestions = isDropdownOpen;
         const title = direction === 'front' ? 'Prioritize Tag To Front' : 'Prioritize Tag To Back';
         const description = direction === 'front'
@@ -286,6 +277,7 @@ export class PrioritizeModal extends BaseModal {
                             type="text"
                             id="prioritize-tag-input"
                             class="prioritize-modal-tag-input"
+                            data-modal-initial-focus
                             autocomplete="off"
                             autocorrect="off"
                             autocapitalize="off"
@@ -312,12 +304,16 @@ export class PrioritizeModal extends BaseModal {
                     <p>Your current search will stay active after the reorder refreshes.</p>
                 </div>
 
-                <div class="form-actions prioritize-modal-actions">
-                    <button type="button" class="secondary-btn" id="prioritize-modal-cancel-btn">Cancel</button>
-                    <button type="button" class="danger-btn" id="prioritize-modal-submit-btn">Apply Global Reorder</button>
-                </div>
+                ${actionRowHtml({
+                    alternative: null,
+                    cancel: { id: 'prioritize-modal-cancel-btn', label: 'Cancel', disabled: false, attributes: [] },
+                    main: {
+                        id: 'prioritize-modal-submit-btn', label: 'Apply Global Reorder', disabled: false, attributes: [],
+                        isDestructive: true, isEnterAction: false, type: 'button',
+                    },
+                    rowClass: 'prioritize-modal-actions',
+                })}
 
-                <p id="prioritize-modal-error" class="error-message">${escapeHtml(error)}</p>
             </div>
         `;
 
@@ -355,7 +351,6 @@ export class PrioritizeModal extends BaseModal {
             this.updateModalState({
                 isDropdownOpen: true,
                 selectedIndex: suggestions.length > 0 ? 0 : -1,
-                error: '',
             });
             this.syncSuggestionUi();
             if (suggestions.length === 0) {
@@ -368,12 +363,19 @@ export class PrioritizeModal extends BaseModal {
             this.updateModalState({
                 tagInput: input.value,
                 isDropdownOpen: true,
-                error: '',
             });
             this.syncSuggestionUi();
             void this.fetchSuggestions(input.value);
         };
         input.onblur = () => {
+            // Closing hides the field, which blurs it after the dialog's state is gone.
+            if (!this.isOpen) {
+                return;
+            }
+            const state = this.getModalState();
+            if (state.isDropdownOpen === false && state.selectedIndex === NO_SELECTION) {
+                return;
+            }
             this.updateModalState({
                 isDropdownOpen: false,
                 selectedIndex: NO_SELECTION,
@@ -406,7 +408,6 @@ export class PrioritizeModal extends BaseModal {
             isDropdownOpen: false,
             selectedIndex: NO_SELECTION,
             loadingSuggestions: false,
-            error: '',
         });
         const { input } = this.getElements();
         input.value = tag;
@@ -418,15 +419,11 @@ export class PrioritizeModal extends BaseModal {
         const state = this.getModalState();
         let tag = typeof state.tagInput === 'string' ? state.tagInput.trim() : '';
         if (tag === '') {
-            this.updateModalState({ error: 'Enter a tag.' });
-            this.syncSuggestionUi();
+            void showErrorDialog([{ text: 'Enter a tag.', fieldId: 'prioritize-tag-input' }]);
             return;
         }
         if (!isValidTagToken(tag)) {
-            this.updateModalState({
-                error: 'This action only supports a single tag token.',
-            });
-            this.syncSuggestionUi();
+            void showErrorDialog([{ text: 'Enter one tag, without spaces or quotes.', fieldId: 'prioritize-tag-input' }]);
             return;
         }
         this._decision.result = tag;
@@ -449,12 +446,18 @@ export class PrioritizeModal extends BaseModal {
         const controller = new AbortController();
         this._suggestionsAbortController = controller;
 
-        this.updateModalState({
-            loadingSuggestions: true,
-            isDropdownOpen: true,
-            selectedIndex: NO_SELECTION,
-        });
-        this.syncSuggestionUi();
+        // A lookup cancelled by the next keystroke leaves these as they are, so the next
+        // lookup may find them already set: the state store refuses a change that changes nothing.
+        const loading = { loadingSuggestions: true, isDropdownOpen: true, selectedIndex: NO_SELECTION };
+        const current = this.getModalState();
+        const isAlreadyLoading = stateValuesEqual(
+            { loadingSuggestions: current.loadingSuggestions, isDropdownOpen: current.isDropdownOpen, selectedIndex: current.selectedIndex },
+            loading,
+        );
+        if (!isAlreadyLoading) {
+            this.updateModalState(loading);
+            this.syncSuggestionUi();
+        }
 
         await (async () => {
             const payload = await fetch(CONFIG.API.NOTES.PRIORITIZE_TAG_SUGGESTIONS, {
@@ -494,7 +497,6 @@ export class PrioritizeModal extends BaseModal {
                 suggestions,
                 isDropdownOpen: keepDropdownOpen,
                 selectedIndex: suggestions.length > 0 ? 0 : -1,
-                error: '',
             });
             this.syncSuggestionUi();
         })().catch((error) => {
@@ -502,7 +504,6 @@ export class PrioritizeModal extends BaseModal {
             if (this._requestVersion !== requestVersion) {
                 return;
             }
-            const message = error instanceof Error ? error.message : 'Failed to load suggestions';
             const latestState = this.getModalState();
             const keepDropdownOpen = latestState.isDropdownOpen === true;
             this.updateModalState({
@@ -510,9 +511,10 @@ export class PrioritizeModal extends BaseModal {
                 suggestions: [],
                 isDropdownOpen: keepDropdownOpen,
                 selectedIndex: NO_SELECTION,
-                error: message,
             });
             this.syncSuggestionUi();
+            // Typing never opens a dialog: the failure floats in the corner.
+            ErrorHandler.showErrorBanner(error.message, 'error', SUGGESTION_FAILURE_SECONDS * MS_PER_SECOND, { closable: true });
         }).finally(() => {
             if (this._suggestionsAbortController === controller) {
                 this._suggestionsAbortController = null;

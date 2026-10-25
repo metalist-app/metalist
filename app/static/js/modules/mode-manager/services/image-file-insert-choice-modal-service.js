@@ -1,5 +1,6 @@
 import { ApplicationState } from '../../application-state.js';
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
+import { actionRowHtml } from '../../modals/action-row.js';
 
 const MODAL_NAME = 'imageFileInsertChoiceModal';
 const MODAL_ID = 'image-file-insert-choice-modal';
@@ -34,11 +35,15 @@ function ensureModalElement() {
             <button type="button" class="modal-close-button" aria-label="Close" title="Close (Esc)">×</button>
             <h2 id="image-file-insert-choice-title">Handle image file</h2>
             <p id="image-file-insert-choice-description"></p>
-            <div class="image-file-insert-choice-actions">
-                <button type="button" class="primary-btn" id="image-file-insert-choice-embed">Paste Inline</button>
-                <button type="button" class="secondary-btn" id="image-file-insert-choice-attach">Save as File</button>
-                <button type="button" class="secondary-btn" id="image-file-insert-choice-cancel">Cancel</button>
-            </div>
+            ${actionRowHtml({
+                alternative: { id: 'image-file-insert-choice-attach', label: 'Save as File', disabled: false, attributes: [] },
+                cancel: { id: 'image-file-insert-choice-cancel', label: 'Cancel', disabled: false, attributes: [] },
+                main: {
+                    id: 'image-file-insert-choice-embed', label: 'Paste Inline', disabled: false, attributes: [],
+                    isDestructive: false, isEnterAction: false, type: 'button',
+                },
+                rowClass: '',
+            })}
         </div>
     `;
     document.body.appendChild(modalElement);
@@ -157,7 +162,8 @@ export function promptForImageFileInsertMode(options) {
                 finish(null);
                 return;
             }
-            if (event.key === 'Enter') {
+            // Enter on a focused button presses it (Cancel cancels); elsewhere it pastes inline.
+            if (event.key === 'Enter' && !(event.target instanceof HTMLButtonElement)) {
                 event.preventDefault();
                 event.stopPropagation();
                 finish('embed');

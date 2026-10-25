@@ -1449,6 +1449,12 @@ function showViewContextMenu(event) {
         onGoToBottom: () => {
             scrollToBottomButton.click();
         },
+        onExpandAll: () => {
+            void CommandPalette.expandAll();
+        },
+        onCollapseAll: () => {
+            void CommandPalette.collapseAll();
+        },
         onFullyExpandAll: () => {
             void CommandPalette.fullyExpandAll();
         },

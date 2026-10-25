@@ -36,7 +36,7 @@ test('validateNamespaceDeletionSubmission requires the exact namespace name', ()
             isCurrentNamespace: true,
             redirectNamespace: 'default',
         }),
-        /Type 'work'/,
+        /Type work to confirm the deletion\.$/,
     );
 });
 
@@ -79,6 +79,6 @@ test('validateNamespaceDeletionSubmission requires an active-namespace redirect'
             isCurrentNamespace: true,
             redirectNamespace: '',
         }),
-        /Choose where to redirect/,
+        /Choose where MetaList goes after the deletion\.$/,
     );
 });

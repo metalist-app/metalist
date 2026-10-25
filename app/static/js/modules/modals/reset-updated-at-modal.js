@@ -1,5 +1,6 @@
 import { ApplicationState } from '../application-state.js';
 import { BaseModal } from './base-modal.js';
+import { actionRowHtml } from './action-row.js';
 import { ModeContextInstance as ModeContext } from '../mode-manager/mode-context.js';
 import { escapeHtml } from '../html-escape.js';
 
@@ -83,22 +84,6 @@ export class ResetUpdatedAtModal extends BaseModal {
         }
     }
 
-    onKeyDown(event) {
-        if (!(event instanceof KeyboardEvent)) {
-            throw new Error('ResetUpdatedAtModal.onKeyDown requires KeyboardEvent');
-        }
-        if (event.key !== 'Enter') {
-            return;
-        }
-        const activeElement = document.activeElement;
-        if (activeElement instanceof HTMLButtonElement) {
-            return;
-        }
-        event.preventDefault();
-        event.stopPropagation();
-        this.submit();
-    }
-
     renderModalContent() {
         const modalElement = document.getElementById(this.modalElementId);
         if (!(modalElement instanceof HTMLElement)) {
@@ -127,10 +112,15 @@ export class ResetUpdatedAtModal extends BaseModal {
                     <p>All notes inside matching root subtrees are changed. Notes outside this view are not changed.</p>
                 </div>
 
-                <div class="form-actions alphabetize-root-notes-actions">
-                    <button type="button" class="secondary-btn" id="reset-updated-at-cancel-btn">Cancel</button>
-                    <button type="button" class="danger-btn" id="reset-updated-at-submit-btn">Reset Timestamps</button>
-                </div>
+                ${actionRowHtml({
+                    alternative: null,
+                    cancel: { id: 'reset-updated-at-cancel-btn', label: 'Cancel', disabled: false, attributes: [] },
+                    main: {
+                        id: 'reset-updated-at-submit-btn', label: 'Reset Timestamps', disabled: false, attributes: [],
+                        isDestructive: true, isEnterAction: false, type: 'button',
+                    },
+                    rowClass: 'alphabetize-root-notes-actions',
+                })}
             </div>
         `;
 

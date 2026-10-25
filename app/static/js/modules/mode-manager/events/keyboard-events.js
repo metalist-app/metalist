@@ -1,6 +1,7 @@
 import { KIB, MIB } from '../../byte-sizes.js';
 import { MS_PER_SECOND } from '../../time-units.js';
 import { escapeHtml } from '../../html-escape.js';
+import { tabContextActionsHtml } from '../services/tab-context-actions.js';
 import { ApplicationState } from '../../application-state.js';
 import { rethrowUnexpectedError } from '../../expected-errors.js';
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
@@ -382,10 +383,9 @@ function handleKeyDown(event) {
         requestPlainPaste();
     }
 
-    // Native batch dialogs remain keyboard-operable while CommandGate locks the
+    // The chat's batch operations remain keyboard-operable while CommandGate locks the
     // rest of the app. Never treat their Enter/Escape/arrow keys as note commands.
-    if (event.target instanceof HTMLElement
-        && event.target.closest('dialog.bulk-proposal-dialog[open], #ai-chat-panel')) {
+    if (event.target instanceof HTMLElement && event.target.closest('#ai-chat-panel')) {
         return;
     }
 
@@ -3386,15 +3386,11 @@ export function updateSearchContextsList() {
         
         const isActive = tabId === activeTabId;
 
-        const atLimit = tabOrder.length >= CONFIG.TABS.MAX_TABS;
-        const addClass = atLimit ? 'is-disabled' : '';
-        const canDelete = tabOrder.length > 1;
-        const deleteClass = canDelete ? '' : 'is-disabled';
-
-        const actions = `
-            <span class="tab-context-action duplicate-context ${addClass}" data-source-tab-id="${escapeHtml(tabId)}" aria-disabled="${atLimit}">+</span>
-            <span class="tab-context-action tab-context-action--danger delete-context ${deleteClass}" data-delete-tab-id="${escapeHtml(tabId)}" aria-disabled="${!canDelete}">-</span>
-        `;
+        const actions = tabContextActionsHtml({
+            tabId,
+            isAtTabLimit: tabOrder.length >= CONFIG.TABS.MAX_TABS,
+            canDelete: tabOrder.length > 1,
+        });
 
         const activeClass = isActive ? 'is-active' : '';
         contextsList.push(
@@ -3468,7 +3464,8 @@ export function updateSearchContextsList() {
         searchContextsList.querySelectorAll('.delete-context').forEach(deleteBtn => {
             deleteBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
-                if (e.currentTarget.getAttribute('aria-disabled') === 'true') {
+                // A single tab's − is hidden: it cannot be deleted.
+                if (e.currentTarget.getAttribute('aria-hidden') === 'true') {
                     return;
                 }
                 const deleteTabId = e.currentTarget.getAttribute('data-delete-tab-id');

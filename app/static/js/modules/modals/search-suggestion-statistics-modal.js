@@ -1,5 +1,6 @@
-import { ApplicationState } from '../application-state.js';
+import { ApplicationState, stateValuesEqual } from '../application-state.js';
 import { BaseModal } from './base-modal.js';
+import { actionRowHtml } from './action-row.js';
 import {
     validateSearchSuggestionStatistics,
 } from '../mode-manager/services/search-suggestion-statistics-service.js';
@@ -10,6 +11,7 @@ import {
     validateSearchSuggestionWindows,
 } from '../mode-manager/services/search-suggestion-windows-service.js';
 import { escapeHtml } from '../html-escape.js';
+import { setFieldMessage } from './field-message.js';
 
 
 
@@ -72,7 +74,6 @@ export class SearchSuggestionStatisticsModal extends BaseModal {
             windowDays: validateSearchSuggestionWindows(this._readWindows()),
             showWindowLabels,
             limitNoteCreditsPerSearchContext,
-            error: '',
             statistics: null,
         };
     }
@@ -105,18 +106,41 @@ export class SearchSuggestionStatisticsModal extends BaseModal {
         if (!Number.isInteger(index) || index < 0) {
             throw new Error('Search suggestion window index must be a non-negative integer');
         }
-        const dayCount = Number(rawValue);
-        const next = this.getModalState().windowDays.slice();
-        next[index] = dayCount;
-        const validationError = getSearchSuggestionWindowsValidationError(next);
-        if (validationError === '') {
-            this.updateModalState({ windowDays: next, error: '' });
-        } else {
-            this.updateModalState({ error: validationError });
-            this.renderModalContent();
+        const { next, problem } = this._windowsWith(index, rawValue);
+        // A bad day count stays typed, with what is wrong under it, and is not saved.
+        this._showWindowProblem(index, problem);
+        // Back to the saved count (a bad one is never saved): nothing to save.
+        if (problem !== '' || stateValuesEqual(next, this.getModalState().windowDays)) {
             return;
         }
+        this.updateModalState({ windowDays: next });
         await this._persistSuggestionSettings();
+    }
+
+    // The windows with this slot's typed value, and what is wrong with that slot, said for
+    // the user ('' when nothing is).
+    _windowsWith(index, rawValue) {
+        const next = this.getModalState().windowDays.slice();
+        const dayCount = Number(rawValue);
+        next[index] = dayCount;
+        if (rawValue.trim() === '' || !Number.isInteger(dayCount)) {
+            return { next, problem: 'Enter a whole number of days.' };
+        }
+        if (dayCount < 1 || dayCount > MAX_SEARCH_SUGGESTION_WINDOW_DAYS) {
+            return { next, problem: `A slot must be between 1 and ${MAX_SEARCH_SUGGESTION_WINDOW_DAYS} days.` };
+        }
+        if (next.filter((other) => other === dayCount).length > 1) {
+            return { next, problem: `Another slot already covers ${dayCount} days.` };
+        }
+        return { next, problem: getSearchSuggestionWindowsValidationError(next) };
+    }
+
+    _showWindowProblem(index, problem) {
+        const input = document.getElementById(`search-window-days-${index}`);
+        if (!(input instanceof HTMLInputElement)) {
+            throw new Error('Search window input missing');
+        }
+        setFieldMessage(input, problem, 'error');
     }
 
     async _removeWindow(index) {
@@ -125,7 +149,7 @@ export class SearchSuggestionStatisticsModal extends BaseModal {
         }
         const next = this.getModalState().windowDays.slice();
         next.splice(index, 1);
-        this.updateModalState({ windowDays: next, error: '' });
+        this.updateModalState({ windowDays: next });
         await this._persistSuggestionSettings();
     }
 
@@ -146,7 +170,6 @@ export class SearchSuggestionStatisticsModal extends BaseModal {
         }
         this.updateModalState({
             windowDays: [...validatedWindows, nextValue],
-            error: '',
         });
         await this._persistSuggestionSettings();
     }
@@ -161,7 +184,7 @@ export class SearchSuggestionStatisticsModal extends BaseModal {
         if (typeof value !== 'boolean') {
             throw new Error('Search suggestion setting value must be boolean');
         }
-        this.updateModalState({ [settingName]: value, error: '' });
+        this.updateModalState({ [settingName]: value });
         await this._persistSuggestionSettings();
     }
 
@@ -177,7 +200,7 @@ export class SearchSuggestionStatisticsModal extends BaseModal {
         if (typeof state.limitNoteCreditsPerSearchContext !== 'boolean') {
             throw new Error('Search-context note credit limit preference must be boolean');
         }
-        this.updateModalState({ saving: true, error: '' });
+        this.updateModalState({ saving: true });
         this.renderModalContent();
         await this._saveSettings(
             windowDays,
@@ -254,8 +277,7 @@ export class SearchSuggestionStatisticsModal extends BaseModal {
     }
 
     _renderResetConfirmation(modalElement, state) {
-        const disabled = state.resetting ? ' disabled' : '';
-        const resetLabel = state.resetting ? 'Resetting…' : 'Reset activity';
+        const resetLabel = state.resetting ? 'Resetting…' : 'Reset Activity';
         modalElement.innerHTML = `
             <div class="modal-content search-suggestion-statistics-modal-content">
                 <div class="prioritize-modal-header">
@@ -266,10 +288,19 @@ export class SearchSuggestionStatisticsModal extends BaseModal {
                     <p>Delete all learned search-suggestion tag activity for this vault?</p>
                     <p>Notes, tabs, saved searches, and the settings in this modal will not be changed.</p>
                 </div>
-                <div class="form-actions alphabetize-root-notes-actions">
-                    <button type="button" class="secondary-btn" id="search-suggestion-statistics-reset-cancel-btn"${disabled}>Cancel</button>
-                    <button type="button" class="danger-btn" id="search-suggestion-statistics-reset-confirm-btn" data-modal-enter-action${disabled}>${resetLabel}</button>
-                </div>
+                ${actionRowHtml({
+                    alternative: null,
+                    cancel: {
+                        id: 'search-suggestion-statistics-reset-cancel-btn', label: 'Cancel',
+                        disabled: state.resetting === true, attributes: [],
+                    },
+                    main: {
+                        id: 'search-suggestion-statistics-reset-confirm-btn', label: resetLabel,
+                        disabled: state.resetting === true, attributes: [],
+                        isDestructive: true, isEnterAction: false, type: 'button',
+                    },
+                    rowClass: 'alphabetize-root-notes-actions',
+                })}
             </div>
         `;
         const cancelButton = document.getElementById(
@@ -303,7 +334,6 @@ export class SearchSuggestionStatisticsModal extends BaseModal {
             || typeof state.confirmingReset !== 'boolean'
             || typeof state.showWindowLabels !== 'boolean'
             || typeof state.limitNoteCreditsPerSearchContext !== 'boolean'
-            || typeof state.error !== 'string'
         ) {
             throw new Error('Search suggestion statistics modal state is invalid');
         }
@@ -316,7 +346,7 @@ export class SearchSuggestionStatisticsModal extends BaseModal {
         const rows = windowDays.map((dayCount, index) => `
             <div class="search-window-row" data-window-index="${index}">
                 <span class="search-window-slot">Slot ${index + 1}</span>
-                <input class="search-window-days-input" type="number" min="1" max="${MAX_SEARCH_SUGGESTION_WINDOW_DAYS}" value="${dayCount}" aria-label="Slot ${index + 1} window in days"${disabled}>
+                <input id="search-window-days-${index}" class="search-window-days-input" type="number" min="1" max="${MAX_SEARCH_SUGGESTION_WINDOW_DAYS}" value="${dayCount}" aria-label="Slot ${index + 1} window in days"${disabled}>
                 <span>days</span>
                 <button type="button" class="secondary-btn search-window-remove"${disabled}>Remove</button>
             </div>
@@ -335,7 +365,7 @@ export class SearchSuggestionStatisticsModal extends BaseModal {
         const resetDisabled = state.loading || state.saving || state.resetting
             ? ' disabled'
             : '';
-        const resetLabel = state.resetting ? 'Resetting…' : 'Reset activity';
+        const resetLabel = state.resetting ? 'Resetting…' : 'Reset Activity';
         const settingsStatus = state.saving ? 'Saving…' : 'Changes save automatically.';
 
         modalElement.innerHTML = `
@@ -357,7 +387,6 @@ export class SearchSuggestionStatisticsModal extends BaseModal {
                     </label>
                     <p class="note-layout-description">When enabled, later edits, expansions, commands, moves, indents, and outdents on the same note are suppressed until you enter a different tab or search context.</p>
                     <p class="search-suggestion-settings-status" aria-live="polite">${settingsStatus}</p>
-                    <p class="error-message">${escapeHtml(state.error)}</p>
                 </section>
                 <section class="search-suggestion-statistics-section">
                     <h3>Collected activity</h3>
@@ -387,6 +416,7 @@ export class SearchSuggestionStatisticsModal extends BaseModal {
             if (!(removeButton instanceof HTMLButtonElement)) {
                 throw new Error('Search window remove button missing');
             }
+            input.oninput = () => this._showWindowProblem(index, this._windowsWith(index, input.value).problem);
             input.onchange = async () => this._changeWindow(index, input.value);
             removeButton.onclick = async () => this._removeWindow(index);
         });

@@ -139,7 +139,7 @@ export async function checkSuperTags(page) {
       ['MAX and units', maxKeepsTheLargest],
       ['a rule over values', aRuleTagsTheNotesItHoldsFor],
       ['the tag bar', theTagBarSuggestsAndSavesASuperTag],
-      ['Edit Tag Relationships', theRuleShowsInItsTagsLeftColumn],
+      ['Edit Tag Relationships…', theRuleShowsInItsTagsLeftColumn],
     ]) {
       try {
         await run(page);

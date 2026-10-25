@@ -3,6 +3,18 @@ import { HttpRequestError, UserInputRejected, rethrowUnexpectedError } from '../
 /** Three explicit password-management modals backed by shared behavior. */
 
 import { BaseModal } from './base-modal.js';
+import { actionRowHtml } from './action-row.js';
+import { showErrorDialogFor } from './error-dialog.js';
+import { setFieldMessage } from './field-message.js';
+
+// "Passwords do not match." once the confirmation stops being the start of the new password,
+// so typing a matching confirmation says nothing; '' otherwise.
+function confirmationMismatch(formData) {
+    if (formData.confirmPassword === '' || formData.newPassword.startsWith(formData.confirmPassword)) {
+        return '';
+    }
+    return 'Passwords do not match.';
+}
 import { ModeContextInstance as ModeContext } from '../mode-manager/mode-context.js';
 import { CONFIG } from '../config.js';
 import {
@@ -18,7 +30,6 @@ import {
 import { readPasswordOperationResponse } from '../password-operation-response.js';
 import { buildSessionHeaders } from '../session-auth.js';
 import { Auth } from '../auth.js';
-import { escapeHtml } from '../html-escape.js';
 
 const PASSWORD_MODAL_CONFIG = {
     create: {
@@ -64,7 +75,6 @@ class PasswordOperationModal extends BaseModal {
             mode: this.mode,
             currentStep: 1,
             isProcessing: false,
-            error: null,
             formData: {
                 currentPassword: '',
                 newPassword: '',
@@ -98,17 +108,14 @@ class PasswordOperationModal extends BaseModal {
             if (this.mode !== 'remove') {
                 this.loadNewPasswordStrengthEstimator();
             }
-        })().catch((error) => {
+        })().catch(async (error) => {
             rethrowUnexpectedError(error);
             if (!this.isCurrentOpen(generation)) return;
-            console.error('Failed to open password operation modal');
-            const errorMessage = error && typeof error.message === 'string' && error.message !== ''
-                ? error.message
-                : 'Failed to load password settings. Please try again.';
-            this.updateModalState({
-                error: errorMessage,
-            });
-            this.renderModalContent();
+            // Nothing to do here: the error dialog says why, and closing it closes this one.
+            await showErrorDialogFor(error, null);
+            if (this.isCurrentOpen(generation)) {
+                this.close();
+            }
         });
     }
     
@@ -166,10 +173,6 @@ class PasswordOperationModal extends BaseModal {
      * Generate HTML content based on modal state
      */
     generateContentHTML(state) {
-        if (state.error) {
-            return this.generateErrorHTML(state.error);
-        }
-        
         switch (state.mode) {
             case 'create':
                 return this.generateCreatePasswordHTML();
@@ -208,12 +211,15 @@ class PasswordOperationModal extends BaseModal {
                         <input type="password" id="confirm-password" autocomplete="new-password" maxlength="${PASSWORD_MAX_LENGTH}" required>
                     </div>
 
-                    <small class="form-help" id="password-form-validation" aria-live="polite"></small>
-
-                    <div class="form-actions">
-                        <button type="submit" class="primary-btn" data-password-submit disabled>Add Password</button>
-                        <button type="button" class="secondary-btn" id="cancel-btn">Cancel</button>
-                    </div>
+                    ${actionRowHtml({
+                        alternative: null,
+                        cancel: { id: 'cancel-btn', label: 'Cancel', disabled: false, attributes: [] },
+                        main: {
+                            id: null, label: 'Add Password', disabled: true, attributes: ['data-password-submit'],
+                            isDestructive: false, isEnterAction: false, type: 'submit',
+                        },
+                        rowClass: '',
+                    })}
                 </form>
                 
                 <div id="progress-section" style="display: none;">
@@ -257,12 +263,15 @@ class PasswordOperationModal extends BaseModal {
                         <input type="password" id="confirm-password" autocomplete="new-password" maxlength="${PASSWORD_MAX_LENGTH}" required>
                     </div>
 
-                    <small class="form-help" id="password-form-validation" aria-live="polite"></small>
-
-                    <div class="form-actions">
-                        <button type="submit" class="primary-btn" data-password-submit disabled>Change Password</button>
-                        <button type="button" class="secondary-btn" id="cancel-btn">Cancel</button>
-                    </div>
+                    ${actionRowHtml({
+                        alternative: null,
+                        cancel: { id: 'cancel-btn', label: 'Cancel', disabled: false, attributes: [] },
+                        main: {
+                            id: null, label: 'Change Password', disabled: true, attributes: ['data-password-submit'],
+                            isDestructive: false, isEnterAction: false, type: 'submit',
+                        },
+                        rowClass: '',
+                    })}
                 </form>
                 
                 <div id="progress-section" style="display: none;">
@@ -468,7 +477,7 @@ class PasswordOperationModal extends BaseModal {
                 <form id="password-form">
                     <div class="form-group">
                         <label for="current-password">Current Password:</label>
-                        <input type="password" id="current-password" required>
+                        <input type="password" id="current-password" data-modal-initial-focus required>
                     </div>
                     
                     <div class="form-group">
@@ -478,12 +487,15 @@ class PasswordOperationModal extends BaseModal {
                         </label>
                     </div>
 
-                    <small class="form-help" id="password-form-validation" aria-live="polite"></small>
-
-                    <div class="form-actions">
-                        <button type="submit" class="danger-btn" data-password-submit disabled>Remove Password</button>
-                        <button type="button" class="secondary-btn" id="cancel-btn">Cancel</button>
-                    </div>
+                    ${actionRowHtml({
+                        alternative: null,
+                        cancel: { id: 'cancel-btn', label: 'Cancel', disabled: false, attributes: [] },
+                        main: {
+                            id: null, label: 'Remove Password', disabled: true, attributes: ['data-password-submit'],
+                            isDestructive: true, isEnterAction: false, type: 'submit',
+                        },
+                        rowClass: '',
+                    })}
                 </form>
                 
                 <div id="progress-section" style="display: none;">
@@ -501,15 +513,6 @@ class PasswordOperationModal extends BaseModal {
             <div class="modal-content">
                 <h3>Loading...</h3>
                 <p>Checking password settings...</p>
-            </div>
-        `;
-    }
-    
-    generateErrorHTML(error) {
-        return `
-            <div class="modal-content">
-                <h3>Error</h3>
-                <p class="error-message">${escapeHtml(error)}</p>
             </div>
         `;
     }
@@ -598,17 +601,19 @@ class PasswordOperationModal extends BaseModal {
 
     syncSubmitAvailability() {
         const submitButton = document.querySelector('[data-password-submit]');
-        const validationOutput = document.getElementById('password-form-validation');
         if (!(submitButton instanceof HTMLButtonElement)) {
             throw new Error('Password modal submit button missing');
         }
-        if (!(validationOutput instanceof HTMLElement)) {
-            throw new Error('password-form-validation missing');
-        }
 
-        const validation = this.validateFormData(this.collectFormData(), this.mode);
+        const formData = this.collectFormData();
+        const validation = this.validateFormData(formData, this.mode);
         submitButton.disabled = !validation.valid;
-        validationOutput.textContent = validation.valid ? '' : validation.error;
+        // The dimmed button says what is missing; only a mistake floats under its field.
+        submitButton.title = validation.valid ? '' : validation.error;
+        const confirmField = document.getElementById('confirm-password');
+        if (confirmField instanceof HTMLInputElement) {
+            setFieldMessage(confirmField, confirmationMismatch(formData), 'error');
+        }
     }
     
     /**
@@ -629,7 +634,7 @@ class PasswordOperationModal extends BaseModal {
         }
 
         await (async () => {
-            this.updateModalState({ isProcessing: true, error: null });
+            this.updateModalState({ isProcessing: true });
             this.showProcessingState();
             
             // Show waiting cursor
@@ -645,23 +650,11 @@ class PasswordOperationModal extends BaseModal {
             });
         })().catch((error) => {
             rethrowUnexpectedError(error);
-            console.error('Password operation failed');
-            
-            // Remove waiting cursor on error
+            // The form comes back as it was typed, under the error dialog.
             document.body.classList.remove('loading');
-
-            let errorMessage = null;
-            if (error && typeof error.message === 'string' && error.message.length > 0) {
-                errorMessage = error.message;
-            } else {
-                errorMessage = 'Password operation failed. Please try again.';
-            }
-            
-            this.updateModalState({ 
-                error: errorMessage,
-                isProcessing: false 
-            });
-            this.renderModalContent();
+            this.updateModalState({ isProcessing: false });
+            this.hideProcessingState();
+            return showErrorDialogFor(error, null);
         });
     }
     
@@ -690,10 +683,13 @@ class PasswordOperationModal extends BaseModal {
         switch (mode) {
             case 'create':
                 if (!formData.newPassword) {
-                    return { valid: false, error: 'Please enter a new password' };
+                    return { valid: false, error: 'Enter a new password.' };
+                }
+                if (!formData.confirmPassword) {
+                    return { valid: false, error: 'Enter the new password again to confirm it.' };
                 }
                 if (formData.newPassword !== formData.confirmPassword) {
-                    return { valid: false, error: 'Passwords do not match' };
+                    return { valid: false, error: 'Passwords do not match.' };
                 }
                 const createLengthValidation = validateNewPasswordLength(formData.newPassword);
                 if (!createLengthValidation.valid) {
@@ -703,13 +699,16 @@ class PasswordOperationModal extends BaseModal {
                 
             case 'change':
                 if (!formData.currentPassword) {
-                    return { valid: false, error: 'Please enter your current password' };
+                    return { valid: false, error: 'Enter your current password.' };
                 }
                 if (!formData.newPassword) {
-                    return { valid: false, error: 'Please enter a new password' };
+                    return { valid: false, error: 'Enter a new password.' };
+                }
+                if (!formData.confirmPassword) {
+                    return { valid: false, error: 'Enter the new password again to confirm it.' };
                 }
                 if (formData.newPassword !== formData.confirmPassword) {
-                    return { valid: false, error: 'New passwords do not match' };
+                    return { valid: false, error: 'Passwords do not match.' };
                 }
                 const changeLengthValidation = validateNewPasswordLength(formData.newPassword);
                 if (!changeLengthValidation.valid) {
@@ -719,11 +718,11 @@ class PasswordOperationModal extends BaseModal {
                 
             case 'remove':
                 if (!formData.currentPassword) {
-                    return { valid: false, error: 'Please enter your current password' };
+                    return { valid: false, error: 'Enter your current password.' };
                 }
                 const confirmCheckbox = document.getElementById('confirm-remove');
                 if (!confirmCheckbox || !confirmCheckbox.checked) {
-                    return { valid: false, error: 'Please confirm that you understand the risks' };
+                    return { valid: false, error: 'Tick the box to confirm you understand the risks.' };
                 }
                 break;
         }
@@ -792,6 +791,16 @@ class PasswordOperationModal extends BaseModal {
         this.simulateProgress();
     }
     
+    hideProcessingState() {
+        const form = document.getElementById('password-form');
+        const progressSection = document.getElementById('progress-section');
+        if (!(form instanceof HTMLElement) || !(progressSection instanceof HTMLElement)) {
+            throw new Error('Password form or progress section missing');
+        }
+        form.style.display = '';
+        progressSection.style.display = 'none';
+    }
+
     /**
      * Simulate progress for bulk operations (temporary until SSE implemented)
      */

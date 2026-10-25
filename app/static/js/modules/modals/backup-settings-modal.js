@@ -1,10 +1,20 @@
 import { parseDecimalInteger } from '../decimal-integer.js';
 import { ApplicationState } from '../application-state.js';
-import { HttpRequestError, rethrowUnexpectedError } from '../expected-errors.js';
+import { FieldInputRejected, HttpRequestError, rethrowUnexpectedError } from '../expected-errors.js';
 import { BaseModal } from './base-modal.js';
 import { CONFIG } from '../config.js';
 import { buildSessionHeaders } from '../session-auth.js';
 import { escapeHtml } from '../html-escape.js';
+import { actionRowHtml } from './action-row.js';
+import { failureFieldId, showErrorDialog, showErrorDialogFor } from './error-dialog.js';
+import { FloatingMessages } from '../floating-messages.js';
+
+const PROGRESS_CARD_KEY = 'backup-settings-progress';
+
+// The id of a vault's checkbox, so an error dialog can name it.
+function vaultCheckboxId(namespace) {
+    return `backup-settings-vault-${namespace}`;
+}
 
 
 function parseResponseError(responseBody, statusCode) {
@@ -31,13 +41,6 @@ export class BackupSettingsModal extends BaseModal {
         ApplicationState.own(this, 'BackupSettingsModal', new.target === BackupSettingsModal);
     }
 
-    _errorMessage(error) {
-        if (error instanceof Error) {
-            return error.message;
-        }
-        return String(error);
-    }
-
     getInitialModalState() {
         return {
             loading: false,
@@ -48,7 +51,6 @@ export class BackupSettingsModal extends BaseModal {
             availableNamespaces: [],
             retentionCountText: '30',
             statusMessage: '',
-            error: '',
         };
     }
 
@@ -116,6 +118,7 @@ export class BackupSettingsModal extends BaseModal {
     }
 
     onClose() {
+        FloatingMessages.end(PROGRESS_CARD_KEY);
         const resolve = this._pendingResolve;
         const closeResult = this._decision.result;
         this._pendingResolve = null;
@@ -151,7 +154,6 @@ export class BackupSettingsModal extends BaseModal {
         const availableNamespaces = Array.isArray(state.availableNamespaces) ? state.availableNamespaces : [];
         const retentionCountText = typeof state.retentionCountText === 'string' ? state.retentionCountText : '';
         const statusMessage = typeof state.statusMessage === 'string' ? state.statusMessage : '';
-        const error = typeof state.error === 'string' ? state.error : '';
         const showNamespaceSelection = availableNamespaces.length > 1;
         const singleNamespaceLabel = availableNamespaces.length > 0 ? availableNamespaces[0] : '';
         const namespaceSelectionHtml = showNamespaceSelection
@@ -159,7 +161,7 @@ export class BackupSettingsModal extends BaseModal {
                 const checked = selectedNamespaces.includes(namespace);
                 return `
                     <label class="backup-settings-checkbox-row backup-settings-namespace-row">
-                        <input type="checkbox" data-backup-namespace="${escapeHtml(namespace)}" ${checked ? 'checked' : ''} ${loading || saving ? 'disabled' : ''}>
+                        <input type="checkbox" id="${escapeHtml(vaultCheckboxId(namespace))}" data-backup-namespace="${escapeHtml(namespace)}" ${checked ? 'checked' : ''} ${loading || saving ? 'disabled' : ''}>
                         <span>${escapeHtml(namespace)}</span>
                     </label>
                 `;
@@ -196,13 +198,21 @@ export class BackupSettingsModal extends BaseModal {
                     <input type="number" id="backup-settings-retention-count" min="1" step="1" value="${escapeHtml(retentionCountText)}" ${loading || saving ? 'disabled' : ''}>
                 </div>
 
-                <div class="form-actions">
-                    <button type="button" class="primary-btn" id="backup-settings-run-btn" ${loading || saving ? 'disabled' : ''}>${saving ? 'Saving...' : 'Back Up Now'}</button>
-                    <button type="button" class="secondary-btn" id="backup-settings-cancel-btn" ${loading || saving || pickingFolder ? 'disabled' : ''}>Cancel</button>
-                </div>
+                ${actionRowHtml({
+                    alternative: null,
+                    cancel: {
+                        id: 'backup-settings-cancel-btn', label: 'Cancel',
+                        disabled: [loading, saving, pickingFolder].includes(true), attributes: [],
+                    },
+                    main: {
+                        id: 'backup-settings-run-btn', label: saving ? 'Backing Up…' : 'Back Up Now',
+                        disabled: [loading, saving].includes(true), attributes: [],
+                        isDestructive: false, isEnterAction: false, type: 'button',
+                    },
+                    rowClass: '',
+                })}
 
                 <p id="backup-settings-status">${escapeHtml(effectiveStatusMessage)}</p>
-                <p id="backup-settings-error" class="error-message">${escapeHtml(error)}</p>
             </div>
         `;
 
@@ -263,7 +273,6 @@ export class BackupSettingsModal extends BaseModal {
             folderClearButton.onclick = () => {
                 this.updateModalState({
                     folderPath: '',
-                    error: '',
                 });
                 this.renderModalContent();
             };
@@ -283,7 +292,6 @@ export class BackupSettingsModal extends BaseModal {
                 });
                 this.updateModalState({
                     selectedNamespaces: checkedNamespaces,
-                    error: '',
                 });
             };
         });
@@ -293,7 +301,6 @@ export class BackupSettingsModal extends BaseModal {
             retentionInput.oninput = () => {
                 this.updateModalState({
                     retentionCountText: retentionInput.value,
-                    error: '',
                 });
             };
         }
@@ -343,7 +350,6 @@ export class BackupSettingsModal extends BaseModal {
             loading: true,
             pickingFolder: false,
             statusMessage: 'Loading backup settings...',
-            error: '',
         });
         this.renderModalContent();
         const settled = await this._authRequest(CONFIG.API.BACKUP.SETTINGS, 'GET', null).then(
@@ -351,41 +357,23 @@ export class BackupSettingsModal extends BaseModal {
             (error) => { rethrowUnexpectedError(error); return ({ ok: false, error }); },
         );
         if (!settled.ok) {
-            this.updateModalState({
-                loading: false,
-                statusMessage: '',
-                error: this._errorMessage(settled.error),
-            });
-            this.renderModalContent();
+            // Nothing to set without the settings: the error dialog says why, and closing it
+            // closes this one.
+            await showErrorDialogFor(settled.error, null);
+            if (this.isOpen) {
+                this.close();
+            }
             return;
         }
         const payload = settled.payload;
         if (!payload || typeof payload !== 'object') {
-            this.updateModalState({
-                loading: false,
-                statusMessage: '',
-                error: 'Backup settings response missing body',
-            });
-            this.renderModalContent();
-            return;
+            throw new Error('Backup settings response missing body');
         }
         if (!Array.isArray(payload.selected_namespaces)) {
-            this.updateModalState({
-                loading: false,
-                statusMessage: '',
-                error: 'Backup settings response missing selected_namespaces',
-            });
-            this.renderModalContent();
-            return;
+            throw new Error('Backup settings response missing selected_namespaces');
         }
         if (!Array.isArray(payload.available_namespaces)) {
-            this.updateModalState({
-                loading: false,
-                statusMessage: '',
-                error: 'Backup settings response missing available_namespaces',
-            });
-            this.renderModalContent();
-            return;
+            throw new Error('Backup settings response missing available_namespaces');
         }
         this.updateModalState({
             loading: false,
@@ -395,7 +383,6 @@ export class BackupSettingsModal extends BaseModal {
             availableNamespaces: payload.available_namespaces,
             retentionCountText: String(payload.retention_count),
             statusMessage: '',
-            error: '',
         });
         this.renderModalContent();
     }
@@ -404,60 +391,45 @@ export class BackupSettingsModal extends BaseModal {
         const state = this.getModalState();
         const raw = typeof state.retentionCountText === 'string' ? state.retentionCountText.trim() : '';
         if (!/^[0-9]+$/.test(raw)) {
-            throw new Error('Retention count must be a whole number.');
+            throw new FieldInputRejected('Backups to retain must be a whole number.', 'backup-settings-retention-count');
         }
         const retentionCount = parseDecimalInteger(raw);
         if (!Number.isInteger(retentionCount) || retentionCount <= 0) {
-            throw new Error('Retention count must be greater than zero.');
+            throw new FieldInputRejected('Keep at least one backup.', 'backup-settings-retention-count');
         }
         return retentionCount;
     }
 
     async pickFolderPath() {
-        this.updateModalState({
-            pickingFolder: true,
-            statusMessage: 'Choose a backup folder...',
-            error: '',
-        });
+        this.updateModalState({ pickingFolder: true });
         this.renderModalContent();
+        FloatingMessages.showProgress(PROGRESS_CARD_KEY, 'Choosing a backup folder…');
         const settled = await this._authRequest(CONFIG.API.BACKUP.FOLDER_PICK, 'POST', {}).then(
             (payload) => ({ ok: true, payload }),
             (error) => { rethrowUnexpectedError(error); return ({ ok: false, error }); },
         );
+        FloatingMessages.end(PROGRESS_CARD_KEY);
         if (!settled.ok) {
             this.updateModalState({
                 pickingFolder: false,
                 statusMessage: '',
-                error: this._errorMessage(settled.error),
             });
             this.renderModalContent();
+            await showErrorDialogFor(settled.error, null);
             return;
         }
         const payload = settled.payload;
         if (!payload || typeof payload !== 'object') {
-            this.updateModalState({
-                pickingFolder: false,
-                statusMessage: '',
-                error: 'Folder picker response missing body',
-            });
-            this.renderModalContent();
-            return;
+            throw new Error('Folder picker response missing body');
         }
         if (payload.selected === true) {
             if (typeof payload.folder_path !== 'string' || payload.folder_path.length === 0) {
-                this.updateModalState({
-                    pickingFolder: false,
-                    statusMessage: '',
-                    error: 'Folder picker response missing folder path',
-                });
-                this.renderModalContent();
-                return;
+                throw new Error('Folder picker response missing folder path');
             }
             this.updateModalState({
                 pickingFolder: false,
                 folderPath: payload.folder_path,
                 statusMessage: '',
-                error: '',
             });
             this.renderModalContent();
             return;
@@ -465,7 +437,6 @@ export class BackupSettingsModal extends BaseModal {
         this.updateModalState({
             pickingFolder: false,
             statusMessage: '',
-            error: '',
         });
         this.renderModalContent();
     }
@@ -499,37 +470,26 @@ export class BackupSettingsModal extends BaseModal {
         const state = this.getModalState();
         const folderPath = typeof state.folderPath === 'string' ? state.folderPath.trim() : '';
         const selectedNamespaces = Array.isArray(state.selectedNamespaces) ? state.selectedNamespaces : [];
-        if (folderPath.length === 0) {
-            this.updateModalState({
-                error: 'Choose a backup folder before running a backup.',
-            });
-            this.renderModalContent();
-            return;
-        }
-        if (selectedNamespaces.length === 0) {
-            this.updateModalState({
-                error: 'Select at least one vault to back up.',
-            });
-            this.renderModalContent();
-            return;
-        }
-        this.updateModalState({
-            saving: true,
-            error: '',
-        });
-        this.renderModalContent();
         const retentionResult = await Promise.resolve()
             .then(() => this._parseRetentionCount())
             .then(
                 (value) => ({ ok: true, value }),
                 (error) => { rethrowUnexpectedError(error); return ({ ok: false, error }); },
             );
+        const availableNamespaces = Array.isArray(state.availableNamespaces) ? state.availableNamespaces : [];
+        const problems = [];
+        if (folderPath.length === 0) {
+            problems.push({ text: 'Choose a backup folder first.', fieldId: 'backup-settings-folder-pick-btn' });
+        }
+        if (selectedNamespaces.length === 0) {
+            const firstVault = availableNamespaces.length > 1 ? vaultCheckboxId(availableNamespaces[0]) : null;
+            problems.push({ text: 'Choose at least one vault to back up.', fieldId: firstVault });
+        }
         if (!retentionResult.ok) {
-            this.updateModalState({
-                saving: false,
-                error: this._errorMessage(retentionResult.error),
-            });
-            this.renderModalContent();
+            problems.push({ text: retentionResult.error.message, fieldId: failureFieldId(retentionResult.error) });
+        }
+        if (problems.length > 0) {
+            await showErrorDialog(problems);
             return;
         }
         const retentionCount = retentionResult.value;

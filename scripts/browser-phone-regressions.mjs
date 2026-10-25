@@ -217,6 +217,34 @@ async function sheetCase(page) {
   await waitQuiet(page);
 }
 
+async function saveButtonState(page) {
+  return page.$eval('#phone-capture-save', button => ({disabled: button.disabled, title: button.title}));
+}
+
+// Cancel and Save side by side at the lower right of the sheet, as in the mock, with the
+// shared dialog row's markup (action-row.js): exact edges, no tolerance.
+async function captureRowCase(page) {
+  const row = await page.$eval('#phone-capture .dialog-actions', element => {
+    const content = element.closest('.phone-capture-content');
+    const contentBox = content.getBoundingClientRect();
+    const contentStyle = getComputedStyle(content);
+    const [cancel, save] = [...element.querySelectorAll('button')].map(button => button.getBoundingClientRect());
+    return {
+      innerRight: contentBox.right - parseFloat(contentStyle.paddingRight) - parseFloat(contentStyle.borderRightWidth),
+      gap: parseFloat(getComputedStyle(element).columnGap),
+      cancel: {left: cancel.left, right: cancel.right, top: cancel.top},
+      save: {left: save.left, right: save.right, top: save.top},
+      saveIsMain: element.querySelector('#phone-capture-save').classList.contains('primary-btn'),
+      cancelIsSafe: element.querySelector('#phone-capture-cancel').hasAttribute('data-modal-safe-focus'),
+    };
+  });
+  assert.equal(row.save.right, row.innerRight, 'Save ends at the sheet\'s right edge');
+  assert.equal(row.cancel.top, row.save.top, 'Cancel and Save side by side');
+  assert.equal(row.cancel.right + row.gap, row.save.left, 'Cancel just left of Save');
+  assert.equal(row.saveIsMain, true, 'Save is the main action');
+  assert.equal(row.cancelIsSafe, true, 'the row is the shared dialog row (Cancel is its safe focus)');
+}
+
 async function captureCase(page) {
   await search(page, '');
   for (const [text, typedTags, savedTags] of [['Phone captured thought', '', '@inbox'], ['Phone tagged thought', 'reading', 'reading']]) {
@@ -225,7 +253,11 @@ async function captureCase(page) {
     assert.equal(await page.evaluate(() => document.activeElement.id), 'phone-capture-text', 'capture starts in its text box');
     const buttons = await page.$$eval('#phone-capture .dialog-actions button', elements => elements.map(element => element.textContent.trim()));
     assert.deepEqual(buttons, ['Cancel', 'Save'], 'Cancel, then Save at the lower right');
+    await captureRowCase(page);
+    assert.deepEqual(await saveButtonState(page), {disabled: true, title: 'Write the note first.'},
+      'Save is dimmed, and says why, while the note is empty');
     await page.type('#phone-capture-text', text);
+    assert.deepEqual(await saveButtonState(page), {disabled: false, title: ''}, 'Save is ready once the note has text');
     if (typedTags !== '') {
       await page.type('#phone-capture-tags', `${typedTags} `);
     }

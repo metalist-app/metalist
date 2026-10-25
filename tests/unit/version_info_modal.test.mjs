@@ -26,6 +26,7 @@ function harness(t) {
     });
     const modal = new VersionInfoModal();
     modal._installModalCloseButton = () => {};
+    modal._focusSafeStart = () => {};
     modal.setupEventListeners = () => {};
     modal.cleanupEventListeners = () => {};
     let pending;

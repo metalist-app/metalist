@@ -1,5 +1,5 @@
 import { ApplicationState } from '../application-state.js';
-import { HttpRequestError } from '../expected-errors.js';
+import { HttpRequestError, UserInputRejected } from '../expected-errors.js';
 import { BaseModal } from './base-modal.js';
 import { CONFIG } from '../config.js';
 import { ModeContextInstance as ModeContext } from '../mode-manager/mode-context.js';
@@ -11,6 +11,11 @@ import { settleResult } from '../async-result.js';
 import { rewriteNamespaceUrlPreservingCurrentHost } from '../login-namespace-picker.js';
 import { buildSessionHeaders } from '../session-auth.js';
 import { escapeHtml } from '../html-escape.js';
+import { actionRowHtml } from './action-row.js';
+import { showErrorDialog, showErrorDialogFor } from './error-dialog.js';
+import { FloatingMessages } from '../floating-messages.js';
+
+const PROGRESS_CARD_KEY = 'delete-vault-progress';
 
 
 
@@ -53,7 +58,6 @@ export class DeleteNamespaceModal extends BaseModal {
             redirectNamespaces: [],
             redirectNamespace: '',
             recreatesDefault: false,
-            error: '',
             status: 'Loading vaults...',
             successMessage: '',
         };
@@ -83,23 +87,22 @@ export class DeleteNamespaceModal extends BaseModal {
                 loading: false,
                 selectableNamespaces,
                 status: '',
-                error: '',
             });
         });
         if (!this.isCurrentOpen(generation)) return;
         if (!catalogResult.ok) {
-            const error = catalogResult.error;
-            const message = error instanceof Error ? error.message : 'Failed to load vaults';
-            this.updateModalState({
-                loading: false,
-                error: message,
-                status: '',
-            });
+            // Nothing to delete from: the error dialog says why, and closing it closes this one.
+            await showErrorDialogFor(catalogResult.error, null);
+            if (this.isCurrentOpen(generation)) {
+                this.close();
+            }
+            return;
         }
         this.renderModalContent();
     }
 
     onClose() {
+        FloatingMessages.end(PROGRESS_CARD_KEY);
     }
 
     requestClose() {
@@ -111,20 +114,9 @@ export class DeleteNamespaceModal extends BaseModal {
         super.requestClose();
     }
 
-    handleKeyDown(event) {
-        const topModal = ModeContext.topModal;
-        if (topModal !== this.modalName) {
-            return;
-        }
-
-        if (event.key === 'Escape') {
-            event.preventDefault();
-            event.stopPropagation();
-            this.requestClose();
-            return;
-        }
-
-        this.onKeyDown(event);
+    // While the vault is deleted the dialog stays open (its Back is dimmed too).
+    canRequestClose() {
+        return this.getModalState().deleting !== true;
     }
 
     onKeyDown(event) {
@@ -140,11 +132,6 @@ export class DeleteNamespaceModal extends BaseModal {
         }
         event.preventDefault();
         event.stopPropagation();
-        const state = this.getModalState();
-        if (state && state.confirming) {
-            void this.handleSubmit();
-            return;
-        }
         void this.prepareDeletionConfirmation();
     }
 
@@ -167,7 +154,6 @@ export class DeleteNamespaceModal extends BaseModal {
         const redirectNamespaces = Array.isArray(state.redirectNamespaces) ? state.redirectNamespaces : [];
         const redirectNamespace = typeof state.redirectNamespace === 'string' ? state.redirectNamespace : '';
         const recreatesDefault = state.recreatesDefault === true;
-        const error = typeof state.error === 'string' ? state.error : '';
         const status = typeof state.status === 'string' ? state.status : '';
         const successMessage = typeof state.successMessage === 'string' ? state.successMessage : '';
 
@@ -189,10 +175,12 @@ export class DeleteNamespaceModal extends BaseModal {
                 <div class="modal-content namespace-delete-modal-content">
                     <h3>Delete vault</h3>
                     <p class="namespace-delete-status">${escapeHtml(status)}</p>
-                    <div class="form-actions">
-                        <button type="button" class="secondary-btn" id="delete-namespace-cancel-loading-btn">Cancel</button>
-                    </div>
-                    <p class="error-message" ${error.length === 0 ? 'style="display:none;"' : ''}>${escapeHtml(error)}</p>
+                    ${actionRowHtml({
+                        alternative: null,
+                        cancel: { id: 'delete-namespace-cancel-loading-btn', label: 'Cancel', disabled: false, attributes: [] },
+                        main: null,
+                        rowClass: '',
+                    })}
                 </div>
             `;
             const cancelButton = document.getElementById('delete-namespace-cancel-loading-btn');
@@ -203,7 +191,7 @@ export class DeleteNamespaceModal extends BaseModal {
         }
 
         if (!confirming) {
-            if (selectableNamespaces.length === 0 && error.length === 0) {
+            if (selectableNamespaces.length === 0) {
                 throw new Error('Delete namespace modal has no namespace choices');
             }
             modalElement.innerHTML = `
@@ -221,12 +209,15 @@ export class DeleteNamespaceModal extends BaseModal {
                             `).join('')}
                         </select>
                     </div>
-                    <div class="form-actions">
-                        <button type="button" class="danger-btn" id="delete-namespace-continue-btn">Continue</button>
-                        <button type="button" class="secondary-btn" id="delete-namespace-cancel-btn">Cancel</button>
-                    </div>
-                    <p class="namespace-delete-status">${escapeHtml(status)}</p>
-                    <p class="error-message" ${error.length === 0 ? 'style="display:none;"' : ''}>${escapeHtml(error)}</p>
+                    ${actionRowHtml({
+                        alternative: null,
+                        cancel: { id: 'delete-namespace-cancel-btn', label: 'Cancel', disabled: false, attributes: [] },
+                        main: {
+                            id: 'delete-namespace-continue-btn', label: 'Continue', disabled: false, attributes: [],
+                            isDestructive: false, isEnterAction: false, type: 'button',
+                        },
+                        rowClass: '',
+                    })}
                 </div>
             `;
             this.setupFormEventListeners();
@@ -267,6 +258,7 @@ export class DeleteNamespaceModal extends BaseModal {
                     <input
                         id="delete-namespace-confirmation"
                         type="text"
+                        data-modal-initial-focus
                         value="${escapeHtml(confirmationText)}"
                         placeholder="${escapeHtml(namespace)}"
                         autocomplete="off"
@@ -277,15 +269,16 @@ export class DeleteNamespaceModal extends BaseModal {
                     />
                 </div>
 
-                <div class="form-actions">
-                    <button type="button" class="danger-btn" id="delete-namespace-submit-btn" ${deleting ? 'disabled' : ''}>
-                        Delete vault
-                    </button>
-                    <button type="button" class="secondary-btn" id="delete-namespace-back-btn" ${deleting ? 'disabled' : ''}>Back</button>
-                </div>
+                ${actionRowHtml({
+                    alternative: null,
+                    cancel: { id: 'delete-namespace-back-btn', label: 'Back', disabled: deleting, attributes: [] },
+                    main: {
+                        id: 'delete-namespace-submit-btn', label: 'Delete Vault', disabled: deleting, attributes: [],
+                        isDestructive: true, isEnterAction: false, type: 'button',
+                    },
+                    rowClass: '',
+                })}
 
-                <p class="namespace-delete-status">${escapeHtml(status)}</p>
-                <p class="error-message" ${error.length === 0 ? 'style="display:none;"' : ''}>${escapeHtml(error)}</p>
             </div>
         `;
 
@@ -298,7 +291,6 @@ export class DeleteNamespaceModal extends BaseModal {
             targetInput.onchange = () => {
                 this.updateModalState({
                     targetNamespaceText: targetInput.value,
-                    error: '',
                     status: '',
                 });
             };
@@ -316,7 +308,6 @@ export class DeleteNamespaceModal extends BaseModal {
             confirmationInput.oninput = () => {
                 this.updateModalState({
                     confirmationText: confirmationInput.value,
-                    error: '',
                     status: '',
                 });
             };
@@ -327,7 +318,6 @@ export class DeleteNamespaceModal extends BaseModal {
             redirectInput.onchange = () => {
                 this.updateModalState({
                     redirectNamespace: redirectInput.value,
-                    error: '',
                     status: '',
                 });
             };
@@ -351,7 +341,6 @@ export class DeleteNamespaceModal extends BaseModal {
                     redirectNamespaces: [],
                     redirectNamespace: '',
                     recreatesDefault: false,
-                    error: '',
                     status: '',
                 });
                 this.renderModalContent();
@@ -372,16 +361,11 @@ export class DeleteNamespaceModal extends BaseModal {
             ? state.targetNamespaceText.trim()
             : '';
         if (targetNamespace.length === 0) {
-            this.updateModalState({
-                error: 'Enter a vault to delete',
-                status: '',
-            });
-            this.renderModalContent();
+            await showErrorDialog([{ text: 'Choose the vault to delete.', fieldId: 'delete-namespace-target' }]);
             return;
         }
         this.updateModalState({
             loading: true,
-            error: '',
             status: 'Checking vault...',
         });
         this.renderModalContent();
@@ -414,7 +398,7 @@ export class DeleteNamespaceModal extends BaseModal {
                 throw new Error('Namespace delete preflight response missing recreates_default');
             }
             if (!preflight.target_exists) {
-                throw new Error(`Vault ${preflight.target_namespace} is unavailable`);
+                throw new UserInputRejected(`Vault ${preflight.target_namespace} no longer exists.`);
             }
             this.updateModalState({
                 loading: false,
@@ -426,19 +410,18 @@ export class DeleteNamespaceModal extends BaseModal {
                 redirectNamespaces: preflight.redirect_namespaces,
                 redirectNamespace: preflight.redirect_namespaces[0],
                 recreatesDefault: preflight.recreates_default,
-                error: '',
                 status: '',
             });
         });
         if (!preflightResult.ok) {
-            const error = preflightResult.error;
-            const message = error instanceof Error ? error.message : 'Failed to check vault';
             this.updateModalState({
                 loading: false,
                 confirming: false,
-                error: message,
                 status: '',
             });
+            this.renderModalContent();
+            await showErrorDialogFor(preflightResult.error, 'delete-namespace-target');
+            return;
         }
         this.renderModalContent();
     }
@@ -454,13 +437,7 @@ export class DeleteNamespaceModal extends BaseModal {
             });
         });
         if (!payloadResult.ok) {
-            const error = payloadResult.error;
-            const message = error instanceof Error ? error.message : 'Invalid vault deletion request';
-            this.updateModalState({
-                error: message,
-                status: '',
-            });
-            this.renderModalContent();
+            await showErrorDialogFor(payloadResult.error, 'delete-namespace-confirmation');
             return;
         }
         const payload = {
@@ -468,12 +445,9 @@ export class DeleteNamespaceModal extends BaseModal {
             target_namespace: state.namespace,
         };
 
-        this.updateModalState({
-            deleting: true,
-            error: '',
-            status: 'Deleting vault...',
-        });
+        this.updateModalState({ deleting: true });
         this.renderModalContent();
+        FloatingMessages.showProgress(PROGRESS_CARD_KEY, 'Deleting vault…');
 
         const deleteResult = await settleResult(async () => {
             const response = await this._authRequest(this.apiEndpoints.deleteNamespace, 'POST', payload);
@@ -487,13 +461,13 @@ export class DeleteNamespaceModal extends BaseModal {
                 throw new Error('Namespace delete response missing message');
             }
             if (!response.active_namespace_deleted) {
+                FloatingMessages.end(PROGRESS_CARD_KEY);
                 this.updateModalState({
                     deleting: false,
                     confirming: false,
                     deleted: true,
                     namespace: response.deleted_namespace,
                     successMessage: response.message,
-                    error: '',
                     status: '',
                 });
                 this.renderModalContent();
@@ -515,14 +489,13 @@ export class DeleteNamespaceModal extends BaseModal {
             window.location.replace(redirectUrl);
         });
         if (!deleteResult.ok) {
-            const error = deleteResult.error;
-            const message = error instanceof Error ? error.message : 'Failed to delete vault';
+            FloatingMessages.end(PROGRESS_CARD_KEY);
             this.updateModalState({
                 deleting: false,
-                error: message,
                 status: '',
             });
             this.renderModalContent();
+            await showErrorDialogFor(deleteResult.error, null);
         }
     }
 
