@@ -16,6 +16,7 @@ import {
 import { BaseModal } from './base-modal.js';
 import { escapeHtml } from '../html-escape.js';
 import { actionRowHtml } from './action-row.js';
+import { showErrorDialog } from './error-dialog.js';
 
 // What the pre-reminder fields show for a reminder without one.
 const PRE_REMINDER_FORM_DEFAULTS = Object.freeze({ amount: '1', unit: 'days' });
@@ -740,7 +741,6 @@ function reminderSearchHaystack(reminder) {
 function defaultReminderModalState() {
     return {
         loading: false,
-        error: '',
         query: '',
         scheduleFilter: 'all_schedules',
         reminders: [],
@@ -967,7 +967,6 @@ export class ReminderModal extends BaseModal {
                             rowClass: 'reminder-form-actions',
                         })}
                         <p class="reminder-modal-warning">${escapeHtml(formWarning)}</p>
-                        <p class="reminder-modal-error">${escapeHtml(this._state.error)}</p>
                     </section>
                 </div>
 
@@ -1205,7 +1204,7 @@ export class ReminderModal extends BaseModal {
     }
 
     // Client state rejects a change to the value it already has (the form's input
-    // and change events both fire, and a save clears an already empty error), so
+    // and change events both fire), so
     // every change goes through here.
     _setState(key, value) {
         if (!stateValuesEqual(this._state[key], value)) this._state[key] = value;
@@ -1223,7 +1222,6 @@ export class ReminderModal extends BaseModal {
         if (target.closest('[data-reminder-new]')) {
             this._setState('form', defaultFormState());
             this._setState('editingId', '');
-            this._setState('error', '');
             this._render();
             return;
         }
@@ -1246,7 +1244,6 @@ export class ReminderModal extends BaseModal {
             }
             this._setState('form', stateFromReminder(reminder));
             this._setState('editingId', reminderId);
-            this._setState('error', '');
             this._render();
             return;
         }
@@ -1271,16 +1268,9 @@ export class ReminderModal extends BaseModal {
         }
         // A reminder needs a title (details are optional): say so instead of sending it.
         if (this._state.form.title.trim() === '') {
-            this._setState('error', 'Add a title for the reminder.');
-            this._render();
-            const titleInput = document.getElementById('reminder-title');
-            if (!(titleInput instanceof HTMLInputElement)) {
-                throw new Error('Reminder title input missing');
-            }
-            titleInput.focus();
+            await showErrorDialog([{ text: 'Add a title for the reminder.', fieldId: 'reminder-title' }]);
             return;
         }
-        this._setState('error', '');
         this._setState('saving', true);
         this._render();
         const payload = buildPayloadFromForm(this._state.form);

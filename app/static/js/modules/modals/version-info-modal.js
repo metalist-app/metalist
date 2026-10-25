@@ -8,6 +8,7 @@ import { CONFIG } from '../config.js';
 import { buildSessionHeaders } from '../session-auth.js';
 import { MS_PER_SECOND } from '../time-units.js';
 import { escapeHtml } from '../html-escape.js';
+import { showErrorDialogFor } from './error-dialog.js';
 
 const UPDATE_POLL_INTERVAL_SECONDS = 2;
 
@@ -75,7 +76,6 @@ export class VersionInfoModal extends BaseModal {
     getInitialModalState() {
         return {
             loading: true,
-            error: '',
             info: null,
             release: null,
             updateMessage: 'Checking PyPI for updates…',
@@ -114,7 +114,6 @@ export class VersionInfoModal extends BaseModal {
 
         const state = this.getModalState();
         const loading = state.loading === true;
-        const error = typeof state.error === 'string' ? state.error : '';
         const info = state.info;
         let isUpdating = state.updatePending;
         if (state.updateJob !== null && !['complete', 'failed'].includes(state.updateJob.status)) {
@@ -125,7 +124,7 @@ export class VersionInfoModal extends BaseModal {
         if (!loading && info !== null) {
             bodyHtml = this.buildInfoTableHtml(info);
         }
-        if (!loading && info === null && error.length === 0) {
+        if (!loading && info === null) {
             throw new Error('Version info modal reached empty non-loading state');
         }
 
@@ -137,7 +136,6 @@ export class VersionInfoModal extends BaseModal {
                     <p>${escapeHtml(state.updateMessage)}</p>
                     ${this.buildUpdateControls(state)}
                 </section>
-                <p class="error-message">${escapeHtml(error)}</p>
             </div>
         `;
     }
@@ -194,7 +192,6 @@ export class VersionInfoModal extends BaseModal {
         }
         this.updateModalState({
             loading: false,
-            error: '',
             info: payload,
         });
         this.renderModalContent();
@@ -271,8 +268,9 @@ export class VersionInfoModal extends BaseModal {
         } catch (error) {
             rethrowUnexpectedError(error);
             if (this.isOpen && generation === this._loadGeneration) {
-                this.updateModalState({ updatePending: false, updateMessage: error.message });
+                this.updateModalState({ updatePending: false });
                 this.renderModalContent();
+                await showErrorDialogFor(error, null);
             }
         }
     }

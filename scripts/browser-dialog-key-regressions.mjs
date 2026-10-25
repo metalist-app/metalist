@@ -315,10 +315,11 @@ async function checkOpenVaultEnter(page) {
       window.addEventListener('unhandledrejection', () => { window.dialogKeyOpenThrew = true; }, {once: true});
     });
     await page.keyboard.press('Enter');
-    await page.waitForFunction(() => window.dialogKeyOpenThrew
-      || document.querySelector('#open-namespace-modal .error-message')?.textContent.trim() !== '');
-    assert.equal(await page.$eval('#open-namespace-modal .error-message', element => element.textContent.trim()),
-      'Select a different vault', 'Open Vault: Enter must try to open the vault in this tab');
+    await page.waitForFunction(() => window.dialogKeyOpenThrew || document.getElementById('error-dialog') !== null);
+    assert.equal(await page.$eval('#error-dialog .error-dialog-text', element => element.textContent.trim()),
+      'That is the vault you are in. Pick another one.', 'Open Vault: Enter must try to open the vault in this tab');
+    await page.keyboard.press('Escape');
+    await settle(page);
   } finally {
     page.off('pageerror', recordError);
   }

@@ -5,7 +5,6 @@ import {
     validateNoteLayoutSettings,
 } from '../command-palette/note-layout-preferences.js';
 import { BaseModal } from './base-modal.js';
-import { escapeHtml } from '../html-escape.js';
 import { actionRowHtml } from './action-row.js';
 
 
@@ -38,7 +37,6 @@ export class NoteLayoutAppearanceModal extends BaseModal {
         return {
             ...settings,
             saving: false,
-            error: '',
         };
     }
 
@@ -67,7 +65,6 @@ export class NoteLayoutAppearanceModal extends BaseModal {
         const state = this.getModalState();
         const settings = validateNoteLayoutSettings(state);
         const saving = state.saving === true;
-        const error = typeof state.error === 'string' ? state.error : '';
         const disabled = saving ? ' disabled' : '';
 
         modalElement.innerHTML = `
@@ -123,7 +120,6 @@ export class NoteLayoutAppearanceModal extends BaseModal {
                     },
                     rowClass: '',
                 })}
-                <p class="error-message">${escapeHtml(error)}</p>
             </div>
         `;
 
@@ -149,7 +145,7 @@ export class NoteLayoutAppearanceModal extends BaseModal {
                 throw new Error(`Note layout select missing: ${elementId}`);
             }
             select.onchange = () => {
-                this.updateModalState({ [stateKey]: select.value, error: '' });
+                this.updateModalState({ [stateKey]: select.value });
                 this.renderModalContent();
                 const refreshedSelect = document.getElementById(elementId);
                 if (refreshedSelect instanceof HTMLSelectElement) {
@@ -173,7 +169,7 @@ export class NoteLayoutAppearanceModal extends BaseModal {
 
     async _handleSave() {
         const settings = validateNoteLayoutSettings(this.getModalState());
-        this.updateModalState({ saving: true, error: '' });
+        this.updateModalState({ saving: true });
         this.renderModalContent();
         await this._saveSettings(settings);
         this.close();

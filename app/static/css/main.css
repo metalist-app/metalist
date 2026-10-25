@@ -1552,15 +1552,6 @@ body.ontology-modal-open #ontology-modal {
     font-size: 0.85rem;
 }
 
-.ontology-error {
-    padding: 10px 12px;
-    border-radius: 10px;
-    border: 1px solid rgba(245, 101, 101, 0.35);
-    background: rgba(245, 101, 101, 0.12);
-    color: rgba(255, 255, 255, 0.9);
-    font-size: 0.9rem;
-}
-
 .ontology-dialog-overlay {
     position: absolute;
     inset: 0;
@@ -1719,15 +1710,6 @@ body.ontology-modal-open #ontology-modal {
     border-radius: 999px;
     background: rgba(255, 255, 255, 0.15);
     color: rgba(255, 255, 255, 0.75);
-}
-
-.ontology-dialog-error {
-    padding: 8px 10px;
-    border-radius: 10px;
-    border: 1px solid rgba(245, 101, 101, 0.35);
-    background: rgba(245, 101, 101, 0.12);
-    color: rgba(255, 255, 255, 0.9);
-    font-size: 0.85rem;
 }
 
 .ontology-dialog-footer {
@@ -2038,10 +2020,8 @@ body.ontology-modal-open #ontology-modal {
     word-break: break-word;
 }
 
-#backup-modal-error:empty,
 #backup-modal-confirm-message:empty,
-#backup-retention-error:empty,
-#password-generator-error:empty {
+#backup-retention-error:empty {
     display: none;
 }
 
@@ -2403,10 +2383,6 @@ body.ontology-modal-open #ontology-modal {
     cursor: default;
     pointer-events: none;
     opacity: 0.78;
-}
-
-.prioritize-modal-content #prioritize-modal-error:empty {
-    display: none;
 }
 
 .prioritize-modal-actions {
@@ -3602,13 +3578,6 @@ details.ai-chat-thinking > .ai-chat-thinking-heading {
     margin: 8px 0 0;
     color: var(--modal-text-subtle);
     font-size: 12px;
-}
-
-/* What went wrong with the key, right under it. */
-#ai-agent-settings-modal .ai-settings-key-error {
-    margin: 0 0 0 92px;
-    color: var(--modal-danger);
-    font-size: 13px;
 }
 
 /* A warning under a provider's key, lined up with the fields. */
@@ -8241,6 +8210,41 @@ html[data-theme="dark"] .meta-code-code .tok-cpf { color: #8b949e; }
     background-color: rgba(255, 255, 255, 0.2);
 }
 
+/* Error dialogs (modals/error-dialog.js): a small dialog over the one the user was in,
+   whose layout never changes for it. */
+.modal.error-dialog-layer {
+    z-index: 15500;
+    background: rgba(3, 7, 12, 0.45);
+    backdrop-filter: none;
+}
+
+.modal-content.error-dialog {
+    width: min(380px, 100%);
+    margin-top: 18vh;
+}
+
+.error-dialog-text {
+    margin: 4px 52px 0 0;
+    line-height: 1.45;
+}
+
+ul.error-dialog-text {
+    padding-left: 18px;
+}
+
+ul.error-dialog-text li + li {
+    margin-top: 6px;
+}
+
+/* A field the error dialog named: a red outline drawn outside it, so nothing changes size,
+   until its value changes. It wins over the dialogs' own focus styles, which remove the
+   outline. */
+.modal-content .field-at-fault,
+.modal-content .field-at-fault:focus {
+    outline: 2px solid var(--modal-danger) !important;
+    outline-offset: 1px;
+}
+
 /* Recent Messages (recent-messages-modal.js): what the floating messages said, newest first. */
 .recent-messages-list {
     margin: 0;
@@ -9212,12 +9216,6 @@ html[data-theme="dark"] body.loading::after {
     margin: 12px 0 0 152px;
 }
 
-.reminder-modal-error {
-    color: #ff7777;
-    min-height: 1.2em;
-    margin-left: 152px;
-}
-
 .reminder-modal-warning {
     min-height: 1.2em;
     margin: 6px 0 0 152px;
@@ -9256,7 +9254,6 @@ html[data-theme="dark"] body.loading::after {
     }
 
     .reminder-form-actions,
-    .reminder-modal-error,
     .reminder-modal-warning {
         margin-left: 0;
     }
@@ -9650,8 +9647,7 @@ html[data-theme="dark"] body.loading::after {
     margin-top: 18px;
 }
 
-.modal-content .error-message,
-.modal-content .reminder-modal-error {
+.modal-content .error-message {
     color: var(--modal-danger);
 }
 

@@ -268,7 +268,12 @@ async function checkEncryptedLogin(context, origin) {
     // Without a title nothing is sent; the dialog says what is missing.
     const remindersBefore = await page.$$eval('[data-reminder-id]', rows => rows.length);
     await page.click('[data-reminder-save]');
-    await page.waitForFunction(() => document.querySelector('.reminder-modal-error').textContent === 'Add a title for the reminder.', {timeout: 10000});
+    await page.waitForFunction(() => {
+      const text = document.querySelector('#error-dialog .error-dialog-text');
+      return text !== null && text.textContent === 'Add a title for the reminder.';
+    }, {timeout: 10000});
+    await page.keyboard.press('Escape');
+    await page.waitForSelector('#error-dialog', {hidden: true});
     assert.equal(await page.evaluate(() => document.activeElement.id), 'reminder-title', 'The title field takes the focus');
     assert.equal(await page.$$eval('[data-reminder-id]', rows => rows.length), remindersBefore, 'Nothing is added without a title');
     await page.type('#reminder-title', 'Call Henry');

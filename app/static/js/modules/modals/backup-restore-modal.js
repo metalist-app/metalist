@@ -3,7 +3,7 @@ import { parseDecimalInteger } from '../decimal-integer.js';
 import { KIB } from '../byte-sizes.js';
 import { isAnsweredStatus } from '../http-status.js';
 import { ApplicationState } from '../application-state.js';
-import { HttpRequestError, rethrowUnexpectedError } from '../expected-errors.js';
+import { FieldInputRejected, HttpRequestError, rethrowUnexpectedError } from '../expected-errors.js';
 import { BaseModal } from './base-modal.js';
 import { CONFIG } from '../config.js';
 import { ModeContextInstance as ModeContext } from '../mode-manager/mode-context.js';
@@ -11,6 +11,7 @@ import { buildSessionHeaders } from '../session-auth.js';
 import { settleResult } from '../async-result.js';
 import { escapeHtml } from '../html-escape.js';
 import { actionRowHtml } from './action-row.js';
+import { failureFieldId, showErrorDialogFor } from './error-dialog.js';
 
 
 const RESTORE_TRANSITION_SUPPRESS_MS = 30_000;
@@ -125,7 +126,6 @@ export class BackupRestoreModal extends BaseModal {
             importLaunchProfile: null,
             overwriteConfirmText: '',
             targetPassword: '',
-            error: '',
         };
     }
 
@@ -200,7 +200,6 @@ export class BackupRestoreModal extends BaseModal {
         const overwriteConfirmText = typeof state.overwriteConfirmText === 'string' ? state.overwriteConfirmText : '';
         const targetPassword = typeof state.targetPassword === 'string' ? state.targetPassword : '';
         const preflight = state.preflight && typeof state.preflight === 'object' ? state.preflight : null;
-        const error = typeof state.error === 'string' ? state.error : '';
         const loading = Boolean(state.loading);
         const choosingFolder = Boolean(state.choosingFolder);
         const restoring = Boolean(state.restoring);
@@ -354,7 +353,6 @@ export class BackupRestoreModal extends BaseModal {
                     })}
 
                     <p id="backup-modal-status">${restoring ? 'Restoring backup...' : ''}</p>
-                    <p id="backup-modal-error" class="error-message">${escapeHtml(error)}</p>
                 </div>
             `;
             this.setupFormEventListeners();
@@ -394,7 +392,6 @@ export class BackupRestoreModal extends BaseModal {
                 })}
 
                 <p id="backup-modal-status">${loading ? 'Loading backups...' : ''}${choosingFolder ? ' Choosing a backup folder...' : ''}${restoring ? ' Restoring backup...' : ''}</p>
-                <p id="backup-modal-error" class="error-message">${escapeHtml(error)}</p>
             </div>
         `;
 
@@ -413,7 +410,6 @@ export class BackupRestoreModal extends BaseModal {
                         importLaunchProfile: null,
                         overwriteConfirmText: '',
                         targetPassword: '',
-                        error: '',
                     });
                     this.renderModalContent();
                     return;
@@ -456,7 +452,6 @@ export class BackupRestoreModal extends BaseModal {
                     importLaunchProfile: null,
                     overwriteConfirmText: '',
                     targetPassword: '',
-                    error: '',
                 });
                 this.renderModalContent();
             };
@@ -472,7 +467,6 @@ export class BackupRestoreModal extends BaseModal {
                     importLaunchProfile: null,
                     overwriteConfirmText: '',
                     targetPassword: '',
-                    error: '',
                 });
             };
         }
@@ -482,7 +476,6 @@ export class BackupRestoreModal extends BaseModal {
             overwriteInput.oninput = () => {
                 this.updateModalState({
                     overwriteConfirmText: overwriteInput.value,
-                    error: '',
                 });
             };
         }
@@ -492,7 +485,6 @@ export class BackupRestoreModal extends BaseModal {
             targetPasswordInput.oninput = () => {
                 this.updateModalState({
                     targetPassword: targetPasswordInput.value,
-                    error: '',
                 });
             };
         }
@@ -548,7 +540,6 @@ export class BackupRestoreModal extends BaseModal {
             restoredTargetNamespace: '',
             activeNamespaceRestarted: false,
             openNamespaceSuggested: false,
-            error: '',
             backups: [],
             selectedBackupId: '',
             targetNamespaceText: '',
@@ -581,7 +572,6 @@ export class BackupRestoreModal extends BaseModal {
             importLaunchProfile: null,
             overwriteConfirmText: '',
             targetPassword: '',
-            error: '',
         });
         this.renderModalContent();
     }
@@ -642,19 +632,17 @@ export class BackupRestoreModal extends BaseModal {
     async chooseBackupFolder() {
         this.updateModalState({
             choosingFolder: true,
-            error: '',
         });
         this.renderModalContent();
         const choiceResult = await settleResult(() => this._pickAndPersistBackupFolder());
         if (!choiceResult.ok) {
-            const error = choiceResult.error;
-            const message = error instanceof Error ? error.message : 'Failed to choose backup folder';
-            this.updateModalState({ choosingFolder: false, error: message });
+            this.updateModalState({ choosingFolder: false });
             this.renderModalContent();
+            await showErrorDialogFor(choiceResult.error, null);
             return;
         }
         if (!choiceResult.value) {
-            this.updateModalState({ choosingFolder: false, error: '' });
+            this.updateModalState({ choosingFolder: false });
             this.renderModalContent();
             return;
         }
@@ -719,14 +707,14 @@ export class BackupRestoreModal extends BaseModal {
 
     _validateRestoreSelection(state) {
         if (typeof state.selectedBackupId !== 'string' || state.selectedBackupId.length === 0) {
-            throw new Error('Select a backup first.');
+            throw new FieldInputRejected('Choose a backup first.', 'backup-select');
         }
         const selectedBackup = this._findSelectedBackup(state);
         if (selectedBackup === null) {
             throw new Error('Selected backup is missing.');
         }
         if (typeof state.targetNamespaceText !== 'string' || state.targetNamespaceText.trim().length === 0) {
-            throw new Error('Target namespace is required.');
+            throw new FieldInputRejected('Enter the target vault.', 'backup-target-namespace');
         }
         return {
             selectedBackup,
@@ -737,8 +725,6 @@ export class BackupRestoreModal extends BaseModal {
     async _prepareRestoreConfirmation() {
         const state = this.getModalState();
         const selection = this._validateRestoreSelection(state);
-        this.updateModalState({ error: '' });
-        this.renderModalContent();
         const preflight = await this._authRequest(
             this.apiEndpoints.restorePreflight,
             'POST',
@@ -759,7 +745,6 @@ export class BackupRestoreModal extends BaseModal {
             importLaunchProfile,
             overwriteConfirmText: '',
             targetPassword: '',
-            error: '',
         });
         this.renderModalContent();
     }
@@ -782,18 +767,17 @@ export class BackupRestoreModal extends BaseModal {
                 ? state.overwriteConfirmText.trim()
                 : '';
             if (confirmation !== selection.targetNamespace) {
-                throw new Error(`Type ${selection.targetNamespace} to confirm overwriting that namespace`);
+                throw new FieldInputRejected(`Type ${selection.targetNamespace} to confirm overwriting that vault.`, 'backup-overwrite-confirmation');
             }
             if (preflight.target_requires_password === true) {
                 const targetPassword = typeof state.targetPassword === 'string' ? state.targetPassword : '';
                 if (targetPassword.length === 0) {
-                    throw new Error(`Enter the password for ${selection.targetNamespace}`);
+                    throw new FieldInputRejected(`Enter the password for ${selection.targetNamespace}.`, 'backup-target-password');
                 }
             }
         }
         this.updateModalState({
             restoring: true,
-            error: '',
         });
         this.renderModalContent();
 
@@ -850,7 +834,6 @@ export class BackupRestoreModal extends BaseModal {
             restoredTargetNamespace: payload.target_namespace,
             activeNamespaceRestarted,
             openNamespaceSuggested: payload.open_namespace_suggested === true,
-            error: '',
         });
         this.renderModalContent();
     }
@@ -865,13 +848,12 @@ export class BackupRestoreModal extends BaseModal {
             await this._submitConfirmedRestore();
         });
         if (!restoreResult.ok) {
-            const error = restoreResult.error;
-            const message = error instanceof Error ? error.message : 'Restore failed';
-            this.updateModalState({
-                restoring: false,
-                error: message,
-            });
+            const restoreState = this.getModalState();
+            if (restoreState.restoring) {
+                this.updateModalState({ restoring: false });
+            }
             this.renderModalContent();
+            await showErrorDialogFor(restoreResult.error, failureFieldId(restoreResult.error));
         }
     }
 
@@ -895,7 +877,6 @@ export class BackupRestoreModal extends BaseModal {
         this._setReconnectCursor(true);
         this.updateModalState({
             waitingForServer: true,
-            error: '',
         });
         this.renderModalContent();
         void this._waitForServerReachabilityThenReload();

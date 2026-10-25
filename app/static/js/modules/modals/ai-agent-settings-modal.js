@@ -19,6 +19,7 @@ import {
 import { validateAgentWebAccessMode } from '../ai-chat/agent-web-settings.js';
 import { escapeHtml } from '../html-escape.js';
 import { actionRowHtml } from './action-row.js';
+import { showErrorDialog, showErrorDialogFor } from './error-dialog.js';
 import { AI_PROVIDERS, aiProvider } from '../ai-chat/ai-providers.js';
 
 // AI Agent Settings (docs/ui/ai-chat.md, "AI Agent Settings"): one folder tab per
@@ -115,14 +116,9 @@ function renderProviderPanel(state) {
         const warning = KEY_WARNINGS[state.provider];
         keyWarning = `<p class="ai-settings-hint ai-settings-indented ai-settings-key-warning" title="${escapeHtml(warning.tooltip)}">${escapeHtml(warning.text)}</p>`;
     }
-    let keyError = '';
-    if (state.keyError !== '') {
-        keyError = `<p class="ai-settings-indented ai-settings-key-error" role="alert">${escapeHtml(state.keyError)}</p>`;
-    }
     return `
         <div class="ai-settings-tab-panel" role="tabpanel" aria-labelledby="ai-agent-tab-${escapeHtml(state.provider)}">
             ${renderKeyRow(state)}
-            ${keyError}
             ${keyWarning}
             ${billing}
         </div>`;
@@ -191,9 +187,6 @@ export class AiAgentSettingsModal extends BaseModal {
             isChangingKey: false,
             credentialConfigured: false,
             credentialPersistent: false,
-            error: '',
-            // A message about the key, shown under the key in its tab.
-            keyError: '',
         };
     }
 
@@ -256,7 +249,6 @@ export class AiAgentSettingsModal extends BaseModal {
                         <input id="ai-agent-max-page-approximate-tokens" type="number" autocomplete="off" data-1p-ignore data-lpignore="true" min="500" max="500000" step="100" value="${escapeHtml(String(state.maxPageApproximateTokens))}">
                     </div>
                 </section>
-                <p class="error-message" role="alert">${escapeHtml(state.error)}</p>
                 ${actionRowHtml({
                     alternative: null,
                     cancel: { id: 'ai-agent-cancel', label: 'Cancel', disabled: false, attributes: [] },
@@ -291,7 +283,7 @@ export class AiAgentSettingsModal extends BaseModal {
         this._setupRuleControls();
         const limitInput = this._element('ai-agent-max-page-approximate-tokens', HTMLInputElement);
         limitInput.oninput = () => {
-            this._setState({ maxPageApproximateTokens: Number(limitInput.value), error: '' });
+            this._setState({ maxPageApproximateTokens: Number(limitInput.value) });
         };
         this._element('ai-agent-save', HTMLButtonElement).onclick = () => void this._handleSave();
         this._element('ai-agent-cancel', HTMLButtonElement).onclick = () => this.requestClose();
@@ -324,14 +316,14 @@ export class AiAgentSettingsModal extends BaseModal {
                 if (event.key !== 'Enter') return;
                 event.preventDefault();
                 event.stopPropagation();
-                this._addRules(side, [input.value], `ai-agent-${side}-input`);
+                void this._addRules(side, [input.value], `ai-agent-${side}-input`);
             };
             // A pasted list (one rule per line, or comma-separated) adds every rule.
             input.onpaste = (event) => {
                 const text = event.clipboardData.getData('text/plain');
                 if (!/[\n,]/.test(text)) return;
                 event.preventDefault();
-                this._addRules(side, text.split(/[\n,]/), `ai-agent-${side}-input`);
+                void this._addRules(side, text.split(/[\n,]/), `ai-agent-${side}-input`);
             };
         }
         for (const removeButton of document.querySelectorAll('#ai-agent-settings-modal .ai-agent-cloud-privacy-settings .ai-settings-chip-remove')) {
@@ -356,11 +348,11 @@ export class AiAgentSettingsModal extends BaseModal {
     }
 
     _update(fields) {
-        this._setState({ ...fields, error: '' });
+        this._setState(fields);
         this.renderModalContent();
     }
 
-    _addRules(side, entries, focusId) {
+    async _addRules(side, entries, focusId) {
         const state = this.getModalState();
         let tags = nonEmptyLines(state[`${side}TagsText`]);
         let phrases = nonEmptyLines(state[`${side}PhrasesText`]);
@@ -373,8 +365,7 @@ export class AiAgentSettingsModal extends BaseModal {
         const fields = { [`${side}TagsText`]: tags.join('\n'), [`${side}PhrasesText`]: phrases.join('\n') };
         const problem = getCloudPrivacyTextFieldsValidationMessage({ ...state, ...fields });
         if (problem !== '') {
-            this._setState({ error: problem });
-            this.renderModalContent();
+            await showErrorDialog([{ text: problem, fieldId: focusId }]);
             return;
         }
         this._update(fields);
@@ -396,7 +387,7 @@ export class AiAgentSettingsModal extends BaseModal {
         if (provider === this.getModalState().provider) return;
         this._update({
             provider, providerLabel: tab.label,
-            isChangingKey: false, credentialConfigured: false, credentialPersistent: false, keyError: '',
+            isChangingKey: false, credentialConfigured: false, credentialPersistent: false,
         });
         await this._loadCredentialStatus();
     }
@@ -411,8 +402,9 @@ export class AiAgentSettingsModal extends BaseModal {
         if (state.isLoadingCredential) {
             return;
         }
-        this._setState({ isLoadingCredential: true, keyError: '' });
+        this._setState({ isLoadingCredential: true });
         this.renderModalContent();
+        let failure = null;
         try {
             const payload = await loadAiCredentialStatus(state.provider);
             if (!this.isCurrentOpen(generation)) return;
@@ -424,12 +416,15 @@ export class AiAgentSettingsModal extends BaseModal {
             if (!(error instanceof AiApiError)) {
                 throw error;
             }
-            this._setState({ keyError: error.message });
+            failure = error;
         } finally {
             if (this.isCurrentOpen(generation)) {
                 this._setState({ isLoadingCredential: false });
                 this.renderModalContent();
             }
+        }
+        if (failure !== null) {
+            await showErrorDialogFor(failure, null);
         }
     }
 
@@ -452,12 +447,12 @@ export class AiAgentSettingsModal extends BaseModal {
     async _handleSaveKey(apiKey) {
         const state = this.getModalState();
         if (apiKey.trim() === '') {
-            this._setState({ keyError: `Paste your ${state.providerLabel} API key first.` });
-            this.renderModalContent();
+            await showErrorDialog([{ text: `Paste your ${state.providerLabel} API key first.`, fieldId: 'ai-agent-api-key' }]);
             return;
         }
-        this._setState({ isLoadingCredential: true, keyError: '' });
+        this._setState({ isLoadingCredential: true });
         this.renderModalContent();
+        let failure = null;
         try {
             this._applyCredentialStatus(await saveAiCredential(state.provider, apiKey));
             this._setState({ isChangingKey: false });
@@ -467,10 +462,13 @@ export class AiAgentSettingsModal extends BaseModal {
             if (!(error instanceof AiApiError)) {
                 throw error;
             }
-            this._setState({ keyError: error.message });
+            failure = error;
         } finally {
             this._setState({ isLoadingCredential: false });
             this.renderModalContent();
+        }
+        if (failure !== null) {
+            await showErrorDialogFor(failure, 'ai-agent-api-key');
         }
     }
 
@@ -485,24 +483,20 @@ export class AiAgentSettingsModal extends BaseModal {
             if (!(error instanceof AiApiError)) {
                 throw error;
             }
-            this._setState({ keyError: error.message });
-            this.renderModalContent();
+            await showErrorDialogFor(error, null);
         }
     }
 
     async _handleSave() {
         const state = this.getModalState();
         const retrievalSettings = { maxPageApproximateTokens: state.maxPageApproximateTokens };
-        const limitProblem = getAgentRetrievalSettingsValidationMessage(retrievalSettings, state.chatProvider);
-        if (limitProblem !== '') {
-            this._setState({ error: limitProblem });
-            this.renderModalContent();
-            return;
-        }
-        const privacyProblem = getCloudPrivacyTextFieldsValidationMessage(state);
-        if (privacyProblem !== '') {
-            this._setState({ error: privacyProblem });
-            this.renderModalContent();
+        // Every problem at once, the limit with its field.
+        const problems = [
+            { text: getAgentRetrievalSettingsValidationMessage(retrievalSettings, state.chatProvider), fieldId: 'ai-agent-max-page-approximate-tokens' },
+            { text: getCloudPrivacyTextFieldsValidationMessage(state), fieldId: null },
+        ].filter((problem) => problem.text !== '');
+        if (problems.length > 0) {
+            await showErrorDialog(problems);
             return;
         }
         await this._saveSettings({

@@ -14,6 +14,7 @@ import {
 } from '../password-strength.js';
 import { rememberGeneratedPasswordCopy } from '../mode-manager/services/password-clipboard-service.js';
 import { escapeHtml } from '../html-escape.js';
+import { showErrorDialog } from './error-dialog.js';
 
 const COPY_HINT_DEFAULT = 'Copy to clipboard. Pasting into an empty note will add @password automatically.';
 const MAX_PASSWORD_LENGTH = 72;
@@ -30,7 +31,6 @@ export class RandomPasswordModal extends BaseModal {
             length: DEFAULT_PASSWORD_LENGTH,
             charsetInput: DEFAULT_PASSWORD_CHARSET,
             result: '',
-            error: '',
             copyStatus: '',
         };
     }
@@ -108,7 +108,6 @@ export class RandomPasswordModal extends BaseModal {
         const lengthValue = Number.isInteger(state.length) ? state.length : DEFAULT_PASSWORD_LENGTH;
         const charsetInput = typeof state.charsetInput === 'string' ? state.charsetInput : DEFAULT_PASSWORD_CHARSET;
         const result = typeof state.result === 'string' ? state.result : '';
-        const error = typeof state.error === 'string' ? state.error : '';
         const copyStatus = typeof state.copyStatus === 'string' && state.copyStatus.length > 0
             ? state.copyStatus
             : COPY_HINT_DEFAULT;
@@ -193,7 +192,6 @@ export class RandomPasswordModal extends BaseModal {
                     <button type="button" class="primary-btn" id="password-regenerate-btn">Regenerate</button>
                 </div>
 
-                <p id="password-generator-error" class="error-message">${escapeHtml(error)}</p>
             </div>
         `;
 
@@ -303,23 +301,17 @@ export class RandomPasswordModal extends BaseModal {
             resultOutput.oninput = () => {
                 const password = resultOutput.value;
                 const copyHintOutput = document.getElementById('password-result-copy-hint');
-                const errorOutput = document.getElementById('password-generator-error');
                 if (!(copyButton instanceof HTMLButtonElement)) {
                     throw new Error('password-copy-btn missing');
                 }
                 if (!(copyHintOutput instanceof HTMLElement)) {
                     throw new Error('password-result-copy-hint missing');
                 }
-                if (!(errorOutput instanceof HTMLElement)) {
-                    throw new Error('password-generator-error missing');
-                }
 
                 copyButton.disabled = password.length === 0;
                 copyHintOutput.textContent = COPY_HINT_DEFAULT;
-                errorOutput.textContent = '';
                 this.updateModalState({
                     result: password,
-                    error: '',
                     copyStatus: COPY_HINT_DEFAULT,
                 });
                 this.renderPasswordStrength(resultOutput.value);
@@ -363,7 +355,6 @@ export class RandomPasswordModal extends BaseModal {
         const lengthInput = document.getElementById('password-length-input');
         const charsetInput = document.getElementById('password-charset-input');
         const resultOutput = document.getElementById('password-result-output');
-        const errorOutput = document.getElementById('password-generator-error');
 
         if (!(lengthInput instanceof HTMLInputElement)) {
             throw new Error('password-length-input missing');
@@ -373,9 +364,6 @@ export class RandomPasswordModal extends BaseModal {
         }
         if (!(resultOutput instanceof HTMLInputElement)) {
             throw new Error('password-result-output missing');
-        }
-        if (!(errorOutput instanceof HTMLElement)) {
-            throw new Error('password-generator-error missing');
         }
 
         const copyHintOutput = document.getElementById('password-result-copy-hint');
@@ -391,47 +379,44 @@ export class RandomPasswordModal extends BaseModal {
         const lengthValue = parseDecimalInteger(lengthInput.value);
         const charsetValue = charsetInput.value;
         if (!Number.isInteger(lengthValue) || lengthValue <= 0) {
-            errorOutput.textContent = 'Password length must be a positive integer.';
             resultOutput.value = '';
             copyButton.disabled = true;
             this.updateModalState({
                 length: lengthValue,
                 charsetInput: charsetValue,
                 result: '',
-                error: 'Password length must be a positive integer.',
                 copyStatus: COPY_HINT_DEFAULT,
             });
             copyHintOutput.textContent = COPY_HINT_DEFAULT;
+            void showErrorDialog([{ text: 'Password length must be a positive integer.', fieldId: 'password-length-input' }]);
             return;
         }
         if (lengthValue > MAX_PASSWORD_LENGTH) {
-            errorOutput.textContent = `Password length must be ${MAX_PASSWORD_LENGTH} or less.`;
             resultOutput.value = '';
             copyButton.disabled = true;
             this.updateModalState({
                 length: lengthValue,
                 charsetInput: charsetValue,
                 result: '',
-                error: `Password length must be ${MAX_PASSWORD_LENGTH} or less.`,
                 copyStatus: COPY_HINT_DEFAULT,
             });
             copyHintOutput.textContent = COPY_HINT_DEFAULT;
+            void showErrorDialog([{ text: `Password length must be ${MAX_PASSWORD_LENGTH} or less.`, fieldId: 'password-length-input' }]);
             return;
         }
 
         const charsetWithoutLineBreaks = charsetValue.replace(/\r/g, '').replace(/\n/g, '');
         if (charsetWithoutLineBreaks.length === 0) {
-            errorOutput.textContent = 'Character set must not be empty.';
             resultOutput.value = '';
             copyButton.disabled = true;
             this.updateModalState({
                 length: lengthValue,
                 charsetInput: charsetValue,
                 result: '',
-                error: 'Character set must not be empty.',
                 copyStatus: COPY_HINT_DEFAULT,
             });
             copyHintOutput.textContent = COPY_HINT_DEFAULT;
+            void showErrorDialog([{ text: 'Character set must not be empty.', fieldId: 'password-charset-input' }]);
             return;
         }
 
@@ -441,12 +426,10 @@ export class RandomPasswordModal extends BaseModal {
         this.renderPasswordStrength(generated);
         copyButton.disabled = false;
         copyHintOutput.textContent = COPY_HINT_DEFAULT;
-        errorOutput.textContent = '';
         this.updateModalState({
             length: lengthValue,
             charsetInput: charsetValue,
             result: generated,
-            error: '',
             copyStatus: COPY_HINT_DEFAULT,
         });
     }

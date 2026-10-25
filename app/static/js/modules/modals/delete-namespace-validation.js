@@ -1,3 +1,5 @@
+import { UserInputRejected } from '../expected-errors.js';
+
 export function extractDeletableNamespaceNames(catalog) {
     if (!catalog || typeof catalog !== 'object') {
         throw new Error('Namespace catalog response is missing');
@@ -30,14 +32,14 @@ export function validateNamespaceDeletionSubmission({
         throw new Error('Current namespace state is unavailable');
     }
     if (typeof redirectNamespace !== 'string' || redirectNamespace.trim().length === 0) {
-        throw new Error('Choose where to redirect after deletion');
+        throw new UserInputRejected('Choose where MetaList goes after the deletion.');
     }
     if (typeof confirmationText !== 'string') {
-        throw new Error(`Type '${namespace}' to confirm deletion`);
+        throw new Error('validateNamespaceDeletionSubmission requires the confirmation text');
     }
     const normalizedConfirmationText = confirmationText.trim();
     if (normalizedConfirmationText !== namespace) {
-        throw new Error(`Type '${namespace}' to confirm deletion`);
+        throw new UserInputRejected(`Type ${namespace} to confirm the deletion.`);
     }
     return {
         confirmed_namespace: normalizedConfirmationText,

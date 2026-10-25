@@ -68,6 +68,7 @@ import {checkDialogButtons} from './browser-dialog-button-regressions.mjs';
 import {checkPhone} from './browser-phone-regressions.mjs';
 import {checkFloatingMessages} from './browser-floating-message-regressions.mjs';
 import {checkViewMenu} from './browser-view-menu-regressions.mjs';
+import {checkErrorDialogs} from './browser-error-dialog-regressions.mjs';
 import {assertLoginLogoGeometry} from './browser-validation/login-logo-geometry.mjs';
 
 // Requests count as quiet after this long without one starting or ending: after a
@@ -319,6 +320,10 @@ try {
     await checkDialogKeys(page);
     assert.deepEqual(errors, []);
     console.log(`PASS dialog key regressions in ${await browser.version()}`);
+  } else if (process.env.BROWSER_TEST_SUITE === 'error-dialogs') {
+    await checkErrorDialogs(page);
+    assert.deepEqual(errors, []);
+    console.log(`PASS error dialog regressions in ${await browser.version()}`);
   } else if (process.env.BROWSER_TEST_SUITE === 'view-menu') {
     await checkViewMenu(page);
     assert.deepEqual(errors, []);

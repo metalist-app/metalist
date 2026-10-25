@@ -134,15 +134,27 @@ function handleKeyDown(event) {
 5. Hide modal UI
 6. Return focus to application
 
-Planned (ready to build): button order, labels, focus and menu rules in `docs/ready-to-build/dialog-and-menu-conventions.md`, and errors and status shown above the layout, never inserted into it, in `docs/ready-to-build/errors-and-status-rule.md` (which replaces the next sentence).
+Being built: button order, labels, focus and menu rules in `docs/ready-to-build/dialog-and-menu-conventions.md`, and errors and status shown above the layout, never inserted into it, in `docs/ready-to-build/errors-and-status-rule.md` (error dialogs below; floating messages in `docs/ui/floating-messages.md`).
 
-Dismiss-only footer buttons labeled `Close` or `OK` are not used. Workflow actions such as `Save`, `Cancel`, `Back`, and destructive confirmations remain visible when they carry meaning beyond dismissing the modal.
+No button only dismisses: an acknowledgement has none (`×`, Escape or a click outside closes it), and a button names what it does. Workflow actions such as `Save`, `Cancel`, `Back`, and destructive confirmations remain visible when they carry meaning beyond dismissing the modal.
+
+### Errors
+An action the user took that did not happen (refused input, a failed request) is told in an error dialog over the dialog they were in, never written into that dialog's layout (`docs/ready-to-build/errors-and-status-rule.md` §2.1; built 2026-10-25, step 5a). Code: `modals/error-dialog.js` (`showErrorDialog(problems)`, `showErrorDialogFor(error, fieldId)`); test: `scripts/browser-error-dialog-regressions.mjs` (`error-dialogs` suite).
+- The dialog underneath stays open with what was typed; nothing in it moves.
+- One error dialog lists every problem (`[{ text, fieldId }]`); a dialog's checks collect them all before refusing.
+- It has no button: `×`, Escape or a click outside closes it, and only it. Keys and focus stay in it while it shows.
+- Closing it focuses the first field at fault; each field at fault keeps a red outline (`.field-at-fault`, drawn outside the field, so no size changes) until its value changes.
+- A refusal about one field throws `FieldInputRejected(message, fieldId)` (`expected-errors.js`), which `failureFieldId` reads.
+- A dialog that fails to load (its list or settings cannot be read) shows the error, and closing it closes both.
+- `role="alertdialog"`: screen readers announce it.
+- Messages say what happened and how to fix it, for the user ("That vault already exists. Pick another name.").
+- Failures while typing (a tag lookup) never open a dialog: they float in the corner (`docs/ui/floating-messages.md`).
 
 ### Modal Stacking
 - Modals can stack via `ModeContext.modalStack`
 - Top modal receives events
 - Closing top modal reveals previous modal
-- Rarely used but architecture supports it
+- The error dialog is the one modal that opens over another (BaseModal dialogs refuse to open while one is open)
 
 ## Example Implementation
 

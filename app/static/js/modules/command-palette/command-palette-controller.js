@@ -58,6 +58,7 @@ import { exportNotes } from '../mode-manager/services/export-service.js';
 
 import { VersionInfoModal } from '../modals/version-info-modal.js';
 import { MemoryUsageModal } from '../modals/memory-usage-modal.js';
+import { showErrorDialogFor } from '../modals/error-dialog.js';
 import { RecentMessagesModal } from '../modals/recent-messages-modal.js';
 import { NoteLayoutAppearanceModal } from '../modals/note-layout-appearance-modal.js';
 import { VisualCuesModal, VISUAL_CUE_OPTIONS } from '../modals/visual-cues-modal.js';
@@ -2401,7 +2402,12 @@ class CommandPaletteController {
             return;
         }
         // With no other namespace, opening one means creating one.
-        if (!(await fetchHasOtherNamespace())) {
+        const hasOtherResult = await settleResult(() => fetchHasOtherNamespace());
+        if (!hasOtherResult.ok) {
+            await showErrorDialogFor(hasOtherResult.error, null);
+            return;
+        }
+        if (!hasOtherResult.value) {
             if (this._createNamespaceModal === null) {
                 this._createNamespaceModal = new CreateNamespaceModal();
             }

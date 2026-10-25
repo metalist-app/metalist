@@ -56,7 +56,6 @@ test('ontology dialog typing clears pending navigation without redundant resets'
     t.after(() => { delete globalThis.HTMLInputElement; });
     const modal = new OntologyModal();
     modal._dialogState = { showInput: true };
-    modal._clearDialogError = () => {};
     let requests = 0;
     modal._updateDialogSuggestions = () => { requests += 1; };
     const event = { target: new Input() };

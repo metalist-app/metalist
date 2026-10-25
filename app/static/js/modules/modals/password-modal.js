@@ -4,6 +4,7 @@ import { HttpRequestError, UserInputRejected, rethrowUnexpectedError } from '../
 
 import { BaseModal } from './base-modal.js';
 import { actionRowHtml } from './action-row.js';
+import { showErrorDialogFor } from './error-dialog.js';
 import { ModeContextInstance as ModeContext } from '../mode-manager/mode-context.js';
 import { CONFIG } from '../config.js';
 import {
@@ -19,7 +20,6 @@ import {
 import { readPasswordOperationResponse } from '../password-operation-response.js';
 import { buildSessionHeaders } from '../session-auth.js';
 import { Auth } from '../auth.js';
-import { escapeHtml } from '../html-escape.js';
 
 const PASSWORD_MODAL_CONFIG = {
     create: {
@@ -65,7 +65,6 @@ class PasswordOperationModal extends BaseModal {
             mode: this.mode,
             currentStep: 1,
             isProcessing: false,
-            error: null,
             formData: {
                 currentPassword: '',
                 newPassword: '',
@@ -99,17 +98,14 @@ class PasswordOperationModal extends BaseModal {
             if (this.mode !== 'remove') {
                 this.loadNewPasswordStrengthEstimator();
             }
-        })().catch((error) => {
+        })().catch(async (error) => {
             rethrowUnexpectedError(error);
             if (!this.isCurrentOpen(generation)) return;
-            console.error('Failed to open password operation modal');
-            const errorMessage = error && typeof error.message === 'string' && error.message !== ''
-                ? error.message
-                : 'Failed to load password settings. Please try again.';
-            this.updateModalState({
-                error: errorMessage,
-            });
-            this.renderModalContent();
+            // Nothing to do here: the error dialog says why, and closing it closes this one.
+            await showErrorDialogFor(error, null);
+            if (this.isCurrentOpen(generation)) {
+                this.close();
+            }
         });
     }
     
@@ -167,10 +163,6 @@ class PasswordOperationModal extends BaseModal {
      * Generate HTML content based on modal state
      */
     generateContentHTML(state) {
-        if (state.error) {
-            return this.generateErrorHTML(state.error);
-        }
-        
         switch (state.mode) {
             case 'create':
                 return this.generateCreatePasswordHTML();
@@ -521,15 +513,6 @@ class PasswordOperationModal extends BaseModal {
         `;
     }
     
-    generateErrorHTML(error) {
-        return `
-            <div class="modal-content">
-                <h3>Error</h3>
-                <p class="error-message">${escapeHtml(error)}</p>
-            </div>
-        `;
-    }
-    
     /**
      * Setup form event listeners after content is rendered
      */
@@ -645,7 +628,7 @@ class PasswordOperationModal extends BaseModal {
         }
 
         await (async () => {
-            this.updateModalState({ isProcessing: true, error: null });
+            this.updateModalState({ isProcessing: true });
             this.showProcessingState();
             
             // Show waiting cursor
@@ -661,23 +644,11 @@ class PasswordOperationModal extends BaseModal {
             });
         })().catch((error) => {
             rethrowUnexpectedError(error);
-            console.error('Password operation failed');
-            
-            // Remove waiting cursor on error
+            // The form comes back as it was typed, under the error dialog.
             document.body.classList.remove('loading');
-
-            let errorMessage = null;
-            if (error && typeof error.message === 'string' && error.message.length > 0) {
-                errorMessage = error.message;
-            } else {
-                errorMessage = 'Password operation failed. Please try again.';
-            }
-            
-            this.updateModalState({ 
-                error: errorMessage,
-                isProcessing: false 
-            });
-            this.renderModalContent();
+            this.updateModalState({ isProcessing: false });
+            this.hideProcessingState();
+            return showErrorDialogFor(error, null);
         });
     }
     
@@ -808,6 +779,16 @@ class PasswordOperationModal extends BaseModal {
         this.simulateProgress();
     }
     
+    hideProcessingState() {
+        const form = document.getElementById('password-form');
+        const progressSection = document.getElementById('progress-section');
+        if (!(form instanceof HTMLElement) || !(progressSection instanceof HTMLElement)) {
+            throw new Error('Password form or progress section missing');
+        }
+        form.style.display = '';
+        progressSection.style.display = 'none';
+    }
+
     /**
      * Simulate progress for bulk operations (temporary until SSE implemented)
      */
