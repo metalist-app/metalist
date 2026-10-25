@@ -5,6 +5,16 @@ import { HttpRequestError, UserInputRejected, rethrowUnexpectedError } from '../
 import { BaseModal } from './base-modal.js';
 import { actionRowHtml } from './action-row.js';
 import { showErrorDialogFor } from './error-dialog.js';
+import { setFieldMessage } from './field-message.js';
+
+// "Passwords do not match." once the confirmation stops being the start of the new password,
+// so typing a matching confirmation says nothing; '' otherwise.
+function confirmationMismatch(formData) {
+    if (formData.confirmPassword === '' || formData.newPassword.startsWith(formData.confirmPassword)) {
+        return '';
+    }
+    return 'Passwords do not match.';
+}
 import { ModeContextInstance as ModeContext } from '../mode-manager/mode-context.js';
 import { CONFIG } from '../config.js';
 import {
@@ -201,8 +211,6 @@ class PasswordOperationModal extends BaseModal {
                         <input type="password" id="confirm-password" autocomplete="new-password" maxlength="${PASSWORD_MAX_LENGTH}" required>
                     </div>
 
-                    <small class="form-help" id="password-form-validation" aria-live="polite"></small>
-
                     ${actionRowHtml({
                         alternative: null,
                         cancel: { id: 'cancel-btn', label: 'Cancel', disabled: false, attributes: [] },
@@ -254,8 +262,6 @@ class PasswordOperationModal extends BaseModal {
                         <label for="confirm-password">Confirm New Password:</label>
                         <input type="password" id="confirm-password" autocomplete="new-password" maxlength="${PASSWORD_MAX_LENGTH}" required>
                     </div>
-
-                    <small class="form-help" id="password-form-validation" aria-live="polite"></small>
 
                     ${actionRowHtml({
                         alternative: null,
@@ -481,8 +487,6 @@ class PasswordOperationModal extends BaseModal {
                         </label>
                     </div>
 
-                    <small class="form-help" id="password-form-validation" aria-live="polite"></small>
-
                     ${actionRowHtml({
                         alternative: null,
                         cancel: { id: 'cancel-btn', label: 'Cancel', disabled: false, attributes: [] },
@@ -597,17 +601,19 @@ class PasswordOperationModal extends BaseModal {
 
     syncSubmitAvailability() {
         const submitButton = document.querySelector('[data-password-submit]');
-        const validationOutput = document.getElementById('password-form-validation');
         if (!(submitButton instanceof HTMLButtonElement)) {
             throw new Error('Password modal submit button missing');
         }
-        if (!(validationOutput instanceof HTMLElement)) {
-            throw new Error('password-form-validation missing');
-        }
 
-        const validation = this.validateFormData(this.collectFormData(), this.mode);
+        const formData = this.collectFormData();
+        const validation = this.validateFormData(formData, this.mode);
         submitButton.disabled = !validation.valid;
-        validationOutput.textContent = validation.valid ? '' : validation.error;
+        // The dimmed button says what is missing; only a mistake floats under its field.
+        submitButton.title = validation.valid ? '' : validation.error;
+        const confirmField = document.getElementById('confirm-password');
+        if (confirmField instanceof HTMLInputElement) {
+            setFieldMessage(confirmField, confirmationMismatch(formData), 'error');
+        }
     }
     
     /**
@@ -677,10 +683,13 @@ class PasswordOperationModal extends BaseModal {
         switch (mode) {
             case 'create':
                 if (!formData.newPassword) {
-                    return { valid: false, error: 'Please enter a new password' };
+                    return { valid: false, error: 'Enter a new password.' };
+                }
+                if (!formData.confirmPassword) {
+                    return { valid: false, error: 'Enter the new password again to confirm it.' };
                 }
                 if (formData.newPassword !== formData.confirmPassword) {
-                    return { valid: false, error: 'Passwords do not match' };
+                    return { valid: false, error: 'Passwords do not match.' };
                 }
                 const createLengthValidation = validateNewPasswordLength(formData.newPassword);
                 if (!createLengthValidation.valid) {
@@ -690,13 +699,16 @@ class PasswordOperationModal extends BaseModal {
                 
             case 'change':
                 if (!formData.currentPassword) {
-                    return { valid: false, error: 'Please enter your current password' };
+                    return { valid: false, error: 'Enter your current password.' };
                 }
                 if (!formData.newPassword) {
-                    return { valid: false, error: 'Please enter a new password' };
+                    return { valid: false, error: 'Enter a new password.' };
+                }
+                if (!formData.confirmPassword) {
+                    return { valid: false, error: 'Enter the new password again to confirm it.' };
                 }
                 if (formData.newPassword !== formData.confirmPassword) {
-                    return { valid: false, error: 'New passwords do not match' };
+                    return { valid: false, error: 'Passwords do not match.' };
                 }
                 const changeLengthValidation = validateNewPasswordLength(formData.newPassword);
                 if (!changeLengthValidation.valid) {
@@ -706,11 +718,11 @@ class PasswordOperationModal extends BaseModal {
                 
             case 'remove':
                 if (!formData.currentPassword) {
-                    return { valid: false, error: 'Please enter your current password' };
+                    return { valid: false, error: 'Enter your current password.' };
                 }
                 const confirmCheckbox = document.getElementById('confirm-remove');
                 if (!confirmCheckbox || !confirmCheckbox.checked) {
-                    return { valid: false, error: 'Please confirm that you understand the risks' };
+                    return { valid: false, error: 'Tick the box to confirm you understand the risks.' };
                 }
                 break;
         }

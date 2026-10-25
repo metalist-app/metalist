@@ -2,6 +2,7 @@ import { ApplicationState } from '../application-state.js';
 import { BaseModal } from './base-modal.js';
 import { ModeContextInstance as ModeContext } from '../mode-manager/mode-context.js';
 import { escapeHtml } from '../html-escape.js';
+import { setFieldMessage } from './field-message.js';
 import { actionRowHtml } from './action-row.js';
 
 // The most earlier suggestions the server accepts (MAX_PREVIOUS_TITLES in
@@ -160,20 +161,24 @@ class ExportOptionsModal extends BaseModal {
         content.classList.toggle('is-asking-ai', isAsking);
     }
 
+    // Why the AI gave no title floats under the field until the next action.
     _showFailure(message) {
-        const card = document.getElementById('export-title-ai-failure');
-        if (!(card instanceof HTMLElement)) {
-            throw new Error('Print title failure card missing');
-        }
-        card.textContent = `The AI couldn't suggest a title: ${message}`;
-        card.hidden = false;
+        setFieldMessage(this._titleInput(), `The AI couldn't suggest a title: ${message}`, 'error');
     }
 
     _hideFailure() {
-        const card = document.getElementById('export-title-ai-failure');
-        if (card instanceof HTMLElement && !card.hidden) {
-            card.hidden = true;
+        const input = document.getElementById('export-title-input');
+        if (input instanceof HTMLInputElement) {
+            setFieldMessage(input, '', 'error');
         }
+    }
+
+    _titleInput() {
+        const input = document.getElementById('export-title-input');
+        if (!(input instanceof HTMLInputElement)) {
+            throw new Error('Export title field missing');
+        }
+        return input;
     }
 
     // The AI's title replaces the field's text as an edit the field can undo.
@@ -222,7 +227,6 @@ class ExportOptionsModal extends BaseModal {
                     <div class="export-title-row">
                         <input type="text" id="export-title-input" aria-label="Title" maxlength="200" autocomplete="off" spellcheck="false">${button}
                     </div>${note}
-                    <div class="export-title-ai-failure" id="export-title-ai-failure" role="status" hidden></div>
                 </div>`;
     }
 

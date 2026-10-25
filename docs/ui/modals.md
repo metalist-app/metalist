@@ -150,6 +150,16 @@ An action the user took that did not happen (refused input, a failed request) is
 - Messages say what happened and how to fix it, for the user ("That vault already exists. Pick another name.").
 - Failures while typing (a tag lookup) never open a dialog: they float in the corner (`docs/ui/floating-messages.md`).
 
+### Messages under a field
+What is wrong with a field's value while it is typed floats just under that field (`errors-and-status-rule.md` §2.2, placement 3; built 2026-10-25, step 5b). Code: `modals/field-message.js` (`setFieldMessage(field, text, kind)`, `''` removes it); test: `scripts/browser-field-message-regressions.mjs` (`field-messages` suite).
+- It floats over what is below, lined up with the field and 4 px under it; nothing moves, focus stays in the field, and it never covers the field. It leaves once the value is fine.
+- Errors are red, warnings (`kind: 'warning'`) amber. It is placed in the field's nearest container that draws a box, so it scrolls with the field.
+- Typing never opens a dialog; a dialog that needs one waits for its action button.
+- Passwords (Add/Change): "Passwords do not match." under Confirm once the confirmation stops being the start of the new password. A missing or short entry says nothing under its field (the length meter shows it); the dimmed button's tooltip says what is missing (Remove Password too).
+- Search suggestion windows: a bad day count under its slot's field ("A slot must be between 1 and N days.", "Another slot already covers N days."); it is not saved until fixed.
+- Reminders: a past date or time, and "Months without the Nth use that month's last day.", in amber under the date (the time when the date is hidden).
+- Export and Print: "The AI couldn't suggest a title: …" under the title, until the next key or click.
+
 ### Modal Stacking
 - Modals can stack via `ModeContext.modalStack`
 - Top modal receives events

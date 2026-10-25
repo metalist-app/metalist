@@ -8245,6 +8245,32 @@ ul.error-dialog-text li + li {
     outline-offset: 1px;
 }
 
+/* Field messages (modals/field-message.js): what is wrong with a field's value, floating
+   just under it over what is below, so nothing moves. */
+.field-message-anchor {
+    position: relative;
+}
+
+.field-message {
+    position: absolute;
+    z-index: 3;
+    box-sizing: border-box;
+    max-width: 360px;
+    padding: 6px 10px;
+    border: 1px solid var(--modal-danger);
+    border-radius: 8px;
+    background: var(--modal-surface-raised);
+    color: var(--modal-text);
+    font-size: 13px;
+    line-height: 1.35;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+    pointer-events: none;
+}
+
+.field-message[data-kind="warning"] {
+    border-color: #e0b04a;
+}
+
 /* Recent Messages (recent-messages-modal.js): what the floating messages said, newest first. */
 .recent-messages-list {
     margin: 0;
@@ -9216,17 +9242,6 @@ html[data-theme="dark"] body.loading::after {
     margin: 12px 0 0 152px;
 }
 
-.reminder-modal-warning {
-    min-height: 1.2em;
-    margin: 6px 0 0 152px;
-    color: #9a6500;
-    font-size: 14px;
-}
-
-.reminder-modal-warning:empty {
-    display: none;
-}
-
 .reminder-empty {
     margin: 12px 0;
     color: var(--muted-text-color, #aaa);
@@ -9253,8 +9268,7 @@ html[data-theme="dark"] body.loading::after {
         padding-top: 14px;
     }
 
-    .reminder-form-actions,
-    .reminder-modal-warning {
+    .reminder-form-actions {
         margin-left: 0;
     }
 
@@ -9798,8 +9812,7 @@ html[data-theme="dark"] body.loading::after {
 
 .modal-content .reminder-row-past-due,
 .modal-content .reminder-row-due,
-.modal-content .reminder-row-overdue,
-.modal-content .reminder-modal-warning {
+.modal-content .reminder-row-overdue {
     color: #f4bd62;
 }
 
@@ -10302,27 +10315,6 @@ iframe.print-frame {
     margin: 6px 0 0;
     font-size: 13px;
     color: var(--modal-text-muted);
-}
-
-/* Why the AI gave no title: floats over what is below until the next action. */
-.export-title-ai-failure {
-    position: absolute;
-    top: 100%;
-    left: 0;
-    right: 0;
-    z-index: 2;
-    margin-top: 4px;
-    padding: 8px 10px;
-    border: 1px solid var(--modal-border-strong);
-    border-radius: 8px;
-    background: var(--modal-surface-raised);
-    color: var(--modal-text);
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
-    font-size: 13px;
-}
-
-.export-title-ai-failure[hidden] {
-    display: none;
 }
 
 /* Date range → Custom Range… (date-range-modal.js). */

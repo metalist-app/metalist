@@ -150,7 +150,7 @@ function optionsState(page) {
         disabled: button.disabled, asking: button.classList.contains('is-asking'), width: button.getBoundingClientRect().width,
       })(document.getElementById('export-title-ai-btn')),
       aiNote: (note => note === null ? null : note.textContent)(document.querySelector('#export-options-modal .export-title-ai-note')),
-      aiFailure: (card => card === null || card.hidden ? null : card.textContent)(document.getElementById('export-title-ai-failure')),
+      aiFailure: (card => card === null ? null : card.textContent)(document.getElementById('export-title-input-message')),
       submit: document.getElementById('export-options-submit-btn') === null ? null : document.getElementById('export-options-submit-btn').textContent,
       frame: frame === null ? null : frame.srcdoc,
       documentTitle: document.title,

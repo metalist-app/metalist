@@ -17,6 +17,7 @@ import { BaseModal } from './base-modal.js';
 import { escapeHtml } from '../html-escape.js';
 import { actionRowHtml } from './action-row.js';
 import { showErrorDialog } from './error-dialog.js';
+import { setFieldMessage } from './field-message.js';
 
 // What the pre-reminder fields show for a reminder without one.
 const PRE_REMINDER_FORM_DEFAULTS = Object.freeze({ amount: '1', unit: 'days' });
@@ -966,13 +967,29 @@ export class ReminderModal extends BaseModal {
                             },
                             rowClass: 'reminder-form-actions',
                         })}
-                        <p class="reminder-modal-warning">${escapeHtml(formWarning)}</p>
                     </section>
                 </div>
 
             </div>
         `;
         this._installModalCloseButton();
+        this._showFormWarning(formWarning);
+    }
+
+    // A past date or time floats in amber under the date (or the time, when the date is
+    // hidden): a warning, not a refusal.
+    _showFormWarning(formWarning) {
+        let anchor = document.getElementById('reminder-date');
+        if (!(anchor instanceof HTMLInputElement)) {
+            anchor = document.getElementById('reminder-time');
+        }
+        if (!(anchor instanceof HTMLInputElement)) {
+            if (formWarning !== '') {
+                throw new Error('A reminder warning has no date or time field to show under');
+            }
+            return;
+        }
+        setFieldMessage(anchor, formWarning, 'warning');
     }
 
     _renderPreReminderFields(form) {
