@@ -2,6 +2,7 @@ import { ApplicationState } from '../application-state.js';
 import { BaseModal } from './base-modal.js';
 import { ModeContextInstance as ModeContext } from '../mode-manager/mode-context.js';
 import { escapeHtml } from '../html-escape.js';
+import { actionRowHtml } from './action-row.js';
 
 // The most earlier suggestions the server accepts (MAX_PREVIOUS_TITLES in
 // app/services/agent/export_title_suggestions.py).
@@ -243,10 +244,15 @@ class ExportOptionsModal extends BaseModal {
                     <p class="prioritize-modal-eyebrow">${escapeHtml(purpose.eyebrow)}</p>
                     <h3>${escapeHtml(purpose.heading)}</h3>
                 </div>${this._renderTitleField(state)}${passwordChoice}
-                <div class="form-actions alphabetize-root-notes-actions">
-                    <button type="button" class="secondary-btn" id="export-options-cancel-btn">Cancel</button>
-                    <button type="button" class="primary-btn" id="export-options-submit-btn" data-modal-enter-action>${escapeHtml(purpose.action)}</button>
-                </div>
+                ${actionRowHtml({
+                    alternative: null,
+                    cancel: { id: 'export-options-cancel-btn', label: 'Cancel', disabled: false, attributes: [] },
+                    main: {
+                        id: 'export-options-submit-btn', label: purpose.action, disabled: false, attributes: [],
+                        isDestructive: false, isEnterAction: true, type: 'button',
+                    },
+                    rowClass: 'alphabetize-root-notes-actions',
+                })}
             </div>
         `;
         // A failure shown floats until the next key or click.

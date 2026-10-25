@@ -6,6 +6,7 @@ import {
 } from '../command-palette/note-layout-preferences.js';
 import { BaseModal } from './base-modal.js';
 import { escapeHtml } from '../html-escape.js';
+import { actionRowHtml } from './action-row.js';
 
 
 
@@ -113,10 +114,15 @@ export class NoteLayoutAppearanceModal extends BaseModal {
                     <div class="note-layout-preview-child"><span>Another child note</span><span class="note-layout-preview-tags"><span class="note-tag note-tag--meta">@todo</span></span></div>
                 </div>
 
-                <div class="form-actions">
-                    <button type="button" class="primary-btn" id="note-layout-save-btn" data-modal-enter-action${disabled}>${saving ? 'Saving…' : 'Save'}</button>
-                    <button type="button" class="secondary-btn" id="note-layout-cancel-btn"${disabled}>Cancel</button>
-                </div>
+                ${actionRowHtml({
+                    alternative: null,
+                    cancel: { id: 'note-layout-cancel-btn', label: 'Cancel', disabled: saving, attributes: [] },
+                    main: {
+                        id: 'note-layout-save-btn', label: saving ? 'Saving…' : 'Save', disabled: saving, attributes: [],
+                        isDestructive: false, isEnterAction: true, type: 'button',
+                    },
+                    rowClass: '',
+                })}
                 <p class="error-message">${escapeHtml(error)}</p>
             </div>
         `;

@@ -1,5 +1,6 @@
 import { ApplicationState } from '../application-state.js';
 import { BaseModal } from './base-modal.js';
+import { actionRowHtml } from './action-row.js';
 import {
     validateSearchSuggestionStatistics,
 } from '../mode-manager/services/search-suggestion-statistics-service.js';
@@ -254,8 +255,7 @@ export class SearchSuggestionStatisticsModal extends BaseModal {
     }
 
     _renderResetConfirmation(modalElement, state) {
-        const disabled = state.resetting ? ' disabled' : '';
-        const resetLabel = state.resetting ? 'Resetting…' : 'Reset activity';
+        const resetLabel = state.resetting ? 'Resetting…' : 'Reset Activity';
         modalElement.innerHTML = `
             <div class="modal-content search-suggestion-statistics-modal-content">
                 <div class="prioritize-modal-header">
@@ -266,10 +266,19 @@ export class SearchSuggestionStatisticsModal extends BaseModal {
                     <p>Delete all learned search-suggestion tag activity for this vault?</p>
                     <p>Notes, tabs, saved searches, and the settings in this modal will not be changed.</p>
                 </div>
-                <div class="form-actions alphabetize-root-notes-actions">
-                    <button type="button" class="secondary-btn" id="search-suggestion-statistics-reset-cancel-btn" data-modal-safe-focus${disabled}>Cancel</button>
-                    <button type="button" class="danger-btn" id="search-suggestion-statistics-reset-confirm-btn" data-modal-destructive${disabled}>${resetLabel}</button>
-                </div>
+                ${actionRowHtml({
+                    alternative: null,
+                    cancel: {
+                        id: 'search-suggestion-statistics-reset-cancel-btn', label: 'Cancel',
+                        disabled: state.resetting === true, attributes: [],
+                    },
+                    main: {
+                        id: 'search-suggestion-statistics-reset-confirm-btn', label: resetLabel,
+                        disabled: state.resetting === true, attributes: [],
+                        isDestructive: true, isEnterAction: false, type: 'button',
+                    },
+                    rowClass: 'alphabetize-root-notes-actions',
+                })}
             </div>
         `;
         const cancelButton = document.getElementById(
@@ -335,7 +344,7 @@ export class SearchSuggestionStatisticsModal extends BaseModal {
         const resetDisabled = state.loading || state.saving || state.resetting
             ? ' disabled'
             : '';
-        const resetLabel = state.resetting ? 'Resetting…' : 'Reset activity';
+        const resetLabel = state.resetting ? 'Resetting…' : 'Reset Activity';
         const settingsStatus = state.saving ? 'Saving…' : 'Changes save automatically.';
 
         modalElement.innerHTML = `

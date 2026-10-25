@@ -11,6 +11,7 @@ import { settleResult } from '../async-result.js';
 import { rewriteNamespaceUrlPreservingCurrentHost } from '../login-namespace-picker.js';
 import { buildSessionHeaders } from '../session-auth.js';
 import { escapeHtml } from '../html-escape.js';
+import { actionRowHtml } from './action-row.js';
 
 
 
@@ -200,10 +201,15 @@ export class DeleteNamespaceModal extends BaseModal {
                             `).join('')}
                         </select>
                     </div>
-                    <div class="form-actions">
-                        <button type="button" class="danger-btn" id="delete-namespace-continue-btn">Continue</button>
-                        <button type="button" class="secondary-btn" id="delete-namespace-cancel-btn">Cancel</button>
-                    </div>
+                    ${actionRowHtml({
+                        alternative: null,
+                        cancel: { id: 'delete-namespace-cancel-btn', label: 'Cancel', disabled: false, attributes: [] },
+                        main: {
+                            id: 'delete-namespace-continue-btn', label: 'Continue', disabled: false, attributes: [],
+                            isDestructive: false, isEnterAction: false, type: 'button',
+                        },
+                        rowClass: '',
+                    })}
                     <p class="namespace-delete-status">${escapeHtml(status)}</p>
                     <p class="error-message" ${error.length === 0 ? 'style="display:none;"' : ''}>${escapeHtml(error)}</p>
                 </div>
@@ -257,12 +263,15 @@ export class DeleteNamespaceModal extends BaseModal {
                     />
                 </div>
 
-                <div class="form-actions">
-                    <button type="button" class="danger-btn" id="delete-namespace-submit-btn" data-modal-destructive ${deleting ? 'disabled' : ''}>
-                        Delete vault
-                    </button>
-                    <button type="button" class="secondary-btn" id="delete-namespace-back-btn" data-modal-safe-focus ${deleting ? 'disabled' : ''}>Back</button>
-                </div>
+                ${actionRowHtml({
+                    alternative: null,
+                    cancel: { id: 'delete-namespace-back-btn', label: 'Back', disabled: deleting, attributes: [] },
+                    main: {
+                        id: 'delete-namespace-submit-btn', label: 'Delete Vault', disabled: deleting, attributes: [],
+                        isDestructive: true, isEnterAction: false, type: 'button',
+                    },
+                    rowClass: '',
+                })}
 
                 <p class="namespace-delete-status">${escapeHtml(status)}</p>
                 <p class="error-message" ${error.length === 0 ? 'style="display:none;"' : ''}>${escapeHtml(error)}</p>

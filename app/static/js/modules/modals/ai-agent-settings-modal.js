@@ -18,6 +18,7 @@ import {
 } from '../ai-chat/cloud-privacy-policy.js';
 import { validateAgentWebAccessMode } from '../ai-chat/agent-web-settings.js';
 import { escapeHtml } from '../html-escape.js';
+import { actionRowHtml } from './action-row.js';
 import { AI_PROVIDERS, aiProvider } from '../ai-chat/ai-providers.js';
 
 // AI Agent Settings (docs/ui/ai-chat.md, "AI Agent Settings"): one folder tab per
@@ -102,8 +103,8 @@ function renderKeyRow(state) {
         <div class="ai-settings-row">
             <label class="ai-settings-row-label" for="ai-agent-api-key">Key</label>
             <input id="ai-agent-api-key" type="password" value="" placeholder="Paste your API key" maxlength="512" autocomplete="new-password" data-1p-ignore data-lpignore="true" ${busy}>
-            <button type="button" id="ai-agent-key-save" ${busy}>Save key</button>
             ${cancel}
+            <button type="button" id="ai-agent-key-save" ${busy}>Save Key</button>
         </div>`;
 }
 
@@ -256,10 +257,15 @@ export class AiAgentSettingsModal extends BaseModal {
                     </div>
                 </section>
                 <p class="error-message" role="alert">${escapeHtml(state.error)}</p>
-                <div class="form-actions">
-                    <button type="button" class="primary-btn" id="ai-agent-save" data-modal-enter-action>Save</button>
-                    <button type="button" class="secondary-btn" id="ai-agent-cancel">Cancel</button>
-                </div>
+                ${actionRowHtml({
+                    alternative: null,
+                    cancel: { id: 'ai-agent-cancel', label: 'Cancel', disabled: false, attributes: [] },
+                    main: {
+                        id: 'ai-agent-save', label: 'Save', disabled: false, attributes: [],
+                        isDestructive: false, isEnterAction: true, type: 'button',
+                    },
+                    rowClass: '',
+                })}
             </div>
         `;
         this._setupControls();

@@ -376,7 +376,7 @@ export const Auth = {
             button.textContent = 'Checking…';
             return;
         }
-        button.textContent = 'OK';
+        button.textContent = 'Log In';
     },
 
     /**

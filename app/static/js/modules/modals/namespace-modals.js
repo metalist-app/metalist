@@ -19,6 +19,7 @@ import { renderNamespaceLoadingTab } from './namespace-loading-page.js';
 import { selectNamespacePortsEditorProfile } from './namespace-ports-profile.js';
 import { buildNamespaceRenamePayload } from './namespace-rename-validation.js';
 import { escapeHtml } from '../html-escape.js';
+import { actionRowHtml } from './action-row.js';
 import { requires } from '../../shockharness/contracts.js';
 
 
@@ -369,11 +370,18 @@ export class OpenNamespaceModal extends NamespaceModalBase {
             <div class="modal-content namespace-modal-content switch-namespace-modal-content">
                 <h3>Open Vault</h3>
                 <div class="namespace-modal-list">${rowsHtml}</div>
-                <div class="form-actions namespace-modal-actions">
-                    <button type="button" class="primary-btn" id="open-namespace-this-tab-btn" ${submitting || isCurrentSelection ? 'disabled' : ''}>Open in This Tab</button>
-                    <button type="button" class="secondary-btn" id="open-namespace-new-tab-btn" ${submitting || isCurrentSelection ? 'disabled' : ''}>Open in New Tab</button>
-                    <button type="button" class="secondary-btn" id="open-namespace-cancel-btn" ${submitting ? 'disabled' : ''}>Cancel</button>
-                </div>
+                ${actionRowHtml({
+                    alternative: {
+                        id: 'open-namespace-new-tab-btn', label: 'Open in New Tab',
+                        disabled: [submitting, isCurrentSelection].includes(true), attributes: [],
+                    },
+                    cancel: { id: 'open-namespace-cancel-btn', label: 'Cancel', disabled: submitting, attributes: [] },
+                    main: {
+                            id: 'open-namespace-this-tab-btn', label: 'Open in This Tab', disabled: [submitting, isCurrentSelection].includes(true), attributes: [],
+                            isDestructive: false, isEnterAction: false, type: 'button',
+                        },
+                    rowClass: 'namespace-modal-actions',
+                })}
                 <p class="namespace-modal-status">${escapeHtml(status)}</p>
                 <p class="error-message" ${error.length === 0 ? 'style="display:none;"' : ''}>${escapeHtml(error)}</p>
             </div>
@@ -621,10 +629,15 @@ export class CreateNamespaceModal extends NamespaceModalBase {
                         </div>
                     ` : ''}
                 </div>
-                <div class="form-actions namespace-modal-actions">
-                    <button type="button" class="primary-btn" id="create-namespace-submit-btn" ${submitting ? 'disabled' : ''}>Create and Open Vault</button>
-                    <button type="button" class="secondary-btn" id="create-namespace-cancel-btn" ${submitting ? 'disabled' : ''}>Cancel</button>
-                </div>
+                ${actionRowHtml({
+                    alternative: null,
+                    cancel: { id: 'create-namespace-cancel-btn', label: 'Cancel', disabled: submitting, attributes: [] },
+                    main: {
+                            id: 'create-namespace-submit-btn', label: 'Create and Open Vault', disabled: submitting, attributes: [],
+                            isDestructive: false, isEnterAction: false, type: 'button',
+                        },
+                    rowClass: 'namespace-modal-actions',
+                })}
                 <p class="namespace-modal-status">${escapeHtml(status)}</p>
                 <p class="error-message" ${error.length === 0 ? 'style="display:none;"' : ''}>${escapeHtml(error)}</p>
             </div>
@@ -820,10 +833,15 @@ export class RenameNamespaceModal extends NamespaceModalBase {
                     <label for="rename-namespace-name">New Vault Name</label>
                     <input id="rename-namespace-name" type="text" value="${escapeHtml(targetNamespace)}" placeholder="personal" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" ${submitting ? 'disabled' : ''}>
                 </div>
-                <div class="form-actions namespace-modal-actions">
-                    <button type="button" class="primary-btn" id="rename-namespace-submit-btn" ${submitting ? 'disabled' : ''}>Rename and Restart</button>
-                    <button type="button" class="secondary-btn" id="rename-namespace-cancel-btn" ${submitting ? 'disabled' : ''}>Cancel</button>
-                </div>
+                ${actionRowHtml({
+                    alternative: null,
+                    cancel: { id: 'rename-namespace-cancel-btn', label: 'Cancel', disabled: submitting, attributes: [] },
+                    main: {
+                            id: 'rename-namespace-submit-btn', label: 'Rename and Restart', disabled: submitting, attributes: [],
+                            isDestructive: false, isEnterAction: false, type: 'button',
+                        },
+                    rowClass: 'namespace-modal-actions',
+                })}
                 <p class="namespace-modal-status">${escapeHtml(status)}</p>
                 <p class="error-message" ${error.length === 0 ? 'style="display:none;"' : ''}>${escapeHtml(error)}</p>
             </div>
@@ -1013,10 +1031,15 @@ export class ManageNamespacePortsModal extends NamespaceModalBase {
                         <tbody>${rowsHtml}</tbody>
                     </table>
                 </div>
-                <div class="form-actions namespace-modal-actions">
-                    <button type="button" class="primary-btn" id="manage-namespace-ports-save-btn" ${saving ? 'disabled' : ''}>Save Ports</button>
-                    <button type="button" class="secondary-btn" id="manage-namespace-ports-cancel-btn" ${saving ? 'disabled' : ''}>Cancel</button>
-                </div>
+                ${actionRowHtml({
+                    alternative: null,
+                    cancel: { id: 'manage-namespace-ports-cancel-btn', label: 'Cancel', disabled: saving, attributes: [] },
+                    main: {
+                            id: 'manage-namespace-ports-save-btn', label: 'Save Ports', disabled: saving, attributes: [],
+                            isDestructive: false, isEnterAction: false, type: 'button',
+                        },
+                    rowClass: 'namespace-modal-actions',
+                })}
                 <p class="namespace-modal-status">${escapeHtml(status)}</p>
                 <p class="error-message" ${error.length === 0 ? 'style="display:none;"' : ''}>${escapeHtml(error)}</p>
             </div>

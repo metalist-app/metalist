@@ -2,6 +2,7 @@ import { NEXT_ROW, NO_SELECTION, PREVIOUS_ROW } from '../list-selection.js';
 import { ApplicationState, stateValuesEqual } from '../application-state.js';
 import { HttpRequestError, rethrowUnexpectedError } from '../expected-errors.js';
 import { BaseModal } from './base-modal.js';
+import { actionRowHtml } from './action-row.js';
 import { CONFIG } from '../config.js';
 import { buildSessionHeaders } from '../session-auth.js';
 import { isValidTagToken } from '../tag-token.js';
@@ -307,10 +308,15 @@ export class PrioritizeModal extends BaseModal {
                     <p>Your current search will stay active after the reorder refreshes.</p>
                 </div>
 
-                <div class="form-actions prioritize-modal-actions">
-                    <button type="button" class="secondary-btn" id="prioritize-modal-cancel-btn" data-modal-safe-focus>Cancel</button>
-                    <button type="button" class="danger-btn" id="prioritize-modal-submit-btn" data-modal-destructive>Apply Global Reorder</button>
-                </div>
+                ${actionRowHtml({
+                    alternative: null,
+                    cancel: { id: 'prioritize-modal-cancel-btn', label: 'Cancel', disabled: false, attributes: [] },
+                    main: {
+                        id: 'prioritize-modal-submit-btn', label: 'Apply Global Reorder', disabled: false, attributes: [],
+                        isDestructive: true, isEnterAction: false, type: 'button',
+                    },
+                    rowClass: 'prioritize-modal-actions',
+                })}
 
                 <p id="prioritize-modal-error" class="error-message">${escapeHtml(error)}</p>
             </div>

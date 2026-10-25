@@ -26,13 +26,13 @@ Hand-drawn diagrams drawn with the Excalidraw editor, stored as `.excalidraw` fi
 ## Opening the Diagram Editor
 - Double-click a rendered diagram, or right-click it and choose **Edit Diagram**.
 - To add one, choose **Add Excalidraw Diagram** from the right-click menu while editing a note, or `Add Excalidraw diagram` in the command palette. An empty diagram is attached to the note being edited (or a new note when none is) and the editor opens immediately.
-- The editor covers the window. Its bar shows the save status, **Discard changes**, and **Done**.
+- The editor covers the window. Its bar shows the save status, **Discard Changes**, and **Done**.
 
 ## Saving and Closing
 - Changes autosave 2 seconds after drawing stops, one save at a time. The bar shows `Unsaved changes`, `Saving…`, `All changes saved`, or `Could not save. Retrying…` (failed saves retry after the same delay).
 - **Done** or `Cmd/Ctrl+Enter` saves anything pending, renders and stores both previews, closes the editor, and refreshes every copy of the diagram on screen. If a save cannot complete, the editor stays open and says so.
 - `Escape` belongs to Excalidraw (for example to cancel a tool) and never closes the editor.
-- **Discard changes** needs a second click within 4 seconds. It restores the diagram and previews exactly as they were when the editor opened, then closes.
+- **Discard Changes** needs a second click within 4 seconds. It restores the diagram and previews exactly as they were when the editor opened, then closes.
 - If another window saves the same diagram, autosave stops with a message to close and reopen the diagram. Done then closes without overwriting the other save; Discard leaves the other window's version in place.
 - Closing or reloading the browser tab with unsaved changes asks for confirmation.
 - While the editor is open, MetaList keyboard shortcuts, clicks, and context menus are disabled so they reach Excalidraw instead.

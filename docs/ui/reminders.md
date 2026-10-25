@@ -11,7 +11,7 @@ Implemented now:
 - Date-time and date-only time modes.
 - Optional details text beyond the title.
 - One optional pre-reminder per reminder.
-- In-app popup surface with one action: `Got it`.
+- In-app popup surface with one action: `Dismiss`.
 - Registry search and schedule filters: `All schedules`, `One Time`, `Daily`, `Weekly`, `Monthly`, `Yearly`.
 - Pause/resume for recurring reminders.
 - Delete for all reminders.
@@ -85,7 +85,7 @@ For date-time reminders:
 - Minute/hour pre-reminders are exact instants: event time minus the offset.
 - Day-based pre-reminders are date-only prompts. For example, a Wednesday 9:30 AM appointment with a 1-day pre-reminder surfaces on Tuesday on first app use, not exactly Tuesday at 9:30 AM.
 
-`Got it` on a pre-reminder only marks that pre-reminder occurrence as seen. It does not advance, complete, or delete the actual reminder. If the actual reminder is already due, it takes priority over any unacknowledged pre-reminder; any visible pre-reminder for that same occurrence is removed when the actual reminder surfaces.
+`Dismiss` on a pre-reminder only marks that pre-reminder occurrence as seen. It does not advance, complete, or delete the actual reminder. If the actual reminder is already due, it takes priority over any unacknowledged pre-reminder; any visible pre-reminder for that same occurrence is removed when the actual reminder surfaces.
 
 ## Missed Behavior
 
@@ -103,11 +103,11 @@ The popup surface is intentionally compact:
 - Fixed reminder icon is render-only; it is not stored.
 - Title and optional details are shown.
 - A horizontal rule separates content from the due status/action row.
-- Due status is italic and shares a row with `Got it`.
-- `Got it` acknowledges the current visible occurrence.
-- The popup handles its own presses: pressing `Got it` while a note is being edited works on the first press and leaves the note in edit mode; pressing a title opens Reminders, which first saves and leaves the note, as every dialog does.
-- When at least one popup is waiting for `Got it`, a bell plus up/down arrow appears below the stack.
-- The arrow collapses or expands the stack; no arrow appears when nothing is waiting for `Got it`.
+- Due status is italic and shares a row with `Dismiss`.
+- `Dismiss` acknowledges the current visible occurrence.
+- The popup handles its own presses: pressing `Dismiss` while a note is being edited works on the first press and leaves the note in edit mode; pressing a title opens Reminders, which first saves and leaves the note, as every dialog does.
+- When at least one popup is waiting for `Dismiss`, a bell plus up/down arrow appears below the stack.
+- The arrow collapses or expands the stack; no arrow appears when nothing is waiting for `Dismiss`.
 - The expanded/collapsed state is stored as the namespace-scoped `pref.reminder_surface_expanded` client preference in the main database, not in browser storage.
 - Existing waiting popups use that stored state after browser refresh; a newly surfaced reminder automatically expands the stack and persists the expanded state.
 - Popup items animate when they appear, disappear, and when the user manually expands/collapses the stack.
@@ -128,18 +128,18 @@ This keeps the server authoritative while avoiding pointless server traffic duri
 
 ## UI Semantics
 
-`Add reminder` and `Save changes` always clear back to the default new-reminder form after a successful create/update.
+`Add Reminder` and `Save Changes` always clear back to the default new-reminder form after a successful create/update.
 
 Editing a reminder keeps its history (how many times it has fired, when it last fired or was seen, missed and snoozed state) and where its schedule stands, as long as the schedule is unchanged: changing the title, details or pre-reminder neither restarts an "after N times" count nor moves a due occurrence on. Changing the schedule (one-time or recurring, date-time or date-only, the date or time, or the recurrence rule) makes a new schedule whose history starts over. Every request must send every reminder field, and a saved reminder must have every field; only reminders saved during development before details and pre-reminders existed load with those blank.
 
-A reminder needs a title (details are optional): `Add reminder` with an empty title sends nothing, says "Add a title for the reminder." under the buttons, and puts the cursor in the title field. The form's fields fire both `input` and `change`, so every form change is applied only when the value differs (the client state rejects redundant changes; before that, `Add reminder` silently did nothing). The release browser check adds a reminder through the dialog (`scripts/browser-validation/browser-startup.mjs`).
+A reminder needs a title (details are optional): `Add Reminder` with an empty title sends nothing, says "Add a title for the reminder." under the buttons, and puts the cursor in the title field. The form's fields fire both `input` and `change`, so every form change is applied only when the value differs (the client state rejects redundant changes; before that, `Add Reminder` silently did nothing). The release browser check adds a reminder through the dialog (`scripts/browser-validation/browser-startup.mjs`).
 
-`Clear form` discards the current form state.
+`Clear Form` discards the current form state.
 
 `Pause` is only shown for recurring reminders. One-time reminders can be edited or deleted; once acknowledged, they disappear.
 
 `Delete` permanently removes the reminder definition.
 
-`Got it` resolves the currently visible due/overdue occurrence. For one-time reminders this removes the reminder. For recurring reminders this advances to the next occurrence.
+`Dismiss` resolves the currently visible due/overdue occurrence. For one-time reminders this removes the reminder. For recurring reminders this advances to the next occurrence.
 
-For pre-reminders, `Got it` only records the pre-reminder occurrence as seen.
+For pre-reminders, `Dismiss` only records the pre-reminder occurrence as seen.

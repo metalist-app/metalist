@@ -537,6 +537,12 @@ html:has(> body > .login-page[style*="display: flex"]) {
     min-width: 112px;
 }
 
+/* A rare alternative sits at the far left, apart from Cancel and the main action
+   (action-row.js; docs/ready-to-build/dialog-and-menu-conventions.md, rule 1). */
+.modal-content .dialog-actions .dialog-actions-alternative {
+    margin-right: auto;
+}
+
 .image-file-insert-choice-modal-content {
     width: min(460px, 92vw);
 }
@@ -544,12 +550,6 @@ html:has(> body > .login-page[style*="display: flex"]) {
 .image-file-insert-choice-modal-content p {
     margin: 0 0 18px;
     line-height: 1.45;
-}
-
-.image-file-insert-choice-actions {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
 }
 
 .link-title-retry-modal-content {
@@ -1762,6 +1762,17 @@ body.ontology-modal-open #ontology-modal {
     color: #fff;
 }
 
+/* A destructive confirmation's main button is red, in the main button's place. */
+#ontology-modal .ontology-dialog-footer .ontology-dialog-destructive {
+    border-color: rgba(248, 113, 113, 0.72);
+    background: #b91c1c;
+    color: #fff;
+}
+
+#ontology-modal .ontology-dialog-footer .ontology-dialog-destructive:hover {
+    background: #991b1b;
+}
+
 #ontology-modal .ontology-dialog-primary {
     border: none;
     color: #0a1724;
@@ -2443,6 +2454,15 @@ html[data-theme="dark"] .prioritize-modal-content input.prioritize-modal-tag-inp
     .modal-content .form-actions {
         flex-direction: column;
         align-items: stretch;
+    }
+
+    /* Stacked, the main action is on top, then Cancel, then any alternative (rule 7). */
+    .modal-content .dialog-actions {
+        flex-direction: column-reverse;
+    }
+
+    .modal-content .dialog-actions .dialog-actions-alternative {
+        margin-right: 0;
     }
 
     .modal-content .form-actions button {

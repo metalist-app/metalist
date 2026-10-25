@@ -5,6 +5,7 @@ import { BaseModal } from './base-modal.js';
 import { CONFIG } from '../config.js';
 import { buildSessionHeaders } from '../session-auth.js';
 import { escapeHtml } from '../html-escape.js';
+import { actionRowHtml } from './action-row.js';
 
 
 function parseResponseError(responseBody, statusCode) {
@@ -196,10 +197,19 @@ export class BackupSettingsModal extends BaseModal {
                     <input type="number" id="backup-settings-retention-count" min="1" step="1" value="${escapeHtml(retentionCountText)}" ${loading || saving ? 'disabled' : ''}>
                 </div>
 
-                <div class="form-actions">
-                    <button type="button" class="primary-btn" id="backup-settings-run-btn" ${loading || saving ? 'disabled' : ''}>${saving ? 'Saving...' : 'Back Up Now'}</button>
-                    <button type="button" class="secondary-btn" id="backup-settings-cancel-btn" ${loading || saving || pickingFolder ? 'disabled' : ''}>Cancel</button>
-                </div>
+                ${actionRowHtml({
+                    alternative: null,
+                    cancel: {
+                        id: 'backup-settings-cancel-btn', label: 'Cancel',
+                        disabled: [loading, saving, pickingFolder].includes(true), attributes: [],
+                    },
+                    main: {
+                        id: 'backup-settings-run-btn', label: saving ? 'Backing Up…' : 'Back Up Now',
+                        disabled: [loading, saving].includes(true), attributes: [],
+                        isDestructive: false, isEnterAction: false, type: 'button',
+                    },
+                    rowClass: '',
+                })}
 
                 <p id="backup-settings-status">${escapeHtml(effectiveStatusMessage)}</p>
                 <p id="backup-settings-error" class="error-message">${escapeHtml(error)}</p>

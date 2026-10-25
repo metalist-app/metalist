@@ -483,7 +483,7 @@ class CommandPaletteController {
                             eyebrow: 'Tag Proposals',
                             title: 'Remove all suggestions?',
                             description: 'Remove every pending tag suggestion in the current context? This cannot be undone and will clear undo/redo.',
-                            confirmLabel: 'Remove all',
+                            confirmLabel: 'Remove All',
                             isDangerous: true,
                         },
                     );
@@ -1734,7 +1734,7 @@ class CommandPaletteController {
                 eyebrow: 'File Storage',
                 title: 'Trim Unused Files?',
                 description: 'Delete every file that is not referenced by a saved note? This cannot be undone.',
-                confirmLabel: 'Trim files',
+                confirmLabel: 'Trim Files',
                 isDangerous: true,
             },
         );

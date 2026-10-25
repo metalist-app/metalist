@@ -15,6 +15,7 @@ import {
 
 import { BaseModal } from './base-modal.js';
 import { escapeHtml } from '../html-escape.js';
+import { actionRowHtml } from './action-row.js';
 
 // What the pre-reminder fields show for a reminder without one.
 const PRE_REMINDER_FORM_DEFAULTS = Object.freeze({ amount: '1', unit: 'days' });
@@ -953,10 +954,18 @@ export class ReminderModal extends BaseModal {
                             </label>
                         </div>
 
-                        <div class="reminder-form-actions">
-                            <button type="button" class="primary-btn" data-reminder-save data-modal-enter-action ${this._state.saving ? 'disabled' : ''}>${this._state.editingId ? 'Save changes' : 'Add reminder'}</button>
-                            <button type="button" class="secondary-btn" data-reminder-new ${this._state.saving ? 'disabled' : ''}>Clear form</button>
-                        </div>
+                        ${actionRowHtml({
+                            alternative: {
+                                id: null, label: 'Clear Form', disabled: this._state.saving, attributes: ['data-reminder-new'],
+                            },
+                            cancel: null,
+                            main: {
+                                id: null, label: this._state.editingId ? 'Save Changes' : 'Add Reminder',
+                                disabled: this._state.saving, attributes: ['data-reminder-save'],
+                                isDestructive: false, isEnterAction: true, type: 'button',
+                            },
+                            rowClass: 'reminder-form-actions',
+                        })}
                         <p class="reminder-modal-warning">${escapeHtml(formWarning)}</p>
                         <p class="reminder-modal-error">${escapeHtml(this._state.error)}</p>
                     </section>
@@ -1086,7 +1095,7 @@ export class ReminderModal extends BaseModal {
                     ${nextLabel ? `<small class="${nextLabelClass}">${escapeHtml(nextLabel)}</small>` : ''}
                 </div>
                 <div class="reminder-row-actions">
-                    ${isMissed ? '<button type="button" data-reminder-action="acknowledge" title="Clear this due or missed notice">Got it</button>' : ''}
+                    ${isMissed ? '<button type="button" data-reminder-action="acknowledge" title="Clear this due or missed notice">Dismiss</button>' : ''}
                     <button type="button" data-reminder-edit>Edit</button>
                     ${isRecurring ? `<button type="button" data-reminder-action="${reminder.status === 'paused' ? 'resume' : 'pause'}">${reminder.status === 'paused' ? 'Resume' : 'Pause'}</button>` : ''}
                     <button type="button" data-reminder-delete>Delete</button>

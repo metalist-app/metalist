@@ -87,7 +87,8 @@ test('password forms block submission until client validation passes', () => {
 
     assert.match(source, /minlength="\$\{PASSWORD_MIN_LENGTH\}"/);
     assert.match(source, /maxlength="\$\{PASSWORD_MAX_LENGTH\}"/);
-    assert.match(source, /data-password-submit disabled/);
+    // The submit button starts disabled (action-row.js writes the attribute).
+    assert.match(source, /disabled: true, attributes: \['data-password-submit'\]/);
     assert.match(source, /syncSubmitAvailability\(\)/);
     assert.match(source, /password-form-validation/);
 

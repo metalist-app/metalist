@@ -6,6 +6,7 @@ import { BaseModal } from './base-modal.js';
 import { CONFIG } from '../config.js';
 import { buildSessionHeaders } from '../session-auth.js';
 import { escapeHtml } from '../html-escape.js';
+import { actionRowHtml } from './action-row.js';
 
 
 const MIN_IDLE_TIMEOUT_MINUTES = 1;
@@ -133,10 +134,16 @@ export class SessionTimeoutModal extends BaseModal {
 
                 ${timeoutControlsHtml}
 
-                <div class="form-actions">
-                    <button type="button" class="primary-btn" id="session-timeout-save-btn" ${loading || saving ? 'disabled' : ''}>${saving ? 'Saving...' : 'Save'}</button>
-                    <button type="button" class="secondary-btn" id="session-timeout-cancel-btn" ${saving ? 'disabled' : ''}>Cancel</button>
-                </div>
+                ${actionRowHtml({
+                    alternative: null,
+                    cancel: { id: 'session-timeout-cancel-btn', label: 'Cancel', disabled: saving, attributes: [] },
+                    main: {
+                        id: 'session-timeout-save-btn', label: saving ? 'Saving…' : 'Save',
+                        disabled: [loading, saving].includes(true), attributes: [],
+                        isDestructive: false, isEnterAction: false, type: 'button',
+                    },
+                    rowClass: '',
+                })}
 
                 <p id="session-timeout-status">${escapeHtml(statusMessage)}</p>
                 <p id="session-timeout-error" class="error-message">${escapeHtml(error)}</p>

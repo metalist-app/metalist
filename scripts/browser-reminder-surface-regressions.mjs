@@ -3,7 +3,7 @@ import { runThenCleanUp } from './suite-outcome.mjs';
 import { waitForAppQuiet } from './browser-app-idle.mjs';
 
 // The Reminders popup handles its own clicks (docs/ui/reminders.md): pressing
-// "Got it" while a note is being edited clears the reminder on the first press,
+// "Dismiss" while a note is being edited clears the reminder on the first press,
 // and the note stays in edit mode with its caret, as pressing any floating card does.
 
 // Requests count as quiet after this long without one starting or ending.
@@ -76,7 +76,7 @@ export async function checkReminderSurfaceWhileEditing(page) {
     await page.click(ACKNOWLEDGE_SELECTOR);
     await pause(SETTLE_MS);
     await idle(page);
-    assert.equal((await reminderIds(page)).includes(reminderId), false, 'one press of Got it clears the reminder');
+    assert.equal((await reminderIds(page)).includes(reminderId), false, 'one press of Dismiss clears the reminder');
     assert.deepEqual(await modeState(page), {editing: true, current: noteId}, 'the note stays in edit mode');
 
     // Its title opens Reminders, which saves and leaves the note first, as every dialog does.

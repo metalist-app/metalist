@@ -3,6 +3,7 @@ import { HttpRequestError, UserInputRejected, rethrowUnexpectedError } from '../
 /** Three explicit password-management modals backed by shared behavior. */
 
 import { BaseModal } from './base-modal.js';
+import { actionRowHtml } from './action-row.js';
 import { ModeContextInstance as ModeContext } from '../mode-manager/mode-context.js';
 import { CONFIG } from '../config.js';
 import {
@@ -210,10 +211,15 @@ class PasswordOperationModal extends BaseModal {
 
                     <small class="form-help" id="password-form-validation" aria-live="polite"></small>
 
-                    <div class="form-actions">
-                        <button type="submit" class="primary-btn" data-password-submit disabled>Add Password</button>
-                        <button type="button" class="secondary-btn" id="cancel-btn">Cancel</button>
-                    </div>
+                    ${actionRowHtml({
+                        alternative: null,
+                        cancel: { id: 'cancel-btn', label: 'Cancel', disabled: false, attributes: [] },
+                        main: {
+                            id: null, label: 'Add Password', disabled: true, attributes: ['data-password-submit'],
+                            isDestructive: false, isEnterAction: false, type: 'submit',
+                        },
+                        rowClass: '',
+                    })}
                 </form>
                 
                 <div id="progress-section" style="display: none;">
@@ -259,10 +265,15 @@ class PasswordOperationModal extends BaseModal {
 
                     <small class="form-help" id="password-form-validation" aria-live="polite"></small>
 
-                    <div class="form-actions">
-                        <button type="submit" class="primary-btn" data-password-submit disabled>Change Password</button>
-                        <button type="button" class="secondary-btn" id="cancel-btn">Cancel</button>
-                    </div>
+                    ${actionRowHtml({
+                        alternative: null,
+                        cancel: { id: 'cancel-btn', label: 'Cancel', disabled: false, attributes: [] },
+                        main: {
+                            id: null, label: 'Change Password', disabled: true, attributes: ['data-password-submit'],
+                            isDestructive: false, isEnterAction: false, type: 'submit',
+                        },
+                        rowClass: '',
+                    })}
                 </form>
                 
                 <div id="progress-section" style="display: none;">
@@ -480,10 +491,15 @@ class PasswordOperationModal extends BaseModal {
 
                     <small class="form-help" id="password-form-validation" aria-live="polite"></small>
 
-                    <div class="form-actions">
-                        <button type="submit" class="danger-btn" data-password-submit data-modal-destructive disabled>Remove Password</button>
-                        <button type="button" class="secondary-btn" id="cancel-btn" data-modal-safe-focus>Cancel</button>
-                    </div>
+                    ${actionRowHtml({
+                        alternative: null,
+                        cancel: { id: 'cancel-btn', label: 'Cancel', disabled: false, attributes: [] },
+                        main: {
+                            id: null, label: 'Remove Password', disabled: true, attributes: ['data-password-submit'],
+                            isDestructive: true, isEnterAction: false, type: 'submit',
+                        },
+                        rowClass: '',
+                    })}
                 </form>
                 
                 <div id="progress-section" style="display: none;">

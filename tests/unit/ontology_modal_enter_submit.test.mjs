@@ -262,7 +262,7 @@ test('focused tag editor offers confirmed whole-tag deletion', async () => {
 
     assert.match(source, /data-action="dialog-delete-tag"/);
     assert.match(source, /data-action="rename-focus" aria-label="Edit tag"/);
-    assert.match(source, /Delete tag…/);
+    assert.match(source, /Delete Tag…/);
     assert.match(source, /This removes the tag from all note tag bars and deletes every ontology relationship that references it\./);
     assert.match(source, /fetchJson\(`\$\{ONTOLOGY_BASE\}\/delete-tag`/);
     assert.match(source, /body: JSON\.stringify\(\{ tag: focusTag \}\)/);

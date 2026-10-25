@@ -1,5 +1,6 @@
 import { ApplicationState } from '../application-state.js';
 import { BaseModal } from './base-modal.js';
+import { actionRowHtml } from './action-row.js';
 import { ModeContextInstance as ModeContext } from '../mode-manager/mode-context.js';
 import { escapeHtml } from '../html-escape.js';
 
@@ -121,10 +122,15 @@ export class AlphabetizeRootNotesModal extends BaseModal {
                     <p>Child notes and notes outside this view are not reordered.</p>
                 </div>
 
-                <div class="form-actions alphabetize-root-notes-actions">
-                    <button type="button" class="secondary-btn" id="alphabetize-root-notes-cancel-btn" data-modal-safe-focus>Cancel</button>
-                    <button type="button" class="danger-btn" id="alphabetize-root-notes-submit-btn" data-modal-destructive>Alphabetize ${directionLabel}</button>
-                </div>
+                ${actionRowHtml({
+                    alternative: null,
+                    cancel: { id: 'alphabetize-root-notes-cancel-btn', label: 'Cancel', disabled: false, attributes: [] },
+                    main: {
+                        id: 'alphabetize-root-notes-submit-btn', label: `Alphabetize ${directionLabel}`, disabled: false,
+                        attributes: [], isDestructive: true, isEnterAction: false, type: 'button',
+                    },
+                    rowClass: 'alphabetize-root-notes-actions',
+                })}
             </div>
         `;
 

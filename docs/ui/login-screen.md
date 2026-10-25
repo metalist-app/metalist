@@ -29,7 +29,7 @@ another vault (`BROWSER_TEST_SUITE=login-logo`), in a wide and a narrow window.
 ## Logging in
 | Moment | Screen |
 |---|---|
-| Press OK (or Enter) | Nothing moves. The button reads "Checking…" and is disabled |
+| Press Log In (or Enter) | Nothing moves. The button reads "Checking…" and is disabled |
 | An upgrade is due (`/auth/status` `database_upgrade_pending`) | While checking, a grey italic note under OK: "Backing up and upgrading this vault…" |
 | Wrong password, too many attempts, or the request fails | The reason appears under OK; the field is emptied and focused. Nothing moved |
 | Password accepted | The form slides out to the left while the loading view slides in from the right (350 ms, within the M's width) |

@@ -567,7 +567,7 @@ export class OntologyModal extends BaseModal {
                             <div class="ontology-dialog-error" id="ontology-dialog-error" style="display:none"></div>
                         </div>
                         <div class="ontology-dialog-footer">
-                            <button class="ontology-dialog-danger" data-action="dialog-delete-tag">Delete tag…</button>
+                            <button class="ontology-dialog-danger" data-action="dialog-delete-tag">Delete Tag…</button>
                             <button class="ontology-dialog-secondary" data-action="dialog-cancel">Cancel</button>
                             <button class="ontology-dialog-primary" data-action="dialog-submit">Save</button>
                         </div>
@@ -1109,12 +1109,13 @@ export class OntologyModal extends BaseModal {
         if (typeof showDeleteTag !== 'boolean') {
             throw new Error('Dialog showDeleteTag must be boolean');
         }
-        const startsOnCancel = config.startsOnCancel;
-        if (typeof startsOnCancel !== 'boolean') {
-            throw new Error('Dialog startsOnCancel must be boolean');
+        // A destructive confirmation's button is red and it starts on Cancel, so Enter never confirms it.
+        const isDestructive = config.isDestructive;
+        if (typeof isDestructive !== 'boolean') {
+            throw new Error('Dialog isDestructive must be boolean');
         }
-        if (startsOnCancel && mode !== 'confirm') {
-            throw new Error('Only a confirmation starts on Cancel');
+        if (isDestructive && mode !== 'confirm') {
+            throw new Error('Only a confirmation is destructive');
         }
         // What the field adds next to which tag, so its suggestions are tags linked to that
         // tag (GET /ontology/tags); null ranks them by use alone.
@@ -1157,7 +1158,7 @@ export class OntologyModal extends BaseModal {
                 suggestOnEmpty,
                 autoSubmitOnSuggestion,
                 showDeleteTag,
-                startsOnCancel,
+                isDestructive,
                 suggestFor,
             };
             this._renderDialog();
@@ -1202,7 +1203,7 @@ export class OntologyModal extends BaseModal {
             allowSuggestions: false,
             suggestFor: null,
             showDeleteTag: false,
-            startsOnCancel: isDestructive,
+            isDestructive,
         });
         return result === true;
     }
@@ -1238,6 +1239,7 @@ export class OntologyModal extends BaseModal {
         elements.input.value = state.initialValue;
         elements.input.setAttribute('aria-label', state.label.trim() === '' ? state.title : state.label);
         elements.submitButton.textContent = state.submitLabel;
+        elements.submitButton.classList.toggle('ontology-dialog-destructive', state.isDestructive);
         elements.deleteTagButton.style.display = state.showDeleteTag ? '' : 'none';
 
         if (!state.showInput) {
@@ -1279,7 +1281,7 @@ export class OntologyModal extends BaseModal {
                     elements.input.setSelectionRange(length, length);
                 }
                 this._updateDialogSuggestions();
-            } else if (state.startsOnCancel) {
+            } else if (state.isDestructive) {
                 elements.cancelButton.focus();
             } else {
                 elements.submitButton.focus();
@@ -2350,7 +2352,7 @@ export class OntologyModal extends BaseModal {
             autoSubmitOnSuggestion: false,
             showInput: true,
             showDeleteTag: false,
-            startsOnCancel: false,
+            isDestructive: false,
         });
         if (next === null) {
             return;
@@ -2432,7 +2434,7 @@ export class OntologyModal extends BaseModal {
             autoSubmitOnSuggestion: false,
             showInput: true,
             showDeleteTag: false,
-            startsOnCancel: false,
+            isDestructive: false,
         });
         if (updatedText === null) {
             return;
@@ -2482,7 +2484,7 @@ export class OntologyModal extends BaseModal {
             autoSubmitOnSuggestion: false,
             showInput: true,
             showDeleteTag: true,
-            startsOnCancel: false,
+            isDestructive: false,
         });
         if (next === null) {
             return;
@@ -2529,7 +2531,7 @@ export class OntologyModal extends BaseModal {
         const confirmed = await this._openConfirmDialog({
             title: `Delete '${focusTag}'?`,
             description: 'This removes the tag from all note tag bars and deletes every ontology relationship that references it. This cannot be undone.',
-            confirmLabel: 'Delete tag',
+            confirmLabel: 'Delete Tag',
             isDestructive: true,
         });
         if (!confirmed) {
@@ -2689,7 +2691,7 @@ export class OntologyModal extends BaseModal {
                     autoSubmitOnSuggestion: false,
                     showInput: true,
                     showDeleteTag: false,
-                    startsOnCancel: false,
+                    isDestructive: false,
                 });
                 if (newTag === null) {
                     return;
@@ -2833,7 +2835,7 @@ export class OntologyModal extends BaseModal {
                     autoSubmitOnSuggestion: false,
                     showInput: true,
                     showDeleteTag: false,
-                    startsOnCancel: false,
+                    isDestructive: false,
                 });
                 if (ruleText === null) {
                     return;
@@ -2859,7 +2861,7 @@ export class OntologyModal extends BaseModal {
                     autoSubmitOnSuggestion: false,
                     showInput: true,
                     showDeleteTag: false,
-                    startsOnCancel: false,
+                    isDestructive: false,
                 });
                 if (newTag === null) {
                     return;
@@ -2885,7 +2887,7 @@ export class OntologyModal extends BaseModal {
                     autoSubmitOnSuggestion: false,
                     showInput: true,
                     showDeleteTag: false,
-                    startsOnCancel: false,
+                    isDestructive: false,
                 });
                 if (newTag === null) {
                     return;

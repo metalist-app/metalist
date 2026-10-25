@@ -10,6 +10,7 @@ import { ModeContextInstance as ModeContext } from '../mode-manager/mode-context
 import { buildSessionHeaders } from '../session-auth.js';
 import { settleResult } from '../async-result.js';
 import { escapeHtml } from '../html-escape.js';
+import { actionRowHtml } from './action-row.js';
 
 
 const RESTORE_TRANSITION_SUPPRESS_MS = 30_000;
@@ -292,19 +293,18 @@ export class BackupRestoreModal extends BaseModal {
                 ` : ''}
             </div>
         ` : '';
-        let restoreButtonLabel = 'Restore Selected Backup';
+        // The first step only moves on to the confirmation, which names what happens.
+        let restoreButtonLabel = 'Continue';
         if (confirming && isImport && targetExists) {
             restoreButtonLabel = 'Import And Overwrite Vault';
         } else if (confirming && isImport) {
-            restoreButtonLabel = 'Confirm Import';
+            restoreButtonLabel = 'Import Backup';
         } else if (confirming) {
-            restoreButtonLabel = 'Confirm Restore';
+            restoreButtonLabel = 'Restore Backup';
         }
+        // Overwriting another vault is destructive: it is red, Enter never does it, and its
+        // view starts in the field where the vault's name is typed (BaseModal).
         const overwritesVault = confirming && isImport && targetExists;
-        const restoreButtonClass = overwritesVault ? 'danger-btn' : 'primary-btn';
-        // Overwriting another vault is destructive: Enter never does it, and its view starts
-        // in the field where the vault's name is typed (BaseModal).
-        const restoreButtonRole = overwritesVault ? 'data-modal-destructive' : '';
         const emptyBackupsHtml = !loading && backups.length === 0 ? `
             <div class="backup-restore-empty-state">
                 <p>No backups are available from this vault's configured backup folder.</p>
@@ -342,10 +342,16 @@ export class BackupRestoreModal extends BaseModal {
                     ${sameNamespaceWarningHtml}
                     ${overwriteWarningHtml}
 
-                    <div class="form-actions">
-                        <button type="button" class="${restoreButtonClass}" id="restore-backup-btn" ${restoreButtonRole} ${restoring || backups.length === 0 ? 'disabled' : ''}>${restoreButtonLabel}</button>
-                        <button type="button" class="secondary-btn" id="close-backup-modal-btn" data-modal-safe-focus ${restoring ? 'disabled' : ''}>Back</button>
-                    </div>
+                    ${actionRowHtml({
+                        alternative: null,
+                        cancel: { id: 'close-backup-modal-btn', label: 'Back', disabled: restoring, attributes: [] },
+                        main: {
+                            id: 'restore-backup-btn', label: restoreButtonLabel,
+                            disabled: [restoring, backups.length === 0].includes(true), attributes: [],
+                            isDestructive: overwritesVault, isEnterAction: false, type: 'button',
+                        },
+                        rowClass: '',
+                    })}
 
                     <p id="backup-modal-status">${restoring ? 'Restoring backup...' : ''}</p>
                     <p id="backup-modal-error" class="error-message">${escapeHtml(error)}</p>
@@ -376,10 +382,16 @@ export class BackupRestoreModal extends BaseModal {
 
                 <p>${selectedNamespace ? `Backup vault: ${escapeHtml(selectedNamespace)}` : ''}</p>
 
-                <div class="form-actions">
-                    <button type="button" class="${restoreButtonClass}" id="restore-backup-btn" ${loading || restoring || backups.length === 0 ? 'disabled' : ''}>${restoreButtonLabel}</button>
-                    <button type="button" class="secondary-btn" id="close-backup-modal-btn" ${restoring ? 'disabled' : ''}>${confirming ? 'Back' : 'Cancel'}</button>
-                </div>
+                ${actionRowHtml({
+                    alternative: null,
+                    cancel: { id: 'close-backup-modal-btn', label: 'Cancel', disabled: restoring, attributes: [] },
+                    main: {
+                        id: 'restore-backup-btn', label: restoreButtonLabel,
+                        disabled: [loading, restoring, backups.length === 0].includes(true), attributes: [],
+                        isDestructive: false, isEnterAction: false, type: 'button',
+                    },
+                    rowClass: '',
+                })}
 
                 <p id="backup-modal-status">${loading ? 'Loading backups...' : ''}${choosingFolder ? ' Choosing a backup folder...' : ''}${restoring ? ' Restoring backup...' : ''}</p>
                 <p id="backup-modal-error" class="error-message">${escapeHtml(error)}</p>

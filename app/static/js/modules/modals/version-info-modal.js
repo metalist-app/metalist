@@ -223,10 +223,10 @@ export class VersionInfoModal extends BaseModal {
             const job = state.updateJob;
             const log = `<p class="version-update-log">Update log on the server: ${escapeHtml(job.log_path)}</p>`;
             if (job.status === 'complete') return '<button type="button" data-update-action="reload">Reload MetaList</button>';
-            if (job.status === 'failed') return `${log}<button type="button" data-update-action="check">Check again</button>`;
+            if (job.status === 'failed') return `${log}<button type="button" data-update-action="check">Check Again</button>`;
             return log;
         }
-        if (state.release === null) return '<button type="button" data-update-action="check">Check again</button>';
+        if (state.release === null) return '<button type="button" data-update-action="check">Check Again</button>';
         if (!state.release.update_available || !state.release.supported) return '';
         return `<p>Checks the release, creates verified backups, and restarts all vaults. You may need to sign in again.</p>
             <button type="button" data-update-action="install" ${state.updatePending ? 'disabled' : ''}>Update to ${escapeHtml(state.release.target_version)}</button>`;

@@ -55,7 +55,7 @@ function buildOverlay(filename) {
     bar.append(
         element('span', 'excalidraw-editor-title', 'Diagram'),
         element('span', 'excalidraw-editor-status', STATUS_TEXT[AUTOSAVE_STATUS.SAVED]),
-        element('button', 'excalidraw-editor-discard', 'Discard changes'),
+        element('button', 'excalidraw-editor-discard', 'Discard Changes'),
         element('button', 'excalidraw-editor-done', 'Done'),
     );
     for (const button of bar.querySelectorAll('button')) {
@@ -256,11 +256,11 @@ function startEditorSession(setup) {
         }
         if (!session.discardArmed) {
             session.discardArmed = true;
-            discardButton.textContent = 'Click again to discard';
+            discardButton.textContent = 'Click Again to Discard';
             session.discardTimer = window.setTimeout(() => {
                 session.discardTimer = null;
                 session.discardArmed = false;
-                discardButton.textContent = 'Discard changes';
+                discardButton.textContent = 'Discard Changes';
             }, DISCARD_CONFIRM_MS);
             return;
         }
