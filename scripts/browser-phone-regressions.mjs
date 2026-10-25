@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 
-// The phone prototype (docs/ready-to-build/phone-prototype.md and phone-prototype-mocks.html;
+// The phone prototype (docs/ui/phone.md and docs/ui/phone-mocks.html;
 // agreed case by case 2026-10-24): under 640 px the search bar alone on top with term and view
 // pills, rows below without tag chips, a bottom bar with the menu sheet and capture; a tapped
 // note never edits, it shows its own tags; a tag pill searches; back restores the search.

@@ -8,7 +8,7 @@ import {
 } from '../../app/static/js/modules/phone/phone-search-terms.js';
 
 // The phone shows a search's terms as pills, each removable with one tap
-// (docs/ready-to-build/phone-prototype.md, §2).
+// (docs/ui/phone.md, "Layout").
 
 test('a search splits into its terms, exclusions and quoted phrases kept whole', () => {
     assert.deepEqual(searchTermsOf('upcoming -journal "spaced repetition" -"old idea"  recipes'), [

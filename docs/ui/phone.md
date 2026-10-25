@@ -5,6 +5,9 @@ local Wi-Fi, opened from its home screen. Desktop is unchanged. Built 2026-10-24
 "blocked in": what is left is in [phone-later.md](../future-plans/phone-later.md). The decided
 mock: [phone-mocks.html](phone-mocks.html).
 
+One screen, search and notes: nothing new is added where an existing piece (tags, search, the
+view options) does the job.
+
 ## Layout
 - The layout comes from CSS (`@media (max-width: 640px)` in `main.css`), so it holds from the
   first paint; `app/static/js/modules/phone/phone-mode.js` adds the behavior at the same width
@@ -46,6 +49,9 @@ the top with the text and the tags; with no tags it is tagged **`@inbox`**, a re
 ## Logging in on a phone
 - The vault's HTTPS address on the local network, e.g. `https://10.0.0.31:9443` (each vault has
   its own port). The certificate is MetaList's own: Safari warns once; after accepting, refresh.
+  To skip the warning, install the **public** certificate (`certs/metalist-cert.pem`, never the
+  key) on the iPhone as a profile and turn on full trust under Settings → General → About →
+  Certificate Trust Settings.
 - The login form carries the vault's name as a hidden username, so iOS saves one password per
   vault and fills it in.
 - The manifest (`app/static/manifest.json`) is `display: standalone`, so Add to Home Screen opens

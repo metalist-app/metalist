@@ -43,7 +43,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         console.log('+++ main.js: ModeManager init() completed');
 
         await CommandPalette.init();
-        // Under 640 px: the phone's read-only view and capture (docs/ready-to-build/phone-prototype.md).
+        // Under 640 px: the phone's read-only view and capture (docs/ui/phone.md).
         PhoneMode.init();
         await AiChatPanel.init({
             getSettings: () => CommandPalette.getAiSettings(),

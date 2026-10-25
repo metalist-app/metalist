@@ -1,5 +1,5 @@
 // A search's terms as the phone shows them: one pill per term, removable with one tap
-// (docs/ready-to-build/phone-prototype.md, §2). A term is a run of non-space text, or a
+// (docs/ui/phone.md, "Layout"). A term is a run of non-space text, or a
 // quoted phrase kept whole; a leading minus makes it an exclusion. The search syntax itself
 // is read by search-syntax-service.js; this only splits it for display and removal.
 

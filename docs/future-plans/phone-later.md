@@ -17,5 +17,3 @@ The phone prototype is built ([docs/ui/phone.md](../ui/phone.md)); these were le
 - **Out of scope for the prototype:** passkeys and Face ID, offline caching, a server-side phone
   client type, photos and audio, capture presets, password tap-to-reveal and clipboard clearing,
   push notifications, and the native (Capacitor) app.
-- **Capture's Cancel · Save row** is written by hand; once the dialog conventions' action-row
-  helper is on `main`, it uses that.

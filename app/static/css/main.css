@@ -10344,7 +10344,7 @@ iframe.print-frame {
 
 
 /* ---------------------------------------------------------------------------------------
-   Phone prototype (docs/ready-to-build/phone-prototype.md, phone-prototype-mocks.html):
+   Phone prototype (docs/ui/phone.md, docs/ui/phone-mocks.html):
    under 640 px (the same width phone-mode.js reads), from the first paint. Search alone on top, rows below
    without tag chips, a bottom bar with the menu sheet and capture. Desktop is unchanged.
    --------------------------------------------------------------------------------------- */

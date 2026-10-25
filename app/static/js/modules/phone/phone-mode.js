@@ -21,7 +21,7 @@ import { FILE_FILTER_CHOICES, FILE_FILTER_KINDS } from '../mode-manager/services
 import { searchTermsOf, withSearchTerm, withoutSearchTerm } from './phone-search-terms.js';
 import { actionRowHtml } from '../modals/action-row.js';
 
-// The phone prototype (docs/ready-to-build/phone-prototype.md, phone-prototype-mocks.html):
+// The phone prototype (docs/ui/phone.md, docs/ui/phone-mocks.html):
 // under 640 px the body gets .phone-layout and the page becomes a read-only view of the notes
 // plus capture. A tap never edits; it shows a note's own tags as pills. Desktop is unchanged.
 

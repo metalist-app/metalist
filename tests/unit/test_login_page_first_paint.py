@@ -68,7 +68,7 @@ def test_the_page_renders_each_way() -> None:
 
 def test_the_login_form_names_the_vault_so_a_phone_can_save_its_password() -> None:
     # iOS saves a password only with a username: the vault's name, in a field that is
-    # never seen, keeps one saved password per vault (docs/ready-to-build/phone-prototype.md).
+    # never seen, keeps one saved password per vault (docs/ui/phone.md).
     template = TEMPLATES.get_template("index.html")
     request = _request(query="", cookie="")
     request.state.csp_nonce = "n" * 32
