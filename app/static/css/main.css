@@ -95,7 +95,9 @@ html:has(> body > .login-page[style*="display: flex"]) {
     margin-top: max(48px, 16vh);
 }
 
-.login-title {
+/* Read by assistive technology or the password manager only, never seen. */
+.login-title,
+.login-username {
     position: absolute;
     width: 1px;
     height: 1px;
@@ -440,6 +442,8 @@ html:has(> body > .login-page[style*="display: flex"]) {
 }
 
 /* Shared modal shell. Modal contents are intentionally dark in every app theme. */
+.phone-sheet,
+.phone-capture,
 .bulk-proposal-dialog,
 .modal {
     --modal-surface: #10151d;
@@ -10331,4 +10335,407 @@ iframe.print-frame {
     width: 100%;
     margin: 0;
     font: inherit;
+}
+
+
+/* ---------------------------------------------------------------------------------------
+   Phone prototype (docs/ready-to-build/phone-prototype.md, phone-prototype-mocks.html):
+   under 640 px (the same width phone-mode.js reads), from the first paint. Search alone on top, rows below
+   without tag chips, a bottom bar with the menu sheet and capture. Desktop is unchanged.
+   --------------------------------------------------------------------------------------- */
+.phone-bar,
+.phone-sheet,
+.phone-sheet-backdrop,
+.phone-capture,
+.phone-search-pills {
+    display: none;
+}
+
+.phone-search-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    padding: 2px 4px 2px 9px;
+    border-radius: 999px;
+    background: #dbe8ff;
+    color: #1d3f7a;
+    font-size: 14px;
+}
+
+.phone-search-pill.is-exclusion .phone-search-pill-text {
+    text-decoration: line-through;
+}
+
+.phone-search-pill-remove {
+    border: none;
+    background: transparent;
+    color: inherit;
+    font-size: 15px;
+    line-height: 1;
+    padding: 2px 4px;
+}
+
+/* A tapped note's own tags, on their own line under its text (a note is a wrapping flex
+   row); tapping one searches. */
+.phone-note-tags {
+    flex: 0 0 100%;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin: 6px 0 2px;
+}
+
+.phone-tag-pill {
+    padding: 3px 10px;
+    border: 1px solid rgba(127, 127, 127, 0.45);
+    border-radius: 999px;
+    background: transparent;
+    color: inherit;
+    font-size: 14px;
+}
+
+.phone-no-tags {
+    font-size: 13px;
+    opacity: 0.6;
+}
+
+.phone-bar-button {
+    border: none;
+    background: transparent;
+    color: inherit;
+    font-size: 24px;
+    padding: 6px 8px;
+}
+
+.phone-bar-capture {
+    width: 44px;
+    height: 44px;
+    border: none;
+    border-radius: 50%;
+    background: #fff;
+    color: #000;
+    font-size: 28px;
+    line-height: 44px;
+    padding: 0;
+}
+
+.phone-readonly {
+    font-size: 13px;
+    opacity: 0.7;
+}
+
+.phone-readonly[hidden] {
+    display: none;
+}
+
+.phone-sheet-handle {
+    width: 40px;
+    height: 4px;
+    margin: 0 auto 10px;
+    border-radius: 2px;
+    background: var(--modal-text-subtle);
+}
+
+.phone-sheet-heading {
+    margin: 4px 0;
+    font-size: 13px;
+    color: var(--modal-text-muted);
+}
+
+.phone-sheet-row {
+    display: flex;
+    justify-content: space-between;
+    width: 100%;
+    padding: 12px 2px;
+    border: none;
+    border-bottom: 1px solid var(--modal-border);
+    background: transparent;
+    color: inherit;
+    font-size: 16px;
+    text-align: left;
+}
+
+.phone-sheet-group {
+    padding-left: 14px;
+}
+
+.phone-sheet-check,
+.phone-sheet-value {
+    color: var(--modal-accent);
+}
+
+.phone-sheet-value {
+    color: var(--modal-text-muted);
+}
+
+.phone-sheet-buttons {
+    display: flex;
+    gap: 10px;
+    margin-top: 14px;
+}
+
+.phone-sheet-buttons button {
+    flex: 1;
+    padding: 10px;
+    border: 1px solid var(--modal-border);
+    border-radius: 10px;
+    background: var(--modal-surface-raised);
+    color: var(--modal-text);
+    font-size: 16px;
+}
+
+.phone-capture .phone-capture-content {
+    display: flex;
+    flex-direction: column;
+    box-sizing: border-box;
+    width: 100%;
+    max-width: none;
+    height: 100%;
+    margin: 0;
+    padding: 16px 16px calc(16px + env(safe-area-inset-bottom));
+    border-radius: 0;
+}
+
+.phone-capture-content h3 {
+    margin: 0 0 10px;
+    text-align: center;
+}
+
+.phone-capture-content textarea {
+    width: 100%;
+    font-size: 16px;
+}
+
+.phone-capture-label {
+    margin-top: 14px;
+    font-size: 13px;
+    color: var(--modal-text-muted);
+}
+
+.phone-capture-tag-line {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    margin-top: 6px;
+    padding: 6px 8px;
+    border: 1px solid var(--modal-border);
+    border-radius: 8px;
+}
+
+.phone-capture-tag-line input {
+    flex: 1 1 80px;
+    min-width: 0;
+    border: none;
+    background: transparent;
+    color: inherit;
+    font-size: 16px;
+}
+
+.phone-capture-tag-pill {
+    padding: 2px 9px;
+    border-radius: 999px;
+    background: #dbe8ff;
+    color: #1d3f7a;
+    font-size: 14px;
+}
+
+.phone-capture-suggestions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 8px;
+}
+
+.phone-capture-content .dialog-actions {
+    margin-top: auto;
+}
+
+/* Capture keeps the mock's look inside the shared dialog styles: Cancel and Save side by side
+   at the lower right,
+a plain text box,
+a borderless tag field,
+suggestions as pills. */
+#phone-capture .phone-capture-content .form-actions {
+    flex-direction: row;
+    justify-content: flex-end;
+    align-items: center;
+}
+
+#phone-capture .phone-capture-content .form-actions button {
+    width: auto;
+    min-width: 96px;
+}
+
+#phone-capture textarea {
+    font-family: inherit;
+}
+
+#phone-capture .phone-capture-tag-line input {
+    padding: 4px 2px;
+    border: none;
+    background: transparent;
+    box-shadow: none;
+}
+
+#phone-capture .phone-tag-pill {
+    width: auto;
+    min-width: 0;
+    padding: 3px 10px;
+    border: 1px solid var(--modal-border);
+    border-radius: 999px;
+    background: transparent;
+    color: var(--modal-text);
+    font-size: 14px;
+}
+
+@media (max-width: 640px) {
+    body {
+        --phone-bar-height: 56px;
+        padding: 0 0 calc(var(--phone-bar-height) + env(safe-area-inset-bottom)) 0;
+    }
+
+    #app {
+        width: 100%;
+    }
+
+    .container {
+        padding-inline: 8px;
+    }
+
+    .global-controls,
+    #tab-hover-zone,
+    #tab-indicator,
+    #search-contexts-list,
+    .ai-chat-panel,
+    .note-tags {
+        display: none !important;
+    }
+
+    .note-collapse-toggle {
+        left: 0;
+    }
+
+    .search-controls {
+        --search-input-width: 100%;
+    }
+
+    .search-input-row {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 4px 6px;
+        width: 100%;
+        min-height: 36px;
+        padding: 4px 8px;
+        box-sizing: border-box;
+        border-radius: 10px;
+        background: #fff;
+    }
+
+    .search-input-row > svg,
+    .search-input-row .search-input-icon {
+        display: none;
+    }
+
+    .search-input {
+        flex: 1 1 120px;
+        width: auto;
+        min-width: 0;
+        padding-right: 0;
+        border: none;
+        background: transparent;
+        color: #111;
+        font-size: 16px;
+    }
+
+    .search-input-chips {
+        position: static;
+        display: contents;
+    }
+
+    .search-results-count {
+        position: static;
+        width: auto;
+        margin-left: auto;
+        color: #555;
+    }
+
+    .search-input-row.phone-search-has-pills .phone-search-pills {
+        display: contents;
+    }
+
+    .search-input-row.phone-search-has-pills #search-input {
+        display: none;
+    }
+
+    .phone-sheet:not([hidden]) {
+        display: block;
+        position: fixed;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        z-index: 13600;
+        max-height: 80vh;
+        overflow-y: auto;
+        padding: 8px 16px calc(16px + env(safe-area-inset-bottom));
+        border-radius: 16px 16px 0 0;
+        background: var(--modal-surface);
+        color: var(--modal-text);
+    }
+
+    /* The expand arrow hangs in the desktop's side gutter; on the phone it sits inside the row. */
+    .note {
+        padding-left: 22px;
+    }
+
+    /* The search bar: one field on a black header holding the term pills, the typed text when
+       typing, the view pills and the count. */
+    .controls {
+        top: 0;
+        padding: 8px;
+        background: #000;
+    }
+
+    /* The bottom bar: the menu at the left, capture at the right, Read-only between. */
+    .phone-bar {
+        position: fixed;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        z-index: 13000;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        height: var(--phone-bar-height);
+        padding: 0 16px env(safe-area-inset-bottom);
+        box-sizing: content-box;
+        border-top: 1px solid rgba(127, 127, 127, 0.3);
+        background: #000;
+        color: #fff;
+    }
+
+    /* The menu sheet, up from the bottom over a dimmed list. */
+    .phone-sheet-backdrop:not([hidden]) {
+        display: block;
+        position: fixed;
+        inset: 0;
+        z-index: 13500;
+        background: rgba(0, 0, 0, 0.4);
+    }
+
+    /* Capture: a full-screen sheet, Cancel and Save at the lower right. */
+    .phone-capture:not([hidden]) {
+        display: block;
+        position: fixed;
+        inset: 0;
+        z-index: 14000;
+        background: var(--modal-surface);
+    }
+
+    /* Floating notices and reminders sit above the phone's bottom bar. */
+    .app-notice-stack,
+    .reminder-surface {
+        bottom: calc(var(--phone-bar-height) + env(safe-area-inset-bottom) + 12px);
+    }
 }

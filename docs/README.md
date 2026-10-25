@@ -12,6 +12,7 @@
 
 ## UI
 - Keyboard + mouse controls: `docs/ui/controls.md`
+- Phone (under 640 px: read-only view and capture): `docs/ui/phone.md`; what is left: `docs/future-plans/phone-later.md`
 - Login screen, loading progress and Session locked page: `docs/ui/login-screen.md`; the MetaList mark, its icons and usage rules: `brand/README.md`
 - UUID note/file references (`![[UUID]]`, `[[UUID]]`): `docs/ui/references.md`
 - External HTML paste sanitization: `docs/ui/paste-sanitization.md`

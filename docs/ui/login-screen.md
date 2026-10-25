@@ -85,6 +85,11 @@ session check, reminders) do not send the page to Session locked; the Password
 dialog then reloads the page into the new state (`Auth.runPasswordChange`). After
 a failed change, a lost session locks the page as usual.
 
+## Saved passwords
+The form holds the vault's name as a username field nobody sees (`#login-username`,
+`autocomplete="username"`, read-only), so a phone's password manager, which saves a password only
+with a username, keeps one password per vault (`docs/ui/phone.md`).
+
 ## Code
 - Markup: `app/templates/index.html`, `app/templates/locked.html`, shared logo
   `app/templates/_logo_mark.html` (from `brand/metalist-mark-white.svg`). The favicon,

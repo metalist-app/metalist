@@ -8,6 +8,7 @@ import { closeAllFloatingNotes } from './mode-manager/services/floating-note-ser
 import { CONFIG } from './config.js';
 import { initializeSessionIdentity, getRequiredTabId } from './session-auth.js';
 import { CommandPalette } from './command-palette/command-palette-controller.js';
+import { PhoneMode } from './phone/phone-mode.js';
 import { ReminderSurface } from './reminder-surface-service.js';
 import { AiChatPanel } from './ai-chat/ai-chat-panel-controller.js';
 import { clearLegacyAuthStorage, resolveStoredThemePreference } from './client-state-migration.js';
@@ -655,6 +656,8 @@ export const Auth = {
                 await window.ModeManager.init({});
                 startupPhase = enterStartupStage('initializing the command palette');
                 await CommandPalette.init();
+                // Under 640 px: the phone's read-only view and capture, as main.js starts it.
+                PhoneMode.init();
                 startupPhase = enterStartupStage('initializing AI chat');
                 await AiChatPanel.init({
                     getSettings: () => CommandPalette.getAiSettings(),
