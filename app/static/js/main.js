@@ -9,6 +9,7 @@ import { CommandPalette } from './modules/command-palette/command-palette-contro
 import { ReminderSurface } from './modules/reminder-surface-service.js';
 import { initializeNoteHtmlSanitizer } from './modules/note-html-sanitizer.js';
 import { AiChatPanel } from './modules/ai-chat/ai-chat-panel-controller.js';
+import { PhoneMode } from './modules/phone/phone-mode.js';
 import {
     queueMermaidDiagramRendering,
 } from './modules/mode-manager/services/mermaid-render-service.js';
@@ -42,6 +43,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         console.log('+++ main.js: ModeManager init() completed');
 
         await CommandPalette.init();
+        // Under 640 px: the phone's read-only view and capture (docs/ready-to-build/phone-prototype.md).
+        PhoneMode.init();
         await AiChatPanel.init({
             getSettings: () => CommandPalette.getAiSettings(),
             saveSettings: (settings) => CommandPalette.saveAiSettings(settings),
