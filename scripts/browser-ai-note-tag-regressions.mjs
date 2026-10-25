@@ -124,7 +124,7 @@ function screenState(page, noteId) {
     const card = tagBar === null ? null : tagBar.querySelector(':scope > .note-tag-bar-ai-status');
     const selection = window.getSelection();
     const indicator = note.querySelector(':scope > .note-proposal-indicator');
-    const banner = document.querySelector('#error-banner .error-banner-message');
+    const banner = document.querySelector('#floating-messages .floating-message:last-child .floating-message-text');
     const rect = element => {
       const box = element.getBoundingClientRect();
       return {top: box.top, bottom: box.bottom, height: box.height};

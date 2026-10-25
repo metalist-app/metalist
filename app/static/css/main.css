@@ -9,8 +9,11 @@
     --app-shell-width: 960px;
     --app-content-width: 800px;
     --app-page-padding: 1rem;
-    --app-min-visible-gutter: calc(var(--side-rail-edge) + 30px + 8px);
+    /* The floating buttons (≡, chat, scroll) are this wide. */
+    --floating-button-size: 30px;
+    --app-min-visible-gutter: calc(var(--side-rail-edge) + var(--floating-button-size) + 8px);
     --app-control-top: calc(1.5rem - 6px);
+    --global-controls-top: calc(var(--app-control-top) + 0.35rem);
     --side-rail-width: 260px;
     --side-rail-edge: 10px;
     --ai-chat-width: 33.333vw;
@@ -2517,8 +2520,14 @@ body.pref-show-ai-chat .container {
     );
 }
 
-body.pref-show-ai-chat .global-controls {
-    right: calc(var(--ai-chat-effective-width) + var(--ai-chat-control-edge));
+/* Where the floating buttons stand off the right edge: beside the chat when it shows.
+   The floating messages line up with them. */
+body {
+    --global-controls-right: var(--side-rail-edge);
+}
+
+body.pref-show-ai-chat {
+    --global-controls-right: calc(var(--ai-chat-effective-width) + var(--ai-chat-control-edge));
 }
 
 body:not(.pref-show-ai-chat) .ai-chat-panel {
@@ -6607,8 +6616,8 @@ html.reference-sliding body {
 /* Global Controls */
 .global-controls {
     position: fixed;
-    top: calc(1.5rem - 6px + 0.35rem);
-    right: var(--side-rail-edge);
+    top: var(--global-controls-top);
+    right: var(--global-controls-right);
     left: auto;
     display: flex;
     flex-direction: column;
@@ -6619,8 +6628,8 @@ html.reference-sliding body {
 
 .scroll-to-top-button,
 .chat-toggle-button {
-    width: 30px;
-    height: 30px;
+    width: var(--floating-button-size);
+    height: var(--floating-button-size);
     border: 1px solid var(--border-color);
     border-radius: 4px;
     background: rgba(255, 255, 255, 0.95);
@@ -6669,8 +6678,8 @@ body.pref-show-ai-chat .chat-toggle-button {
 
 .menu-button {
     composes: add-note;
-    width: 30px;
-    height: 30px;
+    width: var(--floating-button-size);
+    height: var(--floating-button-size);
     border: 1px solid var(--border-color);
     border-radius: 4px;
     display: flex;
@@ -6960,8 +6969,8 @@ body.tab-drag-active * {
         );
     }
 
-    body.pref-show-ai-chat .global-controls {
-        right: var(--side-rail-edge);
+    body.pref-show-ai-chat {
+        --global-controls-right: var(--side-rail-edge);
     }
 }
 
@@ -8147,84 +8156,113 @@ html[data-theme="dark"] .meta-code-code .tok-cpf { color: #8b949e; }
 }
 
 
-/* Error Banner Styles */
-.error-banner {
+/* Floating messages (floating-messages.js): cards in the upper-right corner, just left of
+   the floating buttons, each new one below the others. They float above the page and move
+   nothing; they fade rather than slide, so a card stands where it will stay. */
+.floating-messages {
     position: fixed;
-    top: -100px;
-    left: 0;
-    right: 0;
-    z-index: 20000; /* ensure status banners sit above tab overlays */
-    transition: transform 0.3s ease-in-out;
-    pointer-events: auto;
-}
-
-.error-banner.error-banner-visible {
-    transform: translateY(100px);
-}
-
-.error-banner-content {
+    top: var(--global-controls-top);
+    right: calc(var(--global-controls-right) + var(--floating-button-size) + 8px);
+    z-index: 20000; /* above tab overlays and dialogs */
     display: flex;
-    align-items: center;
-    padding: 12px 20px;
-    margin: 8px 16px;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 8px;
+    max-width: min(420px, calc(100vw - var(--global-controls-right) - var(--floating-button-size) - 24px));
+    pointer-events: none;
+}
+
+.floating-message {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    max-width: 100%;
+    box-sizing: border-box;
+    padding: 10px 14px;
     border-radius: 6px;
     font-size: 14px;
     font-weight: 500;
+    line-height: 1.4;
+    overflow-wrap: anywhere;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+    opacity: 0;
+    transition: opacity 200ms ease-out;
+    pointer-events: auto;
 }
 
-.error-banner-error .error-banner-content {
+.floating-message.is-shown {
+    opacity: 1;
+}
+
+.floating-message-error {
     background-color: var(--error-color);
     color: white;
 }
 
-.error-banner-success .error-banner-content {
+.floating-message-success {
     background-color: var(--success-color);
     color: white;
 }
 
-.error-banner-info .error-banner-content {
+.floating-message-info {
     background-color: var(--info-color);
     color: white;
 }
 
-.error-banner-connection .error-banner-content {
+.floating-message-connection {
     background-color: #fff8e6;
     color: #5b4820;
     border: 1px solid #e8d49a;
     box-shadow: 0 2px 8px rgba(91, 72, 32, 0.14);
 }
 
-.error-banner-icon {
-    margin-right: 8px;
-    font-size: 16px;
-}
-
-.error-banner-message {
+.floating-message-text {
     flex: 1;
 }
 
-.error-banner-close {
-    background: none;
+.floating-message-close {
+    flex: 0 0 auto;
+    width: 20px;
+    height: 20px;
+    padding: 0;
     border: none;
+    border-radius: 50%;
+    background: none;
     color: inherit;
     font-size: 18px;
     font-weight: bold;
+    line-height: 1;
     cursor: pointer;
-    margin-left: 12px;
-    padding: 0;
-    width: 20px;
-    height: 20px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 50%;
     opacity: 0.8;
 }
 
-.error-banner-close:hover {
+.floating-message-close:hover {
     opacity: 1;
     background-color: rgba(255, 255, 255, 0.2);
+}
+
+/* Recent Messages (recent-messages-modal.js): what the floating messages said, newest first. */
+.recent-messages-list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.recent-message {
+    display: flex;
+    gap: 12px;
+    padding: 6px 0;
+    border-bottom: 1px solid var(--modal-border);
+}
+
+.recent-message-time {
+    flex: 0 0 auto;
+    color: var(--modal-text-muted);
+    font-variant-numeric: tabular-nums;
+}
+
+.recent-message-error .recent-message-text {
+    color: var(--modal-danger);
 }
 
 /* Advanced Settings Modal Styles */
@@ -10731,6 +10769,15 @@ suggestions as pills. */
         inset: 0;
         z-index: 14000;
         background: var(--modal-surface);
+    }
+
+    /* Floating messages hang under the search header, the page's width. */
+    .floating-messages {
+        top: calc(var(--search-header-bottom) + 8px);
+        left: 8px;
+        right: 8px;
+        max-width: none;
+        align-items: stretch;
     }
 
     /* Floating notices and reminders sit above the phone's bottom bar. */

@@ -1,6 +1,6 @@
 # Errors and status: never rearrange the layout (modals vs. floating indicators)
 
-**Status:** Agreed with the maintainer 2026-10-24. Ready to build, not started. Filed here from `docs/inbox/` on 2026-10-24. Build it together with `docs/ready-to-build/dialog-and-menu-conventions.md`, which it extends, and document both in the same place.
+**Status:** Agreed with the maintainer 2026-10-24. Being built on `feature/dialog-conventions`: the floating messages (§2.2, placements 1 and 2, with Recent Messages) are built and documented in `docs/ui/floating-messages.md`; the error dialogs, the field messages and the escalation (step 5) and the checks (step 6) are not. Filed here from `docs/inbox/` on 2026-10-24. Build it together with `docs/ready-to-build/dialog-and-menu-conventions.md`, which it extends, and document both in the same place.
 **Scope:** How every error and status message is shown: one rule, the two kinds of message, the three places a floating message may appear, and the existing dialogs that need converting.
 
 Written from a read of the repo on 2026-10-24. Check every reference before relying on it; build only what is missing.

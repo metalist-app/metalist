@@ -8,14 +8,13 @@ import { Auth } from './auth.js';
 import { classifyApiFailure } from './api-failure-classification-service.js';
 import { clearEditingStateForDisconnect } from './disconnect-editing-state-service.js';
 import { MS_PER_SECOND } from './time-units.js';
+import { FloatingMessages } from './floating-messages.js';
 
 const RESTORE_TRANSITION_UNTIL_KEY = 'metalist_restore_transition_until_ms';
-// Lets the banner's hidden state render first so the slide-in transition runs.
-const BANNER_SHOW_DELAY_MS = 10;
-// Matches the .error-banner transform transition in main.css.
-const BANNER_SLIDE_OUT_MS = 300;
 const HTTP_ERROR_BANNER_SECONDS = 5;
-const RECONNECTED_BANNER_SECONDS = 3;
+const CONNECTION_CARD_KEY = 'connection';
+const CONNECTION_LOST_TEXT = 'Not saved, reconnecting…';
+const RECONNECTED_TEXT = 'Reconnected';
 
 
 function _isRestoreTransitionActive() {
@@ -89,7 +88,7 @@ export const ErrorHandler = {
     },
     
     /**
-     * Handle network errors - show a calm status banner but keep the interface visible
+     * Handle network errors - show a calm lasting card but keep the interface visible
      */
     handleNetworkError(message) {
         if (typeof message !== 'string' || message.length === 0) {
@@ -101,21 +100,29 @@ export const ErrorHandler = {
         }
         console.log('[ErrorHandler] Network error');
         
-        // Check if we're already showing a connection error banner
+        // Check if we're already showing the connection card
         if (!ModeContext.connectionErrorBannerVisible) {
             // First network error - show banner and set disconnected state
             if (ModeContext.isConnected) {
                 ModeContext.setConnected(false);
             }
             ModeContext.setConnectionErrorBannerVisible(true);
-            this.showPersistentErrorBanner(message, 'connection');
+            // The card stays as long as the connection is lost; the reason is its tooltip.
+            FloatingMessages.show({
+                text: CONNECTION_LOST_TEXT,
+                type: 'connection',
+                detail: message,
+                isClosable: false,
+                isLasting: true,
+                key: CONNECTION_CARD_KEY,
+            });
             this.disableEditingUI();
         }
-        // If banner is already visible, don't create a new one
+        // If the card is already showing, don't create a new one
     },
     
     /**
-     * Handle successful connection - hide error banner if showing
+     * Handle successful connection - replace the connection card with "Reconnected"
      */
     handleConnectionRestored() {
         // Only process if we were actually disconnected
@@ -128,8 +135,14 @@ export const ErrorHandler = {
             
             if (ModeContext.connectionErrorBannerVisible) {
                 ModeContext.setConnectionErrorBannerVisible(false);
-                this.hideErrorBanner();
-                this.showSuccessBanner('Reconnected to MetaList. Editing is available again.', RECONNECTED_BANNER_SECONDS * MS_PER_SECOND);
+                FloatingMessages.replace(CONNECTION_CARD_KEY, {
+                    text: RECONNECTED_TEXT,
+                    type: 'success',
+                    detail: '',
+                    isClosable: false,
+                    isLasting: false,
+                    key: null,
+                });
                 this.enableEditingUI();
             }
         }
@@ -188,19 +201,21 @@ export const ErrorHandler = {
     },
     
     /**
-     * Show persistent error banner (no auto-hide, no close button)
+     * Show a lasting floating message (no timer, no close button)
      */
     showPersistentErrorBanner(message, type) {
         if (typeof type !== 'string' || type.length === 0) {
             throw new Error('ErrorHandler.showPersistentErrorBanner requires type string');
         }
-        this.showErrorBanner(message, type, 0, { closable: false }); // duration 0: no auto-hide
+        this.showErrorBanner(message, type, 0, { closable: false }); // duration 0: lasting
     },
     
     /**
-     * Show error banner at top of screen
+     * Show a floating message in the upper-right corner (floating-messages.js).
      */
-    // options.closable: whether the banner shows a × to close it.
+    // duration 0 makes a lasting card; any other asks for a passing one, whose time on
+    // screen follows the floating-messages rule (news 4–10 s, errors 10 s).
+    // options.closable: whether the card shows a × to close it.
     showErrorBanner(message, type, duration, options) {
         if (typeof message !== 'string' || message.length === 0) {
             throw new Error('ErrorHandler.showErrorBanner requires message string');
@@ -208,63 +223,27 @@ export const ErrorHandler = {
         if (typeof type !== 'string' || type.length === 0) {
             throw new Error('ErrorHandler.showErrorBanner requires type string');
         }
-        if (typeof duration !== 'number') {
+        if (typeof duration !== 'number' || duration < 0) {
             throw new Error('ErrorHandler.showErrorBanner requires duration number');
         }
         if (!options || typeof options !== 'object' || typeof options.closable !== 'boolean') {
             throw new Error('ErrorHandler.showErrorBanner requires options.closable boolean');
         }
-        const showClose = options.closable;
-        // Remove any existing banner
-        this.hideErrorBanner();
-        
-        // Create banner element
-        const banner = document.createElement('div');
-        banner.id = 'error-banner';
-        banner.className = `error-banner error-banner-${type}`;
-        
-        const closeButton = showClose ? 
-            `<button type="button" class="error-banner-close" aria-label="Close">×</button>` : '';
-            
-        banner.innerHTML = `
-            <div class="error-banner-content">
-                <span class="error-banner-icon">${type === 'error' ? '⚠️' : type === 'success' ? '✅' : 'ℹ️'}</span>
-                <span class="error-banner-message"></span>
-                ${closeButton}
-            </div>
-        `;
-        // Plain text: messages can quote what the user typed or what an AI answered.
-        banner.querySelector('.error-banner-message').textContent = message;
-        // A listener, not an inline onclick: the Content-Security-Policy blocks inline handlers.
-        if (showClose) {
-            banner.querySelector('.error-banner-close').addEventListener('click', () => this.hideErrorBanner());
-        }
-        
-        // Add to page
-        document.body.insertBefore(banner, document.body.firstChild);
-        
-        // Auto-hide after duration
-        if (duration > 0) {
-            setTimeout(() => this.hideErrorBanner(), duration);
-        }
-        
-        // Animate in
-        setTimeout(() => banner.classList.add('error-banner-visible'), BANNER_SHOW_DELAY_MS);
+        FloatingMessages.show({
+            text: message,
+            type,
+            detail: '',
+            isClosable: options.closable,
+            isLasting: duration === 0,
+            key: null,
+        });
     },
     
     /**
-     * Hide error banner
+     * Hide every floating message
      */
     hideErrorBanner() {
-        const banner = document.getElementById('error-banner');
-        if (banner) {
-            banner.classList.remove('error-banner-visible');
-            setTimeout(() => {
-                if (banner.parentNode) {
-                    banner.parentNode.removeChild(banner);
-                }
-            }, BANNER_SLIDE_OUT_MS);
-        }
+        FloatingMessages.dismissAll();
     },
     
     /**

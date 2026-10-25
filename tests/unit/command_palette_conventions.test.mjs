@@ -73,6 +73,7 @@ const LABELS = {
     'form.reminders': 'Open Reminders',
     'form.version_info': 'Version Info',
     'form.memory_usage': 'Memory Usage',
+    'form.recent_messages': 'Recent Messages',
     'form.note_layout_appearance': 'Note Layout & Appearance…',
     'form.visual_cues': 'Visual Cues…',
     'form.dictation_settings': 'Dictation Settings…',

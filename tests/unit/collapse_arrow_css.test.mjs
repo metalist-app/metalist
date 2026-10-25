@@ -18,7 +18,7 @@ test('root collapse arrow hangs inside the minimum visible page gutter', async (
 
     assert.match(
         cssSource,
-        /--app-min-visible-gutter:\s*calc\(var\(--side-rail-edge\) \+ 30px \+ 8px\);/,
+        /--app-min-visible-gutter:\s*calc\(var\(--side-rail-edge\) \+ var\(--floating-button-size\) \+ 8px\);/,
     );
     assert.match(
         cssSource,

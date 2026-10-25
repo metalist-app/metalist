@@ -22,6 +22,7 @@ test('buildCommandPaletteEndpoints includes utility action endpoints', async () 
             openSoundManager: noop,
             openVersionInfo: noop,
             openMemoryUsage: noop,
+            openRecentMessages: noop,
             openNoteLayoutAppearance: noop,
             openVisualCues: noop,
             openDictationSettings: noop,
@@ -114,6 +115,7 @@ test('buildCommandPaletteEndpoints includes utility action endpoints', async () 
     assert.equal(endpointIds.has('form.reminders'), true);
     assert.equal(endpointIds.has('form.version_info'), true);
     assert.equal(endpointIds.has('form.memory_usage'), true);
+    assert.equal(endpointIds.has('form.recent_messages'), true);
     assert.equal(endpointIds.has('form.note_layout_appearance'), true);
     assert.equal(endpointIds.has('form.agent_prompts'), false);
     assert.equal(endpointIds.has('form.tagging_vocabulary'), true);

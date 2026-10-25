@@ -1,6 +1,6 @@
 # Dialog and menu conventions
 
-**Status:** Agreed with the maintainer 2026-10-23. Ready to build, not started. Filed here from `docs/inbox/2026-10-23-dialog-conventions-and-new-mark.md` on 2026-10-24 (its part B, the new mark, was built 2026-10-24: `brand/README.md`). Build it in the same pass as `docs/ready-to-build/errors-and-status-rule.md`, which extends it, and document both in the same place.
+**Status:** Agreed with the maintainer 2026-10-23. Being built on `feature/dialog-conventions`: Enter and focus, button order and labels, and the menus are built; the error dialogs (step 5) and the checks (step 6) are not. Filed here from `docs/inbox/2026-10-23-dialog-conventions-and-new-mark.md` on 2026-10-24 (its part B, the new mark, was built 2026-10-24: `brand/README.md`). Build it in the same pass as `docs/ready-to-build/errors-and-status-rule.md`, which extends it, and document both in the same place.
 **Scope:** One set of conventions for every dialog's buttons and for menus, every existing dialog and menu brought in line with them, and a check so new ones can't drift.
 
 Written from a read of the repo on 2026-10-23. Check every reference before relying on it; build only what is missing.

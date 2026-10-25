@@ -23,6 +23,7 @@
 - Reminders: `docs/ui/reminders.md`
 - AI chat: `docs/ui/ai-chat.md`; AI providers (OpenAI, Anthropic, Google): `docs/design/ai-providers.md`
 - Modal architecture pattern: `docs/ui/modals.md`
+- Floating messages (news, errors, the connection card) and Recent Messages: `docs/ui/floating-messages.md`
 - Client state-handling philosophy: `docs/ui/state-handling.md`
 
 ## Security

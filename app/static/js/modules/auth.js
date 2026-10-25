@@ -2,6 +2,7 @@ import { isServerErrorStatus } from './http-status.js';
 import { ApplicationState } from './application-state.js';
 import { HttpRequestError, rethrowUnexpectedError } from './expected-errors.js';
 import { closeAllFloatingNotes } from './mode-manager/services/floating-note-service.js';
+import { FloatingMessages } from './floating-messages.js';
 /**
  * Authentication module for handling login/logout and password management
  */
@@ -731,6 +732,7 @@ export const Auth = {
 
     clearSessionState() {
         closeAllFloatingNotes();
+        FloatingMessages.forgetRecent();
         clearLegacyAuthStorage();
         sessionStorage.removeItem('metalist_client_id');
     },

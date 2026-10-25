@@ -84,6 +84,12 @@
     "presentation": "dialog"
   },
   {
+    "id": "form.recent_messages",
+    "label": "Recent Messages",
+    "selector": "#recent-messages-modal",
+    "presentation": "dialog"
+  },
+  {
     "id": "form.restore_backup",
     "label": "Restore from Backup…",
     "selector": "#backup-restore-modal",

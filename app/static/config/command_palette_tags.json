@@ -173,6 +173,10 @@
       "tags": ["memory", "ram", "megabytes", "mb", "usage", "server", "process", "resident", "notes", "decrypted", "performance", "stats", "statistics", "debug", "about", "info"]
     },
     {
+      "id": "form.recent_messages",
+      "tags": ["messages", "message", "notifications", "notification", "history", "log", "status", "errors", "error", "banner", "missed", "toast"]
+    },
+    {
       "id": "form.note_layout_appearance",
       "tags": ["note", "notes", "layout", "appearance", "font", "size", "spacing", "indentation", "hierarchy", "display", "settings", "corners", "rounded", "radius", "tags", "pills"]
     },

@@ -524,7 +524,11 @@ test('chat layout defaults to one third and narrows the notes shell', () => {
     );
     assert.match(
         css,
-        /body\.pref-show-ai-chat \.global-controls\s*\{[\s\S]*?right:\s*calc\(var\(--ai-chat-effective-width\) \+ var\(--ai-chat-control-edge\)\);/,
+        /body\.pref-show-ai-chat\s*\{[^}]*--global-controls-right:\s*calc\(var\(--ai-chat-effective-width\) \+ var\(--ai-chat-control-edge\)\);/,
+    );
+    assert.match(
+        css,
+        /\.global-controls\s*\{[^}]*right:\s*var\(--global-controls-right\);/,
     );
     assert.match(
         css,
@@ -612,7 +616,7 @@ test('notes keep symmetric gutters and spend gutter space before note width', ()
 
     assert.match(
         css,
-        /--app-min-visible-gutter:\s*calc\(var\(--side-rail-edge\) \+ 30px \+ 8px\);/,
+        /--app-min-visible-gutter:\s*calc\(var\(--side-rail-edge\) \+ var\(--floating-button-size\) \+ 8px\);/,
     );
     assert.match(
         css,
@@ -643,7 +647,7 @@ test('small windows temporarily hide active chat without changing its preference
     );
     assert.match(
         css,
-        /@media \(max-width:\s*760px\), \(max-height:\s*300px\)[\s\S]*?body\.pref-show-ai-chat \.global-controls\s*\{[^}]*right:\s*var\(--side-rail-edge\);/,
+        /@media \(max-width:\s*760px\), \(max-height:\s*300px\)[\s\S]*?body\.pref-show-ai-chat\s*\{[^}]*--global-controls-right:\s*var\(--side-rail-edge\);/,
     );
     assert.doesNotMatch(controller, /ai-chat-responsive-hidden/);
 });

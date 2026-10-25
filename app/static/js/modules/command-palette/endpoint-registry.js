@@ -153,6 +153,7 @@ export function buildCommandPaletteEndpoints(deps) {
 
     const openVersionInfo = requireAction(actions, 'openVersionInfo');
     const openMemoryUsage = requireAction(actions, 'openMemoryUsage');
+    const openRecentMessages = requireAction(actions, 'openRecentMessages');
     const openNoteLayoutAppearance = requireAction(actions, 'openNoteLayoutAppearance');
     const openVisualCues = requireAction(actions, 'openVisualCues');
     const openDictationSettings = requireAction(actions, 'openDictationSettings');
@@ -492,6 +493,12 @@ export function buildCommandPaletteEndpoints(deps) {
             kind: 'form',
             label: 'Memory Usage',
             execute: async () => openMemoryUsage(),
+        },
+        {
+            id: 'form.recent_messages',
+            kind: 'form',
+            label: 'Recent Messages',
+            execute: async () => openRecentMessages(),
         },
         {
             id: 'form.note_layout_appearance',

@@ -58,6 +58,7 @@ import { exportNotes } from '../mode-manager/services/export-service.js';
 
 import { VersionInfoModal } from '../modals/version-info-modal.js';
 import { MemoryUsageModal } from '../modals/memory-usage-modal.js';
+import { RecentMessagesModal } from '../modals/recent-messages-modal.js';
 import { NoteLayoutAppearanceModal } from '../modals/note-layout-appearance-modal.js';
 import { VisualCuesModal, VISUAL_CUE_OPTIONS } from '../modals/visual-cues-modal.js';
 import { DictationSettingsModal } from '../modals/dictation-settings-modal.js';
@@ -385,6 +386,7 @@ class CommandPaletteController {
 
         this._versionInfoModal = null;
         this._memoryUsageModal = null;
+        this._recentMessagesModal = null;
         this._noteLayoutAppearanceModal = null;
         this._visualCuesModal = null;
         this._dictationSettingsModal = null;
@@ -464,6 +466,7 @@ class CommandPaletteController {
 
                 openVersionInfo: this.openVersionInfo.bind(this),
                 openMemoryUsage: this.openMemoryUsage.bind(this),
+                openRecentMessages: this.openRecentMessages.bind(this),
                 openNoteLayoutAppearance: this.openNoteLayoutAppearance.bind(this),
                 openVisualCues: this.openVisualCues.bind(this),
                 openDictationSettings: this.openDictationSettings.bind(this),
@@ -2573,6 +2576,17 @@ class CommandPaletteController {
             );
         }
         await this._memoryUsageModal.open();
+    }
+
+    async openRecentMessages() {
+        const isReady = await this._prepareForModalOpen('commandPalette.openRecentMessages');
+        if (!isReady) {
+            return;
+        }
+        if (this._recentMessagesModal === null) {
+            this._recentMessagesModal = new RecentMessagesModal();
+        }
+        await this._recentMessagesModal.open();
     }
 
     async openVersionInfo() {
