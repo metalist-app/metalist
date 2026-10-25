@@ -14,13 +14,13 @@
   {
     "id": "form.proposals",
     "label": "Accept or Reject AI-Proposed Tags…",
-    "selector": "dialog[aria-label=\"AI-proposed tags\"]",
+    "selector": "#ai-proposed-tags-modal",
     "presentation": "dialog"
   },
   {
     "id": "form.tagging_vocabulary",
     "label": "AI Tagging Vocabulary…",
-    "selector": "dialog[aria-label=\"AI tagging vocabulary\"]",
+    "selector": "#ai-tagging-vocabulary-modal",
     "presentation": "dialog"
   },
   {

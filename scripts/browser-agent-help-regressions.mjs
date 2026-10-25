@@ -17,6 +17,16 @@ export async function checkAgentHelpMenus(page) {
             return {result, visible: Boolean(element?.getClientRects().length),
                 selected: document.querySelector('#command-palette-results .selected')?.textContent || ''};  // shockharness: ignore[DEF003] reason="no selected palette item reads as empty text"
         }, target);
+        if (target.id === 'form.add_password') {
+            // This vault has a password, so Add Password cannot open: the error dialog says
+            // why, and the AI hears that reason, at once, not "opened".
+            assert.deepEqual(result.result, {status: 'unavailable',
+                detail: 'A password is already set. Use Change Password or Remove Password.'}, target.id);
+            await page.keyboard.press('Escape');
+            await page.waitForFunction(() => document.getElementById('error-dialog') === null);
+            await page.waitForFunction(() => document.querySelector('#add-password-modal')?.getClientRects().length !== 1);
+            continue;
+        }
         assert.equal(result.result.status, 'opened', target.id + ': ' + JSON.stringify(result));
         assert.equal(result.visible, true, target.id);
         if (target.presentation === 'palette' && target.id !== 'command_palette') assert(result.selected.length > 0);

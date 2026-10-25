@@ -7,7 +7,7 @@ import { CONFIG } from '../config.js';
 import { buildSessionHeaders } from '../session-auth.js';
 import { escapeHtml } from '../html-escape.js';
 import { actionRowHtml } from './action-row.js';
-import { failureFieldId, showErrorDialogFor } from './error-dialog.js';
+import { failureFieldId, showErrorDialogFor, showOpenFailure } from './error-dialog.js';
 import { FloatingMessages } from '../floating-messages.js';
 
 const PROGRESS_CARD_KEY = 'idle-timeout-progress';
@@ -265,15 +265,16 @@ export class SessionTimeoutModal extends BaseModal {
                 statusMessage: '',
             });
             this.renderModalContent();
-        })().catch(async (error) => {
+        })().catch((error) => {
             rethrowUnexpectedError(error);
             if (!this.isCurrentOpen(generation)) return;
             // Nothing to change without the setting: the error dialog says why, and closing
             // it closes this one.
-            await showErrorDialogFor(error, null);
-            if (this.isCurrentOpen(generation)) {
-                this.close();
-            }
+            showOpenFailure(error, () => {
+                if (this.isCurrentOpen(generation)) {
+                    this.close();
+                }
+            });
         });
     }
 

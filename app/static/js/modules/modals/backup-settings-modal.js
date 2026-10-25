@@ -6,7 +6,7 @@ import { CONFIG } from '../config.js';
 import { buildSessionHeaders } from '../session-auth.js';
 import { escapeHtml } from '../html-escape.js';
 import { actionRowHtml } from './action-row.js';
-import { failureFieldId, showErrorDialog, showErrorDialogFor } from './error-dialog.js';
+import { failureFieldId, showErrorDialog, showErrorDialogFor, showOpenFailure } from './error-dialog.js';
 import { FloatingMessages } from '../floating-messages.js';
 
 const PROGRESS_CARD_KEY = 'backup-settings-progress';
@@ -359,10 +359,11 @@ export class BackupSettingsModal extends BaseModal {
         if (!settled.ok) {
             // Nothing to set without the settings: the error dialog says why, and closing it
             // closes this one.
-            await showErrorDialogFor(settled.error, null);
-            if (this.isOpen) {
-                this.close();
-            }
+            showOpenFailure(settled.error, () => {
+                if (this.isOpen) {
+                    this.close();
+                }
+            });
             return;
         }
         const payload = settled.payload;

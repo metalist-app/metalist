@@ -423,8 +423,9 @@ export class AiAgentSettingsModal extends BaseModal {
                 this.renderModalContent();
             }
         }
+        // The dialog stays usable under it, and opening is not held up while it shows.
         if (failure !== null) {
-            await showErrorDialogFor(failure, null);
+            void showErrorDialogFor(failure, null);
         }
     }
 

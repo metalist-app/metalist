@@ -175,7 +175,7 @@ An action the user took that did not happen (refused input, a failed request) is
 - It has no button: `×`, Escape or a click outside closes it, and only it. Keys and focus stay in it while it shows.
 - Closing it focuses the first field at fault; each field at fault keeps a red outline (`.field-at-fault`, drawn outside the field, so no size changes) until its value changes.
 - A refusal about one field throws `FieldInputRejected(message, fieldId)` (`expected-errors.js`), which `failureFieldId` reads.
-- A dialog that fails to load (its list or settings cannot be read) shows the error, and closing it closes both.
+- A dialog that fails to load (its list or settings cannot be read, or Add Password in a vault that has one) shows the error, and closing it closes both (`showOpenFailure`). Opening is not held up while the error shows: the AI's menu request reports the error's text as the reason the dialog did not open (`agent-menu-actions.js`).
 - `role="alertdialog"`: screen readers announce it.
 - Messages say what happened and how to fix it, for the user ("That vault already exists. Pick another name.").
 - Failures while typing (a tag lookup) never open a dialog: they float in the corner (`docs/ui/floating-messages.md`).
