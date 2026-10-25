@@ -74,4 +74,4 @@ before anyone sees it. Browser checks: `scripts/browser-scroll-regressions.mjs`
 (`BROWSER_TEST_SUITE=exit-edit-scroll npm run test:browser`).
 
 Errors and status messages follow from principles 1, 2, 3 and 5: nothing that reports
-one may change the layout (planned: `docs/ready-to-build/errors-and-status-rule.md`).
+one may change the layout (`docs/ui/modals.md`, "Errors and status"). What is *on* a dialog (button order, labels, Enter and focus) follows `docs/ui/modals.md`, "Dialog and menu conventions"; those rules add no motion or emphasis.

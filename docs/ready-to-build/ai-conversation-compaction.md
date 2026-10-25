@@ -29,7 +29,7 @@ Two problems for the user:
 
 ## 3. What the user sees
 
-- **A summary entry, collapsed by default,** inserted into the conversation where the summary begins. Collapsed: one line, for example "Earlier conversation summarized — what the AI kept." Expanded: the full summary text. It's part of the conversation, not a modal, banner or toast. Nothing about compaction pops up or shifts the layout (see `docs/ready-to-build/errors-and-status-rule.md`).
+- **A summary entry, collapsed by default,** inserted into the conversation where the summary begins. Collapsed: one line, for example "Earlier conversation summarized — what the AI kept." Expanded: the full summary text. It's part of the conversation, not a modal, banner or toast. Nothing about compaction pops up or shifts the layout (see `docs/ui/modals.md` ("Errors and status")).
 - **Summarized turns stay on screen,** above the summary entry, so the user can scroll back and read them. Render them **greyed and in italics,** with a divider marking where the AI stopped seeing them directly. That must look different from any turn that's held back from the AI for privacy reasons, so the two states can't be confused.
 - **Correcting the summary is just conversation.** If the user notices something missing, they say so in their next message. There's no summary editor.
 - **Copy Response** works on the summary like on any answer, which gives users a ready way to save a long conversation as a note.

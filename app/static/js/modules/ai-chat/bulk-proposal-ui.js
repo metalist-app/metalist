@@ -46,7 +46,7 @@ export async function proposalRequest(path, payload, signal) {
 function openProgress(abortController, chatHost, initialEvent) {
     const isSummary = initialEvent.kind === 'summary_confirmation';
     // The operation always runs inside the chat, in the panel the chat opened for it: it is
-    // the conversation's content (docs/ready-to-build/errors-and-status-rule.md §2.3).
+    // the conversation's content (docs/ui/modals.md, "Errors and status").
     if (!(chatHost instanceof HTMLElement)) {
         throw new Error('A bulk operation needs the chat panel it runs in');
     }

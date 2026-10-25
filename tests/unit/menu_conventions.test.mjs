@@ -4,7 +4,7 @@ import test from 'node:test';
 import { buildContextMenuItems } from '../../app/static/js/modules/context-menu/context-menu-registry.js';
 import { tabContextActionsHtml } from '../../app/static/js/modules/mode-manager/services/tab-context-actions.js';
 
-// Menu rules (docs/ready-to-build/dialog-and-menu-conventions.md, rule 8; agreed case by case
+// Menu rules (docs/ui/modals.md, "Dialog and menu conventions", rule 8; agreed case by case
 // 2026-10-24): "…" exactly when a dialog asks for more first, destructive items last and red,
 // items that cannot apply hidden, the current choice ticked (picking it changes nothing),
 // no separator line above a menu's first item, Title Case labels.

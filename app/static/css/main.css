@@ -544,7 +544,7 @@ html:has(> body > .login-page[style*="display: flex"]) {
 }
 
 /* A rare alternative sits at the far left, apart from Cancel and the main action
-   (action-row.js; docs/ready-to-build/dialog-and-menu-conventions.md, rule 1). */
+   (action-row.js; docs/ui/modals.md, "Dialog and menu conventions", rule 1). */
 .modal-content .dialog-actions .dialog-actions-alternative {
     margin-right: auto;
 }

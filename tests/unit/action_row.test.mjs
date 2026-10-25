@@ -3,7 +3,7 @@ import test from 'node:test';
 
 import { actionRowHtml } from '../../app/static/js/modules/modals/action-row.js';
 
-// The shared button row (docs/ready-to-build/dialog-and-menu-conventions.md): Cancel alone
+// The shared button row (docs/ui/modals.md, "Dialog and menu conventions"): Cancel alone
 // while a dialog loads or only stops what runs.
 
 const CANCEL = { id: 'loading-cancel', label: 'Cancel', disabled: false, attributes: [] };

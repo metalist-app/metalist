@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 
 // The order and labels of every dialog's action row (docs/ready-to-build/
-// dialog-and-menu-conventions.md, rules 1-3 and 7; agreed case by case 2026-10-24): the
+// docs/ui/modals.md, "Dialog and menu conventions", rules 1-3 and 7; agreed case by case 2026-10-24): the
 // main action rightmost, Cancel or Back directly left of it, a rare alternative at the far
 // left; on a narrow screen the row stacks with the main action on top.
 

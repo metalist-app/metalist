@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { runThenCleanUp } from './suite-outcome.mjs';
 import { waitForAppQuiet } from './browser-app-idle.mjs';
 
-// Floating messages (docs/ready-to-build/errors-and-status-rule.md §2.2; agreed case by
+// Floating messages (docs/ui/modals.md, "Errors and status"; agreed case by
 // case 2026-10-24):
 // - cards float in the upper-right corner, just left of the floating buttons (≡, chat,
 //   scroll), their tops level with the first button; on the phone, under the search

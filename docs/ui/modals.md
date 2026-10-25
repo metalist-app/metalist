@@ -134,12 +134,42 @@ function handleKeyDown(event) {
 5. Hide modal UI
 6. Return focus to application
 
-Being built: button order, labels, focus and menu rules in `docs/ready-to-build/dialog-and-menu-conventions.md`, and errors and status shown above the layout, never inserted into it, in `docs/ready-to-build/errors-and-status-rule.md` (error dialogs below; floating messages in `docs/ui/floating-messages.md`).
+## Dialog and menu conventions
+One set of rules for every dialog's buttons and for menus (agreed 2026-10-23, built 2026-10-24/25). People learn where "Save" is; an inconsistent order makes them read every dialog or press the wrong button. Code: `modals/action-row.js` (`actionRowHtml`, the one source of every dialog's row), `BaseModal` (Enter and first focus); tests: `scripts/browser-dialog-key-regressions.mjs`, `scripts/browser-dialog-button-regressions.mjs`, `tests/unit/dialog_labels.test.mjs`, `menu_conventions.test.mjs`, `command_palette_conventions.test.mjs`, and the check below.
+
+1. **Order: the main action is rightmost.** Cancel is just left of it; a rare alternative ("Clear Form", "Open in New Tab") goes at the far left, apart. Reading ends at the lower right; right means forward (Next is right, Back left, in every flow); and it matches macOS, iOS and Android.
+   ```
+                                      [ Cancel ]  [ Save ]
+   [ Open in New Tab ]                [ Cancel ]  [ Open in This Tab ]
+   [ Back ]                                       [ Next ]
+                                      [ Cancel ]  [ Delete Vault ]   ← red
+   ```
+2. **Labels say what happens:** verbs naming the result ("Save", "Add Key", "Delete Vault", "Rename and Restart"), never "OK", "Yes", "Submit" or "Confirm". Cancel is "Cancel", Back is "Back". A label that depends on a choice follows it.
+3. **Title Case** for every button and menu item (the macOS convention).
+4. **Keys and focus.** Enter presses the main action; on a focused button it presses that button, so Enter on Cancel cancels. Escape and `×` cancel. First focus goes to the first field needing input; tab order follows the row, left to right.
+5. **Destructive actions** sit in the same rightmost place, in red; moving them around to be "safe" breaks the habit everywhere else. **Enter never presses one:** such a dialog opens with focus on Cancel (or in the field the user must type in), and Enter beside a red button does only what the dialog allows (picking a suggestion). Irreversible whole-vault actions keep two steps or type-to-confirm; undoable actions get no confirmation.
+6. **Multi-step flows:** Back left, Next or the last step's verb right; Cancel or `×` leaves from any step.
+7. **Narrow screens:** a stacked row puts the main action on top, then Cancel, then any alternative.
+8. **Menus** (right-click menus, the app menu, the palette): `…` means a dialog asks for more first, no `…` acts at once; separators group related items, most-used first, and a menu never opens with a separator above its first item; destructive items go last, in red; shortcuts show on the right; the current choice is ticked, not greyed, and picking it changes nothing; items that cannot apply are hidden. Related actions sit in submenus so a menu fits the window (`docs/ui/controls.md`).
+
+## Errors and status
+**Nothing that reports an error or a status changes the layout** (agreed 2026-10-24, built 2026-10-25). Every error or status shows above the layout, in one of two forms below. Why (`docs/ui/interaction-principles.md`): an inserted message moves things under the point of attention (principle 1); only the user's action changes the screen (2); an error below the fold is out of sight (3); errors may be emphasized (5). The complaint that started it: inline errors shifted dialogs and landed low enough to miss ("Google API key must start with AIza" pushed Save/Cancel down).
+
+### 1. Two kinds, told apart by who ends them
+- **A dialog** pauses on purpose and waits for the user, who ends it: a decision, an action the user just took that **didn't happen**, something to know before going on. See "Errors" below.
+- **A floating indicator** reflects a condition, live, and the condition ends it: one-off news, a lasting condition, feedback on what is being typed. Corner cards: `docs/ui/floating-messages.md`; under a field: "Messages under a field" below.
+- **No permanent status area:** nothing reserves space for status; an indicator shows exactly while it is relevant.
+
+### 2. Not affected
+- **AI chat content** ("not sent because…", the chat's confirmation card, its tagging and summary operations) stays in the conversation, as `docs/ui/ai-chat.md` describes: adding to the conversation shifts no other UI.
+- **View indicators** (sort, date range and "Notes with Files" chips in the search field) show state the user chose; they are not status.
+- **The login screen's error line** keeps the established login design (decided 2026-10-25).
+- **Content that is the dialog's purpose** stays: loading placeholders, the password's "Encrypting notes…" view, the link-title retry progress, Version Info's update section, the strength meters.
 
 No button only dismisses: an acknowledgement has none (`×`, Escape or a click outside closes it), and a button names what it does. Workflow actions such as `Save`, `Cancel`, `Back`, and destructive confirmations remain visible when they carry meaning beyond dismissing the modal.
 
 ### Errors
-An action the user took that did not happen (refused input, a failed request) is told in an error dialog over the dialog they were in, never written into that dialog's layout (`docs/ready-to-build/errors-and-status-rule.md` §2.1; built 2026-10-25, step 5a). Code: `modals/error-dialog.js` (`showErrorDialog(problems)`, `showErrorDialogFor(error, fieldId)`); test: `scripts/browser-error-dialog-regressions.mjs` (`error-dialogs` suite).
+An action the user took that did not happen (refused input, a failed request) is told in an error dialog over the dialog they were in, never written into that dialog's layout (built 2026-10-25). Code: `modals/error-dialog.js` (`showErrorDialog(problems)`, `showErrorDialogFor(error, fieldId)`); test: `scripts/browser-error-dialog-regressions.mjs` (`error-dialogs` suite).
 - The dialog underneath stays open with what was typed; nothing in it moves.
 - One error dialog lists every problem (`[{ text, fieldId }]`); a dialog's checks collect them all before refusing.
 - It has no button: `×`, Escape or a click outside closes it, and only it. Keys and focus stay in it while it shows.
@@ -151,7 +181,7 @@ An action the user took that did not happen (refused input, a failed request) is
 - Failures while typing (a tag lookup) never open a dialog: they float in the corner (`docs/ui/floating-messages.md`).
 
 ### Messages under a field
-What is wrong with a field's value while it is typed floats just under that field (`errors-and-status-rule.md` §2.2, placement 3; built 2026-10-25, step 5b). Code: `modals/field-message.js` (`setFieldMessage(field, text, kind)`, `''` removes it); test: `scripts/browser-field-message-regressions.mjs` (`field-messages` suite).
+What is wrong with a field's value while it is typed floats just under that field (built 2026-10-25). Code: `modals/field-message.js` (`setFieldMessage(field, text, kind)`, `''` removes it); test: `scripts/browser-field-message-regressions.mjs` (`field-messages` suite).
 - It floats over what is below, lined up with the field and 4 px under it; nothing moves, focus stays in the field, and it never covers the field. It leaves once the value is fine.
 - Errors are red, warnings (`kind: 'warning'`) amber. It is placed in the field's nearest container that draws a box, so it scrolls with the field.
 - Typing never opens a dialog; a dialog that needs one waits for its action button.
@@ -161,7 +191,7 @@ What is wrong with a field's value while it is typed floats just under that fiel
 - Export and Print: "The AI couldn't suggest a title: …" under the title, until the next key or click.
 
 ### The check
-`tests/unit/dialog_conventions_check.test.mjs` (the JS unit suite, so CI runs it on every OS) fails when a file writes a dialog button row by hand (`form-actions` / `dialog-actions` outside `modals/action-row.js`) or an error line into a dialog (`error-message`, `role="alert"`, `data-error`, a class ending in `-error`). Each failure names the file and line and what to use instead. Its exceptions name a file, a kind, an exact count and a reason (tool buttons such as Memory Usage's Copy and Refresh; AI chat content, §2.3 of the rule, such as the chat's tagging and summary operations), so a new line of that kind there fails too. It also fails on a deliberately wrong sample. A row with Cancel alone (a dialog still loading, or one that can only stop what runs) is `actionRowHtml({ ..., main: null })`.
+`tests/unit/dialog_conventions_check.test.mjs` (the JS unit suite, so CI runs it on every OS) fails when a file writes a dialog button row by hand (`form-actions` / `dialog-actions` outside `modals/action-row.js`) or an error line into a dialog (`error-message`, `role="alert"`, `data-error`, a class ending in `-error`). Each failure names the file and line and what to use instead. Its exceptions name a file, a kind, an exact count and a reason (tool buttons such as Memory Usage's Copy and Refresh; AI chat content, such as the chat's tagging and summary operations), so a new line of that kind there fails too. It also fails on a deliberately wrong sample. A row with Cancel alone (a dialog still loading, or one that can only stop what runs) is `actionRowHtml({ ..., main: null })`.
 
 ### Modal Stacking
 - Modals can stack via `ModeContext.modalStack`

@@ -13,7 +13,7 @@ import {
 } from '../mode-manager/services/date-range-kinds.js';
 import { FILE_FILTER_CHOICES, FILE_FILTER_KINDS } from '../mode-manager/services/file-filter-kinds.js';
 
-// Menu rules (docs/ready-to-build/dialog-and-menu-conventions.md, rule 8): a trailing "…"
+// Menu rules (docs/ui/modals.md, "Dialog and menu conventions", rule 8): a trailing "…"
 // means a dialog asks for more before anything happens; destructive items come last, red
 // (danger); items that cannot apply are left out; labels are in Title Case.
 

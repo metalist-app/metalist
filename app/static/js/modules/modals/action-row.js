@@ -1,6 +1,6 @@
 import { escapeHtml } from '../html-escape.js';
 
-// Every dialog's action row (docs/ready-to-build/dialog-and-menu-conventions.md, rules 1-7):
+// Every dialog's action row (docs/ui/modals.md, "Dialog and menu conventions", rules 1-7):
 // a rare alternative at the far left, then Cancel or Back, then the main action rightmost.
 // On a narrow screen the row stacks with the main action on top (main.css, .dialog-actions).
 // A destructive main action is red, Enter never presses it and its view starts on Cancel

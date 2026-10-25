@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { waitForAppQuiet } from './browser-app-idle.mjs';
 
-// Error dialogs (docs/ready-to-build/errors-and-status-rule.md §2.1; agreed case by case
+// Error dialogs (docs/ui/modals.md, "Errors and status"; agreed case by case
 // 2026-10-25, step 5a): an action that is refused or fails opens a small error dialog over
 // the dialog the user was in.
 // - The dialog underneath stays open with what was typed, and nothing in it moves.

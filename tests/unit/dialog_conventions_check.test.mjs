@@ -3,7 +3,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import test from 'node:test';
 
-// The dialog conventions, kept (docs/ready-to-build/errors-and-status-rule.md §4.3, agreed
+// The dialog conventions, kept (docs/ui/modals.md, "Errors and status", agreed
 // 2026-10-25 as step 6):
 // - every dialog's button row comes from the shared row (modals/action-row.js), so order,
 //   labels, Enter and the narrow-screen stacking stay the same everywhere;
@@ -48,19 +48,19 @@ const EXCEPTIONS = [
     { file: 'app/static/js/modules/modals/search-suggestion-statistics-modal.js', kind: 'button row', count: 1,
         reason: 'Reset Activity… opens the dialog\'s own confirmation, which uses the shared row' },
     { file: 'app/static/js/modules/ai-chat/confirmation-card.js', kind: 'button row', count: 1,
-        reason: 'AI chat content: a confirmation inside the conversation (§2.3)' },
+        reason: 'AI chat content: a confirmation inside the conversation' },
     { file: 'app/static/js/modules/ai-chat/confirmation-card.js', kind: 'error line', count: 1,
-        reason: 'AI chat content: a confirmation inside the conversation (§2.3)' },
+        reason: 'AI chat content: a confirmation inside the conversation' },
     { file: 'app/static/js/modules/ai-chat/ai-chat-panel-controller.js', kind: 'error line', count: 1,
-        reason: 'AI chat content: a message in the conversation (§2.3)' },
+        reason: 'AI chat content: a message in the conversation' },
     { file: 'app/static/js/modules/ai-chat/ai-agent-debug-view.js', kind: 'error line', count: 1,
         reason: 'a developer view of the AI\'s steps' },
     { file: 'app/static/js/modules/mode-manager/services/shell-output-service.js', kind: 'error line', count: 1,
         reason: 'a shell command\'s output, written into the note' },
     { file: 'app/static/js/modules/ai-chat/bulk-proposal-ui.js', kind: 'button row', count: 1,
-        reason: 'AI chat content: a tagging or summary operation inside the conversation (§2.3)' },
+        reason: 'AI chat content: a tagging or summary operation inside the conversation' },
     { file: 'app/static/js/modules/ai-chat/bulk-proposal-ui.js', kind: 'error line', count: 3,
-        reason: 'AI chat content: a tagging or summary operation inside the conversation (§2.3)' },
+        reason: 'AI chat content: a tagging or summary operation inside the conversation' },
 ];
 
 function sourceFiles(directory) {

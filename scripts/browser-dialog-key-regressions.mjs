@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 
-// Enter and first focus in dialogs (docs/ready-to-build/dialog-and-menu-conventions.md,
+// Enter and first focus in dialogs (docs/ui/modals.md, "Dialog and menu conventions",
 // rule 4 and 5; agreed case by case 2026-10-24):
 // - Enter never triggers a destructive action. A destructive dialog opens with focus on
 //   Cancel (Enter cancels), or in the field the user must type in (Enter does nothing).

@@ -3,7 +3,7 @@ import { escapeHtml } from '../../html-escape.js';
 // A tab row's actions in the tabs overlay: + duplicates the tab, − deletes it (red). Each
 // says what it does on hover. At the tab limit + is greyed (the reason is discoverable);
 // with a single tab − can never apply, so it is hidden, keeping its place so + does not move
-// (docs/ready-to-build/dialog-and-menu-conventions.md, rule 8).
+// (docs/ui/modals.md, "Dialog and menu conventions", rule 8).
 export function tabContextActionsHtml({ tabId, isAtTabLimit, canDelete }) {
     if (typeof tabId !== 'string' || tabId === '') {
         throw new Error('tabContextActionsHtml requires a tab id');

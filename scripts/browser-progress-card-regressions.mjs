@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { waitForAppQuiet } from './browser-app-idle.mjs';
 
-// Progress and lasting problems (docs/ready-to-build/errors-and-status-rule.md §2.2; agreed
+// Progress and lasting problems (docs/ui/modals.md, "Errors and status"; agreed
 // case by case 2026-10-25, step 5c):
 // - while a dialog's action runs, a lasting card in the corner says so, and leaves when it
 //   ends; the dialog writes no status line and nothing in it moves;

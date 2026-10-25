@@ -1,6 +1,6 @@
 # Floating messages
 
-News, errors and lasting conditions float above the page as cards; nothing on the page moves for them (`docs/ready-to-build/errors-and-status-rule.md` §2.2, placements 1 and 2; agreed case by case 2026-10-24). Code: `app/static/js/modules/floating-messages.js`; every `ErrorHandler.show*Banner` call goes through it. Test: `scripts/browser-floating-message-regressions.mjs` (`floating-messages` suite).
+News, errors and lasting conditions float above the page as cards; nothing on the page moves for them (`docs/ui/modals.md`, "Errors and status"; agreed case by case 2026-10-24). Code: `app/static/js/modules/floating-messages.js`; every `ErrorHandler.show*Banner` call goes through it. Test: `scripts/browser-floating-message-regressions.mjs` (`floating-messages` suite).
 
 ## Where
 

@@ -8,7 +8,7 @@ import {
     isCommandAvailable,
 } from '../../app/static/js/modules/command-palette/endpoint-registry.js';
 
-// Command palette labels follow the menu rules (docs/ready-to-build/dialog-and-menu-conventions.md,
+// Command palette labels follow the menu rules (docs/ui/modals.md, "Dialog and menu conventions",
 // rules 1-6; agreed 2026-10-24): Title Case, "…" exactly when a dialog asks for more first,
 // shortcuts shown, destructive commands red, commands that cannot apply hidden.
 

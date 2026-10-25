@@ -20,7 +20,7 @@ Opening or dismissing the command palette does not clear undo/redo. Global actio
 ## Results
 - Labels are in Title Case. A trailing `…` means the command opens a dialog that asks for
   more before anything happens; commands that act at once or only show something have none
-  (`endpoint-registry.js`; the conventions: `docs/ready-to-build/dialog-and-menu-conventions.md`).
+  (`endpoint-registry.js`; the conventions: `docs/ui/modals.md` ("Dialog and menu conventions")).
 - A command with a key of its own shows it at the right (`Find in List` ⌘F, `Keyboard Shortcuts` ?).
 - Destructive commands (they lose what cannot be brought back: `Delete Vault…`, `Remove Password…`,
   `Restore from Backup…`, `Trim Unused Files…`, `Reset All Preferences`, the reorderings and the

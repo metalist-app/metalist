@@ -39,7 +39,7 @@ export function showConfirmationCard({ event, host, signal }) {
     }
     const error = document.createElement('p');
     error.setAttribute('role', 'alert');
-    // Cancel, then the main action rightmost (docs/ready-to-build/dialog-and-menu-conventions.md).
+    // Cancel, then the main action rightmost (docs/ui/modals.md, "Dialog and menu conventions").
     const yes = document.createElement('button');
     yes.type = 'button';
     yes.textContent = 'Apply';

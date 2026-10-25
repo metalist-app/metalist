@@ -432,7 +432,7 @@ function validateMenuItems(items, depth) {
         if (item.checked !== undefined && typeof item.checked !== 'boolean') {
             throw new Error(`Context menu item ${index} checked must be boolean when provided`);
         }
-        // A destructive item (Delete Note) is drawn red (dialog-and-menu-conventions.md, rule 8).
+        // A destructive item (Delete Note) is drawn red (docs/ui/modals.md, "Dialog and menu conventions", rule 8).
         if (item.danger !== undefined && typeof item.danger !== 'boolean') {
             throw new Error(`Context menu item ${index} danger must be boolean when provided`);
         }

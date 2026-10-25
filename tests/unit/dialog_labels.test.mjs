@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
 // Button labels say what happens, in Title Case, never OK, Yes, Submit or Confirm
-// (docs/ready-to-build/dialog-and-menu-conventions.md, rules 2 and 3; agreed 2026-10-24).
+// (docs/ui/modals.md, "Dialog and menu conventions", rules 2 and 3; agreed 2026-10-24).
 // The order of each row is checked in the browser (scripts/browser-dialog-button-regressions.mjs).
 
 function source(path) {

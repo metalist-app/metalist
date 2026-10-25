@@ -249,7 +249,7 @@ export class BaseModal {
         
         if (event.key === 'Enter' && !event.isComposing) {
             // Enter on a focused button presses that button (the browser does it), so Enter
-            // on Cancel cancels (docs/ready-to-build/dialog-and-menu-conventions.md, rule 4).
+            // on Cancel cancels (docs/ui/modals.md, "Dialog and menu conventions", rule 4).
             if (event.target instanceof HTMLButtonElement) {
                 return;
             }

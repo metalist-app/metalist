@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { waitForAppQuiet } from './browser-app-idle.mjs';
 
-// Field messages (docs/ready-to-build/errors-and-status-rule.md §2.2, placement 3; agreed
+// Field messages (docs/ui/modals.md, "Errors and status"; agreed
 // case by case 2026-10-25, step 5b): what is wrong with a field's value floats just under
 // that field, over what is below. Nothing moves, focus stays in the field, and the message
 // leaves once the value is fine.
