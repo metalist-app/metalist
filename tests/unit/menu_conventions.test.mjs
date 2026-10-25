@@ -53,6 +53,11 @@ function find(items, id) {
     return item;
 }
 
+// A group's submenu items beside the menu's own.
+function withSubmenus(items) {
+    return items.flatMap((item) => [item, ...(Array.isArray(item.submenu) ? item.submenu : [])]);
+}
+
 function labels(items) {
     return items.map((item) => item.label);
 }
@@ -77,10 +82,13 @@ test('Delete Note is red, last among the note menu actions', () => {
 
 test('the view menu names what each item does', () => {
     const items = viewMenu({}, []);
-    assert.equal(find(items, 'export-view-html').label, 'Export View as HTML…');
-    assert.equal(find(items, 'print-view').label, 'Print View…');
-    assert.equal(find(items, 'reminders').label, 'Open Reminders');
-    assert.equal(find(items, 'open-namespace').label, 'Open/Switch Vault…');
+    assert.equal(find(items, 'export-print').label, 'Export & Print');
+    assert.equal(find(items, 'open').label, 'Open');
+    const all = withSubmenus(items);
+    assert.equal(find(all, 'export-view-html').label, 'View as HTML…');
+    assert.equal(find(all, 'print-view').label, 'Print View…');
+    assert.equal(find(all, 'reminders').label, 'Reminders');
+    assert.equal(find(all, 'open-namespace').label, 'Vault…');
     assert.equal(find(items, 'log-out').danger, undefined, 'logging out loses nothing: not red');
 });
 
@@ -94,12 +102,12 @@ test('the tag menu says the tag editor asks first', () => {
 
 test('a sorted tab hides adding and pasting at the top', () => {
     for (const sortMode of ['alphabetical', 'created', 'normal-reversed']) {
-        const ids = viewMenu({ sortMode }, []).map((item) => item.id);
-        for (const hidden of ['add-note-at-top', 'paste-note-at-top', 'paste-reference-at-top']) {
+        const ids = withSubmenus(viewMenu({ sortMode }, [])).map((item) => item.id);
+        for (const hidden of ['add', 'add-note-at-top', 'paste-note-at-top', 'paste-reference-at-top']) {
             assert.equal(ids.includes(hidden), false, `${hidden} must be hidden in a ${sortMode} tab`);
         }
     }
-    const ids = viewMenu({ sortMode: 'normal' }, []).map((item) => item.id);
+    const ids = withSubmenus(viewMenu({ sortMode: 'normal' }, [])).map((item) => item.id);
     for (const shown of ['add-note-at-top', 'paste-note-at-top', 'paste-reference-at-top']) {
         assert.equal(ids.includes(shown), true, `${shown} must show in a normal tab`);
     }
@@ -121,7 +129,7 @@ test('the current choice is ticked, not greyed, and picking it changes nothing',
         [find(items, 'date-range').submenu, 'date-range-field-updated'],
         [find(items, 'date-range').submenu, 'date-range-today'],
         [find(items, 'file-filter').submenu, 'file-filter-image'],
-        [find(items, 'theme').submenu, 'theme-dark'],
+        [find(items, 'show').submenu, 'theme-dark'],
     ];
     for (const [submenu, id] of currentChoices) {
         const item = find(submenu, id);
@@ -130,7 +138,7 @@ test('the current choice is ticked, not greyed, and picking it changes nothing',
         item.onSelect();
     }
     assert.deepEqual(calls, [], 'picking the current choice must change nothing');
-    for (const submenu of [find(items, 'sort-by').submenu, find(items, 'theme').submenu]) {
+    for (const submenu of [find(items, 'sort-by').submenu, find(items, 'show').submenu]) {
         for (const item of submenu) {
             assert.equal(item.enabled, true, `${item.label} must not be greyed`);
         }

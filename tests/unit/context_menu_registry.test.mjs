@@ -512,63 +512,76 @@ function describeMenu(items) {
     return items.map((item) => [item.separated === true ? '— ' : '', item.label, item.shortcut === undefined ? '' : ` ${item.shortcut}`].join(''));
 }
 
-test('the background menu groups adding, history, the list, the view, opening, export and log out', () => {
+// Every item, a group's own and then those in its submenu, so a group's actions are found
+// wherever they sit.
+function withSubmenus(items) {
+    return items.flatMap((item) => [item, ...(Array.isArray(item.submenu) ? item.submenu : [])]);
+}
+
+// The background menu fits a window 800 px tall (agreed 2026-10-25): related actions sit in
+// submenus, as Move does in the note menu, and a group with one action that applies shows
+// that action in place.
+test('the background menu groups adding, going, the outline, the view, opening and exporting', () => {
     const items = buildContextMenuItems(buildViewContext({ canPasteNoteAtTop: true, canGoToTop: true, canGoToBottom: true }), buildViewHandlers([]));
     assert.deepEqual(describeMenu(items), [
-        'Add Note at Top ↩',
-        'Paste Note at Top ⌘V',
-        'Paste Note as Reference at Top ⌘R',
+        'Add',
         '— Undo ⌘Z',
         'Redo ⇧⌘Z',
-        '— Go to Top',
-        'Go to Bottom',
-        'Fully Expand All',
-        'Fully Collapse All',
+        '— Go to',
+        'Outline',
         '— View',
         'Sort by',
         'Date Range',
         'Notes with Files',
         'Show',
-        'Theme',
-        '— New Tab',
-        'Open/Switch Vault…',
-        'Open Reminders',
-        '— Export View as HTML…',
-        'Print View…',
+        '— Open',
+        'Export & Print',
         '— Log Out',
     ]);
+    const submenu = (id) => describeMenu(items.find((item) => item.id === id).submenu);
+    assert.deepEqual(submenu('add'), ['Add Note at Top ↩', 'Paste Note at Top ⌘V', 'Paste Note as Reference at Top ⌘R']);
+    assert.deepEqual(submenu('go-to'), ['Top', 'Bottom']);
+    assert.deepEqual(submenu('outline'), ['Fully Expand All', 'Fully Collapse All']);
+    assert.deepEqual(submenu('show'), ['Chat', 'Tabs', 'Tags in List', '— System Theme', 'Light Theme', 'Dark Theme']);
+    assert.deepEqual(submenu('open'), ['New Tab', 'Vault…', 'Reminders']);
+    assert.deepEqual(submenu('export-print'), ['View as HTML…', 'Print View…']);
 });
 
 test('background items that do not apply are hidden, not greyed', () => {
     const atTop = buildContextMenuItems(buildViewContext({}), buildViewHandlers([]));
-    const ids = atTop.map((item) => item.id);
+    const ids = withSubmenus(atTop).map((item) => item.id);
     assert.ok(!ids.includes('paste-note-at-top'));
     assert.ok(!ids.includes('paste-reference-at-top'));
     assert.ok(!ids.includes('go-to-top'));
     assert.ok(!ids.includes('go-to-bottom'));
-    assert.equal(atTop.find((item) => item.id === 'fully-expand-all').separated, true);
-    assert.ok(atTop.every((item) => item.enabled));
+    // With nothing copied, Add Note at Top is alone, so it shows in place.
+    assert.equal(atTop[0].id, 'add-note-at-top');
+    assert.equal(atTop[0].label, 'Add Note at Top');
+    assert.equal(atTop.find((item) => item.id === 'outline').separated, true);
+    assert.ok(withSubmenus(atTop).every((item) => item.enabled));
 
     // While a note is edited, Enter, ⌘V and ⌘Z belong to the editor.
     const editing = buildContextMenuItems(buildViewContext({ isEditing: true, canPasteNoteAtTop: true }), buildViewHandlers([]));
-    const editingIds = editing.map((item) => item.id);
-    for (const id of ['add-note-at-top', 'paste-note-at-top', 'paste-reference-at-top', 'undo', 'redo']) {
+    const editingIds = withSubmenus(editing).map((item) => item.id);
+    for (const id of ['add', 'add-note-at-top', 'paste-note-at-top', 'paste-reference-at-top', 'undo', 'redo']) {
         assert.ok(!editingIds.includes(id), id);
     }
-    assert.equal(editing[0].id, 'fully-expand-all');
+    assert.equal(editing[0].id, 'outline');
 });
 
-test('at the bottom only Go to Top is offered, and at the top only Go to Bottom', () => {
-    const ids = (overrides) => buildContextMenuItems(buildViewContext(overrides), buildViewHandlers([])).map((item) => item.id);
-    assert.deepEqual(ids({ canGoToTop: true }).filter((id) => id.startsWith('go-to-')), ['go-to-top']);
-    assert.deepEqual(ids({ canGoToBottom: true }).filter((id) => id.startsWith('go-to-')), ['go-to-bottom']);
-    const atTop = buildContextMenuItems(buildViewContext({ canGoToBottom: true }), buildViewHandlers([]));
-    assert.equal(atTop.find((item) => item.id === 'go-to-bottom').separated, true);
+test('at the bottom only Go to Top is offered, and at the top only Go to Bottom, in place', () => {
+    const menu = (overrides) => buildContextMenuItems(buildViewContext(overrides), buildViewHandlers([]));
+    const goTo = (overrides) => withSubmenus(menu(overrides)).filter((item) => item.id.startsWith('go-to'))
+        .map((item) => [item.id, item.label]);
+    assert.deepEqual(goTo({ canGoToTop: true }), [['go-to-top', 'Go to Top']]);
+    assert.deepEqual(goTo({ canGoToBottom: true }), [['go-to-bottom', 'Go to Bottom']]);
+    assert.deepEqual(goTo({ canGoToTop: true, canGoToBottom: true }), [['go-to', 'Go to'], ['go-to-top', 'Top'], ['go-to-bottom', 'Bottom']]);
+    assert.equal(menu({ canGoToBottom: true }).find((item) => item.id === 'go-to-bottom').separated, true);
 });
 
 test('background shortcuts are written the Windows and Linux way off a Mac', () => {
     const items = buildContextMenuItems(buildViewContext({ isMac: false, canPasteNoteAtTop: true }), buildViewHandlers([]));
-    const shortcuts = Object.fromEntries(items.filter((item) => item.shortcut !== undefined).map((item) => [item.id, item.shortcut]));
+    const shortcuts = Object.fromEntries(withSubmenus(items).filter((item) => item.shortcut !== undefined).map((item) => [item.id, item.shortcut]));
     assert.deepEqual(shortcuts, {
         'add-note-at-top': 'Enter',
         'paste-note-at-top': 'Ctrl+V',
@@ -588,7 +601,9 @@ test('formatMenuShortcut writes modifiers in platform order', () => {
 test('background actions call their handlers', () => {
     const calls = [];
     const items = buildContextMenuItems(buildViewContext({ canPasteNoteAtTop: true, canGoToTop: true, canGoToBottom: true }), buildViewHandlers(calls));
-    for (const item of items.filter((item) => item.submenu === undefined)) {
+    const groups = ['add', 'go-to', 'outline', 'open', 'export-print'];
+    const actions = items.flatMap((item) => (groups.includes(item.id) ? item.submenu : [item]));
+    for (const item of actions.filter((item) => item.submenu === undefined)) {
         item.onSelect();
     }
     assert.deepEqual(calls.map((call) => call[0]), [
@@ -597,7 +612,7 @@ test('background actions call their handlers', () => {
     ]);
 });
 
-test('View, Show and Theme tick the current state', () => {
+test('View and Show (with the theme) tick the current state', () => {
     const calls = [];
     const items = buildContextMenuItems(buildViewContext({
         isUntaggedView: true, theme: 'dark', isAiChatVisible: true, areTabsVisible: false, areNoteTagsVisible: true,
@@ -607,12 +622,14 @@ test('View, Show and Theme tick the current state', () => {
 
     // The current choice is ticked but not greyed: picking it changes nothing.
     assert.deepEqual(ticks('view'), [['All Notes', false, true], ['Untagged Notes', true, true]]);
-    assert.deepEqual(ticks('show'), [['Chat', true, true], ['Tabs', false, true], ['Tags in List', true, true]]);
-    assert.deepEqual(ticks('theme'), [['System', false, true], ['Light', false, true], ['Dark', true, true]]);
+    assert.deepEqual(ticks('show'), [
+        ['Chat', true, true], ['Tabs', false, true], ['Tags in List', true, true],
+        ['System Theme', false, true], ['Light Theme', false, true], ['Dark Theme', true, true],
+    ]);
 
     submenu('view')[0].onSelect();
-    for (const item of submenu('show')) item.onSelect();
-    submenu('theme')[1].onSelect();
+    for (const item of submenu('show').slice(0, 3)) item.onSelect();
+    submenu('show')[4].onSelect();
     assert.deepEqual(calls, [
         ['onSetUntaggedView', false],
         ['onToggleAiChat', false],

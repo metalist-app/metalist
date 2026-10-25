@@ -479,7 +479,7 @@ async function printViewCase(page) {
   // The background menu prints the view; Escape at the title step prints nothing.
   await page.mouse.click(5, 300, {button: 'right'});
   await pause(SETTLE_MS);
-  await chooseFromMenu(page, ['Print View…']);
+  await chooseFromMenu(page, ['Export & Print', 'Print View…']);
   const asked = await optionsState(page);
   assert.equal(asked.dialogOpen, true);
   assert.equal(asked.title, 'MetaList', 'a view without a search');
@@ -492,7 +492,7 @@ async function printViewCase(page) {
   // Included passwords print readable, not blurred.
   await page.mouse.click(5, 300, {button: 'right'});
   await pause(SETTLE_MS);
-  await chooseFromMenu(page, ['Print View…']);
+  await chooseFromMenu(page, ['Export & Print', 'Print View…']);
   await page.click('#export-passwords-include');
   await page.click('#export-options-submit-btn');
   await pause(SETTLE_MS);

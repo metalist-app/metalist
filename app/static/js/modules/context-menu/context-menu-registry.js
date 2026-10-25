@@ -874,30 +874,33 @@ function buildViewContextItems(context, handlers) {
     const commandKey = (key) => formatMenuShortcut({ isMac, mod: true, shift: false, key });
     const commandShiftKey = (key) => formatMenuShortcut({ isMac, mod: true, shift: true, key });
 
+    // Related actions sit in submenus so the menu fits a window 800 px tall; a group with
+    // one action that applies shows that action in place (pushGroup).
     const items = [];
     // A sorted tab places root notes by its order, so nothing is added at the top there
     // (the keys still say why, root-note-creation-service.js).
     const canAddAtTop = !isRootReorderLocked(context.sortMode);
     if (!isEditing) {
+        const addEntries = [];
         if (canAddAtTop) {
             const onAddNoteAtTop = requireViewHandler(handlers, 'onAddNoteAtTop');
-            items.push({
+            addEntries.push({
                 id: 'add-note-at-top', label: 'Add Note at Top', icon: 'add_top', enabled: true,
                 shortcut: plainKey('Enter'), onSelect: () => onAddNoteAtTop(),
             });
         }
         if (canPasteNoteAtTop && canAddAtTop) {
             const onPasteNoteAtTop = requireViewHandler(handlers, 'onPasteNoteAtTop');
-            items.push({
+            const onPasteReferenceAtTop = requireViewHandler(handlers, 'onPasteReferenceAtTop');
+            addEntries.push({
                 id: 'paste-note-at-top', label: 'Paste Note at Top', icon: 'paste', enabled: true,
                 shortcut: commandKey('V'), onSelect: () => onPasteNoteAtTop(),
-            });
-            const onPasteReferenceAtTop = requireViewHandler(handlers, 'onPasteReferenceAtTop');
-            items.push({
+            }, {
                 id: 'paste-reference-at-top', label: 'Paste Note as Reference at Top', icon: 'note_reference',
                 enabled: true, shortcut: commandKey('R'), onSelect: () => onPasteReferenceAtTop(),
             });
         }
+        pushGroup(items, { id: 'add', label: 'Add', icon: 'add_top', separated: false }, addEntries);
         // While a note is edited, its own editor undoes typing (⌘Z).
         const onUndo = requireViewHandler(handlers, 'onUndo');
         const onRedo = requireViewHandler(handlers, 'onRedo');
@@ -912,31 +915,29 @@ function buildViewContextItems(context, handlers) {
             },
         );
     }
-    const goToItems = [];
+    const goToEntries = [];
     if (canGoToTop) {
         const onGoToTop = requireViewHandler(handlers, 'onGoToTop');
-        goToItems.push({ id: 'go-to-top', label: 'Go to Top', icon: 'arrow_top', enabled: true, onSelect: () => onGoToTop() });
+        goToEntries.push({ id: 'go-to-top', label: 'Top', inlineLabel: 'Go to Top', icon: 'arrow_top', enabled: true, onSelect: () => onGoToTop() });
     }
     if (canGoToBottom) {
         const onGoToBottom = requireViewHandler(handlers, 'onGoToBottom');
-        goToItems.push({ id: 'go-to-bottom', label: 'Go to Bottom', icon: 'arrow_bottom', enabled: true, onSelect: () => onGoToBottom() });
+        goToEntries.push({ id: 'go-to-bottom', label: 'Bottom', inlineLabel: 'Go to Bottom', icon: 'arrow_bottom', enabled: true, onSelect: () => onGoToBottom() });
     }
-    if (goToItems.length > 0) {
-        goToItems[0].separated = true;
-        items.push(...goToItems);
-    }
+    pushGroup(items, { id: 'go-to', label: 'Go to', icon: 'arrow_top', separated: true }, goToEntries);
     const onFullyExpandAll = requireViewHandler(handlers, 'onFullyExpandAll');
     const onFullyCollapseAll = requireViewHandler(handlers, 'onFullyCollapseAll');
-    items.push(
-        { id: 'fully-expand-all', label: 'Fully Expand All', icon: 'expand_all', enabled: true, separated: goToItems.length === 0, onSelect: () => onFullyExpandAll() },
+    pushGroup(items, { id: 'outline', label: 'Outline', icon: 'outline', separated: goToEntries.length === 0 }, [
+        { id: 'fully-expand-all', label: 'Fully Expand All', icon: 'expand_all', enabled: true, onSelect: () => onFullyExpandAll() },
         { id: 'fully-collapse-all', label: 'Fully Collapse All', icon: 'collapse_all', enabled: true, onSelect: () => onFullyCollapseAll() },
-    );
+    ]);
 
     const onSetUntaggedView = requireViewHandler(handlers, 'onSetUntaggedView');
     const onToggleAiChat = requireViewHandler(handlers, 'onToggleAiChat');
     const onToggleTabs = requireViewHandler(handlers, 'onToggleTabs');
     const onToggleNoteTags = requireViewHandler(handlers, 'onToggleNoteTags');
     const onSetTheme = requireViewHandler(handlers, 'onSetTheme');
+    const themeChoices = [['system', 'System Theme'], ['light', 'Light Theme'], ['dark', 'Dark Theme']];
     items.push(
         { ...buildViewModeItem(isUntaggedView, onSetUntaggedView), separated: true },
         buildSortModeItem(context.sortMode, handlers.onSetSortMode),
@@ -948,14 +949,11 @@ function buildViewContextItems(context, handlers) {
                 { id: 'show-chat', label: 'Chat', icon: 'chat', checked: isAiChatVisible, enabled: true, onSelect: () => onToggleAiChat(!isAiChatVisible) },
                 { id: 'show-tabs', label: 'Tabs', icon: 'tabs', checked: areTabsVisible, enabled: true, onSelect: () => onToggleTabs(!areTabsVisible) },
                 { id: 'show-note-tags', label: 'Tags in List', icon: 'tag', checked: areNoteTagsVisible, enabled: true, onSelect: () => onToggleNoteTags(!areNoteTagsVisible) },
+                ...themeChoices.map(([value, label], index) => choiceItem({
+                    id: `theme-${value}`, label, icon: null, isCurrent: context.theme === value, separated: index === 0,
+                    onChoose: () => onSetTheme(value),
+                })),
             ],
-        },
-        {
-            id: 'theme', label: 'Theme', icon: 'theme', enabled: true,
-            submenu: [['system', 'System'], ['light', 'Light'], ['dark', 'Dark']].map(([value, label]) => choiceItem({
-                id: `theme-${value}`, label, icon: null, isCurrent: context.theme === value, separated: false,
-                onChoose: () => onSetTheme(value),
-            })),
         },
     );
 
@@ -966,11 +964,21 @@ function buildViewContextItems(context, handlers) {
     const onPrintView = requireViewHandler(handlers, 'onPrintView');
     const onLogOut = requireViewHandler(handlers, 'onLogOut');
     items.push(
-        { id: 'new-tab', label: 'New Tab', icon: 'tabs', enabled: true, separated: true, onSelect: () => onNewTab() },
-        { id: 'open-namespace', label: 'Open/Switch Vault…', icon: 'namespace', enabled: true, onSelect: () => onOpenNamespace() },
-        { id: 'reminders', label: 'Open Reminders', icon: 'reminder', enabled: true, onSelect: () => onOpenReminders() },
-        { id: 'export-view-html', label: 'Export View as HTML…', icon: 'download', enabled: true, separated: true, onSelect: () => onExportViewHtml() },
-        { id: 'print-view', label: 'Print View…', icon: 'print', enabled: true, onSelect: () => onPrintView() },
+        {
+            id: 'open', label: 'Open', icon: 'external', enabled: true, separated: true,
+            submenu: [
+                { id: 'new-tab', label: 'New Tab', icon: 'tabs', enabled: true, onSelect: () => onNewTab() },
+                { id: 'open-namespace', label: 'Vault…', icon: 'namespace', enabled: true, onSelect: () => onOpenNamespace() },
+                { id: 'reminders', label: 'Reminders', icon: 'reminder', enabled: true, onSelect: () => onOpenReminders() },
+            ],
+        },
+        {
+            id: 'export-print', label: 'Export & Print', icon: 'download', enabled: true,
+            submenu: [
+                { id: 'export-view-html', label: 'View as HTML…', icon: 'download', enabled: true, onSelect: () => onExportViewHtml() },
+                { id: 'print-view', label: 'Print View…', icon: 'print', enabled: true, onSelect: () => onPrintView() },
+            ],
+        },
         { id: 'log-out', label: 'Log Out', icon: 'log_out', enabled: true, separated: true, onSelect: () => onLogOut() },
     );
     return items;
