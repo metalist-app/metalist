@@ -469,6 +469,19 @@ ModeContext = {
   state after the preceding response updates the version/signature. Failure
   releases the pending request and still propagates. Scrolling or switching tabs
   during a save is picked up by the next poll, without duplicate completion writes.
+- A snapshot save is read before it is sent, so one read before a sort order, date
+  range or Files filter changes can reach the server after it (seen under parallel
+  browser-suite load, 2026-10-25). The snapshot carries the `version` the browser
+  had; `TabStateStore.update` never takes a tab's `sortMode` from it (only the
+  sort-mode endpoint sets it) and drops its scroll (`scrollY`, `scrollAnchor`,
+  `anchorRootId`) for a tab whose scroll restarted at a later version. Without
+  that, the tab went back to the old order on the server, also after a reload.
+- The refresh after a sort order, date range, Files filter or Untagged change runs
+  after a view request already in flight (`requireExecution`), instead of being
+  dropped; the one in flight was answered for the old view. Other refreshes are
+  still dropped while one is in flight ([future-plans/dropped-refreshes.md](../future-plans/dropped-refreshes.md)).
+  Browser regressions for both races:
+  `scripts/browser-sorted-tab-regressions.mjs`.
 - The server persists the tab-state snapshot per namespace in the main SQLite DB, so
   active tab/search/scroll context survives server restarts instead of only browser reloads.
 - Command-palette preferences and usage history now follow the same namespace-scoped model:

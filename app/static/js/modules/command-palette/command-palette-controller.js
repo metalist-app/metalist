@@ -1495,10 +1495,13 @@ class CommandPaletteController {
         window.scrollTo(0, 0);
         ModeContext.endIgnoreScrollEvents();
 
+        // A view request already in flight (the infinite-scroll poll, a link-title
+        // refresh) was answered in the old order: this one runs after it, not instead.
         await actionRefreshAndMaybeSelect({
             startedAt: performance.now(),
             context: `sortMode.${normalizedSortMode}`,
             animateNoteChanges: false,
+            requireExecution: true,
         });
     }
 
@@ -1550,10 +1553,12 @@ class CommandPaletteController {
         const response = await setTabDateFilterOnServer(activeTabId, filter);
         ModeContext.hydrateTabState(response, { emitUpdate: false });
         this._showChangedViewFromTop(activeTabId);
+        // As for a sort order: a view request in flight shows the old range.
         await actionRefreshAndMaybeSelect({
             startedAt: performance.now(),
             context: `dateFilter.${filter.rangeKind}`,
             animateNoteChanges: false,
+            requireExecution: true,
         });
     }
 
@@ -1581,10 +1586,12 @@ class CommandPaletteController {
         const response = await setTabFileFilterOnServer(activeTabId, kind);
         ModeContext.hydrateTabState(response, { emitUpdate: false });
         this._showChangedViewFromTop(activeTabId);
+        // As for a sort order: a view request in flight shows the old filter.
         await actionRefreshAndMaybeSelect({
             startedAt: performance.now(),
             context: `fileFilter.${kind}`,
             animateNoteChanges: false,
+            requireExecution: true,
         });
     }
 
@@ -1682,10 +1689,12 @@ class CommandPaletteController {
         window.scrollTo(0, 0);
         ModeContext.endIgnoreScrollEvents();
 
+        // As for a sort order: a view request in flight shows the old view.
         await actionRefreshAndMaybeSelect({
             startedAt: performance.now(),
             context: `untaggedView.${isUntaggedView ? 'on' : 'off'}`,
             animateNoteChanges: false,
+            requireExecution: true,
         });
     }
 

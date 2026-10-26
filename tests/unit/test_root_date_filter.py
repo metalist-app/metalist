@@ -85,7 +85,10 @@ def test_a_tab_keeps_its_range_across_a_reload_and_starts_again_at_its_top(memor
     initial = store.snapshot()
     tab_id = initial["activeTabId"]
     initial["tabs"][tab_id]["scrollY"] = 250
-    store.update(reference_views={}, active_tab_id=tab_id, tabs=initial["tabs"], tab_order=initial["tabOrder"])
+    store.update(
+        reference_views={}, active_tab_id=tab_id, tabs=initial["tabs"], tab_order=initial["tabOrder"],
+        read_at_version=initial["version"],
+    )
 
     chosen = _custom("2026-10-01", "2026-10-22", field="created")
     result = store.set_date_filter(tab_id=tab_id, date_filter=chosen)

@@ -53,6 +53,8 @@ def _normalize_tab_sort_mode(sort_mode: object, *, from_storage: bool) -> str:
 REFERENCE_VIEW_KINDS = frozenset({"source", "backlinks", "reference", "references"})
 _REFERENCE_VIEW_KEYS = ("fromTabId", "referenceQuery", "viewKind", "originScope")
 _ORIGIN_SCOPE_KEYS = ("scopeTabId", "searchQuery", "sortMode", "isUntaggedView")
+# Where a tab is in its view. A new order or filter starts it again at the top.
+_TAB_SCROLL_KEYS = ("scrollY", "scrollAnchor", "anchorRootId")
 
 
 def _normalize_origin_scope(origin_scope: object, *, from_storage: bool) -> Dict[str, object]:
@@ -167,6 +169,8 @@ class TabStateStore:
         self._reference_views: Dict[str, Dict[str, object]] = {}
         self._date_filters: Dict[str, Dict[str, str]] = {}
         self._file_filters: Dict[str, str] = {}
+        # The version at which each tab's scroll last started again at the top.
+        self._scroll_restarted_at_version: Dict[str, int] = {}
         self._install_default_state_locked(version=0)
 
     def bootstrap(self, *, connection) -> None:
@@ -286,6 +290,8 @@ class TabStateStore:
                 del self._date_filters[tab_id]
             if tab_id in self._file_filters:
                 del self._file_filters[tab_id]
+            if tab_id in self._scroll_restarted_at_version:
+                del self._scroll_restarted_at_version[tab_id]
             self._version += 1
             self._persist_locked(connection=None, encryption_service=None, force_plaintext=False)
             return self._snapshot_locked()
@@ -297,7 +303,12 @@ class TabStateStore:
         tabs: Dict[str, Dict[str, object]],
         tab_order: List[str],
         reference_views: object,
+        read_at_version: int,
     ) -> Dict[str, object]:
+        """Save the browser's snapshot of its tabs, read when the browser's state was
+        at read_at_version (the last version it received)."""
+        if not isinstance(read_at_version, int) or read_at_version < 0:
+            raise InputRejected("version must be a non-negative integer")
         normalized_tabs = self._normalize_tabs(tabs, from_storage=False)
         normalized_order = self._normalize_tab_order(tab_order, normalized_tabs)
         normalized_reference_views = _normalize_reference_views(
@@ -311,6 +322,10 @@ class TabStateStore:
             incoming_ids = set(normalized_tabs.keys())
             if incoming_ids != existing_ids:
                 raise InputRejected("tab ids mismatch; use tab-state new/delete endpoints")
+            normalized_tabs = {
+                tab_id: self._tab_from_snapshot_locked(tab_id, entry, read_at_version)
+                for tab_id, entry in normalized_tabs.items()
+            }
             # Scroll persistence posts about once a second; unchanged state must
             # not re-encrypt and rewrite the row. Clients accept the same version.
             if (
@@ -327,6 +342,24 @@ class TabStateStore:
             self._version += 1
             self._persist_locked(connection=None, encryption_service=None, force_plaintext=False)
             return self._snapshot_locked()
+
+    def _tab_from_snapshot_locked(
+        self, tab_id: str, entry: Dict[str, object], read_at_version: int,
+    ) -> Dict[str, object]:
+        """A tab as the browser's snapshot has it, less what the snapshot cannot know.
+        A snapshot (a scroll or search save) can be read before a sort order or filter
+        changes and reach the server after it. Only set_sort_mode sets the sort order,
+        and a scroll read before the tab's scroll restarted belongs to the old view."""
+        current = self._tabs[tab_id]
+        merged = {**entry, "sortMode": current["sortMode"]}
+        if (
+            tab_id in self._scroll_restarted_at_version
+            and read_at_version < self._scroll_restarted_at_version[tab_id]
+        ):
+            for key in _TAB_SCROLL_KEYS:
+                merged[key] = current[key]
+        assert merged.keys() == entry.keys(), "a snapshot tab keeps its own keys"
+        return merged
 
     def get_sort_mode(self, *, tab_id: Optional[str]) -> str:
         with self._lock:
@@ -389,6 +422,7 @@ class TabStateStore:
         entry["scrollAnchor"] = None
         entry["anchorRootId"] = None
         self._version += 1
+        self._scroll_restarted_at_version[tab_id] = self._version
         self._persist_locked(connection=None, encryption_service=None, force_plaintext=False)
 
     def set_date_filter(self, *, tab_id: str, date_filter: RootDateFilter | None) -> Dict[str, object]:
@@ -453,11 +487,7 @@ class TabStateStore:
             changed = entry["sortMode"] != normalized_sort_mode
             if changed:
                 entry["sortMode"] = normalized_sort_mode
-                entry["scrollY"] = 0
-                entry["scrollAnchor"] = None
-                entry["anchorRootId"] = None
-                self._version += 1
-                self._persist_locked(connection=None, encryption_service=None, force_plaintext=False)
+                self._restart_tab_scroll_locked(tab_id)
 
             snapshot = self._snapshot_locked()
             snapshot["changed"] = changed
@@ -498,6 +528,7 @@ class TabStateStore:
         self._reference_views = {}
         self._date_filters = {}
         self._file_filters = {}
+        self._scroll_restarted_at_version = {}
         self._version = version
 
     def _snapshot_locked(self) -> Dict[str, object]:
@@ -582,6 +613,7 @@ class TabStateStore:
             snapshot["dateFilters"], normalized_tabs,
         )
         self._file_filters = _normalize_file_filters(snapshot["fileFilters"], normalized_tabs)
+        self._scroll_restarted_at_version = {}
         self._active_tab_id = active_tab_id
         self._version = version
 

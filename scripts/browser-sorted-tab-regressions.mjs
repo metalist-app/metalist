@@ -188,6 +188,125 @@ async function newNoteAtTopAllowedCase(page, sortCommand, label, created) {
   assert.equal(await fatalText(page), '', `${label}: no fatal error`);
 }
 
+// A view request already on its way when the user picks a sort order (the
+// infinite-scroll poll moving the band, a link-title refresh) is answered in the
+// old order. The new order's own refresh must still run after it: dropping it
+// left the list and the sort chip in the old order although the tab was sorted.
+// The page holds the sort-mode POST before it is sent and the stray view's
+// answer after the server sent it, so the requests land in that order every time.
+async function sortWhileViewInFlightCase(page, ids) {
+  await waitIdle(page);
+  assert.equal((await rootOrder(page))[0], ids[ids.length - 1], 'normal order: the newest root is first');
+  await page.evaluate(async () => {
+    const {CommandPalette} = await import('/static/js/modules/command-palette/command-palette-controller.js');
+    const {ModeContextInstance: mode} = await import('/static/js/modules/mode-manager/mode-context.js');
+    const {actionRefreshAndMaybeSelect} = await import('/static/js/modules/mode-manager/actions/ui-actions.js');
+    const pageFetch = window.fetch;
+    const release = {};
+    const held = {};
+    const gate = name => {
+      held[name] = new Promise(resolve => { release[name] = resolve; });
+      return held[name];
+    };
+    const sortRequestHeld = gate('sortRequest');
+    const viewAnswerHeld = gate('viewAnswer');
+    let sortRequestSeen = false;
+    let viewAnswerSeen = false;
+    window.fetch = async (input, init) => {
+      const url = typeof input === 'string' ? input : input.url;
+      if (url.endsWith('/tab-state/sort-mode') && !sortRequestSeen) {
+        sortRequestSeen = true;
+        await sortRequestHeld;
+        return pageFetch(input, init);
+      }
+      if (url.endsWith('/notes/view') && sortRequestSeen && !viewAnswerSeen) {
+        viewAnswerSeen = true;
+        const answer = await pageFetch(input, init);
+        await viewAnswerHeld;
+        return answer;
+      }
+      return pageFetch(input, init);
+    };
+    const until = async isDone => {
+      while (!isDone()) await new Promise(resolve => setTimeout(resolve, 10));
+    };
+    try {
+      const sorting = CommandPalette.setSortMode('alphabetical');
+      await until(() => sortRequestSeen);
+      const strayView = actionRefreshAndMaybeSelect({context: 'stray view request', animateNoteChanges: false});
+      await until(() => viewAnswerSeen);
+      release.sortRequest();
+      // hydrateTabState and the sort's refresh call run in one task, so once the
+      // mode is hydrated the refresh has been dropped or is waiting its turn.
+      await until(() => mode.activeTabSortMode === 'alphabetical');
+      release.viewAnswer();
+      await Promise.all([sorting, strayView]);
+    } finally {
+      window.fetch = pageFetch;
+    }
+  });
+  await waitIdle(page);
+  const chip = await page.evaluate(() => ({
+    shown: document.getElementById('root-sort-indicator').classList.contains('is-shown'),
+    label: document.getElementById('root-sort-indicator-label').textContent,
+  }));
+  assert.deepEqual(chip, {shown: true, label: 'A–Z'}, 'the sort chip shows the new order');
+  assert.equal((await rootOrder(page))[0], ids[0], 'the list is in the new order: Sorted root 000 first');
+}
+
+// The tab-state snapshot (the scroll poll's save, the save after a search) is read
+// before the user picks a sort order and reaches the server after it. It carries
+// the old order, which must not replace the new one: the tab reverted, also after
+// a reload, while the menu still ticked the new order. The page holds the snapshot
+// before it is sent until the sort order is saved.
+async function staleSnapshotAfterSortCase(page, ids) {
+  await setSortModeAndWait(page, 'normal');
+  assert.equal((await rootOrder(page))[0], ids[ids.length - 1], 'normal order: the newest root is first');
+  await page.evaluate(async () => {
+    const {CommandPalette} = await import('/static/js/modules/command-palette/command-palette-controller.js');
+    const {ModeContextInstance: mode} = await import('/static/js/modules/mode-manager/mode-context.js');
+    const {persistTabStateSnapshot} = await import('/static/js/modules/mode-manager/services/tab-state-service.js');
+    const pageFetch = window.fetch;
+    let releaseSnapshot = null;
+    const snapshotHeld = new Promise(resolve => { releaseSnapshot = resolve; });
+    let snapshotSeen = false;
+    window.fetch = async (input, init) => {
+      const url = typeof input === 'string' ? input : input.url;
+      if (url.endsWith('/notes/tab-state') && init.method === 'POST' && !snapshotSeen) {
+        snapshotSeen = true;
+        await snapshotHeld;
+      }
+      return pageFetch(input, init);
+    };
+    try {
+      // A scroll the poll saves: the snapshot differs from the saved one, so it is sent.
+      mode.updateActiveTabScroll(1);
+      const staleSave = persistTabStateSnapshot();
+      while (!snapshotSeen) await new Promise(resolve => setTimeout(resolve, 10));
+      await CommandPalette.setSortMode('alphabetical');
+      releaseSnapshot();
+      await staleSave;
+    } finally {
+      window.fetch = pageFetch;
+    }
+  });
+  await reload(page);
+  const state = await page.evaluate(async () => {
+    const {ModeContextInstance: mode} = await import('/static/js/modules/mode-manager/mode-context.js');
+    return {sortMode: mode.activeTabSortMode, chip: document.getElementById('root-sort-indicator-label').textContent};
+  });
+  assert.deepEqual(state, {sortMode: 'alphabetical', chip: 'A–Z'}, 'after a reload the tab keeps the new order');
+  assert.equal((await rootOrder(page))[0], ids[0], 'the list is in the new order: Sorted root 000 first');
+}
+
+async function setSortModeAndWait(page, sortMode) {
+  await page.evaluate(async sortMode => {
+    const {CommandPalette} = await import('/static/js/modules/command-palette/command-palette-controller.js');
+    await CommandPalette.setSortMode(sortMode);
+  }, sortMode);
+  await waitIdle(page);
+}
+
 // Grow (content volume) or touch (updated) a root in the middle of the screen:
 // while editing it keeps its neighbours; after Escape it moves to the top and
 // the note that was below it stays where it was on screen.
@@ -254,6 +373,8 @@ export async function checkSortedTabs(page) {
   };
   try {
     await reload(page);
+    await check('sort while a view request is in flight', () => sortWhileViewInFlightCase(page, ids));
+    await check('stale tab-state snapshot after a sort', () => staleSnapshotAfterSortCase(page, ids));
     // The reported crash: Enter in a content-volume tab added an empty note
     // that sorted to the far end, outside the band on screen.
     await check('content volume, Enter', () => newNoteAtTopBlockedCase(page, ids, 'Sort order: Content volume', 'content volume'));

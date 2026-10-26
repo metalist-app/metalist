@@ -49,6 +49,7 @@
 - Future UI plan (toolbar): `docs/future-plans/PLAN.toolbar.md`
 - Future plan (hosted MetaList: downloading your own copy, the backup reminder): `docs/future-plans/hosted-own-copy.md`
 - Future plan (AI providers, what is left: evals for Claude and Gemini, the demo vault, hosted questions): `docs/future-plans/ai-providers-remaining.md`
+- Future fix (refreshes dropped while a view request is in flight: search, delete, undo and others): `docs/future-plans/dropped-refreshes.md`
 - Agreed designs ready to build, not started: `docs/ready-to-build/` (AI conversation compaction with a readable summary: `docs/ready-to-build/ai-conversation-compaction.md`)
 - Incoming design notes, processed into the folders above as soon as they are seen: `docs/inbox/` (see AGENTS.md, "Design Inbox")
 
