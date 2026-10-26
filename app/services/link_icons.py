@@ -25,11 +25,11 @@ import warnings
 
 import httpcore
 import httpx
-from PIL import Image, ImageOps, UnidentifiedImageError
+from PIL import IcoImagePlugin, Image, ImageOps, UnidentifiedImageError
 
 import app.services.link_titles as link_titles
 from app.config import TEST_MODE
-from app.db.link_icons_sql import fetch_all_link_icon_rows, insert_link_icon_row, update_link_icon_row
+from app.db.link_icons_sql import StoredLinkIconRow, fetch_all_link_icon_rows, insert_link_icon_row, update_link_icon_row
 from app.db.session import begin_writer
 from app.services.bulk_operation import bulk_operation_guard
 from app.services.exception_capture import CapturedExceptionContext
@@ -132,7 +132,7 @@ class LinkIconRecord:
 
 @dataclass(frozen=True, slots=True)
 class _LinkIconState:
-    stored_rows: tuple[Mapping[str, object], ...]
+    stored_rows: tuple[StoredLinkIconRow, ...]
     records_by_origin: Mapping[str, LinkIconRecord]
     is_decrypted: bool
 
@@ -231,14 +231,13 @@ class LinkIconStore:
             if result.origin in state.records_by_origin:
                 previous = state.records_by_origin[result.origin]
             record = _next_record(previous=previous, result=result, now=now)
-            payload = _serialized_record(record)
+            stored = _stored_row(record)
             with begin_writer() as connection:
                 if previous is None:
-                    record = replace(record, id=insert_link_icon_row(connection, **payload))
+                    record = replace(record, id=insert_link_icon_row(connection, stored))
                 else:
-                    payload.pop("created_at")
-                    update_link_icon_row(connection, previous.id, **payload)
-            rows_by_id = {row["id"]: row for row in state.stored_rows}
+                    update_link_icon_row(connection, stored)
+            rows_by_id = {row.id: row for row in state.stored_rows}
             rows_by_id[record.id] = _plain_row(record)
             records_by_origin = dict(state.records_by_origin)
             records_by_origin[record.origin] = record
@@ -302,47 +301,47 @@ def _next_record(*, previous: LinkIconRecord | None, result: LinkIconFetchResult
     )
 
 
-def _serialized_record(record: LinkIconRecord) -> dict[str, object]:
-    origin = _encrypt_optional_text(record.origin)
-    icon = _encrypt_optional_text(record.icon_png_base64)
-    return {
-        **_encrypted_fields(origin=origin, icon=icon),
-        "status": record.status,
-        "last_error_kind": record.last_error_kind,
-        "failure_count": record.failure_count,
-        "last_checked_at": record.last_checked_at,
-        "next_check_after": record.next_check_after,
-        "created_at": record.created_at,
-        "updated_at": record.updated_at,
-    }
+def _stored_row(record: LinkIconRecord) -> StoredLinkIconRow:
+    """The record as stored: origin and icon encrypted when the namespace has a key."""
+    return _row_with_fields(
+        record,
+        origin=_encrypt_optional_text(record.origin),
+        icon=_encrypt_optional_text(record.icon_png_base64),
+    )
 
 
-def _encrypted_fields(*, origin: _SerializedTextField, icon: _SerializedTextField) -> dict[str, object]:
+def _row_with_fields(record: LinkIconRecord, *, origin: _SerializedTextField, icon: _SerializedTextField) -> StoredLinkIconRow:
     if origin.value is None:
         raise RuntimeError("Link icon origin serialization produced None")
-    return {
-        "origin": origin.value,
-        "origin_encryption_nonce": origin.nonce,
-        "origin_encryption_tag": origin.tag,
-        "icon_png": icon.value,
-        "icon_png_encryption_nonce": icon.nonce,
-        "icon_png_encryption_tag": icon.tag,
-    }
+    return StoredLinkIconRow(
+        id=record.id,
+        origin=origin.value,
+        origin_encryption_nonce=origin.nonce,
+        origin_encryption_tag=origin.tag,
+        icon_png=icon.value,
+        icon_png_encryption_nonce=icon.nonce,
+        icon_png_encryption_tag=icon.tag,
+        status=record.status,
+        last_error_kind=record.last_error_kind,
+        failure_count=record.failure_count,
+        last_checked_at=record.last_checked_at,
+        next_check_after=record.next_check_after,
+        created_at=record.created_at,
+        updated_at=record.updated_at,
+    )
 
 
-def _plain_row(record: LinkIconRecord) -> dict[str, object]:
+def _plain_row(record: LinkIconRecord) -> StoredLinkIconRow:
     """The stored row of an unlocked record, as a reload in plaintext would read it."""
-    return {
-        "id": record.id, "origin": record.origin, "origin_encryption_nonce": None, "origin_encryption_tag": None,
-        "icon_png": record.icon_png_base64, "icon_png_encryption_nonce": None, "icon_png_encryption_tag": None,
-        "status": record.status, "last_error_kind": record.last_error_kind, "failure_count": record.failure_count,
-        "last_checked_at": record.last_checked_at, "next_check_after": record.next_check_after,
-        "created_at": record.created_at, "updated_at": record.updated_at,
-    }
+    return _row_with_fields(
+        record,
+        origin=_SerializedTextField(value=record.origin, nonce=None, tag=None),
+        icon=_SerializedTextField(value=record.icon_png_base64, nonce=None, tag=None),
+    )
 
 
-def _state_from_rows(*, stored_rows: tuple[Mapping[str, object], ...], token: str) -> _LinkIconState:
-    contains_encrypted = any(row["origin_encryption_nonce"] is not None for row in stored_rows)
+def _state_from_rows(*, stored_rows: tuple[StoredLinkIconRow, ...], token: str) -> _LinkIconState:
+    contains_encrypted = any(row.origin_encryption_nonce is not None for row in stored_rows)
     if contains_encrypted and not _encryption_can_decrypt(token=token):
         return _LinkIconState(stored_rows=stored_rows, records_by_origin={}, is_decrypted=False)
     records_by_origin: dict[str, LinkIconRecord] = {}
@@ -352,49 +351,36 @@ def _state_from_rows(*, stored_rows: tuple[Mapping[str, object], ...], token: st
     return _LinkIconState(stored_rows=stored_rows, records_by_origin=records_by_origin, is_decrypted=True)
 
 
-def _stored_text(row: Mapping[str, object], column: str, *, token: str) -> str | None:
-    value = row[column]
-    nonce = row[f"{column}_encryption_nonce"]
-    tag = row[f"{column}_encryption_tag"]
+def _stored_text(
+    *, row_id: int, column: str, value: str | None, nonce: bytes | None, tag: bytes | None, token: str,
+) -> str | None:
     if value is None:
         if nonce is not None or tag is not None:
-            raise RuntimeError(f"link_icons row {row['id']} has encryption metadata but no {column}")
+            raise RuntimeError(f"link_icons row {row_id} has encryption metadata but no {column}")
         return None
-    if not isinstance(value, str):
-        raise TypeError(f"link_icons.{column} must be a string or None")
-    if not isinstance(nonce, (bytes, type(None))) or not isinstance(tag, (bytes, type(None))):
-        raise TypeError(f"link_icons.{column} encryption metadata must be bytes or None")
     return _decrypt_text_field(stored_value=value, nonce=nonce, tag=tag, token=token, field_name=column)
 
 
-def _record_from_row(row: Mapping[str, object], *, token: str) -> LinkIconRecord:
-    row_id = row["id"]
-    status = row["status"]
-    failure_count = row["failure_count"]
-    if not isinstance(row_id, int):
-        raise TypeError("link_icons.id must be an int")
-    if status not in {"ok", "missing"}:
-        raise RuntimeError(f"link_icons row {row_id} has an unknown status: {status!r}")
-    if not isinstance(failure_count, int) or failure_count < 0:
-        raise TypeError("link_icons.failure_count must be a non-negative int")
-    for column in ("last_checked_at", "created_at", "updated_at"):
-        if not isinstance(row[column], datetime):
-            raise TypeError(f"link_icons.{column} must be a datetime")
-    if row["next_check_after"] is not None and not isinstance(row["next_check_after"], datetime):
-        raise TypeError("link_icons.next_check_after must be a datetime or None")
-    if row["last_error_kind"] is not None and not isinstance(row["last_error_kind"], str):
-        raise TypeError("link_icons.last_error_kind must be a string or None")
-    origin = _stored_text(row, "origin", token=token)
+def _record_from_row(row: StoredLinkIconRow, *, token: str) -> LinkIconRecord:
+    if row.status not in {"ok", "missing"}:
+        raise RuntimeError(f"link_icons row {row.id} has an unknown status: {row.status!r}")
+    origin = _stored_text(
+        row_id=row.id, column="origin", value=row.origin,
+        nonce=row.origin_encryption_nonce, tag=row.origin_encryption_tag, token=token,
+    )
     if origin is None or icon_origin_for_url(origin) != origin:
-        raise RuntimeError(f"link_icons row {row_id} has an invalid origin")
-    icon = _stored_text(row, "icon_png", token=token)
-    if (status == "ok") != (icon is not None):
-        raise RuntimeError(f"link_icons row {row_id} has status {status} with icon present: {icon is not None}")
+        raise RuntimeError(f"link_icons row {row.id} has an invalid origin")
+    icon = _stored_text(
+        row_id=row.id, column="icon_png", value=row.icon_png,
+        nonce=row.icon_png_encryption_nonce, tag=row.icon_png_encryption_tag, token=token,
+    )
+    if (row.status == "ok") != (icon is not None):
+        raise RuntimeError(f"link_icons row {row.id} has status {row.status} with icon present: {icon is not None}")
     return LinkIconRecord(
-        id=row_id, origin=origin, icon_png_base64=icon, status=str(status),
-        last_error_kind=row["last_error_kind"], failure_count=failure_count,
-        last_checked_at=row["last_checked_at"], next_check_after=row["next_check_after"],
-        created_at=row["created_at"], updated_at=row["updated_at"],
+        id=row.id, origin=origin, icon_png_base64=icon, status=row.status,
+        last_error_kind=row.last_error_kind, failure_count=row.failure_count,
+        last_checked_at=row.last_checked_at, next_check_after=row.next_check_after,
+        created_at=row.created_at, updated_at=row.updated_at,
     )
 
 
@@ -408,37 +394,47 @@ def rewrite_persisted_link_icons(*, connection, encryption_service: object | Non
     for row in fetch_all_link_icon_rows(connection):
         if _is_stored_as(row, should_be_encrypted=should_be_encrypted):
             continue
-        origin = _decrypted_for_rewrite(row, "origin", encryption_service=encryption_service)
-        icon = _decrypted_for_rewrite(row, "icon_png", encryption_service=encryption_service)
-        update_link_icon_row(
-            connection, row["id"],
-            **_encrypted_fields(
-                origin=_serialize_text_with_service(value=origin, encryption_service=service),
-                icon=_serialize_text_with_service(value=icon, encryption_service=service),
-            ),
-            status=row["status"], last_error_kind=row["last_error_kind"], failure_count=row["failure_count"],
-            last_checked_at=row["last_checked_at"], next_check_after=row["next_check_after"],
-            updated_at=datetime.now(timezone.utc),
+        origin = _decrypted_for_rewrite(
+            value=row.origin, nonce=row.origin_encryption_nonce, tag=row.origin_encryption_tag,
+            encryption_service=encryption_service,
         )
+        icon = _decrypted_for_rewrite(
+            value=row.icon_png, nonce=row.icon_png_encryption_nonce, tag=row.icon_png_encryption_tag,
+            encryption_service=encryption_service,
+        )
+        origin_field = _serialize_text_with_service(value=origin, encryption_service=service)
+        icon_field = _serialize_text_with_service(value=icon, encryption_service=service)
+        if origin_field.value is None:
+            raise RuntimeError(f"link_icons row {row.id} has no origin to rewrite")
+        update_link_icon_row(connection, replace(
+            row,
+            origin=origin_field.value,
+            origin_encryption_nonce=origin_field.nonce,
+            origin_encryption_tag=origin_field.tag,
+            icon_png=icon_field.value,
+            icon_png_encryption_nonce=icon_field.nonce,
+            icon_png_encryption_tag=icon_field.tag,
+            updated_at=datetime.now(timezone.utc),
+        ))
         rewritten_count += 1
     return rewritten_count
 
 
-def _is_stored_as(row: Mapping[str, object], *, should_be_encrypted: bool) -> bool:
-    if (row["origin_encryption_nonce"] is not None) != should_be_encrypted:
+def _is_stored_as(row: StoredLinkIconRow, *, should_be_encrypted: bool) -> bool:
+    if (row.origin_encryption_nonce is not None) != should_be_encrypted:
         return False
-    if row["icon_png"] is None:
+    if row.icon_png is None:
         return True
-    return (row["icon_png_encryption_nonce"] is not None) == should_be_encrypted
+    return (row.icon_png_encryption_nonce is not None) == should_be_encrypted
 
 
-def _decrypted_for_rewrite(row: Mapping[str, object], column: str, *, encryption_service: object | None) -> str | None:
-    value = row[column]
-    nonce = row[f"{column}_encryption_nonce"]
+def _decrypted_for_rewrite(
+    *, value: str | None, nonce: bytes | None, tag: bytes | None, encryption_service: object | None,
+) -> str | None:
     if value is None or nonce is None:
         return value
     service = _coerce_encryption_service(encryption_service)
-    return service.decrypt_from_storage(value, nonce, row[f"{column}_encryption_tag"])
+    return service.decrypt_from_storage(value, nonce, tag)
 
 
 # Fetching
@@ -709,17 +705,18 @@ def _icon_png(content: bytes) -> _ConvertedIcon:
         with Image.open(BytesIO(content)) as image:
             if image.format not in _ICON_FORMATS:
                 return _ConvertedIcon(png=None)
-            if image.format == "ICO":
-                image.size = _best_ico_size(image.info["sizes"])
-            width, height = image.size
+            picture: Image.Image = image
+            if isinstance(image, IcoImagePlugin.IcoImageFile):
+                picture = image.ico.getimage(_best_ico_size(set(image.ico.sizes())))
+            width, height = picture.size
             if width <= 0 or height <= 0 or width * height > _MAX_ICON_SOURCE_PIXELS:
                 return _ConvertedIcon(png=None)
-            reduce_factor = min(image.size) // _REDUCED_SIDE
-            shrinkable = image
+            reduce_factor = min(picture.size) // _REDUCED_SIDE
+            shrinkable = picture
             if reduce_factor > 1:
-                shrinkable = _box_reduced(image, reduce_factor)
-            elif image.mode not in _SHRINKABLE_MODES:
-                shrinkable = image.convert("RGBA")
+                shrinkable = _box_reduced(picture, reduce_factor)
+            elif picture.mode not in _SHRINKABLE_MODES:
+                shrinkable = picture.convert("RGBA")
             shrinkable.thumbnail((ICON_PIXELS, ICON_PIXELS), Image.Resampling.LANCZOS)
             rgba = shrinkable.convert("RGBA")
     square = ImageOps.pad(rgba, (ICON_PIXELS, ICON_PIXELS), method=Image.Resampling.LANCZOS, color=_TRANSPARENT)

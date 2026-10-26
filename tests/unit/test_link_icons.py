@@ -356,8 +356,8 @@ def test_a_site_without_an_icon_is_asked_again_after_1_7_then_30_days(icon_datab
 
     (row,) = fetch_all_link_icon_rows(icon_database)
 
-    assert row["failure_count"] == failures
-    assert row["next_check_after"] - row["last_checked_at"] == timedelta(days=days)
+    assert row.failure_count == failures
+    assert row.next_check_after - row.last_checked_at == timedelta(days=days)
     assert link_icon_store.get_icon_base64(SITE) is None
 
 
@@ -388,9 +388,9 @@ def test_icons_are_stored_encrypted_and_read_back_after_unlock(icon_database) ->
     link_icon_store.apply_fetch_result(_ok_result())
 
     (row,) = fetch_all_link_icon_rows(icon_database)
-    assert row["origin_encryption_nonce"] is not None and row["icon_png_encryption_nonce"] is not None
-    assert "example.com" not in row["origin"]
-    assert row["icon_png"] != _ok_result().icon_png_base64
+    assert row.origin_encryption_nonce is not None and row.icon_png_encryption_nonce is not None
+    assert "example.com" not in row.origin
+    assert row.icon_png != _ok_result().icon_png_base64
 
     # Locked: the stored rows stay, nothing is shown.
     clear_encryption_key()
@@ -417,12 +417,12 @@ def test_adding_and_removing_a_password_rewrites_the_icons(icon_database) -> Non
 
     assert rewrite_persisted_link_icons(connection=icon_database, encryption_service=service, force_plaintext=False) == 1
     (row,) = fetch_all_link_icon_rows(icon_database)
-    assert row["origin_encryption_nonce"] is not None and row["icon_png_encryption_nonce"] is not None
+    assert row.origin_encryption_nonce is not None and row.icon_png_encryption_nonce is not None
 
     assert rewrite_persisted_link_icons(connection=icon_database, encryption_service=service, force_plaintext=True) == 1
     (row,) = fetch_all_link_icon_rows(icon_database)
-    assert (row["origin"], row["origin_encryption_nonce"]) == (SITE, None)
-    assert (row["icon_png"], row["icon_png_encryption_nonce"]) == (_ok_result().icon_png_base64, None)
+    assert (row.origin, row.origin_encryption_nonce) == (SITE, None)
+    assert (row.icon_png, row.icon_png_encryption_nonce) == (_ok_result().icon_png_base64, None)
 
 
 def test_retry_failed_link_titles_leaves_icons_alone(icon_database) -> None:

@@ -15,7 +15,7 @@ from app.config import (
 )
 from app.db.file_session import connect_file_reader
 from app.db.files_sql import fetch_file
-from app.db.link_icons_sql import fetch_all_link_icon_rows, insert_link_icon_row
+from app.db.link_icons_sql import StoredLinkIconRow, fetch_all_link_icon_rows, insert_link_icon_row
 from app.db.session import begin_writer
 from app.db.session import connect_reader
 from app.db.settings_sql import fetch_settings
@@ -133,26 +133,26 @@ def test_setting_and_removing_a_password_rewrites_the_site_icons(
             note_store.load_from_db(None, prefetched_rows=populate_cache_from_db(session))
             now = datetime.now(timezone.utc)
             with begin_writer() as connection:
-                insert_link_icon_row(
-                    connection, origin="https://example.com", origin_encryption_nonce=None,
+                insert_link_icon_row(connection, StoredLinkIconRow(
+                    id=0, origin="https://example.com", origin_encryption_nonce=None,
                     origin_encryption_tag=None, icon_png="iVBORw0KGgo=", icon_png_encryption_nonce=None,
                     icon_png_encryption_tag=None, status="ok", last_error_kind=None, failure_count=0,
                     last_checked_at=now, next_check_after=None, created_at=now, updated_at=now,
-                )
+                ))
             auth = AuthService(session)
 
             success, message = auth.set_password("aQ7!mZ2#vL9@xR4", KDF_TIME_COST)
             assert success, message
             (encrypted,) = fetch_all_link_icon_rows(session.connection())
-            assert "example.com" not in encrypted["origin"]
-            assert isinstance(encrypted["origin_encryption_nonce"], bytes)
-            assert isinstance(encrypted["icon_png_encryption_nonce"], bytes)
+            assert "example.com" not in encrypted.origin
+            assert isinstance(encrypted.origin_encryption_nonce, bytes)
+            assert isinstance(encrypted.icon_png_encryption_nonce, bytes)
 
             success, message = auth.remove_password("aQ7!mZ2#vL9@xR4")
             assert success, message
             (restored,) = fetch_all_link_icon_rows(session.connection())
-            assert (restored["origin"], restored["origin_encryption_nonce"]) == ("https://example.com", None)
-            assert (restored["icon_png"], restored["icon_png_encryption_nonce"]) == ("iVBORw0KGgo=", None)
+            assert (restored.origin, restored.origin_encryption_nonce) == ("https://example.com", None)
+            assert (restored.icon_png, restored.icon_png_encryption_nonce) == ("iVBORw0KGgo=", None)
         finally:
             session.close()
     finally:
