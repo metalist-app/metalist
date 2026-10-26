@@ -1501,7 +1501,6 @@ class CommandPaletteController {
             startedAt: performance.now(),
             context: `sortMode.${normalizedSortMode}`,
             animateNoteChanges: false,
-            requireExecution: true,
         });
     }
 
@@ -1558,7 +1557,6 @@ class CommandPaletteController {
             startedAt: performance.now(),
             context: `dateFilter.${filter.rangeKind}`,
             animateNoteChanges: false,
-            requireExecution: true,
         });
     }
 
@@ -1591,7 +1589,6 @@ class CommandPaletteController {
             startedAt: performance.now(),
             context: `fileFilter.${kind}`,
             animateNoteChanges: false,
-            requireExecution: true,
         });
     }
 
@@ -1694,7 +1691,6 @@ class CommandPaletteController {
             startedAt: performance.now(),
             context: `untaggedView.${isUntaggedView ? 'on' : 'off'}`,
             animateNoteChanges: false,
-            requireExecution: true,
         });
     }
 

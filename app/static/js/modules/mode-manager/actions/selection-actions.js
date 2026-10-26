@@ -152,7 +152,7 @@ export async function actionDeselectNote() {
 
     clearSelectionStateForDeselect(ModeContext);
 
-    const refreshOptions = {startedAt: startedAt, requireExecution: true};
+    const refreshOptions = {startedAt: startedAt};
     if (viewportHold !== null) {
         refreshOptions.viewportHold = viewportHold;
     }

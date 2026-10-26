@@ -184,5 +184,5 @@ async function refreshForLinkTitleChanges() {
         return;
     }
     const { actionRefreshAndMaybeSelect } = await import('../actions/ui-actions.js');
-    await actionRefreshAndMaybeSelect({ context: 'link-title-refresh', requireExecution: true });
+    await actionRefreshAndMaybeSelect({ context: 'link-title-refresh' });
 }

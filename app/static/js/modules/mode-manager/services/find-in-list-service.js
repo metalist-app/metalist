@@ -509,7 +509,7 @@ export async function closeFindBar() {
 
 async function refreshView(anchorRootId) {
     const { actionRefreshAndMaybeSelect } = await import('../actions/ui-actions.js');
-    const options = { context: 'find', requireExecution: true, animateNoteChanges: false };
+    const options = { context: 'find', animateNoteChanges: false };
     if (anchorRootId !== null) {
         options.visibleRootAnchorId = anchorRootId;
     }

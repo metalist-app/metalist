@@ -177,7 +177,8 @@ def test_format_note_content_for_view_renders_cached_standalone_link_title() -> 
     assert 'href="https://www.youtube.com/watch?v=abc123"' in rendered
 
 
-def test_format_note_content_for_view_does_not_title_inline_link() -> None:
+def test_format_note_content_for_view_titles_inline_link() -> None:
+    # Every web link looks the same, inside a sentence too (agreed 2026-10-26).
     connection = sqlite3.connect(":memory:")
     connection.row_factory = sqlite3.Row
     initialize_schema(connection)
@@ -210,9 +211,10 @@ def test_format_note_content_for_view_does_not_title_inline_link() -> None:
         link_title_store.reset()
         connection.close()
 
-    assert "Article Title" not in rendered
     assert (
-        '<a href="https://example.com/article" target="_blank" rel="noopener noreferrer">https://example.com/article</a>'
+        'Read <a class="link-title" href="https://example.com/article" title="https://example.com/article" '
+        'target="_blank" rel="noopener noreferrer"><span class="link-title-text">Article Title</span>'
+        '<span class="link-title-domain"> · example.com</span></a> later'
         in rendered
     )
 
@@ -259,10 +261,12 @@ def test_format_note_content_for_view_explains_failed_standalone_link_title() ->
 
 
 def test_format_note_content_for_view_normalizes_existing_anchor_to_new_tab() -> None:
+    # A link with its own text opens in a new tab and, as every web link, ends with its domain.
     html = '<div><a href="https://example.com">Example</a></div>'
     rendered = format_note_content_for_view(content_html=html, tags="")
     assert (
-        '<a href="https://example.com" target="_blank" rel="noopener noreferrer">Example</a>'
+        '<a class="link-title" href="https://example.com" target="_blank" rel="noopener noreferrer">'
+        'Example<span class="link-title-domain"> · example.com</span></a>'
         in rendered
     )
 
@@ -711,7 +715,8 @@ def test_format_note_content_for_view_markdown_meta_renders_server_side_html() -
     assert 'data-markdown-rendered="true"' in rendered
     assert "<h1>Title</h1>" in rendered
     assert (
-        '<a href="https://example.com" target="_blank" rel="noopener noreferrer">link</a>'
+        '<a class="link-title" href="https://example.com" target="_blank" rel="noopener noreferrer">'
+        'link<span class="link-title-domain"> · example.com</span></a>'
         in rendered
     )
     assert "<ul><li>one</li><li>two</li></ul>" in rendered

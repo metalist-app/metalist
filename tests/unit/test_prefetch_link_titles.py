@@ -14,6 +14,9 @@ from app.usecases.prefetch_link_titles import CmdPrefetchLinkTitles
     ('<a href="https://example.com/article">https://example.com/article</a>', ""),
     ("Text {{https://example.com/article}}", "{{@footnote}}"),
     ("https://example.com/article", "@markdown"),
+    # An address inside a sentence shows its title too (agreed 2026-10-26).
+    ("Read https://example.com/article now", ""),
+    ('Read <a href="https://example.com/article">https://example.com/article</a> now', ""),
 ])
 def test_prefetch_queues_view_eligible_draft_urls_without_saving(monkeypatch, content, tags):
     queued = []
@@ -30,7 +33,6 @@ def test_prefetch_queues_view_eligible_draft_urls_without_saving(monkeypatch, co
     ("https://example.com/secret", "@password"),
     ('<img src="https://example.com/image.png">', ""),
     ('<a href="https://example.com">Custom label</a>', ""),
-    ('Read <a href="https://example.com">https://example.com</a> now', ""),
 ])
 def test_prefetch_preserves_view_lookup_exclusions(monkeypatch, content, tags):
     queued = []

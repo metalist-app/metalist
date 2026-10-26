@@ -476,12 +476,22 @@ ModeContext = {
   sort-mode endpoint sets it) and drops its scroll (`scrollY`, `scrollAnchor`,
   `anchorRootId`) for a tab whose scroll restarted at a later version. Without
   that, the tab went back to the old order on the server, also after a reload.
-- The refresh after a sort order, date range, Files filter or Untagged change runs
-  after a view request already in flight (`requireExecution`), instead of being
-  dropped; the one in flight was answered for the old view. Other refreshes are
-  still dropped while one is in flight ([future-plans/dropped-refreshes.md](../future-plans/dropped-refreshes.md)).
-  Browser regressions for both races:
-  `scripts/browser-sorted-tab-regressions.mjs`.
+- **Refreshes in flight.** A refresh asked for while another view request is in flight
+  waits for it (`waitForViewRequestIdle`, failing loudly after 5 s), then runs:
+  `actionRefreshAndMaybeSelect` never skips. The request in flight was built from the
+  state before the caller's change, and many callers use what the refresh returns.
+  Until 2026-10-26 a refresh was dropped unless the caller passed `requireExecution`
+  (then only sort order, date range, Files filter and Untagged). That made switching
+  notes crash ("Redundant state change: currentContent is already null"), left a
+  moved note without its content, and left deleted notes, undos and old search
+  results on screen. It was most likely right after a restart, while link titles
+  and site icons arrive and each refreshes the view. Only the infinite-scroll poll
+  skips a round while a request is in flight, by asking `isViewRequestInFlight` in
+  the same task as its call: it comes again in 0.8 s, and its "Infinite scroll
+  blocked" check assumes its own request ran. Waiting cannot hang: the render after
+  the fetch is synchronous. Browser regressions: `scripts/browser-refresh-in-flight-regressions.mjs`
+  (switching notes, moving the edited note, deleting) and `scripts/browser-sorted-tab-regressions.mjs`
+  (sort order); `tests/unit/refresh_in_flight.test.mjs` keeps the poll the only one that may skip.
 - The server persists the tab-state snapshot per namespace in the main SQLite DB, so
   active tab/search/scroll context survives server restarts instead of only browser reloads.
 - Command-palette preferences and usage history now follow the same namespace-scoped model:

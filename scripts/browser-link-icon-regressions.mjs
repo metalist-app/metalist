@@ -45,7 +45,9 @@ async function seedNotes(page) {
     await NotesAPI.setCollapsedBulk([collapsed], true);
     const target = await make(`<p>${url}</p><p>referenced note</p>`);
     const holder = await make(`<p>See [[${target}]] here</p>`);
-    return {open, collapsed, target, holder};
+    // A link with its own text inside a sentence, as the server draws it (agreed 2026-10-26).
+    const sentence = await make(`<p>Read <a href="${url}">the paper on recurrent networks</a> before Monday.</p>`);
+    return {open, collapsed, target, holder, sentence};
   }, URL);
 }
 
@@ -121,7 +123,54 @@ async function iconCases(page, ids) {
     + `.note-reference-link[data-ref-note-id="${ids.target}"] .note-reference-link-title`;
   await check('compact reference, light', 'light', reference, NO_TILE);
   await check('compact reference, dark', 'dark', reference, TILE);
+  try {
+    await sentenceCase(page, ids);
+  } catch (error) {
+    if (!(error instanceof assert.AssertionError)) throw error;
+    failures.push(error.message);
+  }
   assert.deepEqual(failures, []);
+}
+
+// A link with its own text in a sentence: the server draws its text and " · example.com"
+// (the test server fetches no icon); with its icon added, it sits as a titled link's does.
+async function sentenceCase(page, ids) {
+  const selector = `#notes-container .note[data-note-id="${ids.sentence}"] > .note-content a[href="${URL}"]`;
+  const drawn = await page.$eval(selector, link => ({
+    isTitled: link.classList.contains('link-title'),
+    text: link.textContent,
+    sentence: link.parentElement.textContent,
+  }));
+  assert.deepEqual(drawn, {
+    isTitled: true,
+    text: 'the paper on recurrent networks · example.com',
+    sentence: 'Read the paper on recurrent networks · example.com before Monday.',
+  }, 'a link with its own text in a sentence: its text, then its domain');
+  const box = await page.evaluate(selector => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 32;
+    canvas.height = 32;
+    canvas.getContext('2d').fillRect(0, 0, canvas.width, canvas.height);
+    const link = document.querySelector(selector);
+    const icon = document.createElement('img');
+    icon.className = 'link-title-icon';
+    icon.alt = '';
+    icon.src = canvas.toDataURL('image/png');
+    link.prepend(icon);
+    const iconBox = icon.getBoundingClientRect();
+    const range = document.createRange();
+    range.setStart(link.childNodes[1], 0);
+    range.setEnd(link.childNodes[1], 1);
+    const letter = range.getBoundingClientRect();
+    return {
+      fontSize: parseFloat(getComputedStyle(link).fontSize),
+      width: iconBox.width, height: iconBox.height,
+      iconCentre: iconBox.top + iconBox.height / 2, textCentre: letter.top + letter.height / 2,
+      gap: letter.left - iconBox.right,
+      background: getComputedStyle(icon).backgroundColor,
+    };
+  }, selector);
+  assertIconFitsText(box, 'a link with its own text in a sentence', NO_TILE);
 }
 
 export async function checkLinkIcons(page) {

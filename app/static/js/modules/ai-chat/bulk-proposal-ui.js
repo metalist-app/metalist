@@ -229,7 +229,6 @@ export function handleBulkEvent(event, abortController, chatHost) {
 async function refreshAfterBulkProposalChange() {
     await actionRefreshAndMaybeSelect({
         resetViewCacheBeforeFetch: true,
-        requireExecution: true,
         context: 'bulkProposals.success',
     });
 }

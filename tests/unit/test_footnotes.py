@@ -175,7 +175,7 @@ def test_missing_footnote_title_queues_fetch_then_appears_on_next_render(monkeyp
 def test_footnote_preserves_custom_link_labels(monkeypatch):
     monkeypatch.setattr(link_title_store, 'get_ok_title', lambda value: 'Replacement title')
     rendered = render('body {{[my chosen label](https://example.com)}}', '{{@footnote}}')
-    assert '>my chosen label</a>' in rendered
+    assert '>my chosen label<span class="link-title-domain"> · example.com</span></a>' in rendered
     assert 'Replacement title' not in rendered
 
 
