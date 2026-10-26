@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from app.services.tag_ontology import TagOntology
 from typing import Callable, Dict, FrozenSet, Iterable, List, Tuple
 
@@ -12,7 +13,8 @@ from app.services.ontology_rules_store import extract_ontology_tags
 from app.services.ontology_rules_store import get_ontology
 from app.security.sensitive_cache import SensitiveMemo
 from app.services.resource_limits import SENSITIVE_MEMO_BYTES
-from app.services.search_index import search_index
+from app.services.search_index import own_value_token, search_index
+from app.services.tag_properties import tag_part_of_token
 from app.services.tag_plural_variants import PluralSpellings
 from app.services.tag_suggestion_reasons import ContextOverlap
 from app.services.tag_suggestion_reasons import ReasonWriter
@@ -973,11 +975,29 @@ def suggest_tags_with_reasons_for_note(
     content_html: str,
     limit: int,
 ) -> List[TagSuggestion]:
-    """The same suggestions, each with why it is suggested (shown on right-click)."""
-    return _rank_tag_suggestions(
-        note_id=note_id, anchors=anchors, explicit_tags=explicit_tags, prefix=prefix,
+    """What the tag bar shows: the same suggestions, a tag used with values preceded by
+    last time's values, each with why it is suggested (shown on right-click)."""
+    explicit_list = list(explicit_tags)
+    ranked = _rank_tag_suggestions(
+        note_id=note_id, anchors=anchors, explicit_tags=explicit_list, prefix=prefix,
         content_html=content_html, limit=limit,
+    )
+    if prefix.startswith("@"):
+        return ranked.with_reasons()
+    return _with_last_values(
+        shown=ranked.tags, explain=ranked.explain, prefix=prefix,
+        written=_written_besides_typed(explicit_tags=explicit_list, prefix=prefix), note_id=note_id, limit=limit,
     ).with_reasons()
+
+
+def _written_besides_typed(*, explicit_tags: List[str], prefix: str) -> List[str]:
+    """The tag bar's tags without the one being typed, which it sends as its last token."""
+    written = list(explicit_tags)
+    for index in range(len(written) - 1, -1, -1):
+        if prefix != "" and written[index] == prefix:
+            del written[index]
+            break
+    return written
 
 
 def _rank_tag_suggestions(
@@ -1147,6 +1167,90 @@ def _suggest_while_typing(
         if len(shown) == limit:
             break
     return _RankedSuggestions(tags=shown, explain=lambda term: explain_by_term[term.casefold()](term))
+
+
+@dataclass(frozen=True)
+class _LastValues:
+    """A tag's values the last time it had any: the token as written on that note, and when
+    the note was created (None when unknown)."""
+
+    token: str
+    created_at: datetime | None
+
+    def reasons(self) -> Tuple[str, ...]:
+        tag = tag_part_of_token(self.token)
+        if self.created_at is None:
+            return (f"Values from the last note tagged {tag}",)
+        created = self.created_at
+        return (f"Values from the last note tagged {tag} ({created:%b} {created.day}, {created.year})",)
+
+
+# A note with no creation date counts as the oldest.
+_OLDEST = datetime.min.replace(tzinfo=timezone.utc)
+
+
+def _aware(moment: datetime | None) -> datetime:
+    if moment is None:
+        return _OLDEST
+    if moment.tzinfo is None:
+        return moment.replace(tzinfo=timezone.utc)
+    return moment
+
+
+def _last_values(*, tag_casefold: str, note_id: str) -> _LastValues | None:
+    """The values written on the tag by the most recently created note other than the one
+    being edited (docs/ready-to-build/super-tag-last-values.md), or None when no such note
+    gives it any."""
+    newest_key: Tuple[datetime, str] | None = None
+    newest_tags = ""
+    newest_created: datetime | None = None
+    for holder in search_index.notes_with_own_values(tag_casefold):
+        if holder == note_id:
+            continue
+        record = note_store.get_note(holder)
+        key = (_aware(record.created_at), holder)
+        if newest_key is None or key > newest_key:
+            newest_key, newest_tags, newest_created = key, record.tags, record.created_at
+    if newest_key is None:
+        return None
+    token = own_value_token(newest_tags, tag_casefold)
+    assert token != "", f"the search index found values for {tag_casefold} that the tag line does not have"
+    return _LastValues(token=token, created_at=newest_created)
+
+
+def _with_last_values(
+    *,
+    shown: List[str],
+    explain: Callable[[str], Tuple[str, ...]],
+    prefix: str,
+    written: List[str],
+    note_id: str,
+    limit: int,
+) -> _RankedSuggestions:
+    """A tag used with values is offered twice in a row, on the empty bar and while typing:
+    first whole, with the values from the last note that wrote any
+    (breakfast-burrito:calories=800:fat=10g), then bare. Once its whole name is typed (or a
+    suggestion put it there), the bare tag is what is already there: only the values are
+    offered."""
+    # Why each entry is suggested: a token's own reason, a tag's from the ranking.
+    reasons_by_entry: Dict[str, Tuple[str, ...]] = {}
+    paired: List[str] = []
+    typed_casefold = prefix.casefold()
+    written_casefold = {tag.casefold() for tag in written}
+    shown_casefold = {term.casefold() for term in shown}
+    if typed_casefold != "" and typed_casefold not in shown_casefold and typed_casefold not in written_casefold:
+        typed_values = _last_values(tag_casefold=typed_casefold, note_id=note_id)
+        if typed_values is not None:
+            reasons_by_entry[typed_values.token.casefold()] = typed_values.reasons()
+            paired.append(typed_values.token)
+    for term in shown:
+        term_values = _last_values(tag_casefold=term.casefold(), note_id=note_id)
+        if term_values is not None:
+            reasons_by_entry[term_values.token.casefold()] = term_values.reasons()
+            paired.append(term_values.token)
+        reasons_by_entry[term.casefold()] = explain(term)
+        paired.append(term)
+    return _RankedSuggestions(tags=paired[:limit], explain=lambda entry: reasons_by_entry[entry.casefold()])
 
 
 def _inherited_or_implied_tags(*, note_id: str, anchors: List[str], explicit_casefold: set[str]) -> set[str]:
