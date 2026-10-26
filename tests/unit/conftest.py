@@ -17,6 +17,7 @@ import nh3
 import pytest
 
 from app.security import rendered_html
+from app.services import link_titles
 
 
 # Elements that never have an end tag in HTML.
@@ -123,6 +124,24 @@ class _CheckedCleaner:
         sanitized = self._cleaner.clean(html)
         assert_pass_removed_nothing(rendered=html, sanitized=sanitized)
         return sanitized
+
+
+class _RecordedLookups:
+    """The background workers for link-title and site-icon lookups, in a unit test: each lookup
+    asked for is recorded, none runs. Unit tests run outside the server's test mode, so a
+    render that met an unknown link started a real lookup, which could reach the network and
+    ran on into the next test (CI, 2026-10-26; tests/unit/test_no_background_lookups.py)."""
+
+    def __init__(self) -> None:
+        self.submitted: list[tuple[object, tuple[object, ...]]] = []
+
+    def submit(self, job, *args) -> None:
+        self.submitted.append((job, args))
+
+
+@pytest.fixture(autouse=True)
+def _no_background_lookups(monkeypatch):
+    monkeypatch.setattr(link_titles, "_FETCHER_EXECUTOR", _RecordedLookups())
 
 
 @pytest.fixture
