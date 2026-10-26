@@ -25,6 +25,7 @@ from app.services.file_registry import file_registry
 from app.services.link_titles import link_title_store
 from app.services.note_store import store as note_store
 from app.services.search_index import search_index
+from app.services import reference_suggestions
 from app.services.view_cache import view_cache
 
 # Objects the walk does not count: code and types belong to no structure, and small
@@ -171,6 +172,7 @@ _PARTS = (
     ), nullcontext, False),
     _Part("Note store (tree, tags, references)", lambda: (note_store,), lambda: note_store._lock, True),
     _Part("Search index", lambda: (search_index,), lambda: search_index._lock, True),
+    _Part("Reference suggestions", lambda: (reference_suggestions._catalog,), lambda: reference_suggestions._catalog._lock, True),
     _Part("Rendered note views", lambda: (snapshot._VIEW_RENDER_MEMO,), lambda: sensitive_cache._lock, False),
     _Part("Open views per tab", lambda: (view_cache,), lambda: view_cache._lock, False),
     _Part("Link titles", lambda: (link_title_store,), lambda: link_title_store._lock, False),

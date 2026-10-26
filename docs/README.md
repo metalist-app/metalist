@@ -51,7 +51,7 @@
 - Future plan (AI providers, what is left: evals for Claude and Gemini, the demo vault, hosted questions): `docs/future-plans/ai-providers-remaining.md`
 - Future plan (sharing notes as HTML, with ontology fragments, recipes and no code plugins): `docs/future-plans/html-note-sharing.md`
 - Might do (the same tag more than once in a note): `docs/future-plans/same-tag-twice.md`
-- Agreed designs ready to build, not started: `docs/ready-to-build/` (property search on any tag and OR in rules: `attribute-search-and-or-rules.md`; AI conversation compaction with a readable summary: `ai-conversation-compaction.md`; a bookmarklet that clips a page into the open MetaList tab: `web-clipper.md`; custom link text for references, `[[UUID|shown text]]`: `reference-link-text.md`; typing `[[` suggests notes to reference: `reference-suggestions.md`)
+- Agreed designs ready to build, not started: `docs/ready-to-build/` (property search on any tag and OR in rules: `attribute-search-and-or-rules.md`; AI conversation compaction with a readable summary: `ai-conversation-compaction.md`; a bookmarklet that clips a page into the open MetaList tab: `web-clipper.md`; custom link text for references, `[[UUID|shown text]]`: `reference-link-text.md`)
 - Incoming design notes, processed into the folders above as soon as they are seen: `docs/inbox/` (see AGENTS.md, "Design Inbox")
 
 ## Clients

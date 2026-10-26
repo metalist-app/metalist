@@ -10,6 +10,7 @@ from typing import Callable, FrozenSet, Iterator, List, Optional, Tuple
 
 from app.services.content_formatting import CREDENTIAL_MASK
 from app.services.content_formatting import find_global_credential_tag
+from app.services.content_formatting import render_credential_link_row
 from app.services.content_formatting import format_note_content_for_view
 from app.services.content_formatting import has_scoped_footnotes
 from app.services.content_formatting import render_standalone_link_title_html
@@ -819,8 +820,11 @@ def _render_link_body(
     )
     is_credential_preview = redacted_credential != ""
     preview_html = None
+    if not is_credential_preview:
+        # Where credentials are hidden the mask stands in (is_credential_preview).
+        preview_html = _credential_link_row_or_none(reference_note_id=reference_note_id, context=context)
     title_classes = "note-reference-link-title"
-    if show_media and not is_credential_preview:
+    if show_media and not is_credential_preview and preview_html is None:
         # A source that collapses to a thumbnail is referenced by the same thumbnail.
         thumbnail_html, caption = _render_link_preview_thumbnail(
             record=context.get_note(reference_note_id),
@@ -869,6 +873,20 @@ def _render_link_body(
         f'<span class="{title_classes}">{preview_html}</span>'
         "</a>"
     )
+
+
+def _credential_link_row_or_none(*, reference_note_id: str, context: EmbedRenderContext) -> str | None:
+    """A link to an @password or @username note (where credentials are not hidden) is that
+    note's own copyable row (agreed 2026-10-26): clicking the value copies it, the link's
+    reference icon goes to the note. None for any other note."""
+    shown_note_id = resolve_held_source(
+        reference_note_id, has_note=context.has_note, content_of=_context_content(context),
+    )
+    record = context.get_note(shown_note_id)
+    credential_tag = find_global_credential_tag(record.tags)
+    if credential_tag is None:
+        return None
+    return render_credential_link_row(content_html=record.content, credential_tag=credential_tag)
 
 
 def _render_link_preview_thumbnail(
@@ -1465,6 +1483,11 @@ def is_content_collapsible(*, content_html: str, context: EmbedRenderContext) ->
     if preview_html_has_note_embed(preview_source_html=collapsed_preview_source, context=context):
         return True
     return preview_has_more
+
+
+def first_line_preview(content_html: str) -> str:
+    """A note's first line as plain text, as a link to it shows it (reference tokens dropped)."""
+    return _extract_first_line_preview(content_html)
 
 
 def _extract_first_line_preview(content_html: str) -> str:

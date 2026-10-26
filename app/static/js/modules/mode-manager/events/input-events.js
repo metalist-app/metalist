@@ -6,6 +6,7 @@ import { DOMUtils } from '../../dom-utils.js';
 import { enforceTagBarInputElement, validateAndRenderTagBar } from '../services/tag-bar-service.js';
 import { scrollWindowToYFastAnimated } from '../services/animated-scroll-service.js';
 import { initializeTagSuggestions, updateTagSuggestions } from '../services/tag-suggestions-service.js';
+import { initializeReferenceSuggestions, updateReferenceSuggestions } from '../services/reference-suggestions-service.js';
 import { handleDictationPasteEvent, isDictationRawInsertInProgress, noteDictationEditSeen } from '../services/dictation-paste-service.js';
 
 
@@ -85,6 +86,7 @@ export function initInputEvents() {
     document.addEventListener('input', handleInput, { capture: true });
     document.addEventListener('paste', handleTagBarPaste, { capture: true });
     initializeTagSuggestions();
+    initializeReferenceSuggestions();
         
     Logger.logInit('Input events handler');
 }
@@ -168,6 +170,7 @@ function handleInput(event) {
         if (!ModeContext.editSessionHasEdits) ModeContext.markEditSessionHasEdits();
 
         ensureEditingCaretVisible(noteContent);
+        if (!event.isComposing) updateReferenceSuggestions(noteContent, noteId);
 
         // The first input in a note selected without a caret (a pasted note) reveals it; later inputs keep it visible.
         if (ModeContext.isCaretHidden) {

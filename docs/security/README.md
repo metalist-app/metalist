@@ -430,7 +430,11 @@ mutating requests. The request admission counter also excludes overlapping async
 Encrypted logout clears the existing runtime stores plus evidence-token and
 tag-matching LRUs. Sensitive caches are disabled while locked; their calculation
 and clearing share a lock so a computation already underway cannot refill a
-purged cache. Unlock enables caching again. Session replacement clears the LRUs
+purged cache. Unlock enables caching again (restoring a backup into a namespace
+without a password enables it once the restored notes are loaded). The `[[`
+suggestion catalog (every note's first line and text, `app/services/reference_suggestions.py`)
+is one of them: it fills under its own lock, so it checks after each fill and empties
+itself when caching is off. Session replacement clears the LRUs
 and AI state. Runtime generations cancel registered AI streams and prevent old
 hydration/link-title jobs from publishing into a later unlocked session. Shell
 runs are stopped, their reader threads are joined, and retained output is cleared
