@@ -9,7 +9,7 @@ import sqlite3
 from app.db.engine import GuardedConnection
 from app.db.link_titles_sql import _parse_datetime, _serialize_datetime
 from app.db.raw_connection import raw_sqlite_connection
-from app.db.schema import LINK_ICONS_TABLE
+from app.db.schema import LINK_ICONS_COLUMNS, LINK_ICONS_TABLE
 
 
 @dataclass(frozen=True, slots=True)
@@ -72,45 +72,28 @@ def _moment(value: object, *, column: str) -> datetime:
 
 def fetch_all_link_icon_rows(connection: object) -> list[StoredLinkIconRow]:
     rows = _conn(connection).execute(
-        f"""
-        SELECT
-            id,
-            origin,
-            origin_encryption_nonce,
-            origin_encryption_tag,
-            icon_png,
-            icon_png_encryption_nonce,
-            icon_png_encryption_tag,
-            status,
-            last_error_kind,
-            failure_count,
-            last_checked_at,
-            next_check_after,
-            created_at,
-            updated_at
-        FROM {LINK_ICONS_TABLE}
-        ORDER BY id ASC
-        """,
+        f"SELECT {', '.join(LINK_ICONS_COLUMNS)} FROM {LINK_ICONS_TABLE} ORDER BY id ASC",
     ).fetchall()
-    return [
-        StoredLinkIconRow(
-            id=_count(row[0], column="id"),
-            origin=_text(row[1], column="origin"),
-            origin_encryption_nonce=_optional_bytes(row[2], column="origin_encryption_nonce"),
-            origin_encryption_tag=_optional_bytes(row[3], column="origin_encryption_tag"),
-            icon_png=_optional_text(row[4], column="icon_png"),
-            icon_png_encryption_nonce=_optional_bytes(row[5], column="icon_png_encryption_nonce"),
-            icon_png_encryption_tag=_optional_bytes(row[6], column="icon_png_encryption_tag"),
-            status=_text(row[7], column="status"),
-            last_error_kind=_optional_text(row[8], column="last_error_kind"),
-            failure_count=_count(row[9], column="failure_count"),
-            last_checked_at=_moment(row[10], column="last_checked_at"),
-            next_check_after=_parse_datetime(row[11], field_name="link_icons.next_check_after"),
-            created_at=_moment(row[12], column="created_at"),
-            updated_at=_moment(row[13], column="updated_at"),
-        )
-        for row in rows
-    ]
+    return [_stored_row(dict(zip(LINK_ICONS_COLUMNS, row, strict=True))) for row in rows]
+
+
+def _stored_row(values: dict[str, object]) -> StoredLinkIconRow:
+    return StoredLinkIconRow(
+        id=_count(values["id"], column="id"),
+        origin=_text(values["origin"], column="origin"),
+        origin_encryption_nonce=_optional_bytes(values["origin_encryption_nonce"], column="origin_encryption_nonce"),
+        origin_encryption_tag=_optional_bytes(values["origin_encryption_tag"], column="origin_encryption_tag"),
+        icon_png=_optional_text(values["icon_png"], column="icon_png"),
+        icon_png_encryption_nonce=_optional_bytes(values["icon_png_encryption_nonce"], column="icon_png_encryption_nonce"),
+        icon_png_encryption_tag=_optional_bytes(values["icon_png_encryption_tag"], column="icon_png_encryption_tag"),
+        status=_text(values["status"], column="status"),
+        last_error_kind=_optional_text(values["last_error_kind"], column="last_error_kind"),
+        failure_count=_count(values["failure_count"], column="failure_count"),
+        last_checked_at=_moment(values["last_checked_at"], column="last_checked_at"),
+        next_check_after=_parse_datetime(values["next_check_after"], field_name="link_icons.next_check_after"),
+        created_at=_moment(values["created_at"], column="created_at"),
+        updated_at=_moment(values["updated_at"], column="updated_at"),
+    )
 
 
 def insert_link_icon_row(connection: object, row: StoredLinkIconRow) -> int:
