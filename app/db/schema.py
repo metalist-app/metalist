@@ -9,6 +9,7 @@ APP_SETTINGS_TABLE = "app_settings"
 ONTOLOGY_RULES_TABLE = "ontology_rules"
 TAB_STATE_TABLE = "tab_state"
 LINK_TITLES_TABLE = "link_titles"
+LINK_ICONS_TABLE = "link_icons"
 REMINDERS_TABLE = "reminders"
 SEARCH_HISTORY_TABLE = "search_interaction_history"
 NAMESPACE_LAUNCH_PROFILE_TABLE = "namespace_launch_profile"
@@ -137,6 +138,38 @@ CREATE TABLE IF NOT EXISTS {LINK_TITLES_TABLE} (
 );
 """
 
+# Site icons beside link titles, one row per origin (database version 12). The origin
+# and the icon (a 32-pixel PNG, base64) are encrypted like link titles.
+LINK_ICONS_COLUMNS: tuple[str, ...] = (
+    "id", "origin", "origin_encryption_nonce", "origin_encryption_tag", "icon_png",
+    "icon_png_encryption_nonce", "icon_png_encryption_tag", "status", "last_error_kind",
+    "failure_count", "last_checked_at", "next_check_after", "created_at", "updated_at",
+)
+
+_CREATE_LINK_ICONS_TABLE = f"""
+CREATE TABLE IF NOT EXISTS {LINK_ICONS_TABLE} (
+    id INTEGER PRIMARY KEY,
+    origin TEXT NOT NULL,
+    origin_encryption_nonce BLOB,
+    origin_encryption_tag BLOB,
+    icon_png TEXT,
+    icon_png_encryption_nonce BLOB,
+    icon_png_encryption_tag BLOB,
+    status TEXT NOT NULL,
+    last_error_kind TEXT,
+    failure_count INTEGER NOT NULL DEFAULT 0,
+    last_checked_at TEXT NOT NULL,
+    next_check_after TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+"""
+
+
+def create_link_icons_table(connection: Connection) -> None:
+    connection.execute(_CREATE_LINK_ICONS_TABLE)
+
+
 _CREATE_REMINDERS_TABLE = f"""
 CREATE TABLE IF NOT EXISTS {REMINDERS_TABLE} (
     id TEXT PRIMARY KEY,
@@ -211,6 +244,7 @@ def initialize_schema(connection: Connection) -> None:
     connection.execute(_CREATE_ONTOLOGY_RULES_TABLE)
     connection.execute(_CREATE_TAB_STATE_TABLE)
     connection.execute(_CREATE_LINK_TITLES_TABLE)
+    create_link_icons_table(connection)
     connection.execute(_CREATE_REMINDERS_TABLE)
     connection.execute(_CREATE_SEARCH_HISTORY_TABLE)
     connection.execute(_CREATE_NAMESPACE_LAUNCH_PROFILE_TABLE)

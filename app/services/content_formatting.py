@@ -47,6 +47,7 @@ from app.services.markdown_rendering import render_markdown_to_html
 from app.services.ontology_rules_store import get_ontology_if_ready
 from app.services.file_registry import file_registry
 from app.services.link_titles import display_domain_for_url
+from app.services.link_icons import link_icon_store
 from app.services.link_titles import link_title_store
 from app.services.link_titles import normalize_url_for_link_title
 
@@ -740,11 +741,28 @@ _LINK_TITLE_FETCH_RECORDER: ContextVar[List[str] | None] = ContextVar(
 )
 
 
-def _request_link_title_fetch(url: str) -> None:
+def _record_link_fetch(url: str) -> None:
     recorded = _LINK_TITLE_FETCH_RECORDER.get()
     if recorded is not None:
         recorded.append(url)
+
+
+def _request_link_title_fetch(url: str) -> None:
+    _record_link_fetch(url)
     link_title_store.maybe_enqueue_fetch(url)
+
+
+def _request_link_icon_fetch(url: str) -> None:
+    _record_link_fetch(url)
+    link_icon_store.maybe_enqueue_fetch(url)
+
+
+def _enqueue_link_fetches(url: str) -> None:
+    """A cached render's request again: the link's title, or once titled its site's icon."""
+    if link_title_store.get_ok_title(url) is None:
+        link_title_store.maybe_enqueue_fetch(url)
+        return
+    link_icon_store.maybe_enqueue_fetch(url)
 
 
 @contextmanager
@@ -760,7 +778,7 @@ def recording_link_title_fetches() -> Iterator[List[str]]:
 
 def replay_link_title_fetches(urls: Tuple[str, ...]) -> None:
     for url in urls:
-        link_title_store.maybe_enqueue_fetch(url)
+        _enqueue_link_fetches(url)
 
 
 def render_standalone_link_title_html(text: str) -> str | None:
@@ -782,10 +800,17 @@ def render_standalone_link_title_html(text: str) -> str | None:
         _request_link_title_fetch(link_text)
         return None
 
+    # The site's icon goes before the title once both are known (docs/ui/content-formatting.md).
+    icon_html = ""
+    icon_png_base64 = link_icon_store.get_icon_base64(link_text)
+    if icon_png_base64 is None:
+        _request_link_icon_fetch(link_text)
+    else:
+        icon_html = f'<img class="link-title-icon" src="data:image/png;base64,{icon_png_base64}" alt="">'
     escaped_title = html.escape(title)
     escaped_domain = html.escape(display_domain_for_url(link_text))
     return (
-        f'<span class="link-title-text">{escaped_title}</span>'
+        f'{icon_html}<span class="link-title-text">{escaped_title}</span>'
         f'<span class="link-title-domain"> · {escaped_domain}</span>'
     )
 

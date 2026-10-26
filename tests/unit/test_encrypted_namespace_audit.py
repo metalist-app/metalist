@@ -9,7 +9,7 @@ import pytest
 
 from app.db.file_schema import initialize_file_schema
 from app.db.file_session import resolve_file_database_path
-from app.db.schema import initialize_schema
+from app.db.schema import LINK_ICONS_TABLE, initialize_schema
 from app.encryption_audit import audit_all_namespaces, main
 
 
@@ -753,3 +753,46 @@ def test_a_plaintext_claude_key_in_an_encrypted_namespace_is_reported(tmp_path: 
         (finding.table, finding.field) for finding in report.fatal_findings
     }
     assert "sk-ant-secret" not in report.render_text()
+
+
+# Before version 12 the link_icons table may be absent, or already added by the on-open schema helper.
+@pytest.mark.parametrize(("version", "has_table", "allowed"), [(11, False, True), (11, True, True), (12, True, True), (12, False, False)])
+def test_version_12_requires_the_link_icons_table(tmp_path: Path, version: int, has_table: bool, allowed: bool) -> None:
+    namespaces_directory = tmp_path / "namespaces"
+    database_path = _create_namespace_database(namespaces_directory, namespace="private", encryption_enabled=True)
+    with sqlite3.connect(database_path) as connection:
+        if not has_table:
+            connection.execute(f"DROP TABLE {LINK_ICONS_TABLE}")
+        connection.execute(f"PRAGMA user_version = {version}")
+
+    report = audit_all_namespaces(namespaces_directory=namespaces_directory)
+
+    assert report.startup_allowed is allowed, report.render_text()
+    if not allowed:
+        assert {(finding.table, finding.field) for finding in report.fatal_findings} == {(LINK_ICONS_TABLE, "*")}
+
+
+@pytest.mark.parametrize("column", ["origin", "icon_png"])
+def test_a_plaintext_icon_or_site_in_an_encrypted_namespace_is_reported(tmp_path: Path, column: str) -> None:
+    namespaces_directory = tmp_path / "namespaces"
+    database_path = _create_namespace_database(namespaces_directory, namespace="private", encryption_enabled=True)
+    with sqlite3.connect(database_path) as connection:
+        connection.execute(
+            f"INSERT INTO {LINK_ICONS_TABLE} (origin, origin_encryption_nonce, origin_encryption_tag, icon_png, "
+            "icon_png_encryption_nonce, icon_png_encryption_tag, status, failure_count, last_checked_at, created_at, "
+            "updated_at) VALUES (?, ?, ?, ?, ?, ?, 'ok', 0, 'now', 'now', 'now')",
+            (
+                "https://secret.example.com" if column == "origin" else "b3JpZ2lu",
+                None if column == "origin" else b"o" * 12,
+                None if column == "origin" else b"p" * 16,
+                "iVBORw0KGgo=" if column == "icon_png" else "aWNvbg==",
+                None if column == "icon_png" else b"i" * 12,
+                None if column == "icon_png" else b"j" * 16,
+            ),
+        )
+
+    report = audit_all_namespaces(namespaces_directory=namespaces_directory)
+
+    assert report.startup_allowed is False
+    assert (LINK_ICONS_TABLE, column) in {(finding.table, finding.field) for finding in report.fatal_findings}
+    assert "secret.example.com" not in report.render_text()

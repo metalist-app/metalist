@@ -53,7 +53,7 @@ whole-file SQLite encryption or OS full-disk encryption. Coverage includes:
 - Attachments in the sibling files database: file title, filename/MIME/other
   metadata, and file bytes. Embedded-document payloads are encrypted too.
 - Saved tab state (including saved search state), aggregate tag-activity payloads,
-  reminders, and cached link URLs/titles.
+  reminders, and cached link URLs/titles and site icons.
 - UI/client preferences, command-palette usage/query tokens, backup settings,
   and cloud privacy settings stored in client preferences.
 - Persisted OpenAI credentials, when present in a protected vault.

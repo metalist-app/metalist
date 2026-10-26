@@ -4289,6 +4289,21 @@ body[data-tag-style="text"],
     font-size: 0.88em;
 }
 
+/* The site's icon before a fetched link title: as tall as the text and centred on it,
+   in a note (open or collapsed) and in a compact reference alike. */
+img.link-title-icon,
+.note.collapsed:not(.editing) .note-content img.link-title-icon {
+    display: inline-block !important;
+    width: 1em !important;
+    height: 1em !important;
+    max-width: none !important;
+    max-height: none !important;
+    margin: 0 0.3em 0 0;
+    border-radius: 0;
+    vertical-align: -0.11em;
+    object-fit: contain;
+}
+
 /* Embedded note references (![[UUID]]) */
 .note-reference-block {
     display: flex;
@@ -8757,6 +8772,15 @@ html[data-theme="dark"] .meta-status-toggle {
 
 html[data-theme="dark"] .link-title-domain {
     color: var(--app-text-muted);
+}
+
+/* Site icons are drawn for light pages: a light tile keeps dark ones visible. */
+html[data-theme="dark"] img.link-title-icon,
+html[data-theme="dark"] .note.collapsed:not(.editing) .note-content img.link-title-icon {
+    box-sizing: border-box;
+    padding: 0.08em;
+    border-radius: 0.2em;
+    background-color: #e9edf2;
 }
 
 html[data-theme="dark"] .meta-email-value,

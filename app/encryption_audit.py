@@ -251,6 +251,11 @@ _AI_PROVIDER_CREDENTIAL_COLUMNS = frozenset(
     }
 )
 
+# Migration 11→12 added the link_icons table. Before version 12 it may be missing, or
+# already present because opening a database creates it ahead of the migration.
+_LINK_ICONS_TABLE = "link_icons"
+_LINK_ICONS_DATABASE_VERSION = 12
+
 _PROPOSED_TAG_COLUMNS = frozenset(
     {
         "proposed_tags",
@@ -304,6 +309,14 @@ _MAIN_SCHEMA_BEFORE_CONTENT_MIGRATIONS = {
             "title_encryption_nonce", "title_encryption_tag", "status",
             "last_error_kind", "last_checked_at", "last_success_at", "last_failure_at",
             "next_check_after", "failure_count", "created_at", "updated_at",
+        }
+    ),
+    # Site icons beside link titles, from database version 12.
+    _LINK_ICONS_TABLE: frozenset(
+        {
+            "id", "origin", "origin_encryption_nonce", "origin_encryption_tag", "icon_png",
+            "icon_png_encryption_nonce", "icon_png_encryption_tag", "status", "last_error_kind",
+            "failure_count", "last_checked_at", "next_check_after", "created_at", "updated_at",
         }
     ),
     "reminders": frozenset(
@@ -438,6 +451,14 @@ _MAIN_PAYLOADS_WITHOUT_SEARCH_HISTORY = (
         "reminders", "payload_json", "payload_encryption_nonce", "payload_encryption_tag", "text",
         is_nullable=False,
     ),
+    _PayloadSpec(
+        _LINK_ICONS_TABLE, "origin", "origin_encryption_nonce", "origin_encryption_tag", "text",
+        is_nullable=False,
+    ),
+    _PayloadSpec(
+        _LINK_ICONS_TABLE, "icon_png", "icon_png_encryption_nonce", "icon_png_encryption_tag", "text",
+        is_nullable=True,
+    ),
 )
 
 _LEGACY_SEARCH_HISTORY_PAYLOADS = (
@@ -513,6 +534,8 @@ _MIGRATION_DEFERRED_PLAINTEXT_FIELDS_BY_DATABASE_VERSION = dict(enumerate((
     frozenset(),
     # version 10
     frozenset(),
+    # version 11
+    frozenset(),
 )))
 
 
@@ -569,6 +592,8 @@ def _main_schema_for_database_version(
             **resolved_schema,
             "app_settings": resolved_schema["app_settings"] - _AI_PROVIDER_CREDENTIAL_COLUMNS,
         }
+    if database_version < _LINK_ICONS_DATABASE_VERSION and _LINK_ICONS_TABLE not in actual_tables:
+        resolved_schema = {table: columns for table, columns in resolved_schema.items() if table != _LINK_ICONS_TABLE}
     if database_version >= _OPENAI_CREDENTIALS_DATABASE_VERSION or not _OPENAI_CREDENTIAL_COLUMNS.isdisjoint(
         actual_app_settings_columns
     ):

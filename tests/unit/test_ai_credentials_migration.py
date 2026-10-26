@@ -60,7 +60,7 @@ def test_version_10_gains_the_claude_and_gemini_key_slots(tmp_path: Path, encryp
         )
         connection.commit()
 
-    assert _migrate(notes, encrypted=encrypted) == (11,)
+    assert _migrate(notes, encrypted=encrypted) == (11, 12)
     assert _migrate(notes, encrypted=encrypted) == ()
 
     with closing(sqlite3.connect(notes)) as connection:

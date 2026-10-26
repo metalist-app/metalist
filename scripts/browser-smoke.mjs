@@ -68,6 +68,7 @@ import {checkDialogButtons} from './browser-dialog-button-regressions.mjs';
 import {checkPhone} from './browser-phone-regressions.mjs';
 import {checkFloatingMessages} from './browser-floating-message-regressions.mjs';
 import {checkViewMenu} from './browser-view-menu-regressions.mjs';
+import {checkLinkIcons} from './browser-link-icon-regressions.mjs';
 import {checkErrorDialogs} from './browser-error-dialog-regressions.mjs';
 import {checkFieldMessages} from './browser-field-message-regressions.mjs';
 import {checkProgressCards} from './browser-progress-card-regressions.mjs';
@@ -339,6 +340,10 @@ try {
     await checkErrorDialogs(page);
     assert.deepEqual(errors, []);
     console.log(`PASS error dialog regressions in ${await browser.version()}`);
+  } else if (process.env.BROWSER_TEST_SUITE === 'link-icons') {
+    await checkLinkIcons(page);
+    assert.deepEqual(errors, []);
+    console.log(`PASS link icon regressions in ${await browser.version()}`);
   } else if (process.env.BROWSER_TEST_SUITE === 'view-menu') {
     await checkViewMenu(page);
     assert.deepEqual(errors, []);
