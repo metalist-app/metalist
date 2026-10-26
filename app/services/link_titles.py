@@ -9,7 +9,7 @@ import json
 import re
 from threading import Lock, RLock
 import time
-from typing import Callable, Mapping
+from typing import Callable, Mapping, Protocol
 from urllib.parse import quote, urlsplit
 
 import httpcore
@@ -292,6 +292,17 @@ def _ok_titles_by_url(state: _LinkTitleState | None) -> dict[str, str]:
     return titles
 
 
+class LinkTitleCompanion(Protocol):
+    """A store of link details kept beside the titles (site icons): loaded, unlocked and
+    cleared with them."""
+
+    def bootstrap(self, *, connection) -> None: ...
+
+    def ensure_decrypted(self, *, token: str) -> None: ...
+
+    def reset(self) -> None: ...
+
+
 class LinkTitleStore:
     def __init__(self) -> None:
         self._lock = RLock()
@@ -305,6 +316,22 @@ class LinkTitleStore:
         # Called, outside the store lock, with the normalized URLs whose usable
         # title changed (fetched, decrypted, sanitized or cleared on reset).
         self._titles_changed_listeners: list[Callable[[frozenset[str]], None]] = []
+        self._companions: list[LinkTitleCompanion] = []
+
+    def add_companion(self, companion: LinkTitleCompanion) -> None:
+        with self._lock:
+            assert companion not in self._companions, "a link-title companion is added once"
+            self._companions.append(companion)
+
+    def note_companion_change(self) -> None:
+        """A companion changed something rendered links show: they render again."""
+        with self._lock:
+            self._revision += 1
+            self._render_generation += 1
+
+    def _companions_now(self) -> tuple[LinkTitleCompanion, ...]:
+        with self._lock:
+            return tuple(self._companions)
 
     def add_titles_changed_listener(self, listener: Callable[[frozenset[str]], None]) -> None:
         if not callable(listener):
@@ -341,10 +368,17 @@ class LinkTitleStore:
             if did_sanitize:
                 self._revision += 1
         self._notify_titles_changed(before, _ok_titles_by_url(state))
+        for companion in self._companions_now():
+            companion.bootstrap(connection=connection)
 
     def ensure_decrypted(self, *, token: str) -> None:
         if not isinstance(token, str):
             raise TypeError("token must be a string")
+        self._ensure_titles_decrypted(token=token)
+        for companion in self._companions_now():
+            companion.ensure_decrypted(token=token)
+
+    def _ensure_titles_decrypted(self, *, token: str) -> None:
         with self._lock:
             state = self._state
             if state is None:
@@ -374,6 +408,8 @@ class LinkTitleStore:
             self._revision = 0
             self._render_generation += 1
         self._notify_titles_changed(before, {})
+        for companion in self._companions_now():
+            companion.reset()
 
     def get_revision(self) -> int:
         with self._lock:

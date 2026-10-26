@@ -30,7 +30,7 @@ This document describes the security architecture for MetaList3's password prote
 Namespace password protection uses field-level AES-256-GCM encryption, not
 whole-file SQLite encryption. Protected payloads include note bodies and
 accepted/proposed tags, ontology text, attachment titles/metadata/bytes, saved
-tab state, tag activity, reminders, cached link URLs/titles, client preferences
+tab state, tag activity, reminders, cached link URLs/titles and site icons, client preferences
 and persisted AI API keys (one slot per provider: OpenAI, and from database
 version 11 Claude and Gemini). The authoritative payload/schema inventory is
 in `app/encryption_audit.py`.
@@ -42,6 +42,9 @@ payload; this is distinct from readable database structure and container sizes.
 Excalidraw diagram previews (`file_previews.preview_data`) are encrypted like
 attachment bytes; their file ID, light/dark variant, SVG MIME type and the file
 content revision counter are readable structural metadata.
+Site icons beside link titles (`link_icons`, database version 12) encrypt the site
+(`origin`) and the icon (`icon_png`) like link titles; their lookup status, last
+error kind, failure count and check timestamps are readable structural metadata.
 Without a namespace password, ordinary note/file payloads are plaintext at the
 MetaList layer. OS disk encryption is separate.
 
@@ -297,7 +300,9 @@ and pins the actual TCP connection to the validated public address. The
 original hostname remains in the HTTP request and TLS SNI/certificate check.
 DNS failures stop the request instead of falling through to a second,
 unvalidated lookup, and proxy environment variables cannot reroute the pinned
-connection.
+connection. Site icons (`app/services/link_icons.py`) use the same resolution,
+pinning and redirect limit. A fetched icon is never served as fetched: it must
+decode as a small raster image (SVG is refused) and is re-encoded as a PNG.
 
 ### Sensitive Telemetry
 

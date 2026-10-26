@@ -52,6 +52,7 @@ from app.services.search_history import (
     decrypt_all_search_history_for_plaintext,
     encrypt_all_search_history_for_active_dek,
 )
+from app.services.link_icons import rewrite_persisted_link_icons
 from app.services.link_titles import rewrite_persisted_link_titles
 from app.services.reminders import reminder_store
 from app.utils.text_utils import strip_html
@@ -352,6 +353,11 @@ class AuthService:
                         encryption_service=self.encryption,
                         force_plaintext=False,
                     )
+                    rewrite_persisted_link_icons(
+                        connection=connection,
+                        encryption_service=self.encryption,
+                        force_plaintext=False,
+                    )
                 tab_state_store.rewrite_persisted_state(
                     connection=connection,
                     encryption_service=self.encryption,
@@ -499,6 +505,11 @@ class AuthService:
                 )
                 with SafeSession.allow_reads("auth:remove_password:fetch_link_titles"):
                     decrypted_link_title_count = rewrite_persisted_link_titles(
+                        connection=connection,
+                        encryption_service=self.encryption,
+                        force_plaintext=True,
+                    )
+                    rewrite_persisted_link_icons(
                         connection=connection,
                         encryption_service=self.encryption,
                         force_plaintext=True,

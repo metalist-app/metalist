@@ -469,6 +469,12 @@ exception = "json.JSONDecodeError"
 reason = "an uploaded Excalidraw scene is user input: invalid JSON is rejected as invalid file content"
 
 [[tool.shockharness.rules.exceptions.boundaries]]
+path = "app/services/link_icons.py"
+language = "python"
+exceptions = ["OSError", "PIL.Image.DecompressionBombError", "PIL.UnidentifiedImageError", "SyntaxError", "ValueError", "app.services.public_http.PublicHttpTargetRejected", "httpcore.NetworkError", "httpcore.ProtocolError", "httpcore.TimeoutException", "httpx.HTTPError", "httpx.NetworkError", "httpx.TimeoutException"]
+reason = "Handle expected external I/O, provider, image or LaTeX parsing failure."
+
+[[tool.shockharness.rules.exceptions.boundaries]]
 path = "app/services/link_titles.py"
 language = "python"
 exceptions = ["UnicodeDecodeError", "app.services.public_http.PublicHttpTargetRejected", "httpcore.NetworkError", "httpcore.ProtocolError", "httpcore.TimeoutException", "httpx.HTTPError", "httpx.NetworkError", "httpx.TimeoutException", "json.JSONDecodeError"]

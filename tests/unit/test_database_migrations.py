@@ -68,7 +68,7 @@ def test_v6_upgrade_retires_document_table_transactionally(tmp_path: Path, encry
     connection.execute("BEGIN")
     result = run_database_migrations(connection=connection, encryption_enabled=encryption_enabled,
                                      encryption_service=_encryption_service())
-    assert result.applied_versions == (7, 8, 9, 10, 11)
+    assert result.applied_versions == (7, 8, 9, 10, 11, 12)
     assert result.rewritten_payload_count == 0
     assert connection.execute("PRAGMA table_info(embedded_documents)").fetchall() == []
     connection.rollback()
@@ -115,7 +115,7 @@ def test_retired_diagrams_and_placements_are_removed_only_from_live_database(
     result = run_database_migrations(
         connection=connection, encryption_enabled=encryption_enabled, encryption_service=service,
     )
-    assert result.applied_versions == (8, 9, 10, 11)
+    assert result.applied_versions == (8, 9, 10, 11, 12)
     assert result.rewritten_payload_count == 1
     assert connection.execute("PRAGMA table_info(embedded_documents)").fetchall() == []
     row = connection.execute("SELECT content, encryption_nonce, encryption_tag, tags, updated_at FROM notes WHERE id = 'host'").fetchone()
@@ -183,7 +183,7 @@ def test_plaintext_namespace_advances_through_migrations_without_rewriting(tmp_p
 
     assert result.initial_version == 0
     assert result.final_version == CURRENT_DATABASE_VERSION
-    assert result.applied_versions == (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11)
+    assert result.applied_versions == (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12)
     assert result.rewritten_payload_count == 0
     assert read_database_version(connection) == CURRENT_DATABASE_VERSION
     row = connection.execute(
@@ -295,8 +295,8 @@ def test_database_version_two_adds_namespace_content_migration_ledger(
         encryption_service=None,
     )
 
-    assert CURRENT_DATABASE_VERSION == 11
-    assert result.applied_versions == (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11)
+    assert CURRENT_DATABASE_VERSION == 12
+    assert result.applied_versions == (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12)
     columns = {
         row[1]
         for row in connection.execute(
@@ -377,7 +377,7 @@ def test_database_version_four_discards_legacy_query_scores(
         encryption_service=service,
     )
 
-    assert result.applied_versions == (3, 4, 5, 6, 7, 8, 9, 10, 11)
+    assert result.applied_versions == (3, 4, 5, 6, 7, 8, 9, 10, 11, 12)
     columns = {
         str(row["name"])
         for row in connection.execute(
@@ -421,7 +421,7 @@ def test_database_version_five_adds_openai_credential_columns(
         encryption_service=None,
     )
 
-    assert result.applied_versions == (5, 6, 7, 8, 9, 10, 11)
+    assert result.applied_versions == (5, 6, 7, 8, 9, 10, 11, 12)
     columns = {
         str(row["name"])
         for row in connection.execute("PRAGMA table_info(app_settings)").fetchall()
@@ -465,7 +465,7 @@ def test_database_version_six_encrypts_new_proposal_storage_for_encrypted_notes(
         encryption_service=service,
     )
 
-    assert result.applied_versions == (6, 7, 8, 9, 10, 11)
+    assert result.applied_versions == (6, 7, 8, 9, 10, 11, 12)
     assert result.rewritten_payload_count == 1
     row = connection.execute(
         "SELECT proposed_tags, proposed_tags_encryption_nonce, "

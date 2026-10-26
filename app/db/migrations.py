@@ -10,7 +10,7 @@ import re
 from app.db.version import CURRENT_DATABASE_VERSION
 from app.db.editable_files_migration import add_editable_file_schema
 from app.db.retire_sounds import retire_sounds
-from app.db.schema import create_namespace_content_migrations_table
+from app.db.schema import LINK_ICONS_COLUMNS, LINK_ICONS_TABLE, create_link_icons_table, create_namespace_content_migrations_table
 from app.services.encryption import EncryptionService
 
 
@@ -403,6 +403,23 @@ def add_ai_provider_credential_columns(
     return 0
 
 
+def add_link_icons_table(
+    *,
+    connection: sqlite3.Connection,
+    encryption_enabled: bool,  # noqa: ARG001
+    encryption_service: EncryptionService | None,  # noqa: ARG001
+) -> int:
+    """Version 11→12: a table of site icons beside link titles (docs/ui/content-formatting.md).
+    The on-open schema helper may have created it already; then its shape is checked."""
+    create_link_icons_table(connection)
+    columns = _table_columns(connection, table=LINK_ICONS_TABLE)
+    if columns != set(LINK_ICONS_COLUMNS):
+        raise RuntimeError(
+            f"Database migration 11→12 found a {LINK_ICONS_TABLE} table with other columns: {sorted(columns)}"
+        )
+    return 0
+
+
 # One step per database version, in order: the step at position N upgrades version N to N + 1.
 _MIGRATION_STEPS: tuple[Callable[..., int], ...] = (
     _migration_0_to_1,
@@ -416,6 +433,7 @@ _MIGRATION_STEPS: tuple[Callable[..., int], ...] = (
     retire_sounds,
     add_editable_file_schema,
     add_ai_provider_credential_columns,
+    add_link_icons_table,
 )
 _MIGRATIONS: dict[int, Callable[..., int]] = dict(enumerate(_MIGRATION_STEPS))
 assert len(_MIGRATION_STEPS) == CURRENT_DATABASE_VERSION, "every database version below the current one needs a step"
