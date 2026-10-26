@@ -451,11 +451,11 @@ def get_tab_state() -> Dict[str, object]:
 def update_tab_state(payload: UpdateTabStateRequest) -> Dict[str, object]:
     if (
         "activeTabId" not in payload or "tabs" not in payload or "tabOrder" not in payload
-        or "referenceViews" not in payload
+        or "referenceViews" not in payload or "version" not in payload
     ):
         raise HTTPException(
             status_code=HTTPStatus.BAD_REQUEST,
-            detail="activeTabId, tabs, tabOrder, and referenceViews are required",
+            detail="activeTabId, tabs, tabOrder, referenceViews, and version are required",
         )
     active_tab_id = payload["activeTabId"]
     tabs = payload["tabs"]
@@ -468,6 +468,7 @@ def update_tab_state(payload: UpdateTabStateRequest) -> Dict[str, object]:
     with capture:
         response = tab_state_store.update(
             active_tab_id=active_tab_id, tabs=tabs, tab_order=tab_order_list, reference_views=reference_views,
+            read_at_version=payload["version"],
         )
     if capture.captured_exception is not None:
         raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail="Invalid or stale tab state") from capture.captured_exception

@@ -116,6 +116,8 @@ class UpdateTabStateRequest(TypedDict):
     tabs: dict[Identifier, Tab]
     tabOrder: list[Identifier]
     referenceViews: dict[Identifier, ReferenceView]
+    # The tab-state version the browser had when it read this snapshot.
+    version: Nonnegative
 
 @with_config(ConfigDict(strict=True))
 class UpdateTabSortModeRequest(TypedDict):

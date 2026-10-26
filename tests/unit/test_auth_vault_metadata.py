@@ -394,6 +394,7 @@ def test_password_transitions_rewrite_tab_state_rows(
             active_tab_id=tab_id,
             tabs=payload,
             tab_order=initial["tabOrder"],
+            read_at_version=initial["version"],
         )
 
         session = SafeSession()
