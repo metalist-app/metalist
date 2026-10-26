@@ -9323,11 +9323,14 @@ html[data-theme="dark"] body.loading::after {
     }
 }
 
+/* Above everything on the page, below dialogs (15000): an open dialog is what the user is
+   working in, so a due card waits behind its backdrop and never covers its buttons
+   (docs/ui/reminders.md). */
 .reminder-surface {
     position: fixed;
     right: 18px;
     bottom: 18px;
-    z-index: 30001;
+    z-index: 14500;
     display: flex;
     flex-direction: column;
     gap: 0;

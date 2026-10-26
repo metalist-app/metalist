@@ -91,9 +91,11 @@ async function isShown(page, selector) {
   }, selector);
 }
 
+// The field emptied, then the text typed key by key. A triple-click does not select a number
+// field's text in Firefox, where Backspace then left all but the last digit (CI, 2026-10-26).
 async function typeInto(page, selector, text) {
-  await page.click(selector, {clickCount: 3});
-  await page.keyboard.press('Backspace');
+  await page.click(selector);
+  await page.$eval(selector, field => { field.value = ''; });
   await page.type(selector, text);
 }
 
