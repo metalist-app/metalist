@@ -218,6 +218,9 @@ When `Show Tags in List` is enabled, the right-aligned tag column wraps and is c
 - Leaving the tag bar (Tab toggle or click-away) sanitizes the value by removing incomplete/broken items.
 
 
+### The right edge
+Everything on the right of the window stands beside the scrollbar, never over it, and covers no note (agreed 2026-10-25). The visible right edge is the scrollbar's inner edge when scrollbars always show (Windows, or a Mac set to always show them) and the window's edge when they overlay the page. The floating buttons stand 10 px from it (9 px from the AI chat when it shows), floating messages 8 px left of the buttons, the notice and reminder cards 18 px from that corner and the bottom; the chat ends at it. These are CSS `right:` offsets of fixed elements, which current browsers (Chrome 155 and later, Firefox) measure from the visible edge; older Chrome measured from the window's edge, over the strip. The find bar, placed by script under the search controls, measures where a fixed element's `right: 0` lands rather than using `documentElement.clientWidth`, which in current Chrome reports the whole window even while the strip is reserved (`scrollbar-gutter: stable`). A note's robot sits inside the note's corner (`docs/ui/tag-bar.md`), since the margin notes keep on the right is only as wide as the buttons. Checked in every layout, both kinds of scrollbar, Chrome and Firefox, by `scripts/browser-right-edge-regressions.mjs`.
+
 ### Update notifications
 Each document load/refresh starts a fresh server-side PyPI check in parallel with app startup, including on the login page. Once authenticated and ready, a newly discovered release shows a dismissible reminder-style notice linking to Version Info. `pref.update_notice_version` remembers the displayed release using namespace preferences, so refreshes do not repeat it. Failed checks leave the app usable and Version Info offers Check Again. Version Info also checks when opened.
 

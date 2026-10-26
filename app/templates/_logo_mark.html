@@ -1,6 +1,9 @@
 ## The MetaList mark (block M over two bars as wide as it; brand/metalist-mark-white.svg),
-## shown on the login and locked pages.
-<svg class="login-logo-mark" viewBox="0 0 279 223" focusable="false" aria-hidden="true">
+## shown on the login and locked pages. It fills its box exactly (preserveAspectRatio none):
+## the box's width and height are each rounded to the browser's layout grid, and keeping the
+## shape would scale the M by the smaller of the two, leaving it narrower than the bars and the
+## panel under it (Chrome 155 and later). The two roundings differ by under 0.01%.
+<svg class="login-logo-mark" viewBox="0 0 279 223" preserveAspectRatio="none" focusable="false" aria-hidden="true">
     <polygon points="0,0 69,0 139,50 210,0 279,0 279,136 195,136 195,87 139,128 83,87 83,136 0,136"></polygon>
     <rect x="0" y="159" width="279" height="16"></rect>
     <rect x="0" y="197" width="279" height="26"></rect>

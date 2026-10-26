@@ -15,7 +15,8 @@ const FRAMES_TO_SETTLE = 3;
 const GAP_EM = 0.3;
 // Sub-pixel layout rounds each edge to a device pixel at most.
 const PIXEL_ROUNDING = 0.5;
-const GAP_PRECISION = 0.01;
+// A margin is placed on the layout grid: 1/64 px in Chrome, 1/60 px in Firefox.
+const GAP_PRECISION = 1 / 60;
 const TILE = 'rgb(233, 237, 242)';
 const NO_TILE = 'rgba(0, 0, 0, 0)';
 

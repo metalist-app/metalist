@@ -1,0 +1,110 @@
+{
+  "schema_version": 3,
+  "id": "could-you-accept-question",
+  "description": "\"Could you accept …?\" starts the proposal review.",
+  "reviewed": true,
+  "model": "gpt-5.6-luna",
+  "thinking_level": "low",
+  "conversation": [
+    {
+      "role": "user",
+      "content": "Could you accept the pending tag proposals here?"
+    }
+  ],
+  "earlier_actions": [],
+  "view": {
+    "scope_kind": "search",
+    "label": "arXiv",
+    "search_query": "arXiv",
+    "sort_mode": "normal",
+    "notes": [
+      {
+        "note_id": "note-0",
+        "parent_id": "",
+        "content_text": "Language Models of Code are Few-Shot Commonsense Learners",
+        "tags": "arXiv",
+        "proposed_tags": "llm survey"
+      },
+      {
+        "note_id": "note-1",
+        "parent_id": "",
+        "content_text": "LegalGPT: How to Use Large Language Models While Respecting Legal Constraints",
+        "tags": "arXiv",
+        "proposed_tags": "llm survey"
+      },
+      {
+        "note_id": "note-2",
+        "parent_id": "",
+        "content_text": "Distilling Step-by-Step! Outperforming Larger Language Models with Less Training Data",
+        "tags": "arXiv",
+        "proposed_tags": "llm survey"
+      },
+      {
+        "note_id": "note-3",
+        "parent_id": "",
+        "content_text": "Imitating Human Behaviour with Diffusion Models",
+        "tags": "arXiv",
+        "proposed_tags": ""
+      },
+      {
+        "note_id": "note-4",
+        "parent_id": "",
+        "content_text": "Dissecting Recall of Factual Associations in Auto-Regressive Language Models",
+        "tags": "arXiv",
+        "proposed_tags": ""
+      },
+      {
+        "note_id": "note-5",
+        "parent_id": "",
+        "content_text": "Are Emergent Abilities of Large Language Models a Mirage?",
+        "tags": "arXiv",
+        "proposed_tags": ""
+      },
+      {
+        "note_id": "note-6",
+        "parent_id": "",
+        "content_text": "Hyena Hierarchy: Towards Larger Convolutional Language Models",
+        "tags": "arXiv",
+        "proposed_tags": ""
+      },
+      {
+        "note_id": "note-7",
+        "parent_id": "",
+        "content_text": "A Survey of Large Language Models",
+        "tags": "arXiv",
+        "proposed_tags": ""
+      }
+    ]
+  },
+  "selected_note": {
+    "status": "none",
+    "note_id": "",
+    "content_text": "",
+    "tags": ""
+  },
+  "web": {
+    "mode": "none",
+    "pages": [],
+    "retained_urls": []
+  },
+  "answer_questions": "no",
+  "expectation": {
+    "required_calls": [
+      {
+        "tools": [
+          "propose_tag_review"
+        ],
+        "arguments_any_of": []
+      }
+    ],
+    "forbidden_tools": [],
+    "forbidden_calls": [],
+    "confirmation": "asked",
+    "answer_criteria": [],
+    "reference_facts": ""
+  },
+  "provenance": {
+    "source": "The maintainer's request in the AI chat, 2026-10-26 (exported history): a request phrased as a question is a request ('can you wash the dishes?')",
+    "mapping": "A polite question asking for the review is the request: propose_tag_review, which asks to confirm."
+  }
+}

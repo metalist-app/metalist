@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import test from 'node:test';
+import { fileURLToPath } from 'node:url';
 
 // The dialog conventions, kept (docs/ui/modals.md, "Errors and status", agreed
 // 2026-10-25 as step 6):
@@ -11,7 +12,7 @@ import test from 'node:test';
 //   (modals/error-dialog.js), what is wrong while typing floats under its field
 //   (modals/field-message.js), and news floats in the corner (floating-messages.js).
 
-const ROOT = new URL('../../', import.meta.url).pathname;
+const ROOT = fileURLToPath(new URL('../../', import.meta.url));
 const MODULES = join(ROOT, 'app/static/js/modules');
 const SHARED_ROW = 'app/static/js/modules/modals/action-row.js';
 

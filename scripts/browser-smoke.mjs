@@ -12,6 +12,7 @@ import {join, resolve} from 'node:path';
 import {createServer} from 'node:net';
 import {setTimeout as delay} from 'node:timers/promises';
 import puppeteer from 'puppeteer';
+import {closeBrowser, installedBrowserExecutable} from './installed-browser.mjs';
 import {checkPastedHeadingFormatting} from './browser-formatting-regressions.mjs';
 import {checkAdditionalStateTransitions, checkEditingShortcutSequences} from './browser-state-regressions.mjs';
 import {checkTagDoubleClickSelection} from './browser-tag-selection-regressions.mjs';
@@ -69,6 +70,8 @@ import {checkPhone} from './browser-phone-regressions.mjs';
 import {checkFloatingMessages} from './browser-floating-message-regressions.mjs';
 import {checkViewMenu} from './browser-view-menu-regressions.mjs';
 import {checkLinkIcons} from './browser-link-icon-regressions.mjs';
+import {checkRightEdge} from './browser-right-edge-regressions.mjs';
+import {checkRobotCorner} from './browser-robot-corner-regressions.mjs';
 import {checkErrorDialogs} from './browser-error-dialog-regressions.mjs';
 import {checkFieldMessages} from './browser-field-message-regressions.mjs';
 import {checkProgressCards} from './browser-progress-card-regressions.mjs';
@@ -129,7 +132,7 @@ try {
   const browserDriver = process.env.BROWSER_TEST_DRIVER_MODULE
     ? (await import(process.env.BROWSER_TEST_DRIVER_MODULE)).default : puppeteer;
   browser = await browserDriver.launch({headless:true, browser:browserName,
-    ...(process.env.BROWSER_TEST_EXECUTABLE ? {executablePath:process.env.BROWSER_TEST_EXECUTABLE} : {})});
+    executablePath:installedBrowserExecutable(browserName, process.env)});
   const page = await browser.newPage();
   await installRequestMonitor(page);
   page.on('console', message => browserDiagnostics.push(`${new Date().toISOString()} ${message.type()} ${message.text()}`));
@@ -340,6 +343,14 @@ try {
     await checkErrorDialogs(page);
     assert.deepEqual(errors, []);
     console.log(`PASS error dialog regressions in ${await browser.version()}`);
+  } else if (process.env.BROWSER_TEST_SUITE === 'robot-corner') {
+    await checkRobotCorner(page);
+    assert.deepEqual(errors, []);
+    console.log(`PASS robot corner regressions in ${await browser.version()}`);
+  } else if (process.env.BROWSER_TEST_SUITE === 'right-edge') {
+    await checkRightEdge(page);
+    assert.deepEqual(errors, []);
+    console.log(`PASS right edge regressions in ${await browser.version()}`);
   } else if (process.env.BROWSER_TEST_SUITE === 'link-icons') {
     await checkLinkIcons(page);
     assert.deepEqual(errors, []);
@@ -837,7 +848,7 @@ try {
   console.error(`Browser smoke failed; disposable logs: ${directory}`);
   throw error;
 } finally {
-  if (browser) await browser.close();
+  if (browser) await closeBrowser(browser);
   server.kill('SIGTERM');
   const stopped = new Promise(resolve => server.once('exit', resolve));
   await Promise.race([stopped, delay(5000)]);

@@ -120,8 +120,9 @@ too. The answer replaces the title, selected, and Cmd/Ctrl+Z restores the one
 before; asking again gives another. If some of the notes are private the dialog
 says so; if all are, the button is dimmed. Without an AI set up there is no button.
 
-The robot count (🤖 N) on a note counts its pending proposals; on a collapsed
-note, those of its hidden children too. Clicking it opens every collapsed note on
+The robot count (🤖 N) sits in the top-right corner of a note and counts its pending
+proposals; on a collapsed note, those of its hidden children too. On a long first line
+it covers the line's last letters until its proposals are handled. Clicking it opens every collapsed note on
 the way to those proposals, so each shows its own robot, and puts the highest note
 with suggestions of its own into edit mode, showing them: that note, or the first
 one below it. Clicking the note itself just edits it, as always. Right-clicking it offers **Accept All Suggested Tags** and **Reject All
