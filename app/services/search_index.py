@@ -1378,7 +1378,7 @@ class SearchIndex:
     def notes_with_own_values(self, tag_casefold: str) -> List[str]:
         """The live notes whose own tag line gives the tag at least one value (never an
         inherited value, never one inside a scope): where the tag bar's last-used values
-        come from (docs/ready-to-build/super-tag-last-values.md)."""
+        come from (docs/design/tag-properties.md, Suggestions)."""
         if not isinstance(tag_casefold, str) or tag_casefold == "" or tag_casefold != tag_casefold.casefold():
             raise ValueError("notes_with_own_values requires a casefolded tag")
         with self._lock:

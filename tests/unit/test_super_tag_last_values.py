@@ -1,5 +1,5 @@
-"""Super tags: the tag bar suggests the values used last time (docs/ready-to-build/
-super-tag-last-values.md; agreed case by case 2026-10-25). While a tag that has been used
+"""Super tags: the tag bar suggests the values used last time (docs/design/tag-properties.md,
+Suggestions; agreed case by case 2026-10-25). While a tag that has been used
 with values is typed, the list offers it twice in a row: first the whole token from the most
 recently created note that wrote values on it (units as written), then the bare tag, on the
 empty bar too; once the whole tag name is typed, only the values are offered. Only

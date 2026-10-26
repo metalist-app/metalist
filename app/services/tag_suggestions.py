@@ -1199,7 +1199,7 @@ def _aware(moment: datetime | None) -> datetime:
 
 def _last_values(*, tag_casefold: str, note_id: str) -> _LastValues | None:
     """The values written on the tag by the most recently created note other than the one
-    being edited (docs/ready-to-build/super-tag-last-values.md), or None when no such note
+    being edited (docs/design/tag-properties.md, Suggestions), or None when no such note
     gives it any."""
     newest_key: Tuple[datetime, str] | None = None
     newest_tags = ""

@@ -52,7 +52,7 @@
 - Future fix (refreshes dropped while a view request is in flight: search, delete, undo and others): `docs/future-plans/dropped-refreshes.md`
 - Future plan (sharing notes as HTML, with ontology fragments, recipes and no code plugins): `docs/future-plans/html-note-sharing.md`
 - Might do (the same tag more than once in a note): `docs/future-plans/same-tag-twice.md`
-- Agreed designs ready to build, not started: `docs/ready-to-build/` (super tags suggesting last time's values: `super-tag-last-values.md`; site icons on links: `link-favicons.md`; property search on any tag and OR in rules: `attribute-search-and-or-rules.md`; AI conversation compaction with a readable summary: `ai-conversation-compaction.md`)
+- Agreed designs ready to build, not started: `docs/ready-to-build/` (site icons on links: `link-favicons.md`; property search on any tag and OR in rules: `attribute-search-and-or-rules.md`; AI conversation compaction with a readable summary: `ai-conversation-compaction.md`)
 - Incoming design notes, processed into the folders above as soon as they are seen: `docs/inbox/` (see AGENTS.md, "Design Inbox")
 
 ## Clients

@@ -7,7 +7,7 @@ import { waitForAppQuiet } from './browser-app-idle.mjs';
 // (through implications, with MAX), the tag bar suggests names and saves a super tag
 // whole, and a rule over values tags the notes it holds for and shows in the left
 // column of Edit Tag Relationships. Typing a tag used with values offers last time's
-// values first, then the bare tag (docs/ready-to-build/super-tag-last-values.md).
+// values first, then the bare tag (docs/design/tag-properties.md, Suggestions).
 // Each case reports its own failure.
 
 // Requests count as quiet after this long without one starting or ending.
