@@ -73,6 +73,8 @@ import {checkLinkIcons} from './browser-link-icon-regressions.mjs';
 import {checkRightEdge} from './browser-right-edge-regressions.mjs';
 import {checkRobotCorner} from './browser-robot-corner-regressions.mjs';
 import {checkRefreshInFlight} from './browser-refresh-in-flight-regressions.mjs';
+import {checkCredentialLinks} from './browser-credential-link-regressions.mjs';
+import {checkReferenceSuggestions} from './browser-reference-suggestion-regressions.mjs';
 import {checkErrorDialogs} from './browser-error-dialog-regressions.mjs';
 import {checkFieldMessages} from './browser-field-message-regressions.mjs';
 import {checkProgressCards} from './browser-progress-card-regressions.mjs';
@@ -345,6 +347,14 @@ try {
     await checkErrorDialogs(page);
     assert.deepEqual(errors, []);
     console.log(`PASS error dialog regressions in ${await browser.version()}`);
+  } else if (process.env.BROWSER_TEST_SUITE === 'credential-links') {
+    await checkCredentialLinks(page);
+    assert.deepEqual(errors, []);
+    console.log(`PASS credential link regressions in ${await browser.version()}`);
+  } else if (process.env.BROWSER_TEST_SUITE === 'reference-suggestions') {
+    await checkReferenceSuggestions(page);
+    assert.deepEqual(errors, []);
+    console.log(`PASS reference suggestion regressions in ${await browser.version()}`);
   } else if (process.env.BROWSER_TEST_SUITE === 'refresh-in-flight') {
     await checkRefreshInFlight(page);
     assert.deepEqual(errors, []);

@@ -1471,15 +1471,17 @@ function handleClick(event) {
         return;
     }
 
+    // A link to a password or username note holds that note's copyable row: a click on the
+    // value copies it; the rest of the link (its reference icon) goes to the note.
+    if (handleCredentialCopyClick(event)) {
+        return;
+    }
+
     if (handleReferenceLinkClick(event)) {
         return;
     }
 
     if (handleTodoToggleClick(event)) {
-        return;
-    }
-
-    if (handleCredentialCopyClick(event)) {
         return;
     }
 

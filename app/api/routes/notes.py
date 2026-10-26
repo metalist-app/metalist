@@ -24,6 +24,7 @@ from app.api.note_requests import (
     SearchSuggestionInteractionRequest,
     TabSearchInteractionRequest,
     TagSuggestionsRequest,
+    ReferenceSuggestionsRequest,
     TagDetailsRequest,
     SearchTagDetailsRequest,
     DictationPasteRequest,
@@ -136,6 +137,7 @@ from app.services.view_cache import view_cache
 from app.services.view_diff import generate_diff_ops
 from app.services.tab_state import tab_state_store
 from app.services.backlinks import list_backlinks_for_note
+from app.services.reference_suggestions import suggest_references
 from app.services.undo_state import maybe_reset_on_context
 from app.services.search_history import (
     TagActivityWindowSelection,
@@ -806,6 +808,29 @@ def dictation_paste(payload: DictationPasteRequest) -> Dict[str, object]:
         negate_phrase=payload["negate_phrase"],
     )
     return {"text": text}
+
+
+@router.post("/notes/reference-suggestions")
+@transactional_route
+def reference_suggestions(payload: ReferenceSuggestionsRequest) -> Dict[str, object]:
+    """Notes to reference, for the list `[[` opens in a note (docs/ui/references.md)."""
+    editing_note_id = payload["editing_note_id"]
+    _require_note_present(editing_note_id, context="notes.reference-suggestions")
+    suggestions = suggest_references(query=payload["query"], editing_note_id=editing_note_id)
+    return {
+        "suggestions": [
+            {
+                "noteId": suggestion.note_id,
+                "firstLine": suggestion.first_line,
+                "context": suggestion.context,
+                "snippet": suggestion.snippet,
+                "highlightStart": suggestion.highlight_start,
+                "highlightEnd": suggestion.highlight_end,
+                "credential": suggestion.credential,
+            }
+            for suggestion in suggestions
+        ],
+    }
 
 
 @router.post("/notes/tag-suggestions")

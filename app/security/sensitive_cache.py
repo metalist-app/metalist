@@ -110,6 +110,19 @@ def enable_sensitive_caches() -> None:
         _enabled = True
 
 
+def register_sensitive_cache(clear) -> None:
+    """Clear a cache kept elsewhere along with every other sensitive cache. A cache that fills
+    itself checks sensitive_caches_enabled() after filling, outside its own lock, and clears
+    itself when they are disabled: clear() runs under this module's lock."""
+    with _lock:
+        _clearers.append(clear)
+
+
+def sensitive_caches_enabled() -> bool:
+    with _lock:
+        return _enabled
+
+
 def clear_sensitive_caches() -> None:
     with _lock:
         for clear in _clearers:

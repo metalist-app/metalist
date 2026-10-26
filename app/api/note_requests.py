@@ -191,6 +191,12 @@ class DictationPasteRequest(TypedDict):
     negate_phrase: Identifier
 
 @with_config(ConfigDict(strict=True))
+class ReferenceSuggestionsRequest(TypedDict):
+    """What was typed after `[[` in a note, and the note it is typed in."""
+    query: Text
+    editing_note_id: Identifier
+
+@with_config(ConfigDict(strict=True))
 class TagSuggestionsRequest(TypedDict):
     note_id: Identifier
     anchors: list[Identifier]

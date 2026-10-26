@@ -6192,6 +6192,76 @@ html[data-theme="dark"] .context-menu-item.is-submenu-open {
     color: var(--note-tag-muted);
 }
 
+/* The notes `[[` offers to reference (reference-suggestions-service.js), below the `[[`. */
+.reference-suggestions {
+    position: fixed;
+    z-index: 12500;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    width: min(420px, calc(100vw - 16px));
+    padding: 4px;
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+    background: var(--bg-color);
+    color: var(--text-color);
+    box-shadow: 0 8px 18px rgba(0, 0, 0, 0.16);
+    font-size: 13px;
+}
+
+.reference-suggestion {
+    padding: 5px 8px;
+    border-radius: 6px;
+    cursor: pointer;
+}
+
+.reference-suggestion:hover {
+    background: rgba(127, 127, 127, 0.1);
+}
+
+.reference-suggestion.is-selected {
+    background: rgba(127, 127, 127, 0.2);
+}
+
+.reference-suggestion-title {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+}
+
+.reference-suggestion-text,
+.reference-suggestion-context,
+.reference-suggestion-snippet {
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.reference-suggestion-icon {
+    display: inline-flex;
+    flex: none;
+    width: 14px;
+    height: 14px;
+}
+
+.reference-suggestion-icon svg {
+    width: 100%;
+    height: 100%;
+}
+
+.reference-suggestion-context,
+.reference-suggestion-snippet {
+    color: var(--note-tag-muted);
+    font-size: 12px;
+}
+
+.reference-suggestion-snippet mark {
+    background: transparent;
+    color: var(--text-color);
+    font-weight: 600;
+}
+
 /* Below a menu's actions, set off like a separated item. */
 .context-menu-item + .context-menu-explanation {
     margin-top: 6px;

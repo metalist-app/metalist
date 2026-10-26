@@ -1182,6 +1182,22 @@ def _render_credential_meta(
     )
 
 
+# A credential note's row inside a link to it (docs/ui/references.md): the same icon and
+# click-to-copy value as the note's own row (a password blurred), in a span to sit in a line.
+def render_credential_link_row(*, content_html: str, credential_tag: str) -> str:
+    if credential_tag not in _CREDENTIAL_TAGS:
+        raise KeyError(f"Unknown credential meta tag: {credential_tag}")
+    credential_meta = _CREDENTIAL_META[credential_tag]
+    label_text = credential_meta["label"]
+    escaped_value = html.escape(strip_html(content_html), quote=True)
+    return (
+        f'<span class="meta-credential meta-credential-{credential_tag}">'
+        f'<span class="meta-credential-icon" role="img" title="{label_text}" aria-label="{label_text}">{credential_meta["icon"]}</span>'
+        f'<span class="meta-credential-value" data-copy-value="{escaped_value}">{escaped_value}</span>'
+        "</span>"
+    )
+
+
 def _render_email_meta(
     *,
     content_html: str,

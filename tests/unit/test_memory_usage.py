@@ -116,8 +116,8 @@ def test_the_breakdown_measures_every_part_of_a_loaded_namespace(live_database) 
     breakdown = memory_breakdown.measure_memory_breakdown()
     labels = [part["label"] for part in breakdown["parts"]]
     assert labels == [
-        "Note text cache", "Note store (tree, tags, references)", "Search index", "Rendered note views",
-        "Open views per tab", "Link titles", "Attachments index", "Undo history",
+        "Note text cache", "Note store (tree, tags, references)", "Search index", "Reference suggestions",
+        "Rendered note views", "Open views per tab", "Link titles", "Attachments index", "Undo history",
     ]
     sizes = {part["label"]: part["bytes"] for part in breakdown["parts"]}
     assert sizes["Note store (tree, tags, references)"] > 0 and sizes["Search index"] > 0

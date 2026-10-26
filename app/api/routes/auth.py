@@ -69,7 +69,7 @@ from app.services.root_sorting import clear_root_sort_cache
 from app.services.undo_state import reset_all_undo_state
 from app.services.sync import reset_state as reset_sync_state
 from app.services.runtime_generation import current_generation, invalidate_runtime_work
-from app.security.sensitive_cache import disable_and_clear_sensitive_caches, clear_sensitive_caches
+from app.security.sensitive_cache import disable_and_clear_sensitive_caches, clear_sensitive_caches, enable_sensitive_caches
 from app.services.bulk_operation import bulk_operation_guard
 from app.services.diagnostics import activate_authenticated_logging
 from app.services.diagnostics import deactivate_authenticated_logging
@@ -431,6 +431,9 @@ def _reset_runtime_state_after_restore() -> bool:
         prefetched_rows = populate_cache_from_db(session)
         note_store.load_from_db(None, prefetched_rows=prefetched_rows)
         auth_cache_state.mark_cache_ready()
+        # Unlocking turns the caches of note text back on (set_encryption_key); a vault
+        # without a password has no unlock, so they come back on once its notes are loaded.
+        enable_sensitive_caches()
         del prefetched_rows
         release_freed_memory()
         return False

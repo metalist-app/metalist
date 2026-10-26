@@ -5,12 +5,32 @@
   - **Embed**: a note whose only content is the reference shows the source in place (its whole note is the embed). Characters with no width (a zero-width space, a byte-order mark) are not content.
   - **Link**: with any other content in the note, even an extra line, the reference is a link.
   - An older `![[UUID]]` to a note reads the same as `[[UUID]]`; the `!` changes nothing. MetaList writes `[[UUID]]` (⌘R, ⇧⌘R, Paste Reference Into Note).
-  - Agreed, not built (2026-10-26): `[[UUID|shown text]]`, a link with fixed text of the user's choosing, never an embed (`docs/ready-to-build/reference-link-text.md`); and typing `[[` to choose the note from suggestions (`docs/ready-to-build/reference-suggestions.md`).
+  - A link to an `@password` or `@username` note shows that note's own row: its icon and value (a password blurred), and clicking the value copies it with no stop at the note on the way; the link's reference icon still goes to the note (agreed 2026-10-26). Before, the link showed the password in plain text, as text that did nothing. Exports, prints and the AI show `••••••••`. An embed shows the note's row too. `tests/unit/test_password_reference_links.py`, `scripts/browser-credential-link-regressions.mjs` (Chrome and Firefox).
+  - Typing `[[` in a note offers notes to reference (Suggestions, below).
+  - Agreed, not built (2026-10-26): `[[UUID|shown text]]`, a link with fixed text of the user's choosing, never an embed (`docs/ready-to-build/reference-link-text.md`).
 - File references keep two forms: `![[UUID]]` shows the picture or diagram, `[[UUID]]` a file card.
 - `[[...]]` containing exactly a note or file UUID is always a link, even when the note has a matching `[[...]]` scoped wrapper tag (for example `[[@LaTeX]]`); other `[[...]]` text is formatted by that wrapper, and links nested inside it still render.
 - A UUID can resolve to:
   - a note
   - a file attachment
+
+## Suggestions
+
+Typing `[[` in the note being edited opens a list of notes to reference (agreed 2026-10-26); what is typed after it narrows the list. Choosing a note replaces `[[` and the typed text with `[[UUID]]`, as typing it would. It is an ordinary reference: alone in its note it becomes an embed on leaving edit mode, otherwise a link.
+
+- **The list** sits just below the `[[` (above it near the window's bottom), placed as the paste format card is, and stays put while the user types; it never moves the page. ↑/↓ move through it, Enter or Tab chooses the selected note, a click chooses one. Escape closes it and leaves the typed text, and that `[[` stays closed. Moving the caret away from the `[[`, a click elsewhere or leaving the note closes it. Enter on a list not yet updated for the last keystroke goes into the note as usual.
+- **Nothing matching shows no list**; the typed `[[…` stays plain text. `[[@` starts a wrapper tag (`[[@LaTeX]]`), not a reference, and opens nothing. Text after `[[` longer than 80 characters or holding `[`, `]` or a line break opens nothing.
+- **What it finds**, in four tiers, strictly in order, at most 8 notes; ties go to the most recently edited note (`updated_at`):
+  1. the typed text in the note's first line (as its links show it);
+  2. every typed word fuzzily in the first line: the start of a word there, or, for words of 4 or more letters, one edit away after the first letter (a typo, a swapped pair, a partial word with a typo: `bayse`, `factr`);
+  3. the typed text in the note's text;
+  4. every typed word fuzzily in the note's text.
+  Matching ignores case and runs of spaces. Any note can be suggested, child notes too, but not the note being edited. With nothing typed yet, the list shows the most recently edited notes.
+- **Each suggestion** shows the note's first line. A match in the text (tiers 3 and 4) adds a grey snippet of about 40 characters on each side, with the match in bold. All of it is set as text, never as HTML.
+- **Credentials.** An `@password` note is never found or shown by what it holds: it follows its parent when the parent's first line matches (tiers 1 and 2), shown as the lock icon and `••••••••` with the parent's first line under it, and a link to it is the copyable row (above). An `@username` note shows the user icon and its value, and is found by its value (it is not hidden in the note either).
+- **Speed.** The server keeps every note's first line and text, and the words in them by first letter, in a catalog (`app/services/reference_suggestions.py`) updated for the notes that changed since it was last asked (by the note store's revision). The first typing in a note after the page loads asks for it, so it is built (about 3 s for 100,000 notes) before `[[` is typed; then a keystroke takes at most about 115 ms on 100,000 notes (most under 30 ms), and the list waits 100 ms for typing to settle. A fuzzy search looks up the words that match, then the notes holding them, and every tier stops once the list is full. The catalog is a sensitive cache: locking empties it, and it shows in Memory Usage as Reference suggestions.
+- Route: `POST /api2/notes/reference-suggestions` (`{query, editing_note_id}`). Editor: `app/static/js/modules/mode-manager/services/reference-suggestions-service.js`. Tests: `tests/unit/test_reference_suggestions.py`, `scripts/browser-reference-suggestion-regressions.mjs` (Chrome and Firefox).
+- After choosing, typing `|` for link text waits for `[[UUID|shown text]]` (`docs/ready-to-build/reference-link-text.md`).
 
 ## Rendering Rules
 - **View mode**:

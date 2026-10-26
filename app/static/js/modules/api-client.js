@@ -840,6 +840,24 @@ export const NotesAPI = {
         return this._apiCall(CONFIG.API.NOTES.TAG_SUGGESTIONS, options);
     },
 
+    // Notes to reference for what was typed after `[[` (docs/ui/references.md, "Suggestions").
+    async fetchReferenceSuggestions(query, editingNoteId, signal) {
+        if (typeof query !== 'string') {
+            throw new Error('NotesAPI.fetchReferenceSuggestions requires query string');
+        }
+        if (typeof editingNoteId !== 'string' || editingNoteId === '') {
+            throw new Error('NotesAPI.fetchReferenceSuggestions requires editingNoteId');
+        }
+        if (signal === null || typeof signal !== 'object') {
+            throw new Error('NotesAPI.fetchReferenceSuggestions requires an AbortSignal');
+        }
+        return this._apiCall(CONFIG.API.NOTES.REFERENCE_SUGGESTIONS, {
+            method: 'POST',
+            body: JSON.stringify({ query: query, editing_note_id: editingNoteId }),
+            signal: signal
+        });
+    },
+
     // Retry failed link titles: progress (status "idle" before any run), start, stop.
     async getLinkTitleRetry() {
         return this._apiCall(CONFIG.API.NOTES.LINK_TITLE_RETRY, { method: 'GET' });
