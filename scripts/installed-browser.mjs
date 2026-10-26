@@ -45,3 +45,16 @@ export function installedBrowserExecutable(browserName, environment) {
   }
   return found;
 }
+
+// Closes the browser and lets the run end. The installed Chrome starts its crash reporter and
+// Google's updater, which inherit its output pipes and outlive it: the run then waited on those
+// pipes for minutes after passing, and the whole suite took 14 minutes instead of 5
+// (2026-10-26). Nothing is read from them once the browser is closed.
+export async function closeBrowser(browser) {
+  const chrome = browser.process();
+  await browser.close();
+  if (chrome === null) return;
+  for (const stream of [chrome.stdin, chrome.stdout, chrome.stderr]) {
+    if (stream !== null) stream.destroy();
+  }
+}

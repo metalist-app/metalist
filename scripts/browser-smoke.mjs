@@ -12,7 +12,7 @@ import {join, resolve} from 'node:path';
 import {createServer} from 'node:net';
 import {setTimeout as delay} from 'node:timers/promises';
 import puppeteer from 'puppeteer';
-import {installedBrowserExecutable} from './installed-browser.mjs';
+import {closeBrowser, installedBrowserExecutable} from './installed-browser.mjs';
 import {checkPastedHeadingFormatting} from './browser-formatting-regressions.mjs';
 import {checkAdditionalStateTransitions, checkEditingShortcutSequences} from './browser-state-regressions.mjs';
 import {checkTagDoubleClickSelection} from './browser-tag-selection-regressions.mjs';
@@ -848,7 +848,7 @@ try {
   console.error(`Browser smoke failed; disposable logs: ${directory}`);
   throw error;
 } finally {
-  if (browser) await browser.close();
+  if (browser) await closeBrowser(browser);
   server.kill('SIGTERM');
   const stopped = new Promise(resolve => server.once('exit', resolve));
   await Promise.race([stopped, delay(5000)]);

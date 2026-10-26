@@ -98,7 +98,9 @@ function cardAt(page) {
     return {
       text: notice.querySelector('.backup-reminder-text').textContent,
       top: rect.top, right: rect.right, bottom: rect.bottom, left: rect.left,
-      expectedRight: document.documentElement.clientWidth - edge,
+      // The visible right edge: the page's layout width. documentElement.clientWidth reports the
+      // whole window in current Chrome even while a scrollbar strip is reserved (docs/ui/controls.md).
+      expectedRight: document.documentElement.offsetWidth - edge,
       expectedBottom: document.documentElement.clientHeight - edge,
     };
   }, STACK_EDGE_PX);
