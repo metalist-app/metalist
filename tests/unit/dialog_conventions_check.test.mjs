@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
-import { join, relative } from 'node:path';
+import { join, relative, sep } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
@@ -64,6 +64,12 @@ const EXCEPTIONS = [
         reason: 'AI chat content: a tagging or summary operation inside the conversation' },
 ];
 
+// A file's path as the exceptions name it: from the repository root, with forward slashes
+// on every system (Windows writes backslashes, and CI on Windows then found no exception, 2026-10-26).
+export function repositoryPath(relativePath, separator) {
+    return relativePath.split(separator).join('/');
+}
+
 function sourceFiles(directory) {
     return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
         const path = join(directory, entry.name);
@@ -106,7 +112,7 @@ function unexcused(violations) {
 }
 
 test('no dialog writes its own button row or error line', () => {
-    const files = sourceFiles(MODULES).map((path) => ({ path: relative(ROOT, path), source: readFileSync(path, 'utf8') }));
+    const files = sourceFiles(MODULES).map((path) => ({ path: repositoryPath(relative(ROOT, path), sep), source: readFileSync(path, 'utf8') }));
     assert.deepEqual(unexcused(findDialogConventionViolations(files)), []);
 });
 
@@ -130,4 +136,9 @@ test('the check fails on a dialog that writes its own row and error line', () =>
 test('the shared row itself may write the row', () => {
     const shared = { path: SHARED_ROW, source: 'return `<div class="form-actions dialog-actions">`;' };
     assert.deepEqual(findDialogConventionViolations([shared]), []);
+});
+
+test('exceptions match a Windows path too', () => {
+    assert.equal(repositoryPath('app\\static\\js\\modules\\modals\\memory-usage-modal.js', '\\'), 'app/static/js/modules/modals/memory-usage-modal.js');
+    assert.equal(repositoryPath('app/static/js/modules/modals/memory-usage-modal.js', '/'), 'app/static/js/modules/modals/memory-usage-modal.js');
 });

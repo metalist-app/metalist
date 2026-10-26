@@ -55,7 +55,7 @@ import {checkTagRelationships} from './browser-tag-relationship-regressions.mjs'
 import {checkFindInList} from './browser-find-in-list-regressions.mjs';
 import {checkPictureDrag} from './browser-picture-drag-regressions.mjs';
 import {checkBackupReminder} from './browser-backup-reminder-regressions.mjs';
-import {checkReminderSurfaceWhileEditing} from './browser-reminder-surface-regressions.mjs';
+import {checkReminderCardsBehindDialogs, checkReminderSurfaceWhileEditing} from './browser-reminder-surface-regressions.mjs';
 import {checkFloatingControlsWhileEditing} from './browser-floating-control-regressions.mjs';
 import {checkDeleteWarning} from './browser-delete-warning-regressions.mjs';
 import {FOCUSED_SUITES} from './browser-suite-names.mjs';
@@ -313,6 +313,7 @@ try {
     console.log(`PASS floating control regressions in ${await browser.version()}`);
   } else if (process.env.BROWSER_TEST_SUITE === 'reminder-surface') {
     await checkReminderSurfaceWhileEditing(page);
+    await checkReminderCardsBehindDialogs(page);
     assert.deepEqual(errors, []);
     console.log(`PASS reminder surface regressions in ${await browser.version()}`);
   } else if (process.env.BROWSER_TEST_SUITE === 'backup-reminder') {

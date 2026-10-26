@@ -106,6 +106,7 @@ The popup surface is intentionally compact:
 - Due status is italic and shares a row with `Dismiss`.
 - `Dismiss` acknowledges the current visible occurrence.
 - The popup handles its own presses: pressing `Dismiss` while a note is being edited works on the first press and leaves the note in edit mode; pressing a title opens Reminders, which first saves and leaves the note, as every dialog does.
+- The cards float above everything on the page but wait behind an open dialog, dimmed with the page under its backdrop: a dialog is what the user is working in, so a card never covers its buttons (a due card covered Reminders' `Add Reminder` at 800 × 600). A card that comes due while a dialog is open appears there too; when the dialog closes the stack is on top again in its corner, and `Dismiss` works on the first press (agreed 2026-10-26; `checkReminderCardsBehindDialogs` in `scripts/browser-reminder-surface-regressions.mjs`).
 - When at least one popup is waiting for `Dismiss`, a bell plus up/down arrow appears below the stack.
 - The arrow collapses or expands the stack; no arrow appears when nothing is waiting for `Dismiss`.
 - The expanded/collapsed state is stored as the namespace-scoped `pref.reminder_surface_expanded` client preference in the main database, not in browser storage.
@@ -132,7 +133,7 @@ This keeps the server authoritative while avoiding pointless server traffic duri
 
 Editing a reminder keeps its history (how many times it has fired, when it last fired or was seen, missed and snoozed state) and where its schedule stands, as long as the schedule is unchanged: changing the title, details or pre-reminder neither restarts an "after N times" count nor moves a due occurrence on. Changing the schedule (one-time or recurring, date-time or date-only, the date or time, or the recurrence rule) makes a new schedule whose history starts over. Every request must send every reminder field, and a saved reminder must have every field; only reminders saved during development before details and pre-reminders existed load with those blank.
 
-A reminder needs a title (details are optional): `Add Reminder` with an empty title sends nothing, says "Add a title for the reminder." under the buttons, and puts the cursor in the title field. The form's fields fire both `input` and `change`, so every form change is applied only when the value differs (the client state rejects redundant changes; before that, `Add Reminder` silently did nothing). The release browser check adds a reminder through the dialog (`scripts/browser-validation/browser-startup.mjs`).
+A reminder needs a title (details are optional): `Add Reminder` with an empty title sends nothing, opens an error dialog saying "Add a title for the reminder." (`docs/ui/modals.md`, "Errors"), and when it closes the cursor is in the title field. The form's fields fire both `input` and `change`, so every form change is applied only when the value differs (the client state rejects redundant changes; before that, `Add Reminder` silently did nothing). The release browser check adds a reminder through the dialog (`scripts/browser-validation/browser-startup.mjs`).
 
 `Clear Form` discards the current form state.
 
