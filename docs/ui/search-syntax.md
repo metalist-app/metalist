@@ -1,5 +1,7 @@
 # Search Syntax
 
+Agreed, not built (2026-10-25): `:name` terms without a tag (a property on any tag) and `OR` on a rule's left side; see `docs/ready-to-build/attribute-search-and-or-rules.md`.
+
 ## Scope
 - This document describes the **client-side search query syntax verifier**.
 - It does **not** describe search semantics (what matches what).

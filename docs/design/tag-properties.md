@@ -135,6 +135,8 @@ swimming:distance=1500m
 
 ## Search
 
+Agreed, not built (2026-10-25): `:version` / `:version=0.24.5` search a property on any tag (`docs/ready-to-build/attribute-search-and-or-rules.md`).
+
 ```
 jogging:miles>2
 jogging:miles>2 jogging:duration<40
@@ -203,7 +205,9 @@ before, so you write `miles` again rather than `distance`.
   box this counts the property on the tag and on the tags implying it, as upward
   search does.
 - **Proposed:** otherwise, after `miles=`, suggest no values at first. Value
-  suggestions can come later if they turn out to help.
+  suggestions can come later if they turn out to help. Agreed next (2026-10-25): the
+  tag bar suggests a tag with the values from the last note that used it
+  (`docs/ready-to-build/super-tag-last-values.md`).
 - Activity credit (search suggestion statistics) goes to the tag, as today, never to
   properties.
 

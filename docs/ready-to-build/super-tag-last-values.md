@@ -1,6 +1,6 @@
 # Super tags: suggest the values you used last time
 
-**Status:** Agreed with the maintainer 2026-10-25. Small; ready to build.
+**Status:** Agreed with the maintainer 2026-10-25. Small; ready to build, not started. Filed here from `docs/inbox/` on 2026-10-25; next to build.
 **Scope:** The tag bar's suggestions for a super tag that has been used with values before. This is the "value suggestions can come later" step in `docs/design/tag-properties.md` (Suggestions); update that document when it's built.
 
 Written without running the code. Check every reference before relying on it; build only what's missing.
@@ -40,3 +40,13 @@ Then today's suggestions continue as they are (property names after `tag:`, unit
 ## 4. Open (don't block on these)
 
 - Whether to also offer the most often used values when they differ from the last ones (for example as a third suggestion).
+
+## Found when filed (2026-10-25)
+
+- `docs/design/tag-properties.md`, "Suggestions", still says "Value suggestions can come later"; it points here now.
+- **Wrong reference** (in `tag-properties.md`, "Where it touches the code", too): typed tags in the tag bar are ranked by `app/services/tag_suggestions.py` `_suggest_while_typing`, served by `POST /notes/tag-suggestions` (`app/api/routes/notes.py`); `SearchIndex.suggest_tag_completions` serves only `@meta` prefixes.
+- The search index keeps each note's own values (`_note_properties`, `_property_notes`), never inherited ones, but not `created_at` and not the values as written (`PropertyValue` casefolds the unit): the token as written comes from the note's tag line (`NoteRecord.tags`), its date from `NoteRecord.created_at` (which can be missing).
+- Once the whole tag name is typed, today's list leaves that tag out (`explicit_tags` includes the token being typed), so the bare tag as the second suggestion needs adding explicitly.
+- Accepting replaces the typed token with the suggestion's text (`applySuggestion`), so a full token needs no client change.
+- Nothing is built yet; no schema change looks needed (values are already stored on each note's tag line).
+- Open, as §4 says: also offering the most-used values. And "last" means most recently created; confirm in use.

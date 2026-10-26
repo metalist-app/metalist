@@ -1,5 +1,7 @@
 # Ontology Rules (v1)
 
+Agreed, not built (2026-10-25): `a OR b => c` on a rule's left side, as sugar for one rule per group; see `docs/ready-to-build/attribute-search-and-or-rules.md`.
+
 Status: DB-backed (SQLite) and hot-editable via API/UI; rules are cached in memory.
 
 ## Scope

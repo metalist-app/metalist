@@ -1,6 +1,6 @@
 # Attribute searches without a tag, and OR in ontology rules
 
-**Status:** Agreed with the maintainer 2026-10-25. §1 and §2 ready to build. §3 is a recorded future idea; don't build it.
+**Status:** Agreed with the maintainer 2026-10-25. §1 and §2 ready to build, not started; filed here from `docs/inbox/` on 2026-10-25. §3 is a recorded future idea, filed in `docs/future-plans/same-tag-twice.md`; don't build it.
 
 Written without running the code. Check every reference before relying on it; build only what's missing. Update `docs/ui/search-syntax.md`, `docs/ui/search-semantics.md`, `docs/design/tag-properties.md` and `docs/design/ontology-rules-v1.md` with the result.
 
@@ -34,3 +34,8 @@ The maintainer now has use cases (`breakfast-burrito:calories=800` twice for two
 - `a OR b => c` infers `c` from either side; `a b OR c d e => f` infers `f` only when all of one group is present.
 - The inference explanation names the matching group.
 - Existing rules and searches behave exactly as before.
+
+## Found when filed (2026-10-25)
+
+- Neither is built: `docs/ui/search-syntax.md` says "The tag comes first" (no `:name` term without a tag), and `docs/design/ontology-rules-v1.md` has no `OR` on the left side (only the `(a b c) => d` group form).
+- The four documents named above exist and point here now.

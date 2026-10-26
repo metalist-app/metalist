@@ -1,5 +1,7 @@
 # Search Semantics
 
+Agreed, not built (2026-10-25): `:name` terms that match a property on any tag; see `docs/ready-to-build/attribute-search-and-or-rules.md`.
+
 This document describes **server-side search behavior** (what matches what).
 
 For input grammar, normalization rules, and completeness gating, see:

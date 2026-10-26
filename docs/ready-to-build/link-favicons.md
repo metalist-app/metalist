@@ -1,6 +1,6 @@
 # Show site icons (favicons) on links
 
-**Status:** Agreed with the maintainer 2026-10-25. Small; ready to build.
+**Status:** Agreed with the maintainer 2026-10-25. Ready to build, not started; filed here from `docs/inbox/` on 2026-10-25. Second to build, after `super-tag-last-values.md`.
 **Scope:** where a link displays with its fetched title, show the website's small icon before the title.
 
 Written without running the code. Check every reference before relying on it; build only what's missing. Document the result where link titles are documented.
@@ -41,3 +41,9 @@ Unchanged from titles: the browser never contacts the linked site; the server fe
 - Two links to the same site cause one fetch and share the icon.
 - Stored icons are encrypted (encryption audit passes).
 - Dark theme: the tile keeps a dark icon visible.
+
+## Found when filed (2026-10-25)
+
+- The references hold: `app/services/link_titles.py`, `app/services/public_http.py`, `app/services/remote_image_proxy.py` and `app/encryption_audit.py` (which already covers `link_titles`).
+- **A schema change:** one stored icon per origin is a new table (or new columns), so per AGENTS.md it bumps `CURRENT_DATABASE_VERSION` (now 11, `app/db/version.py`) with a migration step in `app/db/migrations.py`, keys the encryption audit on the new version, classifies every new column, and documents readable structural metadata in `docs/security/README.md`. Not "small" in that respect.
+- Link titles are documented in `docs/ui/content-formatting.md` (and `docs/AI-SUMMARY.md`); it points here now.
