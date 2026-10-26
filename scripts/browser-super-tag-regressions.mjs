@@ -6,7 +6,9 @@ import { waitForAppQuiet } from './browser-app-idle.mjs';
 // The search box suggests property names after a tag's colon, searches compare values
 // (through implications, with MAX), the tag bar suggests names and saves a super tag
 // whole, and a rule over values tags the notes it holds for and shows in the left
-// column of Edit Tag Relationships. Each case reports its own failure.
+// column of Edit Tag Relationships. Typing a tag used with values offers last time's
+// values first, then the bare tag (docs/design/tag-properties.md, Suggestions).
+// Each case reports its own failure.
 
 // Requests count as quiet after this long without one starting or ending.
 const REQUESTS_QUIET_MS = 300;
@@ -16,6 +18,7 @@ const NOTES = [
   ['Bike ride', 'cycling:miles=20'],
   ['Pills', 'drug:dosage=10mg'],
   ['Super tag bar note', 'fruit'],
+  ['Last values note', 'lastvalues'],
 ];
 const RULES = ['jogging => exercise', 'cycling => exercise', 'jogging:miles>10 => long-run'];
 
@@ -89,6 +92,42 @@ async function aRuleTagsTheNotesItHoldsFor(page) {
   assert.deepEqual(await shownNoteTexts(page), ['Long run'], 'jogging:miles>10 => long-run');
 }
 
+// The newest note with jogging values is Long run (miles=12): typing jog offers that whole
+// token, then jogging; with the whole name typed, only the token; accepting it and changing
+// the value saves the new value, and Long run keeps its own.
+async function theTagBarOffersLastTimesValues(page) {
+  await search(page, 'lastvalues');
+  await page.click('#notes-container [data-note-id] .note-content');
+  await idle(page);
+  await page.keyboard.press('Tab');
+  await page.keyboard.press('End');
+  await page.keyboard.type(' jog');
+  await page.waitForFunction(() => [...document.querySelectorAll('.note-tag-suggestion')].some(item => item.offsetParent !== null));
+  await idle(page);
+  const labels = await suggestionLabels(page, '.note-tag-suggestion');
+  assert.deepEqual(labels.slice(0, 2), ['jogging:miles=12', 'jogging'], 'last time\'s values first, then the bare tag');
+  // The whole name typed: the bare tag is what is already there, so only the values.
+  await page.keyboard.type('ging');
+  await page.waitForFunction(() => {
+    const first = document.querySelector('.note-tag-suggestion');
+    return first !== null && first.textContent === 'jogging:miles=12';
+  });
+  await idle(page);
+  const whole = await suggestionLabels(page, '.note-tag-suggestion');
+  assert.equal(whole.includes('jogging'), false, 'the bare tag already typed is not offered again');
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('Backspace');
+  await page.keyboard.press('Backspace');
+  await page.keyboard.type('15');
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Escape');
+  await idle(page);
+  await search(page, 'jogging:miles=15');
+  assert.deepEqual(await shownNoteTexts(page), ['Last values note'], 'the accepted values, edited, are saved');
+  await search(page, 'jogging:miles=12');
+  assert.deepEqual(await shownNoteTexts(page), ['Long run'], 'the note the values came from keeps its own');
+}
+
 async function theTagBarSuggestsAndSavesASuperTag(page) {
   await search(page, 'fruit');
   await page.click('#notes-container [data-note-id] .note-content');
@@ -138,6 +177,8 @@ export async function checkSuperTags(page) {
       ['search suggestions and a comparison', searchSuggestsPropertiesThenCompares],
       ['MAX and units', maxKeepsTheLargest],
       ['a rule over values', aRuleTagsTheNotesItHoldsFor],
+      // Before 'the tag bar', which gives a newer note jogging values.
+      ['last time\'s values', theTagBarOffersLastTimesValues],
       ['the tag bar', theTagBarSuggestsAndSavesASuperTag],
       ['Edit Tag Relationships…', theRuleShowsInItsTagsLeftColumn],
     ]) {

@@ -364,6 +364,22 @@ def tag_bar_values(tags: str) -> Tuple[FrozenSet[str], Dict[Tuple[str, str], Pro
     return frozenset(own_tag_names), values
 
 
+def own_value_token(tags: str, tag_casefold: str) -> str:
+    """The token, as written, that gives a tag its values on a note's own tag line
+    (`breakfast-burrito:calories=800:fat=10g`), or '' when none does. Meta tags and tags
+    inside scopes have no own values, as in tag_bar_values."""
+    if not isinstance(tags, str):
+        raise TypeError(f"tags must be a string, got {type(tags)}")
+    for token in _tokenize_tag_bar(tags):
+        base, wrapper = _unwrap_tag_token(token)
+        if wrapper is not None or base.startswith("@"):
+            continue
+        tag_name, token_values = token_properties(base)
+        if tag_name == tag_casefold and token_values:
+            return base
+    return ""
+
+
 def extract_ordered_tags_for_agent(tags: str) -> tuple[str, ...]:
     """The tags the AI is shown for a note: as for search, but a super tag whole with its
     values (jogging:miles=3), so the AI sees them and can propose its own."""
@@ -1358,6 +1374,19 @@ class SearchIndex:
             self._note_properties[note_int_id] = properties
         elif note_int_id in self._note_properties:
             del self._note_properties[note_int_id]
+
+    def notes_with_own_values(self, tag_casefold: str) -> List[str]:
+        """The live notes whose own tag line gives the tag at least one value (never an
+        inherited value, never one inside a scope): where the tag bar's last-used values
+        come from (docs/design/tag-properties.md, Suggestions)."""
+        if not isinstance(tag_casefold, str) or tag_casefold == "" or tag_casefold != tag_casefold.casefold():
+            raise ValueError("notes_with_own_values requires a casefolded tag")
+        with self._lock:
+            note_ids: Set[int] = set()
+            for (tag, _property_name), holders in self._property_notes.items():
+                if tag == tag_casefold:
+                    note_ids |= holders
+            return [self._id_to_uuid[note_int_id] for note_int_id in note_ids if note_int_id in self._alive]
 
     def _tags_implying_locked(self, tag_casefold: str) -> FrozenSet[str]:
         """The tag and every tag implying it, synonyms included, casefolded; the tag alone

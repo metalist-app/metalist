@@ -204,10 +204,28 @@ before, so you write `miles` again rather than `distance`.
   box), suggest the units used with that property, most used first. In the search
   box this counts the property on the tag and on the tags implying it, as upward
   search does.
-- **Proposed:** otherwise, after `miles=`, suggest no values at first. Value
-  suggestions can come later if they turn out to help. Agreed next (2026-10-25): the
-  tag bar suggests a tag with the values from the last note that used it
-  (`docs/ready-to-build/super-tag-last-values.md`).
+- **Last time's values** (built 2026-10-25): wherever the tag bar suggests a tag that has
+  been used with values (the empty bar, as when the note's text names it, and while
+  typing), it offers it twice in a row: first the whole token from the most recently
+  created note that wrote values on it, units as written
+  (`breakfast-burrito:calories=800:fat=10g`), then the bare tag. Once the whole name is
+  typed, or a suggestion put it there, only the token is offered: the bare tag is
+  already there. The AI's tag vocabulary reads the same ranking without the tokens.
+  Only values written on a note's own tag line count: never inherited ones, never ones
+  inside a scope, never the note being edited; a note with no creation date counts as
+  the oldest. Accepting inserts the text as if typed; a value can be changed before
+  leaving the note, and older notes never change. Its reason names where the values
+  come from ("Values from the last note tagged breakfast-burrito (Oct 22, 2026)"). The
+  search box is unchanged. Why last-used values rather than defaults set in the tag
+  editor: no setup, they adapt by themselves, and each note keeps the values written
+  on it, so logging a regular food takes a couple of keystrokes. Code:
+  `_with_last_values` (applied by `suggest_tags_with_reasons_for_note`, the tag bar's
+  list) in `app/services/tag_suggestions.py`,
+  `SearchIndex.notes_with_own_values` and `own_value_token` in
+  `app/services/search_index.py`; tests: `tests/unit/test_super_tag_last_values.py`,
+  the `super-tags` browser suite. Open: also offering the most-used values when they
+  differ from the last ones.
+- After `miles=`, no values are suggested.
 - Activity credit (search suggestion statistics) goes to the tag, as today, never to
   properties.
 
@@ -278,8 +296,10 @@ Decided 2026-10-23:
 - **Search parsing and semantics** (`parse_search_query`, `SearchIndex`): property
   postings by tag and property, typed values, upward matching through the ontology
   closure, the plain-tag match for property tokens.
-- **Suggestions:** `SearchIndex.suggest_tag_completions` and the tag-bar suggestions,
-  for property names.
+- **Suggestions:** `SearchIndex.suggest_property_completions` for property names and
+  units; typed tags in the tag bar, with last time's values, in
+  `app/services/tag_suggestions.py` (`_suggest_while_typing`, `_with_last_values`).
+  `SearchIndex.suggest_tag_completions` serves only `@meta` prefixes.
 - **Ontology rules** (`app/services/tag_ontology.py`): property atoms on the LHS.
 - **Rename and delete** (`app/services/tag_rename.py`).
 - **Other tag paths that must accept or ignore the form:** Add as Tag from a selection,

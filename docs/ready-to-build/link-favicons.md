@@ -1,6 +1,6 @@
 # Show site icons (favicons) on links
 
-**Status:** Agreed with the maintainer 2026-10-25. Ready to build, not started; filed here from `docs/inbox/` on 2026-10-25. Second to build, after `super-tag-last-values.md`.
+**Status:** Agreed with the maintainer 2026-10-25. Ready to build, not started; filed here from `docs/inbox/` on 2026-10-25. Next to build.
 **Scope:** where a link displays with its fetched title, show the website's small icon before the title.
 
 Written without running the code. Check every reference before relying on it; build only what's missing. Document the result where link titles are documented.
