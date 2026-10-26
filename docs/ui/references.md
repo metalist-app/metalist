@@ -5,6 +5,7 @@
   - **Embed**: a note whose only content is the reference shows the source in place (its whole note is the embed). Characters with no width (a zero-width space, a byte-order mark) are not content.
   - **Link**: with any other content in the note, even an extra line, the reference is a link.
   - An older `![[UUID]]` to a note reads the same as `[[UUID]]`; the `!` changes nothing. MetaList writes `[[UUID]]` (⌘R, ⇧⌘R, Paste Reference Into Note).
+  - Agreed, not built (2026-10-26): `[[UUID|shown text]]`, a link with fixed text of the user's choosing, never an embed (`docs/ready-to-build/reference-link-text.md`); and typing `[[` to choose the note from suggestions (`docs/ready-to-build/reference-suggestions.md`).
 - File references keep two forms: `![[UUID]]` shows the picture or diagram, `[[UUID]]` a file card.
 - `[[...]]` containing exactly a note or file UUID is always a link, even when the note has a matching `[[...]]` scoped wrapper tag (for example `[[@LaTeX]]`); other `[[...]]` text is formatted by that wrapper, and links nested inside it still render.
 - A UUID can resolve to:

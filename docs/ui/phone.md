@@ -44,7 +44,7 @@ suggestions from the vault's tags, and Cancel · Save at the lower right (the sh
 `modals/action-row.js`). Save is dimmed, its tooltip saying "Write the note first.", until the note
 has text. Save creates a new note at
 the top with the text and the tags; with no tags it is tagged **`@inbox`**, a reserved meta tag
-(meta tags are not inherited, so search `@inbox` for what to sort).
+(meta tags are not inherited, so search `@inbox` for what to sort). The desktop counterpart, clipping a web page into the open MetaList tab with a bookmarklet, is agreed and ready to build: `docs/ready-to-build/web-clipper.md`.
 
 ## Logging in on a phone
 - The vault's HTTPS address on the local network, e.g. `https://10.0.0.31:9443` (each vault has
