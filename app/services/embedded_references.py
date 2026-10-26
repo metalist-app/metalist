@@ -883,10 +883,14 @@ def _credential_link_row_or_none(*, reference_note_id: str, context: EmbedRender
         reference_note_id, has_note=context.has_note, content_of=_context_content(context),
     )
     record = context.get_note(shown_note_id)
-    credential_tag = find_global_credential_tag(record.tags)
+    content_html = getattr(record, "content")
+    tags = getattr(record, "tags")
+    if not isinstance(content_html, str) or not isinstance(tags, str):
+        raise TypeError("a referenced note's content and tags must be strings")
+    credential_tag = find_global_credential_tag(tags)
     if credential_tag is None:
         return None
-    return render_credential_link_row(content_html=record.content, credential_tag=credential_tag)
+    return render_credential_link_row(content_html=content_html, credential_tag=credential_tag)
 
 
 def _render_link_preview_thumbnail(
