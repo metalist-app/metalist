@@ -895,7 +895,6 @@ async function suggestTagsWithAi(noteId, includeChildren) {
             await actionRefreshAndMaybeSelect({
                 startedAt: performance.now(),
                 context: 'contextMenu.suggestTagsWithAi',
-                requireExecution: true,
                 keepEditingFocus: true,
             });
         }
@@ -948,7 +947,6 @@ async function resolveAllTagProposals(noteId, action, includesHiddenChildren) {
         await actionRefreshAndMaybeSelect({
             startedAt: performance.now(),
             context: `contextMenu.tagProposals.${action}All`,
-            requireExecution: true,
             keepEditingFocus: true,
         });
     });

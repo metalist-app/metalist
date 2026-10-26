@@ -30,7 +30,7 @@ test('completed titles defer during editing and request a guaranteed refresh aft
     assert.equal(scheduled.size, 1);
     mode.isEditing = false;
     await polling.refreshForLinkTitleChanges();
-    assert.deepEqual(refreshes, [{ context: 'link-title-refresh', requireExecution: true }]);
+    assert.deepEqual(refreshes, [{ context: 'link-title-refresh' }]);
     polling.handleLinkTitleRevision({ authenticated: false });
     assert.equal(scheduled.size, 0);
 });

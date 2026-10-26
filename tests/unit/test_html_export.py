@@ -391,7 +391,8 @@ def test_build_notes_export_document_renders_markdown_meta_server_side(
     assert "<h1>Title</h1>" in html
     assert '<ul><li>one</li><li>two</li></ul>' in html
     assert (
-        '<a href="https://example.com" target="_blank" rel="noopener noreferrer">docs</a>'
+        '<a class="link-title" href="https://example.com" target="_blank" rel="noopener noreferrer">'
+        'docs<span class="link-title-domain"> · example.com</span></a>'
         in html
     )
     assert "# Title" not in html

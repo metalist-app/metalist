@@ -502,7 +502,6 @@ function handleRobotPress(event, robot) {
                 await actionRefreshAndMaybeSelect({
                     startedAt: performance.now(),
                     context: 'mouse.proposal_robot',
-                    requireExecution: true,
                     keepEditingFocus: true,
                 });
             }
@@ -1417,7 +1416,6 @@ function handleClick(event) {
             await actionRefreshAndMaybeSelect({
                 startedAt: performance.now(),
                 context: `tagProposal.${action}`,
-                requireExecution: true,
                 keepEditingFocus: true,
             });
             if (action === 'accept') {

@@ -187,7 +187,14 @@ async function maybeMoveBand(state, { needsRootsAbove, needsRootsBelow }) {
     const startBefore = ModeContext.getRootWindowStart();
     const endBefore = startBefore + ModeContext.knownRootCount;
 
-    const { actionRefreshAndMaybeSelect } = await import('../actions/ui-actions.js');
+    const { actionRefreshAndMaybeSelect, isViewRequestInFlight } = await import('../actions/ui-actions.js');
+    // While another view request is on its way the poll skips a round: it comes again in
+    // POLL_INTERVAL_MS, and its checks below assume its own request ran. Asked in the same
+    // task as the call, so no request can start in between.
+    if (isViewRequestInFlight()) {
+        state.pendingFetch = false;
+        return;
+    }
     // Band shifts add and drop roots at the edges; animating those removals
     // would shrink content above the viewport over several frames.
     await actionRefreshAndMaybeSelect({ startedAt, context, animateNoteChanges: false });

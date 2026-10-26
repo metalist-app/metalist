@@ -46,6 +46,7 @@ from app.utils.text_utils import HTMLStripper, LinkUrlKeepingStripper, strip_htm
 from app.services.markdown_rendering import render_markdown_to_html
 from app.services.ontology_rules_store import get_ontology_if_ready
 from app.services.file_registry import file_registry
+from app.security.rendered_html import RENDERER_CLASS_PREFIXES
 from app.services.link_titles import display_domain_for_url
 from app.services.link_icons import link_icon_store
 from app.services.link_titles import link_title_store
@@ -183,6 +184,7 @@ _ANCHOR_START_TAG_RE = re.compile(r"<\s*a\b", re.IGNORECASE)
 _ANCHOR_END_TAG_RE = re.compile(r"<\s*/\s*a\s*>", re.IGNORECASE)
 _ANCHOR_HREF_ATTR_RE = re.compile(r'(\bhref\s*=\s*)(["\'])(?P<value>.*?)\2', re.IGNORECASE)
 _ANCHOR_TARGET_ATTR_RE = re.compile(r'(\btarget\s*=\s*)(["\'])(.*?)\2', re.IGNORECASE)
+_ANCHOR_CLASS_ATTR_RE = re.compile(r'(\bclass\s*=\s*)(["\'])(?P<value>.*?)\2', re.IGNORECASE)
 _ANCHOR_REL_ATTR_RE = re.compile(r'(\brel\s*=\s*)(["\'])(?P<value>.*?)\2', re.IGNORECASE)
 _URL_LABEL_ANCHOR_RE = re.compile(
     r'(?P<opener><a\b[^>]*>)(?P<label>https?://[^<]*)</a\s*>', re.IGNORECASE,
@@ -455,6 +457,16 @@ def format_note_content_for_view(*, content_html: str, tags: str, redact_credent
     if not isinstance(redact_credentials, bool):
         raise TypeError(f"redact_credentials must be a bool, got {type(redact_credentials)}")
 
+    if _LINK_FETCHES_IN_RENDER.get() is not None:
+        return _format_note_content_with_footnotes(content_html=content_html, tags=tags, redact_credentials=redact_credentials)
+    reset_token = _LINK_FETCHES_IN_RENDER.set(set())
+    try:
+        return _format_note_content_with_footnotes(content_html=content_html, tags=tags, redact_credentials=redact_credentials)
+    finally:
+        _LINK_FETCHES_IN_RENDER.reset(reset_token)
+
+
+def _format_note_content_with_footnotes(*, content_html: str, tags: str, redact_credentials: bool) -> str:
     footnotes: list[tuple[str, str]] = []
     output = _format_note_content_for_view(
         content_html=content_html, tags=tags, redact_credentials=redact_credentials,
@@ -623,26 +635,101 @@ def _linkify_plain_view_links(content_html: str) -> str:
     pieces = _HTML_TAG_SPLIT_RE.split(content_html)
     output: List[str] = []
     inside_anchor_depth = 0
+    # The pieces of a web link with its own text, from its start tag to its end tag: it is
+    # shown as every web link is once read whole (_decorate_web_link).
+    web_link: List[str] = []
 
     for piece in pieces:
         if piece == "":
             continue
-        if piece.startswith("<") and piece.endswith(">"):
+        is_tag = piece.startswith("<") and piece.endswith(">")
+        if web_link:
+            web_link.append(piece)
+            if is_tag and _ANCHOR_START_TAG_RE.match(piece):
+                inside_anchor_depth += 1
+            elif is_tag and _ANCHOR_END_TAG_RE.fullmatch(piece):
+                inside_anchor_depth -= 1
+                if inside_anchor_depth == 0:
+                    output.append(_decorate_web_link(web_link))
+                    web_link = []
+            continue
+        if is_tag:
             normalized_tag = _normalize_anchor_tag(piece)
-            output.append(normalized_tag)
             if _ANCHOR_END_TAG_RE.fullmatch(piece):
+                output.append(normalized_tag)
                 if inside_anchor_depth > 0:
                     inside_anchor_depth -= 1
                 continue
             if _ANCHOR_START_TAG_RE.match(piece):
                 inside_anchor_depth += 1
+                if inside_anchor_depth == 1 and _undecorated_web_link_url(piece) is not None:
+                    web_link = [normalized_tag]
+                    continue
+            output.append(normalized_tag)
             continue
         if inside_anchor_depth > 0:
             output.append(piece)
             continue
         output.append(_autolink_plain_urls_in_text(piece))
 
+    # A link left open shows as it was written.
+    output.extend(web_link)
     return "".join(output)
+
+
+# The address of a web link the renderers have not drawn yet (an http(s) link the note
+# holds, with its own text); None for anything else: mailto:, in-page and in-app links,
+# links the renderers already drew (link titles, note references, files, footnotes).
+def _undecorated_web_link_url(tag_html: str) -> str | None:
+    class_match = _ANCHOR_CLASS_ATTR_RE.search(tag_html)
+    if class_match is not None and any(
+        name.startswith(RENDERER_CLASS_PREFIXES) for name in class_match.group("value").split()
+    ):
+        return None
+    href_match = _ANCHOR_HREF_ATTR_RE.search(tag_html)
+    if href_match is None:
+        return None
+    url = html.unescape(href_match.group("value")).strip()
+    if not url.casefold().startswith(("http://", "https://")):
+        return None
+    if normalize_url_for_link_title(url) is None:
+        return None
+    return url
+
+
+# A web link with its own text, as every web link shows (agreed 2026-10-26): the site's icon,
+# its text, " · domain". Text that is the address shows the address's fetched title;
+# text that is the domain is not followed by it again; a link with no text (a linked
+# picture) shows as written.
+def _decorate_web_link(pieces: List[str]) -> str:
+    start_tag, inner, end_tag = pieces[0], "".join(pieces[1:-1]), pieces[-1]
+    url = _undecorated_web_link_url(start_tag)
+    assert url is not None, "only web links are decorated"
+    text = html.unescape(_HTML_TAG_SPLIT_RE.sub("", inner)).strip()
+    if text == "":
+        return "".join(pieces)
+    if text == url:
+        escaped_url = html.escape(url, quote=True)
+        return _render_plain_url_anchor(link_text=escaped_url, href_value=escaped_url)
+    domain_html = _link_domain_html(url)
+    if _bare_host(text) == _bare_host(display_domain_for_url(url)):
+        domain_html = ""
+    return f"{_with_link_title_class(start_tag)}{_link_icon_html(url)}{inner}{domain_html}{end_tag}"
+
+
+def _with_link_title_class(start_tag: str) -> str:
+    class_match = _ANCHOR_CLASS_ATTR_RE.search(start_tag)
+    if class_match is None:
+        return re.sub(r"^<a\b", '<a class="link-title"', start_tag, count=1, flags=re.IGNORECASE)
+    return _ANCHOR_CLASS_ATTR_RE.sub(rf'\1\2{class_match.group("value")} link-title\2', start_tag, count=1)
+
+
+
+def _bare_host(text: str) -> str:
+    host = text.strip().casefold()
+    if host.startswith("www."):
+        return host[len("www."):]
+    return host
 
 
 def _autolink_plain_urls_in_text(text: str) -> str:
@@ -660,27 +747,22 @@ def _autolink_plain_urls_in_text(text: str) -> str:
             continue
         output.append(text[cursor:match.start()])
         href_value = html.escape(html.unescape(link_text), quote=True)
-        output.append(_render_plain_url_anchor(text=text, link_text=link_text, href_value=href_value))
+        output.append(_render_plain_url_anchor(link_text=link_text, href_value=href_value))
         output.append(trailing_suffix)
         cursor = match.end()
     output.append(text[cursor:])
     return "".join(output)
 
 
-def _render_plain_url_anchor(*, text: str, link_text: str, href_value: str) -> str:
-    if not isinstance(text, str):
-        raise TypeError("text must be a string")
+def _render_plain_url_anchor(*, link_text: str, href_value: str) -> str:
     if not isinstance(link_text, str) or link_text == "":
         raise TypeError("link_text must be a non-empty string")
     if not isinstance(href_value, str) or href_value == "":
         raise TypeError("href_value must be a non-empty string")
 
-    stripped = text.strip()
-    if stripped != link_text:
-        return f'<a href="{href_value}" target="_blank" rel="noopener noreferrer">{link_text}</a>'
-
+    # Alone on its line or inside a sentence, an address shows its fetched title (agreed 2026-10-26).
     decoded_url = html.unescape(link_text)
-    title_html = render_standalone_link_title_html(decoded_url)
+    title_html = _link_title_html(decoded_url)
     if title_html is None:
         diagnostic = link_title_store.get_diagnostic(decoded_url)
         diagnostic_title_attr = ""
@@ -730,31 +812,48 @@ def _render_footnote_url_title_match(match: re.Match[str]) -> str:
     if label != href:
         return match.group(0)
     escaped_url = html.escape(href, quote=True)
-    return _render_plain_url_anchor(text=escaped_url, link_text=escaped_url, href_value=escaped_url)
+    return _render_plain_url_anchor(link_text=escaped_url, href_value=escaped_url)
 
 
-# Rendering requests link-title fetches as a side effect (first lookup and
-# backoff retries). Cached renders record those requests so a cache hit can
-# replay exactly the calls a fresh render would make.
-_LINK_TITLE_FETCH_RECORDER: ContextVar[List[str] | None] = ContextVar(
+# Rendering requests link-title and site-icon fetches as a side effect (first lookup and
+# backoff retries). Cached renders record those requests, with what each was for, so a
+# cache hit can replay exactly the calls a fresh render would make.
+_TITLE_FETCH = "title"
+_ICON_FETCH = "icon"
+_LINK_TITLE_FETCH_RECORDER: ContextVar[List[Tuple[str, str]] | None] = ContextVar(
     "link_title_fetch_recorder", default=None,
 )
 
 
-def _record_link_fetch(url: str) -> None:
+# What one render has asked for: a note with footnotes is linked twice (the body, then with
+# its footnotes), and each link asks once.
+_LINK_FETCHES_IN_RENDER: ContextVar[Set[Tuple[str, str]] | None] = ContextVar(
+    "link_fetches_in_render", default=None,
+)
+
+
+# False when this render already asked for it.
+def _record_link_fetch(kind: str, url: str) -> bool:
+    asked = _LINK_FETCHES_IN_RENDER.get()
+    if asked is not None:
+        if (kind, url) in asked:
+            return False
+        asked.add((kind, url))
     recorded = _LINK_TITLE_FETCH_RECORDER.get()
     if recorded is not None:
-        recorded.append(url)
+        recorded.append((kind, url))
+    return True
 
 
 def _request_link_title_fetch(url: str) -> None:
-    _record_link_fetch(url)
-    link_title_store.maybe_enqueue_fetch(url)
+    if _record_link_fetch(_TITLE_FETCH, url):
+        link_title_store.maybe_enqueue_fetch(url)
 
 
+# A link with its own text needs only its site's icon, never its page's title.
 def _request_link_icon_fetch(url: str) -> None:
-    _record_link_fetch(url)
-    link_icon_store.maybe_enqueue_fetch(url)
+    if _record_link_fetch(_ICON_FETCH, url):
+        link_icon_store.maybe_enqueue_fetch(url)
 
 
 def _enqueue_link_fetches(url: str) -> None:
@@ -766,9 +865,9 @@ def _enqueue_link_fetches(url: str) -> None:
 
 
 @contextmanager
-def recording_link_title_fetches() -> Iterator[List[str]]:
+def recording_link_title_fetches() -> Iterator[List[Tuple[str, str]]]:
     assert _LINK_TITLE_FETCH_RECORDER.get() is None, "link-title fetch recording does not nest"
-    recorded: List[str] = []
+    recorded: List[Tuple[str, str]] = []
     reset_token = _LINK_TITLE_FETCH_RECORDER.set(recorded)
     try:
         yield recorded
@@ -776,8 +875,12 @@ def recording_link_title_fetches() -> Iterator[List[str]]:
         _LINK_TITLE_FETCH_RECORDER.reset(reset_token)
 
 
-def replay_link_title_fetches(urls: Tuple[str, ...]) -> None:
-    for url in urls:
+def replay_link_title_fetches(requests: Tuple[Tuple[str, str], ...]) -> None:
+    for kind, url in requests:
+        if kind == _ICON_FETCH:
+            link_icon_store.maybe_enqueue_fetch(url)
+            continue
+        assert kind == _TITLE_FETCH, f"unknown link fetch: {kind}"
         _enqueue_link_fetches(url)
 
 
@@ -795,24 +898,30 @@ def render_standalone_link_title_html(text: str) -> str | None:
     if link_text != stripped or trailing_suffix != "":
         return None
 
-    title = link_title_store.get_ok_title(link_text)
-    if title is None:
-        _request_link_title_fetch(link_text)
-        return None
+    return _link_title_html(link_text)
 
-    # The site's icon goes before the title once both are known (docs/ui/content-formatting.md).
-    icon_html = ""
-    icon_png_base64 = link_icon_store.get_icon_base64(link_text)
+
+# A bare address's fetched title as every web link shows it: the site's icon, the title,
+# " · domain"; None (its title asked for) until the title is known.
+def _link_title_html(url: str) -> str | None:
+    title = link_title_store.get_ok_title(url)
+    if title is None:
+        _request_link_title_fetch(url)
+        return None
+    return f'{_link_icon_html(url)}<span class="link-title-text">{html.escape(title)}</span>{_link_domain_html(url)}'
+
+
+# The site's icon before a web link (docs/ui/content-formatting.md); '' (and asked for) until known.
+def _link_icon_html(url: str) -> str:
+    icon_png_base64 = link_icon_store.get_icon_base64(url)
     if icon_png_base64 is None:
-        _request_link_icon_fetch(link_text)
-    else:
-        icon_html = f'<img class="link-title-icon" src="data:image/png;base64,{icon_png_base64}" alt="">'
-    escaped_title = html.escape(title)
-    escaped_domain = html.escape(display_domain_for_url(link_text))
-    return (
-        f'{icon_html}<span class="link-title-text">{escaped_title}</span>'
-        f'<span class="link-title-domain"> · {escaped_domain}</span>'
-    )
+        _request_link_icon_fetch(url)
+        return ""
+    return f'<img class="link-title-icon" src="data:image/png;base64,{icon_png_base64}" alt="">'
+
+
+def _link_domain_html(url: str) -> str:
+    return f'<span class="link-title-domain"> · {html.escape(display_domain_for_url(url))}</span>'
 
 
 def _split_trailing_url_punctuation(raw_url: str) -> Tuple[str, str]:

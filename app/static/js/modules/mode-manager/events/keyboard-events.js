@@ -3973,7 +3973,6 @@ async function runReferenceSearchInActiveTab(referenceQuery, context) {
     await actionRefreshAndMaybeSelect({
         startedAt,
         context,
-        requireExecution: true,
         animateNoteChanges: false,
     });
     await persistTabStateSnapshot();

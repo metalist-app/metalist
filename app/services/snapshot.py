@@ -898,7 +898,8 @@ def _dependencies_hold(dependencies: _RenderDependencies, live: EmbedRenderConte
 @dataclass(frozen=True)
 class _CachedViewRender:
     html: str
-    fetch_urls: Tuple[str, ...]
+    # (what for, URL): a link's title, or only its site's icon.
+    fetch_urls: Tuple[Tuple[str, str], ...]
     dependencies: _RenderDependencies
 
 

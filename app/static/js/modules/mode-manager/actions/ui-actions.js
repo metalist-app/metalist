@@ -82,6 +82,12 @@ export async function waitForViewRequestIdle() {
     }
 }
 
+// Whether a view request is on its way. Only the infinite-scroll poll asks: it repeats every
+// POLL_INTERVAL_MS, so it skips a round rather than wait.
+export function isViewRequestInFlight() {
+    return moduleState.viewRequestInFlight;
+}
+
 export async function actionRefreshAndMaybeSelect(options) {
     if (options === null || typeof options !== 'object') {
         throw new Error('actionRefreshAndMaybeSelect requires options object');
@@ -103,7 +109,9 @@ export async function actionRefreshAndMaybeSelect(options) {
     if (typeof requestSearchQuery !== 'string') {
         throw new Error('ModeContext.getExecutedSearchQuery() must return a string');
     }
-    const requireExecution = options.requireExecution === true;
+    if (Object.prototype.hasOwnProperty.call(options, 'requireExecution')) {
+        throw new Error('requireExecution is gone: every refresh waits for a request in flight, then runs');
+    }
     const resetViewCacheBeforeFetch = options.resetViewCacheBeforeFetch === true;
     const scrollToTopAfterRender = options.scrollToTopAfterRender === true;
     const startAtListEnd = options.startAtListEnd === true;
@@ -143,15 +151,11 @@ export async function actionRefreshAndMaybeSelect(options) {
         requestContext = options.context;
     }
 
+    // A refresh asked for while another view request is in flight waits its turn, then runs:
+    // that request was built from the state before the caller's change, and callers use what
+    // this one returns (docs/ui/state-handling.md, "Refreshes in flight"). Dropping it crashed
+    // switching notes and left deleted notes on screen (2026-10-26).
     if (moduleState.viewRequestInFlight) {
-        if (!requireExecution) {
-            Logger.logNoop('notes.view ignored while view request in-flight', {
-                activeTabId: ModeContext.activeTabId,
-                context: requestContext,
-            });
-            return null;
-        }
-
         await waitForViewRequestIdle();
     }
 
@@ -402,7 +406,7 @@ export async function actionJumpToListBottom(context) {
         return false;
     }
     ModeContext.resetTabDiffCache(ModeContext.activeTabId, { preserveRootAnchor: false });
-    await actionRefreshAndMaybeSelect({ context, requireExecution: true, startAtListEnd: true });
+    await actionRefreshAndMaybeSelect({ context, startAtListEnd: true });
     return true;
 }
 
@@ -412,7 +416,7 @@ export async function actionJumpToListTop(context) {
     }
     ModeContext.resetTabDiffCache(ModeContext.activeTabId, { preserveRootAnchor: false });
     await actionRefreshAndMaybeSelect({
-        context, requireExecution: true, startAtListTop: true, scrollToTopAfterRender: true,
+        context, startAtListTop: true, scrollToTopAfterRender: true,
     });
     return true;
 }
