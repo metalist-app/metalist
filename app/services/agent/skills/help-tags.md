@@ -200,6 +200,7 @@ Unclosed comments behave like unclosed wrappers:
 - **Suggest Tags with AI** (edited note's menu, or right-click past the tags in its tag bar) asks the AI for that note's tags; see the AI help.
 - Individual proposal accept/reject controls participate in normal undo/redo; undoing an individual acceptance restores its proposal and robot count, while redo accepts it again. This does not define undo behavior for bulk operations.
 - The robot count marks unresolved proposals on visible notes. A collapsed note rolls up proposals hidden in its descendant branch; inherited and ontology-derived terms do not inflate the count.
+- It sits in its note's top-right corner, inside the note, in view and edit mode and on a phone. Over the end of a long first line it covers the last letters, as solid as the note, and nothing moves when it comes or goes; the text shows again once its proposals are handled, or while editing.
 - Copy/paste and duplication preserve each note's direct unresolved proposals.
 - The connector characters used for content matching are configurable via `TAG_SUGGESTION_CONNECTORS` in `app/config.py`.
 - The redundant-content suppression rule is configurable via `TAG_SUGGESTION_SUPPRESS_REDUNDANT_CONTENT_VARIANTS` in `app/config.py`.

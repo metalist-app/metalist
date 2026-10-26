@@ -5547,16 +5547,22 @@ body.pref-animated-transitions .note-tag-bar:focus-within::after {
     outline: 1px solid currentColor;
 }
 
+/* The robot count sits in its note's top-right corner, inside the note, so the right-hand
+   buttons never cover it. Over the end of a long first line it is as solid as its note
+   (the note's own colour under its tint), and nothing moves when it comes or goes
+   (docs/ui/tag-bar.md; scripts/browser-robot-corner-regressions.mjs). */
 .note-proposal-indicator {
+    --robot-tint: rgba(79, 70, 229, 0.10);
     position: absolute;
     top: 4px;
-    left: calc(100% + 4px);
+    right: 4px;
     white-space: nowrap;
     z-index: 4;
     padding: 2px 6px;
     border: 0;
     border-radius: 999px;
-    background: rgba(79, 70, 229, 0.10);
+    background-color: inherit;
+    background-image: linear-gradient(var(--robot-tint), var(--robot-tint));
     color: #4338ca;
     cursor: pointer;
     font: 0.68rem/1.2 system-ui, sans-serif;
@@ -5564,7 +5570,7 @@ body.pref-animated-transitions .note-tag-bar:focus-within::after {
 
 .note-proposal-indicator:hover,
 .note-proposal-indicator:focus-visible {
-    background: rgba(79, 70, 229, 0.18);
+    --robot-tint: rgba(79, 70, 229, 0.18);
     outline: 1px solid currentColor;
 }
 
@@ -8678,7 +8684,7 @@ html[data-theme="dark"] .note-tag-proposal-new {
 }
 
 html[data-theme="dark"] .note-proposal-indicator {
-    background: rgba(99, 102, 241, 0.20);
+    --robot-tint: rgba(99, 102, 241, 0.20);
     color: #c7d2fe;
 }
 

@@ -11,8 +11,12 @@ const M_LEFT_UNITS = 30;
 const M_WIDTH_UNITS = 279;
 const M_HEIGHT_UNITS = 136;
 const MARK_HEIGHT_UNITS = 223;
-// Chrome lays boxes out in 1/64 px steps; an SVG shape is placed exactly within its box.
-const LAYOUT_STEP_PX = 1 / 64;
+// Browsers place each box on a layout grid: 1/64 px in Chrome and Edge, 1/60 px in Firefox
+// (the coarser, so the step allowed). Each size is checked against what the browser derives
+// it from, so it is rounded once: the mark's height comes from its width (already rounded),
+// and the M fills the mark exactly (preserveAspectRatio none, app/templates/_logo_mark.html).
+// Against the ideal values, a size rounded twice drifts past one step (Chrome 155, 2026-10-25).
+const LAYOUT_STEP_PX = 1 / 60;
 
 function assertWithinLayoutStep(actual, expected, message) {
   assert(Math.abs(actual - expected) <= LAYOUT_STEP_PX, `${message}: ${actual} instead of ${expected}`);
@@ -42,9 +46,11 @@ export async function assertLoginLogoGeometry(target, label) {
   const mWidth = M_WIDTH_UNITS * unit;
   assertWithinLayoutStep(layout.m.left, mLeft, `${label}: the M's left edge moved`);
   assertWithinLayoutStep(layout.m.width, mWidth, `${label}: the M's width changed`);
-  assertWithinLayoutStep(layout.m.height, M_HEIGHT_UNITS * unit, `${label}: the M's height changed`);
+  assertWithinLayoutStep(layout.m.height, layout.mark.height * M_HEIGHT_UNITS / MARK_HEIGHT_UNITS,
+    `${label}: the M's height changed`);
   assertWithinLayoutStep(layout.m.top, layout.mark.top, `${label}: the M must start at the top of the mark`);
-  assertWithinLayoutStep(layout.mark.height, MARK_HEIGHT_UNITS * unit,
+  assertWithinLayoutStep(layout.mark.width, mWidth, `${label}: the mark must be the M's box`);
+  assertWithinLayoutStep(layout.mark.height, layout.mark.width * MARK_HEIGHT_UNITS / M_WIDTH_UNITS,
     `${label}: the mark's height changed, which would move everything under it`);
   assert.equal(layout.bars.length, 2, `${label}: the full mark has two bars`);
   for (const bar of layout.bars) {

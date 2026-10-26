@@ -380,7 +380,20 @@ function placeBar(bar) {
     }
     const rect = controls.getBoundingClientRect();
     bar.style.top = `${Math.round(rect.bottom + VIEWPORT_TOP_BUFFER_PX)}px`;
-    bar.style.right = `${Math.round(document.documentElement.clientWidth - rect.right)}px`;
+    bar.style.right = `${Math.round(fixedRightEdge() - rect.right)}px`;
+}
+
+// Where a fixed element's right: 0 lands. With a scrollbar strip reserved it is the strip's
+// inner edge in current Chrome (155 and later) and the window's edge in older Chrome, while
+// documentElement.clientWidth gives the whole window in both: measured, the bar lines up with
+// the controls in either (docs/ui/controls.md, "The right edge").
+function fixedRightEdge() {
+    const probe = document.createElement('div');
+    probe.style.cssText = 'position: fixed; top: 0; right: 0; width: 0; height: 0; visibility: hidden;';
+    document.body.appendChild(probe);
+    const edge = probe.getBoundingClientRect().right;
+    probe.remove();
+    return edge;
 }
 
 function createBar() {

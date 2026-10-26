@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import test from 'node:test';
+import { fileURLToPath } from 'node:url';
 
 // The AI opens a menu destination for the user and checks it showed by the catalog's CSS
 // selector (app/static/config/agent-menu-actions.json). A selector naming an element the app no
@@ -9,7 +10,7 @@ import test from 'node:test';
 // tagging dialogs moved off native <dialog>s). Every selector must name an element some
 // script or template still builds; the agent-help browser suite then checks each one opens.
 
-const ROOT = new URL('../../', import.meta.url).pathname;
+const ROOT = fileURLToPath(new URL('../../', import.meta.url));
 const CATALOG = JSON.parse(readFileSync(join(ROOT, 'app/static/config/agent-menu-actions.json'), 'utf8'));
 
 function sourceFiles(directory, extension) {

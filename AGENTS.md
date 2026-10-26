@@ -222,7 +222,7 @@ If the code works, suggest committing. There are two types:
 
 **Before pushing main**
 - Merging into `main` stays on this machine; the user pushes `main` to GitHub when they choose, often several merges at once, and that push starts the full Windows/macOS/Linux CI matrix.
-- When the user is about to push, run the whole browser suite once on `main`: `npm run test:browser:all` (all suites in parallel, about 5 minutes). Run nothing else heavy beside it, and keep the Mac on power: browsers closing mid-test on battery is power, not code. Fix any failure in a new feature before the push.
+- When the user is about to push, run the whole browser suite once on `main`: `npm run test:browser:all` (all suites in parallel, about 5 minutes). It runs in the Chrome installed on this Mac, the current release CI uses too, never Puppeteer's own older copy (`docs/testing/harness.md`). Run nothing else heavy beside it, and keep the Mac on power: browsers closing mid-test on battery is power, not code. Fix any failure in a new feature before the push.
 - Never push yourself (see "git" below).
 
 **COMMIT** (without qualifier)
