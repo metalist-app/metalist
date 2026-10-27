@@ -109,7 +109,7 @@ export function cloneNotesDomForTab(sourceTabId, targetTabId, options) {
     }
 
     const noteHashes = new Map();
-    const noteElements = targetContainer.querySelectorAll('[data-note-id]');
+    const noteElements = targetContainer.querySelectorAll('.note[data-note-id]');
     for (const element of Array.from(noteElements)) {
         const noteId = element.dataset.noteId;
         const snapshotHash = element.dataset.snapshotHash;

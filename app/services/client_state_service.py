@@ -4,6 +4,7 @@ from app.utils.byte_sizes import KIB
 import hashlib
 import json
 import re
+import threading
 from datetime import datetime, timedelta
 
 from app.db.session import begin_writer
@@ -44,6 +45,8 @@ AI_CHAT_COMPOSER_MINIMUM_HEIGHT = 74
 AI_CHAT_COMPOSER_MAXIMUM_HEIGHT = 220
 _MAX_SEARCH_SUGGESTION_WINDOW_SLOTS = 20
 _MAX_SEARCH_SUGGESTION_WINDOW_DAYS = 365
+
+COPIED_NOTE_PREFERENCE_KEY = "pref.copied_note_id"
 
 _ALLOWED_CLIENT_PREFERENCES = {
     "pref.ai.tagging.vocabulary": {"existing", "new"},
@@ -94,7 +97,18 @@ _ALLOWED_CLIENT_PREFERENCES = {
     ),
     "pref.ai.chat_width": "ai_chat_width",
     "pref.ai.composer_height": "ai_chat_composer_height",
+    # The note copied last in any window, offered first by [[ (remember_copied_note).
+    COPIED_NOTE_PREFERENCE_KEY: "note_id",
 }
+
+# Preferences only the server sets: a browser saving its preferences keeps their
+# stored values, whatever it sends (it may hold an older value, or none).
+_SERVER_OWNED_PREFERENCES = frozenset({COPIED_NOTE_PREFERENCE_KEY})
+_NOTE_ID_RE = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
+
+# Saving preferences reads them, changes them and writes them back: one at a time,
+# so a copied note remembered meanwhile isn't lost.
+_preferences_write_lock = threading.Lock()
 
 _OBSOLETE_CLIENT_PREFERENCES = frozenset(
     {
@@ -287,6 +301,9 @@ def _validate_client_preferences(preferences: dict[str, object]) -> dict[str, st
                     "Dictation phrases must be words of letters, "
                     f"{_DICTATION_PHRASE_MIN_CHARS} to {_DICTATION_PHRASE_MAX_CHARS} characters"
                 )
+        elif allowed_values == "note_id":
+            if _NOTE_ID_RE.fullmatch(value) is None:
+                raise ClientStateValidationError(f"Client preference {key} must be a note id")
         elif allowed_values == "model_name":
             value = validate_model_name(value)
         elif allowed_values == "ai_chat_width":
@@ -431,8 +448,43 @@ def _read_client_preferences(*, token: str) -> dict[str, str]:
 
 
 def save_client_preferences(*, preferences: dict[str, object], token: str) -> dict[str, str]:
-    normalized = _validate_client_preferences(preferences)
-    previous = load_client_preferences(token=token)
+    with _preferences_write_lock:
+        previous = load_client_preferences(token=token)
+        normalized = {
+            key: value for key, value in _validate_client_preferences(preferences).items()
+            if key not in _SERVER_OWNED_PREFERENCES
+        }
+        for key in _SERVER_OWNED_PREFERENCES & previous.keys():
+            normalized[key] = previous[key]
+        _write_client_preferences(normalized=normalized, token=token)
+    # AI requests already running were judged under the old policy: they stop
+    # before their next send (privacy_guard.py). A setting never saved is "".
+    previous_policy = preference_or_default(previous, CLOUD_PRIVACY_POLICY_PREFERENCE_KEY, default="")
+    if preference_or_default(normalized, CLOUD_PRIVACY_POLICY_PREFERENCE_KEY, default="") != previous_policy:
+        cloud_privacy_revision.advance()
+    return normalized
+
+
+def remember_copied_note(*, note_id: str, token: str) -> None:
+    """Copy Note: this note is the one [[ offers first, in every window of the vault
+    and after a restart, until another is copied (docs/ui/references.md)."""
+    if _NOTE_ID_RE.fullmatch(note_id) is None:
+        raise ValueError(f"Not a note id: {note_id!r}")
+    with _preferences_write_lock:
+        previous = load_client_preferences(token=token)
+        if copied_note_ids(token=token) == {note_id}:
+            return
+        _write_client_preferences(normalized={**previous, COPIED_NOTE_PREFERENCE_KEY: note_id}, token=token)
+
+
+def copied_note_ids(*, token: str) -> frozenset[str]:
+    """The note copied last (remember_copied_note): one id, or none before any is copied."""
+    preferences = load_client_preferences(token=token)
+    return frozenset(value for key, value in preferences.items() if key == COPIED_NOTE_PREFERENCE_KEY)
+
+
+def _write_client_preferences(*, normalized: dict[str, str], token: str) -> None:
+    assert _preferences_write_lock.locked()
     serialized = _serialize_json_object(payload=normalized, label="preferences")
     stored_json, nonce, tag = _encode_json_for_storage(
         plaintext_json=serialized,
@@ -447,12 +499,6 @@ def save_client_preferences(*, preferences: dict[str, object], token: str) -> di
             client_preferences_encryption_tag=tag,
         )
     _preferences_in_memory.store(_preferences_memory_key(token), dict(normalized))
-    # AI requests already running were judged under the old policy: they stop
-    # before their next send (privacy_guard.py). A setting never saved is "".
-    previous_policy = preference_or_default(previous, CLOUD_PRIVACY_POLICY_PREFERENCE_KEY, default="")
-    if preference_or_default(normalized, CLOUD_PRIVACY_POLICY_PREFERENCE_KEY, default="") != previous_policy:
-        cloud_privacy_revision.advance()
-    return normalized
 
 
 def load_command_palette_usage(*, token: str) -> dict[str, dict[str, object]]:

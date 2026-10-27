@@ -439,8 +439,9 @@ async function referenceCases(page) {
       expected: source => [source[0].replace(' here', ' heXre')]});
   }
   // L3: a click on the embedded note itself (a note that is only the
-  // reference embeds it): the start of its [[UUID]] source.
-  await referenceClickCase(page, {label: 'L3: on the embedded note', lines: ['REF:baz'], referenced: ['baz'], mode: 'link',
+  // ![[UUID]] reference embeds it; a lone [[UUID]] is a link): the start of
+  // its ![[UUID]] source.
+  await referenceClickCase(page, {label: 'L3: on the embedded note', lines: ['REF:baz'], referenced: ['baz'], mode: 'embed',
     click: host => page.evaluate(id => {
       const embed = document.querySelector(`.note[data-note-id="${id}"] .note-reference-block .note-reference-content`);
       const text = [...embed.querySelectorAll('*')].find(element => element.children.length === 0 && element.textContent.includes('baz content'));

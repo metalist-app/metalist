@@ -3,8 +3,10 @@ import { rethrowUnexpectedError } from '../../expected-errors.js';
 import { NotesAPI } from '../../api-client.js';
 import { unlessDiagramEditorOpen } from '../../excalidraw/excalidraw-editor-state.js';
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
+import { restoreSelection } from '../../editor-selection.js';
 // Placed as the paste format card is: below its anchor, or above it near the window's bottom.
 import { placePasteFormatOffer } from './paste-format-offer-service.js';
+import { PREVIEW_OWNERS, hideReferencePreview, placeReferencePreview, showReferencePreview } from './reference-preview-card-service.js';
 
 // Typing `[[` in a note opens a list of notes to reference (docs/ui/references.md,
 // "Suggestions"); what is typed after it narrows the list, and choosing a note
@@ -16,6 +18,8 @@ import { placePasteFormatOffer } from './paste-format-offer-service.js';
 // not a reference, so it opens nothing.
 
 const TRIGGER = '[[';
+// What Link to… and Embed… type: an embed's opener holds `[[` too, so the list completes it the same way.
+const OPENERS = { link: TRIGGER, embed: `!${TRIGGER}` };
 const WRAPPER_TAG_START = '@';
 // Longer text after `[[` is not a note being looked for.
 const MAX_QUERY_LENGTH = 80;
@@ -32,6 +36,8 @@ const CREDENTIAL_ICON_PATHS = {
 const CREDENTIAL_LABELS = { [USERNAME]: 'Username', [PASSWORD]: 'Password' };
 const SVG_NAMESPACE = 'http://www.w3.org/2000/svg';
 const NO_SELECTION = -1;
+// Between the list and the preview of its highlighted note, as between the list and its `[[`.
+const PREVIEW_GAP_PX = 6;
 const MAIN_BUTTON = 0;
 
 const moduleState = ApplicationState.createFields('reference-suggestions-service', {
@@ -98,7 +104,12 @@ function cancelRequest() {
     moduleState.requestSerial += 1;
 }
 
+function hidePreview() {
+    hideReferencePreview(PREVIEW_OWNERS.suggestions);
+}
+
 function hideList() {
+    hidePreview();
     if (moduleState.list !== null) {
         moduleState.list.remove();
         moduleState.list = null;
@@ -141,6 +152,33 @@ function placeList() {
     });
     list.style.left = `${left}px`;
     list.style.top = `${top}px`;
+    placeReferencePreview();
+}
+
+// Beside the list, level with the highlighted suggestion: on its right, or on
+// its left where the window has no room. A window too narrow for either puts it
+// under the list (over it near the window's bottom). It floats, so the note's
+// text never moves.
+function placePreview(preview) {
+    if (moduleState.list === null) return;
+    const list = moduleState.list.getBoundingClientRect();
+    const item = moduleState.list.querySelectorAll('.reference-suggestion')[moduleState.selectedIndex].getBoundingClientRect();
+    const { width, height } = preview.getBoundingClientRect();
+    let left = list.right + PREVIEW_GAP_PX;
+    let top = Math.max(0, Math.min(item.top, window.innerHeight - height));
+    if (left + width > window.innerWidth) left = list.left - PREVIEW_GAP_PX - width;
+    if (left < 0) {
+        left = Math.max(0, Math.min(list.left, window.innerWidth - width));
+        top = list.bottom + PREVIEW_GAP_PX;
+        if (top + height > window.innerHeight) top = list.top - PREVIEW_GAP_PX - height;
+    }
+    preview.style.left = `${left}px`;
+    preview.style.top = `${top}px`;
+}
+
+// The highlighted note's card: the top of the note as the list draws it.
+function showPreview() {
+    showReferencePreview(moduleState.suggestions[moduleState.selectedIndex].noteId, placePreview, PREVIEW_OWNERS.suggestions);
 }
 
 function credentialIcon(credential) {
@@ -218,6 +256,19 @@ function showSelection() {
         item.classList.toggle('is-selected', isSelected);
         item.setAttribute('aria-selected', String(isSelected));
     });
+    showPreview();
+}
+
+// Pointing at a suggestion highlights it, as ↑/↓ do. Only a move counts: a list
+// drawn under a still pointer highlights its first suggestion.
+function highlightPointed(event) {
+    const item = event.target instanceof Element ? event.target.closest('.reference-suggestion') : null;
+    if (item === null) return;
+    const index = Number(item.dataset.index);
+    if (index === moduleState.selectedIndex) return;
+    setState('selectedIndex', index);
+    showSelection();
+    placeReferencePreview();
 }
 
 function renderList(query, suggestions) {
@@ -230,6 +281,7 @@ function renderList(query, suggestions) {
     suggestions.forEach((suggestion, index) => list.appendChild(buildItem(suggestion, index)));
     list.style.left = '0px';
     list.style.top = '0px';
+    list.addEventListener('mousemove', highlightPointed);
     document.body.appendChild(list);
     moduleState.list = list;
     setState('listQuery', query);
@@ -341,6 +393,7 @@ function moveSelection(step) {
     const last = moduleState.suggestions.length - 1;
     setState('selectedIndex', Math.min(last, Math.max(0, moduleState.selectedIndex + step)));
     showSelection();
+    placeReferencePreview();
 }
 
 // The event is the list's alone.
@@ -409,6 +462,52 @@ function swallowRelease(event) {
 
 function followAnchor() {
     if (moduleState.list !== null) placeList();
+}
+
+// Link to… and Embed… (docs/ui/references.md): types `[[` (kind 'link') or `![[`
+// ('embed') over `range`
+// in the note being edited, followed by the text the range held, which the list
+// then searches for; the list opens as it does for typing.
+function typeOpener(content, range, kind) {
+    if (!Object.hasOwn(OPENERS, kind)) {
+        throw new Error(`Not a kind of reference: ${kind}`);
+    }
+    if (!(range instanceof Range) || !content.contains(range.startContainer) || !content.contains(range.endContainer)) {
+        throw new Error('A reference opener goes in the text of the note being edited');
+    }
+    content.focus({ preventScroll: true });
+    const selection = window.getSelection();
+    const typed = `${OPENERS[kind]}${range.toString()}`;
+    selection.removeAllRanges();
+    selection.addRange(range);
+    // Native insertText: one undo step, and the input event that opens the list.
+    if (!document.execCommand('insertText', false, typed)) {
+        throw new Error('The browser did not type the reference opener');
+    }
+}
+
+// From the note menu: where it was right-clicked (reference-insert-point-service.js).
+export function typeReferenceOpener(noteId, range, kind) {
+    if (!ModeContext.isEditingNote(noteId)) {
+        throw new Error(`Link to… and Embed… need the note being edited: ${noteId}`);
+    }
+    typeOpener(editedContent(noteId), range, kind);
+}
+
+// From the command palette: at the caret of the note being edited.
+export function typeReferenceOpenerAtCaret(kind) {
+    const noteId = ModeContext.currentNoteId;
+    if (!ModeContext.isEditing || typeof noteId !== 'string' || noteId === '') {
+        throw new Error('Link to… and Embed… need a note being edited');
+    }
+    const content = editedContent(noteId);
+    content.focus({ preventScroll: true });
+    restoreSelection();
+    const selection = window.getSelection();
+    if (selection === null || selection.rangeCount === 0) {
+        throw new Error('The note being edited has no caret');
+    }
+    typeOpener(content, selection.getRangeAt(0), kind);
 }
 
 export function initializeReferenceSuggestions() {

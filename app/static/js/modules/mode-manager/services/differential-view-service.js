@@ -66,7 +66,7 @@ function captureCollapseAnimationsFromNotePayload(notePayload) {
         if (!Object.prototype.hasOwnProperty.call(flags, 'isCollapsed')) {
             continue;
         }
-        const noteElement = document.querySelector(`[data-note-id="${noteId}"]`);
+        const noteElement = document.querySelector(`.note[data-note-id="${noteId}"]`);
         if (!(noteElement instanceof HTMLElement)) {
             continue;
         }
@@ -181,7 +181,7 @@ function applyServerDiffOps(payload, animateNoteChanges) {
         return {
             notesContainer,
             editingNoteElement: payload.editingNoteId
-                ? document.querySelector(`[data-note-id="${payload.editingNoteId}"]`)
+                ? document.querySelector(`.note[data-note-id="${payload.editingNoteId}"]`)
                 : null,
             vdomOperations: 0,
         };
@@ -215,7 +215,7 @@ function applyServerDiffOps(payload, animateNoteChanges) {
         if (!parentId) {
             return notesContainer;
         }
-        const parentElement = document.querySelector(`[data-note-id="${parentId}"]`);
+        const parentElement = document.querySelector(`.note[data-note-id="${parentId}"]`);
         if (!parentElement) {
             throw new Error(`Parent note ${parentId} missing from DOM`);
         }
@@ -226,7 +226,7 @@ function applyServerDiffOps(payload, animateNoteChanges) {
         if (noteElements.has(noteId)) {
             return noteElements.get(noteId);
         }
-        const element = document.querySelector(`[data-note-id="${noteId}"]`);
+        const element = document.querySelector(`.note[data-note-id="${noteId}"]`);
         if (element) {
             noteElements.set(noteId, element);
         }
@@ -375,7 +375,7 @@ function applyServerDiffOps(payload, animateNoteChanges) {
     return {
         notesContainer,
         editingNoteElement: payload.editingNoteId
-            ? document.querySelector(`[data-note-id="${payload.editingNoteId}"]`)
+            ? document.querySelector(`.note[data-note-id="${payload.editingNoteId}"]`)
             : null,
         vdomOperations,
     };
@@ -664,7 +664,7 @@ export function applyDifferentialView(payload, options) {
         }
         let parentElement = elementCache.get(parentId);
         if (!parentElement) {
-            parentElement = document.querySelector(`[data-note-id="${parentId}"]`);
+            parentElement = document.querySelector(`.note[data-note-id="${parentId}"]`);
         }
         if (!parentElement) {
             throw new Error(`Parent note ${parentId} missing from DOM`);
@@ -724,7 +724,7 @@ export function applyDifferentialView(payload, options) {
                 const reference = findNoteChildAt(parentContainer, op.toIndex);
                 let element = elementCache.get(op.id);
                 if (!element) {
-                    element = document.querySelector(`[data-note-id="${op.id}"]`);
+                    element = document.querySelector(`.note[data-note-id="${op.id}"]`);
                 }
                 if (element) {
                     parentContainer.insertBefore(element, reference);
@@ -771,7 +771,7 @@ export function applyDifferentialView(payload, options) {
 
         let noteElement = elementCache.get(noteId);
         if (!noteElement) {
-            noteElement = document.querySelector(`[data-note-id="${noteId}"]`);
+            noteElement = document.querySelector(`.note[data-note-id="${noteId}"]`);
         }
         if (!noteElement) {
             throw new Error(`Note ${noteId} missing from DOM after diff`);
@@ -990,7 +990,7 @@ export function applyDifferentialView(payload, options) {
     for (const parentId of touchedParentIds) {
         let parentElement = elementCache.get(parentId);
         if (!parentElement) {
-            parentElement = document.querySelector(`[data-note-id="${parentId}"]`);
+            parentElement = document.querySelector(`.note[data-note-id="${parentId}"]`);
         }
         if (parentElement) {
             affordanceDirtyElements.add(parentElement);
@@ -1011,7 +1011,7 @@ export function applyDifferentialView(payload, options) {
 
     return {
         notesContainer,
-        editingNoteElement: payload.editingNoteId ? document.querySelector(`[data-note-id="${payload.editingNoteId}"]`) : null,
+        editingNoteElement: payload.editingNoteId ? document.querySelector(`.note[data-note-id="${payload.editingNoteId}"]`) : null,
         vdomOperations,
     };
 }
@@ -1241,7 +1241,7 @@ function applyLockDiffs(lockDiffs, currentClientId, affordanceSet) {
         return;
     }
     for (const [noteId, owner] of Object.entries(lockDiffs)) {
-        const noteElement = document.querySelector(`[data-note-id="${noteId}"]`);
+        const noteElement = document.querySelector(`.note[data-note-id="${noteId}"]`);
         if (!noteElement) {
             continue;
         }
@@ -1268,7 +1268,7 @@ function collectDomSubtreeIds(rootElement) {
     if (rootElement?.dataset?.noteId) {
         ids.push(rootElement.dataset.noteId);
     }
-    const descendants = rootElement ? rootElement.querySelectorAll('[data-note-id]') : [];
+    const descendants = rootElement ? rootElement.querySelectorAll('.note[data-note-id]') : [];
     for (const element of descendants) {
         if (element.dataset && element.dataset.noteId) {
             ids.push(element.dataset.noteId);

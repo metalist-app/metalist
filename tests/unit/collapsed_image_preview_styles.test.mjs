@@ -15,7 +15,7 @@ function declarationsFor(selector) {
 
 
 test('collapsed image previews contain the complete image instead of cropping it', () => {
-    const declarations = declarationsFor('.note.collapsed:not(.editing) .note-content img');
+    const declarations = declarationsFor('.note.collapsed:not(.editing) .note-content img:not(:where(.note-reference-note.note-embed-block, .note-reference-note.note-embed-block *))');
 
     assert.match(declarations, /height:\s*4\.5em\s*!important/);
     assert.match(declarations, /width:\s*7\.5em\s*!important/);

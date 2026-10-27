@@ -207,9 +207,14 @@ def test_embed_reference_renders_as_block_and_includes_descendants(monkeypatch: 
     assert rendered.index("note-source-arrow") < rendered.index("embedded root")
 
 
-@pytest.mark.parametrize("written", ["![[{id}]]", "[[{id}]]"])
-def test_reference_with_other_content_is_a_link_however_written(monkeypatch: pytest.MonkeyPatch, written: str) -> None:
-    # Any other content in the note makes a note reference a link; the "!" changes nothing.
+@pytest.mark.parametrize(("written", "shown_as"), [
+    ("[[{id}]]", "note-reference-link-mode"),
+    ("![[{id}]]", "note-embed-block"),
+])
+def test_a_reference_amid_text_is_what_its_written_form_says(
+    monkeypatch: pytest.MonkeyPatch, written: str, shown_as: str,
+) -> None:
+    # The written form decides, anywhere in the text: ![[...]] embeds, [[...]] links.
     token = written.format(id=TARGET_ID)
     notes = {
         HOST_ID: _Note(HOST_ID, None, None, TARGET_ID, False, f"<div>blah {token} yada</div>", ""),
@@ -218,10 +223,11 @@ def test_reference_with_other_content_is_a_link_however_written(monkeypatch: pyt
     state = _state_for(monkeypatch=monkeypatch, notes=notes, children_by_parent={None: [HOST_ID, TARGET_ID]})
 
     rendered = state.payloads[HOST_ID]["content"]
-    assert "note-embed-block" not in rendered
-    assert "note-reference-link-mode" in rendered
-    assert '<span class="note-reference-link-title">embedded root</span>' in rendered
-    assert rendered.index("blah") < rendered.index("note-reference-link-mode") < rendered.index("yada")
+    other = {"note-reference-link-mode", "note-embed-block"} - {shown_as}
+    assert other.pop() not in rendered
+    assert rendered.index("blah") < rendered.index(shown_as) < rendered.index("yada")
+    # A note holding more than one embed is not a holder: it doesn't fold as its source.
+    assert "note-reference-only" not in rendered
 
 
 @pytest.mark.parametrize("content,standalone", [
@@ -230,7 +236,8 @@ def test_reference_with_other_content_is_a_link_however_written(monkeypatch: pyt
     (f"<div><span>![[{TARGET_ID}]]</span></div><div><br></div>", False),
     # A line break ending the reference's own line is the editor's placeholder.
     (f"<div>![[{TARGET_ID}]]<br></div>", True),
-    (f"<p>[[{TARGET_ID}]]</p>", True),
+    # Alone, [[...]] is still a link: only ![[...]] embeds.
+    (f"<p>[[{TARGET_ID}]]</p>", False),
     (f"text<div>![[{TARGET_ID}]]</div>", False),
     (f'![[{TARGET_ID}]]<img src="data:image/png;base64,aA==">', False),
     (f"![[{TARGET_ID}]] ![[{TARGET_ID}]]", False),
@@ -291,7 +298,7 @@ def test_a_note_id_link_beside_a_square_formatting_wrapper_is_still_a_link(monke
     }
     state = _state_for(monkeypatch=monkeypatch, notes=notes, children_by_parent={None: list(notes)})
     assert "note-backlinks-link" in state.payloads[TARGET_ID]["content"]
-    assert "note-reference-only" in state.payloads[HOST_ID]["content"]
+    assert "note-reference-link-mode" in state.payloads[HOST_ID]["content"]
 
 
 def test_a_link_nested_in_a_square_formatting_wrapper_still_renders(monkeypatch):
@@ -385,7 +392,9 @@ def test_a_note_that_is_only_a_reference_folds_as_its_source(
     assert "embedded first line" in rendered
     assert ("embedded hidden line" in rendered) is not collapsed
     assert ("embedded child" in rendered) is not collapsed
-    assert ("note-reference-embed-first-line" in rendered) is collapsed
+    # Folded, the embed is still an embed, its source folded (docs/ui/references.md).
+    assert ("note-embed-collapsed" in rendered) is collapsed
+    assert "note-reference-link-mode" not in rendered
 
 
 @pytest.mark.parametrize("collapsed", [True, False])
@@ -420,14 +429,14 @@ def test_an_embedded_child_shows_its_saved_collapse_with_an_arrow(
 _EMPTY_LINK_RE = re.compile(r"<a\b[^>]*></a>")
 
 
-def test_a_collapsed_embed_of_a_note_that_is_only_a_link_shows_the_source_first_line(
+def test_a_collapsed_embed_of_a_note_that_is_only_an_embed_shows_the_source_first_line(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # HOST embeds OTHER, which only links to TARGET: the collapsed HOST reads as
-    # TARGET's first line, in TARGET's own formatting, as a link to OTHER reads.
+    # HOST embeds OTHER, which only embeds TARGET: the collapsed HOST shows the
+    # embeds, still embeds, down to TARGET's first line in its own formatting.
     notes = {
         HOST_ID: _Note(HOST_ID, None, None, OTHER_ID, True, f"<div>![[{OTHER_ID}]]</div>", ""),
-        OTHER_ID: _Note(OTHER_ID, None, HOST_ID, TARGET_ID, True, f"<div>[[{TARGET_ID}]]</div>", ""),
+        OTHER_ID: _Note(OTHER_ID, None, HOST_ID, TARGET_ID, True, f"<div>![[{TARGET_ID}]]</div>", ""),
         TARGET_ID: _Note(
             TARGET_ID, None, OTHER_ID, None, True,
             "<div>The Living Labyrinth</div><div>hidden line</div>", "@heading @green",
@@ -439,19 +448,19 @@ def test_a_collapsed_embed_of_a_note_that_is_only_a_link_shows_the_source_first_
 
     rendered = state.payloads[HOST_ID]["content"]
     assert _EMPTY_LINK_RE.search(rendered) is None
-    assert (
-        '<span class="note-reference-link-title">'
-        '<span class="meta-global meta-green meta-heading"><div>The Living Labyrinth</div></span></span>'
-    ) in rendered
+    assert _visible_text(rendered) == "The Living Labyrinth"
+    assert "meta-global meta-green meta-heading" in rendered
     assert "hidden line" not in rendered
-    assert f'data-ref-note-id="{OTHER_ID}"' in rendered
+    assert f'data-embed-note-id="{OTHER_ID}"' in rendered
+    assert f'data-embed-note-id="{TARGET_ID}"' in rendered
+    assert "note-reference-link-mode" not in rendered
 
 
 def test_a_collapsed_embed_whose_first_line_holds_a_link_keeps_one_line(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # The source's first line links to another note: the embed shows that line
-    # as the source shows it, without a link nested inside its own.
+    # The source's first line links to another note: the folded embed shows that
+    # line as the source shows it, the link as a link.
     notes = {
         HOST_ID: _Note(HOST_ID, None, None, OTHER_ID, True, f"<div>![[{OTHER_ID}]]</div>", ""),
         OTHER_ID: _Note(
@@ -466,16 +475,14 @@ def test_a_collapsed_embed_whose_first_line_holds_a_link_keeps_one_line(
 
     rendered = state.payloads[HOST_ID]["content"]
     assert _EMPTY_LINK_RE.search(rendered) is None
-    title = re.search(
-        r'<span class="note-reference-link-title"><span class="meta-global meta-green"><div>See (?P<link>.*) here</div></span></span>',
-        rendered,
-    )
-    assert title is not None
-    assert "The Living Labyrinth" in title.group("link")
+    assert _visible_text(rendered) == "See The Living Labyrinth here"
+    assert f'data-embed-note-id="{OTHER_ID}"' in rendered
     assert "hidden line" not in rendered
 
 
-def test_collapsed_host_renders_note_embed_as_link_only(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_a_collapsed_note_starting_with_an_embed_shows_the_embed(monkeypatch: pytest.MonkeyPatch) -> None:
+    # The embed is the first line: folded, it is still the embed, its source folded
+    # to its first line (a folded note is one line); the host's later lines are hidden.
     notes = {
         HOST_ID: _Note(
             HOST_ID,
@@ -503,14 +510,8 @@ def test_collapsed_host_renders_note_embed_as_link_only(monkeypatch: pytest.Monk
     )
 
     rendered = state.payloads[HOST_ID]["content"]
-    assert "note-reference-link-mode" in rendered
-    assert "note-reference-link" in rendered
-    assert "note-reference-toggle" not in rendered
-    assert "note-reference-link-icon" in rendered
-    assert 'title="Go to source note"' in rendered
-    assert "note-reference-link-kind" not in rendered
-    assert "note-embed-block" not in rendered
-    assert "note-embed-node" not in rendered
+    assert "note-reference-link-mode" not in rendered
+    assert "note-embed-block" in rendered
     assert "referenced first line" in rendered
     assert "referenced second line" not in rendered
     assert "hidden host line" not in rendered
@@ -849,15 +850,14 @@ def test_collapsed_embed_preview_preserves_source_footnote_numbers(monkeypatch, 
         TARGET_ID: _Note(TARGET_ID, None, HOST_ID, None, True, content, "{{@footnote}}"),
     }
     state = _state_for(monkeypatch=monkeypatch, notes=notes, children_by_parent={None: list(notes)})
+    # Folded, the embed is still an embed, showing its source folded as the list
+    # shows it (main.css clips a folded footnote note to its first line).
     preview = state.payloads[HOST_ID]["content"]
-    assert 'blah blah' in preview
+    assert "note-embed-collapsed" in preview
+    assert "note-reference-link-mode" not in preview
+    assert "meta-footnotes-note" in preview
     for number in [1, 2, 3]:
-        assert f'meta-footnote-marker">[{number}]</sup>' in preview
-    assert '[4]' not in preview
-    assert 'Later prose' not in preview
-    assert 'meta-footnote-references' not in preview
-    assert 'References' not in preview
-    assert '<button' not in preview  # The compact preview is already a source link.
+        assert f'data-footnote-number="{number}"' in preview
     assert '{{' not in preview
 
 
@@ -870,3 +870,197 @@ def test_collapsed_preview_keeps_footnotes_from_following_source_paragraphs(monk
     assert rendered.count('class="ai-chat-citation-marker meta-footnote-marker"') == 3
     assert 'data-footnote-reference="3"' in rendered
     assert state.payloads[HOST_ID]['flags']['isCollapsed'] is True
+
+
+# A note that is only an embed folds when what it shows can fold: an arrow that
+# changes nothing is not shown (2026-10-26, docs/ui/references.md).
+_ONE_LINE = "<div>Almonds</div>"
+_TWO_LINES = "<div>Almonds</div><div>raw, unsalted</div>"
+
+
+def _holder_note(note_id: str, source_id: str) -> _Note:
+    return _Note(note_id, None, None, None, False, f"<div>![[{source_id}]]</div>", "")
+
+
+@pytest.mark.parametrize(
+    ("source_content", "source_children", "holder_children", "can_fold"),
+    [
+        pytest.param(_ONE_LINE, [], [], False, id="one-line source"),
+        pytest.param(_TWO_LINES, [], [], True, id="source with more lines"),
+        pytest.param(_ONE_LINE, [CHILD_ID], [], True, id="one-line source with children"),
+        pytest.param(_ONE_LINE, [], [CHILD_ID], True, id="holder with children of its own"),
+    ],
+)
+def test_a_note_that_is_only_an_embed_folds_when_its_source_can(
+    monkeypatch: pytest.MonkeyPatch,
+    source_content: str, source_children: List[str], holder_children: List[str], can_fold: bool,
+) -> None:
+    notes = {
+        HOST_ID: _holder_note(HOST_ID, TARGET_ID),
+        TARGET_ID: _Note(TARGET_ID, None, HOST_ID, None, False, source_content, ""),
+        CHILD_ID: _Note(CHILD_ID, None, None, None, False, "<div>kid</div>", ""),
+    }
+    children_by_parent: Dict[Optional[str], List[str]] = {
+        None: [HOST_ID, TARGET_ID], TARGET_ID: source_children, HOST_ID: holder_children,
+    }
+    state = _state_for(monkeypatch=monkeypatch, notes=notes, children_by_parent=children_by_parent)
+    assert state.payloads[HOST_ID]["flags"]["isCollapsible"] is can_fold
+
+
+@pytest.mark.parametrize(("source_content", "can_fold"), [(_ONE_LINE, False), (_TWO_LINES, True)])
+def test_a_chain_of_embeds_folds_as_its_last_source(
+    monkeypatch: pytest.MonkeyPatch, source_content: str, can_fold: bool,
+) -> None:
+    notes = {
+        HOST_ID: _holder_note(HOST_ID, OTHER_ID),
+        OTHER_ID: _holder_note(OTHER_ID, TARGET_ID),
+        TARGET_ID: _Note(TARGET_ID, None, None, None, False, source_content, ""),
+    }
+    state = _state_for(monkeypatch=monkeypatch, notes=notes, children_by_parent={None: [HOST_ID, OTHER_ID, TARGET_ID]})
+    assert state.payloads[HOST_ID]["flags"]["isCollapsible"] is can_fold
+    assert state.payloads[OTHER_ID]["flags"]["isCollapsible"] is can_fold
+
+
+@pytest.mark.parametrize(("source_content", "has_arrow"), [(_ONE_LINE, False), (_TWO_LINES, True)])
+def test_inside_an_embed_a_note_that_is_only_an_embed_folds_when_its_source_can(
+    monkeypatch: pytest.MonkeyPatch, source_content: str, has_arrow: bool,
+) -> None:
+    # HOST embeds OTHER, whose child CHILD only embeds TARGET.
+    notes = {
+        HOST_ID: _holder_note(HOST_ID, OTHER_ID),
+        OTHER_ID: _Note(OTHER_ID, None, None, None, False, "<div>Snacks</div>", ""),
+        CHILD_ID: _holder_note(CHILD_ID, TARGET_ID),
+        TARGET_ID: _Note(TARGET_ID, None, None, None, False, source_content, ""),
+    }
+    state = _state_for(
+        monkeypatch=monkeypatch, notes=notes,
+        children_by_parent={None: [HOST_ID, OTHER_ID, TARGET_ID], OTHER_ID: [CHILD_ID]},
+    )
+    rendered = state.payloads[HOST_ID]["content"]
+    assert (f'data-embed-collapse-note-id="{CHILD_ID}"' in rendered) is has_arrow
+
+
+@pytest.mark.parametrize(
+    ("embeds_each_other", "holder_children", "can_fold"),
+    [
+        pytest.param(False, [], False, id="deleted source"),
+        pytest.param(True, [], False, id="notes that embed each other"),
+        pytest.param(True, [CHILD_ID], True, id="notes that embed each other, with children"),
+    ],
+)
+def test_an_embed_with_no_source_to_show_folds_only_with_children(
+    monkeypatch: pytest.MonkeyPatch, embeds_each_other: bool, holder_children: List[str], can_fold: bool,
+) -> None:
+    notes = {
+        HOST_ID: _holder_note(HOST_ID, MISSING_ID),
+        CHILD_ID: _Note(CHILD_ID, None, None, None, False, "<div>kid</div>", ""),
+    }
+    roots = [HOST_ID]
+    if embeds_each_other:
+        notes[HOST_ID] = _holder_note(HOST_ID, TARGET_ID)
+        notes[TARGET_ID] = _holder_note(TARGET_ID, HOST_ID)
+        roots.append(TARGET_ID)
+    state = _state_for(monkeypatch=monkeypatch, notes=notes, children_by_parent={None: roots, HOST_ID: holder_children})
+    assert state.payloads[HOST_ID]["flags"]["isCollapsible"] is can_fold
+
+
+# A folded note shows its first line as it is shown: an embed always starts a line
+# of its own, and stays an embed folded (only the ! makes an embed; agreed
+# 2026-10-26, docs/ui/references.md). SNACK embeds ALMONDS (one line) or NUTS
+# (two lines).
+SNACK_ID = "55555555-5555-5555-5555-555555555555"
+ALMONDS_ID = "66666666-6666-6666-6666-666666666666"
+CASHEWS_ID = "77777777-7777-7777-7777-777777777777"
+NUTS_ID = "88888888-8888-8888-8888-888888888888"
+_EMBEDDED_NOTES = {
+    ALMONDS_ID: "<div>Almonds</div>",
+    CASHEWS_ID: "<div>Cashews</div>",
+    NUTS_ID: "<div>Nuts</div><div>Almonds, cashews</div>",
+}
+
+
+def _snack_state(monkeypatch: pytest.MonkeyPatch, snack_content: str, *, folded: bool, nuts_folded: bool):
+    notes = {SNACK_ID: _Note(SNACK_ID, None, None, None, folded, snack_content, "")}
+    for note_id, content in _EMBEDDED_NOTES.items():
+        notes[note_id] = _Note(note_id, None, None, None, note_id == NUTS_ID and nuts_folded, content, "")
+    return _state_for(monkeypatch=monkeypatch, notes=notes, children_by_parent={None: [SNACK_ID, *_EMBEDDED_NOTES]})
+
+
+def _visible_text(rendered: str) -> str:
+    return " ".join(re.sub(r"<[^>]+>", " ", rendered).split())
+
+
+@pytest.mark.parametrize(
+    ("snack_content", "folded_text"),
+    [
+        pytest.param(f"<div>Snack: ![[{ALMONDS_ID}]]</div>", "Snack:", id="1 text, then an embed"),
+        pytest.param(f"<div>Snack: ![[{ALMONDS_ID}]] and more</div>", "Snack:", id="2 text, an embed, text"),
+        pytest.param(f"<div>Snack: ![[{ALMONDS_ID}]]</div><div>Daily</div>", "Snack:", id="3 a second line"),
+        pytest.param(f"<div>Snack: ![[{ALMONDS_ID}]] ![[{CASHEWS_ID}]]</div>", "Snack:", id="4 two embeds"),
+    ],
+)
+def test_a_folded_note_shows_the_text_before_its_embed(
+    monkeypatch: pytest.MonkeyPatch, snack_content: str, folded_text: str,
+) -> None:
+    state = _snack_state(monkeypatch, snack_content, folded=True, nuts_folded=False)
+    payload = state.payloads[SNACK_ID]
+    assert payload["flags"]["isCollapsible"] is True
+    assert payload["flags"]["isCollapsed"] is True
+    assert _visible_text(payload["content"]) == folded_text
+    assert "note-reference-block" not in payload["content"]
+
+
+def test_a_note_starting_with_an_embed_folds_to_the_embed(monkeypatch: pytest.MonkeyPatch) -> None:
+    # 5: the embed is the first line; folded, it is still the embed.
+    state = _snack_state(monkeypatch, f"<div>![[{ALMONDS_ID}]] for snack</div>", folded=True, nuts_folded=False)
+    payload = state.payloads[SNACK_ID]
+    assert payload["flags"]["isCollapsible"] is True
+    assert _visible_text(payload["content"]) == "Almonds"
+    assert "note-embed-block" in payload["content"]
+    assert f'data-embed-note-id="{ALMONDS_ID}"' in payload["content"]
+    assert "note-reference-link-mode" not in payload["content"]
+
+
+def test_a_folded_note_starting_with_an_embed_shows_the_embed_folded(monkeypatch: pytest.MonkeyPatch) -> None:
+    # A folded note is one line (2026-10-27): the embed on it shows its note folded,
+    # though NUTS itself is unfolded.
+    state = _snack_state(monkeypatch, f"<div>![[{NUTS_ID}]] for snack</div>", folded=True, nuts_folded=False)
+    rendered = state.payloads[SNACK_ID]["content"]
+    assert _visible_text(rendered) == "Nuts"
+    assert "note-embed-root note-embed-collapsed" in rendered
+
+
+def test_a_folded_note_that_is_only_an_embed_shows_the_folded_embed(monkeypatch: pytest.MonkeyPatch) -> None:
+    # 6: the note folds with its source; folded, it shows the embed with the source folded.
+    state = _snack_state(monkeypatch, f"<div>![[{NUTS_ID}]]</div>", folded=False, nuts_folded=True)
+    payload = state.payloads[SNACK_ID]
+    assert payload["flags"]["isCollapsible"] is True
+    assert payload["flags"]["isCollapsed"] is True
+    assert _visible_text(payload["content"]) == "Nuts"
+    assert "note-embed-held" in payload["content"]
+    assert f'data-embed-note-id="{NUTS_ID}"' in payload["content"]
+    assert "note-reference-link-mode" not in payload["content"]
+
+
+def test_a_link_stays_on_its_line_and_does_not_fold(monkeypatch: pytest.MonkeyPatch) -> None:
+    # 8
+    state = _snack_state(monkeypatch, f"<div>Snack: [[{ALMONDS_ID}]]</div>", folded=False, nuts_folded=False)
+    assert state.payloads[SNACK_ID]["flags"]["isCollapsible"] is False
+
+
+def test_inside_an_embed_a_folded_note_shows_the_text_before_its_embed(monkeypatch: pytest.MonkeyPatch) -> None:
+    # 9: HOST embeds OTHER, whose folded child SNACK reads "Snack: ![[ALMONDS]]".
+    notes = {
+        HOST_ID: _Note(HOST_ID, None, None, None, False, f"<div>![[{OTHER_ID}]]</div>", ""),
+        OTHER_ID: _Note(OTHER_ID, None, None, None, False, "<div>Pantry</div>", ""),
+        SNACK_ID: _Note(SNACK_ID, OTHER_ID, None, None, True, f"<div>Snack: ![[{ALMONDS_ID}]]</div>", ""),
+        ALMONDS_ID: _Note(ALMONDS_ID, None, None, None, False, "<div>Almonds</div>", ""),
+    }
+    state = _state_for(
+        monkeypatch=monkeypatch, notes=notes,
+        children_by_parent={None: [HOST_ID, OTHER_ID, ALMONDS_ID], OTHER_ID: [SNACK_ID]},
+    )
+    rendered = state.payloads[HOST_ID]["content"]
+    assert f'data-embed-collapse-note-id="{SNACK_ID}"' in rendered
+    assert f'data-embed-note-id="{ALMONDS_ID}"' not in rendered
+    assert _visible_text(rendered) == "Pantry Snack:"

@@ -9,7 +9,7 @@ function getNoteElementIfPresent(noteId) {
     if (!noteId) {
         throw new Error('noteId is required');
     }
-    return document.querySelector(`[data-note-id="${noteId}"]`);
+    return document.querySelector(`.note[data-note-id="${noteId}"]`);
 }
 
 function reconcileContentBeforeSave(noteElement) {

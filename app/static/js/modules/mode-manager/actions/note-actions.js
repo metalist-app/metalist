@@ -111,14 +111,14 @@ function removeCachedHashesForDomSubtree(noteId) {
             ModeContext.removeNoteHash(id);
         }
     };
-    const noteElement = document.querySelector(`[data-note-id="${noteId}"]`);
+    const noteElement = document.querySelector(`.note[data-note-id="${noteId}"]`);
     if (!noteElement) {
         forgetCachedHash(noteId);
         return;
     }
 
     forgetCachedHash(noteId);
-    const descendantElements = noteElement.querySelectorAll('[data-note-id]');
+    const descendantElements = noteElement.querySelectorAll('.note[data-note-id]');
     descendantElements.forEach((element) => {
         const descendantId = element.dataset.noteId;
         if (typeof descendantId !== 'string' || descendantId.length === 0) {
@@ -1302,14 +1302,5 @@ export async function actionPasteNoteChild() {
     return pasteAsChild('actionPasteNoteChild', (targetNoteId) => NotesAPI.pasteNoteChild(targetNoteId));
 }
 
-// ⌘R / Paste Sibling Reference: the copied note's reference, where ⌘V puts the note.
-export async function actionPasteReferenceSibling(referenceNoteId) {
-    return pasteAsSibling('actionPasteReferenceSibling',
-        (targetNoteId) => NotesAPI.pasteReferenceSibling(targetNoteId, referenceNoteId));
-}
 
-// ⇧⌘R / Paste Child Reference: the copied note's reference, where ⇧⌘V puts the note.
-export async function actionPasteReferenceChild(referenceNoteId) {
-    return pasteAsChild('actionPasteReferenceChild',
-        (targetNoteId) => NotesAPI.pasteReferenceChild(targetNoteId, referenceNoteId));
-}
+

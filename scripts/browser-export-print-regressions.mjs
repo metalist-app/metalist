@@ -717,7 +717,7 @@ async function exportedEmbedCase(browser, page) {
     await NotesAPI.saveNote(grandkid.id, '<p>Rain jacket</p>', '');
     await NotesAPI.setCollapsedBulk([kid.id], true);
     const holder = await NotesAPI.createNote(null, '');
-    await NotesAPI.saveNote(holder.id, `<p>[[${source.id}]]</p>`, '');
+    await NotesAPI.saveNote(holder.id, `<p>![[${source.id}]]</p>`, '');
     return {source: source.id, kid: kid.id, grandkid: grandkid.id, holder: holder.id};
   });
   await reloadApp(page);

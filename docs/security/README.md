@@ -679,7 +679,7 @@ Auth:
 - `POST /api2/auth/session` - Claim passwordless session (only when no password is set)
 - `GET /api2/auth/status` - Poll auth/encryption status
 - `GET /api2/auth/client-state` - Load namespace-scoped client preferences and command-palette usage
-- `PUT /api2/auth/client-state/preferences` - Persist namespace-scoped client preferences
+- `PUT /api2/auth/client-state/preferences` - Persist namespace-scoped client preferences; the stored `pref.copied_note_id` (the note copied last, offered first by `[[`) is kept whatever a client sends: only Copy Note sets it, server-side, inside the same encrypted preferences
 - `PUT /api2/auth/client-state/command-palette-usage` - Persist namespace-scoped command-palette usage history
 - `POST /api2/auth/namespaces/delete/preflight` / `POST /api2/auth/namespaces/delete` - Delete a named non-default namespace after typed namespace confirmation and, when that namespace is password-protected, password re-entry. Deleting the active namespace moves the tab to a namespace-removal status page while a detached worker shuts down the current namespace and deletes its directory; deleting an inactive namespace stays in the current tab.
 - `POST /api2/auth/settings/password/create` - Enable password protection

@@ -10,7 +10,7 @@ import { tabContextActionsHtml } from '../../app/static/js/modules/mode-manager/
 // no separator line above a menu's first item, Title Case labels.
 
 const VIEW_HANDLER_NAMES = [
-    'onAddNoteAtTop', 'onPasteNoteAtTop', 'onPasteReferenceAtTop', 'onUndo', 'onRedo', 'onGoToTop', 'onGoToBottom', 'onExpandAll', 'onCollapseAll', 'onFullyExpandAll',
+    'onAddNoteAtTop', 'onPasteNoteAtTop', 'onUndo', 'onRedo', 'onGoToTop', 'onGoToBottom', 'onExpandAll', 'onCollapseAll', 'onFullyExpandAll',
     'onFullyCollapseAll', 'onSetUntaggedView', 'onSetSortMode', 'onSetDateRangeField', 'onSetDateRangePreset',
     'onOpenCustomDateRange', 'onSetFileFilter', 'onToggleAiChat', 'onToggleTabs',
     'onToggleNoteTags', 'onSetTheme', 'onNewTab', 'onOpenNamespace', 'onOpenReminders',
@@ -32,7 +32,7 @@ function viewMenu(overrides, calls) {
 
 const NOTE_HANDLER_NAMES = [
     'onCopySelection', 'onAddSelectionAsTag', 'onAddStyle', 'onRemoveFormatting', 'onCopyNote', 'onPasteNote',
-    'onPasteNoteChild', 'onPasteReference', 'onPasteReferenceChild', 'onPasteReferenceHere', 'onOpenReferenceSource',
+    'onPasteNoteChild', 'onLinkTo', 'onEmbed', 'onOpenReferenceSource',
     'onMakeImageBigger', 'onMakeImageSmaller', 'onResetImageSize', 'onExportNoteHtml', 'onExportViewHtml',
     'onPrintNote', 'onPrintView', 'onViewNoteFullscreen', 'onFullyExpandNote', 'onFullyCollapseNote', 'onAddNoteAtTop',
     'onAddSiblingNote', 'onAddChildNote', 'onDeleteNote', 'onMoveNoteToTop', 'onMoveNoteToBottom', 'onMoveNoteUp',
@@ -103,12 +103,12 @@ test('the tag menu says the tag editor asks first', () => {
 test('a sorted tab hides adding and pasting at the top', () => {
     for (const sortMode of ['alphabetical', 'created', 'normal-reversed']) {
         const ids = withSubmenus(viewMenu({ sortMode }, [])).map((item) => item.id);
-        for (const hidden of ['add', 'add-note-at-top', 'paste-note-at-top', 'paste-reference-at-top']) {
+        for (const hidden of ['add', 'add-note-at-top', 'paste-note-at-top']) {
             assert.equal(ids.includes(hidden), false, `${hidden} must be hidden in a ${sortMode} tab`);
         }
     }
     const ids = withSubmenus(viewMenu({ sortMode: 'normal' }, [])).map((item) => item.id);
-    for (const shown of ['add-note-at-top', 'paste-note-at-top', 'paste-reference-at-top']) {
+    for (const shown of ['add-note-at-top', 'paste-note-at-top']) {
         assert.equal(ids.includes(shown), true, `${shown} must show in a normal tab`);
     }
 });

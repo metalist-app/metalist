@@ -247,19 +247,9 @@ def reference_timestamp_store(monkeypatch):
     undo_state.reset_all_undo_state()
 
 
-def test_switching_a_reference_between_link_and_embed_preserves_updated_at(reference_timestamp_store):
-    # Only the reference's form changed ([[id]] to ![[id]]): the note's text did not.
-    record, writes = reference_timestamp_store
-    original_time = record.updated_at
-    embedded = "<div>![[22222222-2222-2222-2222-222222222222]]</div>"
-    update_content_module.apply_update_content(record.id, embedded, record.tags, "")
-    assert record.content == embedded
-    assert record.updated_at == original_time
-    assert len(writes) == 1
-    assert "content" in writes[0] and "updated_at" not in writes[0]
-
-
 @pytest.mark.parametrize("replacement", [
+    # Only the ! added: it turns the link into an embed, so it is an edit.
+    "<div>![[22222222-2222-2222-2222-222222222222]]</div>",
     "<div>New text ![[22222222-2222-2222-2222-222222222222]]</div>",
     "<div>![[33333333-3333-3333-3333-333333333333]]</div>",
     "<div></div>",

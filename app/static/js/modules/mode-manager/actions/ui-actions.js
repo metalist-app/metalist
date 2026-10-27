@@ -237,7 +237,7 @@ export async function actionRefreshAndMaybeSelect(options) {
         }
         let editingFocus = null;
         if (keepEditingFocus && noteId !== null && ModeContext.isEditing) {
-            const editedNote = document.querySelector(`[data-note-id="${noteId}"]`);
+            const editedNote = document.querySelector(`.note[data-note-id="${noteId}"]`);
             if (editedNote instanceof HTMLElement) {
                 editingFocus = captureEditingFocus(editedNote);
             }
@@ -254,7 +254,7 @@ export async function actionRefreshAndMaybeSelect(options) {
 
         // Removal animations retain DOM nodes after the diff removes their view membership.
         const editingNoteElement = noteId && ModeContext.hasNoteHash(noteId)
-            ? document.querySelector(`[data-note-id="${noteId}"]`)
+            ? document.querySelector(`.note[data-note-id="${noteId}"]`)
             : null;
         syncTagBar(editingNoteElement);
 

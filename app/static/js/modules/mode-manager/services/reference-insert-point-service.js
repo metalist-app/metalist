@@ -2,8 +2,8 @@ import { ApplicationState, stateValuesEqual } from '../../application-state.js';
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import { caretPositionAt } from './viewport-hold-service.js';
 
-// Paste Reference Into Note (docs/ui/references.md): the reference goes where the
-// right-click was in the text of the note being edited, or replaces the text
+// Link to… and Embed… (docs/ui/references.md): the `[[` or `![[` goes where the
+// right-click was in the text of the note being edited, or around the text
 // selected before the right-click. "Before" matters: on macOS the browser
 // selects the word under the pointer as the right button goes down, and a word
 // selected that way is not the user's selection.
@@ -13,7 +13,7 @@ import { caretPositionAt } from './viewport-hold-service.js';
 // and the offset there (a Range would not survive comparison by value). Not as
 // text positions: a selection of images has no text, so it had none to find
 // again, and right-clicking selected images threw.
-const pressState = ApplicationState.createFields('paste-reference-here', { selection: null });
+const pressState = ApplicationState.createFields('reference-insert-point', { selection: null });
 
 // MouseEvent.button values.
 const MAIN_BUTTON = 0;
@@ -81,13 +81,13 @@ export function rememberSelectionAtRightPress(event) {
     if (!stateValuesEqual(pressState.selection, next)) pressState.selection = next;
 }
 
-// Where Paste Reference Into Note puts the reference for a right-click on
+// Where Link to… and Embed… type for a right-click on
 // `target` at (x, y) in `noteElement`: the selection made before the
 // right-click when the click was inside it, else the point clicked. null when
 // the click was not in the text of the note being edited.
-export function pasteReferenceHereRange(noteElement, target, x, y) {
+export function referenceInsertRange(noteElement, target, x, y) {
     if (!(noteElement instanceof HTMLElement)) {
-        throw new Error('pasteReferenceHereRange requires the note element');
+        throw new Error('referenceInsertRange requires the note element');
     }
     const noteId = noteElement.dataset.noteId;
     if (!ModeContext.isEditingNote(noteId)) return null;

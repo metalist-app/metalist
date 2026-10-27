@@ -21,7 +21,6 @@ from app.services.content_cache import (
     cache_note_text,
 )
 from app.utils.text_utils import strip_html
-from app.services.embedded_references import normalize_reference_modes_for_comparison
 
 
 def apply_update_content(note_id: str, content: str, tags: str, token: str) -> None:
@@ -64,11 +63,8 @@ def apply_update_note_sources(
     if not content_changed and not tags_changed and not proposed_tags_changed:
         return
 
-    timestamp_changed = content_changed and (
-        normalize_reference_modes_for_comparison(record.content)
-        != normalize_reference_modes_for_comparison(sanitized_content)
-    )
-    if timestamp_changed:
+    # Any text change is an edit, a reference's ! too: it decides link or embed.
+    if content_changed:
         updated_at = datetime.now(timezone.utc)
     else:
         updated_at = record.updated_at
@@ -108,7 +104,7 @@ def apply_update_note_sources(
         raise RuntimeError("Changed note produced no database update fields")
 
     with begin_writer() as connection:
-        if timestamp_changed:
+        if content_changed:
             db_update_note_fields(
                 connection,
                 note_id,

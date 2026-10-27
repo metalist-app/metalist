@@ -47,7 +47,7 @@ export const DOMUtils = {
         if (!noteId) {
             throw new Error('Note ID is required');
         }
-        const note = document.querySelector(`[data-note-id="${noteId}"]`);
+        const note = document.querySelector(`.note[data-note-id="${noteId}"]`);
         if (!note) {
             throw new Error(`Note not found: ${noteId}`);
         }

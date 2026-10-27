@@ -19,9 +19,8 @@ function buildNoteHandlers(calls) {
         onCopyNote: (noteId) => calls.push(['copyNote', noteId]),
         onPasteNote: (noteId) => calls.push(['pasteNote', noteId]),
         onPasteNoteChild: (noteId) => calls.push(['pasteNoteChild', noteId]),
-        onPasteReference: (noteId) => calls.push(['pasteReference', noteId]),
-        onPasteReferenceChild: (noteId) => calls.push(['pasteReferenceChild', noteId]),
-        onPasteReferenceHere: (noteId) => calls.push(['pasteReferenceHere', noteId]),
+        onLinkTo: (noteId) => calls.push(['linkTo', noteId]),
+        onEmbed: (noteId) => calls.push(['embed', noteId]),
         onOpenReferenceSource: (referenceNoteId) => calls.push(['openReferenceSource', referenceNoteId]),
         onMakeImageBigger: (context) => calls.push(['makeImageBigger', context]),
         onMakeImageSmaller: (context) => calls.push(['makeImageSmaller', context]),
@@ -439,35 +438,41 @@ test('while editing, Add Style, Remove Formatting and Add Excalidraw Diagram fol
     assert.equal(viewItems.some((item) => item.id === 'add-style'), false);
 });
 
-test('Paste groups the sibling and child pastes once a note is copied', () => {
+test('Paste groups the sibling and child pastes once a note is copied, and pastes no reference', () => {
     const calls = [];
     const items = buildContextMenuItems(
-        buildNoteContext({ hasNoteClipboard: true, hasReferenceClipboard: true }),
+        buildNoteContext({ hasNoteClipboard: true }),
         buildNoteHandlers(calls),
     );
     assert.deepEqual(menuOutline(items).slice(0, 2), [
         'Copy Note ⌘C',
-        ['Paste', ['Paste Sibling Note ⌘V', 'Paste Child Note ⇧⌘V', 'Paste Sibling Reference ⌘R', 'Paste Child Reference ⇧⌘R']],
+        ['Paste', ['Paste Sibling Note ⌘V', 'Paste Child Note ⇧⌘V']],
     ]);
     for (const item of items[1].submenu) item.onSelect();
     assert.deepEqual(calls, [
         ['pasteNote', 'note-123'],
         ['pasteNoteChild', 'note-123'],
-        ['pasteReference', 'note-123'],
-        ['pasteReferenceChild', 'note-123'],
     ]);
     const nothingCopied = buildContextMenuItems(buildNoteContext({}), buildNoteHandlers([]));
     assert.equal(findMenuItem(nothingCopied, 'paste'), null);
     assert.equal(findMenuItem(nothingCopied, 'paste-note'), null);
 });
 
-test('synthetic note clipboard hides reference paste actions', () => {
+test('Link to… and Embed… lead the editing items for a right-click in the edited text', () => {
+    const calls = [];
     const items = buildContextMenuItems(
-        buildNoteContext({ hasNoteClipboard: true, hasReferenceClipboard: false }),
-        buildNoteHandlers([]),
+        buildNoteContext({ canInsertReference: true, canRemoveFormatting: true }),
+        buildNoteHandlers(calls),
     );
-    assert.deepEqual(findMenuItem(items, 'paste').submenu.map((item) => item.id), ['paste-note', 'paste-note-child']);
-    assert.equal(findMenuItem(items, 'paste-reference'), null);
+    const ids = items.map((item) => item.id);
+    assert.ok(ids.indexOf('link-to') + 1 === ids.indexOf('embed') && ids.indexOf('embed') < ids.indexOf('remove-formatting'));
+    assert.equal(items[ids.indexOf('link-to')].separated, true);
+    findMenuItem(items, 'link-to').onSelect();
+    findMenuItem(items, 'embed').onSelect();
+    assert.deepEqual(calls, [['linkTo', 'note-123'], ['embed', 'note-123']]);
+    const elsewhere = buildContextMenuItems(buildNoteContext({ canRemoveFormatting: true }), buildNoteHandlers([]));
+    assert.equal(findMenuItem(elsewhere, 'link-to'), null);
+    assert.equal(findMenuItem(elsewhere, 'embed'), null);
 });
 
 test('buildContextMenuItems adds a top note action to non-editing note context', () => {
@@ -497,7 +502,7 @@ function buildViewContext(overrides) {
 }
 
 const VIEW_HANDLER_NAMES = [
-    'onAddNoteAtTop', 'onPasteNoteAtTop', 'onPasteReferenceAtTop', 'onUndo', 'onRedo', 'onGoToTop', 'onGoToBottom', 'onExpandAll', 'onCollapseAll', 'onFullyExpandAll',
+    'onAddNoteAtTop', 'onPasteNoteAtTop', 'onUndo', 'onRedo', 'onGoToTop', 'onGoToBottom', 'onExpandAll', 'onCollapseAll', 'onFullyExpandAll',
     'onFullyCollapseAll', 'onSetUntaggedView', 'onSetSortMode', 'onSetDateRangeField', 'onSetDateRangePreset',
     'onOpenCustomDateRange', 'onSetFileFilter', 'onToggleAiChat', 'onToggleTabs',
     'onToggleNoteTags', 'onSetTheme', 'onNewTab', 'onOpenNamespace', 'onOpenReminders',
@@ -539,7 +544,7 @@ test('the background menu groups adding, going, the outline, the view, opening a
         '— Log Out',
     ]);
     const submenu = (id) => describeMenu(items.find((item) => item.id === id).submenu);
-    assert.deepEqual(submenu('add'), ['Add Note at Top ↩', 'Paste Note at Top ⌘V', 'Paste Note as Reference at Top ⌘R']);
+    assert.deepEqual(submenu('add'), ['Add Note at Top ↩', 'Paste Note at Top ⌘V']);
     assert.deepEqual(submenu('go-to'), ['Top', 'Bottom']);
     assert.deepEqual(submenu('outline'), ['Expand All Root Notes', 'Collapse All Root Notes', '— Fully Expand All', 'Fully Collapse All']);
     assert.deepEqual(submenu('show'), ['Chat', 'Tabs', 'Tags in List', '— System Theme', 'Light Theme', 'Dark Theme']);
@@ -551,7 +556,6 @@ test('background items that do not apply are hidden, not greyed', () => {
     const atTop = buildContextMenuItems(buildViewContext({}), buildViewHandlers([]));
     const ids = withSubmenus(atTop).map((item) => item.id);
     assert.ok(!ids.includes('paste-note-at-top'));
-    assert.ok(!ids.includes('paste-reference-at-top'));
     assert.ok(!ids.includes('go-to-top'));
     assert.ok(!ids.includes('go-to-bottom'));
     // With nothing copied, Add Note at Top is alone, so it shows in place.
@@ -563,7 +567,7 @@ test('background items that do not apply are hidden, not greyed', () => {
     // While a note is edited, Enter, ⌘V and ⌘Z belong to the editor.
     const editing = buildContextMenuItems(buildViewContext({ isEditing: true, canPasteNoteAtTop: true }), buildViewHandlers([]));
     const editingIds = withSubmenus(editing).map((item) => item.id);
-    for (const id of ['add', 'add-note-at-top', 'paste-note-at-top', 'paste-reference-at-top', 'undo', 'redo']) {
+    for (const id of ['add', 'add-note-at-top', 'paste-note-at-top', 'undo', 'redo']) {
         assert.ok(!editingIds.includes(id), id);
     }
     assert.equal(editing[0].id, 'outline');
@@ -585,7 +589,6 @@ test('background shortcuts are written the Windows and Linux way off a Mac', () 
     assert.deepEqual(shortcuts, {
         'add-note-at-top': 'Enter',
         'paste-note-at-top': 'Ctrl+V',
-        'paste-reference-at-top': 'Ctrl+R',
         undo: 'Ctrl+Z',
         redo: 'Ctrl+Shift+Z',
     });
@@ -607,7 +610,7 @@ test('background actions call their handlers', () => {
         item.onSelect();
     }
     assert.deepEqual(calls.map((call) => call[0]), [
-        'onAddNoteAtTop', 'onPasteNoteAtTop', 'onPasteReferenceAtTop', 'onUndo', 'onRedo', 'onGoToTop', 'onGoToBottom',
+        'onAddNoteAtTop', 'onPasteNoteAtTop', 'onUndo', 'onRedo', 'onGoToTop', 'onGoToBottom',
         'onExpandAll', 'onCollapseAll', 'onFullyExpandAll', 'onFullyCollapseAll', 'onNewTab', 'onOpenNamespace', 'onOpenReminders', 'onExportViewHtml', 'onPrintView', 'onLogOut',
     ]);
 });

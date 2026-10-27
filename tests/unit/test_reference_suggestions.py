@@ -74,8 +74,24 @@ def _note_under(note_id: str, lines: list[str], *, tags: str, parent_id: str | N
     apply_insert_note(note_id, parent_id, None, None, "", content=content, tags=tags, proposed_tags="")
 
 
+def _suggest_in(query: str, *, copied: frozenset[str], shown: frozenset[str]) -> list:
+    return suggest_references(
+        query=query, editing_note_id="editing", copied_note_ids=copied,
+        view=("test view", shown), view_note_ids=lambda: shown,
+    )
+
+
+def _suggest(query: str) -> list:
+    # Nothing copied, and a view showing every note: it ranks none above another.
+    return _suggest_in(query, copied=frozenset(), shown=frozenset(store.snapshot()))
+
+
 def _ids(query: str) -> list[str]:
-    return [suggestion.note_id for suggestion in suggest_references(query=query, editing_note_id="editing")]
+    return [suggestion.note_id for suggestion in _suggest(query)]
+
+
+def _ids_in(query: str, *, copied: frozenset[str], shown: frozenset[str]) -> list[str]:
+    return [suggestion.note_id for suggestion in _suggest_in(query, copied=copied, shown=shown)]
 
 
 def test_the_four_tiers_in_order(notes) -> None:
@@ -109,7 +125,7 @@ def test_a_content_match_shows_a_snippet_and_a_first_line_match_does_not(notes) 
     _note("content", ["Statistics", "Here the Bayes factor compares two models of the data"])
     _note("editing", ["The note being edited"])
 
-    first, content = suggest_references(query="bayes factor", editing_note_id="editing")
+    first, content = _suggest("bayes factor")
 
     assert (first.first_line, first.snippet) == ("Bayes factor", "")
     assert content.first_line == "Statistics"
@@ -130,7 +146,7 @@ def test_a_password_is_found_by_its_parent_and_shown_masked(notes) -> None:
     _note_under("secret", ["hunter2-correct-horse"], tags="@password", parent_id="bank")
     _note("editing", ["The note being edited"])
 
-    suggestions = suggest_references(query="bank", editing_note_id="editing")
+    suggestions = _suggest("bank")
 
     assert [(s.note_id, s.first_line, s.credential) for s in suggestions] == [
         ("bank", "Bank login", ""),
@@ -154,7 +170,7 @@ def test_a_username_is_found_by_its_value(notes) -> None:
     _note_under("user", ["tom@example.org"], tags="@username", parent_id="bank")
     _note("editing", ["The note being edited"])
 
-    (suggestion,) = suggest_references(query="tom@example", editing_note_id="editing")
+    (suggestion,) = _suggest("tom@example")
 
     assert (suggestion.note_id, suggestion.first_line, suggestion.credential) == ("user", "tom@example.org", "username")
 
@@ -170,7 +186,7 @@ def test_html_in_a_first_line_is_plain_text(notes) -> None:
     _note("markup", ["&lt;b&gt;bold&lt;/b&gt; idea"])
     _note("editing", ["The note being edited"])
 
-    (suggestion,) = suggest_references(query="bold", editing_note_id="editing")
+    (suggestion,) = _suggest("bold")
 
     assert suggestion.first_line == "<b>bold</b> idea"
 
@@ -203,7 +219,7 @@ def test_a_typo_is_found_in_the_text_too(notes) -> None:
     _note("typo", ["Holiday", "we hired a canoe on the lake"])
     _note("editing", ["The note being edited"])
 
-    (suggestion,) = suggest_references(query="cnaoe", editing_note_id="editing")
+    (suggestion,) = _suggest("cnaoe")
 
     assert suggestion.snippet[suggestion.highlight_start:suggestion.highlight_end] == "canoe"
 
@@ -220,3 +236,58 @@ def test_locking_empties_the_catalog_of_the_notes_text(notes) -> None:
     finally:
         enable_sensitive_caches()
     assert _ids("bank") == ["one"]
+
+
+def test_the_copied_note_comes_first_whenever_it_matches(notes) -> None:
+    _note("copied", ["Holiday", "the bayes factor of the trip"])
+    _note("first-line", ["Bayes factor"])
+    _note("editing", ["The note being edited"])
+    copied = frozenset({"copied"})
+    everything = frozenset(store.snapshot())
+
+    # From the content tier, above a first-line match.
+    assert _ids_in("bayes", copied=copied, shown=everything) == ["copied", "first-line"]
+    # With nothing typed.
+    assert _ids_in("", copied=copied, shown=everything)[0] == "copied"
+    # Not at all when it doesn't match.
+    assert _ids_in("factor of", copied=frozenset({"first-line"}), shown=everything) == ["copied"]
+    assert _ids_in("zebra", copied=copied, shown=everything) == []
+
+
+def test_a_deleted_copied_note_is_not_suggested(notes) -> None:
+    _note("one", ["Bayes factor"])
+    _note("editing", ["The note being edited"])
+
+    assert _ids_in("bayes", copied=frozenset({"deleted-note"}), shown=frozenset(store.snapshot())) == ["one"]
+
+
+def test_the_view_ranks_within_a_tier_and_never_filters(notes) -> None:
+    _note("shown-older", ["Trip plan for Japan"])
+    _note("content-shown", ["Notes", "a trip plan with friends"])
+    _note("hidden-newer", ["Trip plan for Iceland"])
+    _note("editing", ["The note being edited"])
+    shown = frozenset({"shown-older", "content-shown", "editing"})
+
+    # In the view first within the first-line tier, then the rest of it; the tiers still come first.
+    assert _ids_in("trip plan", copied=frozenset(), shown=shown) == ["shown-older", "hidden-newer", "content-shown"]
+    # With nothing typed, the view's notes come first too.
+    assert _ids_in("", copied=frozenset(), shown=shown) == ["content-shown", "shown-older", "hidden-newer"]
+
+
+def test_a_note_that_is_only_a_reference_reads_as_its_source(notes) -> None:
+    source, secret = "11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222"
+    _note(source, ["Garden plan"])
+    _note("holder", [f"![[{source}]]"])
+    _note("bank", ["Bank"])
+    _note_under(secret, ["hunter2-correct-horse"], tags="@password", parent_id="bank")
+    _note("password-link", [f"[[{secret}]]"])
+    _note("blank", [""])
+    _note("editing", ["The note being edited"])
+
+    suggestions = {suggestion.note_id: suggestion for suggestion in _suggest("")}
+    lines = {note_id: suggestion.first_line for note_id, suggestion in suggestions.items()}
+
+    assert lines["holder"] == "Garden plan"
+    assert lines["password-link"] == CREDENTIAL_MASK
+    # A note with nothing to read isn't suggested.
+    assert "blank" not in lines

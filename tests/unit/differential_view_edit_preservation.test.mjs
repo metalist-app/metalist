@@ -200,11 +200,12 @@ function installBrowserEnvironment(t, options = {}) {
             if (selector === 'a[href]' || selector === '.note-file-image-embed[data-file-ref-id]') {
                 return [];
             }
-            if (selector === '[data-note-id]') {
+            if (selector === '[data-note-id]' || selector === '.note[data-note-id]') {
+                const isNoteOnly = selector.startsWith('.note');
                 const matches = [];
                 const visit = (node) => {
                     for (const child of node.children) {
-                        if (child.dataset && typeof child.dataset.noteId === 'string') {
+                        if (child.dataset && typeof child.dataset.noteId === 'string' && (!isNoteOnly || child.classList.contains('note'))) {
                             matches.push(child);
                         }
                         visit(child);
@@ -290,12 +291,15 @@ function installBrowserEnvironment(t, options = {}) {
             return id === 'notes-container' ? notesContainer : null;
         },
         querySelector(selector) {
-            const match = selector.match(/^\[data-note-id="([^"]+)"\]$/);
+            const match = selector.match(/^(\.note)?\[data-note-id="([^"]+)"\]$/);
             if (!match) {
                 return null;
             }
-            const element = elementByNoteId.get(match[1]) || null;  // shockharness: ignore[DEF003] reason="the fake answers like the real API: null or empty when absent"
-            if (!element || !element.isConnected || element.dataset.noteId !== match[1]) {
+            const element = elementByNoteId.get(match[2]) || null;  // shockharness: ignore[DEF003] reason="the fake answers like the real API: null or empty when absent"
+            if (!element || !element.isConnected || element.dataset.noteId !== match[2]) {
+                return null;
+            }
+            if (match[1] !== undefined && !element.classList.contains('note')) {
                 return null;
             }
             return element;

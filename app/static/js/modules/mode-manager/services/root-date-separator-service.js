@@ -33,7 +33,7 @@ export function rebuildRootDateSeparators(snapshot) {
     const rootSortBuckets = snapshot.rootSortBuckets;
     const plan = buildRootDateSeparatorPlan(rootIds, rootSortBuckets, snapshot.rootSortKeyBeforeWindow);
     for (const entry of plan) {
-        const rootElement = document.querySelector(`[data-note-id="${entry.rootId}"]`);
+        const rootElement = document.querySelector(`.note[data-note-id="${entry.rootId}"]`);
         if (!(rootElement instanceof HTMLElement)) {
             throw new Error(`Visible root note element missing for separator: ${entry.rootId}`);
         }

@@ -25,7 +25,7 @@ async function reloadApp(page) {
 }
 
 // Notes from a spec: [name, html, parentName | null]; HTML may name other
-// notes as [[name]] (a note that is only a reference embeds it).
+// notes as [[name]] (a link) or ![[name]] (an embed).
 async function createNotes(page, spec) {
   return page.evaluate(async spec => {
     const {NotesAPI} = await import('/static/js/modules/api-client.js');
@@ -127,8 +127,8 @@ function expectedWarning(count, verb) {
 async function menuDeleteCase(page) {
   const ids = await createNotes(page, [
     ['source', '<p>The source note</p>', null],
-    // A note that is only the reference embeds it.
-    ['embedding', '<div>[[source]]</div>', null],
+    // A note that is only the ![[ ]] reference embeds it.
+    ['embedding', '<div>![[source]]</div>', null],
     ['linking', '<div>Links it: [[source]]</div>', null],
   ]);
   await reloadApp(page);
@@ -245,7 +245,7 @@ async function editedShapesCase(page) {
     ['child', '<p>Its child</p>', 'parent'],
     ['grandchild', '<p>Its grandchild</p>', 'child'],
     ['source', '<p>Embedded source</p>', null],
-    ['holder', '<p>[[source]]</p>', null],
+    ['holder', '<p>![[source]]</p>', null],
     ['menu', '<p>Deleted from its menu</p>', null],
   ]);
   await reloadApp(page);

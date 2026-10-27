@@ -25,10 +25,11 @@
   text the copy or cut put on the clipboard and MetaList's clipboard still holds a
   note (`clipboard-shortcut-policy-service.js`). Broken from 0.21.0 to 0.24.1: the
   marker alone decided, so `⇧⌘V` pasted the note's text into the selected note. The
-  reference-paste browser suite sends `⇧⌘V` as Paste and Match Style, as Chrome does.
+  note-paste browser suite sends `⇧⌘V` as Paste and Match Style, as Chrome does.
 - The structural note clipboard is process-local. If a server restart expires it,
   note paste reports that the note must be copied again instead of returning an
-  internal-server error.
+  internal-server error. Only the copied note's id outlives it, for the `[[`
+  suggestions (`docs/ui/references.md`).
 
 ## Entry Points
 - Clipboard/drop handler: `app/static/js/modules/mode-manager/events/keyboard-events.js`

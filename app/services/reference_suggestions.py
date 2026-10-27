@@ -1,9 +1,11 @@
 """Notes suggested while typing `[[` in a note (docs/ui/references.md, "Suggestions").
 
-Four tiers, strictly in order: the query exactly in the note's first line, then fuzzily (every
-typed word a prefix of a word there, or one edit away from one: a typo, a partial word), then
-exactly in the note's text, then fuzzily there. Ties go to the most recently edited note. The note
-being edited is never suggested. An @password note holds the password itself, so it is never found
+The note copied last comes first whenever it matches at all (and with nothing typed). Then four
+tiers, strictly in order: the query exactly in the note's first line, then fuzzily (every typed
+word a prefix of a word there, or one edit away from one: a typo, a partial word), then exactly in
+the note's text, then fuzzily there. Within a tier, the notes the tab's view shows come first, then
+the most recently edited: the view ranks, it never filters. The note being edited is never
+suggested. An @password note holds the password itself, so it is never found
 or shown by what it holds: it follows its parent when the parent's first line matches, masked.
 
 A vault holds over a hundred thousand notes and the list updates as the user types, so the notes'
@@ -15,15 +17,15 @@ holding them, and every tier stops once the list is full.
 from __future__ import annotations
 
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 import re
 from threading import Lock
-from typing import Dict, FrozenSet, Iterable, List, Set, Tuple
+from typing import Callable, Dict, FrozenSet, Hashable, Iterable, List, Set, Tuple
 
 from app.security.sensitive_cache import register_sensitive_cache, sensitive_caches_enabled
 from app.services.content_formatting import CREDENTIAL_MASK, find_global_credential_tag
-from app.services.embedded_references import first_line_preview
+from app.services.embedded_references import EMPTY_NOTE_PREVIEW, first_line_preview, sole_reference_token
 from app.services.note_store import NoteRecord, store
 from app.utils.text_utils import strip_sanitized_html
 
@@ -57,6 +59,7 @@ class ReferenceSuggestion:
     highlight_end: int
     # 'password', 'username' or ''.
     credential: str
+    # The note's first lines as text, for the preview of the highlighted suggestion; a password masked.
 
 
 @dataclass(frozen=True, slots=True)
@@ -284,6 +287,39 @@ _catalog = _Catalog()
 register_sensitive_cache(_catalog.clear)
 
 
+class _ViewOrder:
+    """The catalog's notes with the ones a view shows first, each part most recently edited first:
+    worked out once for a view and catalog revision, as the user types on in the same `[[`."""
+
+    def __init__(self) -> None:
+        self._lock = Lock()
+        self._key: Tuple[object, ...] = ()
+        self._order: List[str] = []
+
+    def clear(self) -> None:
+        with self._lock:
+            self._key = ()
+            self._order = []
+
+    def ordered(self, by_recency: List[str], view: Hashable, view_note_ids: Callable[[], FrozenSet[str]]) -> List[str]:
+        # The catalog replaces its order whenever a note changes, so the list itself names the revision.
+        key = (id(by_recency), view)
+        with self._lock:
+            if key == self._key:
+                return self._order
+        shown = view_note_ids()
+        order = [note_id for note_id in by_recency if note_id in shown]
+        order.extend(note_id for note_id in by_recency if note_id not in shown)
+        with self._lock:
+            self._key = key
+            self._order = order
+        return order
+
+
+_view_order = _ViewOrder()
+register_sensitive_cache(_view_order.clear)
+
+
 def _snippet(entry: _Entry, start: int, end: int) -> Tuple[str, int, int]:
     """The note's text around a match found in its casefolded text."""
     text = entry.text
@@ -343,7 +379,27 @@ class _Collected:
         if self.is_full or suggestion.note_id in self._seen:
             return
         self._seen.add(suggestion.note_id)
+        if suggestion.first_line == "":
+            suggestion = replace(suggestion, first_line=self._as_a_link_reads(suggestion.note_id))
+        # A note with nothing to read is no help to choose (agreed 2026-10-26).
+        if suggestion.first_line == EMPTY_NOTE_PREVIEW:
+            return
         self.suggestions.append(suggestion)
+
+    def _as_a_link_reads(self, note_id: str) -> str:
+        """A note with no text of its own reads as a link to it does: one that is only a
+        reference as that reference's source (a password masked), else as empty."""
+        seen = {note_id}
+        entry = self._entries[note_id]
+        while entry.first_line == "":
+            token = sole_reference_token(entry.record.content)
+            if token is None or token.note_id not in self._entries or token.note_id in seen:
+                return EMPTY_NOTE_PREVIEW
+            seen.add(token.note_id)
+            entry = self._entries[token.note_id]
+        if entry.is_password:
+            return CREDENTIAL_MASK
+        return entry.first_line
 
     def add_with_passwords(self, entry: _Entry) -> None:
         """A first-line match, then the @password notes under it, masked."""
@@ -426,14 +482,28 @@ def _collect_matches(query: str, entries: Dict[str, _Entry], by_recency: List[st
         _collect_fuzzy_texts(typed_words, entries, by_recency, collected)
 
 
-def suggest_references(*, query: str, editing_note_id: str) -> List[ReferenceSuggestion]:
+def suggest_references(
+    *,
+    query: str,
+    editing_note_id: str,
+    copied_note_ids: FrozenSet[str],
+    view: Hashable,
+    view_note_ids: Callable[[], FrozenSet[str]],
+) -> List[ReferenceSuggestion]:
+    """`view` names the tab's view (its search and filters) and view_note_ids() gives the notes it
+    shows, asked for only when that view hasn't been seen with these notes yet."""
     if not isinstance(query, str) or not isinstance(editing_note_id, str):
         raise TypeError("suggest_references requires a query and the edited note's id")
     entries, by_recency = _catalog.refreshed()
+    order = _view_order.ordered(by_recency, view, view_note_ids)
     collected = _Collected(entries, editing_note_id)
     normalized = _normalized(query).casefold()
-    if normalized == "":
-        _latest(entries, by_recency, collected)
-    else:
-        _collect_matches(normalized, entries, by_recency, collected)
+    def collect(entries: Dict[str, _Entry], order: List[str], collected: _Collected) -> None:
+        if normalized == "":
+            _latest(entries, order, collected)
+            return
+        _collect_matches(normalized, entries, order, collected)
+    # The same tiers over the copied note alone: matching any of them puts it first.
+    collect(entries, [note_id for note_id in copied_note_ids if note_id in entries], collected)
+    collect(entries, order, collected)
     return collected.suggestions

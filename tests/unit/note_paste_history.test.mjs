@@ -77,68 +77,15 @@ test('a rejected paste preserves the existing local edit history', async () => {
 });
 
 const keyboardSource = readFileSync(new URL('../../app/static/js/modules/mode-manager/events/keyboard-events.js', import.meta.url), 'utf8');
-const referenceStart = keyboardSource.indexOf('function handleInsertEmbedReferenceShortcut(event)');
-const referenceEnd = keyboardSource.indexOf('async function handleSplitNoteShortcut(event)', referenceStart);
-assert.ok(referenceStart >= 0 && referenceEnd > referenceStart);
-// ⌘R outside edit mode does what the menu's Paste Note as Reference at Top does.
-const topReferenceStart = keyboardSource.indexOf('export async function pasteCopiedNoteReferenceIntoNewTopNote()');
-const topReferenceEnd = keyboardSource.indexOf('export async function pasteCopiedNoteIntoNewTopNote()', topReferenceStart);
-assert.ok(topReferenceStart >= 0 && topReferenceEnd > topReferenceStart);
+const retiredStart = keyboardSource.indexOf('function handleRetiredReferenceShortcut(event)');
+const retiredEnd = keyboardSource.indexOf('async function handleSplitNoteShortcut(event)', retiredStart);
+assert.ok(retiredStart >= 0 && retiredEnd > retiredStart);
 
-function referenceHarness({ isEditing, clipboardNoteId, sortBlocksTopNote }) {
+test('⌘R pastes no reference, and keeps the browser from reloading the page', () => {
     const events = [];
-    const pending = [];
-    const ModeContext = {
-        isEditing, clipboardNoteId, currentNoteId: null,
-        resetEditSessionState() { events.push('reset'); },
-    };
-    if (isEditing) ModeContext.currentNoteId = 'selected';
-    const dependencies = {
-        ModeContext,
-        Logger: { logNoop() {} },
-        CommandGate: { run(_name, callback) { const promise = callback(); pending.push(promise); return promise; } },
-        async createNoteAtTop() { events.push('top'); ModeContext.isEditing = true; ModeContext.currentNoteId = 'new-top'; return 'new-top'; },
-        insertReferenceTokenIntoActiveEditor(token) { events.push(token); },
-        async actionPasteReferenceSibling(noteId) { events.push(`reference-sibling:${noteId}`); },
-        async actionPasteReferenceChild(noteId) { events.push(`reference-child:${noteId}`); },
-        async actionSaveNote(id) { events.push(`save:${id}`); },
-        blockRootNoteCreation(placement) { events.push(`block-check:${placement}`); return sortBlocksTopNote; },
-        requireCreatedNoteId(noteId) { return noteId; },
-    };
-    const source = keyboardSource.slice(referenceStart, referenceEnd)
-        + keyboardSource.slice(topReferenceStart, topReferenceEnd).replace('export ', '');
-    const run = new Function(...Object.keys(dependencies), `${source}\nreturn handleInsertEmbedReferenceShortcut;`)(...Object.values(dependencies));
-    const event = { shiftKey: false, preventDefault() { events.push('prevent'); }, stopPropagation() {} };
-    return { run, event, events, pending };
-}
-
-test('reference paste with no selected note creates and saves a top note', async () => {
-    const { run, event, events, pending } = referenceHarness({ isEditing: false, clipboardNoteId: 'original-note', sortBlocksTopNote: false });
-    run(event);
-    await Promise.all(pending);
-    assert.deepEqual(events, ['prevent', 'block-check:top', 'top', '[[original-note]]', 'save:new-top', 'reset']);
-});
-
-test('reference paste without a copied note does not create an empty note', async () => {
-    const { run, event, events, pending } = referenceHarness({ isEditing: false, clipboardNoteId: null, sortBlocksTopNote: false });
-    run(event);
-    await Promise.all(pending);
-    assert.deepEqual(events, ['prevent']);
-});
-
-test('shift-reference paste pastes the reference as a child, where shift-paste puts the note', async () => {
-    const { run, event, events, pending } = referenceHarness({ isEditing: true, clipboardNoteId: 'original-note', sortBlocksTopNote: false });
-    event.shiftKey = true;
-    run(event);
-    await Promise.all(pending);
-    assert.deepEqual(events, ['prevent', 'reference-child:original-note']);
-});
-
-test('reference paste while editing pastes the reference as a sibling, where paste puts the note', async () => {
-    const { run, event, events, pending } = referenceHarness({ isEditing: true, clipboardNoteId: 'original-note', sortBlocksTopNote: false });
-    run(event);
-    await Promise.all(pending);
-    assert.deepEqual(events, ['prevent', 'reference-sibling:original-note']);
+    const run = new Function(`${keyboardSource.slice(retiredStart, retiredEnd)}\nreturn handleRetiredReferenceShortcut;`)();
+    run({ preventDefault() { events.push('prevent'); }, stopPropagation() { events.push('stop'); } });
+    assert.deepEqual(events, ['prevent', 'stop']);
 });
 
 test('pasting below a non-empty root note in a sorted tab is blocked before any request', async () => {
@@ -151,11 +98,4 @@ test('pasting onto an empty note fills it, so the sort order never blocks it', a
     const { run, events } = harness({ priorEdits: false, failPaste: false, targetText: '', blockRoot: true });
     assert.equal(await run(), true);
     assert.ok(!events.includes('block-check:below'));
-});
-
-test('reference paste into a new top note stops when the sort order blocks new root notes', async () => {
-    const { run, event, events, pending } = referenceHarness({ isEditing: false, clipboardNoteId: 'original-note', sortBlocksTopNote: true });
-    run(event);
-    await Promise.all(pending);
-    assert.deepEqual(events, ['prevent', 'block-check:top']);
 });

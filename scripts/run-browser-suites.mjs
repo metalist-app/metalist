@@ -25,7 +25,7 @@ const CORE = 'core';
 // no keys) run alone after the others: sharing the CPU with other runs makes the app
 // slower than those budgets, and loosening them would let a real slowdown pass.
 const RUN_ALONE = ['input-target'];
-const SLOWEST_FIRST = ['reference-paste', 'exit-edit-scroll', 'click-caret', 'ai-note-tags', CORE, 'sorted-tabs',
+const SLOWEST_FIRST = ['exit-edit-scroll', 'click-caret', 'ai-note-tags', CORE, 'sorted-tabs',
   'delete-warning', 'list-edges', 'editable-embeds'];
 // A run that takes longer than this is stuck: it is stopped and reported as failed.
 const RUN_TIMEOUT_MS = 30 * 60 * 1000;

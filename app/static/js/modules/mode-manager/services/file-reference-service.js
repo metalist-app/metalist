@@ -269,25 +269,11 @@ function insertReferenceTokenAtSelection(contentElement, referenceToken) {
     }
 }
 
-export function insertReferenceTokenIntoActiveEditor(referenceToken) {
+function insertReferenceTokenIntoActiveEditor(referenceToken) {
     const contentElement = requireActiveEditable(referenceToken);
     contentElement.focus();
     restoreSelection();
     ensureSelectionInsideEditableContent(contentElement);
-    insertReferenceTokenAtSelection(contentElement, referenceToken);
-}
-
-// Paste Reference Into Note: the token at `range` (a point, or text it replaces) in
-// the note being edited.
-export function insertReferenceTokenAtRange(referenceToken, range) {
-    const contentElement = requireActiveEditable(referenceToken);
-    if (!(range instanceof Range) || !contentElement.contains(range.startContainer) || !contentElement.contains(range.endContainer)) {
-        throw new Error('Paste Reference Into Note requires a range in the edited note');
-    }
-    contentElement.focus({ preventScroll: true });
-    const selection = window.getSelection();
-    selection.removeAllRanges();
-    selection.addRange(range);
     insertReferenceTokenAtSelection(contentElement, referenceToken);
 }
 

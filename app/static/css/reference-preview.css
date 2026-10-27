@@ -1,0 +1,19 @@
+/* Inside a reference's preview card (reference-preview-card-service.js): the top
+   of the note as the list draws it, smaller, cut at the card's bottom with a fade. */
+:host {
+    font-size: 14px;
+    line-height: 1.45;
+}
+/* About six lines of the note. */
+.reference-preview-clip { max-height: 9em; overflow: hidden; }
+.reference-preview-clip.is-cut {
+    -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 2.2em), transparent);
+    mask-image: linear-gradient(to bottom, #000 calc(100% - 2.2em), transparent);
+}
+.reference-preview-tree .note { background: transparent; color: inherit; min-width: 0; border: 0; margin: 0; padding: 0; box-shadow: none; }
+.reference-preview-tree .note-content { padding: 0; font-size: inherit; cursor: default; }
+.reference-preview-tree .note-children { margin-left: 12px; }
+.reference-preview-tree .note-tags,
+.reference-preview-tree .note-collapse-toggle,
+.reference-preview-tree .note-embed-collapse-toggle { display: none; }
+.reference-preview-tree img { max-width: 100%; height: auto; }

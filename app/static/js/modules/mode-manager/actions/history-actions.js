@@ -102,7 +102,7 @@ function _applyHistorySelectionState({
 
     let cleanupTarget = null;
     if (typeof priorEditingNoteId === 'string' && priorEditingNoteId.length > 0) {
-        cleanupTarget = document.querySelector(`[data-note-id="${priorEditingNoteId}"]`);
+        cleanupTarget = document.querySelector(`.note[data-note-id="${priorEditingNoteId}"]`);
     }
 
     if (!cleanupTarget) {

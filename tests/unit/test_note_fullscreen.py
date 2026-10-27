@@ -172,3 +172,51 @@ def test_fullscreen_keeps_code_lines_as_written_at_every_depth(monkeypatch: pyte
     markup = fullscreen_module.build_note_fullscreen_markup("root")
 
     assert _preformatted_texts(markup) == ["def area(r):\n    return r * r", "def area(r):\n    return r * r"]
+
+
+# A reference's preview card (docs/ui/references.md): the top of the note as the
+# list draws it, formatting and all, up to PREVIEW_NOTE_LIMIT notes, passwords hidden.
+def _preview_store(monkeypatch: pytest.MonkeyPatch, notes: Dict[str, _Note], children: Dict[Optional[str], List[str]]) -> None:
+    monkeypatch.setattr(fullscreen_module, "note_store", _FakeNoteStore(notes=notes, children=children))
+    monkeypatch.setattr(fullscreen_module, "file_registry", _FakeFileRegistry())
+
+
+def test_a_preview_draws_the_note_as_the_list_does(monkeypatch: pytest.MonkeyPatch) -> None:
+    notes = {
+        "ears": _Note("ears", None, '<div># Giving Claude "Ears"</div><div>---</div><div>Claude is **strong**</div>', "@markdown"),
+        "heading": _Note("heading", "ears", "<div>Green heading</div>", "@heading @green"),
+    }
+    _preview_store(monkeypatch, notes, {None: ["ears"], "ears": ["heading"]})
+    markup = fullscreen_module.build_note_preview_markup("ears")
+    assert re.search(r"<h1[^>]*>Giving Claude &quot;Ears&quot;</h1>|<h1[^>]*>Giving Claude \"Ears\"</h1>", markup)
+    assert "<hr" in markup
+    assert "<strong>strong</strong>" in markup
+    assert "meta-heading" in markup and "meta-green" in markup
+
+
+def test_a_preview_stops_after_the_notes_a_card_can_show(monkeypatch: pytest.MonkeyPatch) -> None:
+    child_ids = [f"child-{index}" for index in range(fullscreen_module.PREVIEW_NOTE_LIMIT + 5)]
+    notes = {"root": _Note("root", None, "<div>Root</div>", "")}
+    notes.update({child_id: _Note(child_id, "root", f"<div>{child_id} text</div>", "") for child_id in child_ids})
+    _preview_store(monkeypatch, notes, {None: ["root"], "root": child_ids})
+    markup = fullscreen_module.build_note_preview_markup("root")
+    assert markup.count('<article class="note"') == fullscreen_module.PREVIEW_NOTE_LIMIT
+    full = fullscreen_module.build_note_fullscreen_markup("root")
+    assert full.count('<article class="note"') == len(notes)
+
+
+def test_a_preview_hides_a_password(monkeypatch: pytest.MonkeyPatch) -> None:
+    notes = {"secret": _Note("secret", None, "<div>hunter2-correct-horse</div>", "@password")}
+    _preview_store(monkeypatch, notes, {None: ["secret"]})
+    markup = fullscreen_module.build_note_preview_markup("secret")
+    assert "hunter2" not in markup
+    assert "data-redacted" in markup
+
+
+def test_the_preview_route_draws_a_note_or_nothing(monkeypatch: pytest.MonkeyPatch) -> None:
+    store = _FakeNoteStore(notes={"note-123": _Note("note-123", None, "content", "")}, children={})
+    monkeypatch.setattr(notes_route, "note_store", store)
+    monkeypatch.setattr(notes_route, "build_note_preview_markup", lambda note_id: f"<article>{note_id}</article>")
+    assert notes_route.note_preview("note-123") == {"status": "ready", "html": "<article>note-123</article>"}
+    # A deleted note, or a file's UUID: no card.
+    assert notes_route.note_preview("missing") == {"status": "deleted", "html": ""}

@@ -18,7 +18,7 @@ function getNoteElementIfPresent(noteId) {
     if (typeof noteId !== 'string' || noteId.length === 0) {
         throw new Error('getNoteElementIfPresent requires noteId');
     }
-    return document.querySelector(`[data-note-id="${noteId}"]`);
+    return document.querySelector(`.note[data-note-id="${noteId}"]`);
 }
 
 function applyInitialCaretVisibility(initialCaretVisibility) {
