@@ -52,6 +52,7 @@ from them, not decided case by case. When a new case comes up, reason from these
 | Escape, after only looking | the note's first line | a collapsed note collapses again with its first line where it was (1, 4) |
 | Drag a note and drop it | the drop line | the note's edge next to the line stays on it: its top when moved up, its bottom when moved down; nothing scrolls (1, 2) |
 | …that edge would sit behind the search controls | the drop line | scroll just enough to show it right below them (3) |
+| Drop a file into the note being edited | where it was dropped | its reference goes on a line of its own there (dropped at a line's start, it takes that line's place, with no empty line above). In view, nothing scrolls (2); below the window, the page scrolls just enough to put the file's line at the window's bottom, not further for its preview child (3); under the search controls, just enough to put it the usual gap below them (3). The same in every browser: the browser's own scroll while inserting is undone first (agreed 2026-10-27; `keepInsertedTokenInSight`, `file-reference-service.js`) |
 | Keyboard move up or down | the moved note | follow only if it would leave sight, by the minimum (3) |
 | Up or down arrow (Go to Top / Bottom) | the end they asked for | that end of the list comes into view: the top at the top, the last note's bottom at the bottom of the window; editing ends first, saved (2, 3) |
 | Move to Top | the moved note | the view follows it to its new place at the top (3) |

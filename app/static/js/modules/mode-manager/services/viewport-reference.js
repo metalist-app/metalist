@@ -46,6 +46,24 @@ export function getScrollMaxY() {
     return Math.max(0, Math.round(doc.scrollHeight - window.innerHeight));
 }
 
+// Shows `rect` whole in the usable viewport (below the search controls, above the window's
+// bottom), moving the page the minimum distance; in view, nothing moves
+// (docs/ui/interaction-principles.md, principle 3).
+export function scrollRectIntoUsableViewport(rect) {
+    const top = getViewportTopInset();
+    const bottom = window.innerHeight;
+    let delta = 0;
+    if (rect.bottom > bottom) {
+        delta = rect.bottom - bottom;
+    } else if (rect.top < top) {
+        delta = rect.top - top;
+    }
+    if (delta === 0) {
+        return;
+    }
+    window.scrollTo({ top: clampNumber(window.scrollY + delta, 0, getScrollMaxY()), behavior: 'instant' });
+}
+
 // How far a rect is from a horizontal line: zero when the line crosses it.
 export function distanceToLine(rect, lineY) {
     if (lineY >= rect.top && lineY <= rect.bottom) {
