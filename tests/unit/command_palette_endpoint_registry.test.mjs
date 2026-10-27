@@ -49,6 +49,8 @@ test('buildCommandPaletteEndpoints includes utility action endpoints', async () 
             printView: noop,
             attachFileToCurrentNote: noop,
             addExcalidrawDiagram: noop,
+            linkTo: noop,
+            embed: noop,
             trimUnusedFiles: noop,
             retryFailedLinkTitles: noop,
             openOpenNamespace: noop,

@@ -267,16 +267,9 @@ def _diagram_record() -> SimpleNamespace:
     )
 
 
-@pytest.mark.parametrize(
-    ("host_content", "host_collapsed"),
-    # A link (text around the reference), and a collapsed note that is only the reference.
-    [(f"<div>See [[{_SOURCE_ID}]]</div>", False), (f"<div>![[{_SOURCE_ID}]]</div>", True)],
-)
-def test_compact_reference_to_a_diagram_note_shows_the_diagram_thumbnail(
-    monkeypatch: pytest.MonkeyPatch, host_content: str, host_collapsed: bool,
-) -> None:
+def test_compact_reference_to_a_diagram_note_shows_the_diagram_thumbnail(monkeypatch: pytest.MonkeyPatch) -> None:
     notes = {
-        "host": _Note("host", None, None, _SOURCE_ID, host_collapsed, host_content, ""),
+        "host": _Note("host", None, None, _SOURCE_ID, False, f"<div>See [[{_SOURCE_ID}]]</div>", ""),
         _SOURCE_ID: _Note(_SOURCE_ID, None, "host", None, True, f"<div>![[{_DIAGRAM_ID}]]</div><div>later line</div>", ""),
     }
     state = _state_for(
@@ -300,6 +293,28 @@ def test_compact_reference_to_a_diagram_note_shows_the_diagram_thumbnail(
     assert 'data-file-kind="excalidraw"' not in rendered
     assert "Double-click to edit" not in rendered
     assert rendered.index("note-reference-link-icon") < rendered.index("note-reference-link-thumbnail")
+
+
+def test_a_folded_embed_of_a_note_starting_with_a_diagram_shows_the_diagram(monkeypatch: pytest.MonkeyPatch) -> None:
+    # A folded note that is only an embed shows the embed, its source folded to
+    # its first line: the diagram, an embed as written (docs/ui/references.md).
+    notes = {
+        "host": _Note("host", None, None, _SOURCE_ID, True, f"<div>![[{_SOURCE_ID}]]</div>", ""),
+        _SOURCE_ID: _Note(_SOURCE_ID, None, "host", None, True, f"<div>![[{_DIAGRAM_ID}]]</div><div>later line</div>", ""),
+    }
+    state = _state_for(
+        monkeypatch=monkeypatch,
+        notes=notes,
+        children_by_parent={None: ["host", _SOURCE_ID]},
+        file_ids={_DIAGRAM_ID},
+        file_record=_diagram_record(),
+    )
+
+    rendered = state.payloads["host"]["content"]
+    assert "note-embed-collapsed" in rendered
+    assert "note-reference-link-mode" not in rendered
+    assert f'data-file-ref-id="{_DIAGRAM_ID}"' in rendered
+    assert "later line" not in rendered
 
 
 def test_compact_reference_keeps_text_when_the_source_starts_with_text(monkeypatch: pytest.MonkeyPatch) -> None:

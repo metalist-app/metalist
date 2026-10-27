@@ -61,7 +61,7 @@ def test_where_credentials_are_hidden_a_link_shows_the_mask(static_export: bool)
 
 
 def test_an_embed_of_a_password_note_shows_its_own_row() -> None:
-    rendered = _render(f"<div>[[{SOURCE_ID}]]</div>", "@password", redact_credentials=False, static_export=False)
+    rendered = _render(f"<div>![[{SOURCE_ID}]]</div>", "@password", redact_credentials=False, static_export=False)
 
     assert '<div class="meta-credential meta-credential-password">' in rendered
     assert f'data-copy-value="{SECRET}"' in rendered

@@ -109,7 +109,9 @@ import { openFindBar } from '../mode-manager/services/find-in-list-service.js';
 import { cancelDebouncedSearchExecution } from '../mode-manager/services/search-debounce-service.js';
 import { attachPickedFileToCurrentNote, pickFileForAttachment } from '../mode-manager/services/file-reference-service.js';
 import { isRootReorderLocked, normalizeRootSortMode } from '../mode-manager/services/root-sort-service.js';
-import { blockRootNoteCreation } from '../mode-manager/services/root-note-creation-service.js';
+import { blockRootNoteCreation, requireCreatedNoteId } from '../mode-manager/services/root-note-creation-service.js';
+import { createNoteAtTop } from '../mode-manager/actions/note-actions.js';
+import { typeReferenceOpenerAtCaret } from '../mode-manager/services/reference-suggestions-service.js';
 import {
     setTabDateFilterOnServer, setTabFileFilterOnServer, setTabSortModeOnServer,
 } from '../mode-manager/services/tab-state-service.js';
@@ -451,6 +453,8 @@ class CommandPaletteController {
                 printView: this.printView.bind(this),
                 attachFileToCurrentNote: this.attachFileToCurrentNote.bind(this),
                 addExcalidrawDiagram: this.addExcalidrawDiagram.bind(this),
+                linkTo: () => this.typeReferenceOpener('link'),
+                embed: () => this.typeReferenceOpener('embed'),
                 trimUnusedFiles: this.trimUnusedFiles.bind(this),
                 retryFailedLinkTitles: this.retryFailedLinkTitles.bind(this),
                 openOpenNamespace: this.openOpenNamespace.bind(this),
@@ -1762,6 +1766,25 @@ class CommandPaletteController {
                 { closable: true },
             );
         }
+    }
+
+    // Link to… and Embed…: `[[` or `![[` at the caret, opening the suggestions; outside
+    // edit mode in a new top note, as an attached file goes (docs/ui/references.md).
+    async typeReferenceOpener(kind) {
+        if (this.isOpen()) {
+            this.close();
+        }
+        if (!ModeContext.isEditing) {
+            if (blockRootNoteCreation('top', 'typeReferenceOpener')) {
+                return;
+            }
+            await CommandGate.run('commandPalette.addNoteForReference', async () => {
+                requireCreatedNoteId(await createNoteAtTop(), 'typeReferenceOpener');
+            });
+        }
+        // Outside the gate: MetaList ignores typing while a command runs, and this
+        // typing is what opens the suggestions.
+        typeReferenceOpenerAtCaret(kind);
     }
 
     async addExcalidrawDiagram() {

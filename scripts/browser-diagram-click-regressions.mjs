@@ -106,7 +106,7 @@ async function singleClickCase(page, ids) {
 async function doubleClickCase(page, ids) {
   const center = await diagramCenter(page, ids.hostId);
   await watchEditing(page);
-  await page.mouse.click(center.x, center.y, {clickCount: 2});
+  await page.mouse.click(center.x, center.y, {count: 2});
   await page.waitForSelector('.excalidraw-editor-overlay', {visible: true, timeout: EDITOR_OPEN_TIMEOUT_MS});
   const editingSeen = await stopWatchingEditing(page);
   assert.equal(editingSeen, false, 'the note never entered edit mode on the way to the diagram editor');

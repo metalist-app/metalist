@@ -92,7 +92,7 @@ async function assertOpenedOnce(page, label) {
 async function doubleClickDialogItem(page) {
   const row = await openPaletteAt(page, DIALOG_QUERY, DIALOG_ITEM);
   const box = await row.boundingBox();
-  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2, {clickCount: 2});
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2, {count: 2});
   await assertOpenedOnce(page, 'double-click');
 }
 
@@ -128,7 +128,7 @@ async function doubleClickToggle(page) {
   const before = await toggleValue(page);
   const row = await openPaletteAt(page, TOGGLE_QUERY, TOGGLE_ITEM);
   const box = await row.boundingBox();
-  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2, {clickCount: 2});
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2, {count: 2});
   await idle(page);
   assert.equal(await fatalText(page), '', 'double-clicking a setting: no error');
   assert.equal(await toggleValue(page), !before, 'double-clicking a setting toggles it once');

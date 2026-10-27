@@ -401,6 +401,18 @@
     "presentation": "palette"
   },
   {
+    "id": "action.link_to",
+    "label": "Link to…",
+    "selector": "#command-palette-modal",
+    "presentation": "palette"
+  },
+  {
+    "id": "action.embed",
+    "label": "Embed…",
+    "selector": "#command-palette-modal",
+    "presentation": "palette"
+  },
+  {
     "id": "action.add_excalidraw_diagram",
     "label": "Add Excalidraw Diagram",
     "selector": "#command-palette-modal",

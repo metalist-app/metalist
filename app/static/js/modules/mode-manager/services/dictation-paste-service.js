@@ -246,7 +246,7 @@ export function undoDictatedNotePasteTags(event) {
         return false;
     }
     moduleState.notePasteUndo = null;
-    const noteElement = document.querySelector(`[data-note-id="${link.noteId}"]`);
+    const noteElement = document.querySelector(`.note[data-note-id="${link.noteId}"]`);
     const tagBar = noteElement.querySelector('.note-tag-bar-input');
     if (tagBar.value !== link.tagBarAfter) {
         return false;

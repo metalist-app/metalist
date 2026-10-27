@@ -1,5 +1,7 @@
 # State Handling in MetaList3
 
+Agreed, not built (2026-10-26): several views on one vault at once, each signed in, with editing locked per root note (`docs/ready-to-build/multi-view-editing.md`).
+
 ## Enforced client-state and exception contract
 
 - Browser session identity: `Auth.init()` initializes `session-auth.js` once before authentication. Login, hydration, and workspace requests read the same `ApplicationState`-owned tab ID. `sessionStorage` is read/written only during initialization to preserve identity across reloads; clearing or changing it during an active page cannot rotate the authenticated identity or crash later requests. Requests before initialization still fail explicitly. Regression coverage includes the actual login handler with storage removed during hydration.

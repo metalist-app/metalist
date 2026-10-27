@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { waitForAppQuiet } from './browser-app-idle.mjs';
+import {clickAndSelectAll} from './browser-select-field.mjs';
 
 // Field messages (docs/ui/modals.md, "Errors and status"; agreed
 // case by case 2026-10-25, step 5b): what is wrong with a field's value floats just under
@@ -122,7 +123,7 @@ async function suggestionWindowCase(page) {
   await page.waitForSelector(slot, {visible: true});
   const saved = await page.$eval(slot, input => input.value);
   const before = await layout(page, '#search-suggestion-statistics-modal');
-  await page.click(slot, {clickCount: 3});
+  await clickAndSelectAll(page, slot);
   await page.type(slot, '0');
   await page.keyboard.press('Tab');
   await idle(page);
@@ -131,7 +132,7 @@ async function suggestionWindowCase(page) {
   assert.match(bad.text, /must be between 1 and \d+ days/);
   assertUnder(bad, 'day count');
   assert.deepEqual(await layout(page, '#search-suggestion-statistics-modal'), before, 'nothing in the dialog moves');
-  await page.click(slot, {clickCount: 3});
+  await clickAndSelectAll(page, slot);
   await page.type(slot, saved);
   await page.keyboard.press('Tab');
   await idle(page);

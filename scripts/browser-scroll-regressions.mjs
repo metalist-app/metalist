@@ -178,6 +178,20 @@ function assertStayed(label, before, after, samples) {
   }
 }
 
+// Move the caret to the end of the paragraph starting with `prefix`. Not the End key:
+// in Firefox on macOS it does not move the caret within a line (as on the Mac), so
+// typing went in after the clicked word and broke the prefix the checks look for.
+function caretToParagraphEnd(page, prefix) {
+  return page.evaluate(prefix => {
+    const paragraph = [...document.querySelectorAll('#notes-container p')].find(p => p.textContent.trim().startsWith(prefix));
+    const range = document.createRange();
+    range.selectNodeContents(paragraph);
+    range.collapse(false);
+    window.getSelection().removeAllRanges();
+    window.getSelection().addRange(range);
+  }, prefix);
+}
+
 // Move the caret to the end of the note being edited (typing then scrolls there).
 function caretToEnd(page, noteId) {
   return page.evaluate(noteId => {
@@ -870,7 +884,7 @@ export async function checkExitEditScroll(page) {
       await clickParagraph(page, 'Long paragraph 1:');
       await waitForEditing(page, longId);
       // Type at the end of the clicked line, keeping the paragraph's prefix intact.
-      await page.keyboard.press('End');
+      await caretToParagraphEnd(page, 'Long paragraph 1:');
       await page.keyboard.type(' x');
       await pause(400);
       const before = await paragraphY(page, 'Long paragraph 1:');

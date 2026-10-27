@@ -294,7 +294,13 @@ async function firstPaintCase(browser, origin) {
   const bare = await browser.newPage();
   try {
     await bare.setViewport(PHONE);
-    await bare.setJavaScriptEnabled(false);
+    // No script runs: every script is refused, which the page's only scripts (no inline
+    // ones) are. Not setJavaScriptEnabled, which Puppeteer has only for Chrome.
+    await bare.setRequestInterception(true);
+    bare.on('request', request => {
+      if (new URL(request.url()).pathname.endsWith('.js')) void request.abort();
+      else void request.continue();
+    });
     await bare.goto(origin, {waitUntil: 'load'});
     for (const hidden of ['#tab-hover-zone', '.global-controls']) {
       assert.equal(await bare.$eval(hidden, element => element.getClientRects().length), 0,

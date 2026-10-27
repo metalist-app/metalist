@@ -4,6 +4,11 @@
 // user's own MetaList.
 //
 //   node scripts/run-browser-suites.mjs --browser chrome --workers 6
+//   node scripts/run-browser-suites.mjs --browser firefox --workers 2 --shard 3/10
+//
+// --shard i/n runs only the i-th of n slices, so n machines can share the suites (the
+// browser-suites CI workflow). The suites are dealt out in turn, slowest first, so each
+// slice gets its share of the long ones.
 //
 // Every output line is prefixed with the seconds since its run started, so slow steps show.
 // Exits non-zero when any run failed, after all runs have finished, and prints each failed
@@ -25,7 +30,7 @@ const CORE = 'core';
 // no keys) run alone after the others: sharing the CPU with other runs makes the app
 // slower than those budgets, and loosening them would let a real slowdown pass.
 const RUN_ALONE = ['input-target'];
-const SLOWEST_FIRST = ['reference-paste', 'exit-edit-scroll', 'click-caret', 'ai-note-tags', CORE, 'sorted-tabs',
+const SLOWEST_FIRST = ['exit-edit-scroll', 'click-caret', 'ai-note-tags', CORE, 'sorted-tabs',
   'delete-warning', 'list-edges', 'editable-embeds'];
 // A run that takes longer than this is stuck: it is stopped and reported as failed.
 const RUN_TIMEOUT_MS = 30 * 60 * 1000;
@@ -36,12 +41,20 @@ const BROWSERS = ['chrome', 'firefox'];
 // Wide enough for the seconds prefix up to 9999.9s, so log lines stay aligned.
 const SECONDS_COLUMN_WIDTH = 6;
 
-const {values: options} = parseArgs({options: {browser: {type: 'string'}, workers: {type: 'string'}}});
+const {values: options} = parseArgs({options: {browser: {type: 'string'}, workers: {type: 'string'}, shard: {type: 'string'}}});
 if (!BROWSERS.includes(options.browser)) throw new Error(`--browser must be one of ${BROWSERS.join(', ')}`);
 if (options.workers === undefined || !/^[1-9][0-9]*$/.test(options.workers)) {
   throw new Error('--workers must be a positive whole number (6 suits an 8-core machine)');
 }
 const workerCount = Number(options.workers);
+// Which slice of the suites to run: all of them unless --shard i/n says otherwise.
+let shard = {index: 1, count: 1};
+if (options.shard !== undefined) {
+  const match = /^(?<index>[1-9][0-9]*)\/(?<count>[1-9][0-9]*)$/.exec(options.shard);
+  if (match === null) throw new Error('--shard must be i/n, for example 3/10');
+  shard = {index: Number(match.groups.index), count: Number(match.groups.count)};
+  if (shard.index > shard.count) throw new Error('--shard i/n needs i no larger than n');
+}
 
 const directory = await mkdtemp(join(tmpdir(), 'metalist-browser-suites-'));
 const startedAt = performance.now();
@@ -100,11 +113,17 @@ const allSuites = [CORE, ...FOCUSED_SUITES];
 for (const suite of [...SLOWEST_FIRST, ...RUN_ALONE]) {
   if (!allSuites.includes(suite)) throw new Error(`SLOWEST_FIRST or RUN_ALONE names an unknown suite: ${suite}`);
 }
-const parallelSuites = [...SLOWEST_FIRST, ...allSuites.filter(suite => !SLOWEST_FIRST.includes(suite))]
-  .filter(suite => !RUN_ALONE.includes(suite));
-console.log(`Running ${allSuites.length} browser runs in ${options.browser}, ${workerCount} at a time `
-  + `and then ${RUN_ALONE.join(', ')} alone; logs in ${directory}`);
-const results = [...await runAll(parallelSuites, workerCount), ...await runAll(RUN_ALONE, 1)];
+// Dealt out in turn from the slowest, so every slice gets its share of the long runs.
+const inShard = (_suite, position) => position % shard.count === shard.index - 1;
+const ordered = [...SLOWEST_FIRST, ...allSuites.filter(suite => !SLOWEST_FIRST.includes(suite))];
+const shardSuites = ordered.filter(inShard);
+const parallelSuites = shardSuites.filter(suite => !RUN_ALONE.includes(suite));
+const aloneSuites = shardSuites.filter(suite => RUN_ALONE.includes(suite));
+let aloneNote = '';
+if (aloneSuites.length > 0) aloneNote = ` and then ${aloneSuites.join(', ')} alone`;
+console.log(`Running ${shardSuites.length} of ${allSuites.length} browser runs (slice ${shard.index}/${shard.count}) `
+  + `in ${options.browser}, ${workerCount} at a time${aloneNote}; logs in ${directory}`);
+const results = [...await runAll(parallelSuites, workerCount), ...await runAll(aloneSuites, 1)];
 
 const failed = results.filter(result => !result.passed);
 const summary = results

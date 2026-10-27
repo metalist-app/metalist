@@ -189,9 +189,6 @@ function buildNoteContextItems(context, handlers) {
     const onCopyNote = handlers.onCopyNote;
     const onPasteNote = handlers.onPasteNote;
     const onPasteNoteChild = handlers.onPasteNoteChild;
-    const onPasteReference = handlers.onPasteReference;
-    const onPasteReferenceChild = handlers.onPasteReferenceChild;
-    const onPasteReferenceHere = handlers.onPasteReferenceHere;
     const onOpenReferenceSource = handlers.onOpenReferenceSource;
     const onCopyImage = handlers.onCopyImage;
     const onMakeImageBigger = handlers.onMakeImageBigger;
@@ -234,15 +231,6 @@ function buildNoteContextItems(context, handlers) {
     }
     if (typeof onPasteNoteChild !== 'function') {
         throw new Error('Note context missing onPasteNoteChild handler');
-    }
-    if (typeof onPasteReference !== 'function') {
-        throw new Error('Note context missing onPasteReference handler');
-    }
-    if (typeof onPasteReferenceChild !== 'function') {
-        throw new Error('Note context missing onPasteReferenceChild handler');
-    }
-    if (typeof onPasteReferenceHere !== 'function') {
-        throw new Error('Note context missing onPasteReferenceHere handler');
     }
     if (typeof onExportNoteHtml !== 'function') {
         throw new Error('Note context missing onExportNoteHtml handler');
@@ -351,9 +339,8 @@ function buildNoteContextItems(context, handlers) {
 
     const hasSelectedText = context.hasSelectedText === true;
     const hasNoteClipboard = context.hasNoteClipboard === true;
-    const hasReferenceClipboard = context.hasReferenceClipboard === true;
-    // A right-click in the text of the note being edited, with a note copied.
-    const canPasteReferenceHere = hasReferenceClipboard && context.canPasteReferenceHere === true;
+    // A right-click in the text of the note being edited: Link to… and Embed… type there.
+    const canInsertReference = context.canInsertReference === true;
     const isMac = requireNoteFlag(context, 'isMac');
     // A menu item's shortcut: the key alone, with ⌘ (Ctrl), or with ⌘⇧ (Ctrl+Shift).
     const plainKey = (key) => formatMenuShortcut({ isMac, mod: false, shift: false, key });
@@ -402,18 +389,6 @@ function buildNoteContextItems(context, handlers) {
         pasteEntries.push(
             { id: 'paste-note', label: 'Paste Sibling Note', icon: 'paste', enabled: true, shortcut: commandKey('V'), onSelect: () => onPasteNote(noteId) },
             { id: 'paste-note-child', label: 'Paste Child Note', icon: 'paste_child', enabled: true, shortcut: commandShiftKey('V'), onSelect: () => onPasteNoteChild(noteId) },
-        );
-    }
-    if (hasReferenceClipboard) {
-        pasteEntries.push(
-            { id: 'paste-reference', label: 'Paste Sibling Reference', icon: 'link', enabled: true, shortcut: commandKey('R'), onSelect: () => onPasteReference(noteId) },
-            { id: 'paste-reference-child', label: 'Paste Child Reference', icon: 'link_child', enabled: true, shortcut: commandShiftKey('R'), onSelect: () => onPasteReferenceChild(noteId) },
-        );
-    }
-    // With the other references: less common than pasting notes.
-    if (canPasteReferenceHere) {
-        pasteEntries.push(
-            { id: 'paste-reference-into-note', label: 'Paste Reference Into Note', icon: 'link', enabled: true, onSelect: () => onPasteReferenceHere(noteId) },
         );
     }
     pushGroup(items, { id: 'paste', label: 'Paste', icon: 'paste', separated: false }, pasteEntries);
@@ -474,8 +449,17 @@ function buildNoteContextItems(context, handlers) {
         ],
     });
 
-    // Editing the note: style, formatting, a drawing.
+    // Editing the note: a reference, style, formatting, a drawing.
     const editingItems = [];
+    if (canInsertReference) {
+        // Each types its opener where the right-click was and opens the `[[` suggestions.
+        const onLinkTo = requireNoteHandler(handlers, 'onLinkTo');
+        const onEmbed = requireNoteHandler(handlers, 'onEmbed');
+        editingItems.push(
+            { id: 'link-to', label: 'Link to…', icon: 'link', enabled: true, onSelect: () => onLinkTo(noteId) },
+            { id: 'embed', label: 'Embed…', icon: 'note_reference', enabled: true, onSelect: () => onEmbed(noteId) },
+        );
+    }
     if (context.canAddStyle === true) {
         editingItems.push(buildAddStyleItem(context, noteId, onAddStyle));
     }
@@ -520,6 +504,14 @@ function buildNoteContextItems(context, handlers) {
         ],
     });
     return items;
+}
+
+function requireNoteHandler(handlers, name) {
+    const handler = handlers[name];
+    if (typeof handler !== 'function') {
+        throw new Error(`Note context missing ${name} handler`);
+    }
+    return handler;
 }
 
 function requireNoteFlag(context, name) {
@@ -891,13 +883,9 @@ function buildViewContextItems(context, handlers) {
         }
         if (canPasteNoteAtTop && canAddAtTop) {
             const onPasteNoteAtTop = requireViewHandler(handlers, 'onPasteNoteAtTop');
-            const onPasteReferenceAtTop = requireViewHandler(handlers, 'onPasteReferenceAtTop');
             addEntries.push({
                 id: 'paste-note-at-top', label: 'Paste Note at Top', icon: 'paste', enabled: true,
                 shortcut: commandKey('V'), onSelect: () => onPasteNoteAtTop(),
-            }, {
-                id: 'paste-reference-at-top', label: 'Paste Note as Reference at Top', icon: 'note_reference',
-                enabled: true, shortcut: commandKey('R'), onSelect: () => onPasteReferenceAtTop(),
             });
         }
         pushGroup(items, { id: 'add', label: 'Add', icon: 'add_top', separated: false }, addEntries);

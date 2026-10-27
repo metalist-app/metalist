@@ -11,8 +11,47 @@ from app.services.file_registry import file_registry
 from app.services.file_storage import get_file_reference_record
 from app.services.note_store import store as note_store
 
+# A reference's preview card shows the top of its note (docs/ui/references.md):
+# the note and its first descendants, more than the card's few lines can show.
+PREVIEW_NOTE_LIMIT = 12
+
+
+class _Allowance:
+    """How many more notes a rendering may draw."""
+
+    def __init__(self, notes: int) -> None:
+        assert notes > 0, "a rendering draws at least its note"
+        self.left = notes
+
+    def take(self) -> bool:
+        if self.left == 0:
+            return False
+        self.left -= 1
+        return True
+
+
+class _EveryNote(_Allowance):
+    """Full screen and floating windows draw the whole subtree."""
+
+    def __init__(self) -> None:
+        super().__init__(1)
+
+    def take(self) -> bool:
+        return True
+
 
 def build_note_fullscreen_markup(note_id: str) -> str:
+    """The note and its whole subtree, as full screen and floating windows show them."""
+    return _build_markup(note_id, allowance=_EveryNote(), redact_credentials=False)
+
+
+def build_note_preview_markup(note_id: str) -> str:
+    """The top of a note as the list draws it, for a reference's preview card: the note
+    and its first descendants, passwords and usernames hidden as an export hides them."""
+    return _build_markup(note_id, allowance=_Allowance(PREVIEW_NOTE_LIMIT), redact_credentials=True)
+
+
+def _build_markup(note_id: str, *, allowance: _Allowance, redact_credentials: bool) -> str:
     if not isinstance(note_id, str) or note_id == "":
         raise TypeError("note_id must be a non-empty string")
 
@@ -31,10 +70,13 @@ def build_note_fullscreen_markup(note_id: str) -> str:
         get_file=_get_file_record,
         static_collapse_arrows=False,
     )
+    assert allowance.take(), "the note itself is always drawn"
     return sanitize_rendered_html(_render_fullscreen_note(
         note_id=note_id,
         render_context=render_context,
         visiting=set(),
+        allowance=allowance,
+        redact_credentials=redact_credentials,
     ))
 
 
@@ -43,6 +85,8 @@ def _render_fullscreen_note(
     note_id: str,
     render_context: EmbedRenderContext,
     visiting: Set[str],
+    allowance: _Allowance,
+    redact_credentials: bool,
 ) -> str:
     if note_id in visiting:
         raise RuntimeError(f"Hierarchy cycle detected while rendering note {note_id}")
@@ -60,7 +104,7 @@ def _render_fullscreen_note(
         tags=record.tags,
         context=render_context,
         static_export=False,
-        redact_credentials=False,
+        redact_credentials=redact_credentials,
     )
 
     classes = ["note"]
@@ -80,14 +124,17 @@ def _render_fullscreen_note(
         f'<div class="note-tags" aria-hidden="true">{html.escape(record.tags)}</div>',
     ]
 
-    child_parts = [
-        _render_fullscreen_note(
+    child_parts = []
+    for child_id in note_store.get_children(note_id):
+        if not allowance.take():
+            break
+        child_parts.append(_render_fullscreen_note(
             note_id=child_id,
             render_context=render_context,
             visiting=visiting,
-        )
-        for child_id in note_store.get_children(note_id)
-    ]
+            allowance=allowance,
+            redact_credentials=redact_credentials,
+        ))
     if child_parts:
         parts.extend(['<div class="note-children">', *child_parts, "</div>"])
     parts.append("</article>")

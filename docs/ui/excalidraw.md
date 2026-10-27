@@ -2,6 +2,8 @@
 
 Hand-drawn diagrams drawn with the Excalidraw editor, stored as `.excalidraw` file attachments.
 
+Future plan (2026-10-27): charts of super-tag values work exactly like these diagrams, an embedded chart file opened full screen (`docs/future-plans/charts.md`).
+
 ## Storage
 - A diagram is an ordinary file attachment in `*.files.db` whose file kind is `excalidraw` (MIME type `application/vnd.excalidraw+json` or the `.excalidraw` extension). Notes reference it with `![[UUID]]` like any other file; `[[UUID]]` shows the usual compact file card.
 - Diagrams are the only attachments MetaList replaces in place. Every save increments the file's `content_revision`; a save that names a stale revision is refused (HTTP 409) so a second window cannot silently overwrite the first. Other attachments stay immutable.
@@ -16,7 +18,7 @@ Hand-drawn diagrams drawn with the Excalidraw editor, stored as `.excalidraw` fi
 - A single click anywhere on a diagram edits its note, as a click on the note's text does. It waits out the double-click window first (400 ms, `DIAGRAM_SINGLE_CLICK_EDIT_DELAY_MS` in `mouse-events.js`): in edit mode the diagram shows only as its reference, so editing at once would take the diagram away from the second click of a double-click. A double-click opens the diagram editor, and the note never enters edit mode on the way. A press-and-drag that starts on a diagram moves the note. Full-screen notes and floating windows stay read-only. `BROWSER_TEST_SUITE=diagram-clicks` checks all three.
 - Placeholders: `Loading diagram...`, `Empty diagram. Double-click it to start drawing.`, `This diagram has not been rendered yet. Double-click it to open the editor.` (no preview stored yet), and `Diagram preview unavailable` (request failed).
 - Size uses the same size wrapper and size tag as saved images (`Make Bigger`, `Make Smaller`, `Reset Size`).
-- When the host note is collapsed and the diagram is its first visible line, it collapses to a compact thumbnail of the whole diagram for the current theme, like an image. Compact references to that note (link mode, or an embed inside a collapsed note) show the same thumbnail after their `↗`; clicking it opens the source note.
+- When the host note is collapsed and the diagram is its first visible line, it collapses to a compact thumbnail of the whole diagram for the current theme, like an image. A link to that note shows the same thumbnail after their `↗`; clicking it opens the source note.
 - HTML export embeds the light preview as a data URL, or a file card if the diagram was never rendered.
 - Full-screen notes and floating windows show diagrams too; editing is started from the main view.
 

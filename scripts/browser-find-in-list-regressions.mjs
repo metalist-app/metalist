@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 
 import {runThenCleanUp} from './suite-outcome.mjs';
 import {waitForAppQuiet} from './browser-app-idle.mjs';
+import {clickAndSelectAll} from './browser-select-field.mjs';
 
 // Requests count as quiet after this long without one starting or ending.
 const REQUESTS_QUIET_MS = 300;
@@ -172,7 +173,7 @@ async function openFind(page) {
 }
 
 async function typeFind(page, text) {
-  await page.click('#find-in-list-input', {clickCount: 3});
+  await clickAndSelectAll(page, '#find-in-list-input');
   await page.keyboard.press('Backspace');
   await page.keyboard.type(text);
   await pause(TYPING_SETTLE_MS);

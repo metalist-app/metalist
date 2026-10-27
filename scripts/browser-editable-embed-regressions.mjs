@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
 import { waitForAppQuiet } from './browser-app-idle.mjs';
 
-// Embeds (docs/ui/references.md): a note whose only content is a reference,
-// [[UUID]], shows its source in place. An embed is a window onto its source:
-// it changes how the source is shown, never what it says. A to-do checkbox
+// Embeds (docs/ui/references.md): a note whose only content is an embed
+// reference, ![[UUID]], shows its source in place (a lone [[UUID]] is a link).
+// An embed is a window onto its source: it changes how the source is shown,
+// never what it says. A to-do checkbox
 // inside an embed shows the note's status but is not a control: pressing it
 // does nothing at all (no toggle, no edit mode, nothing moves, a note being
 // edited stays edited). The holder's own checkbox still toggles the holder.
@@ -29,7 +30,8 @@ async function reloadApp(page) {
 }
 
 // Notes from a spec: [name, html, tags, parentName | null]. HTML may name
-// other notes as [[name]] (a note that is only that embeds it); notes are
+// other notes as [[name]] (a link) or ![[name]] (a note that is only that
+// embeds it); notes are
 // created first, in spec order.
 async function createNotes(page, spec) {
   return page.evaluate(async spec => {
@@ -127,7 +129,7 @@ async function checkboxCases(page) {
   const ids = await createNotes(page, [
     ['task', '<p>Task A</p>', '@todo', null],
     ['subtask', '<p>Subtask of A</p>', '@todo', 'task'],
-    ['host', '<div>[[task]]</div>', '@todo', null],
+    ['host', '<div>![[task]]</div>', '@todo', null],
   ]);
   await reloadApp(page);
   assert.equal(await embeddedStatus(page, ids.host, [ids.task]), 'todo', "N4: the embed shows the note's status");
@@ -162,7 +164,7 @@ async function whileEditingCase(page) {
   const ids = await createNotes(page, [
     ['other', '<p>Another note</p>', '', null],
     ['task', '<p>Task A</p>', '@todo', null],
-    ['host', '<div>[[task]]</div>', '', null],
+    ['host', '<div>![[task]]</div>', '', null],
   ]);
   await reloadApp(page);
   const content = await page.$(`.note[data-note-id="${ids.other}"] > .note-content`);
@@ -188,8 +190,8 @@ async function nestedCase(page) {
     ['deep', '<p>Deep task</p>', '@todo', null],
     ['middle', '<div>Middle note</div>', '@todo', null],
     // The middle note's child is only a reference: an embed inside the embed.
-    ['deepHolder', '<div>[[deep]]</div>', '', 'middle'],
-    ['host', '<div>[[middle]]</div>', '', null],
+    ['deepHolder', '<div>![[deep]]</div>', '', 'middle'],
+    ['host', '<div>![[middle]]</div>', '', null],
   ]);
   await reloadApp(page);
   const before = await pressEmbeddedCheckbox(page, ids.host, [ids.middle, ids.deepHolder, ids.deep]);
@@ -205,7 +207,7 @@ async function redactedCase(page) {
   const ids = await createNotes(page, [
     ['task', '<p>Task A</p>', '@todo', null],
     ['parent', '<p>Matching parent</p>', SEARCH_TAG, null],
-    ['host', '<div>[[task]]</div>', EXCLUDED_TAG, 'parent'],
+    ['host', '<div>![[task]]</div>', EXCLUDED_TAG, 'parent'],
   ]);
   await reloadApp(page);
   await page.click('#search-input');
@@ -332,7 +334,7 @@ async function collapseFixture(page) {
     ['child', '<div>Child one</div>', '', 'source'],
     ['grandchild', '<div>Grandchild</div>', '', 'child'],
     ['second', '<div>Child two</div>', '', 'source'],
-    ['host', '<div>[[source]]</div>', '', null],
+    ['host', '<div>![[source]]</div>', '', null],
     ['own', '<div>Its own child</div>', '', 'host'],
   ]);
 }
@@ -509,11 +511,11 @@ async function shadingCases(page) {
   const ids = await createNotes(page, [
     ['third', '<div>Third level</div>', '', null],
     ['second', '<div>Second level</div>', '', null],
-    ['thirdHolder', '<div>[[third]]</div>', '', 'second'],
+    ['thirdHolder', '<div>![[third]]</div>', '', 'second'],
     ['first', '<div>First level</div>', '', null],
-    ['secondHolder', '<div>[[second]]</div>', '', 'first'],
+    ['secondHolder', '<div>![[second]]</div>', '', 'first'],
     ['ownOfSecondHolder', '<div>Belongs to the first level</div>', '', 'secondHolder'],
-    ['host', '<div>[[first]]</div>', '', null],
+    ['host', '<div>![[first]]</div>', '', null],
   ]);
   await reloadApp(page);
   for (const theme of ['light', 'dark']) {

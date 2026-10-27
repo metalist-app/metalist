@@ -317,7 +317,10 @@ async function phoneCase(page) {
     const shown = await card(page, 'Phone news');
     assert.equal(shown.top, header + GAP_PX, 'on the phone the card sits just under the search header');
     assert.equal(shown.left, PHONE_SIDE_PX, 'on the phone the card starts at the page\'s side padding');
-    assert.equal(shown.right, PHONE.width - PHONE_SIDE_PX, 'on the phone the card ends at the page\'s side padding');
+    // The page's own width: the window's less a scrollbar. A phone's scrollbar floats over
+    // the page; Firefox's phone emulation keeps the desktop's, which takes 15 px.
+    const pageWidth = await page.evaluate(() => document.documentElement.clientWidth);
+    assert.equal(shown.right, pageWidth - PHONE_SIDE_PX, 'on the phone the card ends at the page\'s side padding');
   } finally {
     await page.setViewport(WIDE_WINDOW);
     await page.reload();

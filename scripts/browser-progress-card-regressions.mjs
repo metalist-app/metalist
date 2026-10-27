@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { waitForAppQuiet } from './browser-app-idle.mjs';
+import {clickAndSelectAll} from './browser-select-field.mjs';
 
 // Progress and lasting problems (docs/ui/modals.md, "Errors and status"; agreed
 // case by case 2026-10-25, step 5c):
@@ -116,7 +117,7 @@ async function progressCase(page, {method, modal, prepare, button, suffix, text}
 const PORT_FIELD = '.namespace-ports-input[data-field="port"]';
 
 async function typePort(page, port) {
-  await page.click(PORT_FIELD, {clickCount: 3});
+  await clickAndSelectAll(page, PORT_FIELD);
   await page.type(PORT_FIELD, port);
 }
 

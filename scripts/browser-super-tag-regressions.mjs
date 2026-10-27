@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { runThenCleanUp } from './suite-outcome.mjs';
 import { waitForAppQuiet } from './browser-app-idle.mjs';
+import {clickAndSelectAll} from './browser-select-field.mjs';
 
 // Super tags (docs/design/tag-properties.md): tags with values, as a user meets them.
 // The search box suggests property names after a tag's colon, searches compare values
@@ -49,7 +50,7 @@ async function createFixture(page) {
 
 // The search box holds `text` (typed by the keyboard), and the view has settled.
 async function search(page, text) {
-  await page.click('#search-input', {clickCount: 3});
+  await clickAndSelectAll(page, '#search-input');
   await page.keyboard.press('Backspace');
   await page.keyboard.type(text);
   await idle(page);

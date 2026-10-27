@@ -606,7 +606,7 @@ swap, or filesystem snapshots.
   does not replace or weaken server-side scope filtering.
 
 ### Multi-Client Support
-- Token issuance clears any previous tokens for that namespace process (one active browser tab/session per namespace)
+- Token issuance clears any previous tokens for that namespace process (one active browser tab/session per namespace). Agreed, not built (2026-10-26): several views on one vault at once, each signed in, with editing locked per root note (`docs/ready-to-build/multi-view-editing.md`). It re-checks every argument here that relies on a single session.
 - Token verification is bound to an `X-Metalist-Tab-Id` owner (tab-scoped sessions)
 - Browser auth cookies use namespace-scoped names (`metalist_auth_<namespace>`), so sessions on different namespace ports do not overwrite each other in the browser's host-wide cookie jar.
 - DEK is stored in memory alongside the active token; no DEK is persisted to disk
@@ -679,7 +679,7 @@ Auth:
 - `POST /api2/auth/session` - Claim passwordless session (only when no password is set)
 - `GET /api2/auth/status` - Poll auth/encryption status
 - `GET /api2/auth/client-state` - Load namespace-scoped client preferences and command-palette usage
-- `PUT /api2/auth/client-state/preferences` - Persist namespace-scoped client preferences
+- `PUT /api2/auth/client-state/preferences` - Persist namespace-scoped client preferences; the stored `pref.copied_note_id` (the note copied last, offered first by `[[`) is kept whatever a client sends: only Copy Note sets it, server-side, inside the same encrypted preferences
 - `PUT /api2/auth/client-state/command-palette-usage` - Persist namespace-scoped command-palette usage history
 - `POST /api2/auth/namespaces/delete/preflight` / `POST /api2/auth/namespaces/delete` - Delete a named non-default namespace after typed namespace confirmation and, when that namespace is password-protected, password re-entry. Deleting the active namespace moves the tab to a namespace-removal status page while a detached worker shuts down the current namespace and deletes its directory; deleting an inactive namespace stays in the current tab.
 - `POST /api2/auth/settings/password/create` - Enable password protection

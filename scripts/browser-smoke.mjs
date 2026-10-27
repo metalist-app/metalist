@@ -37,7 +37,8 @@ import {checkAiNoteTagSuggestions} from './browser-ai-note-tag-regressions.mjs';
 import {checkRobotProposals} from './browser-robot-proposal-regressions.mjs';
 import {checkExportAndPrint} from './browser-export-print-regressions.mjs';
 import {checkUrlCleaning} from './browser-url-cleaning-regressions.mjs';
-import {checkReferencePaste} from './browser-reference-paste-regressions.mjs';
+import {checkNotePaste} from './browser-note-paste-regressions.mjs';
+import {checkFoldArrows} from './browser-fold-arrow-regressions.mjs';
 import {checkClickCaret} from './browser-click-caret-regressions.mjs';
 import {checkEditableEmbeds} from './browser-editable-embed-regressions.mjs';
 import {checkCollapseOutlines} from './browser-collapse-outline-regressions.mjs';
@@ -379,6 +380,11 @@ try {
     await checkFloatingMessages(page);
     assert.deepEqual(errors, []);
     console.log(`PASS floating message regressions in ${await browser.version()}`);
+  } else if (process.env.BROWSER_TEST_SUITE === 'phone' && browserName === 'firefox' && process.platform === 'darwin') {
+    // Puppeteer cannot send touch input to Firefox on macOS (every tap fails), and the phone
+    // suite is taps. It runs in Chrome here, and in Firefox elsewhere (agreed 2026-10-27;
+    // docs/testing/harness.md). Said out loud, never passed quietly.
+    console.log(`SKIPPED phone regressions in ${await browser.version()} on macOS: Puppeteer cannot send touch input to Firefox here`);
   } else if (process.env.BROWSER_TEST_SUITE === 'phone') {
     await checkPhone(browser, page, origin);
     assert.deepEqual(errors, []);
@@ -399,10 +405,14 @@ try {
     await checkClickCaret(page);
     assert.deepEqual(errors, []);
     console.log(`PASS click caret regressions in ${await browser.version()}`);
-  } else if (process.env.BROWSER_TEST_SUITE === 'reference-paste') {
-    await checkReferencePaste(page);
+  } else if (process.env.BROWSER_TEST_SUITE === 'fold-arrows') {
+    await checkFoldArrows(browser, page);
     assert.deepEqual(errors, []);
-    console.log(`PASS reference paste regressions in ${await browser.version()}`);
+    console.log(`PASS fold arrow regressions in ${await browser.version()}`);
+  } else if (process.env.BROWSER_TEST_SUITE === 'note-paste') {
+    await checkNotePaste(page);
+    assert.deepEqual(errors, []);
+    console.log(`PASS note paste regressions in ${await browser.version()}`);
   } else if (process.env.BROWSER_TEST_SUITE === 'url-cleaning') {
     await checkUrlCleaning(page);
     assert.deepEqual(errors, []);
@@ -436,7 +446,8 @@ try {
     await checkRobotProposals(page);
     await checkExportAndPrint(browser, page);
     await checkUrlCleaning(page);
-    await checkReferencePaste(page);
+    await checkNotePaste(page);
+    await checkFoldArrows(browser, page);
     await checkClickCaret(page);
     await checkEditableEmbeds(page);
     await checkCollapseOutlines(page);
@@ -657,7 +668,7 @@ try {
       const partRows = await page.$$eval('#memory-usage-modal .memory-usage-breakdown tr:not(.memory-usage-field)',
         rows => rows.map(row => [row.querySelector('th').textContent.trim(), row.querySelector('td').textContent.trim()]));
       assert.deepEqual(partRows.map(([label]) => label), ['Note text cache', 'Note store (tree, tags, references)',
-        'Search index', 'Rendered note views', 'Open views per tab', 'Link titles', 'Attachments index', 'Undo history',
+        'Search index', 'Reference suggestions', 'Rendered note views', 'Open views per tab', 'Link titles', 'Attachments index', 'Undo history',
         'Everything else (Python, libraries, free space)']);
       for (const [label, value] of partRows.slice(0, -1)) {
         assert.match(value, /^[0-9.,]+ MB$/, `${label}: ${value}`);

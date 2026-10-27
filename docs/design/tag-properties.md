@@ -199,6 +199,7 @@ before, so you write `miles` again rather than `distance`.
   suggestions.
 - **Search box:** after `exercise:`, also suggest property names used with tags that
   imply `exercise` (`jogging`'s `miles`), since upward search finds those.
+- Agreed, not built (2026-10-26): in the tag bar, when none of a tag's own or inherited property names match what is typed, the vault's are suggested, most used first (`docs/ready-to-build/property-suggestions-fallback.md`).
 - Never suggest the `jogging=3:miles=3` form.
 - **Units:** after a number (`dosage=10` in the tag bar, `dosage>5` in the search
   box), suggest the units used with that property, most used first. In the search
@@ -325,7 +326,11 @@ Decided 2026-10-23:
 
 - Renaming properties; property synonyms in the ontology.
 - Totals, averages and sorting by a property (for example "miles this month" beside
-  the result count, or Sort by `jogging:miles`).
+  the result count, or Sort by `jogging:miles`). Agreed, not built (2026-10-27):
+  summaries beside the result count and the `@datetime` tag
+  (`docs/ready-to-build/super-tag-summaries-and-date.md`); `@stats`, `@sum`, `@avg`,
+  `@min`, `@max` and `@count`, totals of a note's subtree under its text
+  (`docs/ready-to-build/stats-tag.md`); charts later (`docs/future-plans/charts.md`).
 - Values set by rules.
 - Value suggestions.
 - Unit conversions the user defines (`1mile = 1.609km`), so a comparison can include

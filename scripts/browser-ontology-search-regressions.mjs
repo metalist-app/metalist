@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { runThenCleanUp } from './suite-outcome.mjs';
 import { waitForAppQuiet } from './browser-app-idle.mjs';
+import {clickAndSelectAll} from './browser-select-field.mjs';
 
 // Edit Tag Relationships' tag search acts only on a result list built for the
 // text in its box, as the search box and the tag bar do. While a new list is
@@ -84,7 +85,7 @@ function searchState(page) {
 
 // An empty search box with the cursor in it, nothing opened yet in this case.
 async function clearSearch(page) {
-  await page.click(INPUT, {clickCount: 3});
+  await clickAndSelectAll(page, INPUT);
   await page.keyboard.press('Backspace');
   await idle(page);
   await page.evaluate(() => { window.ontologySearchHold.focused.splice(0); });

@@ -1,5 +1,7 @@
 # Differential View Protocol
 
+Agreed, not built (2026-10-26): several views on one vault at once, each signed in, with editing locked per root note (`docs/ready-to-build/multi-view-editing.md`). Moves and saves from other views reach a view live, and the edited root keeps its place on its editor's screen, as `keep_edited_root_in_place` does for sorted tabs.
+
 ## Overview
 - `POST /api2/notes/view` now serves two flows:
   - **Bootstrap**: the server returns a compact `structure` chunk for initial load.

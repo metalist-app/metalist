@@ -1,3 +1,4 @@
+import { watchFoldArrows } from './fold-arrow-alignment-service.js';
 import { ApplicationState, stateValuesEqual } from '../../application-state.js';
 import { NotesAPI } from '../../api-client.js';
 import { rethrowUnexpectedError } from '../../expected-errors.js';
@@ -111,6 +112,7 @@ export async function openFloatingNote(noteId) {
     moduleState.windows[id] = {...elements, noteId, rect, revision: '', markup: ''};
     applyFloatingNoteRect(elements.element, rect);
     mainApp.appendChild(elements.element);
+    watchFoldArrows(elements.tree);
     bringToFront(id);
     startWindowEvents();
     elements.element.focus({preventScroll: true});

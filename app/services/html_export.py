@@ -15,11 +15,11 @@ from app.services.content_formatting import is_password_note
 from app.services.content_formatting import is_username_note
 from app.services.embedded_references import EmbedRenderContext
 from app.services.embedded_references import collect_active_reference_tokens
+from app.services.embedded_references import text_with_references_as_words
 from app.services.embedded_references import extract_collapsed_preview_source_html
 from app.services.embedded_references import render_collapsed_note_content_with_embeds
 from app.services.embedded_references import render_note_content_with_embeds
 from app.services.embedded_references import resolve_held_source
-from app.services.embedded_references import sole_reference_token
 from app.services.markdown_rendering import strip_latex_source_attributes
 from app.services.file_registry import file_registry
 from app.services.file_storage import download_file, find_file_preview
@@ -108,6 +108,10 @@ html[data-theme="dark"] .html-export-body .note:not(.editing):not(.locked):hover
 
 .html-export-body .note.collapsed > .note-content-collapsed {
     display: -webkit-box !important;
+}
+
+.html-export-body .note.collapsed > .note-content-collapsed:has(.note-reference-note.note-embed-block) {
+    display: block !important;
 }
 
 /* The notes in an embed fold the same way, each with its own arrow. */
@@ -209,7 +213,6 @@ EXPORT_PURPOSES = frozenset({"download", "print"})
 _ARROW_STATES = {True: ("false", "Expand note"), False: ("true", "Collapse note")}
 _DEFAULT_TITLE = "MetaList"
 _MAX_TITLE_CHARACTERS = 120
-_EMBED_TOKEN = re.compile(r"!?\[\[[^\]]+\]\]")
 
 # Exported files (downloads) work like MetaList where a file can: they start
 # collapsed and expanded as MetaList shows the notes, a click on a note's arrow
@@ -367,7 +370,7 @@ def build_notes_export_document(
     if document_title == "":
         document_title = _DEFAULT_TITLE
     # The download's own script, as the element holds it, which the policy names by hash.
-    script_text = "\n" + _indent_block(_EXPORT_SCRIPT, _HTML_INNER_INDENT_SPACES) + "\n  "
+    script_text = "\n" + _indent_block(_EXPORT_SCRIPT + _load_fold_arrow_script(), _HTML_INNER_INDENT_SPACES) + "\n  "
     script_source = "'none'"
     if is_download:
         script_source = f"'sha256-{base64.b64encode(hashlib.sha256(script_text.encode('utf-8')).digest()).decode('ascii')}'"
@@ -407,7 +410,7 @@ def _first_line_title(note_id: str) -> str:
         text, redacted = extract_note_text_for_agent(content_html=content_html, tags=record.tags)
         if redacted:
             return ""
-        words = " ".join(_EMBED_TOKEN.sub(" ", text.split("\n")[0]).split())
+        words = " ".join(text_with_references_as_words(text.split("\n")[0]).split())
         if words != "":
             return words[:_MAX_TITLE_CHARACTERS]
     return ""
@@ -522,13 +525,11 @@ def exported_credential_counts(
             (child, in_scope) for child in note_store.get_children(note_id)
             if not in_scope or allowed_note_ids is None or child in allowed_note_ids
         )
-        # A note that is only a reference embeds it (its subtree is shown); any
-        # other reference is a link.
-        embeds_reference = sole_reference_token(record.content) is not None
+        # An embed (![[...]]) shows its source's subtree; a link ([[...]]) only the source.
         for reference in collect_active_reference_tokens(record.content):
             if not note_store.has_note(reference.note_id):
                 continue
-            if embeds_reference:
+            if reference.is_embed:
                 pending.append((reference.note_id, False))
                 continue
             linked_tags = note_store.get_note(reference.note_id).tags
@@ -753,6 +754,28 @@ def _as_drawn_in_metalist(*, note_id: str, record, context: EmbedRenderContext, 
         note_id=note_id, content_html=record.content, tags=record.tags,
         rendered_content=rendered_content, context=context, has_backlinks=False,
     ))
+
+
+# The export's script keeps fold arrows on their first lines with MetaList's own code
+# (fold-arrow-alignment-service.js): one module, its `export`s dropped, in the file's one script.
+_EXPORT_KEYWORD_RE = re.compile(r"^export (?=function |const )", re.MULTILINE)
+# Its own scope: the page's global scope keeps no names that a second load of the file
+# into the same window (document.open) would declare again.
+_FOLD_ARROW_START = "\nwatchFoldArrows(document.getElementById('notes-container'));\n})();\n"
+
+
+@lru_cache(maxsize=1)
+def _load_fold_arrow_script() -> str:
+    script_path = (
+        Path(__file__).resolve().parent.parent / "static" / "js" / "modules" / "mode-manager" / "services"
+        / "fold-arrow-alignment-service.js"
+    )
+    if not script_path.is_file():
+        raise FileNotFoundError(f"MetaList fold arrow script missing at {script_path}")
+    source = script_path.read_text(encoding="utf-8")
+    if "import " in source:
+        raise ValueError("The export inlines fold-arrow-alignment-service.js, which must import nothing")
+    return "\n(function () {\n" + _EXPORT_KEYWORD_RE.sub("", source) + _FOLD_ARROW_START
 
 
 @lru_cache(maxsize=1)

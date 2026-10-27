@@ -20,8 +20,6 @@ import {
     actionCopyNote,
     actionPasteNoteSibling,
     actionPasteNoteChild,
-    actionPasteReferenceSibling,
-    actionPasteReferenceChild,
     splitCurrentNoteFromSelection,
     unformatCurrentNoteContent,
     actionCopyNoteById,
@@ -121,7 +119,7 @@ import {
     imageBlobToEmbeddedDataUrl,
 } from '../services/embedded-image-service.js';
 import { promptForImageFileInsertMode } from '../services/image-file-insert-choice-modal-service.js';
-import { attachPickedFileToCurrentNote, insertReferenceTokenIntoActiveEditor } from '../services/file-reference-service.js';
+import { attachPickedFileToCurrentNote } from '../services/file-reference-service.js';
 import { shouldCreateTopNoteForFileDrop } from '../services/file-drop-policy-service.js';
 import { shouldDeleteSelectedNoteFromKeyboard } from '../services/note-delete-shortcut-policy-service.js';
 import {
@@ -645,7 +643,7 @@ function handleKeyDown(event) {
             break;
         case 'r':
             if (event.metaKey || event.ctrlKey) {
-                handleInsertEmbedReferenceShortcut(event);
+                handleRetiredReferenceShortcut(event);
             }
             break;
         case 's':
@@ -1289,14 +1287,6 @@ async function handleCopyNoteShortcut(event) {
     }
     markNoteClipboardAsTrusted(copiedPlainText(copyResult));
 
-    const copiedNoteId = copyResult?.note_id;
-    if (typeof copiedNoteId === 'string' && copiedNoteId.length > 0) {
-        // Copying the same note again should refresh system clipboard data without changing note clipboard state.
-        if (ModeContext.clipboardNoteId !== copiedNoteId) {
-            ModeContext.setClipboardNoteId(copiedNoteId);
-        }
-    }
-
     Logger.logDebug('Note copied to server clipboard', {
         noteId: ModeContext.currentNoteId
     }, Logger.LogCategory.EVENT);
@@ -1339,48 +1329,11 @@ function insertPlainTextAtCurrentSelection(text) {
     selection.addRange(range);
 }
 
-function handleInsertEmbedReferenceShortcut(event) {
-    if (!event) {
-        throw new Error('handleInsertEmbedReferenceShortcut called without an event object');
-    }
-
-    const currentNoteId = ModeContext.currentNoteId;
-
+// ⌘R makes nothing (a reference is made by typing `[[`), and it is not the
+// browser's reload either: a press from habit leaves MetaList as it is.
+function handleRetiredReferenceShortcut(event) {
     event.preventDefault();
     event.stopPropagation();
-
-    const referenceNoteId = ModeContext.clipboardNoteId;
-    if (typeof referenceNoteId !== 'string' || referenceNoteId.length === 0) {
-        Logger.logNoop('Reference shortcut ignored: no copied note UUID available', {
-            isEditing: ModeContext.isEditing,
-            currentNoteId,
-        });
-        return;
-    }
-
-    if (!ModeContext.isEditing) {
-        if (event.shiftKey) {
-            return;
-        }
-        void pasteCopiedNoteReferenceIntoNewTopNote();
-        return;
-    }
-
-    if (typeof currentNoteId !== 'string' || currentNoteId.length === 0) {
-        throw new Error('Reference paste requires current note id while editing');
-    }
-
-    // A reference pastes where the note itself would: ⇧⌘R as the first child
-    // (⇧⌘V), ⌘R below the note or into it when empty (⌘V).
-    if (event.shiftKey) {
-        void CommandGate.run('keyboard.paste_reference_child', async () => {
-            await actionPasteReferenceChild(referenceNoteId);
-        });
-        return;
-    }
-    void CommandGate.run('keyboard.paste_reference_sibling', async () => {
-        await actionPasteReferenceSibling(referenceNoteId);
-    });
 }
 
 async function handleSplitNoteShortcut(event) {
@@ -2865,24 +2818,6 @@ function insertFormatDetectedPasteIntoNewNote(clipboardData) {
     insertPlainTextAtCurrentSelection(plan.insertText);
     Logger.logDebug('New note from paste tagged by detected format', { tag: detected.tag }, Logger.LogCategory.EVENT);
     return true;
-}
-
-/** ⌘R outside edit mode, or Paste Note as Reference at Top: a new top note holding the copied note's reference. */
-export async function pasteCopiedNoteReferenceIntoNewTopNote() {
-    const referenceNoteId = ModeContext.clipboardNoteId;
-    if (typeof referenceNoteId !== 'string' || referenceNoteId.length === 0) {
-        throw new Error('Paste reference at top requires a copied note');
-    }
-    if (blockRootNoteCreation('top', 'pasteReferenceNewTopNote')) {
-        return false;
-    }
-    return await CommandGate.run('paste_reference.new_top_note', async () => {
-        const newNoteId = requireCreatedNoteId(await createNoteAtTop(), 'pasteReferenceNewTopNote');
-        insertReferenceTokenIntoActiveEditor(`[[${referenceNoteId}]]`);
-        await actionSaveNote(newNoteId);
-        ModeContext.resetEditSessionState({ startedCollapsed: false });
-        return true;
-    });
 }
 
 export async function pasteCopiedNoteIntoNewTopNote() {

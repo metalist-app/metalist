@@ -76,6 +76,17 @@ function installComputedStyle(t, styles) {
 function installRangeRects(t, rects) {
     const originalDocument = globalThis.document;
     globalThis.document = {
+        // The measured element stands in for its one text node.
+        createTreeWalker(root) {
+            let given = false;
+            return {
+                nextNode() {
+                    if (given) return null;
+                    given = true;
+                    return root;
+                },
+            };
+        },
         createRange() {
             return {
                 selectNodeContents() {},
@@ -87,14 +98,28 @@ function installRangeRects(t, rects) {
         },
     };
 
+    const originalNodeFilter = globalThis.NodeFilter;
+    globalThis.NodeFilter = { SHOW_TEXT: 4 };
     t.after(() => {
         globalThis.document = originalDocument;
+        globalThis.NodeFilter = originalNodeFilter;
     });
 }
 
 function installRangeRectsBySelectedNode(t, rectsByNode) {
     const originalDocument = globalThis.document;
     globalThis.document = {
+        // The measured element stands in for its one text node.
+        createTreeWalker(root) {
+            let given = false;
+            return {
+                nextNode() {
+                    if (given) return null;
+                    given = true;
+                    return root;
+                },
+            };
+        },
         createRange() {
             let selectedNode = null;
             return {
@@ -109,8 +134,11 @@ function installRangeRectsBySelectedNode(t, rectsByNode) {
         },
     };
 
+    const originalNodeFilter = globalThis.NodeFilter;
+    globalThis.NodeFilter = { SHOW_TEXT: 4 };
     t.after(() => {
         globalThis.document = originalDocument;
+        globalThis.NodeFilter = originalNodeFilter;
     });
 }
 

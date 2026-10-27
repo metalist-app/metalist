@@ -92,6 +92,8 @@ const LABELS = {
     'action.export_html': 'Export View as HTML…',
     'action.print_view': 'Print View…',
     'action.attach_file_to_current_note': 'Attach File…',
+    'action.link_to': 'Link to…',
+    'action.embed': 'Embed…',
     'action.add_excalidraw_diagram': 'Add Excalidraw Diagram',
     'action.trim_unused_files': 'Trim Unused Files…',
     'action.retry_failed_link_titles': 'Retry Failed Link Titles…',

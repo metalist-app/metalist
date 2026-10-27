@@ -723,8 +723,8 @@ def _folding_tree() -> tuple[dict, dict]:
 def _embed_tree() -> tuple[dict, dict]:
     notes = {
         # A holder shows its source's state: expanded itself, its source collapsed.
-        _HOLDER: _Note(_HOLDER, None, None, _OPEN_HOLDER, False, f"<div>[[{_SOURCE}]]</div>", ""),
-        _OPEN_HOLDER: _Note(_OPEN_HOLDER, None, _HOLDER, _SOURCE, True, f"<div>[[{_OPEN_SOURCE}]]</div>", ""),
+        _HOLDER: _Note(_HOLDER, None, None, _OPEN_HOLDER, False, f"<div>![[{_SOURCE}]]</div>", ""),
+        _OPEN_HOLDER: _Note(_OPEN_HOLDER, None, _HOLDER, _SOURCE, True, f"<div>![[{_OPEN_SOURCE}]]</div>", ""),
         _SOURCE: _Note(_SOURCE, None, _OPEN_HOLDER, _OPEN_SOURCE, True, "<div>Source</div>", ""),
         _KID: _Note(_KID, _SOURCE, None, None, True, "<div>Kid collapsed</div>", ""),
         _GRANDKID: _Note(_GRANDKID, _KID, None, None, False, "<div>Grandkid text</div>", ""),
@@ -961,3 +961,40 @@ def test_exported_images_still_lose_handlers_and_non_image_data(unchecked_render
     )
     assert "steal()" not in cleaned and "data:text/html" not in cleaned
     assert f'src="{_SVG_PREVIEW}"' in cleaned
+
+
+@pytest.mark.parametrize(("source_content", "has_arrow"), [
+    ("<div>Almonds</div>", False), ("<div>Almonds</div><div>raw, unsalted</div>", True),
+])
+def test_a_download_folds_a_note_that_is_only_an_embed_when_its_source_can(
+    monkeypatch: pytest.MonkeyPatch, source_content: str, has_arrow: bool,
+) -> None:
+    notes = {
+        _HOLDER: _Note(_HOLDER, None, None, _SOURCE, False, f"<div>![[{_SOURCE}]]</div>", ""),
+        _SOURCE: _Note(_SOURCE, None, _HOLDER, None, False, source_content, ""),
+    }
+    html = _export(monkeypatch, notes, {None: [_HOLDER, _SOURCE]}, purpose="download", title="", include_credentials=False, editing_note_id=None)
+    holder = html[html.index(f'id="note-{_HOLDER}"') - 80:html.index(f'id="note-{_SOURCE}"')]
+    assert ('data-can-collapse="true"' in holder) is has_arrow
+
+
+def _folded_copy(html: str, note_id: str) -> str:
+    """The text a downloaded export shows for a main-tree note when it is folded."""
+    at = html.index('<div class="note-content note-content-collapsed">', html.index(f'id="note-{note_id}"'))
+    copy = html[at:html.index("\n  </div>", at)]
+    return " ".join(re.sub(r"<[^>]+>", " ", copy).split())
+
+
+def test_a_download_folds_a_note_to_the_line_its_embed_starts_after(monkeypatch: pytest.MonkeyPatch) -> None:
+    # 10: as in MetaList (docs/ui/references.md): "Snack: ![[ALMONDS]]" folds to
+    # "Snack:", and a note that is only an embed folds to the embed, its source folded.
+    notes = {
+        _A: _Note(_A, None, None, None, True, f"<div>Snack: ![[{_B}]]</div>", ""),
+        _B: _Note(_B, None, None, None, False, "<div>Almonds</div>", ""),
+        _HOLDER: _Note(_HOLDER, None, None, None, False, f"<div>![[{_SOURCE}]]</div>", ""),
+        _SOURCE: _Note(_SOURCE, None, None, None, True, "<div>Nuts</div><div>Almonds, cashews</div>", ""),
+    }
+    html = _export(monkeypatch, notes, {None: [_A, _B, _HOLDER, _SOURCE]}, purpose="download", title="", include_credentials=False, editing_note_id=None)
+    assert _opening(html, _A).startswith('<article class="note collapsed"')
+    assert _folded_copy(html, _A) == "Snack:"
+    assert _folded_copy(html, _HOLDER) == "Nuts"

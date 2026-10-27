@@ -10,6 +10,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel
 
 from app.api.note_requests import (
+    ViewScope,
     ViewDiffRequest,
     FindInListRequest,
     UpdateTabStateRequest,
@@ -62,7 +63,6 @@ from app.api.note_requests import (
     CopyNoteEndpointRequest,
     PasteSiblingEndpointRequest,
     PasteChildEndpointRequest,
-    PasteReferenceEndpointRequest,
 )
 from app.api.transactions import serialized_read_route, transactional_route
 from app.services.sync import touch_client
@@ -123,7 +123,6 @@ from app.usecases.run_shell import CmdRunShellStart
 from app.usecases.run_shell import CmdRunShellStatus
 from app.usecases.paste_sibling import CmdPasteSibling
 from app.usecases.paste_child import CmdPasteChild
-from app.usecases.paste_reference import CmdPasteReferenceChild, CmdPasteReferenceSibling
 from app.usecases.split_note import CmdSplitNote
 from app.usecases.unformat_content import CmdUnformatContent
 from app.usecases.resize_image import CmdResizeImage
@@ -138,6 +137,7 @@ from app.services.view_diff import generate_diff_ops
 from app.services.tab_state import tab_state_store
 from app.services.backlinks import list_backlinks_for_note
 from app.services.reference_suggestions import suggest_references
+from app.services.client_state_service import copied_note_ids, remember_copied_note
 from app.services.undo_state import maybe_reset_on_context
 from app.services.search_history import (
     TagActivityWindowSelection,
@@ -160,7 +160,7 @@ from app.services.html_export import build_notes_export_document
 from app.services.html_export import default_export_title
 from app.services.html_export import exported_credential_counts
 from app.services.html_export import build_notes_export_filename
-from app.services.note_fullscreen import build_note_fullscreen_markup
+from app.services.note_fullscreen import build_note_fullscreen_markup, build_note_preview_markup
 from app.services.link_titles import link_title_store
 from app.services.search_index import search_index
 from app.services.dictation_cleanup import clean_dictated_paste
@@ -812,11 +812,23 @@ def dictation_paste(payload: DictationPasteRequest) -> Dict[str, object]:
 
 @router.post("/notes/reference-suggestions")
 @transactional_route
-def reference_suggestions(payload: ReferenceSuggestionsRequest) -> Dict[str, object]:
+def reference_suggestions(request: Request, payload: ReferenceSuggestionsRequest) -> Dict[str, object]:
     """Notes to reference, for the list `[[` opens in a note (docs/ui/references.md)."""
+    token = _require_bearer_token(request)
     editing_note_id = payload["editing_note_id"]
     _require_note_present(editing_note_id, context="notes.reference-suggestions")
-    suggestions = suggest_references(query=payload["query"], editing_note_id=editing_note_id)
+    tab_id = payload["tabId"]
+    view = (
+        payload["search"], payload["isUntaggedView"], _resolve_tab_sort_mode(tab_id),
+        _resolve_tab_date_filter(tab_id), _resolve_tab_file_filter(tab_id),
+    )
+    suggestions = suggest_references(
+        query=payload["query"],
+        editing_note_id=editing_note_id,
+        copied_note_ids=copied_note_ids(token=token),
+        view=view,
+        view_note_ids=lambda: _view_note_ids(payload),
+    )
     return {
         "suggestions": [
             {
@@ -1027,6 +1039,15 @@ def note_floating_window(note_id: str, revision: str) -> dict[str, str]:
         "status": "ready",
         "html": build_note_fullscreen_markup(note_id),
     }
+
+
+@router.get("/notes/{note_id}/preview")
+def note_preview(note_id: str) -> dict[str, str]:
+    """A reference's preview card: the top of the note as the list draws it, or
+    nothing for a note that is not there (deleted, or a file's UUID)."""
+    if not note_store.has_note(note_id):
+        return {"status": "deleted", "html": ""}
+    return {"status": "ready", "html": build_note_preview_markup(note_id)}
 
 
 @router.get("/notes/{note_id}/backlinks")
@@ -1245,8 +1266,9 @@ def add_tag_proposals(request: Request, note_id: str, body: AddTagProposalsReque
     )
 
 
-def _robot_scope_note_ids(body: dict) -> frozenset[str]:
-    """The notes the view showing a robot count lets it count (as /notes/view resolves them)."""
+def _view_note_ids(body: ViewScope) -> frozenset[str]:
+    """The notes a tab's view shows (as /notes/view resolves them): what a robot count counts, and
+    what ranks first in the `[[` suggestions."""
     return resolve_view_scope_membership(
         search=body["search"],
         sort_mode=_resolve_tab_sort_mode(body["tabId"]),
@@ -1263,7 +1285,7 @@ def open_to_tag_proposals(note_id: str, body: OpenToTagProposalsRequest):
     _require_note_present(note_id, context="notes.tag-proposals.open")
     return CmdOpenToTagProposals(
         note_id=note_id,
-        scope_note_ids=_robot_scope_note_ids(body),
+        scope_note_ids=_view_note_ids(body),
         client_id=body["clientId"],
         undo_context=body["undoContext"],
         viewport=viewport,
@@ -1281,7 +1303,7 @@ def resolve_robot_tag_proposals(request: Request, note_id: str, body: ResolveRob
             note_id=note_id,
             action=body["action"],
             includes_hidden_children=body["includesHiddenChildren"],
-            scope_note_ids=_robot_scope_note_ids(body),
+            scope_note_ids=_view_note_ids(body),
             token=token,
             client_id=body["clientId"],
             undo_context=body["undoContext"],
@@ -1714,9 +1736,11 @@ def delete_note(note_id: str, body: DeleteNoteRequest):
 
 @router.post("/notes/{note_id}/copy")
 @transactional_route
-def copy_note_endpoint(note_id: str, body: CopyNoteEndpointRequest):
-    cmd = CmdCopyNote(note_id=note_id, client_id=body["clientId"])  
-    return cmd.execute()
+def copy_note_endpoint(request: Request, note_id: str, body: CopyNoteEndpointRequest):
+    token = _require_bearer_token(request)
+    result = CmdCopyNote(note_id=note_id, client_id=body["clientId"]).execute()
+    remember_copied_note(note_id=note_id, token=token)
+    return result
 
 
 @router.post("/notes/paste-sibling/{target_note_id}")
@@ -1745,40 +1769,6 @@ def paste_child_endpoint(request: Request, target_note_id: str, body: PasteChild
     cmd = CmdPasteChild(
         target_note_id=target_note_id,
         search_query=search_query,
-        token=token,
-        client_id=body["clientId"],
-        undo_context=body["undoContext"],
-        viewport=viewport,
-    )
-    return cmd.execute()
-
-
-@router.post("/notes/paste-reference-sibling/{target_note_id}")
-@transactional_route
-def paste_reference_sibling_endpoint(request: Request, target_note_id: str, body: PasteReferenceEndpointRequest):
-    viewport = _require_viewport(body)
-    token = _require_bearer_token(request)
-    cmd = CmdPasteReferenceSibling(
-        target_note_id=target_note_id,
-        reference_note_id=body["reference_note_id"],
-        search_query=body["search_query"],
-        token=token,
-        client_id=body["clientId"],
-        undo_context=body["undoContext"],
-        viewport=viewport,
-    )
-    return cmd.execute()
-
-
-@router.post("/notes/paste-reference-child/{target_note_id}")
-@transactional_route
-def paste_reference_child_endpoint(request: Request, target_note_id: str, body: PasteReferenceEndpointRequest):
-    viewport = _require_viewport(body)
-    token = _require_bearer_token(request)
-    cmd = CmdPasteReferenceChild(
-        target_note_id=target_note_id,
-        reference_note_id=body["reference_note_id"],
-        search_query=body["search_query"],
         token=token,
         client_id=body["clientId"],
         undo_context=body["undoContext"],

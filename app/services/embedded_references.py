@@ -74,6 +74,8 @@ _COLLAPSED_PREVIEW_MEDIA_TAGS = {
     "svg",
     "video",
 }
+# What a link to a note with no text reads.
+EMPTY_NOTE_PREVIEW = "(empty note)"
 _REFERENCE_TOKEN_RE = re.compile(r"!?\[\[[^\[\]\n]+\]\]")
 _INLINE_IMG_TAG_RE = re.compile(r"<img\b(?:[^>\"']|\"[^\"]*\"|'[^']*')*>", re.IGNORECASE)
 # File kinds that collapse to a thumbnail, in a collapsed note and in a compact reference to it.
@@ -85,6 +87,8 @@ _WHITESPACE_RE = re.compile(r"\s+")
 _LINK_OPEN = "[["
 _EMBED_OPEN = "![["
 _REFERENCE_CLOSE = "]]"
+# Between a reference's UUID and its link text: [[UUID|shown text]].
+_LINK_TEXT_SEPARATOR = "|"
 # The first meaningful fragment, plus a second one to tell whether more follow.
 _PREVIEW_HEAD_FRAGMENT_COUNT = 2
 
@@ -110,6 +114,31 @@ class ReferenceToken:
     end: int
     is_embed: bool
     occurrence_index: int
+    # The text after the first |, shown instead of the target's first line; None
+    # with no |. An embed's is unused (docs/ui/references.md, "Link text").
+    link_text: Optional[str]
+
+
+@dataclass(frozen=True, slots=True)
+class ReferenceTarget:
+    note_id: str
+    link_text: Optional[str]
+
+
+def parse_reference_inner(inner: str) -> Optional[ReferenceTarget]:
+    """What is written between [[ and ]]: a UUID, then optionally | and link text
+    (agreed 2026-10-27, docs/ui/references.md, "Link text"). The text runs to the
+    ]], further | included; it holds no bracket or line break and is not empty.
+    None when it is not a reference."""
+    note_id, separator, link_text = inner.partition(_LINK_TEXT_SEPARATOR)
+    note_id = note_id.strip()
+    if not _is_valid_embed_note_id(note_id):
+        return None
+    if separator == "":
+        return ReferenceTarget(note_id=note_id, link_text=None)
+    if link_text.strip() == "" or any(character in link_text for character in "[]\n"):
+        return None
+    return ReferenceTarget(note_id=note_id, link_text=link_text)
 
 
 class _FootnoteReferencePreview(HTMLParser):
@@ -185,20 +214,6 @@ def collect_reference_tokens_from_html(content_html: str) -> List[ReferenceToken
     return tokens
 
 
-def normalize_reference_modes_for_comparison(content_html: str) -> str:
-    """Ignore only embed/link markers on valid references, preserving other HTML."""
-    tokens = collect_reference_tokens_from_html(content_html)
-    parts = []
-    offset = 0
-    for token in tokens:
-        if token.is_embed:
-            assert content_html[token.start] == "!"
-            parts.append(content_html[offset:token.start])
-            offset = token.start + 1
-    parts.append(content_html[offset:])
-    return "".join(parts)
-
-
 def collect_active_reference_tokens(content_html: str) -> List[ReferenceToken]:
     """The note references the renderer shows: every [[note id]] and ![[note id]].
 
@@ -226,7 +241,8 @@ def render_note_content_with_embeds(
         context=context,
         static_export=static_export,
         redact_credentials=redact_credentials,
-        render_note_embeds_as_links=False,
+        folds_embeds=False,
+        is_held=sole_embed_token(content_html) is not None,
     )
 
 
@@ -238,7 +254,8 @@ def _render_note_content_with_embeds(
     context: EmbedRenderContext,
     static_export: bool,
     redact_credentials: bool,
-    render_note_embeds_as_links: bool,
+    folds_embeds: bool,
+    is_held: bool,
 ) -> str:
     if not isinstance(note_id, str) or note_id == "":
         raise TypeError("note_id must be a non-empty string")
@@ -250,8 +267,8 @@ def _render_note_content_with_embeds(
         raise TypeError("static_export must be a bool")
     if not isinstance(redact_credentials, bool):
         raise TypeError("redact_credentials must be a bool")
-    if not isinstance(render_note_embeds_as_links, bool):
-        raise TypeError("render_note_embeds_as_links must be a bool")
+    if not isinstance(folds_embeds, bool):
+        raise TypeError("folds_embeds must be a bool")
 
     annotated_content = content_html
     if not static_export:
@@ -264,8 +281,8 @@ def _render_note_content_with_embeds(
         ancestry=(note_id,),
         static_export=static_export,
         redact_credentials=redact_credentials,
-        render_note_embeds_as_links=render_note_embeds_as_links,
-        is_sole_reference=sole_reference_token(content_html) is not None,
+        folds_embeds=folds_embeds,
+        is_held=is_held,
     )
     rendered_content = format_note_content_for_view(
         content_html=content_with_embeds,
@@ -289,7 +306,7 @@ def render_collapsed_note_content_with_embeds(
     static_export: bool,
     redact_credentials: bool,
 ) -> str:
-    preview_source_html = extract_collapsed_preview_source_html(content_html)
+    preview_source_html = _first_shown_line(extract_collapsed_preview_source_html(content_html), context=context)
     if has_scoped_footnotes(tags):
         # Footnotes on later source lines can attach markers to the first line.
         preview_source_html = content_html
@@ -300,8 +317,60 @@ def render_collapsed_note_content_with_embeds(
         context=context,
         static_export=static_export,
         redact_credentials=redact_credentials,
-        render_note_embeds_as_links=True,
+        folds_embeds=True,
+        # Whether the note is only its embed, not whether its first line is.
+        is_held=sole_embed_token(content_html) is not None,
     )
+
+
+def _shown_note_embeds(preview_source_html: str, context: EmbedRenderContext) -> List[ReferenceToken]:
+    return [
+        token for token in collect_active_reference_tokens(preview_source_html)
+        if token.is_embed and context.has_note(token.note_id)
+    ]
+
+
+def _first_shown_line(preview_source_html: str, *, context: EmbedRenderContext) -> str:
+    """A note's first line as it is shown. An embed of a note always starts a line
+    of its own and stays an embed (only the ! makes one; docs/ui/references.md):
+    text before the first embed is the first line; with none, the embed is."""
+    embeds = _shown_note_embeds(preview_source_html, context)
+    if not embeds:
+        return preview_source_html
+    first = embeds[0]
+    before = preview_source_html[:first.start]
+    if _fragment_has_collapsed_preview_content([before]):
+        return _closed_html(before)
+    return _closed_html(preview_source_html[:first.end])
+
+
+# Elements that never have content, so never close.
+_VOID_ELEMENTS = frozenset({
+    "area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source", "track", "wbr",
+})
+
+
+class _OpenTags(HTMLParser):
+    """The elements still open at the end of a cut piece of HTML."""
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=False)
+        self.open: List[str] = []
+
+    def handle_starttag(self, tag: str, attrs: List[Tuple[str, Optional[str]]]) -> None:
+        if tag not in _VOID_ELEMENTS:
+            self.open.append(tag)
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag in self.open:
+            del self.open[len(self.open) - 1 - self.open[::-1].index(tag):]
+
+
+def _closed_html(cut_html: str) -> str:
+    parser = _OpenTags()
+    parser.feed(cut_html)
+    parser.close()
+    return cut_html + "".join(f"</{tag}>" for tag in reversed(parser.open))
 
 
 def _iter_collapsed_preview_meaningful_fragments(content_html: str) -> Iterator[str]:
@@ -406,9 +475,8 @@ def sole_reference_token(content_html: str) -> Optional[ReferenceToken]:
     """The reference that is a note's whole content, or None.
 
     A note reference that is its note's only content shows that note in place
-    (an embed); with anything else in the note, even an extra line, it is a
-    link (docs/ui/references.md). Its written form, [[...]] or ![[...]], does
-    not matter.
+    (an embed) when written ![[...]] (sole_embed_token); a link to a note that is
+    only a reference reads as that reference's source.
     """
     tokens = collect_active_reference_tokens(content_html)
     if len(tokens) != 1:
@@ -421,16 +489,25 @@ def sole_reference_token(content_html: str) -> Optional[ReferenceToken]:
     return token
 
 
+def sole_embed_token(content_html: str) -> Optional[ReferenceToken]:
+    """The embed (![[...]]) that is a note's whole content, or None: such a note
+    holds its source, folding as it does (docs/ui/references.md)."""
+    token = sole_reference_token(content_html)
+    if token is None or not token.is_embed:
+        return None
+    return token
+
+
 def resolve_held_source(
     note_id: str, *, has_note: Callable[[str], bool], content_of: Callable[[str], str],
 ) -> str:
-    """The note whose collapse a note shows: for a note that is only a reference,
-    its source (followed through sources that are themselves only a reference);
+    """The note whose collapse a note shows: for a note that is only an embed,
+    its source (followed through sources that are themselves only an embed);
     otherwise the note itself."""
     visited = [note_id]
     current = note_id
     while True:
-        token = sole_reference_token(content_of(current))
+        token = sole_embed_token(content_of(current))
         if token is None or not has_note(token.note_id) or token.note_id in visited:
             return current
         current = token.note_id
@@ -442,8 +519,8 @@ def _context_content(context: EmbedRenderContext) -> Callable[[str], str]:
 
 
 def shows_note_embed(*, content_html: str, context: EmbedRenderContext) -> bool:
-    """Whether a note's content is one reference to a note, shown as an embed."""
-    token = sole_reference_token(content_html)
+    """Whether a note's content is one embed of a note."""
+    token = sole_embed_token(content_html)
     if token is None:
         return False
     return context.has_note(token.note_id)
@@ -464,8 +541,8 @@ def _replace_reference_tokens_in_html(
     ancestry: Tuple[str, ...],
     static_export: bool,
     redact_credentials: bool,
-    render_note_embeds_as_links: bool,
-    is_sole_reference: bool,
+    folds_embeds: bool,
+    is_held: bool,
 ) -> str:
     parts = _HTML_TOKEN_SPLIT_RE.split(content_html)
     output: List[str] = []
@@ -482,8 +559,8 @@ def _replace_reference_tokens_in_html(
             occurrence_start=occurrence_index,
             static_export=static_export,
             redact_credentials=redact_credentials,
-            render_note_embeds_as_links=render_note_embeds_as_links,
-            is_sole_reference=is_sole_reference,
+            folds_embeds=folds_embeds,
+            is_held=is_held,
         )
         output.append(replaced_text)
         occurrence_index = next_occurrence_index
@@ -499,8 +576,8 @@ def _replace_reference_tokens_in_text(
     occurrence_start: int,
     static_export: bool,
     redact_credentials: bool,
-    render_note_embeds_as_links: bool,
-    is_sole_reference: bool,
+    folds_embeds: bool,
+    is_held: bool,
 ) -> tuple[str, int]:
     if text == "":
         return "", occurrence_start
@@ -520,10 +597,9 @@ def _replace_reference_tokens_in_text(
             output.append(text[token_start:])
             break
 
-        raw_id = text[token_start + token_open_length : end]
-        reference_note_id = raw_id.strip()
+        target = parse_reference_inner(text[token_start + token_open_length : end])
 
-        if not _is_valid_embed_note_id(reference_note_id):
+        if target is None:
             # Not a note id (a formatting wrapper or plain brackets): keep the opener
             # and scan on, so a link nested inside, as in [[see [[id]] here]], still counts.
             output.append(text[token_start : token_start + token_open_length])
@@ -533,15 +609,16 @@ def _replace_reference_tokens_in_text(
         output.append(
             _render_reference_block(
                 host_note_id=host_note_id,
-                reference_note_id=reference_note_id,
+                reference_note_id=target.note_id,
+                link_text=target.link_text,
                 occurrence_index=occurrence_index,
                 is_embed=is_embed,
                 context=context,
                 ancestry=ancestry,
                 static_export=static_export,
                 redact_credentials=redact_credentials,
-                render_note_embeds_as_links=render_note_embeds_as_links,
-                is_sole_reference=is_sole_reference,
+                folds_embeds=folds_embeds,
+                is_held=is_held,
             )
         )
         occurrence_index += 1
@@ -568,16 +645,16 @@ def _collect_reference_tokens_in_text(
         if token_end_inner == -1:
             break
 
-        raw_id = text[token_start + token_open_length : token_end_inner]
-        note_id = raw_id.strip()
-        if _is_valid_embed_note_id(note_id):
+        target = parse_reference_inner(text[token_start + token_open_length : token_end_inner])
+        if target is not None:
             tokens.append(
                 ReferenceToken(
-                    note_id=note_id,
+                    note_id=target.note_id,
                     start=text_offset + token_start,
                     end=text_offset + token_end_inner + len(_REFERENCE_CLOSE),
                     is_embed=is_embed,
                     occurrence_index=occurrence_index,
+                    link_text=target.link_text,
                 )
             )
             occurrence_index += 1
@@ -609,14 +686,15 @@ def _render_reference_block(
     *,
     host_note_id: str,
     reference_note_id: str,
+    link_text: Optional[str],
     occurrence_index: int,
     is_embed: bool,
     context: EmbedRenderContext,
     ancestry: Tuple[str, ...],
     static_export: bool,
     redact_credentials: bool,
-    render_note_embeds_as_links: bool,
-    is_sole_reference: bool,
+    folds_embeds: bool,
+    is_held: bool,
 ) -> str:
     mode = "link"
     if is_embed:
@@ -629,38 +707,33 @@ def _render_reference_block(
     if note_exists and file_exists:
         raise RuntimeError(f"Reference UUID {reference_note_id} resolves to both a note and a file")
 
-    # A note reference is an embed when it is its note's whole content, a
-    # link otherwise; a file follows its written form (![[...]] or [[...]]).
+    # The written form decides, for notes as for files: ![[...]] embeds, [[...]]
+    # links, anywhere in the text, folded or not (docs/ui/references.md).
     display_as_embed = is_embed
-    shows_embed_first_line = False
-    if note_exists:
-        # A collapsed note shows its embed as one line, the source's preview.
-        shows_embed_first_line = is_sole_reference and render_note_embeds_as_links
-        display_as_embed = is_sole_reference and not shows_embed_first_line
     wrapper_classes = "note-reference-block"
     if display_as_embed:
         wrapper_classes = f"{wrapper_classes} note-reference-embed note-embed-block"
     else:
         wrapper_classes = f"{wrapper_classes} note-reference-link-mode"
-    if shows_embed_first_line:
-        wrapper_classes = f"{wrapper_classes} note-reference-embed-first-line"
+    if display_as_embed and is_held:
+        # Its note's whole content: the note holds it, with no panel or arrow of its own.
+        wrapper_classes = f"{wrapper_classes} note-embed-held"
 
     if note_exists:
         wrapper_classes = f"{wrapper_classes} note-reference-note"
-        if shows_embed_first_line:
-            body_html = _render_collapsed_embed_body(
-                reference_note_id=reference_note_id,
-                context=context,
-                static_export=static_export,
-                redact_credentials=redact_credentials,
-            )
-        elif display_as_embed:
+        if display_as_embed:
             body_html = _render_embed_body(
                 reference_note_id=reference_note_id,
                 context=context,
                 ancestry=ancestry,
                 static_export=static_export,
                 redact_credentials=redact_credentials,
+                # A folded note shows one line: an embed on it shows its note folded.
+                folds_root=folds_embeds,
+            )
+        elif link_text is not None:
+            body_html = _render_link_text_body(
+                reference_note_id=reference_note_id, link_text=link_text, static_export=static_export,
             )
         else:
             body_html = _render_link_body(
@@ -690,6 +763,7 @@ def _render_reference_block(
             body_html = _render_file_link_body(
                 record=record,
                 reference_note_id=reference_note_id,
+                link_text=link_text,
                 static_export=static_export,
             )
     else:
@@ -714,6 +788,7 @@ def _render_embed_body(
     ancestry: Tuple[str, ...],
     static_export: bool,
     redact_credentials: bool,
+    folds_root: bool,
 ) -> str:
     escaped_note_id = html.escape(reference_note_id, quote=True)
 
@@ -730,6 +805,7 @@ def _render_embed_body(
             context=context,
             ancestry=ancestry + (reference_note_id,),
             is_root=True,
+            folds_root=folds_root,
             static_export=static_export,
             redact_credentials=redact_credentials,
         )
@@ -741,66 +817,6 @@ def _render_embed_body(
         'title="Go to source note" aria-label="Go to source note">'
         '<span class="note-reference-icon" aria-hidden="true"></span></a>'
         f"{embedded_content}</div>"
-    )
-
-
-def _render_collapsed_embed_body(
-    *,
-    reference_note_id: str,
-    context: EmbedRenderContext,
-    static_export: bool,
-    redact_credentials: bool,
-) -> str:
-    """A collapsed embed: the source's first line drawn as a collapsed note draws it,
-    in the source's own formatting (a heading, a colour), with the source icon.
-
-    A source that is only a reference is followed to the note it shows, as a
-    link to it reads. The line is held in a span, not a link: a link on that
-    line inside another link would be split apart, leaving an empty line."""
-    shown_note_id = resolve_held_source(
-        reference_note_id, has_note=context.has_note, content_of=_context_content(context),
-    )
-    record = context.get_note(shown_note_id)
-    source_content = getattr(record, "content")
-    source_tags = getattr(record, "tags")
-    if not isinstance(source_content, str) or not isinstance(source_tags, str):
-        raise TypeError("an embedded note's content and tags must be strings")
-    _preview, redacted_credential = _resolve_note_reference_preview(
-        reference_note_id=reference_note_id,
-        context=context,
-        redact_credentials=redact_credentials,
-    )
-    thumbnail_html, _caption = _render_link_preview_thumbnail(
-        record=record,
-        context=context,
-        static_export=static_export,
-    )
-    # These first lines keep their compact preview: a hidden password, footnote
-    # markers without their references, a picture or diagram as a thumbnail.
-    if redacted_credential != "" or has_scoped_footnotes(source_tags) or thumbnail_html != "":
-        return _render_link_body(
-            reference_note_id=reference_note_id,
-            context=context,
-            static_export=static_export,
-            redact_credentials=redact_credentials,
-            show_media=True,
-        )
-    preview_html = render_collapsed_note_content_with_embeds(
-        note_id=shown_note_id,
-        content_html=source_content,
-        tags=source_tags,
-        context=context,
-        static_export=static_export,
-        redact_credentials=redact_credentials,
-    )
-    if static_export:
-        return f'<span class="note-reference-link note-reference-link-static">{preview_html}</span>'
-    escaped_note_id = html.escape(reference_note_id, quote=True)
-    return (
-        f'<span class="note-reference-link" data-ref-note-id="{escaped_note_id}">'
-        '<span class="note-reference-link-icon note-reference-icon" aria-hidden="true" title="Go to source note"></span>'
-        f'<span class="note-reference-link-title">{preview_html}</span>'
-        "</span>"
     )
 
 
@@ -871,6 +887,22 @@ def _render_link_body(
         f'<a href="#" class="note-reference-link" data-ref-note-id="{escaped_note_id}">'
         '<span class="note-reference-link-icon note-reference-icon" aria-hidden="true" title="Go to source note"></span>'
         f'<span class="{title_classes}">{preview_html}</span>'
+        "</a>"
+    )
+
+
+def _render_link_text_body(*, reference_note_id: str, link_text: str, static_export: bool) -> str:
+    """A link with the text written after its | (agreed 2026-10-27): fixed, plain text,
+    whatever the target's first line, a password note's included."""
+    # The text comes from the note's HTML, its < and & already entities: shown as written.
+    shown_html = html.escape(html.unescape(link_text))
+    if static_export:
+        return f'<span class="note-reference-link note-reference-link-static">{shown_html}</span>'
+    escaped_note_id = html.escape(reference_note_id, quote=True)
+    return (
+        f'<a href="#" class="note-reference-link" data-ref-note-id="{escaped_note_id}">'
+        '<span class="note-reference-link-icon note-reference-icon" aria-hidden="true" title="Go to source note"></span>'
+        f'<span class="note-reference-link-title">{shown_html}</span>'
         "</a>"
     )
 
@@ -1023,7 +1055,7 @@ def _resolve_note_reference_preview(
         note_id = held.note_id
     preview = _extract_first_line_preview(record_content)
     if preview == "":
-        preview = "(empty note)"
+        preview = EMPTY_NOTE_PREVIEW
     return preview, ""
 
 
@@ -1098,6 +1130,8 @@ def _render_file_embed_body(
     return _render_file_body(
         record=record,
         reference_note_id=reference_note_id,
+        # An embed's text after | is unused for now (an image's size later).
+        link_text=None,
         is_embed=True,
         static_export=static_export,
     )
@@ -1107,11 +1141,13 @@ def _render_file_link_body(
     *,
     record: object,
     reference_note_id: str,
+    link_text: Optional[str],
     static_export: bool,
 ) -> str:
     return _render_file_body(
         record=record,
         reference_note_id=reference_note_id,
+        link_text=link_text,
         is_embed=False,
         static_export=static_export,
     )
@@ -1121,6 +1157,7 @@ def _render_file_body(
     *,
     record: object,
     reference_note_id: str,
+    link_text: Optional[str],
     is_embed: bool,
     static_export: bool,
 ) -> str:
@@ -1143,6 +1180,9 @@ def _render_file_body(
 
     escaped_note_id = html.escape(reference_note_id, quote=True)
     escaped_title = html.escape(title)
+    if link_text is not None and not is_embed:
+        # A link's text from its | stands in for the file's name (agreed 2026-10-27).
+        escaped_title = html.escape(html.unescape(link_text))
     escaped_title_attribute = html.escape(title, quote=True)
     badge_text = html.escape(_format_file_badge(thumbnail_kind=thumbnail_kind, original_filename=original_filename))
     if static_export:
@@ -1266,6 +1306,7 @@ def _render_embedded_note_node(
     context: EmbedRenderContext,
     ancestry: Tuple[str, ...],
     is_root: bool,
+    folds_root: bool,
     static_export: bool,
     redact_credentials: bool,
 ) -> str:
@@ -1295,6 +1336,14 @@ def _render_embedded_note_node(
         has_arrow = can_collapse and not is_root
     shown_state_id = resolve_held_source(note_id, has_note=context.has_note, content_of=_context_content(context))
     is_collapsed = has_arrow and bool(context.get_note(shown_state_id).is_collapsed)
+    if folds_root:
+        # A folded note showing this embed on its first line: it shows the embed
+        # folded, an export's folded copy too, where the embed's first note has no
+        # arrow of its own.
+        # A note that cannot fold looks the same folded, but for a footnote note
+        # whose references main.css hides.
+        assert is_root, "only an embed's first note folds with its holder"
+        is_collapsed = True
     toggle_html = ""
     if has_arrow:
         toggle_html = _embed_arrow_html(escaped_note_id=escaped_note_id, is_collapsed=is_collapsed)
@@ -1333,11 +1382,15 @@ def _render_embedded_note_node(
             redact_credentials=redact_credentials,
         )
 
+    content_classes = "note-embed-content"
+    if is_collapsed and static_export:
+        # A folded holder's embed in an export: the file shows it as its folded copy.
+        content_classes = "note-embed-content note-embed-content-collapsed"
     return (
         f'<div class="{classes}" data-embed-note-id="{escaped_note_id}">'
         '<div class="note-embed-body">'
         f"{toggle_html}"
-        f'<div class="note-embed-content">{rendered_content}</div>'
+        f'<div class="{content_classes}">{rendered_content}</div>'
         f"{children_html}"
         "</div>"
         "</div>"
@@ -1438,8 +1491,8 @@ def _render_expanded_embedded_content(
         ancestry=ancestry,
         static_export=static_export,
         redact_credentials=redact_credentials,
-        render_note_embeds_as_links=False,
-        is_sole_reference=sole_reference_token(annotated_content) is not None,
+        folds_embeds=False,
+        is_held=sole_embed_token(annotated_content) is not None,
     )
     return format_note_content_for_view(
         content_html=rendered_content,
@@ -1466,6 +1519,7 @@ def _render_embedded_children(
                 context=context,
                 ancestry=ancestry + (child_id,),
                 is_root=False,
+                folds_root=False,
                 static_export=static_export,
                 redact_credentials=redact_credentials,
             )
@@ -1476,17 +1530,39 @@ def _render_embedded_children(
 def is_content_collapsible(*, content_html: str, context: EmbedRenderContext) -> bool:
     """Whether a note's text is more than its collapsed first line (so it gets a
     collapse arrow even without children); exports decide the same way."""
+    return _is_content_collapsible(content_html=content_html, context=context, follows_embed=True)
+
+
+def _is_content_collapsible(*, content_html: str, context: EmbedRenderContext, follows_embed: bool) -> bool:
     # One preview-head lookup serves all four collapsibility checks.
     collapsed_preview_source, preview_has_more = collapsed_preview_head(content_html)
     if collapsed_preview_source == "":
         return False
+    if preview_has_more:
+        return True
     if preview_html_has_media(collapsed_preview_source):
         return True
     if preview_html_has_image_file_embed(preview_source_html=collapsed_preview_source, context=context):
         return True
     if preview_html_has_note_embed(preview_source_html=collapsed_preview_source, context=context):
+        # Only an embed: it shows its source, so it folds when the source does;
+        # an arrow that would change nothing is not shown (docs/ui/references.md).
+        return follows_embed and _held_source_can_collapse(preview_source_html=collapsed_preview_source, context=context)
+    # Any other embed of a note starts a line of its own after other content.
+    return len(_shown_note_embeds(collapsed_preview_source, context)) > 0
+
+
+def _held_source_can_collapse(*, preview_source_html: str, context: EmbedRenderContext) -> bool:
+    token = sole_embed_token(preview_source_html)
+    assert token is not None, "a note embed preview is one embed"
+    source_id = resolve_held_source(token.note_id, has_note=context.has_note, content_of=_context_content(context))
+    if len(context.get_children(source_id)) > 0:
         return True
-    return preview_has_more
+    source_content = getattr(context.get_note(source_id), "content")
+    if not isinstance(source_content, str):
+        raise TypeError("an embedded note's content must be a string")
+    # The source is not followed further: notes that embed each other show nothing to fold.
+    return _is_content_collapsible(content_html=source_content, context=context, follows_embed=False)
 
 
 def first_line_preview(content_html: str) -> str:
@@ -1515,15 +1591,43 @@ def _strip_reference_tokens(text: str) -> str:
     return normalized.strip()
 
 
-def _strip_reference_token_if_uuid(match: re.Match[str]) -> str:
+# Anything in double brackets, as plain text read for words drops it.
+_BRACKETED_SPAN_RE = re.compile(r"!?\[\[[^\]]+\]\]")
+
+
+def text_with_references_as_words(text: str) -> str:
+    """Plain text with every [[...]] and ![[...]] dropped, but for a link's text
+    after | (docs/ui/references.md, "Link text"), which reads in its place."""
+    if not isinstance(text, str):
+        raise TypeError("text must be a string")
+    return _BRACKETED_SPAN_RE.sub(_link_text_or_space, text)
+
+
+def _link_text_or_space(match: re.Match[str]) -> str:
     token = match.group(0)
     if token.startswith(_EMBED_OPEN):
-        note_id = token[len(_EMBED_OPEN) : -len(_REFERENCE_CLOSE)].strip()
-    else:
-        note_id = token[len(_LINK_OPEN) : -len(_REFERENCE_CLOSE)].strip()
-    if _is_valid_embed_note_id(note_id):
         return " "
-    return token
+    target = parse_reference_inner(token[len(_LINK_OPEN) : -len(_REFERENCE_CLOSE)])
+    if target is None or target.link_text is None:
+        return " "
+    return f" {target.link_text} "
+
+
+def _strip_reference_token_if_uuid(match: re.Match[str]) -> str:
+    """A reference in a line read as text: its link text where it has one (shown
+    there in its place), else a space. Anything else in brackets stays."""
+    token = match.group(0)
+    if token.startswith(_EMBED_OPEN):
+        target = parse_reference_inner(token[len(_EMBED_OPEN) : -len(_REFERENCE_CLOSE)])
+        if target is None:
+            return token
+        return " "
+    target = parse_reference_inner(token[len(_LINK_OPEN) : -len(_REFERENCE_CLOSE)])
+    if target is None:
+        return token
+    if target.link_text is not None:
+        return f" {target.link_text} "
+    return " "
 
 
 def _is_collapsed_preview_line_boundary_tag(tag_html: str) -> bool:

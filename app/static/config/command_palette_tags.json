@@ -249,6 +249,14 @@
       "tags": ["attach", "file", "files", "upload", "reference", "note", "insert", "attachment"]
     },
     {
+      "id": "action.link_to",
+      "tags": ["link", "reference", "note", "insert", "add", "wiki link", "connect"]
+    },
+    {
+      "id": "action.embed",
+      "tags": ["embed", "reference", "note", "insert", "add", "transclude", "include"]
+    },
+    {
       "id": "action.add_excalidraw_diagram",
       "tags": ["excalidraw", "diagram", "drawing", "draw", "sketch", "whiteboard", "insert", "add", "new"]
     },

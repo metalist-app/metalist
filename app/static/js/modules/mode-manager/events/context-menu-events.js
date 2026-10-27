@@ -30,8 +30,6 @@ import {
     moveNoteUp,
     outdentNote,
     unformatCurrentNoteContent,
-    actionPasteReferenceSibling,
-    actionPasteReferenceChild,
 } from '../actions/note-actions.js';
 import { CommandGate } from '../services/command-gate-service.js';
 import { captureEditingFocus, contentTextOf, restoreEditingFocus } from '../services/viewport-hold-service.js';
@@ -42,8 +40,9 @@ import {
     prepareOutlineMoveContextAction,
 } from '../services/note-context-menu-action-service.js';
 import { writeRenderedNoteToSystemClipboard } from '../services/note-clipboard-write-service.js';
-import { downloadFileReference, insertReferenceTokenAtRange } from '../services/file-reference-service.js';
-import { pasteReferenceHereRange, rememberSelectionAtRightPress } from '../services/paste-reference-here-service.js';
+import { downloadFileReference } from '../services/file-reference-service.js';
+import { referenceInsertRange, rememberSelectionAtRightPress } from '../services/reference-insert-point-service.js';
+import { typeReferenceOpener } from '../services/reference-suggestions-service.js';
 import { confirmRemovingReferencedNote } from '../services/referenced-note-removal-service.js';
 import {
     copyImageFromContext,
@@ -87,7 +86,6 @@ import {
     createBlankSearchContextFromHover,
     openReferenceInNewTab,
     pasteCopiedNoteIntoNewTopNote,
-    pasteCopiedNoteReferenceIntoNewTopNote,
 } from './keyboard-events.js';
 import { actionRedo, actionUndo } from '../actions/history-actions.js';
 import { hasRootsBelowLoadedWindow } from '../services/infinite-scroll-service.js';
@@ -679,9 +677,6 @@ function markContextMenuNoteClipboard(noteId) {
     if (ModeContext.clipboardMode !== 'note') {
         ModeContext.setClipboardMode('note');
     }
-    if (ModeContext.clipboardNoteId !== noteId) {
-        ModeContext.setClipboardNoteId(noteId);
-    }
 }
 
 async function copyNoteFromContextMenu(noteId) {
@@ -704,34 +699,6 @@ async function copyNoteFromContextMenu(noteId) {
     markContextMenuNoteClipboard(
         typeof copiedNoteId === 'string' && copiedNoteId.length > 0 ? copiedNoteId : noteId,
     );
-}
-
-async function pasteReferenceFromContextMenu(noteId) {
-    if (typeof noteId !== 'string' || noteId.length === 0) {
-        throw new Error('pasteReferenceFromContextMenu requires noteId');
-    }
-
-    const referenceNoteId = ModeContext.clipboardNoteId;
-    if (typeof referenceNoteId !== 'string' || referenceNoteId.length === 0) {
-        throw new Error('Cannot paste reference: no copied note UUID available');
-    }
-
-    await focusNoteForContextAction(noteId);
-    await actionPasteReferenceSibling(referenceNoteId);
-}
-
-async function pasteReferenceAsChildFromContextMenu(noteId) {
-    if (typeof noteId !== 'string' || noteId.length === 0) {
-        throw new Error('pasteReferenceAsChildFromContextMenu requires noteId');
-    }
-
-    const referenceNoteId = ModeContext.clipboardNoteId;
-    if (typeof referenceNoteId !== 'string' || referenceNoteId.length === 0) {
-        throw new Error('Cannot paste reference as child: no copied note UUID available');
-    }
-
-    await focusNoteForContextAction(noteId);
-    await actionPasteReferenceChild(referenceNoteId);
 }
 
 async function addNoteAtTopFromContextMenu() {
@@ -997,17 +964,9 @@ function showNoteContextMenu(event, noteId, imageContext, selectedTextRange, ref
         ? normalizeSelectedTextForTagAction(selectedTextRange.toString())
         : null;
     const hasNoteClipboard = ModeContext.clipboardMode === 'note';
-    const hasReferenceClipboard = (
-        hasNoteClipboard
-        && typeof ModeContext.clipboardNoteId === 'string'
-        && ModeContext.clipboardNoteId.length > 0
-    );
-    // Where Paste Reference Into Note would put the reference: in the edited note's
-    // text, at the right-click (or the text selected before it).
-    let pasteHereRange = null;
-    if (hasReferenceClipboard) {
-        pasteHereRange = pasteReferenceHereRange(noteElement, event.target, event.clientX, event.clientY);
-    }
+    // Where Link to… and Embed… type: in the edited note's text, at the right-click
+    // (or around the text selected before it).
+    const referenceRange = referenceInsertRange(noteElement, event.target, event.clientX, event.clientY);
     const outline = describeOutlinePosition(noteElement);
     const context = {
         kind: 'note',
@@ -1021,8 +980,7 @@ function showNoteContextMenu(event, noteId, imageContext, selectedTextRange, ref
         imageContext,
         hasSelectedText,
         hasNoteClipboard,
-        hasReferenceClipboard,
-        canPasteReferenceHere: pasteHereRange !== null,
+        canInsertReference: referenceRange !== null,
         canAddStyle: ModeContext.isEditingNote(noteId),
         canRemoveFormatting: ModeContext.isEditingNote(noteId),
         canAddDiagram: ModeContext.isEditingNote(noteId),
@@ -1088,23 +1046,11 @@ function showNoteContextMenu(event, noteId, imageContext, selectedTextRange, ref
                     await actionPasteNoteChild();
                 });
             },
-            onPasteReference: (targetNoteId) => {
-                void CommandGate.run('contextMenu.note.paste_reference', async () => {
-                    await pasteReferenceFromContextMenu(targetNoteId);
-                });
+            onLinkTo: (targetNoteId) => {
+                typeReferenceOpener(targetNoteId, referenceRange, 'link');
             },
-            onPasteReferenceChild: (targetNoteId) => {
-                void CommandGate.run('contextMenu.note.paste_reference_child', async () => {
-                    await pasteReferenceAsChildFromContextMenu(targetNoteId);
-                });
-            },
-            onPasteReferenceHere: (targetNoteId) => {
-                void CommandGate.run('contextMenu.note.paste_reference_here', async () => {
-                    if (ModeContext.currentNoteId !== targetNoteId || pasteHereRange === null) {
-                        throw new Error('Paste Reference Into Note requires the right-clicked note to be edited');
-                    }
-                    insertReferenceTokenAtRange(`[[${ModeContext.clipboardNoteId}]]`, pasteHereRange);
-                });
+            onEmbed: (targetNoteId) => {
+                typeReferenceOpener(targetNoteId, referenceRange, 'embed');
             },
             onOpenReferenceSource: (referenceNoteId) => {
                 void CommandGate.run('contextMenu.reference.open_source', async () => {
@@ -1426,9 +1372,6 @@ function showViewContextMenu(event) {
     const items = buildContextMenuItems(context, {
         onPasteNoteAtTop: () => {
             void pasteCopiedNoteIntoNewTopNote();
-        },
-        onPasteReferenceAtTop: () => {
-            void pasteCopiedNoteReferenceIntoNewTopNote();
         },
         onUndo: () => {
             void CommandGate.run('contextMenu.view.undo', async () => {

@@ -27,9 +27,17 @@ function installMeasurementCounter(t, rects) {
             counter.ranges += 1;
             return { selectNodeContents() {}, getClientRects() { return rects; }, detach() {} };
         },
+        // The measured element stands in for its one text node.
+        createTreeWalker(root) {
+            let given = false;
+            return { nextNode() { const node = given ? null : root; given = true; return node; } };
+        },
     };
+    const originalNodeFilter = globalThis.NodeFilter;
+    globalThis.NodeFilter = { SHOW_TEXT: 4 };
     t.after(() => {
         globalThis.document = originalDocument;
+        globalThis.NodeFilter = originalNodeFilter;
         globalThis.window = originalWindow;
         globalThis.sessionStorage = originalSessionStorage;
         globalThis.localStorage = originalLocalStorage;

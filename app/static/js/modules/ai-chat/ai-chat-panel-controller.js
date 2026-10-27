@@ -768,11 +768,9 @@ class AiChatPanelController {
                 renderedPlainText: payload.plain_text,
                 logger: Logger,
             });
+            // A response is not a note: the note copied last stays first in the `[[` list.
             if (ModeContext.clipboardMode !== 'note') {
                 ModeContext.setClipboardMode('note');
-            }
-            if (ModeContext.clipboardNoteId !== null) {
-                ModeContext.setClipboardNoteId(null);
             }
         } catch (error) {
             rethrowUnexpectedError(error);

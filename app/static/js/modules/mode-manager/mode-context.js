@@ -85,7 +85,6 @@ class ModeContext {
         this._undoContextEpoch = this._loadUndoContextEpoch();
         
         // Clipboard mode tracking
-        this._clipboardNoteId = null;
         this._clipboardMode = 'system'; // 'system' for text, 'note' for note copying
         
         // Connection state tracking
@@ -883,20 +882,6 @@ class ModeContext {
         return this._lastContentChangeTime;
     }
 
-    setClipboardNoteId(noteId) {
-        
-        this._assertStateChanged('clipboardNoteId', this._clipboardNoteId, noteId);
-        
-        if (noteId === null) Logger.logAction('Clearing clipboard note ID');
-        else Logger.logAction(`Setting clipboard note ID to: ${noteId}`);
-        this._clipboardNoteId = noteId;
-        this._notifyListeners('clipboardNoteId', noteId);
-        return this;
-    }
-
-    get clipboardNoteId() {
-        return this._clipboardNoteId;
-    }
     
     setClipboardMode(mode) {
         if (mode !== 'system' && mode !== 'note') {

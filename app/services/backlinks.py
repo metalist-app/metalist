@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from typing import Dict, List, Optional, Set
 
+from app.services.embedded_references import parse_reference_inner
 from app.services.note_store import store as note_store
 from app.utils.text_utils import strip_html
 
@@ -78,6 +79,17 @@ def _extract_preview(content_html: str) -> str:
 def _strip_reference_tokens(text: str) -> str:
     if not isinstance(text, str):
         raise TypeError("text must be a string")
-    without_tokens = _REFERENCE_TOKEN_RE.sub(" ", text)
+    without_tokens = _REFERENCE_TOKEN_RE.sub(_shown_text_of_token, text)
     normalized = _WHITESPACE_RE.sub(" ", without_tokens)
     return normalized.strip()
+
+
+def _shown_text_of_token(match: re.Match[str]) -> str:
+    """A link's text from its | reads in its place (docs/ui/references.md, "Link text")."""
+    token = match.group(0)
+    if token.startswith("!"):
+        return " "
+    target = parse_reference_inner(token[len("[["):-len("]]")])
+    if target is None or target.link_text is None:
+        return " "
+    return f" {target.link_text} "

@@ -4,6 +4,7 @@ import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import { captureSelectionSnapshot, getActiveEditable, getActiveNoteId, restoreSelection } from '../../editor-selection.js';
 import { createNote, createNoteAtTop } from '../actions/note-actions.js';
 import { requireCreatedNoteId } from './root-note-creation-service.js';
+import { scrollRectIntoUsableViewport } from './viewport-reference.js';
 import { actionSaveNote } from '../actions/content-actions.js';
 import { actionSelectNote, actionSwitchNotes } from '../actions/selection-actions.js';
 
@@ -178,13 +179,23 @@ function getSelectionLineContext(contentElement) {
         };
     }
 
+    // Read within the caret's own line: the line element (a <div> or <p>) holding it, or the
+    // note itself for text written straight in it. Across line elements a range's text has no
+    // line break, so the line above read as text before the caret and the file got an empty
+    // line above it.
+    let lineRoot = contentElement;
+    const lineElement = findDirectLineContainer(contentElement, range.startContainer);
+    if (lineElement !== null && lineElement.contains(range.endContainer)) {
+        lineRoot = lineElement;
+    }
+
     const beforeRange = document.createRange();
-    beforeRange.selectNodeContents(contentElement);
+    beforeRange.selectNodeContents(lineRoot);
     beforeRange.setEnd(range.startContainer, range.startOffset);
     const beforeText = beforeRange.toString();
 
     const afterRange = document.createRange();
-    afterRange.selectNodeContents(contentElement);
+    afterRange.selectNodeContents(lineRoot);
     afterRange.setStart(range.endContainer, range.endOffset);
     const afterText = afterRange.toString();
 
@@ -263,31 +274,62 @@ function insertReferenceTokenAtSelection(contentElement, referenceToken) {
         insertionText = `${insertionText}\n`;
     }
 
+    const scrollBefore = window.scrollY;
     insertPlainTextAtCurrentSelection(insertionText);
+    keepInsertedTokenInSight(contentElement, referenceToken, scrollBefore);
     if (!ModeContext.isDirty) {
         ModeContext.setDirty(true);
     }
 }
 
-export function insertReferenceTokenIntoActiveEditor(referenceToken) {
+// The inserted file stays in sight, the same in every browser (docs/ui/interaction-principles.md,
+// principle 3; agreed 2026-10-27): the browser's own scroll while inserting is undone (Firefox
+// shows the caret's line, below the token; Chrome shows nothing), then the page moves the
+// minimum distance that shows the token's line below the search controls.
+function keepInsertedTokenInSight(contentElement, referenceToken, scrollBefore) {
+    const token = insertedTokenRange(contentElement, referenceToken);
+    const place = () => {
+        if (window.scrollY !== scrollBefore) {
+            window.scrollTo({ top: scrollBefore, behavior: 'instant' });
+        }
+        scrollRectIntoUsableViewport(token.getBoundingClientRect());
+    };
+    place();
+    // Firefox scrolls to its caret a frame after inserting: placed again once it has.
+    // The same placement, from where the page was before inserting, so it lands where it did.
+    requestAnimationFrame(place);
+}
+
+// The token just inserted: the last occurrence ending at or before the caret.
+function insertedTokenRange(contentElement, referenceToken) {
+    const selection = window.getSelection();
+    if (selection === null || selection.rangeCount === 0) {
+        throw new Error('The caret is gone after inserting a file reference');
+    }
+    const caret = selection.getRangeAt(0);
+    const walker = document.createTreeWalker(contentElement, NodeFilter.SHOW_TEXT);
+    let inserted = null;
+    for (let text = walker.nextNode(); text !== null; text = walker.nextNode()) {
+        for (let start = text.data.indexOf(referenceToken); start !== NOT_FOUND; start = text.data.indexOf(referenceToken, start + 1)) {
+            const range = document.createRange();
+            range.setStart(text, start);
+            range.setEnd(text, start + referenceToken.length);
+            if (range.compareBoundaryPoints(Range.START_TO_END, caret) <= 0) {
+                inserted = range;
+            }
+        }
+    }
+    if (inserted === null) {
+        throw new Error(`The inserted file reference ${referenceToken} is not before the caret`);
+    }
+    return inserted;
+}
+
+function insertReferenceTokenIntoActiveEditor(referenceToken) {
     const contentElement = requireActiveEditable(referenceToken);
     contentElement.focus();
     restoreSelection();
     ensureSelectionInsideEditableContent(contentElement);
-    insertReferenceTokenAtSelection(contentElement, referenceToken);
-}
-
-// Paste Reference Into Note: the token at `range` (a point, or text it replaces) in
-// the note being edited.
-export function insertReferenceTokenAtRange(referenceToken, range) {
-    const contentElement = requireActiveEditable(referenceToken);
-    if (!(range instanceof Range) || !contentElement.contains(range.startContainer) || !contentElement.contains(range.endContainer)) {
-        throw new Error('Paste Reference Into Note requires a range in the edited note');
-    }
-    contentElement.focus({ preventScroll: true });
-    const selection = window.getSelection();
-    selection.removeAllRanges();
-    selection.addRange(range);
     insertReferenceTokenAtSelection(contentElement, referenceToken);
 }
 

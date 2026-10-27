@@ -339,13 +339,14 @@ export const NotesAPI = {
         });
     },
 
-    // The view a note is in, which decides what a robot count (🤖 N) counts
-    // and which children Suggest Tags with AI includes.
+    // The view a note is in, which decides what a robot count (🤖 N) counts,
+    // which children Suggest Tags with AI includes and which notes the `[[`
+    // suggestions rank first.
     viewScope() {
         const tabId = ModeContext.activeTabId;
         const search = ModeContext.getExecutedSearchQuery(tabId);
         if (typeof tabId !== 'string' || tabId === '' || typeof search !== 'string') {
-            throw new Error('Robot proposal actions require the active tab and its search');
+            throw new Error('The view scope requires the active tab and its search');
         }
         return { search, tabId, isUntaggedView: ModeContext.isUntaggedView };
     },
@@ -673,7 +674,7 @@ export const NotesAPI = {
     },
 
     getNoteElement(noteId) {
-        const noteElement = document.querySelector(`[data-note-id="${noteId}"]`);
+        const noteElement = document.querySelector(`.note[data-note-id="${noteId}"]`);
         if (!noteElement) {
             throw new Error(`Note not found: ${noteId}`);
         }
@@ -853,7 +854,7 @@ export const NotesAPI = {
         }
         return this._apiCall(CONFIG.API.NOTES.REFERENCE_SUGGESTIONS, {
             method: 'POST',
-            body: JSON.stringify({ query: query, editing_note_id: editingNoteId }),
+            body: JSON.stringify({ query: query, editing_note_id: editingNoteId, ...this.viewScope() }),
             signal: signal
         });
     },
@@ -1074,6 +1075,20 @@ export const NotesAPI = {
         });
     },
 
+    // A reference's preview card: the top of the note as the list draws it, or
+    // status 'deleted' with no markup for a note that is not there.
+    async getReferencePreview(noteId) {
+        if (typeof noteId !== 'string' || noteId.length === 0) {
+            throw new Error('getReferencePreview requires a noteId string');
+        }
+        const response = await this._apiCall(CONFIG.API.NOTES.PREVIEW(noteId), { method: 'GET' });
+        if (response === null || typeof response !== 'object' || typeof response.html !== 'string'
+            || !['ready', 'deleted'].includes(response.status) || (response.status === 'ready') !== (response.html.length > 0)) {
+            throw new Error('Invalid reference preview response');
+        }
+        return response;
+    },
+
     async exportCurrentViewAsHtml(theme, options) {
         if (theme !== 'dark' && theme !== 'light') {
             throw new Error("NotesAPI.exportCurrentViewAsHtml requires theme 'dark' or 'light'");
@@ -1232,30 +1247,6 @@ export const NotesAPI = {
             throw new Error('Outside-referrers response must carry a count');
         }
         return response.count;
-    },
-
-    // The copied note's reference, pasted where ⌘V / ⇧⌘V would paste the note.
-    async pasteReferenceSibling(targetNoteId, referenceNoteId) {
-        return this._pasteReference(CONFIG.API.NOTES.PASTE_REFERENCE_SIBLING(targetNoteId), referenceNoteId);
-    },
-
-    async pasteReferenceChild(targetNoteId, referenceNoteId) {
-        return this._pasteReference(CONFIG.API.NOTES.PASTE_REFERENCE_CHILD(targetNoteId), referenceNoteId);
-    },
-
-    async _pasteReference(url, referenceNoteId) {
-        if (typeof referenceNoteId !== 'string' || referenceNoteId.length === 0) {
-            throw new Error('Reference paste requires the copied note id');
-        }
-        const body = {
-            reference_note_id: referenceNoteId,
-            search_query: ModeContext.searchQuery,
-        };
-        return this._apiCall(url, {
-            method: 'POST',
-            claimSession: true,
-            body: JSON.stringify(body),
-        });
     },
 
     // Note locks removed: single-tab session ownership enforces exclusivity.

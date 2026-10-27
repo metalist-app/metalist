@@ -312,9 +312,12 @@ def test_collapsed_note_starting_with_a_reference_hides_its_later_lines(monkeypa
         editing_note_id=None,
     )
 
+    # The embed is the first line and stays an embed, its source folded to its
+    # first line, as a folded note is one line; docs/ui/references.md.
     rendered = state.payloads["host"]["content"]
     assert "second line" not in rendered
-    assert '<span class="note-reference-link-title">Kyoto hotel</span>' in rendered
+    assert "note-embed-block" in rendered and "note-reference-link-mode" not in rendered
+    assert "Kyoto hotel" in rendered
     assert "3 nights" not in rendered
     assert state.payloads["host"]["flags"]["isCollapsible"] is True
 

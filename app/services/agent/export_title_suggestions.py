@@ -35,6 +35,7 @@ from app.services.agent.ai_send import send_structured
 from app.services.content_formatting import extract_note_text_for_agent
 from app.services.content_formatting import is_password_note
 from app.services.content_formatting import is_username_note
+from app.services.embedded_references import text_with_references_as_words
 from app.services.note_store import store as note_store
 from app.services.search_index import extract_ordered_tags_for_search
 from app.contracts import preserves, produces, requires
@@ -55,7 +56,6 @@ MAX_PREVIOUS_TITLES = 10
 # (some hidden: the dialog says private notes are not sent), "ready".
 ExportTitleAvailability = Literal["nothing", "private", "partial", "ready"]
 
-_REFERENCE_TOKEN = re.compile(r"!?\[\[[^\]]+\]\]")
 
 _INSTRUCTIONS = (
     "You title a document made of the user's notes, to be printed or saved as a file. Give one "
@@ -123,8 +123,8 @@ def build_export_title_request(
             continue
         text, redacted = extract_note_text_for_agent(content_html=record.content, tags=record.tags)
         assert not redacted, "A note the AI may read is never a password"
-        # Embedded notes and files are references, not words.
-        words = " ".join(_REFERENCE_TOKEN.sub(" ", text).split())[:_MAX_NOTE_CHARACTERS]
+        # Embedded notes and files are references, not words; a link's text is.
+        words = " ".join(text_with_references_as_words(text).split())[:_MAX_NOTE_CHARACTERS]
         if words == "":
             continue
         note = {"depth": depth, "content_text": words, "tags": list(extract_ordered_tags_for_search(record.tags))}

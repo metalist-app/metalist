@@ -61,6 +61,24 @@ function rectsShareRenderedLine(firstRect, secondRect) {
     return overlapHeight >= shorterRectHeight * SAME_LINE_VERTICAL_OVERLAP_RATIO;
 }
 
+// The boxes of the text's lines. Only text: a range over the whole element also
+// returns the box of each block in it (a line's <div>, an embed's panel), as tall
+// as all its lines, which made a line that wraps count as one. Pictures and other
+// media make a note foldable on the server (preview_html_has_media).
+function textLineRects(contentElement) {
+    const range = globalThis.document.createRange();
+    const walker = globalThis.document.createTreeWalker(contentElement, globalThis.NodeFilter.SHOW_TEXT);
+    const rects = [];
+    for (let text = walker.nextNode(); text !== null; text = walker.nextNode()) {
+        range.selectNodeContents(text);
+        rects.push(...range.getClientRects());
+    }
+    if (typeof range.detach === 'function') {
+        range.detach();
+    }
+    return rects;
+}
+
 // Returns the number of rendered line boxes, stopping at 2: callers only ask
 // whether content spans more than one line, and line groups never merge.
 function countRenderedLineBoxesUpToTwo(contentElement) {
@@ -68,18 +86,13 @@ function countRenderedLineBoxesUpToTwo(contentElement) {
         return null;
     }
 
-    const range = globalThis.document.createRange();
-    range.selectNodeContents(contentElement);
-    const rects = Array.from(range.getClientRects()).filter((rect) => {
+    const rects = textLineRects(contentElement).filter((rect) => {
         return rect
             && typeof rect.width === 'number'
             && typeof rect.height === 'number'
             && rect.width > MAX_EMPTY_RECT_EXTENT_PX
             && rect.height > MAX_EMPTY_RECT_EXTENT_PX;
     });
-    if (typeof range.detach === 'function') {
-        range.detach();
-    }
 
     const renderedLines = [];
     for (const rect of rects) {

@@ -3898,6 +3898,9 @@ html[data-theme="dark"] .ai-chat-header-actions #ai-chat-spend-toggle[aria-press
     transition: filter 120ms ease, opacity 120ms ease;
 }
 
+/* The arrow's glyph sits on the baseline of one 27px line; fold-arrow-alignment-service.js
+   moves the arrow so that baseline is the note's first line's. This top is its place
+   when the first line is not text (a picture, a formula). */
 .note-collapse-toggle {
     position: absolute;
     top: 3px;
@@ -3905,20 +3908,19 @@ html[data-theme="dark"] .ai-chat-header-actions #ai-chat-spend-toggle[aria-press
     width: 27px;
     height: 27px;
     display: none;
-    align-items: center;
-    justify-content: center;
     padding: 0;
     border: none;
     background: transparent;
     cursor: pointer;
     font-size: 23px;
-    line-height: 1;
+    line-height: 27px;
+    text-align: center;
     color: rgba(0, 0, 0, 0.35);
     z-index: 5;
 }
 
 .note[data-can-collapse="true"] > .note-collapse-toggle {
-    display: flex;
+    display: block;
 }
 
 .note-collapse-toggle:hover {
@@ -3964,6 +3966,21 @@ html[data-theme="dark"] .ai-chat-header-actions #ai-chat-spend-toggle[aria-press
     line-height: inherit;
 }
 
+/* A folded note whose first line is an embed shows the embed whole: an embed is a
+   line of its own and stays an embed folded (docs/ui/references.md). */
+.note.collapsed:not(.editing) .note-content:has(.note-reference-note.note-embed-block) {
+    max-height: none;
+    overflow: visible;
+    display: block;
+}
+
+/* A note that starts with a paragraph (pasted or written by the AI) starts its first line
+   at the top, as a folded note shows it and as Markdown does: folding moves neither the
+   line nor its arrow (docs/ui/controls.md, "Where a note's arrow sits"). */
+.note-content > p:first-child {
+    margin-top: 0;
+}
+
 .note.collapsed:not(.editing) .note-content:has(img) {
     max-height: 4.8em;
 }
@@ -3972,12 +3989,14 @@ html[data-theme="dark"] .ai-chat-header-actions #ai-chat-spend-toggle[aria-press
     max-height: 1.75em;
 }
 
-.note.collapsed:not(.editing) .note-content :not(img) {
+/* A folded note's first line is drawn as one line of text; an embed on it is an
+   embed, drawn as everywhere (docs/ui/references.md), so these leave it alone. */
+.note.collapsed:not(.editing) .note-content :not(img):not(:where(.note-reference-note.note-embed-block, .note-reference-note.note-embed-block *)) {
     font-size: inherit !important;
     line-height: inherit !important;
 }
 
-.note.collapsed:not(.editing) .note-content .meta-heading {
+.note.collapsed:not(.editing) .note-content .meta-heading:not(:where(.note-reference-note.note-embed-block, .note-reference-note.note-embed-block *)) {
     font-size: 1.35em !important;
 }
 
@@ -4007,17 +4026,17 @@ html[data-theme="dark"] .ai-chat-header-actions #ai-chat-spend-toggle[aria-press
     tr,
     th,
     td
-) {
+):not(:where(.note-reference-note.note-embed-block, .note-reference-note.note-embed-block *)) {
     display: block;
     margin: 0 !important;
     padding: 0;
 }
 
-.note.collapsed:not(.editing) .note-content br {
+.note.collapsed:not(.editing) .note-content br:not(:where(.note-reference-note.note-embed-block, .note-reference-note.note-embed-block *)) {
     display: inline;
 }
 
-.note.collapsed:not(.editing) .note-content img {
+.note.collapsed:not(.editing) .note-content img:not(:where(.note-reference-note.note-embed-block, .note-reference-note.note-embed-block *)) {
     height: 4.5em !important;
     width: 7.5em !important;
     max-height: 4.5em !important;
@@ -4829,10 +4848,11 @@ html[data-theme="dark"] .note-fullscreen-close {
     border-radius: 6px;
 }
 
+/* A folded note keeps its first line's height: folding moves neither the line nor its
+   arrow (docs/ui/controls.md, "Where a note's arrow sits"). */
 .note.collapsed:not(.editing) .note-content:has(.note-reference-note.note-reference-link-mode) {
     max-height: none;
     display: block;
-    line-height: 1.25;
 }
 
 .note.collapsed:not(.editing) .note-reference-block.note-reference-note.note-reference-link-mode {
@@ -4857,7 +4877,6 @@ html[data-theme="dark"] .note-fullscreen-close {
 .note.collapsed:not(.editing) .note-content:has(.note-reference-file:not(.note-reference-file-image):not(.note-reference-file-excalidraw)) {
     max-height: none;
     display: block;
-    line-height: 1.25;
 }
 
 .note.collapsed:not(.editing) .note-reference-block.note-reference-file-image {
@@ -4998,16 +5017,16 @@ html[data-theme="dark"] .note.collapsed:not(.editing) .note-content img.note-fil
     display: block;
 }
 
-/* Embeds (docs/ui/references.md): a note whose only content is a reference
-   shows that note in place, tinted, drawn exactly as the main tree draws
-   notes: the same boxes, indent, spacing and arrows. */
+/* Embeds (docs/ui/references.md): a note whose only content is an embed
+   (![[...]]) shows that note in place, tinted, drawn exactly as the main tree
+   draws notes: the same boxes, indent, spacing and arrows. */
 .note:not(.editing):has(> .note-content > .note-reference-only) {
     background-color: var(--embed-tint-1);
     border-color: var(--embed-edge);
 }
 
-/* The note's only reference is the note: no panel of its own. */
-.note-reference-only .note-reference-block:not(.note-reference-block .note-reference-block) {
+/* The note's only embed is the note: no panel of its own. */
+.note-reference-block.note-embed-held {
     border: 0;
     border-radius: 0;
     padding: 0;
@@ -5039,8 +5058,8 @@ html[data-theme="dark"] .note.collapsed:not(.editing) .note-content img.note-fil
     margin-left: calc(var(--note-child-indentation) - 15px);
 }
 
-/* A note in an embed that is itself only a reference: a shade deeper. Its
-   reference is the note, as for the holder. */
+/* A note in an embed that is itself only an embed: a shade deeper. Its
+   embed is the note, as for the holder. */
 .note-embed-holds-embed {
     background: var(--embed-tint-2);
 }
@@ -5059,24 +5078,18 @@ html[data-theme="dark"] .note.collapsed:not(.editing) .note-content img.note-fil
     background: var(--embed-tint-2);
 }
 
-.note-embed-holds-embed .note-reference-block.note-embed-block,
-.note-reference-block.note-reference-embed-first-line {
-    border: 0;
-    border-radius: 0;
-    padding: 0;
-    background: transparent;
-}
-
 /* The arrows of the notes in an embed, where the main tree has them. */
+/* As a note's arrow: one 27px line, moved onto the first line's baseline. */
 .note-embed-collapse-toggle {
     position: absolute;
     top: 3px;
     left: -29px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    display: block;
     width: 27px;
     height: 27px;
+    font-size: 23px;
+    line-height: 27px;
+    text-align: center;
     margin: 0;
     padding: 0;
     border: 0;
@@ -5088,8 +5101,6 @@ html[data-theme="dark"] .note.collapsed:not(.editing) .note-content img.note-fil
 
 .note-embed-collapse-toggle::before {
     content: '\25BE';
-    font-size: 23px;
-    line-height: 1;
 }
 
 .note-embed-collapse-toggle[aria-expanded="false"]::before {
@@ -5100,9 +5111,15 @@ html[data-theme="dark"] .note.collapsed:not(.editing) .note-content img.note-fil
     color: #000000;
 }
 
-/* The embed's first note is its holder, whose own arrow folds it. */
-.note-embed-root > .note-embed-body > .note-embed-collapse-toggle {
+/* A held embed's first note is its holder, whose own arrow folds it. */
+.note-embed-held > .note-reference-content > .note-embed-with-source > .note-embed-root > .note-embed-body > .note-embed-collapse-toggle {
     display: none;
+}
+
+/* An embed amid other content folds its first note with its own arrow, inside
+   its panel, at the left of that note's first line. */
+.note-reference-block.note-embed-block:not(.note-embed-held):has(> .note-reference-content > .note-embed-with-source > .note-embed-root > .note-embed-body > .note-embed-collapse-toggle) {
+    padding-left: 29px;
 }
 
 /* Full screen and floating windows are read-only views: no embed arrows. */
@@ -5111,7 +5128,7 @@ html[data-theme="dark"] .note.collapsed:not(.editing) .note-content img.note-fil
 }
 
 /* Links: link text with its arrow, in the line, no panel. */
-.note-reference-note.note-reference-link-mode:not(.note-reference-embed-first-line) {
+.note-reference-note.note-reference-link-mode {
     display: inline;
     margin: 0;
     padding: 0;
@@ -5120,21 +5137,21 @@ html[data-theme="dark"] .note.collapsed:not(.editing) .note-content img.note-fil
     background: transparent;
 }
 
-.note-reference-note.note-reference-link-mode:not(.note-reference-embed-first-line) > .note-reference-content {
+.note-reference-note.note-reference-link-mode > .note-reference-content {
     display: inline;
 }
 
-.note-reference-note.note-reference-link-mode:not(.note-reference-embed-first-line) .note-reference-link {
+.note-reference-note.note-reference-link-mode .note-reference-link {
     display: inline;
     color: #1d5fb8;
 }
 
-.note-reference-note.note-reference-link-mode:not(.note-reference-embed-first-line) .note-reference-link-icon {
+.note-reference-note.note-reference-link-mode .note-reference-link-icon {
     display: inline-block;
     text-decoration: none;
 }
 
-.note-reference-note.note-reference-link-mode:not(.note-reference-embed-first-line) .note-reference-link {
+.note-reference-note.note-reference-link-mode .note-reference-link {
     display: inline-flex;
     align-items: baseline;
     flex-wrap: wrap;
@@ -5145,57 +5162,7 @@ html[data-theme="dark"] .note.collapsed:not(.editing) .note-content img.note-fil
     margin: 0 0 0 0.2em;
 }
 
-/* A collapsed embed looks like any collapsed note: its first line as plain
-   text, the reference icon at the top right. A press on the text edits the
-   note, as anywhere in an embed; only the icon goes to the source. */
-.note-reference-embed-first-line {
-    position: relative;
-}
-
-.note-reference-embed-first-line > .note-reference-content > .note-reference-link {
-    /* The padding keeps the text clear of the icon: inside the width, not past it. */
-    box-sizing: border-box;
-    width: 100%;
-    padding-right: 1.6em;
-    color: inherit;
-    text-decoration: none;
-    pointer-events: none;
-}
-
-.note-reference-embed-first-line > .note-reference-content > .note-reference-link > .note-reference-link-title {
-    text-decoration: none;
-}
-
-/* The source's first line comes in its own blocks (a paragraph, a heading): each
-   stays on one line and ends with … where it would run under the icon. These
-   rules reach only the embed's own line, not a link written on it. */
-.note-reference-embed-first-line > .note-reference-content > .note-reference-link > .note-reference-link-title :not(img) {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.note-reference-embed-first-line > .note-reference-content > .note-reference-link > .note-reference-link-icon {
-    position: absolute;
-    top: 0;
-    right: 0;
-    width: 1.2em;
-    text-align: right;
-    color: #64748b;
-    pointer-events: auto;
-    cursor: pointer;
-}
-
-.note-reference-embed-first-line > .note-reference-content > .note-reference-link > .note-reference-link-icon:hover {
-    color: #2563eb;
-}
-
-html[data-theme="dark"] .note-reference-embed-first-line > .note-reference-content > .note-reference-link > .note-reference-link-icon {
-    color: #a9bbd3;
-}
-
-html[data-theme="dark"] .note-reference-block.note-reference-embed-first-line,
-html[data-theme="dark"] .note-embed-holds-embed .note-reference-block.note-embed-block {
+html[data-theme="dark"] .note-reference-block.note-embed-held {
     border: 0;
     background: transparent;
 }
@@ -6215,10 +6182,6 @@ html[data-theme="dark"] .context-menu-item.is-submenu-open {
     cursor: pointer;
 }
 
-.reference-suggestion:hover {
-    background: rgba(127, 127, 127, 0.1);
-}
-
 .reference-suggestion.is-selected {
     background: rgba(127, 127, 127, 0.2);
 }
@@ -6260,6 +6223,28 @@ html[data-theme="dark"] .context-menu-item.is-submenu-open {
     background: transparent;
     color: var(--text-color);
     font-weight: 600;
+}
+
+/* The highlighted suggestion's first lines, floating beside the list. */
+/* A reference's preview card (reference-preview-card-service.js): the top of
+   its note, drawn in a shadow root (reference-preview.css), cut at about six
+   lines. It floats and takes no pointer, so nothing under it moves. */
+.reference-preview {
+    position: fixed;
+    z-index: 12500;
+    box-sizing: border-box;
+    width: min(360px, calc(100vw - 16px));
+    padding: 8px 10px;
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+    background: var(--bg-color);
+    color: var(--text-color);
+    box-shadow: 0 8px 18px rgba(0, 0, 0, 0.16);
+    pointer-events: none;
+}
+
+.reference-preview[hidden] {
+    display: none;
 }
 
 /* Below a menu's actions, set off like a separated item. */
@@ -8638,7 +8623,7 @@ html[data-theme="dark"] .note:not(.editing):has(> .note-content > .note-referenc
     border-color: var(--embed-edge);
 }
 
-html[data-theme="dark"] .note-reference-note.note-reference-link-mode:not(.note-reference-embed-first-line) .note-reference-link {
+html[data-theme="dark"] .note-reference-note.note-reference-link-mode .note-reference-link {
     color: #8fbcf0;
 }
 
@@ -10227,6 +10212,37 @@ body.ai-tagging-locked .ai-chat-tag-operation select:enabled { cursor: pointer !
 }
 
 .note.collapsed:not(.editing) .note-content .meta-footnote-references {
+    display: none;
+}
+
+/* A folded note in an embed is one line, as in the list, ending with … when too
+   long. An embed held by its note is folded only while that note is: the note's
+   arrow measures it unfolded (collapse-affordance-service.js). */
+.note-embed-collapsed:not(.note-embed-held > .note-reference-content > .note-embed-with-source > .note-embed-root) > .note-embed-body > .note-embed-content,
+.note.collapsed:not(.editing) .note-embed-held > .note-reference-content > .note-embed-with-source > .note-embed-root.note-embed-collapsed > .note-embed-body > .note-embed-content {
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-line-clamp: 1;
+    -webkit-box-orient: vertical;
+}
+
+/* An embed on a folded note's line folds with the note, whose own arrow unfolds it:
+   the embed's arrow is hidden, its space kept so the line does not move. */
+.note.collapsed:not(.editing) > .note-content .note-embed-root.note-embed-collapsed > .note-embed-body > .note-embed-collapse-toggle,
+.note-embed-collapsed > .note-embed-body > .note-embed-content .note-embed-root > .note-embed-body > .note-embed-collapse-toggle {
+    visibility: hidden;
+}
+
+/* A folded footnote note in an embed shows its first line as in the list. */
+.note-embed-collapsed > .note-embed-body > .note-embed-content > .meta-footnotes-note {
+    max-height: 1.6em;
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-line-clamp: 1;
+    -webkit-box-orient: vertical;
+}
+
+.note-embed-collapsed > .note-embed-body > .note-embed-content .meta-footnote-references {
     display: none;
 }
 

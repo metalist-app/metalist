@@ -135,6 +135,8 @@ export function buildCommandPaletteEndpoints(deps) {
     const openKeyboardShortcutsHelp = requireAction(actions, 'openKeyboardShortcutsHelp');
     const attachFileToCurrentNote = requireAction(actions, 'attachFileToCurrentNote');
     const addExcalidrawDiagram = requireAction(actions, 'addExcalidrawDiagram');
+    const linkTo = requireAction(actions, 'linkTo');
+    const embed = requireAction(actions, 'embed');
     const trimUnusedFiles = requireAction(actions, 'trimUnusedFiles');
     const retryFailedLinkTitles = requireAction(actions, 'retryFailedLinkTitles');
     const exportCurrentViewAsHtml = requireAction(actions, 'exportCurrentViewAsHtml');
@@ -611,6 +613,20 @@ export function buildCommandPaletteEndpoints(deps) {
             label: 'Attach File…',
             closeOnExecute: true,
             execute: async () => attachFileToCurrentNote(),
+        },
+        {
+            id: 'action.link_to',
+            kind: 'action',
+            label: 'Link to…',
+            closeOnExecute: true,
+            execute: async () => linkTo(),
+        },
+        {
+            id: 'action.embed',
+            kind: 'action',
+            label: 'Embed…',
+            closeOnExecute: true,
+            execute: async () => embed(),
         },
         {
             id: 'action.add_excalidraw_diagram',

@@ -3,7 +3,7 @@
 Under 640 px wide MetaList becomes a read-only view of the notes plus capture: a phone on the
 local Wi-Fi, opened from its home screen. Desktop is unchanged. Built 2026-10-24 as a prototype,
 "blocked in": what is left is in [phone-later.md](../future-plans/phone-later.md). The decided
-mock: [phone-mocks.html](phone-mocks.html).
+mock: [phone-mocks.html](phone-mocks.html). Agreed, not built (2026-10-27): the phone becomes the desktop app on a smaller screen. It edits (tap a note to edit it, ☰ acts on it, ＋ is Enter), has search contexts and the AI chat on a screen of its own, and capture and `@inbox` go ([phone-same-app.md](../ready-to-build/phone-same-app.md)). It stays signed in beside the desktop, each with its own screen, locked per root note like any view ([multi-view-editing.md](../ready-to-build/multi-view-editing.md)).
 
 One screen, search and notes: nothing new is added where an existing piece (tags, search, the
 view options) does the job.

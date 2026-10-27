@@ -20,6 +20,9 @@ from app.services.client_state_service import load_client_state
 from app.services.client_state_service import load_command_palette_usage
 from app.services.client_state_service import save_client_preferences
 from app.services.client_state_service import save_command_palette_usage
+from app.services.client_state_service import COPIED_NOTE_PREFERENCE_KEY
+from app.services.client_state_service import copied_note_ids
+from app.services.client_state_service import remember_copied_note
 from app.security.sensitive_cache import clear_sensitive_caches
 from app.services.agent.cloud_privacy import CLOUD_PRIVACY_POLICY_PREFERENCE_KEY, CloudPrivacyPolicy, serialize_cloud_privacy_policy
 from app.services.agent.privacy_guard import cloud_privacy_revision
@@ -529,3 +532,25 @@ def test_saving_a_changed_cloud_privacy_policy_advances_its_revision(memory_sett
     assert cloud_privacy_revision.current() == before + 1, "a new privacy policy advances it"
     save_client_preferences(preferences={"pref.theme": "dark", CLOUD_PRIVACY_POLICY_PREFERENCE_KEY: journal_blacklisted}, token="")
     assert cloud_privacy_revision.current() == before + 1, "saving the same privacy policy again does not"
+
+
+COPIED_ID = "11111111-2222-3333-4444-555555555555"
+LATER_COPIED_ID = "66666666-7777-8888-9999-aaaaaaaaaaaa"
+
+
+def test_the_copied_note_is_remembered_and_only_the_server_sets_it(memory_settings_db) -> None:
+    del memory_settings_db
+    assert copied_note_ids(token="") == frozenset()
+
+    remember_copied_note(note_id=COPIED_ID, token="")
+    assert copied_note_ids(token="") == frozenset({COPIED_ID})
+
+    # A window saving its preferences (without the key, or with an older value) keeps it.
+    save_client_preferences(preferences={"pref.theme": "dark"}, token="")
+    save_client_preferences(preferences={"pref.theme": "light", COPIED_NOTE_PREFERENCE_KEY: LATER_COPIED_ID}, token="")
+    assert copied_note_ids(token="") == frozenset({COPIED_ID})
+
+    remember_copied_note(note_id=LATER_COPIED_ID, token="")
+    clear_sensitive_caches()  # as after a restart: read from storage
+    assert copied_note_ids(token="") == frozenset({LATER_COPIED_ID})
+    assert load_client_preferences(token="")["pref.theme"] == "light"

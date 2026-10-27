@@ -192,9 +192,13 @@ class DictationPasteRequest(TypedDict):
 
 @with_config(ConfigDict(strict=True))
 class ReferenceSuggestionsRequest(TypedDict):
-    """What was typed after `[[` in a note, and the note it is typed in."""
+    """What was typed after `[[` in a note, the note it is typed in, and the tab's view
+    (its search, '' for none, and kind), whose notes rank first."""
     query: Text
     editing_note_id: Identifier
+    search: Text
+    tabId: Identifier
+    isUntaggedView: bool
 
 @with_config(ConfigDict(strict=True))
 class TagSuggestionsRequest(TypedDict):
@@ -280,6 +284,13 @@ class AddTagProposalsRequest(TypedDict):
     clientId: Identifier
     undoContext: UndoContext
     viewport: Viewport
+
+# The fields naming a tab's view: its tab, search ('' for none) and kind. Every
+# request below that names a view carries them (routes/notes.py _view_note_ids).
+class ViewScope(TypedDict):
+    search: Text
+    tabId: Identifier
+    isUntaggedView: bool
 
 # The view a robot count (🤖 N) was shown in: its tab, search ('' for none) and kind.
 @with_config(ConfigDict(strict=True))
@@ -483,14 +494,6 @@ class PasteSiblingEndpointRequest(TypedDict):
 
 @with_config(ConfigDict(strict=True))
 class PasteChildEndpointRequest(TypedDict):
-    search_query: Text | None
-    clientId: Identifier
-    undoContext: UndoContext
-    viewport: Viewport
-
-@with_config(ConfigDict(strict=True))
-class PasteReferenceEndpointRequest(TypedDict):
-    reference_note_id: Identifier
     search_query: Text | None
     clientId: Identifier
     undoContext: UndoContext

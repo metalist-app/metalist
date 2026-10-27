@@ -187,6 +187,18 @@ If the user says `PLAN:` (optionally followed by context):
 3. After approval, immediately run the COMMIT CHECKPOINT workflow (with user permission for the required git commands) so PLAN.md is preserved.
 4. Reference PLAN.md throughout the feature work. On COMMIT FEATURE, delete PLAN.md as part of the process after merging and before reporting completion.
 
+### Early Look: Changes the User Sees
+For a change to what the user sees (agreed 2026-10-27), look at it yourself, then give the user an early look, before the full test set or any suite. The user decides what is right and wants to be in the loop early, not handed something polished in a wrong direction. Your own check catches obvious breakage (a blank panel, a broken layout, a dead button); it never replaces the user's look. Changes the user does not see (server-only, storage, sync) keep the usual flow.
+
+1. **Acceptance checks first.** Before the code, write short, concrete statements of what the user should see, from the note or the request ("the header 'State' stays on one line", "the menu follows the dark theme"), in `PLAN.md` or the reply. Written after looking, tests lock in what the code does, not what it should do.
+2. **Write the code.**
+3. **Check it yourself** in a throwaway MetaList (its own data folder and ports, never the user's vault or port 8443), in a real browser: each acceptance check with a screenshot, and the edges (a narrow window, dark theme, a collapsed note, long content, phone width).
+4. **Early look.** Hand it to the user with each acceptance check (pass or fail, with its screenshot), what you fixed on the way, and what you could not judge (timing, scrolling feel, focus and keyboard flow, a real phone): say so, never claim it. Before the early look: only the quick checks that the app starts and the page loads; no full test set, no suites, no checkpoint. Don't polish first: getting the early look quickly matters more than arriving complete.
+5. **Iterate.** Each problem you or the user find becomes a failing test first, then the fix, as in BUG.
+6. **Once the user confirms the direction,** write the remaining tests, checkpoint as below (quick suites only), and run the full suites only where they are already required (COMMIT FEATURE, before a push).
+
+On-screen behavior that moves things still follows "On-screen Behavior Follows the Interaction Principles" above: its cases are agreed before the code.
+
 ### Testing and Commits
 
 #### Windows Line Endings
@@ -196,9 +208,7 @@ Windows CI runners check out with `core.autocrlf=true`, which rewrites LF to CRL
 - Files whose bytes are pinned or reviewed belong under a `-text` rule in `.gitattributes` (as `app/static/js/vendor/**` is), so every platform checks out identical bytes. Do not make a test tolerate line-ending differences instead.
 
 #### If Testing Fails
-If the user tests the code and reports failure:
-1. Suggest doing a `git reset --hard HEAD` to undo the changes.
-2. Ask if the user wants to proceed with the reset before running it.
+A problem found when the user tries a change (at the early look or later) is expected: iterate, as in "Early Look" above, with a failing test first and then the fix. Offer `git reset --hard HEAD` only when the user says the whole approach is wrong, and ask before running it.
 
 #### If Testing Succeeds
 If the code works, suggest committing. There are two types:

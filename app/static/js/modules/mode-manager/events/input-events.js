@@ -7,6 +7,7 @@ import { enforceTagBarInputElement, validateAndRenderTagBar } from '../services/
 import { scrollWindowToYFastAnimated } from '../services/animated-scroll-service.js';
 import { initializeTagSuggestions, updateTagSuggestions } from '../services/tag-suggestions-service.js';
 import { initializeReferenceSuggestions, updateReferenceSuggestions } from '../services/reference-suggestions-service.js';
+import { initializeReferenceHoverPreviews } from '../services/reference-hover-preview-service.js';
 import { handleDictationPasteEvent, isDictationRawInsertInProgress, noteDictationEditSeen } from '../services/dictation-paste-service.js';
 
 
@@ -87,6 +88,7 @@ export function initInputEvents() {
     document.addEventListener('paste', handleTagBarPaste, { capture: true });
     initializeTagSuggestions();
     initializeReferenceSuggestions();
+    initializeReferenceHoverPreviews();
         
     Logger.logInit('Input events handler');
 }

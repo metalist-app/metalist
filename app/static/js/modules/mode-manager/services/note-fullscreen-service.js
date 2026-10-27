@@ -1,3 +1,4 @@
+import { watchFoldArrows } from './fold-arrow-alignment-service.js';
 import { ApplicationState } from '../../application-state.js';
 import { NotesAPI } from '../../api-client.js';
 import { hydrateImageFilePreviews } from './file-image-preview-service.js';
@@ -88,6 +89,7 @@ function createNoteFullscreenOverlay(markup) {
     scrollContainer.appendChild(tree);
     overlay.appendChild(scrollContainer);
     mainApp.appendChild(overlay);
+    watchFoldArrows(tree);
     return { overlay, tree, closeButton };
 }
 
