@@ -49,7 +49,7 @@ One row per item.
 - **Header:** magic `ML`, a suite byte (AES-256-GCM) and a version, followed by segments.
 - **A per-item file key:** a fresh random 256-bit key per item, stored wrapped by the vault key in the catalog. This keeps bulk file encryption off the vault key's nonce budget, and lets one item be re-encrypted alone.
 - **Streaming segments in one file:** fixed plaintext segments (64 KiB proposed), each sealed with a counter-derived nonce, the last marked final. This is the standard streaming-AEAD construction, as used by `age` and libsodium's secretstream. Large files stream, never sit wholly in memory, and are never plaintext on disk. Truncation, reordering and segment swapping are detected.
-- **Padding:** the plaintext is padded with Padmé (at most about 12% overhead) so stored sizes don't identify known documents. The padding is removed on read using the real size from the catalog.
+- **Padding:** the plaintext is padded with Padmé (at most about 12% overhead), plus a small random amount, so stored sizes don't identify known documents. The padding is removed on read using the real size from the catalog.
 - **No plaintext ever touches disk.** Temporary files hold ciphertext only.
 
 ## 5. Writing and editing (crash-safe order)
@@ -97,8 +97,8 @@ Test it like every migration.
 
 ## 10. Still open
 
-1. Padmé alone, or Padmé plus a small random amount.
-2. Hosted retention of deleted files: keep them while any retained snapshot references them (proposed, disclosed in the privacy policy), or cap at, say, 2 years.
+1. ~~Padmé alone, or plus a small random amount~~ **Decided 2026-10-27:** Padmé plus a small random amount (§4). How much is still to set.
+2. ~~Hosted retention of deleted files~~ **Decided 2026-10-27, for now:** keep them while any retained snapshot references them, disclosed in the privacy policy (§6). A cap such as 2 years may be revisited.
 3. Segment size (64 KiB proposed); tune on real files.
 4. The crash-leftover grace period and the sweep schedule.
 5. Hosted storage classes: how many days before a blob moves to infrequent access, and how that tier treats small files.

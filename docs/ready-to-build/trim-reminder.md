@@ -1,6 +1,6 @@
 # Trim reminder, and Trim that never breaks undo
 
-**Status:** Agreed with the maintainer 2026-10-27. Small; ready to build. §1 is agreed; the details in §2 are proposed, so adjust any that read badly.
+**Status:** Agreed with the maintainer 2026-10-27. Small; ready to build. §1 and §2 are agreed (§2 on 2026-10-27, after filing).
 
 Written from a read-only look at the code, without running it. Check every reference before relying on it; build only what's missing.
 
@@ -17,7 +17,7 @@ Written from a read-only look at the code, without running it. Check every refer
 - Like **Backup Reminder**: once the files no note references add up to **10 MB**, a card offers to trim them.
 - **Trimming stays a person's decision.** The card only asks; nothing is deleted automatically.
 
-## 2. Details (proposed)
+## 2. Details (agreed)
 
 - **The card:** same style and corner as the backup reminder. `12 MB of files aren't used by any note.` with **`Trim Unused Files…`**, which opens the usual confirmation, and a dismiss.
 - **The confirmation says what goes:** `Delete 4 unused files (12 MB)? This cannot be undone.`
@@ -47,4 +47,4 @@ Two holes are likely. Please confirm each with a test first:
 - Confirmed: `trim_unused_files` in `app/services/file_storage.py`; the Backup Reminder card to follow (`docs/ui/command-palette.md`).
 - **Fixed on filing:** `docs/ui/command-palette.md` called `Trim Unused Files…` "the only automatic cleanup path"; it is the only cleanup path, and a manual one.
 - Not built: the reminder; §3's undo and copied-note holes are unconfirmed (confirm each with a test first, as §3 asks).
-- **Open (§2, marked proposed):** the card's wording and corner, the confirmation's wording, the 10 MB step after a dismiss, and the off switch beside Backup Reminder.
+- **Agreed after filing (2026-10-27):** all of §2 as written: the card's wording and corner, the confirmation's wording, the 10 MB step after a dismiss, and the off switch beside Backup Reminder, on by default.

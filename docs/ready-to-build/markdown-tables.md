@@ -21,10 +21,10 @@ Written from a read-only look at `app/services/markdown_rendering.py`, without r
 - **Today:** in `_render_table_block`, a body row whose cell count differs from the header's ends the table, and the remaining rows show as plain text.
 - **Change, as in GFM:** keep the row. Fill missing cells with empty cells and drop extra ones. AI-written tables sometimes miss a cell.
 
-## 3. Escaped pipes (proposed; confirm against the GFM spec)
+## 3. Escaped pipes (as in GFM)
 
 - **Today:** `_split_table_row` splits on every `|`, so `a \| b` in a cell splits the row.
-- **Proposed, as in GFM:** `\|` is a literal `|` inside a cell, including inside a code span in a cell. A bare `|` still separates cells, in a code span too.
+- **Change, as in GFM:** `\|` is a literal `|` inside a cell, including inside a code span in a cell. A bare `|` still separates cells, in a code span too.
 
 ## 4. Columns at least as wide as their longest word
 
@@ -56,4 +56,4 @@ Written from a read-only look at `app/services/markdown_rendering.py`, without r
 - Confirmed in `app/services/markdown_rendering.py`: `render_markdown_to_html`, `_render_table_block`, `_split_table_row` and `_render_inline_markdown`.
 - Confirmed §4's cause: `.note-content` sets `overflow-wrap: anywhere` (`main.css`), and `.meta-markdown th, .meta-markdown td` and `.meta-csv-table td` don't override it.
 - Not built: `<br>` in cells, uneven rows, escaped pipes, column widths.
-- **Open (§3, marked proposed):** check `\|` against the GFM spec before building.
+- **Checked (§3):** the GFM tables extension says the same: an escaped `\|` is part of the cell, also inside a code span or other inline span, and a bare `|` splits cells even in a code span.
