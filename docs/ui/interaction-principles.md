@@ -15,6 +15,9 @@ from them, not decided case by case. When a new case comes up, reason from these
 2. **Only the user's action changes the screen.** Anything the user did not directly
    cause (scrolling, flashing, expanding, collapsing, extra spacing) is noise that
    costs attention. MetaList adds no motion, emphasis or state change of its own.
+   One exception is agreed, not built (2026-10-27), and is not a precedent: on the phone the
+   AI chat slides in over the notes and back, always on the user's tap or swipe, short, and
+   instant with Reduce Motion (`docs/ready-to-build/phone-same-app.md`, §5).
 
 3. **Never lose sight of what was just acted on.** This is the only reason MetaList
    may move things itself. If keeping the point still would leave it out of sight,

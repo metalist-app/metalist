@@ -199,6 +199,7 @@ before, so you write `miles` again rather than `distance`.
   suggestions.
 - **Search box:** after `exercise:`, also suggest property names used with tags that
   imply `exercise` (`jogging`'s `miles`), since upward search finds those.
+- Agreed, not built (2026-10-26): in the tag bar, when none of a tag's own or inherited property names match what is typed, the vault's are suggested, most used first (`docs/ready-to-build/property-suggestions-fallback.md`).
 - Never suggest the `jogging=3:miles=3` form.
 - **Units:** after a number (`dosage=10` in the tag bar, `dosage>5` in the search
   box), suggest the units used with that property, most used first. In the search

@@ -404,7 +404,8 @@ preferences are saved (`RETIRED_PROMPT_PREFERENCE_KEYS` and
 
 - Transcript/activity state lives only in server memory keyed by authenticated
   session token hash. Refresh rehydrates it; logout, auth reset, runtime lock, or
-  restart clears it.
+  restart clears it. Agreed, not built (2026-10-26): one conversation per vault, shared
+  live by every view, one answer at a time (`docs/ready-to-build/multi-view-editing.md`, §5).
 - The OpenAI usage/cost aggregate is separate process-wide server memory. Browser
   refresh and chat clearing retain it; its Reset button or server restart clears it.
 - Canonical future context includes only user text and completed assistant prose.

@@ -606,7 +606,7 @@ swap, or filesystem snapshots.
   does not replace or weaken server-side scope filtering.
 
 ### Multi-Client Support
-- Token issuance clears any previous tokens for that namespace process (one active browser tab/session per namespace)
+- Token issuance clears any previous tokens for that namespace process (one active browser tab/session per namespace). Agreed, not built (2026-10-26): several views on one vault at once, each signed in, with editing locked per root note (`docs/ready-to-build/multi-view-editing.md`). It re-checks every argument here that relies on a single session.
 - Token verification is bound to an `X-Metalist-Tab-Id` owner (tab-scoped sessions)
 - Browser auth cookies use namespace-scoped names (`metalist_auth_<namespace>`), so sessions on different namespace ports do not overwrite each other in the browser's host-wide cookie jar.
 - DEK is stored in memory alongside the active token; no DEK is persisted to disk
