@@ -16,6 +16,8 @@ const REQUESTS_QUIET_MS = 300;
 // language) are tagged at once, without a card.
 
 const SETTLE_MS = 400;
+// How long a click on a note may take to start editing it.
+const EDIT_START_TIMEOUT_MS = 10_000;
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 const MARKDOWN = '# Shopping\n\n- milk\n- eggs\n- bread';
@@ -53,23 +55,20 @@ async function edit(page, noteId) {
   await page.$eval(`[data-note-id="${noteId}"] > .note-content`, content => content.scrollIntoView({block: 'center'}));
   await pause(200);
   await page.click(`[data-note-id="${noteId}"] > .note-content`);
-  try {
-    await page.waitForFunction(async noteId => {
-      const {ModeContextInstance: mode} = await import('/static/js/modules/mode-manager/mode-context.js');
-      return mode.isEditing && mode.currentNoteId === noteId;
-    }, {timeout: 10_000}, noteId);
-  } catch (error) {
-    if (error.name !== 'TimeoutError') throw error;
-    // What the click met, to tell a covered note from one that ignored the click.
-    const seen = await page.evaluate(async noteId => {
-      const {ModeContextInstance: mode} = await import('/static/js/modules/mode-manager/mode-context.js');
-      const rect = document.querySelector(`[data-note-id="${noteId}"] > .note-content`).getBoundingClientRect();
-      const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
-      return {isEditing: mode.isEditing, editingOther: mode.currentNoteId !== noteId, rect: [rect.top, rect.height],
-        hit: hit === null ? null : `${hit.tagName}.${hit.className}`};
-    }, noteId);
-    throw new Error(`clicking note ${noteId} did not start editing it: ${JSON.stringify(seen)}`, {cause: error});
-  }
+  // Waits a frame at a time for editing to start; if it never does, reports what the click met,
+  // to tell a covered note from one that ignored the click.
+  const seen = await page.evaluate(async (noteId, timeoutMs) => {
+    const {ModeContextInstance: mode} = await import('/static/js/modules/mode-manager/mode-context.js');
+    const isEditingNote = () => mode.isEditing && mode.currentNoteId === noteId;
+    const deadline = performance.now() + timeoutMs;
+    while (!isEditingNote() && performance.now() < deadline) await new Promise(requestAnimationFrame);
+    if (isEditingNote()) return null;
+    const rect = document.querySelector(`[data-note-id="${noteId}"] > .note-content`).getBoundingClientRect();
+    const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+    return {isEditing: mode.isEditing, editingOther: mode.currentNoteId !== noteId, rect: [rect.top, rect.height],
+      hit: hit === null ? null : `${hit.tagName}.${hit.className}`};
+  }, noteId, EDIT_START_TIMEOUT_MS);
+  if (seen !== null) throw new Error(`clicking note ${noteId} did not start editing it: ${JSON.stringify(seen)}`);
   await idle(page);
 }
 
