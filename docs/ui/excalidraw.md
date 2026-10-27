@@ -2,6 +2,8 @@
 
 Hand-drawn diagrams drawn with the Excalidraw editor, stored as `.excalidraw` file attachments.
 
+Future plan (2026-10-27): charts of super-tag values work exactly like these diagrams, an embedded chart file opened full screen (`docs/future-plans/charts.md`).
+
 ## Storage
 - A diagram is an ordinary file attachment in `*.files.db` whose file kind is `excalidraw` (MIME type `application/vnd.excalidraw+json` or the `.excalidraw` extension). Notes reference it with `![[UUID]]` like any other file; `[[UUID]]` shows the usual compact file card.
 - Diagrams are the only attachments MetaList replaces in place. Every save increments the file's `content_revision`; a save that names a stale revision is refused (HTTP 409) so a second window cannot silently overwrite the first. Other attachments stay immutable.

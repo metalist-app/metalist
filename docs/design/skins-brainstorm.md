@@ -1,5 +1,7 @@
 # MetaList Skins: Illuminated Manuscript Brainstorm
 
+Related future plan (2026-10-27): user-named styles, `@style=name`, a safe subset of CSS (`docs/future-plans/user-styles.md`).
+
 2026-10-18. Brainstorm only: nothing is built and no MetaList code changed. A copy of the [Claude doc](https://claude.ai/code/artifact/249446c1-680b-491c-b24d-319114dcb862); the mockup is the canvas [MetaList Illuminated Skin](https://claude.ai/artifact/52YJNGfbbzzHZ3Tb6uTNBz).
 
 ## Where this stands

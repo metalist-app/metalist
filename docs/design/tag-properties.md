@@ -326,7 +326,11 @@ Decided 2026-10-23:
 
 - Renaming properties; property synonyms in the ontology.
 - Totals, averages and sorting by a property (for example "miles this month" beside
-  the result count, or Sort by `jogging:miles`).
+  the result count, or Sort by `jogging:miles`). Agreed, not built (2026-10-27):
+  summaries beside the result count and the `@datetime` tag
+  (`docs/ready-to-build/super-tag-summaries-and-date.md`); `@stats`, `@sum`, `@avg`,
+  `@min`, `@max` and `@count`, totals of a note's subtree under its text
+  (`docs/ready-to-build/stats-tag.md`); charts later (`docs/future-plans/charts.md`).
 - Values set by rules.
 - Value suggestions.
 - Unit conversions the user defines (`1mile = 1.609km`), so a comparison can include

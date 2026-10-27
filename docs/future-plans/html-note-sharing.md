@@ -158,3 +158,57 @@ Principles agreed with the maintainer 2026-10-25; still not scheduled, like the 
 ### A5. Related idea, not part of this addendum
 
 Typing `[[` could open a small search suggesting notes by their first line; choosing one inserts `[[UUID]]`, instead of copying a reference (⌘R) and pasting. To be designed separately.
+
+## Addendum B (2026-10-27): knowledge packs, collisions, provenance, updates and sharing by QR
+
+Direction only, not scheduled; principles agreed with the maintainer 2026-10-25. Filed from the inbox on 2026-10-27: no code exists for any of it (no exchange file, `@source` or QR drop box yet).
+
+## B1. Knowledge packs
+
+- **A pack is an exchange file of notes plus their tags and ontology,** shared as a body of knowledge: for example detailed notes from a whole course. The notes arrive **already organized and searchable** (`bayes`, `hypothesis-testing`), connect to the recipient's own notes through shared tags, and part of the ontology can change how they look (with user styles, a separate future plan).
+- **What makes it distinctive:** other apps share notes; a MetaList pack shares **notes plus their meaning** (tags, how tags relate, how they look).
+- **Licensing is the sender's responsibility:** one's own notes are theirs to share; where they summarize course material, that course's license applies (some allow non-commercial sharing with credit).
+
+## B2. Tag collisions between people
+
+Three strategies, **combined**, every step explicit:
+1. **Namespace on arrival (the safe default).** Imported tags arrive prefixed with the source (for example `alex.bayes`), so nothing collides, nothing of the recipient's changes, and origin is visible. Prefix or suffix form: open.
+2. **Merge afterward with synonyms, not renaming.** Declaring `alex.bayes` a synonym of the recipient's `bayesian` connects them without destroying either; reversible; provenance kept. The recipient may also choose which side's tag wins.
+3. **AI-assisted merging, approved by the user.** The AI reads the recipient's ontology and the incoming fragment, **proposes** mappings and **asks** where unsure ("they put `regression` under `statistics`, you have it under `ML`; which?"). Nothing applies until approved. This sends tag names and rules to the AI provider only when the user asks, and **the existing AI tag allow and block lists apply.**
+
+## B3. Packs in Git, improved by pull requests
+
+- Packs are files, so they can live in a Git repository: versioned, published, and **improved like open-source code** (someone adds notes, sends a pull request; the maintainer reviews and releases a new version).
+- **It's all data:** a pack holds only notes, tags and rules, so it can't break MetaList's logic.
+- HTML with hidden data makes noisy diffs; a pack meant for a repository may also want a **plain data form** of the same content.
+
+## B4. Provenance: the `@source` super tag
+
+- **Every imported note gets `@source`,** a built-in super tag carrying the pack's **name and version**, its **author**, its **repository address**, and possibly its **license**. Same family as `@LLM` (and the web clipper's `@web`): content that came from outside the user.
+- **What it gives, with nothing new built:** search `@source` (narrow by attribute to one pack); rules such as "`@source` implies a lighter background"; knowing which notes belong to which pack for updates (B5); and contributing back.
+- **Open:** how a note the recipient adds becomes part of a pack for a pull request. First guess: **giving it the pack's `@source` tag is what opts it in,** with no separate "add to pack" feature.
+
+## B5. Updating an imported pack
+
+- Version 2 should arrive as **what changed,** not a second copy. Match by each note's original UUID, timestamps and content fingerprint (already planned in the exchange format), with `@source` naming the pack.
+- **New notes:** offered. **Changed notes:** shown as changes. **Notes the recipient edited that the pack also changed:** side by side; they decide. Nothing overwritten silently; one undo reverses an update.
+
+## B6. Sharing a pack in person by QR code
+
+**The moment:** two phones; one shows a QR code, the other scans, and the pack is offered on the second phone. No email address, no account linking: good for someone just met.
+
+1. The sender's device **encrypts the pack** with a new one-time key and uploads **only the ciphertext** to a temporary drop box on the server.
+2. It shows a **QR code** holding where to fetch it and the one-time key (a QR code holds about 3 KB, so it carries the way to fetch the pack, not the pack).
+3. The recipient's device fetches the ciphertext and **decrypts it locally.**
+4. The drop box **deletes it on first download,** or after a few minutes.
+
+- **The key never touches the server;** the server holds a sealed envelope, briefly, once. The sender vets the recipient by choosing to show them the code. **The same import review applies** on the recipient's side.
+- **One mechanism used twice:** the same protocol is planned for moving a vault key to a new phone (QR device linking, a later phone item). Same code, different payload.
+- **Channels, all with the same file and the same review:** QR in person; files (AirDrop, Messages, email); Git for packs that evolve.
+- **Open:** the drop box's expiry and size limit; whether self-hosted instances run their own drop box; what the scanner sees if the pack expired or was already fetched.
+
+## B7. Invariants to add
+
+1. Imported notes carry `@source` provenance; imported tags arrive namespaced; any merge into the recipient's ontology (by hand or AI-assisted) happens only with their approval.
+2. A pack update never overwrites anything silently; conflicts with the recipient's edits are shown for them to decide.
+3. QR sharing: the one-time key travels only in the QR code; the drop box holds only ciphertext, deletes it on first download or expiry, and the import review still applies.

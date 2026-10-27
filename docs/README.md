@@ -49,10 +49,12 @@
 - Future UI plan (toolbar): `docs/future-plans/PLAN.toolbar.md`
 - Future plan (hosted MetaList: downloading your own copy, the backup reminder): `docs/future-plans/hosted-own-copy.md`
 - Future plan (AI providers, what is left: evals for Claude and Gemini, the demo vault, hosted questions): `docs/future-plans/ai-providers-remaining.md`
-- Future plan (sharing notes as HTML, with ontology fragments, recipes and no code plugins): `docs/future-plans/html-note-sharing.md`
+- Future plan (sharing notes as HTML, with ontology fragments, recipes and no code plugins; knowledge packs, provenance, updates and sharing by QR): `docs/future-plans/html-note-sharing.md`
 - Future plan (Obsidian import and export, aliases and image widths mapped both ways): `docs/future-plans/obsidian-import-export.md`
-- Might do (the same tag more than once in a note): `docs/future-plans/same-tag-twice.md`
-- Agreed designs ready to build, not started: `docs/ready-to-build/` (property search on any tag and OR in rules: `attribute-search-and-or-rules.md`; AI conversation compaction with a readable summary: `ai-conversation-compaction.md`; a bookmarklet that clips a page into the open MetaList tab: `web-clipper.md`; custom link text for references, `[[UUID|shown text]]`: `reference-link-text.md`; menus and modals following the Light/Dark theme: `menus-follow-theme.md`; several views on one vault with editing locked per root note: `multi-view-editing.md`; the vault's property names in the tag bar when none of a tag's own match: `property-suggestions-fallback.md`; the phone as the desktop app on a smaller screen, editing, with search contexts and the AI chat: `phone-same-app.md`)
+- Planned, not scheduled (the same tag more than once in a note): `docs/future-plans/same-tag-twice.md`
+- Future plan (charts of super-tag values, embedded like diagrams): `docs/future-plans/charts.md`
+- Future plan (user-named styles, `@style=name`, a safe subset of CSS): `docs/future-plans/user-styles.md`
+- Agreed designs ready to build, not started: `docs/ready-to-build/` (property search on any tag and OR in rules: `attribute-search-and-or-rules.md`; AI conversation compaction with a readable summary: `ai-conversation-compaction.md`; a bookmarklet that clips a page into the open MetaList tab: `web-clipper.md`; menus and modals following the Light/Dark theme: `menus-follow-theme.md`; several views on one vault with editing locked per root note: `multi-view-editing.md`; the vault's property names in the tag bar when none of a tag's own match: `property-suggestions-fallback.md`; the phone as the desktop app on a smaller screen, editing, with search contexts and the AI chat: `phone-same-app.md`; `@stats` and `@sum`/`@avg`/`@min`/`@max`/`@count`: `stats-tag.md`; summaries beside the result count and `@datetime`: `super-tag-summaries-and-date.md`; renaming tabs to search contexts: `search-contexts-rename.md`; live previews while editing: `smart-previews.md`)
 - Incoming design notes, processed into the folders above as soon as they are seen: `docs/inbox/` (see AGENTS.md, "Design Inbox")
 
 ## Clients
