@@ -25,7 +25,9 @@ function drop(page, selector, files, where) {
     const data = new DataTransfer();
     for (const file of files) data.items.add(new File([file.text], file.name, {type: file.type}));
     const x = where === 'end' ? rect.right - 5 : rect.left + rect.width / 2;
-    const y = where === 'end' ? rect.bottom - 5 : rect.top + rect.height / 2;
+    let y = where === 'end' ? rect.bottom - 5 : rect.top + rect.height / 2;
+    // A file is dropped where the user sees it: never below the window.
+    y = Math.min(y, window.innerHeight - 5);
     target.dispatchEvent(new DragEvent('drop', {dataTransfer: data, bubbles: true, cancelable: true, clientX: x, clientY: y}));
   }, {selector, files, where});
 }
@@ -143,6 +145,11 @@ export async function checkFileDropPreviews(page) {
     // becomes its last child, editing continues, and the note does not move.
     markdown = byFirstPill(await filesView(page), 'readme.md');
     const contentSelector = `.note[data-note-id="${markdown.id}"] .note-content`;
+    // In the middle of the window: a drop that keeps everything in sight moves nothing.
+    // (At the window's bottom edge the inserted file would be out of sight, and Firefox
+    // scrolls it back in view.)
+    await page.$eval(contentSelector, content => content.scrollIntoView({block: 'center'}));
+    await settle(page);
     const box = await page.evaluate(selector => {
       const rect = document.querySelector(selector).getBoundingClientRect();
       return {x: rect.right - 20, y: rect.top + rect.height / 2};
@@ -153,11 +160,18 @@ export async function checkFileDropPreviews(page) {
     // A drop while entering edit mode is still running is refused ("another command is still running").
     await settle(page);
     const topBefore = byId(await filesView(page), markdown.id).top;
+    const scrollBefore = await page.evaluate(() => window.scrollY);
+    const place = await page.evaluate(selector => {
+      const rect = document.querySelector(selector).getBoundingClientRect();
+      return {contentTop: rect.top, contentBottom: rect.bottom, windowHeight: window.innerHeight};
+    }, contentSelector);
     await drop(page, contentSelector, [{name: 'extra.csv', type: 'text/csv', text: 'x,y\n1,2'}], 'end');
     await settle(page);
     const edited = byId(await filesView(page), markdown.id);
+    const scrollAfter = await page.evaluate(() => window.scrollY);
     assert.equal(edited.editing, true, 'drop while editing: the note is still being edited');
-    assert.equal(edited.top, topBefore, 'drop while editing: the note stays where it was');
+    assert.equal(edited.top, topBefore,
+      `drop while editing: the note stays where it was (the page scrolled from ${scrollBefore} to ${scrollAfter}; ${JSON.stringify(place)})`);
     assert.equal(edited.children.length, 2, 'drop while editing: a second child');
     assert.equal(edited.children[0].markdownHeading, 'Hello', 'drop while editing: existing children come first');
     assert.deepEqual(edited.children[1].csvCells, ['x', 'y', '1', '2'], 'drop while editing: the preview is last');

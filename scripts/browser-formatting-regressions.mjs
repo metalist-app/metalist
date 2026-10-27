@@ -73,7 +73,8 @@ export async function checkPastedHeadingFormatting(page) {
       const clipboardData = new DataTransfer();
       clipboardData.setData('text/html', html);
       clipboardData.setData('text/plain', 'A formatted paper title');
-      editor.dispatchEvent(new ClipboardEvent('paste', {bubbles:true, cancelable:true, clipboardData}));
+      // Firefox drops clipboardData given to the constructor (its paste comes empty): set it on the event.
+      editor.dispatchEvent(Object.defineProperty(new ClipboardEvent('paste', {bubbles: true, cancelable: true}), 'clipboardData', {value: clipboardData}));
     }, noteId, html);
     await page.waitForFunction(noteId => document.querySelector(`[data-note-id="${noteId}"] h1`) !== null, {}, noteId);
     await waitForAppQuiet(page, REQUESTS_QUIET_MS);

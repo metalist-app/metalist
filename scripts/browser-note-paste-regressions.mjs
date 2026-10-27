@@ -70,6 +70,14 @@ async function leaveEditing(page) {
 // V also runs the browser's own command, as a real keystroke does: ⌘V pastes, and
 // ⇧⌘V is Chrome's Paste and Match Style, whose paste carries the clipboard's plain
 // text only. MetaList decides from what is pasted.
+// Whether the modifier's V pastes. Chrome runs its paste command for either (the
+// `commands` option below). Firefox pastes only with the platform's own key: ⌘ on
+// macOS, Control elsewhere; Control+V on a Mac pastes nothing there, for anyone.
+function pastesWith(modifier) {
+  if (process.env.BROWSER_TEST_BROWSER === 'chrome') return true;
+  return modifier === (process.platform === 'darwin' ? 'Meta' : 'Control');
+}
+
 async function shortcut(page, modifier, letter, withShift) {
   let options = {};
   if (letter === 'v') options = {commands: ['paste']};
@@ -212,8 +220,10 @@ async function selectedImagesMenuCase(page) {
 export async function checkNotePaste(page) {
   await reloadApp(page);
   for (const modifier of ['Meta', 'Control']) {
-    await childPasteCase(page, modifier);
-    await emptyNoteCase(page, modifier);
+    if (pastesWith(modifier)) {
+      await childPasteCase(page, modifier);
+      await emptyNoteCase(page, modifier);
+    }
     await referenceKeysCase(page, modifier);
   }
   await selectedImagesMenuCase(page);

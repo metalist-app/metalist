@@ -47,18 +47,28 @@ async function seedNotes(page) {
 async function clickMenuItem(page, label) {
   const item = await page.evaluateHandle(text => [...document.querySelectorAll('#context-menu.is-visible .context-menu-item')]
     .find(node => node.querySelector('.context-menu-item-label').textContent.trim() === text), label);
-  assert.notEqual(item.asElement(), null, `the menu offers ${label}`);
+  if (item.asElement() === null) {
+    const offered = await page.evaluate(() => [...document.querySelectorAll('#context-menu.is-visible .context-menu-item-label')]
+      .map(node => node.textContent.trim()));
+    assert.fail(`the menu offers ${label} (it offers ${JSON.stringify(offered)})`);
+  }
   await item.asElement().click();
   await idle(page);
 }
 
 async function copyANote(page) {
   const box = await page.evaluate(() => {
+    // Below the search controls, which float over the notes at the top.
+    const controlsBottom = document.querySelector('.controls').getBoundingClientRect().bottom;
     const inView = [...document.querySelectorAll('.note > .note-content')]
-      .find(node => node.getBoundingClientRect().top > 0 && node.getBoundingClientRect().bottom < window.innerHeight);
+      .find(node => node.getBoundingClientRect().top > controlsBottom && node.getBoundingClientRect().bottom < window.innerHeight);
     const rect = inView.getBoundingClientRect();
-    return {x: rect.left + rect.width / 2, y: rect.top + rect.height / 2};
+    const point = {x: rect.left + rect.width / 2, y: rect.top + rect.height / 2};
+    const hit = document.elementFromPoint(point.x, point.y);
+    return {...point, onNote: inView.contains(hit), hit: hit === null ? null : `${hit.tagName}.${hit.className}`,
+      rect: [rect.left, rect.top, rect.width, rect.height], scrollY: window.scrollY};
   });
+  assert.equal(box.onNote, true, `the point to right-click is on the note (${JSON.stringify(box)})`);
   await page.mouse.click(box.x, box.y, {button: 'right'});
   await page.waitForSelector('#context-menu.is-visible');
   await clickMenuItem(page, 'Copy Note');

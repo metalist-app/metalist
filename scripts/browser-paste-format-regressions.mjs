@@ -53,10 +53,23 @@ async function edit(page, noteId) {
   await page.$eval(`[data-note-id="${noteId}"] > .note-content`, content => content.scrollIntoView({block: 'center'}));
   await pause(200);
   await page.click(`[data-note-id="${noteId}"] > .note-content`);
-  await page.waitForFunction(async noteId => {
-    const {ModeContextInstance: mode} = await import('/static/js/modules/mode-manager/mode-context.js');
-    return mode.isEditing && mode.currentNoteId === noteId;
-  }, {timeout: 10_000}, noteId);
+  try {
+    await page.waitForFunction(async noteId => {
+      const {ModeContextInstance: mode} = await import('/static/js/modules/mode-manager/mode-context.js');
+      return mode.isEditing && mode.currentNoteId === noteId;
+    }, {timeout: 10_000}, noteId);
+  } catch (error) {
+    if (error.name !== 'TimeoutError') throw error;
+    // What the click met, to tell a covered note from one that ignored the click.
+    const seen = await page.evaluate(async noteId => {
+      const {ModeContextInstance: mode} = await import('/static/js/modules/mode-manager/mode-context.js');
+      const rect = document.querySelector(`[data-note-id="${noteId}"] > .note-content`).getBoundingClientRect();
+      const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+      return {isEditing: mode.isEditing, editingOther: mode.currentNoteId !== noteId, rect: [rect.top, rect.height],
+        hit: hit === null ? null : `${hit.tagName}.${hit.className}`};
+    }, noteId);
+    throw new Error(`clicking note ${noteId} did not start editing it: ${JSON.stringify(seen)}`, {cause: error});
+  }
   await idle(page);
 }
 
@@ -77,17 +90,25 @@ function paste(page, noteId, text, html) {
     const content = document.querySelector(`[data-note-id="${noteId}"] .note-content`);
     content.focus();
     const range = document.createRange();
-    // The caret goes at the end: inside the last line, or in the note itself when it is empty.
-    let caretHost = content;
-    if (content.lastElementChild !== null) caretHost = content.lastElementChild;
-    range.selectNodeContents(caretHost);
+    // The caret goes at the end of the note's last text, or in the note itself when it
+    // has none. The last text is not always in the last element: Firefox's editing can
+    // leave the last line as bare text after an element line.
+    const walker = document.createTreeWalker(content, NodeFilter.SHOW_TEXT);
+    let lastText = null;
+    for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) lastText = node;
+    if (lastText === null) {
+      range.selectNodeContents(content);
+    } else {
+      range.setStart(lastText, lastText.length);
+    }
     range.collapse(false);
     window.getSelection().removeAllRanges();
     window.getSelection().addRange(range);
     const data = new DataTransfer();
     data.setData('text/plain', text);
     if (html !== '') data.setData('text/html', html);
-    content.dispatchEvent(new ClipboardEvent('paste', {clipboardData: data, bubbles: true, cancelable: true}));
+    // Firefox drops clipboardData given to the constructor (its paste comes empty): set it on the event.
+    content.dispatchEvent(Object.defineProperty(new ClipboardEvent('paste', {bubbles: true, cancelable: true}), 'clipboardData', {value: data}));
   }, {noteId, text, html});
 }
 
@@ -245,7 +266,7 @@ async function dismissCases(page, ids) {
   await pause(SETTLE_MS);
   now = await state(page, noteId);
   assert.equal(now.card, null, 'typing closes the card');
-  assert(now.text.endsWith('x'), 'the typing reaches the note');
+  assert(now.text.endsWith('x'), `the typing reaches the note (the note ends ${JSON.stringify(now.text.slice(-24))})`);
   assert.equal(now.tags, '');
   await leaveEditing(page);
 }
@@ -293,7 +314,7 @@ async function newNoteCase(page, ids) {
     if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
     const data = new DataTransfer();
     data.setData('text/plain', text);
-    document.body.dispatchEvent(new ClipboardEvent('paste', {clipboardData: data, bubbles: true, cancelable: true}));
+    document.body.dispatchEvent(Object.defineProperty(new ClipboardEvent('paste', {bubbles: true, cancelable: true}), 'clipboardData', {value: data}));
   }, CSV);
   await page.waitForSelector('.paste-format-offer', {timeout: 10_000});
   await idle(page);

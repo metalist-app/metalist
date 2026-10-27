@@ -25,7 +25,6 @@ export async function prepareUpdateFixture(page) {
             })});
         } else if (path === '/api2/auth/app-update' && request.method() === 'POST') {
             fixture.installs += 1;
-            assert.equal(JSON.parse(request.postData()).target_version, fixture.version);
             await request.respond({status: 202, contentType: 'application/json', body: JSON.stringify({
                 job_id: 'e1a65e72-2ac2-40a7-a6e4-e8beee60ad3c', status: 'preparing',
                 message: 'Checking the update', log_path: '/disposable/update.log',
@@ -72,8 +71,23 @@ export async function checkAppUpdates(page, fixture) {
     await page.waitForFunction(() => document.querySelector('#command-palette-results').textContent.includes('Version Info'));
     await page.click('#command-palette-results [data-endpoint-id="form.version_info"]');
     await page.waitForSelector('#version-info-modal [data-update-action="install"]', {visible: true});
+    // The install request's body, read in the page as it is sent: Puppeteer reads an
+    // intercepted request's body only in Chrome.
+    await page.evaluate(() => {
+        const send = window.fetch;
+        window.__installBodies = [];
+        window.fetch = (resource, options) => {
+            if (String(resource).endsWith('/api2/auth/app-update') && options !== undefined && options.method === 'POST') {
+                window.__installBodies.push(options.body);
+            }
+            return send(resource, options);
+        };
+    });
     await page.click('#version-info-modal [data-update-action="install"]');
     await page.waitForSelector('#version-info-modal .version-update-log');
+    const installBodies = await page.evaluate(() => window.__installBodies);
+    assert.equal(installBodies.length, 1, 'one install request');
+    assert.equal(JSON.parse(installBodies[0]).target_version, fixture.version);
     assert.equal(await page.$eval('#version-info-modal', node => getComputedStyle(node).cursor), 'wait');
     assert.equal(await page.$eval('#version-info-modal .version-update-log', node => getComputedStyle(node).cursor), 'wait');
     // Closing/reopening must resume an accepted job, never submit another installer.

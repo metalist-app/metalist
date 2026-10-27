@@ -210,7 +210,8 @@ async function pasteAsCopiedCase(page) {
     input.focus();
     const data = new DataTransfer();
     data.setData('text/plain', text);
-    const event = new ClipboardEvent('paste', {clipboardData: data, bubbles: true, cancelable: true});
+    // Firefox drops clipboardData given to the constructor (its paste comes empty): set it on the event.
+    const event = Object.defineProperty(new ClipboardEvent('paste', {bubbles: true, cancelable: true}), 'clipboardData', {value: data});
     input.dispatchEvent(event);
     return event.defaultPrevented;
   }, PASTED_CONDITION);

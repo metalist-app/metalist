@@ -380,6 +380,11 @@ try {
     await checkFloatingMessages(page);
     assert.deepEqual(errors, []);
     console.log(`PASS floating message regressions in ${await browser.version()}`);
+  } else if (process.env.BROWSER_TEST_SUITE === 'phone' && browserName === 'firefox' && process.platform === 'darwin') {
+    // Puppeteer cannot send touch input to Firefox on macOS (every tap fails), and the phone
+    // suite is taps. It runs in Chrome here, and in Firefox elsewhere (agreed 2026-10-27;
+    // docs/testing/harness.md). Said out loud, never passed quietly.
+    console.log(`SKIPPED phone regressions in ${await browser.version()} on macOS: Puppeteer cannot send touch input to Firefox here`);
   } else if (process.env.BROWSER_TEST_SUITE === 'phone') {
     await checkPhone(browser, page, origin);
     assert.deepEqual(errors, []);

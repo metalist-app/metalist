@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import {clickAndSelectAll} from './browser-select-field.mjs';
 
 export async function checkOpenAiSettings(page) {
   await page.evaluate(async () => {
@@ -49,7 +50,7 @@ export async function checkOpenAiSettings(page) {
   await page.keyboard.press('Escape');
   await page.waitForSelector('#error-dialog', {hidden: true});
   assert.equal(await page.evaluate(() => document.activeElement.id), 'ai-agent-api-key');
-  await page.click('#ai-agent-api-key', {clickCount: 3});
+  await clickAndSelectAll(page, '#ai-agent-api-key');
   await page.type('#ai-agent-api-key', 'AQ.Test0123456789abcdefghijklmnopqrs');
   await page.click('#ai-agent-key-save');
   await page.waitForSelector('#ai-agent-key-remove');

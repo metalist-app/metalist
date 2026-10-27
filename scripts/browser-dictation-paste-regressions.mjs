@@ -17,7 +17,8 @@ function paste(page, selector, text) {
     input.setSelectionRange(input.value.length, input.value.length);
     const data = new DataTransfer();
     data.setData('text/plain', text);
-    input.dispatchEvent(new ClipboardEvent('paste', {clipboardData: data, bubbles: true, cancelable: true}));
+    // Firefox drops clipboardData given to the constructor (its paste comes empty): set it on the event.
+    input.dispatchEvent(Object.defineProperty(new ClipboardEvent('paste', {bubbles: true, cancelable: true}), 'clipboardData', {value: data}));
   }, {selector, text});
 }
 
@@ -84,7 +85,7 @@ function pasteIntoNote(page, noteId, text) {
     window.getSelection().addRange(range);
     const data = new DataTransfer();
     data.setData('text/plain', text);
-    content.dispatchEvent(new ClipboardEvent('paste', {clipboardData: data, bubbles: true, cancelable: true}));
+    content.dispatchEvent(Object.defineProperty(new ClipboardEvent('paste', {bubbles: true, cancelable: true}), 'clipboardData', {value: data}));
   }, {noteId, text});
 }
 
@@ -121,8 +122,12 @@ async function startEditing(page, noteId) {
 // clipboard decides, never MetaList's memory of the last copy.
 async function dictationAfterNoteCopyCase(page) {
   const words = 'Words the dictation app typed';
-  await page.browserContext().overridePermissions(new URL(page.url()).origin,
-    ['clipboard-read', 'clipboard-write', 'clipboard-sanitized-write']);
+  // Chrome needs the clipboard granted; Firefox lets the page write it and paste
+  // without a grant, and has none of these permission names (setting them fails).
+  if (process.env.BROWSER_TEST_BROWSER === 'chrome') {
+    await page.browserContext().overridePermissions(new URL(page.url()).origin,
+      ['clipboard-read', 'clipboard-write', 'clipboard-sanitized-write']);
+  }
   const ids = await page.evaluate(async () => {
     const {NotesAPI} = await import('/static/js/modules/api-client.js');
     const target = await NotesAPI.createNote(null, '');

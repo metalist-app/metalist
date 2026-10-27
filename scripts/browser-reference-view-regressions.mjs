@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { runThenCleanUp } from './suite-outcome.mjs';
 import { waitForAppQuiet } from './browser-app-idle.mjs';
+import {clickAndSelectAll} from './browser-select-field.mjs';
 
 // Reference views and the search bar's chips (docs/ui/references.md,
 // docs/ui/controls.md). Following a reference, an embed's reference icon or an AI
@@ -151,7 +152,7 @@ function expectSameSpot(actual, expected, label) {
 
 // Types the search and lets it run; never Enter, which on a search already run adds a note.
 async function searchFor(page, query) {
-  await page.click('#search-input', {clickCount: 3});
+  await clickAndSelectAll(page, '#search-input');
   await page.keyboard.type(query);
   await idle(page);
 }
@@ -506,10 +507,29 @@ async function checkNewSearch(page, ids) {
   assert.equal(typed.roots.includes(ids.holder), true, 'the new search shows its notes');
 }
 
+// Reduce Motion on or off. Chrome emulates the media feature. Puppeteer cannot in
+// Firefox, so there the page's own question, matchMedia('(prefers-reduced-motion:
+// reduce)'), which is how MetaList asks, gets that answer.
+async function setReducedMotion(page, reduce) {
+  if (process.env.BROWSER_TEST_BROWSER === 'chrome') {
+    await page.emulateMediaFeatures([{name: 'prefers-reduced-motion', value: reduce ? 'reduce' : 'no-preference'}]);
+    return;
+  }
+  await page.evaluate(reduce => {
+    const query = '(prefers-reduced-motion: reduce)';
+    if (window.__realMatchMedia === undefined) window.__realMatchMedia = window.matchMedia.bind(window);
+    window.matchMedia = text => {
+      const answer = window.__realMatchMedia(text);
+      if (text !== query) return answer;
+      return Object.defineProperties(Object.create(answer), {matches: {value: reduce}, media: {value: query}});
+    };
+  }, reduce);
+}
+
 // Case 10: with Reduce Motion, a quick fade instead of the slide.
 async function checkReducedMotion(page, ids) {
   const left = await wheelNoteTo(page, ids.holder, NOTE_TOP_BEFORE_FOLLOWING_PX);
-  await page.emulateMediaFeatures([{name: 'prefers-reduced-motion', value: 'reduce'}]);
+  await setReducedMotion(page, true);
   const played = await navigate(page, () => clickReferenceLink(page, ids.holder, ids.target));
   const fade = [{keyframes: [{opacity: 1}, {opacity: 0}], duration: REDUCED_MOTION_FADE_MS}];
   assert.deepEqual(played.ghost, fade, 'reduce motion: the old column fades out');
@@ -520,7 +540,7 @@ async function checkReducedMotion(page, ids) {
   assert.deepEqual(closed.ghost, fade, 'reduce motion: × fades too');
   expectSearchBar(await barState(page), SEARCH, 'reduce motion: back at the search');
   assert.deepEqual(await notePlace(page, ids.holder), left, 'reduce motion: the search is where the user left it');
-  await page.emulateMediaFeatures([{name: 'prefers-reduced-motion', value: 'no-preference'}]);
+  await setReducedMotion(page, false);
 }
 
 // Case 11, and reference views kept with the tabs: no animation on a reload, a tab

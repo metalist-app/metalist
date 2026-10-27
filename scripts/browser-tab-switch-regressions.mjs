@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { runThenCleanUp } from './suite-outcome.mjs';
 import { waitForAppQuiet } from './browser-app-idle.mjs';
+import {clickAndSelectAll} from './browser-select-field.mjs';
 
 // Switching tabs: after each switch, the notes shown, the search box and the
 // server's active tab all belong to the tab that was picked.
@@ -35,7 +36,7 @@ async function createNotes(page) {
 }
 
 async function searchFor(page, query) {
-  await page.click('#search-input', {clickCount: 3});
+  await clickAndSelectAll(page, '#search-input');
   await page.keyboard.type(query);
   await page.keyboard.press('Enter');
   await idle(page);

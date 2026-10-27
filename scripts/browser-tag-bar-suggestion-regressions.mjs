@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { runThenCleanUp } from './suite-outcome.mjs';
 import { waitForAppQuiet } from './browser-app-idle.mjs';
+import {clickAndSelectAll} from './browser-select-field.mjs';
 
 // The tag bar's suggestions act only on a list built for the text in the bar,
 // as the search box's do. While a new list is on its way, the list on screen
@@ -84,7 +85,7 @@ function tagBarState(page) {
 
 // An empty tag bar with the cursor in it, the list for the empty bar settled.
 async function clearTagBar(page) {
-  await page.click('.note.editing .note-tag-bar-input', {clickCount: 3});
+  await clickAndSelectAll(page, '.note.editing .note-tag-bar-input');
   await page.keyboard.press('Backspace');
   await idle(page);
   await pause(SETTLE_MS);

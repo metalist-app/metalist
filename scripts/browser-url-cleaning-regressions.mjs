@@ -58,7 +58,8 @@ function paste(page, noteId, text, html) {
     const data = new DataTransfer();
     data.setData('text/plain', text);
     if (html !== '') data.setData('text/html', html);
-    const event = new ClipboardEvent('paste', {clipboardData: data, bubbles: true, cancelable: true});
+    // Firefox drops clipboardData given to the constructor (its paste comes empty): set it on the event.
+    const event = Object.defineProperty(new ClipboardEvent('paste', {bubbles: true, cancelable: true}), 'clipboardData', {value: data});
     content.dispatchEvent(event);
     return event.defaultPrevented;
   }, {noteId, text, html});
@@ -78,8 +79,10 @@ async function undo(page) {
   }
 }
 
+// The note's text as it reads. Firefox inserts a pasted leading space as a no-break
+// space, which looks the same; these checks are about the URLs.
 function noteText(page, noteId) {
-  return page.evaluate(id => document.querySelector(`[data-note-id="${id}"] .note-content`).textContent, noteId);
+  return page.evaluate(id => document.querySelector(`[data-note-id="${id}"] .note-content`).textContent.replaceAll('\u00a0', ' '), noteId);
 }
 
 function noteLinks(page, noteId) {
@@ -153,7 +156,7 @@ async function newTopNoteCase(page) {
   await page.evaluate(junk => {
     const data = new DataTransfer();
     data.setData('text/plain', junk);
-    document.body.dispatchEvent(new ClipboardEvent('paste', {clipboardData: data, bubbles: true, cancelable: true}));
+    document.body.dispatchEvent(Object.defineProperty(new ClipboardEvent('paste', {bubbles: true, cancelable: true}), 'clipboardData', {value: data}));
   }, JUNK);
   await pause(SETTLE_MS);
   await idle(page);

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { runThenCleanUp } from './suite-outcome.mjs';
 import { waitForAppQuiet } from './browser-app-idle.mjs';
+import {clickAndSelectAll} from './browser-select-field.mjs';
 
 // Typing `[[` in a note opens a list of notes to reference (docs/ui/references.md,
 // "Suggestions"; agreed 2026-10-26): exact first-line matches, then fuzzy ones,
@@ -197,13 +198,18 @@ async function referenceBox(page, noteId, occurrence) {
     const walker = document.createTreeWalker(document.querySelector(selector), NodeFilter.SHOW_TEXT);
     let seen = 0;
     for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
-      for (const match of node.data.matchAll(/!?\[\[[0-9a-f-]{36}\]\]/g)) {
+      // With any link text after a | (docs/ui/references.md, "Link text").
+      for (const match of node.data.matchAll(/!?\[\[[0-9a-f-]{36}(?:\|[^[\]\n]+)?\]\]/g)) {
         if (seen++ !== occurrence) continue;
         const range = document.createRange();
         range.setStart(node, match.index);
         range.setEnd(node, match.index + match[0].length);
-        const line = range.getClientRects()[0];
-        return {left: line.left, top: line.top, bottom: line.bottom, x: line.left + line.width / 2, y: line.top + line.height / 2};
+        const rects = range.getClientRects();
+        const line = rects[0];
+        const last = rects[rects.length - 1];
+        return {left: line.left, top: line.top, bottom: line.bottom, x: line.left + line.width / 2, y: line.top + line.height / 2,
+          // A point on the token's last characters (on a link's text, past its UUID).
+          endX: last.right - 3, endY: last.top + last.height / 2};
       }
     }
     throw new Error(`no reference ${occurrence} in ${selector}`);
@@ -539,6 +545,32 @@ async function suggestionCases(page, ids) {
     await moveAway();
   });
 
+  // Link text (docs/ui/references.md, "Link text", agreed 2026-10-27): the link reads its
+  // own text, and resting on it, or on its |text while editing, shows the target's card.
+  await attempt('[[UUID|the plan]] reads "the plan"; resting on it, edited or not, shows its card', async () => {
+    await leaveEditing(page);
+    await page.evaluate(async ({holder, ears}) => {
+      const {NotesAPI} = await import('/static/js/modules/api-client.js');
+      await NotesAPI.saveNote(holder, `<div>Holder [[${ears}|the plan]] end</div>`, '');
+    }, ids);
+    await reloadApp(page);
+    const shown = await page.evaluate(id => {
+      const link = document.querySelector(`.note[data-note-id="${id}"] .note-reference-link-mode[data-ref-note-id]`);
+      const line = link.getClientRects()[0];
+      return {text: link.textContent.trim(), left: line.left, bottom: line.bottom, x: line.left + line.width / 2, y: line.top + line.height / 2};
+    }, ids.holder);
+    assert.equal(shown.text, 'the plan');
+    await restOn(shown);
+    assertAt(await shownPreview(page, ids.ears), {left: shown.left, top: shown.bottom + HOVER_GAP_PX});
+    await moveAway();
+    await editAtEnd(page, ids.holder);
+    const edited = await referenceBox(page, ids.holder, 0);
+    await restOn({x: edited.endX, y: edited.endY});
+    const card = await shownPreview(page, ids.ears);
+    assert.equal(card.text[0], 'Earsquill title');
+    await moveAway();
+  });
+
   // A card's note is not a note in the list: following the link to a note the view
   // doesn't show, after its card showed, brings that note in without an error
   // (the list took the card for the note; 2026-10-27).
@@ -547,7 +579,7 @@ async function suggestionCases(page, ids) {
     await leaveEditing(page);
     // With animated transitions, as reported: the list's collapse animation looked the note up first.
     await page.evaluate(() => document.body.classList.add('pref-animated-transitions'));
-    await page.click('#search-input', {clickCount: 3});
+    await clickAndSelectAll(page, '#search-input');
     await page.keyboard.type('"Holder"');
     await pause(SETTLE_MS);
     await idle(page);
@@ -566,7 +598,7 @@ async function suggestionCases(page, ids) {
     // Back from the Source note view, and the search cleared.
     await page.keyboard.press('Escape');
     await idle(page);
-    await page.click('#search-input', {clickCount: 3});
+    await clickAndSelectAll(page, '#search-input');
     await page.keyboard.press('Backspace');
     await pause(SETTLE_MS);
     await idle(page);
