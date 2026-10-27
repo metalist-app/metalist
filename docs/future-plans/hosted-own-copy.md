@@ -74,7 +74,7 @@ The own-copy download works in every account state (trial, active, lapsed, cance
 
 ## Open questions
 
-- **File storage layout.** If hosted file storage differs from the single files database in today's archive (for example, sealed shards), either pack it into the self-hosted format on download or teach self-hosted restore to read the hosted layout.
+- **File storage layout.** If hosted file storage differs from the single files database in today's archive (for example, sealed shards), either pack it into the self-hosted format on download or teach self-hosted restore to read the hosted layout. Direction agreed (2026-10-23, filed 2026-10-27): one encrypted file per attachment with a catalog, for self-hosted and hosted alike, sealed shards rejected (`docs/future-plans/file-storage-per-file.md`).
 - **Large vaults.** Archives with many files could be many GB. Offer "notes only" and "notes and files" separately? Make the download resumable?
 - **Upload back in.** Can a hosted user restore from a copy they downloaded (upload it as a new vault), or only from retained snapshots?
 

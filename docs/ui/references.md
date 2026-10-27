@@ -107,7 +107,7 @@ Typing `[[` in the note being edited opens a list of notes to reference (agreed 
 - Missing or deleted UUID: render a "missing reference" marker (subtly red-tinted).
 - Circular chain (A -> B -> A): render a "circular reference" marker and stop recursion at that point.
 - Removing every note reference to a file does not delete the file automatically.
-- `Trim Unused Files…` is the explicit cleanup path for unreferenced file rows.
+- `Trim Unused Files…` is the explicit cleanup path for unreferenced file rows (a reminder for it is agreed, not built: `docs/ready-to-build/trim-reminder.md`).
 
 ## Keyboard Workflow
 - `Cmd/Ctrl + C` with no text selection copies a note (server clipboard + system clipboard payload).

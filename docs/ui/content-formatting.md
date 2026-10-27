@@ -1,6 +1,6 @@
 # Note Content Formatting (Meta Tags)
 
-Agreed, not built (2026-10-27): `@stats` and `@sum=` / `@avg=` / `@min=` / `@max=` / `@count=`, totals of a note's subtree shown under its text like the footnote References (`docs/ready-to-build/stats-tag.md`); a live preview of LaTeX, CSV, Mermaid and references while editing (`docs/ready-to-build/smart-previews.md`); user-named styles, `@style=name` (future plan, `docs/future-plans/user-styles.md`).
+Agreed, not built (2026-10-27): `@stats` and `@sum=` / `@avg=` / `@min=` / `@max=` / `@count=`, totals of a note's subtree shown under its text like the footnote References (`docs/ready-to-build/stats-tag.md`); a live preview of LaTeX, CSV, Mermaid and references while editing (`docs/ready-to-build/smart-previews.md`); in tables, `<br>` as a line break, uneven rows kept, `\|` as a literal bar and columns at least as wide as their longest word (`docs/ready-to-build/markdown-tables.md`); user-named styles, `@style=name` (future plan, `docs/future-plans/user-styles.md`).
 
 ## Overview
 - Note content is stored as HTML (`notes.content`).
