@@ -25,12 +25,15 @@ _UUID_PATTERN = (
     rf"[0-9a-fA-F]{{4}}{_UUID_SEPARATOR_PATTERN}"
     r"[0-9a-fA-F]{12}"
 )
+# A note's link text after | ([[UUID|text]], docs/ui/references.md, "Link text"): the
+# same citation, its text dropped for the citation marker.
+_LINK_TEXT_PATTERN = r"(?:\|[^\[\]\n]+)?"
 _NOTE_CITATION_RE = re.compile(
-    rf"\[\[(?P<reference>{_UUID_PATTERN})\]\]"
+    rf"\[\[(?P<reference>{_UUID_PATTERN}){_LINK_TEXT_PATTERN}\]\]"
     rf"|(?<!\[\[)(?<!web:)(?<![{_UUID_BOUNDARY_PATTERN}])(?P<bare>{_UUID_PATTERN})"
     rf"(?![{_UUID_BOUNDARY_PATTERN}])"
 )
-_BRACKETED_NOTE_CITATION_RE = re.compile(rf"\[\[{_UUID_PATTERN}\]\]")
+_BRACKETED_NOTE_CITATION_RE = re.compile(rf"\[\[{_UUID_PATTERN}{_LINK_TEXT_PATTERN}\]\]")
 _WEB_CITATION_RE = re.compile(
     rf"\[\[web:(?P<web_id>{_UUID_PATTERN})\]\]",
     re.IGNORECASE,
@@ -40,7 +43,7 @@ _INCOMPLETE_WEB_CITATION_SUFFIX_RE = re.compile(
     re.IGNORECASE,
 )
 _INCOMPLETE_BRACKETED_NOTE_CITATION_SUFFIX_RE = re.compile(
-    rf"\[\[[0-9a-fA-F{re.escape(_UUID_DASH_CHARACTERS)}]{{0,36}}\]?$"
+    rf"\[\[(?:[0-9a-fA-F{re.escape(_UUID_DASH_CHARACTERS)}]{{0,36}}|{_UUID_PATTERN}\|[^\[\]\n]*)\]?$"
 )
 _NUMBERED_NOTE_CITATION_RE = re.compile(
     r"\[citation:(?P<number>[1-9][0-9]*)\]",

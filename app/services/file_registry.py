@@ -10,9 +10,21 @@ from threading import RLock
 from app.services.file_kinds import FILE_FILTER_ANY, FILE_FILTER_KINDS, file_kind_of
 
 # A reference written in a note's text: [[id]] links, ![[id]] embeds.
+# A link may carry text after a | ([[id|shown text]], docs/ui/references.md, "Link text").
 _FILE_REFERENCE_TOKEN_RE = re.compile(
-    r"!?\[\[([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})\]\]"
+    r"!?\[\[([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})(?:\|[^\[\]\n]*[^\s\[\]][^\[\]\n]*)?\]\]"
 )
+
+
+def referenced_file_ids(text: str) -> list[str]:
+    """The UUIDs a note's text references as [[id]] or ![[id]], in order, once each:
+    files among them, and notes, which the caller tells apart."""
+    if not isinstance(text, str):
+        raise TypeError(f"text must be a string, got {type(text)}")
+    if "[[" not in text:
+        # Most notes reference nothing; skip the scan during hydration.
+        return []
+    return list(dict.fromkeys(match.group(1) for match in _FILE_REFERENCE_TOKEN_RE.finditer(text)))
 
 
 @dataclass(frozen=True)
@@ -149,16 +161,8 @@ class FileRegistry:
         """(id, name) of each file a note's text references, in order, once each."""
         if not isinstance(text, str):
             raise TypeError(f"text must be a string, got {type(text)}")
-        if "[[" not in text:
-            # Most notes reference nothing; skip the scan during hydration.
-            return []
         names: list[tuple[str, str]] = []
-        seen: set[str] = set()
-        for match in _FILE_REFERENCE_TOKEN_RE.finditer(text):
-            file_id = match.group(1)
-            if file_id in seen:
-                continue
-            seen.add(file_id)
+        for file_id in referenced_file_ids(text):
             title = self.title_of(file_id)
             if title is not None:
                 names.append((file_id, title))

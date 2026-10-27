@@ -395,6 +395,51 @@ export function caretPositionAt(x, y) {
     return null;
 }
 
+// A click's caret position in `content`: the text under the pointer, or, where the
+// browser finds none there, the nearest spot of the text, as Chrome finds it itself
+// (docs/ui/interaction-principles.md): level with a line, its nearest point; above all the text,
+// the start of its first line; below it, the end of its last. Firefox returns the
+// note's element for a click on its border or beside a list item's marker, and the
+// caret went to whatever source line was under the pointer once the note showed
+// its source.
+function caretPositionInLineAt(content, x, y) {
+    const position = caretPositionAt(x, y);
+    if (position !== null && position.node.nodeType === Node.TEXT_NODE) {
+        return position;
+    }
+    const range = document.createRange();
+    const walker = document.createTreeWalker(content, NodeFilter.SHOW_TEXT);
+    const lines = [];
+    for (let text = walker.nextNode(); text !== null; text = walker.nextNode()) {
+        range.selectNodeContents(text);
+        for (const rect of range.getClientRects()) {
+            if (rect.width > 0) {
+                lines.push({ text, rect });
+            }
+        }
+    }
+    if (lines.length === 0) {
+        return position;
+    }
+    const first = lines[0];
+    const last = lines[lines.length - 1];
+    if (y < first.rect.top) {
+        return { node: first.text, offset: 0 };
+    }
+    if (y > last.rect.bottom) {
+        return { node: last.text, offset: last.text.length };
+    }
+    // Level with a line, or in the gap between two: the line nearest in height, then across.
+    const distance = ({ rect }) => [Math.max(rect.top - y, y - rect.bottom, 0), Math.max(rect.left - x, x - rect.right, 0)];
+    const nearest = lines.reduce((best, line) => {
+        const [lineHeightGap, lineWidthGap] = distance(line);
+        const [bestHeightGap, bestWidthGap] = distance(best);
+        return lineHeightGap < bestHeightGap || (lineHeightGap === bestHeightGap && lineWidthGap < bestWidthGap) ? line : best;
+    });
+    const { rect } = nearest;
+    return caretPositionAt(Math.min(Math.max(x, rect.left), rect.right), rect.top + half(rect.height));
+}
+
 // What to keep in place when this note leaves edit mode: the caret if it is
 // on screen, otherwise the text at the reading line (a third of the way down
 // the usable viewport), otherwise the note's top. `keepVisible` keeps a note
@@ -473,7 +518,7 @@ export function captureClickAnchor(noteElement, x, y) {
         return diagramAnchor;
     }
     const topAnchor = { kind: 'top', noteId, top: noteTop, keepVisible: false, clickX: x, clickY: y };
-    const position = caretPositionAt(x, y);
+    const position = caretPositionInLineAt(content, x, y);
     let textAnchor = null;
     if (position !== null && position.node.nodeType === Node.TEXT_NODE && content.contains(position.node)) {
         const text = content.textContent;
@@ -518,12 +563,18 @@ function referenceBlocksOf(content, noteId) {
         .filter((block) => block.dataset.refHostNoteId === noteId);
 }
 
-function referenceToken(referenceId, mode) {
+// Link text after a | ([[UUID|shown text]], docs/ui/references.md, "Link text"):
+// not empty, no bracket or line break, as the server reads it.
+const LINK_TEXT_PATTERN = '(?:\\|[^\\[\\]\\n]*[^\\s\\[\\]][^\\[\\]\\n]*)?';
+
+// The reference's token in the source: [[UUID]] or ![[UUID]], with any text after a |.
+function referenceTokenPattern(referenceId, mode) {
+    const escapedId = referenceId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     if (mode === 'embed') {
-        return `![[${referenceId}]]`;
+        return new RegExp(`!\\[\\[${escapedId}${LINK_TEXT_PATTERN}\\]\\]`, 'g');
     }
     if (mode === 'link') {
-        return `[[${referenceId}]]`;
+        return new RegExp(`\\[\\[${escapedId}${LINK_TEXT_PATTERN}\\]\\]`, 'g');
     }
     throw new Error(`Unknown reference mode: ${mode}`);
 }
@@ -574,18 +625,17 @@ function captureReferenceClickAnchor({ content, noteId, x, y, position, textAnch
     };
 }
 
-// Where the reference's token starts in the source text; null when absent
-// (e.g. still the rendered view).
-function referenceTokenStart(text, reference) {
-    const token = referenceToken(reference.referenceId, reference.mode);
-    const pattern = new RegExp(token.replace(/[![\]]/g, '\\$&'), 'g');
+// Where the reference's token starts and ends in the source text; null when
+// absent (e.g. still the rendered view).
+function referenceTokenSpan(text, reference) {
+    const pattern = referenceTokenPattern(reference.referenceId, reference.mode);
     let seen = 0;
     for (const match of text.matchAll(pattern)) {
         // [[UUID]] inside ![[UUID]] is the embed's token, not a link.
         const isEmbedTail = reference.mode === 'link' && text.slice(0, match.index).endsWith('!');
         if (!isEmbedTail) {
             if (seen === reference.occurrence) {
-                return match.index;
+                return { start: match.index, end: match.index + match[0].length };
             }
             seen += 1;
         }
@@ -597,14 +647,14 @@ function referenceTokenStart(text, reference) {
 // click on the reference, else the end of the token plus the text the click
 // followed it by, when exactly that text follows it. null otherwise.
 function findReferencePosition(text, reference) {
-    const start = referenceTokenStart(text, reference);
-    if (start === null) {
+    const span = referenceTokenSpan(text, reference);
+    if (span === null) {
         return null;
     }
     if (reference.onReference) {
-        return start;
+        return span.start;
     }
-    const end = start + referenceToken(reference.referenceId, reference.mode).length;
+    const { end } = span;
     if (text.slice(end, end + reference.gapText.length) !== reference.gapText) {
         return null;
     }
@@ -941,7 +991,7 @@ function validateReference(reference) {
         if (typeof reference.referenceId !== 'string' || reference.referenceId.length === 0) {
             throw new Error('A reference hold needs the referenced note id');
         }
-        referenceToken(reference.referenceId, reference.mode);
+        referenceTokenPattern(reference.referenceId, reference.mode);
         if (!Number.isInteger(reference.occurrence) || reference.occurrence < 0) {
             throw new Error('A reference hold needs an occurrence index');
         }

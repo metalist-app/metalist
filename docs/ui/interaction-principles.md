@@ -46,7 +46,7 @@ from them, not decided case by case. When a new case comes up, reason from these
 
 | Action | Point of attention | Result |
 |---|---|---|
-| Click into a note | where they clicked | stays under the pointer, caret showing there so typing can start (1); a click on its padding puts the caret at the nearest spot in its text |
+| Click into a note | where they clicked | stays under the pointer, caret showing there so typing can start (1); a click on its padding puts the caret at the nearest spot in its text: level with a line, its nearest point; above the text, the start of its first line; below it, the end of its last. Chrome finds that spot itself; where a browser finds no text under the click (Firefox, on the border or beside a list item's marker), `caretPositionInLineAt` in `viewport-hold-service.js` does (fixed 2026-10-27) |
 | Escape, after editing | the caret, else the line being read | stays at the same height (1); a collapsed note stays expanded when changed (4); no highlight (5) |
 | Open any dialog or overlay while editing (e.g. the warning for deleting a referenced note) | the edited note | saved and out of edit mode before the dialog shows; Cancel leaves it in place, saved, in its normal view (6) |
 | Escape, after only looking | the note's first line | a collapsed note collapses again with its first line where it was (1, 4) |

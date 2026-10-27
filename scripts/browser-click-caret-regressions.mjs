@@ -341,7 +341,7 @@ async function robotCase(page) {
 // puts the caret at the start of its ![[UUID]] source.
 
 // Notes for a case: the host's lines, with REF:name standing for a reference
-// line to the named note ([[ ]] or ![[ ]] as `mode` says), inline in a line too.
+// line to the named note ([[ ]], ![[ ]] or [[ |the plan]] as `mode` says), inline in a line too.
 async function createReferenceFixture(page, {lines, referenced, mode}) {
   return page.evaluate(async ({lines, referenced, mode}) => {
     const {NotesAPI} = await import('/static/js/modules/api-client.js');
@@ -351,7 +351,13 @@ async function createReferenceFixture(page, {lines, referenced, mode}) {
       await NotesAPI.saveNote(note.id, `<p>${name} content</p>`, '');
       ids[name] = note.id;
     }
-    const token = name => (mode === 'embed' ? `![[${ids[name]}]]` : `[[${ids[name]}]]`);
+    const tokens = {
+      link: name => `[[${ids[name]}]]`,
+      embed: name => `![[${ids[name]}]]`,
+      // Link text (docs/ui/references.md, "Link text"): the rendering shows "the plan".
+      'link-text': name => `[[${ids[name]}|the plan]]`,
+    };
+    const token = tokens[mode];
     const source = lines.map(line => line.replace(/REF:(\w+)/g, (_, name) => token(name)));
     const host = await NotesAPI.createNote(null, '');
     await NotesAPI.saveNote(host.id, source.map(line => `<div>${line}</div>`).join(''), '');
@@ -416,7 +422,7 @@ function typedAt(line, after) {
 }
 
 async function referenceCases(page) {
-  for (const mode of ['link', 'embed']) {
+  for (const mode of ['link', 'embed', 'link-text']) {
     const own = ['foo', 'REF:baz', 'bar'];
     await referenceClickCase(page, {label: `L1 ${mode}: "bar" after the reference`, lines: own, referenced: ['baz'], mode,
       click: host => hostTextPoint(page, host, 'bar', 0, 'ba'.length), expected: typedAt('bar', 'ba'.length)});

@@ -15,6 +15,7 @@ from app.services.content_formatting import is_password_note
 from app.services.content_formatting import is_username_note
 from app.services.embedded_references import EmbedRenderContext
 from app.services.embedded_references import collect_active_reference_tokens
+from app.services.embedded_references import text_with_references_as_words
 from app.services.embedded_references import extract_collapsed_preview_source_html
 from app.services.embedded_references import render_collapsed_note_content_with_embeds
 from app.services.embedded_references import render_note_content_with_embeds
@@ -212,7 +213,6 @@ EXPORT_PURPOSES = frozenset({"download", "print"})
 _ARROW_STATES = {True: ("false", "Expand note"), False: ("true", "Collapse note")}
 _DEFAULT_TITLE = "MetaList"
 _MAX_TITLE_CHARACTERS = 120
-_EMBED_TOKEN = re.compile(r"!?\[\[[^\]]+\]\]")
 
 # Exported files (downloads) work like MetaList where a file can: they start
 # collapsed and expanded as MetaList shows the notes, a click on a note's arrow
@@ -410,7 +410,7 @@ def _first_line_title(note_id: str) -> str:
         text, redacted = extract_note_text_for_agent(content_html=content_html, tags=record.tags)
         if redacted:
             return ""
-        words = " ".join(_EMBED_TOKEN.sub(" ", text.split("\n")[0]).split())
+        words = " ".join(text_with_references_as_words(text.split("\n")[0]).split())
         if words != "":
             return words[:_MAX_TITLE_CHARACTERS]
     return ""

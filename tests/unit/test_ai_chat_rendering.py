@@ -3,6 +3,8 @@ from types import SimpleNamespace
 from app.services.ai_chat_rendering import render_ai_chat_markdown_to_html
 from app.services.ai_chat_rendering import render_ai_chat_streaming_markdown_to_html
 from app.services.ai_chat_rendering import sanitize_ai_chat_markdown_citations
+from app.services.ai_chat_rendering import find_note_citation_ids
+from app.services.ai_chat_rendering import strip_note_citations_for_history
 from app.services.agent.web_evidence import WebCitationReference
 
 
@@ -125,6 +127,32 @@ def test_ai_chat_renderer_hides_partial_bracketed_citation_during_streaming() ->
     assert 'class="ai-chat-note-mention"' not in rendered
     assert 'class="ai-chat-citation-marker"' not in rendered
     assert 'class="ai-chat-references"' not in rendered
+
+
+def test_ai_chat_renderer_hides_partial_link_text_citation_during_streaming() -> None:
+    rendered = render_ai_chat_markdown_to_html(
+        f"Supported finding. [[{NOTE_ID}|the pla",
+        notes=FakeNotes(),
+        allowed_note_ids=(NOTE_ID,),
+        allowed_web_evidence=(),
+    )
+
+    assert "Supported finding." in rendered
+    assert NOTE_ID not in rendered
+    assert "the pla" not in rendered
+
+
+def test_ai_chat_citation_with_link_text_cites_its_note() -> None:
+    # [[UUID|text]] is the same reference as [[UUID]] (docs/ui/references.md, "Link text").
+    markdown = f"Supported finding. [[{NOTE_ID}|the plan]]"
+    rendered = render_ai_chat_markdown_to_html(
+        markdown, notes=FakeNotes(), allowed_note_ids=(NOTE_ID,), allowed_web_evidence=(),
+    )
+
+    assert find_note_citation_ids(markdown, notes=FakeNotes()) == (NOTE_ID,)
+    assert 'class="ai-chat-citation-marker"' in rendered
+    assert "|the plan" not in rendered
+    assert strip_note_citations_for_history(markdown) == "Supported finding."
 
 
 def test_ai_chat_streaming_renderer_withholds_all_reference_ui_until_done() -> None:

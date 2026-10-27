@@ -87,6 +87,8 @@ _WHITESPACE_RE = re.compile(r"\s+")
 _LINK_OPEN = "[["
 _EMBED_OPEN = "![["
 _REFERENCE_CLOSE = "]]"
+# Between a reference's UUID and its link text: [[UUID|shown text]].
+_LINK_TEXT_SEPARATOR = "|"
 # The first meaningful fragment, plus a second one to tell whether more follow.
 _PREVIEW_HEAD_FRAGMENT_COUNT = 2
 
@@ -112,6 +114,31 @@ class ReferenceToken:
     end: int
     is_embed: bool
     occurrence_index: int
+    # The text after the first |, shown instead of the target's first line; None
+    # with no |. An embed's is unused (docs/ui/references.md, "Link text").
+    link_text: Optional[str]
+
+
+@dataclass(frozen=True, slots=True)
+class ReferenceTarget:
+    note_id: str
+    link_text: Optional[str]
+
+
+def parse_reference_inner(inner: str) -> Optional[ReferenceTarget]:
+    """What is written between [[ and ]]: a UUID, then optionally | and link text
+    (agreed 2026-10-27, docs/ui/references.md, "Link text"). The text runs to the
+    ]], further | included; it holds no bracket or line break and is not empty.
+    None when it is not a reference."""
+    note_id, separator, link_text = inner.partition(_LINK_TEXT_SEPARATOR)
+    note_id = note_id.strip()
+    if not _is_valid_embed_note_id(note_id):
+        return None
+    if separator == "":
+        return ReferenceTarget(note_id=note_id, link_text=None)
+    if link_text.strip() == "" or any(character in link_text for character in "[]\n"):
+        return None
+    return ReferenceTarget(note_id=note_id, link_text=link_text)
 
 
 class _FootnoteReferencePreview(HTMLParser):
@@ -570,10 +597,9 @@ def _replace_reference_tokens_in_text(
             output.append(text[token_start:])
             break
 
-        raw_id = text[token_start + token_open_length : end]
-        reference_note_id = raw_id.strip()
+        target = parse_reference_inner(text[token_start + token_open_length : end])
 
-        if not _is_valid_embed_note_id(reference_note_id):
+        if target is None:
             # Not a note id (a formatting wrapper or plain brackets): keep the opener
             # and scan on, so a link nested inside, as in [[see [[id]] here]], still counts.
             output.append(text[token_start : token_start + token_open_length])
@@ -583,7 +609,8 @@ def _replace_reference_tokens_in_text(
         output.append(
             _render_reference_block(
                 host_note_id=host_note_id,
-                reference_note_id=reference_note_id,
+                reference_note_id=target.note_id,
+                link_text=target.link_text,
                 occurrence_index=occurrence_index,
                 is_embed=is_embed,
                 context=context,
@@ -618,16 +645,16 @@ def _collect_reference_tokens_in_text(
         if token_end_inner == -1:
             break
 
-        raw_id = text[token_start + token_open_length : token_end_inner]
-        note_id = raw_id.strip()
-        if _is_valid_embed_note_id(note_id):
+        target = parse_reference_inner(text[token_start + token_open_length : token_end_inner])
+        if target is not None:
             tokens.append(
                 ReferenceToken(
-                    note_id=note_id,
+                    note_id=target.note_id,
                     start=text_offset + token_start,
                     end=text_offset + token_end_inner + len(_REFERENCE_CLOSE),
                     is_embed=is_embed,
                     occurrence_index=occurrence_index,
+                    link_text=target.link_text,
                 )
             )
             occurrence_index += 1
@@ -659,6 +686,7 @@ def _render_reference_block(
     *,
     host_note_id: str,
     reference_note_id: str,
+    link_text: Optional[str],
     occurrence_index: int,
     is_embed: bool,
     context: EmbedRenderContext,
@@ -703,6 +731,10 @@ def _render_reference_block(
                 # A folded note shows one line: an embed on it shows its note folded.
                 folds_root=folds_embeds,
             )
+        elif link_text is not None:
+            body_html = _render_link_text_body(
+                reference_note_id=reference_note_id, link_text=link_text, static_export=static_export,
+            )
         else:
             body_html = _render_link_body(
                 reference_note_id=reference_note_id,
@@ -731,6 +763,7 @@ def _render_reference_block(
             body_html = _render_file_link_body(
                 record=record,
                 reference_note_id=reference_note_id,
+                link_text=link_text,
                 static_export=static_export,
             )
     else:
@@ -854,6 +887,22 @@ def _render_link_body(
         f'<a href="#" class="note-reference-link" data-ref-note-id="{escaped_note_id}">'
         '<span class="note-reference-link-icon note-reference-icon" aria-hidden="true" title="Go to source note"></span>'
         f'<span class="{title_classes}">{preview_html}</span>'
+        "</a>"
+    )
+
+
+def _render_link_text_body(*, reference_note_id: str, link_text: str, static_export: bool) -> str:
+    """A link with the text written after its | (agreed 2026-10-27): fixed, plain text,
+    whatever the target's first line, a password note's included."""
+    # The text comes from the note's HTML, its < and & already entities: shown as written.
+    shown_html = html.escape(html.unescape(link_text))
+    if static_export:
+        return f'<span class="note-reference-link note-reference-link-static">{shown_html}</span>'
+    escaped_note_id = html.escape(reference_note_id, quote=True)
+    return (
+        f'<a href="#" class="note-reference-link" data-ref-note-id="{escaped_note_id}">'
+        '<span class="note-reference-link-icon note-reference-icon" aria-hidden="true" title="Go to source note"></span>'
+        f'<span class="note-reference-link-title">{shown_html}</span>'
         "</a>"
     )
 
@@ -1081,6 +1130,8 @@ def _render_file_embed_body(
     return _render_file_body(
         record=record,
         reference_note_id=reference_note_id,
+        # An embed's text after | is unused for now (an image's size later).
+        link_text=None,
         is_embed=True,
         static_export=static_export,
     )
@@ -1090,11 +1141,13 @@ def _render_file_link_body(
     *,
     record: object,
     reference_note_id: str,
+    link_text: Optional[str],
     static_export: bool,
 ) -> str:
     return _render_file_body(
         record=record,
         reference_note_id=reference_note_id,
+        link_text=link_text,
         is_embed=False,
         static_export=static_export,
     )
@@ -1104,6 +1157,7 @@ def _render_file_body(
     *,
     record: object,
     reference_note_id: str,
+    link_text: Optional[str],
     is_embed: bool,
     static_export: bool,
 ) -> str:
@@ -1126,6 +1180,9 @@ def _render_file_body(
 
     escaped_note_id = html.escape(reference_note_id, quote=True)
     escaped_title = html.escape(title)
+    if link_text is not None and not is_embed:
+        # A link's text from its | stands in for the file's name (agreed 2026-10-27).
+        escaped_title = html.escape(html.unescape(link_text))
     escaped_title_attribute = html.escape(title, quote=True)
     badge_text = html.escape(_format_file_badge(thumbnail_kind=thumbnail_kind, original_filename=original_filename))
     if static_export:
@@ -1534,15 +1591,43 @@ def _strip_reference_tokens(text: str) -> str:
     return normalized.strip()
 
 
-def _strip_reference_token_if_uuid(match: re.Match[str]) -> str:
+# Anything in double brackets, as plain text read for words drops it.
+_BRACKETED_SPAN_RE = re.compile(r"!?\[\[[^\]]+\]\]")
+
+
+def text_with_references_as_words(text: str) -> str:
+    """Plain text with every [[...]] and ![[...]] dropped, but for a link's text
+    after | (docs/ui/references.md, "Link text"), which reads in its place."""
+    if not isinstance(text, str):
+        raise TypeError("text must be a string")
+    return _BRACKETED_SPAN_RE.sub(_link_text_or_space, text)
+
+
+def _link_text_or_space(match: re.Match[str]) -> str:
     token = match.group(0)
     if token.startswith(_EMBED_OPEN):
-        note_id = token[len(_EMBED_OPEN) : -len(_REFERENCE_CLOSE)].strip()
-    else:
-        note_id = token[len(_LINK_OPEN) : -len(_REFERENCE_CLOSE)].strip()
-    if _is_valid_embed_note_id(note_id):
         return " "
-    return token
+    target = parse_reference_inner(token[len(_LINK_OPEN) : -len(_REFERENCE_CLOSE)])
+    if target is None or target.link_text is None:
+        return " "
+    return f" {target.link_text} "
+
+
+def _strip_reference_token_if_uuid(match: re.Match[str]) -> str:
+    """A reference in a line read as text: its link text where it has one (shown
+    there in its place), else a space. Anything else in brackets stays."""
+    token = match.group(0)
+    if token.startswith(_EMBED_OPEN):
+        target = parse_reference_inner(token[len(_EMBED_OPEN) : -len(_REFERENCE_CLOSE)])
+        if target is None:
+            return token
+        return " "
+    target = parse_reference_inner(token[len(_LINK_OPEN) : -len(_REFERENCE_CLOSE)])
+    if target is None:
+        return token
+    if target.link_text is not None:
+        return f" {target.link_text} "
+    return " "
 
 
 def _is_collapsed_preview_line_boundary_tag(tag_html: str) -> bool:

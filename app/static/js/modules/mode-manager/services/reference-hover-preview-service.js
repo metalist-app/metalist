@@ -5,7 +5,7 @@ import { PREVIEW_OWNERS, hideReferencePreview, showReferencePreview } from './re
 // A link's preview card (docs/ui/references.md, "Preview"; agreed 2026-10-26): the
 // pointer resting on a reference shows the card of the note it names, just below
 // that line (above it near the window's bottom), from the link's left edge. In the
-// note being edited that is its `[[UUID]]` or `![[UUID]]`, brackets included;
+// note being edited that is its `[[UUID]]` or `![[UUID]]` (with any `|text`), brackets included;
 // elsewhere a link (an embed already shows its note). Passing over without
 // stopping shows nothing; moving off, typing, a click or a scroll hides it. While
 // the `[[` list is open only its own card shows. Only a mouse rests: touch shows none.
@@ -15,7 +15,8 @@ const HOVER_DELAY_MS = 300;
 // Between the reference's line and the card, as between a `[[` and its list.
 const GAP_PX = 6;
 const MOUSE = 'mouse';
-const REFERENCE_RE = /!?\[\[([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\]\]/g;
+// With any link text after a | (docs/ui/references.md, "Link text"), read as the server reads it.
+const REFERENCE_RE = /!?\[\[([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:\|[^[\]\n]*[^\s[\]][^[\]\n]*)?\]\]/g;
 const LINK_SELECTOR = '.note-reference-block.note-reference-note.note-reference-link-mode[data-ref-note-id]';
 const EDITED_CONTENT_SELECTOR = '.note.editing > .note-content';
 
