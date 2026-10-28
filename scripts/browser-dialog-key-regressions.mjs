@@ -339,7 +339,12 @@ async function checkRemovePassword(page, password) {
   }, password);
   await page.waitForSelector('#current-password', {visible: true});
   await settle(page);
-  assert.equal(await focusedId(page), 'current-password', 'Remove Password: focus must start in the password field');
+  // What has focus instead, when it fails (Firefox on Linux found none, 2026-10-28).
+  const focused = await page.evaluate(() => {
+    const active = document.activeElement;
+    return `${active.tagName}#${active.id}.${active.className} in ${active.closest('[id]')?.id}; dialog shown: ${document.getElementById('current-password') !== null}`;
+  });
+  assert.equal(await focusedId(page), 'current-password', `Remove Password: focus must start in the password field (focus: ${focused})`);
   await recordRequests(page, ['/password/remove']);
   await page.keyboard.type(password);
   await page.click('#confirm-remove');
