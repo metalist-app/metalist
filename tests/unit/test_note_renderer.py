@@ -2,12 +2,11 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-import pytest
 
 from app.presentation.render.note_renderer import render_read_only_mode
 
 
-def test_llm_note_preserves_completed_chat_html_exactly() -> None:
+def test_a_saved_chat_answer_keeps_its_chat_html_exactly() -> None:
     completed_chat_html = (
         '<div class="ai-chat-message-content meta-markdown" '
         'data-markdown-rendered="true">'
@@ -21,15 +20,15 @@ def test_llm_note_preserves_completed_chat_html_exactly() -> None:
         '<details class="ai-chat-references-disclosure"></details>'
         '</div>'
     )
-    note = SimpleNamespace(content=completed_chat_html, tags="@llm")
+    note = SimpleNamespace(content=completed_chat_html, tags="@ai")
 
     assert render_read_only_mode(note) == completed_chat_html
 
 
-def test_legacy_markdown_llm_note_remains_loadable() -> None:
+def test_a_markdown_chat_answer_is_drawn_as_chat_html() -> None:
     note = SimpleNamespace(
         content="<div># Prior copy</div><div></div><div>Body text</div>",
-        tags="@markdown @llm",
+        tags="@markdown @ai",
     )
 
     assert render_read_only_mode(note) == (
@@ -40,8 +39,10 @@ def test_legacy_markdown_llm_note_remains_loadable() -> None:
     )
 
 
-def test_llm_note_rejects_non_chat_html() -> None:
-    note = SimpleNamespace(content="<div>Plain note</div>", tags="@llm")
+def test_a_note_tagged_ai_by_hand_copies_as_an_ordinary_note() -> None:
+    # "Ideas for using AI at work", tagged @ai in its tag bar: not a saved chat answer, so
+    # it copies like any other note, comments left out (agreed 2026-10-28).
+    content = "<div>Ideas for using AI at work /* draft */</div>"
+    plain = render_read_only_mode(SimpleNamespace(content=content, tags=""))
 
-    with pytest.raises(RuntimeError, match="@llm note is missing completed chat HTML"):
-        render_read_only_mode(note)
+    assert render_read_only_mode(SimpleNamespace(content=content, tags="@ai")) == plain

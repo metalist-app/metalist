@@ -14,7 +14,7 @@ Written without running the code. References are from reading it; verify before 
 
 ## 2. Naming: one reserved `@style` tag, user-named values (agreed)
 
-- **`@style` is a single reserved tag; its value is a style name the user defines:** `bug => @style=alert`, `@LLM => @style=borrowed`.
+- **`@style` is a single reserved tag; its value is a style name the user defines:** `bug => @style=alert`, `@ai => @style=borrowed`.
 - The reserved vocabulary doesn't grow; the names belong to the user.
 - Styles are triggered the usual way: a tag on the note, or a rule implying `@style=…`. They compose with everything else.
 

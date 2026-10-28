@@ -95,7 +95,7 @@ def reload_runtime_from_database(*, was_loaded: bool, dek: bytes | None) -> None
                 link_title_store.ensure_decrypted(token='')
                 reminder_store.ensure_decrypted(token='')
                 search_history_store.ensure_decrypted(token='')
-                rows = populate_cache_from_db(session)
+                rows = populate_cache_from_db(session, saved_searches=tab_state_store)
                 store.load_from_db(None, prefetched_rows=rows)
                 auth_cache_state.mark_cache_ready()
                 del rows

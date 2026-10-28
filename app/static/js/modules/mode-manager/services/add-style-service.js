@@ -18,7 +18,7 @@ export const ADD_STYLE_OPTIONS = Object.freeze([
     Object.freeze({ id: 'green', label: 'Green', tag: '@green' }),
     Object.freeze({ id: 'blue', label: 'Blue', tag: '@blue' }),
     Object.freeze({ id: 'grey', label: 'Grey', tag: '@grey' }),
-    Object.freeze({ id: 'highlighter', label: 'Highlighter', tag: '@highlighter' }),
+    Object.freeze({ id: 'highlight', label: 'Highlight', tag: '@highlight' }),
     Object.freeze({ id: 'copyable', label: 'Copyable', tag: '@copyable' }),
     Object.freeze({ id: 'size-010', label: 'Size 10%', tag: '@size=0.1' }),
     Object.freeze({ id: 'size-025', label: 'Size 25%', tag: '@size=0.25' }),

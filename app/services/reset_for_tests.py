@@ -44,7 +44,7 @@ def reset_state_for_tests() -> None:
 
     session = SafeSession()
     try:
-        prefetched_rows = populate_cache_from_db(session)
+        prefetched_rows = populate_cache_from_db(session, saved_searches=tab_state_store)
         session.commit()
     finally:
         session.close()

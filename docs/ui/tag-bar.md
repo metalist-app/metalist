@@ -1,6 +1,6 @@
 # Tag Bar
 
-Agreed, not built (2026-10-28): four built-in `@` tags renamed, with a one-time conversion (`docs/ready-to-build/meta-tag-renames.md`).
+Four built-in `@` tags were renamed 2026-10-28, converted once in every vault (`docs/ui/content-formatting.md`).
 
 ## Overview
 - Each note has a tag string (`notes.tags`) that round-trips through the view snapshot (`snapshot.notes[*].tags`).
@@ -66,14 +66,14 @@ Examples (autocorrected while typing):
   - `@heading` increases font size and weight.
   - `@bold`, `@italic`, `@strikethrough` apply basic text styling.
   - `@serif` switches to a serif font.
-  - `@red`, `@green`, `@blue`, `@grey` apply text colors.
-  - `@highlighter` adds a fluorescent-yellow, slightly irregular marker stroke behind the text.
+  - `@red`, `@green`, `@blue`, `@grey` (or `@gray`) apply text colors.
+  - `@highlight` adds a fluorescent-yellow, slightly irregular marker stroke behind the text.
   - `@copyable` makes the rendered content clickable to copy its raw text to the clipboard.
   - `@size=0.1`, `0.25`, `0.5`, `0.75`, `1.0`, `1.25`, `1.5`, `2.0`, or `3.0` scales a whole note or scoped region non-destructively in view mode.
   - Ontology implication rules can add these formatting tags implicitly (e.g. `bug => @red`).
 - List meta tags:
-  - `@list-bulleted` renders the note's immediate children with bullet markers.
-  - `@list-numbered` renders the note's immediate children with numbered markers.
+  - `@bullets` renders the note's immediate children with bullet markers.
+  - `@numbered` renders the note's immediate children with numbered markers.
   - Only the **direct** children are affected (grandchildren are not).
 - Credential meta tags:
   - `@username` renders a view-only user-icon row with a copyable value.

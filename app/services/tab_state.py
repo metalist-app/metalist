@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 import json
 import re
 from threading import Lock
-from typing import Dict, List, Optional
+from typing import Callable, Dict, List, Optional
 from uuid import uuid4
 
 from app.db.session import begin_writer
@@ -637,6 +637,40 @@ class TabStateStore:
         snapshot = self._deserialize_snapshot_json(plaintext)
         self._apply_snapshot_locked(snapshot)
         self._clear_encrypted_state_locked()
+
+    def rename_search_terms(self, *, rename: Callable[[str], str], connection) -> int:
+        """Each search context's search, and a reference view's queries, as `rename` returns
+        them (meta_tag_renames.py, a one-time pass), saved with `connection` when any
+        changed. Returns how many searches changed."""
+        if not callable(rename):
+            raise TypeError("rename must be callable")
+        with self._lock:
+            self._try_decrypt_locked(token="", require_success=True)
+            changed = 0
+            for tab in self._tabs.values():
+                search_query = tab["searchQuery"]
+                assert isinstance(search_query, str), "a tab's search is text"
+                renamed = rename(search_query)
+                if renamed != search_query:
+                    tab["searchQuery"] = renamed
+                    changed += 1
+            for view in self._reference_views.values():
+                reference_query = view["referenceQuery"]
+                scope = view["originScope"]
+                assert isinstance(reference_query, str) and isinstance(scope, dict), "a reference view is normalized"
+                # A reference view runs its tab's search, so both change together.
+                view["referenceQuery"] = rename(reference_query)
+                origin_query = scope["searchQuery"]
+                assert isinstance(origin_query, str), "an origin scope's search is text"
+                renamed = rename(origin_query)
+                if renamed != origin_query:
+                    scope["searchQuery"] = renamed
+                    changed += 1
+            if changed == 0:
+                return 0
+            self._version += 1
+            self._persist_locked(connection=connection, encryption_service=None, force_plaintext=False)
+            return changed
 
     def _persist_locked(
         self,

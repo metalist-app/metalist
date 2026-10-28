@@ -881,7 +881,7 @@ def copy_ai_message(
     if content == "":
         raise HTTPException(status_code=HTTPStatus.CONFLICT, detail="AI response is empty")
 
-    tags = "@llm"
+    tags = "@ai"
     note_content = _render_ai_response_note_content(
         markdown_text=content,
         session_key=session_key,

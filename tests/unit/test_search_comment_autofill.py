@@ -7,15 +7,15 @@ from app.usecases.search_comment_autofill import compute_initial_tags_for_new_no
 def test_compute_initial_tags_for_new_note_keeps_meta_for_root() -> None:
     tags = compute_initial_tags_for_new_note(
         parent_id=None,
-        search_query="@list-bulleted",
+        search_query="@bullets",
     )
-    assert tags == "@list-bulleted"
+    assert tags == "@bullets"
 
 
 def test_compute_initial_tags_for_new_note_drops_meta_for_children() -> None:
     tags = compute_initial_tags_for_new_note(
         parent_id="parent-note",
-        search_query="@list-bulleted",
+        search_query="@bullets",
     )
     assert tags == ""
 

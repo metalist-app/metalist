@@ -59,11 +59,19 @@ def _store_raw(note_id: str, html: str, *, prev_id: str | None, next_id: str | N
         )
 
 
+class _NoSavedSearches:
+    """Search contexts with nothing to rename (their pass is tested in test_meta_tag_renames)."""
+
+    def rename_search_terms(self, *, rename, connection) -> int:
+        del rename, connection
+        return 0
+
+
 def _unlock() -> None:
     clear_cache()
     session = SafeSession()
     try:
-        populate_cache_from_db(session)
+        populate_cache_from_db(session, saved_searches=_NoSavedSearches())
         session.commit()
     finally:
         session.close()
@@ -82,8 +90,10 @@ def _stored(note_id: str) -> tuple[str, str]:
 
 def _records() -> list[tuple[str, str, int]]:
     with begin_writer() as connection:
+        # The cleaning's own record; the tag renames record theirs beside it.
         return [tuple(row) for row in connection.execute(
-            f"SELECT migration_id, status, converted_count FROM {NAMESPACE_CONTENT_MIGRATIONS_TABLE}",
+            f"SELECT migration_id, status, converted_count FROM {NAMESPACE_CONTENT_MIGRATIONS_TABLE} "
+            "WHERE migration_id LIKE ?", (content_cache.STORED_HTML_CLEANED_PREFIX + "%",),
         ).fetchall()]
 
 

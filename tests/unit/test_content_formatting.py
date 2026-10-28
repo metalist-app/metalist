@@ -39,7 +39,7 @@ def test_remove_added_style_tags_preserves_comments_semantic_tags_and_remaining_
 
 def test_remove_added_style_tags_removes_highlighter_style() -> None:
     updated_tags, wrappers_to_remove = remove_added_style_tags(
-        "@todo @highlighter {@highlighter}"
+        "@todo @highlight {@highlight}"
     )
 
     assert updated_tags == "@todo"
@@ -358,7 +358,7 @@ def test_format_note_content_for_view_scoped_multiple_meta_tags_apply_union() ->
 def test_format_note_content_for_view_scoped_highlighter_uses_inline_box_wrapper() -> None:
     rendered = format_note_content_for_view(
         content_html="<div>{highlighted text}</div>",
-        tags="{@highlighter}",
+        tags="{@highlight}",
     )
 
     assert rendered == (
@@ -376,7 +376,7 @@ def test_format_note_content_for_view_scoped_style_spans_multiple_blocks() -> No
     )
     highlighter_rendered = format_note_content_for_view(
         content_html=content_html,
-        tags="{@highlighter}",
+        tags="{@highlight}",
     )
 
     assert red_rendered == (
@@ -410,7 +410,7 @@ def test_format_note_content_for_view_unclosed_multi_block_scope_stays_literal()
 
     rendered = format_note_content_for_view(
         content_html=content_html,
-        tags="{@highlighter}",
+        tags="{@highlight}",
     )
 
     assert rendered == content_html
@@ -419,7 +419,7 @@ def test_format_note_content_for_view_unclosed_multi_block_scope_stays_literal()
 def test_format_note_content_for_view_global_highlighter_wraps_block_content() -> None:
     rendered = format_note_content_for_view(
         content_html="<div>highlighted text</div>",
-        tags="@highlighter",
+        tags="@highlight",
     )
 
     assert rendered == (
@@ -1015,13 +1015,13 @@ def test_find_list_style_returns_none_without_list_tags() -> None:
 
 
 def test_find_list_style_prefers_last_tag() -> None:
-    assert find_list_style("@list-bulleted @list-numbered") == "numbered"
-    assert find_list_style("@list-numbered @list-bulleted") == "bulleted"
+    assert find_list_style("@bullets @numbered") == "numbered"
+    assert find_list_style("@numbered @bullets") == "bulleted"
 
 
 def test_find_list_style_ignores_wrapped_tags() -> None:
-    assert find_list_style("((@list-bulleted))") is None
-    assert find_list_style("[[@list-numbered]]") is None
+    assert find_list_style("((@bullets))") is None
+    assert find_list_style("[[@numbered]]") is None
 
 
 def test_markdown_display_math_carries_its_tex_source() -> None:

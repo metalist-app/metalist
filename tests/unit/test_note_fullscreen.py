@@ -44,7 +44,7 @@ def test_fullscreen_markup_ignores_ancestors_and_renders_all_descendants(
 ) -> None:
     notes = {
         "parent": _Note("parent", None, "Parent must be absent", ""),
-        "root": _Note("root", "parent", "Selected root", "@list-bulleted"),
+        "root": _Note("root", "parent", "Selected root", "@bullets"),
         "child": _Note("child", "root", "Collapsed child", ""),
         "grandchild": _Note("grandchild", "child", "Grandchild", ""),
     }

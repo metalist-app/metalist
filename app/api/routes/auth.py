@@ -303,7 +303,7 @@ def _run_hydration(*, rebuild_required: bool) -> None:
         return
     session = SafeSession()
     try:
-        prefetched_rows = populate_cache_from_db(session)
+        prefetched_rows = populate_cache_from_db(session, saved_searches=tab_state_store)
         session.commit()
     finally:
         session.close()
@@ -428,7 +428,7 @@ def _reset_runtime_state_after_restore() -> bool:
         if password_required:
             return True
 
-        prefetched_rows = populate_cache_from_db(session)
+        prefetched_rows = populate_cache_from_db(session, saved_searches=tab_state_store)
         note_store.load_from_db(None, prefetched_rows=prefetched_rows)
         auth_cache_state.mark_cache_ready()
         # Unlocking turns the caches of note text back on (set_encryption_key); a vault

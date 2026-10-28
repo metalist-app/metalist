@@ -64,7 +64,7 @@ export async function checkAiResponseMenu(page) {
             + '<ol><li class="ai-chat-web-reference"><span class="ai-chat-reference-number">[1]</span>'
             + '<a href="https://example.com" target="_blank" rel="noopener noreferrer">Example</a>'
             + '</li></ol></details></section></div>',
-            '@llm',
+            '@ai',
         );
         return created.id;
     });

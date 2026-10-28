@@ -76,7 +76,9 @@ _META_TAG_TO_CLASS = {
     "green": "meta-green",
     "blue": "meta-blue",
     "grey": "meta-grey",
-    "highlighter": "meta-highlighter",
+    # Both spellings work, and neither is converted (agreed 2026-10-28).
+    "gray": "meta-grey",
+    "highlight": "meta-highlighter",
     "bold": "meta-bold",
     "italic": "meta-italic",
     "strikethrough": "meta-strikethrough",
@@ -97,8 +99,8 @@ _SUGGESTED_SIZE_TAG_NAMES = (
 )
 
 _LIST_STYLE_TAGS = {
-    "list-bulleted": "bulleted",
-    "list-numbered": "numbered",
+    "bullets": "bulleted",
+    "numbered": "numbered",
 }
 
 _RENDERER_TAGS = frozenset({"markdown", "latex", "json", "csv", "shell", "chess", "diff", "mermaid"})
@@ -262,7 +264,7 @@ def list_known_meta_tag_terms() -> FrozenSet[str]:
     terms.update(f"@{name}" for name in _EMAIL_TAGS)
     terms.update(f"@{name}" for name in _STATUS_TAGS)
     terms.add("@markdown")
-    terms.add("@llm")
+    terms.add("@ai")
     terms.add("@LaTeX")
     terms.add("@shell")
     terms.add("@json")
@@ -1433,7 +1435,7 @@ def _render_scoped_renderer(
 
 
 def _should_use_box_wrapper(tag_names: Set[str] | FrozenSet[str]) -> bool:
-    if "strikethrough" in tag_names or "highlighter" in tag_names:
+    if "strikethrough" in tag_names or "highlight" in tag_names:
         return True
     return any(tag_name.startswith("size=") for tag_name in tag_names)
 

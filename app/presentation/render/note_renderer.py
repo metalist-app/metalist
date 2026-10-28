@@ -14,8 +14,21 @@ from app.services.ai_chat_rendering import render_ai_chat_markdown_to_html
 from app.services.note_store import store as note_store
 
 
+# The markup a saved chat answer holds (app/api/routes/ai.py); a note tagged @ai by hand
+# has none and is an ordinary note (agreed 2026-10-28).
+_CHAT_ANSWER_MARKUP = 'class="ai-chat-message-content meta-markdown"'
+
+
+def _is_saved_chat_answer(*, content_html: str, tags: str) -> bool:
+    if not note_tags_include(tags, "@ai"):
+        return False
+    if note_tags_include(tags, "@markdown"):
+        return True
+    return _CHAT_ANSWER_MARKUP in content_html
+
+
 def _format_note_content_standard(*, content_html: str, tags: str) -> str:
-    if note_tags_include(tags, "@llm"):
+    if _is_saved_chat_answer(content_html=content_html, tags=tags):
         if note_tags_include(tags, "@markdown"):
             markdown_text = extract_plain_text_from_note_html(content_html)
             if markdown_text == "":
@@ -35,8 +48,6 @@ def _format_note_content_standard(*, content_html: str, tags: str) -> str:
                 'data-markdown-rendered="true">'
                 f"{rendered_content}</div>"
             )
-        if 'class="ai-chat-message-content meta-markdown"' not in content_html:
-            raise RuntimeError("@llm note is missing completed chat HTML")
         return content_html
     return format_note_content_for_view(
         content_html=content_html,
@@ -70,6 +81,6 @@ def render_read_only_mode(note) -> str:
     if not isinstance(tags, str):
         raise TypeError(f"Note tags must be a string, got {type(tags)}")
     content = note.content
-    if not note_tags_include(tags, "@llm"):
+    if not _is_saved_chat_answer(content_html=content, tags=tags):
         content = strip_comments_from_html(content)
     return _format_note_content_standard(content_html=content, tags=tags)

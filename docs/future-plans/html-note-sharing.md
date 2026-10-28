@@ -184,7 +184,7 @@ Three strategies, **combined**, every step explicit:
 
 ## B4. Provenance: the `@source` super tag
 
-- **Every imported note gets `@source`,** a built-in super tag carrying the pack's **name and version**, its **author**, its **repository address**, and possibly its **license**. Same family as `@LLM` (and the web clipper's `@web`): content that came from outside the user.
+- **Every imported note gets `@source`,** a built-in super tag carrying the pack's **name and version**, its **author**, its **repository address**, and possibly its **license**. Same family as `@ai` (and the web clipper's `@web`): content that came from outside the user.
 - **What it gives, with nothing new built:** search `@source` (narrow by attribute to one pack); rules such as "`@source` implies a lighter background"; knowing which notes belong to which pack for updates (B5); and contributing back.
 - **Open:** how a note the recipient adds becomes part of a pack for a pull request. First guess: **giving it the pack's `@source` tag is what opts it in,** with no separate "add to pack" feature.
 

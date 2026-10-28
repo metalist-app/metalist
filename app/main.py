@@ -351,7 +351,7 @@ else:
     cache_start = time.perf_counter()
     cache_session = SafeSession()
     try:
-        prefetched_rows = populate_cache_from_db(cache_session)
+        prefetched_rows = populate_cache_from_db(cache_session, saved_searches=tab_state_store)
         cache_session.commit()
     finally:
         cache_session.close()

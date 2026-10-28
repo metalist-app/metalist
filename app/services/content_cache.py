@@ -7,7 +7,7 @@ manually by the sqlite helper layer and service hooks.
 
 import logging
 import time
-from typing import Dict, Iterator, Mapping, Sequence
+from typing import Callable, Dict, Iterator, Mapping, Protocol, Sequence
 
 from app.db.content_migrations_sql import is_content_migration_complete
 from app.db.content_migrations_sql import record_content_migration_complete
@@ -19,6 +19,9 @@ from app.db.session import begin_writer
 from ..models.database import SafeSession
 from ..utils.encryption import encrypt, get_encryption_service
 from app.services.hydration_state import hydration_state
+from app.services.meta_tag_renames import (
+    META_TAG_RENAMES_MIGRATION_ID, META_TAG_RENAMES_PREFIX, rename_meta_tags_in_search, rename_meta_tags_in_tag_bar,
+)
 from app.utils.text_utils import strip_sanitized_html
 from app.security.note_html import sanitize_note_html, sanitizer_fingerprint
 
@@ -112,7 +115,15 @@ def stored_html_cleaned_migration_id() -> str:
     return STORED_HTML_CLEANED_PREFIX + sanitizer_fingerprint()
 
 
-def populate_cache_from_db(db: SafeSession) -> Sequence[Mapping[str, object]]:
+class SavedSearches(Protocol):
+    """Where the search contexts' searches are kept (tab_state.tab_state_store), for a
+    one-time pass that renames terms in them. Passed in: tab_state reaches the note store,
+    which reads this module."""
+
+    def rename_search_terms(self, *, rename: Callable[[str], str], connection: object) -> int: ...
+
+
+def populate_cache_from_db(db: SafeSession, *, saved_searches: SavedSearches) -> Sequence[Mapping[str, object]]:
     """Fill the cache with every note, decrypted, and return each note's structure
     fields (_NOTE_STRUCTURE_FIELDS) for the note store.
 
@@ -132,11 +143,15 @@ def populate_cache_from_db(db: SafeSession) -> Sequence[Mapping[str, object]]:
         raw = raw_sqlite_connection(db.connection())
         migration_id = stored_html_cleaned_migration_id()
         clean_stored_html = not is_content_migration_complete(raw, migration_id)
-        structures, cleaned_notes = _populate_from_rows(
+        rename_meta_tags = not is_content_migration_complete(raw, META_TAG_RENAMES_MIGRATION_ID)
+        structures, cleaned_notes, renamed_tags = _populate_from_rows(
             count_notes(raw), iter_all_for_cache(raw), clean_stored_html=clean_stored_html,
+            rename_meta_tags=rename_meta_tags,
         )
     if clean_stored_html:
         _store_cleaned_notes(cleaned_notes, migration_id=migration_id)
+    if rename_meta_tags:
+        _store_renamed_meta_tags(renamed_tags, saved_searches=saved_searches)
     return structures
 
 
@@ -158,11 +173,37 @@ def _store_cleaned_notes(cleaned_notes: Mapping[str, str], *, migration_id: str)
     logger.info("Cleaned stored note HTML once: %d notes changed", len(cleaned_notes))
 
 
+def _store_renamed_meta_tags(renamed_tags: Mapping[str, tuple[str, str]], *, saved_searches: SavedSearches) -> None:
+    """Stores each note's renamed tags and proposed tags, encrypted as a save would,
+    keeping its updated time; renames the old names in the search contexts' searches; and
+    records the pass, all in one write (meta_tag_renames.py)."""
+    with begin_writer() as writer:
+        connection = raw_sqlite_connection(writer)
+        for note_id, (tags, proposed_tags) in renamed_tags.items():
+            tags_ciphertext, tags_nonce, tags_tag = encrypt(tags, "")
+            proposed_ciphertext, proposed_nonce, proposed_tag = encrypt(proposed_tags, "")
+            update_note_fields_preserving_updated_at(
+                connection, note_id,
+                tags=tags_ciphertext, tags_encryption_nonce=tags_nonce, tags_encryption_tag=tags_tag,
+                proposed_tags=proposed_ciphertext, proposed_tags_encryption_nonce=proposed_nonce,
+                proposed_tags_encryption_tag=proposed_tag,
+            )
+        renamed_searches = saved_searches.rename_search_terms(rename=rename_meta_tags_in_search, connection=connection)
+        record_content_migration_complete(
+            connection, migration_id=META_TAG_RENAMES_MIGRATION_ID,
+            converted_count=len(renamed_tags) + renamed_searches, superseded_prefix=META_TAG_RENAMES_PREFIX,
+        )
+    logger.info(
+        "Renamed built-in tags once: %d notes and %d searches changed", len(renamed_tags), renamed_searches,
+    )
+
+
 def _populate_from_rows(
-    note_count: int, notes: Iterator[dict], *, clean_stored_html: bool,
-) -> tuple[Sequence[Mapping[str, object]], Mapping[str, str]]:
-    """The structure rows, and when clean_stored_html, each note the cleaning changed
-    with its cleaned content."""
+    note_count: int, notes: Iterator[dict], *, clean_stored_html: bool, rename_meta_tags: bool,
+) -> tuple[Sequence[Mapping[str, object]], Mapping[str, str], Mapping[str, tuple[str, str]]]:
+    """The structure rows; when clean_stored_html, each note the cleaning changed with its
+    cleaned content; when rename_meta_tags, each note whose tags or proposed tags name a
+    renamed built-in tag, with both renamed (meta_tag_renames.py)."""
     global _search_cache, _tag_cache, _proposed_tag_cache, _text_cache
 
     if _CACHE_TIMING_ENABLED:
@@ -194,6 +235,7 @@ def _populate_from_rows(
     read_seconds = 0.0
     tag_decrypt_seconds = 0.0
     cleaned_notes: Dict[str, str] = {}
+    renamed_tags: Dict[str, tuple[str, str]] = {}
     processed = 0
     last_checkpoint = loop_started
     # Waiting for the next row: SQLite reading it and sqlite3 building its row.
@@ -299,6 +341,13 @@ def _populate_from_rows(
         else:
             decrypted_proposed_tags = proposed_tags
         tag_decrypt_seconds += time.perf_counter() - tags_started
+        if rename_meta_tags:
+            renamed = rename_meta_tags_in_tag_bar(decrypted_tags)
+            renamed_proposed = rename_meta_tags_in_tag_bar(decrypted_proposed_tags)
+            if renamed != decrypted_tags or renamed_proposed != decrypted_proposed_tags:
+                renamed_tags[note_id] = (renamed, renamed_proposed)
+                decrypted_tags = renamed
+                decrypted_proposed_tags = renamed_proposed
 
         sanitized_content = decrypted_content
         if clean_stored_html:
@@ -366,4 +415,4 @@ def _populate_from_rows(
 
     logger.info(f"Content cache populated with {processed} notes")
 
-    return structures, cleaned_notes
+    return structures, cleaned_notes, renamed_tags
