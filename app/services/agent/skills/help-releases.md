@@ -20,6 +20,7 @@ they already have a release. Version info offers updates (see the data topic).
 - A new mark and favicon.
 - Fixed: changing the sort order while the list was still loading could open it partway down; a refresh asked for during another could be dropped, leaving deleted notes or old search results on screen; a dropped file could land out of sight; tag suggestions failed on a note whose only tags were `@` tags.
 - Vaults are upgraded (database version 12) when first unlocked: an older MetaList cannot open them afterwards.
+- Security: msgpack 1.2.4 (CVE-2026-114613) in the tools that build and test MetaList; MetaList itself does not use msgpack.
 
 ## 0.24.2
 
@@ -210,11 +211,4 @@ they already have a release. Version info offers updates (see the data topic).
 - LLM regressions use current production prompts, default to five trials with cache-aware parallel scheduling, and can run only cases affected by prompt or skill changes.
 - Improved Grammarly edit preservation and search suggestions that match the complete active clause.
 
-## 0.6.3
-
-- Restored HTTPS connection reuse and aligned the pending accept queue with the existing worker capacity, so a browser’s six-connection startup burst is admitted.
-- Every page load or refresh checks PyPI asynchronously. A newly discovered release shows a dismissible notice linking to Version Info; typing `update` in the menu also finds it.
-- Managed uv installations can update from Version Info, using the existing preflight, verified immutable backups, and namespace restart flow. Source checkouts and unmanaged installations explain why in-app installation is unavailable.
-- Release validation now transfers every installed startup asset through concurrent persistent HTTP/HTTPS connections on all supported platforms and Python versions. Actual Edge startup over LAN-style HTTPS is also required on Windows before publication.
-
-Versions before 0.6.3 are left out; the packaged README lists them.
+Versions before 0.7.2 are left out; the packaged README lists them.
