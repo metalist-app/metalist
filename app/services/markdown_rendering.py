@@ -28,6 +28,15 @@ _HORIZONTAL_RULE_MIN_CHARS = 3
 _LINK_TEXT_TO_HREF = "]("
 # Backslashes pair up into escaped backslashes; an odd one out escapes what follows.
 _BACKSLASHES_PER_ESCAPED_BACKSLASH = 2
+_TABLE_CELL_SEPARATOR = "|"
+# In a table row, `\|` is a pipe inside a cell, not a cell boundary (GFM tables).
+_ESCAPED_TABLE_CELL_SEPARATOR = "\\|"
+_MARKDOWN_ESCAPE = "\\"
+# A backslash and the one character it escapes.
+_ESCAPE_SEQUENCE_LENGTH = 2
+# The one raw HTML tag Markdown text may carry: a line break, the standard way to break
+# a line in a table cell. Matched after HTML escaping, so code spans keep it as text.
+_ESCAPED_LINE_BREAK_TAG_RE = re.compile(r"&lt;br\s*/?&gt;", re.IGNORECASE)
 
 
 @dataclass(frozen=True, slots=True)
@@ -172,13 +181,13 @@ class _MarkdownRenderer:
             line = self._lines[self._index]
             if line.strip() == "" or not _looks_like_table_row(line):
                 break
-            cells = _split_table_row(line)
-            if len(cells) != len(header_cells):
-                break
-            body_rows.append(cells)
+            body_rows.append(
+                _fit_row_to_columns(cells=_split_table_row(line), column_count=len(header_cells))
+            )
             self._index += 1
 
-        parts: List[str] = ["<table>", "<thead>", "<tr>"]
+        # The wrapper scrolls a table sideways when its words can't all fit side by side.
+        parts: List[str] = ['<div class="meta-markdown-table-wrap">', "<table>", "<thead>", "<tr>"]
         for cell in header_cells:
             parts.append(f"<th>{_render_inline_markdown(cell.strip(), allow_links=True)}</th>")
         parts.extend(["</tr>", "</thead>"])
@@ -190,7 +199,7 @@ class _MarkdownRenderer:
                     parts.append(f"<td>{_render_inline_markdown(cell.strip(), allow_links=True)}</td>")
                 parts.append("</tr>")
             parts.append("</tbody>")
-        parts.append("</table>")
+        parts.extend(["</table>", "</div>"])
         return "".join(parts)
 
     def _render_blockquote_block(self) -> str:
@@ -361,11 +370,40 @@ class _MarkdownRenderer:
 
 def _split_table_row(line: str) -> list[str]:
     trimmed = line.strip()
-    if trimmed.startswith("|"):
+    if trimmed.startswith(_TABLE_CELL_SEPARATOR):
         trimmed = trimmed[1:]
-    if trimmed.endswith("|"):
-        trimmed = trimmed[:-1]
-    return [cell.strip() for cell in trimmed.split("|")]
+    cells = _split_on_unescaped_separators(trimmed)
+    # A trailing separator closes the last cell; it does not open an empty one.
+    if len(cells) > 1 and cells[-1] == "":
+        cells.pop()
+    return [
+        cell.replace(_ESCAPED_TABLE_CELL_SEPARATOR, _TABLE_CELL_SEPARATOR).strip()
+        for cell in cells
+    ]
+
+
+def _split_on_unescaped_separators(text: str) -> list[str]:
+    """Split a row's text at each `|` that no backslash escapes."""
+    cells: list[str] = []
+    cell_start = 0
+    cursor = 0
+    while cursor < len(text):
+        if text[cursor] == _MARKDOWN_ESCAPE:
+            cursor += _ESCAPE_SEQUENCE_LENGTH
+            continue
+        if text[cursor] == _TABLE_CELL_SEPARATOR:
+            cells.append(text[cell_start:cursor])
+            cell_start = cursor + 1
+        cursor += 1
+    cells.append(text[cell_start:])
+    return cells
+
+
+def _fit_row_to_columns(*, cells: list[str], column_count: int) -> list[str]:
+    """Give a body row the header's column count, as GFM does: pad with empty cells, drop extras."""
+    assert column_count > 0
+    missing_count = column_count - len(cells)
+    return cells[:column_count] + [""] * max(missing_count, 0)
 
 
 def _looks_like_table_row(line: str) -> bool:
@@ -390,6 +428,7 @@ def _render_inline_markdown(text: str, *, allow_links: bool) -> str:
     placeholders: List[_InlinePlaceholder] = []
     rendered = html.escape(text, quote=False)
     rendered = _extract_code_spans(rendered, placeholders)
+    rendered = _ESCAPED_LINE_BREAK_TAG_RE.sub("<br>", rendered)
     if allow_links:
         rendered = _extract_markdown_links(rendered, placeholders)
         rendered = _extract_auto_links(rendered, placeholders)

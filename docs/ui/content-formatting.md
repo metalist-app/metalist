@@ -1,6 +1,6 @@
 # Note Content Formatting (Meta Tags)
 
-Agreed, not built (2026-10-27): `@stats` and `@sum=` / `@avg=` / `@min=` / `@max=` / `@count=`, totals of a note's subtree shown under its text like the footnote References (`docs/ready-to-build/stats-tag.md`); a live preview of LaTeX, CSV, Mermaid and references while editing (`docs/ready-to-build/smart-previews.md`); in tables, `<br>` as a line break, uneven rows kept, `\|` as a literal bar and columns at least as wide as their longest word (`docs/ready-to-build/markdown-tables.md`); user-named styles, `@style=name` (future plan, `docs/future-plans/user-styles.md`).
+Agreed, not built (2026-10-27): `@stats` and `@sum=` / `@avg=` / `@min=` / `@max=` / `@count=`, totals of a note's subtree shown under its text like the footnote References (`docs/ready-to-build/stats-tag.md`); a live preview of LaTeX, CSV, Mermaid and references while editing (`docs/ready-to-build/smart-previews.md`); user-named styles, `@style=name` (future plan, `docs/future-plans/user-styles.md`).
 
 ## Overview
 - Note content is stored as HTML (`notes.content`).
@@ -125,7 +125,7 @@ Other (non-meta) tags may also appear inside wrapper tokens (e.g. `{{foo bar}}`)
 ## Credential meta tags
 - `@username`: renders the note content as a credential row in view mode: a user icon (hovering it says Username), then the value; the value is click-to-copy. Like `@password`, the note is never sent to the AI, and exports and prints hide it unless the user includes it.
 - `@password`: renders the note content as a credential row in view mode: a lock icon (hovering it says Password), then the value; the value is blurred and click-to-copy. Exports and prints hide it as `••••••••` unless the user chooses to include passwords there. A link to an `@password` or `@username` note (a reference among other text) is this row: clicking the value copies it, and the link's reference icon goes to the note; exports, prints and the AI show `••••••••` (2026-10-26).
-- Text never runs out of its note, in MetaList, exports and prints: a word too long for the line (a token, a hash, a long URL) breaks at the note's edge, and code, `@json`, `@diff`, CSV and Markdown code blocks wrap their long lines, keeping spaces and indents, instead of scrolling sideways.
+- Text never runs out of its note, in MetaList, exports and prints: a word too long for the line (a token, a hash, a long URL) breaks at the note's edge, and code, `@json`, `@diff`, CSV and Markdown code blocks wrap their long lines, keeping spaces and indents, instead of scrolling sideways. The one exception is a table whose words can't all fit side by side: it scrolls sideways inside its note (only the table, never the note), because a table broken mid-word is unreadable.
 - These are view-only: in edit mode you see just the raw value.
 
 ## Email meta tags
@@ -139,6 +139,8 @@ Other (non-meta) tags may also appear inside wrapper tokens (e.g. `{{foo bar}}`)
 ## Markdown meta tags
 - `@markdown`: renders the note content as Markdown in view mode on the server.
 - Scoped Markdown renders only the matching wrapped region.
+- Tables follow GFM: `<br>` (also `<br/>`, `<br />`, any case) breaks the line inside a cell, and anywhere else inline; it is the only raw HTML tag Markdown text may carry, and code keeps it as text. A body row with too few cells gets empty ones and one with too many keeps the header's columns; the table goes on either way. `\|` is a `|` inside a cell, in code too; a bare `|` always separates cells.
+- Every table column is at least as wide as its longest word (a short header such as "State" stays on one line); a table too wide for its note scrolls sideways inside it.
 - Fenced code that names a language (```` ```python ````, ```` ```js ````, any language name or alias `@code=` accepts, in any case) is coloured as `@code=<language>` colours it, with the language label above the block. A fence with no language, or one naming plain text (`text`, `output`, `console`) or a language MetaList does not know, stays plain, with no badge. Fenced `mermaid` blocks are unaffected.
 - Fenced `mermaid` blocks render as responsive SVG diagrams in the app. They use a compact layout (13 px labels and tight spacing between nodes and rows); diagrams are never capped or scaled to fit, so large ones keep all their detail. The pinned Mermaid runtime loads locally and only when a visible note contains a Mermaid fence; no diagram source is sent to a CDN or external service.
 - Mermaid source remains ordinary stored note text. It stays searchable and can be included in AI note context when that note is otherwise permitted; this differs from text drawn inside an Excalidraw attachment.
@@ -173,6 +175,7 @@ Other (non-meta) tags may also appear inside wrapper tokens (e.g. `{{foo bar}}`)
 - `@csv`: parses the note content as CSV and renders it as a table in view mode.
 - Invalid CSV shows a red "Invalid CSV" badge and the raw content.
 - Scoped wrappers (e.g. `((@csv))`) render only the wrapped region as a CSV table.
+- Columns are at least as wide as their longest word, as in Markdown tables; a table too wide for its note scrolls sideways inside it.
 
 ## Chess meta tags
 - `@chess`: reads the note content as a FEN (Forsyth–Edwards Notation) position and draws it as a chess board in view mode, White at the bottom, files a–h and ranks 1–8 labelled. Example: `rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1` is the starting position.

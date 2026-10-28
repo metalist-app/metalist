@@ -107,3 +107,83 @@ def test_an_indented_fence_renders_its_code_without_the_indent() -> None:
 
 def test_an_indented_heading_renders_as_a_heading() -> None:
     assert render_markdown_to_html("  ## Title") == "<h2>Title</h2>"
+
+
+# Tables: line breaks in cells, uneven rows, escaped pipes (docs/ui/content-formatting.md).
+
+_STATE_TABLE_HEAD = "| State | What | Entry |\n|---|---|---|\n"
+
+
+def _table(body_cells_html: str) -> str:
+    return (
+        '<div class="meta-markdown-table-wrap"><table><thead><tr>'
+        "<th>State</th><th>What</th><th>Entry</th></tr></thead>"
+        f"<tbody>{body_cells_html}</tbody></table></div>"
+    )
+
+
+def test_line_break_tag_breaks_the_line_inside_a_table_cell() -> None:
+    rendered = render_markdown_to_html(
+        _STATE_TABLE_HEAD + "| Install | Run the script<br>then restart | ok |"
+    )
+
+    assert rendered == _table(
+        "<tr><td>Install</td><td>Run the script<br>then restart</td><td>ok</td></tr>"
+    )
+
+
+def test_every_spelling_of_the_line_break_tag_breaks_the_line() -> None:
+    for spelling in ("<br>", "<br/>", "<br />", "<BR>", "<Br />"):
+        assert render_markdown_to_html(f"one{spelling}two") == "<p>one<br>two</p>"
+
+
+def test_line_break_tag_stays_text_in_code() -> None:
+    assert render_markdown_to_html("Write `<br>` here") == (
+        "<p>Write <code>&lt;br&gt;</code> here</p>"
+    )
+    assert render_markdown_to_html("```\na<br>b\n```") == "<pre><code>a&lt;br&gt;b</code></pre>"
+
+
+def test_other_raw_html_tags_stay_escaped() -> None:
+    assert render_markdown_to_html("<b>x</b> <script>alert(1)</script>") == (
+        "<p>&lt;b&gt;x&lt;/b&gt; &lt;script&gt;alert(1)&lt;/script&gt;</p>"
+    )
+
+
+def test_short_row_gets_empty_cells_and_the_table_goes_on() -> None:
+    rendered = render_markdown_to_html(
+        _STATE_TABLE_HEAD + "| Fault | Missing a cell |\n| Idle | Waits | Reset |"
+    )
+
+    assert rendered == _table(
+        "<tr><td>Fault</td><td>Missing a cell</td><td></td></tr>"
+        "<tr><td>Idle</td><td>Waits</td><td>Reset</td></tr>"
+    )
+
+
+def test_long_row_keeps_only_the_header_columns() -> None:
+    rendered = render_markdown_to_html(_STATE_TABLE_HEAD + "| 1 | 2 | 3 | 4 |")
+
+    assert rendered == _table("<tr><td>1</td><td>2</td><td>3</td></tr>")
+
+
+def test_escaped_pipe_is_a_pipe_inside_a_cell() -> None:
+    rendered = render_markdown_to_html("| a \\| b | c |\n|---|---|\n| `d \\| e` | f |")
+
+    assert rendered == (
+        '<div class="meta-markdown-table-wrap"><table><thead><tr>'
+        "<th>a | b</th><th>c</th></tr></thead>"
+        "<tbody><tr><td><code>d | e</code></td><td>f</td></tr></tbody></table></div>"
+    )
+
+
+def test_bare_pipe_splits_cells_even_inside_a_code_span() -> None:
+    rendered = render_markdown_to_html("| a | b |\n|---|---|\n| `x | y` |")
+
+    assert "<td>`x</td><td>y`</td>" in rendered
+
+
+def test_escaped_trailing_pipe_stays_in_the_last_cell() -> None:
+    rendered = render_markdown_to_html("| a | b \\|\n|---|---|")
+
+    assert "<th>a</th><th>b |</th>" in rendered
