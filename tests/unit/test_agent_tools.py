@@ -13,7 +13,7 @@ from app.services.agent.agent_tools import run_agent_tool
 from app.services.agent.help_catalog import HELP_TOPICS
 from app.services.agent.investigation import InvestigationState
 from app.services.agent.prompt_settings import MAX_AGENT_PROMPT_CHARACTERS
-from app.services.agent.release_notes import release_notes_skill_from_readme
+from app.services.agent.release_notes import release_notes_skill_from_changelog
 from app.services.agent.retrieval_settings import AgentRetrievalSettings
 from app.services.agent.skill_settings import DEFAULT_AGENT_SKILLS
 from app.services.agent.skills import load_skill
@@ -54,36 +54,36 @@ def _small_view() -> ToolContext:
                     skills=DEFAULT_AGENT_SKILLS)
 
 
-def test_the_release_notes_help_matches_the_readme() -> None:
-    readme = (REPOSITORY_ROOT / "README.md").read_text(encoding="utf-8")
+def test_the_release_notes_help_matches_the_changelog() -> None:
+    changelog = (REPOSITORY_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
     # Regenerate with: .venv/bin/python scripts/sync_release_notes_help.py
-    assert load_skill("help-releases.md") == release_notes_skill_from_readme(readme)
+    assert load_skill("help-releases.md") == release_notes_skill_from_changelog(changelog)
 
 
 def test_release_notes_fit_a_skill_by_leaving_out_the_oldest_releases() -> None:
-    # A skill holds at most MAX_AGENT_PROMPT_CHARACTERS; the README keeps every release, the
+    # A skill holds at most MAX_AGENT_PROMPT_CHARACTERS; the changelog keeps every release, the
     # skill the newest that fit (0.25.0's notes took it past the limit, 2026-10-28).
     body = "- " + "x" * 9_000
     readme = "".join(f"## Changes in 1.{minor}.0\n\n{body}\n\n" for minor in range(5, 0, -1))
-    skill = release_notes_skill_from_readme(readme)
+    skill = release_notes_skill_from_changelog(readme)
     assert len(skill) <= MAX_AGENT_PROMPT_CHARACTERS
     assert [line for line in skill.splitlines() if line.startswith("## ")] == ["## 1.5.0", "## 1.4.0", "## 1.3.0"]
     assert "Versions before 1.3.0 are left out" in skill
 
 
-def test_release_notes_keep_every_readme_release_newest_first_without_links() -> None:
+def test_release_notes_keep_every_changelog_release_newest_first_without_links() -> None:
     readme = (
         "# App\n\n## Changes in 1.1.0\n\n- New [thing](docs/thing.md).\n\n"
         "## Changes in 1.0.0\n\n- First.\n\n## Technology Stack\n\n- Python\n"
     )
-    skill = release_notes_skill_from_readme(readme)
+    skill = release_notes_skill_from_changelog(readme)
     assert skill.index("## 1.1.0") < skill.index("## 1.0.0")
     assert "- New thing." in skill
     assert "Python" not in skill
     with pytest.raises(ValueError, match="no"):
-        release_notes_skill_from_readme("# App\n")
+        release_notes_skill_from_changelog("# App\n")
     with pytest.raises(ValueError, match="empty"):
-        release_notes_skill_from_readme("## Changes in 1.0.0\n\n## Changes in 0.9.0\n- x\n")
+        release_notes_skill_from_changelog("## Changes in 1.0.0\n\n## Changes in 0.9.0\n- x\n")
 
 
 def test_help_lookup_returns_the_topics_skills_and_installed_version() -> None:

@@ -1,7 +1,7 @@
 # MetaList release notes
 
-What changed in each MetaList version, newest first, from the packaged
-README. Changes made after the newest listed version are not described here.
+What changed in each MetaList version, newest first, from its changelog
+(CHANGELOG.md). Changes made after the newest listed version are not described here.
 Compare with installed_version from the help lookup to tell the user whether
 they already have a release. Version info offers updates (see the data topic).
 
@@ -211,4 +211,4 @@ they already have a release. Version info offers updates (see the data topic).
 - LLM regressions use current production prompts, default to five trials with cache-aware parallel scheduling, and can run only cases affected by prompt or skill changes.
 - Improved Grammarly edit preservation and search suggestions that match the complete active clause.
 
-Versions before 0.7.2 are left out; the packaged README lists them.
+Versions before 0.7.2 are left out; the changelog (CHANGELOG.md) lists them.
