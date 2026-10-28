@@ -45,10 +45,10 @@ function isRendererTag(folded) {
     return CODE_RENDERER_TAG_RE.test(folded);
 }
 const KNOWN_META_TAGS = new Set([
-    '@footnote', '@monospace', '@heading', '@red', '@green', '@blue', '@grey',
-    '@highlighter', '@bold', '@italic', '@strikethrough', '@serif', '@copyable',
-    '@list-bulleted', '@list-numbered', '@username', '@password', '@email',
-    '@todo', '@done', '@markdown', '@llm', '@latex', '@shell', '@json', '@csv', '@chess', '@diff', '@mermaid',
+    '@footnote', '@monospace', '@heading', '@red', '@green', '@blue', '@grey', '@gray',
+    '@highlight', '@bold', '@italic', '@strikethrough', '@serif', '@copyable',
+    '@bullets', '@numbered', '@username', '@password', '@email',
+    '@todo', '@done', '@markdown', '@ai', '@latex', '@shell', '@json', '@csv', '@chess', '@diff', '@mermaid',
     '@stats',
 ]);
 // @sum=, @avg=, @min=, @max=, @count= and a property name (app/services/subtree_stats.py);

@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 import json
 import re
 from threading import Lock
-from typing import Dict, List, Optional
+from typing import Callable, Dict, List, Optional
 from uuid import uuid4
 
 from app.db.session import begin_writer
@@ -637,6 +637,34 @@ class TabStateStore:
         snapshot = self._deserialize_snapshot_json(plaintext)
         self._apply_snapshot_locked(snapshot)
         self._clear_encrypted_state_locked()
+
+    def rename_search_terms(self, *, rename: Callable[[str], str], connection) -> int:
+        """Each search context's search, and a reference view's queries, as `rename` returns
+        them (meta_tag_renames.py, a one-time pass), saved with `connection` when any
+        changed. Returns how many searches changed."""
+        if not callable(rename):
+            raise TypeError("rename must be callable")
+        with self._lock:
+            self._try_decrypt_locked(token="", require_success=True)
+            changed = 0
+            for tab in self._tabs.values():
+                renamed = rename(tab["searchQuery"])
+                if renamed != tab["searchQuery"]:
+                    tab["searchQuery"] = renamed
+                    changed += 1
+            for view in self._reference_views.values():
+                # A reference view runs its tab's search, so both change together.
+                view["referenceQuery"] = rename(view["referenceQuery"])
+                scope = view["originScope"]
+                renamed = rename(scope["searchQuery"])
+                if renamed != scope["searchQuery"]:
+                    scope["searchQuery"] = renamed
+                    changed += 1
+            if changed == 0:
+                return 0
+            self._version += 1
+            self._persist_locked(connection=connection, encryption_service=None, force_plaintext=False)
+            return changed
 
     def _persist_locked(
         self,

@@ -35,10 +35,10 @@ FILLER_WORDS = frozenset({"a", "an", "and", "at", "the", "tag", "tags", "comma",
 # The built-in meta tags (KNOWN_META_TAGS in tag-syntax-service.js; a unit test
 # keeps the two lists equal).
 KNOWN_META_TAGS = (
-    "@footnote", "@monospace", "@heading", "@red", "@green", "@blue", "@grey",
-    "@highlighter", "@bold", "@italic", "@strikethrough", "@serif", "@copyable",
-    "@list-bulleted", "@list-numbered", "@username", "@password", "@email",
-    "@todo", "@done", "@markdown", "@llm", "@latex", "@shell", "@json", "@csv", "@chess", "@diff", "@mermaid",
+    "@footnote", "@monospace", "@heading", "@red", "@green", "@blue", "@grey", "@gray",
+    "@highlight", "@bold", "@italic", "@strikethrough", "@serif", "@copyable",
+    "@bullets", "@numbered", "@username", "@password", "@email",
+    "@todo", "@done", "@markdown", "@ai", "@latex", "@shell", "@json", "@csv", "@chess", "@diff", "@mermaid",
     "@stats",
 )
 _META_AT_WORDS = frozenset({"at", "@"})

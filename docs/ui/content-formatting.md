@@ -2,7 +2,7 @@
 
 Agreed, not built (2026-10-27): a live preview of LaTeX, CSV, Mermaid and references while editing (`docs/ready-to-build/smart-previews.md`); user-named styles, `@style=name` (future plan, `docs/future-plans/user-styles.md`).
 
-Agreed, not built (2026-10-28): `@highlighter`, `@llm`, `@list-bulleted` and `@list-numbered` become `@highlight`, `@ai`, `@bullets` and `@numbered`, converted once in every vault; `@gray` works as `@grey` does (`docs/ready-to-build/meta-tag-renames.md`).
+Renamed 2026-10-28, before launch, so each name says what the note is in words people know: `@highlight`, `@ai` (a saved AI chat answer), `@bullets` and `@numbered` replace four older names. Each vault is converted once when its notes are first read after unlock: every note's tags and proposed tags and every search context's search (`app/services/meta_tag_renames.py`, recorded in `namespace_content_migrations`, so a restored older backup is converted again; each note keeps its updated time). The old names are not kept: after the conversion they are unknown `@` tags. `@gray` and `@grey` both work. A note tagged `@ai` by hand, not a saved chat answer, copies as an ordinary note.
 
 ## Overview
 - Note content is stored as HTML (`notes.content`).
@@ -96,8 +96,8 @@ Other (non-meta) tags may also appear inside wrapper tokens (e.g. `{{foo bar}}`)
 - `@serif`: renders with a serif font.
 - `@green`: renders text in green.
 - `@blue`: renders text in blue.
-- `@grey`: renders text in grey.
-- `@highlighter`: adds a fluorescent-yellow, slightly irregular marker stroke behind the text.
+- `@grey` (or `@gray`): renders text in grey.
+- `@highlight`: adds a fluorescent-yellow, slightly irregular marker stroke behind the text.
 - Ontology implication rules can add these formatting tags implicitly (e.g. `bug => @red`).
 
 ## Footnotes
@@ -120,8 +120,8 @@ Other (non-meta) tags may also appear inside wrapper tokens (e.g. `{{foo bar}}`)
 - Stored image-file embeds expose the same actions in view mode. Reset removes `@size` and removes delimiters only when no surviving tag owns that scope.
 
 ## List meta tags
-- `@list-bulleted`: renders the note's immediate children as a bulleted list in view mode.
-- `@list-numbered`: renders the note's immediate children as a numbered list in view mode.
+- `@bullets`: renders the note's immediate children as a bulleted list in view mode.
+- `@numbered`: renders the note's immediate children as a numbered list in view mode.
 - Only direct children are affected (grandchildren are not).
 
 ## Credential meta tags

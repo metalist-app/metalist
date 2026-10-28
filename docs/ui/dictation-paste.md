@@ -24,8 +24,8 @@ only pastes.
    whisper" `superwhisper`. At the same length, a match keeping the joiners wins
    (with both `to-do` and `todo`, "to do" is `to-do`).
 5. "at" (or a typed `@`) before words naming a built-in meta tag is that meta tag:
-   "at to do", "At todo.", "@ to do" and `@todo` all give `@todo`; "at list
-   bulleted" gives `@list-bulleted`. Superwhisper drops a repeated "at" ("at green at
+   "at to do", "At todo.", "@ to do" and `@todo` all give `@todo`; "at
+   bullets" gives `@bullets`. Superwhisper drops a repeated "at" ("at green at
    bold" arrives as `At green, bold.`), so right after a meta tag, words naming other
    meta tags continue the run (`@green @bold`), even when the user also has a plain tag of
    that name (usually a typo for the meta tag);

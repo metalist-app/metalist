@@ -385,7 +385,7 @@ preferences are saved (`RETIRED_PROMPT_PREFERENCE_KEYS` and
 - Common UUID dash substitutions are normalized programmatically. UUIDs in fenced
   code/existing links remain literal.
 - Right-click a completed answer and choose `Copy Response` to copy Markdown tagged
-  `@markdown @llm` into the MetaList note clipboard and rich/plain content onto the
+  `@markdown @ai` into the MetaList note clipboard and rich/plain content onto the
   system clipboard. After pasting that response as a note, its References disclosure
   remains interactive in view mode: opening or closing it does not enter edit mode
   or begin a note drag.

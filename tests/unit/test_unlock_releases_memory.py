@@ -12,7 +12,8 @@ def test_an_unlock_hands_freed_memory_back_after_loading(monkeypatch) -> None:
     state = HydrationState()
     monkeypatch.setattr(auth_routes, "hydration_state", state)
 
-    def populate(_session) -> list:
+    def populate(_session, *, saved_searches) -> list:
+        del saved_searches
         events.append("cache")
         return []
 

@@ -194,8 +194,8 @@ def test_spoken_words_match_a_one_word_tag(pasted: str, tags: dict[str, int], ex
     ("@ to do", "@todo"),
     ("@todo", "@todo"),
     ("at done", "@done"),
-    ("at list bulleted", "@list-bulleted"),
-    ("At list-bulleted", "@list-bulleted"),
+    ("at bullets", "@bullets"),
+    ("At numbered", "@numbered"),
     ("At heading, at red.", "@heading @red"),
     ("neural network at to do", "neural-network @todo"),
 ])

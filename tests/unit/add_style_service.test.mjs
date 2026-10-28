@@ -14,7 +14,7 @@ test('Add Style exposes the supported formatting and renderer tags', () => {
     assert.equal(tags.includes('@heading'), true);
     assert.equal(tags.includes('@red'), true);
     assert.equal(tags.includes('@blue'), true);
-    assert.equal(tags.includes('@highlighter'), true);
+    assert.equal(tags.includes('@highlight'), true);
     assert.equal(tags.includes('@markdown'), true);
     assert.equal(tags.includes('@csv'), true);
     // @chess is a hidden extra: typed in the tag bar, not offered in the menu.

@@ -29,7 +29,7 @@ fixed rules, no AI, and it only reacts to pasting: typed text is never changed.
 - Words also match a tag written as one word: "to do" gives `todo`, "scratch pad"
   gives `scratchpad`.
 - "at" before the name of a built-in meta tag gives that meta tag: "at to do" gives
-  `@todo`, "at done" `@done`, "at list bulleted" `@list-bulleted`. Otherwise "at"
+  `@todo`, "at done" `@done`, "at bullets" `@bullets`. Otherwise "at"
   is ignored. One "at" covers a run of meta tags: "at green bold" gives
   `@green @bold` (Superwhisper drops a repeated "at" anyway), even if the user also
   has a plain tag such as `bold`.

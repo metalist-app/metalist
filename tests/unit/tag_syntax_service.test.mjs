@@ -264,3 +264,11 @@ test('a tag with properties counts as its tag for menus and suggestions', () => 
     assert.equal(parseTagBarSuggestionContext('foo jog', 7).isTypingProperty, false);
     assert.deepEqual(parseTagBarSuggestionContext('foo jogging:miles=3 ba', 22).explicitTags, ['foo', 'jogging', 'ba']);
 });
+
+// Four built-in tags renamed 2026-10-28 (docs/ui/content-formatting.md): the new names are
+// kept, both spellings of gray work, and the old names are unknown @ tags, left out.
+test('the renamed built-in tags are kept and the old names are not', () => {
+    const kept = '@highlight @ai @bullets @numbered @gray @grey';
+    assert.equal(analyzeTagBarInput(kept).sanitizedText, kept);
+    assert.equal(analyzeTagBarInput('@llm @highlighter @list-bulleted @list-numbered journal').sanitizedText, 'journal');
+});

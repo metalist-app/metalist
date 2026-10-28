@@ -16,6 +16,7 @@ from app.services.content_formatting import _scan_tag_bar_tokens
 from app.services.content_formatting import _tokenize_tag_bar
 from app.services.embedded_references import _find_next_reference_token_start
 from app.services.encryption import EncryptionService
+from app.services.tab_state import tab_state_store
 from app.services.note_image_tags import _INLINE_IMAGE_RE
 from app.services.note_image_tags import _contains_inline_image_markup
 from app.services.note_store import NoteStore
@@ -80,6 +81,10 @@ def test_cache_hydration_sanitizes_and_extracts_text_once_per_note(
         content_cache, "_store_cleaned_notes",
         lambda cleaned_notes, *, migration_id: stored_cleaned.append(dict(cleaned_notes)),
     )
+    monkeypatch.setattr(
+        content_cache, "_store_renamed_meta_tags",
+        lambda renamed_tags, *, saved_searches: pytest.fail(f"renamed tags: {renamed_tags}") if renamed_tags else None,
+    )
     monkeypatch.setattr(content_cache, "sanitize_note_html", sanitize_once)
     monkeypatch.setattr(content_cache, "strip_sanitized_html", strip_once)
     monkeypatch.setattr(content_cache, "_CACHE_TIMING_ENABLED", False)
@@ -88,7 +93,7 @@ def test_cache_hydration_sanitizes_and_extracts_text_once_per_note(
     monkeypatch.setattr(content_cache, "_proposed_tag_cache", {})
     monkeypatch.setattr(content_cache, "_text_cache", {})
 
-    returned_rows = content_cache.populate_cache_from_db(_FakeDatabase())
+    returned_rows = content_cache.populate_cache_from_db(_FakeDatabase(), saved_searches=tab_state_store)
 
     # Only each note's structure comes back: no content, tags or ciphertext stays held.
     assert returned_rows == [

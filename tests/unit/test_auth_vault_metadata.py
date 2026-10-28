@@ -63,7 +63,7 @@ def test_set_password_after_first_note_in_fresh_namespace(
         try:
             with SafeSession.allow_reads("tests:auth_vault_metadata:bootstrap_ontology"):
                 bootstrap_ontology_rules_store(connection=session.connection())
-            prefetched_rows = populate_cache_from_db(session)
+            prefetched_rows = populate_cache_from_db(session, saved_searches=tab_state_store)
             note_store.load_from_db(None, prefetched_rows=prefetched_rows)
             assert note_store.loaded
             assert len(prefetched_rows) == 0
@@ -130,7 +130,7 @@ def test_setting_and_removing_a_password_rewrites_the_site_icons(
         try:
             with SafeSession.allow_reads("tests:auth_vault_metadata:bootstrap_ontology"):
                 bootstrap_ontology_rules_store(connection=session.connection())
-            note_store.load_from_db(None, prefetched_rows=populate_cache_from_db(session))
+            note_store.load_from_db(None, prefetched_rows=populate_cache_from_db(session, saved_searches=tab_state_store))
             now = datetime.now(timezone.utc)
             with begin_writer() as connection:
                 insert_link_icon_row(connection, StoredLinkIconRow(

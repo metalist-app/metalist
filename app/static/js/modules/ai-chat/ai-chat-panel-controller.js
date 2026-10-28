@@ -759,7 +759,7 @@ class AiChatPanelController {
                 !payload
                 || typeof payload.html !== 'string'
                 || typeof payload.plain_text !== 'string'
-                || payload.tags !== '@llm'
+                || payload.tags !== '@ai'
             ) {
                 throw new Error('Copied AI response payload is malformed');
             }

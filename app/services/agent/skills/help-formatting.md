@@ -99,8 +99,8 @@ Other (non-meta) tags may also appear inside wrapper tokens (e.g. `{{foo bar}}`)
 - `@serif`: renders with a serif font.
 - `@green`: renders text in green.
 - `@blue`: renders text in blue.
-- `@grey`: renders text in grey.
-- `@highlighter`: adds a fluorescent-yellow, slightly irregular marker stroke behind the text.
+- `@grey` (or `@gray`): renders text in grey.
+- `@highlight`: adds a fluorescent-yellow, slightly irregular marker stroke behind the text.
 - Ontology implication rules can add these formatting tags implicitly (e.g. `bug => @red`).
 
 ## Footnotes
@@ -123,8 +123,8 @@ Other (non-meta) tags may also appear inside wrapper tokens (e.g. `{{foo bar}}`)
 - Stored image-file embeds expose the same actions in view mode. Reset removes `@size` and removes delimiters only when no surviving tag owns that scope.
 
 ## List meta tags
-- `@list-bulleted`: renders the note's immediate children as a bulleted list in view mode.
-- `@list-numbered`: renders the note's immediate children as a numbered list in view mode.
+- `@bullets`: renders the note's immediate children as a bulleted list in view mode.
+- `@numbered`: renders the note's immediate children as a numbered list in view mode.
 - Only direct children are affected (grandchildren are not).
 
 ## Credential meta tags

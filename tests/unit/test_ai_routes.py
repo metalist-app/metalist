@@ -557,7 +557,7 @@ def test_copy_ai_response_writes_completed_chat_html_to_llm_note_clipboard(monke
 
     assert response.message_id == turn_id
     assert response.plain_text == raw_markdown
-    assert response.tags == "@llm"
+    assert response.tags == "@ai"
     assert "<h1>Result</h1>" in response.html
     assert '<math xmlns="http://www.w3.org/1998/Math/MathML"' in response.html
     copied_note_content = copied_payloads[0][1][0]["content"]
@@ -581,7 +581,7 @@ def test_copy_ai_response_writes_completed_chat_html_to_llm_note_clipboard(monke
                     "next_id": None,
                     "is_collapsed": False,
                     "content": copied_note_content,
-                    "tags": "@llm",
+                    "tags": "@ai",
                     "proposed_tags": "",
                 }
             ],
