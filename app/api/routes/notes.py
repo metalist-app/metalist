@@ -73,7 +73,7 @@ from app.services.tag_properties import PROPERTY_SUGGESTIONS_IN_TAG_BAR
 from app.services.tag_properties import PropertySuggestion
 from app.services.tag_properties import has_property_syntax
 from app.services.subtree_stats import STATS_STYLES, suggest_summary_properties, typed_summary_property
-from app.services.tag_properties import is_property_term
+from app.services.tag_properties import is_property_term, is_stats_term
 from app.services.root_date_filter import RootDateFilter
 from app.services.root_date_filter import make_root_date_filter
 from app.services.snapshot import build_view_state
@@ -584,8 +584,14 @@ def search_suggestions(request: Request, payload: SearchSuggestionsRequest) -> D
         )
     window_days = tuple(raw_window_days)
     validate_tag_activity_windows(window_days)
-    # Typing a property term (exercise:mi, drug:dosage>5): its names or units.
+    # Typing a stats term (@sum:ca): the properties notes carry that stats tag for.
     typed_term = _typed_property_term(query)
+    if typed_term is not None and is_stats_term(typed_term):
+        return _property_suggestions_response(
+            search_index.suggest_stats_completions(typed=typed_term, limit=MAX_SEARCH_SUGGESTIONS),
+            personalized=True,
+        )
+    # Typing a property term (exercise:mi, drug:dosage>5): its names or units.
     if typed_term is not None:
         return _property_suggestions_response(
             search_index.suggest_property_completions(
@@ -640,7 +646,9 @@ def _typed_property_term(query: str) -> str | None:
     if query == "" or query[-1].isspace():
         return None
     term = query.split()[-1].lstrip("+-")
-    if '"' in term or "'" in term or not is_property_term(term):
+    if '"' in term or "'" in term:
+        return None
+    if not is_property_term(term) and not is_stats_term(term):
         return None
     return term
 

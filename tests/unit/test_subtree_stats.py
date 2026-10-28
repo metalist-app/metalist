@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
+from app.services.search_index import tag_bar_values
 from app.services.subtree_stats import (
     SummaryRequest,
     parse_summary_requests,
@@ -21,16 +22,27 @@ class _Note:
 
 @dataclass(frozen=True)
 class _Tree:
-    """The render context's two lookups over a small tree of notes."""
+    """The render context's lookups over a small tree of notes, in a vault where the
+    properties in `used_elsewhere` have values on notes outside the tree."""
 
     notes: dict[str, _Note]
     children: dict[str, list[str]]
+    used_elsewhere: frozenset[str]
 
     def get_note(self, note_id: str) -> _Note:
         return self.notes[note_id]
 
     def get_children(self, note_id: str) -> list[str]:
         return self.children[note_id]
+
+    def is_property_used(self, property_name: str) -> bool:
+        if property_name in self.used_elsewhere:
+            return True
+        for note in self.notes.values():
+            for tag_name, name in tag_bar_values(note.tags)[1]:
+                if property_name in (name, tag_name):
+                    return True
+        return False
 
 
 def _diet(diet_tags: str) -> _Tree:
@@ -43,6 +55,7 @@ def _diet(diet_tags: str) -> _Tree:
             "dinner": _Note("fruit:calories=200 bread:calories=400"),
         },
         children={"diet": ["breakfast", "lunch", "dinner"], "breakfast": [], "lunch": [], "dinner": []},
+        used_elsewhere=frozenset(),
     )
 
 
@@ -90,7 +103,8 @@ def test_a_named_property_no_note_has_shows_a_dash() -> None:
 
 
 def _tree(diet_tags: str, children: dict[str, str], grandchildren: dict[str, dict[str, str]]) -> _Tree:
-    """A diet note with the given children (id -> tags) and, under some, grandchildren."""
+    """A diet note with the given children (id -> tags) and, under some, grandchildren,
+    in a vault where calories are logged elsewhere too."""
     notes = {"diet": _Note(diet_tags)}
     tree_children: dict[str, list[str]] = {"diet": list(children)}
     for child_id, tags in children.items():
@@ -101,7 +115,7 @@ def _tree(diet_tags: str, children: dict[str, str], grandchildren: dict[str, dic
             notes[kid_id] = _Note(tags)
             tree_children[parent_id].append(kid_id)
             tree_children[kid_id] = []
-    return _Tree(notes=notes, children=tree_children)
+    return _Tree(notes=notes, children=tree_children, used_elsewhere=frozenset({"calories"}))
 
 
 def test_the_notes_own_values_and_its_grandchildrens_count() -> None:
@@ -172,3 +186,39 @@ def test_a_value_written_on_the_tag_itself_counts_as_that_property() -> None:
     assert _groups(_footer(tree)) == [("Total calories: 1,150",)]
     suggestions = suggest_summary_properties(note_id="diet", typed_tag="@sum", typed_property="", context=tree, limit=8)
     assert [suggestion.replacement for suggestion in suggestions] == ["@sum=calories"]
+
+
+def test_with_nothing_under_the_note_the_sum_and_count_are_0_and_the_rest_a_dash() -> None:
+    # A new day of a food log, before any meal (agreed 2026-10-28); calories are logged elsewhere.
+    tree = _tree("@sum=calories @count=calories @avg=calories @min=calories @max=calories", {"a": "walk"}, {})
+    assert _groups(_footer(tree)) == [(
+        "Total calories: 0", "Notes with calories: 0", "Average calories: —", "Min calories: —", "Max calories: —",
+    )]
+
+
+def test_a_property_used_nowhere_in_the_vault_is_a_dash_for_every_tag() -> None:
+    tree = _tree("@sum=calroies @count=calroies", {"a": "meal:calories=500"}, {})
+    assert _groups(_footer(tree)) == [("Total calroies: —", "Notes with calroies: —")]
+
+
+def test_only_text_values_give_0_and_say_they_are_left_out() -> None:
+    tree = _tree("@sum=calories @avg=calories", {"a": "snack:calories=lots"}, {})
+    footer = _footer(tree)
+    assert _groups(footer) == [("Total calories: 0", "Average calories: —")]
+    assert footer.count('<div class="meta-stats-skipped">') == 1
+    assert '<div class="meta-stats-skipped">1 calories value is not a number and is left out</div>' in footer
+
+
+def test_stats_says_a_property_with_only_text_values_is_left_out() -> None:
+    # No figures for it, only the line (agreed 2026-10-28).
+    tree = _tree("@stats", {"a": "meal:calories=500", "b": "mood:feeling=good"}, {})
+    footer = _footer(tree)
+    assert _groups(footer) == [("calories", "Total: 500", "Min: 500", "Max: 500", "Count: 1")]
+    assert '<div class="meta-stats-skipped">1 feeling value is not a number and is left out</div>' in footer
+
+
+def test_stats_and_a_sum_of_a_text_only_property_say_it_once() -> None:
+    tree = _tree("@stats @sum=calories", {"a": "snack:calories=lots"}, {})
+    footer = _footer(tree)
+    assert _groups(footer) == [("Total calories: 0",)]
+    assert footer.count('<div class="meta-stats-skipped">') == 1

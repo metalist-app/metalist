@@ -240,6 +240,9 @@ Super tags carry values (`jogging:miles=3`, `drug:dosage=10mg`; see Super Tags i
   `MAX` and `MIN`. The list shows only the name, unit or keyword. Picking one earns no
   activity credit.
 
+### Stats Figures
+- `@sum:calories>2000` finds notes whose stats show a calorie total over 2000; also `@count:`, `@avg:`, `@min:`, `@max:`. Only notes showing that figure match (`@sum=calories`, or a plain `@sum` covering calories), never their parents; `@stats` is not searched. `@sum:calories` finds every such note; `=MAX`/`=MIN`, `-` and `OR` work as for super tags. The figure is the footer's, as shown; a dash never matches, 0 does (`@sum:calories=0`: days with nothing logged). A found note shows the notes under it. `@sum>2000` is refused: name a property. After `@sum:` the box suggests property names.
+
 ### UUID Terms
 - UUIDs in positive terms are treated as direct note targets (including when pasted as `[[UUID]]`).
 - This is additive with normal tag/text matching.

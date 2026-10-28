@@ -10,6 +10,7 @@ from app.services.embedded_references import render_note_content_with_embeds
 from app.services.file_registry import file_registry
 from app.services.file_storage import get_file_reference_record
 from app.services.note_store import store as note_store
+from app.services.search_index import search_index
 
 # A reference's preview card shows the top of its note (docs/ui/references.md):
 # the note and its first descendants, more than the card's few lines can show.
@@ -68,6 +69,7 @@ def _build_markup(note_id: str, *, allowance: _Allowance, redact_credentials: bo
         get_children=note_store.get_children,
         has_file=file_registry.has_file,
         get_file=_get_file_record,
+        is_property_used=search_index.is_property_name_used,
         static_collapse_arrows=False,
     )
     assert allowance.take(), "the note itself is always drawn"

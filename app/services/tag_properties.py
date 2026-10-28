@@ -54,6 +54,14 @@ MAX_KEYWORD = "MAX"
 MIN_KEYWORD = "MIN"
 EXTREME_KEYWORDS = (MAX_KEYWORD, MIN_KEYWORD)
 
+# The stats tags (subtree_stats.py): in a search, `@sum:calories>2000` compares the figure
+# a note carrying `@sum=calories` shows (docs/ui/search-semantics.md, Stats figures). Only
+# search reads them as terms; in the tag bar a meta tag has no properties.
+STATS_TERM_TAGS = frozenset({"@sum", "@avg", "@min", "@max", "@count"})
+# A stats tag followed by what makes it a term rather than the tag (`@sum=calories`).
+_STATS_TERM_START_RE = re.compile(r"^(?P<tag>@(?:sum|avg|min|max|count))(?=[:<>?])", re.IGNORECASE)
+_STATS_TERM_EXAMPLE = "{tag}:calories>2000"
+
 VALUE_NUMBER = "number"
 VALUE_TEMPORAL = "temporal"
 VALUE_TIME = "time"
@@ -233,6 +241,11 @@ class PropertyCondition:
         """jogging:miles=MAX or =MIN: decided across the notes found, not one note alone."""
         return self.operator == "=" and self.value_text in EXTREME_KEYWORDS
 
+    @property
+    def is_stats(self) -> bool:
+        """@sum:calories>2000: about the figure a stats tag shows, not a value on a note."""
+        return self.key[0] in STATS_TERM_TAGS
+
     def format(self) -> str:
         if self.name == IMPLICIT_PROPERTY and self.operator in IMPLICIT_COMPARISON_OPERATORS:
             return f"{self.tag}{self.operator}{self.value_text}"
@@ -259,6 +272,40 @@ def parse_property_term(token: str) -> PropertyCondition:
     problem = _condition_problem(tag, name, operator, value_text)
     if problem != "":
         raise InputRejected(problem)
+    return PropertyCondition(tag=tag, name=name, operator=operator, value_text=value_text)
+
+
+def is_stats_term(token: str) -> bool:
+    """Whether a search term compares a stats figure (`@sum:calories>2000`), or tries to
+    (`@sum>2000`, refused by parse_stats_term with how to write it)."""
+    if not isinstance(token, str):
+        raise TypeError(f"token must be a string, got {type(token)}")
+    return _STATS_TERM_START_RE.match(token) is not None
+
+
+def parse_stats_term(token: str) -> PropertyCondition:
+    """A stats figure term (`@sum:calories>2000`, `@sum:calories`, `@sum:calories=MAX`), or
+    InputRejected saying how to write one. The figure is a number, so the value is one."""
+    match = _STATS_TERM_START_RE.match(token)
+    if match is None:
+        raise ValueError(f"{token} is not a stats term")
+    tag = match.group("tag").casefold()
+    example = _STATS_TERM_EXAMPLE.format(tag=tag)
+    rest = token[match.end():]
+    if not rest.startswith(PROPERTY_SEPARATOR):
+        raise InputRejected(f"Name the property after {tag} (for example {example})")
+    rest = rest[len(PROPERTY_SEPARATOR):]
+    if rest.endswith(MISSING_OPERATOR):
+        raise InputRejected(f"{tag} always has a figure; compare it (for example {example})")
+    name, operator, value_text = _split_at_operator(rest)
+    if operator == "":
+        name = rest
+    problem = _condition_problem("tag", name, operator, value_text)
+    if problem != "":
+        raise InputRejected(problem.replace("jogging:miles", f"{tag}:calories"))
+    is_comparison = operator != PRESENT_OPERATOR and value_text not in EXTREME_KEYWORDS
+    if is_comparison and parse_property_value(value_text).kind != VALUE_NUMBER:
+        raise InputRejected(f"Compare {tag} with a number (for example {example})")
     return PropertyCondition(tag=tag, name=name, operator=operator, value_text=value_text)
 
 

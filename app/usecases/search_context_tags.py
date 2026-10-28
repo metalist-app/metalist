@@ -40,7 +40,8 @@ def ensure_tags_match_search_query(
         raise TypeError(f"search_query must be a string, got {type(search_query)}")
 
     parsed = parse_search_query(search_query)
-    first_clause = parsed.first_clause
+    # A stats term (@sum:calories>2000) names no value to give a note: it adds nothing.
+    first_clause = parsed.first_clause.without_stats_terms()
     if not first_clause.required_tags and not first_clause.required_text and not first_clause.required_properties:
         return tags
 

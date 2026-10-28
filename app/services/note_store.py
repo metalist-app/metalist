@@ -10,7 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from datetime import datetime
 from threading import RLock
-from typing import Dict, FrozenSet, Iterable, List, Optional, Protocol, Sequence, Mapping, Set
+from typing import Dict, FrozenSet, Iterable, List, Optional, Protocol, Sequence, Mapping, Set, Tuple
 from types import SimpleNamespace
 import time
 import logging
@@ -36,7 +36,8 @@ from app.services.note_image_tags import infer_image_tag_terms
 from app.services.ontology_rules_store import get_ontology, get_ontology_if_ready
 from app.services.search_index import SearchRecord, extract_tags_for_search, search_index, tag_bar_values
 from app.services.tag_ontology import rule_text_conditions
-from app.services.tag_properties import PROPERTY_ASSIGNMENT
+from app.services.subtree_stats import stats_figure_values
+from app.services.tag_properties import PROPERTY_ASSIGNMENT, PropertyCondition, PropertyValue
 from app.utils.text_utils import strip_html, strip_sanitized_html_keeping_link_urls
 
 # Hydration reports its progress after every this many notes.
@@ -241,6 +242,22 @@ class NoteRecord:
     created_at: Optional[datetime]
     updated_at: Optional[datetime]
 
+
+
+@dataclass(frozen=True)
+class _StoreStatsContext:
+    """The tree a stats figure is read from, for a search (subtree_stats.StatsContext)."""
+
+    store: "NoteStore"
+
+    def get_note(self, note_id: str) -> NoteRecord:
+        return self.store.get_note(note_id)
+
+    def get_children(self, note_id: str) -> List[str]:
+        return self.store.get_children(note_id)
+
+    def is_property_used(self, property_name: str) -> bool:
+        return search_index.is_property_name_used(property_name)
 
 class NoteStore:
     """Thread-safe, read-optimized cache of note metadata."""
@@ -584,6 +601,11 @@ class NoteStore:
             note_map, content_text_by_id, tag_only_terms_by_id, ontology,
             timing_enabled=timing_enabled,
         )
+        # Stats terms in a search (@sum:calories>2000) read each note's subtree here.
+        search_index.attach_stats_reader(self._read_stats_figure)
+
+    def _read_stats_figure(self, note_id: str, condition: PropertyCondition) -> Optional[Tuple[PropertyValue, ...]]:
+        return stats_figure_values(note_id=note_id, condition=condition, context=_StoreStatsContext(store=self))
 
     def _apply_hydrated_matchers(
         self, note_map: Mapping[str, NoteRecord], content_text_by_id: Mapping[str, str],

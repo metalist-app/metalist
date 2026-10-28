@@ -4,7 +4,9 @@ import re
 from dataclasses import dataclass
 from typing import FrozenSet, List, Optional, Set, Tuple
 from app.services.input_errors import InputRejected
-from app.services.tag_properties import PropertyCondition, is_property_term, parse_property_term
+from app.services.tag_properties import (
+    PropertyCondition, is_property_term, is_stats_term, parse_property_term, parse_stats_term,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -39,6 +41,20 @@ class SearchClause:
         if self.required_properties:
             return True
         return len(self.forbidden_properties) > 0
+
+    @property
+    def has_stats_terms(self) -> bool:
+        """@sum:calories>2000: a figure read from each note's subtree (subtree_stats.py)."""
+        return any(condition.is_stats for condition in self.required_properties + self.forbidden_properties)
+
+    def without_stats_terms(self) -> SearchClause:
+        """This clause with its stats terms left out: what the search index answers alone."""
+        return SearchClause(
+            required_tags=self.required_tags, forbidden_tags=self.forbidden_tags,
+            required_text=self.required_text, forbidden_text=self.forbidden_text,
+            required_properties=tuple(condition for condition in self.required_properties if not condition.is_stats),
+            forbidden_properties=tuple(condition for condition in self.forbidden_properties if not condition.is_stats),
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -173,8 +189,11 @@ def parse_search_query(normalized_text: str) -> ParsedSearchQuery:
             clause_term_count = 0
             continue
 
-        if is_property_term(token):
-            condition = parse_property_term(token)
+        if is_stats_term(token) or is_property_term(token):
+            if is_stats_term(token):
+                condition = parse_stats_term(token)
+            else:
+                condition = parse_property_term(token)
             if prefix == "-":
                 forbidden_properties.append(condition)
             else:

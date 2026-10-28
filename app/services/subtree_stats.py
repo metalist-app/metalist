@@ -17,7 +17,10 @@ from decimal import ROUND_HALF_UP, Decimal
 from typing import Dict, List, Protocol, Tuple
 
 from app.services.search_index import tag_bar_values
-from app.services.tag_properties import IMPLICIT_PROPERTY, VALUE_NUMBER, PropertySuggestion, PropertyValue
+from app.services.tag_properties import (
+    IMPLICIT_PROPERTY, META_TAG_PREFIX, VALUE_NUMBER, PropertyCondition, PropertySuggestion,
+    PropertyValue,
+)
 
 
 STATS_TAG = "stats"
@@ -49,18 +52,28 @@ _NUMBER_PLACES = 2
 _SIGN_AND_DIGITS_SEPARATOR = ","
 _UNIT_SEPARATOR = ", "
 _MISSING = "—"
+# The sum and the count of no values (an empty day reads 0).
+_ZERO_WHEN_EMPTY = frozenset({SUM, COUNT})
+_ZERO = "0"
 # A @stats property's figures, and each precise tag's label.
 _STATS_FIGURES = ((SUM, "Total"), (MINIMUM, "Min"), (MAXIMUM, "Max"), (COUNT, "Count"))
 _FIGURE_LABELS = {SUM: "Total {}", AVERAGE: "Average {}", MINIMUM: "Min {}", MAXIMUM: "Max {}", COUNT: "Notes with {}"}
 
 
 class NoteTree(Protocol):
-    """What the stats read: a note by id and the ids of its children. The render context
-    (embedded_references.EmbedRenderContext) and the note store both are one."""
+    """What the suggestions read: a note by id and the ids of its children. The render
+    context (embedded_references.EmbedRenderContext) and the note store both are one."""
 
     def get_note(self, note_id: str) -> object: ...
 
     def get_children(self, note_id: str) -> List[str]: ...
+
+
+class StatsContext(NoteTree, Protocol):
+    """What the footer reads: the tree, and whether some note in the vault gives a
+    property a value. The render context is one."""
+
+    def is_property_used(self, property_name: str) -> bool: ...
 
 
 def _note_tags(record: object) -> str:
@@ -108,7 +121,7 @@ def parse_summary_requests(tags: str) -> Tuple[SummaryRequest, ...]:
     return tuple(requests)
 
 
-def render_subtree_stats_footer(*, note_id: str, tags: str, context: NoteTree) -> str:
+def render_subtree_stats_footer(*, note_id: str, tags: str, context: StatsContext) -> str:
     """The footer for a note with summary tags, or "" for one without."""
     requests = parse_summary_requests(tags)
     if not requests:
@@ -117,19 +130,67 @@ def render_subtree_stats_footer(*, note_id: str, tags: str, context: NoteTree) -
     lines = _footer_lines(requests, totals)
     if not lines:
         return ""
+    # A property whose values are all text has no figures under @stats, only its line
+    # saying they are left out (agreed 2026-10-28).
     stats_lines = [line for line in lines if line.kind == STATS_TAG]
     figure_lines = [line for line in lines if line.kind != STATS_TAG]
     parts = ['<section class="meta-stats" aria-label="Stats">']
-    parts.extend(_render_stats_group(line) for line in stats_lines)
+    parts.extend(_render_stats_group(line) for line in stats_lines if _has_numbers(line.totals))
     if figure_lines:
-        parts.append(_render_figures_group(figure_lines))
-    for line in stats_lines:
-        assert line.totals is not None
-        if line.totals.skipped_count:
-            skipped = _skipped_text(line.totals.skipped_count, line.property_name)
-            parts.append(f'<div class="meta-stats-skipped">{html.escape(skipped)}</div>')
+        parts.append(_render_figures_group(figure_lines, context))
+    # Each property's values that are not numbers, said once, under @stats and under
+    # the precise tags alike, so a 0 never hides them.
+    said: set[str] = set()
+    for line in lines:
+        if line.totals is None or line.totals.skipped_count == 0 or line.property_name in said:
+            continue
+        said.add(line.property_name)
+        skipped = _skipped_text(line.totals.skipped_count, line.property_name)
+        parts.append(f'<div class="meta-stats-skipped">{html.escape(skipped)}</div>')
     parts.append("</section>")
     return "".join(parts)
+
+
+def stats_figure_values(
+    *, note_id: str, condition: PropertyCondition, context: StatsContext,
+) -> Tuple[PropertyValue, ...] | None:
+    """The figure a note's stats tag shows for a search term (`@sum:calories>2000`;
+    docs/ui/search-semantics.md, Stats figures): one number per unit, as the footer rounds
+    it; () for a dash; None when the note shows no such figure (it carries neither
+    `@sum=calories` nor a bare `@sum` that shows calories). Counted as the footer counts,
+    so search and footer agree."""
+    if not condition.is_stats:
+        raise ValueError(f"{condition.format()} is not a stats term")
+    kind = condition.key[0][len(META_TAG_PREFIX):]
+    property_name = condition.key[1]
+    requests = parse_summary_requests(_note_tags(context.get_note(note_id)))
+    is_named = SummaryRequest(kind=kind, property_name=property_name) in requests
+    covers_every_property = SummaryRequest(kind=kind, property_name="") in requests
+    if not is_named and not covers_every_property:
+        return None
+    totals = _collect_subtree_totals(note_id=note_id, context=context)
+    if property_name in totals and _has_numbers(totals[property_name]):
+        return _figure_values(totals[property_name], kind)
+    # A bare @sum shows only the properties with numbers under the note.
+    if not is_named:
+        return None
+    is_used = property_name in totals
+    if not is_used:
+        is_used = context.is_property_used(property_name)
+    if _empty_figure(kind, is_used=is_used) == _ZERO:
+        return (PropertyValue(kind=VALUE_NUMBER, sort_key=Decimal(0), unit=""),)
+    return ()
+
+
+def _figure_values(totals: _PropertyTotals, kind: str) -> Tuple[PropertyValue, ...]:
+    if kind == COUNT:
+        return (PropertyValue(kind=VALUE_NUMBER, sort_key=Decimal(totals.note_count), unit=""),)
+    return tuple(
+        PropertyValue(
+            kind=VALUE_NUMBER, sort_key=_rounded(_calculate(kind, note_totals), kind), unit=unit,
+        )
+        for unit, note_totals in sorted(totals.note_totals_by_unit.items())
+    )
 
 
 def typed_summary_property(prefix: str) -> Tuple[str, str] | None:
@@ -238,19 +299,19 @@ def _footer_lines(requests: Tuple[SummaryRequest, ...], totals: Dict[str, _Prope
                 continue
             seen.add((STATS_TAG, ""))
             for property_name in sorted(totals):
-                if totals[property_name].note_count > 0:
-                    lines.append(_FooterLine(kind=STATS_TAG, property_name=property_name, totals=totals[property_name]))
+                lines.append(_FooterLine(kind=STATS_TAG, property_name=property_name, totals=totals[property_name]))
             continue
         property_names = [request.property_name]
         if request.property_name == "":
             property_names = [name for name in sorted(totals) if totals[name].note_count > 0]
         for property_name in property_names:
             key = (request.kind, property_name)
-            is_in_stats = has_stats and request.kind in _STATS_KINDS and property_name in totals
+            is_in_stats = has_stats and request.kind in _STATS_KINDS and property_name in totals and _has_numbers(totals[property_name])
             if key in seen or is_in_stats:
                 continue
             seen.add(key)
-            # A named property no note under it has gets its line too, with a dash: a typo shows.
+            # A named property no note under it has gets its line too: 0 or a dash
+            # (_empty_figure).
             property_totals = None
             if property_name in totals:
                 property_totals = totals[property_name]
@@ -281,15 +342,34 @@ def _render_stats_group(line: _FooterLine) -> str:
     )
 
 
-def _render_figures_group(lines: List[_FooterLine]) -> str:
+def _render_figures_group(lines: List[_FooterLine], context: StatsContext) -> str:
     """The precise tags (`@sum=calories`, `@sum`): a labelled figure each."""
     items = []
     for line in lines:
-        number = _MISSING
-        if line.totals is not None and line.totals.note_count > 0:
+        if _has_numbers(line.totals):
+            assert line.totals is not None
             number = _figure(line.totals, line.kind)
+        elif line.totals is not None:
+            # Only text values under the note: the property is used.
+            number = _empty_figure(line.kind, is_used=True)
+        else:
+            number = _empty_figure(line.kind, is_used=context.is_property_used(line.property_name))
         items.append(_render_item(_FIGURE_LABELS[line.kind].format(line.property_name), number))
     return f'<div class="meta-stats-group">{"".join(items)}</div>'
+
+
+def _has_numbers(totals: _PropertyTotals | None) -> bool:
+    return totals is not None and totals.note_count > 0
+
+
+def _empty_figure(kind: str, *, is_used: bool) -> str:
+    """A figure with no number under the note (agreed 2026-10-28): the sum and the count
+    of nothing are 0, so a new day with `@sum=calories` reads 0; an average, minimum or
+    maximum of nothing does not exist. A property used nowhere in the vault is a dash for
+    every tag, so a typo shows."""
+    if is_used and kind in _ZERO_WHEN_EMPTY:
+        return _ZERO
+    return _MISSING
 
 
 def _figure(totals: _PropertyTotals, kind: str) -> str:
@@ -321,12 +401,17 @@ def _calculate(kind: str, note_totals: List[Decimal]) -> Decimal:
     raise ValueError(f"no number to calculate for {kind!r}")
 
 
-def _format_number(value: Decimal, kind: str) -> str:
-    """Thousands separated, rounded to the kind's places, with no trailing zeros."""
+def _rounded(value: Decimal, kind: str) -> Decimal:
+    """Rounded to the kind's places, as the footer shows it."""
     places = _NUMBER_PLACES
     if kind == AVERAGE:
         places = _AVERAGE_PLACES
-    rounded = value.quantize(Decimal(1).scaleb(-places), rounding=ROUND_HALF_UP)
+    return value.quantize(Decimal(1).scaleb(-places), rounding=ROUND_HALF_UP)
+
+
+def _format_number(value: Decimal, kind: str) -> str:
+    """Thousands separated, rounded to the kind's places, with no trailing zeros."""
+    rounded = _rounded(value, kind)
     text = f"{rounded:,f}".replace(",", _SIGN_AND_DIGITS_SEPARATOR)
     if "." in text:
         text = text.rstrip("0").rstrip(".")

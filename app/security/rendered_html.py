@@ -41,7 +41,7 @@ RENDERER_ATTRIBUTES: dict[str, frozenset[str]] = {
         "data-remote-image-proxy-src", "decoding", "draggable", "hidden", "loading",
     }),
     "li": frozenset({"class", "data-footnote-reference", "tabindex"}),
-    "section": frozenset({"class"}),
+    "section": frozenset({"aria-label", "class"}),
     "span": frozenset({
         "aria-hidden", "aria-label", "class", "data-copy-value", "data-file-ref-id", "data-file-revision",
         "data-footnote-scope", "data-latex-source", "data-preview-state", "data-redacted", "data-status", "role",

@@ -338,7 +338,9 @@ Decided 2026-10-23:
   (`docs/ready-to-build/super-tag-summaries-and-date.md`); charts later
   (`docs/future-plans/charts.md`). Built 2026-10-27: `@stats`, `@sum`, `@avg`, `@min`,
   `@max` and `@count`, a note's subtree summarised under its text
-  (`docs/ui/content-formatting.md`, Stats of a subtree; `app/services/subtree_stats.py`).
+  (`docs/ui/content-formatting.md`, Stats of a subtree; `app/services/subtree_stats.py`);
+  searching those figures (`@sum:calories>2000`) built 2026-10-28 (`docs/ui/search-semantics.md`,
+  Stats Figures).
 - Values set by rules.
 - Value suggestions.
 - Unit conversions the user defines (`1mile = 1.609km`), so a comparison can include
