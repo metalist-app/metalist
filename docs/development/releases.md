@@ -5,7 +5,8 @@ does not call an LLM and does not ask a sequence of release questions. Supplying
 the version on the command line authorizes that one release attempt.
 
 Prepare the release on a feature branch, including the version change in
-`app/version.py`. Use focused checks while developing. After review and human
+`app/version.py` and its notes as a `## Changes in X.Y.Z` section at the top of
+`CHANGELOG.md` (then `.venv/bin/python scripts/sync_release_notes_help.py`). Use focused checks while developing. After review and human
 testing, merge it to `main` and push `main`; that push runs the full matrix once.
 The automatic **Publish to PyPI** main workflow must pass for that exact commit.
 Then run:
