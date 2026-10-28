@@ -444,22 +444,8 @@ html:has(> body > .login-page[style*="display: flex"]) {
     color: #ff8a9a;
 }
 
-/* Shared modal shell. Modal contents are intentionally dark in every app theme. */
-.phone-sheet,
-.phone-capture,
-.modal {
-    --modal-surface: #10151d;
-    --modal-surface-raised: #171e29;
-    --modal-surface-inset: #0a0e14;
-    --modal-border: rgba(205, 220, 241, 0.16);
-    --modal-border-strong: rgba(138, 180, 255, 0.42);
-    --modal-text: #edf3ff;
-    --modal-text-muted: #a5b0c0;
-    --modal-text-subtle: #7f8a9b;
-    --modal-accent: #8ab4ff;
-    --modal-danger: #ff8998;
-    --modal-success: #67d69d;
-}
+/* Shared modal shell. Its colours are the --modal-* tokens beside the theme colours
+   (html[data-theme="light"] below), so dialogs, menus and lists follow the theme. */
 
 .modal {
     display: none;
@@ -472,9 +458,9 @@ html:has(> body > .login-page[style*="display: flex"]) {
     box-sizing: border-box;
     overflow: auto;
     padding: clamp(12px, 3vh, 32px);
-    background: rgba(3, 7, 12, 0.76);
+    background: var(--modal-backdrop);
     color: var(--modal-text);
-    color-scheme: dark;
+    color-scheme: var(--modal-color-scheme);
     backdrop-filter: blur(8px);
 }
 
@@ -488,12 +474,10 @@ html:has(> body > .login-page[style*="display: flex"]) {
     box-sizing: border-box;
     border: 1px solid var(--modal-border);
     border-radius: 16px;
-    background: linear-gradient(145deg, rgba(23, 30, 41, 0.98), rgba(12, 17, 24, 0.99));
+    background: var(--modal-panel-background);
     color: var(--modal-text);
     overflow-y: auto;
-    box-shadow:
-        0 24px 70px rgba(0, 0, 0, 0.62),
-        inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    box-shadow: var(--modal-shadow);
 }
 
 .modal-content h2,
@@ -1109,7 +1093,7 @@ body.ontology-modal-open #ontology-modal {
 #ontology-modal {
     overflow: hidden;
     padding: 0;
-    background: rgba(0, 0, 0, 0.5);
+    background: var(--modal-backdrop);
     backdrop-filter: none;
 }
 
@@ -1124,11 +1108,11 @@ body.ontology-modal-open #ontology-modal {
     flex-direction: column;
     gap: 16px;
     position: relative;
-    background: linear-gradient(135deg, rgba(25, 25, 35, 0.98), rgba(18, 18, 28, 0.98));
+    background: var(--modal-panel-background);
     backdrop-filter: blur(16px);
-    color: rgba(255, 255, 255, 0.92);
-    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.08);
-    border: 1px solid rgba(255, 255, 255, 0.05);
+    color: var(--modal-text);
+    box-shadow: var(--modal-shadow);
+    border: 1px solid var(--modal-border);
     border-radius: 8px;
     overflow: hidden;
     scrollbar-color: auto;
@@ -1143,7 +1127,7 @@ body.ontology-modal-open #ontology-modal {
     justify-content: center;
     flex-direction: column;
     gap: 12px;
-    background: rgba(0, 0, 0, 0.45);
+    background: var(--modal-backdrop-soft);
     backdrop-filter: blur(6px);
     z-index: 20;
     border-radius: 8px;
@@ -1158,8 +1142,8 @@ body.ontology-modal-open #ontology-modal {
     width: 40px;
     height: 40px;
     border-radius: 50%;
-    border: 4px solid rgba(255, 255, 255, 0.2);
-    border-top-color: rgba(255, 255, 255, 0.85);
+    border: 4px solid rgba(var(--modal-ink-rgb), 0.2);
+    border-top-color: rgba(var(--modal-ink-rgb), 0.85);
     animation: ontology-spin 1s linear infinite;
 }
 
@@ -1177,6 +1161,7 @@ body.ontology-modal-open #ontology-modal {
     border-radius: 0;
     color: inherit;
     font: inherit;
+    box-shadow: none;
 }
 
 #ontology-modal .ontology-modal-content button:hover {
@@ -1193,7 +1178,7 @@ body.ontology-modal-open #ontology-modal {
 .ontology-modal-header h2 {
     margin: 0;
     text-align: left;
-    color: rgba(255, 255, 255, 0.92);
+    color: rgba(var(--modal-ink-rgb), 0.92);
 }
 
 .ontology-search {
@@ -1219,15 +1204,15 @@ body.ontology-modal-open #ontology-modal {
     margin: 0;
     padding: 12px 14px;
     border-radius: 10px;
-    border: 1px solid rgba(255, 255, 255, 0.14);
-    background: rgba(0, 0, 0, 0.35);
-    color: rgba(255, 255, 255, 0.92);
+    border: 1px solid rgba(var(--modal-ink-rgb), 0.14);
+    background: var(--modal-surface-inset);
+    color: rgba(var(--modal-ink-rgb), 0.92);
 }
 
 #ontology-search-input:focus {
     outline: none;
-    border-color: rgba(99, 179, 237, 0.85);
-    box-shadow: 0 0 0 3px rgba(99, 179, 237, 0.25);
+    border-color: var(--modal-border-strong);
+    box-shadow: 0 0 0 3px var(--modal-focus-ring);
 }
 
 .ontology-search-results {
@@ -1241,8 +1226,9 @@ body.ontology-modal-open #ontology-modal {
     gap: 4px;
     padding: 8px;
     border-radius: 12px;
-    border: 1px solid rgba(255, 255, 255, 0.14);
-    background: rgba(0, 0, 0, 0.75);
+    border: 1px solid rgba(var(--modal-ink-rgb), 0.14);
+    background: var(--modal-surface);
+    box-shadow: var(--modal-menu-shadow);
     backdrop-filter: blur(10px);
     max-height: 240px;
     overflow-y: auto;
@@ -1255,9 +1241,9 @@ body.ontology-modal-open #ontology-modal {
     gap: 10px;
     padding: 10px 12px;
     border-radius: 10px;
-    border: 1px solid rgba(255, 255, 255, 0.10);
-    background: rgba(255, 255, 255, 0.06);
-    color: rgba(255, 255, 255, 0.9);
+    border: 1px solid rgba(var(--modal-ink-rgb), 0.10);
+    background: rgba(var(--modal-ink-rgb), 0.06);
+    color: rgba(var(--modal-ink-rgb), 0.9);
     cursor: pointer;
     font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
     font-size: 0.95rem;
@@ -1273,17 +1259,17 @@ body.ontology-modal-open #ontology-modal {
     letter-spacing: 0.01em;
     padding: 2px 8px;
     border-radius: 999px;
-    background: rgba(255, 255, 255, 0.12);
-    color: rgba(255, 255, 255, 0.75);
+    background: rgba(var(--modal-ink-rgb), 0.12);
+    color: rgba(var(--modal-ink-rgb), 0.75);
 }
 
 #ontology-modal button.ontology-search-result:hover {
-    background: rgba(255, 255, 255, 0.12);
+    background: rgba(var(--modal-ink-rgb), 0.12);
 }
 
 #ontology-modal button.ontology-search-result.is-selected {
-    background: rgba(255, 255, 255, 0.18);
-    border-color: rgba(255, 255, 255, 0.22);
+    background: rgba(var(--modal-ink-rgb), 0.18);
+    border-color: rgba(var(--modal-ink-rgb), 0.22);
 }
 
 .ontology-columns {
@@ -1300,14 +1286,14 @@ body.ontology-modal-open #ontology-modal {
     gap: 10px;
     padding: 14px;
     border-radius: 12px;
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    background: rgba(0, 0, 0, 0.25);
+    border: 1px solid rgba(var(--modal-ink-rgb), 0.08);
+    background: var(--modal-surface-raised);
     overflow: hidden;
 }
 
 .ontology-column-title {
     font-size: 0.95rem;
-    color: rgba(255, 255, 255, 0.65);
+    color: rgba(var(--modal-ink-rgb), 0.65);
 }
 
 .ontology-list {
@@ -1358,7 +1344,7 @@ body.ontology-modal-open #ontology-modal {
     top: 0;
     bottom: 0;
     width: 6px;
-    border: 1.5px solid rgba(255, 255, 255, 0.35);
+    border: 1.5px solid rgba(var(--modal-ink-rgb), 0.35);
     border-right: none;
     border-radius: 3px 0 0 3px;
 }
@@ -1378,18 +1364,18 @@ body.ontology-modal-open #ontology-modal {
 }
 
 .ontology-atom-tag {
-    color: rgba(255, 255, 255, 0.92);
+    color: rgba(var(--modal-ink-rgb), 0.92);
     cursor: pointer;
 }
 
 .ontology-atom-tag:hover {
-    color: rgba(99, 179, 237, 0.95);
+    color: var(--modal-accent);
 }
 
 .ontology-atom-text,
 .ontology-atom-regex,
 .ontology-atom-value {
-    color: rgba(255, 255, 255, 0.78);
+    color: rgba(var(--modal-ink-rgb), 0.78);
 }
 
 .ontology-rule-text {
@@ -1397,7 +1383,7 @@ body.ontology-modal-open #ontology-modal {
     min-width: 0;
     font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
     font-size: 0.9rem;
-    color: rgba(255, 255, 255, 0.78);
+    color: rgba(var(--modal-ink-rgb), 0.78);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -1419,7 +1405,7 @@ body.ontology-modal-open #ontology-modal {
     text-align: left;
     border: none;
     background: transparent;
-    color: rgba(255, 255, 255, 0.9);
+    color: rgba(var(--modal-ink-rgb), 0.9);
     font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
     font-size: 0.95rem;
     cursor: pointer;
@@ -1432,7 +1418,7 @@ body.ontology-modal-open #ontology-modal {
 }
 
 .ontology-tag:hover {
-    color: rgba(99, 179, 237, 0.95);
+    color: var(--modal-accent);
 }
 
 .ontology-focus .ontology-tag {
@@ -1440,11 +1426,8 @@ body.ontology-modal-open #ontology-modal {
     font-size: 1.75rem !important;
     line-height: 1.05;
     letter-spacing: 0.02em;
-    color: #ffffff;
-    text-shadow:
-        0 0 12px rgba(99, 179, 237, 0.9),
-        0 0 24px rgba(99, 179, 237, 0.6),
-        0 6px 18px rgba(15, 23, 42, 0.65);
+    color: var(--modal-text);
+    text-shadow: var(--modal-focus-tag-shadow);
 }
 
 .ontology-remove {
@@ -1455,15 +1438,15 @@ body.ontology-modal-open #ontology-modal {
     line-height: 1;
     box-sizing: border-box;
     border-radius: 6px;
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    background: rgba(255, 255, 255, 0.02);
-    color: rgba(255, 255, 255, 0.7);
+    border: 1px solid rgba(var(--modal-ink-rgb), 0.12);
+    background: rgba(var(--modal-ink-rgb), 0.02);
+    color: rgba(var(--modal-ink-rgb), 0.7);
     cursor: pointer;
 }
 
 .ontology-remove:hover {
     background: rgba(245, 101, 101, 0.16);
-    color: rgba(255, 255, 255, 0.9);
+    color: rgba(var(--modal-ink-rgb), 0.9);
 }
 
 .ontology-edit {
@@ -1474,16 +1457,16 @@ body.ontology-modal-open #ontology-modal {
     line-height: 1;
     box-sizing: border-box;
     border-radius: 6px;
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    background: rgba(255, 255, 255, 0.02);
-    color: rgba(255, 255, 255, 0.65);
+    border: 1px solid rgba(var(--modal-ink-rgb), 0.12);
+    background: rgba(var(--modal-ink-rgb), 0.02);
+    color: rgba(var(--modal-ink-rgb), 0.65);
     cursor: pointer;
     font-size: 0.85rem;
 }
 
 .ontology-edit:hover {
-    background: rgba(255, 255, 255, 0.08);
-    color: rgba(255, 255, 255, 0.9);
+    background: rgba(var(--modal-ink-rgb), 0.08);
+    color: rgba(var(--modal-ink-rgb), 0.9);
 }
 
 /* The focused tag's 🗑: deletes it everywhere (after the same confirmation as
@@ -1509,16 +1492,16 @@ body.ontology-modal-open #ontology-modal {
 .ontology-add {
     padding: 10px 12px;
     border-radius: 10px;
-    border: 1px dashed rgba(255, 255, 255, 0.2);
-    background: rgba(255, 255, 255, 0.04);
-    color: rgba(255, 255, 255, 0.6);
+    border: 1px dashed rgba(var(--modal-ink-rgb), 0.2);
+    background: rgba(var(--modal-ink-rgb), 0.04);
+    color: rgba(var(--modal-ink-rgb), 0.6);
     cursor: pointer;
     font-size: 0.9rem;
 }
 
 .ontology-add:hover:not(:disabled) {
-    color: rgba(255, 255, 255, 0.82);
-    border-color: rgba(255, 255, 255, 0.3);
+    color: rgba(var(--modal-ink-rgb), 0.82);
+    border-color: rgba(var(--modal-ink-rgb), 0.3);
 }
 
 /* Without a focus tag the column buttons cannot act (ontology-modal.js renderFocusView). */
@@ -1529,13 +1512,13 @@ body.ontology-modal-open #ontology-modal {
 
 .ontology-divider {
     height: 1px;
-    background: rgba(255, 255, 255, 0.24);
+    background: rgba(var(--modal-ink-rgb), 0.24);
     margin: 10px 0;
     box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.25);
 }
 
 .ontology-placeholder {
-    color: rgba(255, 255, 255, 0.45);
+    color: rgba(var(--modal-ink-rgb), 0.45);
     padding: 18px 0;
     font-size: 0.9rem;
 }
@@ -1546,8 +1529,8 @@ body.ontology-modal-open #ontology-modal {
     align-items: center;
     gap: 20px;
     padding-top: 10px;
-    border-top: 1px solid rgba(255, 255, 255, 0.06);
-    color: rgba(255, 255, 255, 0.45);
+    border-top: 1px solid rgba(var(--modal-ink-rgb), 0.06);
+    color: rgba(var(--modal-ink-rgb), 0.45);
     font-size: 0.85rem;
 }
 
@@ -1558,7 +1541,7 @@ body.ontology-modal-open #ontology-modal {
     align-items: flex-start;
     justify-content: center;
     padding: 0 24px;
-    background: rgba(8, 8, 12, 0.72);
+    background: var(--modal-backdrop);
     backdrop-filter: blur(6px);
     z-index: 30;
 }
@@ -1575,10 +1558,10 @@ body.ontology-modal-open #ontology-modal {
     flex-direction: column;
     gap: 16px;
     border-radius: 16px;
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    background: linear-gradient(135deg, rgba(30, 30, 45, 0.98), rgba(16, 16, 28, 0.98));
-    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
-    color: rgba(255, 255, 255, 0.92);
+    border: 1px solid rgba(var(--modal-ink-rgb), 0.12);
+    background: var(--modal-panel-background);
+    box-shadow: var(--modal-shadow);
+    color: rgba(var(--modal-ink-rgb), 0.92);
     overflow: hidden;
 }
 
@@ -1598,9 +1581,9 @@ body.ontology-modal-open #ontology-modal {
     width: 34px;
     height: 34px;
     border-radius: 10px;
-    border: 1px solid rgba(255, 255, 255, 0.18);
-    background: rgba(255, 255, 255, 0.06);
-    color: rgba(255, 255, 255, 0.75);
+    border: 1px solid rgba(var(--modal-ink-rgb), 0.18);
+    background: rgba(var(--modal-ink-rgb), 0.06);
+    color: rgba(var(--modal-ink-rgb), 0.75);
     cursor: pointer;
     font-size: 18px;
     display: grid;
@@ -1608,8 +1591,8 @@ body.ontology-modal-open #ontology-modal {
 }
 
 #ontology-modal .ontology-dialog-close:hover {
-    background: rgba(255, 255, 255, 0.12);
-    color: rgba(255, 255, 255, 0.95);
+    background: rgba(var(--modal-ink-rgb), 0.12);
+    color: rgba(var(--modal-ink-rgb), 0.95);
 }
 
 .ontology-dialog-body {
@@ -1623,12 +1606,12 @@ body.ontology-modal-open #ontology-modal {
 
 .ontology-dialog-description {
     font-size: 0.9rem;
-    color: rgba(255, 255, 255, 0.7);
+    color: rgba(var(--modal-ink-rgb), 0.7);
 }
 
 .ontology-dialog-label {
     font-size: 0.85rem;
-    color: rgba(255, 255, 255, 0.6);
+    color: rgba(var(--modal-ink-rgb), 0.6);
 }
 
 #ontology-dialog-input {
@@ -1637,15 +1620,15 @@ body.ontology-modal-open #ontology-modal {
     margin: 0;
     padding: 12px 14px;
     border-radius: 10px;
-    border: 1px solid rgba(255, 255, 255, 0.16);
-    background: rgba(0, 0, 0, 0.35);
-    color: rgba(255, 255, 255, 0.95);
+    border: 1px solid rgba(var(--modal-ink-rgb), 0.16);
+    background: var(--modal-surface-inset);
+    color: rgba(var(--modal-ink-rgb), 0.95);
 }
 
 #ontology-dialog-input:focus {
     outline: none;
-    border-color: rgba(99, 179, 237, 0.85);
-    box-shadow: 0 0 0 3px rgba(99, 179, 237, 0.25);
+    border-color: var(--modal-border-strong);
+    box-shadow: 0 0 0 3px var(--modal-focus-ring);
 }
 
 .ontology-dialog-help {
@@ -1653,7 +1636,7 @@ body.ontology-modal-open #ontology-modal {
     flex-direction: column;
     gap: 4px;
     font-size: 0.8rem;
-    color: rgba(255, 255, 255, 0.55);
+    color: rgba(var(--modal-ink-rgb), 0.55);
 }
 
 .ontology-dialog-suggestions {
@@ -1665,8 +1648,9 @@ body.ontology-modal-open #ontology-modal {
     overflow-y: auto;
     padding: 6px;
     border-radius: 12px;
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    background: rgba(0, 0, 0, 0.6);
+    border: 1px solid rgba(var(--modal-ink-rgb), 0.12);
+    background: var(--modal-surface);
+    box-shadow: var(--modal-menu-shadow);
 }
 
 .ontology-dialog-suggestions.is-hidden {
@@ -1681,21 +1665,21 @@ body.ontology-modal-open #ontology-modal {
     gap: 10px;
     padding: 10px 12px;
     border-radius: 10px;
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    background: rgba(255, 255, 255, 0.08);
-    color: rgba(255, 255, 255, 0.92);
+    border: 1px solid rgba(var(--modal-ink-rgb), 0.1);
+    background: rgba(var(--modal-ink-rgb), 0.08);
+    color: rgba(var(--modal-ink-rgb), 0.92);
     cursor: pointer;
     font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
     font-size: 0.9rem;
 }
 
 #ontology-modal button.ontology-dialog-suggestion:hover {
-    background: rgba(255, 255, 255, 0.14);
+    background: rgba(var(--modal-ink-rgb), 0.14);
 }
 
 #ontology-modal button.ontology-dialog-suggestion.is-selected {
-    background: rgba(99, 179, 237, 0.2);
-    border-color: rgba(99, 179, 237, 0.45);
+    background: var(--modal-selected);
+    border-color: var(--modal-border-strong);
 }
 
 .ontology-dialog-suggestion-label {
@@ -1707,8 +1691,8 @@ body.ontology-modal-open #ontology-modal {
     font-size: 0.75rem;
     padding: 2px 8px;
     border-radius: 999px;
-    background: rgba(255, 255, 255, 0.15);
-    color: rgba(255, 255, 255, 0.75);
+    background: rgba(var(--modal-ink-rgb), 0.15);
+    color: rgba(var(--modal-ink-rgb), 0.75);
 }
 
 .ontology-dialog-footer {
@@ -1721,33 +1705,33 @@ body.ontology-modal-open #ontology-modal {
 #ontology-modal .ontology-dialog-footer button {
     padding: 10px 16px;
     border-radius: 10px;
-    border: 1px solid rgba(255, 255, 255, 0.18);
-    background: rgba(255, 255, 255, 0.08);
-    color: rgba(255, 255, 255, 0.9);
+    border: 1px solid rgba(var(--modal-ink-rgb), 0.18);
+    background: rgba(var(--modal-ink-rgb), 0.08);
+    color: rgba(var(--modal-ink-rgb), 0.9);
     cursor: pointer;
     font-size: 0.9rem;
 }
 
 #ontology-modal .ontology-dialog-footer button:hover {
-    background: rgba(255, 255, 255, 0.14);
+    background: rgba(var(--modal-ink-rgb), 0.14);
 }
 
 #ontology-modal .ontology-dialog-secondary {
-    background: rgba(255, 255, 255, 0.04);
-    color: rgba(255, 255, 255, 0.7);
+    background: rgba(var(--modal-ink-rgb), 0.04);
+    color: rgba(var(--modal-ink-rgb), 0.7);
 }
 
 #ontology-modal .ontology-dialog-danger {
     margin-right: auto;
-    border-color: rgba(245, 101, 101, 0.45);
-    background: rgba(127, 29, 29, 0.32);
-    color: rgba(254, 202, 202, 0.96);
+    border-color: var(--modal-danger-border);
+    background: var(--modal-danger-tint);
+    color: var(--modal-danger);
 }
 
 #ontology-modal .ontology-dialog-danger:hover {
-    border-color: rgba(248, 113, 113, 0.72);
-    background: rgba(153, 27, 27, 0.52);
-    color: #fff;
+    border-color: var(--modal-danger);
+    background: var(--modal-danger-tint);
+    color: var(--modal-danger);
 }
 
 /* A destructive confirmation's main button is red, in the main button's place. */
@@ -2330,9 +2314,9 @@ body.ontology-modal-open #ontology-modal {
     gap: 4px;
     padding: 8px;
     border-radius: 10px;
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    background: rgba(18, 18, 18, 0.98);
-    box-shadow: 0 10px 24px rgba(0, 0, 0, 0.35);
+    border: 1px solid var(--modal-border);
+    background: var(--modal-surface);
+    box-shadow: var(--modal-menu-shadow);
     z-index: 90;
 }
 
@@ -2353,8 +2337,8 @@ body.ontology-modal-open #ontology-modal {
     padding: 6px 8px;
     border-radius: 6px;
     border: 1px solid transparent;
-    background: rgba(255, 255, 255, 0.08);
-    color: #f5f5f5;
+    background: var(--modal-quiet-button);
+    color: var(--modal-text);
     cursor: pointer;
     font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
     font-size: 0.9rem;
@@ -2367,15 +2351,15 @@ body.ontology-modal-open #ontology-modal {
 .prioritize-modal-content button.prioritize-modal-suggestion:hover,
 .prioritize-modal-content button.prioritize-modal-suggestion:focus,
 .prioritize-modal-content button.prioritize-modal-suggestion:focus-visible {
-    background: rgba(255, 255, 255, 0.16);
-    border-color: rgba(255, 255, 255, 0.18);
+    background: var(--modal-quiet-button-hover);
+    border-color: var(--modal-border);
     box-shadow: none;
     outline: none;
 }
 
 .prioritize-modal-content button.prioritize-modal-suggestion.is-selected {
-    background: rgba(255, 255, 255, 0.24);
-    border-color: rgba(255, 255, 255, 0.28);
+    background: var(--modal-selected);
+    border-color: var(--modal-border-strong);
 }
 
 .prioritize-modal-suggestion-status {
@@ -5359,13 +5343,13 @@ body.pref-animated-transitions .note-tag-bar:focus-within::after {
     bottom: calc(100% + 8px);
     padding: 6px 10px;
     border-radius: 10px;
-    border: 1px solid rgba(244, 67, 54, 0.65);
-    background: rgba(18, 18, 18, 0.97);
-    color: rgba(244, 67, 54, 0.95);
+    border: 1px solid var(--modal-danger-border);
+    background: var(--modal-surface);
+    color: var(--modal-danger);
     font-size: 0.85rem;
     font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     line-height: 1.2;
-    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.28);
+    box-shadow: var(--modal-menu-shadow);
     z-index: 70;
     pointer-events: none;
 }
@@ -5373,8 +5357,8 @@ body.pref-animated-transitions .note-tag-bar:focus-within::after {
 .note-tag-bar-validation-message.is-reminder {
     right: auto;
     padding: 3px 7px;
-    border-color: rgba(148, 163, 184, 0.3);
-    color: #cbd5e1;
+    border-color: var(--modal-border);
+    color: var(--modal-text-muted);
     font-size: 0.72rem;
     box-shadow: none;
 }
@@ -5483,12 +5467,12 @@ body.pref-animated-transitions .note-tag-bar:focus-within::after {
     bottom: calc(100% + 8px);
     padding: 3px 8px;
     border-radius: 8px;
-    border: 1px solid rgba(148, 163, 184, 0.3);
-    background: rgba(18, 18, 18, 0.94);
-    color: #e5e7eb;
+    border: 1px solid var(--modal-border);
+    background: var(--modal-surface);
+    color: var(--modal-text);
     font: 0.72rem/1.3 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     white-space: nowrap;
-    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.22);
+    box-shadow: var(--modal-menu-shadow);
     z-index: 70;
     pointer-events: none;
 }
@@ -5584,9 +5568,9 @@ body.pref-animated-transitions .note-tag-bar:focus-within::after {
     gap: 4px;
     padding: 8px;
     border-radius: 10px;
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    background: rgba(18, 18, 18, 0.98);
-    box-shadow: 0 10px 24px rgba(0, 0, 0, 0.35);
+    border: 1px solid var(--modal-border);
+    background: var(--modal-surface);
+    box-shadow: var(--modal-menu-shadow);
     max-height: 240px;
     overflow-y: auto;
     z-index: 70;
@@ -5605,21 +5589,21 @@ body.pref-animated-transitions .note-tag-bar:focus-within::after {
     padding: 6px 8px;
     border-radius: 6px;
     border: 1px solid transparent;
-    background: rgba(255, 255, 255, 0.08);
-    color: #f5f5f5;
+    background: var(--modal-quiet-button);
+    color: var(--modal-text);
     cursor: pointer;
     font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
     font-size: 0.9rem;
 }
 
 .note-tag-suggestion:hover {
-    background: rgba(255, 255, 255, 0.16);
-    border-color: rgba(255, 255, 255, 0.18);
+    background: var(--modal-quiet-button-hover);
+    border-color: var(--modal-border);
 }
 
 .note-tag-suggestion.is-selected {
-    background: rgba(255, 255, 255, 0.24);
-    border-color: rgba(255, 255, 255, 0.28);
+    background: var(--modal-selected);
+    border-color: var(--modal-border-strong);
 }
 
 .rich-text-toolbar {
@@ -5631,11 +5615,11 @@ body.pref-animated-transitions .note-tag-bar:focus-within::after {
     gap: 10px;
     padding: 10px 16px;
     border-radius: 999px;
-    border: 1px solid rgba(0, 0, 0, 0.4);
-    background: rgba(18, 18, 18, 0.95);
-    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+    border: 1px solid var(--modal-border);
+    background: var(--modal-surface);
+    box-shadow: var(--modal-menu-shadow);
     z-index: 2000;
-    color: #f5f5f5;
+    color: var(--modal-text);
     align-items: center;
 }
 
@@ -5651,7 +5635,7 @@ body.pref-animated-transitions .note-tag-bar:focus-within::after {
 .toolbar-divider {
     width: 1px;
     height: 26px;
-    background: rgba(255, 255, 255, 0.15);
+    background: var(--modal-border);
     display: inline-block;
 }
 
@@ -5670,7 +5654,7 @@ body.pref-animated-transitions .note-tag-bar:focus-within::after {
 
 .rich-text-toolbar button[data-active="true"],
 .rich-text-toolbar button:focus-visible {
-    background: rgba(255, 255, 255, 0.15);
+    background: var(--modal-quiet-button-hover);
 }
 
 .rich-text-toolbar button span {
@@ -6267,8 +6251,8 @@ html[data-theme="dark"] .context-menu-item.is-submenu-open {
     margin-top: 6px;
     padding: 9px 10px;
     border-radius: 6px;
-    background: #1f2937;
-    color: #f8fafc;
+    background: var(--modal-surface-raised);
+    color: var(--modal-text);
     font-size: 11px;
     line-height: 1.35;
     font-variant-numeric: tabular-nums;
@@ -6284,12 +6268,12 @@ html[data-theme="dark"] .context-menu-item.is-submenu-open {
 }
 
 .context-menu-info-label {
-    color: #cbd5e1;
+    color: var(--modal-text-muted);
     font-weight: 600;
 }
 
 .context-menu-info-value {
-    color: #f8fafc;
+    color: var(--modal-text);
     text-align: right;
     white-space: nowrap;
 }
@@ -8302,7 +8286,7 @@ html[data-theme="dark"] .meta-code-code .tok-cpf { color: #8b949e; }
    whose layout never changes for it. */
 .modal.error-dialog-layer {
     z-index: 15500;
-    background: rgba(3, 7, 12, 0.45);
+    background: var(--modal-backdrop-soft);
     backdrop-filter: none;
 }
 
@@ -8476,6 +8460,86 @@ html[data-theme="light"] {
     --bg-color: #ffffff;
     --text-color: #333333;
     --border-color: #dddddd;
+}
+
+/* Shared colours of dialogs, sheets, the command palette, menus and suggestion lists. They
+   follow the theme (docs/ui/command-palette.md, Theme): the Light values here, the Dark ones
+   under html[data-theme="dark"]. The login and loading screen keeps its own dark colours. */
+:root {
+    --modal-color-scheme: light;
+    --modal-surface: #ffffff;
+    --modal-surface-raised: #f4f6f9;
+    --modal-surface-inset: #ffffff;
+    --modal-panel-background: #ffffff;
+    --modal-border: rgba(15, 23, 42, 0.14);
+    --modal-border-strong: rgba(29, 95, 184, 0.55);
+    --modal-text: #1f2937;
+    --modal-text-muted: #4b5563;
+    --modal-text-subtle: #6b7280;
+    --modal-accent: #1d5fb8;
+    --modal-danger: #b42318;
+    --modal-success: #157347;
+    --modal-warning: #8a5a00;
+    --modal-backdrop: rgba(15, 23, 42, 0.28);
+    --modal-backdrop-soft: rgba(15, 23, 42, 0.16);
+    --modal-shadow: 0 24px 60px rgba(15, 23, 42, 0.22), 0 2px 8px rgba(15, 23, 42, 0.08);
+    --modal-menu-shadow: 0 12px 30px rgba(15, 23, 42, 0.18);
+    --modal-hover: rgba(15, 23, 42, 0.06);
+    --modal-selected: rgba(29, 95, 184, 0.12);
+    --modal-quiet-button: rgba(15, 23, 42, 0.04);
+    --modal-quiet-button-hover: rgba(15, 23, 42, 0.09);
+    --modal-quiet-border-hover: rgba(15, 23, 42, 0.24);
+    --modal-heading-tint: rgba(29, 95, 184, 0.08);
+    --modal-heading-text: #1e3a6b;
+    --modal-danger-tint: rgba(180, 35, 24, 0.07);
+    --modal-danger-border: rgba(180, 35, 24, 0.32);
+    --modal-success-tint: rgba(21, 115, 71, 0.1);
+    --modal-track: rgba(15, 23, 42, 0.1);
+    --modal-scrollbar: rgba(15, 23, 42, 0.28);
+    --modal-focus-ring: rgba(29, 95, 184, 0.2);
+    --modal-inset-highlight: rgba(255, 255, 255, 0);
+    --modal-preview-border: rgba(15, 23, 42, 0.28);
+    /* Text and tints drawn in the theme's ink: near-black in Light, white in Dark. */
+    --modal-ink-rgb: 15, 23, 42;
+    --modal-focus-tag-shadow: 0 0 14px rgba(29, 95, 184, 0.28);
+}
+
+html[data-theme="dark"] {
+    --modal-color-scheme: dark;
+    --modal-surface: #10151d;
+    --modal-surface-raised: #171e29;
+    --modal-surface-inset: #0a0e14;
+    --modal-panel-background: linear-gradient(145deg, rgba(23, 30, 41, 0.98), rgba(12, 17, 24, 0.99));
+    --modal-border: rgba(205, 220, 241, 0.16);
+    --modal-border-strong: rgba(138, 180, 255, 0.42);
+    --modal-text: #edf3ff;
+    --modal-text-muted: #a5b0c0;
+    --modal-text-subtle: #7f8a9b;
+    --modal-accent: #8ab4ff;
+    --modal-danger: #ff8998;
+    --modal-success: #67d69d;
+    --modal-warning: #f4bd62;
+    --modal-backdrop: rgba(3, 7, 12, 0.76);
+    --modal-backdrop-soft: rgba(3, 7, 12, 0.45);
+    --modal-shadow: 0 24px 70px rgba(0, 0, 0, 0.62), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    --modal-menu-shadow: 0 12px 30px rgba(0, 0, 0, 0.36);
+    --modal-hover: rgba(255, 255, 255, 0.07);
+    --modal-selected: rgba(77, 144, 254, 0.18);
+    --modal-quiet-button: rgba(255, 255, 255, 0.075);
+    --modal-quiet-button-hover: rgba(255, 255, 255, 0.13);
+    --modal-quiet-border-hover: rgba(229, 235, 243, 0.26);
+    --modal-heading-tint: rgba(138, 180, 255, 0.12);
+    --modal-heading-text: #dbe7ff;
+    --modal-danger-tint: rgba(190, 48, 67, 0.12);
+    --modal-danger-border: rgba(255, 137, 152, 0.32);
+    --modal-success-tint: rgba(58, 177, 112, 0.16);
+    --modal-track: rgba(229, 235, 243, 0.14);
+    --modal-scrollbar: rgba(229, 235, 243, 0.34);
+    --modal-focus-ring: rgba(86, 149, 255, 0.16);
+    --modal-inset-highlight: rgba(255, 255, 255, 0.025);
+    --modal-preview-border: rgba(205, 220, 241, 0.4);
+    --modal-ink-rgb: 255, 255, 255;
+    --modal-focus-tag-shadow: 0 0 12px rgba(99, 179, 237, 0.9), 0 0 24px rgba(99, 179, 237, 0.6), 0 6px 18px rgba(15, 23, 42, 0.65);
 }
 
 /* Dark theme: neutral black with a soft centre glow. Note corners and tag pills
@@ -8947,26 +9011,26 @@ html[data-theme="dark"] body.loading::after {
 .command-palette-modal {
     overflow: hidden;
     padding: 0;
-    background-color: rgba(0, 0, 0, 0.72);
+    background-color: var(--modal-backdrop);
 }
 
 .command-palette-panel {
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-    background: #0b0b0b;
-    color: #e6e6e6;
-    border: 1px solid #2a2a2a;
+    background: var(--modal-surface);
+    color: var(--modal-text);
+    border: 1px solid var(--modal-border);
     border-radius: 12px;
     box-sizing: border-box;
     width: min(860px, 92vw);
     max-height: min(78vh, 720px);
     margin: 10vh auto;
     overflow: hidden;
-    box-shadow: 0 18px 40px rgba(0, 0, 0, 0.6);
+    box-shadow: var(--modal-shadow);
 }
 
 .command-palette-input-row {
     padding: 14px;
-    border-bottom: 1px solid #2a2a2a;
+    border-bottom: 1px solid var(--modal-border);
 }
 
 .command-palette-input {
@@ -8974,22 +9038,22 @@ html[data-theme="dark"] body.loading::after {
     min-width: 0;
     width: 100%;
     padding: 10px 12px;
-    background: #000;
-    border: 1px solid #2a2a2a;
+    background: var(--modal-surface-inset);
+    border: 1px solid var(--modal-border);
     border-radius: 8px;
-    color: #e6e6e6;
+    color: var(--modal-text);
     font-size: 15px;
 }
 
 .command-palette-input:focus {
     outline: none;
-    border-color: #4d90fe;
+    border-color: var(--modal-border-strong);
 }
 
 .command-palette-suggestions {
     padding: 10px 14px;
-    border-bottom: 1px solid #2a2a2a;
-    color: #bdbdbd;
+    border-bottom: 1px solid var(--modal-border);
+    color: var(--modal-text-muted);
     font-size: 13px;
     display: flex;
     flex-wrap: wrap;
@@ -9002,7 +9066,7 @@ html[data-theme="dark"] body.loading::after {
 }
 
 .command-palette-suggestion:hover {
-    color: #ffffff;
+    color: var(--modal-text);
 }
 
 .command-palette-results {
@@ -9015,7 +9079,7 @@ html[data-theme="dark"] body.loading::after {
     justify-content: space-between;
     gap: 16px;
     padding: 10px 14px;
-    border-bottom: 1px solid rgba(42, 42, 42, 0.6);
+    border-bottom: 1px solid var(--modal-border);
 }
 
 .command-palette-row:last-child {
@@ -9023,34 +9087,34 @@ html[data-theme="dark"] body.loading::after {
 }
 
 .command-palette-row.selected {
-    background: rgba(77, 144, 254, 0.18);
+    background: var(--modal-selected);
 }
 
 .command-palette-row-label {
     flex: 1;
-    color: #e6e6e6;
+    color: var(--modal-text);
 }
 
 /* A command's own key, right-aligned and dimmed like the context menus' shortcuts. */
 .command-palette-row-shortcut {
-    color: #8f8f8f;
+    color: var(--modal-text-subtle);
     font-size: 12px;
     white-space: nowrap;
 }
 
 /* A destructive command (endpoint-registry.js, DESTRUCTIVE_COMMAND_IDS). */
 .command-palette-row.is-danger .command-palette-row-label {
-    color: #ff6b6b;
+    color: var(--modal-danger);
 }
 
 .command-palette-row-value {
-    color: #bdbdbd;
+    color: var(--modal-text-muted);
     white-space: nowrap;
 }
 
 .command-palette-empty {
     padding: 16px 14px;
-    color: #bdbdbd;
+    color: var(--modal-text-muted);
 }
 
 .reminder-modal-content {
@@ -9627,11 +9691,11 @@ html[data-theme="dark"] body.loading::after {
 }
 
 /* -------------------------------------------------------------------------- */
-/* Unified dark modal visual system                                           */
+/* Unified modal visual system (theme colours: --modal-* tokens)               */
 /* -------------------------------------------------------------------------- */
 
 .modal-content {
-    scrollbar-color: rgba(229, 235, 243, 0.34) transparent;
+    scrollbar-color: var(--modal-scrollbar) transparent;
     scrollbar-width: thin;
 }
 
@@ -9669,7 +9733,7 @@ html[data-theme="dark"] body.loading::after {
     border-radius: 8px;
     background: var(--modal-surface-inset);
     color: var(--modal-text);
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025);
+    box-shadow: inset 0 1px 0 var(--modal-inset-highlight);
 }
 
 .modal-content input:not([type="checkbox"]):not([type="radio"]):focus,
@@ -9677,7 +9741,7 @@ html[data-theme="dark"] body.loading::after {
 .modal-content select:focus {
     border-color: var(--modal-border-strong);
     outline: none;
-    box-shadow: 0 0 0 3px rgba(86, 149, 255, 0.16);
+    box-shadow: 0 0 0 3px var(--modal-focus-ring);
 }
 
 .modal-content input::placeholder,
@@ -9687,7 +9751,7 @@ html[data-theme="dark"] body.loading::after {
 
 .modal-content input[type="checkbox"],
 .modal-content input[type="radio"] {
-    accent-color: #6fa5ff;
+    accent-color: var(--modal-accent);
 }
 
 .modal-content .primary-btn,
@@ -9706,14 +9770,14 @@ html[data-theme="dark"] body.loading::after {
 
 .modal-content .secondary-btn {
     border: 1px solid var(--modal-border);
-    background: rgba(255, 255, 255, 0.075);
+    background: var(--modal-quiet-button);
     color: var(--modal-text);
     box-shadow: none;
 }
 
 .modal-content .secondary-btn:not(:disabled):hover {
-    border-color: rgba(229, 235, 243, 0.26);
-    background: rgba(255, 255, 255, 0.13);
+    border-color: var(--modal-quiet-border-hover);
+    background: var(--modal-quiet-button-hover);
 }
 
 .modal-content .danger-btn {
@@ -9733,15 +9797,15 @@ html[data-theme="dark"] body.loading::after {
     width: 38px;
     height: 38px;
     border-color: var(--modal-border);
-    background: rgba(255, 255, 255, 0.07);
+    background: var(--modal-quiet-button);
     color: var(--modal-text);
     box-shadow: none;
 }
 
 .modal-content .modal-close-button:hover,
 .modal-content .modal-close-button:focus-visible {
-    border-color: rgba(229, 235, 243, 0.3);
-    background: rgba(255, 255, 255, 0.14);
+    border-color: var(--modal-quiet-border-hover);
+    background: var(--modal-quiet-button-hover);
     outline-color: var(--modal-accent);
 }
 
@@ -9780,30 +9844,24 @@ html[data-theme="dark"] body.loading::after {
     box-shadow: none;
 }
 
-/* Brighter than --modal-border so the corner preset is visible in the preview. */
+/* Stronger than --modal-border so the corner preset is visible in the preview. */
 .modal-content .note-layout-preview-root,
 .modal-content .note-layout-preview-child {
-    border-color: rgba(205, 220, 241, 0.4);
+    border-color: var(--modal-preview-border);
     background: var(--modal-surface-inset);
     color: var(--modal-text);
 }
 
-/* Modals use a dark shell in every theme, so the preview uses dark tag colors. */
-.modal-content .note-layout-preview {
-    --note-tag-border: rgba(255, 255, 255, 0.28);
-    --note-tag-text: #d4d4d4;
-    --note-tag-muted: #9a9a9a;
-}
-
+/* The preview's tags use the page's own tag colours, which follow the theme too. */
 .modal-content .note-layout-preview-tags {
-    color: #9a9a9a;
+    color: var(--note-tag-muted);
 }
 
 .modal-content .namespace-modal-badge,
 .modal-content .namespace-ports-table thead th,
 .modal-content .backup-result-table thead th {
-    background: rgba(138, 180, 255, 0.12);
-    color: #dbe7ff;
+    background: var(--modal-heading-tint);
+    color: var(--modal-heading-text);
 }
 
 .modal-content .namespace-modal-status,
@@ -9836,56 +9894,56 @@ html[data-theme="dark"] body.loading::after {
 .modal-content .progress-bar,
 .modal-content .password-length-meter,
 .modal-content .password-strength-meter span {
-    background: rgba(229, 235, 243, 0.14);
+    background: var(--modal-track);
 }
 
 .modal-content .password-length[data-complete="true"] .password-length-header strong,
 .modal-content .password-length[data-complete="true"] .form-help,
 .modal-content .password-strength[data-score="3"] .password-strength-header strong,
 .modal-content .password-strength[data-score="4"] .password-strength-header strong {
-    color: #67d69d;
+    color: var(--modal-success);
 }
 
 .modal-content .password-strength[data-score="0"] .password-strength-header strong,
 .modal-content .password-strength[data-score="1"] .password-strength-header strong {
-    color: #ff8998;
+    color: var(--modal-danger);
 }
 
 .modal-content .password-strength[data-score="2"] .password-strength-header strong {
-    color: #f4bd62;
+    color: var(--modal-warning);
 }
 
 .modal-content .backup-result-status-success {
-    background: rgba(58, 177, 112, 0.16);
-    color: #86e5b4;
+    background: var(--modal-success-tint);
+    color: var(--modal-success);
 }
 
 .modal-content .backup-result-status-failed {
-    background: rgba(220, 72, 91, 0.18);
-    color: #ff9aa8;
+    background: var(--modal-danger-tint);
+    color: var(--modal-danger);
 }
 
 .modal-content .namespace-delete-warning,
 .modal-content .alphabetize-root-notes-warning {
-    border-color: rgba(255, 137, 152, 0.32);
-    background: rgba(190, 48, 67, 0.12);
+    border-color: var(--modal-danger-border);
+    background: var(--modal-danger-tint);
     color: var(--modal-text);
 }
 
 .modal-content .namespace-delete-phrase {
-    border-color: rgba(255, 137, 152, 0.34);
-    background: rgba(190, 48, 67, 0.16);
-    color: #ffb3bd;
+    border-color: var(--modal-danger-border);
+    background: var(--modal-danger-tint);
+    color: var(--modal-danger);
 }
 
 .modal-content .namespace-delete-namespace {
-    color: #ffb3bd;
+    color: var(--modal-danger);
 }
 
 .modal-content .prioritize-modal-tag-bar {
     border-color: var(--modal-border);
     background: var(--modal-surface-inset);
-    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.36);
+    box-shadow: var(--modal-menu-shadow);
 }
 
 .modal-content input.prioritize-modal-tag-input {
@@ -9913,7 +9971,7 @@ html[data-theme="dark"] body.loading::after {
 .modal-content .reminder-row-past-due,
 .modal-content .reminder-row-due,
 .modal-content .reminder-row-overdue {
-    color: #f4bd62;
+    color: var(--modal-warning);
 }
 
 .modal-content.random-password-modal-content textarea {
@@ -9950,11 +10008,9 @@ html[data-theme="dark"] body.loading::after {
 .command-palette-panel {
     border-color: var(--modal-border);
     border-radius: 16px;
-    background: linear-gradient(145deg, rgba(23, 30, 41, 0.98), rgba(12, 17, 24, 0.99));
+    background: var(--modal-panel-background);
     color: var(--modal-text);
-    box-shadow:
-        0 24px 70px rgba(0, 0, 0, 0.62),
-        inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    box-shadow: var(--modal-shadow);
 }
 
 @media (max-width: 640px) {

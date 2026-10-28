@@ -14,7 +14,7 @@ Opening or dismissing the command palette does not clear undo/redo. Global actio
 
 ## Semantics
 - Query is an unordered bag of words.
-- AND-only matching against manually-authored tags.
+- AND-only matching against each command's keywords (`app/static/config/command_palette_tags.json`). The palette calls them keywords, never tags, so they aren't mistaken for note tags: the input reads `Type keywords to find a command…`, and the words suggested under it are plain text.
 - While you are mid-token (no trailing space), it behaves as a prefix filter.
 
 ## Results
@@ -86,7 +86,7 @@ Opening or dismissing the command palette does not clear undo/redo. Global actio
 - On first launch after this change, the browser imports any legacy command-palette `localStorage` values into the namespace DB and then clears those legacy keys.
 
 ## Utility Actions
-- `Back Up Now…`: opens Backup Settings, where the user chooses one backup folder, picks which namespaces to include, and sets the retention count. `Back Up Now` submits those settings directly to the backend operation that persists them and creates the archives; the completion modal appears only after concrete archive results return and shows the created size per namespace. Typing `backups` in the palette also matches this action.
+- `Back Up Now…`: opens Backup Settings, where the user chooses one backup folder, picks which namespaces to include, and sets the retention count. `Back Up Now` submits those settings directly to the backend operation that persists them and creates the archives; the completion modal appears only after concrete archive results return and shows the created size per namespace. Typing `backups` in the palette also matches this action. Agreed, not built (2026-10-27): a backup never sits half-written under its real name, a warning before an unprotected vault goes to a synced folder (Dropbox, Google Drive, OneDrive, iCloud Drive), and the synced folders MetaList finds offered as choices (`docs/ready-to-build/backups-synced-folders.md`); later, MetaList uploading to S3-compatible storage itself (`docs/future-plans/backups-s3.md`).
   - Each backup snapshot is one versioned `.tar.gz` archive containing the notes DB plus sibling files DB when present.
   - The completion modal shows one result row per namespace.
 - `Backup Reminder`: `Off`, `Daily`, `Weekly` (the default), `Every 2 weeks` or `Monthly`, saved per namespace; Enter cycles it like `Theme`. When this namespace's newest backup in the backup folder is older than that (or there is none), a card floats at the bottom right: `Time to back up: the last backup was 9 days ago.` with `Back Up Now` (opens Backup Settings, as `Back Up Now…` does) and `×` (hides it for a day). It is not a Reminders reminder. It takes no space and never takes focus; it waits while a dialog or the menu is open, stays until a backup succeeds (cancelling Backup Settings keeps it), and goes away when set to `Off`. It is checked when MetaList opens, when its tab comes back, when a dialog or the menu closes, and on the first click or key after a while.

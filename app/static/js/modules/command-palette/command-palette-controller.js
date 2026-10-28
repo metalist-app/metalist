@@ -553,7 +553,7 @@ class CommandPaletteController {
                         autocorrect="off"
                         autocapitalize="off"
                         spellcheck="false"
-                        placeholder="Type tags…"
+                        placeholder="Type keywords to find a command…"
                     />
                 </div>
                 <div id="command-palette-suggestions" class="command-palette-suggestions"></div>
