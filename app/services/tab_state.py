@@ -648,16 +648,22 @@ class TabStateStore:
             self._try_decrypt_locked(token="", require_success=True)
             changed = 0
             for tab in self._tabs.values():
-                renamed = rename(tab["searchQuery"])
-                if renamed != tab["searchQuery"]:
+                search_query = tab["searchQuery"]
+                assert isinstance(search_query, str), "a tab's search is text"
+                renamed = rename(search_query)
+                if renamed != search_query:
                     tab["searchQuery"] = renamed
                     changed += 1
             for view in self._reference_views.values():
-                # A reference view runs its tab's search, so both change together.
-                view["referenceQuery"] = rename(view["referenceQuery"])
+                reference_query = view["referenceQuery"]
                 scope = view["originScope"]
-                renamed = rename(scope["searchQuery"])
-                if renamed != scope["searchQuery"]:
+                assert isinstance(reference_query, str) and isinstance(scope, dict), "a reference view is normalized"
+                # A reference view runs its tab's search, so both change together.
+                view["referenceQuery"] = rename(reference_query)
+                origin_query = scope["searchQuery"]
+                assert isinstance(origin_query, str), "an origin scope's search is text"
+                renamed = rename(origin_query)
+                if renamed != origin_query:
                     scope["searchQuery"] = renamed
                     changed += 1
             if changed == 0:
