@@ -531,7 +531,15 @@ const WRAP_FORMATS = [
 ];
 
 function textOverflow(contents) {
-  // How far each note's text reaches past the right of its box, in pixels.
+  // How far each note's text reaches past the right of its box, in pixels. Text inside a
+  // table that scrolls sideways is seen through that table, which must itself stay in the box
+  // (docs/ui/content-formatting.md: a table too wide for its words scrolls inside its note).
+  const visibleRight = (content, node, rect) => {
+    const scroller = node.parentElement.closest('.meta-markdown-table-wrap, .meta-csv-table-wrap');
+    if (scroller === null || !content.contains(scroller)) return rect.right;
+    if (!['auto', 'scroll'].includes(getComputedStyle(scroller).overflowX)) return rect.right;
+    return Math.min(rect.right, scroller.getBoundingClientRect().right);
+  };
   return contents.map(content => {
     const box = content.getBoundingClientRect();
     let right = box.right;
@@ -539,7 +547,7 @@ function textOverflow(contents) {
     for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
       const range = document.createRange();
       range.selectNodeContents(node);
-      for (const rect of range.getClientRects()) right = Math.max(right, rect.right);
+      for (const rect of range.getClientRects()) right = Math.max(right, visibleRight(content, node, rect));
     }
     return Math.round(right - box.right);
   });
@@ -568,6 +576,12 @@ async function wrappingCase(browser, page) {
     const textOverflow = new Function(`return (${measure})`)();
     return textOverflow(ids.map(id => document.querySelector(`.note[data-note-id="${id}"] > .note-content`)));
   }, created.ids, textOverflow.toString());
+  // The CSV token is too long for the note: its table scrolls sideways rather than breaking it.
+  const csv = created.ids[WRAP_FORMATS.findIndex(([name]) => name === 'csv')];
+  assert.equal(await page.evaluate(id => {
+    const wrap = document.querySelector(`.note[data-note-id="${id}"] .meta-csv-table-wrap`);
+    return wrap.scrollWidth > wrap.clientWidth;
+  }, csv), true, 'the CSV table with a long token scrolls sideways');
   // A credential row is its icon, which names it on hover, then the value:
   // no label, and a long value wraps beside the icon, not below it.
   const username = created.ids[WRAP_FORMATS.findIndex(([name]) => name === 'username')];
