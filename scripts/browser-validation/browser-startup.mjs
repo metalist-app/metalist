@@ -411,6 +411,12 @@ async function checkEncryptedLogin(context, origin) {
       await page.click('#login-form button[type="submit"]');
       stage = `waiting for workspace readiness (removeStoredIdentity=${removeStoredIdentity})`;
       await page.waitForSelector('[data-app-ready="true"]', {timeout: 30000});
+      // The login screen stays over the notes until its progress bar has filled, then
+      // fades (docs/ui/login-screen.md, After login), and while opaque it takes the clicks:
+      // a person sees nothing to click until it has gone, so neither does this check. The
+      // 0.25.0 Linux run clicked the remove-password checkbox through it (2026-10-28).
+      stage = `waiting for the login screen to go (removeStoredIdentity=${removeStoredIdentity})`;
+      await page.waitForFunction(() => getComputedStyle(document.getElementById('login-page')).display === 'none', {timeout: 30000});
       stage = `checking authenticated identity (removeStoredIdentity=${removeStoredIdentity})`;
       const state = await page.evaluate(async () => {
         const {getRequiredTabId} = await import('/static/js/modules/session-auth.js');
