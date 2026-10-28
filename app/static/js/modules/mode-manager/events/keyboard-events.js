@@ -134,6 +134,7 @@ import { unlessDiagramEditorOpen } from '../../excalidraw/excalidraw-editor-stat
 import { unlessNoteFullscreenOpen } from '../services/note-fullscreen-service.js';
 import { captureSelectionSnapshot, getActiveEditable } from '../../editor-selection.js';
 import { handleDictatedNotePaste, undoDictatedNotePasteTags } from '../services/dictation-paste-service.js';
+import { TypeAhead } from '../services/type-ahead-service.js';
 
 const helpModal = new HelpModal();
 
@@ -441,6 +442,12 @@ function handleKeyDown(event) {
 	    }
 
     if (ModeContext.isLoading) {
+        // A character typed while a clicked note opens is kept for it (type-ahead-service.js).
+        if (TypeAhead.keep(event)) {
+            event.preventDefault();
+            event.stopPropagation();
+            return;
+        }
         Logger.logNoop('Keyboard event ignored while system is loading', {
             key: event.key,
             meta: event.metaKey || event.ctrlKey,  // shockharness: ignore[DEF003] reason="a boolean OR of two conditions, not a fallback"

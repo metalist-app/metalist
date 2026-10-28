@@ -1,6 +1,7 @@
 import { half } from '../../half.js';
 import { ApplicationState } from '../../application-state.js';
 import { rethrowUnexpectedError } from '../../expected-errors.js';
+import { TypeAhead } from '../services/type-ahead-service.js';
 import { navigateToFootnoteWithExpansion } from '../services/footnote-navigation-service.js';
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import * as Logger from '../mode-logger.js';
@@ -413,13 +414,21 @@ function handleNoteShellMouseDown(event, noteElement) {
     };
     if (!ModeContext.isEditingNote(noteId)) {
         if (ModeContext.currentNoteId) {
+            // Keys typed while it opens are kept and typed into it (type-ahead-service.js);
+            // only the command that runs opens it (a click right after a mouse-down finds it busy).
+            let opening = TypeAhead.NONE;
             void CommandGate.run('mouse.switch_note', async () => {
+                opening = TypeAhead.begin(noteId);
                 await actionSwitchNotes(noteId, enterEditOptions);
-            });
+            }).then(() => TypeAhead.finish(opening));
         } else {
+            // Keys typed while it opens are kept and typed into it (type-ahead-service.js);
+            // only the command that runs opens it (a click right after a mouse-down finds it busy).
+            let opening = TypeAhead.NONE;
             void CommandGate.run('mouse.select_note', async () => {
+                opening = TypeAhead.begin(noteId);
                 await actionSelectNote(noteId, enterEditOptions);
-            });
+            }).then(() => TypeAhead.finish(opening));
         }
 
         Logger.logDebug('Mouse down in note shell - selecting note', {
@@ -1755,13 +1764,21 @@ function handleClick(event) {
                 // to cursor position in source text
 
                 if (ModeContext.currentNoteId) {
+                    // Keys typed while it opens are kept and typed into it (type-ahead-service.js);
+                    // only the command that runs opens it (a click right after a mouse-down finds it busy).
+                    let opening = TypeAhead.NONE;
                     void CommandGate.run('mouse.switch_note', async () => {
+                        opening = TypeAhead.begin(noteId);
                         await actionSwitchNotes(noteId, enterEditOptions);
-                    });
+                    }).then(() => TypeAhead.finish(opening));
                 } else {
+                    // Keys typed while it opens are kept and typed into it (type-ahead-service.js);
+                    // only the command that runs opens it (a click right after a mouse-down finds it busy).
+                    let opening = TypeAhead.NONE;
                     void CommandGate.run('mouse.select_note', async () => {
+                        opening = TypeAhead.begin(noteId);
                         await actionSelectNote(noteId, enterEditOptions);
-                    });
+                    }).then(() => TypeAhead.finish(opening));
                 }
 
                 Logger.logDebug('Click in note content - selecting note', {
@@ -1854,13 +1871,21 @@ function handleClick(event) {
         };
         if (!ModeContext.isEditingNote(noteId)) {
             if (ModeContext.currentNoteId) {
+                // Keys typed while it opens are kept and typed into it (type-ahead-service.js);
+                // only the command that runs opens it (a click right after a mouse-down finds it busy).
+                let opening = TypeAhead.NONE;
                 void CommandGate.run('mouse.switch_note', async () => {
+                    opening = TypeAhead.begin(noteId);
                     await actionSwitchNotes(noteId, enterEditOptions);
-                });
+                }).then(() => TypeAhead.finish(opening));
             } else {
+                // Keys typed while it opens are kept and typed into it (type-ahead-service.js);
+                // only the command that runs opens it (a click right after a mouse-down finds it busy).
+                let opening = TypeAhead.NONE;
                 void CommandGate.run('mouse.select_note', async () => {
+                    opening = TypeAhead.begin(noteId);
                     await actionSelectNote(noteId, enterEditOptions);
-                });
+                }).then(() => TypeAhead.finish(opening));
             }
 
             Logger.logDebug('Click in note shell - selecting note', {
