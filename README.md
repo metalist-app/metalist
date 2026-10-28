@@ -27,6 +27,7 @@ A minimalist single-user note-taking app focused on server-side rendering (SSR),
 - A new mark and favicon.
 - Fixed: changing the sort order while the list was still loading could open it partway down; a refresh asked for during another could be dropped, leaving deleted notes or old search results on screen; a dropped file could land out of sight; tag suggestions failed on a note whose only tags were `@` tags.
 - Vaults are upgraded (database version 12) when first unlocked: an older MetaList cannot open them afterwards.
+- Security: msgpack 1.2.4 (CVE-2026-114613) in the tools that build and test MetaList; MetaList itself does not use msgpack.
 
 ## Changes in 0.24.2
 

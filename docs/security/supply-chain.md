@@ -1,5 +1,11 @@
 # Supply-chain controls and audit
 
+## Update dated 2026-10-28 (America/Los_Angeles)
+
+The main-branch release audit for 0.25.0 failed on one newly published advisory:
+
+- `msgpack` 1.2.2 (CVE-2026-114613, GHSA-j586-36cw-2gc2): the C extension leaks a decoded map value when a key is rejected with `strict_map_key=True`, so repeated malformed input grows memory. It is a CI-only dependency (`pip-audit` → `cachecontrol`), not in `requirements/runtime.txt`, so MetaList installs never had it. Fixed by locking `msgpack` **1.2.4** (`uv lock --upgrade-package msgpack`; no other package moved; both exports regenerated, only `requirements/ci.txt` changed). The local audit then reported no known advisories across 104 Python versions and 86 vendor versions.
+
 ## Update dated 2026-10-06 (America/Los_Angeles)
 
 The 0.12.0 main-branch release audit failed on one newly published advisory:
