@@ -21,6 +21,10 @@ available through `GITHUB_TOKEN` or the configured git credential helper. It:
 1. waits for the exact main commit's complete 25-job release matrix;
 2. requires Python 3.11 and 3.14 on Windows, macOS, and Linux, including all
    browser smoke and soak jobs;
+   a job GitHub never started (cancelled with no runner and no step, when no
+   machine was free) has no result: the driver reruns it, up to three times, and
+   accepts the rerun only when every job it ran again had never started. A job
+   that ran and failed is never rerun; it needs a fix in a new commit;
 3. creates and pushes the annotated version tag only after that matrix passes;
 4. waits for the tag's publication-only GitHub Trusted Publishing job; that job
    independently checks the exact main run's 25 conclusions and downloads its
@@ -35,7 +39,9 @@ available through `GITHUB_TOKEN` or the configured git credential helper. It:
    dependencies and version, and exercises real HTTP/HTTPS startup outside the
    source checkout.
 
-Failures stop the release immediately. The driver never reruns a failed workflow,
+Requests to GitHub's API that fail on GitHub's side (a 5xx, a dropped connection)
+are asked again with growing pauses before the release stops (0.25.0 stopped three
+times on such blips). Failures stop the release immediately. The driver never reruns a failed workflow,
 changes the source version, commits, merges, or moves an existing tag. If it is
 interrupted after pushing a correct tag, run the same command again; it recognizes
 the tag at the exact commit and resumes monitoring and verification. A tag that

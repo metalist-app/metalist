@@ -128,33 +128,122 @@ def test_run_selection_requires_exact_commit_branch_event_and_workflow() -> None
     assert release.matching_runs(wrong_runs, commit="abc", branch="v1.2.3") == []
 
 
-def test_release_driver_rejects_rerun_before_tagging() -> None:
-    run = {
-        "id": 12,
-        "head_sha": "abc",
-        "head_branch": "main",
-        "event": "push",
-        "name": release.WORKFLOW_NAME,
-        "path": f".github/workflows/{release.WORKFLOW}",
-        "status": "completed",
-        "conclusion": "success",
-        "run_attempt": 2,
-    }
+MAIN_RUN = {
+    "id": 12,
+    "head_sha": "abc",
+    "head_branch": "main",
+    "event": "push",
+    "name": release.WORKFLOW_NAME,
+    "path": f".github/workflows/{release.WORKFLOW}",
+}
 
-    class Client:
-        def workflow_runs(self, *, branch: str) -> list[dict[str, object]]:
-            assert branch == "main"
-            return [run]
 
-        def jobs(self, *, run_id: int) -> list[dict[str, object]]:
-            assert run_id == 12
-            return successful_jobs(is_tag=False)
+def never_started_job(name: str) -> dict[str, object]:
+    """A job GitHub gave up on before any runner took it (macOS capacity, 2026-10-28)."""
+    return {"name": name, "conclusion": "cancelled", "status": "completed", "runner_id": 0, "runner_name": "", "steps": []}
 
+
+def failed_job(name: str) -> dict[str, object]:
+    return {"name": name, "conclusion": "failure", "status": "completed", "runner_id": 7,
+            "runner_name": "GitHub Actions 7", "steps": [{"name": "Run tests"}]}
+
+
+def jobs_with(*replacements: dict[str, object]) -> list[dict[str, object]]:
+    jobs = [dict(job, runner_id=7, runner_name="GitHub Actions 7", steps=[{"name": "step"}])
+            for job in successful_jobs(is_tag=False)]
+    by_name = {str(job["name"]): job for job in replacements}
+    return [by_name[str(job["name"])] if job["name"] in by_name else job for job in jobs]
+
+
+class FakeRunClient:
+    """GitHub as the driver sees it: each poll returns the next run state, and each
+    attempt's jobs; rerun_failed_jobs records the request."""
+
+    def __init__(self, *, states: list[dict[str, object]], attempts: dict[int, list[dict[str, object]]]) -> None:
+        self._states = states
+        self._attempts = attempts
+        self.reruns: list[int] = []
+
+    def workflow_runs(self, *, branch: str) -> list[dict[str, object]]:
+        assert branch == "main"
+        state = self._states[0]
+        if len(self._states) > 1:
+            self._states.pop(0)
+        return [dict(MAIN_RUN, **state)]
+
+    def jobs(self, *, run_id: int) -> list[dict[str, object]]:
+        assert run_id == MAIN_RUN["id"]
+        return self._attempts[max(self._attempts)]
+
+    def attempt_jobs(self, *, run_id: int, attempt: int) -> list[dict[str, object]]:
+        assert run_id == MAIN_RUN["id"]
+        return self._attempts[attempt]
+
+    def rerun_failed_jobs(self, *, run_id: int) -> None:
+        assert run_id == MAIN_RUN["id"]
+        self.reruns.append(run_id)
+
+
+def wait_for_main(client: FakeRunClient, monkeypatch: pytest.MonkeyPatch) -> dict[str, object]:
+    monkeypatch.setattr(release.time, "sleep", lambda _seconds: None)
     console = release.Console(file=StringIO(), force_terminal=False)
-    with pytest.raises(release.ReleaseError, match="was rerun"):
-        release.wait_for_workflow(
-            Client(), commit="abc", branch="main", is_tag=False, console=console,
-        )
+    return release.wait_for_workflow(client, commit="abc", branch="main", is_tag=False, console=console)
+
+
+def test_jobs_github_never_started_are_rerun_and_the_release_goes_on(monkeypatch: pytest.MonkeyPatch) -> None:
+    first = jobs_with(never_started_job("Python (macos-latest, 3.11)"), never_started_job("Browser soak (macOS Chrome and Firefox)"))
+    client = FakeRunClient(
+        states=[
+            {"status": "completed", "conclusion": "failure", "run_attempt": 1},
+            {"status": "in_progress", "conclusion": None, "run_attempt": 2},
+            {"status": "completed", "conclusion": "success", "run_attempt": 2},
+        ],
+        attempts={1: first, 2: jobs_with()},
+    )
+    assert wait_for_main(client, monkeypatch)["run_attempt"] == 2
+    assert client.reruns == [MAIN_RUN["id"]]
+
+
+def test_a_job_that_ran_and_failed_is_never_rerun(monkeypatch: pytest.MonkeyPatch) -> None:
+    client = FakeRunClient(
+        states=[{"status": "completed", "conclusion": "failure", "run_attempt": 1}],
+        attempts={1: jobs_with(failed_job("Browser smoke (Linux Chrome and Firefox)"), never_started_job("Python (macos-latest, 3.11)"))},
+    )
+    with pytest.raises(release.ReleaseError, match="failed"):
+        wait_for_main(client, monkeypatch)
+    assert client.reruns == []
+
+
+def test_a_run_rerun_after_a_real_failure_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Someone reran a failed job by hand: the green attempt does not erase the failure.
+    client = FakeRunClient(
+        states=[{"status": "completed", "conclusion": "success", "run_attempt": 2}],
+        attempts={1: jobs_with(failed_job("Browser smoke (Linux Chrome and Firefox)")), 2: jobs_with()},
+    )
+    with pytest.raises(release.ReleaseError, match="rerun after a job that ran and failed"):
+        wait_for_main(client, monkeypatch)
+
+
+def test_reruns_of_jobs_that_never_started_are_limited(monkeypatch: pytest.MonkeyPatch) -> None:
+    states = []
+    attempts = {}
+    for attempt in range(1, release.MAX_NEVER_STARTED_RERUNS + 2):
+        states.append({"status": "completed", "conclusion": "failure", "run_attempt": attempt})
+        attempts[attempt] = jobs_with(never_started_job("Python (macos-latest, 3.11)"))
+    client = FakeRunClient(states=states, attempts=attempts)
+    with pytest.raises(release.ReleaseError, match="never started"):
+        wait_for_main(client, monkeypatch)
+    assert len(client.reruns) == release.MAX_NEVER_STARTED_RERUNS
+
+
+def test_github_requests_ask_again_when_githubs_side_fails() -> None:
+    # 502, 504 and dropped connections each stopped the 0.25.0 release (2026-10-28).
+    client = release.GitHubClient(username="u", password="p")
+    retry = client._session.get_adapter("https://api.github.com/").max_retries
+    assert retry.total == release.GITHUB_REQUEST_RETRIES
+    assert {502, 504} <= set(retry.status_forcelist)
+    assert {"GET", "POST"} <= set(retry.allowed_methods)
+    assert retry.backoff_factor > 0
 
 
 def distribution_zip(version: str, files: dict[str, bytes]) -> bytes:
@@ -296,7 +385,7 @@ def configure_preflight(
         f'__version__ = "{configuration["declared_version"]}"\n', encoding="utf-8",
     )
     responses = {
-        ("status", "--porcelain"): configuration["status"],
+        ("status", "--porcelain", "--", ".", release.INBOX_PATHSPEC): configuration["status"],
         ("branch", "--show-current"): configuration["branch"],
         ("remote", "get-url", "origin"): configuration["remote"],
         ("rev-parse", "HEAD"): "abc",
