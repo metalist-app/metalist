@@ -14,7 +14,7 @@ import re
 from collections import Counter
 from dataclasses import dataclass
 from decimal import ROUND_HALF_UP, Decimal
-from typing import Dict, List, Tuple
+from typing import Dict, List, Protocol, Tuple
 
 from app.services.search_index import tag_bar_values
 from app.services.tag_properties import IMPLICIT_PROPERTY, VALUE_NUMBER, PropertySuggestion, PropertyValue
@@ -54,6 +54,23 @@ _STATS_FIGURES = ((SUM, "Total"), (MINIMUM, "Min"), (MAXIMUM, "Max"), (COUNT, "C
 _FIGURE_LABELS = {SUM: "Total {}", AVERAGE: "Average {}", MINIMUM: "Min {}", MAXIMUM: "Max {}", COUNT: "Notes with {}"}
 
 
+class NoteTree(Protocol):
+    """What the stats read: a note by id and the ids of its children. The render context
+    (embedded_references.EmbedRenderContext) and the note store both are one."""
+
+    def get_note(self, note_id: str) -> object: ...
+
+    def get_children(self, note_id: str) -> List[str]: ...
+
+
+def _note_tags(record: object) -> str:
+    """A note record's tag line; every note record has one."""
+    tags = getattr(record, "tags")
+    if not isinstance(tags, str):
+        raise TypeError(f"a note's tags must be a string, got {type(tags)}")
+    return tags
+
+
 @dataclass(frozen=True, slots=True)
 class SummaryRequest:
     """One footer line asked for: every property (`@stats`) or one number of one property."""
@@ -91,7 +108,7 @@ def parse_summary_requests(tags: str) -> Tuple[SummaryRequest, ...]:
     return tuple(requests)
 
 
-def render_subtree_stats_footer(*, note_id: str, tags: str, context: object) -> str:
+def render_subtree_stats_footer(*, note_id: str, tags: str, context: NoteTree) -> str:
     """The footer for a note with summary tags, or "" for one without."""
     requests = parse_summary_requests(tags)
     if not requests:
@@ -125,7 +142,7 @@ def typed_summary_property(prefix: str) -> Tuple[str, str] | None:
 
 
 def suggest_summary_properties(
-    *, note_id: str, typed_tag: str, typed_property: str, context: object, limit: int,
+    *, note_id: str, typed_tag: str, typed_property: str, context: NoteTree, limit: int,
 ) -> List[PropertySuggestion]:
     """Property names used in the note and under it that start with what is typed, the
     ones on most notes first (docs/ui/content-formatting.md, Totals)."""
@@ -133,7 +150,7 @@ def suggest_summary_properties(
     pending = [note_id]
     while pending:
         current_id = pending.pop(0)
-        named_values = _own_values_by_property(context.get_note(current_id).tags)
+        named_values = _own_values_by_property(_note_tags(context.get_note(current_id)))
         for property_name in {name for name, _ in named_values}:
             note_counts[property_name] += 1
         pending.extend(context.get_children(current_id))
@@ -165,14 +182,13 @@ def _own_values_by_property(tags: str) -> List[Tuple[str, PropertyValue]]:
     return named
 
 
-def _collect_subtree_totals(*, note_id: str, context: object) -> Dict[str, _PropertyTotals]:
+def _collect_subtree_totals(*, note_id: str, context: NoteTree) -> Dict[str, _PropertyTotals]:
     """Each property's per-note totals over the note and its descendants, by name."""
     totals: Dict[str, _PropertyTotals] = {}
     pending = [note_id]
     while pending:
         current_id = pending.pop(0)
-        record = context.get_note(current_id)
-        _add_note_values(totals, record.tags)
+        _add_note_values(totals, _note_tags(context.get_note(current_id)))
         pending.extend(context.get_children(current_id))
     return totals
 
@@ -187,7 +203,9 @@ def _add_note_values(totals: Dict[str, _PropertyTotals], tags: str) -> None:
         if value.kind != VALUE_NUMBER:
             property_totals.skipped_count += 1
             continue
-        unit_sums = note_sums.setdefault(property_name, {})
+        if property_name not in note_sums:
+            note_sums[property_name] = {}
+        unit_sums = note_sums[property_name]
         if value.unit not in unit_sums:
             unit_sums[value.unit] = Decimal(0)
         unit_sums[value.unit] += value.sort_key
@@ -195,7 +213,9 @@ def _add_note_values(totals: Dict[str, _PropertyTotals], tags: str) -> None:
         property_totals = totals[property_name]
         property_totals.note_count += 1
         for unit, note_total in unit_sums.items():
-            property_totals.note_totals_by_unit.setdefault(unit, []).append(note_total)
+            if unit not in property_totals.note_totals_by_unit:
+                property_totals.note_totals_by_unit[unit] = []
+            property_totals.note_totals_by_unit[unit].append(note_total)
 
 
 @dataclass(frozen=True, slots=True)

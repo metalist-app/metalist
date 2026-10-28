@@ -42,7 +42,10 @@ async function seedNotes(page) {
       ['lunch', 'Lunch', 'meal:calories=500'],
       ['dinner', 'Dinner', 'fruit:calories=200 bread:calories=400'],
     ]) {
-      const note = previous === null ? await NotesAPI.createChild(diet.id, '') : await NotesAPI.createSibling(previous, '');
+      // The first meal goes under the diet note, each next one after the meal before.
+      let note;
+      if (previous === null) note = await NotesAPI.createChild(diet.id, '');
+      else note = await NotesAPI.createSibling(previous, '');
       await NotesAPI.saveNote(note.id, `<p>${text}</p>`, tags);
       ids[key] = note.id;
       previous = note.id;
