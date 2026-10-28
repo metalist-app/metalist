@@ -3,6 +3,7 @@
 **Status:** Agreed with the maintainer 2026-10-27.
 - **Ready to build:** §1, §2 and §3.
 - **Direction only:** §4, the hosted list, which belongs with the hosted build.
+- **Self-hosting is community-only (agreed 2026-10-27):** one short page, no Docker image or installer; the §3 fixes still happen. The page: `self-hosting-page.md`.
 
 Everything not marked *agreed* is proposed; adjust what reads badly.
 

@@ -2,6 +2,8 @@
 
 **Status:** Agreed with the maintainer 2026-10-26, not scheduled. Split off from the Obsidian-style references change (built 2026-10-26: `![[UUID]]` embeds, `[[UUID]]` links, anywhere in text; `docs/ui/references.md`), which made MetaList's references read as Obsidian's do. Attracting Obsidian users is a priority.
 
+**Scheduled for launch (2026-10-27):** `docs/ready-to-build/import-export-launch.md` builds on this mapping, with Obsidian and Logseq importers, an Obsidian-compatible Markdown export, and an import report.
+
 ## What it maps
 
 - **Import:** `![[Note]]` → `![[UUID]]` (an embed), `[[Note]]` → `[[UUID]]` (a link), `[[Note|alias]]` → `[[UUID|alias]]`, keeping the alias.
