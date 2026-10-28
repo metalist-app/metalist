@@ -1543,10 +1543,16 @@ class CommandPaletteController {
 
         // A view request already in flight (the infinite-scroll poll, a link-title
         // refresh) was answered in the old order: this one runs after it, not instead.
+        // It starts afresh at the top of the new order, whatever that answer or a poll
+        // tick while waiting left: their roots on screen and the view they cached belong
+        // to the old order or its window, and asking with them opened the sorted list
+        // partway down (2026-10-27). The cache is cleared again once it is this one's turn.
         await actionRefreshAndMaybeSelect({
             startedAt: performance.now(),
             context: `sortMode.${normalizedSortMode}`,
             animateNoteChanges: false,
+            startAtListTop: true,
+            resetViewCacheBeforeFetch: true,
         });
     }
 

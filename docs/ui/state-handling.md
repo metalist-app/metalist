@@ -490,7 +490,11 @@ ModeContext = {
   and site icons arrive and each refreshes the view. Only the infinite-scroll poll
   skips a round while a request is in flight, by asking `isViewRequestInFlight` in
   the same task as its call: it comes again in 0.8 s, and its "Infinite scroll
-  blocked" check assumes its own request ran. Waiting cannot hang: the render after
+  blocked" check assumes its own request ran. A sort change that waited asks afresh
+  from the top of the new order (`startAtListTop`, `resetViewCacheBeforeFetch`): the
+  roots a poll tick recorded meanwhile, and the view the request in flight cached, belong
+  to the old order, and until 2026-10-27 asking with them could open the sorted list
+  partway down. Waiting cannot hang: the render after
   the fetch is synchronous. Browser regressions: `scripts/browser-refresh-in-flight-regressions.mjs`
   (switching notes, moving the edited note, deleting) and `scripts/browser-sorted-tab-regressions.mjs`
   (sort order); `tests/unit/refresh_in_flight.test.mjs` keeps the poll the only one that may skip.
