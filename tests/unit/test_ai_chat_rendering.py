@@ -476,3 +476,14 @@ def test_streaming_renderer_hides_web_citation_tokens() -> None:
 
     assert "Fresh claim" in rendered
     assert WEB_ID not in rendered
+
+
+def test_ai_chat_answer_renders_line_breaks_in_table_cells_like_notes() -> None:
+    rendered = render_ai_chat_streaming_markdown_to_html(
+        "| Step | Action |\n|---|---|\n| 1 | Run the script<br>then restart |",
+        allowed_note_ids=(),
+        allowed_web_evidence=(),
+    )
+
+    assert '<div class="meta-markdown-table-wrap">' in rendered
+    assert "<td>Run the script<br>then restart</td>" in rendered

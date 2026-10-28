@@ -7897,18 +7897,30 @@ html[data-theme="dark"] .meta-code-code .tok-cpf { color: #8b949e; }
     text-decoration: underline;
 }
 
+/* A table whose words can't all fit side by side scrolls sideways inside its note,
+   rather than breaking words mid-column (docs/ui/content-formatting.md). */
+.meta-markdown-table-wrap {
+    max-width: 100%;
+    margin: 0.35em 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+}
+
 .meta-markdown table {
     border-collapse: collapse;
     width: 100%;
-    margin: 0.35em 0;
+    margin: 0;
     background: #ffffff;
 }
 
+/* Cells break a word only when it can't fit at all, so automatic table layout never
+   squeezes a column below its longest word ("State" stays on one line). */
 .meta-markdown th,
 .meta-markdown td {
     border: 1px solid rgba(0, 0, 0, 0.12);
     padding: 6px 10px;
     vertical-align: top;
+    overflow-wrap: break-word;
 }
 
 .meta-markdown tr:nth-child(even) td {
@@ -8012,6 +8024,7 @@ html[data-theme="dark"] .meta-code-code .tok-cpf { color: #8b949e; }
     padding: 6px 10px;
     vertical-align: top;
     white-space: pre-wrap;
+    overflow-wrap: break-word;
 }
 
 .meta-csv-table td.meta-csv-media-cell {
