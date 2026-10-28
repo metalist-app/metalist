@@ -29,11 +29,12 @@ C
 | E up onto C | E becomes a root note between A and C |
 | E up onto B | E becomes A's child, above B |
 | E up onto A | E becomes a root note above A |
-| B down onto A | B becomes a root note between A and C |
+| B onto A (its parent) | B becomes a root note above A: a parent is always above the notes under it (decided 2026-10-28) |
 | B down onto C | B becomes the last root note, after D and E |
 
 Consequences, all intended:
 - First child of a note: drag up onto its first child. Last child: drag down onto its last child.
+- Between A and C for B: drag B down onto C (it lands after D and E), then onto C again (it lands above C). Where the pointer is never decides the side: only whether the target is above or below the dragged note (decided 2026-10-28; a rule by pointer position was rejected as fiddly on short notes).
 - **Into a note with no children takes two motions:** drop just below it, then Indent. There are deliberately no "drop inside" zones: on a one-line note they'd be a few pixels apart, hard to hit and hard to indicate.
 - A collapsed note is never entered.
 - Dropping onto the dragged note itself, or anywhere inside its own subtree, does nothing.
@@ -52,7 +53,8 @@ So beside a deep subtree, moving the pointer left picks a shallower target, thro
 
 ## 4. What's shown
 
-- **The main cue is the target's outline,** following the pointer. The ghost, the drop line and the direction cursor work as today and stay switchable in `Visual Cues…`; the drop line shows the landing place.
+- **The main cue is the target's outline,** following the pointer. The drop line and the direction cursor work as today and stay switchable in `Visual Cues…`; the drop line shows the landing place.
+- **No ghost in this mode** (decided 2026-10-28): the dashed copy of the note is not drawn. It can come back later if it is missed.
 - **No sideways indent/outdent drag in this mode:** a pointer moved left is over the parent's margin, which targets the parent. Indent and outdent stay on `⌘→`/`⌘←` and the note menu.
 
 ## 5. Scrolling
@@ -98,3 +100,6 @@ Not a case: a search that excludes a tag the new parent would pass down. A note 
 - The setting can sit beside `Backup Reminder` (`endpoint-registry.js`, a `pref.*` key in `app/services/client_state_service.py`).
 - `Cut` with nothing selected is `keyboard.cut_note` in `keyboard-events.js`; the note menu has `Copy Note` (`context-menu-registry.js`) but no `Cut Note`. Still open (§8).
 - Revealed notes come from `search-redaction-reveal-service.js`.
+- §2's table had `B down onto A` → between A and C, which contradicted §3 (a parent is above). Decided 2026-10-28: §3 holds, the table row is corrected.
+- Outdent adds the search's tags only when the note becomes a root note (`outdent.py`), so outdenting under a grandparent that is not a root can drop a note from the search today; §6 covers it.
+- `ensure_tags_match_search_query` adds the first OR clause's tags; for a move, tags are added only when the note would leave the results, from the clause it matched before.
