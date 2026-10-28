@@ -239,6 +239,12 @@ async function sortWhileViewInFlightCase(page, ids) {
       // hydrateTabState and the sort's refresh call run in one task, so once the
       // mode is hydrated the refresh has been dropped or is waiting its turn.
       await until(() => mode.activeTabSortMode === 'alphabetical');
+      // While it waits, the infinite-scroll poll records the roots on screen, still in
+      // the old order (infinite-scroll-service.js, handlePoll). Under load it ticked here
+      // and the sorted list opened at those roots, partway down (2026-10-27): record
+      // them as it would.
+      const onScreen = [...document.querySelectorAll('#notes-container > .note')].map(note => note.dataset.noteId);
+      mode.setVisibleRootRange(onScreen[0], onScreen[Math.min(onScreen.length - 1, 5)]);
       release.viewAnswer();
       await Promise.all([sorting, strayView]);
     } finally {
@@ -252,6 +258,52 @@ async function sortWhileViewInFlightCase(page, ids) {
   }));
   assert.deepEqual(chip, {shown: true, label: 'A–Z'}, 'the sort chip shows the new order');
   assert.equal((await rootOrder(page))[0], ids[0], 'the list is in the new order: Sorted root 000 first');
+}
+
+// The other order a slow network gives (2026-10-27): the view request already in flight
+// reaches the server after the sort is saved. It is answered in the new order but around
+// the old order's roots on screen, and the page caches that view; the sort's refresh,
+// waiting its turn, then asked from that cache and the sorted list opened partway down.
+async function sortWhileViewReachesServerLateCase(page, ids) {
+  await setSortModeAndWait(page, 'normal');
+  assert.equal((await rootOrder(page))[0], ids[ids.length - 1], 'normal order: the newest root is first');
+  await page.evaluate(async () => {
+    const {CommandPalette} = await import('/static/js/modules/command-palette/command-palette-controller.js');
+    const {actionRefreshAndMaybeSelect} = await import('/static/js/modules/mode-manager/actions/ui-actions.js');
+    const pageFetch = window.fetch;
+    let releaseStray = null;
+    const strayHeld = new Promise(resolve => { releaseStray = resolve; });
+    let straySeen = false;
+    let sortSaved = false;
+    window.fetch = async (input, init) => {
+      const url = typeof input === 'string' ? input : input.url;
+      if (url.endsWith('/tab-state/sort-mode')) {
+        const answer = await pageFetch(input, init);
+        sortSaved = true;
+        return answer;
+      }
+      if (url.endsWith('/notes/view') && !straySeen) {
+        straySeen = true;
+        await strayHeld;
+      }
+      return pageFetch(input, init);
+    };
+    const until = async isDone => {
+      while (!isDone()) await new Promise(resolve => setTimeout(resolve, 10));
+    };
+    try {
+      const strayView = actionRefreshAndMaybeSelect({context: 'stray view request', animateNoteChanges: false});
+      await until(() => straySeen);
+      const sorting = CommandPalette.setSortMode('alphabetical');
+      await until(() => sortSaved);
+      releaseStray();
+      await Promise.all([sorting, strayView]);
+    } finally {
+      window.fetch = pageFetch;
+    }
+  });
+  await waitIdle(page);
+  assert.equal((await rootOrder(page))[0], ids[0], 'the sorted list opens at its top: Sorted root 000 first');
 }
 
 // The tab-state snapshot (the scroll poll's save, the save after a search) is read
@@ -374,6 +426,7 @@ export async function checkSortedTabs(page) {
   try {
     await reload(page);
     await check('sort while a view request is in flight', () => sortWhileViewInFlightCase(page, ids));
+    await check('sort while a view request reaches the server late', () => sortWhileViewReachesServerLateCase(page, ids));
     await check('stale tab-state snapshot after a sort', () => staleSnapshotAfterSortCase(page, ids));
     // The reported crash: Enter in a content-volume tab added an empty note
     // that sorted to the far end, outside the band on screen.
