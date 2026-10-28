@@ -1,5 +1,7 @@
 # Tag Bar
 
+Agreed, not built (2026-10-28): four built-in `@` tags renamed, with a one-time conversion (`docs/ready-to-build/meta-tag-renames.md`).
+
 ## Overview
 - Each note has a tag string (`notes.tags`) that round-trips through the view snapshot (`snapshot.notes[*].tags`).
 - The tag bar editor enforces a small grammar in the browser so invalid characters/sequences are removed as you type.

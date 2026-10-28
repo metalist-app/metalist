@@ -2,6 +2,8 @@
 
 Agreed, not built (2026-10-27): a live preview of LaTeX, CSV, Mermaid and references while editing (`docs/ready-to-build/smart-previews.md`); user-named styles, `@style=name` (future plan, `docs/future-plans/user-styles.md`).
 
+Agreed, not built (2026-10-28): `@highlighter`, `@llm`, `@list-bulleted` and `@list-numbered` become `@highlight`, `@ai`, `@bullets` and `@numbered`, converted once in every vault; `@gray` works as `@grey` does (`docs/ready-to-build/meta-tag-renames.md`).
+
 ## Overview
 - Note content is stored as HTML (`notes.content`).
 - The server can apply **view-only** formatting transformations based on **meta tags** (tags starting with `@`) in the tag bar (`notes.tags`).
