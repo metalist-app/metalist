@@ -197,7 +197,7 @@ Other (non-meta) tags may also appear inside wrapper tokens (e.g. `{{foo bar}}`)
 - Scoped wrappers (e.g. `((@code=sql))`) highlight only the wrapped region.
 
 ## Stats of a subtree
-Built 2026-10-27 (`app/services/subtree_stats.py`; design: `docs/design/tag-properties.md`, Later).
+Built 2026-10-27 (`app/services/subtree_stats.py`; design: `docs/design/tag-properties.md`, Later). Agreed, not built (2026-10-28): 0 instead of a dash for `@sum` and `@count` when nothing under the note has the property, and searching the figures (`@sum:calories>2000`); see `docs/ready-to-build/stats-empty-and-search.md`.
 - `@stats` shows, right under the note's own text and above its children, the numeric super tag values of the note and every note under it: for each property its Total, Min, Max and Count (the notes holding it).
 - `@sum`, `@avg`, `@min`, `@max` and `@count` each show one figure: `@sum=calories` gives `Total calories: 1,605`; `@avg=` `Average calories`, `@min=` `Min`, `@max=` `Max`, `@count=` `Notes with calories`. Without a property (`@sum`) a tag covers every number property under the note. Several show in the order written; with `@stats` on the same note, a figure it already shows is left out (`@avg` is not one of them). The tag names are the spreadsheet functions; the labels are plain words.
 - Each value counts once, on the note that writes it: the note's own values and its descendants', never inherited ones, and not those of notes it links to or embeds. Both `burger:calories=450` and a value on the tag itself, `calories=700`, count as `calories`.

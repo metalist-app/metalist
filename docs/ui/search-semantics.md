@@ -2,6 +2,8 @@
 
 Agreed, not built (2026-10-27): a view option summarizing a property over the notes found (Sum, Average, Median, Min, Max, Mode) beside the result count, and the `@datetime` tag that dates a note for date filters (`docs/ready-to-build/super-tag-summaries-and-date.md`).
 
+Agreed, not built (2026-10-28): searching the stats tags' figures, `@sum:calories>2000` and the same for `@count`, `@avg`, `@min` and `@max`; see `docs/ready-to-build/stats-empty-and-search.md`.
+
 Agreed, not built (2026-10-25): `:name` terms that match a property on any tag; see `docs/ready-to-build/attribute-search-and-or-rules.md`.
 
 This document describes **server-side search behavior** (what matches what).
