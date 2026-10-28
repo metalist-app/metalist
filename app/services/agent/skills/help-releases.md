@@ -5,6 +5,22 @@ README. Changes made after the newest listed version are not described here.
 Compare with installed_version from the help lookup to tell the user whether
 they already have a release. Version info offers updates (see the data topic).
 
+## 0.25.0
+
+- **Claude and Gemini beside OpenAI.** AI Agent Settings has a key for each provider, on your own account; you pick the model in the chat, and a conversation carries on when you switch provider.
+- **Stats of a note's subtree.** `@stats` shows, under a note's own text, the Total, Min, Max and Count of each number property in it and the notes under it; `@sum=calories` (and `@avg`, `@min`, `@max`, `@count`) shows one figure, and a plain `@sum` covers every property. With nothing logged yet, a sum or count reads 0. **Stats Style** in the command palette: Strip, Tiles or Ledger. Search the figures with `@sum:calories>2000`: the days over 2000, each with the notes under it.
+- **Four built-in tags renamed:** `@highlighter` is now `@highlight`, `@llm` `@ai`, `@list-bulleted` `@bullets` and `@list-numbered` `@numbered`. Each vault converts its notes and saved searches once, the first time it is unlocked after the update; the old names stop working. `@gray` works as well as `@grey`.
+- **Light and Dark everywhere:** dialogs, menus, the command palette, reminder cards and the tag rules editor follow the theme, and changing the theme cross-fades the page. After logging in, the login screen fades out over your notes.
+- References: typing `[[` suggests notes to link or embed; `[[note|text]]` shows your own link text; a link to a password or username note shows its copyable row. A folded note reads as one line.
+- The tag bar suggests a super tag with last time's values (`jogging:miles=12`), and property names for a tag that has none yet (`calories=` for a new `salad:`).
+- Markdown tables: `<br>` breaks a line in a cell, rows with too few or too many cells and escaped `\|` work, and a wide table scrolls instead of squeezing its columns.
+- Web links show their site's icon, their title and their domain.
+- Under 640 px wide (a phone), MetaList shows a read-only layout with a box to capture new notes.
+- Dialogs are consistent: the main action on the right, Cancel beside it, and Enter never confirms a deletion. Messages float instead of moving the page. The command palette keeps its order while it is open, and its box says "Type keywords".
+- A new mark and favicon.
+- Fixed: changing the sort order while the list was still loading could open it partway down; a refresh asked for during another could be dropped, leaving deleted notes or old search results on screen; a dropped file could land out of sight; tag suggestions failed on a note whose only tags were `@` tags.
+- Vaults are upgraded (database version 12) when first unlocked: an older MetaList cannot open them afterwards.
+
 ## 0.24.2
 
 - ⇧⌘V pastes a copied note as a child again. Since 0.21.0, in Chrome, it put the copied note's text into the selected note instead.
@@ -201,27 +217,4 @@ they already have a release. Version info offers updates (see the data topic).
 - Managed uv installations can update from Version Info, using the existing preflight, verified immutable backups, and namespace restart flow. Source checkouts and unmanaged installations explain why in-app installation is unavailable.
 - Release validation now transfers every installed startup asset through concurrent persistent HTTP/HTTPS connections on all supported platforms and Python versions. Actual Edge startup over LAN-style HTTPS is also required on Windows before publication.
 
-## 0.6.2
-
-- Namespace startup allows two minutes, with progress every five seconds, instead of failing after 12 seconds on a busy machine. `METALIST_STARTUP_TIMEOUT_SECONDS` can increase the allowance. Failed children are stopped and reaped.
-- Updates preserve the running Python interpreter and validate a disposable installation and namespace startup before stopping live servers. uv then installs the tested package/dependency versions from its cache without network access.
-- Python 3.14 is supported. Command-line legacy imports also work when Python lacks Tk's native GUI component.
-- Release validation now includes the real uv update, backups, and multi-namespace restart on Windows, macOS, and Linux across Python 3.10–3.14.
-
-## 0.6.1
-
-- Removed the unused performance overlay, including its menu option and background state updates, fixing a fatal redundant-state error during note rearranging. Obsolete overlay preferences and command usage are discarded automatically.
-
-## 0.6.0
-
-- Open notes and their children in multiple live, read-only floating windows. Drag and resize them, keep them visible across searches and tabs, and follow links or copy passwords. Saved changes refresh every half second.
-- Double-click selects complete tags, including punctuation and prefixes, in search and tag bars.
-- Choose sorting modes from the background right-click menu. Creation sorting uses the root note's creation time; last-updated sorting includes descendants and ignores reference display-form changes.
-- Context menus have icons throughout. Full-screen notes have compact spacing, and both read-only views keep steady borders on hover.
-- Fixed Version Info loading and state-transition errors during editing, focus changes, tab switching, and duplication.
-
-## 0.5.0
-
-- Sound support is removed entirely; reminders retain their visual behavior. The live database migrates to schema 9, with encrypted namespaces migrating after unlock. Existing backups remain unchanged. See sound removal.
-- Remove Formatting supports arbitrary spans within pasted headings. Whole-note Cmd+U removes leading/trailing blank lines and retains at most one empty line between sections.
-- This release includes the security, recovery, resource-limit, state-ownership, and performance work documented in the implementation and coverage map.
+Versions before 0.6.3 are left out; the packaged README lists them.

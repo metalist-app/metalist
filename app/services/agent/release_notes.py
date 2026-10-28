@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import re
 
+from app.services.agent.prompt_settings import MAX_AGENT_PROMPT_CHARACTERS
+
 
 _CHANGES_HEADING_RE = re.compile(r"^## Changes in (\d+\.\d+\.\d+)$")
 _MARKDOWN_LINK_RE = re.compile(r"\[([^\]]+)\]\([^)]+\)")
@@ -42,9 +44,26 @@ def release_notes_skill_from_readme(readme_text: str) -> str:
     if len(set(versions)) != len(versions):
         raise ValueError("README lists a release more than once")
     parts = [RELEASE_NOTES_SKILL_HEADER]
-    for version, lines in sections:
+    for index, (version, lines) in enumerate(sections):
         body = "\n".join(lines).strip()
         if body == "":
             raise ValueError(f"README changes section for {version} is empty")
-        parts.append(f"## {version}\n\n{body}")
-    return "\n\n".join(parts)
+        section = f"## {version}\n\n{body}"
+        # A skill holds at most MAX_AGENT_PROMPT_CHARACTERS: the newest releases that fit,
+        # with a line naming where the left-out ones start (the README keeps them all).
+        candidate = parts + [section]
+        if index < len(sections) - 1:
+            candidate.append(_left_out_note(version))
+        if len("\n\n".join(candidate)) > MAX_AGENT_PROMPT_CHARACTERS:
+            if index == 0:
+                raise ValueError(f"The release notes for {version} alone exceed a skill's size")
+            parts.append(_left_out_note(sections[index - 1][0]))
+            break
+        parts.append(section)
+    skill = "\n\n".join(parts)
+    assert len(skill) <= MAX_AGENT_PROMPT_CHARACTERS, "the skill fits"
+    return skill
+
+
+def _left_out_note(oldest_kept_version: str) -> str:
+    return f"Versions before {oldest_kept_version} are left out; the packaged README lists them."
