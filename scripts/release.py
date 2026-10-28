@@ -41,6 +41,9 @@ ARTIFACT_DOWNLOAD_TIMEOUT_SECONDS = 60
 # Python and Package-and-update per Python version; smoke and soak per browser leg.
 PUBLISH_WORKFLOW_JOB_COUNT = 25
 SHORT_COMMIT_LENGTH = 12
+# Notes the maintainer drops into docs/inbox at any time (AGENTS.md, "Design Inbox") are not
+# part of a release: they do not count as uncommitted work (as in full_checks.py).
+INBOX_PATHSPEC = ":(exclude)docs/inbox"
 # GitHub's API drops a request now and then (502, 504, a closed connection; three times
 # during the 0.25.0 release): ask again a few times before stopping the release.
 GITHUB_REQUEST_RETRIES = 5
@@ -414,7 +417,7 @@ def local_tag_target(root: Path, tag: str) -> str:
 def preflight(root: Path, *, version: str, console: Console) -> tuple[str, str, bool]:
     if not re.fullmatch(r"\d+\.\d+\.\d+", version):
         raise ReleaseError("Version must use X.Y.Z format")
-    if git_output(root, "status", "--porcelain"):
+    if git_output(root, "status", "--porcelain", "--", ".", INBOX_PATHSPEC):
         raise ReleaseError("The repository must be clean before release")
     if git_output(root, "branch", "--show-current") != "main":
         raise ReleaseError("Releases must run from the main branch")

@@ -40,6 +40,9 @@ SANITY_CODE = (
 )
 # The checks after the browser suite run at once: about one process each, on 8 cores.
 PARALLEL_CHECKS = 8
+# Notes the maintainer drops into docs/inbox at any time (AGENTS.md, "Design Inbox") never
+# reach a check: they do not count as uncommitted work (as in release.py).
+INBOX_PATHSPEC = ":(exclude)docs/inbox"
 SUMMARY_NAME_WIDTH = 24
 RESULT_WORDS = {True: "PASS", False: "FAIL"}
 
@@ -162,7 +165,7 @@ def main() -> int:
                         help="skip the browser suite (COMMIT FEATURE; GitHub runs the whole browser suite on push)")
     options = parser.parse_args()
 
-    if _git("status", "--porcelain"):
+    if _git("status", "--porcelain", "--", ".", INBOX_PATHSPEC):
         print("Uncommitted changes: commit first. The ShockHarness gate and the Windows clone read commits only.")
         return 1
     branch = _git("branch", "--show-current")

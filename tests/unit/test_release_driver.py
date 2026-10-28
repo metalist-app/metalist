@@ -385,7 +385,7 @@ def configure_preflight(
         f'__version__ = "{configuration["declared_version"]}"\n', encoding="utf-8",
     )
     responses = {
-        ("status", "--porcelain"): configuration["status"],
+        ("status", "--porcelain", "--", ".", release.INBOX_PATHSPEC): configuration["status"],
         ("branch", "--show-current"): configuration["branch"],
         ("remote", "get-url", "origin"): configuration["remote"],
         ("rev-parse", "HEAD"): "abc",
