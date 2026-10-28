@@ -74,7 +74,7 @@ edited (until the user leaves edit mode), full screen, floating windows, export 
 
 ## Normalization
 - Runs of whitespace are normalized to single spaces.
-- Leading/trailing whitespace is trimmed.
+- Leading/trailing whitespace is trimmed, except the text of an open last quote, which keeps its trailing space.
 - The verifier actively rewrites the input while typing (cursor/selection is preserved).
 
 ## Pasting Dictated Text
@@ -88,8 +88,8 @@ The verifier produces:
 - `warningMessage`: user-facing warning text (or `null`).
 
 Rules:
-- **Unclosed quotes**: incomplete. Warn once there is content inside the quote.
-  - Example: `"unclosed` → warn `Close quote with "`
+- **Open quotes**: an open quote reaches the end of the query, so only the last term can be one. It counts as closed and searches as you type, after the usual pause, with no warning: `"neur` searches `"neur"`, `-"dra` hides notes containing "dra". Its text is taken as typed, a trailing space included (`"fat ` marks a word edge); a backslash typed last is left out until the next character, and `\"` and `\\` inside work as usual. A quote with nothing in it yet (`"`, `-"`) is incomplete, not warned, and runs nothing new.
+- **Closing an open quote**: when the user moves on with a quote open (Enter, a click on a note or anywhere else in the page, a menu, another tab, a new or duplicated tab), the closing quote (the mark that opened it) is added, in the field and in the tab's saved search; a quote with nothing in it is removed. Switching to another app or window is not moving on. When the open quote's search has already run, nothing is searched again, so a click on a note still opens it.
 - **Empty quoted strings**: incomplete and warned.
   - Examples: `""` and `''` → warn `Enter text inside quotes`
 - **Dangling prefixes**: `+` or `-` must be directly followed by its tag or quoted text; a space after it (`- tag`) is not accepted as `-tag`. A lone prefix at the end is still being typed: incomplete, not warned. Once a term follows a prefix and a space, the field shows "In a search, + or - must be directly followed by the tag or quoted text, with no space (for example -tag)", the query is incomplete (nothing new runs), and that term is left out of the sanitized text, so it is never searched with the opposite meaning (a restored `- tag` does not run as `tag`). If such a search is still sent (pressing Enter, or adding a note while it is the search), the server's rejection appears as a polite banner with the same explanation.

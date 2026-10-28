@@ -66,6 +66,7 @@ import {
     syncSearchInputValue,
 } from '../services/search-input-service.js';
 import { analyzeSearchQueryInput } from '../services/search-syntax-service.js';
+import { closeOpenSearchQuote } from './search-events.js';
 import { buildBacklinksQuery } from '../services/backlinks-navigation-service.js';
 import {
     AI_REFERENCE_VIEW_KINDS,
@@ -412,6 +413,9 @@ function handleKeyDown(event) {
         if (searchInput && suggestions && !suggestions.hidden && document.activeElement === searchInput) {
             Logger.logNoop('Ignoring Enter for global shortcuts while search suggestions are open');
             return;
+        }
+        if (document.activeElement === searchInput) {
+            closeOpenSearchQuote();
         }
     }
 
@@ -3437,6 +3441,7 @@ export async function switchToTabContext(tabId, options) {
 	if (options === null || typeof options !== 'object') {
 		throw new Error('switchToTabContext requires options object');
 	}
+    closeOpenSearchQuote();
     await settleViewRequestsBeforeTabChange();
     const canAnimatePreviousView = !ModeContext.isUntaggedView
         && ModeContext.activeTabSortMode === 'normal'
@@ -3557,6 +3562,8 @@ async function duplicateTabContext(sourceTabId, animateNoteChanges, shouldSwitch
     if (typeof shouldSwitchImmediately !== 'boolean') {
         throw new Error('duplicateTabContext requires shouldSwitchImmediately boolean');
     }
+    // The copy takes the search as the user finished it.
+    closeOpenSearchQuote();
 	const startedEditing = ModeContext.isEditing;
 
     if (startedEditing) {
@@ -3666,6 +3673,7 @@ async function duplicateTabContext(sourceTabId, animateNoteChanges, shouldSwitch
 }
 
 export async function createBlankSearchContextFromHover() {
+    closeOpenSearchQuote();
     const sourceTabId = ModeContext.activeTabId;
     if (typeof sourceTabId !== 'string' || sourceTabId.length === 0) {
         throw new Error('ModeContext.activeTabId must be a non-empty string');

@@ -168,3 +168,63 @@ test('stats terms run when complete and say how to write them otherwise', () => 
     assert.equal(typing.isComplete, false);
     assert.equal(typing.warningMessage, null);
 });
+
+// An open last quote searches as typed (docs/ui/search-syntax.md, Completeness).
+test('an open last quote runs as if closed, with no warning', () => {
+    for (const [query, closed] of [
+        ['"neur', '"neur"'],
+        ['-"dra', '-"dra"'],
+        ["'neural", "'neural'"],
+        ['"a', '"a"'],
+        ['tag "neural net', 'tag "neural net"'],
+        ['A OR "b', 'A OR "b"'],
+    ]) {
+        const analysis = analyzeSearchQueryInput(query);
+        assert.equal(analysis.isComplete, true, query);
+        assert.equal(analysis.warningMessage, null, query);
+        assert.equal(analysis.endsInOpenQuote, true, query);
+        assert.equal(analysis.normalizedText, query, query);
+        assert.equal(analysis.closedText, closed, query);
+        assert.equal(analysis.sanitizedText, closed, query);
+    }
+});
+
+test('a trailing space in an open quote is kept: it marks a word edge', () => {
+    const analysis = analyzeSearchQueryInput('"fat ');
+    assert.equal(analysis.normalizedText, '"fat ');
+    assert.equal(analysis.enforcedText, '"fat ');
+    assert.equal(analysis.closedText, '"fat "');
+});
+
+test('a quote with nothing typed in it is removed when closed, and searches nothing yet', () => {
+    for (const [query, closed] of [['"', ''], ['-"', ''], ['neural "', 'neural'], ['"\\', '']]) {
+        const analysis = analyzeSearchQueryInput(query);
+        assert.equal(analysis.isComplete, false, query);
+        assert.equal(analysis.warningMessage, null, query);
+        assert.equal(analysis.closedText, closed, query);
+    }
+});
+
+test('escapes in an open quote: a finished one is kept, a backslash typed last is left out', () => {
+    assert.equal(analyzeSearchQueryInput('"say \\"hi').closedText, '"say \\"hi"');
+    assert.equal(analyzeSearchQueryInput('"a\\\\').closedText, '"a\\\\"');
+    const unfinished = analyzeSearchQueryInput('"abc\\');
+    assert.equal(unfinished.normalizedText, '"abc\\');
+    assert.equal(unfinished.closedText, '"abc"');
+});
+
+test('a closed query is unchanged by closing', () => {
+    for (const query of ['"done"', 'foo', 'A OR "some text"']) {
+        const analysis = analyzeSearchQueryInput(query);
+        assert.equal(analysis.endsInOpenQuote, false, query);
+        assert.equal(analysis.closedText, query, query);
+    }
+    assert.equal(analyzeSearchQueryInput('foo ').enforcedText, 'foo ');
+});
+
+test('an open quote after a stray prefix is closed too, and still explained', () => {
+    const analysis = analyzeSearchQueryInput('- "abc');
+    assert.equal(analysis.isComplete, false);
+    assert.equal(analysis.warningMessage, SPACED_PREFIX_WARNING);
+    assert.equal(analysis.closedText, '- "abc"');
+});

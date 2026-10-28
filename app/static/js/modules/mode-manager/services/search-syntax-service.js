@@ -166,6 +166,8 @@ function readQuotedInner(rawInput, startIndex, quoteChar) {
     let index = startIndex;
     let normalizedInner = '';
     let closed = false;
+    // A backslash typed last, its escape not yet finished.
+    let endsInUnfinishedEscape = false;
 
     while (index < rawInput.length) {
         const char = rawInput[index];
@@ -190,6 +192,7 @@ function readQuotedInner(rawInput, startIndex, quoteChar) {
                 normalizedInner += char;
             }
             index += 1;
+            endsInUnfinishedEscape = index === rawInput.length;
             continue;
         }
 
@@ -199,7 +202,24 @@ function readQuotedInner(rawInput, startIndex, quoteChar) {
         index += 1;
     }
 
-    return { normalizedInner, closed, nextIndex: index };
+    return { normalizedInner, closed, nextIndex: index, endsInUnfinishedEscape };
+}
+
+/**
+ * An open quote reaches the end of the query, so only the last term can be one.
+ * It searches as if closed (docs/ui/search-syntax.md, Completeness): its text as
+ * typed, trailing space included, without an unfinished escape. '' when that
+ * leaves no text.
+ */
+function closeOpenQuoteTerm(opening, inner, quoteChar, endsInUnfinishedEscape) {
+    let text = inner;
+    if (endsInUnfinishedEscape) {
+        text = text.slice(0, -1);
+    }
+    if (text === '') {
+        return '';
+    }
+    return `${opening}${text}${quoteChar}`;
 }
 
 export function analyzeSearchQueryInput(rawInput) {
@@ -209,6 +229,10 @@ export function analyzeSearchQueryInput(rawInput) {
 
     const normalizedTerms = [];
     const sanitizedTerms = [];
+    // The terms with an open last quote closed: what the field holds once the
+    // user moves on, and what runs while the quote is still open.
+    const closedTerms = [];
+    let endsInOpenQuote = false;
 
     const hasTrailingWhitespace = rawInput.length > 0 && isWhitespace(rawInput[rawInput.length - 1]);
 
@@ -237,6 +261,7 @@ export function analyzeSearchQueryInput(rawInput) {
             index += 1;
             if (index >= rawInput.length || isWhitespace(rawInput[index])) {
                 normalizedTerms.push(prefix);
+                closedTerms.push(prefix);
                 isComplete = false;
                 spacedPrefixPending = true;
                 continue;
@@ -251,16 +276,26 @@ export function analyzeSearchQueryInput(rawInput) {
             }
             const termStart = index;
             const isQuoted = QUOTE_CHARS.has(rawInput[index]);
+            let closedTerm = '';
             if (isQuoted) {
                 const quoteChar = rawInput[index];
-                const { nextIndex } = readQuotedInner(rawInput, index + 1, quoteChar);
+                const { closed, nextIndex, endsInUnfinishedEscape } = readQuotedInner(rawInput, index + 1, quoteChar);
                 index = nextIndex;
+                closedTerm = rawInput.slice(termStart, index);
+                if (!closed) {
+                    endsInOpenQuote = true;
+                    closedTerm = closeOpenQuoteTerm(quoteChar, rawInput.slice(termStart + 1, index), quoteChar, endsInUnfinishedEscape);
+                }
             } else {
                 while (index < rawInput.length && !isWhitespace(rawInput[index])) {
                     index += 1;
                 }
+                closedTerm = rawInput.slice(termStart, index);
             }
             normalizedTerms.push(rawInput.slice(termStart, index));
+            if (closedTerm !== '') {
+                closedTerms.push(closedTerm);
+            }
             continue;
         }
 
@@ -274,22 +309,30 @@ export function analyzeSearchQueryInput(rawInput) {
         if (isQuoteStart && (prefix === '' || prefix === '-')) {
             const quoteChar = nextChar;
             index += 1;
-            const { normalizedInner, closed, nextIndex } = readQuotedInner(rawInput, index, quoteChar);
+            const { normalizedInner, closed, nextIndex, endsInUnfinishedEscape } = readQuotedInner(rawInput, index, quoteChar);
             index = nextIndex;
 
             const normalized = `${prefix}${quoteChar}${normalizedInner}`;
 
             if (!closed) {
                 normalizedTerms.push(normalized);
-                isComplete = false;
-                if (!warningMessage && normalizedInner.length > 0) {
-                    warningMessage = `Close quote with ${quoteChar}`;
+                endsInOpenQuote = true;
+                const closedOpenTerm = closeOpenQuoteTerm(`${prefix}${quoteChar}`, normalizedInner, quoteChar, endsInUnfinishedEscape);
+                if (closedOpenTerm === '') {
+                    // A quote with nothing typed in it yet: nothing to search, and nothing to warn about.
+                    isComplete = false;
+                    continue;
                 }
+                closedTerms.push(closedOpenTerm);
+                sanitizedTerms.push(closedOpenTerm);
+                currentClauseTermCount += 1;
+                endsWithOrOperator = false;
                 continue;
             }
 
             const closedToken = `${normalized}${quoteChar}`;
             normalizedTerms.push(closedToken);
+            closedTerms.push(closedToken);
 
             if (normalizedInner.length === 0) {
                 isComplete = false;
@@ -313,6 +356,7 @@ export function analyzeSearchQueryInput(rawInput) {
 
         if (rawToken === OR_OPERATOR) {
             normalizedTerms.push(`${prefix}${OR_OPERATOR}`);
+            closedTerms.push(`${prefix}${OR_OPERATOR}`);
             if (prefix !== '') {
                 isComplete = false;
                 if (!warningMessage) {
@@ -339,6 +383,7 @@ export function analyzeSearchQueryInput(rawInput) {
         if (isPropertyTerm(unprefixedToken)) {
             const term = `${prefix}${enforcePropertyTerm(unprefixedToken)}`;
             normalizedTerms.push(term);
+            closedTerms.push(term);
             const problem = describePropertyTermProblem(term.slice(prefix.length));
             if (problem !== '') {
                 // Still being typed until a space follows it: then say how to finish it.
@@ -366,12 +411,14 @@ export function analyzeSearchQueryInput(rawInput) {
         if (enforcedToken.length === 0) {
             if (prefix) {
                 normalizedTerms.push(prefix);
+                closedTerms.push(prefix);
                 isComplete = false;
             }
             continue;
         }
         if (enforcedToken === OR_OPERATOR) {
             normalizedTerms.push(OR_OPERATOR);
+            closedTerms.push(OR_OPERATOR);
             isComplete = false;
             if (!warningMessage) {
                 warningMessage = 'OR is reserved and cannot be used as a tag';
@@ -382,6 +429,7 @@ export function analyzeSearchQueryInput(rawInput) {
 
         const normalizedTag = `${prefix}${enforcedToken}`;
         normalizedTerms.push(normalizedTag);
+        closedTerms.push(normalizedTag);
         sanitizedTerms.push(normalizedTag);
         currentClauseTermCount += 1;
         endsWithOrOperator = false;
@@ -397,17 +445,23 @@ export function analyzeSearchQueryInput(rawInput) {
         }
     }
 
-    const normalizedText = normalizedTerms.join(' ').trim();
-    const sanitizedText = sanitizedTerms.join(' ').trim();
+    // Terms carry no outer spaces, except an open last quote's own text (a trailing
+    // space there marks a word edge), which is kept.
+    const normalizedText = normalizedTerms.join(' ');
+    const sanitizedText = sanitizedTerms.join(' ');
+    const closedText = closedTerms.join(' ');
 
-    const enforcedText = hasTrailingWhitespace && normalizedText.length > 0
-        ? `${normalizedText} `
-        : normalizedText;
+    let enforcedText = normalizedText;
+    if (hasTrailingWhitespace && normalizedText.length > 0 && !endsInOpenQuote) {
+        enforcedText = `${normalizedText} `;
+    }
 
     return {
         normalizedText,
         enforcedText,
         sanitizedText,
+        closedText,
+        endsInOpenQuote,
         isComplete,
         warningMessage,
     };
