@@ -57,12 +57,14 @@ async function startSampling(page) {
         isAppShown: app.style.display === 'block',
         isLoginShown: style.display !== 'none',
         isLeaving: login.classList.contains('login-page-leaving'),
+        isCovering: login.classList.contains('login-page-covering'),
         opacity: Number(style.opacity),
         zIndex: style.zIndex,
         barFill: track.width === 0 ? null : round(bar.width / track.width),
         logoLeft: round(document.getElementById('login-logo').getBoundingClientRect().left),
         noteLeft: noteBox === null ? null : round(noteBox.left),
         isClickOnNote: hit !== null && note.contains(hit),
+        scrollbarGutter: getComputedStyle(document.documentElement).scrollbarGutter,
       });
       if (style.display !== 'none' || !app.style.display) requestAnimationFrame(sample);
     };
@@ -87,7 +89,20 @@ async function logOut(page) {
   });
 }
 
+// Once the notes are under it, the page keeps its scrollbar strip, so the notes lay out
+// at their final width before anything shows (the release startup check reads it the
+// moment the app is ready; it found the strip off while the progress bar finished,
+// 2026-10-28). The login screen fills the window either way, so the logo stays put.
+function assertStripKeptUnderTheScreen(samples) {
+  // From the moment the notes are revealed: covered by the screen, or with it gone.
+  const revealed = samples.filter(sample => sample.isAppShown && (sample.isCovering || !sample.isLoginShown));
+  assert.ok(revealed.length > 0, 'no sample after the notes were revealed');
+  const gutters = new Set(revealed.map(sample => sample.scrollbarGutter));
+  assert.deepEqual([...gutters], ['stable'], 'the scrollbar strip was off while the notes were under the screen');
+}
+
 function assertFade(samples) {
+  assertStripKeptUnderTheScreen(samples);
   const shownSamples = samples.filter(sample => sample.isAppShown && sample.isLoginShown);
   const fadeSamples = shownSamples.filter(sample => sample.isLeaving);
   assert.ok(fadeSamples.length > 0, 'the login screen never faded');
@@ -106,6 +121,7 @@ function assertFade(samples) {
 }
 
 function assertNoFade(samples) {
+  assertStripKeptUnderTheScreen(samples);
   assert.equal(samples.some(sample => sample.isLeaving), false, 'the screen faded with Animated transitions off');
   assert.equal(samples.some(sample => sample.isAppShown && sample.isLoginShown), false, 'the screen stayed over the notes');
 }
