@@ -20,6 +20,8 @@ import venv
 import zipfile
 
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 from rich.console import Console
 from rich.panel import Panel
 from rich.progress import Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
@@ -39,6 +41,18 @@ ARTIFACT_DOWNLOAD_TIMEOUT_SECONDS = 60
 # Python and Package-and-update per Python version; smoke and soak per browser leg.
 PUBLISH_WORKFLOW_JOB_COUNT = 25
 SHORT_COMMIT_LENGTH = 12
+# GitHub's API drops a request now and then (502, 504, a closed connection; three times
+# during the 0.25.0 release): ask again a few times before stopping the release.
+GITHUB_REQUEST_RETRIES = 5
+# Pauses double from this: 10, 20, 40, 80 and 160 seconds.
+GITHUB_RETRY_BACKOFF_SECONDS = 10
+GITHUB_RETRIED_STATUSES = (
+    HTTPStatus.INTERNAL_SERVER_ERROR, HTTPStatus.BAD_GATEWAY,
+    HTTPStatus.SERVICE_UNAVAILABLE, HTTPStatus.GATEWAY_TIMEOUT,
+)
+# A job GitHub never gave a machine (no runner, no step ran) has no result: rerun it, up
+# to this many times, and then stop and say so.
+MAX_NEVER_STARTED_RERUNS = 3
 FAILURE_LOG_TAIL_LINES = 60
 
 
@@ -225,6 +239,22 @@ def pypi_hashes(payload: dict[str, object], *, version: str) -> dict[str, str]:
     return hashes
 
 
+def github_session() -> requests.Session:
+    """Requests to GitHub's API that ask again, with growing pauses, when GitHub's side
+    fails (a 5xx, a dropped connection, no answer in time); after that the release stops
+    with the error. Rerunning jobs (a POST) is safe to repeat: GitHub refuses a second
+    rerun of a run already rerunning, and the release stops on that."""
+    retry = Retry(
+        total=GITHUB_REQUEST_RETRIES,
+        backoff_factor=GITHUB_RETRY_BACKOFF_SECONDS,
+        status_forcelist=GITHUB_RETRIED_STATUSES,
+        allowed_methods=frozenset({"GET", "POST"}),
+    )
+    session = requests.Session()
+    session.mount("https://", HTTPAdapter(max_retries=retry))
+    return session
+
+
 class GitHubClient:
     def __init__(self, *, username: str, password: str) -> None:
         assert username
@@ -236,9 +266,10 @@ class GitHubClient:
             "User-Agent": "metalist-release-driver",
             "X-GitHub-Api-Version": "2022-11-28",
         }
+        self._session = github_session()
 
     def _request(self, path: str, *, parameters: dict[str, str]) -> requests.Response:
-        response = requests.get(
+        response = self._session.get(
             f"{self._base_url}/{path}",
             params=parameters,
             auth=self._authentication,
@@ -247,6 +278,29 @@ class GitHubClient:
         )
         response.raise_for_status()
         return response
+
+    def rerun_failed_jobs(self, *, run_id: int) -> None:
+        """Asks GitHub to run the run's unsuccessful jobs again, as a new attempt."""
+        response = self._session.post(
+            f"{self._base_url}/actions/runs/{run_id}/rerun-failed-jobs",
+            auth=self._authentication,
+            headers=self._headers,
+            timeout=HTTP_REQUEST_TIMEOUT_SECONDS,
+        )
+        response.raise_for_status()
+        if response.status_code != HTTPStatus.CREATED:
+            raise ReleaseError(f"GitHub answered HTTP {response.status_code} to rerunning the jobs of run {run_id}")
+
+    def attempt_jobs(self, *, run_id: int, attempt: int) -> list[dict[str, object]]:
+        payload = self._request(
+            f"actions/runs/{run_id}/attempts/{attempt}/jobs",
+            parameters={"per_page": "100"},
+        ).json()
+        jobs = payload["jobs"]
+        assert isinstance(jobs, list)
+        if payload["total_count"] != len(jobs):
+            raise ReleaseError("Release workflow attempt unexpectedly exceeded one page of jobs")
+        return jobs
 
     def workflow_runs(self, *, branch: str) -> list[dict[str, object]]:
         response = self._request(
@@ -393,6 +447,33 @@ def preflight(root: Path, *, version: str, console: Console) -> tuple[str, str, 
     return commit, tag, bool(remote_target)
 
 
+def never_started(job: dict[str, object]) -> bool:
+    """A job GitHub cancelled before any machine took it: no runner, no step. It has no
+    result, unlike a job that ran and failed or was cancelled while running (a timeout).
+    Mirrored in resolve_release_validation.py, and tested to agree."""
+    return (
+        job["conclusion"] == "cancelled"
+        and job["runner_id"] in (0, None)
+        and job["runner_name"] in ("", None)
+        and job["steps"] == []
+    )
+
+
+def unsuccessful_jobs(jobs: list[dict[str, object]]) -> list[dict[str, object]]:
+    return [job for job in jobs if job["conclusion"] not in {"success", "skipped"}]
+
+
+def earlier_attempt_failures(client: GitHubClient, run: dict[str, object]) -> list[tuple[int, str, str]]:
+    """Jobs of the run's earlier attempts that ran and did not pass. A rerun counts as
+    one clean run only when every job it ran again had never started."""
+    failures = []
+    for attempt in range(1, int(run["run_attempt"])):
+        for job in unsuccessful_jobs(client.attempt_jobs(run_id=int(run["id"]), attempt=attempt)):
+            if not never_started(job):
+                failures.append((attempt, str(job["name"]), str(job["conclusion"])))
+    return failures
+
+
 def workflow_summary(jobs: list[dict[str, object]]) -> str:
     counts = Counter(str(job["status"]) for job in jobs)
     successful = sum(job["conclusion"] == "success" for job in jobs)
@@ -418,6 +499,10 @@ def wait_for_workflow(
         SpinnerColumn(), TextColumn("{task.description}"), TimeElapsedColumn(), console=console
     ) as progress:
         task = progress.add_task(f"Waiting for {label}", total=None)
+        reruns = 0
+        # After asking for a rerun, the run reads as finished until GitHub starts the
+        # new attempt: wait for that attempt rather than asking again.
+        awaited_attempt = 1
         while time.monotonic() < deadline:
             runs = matching_runs(client.workflow_runs(branch=branch), commit=commit, branch=branch)
             if not runs:
@@ -426,18 +511,34 @@ def wait_for_workflow(
                 continue
             runs.sort(key=lambda run: int(run["id"]), reverse=True)
             run = runs[0]
+            if int(run["run_attempt"]) < awaited_attempt:
+                time.sleep(POLL_SECONDS)
+                continue
             jobs = client.jobs(run_id=int(run["id"]))
             progress.update(task, description=f"{label.capitalize()}: {workflow_summary(jobs)}")
             if run["status"] == "completed":
                 if run["conclusion"] != "success":
-                    failures = [
-                        (job["name"], job["conclusion"])
-                        for job in jobs
-                        if job["conclusion"] not in {"success", "skipped"}
-                    ]
-                    raise ReleaseError(f"{label.capitalize()} failed: {failures}")
+                    unsuccessful = unsuccessful_jobs(jobs)
+                    failures = [(job["name"], job["conclusion"]) for job in unsuccessful]
+                    if is_tag or not all(never_started(job) for job in unsuccessful):
+                        raise ReleaseError(f"{label.capitalize()} failed: {failures}")
+                    if reruns == MAX_NEVER_STARTED_RERUNS:
+                        raise ReleaseError(
+                            f"GitHub never started {failures} after {reruns} reruns; try again later"
+                        )
+                    client.rerun_failed_jobs(run_id=int(run["id"]))
+                    reruns += 1
+                    awaited_attempt = int(run["run_attempt"]) + 1
+                    console.print(f"GitHub never started {failures}; rerunning them ({reruns} of {MAX_NEVER_STARTED_RERUNS})")
+                    time.sleep(POLL_SECONDS)
+                    continue
                 if not is_tag and run["run_attempt"] != 1:
-                    raise ReleaseError("Main validation was rerun; create a new candidate commit")
+                    failures = earlier_attempt_failures(client, run)
+                    if failures:
+                        raise ReleaseError(
+                            "Main validation was rerun after a job that ran and failed; "
+                            f"create a new candidate commit: {failures}"
+                        )
                 validate_jobs(jobs, is_tag=is_tag)
                 return run
             time.sleep(POLL_SECONDS)

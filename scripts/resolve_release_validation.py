@@ -84,9 +84,31 @@ def select_main_run(
     run = matches[0]
     if run["status"] != "completed" or run["conclusion"] != "success":
         raise ReleaseValidationError(f"Main validation run {run['id']} has not passed")
-    if run["run_attempt"] != 1:
-        raise ReleaseValidationError(f"Main validation run {run['id']} was rerun")
     return run
+
+
+def never_started(job: dict[str, object]) -> bool:
+    """A job GitHub cancelled before any machine took it: no runner, no step (as in
+    release.py, tested to agree). Rerunning it is running it for the first time."""
+    return (
+        job["conclusion"] == "cancelled"
+        and job["runner_id"] in (0, None)
+        and job["runner_name"] in ("", None)
+        and job["steps"] == []
+    )
+
+
+def check_earlier_attempts(jobs_by_attempt: dict[int, list[dict[str, object]]]) -> None:
+    """A rerun main run counts only when every job its earlier attempts did not pass had
+    never started: a job that ran and failed is never erased by a green rerun."""
+    failures = [
+        (attempt, job["name"], job["conclusion"])
+        for attempt, jobs in sorted(jobs_by_attempt.items())
+        for job in jobs
+        if job["conclusion"] not in {"success", "skipped"} and not never_started(job)
+    ]
+    if failures:
+        raise ReleaseValidationError(f"Main validation was rerun after jobs that ran and failed: {failures}")
 
 
 def validate_artifact(
@@ -169,6 +191,17 @@ def resolve_main_run(*, repository: str, token: str, commit: str) -> int:
         raise ReleaseValidationError("Main validation search exceeded one API page")
     run = select_main_run(runs, repository=repository, commit=commit)
     run_id = int(run["id"])
+    earlier_jobs: dict[int, list[dict[str, object]]] = {}
+    for attempt in range(1, int(run["run_attempt"])):
+        attempt_listing = github_json(
+            repository=repository, token=token,
+            path=f"actions/runs/{run_id}/attempts/{attempt}/jobs",
+            parameters={"per_page": "100"},
+        )
+        if attempt_listing["total_count"] != len(attempt_listing["jobs"]):
+            raise ReleaseValidationError("Main validation attempt jobs exceeded one API page")
+        earlier_jobs[attempt] = attempt_listing["jobs"]
+    check_earlier_attempts(earlier_jobs)
     jobs_listing = github_json(
         repository=repository, token=token,
         path=f"actions/runs/{run_id}/jobs",

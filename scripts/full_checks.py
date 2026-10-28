@@ -1,6 +1,6 @@
 """Run the full checks in the order that is fastest and safe on one machine: the browser suite
 first and alone (it fills 8 cores; anything beside it times its runs out), then every other
-check at once. COMMIT FEATURE runs them without the browser suite, which runs before a push
+check at once. COMMIT FEATURE runs them without the browser suite; GitHub runs it on push
 (AGENTS.md, "COMMIT FEATURE" and "Before pushing main").
 
     .venv/bin/python scripts/full_checks.py --no-browser   # COMMIT FEATURE, against main
@@ -130,6 +130,11 @@ def _checks_after_browser(*, base: str, branch: str, scratch: Path) -> list[Chec
         Check("js-unit", (Command(("npm", "test"), ROOT),), "ℹ pass"),
         Check("types", (Command((local, "scripts/check_types.py", "check"), ROOT),), ""),
         Check("supply-chain", (Command((local, "scripts/check_supply_chain.py", "check"), ROOT),), ""),
+        # The release audit on main asks the advisory databases about every locked version;
+        # a newly published advisory stopped the 0.25.0 release (msgpack, 2026-10-28).
+        Check("dependency-audit", (
+            Command((local, "scripts/check_supply_chain.py", "audit", "--output", str(scratch / "dependency-audit")), ROOT),
+        ), "Audited"),
         Check("startup-sanity", (Command((local, "-c", SANITY_CODE), ROOT),), ""),
         Check("shockharness-gate", (
             Command((str(ROOT / ".venv" / "bin" / "shockharness"), "gate", "--base", base, "--head", "HEAD"), ROOT),
@@ -154,7 +159,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--base", default="main", help="revision the ShockHarness gate compares against")
     parser.add_argument("--no-browser", action="store_true",
-                        help="skip the browser suite (COMMIT FEATURE; the whole browser suite runs before a push)")
+                        help="skip the browser suite (COMMIT FEATURE; GitHub runs the whole browser suite on push)")
     options = parser.parse_args()
 
     if _git("status", "--porcelain"):

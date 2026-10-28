@@ -25,9 +25,8 @@ var/
 .idea/
 *.log
 logs/
-package-lock.json
-!scripts/browser-validation/package-lock.json
-!scripts/vendor/excalidraw/package-lock.json
+# Every package-lock.json is tracked: npm ci in CI installs exactly what it names (the root one
+# drives the browser suites on GitHub, 2026-10-28).
 node_modules/
 # Symlinked claude compatibility stub
 CLAUDE.md
