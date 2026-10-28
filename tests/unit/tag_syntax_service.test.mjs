@@ -114,6 +114,16 @@ test('sanitizeTagBarInput removes incomplete meta tags and conflicting scoped re
     assert.equal(analyzeTagBarInput('topic @code=').sanitizedText, 'topic');
 });
 
+test('the tag bar keeps the summary tags: @stats, and @sum, @avg, @min, @max, @count with or without a property', () => {
+    assert.equal(analyzeTagBarInput('diet @stats').sanitizedText, 'diet @stats');
+    assert.equal(analyzeTagBarInput('diet @sum @avg=calories @min=fat @max=carbs @count=calories').sanitizedText,
+        'diet @sum @avg=calories @min=fat @max=carbs @count=calories');
+    // Left with a bare =, it keeps the tag without one: every number property.
+    assert.equal(analyzeTagBarInput('diet @sum=').sanitizedText, 'diet @sum');
+    // A property name starts with a letter (docs/design/tag-properties.md); other tags stay unknown.
+    assert.equal(analyzeTagBarInput('diet @sum=1kg @total @summary').sanitizedText, 'diet');
+});
+
 test('exact uppercase OR is reserved and cannot be saved as a tag', () => {
     const reserved = analyzeTagBarInput('alpha OR beta');
     assert.equal(reserved.isValid, false);

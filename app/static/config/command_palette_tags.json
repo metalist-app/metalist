@@ -109,6 +109,10 @@
       "tags": ["theme", "appearance", "light", "dark", "system", "ui"]
     },
     {
+      "id": "pref.stats_style",
+      "tags": ["totals", "stats", "sum", "style", "appearance", "strip", "tiles", "ledger"]
+    },
+    {
       "id": "form.search_suggestion_statistics",
       "tags": ["search", "suggestion", "statistics", "stats", "history", "activity", "counts", "credits", "collected", "days", "tags", "ranking", "window", "windows", "slots", "recent", "order", "settings", "limit", "suppress", "deduplicate", "reset", "clear"]
     },

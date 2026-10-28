@@ -54,6 +54,7 @@ const LABELS = {
     'view.files.pdf': 'Notes with Files: PDFs',
     'view.files.markdown': 'Notes with Files: Markdown Files',
     'pref.theme': 'Theme',
+    'pref.stats_style': 'Stats Style',
     'form.search_suggestion_statistics': 'Search Suggestion Stats & Settings…',
     'form.ai_agent_settings': 'AI Agent Settings…',
     'form.cloud_ai_privacy': 'Cloud AI Privacy…',

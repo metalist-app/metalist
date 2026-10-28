@@ -1163,6 +1163,12 @@ export const NotesAPI = {
         const { tabId, searchQuery } = this._exportViewScope();
         const params = new URLSearchParams();
         params.set('theme', theme);
+        // The Stats Style the user chose, set on the page by the command palette.
+        const statsStyle = document.documentElement.dataset.statsStyle;
+        if (typeof statsStyle !== 'string' || statsStyle === '') {
+            throw new Error('The Stats Style is not set on the page');
+        }
+        params.set('stats_style', statsStyle);
         params.set('search_query', searchQuery);
         params.set('tab_id', tabId);
         params.set('is_untagged_view', ModeContext.isUntaggedView ? 'true' : 'false');

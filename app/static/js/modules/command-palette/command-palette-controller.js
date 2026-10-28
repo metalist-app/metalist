@@ -393,6 +393,10 @@ class CommandPaletteController {
         this._isActivating = false;
         this._previousFocus = null;
         this._previousSelection = null;
+        // How often each item was used, as of opening: rows and suggested keywords keep that
+        // order until the palette closes, so a use never moves the row under the pointer
+        // (docs/ui/command-palette.md, Results). Uses still count, from the next opening.
+        this._openingUsage = null;
 
         this._preferences = new PreferencesStore();
         this._usage = new UsageStore();
@@ -669,6 +673,8 @@ class CommandPaletteController {
         void BackupReminder.preferencesChanged();
 
         applyTheme(this._getSelect('pref.theme', ['system', 'light', 'dark'], 'system'));
+        // How @stats and @sum=… totals look; exports and prints take it from the page too.
+        document.documentElement.dataset.statsStyle = this._getSelect('pref.stats_style', ['strip', 'tiles', 'ledger'], 'strip');
 
         const tabIndicator = document.getElementById('tab-indicator');
         if (tabIndicator) {
@@ -1009,6 +1015,7 @@ class CommandPaletteController {
         this._isOpen = true;
 
         this._previousSelection = { query: input.value, selectedIndex: 0 };
+        this._openingUsage = this._usage.getUsageSnapshot();
         input.value = '';
 
         this._render();
@@ -1037,6 +1044,7 @@ class CommandPaletteController {
         const previousFocus = this._previousFocus;
         this._previousFocus = null;
         this._previousSelection = null;
+        this._openingUsage = null;
         window.scrollTo(0, previousFocus.scrollY);
         if (previousFocus.element !== null) previousFocus.element.focus();
     }
@@ -1100,9 +1108,16 @@ class CommandPaletteController {
         }
     }
 
+    _requireOpeningUsage() {
+        if (this._openingUsage === null) {
+            throw new Error('Command palette usage is read only while it is open');
+        }
+        return this._openingUsage;
+    }
+
     _render() {
         const { input, suggestions, results } = this._elements;
-        const usageSnapshot = this._usage.getUsageSnapshot();
+        const usageSnapshot = this._requireOpeningUsage();
 
         const tokenization = tokenizeQuery(input.value);
         const committedTokens = tokenization.committed;
@@ -1277,7 +1292,7 @@ class CommandPaletteController {
         const tokenization = tokenizeQuery(input.value);
         const committed = tokenization.committed;
         const prefix = tokenization.prefix;
-        const usageSnapshot = this._usage.getUsageSnapshot();
+        const usageSnapshot = this._requireOpeningUsage();
 
         const baseMatches = this._availableEndpoints().filter((e) => endpointMatchesTags(e, committed));
         let matches = baseMatches;

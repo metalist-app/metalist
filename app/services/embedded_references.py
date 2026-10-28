@@ -16,6 +16,7 @@ from app.services.content_formatting import has_scoped_footnotes
 from app.services.content_formatting import render_standalone_link_title_html
 from app.services.file_text_preview import text_file_badge
 from app.services.inline_image_occurrences import annotate_inline_image_occurrences
+from app.services.subtree_stats import render_subtree_stats_footer
 from app.services.remote_image_proxy import (
     remote_image_proxy_registry,
     rewrite_remote_image_sources_for_proxy,
@@ -234,7 +235,7 @@ def render_note_content_with_embeds(
     static_export: bool,
     redact_credentials: bool,
 ) -> str:
-    return _render_note_content_with_embeds(
+    rendered_content = _render_note_content_with_embeds(
         note_id=note_id,
         content_html=content_html,
         tags=tags,
@@ -244,6 +245,9 @@ def render_note_content_with_embeds(
         folds_embeds=False,
         is_held=sole_embed_token(content_html) is not None,
     )
+    # Totals of the subtree (@stats, @sum=…) under the note's own text; a folded note
+    # renders without them (render_collapsed_note_content_with_embeds).
+    return rendered_content + render_subtree_stats_footer(note_id=note_id, tags=tags, context=context)
 
 
 def _render_note_content_with_embeds(

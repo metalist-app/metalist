@@ -328,9 +328,10 @@ Decided 2026-10-23:
 - Totals, averages and sorting by a property (for example "miles this month" beside
   the result count, or Sort by `jogging:miles`). Agreed, not built (2026-10-27):
   summaries beside the result count and the `@datetime` tag
-  (`docs/ready-to-build/super-tag-summaries-and-date.md`); `@stats`, `@sum`, `@avg`,
-  `@min`, `@max` and `@count`, totals of a note's subtree under its text
-  (`docs/ready-to-build/stats-tag.md`); charts later (`docs/future-plans/charts.md`).
+  (`docs/ready-to-build/super-tag-summaries-and-date.md`); charts later
+  (`docs/future-plans/charts.md`). Built 2026-10-27: `@stats`, `@sum`, `@avg`, `@min`,
+  `@max` and `@count`, a note's subtree summarised under its text
+  (`docs/ui/content-formatting.md`, Stats of a subtree; `app/services/subtree_stats.py`).
 - Values set by rules.
 - Value suggestions.
 - Unit conversions the user defines (`1mile = 1.609km`), so a comparison can include

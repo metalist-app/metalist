@@ -95,13 +95,15 @@ def test_build_notes_export_document_keeps_collapsed_notes_collapsed_and_redacts
         sort_mode="normal", date_filter=None, file_filter=None,
         is_untagged_view=False,
         search=None,
-        theme="light",
+        theme="light", stats_style="strip",
         token="token",
         root_note_id=None,
         editing_note_id=None,
     )
 
     assert 'data-theme="light"' in html
+    # The Stats Style the user chose, as the page carries it (main.css styles @stats by it).
+    assert '<html lang="en" data-theme="light" data-stats-style="strip">' in html
     assert "Parent" in html
     assert "meta-credential-password" in html
     assert "sekret" not in html
@@ -143,7 +145,7 @@ def test_build_notes_export_document_can_export_single_note_subtree(
         sort_mode="normal", date_filter=None, file_filter=None,
         is_untagged_view=False,
         search="other",
-        theme="light",
+        theme="light", stats_style="strip",
         token="token",
         root_note_id="root-a",
         editing_note_id=None,
@@ -170,7 +172,7 @@ def test_export_notes_html_route_passes_note_id(
     monkeypatch.setattr(notes_route, "_resolve_tab_file_filter", lambda tab_id: None)
 
     def _build_document(
-        *, search, sort_mode, date_filter, file_filter, is_untagged_view, theme, token, root_note_id, purpose, title,
+        *, search, sort_mode, date_filter, file_filter, is_untagged_view, theme, stats_style, token, root_note_id, purpose, title,
         include_credentials, editing_note_id,
     ):
         captured["editing_note_id"] = editing_note_id
@@ -181,6 +183,7 @@ def test_export_notes_html_route_passes_note_id(
         captured["sort_mode"] = sort_mode
         captured["is_untagged_view"] = is_untagged_view
         captured["theme"] = theme
+        captured["stats_style"] = stats_style
         captured["token"] = token
         captured["root_note_id"] = root_note_id
         return "<!DOCTYPE html><html></html>"
@@ -193,7 +196,7 @@ def test_export_notes_html_route_passes_note_id(
             "method": "GET",
             "path": "/api2/notes/export-html",
             "headers": [],
-            "query_string": b"search_query=tag&theme=dark&note_id=note-123&tab_id=tab-1&is_untagged_view=true&purpose=print&title=Trip&include_credentials=true&editing_note_id=note-123",
+            "query_string": b"search_query=tag&theme=dark&stats_style=ledger&note_id=note-123&tab_id=tab-1&is_untagged_view=true&purpose=print&title=Trip&include_credentials=true&editing_note_id=note-123",
         }
     )
 
@@ -209,6 +212,7 @@ def test_export_notes_html_route_passes_note_id(
         "sort_mode": "alphabetical",
         "is_untagged_view": True,
         "theme": "light",
+        "stats_style": "ledger",
         "token": "token",
         "root_note_id": "note-123",
     }
@@ -226,7 +230,7 @@ def test_export_notes_html_route_rejects_missing_note_id(
             "method": "GET",
             "path": "/api2/notes/export-html",
             "headers": [],
-            "query_string": b"search_query=&theme=light&note_id=missing&tab_id=tab-1&is_untagged_view=false&purpose=download&title=&include_credentials=false&editing_note_id=",
+            "query_string": b"search_query=&theme=light&stats_style=strip&note_id=missing&tab_id=tab-1&is_untagged_view=false&purpose=download&title=&include_credentials=false&editing_note_id=",
         }
     )
 
@@ -295,7 +299,7 @@ def test_build_notes_export_document_uses_search_scope_and_static_reference_mark
         sort_mode="normal", date_filter=None, file_filter=None,
         is_untagged_view=False,
         search="match",
-        theme="dark",
+        theme="dark", stats_style="strip",
         token="token",
         root_note_id=None,
         editing_note_id=None,
@@ -338,7 +342,7 @@ def test_build_notes_export_document_redacts_password_reference_preview(
         sort_mode="normal", date_filter=None, file_filter=None,
         is_untagged_view=False,
         search=None,
-        theme="light",
+        theme="light", stats_style="strip",
         token="token",
         root_note_id=None,
         editing_note_id=None,
@@ -381,7 +385,7 @@ def test_build_notes_export_document_renders_markdown_meta_server_side(
         sort_mode="normal", date_filter=None, file_filter=None,
         is_untagged_view=False,
         search=None,
-        theme="light",
+        theme="light", stats_style="strip",
         token="token",
         root_note_id=None,
         editing_note_id=None,
@@ -428,7 +432,7 @@ def test_build_notes_export_document_renders_latex_meta_server_side(
         sort_mode="normal", date_filter=None, file_filter=None,
         is_untagged_view=False,
         search=None,
-        theme="dark",
+        theme="dark", stats_style="strip",
         token="token",
         root_note_id=None,
         editing_note_id=None,
@@ -460,7 +464,7 @@ def test_an_exported_view_is_the_view_as_shown(monkeypatch: pytest.MonkeyPatch) 
 
     monkeypatch.setattr(export_module, "resolve_view_scope_membership", resolve)
     html = build_notes_export_document(
-        sort_mode="alphabetical", date_filter=None, file_filter=None, is_untagged_view=True, search="fruit", theme="light", token="token", root_note_id=None,
+        sort_mode="alphabetical", date_filter=None, file_filter=None, is_untagged_view=True, search="fruit", theme="light", stats_style="strip", token="token", root_note_id=None,
         purpose="download", title="", include_credentials=False, editing_note_id=None,
     )
     assert calls == [("fruit", "alphabetical", True)]
@@ -478,7 +482,7 @@ def _export(
     monkeypatch.setattr(snapshot_module, "note_store", store)
     return build_notes_export_document(
         purpose=purpose, title=title, sort_mode="normal", date_filter=None, file_filter=None, is_untagged_view=False,
-        search=None, theme="dark", token="token", root_note_id=None, include_credentials=include_credentials, editing_note_id=editing_note_id,
+        search=None, theme="dark", stats_style="strip", token="token", root_note_id=None, include_credentials=include_credentials, editing_note_id=editing_note_id,
     )
 
 
@@ -774,7 +778,7 @@ def test_a_single_exported_note_starts_as_metalist_shows_it(monkeypatch: pytest.
     monkeypatch.setattr(export_module, "note_store", store)
     monkeypatch.setattr(snapshot_module, "note_store", store)
     html = build_notes_export_document(
-        purpose="download", title="", sort_mode="normal", date_filter=None, file_filter=None, is_untagged_view=False, search=None, theme="light",
+        purpose="download", title="", sort_mode="normal", date_filter=None, file_filter=None, is_untagged_view=False, search=None, theme="light", stats_style="strip",
         token="token", root_note_id=_A, include_credentials=False, editing_note_id=None,
     )
     assert _opening(html, _A).startswith('<article class="note collapsed"')
@@ -896,7 +900,7 @@ def test_exported_code_lines_stay_as_written_at_every_depth(
         sort_mode="normal", date_filter=None, file_filter=None,
         is_untagged_view=False,
         search="",
-        theme="light",
+        theme="light", stats_style="strip",
         token="token",
         root_note_id="root",
         editing_note_id=None,

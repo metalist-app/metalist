@@ -270,6 +270,9 @@ def list_known_meta_tag_terms() -> FrozenSet[str]:
     terms.add("@chess")
     terms.add("@diff")
     terms.add("@mermaid")
+    # Totals of a note's subtree (subtree_stats.py); the summary tags name a property.
+    terms.add("@stats")
+    terms.update(("@sum=", "@avg=", "@min=", "@max=", "@count="))
     return frozenset(terms)
 
 

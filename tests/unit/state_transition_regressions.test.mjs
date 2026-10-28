@@ -311,7 +311,8 @@ test('palette opens and closes repeatedly when focus belongs to a non-HTML eleme
     const controller = new Function(...Object.keys(dependencies), `return new (class {${methods}})();`)(...Object.values(dependencies));
     const receiver = {
         _initialized:true, _isOpen:false,
-        _previousSelection:null, _previousFocus:null,
+        _previousSelection:null, _previousFocus:null, _openingUsage:null,
+        _usage:{getUsageSnapshot: () => ({})},
         _elements:{modal:new Element(), input:new Element()},
         _render() {},
     };

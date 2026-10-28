@@ -93,7 +93,8 @@ def test_tag_bar_known_meta_tags_match_server_renderer_catalog() -> None:
     browser_terms = set(re.findall(r"'(@[^']+)'", catalog))
     server_terms = {
         term.casefold() for term in list_known_meta_tag_terms()
-        if not term.casefold().startswith("@size=")
+        # Valued tags the tag bar accepts by pattern: @size=0.5, @sum=calories.
+        if not term.casefold().startswith("@size=") and not term.endswith("=")
     }
 
     assert browser_terms == server_terms

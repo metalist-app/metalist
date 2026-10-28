@@ -186,6 +186,7 @@ export function buildCommandPaletteEndpoints(deps) {
         showAiChat: false,
         animatedTransitions: true,
         theme: 'system',
+        statsStyle: 'strip',
     };
     // An order and its direction are chosen apart: picking an order keeps Reverse Order.
     const sortModeActionValue = (sortMode) => (baseRootSortMode(getSortMode()) === sortMode ? 'Current' : '↵');
@@ -378,6 +379,20 @@ export function buildCommandPaletteEndpoints(deps) {
                 { value: 'dark', label: 'Dark' },
             ],
             apply: (next) => applyPreference('pref.theme', next),
+        },
+        {
+            // How @stats and @sum=… totals look (app/services/subtree_stats.py; main.css).
+            id: 'pref.stats_style',
+            kind: 'select',
+            label: 'Stats Style',
+            persistenceKey: 'pref.stats_style',
+            defaultValue: defaults.statsStyle,
+            options: [
+                { value: 'strip', label: 'Strip' },
+                { value: 'tiles', label: 'Tiles' },
+                { value: 'ledger', label: 'Ledger' },
+            ],
+            apply: (next) => applyPreference('pref.stats_style', next),
         },
         {
             id: 'form.search_suggestion_statistics',

@@ -14,6 +14,7 @@ Opening or dismissing the command palette does not clear undo/redo. Global actio
 
 ## Semantics
 - Query is an unordered bag of words.
+- While the palette is open its order holds: rows and suggested keywords are ranked by how often each command was used as of opening, so using one (cycling `Theme` or `Stats Style`, say) never moves the row under you. The uses count from the next opening (agreed 2026-10-27; `browser-palette-order-regressions.mjs`).
 - AND-only matching against each command's keywords (`app/static/config/command_palette_tags.json`). The palette calls them keywords, never tags, so they aren't mistaken for note tags: the input reads `Type keywords to find a command…`, and the words suggested under it are plain text.
 - While you are mid-token (no trailing space), it behaves as a prefix filter.
 
@@ -77,6 +78,7 @@ Opening or dismissing the command palette does not clear undo/redo. Global actio
 - Search `LLM` or `OpenAI` to find `AI Agent Settings` for API key and model configuration.
 - Endpoint definitions (behavior/labels) live in code.
 - Palette preferences (`pref.*`) and command usage history are persisted per namespace in the main SQLite DB via `/api2/auth/client-state*`, not in browser `localStorage`.
+- `Stats Style`: `Strip` (the default), `Tiles` or `Ledger`, how `@stats` and `@sum=…` look (`docs/ui/content-formatting.md`, Stats of a subtree); Enter cycles it like `Theme`. Saved per namespace; an HTML export or print shows the stats in it too.
 - `Animated transitions` is on by default and controls UI motion such as tag-bar edit transitions, note expand/collapse transitions, the login screen fading out over the notes, and the page cross-fading (300 ms) when `Theme` changes.
 - `Note Layout & Appearance…` stores namespace-scoped presets for top-level note size, child indentation, vertical spacing, note corners, and tag style. The defaults are `Larger`, `Standard`, `Comfortable`, `Round`, and `Pills` respectively. Note corners can be `Subtle`, `Rounded`, or `Round`; tag style shows visible note tags as outlined `Pills` or `Plain text` in both themes.
 - `Search Suggestion Stats & Settings…` is the single suggestion-personalization control surface. Its ordered 1–365 day slots and default-on time-window-label and one-credit-per-note-per-search-context toggles save immediately when changed. The modal also displays retained daily tag-credit statistics and provides the confirmed activity reset. An empty slot list disables personalization; the default slots are 1, 7, and 30 days.

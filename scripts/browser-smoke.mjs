@@ -67,6 +67,8 @@ import {installRequestMonitor, waitForAppQuiet} from './browser-app-idle.mjs';
 import {checkLoginLogo} from './browser-login-logo-regressions.mjs';
 import {checkLoginFade} from './browser-login-fade-regressions.mjs';
 import {checkThemeFade} from './browser-theme-fade-regressions.mjs';
+import {checkPaletteOrder} from './browser-palette-order-regressions.mjs';
+import {checkStatsTags} from './browser-stats-tag-regressions.mjs';
 import {checkDialogKeys} from './browser-dialog-key-regressions.mjs';
 import {checkDialogButtons} from './browser-dialog-button-regressions.mjs';
 import {checkPhone} from './browser-phone-regressions.mjs';
@@ -400,6 +402,14 @@ try {
     await checkLoginLogo(browser, page, origin);
     assert.deepEqual(errors, []);
     console.log(`PASS login logo regressions in ${await browser.version()}`);
+  } else if (process.env.BROWSER_TEST_SUITE === 'stats-tags') {
+    await checkStatsTags(page);
+    assert.deepEqual(errors, []);
+    console.log(`PASS stats tag regressions in ${await browser.version()}`);
+  } else if (process.env.BROWSER_TEST_SUITE === 'palette-order') {
+    await checkPaletteOrder(page);
+    assert.deepEqual(errors, []);
+    console.log(`PASS palette order regressions in ${await browser.version()}`);
   } else if (process.env.BROWSER_TEST_SUITE === 'theme-fade') {
     await checkThemeFade(page);
     assert.deepEqual(errors, []);
