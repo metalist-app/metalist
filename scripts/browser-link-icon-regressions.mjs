@@ -72,6 +72,7 @@ async function measure(page, selector) {
       iconCentre: icon.top + icon.height / 2, textCentre: textBox.top + textBox.height / 2,
       gap: textBox.left - icon.right,
       background: getComputedStyle(host.querySelector('img.link-title-icon')).backgroundColor,
+      screenPixel: 1 / window.devicePixelRatio,
     };
   }, selector);
 }
@@ -79,7 +80,10 @@ async function measure(page, selector) {
 function assertIconFitsText(box, label, background) {
   assert.equal(box.width, box.fontSize, `${label}: the icon is as wide as the text is tall`);
   assert.equal(box.height, box.fontSize, `${label}: the icon is as tall as the text`);
-  assert.ok(Math.abs(box.iconCentre - box.textCentre) <= PIXEL_ROUNDING,
+  // Within one screen pixel: the icon's offset is tuned to the Mac's font, and with Linux's
+  // font on a 1x screen it lands 0.9 px off (agreed 2026-10-28).
+  assert.equal(typeof box.screenPixel, 'number', `${label}: the measurement gives the screen pixel`);
+  assert.ok(Math.abs(box.iconCentre - box.textCentre) <= Math.max(PIXEL_ROUNDING, box.screenPixel),
     `${label}: the icon is centred on the text (${box.iconCentre} vs ${box.textCentre})`);
   assert.ok(Math.abs(box.gap - box.fontSize * GAP_EM) <= GAP_PRECISION,
     `${label}: the gap before the text is ${GAP_EM}em (${box.gap}px at ${box.fontSize}px)`);
@@ -166,6 +170,7 @@ async function sentenceCase(page, ids) {
       fontSize: parseFloat(getComputedStyle(link).fontSize),
       width: iconBox.width, height: iconBox.height,
       iconCentre: iconBox.top + iconBox.height / 2, textCentre: letter.top + letter.height / 2,
+      screenPixel: 1 / window.devicePixelRatio,
       gap: letter.left - iconBox.right,
       background: getComputedStyle(icon).backgroundColor,
     };
