@@ -154,13 +154,16 @@ async function baselines(page, arrowSelector, contentSelector) {
     arrowMarker.remove();
     // Both again from the top of the note the arrow belongs to, which scrolling doesn't change.
     const top = arrow.parentElement.getBoundingClientRect().top;
-    return {arrow: glyph, line, arrowInNote: glyph - top, lineInNote: line - top};
+    return {arrow: glyph, line, arrowInNote: glyph - top, lineInNote: line - top, screenPixel: 1 / window.devicePixelRatio};
   }, {arrowSelector, contentSelector});
 }
 
 function assertLevel(measured, label) {
   assert.equal(measured.missing, undefined, `${label}: no arrow to measure: ${measured.missing}`);
-  assert.ok(Math.abs(measured.arrow - measured.line) < SAME_PIXEL,
+  // Within one screen pixel: on a 1x screen Firefox rounds the font's metrics to whole pixels,
+  // and with Linux's font the arrow lands a pixel off (agreed 2026-10-28; a 2x Mac is exact).
+  assert.equal(typeof measured.screenPixel, 'number', `${label}: the measurement gives the screen pixel`);
+  assert.ok(Math.abs(measured.arrow - measured.line) <= Math.max(SAME_PIXEL, measured.screenPixel),
     `${label}: the arrow's baseline (${measured.arrow}) is the first line's (${measured.line})`);
 }
 
@@ -300,7 +303,7 @@ async function foldArrowCases(browser, page, ids) {
       arrow.appendChild(arrowMarker);
       const glyph = arrowMarker.getBoundingClientRect().bottom;
       arrowMarker.remove();
-      return {arrow: glyph, line};
+      return {arrow: glyph, line, screenPixel: 1 / window.devicePixelRatio};
     }, {arrow: noteArrow(ids.empty), content: noteContent(ids.empty)});
     assertLevel(measured, 'empty');
   });

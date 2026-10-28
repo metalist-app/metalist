@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 
 import {runThenCleanUp} from './suite-outcome.mjs';
 import { waitForAppQuiet } from './browser-app-idle.mjs';
+import { COMMAND_KEY } from './browser-command-key.mjs';
 
 // Requests count as quiet after this long without one starting or ending.
 const REQUESTS_QUIET_MS = 300;
@@ -157,9 +158,9 @@ async function clickCardButton(page, label) {
 // does not turn ⌘Z into the editing command itself, so it is named.
 async function undo(page) {
   if (process.platform === 'darwin') {
-    await page.keyboard.down('Meta');
+    await page.keyboard.down(COMMAND_KEY);
     await page.keyboard.press('z', {commands: ['undo']});
-    await page.keyboard.up('Meta');
+    await page.keyboard.up(COMMAND_KEY);
   } else {
     await page.keyboard.down('Control');
     await page.keyboard.press('z');

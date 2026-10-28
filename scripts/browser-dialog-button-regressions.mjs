@@ -9,6 +9,8 @@ const FRAMES_TO_SETTLE = 3;
 const WIDE_WINDOW = {width: 1280, height: 900};
 // Under the 640 px breakpoint where action rows stack (main.css).
 const NARROW_WINDOW = {width: 420, height: 900};
+// Wider than the Mac's default sans-serif, as Linux's DejaVu Sans is.
+const WIDE_FONT = 'Verdana, "DejaVu Sans", sans-serif';
 const EDGE_PX = 1;
 // Escape presses that close whatever a failed case left open.
 const ESCAPES_AFTER_A_FAILURE = 3;
@@ -30,7 +32,7 @@ async function readRow(page, mainSelector) {
       .filter(button => button.getClientRects().length > 0)
       .map(button => {
         const box = button.getBoundingClientRect();
-        return {label: button.textContent.trim(), left: box.left, right: box.right, top: box.top,
+        return {label: button.textContent.trim(), left: box.left, right: box.right, top: box.top, bottom: box.bottom,
           isMain: button === main, className: button.className};
       });
     const style = getComputedStyle(row);
@@ -42,8 +44,13 @@ async function assertRow(page, {label, mainSelector, labels, mainClass, hasAlter
   const row = await readRow(page, mainSelector);
   const byPosition = [...row.buttons].sort((a, b) => a.left - b.left);
   assert.deepEqual(byPosition.map(button => button.label), labels, `${label}: buttons left to right`);
+  // One row: each button overlaps the first vertically. Buttons of different font metrics
+  // can sit a fraction of a pixel apart on one row (Firefox on Linux, 2026-10-28); a wrapped
+  // button sits a whole button lower and overlaps nothing.
+  const tops = byPosition.map(button => `${button.label}: ${button.top}-${button.bottom}`).join(', ');
   for (const button of byPosition) {
-    assert.equal(button.top, byPosition[0].top, `${label}: the buttons must share one row`);
+    assert.ok(button.top < byPosition[0].bottom && button.bottom > byPosition[0].top,
+      `${label}: the buttons must share one row (${tops})`);
   }
   const main = byPosition[byPosition.length - 1];
   assert.equal(main.isMain, true, `${label}: the main action must be rightmost`);
@@ -215,6 +222,23 @@ const CASES = [
   simpleCase({label: 'Reminders form', open: page => openPalette(page, 'openReminders', {search: ''}),
     mainSelector: '[data-reminder-save]', labels: ['Clear Form', 'Add Reminder'], mainClass: 'primary-btn',
     hasAlternative: true}),
+  // Linux's default font is wider than the Mac's; with it the Reminders form's main action
+  // wrapped onto a second row in CI (2026-10-28). A wide font here checks the same on a Mac.
+  ['Reminders form, wide font', async page => {
+    await openPalette(page, 'openReminders', {search: ''});
+    await page.waitForSelector('[data-reminder-save]', {visible: true});
+    await page.evaluate(font => {
+      const style = document.createElement('style');
+      style.id = 'dialog-button-wide-font';
+      style.textContent = `.reminder-form-actions button { font-family: ${font} !important; letter-spacing: 0.4px; }`;
+      document.head.append(style);
+    }, WIDE_FONT);
+    await settle(page);
+    await assertRow(page, {label: 'Reminders form, wide font', mainSelector: '[data-reminder-save]',
+      labels: ['Clear Form', 'Add Reminder'], mainClass: 'primary-btn', hasAlternative: true});
+    await page.evaluate(() => document.getElementById('dialog-button-wide-font').remove());
+    await closeWithEscape(page);
+  }],
   ['Tag manager', async page => {
     await openModal(page, '/static/js/modules/modals/ontology-modal.js', 'OntologyModal', 'open', null);
     await page.waitForFunction(() => document.activeElement?.id === 'ontology-search-input');

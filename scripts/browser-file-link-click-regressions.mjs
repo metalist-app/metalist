@@ -20,9 +20,15 @@ const DRAG_STEPS = 12;
 const DRAG_STEP_MS = 16;
 // Past the neighbor note's bottom edge, so the drop lands below it.
 const DROP_BELOW_PX = 6;
-const SHORT_NAME = 'pkms_multi_provider_ai_integration.md';
-// Long enough to wrap onto a second line in the note.
-const LONG_NAME = `${'a_very_long_attachment_name_that_keeps_going_'.repeat(6)}end.md`;
+// Short enough to leave room beside it in a floating window with any font: Linux's wider
+// fonts left 15 px after 'pkms_multi_provider_ai_integration.md' (2026-10-28).
+const SHORT_NAME = 'pkms_ai_notes.md';
+// The long name is a line and a half of this, measured in the note's own font, so it wraps
+// onto a second line that ends well short of the first with any font (a fixed name wrapped
+// differently on Linux).
+const LONG_NAME_UNIT = 'a_very_long_attachment_name_that_keeps_going_';
+const LONG_NAME_LINES = 1.5;
+const LONG_NAME_END = 'end.md';
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 async function idle(page) {
@@ -42,6 +48,22 @@ async function createNotes(page) {
 }
 
 // Attaches a Markdown file to the host the way a picked or dropped file is, then leaves edit mode.
+// A name a line and a half long in the host note, measured with the file link's own styles.
+async function longNameFor(page, hostId) {
+  const characters = await page.$eval(`.note[data-note-id="${hostId}"] > .note-content`, (content, unit) => {
+    const probe = document.createElement('span');
+    probe.className = 'note-file-reference-title';
+    probe.style.whiteSpace = 'nowrap';
+    probe.textContent = unit;
+    content.append(probe);
+    const unitWidth = probe.getBoundingClientRect().width;
+    probe.remove();
+    return {lineWidth: content.getBoundingClientRect().width, characterWidth: unitWidth / unit.length};
+  }, LONG_NAME_UNIT);
+  const count = Math.round(LONG_NAME_LINES * characters.lineWidth / characters.characterWidth);
+  return LONG_NAME_UNIT.repeat(Math.ceil(count / LONG_NAME_UNIT.length)).slice(0, count) + LONG_NAME_END;
+}
+
 async function attachFile(page, hostId, filename) {
   await page.click(`.note[data-note-id="${hostId}"] > .note-content`);
   await idle(page);
@@ -251,7 +273,7 @@ export async function checkFileLinkClicks(page) {
   await idle(page);
   await runThenCleanUp('file link clicks', async () => {
     await attachFile(page, short.hostId, SHORT_NAME);
-    await attachFile(page, long.hostId, LONG_NAME);
+    await attachFile(page, long.hostId, await longNameFor(page, long.hostId));
     const failures = await runCases(page, [
       ['expanded note', () => nameAndBadgeCases(page, short, 'expanded note')],
       ['wrapped name', () => wrappedNameCase(page, long)],

@@ -9434,11 +9434,14 @@ html[data-theme="dark"] body.loading::after {
     display: none !important;
 }
 
+/* The row spans the form, Clear Form at the left and the main action at the right, as in
+   every dialog. Starting it under the fields (152px in) left two buttons 255px, and with
+   Linux's wider fonts the main action wrapped onto a second row (2026-10-28). */
 .reminder-form-actions {
     display: flex;
     justify-content: flex-start;
     gap: 8px;
-    margin: 12px 0 0 152px;
+    margin: 12px 0 0;
 }
 
 .reminder-empty {
@@ -9465,10 +9468,6 @@ html[data-theme="dark"] body.loading::after {
         border-top: 1px solid var(--border-color, #333);
         padding-left: 0;
         padding-top: 14px;
-    }
-
-    .reminder-form-actions {
-        margin-left: 0;
     }
 
     .reminder-row {

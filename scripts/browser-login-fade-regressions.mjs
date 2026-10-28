@@ -108,8 +108,11 @@ function assertFade(samples) {
   assert.ok(fadeSamples.length > 0, 'the login screen never faded');
   // Until it has gone, the screen covers everything, floating buttons and cards too.
   assert.deepEqual([...new Set(shownSamples.map(sample => sample.zIndex))], [COVERING_Z_INDEX]);
-  // Opaque until the fade starts, with the progress bar visibly full when it does.
-  assert.deepEqual([...new Set(shownSamples.filter(sample => !sample.isLeaving).map(sample => sample.opacity))], [1]);
+  // Opaque until the fade starts, with the progress bar visibly full when it does. A fast
+  // machine can start the fade before a frame is sampled (Firefox in CI, 2026-10-28): then
+  // there is no frame before it to check.
+  const beforeFade = shownSamples.filter(sample => !sample.isLeaving).map(sample => sample.opacity);
+  assert.ok(beforeFade.every(opacity => opacity === 1), `the screen was not opaque before the fade: ${beforeFade}`);
   assert.equal(fadeSamples[0].barFill, 1, 'the progress bar was not full when the fade started');
   assert.ok(fadeSamples.every((sample, index) => index === 0 || sample.opacity <= fadeSamples[index - 1].opacity), 'the fade went back');
   const hidden = samples.find(sample => sample.isAppShown && !sample.isLoginShown);

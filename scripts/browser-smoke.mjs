@@ -90,6 +90,10 @@ import {assertLoginLogoGeometry} from './browser-validation/login-logo-geometry.
 // Requests count as quiet after this long without one starting or ending: after a
 // step, and longer before the document mouse-movement checks.
 const REQUESTS_QUIET_MS = 100;
+// How long the browser may take to start. Puppeteer's 30 s default ran out for Firefox on
+// GitHub's 4-core machines starting two browsers at once (CI, 2026-10-28); a slow start
+// is the machine, not MetaList.
+const BROWSER_LAUNCH_TIMEOUT_MS = 120_000;
 const BEFORE_MOUSE_CHECKS_QUIET_MS = 500;
 
 const directory = await mkdtemp(join(tmpdir(), 'metalist-browser-'));
@@ -141,7 +145,7 @@ try {
   const browserDriver = process.env.BROWSER_TEST_DRIVER_MODULE
     ? (await import(process.env.BROWSER_TEST_DRIVER_MODULE)).default : puppeteer;
   browser = await browserDriver.launch({headless:true, browser:browserName,
-    executablePath:installedBrowserExecutable(browserName, process.env)});
+    executablePath:installedBrowserExecutable(browserName, process.env), timeout:BROWSER_LAUNCH_TIMEOUT_MS});
   const page = await browser.newPage();
   await installRequestMonitor(page);
   page.on('console', message => browserDiagnostics.push(`${new Date().toISOString()} ${message.type()} ${message.text()}`));
@@ -389,11 +393,13 @@ try {
     await checkFloatingMessages(page);
     assert.deepEqual(errors, []);
     console.log(`PASS floating message regressions in ${await browser.version()}`);
-  } else if (process.env.BROWSER_TEST_SUITE === 'phone' && browserName === 'firefox' && process.platform === 'darwin') {
-    // Puppeteer cannot send touch input to Firefox on macOS (every tap fails), and the phone
-    // suite is taps. It runs in Chrome here, and in Firefox elsewhere (agreed 2026-10-27;
-    // docs/testing/harness.md). Said out loud, never passed quietly.
-    console.log(`SKIPPED phone regressions in ${await browser.version()} on macOS: Puppeteer cannot send touch input to Firefox here`);
+  } else if (process.env.BROWSER_TEST_SUITE === 'phone' && browserName === 'firefox') {
+    // Firefox cannot be made a phone: Puppeteer cannot send it touch input (on macOS every tap
+    // fails; on Linux it answers NS_ERROR_ILLEGAL_VALUE), and on Linux it keeps desktop
+    // scrollbars that take 15 px from the phone-width layout. The phone suite is taps on a
+    // phone layout, so it runs in Chrome only (agreed 2026-10-28; docs/testing/harness.md).
+    // Said out loud, never passed quietly.
+    console.log(`SKIPPED phone regressions in ${await browser.version()}: Firefox cannot emulate a phone (no touch input)`);
   } else if (process.env.BROWSER_TEST_SUITE === 'phone') {
     await checkPhone(browser, page, origin);
     assert.deepEqual(errors, []);

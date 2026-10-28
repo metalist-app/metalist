@@ -329,17 +329,34 @@ async function checkOpenVaultEnter(page) {
 }
 
 async function checkRemovePassword(page, password) {
+  // Setting a password ends every session, so the page is logged out, as when a person sets
+  // one: it logs in again before opening the dialog. Opened in the old page, the dialog went
+  // as soon as a background request found the session ended (Firefox in CI, 2026-10-28).
   await page.evaluate(async secret => {
     const {buildSessionHeaders} = await import('/static/js/modules/session-auth.js');
     const response = await fetch('/api2/auth/settings/password/create',
       {method: 'POST', headers: buildSessionHeaders(true), body: JSON.stringify({password: secret})});
     if (!response.ok) throw new Error(`Password setup failed: ${response.status}`);
+  }, password);
+  await page.reload();
+  await page.waitForSelector('#login-panel[data-revealed="true"] #login-password', {visible: true});
+  await page.type('#login-password', password);
+  await page.click('#login-form button[type="submit"]');
+  await page.waitForSelector('[data-app-ready="true"]');
+  await page.waitForFunction(() => getComputedStyle(document.getElementById('login-page')).display === 'none');
+  await settle(page);
+  await page.evaluate(async () => {
     const {RemovePasswordModal} = await import('/static/js/modules/modals/password-modal.js');
     void new RemovePasswordModal().open();
-  }, password);
+  });
   await page.waitForSelector('#current-password', {visible: true});
   await settle(page);
-  assert.equal(await focusedId(page), 'current-password', 'Remove Password: focus must start in the password field');
+  // What has focus instead, when it fails.
+  const focused = await page.evaluate(() => {
+    const active = document.activeElement;
+    return `${active.tagName}#${active.id}.${active.className} in ${active.closest('[id]')?.id}; dialog shown: ${document.getElementById('current-password') !== null}`;
+  });
+  assert.equal(await focusedId(page), 'current-password', `Remove Password: focus must start in the password field (focus: ${focused})`);
   await recordRequests(page, ['/password/remove']);
   await page.keyboard.type(password);
   await page.click('#confirm-remove');

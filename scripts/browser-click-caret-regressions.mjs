@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { waitForAppQuiet } from './browser-app-idle.mjs';
+import { COMMAND_KEY } from './browser-command-key.mjs';
 
 // The caret after a click (docs/ui/interaction-principles.md, "Click into a
 // note": the clicked spot stays under the pointer, caret there). One click
@@ -273,9 +274,9 @@ async function pastedNoteCase(page) {
     // from what is pasted.
     let options = {};
     if (key === 'v') options = {commands: ['paste']};
-    await page.keyboard.down('Meta');
+    await page.keyboard.down(COMMAND_KEY);
     await page.keyboard.press(key, options);
-    await page.keyboard.up('Meta');
+    await page.keyboard.up(COMMAND_KEY);
     await pause(SETTLE_MS);
     await idle(page);
   }
