@@ -7,8 +7,9 @@ import { waitForAppQuiet } from './browser-app-idle.mjs';
 // loudly. These cases type right after a note is clicked, both from no note
 // being edited and while another note is: every keystroke lands in the clicked
 // note, no input event reaches a note that is not being edited, and nothing
-// errors. (Keys pressed within about 20 ms of the click, faster than anyone
-// types, arrive before the note is editable and are not typed anywhere.)
+// errors. Keys typed while the clicked note is still opening are kept and typed
+// into it once it is editable, so none is lost on a slow machine or connection
+// (agreed 2026-10-28; before, they were dropped).
 
 const SETTLE_MS = 400;
 // Requests count as quiet after this long without one starting or ending.
@@ -17,6 +18,9 @@ const ROUNDS = 4;
 const TYPED = 'qz';
 // From the click to the first key: quicker than a person, slower than the 20 ms above.
 const CLICK_TO_TYPING_MS = 50;
+// A slow connection: every request takes this long, so the clicked note opens well after
+// the keys are typed (Chrome only; Puppeteer cannot slow Firefox's network).
+const SLOW_CONNECTION = {offline: false, download: 1_000_000, upload: 1_000_000, latency: 150};
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 async function idle(page) {
@@ -95,6 +99,26 @@ export async function checkInputTarget(page) {
       await page.keyboard.press('Escape');
       await idle(page);
     }
+    if ((await page.browser().version()).toLowerCase().startsWith('firefox')) {
+      console.log('SKIPPED input target on a slow connection in Firefox: Puppeteer cannot slow its network');
+      return;
+    }
+    // On a slow connection the keys arrive long before the note opens; they still land in it.
+    await page.emulateNetworkConditions(SLOW_CONNECTION);
+    try {
+      await clickAndType(page, ids[0]);
+      expected[0] += TYPED;
+      assert.deepEqual(await noteState(page, ids), {editing: ids[0], inputsOutsideTheEditedNote: 0, texts: expected},
+        'slow connection: typing at once lands in the clicked note');
+      await clickAndType(page, ids[1]);
+      expected[1] += TYPED;
+      assert.deepEqual(await noteState(page, ids), {editing: ids[1], inputsOutsideTheEditedNote: 0, texts: expected},
+        'slow connection: typing at once after switching lands in the newly clicked note');
+    } finally {
+      await page.emulateNetworkConditions(null);
+    }
+    await page.keyboard.press('Escape');
+    await idle(page);
   }, async () => {
     await page.evaluate(async ids => {
       const {NotesAPI} = await import('/static/js/modules/api-client.js');
