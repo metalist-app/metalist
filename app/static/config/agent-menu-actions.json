@@ -323,6 +323,12 @@
     "presentation": "palette"
   },
   {
+    "id": "pref.stats_style",
+    "label": "Stats Style",
+    "selector": "#command-palette-modal",
+    "presentation": "palette"
+  },
+  {
     "id": "action.remove_all_tag_suggestions_current_context",
     "label": "Reject All AI-Proposed Tags (Current Context)…",
     "selector": "#command-palette-modal",

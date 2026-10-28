@@ -11,6 +11,7 @@ from pathlib import Path
 
 from app.security.rendered_html import sanitize_exported_html
 from app.services.content_formatting import find_list_style
+from app.services.subtree_stats import STATS_STYLES
 from app.services.content_formatting import is_password_note
 from app.services.content_formatting import is_username_note
 from app.services.embedded_references import EmbedRenderContext
@@ -316,6 +317,7 @@ def build_notes_export_document(
     date_filter: RootDateFilter | None, file_filter: str | None,
     is_untagged_view: bool,
     theme: str,
+    stats_style: str,
     token: str,
     root_note_id: str | None,
     purpose: str,
@@ -341,6 +343,8 @@ def build_notes_export_document(
         raise TypeError("include_credentials must be a bool")
     if not isinstance(theme, str):
         raise TypeError("theme must be a string")
+    if stats_style not in STATS_STYLES:
+        raise ValueError(f"stats_style must be one of {sorted(STATS_STYLES)}, got {stats_style!r}")
     if not isinstance(token, str) or token == "":
         raise TypeError("token must be a non-empty string")
     if root_note_id is not None and (not isinstance(root_note_id, str) or root_note_id == ""):
@@ -376,7 +380,8 @@ def build_notes_export_document(
         script_source = f"'sha256-{base64.b64encode(hashlib.sha256(script_text.encode('utf-8')).digest()).decode('ascii')}'"
     lines = [
         "<!DOCTYPE html>",
-        f'<html lang="en" data-theme="{normalized_theme}">',
+        # The Stats Style the user chose (subtree_stats.py; main.css), as MetaList shows it.
+        f'<html lang="en" data-theme="{normalized_theme}" data-stats-style="{stats_style}">',
         "<head>",
         '  <meta charset="utf-8" />',
         # A download opens from disk, outside MetaList's own policy: the file sets its own.

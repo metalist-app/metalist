@@ -72,6 +72,7 @@ from app.services.tag_properties import PROPERTY_SUGGESTIONS_IN_SEARCH
 from app.services.tag_properties import PROPERTY_SUGGESTIONS_IN_TAG_BAR
 from app.services.tag_properties import PropertySuggestion
 from app.services.tag_properties import has_property_syntax
+from app.services.subtree_stats import STATS_STYLES, suggest_summary_properties, typed_summary_property
 from app.services.tag_properties import is_property_term
 from app.services.root_date_filter import RootDateFilter
 from app.services.root_date_filter import make_root_date_filter
@@ -867,6 +868,17 @@ def tag_suggestions(payload: TagSuggestionsRequest) -> Dict[str, object]:
 
     _require_note_present(note_id, context="notes.tag-suggestions")
 
+    # Typing a summary tag's property (@sum=cal): the property names used under the note.
+    typed_summary = typed_summary_property(prefix)
+    if typed_summary is not None:
+        return _property_suggestions_response(
+            suggest_summary_properties(
+                note_id=note_id, typed_tag=typed_summary[0], typed_property=typed_summary[1],
+                context=note_store, limit=MAX_TAG_SUGGESTIONS,
+            ),
+            personalized=False,
+        )
+
     # Typing after a tag's colon (jogging:mi, drug:dosage=10m): property names or units.
     if has_property_syntax(prefix):
         return _property_suggestions_response(
@@ -969,6 +981,10 @@ def export_notes_html(request: Request) -> Response:
     normalized_theme = theme.strip().lower()
     if normalized_theme not in {"dark", "light"}:
         raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail="theme must be 'light' or 'dark'")
+    # The totals look as MetaList shows them (Stats Style).
+    stats_style = _required_query_param(request, "stats_style")
+    if stats_style not in STATS_STYLES:
+        raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail="stats_style must be 'strip', 'tiles' or 'ledger'")
     # The view as the tab shows it: its sort order and kind (All or Untagged notes).
     tab_id = _required_query_param(request, "tab_id")
     if tab_id == "":
@@ -1002,6 +1018,7 @@ def export_notes_html(request: Request) -> Response:
         file_filter=_resolve_tab_file_filter(tab_id),
         is_untagged_view=is_untagged_view == "true",
         theme=normalized_theme,
+        stats_style=stats_style,
         token=token,
         root_note_id=note_id,
         purpose=purpose,

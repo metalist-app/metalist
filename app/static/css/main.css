@@ -10320,6 +10320,137 @@ body.ai-tagging-locked .ai-chat-tag-operation select:enabled { cursor: pointer !
     display: none;
 }
 
+/* Totals of a note's subtree (@stats, @sum=…; subtree_stats.py), right under the note's
+   own text and above its children. One markup takes the three Stats Styles, chosen in the
+   command palette and set on the page as data-stats-style (an export or print carries it
+   too): an accent strip (the default), number tiles, or a ledger. Hidden while the note is
+   folded, as footnote References are. */
+.meta-stats {
+    /* The light accent tint every style shows: information about the note, not a note. */
+    --stats-tint: color-mix(in srgb, var(--modal-accent) 9%, transparent);
+    margin-top: 2px;
+    color: var(--modal-heading-text);
+    font-size: 0.85em;
+    line-height: 1.45;
+    font-variant-numeric: tabular-nums;
+}
+
+/* Right under a paragraph, it takes back the paragraph's bottom margin (1em of the
+   paragraph's text, which is 1em / 0.85 of its own), leaving 4px. */
+.note-content > p + .meta-stats {
+    margin-top: calc(4px - 1em / 0.85);
+}
+
+.meta-stats-name,
+.meta-stats-value {
+    font-weight: 600;
+}
+
+.meta-stats-leader {
+    display: none;
+}
+
+.meta-stats-skipped {
+    font-size: 0.9em;
+    font-style: italic;
+}
+
+/* Strip: a light accent band with a bar on its left, the usual sign of information; each
+   group on one line, its figures separated by a dot. */
+:root:not([data-stats-style]) .meta-stats,
+:root[data-stats-style="strip"] .meta-stats {
+    padding: 4px 10px;
+    border-left: 3px solid var(--modal-accent);
+    border-radius: 0;
+    background: var(--stats-tint);
+}
+
+:root:not([data-stats-style]) .meta-stats-name,
+:root[data-stats-style="strip"] .meta-stats-name {
+    display: inline;
+    margin-right: 10px;
+}
+
+:root:not([data-stats-style]) .meta-stats-item,
+:root[data-stats-style="strip"] .meta-stats-item {
+    display: inline;
+}
+
+:root:not([data-stats-style]) .meta-stats-item + .meta-stats-item::before,
+:root[data-stats-style="strip"] .meta-stats-item + .meta-stats-item::before {
+    content: "·";
+    margin: 0 8px;
+    opacity: 0.6;
+}
+
+/* Tiles: each figure a big number over its label, side by side. */
+:root[data-stats-style="tiles"] .meta-stats {
+    display: grid;
+    gap: 6px;
+}
+
+:root[data-stats-style="tiles"] .meta-stats-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+:root[data-stats-style="tiles"] .meta-stats-name {
+    flex-basis: 100%;
+}
+
+:root[data-stats-style="tiles"] .meta-stats-item {
+    display: flex;
+    flex-direction: column-reverse;
+    min-width: 88px;
+    padding: 6px 12px;
+    border-radius: 8px;
+    background: var(--stats-tint);
+}
+
+:root[data-stats-style="tiles"] .meta-stats-value {
+    font-size: 1.45em;
+    font-weight: 500;
+    line-height: 1.2;
+}
+
+:root[data-stats-style="tiles"] .meta-stats-label {
+    text-transform: lowercase;
+}
+
+:root[data-stats-style="tiles"] .meta-stats-colon {
+    display: none;
+}
+
+/* Ledger: on the tint, under a dashed rule, dots lead from each label to its number. */
+:root[data-stats-style="ledger"] .meta-stats {
+    max-width: 300px;
+    padding: 5px 10px 6px;
+    border-top: 1px dashed color-mix(in srgb, var(--modal-accent) 45%, transparent);
+    background: var(--stats-tint);
+}
+
+:root[data-stats-style="ledger"] .meta-stats-item {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+}
+
+:root[data-stats-style="ledger"] .meta-stats-leader {
+    display: block;
+    flex: 1;
+    border-bottom: 1px dotted color-mix(in srgb, var(--modal-accent) 45%, transparent);
+    transform: translateY(-3px);
+}
+
+:root[data-stats-style="ledger"] .meta-stats-group + .meta-stats-group .meta-stats-name {
+    margin-top: 4px;
+}
+
+.note.collapsed:not(.editing) .note-content .meta-stats {
+    display: none;
+}
+
 /* A folded note in an embed is one line, as in the list, ending with … when too
    long. An embed held by its note is folded only while that note is: the note's
    arrow measures it unfolded (collapse-affordance-service.js). */

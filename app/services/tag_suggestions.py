@@ -219,6 +219,11 @@ def _build_cooccurrence_query_anchors(
     seen_casefold: set[str] = set()
 
     for tag in explicit_anchors:
+        # Built-in tags never anchor co-occurrence: the ranking (suggest_tag_completions)
+        # and its explanation (describe_tag_cooccurrence) both leave them out, so a note
+        # whose only tags are built in has no "goes with" suggestions.
+        if tag.startswith("@"):
+            continue
         tag_casefold = tag.casefold()
         if tag_casefold in seen_casefold:
             continue

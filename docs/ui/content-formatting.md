@@ -1,6 +1,6 @@
 # Note Content Formatting (Meta Tags)
 
-Agreed, not built (2026-10-27): `@stats` and `@sum=` / `@avg=` / `@min=` / `@max=` / `@count=`, totals of a note's subtree shown under its text like the footnote References (`docs/ready-to-build/stats-tag.md`); a live preview of LaTeX, CSV, Mermaid and references while editing (`docs/ready-to-build/smart-previews.md`); user-named styles, `@style=name` (future plan, `docs/future-plans/user-styles.md`).
+Agreed, not built (2026-10-27): a live preview of LaTeX, CSV, Mermaid and references while editing (`docs/ready-to-build/smart-previews.md`); user-named styles, `@style=name` (future plan, `docs/future-plans/user-styles.md`).
 
 ## Overview
 - Note content is stored as HTML (`notes.content`).
@@ -195,6 +195,17 @@ Other (non-meta) tags may also appear inside wrapper tokens (e.g. `{{foo bar}}`)
 - `@code=<language>`: shows the note content as source code with syntax highlighting in view mode, for example `@code=python`, `@code=javascript`, `@code=sql`. One tag for every language: any name or alias the server's highlighter (Pygments) knows works (`py`, `js`, `c++`, `c#`...), case-insensitively. The language name is shown above the code.
 - An unknown language (`@code=pyhton`) shows the code plainly with an "Unknown language" badge.
 - Scoped wrappers (e.g. `((@code=sql))`) highlight only the wrapped region.
+
+## Stats of a subtree
+Built 2026-10-27 (`app/services/subtree_stats.py`; design: `docs/design/tag-properties.md`, Later).
+- `@stats` shows, right under the note's own text and above its children, the numeric super tag values of the note and every note under it: for each property its Total, Min, Max and Count (the notes holding it).
+- `@sum`, `@avg`, `@min`, `@max` and `@count` each show one figure: `@sum=calories` gives `Total calories: 1,605`; `@avg=` `Average calories`, `@min=` `Min`, `@max=` `Max`, `@count=` `Notes with calories`. Without a property (`@sum`) a tag covers every number property under the note. Several show in the order written; with `@stats` on the same note, a figure it already shows is left out (`@avg` is not one of them). The tag names are the spreadsheet functions; the labels are plain words.
+- Each value counts once, on the note that writes it: the note's own values and its descendants', never inherited ones, and not those of notes it links to or embeds. Both `burger:calories=450` and a value on the tag itself, `calories=700`, count as `calories`.
+- A note's values for a property are added up first, so Min and Max are the lightest and heaviest note (a meal), not its smallest ingredient; Average is over notes.
+- Units are kept apart and never converted (`Total fat: 15g, 500mg`). Values that are not numbers (`snack:calories=lots`, dates, times) are left out and `@stats` says how many. A negative value lowers a total. A named property no note has shows a dash (`Total calroies: —`), so a typo shows.
+- Live: an edit to any note under it shows at once. Hidden while the note is folded, as footnote References are; shown in exports and prints too.
+- **Stats Style** (command palette; `Strip` by default, `Tiles`, `Ledger`), each on a light accent tint so it reads as information about the note, not as an embedded note: a strip with an accent bar on its left, its figures on one line; tiles, a big number over its label; a ledger, dots leading from each label to its number. The page carries the choice as `data-stats-style`, and an HTML export or print carries it too.
+- The tag bar keeps these tags; after `@sum=` (and the others) it suggests the property names used in the note and under it, the most used first.
 
 ## Mermaid meta tags
 - `@mermaid`: the note content is one Mermaid diagram (no Markdown fence needed), drawn in view mode like a fenced `mermaid` block under `@markdown`, in its own block. Until it is drawn, and when it is invalid (with an `Invalid Mermaid diagram` badge), the source shows as a code block.

@@ -85,6 +85,18 @@ def test_a_tag_that_goes_with_the_notes_tags(monkeypatch: pytest.MonkeyPatch) ->
     assert reasons["pandas"] == ('On 4 notes together with "python"', "You've tagged 5 notes with it")
 
 
+def test_a_note_whose_only_tags_are_built_in_gets_suggestions(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Built-in tags (@code=python, @stats) never anchor "goes with" suggestions: neither
+    # the ranking nor its explanation counts them. Before 2026-10-27 the ranking fell back
+    # to every tag as if each went with them, and explaining them failed an assertion.
+    rows = [("diet", "@stats"), ("meal-1", "meal"), ("meal-2", "meal pasta")]
+    _use(monkeypatch, rows=rows, ontology=_EmptyOntology())
+    reasons = _reasons(prefix="", anchors=["@code=python"], content="Day three")
+    assert all("together with" not in line for lines in reasons.values() for line in lines)
+    reasons = _reasons(prefix="", anchors=["@stats", "@sum=calories"], content="Day three")
+    assert all("together with" not in line for lines in reasons.values() for line in lines)
+
+
 def test_a_tag_that_goes_with_several_of_the_notes_tags(monkeypatch: pytest.MonkeyPatch) -> None:
     rows = [("a", "travel japan kyoto"), ("b", "travel japan kyoto"), ("c", "travel kyoto")]
     _use(monkeypatch, rows=rows, ontology=_EmptyOntology())

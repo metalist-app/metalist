@@ -49,7 +49,11 @@ const KNOWN_META_TAGS = new Set([
     '@highlighter', '@bold', '@italic', '@strikethrough', '@serif', '@copyable',
     '@list-bulleted', '@list-numbered', '@username', '@password', '@email',
     '@todo', '@done', '@markdown', '@llm', '@latex', '@shell', '@json', '@csv', '@chess', '@diff', '@mermaid',
+    '@stats',
 ]);
+// @sum=, @avg=, @min=, @max=, @count= and a property name (app/services/subtree_stats.py);
+// bare (`@sum`: every number property) or with = while being typed.
+const SUMMARY_TAG_RE = /^@(?:sum|avg|min|max|count)(?:=(?:[a-z][^\s=:]*)?)?$/;
 
 function isSupportedMetaTag(term) {
     if (typeof term !== 'string') {
@@ -63,6 +67,9 @@ function isSupportedMetaTag(term) {
         return true;
     }
     if (CODE_RENDERER_TAG_RE.test(folded)) {
+        return true;
+    }
+    if (SUMMARY_TAG_RE.test(folded)) {
         return true;
     }
     return /^@size=(?:\d+(?:\.\d*)?|\.\d+)$/.test(folded)

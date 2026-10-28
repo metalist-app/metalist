@@ -70,7 +70,7 @@ Written without running the code. Every reference below came from reading it and
 - Confirmed: `docs/design/tag-properties.md`, "Later", lists totals and averages beside the result count; `=MAX` / `=MIN` find notes (`docs/ui/search-semantics.md`).
 - Not built: no summary view option and no `@datetime` tag.
 - Users already have a `date` valued tag in the docs' search examples (`date>=2024-01`, `docs/ui/search-semantics.md`), so the system's tag being `@datetime` keeps them apart, as §3 says.
-- Shares its calculation with `@stats` (`docs/ready-to-build/stats-tag.md`).
+- Shares its calculation with `@stats`, built 2026-10-27: `app/services/subtree_stats.py` adds up a set of notes' own values per property (per note first, units kept apart); reuse it for the notes a search finds (`docs/ui/content-formatting.md`, Stats of a subtree).
 - **Named `@datetime`, not `@date`** (maintainer, 2026-10-27): it records a date and a time; a date alone stays valid (§3).
 - **A note that links to or embeds another never takes that note's `@datetime`** (maintainer, 2026-10-27): dates inherit down from parents only.
 - **Sort by Created keeps meaning when a note was typed** (maintainer, 2026-10-27), so sorting by Created still shows recent additions (`docs/ready-to-build/phone-same-app.md`, §3, relies on it). `@datetime` overrides the date for date-range filters and charts only. A separate Sort by Date, by `@datetime`, can come later if wanted.

@@ -54,4 +54,4 @@ Modeled on the existing Excalidraw diagrams (`docs/ui/excalidraw.md`), not on a 
 ## 7. Checked 2026-10-27 (filed from the inbox)
 
 - Filed as a future plan, as its status asks. Confirmed: diagrams are embedded Excalidraw files opened full screen (`docs/ui/excalidraw.md`), the model this follows.
-- Builds on `docs/ready-to-build/super-tag-summaries-and-date.md` (summaries, `@datetime`) and `docs/ready-to-build/stats-tag.md`.
+- Builds on `docs/ready-to-build/super-tag-summaries-and-date.md` (summaries, `@datetime`) and `@stats` (built 2026-10-27; `docs/ui/content-formatting.md`, Stats of a subtree).
