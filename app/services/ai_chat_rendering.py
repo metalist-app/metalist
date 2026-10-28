@@ -13,6 +13,7 @@ from app.services.embedded_references import render_compact_note_reference_link
 from app.services.markdown_rendering import render_markdown_to_html
 from app.services.note_store import NoteStore
 from app.services.agent.web_evidence import WebCitationReference
+from app.services.search_index import search_index
 
 
 _UUID_DASH_CHARACTERS = "-‐‑‒–—−"
@@ -106,6 +107,7 @@ def render_ai_chat_markdown_to_html(
         get_children=lambda _parent_id: [],
         has_file=lambda _file_id: False,
         get_file=_reject_file_reference,
+        is_property_used=search_index.is_property_name_used,
         static_collapse_arrows=False,
     )
     body_html, cited_note_ids = _replace_note_citations(

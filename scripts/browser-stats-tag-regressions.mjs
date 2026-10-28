@@ -7,8 +7,11 @@ import { clickAndSelectAll } from './browser-select-field.mjs';
 // subtree; agreed 2026-10-27): the stats sit right under the note's own text and above its
 // children, follow an edit to a note under it at once, go while the note is folded, and take
 // the Stats Style chosen in the command palette (a strip, tiles or a ledger, each on a light
-// accent tint). After `@sum=`, the tag bar suggests the properties used under the note. The
-// numbers themselves are checked by tests/unit/test_subtree_stats.py.
+// accent tint). After `@sum=`, the tag bar suggests the properties used under the note. With
+// nothing under a note, `@sum` reads 0 and `@avg` a dash; `@sum:calories>2000` in the search
+// box finds the days over 2000 with their meals, after `@sum:` suggesting calories (agreed
+// 2026-10-28, docs/ui/search-semantics.md, Stats Figures). The numbers themselves are
+// checked by tests/unit/test_subtree_stats.py and tests/unit/test_stats_search.py.
 
 const WINDOW = {width: 1100, height: 760};
 const REQUESTS_QUIET_MS = 300;
@@ -49,6 +52,21 @@ async function seedNotes(page) {
       await NotesAPI.saveNote(note.id, `<p>${text}</p>`, tags);
       ids[key] = note.id;
       previous = note.id;
+    }
+    // Days of a food log, each a root note: one over 2000 calories, one under, one empty.
+    for (const [key, text, tags, mealTags] of [
+      ['bigDay', 'Big day', '@sum=calories', 'meal:calories=2400'],
+      ['smallDay', 'Small day', '@sum=calories', 'meal:calories=300'],
+      ['emptyDay', 'Empty day', '@sum=calories @avg=calories', null],
+    ]) {
+      const day = await NotesAPI.createSibling(diet.id, '');
+      await NotesAPI.saveNote(day.id, `<p>${text}</p>`, tags);
+      ids[key] = day.id;
+      if (mealTags !== null) {
+        const meal = await NotesAPI.createChild(day.id, '');
+        await NotesAPI.saveNote(meal.id, '<p>Meal</p>', mealTags);
+        ids[`${key}Meal`] = meal.id;
+      }
     }
     return ids;
   });
@@ -161,6 +179,49 @@ async function styleCases(page, ids) {
   });
 }
 
+// A note's single figures as shown: "Total calories: 0" and so on.
+function figures(page, noteId) {
+  return page.evaluate(noteId => [...document.querySelectorAll(
+    `.note[data-note-id="${noteId}"] > .note-content > .meta-stats .meta-stats-item`,
+  )].map(item => item.textContent.replace(/\s+/g, ' ').trim()), noteId);
+}
+
+async function emptyFiguresCase(page, ids) {
+  // Calories are logged on other days, so an empty day's total is 0, its average a dash.
+  assert.deepEqual(await figures(page, ids.emptyDay), ['Total calories: 0', 'Average calories: —']);
+}
+
+async function search(page, text) {
+  await clickAndSelectAll(page, '#search-input');
+  await page.keyboard.press('Backspace');
+  await page.keyboard.type(text);
+  await idle(page);
+}
+
+// The root notes the search shows, by their first line, and whether each note is greyed.
+function searchResult(page, ids) {
+  return page.evaluate(ids => {
+    const shown = [...document.querySelectorAll('#notes-container > .note, #notes-container [data-note-id]')]
+      .filter(note => !note.parentElement.closest('[data-note-id]') && !note.classList.contains('search-redacted'))
+      .map(note => note.querySelector(':scope > .note-content > p').textContent);
+    const meal = document.querySelector(`.note[data-note-id="${ids.bigDayMeal}"]`);
+    return {roots: [...new Set(shown)].sort(), mealIsShown: meal !== null && !meal.classList.contains('search-redacted')};
+  }, ids);
+}
+
+async function statsSearchCase(page, ids) {
+  await search(page, '@sum:');
+  await page.waitForFunction(() => [...document.querySelectorAll('.search-suggestion')].some(item => item.offsetParent !== null));
+  const labels = await page.$$eval('.search-suggestion', items => items.filter(item => item.offsetParent !== null).map(item => item.textContent.trim()));
+  assert.equal(labels[0], 'calories', `after @sum: the box suggests calories: ${labels}`);
+  await page.keyboard.type('calories>2000');
+  await page.keyboard.press('Escape');
+  await idle(page);
+  assert.deepEqual(await searchResult(page, ids), {roots: ['Big day'], mealIsShown: true},
+    'the day over 2000 calories, with the meal under it');
+  await search(page, '');
+}
+
 async function foldedCase(page, ids) {
   await page.evaluate(async id => {
     const {NotesAPI} = await import('/static/js/modules/api-client.js');
@@ -172,7 +233,7 @@ async function foldedCase(page, ids) {
 
 async function statsCases(page, ids) {
   const failures = [];
-  for (const run of [placeAndLiveCases, suggestionCase, styleCases, foldedCase]) {
+  for (const run of [placeAndLiveCases, suggestionCase, styleCases, emptyFiguresCase, statsSearchCase, foldedCase]) {
     // A suite runs every case and reports all their failures at once.
     try {
       await run(page, ids);
@@ -196,7 +257,7 @@ export async function checkStatsTags(page) {
       const {CommandPalette} = await import('/static/js/modules/command-palette/command-palette-controller.js');
       if (document.documentElement.dataset.statsStyle !== initialStyle) await CommandPalette.applyPreference('pref.stats_style', initialStyle);
       const {NotesAPI} = await import('/static/js/modules/api-client.js');
-      await NotesAPI.deleteNote(ids.diet);
+      for (const key of ['diet', 'bigDay', 'smallDay', 'emptyDay']) await NotesAPI.deleteNote(ids[key]);
     }, {ids, initialStyle});
   });
 }

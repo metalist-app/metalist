@@ -134,6 +134,7 @@ class _LiveWorld:
         self.notes: dict[str, NoteRecord] = {}
         self.children: dict[str | None, list[str]] = {}
         self.files: dict[str, object] = {}
+        self.used_properties: set[str] = set()
 
     def context(self) -> EmbedRenderContext:
         def get_children(parent_id: str | None) -> list[str]:
@@ -147,6 +148,7 @@ class _LiveWorld:
             get_children=get_children,
             has_file=lambda file_id: file_id in self.files,
             get_file=lambda file_id: self.files[file_id],
+            is_property_used=lambda property_name: property_name in self.used_properties,
             static_collapse_arrows=False,
         )
 
@@ -239,6 +241,28 @@ def test_render_cache_revalidates_every_referenced_note_and_file(monkeypatch: py
     assert len(renders) == 6
     render()
     assert len(renders) == 6
+    snapshot_module._VIEW_RENDER_MEMO.clear()
+
+
+def test_render_cache_rerenders_when_a_stats_property_comes_into_use(monkeypatch: pytest.MonkeyPatch) -> None:
+    # `@sum=calories` reads a dash while calories is used nowhere, then 0 once some note
+    # elsewhere logs calories: the cached render must follow (subtree_stats.py).
+    renders: list[str] = []
+
+    def fake_render(*, rec, is_collapsed, has_backlinks, context):
+        rendered = f"calories used: {context.is_property_used('calories')}"
+        renders.append(rendered)
+        return rendered
+
+    _prepare_render_cache(monkeypatch, fake_render)
+    world = _LiveWorld()
+    day = _record("day", "<div>Monday</div>")
+    assert _render_cached(day, world, collapsed=False, backlinks=False) == "calories used: False"
+    assert _render_cached(day, world, collapsed=False, backlinks=False) == "calories used: False"
+    assert len(renders) == 1
+    world.used_properties.add("calories")
+    assert _render_cached(day, world, collapsed=False, backlinks=False) == "calories used: True"
+    assert len(renders) == 2
     snapshot_module._VIEW_RENDER_MEMO.clear()
 
 

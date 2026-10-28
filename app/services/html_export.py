@@ -31,6 +31,7 @@ from app.services.root_date_filter import RootDateFilter
 from app.services.snapshot import is_content_collapsible
 from app.services.snapshot import resolve_view_scope_membership
 from app.services.content_formatting import extract_note_text_for_agent
+from app.services.search_index import search_index
 
 
 _VALID_EXPORT_THEMES = frozenset({"dark", "light"})
@@ -609,6 +610,7 @@ def _render_exported_notes_markup(
         get_children=note_store.get_children,
         has_file=file_registry.has_file,
         get_file=_get_file_record,
+        is_property_used=search_index.is_property_name_used,
         static_collapse_arrows=collapsible,
     )
 

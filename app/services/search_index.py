@@ -3,7 +3,9 @@ from __future__ import annotations
 from collections import Counter
 import dataclasses
 from dataclasses import dataclass
+from decimal import Decimal
 from itertools import combinations
+import re
 from threading import RLock
 import time
 from typing import Callable, Dict, FrozenSet, Iterable, List, Mapping, Optional, Set, Tuple, TypeVar
@@ -25,6 +27,7 @@ from app.services.tag_properties import (
     MIN_KEYWORD,
     EXTREME_KEYWORDS,
     VALUE_KIND_ORDER,
+    VALUE_NUMBER,
     PropertyCompletion,
     PropertySuggestion,
     read_property_completion,
@@ -33,6 +36,7 @@ from app.services.tag_properties import (
     PropertyValue,
     condition_holds,
     is_property_term,
+    is_stats_term,
     property_term_tag,
     tag_part_of_token,
     token_properties,
@@ -182,6 +186,32 @@ def _carries_tag_family(tag_terms_casefold: FrozenSet[str], tag_casefold: str) -
 _PostingKey = TypeVar("_PostingKey")
 # What MAX and MIN keep of a property's values.
 _EXTREME_PICKS = {MAX_KEYWORD: max, MIN_KEYWORD: min}
+_EXTREME_WORDS = {MAX_KEYWORD: "largest", MIN_KEYWORD: "smallest"}
+# A stats term being typed in a search: @sum:ca, or @sum:calories=MA for MAX and MIN.
+_TYPED_STATS_TERM_RE = re.compile(
+    r"(?P<tag>@(?:sum|avg|min|max|count)):(?P<name>[A-Za-z][^:=<>?]*|)(?:(?P<assignment>=)(?P<partial>[A-Z]*))?",
+    re.IGNORECASE,
+)
+# The figure a note's stats tag shows for a term (subtree_stats.stats_figure_values): its
+# numbers per unit, () for a dash, None when the note shows no such figure. It walks the
+# note's subtree in the note store, so the index calls it outside its own lock.
+StatsFigureReader = Callable[[str, PropertyCondition], Optional[Tuple[PropertyValue, ...]]]
+
+
+def _note_noun(count: int) -> str:
+    if count == 1:
+        return "note"
+    return "notes"
+
+
+def _figure_meets(figure: Optional[Tuple[PropertyValue, ...]], condition: PropertyCondition) -> bool:
+    """Whether a stats figure meets a term: shown at all (`@sum:calories`), or a number of it
+    compares (`@sum:calories>2000`; a unit in the term must match). A dash never compares."""
+    if figure is None:
+        return False
+    if condition.operator == PRESENT_OPERATOR:
+        return True
+    return any(value_satisfies(value, condition) for value in figure)
 
 
 def _posting_or_empty(postings: Mapping[_PostingKey, Set[int]], key: _PostingKey) -> Set[int]:
@@ -260,14 +290,15 @@ def _parse_search_suggestion_context(raw_input: str) -> _SearchSuggestionContext
 
         is_partial = index >= length and not raw_input[-1].isspace()
         if is_partial:
-            # Typing a property term (jogging:mi, date>2) suggests no tags.
-            if is_property_term(token):
+            # Typing a property term (jogging:mi, date>2, @sum:ca) suggests no tags.
+            if is_property_term(token) or is_stats_term(token):
                 return _SearchSuggestionContext(tuple(anchors), None, '', False)
             return _SearchSuggestionContext(
                 tuple(anchors), token, raw_input[clause_start:term_start], prefix == '-',
             )
 
-        if prefix == "-":
+        if prefix == "-" or is_stats_term(token):
+            # A stats term (@sum:calories>2000) anchors nothing: its tag is a meta tag.
             clause_term_count += 1
             continue
         # A property term anchors suggestions by its tag: jogging:miles>2 is jogging.
@@ -409,6 +440,8 @@ class SearchIndex:
     def __init__(self) -> None:
         self._lock = RLock()
         self._revision = 0
+        # Attached by the note store once it has loaded (attach_stats_reader).
+        self._stats_reader: StatsFigureReader | None = None
 
         self._uuid_to_id: Dict[str, int] = {}
         self._id_to_uuid: List[str] = []
@@ -813,7 +846,8 @@ class SearchIndex:
         with self._lock:
             has_completed_clause = context.completed_clause.strip() != ""
             if has_completed_clause:
-                clause = parse_search_query(context.completed_clause).first_clause
+                # Suggestions read the clause without its stats terms (no subtree walks here).
+                clause = parse_search_query(context.completed_clause).first_clause.without_stats_terms()
                 matching_ids = self._matching_note_int_ids_for_clause_locked(clause)
             else:
                 matching_ids = self._alive
@@ -1052,7 +1086,8 @@ class SearchIndex:
             if context.completed_clause.strip() == '':
                 matching_ids = self._alive
             else:
-                clause = parse_search_query(context.completed_clause).first_clause
+                # Suggestions read the clause without its stats terms (no subtree walks here).
+                clause = parse_search_query(context.completed_clause).first_clause.without_stats_terms()
                 matching_ids = self._matching_note_int_ids_for_clause_locked(clause)
             if not matching_ids:
                 return []
@@ -1128,6 +1163,9 @@ class SearchIndex:
         required_text_count = sum(len(clause.required_text) for clause in parsed.clauses)
         forbidden_text_count = sum(len(clause.forbidden_text) for clause in parsed.clauses)
 
+        if any(clause.has_stats_terms for clause in parsed.clauses):
+            # A stats figure is read from each note's subtree, outside the lock.
+            return {note_id for clause in parsed.clauses for note_id in self.query_clause_note_ids(clause)}
         if any(clause.has_extreme_terms for clause in parsed.clauses):
             # MAX and MIN are decided per clause, across the notes it finds.
             with self._lock:
@@ -1210,9 +1248,19 @@ class SearchIndex:
         ).info("search.query.finish")
         return matched_note_ids
 
+    def attach_stats_reader(self, reader: StatsFigureReader) -> None:
+        """What answers stats terms (@sum:calories>2000): the note store's tree, which this
+        index does not hold."""
+        if not callable(reader):
+            raise TypeError("the stats reader must be callable")
+        with self._lock:
+            self._stats_reader = reader
+
     def query_clause_note_ids(self, clause: SearchClause) -> Set[str]:
         if not isinstance(clause, SearchClause):
             raise TypeError(f"clause must be SearchClause, got {type(clause)}")
+        if clause.has_stats_terms:
+            return self._stats_clause_note_ids(clause)
         with self._lock:
             return {
                 self._id_to_uuid[note_int_id]
@@ -1377,6 +1425,23 @@ class SearchIndex:
         elif note_int_id in self._note_properties:
             del self._note_properties[note_int_id]
 
+    def is_property_name_used(self, property_casefold: str) -> bool:
+        """Whether some note gives the property a value, a number or not: on any tag
+        (`burger:calories=450`) or on the tag itself (`calories=700`). A stats figure for a
+        property used nowhere shows a dash, so a typo shows (docs/ui/content-formatting.md,
+        Stats of a subtree)."""
+        if not isinstance(property_casefold, str) or property_casefold == "" or property_casefold != property_casefold.casefold():
+            raise ValueError("is_property_name_used requires a casefolded property name")
+        with self._lock:
+            for (tag_name, property_name), notes in self._property_notes.items():
+                if not notes:
+                    continue
+                if property_name == property_casefold:
+                    return True
+                if property_name == IMPLICIT_PROPERTY and tag_name == property_casefold:
+                    return True
+        return False
+
     def notes_with_own_values(self, tag_casefold: str) -> List[str]:
         """The live notes whose own tag line gives the tag at least one value (never an
         inherited value, never one inside a scope): where the tag bar's last-used values
@@ -1423,6 +1488,74 @@ class SearchIndex:
                 if key not in by_tag:
                     by_tag[key] = set()
                 by_tag[key].update(other.casefold() for other in related)
+
+    def suggest_stats_completions(self, *, typed: str, limit: int) -> List[PropertySuggestion]:
+        """In a search, after `@sum:`: the properties notes carry the tag for (`@sum=calories`),
+        on the most notes first, since only those notes are searched; after
+        `@sum:calories=`, MAX and MIN (docs/ui/search-semantics.md, Stats figures)."""
+        match = _TYPED_STATS_TERM_RE.fullmatch(typed)
+        if match is None:
+            return []
+        tag = match.group("tag").casefold()
+        name = match.group("name")
+        if match.group("assignment") is not None:
+            partial = match.group("partial")
+            return [
+                PropertySuggestion(
+                    replacement=f"{typed[: match.start('partial')]}{keyword}", label=keyword,
+                    reasons=(f"The {_EXTREME_WORDS[keyword]} {tag} of {name} among the notes the rest of the search finds",),
+                    note_count=0,
+                )
+                for keyword in EXTREME_KEYWORDS if keyword.startswith(partial)
+            ]
+        completion = PropertyCompletion(
+            tag=tag, property_name=None, partial=name, before=typed[: match.start("name")], number="",
+            excluded_names=frozenset(), name_suffix="", offers_extremes=False,
+        )
+        prefix = tag_family_prefix(tag)
+        assert prefix is not None, "a stats tag carries no value of its own"
+        with self._lock:
+            members = []
+            if tag in self._tag_family_members:
+                members = self._tag_family_members[tag]
+            counts = {
+                term: len(self._tag_notes_casefold[term]) for term in members
+                if self._tag_notes_casefold[term] and _completes(term[len(prefix):], name, frozenset())
+            }
+        ranked = sorted(counts, key=lambda term: (-counts[term], term))[:limit]
+        suggestions = [completion.suggestion(term[len(prefix):], {term: counts[term]}) for term in ranked]
+        # Then every property with numbers in the vault: a bare @sum shows them all, and a
+        # note gets `@sum=calories` only after its first search (reported 2026-10-28).
+        offered = {suggestion.label for suggestion in suggestions}
+        for property_name, note_count in self._number_property_note_counts(name):
+            if len(suggestions) >= limit:
+                break
+            if property_name in offered:
+                continue
+            suggestions.append(PropertySuggestion(
+                replacement=f"{completion.before}{property_name}", label=property_name,
+                reasons=(f"Numbers on {note_count} {_note_noun(note_count)}",), note_count=note_count,
+            ))
+        return suggestions
+
+    def _number_property_note_counts(self, partial: str) -> List[Tuple[str, int]]:
+        """The properties some note gives a number, by how many notes do, most first. A value
+        on the tag itself (`calories=700`) is that property, as the stats count it."""
+        notes_by_name: Dict[str, Set[int]] = {}
+        with self._lock:
+            for (tag_name, property_name), notes in self._property_notes.items():
+                name = property_name
+                if property_name == IMPLICIT_PROPERTY:
+                    name = tag_name
+                if not _completes(name, partial, frozenset()):
+                    continue
+                for note_int_id in notes:
+                    if self._note_properties[note_int_id][(tag_name, property_name)].kind != VALUE_NUMBER:
+                        continue
+                    if name not in notes_by_name:
+                        notes_by_name[name] = set()
+                    notes_by_name[name].add(note_int_id)
+        return sorted(((name, len(notes)) for name, notes in notes_by_name.items()), key=lambda item: (-item[1], item[0]))
 
     def suggest_property_completions(self, *, typed: str, place: str, limit: int) -> List[PropertySuggestion]:
         """Property names after a tag's colon, and units after a value's number
@@ -1587,6 +1720,56 @@ class SearchIndex:
         }
         extreme = pick(best_by_note.values())
         return {note_int_id for note_int_id, best in best_by_note.items() if best == extreme}
+
+    def _stats_clause_note_ids(self, clause: SearchClause) -> Set[str]:
+        """A clause with stats terms (docs/ui/search-semantics.md, Stats figures): the index
+        finds the notes the rest of it holds for, among those carrying each required stats
+        tag; each stats term then compares the figure the note shows. MAX and MIN come last,
+        in the order written, among the notes everything else finds."""
+        reader = self._stats_reader
+        if reader is None:
+            raise RuntimeError("Stats terms need the note store's reader (attach_stats_reader)")
+        rest = clause.without_stats_terms()
+        with self._lock:
+            candidates = self._candidate_note_ids_locked(rest)
+            for condition in clause.required_properties:
+                if condition.is_stats:
+                    candidates &= self._tag_family_posting_locked(condition.key[0])
+            matched = {
+                self._id_to_uuid[note_int_id] for note_int_id in candidates
+                if note_int_id in self._alive and self._verify_note_matches_locked(note_int_id, rest)
+            }
+        for condition in clause.required_properties:
+            if condition.is_stats and not condition.is_extreme:
+                matched = {note_id for note_id in matched if _figure_meets(reader(note_id, condition), condition)}
+        for condition in clause.forbidden_properties:
+            if condition.is_stats and not condition.is_extreme:
+                matched = {note_id for note_id in matched if not _figure_meets(reader(note_id, condition), condition)}
+        for condition in clause.required_properties:
+            if condition.is_extreme:
+                matched = self._extreme_note_ids(matched, condition, reader)
+        for condition in clause.forbidden_properties:
+            if condition.is_extreme:
+                matched -= self._extreme_note_ids(matched, condition, reader)
+        return matched
+
+    def _extreme_note_ids(self, note_ids: Set[str], condition: PropertyCondition, reader: StatsFigureReader) -> Set[str]:
+        """Of these notes, those with the largest (MAX) or smallest (MIN) value or figure."""
+        if not condition.is_stats:
+            with self._lock:
+                note_int_ids = {self._uuid_to_id[note_id] for note_id in note_ids}
+                return {self._id_to_uuid[note_int_id] for note_int_id in self._extreme_notes_locked(note_int_ids, condition)}
+        pick = _EXTREME_PICKS[condition.value_text]
+        best_by_note: Dict[str, Decimal] = {}
+        for note_id in note_ids:
+            figure = reader(note_id, condition)
+            # A dash has no number to compare; units are labels, as for values.
+            if figure:
+                best_by_note[note_id] = pick(value.sort_key for value in figure)
+        if not best_by_note:
+            return set()
+        extreme = pick(best_by_note.values())
+        return {note_id for note_id, best in best_by_note.items() if best == extreme}
 
     def _set_note_text_locked(self, note_int_id: int, content_text: str, tags: str) -> None:
         base_text_casefold = build_searchable_base_text_casefold(content_text, tags)

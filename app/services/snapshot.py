@@ -207,6 +207,11 @@ def _resolve_clause_note_sets(
         positively_matched_note_ids = set(note_store.list_note_ids())
 
     positively_matched_note_ids.update(direct_uuid_note_ids)
+    if any(condition.is_stats for condition in clause.required_properties):
+        # A note found by its stats figure (@sum:calories>2000) shows the notes under it,
+        # as a found note's children show in a tag search, where they inherit its tags
+        # (agreed 2026-10-28).
+        _include_descendants(positively_matched_note_ids, starting_ids=set(positively_matched_note_ids))
     allowed_note_ids = set(positively_matched_note_ids)
 
     excluded_note_ids: Set[str] = set()
@@ -820,6 +825,8 @@ class _RenderDependencies:
     children: Tuple[Tuple[Optional[str], Tuple[str, ...]], ...]
     file_presence: Tuple[Tuple[str, bool], ...]
     file_records: Tuple[Tuple[str, object], ...]
+    # Whether a property is used anywhere in the vault (a stats figure's 0 or dash).
+    property_use: Tuple[Tuple[str, bool], ...]
 
 
 class _DependencyRecorder:
@@ -832,11 +839,13 @@ class _DependencyRecorder:
         self._children: Dict[Optional[str], Tuple[str, ...]] = {}
         self._file_presence: Dict[str, bool] = {}
         self._file_records: Dict[str, object] = {}
+        self._property_use: Dict[str, bool] = {}
 
     def context(self) -> EmbedRenderContext:
         return EmbedRenderContext(
             has_note=self._has_note, get_note=self._get_note, get_children=self._get_children,
-            has_file=self._has_file, get_file=self._get_file, static_collapse_arrows=False,
+            has_file=self._has_file, get_file=self._get_file, is_property_used=self._is_property_used,
+            static_collapse_arrows=False,
         )
 
     def _has_note(self, note_id: str) -> bool:
@@ -864,6 +873,11 @@ class _DependencyRecorder:
         self._file_records[file_id] = record
         return record
 
+    def _is_property_used(self, property_name: str) -> bool:
+        used = self._live.is_property_used(property_name)
+        self._property_use[property_name] = used
+        return used
+
     def freeze(self) -> _RenderDependencies:
         return _RenderDependencies(
             note_presence=tuple(self._note_presence.items()),
@@ -871,6 +885,7 @@ class _DependencyRecorder:
             children=tuple(self._children.items()),
             file_presence=tuple(self._file_presence.items()),
             file_records=tuple(self._file_records.items()),
+            property_use=tuple(self._property_use.items()),
         )
 
 
@@ -891,6 +906,9 @@ def _dependencies_hold(dependencies: _RenderDependencies, live: EmbedRenderConte
             return False
     for file_id, file_record in dependencies.file_records:
         if not live.has_file(file_id) or live.get_file(file_id) != file_record:
+            return False
+    for property_name, used in dependencies.property_use:
+        if live.is_property_used(property_name) != used:
             return False
     return True
 
@@ -1080,6 +1098,7 @@ def _new_embed_render_context(traversal_cache: _SnapshotTraversalCache) -> Embed
         get_children=traversal_cache.get_children,
         has_file=file_registry.has_file,
         get_file=_get_file_record,
+        is_property_used=search_index.is_property_name_used,
         static_collapse_arrows=False,
     )
 

@@ -101,6 +101,9 @@ class EmbedRenderContext:
     get_children: Callable[[Optional[str]], List[str]]
     has_file: Callable[[str], bool]
     get_file: Callable[[str], object]
+    # Whether some note in the vault gives a property (casefolded) a value: a stats
+    # figure for a property used nowhere shows a dash (subtree_stats.py).
+    is_property_used: Callable[[str], bool]
     # A downloaded export: the notes in an embed get MetaList's arrows and start
     # as saved, and carry their first line and their full content, so the file
     # can fold them. False for the live view (it folds through the server) and

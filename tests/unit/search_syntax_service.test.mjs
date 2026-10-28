@@ -143,3 +143,28 @@ test('property terms run when complete and say how to finish them otherwise', ()
 test('a property term is about its tag for the tag menu', () => {
     assert.equal(findSearchTagAtIndex('foo jogging:miles>2', 10).tag, 'jogging');
 });
+
+// Stats figures (docs/ui/search-semantics.md, Stats figures; agreed 2026-10-28):
+// @sum:calories>2000 and the same for @count, @avg, @min and @max.
+test('stats terms run when complete and say how to write them otherwise', () => {
+    for (const term of ['@sum:calories>2000', '@count:calories>3', '@avg:calories<600', '@max:calories=MAX', '@sum:calories', '-@sum:fat>10g']) {
+        const analysis = analyzeSearchQueryInput(term);
+        assert.equal(analysis.isComplete, true, term);
+        assert.equal(analysis.sanitizedText, term, term);
+    }
+    const cases = [
+        ['@sum>2000 ', 'Name the property after @sum (for example @sum:calories>2000)'],
+        ['@sum:calories? ', '@sum always has a figure'],
+        ['@sum: ', 'Name a property after the colon'],
+    ];
+    for (const [typed, warning] of cases) {
+        const analysis = analyzeSearchQueryInput(typed);
+        assert.equal(analysis.isComplete, false, typed);
+        assert.equal(analysis.warningMessage.startsWith(warning), true, `${typed}: ${analysis.warningMessage}`);
+    }
+    // The meta tag itself stays a tag search, and @stats takes no property.
+    assert.equal(analyzeSearchQueryInput('@sum=calories').isComplete, true);
+    const typing = analyzeSearchQueryInput('@sum:');
+    assert.equal(typing.isComplete, false);
+    assert.equal(typing.warningMessage, null);
+});

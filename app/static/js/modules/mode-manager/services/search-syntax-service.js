@@ -86,8 +86,16 @@ const IMPLICIT_PROPERTY_TERM_RE = /^[^:=<>?@][^:=<>?]*(?:>=|<=|>|<)[^<>?=]+$/;
 const TRAILING_OPERATOR_RE = /(>=|<=|>|<|=)$/;
 const PROPERTY_NAME_NOT_A_LETTER_RE = /^[^:]+:[^A-Za-z]/;
 const PROPERTY_TERM_EXAMPLE = 'jogging:miles>2';
+// The stats tags' figures (@sum:calories>2000; app/services/tag_properties.py
+// parse_stats_term): only these @ words take a property, and only in a search.
+const STATS_TERM_START_RE = /^(@(?:sum|avg|min|max|count))[:<>?]/i;
+const STATS_TERM_RE = /^@(?:sum|avg|min|max|count):[A-Za-z][^:=<>?]*(?:(?:>=|<=|>|<|=)[^<>?=]+)?$/i;
+const STATS_TERM_EXAMPLE_PROPERTY = 'calories>2000';
 
 function isPropertyTerm(token) {
+    if (STATS_TERM_START_RE.test(token)) {
+        return true;
+    }
     if (token.startsWith('@')) {
         return false;
     }
@@ -117,8 +125,19 @@ function describePropertyTermProblem(term) {
     if (term.split(/[:<>]/)[0] === OR_OPERATOR) {
         return 'OR is reserved and cannot be used as a tag';
     }
-    if (NAMED_PROPERTY_TERM_RE.test(term) || IMPLICIT_PROPERTY_TERM_RE.test(term)) {
+    if (NAMED_PROPERTY_TERM_RE.test(term) || IMPLICIT_PROPERTY_TERM_RE.test(term) || STATS_TERM_RE.test(term)) {
         return '';
+    }
+    const statsStart = STATS_TERM_START_RE.exec(term);
+    if (statsStart) {
+        const statsTag = statsStart[1].toLowerCase();
+        const statsExample = `${statsTag}:${STATS_TERM_EXAMPLE_PROPERTY}`;
+        if (!term.startsWith(`${statsStart[1]}${PROPERTY_SEPARATOR}`)) {
+            return `Name the property after ${statsTag} (for example ${statsExample})`;
+        }
+        if (term.endsWith('?')) {
+            return `${statsTag} always has a figure; compare it (for example ${statsExample})`;
+        }
     }
     if (term.endsWith(PROPERTY_SEPARATOR)) {
         return `Name a property after the colon (for example ${PROPERTY_TERM_EXAMPLE})`;

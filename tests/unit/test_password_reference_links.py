@@ -24,6 +24,7 @@ def _render(content_html: str, source_tags: str, *, redact_credentials: bool, st
     context = EmbedRenderContext(
         has_note=lambda note_id: note_id == SOURCE_ID, get_note=lambda note_id: source,
         get_children=lambda parent_id: [], has_file=lambda file_id: False, get_file=lambda file_id: None,
+        is_property_used=lambda property_name: False,
         static_collapse_arrows=False,
     )
     return render_note_content_with_embeds(

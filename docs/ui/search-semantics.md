@@ -2,8 +2,6 @@
 
 Agreed, not built (2026-10-27): a view option summarizing a property over the notes found (Sum, Average, Median, Min, Max, Mode) beside the result count, and the `@datetime` tag that dates a note for date filters (`docs/ready-to-build/super-tag-summaries-and-date.md`).
 
-Agreed, not built (2026-10-28): searching the stats tags' figures, `@sum:calories>2000` and the same for `@count`, `@avg`, `@min` and `@max`; see `docs/ready-to-build/stats-empty-and-search.md`.
-
 Agreed, not built (2026-10-25): `:name` terms that match a property on any tag; see `docs/ready-to-build/attribute-search-and-or-rules.md`.
 
 This document describes **server-side search behavior** (what matches what).
@@ -170,6 +168,37 @@ bar's reference and `docs/design/tag-properties.md`). A search compares a note's
   after a number (`drug:dosage>5`) the units used with that property (`5mg`); after `=`,
   `MAX` and `MIN`. The list shows only the name, unit or keyword. Picking one earns no
   activity credit.
+
+### Stats Figures
+Built 2026-10-28. The stats tags show figures of a note's subtree (`docs/ui/content-formatting.md`,
+Stats of a subtree); a search compares them in the super tag form, with a stats tag as the tag
+(`app/services/subtree_stats.py` `stats_figure_values`, `SearchIndex._stats_clause_note_ids`):
+
+- `@sum:calories>2000`: notes whose `@sum` shows a calorie total over 2000. The same for
+  `@count:calories>3`, `@avg:calories<600`, `@min:calories<100`, `@max:calories>1000`.
+- **Only notes showing that figure match:** a note carrying `@sum=calories`, or a plain `@sum`
+  that shows calories (it covers every property with numbers under the note). The figure is
+  never computed for other notes, so the month and the log above a day never match. `@stats`
+  is not searched this way: a note with only `@stats` doesn't match `@sum:calories>2000`.
+- `@sum:calories` with no comparison finds the notes showing that figure, as `jogging:miles`
+  does. `-` excludes, spaces combine, `OR` separates clauses; `=MAX` and `=MIN` keep the
+  largest and smallest figure among the notes the rest of the clause finds
+  (`@sum:calories=MAX` is the biggest day).
+- **The figure as shown:** counted as the footer counts (own and descendants' values, never
+  inherited, never through links or embeds; average, min and max per note), rounded as it
+  shows. Units as for values: `@sum:fat>10g` compares the grams total only. A dash never
+  matches: a day with no meals has no average. A 0 is a number: `@sum:calories=0` finds the
+  days nothing was logged in.
+- **A found note shows the notes under it** (the meals that make up the day), as a tag search
+  shows a found note's children, which inherit its tags.
+- A property and a number are required: `@sum>2000`, `@sum:calories?` and
+  `@sum:calories>lots` are refused with how to write the term. `@sum=calories` alone stays a
+  tag search.
+- Live: an edit under a found note changes its figure, and the next refresh shows whether it
+  still matches. A note added while such a search is active gets nothing from it.
+- **Suggestions:** after `@sum:` the search box suggests the properties notes carry the tag for
+  (`@sum=calories`), then every property with numbers in the vault, most used first; after
+  `=`, `MAX` and `MIN`. Tag suggestions read the rest of the clause without the stats terms.
 
 ### UUID Terms
 - UUIDs in positive terms are treated as direct note targets (including when pasted as `[[UUID]]`).
