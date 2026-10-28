@@ -28,8 +28,12 @@ async function setAnimatedTransitions(page, isOn) {
 }
 
 // The page's own view-transition animations, sampled every frame while the theme changes.
+// An earlier change's fade (the setup's, the case before) ends first, so only this one counts.
 async function changeTheme(page, themes) {
   return page.evaluate(async ({themes, sampleMs}) => {
+    // A fade's animations start a frame or two after its change; wait for those to show first.
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    await Promise.all(document.getAnimations().map(animation => animation.finished));
     const fades = new Set();
     const start = performance.now();
     await new Promise(resolve => {
@@ -96,6 +100,8 @@ function assertThemeChange(outcome, expectedTheme, isOneFade) {
 }
 
 export async function checkThemeFade(page) {
+  // The cases start from Light, set without a fade of its own.
+  await setAnimatedTransitions(page, false);
   await applyPreference(page, 'pref.theme', 'light');
   await runThenCleanUp('theme fade', () => themeCases(page), async () => {
     await setAnimatedTransitions(page, true);
