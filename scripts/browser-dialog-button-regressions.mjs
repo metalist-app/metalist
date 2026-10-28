@@ -30,7 +30,7 @@ async function readRow(page, mainSelector) {
       .filter(button => button.getClientRects().length > 0)
       .map(button => {
         const box = button.getBoundingClientRect();
-        return {label: button.textContent.trim(), left: box.left, right: box.right, top: box.top,
+        return {label: button.textContent.trim(), left: box.left, right: box.right, top: box.top, bottom: box.bottom,
           isMain: button === main, className: button.className};
       });
     const style = getComputedStyle(row);
@@ -42,8 +42,13 @@ async function assertRow(page, {label, mainSelector, labels, mainClass, hasAlter
   const row = await readRow(page, mainSelector);
   const byPosition = [...row.buttons].sort((a, b) => a.left - b.left);
   assert.deepEqual(byPosition.map(button => button.label), labels, `${label}: buttons left to right`);
+  // One row: each button overlaps the first vertically. Buttons of different font metrics
+  // can sit a fraction of a pixel apart on one row (Firefox on Linux, 2026-10-28); a wrapped
+  // button sits a whole button lower and overlaps nothing.
+  const tops = byPosition.map(button => `${button.label}: ${button.top}-${button.bottom}`).join(', ');
   for (const button of byPosition) {
-    assert.equal(button.top, byPosition[0].top, `${label}: the buttons must share one row`);
+    assert.ok(button.top < byPosition[0].bottom && button.bottom > byPosition[0].top,
+      `${label}: the buttons must share one row (${tops})`);
   }
   const main = byPosition[byPosition.length - 1];
   assert.equal(main.isMain, true, `${label}: the main action must be rightmost`);

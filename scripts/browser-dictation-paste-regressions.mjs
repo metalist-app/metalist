@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { waitForAppIdle } from './browser-app-idle.mjs';
+import { COMMAND_KEY } from './browser-command-key.mjs';
 
 // Dictated text (for example from Superwhisper) pasted into the search bar or
 // the tag bar becomes the user's existing tags; one undo brings back exactly
@@ -58,10 +59,10 @@ function undo(page) {
 // runs its native undo (on macOS synthetic keys need the editing command).
 async function undoShortcut(page) {
   if (process.platform === 'darwin') {
-    await page.keyboard.down('Meta');
+    await page.keyboard.down(COMMAND_KEY);
     await page.keyboard.down('z', {commands: ['undo']});
     await page.keyboard.up('z');
-    await page.keyboard.up('Meta');
+    await page.keyboard.up(COMMAND_KEY);
     return;
   }
   await page.keyboard.down('Control');
@@ -141,9 +142,9 @@ async function dictationAfterNoteCopyCase(page) {
   await waitForAppIdle(page);
   try {
     await startEditing(page, ids.copied);
-    await page.keyboard.down('Meta');
+    await page.keyboard.down(COMMAND_KEY);
     await page.keyboard.press('c');
-    await page.keyboard.up('Meta');
+    await page.keyboard.up(COMMAND_KEY);
     // The copy is done once the system clipboard holds the note, after its command.
     await waitForEqual(() => clipboardModeOf(page), 'note', 'D7: Cmd+C copied the note');
     await waitForAppIdle(page);
@@ -154,9 +155,9 @@ async function dictationAfterNoteCopyCase(page) {
     const notesBefore = await shownNoteIds(page);
     // The dictation app writes its words to the clipboard, outside MetaList.
     await page.evaluate(text => navigator.clipboard.writeText(text), words);
-    await page.keyboard.down('Meta');
+    await page.keyboard.down(COMMAND_KEY);
     await page.keyboard.press('v', {commands: ['paste']});
-    await page.keyboard.up('Meta');
+    await page.keyboard.up(COMMAND_KEY);
     await new Promise(resolve => setTimeout(resolve, PASTE_SETTLE_MS));
     await waitForEqual(() => noteText(page, ids.target), `Dictating into this note${words}`, 'D7: the dictated words go into the note being edited');
     await waitForAppIdle(page);
@@ -167,9 +168,9 @@ async function dictationAfterNoteCopyCase(page) {
     const tagBar = `[data-note-id="${ids.target}"] .note-tag-bar-input`;
     await page.waitForFunction(selector => document.activeElement === document.querySelector(selector), {}, tagBar);
     await page.evaluate(text => navigator.clipboard.writeText(text), 'At heading.');
-    await page.keyboard.down('Meta');
+    await page.keyboard.down(COMMAND_KEY);
     await page.keyboard.press('v', {commands: ['paste']});
-    await page.keyboard.up('Meta');
+    await page.keyboard.up(COMMAND_KEY);
     await new Promise(resolve => setTimeout(resolve, PASTE_SETTLE_MS));
     await waitForAppIdle(page);
     assert.deepEqual(await shownNoteIds(page), notesBefore, 'D7 tag bar: no copy of the copied note appears');
