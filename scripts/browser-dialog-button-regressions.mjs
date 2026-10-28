@@ -9,6 +9,8 @@ const FRAMES_TO_SETTLE = 3;
 const WIDE_WINDOW = {width: 1280, height: 900};
 // Under the 640 px breakpoint where action rows stack (main.css).
 const NARROW_WINDOW = {width: 420, height: 900};
+// Wider than the Mac's default sans-serif, as Linux's DejaVu Sans is.
+const WIDE_FONT = 'Verdana, "DejaVu Sans", sans-serif';
 const EDGE_PX = 1;
 // Escape presses that close whatever a failed case left open.
 const ESCAPES_AFTER_A_FAILURE = 3;
@@ -220,6 +222,23 @@ const CASES = [
   simpleCase({label: 'Reminders form', open: page => openPalette(page, 'openReminders', {search: ''}),
     mainSelector: '[data-reminder-save]', labels: ['Clear Form', 'Add Reminder'], mainClass: 'primary-btn',
     hasAlternative: true}),
+  // Linux's default font is wider than the Mac's; with it the Reminders form's main action
+  // wrapped onto a second row in CI (2026-10-28). A wide font here checks the same on a Mac.
+  ['Reminders form, wide font', async page => {
+    await openPalette(page, 'openReminders', {search: ''});
+    await page.waitForSelector('[data-reminder-save]', {visible: true});
+    await page.evaluate(font => {
+      const style = document.createElement('style');
+      style.id = 'dialog-button-wide-font';
+      style.textContent = `.reminder-form-actions button { font-family: ${font} !important; letter-spacing: 0.4px; }`;
+      document.head.append(style);
+    }, WIDE_FONT);
+    await settle(page);
+    await assertRow(page, {label: 'Reminders form, wide font', mainSelector: '[data-reminder-save]',
+      labels: ['Clear Form', 'Add Reminder'], mainClass: 'primary-btn', hasAlternative: true});
+    await page.evaluate(() => document.getElementById('dialog-button-wide-font').remove());
+    await closeWithEscape(page);
+  }],
   ['Tag manager', async page => {
     await openModal(page, '/static/js/modules/modals/ontology-modal.js', 'OntologyModal', 'open', null);
     await page.waitForFunction(() => document.activeElement?.id === 'ontology-search-input');
