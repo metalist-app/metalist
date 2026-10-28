@@ -80,7 +80,7 @@ Ontology rules also add **inferred tags** before search matching:
 ### Text Terms (quoted)
 - Required text: `"some text"` or `'some text'`
 - Forbidden text: `-"some text"` or `-'some text'`
-- Agreed, not built (2026-10-28): an open last quote searches as typed, trailing space included (`docs/ready-to-build/live-text-search.md`).
+- An open last quote searches as typed, before the closing quote: `"neur` searches `"neur"`, a trailing space included (`docs/ui/search-syntax.md`, Completeness).
 
 Text matching is:
 - Case-insensitive (`casefold`).

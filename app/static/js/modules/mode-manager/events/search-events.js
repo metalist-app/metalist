@@ -7,7 +7,7 @@ import { initializeTabStateService } from '../services/tab-state-service.js';
 import { analyzeSearchQueryInput } from '../services/search-syntax-service.js';
 import { enforceSearchInputElement, setSearchValidationState, syncSearchInputValue } from '../services/search-input-service.js';
 import { CommandGate } from '../services/command-gate-service.js';
-import { scheduleDebouncedSearchExecution } from '../services/search-debounce-service.js';
+import { isDebouncedSearchPending, scheduleDebouncedSearchExecution } from '../services/search-debounce-service.js';
 import { primeActiveSearchInteractionState } from '../services/search-interaction-service.js';
 import { initializeSearchSuggestions, updateSearchSuggestions } from '../services/search-suggestions-service.js';
 import { clearActiveNotesDom, clearCachedNotesDomForTab } from '../services/tab-dom-cache-service.js';
@@ -128,16 +128,17 @@ export function handleSearchInput(event) {
             return;
         }
 
-        const currentSearch = ModeContext.searchQuery;
-        const currentAnalysis = analyzeSearchQueryInput(currentSearch);
+        const currentAnalysis = analyzeSearchQueryInput(ModeContext.searchQuery);
 
         if (!currentAnalysis.isComplete) {
             Logger.logNoop('Search execution skipped: incomplete query', {
-                searchQuery: currentSearch,
+                searchQuery: ModeContext.searchQuery,
                 warningMessage: currentAnalysis.warningMessage,
             });
             return;
         }
+        // An open last quote runs closed: "neur searches for "neur".
+        const currentSearch = currentAnalysis.closedText;
 
         void CommandGate.run('search.execute', async () => {
             Logger.logAction('executeSearch', { searchQuery: currentSearch });
@@ -168,9 +169,44 @@ export function handleSearchInput(event) {
     scheduleDebouncedSearchExecution(CONFIG.SEARCH.DEBOUNCE_MS, executeSearchWhenIdle);
 }
 
+/**
+ * The user moves on with a quote still open (Enter, a click elsewhere, another tab):
+ * the closing quote is added, to the field and to the tab's search; a quote with
+ * nothing typed in it is removed (docs/ui/search-syntax.md, Completeness).
+ */
+export function closeOpenSearchQuote() {
+    const searchInput = document.getElementById('search-input');
+    if (!(searchInput instanceof HTMLInputElement)) {
+        throw new Error('search-input missing from DOM');
+    }
+    const analysis = analyzeSearchQueryInput(searchInput.value);
+    if (!analysis.endsInOpenQuote) {
+        return;
+    }
+    searchInput.value = analysis.closedText;
+    // Usually the open quote's search has run already, closed: the field and the tab's
+    // search change, the list does not. Otherwise this is new typing, searched as such.
+    const isAlreadyRun = ModeContext.getExecutedSearchQuery() === analysis.closedText;
+    if (!isAlreadyRun || isDebouncedSearchPending()) {
+        searchInput.dispatchEvent(new Event('input'));
+        return;
+    }
+    Logger.logAction('search.close_open_quote', { searchQuery: analysis.closedText });
+    setSearchValidationState(searchInput, analyzeSearchQueryInput(analysis.closedText));
+    // The field can be ahead of the tab's search only while an input event is pending.
+    if (ModeContext.searchQuery !== analysis.closedText) {
+        ModeContext.setSearchQuery(analysis.closedText);
+    }
+    updateSearchContextsList();
+}
+
 // The magnifier brought the empty input out over a reference view; leaving it
 // without typing brings the chip back.
 function handleSearchInputBlur(event) {
+    // Leaving the page (another app or window) is not moving on: typing resumes there.
+    if (document.hasFocus()) {
+        closeOpenSearchQuote();
+    }
     if (!isShowingNewSearchInReferenceView()) {
         return;
     }
@@ -227,7 +263,7 @@ export async function initializeSearchEvents() {
     const initialQueryLogValue = analysis.normalizedText.length > 0 ? analysis.normalizedText : 'none';
     Logger.logAction('initialPageLoad', { searchQuery: initialQueryLogValue });
 
-    const initialExecutableQuery = analysis.isComplete ? analysis.normalizedText : analysis.sanitizedText;
+    const initialExecutableQuery = analysis.isComplete ? analysis.closedText : analysis.sanitizedText;
     // The default executed query is empty, so initial empty searches do not need a setter call.
     if (ModeContext.getExecutedSearchQuery() !== initialExecutableQuery) {
         ModeContext.setExecutedSearchQuery(initialExecutableQuery);

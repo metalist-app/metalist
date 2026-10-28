@@ -280,3 +280,108 @@ export async function checkFileFilter(page) {
     await NotesAPI.deleteNote(id);
   }, noteId);
 }
+
+// Quoted text searches as it is typed: an open last quote runs closed, and the
+// closing quote is added once the user moves on (docs/ui/search-syntax.md).
+const SEARCH_HIGHLIGHT_NAME = 'metalist-search';
+const OPEN_QUOTE_NOTES = ['lqneural network', 'lqneurons fire', 'lqfat cat', 'lqfather tree', 'lqdraft essay'];
+
+function searchField(page) {
+  return page.evaluate(() => document.getElementById('search-input').value);
+}
+
+function savedTabSearch(page) {
+  return page.evaluate(async () => {
+    const {ModeContextInstance} = await import('/static/js/modules/mode-manager/mode-context.js');
+    return ModeContextInstance.tabs[ModeContextInstance.activeTabId].searchQuery;
+  });
+}
+
+function highlightedTexts(page) {
+  return page.evaluate(name => (CSS.highlights.has(name) ? [...CSS.highlights.get(name)].map(range => range.toString()).sort() : []), SEARCH_HIGHLIGHT_NAME);
+}
+
+async function typeIntoEmptySearch(page, text) {
+  await page.focus('#search-input');
+  await page.evaluate(() => document.getElementById('search-input').select());
+  await page.keyboard.press('Backspace');
+  await page.keyboard.type(text);
+  await idle(page);
+}
+
+export async function checkOpenQuoteSearch(page) {
+  const noteIds = await page.evaluate(async texts => {
+    const {NotesAPI} = await import('/static/js/modules/api-client.js');
+    const ids = [];
+    for (const text of texts) {
+      const note = await NotesAPI.createNote(null, '');
+      await NotesAPI.saveNote(note.id, `<p>${text}</p>`, '');
+      ids.push(note.id);
+    }
+    return ids;
+  }, OPEN_QUOTE_NOTES);
+  await page.reload();
+  await page.waitForSelector('[data-app-ready="true"]');
+  await idle(page);
+
+  // 1. Each letter narrows the notes, with no closing quote typed; the marks follow.
+  await typeIntoEmptySearch(page, '"lqneur');
+  assert.equal(await executedSearch(page), '"lqneur"', 'an open quote runs closed');
+  assert.deepEqual((await shownRootTexts(page)).sort(), ['lqneural network', 'lqneurons fire']);
+  assert.deepEqual(await highlightedTexts(page), ['lqneur', 'lqneur']);
+  assert.equal(await typingWarning(page), '', 'an open last quote is not warned about');
+  await page.keyboard.type('al');
+  await idle(page);
+  assert.deepEqual(await shownRootTexts(page), ['lqneural network'], 'a further letter narrows the notes');
+  assert.equal(await searchField(page), '"lqneural', 'the field keeps the quote open while typing');
+
+  // 2. Excluded text hides notes as it is typed.
+  await typeIntoEmptySearch(page, '-"lqdra');
+  assert.equal(await executedSearch(page), '-"lqdra"');
+  const shownWithoutDraft = (await shownRootTexts(page)).filter(text => text.startsWith('lq')).sort();
+  assert.deepEqual(shownWithoutDraft, ['lqfat cat', 'lqfather tree', 'lqneural network', 'lqneurons fire'], 'only the draft leaves the list');
+
+  // 3. One letter is enough.
+  await typeIntoEmptySearch(page, '"a');
+  assert.equal(await executedSearch(page), '"a"', 'one letter in an open quote searches');
+
+  // 5. A trailing space marks a word edge.
+  await typeIntoEmptySearch(page, '"lqfat ');
+  assert.equal(await executedSearch(page), '"lqfat "', 'the trailing space is kept');
+  assert.deepEqual(await shownRootTexts(page), ['lqfat cat'], 'a word edge: not lqfather');
+
+  // 4. Moving on closes the quote, in the field and the tab's saved search.
+  // Clicking a note: the list is not searched again, the note opens.
+  await typeIntoEmptySearch(page, '"lqneural net');
+  await page.click(`.note[data-note-id="${noteIds[0]}"] > .note-content`);
+  await idle(page);
+  assert.equal(await searchField(page), '"lqneural net"', 'a click on a note closes the quote');
+  assert.equal(await savedTabSearch(page), '"lqneural net"', 'the tab saves the closed search');
+  assert.equal(await executedSearch(page), '"lqneural net"');
+  assert.equal(await page.evaluate(async () => (await import('/static/js/modules/mode-manager/mode-context.js')).ModeContextInstance.currentNoteId), noteIds[0], 'the clicked note opens');
+  await page.keyboard.press('Escape');
+  await idle(page);
+  // Enter, with the other quote mark.
+  await typeIntoEmptySearch(page, "'lqneural");
+  await page.keyboard.press('Enter');
+  await idle(page);
+  assert.equal(await searchField(page), "'lqneural'", 'Enter closes the quote with its own mark');
+  assert.equal(await savedTabSearch(page), "'lqneural'");
+  await page.keyboard.press('Escape');
+  await idle(page);
+  // A quote with nothing in it is removed, and the search it leaves runs.
+  await typeIntoEmptySearch(page, '"');
+  await page.evaluate(() => document.getElementById('search-input').blur());
+  await idle(page);
+  assert.equal(await searchField(page), '', 'a lone quote is removed');
+  assert.equal(await savedTabSearch(page), '');
+  assert.equal(await executedSearch(page), '', 'the emptied search runs');
+
+  await page.evaluate(async ids => {
+    const {NotesAPI} = await import('/static/js/modules/api-client.js');
+    for (const id of ids) await NotesAPI.deleteNote(id);
+  }, noteIds);
+  await page.reload();
+  await page.waitForSelector('[data-app-ready="true"]');
+  await idle(page);
+}

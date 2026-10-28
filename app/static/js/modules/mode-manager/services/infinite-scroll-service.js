@@ -2,6 +2,7 @@ import { ApplicationState, stateValuesEqual } from '../../application-state.js';
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import * as Logger from '../mode-logger.js';
 import { CommandGate } from './command-gate-service.js';
+import { analyzeSearchQueryInput } from './search-syntax-service.js';
 
 const POLL_INTERVAL_MS = 800;
 
@@ -121,7 +122,12 @@ async function handlePoll() {
     if (CommandGate.isBusy()) return;
     if (ModeContext.isLoading) return;
 
-    const searchQuery = ModeContext.searchQuery;
+    // An open last quote runs closed (search-syntax-service.js closedText).
+    const typedAnalysis = analyzeSearchQueryInput(ModeContext.searchQuery);
+    let searchQuery = ModeContext.searchQuery;
+    if (typedAnalysis.isComplete) {
+        searchQuery = typedAnalysis.closedText;
+    }
     const executedSearchQuery = ModeContext.getExecutedSearchQuery();
     if (searchQuery !== executedSearchQuery) {
         // Search context has changed but hasn't been executed yet.
