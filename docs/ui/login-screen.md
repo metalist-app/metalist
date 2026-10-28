@@ -44,8 +44,11 @@ reserve no scrollbar strip, since nothing on them scrolls: with always-visible
 scrollbars the strip showed white at the right edge and shifted the logo when
 the panel appeared. The app keeps its strip, so the notes do not shift when the
 list starts to scroll (`main.css`, `html:has(> body > .login-page…)`). The strip
-comes back when the fade after loading starts, while the screen is still opaque;
-the login screen is as wide as the whole window, so its logo stays put.
+comes back as soon as the notes are under the screen (while the progress bar
+finishes, before the fade), so they lay out at their final width before they show;
+the login screen is as wide as the whole window, so its logo stays put. (Until
+2026-10-28 it came back only when the fade started, and the release startup check,
+which reads it the moment the app is ready, found it off.)
 
 ## No white page in between
 A password namespace's page opens straight on the login screen when a login is
