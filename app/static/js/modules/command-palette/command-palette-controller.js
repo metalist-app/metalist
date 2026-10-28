@@ -201,9 +201,7 @@ function applyTheme(theme) {
         return;
     }
     const transition = document.startViewTransition(setTheme);
-    // Changing the theme again mid-fade (Enter cycles it) skips this fade, an AbortError:
-    // expected.
-    transition.ready.catch((error) => {
+    transition.ready.catch((error) => { // shockharness: ignore[EXC002] reason="changing the theme again mid-fade (Enter cycles it) skips this fade with an AbortError; the newer theme is already applied, so nothing is left to do"
         rethrowUnexpectedError(error);
     });
 }

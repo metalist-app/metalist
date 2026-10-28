@@ -35,7 +35,9 @@ async function changeTheme(page, themes) {
     await new Promise(resolve => {
       const sample = () => {
         for (const animation of document.getAnimations()) {
-          const pseudo = String(animation.effect?.pseudoElement ?? '');
+          // Only the page's own fade: animations on its old and new snapshots.
+          if (animation.effect === null || animation.effect.pseudoElement === null) continue;
+          const pseudo = animation.effect.pseudoElement;
           if (pseudo.startsWith('::view-transition-old(root)') || pseudo.startsWith('::view-transition-new(root)')) {
             fades.add(animation);
           }
@@ -51,7 +53,7 @@ async function changeTheme(page, themes) {
     return {
       theme: document.documentElement.getAttribute('data-theme'),
       fades: [...fades].map(animation => ({pseudo: animation.effect.pseudoElement, duration: animation.effect.getTiming().duration})),
-      overlay: document.getElementById('fatal-error-overlay')?.textContent ?? null,
+      hasErrorOverlay: document.getElementById('fatal-error-overlay') !== null,
     };
   }, {themes, sampleMs: SAMPLE_MS});
 }
@@ -72,20 +74,25 @@ async function themeCases(page) {
     const outcome = await changeTheme(page, themes);
     // A suite runs every case and reports all their failures at once.
     try {
-      assert.equal(outcome.theme, expectedTheme);
-      assert.equal(outcome.overlay, null);
-      if (isOneFade === true) {
-        // One fade: the browser animates the old snapshot and the new one, two animations each.
-        assert.deepEqual(outcome.fades.map(fade => `${fade.pseudo} ${fade.duration}`).sort(), ONE_FADE);
-      } else if (isOneFade === false) {
-        assert.deepEqual(outcome.fades, []);
-      }
+      assertThemeChange(outcome, expectedTheme, isOneFade);
     } catch (error) {
       if (!(error instanceof assert.AssertionError)) throw error;
       failures.push(`${label}: ${error.message}`);
     }
   }
   assert.deepEqual(failures, []);
+}
+
+// isOneFade: true for exactly one fade, false for none, null when the count doesn't matter.
+function assertThemeChange(outcome, expectedTheme, isOneFade) {
+  assert.equal(outcome.theme, expectedTheme);
+  assert.equal(outcome.hasErrorOverlay, false);
+  if (isOneFade === true) {
+    // One fade: the browser animates the old snapshot and the new one, two animations each.
+    assert.deepEqual(outcome.fades.map(fade => `${fade.pseudo} ${fade.duration}`).sort(), ONE_FADE);
+  } else if (isOneFade === false) {
+    assert.deepEqual(outcome.fades, []);
+  }
 }
 
 export async function checkThemeFade(page) {
