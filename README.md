@@ -12,6 +12,22 @@ A minimalist single-user note-taking app focused on server-side rendering (SSR),
 - Multi-tab search contexts with server-persisted scroll/search state (survives browser restarts)
 - Manual namespace backups/restores to a user-selected backup folder with retention controls
 
+## Changes in 0.25.0
+
+- **Claude and Gemini beside OpenAI.** AI Agent Settings has a key for each provider, on your own account; you pick the model in the chat, and a conversation carries on when you switch provider.
+- **Stats of a note's subtree.** `@stats` shows, under a note's own text, the Total, Min, Max and Count of each number property in it and the notes under it; `@sum=calories` (and `@avg`, `@min`, `@max`, `@count`) shows one figure, and a plain `@sum` covers every property. With nothing logged yet, a sum or count reads 0. **Stats Style** in the command palette: Strip, Tiles or Ledger. Search the figures with `@sum:calories>2000`: the days over 2000, each with the notes under it.
+- **Four built-in tags renamed:** `@highlighter` is now `@highlight`, `@llm` `@ai`, `@list-bulleted` `@bullets` and `@list-numbered` `@numbered`. Each vault converts its notes and saved searches once, the first time it is unlocked after the update; the old names stop working. `@gray` works as well as `@grey`.
+- **Light and Dark everywhere:** dialogs, menus, the command palette, reminder cards and the tag rules editor follow the theme, and changing the theme cross-fades the page. After logging in, the login screen fades out over your notes.
+- References: typing `[[` suggests notes to link or embed; `[[note|text]]` shows your own link text; a link to a password or username note shows its copyable row. A folded note reads as one line.
+- The tag bar suggests a super tag with last time's values (`jogging:miles=12`), and property names for a tag that has none yet (`calories=` for a new `salad:`).
+- Markdown tables: `<br>` breaks a line in a cell, rows with too few or too many cells and escaped `\|` work, and a wide table scrolls instead of squeezing its columns.
+- Web links show their site's icon, their title and their domain.
+- Under 640 px wide (a phone), MetaList shows a read-only layout with a box to capture new notes.
+- Dialogs are consistent: the main action on the right, Cancel beside it, and Enter never confirms a deletion. Messages float instead of moving the page. The command palette keeps its order while it is open, and its box says "Type keywords".
+- A new mark and favicon.
+- Fixed: changing the sort order while the list was still loading could open it partway down; a refresh asked for during another could be dropped, leaving deleted notes or old search results on screen; a dropped file could land out of sight; tag suggestions failed on a note whose only tags were `@` tags.
+- Vaults are upgraded (database version 12) when first unlocked: an older MetaList cannot open them afterwards.
+
 ## Changes in 0.24.2
 
 - ⇧⌘V pastes a copied note as a child again. Since 0.21.0, in Chrome, it put the copied note's text into the selected note instead.
