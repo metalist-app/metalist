@@ -8,7 +8,7 @@ Vocabulary as in `docs/AI-SUMMARY.md`: users see **vault**; code, APIs and backu
 
 In the planned hosted MetaList, each user's vault runs in its own server process on MetaList's machines. The hosted service keeps encrypted snapshots of every vault (at least hourly while it is unlocked and being edited, and on every graceful stop). Users can restore from those snapshots themselves. Users must also always be able to keep their own copy on their own computer, and some will want to even knowing the service backs up.
 
-The self-hosted backup feature assumes the server runs on the user's machine. In the hosted service it doesn't, so the feature needs a hosted mode.
+The self-hosted backup feature assumes the server runs on the user's machine. In the hosted service it doesn't, so the feature needs a hosted mode. That mode is the `hosted` deployment profile (`docs/ready-to-build/deployment-profiles.md`), whose §4 lists what else the hosted build must turn off.
 
 ## What exists today
 

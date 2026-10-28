@@ -640,6 +640,12 @@ swap, or filesystem snapshots.
 - Existing passwords are grandfathered: login verifies them against their stored
   Argon2id profile without applying the newer creation policy.
 - The 72-character ceiling is applied before estimation to bound estimator work.
+- Agreed, not built (2026-10-27): new and changed vault passwords need score 4, and
+  password forms suggest five-word passphrases (`docs/ready-to-build/password-strength.md`).
+- Agreed, not built (2026-10-27): a deployment profile (`personal`, `self-hosted`,
+  `hosted`) set by whoever installs the server, with what each allows (`@shell`, backup
+  folders) and what must change before a self-hosted server faces the internet
+  (`docs/ready-to-build/deployment-profiles.md`).
 - The random-password generator uses browser `crypto.getRandomValues()` and scores
   results locally with the official JavaScript zxcvbn build. The browser scorer is
   lazy-loaded only when the generator opens; generated passwords are not submitted
