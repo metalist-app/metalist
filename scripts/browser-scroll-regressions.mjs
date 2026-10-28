@@ -14,9 +14,11 @@ const REQUESTS_QUIET_MS = 300;
 
 const TOLERANCE_PX = 2;
 
+// One line per paragraph with any font: with Linux's wider font the longer sentence wrapped,
+// the notes grew taller, and the drag cases' notes no longer fit on screen (CI, 2026-10-28).
 function paragraphs(label, count) {
   return Array.from({length: count}, (_, index) =>
-    `<p>${label} paragraph ${index + 1}: ordinary sentence text giving the line a realistic width.</p>`).join('');
+    `<p>${label} paragraph ${index + 1}: ordinary sentence text.</p>`).join('');
 }
 
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
