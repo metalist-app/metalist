@@ -76,6 +76,8 @@ The verifier produces:
 - `isComplete`: whether the full query is syntactically complete.
 - `warningMessage`: user-facing warning text (or `null`).
 
+Agreed, not built (2026-10-28): an open quote on the last term counts as closed, so quoted searches update as you type, and the closing quote is added when the user moves on (`docs/ready-to-build/live-text-search.md`).
+
 Rules:
 - **Unclosed quotes**: incomplete. Warn once there is content inside the quote.
   - Example: `"unclosed` → warn `Close quote with "`
