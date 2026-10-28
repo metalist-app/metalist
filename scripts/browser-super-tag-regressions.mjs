@@ -129,6 +129,27 @@ async function theTagBarOffersLastTimesValues(page) {
   assert.deepEqual(await shownNoteTexts(page), ['Long run'], 'the note the values came from keeps its own');
 }
 
+// A tag with no property names of its own (or of the tags it implies) is offered the
+// vault's, by how many notes use each, so it reuses a name rather than invent one
+// (docs/design/tag-properties.md, Suggestions; agreed 2026-10-26).
+async function aNewTagIsOfferedTheVaultsNames(page) {
+  await search(page, 'fruit');
+  await page.click('#notes-container [data-note-id] .note-content');
+  await idle(page);
+  await page.keyboard.press('Tab');
+  await page.keyboard.press('End');
+  const typed = ' salad:';
+  await page.keyboard.type(typed);
+  await page.waitForFunction(() => [...document.querySelectorAll('.note-tag-suggestion')]
+    .some(item => item.offsetParent !== null && item.dataset.tag.startsWith('salad:')));
+  assert.deepEqual(await suggestionLabels(page, '.note-tag-suggestion'), ['miles=', 'dosage='],
+    'after salad: the tag bar suggests the vault\'s names, the most used first');
+  for (let count = 0; count < typed.length; count += 1) await page.keyboard.press('Backspace');
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Escape');
+  await idle(page);
+}
+
 async function theTagBarSuggestsAndSavesASuperTag(page) {
   await search(page, 'fruit');
   await page.click('#notes-container [data-note-id] .note-content');
@@ -180,6 +201,8 @@ export async function checkSuperTags(page) {
       ['a rule over values', aRuleTagsTheNotesItHoldsFor],
       // Before 'the tag bar', which gives a newer note jogging values.
       ['last time\'s values', theTagBarOffersLastTimesValues],
+      // Before 'the tag bar', which gives the fruit note more miles.
+      ['a new tag', aNewTagIsOfferedTheVaultsNames],
       ['the tag bar', theTagBarSuggestsAndSavesASuperTag],
       ['Edit Tag Relationships…', theRuleShowsInItsTagsLeftColumn],
     ]) {

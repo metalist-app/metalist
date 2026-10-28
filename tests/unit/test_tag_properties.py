@@ -243,6 +243,14 @@ def suggestion_index(monkeypatch: pytest.MonkeyPatch) -> SearchIndex:
     # A name the token has is not offered again.
     ("jogging:miles=3:", "tag-bar", [("jogging:miles=3:duration=", "duration="), ("jogging:miles=3:heart=", "heart=")]),
     ("jogging:d", "tag-bar", [("jogging:duration=", "duration=")]),
+    # A tag none of whose (or whose implied tags') names match what is typed: the vault's
+    # names, by how many notes use each on any tag, ties by name (agreed 2026-10-26/27).
+    ("new-food:", "tag-bar", [("new-food:dosage=", "dosage="), ("new-food:miles=", "miles="),
+                              ("new-food:duration=", "duration="), ("new-food:heart=", "heart="),
+                              ("new-food:watts=", "watts=")]),
+    ("new-food:dosage=5:", "tag-bar", [("new-food:dosage=5:miles=", "miles="), ("new-food:dosage=5:duration=", "duration="),
+                                        ("new-food:dosage=5:heart=", "heart="), ("new-food:dosage=5:watts=", "watts=")]),
+    ("jogging:w", "tag-bar", [("jogging:watts=", "watts=")]),
     # A search: names used with the tag and the tags implying it.
     ("exercise:", "search", [("exercise:miles", "miles"), ("exercise:duration", "duration"),
                              ("exercise:heart", "heart"), ("exercise:watts", "watts")]),
@@ -253,12 +261,20 @@ def suggestion_index(monkeypatch: pytest.MonkeyPatch) -> SearchIndex:
     # MAX and MIN after a search's =.
     ("jogging:miles=", "search", [("jogging:miles=MAX", "MAX"), ("jogging:miles=MIN", "MIN")]),
     ("jogging", "search", []),
+    # A search offers only what it can find: no names from other tags.
+    ("jogging:w", "search", []),
+    ("new-food:", "search", []),
 ])
 def test_property_names_units_and_keywords_are_suggested(
     suggestion_index: SearchIndex, typed: str, place: str, expected: list[tuple[str, str]],
 ) -> None:
     suggestions = suggestion_index.suggest_property_completions(typed=typed, place=place, limit=10)
     assert [(suggestion.replacement, suggestion.label) for suggestion in suggestions] == expected
+
+
+def test_a_name_from_other_tags_says_so(suggestion_index: SearchIndex) -> None:
+    [dosage, *_rest] = suggestion_index.suggest_property_completions(typed="new-food:", place="tag-bar", limit=10)
+    assert dosage.reasons == ("Not used with this tag yet: used with other tags", "On 3 notes tagged drug")
 
 
 def test_a_suggestion_says_which_tags_use_it(suggestion_index: SearchIndex) -> None:

@@ -199,7 +199,14 @@ before, so you write `miles` again rather than `distance`.
   suggestions.
 - **Search box:** after `exercise:`, also suggest property names used with tags that
   imply `exercise` (`jogging`'s `miles`), since upward search finds those.
-- Agreed, not built (2026-10-26): in the tag bar, when none of a tag's own or inherited property names match what is typed, the vault's are suggested, most used first (`docs/ready-to-build/property-suggestions-fallback.md`).
+- **Tag bar, a name not used with the tag yet** (built 2026-10-27): when none of a tag's own or
+  inherited property names match what is typed (a new tag, or `jogging:cal` when `jogging` has only
+  `miles`), suggest the names used with any tag, by how many notes use each, ties by name, so a new
+  tag reuses `calories` instead of inventing `kcal`. Right-clicking one says "Not used with this tag
+  yet: used with other tags", then the tags using it most. The search box never does this: there a
+  name the tag never uses finds nothing. A tag's own value (`calories=700`) is not a property name
+  and is not offered (`SearchIndex._vault_property_names`; tests: `test_tag_properties.py`, the
+  `super-tags` browser suite).
 - Never suggest the `jogging=3:miles=3` form.
 - **Units:** after a number (`dosage=10` in the tag bar, `dosage>5` in the search
   box), suggest the units used with that property, most used first. In the search

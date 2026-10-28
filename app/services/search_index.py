@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import Counter
+import dataclasses
 from dataclasses import dataclass
 from itertools import combinations
 from threading import RLock
@@ -24,6 +25,7 @@ from app.services.tag_properties import (
     MIN_KEYWORD,
     EXTREME_KEYWORDS,
     VALUE_KIND_ORDER,
+    PropertyCompletion,
     PropertySuggestion,
     read_property_completion,
     PROPERTY_ASSIGNMENT,
@@ -1462,14 +1464,40 @@ class SearchIndex:
         ranked = sorted(
             (
                 (name, by_tag) for name, by_tag in counts.items()
-                if name.startswith(completion.partial.casefold()) and name != completion.partial.casefold()
-                and name not in excluded
+                if _completes(name, completion.partial, excluded)
             ),
             key=lambda item: (-sum(item[1].values()), item[0]),
         )
+        if not ranked and place == PROPERTY_SUGGESTIONS_IN_TAG_BAR and completion.property_name is None:
+            return self._vault_property_names(completion=completion, excluded=excluded, limit=limit)
         return [
             completion.suggestion(name, by_tag) for name, by_tag in ranked[:limit]
         ]
+
+    def _vault_property_names(
+        self, *, completion: PropertyCompletion, excluded: FrozenSet[str], limit: int,
+    ) -> List[PropertySuggestion]:
+        """In the tag bar, when no name used with the tag (or the tags it implies) matches
+        what is typed: the names used with any tag, by how many notes use each, so a new tag
+        reuses `calories` rather than invent `kcal` (docs/design/tag-properties.md,
+        Suggestions; agreed 2026-10-26)."""
+        with self._lock:
+            notes_by_name: Dict[str, Set[int]] = {}
+            for (_, property_name), notes in self._property_notes.items():
+                if property_name == IMPLICIT_PROPERTY or not _completes(property_name, completion.partial, excluded):
+                    continue
+                if property_name not in notes_by_name:
+                    notes_by_name[property_name] = set()
+                notes_by_name[property_name].update(notes)
+            ranked_names = sorted(notes_by_name, key=lambda name: (-len(notes_by_name[name]), name))[:limit]
+            counts = self._property_name_counts_locked(frozenset(tag for tag, _ in self._property_notes))
+        suggestions = []
+        for name in ranked_names:
+            suggestion = completion.suggestion(name, counts[name])
+            suggestions.append(dataclasses.replace(
+                suggestion, reasons=(_FROM_OTHER_TAGS_REASON,) + suggestion.reasons[:_OTHER_TAG_REASON_LIMIT],
+            ))
+        return suggestions
 
     def note_ids_for_property_term(self, condition: PropertyCondition) -> Set[str]:
         """The notes a super tag term can hold for: those with a value of its property on its
@@ -1764,3 +1792,15 @@ class SearchIndex:
 search_index = SearchIndex()
 # A fetched, decrypted or cleared URL title changes which notes match a text search.
 link_title_store.add_titles_changed_listener(search_index.refresh_link_titles)
+
+
+# A vault-wide name's reason (SearchIndex._vault_property_names), then its busiest tags.
+_FROM_OTHER_TAGS_REASON = "Not used with this tag yet: used with other tags"
+_OTHER_TAG_REASON_LIMIT = 3
+
+
+def _completes(name: str, partial: str, excluded: FrozenSet[str]) -> bool:
+    """Whether a property name completes what is typed: it starts with it, is longer, and
+    is not already in the token."""
+    typed = partial.casefold()
+    return name.startswith(typed) and name != typed and name not in excluded
