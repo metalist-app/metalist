@@ -68,7 +68,7 @@ One row per item.
 ## 6. Backups
 
 - **Self-hosted and personal backups stay one whole archive** (`Back Up Now`): the notes database plus the `files/` folder as it is (catalog and blobs). Every backup is complete; nothing chooses which files go in. An export opens directly as a vault.
-- **The rule behind it:** people must never have to get the choice of what to back up right. If MetaList later backs up to cloud storage itself (an integration with AWS, Azure or Google Drive, say), it may upload each file once there too, as hosted does, because MetaList does the choosing.
+- **The rule behind it:** people must never have to get the choice of what to back up right. If MetaList later backs up to cloud storage itself (an integration with AWS, Azure or Google Drive, say), it may upload each file once there too, as hosted does, because MetaList does the choosing (`docs/future-plans/backups-s3.md`).
 - **Hosted:** a keyless uploader sends each new blob to the backup store **once**, as one object, and sets `backed_up_at`. The catalog is snapshotted together with the notes database, as a pair with one snapshot ID, using `VACUUM INTO` after a WAL checkpoint, on the existing snapshot triggers. A restore always uses a matching pair. Here no person chooses anything, so uploading each file once is safe, and it's the only affordable way at hourly snapshots.
 - **Hosted retention:** a backed-up blob stays as long as any retained catalog snapshot references it.
 

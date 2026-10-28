@@ -174,6 +174,38 @@ const ERROR_BANNER_SECONDS = 10;
 // Command-gate watchdog for commands that may run long (file upload, prioritize, backup run).
 const LONG_COMMAND_TIMEOUT_SECONDS = 120;
 
+
+// A theme change cross-fades the whole page from the old colours to the new (main.css,
+// ::view-transition(root)). Opening in the saved theme, a background tab, reduced motion and
+// Animated transitions off switch at once, as does a browser without view transitions.
+function applyTheme(theme) {
+    const root = document.documentElement;
+    const nextTheme = theme === 'system' ? null : theme;
+    if (root.getAttribute('data-theme') === nextTheme) {
+        return;
+    }
+    const setTheme = () => {
+        if (nextTheme === null) {
+            root.removeAttribute('data-theme');
+        } else {
+            root.setAttribute('data-theme', nextTheme);
+        }
+    };
+    const isFaded = document.body.dataset.appReady === 'true'
+        && !document.hidden
+        && document.body.classList.contains('pref-animated-transitions')
+        && !window.matchMedia('(prefers-reduced-motion: reduce)').matches
+        && typeof document.startViewTransition === 'function';
+    if (!isFaded) {
+        setTheme();
+        return;
+    }
+    const transition = document.startViewTransition(setTheme);
+    transition.ready.catch((error) => { // shockharness: ignore[EXC002] reason="changing the theme again mid-fade (Enter cycles it) skips this fade with an AbortError; the newer theme is already applied, so nothing is left to do"
+        rethrowUnexpectedError(error);
+    });
+}
+
 function trimToken(token) {
     if (typeof token !== 'string') {
         throw new Error('trimToken requires string');
@@ -553,7 +585,7 @@ class CommandPaletteController {
                         autocorrect="off"
                         autocapitalize="off"
                         spellcheck="false"
-                        placeholder="Type tags…"
+                        placeholder="Type keywords to find a command…"
                     />
                 </div>
                 <div id="command-palette-suggestions" class="command-palette-suggestions"></div>
@@ -636,12 +668,7 @@ class CommandPaletteController {
 
         void BackupReminder.preferencesChanged();
 
-        const theme = this._getSelect('pref.theme', ['system', 'light', 'dark'], 'system');
-        if (theme === 'system') {
-            document.documentElement.removeAttribute('data-theme');
-        } else {
-            document.documentElement.setAttribute('data-theme', theme);
-        }
+        applyTheme(this._getSelect('pref.theme', ['system', 'light', 'dark'], 'system'));
 
         const tabIndicator = document.getElementById('tab-indicator');
         if (tabIndicator) {

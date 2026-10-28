@@ -25,7 +25,7 @@ MetaList has two themes, and dark mode is built from per-element overrides, not 
 | The note itself hard-codes white and `#e6e6e6` | `main.css`, `.note` | Even the core surface is not a variable yet |
 | Tags are already variables (`--note-tag-radius`, `--note-tag-border-width`, …) | `main.css`, `:root` | The pattern the rest should follow |
 | Fonts and images load only from MetaList or embedded data | `app/security/http_headers.py` | Skin fonts and ornament art must ship with MetaList |
-| Dialogs are dark in every theme on purpose | `main.css`, shared modal shell | A skin must decide whether it restyles them |
+| Dialogs, menus and cards follow the Light/Dark theme through one token set (since 2026-10-27) | `main.css`, `--modal-*` tokens | A skin can restyle them by setting the tokens |
 | Excalidraw previews and Mermaid diagrams render as light or dark | `file_previews`, Mermaid render service | A skin must say which base it uses |
 
 ## Proposed skin architecture
@@ -154,7 +154,7 @@ Each of these stresses a different part of the skin system, so building two of t
 | Card catalogue | Each note a typed index card, tags as stamped labels | Heavy reshaping of each note | Light |
 | Green phosphor terminal | Monospace font, scanlines, block cursor | The dark base and the cursor styling | Dark |
 | Blueprint | White lines on blue, notes as boxes with dimension lines | Borders and indentation lines | Dark |
-| Mac System 7 | 1-bit dithered fills, pinstriped title bars on top-level notes | Dialogs, which are dark in every theme today | Light |
+| Mac System 7 | 1-bit dithered fills, pinstriped title bars on top-level notes | Dialogs, which follow the theme through the `--modal-*` tokens | Light |
 
 ## Open questions and a sensible order
 
@@ -166,7 +166,7 @@ If this is picked up, the colour refactor comes first because every skin depends
 4. Border art per context.
 5. Rendition styles that need no AI (dithering), then AI renditions.
 
-- [ ] Do skins restyle dialogs, or do dialogs stay dark in every skin?
+- [ ] Do skins set the dialogs' `--modal-*` tokens, or leave them to the Light/Dark theme?
 - [ ] Which do Excalidraw previews and Mermaid diagrams use under a skin: the skin's base, or something new?
 - [ ] Border art: drawn by hand as SVG, or sliced from openly licensed museum scans?
 - [ ] Does a search change the border only once it settles, or only a tab switch?

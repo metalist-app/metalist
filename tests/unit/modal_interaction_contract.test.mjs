@@ -110,21 +110,30 @@ test('help modal uses a centered flex overlay with internal panel scrolling', ()
 });
 
 
-test('all app modals inherit the theme-independent dark visual system', () => {
+test('all app modals share one visual system that follows the theme', () => {
     const source = readFileSync(MAIN_CSS_URL, 'utf8');
-    const shellStart = source.indexOf('/* Shared modal shell. Modal contents are intentionally dark in every app theme. */');
-    const unifiedStart = source.indexOf('/* Unified dark modal visual system');
+    const shellStart = source.indexOf('/* Shared modal shell.');
+    const unifiedStart = source.indexOf('/* Unified modal visual system');
 
     assert.notEqual(shellStart, -1);
     assert.notEqual(unifiedStart, -1);
     const shellSource = source.slice(shellStart, source.indexOf('.image-file-insert-choice-modal-content', shellStart));
     const unifiedSource = source.slice(unifiedStart);
 
-    assert.match(shellSource, /\.modal\s*\{[\s\S]*--modal-surface:/);
-    assert.match(shellSource, /color-scheme:\s*dark/);
+    // One token set, Light values on :root and Dark ones under the dark theme.
+    const lightTokens = source.match(/:root\s*\{\s*--modal-color-scheme:\s*light;([^}]*)\}/);
+    const darkTokens = source.match(/html\[data-theme="dark"\]\s*\{\s*--modal-color-scheme:\s*dark;([^}]*)\}/);
+    assert.ok(lightTokens, 'expected the Light modal tokens');
+    assert.ok(darkTokens, 'expected the Dark modal tokens');
+    const tokenNames = tokens => [...tokens.matchAll(/(--modal-[\w-]+):/g)].map(match => match[1]).sort();
+    assert.deepEqual(tokenNames(lightTokens[1]), tokenNames(darkTokens[1]), 'every token has a Light and a Dark value');
+    assert.match(lightTokens[1], /--modal-surface:\s*#ffffff;/);
+    assert.match(darkTokens[1], /--modal-surface:\s*#10151d;/);
+
+    assert.match(shellSource, /\.modal\s*\{[\s\S]*color-scheme:\s*var\(--modal-color-scheme\)/);
     assert.match(shellSource, /z-index:\s*15000/);
     assert.match(shellSource, /backdrop-filter:\s*blur\(/);
-    assert.match(shellSource, /\.modal-content\s*\{[\s\S]*background:\s*linear-gradient/);
+    assert.match(shellSource, /\.modal-content\s*\{[\s\S]*background:\s*var\(--modal-panel-background\)/);
     assert.match(unifiedSource, /\.modal-content input:not\(\[type="checkbox"\]\)/);
     assert.match(unifiedSource, /\.modal-content \.secondary-btn/);
     assert.match(unifiedSource, /\.modal-content \.danger-btn/);
@@ -142,14 +151,14 @@ test('all app modals inherit the theme-independent dark visual system', () => {
         'command-palette-panel',
     ];
     for (const className of specializedSurfaces) {
-        assert.ok(unifiedSource.includes(className), `missing dark modal coverage for ${className}`);
+        assert.ok(unifiedSource.includes(className), `missing modal coverage for ${className}`);
     }
 });
 
 
-test('ontology editor keeps its established visual system outside shared modal overrides', () => {
+test('ontology editor keeps its own layout and follows the theme through the shared tokens', () => {
     const source = readFileSync(MAIN_CSS_URL, 'utf8');
-    const unifiedStart = source.indexOf('/* Unified dark modal visual system');
+    const unifiedStart = source.indexOf('/* Unified modal visual system');
     assert.notEqual(unifiedStart, -1);
     const unifiedSource = source.slice(unifiedStart);
 
@@ -160,6 +169,12 @@ test('ontology editor keeps its established visual system outside shared modal o
         source,
         /#ontology-modal \.modal-content\.ontology-modal-content\s*\{[\s\S]*max-width:\s*90%;[\s\S]*margin:\s*60px auto;[\s\S]*padding:\s*20px;[\s\S]*border-radius:\s*8px/,
     );
+    // Its colours come from the theme: no fixed white text or tints, no fixed dark panels.
+    const ontologySource = source.slice(source.indexOf('#ontology-modal {'), source.indexOf('.help-modal-content {'));
+    assert.doesNotMatch(ontologySource, /rgba\(255, 255, 255,/);
+    // A fixed near-black panel or list (each channel under 50, nearly opaque), as it had before.
+    assert.doesNotMatch(ontologySource, /rgba\([0-4]?\d, [0-4]?\d, [0-4]?\d, 0\.9\d\)/);
+    assert.match(ontologySource, /background:\s*var\(--modal-panel-background\)/);
 });
 
 

@@ -6,9 +6,10 @@ This document defines the standard pattern for implementing modal dialogs in the
 
 ## Design Principles
 
-### 0. **One Dark Visual System**
-- Every application modal uses the shared dark shell in `app/static/css/main.css`, independent of the page's light/dark preference.
-- Shared tokens on `.modal` define the surface, inset surface, borders, text hierarchy, accent, success, and danger colors.
+### 0. **One Visual System That Follows the Theme**
+- Every application modal, menu, sheet, suggestion list and floating card follows the Light/Dark theme (agreed 2026-10-26; built 2026-10-27). Only the login screen stays dark in every theme.
+- One token set, `--modal-*` in `app/static/css/main.css`, defines the surface, raised and inset surfaces, borders, text hierarchy, accent, success, warning, danger, backdrop and shadows: Light values on `:root`, Dark ones under `html[data-theme="dark"]`, beside the theme colours. Every token has both values (`tests/unit/modal_interaction_contract.test.mjs`). Feature CSS uses the tokens, never fixed colours.
+- In Light theme a modal or menu stands above the page by its border, shadow and dimmed backdrop.
 - `.modal-content` owns the standard panel, shadow, radius, padding, scrolling, headings, controls, buttons, and close control. Feature-specific modal CSS should define layout and width only where possible.
 - Dense information uses cards, tables, and split panes only when they improve scanning. Do not repeat a value in a large summary card beside the control that already displays it.
 - Default action rows are right-aligned on desktop and stack to full width on narrow screens.

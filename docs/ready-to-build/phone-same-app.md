@@ -89,4 +89,4 @@ From `docs/ui/phone.md`: read-only; a tap on a note shows its own tags as blue p
 - **Not there yet:** the server knows no client type. `docs/future-plans/phone-later.md` listed "a server-side phone client type" as out of scope. The phone's view (`multi-view-editing.md`) would declare it.
 - **The server's refusal of the trimmed routes is a guard against the phone app's own mistakes, not a security boundary** (maintainer, 2026-10-27). The client declares its own type, so it keeps the phone's interface out of those routes but stops nothing that claims to be a desktop. That is enough: anyone with the password can use those routes from a desktop anyway.
 - `@inbox` goes entirely, with nothing done to notes already carrying it: no vault in use has any (maintainer, 2026-10-27).
-- The theme note (`menus-follow-theme.md`) lists "the phone sheets and capture"; capture goes away here.
+- The phone sheets and capture follow the theme since 2026-10-27 (`docs/ui/modals.md`); capture goes away here.

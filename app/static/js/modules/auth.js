@@ -29,6 +29,12 @@ import { beginStartupTiming, enterStartupStage, finishStartupTiming } from './st
 const LOGIN_SLIDE_MS = 350;
 // How long past the slide to wait for its animationend before swapping anyway.
 const LOGIN_SLIDE_GRACE_MS = 100;
+// Matches the 300 ms fade in main.css (.login-page-leaving).
+const LOGIN_FADE_MS = 300;
+// Matches the progress bar's 0.2 s width transition in main.css (.login-progress-bar).
+const LOGIN_PROGRESS_FILL_MS = 200;
+const LOGIN_PAGE_LEAVING_CLASS = 'login-page-leaving';
+const LOGIN_PAGE_COVERING_CLASS = 'login-page-covering';
 const HYDRATION_POLL_INTERVAL_MS = 200;
 const FULL_PROGRESS_PERCENT = 100;
 // With a single namespace there is nothing to switch to.
@@ -48,6 +54,8 @@ export const Auth = {
     _loadingTimerId: null,
     // The next login backs up and upgrades the database (from /auth/status).
     _isUpgradePending: false,
+    // Counts login-screen fades, so a fade's late finish never hides a login screen shown since.
+    _loginFadeCount: 0,
     
     /**
      * Initialize authentication on page load
@@ -391,6 +399,8 @@ export const Auth = {
         const passwordInput = this._requireElement('login-password');
 
         mainApp.style.display = 'none';
+        this._loginFadeCount += 1;
+        loginPage.classList.remove(LOGIN_PAGE_LEAVING_CLASS, LOGIN_PAGE_COVERING_CLASS);
         loginPage.style.display = 'flex';
         this._showLoginForm();
         this._resetHydrationUI();
@@ -427,12 +437,75 @@ export const Auth = {
         const passwordInput = this._requireElement('login-password');
 
         this._stopLoadingElapsed();
-        loginPage.style.display = 'none';
         mainApp.style.display = 'block';
+        passwordInput.value = '';
+        this._fadeOutLoginPage(loginPage);
+    },
+
+    // The notes show underneath at once; once the progress bar has visibly filled, the
+    // login screen fades out over them. With reduced motion or Animated transitions off it
+    // goes at once.
+    _fadeOutLoginPage(loginPage) {
+        const isAnimated = document.body.classList.contains('pref-animated-transitions')
+            && !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        if (!isAnimated || loginPage.style.display === 'none') {
+            this._hideLoginPage(loginPage);
+            return;
+        }
+        this._loginFadeCount += 1;
+        const fadeCount = this._loginFadeCount;
+        // From now until it has gone, the screen covers the floating buttons and cards too.
+        loginPage.classList.add(LOGIN_PAGE_COVERING_CLASS);
+        const barFill = this._requireElement('login-progress-bar').getAnimations();
+        let hasStarted = false;
+        const start = () => {
+            if (hasStarted || fadeCount !== this._loginFadeCount) {
+                return;
+            }
+            hasStarted = true;
+            this._startLoginPageFade(loginPage, fadeCount);
+        };
+        if (barFill.length === 0) {
+            start();
+            return;
+        }
+        for (const animation of barFill) {
+            animation.addEventListener('finish', start, { once: true });
+            animation.addEventListener('cancel', start, { once: true });
+        }
+        // Background tabs may not run the transition; the fade still starts.
+        window.setTimeout(start, LOGIN_PROGRESS_FILL_MS + LOGIN_SLIDE_GRACE_MS);
+    },
+
+    _startLoginPageFade(loginPage, fadeCount) {
+        // A very quick login can still be sliding the form away; it goes now.
+        this._requireElement('login-form-view').hidden = true;
+        const finish = () => {
+            loginPage.removeEventListener('animationend', onAnimationEnd);
+            // A login screen shown again since (a lock, a vault switch) stays.
+            if (fadeCount !== this._loginFadeCount || !loginPage.classList.contains(LOGIN_PAGE_LEAVING_CLASS)) {
+                return;
+            }
+            this._hideLoginPage(loginPage);
+        };
+        // The logo's own animations end inside it too; only the screen's fade counts.
+        const onAnimationEnd = (event) => {
+            if (event.target === loginPage) {
+                finish();
+            }
+        };
+        loginPage.addEventListener('animationend', onAnimationEnd);
+        loginPage.classList.add(LOGIN_PAGE_LEAVING_CLASS);
+        // Background tabs may not run the animation; the screen still goes.
+        window.setTimeout(finish, LOGIN_FADE_MS + LOGIN_SLIDE_GRACE_MS);
+    },
+
+    _hideLoginPage(loginPage) {
+        loginPage.classList.remove(LOGIN_PAGE_LEAVING_CLASS, LOGIN_PAGE_COVERING_CLASS);
+        loginPage.style.display = 'none';
         this._resetHydrationUI();
         this._clearLoginError();
         this._syncLoginNamespaceVisibility();
-        passwordInput.value = '';
     },
 
     _showHydrationUI() {

@@ -65,11 +65,11 @@ test('syncNoteTimestampDataset requires complete timestamp metadata', () => {
     );
 });
 
-test('timestamps use the dark context-menu info footer instead of a hover preference', () => {
+test('timestamps use the context-menu info footer, in the theme colours, instead of a hover preference', () => {
     const cssUrl = new URL('../../app/static/css/main.css', import.meta.url);
     const css = readFileSync(cssUrl, 'utf8');
 
     assert.doesNotMatch(css, /pref-show-note-timestamps/);
-    assert.match(css, /\.context-menu-info\s*\{[\s\S]*?background:\s*#1f2937/);
-    assert.match(css, /\.context-menu-info\s*\{[\s\S]*?color:\s*#f8fafc/);
+    assert.match(css, /\.context-menu-info\s*\{[\s\S]*?background:\s*var\(--modal-surface-raised\)/);
+    assert.match(css, /\.context-menu-info\s*\{[\s\S]*?color:\s*var\(--modal-text\)/);
 });

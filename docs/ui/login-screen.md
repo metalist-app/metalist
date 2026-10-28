@@ -34,16 +34,18 @@ another vault (`BROWSER_TEST_SUITE=login-logo`), in a wide and a narrow window.
 | Wrong password, too many attempts, or the request fails | The reason appears under OK; the field is emptied and focused. Nothing moved |
 | Password accepted | The form slides out to the left while the loading view slides in from the right (350 ms, within the M's width) |
 | Loading | A progress bar as wide as the logo's bars, like a third bar, that never moves backwards; under it, in grey italics, the current step and the seconds elapsed ("Decrypting notes into memory… · 4s") |
-| Loading done | The app appears |
+| Loading done | The notes show underneath at once; once the progress bar has visibly filled, the screen fades out over them (300 ms), from black to the page's colour. Until it has gone it covers everything, floating buttons and cards too, so they all appear together. The logo and the notes stand still, and a click during the fade reaches the notes (`auth.js` `_fadeOutLoginPage`, agreed 2026-10-27) |
 | Loading fails | The error replaces the step line in red, with the elapsed time frozen; the app does not open |
 
-With the system's reduce-motion setting the fades and the slide become instant.
+With the system's reduce-motion setting the fades and the slide become instant; with `Animated transitions` off, the fade after loading does too.
 
 The login-style screens (login, Session locked, the tab opening a namespace)
 reserve no scrollbar strip, since nothing on them scrolls: with always-visible
 scrollbars the strip showed white at the right edge and shifted the logo when
 the panel appeared. The app keeps its strip, so the notes do not shift when the
-list starts to scroll (`main.css`, `html:has(> body > .login-page…)`).
+list starts to scroll (`main.css`, `html:has(> body > .login-page…)`). The strip
+comes back when the fade after loading starts, while the screen is still opaque;
+the login screen is as wide as the whole window, so its logo stays put.
 
 ## No white page in between
 A password namespace's page opens straight on the login screen when a login is
