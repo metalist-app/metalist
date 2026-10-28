@@ -864,17 +864,24 @@ try {
   });
   const backupPath = join(directory,'namespaces','default','backups',backupFilename);
   const backupHash = createHash('sha256').update(await readFile(backupPath)).digest('hex');
-  await page.evaluate(async ({noteId, backupFilename}) => {
+  const restoreHeaders = await page.evaluate(async noteId => {
     const {NotesAPI} = await import('/static/js/modules/api-client.js');
     const {buildSessionHeaders} = await import('/static/js/modules/session-auth.js');
     await NotesAPI.saveNote(noteId, '<p>Changed after backup</p>', '');
-    const response = await fetch('/api2/auth/backup/restore', {method:'POST',headers:buildSessionHeaders(true),body:JSON.stringify({filename:backupFilename})});
+    return buildSessionHeaders(true);
+  }, noteId);
+  // The restore is sent from a same-origin page without the app. An app page still open
+  // when the restarted server answers gets a 401 for its old session and goes to /locked,
+  // which can cancel a reload already under way and leave the login screen unopened.
+  await page.goto(`${origin}/static/css/main.css?restore-host`);
+  await page.evaluate(async ({restoreHeaders, backupFilename}) => {
+    const response = await fetch('/api2/auth/backup/restore', {method:'POST',headers:restoreHeaders,body:JSON.stringify({filename:backupFilename})});
     if (!response.ok) throw new Error(`Restore failed: ${response.status}`);
-  }, {noteId, backupFilename});
+  }, {restoreHeaders, backupFilename});
   // Restore re-execs the same owned server process; observe its second startup.
   for (let attempt=0; attempt<300 && logs.split('Application startup complete.').length<3; attempt++) await delay(100);
   assert(logs.split('Application startup complete.').length>=3, 'Restored server did not restart');
-  await page.reload();
+  await page.goto(origin);
   await page.waitForSelector('#login-panel[data-revealed="true"] #login-password', {visible:true});
   await page.type('#login-password', password);
   await page.click('#login-form button[type="submit"]');
