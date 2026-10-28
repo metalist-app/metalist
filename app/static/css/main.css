@@ -62,7 +62,7 @@ html {
 /* A login-style screen (login, Session locked, the tab opening a namespace) has
    nothing to scroll: with always-visible scrollbars the reserved strip showed
    white at the right edge and moved the logo when the panel appeared. */
-html:has(> body > .login-page[style*="display: flex"]) {
+html:has(> body > .login-page[style*="display: flex"]:not(.login-page-leaving)) {
     scrollbar-gutter: auto;
 }
 
@@ -71,7 +71,12 @@ html:has(> body > .login-page[style*="display: flex"]) {
 .login-page {
     --login-logo-width: min(300px, 62vw);
     position: fixed;
-    inset: 0;
+    /* The whole window's width, not the page's: when the notes take back the scrollbar's
+       space as the screen fades (always-visible scrollbars), the logo stays put. */
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: 100vw;
     display: flex;
     align-items: flex-start;
     justify-content: center;
@@ -80,6 +85,28 @@ html:has(> body > .login-page[style*="display: flex"]) {
     background: radial-gradient(ellipse at 50% 42%, #1a1a1a 0%, #0b0b0b 58%, #050505 100%);
     color: #f4f4f4;
     font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", Arial, sans-serif;
+}
+
+/* After login the notes show underneath while the screen fades out over them
+   (auth.js, _fadeOutLoginPage). Until it has gone it covers everything, floating buttons
+   and cards too, so they all fade in together; a click during the fade reaches the notes. */
+.login-page.login-page-covering {
+    z-index: 21000; /* above floating messages (20000) */
+}
+
+.login-page.login-page-leaving {
+    pointer-events: none;
+    animation: login-page-fade-out 300ms ease-out forwards;
+}
+
+@keyframes login-page-fade-out {
+    from {
+        opacity: 1;
+    }
+
+    to {
+        opacity: 0;
+    }
 }
 
 .login-stage {
@@ -8540,6 +8567,13 @@ html[data-theme="dark"] {
     --modal-preview-border: rgba(205, 220, 241, 0.4);
     --modal-ink-rgb: 255, 255, 255;
     --modal-focus-tag-shadow: 0 0 12px rgba(99, 179, 237, 0.9), 0 0 24px rgba(99, 179, 237, 0.6), 0 6px 18px rgba(15, 23, 42, 0.65);
+}
+
+/* Changing the theme cross-fades the page over 300 ms (command-palette-controller.js,
+   applyTheme), like the login screen's fade after loading. */
+::view-transition-old(root),
+::view-transition-new(root) {
+    animation-duration: 300ms;
 }
 
 /* Dark theme: neutral black with a soft centre glow. Note corners and tag pills

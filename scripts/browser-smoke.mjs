@@ -65,6 +65,8 @@ import {checkSearchHighlight} from './browser-search-highlight-regressions.mjs';
 import {checkReferenceViews} from './browser-reference-view-regressions.mjs';
 import {installRequestMonitor, waitForAppQuiet} from './browser-app-idle.mjs';
 import {checkLoginLogo} from './browser-login-logo-regressions.mjs';
+import {checkLoginFade} from './browser-login-fade-regressions.mjs';
+import {checkThemeFade} from './browser-theme-fade-regressions.mjs';
 import {checkDialogKeys} from './browser-dialog-key-regressions.mjs';
 import {checkDialogButtons} from './browser-dialog-button-regressions.mjs';
 import {checkPhone} from './browser-phone-regressions.mjs';
@@ -398,6 +400,14 @@ try {
     await checkLoginLogo(browser, page, origin);
     assert.deepEqual(errors, []);
     console.log(`PASS login logo regressions in ${await browser.version()}`);
+  } else if (process.env.BROWSER_TEST_SUITE === 'theme-fade') {
+    await checkThemeFade(page);
+    assert.deepEqual(errors, []);
+    console.log(`PASS theme fade regressions in ${await browser.version()}`);
+  } else if (process.env.BROWSER_TEST_SUITE === 'login-fade') {
+    await checkLoginFade(page);
+    assert.deepEqual(errors, []);
+    console.log(`PASS login fade regressions in ${await browser.version()}`);
   } else if (process.env.BROWSER_TEST_SUITE === 'collapse-outlines') {
     await checkCollapseOutlines(page);
     assert.deepEqual(errors, []);

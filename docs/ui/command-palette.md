@@ -77,7 +77,7 @@ Opening or dismissing the command palette does not clear undo/redo. Global actio
 - Search `LLM` or `OpenAI` to find `AI Agent Settings` for API key and model configuration.
 - Endpoint definitions (behavior/labels) live in code.
 - Palette preferences (`pref.*`) and command usage history are persisted per namespace in the main SQLite DB via `/api2/auth/client-state*`, not in browser `localStorage`.
-- `Animated transitions` is on by default and controls UI motion such as tag-bar edit transitions and note expand/collapse transitions.
+- `Animated transitions` is on by default and controls UI motion such as tag-bar edit transitions, note expand/collapse transitions, the login screen fading out over the notes, and the page cross-fading (300 ms) when `Theme` changes.
 - `Note Layout & Appearance…` stores namespace-scoped presets for top-level note size, child indentation, vertical spacing, note corners, and tag style. The defaults are `Larger`, `Standard`, `Comfortable`, `Round`, and `Pills` respectively. Note corners can be `Subtle`, `Rounded`, or `Round`; tag style shows visible note tags as outlined `Pills` or `Plain text` in both themes.
 - `Search Suggestion Stats & Settings…` is the single suggestion-personalization control surface. Its ordered 1–365 day slots and default-on time-window-label and one-credit-per-note-per-search-context toggles save immediately when changed. The modal also displays retained daily tag-credit statistics and provides the confirmed activity reset. An empty slot list disables personalization; the default slots are 1, 7, and 30 days.
 - `Show/Hide AI Chat` controls the resizable right-side chat panel.
