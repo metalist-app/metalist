@@ -1,4 +1,5 @@
 import { ApplicationState, stateValuesEqual } from '../../application-state.js';
+import { half } from '../../half.js';
 import { NotesAPI } from '../../api-client.js';
 import { sanitizeNoteHtmlForStorage } from '../../note-html-sanitizer.js';
 import { serverRenderedHtml } from '../../server-rendered-html.js';
@@ -7,13 +8,14 @@ import { getTagBarValue } from './tag-bar-service.js';
 import { placePasteFormatOffer } from './paste-format-offer-service.js';
 
 // Previews while editing (docs/ui/content-formatting.md, "Previews while editing";
-// agreed 2026-10-29). With the caret inside a formula of the note being edited, a
-// small panel just below that line, under the caret, shows the formula drawn. The server finds the
-// formula under the caret and draws it as the note draws it (app/services/edit_previews.py),
-// so a preview never disagrees with the note. The panel floats: the note's text
-// never moves. While the formula is broken mid-typing the last good drawing fades
-// toward a ghost; a pause shows why it is broken. Escape hides it until the caret
-// next enters a formula; scrolling hides it until the next key or caret move.
+// agreed 2026-10-29). With the caret inside a formula or a CSV table of the note being
+// edited, a small panel just below that line, under the caret, shows it drawn; a table
+// scrolls so the caret's row is in view. The server finds what is under the caret and
+// draws it as the note draws it (app/services/edit_previews.py), so a preview never
+// disagrees with the note. The panel floats: the note's text never moves. While it is
+// broken mid-typing the last good drawing fades toward a ghost; a pause shows why it is
+// broken. Selecting text (to type over it) leaves it as it was. Escape hides it until the
+// caret next leaves it; scrolling hides it until the next key or caret move.
 // "Previews While Editing" turns it off; the phone has none.
 
 // A Unicode noncharacter marks the caret; the server looks for the same one.
@@ -22,6 +24,9 @@ const EDITED_CONTENT_SELECTOR = '.note.editing > .note-content';
 const PREVIEWS_ON_CLASS = 'pref-edit-previews';
 const PHONE_CLASS = 'phone-layout';
 const PREVIEW_NONE = 'none';
+const PREVIEW_CSV = 'csv';
+const NO_CARET_ROW = -1;
+const TABLE_CLASS = 'edit-preview-table';
 
 // Tuning (the maintainer wants to try these before settling them):
 // the preview asks once typing pauses this long,
@@ -42,8 +47,8 @@ const moduleState = ApplicationState.createFields('edit-preview-service', {
     brokenTimer: null,
     // The note content the caret was last asked about: a caret in another note starts fresh.
     askedContent: null,
-    // The formula under the caret drawn when it last rendered, while the caret stays in it.
-    lastGoodHtml: null,
+    // What is under the caret as it last rendered ({ kind, html, caretRow }), while the caret stays in it.
+    lastGood: null,
     // Escape hid the panel; it stays hidden until the caret leaves the formula.
     isDismissed: false,
 });
@@ -68,6 +73,15 @@ function caretInEditedNote() {
     const content = element.closest(EDITED_CONTENT_SELECTOR);
     if (content === null) return null;
     return { content, node, offset: range.startOffset };
+}
+
+// Text selected in the note being edited, as before typing over it: the preview stays as it was.
+function isSelectingInEditedNote() {
+    const selection = window.getSelection();
+    if (selection === null || selection.rangeCount === 0 || selection.isCollapsed) return false;
+    const node = selection.anchorNode;
+    const element = node instanceof Element ? node : node.parentElement;
+    return element !== null && element.closest(EDITED_CONTENT_SELECTOR) !== null;
 }
 
 function childIndex(node) {
@@ -109,7 +123,7 @@ function hidePanel() {
 function forgetFormula() {
     hidePanel();
     setState('askedContent', null);
-    setState('lastGoodHtml', null);
+    setState('lastGood', null);
     setState('isDismissed', false);
 }
 
@@ -152,7 +166,18 @@ function setStrength(isFaded) {
     panel.style.opacity = String(FULL_OPACITY);
 }
 
-function showPanel({ caret, html, error, isFaded }) {
+// The table scrolled inside the panel so the caret's row is in the middle, as far as it can be.
+function showCaretRow(caretRow) {
+    const panel = moduleState.panel;
+    const rows = panel.querySelectorAll('tbody > tr');
+    if (caretRow === NO_CARET_ROW || caretRow >= rows.length) return;
+    const panelBox = panel.getBoundingClientRect();
+    const rowBox = rows[caretRow].getBoundingClientRect();
+    const rowTopInPanel = rowBox.top - panelBox.top + panel.scrollTop;
+    panel.scrollTop = rowTopInPanel - half(panel.clientHeight - rowBox.height);
+}
+
+function showPanel({ caret, kind, html, error, caretRow, isFaded }) {
     if (moduleState.panel === null) {
         const panel = document.createElement('div');
         panel.className = 'edit-preview';
@@ -164,6 +189,7 @@ function showPanel({ caret, html, error, isFaded }) {
     }
     const panel = moduleState.panel;
     panel.classList.toggle('edit-preview-has-error', error !== '');
+    panel.classList.toggle(TABLE_CLASS, kind === PREVIEW_CSV && error === '');
     if (error !== '') {
         panel.style.fontSize = '';
         panel.textContent = error;
@@ -173,6 +199,8 @@ function showPanel({ caret, html, error, isFaded }) {
         panel.innerHTML = serverRenderedHtml(html);
     }
     placePanel(caret);
+    panel.scrollTop = 0;
+    if (error === '') showCaretRow(caretRow);
     setStrength(isFaded);
 }
 
@@ -182,26 +210,31 @@ function showAnswer(caret, preview) {
         return;
     }
     if (moduleState.isDismissed) return;
-    const isGood = preview.error === '' && !preview.hasUnknownCommand;
+    const { kind, html, error, caretRow } = preview;
+    // The caret went from a formula into a table (or back) without leaving both: nothing carries over.
+    if (moduleState.lastGood !== null && moduleState.lastGood.kind !== kind) setState('lastGood', null);
+    const isGood = error === '' && !preview.hasUnknownCommand;
     if (isGood) {
-        setState('lastGoodHtml', preview.html);
-        showPanel({ caret, html: preview.html, error: '', isFaded: false });
+        setState('lastGood', { kind, html, caretRow });
+        showPanel({ caret, kind, html, error: '', caretRow, isFaded: false });
         return;
     }
-    if (moduleState.lastGoodHtml === null) {
+    const lastGood = moduleState.lastGood;
+    if (lastGood === null) {
         hidePanel();
     } else {
-        showPanel({ caret, html: moduleState.lastGoodHtml, error: '', isFaded: true });
+        showPanel({ caret, kind, html: lastGood.html, error: '', caretRow: lastGood.caretRow, isFaded: true });
     }
     // Still broken after a pause: why, or the drawing with the command it does not know, as the note shows it.
     setState('brokenTimer', setTimeout(() => {
         setState('brokenTimer', null);
-        showPanel({ caret, html: preview.html, error: preview.error, isFaded: false });
+        showPanel({ caret, kind, html, error, caretRow, isFaded: false });
     }, BROKEN_PAUSE_MS));
 }
 
 async function askForPreview() {
     setState('typingTimer', null);
+    if (isSelectingInEditedNote()) return;
     const caret = caretInEditedNote();
     if (!isEnabled() || caret === null || caret.content.textContent.includes(CARET_MARK)) {
         forgetFormula();
@@ -214,7 +247,7 @@ async function askForPreview() {
     setState('requestSerial', moduleState.requestSerial + 1);
     const serial = moduleState.requestSerial;
     const preview = await NotesAPI.fetchEditPreview(markedContentHtml(caret), getTagBarValue(noteElement));
-    if (serial !== moduleState.requestSerial) return;
+    if (serial !== moduleState.requestSerial || isSelectingInEditedNote()) return;
     if (!caret.content.isConnected || caretInEditedNote() === null) {
         forgetFormula();
         return;
@@ -233,6 +266,13 @@ function scheduleAsk() {
     }, TYPING_PAUSE_MS));
 }
 
+// The page or a list scrolled: the panel hides until the next key or caret move. Its own
+// scrolling, to the caret's row, is not one.
+function handleScroll(event) {
+    if (moduleState.panel !== null && event.target instanceof Node && moduleState.panel.contains(event.target)) return;
+    hidePanel();
+}
+
 // Escape hides only the panel; editing goes on.
 function handleKeyDown(event) {
     if (event.key !== 'Escape' || moduleState.panel === null) return;
@@ -249,6 +289,6 @@ export function initializeEditPreviews() {
     // Typing that leaves the caret where it was (Delete) changes the formula too.
     document.addEventListener('input', unlessDiagramEditorOpen(scheduleAsk), { capture: true });
     window.addEventListener('keydown', handleKeyDown, { capture: true });
-    document.addEventListener('scroll', hidePanel, { capture: true, passive: true });
+    document.addEventListener('scroll', handleScroll, { capture: true, passive: true });
     window.addEventListener('resize', hidePanel);
 }

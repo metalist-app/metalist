@@ -6274,6 +6274,8 @@ html[data-theme="dark"] .context-menu-item.is-submenu-open {
 .edit-preview {
     position: fixed;
     z-index: 12500;
+    /* The 40% includes the padding and border. */
+    box-sizing: border-box;
     max-width: min(640px, calc(100vw - 16px));
     max-height: 40vh;
     overflow: hidden;
@@ -6284,6 +6286,15 @@ html[data-theme="dark"] .context-menu-item.is-submenu-open {
     color: var(--text-color);
     box-shadow: 0 8px 18px rgba(0, 0, 0, 0.16);
     pointer-events: none;
+}
+
+/* A table is as wide as the window allows and scrolls to the caret's row (edit-preview-service.js). */
+.edit-preview.edit-preview-table {
+    max-width: calc(100vw - 16px);
+}
+
+.edit-preview .meta-csv {
+    margin: 0;
 }
 
 .edit-preview.edit-preview-has-error {

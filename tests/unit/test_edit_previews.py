@@ -12,7 +12,8 @@ import pytest
 import app.services.content_formatting as content_formatting_module
 from app.security.rendered_html import sanitize_rendered_html
 from app.services.content_formatting import format_note_content_for_view
-from app.services.edit_previews import CARET_MARK, PREVIEW_LATEX, PREVIEW_NONE, edit_preview_at_caret
+from app.services.edit_previews import CARET_MARK, PREVIEW_CSV, PREVIEW_LATEX, PREVIEW_NONE, edit_preview_at_caret
+from app.utils.not_found import NOT_FOUND
 from app.services.latex_rendering import FoundFormula, finding_formulas, render_latex_math_to_html, render_latex_to_html
 
 MARKDOWN = "@markdown"
@@ -168,10 +169,10 @@ with TestClient(app, base_url="http://localhost", raise_server_exceptions=False)
     assert answer.status_code == 200, answer.text
     assert answer.json() == {
         "kind": "latex", "html": sanitize_rendered_html(render_latex_math_to_html("\\\\frac{1}{2}", display="block").html),
-        "error": "", "hasUnknownCommand": False,
+        "error": "", "hasUnknownCommand": False, "caretRow": -1,
     }, answer.json()
     outside = client.post(path, headers=headers, json={"marked_content_html": "<div>" + CARET_MARK + "$$x^2$$</div>", "tags_text": "@markdown"})
-    assert outside.json() == {"kind": "none", "html": "", "error": "", "hasUnknownCommand": False}, outside.json()
+    assert outside.json() == {"kind": "none", "html": "", "error": "", "hasUnknownCommand": False, "caretRow": -1}, outside.json()
     missing = client.post(path, headers=headers, json={"marked_content_html": "<div>$$x^2$$</div>"})
     assert missing.status_code == 422, missing.text
     unauthenticated = client.post(path, headers={"Origin": "http://localhost"}, json={"marked_content_html": CARET_MARK, "tags_text": ""})
@@ -182,3 +183,59 @@ print("ROUTE OK")
     result = subprocess.run([sys.executable, "-c", script], env=environment, capture_output=True, encoding="utf-8", timeout=60)
     assert result.returncode == 0, (result.stdout[-2000:], result.stderr[-3000:])
     assert "ROUTE OK" in result.stdout
+
+
+PEOPLE = ['Name,Role,City', 'Ada,Analyst,London', '"Smith, John",Engineer,"Portland, OR"', 'Linus,Maintainer,Portland']
+
+
+def _lines(lines: list[str]) -> str:
+    return "".join(f"<div>{line}</div>" for line in lines)
+
+
+# The table as the note draws it.
+def _note_shows(content_html: str, tags: str) -> str:
+    return format_note_content_for_view(content_html=content_html.replace("|", ""), tags=tags, redact_credentials=True)
+
+
+@pytest.mark.parametrize(
+    ("lines", "row"),
+    [
+        (["Na|me,Role,City", *PEOPLE[1:]], 0),
+        ([PEOPLE[0], "Ada,Ana|lyst,London", *PEOPLE[2:]], 1),
+        ([*PEOPLE[:2], '"Smith,| John",Engineer,"Portland, OR"', PEOPLE[3]], 2),
+        # On an empty line after the table: no row of it.
+        ([*PEOPLE, "|"], NOT_FOUND),
+    ],
+)
+def test_the_whole_csv_note_is_its_table_with_the_caret_row(lines: list[str], row: int) -> None:
+    content_html = _lines(lines)
+    preview = _preview(content_html, "@csv")
+
+    assert preview.kind == PREVIEW_CSV
+    assert preview.error == ""
+    assert preview.caret_row == row
+    assert preview.html != "" and preview.html in _note_shows(content_html, "@csv")
+
+
+def test_a_csv_region_previews_only_inside_it_as_the_note_shows_it() -> None:
+    content_html = "<div>Groceries ((Item,Qty</div><div>Mi|lk,2)) and $$E = mc^2$$ here.</div>"
+    tags = "@markdown ((@csv))"
+
+    inside = _preview(content_html, tags)
+    assert (inside.kind, inside.caret_row) == (PREVIEW_CSV, 1)
+    assert inside.html in _note_shows(content_html, tags)
+    assert _preview(content_html.replace("|", "").replace("Groceries", "Groc|eries"), tags).kind == PREVIEW_NONE
+    assert _preview(content_html.replace("|", "").replace("((Item", "(|(Item"), tags).kind == PREVIEW_NONE
+    formula = _preview(content_html.replace("|", "").replace("mc^2", "mc^|2"), tags)
+    assert formula.kind == PREVIEW_LATEX
+
+
+def test_one_column_shows_nothing() -> None:
+    assert _preview("<div>Milk</div><div>Eg|gs</div>", "@csv").kind == PREVIEW_NONE
+
+
+def test_a_broken_table_says_why_as_its_badge_does() -> None:
+    preview = _preview(_lines(["Item,Qty", "Milk,2,ex|tra"]), "@csv")
+
+    assert (preview.kind, preview.html, preview.caret_row) == (PREVIEW_CSV, "", NOT_FOUND)
+    assert preview.error == "Invalid CSV: Row 2 has 3 columns, expected 2"

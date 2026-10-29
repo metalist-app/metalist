@@ -154,7 +154,7 @@ Other (non-meta) tags may also appear inside wrapper tokens (e.g. `{{foo bar}}`)
 - Mermaid uses strict security mode and follows the active light/dark theme when rendering. Invalid Mermaid syntax remains visible as a code block with an `Invalid Mermaid diagram` badge.
 - Paired LaTeX delimiters inside Markdown render automatically as server-side MathML: `\(...\)` and `$...$` are inline; `\[...\]` and `$$...$$` are display math.
 - Math detection skips inline code and fenced code blocks. Unpaired delimiters and currency-like dollar text remain literal.
-- Scoped LaTeX (content `(((\frac{1}{2})))`, tag `(((@LaTeX)))`) works too, also beside automatic math in a Markdown note.
+- Scoped regions (`(((@LaTeX)))`, `((@csv))`, `((@json))`…) draw in a Markdown note as anywhere, beside automatic math.
 - A folded note shows one line; big headings shrink to fit it, and a first picture shows about 3x the line's height.
 
 ## LaTeX meta tags
@@ -163,7 +163,7 @@ Other (non-meta) tags may also appear inside wrapper tokens (e.g. `{{foo bar}}`)
 - Invalid LaTeX shows a red "Invalid LaTeX" badge and the raw content.
 - Inline math uses `$...$`; display math uses `$$...$$`.
 - If no `$` delimiters are present, the entire note is rendered as display math.
-- While editing, with the caret inside a formula (delimited, an `@LaTeX` note, a `(((@LaTeX)))` region), a panel under the caret shows it drawn; none for one that looks as typed (`$$x$$`). Broken mid-typing, the last good drawing fades; a pause shows `Invalid LaTeX`. Escape hides it; `Previews While Editing` (command palette) turns it off.
+- While editing, with the caret in a formula or CSV table (delimited, an `@LaTeX` or `@csv` note, a scoped region), a panel under the caret draws it; none if it looks as typed (`$$x$$`, one column). Broken mid-typing, the last good drawing fades; a pause says why. Selecting keeps it; Escape hides it; `Previews While Editing` (command palette) turns it off.
 
 ## Shell meta tags
 - `@shell`: renders the note content as a terminal-style script block in view mode.

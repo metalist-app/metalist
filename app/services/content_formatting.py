@@ -178,9 +178,19 @@ _STATUS_META = {
     },
 }
 
+# In a Markdown note, what a scoped renderer drew is kept from the Markdown pass as a
+# placeholder and put back after it. An inline drawing (a formula, a chess board) stays in
+# its paragraph; a block (a table, code, a diagram) gets blank lines around it, so it is a
+# paragraph of its own, which the block then replaces: a block never sits in a paragraph.
 _LATEX_PLACEHOLDER_PREFIX = "@@MLLATEX["
 _LATEX_PLACEHOLDER_SUFFIX = "]@@"
 _LATEX_PLACEHOLDER_RE = re.compile(r"@@MLLATEX\[([A-Za-z0-9+/=]+)\]@@")
+_BLOCK_PLACEHOLDER_PREFIX = "@@MLBLOCK["
+_BLOCK_PLACEHOLDER_SUFFIX = "]@@"
+_BLOCK_PLACEHOLDER_RE = re.compile(r"@@MLBLOCK\[([A-Za-z0-9+/=]+)\]@@")
+_BLOCK_PARAGRAPH_RE = re.compile(r"<p>@@MLBLOCK\[([A-Za-z0-9+/=]+)\]@@</p>")
+_BLOCK_SEPARATOR = "\n\n"
+_INLINE_SCOPED_RENDERERS = frozenset({"latex", "chess"})
 _PLAIN_URL_RE = re.compile(r"https?://[^\s<]+", re.IGNORECASE)
 _HTML_TAG_SPLIT_RE = re.compile(r"(<[^>]+>)")
 _ANCHOR_START_TAG_RE = re.compile(r"<\s*a\b", re.IGNORECASE)
@@ -355,7 +365,7 @@ def remove_formatting_scope_delimiters(
         wrappers_to_consume=wrappers_to_remove,
         scoped_tags={},
         scoped_renderers={},
-        preserve_latex_placeholders=False,
+        protect_from_markdown=False,
     )
 
 
@@ -517,13 +527,13 @@ def _format_note_content_for_view(
     if renderer_tag == "csv":
         apply_wrappers = False
     if apply_wrappers and config.wrappers_to_consume:
-        preserve_latex_placeholders = renderer_tag == "markdown"
+        protect_from_markdown = renderer_tag == "markdown"
         output = _apply_scoped_meta_tags(
             content_html=output,
             wrappers_to_consume=config.wrappers_to_consume,
             scoped_tags=config.scoped_tags,
             scoped_renderers=config.scoped_renderers,
-            preserve_latex_placeholders=preserve_latex_placeholders,
+            protect_from_markdown=protect_from_markdown,
         )
 
     if any("footnote" in names for names in config.scoped_tags.values()):
@@ -836,6 +846,30 @@ _LINK_TITLE_FETCH_RECORDER: ContextVar[List[Tuple[str, str]] | None] = ContextVa
 _LINK_FETCHES_IN_RENDER: ContextVar[Set[Tuple[str, str]] | None] = ContextVar(
     "link_fetches_in_render", default=None,
 )
+
+
+@dataclass(frozen=True, slots=True)
+class FoundTable:
+    """A CSV table a render met: the HTML it was made from, and how to draw it as the render would."""
+
+    source_html: str
+    render: Callable[[], str]
+
+
+# Open while finding_tables() lists the tables a render meets.
+_TABLES_FOUND: ContextVar[List[FoundTable] | None] = ContextVar("tables_found", default=None)
+
+
+@contextmanager
+def finding_tables() -> Iterator[List[FoundTable]]:
+    """While open, every CSV table a render meets is listed, in order, instead of drawn."""
+    assert _TABLES_FOUND.get() is None, "finding tables does not nest"
+    found: List[FoundTable] = []
+    reset_token = _TABLES_FOUND.set(found)
+    try:
+        yield found
+    finally:
+        _TABLES_FOUND.reset(reset_token)
 
 
 # True while a render must ask for no link's title or icon (a preview of text being typed).
@@ -1384,7 +1418,7 @@ def _render_markdown_meta(*, content_html: str, formatting_tags: FrozenSet[str])
     raw_text = _extract_plain_text(content_html)
     copy_attr = _copyable_attr(formatting_tags, raw_text)
     rendered_markdown = render_markdown_to_html(raw_text)
-    rendered_markdown = _replace_latex_placeholders(rendered_markdown)
+    rendered_markdown = _replace_block_placeholders(_replace_inline_placeholders(rendered_markdown))
 
     extra_classes = ""
     if formatting_tags:
@@ -1420,18 +1454,37 @@ def _render_scoped_renderer(
     scoped_tags: Mapping[Tuple[str, int], FrozenSet[str]],
     scoped_renderers: Mapping[Tuple[str, int], str],
     render_key: Tuple[str, int] | None,
-    preserve_latex_placeholders: bool,
+    protect_from_markdown: bool,
+) -> str:
+    rendered_html = _draw_scoped_region(
+        render_tag=render_tag, content_html=content_html, formatting_tags=formatting_tags,
+        wrappers_to_consume=wrappers_to_consume, scoped_tags=scoped_tags, scoped_renderers=scoped_renderers,
+        render_key=render_key,
+    )
+    if not protect_from_markdown:
+        return rendered_html
+    if render_tag in _INLINE_SCOPED_RENDERERS:
+        return _encode_inline_placeholder(rendered_html)
+    return _encode_block_placeholder(rendered_html)
+
+
+def _draw_scoped_region(
+    *,
+    render_tag: str,
+    content_html: str,
+    formatting_tags: FrozenSet[str],
+    wrappers_to_consume: FrozenSet[Tuple[str, int]],
+    scoped_tags: Mapping[Tuple[str, int], FrozenSet[str]],
+    scoped_renderers: Mapping[Tuple[str, int], str],
+    render_key: Tuple[str, int] | None,
 ) -> str:
     if render_tag == "latex":
         raw_text = _extract_plain_text(content_html)
-        rendered_html = _render_latex_container(
+        return _render_latex_container(
             raw_text=raw_text,
             formatting_tags=formatting_tags,
             wrapper_tag="span",
         )
-        if preserve_latex_placeholders:
-            return _encode_latex_placeholder(rendered_html)
-        return rendered_html
     if render_tag == "csv":
         filtered_wrappers = wrappers_to_consume
         filtered_scoped = scoped_tags
@@ -1546,14 +1599,33 @@ def _wrap_meta_html(
     )
 
 
-def _encode_latex_placeholder(rendered_html: str) -> str:
+def _encode_inline_placeholder(rendered_html: str) -> str:
     if not isinstance(rendered_html, str):
         raise TypeError("rendered_html must be a string")
     encoded = base64.b64encode(rendered_html.encode("utf-8")).decode("ascii")
     return f"{_LATEX_PLACEHOLDER_PREFIX}{encoded}{_LATEX_PLACEHOLDER_SUFFIX}"
 
 
-def _replace_latex_placeholders(html_text: str) -> str:
+def _encode_block_placeholder(rendered_html: str) -> str:
+    if not isinstance(rendered_html, str):
+        raise TypeError("rendered_html must be a string")
+    encoded = base64.b64encode(rendered_html.encode("utf-8")).decode("ascii")
+    return f"{_BLOCK_SEPARATOR}{_BLOCK_PLACEHOLDER_PREFIX}{encoded}{_BLOCK_PLACEHOLDER_SUFFIX}{_BLOCK_SEPARATOR}"
+
+
+# A block's own paragraph becomes the block. One Markdown kept inside something else (a
+# list item, a table cell) becomes the block there.
+def _replace_block_placeholders(html_text: str) -> str:
+    if not isinstance(html_text, str):
+        raise TypeError("html_text must be a string")
+
+    def decoded(match: re.Match[str]) -> str:
+        return base64.b64decode(match.group(1).encode("ascii")).decode("utf-8")
+
+    return _BLOCK_PLACEHOLDER_RE.sub(decoded, _BLOCK_PARAGRAPH_RE.sub(decoded, html_text))
+
+
+def _replace_inline_placeholders(html_text: str) -> str:
     if not isinstance(html_text, str):
         raise TypeError("html_text must be a string")
 
@@ -1781,7 +1853,7 @@ def _apply_scoped_meta_tags(
     wrappers_to_consume: FrozenSet[Tuple[str, int]],
     scoped_tags: Mapping[Tuple[str, int], FrozenSet[str]],
     scoped_renderers: Mapping[Tuple[str, int], str],
-    preserve_latex_placeholders: bool,
+    protect_from_markdown: bool,
 ) -> str:
     parts = re.split(r"(<[^>]+>)", content_html)
     output: List[str] = []
@@ -1823,7 +1895,7 @@ def _apply_scoped_meta_tags(
             scoped_tags=scoped_tags,
             scoped_renderers=scoped_renderers,
             escape_text=False,
-            preserve_latex_placeholders=preserve_latex_placeholders,
+            protect_from_markdown=protect_from_markdown,
         )
 
     for frame in stack:
@@ -1838,7 +1910,7 @@ def _apply_scoped_meta_tags_to_plain_text(
     wrappers_to_consume: FrozenSet[Tuple[str, int]],
     scoped_tags: Mapping[Tuple[str, int], FrozenSet[str]],
     scoped_renderers: Mapping[Tuple[str, int], str],
-    preserve_latex_placeholders: bool,
+    protect_from_markdown: bool,
 ) -> str:
     output: List[str] = []
     stack: List[_OpenFrame] = []
@@ -1850,7 +1922,7 @@ def _apply_scoped_meta_tags_to_plain_text(
         scoped_tags=scoped_tags,
         scoped_renderers=scoped_renderers,
         escape_text=True,
-        preserve_latex_placeholders=preserve_latex_placeholders,
+        protect_from_markdown=protect_from_markdown,
     )
     for frame in stack:
         output[frame.placeholder_index] = frame.opener_text
@@ -1866,7 +1938,7 @@ def _process_text_segment(
     scoped_tags: Mapping[Tuple[str, int], FrozenSet[str]],
     scoped_renderers: Mapping[Tuple[str, int], str],
     escape_text: bool,
-    preserve_latex_placeholders: bool,
+    protect_from_markdown: bool,
 ) -> None:
     index = 0
     while index < len(text):
@@ -1888,7 +1960,7 @@ def _process_text_segment(
                     scoped_tags=scoped_tags,
                     scoped_renderers=scoped_renderers,
                     escape_text=escape_text,
-                    preserve_latex_placeholders=preserve_latex_placeholders,
+                    protect_from_markdown=protect_from_markdown,
                 )
                 continue
             run = 1
@@ -1904,7 +1976,7 @@ def _process_text_segment(
                             wrappers_to_consume=wrappers_to_consume,
                             scoped_tags=scoped_tags,
                             scoped_renderers=scoped_renderers,
-                            preserve_latex_placeholders=preserve_latex_placeholders,
+                            protect_from_markdown=protect_from_markdown,
                         )
                         index += run
                         continue
@@ -2085,7 +2157,7 @@ def _process_active_latex_renderer_text(
     scoped_tags: Mapping[Tuple[str, int], FrozenSet[str]],
     scoped_renderers: Mapping[Tuple[str, int], str],
     escape_text: bool,
-    preserve_latex_placeholders: bool,
+    protect_from_markdown: bool,
 ) -> int:
     if not isinstance(text, str):
         raise TypeError("text must be a string")
@@ -2119,7 +2191,7 @@ def _process_active_latex_renderer_text(
                 wrappers_to_consume=wrappers_to_consume,
                 scoped_tags=scoped_tags,
                 scoped_renderers=scoped_renderers,
-                preserve_latex_placeholders=preserve_latex_placeholders,
+                protect_from_markdown=protect_from_markdown,
             )
             return index + active_renderer.depth
         _append_output_segment(
@@ -2145,7 +2217,7 @@ def _close_active_renderer(
     wrappers_to_consume: FrozenSet[Tuple[str, int]],
     scoped_tags: Mapping[Tuple[str, int], FrozenSet[str]],
     scoped_renderers: Mapping[Tuple[str, int], str],
-    preserve_latex_placeholders: bool,
+    protect_from_markdown: bool,
 ) -> None:
     stack.pop()
     inner_parts = output[active_renderer.placeholder_index + 1 :]
@@ -2161,7 +2233,7 @@ def _close_active_renderer(
         scoped_tags=scoped_tags,
         scoped_renderers=scoped_renderers,
         render_key=active_renderer.render_key,
-        preserve_latex_placeholders=preserve_latex_placeholders,
+        protect_from_markdown=protect_from_markdown,
     )
     del output[active_renderer.placeholder_index :]
     output.append(rendered)
@@ -2354,9 +2426,16 @@ def _render_chess_meta(*, content_html: str, formatting_tags: FrozenSet[str]) ->
 def _render_csv_meta(*, content_html: str, formatting_tags: FrozenSet[str], inline: bool,
                      cell_wrappers: FrozenSet[Tuple[str, int]], cell_scoped_tags: Mapping[Tuple[str, int], FrozenSet[str]],
                      cell_scoped_renderers: Mapping[Tuple[str, int], str]) -> str:
-    return render_csv(content_html=content_html, formatting_tags=formatting_tags, inline=inline,
-        cell_wrappers=cell_wrappers, cell_scoped_tags=cell_scoped_tags, cell_scoped_renderers=cell_scoped_renderers,
-        extra_classes=_meta_classes_for_tag_names(formatting_tags),
-        size_style_attr=_meta_size_style_attr(formatting_tags),
-        scoped_formatting=CsvScopeFormatting(extract=_extract_wrapper_placeholders,
-            restore=_restore_wrapper_placeholders, render=_apply_scoped_meta_tags_to_plain_text))
+    def render() -> str:
+        return render_csv(content_html=content_html, formatting_tags=formatting_tags, inline=inline,
+            cell_wrappers=cell_wrappers, cell_scoped_tags=cell_scoped_tags, cell_scoped_renderers=cell_scoped_renderers,
+            extra_classes=_meta_classes_for_tag_names(formatting_tags),
+            size_style_attr=_meta_size_style_attr(formatting_tags),
+            scoped_formatting=CsvScopeFormatting(extract=_extract_wrapper_placeholders,
+                restore=_restore_wrapper_placeholders, render=_apply_scoped_meta_tags_to_plain_text))
+
+    found = _TABLES_FOUND.get()
+    if found is not None:
+        found.append(FoundTable(source_html=content_html, render=render))
+        return ""
+    return render()

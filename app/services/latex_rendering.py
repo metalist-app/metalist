@@ -2,12 +2,15 @@ from __future__ import annotations
 
 from app.utils.not_found import NOT_FOUND
 import html
+import re
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import Iterator
+from xml.etree.ElementTree import Element
+from xml.etree.ElementTree import tostring
 
-from latex2mathml.converter import convert
+from latex2mathml.converter import convert_to_element
 from latex2mathml.exceptions import DenominatorNotFoundError
 from latex2mathml.exceptions import DoubleSubscriptsError
 from latex2mathml.exceptions import DoubleSuperscriptsError
@@ -42,6 +45,9 @@ _LATEX_CONVERSION_ERRORS = (
 _DISPLAY_MATH_DELIMITER = "$$"
 # Backslashes pair up into escaped backslashes; an odd one out escapes what follows.
 _BACKSLASHES_PER_ESCAPED_BACKSLASH = 2
+# latex2mathml writes each symbol into its tree as the text "&#x2264;", meaning the character.
+_LIBRARY_CHARACTER_REFERENCE = re.compile(r"&#x([0-9A-Fa-f]+);")
+_HEXADECIMAL_BASE = 16
 
 
 @dataclass(frozen=True, slots=True)
@@ -157,7 +163,36 @@ def _render_math_segment(latex_text: str, *, display: str) -> str:
     if found is not None:
         found.append(FoundFormula(source=latex_text, display=display))
         return ""
-    return convert(latex_text, display=display)
+    return _serialize_mathml(convert_to_element(latex_text, display=display))
+
+
+def _serialize_mathml(math: Element) -> str:
+    """The MathML tree as markup, its text escaped so whatever the formula says shows literally.
+
+    latex2mathml's own convert() unescapes its whole serialized output to restore the
+    character references it writes as text, which also turns text typed in the formula
+    (\\text{<b>x</b>}, \\verb, \\textcolor's colour) back into live markup. Here those
+    references become the characters they stand for, and ElementTree escapes every
+    text and attribute value.
+    """
+    if not isinstance(math, Element):
+        raise TypeError(f"math must be an Element, got {type(math)}")
+    assert math.tag == "math", f"latex2mathml returned a <{math.tag}>, not <math>"
+    for element in math.iter():
+        if element.text is not None:
+            element.text = _decode_library_character_references(element.text)
+        if element.tail is not None:
+            element.tail = _decode_library_character_references(element.tail)
+    return tostring(math, encoding="unicode")
+
+
+def _decode_library_character_references(text: str) -> str:
+    if not isinstance(text, str):
+        raise TypeError(f"text must be a string, got {type(text)}")
+    return _LIBRARY_CHARACTER_REFERENCE.sub(
+        lambda reference: chr(int(reference.group(1), _HEXADECIMAL_BASE)),
+        text,
+    )
 
 
 def _render_text_segment(text: str) -> str:

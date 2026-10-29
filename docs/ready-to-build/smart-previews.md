@@ -1,6 +1,6 @@
 # Smart previews while editing
 
-**Status:** Agreed with the maintainer 2026-10-26. Built in slices, each tried by the maintainer before the next. **Slice 1, LaTeX, built 2026-10-29** (documented in `docs/ui/content-formatting.md`, "Previews while editing"). Left, in order: 2 CSV, 3 Mermaid, 4 reference previews from the caret and file references (§4), 5 Insert LaTeX / CSV / Diagram (§5), 6 previews on the "Apply as …" card (§5). Delete this note when the last is built.
+**Status:** Agreed with the maintainer 2026-10-26. Built in slices, each tried by the maintainer before the next. **Slices 1 (LaTeX) and 2 (CSV) built 2026-10-29** (documented in `docs/ui/content-formatting.md`, "Previews while editing"). Left, in order: 3 Mermaid, 4 reference previews from the caret and file references (§4), 5 Insert LaTeX / CSV / Diagram (§5), 6 previews on the "Apply as …" card (§5). Delete this note when the last is built.
 **Scope:** a live, rendered preview of the construct being edited (LaTeX, CSV, Mermaid, references) while a note is in edit mode. Document it in `docs/ui/content-formatting.md` and `docs/ui/references.md`.
 
 Written without running the code. Every reference below came from reading it and must be checked before relying on it; build only what's missing.
@@ -82,3 +82,9 @@ Today LaTeX renders on the server. A round trip per keystroke would lag and load
 - The server finds the formula under the caret by rendering the note twice, without and with a caret mark, and listing the formulas each render meets (`app/services/edit_previews.py`); CSV can reuse the same approach for `((@csv))` regions and `@csv` notes, Mermaid for finding the fence (its drawing stays in the browser).
 - Decided with the maintainer while trying it: the panel's left edge is at the caret and follows it as the caret moves (not the formula's start, and not fixed where it first appeared).
 - Found: `latex2mathml` draws an unknown command (`\fra`) as its name instead of failing, and its errors carry no message. A half-typed command fades like a broken formula and shows as typed after the pause; the error shown is `Invalid LaTeX`, as the badge.
+- Decided while trying it: selecting text (to type over it) keeps the preview where and as it was; it had disappeared, which the first acceptance list asked for.
+
+## 12. Slice 2 (CSV), as built 2026-10-29
+- `content_formatting.finding_tables` lists the tables a render meets, each with how to draw it as the render would (`FoundTable.render`), beside the formulas; the one holding the caret mark is drawn and the server sends the caret's row, which the panel scrolls to its middle.
+- Found and fixed on the way: in a Markdown note every scoped region but LaTeX lost its drawing to the Markdown pass, so a `((@csv))` table there showed as run-together text (`docs/ui/content-formatting.md`, "Markdown meta tags"). A preview of it would have disagreed with the note.
+- Found by the tests: the panel's 40% height left out its padding and border (now `box-sizing: border-box`).

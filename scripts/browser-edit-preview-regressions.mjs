@@ -9,8 +9,14 @@ import { waitForAppQuiet } from './browser-app-idle.mjs';
 // or for a formula that looks as typed. Broken mid-typing, the last good drawing fades to a
 // ghost (0.25) and a pause shows "Invalid LaTeX"; a command not finished shows as typed after
 // the pause. The panel never moves the note's text. Escape hides it until the caret leaves the
-// formula; scrolling hides it; a selection shows none; Previews While Editing off shows none.
+// formula; scrolling hides it; a selection keeps it as it was; Previews While Editing off shows none.
 // The note's text never holds the caret mark.
+//
+// CSV tables (2026-10-29): with the caret in an @csv note or a ((@csv)) region, the panel
+// shows the table exactly as the note draws it, at most 40% of the window tall, scrolled
+// so the caret's row is in its middle; broken, the last good table fades and a pause
+// shows "Invalid CSV" with why. In a Markdown note with a ((@csv)) region and a formula,
+// each shows its own; the text around the region shows nothing.
 
 const WINDOW = {width: 1100, height: 800};
 const REQUESTS_QUIET_MS = 300;
@@ -27,6 +33,12 @@ const ROUNDING_PX = 0.5;
 const GHOST_OPACITY = '0.25';
 const FULL_OPACITY = '1';
 const FILLER_NOTES = 30;
+const TABLE_ROWS = 40;
+const CARET_ROW = 30;
+// The panel's height, at most this share of the window's (main.css, .edit-preview).
+const PANEL_HEIGHT_SHARE = 0.4;
+// The panel's scroll is a whole number of pixels: the row's middle is this close to the panel's.
+const ROW_CENTERING_PX = 1;
 const PANEL = '.edit-preview';
 // What marks the caret in the note sent for a preview (edit-preview-service.js).
 const CARET_MARK = '\ufdd0';
@@ -48,7 +60,7 @@ async function pause(milliseconds) {
 }
 
 async function seedNotes(page) {
-  return page.evaluate(async fillerCount => {
+  return page.evaluate(async ({fillerCount, rowCount}) => {
     const {NotesAPI} = await import('/static/js/modules/api-client.js');
     const make = async (html, tags) => {
       const note = await NotesAPI.createNote(null, '');
@@ -63,8 +75,16 @@ async function seedNotes(page) {
       // Last: a $$ with no $$ after it anywhere opens nothing.
       'Only an opening $$\\frac{1}{2} and no closing one.',
     ].map(line => `<div>${line}</div>`).join(''), '@markdown');
-    return {fillers, formulas};
-  }, FILLER_NOTES);
+    const tableLines = ['Day,Steps,Sleep,Mood'];
+    for (let day = 1; day <= rowCount; day += 1) tableLines.push(`Day ${day},${4000 + day * 137},7.0,good`);
+    const table = await make(tableLines.map(line => `<div>${line}</div>`).join(''), '@csv');
+    const groceries = await make([
+      'Groceries this week ((Item,Qty,Price',
+      'Milk,2,1.20',
+      'Eggs,12,3.40)) and the energy $$E = mc^2$$ here.',
+    ].map(line => `<div>${line}</div>`).join(''), '@markdown ((@csv))');
+    return {fillers, formulas, table, groceries};
+  }, {fillerCount: FILLER_NOTES, rowCount: TABLE_ROWS});
 }
 
 const contentOf = id => `.note[data-note-id="${id}"] > .note-content`;
@@ -129,6 +149,15 @@ async function becomes(page, condition, value) {
       opacity: () => panel() !== null && getComputedStyle(panel()).opacity === value,
       fraction: () => panel() !== null && panel().querySelector('math mfrac') !== null,
       movedFrom: () => panel() !== null && Math.abs(panel().getBoundingClientRect().left - value) > 1,
+      // The row `value` (counted from 0) in the panel's middle, to a pixel.
+      rowCentered: () => {
+        if (panel() === null) return false;
+        const row = panel().querySelectorAll('tbody > tr')[value];
+        if (row === undefined) return false;
+        const box = panel().getBoundingClientRect();
+        const rowBox = row.getBoundingClientRect();
+        return Math.abs((rowBox.top + rowBox.bottom) / 2 - (box.top + box.bottom) / 2) <= 1;
+      },
     };
     const started = performance.now();
     const step = () => {
@@ -267,17 +296,42 @@ async function scrollSelectionAndSetting(page) {
   await placeCaret(page, '{1}{2}', 3);
   await waitForPanel(page, 'a caret move after scrolling');
 
-  await page.evaluate(() => {
+  // Selecting text to type over it keeps the preview as it was (2026-10-29): dragging over
+  // `{1}` with the mouse, then typing `3` in its place.
+  const beforeSelecting = await measure(page);
+  const drag = await page.evaluate(() => {
     const content = document.querySelector('.note.editing > .note-content');
     const text = [...content.querySelectorAll('div')][0].firstChild;
     const start = text.data.indexOf('{1}');
-    const range = document.createRange();
-    range.setStart(text, start);
-    range.setEnd(text, start + 3);
-    getSelection().removeAllRanges();
-    getSelection().addRange(range);
+    const at = offset => {
+      const range = document.createRange();
+      range.setStart(text, offset);
+      range.collapse(true);
+      const box = range.getClientRects()[0];
+      return {x: box.left, y: (box.top + box.bottom) / 2};
+    };
+    return {from: at(start), to: at(start + 3)};
   });
-  await assertNoPanel(page, 'a selection in the formula');
+  await page.mouse.move(drag.from.x + 1, drag.from.y);
+  await page.mouse.down();
+  await page.mouse.move(drag.to.x - 1, drag.to.y, {steps: 5});
+  await page.mouse.up();
+  await pause(NO_PANEL_WAIT_MS);
+  const selecting = await page.evaluate(selector => {
+    const panel = document.querySelector(selector);
+    return {
+      selected: getSelection().toString(),
+      panel: panel === null ? null : {left: panel.getBoundingClientRect().left, top: panel.getBoundingClientRect().top, html: panel.innerHTML},
+    };
+  }, PANEL);
+  assert.equal(selecting.selected, '{1}', 'the drag selected {1}');
+  assert.deepEqual(selecting.panel, {left: beforeSelecting.panel.left, top: beforeSelecting.panel.top, html: beforeSelecting.panel.html},
+    'a selection keeps the preview where and as it was');
+  await page.keyboard.type('3');
+  assert.ok(await becomes(page, 'fraction', null), 'typing over the selection: the preview goes on');
+  await page.keyboard.press('Backspace');
+  await page.keyboard.type('{1}');
+  await idle(page);
 
   await page.evaluate(async () => {
     const {CommandPalette} = await import('/static/js/modules/command-palette/command-palette-controller.js');
@@ -294,6 +348,89 @@ async function scrollSelectionAndSetting(page) {
   }
   await placeCaret(page, '{1}{2}', 3);
   await waitForPanel(page, 'Previews While Editing on again');
+}
+
+// The table a note draws outside editing (the one in its ((@csv)) region, or the whole note).
+async function drawnTable(page, id) {
+  return page.$eval(contentOf(id), content => content.querySelector('.meta-csv').outerHTML);
+}
+
+async function panelTable(page) {
+  return page.$eval(PANEL, panel => {
+    const table = panel.querySelector('.meta-csv');
+    return table === null ? null : table.outerHTML;
+  });
+}
+
+async function leaveEditing(page) {
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Escape');
+  await idle(page);
+}
+
+async function tableNote(page, ids) {
+  const drawn = await drawnTable(page, ids.table);
+  await enterEditing(page, ids.table);
+  // The caret's line in the middle of the window, as when a person clicks it.
+  await page.evaluate(needle => {
+    const line = [...document.querySelectorAll('.note.editing > .note-content > div')].find(div => div.textContent.startsWith(needle));
+    line.scrollIntoView({block: 'center'});
+  }, `Day ${CARET_ROW},`);
+  await settle(page);
+  // Clicking into the note put the caret on another row, whose preview may already show:
+  // wait for the one with the caret's row in the middle.
+  await placeCaret(page, `Day ${CARET_ROW},`, 2);
+  assert.ok(await becomes(page, 'rowCentered', CARET_ROW), `the caret's row (Day ${CARET_ROW}) in the panel's middle`);
+  await settle(page);
+  assert.equal(await panelTable(page), drawn, 'the table as the note draws it');
+  const rows = await page.$eval(PANEL, panel => {
+    const box = panel.getBoundingClientRect();
+    return {
+      panel: {top: box.top, bottom: box.bottom, height: box.height},
+      row: [...panel.querySelectorAll('tbody > tr')].map(row => {
+        const rowBox = row.getBoundingClientRect();
+        return {text: row.cells[0].textContent, middle: (rowBox.top + rowBox.bottom) / 2};
+      }),
+      windowHeight: window.innerHeight,
+    };
+  });
+  assert.ok(rows.panel.height <= rows.windowHeight * PANEL_HEIGHT_SHARE + ROUNDING_PX,
+    `at most ${PANEL_HEIGHT_SHARE * 100}% of the window tall (${rows.panel.height} of ${rows.windowHeight})`);
+  const caretRow = rows.row[CARET_ROW];
+  assert.equal(caretRow.text, `Day ${CARET_ROW}`, 'the caret\'s row');
+  assert.ok(Math.abs(caretRow.middle - (rows.panel.top + rows.panel.bottom) / 2) <= ROW_CENTERING_PX,
+    `the caret's row in the panel's middle (${caretRow.middle}, panel ${rows.panel.top}–${rows.panel.bottom})`);
+  assertBelowCaret(await measure(page), 'caret in a cell');
+
+  await placeCaret(page, `Day ${CARET_ROW},`, `Day ${CARET_ROW},${4000 + CARET_ROW * 137},7.0,good`.length);
+  await page.keyboard.type(',x');
+  assert.ok(await becomes(page, 'opacity', GHOST_OPACITY), 'broken: the last good table fades');
+  assert.equal(await panelTable(page), drawn, 'broken: the last good table stays');
+  await pause(BROKEN_PAUSE_WAIT_MS);
+  const paused = await measure(page);
+  assert.deepEqual([paused.panel.text, paused.panel.hasError, paused.panel.opacity],
+    [`Invalid CSV: Row ${CARET_ROW + 1} has 5 columns, expected 4`, true, FULL_OPACITY], 'broken after a pause: why');
+  await page.keyboard.press('Backspace');
+  await page.keyboard.press('Backspace');
+  assert.ok(await becomes(page, 'opacity', FULL_OPACITY), 'fixed: back at full strength');
+  await idle(page);
+  assert.equal(await panelTable(page), drawn, 'fixed: the table again');
+  await leaveEditing(page);
+}
+
+async function regionInMarkdown(page, ids) {
+  const drawn = await drawnTable(page, ids.groceries);
+  await enterEditing(page, ids.groceries);
+  await placeCaret(page, 'Milk', 2);
+  await waitForPanel(page, 'caret in the region');
+  assert.equal(await panelTable(page), drawn, 'the region\'s table as the note draws it');
+  await placeCaret(page, 'mc^2', 3);
+  await pause(NO_PANEL_WAIT_MS);
+  const formula = await page.$eval(PANEL, panel => ({math: panel.querySelector('math') !== null, table: panel.querySelector('table') !== null}));
+  assert.deepEqual(formula, {math: true, table: false}, 'caret in the formula: the formula');
+  await placeCaret(page, 'Groceries', 3);
+  await assertNoPanel(page, 'caret before the region');
+  await leaveEditing(page);
 }
 
 async function previewCases(page, ids) {
@@ -326,6 +463,8 @@ async function previewCases(page, ids) {
     assert.equal(await page.$('.note.editing'), null, 'editing ended');
     assert.equal(shown.includes(CARET_MARK), false, 'no caret mark saved');
   });
+  await attempt('8 a CSV note: its table, scrolled to the caret\'s row; broken, it fades and says why', () => tableNote(page, ids));
+  await attempt('9 a ((@csv)) region in a Markdown note, beside a formula', () => regionInMarkdown(page, ids));
   assert.deepEqual(failures, []);
 }
 
@@ -338,7 +477,7 @@ export async function checkEditPreviews(page) {
   await runThenCleanUp('edit previews', () => previewCases(page, ids), async () => {
     await page.evaluate(async ids => {
       const {NotesAPI} = await import('/static/js/modules/api-client.js');
-      for (const id of [ids.formulas, ...ids.fillers]) await NotesAPI.deleteNote(id);
+      for (const id of [ids.formulas, ids.table, ids.groceries, ...ids.fillers]) await NotesAPI.deleteNote(id);
     }, ids);
   });
 }

@@ -234,7 +234,7 @@ def _render_csv_meta(
                     wrappers_to_consume=cell_wrappers,
                     scoped_tags=effective_scoped_tags,
                     scoped_renderers=cell_scoped_renderers,
-                    preserve_latex_placeholders=False,
+                    protect_from_markdown=False,
                 )
             else:
                 cell_html = html.escape(cell_text, quote=False)
@@ -355,6 +355,20 @@ def _parse_csv_rows(
             return [], f"Row {idx} has {len(row)} columns, expected {expected_len}"
 
     return rows, None
+
+
+# The start of what _render_csv_error renders, with why in its badge's title.
+_CSV_ERROR_START_RE = re.compile(r'<div class="meta-csv meta-csv-error[^"]*"[^>]*><span class="meta-csv-badge" title="([^"]*)">')
+
+
+def csv_error_message(rendered_html: str) -> str:
+    """Why a table _render_csv_meta rendered is invalid, as its badge's title says; "" when it rendered."""
+    if not isinstance(rendered_html, str):
+        raise TypeError("rendered_html must be a string")
+    match = _CSV_ERROR_START_RE.match(rendered_html)
+    if match is None:
+        return ""
+    return html.unescape(match.group(1))
 
 
 def _render_csv_error(*, raw_text: str, message: str, inline: bool, copy_attr: str) -> str:
