@@ -1,6 +1,6 @@
 # Smart previews while editing
 
-**Status:** Agreed with the maintainer 2026-10-26. Built in slices, each tried by the maintainer before the next. **Slices 1 (LaTeX) and 2 (CSV) built 2026-10-29** (documented in `docs/ui/content-formatting.md`, "Previews while editing"). Left, in order: 3 Mermaid, 4 reference previews from the caret and file references (§4), 5 Insert LaTeX / CSV / Diagram (§5), 6 previews on the "Apply as …" card (§5). Delete this note when the last is built.
+**Status:** Agreed with the maintainer 2026-10-26. Built in slices, each tried by the maintainer before the next. **Slices 1 (LaTeX), 2 (CSV), 3 (Mermaid) and JSON built 2026-10-29** (documented in `docs/ui/content-formatting.md`, "Previews while editing"). Left, in order: 4 reference previews from the caret and file references (§4), 5 Insert LaTeX / CSV / Diagram (§5), 6 previews on the "Apply as …" card (§5). Delete this note when the last is built.
 **Scope:** a live, rendered preview of the construct being edited (LaTeX, CSV, Mermaid, references) while a note is in edit mode. Document it in `docs/ui/content-formatting.md` and `docs/ui/references.md`.
 
 Written without running the code. Every reference below came from reading it and must be checked before relying on it; build only what's missing.
@@ -88,3 +88,8 @@ Today LaTeX renders on the server. A round trip per keystroke would lag and load
 - `content_formatting.finding_tables` lists the tables a render meets, each with how to draw it as the render would (`FoundTable.render`), beside the formulas; the one holding the caret mark is drawn and the server sends the caret's row, which the panel scrolls to its middle.
 - Found and fixed on the way: in a Markdown note every scoped region but LaTeX lost its drawing to the Markdown pass, so a `((@csv))` table there showed as run-together text (`docs/ui/content-formatting.md`, "Markdown meta tags"). A preview of it would have disagreed with the note.
 - Found by the tests: the panel's 40% height left out its padding and border (now `box-sizing: border-box`).
+
+## 13. Slice 3 (Mermaid) and JSON, as built 2026-10-29
+- Mermaid: the server finds the diagram (`mermaid_note_rendering.finding_diagrams`, with whether its fence is closed) and sends its source; the browser draws it with the note's runtime and theme, after a 400 ms pause. Decided with the maintainer: a large diagram is scaled down to fit the panel, never up, even though a tall one becomes small. Mermaid's reason for a broken diagram is not shown (it needs an exception boundary to read).
+- JSON was added after the slices (maintainer, 2026-10-29) to catch broken JSON while typing: valid compact JSON shows laid out, JSON already laid out shows nothing, broken JSON says why and where. No previews for code (`@code=…`): coloured it looks as typed, and nothing checks it. Checking code's syntax would be a separate feature (Python's own parser could do `@code=python`; most languages have no checker here).
+- Found by the tests: the panel was placed with its height rounded to a whole pixel, a fraction off the line above it; it now uses its exact size.

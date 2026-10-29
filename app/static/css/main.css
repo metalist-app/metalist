@@ -6288,8 +6288,9 @@ html[data-theme="dark"] .context-menu-item.is-submenu-open {
     pointer-events: none;
 }
 
-/* A table is as wide as the window allows and scrolls to the caret's row (edit-preview-service.js). */
-.edit-preview.edit-preview-table {
+/* A table or diagram is as wide as the window allows; a table scrolls to the caret's row,
+   a diagram is scaled down to fit (edit-preview-service.js). */
+.edit-preview.edit-preview-wide {
     max-width: calc(100vw - 16px);
 }
 

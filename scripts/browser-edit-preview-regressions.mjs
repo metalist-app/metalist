@@ -17,6 +17,12 @@ import { waitForAppQuiet } from './browser-app-idle.mjs';
 // so the caret's row is in its middle; broken, the last good table fades and a pause
 // shows "Invalid CSV" with why. In a Markdown note with a ((@csv)) region and a formula,
 // each shows its own; the text around the region shows nothing.
+//
+// Mermaid diagrams and JSON (2026-10-29): in a ```mermaid fence the panel shows the diagram
+// as the note draws it, never scaled up; a tall one is scaled down, in proportion, to fit
+// 40% of the window; nothing on the fence's lines; a dangling arrow fades it and a pause
+// shows "Invalid Mermaid diagram". Compact JSON shows laid out as the note draws it; broken,
+// it fades and a pause says why and where.
 
 const WINDOW = {width: 1100, height: 800};
 const REQUESTS_QUIET_MS = 300;
@@ -39,6 +45,13 @@ const CARET_ROW = 30;
 const PANEL_HEIGHT_SHARE = 0.4;
 // The panel's scroll is a whole number of pixels: the row's middle is this close to the panel's.
 const ROW_CENTERING_PX = 1;
+const TALL_DIAGRAM_STEPS = 14;
+// The window's width less the panel's 8 px margin on each side (paste-format-offer-service.js).
+const WINDOW_MARGINS_PX = 16;
+// A scaled diagram keeps its proportions to this share of either side.
+const PROPORTION_TOLERANCE = 0.01;
+// Browsers lay an SVG's size out in floats: equal to this.
+const SAME_SIZE_PX = 0.01;
 const PANEL = '.edit-preview';
 // What marks the caret in the note sent for a preview (edit-preview-service.js).
 const CARET_MARK = '\ufdd0';
@@ -60,7 +73,7 @@ async function pause(milliseconds) {
 }
 
 async function seedNotes(page) {
-  return page.evaluate(async ({fillerCount, rowCount}) => {
+  return page.evaluate(async ({fillerCount, rowCount, tallSteps}) => {
     const {NotesAPI} = await import('/static/js/modules/api-client.js');
     const make = async (html, tags) => {
       const note = await NotesAPI.createNote(null, '');
@@ -83,8 +96,14 @@ async function seedNotes(page) {
       'Milk,2,1.20',
       'Eggs,12,3.40)) and the energy $$E = mc^2$$ here.',
     ].map(line => `<div>${line}</div>`).join(''), '@markdown ((@csv))');
-    return {fillers, formulas, table, groceries};
-  }, {fillerCount: FILLER_NOTES, rowCount: TABLE_ROWS});
+    const release = await make(['Release steps:', '```mermaid', 'flowchart LR', 'A[Write] --> B[Review] --> C[Ship]', '```', 'Done when shipped.']
+      .map(line => `<div>${line}</div>`).join(''), '@markdown');
+    const tallLines = ['flowchart TD'];
+    for (let step = 0; step < tallSteps; step += 1) tallLines.push(`N${step}[Step ${step}: a fairly long label] --> N${step + 1}[Step ${step + 1}]`);
+    const tall = await make(tallLines.map(line => `<div>${line}</div>`).join(''), '@mermaid');
+    const settings = await make('<div>{"name": "MetaList", "tags": ["notes", "search"], "port": 8443}</div>', '@json');
+    return {fillers, formulas, table, groceries, release, tall, settings};
+  }, {fillerCount: FILLER_NOTES, rowCount: TABLE_ROWS, tallSteps: TALL_DIAGRAM_STEPS});
 }
 
 const contentOf = id => `.note[data-note-id="${id}"] > .note-content`;
@@ -148,6 +167,13 @@ async function becomes(page, condition, value) {
       hidden: () => panel() === null,
       opacity: () => panel() !== null && getComputedStyle(panel()).opacity === value,
       fraction: () => panel() !== null && panel().querySelector('math mfrac') !== null,
+      diagram: () => panel() !== null && panel().querySelector('svg') !== null,
+      // A diagram placed for where the caret is now, not for where it was before.
+      diagramAtCaret: () => {
+        if (panel() === null || panel().querySelector('svg') === null) return false;
+        const caret = getSelection().getRangeAt(0).getClientRects()[0];
+        return Math.abs(panel().getBoundingClientRect().left - caret.left) <= 1;
+      },
       movedFrom: () => panel() !== null && Math.abs(panel().getBoundingClientRect().left - value) > 1,
       // The row `value` (counted from 0) in the panel's middle, to a pixel.
       rowCentered: () => {
@@ -433,6 +459,84 @@ async function regionInMarkdown(page, ids) {
   await leaveEditing(page);
 }
 
+// The diagram in the panel: its drawn size, its own (viewBox) size, and the panel's box.
+async function panelDiagram(page) {
+  return page.$eval(PANEL, panel => {
+    const svg = panel.querySelector('svg');
+    const box = panel.getBoundingClientRect();
+    const drawn = svg.getBoundingClientRect();
+    return {
+      drawn: {width: drawn.width, height: drawn.height},
+      own: {width: svg.viewBox.baseVal.width, height: svg.viewBox.baseVal.height},
+      panel: {width: box.width, height: box.height},
+      window: {width: window.innerWidth, height: window.innerHeight},
+    };
+  });
+}
+
+async function mermaidCases(page, ids) {
+  await enterEditing(page, ids.release);
+  // Clicking into the note may already have drawn the diagram for another caret.
+  await placeCaret(page, 'A[Write]', 4);
+  assert.ok(await becomes(page, 'diagramAtCaret', null), 'caret in the fence: the diagram, at the caret');
+  await settle(page);
+  assertBelowCaret(await measure(page), 'caret in the fence');
+  const small = await panelDiagram(page);
+  assert.ok(Math.abs(small.drawn.width - small.own.width) <= SAME_SIZE_PX && Math.abs(small.drawn.height - small.own.height) <= SAME_SIZE_PX,
+    `a small diagram at its own size, never scaled up (${JSON.stringify(small)})`);
+  await placeCaret(page, '```mermaid', 1);
+  assert.ok(await becomes(page, 'hidden', null), 'caret on the fence line: nothing');
+
+  await placeCaret(page, 'C[Ship]', 'C[Ship]'.length);
+  assert.ok(await becomes(page, 'diagram', null), 'back in the fence: the diagram');
+  const good = await measure(page);
+  await page.keyboard.type(' -->');
+  assert.ok(await becomes(page, 'opacity', GHOST_OPACITY), 'a dangling arrow: the last good diagram fades');
+  assert.equal((await measure(page)).panel.html, good.panel.html, 'a dangling arrow: the last good diagram stays');
+  await pause(BROKEN_PAUSE_WAIT_MS);
+  const paused = await measure(page);
+  assert.deepEqual([paused.panel.text, paused.panel.hasError, paused.panel.opacity], ['Invalid Mermaid diagram', true, FULL_OPACITY],
+    'broken after a pause');
+  for (let index = 0; index < ' -->'.length; index += 1) await page.keyboard.press('Backspace');
+  assert.ok(await becomes(page, 'diagram', null), 'fixed: the diagram again');
+  assert.ok(await becomes(page, 'opacity', FULL_OPACITY), 'fixed: at full strength');
+  await leaveEditing(page);
+
+  await enterEditing(page, ids.tall);
+  await page.evaluate(() => document.querySelector('.note.editing > .note-content > div').scrollIntoView({block: 'start'}));
+  await settle(page);
+  await placeCaret(page, 'N2[Step', 2);
+  assert.ok(await becomes(page, 'diagram', null), 'caret in a tall diagram: the diagram');
+  await settle(page);
+  const tall = await panelDiagram(page);
+  assert.ok(tall.drawn.height < tall.own.height, `a tall diagram is scaled down (${JSON.stringify(tall)})`);
+  assert.ok(tall.panel.height <= tall.window.height * PANEL_HEIGHT_SHARE + ROUNDING_PX, `it fits 40% of the window (${JSON.stringify(tall)})`);
+  assert.ok(tall.panel.width <= tall.window.width - WINDOW_MARGINS_PX, `and the window's width (${JSON.stringify(tall)})`);
+  assert.ok(Math.abs(tall.drawn.width / tall.drawn.height - tall.own.width / tall.own.height) <= PROPORTION_TOLERANCE * (tall.own.width / tall.own.height),
+    `in proportion (${JSON.stringify(tall)})`);
+  await leaveEditing(page);
+}
+
+async function jsonCases(page, ids) {
+  const drawn = await page.$eval(contentOf(ids.settings), content => content.querySelector('.meta-json').outerHTML);
+  await enterEditing(page, ids.settings);
+  await placeCaret(page, '"tags"', 3);
+  await waitForPanel(page, 'caret in compact JSON');
+  assert.equal(await page.$eval(PANEL, panel => panel.querySelector('.meta-json').outerHTML), drawn, 'laid out as the note draws it');
+  await placeCaret(page, '8443', '8443'.length);
+  await page.keyboard.type(' "x"');
+  assert.ok(await becomes(page, 'opacity', GHOST_OPACITY), 'broken: the last good drawing fades');
+  await pause(BROKEN_PAUSE_WAIT_MS);
+  const paused = await measure(page);
+  assert.deepEqual([paused.panel.text, paused.panel.hasError, paused.panel.opacity],
+    ["Invalid JSON: Expecting ',' delimiter: line 1 column 64 (char 63)", true, FULL_OPACITY], 'broken after a pause: why and where');
+  for (let index = 0; index < ' "x"'.length; index += 1) await page.keyboard.press('Backspace');
+  assert.ok(await becomes(page, 'opacity', FULL_OPACITY), 'fixed: at full strength');
+  await idle(page);
+  assert.equal(await page.$eval(PANEL, panel => panel.querySelector('.meta-json').outerHTML), drawn, 'fixed: laid out again');
+  await leaveEditing(page);
+}
+
 async function previewCases(page, ids) {
   const failures = [];
   const attempt = async (label, run) => {
@@ -465,6 +569,8 @@ async function previewCases(page, ids) {
   });
   await attempt('8 a CSV note: its table, scrolled to the caret\'s row; broken, it fades and says why', () => tableNote(page, ids));
   await attempt('9 a ((@csv)) region in a Markdown note, beside a formula', () => regionInMarkdown(page, ids));
+  await attempt('10 Mermaid: a fence\'s diagram, broken and fixed; a tall one scaled down to fit', () => mermaidCases(page, ids));
+  await attempt('11 JSON: compact shown laid out; broken, why and where', () => jsonCases(page, ids));
   assert.deepEqual(failures, []);
 }
 
@@ -477,7 +583,7 @@ export async function checkEditPreviews(page) {
   await runThenCleanUp('edit previews', () => previewCases(page, ids), async () => {
     await page.evaluate(async ids => {
       const {NotesAPI} = await import('/static/js/modules/api-client.js');
-      for (const id of [ids.formulas, ids.table, ids.groceries, ...ids.fillers]) await NotesAPI.deleteNote(id);
+      for (const id of [ids.formulas, ids.table, ids.groceries, ids.release, ids.tall, ids.settings, ...ids.fillers]) await NotesAPI.deleteNote(id);
     }, ids);
   });
 }

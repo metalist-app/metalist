@@ -357,18 +357,20 @@ def _parse_csv_rows(
     return rows, None
 
 
-# The start of what _render_csv_error renders, with why in its badge's title.
-_CSV_ERROR_START_RE = re.compile(r'<div class="meta-csv meta-csv-error[^"]*"[^>]*><span class="meta-csv-badge" title="([^"]*)">')
+# The start of what _render_csv_error and _render_json_error render, with why in the badge's title.
+_REGION_ERROR_START_RE = re.compile(
+    r'<div class="meta-(?P<kind>csv|json) meta-(?P=kind)-error[^"]*"[^>]*><span class="meta-(?P=kind)-badge" title="(?P<reason>[^"]*)">',
+)
 
 
-def csv_error_message(rendered_html: str) -> str:
-    """Why a table _render_csv_meta rendered is invalid, as its badge's title says; "" when it rendered."""
+def region_error_message(rendered_html: str) -> str:
+    """Why a CSV table or JSON value rendered invalid, as its badge's title says; "" when it rendered."""
     if not isinstance(rendered_html, str):
         raise TypeError("rendered_html must be a string")
-    match = _CSV_ERROR_START_RE.match(rendered_html)
+    match = _REGION_ERROR_START_RE.match(rendered_html)
     if match is None:
         return ""
-    return html.unescape(match.group(1))
+    return html.unescape(match.group("reason"))
 
 
 def _render_csv_error(*, raw_text: str, message: str, inline: bool, copy_attr: str) -> str:

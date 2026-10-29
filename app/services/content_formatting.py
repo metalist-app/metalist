@@ -848,28 +848,43 @@ _LINK_FETCHES_IN_RENDER: ContextVar[Set[Tuple[str, str]] | None] = ContextVar(
 )
 
 
-@dataclass(frozen=True, slots=True)
-class FoundTable:
-    """A CSV table a render met: the HTML it was made from, and how to draw it as the render would."""
+REGION_CSV = "csv"
+REGION_JSON = "json"
 
+
+@dataclass(frozen=True, slots=True)
+class FoundRegion:
+    """A CSV table or JSON value a render met: its kind, the HTML it was made from, and
+    how to draw it as the render would."""
+
+    kind: str
     source_html: str
     render: Callable[[], str]
 
 
-# Open while finding_tables() lists the tables a render meets.
-_TABLES_FOUND: ContextVar[List[FoundTable] | None] = ContextVar("tables_found", default=None)
+# Open while finding_regions() lists the tables and JSON values a render meets.
+_REGIONS_FOUND: ContextVar[List[FoundRegion] | None] = ContextVar("regions_found", default=None)
 
 
 @contextmanager
-def finding_tables() -> Iterator[List[FoundTable]]:
-    """While open, every CSV table a render meets is listed, in order, instead of drawn."""
-    assert _TABLES_FOUND.get() is None, "finding tables does not nest"
-    found: List[FoundTable] = []
-    reset_token = _TABLES_FOUND.set(found)
+def finding_regions() -> Iterator[List[FoundRegion]]:
+    """While open, every CSV table and JSON value a render meets is listed, in order, instead of drawn."""
+    assert _REGIONS_FOUND.get() is None, "finding regions does not nest"
+    found: List[FoundRegion] = []
+    reset_token = _REGIONS_FOUND.set(found)
     try:
         yield found
     finally:
-        _TABLES_FOUND.reset(reset_token)
+        _REGIONS_FOUND.reset(reset_token)
+
+
+# Lists the region when regions are being found; True when it was (its render draws nothing).
+def _found_region(*, kind: str, source_html: str, render: Callable[[], str]) -> bool:
+    found = _REGIONS_FOUND.get()
+    if found is None:
+        return False
+    found.append(FoundRegion(kind=kind, source_html=source_html, render=render))
+    return True
 
 
 # True while a render must ask for no link's title or icon (a preview of text being typed).
@@ -2403,9 +2418,14 @@ def _render_latex_container(
 
 
 def _render_json_meta(*, content_html: str, formatting_tags: FrozenSet[str]) -> str:
-    return render_json(content_html=content_html, formatting_tags=formatting_tags,
-        extra_classes=_meta_classes_for_tag_names(formatting_tags),
-        size_style_attr=_meta_size_style_attr(formatting_tags))
+    def render() -> str:
+        return render_json(content_html=content_html, formatting_tags=formatting_tags,
+            extra_classes=_meta_classes_for_tag_names(formatting_tags),
+            size_style_attr=_meta_size_style_attr(formatting_tags))
+
+    if _found_region(kind=REGION_JSON, source_html=content_html, render=render):
+        return ""
+    return render()
 
 
 def _render_diff_meta(*, content_html: str, formatting_tags: FrozenSet[str]) -> str:
@@ -2434,8 +2454,6 @@ def _render_csv_meta(*, content_html: str, formatting_tags: FrozenSet[str], inli
             scoped_formatting=CsvScopeFormatting(extract=_extract_wrapper_placeholders,
                 restore=_restore_wrapper_placeholders, render=_apply_scoped_meta_tags_to_plain_text))
 
-    found = _TABLES_FOUND.get()
-    if found is not None:
-        found.append(FoundTable(source_html=content_html, render=render))
+    if _found_region(kind=REGION_CSV, source_html=content_html, render=render):
         return ""
     return render()

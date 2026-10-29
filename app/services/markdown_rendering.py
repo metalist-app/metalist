@@ -10,6 +10,7 @@ from urllib.parse import urlsplit
 from app.services.code_rendering import is_highlighted_fence_language
 from app.services.code_rendering import render_fenced_code
 from app.services.latex_rendering import render_latex_math_to_html
+from app.services.mermaid_note_rendering import found_diagram
 
 
 _ORDERED_LIST_RE = re.compile(r"^(\d+)\.\s+(?P<content>.*)$")
@@ -131,10 +132,12 @@ class _MarkdownRenderer:
         self._index += 1
 
         content_lines: List[str] = []
+        is_closed = False
         while self._index < len(self._lines):
             line = self._lines[self._index]
             if line.strip() == "```":
                 self._index += 1
+                is_closed = True
                 break
             if line.startswith(fence_indent):
                 line = line[len(fence_indent):]
@@ -143,6 +146,8 @@ class _MarkdownRenderer:
 
         escaped_code = html.escape("\n".join(content_lines), quote=False)
         if language.casefold() == "mermaid":
+            if found_diagram(source="\n".join(content_lines), is_closed=is_closed):
+                return ""
             return (
                 '<pre class="meta-mermaid-source">'
                 f'<code class="language-mermaid">{escaped_code}</code>'

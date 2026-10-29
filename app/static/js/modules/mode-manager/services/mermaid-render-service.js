@@ -290,6 +290,40 @@ export async function renderMermaidDiagrams(rootElement, options) {
     return { renderedCount, invalidCount };
 }
 
+// The diagram for the preview while editing (edit-preview-service.js), drawn as the note
+// draws its diagrams: the same runtime, theme and layout, in the same queue. `isValid`
+// is false when Mermaid cannot parse the source.
+export function drawMermaidPreview(source) {
+    if (typeof source !== 'string' || source.trim() === '') {
+        throw new Error('drawMermaidPreview requires a diagram source');
+    }
+    const drawing = moduleState.mermaidRenderQueue.then(async () => {
+        const api = await loadMermaidApi(document);
+        api.initialize(buildMermaidConfig(resolveMermaidTheme(document)));
+        // As for a note's diagram: pasted indentation is non-breaking spaces.
+        const cleaned = source.replace(/\u00a0/g, ' ');
+        const isValid = await api.parse(cleaned, { suppressErrors: true });
+        if (isValid === false) return { isValid: false, svg: '' };
+        moduleState.mermaidRenderSequence += 1;
+        const renderResult = await api.render(`metalist-mermaid-preview-${moduleState.mermaidRenderSequence}`, cleaned);
+        if (!renderResult || typeof renderResult.svg !== 'string' || renderResult.svg.length === 0) {
+            throw new Error('Mermaid render result missing SVG');
+        }
+        return { isValid: true, svg: renderResult.svg };
+    });
+    moduleState.mermaidRenderQueue = drawing;
+    return drawing;
+}
+
+// A preview's SVG put on the page. Mermaid runs with securityLevel 'strict', which
+// sanitizes the labels it renders, as for the note's diagrams.
+export function mermaidPreviewHtml(svg) {
+    if (typeof svg !== 'string') {
+        throw new Error('mermaidPreviewHtml requires the SVG');
+    }
+    return produces(svg, 'sanitized_html');
+}
+
 export function queueMermaidDiagramRendering(rootElement) {
     // Synchronously, before the browser paints the newly inserted sources.
     reserveMermaidSpace(rootElement);

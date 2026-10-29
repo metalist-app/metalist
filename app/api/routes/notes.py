@@ -929,11 +929,12 @@ def tag_details(payload: TagDetailsRequest) -> Dict[str, object]:
 @router.post("/notes/edit-preview")
 @transactional_route
 def edit_preview(payload: EditPreviewRequest) -> Dict[str, object]:
-    """Read-only: the formula or CSV table under the caret while editing, drawn (docs/ui/content-formatting.md, "Previews while editing")."""
+    """Read-only: the formula, CSV table or Mermaid diagram under the caret while editing (docs/ui/content-formatting.md, "Previews while editing")."""
     preview = edit_preview_at_caret(marked_content_html=payload["marked_content_html"], tags=payload["tags_text"])
     return {
         "kind": preview.kind, "html": preview.html, "error": preview.error,
         "hasUnknownCommand": preview.has_unknown_command, "caretRow": preview.caret_row,
+        "diagramSource": preview.diagram_source,
     }
 
 

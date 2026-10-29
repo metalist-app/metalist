@@ -163,7 +163,7 @@ Other (non-meta) tags may also appear inside wrapper tokens (e.g. `{{foo bar}}`)
 - Invalid LaTeX shows a red "Invalid LaTeX" badge and the raw content.
 - Inline math uses `$...$`; display math uses `$$...$$`.
 - If no `$` delimiters are present, the entire note is rendered as display math.
-- While editing, with the caret in a formula or CSV table (delimited, an `@LaTeX` or `@csv` note, a scoped region), a panel under the caret draws it; none if it looks as typed (`$$x$$`, one column). Broken mid-typing, the last good drawing fades; a pause says why. Selecting keeps it; Escape hides it; `Previews While Editing` (command palette) turns it off.
+- While editing, with the caret in a formula, CSV table, JSON value or Mermaid diagram (delimited, tagged or scoped), a panel under the caret draws it; none if it looks as typed (`$$x$$`, one column, code). Broken while typing, the last good one fades; a pause says why. Selecting keeps it, Escape hides it, `Previews While Editing` (palette) turns it off.
 
 ## Shell meta tags
 - `@shell`: renders the note content as a terminal-style script block in view mode.

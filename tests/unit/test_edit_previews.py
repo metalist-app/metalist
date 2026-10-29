@@ -12,7 +12,7 @@ import pytest
 import app.services.content_formatting as content_formatting_module
 from app.security.rendered_html import sanitize_rendered_html
 from app.services.content_formatting import format_note_content_for_view
-from app.services.edit_previews import CARET_MARK, PREVIEW_CSV, PREVIEW_LATEX, PREVIEW_NONE, edit_preview_at_caret
+from app.services.edit_previews import CARET_MARK, PREVIEW_CSV, PREVIEW_JSON, PREVIEW_LATEX, PREVIEW_MERMAID, PREVIEW_NONE, edit_preview_at_caret
 from app.utils.not_found import NOT_FOUND
 from app.services.latex_rendering import FoundFormula, finding_formulas, render_latex_math_to_html, render_latex_to_html
 
@@ -169,10 +169,10 @@ with TestClient(app, base_url="http://localhost", raise_server_exceptions=False)
     assert answer.status_code == 200, answer.text
     assert answer.json() == {
         "kind": "latex", "html": sanitize_rendered_html(render_latex_math_to_html("\\\\frac{1}{2}", display="block").html),
-        "error": "", "hasUnknownCommand": False, "caretRow": -1,
+        "error": "", "hasUnknownCommand": False, "caretRow": -1, "diagramSource": "",
     }, answer.json()
     outside = client.post(path, headers=headers, json={"marked_content_html": "<div>" + CARET_MARK + "$$x^2$$</div>", "tags_text": "@markdown"})
-    assert outside.json() == {"kind": "none", "html": "", "error": "", "hasUnknownCommand": False, "caretRow": -1}, outside.json()
+    assert outside.json() == {"kind": "none", "html": "", "error": "", "hasUnknownCommand": False, "caretRow": -1, "diagramSource": ""}, outside.json()
     missing = client.post(path, headers=headers, json={"marked_content_html": "<div>$$x^2$$</div>"})
     assert missing.status_code == 422, missing.text
     unauthenticated = client.post(path, headers={"Origin": "http://localhost"}, json={"marked_content_html": CARET_MARK, "tags_text": ""})
@@ -239,3 +239,63 @@ def test_a_broken_table_says_why_as_its_badge_does() -> None:
 
     assert (preview.kind, preview.html, preview.caret_row) == (PREVIEW_CSV, "", NOT_FOUND)
     assert preview.error == "Invalid CSV: Row 2 has 3 columns, expected 2"
+
+
+FENCE = ["Release steps:", "```mermaid", "flowchart LR", "A[Write] --> B[Review]", "```", "Done."]
+
+
+@pytest.mark.parametrize(
+    ("lines", "tags", "source"),
+    [
+        ([*FENCE[:3], "A[Wr|ite] --> B[Review]", *FENCE[4:]], MARKDOWN, "flowchart LR\nA[Write] --> B[Review]"),
+        (["flowchart TD", "A --> |B"], "@mermaid", "flowchart TD\nA --> B"),
+        (["See ((flowchart LR", "A --> B|)) here"], "((@mermaid))", "flowchart LR\nA --> B"),
+    ],
+)
+def test_a_diagram_under_the_caret_comes_with_its_source_for_the_browser_to_draw(lines: list[str], tags: str, source: str) -> None:
+    preview = _preview(_lines(lines), tags)
+
+    assert (preview.kind, preview.html, preview.error, preview.diagram_source) == (PREVIEW_MERMAID, "", "", source)
+
+
+@pytest.mark.parametrize(
+    ("lines", "tags"),
+    [
+        # On the fence's lines, before or after it.
+        ([FENCE[0], "```mer|maid", *FENCE[2:]], MARKDOWN),
+        ([*FENCE[:4], "``|`", FENCE[5]], MARKDOWN),
+        (["Release| steps:", *FENCE[1:]], MARKDOWN),
+        # A fence without its closing ``` is still being written.
+        ([*FENCE[:3], "A[Write] --> |B[Review]"], MARKDOWN),
+        (["See| ((flowchart LR", "A --> B)) here"], "((@mermaid))"),
+        # Fenced, but no diagram in it.
+        ([FENCE[0], "```mermaid", "|", "```"], MARKDOWN),
+    ],
+)
+def test_no_diagram_outside_one_or_in_an_open_fence(lines: list[str], tags: str) -> None:
+    assert _preview(_lines(lines), tags).kind == PREVIEW_NONE
+
+
+def test_compact_json_shows_as_the_note_draws_it() -> None:
+    content_html = _lines(['{"name": "MetaList", "tags": ["no|tes"], "port": 8443}'])
+    preview = _preview(content_html, "@json")
+
+    assert (preview.kind, preview.error) == (PREVIEW_JSON, "")
+    assert preview.html != "" and preview.html in _note_shows(content_html, "@json")
+    region = _preview(_lines(['Settings ((({"debug": true,| "port": 8080}))) saved']), "@markdown (((@json)))")
+    assert region.kind == PREVIEW_JSON
+    assert region.html in _note_shows(_lines(['Settings ((({"debug": true, "port": 8080}))) saved']), "@markdown (((@json)))")
+
+
+def test_json_laid_out_as_the_note_draws_it_shows_nothing() -> None:
+    assert _preview(_lines(["{", '  "a": 1,|', '  "b": 2', "}"]), "@json").kind == PREVIEW_NONE
+    # Laid out another way (four spaces), it shows.
+    assert _preview(_lines(["{", '    "a": 1|', "}"]), "@json").kind == PREVIEW_JSON
+
+
+def test_broken_json_says_why_and_where() -> None:
+    preview = _preview(_lines(['{"a": 1 "b|": 2}']), "@json")
+
+    assert (preview.kind, preview.html) == (PREVIEW_JSON, "")
+    assert preview.error == "Invalid JSON: Expecting ',' delimiter: line 1 column 9 (char 8)"
+    assert _preview(_lines(['Settings| ((({"debug": true}))) saved']), "@markdown (((@json)))").kind == PREVIEW_NONE

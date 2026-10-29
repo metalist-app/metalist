@@ -759,7 +759,7 @@ export const NotesAPI = {
         });
     },
 
-    // The formula or CSV table under the caret while editing, drawn: { kind, html, error, hasUnknownCommand, caretRow }.
+    // The formula, CSV table or Mermaid diagram under the caret while editing: { kind, html, error, hasUnknownCommand, caretRow, diagramSource }.
     async fetchEditPreview(markedContentHtml, tagsText) {
         if (typeof markedContentHtml !== 'string' || typeof tagsText !== 'string') {
             throw new Error('NotesAPI.fetchEditPreview requires the marked content and the tags');

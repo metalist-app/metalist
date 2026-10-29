@@ -6,11 +6,12 @@ import { serverRenderedHtml } from '../../server-rendered-html.js';
 import { unlessDiagramEditorOpen } from '../../excalidraw/excalidraw-editor-state.js';
 import { getTagBarValue } from './tag-bar-service.js';
 import { placePasteFormatOffer } from './paste-format-offer-service.js';
+import { drawMermaidPreview, mermaidPreviewHtml } from './mermaid-render-service.js';
 
 // Previews while editing (docs/ui/content-formatting.md, "Previews while editing";
-// agreed 2026-10-29). With the caret inside a formula or a CSV table of the note being
-// edited, a small panel just below that line, under the caret, shows it drawn; a table
-// scrolls so the caret's row is in view. The server finds what is under the caret and
+// agreed 2026-10-29). With the caret inside a formula, a CSV table, a JSON value or a
+// Mermaid diagram of the note being edited, a small panel just below that line, under the caret, shows it
+// drawn; a table scrolls so the caret's row is in view, a diagram is scaled down to fit. The server finds what is under the caret and
 // draws it as the note draws it (app/services/edit_previews.py), so a preview never
 // disagrees with the note. The panel floats: the note's text never moves. While it is
 // broken mid-typing the last good drawing fades toward a ghost; a pause shows why it is
@@ -25,12 +26,23 @@ const PREVIEWS_ON_CLASS = 'pref-edit-previews';
 const PHONE_CLASS = 'phone-layout';
 const PREVIEW_NONE = 'none';
 const PREVIEW_CSV = 'csv';
+const PREVIEW_MERMAID = 'mermaid';
+const PREVIEW_JSON = 'json';
 const NO_CARET_ROW = -1;
-const TABLE_CLASS = 'edit-preview-table';
+// Tables, JSON and diagrams may be as wide as the window.
+const WIDE_CLASS = 'edit-preview-wide';
+const WIDE_KINDS = new Set([PREVIEW_CSV, PREVIEW_JSON, PREVIEW_MERMAID]);
+const INVALID_DIAGRAM = 'Invalid Mermaid diagram';
+// The panel's room (main.css, .edit-preview): this share of the window's height, and
+// the window's width less this margin on each side.
+const PANEL_HEIGHT_SHARE = 0.4;
+const VIEWPORT_MARGIN_PX = 8;
+const NO_SCALE_UP = 1;
 
 // Tuning (the maintainer wants to try these before settling them):
-// the preview asks once typing pauses this long,
+// the preview asks once typing pauses this long, and draws a diagram (heavier) once it pauses this long,
 const TYPING_PAUSE_MS = 150;
+const DIAGRAM_PAUSE_MS = 400;
 // a formula still broken after this pause shows why,
 const BROKEN_PAUSE_MS = 1500;
 // and the last good drawing fades over this long to this faint.
@@ -45,6 +57,7 @@ const moduleState = ApplicationState.createFields('edit-preview-service', {
     requestSerial: 0,
     typingTimer: null,
     brokenTimer: null,
+    drawTimer: null,
     // The note content the caret was last asked about: a caret in another note starts fresh.
     askedContent: null,
     // What is under the caret as it last rendered ({ kind, html, caretRow }), while the caret stays in it.
@@ -147,7 +160,8 @@ function placePanel(caret) {
     const line = caretRect(caret);
     const { left, top } = placePasteFormatOffer({
         anchor: { left: line.left, top: line.top, bottom: line.bottom },
-        width: panel.offsetWidth, height: panel.offsetHeight,
+        // Its exact size: a whole-pixel height would put it a fraction off the line above it.
+        width: panel.getBoundingClientRect().width, height: panel.getBoundingClientRect().height,
         viewportWidth: window.innerWidth, viewportHeight: window.innerHeight,
     });
     panel.style.left = `${left}px`;
@@ -177,6 +191,29 @@ function showCaretRow(caretRow) {
     panel.scrollTop = rowTopInPanel - half(panel.clientHeight - rowBox.height);
 }
 
+// Width in pixels of what is around an element's content: its padding and border on two sides.
+function chrome(style, firstSide, secondSide) {
+    return ['padding', 'border'].reduce((sum, part) => {
+        const suffix = part === 'border' ? 'Width' : '';
+        return sum + Number.parseFloat(style[`${part}${firstSide}${suffix}`]) + Number.parseFloat(style[`${part}${secondSide}${suffix}`]);
+    }, 0);
+}
+
+// A diagram scaled down to fit the panel's room, keeping its proportions; never scaled up.
+function fitDiagram() {
+    const panel = moduleState.panel;
+    const svg = panel.querySelector('svg');
+    if (svg === null || svg.viewBox.baseVal === null || svg.viewBox.baseVal.width === 0) return;
+    const style = window.getComputedStyle(panel);
+    const roomWidth = window.innerWidth - VIEWPORT_MARGIN_PX - VIEWPORT_MARGIN_PX - chrome(style, 'Left', 'Right');
+    const roomHeight = window.innerHeight * PANEL_HEIGHT_SHARE - chrome(style, 'Top', 'Bottom');
+    const { width, height } = svg.viewBox.baseVal;
+    const scale = Math.min(NO_SCALE_UP, roomWidth / width, roomHeight / height);
+    svg.style.maxWidth = 'none';
+    svg.setAttribute('width', String(width * scale));
+    svg.setAttribute('height', String(height * scale));
+}
+
 function showPanel({ caret, kind, html, error, caretRow, isFaded }) {
     if (moduleState.panel === null) {
         const panel = document.createElement('div');
@@ -189,10 +226,14 @@ function showPanel({ caret, kind, html, error, caretRow, isFaded }) {
     }
     const panel = moduleState.panel;
     panel.classList.toggle('edit-preview-has-error', error !== '');
-    panel.classList.toggle(TABLE_CLASS, kind === PREVIEW_CSV && error === '');
+    panel.classList.toggle(WIDE_CLASS, WIDE_KINDS.has(kind) && error === '');
     if (error !== '') {
         panel.style.fontSize = '';
         panel.textContent = error;
+    } else if (kind === PREVIEW_MERMAID) {
+        panel.style.fontSize = '';
+        panel.innerHTML = mermaidPreviewHtml(html);
+        fitDiagram();
     } else {
         // Drawn at the note's size, as the note will draw it.
         panel.style.fontSize = window.getComputedStyle(caret.content).fontSize;
@@ -232,6 +273,18 @@ function showAnswer(caret, preview) {
     }, BROKEN_PAUSE_MS));
 }
 
+// A diagram is drawn in the browser, as the note's are, once typing has paused a little longer.
+function drawDiagramLater(caret, source, serial) {
+    setState('drawTimer', setTimeout(async () => {
+        setState('drawTimer', null);
+        const drawn = await drawMermaidPreview(source);
+        if (serial !== moduleState.requestSerial || isSelectingInEditedNote()) return;
+        let error = '';
+        if (!drawn.isValid) error = INVALID_DIAGRAM;
+        showAnswer(caret, { kind: PREVIEW_MERMAID, html: drawn.svg, error, hasUnknownCommand: false, caretRow: NO_CARET_ROW });
+    }, DIAGRAM_PAUSE_MS - TYPING_PAUSE_MS));
+}
+
 async function askForPreview() {
     setState('typingTimer', null);
     if (isSelectingInEditedNote()) return;
@@ -252,6 +305,10 @@ async function askForPreview() {
         forgetFormula();
         return;
     }
+    if (preview.kind === PREVIEW_MERMAID && !moduleState.isDismissed) {
+        drawDiagramLater(caret, preview.diagramSource, serial);
+        return;
+    }
     showAnswer(caret, preview);
 }
 
@@ -259,6 +316,7 @@ async function askForPreview() {
 function scheduleAsk() {
     clearTimer('typingTimer');
     clearTimer('brokenTimer');
+    clearTimer('drawTimer');
     setState('requestSerial', moduleState.requestSerial + 1);
     // A failed request is not swallowed: it reaches the error overlay, as for the `[[` list.
     setState('typingTimer', setTimeout(async () => {
