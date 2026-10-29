@@ -1,6 +1,6 @@
 # Web clipper: a bookmarklet that hands the clip to the open MetaList tab
 
-**Status:** **Ready to build, through the clipboard** (maintainer, 2026-10-28): a "Copy for MetaList" bookmarklet copies the clip, and the user pastes it into MetaList where they want it. See "The clipboard instead" at the end, and settle its "To settle before building" first. Everything above that section describes the earlier helper-page design, which was put on hold the same day over its security hole; it is kept for its reasoning (what a clip contains, tags, plain untrusted text), not to be built. Earlier: agreed 2026-10-24 to 2026-10-26.
+**Status:** **Ready to build, through the clipboard** (maintainer, 2026-10-28): a "Copy for MetaList" bookmarklet copies the clip, and the user pastes it into MetaList where they want it. See "The clipboard instead" at the end, and settle its "To settle before building" and "Brainstormed, undecided" first. Everything above that section describes the earlier helper-page design, which was put on hold the same day over its security hole; it is kept for its reasoning (what a clip contains, tags, plain untrusted text), not to be built. Earlier: agreed 2026-10-24 to 2026-10-26.
 **Scope:** clipping a web page's title, address and selected text into MetaList from any desktop browser, with no extension, as a new root note, saved only after the user confirms it.
 
 Written without running the code. Check every reference before relying on it; build only what's missing. Document the result in `docs/ui/` (a new page for the clipper) and in the help.
@@ -129,3 +129,23 @@ Checked against the code; nothing of the clipper exists yet (no `/clip` route, n
 - **No browser plugin needed,** so none of the extension costs. The maintainer's first version of the idea was a plugin adding the page's details to every Ctrl+C; a bookmarklet does the same with one click and changes no other copy.
 - **Limits:** two steps (click the bookmark, then paste); sites that block bookmarklets fall back to copying by hand; a website could alter what lands in the clipboard (a fake title or link), seen in the note when pasted, as with any copied text.
 - **To settle before building:** what a paste does where (into the text of a note being edited, or as a new note beside or under the selected one, as `Paste Sibling Note` and `Paste Child Note` do for copied notes); whether the AI-suggested tags (proposed tags, behind the menu setting) still apply, given that AI tag suggestions on every substantial paste were rejected the same day: a freshly pasted note has no tags yet, so excluded tags can't keep a private paste from the cloud AI; and how the bookmarklet writes both forms in each browser (the Clipboard API inside the click, or a copy of a hidden element where that is blocked).
+
+### Brainstormed, undecided (2026-10-28)
+
+The maintainer is still thinking these over; nothing here is agreed.
+
+- **Pasting goes through today's paste rules:** a clip pastes like a copied MetaList note (`docs/ui/controls.md`, `⌘ + V`). Enter makes an empty new note at the top (with the search's tags); ⌘V then replaces that empty note with the clip, keeping its search tags. ⌘V beside the selected note, ⇧⌘V under it. Enter alone never reads the clipboard: browsers only let a page read it on a paste.
+- **A clip format the user chooses?** The maintainer isn't sure one shape fits everyone. Shapes discussed:
+  1. **Title with the selection below:** a root note holding the page title as a link, and the selection as a child note (the maintainer's first idea).
+  2. **All in one note:** the title as a link, then the selection as a quote.
+  3. **Quote first,** with the source as a reference: **the maintainer's current leaning**, below.
+  4. **Title with each paragraph as a child,** for outlining or tagging the pieces separately.
+  - **Link only: rejected.** Pasting the page's address already gets its title fetched.
+  - Open: one format for everyone, or a `Clip Format` menu setting with some of these.
+- **Quote first, as a footnote reference (the leaning):** the paste inserts the selected text followed by a footnote holding the page title linked to its address, and makes sure the note has `{{@footnote}}`, i.e. `selected text{{<a href="address">title</a>}}` (`docs/ui/content-formatting.md`, Footnotes). The existing footnotes then give what the maintainer asked for:
+  - a superscript number after the quote, and a **References** section at the bottom with the linked title, as AI answers' references look;
+  - a second clip pasted into the same note becomes reference 2, added to the same References section;
+  - a clip from the same page again reuses its number and row (identical footnote text is one reference), so nothing is listed twice;
+  - nothing to overwrite: the numbers and References are worked out when the note is shown, never stored in it.
+  - Reuse is per page (the same address), not per website: two articles from one site are two references. To confirm with the maintainer.
+- **Open:** what a clip with no selected text pastes (perhaps just the title as a link, as if the address had been pasted); while editing a note's text, whether the paste inserts this same form at the caret.
