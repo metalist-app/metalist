@@ -302,7 +302,14 @@ DNS failures stop the request instead of falling through to a second,
 unvalidated lookup, and proxy environment variables cannot reroute the pinned
 connection. Site icons (`app/services/link_icons.py`) use the same resolution,
 pinning and redirect limit. A fetched icon is never served as fetched: it must
-decode as a small raster image (SVG is refused) and is re-encoded as a PNG.
+decode as a small raster image, or be an SVG drawn on the server, and is re-encoded
+as a PNG. resvg (`resvg_py`), which draws SVG icons, reads local files an SVG names
+in an `<image>` (an absolute path, or a relative one), so an SVG is drawn only when
+it refers to nothing outside itself: no `DOCTYPE` or entities, no `image`,
+`feImage`, `script` or `foreignObject` element, no `href` or CSS `url()` other than
+`#id`, no `@import` or stylesheet instruction, at most 100 KB. Relative paths also
+resolve in an empty temporary folder. The SVG itself is never stored or sent to
+the browser (`link_icons._svg_icon_png()`).
 
 ### Sensitive Telemetry
 

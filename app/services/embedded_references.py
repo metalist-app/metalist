@@ -14,6 +14,9 @@ from app.services.content_formatting import render_credential_link_row
 from app.services.content_formatting import format_note_content_for_view
 from app.services.content_formatting import has_scoped_footnotes
 from app.services.content_formatting import render_standalone_link_title_html
+from app.services.content_formatting import showing_sites_above
+from app.services.content_formatting import sites_linked_in
+from app.services.content_formatting import sites_shown_above
 from app.services.file_text_preview import text_file_badge
 from app.services.inline_image_occurrences import annotate_inline_image_occurrences
 from app.services.subtree_stats import render_subtree_stats_footer
@@ -728,27 +731,13 @@ def _render_reference_block(
 
     if note_exists:
         wrapper_classes = f"{wrapper_classes} note-reference-note"
-        if display_as_embed:
-            body_html = _render_embed_body(
-                reference_note_id=reference_note_id,
-                context=context,
-                ancestry=ancestry,
-                static_export=static_export,
-                redact_credentials=redact_credentials,
-                # A folded note shows one line: an embed on it shows its note folded.
-                folds_root=folds_embeds,
-            )
-        elif link_text is not None:
-            body_html = _render_link_text_body(
-                reference_note_id=reference_note_id, link_text=link_text, static_export=static_export,
-            )
-        else:
-            body_html = _render_link_body(
-                reference_note_id=reference_note_id,
-                context=context,
-                static_export=static_export,
-                redact_credentials=redact_credentials,
-                show_media=True,
+        # A referenced note is drawn without its ancestors: its links keep their sites
+        # (docs/ui/content-formatting.md, Links In View Mode).
+        with showing_sites_above(frozenset()):
+            body_html = _render_note_reference_body(
+                reference_note_id=reference_note_id, display_as_embed=display_as_embed, link_text=link_text,
+                context=context, ancestry=ancestry, static_export=static_export,
+                redact_credentials=redact_credentials, folds_embeds=folds_embeds,
             )
     elif file_exists:
         wrapper_classes = f"{wrapper_classes} note-reference-file"
@@ -785,6 +774,40 @@ def _render_reference_block(
         f'data-embed-ref-id="{escaped_reference_note_id}">'
         f'<div class="note-reference-content">{body_html}</div>'
         "</div>"
+    )
+
+
+def _render_note_reference_body(
+    *,
+    reference_note_id: str,
+    display_as_embed: bool,
+    link_text: Optional[str],
+    context: EmbedRenderContext,
+    ancestry: Tuple[str, ...],
+    static_export: bool,
+    redact_credentials: bool,
+    folds_embeds: bool,
+) -> str:
+    if display_as_embed:
+        return _render_embed_body(
+            reference_note_id=reference_note_id,
+            context=context,
+            ancestry=ancestry,
+            static_export=static_export,
+            redact_credentials=redact_credentials,
+            # A folded note shows one line: an embed on it shows its note folded.
+            folds_root=folds_embeds,
+        )
+    if link_text is not None:
+        return _render_link_text_body(
+            reference_note_id=reference_note_id, link_text=link_text, static_export=static_export,
+        )
+    return _render_link_body(
+        reference_note_id=reference_note_id,
+        context=context,
+        static_export=static_export,
+        redact_credentials=redact_credentials,
+        show_media=True,
     )
 
 
@@ -1381,13 +1404,15 @@ def _render_embedded_note_node(
             static_export=static_export,
             redact_credentials=redact_credentials,
         )
-        children_html = _render_embedded_children(
-            child_ids=child_ids,
-            context=context,
-            ancestry=ancestry,
-            static_export=static_export,
-            redact_credentials=redact_credentials,
-        )
+        # Its children are shown under it: its sites are shown above them.
+        with showing_sites_above(sites_shown_above() | sites_linked_in(record_content)):
+            children_html = _render_embedded_children(
+                child_ids=child_ids,
+                context=context,
+                ancestry=ancestry,
+                static_export=static_export,
+                redact_credentials=redact_credentials,
+            )
 
     content_classes = "note-embed-content"
     if is_collapsed and static_export:
@@ -1439,13 +1464,14 @@ def _render_foldable_static_embedded_note_node(
         static_export=True,
         redact_credentials=redact_credentials,
     )
-    children_html = _render_embedded_children(
-        child_ids=child_ids,
-        context=context,
-        ancestry=ancestry,
-        static_export=True,
-        redact_credentials=redact_credentials,
-    )
+    with showing_sites_above(sites_shown_above() | sites_linked_in(annotated_content)):
+        children_html = _render_embedded_children(
+            child_ids=child_ids,
+            context=context,
+            ancestry=ancestry,
+            static_export=True,
+            redact_credentials=redact_credentials,
+        )
     return (
         f'<div class="{classes}" data-embed-note-id="{escaped_note_id}">'
         '<div class="note-embed-body">'

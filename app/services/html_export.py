@@ -11,6 +11,8 @@ from pathlib import Path
 
 from app.security.rendered_html import sanitize_exported_html
 from app.services.content_formatting import find_list_style
+from app.services.content_formatting import showing_sites_above
+from app.services.content_formatting import sites_linked_in
 from app.services.subtree_stats import STATS_STYLES
 from app.services.content_formatting import is_password_note
 from app.services.content_formatting import is_username_note
@@ -642,6 +644,9 @@ def _render_exported_note(*, note_id, allowed_note_ids, embed_render_context, co
     pending = [(note_id, False)]
     visiting = set()
     rendered = {}
+    # The file shows a note under its ancestors in it, as MetaList does: its links to their
+    # sites show their text alone (docs/ui/content-formatting.md). The top note has none.
+    sites_above = {note_id: frozenset()}
     while pending:
         current, finishing = pending.pop()
         children = [child for child in note_store.get_children(current) if allowed_note_ids is None or child in allowed_note_ids]
@@ -651,9 +656,13 @@ def _render_exported_note(*, note_id, allowed_note_ids, embed_render_context, co
             visiting.add(current)
             pending.append((current, True))
             pending.extend((child, False) for child in reversed(children))
+            below_current = sites_above[current] | sites_linked_in(note_store.get_note(current).content)
+            for child in children:
+                sites_above[child] = below_current
             continue
         visiting.remove(current)
-        rendered[current] = _render_exported_note_node(note_id=current, allowed_note_ids=allowed_note_ids, embed_render_context=embed_render_context, children_html_parts=[rendered.pop(child) for child in children], collapsible=collapsible, open_note_ids=open_note_ids, redact_credentials=redact_credentials)
+        with showing_sites_above(sites_above.pop(current)):
+            rendered[current] = _render_exported_note_node(note_id=current, allowed_note_ids=allowed_note_ids, embed_render_context=embed_render_context, children_html_parts=[rendered.pop(child) for child in children], collapsible=collapsible, open_note_ids=open_note_ids, redact_credentials=redact_credentials)
     return rendered[note_id]
 
 

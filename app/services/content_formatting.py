@@ -48,6 +48,7 @@ from app.services.ontology_rules_store import get_ontology_if_ready
 from app.services.file_registry import file_registry
 from app.security.rendered_html import RENDERER_CLASS_PREFIXES
 from app.services.link_titles import display_domain_for_url
+from app.services.link_titles import site_of_url
 from app.services.link_icons import link_icon_store
 from app.services.link_titles import link_title_store
 from app.services.link_titles import normalize_url_for_link_title
@@ -916,8 +917,49 @@ def _link_title_html(url: str) -> str | None:
     return f'{_link_icon_html(url)}<span class="link-title-text">{html.escape(title)}</span>{_link_domain_html(url)}'
 
 
+# The sites the notes shown above the one being drawn link to (its ancestors, as far up as
+# they are shown): its links to those sites show their text alone, no icon and no
+# " · domain" (docs/ui/content-formatting.md, Links In View Mode). Nothing is shown above a
+# note drawn on its own (a preview, an embed's note), so nothing is left out there.
+_SITES_SHOWN_ABOVE: ContextVar[FrozenSet[str]] = ContextVar("sites_shown_above", default=frozenset())
+_WEB_LINK_HREF_RE = re.compile(r"""<a\b[^>]*?\bhref\s*=\s*(?P<quote>["'])(?P<url>https?://[^"']+)(?P=quote)""", re.IGNORECASE)
+
+
+@contextmanager
+def showing_sites_above(sites: FrozenSet[str]) -> Iterator[None]:
+    """Draw with these sites already linked from the notes shown above."""
+    if not isinstance(sites, frozenset):
+        raise TypeError(f"sites must be a frozenset, got {type(sites)}")
+    reset_token = _SITES_SHOWN_ABOVE.set(sites)
+    try:
+        yield
+    finally:
+        _SITES_SHOWN_ABOVE.reset(reset_token)
+
+
+def sites_shown_above() -> FrozenSet[str]:
+    """The sites linked from the notes shown above the one being drawn."""
+    return _SITES_SHOWN_ABOVE.get()
+
+
+def sites_linked_in(content_html: str) -> FrozenSet[str]:
+    """The sites a note's text links to, anywhere in it: its links and its bare addresses."""
+    if not isinstance(content_html, str):
+        raise TypeError(f"content_html must be a string, got {type(content_html)}")
+    urls = [html.unescape(match.group("url")) for match in _WEB_LINK_HREF_RE.finditer(content_html)]
+    urls.extend(find_plain_text_urls(strip_html(content_html)))
+    return frozenset(site_of_url(url) for url in urls if urllib.parse.urlsplit(url).hostname)
+
+
+def _is_site_shown_above(url: str) -> bool:
+    sites = _SITES_SHOWN_ABOVE.get()
+    return len(sites) > 0 and site_of_url(url) in sites
+
+
 # The site's icon before a web link (docs/ui/content-formatting.md); '' (and asked for) until known.
 def _link_icon_html(url: str) -> str:
+    if _is_site_shown_above(url):
+        return ""
     icon_png_base64 = link_icon_store.get_icon_base64(url)
     if icon_png_base64 is None:
         _request_link_icon_fetch(url)
@@ -926,6 +968,8 @@ def _link_icon_html(url: str) -> str:
 
 
 def _link_domain_html(url: str) -> str:
+    if _is_site_shown_above(url):
+        return ""
     return f'<span class="link-title-domain"> · {html.escape(display_domain_for_url(url))}</span>'
 
 

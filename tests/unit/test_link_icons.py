@@ -1,9 +1,9 @@
 """Site icons beside fetched link titles (docs/ui/content-formatting.md, Link icons; agreed
 case by case 2026-10-25). Once per site (origin) the server reads the icon the site's
 front page declares (a small one first, the apple-touch-icon after), else /favicon.ico;
-the sites whose titles come from oEmbed go straight to /favicon.ico. SVG is refused; an
-icon must be a small, decodable image (ICO included) and is stored as one 32-pixel PNG,
-encrypted like the titles. A site without an icon is asked again after 1, 7, then every
+the sites whose titles come from oEmbed go straight to /favicon.ico. An icon must be a
+small, decodable image (ICO included) or a self-contained SVG (agreed 2026-10-29), and is
+stored as one 32-pixel PNG, encrypted like the titles. A site without an icon is asked again after 1, 7, then every
 30 days; nothing about it is shown."""
 
 from __future__ import annotations
@@ -173,24 +173,92 @@ def test_a_site_without_any_icon_has_none(network) -> None:
     assert result == LinkIconFetchResult(origin=SITE, icon_png_base64=None, status="missing", last_error_kind="http_404")
 
 
-def test_svg_icons_are_never_requested(network) -> None:
+SQUARE_SVG = (
+    b'<?xml version="1.0" encoding="UTF-8"?>\n'
+    b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect width="10" height="10" fill="#1b3543"/></svg>'
+)
+
+
+def test_svg_icons_are_tried_after_the_bitmaps_and_before_favicon_ico(network) -> None:
     routes, requested = network
     routes[f"{SITE}/"] = _page(
         '<link rel="icon" href="/icon.svg" sizes="any">'
-        '<link rel="icon" href="/vector" type="image/svg+xml">'
+        '<link rel="icon" href="/missing.png" sizes="32x32">'
     )
+    routes[f"{SITE}/icon.svg"] = _icon(SQUARE_SVG, "image/svg+xml")
     routes[f"{SITE}/favicon.ico"] = _icon(_ico(), "image/x-icon")
 
-    assert fetch_link_icon(SITE).status == "ok"
-    assert requested == [f"{SITE}/", f"{SITE}/favicon.ico"]
+    result = fetch_link_icon(SITE)
+
+    assert result.status == "ok"
+    assert requested == [f"{SITE}/", f"{SITE}/missing.png", f"{SITE}/icon.svg"]
+    icon = _decoded(result)
+    assert icon.size == (ICON_PIXELS, ICON_PIXELS)
+    assert icon.convert("RGBA").getpixel((ICON_PIXELS // 2, ICON_PIXELS // 2)) == (0x1b, 0x35, 0x43, 255)
 
 
-def test_an_svg_served_as_an_icon_is_refused(network) -> None:
+def test_an_svg_written_into_the_page_is_drawn_without_a_request(network) -> None:
+    routes, requested = network
+    inline = (
+        "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E"
+        "%3Crect width='32' height='32' rx='6' fill='%231b3543'/%3E%3C/svg%3E"
+    )
+    routes[f"{SITE}/"] = _page(f'<link rel="icon" href="{inline}">')
+
+    result = fetch_link_icon(SITE)
+
+    assert result.status == "ok"
+    assert requested == [f"{SITE}/"]
+    assert _decoded(result).size == (ICON_PIXELS, ICON_PIXELS)
+
+
+def test_an_svg_that_draws_nothing_is_refused(network) -> None:
     routes, _requested = network
     routes[f"{SITE}/favicon.ico"] = _icon(b'<svg xmlns="http://www.w3.org/2000/svg"><rect/></svg>', "image/svg+xml")
 
     assert fetch_link_icon(SITE) == LinkIconFetchResult(
         origin=SITE, icon_png_base64=None, status="missing", last_error_kind="invalid_image")
+
+
+@pytest.mark.parametrize("svg", [
+    # resvg reads files an SVG names: a site must never reach one (found 2026-10-29).
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 9 9"><image href="{file}" width="9" height="9"/></svg>',
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 9 9"><image href="{name}" width="9" height="9"/></svg>',
+    '<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">'
+    '<use xlink:href="other.svg#a"/></svg>',
+    '<svg xmlns="http://www.w3.org/2000/svg"><filter id="f"><feImage href="/x.png"/></filter></svg>',
+    '<svg xmlns="http://www.w3.org/2000/svg"><rect width="9" height="9" style="fill:url(/x.png)"/></svg>',
+    '<svg xmlns="http://www.w3.org/2000/svg"><style>rect { fill: url("x.png") }</style><rect width="9" height="9"/></svg>',
+    '<svg xmlns="http://www.w3.org/2000/svg"><style>@import "x.css";</style><rect width="9" height="9"/></svg>',
+    '<?xml-stylesheet href="x.css"?><svg xmlns="http://www.w3.org/2000/svg"><rect width="9" height="9"/></svg>',
+    '<!DOCTYPE svg [<!ENTITY a "b">]><svg xmlns="http://www.w3.org/2000/svg"><rect width="9" height="9"/></svg>',
+    '<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script><rect width="9" height="9"/></svg>',
+    '<svg xmlns="http://www.w3.org/2000/svg"><rect width="9"',
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 9 9"></svg>',
+])
+def test_an_svg_that_reaches_outside_itself_or_draws_nothing_is_refused(svg: str, tmp_path, monkeypatch) -> None:
+    # A real image the SVG names, by its path and from the folder MetaList runs in.
+    (tmp_path / "secret.png").write_bytes(_png((ICON_PIXELS, ICON_PIXELS)))
+    monkeypatch.chdir(tmp_path)
+    named = svg.replace("{file}", str(tmp_path / "secret.png")).replace("{name}", "secret.png")
+    assert normalized_icon_png(named.encode()) is None
+
+
+def test_an_svg_s_own_references_and_text_are_drawn() -> None:
+    gradient = (
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 9 9"><defs><linearGradient id="g">'
+        '<stop offset="0" stop-color="red"/></linearGradient></defs><rect width="9" height="9" fill="url(#g)"/></svg>'
+    )
+    assert normalized_icon_png(gradient.encode()) is not None
+    emoji = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y=".9em" font-size="90">\U0001F98A</text></svg>'
+    drawn = normalized_icon_png(emoji.encode())
+    assert drawn is not None
+    assert Image.open(BytesIO(drawn)).convert("RGBA").getchannel("A").getbbox() is not None
+
+
+def test_an_oversized_svg_is_refused() -> None:
+    padding = b" " * link_icons._MAX_SVG_ICON_BYTES
+    assert normalized_icon_png(SQUARE_SVG.replace(b"<rect", padding + b"<rect")) is None
 
 
 def test_an_oversized_icon_is_refused(network) -> None:
@@ -359,6 +427,21 @@ def test_a_site_without_an_icon_is_asked_again_after_1_7_then_30_days(icon_datab
     assert row.failure_count == failures
     assert row.next_check_after - row.last_checked_at == timedelta(days=days)
     assert link_icon_store.get_icon_base64(SITE) is None
+
+
+def test_a_miss_recorded_before_svg_icons_were_drawn_is_asked_again_now(icon_database, monkeypatch) -> None:
+    submitted: list[str] = []
+    monkeypatch.setattr(link_icons, "_submit_fetch", lambda origin, generation: submitted.append(origin))
+    link_icon_store.apply_fetch_result(LinkIconFetchResult(
+        origin=SITE, icon_png_base64=None, status="missing", last_error_kind="http_404"))
+
+    link_icon_store.maybe_enqueue_fetch(f"{SITE}/page")
+    assert submitted == [], "a miss recorded since waits its day"
+
+    # The same miss, recorded before SVG icons were drawn: its site may have only an SVG icon.
+    monkeypatch.setattr(link_icons, "_SVG_ICONS_DRAWN_SINCE", datetime.now(timezone.utc) + timedelta(hours=1))
+    link_icon_store.maybe_enqueue_fetch(f"{SITE}/page")
+    assert submitted == [SITE]
 
 
 def test_an_icon_change_refreshes_rendered_links(icon_database) -> None:

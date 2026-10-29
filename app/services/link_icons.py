@@ -3,8 +3,9 @@
 Once per site (origin), the server reads the icons the site's front page declares (a
 small one first, the apple-touch-icon after), else /favicon.ico; sites whose titles come
 from oEmbed go straight to /favicon.ico. Requests take the same guards and per-site
-turns as title lookups. SVG is refused; an icon must be a small decodable image (ICO
-included) and is kept as one ICON_PIXELS-square PNG, encrypted like the titles. A site
+turns as title lookups. An icon must be a small decodable image (ICO included) or a
+self-contained SVG, drawn with resvg; it is kept as one ICON_PIXELS-square PNG, encrypted
+like the titles, and an SVG itself is never kept. A site
 without one is asked again after 1, 7, then every 30 days, and nothing is shown for it.
 The store is loaded, unlocked and cleared with the link titles (a LinkTitleCompanion).
 """
@@ -18,14 +19,17 @@ from html.parser import HTMLParser
 from http import HTTPStatus
 from io import BytesIO
 import re
+import tempfile
 from threading import Lock, RLock
 from typing import Mapping
-from urllib.parse import urljoin, urlsplit
+from urllib.parse import unquote_to_bytes, urljoin, urlsplit
 import warnings
+import xml.etree.ElementTree as ElementTree
 
 import httpcore
 import httpx
 from PIL import IcoImagePlugin, Image, ImageOps, UnidentifiedImageError
+import resvg_py
 
 import app.services.link_titles as link_titles
 from app.config import TEST_MODE
@@ -86,6 +90,30 @@ _MISSING_RETRY_DELAYS = (
     timedelta(days=_LATER_RETRY_DAYS),
 )
 _ICON_FORMATS = frozenset({"BMP", "GIF", "ICO", "JPEG", "PNG", "WEBP"})
+# An SVG icon (agreed 2026-10-29) is drawn at twice the stored size, then shrunk like any icon.
+_SVG_RENDER_SCALE = 2
+_SVG_RENDER_PIXELS = _SVG_RENDER_SCALE * ICON_PIXELS
+# Site icons drawn as SVG are a few KB; a bigger one is refused.
+_MAX_SVG_ICON_BYTES = 100 * 1024
+# How far into a download to look for an <svg> tag.
+_SVG_SNIFF_BYTES = 1024
+# An SVG icon must hold everything it draws: resvg reads files an SVG names (an <image>
+# path), which a site must never reach. Elements that load or run something are refused,
+# and so is any reference that is not to the SVG itself (#id).
+_SVG_LOADING_ELEMENTS = frozenset({"image", "feimage", "script", "foreignobject"})
+_SVG_OUTSIDE_URL_RE = re.compile(r"url\(\s*(?![\s'\"]*#)", re.IGNORECASE)
+_SVG_REFUSED_TEXT = ("<!doctype", "<!entity", "<?xml-stylesheet", "@import")
+_SVG_DATA_URL_PREFIX = "data:image/svg+xml"
+_BASE64_DATA_MARKER = ";base64"
+# A data: address writes a byte as up to three characters (%3C).
+_PERCENT_ENCODED_BYTE_CHARS = 3
+_MAX_SVG_DATA_URL_CHARS = _PERCENT_ENCODED_BYTE_CHARS * _MAX_SVG_ICON_BYTES
+_NOT_BASE64_DIGIT_RE = re.compile(r"[^A-Za-z0-9+/]")
+# Base64 digits come in fours; a group cut short by one digit holds no whole byte.
+_BASE64_GROUP_DIGITS = 4
+# Misses recorded before SVG icons were drawn are asked again the next time their site's
+# links are shown, not after the usual wait: their site may have only an SVG icon.
+_SVG_ICONS_DRAWN_SINCE = datetime.fromisoformat("2026-10-29T16:00:00+00:00")
 _TRANSPARENT = (0, 0, 0, 0)
 _HTTP_DEFAULT_PORT = 80
 _HTTPS_DEFAULT_PORT = 443
@@ -258,6 +286,8 @@ class LinkIconStore:
         record = state.records_by_origin[origin]
         if record.status == "ok":
             return False
+        if record.last_checked_at < _SVG_ICONS_DRAWN_SINCE:
+            return True
         assert record.next_check_after is not None, f"missing link icon without a next check: {origin}"
         return datetime.now(timezone.utc) >= record.next_check_after
 
@@ -502,6 +532,8 @@ def _icon_group(icon: _DeclaredIcon) -> int:
 
 
 def _is_declared_svg(*, declared_type: str | None, href: str) -> bool:
+    if href.casefold().startswith(_SVG_DATA_URL_PREFIX):
+        return True
     if urlsplit(href).path.casefold().endswith(".svg"):
         return True
     return declared_type is not None and "svg" in declared_type.casefold()
@@ -518,19 +550,27 @@ def _size_rank(sizes: str) -> tuple[int, int]:
 
 
 def declared_icon_urls(content: bytes, *, base_url: str) -> list[str]:
-    """The icons a page declares, in the order to try them; never SVG."""
+    """The icons a page declares, in the order to try them: its bitmaps, then its SVGs.
+    An SVG written into the page (a data: address) is kept as it is."""
     parser = _IconLinkParser()
     parser.feed(content.decode("utf-8", errors="replace"))
-    usable = [icon for icon in parser.icons if not icon.is_svg]
     ordered = sorted(
-        usable, key=lambda icon: (_icon_group(icon), _size_rank(icon.sizes)),
+        parser.icons, key=lambda icon: (icon.is_svg, _icon_group(icon), _size_rank(icon.sizes)),
     )
     urls: list[str] = []
     for icon in ordered:
-        url = normalize_url_for_link_title(urljoin(base_url, icon.href))
+        url = _declared_icon_url(icon, base_url=base_url)
         if url is not None and url not in urls:
             urls.append(url)
     return urls
+
+
+def _declared_icon_url(icon: _DeclaredIcon, *, base_url: str) -> str | None:
+    if icon.href.casefold().startswith("data:"):
+        if not icon.href.casefold().startswith(_SVG_DATA_URL_PREFIX):
+            return None
+        return icon.href
+    return normalize_url_for_link_title(urljoin(base_url, icon.href))
 
 
 def fetch_link_icon(origin: str) -> LinkIconFetchResult:
@@ -554,7 +594,10 @@ def fetch_link_icon(origin: str) -> LinkIconFetchResult:
     # not the 404 of the /favicon.ico tried after it.
     refusals: list[str] = []
     for url in candidates:
-        download = _download(url, accept="image/*", is_page=False)
+        if url.startswith("data:"):
+            download = _data_url_download(url)
+        else:
+            download = _download(url, accept="image/*", is_page=False)
         if download.error_kind == "rate_limited":
             return LinkIconFetchResult(origin=origin, icon_png_base64=None, status="deferred", last_error_kind="rate_limited")
         if download.error_kind is not None:
@@ -570,6 +613,24 @@ def fetch_link_icon(origin: str) -> LinkIconFetchResult:
         )
     assert len(refusals) == len(candidates), "every candidate failed for a reason"
     return LinkIconFetchResult(origin=origin, icon_png_base64=None, status="missing", last_error_kind=refusals[0])
+
+
+def _data_url_download(url: str) -> _Download:
+    """An SVG icon written into the page as a data: address, read as a download would be."""
+    assert url.casefold().startswith(_SVG_DATA_URL_PREFIX), "only SVG data addresses are icons"
+    header, separator, payload = url.partition(",")
+    if separator == "" or len(payload) > _MAX_SVG_DATA_URL_CHARS:
+        return _Download(content=None, final_url=url, error_kind="invalid_image")
+    if header.casefold().endswith(_BASE64_DATA_MARKER):
+        digits = _NOT_BASE64_DIGIT_RE.sub("", payload)
+        if len(digits) % _BASE64_GROUP_DIGITS == 1:
+            return _Download(content=None, final_url=url, error_kind="invalid_image")
+        content = base64.b64decode(digits + "=" * (-len(digits) % _BASE64_GROUP_DIGITS))
+    else:
+        content = unquote_to_bytes(payload)
+    if content == b"":
+        return _Download(content=None, final_url=url, error_kind="empty_response")
+    return _Download(content=content, final_url=url, error_kind=None)
 
 
 def _download(url: str, *, accept: str, is_page: bool) -> _Download:
@@ -673,9 +734,14 @@ def _get(
 
 def normalized_icon_png(content: bytes) -> bytes | None:
     """The icon as an ICON_PIXELS-square PNG, centred on transparency; None for anything
-    that is not a small decodable bitmap (SVG included)."""
+    that is not a small decodable bitmap or a self-contained SVG."""
     if not isinstance(content, bytes) or content == b"":
         raise TypeError("content must be non-empty bytes")
+    if _looks_like_svg(content):
+        drawn = _svg_icon_png(content)
+        if drawn is None:
+            return None
+        content = drawn
     image_capture = CapturedExceptionContext(
         Image.DecompressionBombError,
         OSError,
@@ -691,6 +757,70 @@ def normalized_icon_png(content: bytes) -> bytes | None:
     if converted is None:
         raise RuntimeError("Link icon conversion returned without a result or exception")
     return converted.png
+
+
+def _looks_like_svg(content: bytes) -> bool:
+    head = content[:_SVG_SNIFF_BYTES].lstrip(b"\xef\xbb\xbf \t\r\n").lower()
+    return head.startswith(b"<") and b"<svg" in head
+
+
+def _svg_icon_png(content: bytes) -> bytes | None:
+    """An SVG icon drawn as a PNG; None for one that is too big, does not parse, refers to
+    anything outside itself, or draws nothing."""
+    if len(content) > _MAX_SVG_ICON_BYTES:
+        return None
+    svg_capture = CapturedExceptionContext(
+        SyntaxError, ValueError, boundary='app/services/link_icons.py:_svg_icon_png:svg_capture')
+    drawn: _ConvertedIcon | None = None
+    with _SHRINK_LOCK, svg_capture:
+        drawn = _drawn_svg(content)
+    if svg_capture.captured_exception is not None:
+        return None
+    if drawn is None:
+        raise RuntimeError("SVG icon drawing returned without a result or exception")
+    return drawn.png
+
+
+def _drawn_svg(content: bytes) -> _ConvertedIcon:
+    text = content.decode("utf-8")
+    folded = text.casefold()
+    if any(refused in folded for refused in _SVG_REFUSED_TEXT):
+        return _ConvertedIcon(png=None)
+    # Parsed from its bytes: a str with an encoding declaration ("UTF-8") is refused.
+    root = ElementTree.fromstring(content)
+    if _local_name(root.tag) != "svg" or not _is_self_contained_svg(root):
+        return _ConvertedIcon(png=None)
+    # Relative paths would be read from here: an empty folder, though none can get this far.
+    with tempfile.TemporaryDirectory() as empty_resources:
+        png = resvg_py.svg_to_bytes(
+            svg_string=text, width=_SVG_RENDER_PIXELS, height=_SVG_RENDER_PIXELS, resources_dir=empty_resources,
+        )
+    with Image.open(BytesIO(png)) as drawing:
+        if drawing.convert("RGBA").getchannel("A").getbbox() is None:
+            return _ConvertedIcon(png=None)
+    return _ConvertedIcon(png=png)
+
+
+def _is_self_contained_svg(root: ElementTree.Element) -> bool:
+    for element in root.iter():
+        if not isinstance(element.tag, str):
+            continue
+        if _local_name(element.tag).casefold() in _SVG_LOADING_ELEMENTS:
+            return False
+        for name, value in element.attrib.items():
+            if _local_name(name) == "href" and not value.strip().startswith("#"):
+                return False
+            if _SVG_OUTSIDE_URL_RE.search(value):
+                return False
+        if element.text is not None and _SVG_OUTSIDE_URL_RE.search(element.text):
+            return False
+    return True
+
+
+def _local_name(tag: str) -> str:
+    """A tag or attribute name without its namespace ("{http://www.w3.org/2000/svg}svg" is "svg")."""
+    _namespace, _brace, local_name = tag.rpartition("}")
+    return local_name
 
 
 @dataclass(frozen=True, slots=True)

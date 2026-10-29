@@ -89,6 +89,10 @@ are its own new dependencies. The `anthropic` SDK (added 2026-10-23 for Claude) 
 pinned at 1.12.1; its HTTP stack (`httpx2`, `httpcore2`, `truststore`) is held to
 older releases by `[tool.uv] constraint-dependencies` in `pyproject.toml`, since the
 newest of each was days old. Raise those pins deliberately, through the same check.
+`resvg_py` (added 2026-10-29 to draw sites' SVG icons) is pinned at 0.5.0, released
+2026-08-24; it has no dependencies of its own and ships one stable-ABI wheel per
+platform (Python 3.10 and later). It is a small, single-maintainer binding (MIT) of
+the resvg renderer, and the SVG it is given is checked first (`docs/security/README.md`).
 
 ### Managed update installer
 

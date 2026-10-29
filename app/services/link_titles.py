@@ -1480,6 +1480,20 @@ def _site_domain_labels(url: str) -> list[str]:
     return labels[-_SITE_DOMAIN_LABEL_COUNT:]
 
 
+# YouTube's short address counts as YouTube (docs/ui/content-formatting.md).
+_YOUTUBE_SHORT_SITE = "youtu.be"
+_YOUTUBE_SITE = "youtube.com"
+
+
+def site_of_url(url: str) -> str:
+    """The site a web address belongs to: its own domain, whatever the subdomain
+    (old.reddit.com is reddit.com, news.bbc.co.uk bbc.co.uk; youtu.be is youtube.com)."""
+    site = ".".join(_site_domain_labels(url))
+    if site == _YOUTUBE_SHORT_SITE:
+        return _YOUTUBE_SITE
+    return site
+
+
 def _is_site_name_title(*, title: str, url: str) -> bool:
     """A title that is only the site's name ("Reddit" for reddit.com) tells nothing
     the domain does not; the link shows its URL instead."""

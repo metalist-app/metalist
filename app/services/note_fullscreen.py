@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import html
-from typing import Set
+from typing import FrozenSet, Set
 
 from app.security.rendered_html import sanitize_rendered_html
 from app.services.content_formatting import find_list_style
+from app.services.content_formatting import showing_sites_above
+from app.services.content_formatting import sites_linked_in
 from app.services.embedded_references import EmbedRenderContext
 from app.services.embedded_references import render_note_content_with_embeds
 from app.services.file_registry import file_registry
@@ -79,6 +81,8 @@ def _build_markup(note_id: str, *, allowance: _Allowance, redact_credentials: bo
         visiting=set(),
         allowance=allowance,
         redact_credentials=redact_credentials,
+        # Shown without its ancestors: its own links keep their sites.
+        sites_above=frozenset(),
     ))
 
 
@@ -89,6 +93,7 @@ def _render_fullscreen_note(
     visiting: Set[str],
     allowance: _Allowance,
     redact_credentials: bool,
+    sites_above: FrozenSet[str],
 ) -> str:
     if note_id in visiting:
         raise RuntimeError(f"Hierarchy cycle detected while rendering note {note_id}")
@@ -100,14 +105,16 @@ def _render_fullscreen_note(
     if not isinstance(record.tags, str):
         raise TypeError("note tags must be a string")
 
-    rendered_content = render_note_content_with_embeds(
-        note_id=note_id,
-        content_html=record.content,
-        tags=record.tags,
-        context=render_context,
-        static_export=False,
-        redact_credentials=redact_credentials,
-    )
+    # Links to a site its ancestors here link to show their text alone (docs/ui/content-formatting.md).
+    with showing_sites_above(sites_above):
+        rendered_content = render_note_content_with_embeds(
+            note_id=note_id,
+            content_html=record.content,
+            tags=record.tags,
+            context=render_context,
+            static_export=False,
+            redact_credentials=redact_credentials,
+        )
 
     classes = ["note"]
     list_style = find_list_style(record.tags)
@@ -136,6 +143,7 @@ def _render_fullscreen_note(
             visiting=visiting,
             allowance=allowance,
             redact_credentials=redact_credentials,
+            sites_above=sites_above | sites_linked_in(record.content),
         ))
     if child_parts:
         parts.extend(['<div class="note-children">', *child_parts, "</div>"])

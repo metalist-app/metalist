@@ -7,13 +7,15 @@ from dataclasses import dataclass
 from datetime import datetime
 import re
 import time
-from typing import Dict, List, Optional, Tuple, Set
+from typing import Dict, FrozenSet, List, Optional, Tuple, Set
 
 from loguru import logger
 
 from app.services.content_formatting import COMMENT_CLOSE, COMMENT_OPEN, find_list_style
 from app.services.content_formatting import recording_link_title_fetches
 from app.services.content_formatting import replay_link_title_fetches
+from app.services.content_formatting import showing_sites_above
+from app.services.content_formatting import sites_linked_in
 from app.services.embedded_references import EmbedRenderContext
 from app.services.embedded_references import is_content_collapsible
 from app.services.embedded_references import resolve_held_source
@@ -791,6 +793,10 @@ _REMOTE_IMAGE_PROXY_MARKER = "data-remote-image-proxy-src="
 _VIEW_RENDER_MEMO_ENTRIES = 65536
 _VIEW_RENDER_MEMO_MIB = 64
 _VIEW_RENDER_MEMO = SensitiveMemo(maxsize=_VIEW_RENDER_MEMO_ENTRIES, max_bytes=_VIEW_RENDER_MEMO_MIB * MIB)
+# The sites each note's own text links to, by record: what its descendants' links leave out.
+_LINKED_SITES_MEMO_ENTRIES = 65536
+_LINKED_SITES_MEMO_MIB = 8
+_LINKED_SITES_MEMO = SensitiveMemo(maxsize=_LINKED_SITES_MEMO_ENTRIES, max_bytes=_LINKED_SITES_MEMO_MIB * MIB)
 
 
 def _is_render_cacheable(content_html: str) -> bool:
@@ -920,6 +926,16 @@ class _CachedViewRender:
 
 
 def _render_note_view_html(
+    *, rec: NoteRecord, is_collapsed: bool, referrer_count: int, sites_above: FrozenSet[str],
+    context: EmbedRenderContext,
+) -> str:
+    with showing_sites_above(sites_above):
+        return _render_note_view_html_below_sites(
+            rec=rec, is_collapsed=is_collapsed, referrer_count=referrer_count, context=context,
+        )
+
+
+def _render_note_view_html_below_sites(
     *, rec: NoteRecord, is_collapsed: bool, referrer_count: int, context: EmbedRenderContext,
 ) -> str:
     if is_collapsed:
@@ -951,7 +967,8 @@ def _render_note_view_html(
 
 
 def _cached_note_view_html(
-    *, rec: NoteRecord, is_collapsed: bool, referrer_count: int, context: EmbedRenderContext,
+    *, rec: NoteRecord, is_collapsed: bool, referrer_count: int, sites_above: FrozenSet[str],
+    context: EmbedRenderContext,
 ) -> str:
     # NoteRecord is immutable and replaced on every change, so its identity
     # pins content, tags, and every other field; the ontology object is
@@ -959,7 +976,7 @@ def _cached_note_view_html(
     assert type(rec) is NoteRecord
     assert _is_render_cacheable(rec.content)
     key = (
-        _IdentityKey(rec), is_collapsed, referrer_count,
+        _IdentityKey(rec), is_collapsed, referrer_count, sites_above,
         _IdentityKey(get_ontology_if_ready()), link_title_store.get_render_generation(),
         file_registry.names_generation(),
     )
@@ -973,7 +990,7 @@ def _cached_note_view_html(
     recorder = _DependencyRecorder(context)
     with recording_link_title_fetches() as fetch_urls:
         rendered = _render_note_view_html(
-            rec=rec, is_collapsed=is_collapsed, referrer_count=referrer_count,
+            rec=rec, is_collapsed=is_collapsed, referrer_count=referrer_count, sites_above=sites_above,
             context=recorder.context(),
         )
     if _REMOTE_IMAGE_PROXY_MARKER not in rendered:
@@ -1004,6 +1021,31 @@ def _is_shown_collapsed(rec: NoteRecord, context: EmbedRenderContext) -> bool:
     return bool(rec.is_collapsed)
 
 
+def _linked_sites_of(rec: NoteRecord) -> FrozenSet[str]:
+    if type(rec) is not NoteRecord:
+        # Only an immutable record can key the memo (test doubles change in place).
+        return sites_linked_in(rec.content)
+    key = _IdentityKey(rec)
+    found, sites = _LINKED_SITES_MEMO.lookup(key)
+    if found:
+        return sites
+    sites = sites_linked_in(rec.content)
+    _LINKED_SITES_MEMO.store(key, sites)
+    return sites
+
+
+def _sites_shown_above(rec: NoteRecord, context: EmbedRenderContext) -> FrozenSet[str]:
+    """The sites a note's ancestors link to: the list shows a note under all of them, so
+    its own links to those sites show their text alone (docs/ui/content-formatting.md)."""
+    sites: Set[str] = set()
+    parent_id = rec.parent_id
+    while parent_id is not None:
+        parent = context.get_note(parent_id)
+        sites |= _linked_sites_of(parent)
+        parent_id = parent.parent_id
+    return frozenset(sites)
+
+
 def _referrer_count(note_id: str) -> int:
     """How many notes reference this one: its Referenced by badge (docs/ui/references.md)."""
     if not note_store.has_backlinks(note_id):
@@ -1014,14 +1056,17 @@ def _referrer_count(note_id: str) -> int:
 def _render_note_content_html(rec: NoteRecord, *, is_collapsed: bool, context: EmbedRenderContext) -> str:
     """A note's content as the list shows it when it is not being edited."""
     referrer_count = _referrer_count(rec.id)
+    sites_above = _sites_shown_above(rec, context)
     if type(rec) is NoteRecord and _is_render_cacheable(rec.content):
         # Identity keys are exact only for immutable records; any other record
         # type (e.g. test doubles) could change in place and renders directly.
         return _cached_note_view_html(
-            rec=rec, is_collapsed=is_collapsed, referrer_count=referrer_count, context=context,
+            rec=rec, is_collapsed=is_collapsed, referrer_count=referrer_count, sites_above=sites_above,
+            context=context,
         )
     return _render_note_view_html(
-        rec=rec, is_collapsed=is_collapsed, referrer_count=referrer_count, context=context,
+        rec=rec, is_collapsed=is_collapsed, referrer_count=referrer_count, sites_above=sites_above,
+        context=context,
     )
 
 

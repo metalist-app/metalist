@@ -138,6 +138,7 @@ CAPTURE_BOUNDARIES = {
     'app/services/link_icons.py:_request_once:transport_capture': ('TimeoutException', 'NetworkError', 'HTTPError', 'TimeoutException', 'NetworkError', 'ProtocolError'),
     # Handle expected external I/O, provider, image or LaTeX parsing failure.
     'app/services/link_icons.py:normalized_icon_png:image_capture': ('DecompressionBombError', 'OSError', 'SyntaxError', 'UnidentifiedImageError', 'ValueError'),
+    'app/services/link_icons.py:_svg_icon_png:svg_capture': ('SyntaxError', 'ValueError'),
     # Handle expected external I/O, provider, image or LaTeX parsing failure.
     'app/services/namespace_deletion_worker.py:_is_process_running:kill_capture': ('ProcessLookupError', 'PermissionError'),
     # Handle expected external I/O, provider, image or LaTeX parsing failure.
