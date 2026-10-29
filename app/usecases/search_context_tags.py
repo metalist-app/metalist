@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from app.services.search_index import extract_tags_for_search, search_index
-from app.services.search_query import parse_search_query
+from app.services.search_query import SearchClause, parse_search_query
 from app.services.tag_properties import PROPERTY_SEPARATOR, PropertyCondition
 from app.services.search_text import build_searchable_text_casefold, text_term_matches
 from app.services.store import store
@@ -41,8 +41,42 @@ def ensure_tags_match_search_query(
 
     parsed = parse_search_query(search_query)
     # A stats term (@sum:calories>2000) names no value to give a note: it adds nothing.
-    first_clause = parsed.first_clause.without_stats_terms()
-    if not first_clause.required_tags and not first_clause.required_text and not first_clause.required_properties:
+    return _tags_matching_clause(parsed.first_clause.without_stats_terms(), parent_id=parent_id, content=content, tags=tags)
+
+
+def search_clauses_matching_note(note_id: str, search_query: str) -> tuple[SearchClause, ...]:
+    """The parts of a search (its OR clauses) a note matches where it is now; none for an
+    empty search."""
+    if not isinstance(search_query, str):
+        raise TypeError(f"search_query must be a string, got {type(search_query)}")
+    if search_query.strip() == "":
+        return ()
+    parsed = parse_search_query(search_query)
+    return tuple(clause for clause in parsed.clauses if note_id in search_index.query_clause_note_ids(clause))
+
+
+def tags_keeping_moved_note_in_search(note_id: str, clauses_matched_before: tuple[SearchClause, ...]) -> str:
+    """A note just moved to another parent never leaves the search it was found by
+    (docs/ui/search-semantics.md, Moving Notes During Search): when no part of the search it matched before matches it
+    at its new place, it gets the tags it misses for the first of them, as its own. A note
+    that matched nothing (shown only above a match) keeps its tags."""
+    record = store.get(note_id)
+    if not clauses_matched_before:
+        return record.tags
+    for clause in clauses_matched_before:
+        if note_id in search_index.query_clause_note_ids(clause):
+            return record.tags
+    return _tags_matching_clause(
+        clauses_matched_before[0].without_stats_terms(),
+        parent_id=record.parent_id, content=record.content, tags=record.tags,
+    )
+
+
+def _tags_matching_clause(clause: SearchClause, *, parent_id: str | None, content: str, tags: str) -> str:
+    """The note's tags plus what it misses to match the clause at a place under parent_id:
+    its required tags not carried or inherited, its property tags, and a comment for each
+    required phrase its text lacks."""
+    if not clause.required_tags and not clause.required_text and not clause.required_properties:
         return tags
 
     inherited_non_meta = compute_inherited_non_meta_tag_terms(parent_id)
@@ -55,7 +89,7 @@ def ensure_tags_match_search_query(
     required_tag_terms = dedupe_tag_terms_by_casefold(
         [
             prefer_existing_tag_case(term, preferred_by_casefold)
-            for term in sorted(first_clause.required_tags)
+            for term in sorted(clause.required_tags)
         ]
     )
     for term in required_tag_terms:
@@ -66,11 +100,11 @@ def ensure_tags_match_search_query(
             continue
         if term.casefold() in inherited_non_meta_casefold or term.casefold() in explicit_terms_casefold:
             continue
-        if any(term.casefold() == condition.tag.casefold() for condition in first_clause.required_properties):
+        if any(term.casefold() == condition.tag.casefold() for condition in clause.required_properties):
             continue  # added below, with its values
         additions.append(term)
     additions += _property_tag_tokens(
-        first_clause.required_properties,
+        clause.required_properties,
         present_casefold=explicit_terms_casefold | inherited_non_meta_casefold,
         preferred_by_casefold=preferred_by_casefold,
     )
@@ -82,12 +116,12 @@ def ensure_tags_match_search_query(
         else:
             next_tags = f"{next_tags} {' '.join(additions)}"
 
-    if not first_clause.required_text:
+    if not clause.required_text:
         return next_tags
 
     searchable = build_searchable_text_casefold(content, next_tags)
     missing_phrases: list[str] = []
-    for phrase in first_clause.required_text:
+    for phrase in clause.required_text:
         if text_term_matches(phrase, searchable):
             continue
         missing_phrases.append(phrase)
@@ -139,4 +173,9 @@ def _property_tag_tokens(
     return tokens
 
 
-__all__ = ["compute_inherited_non_meta_tag_terms", "ensure_tags_match_search_query"]
+__all__ = [
+    "compute_inherited_non_meta_tag_terms",
+    "ensure_tags_match_search_query",
+    "search_clauses_matching_note",
+    "tags_keeping_moved_note_in_search",
+]

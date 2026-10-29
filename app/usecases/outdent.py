@@ -4,10 +4,11 @@ from dataclasses import dataclass
 from typing import Dict, Optional
 
 from app.usecases.base import QueryCommand
+from app.services.search_query import SearchClause
 from app.services.store import store
 from app.services.sync import generate_new_uuid
 from app.usecases.move import apply_move, _neighbors, _assert_neighbors
-from app.usecases.search_context_tags import ensure_tags_match_search_query
+from app.usecases.search_context_tags import search_clauses_matching_note, tags_keeping_moved_note_in_search
 from app.usecases.update_content import apply_update_content
 from app.services.undo_state import record_move
 
@@ -48,26 +49,19 @@ class CmdOutdent(QueryCommand):
         if not isinstance(record.content, str):
             raise RuntimeError(f"Note content must be a string | note_id={self.note_id}")
         before_tags = record.tags
-        after_tags = record.tags
-
-        if grandparent_id is None:
-            if self.search_query is not None and not isinstance(self.search_query, str):
-                raise TypeError(
-                    f"search_query must be a string or None, got {type(self.search_query)}"
-                )
-            if isinstance(self.search_query, str) and self.search_query.strip() != "":
-                after_tags = ensure_tags_match_search_query(
-                    parent_id=grandparent_id,
-                    content=record.content,
-                    tags=record.tags,
-                    search_query=self.search_query,
-                )
-
-        if after_tags != before_tags:
-            apply_update_content(self.note_id, record.content, after_tags, self.token)
+        if self.search_query is not None and not isinstance(self.search_query, str):
+            raise TypeError(f"search_query must be a string or None, got {type(self.search_query)}")
+        clauses_matched_before: tuple[SearchClause, ...] = ()
+        if isinstance(self.search_query, str):
+            clauses_matched_before = search_clauses_matching_note(self.note_id, self.search_query)
 
         apply_move(self.note_id, grandparent_id, dest_prev, dest_next)
         _assert_neighbors(self.note_id, grandparent_id, dest_prev, dest_next)
+
+        # It stays in the search it was found by, wherever it lands.
+        after_tags = tags_keeping_moved_note_in_search(self.note_id, clauses_matched_before)
+        if after_tags != before_tags:
+            apply_update_content(self.note_id, record.content, after_tags, self.token)
 
         record_move(
             self.client_id,

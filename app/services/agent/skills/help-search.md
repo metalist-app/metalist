@@ -167,6 +167,12 @@ Ontology rules also add **inferred tags** before search matching:
 - If an existing case-equivalent tag spelling is already common in the vault, that spelling is used for the new note. Example: searching `ml3` adds `ML3` when existing notes use `ML3`.
 - If the new note already inherits a case-equivalent non-meta tag from an ancestor, the inherited tag is treated as satisfying the search and is not duplicated.
 
+### Moving Notes During Search
+- A note outdented while a search is active never leaves the results, wherever it lands (under a grandparent or as a root note). If the note matched before the move and would not match at its new place, it gets, as its own tags, the tags it misses for the part of the search (`OR` clause) it matched; it gets nothing when it still matches there, through inherited tags or another clause.
+- A note shown only as context above a match (it did not match itself) keeps its tags.
+- A note's own text moves with it, so a move never adds `/* ... */` comments. Undo restores both the place and the tags.
+- Reordering among siblings and indenting cannot drop a note from the results, so they add nothing.
+
 ### Text Terms (quoted)
 - Required text: `"some text"` or `'some text'`
 - Forbidden text: `-"some text"` or `-'some text'`
