@@ -1,6 +1,6 @@
 # Several views at once: one editor per root note
 
-**Status:** Agreed with the maintainer 2026-10-26. Ready to build. A large change: please propose a build order (and a split into steps, if that helps) before starting.
+**Status:** Agreed with the maintainer 2026-10-26. Ready to build. A large change: a build order was proposed 2026-10-28 (§10), not yet approved. **Undecided (2026-10-28):** the AI conversation (§5) and whether the list of search contexts stays shared (§2); see §10.
 **Scope:** let MetaList be open in several places on one vault at the same time (two browser tabs, a browser tab and the phone, later apps) instead of one session per vault. Each place has its own independent screen; editing is locked **per root note**. Update the permanent docs (`docs/ui/state-handling.md`, `docs/design/differential-view-protocol.md`, `docs/ui/ai-chat.md`, `docs/security/README.md`, `docs/ui/phone.md` and wherever "one active session" is stated) with the result.
 
 Written without running the code. Every code reference below came from reading it and must be checked before relying on it; build only what's missing.
@@ -27,7 +27,7 @@ Written without running the code. Every code reference below came from reading i
 ## 2. Views are independent
 
 - **Every view stays signed in.** Signing in on one no longer logs out another. *Not decided here:* what locking the vault, signing out or changing the password in one view does to the others. Propose it, keeping it at least as safe as today.
-- **Shared across views:** the **set** of search contexts (create, rename, reorder, delete), so a new view starts with all of them, never blank.
+- **Shared across views:** the **set** of search contexts (create, rename, reorder, delete), so a new view starts with all of them, never blank. *Reopened 2026-10-28: the maintainer isn't sure the set must be shared (§10).*
 - **Per view, surviving a reload of that view:**
   - which search context it is showing
   - its scroll position (never synced: layouts differ)
@@ -61,6 +61,8 @@ Written without running the code. Every code reference below came from reading i
 - **Collapsing or expanding inside a root locked by another view is refused,** like any other change: collapsing the parent of the note being edited would fold away the text under the other person's cursor. The marker says why.
 
 ## 5. The AI conversation: one per vault
+
+**Undecided (2026-10-28), don't build this section as written.** The maintainer is leaning towards **one conversation per view** instead, and is still thinking it over (§10).
 
 - **One conversation per vault, shared live across views.** Start a question at the desk, continue it from the phone. It must not be tied to one view, since a view's ID is cleared when its browser tab closes. (Today the transcript is keyed by the session token hash; with several sessions it needs a vault-level key.)
 - **Each Send uses the search context of the view it was sent from,** exactly as a Send captures the active search context today.
@@ -106,3 +108,32 @@ Removing "one active session per vault" changes assumptions recorded elsewhere. 
   - Tests: lock in tab 1, and tab 2 and the phone save their typing and show the lock screen, with no edit locks left. Sign out in tab 1, and tab 2 in the same browser signs out while another browser and the phone keep editing. Change the password in tab 1, and tab 1 stays signed in while every other browser and the phone save and sign out.
 - **The phone will edit** (maintainer, 2026-10-27), so the lock, the marker and Take Over (§3.1) cover it like any view. Today it is read-only plus capture (`docs/ui/phone.md`); the design that makes it edit is `docs/ready-to-build/phone-same-app.md`, built with or after this note. Edits from the phone are refused only for a root another view has locked; the server refuses phone clients only the routes that note trims (the ontology editor, rules, vaults, reminders, AI settings).
 - As the note asks: propose a build order before starting.
+
+## 10. Discussed 2026-10-28
+
+### The AI conversation: undecided
+- **One conversation per vault (§5) is in doubt.** A conversation only makes sense with the search it was asked in, and a different view usually shows a different search.
+- **One conversation per search context: rejected.** The maintainer often refines the search partway through a conversation and keeps asking; tying the conversation to a search context breaks that.
+- **Leaning towards one conversation per view,** as today's one per sign-in but per view: it follows that view as its search changes or it switches search contexts, and each Send uses what the view shows then. Views never share a conversation, so "one answer at a time" across views (§5) would go, and so would continuing a conversation on another device.
+  - The trade-off: a browser tab's view is forgotten when the tab closes (its ID is in `sessionStorage`), so closing a tab would end its conversation; a reload keeps it. Today the transcript is keyed by the browser's sign-in (`token_service.get_session_key`), so it survives closing the tab. The installed phone app keeps its view (§9), so its conversation survives the app being ended.
+- Build the AI step last, once this is decided.
+
+### The list of search contexts: shared?
+- The maintainer isn't sure the set of search contexts has to be shared; a new view should still open on the one used most recently.
+- For keeping it shared: a browser tab's view is forgotten when the tab closes, so search contexts set up in a tab would disappear with it, and the phone wouldn't see those made on the desktop. Each view still shows its own search context either way. Asked what separate lists would be for (for example a short list on the phone); not answered yet.
+
+### Proposed build order (not yet approved)
+Checked against the code first: the browser's sign-in is a per-vault cookie (`app/api/request_auth.py`), one tab at a time claims it (`claim_token_for_tab`, `X-Metalist-Claim`; a second tab shows "Session locked / Take Over"), and `create_token` clears every other token (`app/services/tokens.py`). Views learn of no change made elsewhere: the status poll (`polling-service.js`) refreshes only for sign-in, connectivity and link-title revisions, and hidden tabs skip it. Warm views (`(clientId, tabId)`) and undo stacks (`undo_state.py`, per client) are already per browser tab. The per-note locks in `sync.py` are unused.
+
+1. **Several sign-ins:** every tab and device stays signed in; the session Take Over screen goes; lock, sign out and password change as in §9; the security review (§6). Until step 4 two views could edit the same note: for trying, not real work.
+2. **Each view its own screen:** its own search context, scroll and selection across a reload; a new view on the most recently used context; the installed phone app's ID in `localStorage` (§9).
+3. **Live changes from other views:** saves, moves and collapse arrive without a reload, and what the user is looking at doesn't move. A case list is agreed first (`docs/ui/interaction-principles.md`).
+4. **Root-note edit locks:** server-side refusals, moves allowed, the marker and Take Over (§3). A case list is agreed first.
+5. **The AI conversation,** once decided.
+
+Step 3 comes before 4 because markers and Take Over need views to see each other's changes live.
+
+### Not in the note, proposed
+- **Undo across views:** an undo that would change a root another view has locked is refused, like any other change from another view.
+- **Idle timeout:** each sign-in times out on its own (as each token does today), so one idle device signs out without touching the others.
+- **Hidden tabs:** they need a light heartbeat so their edit locks don't lapse; browsers slow hidden tabs' timers to about once a minute, so the lease must outlast two or three missed beats.
