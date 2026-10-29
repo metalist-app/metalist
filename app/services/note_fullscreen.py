@@ -54,10 +54,26 @@ def build_note_preview_markup(note_id: str) -> str:
     return _build_markup(note_id, allowance=_Allowance(PREVIEW_NOTE_LIMIT), redact_credentials=True)
 
 
-def _build_markup(note_id: str, *, allowance: _Allowance, redact_credentials: bool) -> str:
-    if not isinstance(note_id, str) or note_id == "":
-        raise TypeError("note_id must be a non-empty string")
+def build_file_preview_markup(file_id: str) -> str:
+    """A file reference's preview card (smart previews, slice 4): the file as `![[UUID]]`
+    draws it in a note: a picture, a diagram's preview, or the file's card."""
+    if not isinstance(file_id, str) or not file_registry.has_file(file_id):
+        raise ValueError("file_id must name a file")
+    rendered_embed = render_note_content_with_embeds(
+        note_id=file_id,
+        content_html=f"<div>![[{file_id}]]</div>",
+        tags="",
+        context=_render_context(),
+        static_export=False,
+        redact_credentials=True,
+    )
+    return sanitize_rendered_html(
+        '<article class="note"><div class="note-content" contenteditable="false">'
+        f"{rendered_embed}</div></article>"
+    )
 
+
+def _render_context() -> EmbedRenderContext:
     file_record_cache: dict[str, object] = {}
 
     def _get_file_record(file_id: str) -> object:
@@ -65,7 +81,7 @@ def _build_markup(note_id: str, *, allowance: _Allowance, redact_credentials: bo
             file_record_cache[file_id] = get_file_reference_record(file_id, token=None)
         return file_record_cache[file_id]
 
-    render_context = EmbedRenderContext(
+    return EmbedRenderContext(
         has_note=note_store.has_note,
         get_note=note_store.get_note,
         get_children=note_store.get_children,
@@ -74,6 +90,13 @@ def _build_markup(note_id: str, *, allowance: _Allowance, redact_credentials: bo
         is_property_used=search_index.is_property_name_used,
         static_collapse_arrows=False,
     )
+
+
+def _build_markup(note_id: str, *, allowance: _Allowance, redact_credentials: bool) -> str:
+    if not isinstance(note_id, str) or note_id == "":
+        raise TypeError("note_id must be a non-empty string")
+
+    render_context = _render_context()
     assert allowance.take(), "the note itself is always drawn"
     return sanitize_rendered_html(_render_fullscreen_note(
         note_id=note_id,

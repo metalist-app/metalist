@@ -9,6 +9,7 @@ import { initializeTagSuggestions, updateTagSuggestions } from '../services/tag-
 import { initializeReferenceSuggestions, updateReferenceSuggestions } from '../services/reference-suggestions-service.js';
 import { initializeReferenceHoverPreviews } from '../services/reference-hover-preview-service.js';
 import { initializeEditPreviews } from '../services/edit-preview-service.js';
+import { initializeReferenceCaretPreviews } from '../services/reference-caret-preview-service.js';
 import { handleDictationPasteEvent, isDictationRawInsertInProgress, noteDictationEditSeen } from '../services/dictation-paste-service.js';
 
 
@@ -91,6 +92,7 @@ export function initInputEvents() {
     initializeReferenceSuggestions();
     initializeReferenceHoverPreviews();
     initializeEditPreviews();
+    initializeReferenceCaretPreviews();
         
     Logger.logInit('Input events handler');
 }

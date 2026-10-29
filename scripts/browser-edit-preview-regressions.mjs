@@ -23,6 +23,12 @@ import { waitForAppQuiet } from './browser-app-idle.mjs';
 // 40% of the window; nothing on the fence's lines; a dangling arrow fades it and a pause
 // shows "Invalid Mermaid diagram". Compact JSON shows laid out as the note draws it; broken,
 // it fades and a pause says why and where.
+//
+// References (slice 4, 2026-10-29): with the caret inside `[[UUID]]` or `![[UUID]]` the
+// preview card shows the note, picture or file it names, 6 px below the line from the
+// reference's left edge; moving within keeps it, leaving hides it; a picture's card shows
+// the picture (it had stayed "Loading image preview..."); Escape hides it, editing goes
+// on, until the caret leaves the reference.
 
 const WINDOW = {width: 1100, height: 800};
 const REQUESTS_QUIET_MS = 300;
@@ -52,6 +58,8 @@ const WINDOW_MARGINS_PX = 16;
 const PROPORTION_TOLERANCE = 0.01;
 // Browsers lay an SVG's size out in floats: equal to this.
 const SAME_SIZE_PX = 0.01;
+const CARD = '.reference-preview';
+const PNG_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAADAAAAAwCAIAAADYYG7QAAAAQklEQVR4nO3OQQ0AIAwAsQlDBLKRhQuOR5MK6Jy9vjL5QEhISKgeCAkJCdUDISEhoXogJCQkVA+EhISE6oGQkNBjF21V9KbVaAsfAAAAAElFTkSuQmCC';
 const PANEL = '.edit-preview';
 // What marks the caret in the note sent for a preview (edit-preview-service.js).
 const CARET_MARK = '\ufdd0';
@@ -73,7 +81,7 @@ async function pause(milliseconds) {
 }
 
 async function seedNotes(page) {
-  return page.evaluate(async ({fillerCount, rowCount, tallSteps}) => {
+  return page.evaluate(async ({fillerCount, rowCount, tallSteps, png}) => {
     const {NotesAPI} = await import('/static/js/modules/api-client.js');
     const make = async (html, tags) => {
       const note = await NotesAPI.createNote(null, '');
@@ -102,8 +110,14 @@ async function seedNotes(page) {
     for (let step = 0; step < tallSteps; step += 1) tallLines.push(`N${step}[Step ${step}: a fairly long label] --> N${step + 1}[Step ${step + 1}]`);
     const tall = await make(tallLines.map(line => `<div>${line}</div>`).join(''), '@mermaid');
     const settings = await make('<div>{"name": "MetaList", "tags": ["notes", "search"], "port": 8443}</div>', '@json');
-    return {fillers, formulas, table, groceries, release, tall, settings};
-  }, {fillerCount: FILLER_NOTES, rowCount: TABLE_ROWS, tallSteps: TALL_DIAGRAM_STEPS});
+    const {FilesAPI} = await import('/static/js/modules/api-client.js');
+    const kyoto = await make('<div>Kyoto trip plan</div><div>Day 1: temples</div>', '');
+    const bytes = Uint8Array.from(atob(png), character => character.charCodeAt(0));
+    const picture = (await FilesAPI.uploadFile(new File([bytes], 'dot.png', {type: 'image/png'}))).file_id;
+    const pdf = (await FilesAPI.uploadFile(new File([new TextEncoder().encode('%PDF-1.4 lease')], 'lease.pdf', {type: 'application/pdf'}))).file_id;
+    const plan = await make(`<div>Plan: [[${kyoto}]] and the photo ![[${picture}]] and the lease [[${pdf}|lease]] end</div>`, '');
+    return {fillers, formulas, table, groceries, release, tall, settings, kyoto, picture, pdf, plan};
+  }, {fillerCount: FILLER_NOTES, rowCount: TABLE_ROWS, tallSteps: TALL_DIAGRAM_STEPS, png: PNG_BASE64});
 }
 
 const contentOf = id => `.note[data-note-id="${id}"] > .note-content`;
@@ -537,6 +551,81 @@ async function jsonCases(page, ids) {
   await leaveEditing(page);
 }
 
+// Whether the reference card comes to meet `condition` within PANEL_WAIT_MS, checked every frame.
+async function cardBecomes(page, condition, value) {
+  return page.evaluate(({condition, value, selector, timeout}) => new Promise(resolve => {
+    const card = () => {
+      const element = document.querySelector(selector);
+      return element === null || element.hidden ? null : element;
+    };
+    const checks = {
+      hidden: () => card() === null,
+      showing: () => card() !== null && card().shadowRoot.textContent.includes(value),
+      pictureLoaded: () => card() !== null && card().shadowRoot.querySelector('.note-file-image-embed[data-preview-state="loaded"] img') !== null,
+    };
+    const started = performance.now();
+    const step = () => {
+      if (checks[condition]()) {
+        resolve(true);
+        return;
+      }
+      if (performance.now() - started > timeout) {
+        resolve(false);
+        return;
+      }
+      requestAnimationFrame(step);
+    };
+    step();
+  }), {condition, value, selector: CARD, timeout: PANEL_WAIT_MS});
+}
+
+// The card's box, and the line and left edge of the reference holding the caret.
+async function cardAndReference(page, needle) {
+  return page.evaluate(({selector, needle}) => {
+    const card = document.querySelector(selector).getBoundingClientRect();
+    const selection = getSelection().getRangeAt(0);
+    const text = selection.startContainer;
+    const start = text.data.lastIndexOf(needle, selection.startOffset);
+    const range = document.createRange();
+    range.setStart(text, start);
+    range.setEnd(text, start + 1);
+    const box = range.getClientRects()[0];
+    return {card: {left: card.left, top: card.top}, reference: {left: box.left, bottom: box.bottom}};
+  }, {selector: CARD, needle});
+}
+
+async function referenceCases(page, ids) {
+  await enterEditing(page, ids.plan);
+  await placeCaret(page, 'Plan:', 2);
+  await pause(NO_PANEL_WAIT_MS);
+  assert.ok(await cardBecomes(page, 'hidden', null), 'caret in plain text: no card');
+  await placeCaret(page, ids.kyoto, 5);
+  assert.ok(await cardBecomes(page, 'showing', 'Kyoto trip plan'), 'caret in a note link: its note\'s card');
+  const placed = await cardAndReference(page, '[[');
+  assert.ok(Math.abs(placed.card.left - placed.reference.left) <= ROUNDING_PX && Math.abs(placed.card.top - (placed.reference.bottom + GAP_PX)) <= ROUNDING_PX,
+    `the card ${GAP_PX} px below the line from the reference's left edge (${JSON.stringify(placed)})`);
+  await placeCaret(page, ids.kyoto, 20);
+  await pause(NO_PANEL_WAIT_MS);
+  assert.ok(await cardBecomes(page, 'showing', 'Kyoto trip plan'), 'moving within the reference keeps the card');
+  await placeCaret(page, 'and the photo', 3);
+  assert.ok(await cardBecomes(page, 'hidden', null), 'leaving the reference hides the card');
+  await placeCaret(page, ids.picture, 5);
+  assert.ok(await cardBecomes(page, 'pictureLoaded', null), 'caret in a picture\'s embed: the picture, loaded');
+  await placeCaret(page, '|lease', 3);
+  assert.ok(await cardBecomes(page, 'showing', 'lease.pdf'), 'caret in a file link: the file\'s card');
+  await page.keyboard.press('Escape');
+  assert.ok(await cardBecomes(page, 'hidden', null), 'Escape hides the card');
+  assert.notEqual(await page.$('.note.editing'), null, 'Escape leaves editing alone');
+  await placeCaret(page, '|lease', 4);
+  await pause(NO_PANEL_WAIT_MS);
+  assert.ok(await cardBecomes(page, 'hidden', null), 'after Escape, inside the same reference: still hidden');
+  await placeCaret(page, ' end', 2);
+  await pause(NO_PANEL_WAIT_MS);
+  await placeCaret(page, ids.kyoto, 5);
+  assert.ok(await cardBecomes(page, 'showing', 'Kyoto trip plan'), 'leaving and coming back shows a card again');
+  await leaveEditing(page);
+}
+
 async function previewCases(page, ids) {
   const failures = [];
   const attempt = async (label, run) => {
@@ -571,6 +660,7 @@ async function previewCases(page, ids) {
   await attempt('9 a ((@csv)) region in a Markdown note, beside a formula', () => regionInMarkdown(page, ids));
   await attempt('10 Mermaid: a fence\'s diagram, broken and fixed; a tall one scaled down to fit', () => mermaidCases(page, ids));
   await attempt('11 JSON: compact shown laid out; broken, why and where', () => jsonCases(page, ids));
+  await attempt('12 references: the card for the note, picture or file the caret is in', () => referenceCases(page, ids));
   assert.deepEqual(failures, []);
 }
 
@@ -583,7 +673,7 @@ export async function checkEditPreviews(page) {
   await runThenCleanUp('edit previews', () => previewCases(page, ids), async () => {
     await page.evaluate(async ids => {
       const {NotesAPI} = await import('/static/js/modules/api-client.js');
-      for (const id of [ids.formulas, ids.table, ids.groceries, ids.release, ids.tall, ids.settings, ...ids.fillers]) await NotesAPI.deleteNote(id);
+      for (const id of [ids.formulas, ids.table, ids.groceries, ids.release, ids.tall, ids.settings, ids.plan, ids.kyoto, ...ids.fillers]) await NotesAPI.deleteNote(id);
     }, ids);
   });
 }

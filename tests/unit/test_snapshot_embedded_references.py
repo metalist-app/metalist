@@ -1067,14 +1067,14 @@ def _referrer_ids(count: int) -> List[str]:
     return [f"{index:08x}-5555-4555-8555-555555555555" for index in range(count)]
 
 
-@pytest.mark.parametrize(("referrer_count", "shown", "width_class", "title"), [
-    (1, "1", None, "Referenced by 1 note"),
-    (3, "3", None, "Referenced by 3 notes"),
-    (12, "12", "note-with-backlinks-wide", "Referenced by 12 notes"),
-    (99, "99", "note-with-backlinks-wide", "Referenced by 99 notes"),
-    (150, "99+", "note-with-backlinks-widest", "Referenced by 150 notes"),
+@pytest.mark.parametrize(("referrer_count", "shown", "wrapper_classes", "title"), [
+    (1, "1", ["note-with-backlinks"], "Referenced by 1 note"),
+    (3, "3", ["note-with-backlinks"], "Referenced by 3 notes"),
+    (12, "12", ["note-with-backlinks", "note-with-backlinks-wide"], "Referenced by 12 notes"),
+    (99, "99", ["note-with-backlinks", "note-with-backlinks-wide"], "Referenced by 99 notes"),
+    (150, "99+", ["note-with-backlinks", "note-with-backlinks-widest"], "Referenced by 150 notes"),
 ])
-def test_the_referenced_by_badge_counts_the_referring_notes(monkeypatch, referrer_count, shown, width_class, title):
+def test_the_referenced_by_badge_counts_the_referring_notes(monkeypatch, referrer_count, shown, wrapper_classes, title):
     # docs/ui/references.md, Referenced by: one badge per referenced note, counting notes, not references.
     referrers = _referrer_ids(referrer_count)
     notes = {TARGET_ID: _Note(TARGET_ID, None, None, HOST_ID, False, "Source", "")}
@@ -1092,8 +1092,7 @@ def test_the_referenced_by_badge_counts_the_referring_notes(monkeypatch, referre
     assert f'data-referrer-count="{shown}"' in source
     assert f'title="{title}" aria-label="{title}"></button>' in source
     wrapper = re.search(r'<div class="([^"]*note-with-backlinks[^"]*)">', source).group(1).split()
-    expected = ["note-with-backlinks"] + ([width_class] if width_class is not None else [])
-    assert wrapper == expected
+    assert wrapper == wrapper_classes
 
 
 def test_a_note_linking_twice_counts_once(monkeypatch):
@@ -1103,3 +1102,42 @@ def test_a_note_linking_twice_counts_once(monkeypatch):
     }
     state = _state_for(monkeypatch=monkeypatch, notes=notes, children_by_parent={None: list(notes)})
     assert 'data-referrer-count="1" title="Referenced by 1 note"' in state.payloads[TARGET_ID]["content"]
+
+
+# The text of the one note link in a rendered host note.
+def _link_title_html(rendered: str) -> str:
+    match = re.search(r'<span class="note-reference-link-title">(.*?)</span></a>', rendered, re.DOTALL)
+    assert match is not None, rendered
+    return match.group(1)
+
+
+# A link reads like its note (agreed 2026-10-29): its first line drawn as the folded note
+# draws it, formulas inline, in the link's colour; it had shown the LaTeX source.
+def test_link_text_draws_the_targets_formulas_inline(monkeypatch: pytest.MonkeyPatch) -> None:
+    notes = {
+        HOST_ID: _Note(HOST_ID, None, None, None, False, f"<div>See [[{TARGET_ID}]]</div>", ""),
+        TARGET_ID: _Note(
+            TARGET_ID, None, None, None, False,
+            "<div>Euler: $e^{i\\pi} + 12 = 20$, and the half is $$\\frac{1}{2}$$.</div><div>Second line</div>", "@markdown",
+        ),
+    }
+    state = _state_for(monkeypatch=monkeypatch, notes=notes, children_by_parent={None: [HOST_ID, TARGET_ID]})
+
+    title = _link_title_html(state.payloads[HOST_ID]["content"])
+    assert title.count('<math xmlns="http://www.w3.org/1998/Math/MathML" display="inline">') == 2, title
+    assert 'display="block"' not in title
+    assert "$" not in title and "\\frac" not in title, title
+    assert "<mfrac>" in title
+    assert re.sub(r"<math.*?</math>", "", title, flags=re.DOTALL) == "Euler: , and the half is ."
+    assert "Second line" not in title
+
+
+def test_link_text_keeps_bold_but_no_link_or_colour_of_its_own(monkeypatch: pytest.MonkeyPatch) -> None:
+    notes = {
+        HOST_ID: _Note(HOST_ID, None, None, None, False, f"<div>See [[{TARGET_ID}]]</div>", ""),
+        TARGET_ID: _Note(TARGET_ID, None, None, None, False, "<div>**Kyoto** trip, see https://example.org</div>", "@markdown @red"),
+    }
+    state = _state_for(monkeypatch=monkeypatch, notes=notes, children_by_parent={None: [HOST_ID, TARGET_ID]})
+
+    title = _link_title_html(state.payloads[HOST_ID]["content"])
+    assert title == "<strong>Kyoto</strong> trip, see https://example.org", title

@@ -181,6 +181,82 @@ class _FootnoteReferencePreview(HTMLParser):
             self.output.append(html.escape(_REFERENCE_TOKEN_RE.sub(_strip_reference_token_if_uuid, data)))
 
 
+# Inline formatting a link's text keeps from its note's drawn first line; anything else
+# (colours, headings, blocks, links, buttons) gives only its text, in the link's colour.
+_LINK_TEXT_TAGS = frozenset({"strong", "b", "em", "i", "u", "s", "del", "sup", "sub", "mark"})
+# Elements that end a line: in a link's text, a space.
+_LINK_TEXT_BREAKS = frozenset({"br", "p", "div", "h1", "h2", "h3", "h4", "h5", "h6", "li", "tr", "td", "th"})
+_MATH_TAG = "math"
+
+
+class _LinkTextDrawing(HTMLParser):
+    """A note's drawn first line made fit to sit inside its link: formulas (MathML) kept
+    whole and shown inline, inline formatting kept bare, everything else its text."""
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.output: list[str] = []
+        self.math_depth = 0
+        self.has_drawing = False
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag == _MATH_TAG or self.math_depth > 0:
+            self.math_depth += 1
+            self.has_drawing = True
+            kept = [(name, value) for name, value in attrs if name != "display" or tag != _MATH_TAG]
+            if tag == _MATH_TAG:
+                kept.append(("display", "inline"))
+            assert all(value is not None for _name, value in kept), "MathML attributes carry values"
+            attributes = "".join(f' {name}="{html.escape(str(value), quote=True)}"' for name, value in kept)
+            self.output.append(f"<{tag}{attributes}>")
+            return
+        if tag in _LINK_TEXT_TAGS:
+            self.has_drawing = True
+            self.output.append(f"<{tag}>")
+        elif tag in _LINK_TEXT_BREAKS:
+            self.output.append(" ")
+
+    def handle_endtag(self, tag: str) -> None:
+        if self.math_depth > 0:
+            self.math_depth -= 1
+            self.output.append(f"</{tag}>")
+            return
+        if tag in _LINK_TEXT_TAGS:
+            self.output.append(f"</{tag}>")
+        elif tag in _LINK_TEXT_BREAKS:
+            self.output.append(" ")
+
+    def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if self.math_depth > 0:
+            self.output.append(f"<{tag}/>")
+        elif tag in _LINK_TEXT_BREAKS:
+            self.output.append(" ")
+
+    def handle_data(self, data: str) -> None:
+        if self.math_depth > 0:
+            self.output.append(html.escape(data, quote=False))
+            return
+        self.output.append(html.escape(_REFERENCE_TOKEN_RE.sub(_strip_reference_token_if_uuid, data), quote=False))
+
+    def drawn_html(self) -> str:
+        return _WHITESPACE_RE.sub(" ", "".join(self.output)).strip()
+
+
+def _drawn_link_text_or_none(*, record: object, context: EmbedRenderContext, redact_credentials: bool) -> str | None:
+    """A link's text as its note's folded first line draws it (agreed 2026-10-29), or None
+    when that line has no formula or formatting to draw (its plain text says it all)."""
+    content_html = getattr(record, "content")
+    tags = getattr(record, "tags")
+    first_line = _first_shown_line(extract_collapsed_preview_source_html(content_html), context=context)
+    drawing = _LinkTextDrawing()
+    drawing.feed(format_note_content_for_view(content_html=first_line, tags=tags, redact_credentials=redact_credentials))
+    drawing.close()
+    assert drawing.math_depth == 0, "a drawn first line closes its formulas"
+    if not drawing.has_drawing:
+        return None
+    return drawing.drawn_html()
+
+
 class _ImageSourceParser(HTMLParser):
     """The src of the first <img> in a fragment of stored note HTML."""
 
@@ -896,6 +972,13 @@ def _render_link_body(
             assert not parser.marker_open
             if parser.output:
                 preview_html = "".join(parser.output).strip()
+        if preview_html is None:
+            preview_html = _drawn_link_text_or_none(
+                record=context.get_note(resolve_held_source(
+                    reference_note_id, has_note=context.has_note, content_of=_context_content(context),
+                )),
+                context=context, redact_credentials=redact_credentials,
+            )
         if preview_html is None:
             preview_html = render_standalone_link_title_html(preview)
     if preview_html is None:

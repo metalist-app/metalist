@@ -218,5 +218,37 @@ def test_the_preview_route_draws_a_note_or_nothing(monkeypatch: pytest.MonkeyPat
     monkeypatch.setattr(notes_route, "note_store", store)
     monkeypatch.setattr(notes_route, "build_note_preview_markup", lambda note_id: f"<article>{note_id}</article>")
     assert notes_route.note_preview("note-123") == {"status": "ready", "html": "<article>note-123</article>"}
-    # A deleted note, or a file's UUID: no card.
+    # A file's UUID: the file as an embed of it draws it (smart previews, slice 4, 2026-10-29).
+    monkeypatch.setattr(notes_route, "file_registry", _FilesNamed({"file-456"}))
+    monkeypatch.setattr(notes_route, "build_file_preview_markup", lambda file_id: f"<article>file {file_id}</article>")
+    assert notes_route.note_preview("file-456") == {"status": "ready", "html": "<article>file file-456</article>"}
+    # A deleted note or file: no card.
     assert notes_route.note_preview("missing") == {"status": "deleted", "html": ""}
+
+
+class _FilesNamed:
+    def __init__(self, file_ids: set[str]) -> None:
+        self.file_ids = file_ids
+
+    def has_file(self, file_id: str) -> bool:
+        return file_id in self.file_ids
+
+
+def test_a_file_preview_draws_the_file_as_its_embed_does(monkeypatch: pytest.MonkeyPatch) -> None:
+    drawn: list[dict[str, object]] = []
+
+    def _render(**kwargs: object) -> str:
+        drawn.append(kwargs)
+        return '<div class="note-file-image-embed" data-file-ref-id="file-456">picture</div>'
+
+    monkeypatch.setattr(fullscreen_module, "file_registry", _FilesNamed({"file-456"}))
+    monkeypatch.setattr(fullscreen_module, "render_note_content_with_embeds", _render)
+    markup = fullscreen_module.build_file_preview_markup("file-456")
+
+    assert [(call["content_html"], call["tags"], call["redact_credentials"]) for call in drawn] == [("<div>![[file-456]]</div>", "", True)]
+    assert markup == (
+        '<article class="note"><div class="note-content" contenteditable="false">'
+        '<div class="note-file-image-embed" data-file-ref-id="file-456">picture</div></div></article>'
+    )
+    with pytest.raises(ValueError, match="must name a file"):
+        fullscreen_module.build_file_preview_markup("not-a-file")

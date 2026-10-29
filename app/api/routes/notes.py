@@ -163,7 +163,7 @@ from app.services.html_export import build_notes_export_document
 from app.services.html_export import default_export_title
 from app.services.html_export import exported_credential_counts
 from app.services.html_export import build_notes_export_filename
-from app.services.note_fullscreen import build_note_fullscreen_markup, build_note_preview_markup
+from app.services.note_fullscreen import build_file_preview_markup, build_note_fullscreen_markup, build_note_preview_markup
 from app.services.link_titles import link_title_store
 from app.services.search_index import search_index
 from app.services.dictation_cleanup import clean_dictated_paste
@@ -1082,11 +1082,13 @@ def note_floating_window(note_id: str, revision: str) -> dict[str, str]:
 
 @router.get("/notes/{note_id}/preview")
 def note_preview(note_id: str) -> dict[str, str]:
-    """A reference's preview card: the top of the note as the list draws it, or
-    nothing for a note that is not there (deleted, or a file's UUID)."""
-    if not note_store.has_note(note_id):
-        return {"status": "deleted", "html": ""}
-    return {"status": "ready", "html": build_note_preview_markup(note_id)}
+    """A reference's preview card: the top of the note as the list draws it, a file as
+    an embed of it draws it, or nothing for a reference to neither (deleted)."""
+    if note_store.has_note(note_id):
+        return {"status": "ready", "html": build_note_preview_markup(note_id)}
+    if file_registry.has_file(note_id):
+        return {"status": "ready", "html": build_file_preview_markup(note_id)}
+    return {"status": "deleted", "html": ""}
 
 
 @router.get("/notes/{note_id}/backlinks")

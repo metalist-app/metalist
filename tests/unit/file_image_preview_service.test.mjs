@@ -227,6 +227,33 @@ test('hydrateImageFilePreviews loads one authenticated image preview per file id
     assert.equal(downloadCount, 1);
 });
 
+// A reference's preview card draws its note inside a shadow root, where the page's
+// document finds nothing: its pictures stayed "Loading image preview..." (2026-10-29).
+test('hydrateImageFilePreviews fills pictures under a root the document cannot search', async (t) => {
+    const { FakeElement, FakeImageElement } = installPreviewTestDom(t);
+    const { FilesAPI } = await import('../../app/static/js/modules/api-client.js');
+    const { hydrateImageFilePreviews } = await import('../../app/static/js/modules/mode-manager/services/file-image-preview-service.js');
+
+    const originalDownloadFile = FilesAPI.downloadFile;
+    t.after(() => {
+        FilesAPI.downloadFile = originalDownloadFile;
+    });
+    FilesAPI.downloadFile = async (fileId) => ({
+        blob: new Blob([Buffer.from(fileId)], { type: 'image/png' }),
+        filename: 'photo.png',
+    });
+
+    const inCard = buildImagePreviewTarget(FakeElement, FakeImageElement, 'file-in-card');
+    const shadowTree = new FakeElement();
+    shadowTree.appendChild(inCard.target);
+
+    await hydrateImageFilePreviews(shadowTree);
+
+    assert.equal(inCard.target.dataset.previewState, 'loaded');
+    assert.equal(inCard.image.hidden, false);
+    assert.equal(inCard.image.src.startsWith('blob:preview-'), true);
+});
+
 test('preview hydration propagates internal defects and clears pending requests for retry', async (t) => {
     const { FakeElement, FakeImageElement, documentRoot } = installPreviewTestDom(t);
     const { FilesAPI } = await import('../../app/static/js/modules/api-client.js');

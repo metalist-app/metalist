@@ -1,6 +1,6 @@
 # Smart previews while editing
 
-**Status:** Agreed with the maintainer 2026-10-26. Built in slices, each tried by the maintainer before the next. **Slices 1 (LaTeX), 2 (CSV), 3 (Mermaid) and JSON built 2026-10-29** (documented in `docs/ui/content-formatting.md`, "Previews while editing"). Left, in order: 4 reference previews from the caret and file references (§4), 5 Insert LaTeX / CSV / Diagram (§5), 6 previews on the "Apply as …" card (§5). Delete this note when the last is built.
+**Status:** Agreed with the maintainer 2026-10-26. Built in slices, each tried by the maintainer before the next. **Slices 1 (LaTeX), 2 (CSV), 3 (Mermaid), JSON and 4 (references) built 2026-10-29** (documented in `docs/ui/content-formatting.md`, "Previews while editing", and `docs/ui/references.md`, "The preview card"). Left, in order: 5 Insert LaTeX / CSV / Diagram (§5), 6 previews on the "Apply as …" card (§5). Delete this note when the last is built.
 **Scope:** a live, rendered preview of the construct being edited (LaTeX, CSV, Mermaid, references) while a note is in edit mode. Document it in `docs/ui/content-formatting.md` and `docs/ui/references.md`.
 
 Written without running the code. Every reference below came from reading it and must be checked before relying on it; build only what's missing.
@@ -93,3 +93,8 @@ Today LaTeX renders on the server. A round trip per keystroke would lag and load
 - Mermaid: the server finds the diagram (`mermaid_note_rendering.finding_diagrams`, with whether its fence is closed) and sends its source; the browser draws it with the note's runtime and theme, after a 400 ms pause. Decided with the maintainer: a large diagram is scaled down to fit the panel, never up, even though a tall one becomes small. Mermaid's reason for a broken diagram is not shown (it needs an exception boundary to read).
 - JSON was added after the slices (maintainer, 2026-10-29) to catch broken JSON while typing: valid compact JSON shows laid out, JSON already laid out shows nothing, broken JSON says why and where. No previews for code (`@code=…`): coloured it looks as typed, and nothing checks it. Checking code's syntax would be a separate feature (Python's own parser could do `@code=python`; most languages have no checker here).
 - Found by the tests: the panel was placed with its height rounded to a whole pixel, a fraction off the line above it; it now uses its exact size.
+
+## 14. Slice 4 (references), as built 2026-10-29
+- The caret inside `[[UUID]]` or `![[UUID]]` shows the existing preview card, placed as for the pointer, through a third owner of the card (`caret`, `reference-caret-preview-service.js`); a file's UUID gets a card (`note_fullscreen.build_file_preview_markup`), for the pointer too.
+- Found on the way: pictures in a preview card never loaded (the loader searched only the page, not the card's shadow root), for note cards too; fixed with a unit test.
+- Found while trying it (maintainer): a link to a note showed its first line's LaTeX source. Agreed: a link draws its note's first line as the folded note does, formulas inline, in the link's colour (`docs/ui/references.md`, "Links").

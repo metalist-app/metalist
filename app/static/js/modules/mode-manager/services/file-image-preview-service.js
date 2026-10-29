@@ -154,7 +154,9 @@ export function hydrateImageFilePreviews(rootNode) {
         return;
     }
 
-    const fileIds = new Set();
+    // The targets under `rootNode` by file: the document cannot find those in a shadow
+    // root (a reference's preview card), so they are filled as well as the document's.
+    const targetsByFile = new Map();
     for (const target of targets) {
         if (!(target instanceof HTMLElement)) {
             throw new Error('hydrateImageFilePreviews target must be HTMLElement');
@@ -168,14 +170,19 @@ export function hydrateImageFilePreviews(rootNode) {
         }
         setPreviewState(target, 'loading');
         reservePreviewSpace(target, fileId);
-        fileIds.add(fileId);
+        if (!targetsByFile.has(fileId)) targetsByFile.set(fileId, []);
+        targetsByFile.get(fileId).push(target);
     }
 
+    const targetsOf = (fileId) => new Set([
+        ...targetsByFile.get(fileId),
+        ...document.querySelectorAll(`.note-file-image-embed[data-file-ref-id="${fileId}"]`),
+    ]);
     const requests = [];
-    for (const fileId of fileIds) {
+    for (const fileId of targetsByFile.keys()) {
         requests.push(fetchPreviewObjectUrl(fileId)
             .then((objectUrl) => {
-                document.querySelectorAll(`.note-file-image-embed[data-file-ref-id="${fileId}"]`).forEach((target) => {
+                targetsOf(fileId).forEach((target) => {
                     if (!(target instanceof HTMLElement)) {
                         throw new Error('Image file preview target must remain HTMLElement');
                     }
@@ -184,7 +191,7 @@ export function hydrateImageFilePreviews(rootNode) {
             })
             .catch((error) => {
             rethrowUnexpectedError(error);
-                document.querySelectorAll(`.note-file-image-embed[data-file-ref-id="${fileId}"]`).forEach((target) => {
+                targetsOf(fileId).forEach((target) => {
                     if (!(target instanceof HTMLElement)) {
                         throw new Error('Image file preview target must remain HTMLElement');
                     }

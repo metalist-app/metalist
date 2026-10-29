@@ -16,7 +16,7 @@ const HOVER_DELAY_MS = 300;
 const GAP_PX = 6;
 const MOUSE = 'mouse';
 // With any link text after a | (docs/ui/references.md, "Link text"), read as the server reads it.
-const REFERENCE_RE = /!?\[\[([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:\|[^[\]\n]*[^\s[\]][^[\]\n]*)?\]\]/g;
+export const REFERENCE_RE = /!?\[\[([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:\|[^[\]\n]*[^\s[\]][^[\]\n]*)?\]\]/g;
 const LINK_SELECTOR = '.note-reference-block.note-reference-note.note-reference-link-mode[data-ref-note-id]';
 const EDITED_CONTENT_SELECTOR = '.note.editing > .note-content';
 
@@ -77,7 +77,8 @@ function isSameReference(first, second) {
     return first !== null && second !== null && first.anchor === second.anchor && first.start === second.start;
 }
 
-function placeBelow(line) {
+// Just below the reference's line from `line.left`, or above it near the window's bottom.
+export function placeBelow(line) {
     return (card) => {
         const { width, height } = card.getBoundingClientRect();
         const left = Math.max(0, Math.min(line.left, window.innerWidth - width));

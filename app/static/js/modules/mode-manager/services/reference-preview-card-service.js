@@ -9,14 +9,15 @@ import { serverRenderedHtml } from '../../server-rendered-html.js';
 // A reference's preview card (docs/ui/references.md, "Preview"): the top of the
 // note it names as the list draws it (Markdown, headings, colours, checkboxes,
 // pictures; passwords hidden), cut at the card's height with a fade. One card
-// shows at a time, for the `[[` suggestion list's highlighted note or for a link
-// the pointer rests on. It floats and takes no pointer: nothing under it moves.
+// shows at a time, for the `[[` suggestion list's highlighted note, a link the
+// pointer rests on, or the reference the caret is in. A file's UUID shows the file
+// as an embed of it draws it. It floats and takes no pointer: nothing under it moves.
 // Its note is drawn inside a shadow root with the list's stylesheet, as a
 // floating window's is, so the list's rules for notes don't reach the card.
 
 const STYLESHEETS = ['/static/css/main.css', '/static/css/reference-preview.css'];
 // What asks for the card: only that asker hides it.
-export const PREVIEW_OWNERS = Object.freeze({ suggestions: 'suggestions', hover: 'hover' });
+export const PREVIEW_OWNERS = Object.freeze({ suggestions: 'suggestions', hover: 'hover', caret: 'caret' });
 
 const moduleState = ApplicationState.createFields('reference-preview-card-service', {
     card: null,
@@ -83,7 +84,7 @@ function fill(tree, html) {
 }
 
 // Shows `noteId`'s card for `owner`, placed by `place(card)`; replaces any card
-// showing. A note that is not there (deleted, or a file's UUID) shows none.
+// showing. A reference to nothing there (deleted) shows none.
 export async function showReferencePreview(noteId, place, owner) {
     if (typeof noteId !== 'string' || noteId === '' || typeof place !== 'function' || !Object.hasOwn(PREVIEW_OWNERS, owner)) {
         throw new Error('showReferencePreview requires a note id, a place function and an owner');
@@ -121,6 +122,11 @@ export function hideReferencePreview(owner) {
     setState('noteId', null);
     setState('place', null);
     if (moduleState.card !== null) moduleState.card.hidden = true;
+}
+
+// Whether `owner`'s card is showing (not still loading, hidden or replaced).
+export function isReferencePreviewShownBy(owner) {
+    return moduleState.owner === owner && moduleState.card !== null && !moduleState.card.hidden;
 }
 
 // Places the card again where its owner wants it now (the list moved with a scroll).
