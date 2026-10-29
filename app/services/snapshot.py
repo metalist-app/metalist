@@ -963,6 +963,7 @@ def _cached_note_view_html(
     key = (
         _IdentityKey(rec), is_collapsed, has_backlinks,
         _IdentityKey(get_ontology_if_ready()), link_title_store.get_render_generation(),
+        file_registry.names_generation(),
     )
     found, cached = _VIEW_RENDER_MEMO.lookup(key)
     if found and _dependencies_hold(cached.dependencies, context):

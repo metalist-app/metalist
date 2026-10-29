@@ -1383,6 +1383,15 @@ class NoteStore:
             search_index.upsert(note_id=note_id, content_text=_search_text(record.content, plaintext),
                                 tags=record.tags, raw_tag_terms=raw, tag_terms=effective)
 
+    def refresh_search_text_for_notes(self, note_ids: Set[str]) -> None:
+        """Search sees these notes' text again, after a file they show was renamed."""
+        with self._lock:
+            texts = {
+                note_id: (_search_text(self._note_map[note_id].content, get_cached_text(note_id)), self._note_map[note_id].tags)
+                for note_id in note_ids
+            }
+        search_index.refresh_note_texts(texts)
+
     def refresh_tags_for_value_rules(self, *, rule_texts: list[str]) -> int:
         """After a rule testing values changed: the tags of the notes it can concern (with a
         value of a property it tests, or carrying a tag a `?` term tests, on the tag or a tag

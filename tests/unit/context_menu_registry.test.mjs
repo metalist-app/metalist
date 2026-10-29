@@ -42,6 +42,7 @@ function buildNoteHandlers(calls) {
         onMoveNoteDown: (noteId) => calls.push(['moveDown', noteId]),
         onIndentNote: (noteId) => calls.push(['indent', noteId]),
         onOutdentNote: (noteId) => calls.push(['outdent', noteId]),
+        onRenameFile: (fileId) => calls.push(['renameFile', fileId]),
     };
 }
 
@@ -61,6 +62,7 @@ function buildNoteContext(overrides = {}) {
         canMoveDown: true,
         canIndent: true,
         canOutdent: true,
+        fileCardFileId: null,
         ...overrides,
     };
 }
@@ -969,4 +971,57 @@ test('the date range menu ticks its date and range and calls their handlers', ()
         .find((item) => item.id === 'date-range').submenu.find((item) => item.id === 'date-range-custom');
     assert.equal(custom.checked, true);
     assert.equal(custom.enabled, true);
+});
+
+test('Rename File… leads a file card menu and follows Save Image or Save Diagram File', () => {
+    const calls = [];
+    const handlers = {
+        ...buildNoteHandlers(calls),
+        onCopyImage: () => {},
+        onSaveImage: () => {},
+        onZoomImage: () => {},
+        onOpenImageInNewTab: () => {},
+        onEditDiagram: () => {},
+        onSaveDiagram: () => {},
+    };
+    const ids = (items) => items.map((item) => item.id);
+
+    const card = buildContextMenuItems(buildNoteContext({ fileCardFileId: 'file-card' }), handlers);
+    assert.deepEqual(
+        { id: card[0].id, label: card[0].label, icon: card[0].icon, enabled: card[0].enabled },
+        { id: 'rename-file', label: 'Rename File…', icon: 'rename', enabled: true },
+    );
+    assert.equal(isContextMenuIconSupported('rename'), true);
+    card[0].onSelect();
+
+    const picture = buildContextMenuItems(buildNoteContext({
+        imageContext: {
+            sourceKind: 'file', fileId: 'file-picture', fileKind: 'image', hostNoteId: 'note-123',
+            occurrenceIndex: 0, src: 'blob:picture', alt: 'Kyoto', filename: 'Kyoto.png',
+        },
+    }), handlers);
+    assert.equal(ids(picture).indexOf('rename-file'), ids(picture).indexOf('save-image') + 1);
+    picture.find((item) => item.id === 'rename-file').onSelect();
+
+    const diagram = buildContextMenuItems(buildNoteContext({
+        imageContext: {
+            sourceKind: 'file', fileId: 'file-diagram', fileKind: 'excalidraw', hostNoteId: 'note-123',
+            occurrenceIndex: 0, src: 'blob:diagram', alt: 'Diagram', filename: 'Diagram.excalidraw',
+        },
+        canEditDiagram: true,
+    }), handlers);
+    assert.equal(ids(diagram).indexOf('rename-file'), ids(diagram).indexOf('save-diagram') + 1);
+    diagram.find((item) => item.id === 'rename-file').onSelect();
+
+    assert.deepEqual(calls, [['renameFile', 'file-card'], ['renameFile', 'file-picture'], ['renameFile', 'file-diagram']]);
+
+    // A picture pasted into the text is no file: nothing to rename.
+    const inline = buildContextMenuItems(buildNoteContext({
+        imageContext: {
+            sourceKind: 'inline', fileId: null, hostNoteId: 'note-123', occurrenceIndex: 0,
+            src: 'data:image/png;base64,AAAA', alt: 'Inline', filename: null,
+        },
+    }), handlers);
+    assert.equal(ids(inline).includes('rename-file'), false);
+    assert.equal(ids(buildContextMenuItems(buildNoteContext(), handlers)).includes('rename-file'), false);
 });

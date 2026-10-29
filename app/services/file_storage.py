@@ -24,6 +24,7 @@ from app.db.files_sql import (
     fetch_file,
     insert_file,
     replace_file_content_fields,
+    update_file_name_fields,
     update_file_preview_storage_fields,
     update_file_storage_fields,
     upsert_file_preview,
@@ -35,7 +36,9 @@ from app.security.encryption import (
 )
 from app.services.embedded_references import collect_reference_tokens_from_html
 from app.services.file_registry import FileDetails, file_registry
+from app.services.input_errors import InputRejected
 from app.services.note_store import store as note_store
+from app.utils.file_names import MAX_FILE_NAME_CHARACTERS, replace_unsafe_filename_characters, split_extension
 
 _ALLOWED_THUMBNAIL_KINDS = {"pdf", "image", "audio", "video", "text", "archive", "excalidraw", "other"}
 
@@ -407,6 +410,69 @@ def replace_file_content(
     assert updated.content_revision == expected_revision + 1
     assert updated.size_bytes == len(content_bytes)
     return updated
+
+
+def rename_file(*, file_id: str, name: str, token: str) -> FileReferenceRecord:
+    """Give the file a new name, shown on its cards, found by search and used for its
+    downloads (docs/ui/references.md, Renaming files). The extension stays: a name
+    with another one is refused. Characters a file name can't hold become "-"."""
+    if not isinstance(name, str):
+        raise TypeError(f"name must be a string, got {type(name)}")
+    if not isinstance(token, str) or token == "":
+        raise TypeError("token must be a non-empty string")
+
+    record = get_file_reference_record(file_id, token)
+    stem, extension = split_extension(name.strip())
+    _current_stem, current_extension = split_extension(record.original_filename)
+    if extension != current_extension:
+        raise InputRejected(f"A file's extension can't change: keep {current_extension or 'no extension'}.")
+    clean_stem = replace_unsafe_filename_characters(stem).strip(" .")
+    if clean_stem == "":
+        raise InputRejected("A file name can't be blank.")
+    new_name = f"{clean_stem}{extension}"
+    if len(new_name) > MAX_FILE_NAME_CHARACTERS:
+        raise InputRejected(f"A file name can be at most {MAX_FILE_NAME_CHARACTERS} characters long.")
+    if new_name == record.original_filename and new_name == record.title:
+        return record
+
+    metadata = {
+        "original_filename": new_name,
+        "mime_type": record.mime_type,
+        "size_bytes": record.size_bytes,
+        "thumbnail_kind": record.thumbnail_kind,
+    }
+    metadata_json = json.dumps(metadata, separators=(",", ":"), ensure_ascii=False)
+    encryption_service = _resolve_encryption_service(token)
+    encrypted_title, title_nonce, title_tag = _encrypt_text_for_storage(
+        encryption_service=encryption_service,
+        plaintext=new_name,
+    )
+    encrypted_metadata, metadata_nonce, metadata_tag = _encrypt_text_for_storage(
+        encryption_service=encryption_service,
+        plaintext=metadata_json,
+    )
+    with begin_file_writer() as connection:
+        updated_rows = update_file_name_fields(
+            connection,
+            file_id=file_id,
+            title=encrypted_title,
+            title_encryption_nonce=title_nonce,
+            title_encryption_tag=title_tag,
+            metadata_json=encrypted_metadata,
+            metadata_encryption_nonce=metadata_nonce,
+            metadata_encryption_tag=metadata_tag,
+            updated_at=datetime.now(timezone.utc),
+        )
+    if updated_rows != 1:
+        raise RuntimeError(f"Renaming file {file_id} changed {updated_rows} rows")
+
+    file_registry.rename(file_id, title=new_name)
+    # Search reads the names of the files a note shows (search_text.py).
+    note_store.refresh_search_text_for_notes(note_store.note_ids_referencing({file_id}))
+    renamed = get_file_reference_record(file_id, token)
+    assert renamed.title == new_name and renamed.original_filename == new_name
+    assert renamed.content_revision == record.content_revision
+    return renamed
 
 
 def _encrypt_replacement_content(

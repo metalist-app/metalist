@@ -9,7 +9,7 @@ from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel
 
-from app.api.note_requests import DiscardFileEditSessionRequest, FinishFileEditSessionRequest
+from app.api.note_requests import DiscardFileEditSessionRequest, FinishFileEditSessionRequest, RenameFileRequest
 from app.api.transactions import transactional_route
 from app.api.upload_limits import read_attachment
 from app.api.request_auth import require_request_auth_token
@@ -20,6 +20,8 @@ from app.services.file_storage import (
     create_file,
     download_file,
     get_file_preview,
+    get_file_reference_record,
+    rename_file,
     replace_file_content,
     store_file_previews,
     trim_unused_files,
@@ -54,6 +56,12 @@ class FileContentUpdatedResponse(BaseModel):
 class FilePreviewsStoredResponse(BaseModel):
     file_id: str
     content_revision: int
+
+
+# A file's name, as read or just given by Rename File….
+class FileRenamedResponse(BaseModel):
+    file_id: str
+    name: str
 
 
 class TrimUnusedFilesResponse(BaseModel):
@@ -141,6 +149,23 @@ async def replace_file_content_endpoint(
         content_revision=record.content_revision,
         size_bytes=record.size_bytes,
     )
+
+
+@router.get("/{file_id}/name", response_model=FileRenamedResponse)
+def read_file_name_endpoint(request: Request, file_id: str):
+    token = _require_bearer_token(request)
+    _require_known_file(file_id)
+    record = get_file_reference_record(file_id, token)
+    return FileRenamedResponse(file_id=record.id, name=record.title)
+
+
+@router.put("/{file_id}/name", response_model=FileRenamedResponse)
+@transactional_route
+def rename_file_endpoint(request: Request, file_id: str, body: RenameFileRequest):
+    token = _require_bearer_token(request)
+    _require_known_file(file_id)
+    record = rename_file(file_id=file_id, name=body["name"], token=token)
+    return FileRenamedResponse(file_id=record.id, name=record.title)
 
 
 @router.put("/{file_id}/previews", response_model=FilePreviewsStoredResponse)

@@ -637,6 +637,19 @@ class SearchIndex:
             self._revision += 1
             self._result_cache.clear()
 
+    def refresh_note_texts(self, texts: Dict[str, Tuple[str, str]]) -> None:
+        """Recompose the searchable text of notes, by id, from (content text, tags), after
+        something they show changed without their own text changing: a file's name."""
+        if not texts:
+            return
+        with self._lock:
+            for note_id, (content_text, tags) in texts.items():
+                note_int_id = self._uuid_to_id[note_id]
+                assert note_int_id in self._alive, "only live notes are refreshed"
+                self._set_note_text_locked(note_int_id, content_text, tags)
+            self._revision += 1
+            self._result_cache.clear()
+
     def bulk_update_tag_terms(self, updates: Dict[str, FrozenSet[str]]) -> None:
         if not updates:
             return

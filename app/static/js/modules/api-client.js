@@ -1428,6 +1428,53 @@ export const FilesAPI = {
         return { status: 'ready', blob: await response.blob(), revision: readFileRevision(response) };
     },
 
+    // The file's name, extension included (what its cards show and its downloads use).
+    async getFileName(fileId) {
+        requireFileId(fileId, 'getFileName');
+        const response = await fetch(CONFIG.API.FILES.NAME(fileId), {
+            method: 'GET',
+            headers: buildAuthHeaders(false),
+        });
+        if (!response.ok) {
+            ErrorHandler.handleApiError(null, response);
+            throw new HttpRequestError(`Reading the file name failed: ${response.status} ${response.statusText}`);
+        }
+        const data = await response.json();
+        if (typeof data.name !== 'string' || data.name.length === 0) {
+            throw new Error('File name response is missing name');
+        }
+        return data.name;
+    },
+
+    // Renames the file; name is the whole new name, its extension the file's own. A name
+    // the server refuses (blank, another extension) throws ServerInputRejectedError.
+    async renameFile(fileId, name) {
+        requireFileId(fileId, 'renameFile');
+        if (typeof name !== 'string' || name.trim() === '') {
+            throw new Error('FilesAPI.renameFile requires a name');
+        }
+        const response = await fetch(CONFIG.API.FILES.NAME(fileId), {
+            method: 'PUT',
+            headers: buildAuthHeaders(true),
+            body: JSON.stringify({ name }),
+        });
+        if (response.status === HTTP_STATUS.BAD_REQUEST && response.headers.get('content-type')?.includes('application/json')) {
+            const rejection = await response.clone().json();
+            if (rejection.inputRejected === true && typeof rejection.detail === 'string') {
+                throw new ServerInputRejectedError(rejection.detail);
+            }
+        }
+        if (!response.ok) {
+            ErrorHandler.handleApiError(null, response);
+            throw new HttpRequestError(`Renaming the file failed: ${response.status} ${response.statusText}`);
+        }
+        const data = await response.json();
+        if (typeof data.name !== 'string' || data.name.length === 0) {
+            throw new Error('File rename response is missing name');
+        }
+        return data.name;
+    },
+
     async trimUnusedFiles() {
         const response = await fetch(CONFIG.API.FILES.TRIM_UNUSED, {
             method: 'POST',

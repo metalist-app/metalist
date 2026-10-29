@@ -47,6 +47,9 @@ class FileRegistry:
         # then. None: not read yet.
         self._titles_by_id: dict[str, str] | None = None
         self._details_loader: Callable[[], dict[str, FileDetails]] | None = None
+        # Counts renames, so views rendered with an old file name are rendered again
+        # (snapshot.py keys its render cache on it).
+        self._names_generation = 0
 
     def install_details_loader(self, loader: Callable[[], dict[str, FileDetails]]) -> None:
         """How to read every file's name and kind (file_storage.py, which this module cannot import)."""
@@ -125,6 +128,23 @@ class FileRegistry:
             self._thumbnail_kinds_by_id[file_id] = thumbnail_kind
             if self._titles_by_id is not None:
                 self._titles_by_id[file_id] = title
+
+    def rename(self, file_id: str, *, title: str) -> None:
+        if not isinstance(file_id, str) or file_id == "":
+            raise TypeError("file_id must be a non-empty string")
+        if not isinstance(title, str) or title == "":
+            raise TypeError("title must be a non-empty string")
+        with self._lock:
+            if file_id not in self._ids:
+                raise KeyError(f"File {file_id} is not registered")
+            if self._titles_by_id is not None:
+                self._titles_by_id[file_id] = title
+            self._names_generation += 1
+
+    def names_generation(self) -> int:
+        """Changes whenever a file is renamed."""
+        with self._lock:
+            return self._names_generation
 
     def remove_many(self, file_ids: set[str]) -> None:
         if not isinstance(file_ids, set):

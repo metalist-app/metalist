@@ -6,7 +6,7 @@ Future plan (2026-10-27): charts of super-tag values work exactly like these dia
 
 ## Storage
 - A diagram is an ordinary file attachment in `*.files.db` whose file kind is `excalidraw` (MIME type `application/vnd.excalidraw+json` or the `.excalidraw` extension). Notes reference it with `![[UUID]]` like any other file; `[[UUID]]` shows the usual compact file card.
-- Diagrams are the only attachments MetaList replaces in place. Every save increments the file's `content_revision`; a save that names a stale revision is refused (HTTP 409) so a second window cannot silently overwrite the first. Other attachments stay immutable.
+- Diagrams are the only attachments MetaList replaces in place. Every save increments the file's `content_revision`; a save that names a stale revision is refused (HTTP 409) so a second window cannot silently overwrite the first. Other attachments' content stays immutable; any file's name can change with `Rename File…` (`docs/ui/references.md`, Renaming Files).
 - Database version 10 adds the revision column and the `file_previews` table to `*.files.db` (migration 9→10, `app/db/editable_files_migration.py`).
 - Two SVG previews, `light` and `dark`, are rendered in the browser when the editor closes and stored encrypted in `file_previews`, keyed by file and variant and tagged with the revision they were rendered from. Encryption changes, restores, and file trimming treat them like file content (deleting a file deletes its previews).
 - Previews are transparent unless the drawing has its own canvas colour, so they sit on the note background in either theme.

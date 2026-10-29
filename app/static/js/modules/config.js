@@ -147,6 +147,7 @@ export const CONFIG = {
             EDIT_SESSIONS: (fileId) => `${API_FILES_BASE}/${fileId}/edit-sessions`,
             EDIT_SESSION_FINISH: (fileId, sessionId) => `${API_FILES_BASE}/${fileId}/edit-sessions/${sessionId}/finish`,
             EDIT_SESSION_DISCARD: (fileId, sessionId) => `${API_FILES_BASE}/${fileId}/edit-sessions/${sessionId}/discard`,
+            NAME: (fileId) => `${API_FILES_BASE}/${fileId}/name`,
             TRIM_UNUSED: `${API_FILES_BASE}/trim-unused`,
         },
 

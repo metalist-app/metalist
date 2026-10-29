@@ -45,7 +45,8 @@ Sources: docs/ui/references.md
   - File targets:
     - non-image files render a file card/link row with a deterministic type badge (`PDF`, `IMG`, `VID`, `TXT`, etc.) and the file title. `.txt`, `.md`/`.markdown`, `.csv` and `.json` files are labelled by extension (`.TXT`, `.MD`, `.CSV`, `.JSON`) whatever MIME type the browser sent; other files by their kind.
     - embedded image files (`![[UUID]]`) render an authenticated image preview with a `download image` control beneath it.
-    - right-clicking the rendered image preview also offers image actions (`Copy Image`, `Save Image`, `Zoom Image`, `Open Image in New Tab`).
+    - right-clicking the rendered image preview also offers image actions (`Copy Image`, `Save Image`, `Rename File…`, `Zoom Image`, `Open Image in New Tab`).
+    - **Rename File…**: right-click a file card (first item), a picture stored as a file (after `Save Image`) or a diagram (after `Save Diagram File`). The new name shows on every card for that file, search finds it, and downloads use it. The extension is fixed beside the field and can't change; a blank name can't be used; characters a file name can't hold (`/ \ : * ? " < > |`) become `-`. Nothing else about the file changes. ⌘Z doesn't undo a rename: rename it back.
     - link-mode image files (`[[UUID]]`) keep the generic compact file card/link row.
     - embedded Excalidraw diagrams (`.excalidraw` files, badge `DRAW`) render their stored light or dark SVG preview; double-click or right-click **Edit Diagram** to open the full-screen editor. See `docs/ui/excalidraw.md`.
     - clicking the rendered file reference's badge (`.MD`) or its underlined name downloads the decrypted file from the server; hovering them shows the tooltip "Click to download <file name>". Clicking beside the name edits the note, and dragging from there moves it, like anywhere else on a note.

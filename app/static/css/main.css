@@ -621,6 +621,28 @@ html:has(> body > .login-page[style*="display: flex"]:not(.login-page-covering):
     width: min(520px, 92vw);
 }
 
+/* Rename File…: the name is edited, its extension stays fixed beside it. */
+.file-rename-modal-content {
+    width: min(480px, 92vw);
+}
+
+.file-rename-name-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.file-rename-name-row input {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.file-rename-extension {
+    flex: 0 0 auto;
+    color: var(--modal-text-muted);
+    font-size: 16px;
+}
+
 .note-layout-appearance-modal-content {
     width: min(560px, 92vw);
 }

@@ -135,8 +135,25 @@ function buildDiagramItems(context, imageContext, handlers) {
         icon: 'download',
         enabled: true,
         onSelect: () => handlers.onSaveDiagram(imageContext),
-    });
+    }, buildRenameFileItem(imageContext.fileId, handlers.onRenameFile));
     return items;
+}
+
+// Renaming changes the name every card of the file shows and its downloads use (docs/ui/references.md).
+function buildRenameFileItem(fileId, onRenameFile) {
+    if (typeof fileId !== 'string' || fileId === '') {
+        throw new Error('Rename File needs the file id');
+    }
+    if (typeof onRenameFile !== 'function') {
+        throw new Error('Note context missing onRenameFile handler');
+    }
+    return {
+        id: 'rename-file',
+        label: 'Rename File…',
+        icon: 'rename',
+        enabled: true,
+        onSelect: () => onRenameFile(fileId),
+    };
 }
 
 function buildReferenceSourceItem(referenceNoteId, onOpenReferenceSource) {
@@ -205,6 +222,7 @@ function buildNoteContextItems(context, handlers) {
     const onAddDiagram = handlers.onAddDiagram;
     const onEditDiagram = handlers.onEditDiagram;
     const onSaveDiagram = handlers.onSaveDiagram;
+    const onRenameFile = handlers.onRenameFile;
     if (typeof onAddSiblingNote !== 'function') {
         throw new Error('Note context missing onAddSiblingNote handler');
     }
@@ -250,11 +268,15 @@ function buildNoteContextItems(context, handlers) {
     if (referenceNoteId !== undefined) {
         items.push(buildReferenceSourceItem(referenceNoteId, onOpenReferenceSource));
     }
+    // A file card ([[id]]) right-clicked: what was clicked comes first.
+    if (context.fileCardFileId !== null) {
+        items.push(buildRenameFileItem(context.fileCardFileId, onRenameFile));
+    }
     const imageContext = context.imageContext;
     const isDiagram = imageContext !== null && typeof imageContext === 'object' && imageContext.fileKind === 'excalidraw';
     if (isDiagram) {
         items.push(...buildDiagramItems(context, imageContext, {
-            onEditDiagram, onSaveDiagram, onZoomImage, onMakeImageBigger, onMakeImageSmaller, onResetImageSize,
+            onEditDiagram, onSaveDiagram, onZoomImage, onMakeImageBigger, onMakeImageSmaller, onResetImageSize, onRenameFile,
         }));
     }
     // An image's size changes in view and edit mode alike (in the edited note, the
@@ -320,6 +342,8 @@ function buildNoteContextItems(context, handlers) {
                 enabled: true,
                 onSelect: () => onSaveImage(imageContext),
             },
+            // Only an attached picture is a file; a picture pasted into the text has no name.
+            ...(imageContext.sourceKind === 'file' ? [buildRenameFileItem(imageContext.fileId, onRenameFile)] : []),
             {
                 id: 'zoom-image',
                 label: 'Zoom Image',

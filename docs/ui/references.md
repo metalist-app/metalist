@@ -65,7 +65,8 @@ Typing `[[` in the note being edited opens a list of notes to reference (agreed 
   - File targets:
     - non-image files render a file card/link row with a deterministic type badge (`PDF`, `IMG`, `VID`, `TXT`, etc.) and the file title. `.txt`, `.md`/`.markdown`, `.csv` and `.json` files are labelled by extension (`.TXT`, `.MD`, `.CSV`, `.JSON`) whatever MIME type the browser sent; other files by their kind.
     - embedded image files (`![[UUID]]`) render an authenticated image preview with a `download image` control beneath it.
-    - right-clicking the rendered image preview also offers image actions (`Copy Image`, `Save Image`, `Zoom Image`, `Open Image in New Tab`).
+    - right-clicking the rendered image preview also offers image actions (`Copy Image`, `Save Image`, `Rename File…`, `Zoom Image`, `Open Image in New Tab`).
+    - right-clicking a file card offers `Rename File…` first; a diagram offers it after `Save Diagram File` (Renaming Files, below).
     - link-mode image files (`[[UUID]]`) keep the generic compact file card/link row.
     - embedded Excalidraw diagrams (`.excalidraw` files, badge `DRAW`) render their stored light or dark SVG preview; double-click or right-click **Edit Diagram** to open the full-screen editor. See `docs/ui/excalidraw.md`.
     - clicking the rendered file reference's badge (`.MD`) or its underlined name downloads the decrypted file from the server; hovering them shows the tooltip "Click to download <file name>". The rest of the note's line is the note: a click beside the name (also after a wrapped name's shorter last line) edits it and a drag there moves it, in the list, collapsed or expanded, and in floating windows. The button takes no clicks itself; the badge and an inline `.note-file-reference-name` around the name do (`main.css`). Tests: `scripts/browser-file-link-click-regressions.mjs`.
@@ -100,8 +101,18 @@ Typing `[[` in the note being edited opens a list of notes to reference (agreed 
 - The attach flow saves the note immediately after insertion so the new reference survives refresh/reload.
 - `Add Excalidraw Diagram` attaches a new, empty `.excalidraw` file the same way and opens the diagram editor.
 - Files live in a sibling SQLite database derived from the main DB path (`*.files.db`).
-- Attachments are immutable except Excalidraw diagrams, which the diagram editor replaces in place under a per-file content revision (see `docs/ui/excalidraw.md`). Agreed, not built (2026-10-28): `Rename File…` on a file card, picture or diagram, changing the shown and downloaded name but not the extension (`docs/ready-to-build/rename-files.md`).
+- An attachment's content is immutable except Excalidraw diagrams, which the diagram editor replaces in place under a per-file content revision (see `docs/ui/excalidraw.md`). Its name can change (Renaming Files, below).
 - Startup only loads the file UUID registry into memory; file metadata/blob rows are decrypted on demand for rendering/download.
+
+## Renaming Files
+- Right-click a file card, a picture or a diagram → `Rename File…`. A picture pasted into the text (not a file) has none.
+- The name belongs to the file: every card showing it, search and downloads (`Save Image`, `Save Diagram File`, the card's own download) use the new name.
+- The dialog edits the name without its extension, already selected so typing replaces it; the extension stays beside it, fixed (`Lease 2026` `.pdf`). A name with no extension (`.bashrc`, `Makefile`) is edited whole. The extension starts at the last dot unless that dot is the name's first or last character.
+- Enter renames; Escape or `Cancel` changes nothing. A blank name dims `Rename`.
+- Characters a file name can't hold (`\ / : * ? " < > |` and control characters) become `-`, as export file names do (`a/b:c` → `a-b-c`); spaces and dots at the ends are dropped. At most 255 characters.
+- Nothing else changes: not the extension, the kind (badge), the content, its revision or a diagram's previews. ⌘Z does not undo a rename; rename it back.
+- A note being edited is saved and leaves edit mode first, as for other dialogs.
+- Implementation: `PUT /api2/files/{file_id}/name` (`GET` reads it) → `file_storage.rename_file()` re-encrypts the title column and the metadata's `original_filename` together and refuses a changed extension (`InputRejected`, a polite 400). `file_registry.rename()` updates the cached name and bumps `names_generation()`, which the view render cache keys on; `NoteStore.refresh_search_text_for_notes()` refreshes search for the notes referencing the file. Client: `file-rename-service.js`, `file-rename-modal.js`. Tests: `tests/unit/test_file_renames.py`, `tests/unit/context_menu_registry.test.mjs`, `tests/unit/file_rename_modal.test.mjs`.
 
 ## Failure / Safety Cases
 - Missing or deleted UUID: render a "missing reference" marker (subtly red-tinted).

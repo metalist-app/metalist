@@ -41,6 +41,7 @@ import {
 } from '../services/note-context-menu-action-service.js';
 import { writeRenderedNoteToSystemClipboard } from '../services/note-clipboard-write-service.js';
 import { downloadFileReference } from '../services/file-reference-service.js';
+import { renameFileFromMenu } from '../services/file-rename-service.js';
 import { referenceInsertRange, rememberSelectionAtRightPress } from '../services/reference-insert-point-service.js';
 import { typeReferenceOpener } from '../services/reference-suggestions-service.js';
 import { confirmRemovingReferencedNote } from '../services/referenced-note-removal-service.js';
@@ -936,6 +937,22 @@ function showTagProposalsContextMenu(event, robot) {
     showContextMenu({ items, position: { x: event.clientX, y: event.clientY }, onClose: null });
 }
 
+// The file a right-click on a file card ([[id]]) names, or null elsewhere.
+function fileCardFileIdAt(target) {
+    if (!(target instanceof Element)) {
+        return null;
+    }
+    const card = target.closest('.note-file-reference-link[data-file-ref-id]');
+    if (card === null) {
+        return null;
+    }
+    const fileId = card.getAttribute('data-file-ref-id');
+    if (typeof fileId !== 'string' || fileId === '') {
+        throw new Error('File card is missing its file id');
+    }
+    return fileId;
+}
+
 function showNoteContextMenu(event, noteId, imageContext, selectedTextRange, referenceContext) {
     if (typeof noteId !== 'string' || noteId.trim() === '') {
         return;
@@ -978,6 +995,7 @@ function showNoteContextMenu(event, noteId, imageContext, selectedTextRange, ref
             updated: updatedTimestamp,
         },
         imageContext,
+        fileCardFileId: fileCardFileIdAt(event.target),
         hasSelectedText,
         hasNoteClipboard,
         canInsertReference: referenceRange !== null,
@@ -1098,6 +1116,9 @@ function showNoteContextMenu(event, noteId, imageContext, selectedTextRange, ref
             },
             onEditDiagram: (targetImageContext) => {
                 void openDiagramEditor(targetImageContext.fileId, targetImageContext.hostNoteId);
+            },
+            onRenameFile: (fileId) => {
+                void renameFileFromMenu(fileId);
             },
             onSaveDiagram: (targetImageContext) => {
                 void CommandGate.run('contextMenu.diagram.save', async () => {

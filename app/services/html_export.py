@@ -30,6 +30,7 @@ from app.services.reference_presentation import decorate_note_references
 from app.services.root_date_filter import RootDateFilter
 from app.services.snapshot import is_content_collapsible
 from app.services.snapshot import resolve_view_scope_membership
+from app.utils.file_names import replace_unsafe_filename_characters
 from app.services.content_formatting import extract_note_text_for_agent
 from app.services.search_index import search_index
 
@@ -455,8 +456,6 @@ def _is_note_id_search(search: str) -> bool:
 
 
 
-# Characters a file name cannot hold on some system, and control characters.
-_FILENAME_UNSAFE = re.compile(r'[\\/:*?"<>|\x00-\x1f\x7f]')
 _MAX_FILENAME_CHARACTERS = 120
 
 
@@ -464,7 +463,7 @@ def build_notes_export_filename(title: str) -> str:
     """The export's file name: its title, or the time it was made for a blank title."""
     if not isinstance(title, str):
         raise TypeError("title must be a string")
-    name = " ".join(_FILENAME_UNSAFE.sub("-", title).split())[:_MAX_FILENAME_CHARACTERS].strip(" .")
+    name = replace_unsafe_filename_characters(title)[:_MAX_FILENAME_CHARACTERS].strip(" .")
     if name == "":
         timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
         return f"metalist-export-{timestamp}.html"

@@ -187,6 +187,47 @@ def update_file_storage_fields(
     )
 
 
+def update_file_name_fields(
+    connection: sqlite3.Connection,
+    *,
+    file_id: str,
+    title: str,
+    title_encryption_nonce: Optional[bytes],
+    title_encryption_tag: Optional[bytes],
+    metadata_json: str,
+    metadata_encryption_nonce: Optional[bytes],
+    metadata_encryption_tag: Optional[bytes],
+    updated_at: datetime,
+) -> int:
+    """A rename: the title and the metadata naming the file; content, revision and
+    previews stay as they are. Returns the number of rows changed."""
+    cursor = connection.execute(
+        f"""
+        UPDATE {FILES_TABLE}
+        SET
+            title = ?,
+            title_encryption_nonce = ?,
+            title_encryption_tag = ?,
+            metadata_json = ?,
+            metadata_encryption_nonce = ?,
+            metadata_encryption_tag = ?,
+            updated_at = ?
+        WHERE id = ?
+        """,
+        (
+            title,
+            title_encryption_nonce,
+            title_encryption_tag,
+            metadata_json,
+            metadata_encryption_nonce,
+            metadata_encryption_tag,
+            _serialize_datetime(updated_at),
+            file_id,
+        ),
+    )
+    return int(cursor.rowcount)
+
+
 def delete_files(connection: sqlite3.Connection, file_ids: Iterable[str]) -> int:
     identifiers = list(file_ids)
     if not identifiers:

@@ -366,6 +366,11 @@ class FinishFileEditSessionRequest(TypedDict):
     viewport: Viewport
 
 @with_config(ConfigDict(strict=True))
+class RenameFileRequest(TypedDict):
+    # The whole new name, extension included (it must be the file's own).
+    name: Annotated[str, Field(min_length=1, max_length=KIB)]
+
+@with_config(ConfigDict(strict=True))
 class DiscardFileEditSessionRequest(TypedDict):
     contentRevision: Annotated[int, Field(ge=1)]
 

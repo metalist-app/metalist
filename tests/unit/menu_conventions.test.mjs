@@ -43,7 +43,7 @@ function noteMenu() {
     return buildContextMenuItems({
         kind: 'note', noteId: 'note-1', noteTimestamps: { created: 'Oct 24, 2026', updated: 'Oct 24, 2026' }, isMac: true,
         hasChildren: true, canMoveToTop: true, canMoveToBottom: true, canMoveUp: true, canMoveDown: true,
-        canIndent: true, canOutdent: true,
+        canIndent: true, canOutdent: true, fileCardFileId: null,
     }, Object.fromEntries(NOTE_HANDLER_NAMES.map((name) => [name, () => {}])));
 }
 
