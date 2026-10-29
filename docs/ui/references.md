@@ -100,7 +100,7 @@ Typing `[[` in the note being edited opens a list of notes to reference (agreed 
 - The attach flow saves the note immediately after insertion so the new reference survives refresh/reload.
 - `Add Excalidraw Diagram` attaches a new, empty `.excalidraw` file the same way and opens the diagram editor.
 - Files live in a sibling SQLite database derived from the main DB path (`*.files.db`).
-- Attachments are immutable except Excalidraw diagrams, which the diagram editor replaces in place under a per-file content revision (see `docs/ui/excalidraw.md`).
+- Attachments are immutable except Excalidraw diagrams, which the diagram editor replaces in place under a per-file content revision (see `docs/ui/excalidraw.md`). Agreed, not built (2026-10-28): `Rename File…` on a file card, picture or diagram, changing the shown and downloaded name but not the extension (`docs/ready-to-build/rename-files.md`).
 - Startup only loads the file UUID registry into memory; file metadata/blob rows are decrypted on demand for rendering/download.
 
 ## Failure / Safety Cases
