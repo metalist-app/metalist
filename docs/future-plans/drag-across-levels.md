@@ -1,6 +1,8 @@
 # Drag across levels: an experimental drag mode behind a setting
 
-**Status:** Agreed with the maintainer 2026-10-28. Ready to build. **This becomes the default drag;** a menu setting turns it off (back to today's drag) while the maintainer experiments. One small point is still open (§8).
+**Status:** Tried and rejected, 2026-10-28. It was built as specified below and tried by the maintainer, who did not like it: revisiting dragging across levels needs a different control system, not this one. The code was reverted. §6 (a moved note never leaves the search) was built for outdent, the only existing move that could drop a note (`docs/ui/search-semantics.md`, Moving Notes During Search).
+
+Originally: agreed with the maintainer 2026-10-28 as the default drag, with a menu setting to turn it off. During the trial, sideways drags on the dragged note's own row were brought back to indent and outdent (§4 still says otherwise).
 
 Written from a read-only look at the repo. Check the code references before relying on them.
 

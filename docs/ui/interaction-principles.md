@@ -44,8 +44,6 @@ from them, not decided case by case. When a new case comes up, reason from these
 
 ## Derived behavior
 
-Agreed, not built (2026-10-28): a row for dragging a note across levels (`docs/ready-to-build/drag-across-levels.md`, §5).
-
 | Action | Point of attention | Result |
 |---|---|---|
 | Click into a note | where they clicked | stays under the pointer, caret showing there so typing can start (1); a click on its padding puts the caret at the nearest spot in its text: level with a line, its nearest point; above the text, the start of its first line; below it, the end of its last. Chrome finds that spot itself; where a browser finds no text under the click (Firefox, on the border or beside a list item's marker), `caretPositionInLineAt` in `viewport-hold-service.js` does (fixed 2026-10-27) |

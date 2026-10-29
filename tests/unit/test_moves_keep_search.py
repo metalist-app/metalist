@@ -1,5 +1,5 @@
 """A note moved to another parent never disappears from the search it was found by
-(docs/ready-to-build/drag-across-levels.md, §6): it gets, as its own tags, the tags it
+(docs/ui/search-semantics.md, Moving Notes During Search): it gets, as its own tags, the tags it
 needs to keep matching, and only those. A note that did not match (shown only as the
 ancestor of a match) gets nothing."""
 

@@ -57,7 +57,7 @@ def search_clauses_matching_note(note_id: str, search_query: str) -> tuple[Searc
 
 def tags_keeping_moved_note_in_search(note_id: str, clauses_matched_before: tuple[SearchClause, ...]) -> str:
     """A note just moved to another parent never leaves the search it was found by
-    (docs/ui/controls.md, moves): when no part of the search it matched before matches it
+    (docs/ui/search-semantics.md, Moving Notes During Search): when no part of the search it matched before matches it
     at its new place, it gets the tags it misses for the first of them, as its own. A note
     that matched nothing (shown only above a match) keeps its tags."""
     record = store.get(note_id)
