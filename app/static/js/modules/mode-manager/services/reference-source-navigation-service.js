@@ -601,6 +601,58 @@ export function popActiveReferenceChain() {
     return chain;
 }
 
+/**
+ * The tab of the level on the active reference path (the view shown now included) that
+ * shows this reference, or '' when none does. Following a reference already open on the
+ * path goes back to it instead of opening a tab (docs/ui/references.md, Reference views).
+ */
+export function findReferenceLevelOnActivePath(referenceQuery, viewKind) {
+    requireReferenceViewKind(viewKind);
+    if (typeof referenceQuery !== 'string' || referenceQuery.length === 0) {
+        throw new Error('findReferenceLevelOnActivePath requires referenceQuery');
+    }
+    if (!isViewingReferenceSource()) {
+        return '';
+    }
+    for (const entry of getActiveReferenceChain()) {
+        if (entry.referenceQuery === referenceQuery && entry.viewKind === viewKind) {
+            return entry.toTabId;
+        }
+    }
+    return '';
+}
+
+/**
+ * Leave the levels of the active reference path after the one shown in levelTabId:
+ * removes their entries and returns them, the one shown now first.
+ */
+export function popReferenceLevelsAbove(levelTabId) {
+    const chain = getActiveReferenceChain();
+    const levelIndex = chain.findIndex((entry) => entry.toTabId === levelTabId);
+    if (levelIndex === NOT_FOUND) {
+        throw new Error(`Tab ${levelTabId} is not on the active reference path`);
+    }
+    const leftTabIds = new Set(chain.slice(levelIndex + 1).map((entry) => entry.toTabId));
+    const left = [];
+    const stack = moduleState.referenceNavigationStack;
+    let writeIndex = 0;
+    for (let i = 0; i < stack.length; i += 1) {
+        const entry = stack[i];
+        if (leftTabIds.has(entry.toTabId)) {
+            left.unshift(entry);
+            continue;
+        }
+        if (writeIndex !== i) stack[writeIndex] = entry;
+        writeIndex += 1;
+    }
+    stack.length = writeIndex;
+    for (const tabId of leftTabIds) {
+        forgetSourceTitle(tabId);
+    }
+    updateReferenceSourceIndicator();
+    return left;
+}
+
 export function dismissReferenceSourceModeForActiveTab() {
     return popReferenceNavigationEntryForActiveTab() !== null;
 }

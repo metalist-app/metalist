@@ -26,6 +26,9 @@ const LINKING_CHILD_INDEX = 16;
 const NOTE_TOP_BEFORE_FOLLOWING_PX = 320;
 const TARGET_TITLE = 'Reference view target whose first line runs long enough that a chip would cut it short';
 const SECOND_TITLE = 'Second reference target';
+const THIRD_TITLE = 'Third reference target';
+// The target's child that links to the target itself.
+const SELF_LINKING_CHILD_INDEX = 2;
 const SOURCE_LABEL = 'Source note';
 const SLIDE_MS = 250;
 const REDUCED_MOTION_FADE_MS = 120;
@@ -45,7 +48,8 @@ async function idle(page) {
 }
 
 async function createNotes(page) {
-  return page.evaluate(async ({search, fillersAbove, fillersBelow, targetChildren, linkingChildIndex, targetTitle, secondTitle}) => {
+  return page.evaluate(async ({search, fillersAbove, fillersBelow, targetChildren, linkingChildIndex, selfLinkingChildIndex,
+    targetTitle, secondTitle, thirdTitle}) => {
     const {NotesAPI} = await import('/static/js/modules/api-client.js');
     const ids = {fillers: [], children: []};
     const make = async (html, tags) => {
@@ -61,20 +65,25 @@ async function createNotes(page) {
     ids.target = await make(`<p>${targetTitle}</p><p>the target's second line</p>`, search);
     for (let index = 1; index <= targetChildren; index += 1) {
       const child = await NotesAPI.createChild(ids.target, '');
-      const html = index === linkingChildIndex
-        ? `<p>Target child ${index} links to [[${ids.second}]] in its text</p><p>more</p>`
-        : `<p>Target child ${index}</p><p>second line</p><p>third line</p>`;
+      let html = `<p>Target child ${index}</p><p>second line</p><p>third line</p>`;
+      if (index === linkingChildIndex) html = `<p>Target child ${index} links to [[${ids.second}]] in its text</p><p>more</p>`;
+      if (index === selfLinkingChildIndex) html = `<p>Target child ${index} links to [[${ids.target}]], its parent</p><p>more</p>`;
       await NotesAPI.saveNote(child.id, html, '');
       ids.children.push(child.id);
       if (index === linkingChildIndex) ids.linkingChild = child.id;
+      if (index === selfLinkingChildIndex) ids.selfLinkingChild = child.id;
     }
+    // The second note links back to the target and on to a third, which links back too.
+    ids.third = await make(`<p>${thirdTitle}</p><p>back to [[${ids.target}]]</p>`, 'refother');
+    await NotesAPI.saveNote(ids.second, `<p>${secondTitle}</p><p>back to [[${ids.target}]], on to [[${ids.third}]]</p>`, 'refother');
     ids.holder = await make(`<p>Holder links to [[${ids.target}]] in its text</p><p>second line</p>`, search);
     for (let index = fillersAbove; index >= 1; index -= 1) {
       ids.fillers.push(await make(`<p>Reference view filler above ${index}</p><p>second line</p><p>third line</p>`, search));
     }
     return ids;
   }, {search: SEARCH, fillersAbove: FILLERS_ABOVE, fillersBelow: FILLERS_BELOW, targetChildren: TARGET_CHILDREN,
-    linkingChildIndex: LINKING_CHILD_INDEX, targetTitle: TARGET_TITLE, secondTitle: SECOND_TITLE});
+    linkingChildIndex: LINKING_CHILD_INDEX, selfLinkingChildIndex: SELF_LINKING_CHILD_INDEX, targetTitle: TARGET_TITLE,
+    secondTitle: SECOND_TITLE, thirdTitle: THIRD_TITLE});
 }
 
 // Records, in the page, every reference transition the moment it plays: the column
@@ -441,6 +450,41 @@ async function checkStack(page, ids) {
   assert.equal(after.tabCount, searchTabs, '× closes every reference view it leaves');
 }
 
+// Following a reference already open on the path goes back to its level: no new tab
+// (agreed 2026-10-29). Case 1: one level back; case 2: two; case 3: the view shown now.
+async function checkReturnAlongPath(page, ids) {
+  const searchTabs = (await barState(page)).tabCount;
+  await navigate(page, () => clickReferenceLink(page, ids.holder, ids.target));
+  const atLink = await wheelNoteTo(page, ids.linkingChild, NOTE_TOP_BEFORE_FOLLOWING_PX);
+  const expectBackAtTarget = async (played, label) => {
+    expectSlide(played, 'back', label);
+    const bar = await barState(page);
+    expectReferenceBar(bar, SOURCE_BAR, label);
+    assert.equal(bar.labelTitle, TARGET_TITLE, `${label}: the target's view`);
+    assert.equal(bar.tabCount, searchTabs + 1, `${label}: no new tab, the levels after the target's closed`);
+    assert.deepEqual(await notePlace(page, ids.linkingChild), atLink, `${label}: exactly where the user left the target's view`);
+  };
+
+  await navigate(page, () => clickReferenceLink(page, ids.linkingChild, ids.second));
+  await expectBackAtTarget(await navigate(page, () => clickReferenceLink(page, ids.second, ids.target)), 'a link back one level');
+
+  await navigate(page, () => clickReferenceLink(page, ids.linkingChild, ids.second));
+  await navigate(page, () => clickReferenceLink(page, ids.second, ids.third));
+  assert.equal((await barState(page)).tabCount, searchTabs + 3, 'a note not on the path opens a level');
+  await expectBackAtTarget(await navigate(page, () => clickReferenceLink(page, ids.third, ids.target)), 'a link back two levels');
+
+  const before = await transitionCount(page);
+  await clickReferenceLink(page, ids.selfLinkingChild, ids.target);
+  await idle(page);
+  assert.equal(await transitionCount(page), before, 'a link to the view shown does nothing');
+  const shown = await barState(page);
+  expectReferenceBar(shown, SOURCE_BAR, 'a link to the view shown');
+  assert.equal(shown.tabCount, searchTabs + 1, 'a link to the view shown opens no tab');
+
+  await navigate(page, () => page.click('#reference-source-indicator-clear'));
+  assert.equal((await barState(page)).tabCount, searchTabs, '× closes the path');
+}
+
 // Cases 2 and 6: an AI answer's references, then one of them; the same again does nothing.
 async function checkAiReferences(page, ids) {
   const left = await wheelNoteTo(page, ids.holder, NOTE_TOP_BEFORE_FOLLOWING_PX);
@@ -668,6 +712,7 @@ export async function checkReferenceViews(page) {
     const left = await checkFollowFromSearch(page, ids);
     await checkCloseToSearch(page, ids, left, '× from the first level');
     await checkStack(page, ids);
+    await checkReturnAlongPath(page, ids);
     await checkAiReferences(page, ids);
     await checkReducedMotion(page, ids);
     await checkNoAnimationWithoutNavigation(page, ids);
@@ -676,7 +721,7 @@ export async function checkReferenceViews(page) {
   }, async () => {
     await page.evaluate(async ids => {
       const {NotesAPI} = await import('/static/js/modules/api-client.js');
-      for (const id of [ids.holder, ids.target, ids.second, ...ids.fillers]) await NotesAPI.deleteNote(id);
+      for (const id of [ids.holder, ids.target, ids.second, ids.third, ...ids.fillers]) await NotesAPI.deleteNote(id);
     }, ids);
   });
 }

@@ -71,6 +71,7 @@ import { buildBacklinksQuery } from '../services/backlinks-navigation-service.js
 import {
     AI_REFERENCE_VIEW_KINDS,
     captureReferenceOriginScopeForActiveTab,
+    findReferenceLevelOnActivePath,
     getActiveReferenceSourceQuery,
     getActiveReferenceViewKind,
     getReferenceNavigationLabelForTab,
@@ -78,6 +79,7 @@ import {
     getReferenceViewKindForTab,
     isViewingReferenceSource,
     popActiveReferenceChain,
+    popReferenceLevelsAbove,
     popReferenceNavigationEntryForActiveTab,
     pushReferenceNavigationEntry,
     replaceActiveReferenceNavigationQuery,
@@ -3792,6 +3794,18 @@ async function openReferenceQueryInNewTabWithContext(
     ) {
         return ModeContext.activeTabId;
     }
+    // A reference already open on this path: back to its level, with no new tab
+    // (docs/ui/references.md, Reference views). The view shown now: already there.
+    if (!replaceActiveReference) {
+        const levelTabId = findReferenceLevelOnActivePath(referenceQuery, viewKind);
+        if (levelTabId === ModeContext.activeTabId) {
+            return levelTabId;
+        }
+        if (levelTabId !== '') {
+            await navigateWithReferenceSlide('back', () => returnToReferenceLevel(levelTabId));
+            return levelTabId;
+        }
+    }
     let resultTabId = '';
     await navigateWithReferenceSlide('forward', async () => {
         resultTabId = await openReferenceQueryBehindTransition(
@@ -4089,6 +4103,26 @@ async function leaveActiveReferenceChain() {
 
     if (requireCloseReferenceTabOnBack()) {
         for (const entry of chain) {
+            if (ModeContext.tabs[entry.toTabId]) {
+                await deleteTabContext(entry.toTabId);
+            }
+        }
+    }
+    updateReferenceSourceIndicator();
+    return true;
+}
+
+/** Back to a level further up the active reference path, closing the levels after it. */
+async function returnToReferenceLevel(levelTabId) {
+    const left = popReferenceLevelsAbove(levelTabId);
+    if (!ModeContext.tabs[levelTabId]) {
+        return false;
+    }
+
+    await switchToTabContext(levelTabId, { animateNoteChanges: false });
+
+    if (requireCloseReferenceTabOnBack()) {
+        for (const entry of left) {
             if (ModeContext.tabs[entry.toTabId]) {
                 await deleteTabContext(entry.toTabId);
             }
