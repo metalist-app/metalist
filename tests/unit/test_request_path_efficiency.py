@@ -161,18 +161,18 @@ def _prepare_render_cache(monkeypatch: pytest.MonkeyPatch, fake_render) -> None:
     snapshot_module._VIEW_RENDER_MEMO.clear()
 
 
-def _render_cached(rec: NoteRecord, world: _LiveWorld, *, collapsed: bool, backlinks: bool) -> str:
+def _render_cached(rec: NoteRecord, world: _LiveWorld, *, collapsed: bool, referrers: int) -> str:
     return snapshot_module._cached_note_view_html(
-        rec=rec, is_collapsed=collapsed, has_backlinks=backlinks, context=world.context(),
+        rec=rec, is_collapsed=collapsed, referrer_count=referrers, context=world.context(),
     )
 
 
 def test_render_cache_rerenders_whenever_a_key_input_changes(monkeypatch: pytest.MonkeyPatch) -> None:
-    renders: list[tuple[str, bool, bool]] = []
+    renders: list[tuple[str, bool, int]] = []
 
-    def fake_render(*, rec, is_collapsed, has_backlinks, context):
-        renders.append((rec.content, is_collapsed, has_backlinks))
-        return f"{rec.content}|{is_collapsed}|{has_backlinks}"
+    def fake_render(*, rec, is_collapsed, referrer_count, context):
+        renders.append((rec.content, is_collapsed, referrer_count))
+        return f"{rec.content}|{is_collapsed}|{referrer_count}"
 
     _prepare_render_cache(monkeypatch, fake_render)
     ontology = [object()]
@@ -182,27 +182,29 @@ def test_render_cache_rerenders_whenever_a_key_input_changes(monkeypatch: pytest
     world = _LiveWorld()
     original = _record("note", "<div>one</div>")
 
-    assert _render_cached(original, world, collapsed=False, backlinks=False) == "<div>one</div>|False|False"
-    assert _render_cached(original, world, collapsed=False, backlinks=False) == "<div>one</div>|False|False"
+    assert _render_cached(original, world, collapsed=False, referrers=0) == "<div>one</div>|False|0"
+    assert _render_cached(original, world, collapsed=False, referrers=0) == "<div>one</div>|False|0"
     assert len(renders) == 1
 
     # A replaced record re-renders even when it compares equal field by field.
-    _render_cached(dataclasses.replace(original), world, collapsed=False, backlinks=False)
-    _render_cached(_record("note", "<div>two</div>"), world, collapsed=False, backlinks=False)
-    assert _render_cached(original, world, collapsed=True, backlinks=False) == "<div>one</div>|True|False"
-    assert _render_cached(original, world, collapsed=False, backlinks=True) == "<div>one</div>|False|True"
+    _render_cached(dataclasses.replace(original), world, collapsed=False, referrers=0)
+    _render_cached(_record("note", "<div>two</div>"), world, collapsed=False, referrers=0)
+    assert _render_cached(original, world, collapsed=True, referrers=0) == "<div>one</div>|True|0"
+    assert _render_cached(original, world, collapsed=False, referrers=1) == "<div>one</div>|False|1"
+    # Another referring note changes the badge's number: rendered again.
+    assert _render_cached(original, world, collapsed=False, referrers=2) == "<div>one</div>|False|2"
     ontology[0] = object()
-    _render_cached(original, world, collapsed=False, backlinks=False)
+    _render_cached(original, world, collapsed=False, referrers=0)
     generation[0] = 1
-    _render_cached(original, world, collapsed=False, backlinks=False)
-    assert len(renders) == 7
+    _render_cached(original, world, collapsed=False, referrers=0)
+    assert len(renders) == 8
     snapshot_module._VIEW_RENDER_MEMO.clear()
 
 
 def test_render_cache_revalidates_every_referenced_note_and_file(monkeypatch: pytest.MonkeyPatch) -> None:
     renders: list[str] = []
 
-    def fake_render(*, rec, is_collapsed, has_backlinks, context):
+    def fake_render(*, rec, is_collapsed, referrer_count, context):
         # Mimic an embed render: reads the target, its children, and a file.
         target = context.get_note("target")
         child_ids = context.get_children("target")
@@ -222,7 +224,7 @@ def test_render_cache_revalidates_every_referenced_note_and_file(monkeypatch: py
     host = _record("host", "<div>![[target]]</div>")
 
     def render() -> str:
-        return _render_cached(host, world, collapsed=False, backlinks=False)
+        return _render_cached(host, world, collapsed=False, referrers=0)
 
     render()
     render()
@@ -249,7 +251,7 @@ def test_render_cache_rerenders_when_a_stats_property_comes_into_use(monkeypatch
     # elsewhere logs calories: the cached render must follow (subtree_stats.py).
     renders: list[str] = []
 
-    def fake_render(*, rec, is_collapsed, has_backlinks, context):
+    def fake_render(*, rec, is_collapsed, referrer_count, context):
         rendered = f"calories used: {context.is_property_used('calories')}"
         renders.append(rendered)
         return rendered
@@ -257,11 +259,11 @@ def test_render_cache_rerenders_when_a_stats_property_comes_into_use(monkeypatch
     _prepare_render_cache(monkeypatch, fake_render)
     world = _LiveWorld()
     day = _record("day", "<div>Monday</div>")
-    assert _render_cached(day, world, collapsed=False, backlinks=False) == "calories used: False"
-    assert _render_cached(day, world, collapsed=False, backlinks=False) == "calories used: False"
+    assert _render_cached(day, world, collapsed=False, referrers=0) == "calories used: False"
+    assert _render_cached(day, world, collapsed=False, referrers=0) == "calories used: False"
     assert len(renders) == 1
     world.used_properties.add("calories")
-    assert _render_cached(day, world, collapsed=False, backlinks=False) == "calories used: True"
+    assert _render_cached(day, world, collapsed=False, referrers=0) == "calories used: True"
     assert len(renders) == 2
     snapshot_module._VIEW_RENDER_MEMO.clear()
 
@@ -269,7 +271,7 @@ def test_render_cache_rerenders_when_a_stats_property_comes_into_use(monkeypatch
 def test_renders_with_remote_image_proxy_sources_are_not_stored(monkeypatch: pytest.MonkeyPatch) -> None:
     renders: list[str] = []
 
-    def fake_render(*, rec, is_collapsed, has_backlinks, context):
+    def fake_render(*, rec, is_collapsed, referrer_count, context):
         renders.append(rec.id)
         return '<img data-remote-image-proxy-src="/api2/remote-images/token">'
 
@@ -277,8 +279,8 @@ def test_renders_with_remote_image_proxy_sources_are_not_stored(monkeypatch: pyt
     world = _LiveWorld()
     host = _record("host", "<div>![[target]]</div>")
 
-    _render_cached(host, world, collapsed=False, backlinks=False)
-    _render_cached(host, world, collapsed=False, backlinks=False)
+    _render_cached(host, world, collapsed=False, referrers=0)
+    _render_cached(host, world, collapsed=False, referrers=0)
 
     assert len(renders) == 2
     snapshot_module._VIEW_RENDER_MEMO.clear()
@@ -296,8 +298,8 @@ def test_render_cache_hits_replay_link_title_fetch_requests(monkeypatch: pytest.
     rec = _record("note", "<div>https://example.test/page</div>")
     world.notes["note"] = rec
 
-    first = _render_cached(rec, world, collapsed=False, backlinks=False)
-    second = _render_cached(rec, world, collapsed=False, backlinks=False)
+    first = _render_cached(rec, world, collapsed=False, referrers=0)
+    second = _render_cached(rec, world, collapsed=False, referrers=0)
 
     assert first == second
     assert snapshot_module._VIEW_RENDER_MEMO.info().hits == 1
@@ -328,10 +330,10 @@ def test_render_cache_shows_link_title_after_it_arrives(monkeypatch: pytest.Monk
     rec = _record("note", f"<div>{url}</div>")
     world.notes["note"] = rec
 
-    before = _render_cached(rec, world, collapsed=False, backlinks=False)
+    before = _render_cached(rec, world, collapsed=False, referrers=0)
     titles[url] = "Example Page Title"
     generation[0] += 1
-    after = _render_cached(rec, world, collapsed=False, backlinks=False)
+    after = _render_cached(rec, world, collapsed=False, referrers=0)
 
     assert "Example Page Title" not in before
     assert "Example Page Title" in after

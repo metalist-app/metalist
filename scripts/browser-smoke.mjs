@@ -75,6 +75,7 @@ import {checkPhone} from './browser-phone-regressions.mjs';
 import {checkFloatingMessages} from './browser-floating-message-regressions.mjs';
 import {checkViewMenu} from './browser-view-menu-regressions.mjs';
 import {checkLinkIcons} from './browser-link-icon-regressions.mjs';
+import {checkReferencedByBadge} from './browser-referenced-by-badge-regressions.mjs';
 import {checkMarkdownTables} from './browser-markdown-table-regressions.mjs';
 import {checkRightEdge} from './browser-right-edge-regressions.mjs';
 import {checkRobotCorner} from './browser-robot-corner-regressions.mjs';
@@ -382,6 +383,10 @@ try {
     await checkLinkIcons(page);
     assert.deepEqual(errors, []);
     console.log(`PASS link icon regressions in ${await browser.version()}`);
+  } else if (process.env.BROWSER_TEST_SUITE === 'referenced-by-badge') {
+    await checkReferencedByBadge(page);
+    assert.deepEqual(errors, []);
+    console.log(`PASS referenced by badge regressions in ${await browser.version()}`);
   } else if (process.env.BROWSER_TEST_SUITE === 'markdown-tables') {
     await checkMarkdownTables(page);
     assert.deepEqual(errors, []);

@@ -1214,6 +1214,13 @@ class NoteStore:
         with self._lock:
             return note_id in self._note_map and self._backlink_index.has_backlinks(note_id)
 
+    def count_referrers(self, note_id: str) -> int:
+        """How many notes reference or embed note_id (one linking twice counts once)."""
+        with self._lock:
+            if note_id not in self._note_map:
+                raise KeyError(f"Note {note_id} not present in NoteStore")
+            return len(self._referrers_locked(note_id))
+
     def get_referrer_ids(self, note_id: str) -> FrozenSet[str]:
         """The notes that reference or embed note_id."""
         with self._lock:

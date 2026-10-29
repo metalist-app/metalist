@@ -18,6 +18,10 @@ const PIXEL_ROUNDING = 0.5;
 // A margin is placed on the layout grid: 1/64 px in Chrome, 1/60 px in Firefox.
 const GAP_PRECISION = 1 / 60;
 const TILE = 'rgb(233, 237, 242)';
+// A note link's icon follows its text at this gap (main.css, .note-reference-link-icon).
+const NOTE_LINK_ICON_GAP_EM = 0.2;
+const LONG_FIRST_LINE = 'Make up avatars for your various agents the same way you would in a video game, '
+  + 'where you can choose their faces, clothes and voices, and then keep them for every conversation you have';
 const NO_TILE = 'rgba(0, 0, 0, 0)';
 
 async function settle(page) {
@@ -33,7 +37,7 @@ async function idle(page) {
 }
 
 async function seedNotes(page) {
-  return page.evaluate(async url => {
+  return page.evaluate(async (url, longFirstLine) => {
     const {NotesAPI} = await import('/static/js/modules/api-client.js');
     const make = async html => {
       const note = await NotesAPI.createNote(null, '');
@@ -47,8 +51,15 @@ async function seedNotes(page) {
     const holder = await make(`<p>See [[${target}]] here</p>`);
     // A link with its own text inside a sentence, as the server draws it (agreed 2026-10-26).
     const sentence = await make(`<p>Read <a href="${url}">the paper on recurrent networks</a> before Monday.</p>`);
-    return {open, collapsed, target, holder, sentence};
-  }, URL);
+    // Note links whose text is longer than the line (reported 2026-10-28: the icon wrapped below).
+    const longTarget = await make(`<p>${longFirstLine}</p>`);
+    const shortTarget = await make('<p>liv lab</p>');
+    const longLink = await make(`<p>[[${shortTarget}]]</p><p>[[${longTarget}]]</p>`);
+    const longLinkCollapsed = await make(`<p>[[${longTarget}]]</p><p>second line</p>`);
+    await NotesAPI.setCollapsedBulk([longLinkCollapsed], true);
+    const longLinkAfterText = await make(`<p>See [[${longTarget}]]</p>`);
+    return {open, collapsed, target, holder, sentence, longTarget, shortTarget, longLink, longLinkCollapsed, longLinkAfterText};
+  }, URL, LONG_FIRST_LINE);
 }
 
 // Writes the server's markup for a titled link with an icon in place of the plain link
@@ -133,7 +144,48 @@ async function iconCases(page, ids) {
     if (!(error instanceof assert.AssertionError)) throw error;
     failures.push(error.message);
   }
+  const checkNoteLink = async (label, holderId, targetId, isCut) => {
+    try {
+      assertNoteLinkIconFollowsText(await measureNoteLink(page, holderId, targetId), label, isCut);
+    } catch (error) {
+      if (!(error instanceof assert.AssertionError)) throw error;
+      failures.push(error.message);
+    }
+  };
+  await checkNoteLink('a short note link', ids.longLink, ids.shortTarget, false);
+  await checkNoteLink('a note link longer than its line', ids.longLink, ids.longTarget, true);
+  await checkNoteLink('a note link longer than its line, collapsed', ids.longLinkCollapsed, ids.longTarget, true);
+  await checkNoteLink('a note link longer than its line, after text', ids.longLinkAfterText, ids.longTarget, true);
   assert.deepEqual(failures, []);
+}
+
+// A note link's icon follows its text on the same line, also when the text is cut with "…"
+// to fit the line (docs/ui/references.md, Links).
+async function measureNoteLink(page, holderId, targetId) {
+  return page.evaluate((holderId, targetId) => {
+    const content = document.querySelector(`#notes-container .note[data-note-id="${holderId}"] > .note-content`);
+    const link = content.querySelector(`.note-reference-link[data-ref-note-id="${targetId}"]`);
+    const title = link.querySelector('.note-reference-link-title').getBoundingClientRect();
+    const titleElement = link.querySelector('.note-reference-link-title');
+    const icon = link.querySelector('.note-reference-link-icon').getBoundingClientRect();
+    return {
+      fontSize: parseFloat(getComputedStyle(link).fontSize),
+      titleTop: title.top, titleBottom: title.bottom, titleRight: title.right,
+      iconLeft: icon.left, iconRight: icon.right, iconCentre: icon.top + icon.height / 2,
+      contentRight: content.getBoundingClientRect().right,
+      isCut: titleElement.scrollWidth > titleElement.clientWidth,
+    };
+  }, holderId, targetId);
+}
+
+function assertNoteLinkIconFollowsText(box, label, isCut) {
+  assert.equal(box.isCut, isCut, `${label}: the text is ${isCut ? '' : 'not '}cut with "…"`);
+  assert.ok(box.iconCentre > box.titleTop && box.iconCentre < box.titleBottom,
+    `${label}: the icon is on the text's line (icon centre ${box.iconCentre}, text ${box.titleTop}–${box.titleBottom})`);
+  assert.ok(Math.abs(box.iconLeft - box.titleRight - box.fontSize * NOTE_LINK_ICON_GAP_EM) <= PIXEL_ROUNDING,
+    `${label}: the icon follows the text at ${NOTE_LINK_ICON_GAP_EM}em (${box.iconLeft - box.titleRight}px)`);
+  assert.ok(box.iconRight <= box.contentRight + PIXEL_ROUNDING,
+    `${label}: the icon stays inside the note (${box.iconRight} vs ${box.contentRight})`);
 }
 
 // A link with its own text in a sentence: the server draws its text and " · example.com"

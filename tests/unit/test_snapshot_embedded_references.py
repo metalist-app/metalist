@@ -17,13 +17,6 @@ from app.services.snapshot import build_view_state
 from tests.unit.snapshot_note_fixture import SnapshotTestNote as _Note
 
 
-@pytest.fixture(autouse=True)
-def _backlinks_button_on(monkeypatch):
-    """The backlinks button is off for now (snapshot.SHOWS_BACKLINKS_BUTTON); these
-    tests keep checking how it renders for when it returns."""
-    monkeypatch.setattr(snapshot_module, "SHOWS_BACKLINKS_BUTTON", True)
-
-
 class _FakeNoteStore:
     def __init__(self, *, notes: Dict[str, _Note], children_by_parent: Dict[Optional[str], List[str]]):
         self._notes = notes
@@ -37,6 +30,9 @@ class _FakeNoteStore:
 
     def get_backlink_counts(self, note_id: str) -> dict[str, int]:
         return self._backlink_index.get_counts(note_id)
+
+    def count_referrers(self, note_id: str) -> int:
+        return len(self._backlink_index.get_counts(note_id).keys() & self._notes.keys())
 
     def has_note(self, note_id: str) -> bool:
         return note_id in self._notes
@@ -257,10 +253,11 @@ def test_standalone_reference_and_source_chrome(monkeypatch, content, standalone
     assert "note-backlinks-link" not in host
     if TARGET_ID in content:
         assert f'data-source-note-id="{TARGET_ID}"' in source
-        assert source.index("\u2196") < source.index("Source")
+        assert 'data-referrer-count="1"' in source
+        assert source.index("note-backlinks-badge") < source.index("Source")
 
 
-def test_backlink_arrow_updates_when_last_reference_is_removed(monkeypatch):
+def test_referenced_by_badge_goes_when_the_last_reference_is_removed(monkeypatch):
     notes = {
         HOST_ID: _Note(HOST_ID, None, None, TARGET_ID, False, f"![[{TARGET_ID}]]", ""),
         TARGET_ID: _Note(TARGET_ID, None, HOST_ID, None, False, "Source", ""),
@@ -284,7 +281,7 @@ def test_editing_source_omits_reference_chrome(monkeypatch):
     assert state.payloads[TARGET_ID]["content"] == "Source"
 
 
-def test_a_self_reference_does_not_create_a_source_arrow(monkeypatch):
+def test_a_self_reference_does_not_create_a_referenced_by_badge(monkeypatch):
     notes = {TARGET_ID: _Note(TARGET_ID, None, None, None, False, f"![[{TARGET_ID}]]", "")}
     state = _state_for(monkeypatch=monkeypatch, notes=notes, children_by_parent={None: list(notes)})
     assert "note-backlinks-link" not in state.payloads[TARGET_ID]["content"]
@@ -1064,3 +1061,45 @@ def test_inside_an_embed_a_folded_note_shows_the_text_before_its_embed(monkeypat
     assert f'data-embed-collapse-note-id="{SNACK_ID}"' in rendered
     assert f'data-embed-note-id="{ALMONDS_ID}"' not in rendered
     assert _visible_text(rendered) == "Pantry Snack:"
+
+
+def _referrer_ids(count: int) -> List[str]:
+    return [f"{index:08x}-5555-4555-8555-555555555555" for index in range(count)]
+
+
+@pytest.mark.parametrize(("referrer_count", "shown", "width_class", "title"), [
+    (1, "1", None, "Referenced by 1 note"),
+    (3, "3", None, "Referenced by 3 notes"),
+    (12, "12", "note-with-backlinks-wide", "Referenced by 12 notes"),
+    (99, "99", "note-with-backlinks-wide", "Referenced by 99 notes"),
+    (150, "99+", "note-with-backlinks-widest", "Referenced by 150 notes"),
+])
+def test_the_referenced_by_badge_counts_the_referring_notes(monkeypatch, referrer_count, shown, width_class, title):
+    # docs/ui/references.md, Referenced by: one badge per referenced note, counting notes, not references.
+    referrers = _referrer_ids(referrer_count)
+    notes = {TARGET_ID: _Note(TARGET_ID, None, None, HOST_ID, False, "Source", "")}
+    notes[HOST_ID] = _Note(HOST_ID, None, TARGET_ID, None, True, "Referrers", "")
+    # Each referrer's neighbours: None before the first and after the last.
+    neighbours: List[Optional[str]] = [None, *referrers, None]
+    for index, referrer_id in enumerate(referrers):
+        notes[referrer_id] = _Note(
+            referrer_id, HOST_ID, neighbours[index], neighbours[index + 2], False, f"See [[{TARGET_ID}]]", "",
+        )
+    state = _state_for(
+        monkeypatch=monkeypatch, notes=notes, children_by_parent={None: [TARGET_ID, HOST_ID], HOST_ID: referrers},
+    )
+    source = state.payloads[TARGET_ID]["content"]
+    assert f'data-referrer-count="{shown}"' in source
+    assert f'title="{title}" aria-label="{title}"></button>' in source
+    wrapper = re.search(r'<div class="([^"]*note-with-backlinks[^"]*)">', source).group(1).split()
+    expected = ["note-with-backlinks"] + ([width_class] if width_class is not None else [])
+    assert wrapper == expected
+
+
+def test_a_note_linking_twice_counts_once(monkeypatch):
+    notes = {
+        HOST_ID: _Note(HOST_ID, None, None, TARGET_ID, False, f"[[{TARGET_ID}]] and again ![[{TARGET_ID}]]", ""),
+        TARGET_ID: _Note(TARGET_ID, None, HOST_ID, None, False, "Source", ""),
+    }
+    state = _state_for(monkeypatch=monkeypatch, notes=notes, children_by_parent={None: list(notes)})
+    assert 'data-referrer-count="1" title="Referenced by 1 note"' in state.payloads[TARGET_ID]["content"]

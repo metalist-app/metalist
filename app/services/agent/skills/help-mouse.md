@@ -27,6 +27,7 @@ Sources: docs/ui/controls.md
 | Click `×` or `←` on a reference view's chip, or press Escape | `×`: back to the search the reference views started from, closing them all; `←` and Escape: back one level; both to the exact scroll position you left |
 | Type in search while viewing a reference source | Dismiss reference-source mode and keep the current tab as a normal search context |
 | Right-click anywhere inside a rendered note reference | Choose **Go to Source Note** to open the same temporary reference-source context |
+| Click a note's Referenced by badge (the blue count at its top right), or Enter on it | Open **Referenced by**, the notes referencing it; a note being edited is saved first. × or Escape goes back |
 | Press `@todo` / `@done` checkbox | Toggle the note status on mouse down. If another note is being edited, save + exit edit mode first and do not enter edit mode for the toggled note. In an embed it only shows the status; a press does nothing. |
 | Press note shell / blank space | Select/edit that note on mouse down. Note content waits until click so drag/drop can disambiguate click vs drag. |
 | Click the tag bar while editing | Focus the tag input without re-selecting the note shell. Mouse or keyboard focus adds a soft focus ring and, when Animated Transitions is enabled, a single subtle outward halo. |

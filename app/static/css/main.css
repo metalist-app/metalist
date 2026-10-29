@@ -5186,10 +5186,11 @@ html[data-theme="dark"] .note.collapsed:not(.editing) .note-content img.note-fil
     text-decoration: none;
 }
 
+/* One line: text too long for it is cut with "…" and the icon still follows it. */
 .note-reference-note.note-reference-link-mode .note-reference-link {
     display: inline-flex;
     align-items: baseline;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
 }
 
 .note-reference-note.note-reference-link-mode .note-reference-link-icon {
@@ -5202,27 +5203,102 @@ html[data-theme="dark"] .note-reference-block.note-embed-held {
     background: transparent;
 }
 
-/* The go-to buttons (the reference icon to the source, ↖ backlinks) sit at the
-   top right; only the first line makes room for them. A link's icon follows its text. */
+/* The go-to buttons (the reference icon to the source, the Referenced by badge) sit
+   at the top right; only the first line makes room for them. A link's icon follows its text. */
 .note-embed-with-source,
 .note:not(.editing) > .note-content .note-with-backlinks,
 .note.collapsed:not(.editing) > .note-content .note-with-backlinks {
     position: relative;
 }
 
-.note-embed-with-source > .note-embed-root > .note-embed-body > .note-embed-content,
-.note-with-backlinks:not(.note-reference-only) > :not(.note-backlinks-link):first-of-type {
+.note-embed-with-source > .note-embed-root > .note-embed-body > .note-embed-content {
     padding-right: 1.6em;
 }
 
-/* An embed's holder with backlinks: ↖ beside the embed's ↗. (No :has()
-   here: Chrome crashed on it while a tall note collapsed.) */
-.note-with-backlinks.note-reference-only .note-embed-root > .note-embed-body > .note-embed-content {
+/* The badge's width and half a character: wider for two digits and for 99+. A collapsed
+   note zeroes its blocks' padding (its one-line view), so it says so again. */
+.note-with-backlinks:not(.note-reference-only) > :not(.note-backlinks-link):first-of-type,
+.note.collapsed:not(.editing) > .note-content .note-with-backlinks:not(.note-reference-only) > :not(.note-backlinks-link):first-of-type {
+    padding-right: 1.8em;
+}
+
+.note-with-backlinks-wide:not(.note-reference-only) > :not(.note-backlinks-link):first-of-type,
+.note.collapsed:not(.editing) > .note-content .note-with-backlinks-wide:not(.note-reference-only) > :not(.note-backlinks-link):first-of-type {
+    padding-right: 2.4em;
+}
+
+.note-with-backlinks-widest:not(.note-reference-only) > :not(.note-backlinks-link):first-of-type,
+.note.collapsed:not(.editing) > .note-content .note-with-backlinks-widest:not(.note-reference-only) > :not(.note-backlinks-link):first-of-type {
     padding-right: 3em;
 }
 
-.note-with-backlinks.note-reference-only > .note-backlinks-link {
-    right: 1.4em;
+/* An embed's holder that is referenced: the badge beside the embed's ↗. (No :has()
+   here: Chrome crashed on it while a tall note collapsed.) */
+.note-with-backlinks.note-reference-only .note-embed-root > .note-embed-body > .note-embed-content {
+    padding-right: 3.5em;
+}
+
+.note-with-backlinks-wide.note-reference-only .note-embed-root > .note-embed-body > .note-embed-content {
+    padding-right: 4.1em;
+}
+
+.note-with-backlinks-widest.note-reference-only .note-embed-root > .note-embed-body > .note-embed-content {
+    padding-right: 4.7em;
+}
+
+.note-with-backlinks.note-reference-only > .note-backlinks-badge {
+    right: 1.7em;
+}
+
+/* Referenced by: how many notes reference this one, in link blue on a light tint of it.
+   A circle for one digit, a pill for more (docs/ui/references.md). */
+.note-backlinks-badge {
+    position: absolute;
+    top: 0.3em;
+    right: 0;
+    box-sizing: border-box;
+    min-width: 1.5em;
+    height: 1.5em;
+    margin: 0;
+    padding: 0 0.4em;
+    border: 0;
+    border-radius: 0.75em;
+    background: rgba(29, 95, 184, 0.12);
+    color: #1d5fb8;
+    font-family: inherit;
+    font-size: 0.75em;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    font-style: normal;
+    line-height: 1.5em;
+    text-align: center;
+    text-decoration: none;
+    white-space: nowrap;
+    cursor: pointer;
+}
+
+/* A collapsed note sets every element to its own text size; the badge keeps its smaller one. */
+.note.collapsed:not(.editing) .note-content .note-backlinks-badge {
+    font-size: 0.75em !important;
+    line-height: 1.5em !important;
+}
+
+/* The number is drawn, not text: find and search marks never read it. */
+.note-backlinks-badge::after {
+    content: attr(data-referrer-count);
+}
+
+.note-backlinks-badge:hover {
+    background: rgba(29, 95, 184, 0.24);
+}
+
+.note-backlinks-badge:focus-visible {
+    outline: 2px solid #2563eb;
+    outline-offset: 1px;
+}
+
+.note .note-content.is-reading-reference-title .note-backlinks-badge {
+    display: none;
 }
 
 .note-source-arrow {
@@ -8766,6 +8842,15 @@ html[data-theme="dark"] .note-reference-note.note-reference-link-mode .note-refe
 
 html[data-theme="dark"] .note-source-arrow {
     color: #a9bbd3;
+}
+
+html[data-theme="dark"] .note-backlinks-badge {
+    background: rgba(143, 188, 240, 0.16);
+    color: #8fbcf0;
+}
+
+html[data-theme="dark"] .note-backlinks-badge:hover {
+    background: rgba(143, 188, 240, 0.3);
 }
 
 html[data-theme="dark"] .note-embed-cycle {

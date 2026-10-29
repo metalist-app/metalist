@@ -50,8 +50,6 @@ from app.utils.time_units import MS_PER_SECOND
 # between half and twice this far from the visible roots, so ordinary
 # scrolling changes nothing and unloading happens far from the viewport.
 ROOT_BAND_MARGIN = 75
-# The backlinks button (↖) on notes that are referenced; see _shows_backlinks_button.
-SHOWS_BACKLINKS_BUTTON = False
 # "Between half and twice": the near edge is the margin divided by this, the
 # far edge the margin times this.
 _BAND_EDGE_HOLD_FACTOR = 2
@@ -922,7 +920,7 @@ class _CachedViewRender:
 
 
 def _render_note_view_html(
-    *, rec: NoteRecord, is_collapsed: bool, has_backlinks: bool, context: EmbedRenderContext,
+    *, rec: NoteRecord, is_collapsed: bool, referrer_count: int, context: EmbedRenderContext,
 ) -> str:
     if is_collapsed:
         rendered_content = render_collapsed_note_content_with_embeds(
@@ -948,12 +946,12 @@ def _render_note_view_html(
     return sanitize_rendered_html(decorate_note_references(
         note_id=rec.id, content_html=rec.content, tags=rec.tags,
         rendered_content=rendered_content, context=context,
-        has_backlinks=has_backlinks,
+        referrer_count=referrer_count,
     ))
 
 
 def _cached_note_view_html(
-    *, rec: NoteRecord, is_collapsed: bool, has_backlinks: bool, context: EmbedRenderContext,
+    *, rec: NoteRecord, is_collapsed: bool, referrer_count: int, context: EmbedRenderContext,
 ) -> str:
     # NoteRecord is immutable and replaced on every change, so its identity
     # pins content, tags, and every other field; the ontology object is
@@ -961,7 +959,7 @@ def _cached_note_view_html(
     assert type(rec) is NoteRecord
     assert _is_render_cacheable(rec.content)
     key = (
-        _IdentityKey(rec), is_collapsed, has_backlinks,
+        _IdentityKey(rec), is_collapsed, referrer_count,
         _IdentityKey(get_ontology_if_ready()), link_title_store.get_render_generation(),
         file_registry.names_generation(),
     )
@@ -975,7 +973,7 @@ def _cached_note_view_html(
     recorder = _DependencyRecorder(context)
     with recording_link_title_fetches() as fetch_urls:
         rendered = _render_note_view_html(
-            rec=rec, is_collapsed=is_collapsed, has_backlinks=has_backlinks,
+            rec=rec, is_collapsed=is_collapsed, referrer_count=referrer_count,
             context=recorder.context(),
         )
     if _REMOTE_IMAGE_PROXY_MARKER not in rendered:
@@ -1006,24 +1004,24 @@ def _is_shown_collapsed(rec: NoteRecord, context: EmbedRenderContext) -> bool:
     return bool(rec.is_collapsed)
 
 
-def _shows_backlinks_button(note_id: str) -> bool:
-    """Whether the note gets the backlinks button (↖). Off for now: an arrow pointing
-    back reads as "back to where I came from", which it is not; backlinks need
-    another visual metaphor before they return (docs/ui/references.md)."""
-    return SHOWS_BACKLINKS_BUTTON and note_store.has_backlinks(note_id)
+def _referrer_count(note_id: str) -> int:
+    """How many notes reference this one: its Referenced by badge (docs/ui/references.md)."""
+    if not note_store.has_backlinks(note_id):
+        return 0
+    return note_store.count_referrers(note_id)
 
 
 def _render_note_content_html(rec: NoteRecord, *, is_collapsed: bool, context: EmbedRenderContext) -> str:
     """A note's content as the list shows it when it is not being edited."""
-    has_backlinks = _shows_backlinks_button(rec.id)
+    referrer_count = _referrer_count(rec.id)
     if type(rec) is NoteRecord and _is_render_cacheable(rec.content):
         # Identity keys are exact only for immutable records; any other record
         # type (e.g. test doubles) could change in place and renders directly.
         return _cached_note_view_html(
-            rec=rec, is_collapsed=is_collapsed, has_backlinks=has_backlinks, context=context,
+            rec=rec, is_collapsed=is_collapsed, referrer_count=referrer_count, context=context,
         )
     return _render_note_view_html(
-        rec=rec, is_collapsed=is_collapsed, has_backlinks=has_backlinks, context=context,
+        rec=rec, is_collapsed=is_collapsed, referrer_count=referrer_count, context=context,
     )
 
 

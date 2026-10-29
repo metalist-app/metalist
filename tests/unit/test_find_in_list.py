@@ -25,6 +25,9 @@ class _FakeNoteStore:
     def has_backlinks(self, note_id: str) -> bool:
         return note_id in self._referrers
 
+    def count_referrers(self, note_id: str) -> int:
+        return len(self._referrers[note_id])
+
     def has_note(self, note_id: str) -> bool:
         return note_id in self._notes
 
@@ -193,6 +196,20 @@ def test_an_embed_counts_its_source_text_in_the_note_showing_it(monkeypatch) -> 
 
     window = _find("apple", from_root_index=0, direction="forward", search="")
 
+    assert [(match.note_id, match.content_count) for match in window.matches] == [(HOST_ID, 1), (SOURCE_ID, 1)]
+
+
+def test_the_referenced_by_badge_number_is_not_found(monkeypatch) -> None:
+    # The badge draws its number (docs/ui/references.md): a find for it matches the notes' text only.
+    notes = _siblings(None, [
+        (HOST_ID, False, f"<div>see [[{SOURCE_ID}]]</div>", ""),
+        (SOURCE_ID, False, "<div>chapter 1</div>", ""),
+    ])
+    _install(monkeypatch, notes, {SOURCE_ID: frozenset({HOST_ID})})
+
+    window = _find("1", from_root_index=0, direction="forward", search="")
+
+    # The source's "chapter 1" once, not its badge's 1 too; the host's link reads "chapter 1".
     assert [(match.note_id, match.content_count) for match in window.matches] == [(HOST_ID, 1), (SOURCE_ID, 1)]
 
 

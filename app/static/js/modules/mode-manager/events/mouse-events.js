@@ -2014,14 +2014,19 @@ function handleBacklinksLinkClick(event) {
     }
     event.preventDefault();
     event.stopPropagation();
-    if (ModeContext.isEditing || !ModeContext.isConnected) {
+    if (!ModeContext.isConnected) {
         return true;
     }
     const sourceNoteId = link.dataset.sourceNoteId;
     if (typeof sourceNoteId !== 'string' || sourceNoteId.length === 0) {
-        throw new Error('Backlinks arrow missing source note id');
+        throw new Error('Referenced by badge missing source note id');
     }
+    // The Referenced by badge (docs/ui/references.md): a note being edited is saved and
+    // left first, as for any view the badge opens over it.
     void CommandGate.run('mouse.open_backlinks', async () => {
+        if (ModeContext.isEditing) {
+            await actionDeselectNote();
+        }
         await openBacklinksInNewTab(sourceNoteId);
     });
     return true;

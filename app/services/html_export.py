@@ -754,11 +754,11 @@ def _render_exported_note_node(
 def _as_drawn_in_metalist(*, note_id: str, record, context: EmbedRenderContext, rendered_content: str) -> str:
     """A note's content with the wrapper MetaList's view gives it: a holder (a note
     that is only a reference) is tinted and its embed has no panel of its own.
-    There is no backlinks button: a file has no backlinks view to open. Like the view,
+    There is no Referenced by badge: a file has no Referenced by view to open. Like the view,
     it is sanitized last (rendered_html.py), allowing the file's inline images."""
     return sanitize_exported_html(decorate_note_references(
         note_id=note_id, content_html=record.content, tags=record.tags,
-        rendered_content=rendered_content, context=context, has_backlinks=False,
+        rendered_content=rendered_content, context=context, referrer_count=0,
     ))
 
 

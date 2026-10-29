@@ -403,7 +403,7 @@ function handleKeyDown(event) {
 
     if ((event.key === 'Enter' || event.key === ' ')
         && event.target instanceof HTMLElement
-        && event.target.closest('.note-source-arrow, #reference-source-indicator-clear, #reference-view-chip-back, #reference-view-new-search')) {
+        && event.target.closest('.note-source-arrow, .note-backlinks-badge, #reference-source-indicator-clear, #reference-view-chip-back, #reference-view-new-search')) {
         return;
     }
 

@@ -171,3 +171,11 @@ def test_the_notes_showing_a_picture_inline_follow_their_text(hydrated_store):
         note_id=CHILD, plaintext="<div>no picture now</div>", tags="", proposed_tags="", updated_at=None,
     )
     assert hydrated_store.note_ids_with_inline_images() == set()
+
+
+def test_count_referrers_counts_each_referring_note_once(hydrated_store):
+    # The Referenced by badge's number (docs/ui/references.md): REFERRER links twice, CHILD once.
+    assert hydrated_store.count_referrers(TARGET) == 2
+    assert hydrated_store.count_referrers(REFERRER) == 0
+    with pytest.raises(KeyError):
+        hydrated_store.count_referrers("44444444-4444-4444-8444-444444444444")

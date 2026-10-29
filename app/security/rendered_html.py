@@ -29,7 +29,7 @@ RENDERER_ATTRIBUTES: dict[str, frozenset[str]] = {
     "article": frozenset({"class"}),
     "button": frozenset({
         "aria-expanded", "aria-label", "class", "data-embed-collapse-note-id", "data-file-ref-id",
-        "data-footnote-number", "data-source-note-id", "title", "type",
+        "data-footnote-number", "data-referrer-count", "data-source-note-id", "title", "type",
     }),
     "div": frozenset({
         "aria-hidden", "aria-live", "class", "contenteditable", "data-copy-value", "data-embed-note-id",
