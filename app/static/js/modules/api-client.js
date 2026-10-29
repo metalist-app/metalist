@@ -759,6 +759,17 @@ export const NotesAPI = {
         });
     },
 
+    // The formula under the caret while editing, drawn: { kind, html, error, hasUnknownCommand }.
+    async fetchEditPreview(markedContentHtml, tagsText) {
+        if (typeof markedContentHtml !== 'string' || typeof tagsText !== 'string') {
+            throw new Error('NotesAPI.fetchEditPreview requires the marked content and the tags');
+        }
+        return this._apiCall(CONFIG.API.NOTES.EDIT_PREVIEW, {
+            method: 'POST',
+            body: JSON.stringify({ marked_content_html: markedContentHtml, tags_text: tagsText }),
+        });
+    },
+
     // About a tag in a note's tag bar (right-click): { lines }.
     async fetchTagDetails(noteId, tag, tagsText, contentHtml) {
         if (typeof noteId !== 'string' || noteId.length === 0) {

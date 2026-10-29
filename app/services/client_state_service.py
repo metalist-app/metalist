@@ -56,6 +56,7 @@ _ALLOWED_CLIENT_PREFERENCES = {
     "pref.show_search_results_count": {"true", "false"},
     "pref.show_ai_chat": {"true", "false"},
     "pref.animated_transitions": {"true", "false"},
+    "pref.edit_previews": {"true", "false"},
     "pref.drag_ghost": {"true", "false"},
     "pref.drop_indicator": {"true", "false"},
     "pref.drag_direction_icon": {"true", "false"},

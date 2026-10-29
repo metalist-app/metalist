@@ -209,6 +209,12 @@ class TagSuggestionsRequest(TypedDict):
     content_html: Content
 
 @with_config(ConfigDict(strict=True))
+class EditPreviewRequest(TypedDict):
+    # The edited note's content with the caret marked (app/services/edit_previews.py).
+    marked_content_html: Content
+    tags_text: Text
+
+@with_config(ConfigDict(strict=True))
 class TagDetailsRequest(TypedDict):
     note_id: Identifier
     tag: Identifier

@@ -185,6 +185,7 @@ export function buildCommandPaletteEndpoints(deps) {
         showSearchResultsCount: true,
         showAiChat: false,
         animatedTransitions: true,
+        editPreviews: true,
         theme: 'system',
         statsStyle: 'strip',
     };
@@ -254,6 +255,16 @@ export function buildCommandPaletteEndpoints(deps) {
             persistenceKey: 'pref.animated_transitions',
             defaultValue: defaults.animatedTransitions,
             apply: (next) => applyPreference('pref.animated_transitions', next),
+        },
+        {
+            id: 'pref.edit_previews',
+            kind: 'boolean',
+            get label() {
+                return visibilityLabel(preferencesStore, 'pref.edit_previews', defaults.editPreviews, 'Previews While Editing');
+            },
+            persistenceKey: 'pref.edit_previews',
+            defaultValue: defaults.editPreviews,
+            apply: (next) => applyPreference('pref.edit_previews', next),
         },
         {
             id: 'view.sort_mode.normal',

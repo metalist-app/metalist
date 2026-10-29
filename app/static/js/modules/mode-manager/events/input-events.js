@@ -8,6 +8,7 @@ import { scrollWindowToYFastAnimated } from '../services/animated-scroll-service
 import { initializeTagSuggestions, updateTagSuggestions } from '../services/tag-suggestions-service.js';
 import { initializeReferenceSuggestions, updateReferenceSuggestions } from '../services/reference-suggestions-service.js';
 import { initializeReferenceHoverPreviews } from '../services/reference-hover-preview-service.js';
+import { initializeEditPreviews } from '../services/edit-preview-service.js';
 import { handleDictationPasteEvent, isDictationRawInsertInProgress, noteDictationEditSeen } from '../services/dictation-paste-service.js';
 
 
@@ -89,6 +90,7 @@ export function initInputEvents() {
     initializeTagSuggestions();
     initializeReferenceSuggestions();
     initializeReferenceHoverPreviews();
+    initializeEditPreviews();
         
     Logger.logInit('Input events handler');
 }

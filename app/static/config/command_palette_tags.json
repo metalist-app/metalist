@@ -21,6 +21,10 @@
       "tags": ["animated", "animations", "animation", "transitions", "motion", "movement", "ui", "show", "hide", "toggle", "enable", "disable"]
     },
     {
+      "id": "pref.edit_previews",
+      "tags": ["preview", "previews", "editing", "edit", "latex", "math", "formula", "formulas", "equation", "show", "hide", "toggle", "enable", "disable"]
+    },
+    {
       "id": "view.sort_mode.normal",
       "tags": ["sort", "order", "normal", "manual", "default", "view"]
     },

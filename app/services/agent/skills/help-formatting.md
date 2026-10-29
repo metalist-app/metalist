@@ -154,16 +154,16 @@ Other (non-meta) tags may also appear inside wrapper tokens (e.g. `{{foo bar}}`)
 - Mermaid uses strict security mode and follows the active light/dark theme when rendering. Invalid Mermaid syntax remains visible as a code block with an `Invalid Mermaid diagram` badge.
 - Paired LaTeX delimiters inside Markdown render automatically as server-side MathML: `\(...\)` and `$...$` are inline; `\[...\]` and `$$...$$` are display math.
 - Math detection skips inline code and fenced code blocks. Unpaired delimiters and currency-like dollar text remain literal.
-- Explicit scoped LaTeX such as content `(((\frac{1}{2})))` with tag-bar token `(((@LaTeX)))` remains supported and can coexist with automatic math in the same Markdown note.
-- Collapsed notes still render a one-line preview; oversized heading styles are normalized in that preview so the first line remains visible and thumbnail behavior for images is preserved.
-- For collapsed previews where the first visible content includes an image, the image thumbnail is intentionally larger (about 3x the baseline collapsed height) to keep image context readable.
+- Scoped LaTeX (content `(((\frac{1}{2})))`, tag `(((@LaTeX)))`) works too, also beside automatic math in a Markdown note.
+- A folded note shows one line; big headings shrink to fit it, and a first picture shows about 3x the line's height.
 
 ## LaTeX meta tags
 - `@LaTeX`: renders the note content as LaTeX on the server in view mode.
-- The server emits final MathML directly, so normal app rendering and HTML export use the same rendered output.
+- It renders to MathML on the server, the same in the app and in exports.
 - Invalid LaTeX shows a red "Invalid LaTeX" badge and the raw content.
 - Inline math uses `$...$`; display math uses `$$...$$`.
 - If no `$` delimiters are present, the entire note is rendered as display math.
+- While editing, with the caret inside a formula (delimited, an `@LaTeX` note, a `(((@LaTeX)))` region), a panel under the caret shows it drawn; none for one that looks as typed (`$$x$$`). Broken mid-typing, the last good drawing fades; a pause shows `Invalid LaTeX`. Escape hides it; `Previews While Editing` (command palette) turns it off.
 
 ## Shell meta tags
 - `@shell`: renders the note content as a terminal-style script block in view mode.

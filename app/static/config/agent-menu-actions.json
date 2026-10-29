@@ -191,6 +191,12 @@
     "presentation": "palette"
   },
   {
+    "id": "pref.edit_previews",
+    "label": "Hide Previews While Editing",
+    "selector": "#command-palette-modal",
+    "presentation": "palette"
+  },
+  {
     "id": "view.sort_mode.normal",
     "label": "Sort Order: Normal",
     "selector": "#command-palette-modal",

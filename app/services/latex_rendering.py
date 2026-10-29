@@ -2,7 +2,10 @@ from __future__ import annotations
 
 from app.utils.not_found import NOT_FOUND
 import html
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
+from typing import Iterator
 
 from latex2mathml.converter import convert
 from latex2mathml.exceptions import DenominatorNotFoundError
@@ -46,6 +49,34 @@ class LatexRenderResult:
     html: str
     has_error: bool
     error_message: str
+
+
+@dataclass(frozen=True, slots=True)
+class FoundFormula:
+    """A formula a render met: its TeX source and whether it is shown inline or as a block."""
+
+    source: str
+    display: str
+
+
+# Open while finding_formulas() lists the formulas a render meets.
+_FORMULAS_FOUND: ContextVar[list[FoundFormula] | None] = ContextVar("formulas_found", default=None)
+
+
+@contextmanager
+def finding_formulas() -> Iterator[list[FoundFormula]]:
+    """While open, every formula a render meets is listed, in order, instead of drawn.
+
+    Each one renders as nothing, so a broken formula never stops the render
+    from meeting the ones after it.
+    """
+    assert _FORMULAS_FOUND.get() is None, "finding formulas does not nest"
+    found: list[FoundFormula] = []
+    reset_token = _FORMULAS_FOUND.set(found)
+    try:
+        yield found
+    finally:
+        _FORMULAS_FOUND.reset(reset_token)
 
 
 @dataclass(frozen=True, slots=True)
@@ -122,6 +153,10 @@ def _render_math_segment(latex_text: str, *, display: str) -> str:
         raise TypeError(f"latex_text must be a string, got {type(latex_text)}")
     if display not in {"inline", "block"}:
         raise ValueError("display must be 'inline' or 'block'")
+    found = _FORMULAS_FOUND.get()
+    if found is not None:
+        found.append(FoundFormula(source=latex_text, display=display))
+        return ""
     return convert(latex_text, display=display)
 
 

@@ -27,6 +27,7 @@ from app.api.note_requests import (
     TagSuggestionsRequest,
     ReferenceSuggestionsRequest,
     TagDetailsRequest,
+    EditPreviewRequest,
     SearchTagDetailsRequest,
     DictationPasteRequest,
     CreateNoteTopRequest,
@@ -66,6 +67,7 @@ from app.api.note_requests import (
 )
 from app.api.transactions import serialized_read_route, transactional_route
 from app.services.sync import touch_client
+from app.services.edit_previews import edit_preview_at_caret
 from app.services.file_kinds import FILE_FILTER_NONE
 from app.services.root_date_filter import DATE_RANGE_NONE
 from app.services.tag_properties import PROPERTY_SUGGESTIONS_IN_SEARCH
@@ -922,6 +924,17 @@ def tag_details(payload: TagDetailsRequest) -> Dict[str, object]:
         note_id=note_id, tag=payload["tag"], tags_text=payload["tags_text"], content_html=payload["content_html"],
     )
     return {"lines": list(lines)}
+
+
+@router.post("/notes/edit-preview")
+@transactional_route
+def edit_preview(payload: EditPreviewRequest) -> Dict[str, object]:
+    """Read-only: the formula under the caret while editing, drawn (docs/ui/content-formatting.md, "Previews while editing")."""
+    preview = edit_preview_at_caret(marked_content_html=payload["marked_content_html"], tags=payload["tags_text"])
+    return {
+        "kind": preview.kind, "html": preview.html, "error": preview.error,
+        "hasUnknownCommand": preview.has_unknown_command,
+    }
 
 
 @router.post("/notes/search-tag-details")

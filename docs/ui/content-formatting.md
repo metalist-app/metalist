@@ -166,6 +166,16 @@ Other (non-meta) tags may also appear inside wrapper tokens (e.g. `{{foo bar}}`)
 - Inline math uses `$...$`; display math uses `$$...$$`.
 - If no `$` delimiters are present, the entire note is rendered as display math.
 
+## Previews while editing
+Edit mode shows the raw text on purpose; previews make raw formulas easier to edit without hiding them (agreed 2026-10-26, built for LaTeX 2026-10-29; what is left: `docs/ready-to-build/smart-previews.md`).
+- With the caret inside a formula of the note being edited, a small panel 6 px below the caret's line, its left edge at the caret, shows that formula drawn. A formula is any of the regions above: `$…$`, `$$…$$`, `\(…\)`, `\[…\]` in Markdown, a whole `@LaTeX` note or one of its `$` formulas, a `(((@LaTeX)))` region. Near the window's bottom the panel sits above the line. It follows the caret, moving once typing pauses (150 ms).
+- Both delimiters must be there: outside a formula, on a delimiter, or with only the opening one, nothing shows. Nor for a formula that looks as typed (`$$x$$`, `$$12$$`): one shows only with a command, `^`, `_` or `{`.
+- The server decides: the editor sends the note with a mark (the noncharacter U+FDD0) where the caret is, and `app/services/edit_previews.py` renders the note as it is shown, twice, listing its formulas instead of drawing them (`latex_rendering.finding_formulas`): without the mark and with it. The formula holding the mark is drawn with `latex2mathml` and sanitized (`sanitize_rendered_html`), as the note is, but only when both renders met the same formulas; when the mark changed what the renderer reads (inside a delimiter, after a `$` that opens nothing) there is no preview. So a preview never shows what the note would not. These renders fetch no link titles or icons (`content_formatting.holding_link_fetches`): a half-typed address is no site.
+- Broken mid-typing, the last good drawing stays and fades to a ghost (opacity 0.25 over 600 ms); full strength again the moment it draws. After a 1.5 s pause a broken formula shows `Invalid LaTeX` (`latex2mathml` gives no further reason). A command it does not know (`\fra`, half of `\frac`) is no error to it: the note shows its name as typed, so the preview fades while typing and after the pause shows it as the note will. The waits and the fade are constants at the top of `edit-preview-service.js`.
+- The panel floats: no note moves when it appears, changes or goes. It takes the note's text size. Escape hides it without leaving editing, until the caret next enters a formula; scrolling hides it until the next key or caret move; a selection shows none. `Previews While Editing` in the command palette (`pref.edit_previews`, on by default) turns previews off; the phone has none.
+- The preview never changes the note: the mark goes into a copy of its text.
+- Tests: `tests/unit/test_edit_previews.py`, `scripts/browser-edit-preview-regressions.mjs` (`BROWSER_TEST_SUITE=edit-previews`).
+
 ## Shell meta tags
 - `@shell`: renders the note content as a terminal-style script block in view mode.
 - Scoped shell rendering applies only to the matching wrapped region.

@@ -651,6 +651,9 @@ class CommandPaletteController {
         const animatedTransitions = this._getBoolean('pref.animated_transitions', true);
         document.body.classList.toggle('pref-animated-transitions', animatedTransitions);
 
+        const editPreviews = this._getBoolean('pref.edit_previews', true);
+        document.body.classList.toggle('pref-edit-previews', editPreviews);
+
         const dragGhost = this._getBoolean('pref.drag_ghost', true);
         document.body.classList.toggle('pref-drag-ghost', dragGhost);
 

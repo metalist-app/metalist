@@ -32,6 +32,7 @@ const LABELS = {
     'pref.show_search_results_count': 'Hide Search Result Count',
     'pref.show_ai_chat': 'Show AI Chat',
     'pref.animated_transitions': 'Hide Animated Transitions',
+    'pref.edit_previews': 'Hide Previews While Editing',
     'view.sort_mode.normal': 'Sort Order: Normal',
     'view.sort_mode.created': 'Sort Order: Datetime Created',
     'view.sort_mode.updated': 'Sort Order: Datetime Last Updated',

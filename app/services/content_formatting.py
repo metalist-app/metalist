@@ -838,8 +838,24 @@ _LINK_FETCHES_IN_RENDER: ContextVar[Set[Tuple[str, str]] | None] = ContextVar(
 )
 
 
-# False when this render already asked for it.
+# True while a render must ask for no link's title or icon (a preview of text being typed).
+_LINK_FETCHES_HELD: ContextVar[bool] = ContextVar("link_fetches_held", default=False)
+
+
+@contextmanager
+def holding_link_fetches() -> Iterator[None]:
+    """While open, renders fetch no link titles or icons: a half-typed address is no site."""
+    reset_token = _LINK_FETCHES_HELD.set(True)
+    try:
+        yield
+    finally:
+        _LINK_FETCHES_HELD.reset(reset_token)
+
+
+# False when this render already asked for it, or must not ask.
 def _record_link_fetch(kind: str, url: str) -> bool:
+    if _LINK_FETCHES_HELD.get():
+        return False
     asked = _LINK_FETCHES_IN_RENDER.get()
     if asked is not None:
         if (kind, url) in asked:

@@ -6270,6 +6270,27 @@ html[data-theme="dark"] .context-menu-item.is-submenu-open {
     color: var(--note-tag-muted);
 }
 
+/* The formula under the caret drawn while editing (edit-preview-service.js), below its line. */
+.edit-preview {
+    position: fixed;
+    z-index: 12500;
+    max-width: min(640px, calc(100vw - 16px));
+    max-height: 40vh;
+    overflow: hidden;
+    padding: 6px 10px;
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+    background: var(--bg-color);
+    color: var(--text-color);
+    box-shadow: 0 8px 18px rgba(0, 0, 0, 0.16);
+    pointer-events: none;
+}
+
+.edit-preview.edit-preview-has-error {
+    color: var(--note-tag-muted);
+    font-size: 13px;
+}
+
 /* The notes `[[` offers to reference (reference-suggestions-service.js), below the `[[`. */
 .reference-suggestions {
     position: fixed;

@@ -81,6 +81,7 @@ export const CONFIG = {
             TAG_SUGGESTIONS: `${API_NOTES_BASE}/tag-suggestions`,
             REFERENCE_SUGGESTIONS: `${API_NOTES_BASE}/reference-suggestions`,
             TAG_DETAILS: `${API_NOTES_BASE}/tag-details`,
+            EDIT_PREVIEW: `${API_NOTES_BASE}/edit-preview`,
             SEARCH_TAG_DETAILS: `${API_NOTES_BASE}/search-tag-details`,
             DICTATION_PASTE: `${API_NOTES_BASE}/dictation-paste`,
             BACKLINKS: (noteId) => `${API_NOTES_BASE}/${noteId}/backlinks`,
