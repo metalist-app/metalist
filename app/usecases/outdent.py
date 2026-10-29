@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Dict, Optional
 
 from app.usecases.base import QueryCommand
+from app.services.search_query import SearchClause
 from app.services.store import store
 from app.services.sync import generate_new_uuid
 from app.usecases.move import apply_move, _neighbors, _assert_neighbors
@@ -50,7 +51,7 @@ class CmdOutdent(QueryCommand):
         before_tags = record.tags
         if self.search_query is not None and not isinstance(self.search_query, str):
             raise TypeError(f"search_query must be a string or None, got {type(self.search_query)}")
-        clauses_matched_before = ()
+        clauses_matched_before: tuple[SearchClause, ...] = ()
         if isinstance(self.search_query, str):
             clauses_matched_before = search_clauses_matching_note(self.note_id, self.search_query)
 
