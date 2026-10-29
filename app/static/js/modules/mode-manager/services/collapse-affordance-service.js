@@ -11,6 +11,9 @@ const NORMAL_LINE_HEIGHT_FONT_SIZE_RATIO = 1.2;
 const MAX_EMPTY_RECT_EXTENT_PX = 0.5;
 // Counting rendered lines stops here: enough to tell one line from several.
 const RENDERED_LINE_COUNT_LIMIT = 2;
+const LIST_NOTE_SELECTOR = '.note[data-note-id]';
+// The note size settings on <body> that change how wide a note's text is or how big.
+const TEXT_LAYOUT_ATTRIBUTES = ['data-top-level-note-size', 'data-child-indentation'];
 
 function parsePixelValue(value) {
     if (typeof value !== 'string') {
@@ -217,6 +220,28 @@ export function updateCollapseAffordanceForNote(noteElement) {
         collapseToggle.setAttribute('aria-label', shouldApplyCollapsedClass ? 'Expand note' : 'Collapse note');
         collapseToggle.removeAttribute('title');
     }
+}
+
+// Whether a note's text takes more than one line depends on the width it is laid out
+// in and the size of its text, so notes are measured again when either changes: the
+// list's width (the window, the chat panel), the note size settings, a font arriving.
+// Measured only when drawn, a link line that wrapped in a narrower window kept an
+// arrow that folded nothing (2026-10-29).
+export function watchFoldability(root) {
+    if (!(root instanceof HTMLElement)) {
+        throw new Error('watchFoldability requires an element');
+    }
+    const measureAgain = () => updateCollapseAffordancesForNotes(root.querySelectorAll(LIST_NOTE_SELECTOR));
+    let measuredWidth = root.getBoundingClientRect().width;
+    // After layout and before paint, so a stale arrow is never drawn.
+    new ResizeObserver((entries) => {
+        const width = entries[entries.length - 1].contentRect.width;
+        if (width === measuredWidth) return;
+        measuredWidth = width;
+        measureAgain();
+    }).observe(root);
+    new MutationObserver(measureAgain).observe(document.body, { attributes: true, attributeFilter: TEXT_LAYOUT_ATTRIBUTES });
+    void document.fonts.ready.then(measureAgain);
 }
 
 function measureRenderedContentNeedsCollapse(noteElement, contentElement) {

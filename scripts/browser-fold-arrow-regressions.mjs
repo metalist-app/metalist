@@ -37,6 +37,10 @@ const PHONE_WIDTH_PX = 375;
 const PHONE_HEIGHT_PX = 812;
 const LONG_LINE = 'A first line long enough to wrap onto more lines in any window MetaList is shown in, '
   + 'because it keeps going well past the width of a note and on again past it once more.';
+// One line that fits a note in the test's window but wraps in a narrow one or at the largest note size.
+const MEDIUM_LINE = 'A one-line note that fits its line in a wide window and wraps in a narrow one';
+// Narrow enough for MEDIUM_LINE to wrap, wide enough to stay out of the phone layout (under 640 px).
+const NARROW_WIDTH_PX = 660;
 const PNG_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAADAAAAAwCAIAAADYYG7QAAAAQklEQVR4nO3OQQ0AIAwAsQlDBLKRhQuOR5MK6Jy9vjL5QEhISKgeCAkJCdUDISEhoXogJCQkVA+EhISE6oGQkNBjF21V9KbVaAsfAAAAAElFTkSuQmCC';
 
 async function idle(page) {
@@ -51,7 +55,7 @@ async function reloadApp(page) {
 
 // Each note gets a second line or a child, so it can fold and shows its arrow.
 async function seedNotes(page) {
-  return page.evaluate(async ({longLine, png}) => {
+  return page.evaluate(async ({longLine, mediumLine, png}) => {
     const {NotesAPI} = await import('/static/js/modules/api-client.js');
     const make = async (html, tags) => {
       const note = await NotesAPI.createNote(null, '');
@@ -116,8 +120,9 @@ async function seedNotes(page) {
     ids.wrappingOnly = await make(`<div>${longLine}</div>`, '');
     ids.wrappingHolder = await make(`<div>![[${ids.wrappingOnly}]]</div>`, '');
     await NotesAPI.setCollapsedBulk([ids.foldedLongChild], true);
+    ids.fitsWide = await make(`<div>${mediumLine}</div>`, '');
     return ids;
-  }, {longLine: LONG_LINE, png: PNG_BASE64});
+  }, {longLine: LONG_LINE, mediumLine: MEDIUM_LINE, png: PNG_BASE64});
 }
 
 // The arrow's baseline and the first line's, for a note in the list or in an embed.
@@ -244,6 +249,23 @@ function assertCheckboxLine(line, text, label) {
   assert.equal(line.textLines, 1, `${label}: the text stays on one line`);
   assert.notEqual(line.checkbox, null, `${label}: a checkbox`);
   assert.ok(line.textMiddle > line.checkbox.top && line.textMiddle < line.checkbox.bottom, `${label}: the text is level with the checkbox`);
+}
+
+// How many lines the note's text takes, counted by the tops of its text's line boxes.
+async function textLineCount(page, id) {
+  return page.evaluate(id => {
+    const content = document.querySelector(`.note[data-note-id="${id}"] > .note-content`);
+    const walker = document.createTreeWalker(content, NodeFilter.SHOW_TEXT);
+    const tops = new Set();
+    for (let text = walker.nextNode(); text !== null; text = walker.nextNode()) {
+      const range = document.createRange();
+      range.selectNodeContents(text);
+      for (const rect of range.getClientRects()) {
+        if (rect.width > 0) tops.add(Math.round(rect.top));
+      }
+    }
+    return tops.size;
+  }, id);
 }
 
 async function setTopLevelSize(page, size) {
@@ -467,6 +489,38 @@ async function foldArrowCases(browser, page, ids) {
     assertOneCutLine(await whileFolded(ids.wrappingHolder, () => foldedLine(page, foldedEmbedLine(ids.wrappingHolder))), 'wrapping holder');
     assert.deepEqual(await arrowState(page, ids.wrappingHolder), {shown: true, folded: false});
   });
+  // Whether a note gets an arrow follows its width (2026-10-29): a one-line note that
+  // wrapped when it was drawn loses its arrow once it fits, and gets it back once it wraps.
+  await attempt('28 a one-line note drawn in a narrow window: no arrow once the window widens, an arrow once it narrows again', async () => {
+    const window = page.viewport();
+    await page.setViewport({width: NARROW_WIDTH_PX, height: window.height});
+    await reloadApp(page);
+    try {
+      assert.equal(await textLineCount(page, ids.fitsWide), 2, 'narrow: the line wraps');
+      assert.deepEqual(await arrowState(page, ids.fitsWide), {shown: true, folded: false}, 'narrow: an arrow');
+      await page.setViewport(window);
+      await new Promise(resolve => setTimeout(resolve, SETTLE_MS));
+      assert.equal(await textLineCount(page, ids.fitsWide), 1, 'wide: one line');
+      assert.deepEqual(await arrowState(page, ids.fitsWide), {shown: false, folded: false}, 'wide: no arrow');
+      await page.setViewport({width: NARROW_WIDTH_PX, height: window.height});
+      await new Promise(resolve => setTimeout(resolve, SETTLE_MS));
+      assert.deepEqual(await arrowState(page, ids.fitsWide), {shown: true, folded: false}, 'narrow again: an arrow');
+    } finally {
+      await page.setViewport(window);
+      await reloadApp(page);
+    }
+  });
+  await attempt('29 a one-line note that wraps at the largest note size: an arrow there, none back at normal size', async () => {
+    assert.deepEqual(await arrowState(page, ids.fitsWide), {shown: false, folded: false}, 'normal size: no arrow');
+    await setTopLevelSize(page, 'largest');
+    try {
+      assert.equal(await textLineCount(page, ids.fitsWide), 2, 'largest: the line wraps');
+      assert.deepEqual(await arrowState(page, ids.fitsWide), {shown: true, folded: false}, 'largest: an arrow');
+    } finally {
+      await setTopLevelSize(page, 'same');
+    }
+    assert.deepEqual(await arrowState(page, ids.fitsWide), {shown: false, folded: false}, 'back at normal size: no arrow');
+  });
   await attempt('18 the source gains a second line: the embed gets an arrow', async () => {
     await page.evaluate(async id => {
       const {NotesAPI} = await import('/static/js/modules/api-client.js');
@@ -486,7 +540,7 @@ export async function checkFoldArrows(browser, page) {
     await reloadApp(page);
     await page.evaluate(async ids => {
       const {NotesAPI} = await import('/static/js/modules/api-client.js');
-      for (const id of [ids.wrappingHolder, ids.wrappingOnly, ids.todoHolder, ids.todoSource, ids.openHolder, ids.openSource, ids.longFirst, ids.longHolder, ids.longSource, ids.foldedTodo,
+      for (const id of [ids.fitsWide, ids.wrappingHolder, ids.wrappingOnly, ids.todoHolder, ids.todoSource, ids.openHolder, ids.openSource, ids.longFirst, ids.longHolder, ids.longSource, ids.foldedTodo,
         ids.nutsHolder,ids.embedFirst, ids.nuts, ids.almonds, ids.oneLineAmid, ids.oneLineHolder, ids.oneLine, ids.foldedOneLineHolder, ids.foldedOneLine,
         ids.holder, ids.amid, ids.link, ids.paragraph, ids.plain, ids.heading, ids.markdownHeading, ids.wrapping, ids.todo,
         ids.username, ids.empty, ids.picture, ids.formula, ids.mermaid, ids.table, ids.code, ids.source]) {

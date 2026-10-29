@@ -11,6 +11,7 @@ import { initializeNoteHtmlSanitizer } from './modules/note-html-sanitizer.js';
 import { AiChatPanel } from './modules/ai-chat/ai-chat-panel-controller.js';
 import { PhoneMode } from './modules/phone/phone-mode.js';
 import { watchFoldArrows } from './modules/mode-manager/services/fold-arrow-alignment-service.js';
+import { watchFoldability } from './modules/mode-manager/services/collapse-affordance-service.js';
 import {
     queueMermaidDiagramRendering,
 } from './modules/mode-manager/services/mermaid-render-service.js';
@@ -41,6 +42,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             throw new Error('Notes container not found after ModeManager initialization');
         }
         watchFoldArrows(notesContainer);
+        watchFoldability(notesContainer);
         await queueMermaidDiagramRendering(notesContainer);
         console.log('+++ main.js: ModeManager init() completed');
 
