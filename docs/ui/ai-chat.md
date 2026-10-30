@@ -426,8 +426,9 @@ the AI knows about them (built 2026-10-30, `app/services/agent/chat_compaction.p
   and keeps its header line still. Summarized turns stay on screen, grey and italic.
   Copy Response works on the entry. Summarizing never moves what the user is reading: the
   latest turn when the chat is scrolled to its end, otherwise the item at the middle.
-- **Privacy.** A summary is a turn like the others: when what the AI may see changes,
-  the history and the summary are held back together. Held-back turns keep their look,
+- **Privacy.** A summary is a turn like the others: when the privacy settings change or
+  a note the AI could see becomes private, the history and the summary are held back
+  together. Adding, deleting or unhiding a note keeps them. Held-back turns keep their look,
   with a divider after the last of them: "Earlier messages are not sent to the AI
   (privacy settings changed)". A summary made while privacy changed, or while the chat
   was cleared, is discarded. The summary lives with the conversation in server memory;

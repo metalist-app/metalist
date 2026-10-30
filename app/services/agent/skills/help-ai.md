@@ -150,8 +150,8 @@ it works, Send waits. The AI cannot summarize the chat itself. The **History N%*
 the message box shows how full the history is (100% means the next Send summarizes);
 hovering it shows the summary, turns, agent's records and free space, and what the last
 request sent to the model was made of: instructions, history, and the question with its
-notes and pages. When the privacy settings change, earlier turns and the summary stop
-being sent together, under the divider "Earlier messages are not sent to the AI (privacy
+notes and pages. When the privacy settings change or a note the AI could see becomes
+private, earlier turns and the summary stop being sent together, under the divider "Earlier messages are not sent to the AI (privacy
 settings changed)".
 
 Chat history and its debug traces are session-only. Clear Chat/logout removes

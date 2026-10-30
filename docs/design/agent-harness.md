@@ -142,13 +142,16 @@ size for the chat's meter.
 ## Conversation disclosure boundaries
 
 The display transcript stays visible when the disclosure boundary changes.
-Model-visible history starts fresh at that boundary. The server hashes whether
-the cloud policy applies, the configured privacy policy, and the namespace-wide
-set of permitted note IDs before each turn. The provider is not part of it: one
+Model-visible history starts fresh at that boundary. Before each turn the server
+takes `CloudPrivacyEvaluator.history_disclosure`: a hash of whether the cloud policy
+applies and the configured privacy policy, and the sets of notes the AI may and may
+not see. The provider is not part of it: one
 policy covers OpenAI, Anthropic and Google, so switching provider keeps the
-conversation (decided 2026-10-24). A policy edit, newly applied/inherited `@password`
-restriction, changed ontology/content match, or removal of previously permitted
-notes invalidates prior history. Unknown history provenance is excluded
+conversation (decided 2026-10-24). A policy edit, or a note the AI could see at the
+previous turn becoming hidden (a newly applied/inherited `@password` restriction, a
+blacklisted tag, a changed ontology/content match), invalidates prior history. A new
+note, a deleted note or a hidden note becoming visible changes nothing the AI saw, so
+the history continues (decided 2026-10-30; `tests/unit/test_phase_one_integrity.py`). Unknown history provenance is excluded
 conservatively. Every agent request consumes this filtered
 history, including when the current evidence scope is empty. Returning to an old
 provider does not automatically restore its previous context.

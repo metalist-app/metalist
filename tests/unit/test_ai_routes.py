@@ -14,6 +14,7 @@ import app.services.ai_setup as ai_setup_module
 from app.security.note_html import sanitize_note_html
 from app.services.ai_chat import AiChatSessionStore
 from app.services.ai_chat import NO_REQUEST
+from app.services.agent.cloud_privacy import HistoryDisclosure
 from app.services.agent.prompt_settings import DEFAULT_AGENT_PROMPTS
 from app.services.agent.openai_cost_tracking import OpenAICostTracker
 from app.services.agent.openai_cost_tracking import OpenAITokenUsage
@@ -859,7 +860,7 @@ def test_stream_chat_uses_openai_provider_with_cloud_boundary(
     monkeypatch,
 ) -> None:
     store = AiChatSessionStore()
-    store.synchronize_disclosure_boundary(session_key="session-key", disclosure_key="previous-disclosure-boundary")
+    store.synchronize_disclosure_boundary(session_key="session-key", disclosure=HistoryDisclosure(policy_key="previous-disclosure-boundary", permitted_note_ids=frozenset(), hidden_note_ids=frozenset()))
     previous_turn = store.start_turn(session_key="session-key", user_content="Read private notes", provider="openai", model="old-model")
     store.complete_turn(session_key="session-key", turn_id=previous_turn, final_content="PRIVATE_HISTORY_CANARY", actions=[], request_tokens=NO_REQUEST)
     api_key = "sk-test-0123456789abcdefghijklmnop"
@@ -1271,8 +1272,9 @@ def test_stream_chat_blocks_references_from_an_earlier_turn(monkeypatch) -> None
             yield {"type": "done", "reference_note_ids": [], "reference_web_ids": [], "actions": [], "request_tokens": NO_REQUEST}
 
     store = AiChatSessionStore()
-    monkeypatch.setattr(ai_routes.cloud_privacy_evaluator, 'history_disclosure_key', lambda **kwargs: 'fixture-boundary')
-    store.synchronize_disclosure_boundary(session_key='session-key', disclosure_key='fixture-boundary')
+    fixture_boundary = HistoryDisclosure(policy_key='fixture-boundary', permitted_note_ids=frozenset(), hidden_note_ids=frozenset())
+    monkeypatch.setattr(ai_routes.cloud_privacy_evaluator, 'history_disclosure', lambda **kwargs: fixture_boundary)
+    store.synchronize_disclosure_boundary(session_key='session-key', disclosure=fixture_boundary)
     prior_turn_id = store.start_turn(
         session_key="session-key",
         user_content="Summarize testosterone notes",

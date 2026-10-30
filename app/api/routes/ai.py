@@ -873,8 +873,7 @@ def summarize_ai_chat(
     payload: AiSummarizeRequest,
     token: Annotated[str, Depends(require_request_auth_token)],
 ) -> StreamingResponse:
-    """"Summarize now": replace every turn the AI sees directly but the latest with a
-    summary. One {"type": "summarized"}, {"type": "nothing"} or {"type": "failed"} line."""
+    """"Summarize now": replace every turn the AI sees directly with a summary. One {"type": "summarized"}, {"type": "nothing"} or {"type": "failed"} line."""
     session_key = token_service.get_session_key(token)
     connection = _require_ai_connection(
         provider=payload.provider, model=payload.model, token=token, session_key=session_key,
@@ -885,7 +884,7 @@ def summarize_ai_chat(
     # As at Send: after a privacy change the AI sees none of the earlier turns.
     if ai_chat_store.synchronize_disclosure_boundary(
         session_key=session_key,
-        disclosure_key=cloud_privacy_evaluator.history_disclosure_key(boundary=privacy_boundary),
+        disclosure=cloud_privacy_evaluator.history_disclosure(boundary=privacy_boundary),
     ):
         web_evidence_store.clear_session(session_key=session_key)
         summary_batch_store.clear_session(session_key=session_key)
@@ -1100,7 +1099,7 @@ def stream_ai_chat(
         batch_tokens=resolve_tagging_batch_tokens(preferences, payload.provider))
     disclosure_changed = ai_chat_store.synchronize_disclosure_boundary(
         session_key=session_key,
-        disclosure_key=cloud_privacy_evaluator.history_disclosure_key(boundary=privacy_boundary),
+        disclosure=cloud_privacy_evaluator.history_disclosure(boundary=privacy_boundary),
     )
     if disclosure_changed:
         web_evidence_store.clear_session(session_key=session_key)

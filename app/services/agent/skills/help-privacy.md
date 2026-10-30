@@ -25,10 +25,11 @@ appears as "[private]". So a search for a private topic never reaches the AI, an
 "[private]" can also mean the term finds no notes at all.
 Changing the privacy settings stops any AI request still running before it
 sends more.
-Earlier answers in a chat are sent back to the AI with each new message. Making a
-note private starts the chat's AI memory afresh; but if an answer already quoted
-something that should have stayed private and the note was edited rather than made
-private, tell the user to press Clear Chat, which removes that memory.
+Earlier answers in a chat are sent back to the AI with each new message. Changing the
+privacy settings, or making a note the AI could see private, starts the chat's AI memory
+afresh; adding, deleting or unhiding a note keeps it. If an answer already quoted
+something that should have stayed private and the note was edited or deleted rather than
+made private, tell the user to press Clear Chat, which removes that memory.
 
 OpenAI credentials persist encrypted when the vault is password-protected.
 For a plaintext vault they are held only in server session memory. Do not

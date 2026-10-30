@@ -33,6 +33,7 @@ from app.services.note_store import store
 from app.services.ontology_rules_store import bootstrap_ontology_rules_store
 from app.services.tag_term_matching import split_tag_term_segments, _split_tag_term_segments_cached
 from app.usecases.create_note import apply_insert_note
+from app.usecases.delete_subtree import apply_delete_subtree
 from app.usecases.update_content import apply_update_content
 
 
@@ -185,13 +186,13 @@ def test_switching_provider_under_the_same_rules_keeps_the_conversation(live_dat
     apply_insert_note('fixture', None, None, None, '', content='Permitted note', tags='', proposed_tags='')
     evaluator = CloudPrivacyEvaluator(notes=store, effective_tags_provider=lambda note_id: store.get_note(note_id).tag_terms, accepted_tags_provider=lambda note_id: store.get_note(note_id).tag_terms)
     chat = AiChatSessionStore()
-    first_key = evaluator.history_disclosure_key(boundary=resolve_cloud_privacy_boundary(preferences={}, provider='openai'))
-    chat.synchronize_disclosure_boundary(session_key='fixture', disclosure_key=first_key)
+    first = evaluator.history_disclosure(boundary=resolve_cloud_privacy_boundary(preferences={}, provider='openai'))
+    chat.synchronize_disclosure_boundary(session_key='fixture', disclosure=first)
     turn = chat.start_turn(session_key='fixture', user_content='Summarize the papers', provider='openai', model='gpt-5.6-luna')
     chat.complete_turn(session_key='fixture', turn_id=turn, final_content='Here is the summary', actions=[], request_tokens=NO_REQUEST)
-    next_key = evaluator.history_disclosure_key(boundary=resolve_cloud_privacy_boundary(preferences={}, provider=next_provider))
-    assert next_key == first_key
-    assert chat.synchronize_disclosure_boundary(session_key='fixture', disclosure_key=next_key) is False
+    after = evaluator.history_disclosure(boundary=resolve_cloud_privacy_boundary(preferences={}, provider=next_provider))
+    assert after == first
+    assert chat.synchronize_disclosure_boundary(session_key='fixture', disclosure=after) is False
     chat.start_turn(session_key='fixture', user_content='Can we try that again?', provider=next_provider, model='next')
     assert chat.provider_messages(session_key='fixture') == [
         {'role': 'user', 'content': 'Summarize the papers'},
@@ -200,31 +201,91 @@ def test_switching_provider_under_the_same_rules_keeps_the_conversation(live_dat
     ]
 
 
-@pytest.mark.parametrize('change', ['policy', 'password_tag', 'deleted_note'])
+def _evaluator() -> CloudPrivacyEvaluator:
+    return CloudPrivacyEvaluator(notes=store, effective_tags_provider=lambda note_id: store.get_note(note_id).tag_terms,
+                                 accepted_tags_provider=lambda note_id: store.get_note(note_id).tag_terms)
+
+
+def _chat_that_answered(evaluator, boundary, answer):
+    """A chat whose one answer the AI will be sent on the next turn."""
+    chat = AiChatSessionStore()
+    chat.synchronize_disclosure_boundary(session_key='fixture', disclosure=evaluator.history_disclosure(boundary=boundary))
+    turn = chat.start_turn(session_key='fixture', user_content='Read notes', provider='openai', model='cloud')
+    chat.complete_turn(session_key='fixture', turn_id=turn, final_content=answer, actions=[], request_tokens=NO_REQUEST)
+    assert chat.synchronize_disclosure_boundary(
+        session_key='fixture', disclosure=evaluator.history_disclosure(boundary=boundary)) is False
+    assert answer in str(chat.provider_messages(session_key='fixture'))
+    return chat
+
+
+# The history resets only when the AI may no longer see something it could see before:
+# the privacy settings changed, or a note it could see became private (the maintainer,
+# 2026-10-30). The AI's earlier answers may quote that note.
+@pytest.mark.parametrize('change', ['policy', 'password_tag', 'blacklisted_tag', 'blacklisted_phrase_typed'])
 def test_privacy_change_excludes_prior_answer_even_with_empty_followup_scope(live_database, change):
     apply_insert_note('fixture', None, None, None, '', content='PRIVATE_CANARY', tags='', proposed_tags='')
-    evaluator = CloudPrivacyEvaluator(notes=store, effective_tags_provider=lambda note_id: store.get_note(note_id).tag_terms, accepted_tags_provider=lambda note_id: store.get_note(note_id).tag_terms)
+    evaluator = _evaluator()
     boundary = resolve_cloud_privacy_boundary(preferences={}, provider='openai')
-    chat = AiChatSessionStore()
-    first_key = evaluator.history_disclosure_key(boundary=boundary)
-    chat.synchronize_disclosure_boundary(session_key='fixture', disclosure_key=first_key)
-    turn = chat.start_turn(session_key='fixture', user_content='Read notes', provider='openai', model='cloud')
-    chat.complete_turn(session_key='fixture', turn_id=turn, final_content='PRIVATE_CANARY', actions=[], request_tokens=NO_REQUEST)
-    chat.synchronize_disclosure_boundary(session_key='fixture', disclosure_key=first_key)
-    assert 'PRIVATE_CANARY' in str(chat.provider_messages(session_key='fixture'))
+    boundary = replace(boundary, policy=replace(boundary.policy, blacklist_tags=('health',), blacklist_phrases=('SECRET_WORD',)))
+    chat = _chat_that_answered(evaluator, boundary, 'PRIVATE_CANARY')
     if change == 'policy':
         boundary = replace(boundary, policy=replace(boundary.policy, blacklist_phrases=('PRIVATE_CANARY',)))
     elif change == 'password_tag':
         apply_update_content('fixture', 'PRIVATE_CANARY', '@password', '')
+    elif change == 'blacklisted_tag':
+        apply_update_content('fixture', 'PRIVATE_CANARY', 'health', '')
     else:
-        store.reset()
-        store.load_from_db(None, prefetched_rows=[])
-    next_key = evaluator.history_disclosure_key(boundary=boundary)
-    assert next_key != first_key
-    chat.synchronize_disclosure_boundary(session_key='fixture', disclosure_key=next_key)
+        apply_update_content('fixture', 'PRIVATE_CANARY SECRET_WORD', '', '')
+    assert chat.synchronize_disclosure_boundary(
+        session_key='fixture', disclosure=evaluator.history_disclosure(boundary=boundary)) is True
     chat.start_turn(session_key='fixture', user_content='Hello', provider='openai', model='cloud')
     assert chat.provider_messages(session_key='fixture') == [{'role': 'user', 'content': 'Hello'}]
     assert 'PRIVATE_CANARY' in str(chat.snapshot(session_key='fixture'))
+
+
+# Nothing the AI could see became private, so the conversation goes on. A deleted note is
+# not a private one: what earlier answers quoted from it is the user's to clear (Clear Chat),
+# as for deleted text (docs/security/cloud-privacy-boundary.md, finding 4).
+@pytest.mark.parametrize('change', ['new_note', 'new_private_note', 'private_note_made_visible', 'deleted_note', 'edited_note'])
+def test_a_change_that_hides_nothing_the_ai_saw_keeps_the_conversation(live_database, change):
+    apply_insert_note('fixture', None, None, None, '', content='Permitted note', tags='', proposed_tags='')
+    apply_insert_note('locked', None, None, None, '', content='Locked note', tags='@password', proposed_tags='')
+    evaluator = _evaluator()
+    boundary = resolve_cloud_privacy_boundary(preferences={}, provider='openai')
+    chat = _chat_that_answered(evaluator, boundary, 'Earlier answer')
+    if change == 'new_note':
+        apply_insert_note('later', None, None, None, '', content='A new note', tags='', proposed_tags='')
+    elif change == 'new_private_note':
+        apply_insert_note('later', None, None, None, '', content='A new secret', tags='@password', proposed_tags='')
+    elif change == 'private_note_made_visible':
+        apply_update_content('locked', 'Locked note', '', '')
+    elif change == 'deleted_note':
+        apply_delete_subtree('fixture')
+    else:
+        apply_update_content('fixture', 'Permitted note, edited', '', '')
+    assert chat.synchronize_disclosure_boundary(
+        session_key='fixture', disclosure=evaluator.history_disclosure(boundary=boundary)) is False
+    chat.start_turn(session_key='fixture', user_content='And then?', provider='openai', model='cloud')
+    assert chat.provider_messages(session_key='fixture') == [
+        {'role': 'user', 'content': 'Read notes'},
+        {'role': 'assistant', 'content': 'Earlier answer'},
+        {'role': 'user', 'content': 'And then?'},
+    ]
+
+
+def test_a_note_added_during_the_chat_resets_it_once_made_private(live_database):
+    # What the AI may see is taken again at every turn, so a note it could only see since
+    # the chat began is protected like the others.
+    apply_insert_note('fixture', None, None, None, '', content='Permitted note', tags='', proposed_tags='')
+    evaluator = _evaluator()
+    boundary = resolve_cloud_privacy_boundary(preferences={}, provider='openai')
+    chat = _chat_that_answered(evaluator, boundary, 'Earlier answer')
+    apply_insert_note('later', None, None, None, '', content='LATER_CANARY', tags='', proposed_tags='')
+    assert chat.synchronize_disclosure_boundary(
+        session_key='fixture', disclosure=evaluator.history_disclosure(boundary=boundary)) is False
+    apply_update_content('later', 'LATER_CANARY', '@password', '')
+    assert chat.synchronize_disclosure_boundary(
+        session_key='fixture', disclosure=evaluator.history_disclosure(boundary=boundary)) is True
 
 
 def test_old_link_title_work_cannot_publish_after_runtime_replacement(monkeypatch):

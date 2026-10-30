@@ -29,7 +29,7 @@ request), and that one value is used for the rest of the request.
 | --- | --- | --- |
 | Chat: view evidence (read, search, overview, summaries) | `ScopedSearchSnapshotFactory.freeze` (`scope.py`), text extracted lazily by `NoteText.text` | `hidden_note_ids` over the candidates at freeze |
 | Chat: the selected note's tree | `_freeze_selected_note` | `exclusion_reason` on the note, `hidden_note_ids` on its tree |
-| Chat: replayed history and earlier action logs | `ai_chat_store.provider_messages`, `.earlier_actions` | only the history reset (`synchronize_disclosure_boundary`, keyed by `history_disclosure_key`) |
+| Chat: replayed history and earlier action logs | `ai_chat_store.provider_messages`, `.earlier_actions` | only the history reset (`synchronize_disclosure_boundary`, when the policy changes or a note the AI could see becomes hidden: `history_disclosure`) |
 | Chat: bulk tagging (a chat tool) | `tagging_run.tagging_trees` | the snapshot's id set from Send |
 | Suggest Tags with AI (one note, or with children) | `note_tag_suggestions.build_note_tag_request` | `exclusion_reason` on the note, `hidden_note_ids` on children and on the tag vocabulary |
 | Export and print title suggestion | `export_title_suggestions.build_export_title_request` | `hidden_note_ids` over the export tree |
@@ -71,12 +71,13 @@ in shown notes), `remote_image_proxy` (remote images in shown notes).
    adapter is built (`tests/unit/test_privacy_guard.py`,
    `test_saving_a_changed_cloud_privacy_policy_advances_its_revision`).
 4. **History can replay content that has since become private: left to the user,
-   decided.** The history reset key hashes the provider, the policy and the ids of
-   permitted notes, not their content. If an AI answer quoted text from a permitted
+   decided.** The history resets when the policy changes or a note the AI could see
+   becomes hidden; it looks at which notes are hidden, not at their content. If an AI answer quoted text from a permitted
    note and that text is then moved out (into a private note, or simply deleted),
-   no id changes, the history is not reset, and the quote is resent on later turns
+   no note becomes hidden, the history is not reset, and the quote is resent on later turns
    of that chat (history lives in server memory for the sign-in session; once
-   summarized, only as much of it as the summary kept). Making the note private does reset the history. A heuristic
+   summarized, only as much of it as the summary kept). Making the note private does reset the history; deleting a whole note does not
+   (decided 2026-10-30), like deleting its text. A heuristic
    (drop earlier answers that share text with private notes) was considered and
    rejected: it misses deletions and rewordings, so it would add complexity and
    false confidence without a guarantee. The user presses Clear Chat when the AI

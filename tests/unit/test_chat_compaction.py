@@ -21,6 +21,7 @@ from app.services.agent.request_tokens import request_breakdown
 from app.services.agent.token_estimation import estimate_text_tokens
 from app.services.ai_chat import AiChatSessionStore
 from app.services.ai_chat import NO_REQUEST
+from app.services.agent.cloud_privacy import HistoryDisclosure
 
 SESSION = "session"
 CONTEXT_TOKENS = 32_768
@@ -50,7 +51,7 @@ class FakeInference:
 
 def _store_with_turns(*answers: str) -> AiChatSessionStore:
     store = AiChatSessionStore()
-    store.synchronize_disclosure_boundary(session_key=SESSION, disclosure_key="boundary")
+    store.synchronize_disclosure_boundary(session_key=SESSION, disclosure=HistoryDisclosure(policy_key="boundary", permitted_note_ids=frozenset(), hidden_note_ids=frozenset()))
     for number, answer in enumerate(answers, start=1):
         turn = store.start_turn(session_key=SESSION, user_content=f"Question {number}", provider="openai", model="m")
         store.complete_turn(session_key=SESSION, turn_id=turn, final_content=answer, actions=[], request_tokens=NO_REQUEST)
@@ -186,7 +187,7 @@ def test_a_privacy_change_stops_sending_the_summary() -> None:
     store = _store_with_turns("PRIVATE_ANSWER")
     assert _summarize_now(store, FakeInference("PRIVATE_SUMMARY"))
 
-    store.synchronize_disclosure_boundary(session_key=SESSION, disclosure_key="changed")
+    store.synchronize_disclosure_boundary(session_key=SESSION, disclosure=HistoryDisclosure(policy_key="changed", permitted_note_ids=frozenset(), hidden_note_ids=frozenset()))
     store.start_turn(session_key=SESSION, user_content="Hello", provider="openai", model="m")
 
     assert store.provider_messages(session_key=SESSION) == [{"role": "user", "content": "Hello"}]

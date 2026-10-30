@@ -7,6 +7,7 @@ import pytest
 from app.services.ai_chat import AiChatActivityTimer
 from app.services.ai_chat import NO_REQUEST
 from app.services.ai_chat import AiChatSessionStore
+from app.services.agent.cloud_privacy import HistoryDisclosure
 
 
 def test_chat_history_is_scoped_to_server_session_key() -> None:
@@ -275,6 +276,6 @@ def test_the_action_log_starts_over_with_the_history() -> None:
     store.complete_turn(session_key="session-a", turn_id=turn, final_content="Done.",
                         actions=[{"tool": "view_overview", "notes_in_view": 3, "trees_in_view": 3}], request_tokens=NO_REQUEST)
     # A privacy boundary change hides the earlier history from the model, and its actions with it.
-    store.synchronize_disclosure_boundary(session_key="session-a", disclosure_key="first")
-    store.synchronize_disclosure_boundary(session_key="session-a", disclosure_key="second")
+    store.synchronize_disclosure_boundary(session_key="session-a", disclosure=HistoryDisclosure(policy_key="first", permitted_note_ids=frozenset(), hidden_note_ids=frozenset()))
+    store.synchronize_disclosure_boundary(session_key="session-a", disclosure=HistoryDisclosure(policy_key="second", permitted_note_ids=frozenset(), hidden_note_ids=frozenset()))
     assert store.earlier_actions(session_key="session-a") == []

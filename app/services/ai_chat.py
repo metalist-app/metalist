@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from threading import Lock
 from uuid import uuid4
 
+from app.services.agent.cloud_privacy import HistoryDisclosure
 from app.services.ai_chat_rendering import strip_note_citations_for_history
 from app.utils.time_units import MS_PER_SECOND
 
@@ -188,8 +189,10 @@ class _ChatSession:
     # The first message the model still sees directly (after a disclosure boundary or
     # a summary).
     history_start: int
-    # None until the first disclosure boundary is set.
-    disclosure_key: str | None
+    # The privacy rules at the last turn; None until the first disclosure boundary is set.
+    disclosure_policy_key: str | None
+    # The notes the AI could see at the last turn: if one becomes private, the history resets.
+    permitted_note_ids: frozenset[str]
     # Every summary made, oldest first; the screen keeps them all.
     summaries: list[ChatSummary]
     # The summary the model sees, before messages[history_start:]; None when there is
@@ -205,7 +208,8 @@ class _ChatSession:
 
 
 def _new_chat_session() -> _ChatSession:
-    return _ChatSession(id=str(uuid4()), messages=[], activities={}, action_logs={}, history_start=0, disclosure_key=None,
+    return _ChatSession(id=str(uuid4()), messages=[], activities={}, action_logs={}, history_start=0,
+                        disclosure_policy_key=None, permitted_note_ids=frozenset(),
                         summaries=[], active_summary=None, held_back_until=0, is_summarizing=False,
                         last_request=dict(NO_REQUEST))
 
@@ -464,21 +468,28 @@ class AiChatSessionStore:
             message["status"] = "error"
             message["error"] = error
 
-    def synchronize_disclosure_boundary(self, *, session_key: str, disclosure_key: str) -> bool:
-        """Retain the display transcript, but never replay a previous disclosure context."""
+    def synchronize_disclosure_boundary(self, *, session_key: str, disclosure: HistoryDisclosure) -> bool:
+        """Retain the display transcript, but never replay a previous disclosure context:
+        the history resets when the privacy rules change or a note the AI could see has
+        become private. A new note, a deleted one or one made visible changes nothing the
+        AI saw (the maintainer, 2026-10-30). True when it reset."""
         self._validate_session_key(session_key)
-        if not disclosure_key:
-            raise ValueError("A disclosure boundary key is required")
+        if not isinstance(disclosure, HistoryDisclosure) or disclosure.policy_key == "":
+            raise ValueError("A disclosure boundary is required")
         with self._lock:
             session = self._session_locked(session_key)
-            if session.disclosure_key != disclosure_key:
+            is_reset = session.disclosure_policy_key != disclosure.policy_key
+            if not session.permitted_note_ids.isdisjoint(disclosure.hidden_note_ids):
+                # A note the AI could see at the last turn is private now.
+                is_reset = True
+            if is_reset:
                 # The summary drew on the turns it replaced, so it goes with them.
                 session.history_start = len(session.messages)
                 session.held_back_until = len(session.messages)
                 session.active_summary = None
-                session.disclosure_key = disclosure_key
-                return True
-            return False
+                session.disclosure_policy_key = disclosure.policy_key
+            session.permitted_note_ids = disclosure.permitted_note_ids
+            return is_reset
 
     def provider_messages(self, *, session_key: str) -> list[dict[str, str]]:
         self._validate_session_key(session_key)
