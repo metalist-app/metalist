@@ -316,6 +316,7 @@ test('fresh search input resets the active tab sort without losing the typed que
         // The server's tab state always carries the tabs' date ranges and Files filters.
         responseState.dateFilters = {};
         responseState.fileFilters = {};
+        responseState.summaries = {};
         return {
             ok: true,
             async json() {

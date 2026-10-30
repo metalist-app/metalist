@@ -12,7 +12,7 @@ import { tabContextActionsHtml } from '../../app/static/js/modules/mode-manager/
 const VIEW_HANDLER_NAMES = [
     'onAddNoteAtTop', 'onPasteNoteAtTop', 'onUndo', 'onRedo', 'onGoToTop', 'onGoToBottom', 'onExpandAll', 'onCollapseAll', 'onFullyExpandAll',
     'onFullyCollapseAll', 'onSetUntaggedView', 'onSetSortMode', 'onSetDateRangeField', 'onSetDateRangePreset',
-    'onOpenCustomDateRange', 'onSetFileFilter', 'onToggleAiChat', 'onToggleTabs',
+    'onOpenCustomDateRange', 'onSetFileFilter', 'onOpenSummary', 'onToggleAiChat', 'onToggleTabs',
     'onToggleNoteTags', 'onSetTheme', 'onNewTab', 'onOpenNamespace', 'onOpenReminders',
     'onExportViewHtml', 'onPrintView', 'onLogOut',
 ];
@@ -25,7 +25,7 @@ function viewMenu(overrides, calls) {
     return buildContextMenuItems({
         kind: 'view', isMac: true, isEditing: false, canPasteNoteAtTop: true, canGoToTop: true, canGoToBottom: true,
         isUntaggedView: false, theme: 'system', sortMode: 'normal', dateRangeKind: 'none', dateRangeField: 'updated',
-        fileFilterKind: 'none', areTabsVisible: false, isAiChatVisible: false, areNoteTagsVisible: false,
+        fileFilterKind: 'none', hasSummary: false, areTabsVisible: false, isAiChatVisible: false, areNoteTagsVisible: false,
         ...overrides,
     }, viewHandlers(calls));
 }

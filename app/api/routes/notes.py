@@ -16,6 +16,7 @@ from app.api.note_requests import (
     UpdateTabStateRequest,
     UpdateTabDateFilterRequest,
     UpdateTabFileFilterRequest,
+    UpdateTabSummaryRequest,
     UpdateTabSortModeRequest,
     CreateNewTabRequest,
     DeleteTabRequest,
@@ -71,7 +72,7 @@ from app.services.sync import touch_client
 from app.services.edit_previews import edit_preview_at_caret, format_preview_html
 from app.services.file_kinds import FILE_FILTER_NONE
 from app.services.root_date_filter import DATE_RANGE_NONE
-from app.services.tag_properties import PROPERTY_SUGGESTIONS_IN_SEARCH
+from app.services.tag_properties import PROPERTY_SEPARATOR, PROPERTY_SUGGESTIONS_IN_SEARCH
 from app.services.tag_properties import PROPERTY_SUGGESTIONS_IN_TAG_BAR
 from app.services.tag_properties import PropertySuggestion
 from app.services.tag_properties import has_property_syntax
@@ -83,6 +84,9 @@ from app.services.snapshot import build_view_state
 from app.services.snapshot import find_in_view
 from app.services.snapshot import resolve_search_scope
 from app.services.snapshot import resolve_view_scope_membership
+from app.services.search_summary import SearchSummary, make_search_summary, summarize
+from app.security.sensitive_cache import SensitiveMemo
+from app.services.resource_limits import SENSITIVE_MEMO_BYTES
 from app.services.note_store import store as note_store
 from app.services.exception_capture import CapturedExceptionContext
 from app.usecases.create_note import CmdCreateNote
@@ -286,6 +290,43 @@ def _resolve_tab_file_filter(tab_id: str) -> str | None:
     return tab_state_store.get_file_filter(tab_id=tab_id)
 
 
+# A few tabs' summaries, kept while nothing they read changes; note values are private,
+# so the memo is cleared on lock.
+_SUMMARY_MEMO_ENTRIES = 8
+_summary_memo = SensitiveMemo(maxsize=_SUMMARY_MEMO_ENTRIES, max_bytes=SENSITIVE_MEMO_BYTES)
+
+
+def _resolve_tab_summary(tab_id: str) -> SearchSummary | None:
+    """The tab's summary beside the result count (None: the count alone)."""
+    if not isinstance(tab_id, str) or tab_id == "":
+        raise TypeError("tabId must be a non-empty string")
+    return tab_state_store.get_summary(tab_id=tab_id)
+
+
+def _view_summary(*, tab_id: str, search: str | None, sort_mode: str, is_untagged_view: bool) -> Dict[str, str]:
+    """The figure beside the result count (search_summary.py) over exactly the notes the
+    view finds, or empty text when the tab shows none. Recomputed only when the notes,
+    the index (rules included) or what the view finds changes, not on every scroll."""
+    summary = _resolve_tab_summary(tab_id)
+    if summary is None:
+        return {"text": "", "title": ""}
+    search_text = ""
+    if search is not None:
+        search_text = search
+    date_filter = _resolve_tab_date_filter(tab_id)
+    file_filter = _resolve_tab_file_filter(tab_id)
+    key = (summary, search_text, sort_mode, date_filter, file_filter, is_untagged_view, note_store.revision, search_index.revision)
+    found, figure = _summary_memo.lookup(key)
+    if not found:
+        scope = resolve_view_scope_membership(
+            search=search_text, sort_mode=sort_mode, date_filter=date_filter, file_filter=file_filter,
+            is_untagged_view=is_untagged_view,
+        )
+        figure = summarize(summary, [note_store.get_note(note_id).tags for note_id in sorted(scope.matched_note_ids)])
+        _summary_memo.store(key, figure)
+    return {"text": figure.text, "title": figure.title}
+
+
 def _resolve_tab_date_filter(tab_id: str) -> RootDateFilter | None:
     """The tab's date range filter (None: every date), as its sort order is resolved."""
     if not isinstance(tab_id, str) or tab_id == "":
@@ -426,6 +467,7 @@ def view_diff(payload: ViewDiffRequest):
         "isUntaggedView": is_untagged_view,
         "rootCountTotal": state.metadata["rootCountTotal"],
         "searchRootCountTotal": state.metadata["searchRootCountTotal"],
+        "summary": _view_summary(tab_id=tab_id, search=normalized_search, sort_mode=sort_mode, is_untagged_view=is_untagged_view),
         "rootSortBuckets": state.metadata["rootSortBuckets"],
         "rootWindowStart": state.metadata["rootWindowStart"],
         "rootBandMargin": state.metadata["rootBandMargin"],
@@ -536,6 +578,30 @@ def update_tab_file_filter(payload: UpdateTabFileFilterRequest) -> Dict[str, obj
     if response["changed"] is True:
         reset_undo_stack(payload["clientId"], payload["undoContext"])
     return response
+
+
+# As many names as the summary dialog lists.
+_SUMMARY_PROPERTY_NAME_LIMIT = 200
+
+
+@router.get("/notes/property-names")
+def list_property_names() -> Dict[str, object]:
+    """The property names used on any tag, most used first: the summary dialog's choices
+    (the same list a bare `:` suggests in the search box)."""
+    suggestions = search_index.suggest_property_completions(
+        typed=PROPERTY_SEPARATOR, place=PROPERTY_SUGGESTIONS_IN_SEARCH, limit=_SUMMARY_PROPERTY_NAME_LIMIT,
+    )
+    return {"names": [suggestion.label for suggestion in suggestions]}
+
+
+@router.post("/notes/tab-state/summary")
+@transactional_route
+def update_tab_summary(payload: UpdateTabSummaryRequest) -> Dict[str, object]:
+    """Set or clear a tab's summary beside the result count (search_summary.py)."""
+    summary = None
+    if payload["kind"] != "none":
+        summary = make_search_summary(kind=payload["kind"], property_name=payload["property"])
+    return tab_state_store.set_summary(tab_id=payload["tabId"], summary=summary)
 
 
 @router.post("/notes/tab-state/new-tab")

@@ -116,7 +116,7 @@ import { blockRootNoteCreation, requireCreatedNoteId } from '../mode-manager/ser
 import { createNoteAtTop } from '../mode-manager/actions/note-actions.js';
 import { typeReferenceOpenerAtCaret } from '../mode-manager/services/reference-suggestions-service.js';
 import {
-    setTabDateFilterOnServer, setTabFileFilterOnServer, setTabSortModeOnServer,
+    setTabDateFilterOnServer, setTabFileFilterOnServer, setTabSortModeOnServer, setTabSummaryOnServer,
 } from '../mode-manager/services/tab-state-service.js';
 import { FILE_FILTER_KINDS, getActiveFileFilterKind } from '../mode-manager/services/file-filter-service.js';
 import {
@@ -127,6 +127,8 @@ import {
     rememberDateRangeField,
 } from '../mode-manager/services/date-range-filter-service.js';
 import { DateRangeModal } from '../modals/date-range-modal.js';
+import { SummaryModal } from '../modals/summary-modal.js';
+import { NO_SUMMARY, getActiveSummary } from '../mode-manager/services/summary-service.js';
 import { settleResult } from '../async-result.js';
 import { buildSessionHeaders } from '../session-auth.js';
 import { isValidTagToken } from '../tag-token.js';
@@ -423,6 +425,7 @@ class CommandPaletteController {
         this._prioritizeModal = null;
         this._alphabetizeRootNotesModal = null;
         this._dateRangeModal = null;
+        this._summaryModal = null;
         this._resetUpdatedAtModal = null;
         this._reminderModal = null;
 
@@ -522,6 +525,7 @@ class CommandPaletteController {
                 getDateRangeKind: this.getDateRangeKind.bind(this),
                 getFileFilterKind: this.getFileFilterKind.bind(this),
                 setFileFilter: this.setFileFilter.bind(this),
+                openSummary: this.openSummary.bind(this),
                 getDateRangeField: getDateRangeField,
                 setDateRangePreset: this.setDateRangePreset.bind(this),
                 setDateRangeField: this.setDateRangeField.bind(this),
@@ -1648,6 +1652,65 @@ class CommandPaletteController {
         await actionRefreshAndMaybeSelect({
             startedAt: performance.now(),
             context: `fileFilter.${kind}`,
+            animateNoteChanges: false,
+        });
+    }
+
+    // The active tab's summary beside the result count (summary-service.js), or null.
+    getSummary() {
+        return getActiveSummary();
+    }
+
+    /** Summary…: pick a calculation and a property (summary-modal.js), shown beside the count. */
+    async openSummary() {
+        const isReady = await this._prepareForModalOpen('commandPalette.summary');
+        if (!isReady) {
+            return;
+        }
+        const { names } = await this._authRequest(CONFIG.API.NOTES.PROPERTY_NAMES, 'GET', null);
+        if (!Array.isArray(names)) {
+            throw new Error('Property names response missing names');
+        }
+        if (this._summaryModal === null) {
+            this._summaryModal = new SummaryModal();
+        }
+        const current = getActiveSummary();
+        let kind = 'sum';
+        let property = '';
+        if (names.length > 0) {
+            property = names[0];
+        }
+        if (current !== null) {
+            kind = current.kind;
+            property = current.property;
+        }
+        const chosen = await this._summaryModal.openForSummary({ kind, property, propertyNames: names });
+        if (chosen === null) {
+            return;
+        }
+        await CommandGate.run('commandPalette.summary.apply', async () => {
+            await this.setSummary(chosen.kind, chosen.property);
+        });
+    }
+
+    /** Show a summary (kind 'none': hide it). The notes shown stay, and so does the scroll. */
+    async setSummary(kind, property) {
+        const activeTabId = ModeContext.activeTabId;
+        if (typeof activeTabId !== 'string' || activeTabId.length === 0) {
+            throw new Error('ModeContext.activeTabId must be a non-empty string');
+        }
+        const current = getActiveSummary();
+        if (kind === NO_SUMMARY && current === null) {
+            return;
+        }
+        if (current !== null && current.kind === kind && current.property === property) {
+            return;
+        }
+        const response = await setTabSummaryOnServer(activeTabId, kind, property);
+        ModeContext.hydrateTabState(response, { emitUpdate: false });
+        await actionRefreshAndMaybeSelect({
+            startedAt: performance.now(),
+            context: `summary.${kind}`,
             animateNoteChanges: false,
         });
     }

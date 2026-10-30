@@ -109,6 +109,10 @@
       "tags": ["files", "attachments", "filter", "markdown", "md", "view"]
     },
     {
+      "id": "view.summary",
+      "tags": ["summary", "sum", "total", "average", "avg", "median", "min", "max", "mode", "statistics", "stats", "calculate", "property", "view"]
+    },
+    {
       "id": "pref.theme",
       "tags": ["theme", "appearance", "light", "dark", "system", "ui"]
     },

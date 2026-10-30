@@ -10,6 +10,7 @@ import { AuthenticationRequiredError } from '../../client-state-api.js';
 import { getReferenceViewsPayload, restoreReferenceNavigation } from './reference-source-navigation-service.js';
 import { recordDateFiltersFromServer } from './date-range-filter-service.js';
 import { recordFileFiltersFromServer } from './file-filter-service.js';
+import { recordSummariesFromServer } from './summary-service.js';
 
 const HTTP_UNAUTHORIZED = 401;
 const TAB_STATE_ENDPOINT = CONFIG.API.NOTES.TAB_STATE;
@@ -18,6 +19,7 @@ const TAB_STATE_DELETE_TAB_ENDPOINT = CONFIG.API.NOTES.TAB_STATE_DELETE_TAB;
 const TAB_STATE_SORT_MODE_ENDPOINT = CONFIG.API.NOTES.TAB_STATE_SORT_MODE;
 const TAB_STATE_DATE_FILTER_ENDPOINT = CONFIG.API.NOTES.TAB_STATE_DATE_FILTER;
 const TAB_STATE_FILE_FILTER_ENDPOINT = CONFIG.API.NOTES.TAB_STATE_FILE_FILTER;
+const TAB_STATE_SUMMARY_ENDPOINT = CONFIG.API.NOTES.TAB_STATE_SUMMARY;
 const SCROLL_POLL_INTERVAL_MS = 1000;
 const TAB_STATE_PERSIST_DEBOUNCE_MS = 300;
 
@@ -126,6 +128,7 @@ function captureServerSignature(state) {
 function recordServerSignature(state) {
     recordDateFiltersFromServer(state);
     recordFileFiltersFromServer(state);
+    recordSummariesFromServer(state);
     const signature = serializeState(canonicalizeState(state));
     if (moduleState.lastSignature !== signature) {
         moduleState.lastSignature = signature;
@@ -258,6 +261,19 @@ export async function setTabFileFilterOnServer(tabId, kind) {
         clientId: ModeContext.clientId,
         undoContext: captureUndoContext(),
     });
+    captureServerSignature(response);
+    return response;
+}
+
+/** Set (kind 'none': clear) a tab's summary beside the result count (summary-service.js). */
+export async function setTabSummaryOnServer(tabId, kind, property) {
+    if (typeof tabId !== 'string' || tabId.length === 0) {
+        throw new Error('tabId must be a non-empty string');
+    }
+    if (typeof kind !== 'string' || kind.length === 0 || typeof property !== 'string') {
+        throw new Error('setTabSummaryOnServer requires a kind and a property');
+    }
+    const response = await callTabStateApiAt(TAB_STATE_SUMMARY_ENDPOINT, 'POST', { tabId, kind, property });
     captureServerSignature(response);
     return response;
 }

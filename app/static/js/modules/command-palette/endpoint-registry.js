@@ -176,6 +176,7 @@ export function buildCommandPaletteEndpoints(deps) {
     const openCustomDateRange = requireAction(actions, 'openCustomDateRange');
     const getFileFilterKind = requireAction(actions, 'getFileFilterKind');
     const setFileFilter = requireAction(actions, 'setFileFilter');
+    const openSummary = requireAction(actions, 'openSummary');
     const openAiAgentSettings = requireAction(actions, 'openAiAgentSettings');
     const openCloudPrivacySettings = requireAction(actions, 'openCloudPrivacySettings');
     const openProposalManager = requireAction(actions, 'openProposalManager');
@@ -384,6 +385,13 @@ export function buildCommandPaletteEndpoints(deps) {
             closeOnExecute: true,
             execute: async () => setFileFilter(kind),
         })),
+        {
+            id: 'view.summary',
+            kind: 'action',
+            label: 'Summary…',
+            closeOnExecute: true,
+            execute: async () => openSummary(),
+        },
         {
             id: 'pref.theme',
             kind: 'select',

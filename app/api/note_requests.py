@@ -147,6 +147,14 @@ class UpdateTabFileFilterRequest(TypedDict):
     undoContext: UndoContext
 
 @with_config(ConfigDict(strict=True))
+class UpdateTabSummaryRequest(TypedDict):
+    tabId: Identifier
+    # "none" shows the count alone (search_summary.py SUMMARY_KINDS otherwise).
+    kind: Literal["none", "sum", "avg", "median", "min", "max", "mode"]
+    # The property summarized; "" with "none".
+    property: str
+
+@with_config(ConfigDict(strict=True))
 class CreateNewTabRequest(TypedDict):
     copyFromTabId: Identifier
     clientId: Identifier

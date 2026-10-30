@@ -39,6 +39,8 @@ class AuthMiddleware(BaseHTTPMiddleware):
         f"{API_PREFIX}/auth/login-namespaces/open",
         f"{API_PREFIX}/auth/status",
         f"{API_PREFIX}/auth/app-update/check",
+        # Whether the server runs older code than its files (server_code.py): a yes or no.
+        f"{API_PREFIX}/auth/app-update/server-code",
         f"{API_PREFIX}/auth/session",
         "/favicon.ico",
         "/locked",

@@ -497,7 +497,7 @@ function buildViewContext(overrides) {
     return {
         kind: 'view', isMac: true, isEditing: false, canPasteNoteAtTop: false, canGoToTop: false, canGoToBottom: false,
         isUntaggedView: false, theme: 'system', sortMode: 'normal', dateRangeKind: 'none', dateRangeField: 'updated',
-        fileFilterKind: 'none',
+        fileFilterKind: 'none', hasSummary: false,
         areTabsVisible: false, isAiChatVisible: false, areNoteTagsVisible: false,
         ...overrides,
     };
@@ -506,7 +506,7 @@ function buildViewContext(overrides) {
 const VIEW_HANDLER_NAMES = [
     'onAddNoteAtTop', 'onPasteNoteAtTop', 'onUndo', 'onRedo', 'onGoToTop', 'onGoToBottom', 'onExpandAll', 'onCollapseAll', 'onFullyExpandAll',
     'onFullyCollapseAll', 'onSetUntaggedView', 'onSetSortMode', 'onSetDateRangeField', 'onSetDateRangePreset',
-    'onOpenCustomDateRange', 'onSetFileFilter', 'onToggleAiChat', 'onToggleTabs',
+    'onOpenCustomDateRange', 'onSetFileFilter', 'onOpenSummary', 'onToggleAiChat', 'onToggleTabs',
     'onToggleNoteTags', 'onSetTheme', 'onNewTab', 'onOpenNamespace', 'onOpenReminders',
     'onExportViewHtml', 'onPrintView', 'onLogOut',
 ];
@@ -540,6 +540,7 @@ test('the background menu groups adding, going, the outline, the view, opening a
         'Sort by',
         'Date Range',
         'Notes with Files',
+        'Summary…',
         'Show',
         '— Open',
         'Export & Print',
@@ -613,7 +614,7 @@ test('background actions call their handlers', () => {
     }
     assert.deepEqual(calls.map((call) => call[0]), [
         'onAddNoteAtTop', 'onPasteNoteAtTop', 'onUndo', 'onRedo', 'onGoToTop', 'onGoToBottom',
-        'onExpandAll', 'onCollapseAll', 'onFullyExpandAll', 'onFullyCollapseAll', 'onNewTab', 'onOpenNamespace', 'onOpenReminders', 'onExportViewHtml', 'onPrintView', 'onLogOut',
+        'onExpandAll', 'onCollapseAll', 'onFullyExpandAll', 'onFullyCollapseAll', 'onOpenSummary', 'onNewTab', 'onOpenNamespace', 'onOpenReminders', 'onExportViewHtml', 'onPrintView', 'onLogOut',
     ]);
 });
 

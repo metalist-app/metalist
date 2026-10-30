@@ -71,6 +71,8 @@ export const CONFIG = {
             TAB_STATE_SORT_MODE: `${API_NOTES_BASE}/tab-state/sort-mode`,
             TAB_STATE_DATE_FILTER: `${API_NOTES_BASE}/tab-state/date-filter`,
             TAB_STATE_FILE_FILTER: `${API_NOTES_BASE}/tab-state/file-filter`,
+            TAB_STATE_SUMMARY: `${API_NOTES_BASE}/tab-state/summary`,
+            PROPERTY_NAMES: `${API_NOTES_BASE}/property-names`,
             TAG_INTERACTIONS: `${API_NOTES_BASE}/tag-interactions`,
             MEMORY_USAGE: `${API_NOTES_BASE}/memory-usage`,
             MEMORY_BREAKDOWN: `${API_NOTES_BASE}/memory-usage/breakdown`,
@@ -92,6 +94,7 @@ export const CONFIG = {
         },
         AUTH: {
             APP_UPDATE: `${API_AUTH_BASE}/app-update`,
+            SERVER_CODE: `${API_AUTH_BASE}/app-update/server-code`,
             STATUS: `${API_AUTH_BASE}/status`,
             LOGIN: `${API_AUTH_BASE}/login`,
             LOGIN_NAMESPACES: {

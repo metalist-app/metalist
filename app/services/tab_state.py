@@ -18,6 +18,7 @@ from app.security.encryption import (
 from app.services.root_sorting import SORT_MODE_NORMAL, SORT_MODES, normalize_sort_mode
 from app.services.input_errors import InputRejected
 from app.services.file_kinds import make_file_filter
+from app.services.search_summary import SearchSummary, make_search_summary, summaries_by_tab
 from app.services.root_date_filter import RootDateFilter, root_date_filter_from_payload, root_date_filter_payload
 
 
@@ -147,6 +148,16 @@ def _normalize_file_filters(filters: object, tabs: Dict[str, Dict[str, object]])
     return {tab_id: make_file_filter(kind) for tab_id, kind in filters.items() if tab_id in tabs}
 
 
+def _normalize_summaries(summaries: object, tabs: Dict[str, Dict[str, object]]) -> Dict[str, Dict[str, str]]:
+    """Summaries by tab (search_summary.py), as stored: {kind, property}; a tab that is gone has none."""
+    if not isinstance(summaries, dict):
+        raise InputRejected("summaries must be an object")
+    return {
+        tab_id: {"kind": summary.kind, "property": summary.property_name}
+        for tab_id, summary in summaries_by_tab(summaries).items() if tab_id in tabs
+    }
+
+
 def _is_uuid_string(value: str) -> bool:
     if not isinstance(value, str):
         return False
@@ -169,6 +180,8 @@ class TabStateStore:
         self._reference_views: Dict[str, Dict[str, object]] = {}
         self._date_filters: Dict[str, Dict[str, str]] = {}
         self._file_filters: Dict[str, str] = {}
+        # Each tab's summary beside the result count (search_summary.py), as stored.
+        self._summaries: Dict[str, Dict[str, str]] = {}
         # The version at which each tab's scroll last started again at the top.
         self._scroll_restarted_at_version: Dict[str, int] = {}
         self._install_default_state_locked(version=0)
@@ -290,6 +303,8 @@ class TabStateStore:
                 del self._date_filters[tab_id]
             if tab_id in self._file_filters:
                 del self._file_filters[tab_id]
+            if tab_id in self._summaries:
+                del self._summaries[tab_id]
             if tab_id in self._scroll_restarted_at_version:
                 del self._scroll_restarted_at_version[tab_id]
             self._version += 1
@@ -416,6 +431,44 @@ class TabStateStore:
             snapshot["changed"] = changed
             return snapshot
 
+    def get_summary(self, *, tab_id: str) -> SearchSummary | None:
+        """The tab's summary beside the result count, or None when it shows none."""
+        with self._lock:
+            self._try_decrypt_locked(token="", require_success=True)
+            if tab_id not in self._tabs:
+                raise InputRejected("tab_id must reference an existing tab")
+            if tab_id not in self._summaries:  # shockharness: ignore[DEF002] reason="a tab without a summary shows only its count: None is that, as get_file_filter's None is every note"
+                return None
+            entry = self._summaries[tab_id]
+            return make_search_summary(kind=entry["kind"], property_name=entry["property"])
+
+    def set_summary(self, *, tab_id: str, summary: SearchSummary | None) -> Dict[str, object]:
+        """Set (or, with None, remove) a tab's summary. It shows a figure and changes no
+        note in the view, so the tab's scroll stays."""
+        if not isinstance(tab_id, str) or not tab_id:
+            raise InputRejected("tabId must be a non-empty string")
+        with self._lock:
+            self._try_decrypt_locked(token="", require_success=True)
+            if tab_id not in self._tabs:
+                raise InputRejected("tabId must reference an existing tab")
+            current = None
+            if tab_id in self._summaries:
+                current = self._summaries[tab_id]
+            wanted = None
+            if summary is not None:
+                wanted = {"kind": summary.kind, "property": summary.property_name}
+            changed = current != wanted
+            if changed:
+                if wanted is None:
+                    del self._summaries[tab_id]
+                else:
+                    self._summaries[tab_id] = wanted
+                self._version += 1
+                self._persist_locked(connection=None, encryption_service=None, force_plaintext=False)
+            snapshot = self._snapshot_locked()
+            snapshot["changed"] = changed
+            return snapshot
+
     def _restart_tab_scroll_locked(self, tab_id: str) -> None:
         entry = self._tabs[tab_id]
         entry["scrollY"] = 0
@@ -528,6 +581,7 @@ class TabStateStore:
         self._reference_views = {}
         self._date_filters = {}
         self._file_filters = {}
+        self._summaries = {}
         self._scroll_restarted_at_version = {}
         self._version = version
 
@@ -539,6 +593,7 @@ class TabStateStore:
             "referenceViews": deepcopy(self._reference_views),
             "dateFilters": deepcopy(self._date_filters),
             "fileFilters": dict(self._file_filters),
+            "summaries": deepcopy(self._summaries),
             "version": self._version,
         }
 
@@ -575,6 +630,9 @@ class TabStateStore:
         file_filters: object = {}
         if "fileFilters" in parsed:
             file_filters = parsed["fileFilters"]
+        summaries: object = {}
+        if "summaries" in parsed:
+            summaries = parsed["summaries"]
         return {
             "activeTabId": active_tab_id,
             "tabs": self._normalize_tabs(tabs, from_storage=True),
@@ -582,6 +640,7 @@ class TabStateStore:
             "referenceViews": reference_views,
             "dateFilters": date_filters,
             "fileFilters": file_filters,
+            "summaries": summaries,
             "version": version,
         }
 
@@ -613,6 +672,7 @@ class TabStateStore:
             snapshot["dateFilters"], normalized_tabs,
         )
         self._file_filters = _normalize_file_filters(snapshot["fileFilters"], normalized_tabs)
+        self._summaries = _normalize_summaries(snapshot["summaries"], normalized_tabs)
         self._scroll_restarted_at_version = {}
         self._active_tab_id = active_tab_id
         self._version = version

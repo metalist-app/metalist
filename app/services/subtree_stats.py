@@ -14,7 +14,7 @@ import re
 from collections import Counter
 from dataclasses import dataclass
 from decimal import ROUND_HALF_UP, Decimal
-from typing import Dict, List, Protocol, Tuple
+from typing import Dict, Iterable, List, Protocol, Tuple
 
 from app.services.search_index import tag_bar_values
 from app.services.tag_properties import (
@@ -29,7 +29,11 @@ AVERAGE = "avg"
 MINIMUM = "min"
 MAXIMUM = "max"
 COUNT = "count"
+# Search summaries only (search_summary.py): the middle note total.
+MEDIAN = "median"
 SUMMARY_KINDS = (SUM, AVERAGE, MINIMUM, MAXIMUM, COUNT)
+# A median of an even count of note totals is the mean of the middle two.
+_MIDDLE_PAIR = 2
 # How the totals look (Stats Style in the command palette; main.css): an accent strip,
 # number tiles or a ledger. The same markup takes each look.
 STATS_STYLES = frozenset({"strip", "tiles", "ledger"})
@@ -95,7 +99,7 @@ class SummaryRequest:
 
 
 @dataclass(slots=True)
-class _PropertyTotals:
+class PropertyTotals:
     # Per unit (casefolded, "" for none), each note's own total, in tree order.
     note_totals_by_unit: Dict[str, List[Decimal]]
     # Notes holding a number for the property, in any unit.
@@ -182,7 +186,7 @@ def stats_figure_values(
     return ()
 
 
-def _figure_values(totals: _PropertyTotals, kind: str) -> Tuple[PropertyValue, ...]:
+def _figure_values(totals: PropertyTotals, kind: str) -> Tuple[PropertyValue, ...]:
     if kind == COUNT:
         return (PropertyValue(kind=VALUE_NUMBER, sort_key=Decimal(totals.note_count), unit=""),)
     return tuple(
@@ -243,9 +247,23 @@ def _own_values_by_property(tags: str) -> List[Tuple[str, PropertyValue]]:
     return named
 
 
-def _collect_subtree_totals(*, note_id: str, context: NoteTree) -> Dict[str, _PropertyTotals]:
+def totals_of_notes(tag_bars: Iterable[str]) -> Dict[str, PropertyTotals]:
+    """Each property's per-note totals over these notes' own values, by name (a search
+    summary's notes: search_summary.py)."""
+    totals: Dict[str, PropertyTotals] = {}
+    for tags in tag_bars:
+        _add_note_values(totals, tags)
+    return totals
+
+
+def figure_of(totals: PropertyTotals, kind: str) -> str:
+    """One calculation of a property's note totals, one number per unit (`42g, 1,500mg`)."""
+    return _per_unit(totals, kind)
+
+
+def _collect_subtree_totals(*, note_id: str, context: NoteTree) -> Dict[str, PropertyTotals]:
     """Each property's per-note totals over the note and its descendants, by name."""
-    totals: Dict[str, _PropertyTotals] = {}
+    totals: Dict[str, PropertyTotals] = {}
     pending = [note_id]
     while pending:
         current_id = pending.pop(0)
@@ -254,12 +272,12 @@ def _collect_subtree_totals(*, note_id: str, context: NoteTree) -> Dict[str, _Pr
     return totals
 
 
-def _add_note_values(totals: Dict[str, _PropertyTotals], tags: str) -> None:
+def _add_note_values(totals: Dict[str, PropertyTotals], tags: str) -> None:
     """Adds one note's own values: per property, the note's values summed per unit."""
     note_sums: Dict[str, Dict[str, Decimal]] = {}
     for property_name, value in _own_values_by_property(tags):
         if property_name not in totals:
-            totals[property_name] = _PropertyTotals(note_totals_by_unit={}, note_count=0, skipped_count=0)
+            totals[property_name] = PropertyTotals(note_totals_by_unit={}, note_count=0, skipped_count=0)
         property_totals = totals[property_name]
         if value.kind != VALUE_NUMBER:
             property_totals.skipped_count += 1
@@ -284,10 +302,10 @@ class _FooterLine:
     # "stats" for a whole @stats line, else one summary kind.
     kind: str
     property_name: str
-    totals: _PropertyTotals | None
+    totals: PropertyTotals | None
 
 
-def _footer_lines(requests: Tuple[SummaryRequest, ...], totals: Dict[str, _PropertyTotals]) -> List[_FooterLine]:
+def _footer_lines(requests: Tuple[SummaryRequest, ...], totals: Dict[str, PropertyTotals]) -> List[_FooterLine]:
     """The lines in the order written. A summary tag without a property (`@sum`) gives a line
     for every number property, alphabetically; with @stats, a line it already shows is skipped."""
     has_stats = any(request.kind == STATS_TAG for request in requests)
@@ -358,7 +376,7 @@ def _render_figures_group(lines: List[_FooterLine], context: StatsContext) -> st
     return f'<div class="meta-stats-group">{"".join(items)}</div>'
 
 
-def _has_numbers(totals: _PropertyTotals | None) -> bool:
+def _has_numbers(totals: PropertyTotals | None) -> bool:
     return totals is not None and totals.note_count > 0
 
 
@@ -372,13 +390,13 @@ def _empty_figure(kind: str, *, is_used: bool) -> str:
     return _MISSING
 
 
-def _figure(totals: _PropertyTotals, kind: str) -> str:
+def _figure(totals: PropertyTotals, kind: str) -> str:
     if kind == COUNT:
         return f"{totals.note_count:,}"
     return _per_unit(totals, kind)
 
 
-def _per_unit(totals: _PropertyTotals, kind: str) -> str:
+def _per_unit(totals: PropertyTotals, kind: str) -> str:
     """One number per unit: a plain number first, then the units alphabetically."""
     numbers = []
     units = sorted(totals.note_totals_by_unit, key=lambda unit: (unit != "", unit))
@@ -398,13 +416,19 @@ def _calculate(kind: str, note_totals: List[Decimal]) -> Decimal:
         return max(note_totals)
     if kind == AVERAGE:
         return sum(note_totals, Decimal(0)) / Decimal(len(note_totals))
+    if kind == MEDIAN:
+        ordered = sorted(note_totals)
+        middle = len(ordered) // _MIDDLE_PAIR
+        if len(ordered) % _MIDDLE_PAIR == 1:
+            return ordered[middle]
+        return (ordered[middle - 1] + ordered[middle]) / Decimal(_MIDDLE_PAIR)
     raise ValueError(f"no number to calculate for {kind!r}")
 
 
 def _rounded(value: Decimal, kind: str) -> Decimal:
     """Rounded to the kind's places, as the footer shows it."""
     places = _NUMBER_PLACES
-    if kind == AVERAGE:
+    if kind in (AVERAGE, MEDIAN):
         places = _AVERAGE_PLACES
     return value.quantize(Decimal(1).scaleb(-places), rounding=ROUND_HALF_UP)
 

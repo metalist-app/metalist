@@ -75,6 +75,7 @@ test('buildCommandPaletteEndpoints includes utility action endpoints', async () 
             openCustomDateRange: noop,
             getFileFilterKind: () => 'none',
             setFileFilter: noop,
+            openSummary: noop,
         },
     });
 
