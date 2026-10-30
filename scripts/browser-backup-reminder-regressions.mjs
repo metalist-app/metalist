@@ -158,7 +158,7 @@ async function useBackupFolder(page, folder) {
     const {CommandPalette} = await import('/static/js/modules/command-palette/command-palette-controller.js');
     const {CONFIG} = await import('/static/js/modules/config.js');
     await CommandPalette._authRequest(CONFIG.API.BACKUP.SETTINGS, 'PUT', {
-      folder_path: folder, selected_namespaces: ['default'], retention_count: 3,
+      folder_path: folder, selected_namespaces: ['default'], retention_count: 3, plaintext_sync_acknowledged: [],
     });
   }, folder);
 }
