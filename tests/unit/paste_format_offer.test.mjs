@@ -13,7 +13,7 @@ function memoryStorage() {
 }
 globalThis.sessionStorage = memoryStorage();
 globalThis.localStorage = memoryStorage();
-const { placePasteFormatOffer } = await import('../../app/static/js/modules/mode-manager/services/paste-format-offer-service.js');
+const { placePasteFormatOffer } = await import('../../app/static/js/modules/mode-manager/services/floating-card-placement.js');
 
 // The card for a guessed paste format sits just below where the paste ended,
 // or above it near the window's bottom, always inside the window.

@@ -1,6 +1,10 @@
 import { NOT_IN_TAB_ORDER } from '../../dom-focus.js';
 import { ApplicationState } from '../../application-state.js';
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
+import { NotesAPI } from '../../api-client.js';
+import { serverRenderedHtml } from '../../server-rendered-html.js';
+import { queueMermaidDiagramRendering } from './mermaid-render-service.js';
+import { placePasteFormatOffer } from './floating-card-placement.js';
 
 // The card offering a guessed format for a paste: "Apply as Markdown" (or a
 // few languages for code) and "Skip" (docs/ui/content-formatting.md, "Paste
@@ -10,14 +14,16 @@ import { ModeContextInstance as ModeContext } from '../mode-context.js';
 // scrolling by the user (wheel, touch, scrollbar, keys), Escape (which closes
 // only the card) or leaving edit mode closes it. When MetaList itself scrolls
 // (a new note settling into view), the card moves with the end of the paste.
+// Under its buttons it shows the paste drawn in the format offered (smart previews,
+// slice 6, 2026-10-29); with several languages, in the one pointed at or focused.
 
-const CARD_GAP_PX = 6;
-const VIEWPORT_MARGIN_PX = 8;
 const EDIT_CHECK_INTERVAL_MS = 300;
 const MODIFIER_KEYS = new Set(['Shift', 'Control', 'Alt', 'Meta', 'CapsLock']);
 
 const moduleState = ApplicationState.createFields('paste-format-offer-service', {
     card: null,
+    // Each format's preview of this paste, asked once: { [tag]: Promise<html> }.
+    previews: null,
     noteId: null,
     contentElement: null,
     editCheckTimer: null,
@@ -29,6 +35,7 @@ export function closePasteFormatOffer() {
     }
     moduleState.card.remove();
     moduleState.card = null;
+    moduleState.previews = null;
     moduleState.noteId = null;
     moduleState.contentElement = null;
     clearInterval(moduleState.editCheckTimer);
@@ -93,6 +100,21 @@ function caretRect(contentElement) {
     return { left: content.left, right: content.left, top: content.bottom, bottom: content.bottom };
 }
 
+// The paste drawn as `tag` draws it, under the card's buttons; the card is placed again as it grows.
+async function showPreview(card, contentElement, pastedText, tag) {
+    if (!moduleState.previews.has(tag)) {
+        moduleState.previews.set(tag, NotesAPI.fetchFormatPreview(pastedText, tag).then((answer) => answer.html));
+    }
+    const html = await moduleState.previews.get(tag);
+    if (moduleState.card !== card) return;
+    const preview = card.querySelector('.paste-format-offer-preview');
+    preview.innerHTML = serverRenderedHtml(html);
+    preview.dataset.previewTag = tag;
+    preview.hidden = false;
+    void queueMermaidDiagramRendering(preview);
+    placeCard(card, caretRect(contentElement));
+}
+
 function buildButton(label, className, onActivate) {
     const button = document.createElement('button');
     button.type = 'button';
@@ -109,18 +131,6 @@ function buildButton(label, className, onActivate) {
     return button;
 }
 
-// Where the card goes: just below where the paste ended, or above it when it
-// would run past the window's bottom; kept inside the window either way.
-export function placePasteFormatOffer({ anchor, width, height, viewportWidth, viewportHeight }) {
-    let left = Math.min(anchor.left, viewportWidth - width - VIEWPORT_MARGIN_PX);
-    left = Math.max(VIEWPORT_MARGIN_PX, left);
-    let top = anchor.bottom + CARD_GAP_PX;
-    if (top + height > viewportHeight - VIEWPORT_MARGIN_PX) {
-        top = Math.max(VIEWPORT_MARGIN_PX, anchor.top - height - CARD_GAP_PX);
-    }
-    return { left: Math.round(left), top: Math.round(top) };
-}
-
 function placeCard(card, anchor) {
     const { left, top } = placePasteFormatOffer({
         anchor, width: card.offsetWidth, height: card.offsetHeight,
@@ -132,7 +142,7 @@ function placeCard(card, anchor) {
 
 // Offer the guessed formats for the paste just made into noteId.
 // options: [{ tag, label }]; onApply(tag) applies the chosen one.
-export function offerPasteFormat({ noteId, contentElement, kind, options, onApply }) {
+export function offerPasteFormat({ noteId, contentElement, kind, options, pastedText, onApply }) {
     if (typeof noteId !== 'string' || noteId === '' || !(contentElement instanceof HTMLElement)) {
         throw new Error('offerPasteFormat requires noteId and contentElement');
     }
@@ -141,6 +151,9 @@ export function offerPasteFormat({ noteId, contentElement, kind, options, onAppl
     }
     if (typeof onApply !== 'function') {
         throw new Error('offerPasteFormat requires onApply');
+    }
+    if (typeof pastedText !== 'string' || pastedText === '') {
+        throw new Error('offerPasteFormat requires the pasted text');
     }
     closePasteFormatOffer();
     const card = document.createElement('div');
@@ -158,18 +171,30 @@ export function offerPasteFormat({ noteId, contentElement, kind, options, onAppl
             throw new Error('offerPasteFormat options require tag and label');
         }
         const label = options.length > 1 ? option.label : `Apply as ${option.label}`;
-        card.appendChild(buildButton(label, 'paste-format-offer-apply', () => {
+        const button = buildButton(label, 'paste-format-offer-apply', () => {
             closePasteFormatOffer();
             onApply(option.tag);
-        }));
+        });
+        // Several languages: the preview follows the one pointed at or focused.
+        for (const type of ['mouseenter', 'focus']) {
+            button.addEventListener(type, async () => {
+                await showPreview(card, contentElement, pastedText, option.tag);
+            });
+        }
+        card.appendChild(button);
     }
     card.appendChild(buildButton('Skip', 'paste-format-offer-skip', closePasteFormatOffer));
+    const preview = document.createElement('div');
+    preview.className = 'paste-format-offer-preview';
+    preview.hidden = true;
+    card.appendChild(preview);
     card.style.left = '0px';
     card.style.top = '0px';
     document.body.appendChild(card);
     placeCard(card, caretRect(contentElement));
 
     moduleState.card = card;
+    moduleState.previews = new Map();
     moduleState.noteId = noteId;
     moduleState.contentElement = contentElement;
     moduleState.editCheckTimer = setInterval(checkStillEditing, EDIT_CHECK_INTERVAL_MS);
@@ -179,4 +204,6 @@ export function offerPasteFormat({ noteId, contentElement, kind, options, onAppl
     document.addEventListener('touchmove', closePasteFormatOffer, { capture: true, passive: true });
     document.addEventListener('scroll', followPaste, { capture: true });
     window.addEventListener('resize', closePasteFormatOffer);
+    // The first format's preview at once.
+    void showPreview(card, contentElement, pastedText, options[0].tag);
 }

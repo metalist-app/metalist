@@ -43,6 +43,8 @@ import { writeRenderedNoteToSystemClipboard } from '../services/note-clipboard-w
 import { downloadFileReference } from '../services/file-reference-service.js';
 import { renameFileFromMenu } from '../services/file-rename-service.js';
 import { referenceInsertRange, rememberSelectionAtRightPress } from '../services/reference-insert-point-service.js';
+import { insertFormatAt } from '../services/insert-format-service.js';
+import { insertKindsFor } from '../services/insert-format-plan.js';
 import { typeReferenceOpener } from '../services/reference-suggestions-service.js';
 import { confirmRemovingReferencedNote } from '../services/referenced-note-removal-service.js';
 import {
@@ -615,6 +617,11 @@ function restoreStyleSelection(noteContent, styledRange) {
     selection.addRange(styledRange);
 }
 
+function insertKindsAt(noteElement, referenceRange) {
+    if (referenceRange === null) return [];
+    return insertKindsFor(getTagBarValue(noteElement));
+}
+
 async function addStyleFromContextMenu(noteId, styleTag, selectedTextRange) {
     if (typeof noteId !== 'string' || noteId.length === 0) {
         throw new Error('addStyleFromContextMenu requires noteId');
@@ -999,6 +1006,8 @@ function showNoteContextMenu(event, noteId, imageContext, selectedTextRange, ref
         hasSelectedText,
         hasNoteClipboard,
         canInsertReference: referenceRange !== null,
+        // Insert ▸ offers only where Link to… can type, in the note being edited.
+        insertKinds: insertKindsAt(noteElement, referenceRange),
         canAddStyle: ModeContext.isEditingNote(noteId),
         canRemoveFormatting: ModeContext.isEditingNote(noteId),
         canAddDiagram: ModeContext.isEditingNote(noteId),
@@ -1069,6 +1078,11 @@ function showNoteContextMenu(event, noteId, imageContext, selectedTextRange, ref
             },
             onEmbed: (targetNoteId) => {
                 typeReferenceOpener(targetNoteId, referenceRange, 'embed');
+            },
+            onInsertFormat: (targetNoteId, kind) => {
+                void CommandGate.run('contextMenu.note.insert_format', async () => {
+                    await insertFormatAt(targetNoteId, referenceRange, kind);
+                });
             },
             onOpenReferenceSource: (referenceNoteId) => {
                 void CommandGate.run('contextMenu.reference.open_source', async () => {

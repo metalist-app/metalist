@@ -484,6 +484,9 @@ function buildNoteContextItems(context, handlers) {
             { id: 'embed', label: 'Embed…', icon: 'note_reference', enabled: true, onSelect: () => onEmbed(noteId) },
         );
     }
+    if (Array.isArray(context.insertKinds) && context.insertKinds.length > 0) {
+        editingItems.push(buildInsertItem(context.insertKinds, noteId, requireNoteHandler(handlers, 'onInsertFormat')));
+    }
     if (context.canAddStyle === true) {
         editingItems.push(buildAddStyleItem(context, noteId, onAddStyle));
     }
@@ -609,6 +612,21 @@ function buildOutlineEntries(context, handlers, { commandKey }) {
         levelEntries[0].separated = true;
     }
     return [...expandEntries, ...levelEntries];
+}
+
+// Insert ▸ LaTeX / CSV / Mermaid Diagram: the region's delimiters where it was right-clicked
+// (insert-format-service.js). Only the kinds the note is not already.
+const INSERT_ITEM_LABELS = Object.freeze({ latex: 'LaTeX', csv: 'CSV', mermaid: 'Mermaid Diagram' });
+const INSERT_ITEM_ICONS = Object.freeze({ latex: 'style', csv: 'view', mermaid: 'diagram' });
+
+function buildInsertItem(insertKinds, noteId, onInsertFormat) {
+    const submenu = insertKinds.map((kind) => {
+        if (!Object.hasOwn(INSERT_ITEM_LABELS, kind)) {
+            throw new Error(`Not a kind to insert: ${kind}`);
+        }
+        return { id: `insert-${kind}`, label: INSERT_ITEM_LABELS[kind], icon: INSERT_ITEM_ICONS[kind], enabled: true, onSelect: () => onInsertFormat(noteId, kind) };
+    });
+    return { id: 'insert-format', label: 'Insert', icon: 'add_child', enabled: true, submenu };
 }
 
 function buildAddStyleItem(context, noteId, onAddStyle) {

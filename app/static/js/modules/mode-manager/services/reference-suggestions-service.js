@@ -5,7 +5,7 @@ import { unlessDiagramEditorOpen } from '../../excalidraw/excalidraw-editor-stat
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import { restoreSelection } from '../../editor-selection.js';
 // Placed as the paste format card is: below its anchor, or above it near the window's bottom.
-import { placePasteFormatOffer } from './paste-format-offer-service.js';
+import { placePasteFormatOffer } from './floating-card-placement.js';
 import { PREVIEW_OWNERS, hideReferencePreview, placeReferencePreview, showReferencePreview } from './reference-preview-card-service.js';
 
 // Typing `[[` in a note opens a list of notes to reference (docs/ui/references.md,

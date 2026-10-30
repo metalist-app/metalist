@@ -1871,6 +1871,7 @@ function offerGuessedFormat({ record, guess }) {
         contentElement: DOMUtils.getNoteContent(noteElement),
         kind: guess.kind,
         options: guess.options,
+        pastedText: pasted.pastedText,
         onApply: (tag) => applyGuessedFormat(pasted, tag),
     });
     Logger.logDebug('Paste format offered', { kind: guess.kind, tags: guess.options.map((option) => option.tag) },

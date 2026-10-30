@@ -1,6 +1,7 @@
 import { AI_CHAT_COMPOSER_MAXIMUM_HEIGHT, AI_CHAT_COMPOSER_MINIMUM_HEIGHT, AI_CHAT_MAXIMUM_WIDTH, AI_CHAT_MINIMUM_WIDTH } from '../ai-chat/ai-chat-size-limits.js';
 import { openAgentMenu } from '../ai-chat/agent-menu-actions.js';
 import { addDiagramToNote } from '../excalidraw/excalidraw-actions.js';
+import { insertFormatAtCaret } from '../mode-manager/services/insert-format-service.js';
 import { captureActiveAgentScope } from '../ai-chat/ai-chat-panel-controller.js';
 import { showUpdateNotice } from '../app-update-service.js';
 import { BackupReminder } from '../backup-reminder-service.js';
@@ -489,6 +490,7 @@ class CommandPaletteController {
                 printView: this.printView.bind(this),
                 attachFileToCurrentNote: this.attachFileToCurrentNote.bind(this),
                 addExcalidrawDiagram: this.addExcalidrawDiagram.bind(this),
+                insertFormat: this.insertFormat.bind(this),
                 linkTo: () => this.typeReferenceOpener('link'),
                 embed: () => this.typeReferenceOpener('embed'),
                 trimUnusedFiles: this.trimUnusedFiles.bind(this),
@@ -1836,6 +1838,25 @@ class CommandPaletteController {
         // Outside the gate: MetaList ignores typing while a command runs, and this
         // typing is what opens the suggestions.
         typeReferenceOpenerAtCaret(kind);
+    }
+
+    // Insert LaTeX / CSV / Mermaid Diagram at the caret (insert-format-service.js); outside
+    // edit mode in a new top note, as Link to… does.
+    async insertFormat(kind) {
+        if (this.isOpen()) {
+            this.close();
+        }
+        if (!ModeContext.isEditing) {
+            if (blockRootNoteCreation('top', 'insertFormat')) {
+                return;
+            }
+            await CommandGate.run('commandPalette.addNoteForInsert', async () => {
+                requireCreatedNoteId(await createNoteAtTop(), 'insertFormat');
+            });
+        }
+        await CommandGate.run('commandPalette.insertFormat', async () => {
+            await insertFormatAtCaret(kind);
+        });
     }
 
     async addExcalidrawDiagram() {

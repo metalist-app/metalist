@@ -29,6 +29,13 @@ import { waitForAppQuiet } from './browser-app-idle.mjs';
 // reference's left edge; moving within keeps it, leaving hides it; a picture's card shows
 // the picture (it had stayed "Loading image preview..."); Escape hides it, editing goes
 // on, until the caret leaves the reference.
+//
+// Insert (slice 5, 2026-10-29): Insert LaTeX in a plain note adds a free wrapper's tag
+// (`{@LaTeX}`) and types `{}` with the caret inside, where a formula then previews; in a
+// Markdown note Insert Mermaid Diagram types a fence on lines of its own with the caret
+// on its empty line; Insert ▸ hides CSV in an @csv note; ⌘Z takes the typing back.
+// The "Apply as …" card (slice 6): a CSV paste's card shows the paste as the table
+// @csv draws; with two languages, pointing at one shows the paste in it.
 
 const WINDOW = {width: 1100, height: 800};
 const REQUESTS_QUIET_MS = 300;
@@ -116,14 +123,19 @@ async function seedNotes(page) {
     const picture = (await FilesAPI.uploadFile(new File([bytes], 'dot.png', {type: 'image/png'}))).file_id;
     const pdf = (await FilesAPI.uploadFile(new File([new TextEncoder().encode('%PDF-1.4 lease')], 'lease.pdf', {type: 'application/pdf'}))).file_id;
     const plan = await make(`<div>Plan: [[${kyoto}]] and the photo ![[${picture}]] and the lease [[${pdf}|lease]] end</div>`, '');
-    return {fillers, formulas, table, groceries, release, tall, settings, kyoto, picture, pdf, plan};
+    const plainNote = await make('<div>Plain note</div>', '');
+    const markdownNote = await make('<div>Markdown note</div>', '@markdown');
+    const csvNote = await make('<div>Name,Role</div>', '@csv');
+    const pasteNote = await make('<div>Paste here:</div>', '');
+    return {fillers, formulas, table, groceries, release, tall, settings, kyoto, picture, pdf, plan, plainNote, markdownNote, csvNote, pasteNote};
   }, {fillerCount: FILLER_NOTES, rowCount: TABLE_ROWS, tallSteps: TALL_DIAGRAM_STEPS, png: PNG_BASE64});
 }
 
 const contentOf = id => `.note[data-note-id="${id}"] > .note-content`;
 
 async function enterEditing(page, id) {
-  await page.evaluate(selector => document.querySelector(selector).scrollIntoView({block: 'start'}), contentOf(id));
+  // In the middle: at the top a one-line note would sit under the sticky search bar.
+  await page.evaluate(selector => document.querySelector(selector).scrollIntoView({block: 'center'}), contentOf(id));
   await settle(page);
   await page.click(contentOf(id));
   await idle(page);
@@ -626,6 +638,124 @@ async function referenceCases(page, ids) {
   await leaveEditing(page);
 }
 
+// The note's text, tag bar and the text just before the caret.
+async function editorState(page, id) {
+  return page.evaluate(id => {
+    const note = document.querySelector(`.note[data-note-id="${id}"]`);
+    const content = note.querySelector(':scope > .note-content');
+    const range = getSelection().getRangeAt(0);
+    const before = document.createRange();
+    before.setStart(content, 0);
+    before.setEnd(range.startContainer, range.startOffset);
+    // Lines as written: Chrome types a new line as a <div>, Firefox as a <br>, and the note
+    // reads both alike. Each block is a line or more split at <br>; a <br> ending a block
+    // only holds an empty line open.
+    const textOf = fragment => {
+      const holder = document.createElement('div');
+      holder.innerHTML = fragment;
+      return holder.textContent;
+    };
+    const blockLines = html => {
+      const parts = html.split(/<br\s*\/?>/i).map(textOf);
+      if (parts.length > 1 && parts[parts.length - 1] === '') parts.pop();
+      return parts;
+    };
+    const lines = [...content.childNodes].flatMap(node => (node instanceof Element ? blockLines(node.innerHTML) : [node.textContent]));
+    return {lines, tags: note.querySelector('.note-tag-bar-input').value, beforeCaret: before.toString()};
+  }, id);
+}
+
+async function insertFromPalette(page, kind) {
+  await page.evaluate(async kind => {
+    const {CommandPalette} = await import('/static/js/modules/command-palette/command-palette-controller.js');
+    await CommandPalette.insertFormat(kind);
+  }, kind);
+  await idle(page);
+}
+
+async function insertCases(page, ids) {
+  await enterEditing(page, ids.plainNote);
+  await placeCaret(page, 'Plain note', 'Plain note'.length);
+  await insertFromPalette(page, 'latex');
+  assert.deepEqual(await editorState(page, ids.plainNote), {lines: ['Plain note{}'], tags: '{@LaTeX}', beforeCaret: 'Plain note{'},
+    'Insert LaTeX in a plain note: a free wrapper, its tag, the caret inside');
+  await page.keyboard.type('\\frac{1}{2}');
+  assert.ok(await becomes(page, 'fraction', null), 'typed in the inserted region: its preview');
+  await leaveEditing(page);
+
+  await enterEditing(page, ids.markdownNote);
+  await placeCaret(page, 'Markdown note', 'Markdown note'.length);
+  await insertFromPalette(page, 'mermaid');
+  assert.deepEqual(await editorState(page, ids.markdownNote), {
+    lines: ['Markdown note', '```mermaid', 'flowchart LR', '', '```'],
+    tags: '@markdown', beforeCaret: 'Markdown note```mermaidflowchart LR',
+  }, 'Insert Mermaid Diagram in a Markdown note: a fence on lines of its own, the caret on its empty line');
+  // ⌘Z in a note with edits is the browser's own undo (history-shortcut-policy-service.js),
+  // which headless browsers do not map to the key: the command it runs.
+  await page.evaluate(() => document.execCommand('undo'));
+  await idle(page);
+  assert.deepEqual((await editorState(page, ids.markdownNote)).lines, ['Markdown note'], '⌘Z takes the inserted text back');
+  await leaveEditing(page);
+
+  await enterEditing(page, ids.csvNote);
+  const box = await page.$eval(contentOf(ids.csvNote), content => {
+    const rect = content.getBoundingClientRect();
+    return {x: rect.left + 20, y: rect.top + rect.height / 2};
+  });
+  await page.mouse.click(box.x, box.y, {button: 'right'});
+  await settle(page);
+  const insertItem = await page.evaluateHandle(() => [...document.querySelectorAll('[role="menuitem"]')].find(item => item.textContent.trim().startsWith('Insert')));
+  assert.ok(insertItem.asElement() !== null, 'the editing menu offers Insert');
+  await insertItem.asElement().hover();
+  await settle(page);
+  const offered = await page.evaluate(() => [...document.querySelectorAll('[role="menuitem"]')].map(item => item.textContent.trim())
+    .filter(label => ['LaTeX', 'CSV', 'Mermaid Diagram'].includes(label)));
+  assert.deepEqual(offered, ['LaTeX', 'Mermaid Diagram'], 'in an @csv note, Insert offers no CSV');
+  await page.keyboard.press('Escape');
+  await leaveEditing(page);
+}
+
+async function pasteCardCases(page, ids) {
+  await enterEditing(page, ids.pasteNote);
+  await placeCaret(page, 'Paste here:', 'Paste here:'.length);
+  await page.keyboard.press('Enter');
+  await page.evaluate(id => {
+    const content = document.querySelector(`.note[data-note-id="${id}"] > .note-content`);
+    const data = new DataTransfer();
+    data.setData('text/plain', 'Name,Role,City\nAda,Analyst,London\nGrace,Admiral,New York');
+    // Firefox drops clipboardData given to the constructor: set it on the event (as browser-paste-format-regressions.mjs).
+    content.dispatchEvent(Object.defineProperty(new ClipboardEvent('paste', {bubbles: true, cancelable: true}), 'clipboardData', {value: data}));
+  }, ids.pasteNote);
+  await idle(page);
+  const card = await page.evaluate(() => {
+    const offer = document.querySelector('.paste-format-offer');
+    const preview = offer.querySelector('.paste-format-offer-preview');
+    return {buttons: [...offer.querySelectorAll('button')].map(button => button.textContent), tag: preview.dataset.previewTag,
+      cells: [...preview.querySelectorAll('td')].map(cell => cell.textContent)};
+  });
+  assert.deepEqual(card, {buttons: ['Apply as CSV', 'Skip'], tag: '@csv',
+    cells: ['Name', 'Role', 'City', 'Ada', 'Analyst', 'London', 'Grace', 'Admiral', 'New York']}, 'a CSV paste\'s card shows its table');
+  await page.keyboard.press('Escape');
+  await settle(page);
+
+  // Two languages offered: the preview follows the one pointed at.
+  await page.evaluate(async id => {
+    const {offerPasteFormat} = await import('/static/js/modules/mode-manager/services/paste-format-offer-service.js');
+    const content = document.querySelector(`.note[data-note-id="${id}"] > .note-content`);
+    offerPasteFormat({noteId: id, contentElement: content, kind: 'code', pastedText: 'print(1)',
+      options: [{tag: '@code=python', label: 'Python'}, {tag: '@code=ruby', label: 'Ruby'}], onApply: () => {}});
+  }, ids.pasteNote);
+  await idle(page);
+  const first = await page.$eval('.paste-format-offer-preview', preview => [preview.dataset.previewTag, preview.querySelector('.meta-code-language').textContent]);
+  assert.deepEqual(first, ['@code=python', 'python'], 'the first language at once');
+  await (await page.$$('.paste-format-offer-apply'))[1].hover();
+  await idle(page);
+  const pointed = await page.$eval('.paste-format-offer-preview', preview => [preview.dataset.previewTag, preview.querySelector('.meta-code-language').textContent]);
+  assert.deepEqual(pointed, ['@code=ruby', 'ruby'], 'pointing at Ruby shows the paste as Ruby');
+  await page.keyboard.press('Escape');
+  await leaveEditing(page);
+}
+
 async function previewCases(page, ids) {
   const failures = [];
   const attempt = async (label, run) => {
@@ -661,6 +791,8 @@ async function previewCases(page, ids) {
   await attempt('10 Mermaid: a fence\'s diagram, broken and fixed; a tall one scaled down to fit', () => mermaidCases(page, ids));
   await attempt('11 JSON: compact shown laid out; broken, why and where', () => jsonCases(page, ids));
   await attempt('12 references: the card for the note, picture or file the caret is in', () => referenceCases(page, ids));
+  await attempt('13 Insert LaTeX / CSV / Mermaid Diagram', () => insertCases(page, ids));
+  await attempt('14 the Apply as … card shows the paste in its format', () => pasteCardCases(page, ids));
   assert.deepEqual(failures, []);
 }
 
@@ -673,7 +805,7 @@ export async function checkEditPreviews(page) {
   await runThenCleanUp('edit previews', () => previewCases(page, ids), async () => {
     await page.evaluate(async ids => {
       const {NotesAPI} = await import('/static/js/modules/api-client.js');
-      for (const id of [ids.formulas, ids.table, ids.groceries, ids.release, ids.tall, ids.settings, ids.plan, ids.kyoto, ...ids.fillers]) await NotesAPI.deleteNote(id);
+      for (const id of [ids.formulas, ids.table, ids.groceries, ids.release, ids.tall, ids.settings, ids.plan, ids.kyoto, ids.plainNote, ids.markdownNote, ids.csvNote, ids.pasteNote, ...ids.fillers]) await NotesAPI.deleteNote(id);
     }, ids);
   });
 }

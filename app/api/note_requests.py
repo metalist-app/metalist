@@ -209,6 +209,12 @@ class TagSuggestionsRequest(TypedDict):
     content_html: Content
 
 @with_config(ConfigDict(strict=True))
+class FormatPreviewRequest(TypedDict):
+    # Pasted text and the format the "Apply as …" card offers for it (`@csv`, `@code=python`).
+    text: Content
+    tags_text: Text
+
+@with_config(ConfigDict(strict=True))
 class EditPreviewRequest(TypedDict):
     # The edited note's content with the caret marked (app/services/edit_previews.py).
     marked_content_html: Content

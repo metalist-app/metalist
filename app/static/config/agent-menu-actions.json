@@ -425,6 +425,24 @@
     "presentation": "palette"
   },
   {
+    "id": "action.insert_latex",
+    "label": "Insert LaTeX",
+    "selector": "#command-palette-modal",
+    "presentation": "palette"
+  },
+  {
+    "id": "action.insert_csv",
+    "label": "Insert CSV",
+    "selector": "#command-palette-modal",
+    "presentation": "palette"
+  },
+  {
+    "id": "action.insert_mermaid",
+    "label": "Insert Mermaid Diagram",
+    "selector": "#command-palette-modal",
+    "presentation": "palette"
+  },
+  {
     "id": "action.add_excalidraw_diagram",
     "label": "Add Excalidraw Diagram",
     "selector": "#command-palette-modal",

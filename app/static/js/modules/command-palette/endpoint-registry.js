@@ -135,6 +135,7 @@ export function buildCommandPaletteEndpoints(deps) {
     const openKeyboardShortcutsHelp = requireAction(actions, 'openKeyboardShortcutsHelp');
     const attachFileToCurrentNote = requireAction(actions, 'attachFileToCurrentNote');
     const addExcalidrawDiagram = requireAction(actions, 'addExcalidrawDiagram');
+    const insertFormat = requireAction(actions, 'insertFormat');
     const linkTo = requireAction(actions, 'linkTo');
     const embed = requireAction(actions, 'embed');
     const trimUnusedFiles = requireAction(actions, 'trimUnusedFiles');
@@ -654,6 +655,13 @@ export function buildCommandPaletteEndpoints(deps) {
             closeOnExecute: true,
             execute: async () => embed(),
         },
+        ...['latex', 'csv', 'mermaid'].map((kind) => ({
+            id: `action.insert_${kind}`,
+            kind: 'action',
+            label: { latex: 'Insert LaTeX', csv: 'Insert CSV', mermaid: 'Insert Mermaid Diagram' }[kind],
+            closeOnExecute: true,
+            execute: async () => insertFormat(kind),
+        })),
         {
             id: 'action.add_excalidraw_diagram',
             kind: 'action',

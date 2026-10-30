@@ -25,6 +25,7 @@ from app.services.content_formatting import REGION_JSON
 from app.services.content_formatting import FoundRegion
 from app.services.content_formatting import finding_regions
 from app.services.content_formatting import format_note_content_for_view
+from app.services.file_text_preview import plain_text_to_note_html
 from app.services.content_formatting import holding_link_fetches
 from app.services.latex_rendering import FoundFormula
 from app.services.latex_rendering import finding_formulas
@@ -227,3 +228,13 @@ def _error_text(badge: str, message: str) -> str:
     if message.strip() == "":
         return badge
     return f"{badge}: {message.strip()}"
+
+
+def format_preview_html(*, text: str, tags: str) -> str:
+    """Pasted text drawn as a note with `tags` draws it, for the "Apply as …" card
+    (smart previews, slice 6): the format it offers, before it is applied."""
+    if not isinstance(text, str) or not isinstance(tags, str):
+        raise TypeError("format_preview_html requires text and tags strings")
+    with holding_link_fetches():
+        rendered = format_note_content_for_view(content_html=plain_text_to_note_html(text), tags=tags, redact_credentials=True)
+    return sanitize_rendered_html(rendered)

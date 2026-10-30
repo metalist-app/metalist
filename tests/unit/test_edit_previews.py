@@ -12,7 +12,7 @@ import pytest
 import app.services.content_formatting as content_formatting_module
 from app.security.rendered_html import sanitize_rendered_html
 from app.services.content_formatting import format_note_content_for_view
-from app.services.edit_previews import CARET_MARK, PREVIEW_CSV, PREVIEW_JSON, PREVIEW_LATEX, PREVIEW_MERMAID, PREVIEW_NONE, edit_preview_at_caret
+from app.services.edit_previews import CARET_MARK, PREVIEW_CSV, PREVIEW_JSON, PREVIEW_LATEX, PREVIEW_MERMAID, PREVIEW_NONE, edit_preview_at_caret, format_preview_html
 from app.utils.not_found import NOT_FOUND
 from app.services.latex_rendering import FoundFormula, finding_formulas, render_latex_math_to_html, render_latex_to_html
 
@@ -299,3 +299,18 @@ def test_broken_json_says_why_and_where() -> None:
     assert (preview.kind, preview.html) == (PREVIEW_JSON, "")
     assert preview.error == "Invalid JSON: Expecting ',' delimiter: line 1 column 9 (char 8)"
     assert _preview(_lines(['Settings| ((({"debug": true}))) saved']), "@markdown (((@json)))").kind == PREVIEW_NONE
+
+
+# The "Apply as …" card's preview (smart previews, slice 6): the paste as the format draws it.
+@pytest.mark.parametrize(
+    ("text", "tags", "drawn"),
+    [
+        ("Name,Role\nAda,Analyst", "@csv", "<td>Ada</td><td>Analyst</td>"),
+        ("# Title\n**bold** text", "@markdown", "<h1>Title</h1><p><strong>bold</strong> text</p>"),
+        ("def f(x):\n    return x", "@code=python", '<span class="meta-code-language">python</span>'),
+    ],
+)
+def test_a_paste_shows_as_the_format_it_is_offered_draws_it(text: str, tags: str, drawn: str) -> None:
+    html_text = format_preview_html(text=text, tags=tags)
+    assert drawn in html_text, html_text
+    assert html_text == sanitize_rendered_html(html_text)

@@ -28,6 +28,7 @@ from app.api.note_requests import (
     ReferenceSuggestionsRequest,
     TagDetailsRequest,
     EditPreviewRequest,
+    FormatPreviewRequest,
     SearchTagDetailsRequest,
     DictationPasteRequest,
     CreateNoteTopRequest,
@@ -67,7 +68,7 @@ from app.api.note_requests import (
 )
 from app.api.transactions import serialized_read_route, transactional_route
 from app.services.sync import touch_client
-from app.services.edit_previews import edit_preview_at_caret
+from app.services.edit_previews import edit_preview_at_caret, format_preview_html
 from app.services.file_kinds import FILE_FILTER_NONE
 from app.services.root_date_filter import DATE_RANGE_NONE
 from app.services.tag_properties import PROPERTY_SUGGESTIONS_IN_SEARCH
@@ -936,6 +937,13 @@ def edit_preview(payload: EditPreviewRequest) -> Dict[str, object]:
         "hasUnknownCommand": preview.has_unknown_command, "caretRow": preview.caret_row,
         "diagramSource": preview.diagram_source,
     }
+
+
+@router.post("/notes/format-preview")
+@transactional_route
+def format_preview(payload: FormatPreviewRequest) -> Dict[str, object]:
+    """Read-only: pasted text drawn in the format the "Apply as …" card offers (docs/ui/content-formatting.md)."""
+    return {"html": format_preview_html(text=payload["text"], tags=payload["tags_text"])}
 
 
 @router.post("/notes/search-tag-details")

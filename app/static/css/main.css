@@ -6381,6 +6381,28 @@ html[data-theme="dark"] .context-menu-item.is-submenu-open {
     font-size: 13px;
 }
 
+/* The paste drawn in the format offered, under the buttons, cut with a fade. */
+.paste-format-offer:has(.paste-format-offer-preview:not([hidden])) {
+    max-width: min(640px, calc(100vw - 16px));
+}
+
+.paste-format-offer-preview {
+    flex-basis: 100%;
+    max-height: 15em;
+    overflow: hidden;
+    padding: 4px;
+    border-top: 1px solid var(--border-color);
+    font-size: 14px;
+    -webkit-mask-image: linear-gradient(to bottom, #000 75%, transparent);
+    mask-image: linear-gradient(to bottom, #000 75%, transparent);
+}
+
+.paste-format-offer-preview .meta-csv,
+.paste-format-offer-preview .meta-code,
+.paste-format-offer-preview .meta-markdown {
+    margin: 0;
+}
+
 .paste-format-offer-prompt {
     padding: 0 4px;
     color: var(--note-tag-muted);

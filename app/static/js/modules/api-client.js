@@ -759,6 +759,17 @@ export const NotesAPI = {
         });
     },
 
+    // Pasted text drawn in a format the "Apply as …" card offers: { html }.
+    async fetchFormatPreview(text, tagsText) {
+        if (typeof text !== 'string' || typeof tagsText !== 'string') {
+            throw new Error('NotesAPI.fetchFormatPreview requires text and tags');
+        }
+        return this._apiCall(CONFIG.API.NOTES.FORMAT_PREVIEW, {
+            method: 'POST',
+            body: JSON.stringify({ text, tags_text: tagsText }),
+        });
+    },
+
     // The formula, CSV table or Mermaid diagram under the caret while editing: { kind, html, error, hasUnknownCommand, caretRow, diagramSource }.
     async fetchEditPreview(markedContentHtml, tagsText) {
         if (typeof markedContentHtml !== 'string' || typeof tagsText !== 'string') {

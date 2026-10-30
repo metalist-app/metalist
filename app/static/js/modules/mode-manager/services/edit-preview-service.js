@@ -5,7 +5,7 @@ import { sanitizeNoteHtmlForStorage } from '../../note-html-sanitizer.js';
 import { serverRenderedHtml } from '../../server-rendered-html.js';
 import { unlessDiagramEditorOpen } from '../../excalidraw/excalidraw-editor-state.js';
 import { getTagBarValue } from './tag-bar-service.js';
-import { placePasteFormatOffer } from './paste-format-offer-service.js';
+import { VIEWPORT_MARGIN_PX, placePasteFormatOffer } from './floating-card-placement.js';
 import { drawMermaidPreview, mermaidPreviewHtml } from './mermaid-render-service.js';
 
 // Previews while editing (docs/ui/content-formatting.md, "Previews while editing";
@@ -36,7 +36,6 @@ const INVALID_DIAGRAM = 'Invalid Mermaid diagram';
 // The panel's room (main.css, .edit-preview): this share of the window's height, and
 // the window's width less this margin on each side.
 const PANEL_HEIGHT_SHARE = 0.4;
-const VIEWPORT_MARGIN_PX = 8;
 const NO_SCALE_UP = 1;
 
 // Tuning (the maintainer wants to try these before settling them):

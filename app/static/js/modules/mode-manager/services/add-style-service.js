@@ -50,7 +50,7 @@ function requireKnownStyleTag(styleTag) {
     }
 }
 
-function scanTopLevelTagTokens(tagBarText) {
+export function scanTopLevelTagTokens(tagBarText) {
     requireText(tagBarText, 'tagBarText');
 
     const tokens = [];
