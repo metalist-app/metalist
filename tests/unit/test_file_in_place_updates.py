@@ -18,7 +18,7 @@ from app.db.files_sql import fetch_file, fetch_file_preview
 from app.models.database import SafeSession
 from app.security.encryption import clear_encryption_key, get_encryption_service, set_encryption_required, set_session_dek
 from app.services import file_storage
-from app.services.file_registry import FileRegistry, file_registry
+from app.services.file_registry import FileRegistry, file_registry, referenced_file_ids
 from app.services.file_storage import (
     FileNotEditable,
     FilePreviewMissing,
@@ -200,6 +200,9 @@ class _FakeNoteStore:
     def get_note(self, note_id: str) -> _FakeNote:
         return self._notes[note_id]
 
+    def referenced_target_ids(self) -> frozenset[str]:
+        return frozenset(file_id for note in self._notes.values() for file_id in referenced_file_ids(note.content))
+
 
 def test_trimming_an_unused_diagram_deletes_its_previews(encrypted_files, monkeypatch) -> None:
     kept_id = _create_diagram()
@@ -208,7 +211,7 @@ def test_trimming_an_unused_diagram_deletes_its_previews(encrypted_files, monkey
         store_file_previews(file_id=file_id, previews_by_variant={"light": LIGHT_SVG, "dark": DARK_SVG}, content_revision=1, token="token")
     monkeypatch.setattr(file_storage, "note_store", _FakeNoteStore({"note": _FakeNote(content=f"<div>![[{kept_id}]]</div>")}))
 
-    result = trim_unused_files()
+    result = trim_unused_files(kept_file_ids=frozenset())
 
     assert result.deleted_file_ids == [dropped_id]
     with connect_file_reader() as connection:

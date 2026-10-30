@@ -21,7 +21,7 @@ This document describes the security architecture for MetaList3's password prote
   sanity gates; production mode skips them:
   - Python AST/default/transaction-route rules
   - JS tree-sitter sanity rules for `try/catch`, default params, destructuring defaults, and defaulting operators.
-- New or changed passwords require 12–72 characters and zxcvbn score ≥3 in every mode. Existing passwords can still unlock their namespaces.
+- New or changed passwords require 12–72 characters and zxcvbn score 4 in every mode. Existing passwords can still unlock their namespaces.
 
 ## Two-Key Encryption System
 
@@ -386,7 +386,7 @@ Database migration `2 → 3` removes the legacy search-history schema that expos
 
 ### Backup Immutability
 
-Existing backup archives are immutable. MetaList can create a new archive using exclusive creation, validate/read one, restore from one, or delete one through the explicit retention/delete or namespace-deletion workflow. It never rewrites, replaces, renames, repackages, migrates, touches, or changes permissions on an existing archive. Login and database migrations do not enumerate user-configured backup folders.
+Existing backup archives are immutable. MetaList can create a new archive using exclusive creation, validate/read one, restore from one, or delete one through the explicit retention/delete or namespace-deletion workflow. It never rewrites, replaces, renames, repackages, migrates, touches, or changes permissions on an existing archive. A new archive is published by hard link (approved 2026-10-29): it is written to `<name>.partial` (opened with exclusive create), fsynced, and `os.link`ed to its name, which fails if that name exists, so a sync app never uploads a half-written archive and a crash never leaves a truncated one under a backup's name. Only `backup_service.delete_partial_archives` removes `.partial` files, and it asserts each is one; the `BKP001` gate allows it and exclusive-create opens (`app/startup_sanity.py`), and still forbids writing to or deleting anything else. Login and database migrations do not enumerate user-configured backup folders.
 
 Restore hashes the selected archive and every legacy sidecar before reading it, installs the database into the live destination, and hashes the sources again. Any byte change fails loudly. A restored passwordless database is migrated after installation; an encrypted older version stays locked and migrates after its own password unwraps its DEK. The source backup remains unchanged in either case. `BKP001` startup sanity rejects overwrite-capable archive modes, historical-backup transformation functions, backup-service imports from database migrations, archive replacement/move APIs, and deletion outside the explicit retention path. The gate cannot be suppressed.
 
@@ -641,14 +641,29 @@ swap, or filesystem snapshots.
 ### Password Requirements
 - New and changed passwords must contain 12-72 characters.
 - No character-class composition rules are imposed; spaces and passphrases are supported.
-- The server uses the offline `zxcvbn` estimator and requires score 3 or higher,
+- The server uses the offline `zxcvbn` estimator and requires score 4 (raised from 3 on
+  2026-10-29: the vault password alone protects backups and snapshots, which can be
+  guessed offline with no login limit; zxcvbn rates 3 moderate and 4 strong against that),
   rejecting common words, known password patterns, dates, repeats, keyboard walks,
   and similarly predictable choices. Passwords are never sent to a third party.
 - Existing passwords are grandfathered: login verifies them against their stored
   Argon2id profile without applying the newer creation policy.
 - The 72-character ceiling is applied before estimation to bound estimator work.
-- Agreed, not built (2026-10-27): new and changed vault passwords need score 4, and
-  password forms suggest five-word passphrases (`docs/ready-to-build/password-strength.md`).
+- The browser meter (`password-strength.js`, vendored `zxcvbn-4.4.2.js`) uses the same
+  score from `password-policy.js`; raise both together. The server is the gate.
+- **Suggest Passphrase** (Add and Change Password) fills both fields with five random words
+  of EFF's long wordlist (7,776 words, about 64.6 bits), lowercase and joined by hyphens,
+  shown in plain text while they are a suggestion, with Regenerate, Copy and "Save this in a
+  password manager or write it down. It can't be recovered." (no recovery key exists).
+  Typing in the field makes it a hidden password again. Each word is picked with
+  `crypto.getRandomValues()` and rejection sampling (`pickRandomIndexes` in
+  `password-generator.js`, shared with the character generator), and each suggestion is
+  scored before it is shown and drawn again below 4 (`passphrase.js`). The list is bundled
+  (`app/static/js/vendor/eff-large-wordlist-2016-07-18.txt`, CC BY 3.0 US, pinned by checksum
+  as a `data` entry in `docs/security/vendor-manifest.json`): nothing is fetched from
+  elsewhere, and the suggestion stays in the browser until the form is submitted. 10,000
+  random five-word phrases all scored 4 on both zxcvbns (measured 2026-10-29); the tests
+  score 1,000 each (`tests/unit/passphrase.test.mjs`, `tests/unit/test_passphrase_strength.py`).
 - Agreed, not built (2026-10-27): a deployment profile (`personal`, `self-hosted`,
   `hosted`) set by whoever installs the server, with what each allows (`@shell`, backup
   folders) and what must change before a self-hosted server faces the internet

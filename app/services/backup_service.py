@@ -6,6 +6,7 @@ from contextlib import closing
 from datetime import datetime, timezone
 import hashlib
 import json
+import os
 from pathlib import Path
 import re
 import shutil
@@ -32,6 +33,8 @@ _SUPPORTED_ARCHIVE_BACKUP_FORMAT_VERSIONS = {_ARCHIVE_BACKUP_FORMAT_VERSION}
 _ARCHIVE_BACKUP_FILENAME_RE = re.compile(
     r"^(?P<namespace>.+)-(?P<timestamp>[0-9]{8}-[0-9]{6}-[0-9]{6})\.metalist-backup\.tar\.gz$"
 )
+# A backup being written: published under its name only once complete (_publish_archive).
+_PARTIAL_ARCHIVE_SUFFIX = ".partial"
 _LEGACY_PRIMARY_BACKUP_FILENAME_RE = re.compile(
     r"^(?P<timestamp>[0-9]{8}-[0-9]{6}-[0-9]{6})\.(?P<database_name>.+)\.bak$"
 )
@@ -446,6 +449,13 @@ def read_backup_launch_profile(
         )
 
 
+def vault_has_password(database_path: Path) -> bool:
+    """Whether a vault's live database is encrypted: read only, as a backup's manifest reads it."""
+    if not isinstance(database_path, Path):
+        raise TypeError(f"database_path must be a Path, got {type(database_path)}")
+    return _detect_encryption_enabled(database_path)
+
+
 def _detect_encryption_enabled(database_path: Path) -> bool:
     connection = sqlite3.connect(str(database_path), check_same_thread=False)
     try:
@@ -743,12 +753,50 @@ def _create_archive_backup_for_paths(database_path: Path, backup_directory: Path
                 encoding="utf-8",
             )
 
-            with tarfile.open(backup_path, mode="x:gz") as archive_handle:
-                archive_handle.add(manifest_path, arcname=_MANIFEST_FILENAME)
-                for _, snapshot_path in snapshot_entries:
-                    archive_handle.add(snapshot_path, arcname=snapshot_path.name)
+            # A backup still being written is never under a backup's name (a sync app could
+            # upload it, a crash could leave it truncated): it is written to .partial, fsynced,
+            # then hard-linked to its name, which fails if that name exists, as "x" does.
+            delete_partial_archives(_leftover_partial_archives(backup_directory, namespace=namespace))
+            partial_backup_path = backup_path.with_name(backup_path.name + _PARTIAL_ARCHIVE_SUFFIX)
+            with open(partial_backup_path, "xb") as partial_backup_file:
+                with tarfile.open(fileobj=partial_backup_file, mode="x:gz") as archive_handle:
+                    archive_handle.add(manifest_path, arcname=_MANIFEST_FILENAME)
+                    for _, snapshot_path in snapshot_entries:
+                        archive_handle.add(snapshot_path, arcname=snapshot_path.name)
+                partial_backup_file.flush()
+                os.fsync(partial_backup_file.fileno())
+            os.link(partial_backup_path, backup_path)
+            delete_partial_archives([partial_backup_path])
 
     return _stat_to_backup_info(backup_path)
+
+
+def _is_partial_archive_name(filename: str) -> bool:
+    if not filename.endswith(_PARTIAL_ARCHIVE_SUFFIX):
+        return False
+    return _ARCHIVE_BACKUP_FILENAME_RE.fullmatch(filename[: -len(_PARTIAL_ARCHIVE_SUFFIX)]) is not None
+
+
+# This vault's backups left half-written by a crash or a failure: never a complete backup.
+def _leftover_partial_archives(backup_directory: Path, *, namespace: str) -> list[Path]:
+    leftovers = []
+    for path in sorted(backup_directory.iterdir()):
+        if not _is_partial_archive_name(path.name):
+            continue
+        match = _ARCHIVE_BACKUP_FILENAME_RE.fullmatch(path.name[: -len(_PARTIAL_ARCHIVE_SUFFIX)])
+        assert match is not None
+        if match.group("namespace") == namespace:
+            leftovers.append(path)
+    return leftovers
+
+
+def delete_partial_archives(partial_backup_paths: list[Path]) -> None:
+    """Removes backups' .partial files: one just published by its hard link, or left by a
+    crash. No file with a backup's name is ever removed here (the BKP001 gate allows this
+    function, and the retention workflow, to delete)."""
+    for partial_backup_path in partial_backup_paths:
+        assert _is_partial_archive_name(partial_backup_path.name), f"not a partial backup: {partial_backup_path.name}"
+        partial_backup_path.unlink()
 
 
 def _restore_archive_backup_to_paths(

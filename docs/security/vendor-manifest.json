@@ -44,5 +44,14 @@
       "lockfile": "scripts/vendor/excalidraw/package-lock.json",
       "packages": "scripts/vendor/excalidraw/bundle-packages.json"
     }
+  },
+  {
+    "name": "eff-large-wordlist",
+    "version": "2016-07-18",
+    "kind": "data",
+    "path": "app/static/js/vendor/eff-large-wordlist-2016-07-18.txt",
+    "license": "app/static/js/vendor/eff-large-wordlist-2016-07-18.LICENSE.txt",
+    "sha256": "addd35536511597a02fa0a9ff1e5284677b8883b83e986e43f15a3db996b903e",
+    "upstream": "https://www.eff.org/files/2016/07/18/eff_large_wordlist.txt"
   }
 ]

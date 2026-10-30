@@ -19,6 +19,9 @@ from app.db.session import begin_writer
 from ..models.database import SafeSession
 from ..utils.encryption import encrypt, get_encryption_service
 from app.services.hydration_state import hydration_state
+from app.services.backup_settings_service import (
+    BACKUP_SETTINGS_UNCHECKED_MIGRATION_ID, convert_backup_settings_to_unchecked, list_available_namespaces,
+)
 from app.services.meta_tag_renames import (
     META_TAG_RENAMES_MIGRATION_ID, META_TAG_RENAMES_PREFIX, rename_meta_tags_in_search, rename_meta_tags_in_tag_bar,
 )
@@ -144,6 +147,7 @@ def populate_cache_from_db(db: SafeSession, *, saved_searches: SavedSearches) ->
         migration_id = stored_html_cleaned_migration_id()
         clean_stored_html = not is_content_migration_complete(raw, migration_id)
         rename_meta_tags = not is_content_migration_complete(raw, META_TAG_RENAMES_MIGRATION_ID)
+        convert_backup_settings = not is_content_migration_complete(raw, BACKUP_SETTINGS_UNCHECKED_MIGRATION_ID)
         structures, cleaned_notes, renamed_tags = _populate_from_rows(
             count_notes(raw), iter_all_for_cache(raw), clean_stored_html=clean_stored_html,
             rename_meta_tags=rename_meta_tags,
@@ -152,6 +156,8 @@ def populate_cache_from_db(db: SafeSession, *, saved_searches: SavedSearches) ->
         _store_cleaned_notes(cleaned_notes, migration_id=migration_id)
     if rename_meta_tags:
         _store_renamed_meta_tags(renamed_tags, saved_searches=saved_searches)
+    if convert_backup_settings:
+        convert_backup_settings_to_unchecked(available_namespaces=list_available_namespaces())
     return structures
 
 

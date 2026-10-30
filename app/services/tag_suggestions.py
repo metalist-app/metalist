@@ -30,6 +30,9 @@ from app.services.tag_term_matching import normalize_tag_match_text
 from app.services.tag_term_matching import note_text_for_tag_matching
 from app.services.tag_term_matching import split_tag_term_segments
 from app.services.tag_term_matching import tag_term_matches_prefix
+from app.services.tag_term_matching import with_link_titles
+from app.services.link_titles import link_title_store
+from app.services.search_text import link_titles_in_html
 
 _UNMATCHED_SEGMENT_PENALTY = 10
 _PHRASE_MATCH_BONUS = 1000
@@ -612,7 +615,7 @@ def _rank_terms_by_local_context(
     current_note_content_matches = _collect_content_match_scores(
         candidate_terms=candidate_terms,
         context=build_normalized_content_match_context(
-            normalized_content=note_text_for_tag_matching(current_record.content),
+            normalized_content=_note_text_with_link_titles(current_record.content),
         ),
         ontology=ontology,
     )
@@ -941,6 +944,12 @@ class _RankedSuggestions:
         return [TagSuggestion(tag=tag, reasons=self.explain(tag)) for tag in self.tags]
 
 
+def _note_text_with_link_titles(content_html: str) -> str:
+    """The note's own text and its own links' fetched titles, as tags are matched against
+    them (docs/ui/tag-bar.md): a title not fetched yet adds nothing."""
+    return with_link_titles(note_text_for_tag_matching(content_html), link_titles_in_html(content_html))
+
+
 def match_tag_in_note_text(*, term: str, content_html: str, ontology) -> TagContentMatch | None:
     """How the note's text names the tag or one of its synonyms, matched as suggestions are."""
     if not isinstance(term, str) or term == "":
@@ -1059,6 +1068,8 @@ class _TypingBasis:
 
     store_revision: int
     index_revision: int
+    # A link's title arriving changes what the note's text names.
+    link_title_revision: int
     # Compared by identity: editing the rules compiles a new ontology.
     ontology: TagOntology
     evidence: _RankedSuggestions
@@ -1069,7 +1080,7 @@ class _TypingBasis:
 
     def is_current(self, *, ontology: TagOntology) -> bool:
         return (self.store_revision == note_store.revision and self.index_revision == search_index.revision
-                and self.ontology is ontology)
+                and self.link_title_revision == link_title_store.get_revision() and self.ontology is ontology)
 
 
 # The empty-bar ranking is kept this deep for typing to narrow (measured in
@@ -1092,6 +1103,7 @@ def _typing_basis(
     # Read before ranking, so a change made meanwhile makes the next letter rank again.
     store_revision = note_store.revision
     index_revision = search_index.revision
+    link_title_revision = link_title_store.get_revision()
     evidence = _suggest_tags(
         note_id=note_id, anchors=anchors, explicit_tags=empty_bar_explicit, content_html=content_html,
         limit=_TYPING_EVIDENCE_DEPTH, include_unranked=False,
@@ -1107,7 +1119,8 @@ def _typing_basis(
         exact_tag_counts=exact_tag_counts,
     )
     basis = _TypingBasis(
-        store_revision=store_revision, index_revision=index_revision, ontology=ontology, evidence=evidence,
+        store_revision=store_revision, index_revision=index_revision, link_title_revision=link_title_revision,
+        ontology=ontology, evidence=evidence,
         already_applying_by_use=tuple(sorted(
             already_applying, key=lambda term: (-_lookup_count(raw_tag_counts, term.casefold()), term.casefold()),
         )),
@@ -1315,7 +1328,7 @@ def _suggest_tags(
         exact_tag_counts=exact_tag_counts,
         ontology=ontology,
     )
-    normalized_content = note_text_for_tag_matching(content_html)
+    normalized_content = _note_text_with_link_titles(content_html)
     candidate_terms: List[str] = []
     for term in all_terms:
         if term.casefold() in suppressed_casefold:

@@ -72,6 +72,19 @@ def append_link_titles_casefold(text_casefold: str, link_title_urls: frozenset[s
     return " ".join([text_casefold, *titles])
 
 
+def link_titles_in_html(content_html: str) -> tuple[str, ...]:
+    """The fetched titles of the web addresses in a note's HTML, those quoted search reads
+    (docs/ui/search-semantics.md): tag suggestions read the same (docs/ui/tag-bar.md)."""
+    if not isinstance(content_html, str):
+        raise TypeError("content_html must be a string")
+    titles: list[str] = []
+    for url in sorted(list_link_title_urls(strip_html_keeping_link_urls(content_html))):
+        title = link_title_store.get_ok_title(url)
+        if title is not None:
+            titles.append(title)
+    return tuple(titles)
+
+
 def build_searchable_text_casefold_from_plaintext(content_text: str, tags: str) -> str:
     """Visible text, tag-bar comments and the cached titles of URLs in the text, casefolded."""
     return append_link_titles_casefold(

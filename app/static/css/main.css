@@ -1960,6 +1960,33 @@ body.ontology-modal-open #ontology-modal {
     margin-bottom: 10px;
 }
 
+/* Synced folders found on this computer (synced_folders.py): one button each; the one
+   holding the chosen folder path is pressed. */
+/* The folder path only shows the folder; clicking it opens the folder picker. */
+#backup-settings-folder-path {
+    cursor: pointer;
+}
+
+.backup-settings-synced-folder-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+/* The folder chosen now: tinted and outlined, so it reads as selected at a glance. */
+.modal-content .backup-settings-synced-folder[aria-pressed="true"] {
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 1px var(--primary-color);
+    background: color-mix(in srgb, var(--primary-color) 22%, transparent);
+    font-weight: 600;
+}
+
+/* The vault in use: always backed up, so its box is locked (checked, not grey). */
+.backup-settings-namespace-row[data-backup-current],
+.backup-settings-namespace-row[data-backup-current] input {
+    cursor: default;
+}
+
 .backup-settings-single-namespace {
     margin: 10px 0 0;
 }
@@ -2082,7 +2109,19 @@ body.ontology-modal-open #ontology-modal {
 }
 
 .random-password-modal-top-row {
-    display: block;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 12px 24px;
+    margin-bottom: 14px;
+}
+
+.modal-content .form-group.random-password-mode-group {
+    margin-bottom: 0;
+}
+
+.modal-content .form-group.random-password-mode-group select {
+    width: auto;
 }
 
 .random-password-length-group {
@@ -2133,6 +2172,28 @@ body.ontology-modal-open #ontology-modal {
     width: auto;
     min-width: 108px;
     margin: 0;
+}
+
+/* Suggest Passphrase (password-modal.js): Regenerate, Copy and the note show only while
+   the field holds a suggestion. */
+.password-suggestion {
+    margin: -4px 0 12px;
+}
+
+.password-suggestion-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.password-suggestion[data-suggested="false"] .password-suggestion-shown,
+.password-suggestion[data-suggested="true"] #suggest-passphrase-btn {
+    display: none;
+}
+
+.password-suggestion small.password-suggestion-shown {
+    display: block;
+    margin-top: 6px;
 }
 
 .password-strength {

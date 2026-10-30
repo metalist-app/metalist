@@ -34,6 +34,13 @@ _AUTH_ROUTES_PATH = "app/api/routes/auth.py"
 _MAIN_PATH = "app/main.py"
 _BACKUP_SERVICE_MODULE = "app.services.backup_service"
 _BACKUP_DELETE_FUNCTION = "delete_oldest_backups_in_directory"
+# Removes a backup's own .partial file (published by hard link, or left by a crash); it
+# deletes no file with a backup's name (backup_service.delete_partial_archives; approved
+# by the maintainer 2026-10-29).
+_PARTIAL_ARCHIVE_DELETE_FUNCTION = "delete_partial_archives"
+# Open modes that write to an existing file. Exclusive create ("x") is allowed, as
+# tarfile's "x" mode is: it fails if the name exists, so no backup is ever touched.
+_EXISTING_FILE_WRITE_MODE_MARKERS = ("w", "a", "+")
 _FORBIDDEN_BACKUP_MUTATION_CALLEES = frozenset(
     {
         "os.chmod",
@@ -757,7 +764,7 @@ class _StartupSanityChecker(ast.NodeVisitor):
                     message="backup file open mode must be a literal read mode",
                 )
                 return
-            if any(marker in mode_node.value for marker in ("w", "a", "x", "+")):
+            if any(marker in mode_node.value for marker in _EXISTING_FILE_WRITE_MODE_MARKERS):
                 self._add(
                     node=node,
                     rule_id="BKP001",
@@ -802,7 +809,7 @@ class _StartupSanityChecker(ast.NodeVisitor):
                     message="backup path open mode must be a literal read mode",
                 )
                 return
-            if any(marker in mode_node.value for marker in ("w", "a", "x", "+")):
+            if any(marker in mode_node.value for marker in _EXISTING_FILE_WRITE_MODE_MARKERS):
                 self._add(
                     node=node,
                     rule_id="BKP001",
@@ -810,7 +817,7 @@ class _StartupSanityChecker(ast.NodeVisitor):
                 )
             return
         if receiver_mentions_backup and node.func.attr == "unlink":
-            if self._enclosing_function_name() != _BACKUP_DELETE_FUNCTION:
+            if self._enclosing_function_name() not in {_BACKUP_DELETE_FUNCTION, _PARTIAL_ARCHIVE_DELETE_FUNCTION}:
                 self._add(
                     node=node,
                     rule_id="BKP001",

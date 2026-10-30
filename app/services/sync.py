@@ -6,7 +6,7 @@ from app.services.resource_limits import CLIENT_ENTRIES, CLIENT_IDLE_SECONDS, UN
 from copy import deepcopy
 from functools import wraps
 from threading import RLock
-from typing import Dict, Tuple
+from typing import Dict, List, Tuple
 
 _state_lock = RLock()
 
@@ -118,6 +118,13 @@ def get_clipboard(client_id: str) -> list:
     if records:
         return deepcopy(records)
     return []
+
+
+@_synchronized
+def all_clipboards() -> List[list]:
+    """Every tab's copied notes: Trim Unused Files keeps the files they name, so a paste
+    never brings back a reference to a deleted file (unused_files.py)."""
+    return [deepcopy(records) for records in _clipboards.values()]
 
 
 @_synchronized

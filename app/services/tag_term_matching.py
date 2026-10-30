@@ -44,6 +44,14 @@ def note_text_for_tag_matching(content_html: str) -> str:
     return normalize_tag_match_text(plaintext)
 
 
+def with_link_titles(normalized_text: str, link_titles: tuple[str, ...]) -> str:
+    """The note's text as tags are matched against it, followed by its links' fetched
+    titles, matched like typed text (the whole title, site name included)."""
+    if not isinstance(normalized_text, str) or not isinstance(link_titles, tuple):
+        raise TypeError("with_link_titles requires the normalized text and a tuple of titles")
+    return " ".join(part for part in [normalized_text, *map(normalize_tag_match_text, link_titles)] if part != "")
+
+
 def site_name_of_url(url: str) -> str:
     """The site's own name in a web address (`youtube`, `wikipedia`, `bbc`), or "" when it has none."""
     if not isinstance(url, str):

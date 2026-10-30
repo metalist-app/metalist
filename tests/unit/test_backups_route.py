@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 import app.api.routes.backups as backups_route
+from app.services.synced_folders import SuggestedFolder
 from app.db.schema import initialize_schema
 from app.db.settings_sql import insert_default_settings
 from app.db.settings_sql import update_password_settings
@@ -53,66 +54,54 @@ def _write_password_protected_target_database(*, database_path: Path, password: 
         connection.close()
 
 
-def test_serialize_settings_response_returns_folder_and_namespace_fields(
+def test_serialize_settings_response_checks_every_vault_not_left_out(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(backups_route, "_list_available_namespaces", lambda: ["default", "work"])
+    # "work" was created since the last backup: it starts checked.
+    monkeypatch.setattr(backups_route, "list_available_namespaces", lambda: ["default", "cla", "work"])
+    monkeypatch.setattr(backups_route, "ACTIVE_NAMESPACE", "default")
+    monkeypatch.setattr(backups_route, "suggested_backup_folders", lambda home: [
+        SuggestedFolder(label="Downloads", path=Path("/home/Downloads")),
+        SuggestedFolder(label="Dropbox › MetaList Backups", path=Path("/home/Dropbox/MetaList Backups")),
+    ])
 
     response = backups_route._serialize_settings_response(
         {
             "folder_path": "/tmp/backups",
-            "selected_namespaces": ["work"],
+            "unchecked_namespaces": ["cla"],
             "retention_count": 30,
         }
     )
 
-    payload = response.model_dump()
-    assert payload == {
+    assert response.model_dump() == {
         "folder_path": "/tmp/backups",
-        "selected_namespaces": ["work"],
-        "available_namespaces": ["default", "work"],
+        "suggested_folders": [
+            {"label": "Downloads", "path": "/home/Downloads"},
+            {"label": "Dropbox › MetaList Backups", "path": "/home/Dropbox/MetaList Backups"},
+        ],
+        "selected_namespaces": ["default", "work"],
+        "available_namespaces": ["default", "cla", "work"],
+        "current_namespace": "default",
         "retention_count": 30,
     }
 
 
-def test_serialize_settings_response_removes_deleted_saved_namespaces(
+def test_serialize_settings_response_drops_deleted_vaults_left_out(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(backups_route, "_list_available_namespaces", lambda: ["cla", "thomas"])
+    monkeypatch.setattr(backups_route, "list_available_namespaces", lambda: ["cla", "thomas"])
+    monkeypatch.setattr(backups_route, "ACTIVE_NAMESPACE", "thomas")
 
     response = backups_route._serialize_settings_response(
         {
             "folder_path": "/tmp/backups",
-            "selected_namespaces": ["default", "cla", "recovered", "thomas"],
+            "unchecked_namespaces": ["recovered"],
             "retention_count": 5,
         }
     )
 
     assert response.available_namespaces == ["cla", "thomas"]
     assert response.selected_namespaces == ["cla", "thomas"]
-
-
-def test_list_available_namespaces_requires_an_existing_namespace_database(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    namespaces_directory = tmp_path / "namespaces"
-    for namespace in ("default", "recovered", "cla", "thomas"):
-        (namespaces_directory / namespace).mkdir(parents=True)
-    (namespaces_directory / "cla" / "cla.metalist.db").touch()
-    (namespaces_directory / "thomas" / "thomas.metalist.db").touch()
-    monkeypatch.setattr(
-        backups_route,
-        "resolve_namespaces_directory",
-        lambda: namespaces_directory,
-    )
-    monkeypatch.setattr(
-        backups_route,
-        "resolve_namespaced_database_path",
-        lambda *, namespace: namespaces_directory / namespace / f"{namespace}.metalist.db",
-    )
-
-    assert backups_route._list_available_namespaces() == ["cla", "thomas"]
 
 
 def test_put_backup_settings_normalizes_and_passes_folder_path_and_namespaces(
@@ -130,21 +119,23 @@ def test_put_backup_settings_normalizes_and_passes_folder_path_and_namespaces(
         *,
         token: str,
         folder_path: str,
-        selected_namespaces: list[str],
+        unchecked_namespaces: list[str],
         retention_count: int,
+        newly_acknowledged_namespaces: list[str],
     ) -> dict[str, object]:
         captured["token"] = token
         captured["folder_path"] = folder_path
-        captured["selected_namespaces"] = selected_namespaces
+        captured["unchecked_namespaces"] = unchecked_namespaces
         captured["retention_count"] = retention_count
         return {
             "folder_path": folder_path,
-            "selected_namespaces": selected_namespaces,
+            "unchecked_namespaces": unchecked_namespaces,
             "retention_count": retention_count,
         }
 
     monkeypatch.setattr(backups_route, "update_backup_settings", _capture_update_settings)
-    monkeypatch.setattr(backups_route, "_list_available_namespaces", lambda: ["default", "work"])
+    monkeypatch.setattr(backups_route, "list_available_namespaces", lambda: ["default", "home", "work"])
+    monkeypatch.setattr(backups_route, "ACTIVE_NAMESPACE", "default")
     monkeypatch.setattr(
         backups_route,
         "resolve_namespaced_database_path",
@@ -158,12 +149,13 @@ def test_put_backup_settings_normalizes_and_passes_folder_path_and_namespaces(
         folder_path=f"  {expected_folder}  ",
         selected_namespaces=["work", "default"],
         retention_count=10,
+        plaintext_sync_acknowledged=[],
     )
 
     response = backups_route.put_backup_settings(payload=payload, token="token")
 
     assert captured["folder_path"] == str(expected_folder)
-    assert captured["selected_namespaces"] == ["default", "work"]
+    assert captured["unchecked_namespaces"] == ["home"]
     assert expected_folder.is_dir() is True
     assert response.folder_path == str(expected_folder)
     assert response.selected_namespaces == ["default", "work"]
@@ -190,6 +182,8 @@ def test_run_backup_writes_each_selected_namespace_to_configured_folder(
     )
 
     captured_settings: dict[str, object] = {}
+    monkeypatch.setattr(backups_route, "list_available_namespaces", lambda: ["default", "home", "work"])
+    monkeypatch.setattr(backups_route, "ACTIVE_NAMESPACE", "default")
     monkeypatch.setattr(
         backups_route,
         "update_backup_settings",
@@ -221,6 +215,7 @@ def test_run_backup_writes_each_selected_namespace_to_configured_folder(
             folder_path=str(folder_directory),
             selected_namespaces=["default", "work"],
             retention_count=30,
+            plaintext_sync_acknowledged=[],
         ),
         token="token",
     )
@@ -229,7 +224,8 @@ def test_run_backup_writes_each_selected_namespace_to_configured_folder(
     assert captured_settings == {
         "folder_path": str(folder_directory),
         "retention_count": 30,
-        "selected_namespaces": ["default", "work"],
+        "unchecked_namespaces": ["home"],
+        "newly_acknowledged_namespaces": [],
         "token": "token",
     }
     assert len(response.results) == 2
@@ -256,6 +252,8 @@ def test_run_backup_ignores_deleted_namespaces_in_saved_settings(
         size_bytes=128,
     )
     monkeypatch.setattr(backups_route, "update_backup_settings", lambda **settings: settings)
+    monkeypatch.setattr(backups_route, "list_available_namespaces", lambda: ["cla"])
+    monkeypatch.setattr(backups_route, "ACTIVE_NAMESPACE", "cla")
     monkeypatch.setattr(
         backups_route,
         "resolve_namespaced_database_path",
@@ -277,6 +275,7 @@ def test_run_backup_ignores_deleted_namespaces_in_saved_settings(
             folder_path=str(folder_directory),
             selected_namespaces=["default", "cla", "recovered"],
             retention_count=5,
+            plaintext_sync_acknowledged=[],
         ),
         token="token",
     )
@@ -300,6 +299,30 @@ def test_run_backup_rejects_when_no_namespaces_are_selected(
 
     assert excinfo.value.status_code == 400
     assert excinfo.value.detail == "Select at least one vault to back up"
+
+
+def test_run_backup_refuses_to_leave_out_the_vault_in_use(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    work_database = tmp_path / "work.metalist.db"
+    work_database.touch()
+    monkeypatch.setattr(backups_route, "ACTIVE_NAMESPACE", "default")
+    monkeypatch.setattr(backups_route, "resolve_namespaced_database_path", lambda *, namespace: tmp_path / f"{namespace}.metalist.db")
+    monkeypatch.setattr(backups_route, "update_backup_settings", lambda **settings: pytest.fail("nothing is saved"))
+
+    with pytest.raises(backups_route.HTTPException) as excinfo:
+        backups_route.run_backup(
+            payload=backups_route.BackupSettingsUpdateRequest(
+                folder_path=str(tmp_path / "backups"),
+                selected_namespaces=["work"],
+                retention_count=30,
+                plaintext_sync_acknowledged=[],
+            ),
+            token="token",
+        )
+
+    assert (excinfo.value.status_code, excinfo.value.detail) == (400, "The vault in use is always backed up")
 
 
 def test_pick_backup_folder_returns_selected_folder(
@@ -1060,7 +1083,7 @@ def test_run_backup_keeps_the_newest_backups_and_deletes_only_the_oldest_beyond_
 
     response = backups_route.run_backup(
         payload=backups_route.BackupSettingsUpdateRequest(
-            folder_path=str(folder), selected_namespaces=["default"], retention_count=3,
+            folder_path=str(folder), selected_namespaces=["default"], retention_count=3, plaintext_sync_acknowledged=[],
         ),
         token="token",
     )

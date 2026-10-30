@@ -52,7 +52,7 @@ whole-file SQLite encryption or OS full-disk encryption. Coverage includes:
 - Note bodies, accepted tags and pending proposed tags; ontology rule text.
 - Attachments in the sibling files database: file title, filename/MIME/other
   metadata, and file bytes. Embedded-document payloads are encrypted too.
-- Saved tab state (including saved search state), aggregate tag-activity payloads,
+- Saved search-context state (including saved search state), aggregate tag-activity payloads,
   reminders, and cached link URLs/titles and site icons.
 - UI/client preferences, command-palette usage/query tokens, backup settings,
   and cloud privacy settings stored in client preferences.
@@ -137,6 +137,10 @@ current loading step and the seconds elapsed. When a database upgrade is due,
 "Backing up and upgrading this vault…" appears under OK while it checks, and
 that login takes longer. "Session locked" means the session moved to another tab
 or device; Go to Login opens the login screen.
+
+New and changed vault passwords need 12-72 characters and the strongest zxcvbn score (4/4);
+existing passwords still unlock. Add and Change password offer Suggest Passphrase: five
+random words, with Regenerate and Copy.
 
 The Add password, Change password, and Remove password menus open forms. Change
 password in a vault with no password opens the Add password form. Opening

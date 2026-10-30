@@ -20,6 +20,7 @@ import { CONFIG } from '../config.js';
 import {
     PASSWORD_MAX_LENGTH,
     PASSWORD_MIN_LENGTH,
+    PASSWORD_MIN_ZXCVBN_SCORE,
     calculatePasswordLengthProgress,
     validateNewPasswordLength,
 } from '../password-policy.js';
@@ -27,6 +28,7 @@ import {
     evaluatePasswordStrength,
     loadPasswordStrengthEstimator,
 } from '../password-strength.js';
+import { loadPassphraseWords, suggestPassphrase } from '../passphrase.js';
 import { readPasswordOperationResponse } from '../password-operation-response.js';
 import { buildSessionHeaders } from '../session-auth.js';
 import { Auth } from '../auth.js';
@@ -204,6 +206,7 @@ class PasswordOperationModal extends BaseModal {
                         >
                     </div>
 
+                    ${this.generatePassphraseSuggestionHTML()}
                     ${this.generateNewPasswordLengthHTML()}
                     ${this.generateNewPasswordStrengthHTML()}
                     
@@ -256,6 +259,7 @@ class PasswordOperationModal extends BaseModal {
                         >
                     </div>
 
+                    ${this.generatePassphraseSuggestionHTML()}
                     ${this.generateNewPasswordLengthHTML()}
                     ${this.generateNewPasswordStrengthHTML()}
                     
@@ -283,6 +287,79 @@ class PasswordOperationModal extends BaseModal {
                 </div>
             </div>
         `;
+    }
+
+    // Suggest Passphrase (docs/security/README.md, "Password Requirements"): five random
+    // words that pass the rule fill both fields, shown in plain text while they are a
+    // suggestion, with Regenerate, Copy and a line on keeping them.
+    generatePassphraseSuggestionHTML() {
+        return `
+            <div class="password-suggestion" id="password-suggestion" data-suggested="false">
+                <div class="password-suggestion-actions">
+                    <button type="button" class="secondary-btn" id="suggest-passphrase-btn">Suggest Passphrase</button>
+                    <button type="button" class="secondary-btn password-suggestion-shown" id="regenerate-passphrase-btn">Regenerate</button>
+                    <button type="button" class="secondary-btn password-suggestion-shown" id="copy-passphrase-btn">Copy</button>
+                </div>
+                <small class="form-help password-suggestion-shown">Save this in a password manager or write it down. It can't be recovered.</small>
+            </div>
+        `;
+    }
+
+    async fillSuggestedPassphrase() {
+        const [words, estimator] = await Promise.all([loadPassphraseWords(), loadPasswordStrengthEstimator()]);
+        const newPasswordInput = document.getElementById('new-password');
+        const confirmPasswordInput = document.getElementById('confirm-password');
+        const suggestion = document.getElementById('password-suggestion');
+        if (!this.isOpen || !(newPasswordInput instanceof HTMLInputElement)) {
+            return;
+        }
+        if (!(confirmPasswordInput instanceof HTMLInputElement) || !(suggestion instanceof HTMLElement)) {
+            throw new Error('Passphrase suggestion needs both password fields');
+        }
+        const passphrase = suggestPassphrase(words, estimator, null);
+        newPasswordInput.type = 'text';
+        newPasswordInput.value = passphrase;
+        confirmPasswordInput.value = passphrase;
+        suggestion.dataset.suggested = 'true';
+        // Untrusted events: the fields' own listeners update the meters and the button.
+        for (const input of [newPasswordInput, confirmPasswordInput]) {
+            input.dispatchEvent(new Event('input'));
+        }
+    }
+
+    // Typing in the field makes it the person's own password again: hidden, no suggestion tools.
+    endPassphraseSuggestion(newPasswordInput) {
+        const suggestion = document.getElementById('password-suggestion');
+        if (!(suggestion instanceof HTMLElement) || suggestion.dataset.suggested !== 'true') {
+            return;
+        }
+        suggestion.dataset.suggested = 'false';
+        newPasswordInput.type = 'password';
+    }
+
+    async copySuggestedPassphrase() {
+        const newPasswordInput = document.getElementById('new-password');
+        if (!(newPasswordInput instanceof HTMLInputElement)) {
+            throw new Error('new-password missing');
+        }
+        await navigator.clipboard.writeText(newPasswordInput.value);
+    }
+
+    setupPassphraseSuggestion(newPasswordInput) {
+        const suggestButton = document.getElementById('suggest-passphrase-btn');
+        const regenerateButton = document.getElementById('regenerate-passphrase-btn');
+        const copyButton = document.getElementById('copy-passphrase-btn');
+        if (![suggestButton, regenerateButton, copyButton].every((button) => button instanceof HTMLButtonElement)) {
+            throw new Error('Passphrase suggestion buttons missing');
+        }
+        suggestButton.addEventListener('click', () => void this.fillSuggestedPassphrase());
+        regenerateButton.addEventListener('click', () => void this.fillSuggestedPassphrase());
+        copyButton.addEventListener('click', () => void this.copySuggestedPassphrase());
+        newPasswordInput.addEventListener('input', (event) => {
+            if (event.isTrusted) {
+                this.endPassphraseSuggestion(newPasswordInput);
+            }
+        });
     }
 
     generateNewPasswordLengthHTML() {
@@ -441,8 +518,8 @@ class PasswordOperationModal extends BaseModal {
         strengthLabel.textContent = `${strength.label} · ${strength.score}/4`;
         strengthMeter.setAttribute('aria-valuenow', String(strength.score));
         strengthPolicy.textContent = strength.meetsScoreThreshold
-            ? 'Meets the MetaList zxcvbn score threshold.'
-            : 'Below the MetaList zxcvbn score threshold.';
+            ? 'Strong enough.'
+            : `Needs ${PASSWORD_MIN_ZXCVBN_SCORE}/4: add words, or Suggest Passphrase.`;
     }
 
     renderNewPasswordStrengthUnavailable() {
@@ -539,6 +616,7 @@ class PasswordOperationModal extends BaseModal {
         
         // Real-time password matching validation
         if (newPasswordInput && confirmPasswordInput) {
+            this.setupPassphraseSuggestion(newPasswordInput);
             newPasswordInput.addEventListener('input', () => {
                 this.renderNewPasswordLength(newPasswordInput.value);
                 this.renderNewPasswordStrength(newPasswordInput.value);

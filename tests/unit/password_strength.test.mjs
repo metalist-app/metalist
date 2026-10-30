@@ -24,10 +24,11 @@ test('evaluatePasswordStrength returns only the score interpretation', () => {
         };
     };
 
+    // Vault passwords need score 4 (docs/security/README.md, raised 2026-10-29).
     assert.deepEqual(evaluatePasswordStrength('private candidate', estimator), {
         score: 3,
         label: 'Strong',
-        meetsScoreThreshold: true,
+        meetsScoreThreshold: false,
     });
     assert.equal(estimatorPassword, 'private candidate');
     assert.deepEqual(estimatorUserInputs, ['metalist']);
@@ -38,7 +39,7 @@ test('score descriptions cover every zxcvbn score', () => {
     assert.deepEqual(describePasswordScore(0), { label: 'Very weak', meetsScoreThreshold: false });
     assert.deepEqual(describePasswordScore(1), { label: 'Weak', meetsScoreThreshold: false });
     assert.deepEqual(describePasswordScore(2), { label: 'Fair', meetsScoreThreshold: false });
-    assert.deepEqual(describePasswordScore(3), { label: 'Strong', meetsScoreThreshold: true });
+    assert.deepEqual(describePasswordScore(3), { label: 'Strong', meetsScoreThreshold: false });
     assert.deepEqual(describePasswordScore(4), { label: 'Very strong', meetsScoreThreshold: true });
 });
 

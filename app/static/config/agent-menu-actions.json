@@ -168,7 +168,7 @@
   },
   {
     "id": "pref.show_tab_ui",
-    "label": "Show Tabs",
+    "label": "Show Search Contexts",
     "selector": "#command-palette-modal",
     "presentation": "palette"
   },
@@ -385,6 +385,12 @@
   {
     "id": "pref.backup_reminder",
     "label": "Backup Reminder",
+    "selector": "#command-palette-modal",
+    "presentation": "palette"
+  },
+  {
+    "id": "pref.trim_reminder",
+    "label": "Trim Reminder",
     "selector": "#command-palette-modal",
     "presentation": "palette"
   },

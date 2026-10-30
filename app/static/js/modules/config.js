@@ -133,6 +133,7 @@ export const CONFIG = {
         BACKUP: {
             SETTINGS: `${API_BASE}/backup/settings`,
             RUN: `${API_BASE}/backup/run`,
+            PLAINTEXT_CHECK: `${API_BASE}/backup/plaintext-check`,
             LIST: `${API_BASE}/backup/list`,
             TIMES: `${API_BASE}/backup/times`,
             RESTORE: `${API_BASE}/backup/restore`,
@@ -153,6 +154,7 @@ export const CONFIG = {
             EDIT_SESSION_DISCARD: (fileId, sessionId) => `${API_FILES_BASE}/${fileId}/edit-sessions/${sessionId}/discard`,
             NAME: (fileId) => `${API_FILES_BASE}/${fileId}/name`,
             TRIM_UNUSED: `${API_FILES_BASE}/trim-unused`,
+            UNUSED: `${API_FILES_BASE}/unused`,
         },
 
         REMINDERS: {

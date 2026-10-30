@@ -9,7 +9,7 @@ from app.db.file_session import connect_file_reader
 from app.db.files_sql import fetch_file
 from app.models.database import SafeSession
 from app.security.encryption import clear_encryption_key, set_encryption_required, set_session_dek
-from app.services.file_registry import file_registry
+from app.services.file_registry import file_registry, referenced_file_ids
 from app.services.file_storage import create_file, download_file, trim_unused_files
 
 
@@ -113,6 +113,9 @@ class _FakeNoteStore:
     def get_note(self, note_id: str) -> _FakeNote:
         return self._notes[note_id]
 
+    def referenced_target_ids(self) -> frozenset[str]:
+        return frozenset(file_id for note in self._notes.values() for file_id in referenced_file_ids(note.content))
+
 
 def test_trim_unused_files_deletes_only_unreferenced_rows(tmp_path: Path, monkeypatch) -> None:
     set_encryption_required(True)
@@ -141,7 +144,7 @@ def test_trim_unused_files_deletes_only_unreferenced_rows(tmp_path: Path, monkey
         )
         monkeypatch.setattr("app.services.file_storage.note_store", fake_store)
 
-        result = trim_unused_files()
+        result = trim_unused_files(kept_file_ids=frozenset())
         assert result.deleted_count == 1
         assert result.deleted_file_ids == [deleted.id]
         assert file_registry.has_file(kept.id) is True

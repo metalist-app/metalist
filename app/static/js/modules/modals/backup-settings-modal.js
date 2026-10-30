@@ -7,11 +7,9 @@ import { buildSessionHeaders } from '../session-auth.js';
 import { escapeHtml } from '../html-escape.js';
 import { actionRowHtml } from './action-row.js';
 import { failureFieldId, showErrorDialog, showErrorDialogFor, showOpenFailure } from './error-dialog.js';
-import { FloatingMessages } from '../floating-messages.js';
 
-const PROGRESS_CARD_KEY = 'backup-settings-progress';
 
-// The id of a vault's checkbox, so an error dialog can name it.
+// The id of a vault's checkbox.
 function vaultCheckboxId(namespace) {
     return `backup-settings-vault-${namespace}`;
 }
@@ -49,6 +47,9 @@ export class BackupSettingsModal extends BaseModal {
             folderPath: '',
             selectedNamespaces: [],
             availableNamespaces: [],
+            currentNamespace: '',
+            // [{ label, path }]: Downloads, then a MetaList Backups folder in each synced folder found.
+            suggestedFolders: [],
             retentionCountText: '30',
             statusMessage: '',
         };
@@ -118,7 +119,6 @@ export class BackupSettingsModal extends BaseModal {
     }
 
     onClose() {
-        FloatingMessages.end(PROGRESS_CARD_KEY);
         const resolve = this._pendingResolve;
         const closeResult = this._decision.result;
         this._pendingResolve = null;
@@ -152,21 +152,39 @@ export class BackupSettingsModal extends BaseModal {
         const folderPath = typeof state.folderPath === 'string' ? state.folderPath : '';
         const selectedNamespaces = Array.isArray(state.selectedNamespaces) ? state.selectedNamespaces : [];
         const availableNamespaces = Array.isArray(state.availableNamespaces) ? state.availableNamespaces : [];
+        const currentNamespace = typeof state.currentNamespace === 'string' ? state.currentNamespace : '';
         const retentionCountText = typeof state.retentionCountText === 'string' ? state.retentionCountText : '';
         const statusMessage = typeof state.statusMessage === 'string' ? state.statusMessage : '';
         const showNamespaceSelection = availableNamespaces.length > 1;
         const singleNamespaceLabel = availableNamespaces.length > 0 ? availableNamespaces[0] : '';
         const namespaceSelectionHtml = showNamespaceSelection
             ? availableNamespaces.map((namespace) => {
-                const checked = selectedNamespaces.includes(namespace);
+                // The vault in use is always backed up: checked, and locked. It looks checked like
+                // the others (a disabled box draws grey, which reads as unsure); clicks do nothing.
+                const isCurrent = namespace === currentNamespace;
+                const checked = [isCurrent, selectedNamespaces.includes(namespace)].includes(true);
+                const locked = isCurrent ? ' title="The vault you&#39;re in is always backed up" data-backup-current="true"' : '';
                 return `
-                    <label class="backup-settings-checkbox-row backup-settings-namespace-row">
-                        <input type="checkbox" id="${escapeHtml(vaultCheckboxId(namespace))}" data-backup-namespace="${escapeHtml(namespace)}" ${checked ? 'checked' : ''} ${loading || saving ? 'disabled' : ''}>
+                    <label class="backup-settings-checkbox-row backup-settings-namespace-row"${locked}>
+                        <input type="checkbox" id="${escapeHtml(vaultCheckboxId(namespace))}" data-backup-namespace="${escapeHtml(namespace)}" ${checked ? 'checked' : ''} ${isCurrent ? 'aria-disabled="true"' : ''} ${loading || saving ? 'disabled' : ''}>
                         <span>${escapeHtml(namespace)}</span>
                     </label>
                 `;
             }).join('')
             : `<p class="backup-settings-single-namespace"><strong>Vault:</strong> ${escapeHtml(singleNamespaceLabel)}</p>`;
+
+        // Downloads, and synced folders that keep backups off this computer (docs/ui/command-palette.md, `Back Up Now…`).
+        const suggestedFolders = Array.isArray(state.suggestedFolders) ? state.suggestedFolders : [];
+        const syncedFoldersHtml = suggestedFolders.length === 0 ? '' : `
+                <div class="form-group backup-settings-synced-folders">
+                    <label>Suggested folders</label>
+                    <div class="backup-settings-synced-folder-list">
+                        ${suggestedFolders.map((folder) => `
+                            <button type="button" class="secondary-btn backup-settings-synced-folder" data-synced-folder-path="${escapeHtml(folder.path)}"
+                                aria-pressed="${folder.path === folderPath ? 'true' : 'false'}" title="${escapeHtml(folder.path)}" ${loading || saving ? 'disabled' : ''}>${escapeHtml(folder.label)}</button>
+                        `).join('')}
+                    </div>
+                </div>`;
 
         let effectiveStatusMessage = statusMessage;
         if (effectiveStatusMessage.length === 0 && loading) {
@@ -178,9 +196,10 @@ export class BackupSettingsModal extends BaseModal {
                 <h3 class="backup-settings-modal-title">Backup Settings</h3>
                 <p>Choose one backup folder and how many snapshots to keep for each selected vault.</p>
 
+                ${syncedFoldersHtml}
                 <div class="form-group">
                     <label for="backup-settings-folder-path">Folder path</label>
-                    <input type="text" id="backup-settings-folder-path" value="${escapeHtml(folderPath)}" placeholder="/Users/you/Backups/MetaList" readonly ${loading || saving || pickingFolder ? 'disabled' : ''}>
+                    <input type="text" id="backup-settings-folder-path" value="${escapeHtml(folderPath)}" placeholder="/Users/you/Backups/MetaList" title="Choose a folder" readonly ${loading || saving || pickingFolder ? 'disabled' : ''}>
                     <div class="form-actions">
                         <button type="button" class="secondary-btn" id="backup-settings-folder-pick-btn" ${loading || saving || pickingFolder ? 'disabled' : ''}>${pickingFolder ? 'Choosing...' : 'Choose Folder...'}</button>
                         <button type="button" class="secondary-btn" id="backup-settings-folder-clear-btn" ${loading || saving || pickingFolder || folderPath.length === 0 ? 'disabled' : ''}>Clear</button>
@@ -241,18 +260,6 @@ export class BackupSettingsModal extends BaseModal {
         }
     }
 
-    _defaultSelectedNamespaces(availableNamespaces) {
-        if (!Array.isArray(availableNamespaces)) {
-            throw new Error('availableNamespaces must be an array');
-        }
-        return availableNamespaces.map((namespace) => {
-            if (typeof namespace !== 'string' || namespace.length === 0) {
-                throw new Error('availableNamespaces entries must be non-empty strings');
-            }
-            return namespace;
-        });
-    }
-
     setupFormEventListeners() {
         const cancelButton = document.getElementById('backup-settings-cancel-btn');
         if (cancelButton instanceof HTMLButtonElement) {
@@ -268,6 +275,17 @@ export class BackupSettingsModal extends BaseModal {
             };
         }
 
+        // The path field only shows the folder: clicking it opens the folder picker too.
+        const folderPathInput = document.getElementById('backup-settings-folder-path');
+        if (folderPathInput instanceof HTMLInputElement) {
+            folderPathInput.onclick = async () => {
+                if (this.getModalState().pickingFolder) {
+                    return;
+                }
+                await this.pickFolderPath();
+            };
+        }
+
         const folderClearButton = document.getElementById('backup-settings-folder-clear-btn');
         if (folderClearButton instanceof HTMLButtonElement) {
             folderClearButton.onclick = () => {
@@ -278,10 +296,26 @@ export class BackupSettingsModal extends BaseModal {
             };
         }
 
+        for (const syncedFolderButton of document.querySelectorAll('[data-synced-folder-path]')) {
+            syncedFolderButton.onclick = () => {
+                const folderPath = syncedFolderButton.dataset.syncedFolderPath;
+                // The folder already chosen: nothing changes (owned state rejects a same-value write).
+                if (this.getModalState().folderPath === folderPath) {
+                    return;
+                }
+                this.updateModalState({ folderPath });
+                this.renderModalContent();
+            };
+        }
+
         const namespaceCheckboxes = document.querySelectorAll('[data-backup-namespace]');
         namespaceCheckboxes.forEach((element) => {
             if (!(element instanceof HTMLInputElement)) {
                 throw new Error('Namespace checkbox must be an input');
+            }
+            if (element.getAttribute('aria-disabled') === 'true') {
+                element.onclick = (event) => event.preventDefault();
+                return;
             }
             element.onchange = () => {
                 const state = this.getModalState();
@@ -376,12 +410,20 @@ export class BackupSettingsModal extends BaseModal {
         if (!Array.isArray(payload.available_namespaces)) {
             throw new Error('Backup settings response missing available_namespaces');
         }
+        if (typeof payload.current_namespace !== 'string' || !payload.available_namespaces.includes(payload.current_namespace)) {
+            throw new Error('Backup settings response missing current_namespace');
+        }
+        if (!Array.isArray(payload.suggested_folders)) {
+            throw new Error('Backup settings response missing suggested_folders');
+        }
         this.updateModalState({
             loading: false,
             pickingFolder: false,
             folderPath: typeof payload.folder_path === 'string' ? payload.folder_path : '',
-            selectedNamespaces: this._defaultSelectedNamespaces(payload.available_namespaces),
+            selectedNamespaces: payload.selected_namespaces,
             availableNamespaces: payload.available_namespaces,
+            currentNamespace: payload.current_namespace,
+            suggestedFolders: payload.suggested_folders,
             retentionCountText: String(payload.retention_count),
             statusMessage: '',
         });
@@ -404,12 +446,11 @@ export class BackupSettingsModal extends BaseModal {
     async pickFolderPath() {
         this.updateModalState({ pickingFolder: true });
         this.renderModalContent();
-        FloatingMessages.showProgress(PROGRESS_CARD_KEY, 'Choosing a backup folder…');
+        // No progress card: the system's folder picker is on screen until it answers.
         const settled = await this._authRequest(CONFIG.API.BACKUP.FOLDER_PICK, 'POST', {}).then(
             (payload) => ({ ok: true, payload }),
             (error) => { rethrowUnexpectedError(error); return ({ ok: false, error }); },
         );
-        FloatingMessages.end(PROGRESS_CARD_KEY);
         if (!settled.ok) {
             this.updateModalState({
                 pickingFolder: false,
@@ -477,14 +518,9 @@ export class BackupSettingsModal extends BaseModal {
                 (value) => ({ ok: true, value }),
                 (error) => { rethrowUnexpectedError(error); return ({ ok: false, error }); },
             );
-        const availableNamespaces = Array.isArray(state.availableNamespaces) ? state.availableNamespaces : [];
         const problems = [];
         if (folderPath.length === 0) {
             problems.push({ text: 'Choose a backup folder first.', fieldId: 'backup-settings-folder-pick-btn' });
-        }
-        if (selectedNamespaces.length === 0) {
-            const firstVault = availableNamespaces.length > 1 ? vaultCheckboxId(availableNamespaces[0]) : null;
-            problems.push({ text: 'Choose at least one vault to back up.', fieldId: firstVault });
         }
         if (!retentionResult.ok) {
             problems.push({ text: retentionResult.error.message, fieldId: failureFieldId(retentionResult.error) });
@@ -501,6 +537,8 @@ export class BackupSettingsModal extends BaseModal {
                 folder_path: folderPath,
                 selected_namespaces: selectedNamespaces,
                 retention_count: retentionCount,
+                // Filled in once the person answers the synced-folder warning (createBackup).
+                plaintext_sync_acknowledged: [],
             },
         };
         this.close();

@@ -38,7 +38,7 @@ Written from a read-only look at the code, without running it. A sweep found the
 | `@shell` | Opt-in with `--enable-shell`, as today | **Opt-in, with warnings** (§2.1) | **Never.** The flag is refused at startup and the shell routes refuse |
 | Backup folder | Yes | Yes: a path typed on the server | **Refused by the server** (`hosted-own-copy.md`) |
 | Native folder picker | Yes | No: hide it and type a path | No |
-| Synced-folder suggestions (`ready-to-build/backups-synced-folders.md`) | Yes | No | No |
+| Synced-folder suggestions (built: `Back Up Now…` in `docs/ui/command-palette.md`) | Yes | No | No |
 | Backup Reminder default | Weekly | Weekly | Off, per `hosted-own-copy.md`. The server supplies the default instead of the browser constant |
 
 ### 2.1 `@shell` on self-hosted (proposed)
@@ -126,6 +126,6 @@ With one container per user, a signed-in user controlling "the server" controls 
 
 - **Confirmed** (each found in the code): `METALIST_ENVIRONMENT` (`app/startup_environment.py`); `--enable-shell` (`main.py`) and `app/security/shell_execution.py`; the loopback check for shell requests (`app/api/routes/notes.py`); `_bootstrap_default_namespace_if_empty` and `_prompt_for_missing_namespace_launch_profiles` (`main.py`); the `password/create`, `login-namespaces` and `namespace-deleted/open` exceptions (`app/api/middleware/auth.py`); `local_today` (`root_date_filter.py`), `root_sorting.py`, `search_history.py`; `create_token` clearing every other token (`app/services/tokens.py`); `DEFAULT_TOKEN_EXPIRY_MINUTES = 0`; `ensure_default_tls_pair`, `resolve_https_redirect_url`, `_build_browser_url`; `network-settings.json` (`app/network_settings.py`); `/auth/app-update`; `_evict_processes_listening_on_port`; `os.execv`; `PRAGMA cache_size=500000` (`app/models/database.py`); `json.tool` (`structured_note_renderers.py`); `/test/reset`; `resolve_public_http_target` (`app/services/public_http.py`); `metalist-runtime`, `_LOOPBACK_BIND_HOSTS`; `CRASH_SERVER_ON_FAIL` (`app/config.py`).
 - **Wrong path:** `http_error_diagnostics.py` is `app/security/http_error_diagnostics.py`.
-- **Already filed, so build them once:** the hosted backup mode (`docs/future-plans/hosted-own-copy.md`, which §4 belongs with) and several sessions per vault (`docs/ready-to-build/multi-view-editing.md`, §3 item 6). The synced-folder suggestions (§2) are `docs/ready-to-build/backups-synced-folders.md`.
+- **Already filed, so build them once:** the hosted backup mode (`docs/future-plans/hosted-own-copy.md`, which §4 belongs with) and several sessions per vault (`docs/ready-to-build/multi-view-editing.md`, §3 item 6). The synced-folder suggestions (§2) were built 2026-10-29 (`Back Up Now…` in `docs/ui/command-palette.md`).
 - **When built:** a server-supplied Backup Reminder default (§2) and any new setting stored in a vault database are schema changes under AGENTS.md's "Database Schema Changes Require a Version Bump"; an environment variable is not.
 - **Open (proposed, for the maintainer):** §2.1's confirmation, indicator and password rule for `@shell` on self-hosted; §3's one-time setup code (item 1), passwords required on self-hosted (item 2, "not yet ruled on"), hiding the vault list (item 3), the idle-timeout default (item 7) and the proxy and base-URL settings (items 8 and 9).

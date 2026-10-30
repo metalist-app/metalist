@@ -16,6 +16,8 @@ ROOT = Path(__file__).resolve().parents[1]
 EXPORT_OPTIONS = ['--frozen', '--offline', '--no-emit-project', '--no-header', '--no-annotate']
 VENDOR_REPORT_JSON_INDENT = 2
 OSV_QUERY_TIMEOUT_SECONDS = 45
+# A vendored data file rather than a code bundle (vendor-manifest.json "kind").
+DATA_KIND = 'data'
 
 
 def check_exports(root: Path) -> None:
@@ -60,6 +62,9 @@ def audited_versions(root: Path, libraries: list[dict]) -> list[dict]:
     """Every npm name/version shipped: single-file vendors plus each package inside a bundle."""
     versions = {}
     for library in libraries:
+        if 'kind' in library and library['kind'] == DATA_KIND:
+            # Data (a wordlist) runs nothing and is no npm package: its checksum pins it.
+            continue
         members = [library]
         if 'bundle' in library:
             members = bundled_packages(root, library)
@@ -70,10 +75,13 @@ def audited_versions(root: Path, libraries: list[dict]) -> list[dict]:
 
 def check_vendor_files(root: Path) -> list[dict]:
     libraries = json.loads((root / 'docs/security/vendor-manifest.json').read_text())
-    actual = {path.relative_to(root).as_posix() for path in (root / 'app/static/js/vendor').glob('*.js')}
+    vendor = root / 'app/static/js/vendor'
+    # Code bundles, and data files (a wordlist): every file but the licenses.
+    shipped = [*vendor.glob('*.js'), *(path for path in vendor.glob('*.txt') if not path.name.endswith('.LICENSE.txt'))]
+    actual = {path.relative_to(root).as_posix() for path in shipped}
     declared = {library['path'] for library in libraries}
     if actual != declared or len(declared) != len(libraries):
-        raise RuntimeError('Vendor manifest must cover every JavaScript bundle exactly once')
+        raise RuntimeError('Vendor manifest must cover every vendored file exactly once')
     for library in libraries:
         if hashlib.sha256((root / library['path']).read_bytes()).hexdigest() != library['sha256']:
             raise RuntimeError(f'Vendor checksum mismatch: {library["path"]}')

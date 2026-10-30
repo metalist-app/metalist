@@ -75,7 +75,7 @@ One row per item.
 ## 7. Cleanup
 
 - **Crash leftovers, automatic and keyless:** blobs with no catalog row, older than a grace period (1 hour proposed), are deleted.
-- **Files nothing references:** removed only by `Trim Unused Files…`, which a person runs, prompted by the trim reminder (separate note, `2026-10-27-trim-reminder.md`). **Agreed:** no automatic removal of catalog rows nothing references. The trim reminder keeps Trim from being forgotten. Finding those rows also needs the notes' contents, which are encrypted, so a keyless job couldn't do it anyway.
+- **Files nothing references:** removed only by `Trim Unused Files…`, which a person runs, prompted by the trim reminder (built 2026-10-29: `Trim Reminder` in `docs/ui/command-palette.md`). **Agreed:** no automatic removal of catalog rows nothing references. The trim reminder keeps Trim from being forgotten. Finding those rows also needs the notes' contents, which are encrypted, so a keyless job couldn't do it anyway.
 - **Hosted backup store:** a blob is deleted once no retained catalog snapshot references it and its retention lock has expired. This works from the plaintext columns, keylessly.
 - **Verification:** every catalog `blob_id` exists live (and, once backed up, in the backup store). Spot-check by decrypting samples and comparing `content_hash`.
 
@@ -116,4 +116,4 @@ Test it like every migration.
 
 - Filed as a future plan, as its status asks. Confirmed: today's `files` and `file_previews` tables (`app/db/file_schema.py`) in `<vault>.metalist.files.db`; `docs/future-plans/hosted-own-copy.md` notes its layout depends on this.
 - **When built:** this changes the files database's schema, so AGENTS.md's "Database Schema Changes Require a Version Bump" applies: a `CURRENT_DATABASE_VERSION` step in `app/db/migrations.py`, the encryption audit (`app/encryption_audit.py`) keyed on the version, every new plaintext column documented in `docs/security/README.md`, and AGENTS.md's backup immutability rules (§9's migration runs on the live vault only, never on a backup).
-- The trim reminder it mentions is filed as `docs/ready-to-build/trim-reminder.md`.
+- The trim reminder it mentions was built 2026-10-29 (`Trim Reminder` in `docs/ui/command-palette.md`).

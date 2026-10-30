@@ -8,6 +8,11 @@ import {
     BACKUP_REMINDER_OPTIONS,
     BACKUP_REMINDER_PREFERENCE,
 } from '../backup-reminder-schedule.js';
+import {
+    TRIM_REMINDER_DEFAULT,
+    TRIM_REMINDER_OPTIONS,
+    TRIM_REMINDER_PREFERENCE,
+} from '../trim-reminder-schedule.js';
 
 function requireAction(actions, key) {
     if (!actions || typeof actions !== 'object') {
@@ -211,7 +216,7 @@ export function buildCommandPaletteEndpoints(deps) {
             id: 'pref.show_tab_ui',
             kind: 'boolean',
             get label() {
-                return visibilityLabel(preferencesStore, 'pref.show_tab_ui', defaults.showTabUi, 'Tabs');
+                return visibilityLabel(preferencesStore, 'pref.show_tab_ui', defaults.showTabUi, 'Search Contexts');
             },
             persistenceKey: 'pref.show_tab_ui',
             defaultValue: defaults.showTabUi,
@@ -591,6 +596,15 @@ export function buildCommandPaletteEndpoints(deps) {
             defaultValue: BACKUP_REMINDER_DEFAULT,
             options: BACKUP_REMINDER_OPTIONS,
             apply: (next) => applyPreference(BACKUP_REMINDER_PREFERENCE, next),
+        },
+        {
+            id: 'pref.trim_reminder',
+            kind: 'select',
+            label: 'Trim Reminder',
+            persistenceKey: TRIM_REMINDER_PREFERENCE,
+            defaultValue: TRIM_REMINDER_DEFAULT,
+            options: TRIM_REMINDER_OPTIONS,
+            apply: (next) => applyPreference(TRIM_REMINDER_PREFERENCE, next),
         },
         {
             id: 'form.restore_backup',

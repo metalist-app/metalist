@@ -55,7 +55,8 @@ def test_audited_versions_expand_bundles_into_their_packages() -> None:
     audited_pairs = {(item["name"], item["version"]) for item in audited}
     assert ("react-dom", "18.3.1") in audited_pairs
     for library in libraries:
-        if "bundle" not in library:
+        # A data file (the passphrase wordlist) is no npm package: its checksum pins it.
+        if "bundle" not in library and "kind" not in library:
             assert (library["name"], library["version"]) in audited_pairs
 
 

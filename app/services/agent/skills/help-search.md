@@ -89,7 +89,7 @@ The verifier produces:
 
 Rules:
 - **Open quotes**: an open quote reaches the end of the query, so only the last term can be one. It counts as closed and searches as you type, after the usual pause, with no warning: `"neur` searches `"neur"`, `-"dra` hides notes containing "dra". Its text is taken as typed, a trailing space included (`"fat ` marks a word edge); a backslash typed last is left out until the next character, and `\"` and `\\` inside work as usual. A quote with nothing in it yet (`"`, `-"`) is incomplete, not warned, and runs nothing new.
-- **Closing an open quote**: when the user moves on with a quote open (Enter, a click on a note or anywhere else in the page, a menu, another tab, a new or duplicated tab), the closing quote (the mark that opened it) is added, in the field and in the tab's saved search; a quote with nothing in it is removed. Switching to another app or window is not moving on. When the open quote's search has already run, nothing is searched again, so a click on a note still opens it.
+- **Closing an open quote**: when the user moves on with a quote open (Enter, a click on a note or anywhere else in the page, a menu, another search context, a new or duplicated one), the closing quote (the mark that opened it) is added, in the field and in the tab's saved search; a quote with nothing in it is removed. Switching to another app or window is not moving on. When the open quote's search has already run, nothing is searched again, so a click on a note still opens it.
 - **Empty quoted strings**: incomplete and warned.
   - Examples: `""` and `''` → warn `Enter text inside quotes`
 - **Dangling prefixes**: `+` or `-` must be directly followed by its tag or quoted text; a space after it (`- tag`) is not accepted as `-tag`. A lone prefix at the end is still being typed: incomplete, not warned. Once a term follows a prefix and a space, the field shows "In a search, + or - must be directly followed by the tag or quoted text, with no space (for example -tag)", the query is incomplete (nothing new runs), and that term is left out of the sanitized text, so it is never searched with the opposite meaning (a restored `- tag` does not run as `tag`). If such a search is still sent (pressing Enter, or adding a note while it is the search), the server's rejection appears as a polite banner with the same explanation.
@@ -131,11 +131,11 @@ Ontology rules also add **inferred tags** before search matching:
 - See `docs/design/ontology-rules-v1.md` for the rule language and semantics.
 
 ### Untagged Notes View
-- `View: Untagged Notes` is a temporary, tab-agnostic view selected from the command palette, not an `@untagged` search token.
-- Selecting it preserves the active tab and its search while temporarily showing notes whose full effective tag set has no non-meta tags. The search box is visually blank while this override is active because the preserved tab query is not being applied.
+- `View: Untagged Notes` is a temporary view, not tied to a search context, selected from the command palette, not an `@untagged` search token.
+- Selecting it preserves the active search context and its search while temporarily showing notes whose full effective tag set has no non-meta tags. The search box is visually blank while this override is active because the preserved search context's query is not being applied.
 - Inherited and ontology-inferred tags count as tags; formatting/meta tags beginning with `@` do not.
-- The dismissible `Untagged Notes` pill returns to the underlying tab view and restores its query in the search box. Clicking any tab or changing the search input also dismisses the temporary view.
-- Changing the search input additionally resets the active tab's sort mode to Normal before executing the search.
+- The dismissible `Untagged Notes` pill returns to the underlying search context and restores its query in the search box. Clicking any search context or changing the search input also dismisses the temporary view.
+- Changing the search input additionally resets the active search context's sort mode to Normal before executing the search.
 
 ### Notes With Files
 - **Notes with Files** in the right-click menus and the palette (`Notes with Files: Images`, …) keeps a search to the matches whose own text links to or embeds an attached file, or a file of one kind (images, PDFs, Markdown files; Images also counts a picture pasted into the note), with the notes above them. Without a search it alone picks the notes. It is not a search term: a chip in the search box shows it, and a new search keeps it (`docs/ui/command-palette.md`, Notes With Files).
@@ -147,7 +147,7 @@ Ontology rules also add **inferred tags** before search matching:
 - Prefix matching happens against the complete candidate set before the visible suggestion limit is applied, so an interacted `shortcut` cannot be discarded merely because 50 unrelated tags rank above it globally and leave frequency-ranked `short-story` first.
 - Case-equivalent tags are collapsed in suggestions, and the most-used spelling is shown.
 - Enter and the arrow keys act only on a suggestion list built for the text in the box. While the list for what you just typed is on its way, the one on screen is for older text: Enter then closes it and keeps what you typed (it does not add a note), and the arrows wait for the new list.
-- Searches themselves never earn credit. Intentional note engagements—edit selection, manual expansion, full-screen view, shell/todo command execution—increment the note's raw explicit/inherited searchable tags once per active tab/search flow. Leaving for another tab or executed search and later returning starts a new flow, so a later shell run can count again. Successfully adding explicit tags separately credits only those newly added tags; removals and case-only changes are neutral. Accepting a search suggestion by mouse or keyboard credits that selected tag once, with no engagement-flow deduplication. Clicking a search-context tab credits each known positive tag term in its executed query once; excluded tags and quoted text are ignored. Programmatic tab restoration/switching, collapse, search execution, hover, render, and scroll are neutral.
+- Searches themselves never earn credit. Intentional note engagements—edit selection, manual expansion, full-screen view, shell/todo command execution—increment the note's raw explicit/inherited searchable tags once per active search context/search flow. Leaving for another search context or executed search and later returning starts a new flow, so a later shell run can count again. Successfully adding explicit tags separately credits only those newly added tags; removals and case-only changes are neutral. Accepting a search suggestion by mouse or keyboard credits that selected tag once, with no engagement-flow deduplication. Clicking a search context credits each known positive tag term in its executed query once; excluded tags and quoted text are ignored. Programmatic search-context restoration/switching, collapse, search execution, hover, render, and scroll are neutral.
 - After one or more completed tags, the remaining suggestions (only tags that still leave results) are ordered by how closely their notes overlap with the notes matching the tags already typed, so specific companions come before tags that are common everywhere.
 - Activity uses sparse per-calendar-day counts. A window sums the relevant daily buckets, selects its highest-count matching tag, and excludes tags chosen by earlier windows. No decay calculation or all-time score exists. The latest 365 populated days are retained, so unused calendar days consume no buckets.
 - In password-protected vaults, all retained daily buckets live together in one authenticated encrypted payload. The database exposes only one random row UUID, ciphertext, nonce, and authentication tag—never dates, tag names, counts, queries, or changed-tag metadata.
@@ -281,7 +281,7 @@ The UI renders a tree, so search returns context:
 - All ancestors of a matching note are included (so matches are reachable).
 - Non-matching descendants are not promoted to full matches just because an ancestor matched.
 - Within a visible root, excluded child/sibling branches are rendered as redacted placeholders on the client (fixed-height grey lines) rather than disappearing.
-- Clicking a redacted placeholder reveals the whole redacted set within that note's local subtree in the current tab; the revealed notes stay visually dimmed so excluded search context is still obvious.
+- Clicking a redacted placeholder reveals the whole redacted set within that note's local subtree in the current search context; the revealed notes stay visually dimmed so excluded search context is still obvious.
 - For UUID-direct targeting specifically:
   - The target note is included.
   - Its ancestors are included.
@@ -317,7 +317,7 @@ From docs/ui/controls.md.
   result count` preference controls the count.
 - If the search query contains required tag terms (unquoted tokens like `asdf`), the new root note is created with those tags in its tag bar.
 - When creating a child (`⇧ + ⌘ + Enter`) or sibling (`⌘ + Enter`) note under a note that already provides the required **non-meta** tags via inheritance, the new note is **not** redundantly tagged.
-- **Sorted tabs: adding and editing notes.** In any non-normal sort order a new or edited root note could land far from where you are, so:
+- **Sorted search contexts: adding and editing notes.** In any non-normal sort order a new or edited root note could land far from where you are, so:
 
   | Sort | While you edit a note | New root note at the top (`Enter` outside edit mode, Add Note, pasting or dropping into a new note) | New root note below a root note (`⌘ + Enter`, Split, paste as sibling) |
   |---|---|---|---|
@@ -337,12 +337,12 @@ From docs/ui/controls.md.
 - Suggestions are **tag-only** (no text suggestions).
 - For a blank search or the first tag prefix in a query, the first suggestion slots can be personalized from ordered activity windows. The default windows are 1, 7, and 30 calendar days.
 - Case-equivalent tags are collapsed in the suggestion list, and the most-used spelling is shown.
-- Search execution, typing, scrolling, hovering, rendering, collapsing, and programmatic tab switches do not earn credit.
+- Search execution, typing, scrolling, hovering, rendering, collapsing, and programmatic search-context switches do not earn credit.
 - Entering edit mode, manually expanding a note, entering full-screen note view, running a shell note, toggling todo/done, and successfully reordering/indenting/outdenting a note count as intentional note engagements. Structural no-ops do not count.
 - Each engagement increments every raw searchable tag on the note, including inherited tags and meta tags, before ontology inference. This lets an `@shell` child under `shortcut` credit both raw tags without rewarding unrelated inferred tags.
-- By default, each note can earn only one engagement credit in the same active tab and executed-search context, even when other notes are engaged between two interactions with it. The context limits repetition but does not filter the credited note tags. Leaving that context and later returning starts a fresh flow.
+- By default, each note can earn only one engagement credit in the same active search context and executed search, even when other notes are engaged between two interactions with it. The context limits repetition but does not filter the credited note tags. Leaving that context and later returning starts a fresh flow.
 - Successfully adding one or more explicit tags awards one credit to each newly added tag. It does not re-credit tags already present or inherited from ancestors; removals and case-only changes award nothing.
-- Accepting a search suggestion by click or `Enter` awards one credit to the selected tag every time. Clicking a search-context tab awards one credit to each known positive tag term in that tab's executed query; excluded tags and quoted text do not earn credit.
+- Accepting a search suggestion by click or `Enter` awards one credit to the selected tag every time. Clicking a search context awards one credit to each known positive tag term in that tab's executed query; excluded tags and quoted text do not earn credit.
 - Counts are stored in sparse daily buckets. Days without activity have no bucket and do not consume retention capacity; the latest 365 populated days are retained.
 - Each configured window chooses its highest-count matching tag, excluding tags already chosen by earlier windows. The remaining suggestions retain normal vault-frequency ordering.
 - `Cmd/Ctrl+/` → `Search Suggestion Stats & Settings…` is the single place for suggestion activity controls. Changes to its ordered 1–365 day slots, default-on time-window labels, and default-on one-credit-per-note-per-search-context limit persist immediately. It also shows every retained populated date and tag-credit count and includes a confirmed `Reset Activity` action. Disabling the credit limit makes every qualifying interaction count; removing every slot disables personalization.

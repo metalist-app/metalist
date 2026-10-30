@@ -143,48 +143,29 @@ test('BackupSettingsModal falls back to the next enabled control when retention 
     assert.equal(runButton.focusCount, 0);
 });
 
-test('BackupSettingsModal selects every available namespace by default', async (t) => {
-    const originalSessionStorage = globalThis.sessionStorage;
-    const originalDocument = globalThis.document;
-    const originalHTMLElement = globalThis.HTMLElement;
-
-    globalThis.sessionStorage = {
-        getItem() {
-            return null;
-        },
-        setItem() {},
-    };
-    globalThis.HTMLElement = TestElement;
-    globalThis.document = {
-        getElementById() {
-            return null;
-        },
-    };
-
-    t.after(() => {
-        if (typeof originalSessionStorage === 'undefined') {
-            delete globalThis.sessionStorage;
-        } else {
-            globalThis.sessionStorage = originalSessionStorage;
-        }
-        if (typeof originalDocument === 'undefined') {
-            delete globalThis.document;
-        } else {
-            globalThis.document = originalDocument;
-        }
-        if (typeof originalHTMLElement === 'undefined') {
-            delete globalThis.HTMLElement;
-        } else {
-            globalThis.HTMLElement = originalHTMLElement;
-        }
-    });
-
+// docs/ready-to-build/backup-vault-choice.md: the dialog opens with the vaults checked as
+// the server remembers them (it had checked every vault each time), and knows the vault in use.
+test('BackupSettingsModal opens with the remembered vaults checked', async () => {
     const { BackupSettingsModal } = await import('../../app/static/js/modules/modals/backup-settings-modal.js');
     const modal = new BackupSettingsModal();
+    const state = {};
+    modal.getModalState = () => state;
+    modal.updateModalState = (patch) => Object.assign(state, patch);
+    modal.renderModalContent = () => {};
+    modal._authRequest = async () => ({
+        folder_path: '/tmp/metalist-backups',
+        selected_namespaces: ['default', 'test'],
+        available_namespaces: ['default', 'cla', 'test'],
+        current_namespace: 'default',
+        suggested_folders: [],
+        retention_count: 30,
+    });
+
+    await modal.loadSettings();
 
     assert.deepEqual(
-        modal._defaultSelectedNamespaces(['default', 'cla', 'test']),
-        ['default', 'cla', 'test'],
+        [state.selectedNamespaces, state.availableNamespaces, state.currentNamespace],
+        [['default', 'test'], ['default', 'cla', 'test'], 'default'],
     );
 });
 
@@ -226,6 +207,7 @@ test('BackupSettingsModal returns validated settings without a settings-only req
             folder_path: '/tmp/metalist-backups',
             retention_count: 30,
             selected_namespaces: ['default'],
+            plaintext_sync_acknowledged: [],
         },
     });
 });

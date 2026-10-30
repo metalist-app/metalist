@@ -73,12 +73,12 @@ On macOS, `⌘ + Y` normally opens Safari History rather than performing native 
 - When a non-normal sort mode is active, a gray chip at the right end inside the search input names it (`A–Z`, `Created ↑`, …), with an `×` to return to normal sorting.
 - These dismissible chips are **view indicators**: sorted notes, a date range, a Notes with files filter and Untagged notes inside the search input; reference views (Source note, Reference, All references) centered in the bar in place of the input. Entering or leaving them applies note changes immediately, without appearance/disappearance or collapse animations; only reference views slide the list.
 - Scroll restoration preserves an exact top position without delayed anchor alignment. Resetting a view cancels pending scroll restores from its previous content.
-- When tabs are enabled, a white outline stacked-folder icon marks the black trigger region left of the search field. Its left inset matches the results count's right inset. Hovering that region or icon opens the tab/search-context overlay, which remains available while hovering over the dropdown itself. Creating a blank tab with `Enter` does not dismiss the overlay. Open search suggestions render above the tabs.
+- When search contexts are shown, a white outline stacked-folder icon marks the black trigger region left of the search field. Its left inset matches the results count's right inset. Hovering that region or icon opens the search-context overlay, which remains available while hovering over the dropdown itself. Creating a blank tab with `Enter` does not dismiss the overlay. Open search suggestions render above the tabs.
 - Left/right side lanes hide at narrower desktop widths before they can overlap the centered notes column.
 
 ### Find in the List
 - `⌘ + F` (`Ctrl + F` on Windows and Linux) opens MetaList's find bar, under the search controls at the right. Unlike the browser's own find, it also finds text far below the loaded notes and inside folded notes.
-- It finds what notes show (their text, the text of expanded embeds, tag-bar comments), in any case and inside words, in the current tab's notes in list order. It does not find tag names (search does) or the grey placeholder lines a search leaves.
+- It finds what notes show (their text, the text of expanded embeds, tag-bar comments), in any case and inside words, in the current search context's notes in list order. It does not find tag names (search does) or the grey placeholder lines a search leaves.
 - The count reads like `3 of 12`; `3 of 50+` means more may lie beyond what has been read, since find reads 50 matching notes at a time. `No matches` dims the arrows.
 - `Enter` / `⌘ + G`: next match; `⇧ + Enter` / `⇧ + ⌘ + G`: previous; both wrap. A match in view does not scroll; one out of view moves just into view. A match inside a folded note opens that note for the moment only (its saved collapse stays) and folds back when find moves on or closes.
 - `Esc`, the `×`, or clicking into a note closes find and clears its marks. The palette command `Find in List` opens it too.
@@ -104,7 +104,7 @@ On macOS, `⌘ + Y` normally opens Safari History rather than performing native 
 - Arrow keys move selection; `Enter` accepts the selected suggestion without adding a trailing space.
 
 ### Command Palette Utility Entries
-- Show/Hide tabs (label reflects current visibility)
+- Show/Hide Search Contexts (label reflects current visibility)
 - Show/Hide AI Chat (label reflects current visibility)
 - AI Agent Settings… (OpenAI API key, model, cloud privacy, evidence and tagging limits; model and thinking level are selected beside chat Send)
 - Back Up Now… (opens Backup Settings, where you choose one backup folder, select the vaults to include, set retention, and then run the backup; typing `backups` in the palette also matches it, and the completion modal shows archive size)
@@ -118,7 +118,7 @@ On macOS, `⌘ + Y` normally opens Safari History rather than performing native 
 
 > Note: On Windows/Linux, use `Ctrl` instead of `⌘` (Command)
 
-App menus close with `Escape` (only the menu: a note being edited stays in edit mode) or an outside click. The right-click menu also closes once the pointer moves about 28px away from it and any open submenu, like the tab overlay; small movements just past its edge keep it open. Every modal has a standard upper-right circular `×` matching full-screen note view and also closes with `Escape` or an outside click. Dismiss-only footer `Close`/`OK` buttons are omitted; `Enter` still submits a modal's declared primary workflow action.
+App menus close with `Escape` (only the menu: a note being edited stays in edit mode) or an outside click. The right-click menu also closes once the pointer moves about 28px away from it and any open submenu, like the search-context overlay; small movements just past its edge keep it open. Every modal has a standard upper-right circular `×` matching full-screen note view and also closes with `Escape` or an outside click. Dismiss-only footer `Close`/`OK` buttons are omitted; `Enter` still submits a modal's declared primary workflow action.
 
 When `Show Tags in List` is enabled, the grey right-aligned tag column wraps and is capped at 25% of its note row so note content retains the majority of the available width.
 
@@ -134,4 +134,4 @@ Update is a deliberate action: it preflights the reviewed release, creates verif
 
 ## On a phone
 
-Under 640 px wide (a phone on the local Wi-Fi, opening the vault's address such as `https://10.0.0.31:9443`) MetaList is a read-only view plus capture. The search bar sits alone at the top with each search term as a pill (× drops it) and the view pills beside them; notes show below without tag chips. Tapping a note never edits it: it shows that note's own tags as pills under it and expands it; tapping a tag pill searches for it; tapping the note again hides the pills. Back restores the previous search. The ☰ button at the bottom left opens sort, reverse, date range, notes with files, untagged notes, Lock and Sign Out (both log out; the vault stays picked). The ＋ button at the bottom right opens capture: type the note, optionally add tags, Save. A note captured with no tags is tagged `@inbox`, so searching `@inbox` shows what still needs sorting. Editing, menus and tabs are desktop only. Safari's Add to Home Screen opens MetaList full screen, and iOS saves the password per vault.
+Under 640 px wide (a phone on the local Wi-Fi, opening the vault's address such as `https://10.0.0.31:9443`) MetaList is a read-only view plus capture. The search bar sits alone at the top with each search term as a pill (× drops it) and the view pills beside them; notes show below without tag chips. Tapping a note never edits it: it shows that note's own tags as pills under it and expands it; tapping a tag pill searches for it; tapping the note again hides the pills. Back restores the previous search. The ☰ button at the bottom left opens sort, reverse, date range, notes with files, untagged notes, Lock and Sign Out (both log out; the vault stays picked). The ＋ button at the bottom right opens capture: type the note, optionally add tags, Save. A note captured with no tags is tagged `@inbox`, so searching `@inbox` shows what still needs sorting. Editing, menus and search contexts are desktop only. Safari's Add to Home Screen opens MetaList full screen, and iOS saves the password per vault.

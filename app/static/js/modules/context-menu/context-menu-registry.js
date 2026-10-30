@@ -982,7 +982,7 @@ function buildViewContextItems(context, handlers) {
             id: 'show', label: 'Show', icon: 'show', enabled: true,
             submenu: [
                 { id: 'show-chat', label: 'Chat', icon: 'chat', checked: isAiChatVisible, enabled: true, onSelect: () => onToggleAiChat(!isAiChatVisible) },
-                { id: 'show-tabs', label: 'Tabs', icon: 'tabs', checked: areTabsVisible, enabled: true, onSelect: () => onToggleTabs(!areTabsVisible) },
+                { id: 'show-tabs', label: 'Search Contexts', icon: 'tabs', checked: areTabsVisible, enabled: true, onSelect: () => onToggleTabs(!areTabsVisible) },
                 { id: 'show-note-tags', label: 'Tags in List', icon: 'tag', checked: areNoteTagsVisible, enabled: true, onSelect: () => onToggleNoteTags(!areNoteTagsVisible) },
                 ...themeChoices.map(([value, label], index) => choiceItem({
                     id: `theme-${value}`, label, icon: null, isCurrent: context.theme === value, separated: index === 0,
@@ -1002,7 +1002,7 @@ function buildViewContextItems(context, handlers) {
         {
             id: 'open', label: 'Open', icon: 'external', enabled: true, separated: true,
             submenu: [
-                { id: 'new-tab', label: 'New Tab', icon: 'tabs', enabled: true, onSelect: () => onNewTab() },
+                { id: 'new-tab', label: 'New Search Context', icon: 'tabs', enabled: true, onSelect: () => onNewTab() },
                 { id: 'open-namespace', label: 'Vault…', icon: 'namespace', enabled: true, onSelect: () => onOpenNamespace() },
                 { id: 'reminders', label: 'Reminders', icon: 'reminder', enabled: true, onSelect: () => onOpenReminders() },
             ],

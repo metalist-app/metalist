@@ -1531,6 +1531,20 @@ export const FilesAPI = {
         return data.name;
     },
 
+    // What Trim Unused Files would delete now: { count, size_bytes }.
+    async fetchUnusedFiles() {
+        const response = await fetch(CONFIG.API.FILES.UNUSED, { method: 'GET', headers: buildAuthHeaders(false) });
+        if (!response.ok) {
+            ErrorHandler.handleApiError(null, response);
+            throw new HttpRequestError(`Reading unused files failed: ${response.status} ${response.statusText}`);
+        }
+        const data = await response.json();
+        if (!Number.isInteger(data.count) || !Number.isInteger(data.size_bytes)) {
+            throw new Error('Unused files response is missing count or size_bytes');
+        }
+        return data;
+    },
+
     async trimUnusedFiles() {
         const response = await fetch(CONFIG.API.FILES.TRIM_UNUSED, {
             method: 'POST',

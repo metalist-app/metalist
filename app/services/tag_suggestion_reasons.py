@@ -16,8 +16,10 @@ from app.services.search_index import SearchIndex
 from app.services.search_index import SearchSuggestionFacts
 from app.services.search_index import TagCooccurrence
 from app.services.tag_ontology import TagOntology
+from app.services.tag_term_matching import NormalizedContentMatchContext
 from app.services.tag_term_matching import TagContentMatch
 from app.services.tag_term_matching import build_normalized_content_match_context
+from app.services.tag_term_matching import match_tag_term_in_content_match_context
 from app.services.tag_term_matching import list_significant_content_match_segments
 from app.services.tag_term_matching import note_text_for_tag_matching
 from app.services.tag_term_matching import quote_content_match
@@ -177,6 +179,8 @@ class ReasonWriter:
     applies: AppliesThrough
     # The letters typed for the tag ("" in an empty bar).
     prefix: str
+    # The note's own text (its links' titles left out), as tags are matched against it.
+    own_text: NormalizedContentMatchContext
     # The note text's words, as tags are matched against them.
     content_words: FrozenSet[str]
 
@@ -196,8 +200,16 @@ class ReasonWriter:
         return cls(
             count_by_casefold=count_by_casefold, ontology_only_casefold=ontology_only_casefold,
             applies=AppliesThrough.build(inherited_non_meta=inherited_non_meta, base_tags=base_tags, ontology=ontology),
-            prefix=prefix, content_words=frozenset(context.token_positions),
+            prefix=prefix, own_text=context, content_words=frozenset(context.token_positions),
         )
+
+    def where_named(self, match: TagContentMatch) -> str:
+        """This note, or the title of one of its links when the note's own text does not
+        name the tag as strongly (the titles follow the text, so an equal match is the text's)."""
+        own = match_tag_term_in_content_match_context(term=match.term, context=self.own_text)
+        if own is not None and own.sort_key() >= match.sort_key():
+            return "this note"
+        return "the title of a link in this note"
 
     def already_applies(self, term: str) -> Tuple[str, ...]:
         return self.applies.lines(term, lead="Already applies: ")
@@ -285,10 +297,11 @@ class SuggestionEvidence:
         lines: List[str] = []
         if subject in self.synonym_matches:
             representative, match = self.synonym_matches[subject]
-            lines.append(named_line(match=match, shown=shown, where="this note"))
+            lines.append(named_line(match=match, shown=shown, where=self.writer.where_named(match)))
             lines.append(f"A synonym of {quoted(representative)}")
         elif subject in self.content_matches:
-            lines.append(named_line(match=self.content_matches[subject], shown=shown, where="this note"))
+            match = self.content_matches[subject]
+            lines.append(named_line(match=match, shown=shown, where=self.writer.where_named(match)))
         if subject in self.cooccurrence_terms:
             assert subject in cooccurrences, f"{subject!r} was ranked as co-occurring"
             lines.append(self._about(subject, shown, self._cooccurrence(cooccurrences[subject])))

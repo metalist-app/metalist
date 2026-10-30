@@ -1210,6 +1210,12 @@ class NoteStore:
             )
             # Content/collapse changes preserve the authoritative sibling pointers.
 
+    def referenced_target_ids(self) -> frozenset[str]:
+        """Every id a live note's text references ([[id]] or ![[id]]): what Trim Unused
+        Files keeps, read from the reference index instead of every note's text."""
+        with self._lock:
+            return self._backlink_index.target_ids()
+
     def has_backlinks(self, note_id: str) -> bool:
         with self._lock:
             return note_id in self._note_map and self._backlink_index.has_backlinks(note_id)

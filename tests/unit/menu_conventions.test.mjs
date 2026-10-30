@@ -161,8 +161,8 @@ test('view menu labels are in Title Case', () => {
 
 test('the tabs overlay says what + and − do, and hides − for a single tab', () => {
     const several = tabContextActionsHtml({ tabId: 'tab-1', isAtTabLimit: false, canDelete: true });
-    assert.match(several, /class="tab-context-action duplicate-context "[^>]*title="Duplicate Tab"/);
-    assert.match(several, /delete-context "[^>]*title="Delete Tab"[^>]*aria-hidden="false"/);
+    assert.match(several, /class="tab-context-action duplicate-context "[^>]*title="Duplicate Search Context"/);
+    assert.match(several, /delete-context "[^>]*title="Delete Search Context"[^>]*aria-hidden="false"/);
     const single = tabContextActionsHtml({ tabId: 'tab-1', isAtTabLimit: false, canDelete: false });
     assert.match(single, /delete-context is-hidden"[^>]*aria-hidden="true"/);
     // At the tab limit + stays, greyed: the reason is discoverable.

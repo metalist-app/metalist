@@ -71,7 +71,7 @@ Existing backup files are immutable recovery artifacts.
 - Database migrations operate only on the live database. Login/startup migrations must never enumerate or transform historical backups.
 - Restore must leave every source archive and legacy sidecar byte-for-byte unchanged. Old database versions migrate only after installation as the live database: immediately for plaintext databases or after unlock for encrypted databases.
 - A requested backup conversion must create a distinct new file with exclusive creation and retain the original unchanged.
-- Backup creation must fail if its destination already exists; overwrite-capable archive modes and `os.replace`/rename-style publication are forbidden.
+- Backup creation must fail if its destination already exists; overwrite-capable archive modes and `os.replace`/rename-style publication are forbidden. The one approved publication (2026-10-29) is a hard link: write `<name>.partial` with exclusive create, fsync, `os.link` it to the final name (fails if it exists), then remove the `.partial` through `delete_partial_archives`, the only function besides the retention workflow that may delete, and only `.partial` files.
 - `BKP001` startup-sanity findings cannot be suppressed. Do not weaken or bypass this gate.
 
 ## CRITICAL: Database Schema Changes Require a Version Bump

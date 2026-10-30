@@ -549,8 +549,8 @@ test('the background menu groups adding, going, the outline, the view, opening a
     assert.deepEqual(submenu('add'), ['Add Note at Top ↩', 'Paste Note at Top ⌘V']);
     assert.deepEqual(submenu('go-to'), ['Top', 'Bottom']);
     assert.deepEqual(submenu('outline'), ['Expand All Root Notes', 'Collapse All Root Notes', '— Fully Expand All', 'Fully Collapse All']);
-    assert.deepEqual(submenu('show'), ['Chat', 'Tabs', 'Tags in List', '— System Theme', 'Light Theme', 'Dark Theme']);
-    assert.deepEqual(submenu('open'), ['New Tab', 'Vault…', 'Reminders']);
+    assert.deepEqual(submenu('show'), ['Chat', 'Search Contexts', 'Tags in List', '— System Theme', 'Light Theme', 'Dark Theme']);
+    assert.deepEqual(submenu('open'), ['New Search Context', 'Vault…', 'Reminders']);
     assert.deepEqual(submenu('export-print'), ['View as HTML…', 'Print View…']);
 });
 
@@ -628,7 +628,7 @@ test('View and Show (with the theme) tick the current state', () => {
     // The current choice is ticked but not greyed: picking it changes nothing.
     assert.deepEqual(ticks('view'), [['All Notes', false, true], ['Untagged Notes', true, true]]);
     assert.deepEqual(ticks('show'), [
-        ['Chat', true, true], ['Tabs', false, true], ['Tags in List', true, true],
+        ['Chat', true, true], ['Search Contexts', false, true], ['Tags in List', true, true],
         ['System Theme', false, true], ['Light Theme', false, true], ['Dark Theme', true, true],
     ]);
 

@@ -643,6 +643,7 @@ export class BackupRestoreModal extends BaseModal {
             folder_path: folderPath,
             selected_namespaces: settings.selectedNamespaces,
             retention_count: settings.retentionCount,
+            plaintext_sync_acknowledged: [],
         });
         return true;
     }
@@ -652,9 +653,8 @@ export class BackupRestoreModal extends BaseModal {
             choosingFolder: true,
         });
         this.renderModalContent();
-        this._showProgress('Choosing a backup folder…');
+        // No progress card: the system's folder picker is on screen until it answers.
         const choiceResult = await settleResult(() => this._pickAndPersistBackupFolder());
-        this._endProgress();
         if (!choiceResult.ok) {
             this.updateModalState({ choosingFolder: false });
             this.renderModalContent();

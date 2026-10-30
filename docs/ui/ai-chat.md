@@ -47,7 +47,7 @@
 - Stop no longer ends in a fatal error: the "Cancelling request" activity carries the fields every activity needs.
 - The AI remembers a failed request and the explanation you saw, so you can follow up
   with "try that again" or ask why it failed (`docs/design/agent-harness.md`).
-- A Send that MetaList refuses before the AI starts (the AI is not set up, the active tab changed, a message it rejects) stays in the chat with the reason, so the message is not lost and the reason says what to fix. The server keeps no record of such a turn, so the page keeps it (`ai-chat-refused-turns.js`) and puts it back after the server message it followed each time the chat reloads: later Sends leave it in place, in order. Clear chat clears it, a refused turn goes with the earlier message it followed when the server trims old history, and reloading the page forgets it. The AI never sees refused turns. A connection lost mid-answer is not a refusal: the server has that turn.
+- A Send that MetaList refuses before the AI starts (the AI is not set up, the active search context changed, a message it rejects) stays in the chat with the reason, so the message is not lost and the reason says what to fix. The server keeps no record of such a turn, so the page keeps it (`ai-chat-refused-turns.js`) and puts it back after the server message it followed each time the chat reloads: later Sends leave it in place, in order. Clear chat clears it, a refused turn goes with the earlier message it followed when the server trims old history, and reloading the page forgets it. The AI never sees refused turns. A connection lost mid-answer is not a refusal: the server has that turn.
 
 ## Web access
 
@@ -105,7 +105,7 @@ result, rather than treating model prose as proof of execution.
 
 ## Scope at Send
 
-The browser captures one required view descriptor from the active tab:
+The browser captures one required view descriptor from the active search context:
 
 - normal search, All notes, Untagged notes, or temporary Reference source;
 - executed search text;
@@ -113,9 +113,9 @@ The browser captures one required view descriptor from the active tab:
 - reference UUIDs where applicable;
 - a human-readable scope label.
 
-The server verifies that the descriptor targets the active tab and matches its
+The server verifies that the descriptor targets the active search context and matches its
 canonical search/sort state, then resolves actual note membership itself.
-The browser never submits a trusted corpus-sized UUID list. Later typing, tab
+The browser never submits a trusted corpus-sized UUID list. Later typing, search-context
 switches, or reference navigation do not change the running request.
 
 The assistant turn does not repeat this scope above its response. When developer
@@ -379,9 +379,9 @@ preferences are saved (`RETIRED_PROMPT_PREFERENCE_KEYS` and
   root, the query is `UUID1 OR UUID2`; normal search behavior preserves both paths
   and gray-redacts unrelated siblings.
 - Individual/all-reference navigation uses the temporary Reference source context,
-  leaves the visible search field empty, labels the temporary tab `Reference source`
+  leaves the visible search field empty, labels the temporary search context `Reference source`
   instead of displaying its internal exact-note filter, excludes that filter from
-  search history, and provides the dismissible X to return to the prior tab context.
+  search history, and provides the dismissible X to return to the prior search context.
 - Common UUID dash substitutions are normalized programmatically. UUIDs in fenced
   code/existing links remain literal.
 - Right-click a completed answer and choose `Copy Response` to copy Markdown tagged

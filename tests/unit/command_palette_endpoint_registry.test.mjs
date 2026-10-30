@@ -231,7 +231,7 @@ test('buildCommandPaletteEndpoints includes utility action endpoints', async () 
     // The Backlinks panel is gone; ↖ and Referenced by replace it.
     assert.equal(endpointIds.has('pref.show_backlinks'), false);
     assert.equal(endpoints.find((endpoint) => endpoint.id === 'pref.show_note_tags').label, 'Show Tags in List');
-    assert.equal(endpoints.find((endpoint) => endpoint.id === 'pref.show_tab_ui').label, 'Show Tabs');
+    assert.equal(endpoints.find((endpoint) => endpoint.id === 'pref.show_tab_ui').label, 'Show Search Contexts');
     assert.equal(
         endpoints.find((endpoint) => endpoint.id === 'pref.show_search_results_count').label,
         'Hide Search Result Count',
@@ -245,7 +245,7 @@ test('buildCommandPaletteEndpoints includes utility action endpoints', async () 
     storedPreferences.set('pref.animated_transitions', 'false');
 
     assert.equal(endpoints.find((endpoint) => endpoint.id === 'pref.show_note_tags').label, 'Hide Tags in List');
-    assert.equal(endpoints.find((endpoint) => endpoint.id === 'pref.show_tab_ui').label, 'Hide Tabs');
+    assert.equal(endpoints.find((endpoint) => endpoint.id === 'pref.show_tab_ui').label, 'Hide Search Contexts');
     assert.equal(
         endpoints.find((endpoint) => endpoint.id === 'pref.show_search_results_count').label,
         'Show Search Result Count',

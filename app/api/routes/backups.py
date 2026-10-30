@@ -32,6 +32,7 @@ from app.services.backup_service import (
     read_backup_launch_profile,
     restore_backup_to_paths,
     restore_backup_to_paths_from_namespace,
+    vault_has_password,
 )
 from app.server_runtime import NamespaceLaunchProfile
 from app.server_runtime import _DEFAULT_HTTP_PORT
@@ -39,10 +40,13 @@ from app.server_runtime import load_all_namespace_launch_profiles
 from app.server_runtime import load_namespace_launch_profile
 from app.server_runtime import resolve_namespace_directory
 from app.server_runtime import resolve_namespaced_database_path
-from app.server_runtime import resolve_namespaces_directory
 from app.server_runtime import save_namespace_launch_profile
 from app.server_runtime import validate_namespace
+from app.services.synced_folders import provider_syncing, suggested_backup_folders
 from app.services.backup_settings_service import (
+    acknowledged_unprotected_namespaces,
+    list_available_namespaces,
+    order_namespaces,
     load_backup_settings,
     update_backup_settings,
 )
@@ -62,10 +66,21 @@ _FOLDER_BACKUP_ID_PART_COUNT = 3
 _RESTART_AFTER_RESTORE_DELAY_SECONDS = 0.5
 
 
+class SuggestedFolderResponse(BaseModel):
+    # `Downloads`, `Dropbox › MetaList Backups`
+    label: str
+    path: str
+
+
 class BackupSettingsResponse(BaseModel):
     folder_path: str
+    # Downloads, then a MetaList Backups folder in each synced folder found (synced_folders.py).
+    suggested_folders: list[SuggestedFolderResponse]
+    # Every available vault but those left out: a vault created since the last backup is checked.
     selected_namespaces: list[str]
     available_namespaces: list[str]
+    # The vault in use: always backed up, its checkbox locked.
+    current_namespace: str
     retention_count: int
 
 
@@ -73,6 +88,20 @@ class BackupSettingsUpdateRequest(BaseModel):
     folder_path: str
     selected_namespaces: list[str] = Field(..., min_length=1)
     retention_count: int = Field(..., gt=0)
+    # Vaults without a password the person chose to back up into this synced folder anyway.
+    plaintext_sync_acknowledged: list[str]
+
+
+class PlaintextSyncCheckRequest(BaseModel):
+    folder_path: str
+    selected_namespaces: list[str] = Field(..., min_length=1)
+
+
+class PlaintextSyncCheckResponse(BaseModel):
+    # The provider syncing the folder (`Dropbox`), or "" when it is not synced.
+    provider: str
+    # Selected vaults without a password not yet agreed to for this folder.
+    unprotected_namespaces: list[str]
 
 
 class BackupFolderPickResponse(BaseModel):
@@ -193,25 +222,20 @@ def _serialize_settings_response(settings: dict[str, object]) -> BackupSettingsR
     folder_path = settings["folder_path"]
     if not isinstance(folder_path, str):
         raise RuntimeError("backup settings folder_path must be a string")
-    selected_namespaces = settings["selected_namespaces"]
-    if not isinstance(selected_namespaces, list):
-        raise RuntimeError("backup settings selected_namespaces must be a list")
-    normalized_selected_namespaces: list[str] = []
-    for selected_namespace in selected_namespaces:
-        if not isinstance(selected_namespace, str):
-            raise RuntimeError("backup settings selected_namespaces entries must be strings")
-        normalized_selected_namespaces.append(validate_namespace(namespace=selected_namespace))
-    available_namespaces = _list_available_namespaces()
-    available_namespace_set = set(available_namespaces)
-    existing_selected_namespaces = [
-        namespace
-        for namespace in normalized_selected_namespaces
-        if namespace in available_namespace_set
-    ]
+    unchecked_namespaces = settings["unchecked_namespaces"]
+    if not isinstance(unchecked_namespaces, list):
+        raise RuntimeError("backup settings unchecked_namespaces must be a list")
+    available_namespaces = list_available_namespaces()
+    assert ACTIVE_NAMESPACE in available_namespaces, "the vault in use has a database"
     return BackupSettingsResponse(
         folder_path=folder_path,
-        selected_namespaces=_order_namespaces(namespaces=existing_selected_namespaces),
+        suggested_folders=[
+            SuggestedFolderResponse(label=folder.label, path=str(folder.path))
+            for folder in suggested_backup_folders(Path.home())
+        ],
+        selected_namespaces=[namespace for namespace in available_namespaces if namespace not in unchecked_namespaces],
         available_namespaces=available_namespaces,
+        current_namespace=ACTIVE_NAMESPACE,
         retention_count=int(settings["retention_count"]),
     )
 
@@ -260,46 +284,10 @@ def _prepare_folder_backup_directory_for_settings(*, folder_path: str) -> str:
     return str(folder_directory)
 
 
-def _order_namespaces(*, namespaces: list[str]) -> list[str]:
-    if not isinstance(namespaces, list):
-        raise TypeError("namespaces must be a list")
-    normalized_namespaces: list[str] = []
-    seen_namespaces: set[str] = set()
-    for namespace in namespaces:
-        if not isinstance(namespace, str):
-            raise TypeError("namespaces entries must be strings")
-        normalized_namespace = validate_namespace(namespace=namespace)
-        if normalized_namespace in seen_namespaces:
-            continue
-        seen_namespaces.add(normalized_namespace)
-        normalized_namespaces.append(normalized_namespace)
-    normalized_namespaces.sort()
-    if "default" in normalized_namespaces:
-        normalized_namespaces.remove("default")
-        normalized_namespaces.insert(0, "default")
-    return normalized_namespaces
-
-
-def _list_available_namespaces() -> list[str]:
-    discovered_namespaces: list[str] = []
-    namespaces_directory = resolve_namespaces_directory()
-    if namespaces_directory.exists():
-        if not namespaces_directory.is_dir():
-            raise RuntimeError(f"namespaces directory is not a directory: {namespaces_directory}")
-        for child in namespaces_directory.iterdir():
-            if not child.is_dir():
-                continue
-            namespace = validate_namespace(namespace=child.name)
-            database_path = resolve_namespaced_database_path(namespace=namespace)
-            if database_path.is_file():
-                discovered_namespaces.append(namespace)
-    return _order_namespaces(namespaces=discovered_namespaces)
-
-
 def _normalize_selected_namespaces(*, selected_namespaces: list[str]) -> list[str]:
     if not isinstance(selected_namespaces, list):
         raise TypeError("selected_namespaces must be a list")
-    normalized_selected_namespaces = _order_namespaces(namespaces=selected_namespaces)
+    normalized_selected_namespaces = order_namespaces(namespaces=selected_namespaces)
     if len(normalized_selected_namespaces) == 0:
         raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail="Select at least one vault to back up")
     return normalized_selected_namespaces
@@ -327,6 +315,38 @@ def _filter_deleted_selected_namespaces(*, selected_namespaces: list[str]) -> li
             detail="None of the selected backup vaults still exist",
         )
     return existing_selected_namespaces
+
+
+# A synced folder and the selected vaults without a password not yet agreed to there: the
+# warning Back Up Now asks before backing up (docs/ui/command-palette.md, `Back Up Now…`).
+def _plaintext_sync_check(*, folder_path: str, selected_namespaces: list[str], token: str) -> PlaintextSyncCheckResponse:
+    provider = provider_syncing(Path(folder_path), home=Path.home())
+    if provider == "":
+        return PlaintextSyncCheckResponse(provider="", unprotected_namespaces=[])
+    acknowledged = acknowledged_unprotected_namespaces(load_backup_settings(token=token), folder_path=folder_path)
+    unprotected = [
+        namespace for namespace in selected_namespaces
+        if namespace not in acknowledged and not vault_has_password(resolve_namespaced_database_path(namespace=namespace))
+    ]
+    return PlaintextSyncCheckResponse(provider=provider, unprotected_namespaces=unprotected)
+
+
+# Refuses a backup or setting that skips the warning; what was agreed is remembered.
+def _require_plaintext_sync_answered(*, folder_path: str, selected_namespaces: list[str], acknowledged: list[str], token: str) -> None:
+    check = _plaintext_sync_check(folder_path=folder_path, selected_namespaces=selected_namespaces, token=token)
+    unanswered = [namespace for namespace in check.unprotected_namespaces if namespace not in acknowledged]
+    if unanswered:
+        raise HTTPException(
+            status_code=HTTPStatus.CONFLICT,
+            detail=f"This folder syncs to {check.provider}, and {', '.join(unanswered)} has no password: confirm before backing up",
+        )
+
+
+# The vaults a request leaves out, refusing one that leaves out the vault in use.
+def _unchecked_namespaces_for(*, selected_namespaces: list[str]) -> list[str]:
+    if ACTIVE_NAMESPACE not in selected_namespaces:
+        raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail="The vault in use is always backed up")
+    return [namespace for namespace in list_available_namespaces() if namespace not in selected_namespaces]
 
 
 def _run_native_folder_picker_command(*, command: list[str]) -> str | None:
@@ -828,13 +848,26 @@ def put_backup_settings(
     normalized_selected_namespaces = _require_existing_selected_namespaces(
         selected_namespaces=payload.selected_namespaces,
     )
+    # Saving a folder writes nothing to it; a run asks before plaintext lands there.
     settings = update_backup_settings(
         token=token,
         folder_path=normalized_folder_path,
-        selected_namespaces=normalized_selected_namespaces,
+        unchecked_namespaces=_unchecked_namespaces_for(selected_namespaces=normalized_selected_namespaces),
         retention_count=payload.retention_count,
+        newly_acknowledged_namespaces=payload.plaintext_sync_acknowledged,
     )
     return _serialize_settings_response(settings)
+
+
+@router.post("/plaintext-check", response_model=PlaintextSyncCheckResponse)
+@transactional_route
+def check_plaintext_sync(
+    payload: PlaintextSyncCheckRequest,
+    token: Annotated[str, Depends(_require_auth)],
+):
+    folder_path = str(_normalize_folder_backup_path(folder_path=payload.folder_path))
+    selected_namespaces = _filter_deleted_selected_namespaces(selected_namespaces=payload.selected_namespaces)
+    return _plaintext_sync_check(folder_path=folder_path, selected_namespaces=selected_namespaces, token=token)
 
 
 @router.post("/folder/pick", response_model=BackupFolderPickResponse)
@@ -902,11 +935,16 @@ def run_backup(
     normalized_selected_namespaces = _filter_deleted_selected_namespaces(
         selected_namespaces=payload.selected_namespaces,
     )
+    _require_plaintext_sync_answered(
+        folder_path=folder_path, selected_namespaces=normalized_selected_namespaces,
+        acknowledged=payload.plaintext_sync_acknowledged, token=token,
+    )
     update_backup_settings(
         token=token,
         folder_path=folder_path,
-        selected_namespaces=normalized_selected_namespaces,
+        unchecked_namespaces=_unchecked_namespaces_for(selected_namespaces=normalized_selected_namespaces),
         retention_count=payload.retention_count,
+        newly_acknowledged_namespaces=payload.plaintext_sync_acknowledged,
     )
 
     folder_directory = _normalize_folder_backup_path(folder_path=folder_path)

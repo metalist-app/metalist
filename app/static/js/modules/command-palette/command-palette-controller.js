@@ -5,6 +5,8 @@ import { insertFormatAtCaret } from '../mode-manager/services/insert-format-serv
 import { captureActiveAgentScope } from '../ai-chat/ai-chat-panel-controller.js';
 import { showUpdateNotice } from '../app-update-service.js';
 import { BackupReminder } from '../backup-reminder-service.js';
+import { TrimReminder } from '../trim-reminder-service.js';
+import { trimConfirmationText } from '../trim-reminder-schedule.js';
 import { receiveSearchSuggestionPreferences } from '../mode-manager/services/search-suggestion-windows-service.js';
 import { ApplicationState, stateValuesEqual } from '../application-state.js';
 import { HttpRequestError, rethrowUnexpectedError } from '../expected-errors.js';
@@ -676,6 +678,7 @@ class CommandPaletteController {
         applyNoteLayoutSettings(document.body, this._readNoteLayoutSettings());
 
         void BackupReminder.preferencesChanged();
+        void TrimReminder.preferencesChanged();
 
         applyTheme(this._getSelect('pref.theme', ['system', 'light', 'dark'], 'system'));
         // How @stats and @sum=… totals look; exports and prints take it from the page too.
@@ -1868,12 +1871,18 @@ class CommandPaletteController {
     }
 
     async trimUnusedFiles() {
+        // The confirmation says what goes: the same files the trim reminder totals (unused_files.py).
+        const unused = await FilesAPI.fetchUnusedFiles();
+        if (unused.count === 0) {
+            ErrorHandler.showInfoBanner('No unused files to trim.', RESULT_BANNER_SECONDS * MS_PER_SECOND);
+            return;
+        }
         const confirmed = await this._confirmAction(
             'commandPalette.trimUnusedFiles.confirm',
             {
                 eyebrow: 'File Storage',
                 title: 'Trim Unused Files?',
-                description: 'Delete every file that is not referenced by a saved note? This cannot be undone.',
+                description: trimConfirmationText({ count: unused.count, sizeBytes: unused.size_bytes }),
                 confirmLabel: 'Trim Files',
                 isDangerous: true,
             },
@@ -1904,6 +1913,7 @@ class CommandPaletteController {
         if (result === null) {
             return;
         }
+        void TrimReminder.preferencesChanged();
 
         ErrorHandler.showInfoBanner(
             `Trimmed ${result.deleted_count} unused file(s).`,
@@ -2359,6 +2369,35 @@ class CommandPaletteController {
         return await this._backupSettingsModal.openForBackup();
     }
 
+    // Before a vault without a password is backed up into a synced folder, ask once per
+    // folder and vault (docs/ui/command-palette.md, `Back Up Now…`). The vaults agreed to,
+    // or null when the person cancels.
+    async _confirmPlaintextSync(backupSettings) {
+        const check = await this._authRequest(CONFIG.API.BACKUP.PLAINTEXT_CHECK, 'POST', {
+            folder_path: backupSettings.folder_path,
+            selected_namespaces: backupSettings.selected_namespaces,
+        });
+        if (typeof check.provider !== 'string' || !Array.isArray(check.unprotected_namespaces)) {
+            throw new Error('Plaintext sync check response missing provider or unprotected_namespaces');
+        }
+        if (check.unprotected_namespaces.length === 0) {
+            return [];
+        }
+        const names = check.unprotected_namespaces.map((namespace) => `"${namespace}"`).join(', ');
+        const verb = check.unprotected_namespaces.length === 1 ? 'has' : 'have';
+        const confirmed = await this._confirmAction('commandPalette.createBackup.plaintextSync', {
+            eyebrow: 'Backup',
+            title: 'Back Up Without a Password?',
+            description: `This folder syncs to ${check.provider}, and ${names} ${verb} no password, so its notes will be readable there. Set a vault password, or back up anyway.`,
+            confirmLabel: 'Back Up Anyway',
+            isDangerous: true,
+        });
+        if (!confirmed) {
+            return null;
+        }
+        return check.unprotected_namespaces;
+    }
+
     async createBackup() {
         const modalResult = await this._openBackupSettingsModal();
         if (modalResult === null) {
@@ -2374,6 +2413,12 @@ class CommandPaletteController {
         if (!backupSettings || typeof backupSettings !== 'object') {
             throw new Error('Backup settings modal result missing settings');
         }
+        const acknowledged = await this._confirmPlaintextSync(backupSettings);
+        if (acknowledged === null) {
+            return;
+        }
+        // A new object: the dialog's result is its own owned state.
+        const runSettings = { ...backupSettings, plaintext_sync_acknowledged: acknowledged };
 
         await waitForCommandAvailability({
             isBusy: () => CommandGate.isBusy(),
@@ -2382,7 +2427,7 @@ class CommandPaletteController {
             pollIntervalMs: BACKUP_COMMAND_AVAILABILITY_POLL_INTERVAL_MS,
         });
         const backupResult = await CommandGate.run('commandPalette.createBackup', async () => {
-            const payload = await this._authRequest(CONFIG.API.BACKUP.RUN, 'POST', backupSettings);
+            const payload = await this._authRequest(CONFIG.API.BACKUP.RUN, 'POST', runSettings);
             if (!payload || typeof payload !== 'object') {
                 throw new Error('Backup run response missing body');
             }
@@ -2654,6 +2699,11 @@ class CommandPaletteController {
             preferences: this._preferences,
             fetchBackupTimes: () => this._authRequest(CONFIG.API.BACKUP.TIMES, 'GET', null),
             openBackup: () => this.createBackup(),
+        });
+        await TrimReminder.start({
+            preferences: this._preferences,
+            fetchUnusedFiles: () => FilesAPI.fetchUnusedFiles(),
+            openTrim: () => this.trimUnusedFiles(),
         });
     }
 

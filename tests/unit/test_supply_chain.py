@@ -30,6 +30,22 @@ def test_untracked_vendor_file_fails_manifest_check(tmp_path):
         chain.check_vendor_files(tmp_path)
 
 
+def test_untracked_vendor_data_file_fails_manifest_check(tmp_path):
+    (tmp_path / 'docs/security').mkdir(parents=True)
+    (tmp_path / 'docs/security/vendor-manifest.json').write_text('[]')
+    (tmp_path / 'app/static/js/vendor').mkdir(parents=True)
+    (tmp_path / 'app/static/js/vendor/words.txt').write_text('abacus')
+    (tmp_path / 'app/static/js/vendor/other.LICENSE.txt').write_text('license')
+    with pytest.raises(RuntimeError, match='cover every'):
+        chain.check_vendor_files(tmp_path)
+
+
+def test_vendored_data_is_not_audited_as_an_npm_package():
+    data = {'name': 'eff-large-wordlist', 'version': '2016-07-18', 'kind': 'data'}
+    code = {'name': 'zxcvbn', 'version': '4.4.2'}
+    assert chain.audited_versions(Path('.'), [data, code]) == [{'name': 'zxcvbn', 'version': '4.4.2'}]
+
+
 @pytest.mark.parametrize('step', ['  - name: Checkout\n    uses: actions/checkout@v4\n',
                                  '  - uses: actions/checkout@v4\n'])
 @pytest.mark.parametrize('extension', ['yml', 'yaml'])

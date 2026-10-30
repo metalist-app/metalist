@@ -73,6 +73,10 @@ _ALLOWED_CLIENT_PREFERENCES = {
     "pref.backup_reminder": {"off", "daily", "weekly", "every_2_weeks", "monthly"},
     # Until when the dismissed backup reminder stays hidden.
     "pref.backup_reminder_hidden_until": "utc_timestamp",
+    # Whether a card offers to trim files no note uses (trim-reminder-service.js).
+    "pref.trim_reminder": {"on", "off"},
+    # How many bytes of unused files there were when its card was last dismissed.
+    "pref.trim_reminder_dismissed_bytes": "byte_count",
     "pref.note_layout.top_level_note_size": {"same", "larger", "largest"},
     "pref.note_layout.child_indentation": {"compact", "standard", "wide"},
     "pref.note_layout.vertical_spacing": {"compact", "comfortable", "spacious"},
@@ -292,6 +296,9 @@ def _validate_client_preferences(preferences: dict[str, object]) -> dict[str, st
                 raise ClientStateValidationError("Invalid update notice version")
         elif allowed_values == "utc_timestamp":
             _validate_utc_timestamp_preference(key=key, value=value)
+        elif allowed_values == "byte_count":
+            if re.fullmatch(r"0|[1-9][0-9]*", value) is None:
+                raise ClientStateValidationError(f"Client preference {key} must be a whole number of bytes")
         elif allowed_values == "tag_activity_windows":
             _validate_tag_activity_windows_preference(key=key, value=value)
         elif allowed_values == "dictation_phrase":

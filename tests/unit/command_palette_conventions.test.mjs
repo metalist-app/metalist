@@ -28,7 +28,7 @@ function endpoints() {
 
 const LABELS = {
     'pref.show_note_tags': 'Show Tags in List',
-    'pref.show_tab_ui': 'Show Tabs',
+    'pref.show_tab_ui': 'Show Search Contexts',
     'pref.show_search_results_count': 'Hide Search Result Count',
     'pref.show_ai_chat': 'Show AI Chat',
     'pref.animated_transitions': 'Hide Animated Transitions',
@@ -86,6 +86,7 @@ const LABELS = {
     'form.delete_current_namespace': 'Delete Vault…',
     'action.create_backup': 'Back Up Now…',
     'pref.backup_reminder': 'Backup Reminder',
+    'pref.trim_reminder': 'Trim Reminder',
     'form.restore_backup': 'Restore from Backup…',
     'action.logout': 'Log Out',
     'form.random_password_generator': 'Generate Random Password…',

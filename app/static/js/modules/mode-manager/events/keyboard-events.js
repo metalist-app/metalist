@@ -3589,7 +3589,7 @@ async function duplicateTabContext(sourceTabId, animateNoteChanges, shouldSwitch
     const payload = ModeContext.getTabStatePayload();
 	if (payload.tabOrder.length >= CONFIG.TABS.MAX_TABS) {
 		ErrorHandler.showInfoBanner(
-			`Tab limit reached (${CONFIG.TABS.MAX_TABS}). Close a tab before adding another.`,
+			`Search context limit reached (${CONFIG.TABS.MAX_TABS}). Close one before adding another.`,
 			TAB_LIMIT_BANNER_SECONDS * MS_PER_SECOND,
 		);
 		return;
@@ -3688,7 +3688,7 @@ export async function createBlankSearchContextFromHover() {
     const payload = ModeContext.getTabStatePayload();
     if (payload.tabOrder.length >= CONFIG.TABS.MAX_TABS) {
         ErrorHandler.showInfoBanner(
-            `Tab limit reached (${CONFIG.TABS.MAX_TABS}). Close a tab before adding another.`,
+            `Search context limit reached (${CONFIG.TABS.MAX_TABS}). Close one before adding another.`,
             TAB_LIMIT_BANNER_SECONDS * MS_PER_SECOND,
         );
         return null;

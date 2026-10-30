@@ -231,7 +231,7 @@ def test_converter_creates_current_encrypted_database_with_launch_profile(tmp_pa
         ],
         cwd=_PROJECT_ROOT,
         env=environ,
-        input="y\ncorrect-horse\ncorrect-horse\n",
+        input="y\nvelvet-orbit-canyon-pickle\nvelvet-orbit-canyon-pickle\n",
         capture_output=True,
         check=False,
         encoding="utf-8",

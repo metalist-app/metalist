@@ -21,6 +21,7 @@ from app.db.files_sql import (
     fetch_file_metadata,
     fetch_file_preview,
     require_file_size,
+    sum_stored_file_sizes,
     fetch_file,
     insert_file,
     replace_file_content_fields,
@@ -34,7 +35,6 @@ from app.security.encryption import (
     get_encryption_service_with_token,
     is_encryption_required,
 )
-from app.services.embedded_references import collect_reference_tokens_from_html
 from app.services.file_registry import FileDetails, file_registry
 from app.services.input_errors import InputRejected
 from app.services.note_store import store as note_store
@@ -688,21 +688,24 @@ def find_file_preview(*, file_id: str, variant: str, token: str) -> Optional[Fil
     )
 
 
-def trim_unused_files() -> TrimUnusedFilesResult:
+def unused_file_ids(*, kept_file_ids: frozenset[str]) -> set[str]:
+    """Files no live note's text references, less those kept (what ⌘Z or a paste could
+    bring back: unused_files.py)."""
     if not note_store.loaded:
-        raise RuntimeError("Cannot trim unused files before NoteStore hydration")
+        raise RuntimeError("Cannot list unused files before NoteStore hydration")
+    return file_registry.list_ids() - note_store.referenced_target_ids() - kept_file_ids
 
-    referenced_file_ids: set[str] = set()
-    for note_id in note_store.list_note_ids():
-        content_html = note_store.get_note(note_id).content
-        tokens = collect_reference_tokens_from_html(content_html)
-        for token in tokens:
-            if file_registry.has_file(token.note_id):
-                referenced_file_ids.add(token.note_id)
 
-    all_file_ids = file_registry.list_ids()
-    unused_file_ids = all_file_ids.difference(referenced_file_ids)
-    deleted_ids = sorted(unused_file_ids)
+def stored_size_of_files(file_ids: set[str]) -> int:
+    """The bytes the files take in the files database, as stored (encrypted or not)."""
+    if not file_ids:
+        return 0
+    with connect_file_reader() as connection:
+        return sum_stored_file_sizes(connection, sorted(file_ids))
+
+
+def trim_unused_files(*, kept_file_ids: frozenset[str]) -> TrimUnusedFilesResult:
+    deleted_ids = sorted(unused_file_ids(kept_file_ids=kept_file_ids))
     with begin_file_writer() as connection:
         deleted_count = delete_files(connection, deleted_ids)
     if deleted_count != len(deleted_ids):

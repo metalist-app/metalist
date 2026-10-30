@@ -53,6 +53,10 @@ class BacklinkIndex:
             if not sources:
                 del self._incoming[target_id]
 
+    def target_ids(self) -> frozenset[str]:
+        """Every id some note references: notes, missing notes and files."""
+        return frozenset(self._incoming)
+
     def has_backlinks(self, note_id: str) -> bool:
         return note_id in self._incoming
 

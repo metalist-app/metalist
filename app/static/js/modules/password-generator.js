@@ -39,6 +39,34 @@ export function normalizePasswordCharset(rawCharsetInput) {
     return Array.from(new Set(normalized)).join('');
 }
 
+// `count` indexes below `size`, each equally likely: samples past the largest multiple of
+// `size` are dropped, so no index is favoured (no modulo bias).
+export function pickRandomIndexes(count, size, fillRandomValues) {
+    if (!Number.isInteger(count) || count <= 0) {
+        throw new Error('count must be a positive integer');
+    }
+    if (!Number.isInteger(size) || size <= 0 || size > UINT32_VALUE_COUNT) {
+        throw new Error('size must be a positive integer no larger than 2**32');
+    }
+    const randomValues = resolveRandomValuesFunction(fillRandomValues);
+    const unbiasedUpperBound = Math.floor(UINT32_VALUE_COUNT / size) * size;
+    const indexes = [];
+    while (indexes.length < count) {
+        const randomBuffer = new Uint32Array((count - indexes.length) * RANDOM_SAMPLES_PER_CHARACTER);
+        randomValues(randomBuffer);
+        for (const value of randomBuffer) {
+            if (value >= unbiasedUpperBound) {
+                continue;
+            }
+            indexes.push(value % size);
+            if (indexes.length === count) {
+                return indexes;
+            }
+        }
+    }
+    return indexes;
+}
+
 export function generateRandomPassword(length, charset, fillRandomValues) {
     if (!Number.isInteger(length) || length <= 0) {
         throw new Error('length must be a positive integer');
@@ -52,28 +80,5 @@ export function generateRandomPassword(length, charset, fillRandomValues) {
         throw new Error('charset must contain at least one character');
     }
 
-    const randomValues = resolveRandomValuesFunction(fillRandomValues);
-    const charsetLength = characters.length;
-    const unbiasedUpperBound = Math.floor(UINT32_VALUE_COUNT / charsetLength) * charsetLength;
-
-    const result = [];
-    while (result.length < length) {
-        const remaining = length - result.length;
-        const sampleCount = remaining * RANDOM_SAMPLES_PER_CHARACTER;
-        const randomBuffer = new Uint32Array(sampleCount);
-        randomValues(randomBuffer);
-
-        for (const value of randomBuffer) {
-            if (value >= unbiasedUpperBound) {
-                continue;
-            }
-            const nextCharacter = characters[value % charsetLength];
-            result.push(nextCharacter);
-            if (result.length === length) {
-                return result.join('');
-            }
-        }
-    }
-
-    return result.join('');
+    return pickRandomIndexes(length, characters.length, fillRandomValues).map((index) => characters[index]).join('');
 }

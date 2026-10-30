@@ -1,6 +1,6 @@
 export const PASSWORD_MIN_LENGTH = 12;
 export const PASSWORD_MAX_LENGTH = 72;
-export const PASSWORD_MIN_ZXCVBN_SCORE = 3;
+export const PASSWORD_MIN_ZXCVBN_SCORE = 4;
 const PERCENT_OF_WHOLE = 100;
 
 

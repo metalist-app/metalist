@@ -1,7 +1,7 @@
 # MetaList vaults, backups, exports, and updates
 
 Vaults isolate notes, preferences, tags, reminders, and authentication. A
-vault is not a search tab. Search tabs are views within the same vault.
+vault is not a search context. Search contexts are saved searches within the same vault.
 Open/Switch Vault… opens a picker of reachable vaults with two buttons: Open in
 This Tab (switching keeps one tab) and Open in New Tab; with no other vault
 yet it opens Create Vault… instead. Create Vault… opens

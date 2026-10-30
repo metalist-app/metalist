@@ -256,8 +256,8 @@ if (event.metaKey && event.key === 'p') {
 Password management uses three distinct modal flows from
 `app/static/js/modules/modals/password-modal.js`:
 
-- **Add Password**: passwordless namespace → encrypted namespace. Shows local zxcvbn strength feedback.
-- **Change Password**: current password → new password. Shows local zxcvbn strength feedback. With no password set, the menu's Change password opens Add Password instead (`CommandPalette.openChangePassword`).
+- **Add Password**: passwordless namespace → encrypted namespace. Shows local zxcvbn strength feedback (score 4 needed) and **Suggest Passphrase** (five random words; `docs/security/README.md`, "Password Requirements").
+- **Change Password**: current password → new password. Shows local zxcvbn strength feedback and **Suggest Passphrase**, as Add Password does. With no password set, the menu's Change password opens Add Password instead (`CommandPalette.openChangePassword`).
 - **Remove Password**: encrypted namespace → passwordless namespace. Requires an explicit plaintext-storage acknowledgement.
 
 Each modal checks `/api2/auth/status` before rendering and rejects an operation

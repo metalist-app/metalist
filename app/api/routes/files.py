@@ -16,6 +16,7 @@ from app.api.request_auth import require_request_auth_token
 from app.services.file_registry import file_registry
 from app.services.email_files import email_attachment, is_email_file, read_email
 from app.services.note_store import store as note_store
+from app.services.unused_files import trim as trim_unused_and_unrestorable_files, unused_files
 from app.db.file_schema import FILE_PREVIEW_VARIANTS
 from app.services.file_storage import (
     create_file,
@@ -25,7 +26,6 @@ from app.services.file_storage import (
     rename_file,
     replace_file_content,
     store_file_previews,
-    trim_unused_files,
 )
 from app.usecases.file_edit_session import (
     CmdDiscardFileEditSession,
@@ -300,11 +300,24 @@ def discard_file_edit_session_endpoint(
     ).execute()
 
 
+class UnusedFilesResponse(BaseModel):
+    count: int
+    size_bytes: int
+
+
+# What Trim Unused Files would delete now: the trim reminder's total and the confirmation's.
+@router.get("/unused", response_model=UnusedFilesResponse)
+def list_unused_files(request: Request):
+    _require_bearer_token(request)
+    summary = unused_files()
+    return UnusedFilesResponse(count=summary.count, size_bytes=summary.size_bytes)
+
+
 @router.post("/trim-unused", response_model=TrimUnusedFilesResponse)
 @transactional_route
 def trim_unused_files_endpoint(request: Request):
     _require_bearer_token(request)
-    result = trim_unused_files()
+    result = trim_unused_and_unrestorable_files()
     return TrimUnusedFilesResponse(
         deleted_count=result.deleted_count,
         deleted_file_ids=result.deleted_file_ids,

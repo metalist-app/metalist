@@ -34,7 +34,7 @@ marking each place the text occurs.
   names of files they show (a PDF's or other file's name on its card), and tag-bar comments. Not tag names (search finds those), not link addresses or fetched
   link titles the note does not show, and not the grey placeholder lines a search leaves
   for branches outside it.
-- Only the notes of the current tab, search and sort order, in list order: each note,
+- Only the notes of the current search context, search and sort order, in list order: each note,
   then its children, then the next root.
 
 ## Where the page goes
@@ -52,7 +52,7 @@ strong one, painted with the CSS Custom Highlight API: the marks move nothing
 | It is far away, not loaded yet | That part of the list is loaded and the match placed as above, by direction: next from below, previous or a wrap to the first from above |
 | It is hidden in a folded note (below its first line, or in a child) | The note and the folded notes above it open for this view only; their saved collapse is unchanged (4). Opening only pushes down what is below; the match is then placed as above |
 | Moving on, or closing the bar | What find opened folds back with its first line where it was (1, 4) |
-| The search, tab or sort changes | Find counts again |
+| The search, search context or sort changes | Find counts again |
 
 "Usable screen" is the screen below the search controls (and below the find bar, where
 the bar covers it), above the window's bottom edge.

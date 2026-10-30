@@ -32,7 +32,9 @@ test('createBackup configures a longer CommandGate watchdog timeout', () => {
     );
     assert.match(
         source.slice(runIndex, source.indexOf('async logout()', runIndex)),
-        /_authRequest\(CONFIG\.API\.BACKUP\.RUN, 'POST', backupSettings\)/,
+        /_authRequest\(CONFIG\.API\.BACKUP\.RUN, 'POST', runSettings\)/,
         'createBackup must submit the validated settings in the backup-creation request',
     );
+    // The validated settings, plus the vaults agreed to back up into a synced folder.
+    assert.match(source, /const runSettings = \{ \.\.\.backupSettings, plaintext_sync_acknowledged: acknowledged \};/);
 });

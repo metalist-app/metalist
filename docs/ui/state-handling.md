@@ -1,5 +1,7 @@
 # State Handling in MetaList3
 
+Terminology: what this document calls "tabs" (MetaList's own: a search plus its view options) are "search contexts" in the interface, help and user docs since 2026-10-29 (`docs/ui/controls.md`). The code keeps `tab` in its identifiers (`tab_state.py`, `tabId`, `tabOrder`, `pref.show_tab_ui`), and so does this document; browser tabs are always called browser tabs.
+
 Agreed, not built (2026-10-26): several views on one vault at once, each signed in, with editing locked per root note (`docs/ready-to-build/multi-view-editing.md`).
 
 ## Enforced client-state and exception contract

@@ -9,7 +9,7 @@ Written from a read-only look at the code, without running it. Check every refer
 ## 0. Where this fits
 
 - **Personal and self-hosted backups leave the computer in layers:**
-  1. **Synced folders** (ready to build, `docs/ready-to-build/backups-synced-folders.md`): the backup folder sits in Dropbox, Google Drive, OneDrive or iCloud Drive, and their apps upload it.
+  1. **Synced folders** (built 2026-10-29: `Back Up Now…` in `docs/ui/command-palette.md`): the backup folder sits in Dropbox, Google Drive, OneDrive or iCloud Drive, and their apps upload it.
   2. **S3-compatible storage**, this note: MetaList uploads itself, with an access key. One API covers AWS S3, Backblaze B2, Cloudflare R2, Wasabi and MinIO.
   3. **Never:** signing in to Google, Dropbox or Microsoft (OAuth). Layer 1 covers them through their desktop apps.
 - **Azure Blob Storage** is a different API. Leave it out until someone asks.

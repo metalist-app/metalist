@@ -81,6 +81,8 @@ test('restore modal can choose and save a backup folder without creating a backu
                 folder_path: '/Users/example/MetaList Backups',
                 selected_namespaces: ['default'],
                 retention_count: 30,
+                // Saving a folder writes nothing to it; only a backup run asks about synced plaintext.
+                plaintext_sync_acknowledged: [],
             },
         },
     ]);

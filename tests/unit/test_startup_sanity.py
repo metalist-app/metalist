@@ -287,6 +287,48 @@ def delete_oldest_backups_in_directory(backup_path):
     assert not any(violation.rule_id == "BKP001" for violation in violations)
 
 
+def test_startup_sanity_allows_writing_and_removing_a_partial_archive(tmp_path: Path) -> None:
+    # A backup is written to <name>.partial, fsynced, and hard-linked to its name, which
+    # fails if that name exists; leftover .partial files are removed by their own function
+    # (docs/security/README.md, "Backups"; 2026-10-29).
+    _write_file(
+        tmp_path / "app" / "services" / "backup_service.py",
+        """
+import tarfile
+
+def create_backup(partial_backup_path):
+    with open(partial_backup_path, "xb") as raw:
+        with tarfile.open(fileobj=raw, mode="x:gz"):
+            pass
+
+def delete_partial_archives(partial_backup_paths):
+    for partial_backup_path in partial_backup_paths:
+        partial_backup_path.unlink()
+""".strip()
+        + "\n",
+    )
+
+    _, violations = collect_startup_sanity_violations(tmp_path)
+
+    assert not any(violation.rule_id == "BKP001" for violation in violations)
+
+
+@pytest.mark.parametrize("statement", [
+    'open(backup_path, "r+b")',
+    'open(backup_path, "ab")',
+    "backup_path.unlink()",
+])
+def test_startup_sanity_still_rejects_writing_or_deleting_existing_backups(tmp_path: Path, statement: str) -> None:
+    _write_file(
+        tmp_path / "app" / "services" / "backup_service.py",
+        f"def damage(backup_path):\n    {statement}\n",
+    )
+
+    _, violations = collect_startup_sanity_violations(tmp_path)
+
+    assert any(violation.rule_id == "BKP001" for violation in violations)
+
+
 @pytest.mark.parametrize(
     "source",
     [

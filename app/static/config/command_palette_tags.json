@@ -6,7 +6,7 @@
     },
     {
       "id": "pref.show_tab_ui",
-      "tags": ["tabs", "tab", "contexts", "search", "view", "show", "hide", "toggle"]
+      "tags": ["tabs", "tab", "contexts", "context", "search", "searches", "saved", "view", "show", "hide", "toggle"]
     },
     {
       "id": "pref.show_search_results_count",
@@ -223,6 +223,10 @@
     {
       "id": "pref.backup_reminder",
       "tags": ["backup", "backups", "reminder", "remind", "nag", "schedule", "daily", "weekly", "monthly", "frequency", "safety"]
+    },
+    {
+      "id": "pref.trim_reminder",
+      "tags": ["trim", "unused", "files", "reminder", "remind", "cleanup", "clean", "storage", "space", "size"]
     },
     {
       "id": "form.restore_backup",

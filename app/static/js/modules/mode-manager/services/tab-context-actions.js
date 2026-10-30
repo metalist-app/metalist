@@ -14,7 +14,7 @@ export function tabContextActionsHtml({ tabId, isAtTabLimit, canDelete }) {
     const addClass = isAtTabLimit ? 'is-disabled' : '';
     const deleteClass = canDelete ? '' : 'is-hidden';
     return `
-            <span class="tab-context-action duplicate-context ${addClass}" data-source-tab-id="${escapeHtml(tabId)}" title="Duplicate Tab" aria-label="Duplicate Tab" aria-disabled="${isAtTabLimit}">+</span>
-            <span class="tab-context-action tab-context-action--danger delete-context ${deleteClass}" data-delete-tab-id="${escapeHtml(tabId)}" title="Delete Tab" aria-label="Delete Tab" aria-hidden="${!canDelete}">-</span>
+            <span class="tab-context-action duplicate-context ${addClass}" data-source-tab-id="${escapeHtml(tabId)}" title="Duplicate Search Context" aria-label="Duplicate Search Context" aria-disabled="${isAtTabLimit}">+</span>
+            <span class="tab-context-action tab-context-action--danger delete-context ${deleteClass}" data-delete-tab-id="${escapeHtml(tabId)}" title="Delete Search Context" aria-label="Delete Search Context" aria-hidden="${!canDelete}">-</span>
         `;
 }

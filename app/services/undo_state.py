@@ -301,6 +301,12 @@ def restore_undo_state(snapshot: dict) -> None:
     _enforce_undo_limits()
 
 
+def undo_history_operations() -> List[dict]:
+    """Every tab's undo and redo operations: Trim Unused Files keeps the files they name,
+    so ⌘Z and ⇧⌘Z never bring back a reference to a deleted file (unused_files.py)."""
+    return [op for ctx in _clients.values() for op in [*ctx.history, *ctx.redo]]
+
+
 def reset_all_undo_state() -> None:
     """Discard every client's undo/redo payloads, which may contain plaintext notes and files."""
     _clients.clear()

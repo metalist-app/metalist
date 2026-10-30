@@ -113,6 +113,14 @@ def fetch_all_file_metadata(connection: sqlite3.Connection):
     return [_deserialize_row(row) for row in connection.execute(f"SELECT {_METADATA_COLUMNS} FROM {FILES_TABLE} ORDER BY created_at ASC")]
 
 
+def sum_stored_file_sizes(connection: sqlite3.Connection, file_ids: list[str]) -> int:
+    placeholders = ",".join("?" for _ in file_ids)
+    row = connection.execute(
+        f"SELECT COALESCE(SUM(length(blob_data)), 0) FROM {FILES_TABLE} WHERE id IN ({placeholders})", file_ids,
+    ).fetchone()
+    return int(row[0])
+
+
 def require_file_size(connection: sqlite3.Connection, file_id: str, limit: int) -> None:
     row = connection.execute(f"SELECT length(blob_data) FROM {FILES_TABLE} WHERE id=?", (file_id,)).fetchone()
     if row is not None and row[0] > limit:
