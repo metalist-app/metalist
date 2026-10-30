@@ -77,7 +77,7 @@ Typing `[[` in the note being edited opens a list of notes to reference (agreed 
       - A long body is cut at 18 lines with a fade; **Show all** opens it in place (**Show less** closes it); neither edits the note.
       - A note whose first line is an email folds (its ▾/▸), and folded the card is one line drawn as a file's pill: `EML`, the subject, the sender's name.
       - A link to an email (`[[UUID]]`) is its file card with the badge `EML`. A file with none of an email's headers and no body says `Not a readable email`.
-      - Searching finds a note by the words of the emails it references (Search Semantics, below). Not yet (2026-10-29): exports and prints show an embedded email as its file card.
+      - Searching finds a note by the words of the emails it references (Search Semantics, below). Not yet (2026-10-29): exports and prints show an embedded email as its file card (`docs/future-plans/email-in-exports.md`).
       - Tests: `tests/unit/test_email_files.py`, `tests/unit/test_snapshot_file_references.py`, `scripts/browser-email-file-regressions.mjs` (`BROWSER_TEST_SUITE=email-files`).
     - right-clicking the rendered image preview also offers image actions (`Copy Image`, `Save Image`, `Rename File…`, `Zoom Image`, `Open Image in New Tab`).
     - right-clicking a file card offers `Rename File…` first; a diagram offers it after `Save Diagram File` (Renaming Files, below).
