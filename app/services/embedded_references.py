@@ -199,8 +199,12 @@ class _LinkTextDrawing(HTMLParser):
         self.output: list[str] = []
         self.math_depth = 0
         self.has_drawing = False
+        # A web link drawn in the line (its fetched title): links to it keep their own rules.
+        self.has_web_link = False
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag == "a":
+            self.has_web_link = True
         if tag == _MATH_TAG or self.math_depth > 0:
             self.math_depth += 1
             self.has_drawing = True
@@ -245,17 +249,25 @@ class _LinkTextDrawing(HTMLParser):
 
 def _drawn_link_text_or_none(*, record: object, context: EmbedRenderContext, redact_credentials: bool) -> str | None:
     """A link's text as its note's folded first line draws it (agreed 2026-10-29), or None
-    when that line has no formula or formatting to draw (its plain text says it all)."""
+    when drawing changes nothing (its plain text says it all). Drawing can change the text
+    with no formatting left: a Markdown heading `# Trip plan` draws as `Trip plan`."""
     content_html = getattr(record, "content")
     tags = getattr(record, "tags")
     first_line = _first_shown_line(extract_collapsed_preview_source_html(content_html), context=context)
-    drawing = _LinkTextDrawing()
-    drawing.feed(format_note_content_for_view(content_html=first_line, tags=tags, redact_credentials=redact_credentials))
-    drawing.close()
-    assert drawing.math_depth == 0, "a drawn first line closes its formulas"
-    if not drawing.has_drawing:
+    drawing = _link_text_drawing(format_note_content_for_view(content_html=first_line, tags=tags, redact_credentials=redact_credentials))
+    if drawing.has_drawing:
+        return drawing.drawn_html()
+    if drawing.has_web_link or drawing.drawn_html() == _link_text_drawing(first_line).drawn_html():
         return None
     return drawing.drawn_html()
+
+
+def _link_text_drawing(fragment_html: str) -> _LinkTextDrawing:
+    drawing = _LinkTextDrawing()
+    drawing.feed(fragment_html)
+    drawing.close()
+    assert drawing.math_depth == 0, "a drawn first line closes its formulas"
+    return drawing
 
 
 class _ImageSourceParser(HTMLParser):

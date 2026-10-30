@@ -13,6 +13,7 @@ import {createServer} from 'node:net';
 import {setTimeout as delay} from 'node:timers/promises';
 import puppeteer from 'puppeteer';
 import {closeBrowser, installedBrowserExecutable} from './installed-browser.mjs';
+import {stopChildrenOnExitSignals} from './stop-children-on-exit.mjs';
 import {checkPastedHeadingFormatting} from './browser-formatting-regressions.mjs';
 import {checkAdditionalStateTransitions, checkEditingShortcutSequences} from './browser-state-regressions.mjs';
 import {checkTagDoubleClickSelection} from './browser-tag-selection-regressions.mjs';
@@ -125,6 +126,8 @@ env.V1_API_PREFIX = '/api';
 const python = process.platform === 'win32' ? '.venv/Scripts/python.exe' : '.venv/bin/python';
 let logs = '';  // shockharness: ignore[STATE001] reason="single-threaded Node: the server output callbacks and the run share one event loop"
 const server = spawn(resolve(python), ['serve_namespace.py','--namespace','default','--port',String(port)], {env, stdio:['ignore','pipe','pipe']});
+// Ctrl-C or a kill skips the `finally` below: the server still stops.
+stopChildrenOnExitSignals([server]);
 server.stdout.on('data', chunk => { logs += chunk; });
 server.stderr.on('data', chunk => { logs += chunk; });
 let browser;

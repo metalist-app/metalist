@@ -1141,3 +1141,15 @@ def test_link_text_keeps_bold_but_no_link_or_colour_of_its_own(monkeypatch: pyte
 
     title = _link_title_html(state.payloads[HOST_ID]["content"])
     assert title == "<strong>Kyoto</strong> trip, see https://example.org", title
+
+
+# Found in the throwaway MetaList (2026-10-29): a Markdown heading draws as plain text, so
+# the link fell back to the note's raw first line and read "# Trip plan".
+def test_link_text_to_a_markdown_heading_reads_without_its_marker(monkeypatch: pytest.MonkeyPatch) -> None:
+    notes = {
+        HOST_ID: _Note(HOST_ID, None, None, None, False, f"<div>See [[{TARGET_ID}]]</div>", ""),
+        TARGET_ID: _Note(TARGET_ID, None, None, None, False, "<div># Trip plan</div><div>Day one</div>", "@markdown"),
+    }
+    state = _state_for(monkeypatch=monkeypatch, notes=notes, children_by_parent={None: [HOST_ID, TARGET_ID]})
+
+    assert _link_title_html(state.payloads[HOST_ID]["content"]) == "Trip plan"

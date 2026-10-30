@@ -34,6 +34,9 @@ const SLOWEST_FIRST = ['exit-edit-scroll', 'click-caret', 'ai-note-tags', CORE, 
   'delete-warning', 'list-edges', 'editable-embeds'];
 // A run that takes longer than this is stuck: it is stopped and reported as failed.
 const RUN_TIMEOUT_MS = 30 * 60 * 1000;
+// A timed-out run gets SIGTERM, so it stops its MetaList server (stop-children-on-exit.mjs),
+// then SIGKILL this much later if it is still running.
+const STOP_GRACE_MS = 10 * 1000;
 const MS_PER_SECOND = 1000;
 // How many of a failed run's last lines the summary prints.
 const FAILURE_TAIL_LINES = 25;
@@ -85,7 +88,12 @@ function runSuite(suite) {
   };
   child.stdout.on('data', write);
   child.stderr.on('data', write);
-  const timer = setTimeout(() => child.kill('SIGKILL'), RUN_TIMEOUT_MS);
+  const timer = setTimeout(() => {
+    child.kill('SIGTERM');
+    setTimeout(() => {
+      if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
+    }, STOP_GRACE_MS).unref();
+  }, RUN_TIMEOUT_MS);
   return new Promise(resolve => child.on('close', (code, signal) => {
     clearTimeout(timer);
     if (pending !== '') write('\n');
