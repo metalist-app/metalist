@@ -260,3 +260,61 @@ def test_only_claudes_own_address_is_used() -> None:
         asyncio.run(adapter.inspect_context_window(base_url="https://example.com", model=MODEL))
     window = asyncio.run(adapter.inspect_context_window(base_url=BASE_URL, model=MODEL))
     assert window.maximum_tokens == 1_000_000
+
+
+# A stream that breaks while being read fails with httpx2's own error: the Anthropic SDK
+# wraps failures of the request itself, not of reading its stream (checked 2026-10-30).
+class _BrokenStream(httpx2.AsyncByteStream):
+    def __init__(self, first: bytes, failure: httpx2.TransportError) -> None:
+        self._first = first
+        self._failure = failure
+
+    async def __aiter__(self):
+        yield self._first
+        raise self._failure
+
+
+def _serve_breaking(monkeypatch: pytest.MonkeyPatch, failure_type: type[httpx2.TransportError]) -> None:
+    """Every reply starts, then its stream breaks with failure_type."""
+    first_event = _reply(_text("Reading"), stop_reason="end_turn", stop_details=None).split(b"\n\n")[0] + b"\n\n"
+
+    def handle(request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(200, headers={"content-type": "text/event-stream"},
+                               stream=_BrokenStream(first_event, failure_type("stream broke", request=request)))
+
+    def client(**options: object) -> DefaultAsyncHttpxClient:
+        return DefaultAsyncHttpxClient(**options, transport=httpx2.MockTransport(handle))
+
+    monkeypatch.setattr(anthropic_inference, "DefaultAsyncHttpxClient", client)
+
+
+_CLAUDE_SILENT = "Anthropic did not respond for 30 seconds. Check your internet connection and ask again."
+_CLAUDE_CONNECTION_LOST = "The connection to Anthropic broke off. Check your internet connection and ask again."
+
+
+@pytest.mark.parametrize(("failure_type", "message"), [
+    (httpx2.ReadTimeout, _CLAUDE_SILENT), (httpx2.RemoteProtocolError, _CLAUDE_CONNECTION_LOST)])
+def test_a_tool_turn_whose_stream_breaks_fails_with_a_clear_message(monkeypatch, failure_type, message) -> None:
+    _serve_breaking(monkeypatch, failure_type)
+    with pytest.raises(AnthropicProviderError) as failure:
+        _tool_turn(QUESTION, thinking_level="low")
+    assert str(failure.value) == message
+    assert isinstance(failure.value.__cause__, failure_type)
+
+
+@pytest.mark.parametrize(("failure_type", "message"), [
+    (httpx2.ReadTimeout, _CLAUDE_SILENT), (httpx2.RemoteProtocolError, _CLAUDE_CONNECTION_LOST)])
+def test_a_structured_reply_whose_stream_breaks_fails_as_a_provider_failure(monkeypatch, failure_type, message) -> None:
+    _serve_breaking(monkeypatch, failure_type)
+    progress: list = []
+    adapter = AnthropicInferenceAdapter(api_key="sk-ant-test")
+    with pytest.raises(AnthropicProviderError) as failure:
+        asyncio.run(adapter.infer_structured(
+            base_url=BASE_URL, model=MODEL, thinking_level="low", messages=QUESTION,
+            response_model=OutputJudgment, on_progress=progress.append,
+        ))
+    assert str(failure.value) == message
+    assert isinstance(failure.value.__cause__, failure_type)
+    failed = [update for update in progress if update.phase not in ("attempt_started", "output_progress")]
+    assert [(update.phase, update.failure_kind, update.error_type) for update in failed] == [
+        ("attempt_failed", "Provider request failed", failure_type.__name__)]

@@ -23,7 +23,11 @@ Off and Low, measured; 60 s Medium and 120 s High, unmeasured), passed as the
 request timeout so the library's 600 s default never applies; a timeout becomes
 "OpenAI did not respond for N seconds…" (agent turns, final answers) or, for a
 structured step, that sentence per attempt (`failure_explanations.py`, which names
-the provider from `FailureSetup.provider_label`). Google's adapter says the model may be
+the provider from `FailureSetup.provider_label`). A stream that breaks while being read
+fails with the HTTP library's own error, which neither the OpenAI nor the Anthropic SDK
+wraps: each adapter turns an `httpx.TimeoutException` (`httpx2` for Claude) into its own
+silence sentence and any other `TransportError` into "The connection to <provider> broke
+off…" (`connection_lost_message`). Google's adapter says the model may be
 busy instead of blaming the connection, since its overloaded models hang silently, and
 turns an HTTP 503 into "Google says <model> is busy right now…"; a structured step's
 explanation recognizes the 503 by Instructor's recorded error. Streams

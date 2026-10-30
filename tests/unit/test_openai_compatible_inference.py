@@ -218,3 +218,53 @@ def test_a_structured_step_google_was_too_busy_for_says_so(monkeypatch) -> None:
     assert "Attempt 2: Google said gemini-3.8-flash is busy right now." in message
     assert "the reply was empty" not in message
     assert "What you can try: Ask again later or pick another model." in message
+
+
+# A stream that breaks while being read fails with httpx's own error: the OpenAI SDK
+# wraps failures of the request itself, not of reading its stream (checked 2026-10-30).
+class _BrokenStream(httpx.AsyncByteStream):
+    def __init__(self, first: bytes, failure: httpx.TransportError) -> None:
+        self._first = first
+        self._failure = failure
+
+    async def __aiter__(self):
+        yield self._first
+        raise self._failure
+
+
+def _breaking_with(failure_type: type[httpx.TransportError]):
+    first_chunk = _stream(_chunk({"role": "assistant", "content": "{"}, None), usage=None).split(b"\n\n")[0] + b"\n\n"
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, headers={"content-type": "text/event-stream"},
+                              stream=_BrokenStream(first_chunk, failure_type("stream broke", request=request)))
+    return handle
+
+
+_GOOGLE_SILENT = ("Google did not respond for 30 seconds. gemini-3.8-flash may be busy at Google: "
+                  "ask again later or pick another model.")
+_GOOGLE_CONNECTION_LOST = "The connection to Google broke off. Check your internet connection and ask again."
+
+
+@pytest.mark.parametrize(("failure_type", "message"), [
+    (httpx.ReadTimeout, _GOOGLE_SILENT), (httpx.RemoteProtocolError, _GOOGLE_CONNECTION_LOST)])
+def test_a_gemini_tool_turn_whose_stream_breaks_fails_with_a_clear_message(monkeypatch, failure_type, message) -> None:
+    _fail(monkeypatch, _breaking_with(failure_type))
+    with pytest.raises(OpenAICompatibleProviderError) as failure:
+        _tool_turn(QUESTION, "low")
+    assert str(failure.value) == message
+    assert isinstance(failure.value.__cause__, failure_type)
+
+
+@pytest.mark.parametrize(("failure_type", "message"), [
+    (httpx.ReadTimeout, _GOOGLE_SILENT), (httpx.RemoteProtocolError, _GOOGLE_CONNECTION_LOST)])
+def test_a_gemini_structured_reply_whose_stream_breaks_fails_with_a_clear_message(monkeypatch, failure_type, message) -> None:
+    _fail(monkeypatch, _breaking_with(failure_type))
+    adapter = OpenAICompatibleInferenceAdapter(api_key="AIza-test", provider=GEMINI)
+    with pytest.raises(OpenAICompatibleProviderError) as failure:
+        asyncio.run(adapter.infer_structured(
+            base_url=BASE_URL, model=MODEL, thinking_level="low", messages=QUESTION,
+            response_model=OutputJudgment, on_progress=lambda progress: None,
+        ))
+    assert str(failure.value) == message
+    assert isinstance(failure.value.__cause__, failure_type)

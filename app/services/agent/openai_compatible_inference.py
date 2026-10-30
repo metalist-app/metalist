@@ -46,6 +46,7 @@ from app.services.agent.inference import InferenceResponse
 from app.services.agent.inference import StructuredInferenceProgress
 from app.services.agent.inference import TARGET_AGENT_CONTEXT_TOKENS
 from app.services.agent.inference import UNMEASURED_SILENCE_LIMIT_SECONDS
+from app.services.agent.inference import connection_lost_message
 # Also registers strict structured outputs for Instructor's JSON_SCHEMA requests.
 from app.services.agent.openai_inference import _extract_openai_token_usage
 from app.services.agent.openai_inference import _strict_json_schema
@@ -218,6 +219,12 @@ class OpenAICompatibleInferenceAdapter:
             "ask again later or pick another model."
         )
 
+    def _transport_error(self, exc: httpx.TransportError, thinking_level: str, model: str) -> OpenAICompatibleProviderError:
+        """A stream that broke while being read: the OpenAI library leaves those failures as httpx's own."""
+        if isinstance(exc, httpx.TimeoutException):
+            return self._silence_error(thinking_level, model)
+        return OpenAICompatibleProviderError(connection_lost_message(self._provider.label))
+
     def _api_error(self, exc: APIError, model: str) -> OpenAICompatibleProviderError:
         if isinstance(exc, APIStatusError) and exc.status_code == HTTPStatus.SERVICE_UNAVAILABLE:
             return OpenAICompatibleProviderError(
@@ -289,6 +296,9 @@ class OpenAICompatibleInferenceAdapter:
         # lint: allow-PY001 rationale="translate the provider's API failures into the provider-neutral contract"
         except APIError as exc:
             raise self._api_error(exc, normalized_model) from exc
+        # lint: allow-PY001 rationale="a stream that breaks while being read fails with httpx's own error"
+        except httpx.TransportError as exc:
+            raise self._transport_error(exc, thinking_level, normalized_model) from exc
         finally:
             for number, attempt in enumerate(capture.freeze(), 1):
                 record_provider_event("LLM_ATTEMPT_OUTPUT", {
@@ -403,6 +413,9 @@ class OpenAICompatibleInferenceAdapter:
         # lint: allow-PY001 rationale="translate the provider's stream failures into the provider-neutral contract"
         except APIError as exc:
             raise self._api_error(exc, normalized_model) from exc
+        # lint: allow-PY001 rationale="a stream that breaks while being read fails with httpx's own error"
+        except httpx.TransportError as exc:
+            raise self._transport_error(exc, thinking_level, normalized_model) from exc
         finally:
             await client.close()
         if finish_reason == "length":

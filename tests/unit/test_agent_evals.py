@@ -1,9 +1,14 @@
+import argparse
 import asyncio
 import json
 from pathlib import Path
 
+import httpx
 import pytest
 
+from app.services.agent.openai_inference import OpenAIProviderError, openai_silence_limit_seconds
+from app.services.agent.openai_inference import openai_silence_message
+from evals import __main__ as evals_cli
 from evals.agent_models import AgentCase
 from evals.agent_runner import build_snapshot, check_trial, fixture_environment, order_violations
 from evals.agent_runner import run_agent_cases, run_trial
@@ -212,3 +217,53 @@ def test_a_web_address_with_note_words_asks_without_crashing_the_trial():
     outcome = _trial(case, model)
     assert outcome["status"] == "correct", outcome
     assert [question["kind"] for question in outcome["questions"]] == ["change_confirmation"]
+
+
+class _TimingOutModel(_ScriptedModel):
+    """Answers every conversation except one mentioning "Time out", whose stream times out mid-read
+    and fails as the OpenAI adapter reports it."""
+
+    def __init__(self, *, api_key, cost_tracker) -> None:
+        del api_key, cost_tracker
+        super().__init__([_turn("Hello.", [])])
+
+    async def stream_tool_turn(self, *, base_url, model, thinking_level, messages, tools, on_request):
+        if "Time out" in json.dumps(messages):
+            yield {"type": "provider_started"}
+            timeout = httpx.ReadTimeout("The read operation timed out")
+            raise OpenAIProviderError(openai_silence_message(openai_silence_limit_seconds(thinking_level))) from timeout
+        async for event in super().stream_tool_turn(base_url=base_url, model=model, thinking_level=thinking_level,
+                                                    messages=messages, tools=tools, on_request=on_request):
+            yield event
+
+
+def test_a_provider_timeout_is_an_error_trial_and_the_run_still_reports(tmp_path, monkeypatch):
+    # 2026-10-30: an httpx.ReadTimeout from OpenAI's stream ended a 54-case run after 43
+    # trials with no report.json. It must count as that trial's error instead.
+    case_paths = []
+    for case_id, message in (("timed-out-case", "Time out"), ("answered-case", "Say hello")):
+        case = _case(id=case_id, conversation=[{"role": "user", "content": message}])
+        path = tmp_path / f"{case_id}.json"
+        path.write_text(case.model_dump_json(), encoding="utf-8")
+        case_paths.append(path)
+    monkeypatch.setattr(evals_cli, "OpenAIInferenceAdapter", _TimingOutModel)
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    output = tmp_path / "run"
+    arguments = argparse.Namespace(cases=case_paths, judge=None, live=True, repetitions=1, concurrency=1,
+                                   output=output)
+
+    with pytest.raises(SystemExit) as stopped:
+        asyncio.run(evals_cli.run_agent(arguments))
+
+    assert stopped.value.code == 2
+    trials = {trial["case_id"]: trial for trial in
+              (json.loads(path.read_text(encoding="utf-8")) for path in sorted((output / "trials").iterdir()))}
+    assert set(trials) == {"timed-out-case", "answered-case"}
+    assert trials["timed-out-case"]["status"] == "error"
+    assert trials["timed-out-case"]["error"] == ("OpenAIProviderError: OpenAI did not respond for 15 seconds. "
+                                                 "Check your internet connection and ask again.")
+    assert trials["answered-case"]["status"] == "correct"
+    counts = {entry["base_case_id"]: entry["counts"]
+              for entry in json.loads((output / "report.json").read_text(encoding="utf-8"))["cases"]}
+    assert counts == {"timed-out-case": {"correct": 0, "incorrect": 0, "error": 1},
+                      "answered-case": {"correct": 1, "incorrect": 0, "error": 0}}
