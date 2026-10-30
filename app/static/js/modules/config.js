@@ -142,6 +142,8 @@ export const CONFIG = {
         FILES: {
             UPLOAD: `${API_FILES_BASE}/upload`,
             DOWNLOAD: (fileId) => `${API_FILES_BASE}/${fileId}/download`,
+            EMAIL: (fileId) => `${API_FILES_BASE}/${fileId}/email`,
+            EMAIL_ATTACHMENT: (fileId, index) => `${API_FILES_BASE}/${fileId}/email/attachments/${index}`,
             CONTENT: (fileId) => `${API_FILES_BASE}/${fileId}/content`,
             PREVIEWS: (fileId) => `${API_FILES_BASE}/${fileId}/previews`,
             PREVIEW: (fileId, variant) => `${API_FILES_BASE}/${fileId}/previews/${variant}`,

@@ -1314,6 +1314,40 @@ export const FilesAPI = {
         };
     },
 
+    // An email file as its card shows it: { isReadable, from, to, cc, date, subject, html, text, attachments, revision }.
+    async getEmail(fileId) {
+        requireFileId(fileId, 'getEmail');
+        const response = await fetch(CONFIG.API.FILES.EMAIL(fileId), {
+            method: 'GET',
+            headers: buildAuthHeaders(false),
+        });
+        if (!response.ok) {
+            ErrorHandler.handleApiError(null, response);
+            throw new HttpRequestError(`Reading the email failed: ${response.status} ${response.statusText}`);
+        }
+        return response.json();
+    },
+
+    // One of an email file's attachments, to save: { blob, filename }.
+    async downloadEmailAttachment(fileId, index) {
+        requireFileId(fileId, 'downloadEmailAttachment');
+        if (!Number.isInteger(index) || index < 0) {
+            throw new Error('FilesAPI.downloadEmailAttachment requires an attachment index');
+        }
+        const response = await fetch(CONFIG.API.FILES.EMAIL_ATTACHMENT(fileId, index), {
+            method: 'GET',
+            headers: buildAuthHeaders(false),
+        });
+        if (!response.ok) {
+            ErrorHandler.handleApiError(null, response);
+            throw new HttpRequestError(`Email attachment download failed: ${response.status} ${response.statusText}`);
+        }
+        return {
+            blob: await response.blob(),
+            filename: extractFilenameFromContentDisposition(response.headers.get('content-disposition')),
+        };
+    },
+
     // Replace an Excalidraw scene in place; throws FileRevisionConflictError if it was saved elsewhere first.
     async replaceFileContent(fileId, contentBlob, filename, expectedRevision) {
         requireFileId(fileId, 'replaceFileContent');

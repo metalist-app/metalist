@@ -502,10 +502,23 @@ export async function downloadFileReference(fileId) {
         throw new Error('File download response missing filename');
     }
 
-    const objectUrl = URL.createObjectURL(payload.blob);
+    saveDownload(payload.blob, payload.filename);
+}
+
+// One of an email file's attachments, saved as its own file.
+export async function downloadEmailAttachment(fileId, index) {
+    const payload = await FilesAPI.downloadEmailAttachment(fileId, index);
+    if (!(payload.blob instanceof Blob) || typeof payload.filename !== 'string' || payload.filename.length === 0) {
+        throw new Error('Email attachment download response missing its blob or filename');
+    }
+    saveDownload(payload.blob, payload.filename);
+}
+
+function saveDownload(blob, filename) {
+    const objectUrl = URL.createObjectURL(blob);
     const anchor = document.createElement('a');
     anchor.href = objectUrl;
-    anchor.download = payload.filename;
+    anchor.download = filename;
     document.body.appendChild(anchor);
     anchor.click();
     anchor.remove();

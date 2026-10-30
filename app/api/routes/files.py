@@ -14,6 +14,7 @@ from app.api.transactions import transactional_route
 from app.api.upload_limits import read_attachment
 from app.api.request_auth import require_request_auth_token
 from app.services.file_registry import file_registry
+from app.services.email_files import email_attachment, is_email_file, read_email
 from app.services.note_store import store as note_store
 from app.db.file_schema import FILE_PREVIEW_VARIANTS
 from app.services.file_storage import (
@@ -124,6 +125,46 @@ def download_file_endpoint(request: Request, file_id: str):
             "Content-Disposition": f"attachment; filename*=UTF-8''{quoted_filename}",
             FILE_REVISION_HEADER: str(downloaded.record.content_revision),
         },
+    )
+
+
+def _downloaded_email(request: Request, file_id: str):
+    token = _require_bearer_token(request)
+    if not file_registry.has_file(file_id):
+        raise HTTPException(status_code=HTTPStatus.NOT_FOUND, detail=f"File not found: {file_id}")
+    downloaded = download_file(file_id, token)
+    if not is_email_file(mime_type=downloaded.record.mime_type, original_filename=downloaded.record.original_filename):
+        raise HTTPException(status_code=HTTPStatus.NOT_FOUND, detail=f"File is not an email: {file_id}")
+    return downloaded
+
+
+@router.get("/{file_id}/email")
+def read_email_endpoint(request: Request, file_id: str) -> dict[str, object]:
+    """An email file as its card shows it (docs/ui/references.md, "Email files")."""
+    downloaded = _downloaded_email(request, file_id)
+    email = read_email(downloaded.content_bytes)
+    return {
+        "isReadable": email.is_readable,
+        "from": email.sender, "fromName": email.sender_name, "to": email.to, "cc": email.cc, "date": email.date, "subject": email.subject,
+        "html": email.body_html, "text": email.body_text,
+        "attachments": [
+            {"name": attachment.name, "contentType": attachment.content_type, "sizeBytes": attachment.size_bytes}
+            for attachment in email.attachments
+        ],
+        "revision": downloaded.record.content_revision,
+    }
+
+
+@router.get("/{file_id}/email/attachments/{index}")
+def download_email_attachment_endpoint(request: Request, file_id: str, index: int):
+    downloaded = _downloaded_email(request, file_id)
+    attachments_count = len(read_email(downloaded.content_bytes).attachments)
+    if not 0 <= index < attachments_count:
+        raise HTTPException(status_code=HTTPStatus.NOT_FOUND, detail=f"The email has no attachment {index}")
+    attachment, payload = email_attachment(downloaded.content_bytes, index)
+    return StreamingResponse(
+        BytesIO(payload), media_type=attachment.content_type,
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(attachment.name, safe='')}"},
     )
 
 

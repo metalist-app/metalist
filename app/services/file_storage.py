@@ -335,7 +335,19 @@ def get_file_reference_record(file_id: str, token: Optional[str]) -> FileReferen
 def download_file(file_id: str, token: str) -> DownloadedFile:
     if not isinstance(token, str) or token == "":
         raise TypeError("token must be a non-empty string")
+    return _read_stored_file(file_id, token)
 
+
+def read_stored_file(file_id: str) -> DownloadedFile:
+    """A file read with the session's key, as drawing a note reads files' details:
+    for work no request asks for (an email's words in the search index)."""
+    return _read_stored_file(file_id, None)
+
+
+file_registry.install_content_reader(read_stored_file)
+
+
+def _read_stored_file(file_id: str, token: Optional[str]) -> DownloadedFile:
     encryption_service = _resolve_encryption_service(token)
     with connect_file_reader() as connection:
         require_file_size(connection, file_id, MAX_ATTACHMENT_BYTES)

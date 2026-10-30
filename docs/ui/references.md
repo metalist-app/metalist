@@ -70,6 +70,15 @@ Typing `[[` in the note being edited opens a list of notes to reference (agreed 
   - File targets:
     - non-image files render a file card/link row with a deterministic type badge (`PDF`, `IMG`, `VID`, `TXT`, etc.) and the file title. `.txt`, `.md`/`.markdown`, `.csv` and `.json` files are labelled by extension (`.TXT`, `.MD`, `.CSV`, `.JSON`) whatever MIME type the browser sent; other files by their kind.
     - embedded image files (`![[UUID]]`) render an authenticated image preview with a `download image` control beneath it.
+    - **Email files** (agreed and built 2026-10-29): a file named `.eml` or sent as `message/rfc822` (as Mail, Outlook or a mail download gives it), embedded (`![[UUID]]`, as a drop or Attach File inserts it), is a card: the subject, then From, To, Cc and Date, then the body, then the attachments. Emails stored before cards existed count too: no file is rewritten (the files database is unchanged).
+      - The server reads the email with Python's `email` package (`app/services/email_files.py`; `GET /files/{id}/email`, `GET /files/{id}/email/attachments/{n}`); the browser fills the server's placeholder in (`file-email-preview-service.js`), in the list, floating windows, full screen and preview cards. Headers are decoded (`=?UTF-8?B?…?=`), bodies too (quoted-printable, base64).
+      - The body is the HTML version, sanitized as a note's stored HTML is (`sanitize_note_html`: no scripts, styles or inline styling), with inline (`cid:`) pictures and 1-pixel tracking pictures dropped; remote pictures load through MetaList's image proxy and links open in a new tab. An email without HTML shows its plain text, line for line.
+      - Each attachment is a button with its name and size that downloads it; an unnamed one is called by its place and type (`attachment-2.pdf`).
+      - A long body is cut at 18 lines with a fade; **Show all** opens it in place (**Show less** closes it); neither edits the note.
+      - A note whose first line is an email folds (its ▾/▸), and folded the card is one line drawn as a file's pill: `EML`, the subject, the sender's name.
+      - A link to an email (`[[UUID]]`) is its file card with the badge `EML`. A file with none of an email's headers and no body says `Not a readable email`.
+      - Searching finds a note by the words of the emails it references (Search Semantics, below). Not yet (2026-10-29): exports and prints show an embedded email as its file card.
+      - Tests: `tests/unit/test_email_files.py`, `tests/unit/test_snapshot_file_references.py`, `scripts/browser-email-file-regressions.mjs` (`BROWSER_TEST_SUITE=email-files`).
     - right-clicking the rendered image preview also offers image actions (`Copy Image`, `Save Image`, `Rename File…`, `Zoom Image`, `Open Image in New Tab`).
     - right-clicking a file card offers `Rename File…` first; a diagram offers it after `Save Diagram File` (Renaming Files, below).
     - link-mode image files (`[[UUID]]`) keep the generic compact file card/link row.

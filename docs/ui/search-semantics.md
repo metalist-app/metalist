@@ -100,6 +100,12 @@ Text matching is:
   `0025018697_CongratulationLetter.pdf`. Names are read from the files database the
   first time a note is indexed (in an encrypted vault, once it is unlocked) and kept in
   memory (`FileRegistry.referenced_file_names`); a file's name never changes after upload.
+- Also against the words of the emails the note references (`.eml` files, docs/ui/references.md,
+  "Email files"): their subject, From, To, Cc, body (an HTML body as its text) and attachment
+  names (2026-10-29). `app/services/email_search_text.py` reads each email once, through the
+  file registry's reader (`FileRegistry.read_stored_file`, which `file_storage` installs), and
+  keeps its words in a sensitive cache, emptied when the vault locks; only files whose kind can
+  be an email (`other`, `text`) are read. An email's content never changes in place.
 - Also against the titles of web pages linked in the note: for each `http(s)` URL
   in the note (written out, or hidden behind a link label), the page title
   MetaList has already fetched and stored. Titles are fetched when a URL on its own

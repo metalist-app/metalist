@@ -1,4 +1,4 @@
-import { KIB, MIB, GIB } from '../byte-sizes.js';
+import { formatByteSize } from '../byte-sizes.js';
 import { ApplicationState } from '../application-state.js';
 import { BaseModal } from './base-modal.js';
 import { escapeHtml } from '../html-escape.js';
@@ -21,17 +21,7 @@ function _assertNonNegativeInteger(value, fieldName) {
 
 export function formatBackupSize(sizeBytes) {
     _assertNonNegativeInteger(sizeBytes, 'sizeBytes');
-
-    if (sizeBytes < KIB) {
-        return `${sizeBytes} B`;
-    }
-    if (sizeBytes < MIB) {
-        return `${(sizeBytes / KIB).toFixed(1)} KB`;
-    }
-    if (sizeBytes < GIB) {
-        return `${(sizeBytes / MIB).toFixed(1)} MB`;
-    }
-    return `${(sizeBytes / GIB).toFixed(1)} GB`;
+    return formatByteSize(sizeBytes);
 }
 
 

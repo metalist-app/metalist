@@ -29,7 +29,9 @@ import { actionSaveNote } from '../actions/content-actions.js';
 import { CommandPalette } from '../../command-palette/command-palette-controller.js';
 import { NotesAPI } from '../../api-client.js';
 import { isContextMenuInteractionTarget } from '../../context-menu/context-menu-target-service.js';
-import { downloadFileReference } from '../services/file-reference-service.js';
+import { downloadEmailAttachment, downloadFileReference } from '../services/file-reference-service.js';
+import { toggleEmailBody } from '../services/file-email-preview-service.js';
+import { parseDecimalInteger } from '../../decimal-integer.js';
 import { revealRedactedNoteWithScrollPreservation } from '../services/search-redaction-reveal-service.js';
 import { resolveVerticalSiblingDropDestination, updateMoveDragGestureState } from '../services/note-drag-service.js';
 import { hideNoteDragIndicators, renderNoteDragIndicators } from '../services/note-drag-indicator-service.js';
@@ -325,6 +327,8 @@ function isMouseDownOutsideEditExclusion(target) {
             '.ai-chat-open-all-references',
             '.note-file-reference-link',
             '.note-file-image-download-link',
+            '.note-file-email-attachment',
+            '.note-file-email-more',
             CREDENTIAL_VALUE_SELECTOR,
             EMAIL_VALUE_SELECTOR,
             COPYABLE_SELECTOR,
@@ -1476,6 +1480,10 @@ function handleClick(event) {
         return;
     }
 
+    if (handleEmailCardClick(event)) {
+        return;
+    }
+
     if (handleBacklinksLinkClick(event)) {
         return;
     }
@@ -2117,6 +2125,36 @@ function handleFileReferenceClick(event) {
 
     void CommandGate.run('mouse.download_file_reference', async () => {
         await downloadFileReference(fileId);
+    });
+    return true;
+}
+
+// An email card's attachment downloads it; Show all opens or closes the whole body.
+function handleEmailCardClick(event) {
+    const target = event.target instanceof Element ? event.target : null;
+    if (target === null) return false;
+    const more = target.closest('.note-file-email-more');
+    if (more !== null) {
+        event.preventDefault();
+        event.stopPropagation();
+        toggleEmailBody(more);
+        return true;
+    }
+    const attachment = target.closest('.note-file-email-attachment');
+    if (attachment === null) return false;
+    event.preventDefault();
+    event.stopPropagation();
+    if (!ModeContext.isConnected) {
+        Logger.logNoop('Email attachment click ignored while disconnected', { isConnected: false });
+        return true;
+    }
+    const fileId = attachment.dataset.fileRefId;
+    const index = parseDecimalInteger(attachment.dataset.attachmentIndex);
+    if (typeof fileId !== 'string' || fileId === '' || !Number.isInteger(index)) {
+        throw new Error('Email attachment click missing its file id or index');
+    }
+    void CommandGate.run('mouse.download_email_attachment', async () => {
+        await downloadEmailAttachment(fileId, index);
     });
     return true;
 }

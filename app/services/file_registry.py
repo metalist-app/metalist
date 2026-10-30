@@ -47,6 +47,8 @@ class FileRegistry:
         # then. None: not read yet.
         self._titles_by_id: dict[str, str] | None = None
         self._details_loader: Callable[[], dict[str, FileDetails]] | None = None
+        # How to read one file's stored bytes with the session's key (file_storage.read_stored_file).
+        self._content_reader: Callable[[str], object] | None = None
         # Counts renames, so views rendered with an old file name are rendered again
         # (snapshot.py keys its render cache on it).
         self._names_generation = 0
@@ -57,6 +59,20 @@ class FileRegistry:
             raise TypeError("install_details_loader requires a callable")
         with self._lock:
             self._details_loader = loader
+
+    def install_content_reader(self, reader: Callable[[str], object]) -> None:
+        """How to read a file's stored bytes (file_storage.py, which this module and the
+        search text it feeds cannot import): an email's words for search."""
+        if not callable(reader):
+            raise TypeError("install_content_reader requires a callable")
+        with self._lock:
+            self._content_reader = reader
+
+    def read_stored_file(self, file_id: str) -> object:
+        """The file's record and bytes (file_storage.DownloadedFile)."""
+        if self._content_reader is None:
+            raise RuntimeError("A file is read before file storage installed its reader")
+        return self._content_reader(file_id)
 
     def _ensure_details_locked(self) -> None:
         if self._titles_by_id is not None:
@@ -187,6 +203,13 @@ class FileRegistry:
             if title is not None:
                 names.append((file_id, title))
         return names
+
+    def thumbnail_kind_of(self, file_id: str) -> str | None:
+        """A file's thumbnail kind (file_storage._derive_thumbnail_kind), or None when the id is no file's."""
+        if not isinstance(file_id, str) or file_id == "":
+            raise TypeError("file_id must be a non-empty string")
+        with self._lock:
+            return self._thumbnail_kind_locked(file_id)
 
     def file_ids_of_kind(self, kind: str) -> set[str]:
         """The files a Files filter keeps (file_kinds.py): every file for "any"."""

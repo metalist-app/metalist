@@ -4434,6 +4434,145 @@ img.link-title-icon,
     text-decoration-thickness: 2px;
 }
 
+/* An email file as a card (file-email-preview-service.js; docs/ui/references.md, "Email files"). */
+.note-file-email-embed {
+    margin: 4px 0;
+}
+
+.note-file-email-placeholder,
+.note-file-email-unreadable {
+    color: var(--note-tag-muted);
+    font-size: 0.9em;
+}
+
+.note-file-email-card {
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 10px 12px;
+    background: var(--bg-color);
+}
+
+.note-file-email-subject {
+    font-weight: 600;
+    margin-bottom: 4px;
+}
+
+.note-file-email-headers {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: 1px 10px;
+    margin: 0 0 8px;
+    font-size: 0.85em;
+    color: var(--note-tag-muted);
+}
+
+.note-file-email-header {
+    display: contents;
+}
+
+.note-file-email-header-name,
+.note-file-email-header-value {
+    margin: 0;
+    overflow-wrap: anywhere;
+}
+
+/* A long body is cut with a fade until Show all. */
+.note-file-email-body {
+    max-height: 18em;
+    overflow: hidden;
+    overflow-wrap: anywhere;
+    -webkit-mask-image: linear-gradient(to bottom, #000 80%, transparent);
+    mask-image: linear-gradient(to bottom, #000 80%, transparent);
+}
+
+.note-file-email-card.is-expanded .note-file-email-body {
+    max-height: none;
+    -webkit-mask-image: none;
+    mask-image: none;
+}
+
+.note-file-email-body img {
+    max-width: 100%;
+    height: auto;
+}
+
+.note-file-email-text {
+    white-space: pre-wrap;
+}
+
+.note-file-email-attachments {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 8px;
+}
+
+.note-file-email-attachment,
+.note-file-email-more {
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 2px 8px;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    font-size: 0.85em;
+    cursor: pointer;
+}
+
+.note-file-email-attachment-size {
+    margin-left: 6px;
+    color: var(--note-tag-muted);
+}
+
+/* Folded (the note's or an embed's ▾/▸): one line, as a file's pill. */
+.note-file-email-line {
+    display: none;
+    align-items: baseline;
+    gap: 8px;
+    min-width: 0;
+    white-space: nowrap;
+}
+
+.note-file-email-line-subject {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-weight: 600;
+}
+
+.note-file-email-line-sender {
+    flex-shrink: 0;
+    color: var(--note-tag-muted);
+}
+
+.note.collapsed:not(.editing) .note-file-email-card,
+.note-embed-collapsed .note-file-email-card {
+    padding: 0;
+    border: none;
+    background: transparent;
+}
+
+.note.collapsed:not(.editing) .note-file-email-card > :not(.note-file-email-line),
+.note-embed-collapsed .note-file-email-card > :not(.note-file-email-line) {
+    display: none;
+}
+
+.note.collapsed:not(.editing) .note-file-email-line,
+.note-embed-collapsed .note-file-email-line {
+    display: flex;
+}
+
+/* The badge as on a file's pill: a folded note sets every font size to its own (above). */
+.note.collapsed:not(.editing) .note-file-email-line .note-file-reference-badge,
+.note-embed-collapsed .note-file-email-line .note-file-reference-badge {
+    font-size: 10px !important;
+}
+
+.note-file-email-more {
+    margin-top: 8px;
+    border-color: transparent;
+    color: var(--note-tag-muted);
+}
+
 .note-file-reference-link {
     display: flex;
     flex-direction: column;

@@ -39,7 +39,7 @@ function harness() {
             return entry;
         },
         getFloatingNoteTitle: () => 'Root',
-        applyFloatingNoteRect() {}, hydrateImageFilePreviews() {}, hydrateExcalidrawPreviews: async () => [], ensureAnchorsOpenInNewTabs() {},
+        applyFloatingNoteRect() {}, hydrateImageFilePreviews() {}, hydrateEmailPreviews: async () => [], hydrateExcalidrawPreviews: async () => [], ensureAnchorsOpenInNewTabs() {},
         hydrateRemoteImageProxies() {}, queueMermaidDiagramRendering: async () => {},
         serverRenderedHtml: html => html,
         watchFoldArrows() {},

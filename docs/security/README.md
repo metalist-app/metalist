@@ -813,3 +813,6 @@ Password creation/removal now exposes separate key preparation, persisted note/o
 - [Recovery runbook](recovery.md): failed transitions, interrupted restore, immutable source archives, and isolated verification.
 - [Supply-chain controls and dated audit](supply-chain.md): dependency pins/hashes, vendored-library provenance and advisories, CI gates, and update procedure.
 - [Current feature/test/documentation map](../testing/coverage-map.md).
+
+## Email files (2026-10-29)
+An embedded `.eml` file is read on the server (`app/services/email_files.py`) and shown as a card. Its HTML body passes the same sanitizer as a note's stored HTML (`sanitize_note_html`), then inline (`cid:`) and 1-pixel pictures are dropped, so opening a note sends nothing to the email's sender; remote pictures load only through MetaList's image proxy, as in notes. An email's words for search are read with the session's key (`file_storage.read_stored_file`, the way drawing a note reads files' details) and kept only in a sensitive cache, emptied when the vault locks; nothing about an email is stored beyond the file itself.

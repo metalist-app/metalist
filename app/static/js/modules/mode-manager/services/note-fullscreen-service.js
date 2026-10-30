@@ -2,6 +2,7 @@ import { watchFoldArrows } from './fold-arrow-alignment-service.js';
 import { ApplicationState } from '../../application-state.js';
 import { NotesAPI } from '../../api-client.js';
 import { hydrateImageFilePreviews } from './file-image-preview-service.js';
+import { hydrateEmailPreviews } from './file-email-preview-service.js';
 import { hydrateExcalidrawPreviews } from '../../excalidraw/excalidraw-preview-service.js';
 import { ensureAnchorsOpenInNewTabs } from './link-target-service.js';
 import { queueMermaidDiagramRendering } from './mermaid-render-service.js';
@@ -110,6 +111,7 @@ export async function openNoteFullscreen(noteId) {
 
     ensureAnchorsOpenInNewTabs(elements.tree);
     hydrateImageFilePreviews(elements.tree);
+    void hydrateEmailPreviews(elements.tree);
     void hydrateExcalidrawPreviews(elements.tree);
     hydrateRemoteImageProxies(elements.tree);
     void queueMermaidDiagramRendering(elements.tree);

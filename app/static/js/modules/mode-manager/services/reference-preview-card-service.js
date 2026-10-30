@@ -1,6 +1,7 @@
 import { ApplicationState, stateValuesEqual } from '../../application-state.js';
 import { NotesAPI } from '../../api-client.js';
 import { hydrateImageFilePreviews } from './file-image-preview-service.js';
+import { hydrateEmailPreviews } from './file-email-preview-service.js';
 import { hydrateExcalidrawPreviews } from '../../excalidraw/excalidraw-preview-service.js';
 import { hydrateRemoteImageProxies } from './remote-image-proxy-service.js';
 import { queueMermaidDiagramRendering } from './mermaid-render-service.js';
@@ -78,6 +79,7 @@ function fill(tree, html) {
     for (const editable of tree.querySelectorAll('[contenteditable]')) editable.setAttribute('contenteditable', 'false');
     for (const control of tree.querySelectorAll('button, input, textarea, select')) control.setAttribute('disabled', '');
     hydrateImageFilePreviews(tree);
+    void hydrateEmailPreviews(tree);
     void hydrateExcalidrawPreviews(tree);
     hydrateRemoteImageProxies(tree);
     void queueMermaidDiagramRendering(tree);

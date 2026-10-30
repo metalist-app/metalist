@@ -4,6 +4,7 @@ import { CONFIG } from '../../config.js';
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import { updateCollapseAffordancesForNotes } from './collapse-affordance-service.js';
 import { hydrateImageFilePreviews } from './file-image-preview-service.js';
+import { hydrateEmailPreviews } from './file-email-preview-service.js';
 import { hydrateExcalidrawPreviews } from '../../excalidraw/excalidraw-preview-service.js';
 import {
     hydrateRemoteImageProxies,
@@ -365,6 +366,7 @@ function applyServerDiffOps(payload, animateNoteChanges) {
 
     if (didRenderContent) {
         hydrateImageFilePreviews(notesContainer);
+        void hydrateEmailPreviews(notesContainer);
         void hydrateExcalidrawPreviews(notesContainer);
         hydrateRemoteImagesForCurrentMode(notesContainer);
         void queueMermaidDiagramRendering(notesContainer);
@@ -1002,6 +1004,8 @@ export function applyDifferentialView(payload, options) {
     }
 
     hydrateImageFilePreviews(notesContainer);
+
+    void hydrateEmailPreviews(notesContainer);
     void hydrateExcalidrawPreviews(notesContainer);
     hydrateRemoteImagesForCurrentMode(notesContainer);
     ensureAnchorsOpenInNewTabs(notesContainer);

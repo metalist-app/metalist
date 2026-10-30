@@ -77,6 +77,7 @@ import {checkViewMenu} from './browser-view-menu-regressions.mjs';
 import {checkLinkIcons} from './browser-link-icon-regressions.mjs';
 import {checkReferencedByBadge} from './browser-referenced-by-badge-regressions.mjs';
 import {checkEditPreviews} from './browser-edit-preview-regressions.mjs';
+import {checkEmailFiles} from './browser-email-file-regressions.mjs';
 import {checkMarkdownTables} from './browser-markdown-table-regressions.mjs';
 import {checkRightEdge} from './browser-right-edge-regressions.mjs';
 import {checkRobotCorner} from './browser-robot-corner-regressions.mjs';
@@ -392,6 +393,10 @@ try {
     await checkEditPreviews(page);
     assert.deepEqual(errors, []);
     console.log(`PASS edit preview regressions in ${await browser.version()}`);
+  } else if (process.env.BROWSER_TEST_SUITE === 'email-files') {
+    await checkEmailFiles(page);
+    assert.deepEqual(errors, []);
+    console.log(`PASS email file regressions in ${await browser.version()}`);
   } else if (process.env.BROWSER_TEST_SUITE === 'markdown-tables') {
     await checkMarkdownTables(page);
     assert.deepEqual(errors, []);

@@ -18,6 +18,7 @@ from app.services.content_formatting import showing_sites_above
 from app.services.content_formatting import sites_linked_in
 from app.services.content_formatting import sites_shown_above
 from app.services.file_text_preview import text_file_badge
+from app.services.email_files import EMAIL_BADGE, is_email_file
 from app.services.inline_image_occurrences import annotate_inline_image_occurrences
 from app.services.subtree_stats import render_subtree_stats_footer
 from app.services.remote_image_proxy import (
@@ -541,6 +542,16 @@ def preview_html_has_image_file_embed(*, preview_source_html: str, context: Embe
         if not isinstance(thumbnail_kind, str):
             raise TypeError("file thumbnail_kind must be a string")
         if thumbnail_kind in {"image", "excalidraw"}:
+            return True
+    return False
+
+
+def _preview_html_has_email_embed(*, preview_source_html: str, context: EmbedRenderContext) -> bool:
+    for token in collect_reference_tokens_from_html(preview_source_html):
+        if not token.is_embed or not context.has_file(token.note_id):
+            continue
+        record = context.get_file(token.note_id)
+        if is_email_file(mime_type=getattr(record, "mime_type"), original_filename=getattr(record, "original_filename")):
             return True
     return False
 
@@ -1297,7 +1308,12 @@ def _render_file_body(
         # A link's text from its | stands in for the file's name (agreed 2026-10-27).
         escaped_title = html.escape(html.unescape(link_text))
     escaped_title_attribute = html.escape(title, quote=True)
+    is_email = is_email_file(mime_type=mime_type, original_filename=original_filename)
     badge_text = html.escape(_format_file_badge(thumbnail_kind=thumbnail_kind, original_filename=original_filename))
+    if is_email:
+        badge_text = EMAIL_BADGE
+    if is_embed and is_email and not static_export:
+        return _render_email_embed(record=record, escaped_note_id=escaped_note_id)
     if static_export:
         return _render_static_file_body(
             record=record,
@@ -1339,6 +1355,20 @@ def _render_file_body(
         f'<span class="note-file-reference-title"><span class="note-file-reference-name">{escaped_title}</span></span>'
         "</span>"
         "</button>"
+    )
+
+
+def _render_email_embed(*, record: object, escaped_note_id: str) -> str:
+    """An email file as a card (docs/ui/references.md, "Email files"), filled in by the
+    browser from GET /files/{id}/email (file-email-preview-service.js)."""
+    content_revision = getattr(record, "content_revision")
+    if not isinstance(content_revision, int) or content_revision < 1:
+        raise TypeError("email file content_revision must be a positive int")
+    return (
+        f'<div class="note-file-email-embed" data-file-ref-id="{escaped_note_id}" '
+        f'data-file-revision="{content_revision}" data-preview-state="idle">'
+        '<div class="note-file-email-placeholder">Loading email…</div>'
+        "</div>"
     )
 
 
@@ -1659,6 +1689,9 @@ def _is_content_collapsible(*, content_html: str, context: EmbedRenderContext, f
     if preview_html_has_media(collapsed_preview_source):
         return True
     if preview_html_has_image_file_embed(preview_source_html=collapsed_preview_source, context=context):
+        return True
+    if _preview_html_has_email_embed(preview_source_html=collapsed_preview_source, context=context):
+        # An email's card folds to one line, its subject and sender (agreed 2026-10-29).
         return True
     if preview_html_has_note_embed(preview_source_html=collapsed_preview_source, context=context):
         # Only an embed: it shows its source, so it folds when the source does;

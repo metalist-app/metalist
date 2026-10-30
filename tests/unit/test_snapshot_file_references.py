@@ -449,3 +449,35 @@ def test_file_pill_tooltip_says_clicking_downloads_the_file(monkeypatch: pytest.
     rendered = state.payloads["a"]["content"]
     assert 'title="Click to download Q&amp;A &quot;notes&quot;.md"' in rendered
     assert '<span class="note-file-reference-badge">.MD</span>' in rendered
+
+
+def _email_record(file_id: str) -> SimpleNamespace:
+    return SimpleNamespace(
+        id=file_id, title="plan.eml", original_filename="plan.eml", mime_type="message/rfc822",
+        size_bytes=4096, thumbnail_kind="other", content_revision=1,
+    )
+
+
+# An embedded email is a card the browser fills in (docs/ui/references.md, "Email files");
+# a note that is only an email folds, to the card's one line (2026-10-29).
+def test_an_embedded_email_is_a_card_and_its_note_folds(monkeypatch: pytest.MonkeyPatch) -> None:
+    file_id = "5d0a3bb3-91a4-4a52-9a1b-4c6f0b1c2d3e"
+    notes = {"a": _Note("a", None, None, None, False, f"<div>![[{file_id}]]</div>", "")}
+    state = _state_for(monkeypatch=monkeypatch, notes=notes, children_by_parent={None: ["a"]}, file_ids={file_id}, file_record=_email_record(file_id))
+
+    rendered = state.payloads["a"]["content"]
+    assert (
+        f'<div class="note-file-email-embed" data-file-ref-id="{file_id}" data-file-revision="1" data-preview-state="idle">'
+        '<div class="note-file-email-placeholder">Loading email…</div></div>'
+    ) in rendered
+    assert state.payloads["a"]["flags"]["isCollapsible"] is True
+
+
+def test_a_link_to_an_email_is_its_pill_with_an_eml_badge(monkeypatch: pytest.MonkeyPatch) -> None:
+    file_id = "5d0a3bb3-91a4-4a52-9a1b-4c6f0b1c2d3e"
+    notes = {"a": _Note("a", None, None, None, False, f"<div>See [[{file_id}]]</div>", "")}
+    state = _state_for(monkeypatch=monkeypatch, notes=notes, children_by_parent={None: ["a"]}, file_ids={file_id}, file_record=_email_record(file_id))
+
+    rendered = state.payloads["a"]["content"]
+    assert '<span class="note-file-reference-badge">EML</span>' in rendered
+    assert "note-file-email-embed" not in rendered
