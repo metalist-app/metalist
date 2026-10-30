@@ -29,6 +29,9 @@ const SHORT_NAME = 'pkms_ai_notes.md';
 const LONG_NAME_UNIT = 'a_very_long_attachment_name_that_keeps_going_';
 const LONG_NAME_LINES = 1.5;
 const LONG_NAME_END = 'end.md';
+// Escape first hides the reference card the caret shows inside `![[…]]` (editing goes on),
+// then leaves editing (docs/ui/references.md, "The preview card"; 2026-10-29).
+const ESCAPES_TO_LEAVE = 2;
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 async function idle(page) {
@@ -133,10 +136,11 @@ async function downloadsDuring(page, act) {
 }
 
 async function leaveEditing(page) {
-  if ((await editState(page)) !== null) {
+  for (let press = 0; press < ESCAPES_TO_LEAVE && (await editState(page)) !== null; press += 1) {
     await page.keyboard.press('Escape');
     await idle(page);
   }
+  assert.equal(await editState(page), null, 'Escape leaves editing');
 }
 
 async function clickDownloads(page, point, label) {
