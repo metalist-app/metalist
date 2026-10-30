@@ -323,12 +323,6 @@
     "presentation": "palette"
   },
   {
-    "id": "view.summary",
-    "label": "Summary…",
-    "selector": "#command-palette-modal",
-    "presentation": "palette"
-  },
-  {
     "id": "pref.theme",
     "label": "Theme",
     "selector": "#command-palette-modal",

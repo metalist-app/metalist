@@ -54,7 +54,6 @@ const LABELS = {
     'view.files.image': 'Notes with Files: Images',
     'view.files.pdf': 'Notes with Files: PDFs',
     'view.files.markdown': 'Notes with Files: Markdown Files',
-    'view.summary': 'Summary…',
     'pref.theme': 'Theme',
     'pref.stats_style': 'Stats Style',
     'form.search_suggestion_statistics': 'Search Suggestion Stats & Settings…',

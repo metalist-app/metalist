@@ -1344,10 +1344,6 @@ function buildViewAndOrderHandlers() {
                 await CommandPalette.setFileFilter(kind);
             });
         },
-        // The dialog waits for the user, so it runs outside the command gate.
-        onOpenSummary: () => {
-            void CommandPalette.openSummary();
-        },
     };
 }
 
@@ -1357,7 +1353,6 @@ function dateRangeMenuContext() {
         dateRangeKind: CommandPalette.getDateRangeKind(),
         dateRangeField: getDateRangeField(),
         fileFilterKind: CommandPalette.getFileFilterKind(),
-        hasSummary: CommandPalette.getSummary() !== null,
     };
 }
 

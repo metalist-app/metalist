@@ -1,11 +1,20 @@
 # Charts of super-tag values (future plan)
 
 **Status:** **Direction only. Don't build yet.** Parts are decided (marked), parts are still being shaped with the maintainer. File it in `docs/future-plans/`. Sent now so nearby work (summaries, `@datetime`, `@stats`, the diagram code) doesn't close off this direction.
-**Scope:** charts of super-tag values over time or as distributions, drawn from a search or from a CSV/JSON file. Builds on the summaries and `@datetime` note (`2026-10-27-super-tag-summaries-and-date.md`, arriving with this one).
+**Scope:** charts of super-tag values over time or as distributions, drawn from a search or from a CSV/JSON file. Builds on `@datetime` (`docs/ready-to-build/super-tag-summaries-and-date.md`) and takes over the dropped summaries (§0).
 
 Written without running the code. References are from reading it; verify before relying on them.
 
 ---
+
+## 0. Figures over the notes (from the dropped summaries, 2026-10-30)
+
+A view option showing a figure beside the result count was built and removed (`docs/ready-to-build/super-tag-summaries-and-date.md`, §2): the header bar is the wrong place. Figures over a set of notes come with charts instead (a chart's caption or a figure chart). The rules worked out for them stand:
+- **Sum, Average, Median, Min, Max** over numbers, and **Mode** over any values.
+- **Per note:** each note first adds up its own values of the property (one meal note may hold several foods), then the calculation runs across notes; Average, Median, Min and Max say "per note"; Sum is the same either way.
+- Values count only on the note that writes them, on any tag (as `@stats` does: `subtree_stats.py`); negative numbers subtract; units are summed per unit, never converted (`Σ fat 42g, 1,500mg`); values that are not numbers are skipped and counted.
+- **Mode** counts each note once per distinct value and always shows its count (`sci-fi (12 of 30 notes)`); ties show every tied value.
+- Nothing is grouped by an inferred unit (days, weeks) unless the chart asks for it.
 
 ## 1. Charts work exactly like diagrams (decided)
 
@@ -33,7 +42,7 @@ Modeled on the existing Excalidraw diagrams (`docs/ui/excalidraw.md`), not on a 
 
 ## 4. Grouping and gaps (decided)
 
-- **Group by day is an explicit option, never automatic,** labeled "grouped by day, using each note's date," with a small **"?"** explaining the edge cases (entries logged later land on the later day unless they carry `@datetime`; an empty day shows as zero whether it was a fast or a forgotten log). Dates come from `@datetime` when present. The summaries beside the result count stay per note.
+- **Group by day is an explicit option, never automatic,** labeled "grouped by day, using each note's date," with a small **"?"** explaining the edge cases (entries logged later land on the later day unless they carry `@datetime`; an empty day shows as zero whether it was a fast or a forgotten log). Dates come from `@datetime` when present. Figures over notes (§0) stay per note.
 - **How a line connects points, labeled on the chart:** **Linear**, **Step** (holds until the next value: weight, a setting), **None** (points only, gaps visible). With group by day, also: **empty days as zero** or **empty days skipped**, chosen by the user who knows which it was.
 - *Possible later:* smoothing (a moving average over a chosen window).
 
@@ -54,4 +63,4 @@ Modeled on the existing Excalidraw diagrams (`docs/ui/excalidraw.md`), not on a 
 ## 7. Checked 2026-10-27 (filed from the inbox)
 
 - Filed as a future plan, as its status asks. Confirmed: diagrams are embedded Excalidraw files opened full screen (`docs/ui/excalidraw.md`), the model this follows.
-- Builds on `docs/ready-to-build/super-tag-summaries-and-date.md` (summaries, `@datetime`) and `@stats` (built 2026-10-27; `docs/ui/content-formatting.md`, Stats of a subtree).
+- Builds on `docs/ready-to-build/super-tag-summaries-and-date.md` (`@datetime`; its summaries were dropped 2026-10-30 and live on here, §0) and `@stats` (built 2026-10-27; `docs/ui/content-formatting.md`, Stats of a subtree).

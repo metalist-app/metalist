@@ -91,8 +91,6 @@ const CONTEXT_MENU_ICONS = {
         'M8 14h2',
         'M14 14h2',
     ],
-    // A sigma: a figure added up over the notes found (Summary…).
-    sum: ['M17 5H7l6 7-6 7h10'],
     // A calendar with a span of days marked.
     date_range: [
         'M4 5h16v15H4z',

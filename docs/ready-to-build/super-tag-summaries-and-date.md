@@ -1,7 +1,7 @@
 # Super-tag summaries beside the result count, and the `@datetime` tag
 
 **Status:** Agreed with the maintainer 2026-10-26. Ready to build. (Charts, the next step, are a separate future-plans note: `2026-10-27-charts.md`, which arrives with this one.)
-**Scope:** (1) a view option that summarizes a numeric (or text) property over the notes a search finds, shown beside the result count; (2) a reserved `@datetime` tag that says which date a note belongs to. Update `docs/design/tag-properties.md` ("Later" lists totals beside the result count), `docs/ui/search-semantics.md` and the view-option docs.
+**Scope:** (1) [dropped 2026-10-30, see §2] a view option that summarizes a numeric (or text) property over the notes a search finds, shown beside the result count; (2) a reserved `@datetime` tag that says which date a note belongs to. Update `docs/design/tag-properties.md` ("Later" lists totals beside the result count), `docs/ui/search-semantics.md` and the view-option docs.
 
 Written without running the code. Every reference below came from reading it and must be checked before relying on it; build only what's missing.
 
@@ -15,6 +15,8 @@ Written without running the code. Every reference below came from reading it and
 - A separate `@stats` tag (a footer summarizing a note's subtree) was handed off on 2026-10-27; this is its search-based counterpart. Share the calculation code.
 
 ## 2. Summaries: a view option, shown beside the result count
+
+**Dropped 2026-10-30, not to build.** Built and tried on a branch, then removed: a figure beside the result count (first a small line under the count, then a pill between the search box and the count) went unnoticed or looked wrong in the header bar, and the maintainer would not use it. Figures over a larger set of notes belong in charts (`docs/future-plans/charts.md`, "Figures over the notes"), which keeps the calculation rules below. `@datetime` (§3) is still ready to build.
 
 - **The search picks the notes,** as always, for example `:calories` plus the date range "Created · last 7 days."
 - **A view option picks a calculation and a property:** **Sum, Average, Median, Min, Max** (numbers) or **Mode** (any values): "Sum of `calories`," "Median of `pages`." It shows as a chip in the search bar like other view options, with × to remove it.

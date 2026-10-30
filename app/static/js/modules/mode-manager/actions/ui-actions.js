@@ -13,7 +13,6 @@ import { rebuildRootDateSeparators } from '../services/root-date-separator-servi
 import { updateRootSortIndicator } from '../services/root-sort-indicator-service.js';
 import { updateDateRangeIndicator } from '../services/date-range-filter-service.js';
 import { updateFileFilterIndicator } from '../services/file-filter-service.js';
-import { updateSummaryFigure, updateSummaryIndicator } from '../services/summary-service.js';
 import { updateUntaggedViewIndicator } from '../services/untagged-view-indicator-service.js';
 import { updateReferenceSourceIndicator } from '../services/reference-source-navigation-service.js';
 import { hasRootsBelowLoadedWindow, resetInfiniteScrollState } from '../services/infinite-scroll-service.js';
@@ -39,10 +38,9 @@ function updateSearchResultsCount(snapshot, tabId) {
         throw new Error('updateSearchResultsCount requires snapshot object');
     }
 
-    // The number; the summary is the line under it (summary-service.js).
-    const el = document.getElementById('search-results-count-number');
+    const el = document.getElementById('search-results-count');
     if (!el) {
-        throw new Error('search-results-count-number element missing from DOM');
+        throw new Error('search-results-count element missing from DOM');
     }
 
     const rootCountTotal = snapshot.rootCountTotal;
@@ -196,11 +194,9 @@ export async function actionRefreshAndMaybeSelect(options) {
         }
 
         updateSearchResultsCount(snapshot, requestTabId);
-        updateSummaryFigure(snapshot);
         updateRootSortIndicator(snapshot);
         updateDateRangeIndicator();
         updateFileFilterIndicator();
-        updateSummaryIndicator();
         updateUntaggedViewIndicator(snapshot);
         const previousRootCountTotals = ModeContext.getRootCountTotals(requestTabId);
         // Incremental notes.view refreshes can return the same totals when only note content changed.

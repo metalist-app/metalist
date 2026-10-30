@@ -817,19 +817,6 @@ function buildFileFilterItem(context, handlers) {
     };
 }
 
-// Summary…: a figure beside the result count over the notes found (summary-service.js),
-// ticked while the view shows one.
-function buildSummaryItem(context, handlers) {
-    if (typeof context.hasSummary !== 'boolean') {
-        throw new Error('View context missing hasSummary');
-    }
-    const onOpenSummary = requireViewHandler(handlers, 'onOpenSummary');
-    return {
-        id: 'summary', label: 'Summary…', icon: 'sum', checked: context.hasSummary, enabled: true,
-        onSelect: () => onOpenSummary(),
-    };
-}
-
 const MAC_KEY_SYMBOLS = Object.freeze({ Enter: '↩', Backspace: '⌫' });
 
 // A keyboard shortcut as the platform writes it: ⇧⌘Z on a Mac, Ctrl+Shift+Z elsewhere.
@@ -894,7 +881,6 @@ function buildSearchBarContextItems(context, handlers) {
         buildSortModeItem(context.sortMode, requireViewHandler(handlers, 'onSetSortMode')),
         buildDateRangeItem(context, handlers),
         buildFileFilterItem(context, handlers),
-        buildSummaryItem(context, handlers),
     ];
 }
 
@@ -992,7 +978,6 @@ function buildViewContextItems(context, handlers) {
         buildSortModeItem(context.sortMode, handlers.onSetSortMode),
         buildDateRangeItem(context, handlers),
         buildFileFilterItem(context, handlers),
-        buildSummaryItem(context, handlers),
         {
             id: 'show', label: 'Show', icon: 'show', enabled: true,
             submenu: [

@@ -300,7 +300,6 @@ function isMouseDownOutsideEditExclusion(target) {
             '#root-sort-indicator',
             '#date-range-indicator',
             '#file-filter-indicator',
-            '#summary-indicator',
             '#untagged-view-indicator',
             '#menu-button',
             '#chat-toggle-button',
@@ -1551,18 +1550,6 @@ function handleClick(event) {
         if (event.target.closest('#file-filter-indicator-clear')) {
             void CommandGate.run('fileFilterIndicator.clear', async () => {
                 await CommandPalette.setFileFilter('none');
-            });
-        }
-        return;
-    }
-
-    const summaryIndicator = event.target.closest('#summary-indicator');
-    if (summaryIndicator) {
-        event.preventDefault();
-        event.stopPropagation();
-        if (event.target.closest('#summary-indicator-clear')) {
-            void CommandGate.run('summaryIndicator.clear', async () => {
-                await CommandPalette.setSummary('none', '');
             });
         }
         return;
