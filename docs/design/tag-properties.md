@@ -333,10 +333,10 @@ Decided 2026-10-23:
 
 - Renaming properties; property synonyms in the ontology.
 - Totals, averages and sorting by a property (for example "miles this month" beside
-  the result count, or Sort by `jogging:miles`). Agreed, not built (2026-10-27):
-  the `@datetime` tag (`docs/ready-to-build/super-tag-summaries-and-date.md`). Summaries
-  beside the result count were dropped (2026-10-30); figures over many notes come with
-  charts later (`docs/future-plans/charts.md`). Built 2026-10-27: `@stats`, `@sum`, `@avg`, `@min`,
+  the result count, or Sort by `jogging:miles`). Built 2026-10-30: the `@datetime`
+  tag, a note's date for the Created date range (`docs/ui/tag-bar.md`, Date meta tag).
+  Summaries beside the result count were dropped (2026-10-30); figures over many notes
+  come with charts later (`docs/future-plans/charts.md`). Built 2026-10-27: `@stats`, `@sum`, `@avg`, `@min`,
   `@max` and `@count`, a note's subtree summarised under its text
   (`docs/ui/content-formatting.md`, Stats of a subtree; `app/services/subtree_stats.py`);
   searching those figures (`@sum:calories>2000`) built 2026-10-28 (`docs/ui/search-semantics.md`,

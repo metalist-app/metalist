@@ -12,6 +12,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Dict, FrozenSet, Iterable, List, Mapping, Tuple
 
+from app.services.note_datetime import is_datetime_tag_term
 from app.services.search_index import SearchIndex
 from app.services.search_index import SearchSuggestionFacts
 from app.services.search_index import TagCooccurrence
@@ -276,6 +277,8 @@ class ReasonWriter:
 def meta_tag_reasons(*, index: SearchIndex, term: str, prefix: str) -> Tuple[str, ...]:
     """Meta tags are listed by use once `@` is typed."""
     assert term.startswith("@") and prefix.startswith("@"), (term, prefix)
+    if is_datetime_tag_term(term):
+        return ("The first date in the note's text, else now",)
     count = index.count_notes_with_tag(term)
     usage = "Not on any note yet"
     if count > 0:

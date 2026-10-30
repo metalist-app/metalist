@@ -289,6 +289,27 @@ def list_known_meta_tag_terms() -> FrozenSet[str]:
     return frozenset(terms)
 
 
+_KNOWN_META_TAG_CASEFOLDS = frozenset(known.casefold() for known in list_known_meta_tag_terms())
+# A summary tag naming a property (@sum=calories; subtree_stats.py).
+_SUMMARY_PROPERTY_TAG_RE = re.compile(r"@(?:sum|avg|min|max|count)=[a-z][^\s=:]*", re.IGNORECASE)
+
+
+def is_known_meta_tag_term(term: str) -> bool:
+    """Whether MetaList knows an @ tag, so the tag bar keeps it when saving
+    (isSupportedMetaTag in tag-syntax-service.js). A tag notes still carry from
+    elsewhere or from an older MetaList (@date-headline) is not one."""
+    if not isinstance(term, str) or not term.startswith("@"):
+        raise ValueError(f"term must be an @ tag, got {term!r}")
+    if term.casefold() in _KNOWN_META_TAG_CASEFOLDS:
+        return True
+    name = term[1:].casefold()
+    if name == "":
+        return False
+    if parse_code_tag_language(name) is not None or _parse_size_factor(name) is not None:
+        return True
+    return _SUMMARY_PROPERTY_TAG_RE.fullmatch(term) is not None
+
+
 def find_global_credential_tag(tags: str) -> str | None:
     if not isinstance(tags, str):
         raise TypeError(f"tags must be a string, got {type(tags)}")

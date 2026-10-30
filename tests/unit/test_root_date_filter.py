@@ -10,6 +10,7 @@ from typing import Dict, List, Optional
 
 import pytest
 
+import app.services.root_date_filter as root_date_filter
 import app.services.root_sorting as root_sorting
 import app.services.snapshot as snapshot
 from app.models.database import SafeSession
@@ -175,10 +176,10 @@ def _local(day: date) -> datetime:
     return datetime(day.year, day.month, day.day, MIDDAY).astimezone()
 
 
-def _note(note_id: str, *, parent_id: Optional[str], created: date, updated: date) -> _Note:
+def _note(note_id: str, *, parent_id: Optional[str], created: date, updated: date, tags: str) -> _Note:
     return _Note(
         id=note_id, parent_id=parent_id, prev_id=None, next_id=None, is_collapsed=False,
-        content=f"<div>{note_id}</div>", tags="", created_at=_local(created), updated_at=_local(updated),
+        content=f"<div>{note_id}</div>", tags=tags, created_at=_local(created), updated_at=_local(updated),
     )
 
 
@@ -186,16 +187,17 @@ def _note(note_id: str, *, parent_id: Optional[str], created: date, updated: dat
 def three_roots(monkeypatch: pytest.MonkeyPatch) -> None:
     """An old root with a child edited today, a root made in September, one made today."""
     notes = {
-        "old": _note("old", parent_id=None, created=date(2025, 3, 1), updated=date(2025, 3, 1)),
-        "old-child": _note("old-child", parent_id="old", created=date(2025, 3, 2), updated=TODAY),
-        "september": _note("september", parent_id=None, created=date(2026, 9, 10), updated=date(2026, 9, 10)),
-        "today": _note("today", parent_id=None, created=TODAY, updated=TODAY),
+        "old": _note("old", parent_id=None, created=date(2025, 3, 1), updated=date(2025, 3, 1), tags=""),
+        "old-child": _note("old-child", parent_id="old", created=date(2025, 3, 2), updated=TODAY, tags=""),
+        "september": _note("september", parent_id=None, created=date(2026, 9, 10), updated=date(2026, 9, 10), tags=""),
+        "today": _note("today", parent_id=None, created=TODAY, updated=TODAY, tags=""),
     }
     store = _FakeNoteStore(notes=notes, children_by_parent={None: ["old", "september", "today"], "old": ["old-child"]})
     monkeypatch.setattr(snapshot, "note_store", store)
     monkeypatch.setattr(snapshot, "get_all_locks", lambda: {})
     monkeypatch.setattr(snapshot, "local_today", lambda: TODAY)
     monkeypatch.setattr(root_sorting, "note_store", store)
+    monkeypatch.setattr(root_date_filter, "note_store", store)
 
 
 def _shown_roots(date_filter: RootDateFilter | None, *, editing_note_id: str | None) -> List[str]:
@@ -235,3 +237,38 @@ def test_the_note_being_edited_stays_while_its_date_is_outside_the_range(three_r
     assert _shown_roots(september, editing_note_id="old-child") == ["old", "september"]
     # Once editing ends it leaves the view.
     assert _shown_roots(september, editing_note_id=None) == ["september"]
+
+
+@pytest.fixture
+def dated_roots(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The three roots, with today's root dated in September by its @datetime and the old
+    root's child dated today by its own."""
+    notes = {
+        "old": _note("old", parent_id=None, created=date(2025, 3, 1), updated=date(2025, 3, 1), tags=""),
+        "old-child": _note(
+            "old-child", parent_id="old", created=date(2025, 3, 2), updated=TODAY,
+            tags=f"journal @datetime={TODAY.isoformat()}T08:30",
+        ),
+        "september": _note("september", parent_id=None, created=date(2026, 9, 10), updated=date(2026, 9, 10), tags=""),
+        "today": _note("today", parent_id=None, created=TODAY, updated=TODAY, tags="@datetime=2026-09-15 food"),
+    }
+    store = _FakeNoteStore(notes=notes, children_by_parent={None: ["old", "september", "today"], "old": ["old-child"]})
+    monkeypatch.setattr(snapshot, "note_store", store)
+    monkeypatch.setattr(snapshot, "get_all_locks", lambda: {})
+    monkeypatch.setattr(snapshot, "local_today", lambda: TODAY)
+    monkeypatch.setattr(root_sorting, "note_store", store)
+    monkeypatch.setattr(root_date_filter, "note_store", store)
+
+
+@pytest.mark.parametrize(("date_filter", "roots"), [
+    # Created: a root's own @datetime in place of its creation; a child's dates nothing.
+    (_preset("today", field="created"), []),
+    (_custom("2026-09-01", "2026-09-30", field="created"), ["september", "today"]),
+    (_custom("2026-09-15", "2026-09-15", field="created"), ["today"]),
+    # Last updated stays the real last edit.
+    (_preset("today", field="updated"), ["old", "today"]),
+])
+def test_a_roots_datetime_dates_it_for_the_created_range(
+    dated_roots, date_filter: RootDateFilter, roots: List[str],
+) -> None:
+    assert _shown_roots(date_filter, editing_note_id=None) == roots

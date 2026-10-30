@@ -1,6 +1,6 @@
 # Search Semantics
 
-Agreed, not built (2026-10-27): the `@datetime` tag that dates a note for date filters (`docs/ready-to-build/super-tag-summaries-and-date.md`). Summaries of a property over the notes found were dropped (2026-10-30) and belong to charts (`docs/future-plans/charts.md`).
+Built 2026-10-30: the `@datetime` tag, which dates a root note for the Created date range (`docs/ui/tag-bar.md`, Date meta tag). Summaries of a property over the notes found were dropped (2026-10-30) and belong to charts (`docs/future-plans/charts.md`).
 
 
 This document describes **server-side search behavior** (what matches what).

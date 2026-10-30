@@ -2009,6 +2009,10 @@ def _use_parent_tagged_maple(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(tag_suggestions_module, "get_ontology", lambda: _build_ontology(text="maple => tree\n"))
 
 
+def _plain_tags(suggestions: list[str]) -> list[str]:
+    return [tag for tag in suggestions if not tag.startswith("@")]
+
+
 def _suggest_for_child(*, prefix: str) -> list[str]:
     explicit_tags = []
     if prefix != "":
@@ -2025,9 +2029,10 @@ def test_tags_that_already_apply_are_left_out_until_typed(monkeypatch: pytest.Mo
     assert "maple" not in empty_bar
     assert "tree" not in empty_bar
     # Once typed they come right after the tags with evidence (none here), at every length.
-    assert _suggest_for_child(prefix="m") == ["maple", "marsh", "mascot", "mason"]
-    assert _suggest_for_child(prefix="ma") == ["maple", "marsh", "mascot", "mason"]
-    assert _suggest_for_child(prefix="t") == ["tree", "trek", "trout"]
+    # The built-in tags the letters start (@markdown) follow them.
+    assert _plain_tags(_suggest_for_child(prefix="m")) == ["maple", "marsh", "mascot", "mason"]
+    assert _plain_tags(_suggest_for_child(prefix="ma")) == ["maple", "marsh", "mascot", "mason"]
+    assert _plain_tags(_suggest_for_child(prefix="t")) == ["tree", "trek", "trout"]
     assert _suggest_for_child(prefix="tr") == ["tree", "trek", "trout"]
 
 
