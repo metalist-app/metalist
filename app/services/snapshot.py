@@ -1041,6 +1041,7 @@ def _sites_shown_above(rec: NoteRecord, context: EmbedRenderContext) -> FrozenSe
     parent_id = rec.parent_id
     while parent_id is not None:
         parent = context.get_note(parent_id)
+        assert isinstance(parent, NoteRecord), "a note's parent is a note"
         sites |= _linked_sites_of(parent)
         parent_id = parent.parent_id
     return frozenset(sites)

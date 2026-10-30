@@ -70,9 +70,12 @@ class FileRegistry:
 
     def read_stored_file(self, file_id: str) -> object:
         """The file's record and bytes (file_storage.DownloadedFile)."""
-        if self._content_reader is None:
+        with self._lock:
+            reader = self._content_reader
+        if reader is None:
             raise RuntimeError("A file is read before file storage installed its reader")
-        return self._content_reader(file_id)
+        # Outside the lock: reading a file decrypts it, and searches wait on the lock.
+        return reader(file_id)
 
     def _ensure_details_locked(self) -> None:
         if self._titles_by_id is not None:

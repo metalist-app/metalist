@@ -116,8 +116,9 @@ function checkBadge(box, label, number, isCollapsed) {
 async function layoutCases(page, ids) {
   const failures = [];
   const check = async (label, id, number, isCollapsed) => {
+    const measured = await measureBadge(page, id);
     try {
-      checkBadge(await measureBadge(page, id), label, number, isCollapsed);
+      checkBadge(measured, label, number, isCollapsed);
     } catch (error) {
       if (!(error instanceof assert.AssertionError)) throw error;
       failures.push(error.message);

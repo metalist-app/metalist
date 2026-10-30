@@ -145,8 +145,9 @@ async function iconCases(page, ids) {
     failures.push(error.message);
   }
   const checkNoteLink = async (label, holderId, targetId, isCut) => {
+    const measured = await measureNoteLink(page, holderId, targetId);
     try {
-      assertNoteLinkIconFollowsText(await measureNoteLink(page, holderId, targetId), label, isCut);
+      assertNoteLinkIconFollowsText(measured, label, isCut);
     } catch (error) {
       if (!(error instanceof assert.AssertionError)) throw error;
       failures.push(error.message);
