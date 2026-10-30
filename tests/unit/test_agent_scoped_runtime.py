@@ -266,7 +266,7 @@ class _FakeInference:
         on_request({"messages": len(messages)})
         yield {"type": "tool_call", "id": "call-summary", "name": "summarize_view",
                "arguments": self.summary_tool_arguments}
-        yield {"type": "done", "finish_reason": "tool_calls", "usage": {}}
+        yield {"type": "done", "finish_reason": "tool_calls", "usage": {"prompt_tokens": 10_000}}
 
     async def stream_text(self, **arguments):
         self.final_messages = arguments["messages"]

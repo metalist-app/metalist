@@ -117,6 +117,28 @@ prefixed by a note that it is not an answer and that "try again" means redoing
 that request (note citations removed, as for answers). So the user can ask to try
 again or ask why it failed. Failed requests have no `EARLIER_ACTIONS` record.
 
+## Summaries of earlier turns
+
+The history is kept within a token budget by summaries, never by dropping turns
+(`chat_compaction.py`; behavior and numbers in `docs/ui/ai-chat.md`, Long chats).
+Before a turn, `summarize_before_turn` asks the conversation's own provider and model,
+through `send_text_stream`, to fold the previous summary and the oldest turns (their text
+and their action records) into one new summary, then
+`AiChatSessionStore.apply_summary` stores it, marks the turns summarized and drops their
+action records. `provider_messages()` then starts with the summary as a user message
+(`EARLIER_CONVERSATION_SUMMARY`) and continues with the turns after it, so a summarized
+turn is never sent again. `apply_summary` refuses a summary when the chat was cleared
+(new session id) or the disclosure boundary moved while it was made, and a boundary
+change drops the active summary with the turns. `POST /api2/ai/chat/summarize` does the
+same on request for every turn the AI still sees; `begin_summary` makes Send wait for it.
+
+The loop also records what its last request to the model was made of
+(`request_tokens.py`): the provider's `prompt_tokens`, with MetaList's estimates of the
+history and the current turn and the rest counted as instructions. It travels in the
+`done` event as `request_tokens`, which `ChatTurnStream.complete` stores with the turn
+and removes from the event; `GET /api2/ai/history-meter` reports it with the history's
+size for the chat's meter.
+
 ## Conversation disclosure boundaries
 
 The display transcript stays visible when the disclosure boundary changes.

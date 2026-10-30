@@ -23,6 +23,8 @@ import {
     clearAiChatSession,
     copyAiChatResponse,
     listAiModelChoices,
+    summarizeAiChat,
+    loadAiHistoryMeter,
     loadAiChatSession,
     loadOpenAiCostSnapshot,
     previewCloudPrivacy,
@@ -61,6 +63,11 @@ import {
     normalizeThinkingLevelForModel,
 } from './ai-thinking-level-service.js';
 import { serverRenderedHtml } from '../server-rendered-html.js';
+import { FloatingMessages } from '../floating-messages.js';
+import { renderHistoryMeter, validateHistoryMeter } from './ai-chat-history-meter.js';
+import {
+    SUMMARY_VISIBILITY_SENT, conversationItems, hasTurnsToSummarize, validateSummary, validateVisibility,
+} from './ai-chat-summaries.js';
 
 // The panel's default width is a third of the window (--ai-chat-width in main.css).
 const DEFAULT_PANEL_WIDTH_DIVISOR = 3;
@@ -68,6 +75,19 @@ const THINKING_DOT_COUNT = 3;
 // The persisted panel-width and composer-height ranges (checked again by the server).
 const RESIZER_KEYBOARD_STEP_PX = 24;
 const REFERENCES_PREVIEW_MAXIMUM_HEIGHT_PX = 48;
+// The working line Summarize Now shows where its entry will land.
+const SUMMARY_PENDING_ID = 'ai-chat-summary-pending';
+// The middle of the chat is half its height down.
+const HALVES = 2;
+// Scrolled to the end, give or take the rounding of a fractional scroll position.
+const SCROLLED_TO_END_SLACK_PX = 1;
+const SUMMARY_HEADING = 'Earlier conversation summarized';
+const SUMMARY_TOOLTIP_BY_VISIBILITY = {
+    sent: 'What the AI kept of the turns above: it no longer sees them',
+    summarized: 'Folded into a later summary below',
+    held_back: 'No longer sent to the AI: privacy settings changed',
+};
+const HELD_BACK_DIVIDER_TEXT = 'Earlier messages are not sent to the AI (privacy settings changed)';
 
 
 function requireElement(id, constructor) {
@@ -78,6 +98,21 @@ function requireElement(id, constructor) {
     return element;
 }
 
+
+// A passing floating card about the chat (docs/ui/floating-messages.md).
+function showChatNotice(text, type) {
+    FloatingMessages.show({ text, type, detail: '', isClosable: true, isLasting: false, key: null });
+}
+
+// The id a rendered chat item carries: a message's, a summary's or the divider's.
+function chatItemId(element) {
+    for (const key of ['messageId', 'summaryId', 'dividerId']) {
+        if (typeof element.dataset[key] === 'string' && element.dataset[key] !== '') {
+            return element.dataset[key];
+        }
+    }
+    return '';
+}
 
 function validateMessage(message) {
     if (!message || typeof message !== 'object' || Array.isArray(message)) {
@@ -105,6 +140,7 @@ function validateMessage(message) {
     if (!['complete', 'streaming', 'error'].includes(message.status)) {
         throw new Error('AI chat message status is invalid');
     }
+    validateVisibility(message.visibility);
     if (!Array.isArray(message.activities)) {
         throw new Error('AI chat message activities must be an array');
     }
@@ -176,6 +212,8 @@ const AI_ACTIVITY_ACTIONS = new Set([
     'agent_turn',
     // Sent, no signal from the provider yet (shown as "Waiting for OpenAI").
     'provider_wait',
+    // Earlier turns summarized before the answer (chat_compaction.py).
+    'conversation_summary',
     'lookup_metalist_help',
     'view_overview',
     'search_view_notes',
@@ -256,6 +294,14 @@ class AiChatPanelController {
     constructor() {
         this._initialized = false;
         this._messages = [];
+        // Summaries of earlier turns, each shown after the last turn it replaced (ai-chat-summaries.js).
+        this._summaries = [];
+        this._expandedSummaryIds = new Set();
+        // Counts history-meter loads, so an older answer never replaces a newer one.
+        this._historyMeterRequest = 0;
+        // "Summarize now" is running: Send waits for it, and Clear waits for _activeSummary.
+        this._isSummarizing = false;
+        this._activeSummary = null;
         // Sends MetaList refused, which only this page knows (ai-chat-refused-turns.js).
         this._refusedTurns = [];
         this._bulkPanel = null;
@@ -308,6 +354,7 @@ class AiChatPanelController {
         this._handleComposerPointerDown = this._handleComposerPointerDown.bind(this);
         this._handleComposerPointerUp = this._handleComposerPointerUp.bind(this);
         this._handleWindowResize = this._handleWindowResize.bind(this);
+        this._handleSummarizeRequested = this._handleSummarizeRequested.bind(this);
 
         ApplicationState.own(this, 'AiChatPanelController', new.target === AiChatPanelController);
     }
@@ -411,6 +458,7 @@ class AiChatPanelController {
             ),
             form: requireElement('ai-chat-form', HTMLFormElement),
             input: requireElement('ai-chat-input', HTMLTextAreaElement),
+            historyMeter: requireElement('ai-chat-history-meter', HTMLDivElement),
             send: requireElement('ai-chat-send', HTMLButtonElement),
             model: requireElement('ai-chat-model', HTMLSelectElement),
             thinkingLevel: requireElement('ai-chat-thinking-level', HTMLSelectElement),
@@ -529,6 +577,80 @@ class AiChatPanelController {
         window.addEventListener('resize', this._handleWindowResize);
         document.addEventListener('metalist:ai-chat-visibility-changed', this._handleVisibilityChanged);
         document.addEventListener('metalist:ai-settings-changed', this._handleSettingsChanged);
+        document.addEventListener('metalist:ai-chat-summarize-requested', this._handleSummarizeRequested);
+    }
+
+    _handleSummarizeRequested() {
+        void this._summarizeNow();
+    }
+
+    // "Summarize now" (docs/ui/ai-chat.md, Long chats): every turn the AI still sees
+    // becomes a summary, whose entry lands at the end of the chat, where it was chosen.
+    // While it is made, a working line stands there; then the chat scrolls the minimum
+    // distance to show the entry.
+    async _summarizeNow() {
+        if (this._isBusy || this._isSummarizing || this._isClearingSession) {
+            showChatNotice('Wait for the AI chat to finish', 'info');
+            return;
+        }
+        if (!hasTurnsToSummarize(this._messages)) {
+            showChatNotice('Nothing to summarize yet', 'info');
+            return;
+        }
+        const settings = this._getSettings();
+        if (!this._isModelAvailable(settings)) {
+            showChatNotice('Select an available AI model first', 'error');
+            return;
+        }
+        let finishSummary;
+        this._activeSummary = new Promise((resolve) => { finishSummary = resolve; });
+        this._isSummarizing = true;
+        this._syncComposerControlsDisabled();
+        this._render({ shouldScrollToBottom: false });
+        this._revealChatItem(SUMMARY_PENDING_ID);
+        let outcome = '';
+        try {
+            outcome = await summarizeAiChat({ settings });
+        } catch (error) {
+            rethrowUnexpectedError(error);
+            if (!(error instanceof AiApiError) && !(error instanceof HttpRequestError)) {
+                throw error;
+            }
+            showChatNotice(error.message, 'error');
+        } finally {
+            this._isSummarizing = false;
+            this._syncComposerControlsDisabled();
+            this._activeSummary = null;
+            finishSummary();
+        }
+        if (outcome === 'nothing') {
+            showChatNotice('Nothing to summarize yet', 'info');
+        }
+        await this._loadSession({ shouldScrollToBottom: false });
+        if (outcome === 'summarized' && this._summaries.length > 0) {
+            this._revealChatItem(this._summaries.at(-1).id);
+        }
+    }
+
+    // Scroll the chat the minimum distance that shows the item whole, up to where the
+    // chat's last item sits when scrolled to its end. Nothing else moves.
+    _revealChatItem(itemId) {
+        const container = this._elements.messages;
+        const element = Array.from(container.children).find(
+            (child) => child instanceof HTMLElement && chatItemId(child) === itemId,
+        );
+        if (element === undefined) {
+            throw new Error(`Chat item to reveal is not shown: ${itemId}`);
+        }
+        const box = container.getBoundingClientRect();
+        const visibleBottom = box.bottom - parseFloat(getComputedStyle(container).paddingBottom);
+        const visibleTop = box.top + parseFloat(getComputedStyle(container).paddingTop);
+        const bounds = element.getBoundingClientRect();
+        if (bounds.bottom > visibleBottom) {
+            container.scrollTop += bounds.bottom - visibleBottom;
+        } else if (bounds.top < visibleTop) {
+            container.scrollTop -= visibleTop - bounds.top;
+        }
     }
 
     _handleVisibilityChanged(event) {
@@ -711,9 +833,52 @@ class AiChatPanelController {
         if (!(target instanceof Element)) {
             return;
         }
-        const article = target.closest('.ai-chat-message-assistant');
-        if (!(article instanceof HTMLElement) || !this._elements.messages.contains(article)) {
+        if (!this._elements.messages.contains(target)) {
             return;
+        }
+        const items = [];
+        const copyableId = this._copyableResponseId(target);
+        if (copyableId !== '') {
+            items.push({
+                id: 'copy-ai-response',
+                label: 'Copy Response',
+                icon: 'copy',
+                enabled: true,
+                onSelect: () => void this._copyAssistantMessage(copyableId),
+            });
+        }
+        if (!this._isBusy && !this._isSummarizing && hasTurnsToSummarize(this._messages)) {
+            items.push({
+                id: 'summarize-ai-chat',
+                label: 'Summarize Now',
+                icon: 'collapse_all',
+                enabled: true,
+                onSelect: () => void this._summarizeNow(),
+            });
+        }
+        if (items.length === 0) {
+            return;
+        }
+
+        event.preventDefault();
+        event.stopPropagation();
+        showContextMenu({
+            items,
+            position: { x: event.clientX, y: event.clientY },
+            onClose: null,
+        });
+    }
+
+    // The completed answer or summary under the pointer, which Copy Response copies;
+    // '' for anything else.
+    _copyableResponseId(target) {
+        const summary = target.closest('.ai-chat-summary[data-summary-id]');
+        if (summary instanceof HTMLElement) {
+            return summary.dataset.summaryId;
+        }
+        const article = target.closest('.ai-chat-message-assistant');
+        if (!(article instanceof HTMLElement)) {
+            return '';
         }
         const messageId = article.dataset.messageId;
         if (typeof messageId !== 'string' || messageId === '') {
@@ -728,24 +893,9 @@ class AiChatPanelController {
             || message.content === ''
             || message.id.startsWith('local-')
         ) {
-            return;
+            return '';
         }
-
-        event.preventDefault();
-        event.stopPropagation();
-        showContextMenu({
-            items: [
-                {
-                    id: 'copy-ai-response',
-                    label: 'Copy Response',
-                    icon: 'copy',
-                    enabled: true,
-                    onSelect: () => void this._copyAssistantMessage(message.id),
-                },
-            ],
-            position: { x: event.clientX, y: event.clientY },
-            onClose: null,
-        });
+        return message.id;
     }
 
     async _copyAssistantMessage(messageId) {
@@ -1078,6 +1228,9 @@ class AiChatPanelController {
         this._elements.send.textContent = this._isBusy ? 'Stop' : 'Send';
         this._elements.send.classList.toggle('is-stop', this._isBusy);
         let isSendDisabled = false;
+        if (this._isSummarizing) {
+            isSendDisabled = true;
+        }
         if (!this._isBusy) {
             if (this._isLoadingModels) {
                 isSendDisabled = true;
@@ -1126,6 +1279,8 @@ class AiChatPanelController {
             this._isLoadingModels = false;
             this._syncSettingsControls();
         }
+        // The meter needs the chosen AI, known only now.
+        await this._refreshHistoryMeter();
     }
 
     async _selectModel() {
@@ -1141,6 +1296,8 @@ class AiChatPanelController {
             model,
             thinkingLevel,
         });
+        // Another AI may have another context, so another budget.
+        await this._refreshHistoryMeter();
         this._elements.input.focus();
     }
 
@@ -1164,9 +1321,11 @@ class AiChatPanelController {
         }
         try {
             const payload = await loadAiChatSession();
-            if (!payload || !Array.isArray(payload.messages)) {
-                throw new Error('AI chat session response missing messages');
+            if (!payload || !Array.isArray(payload.messages) || !Array.isArray(payload.summaries)) {
+                throw new Error('AI chat session response missing messages or summaries');
             }
+            const summaries = payload.summaries.map(validateSummary);
+            if (!stateValuesEqual(this._summaries, summaries)) this._summaries = summaries;
             if (this._expandedThinkingMessageIds.size > 0) this._expandedThinkingMessageIds.clear();
             if (this._expandedReferenceMessageIds.size > 0) this._expandedReferenceMessageIds.clear();
             const placed = placeRefusedTurns(payload.messages.map(validateMessage), this._refusedTurns);
@@ -1175,6 +1334,7 @@ class AiChatPanelController {
             if (!stateValuesEqual(this._messages, placed.messages)) this._messages = placed.messages;
             this._render({ shouldScrollToBottom });
             await queueMermaidDiagramRendering(this._elements.messages);
+            await this._refreshHistoryMeter();
         } catch (error) {
             rethrowUnexpectedError(error);
             if (!(error instanceof AiApiError)) {
@@ -1192,6 +1352,10 @@ class AiChatPanelController {
         this._isClearingSession = true;
         this._render({ shouldScrollToBottom: true });
         try {
+            // A summary being made lands first, then goes with the rest of the chat.
+            if (this._activeSummary !== null) {
+                await this._activeSummary;
+            }
             if (this._isBusy) {
                 const activeRequestCompletion = this._activeChatCompletion;
                 if (!(activeRequestCompletion instanceof Promise)) {
@@ -1214,14 +1378,36 @@ class AiChatPanelController {
         if (this._expandedThinkingMessageIds.size > 0) this._expandedThinkingMessageIds.clear();
         if (this._expandedReferenceMessageIds.size > 0) this._expandedReferenceMessageIds.clear();
         if (this._messages.length > 0) this._messages = [];
+        if (this._summaries.length > 0) this._summaries = [];
+        if (this._expandedSummaryIds.size > 0) this._expandedSummaryIds.clear();
         if (this._refusedTurns.length > 0) this._refusedTurns = [];
         this._render({ shouldScrollToBottom: true });
+        await this._refreshHistoryMeter();
         await AgentDebugView.refreshIfOpen();
         this._elements.input.focus();
     }
 
+    // The history meter above the message box (ai-chat-history-meter.js), for the chosen
+    // AI: its context sets the budget. Hidden while no AI model is available.
+    async _refreshHistoryMeter() {
+        this._historyMeterRequest += 1;
+        const request = this._historyMeterRequest;
+        const settings = this._getSettings();
+        if (!this._isModelAvailable(settings)) {
+            this._elements.historyMeter.hidden = true;
+            return;
+        }
+        const meter = validateHistoryMeter(await loadAiHistoryMeter({ provider: settings.provider }));
+        if (request !== this._historyMeterRequest) return;
+        renderHistoryMeter(this._elements.historyMeter, meter);
+    }
+
     async _submitMessage() {
         if (CommandGate.isBusy()) return;
+        if (this._isSummarizing) {
+            showChatNotice('Wait for the summary to finish', 'info');
+            return;
+        }
         if (this._isBusy) {
             return;
         }
@@ -1262,6 +1448,7 @@ class AiChatPanelController {
                 error: '',
                 provider: settings.provider,
                 model: settings.model,
+                visibility: SUMMARY_VISIBILITY_SENT,
                 activities: [],
             },
             {
@@ -1275,6 +1462,7 @@ class AiChatPanelController {
                 error: '',
                 provider: settings.provider,
                 model: settings.model,
+                visibility: SUMMARY_VISIBILITY_SENT,
                 activities: [],
             },
         );
@@ -1586,16 +1774,29 @@ class AiChatPanelController {
         if (typeof shouldScrollToBottom !== 'boolean') {
             throw new Error('_render requires boolean scroll behavior');
         }
-        const previousScrollTop = this._elements.messages.scrollTop;
+        // What the user is reading stays where it is, whatever appears above it (a summary).
+        const anchor = this._readingAnchor();
         for (const child of Array.from(this._elements.messages.children)) {
             if (child !== this._bulkPanel) child.remove();
         }
         const renderedMessages = [];
-        for (const message of this._messages) {
+        for (const item of conversationItems(this._messages, this._summaries)) {
+            if (item.kind === 'summary') {
+                renderedMessages.push({ messageId: item.summary.id, element: this._renderSummary(item.summary) });
+                continue;
+            }
+            if (item.kind === 'held-back-divider') {
+                renderedMessages.push({ messageId: item.id, element: this._renderHeldBackDivider(item.id) });
+                continue;
+            }
+            const message = item.message;
             validateMessage(message);
             const article = document.createElement('article');
             article.className = `ai-chat-message ai-chat-message-${message.role}`;
             article.dataset.messageId = message.id;
+            // Grey and italic once only a summary stands for it; unmarked when held back
+            // (the divider below the held-back turns says so).
+            article.classList.toggle('is-summarized', message.visibility === 'summarized');
 
             if (
                 this._showDiagnosticActivities
@@ -1729,6 +1930,9 @@ class AiChatPanelController {
                 element: article.childElementCount > 0 ? article : null,
             });
         }
+        if (this._isSummarizing) {
+            renderedMessages.push({ messageId: SUMMARY_PENDING_ID, element: this._renderSummaryPending() });
+        }
         placeChatMessageElements({
             container: this._elements.messages,
             renderedMessages,
@@ -1742,8 +1946,101 @@ class AiChatPanelController {
             this._elements.messages.scrollTop = this._elements.messages.scrollHeight;
             return;
         }
-        this._elements.messages.scrollTop = previousScrollTop;
+        this._restoreReadingAnchor(anchor);
         this._revealReferencesHeaderAtViewportBottom();
+    }
+
+    // What the user is reading, and how far below the chat's top it starts: the latest
+    // item when the chat is scrolled to its end, else the item at its middle (or the
+    // first below it).
+    _readingAnchor() {
+        const container = this._elements.messages;
+        const containerBounds = container.getBoundingClientRect();
+        const items = Array.from(container.children).filter(
+            (child) => child instanceof HTMLElement && chatItemId(child) !== '',
+        );
+        const isAtEnd = container.scrollHeight - container.scrollTop - container.clientHeight <= SCROLLED_TO_END_SLACK_PX;
+        let anchor = items.at(-1);
+        if (!isAtEnd) {
+            const middle = (containerBounds.top + containerBounds.bottom) / HALVES;
+            anchor = items.find((item) => item.getBoundingClientRect().bottom > middle);
+        }
+        if (anchor === undefined) {
+            return { id: '', offset: 0, scrollTop: container.scrollTop };
+        }
+        return {
+            id: chatItemId(anchor),
+            offset: anchor.getBoundingClientRect().top - containerBounds.top,
+            scrollTop: container.scrollTop,
+        };
+    }
+
+    _restoreReadingAnchor(anchor) {
+        const container = this._elements.messages;
+        container.scrollTop = anchor.scrollTop;
+        if (anchor.id === '') return;
+        const element = Array.from(container.children).find(
+            (child) => child instanceof HTMLElement && chatItemId(child) === anchor.id,
+        );
+        if (element === undefined) return;
+        const offset = element.getBoundingClientRect().top - container.getBoundingClientRect().top;
+        container.scrollTop += offset - anchor.offset;
+    }
+
+    _renderSummary(summary) {
+        const details = document.createElement('details');
+        details.className = `ai-chat-summary is-${summary.visibility.replace('_', '-')}`;
+        details.dataset.summaryId = summary.id;
+        details.open = this._expandedSummaryIds.has(summary.id);
+        details.addEventListener('toggle', () => {
+            if (details.open) {
+                this._expandedSummaryIds.add(summary.id);
+            } else {
+                this._expandedSummaryIds.delete(summary.id);
+            }
+        });
+        const heading = document.createElement('summary');
+        heading.className = 'ai-chat-summary-heading';
+        heading.textContent = SUMMARY_HEADING;
+        heading.title = SUMMARY_TOOLTIP_BY_VISIBILITY[summary.visibility];
+        details.appendChild(heading);
+        const content = document.createElement('div');
+        content.className = 'ai-chat-summary-content meta-markdown';
+        content.setAttribute('data-markdown-rendered', 'true');
+        content.innerHTML = serverRenderedHtml(summary.rendered_content);
+        details.appendChild(content);
+        return details;
+    }
+
+    // Where the summary entry will land, while Summarize Now works: like its header line.
+    _renderSummaryPending() {
+        const pending = document.createElement('div');
+        pending.className = 'ai-chat-summary ai-chat-summary-pending';
+        pending.dataset.dividerId = SUMMARY_PENDING_ID;
+        pending.setAttribute('role', 'status');
+        const heading = document.createElement('div');
+        heading.className = 'ai-chat-summary-heading';
+        heading.textContent = 'Summarizing earlier conversation';
+        const dots = document.createElement('span');
+        dots.className = 'ai-chat-thinking-dots';
+        dots.setAttribute('aria-hidden', 'true');
+        for (let index = 0; index < THINKING_DOT_COUNT; index += 1) {
+            const dot = document.createElement('span');
+            dot.textContent = '.';
+            dots.appendChild(dot);
+        }
+        heading.appendChild(dots);
+        pending.appendChild(heading);
+        return pending;
+    }
+
+    _renderHeldBackDivider(id) {
+        const divider = document.createElement('div');
+        divider.className = 'ai-chat-held-back-divider';
+        divider.dataset.dividerId = id;
+        divider.setAttribute('role', 'separator');
+        divider.textContent = HELD_BACK_DIVIDER_TEXT;
+        return divider;
     }
 
     _replaceTagProposalReferenceDisclosure(content, message) {

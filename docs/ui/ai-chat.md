@@ -390,12 +390,62 @@ preferences are saved (`RETIRED_PROMPT_PREFERENCE_KEYS` and
   remains interactive in view mode: opening or closing it does not enter edit mode
   or begin a note drag.
 
-## Session and Debug Boundaries
+## Long chats
 
-- A session keeps at most 100 messages (50 turns); a new turn past that drops the oldest
-  one without telling the user, and nothing checks that the conversation fits the model's
-  context. Planned instead: a token budget, with the oldest turns replaced by a summary the
-  user can open and read (`docs/ready-to-build/ai-conversation-compaction.md`).
+A chat never drops a turn silently. When it outgrows its budget, its oldest turns are
+replaced by a summary that the user can open and read, and the summary is exactly what
+the AI knows about them (built 2026-10-30, `app/services/agent/chat_compaction.py`).
+
+- **Budget.** The history (summary, turns and the agent's records) may take a quarter
+  of the model's context, at most 32,000 tokens (`history_budget`). There is no message
+  count limit any more.
+- **Automatic summary at Send.** When the summary, the turns and the new message would
+  pass the budget, the oldest turns are summarized first, together with the previous
+  summary, until the turns kept fill half the budget, so the next Send does not summarize
+  again. The chat shows it as an activity, "Summarizing earlier conversation", then
+  "Earlier conversation summarized". There is only ever one summary in what the AI is sent,
+  as the first message, and summarized turns are never sent again.
+- **Summarize Now** (right-click a completed answer, or the palette's
+  "AI Chat: Summarize Now") summarizes every turn the AI still sees directly. A working
+  line "Summarizing earlier conversation…" stands at the end of the chat; the entry
+  replaces it there, and the chat scrolls the minimum distance to show it. With no turn
+  since the last summary, the menu hides the item and the palette says
+  "Nothing to summarize yet" in a floating card. Enter meanwhile keeps the message and says
+  "Wait for the summary to finish"; the server refuses a Send during a summary (`409`).
+  Clear waits for the summary, then clears it with the rest.
+- **Length.** A summary is at most a third of the tokens it replaces (never under 60
+  tokens) and never over a tenth of the budget (`summary_token_limit`); the prompt asks
+  for half that many words. One that comes back empty or too long fails with a red
+  message and nothing is summarized. The prompt
+  (`app/services/agent/prompts/conversation-summary.md`) keeps decisions, facts, open
+  questions, what the user asked to remember and what the agent did, and names notes by
+  title as plain text: earlier turns reach the AI without their citations, so a summary
+  cannot cite.
+- **What the user sees.** The summary entry sits right after the last turn it replaced,
+  collapsed to one line, "Earlier conversation summarized"; opening it shows the summary
+  and keeps its header line still. Summarized turns stay on screen, grey and italic.
+  Copy Response works on the entry. Summarizing never moves what the user is reading: the
+  latest turn when the chat is scrolled to its end, otherwise the item at the middle.
+- **Privacy.** A summary is a turn like the others: when what the AI may see changes,
+  the history and the summary are held back together. Held-back turns keep their look,
+  with a divider after the last of them: "Earlier messages are not sent to the AI
+  (privacy settings changed)". A summary made while privacy changed, or while the chat
+  was cleared, is discarded. The summary lives with the conversation in server memory;
+  if conversations are ever kept on disk, it is kept with them, encrypted the same way,
+  and Clear removes it.
+- **History meter.** A thin grey bar above the message box with "History N%", the share
+  of the budget the history takes, counted as the automatic summary counts it
+  (`GET /api2/ai/history-meter`). It reaches 100% when the next Send would summarize.
+  Hovering or focusing it shows the summary, turns, agent's records and free space, the
+  budget against the model's context, and the latest answer's last request: the
+  provider's own count, split into instructions, history, and question with notes and
+  pages (`app/services/agent/request_tokens.py`; only the total is exact, instructions is
+  what the estimates of the other two leave). Its line is always kept, so it appearing
+  or updating moves nothing.
+- Tests: `tests/unit/test_chat_compaction.py`, `tests/unit/ai_chat_history_meter.test.mjs`,
+  browser suite `ai-chat-summary`.
+
+## Session and Debug Boundaries
 
 - The agent keeps a private record of what each answer did (tools, searches and pages
   opened, notes read), so questions such as "did you search the web?" are answered

@@ -33,6 +33,7 @@ test('buildCommandPaletteEndpoints includes utility action endpoints', async () 
             openTaggingVocabulary: noop,
             openOntologyEditor: noop,
             openFindBar: noop,
+            summarizeAiChat: noop,
             createBackup: noop,
             openBackupRestore: noop,
             logout: noop,

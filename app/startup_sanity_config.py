@@ -53,6 +53,8 @@ JS_ALLOWED_TRY_CALLEE_NAMES = (
     "loadOpenAiCostSnapshot",
     "loadAgentPromptDefaults",
     "streamAiChat",
+    "summarizeAiChat",
+    "loadAiHistoryMeter",
     "setAiDebugExactDetails",
     "loadAiCredentialStatus",
     "saveAiCredential",

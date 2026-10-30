@@ -17,6 +17,7 @@ from app.services import auth_service, backup_service, runtime_lock
 from app.services.agent.evidence_serialization import EvidenceNoteTokenSource, EvidenceTreeTokenSource
 from app.services.agent.evidence_serialization import estimate_cached_root_tree_tokens, _estimate_cached_root_tree_tokens
 from app.services.ai_chat import AiChatSessionStore
+from app.services.ai_chat import NO_REQUEST
 from app.services.agent.cloud_privacy import CloudPrivacyEvaluator, resolve_cloud_privacy_boundary
 from app.services.search_index import search_index
 from app.services.sync import capture_sync_state, generate_new_uuid
@@ -187,7 +188,7 @@ def test_switching_provider_under_the_same_rules_keeps_the_conversation(live_dat
     first_key = evaluator.history_disclosure_key(boundary=resolve_cloud_privacy_boundary(preferences={}, provider='openai'))
     chat.synchronize_disclosure_boundary(session_key='fixture', disclosure_key=first_key)
     turn = chat.start_turn(session_key='fixture', user_content='Summarize the papers', provider='openai', model='gpt-5.6-luna')
-    chat.complete_turn(session_key='fixture', turn_id=turn, final_content='Here is the summary', actions=[])
+    chat.complete_turn(session_key='fixture', turn_id=turn, final_content='Here is the summary', actions=[], request_tokens=NO_REQUEST)
     next_key = evaluator.history_disclosure_key(boundary=resolve_cloud_privacy_boundary(preferences={}, provider=next_provider))
     assert next_key == first_key
     assert chat.synchronize_disclosure_boundary(session_key='fixture', disclosure_key=next_key) is False
@@ -208,7 +209,7 @@ def test_privacy_change_excludes_prior_answer_even_with_empty_followup_scope(liv
     first_key = evaluator.history_disclosure_key(boundary=boundary)
     chat.synchronize_disclosure_boundary(session_key='fixture', disclosure_key=first_key)
     turn = chat.start_turn(session_key='fixture', user_content='Read notes', provider='openai', model='cloud')
-    chat.complete_turn(session_key='fixture', turn_id=turn, final_content='PRIVATE_CANARY', actions=[])
+    chat.complete_turn(session_key='fixture', turn_id=turn, final_content='PRIVATE_CANARY', actions=[], request_tokens=NO_REQUEST)
     chat.synchronize_disclosure_boundary(session_key='fixture', disclosure_key=first_key)
     assert 'PRIVATE_CANARY' in str(chat.provider_messages(session_key='fixture'))
     if change == 'policy':

@@ -135,6 +135,25 @@ and cannot be edited, so the AI behaves the same for everyone; instructions save
 by older versions are ignored. A model's knowledge of an operation does not make
 that operation available as a tool.
 
+Long chats are never cut off silently. The chat's history (a summary, the turns and the
+agent's records of what it did) may take a quarter of the model's context, at most
+32,000 tokens. When the next Send would pass that, the oldest turns are first replaced by
+a summary made by the same AI, at most a third as long as what it replaces; the chat
+shows "Summarizing earlier conversation". The summary entry sits after the last turn it
+replaced, collapsed to "Earlier conversation summarized"; clicking it shows the
+summary, and Copy Response works on it. Summarized turns stay on screen, grey and italic,
+but the AI never sees them again: it knows them only through the summary, which names
+notes by title instead of citing them. A missing detail is corrected by saying it in
+the next message; there is no summary editor. **Summarize Now** (right-click a completed
+answer, or the palette's "AI Chat: Summarize Now") summarizes every turn at once; while
+it works, Send waits. The AI cannot summarize the chat itself. The **History N%** bar above
+the message box shows how full the history is (100% means the next Send summarizes);
+hovering it shows the summary, turns, agent's records and free space, and what the last
+request sent to the model was made of: instructions, history, and the question with its
+notes and pages. When the privacy settings change, earlier turns and the summary stop
+being sent together, under the divider "Earlier messages are not sent to the AI (privacy
+settings changed)".
+
 Chat history and its debug traces are session-only. Clear Chat/logout removes
 them; a server restart removes them. A page reload in the same authenticated
 session retains them. Export LLM history (download arrow in the chat header)

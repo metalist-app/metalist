@@ -27,6 +27,7 @@ from app.services.ai_setup import AiNotSetUp
 from app.services.ai_setup import AiProvider
 from app.services.ai_setup import connect_to_ai
 from app.services.ai_chat import ai_chat_store
+from app.services.agent.chat_compaction import history_meter, summarize_before_turn, summarize_on_request
 from app.services.ai_chat_rendering import find_note_citation_ids
 from app.services.ai_chat_rendering import find_web_citation_ids
 from app.services.ai_chat_rendering import render_ai_chat_markdown_to_html
@@ -302,10 +303,52 @@ class AiChatMessage(BaseModel):
     provider: AiProvider
     model: str
     activities: list[AiChatActivity]
+    # What the AI still sees of it: directly, only through a summary, or nothing since
+    # the privacy settings changed (ai_chat.py).
+    visibility: Literal["sent", "summarized", "held_back"]
+
+
+class AiChatSummary(BaseModel):
+    """A summary that replaced earlier turns; shown after the last turn it replaced."""
+    id: str
+    content: str
+    rendered_content: str
+    after_message_id: str
+    visibility: Literal["sent", "summarized", "held_back"]
 
 
 class AiSessionResponse(BaseModel):
     messages: list[AiChatMessage]
+    summaries: list[AiChatSummary]
+
+
+class AiLastRequest(BaseModel):
+    """The latest answer's last request to the model (request_tokens.py); all zero before
+    any answer."""
+    total: int = Field(..., ge=0)
+    instructions: int = Field(..., ge=0)
+    history: int = Field(..., ge=0)
+    this_turn: int = Field(..., ge=0)
+
+
+class AiHistoryMeterResponse(BaseModel):
+    """How full the chat's history is (chat_compaction.history_meter): it is summarized
+    when it would pass budget_tokens."""
+    summary_tokens: int = Field(..., ge=0)
+    turn_count: int = Field(..., ge=0)
+    turn_tokens: int = Field(..., ge=0)
+    action_tokens: int = Field(..., ge=0)
+    budget_tokens: int = Field(..., ge=1)
+    context_tokens: int = Field(..., ge=1)
+    last_request: AiLastRequest
+
+
+class AiSummarizeRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    provider: AiProvider
+    model: str = Field(..., min_length=1)
+    thinking_level: Literal["off", "low", "medium", "high"]
 
 
 class AiClearResponse(BaseModel):
@@ -780,6 +823,7 @@ def get_ai_session(
                 error=message["error"],
                 provider=message["provider"],
                 model=message["model"],
+                visibility=message["visibility"],
                 activities=[
                     AiChatActivity(
                         sequence=index,
@@ -794,7 +838,85 @@ def get_ai_session(
                 ],
             )
         )
-    return AiSessionResponse(messages=messages)
+    summaries = [
+        AiChatSummary(
+            id=summary["id"], content=summary["content"], after_message_id=summary["after_message_id"],
+            visibility=summary["visibility"],
+            # A summary names notes by title; it has no note or web references.
+            rendered_content=render_ai_chat_markdown_to_html(
+                summary["content"], notes=note_store, allowed_note_ids=(), allowed_web_evidence=(),
+            ),
+        )
+        for summary in snapshot["summaries"]
+    ]
+    return AiSessionResponse(messages=messages, summaries=summaries)
+
+
+@router.get("/history-meter", response_model=AiHistoryMeterResponse)
+def get_ai_history_meter(
+    provider: AiProvider,
+    response: Response,
+    token: Annotated[str, Depends(require_request_auth_token)],
+) -> AiHistoryMeterResponse:
+    """The chat's history meter for the chosen AI, whose context sets the budget."""
+    response.headers["Cache-Control"] = "no-store"
+    session_key = token_service.get_session_key(token)
+    meter = history_meter(store=ai_chat_store, session_key=session_key,
+                          context_tokens=catalog_entry(provider).context_tokens)
+    return AiHistoryMeterResponse(**meter, last_request=AiLastRequest(
+        **ai_chat_store.last_request(session_key=session_key)))
+
+
+@router.post("/chat/summarize")
+@transactional_route
+def summarize_ai_chat(
+    payload: AiSummarizeRequest,
+    token: Annotated[str, Depends(require_request_auth_token)],
+) -> StreamingResponse:
+    """"Summarize now": replace every turn the AI sees directly but the latest with a
+    summary. One {"type": "summarized"}, {"type": "nothing"} or {"type": "failed"} line."""
+    session_key = token_service.get_session_key(token)
+    connection = _require_ai_connection(
+        provider=payload.provider, model=payload.model, token=token, session_key=session_key,
+    )
+    privacy_boundary = resolve_cloud_privacy_boundary(
+        preferences=load_client_preferences(token=token), provider=payload.provider,
+    )
+    # As at Send: after a privacy change the AI sees none of the earlier turns.
+    if ai_chat_store.synchronize_disclosure_boundary(
+        session_key=session_key,
+        disclosure_key=cloud_privacy_evaluator.history_disclosure_key(boundary=privacy_boundary),
+    ):
+        web_evidence_store.clear_session(session_key=session_key)
+        summary_batch_store.clear_session(session_key=session_key)
+    if not ai_chat_store.begin_summary(session_key=session_key):
+        raise HTTPException(status_code=HTTPStatus.CONFLICT, detail="The AI chat is busy: wait for it to finish")
+    return StreamingResponse(
+        _summarize_events(payload=payload, connection=connection, session_key=session_key),
+        media_type="application/x-ndjson",
+        headers={"X-Accel-Buffering": "no", "Cache-Control": "no-store", "Content-Encoding": "identity"},
+    )
+
+
+async def _summarize_events(
+    *, payload: AiSummarizeRequest, connection: AiConnection, session_key: str,
+) -> AsyncIterator[str]:
+    # lint: allow-PY001 rationale="the AI provider failed or wrote an unusable summary: the chat shows why"
+    try:
+        is_summarized = await summarize_on_request(
+            store=ai_chat_store, session_key=session_key, inference=connection.inference,
+            base_url=connection.base_url, model=payload.model, thinking_level=payload.thinking_level,
+        )
+    # lint: allow-PY001 rationale="the AI provider failed or wrote an unusable summary: the chat shows why"
+    except InferenceProviderError as exc:
+        yield json.dumps({"type": "failed", "message": str(exc)}) + "\n"
+        return
+    finally:
+        ai_chat_store.end_summary(session_key=session_key)
+    outcome = "nothing"
+    if is_summarized:
+        outcome = "summarized"
+    yield json.dumps({"type": outcome}) + "\n"
 
 
 @router.delete("/session", response_model=AiClearResponse)
@@ -869,15 +991,19 @@ def copy_ai_message(
         for message in snapshot["messages"]
         if message["id"] == message_id and message["role"] == "assistant"
     ]
-    if len(matching_messages) == 0:
-        raise HTTPException(status_code=HTTPStatus.NOT_FOUND, detail="AI response not found")
-    if len(matching_messages) != 1:
+    if len(matching_messages) > 1:
         raise RuntimeError("AI chat session contains duplicate message ids")
-
-    message = matching_messages[0]
-    if message["status"] != "complete":
-        raise HTTPException(status_code=HTTPStatus.CONFLICT, detail="AI response is not complete")
-    content = message["content"]
+    if len(matching_messages) == 1:
+        message = matching_messages[0]
+        if message["status"] != "complete":
+            raise HTTPException(status_code=HTTPStatus.CONFLICT, detail="AI response is not complete")
+        content = message["content"]
+    else:
+        # A summary of earlier turns copies like an answer.
+        summary_content = ai_chat_store.summary_content(session_key=session_key, summary_id=message_id)
+        if summary_content is None:
+            raise HTTPException(status_code=HTTPStatus.NOT_FOUND, detail="AI response not found")
+        content = summary_content
     if content == "":
         raise HTTPException(status_code=HTTPStatus.CONFLICT, detail="AI response is empty")
 
@@ -979,16 +1105,17 @@ def stream_ai_chat(
     if disclosure_changed:
         web_evidence_store.clear_session(session_key=session_key)
         summary_batch_store.clear_session(session_key=session_key)
+    if ai_chat_store.is_summarizing(session_key=session_key):
+        raise HTTPException(status_code=HTTPStatus.CONFLICT, detail="The chat is being summarized: send when it is done")
     turn_id = ai_chat_store.start_turn(
         session_key=session_key,
         user_content=payload.message,
         provider=payload.provider,
         model=payload.model,
     )
-    provider_messages = ai_chat_store.provider_messages(session_key=session_key)
-    earlier_actions = ai_chat_store.earlier_actions(session_key=session_key)
+    # Before any summary: the conversation as it stands, for the first progress panels.
     initial_messages = agent_context_builder.build_initial_messages(
-        canonical_messages=provider_messages,
+        canonical_messages=ai_chat_store.provider_messages(session_key=session_key),
         prompts=prompts,
     )
     initial_approx_input_tokens = estimate_input_tokens(initial_messages)
@@ -997,10 +1124,9 @@ def stream_ai_chat(
                                  web_evidence_store=web_evidence_store, session_key=session_key,
                                  turn_id=turn_id, initial_input_tokens=initial_approx_input_tokens)
     events = _stream_runtime_events(payload=payload, connection=connection,
-        session_key=session_key, provider_messages=provider_messages, prompts=prompts, skills=skills,
+        session_key=session_key, prompts=prompts, skills=skills,
         retrieval_settings=retrieval_settings, frozen_scope=frozen_scope, tagging_run=tagging_run,
-        web_settings=web_settings, earlier_actions=earlier_actions,
-        initial_input_tokens=initial_approx_input_tokens)
+        web_settings=web_settings, initial_input_tokens=initial_approx_input_tokens)
 
     return StreamingResponse(
         turn_stream.events(events),
@@ -1015,10 +1141,9 @@ def stream_ai_chat(
 
 async def _stream_runtime_events(
     *, payload: AiChatRequest, connection: AiConnection, session_key: str,
-    provider_messages: list[dict[str, str]], prompts: AgentPromptSet, skills: AgentSkillSet,
+    prompts: AgentPromptSet, skills: AgentSkillSet,
     retrieval_settings: AgentRetrievalSettings, frozen_scope: ScopedSearchSnapshot,
     tagging_run: TaggingRun, initial_input_tokens: int, web_settings: AgentWebSettings,
-    earlier_actions: list[dict[str, object]],
 ) -> AsyncIterator[dict[str, object]]:
     action, start_label = 'provider_runtime', f'Connecting to {connection.label} API'
     ready_label = connection.ready_label
@@ -1028,6 +1153,14 @@ async def _stream_runtime_events(
                approx_input_tokens=initial_input_tokens, output_tokens_received=0, duration_ms=0.0)
     yield dict(type='action_status', action=action, status='completed', label=ready_label,
                approx_input_tokens=initial_input_tokens, output_tokens_received=0, duration_ms=0.0)
+    async for event in summarize_before_turn(  # shockharness: ignore[EXC003] reason="the summary step's status events are forwarded as they come"
+        store=ai_chat_store, session_key=session_key, inference=connection.inference, base_url=base_url,
+        model=payload.model, thinking_level=payload.thinking_level, current_message=payload.message,
+    ):
+        yield event
+    # After any summary: the summary and the turns after it, never the turns it replaced.
+    provider_messages = ai_chat_store.provider_messages(session_key=session_key)
+    earlier_actions = ai_chat_store.earlier_actions(session_key=session_key)
     events = runtime.stream_agent(session_key=session_key, base_url=base_url,
             selected_model=payload.model, thinking_level=payload.thinking_level,
             canonical_messages=provider_messages, prompts=prompts, skills=skills,

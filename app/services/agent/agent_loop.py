@@ -43,6 +43,7 @@ from app.services.agent.scope import describe_text_extraction
 from app.services.agent.token_estimation import estimate_input_tokens
 from app.services.agent.token_estimation import estimate_text_tokens
 from app.services.agent.tool_calling import estimate_tool_conversation_tokens
+from app.services.agent.request_tokens import request_breakdown
 from app.services.agent.web_actions import NoteTextGuard
 from app.services.agent.web_capabilities import build_web_url_capabilities
 from app.services.agent.web_capabilities import note_evidence_url_capabilities
@@ -90,6 +91,8 @@ class AgentLoopState:
         # Note text shown to the model, and full-mode addresses the user approved.
         self.note_text_parts: list[str] = [selected_note_text]
         self.approved_urls: set[str] = set()
+        # The latest model request's make-up (request_tokens.py), for the history meter.
+        self.last_request: dict[str, int] = {}
 
     def add_tool_result(self, result: ToolResult) -> None:
         for note_id in result.note_ids:
@@ -139,8 +142,10 @@ class AgentLoopState:
                                             result_content=result_content, is_error=is_error))
 
     def done_event(self) -> dict[str, object]:
+        assert self.last_request, "an answer comes after at least one model request"
         return {"type": "done", "reference_note_ids": list(self.reference_note_ids),
-                "reference_web_ids": self.reference_web_ids(), "actions": list(self.actions)}
+                "reference_web_ids": self.reference_web_ids(), "actions": list(self.actions),
+                "request_tokens": dict(self.last_request)}
 
 
 class AgentLoopMixin:
@@ -212,6 +217,11 @@ class AgentLoopMixin:
                                                         state=state, turn=turn)) as turn_events:
                 async for event in turn_events:
                     yield event
+            # The history is every conversation message but the current question.
+            state.last_request = request_breakdown(
+                messages=messages, history_message_count=len(canonical_messages) - 1,
+                prompt_tokens=turn["done"]["usage"]["prompt_tokens"],
+            )
             assistant_message: dict[str, object] = {"role": "assistant", "content": turn["content"]}
             if turn["calls"]:
                 assistant_message["tool_calls"] = turn["calls"]

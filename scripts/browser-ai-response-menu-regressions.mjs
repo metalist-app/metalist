@@ -10,7 +10,7 @@ export async function checkAiResponseMenu(page) {
             content: 'A response long enough to fill the available bubble width and wrap to another line.',
             rendered_content: '<p>A response long enough to fill the available bubble width and wrap to another line.</p><p><a href="https://example.com">Example link</a></p>',
             thinking: '', rendered_thinking: '', error: '', provider: 'openai',
-            model: 'gpt-5.6-luna', activities: [],
+            model: 'gpt-5.6-luna', visibility: 'sent', activities: [],
         });
         AiChatPanel._render({shouldScrollToBottom: true});
     });

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { runInNewContext } from 'node:vm';
+import { validateVisibility } from '../../app/static/js/modules/ai-chat/ai-chat-summaries.js';
 
 
 const TEMPLATE_URL = new URL('../../app/templates/index.html', import.meta.url);
@@ -72,6 +73,7 @@ test('chat accepts agent activities both live and in restored messages', () => {
         source.indexOf('class AiChatPanelController'));
     const { validateActivity, validateMessage } = runInNewContext(
         `${messageValidator}\n${activityValidator}\n({ validateActivity, validateMessage })`,
+        { validateVisibility },
     );
     const activity = {
         sequence: 1, action: 'search_view_notes', status: 'started', label: 'Searching your view',
@@ -88,10 +90,11 @@ test('chat accepts agent activities both live and in restored messages', () => {
     const message = {
         id: 'assistant-1', role: 'assistant', content: '', rendered_content: '',
         thinking: '', rendered_thinking: '', status: 'complete', error: '',
-        provider: 'openai', model: 'test-model',
+        provider: 'openai', model: 'test-model', visibility: 'sent',
         activities: [activity, { ...activity, sequence: 2, status: 'completed' }],
     };
     assert.equal(validateMessage(message), message);
+    assert.throws(() => validateMessage({ ...message, visibility: 'hidden' }), /visibility is invalid/);
     assert.throws(() => validateActivity({ ...activity, action: 'unknown_action' }),
         /Unknown AI chat activity action/);
 });
@@ -109,6 +112,7 @@ test('chat accepts every activity the tool-using agent emits', () => {
         'view_overview', 'search_view_notes', 'read_view_notes', 'open_web_pages', 'open_menu',
         'confirmation', 'tool_call_rejected', 'skill', 'model_request', 'validation', 'retry',
         'evidence_root_prefix', 'investigation_evidence', 'investigation_sources', 'respond',
+        'conversation_summary',
     ]) {
         const activity = {
             sequence: 1,

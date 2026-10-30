@@ -75,8 +75,8 @@ in shown notes), `remote_image_proxy` (remote images in shown notes).
    permitted notes, not their content. If an AI answer quoted text from a permitted
    note and that text is then moved out (into a private note, or simply deleted),
    no id changes, the history is not reset, and the quote is resent on later turns
-   of that chat (history lives in server memory for the sign-in session, up to the
-   last 100 messages). Making the note private does reset the history. A heuristic
+   of that chat (history lives in server memory for the sign-in session; once
+   summarized, only as much of it as the summary kept). Making the note private does reset the history. A heuristic
    (drop earlier answers that share text with private notes) was considered and
    rejected: it misses deletions and rewordings, so it would add complexity and
    false confidence without a guarantee. The user presses Clear Chat when the AI

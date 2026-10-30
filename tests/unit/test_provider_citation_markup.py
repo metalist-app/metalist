@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import json
 
+from app.services.ai_chat import NO_REQUEST
 from app.services.ai_chat import AiChatSessionStore
 from app.services.ai_chat_stream import ChatTurnStream
 from app.services.agent.web_evidence import WebEvidenceStore
@@ -57,7 +58,7 @@ def _streamed(deltas: list[str]) -> list[dict[str, object]]:
     async def source():
         for text in deltas:
             yield {"type": "content_delta", "text": text, "reference_note_ids": [], "reference_web_ids": []}
-        yield {"type": "done", "reference_note_ids": [], "reference_web_ids": [], "actions": []}
+        yield {"type": "done", "reference_note_ids": [], "reference_web_ids": [], "actions": [], "request_tokens": NO_REQUEST}
 
     async def consume() -> list[dict[str, object]]:
         return [json.loads(line) async for line in stream.events(source())]

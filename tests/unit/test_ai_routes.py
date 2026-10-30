@@ -13,11 +13,13 @@ import app.services.agent.openai_inference as openai_inference_module
 import app.services.ai_setup as ai_setup_module
 from app.security.note_html import sanitize_note_html
 from app.services.ai_chat import AiChatSessionStore
+from app.services.ai_chat import NO_REQUEST
 from app.services.agent.prompt_settings import DEFAULT_AGENT_PROMPTS
 from app.services.agent.openai_cost_tracking import OpenAICostTracker
 from app.services.agent.openai_cost_tracking import OpenAITokenUsage
 from app.services.agent.skill_settings import DEFAULT_AGENT_SKILLS
 from app.services.agent.trace import AgentTraceStore
+from app.services.agent.inference import InferenceContextWindow
 from app.services.agent.inference import InferenceProviderError
 from app.services.agent.web_evidence import WebEvidenceStore
 from app.services.ai_credentials import AiCredentialStatus
@@ -344,7 +346,7 @@ def test_openai_chat_requires_a_configured_api_key_before_starting_turn(
         )
 
     assert error.value.status_code == 409
-    assert store.snapshot(session_key="session-key") == {"messages": []}
+    assert store.snapshot(session_key="session-key") == {"messages": [], "summaries": []}
 
 
 def test_ai_session_renders_assistant_markdown_latex_and_mermaid(monkeypatch) -> None:
@@ -378,7 +380,7 @@ def test_ai_session_renders_assistant_markdown_latex_and_mermaid(monkeypatch) ->
             "# Result\n\n"
             "Inline math: $x^2$.\n\n"
             "```mermaid\nflowchart LR\nA-->B\n```"
-        ), actions=[])
+        ), actions=[], request_tokens=NO_REQUEST)
     monkeypatch.setattr(ai_routes, "ai_chat_store", store)
     monkeypatch.setattr(
         ai_routes.token_service,
@@ -430,7 +432,7 @@ def test_ai_session_renders_note_uuid_as_navigable_content_preview(monkeypatch) 
     store.complete_turn(
         session_key="session-key",
         turn_id=turn_id,
-        final_content=f"Source: [[{note_id}]]", actions=[])
+        final_content=f"Source: [[{note_id}]]", actions=[], request_tokens=NO_REQUEST)
     monkeypatch.setattr(ai_routes, "ai_chat_store", store)
     monkeypatch.setattr(ai_routes, "note_store", FakeNotes())
     monkeypatch.setattr(
@@ -468,7 +470,7 @@ def test_ai_session_omits_stale_web_citation_after_evidence_clear(monkeypatch) -
     store.complete_turn(
         session_key="session-key",
         turn_id=turn_id,
-        final_content=content, actions=[])
+        final_content=content, actions=[], request_tokens=NO_REQUEST)
     monkeypatch.setattr(ai_routes, "ai_chat_store", store)
     monkeypatch.setattr(ai_routes, "web_evidence_store", WebEvidenceStore())
     monkeypatch.setattr(
@@ -503,8 +505,7 @@ def test_ai_session_rendered_markdown_rejects_executable_links(monkeypatch) -> N
         session_key="session-key",
         turn_id=turn_id,
         final_content="[unsafe](javascript:alert(1)) <script>alert(2)</script>",
-        actions=[],
-    )
+        actions=[], request_tokens=NO_REQUEST)
     monkeypatch.setattr(ai_routes, "ai_chat_store", store)
     monkeypatch.setattr(
         ai_routes.token_service,
@@ -539,7 +540,7 @@ def test_copy_ai_response_writes_completed_chat_html_to_llm_note_clipboard(monke
     store.complete_turn(
         session_key="session-key",
         turn_id=turn_id,
-        final_content=raw_markdown, actions=[])
+        final_content=raw_markdown, actions=[], request_tokens=NO_REQUEST)
     copied_payloads = []
     monkeypatch.setattr(ai_routes, "ai_chat_store", store)
     monkeypatch.setattr(ai_routes.token_service, "get_session_key", lambda token: "session-key")
@@ -657,7 +658,7 @@ def test_clear_ai_session_removes_only_current_session(monkeypatch) -> None:
 
     assert response.message == "Chat cleared"
     assert http_response.headers["Cache-Control"] == "no-store"
-    assert store.snapshot(session_key="session-a") == {"messages": []}
+    assert store.snapshot(session_key="session-a") == {"messages": [], "summaries": []}
     assert len(store.snapshot(session_key="session-b")["messages"]) == 2
     assert traces.snapshot(session_key="session-a") == {
         "enabled": True,
@@ -753,7 +754,7 @@ def test_stream_chat_updates_server_history_and_emits_typed_events(monkeypatch) 
                 "reference_note_ids": [],
                 "reference_web_ids": [],
             }
-            yield {"type": "done", "reference_note_ids": [], "reference_web_ids": [], "actions": []}
+            yield {"type": "done", "reference_note_ids": [], "reference_web_ids": [], "actions": [], "request_tokens": NO_REQUEST}
 
     monkeypatch.setattr(ai_routes, "ai_chat_store", store)
     monkeypatch.setattr(ai_routes, "_agent_runtime", lambda **kwargs: FakeRuntime())
@@ -860,9 +861,16 @@ def test_stream_chat_uses_openai_provider_with_cloud_boundary(
     store = AiChatSessionStore()
     store.synchronize_disclosure_boundary(session_key="session-key", disclosure_key="previous-disclosure-boundary")
     previous_turn = store.start_turn(session_key="session-key", user_content="Read private notes", provider="openai", model="old-model")
-    store.complete_turn(session_key="session-key", turn_id=previous_turn, final_content="PRIVATE_HISTORY_CANARY", actions=[])
+    store.complete_turn(session_key="session-key", turn_id=previous_turn, final_content="PRIVATE_HISTORY_CANARY", actions=[], request_tokens=NO_REQUEST)
     api_key = "sk-test-0123456789abcdefghijklmnop"
-    inference_sentinel = object()
+
+    class ContextOnlyInference:
+        """Answers the summary step's context check; the chat fits, so nothing is summarized."""
+        async def inspect_context_window(self, *, base_url, model):
+            return InferenceContextWindow(model=model, maximum_tokens=1_050_000, loaded_tokens=1_050_000,
+                                          required_tokens=32_768)
+
+    inference_sentinel = ContextOnlyInference()
 
     class ConfiguredCredentialStore:
         def status(self, *, token, session_key):
@@ -894,7 +902,7 @@ def test_stream_chat_uses_openai_provider_with_cloud_boundary(
                 "reference_note_ids": [],
                 "reference_web_ids": [],
             }
-            yield {"type": "done", "reference_note_ids": [], "reference_web_ids": [], "actions": []}
+            yield {"type": "done", "reference_note_ids": [], "reference_web_ids": [], "actions": [], "request_tokens": NO_REQUEST}
 
     monkeypatch.setattr(ai_routes, "ai_chat_store", store)
     monkeypatch.setattr(ai_setup_module, "ai_credential_store", lambda provider: ConfiguredCredentialStore())
@@ -1260,7 +1268,7 @@ def test_stream_chat_blocks_references_from_an_earlier_turn(monkeypatch) -> None
                 "reference_note_ids": [],
                 "reference_web_ids": [],
             }
-            yield {"type": "done", "reference_note_ids": [], "reference_web_ids": [], "actions": []}
+            yield {"type": "done", "reference_note_ids": [], "reference_web_ids": [], "actions": [], "request_tokens": NO_REQUEST}
 
     store = AiChatSessionStore()
     monkeypatch.setattr(ai_routes.cloud_privacy_evaluator, 'history_disclosure_key', lambda **kwargs: 'fixture-boundary')
@@ -1281,7 +1289,7 @@ def test_stream_chat_blocks_references_from_an_earlier_turn(monkeypatch) -> None
     store.complete_turn(
         session_key="session-key",
         turn_id=prior_turn_id,
-        final_content=prior_content, actions=PRIOR_ACTIONS)
+        final_content=prior_content, actions=PRIOR_ACTIONS, request_tokens=NO_REQUEST)
     monkeypatch.setattr(ai_routes, "ai_chat_store", store)
     monkeypatch.setattr(ai_routes, "_agent_runtime", lambda **kwargs: FakeRuntime())
     monkeypatch.setattr(ai_routes, "note_store", FakeNotes())

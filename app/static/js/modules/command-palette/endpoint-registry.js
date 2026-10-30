@@ -137,6 +137,7 @@ export function buildCommandPaletteEndpoints(deps) {
     const openSearchSuggestionStatistics = requireAction(actions, 'openSearchSuggestionStatistics');
     const openOntologyEditor = requireAction(actions, 'openOntologyEditor');
     const openFindBar = requireAction(actions, 'openFindBar');
+    const summarizeAiChat = requireAction(actions, 'summarizeAiChat');
     const openKeyboardShortcutsHelp = requireAction(actions, 'openKeyboardShortcutsHelp');
     const attachFileToCurrentNote = requireAction(actions, 'attachFileToCurrentNote');
     const addExcalidrawDiagram = requireAction(actions, 'addExcalidrawDiagram');
@@ -246,6 +247,13 @@ export function buildCommandPaletteEndpoints(deps) {
             persistenceKey: 'pref.show_ai_chat',
             defaultValue: defaults.showAiChat,
             apply: (next) => applyPreference('pref.show_ai_chat', next),
+        },
+        {
+            id: 'action.summarize_ai_chat',
+            kind: 'action',
+            label: 'AI Chat: Summarize Now',
+            closeOnExecute: true,
+            execute: async () => summarizeAiChat(),
         },
         {
             id: 'pref.animated_transitions',

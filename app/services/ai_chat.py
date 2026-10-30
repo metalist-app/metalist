@@ -11,10 +11,22 @@ from app.services.ai_chat_rendering import strip_note_citations_for_history
 from app.utils.time_units import MS_PER_SECOND
 
 
-_MAX_MESSAGES_PER_SESSION = 100
+# What the history meter shows before any answer: no request yet.
+NO_REQUEST = {"total": 0, "instructions": 0, "history": 0, "this_turn": 0}
 # A turn is the user's message followed by the assistant's answer.
 _MESSAGES_PER_TURN = 2
 _MAX_MESSAGE_CHARACTERS = 32_000
+# What the model may still see of each message (snapshot()): directly, only through the
+# summary that replaced it, or nothing since a privacy change (synchronize_disclosure_boundary).
+VISIBILITY_SENT = "sent"
+VISIBILITY_SUMMARIZED = "summarized"
+VISIBILITY_HELD_BACK = "held_back"
+# How the summary of earlier turns opens the conversation the model is sent.
+_SUMMARY_MESSAGE_HEADER = "EARLIER_CONVERSATION_SUMMARY"
+_SUMMARY_MESSAGE_INSTRUCTION = (
+    "The earlier part of this chat, summarized because the whole chat no longer fits. It is "
+    "everything you know about that part: if it does not say something, you cannot tell."
+)
 
 
 class AiChatActivityTimer:
@@ -92,24 +104,119 @@ def _failed_turn_history_content(error: str) -> str:
     return strip_note_citations_for_history(f"{_FAILED_TURN_HISTORY_PREFIX}\n{error}")
 
 
+def summary_message(content: str) -> dict[str, str]:
+    """The summary of earlier turns as the model is sent it, before the turns after it."""
+    if not isinstance(content, str) or content.strip() == "":
+        raise ValueError("A summary must have text")
+    return {"role": "user", "content": f"{_SUMMARY_MESSAGE_HEADER}\n{_SUMMARY_MESSAGE_INSTRUCTION}\n\n{content}"}
+
+
+def _turn_as_sent(messages: list[dict[str, str]], index: int) -> list[dict[str, str]]:
+    """The turn starting at messages[index] as the model is sent it: the question, then
+    the answer (note citations removed), the failure it explained, or nothing while it is
+    being answered."""
+    assert len(messages) % _MESSAGES_PER_TURN == 0, "AI chat history must contain complete turn pairs"
+    user_message = messages[index]
+    assistant_message = messages[index + 1]
+    assert user_message["role"] == "user"
+    assert user_message["status"] == "complete"
+    assert assistant_message["role"] == "assistant"
+    sent = [{"role": "user", "content": user_message["content"]}]
+    if assistant_message["status"] == "error":
+        # The agent keeps failed requests in view, so the user can
+        # say "try that again" or ask why it failed.
+        sent.append({"role": "assistant", "content": _failed_turn_history_content(assistant_message["error"])})
+        return sent
+    if assistant_message["status"] == "streaming":
+        assert index == len(messages) - _MESSAGES_PER_TURN, "only the current turn may be streaming"
+        return sent
+    assert assistant_message["status"] == "complete"
+    assistant_content = assistant_message["content"]
+    assert isinstance(assistant_content, str)
+    sent.append({"role": "assistant", "content": strip_note_citations_for_history(assistant_content)})
+    return sent
+
+
+def _turn_actions(session: "_ChatSession", assistant_message: dict[str, str]) -> list[dict[str, object]]:
+    """The agent's record of what an answer did; a failed request has none."""
+    if assistant_message["status"] != "complete":
+        return []
+    if assistant_message["id"] not in session.action_logs:
+        raise RuntimeError("Completed AI answer has no action log")
+    return [dict(action) for action in session.action_logs[assistant_message["id"]]]
+
+
+@dataclass(frozen=True)
+class ChatSummary:
+    """A summary that replaced the earlier turns of a chat (agent/chat_compaction.py)."""
+    id: str
+    content: str
+    # It replaced messages[:position] (those the model still saw directly).
+    position: int
+
+
+@dataclass(frozen=True)
+class TurnToSummarize:
+    """One earlier turn as the model sees it, with the agent's record of what it did."""
+    messages: list[dict[str, str]]
+    actions: list[dict[str, object]]
+
+
+@dataclass(frozen=True)
+class SummarySource:
+    """What a new summary replaces: the summary the model sees now ('' for none) and the
+    turns it still sees directly, oldest first, without the turn being answered."""
+    summary: str
+    turns: list[TurnToSummarize]
+    # Where those turns start (history_start), and the chat they belong to, to check
+    # nothing moved and the chat was not cleared meanwhile.
+    history_start: int
+    session_id: str
+
+
 @dataclass
 class _ChatSession:
     """One authenticated session's conversation."""
+    # A new one after Clear Chat, so work begun before it cannot land in the new chat.
+    id: str
     messages: list[dict[str, str]]
     # Progress shown under each message, by message id.
     activities: dict[str, list[dict[str, object]]]
     # The agent's own record of what each answer did (action_log.py), by
     # assistant message id. Only the model sees it, on later turns.
     action_logs: dict[str, list[dict[str, object]]]
-    # The first message the model still sees (after a provider switch, a
-    # disclosure boundary or trimming).
+    # The first message the model still sees directly (after a disclosure boundary or
+    # a summary).
     history_start: int
     # None until the first disclosure boundary is set.
     disclosure_key: str | None
+    # Every summary made, oldest first; the screen keeps them all.
+    summaries: list[ChatSummary]
+    # The summary the model sees, before messages[history_start:]; None when there is
+    # none, or since a privacy change dropped it.
+    active_summary: ChatSummary | None
+    # The model sees nothing of messages[:held_back_until] since the last privacy change.
+    held_back_until: int
+    # A summary is being made on request (begin_summary); no turn starts meanwhile.
+    is_summarizing: bool
+    # The make-up of the latest answer's last request to the model (request_tokens.py):
+    # all zeros until an answer completes.
+    last_request: dict[str, int]
 
 
 def _new_chat_session() -> _ChatSession:
-    return _ChatSession(messages=[], activities={}, action_logs={}, history_start=0, disclosure_key=None)
+    return _ChatSession(id=str(uuid4()), messages=[], activities={}, action_logs={}, history_start=0, disclosure_key=None,
+                        summaries=[], active_summary=None, held_back_until=0, is_summarizing=False,
+                        last_request=dict(NO_REQUEST))
+
+
+def _visibility(index: int, *, held_back_until: int, history_start: int) -> str:
+    """What the model sees of the message (or summary) at a position in the chat."""
+    if index < held_back_until:
+        return VISIBILITY_HELD_BACK
+    if index < history_start:
+        return VISIBILITY_SUMMARIZED
+    return VISIBILITY_SENT
 
 
 class AiChatSessionStore:
@@ -137,22 +244,40 @@ class AiChatSessionStore:
         return self._sessions[session_key]
 
     def snapshot(self, *, session_key: str) -> dict[str, list[dict[str, object]]]:
+        """The chat as shown: every message and every summary, each with what the model
+        still sees of it (a summary sits after the last message it replaced)."""
         self._validate_session_key(session_key)
         with self._lock:
             if session_key not in self._sessions:
-                return {"messages": []}
+                return {"messages": [], "summaries": []}
             session = self._sessions[session_key]
+            boundaries = {"held_back_until": session.held_back_until, "history_start": session.history_start}
+            summaries: list[dict[str, object]] = []
+            for summary in session.summaries:
+                visibility = VISIBILITY_SUMMARIZED
+                if summary is session.active_summary:
+                    visibility = VISIBILITY_SENT
+                elif summary.position <= session.held_back_until:
+                    visibility = VISIBILITY_HELD_BACK
+                summaries.append({
+                    "id": summary.id,
+                    "content": summary.content,
+                    "after_message_id": session.messages[summary.position - 1]["id"],
+                    "visibility": visibility,
+                })
             return {
                 "messages": [
                     {
                         **message,
+                        "visibility": _visibility(index, **boundaries),
                         "activities": [
                             dict(activity)
                             for activity in session.activities[message["id"]]
                         ],
                     }
-                    for message in session.messages
-                ]
+                    for index, message in enumerate(session.messages)
+                ],
+                "summaries": summaries,
             }
 
     def start_turn(
@@ -173,20 +298,12 @@ class AiChatSessionStore:
             session_activities = session.activities
             if any(message["status"] == "streaming" for message in messages):
                 raise RuntimeError("AI chat session already streaming a turn")
+            if session.is_summarizing:
+                raise RuntimeError("AI chat session is summarizing its earlier turns")
             # Switching provider keeps the conversation: one privacy policy covers every
             # provider (synchronize_disclosure_boundary resets it when what the AI may see
-            # changes; the maintainer, 2026-10-24).
-            if len(messages) + _MESSAGES_PER_TURN > _MAX_MESSAGES_PER_SESSION:
-                removed_message_ids = [message["id"] for message in messages[:_MESSAGES_PER_TURN]]
-                del messages[:_MESSAGES_PER_TURN]
-                session.history_start = max(0, session.history_start - _MESSAGES_PER_TURN)
-                session_action_logs = session.action_logs
-                for removed_message_id in removed_message_ids:
-                    if removed_message_id not in session_activities:
-                        raise RuntimeError("AI activity list missing for removed message")
-                    del session_activities[removed_message_id]
-                    if removed_message_id in session_action_logs:
-                        del session_action_logs[removed_message_id]
+            # changes; the maintainer, 2026-10-24). Nothing is trimmed: summaries keep the
+            # conversation within the model's context (agent/chat_compaction.py).
             user_message_id = str(uuid4())
             assistant_message_id = str(uuid4())
             messages.extend(
@@ -301,12 +418,15 @@ class AiChatSessionStore:
         turn_id: str,
         final_content: str,
         actions: list[dict[str, object]],
+        request_tokens: dict[str, int],
     ) -> None:
         self._validate_session_key(session_key)
         self._validate_message_text(turn_id, label="turn_id")
         self._validate_message_text(final_content, label="final_content")
         if not isinstance(actions, list) or not all(isinstance(action, dict) for action in actions):
             raise TypeError("actions must be a list of action log entries")
+        if not isinstance(request_tokens, dict) or set(request_tokens) != set(NO_REQUEST):
+            raise ValueError(f"request_tokens must have {sorted(NO_REQUEST)}")
         with self._lock:
             message = self._require_streaming_turn(
                 session_key=session_key,
@@ -315,6 +435,15 @@ class AiChatSessionStore:
             message["content"] = final_content
             message["status"] = "complete"
             self._sessions[session_key].action_logs[turn_id] = [dict(action) for action in actions]
+            self._sessions[session_key].last_request = dict(request_tokens)
+
+    def last_request(self, *, session_key: str) -> dict[str, int]:
+        """The make-up of the latest answer's last request; NO_REQUEST before any answer."""
+        self._validate_session_key(session_key)
+        with self._lock:
+            if session_key not in self._sessions:
+                return dict(NO_REQUEST)
+            return dict(self._sessions[session_key].last_request)
 
     def is_streaming(self, *, session_key: str, turn_id: str) -> bool:
         with self._lock:
@@ -343,7 +472,10 @@ class AiChatSessionStore:
         with self._lock:
             session = self._session_locked(session_key)
             if session.disclosure_key != disclosure_key:
+                # The summary drew on the turns it replaced, so it goes with them.
                 session.history_start = len(session.messages)
+                session.held_back_until = len(session.messages)
+                session.active_summary = None
                 session.disclosure_key = disclosure_key
                 return True
             return False
@@ -357,37 +489,97 @@ class AiChatSessionStore:
             messages = session.messages
             assert len(messages) % _MESSAGES_PER_TURN == 0, "AI chat history must contain complete turn pairs"
             provider_messages: list[dict[str, str]] = []
+            if session.active_summary is not None:
+                assert session.active_summary.position == session.history_start, "the summary ends where the turns start"
+                provider_messages.append(summary_message(session.active_summary.content))
             for index in range(session.history_start, len(messages), _MESSAGES_PER_TURN):
-                user_message = messages[index]
-                assistant_message = messages[index + 1]
-                assert user_message["role"] == "user"
-                assert user_message["status"] == "complete"
-                assert assistant_message["role"] == "assistant"
-                provider_messages.append(
-                    {"role": "user", "content": user_message["content"]}
-                )
-                if assistant_message["status"] == "error":
-                    # The agent keeps failed requests in view, so the user can
-                    # say "try that again" or ask why it failed.
-                    provider_messages.append(
-                        {"role": "assistant", "content": _failed_turn_history_content(assistant_message["error"])}
-                    )
-                    continue
-                if assistant_message["status"] == "streaming":
-                    assert index == len(messages) - _MESSAGES_PER_TURN, "only the current turn may be streaming"
-                    continue
-                assert assistant_message["status"] == "complete"
-                assistant_content = assistant_message["content"]
-                assert isinstance(assistant_content, str)
-                provider_messages.append(
-                    {
-                        "role": "assistant",
-                        "content": strip_note_citations_for_history(
-                            assistant_content,
-                        ),
-                    }
-                )
+                provider_messages.extend(_turn_as_sent(messages, index))
             return provider_messages
+
+    def summary_source(self, *, session_key: str) -> SummarySource:
+        """The summary and the turns the model sees directly, for making a new summary.
+        A turn being answered is left out: it is never summarized."""
+        self._validate_session_key(session_key)
+        with self._lock:
+            session = self._session_locked(session_key)
+            messages = session.messages
+            end = len(messages)
+            if end > 0 and messages[-1]["status"] == "streaming":
+                end -= _MESSAGES_PER_TURN
+            summary = ""
+            if session.active_summary is not None:
+                summary = session.active_summary.content
+            turns = [
+                TurnToSummarize(messages=_turn_as_sent(messages, index),
+                                actions=_turn_actions(session, messages[index + 1]))
+                for index in range(session.history_start, end, _MESSAGES_PER_TURN)
+            ]
+            return SummarySource(summary=summary, turns=turns, history_start=session.history_start,
+                                 session_id=session.id)
+
+    def apply_summary(
+        self, *, session_key: str, content: str, turn_count: int, history_start: int, session_id: str,
+    ) -> bool:
+        """Replace the summary and the first turn_count turns the model sees with a new
+        summary. False, changing nothing, when the chat was cleared or its history moved
+        since summary_source() (a privacy change held it all back): that summary must not
+        be sent."""
+        self._validate_session_key(session_key)
+        self._validate_message_text(content, label="summary")
+        if not isinstance(turn_count, int) or isinstance(turn_count, bool) or turn_count < 1:
+            raise ValueError("A summary replaces at least one turn")
+        with self._lock:
+            if session_key not in self._sessions:
+                return False
+            session = self._sessions[session_key]
+            if session.id != session_id or session.history_start != history_start:
+                return False
+            position = history_start + turn_count * _MESSAGES_PER_TURN
+            if position > len(session.messages) or session.messages[position - 1]["status"] == "streaming":
+                raise RuntimeError("A summary cannot replace the turn being answered")
+            summary = ChatSummary(id=str(uuid4()), content=content, position=position)
+            session.summaries.append(summary)
+            session.active_summary = summary
+            session.history_start = position
+            return True
+
+    def begin_summary(self, *, session_key: str) -> bool:
+        """Start making a summary on request; False when a turn is being answered or
+        a summary is already being made."""
+        self._validate_session_key(session_key)
+        with self._lock:
+            session = self._session_locked(session_key)
+            if session.is_summarizing or any(message["status"] == "streaming" for message in session.messages):
+                return False
+            session.is_summarizing = True
+            return True
+
+    def is_summarizing(self, *, session_key: str) -> bool:
+        self._validate_session_key(session_key)
+        with self._lock:
+            return session_key in self._sessions and self._sessions[session_key].is_summarizing
+
+    def end_summary(self, *, session_key: str) -> None:
+        self._validate_session_key(session_key)
+        with self._lock:
+            # Clear Chat may have removed the session meanwhile.
+            if session_key not in self._sessions:
+                return
+            session = self._sessions[session_key]
+            if not session.is_summarizing:
+                raise RuntimeError("No summary is being made")
+            session.is_summarizing = False
+
+    def summary_content(self, *, session_key: str, summary_id: str) -> str | None:
+        """A summary's text for Copy Response; None when the chat has no such summary."""
+        self._validate_session_key(session_key)
+        with self._lock:
+            if session_key not in self._sessions:
+                return None
+            for summary in self._sessions[session_key].summaries:
+                if summary.id == summary_id:
+                    return summary.content
+            return None
 
     def earlier_actions(self, *, session_key: str) -> list[dict[str, object]]:
         """What the agent did for each completed answer the model still sees, in the

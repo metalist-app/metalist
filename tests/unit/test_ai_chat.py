@@ -5,6 +5,7 @@ import httpx
 import pytest
 
 from app.services.ai_chat import AiChatActivityTimer
+from app.services.ai_chat import NO_REQUEST
 from app.services.ai_chat import AiChatSessionStore
 
 
@@ -42,7 +43,7 @@ def test_chat_history_is_scoped_to_server_session_key() -> None:
     store.complete_turn(
         session_key="session-a",
         turn_id=first_turn,
-        final_content="4", actions=[])
+        final_content="4", actions=[], request_tokens=NO_REQUEST)
 
     session_a = store.snapshot(session_key="session-a")
     session_b = store.snapshot(session_key="session-b")
@@ -62,7 +63,7 @@ def test_chat_history_is_scoped_to_server_session_key() -> None:
         }
     ]
     assert session_a["messages"][0]["activities"] == []
-    assert session_b == {"messages": []}
+    assert session_b == {"messages": [], "summaries": []}
 
 
 def test_chat_store_builds_provider_history_without_thinking_trace() -> None:
@@ -98,7 +99,7 @@ def test_chat_store_builds_provider_history_without_thinking_trace() -> None:
     store.complete_turn(
         session_key="session-a",
         turn_id=turn_id,
-        final_content="Hi there", actions=[])
+        final_content="Hi there", actions=[], request_tokens=NO_REQUEST)
 
     history = store.provider_messages(session_key="session-a")
 
@@ -166,7 +167,7 @@ def test_chat_store_removes_prior_note_citations_from_provider_history() -> None
     store.complete_turn(
         session_key="session-a",
         turn_id=turn_id,
-        final_content=f"Sleep can affect testosterone. [[{note_id}]]", actions=[])
+        final_content=f"Sleep can affect testosterone. [[{note_id}]]", actions=[], request_tokens=NO_REQUEST)
     store.start_turn(
         session_key="session-a",
         user_content="Please describe Bayes' theorem briefly",
@@ -254,7 +255,7 @@ def test_the_agent_action_log_follows_the_provider_history() -> None:
         {"url": "https://www.google.com/search?q=ssm", "status": "ok", "title": "Google Search"}]}]
     first = store.start_turn(session_key="session-a", user_content="Find recent papers",
                              provider="openai", model="gpt-5.6-luna")
-    store.complete_turn(session_key="session-a", turn_id=first, final_content="Here are some.", actions=searched)
+    store.complete_turn(session_key="session-a", turn_id=first, final_content="Here are some.", actions=searched, request_tokens=NO_REQUEST)
     failed = store.start_turn(session_key="session-a", user_content="And more?",
                               provider="openai", model="gpt-5.6-luna")
     store.fail_turn(session_key="session-a", turn_id=failed, error="Provider failed")
@@ -272,7 +273,7 @@ def test_the_action_log_starts_over_with_the_history() -> None:
     turn = store.start_turn(session_key="session-a", user_content="Find recent papers",
                             provider="openai", model="gpt-5.6-luna")
     store.complete_turn(session_key="session-a", turn_id=turn, final_content="Done.",
-                        actions=[{"tool": "view_overview", "notes_in_view": 3, "trees_in_view": 3}])
+                        actions=[{"tool": "view_overview", "notes_in_view": 3, "trees_in_view": 3}], request_tokens=NO_REQUEST)
     # A privacy boundary change hides the earlier history from the model, and its actions with it.
     store.synchronize_disclosure_boundary(session_key="session-a", disclosure_key="first")
     store.synchronize_disclosure_boundary(session_key="session-a", disclosure_key="second")
