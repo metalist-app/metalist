@@ -61,6 +61,10 @@ class ContextOverlap:
         assert all(len(shared) == self.shared_count for shared in self.shared_casefold_sets)
 
 
+# A rule group of one tag is an implication, named as `implied by "maple"`.
+MIN_GROUP_TAGS = 2
+
+
 def quoted(text: str) -> str:
     return f'"{text}"'
 
@@ -160,6 +164,9 @@ class AppliesThrough:
         term_casefold = term.casefold()
         if term_casefold in self.inherited_casefold:
             return (f"{lead}inherited from a parent note",)
+        group = self._tag_group_implying(term_casefold)
+        if group:
+            return (f"{lead}implied by {join_names(group)} together",)
         if term_casefold not in self.implied_casefold:
             return ()
         for base in sorted(self.base_tags, key=lambda tag: (tag.casefold(), tag)):
@@ -168,6 +175,24 @@ class AppliesThrough:
                 return (f"{lead}implied by {quoted(base)}",)
         # Implied only by several of the note's tags together.
         return (f"{lead}implied by this note's tags",)
+
+    def _tag_group_implying(self, term_casefold: str) -> FrozenSet[str]:
+        """The tags of a rule group the note carries whole (`metalist version => metalist-
+        version`, one group of an OR rule; docs/design/ontology-rules-v1.md) that infers the
+        term or a tag implying it; empty when none does. Groups with text or a pattern are
+        decided from the note's text, so they are not named here."""
+        if self.ontology.is_empty:
+            return frozenset()
+        base_casefold = frozenset(tag.casefold() for tag in self.base_tags)
+        for rule in self.ontology.matcher_rules:
+            if rule.required_text_patterns or rule.required_regexes or len(rule.required_tags) < MIN_GROUP_TAGS:
+                continue
+            if not frozenset(tag.casefold() for tag in rule.required_tags) <= base_casefold:
+                continue
+            reached = self.ontology.infer_implication_only(base_tags=frozenset({rule.rhs}))
+            if term_casefold in {tag.casefold() for tag in reached}:
+                return rule.required_tags
+        return frozenset()
 
 
 @dataclass(frozen=True)

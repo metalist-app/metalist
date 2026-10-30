@@ -275,6 +275,40 @@ def parse_property_term(token: str) -> PropertyCondition:
     return PropertyCondition(tag=tag, name=name, operator=operator, value_text=value_text)
 
 
+# A property on any tag (`:version`, `:version=0.24.5`, `:version>0.24`): a search term
+# with no tag before its colon (docs/ui/search-syntax.md; agreed 2026-10-25). Search only:
+# rules always name their tag.
+ANY_TAG = ""
+_TAGLESS_EXAMPLE = ":version=0.24"
+
+
+def is_tagless_property_term(token: str) -> bool:
+    """Whether a search term is a property on any tag: it starts with the colon."""
+    if not isinstance(token, str):
+        raise TypeError(f"token must be a string, got {type(token)}")
+    return token.startswith(PROPERTY_SEPARATOR)
+
+
+def parse_tagless_property_term(token: str) -> PropertyCondition:
+    """`:version`, `:version=0.24.5` or `:version>0.24`, or InputRejected saying how to
+    write one. A missing property (`:version?`) needs its tag: on any tag it matches too
+    much (decided 2026-10-25)."""
+    if not is_tagless_property_term(token):
+        raise ValueError(f"{token} does not start with {PROPERTY_SEPARATOR}")
+    rest = token[len(PROPERTY_SEPARATOR):]
+    if rest.endswith(MISSING_OPERATOR):
+        raise InputRejected("A search for a missing property needs its tag (for example jogging:miles?)")
+    name, operator, value_text = _split_at_operator(rest)
+    if operator == "":
+        name, operator = rest, PRESENT_OPERATOR
+    if name == "":
+        raise InputRejected(f"Name a property after the colon (for example {_TAGLESS_EXAMPLE})")
+    problem = _name_and_value_problem(name, operator, value_text)
+    if problem != "":
+        raise InputRejected(problem)
+    return PropertyCondition(tag=ANY_TAG, name=name, operator=operator, value_text=value_text)
+
+
 def is_stats_term(token: str) -> bool:
     """Whether a search term compares a stats figure (`@sum:calories>2000`), or tries to
     (`@sum>2000`, refused by parse_stats_term with how to write it)."""
@@ -337,6 +371,10 @@ def _condition_problem(tag: str, name: str, operator: str, value_text: str) -> s
         return "OR is reserved and cannot be used as a tag"
     if tag == "" or any(mark in tag for mark in (PROPERTY_ASSIGNMENT, PROPERTY_SEPARATOR)) or tag.startswith(META_TAG_PREFIX):
         return f"Name the tag before the property (for example jogging:miles>2), not {tag!r}"
+    return _name_and_value_problem(name, operator, value_text)
+
+
+def _name_and_value_problem(name: str, operator: str, value_text: str) -> str:
     if _PROPERTY_NAME_RE.match(name) is None:
         return "A property name starts with a letter (for example jogging:miles>2)"
     if value_text in EXTREME_KEYWORDS and operator != "=":
@@ -441,6 +479,8 @@ def read_property_completion(typed: str, *, in_tag_bar: bool, offers_extremes: b
     date>5), or None when neither is."""
     if typed.startswith(META_TAG_PREFIX):
         return None
+    if not in_tag_bar and is_tagless_property_term(typed):
+        return _tagless_completion(typed, offers_extremes=offers_extremes)
     # In the tag bar a chosen name gets its =, ready for the value.
     name_suffix = ""
     if in_tag_bar:
@@ -473,9 +513,29 @@ def read_property_completion(typed: str, *, in_tag_bar: bool, offers_extremes: b
     if in_tag_bar:
         return None
     name, operator, value = _split_at_operator(typed)
-    if operator not in IMPLICIT_COMPARISON_OPERATORS:
+    if operator not in IMPLICIT_COMPARISON_OPERATORS or name == "":
         return None
     return _unit_completion(typed, tag=name, property_name=IMPLICIT_PROPERTY, value=value)
+
+
+# A search's `:` (any tag): property names used anywhere (`:ver`), then MAX and MIN or a
+# value's unit, as after a tag's colon.
+def _tagless_completion(typed: str, *, offers_extremes: bool) -> PropertyCompletion | None:
+    rest = typed[len(PROPERTY_SEPARATOR):]
+    name, operator, value = _split_at_operator(rest)
+    if operator == "":
+        if rest != "" and _PROPERTY_NAME_RE.match(rest) is None:
+            return None
+        return PropertyCompletion(
+            tag=ANY_TAG, property_name=None, partial=rest, before=PROPERTY_SEPARATOR, number="",
+            excluded_names=frozenset(), name_suffix="", offers_extremes=False,
+        )
+    if offers_extremes and operator == "=" and any(keyword.startswith(value) for keyword in EXTREME_KEYWORDS):
+        return PropertyCompletion(
+            tag=ANY_TAG, property_name=name, partial=value, before=typed[: len(typed) - len(value)], number="",
+            excluded_names=frozenset(), name_suffix="", offers_extremes=True,
+        )
+    return _unit_completion(typed, tag=ANY_TAG, property_name=name, value=value)
 
 
 def _split_at_operator(text: str) -> Tuple[str, str, str]:
@@ -488,7 +548,7 @@ def _split_at_operator(text: str) -> Tuple[str, str, str]:
 
 def _unit_completion(typed: str, *, tag: str, property_name: str, value: str) -> PropertyCompletion | None:
     match = _NUMBER_AND_PARTIAL_UNIT_RE.match(value)
-    if tag == "" or match is None or _PROPERTY_NAME_RE.match(property_name) is None:
+    if match is None or _PROPERTY_NAME_RE.match(property_name) is None:
         return None
     partial = match.group("unit")
     if partial is None:

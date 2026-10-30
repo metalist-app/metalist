@@ -5,7 +5,8 @@ from dataclasses import dataclass
 from typing import FrozenSet, List, Optional, Set, Tuple
 from app.services.input_errors import InputRejected
 from app.services.tag_properties import (
-    PropertyCondition, is_property_term, is_stats_term, parse_property_term, parse_stats_term,
+    PropertyCondition, is_property_term, is_stats_term, is_tagless_property_term, parse_property_term,
+    parse_stats_term, parse_tagless_property_term,
 )
 
 
@@ -189,9 +190,11 @@ def parse_search_query(normalized_text: str) -> ParsedSearchQuery:
             clause_term_count = 0
             continue
 
-        if is_stats_term(token) or is_property_term(token):
+        if is_stats_term(token) or is_property_term(token) or is_tagless_property_term(token):
             if is_stats_term(token):
                 condition = parse_stats_term(token)
+            elif is_tagless_property_term(token):
+                condition = parse_tagless_property_term(token)
             else:
                 condition = parse_property_term(token)
             if prefix == "-":

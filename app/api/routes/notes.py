@@ -76,7 +76,7 @@ from app.services.tag_properties import PROPERTY_SUGGESTIONS_IN_TAG_BAR
 from app.services.tag_properties import PropertySuggestion
 from app.services.tag_properties import has_property_syntax
 from app.services.subtree_stats import STATS_STYLES, suggest_summary_properties, typed_summary_property
-from app.services.tag_properties import is_property_term, is_stats_term
+from app.services.tag_properties import is_property_term, is_stats_term, is_tagless_property_term
 from app.services.root_date_filter import RootDateFilter
 from app.services.root_date_filter import make_root_date_filter
 from app.services.snapshot import build_view_state
@@ -651,7 +651,7 @@ def _typed_property_term(query: str) -> str | None:
     term = query.split()[-1].lstrip("+-")
     if '"' in term or "'" in term:
         return None
-    if not is_property_term(term) and not is_stats_term(term):
+    if not is_property_term(term) and not is_stats_term(term) and not is_tagless_property_term(term):
         return None
     return term
 

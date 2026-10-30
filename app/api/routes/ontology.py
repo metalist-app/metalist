@@ -22,7 +22,7 @@ from app.utils.not_found import NOT_FOUND
 from app.services.note_store import store as note_store
 from app.services.sync import generate_new_uuid
 from app.services.tag_properties import PROPERTY_SUGGESTIONS_IN_RULE, is_property_term
-from app.services.tag_ontology import PropertyAtom, RegexAtom, TagAtom, TextAtom, parse_rules_text, rule_text_tests_values
+from app.services.tag_ontology import PropertyAtom, RegexAtom, TagAtom, TextAtom, parse_rules_text, rule_text_has_plain_groups, rule_text_tests_values
 from app.services.ontology_rules_store import (
     build_direct_edge_rule_map,
     create_rule_line,
@@ -159,9 +159,9 @@ def _refresh_note_tags(candidate_note_ids: set[str], *, rule_texts: list[str]) -
     them, since the tags it gives pass to those (NoteStore.refresh_tags_for_value_rules)."""
     if any(rule_text_tests_values(text) for text in rule_texts):
         note_store.refresh_tags_for_value_rules(rule_texts=[text for text in rule_texts if rule_text_tests_values(text)])
-        if all(rule_text_tests_values(text) for text in rule_texts):
-            return
-    note_store.rebuild_search_index_tag_terms_for_notes(candidate_note_ids)
+    # A line's other OR groups test no value: their notes are refreshed too (found 2026-10-30).
+    if any(rule_text_has_plain_groups(text) for text in rule_texts):
+        note_store.rebuild_search_index_tag_terms_for_notes(candidate_note_ids)
 
 
 def _collect_candidate_note_ids_for_texts(texts: list[str], *, filename: str) -> set[str]:

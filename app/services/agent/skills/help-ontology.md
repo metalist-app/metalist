@@ -28,7 +28,11 @@ One rule per non-empty, non-comment line.
 
 Operators:
 - Implication: `LHS => RHS`
-- Equality: `LHS = RHS` (syntactic sugar for `LHS => RHS` and `RHS => LHS`)
+- Equality: `LHS = RHS` (syntactic sugar for `LHS => RHS` and `RHS => LHS`; single tags only)
+- `OR` on the left side, as in a search: adjacent atoms are ANDed and `OR` separates
+  groups, each its own rule. `a b OR c d e => f` is `(a b) => f` and `(c d e) => f`;
+  `metalist:version OR metalist version => metalist-version`. About this tag names a
+  group of tags that inferred a tag ("implied by "metalist" and "version" together").
 
 Comments:
 - Blank lines are ignored

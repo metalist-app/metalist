@@ -83,6 +83,10 @@ const PROPERTY_SEPARATOR = ':';
 const PROPERTY_TERM_MARKS = new Set([PROPERTY_SEPARATOR, '<', '>', '?']);
 const NAMED_PROPERTY_TERM_RE = /^[^:=<>?@][^:=<>?]*:[A-Za-z][^:=<>?]*(?:\?|(?:>=|<=|>|<|=)[^<>?=]+)?$/;
 const IMPLICIT_PROPERTY_TERM_RE = /^[^:=<>?@][^:=<>?]*(?:>=|<=|>|<)[^<>?=]+$/;
+// A property on any tag (:version, :version=0.24.5, :version>0.24; app/services/
+// tag_properties.py parse_tagless_property_term). Never with ?: on any tag it matches too much.
+const TAGLESS_PROPERTY_TERM_RE = /^:[A-Za-z][^:=<>?]*(?:(?:>=|<=|>|<|=)[^<>?=]+)?$/;
+const TAGLESS_PROPERTY_TERM_EXAMPLE = ':version=0.24';
 const TRAILING_OPERATOR_RE = /(>=|<=|>|<|=)$/;
 const PROPERTY_NAME_NOT_A_LETTER_RE = /^[^:]+:[^A-Za-z]/;
 const PROPERTY_TERM_EXAMPLE = 'jogging:miles>2';
@@ -93,7 +97,7 @@ const STATS_TERM_RE = /^@(?:sum|avg|min|max|count):[A-Za-z][^:=<>?]*(?:(?:>=|<=|
 const STATS_TERM_EXAMPLE_PROPERTY = 'calories>2000';
 
 function isPropertyTerm(token) {
-    if (STATS_TERM_START_RE.test(token)) {
+    if (STATS_TERM_START_RE.test(token) || token.startsWith(PROPERTY_SEPARATOR)) {
         return true;
     }
     if (token.startsWith('@')) {
@@ -125,8 +129,11 @@ function describePropertyTermProblem(term) {
     if (term.split(/[:<>]/)[0] === OR_OPERATOR) {
         return 'OR is reserved and cannot be used as a tag';
     }
-    if (NAMED_PROPERTY_TERM_RE.test(term) || IMPLICIT_PROPERTY_TERM_RE.test(term) || STATS_TERM_RE.test(term)) {
+    if ([NAMED_PROPERTY_TERM_RE, IMPLICIT_PROPERTY_TERM_RE, STATS_TERM_RE, TAGLESS_PROPERTY_TERM_RE].some((re) => re.test(term))) {
         return '';
+    }
+    if (term.startsWith(PROPERTY_SEPARATOR)) {
+        return describeTaglessPropertyTermProblem(term);
     }
     const statsStart = STATS_TERM_START_RE.exec(term);
     if (statsStart) {
@@ -150,6 +157,24 @@ function describePropertyTermProblem(term) {
         return `Write a value after ${trailingOperator[1]}`;
     }
     return `Search one property per term (for example ${PROPERTY_TERM_EXAMPLE} jogging:duration<40)`;
+}
+
+// Same wording as the server (app/services/tag_properties.py parse_tagless_property_term).
+function describeTaglessPropertyTermProblem(term) {
+    if (term.endsWith('?')) {
+        return 'A search for a missing property needs its tag (for example jogging:miles?)';
+    }
+    if (term === PROPERTY_SEPARATOR) {
+        return `Name a property after the colon (for example ${TAGLESS_PROPERTY_TERM_EXAMPLE})`;
+    }
+    if (!/^:[A-Za-z]/.test(term)) {
+        return `A property name starts with a letter (for example ${PROPERTY_TERM_EXAMPLE})`;
+    }
+    const trailingOperator = TRAILING_OPERATOR_RE.exec(term);
+    if (trailingOperator) {
+        return `Write a value after ${trailingOperator[1]}`;
+    }
+    return `Search one property per term (for example ${TAGLESS_PROPERTY_TERM_EXAMPLE})`;
 }
 
 function readQuotedInner(rawInput, startIndex, quoteChar) {

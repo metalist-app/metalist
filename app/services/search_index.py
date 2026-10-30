@@ -17,6 +17,7 @@ from app.services.shared_sets import SharedSetColumn, SharedSets
 from app.services.search_query import SearchClause, parse_search_query
 from app.services.tag_term_matching import tag_term_matches_prefix
 from app.services.tag_properties import (
+    ANY_TAG,
     IMPLICIT_PROPERTY,
     MISSING_OPERATOR,
     PRESENT_OPERATOR,
@@ -37,6 +38,7 @@ from app.services.tag_properties import (
     condition_holds,
     is_property_term,
     is_stats_term,
+    is_tagless_property_term,
     property_term_tag,
     tag_part_of_token,
     token_properties,
@@ -204,6 +206,13 @@ def _note_noun(count: int) -> str:
     return "notes"
 
 
+# A property name being completed, or None while the name itself is typed.
+def _casefold_name(property_name: str | None) -> str | None:
+    if property_name is None:
+        return None
+    return property_name.casefold()
+
+
 def _figure_meets(figure: Optional[Tuple[PropertyValue, ...]], condition: PropertyCondition) -> bool:
     """Whether a stats figure meets a term: shown at all (`@sum:calories`), or a number of it
     compares (`@sum:calories>2000`; a unit in the term must match). A dash never compares."""
@@ -290,15 +299,16 @@ def _parse_search_suggestion_context(raw_input: str) -> _SearchSuggestionContext
 
         is_partial = index >= length and not raw_input[-1].isspace()
         if is_partial:
-            # Typing a property term (jogging:mi, date>2, @sum:ca) suggests no tags.
-            if is_property_term(token) or is_stats_term(token):
+            # Typing a property term (jogging:mi, date>2, @sum:ca, :ver) suggests no tags.
+            if is_property_term(token) or is_stats_term(token) or is_tagless_property_term(token):
                 return _SearchSuggestionContext(tuple(anchors), None, '', False)
             return _SearchSuggestionContext(
                 tuple(anchors), token, raw_input[clause_start:term_start], prefix == '-',
             )
 
-        if prefix == "-" or is_stats_term(token):
-            # A stats term (@sum:calories>2000) anchors nothing: its tag is a meta tag.
+        if prefix == "-" or is_stats_term(token) or is_tagless_property_term(token):
+            # A stats term (@sum:calories>2000) anchors nothing: its tag is a meta tag; nor
+            # does a property on any tag (:version), which has none.
             clause_term_count += 1
             continue
         # A property term anchors suggestions by its tag: jogging:miles>2 is jogging.
@@ -1476,6 +1486,17 @@ class SearchIndex:
             return frozenset({tag_casefold})
         return frozenset(self._implying_tags_by_tag[tag_casefold] | {tag_casefold})
 
+    def _property_tags_locked(self, tag_casefold: str, property_name: str | None) -> FrozenSet[str]:
+        """The tags whose values a property term reads: its tag and every tag implying it,
+        or, for a term on any tag (`:version`), every tag with that property (any property
+        while its name is still being typed)."""
+        if tag_casefold != ANY_TAG:
+            return self._tags_implying_locked(tag_casefold)
+        return frozenset(
+            tag_name for (tag_name, name), notes in self._property_notes.items()
+            if notes and name != IMPLICIT_PROPERTY and (property_name is None or name == property_name)
+        )
+
     def _tags_implied_by_locked(self, tag_casefold: str) -> FrozenSet[str]:
         """The tag and every tag it implies, synonyms included, casefolded."""
         self._read_ontology_locked()
@@ -1600,7 +1621,7 @@ class SearchIndex:
             if place == PROPERTY_SUGGESTIONS_IN_TAG_BAR:
                 tag_names = self._tags_implied_by_locked(completion.tag.casefold())
             else:
-                tag_names = self._tags_implying_locked(completion.tag.casefold())
+                tag_names = self._property_tags_locked(completion.tag.casefold(), _casefold_name(completion.property_name))
             if completion.property_name is None:
                 counts = self._property_name_counts_locked(tag_names)
                 excluded = completion.excluded_names
@@ -1650,7 +1671,7 @@ class SearchIndex:
         tag or a tag implying it, or, for a missing one (task:due?), those carrying such a tag."""
         with self._lock:
             notes: Set[int] = set()
-            for tag_name in self._tags_implying_locked(condition.key[0]):
+            for tag_name in self._property_tags_locked(*condition.key):
                 if condition.operator == MISSING_OPERATOR:
                     notes |= self._tag_family_posting_locked(tag_name)
                 else:
@@ -1704,14 +1725,14 @@ class SearchIndex:
         )
         return condition_holds(
             condition, values=values, own_tag_names=own_tag_names,
-            tag_names=self._tags_implying_locked(condition.key[0]),
+            tag_names=self._property_tags_locked(*condition.key),
         )
 
     def _extreme_notes_locked(self, note_int_ids: Set[int], condition: PropertyCondition) -> Set[int]:
         """Of these notes, those holding the largest (MAX) or smallest (MIN) value of the
         term's property, ties included. Values are compared within one kind: the kind most
         of the values are (numbers first on a tie); units are labels and do not count."""
-        tag_names = self._tags_implying_locked(condition.key[0])
+        tag_names = self._property_tags_locked(*condition.key)
         values_by_note: Dict[int, List[PropertyValue]] = {}
         for note_int_id in note_int_ids:
             if note_int_id not in self._note_properties:
@@ -1902,7 +1923,7 @@ class SearchIndex:
         # A property term needs its property (or, missing it, its tag) on the note, on
         # the term's tag or a tag implying it.
         for condition in clause.required_properties:
-            tag_names = self._tags_implying_locked(condition.key[0])
+            tag_names = self._property_tags_locked(*condition.key)
             notes: Set[int] = set()
             for tag_name in tag_names:
                 if condition.operator == MISSING_OPERATOR:

@@ -1,6 +1,5 @@
 # Search Syntax
 
-Agreed, not built (2026-10-25): `:name` terms without a tag (a property on any tag) and `OR` on a rule's left side; see `docs/ready-to-build/attribute-search-and-or-rules.md`.
 
 ## Scope
 - This document describes the **client-side search query syntax verifier**.
@@ -42,6 +41,8 @@ Notes:
   `date>=2024-01`, with an optional `-` or `+` before them.
 - The tag comes first; a property name starts with a letter; a value may contain `:`
   (`run:start>10:30pm`) but not `<`, `>`, `?` or `=`.
+- Or no tag: `:version`, `:version=0.24.5`, `:version>0.24` (a property on any tag), but
+  not `:version?`.
 - An unfinished term does not run: `jogging:` and `jogging:miles>` while typing. Once a
   space follows it, the warning says how to finish it ("Name a property after the colon",
   "Write a value after >"). A term with two properties says "Search one property per term".

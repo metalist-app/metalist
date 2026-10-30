@@ -140,6 +140,28 @@ test('property terms run when complete and say how to finish them otherwise', ()
     assert.equal(typing.warningMessage, null);
 });
 
+// A property on any tag (docs/ui/search-syntax.md; agreed 2026-10-25): :version,
+// :version=0.24.5, :version>0.24. It had been read as the tag "version".
+test('a property on any tag runs, and :version? says it needs its tag', () => {
+    for (const term of [':version', ':version=0.24.5', ':version>0.24', '-:version', '+:miles<=5mi']) {
+        const analysis = analyzeSearchQueryInput(term);
+        assert.equal(analysis.isComplete, true, term);
+        assert.equal(analysis.sanitizedText, term, term);
+    }
+    const cases = [
+        [':version? ', 'A search for a missing property needs its tag (for example jogging:miles?)'],
+        [': ', 'Name a property after the colon (for example :version=0.24)'],
+        [':3x ', 'A property name starts with a letter'],
+        [':version> ', 'Write a value after >'],
+    ];
+    for (const [typed, warning] of cases) {
+        const analysis = analyzeSearchQueryInput(typed);
+        assert.equal(analysis.isComplete, false, typed);
+        assert.equal(analysis.warningMessage.startsWith(warning), true, `${typed}: ${analysis.warningMessage}`);
+    }
+    assert.equal(findSearchTagAtIndex(':version=0.24', 3), null, 'a term on any tag names no tag for the tag menu');
+});
+
 test('a property term is about its tag for the tag menu', () => {
     assert.equal(findSearchTagAtIndex('foo jogging:miles>2', 10).tag, 'jogging');
 });

@@ -2,7 +2,6 @@
 
 Agreed, not built (2026-10-27): a view option summarizing a property over the notes found (Sum, Average, Median, Min, Max, Mode) beside the result count, and the `@datetime` tag that dates a note for date filters (`docs/ready-to-build/super-tag-summaries-and-date.md`).
 
-Agreed, not built (2026-10-25): `:name` terms that match a property on any tag; see `docs/ready-to-build/attribute-search-and-or-rules.md`.
 
 This document describes **server-side search behavior** (what matches what).
 
@@ -146,6 +145,14 @@ bar's reference and `docs/design/tag-properties.md`). A search compares a note's
 - `jogging:miles`: notes whose `jogging` has `miles`, with any value.
 - `date>=2024-01`: a valued tag's own value (`date=2024-03-05`); `>`, `<`, `>=`, `<=`.
   (`date=2024-01` stays the valued tag it has always been.)
+- `:version`, `:version=0.24.5`, `:version>0.24`, `-:version`: the property on any tag
+  (built 2026-10-29): every tag carrying `version` counts, units and MAX/MIN as on a tag.
+  There is no tag to read upward from, so implications play no part. `:version?` is
+  refused ("A search for a missing property needs its tag"). A bare `:` suggests the
+  property names used anywhere, most used first; then units, MAX and MIN as after a tag
+  (`tag_properties.parse_tagless_property_term`, `SearchIndex._property_tags_locked`).
+  Before, the search box had read `:version` as the tag `version`. Tests:
+  `tests/unit/test_tagless_property_search.py`, `tests/unit/search_syntax_service.test.mjs`.
 - `-` excludes, spaces combine, `OR` separates clauses, as for tags:
   `jogging:miles>2 jogging:duration<40`, `jogging -jogging:miles>10`.
 - One property per term: `jogging:miles>2:duration<40` is refused with how to write it.

@@ -135,7 +135,7 @@ swimming:distance=1500m
 
 ## Search
 
-Agreed, not built (2026-10-25): `:version` / `:version=0.24.5` search a property on any tag (`docs/ready-to-build/attribute-search-and-or-rules.md`).
+`:version`, `:version=0.24.5`, `:version>0.24`: a property on any tag (built 2026-10-29; `docs/ui/search-semantics.md`, Super Tag Searches). No `?` form: on any tag it matches too much.
 
 ```
 jogging:miles>2

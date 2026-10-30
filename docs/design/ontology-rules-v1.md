@@ -1,6 +1,5 @@
 # Ontology Rules (v1)
 
-Agreed, not built (2026-10-25): `a OR b => c` on a rule's left side, as sugar for one rule per group; see `docs/ready-to-build/attribute-search-and-or-rules.md`.
 
 Status: DB-backed (SQLite) and hot-editable via API/UI; rules are cached in memory.
 
@@ -35,10 +34,22 @@ Comments:
 
 ### LHS forms
 
-LHS can be either:
+LHS is one or more groups separated by uppercase `OR` (built 2026-10-29), each group a
+conjunction of atoms, as in a search:
 - A single atom: `foo => bar`
-- A conjunction group: `(atom atom atom) => bar`
-  - Nested parentheses are not allowed in v1.
+- Adjacent atoms, ANDed: `metalist version => metalist-version`
+- A parenthesized group: `(atom atom atom) => bar` (nested parentheses are not allowed in v1)
+- Groups joined by `OR`: `a b OR c d e => f` is sugar for the rules `(a b) => f` and
+  `(c d e) => f`; `metalist:version OR metalist version => metalist-version` mixes a
+  super tag term group with a tag group. Every atom type is allowed in any group.
+- `OR` needs a term on each side (`OR needs a term before it` / `after it`); `=` stays a
+  synonym between two single tags, never with `OR`.
+
+Each group is its own rule everywhere: validation, the notes a saved rule refreshes (a line
+with both a value group and a plain group refreshes both kinds of note: `rule_text_has_
+plain_groups`; it had refreshed only the value notes), and About this tag, which names a
+tag-only group that inferred a tag: `Also implied by "metalist" and "version" together`
+(`AppliesThrough._tag_group_implying`). Tests: `tests/unit/test_rule_or_groups.py`.
 
 ### Atoms
 

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import re
-from typing import Dict, FrozenSet, Iterable, List, Mapping, Optional, Sequence, Set, Tuple
+from typing import Callable, Dict, FrozenSet, Iterable, List, Mapping, Optional, Sequence, Set, Tuple
 
 from app.services.tag_properties import (
     MISSING_OPERATOR,
@@ -227,27 +227,34 @@ def _parse_rule_line(*, raw_line: str, filename: str, line_number: int) -> List[
     if index >= len(line):
         return []
 
-    lhs_atoms: Tuple[Atom, ...]
-    if line[index] == "(":
-        index += 1
-        atoms: List[Atom] = []
-        while True:
-            index = skip_spaces(index)
-            if index >= len(line):
-                raise error("Unclosed '(' in LHS", at=len(line) - 1)
-            if line[index] == ")":
-                if not atoms:
-                    raise error("Empty LHS group '()' is not allowed", at=index)
-                index += 1
-                break
-            if line[index] == "(":
-                raise error("Nested parentheses are not allowed in v1", at=index)
-            atom, index = _parse_atom(line, index, filename=filename, line_number=line_number)
-            atoms.append(atom)
-        lhs_atoms = tuple(atoms)
-    else:
+    # The left side: groups of atoms separated by OR (docs/design/ontology-rules-v1.md; agreed
+    # 2026-10-25), as in a search: adjacent atoms are ANDed, `a b OR c d e => f` is the rules
+    # (a b) => f and (c d e) => f. A group may also be written in parentheses, `(a b c) => d`.
+    groups: List[Tuple[Atom, ...]] = []
+    atoms: List[Atom] = []
+    while True:
+        index = skip_spaces(index)
+        if index >= len(line):
+            raise error("Expected '=>' or '=' operator", at=index)
+        if line.startswith("=>", index) or line[index] == "=":
+            break
+        if line[index] == "(":
+            index = _parse_atom_group(line, index + 1, atoms, error=error, filename=filename, line_number=line_number)
+            continue
+        if line[index] not in _NON_BARE_ATOM_STARTS and _read_bare_token(line, index)[0] == _RULE_OR:
+            if not atoms:
+                raise error("OR needs a term before it", at=index)
+            groups.append(tuple(atoms))
+            atoms = []
+            index += len(_RULE_OR)
+            continue
         atom, index = _parse_atom(line, index, filename=filename, line_number=line_number)
-        lhs_atoms = (atom,)
+        atoms.append(atom)
+    if not atoms and groups:
+        raise error("OR needs a term after it", at=index)
+    if not atoms:
+        raise error("Missing LHS", at=index)
+    groups.append(tuple(atoms))
 
     index = skip_spaces(index)
     op: Optional[str] = None
@@ -273,19 +280,45 @@ def _parse_rule_line(*, raw_line: str, filename: str, line_number: int) -> List[
         raise error("Unexpected trailing text (no inline comments in v1)", at=index)
 
     if op == "=>":
-        return [Rule(lhs=lhs_atoms, rhs=rhs_token)]
+        return [Rule(lhs=group, rhs=rhs_token) for group in groups]
 
     if op != "=":
         raise error(f"Unknown operator: {op!r}", at=index)
 
-    if len(lhs_atoms) != 1 or not isinstance(lhs_atoms[0], TagAtom):
+    if len(groups) != 1 or len(groups[0]) != 1 or not isinstance(groups[0][0], TagAtom):
         raise error("'=' is only allowed between tag atoms in v1", at=0)
 
-    lhs_tag = lhs_atoms[0].tag
+    lhs_tag = groups[0][0].tag
     return [
         Rule(lhs=(TagAtom(lhs_tag),), rhs=rhs_token),
         Rule(lhs=(TagAtom(rhs_token),), rhs=lhs_tag),
     ]
+
+
+# OR between a rule's groups; a quote, regex or parenthesis starts no bare token.
+_RULE_OR = "OR"
+_NON_BARE_ATOM_STARTS = ('"', "'", "/", "(", ")")
+
+
+def _parse_atom_group(
+    line: str, index: int, atoms: List[Atom], *, error: Callable[..., OntologyParseError], filename: str, line_number: int,
+) -> int:
+    """The atoms of a parenthesized group, from just after its `(`, added to `atoms`; the
+    index just after its `)`."""
+    start = len(atoms)
+    while True:
+        while index < len(line) and line[index].isspace():
+            index += 1
+        if index >= len(line):
+            raise error("Unclosed '(' in LHS", at=len(line) - 1)
+        if line[index] == ")":
+            if len(atoms) == start:
+                raise error("Empty LHS group '()' is not allowed", at=index)
+            return index + 1
+        if line[index] == "(":
+            raise error("Nested parentheses are not allowed in v1", at=index)
+        atom, index = _parse_atom(line, index, filename=filename, line_number=line_number)
+        atoms.append(atom)
 
 
 def _parse_atom(
@@ -673,6 +706,15 @@ def rule_text_tests_values(text: str) -> bool:
         isinstance(atom, PropertyAtom)
         for rule in parse_rules_text(text=f"{text}\n", filename="ontology_rules:check")
         for atom in rule.lhs
+    )
+
+
+def rule_text_has_plain_groups(text: str) -> bool:
+    """Whether rule text holds a rule testing no super tag value. One line can hold both
+    kinds, one per OR group (`metalist:version OR metalist version => metalist-version`)."""
+    return any(
+        not any(isinstance(atom, PropertyAtom) for atom in rule.lhs)
+        for rule in parse_rules_text(text=f"{text}\n", filename="ontology_rules:check")
     )
 
 

@@ -210,6 +210,8 @@ Super tags carry values (`jogging:miles=3`, `drug:dosage=10mg`; see Super Tags i
 - `jogging:miles`: notes whose `jogging` has `miles`, with any value.
 - `date>=2024-01`: a valued tag's own value (`date=2024-03-05`); `>`, `<`, `>=`, `<=`.
   (`date=2024-01` stays the valued tag it has always been.)
+- `:version`, `:version=0.24.5`, `:version>0.24`: the property on any tag. `:version?` is
+  refused (a missing property needs its tag). A bare `:` suggests the vault's property names.
 - `-` excludes, spaces combine, `OR` separates clauses, as for tags:
   `jogging:miles>2 jogging:duration<40`, `jogging -jogging:miles>10`.
 - One property per term: `jogging:miles>2:duration<40` is refused with how to write it.
