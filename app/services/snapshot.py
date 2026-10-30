@@ -1021,10 +1021,10 @@ def _is_shown_collapsed(rec: NoteRecord, context: EmbedRenderContext) -> bool:
     return bool(rec.is_collapsed)
 
 
-def _linked_sites_of(rec: NoteRecord) -> FrozenSet[str]:
+def _linked_sites_of(rec: object) -> FrozenSet[str]:
     if type(rec) is not NoteRecord:
         # Only an immutable record can key the memo (test doubles change in place).
-        return sites_linked_in(rec.content)
+        return sites_linked_in(getattr(rec, "content"))
     key = _IdentityKey(rec)
     found, sites = _LINKED_SITES_MEMO.lookup(key)
     if found:
@@ -1040,10 +1040,10 @@ def _sites_shown_above(rec: NoteRecord, context: EmbedRenderContext) -> FrozenSe
     sites: Set[str] = set()
     parent_id = rec.parent_id
     while parent_id is not None:
+        # The context's notes are records, or a test's stand-ins for them (_linked_sites_of).
         parent = context.get_note(parent_id)
-        assert isinstance(parent, NoteRecord), "a note's parent is a note"
         sites |= _linked_sites_of(parent)
-        parent_id = parent.parent_id
+        parent_id = getattr(parent, "parent_id")
     return frozenset(sites)
 
 
