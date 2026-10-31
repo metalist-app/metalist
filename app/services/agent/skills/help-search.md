@@ -40,6 +40,7 @@ many words it contains. For example, `A B OR C` has two clauses and three terms.
   used as a tag.
 - Lowercase or mixed-case forms such as `or` and `Or` remain ordinary tag terms.
 - Quoted `"OR"` and `'OR'` remain ordinary text terms.
+- Tags, quoted text and property names may use any script and emoji (`café`, `"naïve"`, `日記:時間>2`); case is ignored in every script. Pasting a property search (`jogging:miles>3`) into the search bar keeps it as pasted.
 
 Examples:
 - `A B C OR D E`

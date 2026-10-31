@@ -6,6 +6,7 @@ from app.services.content_formatting import COMMENT_CLOSE, COMMENT_OPEN, find_pl
 from app.services.email_search_text import EMAIL_THUMBNAIL_KINDS, email_search_words
 from app.services.file_registry import file_registry
 from app.services.link_titles import link_title_store, normalize_url_for_link_title
+from app.services.tag_characters import normalize_text
 from app.utils.text_utils import strip_html_keeping_link_urls
 
 
@@ -121,7 +122,8 @@ def build_searchable_base_text_casefold(content_text: str, tags: str) -> str:
         else:
             combined = comment_text
 
-    return combined.casefold()
+    # One Unicode form, as searches are (app/services/tag_characters.py).
+    return normalize_text(combined).casefold()
 
 
 def build_searchable_text_casefold(content_html: str, tags: str) -> str:

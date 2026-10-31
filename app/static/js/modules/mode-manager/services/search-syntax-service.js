@@ -1,3 +1,4 @@
+import { isTextCharacter, normalizeText } from '../../tag-characters.js';
 const TAG_CONTAINS_DISALLOWED = new Set([
     ':',
     '"',
@@ -27,18 +28,6 @@ const QUOTE_CHARS = new Set(['"', "'" ]);
 const OR_OPERATOR = 'OR';
 // A backslash and the character it escapes.
 const ESCAPE_SEQUENCE_LENGTH = 2;
-// Printable ASCII runs from the space through the tilde.
-const FIRST_PRINTABLE_ASCII_CODE = ' '.charCodeAt(0);
-const LAST_PRINTABLE_ASCII_CODE = '~'.charCodeAt(0);
-
-function isAsciiPrintable(char) {
-    if (typeof char !== 'string' || char.length === 0) {
-        return false;
-    }
-    const code = char.charCodeAt(0);
-    return code >= FIRST_PRINTABLE_ASCII_CODE && code <= LAST_PRINTABLE_ASCII_CODE;
-}
-
 function isWhitespace(char) {
     return typeof char === 'string' && char.length === 1 && /\s/.test(char);
 }
@@ -58,7 +47,7 @@ function enforceTagToken(rawToken) {
     let output = '';
     let hasValueSeparator = false;
     for (const char of token) {
-        if (!isAsciiPrintable(char)) {
+        if (!isTextCharacter(char)) {
             continue;
         }
         if (char === TAG_VALUE_SEPARATOR) {
@@ -81,19 +70,20 @@ function enforceTagToken(rawToken) {
 // jogging:miles, date>=2024-01 (app/services/tag_properties.py parse_property_term).
 const PROPERTY_SEPARATOR = ':';
 const PROPERTY_TERM_MARKS = new Set([PROPERTY_SEPARATOR, '<', '>', '?']);
-const NAMED_PROPERTY_TERM_RE = /^[^:=<>?@][^:=<>?]*:[A-Za-z][^:=<>?]*(?:\?|(?:>=|<=|>|<|=)[^<>?=]+)?$/;
+// A property's name starts with a letter, in any script.
+const NAMED_PROPERTY_TERM_RE = /^[^:=<>?@][^:=<>?]*:\p{L}[^:=<>?]*(?:\?|(?:>=|<=|>|<|=)[^<>?=]+)?$/u;
 const IMPLICIT_PROPERTY_TERM_RE = /^[^:=<>?@][^:=<>?]*(?:>=|<=|>|<)[^<>?=]+$/;
 // A property on any tag (:version, :version=0.24.5, :version>0.24; app/services/
 // tag_properties.py parse_tagless_property_term). Never with ?: on any tag it matches too much.
-const TAGLESS_PROPERTY_TERM_RE = /^:[A-Za-z][^:=<>?]*(?:(?:>=|<=|>|<|=)[^<>?=]+)?$/;
+const TAGLESS_PROPERTY_TERM_RE = /^:\p{L}[^:=<>?]*(?:(?:>=|<=|>|<|=)[^<>?=]+)?$/u;
 const TAGLESS_PROPERTY_TERM_EXAMPLE = ':version=0.24';
 const TRAILING_OPERATOR_RE = /(>=|<=|>|<|=)$/;
-const PROPERTY_NAME_NOT_A_LETTER_RE = /^[^:]+:[^A-Za-z]/;
+const PROPERTY_NAME_NOT_A_LETTER_RE = /^[^:]+:\P{L}/u;
 const PROPERTY_TERM_EXAMPLE = 'jogging:miles>2';
 // The stats tags' figures (@sum:calories>2000; app/services/tag_properties.py
 // parse_stats_term): only these @ words take a property, and only in a search.
 const STATS_TERM_START_RE = /^(@(?:sum|avg|min|max|count))[:<>?]/i;
-const STATS_TERM_RE = /^@(?:sum|avg|min|max|count):[A-Za-z][^:=<>?]*(?:(?:>=|<=|>|<|=)[^<>?=]+)?$/i;
+const STATS_TERM_RE = /^@(?:sum|avg|min|max|count):\p{L}[^:=<>?]*(?:(?:>=|<=|>|<|=)[^<>?=]+)?$/iu;
 const STATS_TERM_EXAMPLE_PROPERTY = 'calories>2000';
 
 function isPropertyTerm(token) {
@@ -114,7 +104,7 @@ function isPropertyTerm(token) {
 function enforcePropertyTerm(rawToken) {
     let output = '';
     for (const char of rawToken) {
-        if (!isAsciiPrintable(char)) {
+        if (!isTextCharacter(char)) {
             continue;
         }
         if (char === TAG_VALUE_SEPARATOR || PROPERTY_TERM_MARKS.has(char) || !TAG_CONTAINS_DISALLOWED.has(char)) {
@@ -167,7 +157,7 @@ function describeTaglessPropertyTermProblem(term) {
     if (term === PROPERTY_SEPARATOR) {
         return `Name a property after the colon (for example ${TAGLESS_PROPERTY_TERM_EXAMPLE})`;
     }
-    if (!/^:[A-Za-z]/.test(term)) {
+    if (!/^:\p{L}/u.test(term)) {
         return `A property name starts with a letter (for example ${PROPERTY_TERM_EXAMPLE})`;
     }
     const trailingOperator = TRAILING_OPERATOR_RE.exec(term);
@@ -213,7 +203,7 @@ function readQuotedInner(rawInput, startIndex, quoteChar) {
                 }
             }
 
-            if (isAsciiPrintable(char)) {
+            if (isTextCharacter(char)) {
                 normalizedInner += char;
             }
             index += 1;
@@ -221,7 +211,7 @@ function readQuotedInner(rawInput, startIndex, quoteChar) {
             continue;
         }
 
-        if (isAsciiPrintable(char)) {
+        if (isTextCharacter(char)) {
             normalizedInner += char;
         }
         index += 1;
@@ -247,10 +237,12 @@ function closeOpenQuoteTerm(opening, inner, quoteChar, endsInUnfinishedEscape) {
     return `${opening}${text}${quoteChar}`;
 }
 
-export function analyzeSearchQueryInput(rawInput) {
-    if (typeof rawInput !== 'string') {
+export function analyzeSearchQueryInput(typedInput) {
+    if (typeof typedInput !== 'string') {
         throw new Error('analyzeSearchQueryInput expects a string');
     }
+    // One Unicode form, so a search matches tags that look the same (tag-characters.js).
+    const rawInput = normalizeText(typedInput);
 
     const normalizedTerms = [];
     const sanitizedTerms = [];

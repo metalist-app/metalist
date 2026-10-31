@@ -27,7 +27,7 @@ meta-tags topic; what the tag bar suggests, and why, is in the tag-suggestions t
 - Double-click selects an entire tag, including `@`, connectors such as `-`, `_`, `.`, `/`, and assignment values such as `@size=2.0`. Inside a scoped wrapper, it selects the individual tag without the wrapper. Comments retain ordinary word selection. The search input uses the same interaction with its own query grammar.
 - Runs of whitespace are normalized to single spaces.
 - Wrapper tokens may contain internal spaces (e.g. `{{@red @monospace}}`), which are preserved (normalized) inside the wrapper. This means a wrapper token can contain multiple tags.
-- A normal tag token allows only ASCII-printable characters and disallows: `: , " \\ > < [ ] { } ( ) * | ; ~ ``. The one exception is `:` making a super tag (below).
+- A normal tag token allows letters in any script and emoji (`Café`, `日記`, `🏃`) and disallows: `: , " \\ > < [ ] { } ( ) * | ; ~ ``. The one exception is `:` making a super tag (below). Invisible characters (zero-width spaces, direction marks) are dropped, any space separates tags, case is ignored in every script (`Straße` and `STRASSE` are one tag), and an accented letter typed or pasted in either form is the same letter.
 - One `=` is allowed inside regular or meta tags when valid tag characters occur on both sides (for example `abc=xyz` or `@size=2.0`). It cannot appear at the start/end, and multiple `=` characters are removed during normalization.
 - Tag tokens also cannot start with `-`, `+`, or `/`.
 - Exact uppercase `OR` is reserved as the search disjunction operator and cannot
@@ -70,7 +70,7 @@ Examples (autocorrected while typing):
 ## Comments
 You can include `/* ... */` comment segments in the tag bar:
 - Comments may contain spaces.
-- Comment text is preserved (ASCII-printable characters only).
+- Comment text is preserved, in any script.
 
 Comments also participate in server-side text search.
 

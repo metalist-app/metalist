@@ -4,6 +4,7 @@ import re
 from dataclasses import dataclass
 from typing import FrozenSet, List, Optional, Set, Tuple
 from app.services.input_errors import InputRejected
+from app.services.tag_characters import normalize_text
 from app.services.tag_properties import (
     PropertyCondition, is_property_term, is_stats_term, is_tagless_property_term, parse_property_term,
     parse_stats_term, parse_tagless_property_term,
@@ -92,7 +93,8 @@ def parse_search_query(normalized_text: str) -> ParsedSearchQuery:
     if not isinstance(normalized_text, str):
         raise TypeError(f"search query must be a string, got {type(normalized_text)}")
 
-    text = normalized_text.strip()
+    # One Unicode form, as tags and note text are (app/services/tag_characters.py).
+    text = normalize_text(normalized_text).strip()
     if text == "":
         return ParsedSearchQuery(
             clauses=(

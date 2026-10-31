@@ -51,7 +51,7 @@ book:author=Ursula-Le-Guin
 
 - The tag is everything before the first `:`. It follows today's tag grammar.
 - After it, each property is `name=value`, introduced by `:`.
-- **Property names start with a letter.** Then they follow tag characters.
+- **Property names start with a letter,** in any script (`Größe`, `時間`; `str.isalpha`, the browser's `\p{L}`). Then they follow tag characters.
 - **A colon followed by a letter starts the next property. Any other colon belongs to
   the value.** This is what lets values hold times and date-times: in
   `run:start=10:30:miles=3`, `10:30` is the start and `miles` the next property.

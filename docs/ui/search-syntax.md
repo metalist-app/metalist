@@ -53,6 +53,7 @@ A text term is a quoted string using either quote character, as long as the open
 - Double-quoted: `"some text"`
 - Single-quoted: `'some text'`
 - Negated forms: `-"some text"`, `-'some text'`
+- Quoted text, tags and property names may use any script (`"naïve"`, `日記:時間>2`; since 2026-10-30, before which non-ASCII characters were dropped, so `"naïve"` searched for `nave`). A search is kept in one Unicode form and matches note text in either form of an accented letter (`docs/ui/tag-bar.md`, Whitespace + Tokens).
 
 Escapes inside quoted text (backslash approach):
 - Within `"..."`: allow `\\` and `\"`

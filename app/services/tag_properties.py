@@ -75,7 +75,8 @@ _DATE_TIME_RE = re.compile(r"^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})
 _TIME_RE = re.compile(
     r"^(\d{1,2})(?::(\d{2})(?::(\d{2}))?)?\s*(am|pm|a\.m\.|p\.m\.)?$", re.IGNORECASE,
 )
-_PROPERTY_NAME_RE = re.compile(r"^[A-Za-z][^:=<>?]*$")
+# What a property name may not hold after its first letter.
+_PROPERTY_NAME_DISALLOWED = frozenset(":=<>?")
 _HOURS_ON_A_CLOCK = 12
 _HOURS_IN_DAY = 24
 _MINUTES_IN_HOUR = 60
@@ -184,8 +185,9 @@ def parse_property_value(text: str) -> PropertyValue:
 
 
 def is_property_name(name: str) -> bool:
-    """A property's name: a letter first, then no : = < > ?."""
-    return _PROPERTY_NAME_RE.match(name) is not None
+    """A property's name: a letter first, in any script (str.isalpha, the browser's \\p{L}),
+    then no : = < > ?."""
+    return name != "" and name[0].isalpha() and not any(char in _PROPERTY_NAME_DISALLOWED for char in name)
 
 
 def split_property_segments(text: str) -> List[str]:
@@ -194,7 +196,7 @@ def split_property_segments(text: str) -> List[str]:
     current = ""
     for index, char in enumerate(text):
         is_last = index == len(text) - 1
-        if char == PROPERTY_SEPARATOR and (is_last or text[index + 1].isascii() and text[index + 1].isalpha()):
+        if char == PROPERTY_SEPARATOR and (is_last or text[index + 1].isalpha()):
             segments.append(current)
             current = ""
             continue
@@ -216,7 +218,7 @@ def token_properties(token: str) -> Tuple[str, Dict[str, PropertyValue]]:
         for segment in split_property_segments(token[len(tag_part) + 1:]):
             property_name, has_value, value = segment.partition(PROPERTY_ASSIGNMENT)
             key = property_name.casefold()
-            if not has_value or value == "" or _PROPERTY_NAME_RE.match(property_name) is None or key in properties:
+            if not has_value or value == "" or not is_property_name(property_name) or key in properties:
                 continue
             properties[key] = parse_property_value(value)
     return name.casefold(), properties
@@ -375,7 +377,7 @@ def _condition_problem(tag: str, name: str, operator: str, value_text: str) -> s
 
 
 def _name_and_value_problem(name: str, operator: str, value_text: str) -> str:
-    if _PROPERTY_NAME_RE.match(name) is None:
+    if not is_property_name(name):
         return "A property name starts with a letter (for example jogging:miles>2)"
     if value_text in EXTREME_KEYWORDS and operator != "=":
         return f"{value_text} goes after = (for example jogging:miles={value_text})"
@@ -498,7 +500,7 @@ def read_property_completion(typed: str, *, in_tag_bar: bool, offers_extremes: b
             excluded = frozenset()
             name, operator, value = _split_at_operator(rest)
         if operator == "":
-            if name != "" and _PROPERTY_NAME_RE.match(name) is None:
+            if name != "" and not is_property_name(name):
                 return None
             return PropertyCompletion(
                 tag=tag, property_name=None, partial=name, before=typed[: len(typed) - len(name)], number="",
@@ -524,7 +526,7 @@ def _tagless_completion(typed: str, *, offers_extremes: bool) -> PropertyComplet
     rest = typed[len(PROPERTY_SEPARATOR):]
     name, operator, value = _split_at_operator(rest)
     if operator == "":
-        if rest != "" and _PROPERTY_NAME_RE.match(rest) is None:
+        if rest != "" and not is_property_name(rest):
             return None
         return PropertyCompletion(
             tag=ANY_TAG, property_name=None, partial=rest, before=PROPERTY_SEPARATOR, number="",
@@ -548,7 +550,7 @@ def _split_at_operator(text: str) -> Tuple[str, str, str]:
 
 def _unit_completion(typed: str, *, tag: str, property_name: str, value: str) -> PropertyCompletion | None:
     match = _NUMBER_AND_PARTIAL_UNIT_RE.match(value)
-    if match is None or _PROPERTY_NAME_RE.match(property_name) is None:
+    if match is None or not is_property_name(property_name):
         return None
     partial = match.group("unit")
     if partial is None:

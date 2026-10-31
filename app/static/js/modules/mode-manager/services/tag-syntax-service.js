@@ -1,3 +1,4 @@
+import { foldTagCase, isTextCharacter, normalizeText } from '../../tag-characters.js';
 const TAG_CONTAINS_DISALLOWED = new Set([
     ':',
     ',',
@@ -53,7 +54,7 @@ const KNOWN_META_TAGS = new Set([
 ]);
 // @sum=, @avg=, @min=, @max=, @count= and a property name (app/services/subtree_stats.py);
 // bare (`@sum`: every number property) or with = while being typed.
-const SUMMARY_TAG_RE = /^@(?:sum|avg|min|max|count)(?:=(?:[a-z][^\s=:]*)?)?$/;
+const SUMMARY_TAG_RE = /^@(?:sum|avg|min|max|count)(?:=(?:\p{L}[^\s=:]*)?)?$/u;
 // @datetime=2026-10-24 or @datetime=2026-10-24T08:30, the date a note belongs to
 // (app/services/note_datetime.py). Its value keeps its colon, unlike other @ tags.
 const DATETIME_TAG_PREFIX = '@datetime=';
@@ -109,18 +110,6 @@ function isSupportedMetaTag(term) {
         && /[1-9]/.test(folded.slice('@size='.length));
 }
 
-// Printable ASCII runs from the space (0x20) to the tilde (0x7e).
-const FIRST_PRINTABLE_ASCII_CODE = ' '.charCodeAt(0);
-const LAST_PRINTABLE_ASCII_CODE = '~'.charCodeAt(0);
-
-function isAsciiPrintable(char) {
-    if (typeof char !== 'string' || char.length === 0) {
-        return false;
-    }
-    const code = char.charCodeAt(0);
-    return code >= FIRST_PRINTABLE_ASCII_CODE && code <= LAST_PRINTABLE_ASCII_CODE;
-}
-
 function isWhitespace(char) {
     return typeof char === 'string' && char.length === 1 && /\s/.test(char);
 }
@@ -150,7 +139,7 @@ function enforceTagTokenInternal(rawToken, allowTrailingAssignmentSeparator) {
     );
     let out = '';
     for (const char of token) {
-        if (!isAsciiPrintable(char)) {
+        if (!isTextCharacter(char)) {
             continue;
         }
         if (char === '=' && canPreserveAssignmentSeparator) {
@@ -175,7 +164,8 @@ function enforceTagToken(rawToken) {
 // tags inside scopes have no properties: their colons are removed as before.
 const PROPERTY_SEPARATOR = ':';
 const PROPERTY_ASSIGNMENT = '=';
-const PROPERTY_NAME_START_RE = /^[A-Za-z]$/;
+// A property's name starts with a letter, in any script (Größe, 時間).
+const PROPERTY_NAME_START_RE = /^\p{L}$/u;
 
 function hasPropertySyntax(token) {
     return token.indexOf(PROPERTY_SEPARATOR) > 0 && !token.startsWith('@');
@@ -223,7 +213,7 @@ function keepAllowedChars(text, options) {
     const allowsColon = options.allowsColon;
     let out = '';
     for (const char of text) {
-        if (!isAsciiPrintable(char)) {
+        if (!isTextCharacter(char)) {
             continue;
         }
         if (char === PROPERTY_SEPARATOR && allowsColon) {
@@ -279,10 +269,10 @@ function enforcePropertyTagToken(rawToken, options) {
     const kept = [];
     for (const segment of segments) {
         const isComplete = segment.name.length > 0 && segment.value !== null && segment.value.length > 0;
-        if (!isComplete || seenNames.has(segment.name.toLowerCase())) {
+        if (!isComplete || seenNames.has(foldTagCase(segment.name))) {
             continue;
         }
-        seenNames.add(segment.name.toLowerCase());
+        seenNames.add(foldTagCase(segment.name));
         kept.push(`${segment.name}${PROPERTY_ASSIGNMENT}${segment.value}`);
     }
     if (kept.length === 0) {
@@ -440,6 +430,8 @@ function enforceTagBarInputInternal(rawInput, options) {
     }
 
     const allowTrailingCommentStart = Boolean(options && options.allowTrailingCommentStart);
+    // One Unicode form, so tags that look the same are the same (tag-characters.js).
+    const text = normalizeText(rawInput);
 
     let output = '';
     let currentToken = '';
@@ -463,9 +455,9 @@ function enforceTagBarInputInternal(rawInput, options) {
         currentToken = '';
     };
 
-    for (let index = 0; index < rawInput.length; index += 1) {
-        const char = rawInput[index];
-        const nextChar = index + 1 < rawInput.length ? rawInput[index + 1] : '';
+    for (let index = 0; index < text.length; index += 1) {
+        const char = text[index];
+        const nextChar = index + 1 < text.length ? text[index + 1] : '';
 
         if (!inComment && char === '/' && nextChar === '*') {
             flushToken({ isFinal: false });
@@ -482,7 +474,7 @@ function enforceTagBarInputInternal(rawInput, options) {
                 index += 1;
                 continue;
             }
-            if (!isAsciiPrintable(char)) {
+            if (!isTextCharacter(char)) {
                 continue;
             }
             output += char;
@@ -496,7 +488,7 @@ function enforceTagBarInputInternal(rawInput, options) {
                 throw new Error(`Unknown tag wrapper opener: ${opener}`);
             }
             let openerCount = 0;
-            while (openerCount < rawInput.length - index && rawInput[index + openerCount] === opener && openerCount < MAX_WRAPPER_DEPTH) {
+            while (openerCount < text.length - index && text[index + openerCount] === opener && openerCount < MAX_WRAPPER_DEPTH) {
                 openerCount += 1;
             }
             wrapper = { opener, closer, openerCount };
@@ -792,7 +784,7 @@ export function analyzeTagBarInput(rawInput) {
                 continue;
             } else if (!segment.text.startsWith('@')) {
                 const name = tagNameOfToken(segment.text);
-                const key = name.toLowerCase();
+                const key = foldTagCase(name);
                 const hasProperties = hasPropertySyntax(segment.text);
                 if (tagNamesWithProperties.has(key) && (hasProperties || tagNamesWithProperties.get(key))) {
                     if (refusedTagName === null) {

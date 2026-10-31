@@ -47,10 +47,13 @@ fixed rules, no AI, and it only reacts to pasting: typed text is never changed.
   minus python" gives `neural-network -python`), and a quoted phrase becomes a text
   search. "not" is an ordinary word unless it is set as the exclusion phrase.
   With the cursor inside a quoted phrase (after `"`), a paste is not cleaned up:
-  it goes in exactly as copied, on one line, with quote marks escaped.
+  it goes in exactly as copied, on one line, with quote marks escaped. Pasted search
+  syntax stays as pasted: `-tag`, `OR`, a quoted phrase, and a property search
+  (`jogging:miles>3`, `:version=0.24`, `@sum:calories>2000`).
 - **Tag bar:** words matching no tag become new tags, lowercased unless they look
   like an acronym (`GPT`). Each word is its own tag unless the words together match
-  one of the user's tags; a new multi-word tag has to be typed.
+  one of the user's tags; a new multi-word tag has to be typed. A tag with values
+  stays as pasted: `jogging:miles=3`, `asdf=1234`, `@code=python`, `@datetime=2026-10-24`.
 - **Other one-tag fields** (Edit Tag Relationships' search box, Add tag, Implied
   tag, Synonym tag, Rename tag; Prioritize Tag; Accept or Reject AI-Proposed Tags…' tag filter):
   the whole paste becomes one tag, "Machine learning" gives `machine-learning`.

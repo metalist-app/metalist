@@ -194,7 +194,7 @@ _EXTREME_PICKS = {MAX_KEYWORD: max, MIN_KEYWORD: min}
 _EXTREME_WORDS = {MAX_KEYWORD: "largest", MIN_KEYWORD: "smallest"}
 # A stats term being typed in a search: @sum:ca, or @sum:calories=MA for MAX and MIN.
 _TYPED_STATS_TERM_RE = re.compile(
-    r"(?P<tag>@(?:sum|avg|min|max|count)):(?P<name>[A-Za-z][^:=<>?]*|)(?:(?P<assignment>=)(?P<partial>[A-Z]*))?",
+    r"(?P<tag>@(?:sum|avg|min|max|count)):(?P<name>[^\W\d_][^:=<>?]*|)(?:(?P<assignment>=)(?P<partial>[A-Z]*))?",
     re.IGNORECASE,
 )
 # The figure a note's stats tag shows for a term (subtree_stats.stats_figure_values): its

@@ -1,4 +1,5 @@
 import { ApplicationState } from '../../application-state.js';
+import { foldTagCase } from '../../tag-characters.js';
 
 // Suggest Tags with AI, per note: 'asking' while the AI works, 'nothing-new'
 // when it had nothing to add. Shown on a card floating above the tag bar's
@@ -179,7 +180,7 @@ function parseProposalTokens(proposedTags) {
         return [];
     }
     const tokens = trimmed.split(/\s+/u);
-    const normalizedKeys = new Set(tokens.map((token) => token.toLowerCase()));
+    const normalizedKeys = new Set(tokens.map((token) => foldTagCase(token)));
     if (normalizedKeys.size !== tokens.length) {
         throw new Error('Proposal tokens must be case-insensitively unique');
     }
@@ -188,8 +189,8 @@ function parseProposalTokens(proposedTags) {
 
 // The new-tag proposals, checked against the note's proposals (case-insensitive).
 function parseNewProposalKeys(newProposedTags, tokens) {
-    const proposalKeys = new Set(tokens.map((token) => token.toLowerCase()));
-    const newKeys = new Set(parseProposalTokens(newProposedTags).map((token) => token.toLowerCase()));
+    const proposalKeys = new Set(tokens.map((token) => foldTagCase(token)));
+    const newKeys = new Set(parseProposalTokens(newProposedTags).map((token) => foldTagCase(token)));
     for (const key of newKeys) {
         if (!proposalKeys.has(key)) {
             throw new Error(`New proposal ${key} is not one of the note's proposals`);
@@ -260,10 +261,10 @@ function syncProposalRow(noteElement, noteId, tokens, newKeys, isEditing) {
     const row = document.createElement('div');
     row.classList.add('note-tag-proposals');
     row.setAttribute('aria-label', 'AI tag proposals');
-    const inUse = tokens.filter((token) => !newKeys.has(token.toLowerCase()));
-    const created = tokens.filter((token) => newKeys.has(token.toLowerCase()));
+    const inUse = tokens.filter((token) => !newKeys.has(foldTagCase(token)));
+    const created = tokens.filter((token) => newKeys.has(foldTagCase(token)));
     for (const proposal of [...inUse, ...created]) {
-        const isNew = newKeys.has(proposal.toLowerCase());
+        const isNew = newKeys.has(foldTagCase(proposal));
         const proposalElement = document.createElement('span');
         proposalElement.classList.add('note-tag-proposal');
         if (isNew) {

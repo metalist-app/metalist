@@ -1,3 +1,4 @@
+import { isTextCharacter, normalizeText } from '../../tag-characters.js';
 export const MAX_SELECTED_TEXT_TAG_CHARACTERS = 25;
 
 const TAG_CONTAINS_DISALLOWED = new Set([
@@ -21,19 +22,13 @@ const TAG_CONTAINS_DISALLOWED = new Set([
     '`',
 ]);
 const TOKEN_START_DISALLOWED = new Set(['-', '+', '/']);
-// A default tag keeps only printable ASCII: space (0x20) through tilde (0x7e).
-const FIRST_PRINTABLE_ASCII_CODE_POINT = ' '.codePointAt(0);
-const LAST_PRINTABLE_ASCII_CODE_POINT = '~'.codePointAt(0);
 
 function buildDefaultTagCandidate(normalizedSelectedText) {
-    const spacesJoined = normalizedSelectedText.replace(/\s+/g, '-');
+    // A default tag keeps letters in any script (tag-characters.js).
+    const spacesJoined = normalizeText(normalizedSelectedText).replace(/\s+/g, '-');
     let candidate = '';
     for (const char of spacesJoined) {
-        const codePoint = char.codePointAt(0);
-        if (!Number.isInteger(codePoint)) {
-            throw new Error('Selected-text tag character missing code point');
-        }
-        if (codePoint < FIRST_PRINTABLE_ASCII_CODE_POINT || codePoint > LAST_PRINTABLE_ASCII_CODE_POINT) {
+        if (!isTextCharacter(char)) {
             continue;
         }
         if (TAG_CONTAINS_DISALLOWED.has(char)) {

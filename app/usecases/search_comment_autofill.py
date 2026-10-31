@@ -7,18 +7,17 @@ from app.services.content_formatting import list_known_meta_tag_terms
 from app.services.search_index import extract_tags_for_search, search_index
 from app.services.search_text import build_searchable_text_casefold, text_term_matches
 from app.services.store import store
+from app.services.tag_characters import is_text_character
 from app.services.tag_case import (
     build_preferred_tag_case_map,
     dedupe_tag_terms_by_casefold,
     prefer_existing_tag_case,
 )
 
-_FIRST_PRINTABLE_ASCII = ord(" ")
-_LAST_PRINTABLE_ASCII = ord("~")
-
-
-def _is_ascii_printable(text: str) -> bool:
-    return all(_FIRST_PRINTABLE_ASCII <= ord(ch) <= _LAST_PRINTABLE_ASCII for ch in text)
+def _is_comment_text(text: str) -> bool:
+    """Whether a tag-bar comment may hold the text: letters in any script, no control or
+    invisible characters (app/services/tag_characters.py)."""
+    return all(is_text_character(ch) for ch in text)
 
 
 def _dedupe_preserve_order(values: Sequence[str]) -> list[str]:
@@ -37,7 +36,7 @@ def _build_comment_tokens(required_text_terms: Sequence[str]) -> str:
     for term in _dedupe_preserve_order(required_text_terms):
         if not isinstance(term, str):
             raise TypeError(f"search term must be a string, got {type(term)}")
-        if not _is_ascii_printable(term):
+        if not _is_comment_text(term):
             continue
         if "/*" in term or "*/" in term:
             continue
