@@ -31,11 +31,11 @@ An edit is in one of three places when a process stops:
 - Multi-view's Take Over already says the other view saves its typing and shows anything unsaved for copying.
 
 **Gaps:**
-1. **Notes autosave only after 60 s idle,** a value marked "for debugging" (`app/static/js/modules/mode-manager/events/inactivity-events.js:9`).
+1. **Notes autosave only after 60 s idle,** a value marked "for debugging" (`app/static/js/modules/mode-manager/events/inactivity-events.js:9`). **Changed to 10 s on 2026-10-31** (`CONTENT_INACTIVITY_THRESHOLD`), alone, as a trial: saves still run as before.
 2. **Hiding or closing a tab doesn't save a note.** The mode manager's `visibilitychange` handler only logs (`mode-manager-controller.js`, `_handleVisibilityChange`); there is no `beforeunload` for notes.
-3. **A save can mark text typed during the request as saved (live bug).** `actionSaveNoteOnIdle` captures the content, awaits the server, then calls `ModeContext.setDirty(false)` unconditionally (`content-actions.js:123`; also line 70). Keystrokes typed while the request was in flight are marked clean without being sent. **Fix this first; it applies today, not only to hosted.**
+3. **A save can mark text typed during the request as saved** (fixed 2026-10-31, see §10). `actionSaveNoteOnIdle` captures the content, awaits the server, then calls `ModeContext.setDirty(false)` unconditionally (`content-actions.js:123`; also line 70). Keystrokes typed while the request was in flight are marked clean without being sent. **Fix this first; it applies today, not only to hosted.**
 4. **No retry, no change IDs.** A failed save stays dirty; nothing resends after a reconnect, leaving edit mode or a restart.
-5. **Every save records an undo step** (`app/usecases/update_content.py:159`). At a 2-second autosave, one editing pass would become many steps.
+5. **Every save records an undo step** (`app/usecases/update_content.py:159`). At a 10-second autosave, one editing pass would still become many steps.
 6. **Saves claim the session** (`claimSession` → `X-Metalist-Claim`, `api-client.js`). With multi-view's several sign-ins this should go entirely: saving never claims anything.
 7. **`synchronous=NORMAL`** (`app/models/database.py:90`, `app/db/file_session.py`): safe against a process kill in WAL mode, not against an OS crash or host loss.
 8. **The shutdown hook only stops shell runs** (`app/main.py`, `stop_shell_runs`). No draining state, no final snapshot.
@@ -61,7 +61,7 @@ A process told to stop enters **draining**: new mutations get `503` with `{"rest
 ## 3. Client: keep it until acknowledged
 
 ### 3.1 Autosave
-- **2 s after typing stops** (`NOTE_AUTOSAVE_DELAY_MS`), one save in flight per note, as drawings do. Replaces the 60-second idle save.
+- **10 s after typing stops** (`NOTE_AUTOSAVE_DELAY_MS`; decided 2026-10-31, replacing the 2 s first agreed), one save in flight per note, as drawings do. Replaces the 60-second idle save. Why 10: saving when the tab is hidden and the close warning already cover everyday ways of losing work; the delay only bounds what a crash, a dead battery or a killed phone app loses (a few sentences), while saving far less often than at every pause.
 - **Save immediately when hidden:** `visibilitychange` to hidden and `pagehide`, with `fetch(..., {keepalive: true})`; the phone the same when it goes to the background.
 - Escape, modals and Lock still save first.
 - **"Dirty" clears only when the acknowledged text equals what's in the editor now** (gap 3).
@@ -79,7 +79,7 @@ A process told to stop enters **draining**: new mutations get `503` with `{"rest
 - A save whose `base_revision` isn't current is refused with `409` and handled as in §3.4.
 
 ### 3.4 A view that lost its lock
-With multi-view editing, a view loses the right to edit a root note when another view takes it over. Its later writes to that root, late retries included, are **refused**, never applied over newer work and never silently dropped: its unsent text is shown for copying, as Take Over already specifies. With a 2-second autosave and save-on-hide this is rare.
+With multi-view editing, a view loses the right to edit a root note when another view takes it over. Its later writes to that root, late retries included, are **refused**, never applied over newer work and never silently dropped: its unsent text is shown for copying, as Take Over already specifies. With a 10-second autosave and save-on-hide this is rare.
 
 ### 3.5 What the user sees
 - A status while editing or while something is pending: `Saving…`, `Saved`, `Not saved, reconnecting…` (text kept on screen).
@@ -104,14 +104,14 @@ It must finish within `DRAIN_TIMEOUT_SECONDS`, below the container's stop timeou
 - **Duplicate delivery:** replay each request 1–3 times, in and out of order; state equals one delivery.
 - **Host loss on the real hosted storage:** force-stop the machine mid-write (not just the process); every acknowledged change survives. This decides §2.2.
 - **Takeover mid-save:** type in view A, take over from view B. B's work is never overwritten; A shows its unsent text.
-- **Hidden-tab save:** type, then hide or close within 2 s; the save arrives, or the close was confirmed.
+- **Hidden-tab save:** type, then hide or close within 10 s; the save arrives, or the close was confirmed.
 - **Typing during a save** (gap 3): the note stays dirty and the next autosave sends the rest.
 
 ## 6. Config values
 
 | Name | Initial value |
 |---|---|
-| `NOTE_AUTOSAVE_DELAY_MS` | 2000 |
+| `NOTE_AUTOSAVE_DELAY_MS` | 10000 (decided 2026-10-31; first 2000) |
 | `SAVE_RETRY_BACKOFF` | 1 s, 2 s, 5 s, then every 10 s |
 | `NOT_SAVED_WARN_SECONDS` | 30 |
 | `CHANGE_ID_RETENTION_DAYS` | 7 |
@@ -139,7 +139,7 @@ It must finish within `DRAIN_TIMEOUT_SECONDS`, below the container's stop timeou
 
 ## 9. Done when (client part, buildable now)
 
-1. Notes autosave 2 s after typing stops and when the tab is hidden or closed; the 60-second idle save is gone.
+1. Notes autosave 10 s after typing stops and when the tab is hidden or closed; the 60-second idle save is gone.
 2. Typing during a save is never marked saved (a test reproduces the race and passes).
 3. A save that fails is retried with backoff and the same change ID, and survives a server restart; a repeated change ID applies once.
 4. `Saving… / Saved / Not saved, reconnecting…` and the close warning behave as in §3.5.
@@ -152,7 +152,8 @@ It must finish within `DRAIN_TIMEOUT_SECONDS`, below the container's stop timeou
 Every code reference in §1 checked out: the 60-second idle save (`inactivity-events.js`, `CONTENT_INACTIVITY_THRESHOLD`), the logging-only `_handleVisibilityChange`, no `beforeunload` for notes (only drawings and two image services have one), `setDirty(false)` after the await (`content-actions.js`, lines 70 and 123), the undo step per save (`update_content.py`), `claimSession` (`api-client.js`), `synchronous=NORMAL` (`app/models/database.py:90`, `app/db/file_session.py`) and the shutdown hook that only stops shell runs (`app/main.py`, `stop_shell_runs`). One correction and what it means for §3.1:
 
 - **Gap 3 is not live today.** Every save runs through `CommandGate.run` (the idle save as `autosave`), and while a command runs the keyboard and input handlers drop input (`keyboard-events.js` and `input-events.js` check `ModeContext.isLoading`; `docs/ui/command-gate.md`). So nothing can be typed during a save: no keystroke is wrongly marked saved. The code shape is still wrong, and the race becomes real as soon as typing is allowed during a save.
-- **The 2-second autosave must not run through the CommandGate as it does today.** At the current 60 s a dropped keystroke is rare; at 2 s, every save would swallow the keys typed during its request, and the loading overlay could appear while typing (after `CONFIG.LOADING.SPINNER_DELAY`). The autosave has to let typing go on, which is what makes the gap 3 fix (clear "dirty" only when the acknowledged text equals the editor's) necessary.
-- **Open:** does an autosave stay out of the CommandGate entirely (it then needs its own one-save-in-flight rule, as drawings have), or does the gate learn a kind of command that keeps input flowing? Ask the maintainer.
+- **The 10-second autosave must not run through the CommandGate as it does today.** At the current 60 s a dropped keystroke is rare; at 10 s, a save would often start at a pause in writing and swallow the keys typed during its request, and the loading overlay could appear while typing (after `CONFIG.LOADING.SPINNER_DELAY`). The autosave has to let typing go on, which is what makes the gap 3 fix (clear "dirty" only when the acknowledged text equals the editor's) necessary.
+- **Decided 2026-10-31: keep saves as they run today, for now.** Measured in a throwaway MetaList, a save takes 5–10 ms for short and medium notes and about 25 ms for a 600-line one, so a key pressed just as a save runs is very unlikely on a local MetaList. The delay went to 10 s alone (gap 1) as a trial; a letter lost on resuming typing after a pause is the sign to build the fix. **Revisit before the hosted launch,** where every save also crosses the network (a tenth of a second or more). The options then: (A) the autosave stays out of the CommandGate with its own one-save-in-flight rule, as drawings have, and every other command waits for it; (B, preferred 2026-10-31) the gate learns a background kind of command that keeps typing flowing, and a key or click during it waits instead of being dropped. Either needs the gap 3 fix. A user setting for the delay was considered and declined: it hands users a trade they can't see, and the default decides for nearly everyone anyway. **Built 2026-10-31 instead of A or B, for keys:** letters typed during an autosave are kept and typed in after it (`type-ahead-service.js`, the piece that keeps letters typed while a clicked note opens); Backspace, Enter, arrows and shortcuts are still dropped, so A or B is still the answer for those on the hosted launch.
+- **Found 2026-10-31 (`docs/BUGS.md`):** text that arrives without a key press while a command runs (dictation, autocorrect, the emoji picker, a writing assistant) lands in the note, but the input handler ignores it as "busy" (`input-events.js`, `handleInput`: `preventDefault` on an `input` event does nothing, since it can't be cancelled), so it isn't marked dirty and the autosave skips it. Leaving the note still saves it (`reconcileContentBeforeSave` compares the editor with the last content it recorded). So the close warning and the save when hidden (§3.1, §3.5) must make the same comparison, not trust the dirty flag. **Fixed 2026-10-31:** after each save the editor is compared with what was sent, and the note stays changed if it holds more (`editorHoldsUnsentText`, `content-actions.js`); this is gap 3's fix for both save paths.
 
 Linked from `docs/ui/state-handling.md` and `docs/README.md`. Model checking this protocol is a future plan: `docs/future-plans/model-checking-protocols.md`.

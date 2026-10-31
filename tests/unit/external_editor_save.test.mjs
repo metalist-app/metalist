@@ -7,6 +7,7 @@ const source = readFileSync(new URL('../../app/static/js/modules/mode-manager/ac
 
 function harness() {
     const saves = [];
+    const during = {save: () => {}};
     const note = {innerHTML:'<p>Choas</p>', dataset:{noteTags:''}, tags:''};
     const mode = {
         currentNoteId:'note-1', currentContent:note.innerHTML, lastSavedContent:null,
@@ -19,7 +20,7 @@ function harness() {
     const dependencies = {
         ModeContext:mode,
         Logger:{logAction() {}, logDebug() {}, LogCategory:{DEBUG:'debug', STATE:'state'}},
-        NotesAPI:{async saveNote(...args) { saves.push(args); return {status:'success'}; }},
+        NotesAPI:{async saveNote(...args) { saves.push(args); during.save(); return {status:'success'}; }},
         DOMUtils:{getNoteContentHTML:element => element.innerHTML},
         document:{querySelector:() => note},
         getTagBarValue:element => element.tags,
@@ -29,7 +30,7 @@ function harness() {
         sanitizeNoteHtmlForStorage:html => html.replaceAll(' data-render-only="true"', ''),
     };
     const actions = new Function(...Object.keys(dependencies), `${source}\nreturn {actionSaveNote, actionSaveNoteOnIdle};`)(...Object.values(dependencies));
-    return {note, mode, saves, ...actions};
+    return {note, mode, saves, during, ...actions};
 }
 
 for (const saveAction of ['actionSaveNote', 'actionSaveNoteOnIdle']) {
@@ -44,6 +45,22 @@ for (const saveAction of ['actionSaveNote', 'actionSaveNoteOnIdle']) {
         assert.equal(h.mode.isDirty, false);
         await h[saveAction]('note-1');
         assert.equal(h.saves.length, 1, 'Repeated observation must not create duplicate saves');
+    });
+
+    // Dictation or autocorrect while the save runs: MetaList ignores input while busy, so
+    // the text reaches the editor with no input recorded (fixed 2026-10-31, docs/BUGS.md).
+    test(`${saveAction} keeps the note changed when text arrived during the save`, async () => {
+        const h = harness();
+        h.note.innerHTML = '<p>Chaos</p>';
+        h.during.save = () => { h.note.innerHTML = '<p>Chaos spoken</p>'; h.during.save = () => {}; };
+        await h[saveAction]('note-1');
+        assert.deepEqual(h.saves, [['note-1', '<p>Chaos</p>', '']]);
+        assert.equal(h.mode.lastSavedContent, '<p>Chaos</p>');
+        assert.equal(h.mode.isDirty, true, 'the spoken text was not sent, so the note is still changed');
+        assert.equal(h.mode.currentContent, '<p>Chaos spoken</p>');
+        await h[saveAction]('note-1');
+        assert.deepEqual(h.saves[1], ['note-1', '<p>Chaos spoken</p>', '']);
+        assert.equal(h.mode.isDirty, false);
     });
 
     test(`${saveAction} ignores changes that disappear during storage sanitization`, async () => {
@@ -76,4 +93,16 @@ test('save rejects an uninitialized active-editor snapshot', async () => {
     h.mode.currentContent = null;
     await assert.rejects(h.actionSaveNote('note-1'), /requires its current content snapshot/);
     assert.deepEqual(h.saves, []);
+});
+
+test('a tag-only save marks the note changed when text arrived during it', async () => {
+    const h = harness();
+    h.note.tags = 'books';
+    h.during.save = () => { h.note.innerHTML = '<p>Choas spoken</p>'; h.during.save = () => {}; };
+    await h.actionSaveNote('note-1');
+    assert.deepEqual(h.saves, [['note-1', '<p>Choas</p>', 'books']]);
+    assert.equal(h.mode.isDirty, true);
+    assert.equal(h.mode.editSessionHasEdits, true);
+    await h.actionSaveNote('note-1');
+    assert.deepEqual(h.saves[1], ['note-1', '<p>Choas spoken</p>', 'books']);
 });

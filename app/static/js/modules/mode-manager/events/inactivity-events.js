@@ -3,10 +3,13 @@ import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import * as Logger from '../mode-logger.js';
 import { actionSaveNoteOnIdle } from '../actions/content-actions.js';
 import { CommandGate } from '../services/command-gate-service.js';
+import { TypeAhead } from '../services/type-ahead-service.js';
 import { prefetchEditingLinkTitles } from '../services/link-title-prefetch-service.js';
 
 const CHECK_INTERVAL = 500;
-const CONTENT_INACTIVITY_THRESHOLD = 60000;  // 60 seconds for debugging 
+// A note being edited saves after 10 s without typing (decided 2026-10-31,
+// docs/ready-to-build/commit-and-shutdown-protocol.md §3.1).
+const CONTENT_INACTIVITY_THRESHOLD = 10000;
 
 const moduleState = ApplicationState.createFields('inactivity-events', {
     contentCheckTimer: null,
@@ -36,9 +39,14 @@ function checkAndSaveContent() {
             inactivityDuration: timeSinceLastChange
         });
 
+        // Letters typed while the save runs are kept and typed in after it (agreed
+        // 2026-10-31), once MetaList is no longer busy, so they count as typing.
+        const noteId = ModeContext.currentNoteId;
+        let saving = TypeAhead.NONE;
         void CommandGate.run('autosave', async () => {
-            await actionSaveNoteOnIdle(ModeContext.currentNoteId);
-        });
+            saving = TypeAhead.begin(noteId);
+            await actionSaveNoteOnIdle(noteId);
+        }).then(() => TypeAhead.finish(saving));
 
     }
 }

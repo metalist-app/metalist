@@ -30,6 +30,19 @@ function reconcileContentBeforeSave(noteElement) {
     return contentHTML;
 }
 
+// Text that reached the editor while the save ran with no input recorded (dictation,
+// autocorrect: MetaList ignores input while busy) was not sent: it becomes the observed
+// content, and the caller keeps the note changed so the next save sends it (2026-10-31).
+function editorHoldsUnsentText(noteElement, sentHTML) {
+    const rawHTML = DOMUtils.getNoteContentHTML(noteElement);
+    if (sanitizeNoteHtmlForStorage(rawHTML) === sentHTML) {
+        return false;
+    }
+    if (rawHTML !== ModeContext.currentContent) ModeContext.setCurrentContent(rawHTML);
+    if (!ModeContext.editSessionHasEdits) ModeContext.markEditSessionHasEdits();
+    return true;
+}
+
 export async function actionSaveNote(noteId) {
     Logger.logAction('saveNote', { noteId });
 
@@ -62,12 +75,15 @@ export async function actionSaveNote(noteId) {
 
     const response = await NotesAPI.saveNote(noteId, contentHTML, tags);
 
+    const holdsUnsentText = editorHoldsUnsentText(noteElement, contentHTML);
     if (ModeContext.isDirty) {
         // A save can be triggered for tag-only changes after content was already captured.
         if (ModeContext.lastSavedContent !== contentHTML) {
             ModeContext.setLastSavedContent(contentHTML);
         }
-        ModeContext.setDirty(false);
+        if (!holdsUnsentText) ModeContext.setDirty(false);
+    } else if (holdsUnsentText) {
+        ModeContext.setDirty(true);
     }
     if (tagsChanged) {
         setTagBarValue(noteElement, tags);
@@ -120,7 +136,7 @@ export async function actionSaveNoteOnIdle(noteId) {
     if (ModeContext.lastSavedContent !== contentHTML) {
         ModeContext.setLastSavedContent(contentHTML);
     }
-    ModeContext.setDirty(false);
+    if (!editorHoldsUnsentText(noteElement, contentHTML)) ModeContext.setDirty(false);
     setTagBarValue(noteElement, tags);
     markTagBarSaved(noteElement, tags);
 

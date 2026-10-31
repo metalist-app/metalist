@@ -2,6 +2,31 @@
 
 ----
 
+## Text dictated or autocorrected while a save ran was skipped by the autosave (fixed 2026-10-31, found 2026-10-31)
+
+While any command runs (an autosave, opening a note), MetaList ignores input. Keys are
+blocked at `keydown`, but text that arrives without a key press (dictation, autocorrect,
+the emoji picker, a writing assistant) comes only as an `input` event, which can't be
+cancelled: `handleInput` (`input-events.js`) calls `preventDefault`, which does nothing, and
+returns. The text stays in the note but is not marked as a change, so the autosave doesn't
+send it. It is not lost: leaving the note compares the editor with the last content it
+recorded (`reconcileContentBeforeSave`) and saves it, and any later keystroke marks the note
+changed again. Only closing the tab, or a crash, before either would lose it. Checked in a
+throwaway MetaList (2026-10-31): text inserted during a held save stayed unsaved by the
+autosave and was saved on Escape. (A first report the same day said it was lost on leaving;
+that test reloaded the page while its own slowed-down save was still running.) The close
+warning and save-when-hidden planned in `docs/ready-to-build/commit-and-shutdown-protocol.md`
+must compare the editor with what was saved, not trust the dirty flag, or they would miss it.
+
+Fix: after each save, the editor is compared with what the save sent (`editorHoldsUnsentText`,
+`content-actions.js`); if it holds more, that becomes the observed content and the note
+stays changed, so the next autosave, 10 s later, sends it. Tests:
+`tests/unit/external_editor_save.test.mjs` (both save paths, and a tag-only save), which
+failed before the fix; checked in a throwaway: the second autosave sent the text and a reload
+without leaving the note kept it.
+
+----
+
 ## After a backup restore, a background save can land on the lock page instead of the login screen (fixed 2026-10-30, found 2026-10-18)
 
 Seen twice in the browser smoke (`core`, the encrypted-backup step), once under load and
