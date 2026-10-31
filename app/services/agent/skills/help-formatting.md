@@ -149,6 +149,7 @@ Other (non-meta) tags may also appear inside wrapper tokens (e.g. `{{foo bar}}`)
 - `@markdown`: renders the note content as Markdown in view mode on the server.
 - Scoped Markdown renders only the matching wrapped region.
 - Lists nest by indent: an item two or more spaces (or a tab) deeper than its list sits inside the item above it, bullets and numbers mixed; one space deeper stays a sibling.
+- Highlights: `==text==` shows highlighted; `a == b` with spaces stays as written.
 - Tasks: `- [ ] milk` and `- [x] bread` show as checkboxes; clicking a box while viewing ticks or empties it in the note's text (⌘Z undoes it); editing shows the source. Boxes in an embedded copy can't be clicked.
 - Images: `![alt](https://…)` shows a web image where it is written, loaded through MetaList's image proxy; other addresses stay as text. The AI chat draws no images.
 - References work in a Markdown note: `[[UUID]]` links stay in their line (paragraph, heading, list item, table cell); `![[UUID]]` embeds of notes and images are blocks of their own.

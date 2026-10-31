@@ -532,6 +532,7 @@ def _render_inline_markdown(text: str, *, allow_links: bool, allows_images: bool
     rendered = _replace_strong(rendered)
     rendered = _replace_emphasis(rendered)
     rendered = _replace_strikethrough(rendered)
+    rendered = _replace_highlight(rendered)
     rendered = rendered.replace("\\\n", "\n")
     for placeholder in placeholders:
         rendered = rendered.replace(placeholder.token, placeholder.html_value)
@@ -862,6 +863,15 @@ def _replace_emphasis(text: str) -> str:
 
 def _replace_strikethrough(text: str) -> str:
     return re.sub(r"~~(.+?)~~", r"<s>\1</s>", text)
+
+
+# ==text== highlights (2026-10-31, as Obsidian writes them); the text starts and ends with
+# something other than a space or =, so `a == b == c` and `====` stay as written.
+_HIGHLIGHT_RE = re.compile(r"(?<!=)==(?=[^\s=])(.+?)(?<=[^\s=])==(?!=)")
+
+
+def _replace_highlight(text: str) -> str:
+    return _HIGHLIGHT_RE.sub(r"<mark>\1</mark>", text)
 
 
 def _count_repeated_char(*, text: str, start: int, char: str) -> int:

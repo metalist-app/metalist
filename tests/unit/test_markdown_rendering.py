@@ -256,3 +256,22 @@ def test_tasks_are_numbered_boxes_in_a_note() -> None:
 def test_a_fenced_task_and_the_ai_chat_draw_no_box() -> None:
     assert markdown_task_lines("```\n- [ ] in code\n```\n- [ ] real") == [3]
     assert "checkbox" not in render_markdown_to_html("- [ ] a reply's task")
+
+
+# Highlights (2026-10-31): ==text==, as Obsidian writes them; not with spaces inside the
+# marks, nor in code.
+@pytest.mark.parametrize(("markdown", "expected"), [
+    ("A ==highlighted== word", "<p>A <mark>highlighted</mark> word</p>"),
+    ("**==bold highlight==**", "<p><strong><mark>bold highlight</mark></strong></p>"),
+    ("==**bold** inside==", "<p><mark><strong>bold</strong> inside</mark></p>"),
+    ("# ==Heading==", "<h1><mark>Heading</mark></h1>"),
+    ("==🔴 urgent==", "<p><mark>🔴 urgent</mark></p>"),
+    ("a==b==c", "<p>a<mark>b</mark>c</p>"),
+    ("a == b", "<p>a == b</p>"),
+    ("x == y == z", "<p>x == y == z</p>"),
+    ("====", "<p>====</p>"),
+    ("== spaced ==", "<p>== spaced ==</p>"),
+    ("`==code==`", "<p><code>==code==</code></p>"),
+])
+def test_double_equals_highlight(markdown: str, expected: str) -> None:
+    assert render_markdown_to_html(markdown) == expected
