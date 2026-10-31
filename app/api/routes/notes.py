@@ -44,6 +44,7 @@ from app.api.note_requests import (
     ResolveRobotProposalsRequest,
     SplitNoteRequest,
     ToggleTodoDoneRequest,
+    ToggleMarkdownCalloutRequest,
     ToggleMarkdownTaskRequest,
     UnformatNoteContentRequest,
     ResizeNoteImageRequest,
@@ -125,7 +126,7 @@ from app.usecases.set_collapse_in_context import (
 )
 from app.usecases.copy_note import CmdCopyNote
 from app.usecases.toggle_todo_done import CmdToggleTodoDone
-from app.usecases.toggle_markdown_task import CmdToggleMarkdownTask
+from app.usecases.toggle_markdown_task import CmdToggleMarkdownCallout, CmdToggleMarkdownTask
 from app.usecases.run_shell import CmdRunShellStart
 from app.usecases.run_shell import CmdRunShellStatus
 from app.usecases.paste_sibling import CmdPasteSibling
@@ -1451,6 +1452,25 @@ def toggle_markdown_task(request: Request, note_id: str, body: ToggleMarkdownTas
         note_id=note_id,
         task_index=body["taskIndex"],
         is_ticked=body["isTicked"],
+        token=token,
+        client_id=client_id,
+        undo_context=body["undoContext"],
+        viewport=viewport,
+    )
+    return cmd.execute()
+
+
+@router.post("/notes/{note_id}/toggle-markdown-callout")
+@transactional_route
+def toggle_markdown_callout(request: Request, note_id: str, body: ToggleMarkdownCalloutRequest):
+    client_id = body["clientId"]
+    viewport = _require_viewport(body)
+    token = _require_bearer_token(request)
+    _require_note_present(note_id, context="notes.toggle-markdown-callout")
+    cmd = CmdToggleMarkdownCallout(
+        note_id=note_id,
+        callout_index=body["calloutIndex"],
+        is_open=body["isOpen"],
         token=token,
         client_id=client_id,
         undo_context=body["undoContext"],

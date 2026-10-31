@@ -19,6 +19,10 @@ _ORDERED_LIST_RE = re.compile(r"^(\d+)\.\s+(?P<content>.*)$")
 # A task: a list item starting [ ] or [x] (2026-10-31; GFM task lists, as Obsidian writes them).
 _TASK_RE = re.compile(r"^\[(?P<mark>[ xX])\](?P<content>(?:\s.*)?)$")
 _TASK_ICONS = {False: EMPTY_BOX_ICON, True: TICKED_BOX_ICON}
+# A callout (2026-10-31, Obsidian): a quote whose first line is [!type], then - (folded) or
+# + (open) for one that folds, then its title.
+_CALLOUT_RE = re.compile(r"^\[!(?P<type>[^\]\s]+)\](?P<fold>[-+]?)(?:\s+(?P<title>.*))?$")
+_CALLOUT_OPEN_MARK = "+"
 # Footnotes (2026-10-31, GFM and Obsidian): [^label] where [^label]: text is defined on a
 # line of its own, and ^[inline text].
 _FOOTNOTE_DEFINITION_RE = re.compile(r"^\[\^(?P<label>[^\]\s]+)\]:[ \t]?(?P<text>.*)$")
@@ -128,6 +132,14 @@ def markdown_task_lines(markdown_text: str) -> List[int]:
     return list(renderer.task_lines)
 
 
+def markdown_callout_lines(markdown_text: str) -> List[int]:
+    """The line of each folding callout's [!type]- or [!type]+ in a Markdown note's text,
+    in the order they are numbered: the line a click on callout N's title rewrites."""
+    renderer = _note_renderer(markdown_text, is_note_text=True, takes_footnotes=True)
+    renderer.render()
+    return list(renderer.callout_lines)
+
+
 def _note_renderer(markdown_text: str, *, is_note_text: bool, takes_footnotes: bool) -> "_MarkdownRenderer":
     if not isinstance(markdown_text, str):
         raise TypeError(f"markdown_text must be a string, got {type(markdown_text)}")
@@ -139,7 +151,8 @@ def _note_renderer(markdown_text: str, *, is_note_text: bool, takes_footnotes: b
         prefix = _FOOTNOTE_TOKEN_PREFIX + hashlib.sha256(normalized_text.encode()).hexdigest()[:_FOOTNOTE_HASH_LENGTH]
         footnotes = _Footnotes(definitions=definitions, token_prefix=prefix, is_enabled=True)
     return _MarkdownRenderer(
-        lines=lines, is_note_text=is_note_text, line_offset=0, task_lines=[], footnotes=footnotes,
+        lines=lines, is_note_text=is_note_text, line_offset=0, task_lines=[], callout_lines=[],
+        footnotes=footnotes,
     )
 
 
@@ -203,7 +216,8 @@ def _take_footnote_definitions(lines: List[str]) -> Tuple[List[str], Dict[str, s
 
 class _MarkdownRenderer:
     def __init__(
-        self, *, lines: List[str], is_note_text: bool, line_offset: int, task_lines: List[int], footnotes: _Footnotes,
+        self, *, lines: List[str], is_note_text: bool, line_offset: int, task_lines: List[int],
+        callout_lines: List[int], footnotes: _Footnotes,
     ):
         if not isinstance(lines, list):
             raise TypeError(f"lines must be a list, got {type(lines)}")
@@ -212,9 +226,10 @@ class _MarkdownRenderer:
         # A note's own text draws web images and task boxes; the AI chat and footnotes don't.
         self._is_note_text = is_note_text
         # Where these lines start in the note's text (a quote's lines are its own renderer's),
-        # and the task lines found so far, shared with the renderers of quotes.
+        # and the task and folding callout lines found so far, shared with the renderers of quotes.
         self._line_offset = line_offset
         self.task_lines = task_lines
+        self.callout_lines = callout_lines
         self.footnotes = footnotes
 
     def _inline(self, text: str) -> str:
@@ -343,24 +358,58 @@ class _MarkdownRenderer:
         quote_lines: List[str] = []
         while self._index < len(self._lines):
             line = self._lines[self._index]
+            # A blank line (no >) ends a callout, as in Obsidian; a plain quote goes on past it.
+            if line.strip() == "" and _CALLOUT_RE.match(quote_lines[0].strip()) is not None:
+                break
             if line.strip() == "":
                 quote_lines.append("")
                 self._index += 1
                 continue
             if not self._is_blockquote_start(line):
                 break
-            stripped = line.lstrip()
-            assert stripped.startswith(">")
-            stripped = stripped[1:]
-            if stripped.startswith(" "):
-                stripped = stripped[1:]
+            stripped = _without_quote_mark(line)
+            # A callout after a blank line starts a quote of its own, as in Obsidian.
+            if len(quote_lines) > 0 and quote_lines[-1] == "" and _CALLOUT_RE.match(stripped.strip()) is not None:
+                break
             quote_lines.append(stripped)
             self._index += 1
-        inner_html = _MarkdownRenderer(
-            lines=quote_lines, is_note_text=self._is_note_text, line_offset=self._line_offset + quote_start,
-            task_lines=self.task_lines, footnotes=self.footnotes,
-        ).render()
+        callout = _CALLOUT_RE.match(quote_lines[0].strip())
+        if callout is not None:
+            return self._render_callout(callout, body_lines=quote_lines[1:], header_line=quote_start)
+        inner_html = self._quote_renderer(quote_lines, start=quote_start).render()
         return f"<blockquote>{inner_html}</blockquote>"
+
+    def _quote_renderer(self, lines: List[str], *, start: int) -> "_MarkdownRenderer":
+        return _MarkdownRenderer(
+            lines=lines, is_note_text=self._is_note_text, line_offset=self._line_offset + start,
+            task_lines=self.task_lines, callout_lines=self.callout_lines, footnotes=self.footnotes,
+        )
+
+    def _render_callout(self, callout: re.Match[str], *, body_lines: List[str], header_line: int) -> str:
+        """A callout (2026-10-31; obsidian-mapping.md H19): a quote led by its type and title
+        in bold, no colour or icon; one marked - or + folds, its title the line a click opens
+        or closes (markdown_tasks.toggle_callout_fold_in_note_html)."""
+        heading = callout.group("type").capitalize()
+        title = callout.group("title")
+        if title is not None and title.strip() != "":
+            heading = f"{heading}: {title.strip()}"
+        heading_html = f"<strong>{self._inline(heading)}</strong>"
+        callout_index = len(self.callout_lines)
+        if callout.group("fold") != "" and self._is_note_text:
+            self.callout_lines.append(self._line_offset + header_line)
+        body_html = self._quote_renderer(body_lines, start=header_line + 1).render()
+        if callout.group("fold") == "":
+            return f'<blockquote class="meta-markdown-callout"><p>{heading_html}</p>{body_html}</blockquote>'
+        open_attr = ""
+        if callout.group("fold") == _CALLOUT_OPEN_MARK:
+            open_attr = ' open=""'
+        index_attr = ""
+        if self._is_note_text:
+            index_attr = f' data-callout-index="{callout_index}"'
+        return (
+            f'<blockquote class="meta-markdown-callout"><details class="meta-markdown-callout-fold"{index_attr}{open_attr}>'
+            f"<summary>{heading_html}</summary>{body_html}</details></blockquote>"
+        )
 
     def _render_list_block(self) -> str:
         """A list and the lists nested in its items (2026-10-31): an item indented at least
@@ -551,6 +600,16 @@ def _indent_width(line: str) -> int:
     """The columns of space before a line's text, a tab counting _TAB_WIDTH."""
     expanded = line.expandtabs(_TAB_WIDTH)
     return len(expanded) - len(expanded.lstrip())
+
+
+def _without_quote_mark(line: str) -> str:
+    """A quote's line without its > and the one space after it."""
+    stripped = line.lstrip()
+    assert stripped.startswith(">")
+    stripped = stripped[1:]
+    if stripped.startswith(" "):
+        return stripped[1:]
+    return stripped
 
 
 def _split_table_row(line: str) -> list[str]:

@@ -152,6 +152,7 @@ Other (non-meta) tags may also appear inside wrapper tokens (e.g. `{{foo bar}}`)
 - Highlights: `==text==` shows highlighted; `a == b` with spaces stays as written.
 - Footnotes: `text[^1]` with `[^1]: the note` on its own line, or inline `^[the note]`, show as MetaList's footnotes: a number in place and a References list at the end.
 - Tasks: `- [ ] milk` and `- [x] bread` show as checkboxes; clicking a box while viewing ticks or empties it in the note's text (⌘Z undoes it); editing shows the source. Boxes in an embedded copy can't be clicked.
+- Callouts: a quote starting `> [!warning] Title` shows bold **Warning: Title** with the rest of the quote under it. `[!tip]-` starts folded and `[!tip]+` open; clicking the title opens or closes it and saves that in the note (⌘Z undoes it).
 - Images: `![alt](https://…)` shows a web image where it is written, loaded through MetaList's image proxy; other addresses stay as text. The AI chat draws no images.
 - References work in a Markdown note: `[[UUID]]` links stay in their line (paragraph, heading, list item, table cell); `![[UUID]]` embeds of notes and images are blocks of their own.
 - Tables: `<br>` breaks a cell's line (the only raw HTML allowed); short rows get empty cells; `\|` is a literal `|`; columns are as wide as their longest word, and a too-wide table scrolls sideways.

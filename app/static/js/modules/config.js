@@ -36,6 +36,7 @@ export const CONFIG = {
             SPLIT: (noteId) => `${API_NOTES_BASE}/${noteId}/split`,
             TOGGLE_TODO: (noteId) => `${API_NOTES_BASE}/${noteId}/toggle-todo`,
             TOGGLE_MARKDOWN_TASK: (noteId) => `${API_NOTES_BASE}/${noteId}/toggle-markdown-task`,
+            TOGGLE_MARKDOWN_CALLOUT: (noteId) => `${API_NOTES_BASE}/${noteId}/toggle-markdown-callout`,
             UNFORMAT: (noteId) => `${API_NOTES_BASE}/${noteId}/unformat`,
             RESIZE_IMAGE: (noteId) => `${API_NOTES_BASE}/${noteId}/resize-image`,
             EDITING_IMAGE_SIZES: (noteId) => `${API_NOTES_BASE}/${noteId}/editing-image-sizes`,

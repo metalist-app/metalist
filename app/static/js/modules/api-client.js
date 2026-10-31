@@ -437,6 +437,18 @@ export const NotesAPI = {
         });
     },
 
+    // A click on folding callout calloutIndex's title in a Markdown note; isOpen is the state asked for.
+    async toggleMarkdownCallout(noteId, calloutIndex, isOpen) {
+        if (typeof noteId !== 'string' || noteId.length === 0 || !Number.isInteger(calloutIndex) || typeof isOpen !== 'boolean') {
+            throw new Error('NotesAPI.toggleMarkdownCallout requires noteId, calloutIndex and isOpen');
+        }
+        return this._apiCall(CONFIG.API.NOTES.TOGGLE_MARKDOWN_CALLOUT(noteId), {
+            method: 'POST',
+            claimSession: true,
+            body: JSON.stringify({ calloutIndex, isOpen }),
+        });
+    },
+
     async unformatNote(noteId) {
         if (typeof noteId !== 'string' || noteId.length === 0) {
             throw new Error('NotesAPI.unformatNote requires noteId string');

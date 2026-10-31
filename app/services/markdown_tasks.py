@@ -1,8 +1,10 @@
-"""Ticking a task in a Markdown note (docs/ui/content-formatting.md, Tasks; agreed
-2026-10-31): a click on box N rewrites that task's [ ] to [x], or back, in the note's
-stored text, and nothing else.
+"""Clicks that write into a Markdown note (docs/ui/content-formatting.md, Tasks and
+Callouts; agreed 2026-10-31): a click on box N rewrites that task's [ ] to [x], or back,
+and a click on folding callout N's title its - (folded) to + (open), or back, in the
+note's stored text, and nothing else.
 
-The boxes are numbered as the renderer draws them (markdown_task_lines) over the note's
+The boxes and callouts are numbered as the renderer draws them (markdown_task_lines,
+markdown_callout_lines) over the note's
 plain text (extract_plain_text_from_note_html). The stored text is HTML, so the plain text
 is read here again, character by character, remembering where each character came from;
 the mark between the brackets is then replaced where it stands in the HTML.
@@ -12,10 +14,10 @@ from __future__ import annotations
 
 import html
 import re
-from typing import List, NamedTuple
+from typing import Callable, List, NamedTuple
 
 from app.services.input_errors import InputRejected
-from app.services.markdown_rendering import markdown_task_lines
+from app.services.markdown_rendering import markdown_callout_lines, markdown_task_lines
 
 # As structured_note_renderers._extract_plain_text reads note HTML: these start a line,
 # these closing tags vanish, every other tag vanishes, an entity is its character, and a
@@ -30,7 +32,12 @@ _NO_BREAK_SPACE = " "
 _TASK_LINE_RE = re.compile(r"^\s*(?:>\s?)*\s*(?:[-+*]|\d+\.)\s+\[(?P<mark>[ xX])\]")
 _TICKED_MARK = "x"
 _EMPTY_MARK = " "
+# A folding callout's line: its quote marks, then [!type] and - or + (markdown_rendering._CALLOUT_RE).
+_CALLOUT_LINE_RE = re.compile(r"^(?:\s*>)+\s*\[![^\]\s]+\](?P<mark>[-+])")
+_OPEN_MARK = "+"
+_FOLDED_MARK = "-"
 _CHANGED_MESSAGE = "This note changed since it was shown; try the box again."
+_CALLOUT_CHANGED_MESSAGE = "This note changed since it was shown; try the title again."
 
 
 class _PlainCharacter(NamedTuple):
@@ -47,26 +54,63 @@ def toggle_task_in_note_html(*, content_html: str, task_index: int, is_ticked: b
         raise TypeError(f"content_html must be a string, got {type(content_html)}")
     if not isinstance(task_index, int) or task_index < 0:
         raise ValueError(f"task_index must be a non-negative integer, got {task_index!r}")
-    characters = _plain_characters(content_html)
-    plain_text = "".join(character.character for character in characters)
-    leading_breaks = len(plain_text) - len(plain_text.lstrip(_LINE_BREAK))
-    task_lines = markdown_task_lines(plain_text.strip(_LINE_BREAK))
-    if task_index >= len(task_lines):
-        raise InputRejected(_CHANGED_MESSAGE)
-    line_start = _line_start(plain_text, leading_breaks=leading_breaks, line_index=task_lines[task_index])
-    line_end = plain_text.find(_LINE_BREAK, line_start)
-    if line_end == -1:
-        line_end = len(plain_text)
-    match = _TASK_LINE_RE.match(plain_text[line_start:line_end])
-    if match is None:
-        raise InputRejected(_CHANGED_MESSAGE)
-    if (match.group("mark") != _EMPTY_MARK) == is_ticked:
-        # Already as asked (a second click before the first one's redraw): say so.
-        raise InputRejected(_CHANGED_MESSAGE)
-    mark = characters[line_start + match.start("mark")]
     new_mark = _EMPTY_MARK
     if is_ticked:
         new_mark = _TICKED_MARK
+    return _rewrite_mark(
+        content_html=content_html, find_lines=markdown_task_lines, index=task_index, line_re=_TASK_LINE_RE,
+        is_already=lambda mark: (mark != _EMPTY_MARK) == is_ticked, new_mark=new_mark,
+        changed_message=_CHANGED_MESSAGE,
+    )
+
+
+def toggle_callout_fold_in_note_html(*, content_html: str, callout_index: int, is_open: bool) -> str:
+    """The note's HTML with folding callout callout_index marked open (is_open, +) or
+    folded (-). It must be the opposite now; if the note changed under it, InputRejected
+    says to try again."""
+    if not isinstance(content_html, str):
+        raise TypeError(f"content_html must be a string, got {type(content_html)}")
+    if not isinstance(callout_index, int) or callout_index < 0:
+        raise ValueError(f"callout_index must be a non-negative integer, got {callout_index!r}")
+    new_mark = _FOLDED_MARK
+    if is_open:
+        new_mark = _OPEN_MARK
+    return _rewrite_mark(
+        content_html=content_html, find_lines=markdown_callout_lines, index=callout_index,
+        line_re=_CALLOUT_LINE_RE, is_already=lambda mark: mark == new_mark, new_mark=new_mark,
+        changed_message=_CALLOUT_CHANGED_MESSAGE,
+    )
+
+
+def _rewrite_mark(
+    *,
+    content_html: str,
+    find_lines: Callable[[str], List[int]],
+    index: int,
+    line_re: re.Pattern[str],
+    is_already: Callable[[str], bool],
+    new_mark: str,
+    changed_message: str,
+) -> str:
+    """The note's HTML with the one-character mark of item index (found by find_lines over
+    its plain text, read by line_re's mark group) replaced by new_mark where it stands."""
+    characters = _plain_characters(content_html)
+    plain_text = "".join(character.character for character in characters)
+    leading_breaks = len(plain_text) - len(plain_text.lstrip(_LINE_BREAK))
+    item_lines = find_lines(plain_text.strip(_LINE_BREAK))
+    if index >= len(item_lines):
+        raise InputRejected(changed_message)
+    line_start = _line_start(plain_text, leading_breaks=leading_breaks, line_index=item_lines[index])
+    line_end = plain_text.find(_LINE_BREAK, line_start)
+    if line_end == -1:
+        line_end = len(plain_text)
+    match = line_re.match(plain_text[line_start:line_end])
+    if match is None:
+        raise InputRejected(changed_message)
+    if is_already(match.group("mark")):
+        # Already as asked (a second click before the first one's redraw): say so.
+        raise InputRejected(changed_message)
+    mark = characters[line_start + match.start("mark")]
     return content_html[: mark.html_start] + new_mark + content_html[mark.html_end :]
 
 

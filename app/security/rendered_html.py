@@ -27,6 +27,9 @@ RENDERER_TAGS = frozenset({"article", "button", "path", "rect", "svg"})
 RENDERER_ATTRIBUTES: dict[str, frozenset[str]] = {
     "a": frozenset({"aria-label", "class", "rel", "target"}),
     "article": frozenset({"class"}),
+    # A callout (markdown_rendering._render_callout); a folding one's index and state.
+    "blockquote": frozenset({"class"}),
+    "details": frozenset({"class", "data-callout-index", "open"}),
     "button": frozenset({
         "aria-expanded", "aria-label", "class", "data-embed-collapse-note-id", "data-file-ref-id",
         "data-footnote-number", "data-referrer-count", "data-source-note-id", "title", "type",
@@ -67,6 +70,7 @@ _FIXED_VALUES: dict[tuple[str, str], frozenset[str]] = {
     ("div", "contenteditable"): frozenset({"false"}),
     ("img", "decoding"): frozenset({"async"}),
     ("img", "draggable"): frozenset({"true", "false"}),
+    ("details", "open"): frozenset({"", "open"}),
     ("img", "hidden"): frozenset({"", "hidden"}),
     ("img", "loading"): frozenset({"lazy"}),
     ("li", "tabindex"): frozenset({"-1"}),

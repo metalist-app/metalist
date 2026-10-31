@@ -322,6 +322,21 @@ export async function toggleMarkdownTask(noteId, taskIndex, isTicked) {
     await actionRefreshAndMaybeSelect({ startedAt, context: 'toggleMarkdownTask' });
 }
 
+// A click on a folding callout's title in a Markdown note (docs/ui/content-formatting.md, Callouts).
+export async function toggleMarkdownCallout(noteId, calloutIndex, isOpen) {
+    const startedAt = performance.now();
+    Logger.logAction('toggleMarkdownCallout', { noteId, calloutIndex, isOpen });
+    await exitEditingBeforeTodoToggle({
+        modeContext: ModeContext,
+        noteId,
+        saveAndExitEditingFn: actionSaveAndExitEditingWithoutRefreshing,
+        logDebugFn: Logger.logDebug,
+    });
+    await NotesAPI.toggleMarkdownCallout(noteId, calloutIndex, isOpen);
+    await recordNoteInteractionIfNew(noteId, 'command');
+    await actionRefreshAndMaybeSelect({ startedAt, context: 'toggleMarkdownCallout' });
+}
+
 export async function addSelectedTextAsTag(noteId, selectedText) {
     if (typeof noteId !== 'string' || noteId.length === 0) {
         throw new Error('addSelectedTextAsTag requires noteId string');

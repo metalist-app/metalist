@@ -8359,6 +8359,20 @@ html[data-theme="dark"] .meta-code-code .tok-cpf { color: #8b949e; }
     display: block;
 }
 
+/* A folding callout's title (docs/ui/content-formatting.md, Callouts): the browser's own
+   arrow, and the title on its line. */
+.meta-markdown-callout-fold > summary {
+    cursor: pointer;
+}
+
+.meta-markdown-callout-fold[open] > summary {
+    margin-bottom: 0.35em;
+}
+
+.note.collapsed .meta-markdown-callout-fold > summary {
+    cursor: inherit;
+}
+
 /* In an embed a task's box shows its source's state but is not a control. */
 .note-embed-node .meta-markdown-task-toggle {
     cursor: default;

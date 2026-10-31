@@ -18,6 +18,9 @@ export function isViewModeNoteDisclosureToggle(target) {
     if (!supportsClosest(target)) {
         return false;
     }
+    if (viewModeCalloutTitleAt(target) !== null) {
+        return true;
+    }
     const summary = target.closest('summary.ai-chat-references-heading');
     if (!summary) {
         return false;
@@ -28,6 +31,27 @@ export function isViewModeNoteDisclosureToggle(target) {
     }
     const note = summary.closest('.note');
     return note !== null && !note.classList.contains('editing');
+}
+
+// The title of a folding Markdown callout (docs/ui/content-formatting.md, Callouts) in a
+// note being viewed, open (not collapsed to its first line): a click there folds it, as
+// the browser's own disclosure does, without editing or dragging the note. Null elsewhere.
+export function viewModeCalloutTitleAt(target) {
+    if (!supportsClosest(target)) {
+        return null;
+    }
+    const summary = target.closest('summary');
+    if (!summary || !summary.parentElement || !summary.parentElement.matches('details.meta-markdown-callout-fold')) {
+        return null;
+    }
+    if (!summary.closest('.note-content')) {
+        return null;
+    }
+    const note = summary.closest('.note');
+    if (note === null || note.classList.contains('editing') || note.classList.contains('collapsed')) {
+        return null;
+    }
+    return summary;
 }
 
 export function resolveNonContentNoteSelectionTarget(target) {

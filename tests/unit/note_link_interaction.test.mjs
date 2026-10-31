@@ -6,6 +6,7 @@ import {
     isViewModeNoteDisclosureToggle,
     isViewModeNoteLink,
     resolveNonContentNoteSelectionTarget,
+    viewModeCalloutTitleAt,
 } from '../../app/static/js/modules/mode-manager/services/note-click-target-service.js';
 
 const source = readFileSync(new URL(
@@ -31,7 +32,8 @@ function harness(isEditing) {
     const events = [];
     const dependencies = {
         Element, isViewModeNoteDisclosureToggle, isViewModeNoteLink,
-        resolveNonContentNoteSelectionTarget,
+        resolveNonContentNoteSelectionTarget, viewModeCalloutTitleAt,
+        toggleMarkdownCallout: () => {},
         ModeContext: { isEditing, currentNoteId: isEditing ? 'note-1' : null, isConnected: true, isLoading: false },
         isContextMenuInteractionTarget: () => false,
         Logger: { logNoop() {}, logDebug() {} },
@@ -119,4 +121,47 @@ test('References disclosure toggles in view mode without selecting or dragging i
 test('References disclosure guard applies only outside edit mode', () => {
     assert.equal(isViewModeNoteDisclosureToggle(disclosureHarness(false).event.target), true);
     assert.equal(isViewModeNoteDisclosureToggle(disclosureHarness(true).event.target), false);
+});
+
+// A folding Markdown callout's title (docs/ui/content-formatting.md, Callouts).
+function calloutHarness({ noteClasses, isOpen, inEmbed }) {
+    const h = harness(noteClasses.includes('editing'));
+    const note = { dataset: { noteId: 'note-1' }, classList: { contains: (name) => noteClasses.includes(name) } };
+    const content = { closest: (selector) => selector === '.note' ? note : null };
+    const fold = { open: isOpen, dataset: { calloutIndex: '2' }, matches: (selector) => selector === 'details.meta-markdown-callout-fold' };
+    const embed = inEmbed ? {} : null;
+    const summary = {
+        parentElement: fold,
+        closest: (selector) => ({ summary, '.note': note, '.note-content': content, '.note-embed-node': embed })[selector] ?? null,
+    };
+    const title = { closest: (selector) => selector === 'summary' ? summary : summary.closest(selector) };
+    h.event.target = title;
+    h.event.composedPath = () => [title, summary, fold, content, note];
+    return h;
+}
+
+test('a callout title folds and saves without selecting, editing or dragging its note', () => {
+    const h = calloutHarness({ noteClasses: [], isOpen: false, inEmbed: false });
+    h.handlers.handleImmediateMouseDown(h.event);
+    h.handlers.handleMoveDragMouseDown(h.event);
+    h.handlers.handleClick(h.event);
+    assert.deepEqual(h.events, ['mouse.toggle_markdown_callout']);
+    assert.equal(h.handlers.dragContext(), null);
+});
+
+test('a callout title in an embed folds there only; in a locked note nothing changes', () => {
+    const embedded = calloutHarness({ noteClasses: [], isOpen: true, inEmbed: true });
+    embedded.handlers.handleClick(embedded.event);
+    assert.deepEqual(embedded.events, []);
+    const locked = calloutHarness({ noteClasses: ['locked'], isOpen: true, inEmbed: false });
+    locked.handlers.handleClick(locked.event);
+    assert.deepEqual(locked.events, ['prevent-default']);
+});
+
+test('a callout title is a plain click while editing or collapsed', () => {
+    for (const noteClasses of [['editing'], ['collapsed']]) {
+        const h = calloutHarness({ noteClasses, isOpen: false, inEmbed: false });
+        assert.equal(viewModeCalloutTitleAt(h.event.target), null, noteClasses[0]);
+        assert.equal(isViewModeNoteDisclosureToggle(h.event.target), false, noteClasses[0]);
+    }
 });
