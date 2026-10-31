@@ -11,7 +11,7 @@ from app.services.search_index import (
 )
 from app.services.input_errors import InputRejected
 from app.services.search_query import parse_search_query
-from app.services.search_text import text_term_matches
+from app.services.text_terms import text_term_matches
 from app.utils.text_utils import strip_html
 
 

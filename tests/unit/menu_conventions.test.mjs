@@ -23,7 +23,7 @@ function viewHandlers(calls) {
 
 function viewMenu(overrides, calls) {
     return buildContextMenuItems({
-        kind: 'view', isMac: true, isEditing: false, canPasteNoteAtTop: true, canGoToTop: true, canGoToBottom: true,
+        kind: 'view', searchAllowsNewNotes: true, isMac: true, isEditing: false, canPasteNoteAtTop: true, canGoToTop: true, canGoToBottom: true,
         isUntaggedView: false, theme: 'system', sortMode: 'normal', dateRangeKind: 'none', dateRangeField: 'updated',
         fileFilterKind: 'none', areTabsVisible: false, isAiChatVisible: false, areNoteTagsVisible: false,
         ...overrides,

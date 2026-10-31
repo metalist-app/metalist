@@ -281,5 +281,5 @@ Options:
 Still open, for the import only (what MetaList keeps of each, and what the import report says is lost):
 
 3. **Obsidian syntax with no MetaList counterpart** (callouts are decided, H19: plain HTML; still open: comments H13, block IDs F1, aliases C2, nested YAML and `cssclasses` C3/C10, table alignment H17, embed subpaths and image widths E3/E6): kept as text in the note (a callout as Markdown in an `@markdown` note, an image's `|300` in the embed's text), or dropped and reported.
-4. ~~Property values with spaces~~ **Decided 2026-10-30 (C4–C5):** quoted tag values (`author="Ursula Le Guin"`), built before the import (`docs/ready-to-build/quoted-tag-values.md`). This replaced the first answer, dashes (`author=Ursula-Le-Guin`), which lose information (`Jean-Paul Sartre` and `Jean Paul Sartre` would both become `Jean-Paul-Sartre`).
+4. ~~Property values with spaces~~ **Decided 2026-10-30 (C4–C5):** quoted tag values (`author="Ursula Le Guin"`), built 2026-10-31 (`docs/design/tag-properties.md`, Quoted values). This replaced the first answer, dashes (`author=Ursula-Le-Guin`), which lose information (`Jean-Paul Sartre` and `Jean Paul Sartre` would both become `Jean-Paul-Sartre`).
 5. **Excalidraw** (J4): import an `.excalidraw.md` drawing as an editable MetaList diagram, or keep it as a file.

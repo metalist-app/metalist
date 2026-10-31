@@ -1,5 +1,6 @@
 import { ApplicationState } from '../../application-state.js';
 import { foldTagCase } from '../../tag-characters.js';
+import { splitTokens } from '../../quoted-values.js';
 
 // Suggest Tags with AI, per note: 'asking' while the AI works, 'nothing-new'
 // when it had nothing to add. Shown on a card floating above the tag bar's
@@ -179,7 +180,7 @@ function parseProposalTokens(proposedTags) {
     if (trimmed === '') {
         return [];
     }
-    const tokens = trimmed.split(/\s+/u);
+    const tokens = splitTokens(trimmed);
     const normalizedKeys = new Set(tokens.map((token) => foldTagCase(token)));
     if (normalizedKeys.size !== tokens.length) {
         throw new Error('Proposal tokens must be case-insensitively unique');

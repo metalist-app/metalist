@@ -118,7 +118,9 @@ test('a tag in a search keeps one = as typed, as the tag bar does (@code=python)
 
 // Property terms (docs/design/tag-properties.md): jogging:miles>2, jogging:miles?, date>=2024-01.
 test('property terms run when complete and say how to finish them otherwise', () => {
-    for (const term of ['jogging:miles>2', 'drug:dosage<=5mg', 'jogging:miles?', '-jogging:miles', 'date>=2024-01', 'run:start>10:30pm']) {
+    for (const term of ['jogging:miles>2', 'drug:dosage<=5mg', 'jogging:miles?', '-jogging:miles', 'date>=2024-01', 'run:start>10:30pm',
+        // A chain: one tag meets every condition (decided 2026-10-31).
+        'jogging:miles>2:duration<40', 'run:start>10:30pm:miles=3', 'jogging:miles>2:duration', ':foo="bar":baz>3:zed<100']) {
         const analysis = analyzeSearchQueryInput(term);
         assert.equal(analysis.isComplete, true, term);
         assert.equal(analysis.sanitizedText, term, term);
@@ -127,7 +129,12 @@ test('property terms run when complete and say how to finish them otherwise', ()
         ['jogging: ', 'Name a property after the colon'],
         ['jogging:miles> ', 'Write a value after >'],
         ['jogging:3>2 ', 'A property name starts with a letter'],
-        ['jogging:miles>2:duration<40 ', 'Search one property per term'],
+        ['jogging:miles>2:duration? ', 'Search a missing property in a term of its own'],
+        ['jogging:miles>2:duration=MAX ', 'MAX goes in a term of its own'],
+        ['jogging:miles>2:Miles<5 ', 'Name each property once in a search term'],
+        [':foo=1:foo=2 ', 'Name each property once in a search term'],
+        ['jogging:miles>2>3 ', 'Quote a value holding <, >, ? or ='],
+        ['@sum:calories>2000:fat<10 ', 'Compare one figure per term'],
     ];
     for (const [typed, warning] of cases) {
         const analysis = analyzeSearchQueryInput(typed);

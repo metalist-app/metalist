@@ -20,7 +20,7 @@ Why: the path Obsidian → MetaList → back to Obsidian is the one where the us
 
 **Build order** (the maintainer, 2026-10-30), each step with its own early look:
 1. Unicode tags (§"Found when filed"). **Built 2026-10-30;** documented in `docs/ui/tag-bar.md` (Whitespace + Tokens).
-1a. Tag values with spaces, in quotes (`author="Ursula Le Guin"`; `docs/ready-to-build/quoted-tag-values.md`, decided 2026-10-30). The import then writes frontmatter values with spaces quoted, not dashed.
+1a. Tag values with spaces, in quotes (`author="Ursula Le Guin"`, decided 2026-10-30). **Built 2026-10-31,** with value suggestions after `=`, chained search conditions (`:foo="bar":baz>3`) and no new root note in a search no new note can match; documented in `docs/design/tag-properties.md` (Quoted values, Search). The import then writes frontmatter values with spaces quoted, not dashed; the export's hidden metadata must round-trip them, escapes included (`title="The \"Best\" Book"`).
 1b. `@markdown` notes keep links and embeds (`obsidian-mapping.md` A1; decided 2026-10-30). Then, planned: nested lists, Markdown images, tasks, `==highlight==`, footnotes, callouts, and HTML inside Markdown (sanitized as stored notes are; today all HTML but `<br>` is escaped) in `@markdown` notes (A2). The import's Markdown content choice (§2.2) relies on them; its rich-text choice doesn't.
 2. Obsidian import, developer version.
 3. Markdown export, developer version.

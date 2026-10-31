@@ -37,6 +37,7 @@ from app.services.agent.token_estimation import estimate_input_tokens
 from app.services.agent.web_settings import AgentWebSettings
 from app.services.content_formatting import extract_note_text_for_agent
 from app.services.note_store import store as note_store
+from app.services.quoted_values import split_tokens
 from app.services.search_index import extract_ordered_tags_for_agent, extract_ordered_tags_for_search
 from app.services.tag_properties import tag_part_of_token
 from app.services.search_index import search_index
@@ -131,7 +132,7 @@ def _note_text(note_id: str) -> dict[str, object]:
 
 def _note_node(note_id: str) -> dict[str, object]:
     return {"note_id": note_id, **_note_text(note_id),
-            "proposed_tags": list(note_store.get_note(note_id).proposed_tags.split())}
+            "proposed_tags": list(split_tokens(note_store.get_note(note_id).proposed_tags))}
 
 
 def _subtree_node(note_id: str, scope_note_ids: frozenset[str], hidden: frozenset[str]) -> dict[str, object]:

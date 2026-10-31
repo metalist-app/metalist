@@ -65,7 +65,7 @@ import {
 } from '../services/context-menu-target-service.js';
 import { OntologyModal } from '../../modals/ontology-modal.js';
 import { findTagAtIndexInTagBar } from '../services/tag-syntax-service.js';
-import { findSearchTagAtIndex } from '../services/search-syntax-service.js';
+import { findSearchTagAtIndex, findUnfillableSearchTerm } from '../services/search-syntax-service.js';
 import { getInputCaretIndexFromPoint, isInputPointPastText } from '../../context-menu/input-caret-service.js';
 import { buildContextMenuItems } from '../../context-menu/context-menu-registry.js';
 import { initContextMenuService, showContextMenu } from '../../context-menu/context-menu-service.js';
@@ -1012,7 +1012,7 @@ function showNoteContextMenu(event, noteId, imageContext, selectedTextRange, ref
         canRemoveFormatting: ModeContext.isEditingNote(noteId),
         canAddDiagram: ModeContext.isEditingNote(noteId),
         canEditDiagram: true,
-        canAddNoteAtTop: !ModeContext.isEditing,
+        canAddNoteAtTop: !ModeContext.isEditing && findUnfillableSearchTerm(ModeContext.searchQuery) === null,
         canViewFullscreen: true,
         canOpenFloatingNote: true,
     };
@@ -1402,6 +1402,7 @@ function showViewContextMenu(event) {
         isAiChatVisible: document.body.classList.contains('pref-show-ai-chat'),
         areNoteTagsVisible: document.body.classList.contains('pref-show-note-tags'),
         sortMode: ModeContext.activeTabSortMode,
+        searchAllowsNewNotes: findUnfillableSearchTerm(ModeContext.searchQuery) === null,
         ...dateRangeMenuContext(),
     };
     const items = buildContextMenuItems(context, {

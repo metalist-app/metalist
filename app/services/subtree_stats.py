@@ -177,18 +177,19 @@ def stats_figure_values(
     if not is_used:
         is_used = context.is_property_used(property_name)
     if _empty_figure(kind, is_used=is_used) == _ZERO:
-        return (PropertyValue(kind=VALUE_NUMBER, sort_key=Decimal(0), unit=""),)
+        return (PropertyValue(kind=VALUE_NUMBER, sort_key=Decimal(0), unit="", text=str(Decimal(0))),)
     return ()
 
 
 def _figure_values(totals: _PropertyTotals, kind: str) -> Tuple[PropertyValue, ...]:
     if kind == COUNT:
-        return (PropertyValue(kind=VALUE_NUMBER, sort_key=Decimal(totals.note_count), unit=""),)
+        return (PropertyValue(
+            kind=VALUE_NUMBER, sort_key=Decimal(totals.note_count), unit="", text=str(totals.note_count),
+        ),)
+    figures = ((unit, _rounded(_calculate(kind, note_totals), kind)) for unit, note_totals in sorted(totals.note_totals_by_unit.items()))
     return tuple(
-        PropertyValue(
-            kind=VALUE_NUMBER, sort_key=_rounded(_calculate(kind, note_totals), kind), unit=unit,
-        )
-        for unit, note_totals in sorted(totals.note_totals_by_unit.items())
+        PropertyValue(kind=VALUE_NUMBER, sort_key=figure, unit=unit, text=f"{figure}{unit}")
+        for unit, figure in figures
     )
 
 

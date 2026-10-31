@@ -1,4 +1,5 @@
-import { isTextCharacter, normalizeText } from '../../tag-characters.js';
+import { foldTagCase, isTextCharacter, normalizeText } from '../../tag-characters.js';
+import { VALUE_QUOTE, opensValue } from '../../quoted-values.js';
 const TAG_CONTAINS_DISALLOWED = new Set([
     ':',
     '"',
@@ -26,6 +27,8 @@ const SPACED_PREFIX_WARNING = 'In a search, + or - must be directly followed by 
 
 const QUOTE_CHARS = new Set(['"', "'" ]);
 const OR_OPERATOR = 'OR';
+// jogging:miles=MAX: the notes with the largest value, no value to give a new one.
+const EXTREME_VALUES = new Set(['MAX', 'MIN']);
 // A backslash and the character it escapes.
 const ESCAPE_SEQUENCE_LENGTH = 2;
 function isWhitespace(char) {
@@ -71,11 +74,25 @@ function enforceTagToken(rawToken) {
 const PROPERTY_SEPARATOR = ':';
 const PROPERTY_TERM_MARKS = new Set([PROPERTY_SEPARATOR, '<', '>', '?']);
 // A property's name starts with a letter, in any script.
-const NAMED_PROPERTY_TERM_RE = /^[^:=<>?@][^:=<>?]*:\p{L}[^:=<>?]*(?:\?|(?:>=|<=|>|<|=)[^<>?=]+)?$/u;
-const IMPLICIT_PROPERTY_TERM_RE = /^[^:=<>?@][^:=<>?]*(?:>=|<=|>|<)[^<>?=]+$/;
-// A property on any tag (:version, :version=0.24.5, :version>0.24; app/services/
-// tag_properties.py parse_tagless_property_term). Never with ?: on any tag it matches too much.
-const TAGLESS_PROPERTY_TERM_RE = /^:\p{L}[^:=<>?]*(?:(?:>=|<=|>|<|=)[^<>?=]+)?$/u;
+// A value: bare, or quoted (masked to "v" before these are tested).
+const TERM_TAG_PATTERN = '[^:=<>?@"][^:=<>?"]*';
+// A colon followed by a letter starts the chain's next condition, so no value holds one.
+const TERM_VALUE_PATTERN = '(?:"v"|(?:[^<>?=":]|:(?!\\p{L}))+)';
+const PROPERTY_CONDITION_PATTERN = `\\p{L}[^:=<>?"]*(?:(?:>=|<=|>|<|=)${TERM_VALUE_PATTERN})?`;
+// One condition, or a chain whose conditions one tag meets (jogging:miles>2:duration<40;
+// decided 2026-10-31); ? only alone.
+const NAMED_PROPERTY_TERM_RE = new RegExp(
+    `^${TERM_TAG_PATTERN}(?::\\p{L}[^:=<>?"]*\\?|(?::${PROPERTY_CONDITION_PATTERN})+)$`, 'u',
+);
+const IMPLICIT_PROPERTY_TERM_RE = new RegExp(`^${TERM_TAG_PATTERN}(?:>=|<=|>|<)${TERM_VALUE_PATTERN}$`, 'u');
+// A property on any tag (:version, :version=0.24.5, :version>0.24, :foo="bar":baz>3;
+// app/services/tag_properties.py parse_tagless_property_term). Never with ?: on any tag it
+// matches too much.
+const TAGLESS_PROPERTY_TERM_RE = new RegExp(`^(?::${PROPERTY_CONDITION_PATTERN})+$`, 'u');
+// Where a chain's next condition starts: a colon followed by a letter.
+const CHAIN_SEPARATOR_RE = /:(?=\p{L})/u;
+const CHAIN_TERM_EXAMPLE = 'jogging:miles>2:duration<40';
+const UNQUOTED_OPERATOR_PROBLEM = 'Quote a value holding <, >, ? or = (for example book:title="a=b")';
 const TAGLESS_PROPERTY_TERM_EXAMPLE = ':version=0.24';
 const TRAILING_OPERATOR_RE = /(>=|<=|>|<|=)$/;
 const PROPERTY_NAME_NOT_A_LETTER_RE = /^[^:]+:\P{L}/u;
@@ -86,6 +103,32 @@ const STATS_TERM_START_RE = /^(@(?:sum|avg|min|max|count))[:<>?]/i;
 const STATS_TERM_RE = /^@(?:sum|avg|min|max|count):\p{L}[^:=<>?]*(?:(?:>=|<=|>|<|=)[^<>?=]+)?$/iu;
 const STATS_TERM_EXAMPLE_PROPERTY = 'calories>2000';
 
+// Quoted values (docs/design/tag-properties.md, Quoted values): a quote straight after
+// = < > opens a value, author="Ursula Le Guin" (quoted-values.js). Checked with each
+// quoted value masked as MASKED_VALUE, so the patterns above see one plain character.
+const MASKED_VALUE = 'v';
+const EMPTY_QUOTED_VALUE_RE = /(?:>=|<=|>|<|=)""$/;
+// author="Le Guin": the tag's own value, matched as quoted text (tag_properties.py).
+const QUOTED_VALUE_TERM_RE = /^[^:=<>?@][^:=<>?]*="v"$/u;
+const QUOTED_VALUE_START_RE = /^[^:=<>?@"][^:=<>?"]*="/u;
+
+// A term with each closed quoted value's text masked; an open one is closed first.
+function maskQuotedValues(term) {
+    let out = '';
+    let index = 0;
+    while (index < term.length) {
+        if (!opensValue(term, index)) {
+            out += term[index];
+            index += 1;
+            continue;
+        }
+        const { normalizedInner, nextIndex } = readQuotedInner(term, index + 1, VALUE_QUOTE);
+        out += normalizedInner.length > 0 ? `${VALUE_QUOTE}${MASKED_VALUE}${VALUE_QUOTE}` : `${VALUE_QUOTE}${VALUE_QUOTE}`;
+        index = nextIndex;
+    }
+    return out;
+}
+
 function isPropertyTerm(token) {
     if (STATS_TERM_START_RE.test(token) || token.startsWith(PROPERTY_SEPARATOR)) {
         return true;
@@ -93,17 +136,31 @@ function isPropertyTerm(token) {
     if (token.startsWith('@')) {
         return false;
     }
-    if (token.indexOf(PROPERTY_SEPARATOR) > 0) {
+    if (QUOTED_VALUE_START_RE.test(token)) {
         return true;
     }
-    return /[<>]/.test(token);
+    const masked = maskQuotedValues(token);
+    if (masked.indexOf(PROPERTY_SEPARATOR) > 0) {
+        return true;
+    }
+    return /[<>]/.test(masked);
 }
 
 // A property term's characters: a tag's, plus : < > ? (and = in any number: an
 // extra one is explained, not dropped, so the term never changes meaning silently).
+// A quoted value keeps every text character.
 function enforcePropertyTerm(rawToken) {
     let output = '';
-    for (const char of rawToken) {
+    let index = 0;
+    while (index < rawToken.length) {
+        if (opensValue(rawToken, index)) {
+            const { normalizedInner, closed, nextIndex } = readQuotedInner(rawToken, index + 1, VALUE_QUOTE);
+            output += `${VALUE_QUOTE}${normalizedInner}${closed ? VALUE_QUOTE : ''}`;
+            index = nextIndex;
+            continue;
+        }
+        const char = rawToken[index];
+        index += 1;
         if (!isTextCharacter(char)) {
             continue;
         }
@@ -115,17 +172,28 @@ function enforcePropertyTerm(rawToken) {
 }
 
 /** What is unfinished or wrong in a property term, or '' when it can run. */
-function describePropertyTermProblem(term) {
-    if (term.split(/[:<>]/)[0] === OR_OPERATOR) {
+function describePropertyTermProblem(typedTerm) {
+    if (typedTerm.split(/[:<>=]/)[0] === OR_OPERATOR) {
         return 'OR is reserved and cannot be used as a tag';
     }
-    if ([NAMED_PROPERTY_TERM_RE, IMPLICIT_PROPERTY_TERM_RE, STATS_TERM_RE, TAGLESS_PROPERTY_TERM_RE].some((re) => re.test(term))) {
+    const term = maskQuotedValues(typedTerm);
+    const emptyValue = EMPTY_QUOTED_VALUE_RE.exec(term);
+    if (emptyValue) {
+        return `Write a value after ${emptyValue[0].slice(0, -VALUE_QUOTE.length * 2)}`;
+    }
+    const statsStart = STATS_TERM_START_RE.exec(term);
+    if (!statsStart && !(term.startsWith(PROPERTY_SEPARATOR) && term.endsWith('?'))) {
+        const chainProblem = describeChainProblem(term);
+        if (chainProblem !== '') {
+            return chainProblem;
+        }
+    }
+    if ([NAMED_PROPERTY_TERM_RE, IMPLICIT_PROPERTY_TERM_RE, STATS_TERM_RE, TAGLESS_PROPERTY_TERM_RE, QUOTED_VALUE_TERM_RE].some((re) => re.test(term))) {
         return '';
     }
     if (term.startsWith(PROPERTY_SEPARATOR)) {
         return describeTaglessPropertyTermProblem(term);
     }
-    const statsStart = STATS_TERM_START_RE.exec(term);
     if (statsStart) {
         const statsTag = statsStart[1].toLowerCase();
         const statsExample = `${statsTag}:${STATS_TERM_EXAMPLE_PROPERTY}`;
@@ -134,6 +202,9 @@ function describePropertyTermProblem(term) {
         }
         if (term.endsWith('?')) {
             return `${statsTag} always has a figure; compare it (for example ${statsExample})`;
+        }
+        if (term.slice(statsStart[1].length + PROPERTY_SEPARATOR.length).split(CHAIN_SEPARATOR_RE).length > 1) {
+            return `Compare one figure per term (for example ${statsExample} ${statsTag}:fat<30)`;
         }
     }
     if (term.endsWith(PROPERTY_SEPARATOR)) {
@@ -146,7 +217,37 @@ function describePropertyTermProblem(term) {
     if (trailingOperator) {
         return `Write a value after ${trailingOperator[1]}`;
     }
-    return `Search one property per term (for example ${PROPERTY_TERM_EXAMPLE} jogging:duration<40)`;
+    return UNQUOTED_OPERATOR_PROBLEM;
+}
+
+// Same wording as the server (app/services/tag_properties.py _chain_problem): ?, MAX and
+// MIN go in terms of their own, and a chain names each property once. term is masked.
+function describeChainProblem(term) {
+    const separatorIndex = term.indexOf(PROPERTY_SEPARATOR);
+    if (separatorIndex === -1) {
+        return '';
+    }
+    const isTagless = separatorIndex === 0;
+    const segments = term.slice(separatorIndex + PROPERTY_SEPARATOR.length).split(CHAIN_SEPARATOR_RE);
+    if (segments.length < 2) {
+        return '';
+    }
+    const exampleTag = isTagless ? '' : 'jogging';
+    const names = segments.map((segment) => foldTagCase(segment.split(/[<>=?]/)[0]));
+    if (new Set(names).size !== names.length) {
+        return `Name each property once in a search term (for example ${CHAIN_TERM_EXAMPLE})`;
+    }
+    for (const segment of segments) {
+        const name = segment.split(/[<>=?]/)[0];
+        if (segment.endsWith('?')) {
+            return `Search a missing property in a term of its own (for example ${exampleTag}:miles>2 ${exampleTag}:${name}?)`;
+        }
+        const extreme = /=(MAX|MIN)$/.exec(segment);
+        if (extreme) {
+            return `${extreme[1]} goes in a term of its own (for example ${exampleTag}:${name}=${extreme[1]})`;
+        }
+    }
+    return '';
 }
 
 // Same wording as the server (app/services/tag_properties.py parse_tagless_property_term).
@@ -164,7 +265,7 @@ function describeTaglessPropertyTermProblem(term) {
     if (trailingOperator) {
         return `Write a value after ${trailingOperator[1]}`;
     }
-    return `Search one property per term (for example ${TAGLESS_PROPERTY_TERM_EXAMPLE})`;
+    return UNQUOTED_OPERATOR_PROBLEM;
 }
 
 function readQuotedInner(rawInput, startIndex, quoteChar) {
@@ -237,6 +338,42 @@ function closeOpenQuoteTerm(opening, inner, quoteChar, endsInUnfinishedEscape) {
     return `${opening}${text}${quoteChar}`;
 }
 
+/**
+ * A tag or property term from index: to the next space outside a quoted value. Its
+ * text, where the next term starts, and whether it ends in a value quote still open.
+ */
+function readTermToken(rawInput, startIndex) {
+    let index = startIndex;
+    let text = '';
+    let endsInOpenValue = false;
+    let endsInUnfinishedEscape = false;
+    while (index < rawInput.length && !isWhitespace(rawInput[index])) {
+        if (text.length > 0 && opensValue(rawInput, index)) {
+            const quoted = readQuotedInner(rawInput, index + 1, VALUE_QUOTE);
+            text += rawInput.slice(index, quoted.nextIndex);
+            index = quoted.nextIndex;
+            endsInOpenValue = !quoted.closed;
+            endsInUnfinishedEscape = quoted.endsInUnfinishedEscape;
+            continue;
+        }
+        text += rawInput[index];
+        index += 1;
+    }
+    return { text, nextIndex: index, endsInOpenValue, endsInUnfinishedEscape };
+}
+
+/** A term ending in an open value quote, closed: '' when the value has nothing in it yet. */
+function closeOpenValueTerm(term, endsInUnfinishedEscape) {
+    let text = term;
+    if (endsInUnfinishedEscape) {
+        text = text.slice(0, -1);
+    }
+    if (text.endsWith(VALUE_QUOTE) && opensValue(text, text.length - 1)) {
+        return '';
+    }
+    return `${text}${VALUE_QUOTE}`;
+}
+
 export function analyzeSearchQueryInput(typedInput) {
     if (typeof typedInput !== 'string') {
         throw new Error('analyzeSearchQueryInput expects a string');
@@ -304,10 +441,13 @@ export function analyzeSearchQueryInput(typedInput) {
                     closedTerm = closeOpenQuoteTerm(quoteChar, rawInput.slice(termStart + 1, index), quoteChar, endsInUnfinishedEscape);
                 }
             } else {
-                while (index < rawInput.length && !isWhitespace(rawInput[index])) {
-                    index += 1;
-                }
+                const termToken = readTermToken(rawInput, index);
+                index = termToken.nextIndex;
                 closedTerm = rawInput.slice(termStart, index);
+                if (termToken.endsInOpenValue) {
+                    endsInOpenQuote = true;
+                    closedTerm = closeOpenValueTerm(closedTerm, termToken.endsInUnfinishedEscape);
+                }
             }
             normalizedTerms.push(rawInput.slice(termStart, index));
             if (closedTerm !== '') {
@@ -365,10 +505,30 @@ export function analyzeSearchQueryInput(typedInput) {
             continue;
         }
 
-        let rawToken = '';
-        while (index < rawInput.length && !isWhitespace(rawInput[index])) {
-            rawToken += rawInput[index];
-            index += 1;
+        const termToken = readTermToken(rawInput, index);
+        const rawToken = termToken.text;
+        index = termToken.nextIndex;
+        if (termToken.endsInOpenValue) {
+            // author="Ursula Le: searched as if closed, as an open text quote is; with
+            // nothing in it yet (author=") it is still being typed.
+            endsInOpenQuote = true;
+            const unprefixed = rawToken.replace(/^[+-]+/, '');
+            const openTerm = `${prefix}${enforcePropertyTerm(unprefixed)}`;
+            normalizedTerms.push(openTerm);
+            const closedOpenTerm = closeOpenValueTerm(openTerm, termToken.endsInUnfinishedEscape);
+            if (closedOpenTerm === '') {
+                isComplete = false;
+                continue;
+            }
+            closedTerms.push(closedOpenTerm);
+            if (describePropertyTermProblem(closedOpenTerm.slice(prefix.length)) !== '') {
+                isComplete = false;
+                continue;
+            }
+            sanitizedTerms.push(closedOpenTerm);
+            currentClauseTermCount += 1;
+            endsWithOrOperator = false;
+            continue;
         }
 
         if (rawToken === OR_OPERATOR) {
@@ -484,6 +644,53 @@ export function analyzeSearchQueryInput(typedInput) {
     };
 }
 
+// A property term a new note can be given (app/usecases/search_context_tags.py): its tag
+// and exact values, jogging:miles=3, jogging:miles=3:duration=30 or book:author="Le Guin"
+// (masked), or a tag's own quoted value, author="Le Guin".
+const FILLABLE_PROPERTY_TERM_RE = new RegExp(
+    `^${TERM_TAG_PATTERN}(?:=${TERM_VALUE_PATTERN}|(?::\\p{L}[^:=<>?"]*=${TERM_VALUE_PATTERN})+)$`, 'u',
+);
+
+/**
+ * The first property term in a search's first clause that a note added in the search
+ * cannot be given (jogging:miles>3, :foo="ba", jogging:miles?, MAX, @sum:calories>2000),
+ * or null. A note added there would not match its own search, so none is added (agreed
+ * 2026-10-31). Excluded terms never block: a new note has no values.
+ */
+export function findUnfillableSearchTerm(searchQuery) {
+    if (typeof searchQuery !== 'string') {
+        throw new Error('findUnfillableSearchTerm expects a string');
+    }
+    const runnable = analyzeSearchQueryInput(searchQuery).sanitizedText;
+    let index = 0;
+    while (index < runnable.length) {
+        if (isWhitespace(runnable[index])) {
+            index += 1;
+            continue;
+        }
+        const prefix = runnable[index] === '-' || runnable[index] === '+' ? runnable[index] : '';
+        const bodyStart = index + prefix.length;
+        if (QUOTE_CHARS.has(runnable[bodyStart])) {
+            index = readQuotedInner(runnable, bodyStart + 1, runnable[bodyStart]).nextIndex;
+            continue;
+        }
+        const { text, nextIndex } = readTermToken(runnable, bodyStart);
+        index = nextIndex;
+        if (text === OR_OPERATOR) {
+            return null;
+        }
+        if (prefix === '-' || !isPropertyTerm(text)) {
+            continue;
+        }
+        const masked = maskQuotedValues(text);
+        const value = masked.slice(masked.lastIndexOf('=') + 1);
+        if (!FILLABLE_PROPERTY_TERM_RE.test(masked) || EXTREME_VALUES.has(value)) {
+            return text;
+        }
+    }
+    return null;
+}
+
 /**
  * The quote mark of the quoted phrase the cursor is inside (" or '), or '' when
  * the cursor is outside quoted text. Inside a phrase a paste is text as copied,
@@ -515,9 +722,11 @@ export function findOpenQuoteAtIndex(rawInput, cursorIndex) {
             index = nextIndex;
             continue;
         }
-        while (index < before.length && !isWhitespace(before[index])) {
-            index += 1;
+        const termToken = readTermToken(before, index);
+        if (termToken.endsInOpenValue) {
+            return VALUE_QUOTE;
         }
+        index = termToken.nextIndex;
     }
     return '';
 }
@@ -586,9 +795,7 @@ export function findSearchTagAtIndex(rawInput, cursorIndex) {
             }
         }
 
-        while (index < rawInput.length && !isWhitespace(rawInput[index])) {
-            index += 1;
-        }
+        index = readTermToken(rawInput, index).nextIndex;
         const tokenEnd = index;
         if (cursorIndex >= tokenStart && cursorIndex <= tokenEnd) {
             let tokenText = rawInput.slice(tokenStart, tokenEnd);
@@ -597,7 +804,7 @@ export function findSearchTagAtIndex(rawInput, cursorIndex) {
             }
             // A property term is about its tag: jogging:miles>2 is jogging.
             if (isPropertyTerm(tokenText)) {
-                tokenText = tokenText.split(/[:<>]/)[0];
+                tokenText = tokenText.split(/[:<>=]/)[0];
             }
             const enforced = enforceTagToken(tokenText);
             if (enforced === OR_OPERATOR) {

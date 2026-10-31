@@ -76,6 +76,7 @@ from app.services.tag_properties import PROPERTY_SUGGESTIONS_IN_TAG_BAR
 from app.services.tag_properties import PropertySuggestion
 from app.services.tag_properties import has_property_syntax
 from app.services.subtree_stats import STATS_STYLES, suggest_summary_properties, typed_summary_property
+from app.services.quoted_values import token_end
 from app.services.tag_properties import is_property_term, is_stats_term, is_tagless_property_term
 from app.services.root_date_filter import RootDateFilter
 from app.services.root_date_filter import make_root_date_filter
@@ -645,15 +646,32 @@ def search_suggestions(request: Request, payload: SearchSuggestionsRequest) -> D
 
 
 def _typed_property_term(query: str) -> str | None:
-    """The property term being typed at the end of a search, without its - or +."""
-    if query == "" or query[-1].isspace():
+    """The property term being typed at the end of a search, without its - or +. A quoted
+    value it ends in may still be open, spaces and all (:author="Ursula Le)."""
+    term_start = _last_term_start(query)
+    if term_start is None:
         return None
-    term = query.split()[-1].lstrip("+-")
-    if '"' in term or "'" in term:
+    term = query[term_start:].lstrip("+-")
+    if term.startswith(("\"", "'")):
         return None
     if not is_property_term(term) and not is_stats_term(term) and not is_tagless_property_term(term):
         return None
     return term
+
+
+def _last_term_start(query: str) -> int | None:
+    """Where the search's last term starts when the query ends inside it, else None (it
+    ends in a space after the term)."""
+    index = 0
+    term_start = None
+    while index < len(query):
+        if query[index].isspace():
+            index += 1
+            term_start = None
+            continue
+        term_start = index
+        index = token_end(query, index)
+    return term_start
 
 
 def _property_suggestions_response(suggestions: list[PropertySuggestion], *, personalized: bool) -> Dict[str, object]:

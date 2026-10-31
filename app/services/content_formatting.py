@@ -48,6 +48,7 @@ from app.services.ontology_rules_store import get_ontology_if_ready
 from app.services.file_registry import file_registry
 from app.security.rendered_html import RENDERER_CLASS_PREFIXES
 from app.services.link_titles import display_domain_for_url
+from app.services.quoted_values import VALUE_QUOTE, token_end
 from app.services.link_titles import site_of_url
 from app.services.link_icons import link_icon_store
 from app.services.link_titles import link_title_store
@@ -1729,10 +1730,10 @@ def _parse_meta_tags(tags: str) -> MetaTagConfig:
 
 
 def _tokenize_tag_bar(tags: str) -> List[str]:
-    # Without comments or wrapper openers the scanner below only splits on
-    # whitespace (str.isspace, the same set str.split uses), so take the
-    # C-speed path for plain tag strings.
-    if "/*" not in tags and _WRAPPER_OPENER_RE.search(tags) is None:
+    # Without comments, wrapper openers or quoted values the scanner below only
+    # splits on whitespace (str.isspace, the same set str.split uses), so take
+    # the C-speed path for plain tag strings.
+    if "/*" not in tags and VALUE_QUOTE not in tags and _WRAPPER_OPENER_RE.search(tags) is None:
         return tags.split()
     return _scan_tag_bar_tokens(tags)
 
@@ -1770,8 +1771,8 @@ def _scan_tag_bar_tokens(tags: str) -> List[str]:
                         tokens.append(token)
                     continue
 
-        while index < len(tags) and not tags[index].isspace():
-            index += 1
+        # A quoted value (author="Ursula Le Guin") keeps its spaces.
+        index = token_end(tags, index)
         token = tags[start:index]
         if token:
             tokens.append(token)
@@ -1820,8 +1821,7 @@ def _tokenize_tag_bar_preserving_comments(tags: str) -> List[str]:
                     tokens.append(tags[start:index])
                     continue
 
-        while index < len(tags) and not tags[index].isspace():
-            index += 1
+        index = token_end(tags, index)
         tokens.append(tags[start:index])
     return tokens
 

@@ -911,9 +911,13 @@ function buildViewContextItems(context, handlers) {
     // Related actions sit in submenus so the menu fits a window 800 px tall; a group with
     // one action that applies shows that action in place (pushGroup).
     const items = [];
-    // A sorted tab places root notes by its order, so nothing is added at the top there
-    // (the keys still say why, root-note-creation-service.js).
-    const canAddAtTop = !isRootReorderLocked(context.sortMode);
+    // A sorted tab places root notes by its order, and a new note could not match a search
+    // like jogging:miles>3, so nothing is added at the top there (the keys still say why,
+    // root-note-creation-service.js).
+    if (typeof context.searchAllowsNewNotes !== 'boolean') {
+        throw new Error('View context requires searchAllowsNewNotes boolean');
+    }
+    const canAddAtTop = !isRootReorderLocked(context.sortMode) && context.searchAllowsNewNotes;
     if (!isEditing) {
         const addEntries = [];
         if (canAddAtTop) {

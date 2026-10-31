@@ -8,29 +8,39 @@ jogging:miles=3 is jogging. Meta tags (@size=2) and tags inside scopes have none
 from __future__ import annotations
 
 import calendar
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from decimal import Decimal
 import re
 from typing import Any, Dict, FrozenSet, List, Mapping, Tuple
 
 from app.services.input_errors import InputRejected
+from app.services.quoted_values import (
+    find_outside_values, is_quoted, opens_value, quote_value, quoted_value_end, unquote_value,
+)
+from app.services.text_terms import text_term_matches
 
 PROPERTY_SEPARATOR = ":"
 META_TAG_PREFIX = "@"
+_PROPERTY_SEPARATORS = frozenset(PROPERTY_SEPARATOR)
+
+
+def _property_separator_index(token: str) -> int:
+    """The colon that ends the tag, outside any quoted value (author="a:b" has none), or -1."""
+    return find_outside_values(token, _PROPERTY_SEPARATORS, 0)
 
 
 def has_property_syntax(token: str) -> bool:
     if not isinstance(token, str):
         raise TypeError(f"token must be a string, got {type(token)}")
-    return token.find(PROPERTY_SEPARATOR) > 0 and not token.startswith(META_TAG_PREFIX)
+    return _property_separator_index(token) > 0 and not token.startswith(META_TAG_PREFIX)
 
 
 def tag_part_of_token(token: str) -> str:
     """The tag a token names: jogging for jogging:miles=3, the token itself otherwise."""
     if not has_property_syntax(token):
         return token
-    return token[: token.index(PROPERTY_SEPARATOR)]
+    return token[: _property_separator_index(token)]
 
 
 # --- Values and search conditions -------------------------------------------------
@@ -44,6 +54,7 @@ MISSING_OPERATOR = "?"
 # A bare property name in a search: the note has the property, with any value.
 PRESENT_OPERATOR = ""
 COMPARISON_OPERATORS = (">=", "<=", ">", "<", "=")
+_OPERATOR_CHARACTERS = frozenset("<>=")
 # Comparisons a search can write without naming a property: date>=2024-01. (date=2024-01
 # stays the valued tag it has always been.)
 IMPLICIT_COMPARISON_OPERATORS = (">=", "<=", ">", "<")
@@ -96,6 +107,8 @@ class PropertyValue:
     sort_key: Any
     # A number's unit as written after it, casefolded ("mg" for 10mg); "" for none.
     unit: str
+    # The value as written, without quotes: what a quoted search value matches inside.
+    text: str
 
 
 def _number_value(text: str) -> PropertyValue | None:
@@ -107,7 +120,7 @@ def _number_value(text: str) -> PropertyValue | None:
         unit = ""
     if unit.casefold() in {"am", "pm"}:
         return None
-    return PropertyValue(kind=VALUE_NUMBER, sort_key=Decimal(match.group("number")), unit=unit.casefold())
+    return PropertyValue(kind=VALUE_NUMBER, sort_key=Decimal(match.group("number")), unit=unit.casefold(), text=text)
 
 
 def _temporal_value(text: str) -> PropertyValue | None:
@@ -128,7 +141,7 @@ def _temporal_value(text: str) -> PropertyValue | None:
         )
     if moment is None:
         return None
-    return PropertyValue(kind=VALUE_TEMPORAL, sort_key=moment, unit="")
+    return PropertyValue(kind=VALUE_TEMPORAL, sort_key=moment, unit="", text=text)
 
 
 def _valid_moment(year: int, month: int, day: int, *, hour: int, minute: int, second: int) -> datetime | None:
@@ -168,6 +181,7 @@ def _time_value(text: str) -> PropertyValue | None:
         return None
     return PropertyValue(
         kind=VALUE_TIME, sort_key=(hour * _MINUTES_IN_HOUR + minute) * _SECONDS_IN_MINUTE + second, unit="",
+        text=text,
     )
 
 
@@ -181,7 +195,7 @@ def parse_property_value(text: str) -> PropertyValue:
         value = reader(text)
         if value is not None:
             return value
-    return PropertyValue(kind=VALUE_TEXT, sort_key=text.casefold(), unit="")
+    return PropertyValue(kind=VALUE_TEXT, sort_key=text.casefold(), unit="", text=text)
 
 
 def is_property_name(name: str) -> bool:
@@ -191,12 +205,21 @@ def is_property_name(name: str) -> bool:
 
 
 def split_property_segments(text: str) -> List[str]:
-    """The text after a tag, split where a colon is followed by a letter (or ends it)."""
+    """The text after a tag, split where a colon is followed by a letter (or ends it); a
+    quoted value is kept whole (title="Dune: Messiah")."""
     segments: List[str] = []
     current = ""
-    for index, char in enumerate(text):
-        is_last = index == len(text) - 1
-        if char == PROPERTY_SEPARATOR and (is_last or text[index + 1].isalpha()):
+    index = 0
+    while index < len(text):
+        if opens_value(text, index):
+            end = quoted_value_end(text, index).end
+            current += text[index:end]
+            index = end
+            continue
+        char = text[index]
+        index += 1
+        is_last = index == len(text)
+        if char == PROPERTY_SEPARATOR and (is_last or text[index].isalpha()):
             segments.append(current)
             current = ""
             continue
@@ -212,15 +235,16 @@ def token_properties(token: str) -> Tuple[str, Dict[str, PropertyValue]]:
     tag_part = tag_part_of_token(token)
     name, assignment, implicit_value = tag_part.partition(PROPERTY_ASSIGNMENT)
     properties: Dict[str, PropertyValue] = {}
-    if assignment and implicit_value != "":
-        properties[IMPLICIT_PROPERTY] = parse_property_value(implicit_value)
+    if assignment and unquote_value(implicit_value) != "":
+        properties[IMPLICIT_PROPERTY] = parse_property_value(unquote_value(implicit_value))
     if has_property_syntax(token):
         for segment in split_property_segments(token[len(tag_part) + 1:]):
             property_name, has_value, value = segment.partition(PROPERTY_ASSIGNMENT)
             key = property_name.casefold()
-            if not has_value or value == "" or not is_property_name(property_name) or key in properties:
+            text = unquote_value(value)
+            if not has_value or text == "" or not is_property_name(property_name) or key in properties:
                 continue
-            properties[key] = parse_property_value(value)
+            properties[key] = parse_property_value(text)
     return name.casefold(), properties
 
 
@@ -231,8 +255,16 @@ class PropertyCondition:
     tag: str
     name: str
     operator: str
-    # The compared value as typed; "" for ? and a bare name.
+    # The compared value as typed, quotes included; "" for ? and a bare name.
     value_text: str
+    # The term's further conditions (:foo="bar":baz>3), each met by the same tag as this
+    # one (decided 2026-10-31); () for a term with one condition.
+    chained: Tuple["PropertyCondition", ...]
+
+    @property
+    def links(self) -> Tuple["PropertyCondition", ...]:
+        """Every condition of the term, this one first, none with a chain of its own."""
+        return (replace(self, chained=()),) + self.chained
 
     @property
     def key(self) -> Tuple[str, str]:
@@ -248,19 +280,41 @@ class PropertyCondition:
         """@sum:calories>2000: about the figure a stats tag shows, not a value on a note."""
         return self.key[0] in STATS_TERM_TAGS
 
+    @property
+    def is_text_match(self) -> bool:
+        """:foo="ba": a quoted value after =, matched inside the note's value as quoted
+        text is (decided 2026-10-31); a bare value after = matches the whole value."""
+        return self.operator == "=" and is_quoted(self.value_text)
+
+    @property
+    def compared_text(self) -> str:
+        """The compared value without its quotes."""
+        return unquote_value(self.value_text)
+
     def format(self) -> str:
-        if self.name == IMPLICIT_PROPERTY and self.operator in IMPLICIT_COMPARISON_OPERATORS:
-            return f"{self.tag}{self.operator}{self.value_text}"
-        return f"{self.tag}{PROPERTY_SEPARATOR}{self.name}{self.operator}{self.value_text}"
+        chain = "".join(f"{PROPERTY_SEPARATOR}{link.name}{link.operator}{link.value_text}" for link in self.chained)
+        if self.tag != ANY_TAG and self.name == IMPLICIT_PROPERTY and _is_implicit_term(self.operator, self.value_text):
+            return f"{self.tag}{self.operator}{self.value_text}{chain}"
+        return f"{self.tag}{PROPERTY_SEPARATOR}{self.name}{self.operator}{self.value_text}{chain}"
 
 
 def is_property_term(token: str) -> bool:
-    """Whether a search term is about a property rather than a tag."""
+    """Whether a search term is about a property rather than a tag: it names one
+    (jogging:miles>2), compares (date>=2024-01) or matches a quoted value (author="Le Guin")."""
     if token.startswith(META_TAG_PREFIX):
         return False
     if has_property_syntax(token):
         return True
-    return any(operator in token for operator in ("<", ">"))
+    _name, operator, value = _split_at_operator(token)
+    return _is_implicit_term(operator, value)
+
+
+def _is_implicit_term(operator: str, value: str) -> bool:
+    """A term about a tag's own value, without naming the property: date>=2024-01 or
+    author="Le Guin" (date=2024-01, bare, stays the valued tag it has always been)."""
+    if operator in IMPLICIT_COMPARISON_OPERATORS:
+        return True
+    return operator == PROPERTY_ASSIGNMENT and is_quoted(value)
 
 
 def property_term_tag(token: str) -> str:
@@ -269,12 +323,52 @@ def property_term_tag(token: str) -> str:
 
 
 def parse_property_term(token: str) -> PropertyCondition:
-    """A property search term, or InputRejected saying how to write one."""
-    tag, name, operator, value_text = _split_property_term(token)
-    problem = _condition_problem(tag, name, operator, value_text)
+    """A property search term, or InputRejected saying how to write one. Its conditions
+    after the first (jogging:miles>2:duration<40) are chained to it."""
+    problem = property_term_problem(token)
     if problem != "":
         raise InputRejected(problem)
-    return PropertyCondition(tag=tag, name=name, operator=operator, value_text=value_text)
+    return _chained_condition([
+        PropertyCondition(tag=tag, name=name, operator=operator, value_text=value_text, chained=())
+        for tag, name, operator, value_text in _chain_parts(token)
+    ])
+
+
+def _chained_condition(conditions: List[PropertyCondition]) -> PropertyCondition:
+    """The first condition of a term with the rest chained to it."""
+    assert conditions, "a term has a condition"
+    return replace(conditions[0], chained=tuple(conditions[1:]))
+
+
+def _chain_parts(token: str) -> List[Tuple[str, str, str, str]]:
+    """Each condition of a term as its tag, property name, operator and value, as written:
+    jogging:miles>2:duration<40 is two, split where a colon is followed by a letter."""
+    if not has_property_syntax(token):
+        return [_split_property_term(token)]
+    tag = tag_part_of_token(token)
+    return [
+        _split_property_term(f"{tag}{PROPERTY_SEPARATOR}{segment}")
+        for segment in split_property_segments(token[len(tag) + len(PROPERTY_SEPARATOR):])
+    ]
+
+
+_CHAIN_EXAMPLE = "jogging:miles>2:duration<40"
+
+
+def _chain_problem(parts: List[Tuple[str, str, str, str]]) -> str:
+    """What a chained term may not hold: ?, MAX and MIN go in terms of their own (each is
+    about the property alone, or across notes), and each property is named once."""
+    if len(parts) == 1:
+        return ""
+    names = [name.casefold() for _tag, name, _operator, _value in parts]
+    if len(set(names)) != len(names):
+        return f"Name each property once in a search term (for example {_CHAIN_EXAMPLE})"
+    for _tag, name, operator, value_text in parts:
+        if operator == MISSING_OPERATOR:
+            return f"Search a missing property in a term of its own (for example jogging:miles>2 jogging:{name}?)"
+        if value_text in EXTREME_KEYWORDS:
+            return f"{value_text} goes in a term of its own (for example jogging:{name}={value_text})"
+    return ""
 
 
 # A property on any tag (`:version`, `:version=0.24.5`, `:version>0.24`): a search term
@@ -297,18 +391,29 @@ def parse_tagless_property_term(token: str) -> PropertyCondition:
     much (decided 2026-10-25)."""
     if not is_tagless_property_term(token):
         raise ValueError(f"{token} does not start with {PROPERTY_SEPARATOR}")
-    rest = token[len(PROPERTY_SEPARATOR):]
-    if rest.endswith(MISSING_OPERATOR):
+    parts = [_tagless_part(segment) for segment in split_property_segments(token[len(PROPERTY_SEPARATOR):])]
+    problem = _chain_problem(parts)
+    if problem != "":
+        raise InputRejected(problem.replace("jogging:", PROPERTY_SEPARATOR))
+    return _chained_condition([
+        PropertyCondition(tag=tag, name=name, operator=operator, value_text=value_text, chained=())
+        for tag, name, operator, value_text in parts
+    ])
+
+
+def _tagless_part(segment: str) -> Tuple[str, str, str, str]:
+    """One condition of a property on any tag (version>0.24), or InputRejected."""
+    if segment.endswith(MISSING_OPERATOR):
         raise InputRejected("A search for a missing property needs its tag (for example jogging:miles?)")
-    name, operator, value_text = _split_at_operator(rest)
+    name, operator, value_text = _split_at_operator(segment)
     if operator == "":
-        name, operator = rest, PRESENT_OPERATOR
+        name, operator = segment, PRESENT_OPERATOR
     if name == "":
         raise InputRejected(f"Name a property after the colon (for example {_TAGLESS_EXAMPLE})")
     problem = _name_and_value_problem(name, operator, value_text)
     if problem != "":
         raise InputRejected(problem)
-    return PropertyCondition(tag=ANY_TAG, name=name, operator=operator, value_text=value_text)
+    return ANY_TAG, name, operator, value_text
 
 
 def is_stats_term(token: str) -> bool:
@@ -333,6 +438,8 @@ def parse_stats_term(token: str) -> PropertyCondition:
     rest = rest[len(PROPERTY_SEPARATOR):]
     if rest.endswith(MISSING_OPERATOR):
         raise InputRejected(f"{tag} always has a figure; compare it (for example {example})")
+    if len(split_property_segments(rest)) > 1:
+        raise InputRejected(f"Compare one figure per term (for example {example} {tag}:fat<30)")
     name, operator, value_text = _split_at_operator(rest)
     if operator == "":
         name = rest
@@ -340,15 +447,20 @@ def parse_stats_term(token: str) -> PropertyCondition:
     if problem != "":
         raise InputRejected(problem.replace("jogging:miles", f"{tag}:calories"))
     is_comparison = operator != PRESENT_OPERATOR and value_text not in EXTREME_KEYWORDS
-    if is_comparison and parse_property_value(value_text).kind != VALUE_NUMBER:
+    if is_comparison and (is_quoted(value_text) or parse_property_value(value_text).kind != VALUE_NUMBER):
         raise InputRejected(f"Compare {tag} with a number (for example {example})")
-    return PropertyCondition(tag=tag, name=name, operator=operator, value_text=value_text)
+    return PropertyCondition(tag=tag, name=name, operator=operator, value_text=value_text, chained=())
 
 
 def property_term_problem(token: str) -> str:
     """What is wrong with a super tag term, said so the user can fix it; "" for nothing.
     The rule editor's parser reports it as its own error (tag_ontology)."""
-    return _condition_problem(*_split_property_term(token))
+    parts = _chain_parts(token)
+    for part in parts:
+        problem = _condition_problem(*part)
+        if problem != "":
+            return problem
+    return _chain_problem(parts)
 
 
 def _split_property_term(token: str) -> Tuple[str, str, str, str]:
@@ -361,10 +473,9 @@ def _split_property_term(token: str) -> Tuple[str, str, str, str]:
         if operator == "":
             return tag, rest, PRESENT_OPERATOR, ""
         return tag, name, operator, value
-    for operator in IMPLICIT_COMPARISON_OPERATORS:
-        if operator in token:
-            tag, value = token.split(operator, 1)
-            return tag, IMPLICIT_PROPERTY, operator, value
+    tag, operator, value = _split_at_operator(token)
+    if _is_implicit_term(operator, value):
+        return tag, IMPLICIT_PROPERTY, operator, value
     raise InputRejected(f"{token} is not a property search (for example jogging:miles>2)")
 
 
@@ -381,10 +492,12 @@ def _name_and_value_problem(name: str, operator: str, value_text: str) -> str:
         return "A property name starts with a letter (for example jogging:miles>2)"
     if value_text in EXTREME_KEYWORDS and operator != "=":
         return f"{value_text} goes after = (for example jogging:miles={value_text})"
-    if operator not in (MISSING_OPERATOR, PRESENT_OPERATOR) and value_text == "":
+    if operator not in (MISSING_OPERATOR, PRESENT_OPERATOR) and unquote_value(value_text).strip() == "":
         return f"Write a value after {operator} (for example jogging:miles{operator}2)"
+    if is_quoted(value_text):
+        return ""
     if any(mark in value_text for mark in ("<", ">", "?", PROPERTY_ASSIGNMENT)):
-        return "One property per search term (for example jogging:miles>2 jogging:duration<40)"
+        return 'Quote a value holding <, >, ? or = (for example book:title="a=b")'
     return ""
 
 
@@ -393,7 +506,9 @@ def value_satisfies(value: PropertyValue, condition: PropertyCondition) -> bool:
     (miles=far never answers miles>2); a query's unit, when it has one, must match."""
     if condition.operator in (MISSING_OPERATOR, PRESENT_OPERATOR) or condition.is_extreme:
         raise ValueError("Only comparisons compare values")
-    wanted = parse_property_value(condition.value_text)
+    if condition.is_text_match:
+        return text_term_matches(condition.compared_text, value.text.casefold())
+    wanted = parse_property_value(condition.compared_text)
     if value.kind != wanted.kind:
         return False
     if wanted.unit != "" and value.unit != wanted.unit:
@@ -456,6 +571,8 @@ class PropertyCompletion:
     name_suffix: str
     # A search's = with no value yet (or MA, MI): MAX and MIN are offered.
     offers_extremes: bool
+    # After =: the values notes give the property (partial is the value typed so far).
+    offers_values: bool
 
     def suggestion(self, completed: str, notes_by_tag: Dict[str, int]) -> PropertySuggestion:
         reasons = tuple(
@@ -491,27 +608,32 @@ def read_property_completion(typed: str, *, in_tag_bar: bool, offers_extremes: b
         tag, rest = typed.split(PROPERTY_SEPARATOR, 1)
         if PROPERTY_ASSIGNMENT in tag:
             tag = tag.split(PROPERTY_ASSIGNMENT, 1)[0]
+        # Suggestions follow the last property (jogging:miles=3:du, or in a search the
+        # last condition of a chain, book:title="Dune":ye); names it has are not offered.
+        segments = split_property_segments(rest)
+        current = segments[-1]
+        excluded = frozenset(_split_at_operator(segment)[0].casefold() for segment in segments[:-1])
         if in_tag_bar:
-            segments = split_property_segments(rest)
-            current = segments[-1]
-            excluded = frozenset(segment.partition(PROPERTY_ASSIGNMENT)[0].casefold() for segment in segments[:-1])
             name, operator, value = current.partition(PROPERTY_ASSIGNMENT)
         else:
-            excluded = frozenset()
-            name, operator, value = _split_at_operator(rest)
+            name, operator, value = _split_at_operator(current)
+            # MAX and MIN go in a term of their own (_chain_problem).
+            offers_extremes = offers_extremes and len(segments) == 1
         if operator == "":
             if name != "" and not is_property_name(name):
                 return None
             return PropertyCompletion(
                 tag=tag, property_name=None, partial=name, before=typed[: len(typed) - len(name)], number="",
                 excluded_names=excluded, name_suffix=name_suffix, offers_extremes=False,
+                offers_values=False,
             )
         if offers_extremes and operator == "=" and any(keyword.startswith(value) for keyword in EXTREME_KEYWORDS):
             return PropertyCompletion(
                 tag=tag, property_name=name, partial=value, before=typed[: len(typed) - len(value)], number="",
                 excluded_names=frozenset(), name_suffix="", offers_extremes=True,
+                offers_values=True,
             )
-        return _unit_completion(typed, tag=tag, property_name=name, value=value)
+        return _unit_or_value_completion(typed, tag=tag, property_name=name, operator=operator, value=value)
     if in_tag_bar:
         return None
     name, operator, value = _split_at_operator(typed)
@@ -523,29 +645,68 @@ def read_property_completion(typed: str, *, in_tag_bar: bool, offers_extremes: b
 # A search's `:` (any tag): property names used anywhere (`:ver`), then MAX and MIN or a
 # value's unit, as after a tag's colon.
 def _tagless_completion(typed: str, *, offers_extremes: bool) -> PropertyCompletion | None:
-    rest = typed[len(PROPERTY_SEPARATOR):]
+    # In a chain (:foo="bar":ba), the last condition.
+    segments = split_property_segments(typed[len(PROPERTY_SEPARATOR):])
+    rest = segments[-1]
+    excluded = frozenset(_split_at_operator(segment)[0].casefold() for segment in segments[:-1])
+    offers_extremes = offers_extremes and len(segments) == 1
     name, operator, value = _split_at_operator(rest)
     if operator == "":
         if rest != "" and not is_property_name(rest):
             return None
         return PropertyCompletion(
-            tag=ANY_TAG, property_name=None, partial=rest, before=PROPERTY_SEPARATOR, number="",
-            excluded_names=frozenset(), name_suffix="", offers_extremes=False,
+            tag=ANY_TAG, property_name=None, partial=rest, before=typed[: len(typed) - len(rest)], number="",
+            excluded_names=excluded, name_suffix="", offers_extremes=False, offers_values=False,
         )
     if offers_extremes and operator == "=" and any(keyword.startswith(value) for keyword in EXTREME_KEYWORDS):
         return PropertyCompletion(
             tag=ANY_TAG, property_name=name, partial=value, before=typed[: len(typed) - len(value)], number="",
-            excluded_names=frozenset(), name_suffix="", offers_extremes=True,
+            excluded_names=frozenset(), name_suffix="", offers_extremes=True, offers_values=True,
         )
-    return _unit_completion(typed, tag=ANY_TAG, property_name=name, value=value)
+    return _unit_or_value_completion(typed, tag=ANY_TAG, property_name=name, operator=operator, value=value)
+
+
+def _unit_or_value_completion(
+    typed: str, *, tag: str, property_name: str, operator: str, value: str,
+) -> PropertyCompletion | None:
+    """After =, the values notes give the property (book:title=, :author="Le), then a
+    number's units; after a comparison, a number's units (drug:dosage>10m)."""
+    if operator != PROPERTY_ASSIGNMENT or not is_property_name(property_name):
+        return _unit_completion(typed, tag=tag, property_name=property_name, value=value)
+    # After = a number's units follow the values (number names the number typed).
+    number = ""
+    match = _NUMBER_AND_PARTIAL_UNIT_RE.match(value)
+    if match is not None:
+        number = match.group("number")
+    return PropertyCompletion(
+        tag=tag, property_name=property_name, partial=value, before=typed[: len(typed) - len(value)],
+        number=number, excluded_names=frozenset(), name_suffix="", offers_extremes=False, offers_values=True,
+    )
+
+
+def value_completes(text: str, partial: str) -> bool:
+    """Whether a property's value (as written, unquoted) completes a typed value: a bare
+    one by its start, a quoted one anywhere, as a quoted value searches (decided
+    2026-10-31). Never the value exactly as typed."""
+    written = quote_value(text)
+    if written == partial:
+        return False
+    typed = unquote_value(partial).casefold()
+    if is_quoted(partial):
+        return typed in text.casefold()
+    return text.casefold().startswith(typed)
 
 
 def _split_at_operator(text: str) -> Tuple[str, str, str]:
+    """A term's name, its first operator and the value after it (which may be quoted and
+    hold operators of its own); the operator "" when there is none."""
+    index = find_outside_values(text, _OPERATOR_CHARACTERS, 0)
+    if index == -1:
+        return text, "", ""
     for operator in COMPARISON_OPERATORS:
-        if operator in text:
-            name, value = text.split(operator, 1)
-            return name, operator, value
-    return text, "", ""
+        if text.startswith(operator, index):
+            return text[:index], operator, text[index + len(operator):]
+    raise AssertionError(f"{text[index]!r} starts no comparison operator")
 
 
 def _unit_completion(typed: str, *, tag: str, property_name: str, value: str) -> PropertyCompletion | None:
@@ -558,6 +719,7 @@ def _unit_completion(typed: str, *, tag: str, property_name: str, value: str) ->
     return PropertyCompletion(
         tag=tag, property_name=property_name, partial=partial, before=typed[: len(typed) - len(partial)],
         number=match.group("number"), excluded_names=frozenset(), name_suffix="", offers_extremes=False,
+        offers_values=False,
     )
 
 
@@ -572,6 +734,11 @@ def condition_holds(
     own (jogging:miles?), or has a value that compares (jogging:miles>2); any one value
     is enough. MAX and MIN need the property; which notes hold the extreme is decided
     across the notes found."""
+    if condition.chained:
+        # One tag meets every condition of the term (:foo="bar":baz>3).
+        return any(
+            all(_holds_on_tag(link, tag_name, values) for link in condition.links) for tag_name in tag_names
+        )
     keys = [(tag_name, condition.key[1]) for tag_name in tag_names if (tag_name, condition.key[1]) in values]
     if condition.operator == MISSING_OPERATOR:
         return bool(own_tag_names & tag_names) and not keys
@@ -579,3 +746,16 @@ def condition_holds(
         return len(keys) > 0
     return any(value_satisfies(values[key], condition) for key in keys)
 
+
+def _holds_on_tag(
+    condition: PropertyCondition, tag_name: str, values: Mapping[Tuple[str, str], PropertyValue],
+) -> bool:
+    """Whether one tag's value meets one condition of a chain: present, or comparing. A
+    chain holds no ?, MAX or MIN (_chain_problem)."""
+    assert condition.operator != MISSING_OPERATOR and not condition.is_extreme, condition
+    key = (tag_name, condition.key[1])
+    if key not in values:
+        return False
+    if condition.operator == PRESENT_OPERATOR:
+        return True
+    return value_satisfies(values[key], condition)

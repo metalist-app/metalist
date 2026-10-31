@@ -12,6 +12,7 @@ from typing import Callable, Dict, FrozenSet, Iterable, List, Mapping, Optional,
 
 from loguru import logger
 
+from app.services.quoted_values import canonical_valued_token, quote_value, token_end, unquote_value
 from app.services.content_formatting import (
     _tokenize_tag_bar, _unwrap_tag_token, is_known_meta_tag_term, list_known_meta_tag_terms,
 )
@@ -31,9 +32,11 @@ from app.services.tag_properties import (
     EXTREME_KEYWORDS,
     VALUE_KIND_ORDER,
     VALUE_NUMBER,
+    VALUE_TEXT,
     PropertyCompletion,
     PropertySuggestion,
     read_property_completion,
+    value_completes,
     PROPERTY_ASSIGNMENT,
     PropertyCondition,
     PropertyValue,
@@ -54,8 +57,8 @@ from app.services.search_text import (
     append_link_titles_casefold,
     build_searchable_base_text_casefold,
     list_link_title_urls,
-    text_term_matches,
 )
+from app.services.text_terms import text_term_matches
 from app.utils.time_units import MS_PER_SECOND
 
 
@@ -281,8 +284,7 @@ def _parse_search_suggestion_context(raw_input: str) -> _SearchSuggestionContext
             continue
 
         start = index
-        while index < length and not raw_input[index].isspace():
-            index += 1
+        index = token_end(raw_input, start)
 
         token = raw_input[start:index]
         if token == "":
@@ -381,8 +383,9 @@ def extract_ordered_tags_for_search(tags: str) -> tuple[str, ...]:
     for token in _tokenize_tag_bar(tags):
         base, wrapper = _unwrap_tag_token(token)
         if wrapper is None:
-            # A tag with properties is its tag: jogging:miles=3 is jogging.
-            base = tag_part_of_token(base)
+            # A tag with properties is its tag: jogging:miles=3 is jogging. A quoted value
+            # is the same value bare when it needs no quotes: author="Le-Guin" is author=Le-Guin.
+            base = canonical_valued_token(tag_part_of_token(base))
             if base != "OR" and base not in seen_terms:
                 seen_terms.add(base)
                 ordered_terms.append(base)
@@ -1549,7 +1552,7 @@ class SearchIndex:
             ]
         completion = PropertyCompletion(
             tag=tag, property_name=None, partial=name, before=typed[: match.start("name")], number="",
-            excluded_names=frozenset(), name_suffix="", offers_extremes=False,
+            excluded_names=frozenset(), name_suffix="", offers_extremes=False, offers_values=False,
         )
         prefix = tag_family_prefix(tag)
         assert prefix is not None, "a stats tag carries no value of its own"
@@ -1610,18 +1613,8 @@ class SearchIndex:
         )
         if completion is None:
             return []
-        if completion.offers_extremes:
-            assert completion.property_name is not None, "MAX and MIN follow a property"
-            extreme_words = {MAX_KEYWORD: "largest", MIN_KEYWORD: "smallest"}
-            return [
-                PropertySuggestion(
-                    replacement=f"{completion.before}{keyword}", label=keyword,
-                    reasons=(f"The {extreme_words[keyword]} {completion.property_name} "
-                             "among the notes the rest of the search finds",),
-                    note_count=0,
-                )
-                for keyword in EXTREME_KEYWORDS if keyword.startswith(completion.partial)
-            ]
+        if completion.offers_values:
+            return self._value_suggestions(completion=completion, place=place, limit=limit)
         with self._lock:
             if place == PROPERTY_SUGGESTIONS_IN_TAG_BAR:
                 tag_names = self._tags_implied_by_locked(completion.tag.casefold())
@@ -1645,6 +1638,88 @@ class SearchIndex:
         return [
             completion.suggestion(name, by_tag) for name, by_tag in ranked[:limit]
         ]
+
+    def _value_suggestions(
+        self, *, completion: PropertyCompletion, place: str, limit: int,
+    ) -> List[PropertySuggestion]:
+        """After a property's =: in a search MAX and MIN first when some value is a number,
+        date or time (never for text alone, agreed 2026-10-31), then the values notes give
+        it, written as they would be typed (quoted when they need it), the closest match and
+        then the most used first."""
+        assert completion.property_name is not None, "values follow a property"
+        property_name = completion.property_name.casefold()
+        with self._lock:
+            if place == PROPERTY_SUGGESTIONS_IN_TAG_BAR:
+                tag_names = self._tags_implied_by_locked(completion.tag.casefold())
+            else:
+                tag_names = self._property_tags_locked(completion.tag.casefold(), property_name)
+            values = self._value_counts_locked(tag_names, property_name)
+        suggestions: List[PropertySuggestion] = []
+        is_ordered = any(value.kind != VALUE_TEXT for value, _ in values.values())
+        if completion.offers_extremes and is_ordered:
+            extreme_words = {MAX_KEYWORD: "largest", MIN_KEYWORD: "smallest"}
+            suggestions += [
+                PropertySuggestion(
+                    replacement=f"{completion.before}{keyword}", label=keyword,
+                    reasons=(f"The {extreme_words[keyword]} {completion.property_name} "
+                             "among the notes the rest of the search finds",),
+                    note_count=0,
+                )
+                for keyword in EXTREME_KEYWORDS if keyword.startswith(completion.partial)
+            ]
+        typed = unquote_value(completion.partial).casefold()
+        ranked = sorted(
+            (
+                (value, by_tag) for value, by_tag in values.values()
+                if value_completes(value.text, completion.partial)
+            ),
+            key=lambda item: (
+                not item[0].text.casefold().startswith(typed), -sum(item[1].values()), item[0].text.casefold(),
+            ),
+        )
+        for value, by_tag in ranked:
+            written = quote_value(value.text)
+            reasons = tuple(
+                f"On {count} {_note_noun(count)} tagged {tag}"
+                for tag, count in sorted(by_tag.items(), key=lambda item: (-item[1], item[0]))
+            )
+            suggestions.append(PropertySuggestion(
+                replacement=f"{completion.before}{written}", label=written, reasons=reasons,
+                note_count=sum(by_tag.values()),
+            ))
+        if completion.number != "":
+            # Then the units the property is written in, after the number typed (10m: 10mg).
+            unit_completion = dataclasses.replace(
+                completion, partial=completion.partial[len(completion.number):],
+                before=f"{completion.before}{completion.number}",
+            )
+            with self._lock:
+                unit_counts = self._unit_counts_locked(tag_names, property_name)
+            offered = {suggestion.replacement for suggestion in suggestions}
+            for unit, by_tag in sorted(unit_counts.items(), key=lambda item: (-sum(item[1].values()), item[0])):
+                suggestion = unit_completion.suggestion(unit, by_tag)
+                if _completes(unit, unit_completion.partial, frozenset()) and suggestion.replacement not in offered:
+                    suggestions.append(suggestion)
+        return suggestions[:limit]
+
+    def _value_counts_locked(
+        self, tag_names: FrozenSet[str], property_name: str,
+    ) -> Dict[str, Tuple[PropertyValue, Dict[str, int]]]:
+        """Per value (casefolded text), one way it is written and how many notes give it
+        with each tag."""
+        values: Dict[str, Tuple[PropertyValue, Dict[str, int]]] = {}
+        for tag_name in tag_names:
+            key = (tag_name, property_name)
+            for note_int_id in _posting_or_empty(self._property_notes, key):
+                value = self._note_properties[note_int_id][key]
+                folded = value.text.casefold()
+                if folded not in values:
+                    values[folded] = (value, {})
+                by_tag = values[folded][1]
+                if tag_name not in by_tag:
+                    by_tag[tag_name] = 0
+                by_tag[tag_name] += 1
+        return values
 
     def _vault_property_names(
         self, *, completion: PropertyCompletion, excluded: FrozenSet[str], limit: int,

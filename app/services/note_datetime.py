@@ -14,6 +14,8 @@ from calendar import monthrange
 from dataclasses import dataclass
 from datetime import date, datetime
 
+from app.services.quoted_values import VALUE_QUOTE, split_tokens
+
 DATETIME_TAG = "@datetime"
 DATETIME_TAG_PREFIX = DATETIME_TAG + "="
 # A whole token on the tag line: @datetime=<value>.
@@ -89,10 +91,10 @@ def note_date_of_tags(tags: str) -> date | None:
     real date."""
     if not isinstance(tags, str):
         raise TypeError(f"tags must be a string, got {type(tags)}")
-    token = _DATETIME_TOKEN_RE.search(tags)
-    if token is None:
+    token_value = _datetime_token_value(tags)
+    if token_value is None:
         return None
-    value = _DATETIME_VALUE_RE.fullmatch(token["value"])
+    value = _DATETIME_VALUE_RE.fullmatch(token_value)
     if value is None:
         return None
     year, month, day = int(value["year"]), int(value["month"]), int(value["day"])
@@ -101,6 +103,21 @@ def note_date_of_tags(tags: str) -> date | None:
     if value["hour"] is not None and (int(value["hour"]) > _LAST_HOUR or int(value["minute"]) > _LAST_MINUTE):
         return None
     return date(year, month, day)
+
+
+def _datetime_token_value(tags: str) -> str | None:
+    """The value of the first @datetime token, not one inside a quoted value
+    (title="moved @datetime=2026-01-01"), or None."""
+    if VALUE_QUOTE not in tags:
+        match = _DATETIME_TOKEN_RE.search(tags)
+        if match is None:
+            return None
+        return match["value"]
+    for token in split_tokens(tags):
+        match = _DATETIME_TOKEN_RE.fullmatch(token)
+        if match is not None:
+            return match["value"]
+    return None
 
 
 def is_datetime_tag_term(term: str) -> bool:

@@ -495,7 +495,7 @@ test('buildContextMenuItems adds a top note action to non-editing note context',
 
 function buildViewContext(overrides) {
     return {
-        kind: 'view', isMac: true, isEditing: false, canPasteNoteAtTop: false, canGoToTop: false, canGoToBottom: false,
+        kind: 'view', searchAllowsNewNotes: true, isMac: true, isEditing: false, canPasteNoteAtTop: false, canGoToTop: false, canGoToBottom: false,
         isUntaggedView: false, theme: 'system', sortMode: 'normal', dateRangeKind: 'none', dateRangeField: 'updated',
         fileFilterKind: 'none',
         areTabsVisible: false, isAiChatVisible: false, areNoteTagsVisible: false,

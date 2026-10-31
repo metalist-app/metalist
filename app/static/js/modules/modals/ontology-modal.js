@@ -10,6 +10,7 @@ import { handleDictationPasteEvent } from '../mode-manager/services/dictation-pa
 import { escapeHtml } from '../html-escape.js';
 import { MS_PER_SECOND } from '../time-units.js';
 import { showErrorDialog } from './error-dialog.js';
+import { opensValue, quotedValueEnd } from '../quoted-values.js';
 
 const ONTOLOGY_BASE = '/api2/ontology';
 const TAG_LIMIT = 20;
@@ -250,6 +251,11 @@ function parseIncomingAtoms(raw) {
 
         const start = index;
         while (index < raw.length) {
+            if (opensValue(raw, index)) {
+                // A quoted value is part of its term: book:title="Dune (1965)".
+                index = quotedValueEnd(raw, index).end;
+                continue;
+            }
             const c = raw[index];
             if (c.match(/\s/) || c === '(' || c === ')') {
                 break;

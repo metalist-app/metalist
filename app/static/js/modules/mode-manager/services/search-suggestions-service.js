@@ -3,6 +3,7 @@ import { ApplicationState } from '../../application-state.js';
 import { isContextMenuOpen, isMacControlClick } from '../../context-menu/context-menu-service.js';
 import { NotesAPI } from '../../api-client.js';
 import { analyzeSearchQueryInput } from './search-syntax-service.js';
+import { tokenEnd } from '../../quoted-values.js';
 import { syncSearchInputValue } from './search-input-service.js';
 import {
     getSearchSuggestionWindowDays,
@@ -36,6 +37,25 @@ function getSearchSuggestionsContainer() {
     return container;
 }
 
+// Just past the quote that closes a text term whose text starts at startIndex, or null
+// while it is open.
+function textQuoteEnd(rawValue, startIndex, quoteChar) {
+    let index = startIndex;
+    while (index < rawValue.length) {
+        const char = rawValue[index];
+        if (char === '\\' && index + 1 < rawValue.length
+            && (rawValue[index + 1] === quoteChar || rawValue[index + 1] === '\\')) {
+            index += ESCAPE_SEQUENCE_LENGTH;
+            continue;
+        }
+        if (char === quoteChar) {
+            return index + 1;
+        }
+        index += 1;
+    }
+    return null;
+}
+
 function parseSuggestionContext(rawValue, cursorIndex) {
     if (typeof rawValue !== 'string') {
         throw new Error('parseSuggestionContext requires rawValue string');
@@ -47,39 +67,39 @@ function parseSuggestionContext(rawValue, cursorIndex) {
         throw new Error('parseSuggestionContext cursorIndex out of bounds');
     }
 
-    let quoteChar = null;
+    // The term the cursor ends: a quoted text term (searched as typed, no suggestions)
+    // starts with its quote; a tag or property term runs to a space outside its quoted
+    // value (:author="Ursula Le Guin", quoted-values.js).
+    let start = cursorIndex;
     let index = 0;
     while (index < cursorIndex) {
-        const char = rawValue[index];
-        if (char === '\\' && index + 1 < cursorIndex) {
-            const nextChar = rawValue[index + 1];
-            if (quoteChar && (nextChar === quoteChar || nextChar === '\\')) {
-                index += ESCAPE_SEQUENCE_LENGTH;
-                continue;
-            }
-        }
-        if (quoteChar) {
-            if (char === quoteChar) {
-                quoteChar = null;
-            }
+        if (/\s/.test(rawValue[index])) {
             index += 1;
             continue;
         }
-        if (char === '"' || char === "'") {
-            quoteChar = char;
-            index += 1;
+        const termStart = index;
+        let bodyStart = index;
+        if (rawValue[bodyStart] === '+' || rawValue[bodyStart] === '-') {
+            bodyStart += 1;
+        }
+        const quoteChar = rawValue[bodyStart];
+        if (quoteChar === '"' || quoteChar === "'") {
+            const end = textQuoteEnd(rawValue, bodyStart + 1, quoteChar);
+            if (end === null || cursorIndex < end) {
+                return null;
+            }
+            index = end;
+            if (cursorIndex === end) {
+                start = termStart;
+            }
             continue;
         }
-        index += 1;
-    }
-
-    if (quoteChar) {
-        return null;
-    }
-
-    let start = cursorIndex;
-    while (start > 0 && !/\s/.test(rawValue[start - 1])) {
-        start -= 1;
+        const end = tokenEnd(rawValue, index);
+        if (cursorIndex <= end) {
+            start = termStart;
+            break;
+        }
+        index = end;
     }
 
     const token = rawValue.slice(start, cursorIndex);

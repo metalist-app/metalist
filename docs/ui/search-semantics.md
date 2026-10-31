@@ -75,6 +75,8 @@ Ontology rules also add **inferred tags** before search matching:
   clauses are not copied into the new note.
 - If an existing case-equivalent tag spelling is already common in the namespace, that spelling is used for the new note. Example: searching `ml3` adds `ML3` when existing notes use `ML3`.
 - If the new note already inherits a case-equivalent non-meta tag from an ancestor, the inherited tag is treated as satisfying the search and is not duplicated.
+- A property term with a named tag and an exact value is copied whole: `jogging:miles=3` and `book:author="Le Guin"` give the new note those tokens (before 2026-10-31 the main add-note path dropped them, and the note left its own search at once).
+- **A search no new note can match refuses new notes at the top** (decided 2026-10-31), as a sorted view does: a property term in the first clause other than a named tag with an exact value (`jogging:miles>3`, `:foo="ba"`, `jogging:miles?`, bare `jogging:miles`, `=MAX`/`=MIN`, a stats term such as `@sum:calories>2000`). Enter, pasting or dropping files at the top and the command palette show the banner "New notes cannot be added in this search: a new note would not match jogging:miles>3.", and Add Note at Top is hidden in the view and note menus. Excluded terms (`-jogging:miles>3`) and later `OR` clauses never refuse. Children and siblings of nested notes are still added. Code: `findUnfillableSearchTerm` (`search-syntax-service.js`), `rootNoteCreationBlockReason` (`root-note-creation-service.js`).
 
 ### Moving Notes During Search
 - A note outdented while a search is active never leaves the results, wherever it lands (under a grandparent or as a root note). If the note matched before the move and would not match at its new place, it gets, as its own tags, the tags it misses for the part of the search (`OR` clause) it matched; it gets nothing when it still matches there, through inherited tags or another clause.
@@ -155,7 +157,15 @@ bar's reference and `docs/design/tag-properties.md`). A search compares a note's
   `tests/unit/test_tagless_property_search.py`, `tests/unit/search_syntax_service.test.mjs`.
 - `-` excludes, spaces combine, `OR` separates clauses, as for tags:
   `jogging:miles>2 jogging:duration<40`, `jogging -jogging:miles>10`.
-- One property per term: `jogging:miles>2:duration<40` is refused with how to write it.
+- **Chained conditions** (built 2026-10-31): `book:title="Dune":year>1960`,
+  `:foo="bar":baz>3:zed<100`. One tag on the note meets every condition, where separate
+  terms may each be met by a different tag: `:foo="bar":baz>3` finds `x:foo=bar:baz=5`,
+  not `x:foo=bar y:baz=5`; with `jogging => exercise` and `cycling => exercise`,
+  `exercise:miles>2:duration<40` finds `jogging:miles=3:duration=30`, not
+  `jogging:miles=3 cycling:duration=30`. A chain takes comparisons, `=` and a bare name
+  (`jogging:miles>2:duration`); `?`, `MAX` and `MIN` go in terms of their own, each
+  property is named once, and stats terms compare one figure. `-` leaves out only notes
+  where one tag meets them all. Ontology rules keep one property per condition.
 - Values are compared by kind: numbers, dates (`2024-01` is its first day; a year alone,
   `2026`, is a number), date-times (`2024-01-15T10:30`), times of day (`10:30`, `22:30`,
   `10:30pm`, `10am`; `12am` is midnight) and text (any case). A value of another kind is
@@ -164,9 +174,15 @@ bar's reference and `docs/design/tag-properties.md`). A search compares a note's
   every unit (`10mg`, `10kg`, `10`), which shows when a search should name one.
 - Values belong to the note they are written on: a child of a 3-mile run inherits
   `jogging`, never `miles=3`.
-- A note added while such a search is active gets the term's tag; an `=` term also gives
-  it the value (`jogging:miles=3` adds `jogging:miles=3`). Other comparisons name no
-  value, so the new note has the tag only.
+- A note added while such a search is active gets the term's tag and value
+  (`jogging:miles=3` adds `jogging:miles=3`). A search whose term names no value a new
+  note could carry (`jogging:miles>2`) refuses new notes at the top (Creating Notes From
+  Search above); a child added under a result gets the tag only.
+- **Quoted values** (built 2026-10-31): `author="Ursula Le Guin"` and
+  `book:title="Dune: Messiah"` hold spaces and colons. A quoted value is a text match
+  inside the value, like a quoted text search (`:foo="ba"` finds `foo=bar`, `foo=bag` and
+  `foo=aba`; `author="Ursula"` finds Ursula Le Guin); a bare value is exact. Quotes never
+  change a value: `zed:foo="asdf-jkl"` and `zed:foo=asdf-jkl` are the same tag.
 - **Through implications:** a term about a tag also reads the values of every tag that
   implies it, synonyms included. With `jogging => exercise`, `exercise:miles>2` finds
   `jogging:miles=3`; with `trail-run => jogging`, `trail-run:miles=5` too. Ask at any
@@ -186,7 +202,9 @@ bar's reference and `docs/design/tag-properties.md`). A search compares a note's
 - **Suggestions:** after `exercise:` the search box suggests property names used with
   `exercise` and with the tags implying it (`miles` from `jogging`), most used first;
   after a number (`drug:dosage>5`) the units used with that property (`5mg`); after `=`,
-  `MAX` and `MIN`. The list shows only the name, unit or keyword. Picking one earns no
+  the values notes give the property, quoted when needed, after `MAX` and `MIN` when the
+  property has a number, date or time value (a bare partial matches a value's start, a
+  quoted one anywhere in it). The list shows only the name, unit or keyword. Picking one earns no
   activity credit.
 
 ### Stats Figures

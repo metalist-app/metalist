@@ -31,6 +31,15 @@ import re
 from app.config import TAG_SUGGESTION_CONNECTORS
 from app.services.content_formatting import is_known_meta_tag_term
 from app.services.note_datetime import is_datetime_tag_term, note_date_of_tags
+from app.services.quoted_values import (
+    VALUE_QUOTE,
+    is_closed_quoted_value,
+    is_quoted,
+    opens_value,
+    split_tokens,
+    token_end,
+    unquote_value,
+)
 from app.services.tag_characters import is_text_character, normalize_text
 from app.services.tag_ontology import is_valid_proposal_token, is_valid_tag_token
 from app.services.tag_properties import (
@@ -231,6 +240,37 @@ def _items(text: str, *, target: str, quoted_re: re.Pattern[str], open_re: re.Pa
     text = _without_unopened_close_phrases(_join_spoken_joiners(text.translate(_TYPOGRAPHIC)), open_re, close_re)
     items: list[_Word | _Phrase | _Syntax] = []
     position = 0
+    # A word with a quoted value (author="Ursula Le Guin") is one word: its quotes are not
+    # a quoted phrase.
+    for start, end in _valued_word_spans(text):
+        items.extend(_items_between_values(text[position:start], target=target, quoted_re=quoted_re, close_re=close_re))
+        items.extend(_words(text[start:end], target=target))
+        position = end
+    items.extend(_items_between_values(text[position:], target=target, quoted_re=quoted_re, close_re=close_re))
+    return items
+
+
+def _valued_word_spans(text: str) -> list[tuple[int, int]]:
+    """Where each word holding a quoted value starts and ends."""
+    spans: list[tuple[int, int]] = []
+    if VALUE_QUOTE not in text:
+        return spans
+    index = 0
+    while index < len(text):
+        if text[index].isspace():
+            index += 1
+            continue
+        end = token_end(text, index)
+        if any(opens_value(text, position) for position in range(index, end)):
+            spans.append((index, end))
+        index = end
+    return spans
+
+
+def _items_between_values(text: str, *, target: str, quoted_re: re.Pattern[str],
+                          close_re: re.Pattern[str]) -> list[_Word | _Phrase | _Syntax]:
+    items: list[_Word | _Phrase | _Syntax] = []
+    position = 0
     for match in quoted_re.finditer(text):
         items.extend(_words(close_re.sub(" ", text[position:match.start()]), target=target))
         phrase = match.group("marked")
@@ -279,15 +319,26 @@ def _is_tag_with_values(token: str) -> bool:
     if PROPERTY_SEPARATOR in token:
         return is_valid_proposal_token(token)
     name, _separator, value = token.partition(_VALUE_SEPARATOR)
+    if is_quoted(value):
+        # author="Ursula Le Guin" (docs/design/tag-properties.md, Quoted values).
+        return is_valid_tag_token(name) and is_closed_quoted_value(value) and unquote_value(value).strip() != ""
     return is_valid_tag_token(name) and value != "" and not any(
         char.isspace() or char in _TAG_DISALLOWED or not is_text_character(char) for char in value
     )
 
 
+def _meta_tag_parts(token: str) -> list[str]:
+    """A word split before each @ ("@green@bold"); a quoted value stays whole
+    (title="a@b")."""
+    if VALUE_QUOTE in token:
+        return [token]
+    return re.split(r"(?<=\S)(?=@)", token)
+
+
 def _words(chunk: str, *, target: str) -> list[_Word | _Syntax]:
     words: list[_Word | _Syntax] = []
     # "@green@bold": meta tags typed together are separate words.
-    for token in (part for raw in chunk.split() for part in re.split(r"(?<=\S)(?=@)", raw)):
+    for token in (part for raw in split_tokens(chunk) for part in _meta_tag_parts(raw)):
         if target == "search" and (token == "OR" or (len(token) > 1 and token[0] in "-+" and token[1].isalnum())):
             words.append(_Syntax(token.rstrip(_SENTENCE_PUNCTUATION)))
             continue
@@ -448,7 +499,7 @@ def _search_text(items: list, *, tag_index: _TagIndex, current_value: str, negat
         elif word not in FILLER_WORDS and word not in _SEARCH_OR_WORDS:
             elements.append("DROP")
         index += 1
-    present = {term.casefold() for term in current_value.split()}
+    present = {term.casefold() for term in split_tokens(current_value)}
     clauses: list[list[str]] = [[]]
     pending_not = False
     for element in elements:
@@ -475,7 +526,7 @@ def _search_text(items: list, *, tag_index: _TagIndex, current_value: str, negat
 
 def _tag_bar_text(items: list, *, tag_index: _TagIndex, current_value: str, negate_words: tuple[str, ...]) -> str:
     tags: list[str] = []
-    present = {_equivalence_key(tag) for tag in current_value.split()}
+    present = {_equivalence_key(tag) for tag in split_tokens(current_value)}
     index = 0
     in_meta_run = False
     while index < len(items):

@@ -1,4 +1,7 @@
 import { foldTagCase, isTextCharacter, normalizeText } from '../../tag-characters.js';
+import {
+    VALUE_ESCAPE, VALUE_QUOTE, findOutsideValues, isQuoted, opensValue, quotedValueEnd, tokenEnd,
+} from '../../quoted-values.js';
 const TAG_CONTAINS_DISALLOWED = new Set([
     ':',
     ',',
@@ -158,6 +161,85 @@ function enforceTagToken(rawToken) {
     return enforceTagTokenInternal(rawToken, false);
 }
 
+// A quoted value as the tag bar keeps it (docs/design/tag-properties.md, Quoted values):
+// any text character inside the quotes, other whitespace as a space, escapes as typed,
+// nothing after the closing quote. An open value stays open; closeValue closes it.
+function enforceQuotedValue(rawValue) {
+    if (!isQuoted(rawValue)) {
+        throw new Error('enforceQuotedValue expects a quoted value');
+    }
+    // Read as the value of a=, so quotedValueEnd finds where it closes.
+    const text = `${PROPERTY_ASSIGNMENT}${rawValue}`;
+    const { end } = quotedValueEnd(text, PROPERTY_ASSIGNMENT.length);
+    let out = '';
+    for (const char of text.slice(PROPERTY_ASSIGNMENT.length, end)) {
+        if (isWhitespace(char)) {
+            out += ' ';
+            continue;
+        }
+        if (isTextCharacter(char)) {
+            out += char;
+        }
+    }
+    return out;
+}
+
+// A quoted value once the user moves on: an open one closed (a backslash typed last left
+// out), an empty one ('"' or '""') removed.
+function closeValue(value) {
+    if (!isQuoted(value)) {
+        return value;
+    }
+    const text = `${PROPERTY_ASSIGNMENT}${value}`;
+    let closed = value;
+    if (!quotedValueEnd(text, PROPERTY_ASSIGNMENT.length).isClosed) {
+        let open = value;
+        let trailingEscapes = 0;
+        while (trailingEscapes < open.length - 1 && open[open.length - 1 - trailingEscapes] === VALUE_ESCAPE) {
+            trailingEscapes += 1;
+        }
+        if (trailingEscapes % 2 === 1) {
+            open = open.slice(0, -1);
+        }
+        closed = `${open}${VALUE_QUOTE}`;
+    }
+    if (closed === `${VALUE_QUOTE}${VALUE_QUOTE}`) {
+        return '';
+    }
+    return closed;
+}
+
+// A value as the tag bar keeps it: quoted, or the characters a bare value keeps.
+function enforceValue(rawValue) {
+    if (isQuoted(rawValue)) {
+        return enforceQuotedValue(rawValue);
+    }
+    return keepAllowedChars(rawValue, { allowsColon: true });
+}
+
+// A top-level tag (not inside a scope), whose value may be quoted: author="Ursula Le Guin".
+// While its value is still being typed ({ isTypingValue }) an open quote stays open.
+function enforceValuedTagToken(rawToken, options) {
+    if (options === null || typeof options !== 'object' || typeof options.isTypingValue !== 'boolean') {
+        throw new Error('enforceValuedTagToken requires { isTypingValue } boolean');
+    }
+    const assignmentIndex = rawToken.indexOf(PROPERTY_ASSIGNMENT);
+    const isQuotedValue = !rawToken.startsWith('@') && assignmentIndex > 0
+        && opensValue(rawToken, assignmentIndex + 1);
+    if (!isQuotedValue) {
+        return enforceTagTokenInternal(rawToken, options.isTypingValue);
+    }
+    const name = enforceTagTokenInternal(rawToken.slice(0, assignmentIndex), false);
+    let value = enforceQuotedValue(rawToken.slice(assignmentIndex + 1));
+    if (!options.isTypingValue) {
+        value = closeValue(value);
+    }
+    if (name.length === 0 || value.length === 0) {
+        return name;
+    }
+    return `${name}${PROPERTY_ASSIGNMENT}${value}`;
+}
+
 // Tag properties (docs/design/tag-properties.md): jogging:miles=3:duration=30. The tag is
 // everything before the first colon. After it, a colon followed by a letter starts the
 // next property and any other colon belongs to the value (start=10:30pm). Meta tags and
@@ -167,8 +249,15 @@ const PROPERTY_ASSIGNMENT = '=';
 // A property's name starts with a letter, in any script (Größe, 時間).
 const PROPERTY_NAME_START_RE = /^\p{L}$/u;
 
+const PROPERTY_SEPARATORS = new Set([PROPERTY_SEPARATOR]);
+
+// The colon that ends the tag, outside any quoted value (author="a:b" has none), or -1.
+function propertySeparatorIndex(token) {
+    return findOutsideValues(token, PROPERTY_SEPARATORS, 0);
+}
+
 function hasPropertySyntax(token) {
-    return token.indexOf(PROPERTY_SEPARATOR) > 0 && !token.startsWith('@');
+    return propertySeparatorIndex(token) > 0 && !token.startsWith('@');
 }
 
 /** The tag a token names: jogging for jogging:miles=3, the token itself otherwise. */
@@ -179,7 +268,7 @@ export function tagPartOfToken(token) {
     if (!hasPropertySyntax(token)) {
         return token;
     }
-    return token.slice(0, token.indexOf(PROPERTY_SEPARATOR));
+    return token.slice(0, propertySeparatorIndex(token));
 }
 
 // The tag's name without a value: jogging for jogging=3 and for jogging:miles=3.
@@ -187,11 +276,18 @@ function tagNameOfToken(token) {
     return tagPartOfToken(token).split(PROPERTY_ASSIGNMENT)[0];
 }
 
-// The text after the tag, split where a colon is followed by a letter (or ends it).
+// The text after the tag, split where a colon is followed by a letter (or ends it); a
+// quoted value is kept whole (title="Dune: Messiah").
 function splitPropertySegments(text) {
     const segments = [];
     let current = '';
     for (let index = 0; index < text.length; index += 1) {
+        if (opensValue(text, index)) {
+            const { end } = quotedValueEnd(text, index);
+            current += text.slice(index, end);
+            index = end - 1;
+            continue;
+        }
         const char = text[index];
         const isLast = index === text.length - 1;
         if (char === PROPERTY_SEPARATOR && (isLast || PROPERTY_NAME_START_RE.test(text[index + 1]))) {
@@ -241,7 +337,7 @@ function enforcePropertySegment(segment) {
     }
     return {
         name: keepAllowedChars(text.slice(0, assignmentIndex), { allowsColon: false }),
-        value: keepAllowedChars(text.slice(assignmentIndex + 1), { allowsColon: true }),
+        value: enforceValue(text.slice(assignmentIndex + 1)),
     };
 }
 
@@ -251,7 +347,7 @@ function enforcePropertyTagToken(rawToken, options) {
     if (options === null || typeof options !== 'object' || typeof options.isEditing !== 'boolean') {
         throw new Error('enforcePropertyTagToken requires { isEditing } boolean');
     }
-    const colonIndex = rawToken.indexOf(PROPERTY_SEPARATOR);
+    const colonIndex = propertySeparatorIndex(rawToken);
     const tag = enforceTagTokenInternal(rawToken.slice(0, colonIndex), false);
     if (tag.length === 0 || tag.startsWith('@')) {
         return enforceTagTokenInternal(rawToken, false);
@@ -267,7 +363,10 @@ function enforcePropertyTagToken(rawToken, options) {
     }
     const seenNames = new Set();
     const kept = [];
-    for (const segment of segments) {
+    for (const typedSegment of segments) {
+        const segment = typedSegment.value === null
+            ? typedSegment
+            : { name: typedSegment.name, value: closeValue(typedSegment.value) };
         const isComplete = segment.name.length > 0 && segment.value !== null && segment.value.length > 0;
         if (!isComplete || seenNames.has(foldTagCase(segment.name))) {
             continue;
@@ -310,7 +409,7 @@ function enforceWrappedTagTokenInternal(
             // Only the editing path keeps trailing spaces: it is the one typing.
             return enforcePropertyTagToken(rawToken, { isEditing: preserveTrailingSpaceWhenUnclosed });
         }
-        return enforceTagTokenInternal(rawToken, allowTrailingAssignmentSeparator);
+        return enforceValuedTagToken(rawToken, { isTypingValue: allowTrailingAssignmentSeparator });
     }
 
     const closer = TAG_WRAPPER_PAIRS.get(opener);
@@ -497,6 +596,14 @@ function enforceTagBarInputInternal(rawInput, options) {
             continue;
         }
 
+        // A quoted value keeps its spaces, and a /* inside it is text.
+        if (!wrapper && opensValue(text, index) && currentToken.endsWith(PROPERTY_ASSIGNMENT)) {
+            const { end } = quotedValueEnd(text, index);
+            currentToken += text.slice(index, end);
+            index = end - 1;
+            continue;
+        }
+
         if (isWhitespace(char) && !wrapper) {
             flushToken({ isFinal: false });
             if (output.length > 0 && output[output.length - 1] !== ' ') {
@@ -564,6 +671,13 @@ function scanTagBarSegments(rawInput) {
             wrapper = { opener, closer, openerCount };
             currentToken += opener.repeat(openerCount);
             index += openerCount;
+            continue;
+        }
+
+        if (!wrapper && currentToken.length > 0 && opensValue(rawInput, index)) {
+            const { end } = quotedValueEnd(rawInput, index);
+            currentToken += rawInput.slice(index, end);
+            index = end;
             continue;
         }
 
@@ -638,9 +752,7 @@ function scanTagBarTokensWithPositions(rawInput) {
             }
         }
 
-        while (index < rawInput.length && !isWhitespace(rawInput[index])) {
-            index += 1;
-        }
+        index = tokenEnd(rawInput, index);
         tokens.push({ text: rawInput.slice(start, index), start, end: index });
     }
 
@@ -939,7 +1051,7 @@ export function parseTagBarSuggestionContext(rawInput, cursorIndex) {
     // Typing a property (after jogging:): the server suggests its names and units from
     // the token typed so far, replacing it whole.
     const isTypingProperty = Boolean(currentAtom) && hasPropertySyntax(currentAtom.text)
-        && cursorIndex > currentAtom.start + currentAtom.text.indexOf(PROPERTY_SEPARATOR);
+        && cursorIndex > currentAtom.start + propertySeparatorIndex(currentAtom.text);
 
     // A tag with properties counts as its tag: jogging:miles=3 is jogging.
     const explicitTags = [];
@@ -1030,7 +1142,7 @@ export function findTagAtIndexInTagBar(rawInput, cursorIndex) {
         }
 
         // Anywhere on jogging:miles=3 is the tag jogging.
-        const enforced = enforceTagToken(tagPartOfToken(token.text));
+        const enforced = enforceValuedTagToken(tagPartOfToken(token.text), { isTypingValue: false });
         if (enforced.length > 0) {
             atoms.push({ text: enforced, start: token.start, end: token.end });
         }

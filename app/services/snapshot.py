@@ -35,6 +35,7 @@ from app.services.root_sorting import get_root_ids_for_sort_mode
 from app.services.root_sorting import get_root_sort_timestamps
 from app.services.root_sorting import normalize_sort_mode
 from app.services.root_date_filter import RootDateFilter, filter_root_ids_by_date, local_today
+from app.services.quoted_values import split_tokens
 from app.services.search_index import search_index
 from app.services.search_query import ParsedSearchQuery, SearchClause, parse_search_query, search_highlight_phrases
 from app.services.tag_properties import PropertyCondition, tag_part_of_token
@@ -1113,7 +1114,7 @@ def _render_view_note(
     # Proposals no note has yet: accepting one creates a new tag, so the row marks them.
     # A super tag is new when its tag is (jogging:miles=3 on an existing jogging is not).
     flags["newProposedTags"] = " ".join(
-        term for term in rec.proposed_tags.split() if not search_index.is_tag_on_any_note(tag_part_of_token(term))
+        term for term in split_tokens(rec.proposed_tags) if not search_index.is_tag_on_any_note(tag_part_of_token(term))
     )
 
     is_editing = bool(flags["isEditing"])

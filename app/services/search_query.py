@@ -4,6 +4,7 @@ import re
 from dataclasses import dataclass
 from typing import FrozenSet, List, Optional, Set, Tuple
 from app.services.input_errors import InputRejected
+from app.services.quoted_values import token_end
 from app.services.tag_characters import normalize_text
 from app.services.tag_properties import (
     PropertyCondition, is_property_term, is_stats_term, is_tagless_property_term, parse_property_term,
@@ -162,8 +163,8 @@ def parse_search_query(normalized_text: str) -> ParsedSearchQuery:
             continue
 
         start = index
-        while index < len(text) and not text[index].isspace():
-            index += 1
+        # A quoted value (author="Ursula Le Guin") keeps its spaces.
+        index = token_end(text, index)
         token = text[start:index]
         if token == "":
             raise InputRejected("Empty tag term in search query")

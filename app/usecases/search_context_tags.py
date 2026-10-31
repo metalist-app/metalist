@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from app.services.search_index import extract_tags_for_search, search_index
 from app.services.search_query import SearchClause, parse_search_query
-from app.services.tag_properties import PROPERTY_SEPARATOR, PropertyCondition
-from app.services.search_text import build_searchable_text_casefold, text_term_matches
+from app.services.tag_properties import ANY_TAG, IMPLICIT_PROPERTY, PROPERTY_SEPARATOR, PropertyCondition
+from app.services.search_text import build_searchable_text_casefold
+from app.services.text_terms import text_term_matches
 from app.services.store import store
 from app.services.tag_case import (
     build_preferred_tag_case_map,
@@ -103,7 +104,7 @@ def _tags_matching_clause(clause: SearchClause, *, parent_id: str | None, conten
         if any(term.casefold() == condition.tag.casefold() for condition in clause.required_properties):
             continue  # added below, with its values
         additions.append(term)
-    additions += _property_tag_tokens(
+    additions += property_tag_tokens(
         clause.required_properties,
         present_casefold=explicit_terms_casefold | inherited_non_meta_casefold,
         preferred_by_casefold=preferred_by_casefold,
@@ -147,34 +148,48 @@ def _tags_matching_clause(clause: SearchClause, *, parent_id: str | None, conten
     return f"{next_tags} {suffix}"
 
 
-def _property_tag_tokens(
+def property_tag_tokens(
     conditions: tuple[PropertyCondition, ...], *, present_casefold: set[str],
     preferred_by_casefold: dict[str, str],
 ) -> list[str]:
     """What a note added in a property search carries (docs/design/tag-properties.md): the
     tag of each property term, with the values its = terms name (jogging:miles=3 adds
-    jogging:miles=3). Other comparisons name no value, so they add the tag alone."""
+    jogging:miles=3; a chain, jogging:miles=3:duration=30, each of its values). Other
+    comparisons name no value, so they add the tag alone."""
     values_by_tag: dict[str, list[str]] = {}
+    own_value_by_tag: dict[str, str] = {}
     spelling_by_tag: dict[str, str] = {}
-    for condition in conditions:
+    for condition in (link for term in conditions for link in term.links):
+        # A property on any tag (:foo="ba") names no tag to give the note.
+        if condition.tag == ANY_TAG:
+            continue
         key = condition.tag.casefold()
         if key not in values_by_tag:
             values_by_tag[key] = []
             spelling_by_tag[key] = prefer_existing_tag_case(condition.tag, preferred_by_casefold)
         # MAX and MIN pick among notes; they are no value to give one.
-        if condition.operator == "=" and not condition.is_extreme:
-            values_by_tag[key].append(f"{condition.name}={condition.value_text}")
+        if condition.operator != "=" or condition.is_extreme:
+            continue
+        # The tag's own value (author="Le Guin") is written on the tag, not as a property.
+        if condition.name == IMPLICIT_PROPERTY:
+            own_value_by_tag[key] = condition.value_text
+            continue
+        values_by_tag[key].append(f"{condition.name}={condition.value_text}")
     tokens: list[str] = []
     for key, values in values_by_tag.items():
-        if values:
-            tokens.append(PROPERTY_SEPARATOR.join([spelling_by_tag[key], *values]))
+        tag = spelling_by_tag[key]
+        if key in own_value_by_tag:
+            tag = f"{tag}={own_value_by_tag[key]}"
+        if values or key in own_value_by_tag:
+            tokens.append(PROPERTY_SEPARATOR.join([tag, *values]))
         elif key not in present_casefold:
-            tokens.append(spelling_by_tag[key])
+            tokens.append(tag)
     return tokens
 
 
 __all__ = [
     "compute_inherited_non_meta_tag_terms",
+    "property_tag_tokens",
     "ensure_tags_match_search_query",
     "search_clauses_matching_note",
     "tags_keeping_moved_note_in_search",

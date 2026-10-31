@@ -14,7 +14,8 @@ from pathlib import Path
 
 import pytest
 
-from app.services.search_text import build_searchable_base_text_casefold, text_term_matches
+from app.services.search_text import build_searchable_base_text_casefold
+from app.services.text_terms import text_term_matches
 from app.services.tag_characters import clean_tag_text, is_text_character, normalize_text
 from app.services.tag_properties import is_property_name, split_property_segments
 from app.services.selected_text_tag import build_default_tag_from_selected_text

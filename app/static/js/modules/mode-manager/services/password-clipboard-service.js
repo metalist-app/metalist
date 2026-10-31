@@ -3,6 +3,7 @@ import {
     normalizeTagBarInput,
     parseTagBarSuggestionContext,
 } from './tag-syntax-service.js';
+import { splitTokens } from '../../quoted-values.js';
 
 export const PASSWORD_TAG = '@password';
 
@@ -25,7 +26,7 @@ function extractExplicitTags(rawTags) {
         return context.explicitTags.slice();
     }
 
-    return normalizedTags.split(/\s+/).filter((token) => token.length > 0);
+    return splitTokens(normalizedTags);
 }
 
 export function rememberGeneratedPasswordCopy(passwordText) {

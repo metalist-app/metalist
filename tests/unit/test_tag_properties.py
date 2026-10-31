@@ -74,7 +74,11 @@ def test_a_token_lists_its_complete_properties_once_including_the_implicit_value
 @pytest.mark.parametrize(("term", "message"), [
     ("jogging:miles>", "Write a value after >"),
     ("jogging:3>2", "A property name starts with a letter"),
-    ("jogging:miles>2:duration<40", "One property per search term"),
+    # A chain (decided 2026-10-31) holds comparisons, = and bare names only, each once.
+    ("jogging:miles>2:duration?", "Search a missing property in a term of its own"),
+    ("jogging:miles>2:duration=MAX", "MAX goes in a term of its own"),
+    ("jogging:miles>2:miles<5", "Name each property once in a search term"),
+    ("jogging:miles>2>3", "Quote a value holding <, >, \\? or ="),
     (":miles>2", "Name the tag before the property"),
     ("OR:miles>2", "OR is reserved"),
 ])
@@ -259,7 +263,9 @@ def suggestion_index(monkeypatch: pytest.MonkeyPatch) -> SearchIndex:
     ("drug:dosage>5m", "search", [("drug:dosage>5mg", "5mg")]),
     ("drug:dosage>5mg", "search", []),
     # MAX and MIN after a search's =.
-    ("jogging:miles=", "search", [("jogging:miles=MAX", "MAX"), ("jogging:miles=MIN", "MIN")]),
+    # After =, the highest and lowest first, then the values notes give it.
+    ("jogging:miles=", "search", [("jogging:miles=MAX", "MAX"), ("jogging:miles=MIN", "MIN"),
+                                  ("jogging:miles=3", "3"), ("jogging:miles=5", "5")]),
     ("jogging", "search", []),
     # A search offers only what it can find: no names from other tags.
     ("jogging:w", "search", []),

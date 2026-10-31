@@ -10,6 +10,7 @@ import { syncSearchInputValue } from '../mode-manager/services/search-input-serv
 import { getSearchSuggestionWindowDays } from '../mode-manager/services/search-suggestion-windows-service.js';
 import { splitTagsForDisplay } from '../mode-manager/services/tag-syntax-service.js';
 import { sanitizeTags } from '../mode-manager/services/tag-bar-service.js';
+import { tokenEnd } from '../quoted-values.js';
 import {
     ROOT_SORT_MODES,
     baseRootSortMode,
@@ -441,10 +442,29 @@ async function suggestCaptureTags(prefix) {
     suggestions.innerHTML = tags.map((tag) => `<button type="button" class="phone-tag-pill" data-capture-tag="${escapeHtml(tag)}">${escapeHtml(tag)}</button>`).join('');
 }
 
+// The tags typed so far that a space has ended, and the one still being typed; a space
+// inside a quoted value (author="Ursula Le Guin") ends nothing.
+function captureTagParts(text) {
+    const parts = [];
+    let index = 0;
+    while (index < text.length) {
+        if (/\s/u.test(text[index])) {
+            index += 1;
+            continue;
+        }
+        const end = tokenEnd(text, index);
+        if (end === text.length) {
+            return { parts, typing: text.slice(index) };
+        }
+        parts.push(text.slice(index, end));
+        index = end;
+    }
+    return { parts, typing: '' };
+}
+
 function onCaptureTagsInput(event) {
     const input = event.target;
-    const parts = input.value.split(/\s+/u);
-    const typing = parts.pop();
+    const { parts, typing } = captureTagParts(input.value);
     for (const part of parts) {
         addCaptureTag(part);
     }
