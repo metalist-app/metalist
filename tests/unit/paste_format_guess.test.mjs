@@ -29,6 +29,19 @@ test('Markdown-like text needs two kinds of signs, or a table', () => {
     assert.equal(offered('A plain paragraph of text.\n\nAnother one.'), null);
 });
 
+// A nested list is Markdown by itself (agreed 2026-10-31): plain text rarely indents an
+// item under another. A flat list still is not.
+test('a nested list alone is offered as Markdown', () => {
+    const markdown = { kind: 'markdown', tags: ['@markdown'] };
+    assert.deepEqual(offered('- Saturday\n  - Morning\n  - Afternoon\n- Sunday'), markdown);
+    assert.deepEqual(offered('1. Run\n   - 5 miles\n2. Coffee'), markdown);
+    assert.deepEqual(offered('- Top\n\t- tabbed child'), markdown);
+    assert.deepEqual(offered('- Sunday\n\n  - Rest, after a blank line'), markdown);
+    assert.equal(offered('- milk\n - eggs\n- bread'), null, 'one space in is not nested');
+    assert.equal(offered('Shopping:\n  - milk\n  - eggs'), null, 'indented under a line that is not an item');
+    assert.equal(offered('dependencies:\n  - fastapi\n  - pygments')?.kind === 'markdown', false);
+});
+
 // An answer copied from an AI chat: prose, a heading, and a fenced app.
 const HTML_APP = [
     '<!DOCTYPE html>', '<html>', '<head>', '  <title>Labyrinth</title>', '  <style>', '    body { margin: 0; }', '  </style>',

@@ -36,8 +36,8 @@ Each was confirmed in the code.
    - **"No splitting" as planned would lose every link and embed on screen.**
    - Mitigation: make `@markdown` notes keep references. Carry the tokens through the Markdown pass as placeholders, the way scoped regions already are (`content-formatting.md`, "Any other scoped region in a Markdown note"), and draw them after. **Open:** build that first, or drop "No splitting".
 2. **MetaList's Markdown renderer is its own, and narrower than Obsidian's** (`markdown_rendering.py`, no library). Inside an `@markdown` note:
-   - **Shown:** headings, paragraphs, bold, italic, strikethrough, inline code, backtick fences, blockquotes, flat lists, tables, rules, links, math, Mermaid.
-   - **Shown wrongly:** nested lists come out flat; `![alt](src)` images show as `!` plus a link.
+   - **Shown:** headings, paragraphs, bold, italic, strikethrough, inline code, backtick fences, blockquotes, lists, tables, rules, links, math, Mermaid.
+   - **Shown wrongly:** ~~nested lists come out flat~~ (fixed 2026-10-31); `![alt](src)` images show as `!` plus a link.
    - **Shown as literal text:** `- [ ]` tasks, `==highlight==`, footnotes, callouts, `%%comments%%`, `~~~` fences, setext headings, reference-style links, raw HTML (except `<br>`).
    - This only matters for "No splitting". The split modes convert to MetaList's own formats, which don't go through this renderer.
 3. **A note has one renderer, and it overrides everything else** (`content_formatting.py:534-659`, 1212). For example, `@todo @markdown` shows no checkbox. Mixing formats in one note fails.

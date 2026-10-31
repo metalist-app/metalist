@@ -33,6 +33,10 @@ _TABLE_CELL_SEPARATOR = "|"
 # In a table row, `\|` is a pipe inside a cell, not a cell boundary (GFM tables).
 _ESCAPED_TABLE_CELL_SEPARATOR = "\\|"
 _MARKDOWN_ESCAPE = "\\"
+# How many more columns than its list an item needs to sit inside the item above it: two
+# spaces, as under "- ", or a tab (_TAB_WIDTH).
+_NESTED_LIST_INDENT = 2
+_TAB_WIDTH = 4
 # A backslash and the one character it escapes.
 _ESCAPE_SEQUENCE_LENGTH = 2
 # The one raw HTML tag Markdown text may carry: a line break, the standard way to break
@@ -228,7 +232,10 @@ class _MarkdownRenderer:
         return f"<blockquote>{inner_html}</blockquote>"
 
     def _render_list_block(self) -> str:
+        """A list and the lists nested in its items (2026-10-31): an item indented at least
+        _NESTED_LIST_INDENT columns more than its list belongs inside the item above it."""
         first_line = self._lines[self._index]
+        list_indent = _indent_width(first_line)
         ordered_match = _ORDERED_LIST_RE.match(first_line.strip())
         is_ordered = ordered_match is not None
         tag_name = "ul"
@@ -245,30 +252,20 @@ class _MarkdownRenderer:
         while self._index < len(self._lines):
             line = self._lines[self._index]
             if line.strip() == "":
-                next_content_index = self._index
-                while (
-                    next_content_index < len(self._lines)
-                    and self._lines[next_content_index].strip() == ""
-                ):
-                    next_content_index += 1
-                if (
-                    next_content_index < len(self._lines)
-                    and self._is_matching_list_item(
-                        line=self._lines[next_content_index],
-                        is_ordered=is_ordered,
-                    )
+                next_content_index = self._next_content_index(self._index)
+                if next_content_index < len(self._lines) and self._is_sibling_item(
+                    line=self._lines[next_content_index], list_indent=list_indent, is_ordered=is_ordered,
                 ):
                     self._index = next_content_index
                     continue
-                self._index = next_content_index
                 break
-            if not self._is_matching_list_item(line=line, is_ordered=is_ordered):
+            if not self._is_sibling_item(line=line, list_indent=list_indent, is_ordered=is_ordered):
                 break
-            items.append(self._render_list_item(is_ordered=is_ordered))
+            items.append(self._render_list_item(is_ordered=is_ordered, list_indent=list_indent))
 
         return f"{opening_tag}{''.join(items)}</{tag_name}>"
 
-    def _render_list_item(self, *, is_ordered: bool) -> str:
+    def _render_list_item(self, *, is_ordered: bool, list_indent: int) -> str:
         line = self._lines[self._index]
         stripped = line.strip()
         if is_ordered:
@@ -278,15 +275,28 @@ class _MarkdownRenderer:
         assert match is not None
         item_content = match.group("content")
         item_lines = [item_content]
+        nested_lists: List[str] = []
         self._index += 1
 
         while self._index < len(self._lines):
             next_line = self._lines[self._index]
             if next_line.strip() == "":
+                # A blank line before a nested list keeps it in this item.
+                next_content_index = self._next_content_index(self._index)
+                if next_content_index < len(self._lines) and self._is_nested_item(
+                    line=self._lines[next_content_index], list_indent=list_indent,
+                ):
+                    self._index = next_content_index
+                    continue
                 break
+            if self._is_nested_item(line=next_line, list_indent=list_indent):
+                nested_lists.append(self._render_list_block())
+                continue
             if self._is_list_start(next_line):
                 break
             if self._is_block_start(next_line):
+                break
+            if nested_lists:
                 break
             if next_line.startswith("  ") or next_line.startswith("\t"):
                 item_lines.append(next_line.lstrip())
@@ -296,7 +306,22 @@ class _MarkdownRenderer:
 
         rendered = _render_inline_markdown("\n".join(item_lines), allow_links=True)
         rendered = rendered.replace("\n", "<br>\n")
-        return f"<li>{rendered}</li>"
+        return f"<li>{rendered}{''.join(nested_lists)}</li>"
+
+    def _next_content_index(self, index: int) -> int:
+        """The first line at or after index that is not blank, or the number of lines."""
+        while index < len(self._lines) and self._lines[index].strip() == "":
+            index += 1
+        return index
+
+    def _is_nested_item(self, *, line: str, list_indent: int) -> bool:
+        return self._is_list_start(line) and _indent_width(line) >= list_indent + _NESTED_LIST_INDENT
+
+    def _is_sibling_item(self, *, line: str, list_indent: int, is_ordered: bool) -> bool:
+        indent = _indent_width(line)
+        if indent < list_indent or indent >= list_indent + _NESTED_LIST_INDENT:
+            return False
+        return self._is_matching_list_item(line=line, is_ordered=is_ordered)
 
     def _render_paragraph_block(self) -> str:
         paragraph_lines: List[str] = []
@@ -371,6 +396,12 @@ class _MarkdownRenderer:
         return len(_split_table_row(header_line)) == len(
             _split_table_row(delimiter_line)
         )
+
+
+def _indent_width(line: str) -> int:
+    """The columns of space before a line's text, a tab counting _TAB_WIDTH."""
+    expanded = line.expandtabs(_TAB_WIDTH)
+    return len(expanded) - len(expanded.lstrip())
 
 
 def _split_table_row(line: str) -> list[str]:

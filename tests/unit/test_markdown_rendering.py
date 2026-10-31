@@ -1,3 +1,5 @@
+import pytest
+
 from app.services.markdown_rendering import render_markdown_to_html
 
 
@@ -187,3 +189,23 @@ def test_escaped_trailing_pipe_stays_in_the_last_cell() -> None:
     rendered = render_markdown_to_html("| a | b \\|\n|---|---|")
 
     assert "<th>a</th><th>b |</th>" in rendered
+
+
+# Nested lists (2026-10-31): an item two or more columns (or a tab) deeper than its list
+# sits inside the item above it.
+@pytest.mark.parametrize(("markdown", "expected"), [
+    (
+        "- a\n  - b\n    1. c\n    2. d\n  - e\n- f",
+        "<ul><li>a<ul><li>b<ol><li>c</li><li>d</li></ol></li><li>e</li></ul></li><li>f</li></ul>",
+    ),
+    ("- a\n\n  - after a blank line\n\n- b", "<ul><li>a<ul><li>after a blank line</li></ul></li><li>b</li></ul>"),
+    ("3. three\n   - a bullet\n4. four", '<ol start="3"><li>three<ul><li>a bullet</li></ul></li><li>four</li></ol>'),
+    ("- a\n  - b\n    3. c", '<ul><li>a<ul><li>b<ol start="3"><li>c</li></ol></li></ul></li></ul>'),
+    ("- a\n\t- tabbed\n\t\t- twice\n- b", "<ul><li>a<ul><li>tabbed<ul><li>twice</li></ul></li></ul></li><li>b</li></ul>"),
+    ("- a\n  continued\n- b", "<ul><li>a<br>\ncontinued</li><li>b</li></ul>"),
+    # One column deeper is a sibling, as in standard Markdown.
+    ("- a\n - b\n- c", "<ul><li>a</li><li>b</li><li>c</li></ul>"),
+    ("- a\n  - b\n\nAfter", "<ul><li>a<ul><li>b</li></ul></li></ul><p>After</p>"),
+])
+def test_an_indented_item_nests_inside_the_item_above(markdown: str, expected: str) -> None:
+    assert render_markdown_to_html(markdown) == expected

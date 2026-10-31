@@ -148,6 +148,8 @@ Other (non-meta) tags may also appear inside wrapper tokens (e.g. `{{foo bar}}`)
 ## Markdown meta tags
 - `@markdown`: renders the note content as Markdown in view mode on the server.
 - Scoped Markdown renders only the matching wrapped region.
+- Lists nest by indent: an item two or more spaces (or a tab) deeper than its list sits inside the item above it, bullets and numbers mixed; one space deeper stays a sibling.
+- References work in a Markdown note: `[[UUID]]` links stay in their line (paragraph, heading, list item, table cell); `![[UUID]]` embeds of notes and images are blocks of their own.
 - Tables: `<br>` breaks a cell's line (the only raw HTML allowed); short rows get empty cells; `\|` is a literal `|`; columns are as wide as their longest word, and a too-wide table scrolls sideways.
 - Fenced code that names a language (```` ```python ````, ```` ```js ````, any language name or alias `@code=` accepts, in any case) is coloured as `@code=<language>` colours it, with the language label above the block. A fence with no language, or one naming plain text (`text`, `output`, `console`) or a language MetaList does not know, stays plain, with no badge. Fenced `mermaid` blocks are unaffected.
 - Fenced `mermaid` blocks render as responsive SVG diagrams in the app. They use a compact layout and are never scaled to fit. The Mermaid runtime is local: no diagram source leaves MetaList.
