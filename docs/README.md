@@ -50,7 +50,7 @@
 - Future plan (hosted MetaList: downloading your own copy, the backup reminder): `docs/future-plans/hosted-own-copy.md`
 - Future plan (AI providers, what is left: evals for Claude and Gemini, the demo vault, hosted questions): `docs/future-plans/ai-providers-remaining.md`
 - Future plan (sharing notes as HTML, with ontology fragments, recipes and no code plugins; knowledge packs, provenance, updates and sharing by QR): `docs/future-plans/html-note-sharing.md`
-- Future plan (Obsidian import and export, aliases and image widths mapped both ways): `docs/future-plans/obsidian-import-export.md`; scheduled for launch in `docs/ready-to-build/import-export-launch.md`
+- Future plan (Obsidian import and export, aliases and image widths mapped both ways): `docs/future-plans/obsidian-import-export.md`; scheduled for launch in `docs/ready-to-build/import-export-launch.md`, with every Obsidian feature mapped into MetaList in `docs/ready-to-build/obsidian-mapping.md`
 - Planned, not scheduled (the same tag more than once in a note): `docs/future-plans/same-tag-twice.md`
 - Future plan (charts of super-tag values, embedded like diagrams): `docs/future-plans/charts.md`
 - Future plan (one encrypted file per attachment, with a catalog): `docs/future-plans/file-storage-per-file.md`
@@ -60,7 +60,7 @@
 - Tried and rejected (dragging a note to any level by the note released on; needs a different control system): `docs/future-plans/drag-across-levels.md`
 - Future plan (a hover card on the Referenced by badge listing the referring notes): `docs/future-plans/referenced-by-hover-card.md`
 - Future plan (an embedded email drawn as its card in exports and prints, not as its file card): `docs/future-plans/email-in-exports.md`
-- Agreed designs ready to build, not started: `docs/ready-to-build/` (several views on one vault with editing locked per root note: `multi-view-editing.md`; the phone as the desktop app on a smaller screen, editing, with search contexts and the AI chat: `phone-same-app.md`; deployment profiles (personal, self-hosted, hosted) and hardening self-hosted for the internet: `deployment-profiles.md`; a short community-only self-hosting page, no packaging: `self-hosting-page.md`; Obsidian and Logseq imports, an Obsidian-compatible Markdown export and an import report, for launch: `import-export-launch.md`)
+- Agreed designs ready to build, not started: `docs/ready-to-build/` (several views on one vault with editing locked per root note: `multi-view-editing.md`; the phone as the desktop app on a smaller screen, editing, with search contexts and the AI chat: `phone-same-app.md`; deployment profiles (personal, self-hosted, hosted) and hardening self-hosted for the internet: `deployment-profiles.md`; a short community-only self-hosting page, no packaging: `self-hosting-page.md`; tag values with spaces in quotes, before the import: `quoted-tag-values.md`; Obsidian and Logseq imports with an import report, and the export as one ordered document in standard Markdown or HTML, for launch: `import-export-launch.md`; every Obsidian feature mapped into MetaList: `obsidian-mapping.md`)
 - Incoming design notes, processed into the folders above as soon as they are seen: `docs/inbox/` (see AGENTS.md, "Design Inbox")
 
 ## Clients

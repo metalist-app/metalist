@@ -55,6 +55,8 @@ A text term is a quoted string using either quote character, as long as the open
 - Negated forms: `-"some text"`, `-'some text'`
 - Quoted text, tags and property names may use any script (`"naïve"`, `日記:時間>2`; since 2026-10-30, before which non-ASCII characters were dropped, so `"naïve"` searched for `nave`). A search is kept in one Unicode form and matches note text in either form of an accented letter (`docs/ui/tag-bar.md`, Whitespace + Tokens).
 
+**Planned (decided 2026-10-30):** a quote straight after `=` opens a tag's value, not a text term: `author="Ursula Le Guin"` is one tag with that value, `author "Ursula Le Guin"` a tag plus a text search (`docs/ready-to-build/quoted-tag-values.md`).
+
 Escapes inside quoted text (backslash approach):
 - Within `"..."`: allow `\\` and `\"`
 - Within `'...'`: allow `\\` and `\'`

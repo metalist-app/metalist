@@ -455,9 +455,9 @@ the AI knows about them (built 2026-10-30, `app/services/agent/chat_compaction.p
 
 - Transcript/activity state lives only in server memory keyed by authenticated
   session token hash. Refresh rehydrates it; logout, auth reset, runtime lock, or
-  restart clears it. With several views (`docs/ready-to-build/multi-view-editing.md`),
-  which conversation each view has is undecided (2026-10-28, §10 there): leaning towards
-  one per view, not one per vault.
+  restart clears it. With several views (`docs/ready-to-build/multi-view-editing.md` §5,
+  decided 2026-10-28), each view will have its own conversation: a new browser tab starts
+  blank, a reload keeps it, closing the tab ends it.
 - The OpenAI usage/cost aggregate is separate process-wide server memory. Browser
   refresh and chat clearing retain it; its Reset button or server restart clears it.
 - Canonical future context includes only user text and completed assistant prose.

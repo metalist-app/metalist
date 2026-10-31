@@ -1,6 +1,6 @@
 # Several views at once: one editor per root note
 
-**Status:** Agreed with the maintainer 2026-10-26. Ready to build. A large change: a build order was proposed 2026-10-28 (§10), not yet approved. **Undecided (2026-10-28):** the AI conversation (§5) and whether the list of search contexts stays shared (§2); see §10.
+**Status:** Agreed with the maintainer 2026-10-26. Ready to build. A large change: a build order was proposed 2026-10-28 (§10), not yet approved. **Undecided (2026-10-28):** whether the list of search contexts stays shared (§2); see §10. The AI conversation is decided: one per view (§5).
 **Scope:** let MetaList be open in several places on one vault at the same time (two browser tabs, a browser tab and the phone, later apps) instead of one session per vault. Each place has its own independent screen; editing is locked **per root note**. Update the permanent docs (`docs/ui/state-handling.md`, `docs/design/differential-view-protocol.md`, `docs/ui/ai-chat.md`, `docs/security/README.md`, `docs/ui/phone.md` and wherever "one active session" is stated) with the result.
 
 Written without running the code. Every code reference below came from reading it and must be checked before relying on it; build only what's missing.
@@ -60,13 +60,18 @@ Written without running the code. Every code reference below came from reading i
 - **Collapse stays saved on the note, shared by every view** (as today). Collapsing something on the phone folds it on the desktop too, live; the desktop holds its reading position through the update, so the screen doesn't jump.
 - **Collapsing or expanding inside a root locked by another view is refused,** like any other change: collapsing the parent of the note being edited would fold away the text under the other person's cursor. The marker says why.
 
-## 5. The AI conversation: one per vault
+## 5. The AI conversation: one per view
 
-**Undecided (2026-10-28), don't build this section as written.** The maintainer is leaning towards **one conversation per view** instead, and is still thinking it over (§10).
+**Decided 2026-10-28** (filed 2026-10-30 from `docs/inbox/2026-10-28-ai-conversation-per-view.md`): **each view has its own AI conversation, and a new view starts with a blank one.** This replaces "one conversation per vault, shared live" (§10 keeps why).
 
-- **One conversation per vault, shared live across views.** Start a question at the desk, continue it from the phone. It must not be tied to one view, since a view's ID is cleared when its browser tab closes. (Today the transcript is keyed by the session token hash; with several sessions it needs a vault-level key.)
-- **Each Send uses the search context of the view it was sent from,** exactly as a Send captures the active search context today.
-- **One answer at a time.** While an answer is being written, other views can type, but **Send waits**, with a status in the chat's status line saying where the answer is being written (for example "Answering from your desktop…"); nothing in the layout moves. When the answer finishes, Send works again and the typed message is still there. *Why not a queue:* a queued question would be answered after an answer its sender hadn't read, against a context captured earlier.
+1. **A conversation belongs to a view** (a browser tab's view, the phone app's view). It follows the view as its search changes or it switches search contexts. Each Send captures the scope the view shows at that moment, as today.
+2. **A new view starts blank,** unlike search contexts, where a new view opens on the most recently used one. A new browser tab is a new conversation, as in other chat apps.
+3. **A reload keeps the view's conversation** (the view ID survives a reload).
+4. **Closing the view ends its conversation.** A browser tab's view ID is in `sessionStorage`, so closing the tab drops it; the installed phone app keeps its view (§9), so its conversation survives the app being ended. Accepted.
+5. **Views never share a conversation.** No cross-view "one answer at a time" rule and no "Answering from your desktop…" status: two views can each have an answer being written at once.
+6. **No conversation history list** (unchanged). Keeping an answer is still Copy Response and pasting it as a note. A history may come later; nothing here should block it.
+
+**The change:** today the transcript and activity state live in server memory keyed by the sign-in (`token_service.get_session_key`; `docs/ui/ai-chat.md`, "Session and Debug Boundaries"). Once every view has its own sign-in or ID (build steps 1 and 2), key the transcript, the activity state, the agent's record of what each answer did, and the latest debug trace by **view**. Clear clears only that view's conversation. A view's conversation is dropped from server memory when the view is gone (its lease lapses after its tab closes), so closed tabs don't pile up transcripts. Lock, sign out and restart behave as today for each view's conversation.
 
 ## 6. Security review
 
@@ -75,7 +80,7 @@ Removing "one active session per vault" changes assumptions recorded elsewhere. 
 ## 7. Invariants
 
 1. Two views never edit the same root note at once; the root note is the unit of locking. A locked root can be moved but not deleted.
-2. Every view is independent in what it shows; the notes, collapse state and AI conversation are shared.
+2. Every view is independent in what it shows and has its own AI conversation; the notes and collapse state are shared.
 3. A lock never expires under a connected view, and taking one over never loses typing.
 4. Linked-list ordering is unchanged; the server applies changes in arrival order.
 5. The note being edited never jumps on its editor's screen.
@@ -87,7 +92,7 @@ Removing "one active session per vault" changes assumptions recorded elsewhere. 
 - Editing a child in tab 1 locks its whole root in tab 2: edits, checkbox ticks, collapse and delete are refused there with the marker; moving the root and adding neighbours succeed, and tab 1's edited note stays at the same screen height.
 - The lock lapses shortly after tab 1 closes or disconnects, and never while it stays connected and idle.
 - Take Over: first click shows the button and doesn't edit; the second takes the lock; tab 1's typing is saved and it leaves edit mode.
-- AI: a Send from tab 2 while tab 1's answer is being written waits with the status; the conversation shows in both; each Send uses its own view's context.
+- AI (§5): two tabs each have their own conversation, and a Send in one never appears in the other; a new tab opens with an empty chat and a reload keeps a tab's conversation; changing the search or switching search contexts in one tab keeps its conversation and the next Send uses the new scope; two tabs can each have an answer being written at once; closing a tab ends its conversation and the server frees it.
 - Order stays consistent under interleaved adds and moves from two tabs.
 
 ## 9. Checked 2026-10-27 (filed from the inbox)
@@ -111,12 +116,12 @@ Removing "one active session per vault" changes assumptions recorded elsewhere. 
 
 ## 10. Discussed 2026-10-28
 
-### The AI conversation: undecided
+### The AI conversation: decided 2026-10-28, one per view (§5)
 - **One conversation per vault (§5) is in doubt.** A conversation only makes sense with the search it was asked in, and a different view usually shows a different search.
 - **One conversation per search context: rejected.** The maintainer often refines the search partway through a conversation and keeps asking; tying the conversation to a search context breaks that.
 - **Leaning towards one conversation per view,** as today's one per sign-in but per view: it follows that view as its search changes or it switches search contexts, and each Send uses what the view shows then. Views never share a conversation, so "one answer at a time" across views (§5) would go, and so would continuing a conversation on another device.
   - The trade-off: a browser tab's view is forgotten when the tab closes (its ID is in `sessionStorage`), so closing a tab would end its conversation; a reload keeps it. Today the transcript is keyed by the browser's sign-in (`token_service.get_session_key`), so it survives closing the tab. The installed phone app keeps its view (§9), so its conversation survives the app being ended.
-- Build the AI step last, once this is decided.
+- Build the AI step last (step 5).
 
 ### The list of search contexts: shared?
 - The maintainer isn't sure the set of search contexts has to be shared; a new view should still open on the one used most recently.
@@ -129,7 +134,7 @@ Checked against the code first: the browser's sign-in is a per-vault cookie (`ap
 2. **Each view its own screen:** its own search context, scroll and selection across a reload; a new view on the most recently used context; the installed phone app's ID in `localStorage` (§9).
 3. **Live changes from other views:** saves, moves and collapse arrive without a reload, and what the user is looking at doesn't move. A case list is agreed first (`docs/ui/interaction-principles.md`).
 4. **Root-note edit locks:** server-side refusals, moves allowed, the marker and Take Over (§3). A case list is agreed first.
-5. **The AI conversation,** once decided.
+5. **The AI conversation,** one per view (§5).
 
 Step 3 comes before 4 because markers and Take Over need views to see each other's changes live.
 

@@ -57,7 +57,7 @@ book:author=Ursula-Le-Guin
   `run:start=10:30:miles=3`, `10:30` is the start and `miles` the next property.
   `https://…` stays inside a value too (the colon is followed by `/`).
 - Values have no spaces (tags never do): `author=Ursula-Le-Guin`.
-- A value cannot contain a colon followed by a letter (`ref=abc:def` would split).
+- A value cannot contain a colon followed by a letter (`ref=abc:def` would split). **Planned (decided 2026-10-30):** a quoted value can hold spaces and colons, `book:title="Dune: Messiah"` (`docs/ready-to-build/quoted-tag-values.md`).
   Accepted as rare.
 - Each property appears at most once per token. The tag bar removes a repeated one
   while typing, as it removes a second `=` today. Properties keep the order typed;
