@@ -838,18 +838,21 @@ def get_ai_session(
                 ],
             )
         )
-    summaries = [
-        AiChatSummary(
-            id=summary["id"], content=summary["content"], after_message_id=summary["after_message_id"],
-            visibility=summary["visibility"],
-            # A summary names notes by title; it has no note or web references.
-            rendered_content=render_ai_chat_markdown_to_html(
-                summary["content"], notes=note_store, allowed_note_ids=(), allowed_web_evidence=(),
-            ),
-        )
-        for summary in snapshot["summaries"]
-    ]
+    summaries = [_summary_response(summary) for summary in snapshot["summaries"]]
     return AiSessionResponse(messages=messages, summaries=summaries)
+
+
+def _summary_response(summary: dict[str, object]) -> AiChatSummary:
+    content = summary["content"]
+    assert isinstance(content, str), "a summary's content is text"
+    return AiChatSummary(
+        id=summary["id"], content=content, after_message_id=summary["after_message_id"],
+        visibility=summary["visibility"],
+        # A summary names notes by title; it has no note or web references.
+        rendered_content=render_ai_chat_markdown_to_html(
+            content, notes=note_store, allowed_note_ids=(), allowed_web_evidence=(),
+        ),
+    )
 
 
 @router.get("/history-meter", response_model=AiHistoryMeterResponse)

@@ -134,7 +134,9 @@ async def _make_summary(
         on_request=lambda wire_request: None,
     ):
         if event["type"] == "content_delta":
-            content += event["text"]
+            text = event["text"]
+            assert isinstance(text, str), "a content delta carries text"
+            content += text
         elif event["type"] not in _TEXT_EVENTS_WITHOUT_SUMMARY_TEXT:
             raise RuntimeError(f"Unknown inference stream event: {event['type']}")
     content = content.strip()

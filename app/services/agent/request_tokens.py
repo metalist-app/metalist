@@ -17,7 +17,9 @@ _SYSTEM_ROLE = "system"
 def _message_tokens(message: dict[str, object]) -> int:
     tokens = estimate_text_tokens(str(message["content"]))
     if "tool_calls" in message:
-        for call in message["tool_calls"]:
+        tool_calls = message["tool_calls"]
+        assert isinstance(tool_calls, list), "an assistant message's tool calls are a list"
+        for call in tool_calls:
             tokens += estimate_text_tokens(call["name"]) + estimate_text_tokens(call["arguments"])
     return tokens
 

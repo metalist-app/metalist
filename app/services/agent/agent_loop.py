@@ -218,9 +218,11 @@ class AgentLoopMixin:
                 async for event in turn_events:
                     yield event
             # The history is every conversation message but the current question.
+            turn_done = turn["done"]
+            assert isinstance(turn_done, dict), "a finished turn reports its usage"
             state.last_request = request_breakdown(
                 messages=messages, history_message_count=len(canonical_messages) - 1,
-                prompt_tokens=turn["done"]["usage"]["prompt_tokens"],
+                prompt_tokens=turn_done["usage"]["prompt_tokens"],
             )
             assistant_message: dict[str, object] = {"role": "assistant", "content": turn["content"]}
             if turn["calls"]:
