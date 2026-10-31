@@ -476,6 +476,8 @@ class CommandPaletteController {
                 openSessionTimeoutSettings: this.openSessionTimeoutSettings.bind(this),
                 openOntologyEditor: this.openOntologyEditor.bind(this),
                 openFindBar: () => openFindBar(),
+                // The chat panel does it (ai-chat-panel-controller.js), shown or not.
+                summarizeAiChat: () => document.dispatchEvent(new CustomEvent('metalist:ai-chat-summarize-requested')),
                 createBackup: this.createBackup.bind(this),
                 openBackupRestore: this.openBackupRestore.bind(this),
                 logout: this.logout.bind(this),

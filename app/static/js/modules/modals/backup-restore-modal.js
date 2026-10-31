@@ -13,6 +13,7 @@ import { escapeHtml } from '../html-escape.js';
 import { actionRowHtml } from './action-row.js';
 import { failureFieldId, showErrorDialogFor } from './error-dialog.js';
 import { FloatingMessages } from '../floating-messages.js';
+import { setRestoringOpenVault } from '../restore-session-end.js';
 
 const PROGRESS_CARD_KEY = 'backup-restore-progress';
 
@@ -879,13 +880,17 @@ export class BackupRestoreModal extends BaseModal {
         }
     }
 
+    // Restoring the open vault restarts the server and ends the session: lost
+    // connections and "not logged in" answers meanwhile are expected.
     _markRestoreTransitionActive() {
         const transitionUntil = Date.now() + RESTORE_TRANSITION_SUPPRESS_MS;
         sessionStorage.setItem(RESTORE_TRANSITION_UNTIL_KEY, String(transitionUntil));
+        setRestoringOpenVault(true);
     }
 
     _clearRestoreTransitionActive() {
         sessionStorage.removeItem(RESTORE_TRANSITION_UNTIL_KEY);
+        setRestoringOpenVault(false);
     }
 
     _beginPostRestoreReconnectAndReload() {

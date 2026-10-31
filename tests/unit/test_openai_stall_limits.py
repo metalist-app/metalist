@@ -22,6 +22,7 @@ from app.services.agent.openai_cost_tracking import OpenAICostTracker
 from app.services.agent.openai_inference import OPENAI_API_BASE_URL
 from app.services.agent.openai_inference import OpenAIInferenceAdapter
 from app.services.agent.openai_inference import openai_silence_limit_seconds
+from app.services.agent.staged_summary import SummaryFindingsResult
 from tests.unit.test_openai_inference import _API_KEY, _SEARCH_TOOL
 
 
@@ -117,3 +118,73 @@ def test_a_streamed_answer_that_gets_no_reply_fails_with_a_clear_message(monkeyp
         _text_stream("off")
 
     assert created["timeout"] == 15.0
+
+
+# A stream OpenAI stops feeding, or whose connection drops, fails while it is being
+# read; the OpenAI library leaves that error as httpx's own, not one of its APIErrors.
+# 2026-10-30: such an httpx.ReadTimeout reached the caller raw, past every handler
+# that expects the provider-neutral error.
+class _BrokenStream:
+    def __init__(self, failure: httpx.TransportError) -> None:
+        self._failure = failure
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        raise self._failure
+
+
+def _stream_breaking_with(failure_type: type[httpx.TransportError]):
+    async def behaviour(request: httpx.Request):
+        return _BrokenStream(failure_type("stream failed", request=request))
+    return behaviour
+
+
+_SILENCE_AT_LOW = "OpenAI did not respond for 15 seconds. Check your internet connection and ask again."
+_CONNECTION_LOST = "The connection to OpenAI broke off. Check your internet connection and ask again."
+
+
+@pytest.mark.parametrize(("failure_type", "message"), [
+    (httpx.ReadTimeout, _SILENCE_AT_LOW), (httpx.RemoteProtocolError, _CONNECTION_LOST)])
+def test_an_agent_turn_whose_stream_breaks_fails_with_a_clear_message(monkeypatch, failure_type, message) -> None:
+    _fake_client(monkeypatch, attribute="responses", behaviour=_stream_breaking_with(failure_type))
+
+    with pytest.raises(InferenceProviderError) as failure:
+        _tool_turn("low")
+
+    assert str(failure.value) == message
+    assert isinstance(failure.value.__cause__, failure_type)
+
+
+@pytest.mark.parametrize(("failure_type", "message"), [
+    (httpx.ReadTimeout, _SILENCE_AT_LOW), (httpx.RemoteProtocolError, _CONNECTION_LOST)])
+def test_a_streamed_answer_whose_stream_breaks_fails_with_a_clear_message(monkeypatch, failure_type, message) -> None:
+    _fake_client(monkeypatch, attribute="chat", behaviour=_stream_breaking_with(failure_type))
+
+    with pytest.raises(InferenceProviderError) as failure:
+        _text_stream("low")
+
+    assert str(failure.value) == message
+    assert isinstance(failure.value.__cause__, failure_type)
+
+
+@pytest.mark.parametrize(("failure_type", "message"), [
+    (httpx.ReadTimeout, _SILENCE_AT_LOW), (httpx.RemoteProtocolError, _CONNECTION_LOST)])
+def test_a_structured_answer_whose_stream_breaks_fails_with_a_clear_message(monkeypatch, failure_type, message) -> None:
+    async def breaking_completion(**arguments):
+        del arguments
+        raise failure_type("stream failed", request=httpx.Request("POST", "https://api.openai.com/v1/x"))
+
+    monkeypatch.setattr(openai_inference_module, "_create_structured_completion", breaking_completion)
+    adapter = OpenAIInferenceAdapter(api_key=_API_KEY, cost_tracker=OpenAICostTracker())
+
+    with pytest.raises(InferenceProviderError) as failure:
+        asyncio.run(adapter.infer_structured(
+            base_url=OPENAI_API_BASE_URL, model="gpt-5.6-luna", thinking_level="low",
+            messages=[{"role": "user", "content": "Summarize."}], response_model=SummaryFindingsResult,
+            on_progress=lambda progress: None,
+        ))
+
+    assert str(failure.value) == message
+    assert isinstance(failure.value.__cause__, failure_type)

@@ -3264,6 +3264,56 @@ body.ai-chat-resizing * {
     font-weight: 600;
 }
 
+/* Long chats (docs/ui/ai-chat.md): a turn only a summary stands for is grey and italic;
+   the summary sits after the last turn it replaced. Held-back turns keep their look and
+   get a divider instead, so the two can't be confused. */
+.ai-chat-message.is-summarized {
+    opacity: 0.6;
+    font-style: italic;
+}
+
+.ai-chat-summary {
+    align-self: stretch;
+    padding: 6px 10px;
+    border-top: 1px solid #cbd5e1;
+    border-bottom: 1px solid #cbd5e1;
+    color: #475569;
+    font-size: 12px;
+}
+
+.ai-chat-summary.is-summarized,
+.ai-chat-summary.is-held-back {
+    opacity: 0.6;
+    font-style: italic;
+}
+
+.ai-chat-summary-heading {
+    cursor: pointer;
+    font-weight: 600;
+}
+
+.ai-chat-summary-content {
+    margin-top: 6px;
+    font-size: 13px;
+    color: #1e293b;
+    overflow-wrap: anywhere;
+}
+
+.ai-chat-held-back-divider {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: #64748b;
+    font-size: 12px;
+}
+
+.ai-chat-held-back-divider::before,
+.ai-chat-held-back-divider::after {
+    content: '';
+    flex: 1;
+    border-top: 1px dashed #cbd5e1;
+}
+
 .ai-chat-thinking {
     color: #64748b;
     font-size: 12px;
@@ -3351,6 +3401,91 @@ details.ai-chat-thinking > .ai-chat-thinking-heading {
     padding: 12px 14px 14px;
     border-top: 1px solid #dbe2ea;
     background: #ffffff;
+}
+
+/* The history meter (docs/ui/ai-chat.md, Long chats): a thin grey bar along the top of
+   the message box; hovering or focusing it shows the breakdown above it. */
+.ai-chat-history-meter {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    /* One line whether or not its label has text yet: the message box never changes height. */
+    height: 16px;
+    margin-bottom: 8px;
+    outline: none;
+}
+
+/* Hidden until the chosen AI is known, but its line is kept, so showing it moves nothing. */
+.ai-chat-history-meter[hidden] {
+    display: flex;
+    visibility: hidden;
+}
+
+.ai-chat-history-meter-track {
+    flex: 1;
+    height: 3px;
+    border-radius: 2px;
+    background: #e2e8f0;
+    overflow: hidden;
+}
+
+.ai-chat-history-meter-fill {
+    height: 100%;
+    background: #94a3b8;
+}
+
+.ai-chat-history-meter-label {
+    color: #64748b;
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.ai-chat-history-meter-details {
+    position: absolute;
+    right: 0;
+    bottom: calc(100% + 6px);
+    z-index: 5;
+    display: none;
+    width: min(320px, 100%);
+    box-sizing: border-box;
+    padding: 10px 12px;
+    border: 1px solid #dbe2ea;
+    border-radius: 8px;
+    background: #ffffff;
+    box-shadow: 0 6px 18px rgba(15, 23, 42, 0.12);
+    color: #1e293b;
+    font-size: 12px;
+}
+
+.ai-chat-history-meter:hover .ai-chat-history-meter-details,
+.ai-chat-history-meter:focus-visible .ai-chat-history-meter-details {
+    display: block;
+}
+
+.ai-chat-history-meter-row {
+    display: grid;
+    grid-template-columns: 1fr auto 3.5em;
+    gap: 8px;
+    padding: 2px 0;
+    font-variant-numeric: tabular-nums;
+}
+
+.ai-chat-history-meter-row span:not(:first-child) {
+    text-align: right;
+}
+
+.ai-chat-history-meter-section + .ai-chat-history-meter-limit,
+.ai-chat-history-meter-limit + .ai-chat-history-meter-section {
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid #e2e8f0;
+}
+
+.ai-chat-history-meter-limit {
+    margin: 0;
+    color: #64748b;
 }
 
 .ai-chat-composer textarea {
@@ -3756,6 +3891,48 @@ html[data-theme="dark"] .ai-agent-debug-event pre {
 html[data-theme="dark"] .ai-chat-message-user {
     border-color: #2f6fb8;
     background: #141414;
+}
+
+html[data-theme="dark"] .ai-chat-history-meter-track {
+    background: #2a2a2a;
+}
+
+html[data-theme="dark"] .ai-chat-history-meter-fill {
+    background: #737373;
+}
+
+html[data-theme="dark"] .ai-chat-history-meter-label,
+html[data-theme="dark"] .ai-chat-history-meter-limit {
+    color: #a3a3a3;
+}
+
+html[data-theme="dark"] .ai-chat-history-meter-details {
+    border-color: #3a3a3a;
+    background: #1f1f1f;
+    color: #e5e5e5;
+}
+
+html[data-theme="dark"] .ai-chat-history-meter-section + .ai-chat-history-meter-limit,
+html[data-theme="dark"] .ai-chat-history-meter-limit + .ai-chat-history-meter-section {
+    border-top-color: #3a3a3a;
+}
+
+html[data-theme="dark"] .ai-chat-summary {
+    border-color: #3a3a3a;
+    color: #a3a3a3;
+}
+
+html[data-theme="dark"] .ai-chat-summary-content {
+    color: #e5e5e5;
+}
+
+html[data-theme="dark"] .ai-chat-held-back-divider {
+    color: #a3a3a3;
+}
+
+html[data-theme="dark"] .ai-chat-held-back-divider::before,
+html[data-theme="dark"] .ai-chat-held-back-divider::after {
+    border-top-color: #3a3a3a;
 }
 
 html[data-theme="dark"] .ai-chat-note-mention {

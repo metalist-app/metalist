@@ -8,6 +8,9 @@ from typing import Callable, Dict, FrozenSet, Iterable, List, Tuple
 
 from app.config import TAG_SUGGESTION_CONNECTORS
 from app.config import TAG_SUGGESTION_SUPPRESS_REDUNDANT_CONTENT_VARIANTS
+from app.services.note_datetime import datetime_tag_in_text, is_datetime_tag_term, may_be_datetime_tag
+from app.services.note_datetime import suggested_datetime_tag
+from app.utils.text_utils import strip_html
 from app.services.note_store import store as note_store
 from app.services.ontology_rules_store import extract_ontology_tags
 from app.services.ontology_rules_store import get_ontology
@@ -1025,17 +1028,106 @@ def _rank_tag_suggestions(
 ) -> _RankedSuggestions:
     if not isinstance(prefix, str):
         raise TypeError("prefix must be a string")
+    explicit_list = list(explicit_tags)
+    ranked = _rank_by_what_is_typed(
+        note_id=note_id, anchors=anchors, explicit_tags=explicit_list, prefix=prefix,
+        content_html=content_html, limit=limit,
+    )
+    text_datetime = _datetime_named_in_text(
+        note_id=note_id, explicit_tags=explicit_list, prefix=prefix, content_html=content_html,
+    )
+    if text_datetime is None:
+        return ranked
+    return _with_first(ranked, term=text_datetime, reasons=("A date in the note's text",), limit=limit)
+
+
+def _year_last_updated(note_id: str) -> int:
+    """The year a date written without one is in: the year the note was last updated. A
+    note not saved yet is being written now."""
+    record = _get_note_record_or_none(note_id)
+    if record is None:
+        return datetime.now().year
+    return record.updated_at.astimezone().year
+
+
+def _datetime_named_in_text(
+    *, note_id: str, explicit_tags: List[str], prefix: str, content_html: str,
+) -> str | None:
+    """The `@datetime` of the first date the note's text names, when the note has none yet
+    and what is typed (nothing, `d`, `@dat`) can lead to it; else None."""
+    written = _written_besides_typed(explicit_tags=explicit_tags, prefix=prefix)
+    if any(tag.startswith("@") and is_datetime_tag_term(tag) for tag in written):
+        return None
+    typed = prefix
+    if not typed.startswith("@"):
+        typed = f"@{prefix}"
+    if not may_be_datetime_tag(typed):
+        return None
+    text = strip_html(content_html)
+    # Most notes name no date: the note's record is read only for one that does.
+    if datetime_tag_in_text(text, year_if_missing=datetime.now().year) is None:
+        return None
+    term = datetime_tag_in_text(text, year_if_missing=_year_last_updated(note_id))
+    if term is None or not term.casefold().startswith(typed.casefold()):
+        return None
+    return term
+
+
+def _with_first(ranked: _RankedSuggestions, *, term: str, reasons: Tuple[str, ...], limit: int) -> _RankedSuggestions:
+    """The suggestions with term first, once."""
+    rest = [tag for tag in ranked.tags if tag.casefold() != term.casefold()]
+
+    def explain(shown: str) -> Tuple[str, ...]:
+        if shown.casefold() == term.casefold():
+            return reasons
+        return ranked.explain(shown)
+
+    return _RankedSuggestions(tags=[term, *rest][:limit], explain=explain)
+
+
+def _rank_by_what_is_typed(
+    *,
+    note_id: str,
+    anchors: Iterable[str],
+    explicit_tags: List[str],
+    prefix: str,
+    content_html: str,
+    limit: int,
+) -> _RankedSuggestions:
     if prefix == "":
         return _suggest_tags(
             note_id=note_id, anchors=anchors, explicit_tags=explicit_tags, content_html=content_html,
             limit=limit, include_unranked=True,
         )
     if prefix.startswith("@"):
-        return _suggest_meta_tags(anchors=anchors, prefix=prefix, limit=limit)
-    return _suggest_while_typing(
+        return _suggest_meta_tags(note_id=note_id, prefix=prefix, content_html=content_html, limit=limit)
+    typed = _suggest_while_typing(
         note_id=note_id, anchors=list(anchors), explicit_tags=list(explicit_tags), prefix=prefix,
         content_html=content_html, limit=limit,
     )
+    return _with_meta_tags_after(typed, note_id=note_id, prefix=prefix, content_html=content_html, limit=limit)
+
+
+def _with_meta_tags_after(
+    typed: _RankedSuggestions, *, note_id: str, prefix: str, content_html: str, limit: int,
+) -> _RankedSuggestions:
+    """The tags typing offers, then the built-in tags the same letters start once an @ is
+    put before them (`bo` → `@bold`), so the @ need not be typed first."""
+    if len(typed.tags) >= limit:
+        return typed
+    meta = _suggest_meta_tags(
+        note_id=note_id, prefix=f"@{prefix}", content_html=content_html, limit=limit - len(typed.tags),
+    )
+    typed_casefolds = {tag.casefold() for tag in typed.tags}
+    meta_tags = [tag for tag in meta.tags if tag.casefold() not in typed_casefolds]
+    meta_casefolds = {tag.casefold() for tag in meta_tags}
+
+    def explain(term: str) -> Tuple[str, ...]:
+        if term.casefold() in meta_casefolds:
+            return meta.explain(term)
+        return typed.explain(term)
+
+    return _RankedSuggestions(tags=[*typed.tags, *meta_tags], explain=explain)
 
 
 def _synonyms_of_written_tags(*, tags: Iterable[str], ontology: TagOntology) -> FrozenSet[str]:
@@ -1048,13 +1140,17 @@ def _synonyms_of_written_tags(*, tags: Iterable[str], ontology: TagOntology) -> 
     return frozenset(synonyms)
 
 
-def _suggest_meta_tags(*, anchors: Iterable[str], prefix: str, limit: int) -> _RankedSuggestions:
-    """Built-in tags starting with what is typed (`@foot`), most used with the note's tags first."""
+def _suggest_meta_tags(*, note_id: str, prefix: str, content_html: str, limit: int) -> _RankedSuggestions:
+    """Built-in tags starting with what is typed (`@foot`), most used first; `@datetime`
+    with the first date the note's text names, or now."""
     assert prefix.startswith("@"), prefix
-    anchor_list = _sanitize_tag_terms(tags=anchors, field_name="anchors")
-    meta_query = _build_search_query_for_suggestions(anchors=anchor_list, prefix=prefix)
+    datetime_term: str | None = None
+    if may_be_datetime_tag(prefix):
+        datetime_term = suggested_datetime_tag(
+            text=strip_html(content_html), now=datetime.now(), year_if_missing=_year_last_updated(note_id),
+        )
     return _RankedSuggestions(
-        tags=search_index.suggest_tag_completions(query=meta_query, limit=limit),
+        tags=search_index.suggest_meta_tag_completions(prefix=prefix, limit=limit, datetime_term=datetime_term),
         explain=lambda term: meta_tag_reasons(index=search_index, term=term, prefix=prefix),
     )
 

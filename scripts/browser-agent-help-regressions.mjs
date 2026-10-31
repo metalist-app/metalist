@@ -138,7 +138,7 @@ async function checkChatMenuAcknowledgment(page) {
         const encode = event => new TextEncoder().encode(JSON.stringify(event) + '\n');
         window.fetch = async (url, options) => {
             if (String(url).endsWith('/ai/session')) {
-                return new Response(JSON.stringify({messages: AiChatPanel._messages}), {headers: {'content-type': 'application/json'}});
+                return new Response(JSON.stringify({messages: AiChatPanel._messages, summaries: []}), {headers: {'content-type': 'application/json'}});
             }
             if (String(url).endsWith('/ai/chat')) {
                 chatRequests++;

@@ -56,6 +56,7 @@ from app.services.agent.inference import StructuredInferenceError
 from app.services.agent.inference import StructuredInferenceProgress
 from app.services.agent.inference import TARGET_AGENT_CONTEXT_TOKENS
 from app.services.agent.inference import UNMEASURED_SILENCE_LIMIT_SECONDS
+from app.services.agent.inference import connection_lost_message
 from app.services.agent.structured_inference import _broken_rules
 from app.services.agent.structured_inference import _structured_max_output_tokens
 from app.services.agent.structured_inference import structured_retry_messages
@@ -111,6 +112,13 @@ def claude_silence_limit_seconds(thinking_level: str) -> float:
 
 def _silence_message(seconds: float) -> str:
     return f"Anthropic did not respond for {seconds:g} seconds. Check your internet connection and ask again."
+
+
+def _transport_failure_message(failure: httpx2.TransportError, *, thinking_level: str) -> str:
+    """Why a stream broke while being read: the Anthropic SDK leaves those failures as httpx2's own."""
+    if isinstance(failure, httpx2.TimeoutException):
+        return _silence_message(claude_silence_limit_seconds(thinking_level))
+    return connection_lost_message("Anthropic")
 
 
 def _provider_error_message(exc: APIError) -> str:
@@ -380,6 +388,10 @@ class AnthropicInferenceAdapter:
         except APIError as exc:
             attempts.fail(exc)
             raise AnthropicProviderError(_provider_error_message(exc)) from exc
+        # lint: allow-PY001 rationale="a stream that breaks while being read fails with httpx2's own error"
+        except httpx2.TransportError as exc:
+            attempts.fail(exc)
+            raise AnthropicProviderError(_transport_failure_message(exc, thinking_level=thinking_level)) from exc
         finally:
             await client.close()
         attempts.finish(final)
@@ -483,6 +495,9 @@ class AnthropicInferenceAdapter:
         # lint: allow-PY001 rationale="translate external Claude stream failures into the provider-neutral contract"
         except APIError as exc:
             raise AnthropicProviderError(_provider_error_message(exc)) from exc
+        # lint: allow-PY001 rationale="a stream that breaks while being read fails with httpx2's own error"
+        except httpx2.TransportError as exc:
+            raise AnthropicProviderError(_transport_failure_message(exc, thinking_level=thinking_level)) from exc
         finally:
             await client.close()
         _raise_unless_finished(final)
@@ -575,7 +590,7 @@ class _StructuredAttempts:
         attempt.duration_ms = (time.perf_counter() - attempt.started_at) * MS_PER_SECOND
         failure_kind = "Structured output invalid"
         phase = "retrying"
-        if isinstance(error, APIError):
+        if isinstance(error, (APIError, httpx2.TransportError)):
             failure_kind = "Provider request failed"
             phase = "attempt_failed"
         if len(self.attempts) == _STRUCTURED_MAX_ATTEMPTS:

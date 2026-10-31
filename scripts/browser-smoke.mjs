@@ -45,6 +45,8 @@ import {checkEditableEmbeds} from './browser-editable-embed-regressions.mjs';
 import {checkCollapseOutlines} from './browser-collapse-outline-regressions.mjs';
 import {checkTabSwitching} from './browser-tab-switch-regressions.mjs';
 import {checkAiChatRefusal} from './browser-ai-chat-refusal-regressions.mjs';
+import {checkAiChatSummary} from './browser-ai-chat-summary-regressions.mjs';
+import {checkRestoreSession} from './browser-restore-session-regressions.mjs';
 import {checkSearchSuggestions} from './browser-search-suggestion-regressions.mjs';
 import {checkTagBarSuggestions} from './browser-tag-bar-suggestion-regressions.mjs';
 import {checkInputTarget} from './browser-input-target-regressions.mjs';
@@ -323,6 +325,14 @@ try {
     await checkAiChatRefusal(page);
     assert.deepEqual(errors, []);
     console.log(`PASS AI chat refusal regressions in ${await browser.version()}`);
+  } else if (process.env.BROWSER_TEST_SUITE === 'ai-chat-summary') {
+    await checkAiChatSummary(page);
+    assert.deepEqual(errors, []);
+    console.log(`PASS AI chat summary regressions in ${await browser.version()}`);
+  } else if (process.env.BROWSER_TEST_SUITE === 'restore-session') {
+    await checkRestoreSession(page);
+    assert.deepEqual(errors, []);
+    console.log(`PASS restore session regressions in ${await browser.version()}`);
   } else if (process.env.BROWSER_TEST_SUITE === 'tab-switching') {
     await checkTabSwitching(page);
     assert.deepEqual(errors, []);

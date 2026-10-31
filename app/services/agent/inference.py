@@ -95,6 +95,11 @@ class StructuredInferenceProgress:
             raise ValueError("Structured inference output tokens must be non-negative")
 
 
+def connection_lost_message(provider_label: str) -> str:
+    """A stream whose connection dropped while being read (not a silence: that has its own limit)."""
+    return f"The connection to {provider_label} broke off. Check your internet connection and ask again."
+
+
 class InferenceProviderError(RuntimeError):
     """Expected failure while communicating with an external model provider."""
 

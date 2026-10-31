@@ -31,7 +31,7 @@ async function installFakeServer(page) {
         window.chatRefusalTest = fake;
         const serverMessage = (id, role, content, model) => ({
             id, role, content, rendered_content: `<p>${content}</p>`, thinking: '', rendered_thinking: '',
-            status: 'complete', error: '', provider: 'openai', model, activities: [],
+            status: 'complete', error: '', provider: 'openai', model, visibility: 'sent', activities: [],
         });
         const json = (body, statusCode) => new Response(JSON.stringify(body), {
             status: statusCode, headers: {'Content-Type': 'application/json'},
@@ -52,7 +52,7 @@ async function installFakeServer(page) {
                     reference_note_ids: [], reference_web_ids: [],
                 }) + '\n', {headers: {'Content-Type': 'application/x-ndjson'}});
             }
-            if (path === '/api2/ai/session' && method === 'GET') return json({messages: fake.transcript}, 200);
+            if (path === '/api2/ai/session' && method === 'GET') return json({messages: fake.transcript, summaries: []}, 200);
             if (path === '/api2/ai/session' && method === 'DELETE') {
                 fake.transcript.splice(0);
                 return json({}, 200);

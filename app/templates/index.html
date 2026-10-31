@@ -149,6 +149,11 @@
         </section>
         <div id="ai-chat-messages" class="ai-chat-messages" aria-live="polite"></div>
         <form id="ai-chat-form" class="ai-chat-composer">
+            <div id="ai-chat-history-meter" class="ai-chat-history-meter" tabindex="0" hidden>
+                <div class="ai-chat-history-meter-track"><div class="ai-chat-history-meter-fill"></div></div>
+                <span class="ai-chat-history-meter-label"></span>
+                <div class="ai-chat-history-meter-details" role="tooltip"></div>
+            </div>
             <textarea
                 id="ai-chat-input"
                 rows="3"

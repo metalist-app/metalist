@@ -92,6 +92,7 @@ export const CONFIG = {
         },
         AUTH: {
             APP_UPDATE: `${API_AUTH_BASE}/app-update`,
+            SERVER_CODE: `${API_AUTH_BASE}/app-update/server-code`,
             STATUS: `${API_AUTH_BASE}/status`,
             LOGIN: `${API_AUTH_BASE}/login`,
             LOGIN_NAMESPACES: {
@@ -186,6 +187,8 @@ export const CONFIG = {
             EXPORT_TITLE_AVAILABILITY: `${API_AI_BASE}/export-title/availability`,
             EXPORT_TITLE: `${API_AI_BASE}/export-title`,
             CHAT: `${API_AI_BASE}/chat`,
+            SUMMARIZE: `${API_AI_BASE}/chat/summarize`,
+            HISTORY_METER: `${API_AI_BASE}/history-meter`,
             MENU_RESULT: `${API_AI_BASE}/menu-result`,
             COPY_MESSAGE: (messageId) => `${API_AI_BASE}/messages/${messageId}/copy`,
         }

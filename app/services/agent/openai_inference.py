@@ -21,6 +21,7 @@ from app.services.agent.tool_calling import AgentTool, validate_tool_conversatio
 from app.services.agent.inference import InferenceContextWindow
 from app.services.agent.inference import InferenceAttempt
 from app.services.agent.inference import InferenceProviderError
+from app.services.agent.inference import connection_lost_message
 from app.services.agent.inference import OutputLimitReached
 from app.services.agent.inference import InferenceResponse
 from app.services.agent.inference import StructuredInferenceProgress
@@ -82,6 +83,13 @@ def openai_silence_limit_seconds(thinking_level: str) -> float:
 
 def openai_silence_message(seconds: float) -> str:
     return f"OpenAI did not respond for {seconds:g} seconds. Check your internet connection and ask again."
+
+
+def _transport_failure_message(failure: httpx.TransportError, *, thinking_level: str) -> str:
+    """Why a stream broke while being read: the OpenAI library leaves those failures as httpx's own."""
+    if isinstance(failure, httpx.TimeoutException):
+        return openai_silence_message(openai_silence_limit_seconds(thinking_level))
+    return connection_lost_message("OpenAI")
 
 
 def _validate_base_url(base_url: str) -> None:
@@ -342,6 +350,9 @@ class OpenAIInferenceAdapter:
         # lint: allow-PY001 rationale="translate external OpenAI API failures into the provider-neutral contract"
         except APIError as exc:
             raise OpenAIProviderError(_provider_error_message(exc)) from exc
+        # lint: allow-PY001 rationale="a stream that breaks while being read fails with httpx's own error"
+        except httpx.TransportError as exc:
+            raise OpenAIProviderError(_transport_failure_message(exc, thinking_level=thinking_level)) from exc
         finally:
             for number, attempt in enumerate(capture.freeze(), 1):
                 record_provider_event("LLM_ATTEMPT_OUTPUT", {
@@ -463,6 +474,9 @@ class OpenAIInferenceAdapter:
         # lint: allow-PY001 rationale="translate external OpenAI stream failures into the provider-neutral contract"
         except APIError as exc:
             raise OpenAIProviderError(_provider_error_message(exc)) from exc
+        # lint: allow-PY001 rationale="a stream that breaks while being read fails with httpx's own error"
+        except httpx.TransportError as exc:
+            raise OpenAIProviderError(_transport_failure_message(exc, thinking_level=thinking_level)) from exc
         finally:
             await client.close()
         if not did_finish:
@@ -563,6 +577,9 @@ class OpenAIInferenceAdapter:
         # lint: allow-PY001 rationale="translate external OpenAI stream failures into the provider-neutral contract"
         except APIError as exc:
             raise OpenAIProviderError(_provider_error_message(exc)) from exc
+        # lint: allow-PY001 rationale="a stream that breaks while being read fails with httpx's own error"
+        except httpx.TransportError as exc:
+            raise OpenAIProviderError(_transport_failure_message(exc, thinking_level=thinking_level)) from exc
         finally:
             await client.close()
         if not did_finish:

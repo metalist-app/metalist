@@ -153,9 +153,12 @@ class ChatTurnStream:
         actions = event['actions']
         if not isinstance(actions, list) or not all(isinstance(action, dict) for action in actions):
             raise RuntimeError('Agent completion actions must be a list of action log entries')
+        request_tokens = event['request_tokens']
+        if not isinstance(request_tokens, dict):
+            raise RuntimeError('Agent completion must report what its last request was made of')
         self.store.complete_turn(session_key=self.session_key, turn_id=self.turn_id, final_content=content,
-                                 actions=actions)
-        event = {key: value for key, value in event.items() if key != 'actions'}
+                                 actions=actions, request_tokens=request_tokens)
+        event = {key: value for key, value in event.items() if key not in {'actions', 'request_tokens'}}
         return {**event, 'content': content, 'rendered_content': render_ai_chat_markdown_to_html(
             content,
             notes=self.notes,

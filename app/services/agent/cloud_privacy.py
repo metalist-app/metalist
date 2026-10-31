@@ -46,6 +46,16 @@ class CloudPrivacyBoundary:
 
 
 @dataclass(frozen=True, slots=True)
+class HistoryDisclosure:
+    """What the AI may see at a turn, for deciding whether the chat's history may still be
+    sent (AiChatSessionStore.synchronize_disclosure_boundary)."""
+    # The privacy rules: a change to them resets the history.
+    policy_key: str
+    permitted_note_ids: frozenset[str]
+    hidden_note_ids: frozenset[str]
+
+
+@dataclass(frozen=True, slots=True)
 class _CloudPrivacyMatchPlan:
     apply_cloud_policy: bool
     whitelist_tags: frozenset[str]
@@ -328,14 +338,17 @@ class CloudPrivacyEvaluator:
         # The same without proposals: the whitelist, so the AI cannot propose its way in.
         self._accepted_tags_provider = accepted_tags_provider
 
-    def history_disclosure_key(self, *, boundary: CloudPrivacyBoundary) -> str:
+    def history_disclosure(self, *, boundary: CloudPrivacyBoundary) -> HistoryDisclosure:
         note_ids = tuple(self._notes.list_note_ids())
         hidden_ids = self.hidden_note_ids(note_ids=note_ids, boundary=boundary)
-        permitted_ids = sorted(set(note_ids) - hidden_ids)
         # What the AI may see, not which company it is: one policy covers every provider,
         # so switching provider keeps the conversation (the maintainer, 2026-10-24).
-        payload = (boundary.apply_cloud_policy, serialize_cloud_privacy_policy(boundary.policy), permitted_ids)
-        return hashlib.sha256(json.dumps(payload, separators=(",", ":")).encode()).hexdigest()
+        policy = (boundary.apply_cloud_policy, serialize_cloud_privacy_policy(boundary.policy))
+        return HistoryDisclosure(
+            policy_key=hashlib.sha256(json.dumps(policy, separators=(",", ":")).encode()).hexdigest(),
+            permitted_note_ids=frozenset(note_ids) - hidden_ids,
+            hidden_note_ids=hidden_ids,
+        )
 
     def hidden_note_ids(
         self,

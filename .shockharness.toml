@@ -319,6 +319,12 @@ exception = "openai.APIError"
 reason = "translate external OpenAI stream failures into the provider-neutral contract"
 
 [[tool.shockharness.rules.exceptions.boundaries]]
+path = "app/services/agent/openai_inference.py"
+language = "python"
+exception = "httpx.TransportError"
+reason = "a stream that breaks while being read fails with httpx's own error"
+
+[[tool.shockharness.rules.exceptions.boundaries]]
 path = "app/services/agent/anthropic_inference.py"
 language = "python"
 exception = "anthropic.APITimeoutError"
@@ -329,6 +335,12 @@ path = "app/services/agent/anthropic_inference.py"
 language = "python"
 exception = "anthropic.APIError"
 reason = "translate external Claude API and stream failures into the provider-neutral contract"
+
+[[tool.shockharness.rules.exceptions.boundaries]]
+path = "app/services/agent/anthropic_inference.py"
+language = "python"
+exception = "httpx2.TransportError"
+reason = "a stream that breaks while being read fails with httpx2's own error"
 
 [[tool.shockharness.rules.exceptions.boundaries]]
 path = "app/services/agent/anthropic_inference.py"
@@ -347,6 +359,12 @@ path = "app/services/agent/openai_compatible_inference.py"
 language = "python"
 exception = "openai.APIError"
 reason = "translate the provider's API and stream failures into the provider-neutral contract"
+
+[[tool.shockharness.rules.exceptions.boundaries]]
+path = "app/services/agent/openai_compatible_inference.py"
+language = "python"
+exception = "httpx.TransportError"
+reason = "a stream that breaks while being read fails with httpx's own error"
 
 [[tool.shockharness.rules.exceptions.boundaries]]
 path = "app/services/agent/runtime.py"

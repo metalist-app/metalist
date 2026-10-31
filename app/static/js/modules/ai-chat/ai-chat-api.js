@@ -280,6 +280,47 @@ export async function requestExportTitle({ provider, model, thinkingLevel, scope
 }
 
 
+// "Summarize now": 'summarized', or 'nothing' when only the latest turn is left to
+// summarize; rejects with an AiApiError saying why it could not.
+export async function summarizeAiChat({ settings }) {
+    if (!settings || typeof settings !== 'object') {
+        throw new Error('summarizeAiChat requires settings object');
+    }
+    const response = await fetchAi(CONFIG.API.AI.SUMMARIZE, {
+        method: 'POST',
+        headers: buildSessionHeaders(true),
+        body: JSON.stringify({
+            provider: settings.provider,
+            model: settings.model,
+            thinking_level: validateAiThinkingLevel(settings.thinkingLevel),
+        }),
+    });
+    if (!response.ok) {
+        await readJsonResponse(response, 'Failed to summarize the AI chat');
+        throw new Error('readJsonResponse returns only for a successful response');
+    }
+    const event = JSON.parse((await response.text()).trim());
+    if (event.type === 'summarized' || event.type === 'nothing') {
+        return event.type;
+    }
+    if (event.type === 'failed' && typeof event.message === 'string') {
+        throw new AiApiError(event.message);
+    }
+    throw new Error(`Summarize now answered an unknown line: ${event.type}`);
+}
+
+
+// How full the chat's history is for the chosen AI (GET /ai/history-meter).
+export async function loadAiHistoryMeter({ provider }) {
+    if (typeof provider !== 'string' || provider === '') {
+        throw new Error('loadAiHistoryMeter requires a provider');
+    }
+    const url = `${CONFIG.API.AI.HISTORY_METER}?provider=${encodeURIComponent(provider)}`;
+    const response = await fetchAi(url, { headers: buildSessionHeaders(false), cache: 'no-store' });
+    return await readJsonResponse(response, 'Failed to load the AI chat history meter');
+}
+
+
 export async function previewCloudPrivacy({ provider, noteIds, signal }) {
     if (!isAiProvider(provider)) {
         throw new Error('previewCloudPrivacy requires supported provider');

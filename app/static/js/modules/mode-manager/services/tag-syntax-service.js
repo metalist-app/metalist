@@ -54,6 +54,39 @@ const KNOWN_META_TAGS = new Set([
 // @sum=, @avg=, @min=, @max=, @count= and a property name (app/services/subtree_stats.py);
 // bare (`@sum`: every number property) or with = while being typed.
 const SUMMARY_TAG_RE = /^@(?:sum|avg|min|max|count)(?:=(?:[a-z][^\s=:]*)?)?$/;
+// @datetime=2026-10-24 or @datetime=2026-10-24T08:30, the date a note belongs to
+// (app/services/note_datetime.py). Its value keeps its colon, unlike other @ tags.
+const DATETIME_TAG_PREFIX = '@datetime=';
+const DATETIME_VALUE_RE = /^(\d{4})-(\d{2})-(\d{2})(?:t(\d{2}):(\d{2}))?$/i;
+const DATETIME_NEEDS_DATE_MESSAGE = '@datetime needs a date: YYYY-MM-DD or YYYY-MM-DDTHH:MM';
+const LAST_HOUR = 23;
+const LAST_MINUTE = 59;
+// Date counts months from 0.
+const DATE_MONTH_OFFSET = 1;
+
+function isDatetimeToken(token) {
+    return token.toLowerCase().startsWith(DATETIME_TAG_PREFIX);
+}
+
+// Whether a @datetime token's value is a real day, and a real time when it has one.
+function isValidDatetimeToken(token) {
+    const parts = DATETIME_VALUE_RE.exec(token.slice(DATETIME_TAG_PREFIX.length));
+    if (parts === null) {
+        return false;
+    }
+    const [, yearText, monthText, dayText, hourText, minuteText] = parts;
+    const year = Number(yearText);
+    const monthIndex = Number(monthText) - DATE_MONTH_OFFSET;
+    const day = Number(dayText);
+    const calendarDay = new Date(year, monthIndex, day);
+    if (calendarDay.getFullYear() !== year || calendarDay.getMonth() !== monthIndex || calendarDay.getDate() !== day) {
+        return false;
+    }
+    if (hourText === undefined) {
+        return true;
+    }
+    return Number(hourText) <= LAST_HOUR && Number(minuteText) <= LAST_MINUTE;
+}
 
 function isSupportedMetaTag(term) {
     if (typeof term !== 'string') {
@@ -279,6 +312,10 @@ function enforceWrappedTagTokenInternal(
 
     const opener = rawToken[0];
     if (!TAG_WRAPPER_OPENERS.has(opener)) {
+        if (isDatetimeToken(rawToken)) {
+            const name = rawToken.slice(0, DATETIME_TAG_PREFIX.length);
+            return `${name}${keepAllowedChars(rawToken.slice(DATETIME_TAG_PREFIX.length), { allowsColon: true })}`;
+        }
         if (hasPropertySyntax(rawToken)) {
             // Only the editing path keeps trailing spaces: it is the one typing.
             return enforcePropertyTagToken(rawToken, { isEditing: preserveTrailingSpaceWhenUnclosed });
@@ -693,6 +730,8 @@ export function analyzeTagBarInput(rawInput) {
     // jogging:miles=3 is refused. By tag name (lowercase), whether its token has them.
     const tagNamesWithProperties = new Map();
     let refusedTagName = null;
+    let hasDatetime = false;
+    let hasInvalidDatetime = false;
 
     const sanitizedSegments = [];
     const normalizedSegments = [];
@@ -736,6 +775,19 @@ export function analyzeTagBarInput(rawInput) {
                 const prefix = opener.repeat(closedWrapperInfo.depth);
                 const suffix = TAG_WRAPPER_PAIRS.get(opener).repeat(closedWrapperInfo.depth);
                 sanitizedToken = `${prefix}${retainedTerms.join(' ')}${suffix}`;
+            } else if (isDatetimeToken(segment.text)) {
+                // One date per note, and only a real one.
+                if (!isValidDatetimeToken(segment.text)) {
+                    hasInvalidDatetime = true;
+                    continue;
+                }
+                if (hasDatetime) {
+                    if (refusedTagName === null) {
+                        refusedTagName = '@datetime';
+                    }
+                    continue;
+                }
+                hasDatetime = true;
             } else if (!isSupportedMetaTag(segment.text)) {
                 continue;
             } else if (!segment.text.startsWith('@')) {
@@ -779,6 +831,8 @@ export function analyzeTagBarInput(rawInput) {
         reminderMessage = `Close scope with ${unclosedWrapperSuffix}`;
     } else if (refusedTagName !== null) {
         reminderMessage = `${refusedTagName} is already on this note`;
+    } else if (hasInvalidDatetime) {
+        reminderMessage = DATETIME_NEEDS_DATE_MESSAGE;
     }
 
     return {

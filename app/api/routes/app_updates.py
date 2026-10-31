@@ -12,6 +12,7 @@ from app.api.transactions import transactional_route
 from app.services import app_updates
 from app.services.exception_capture import CapturedExceptionContext
 from app.services.app_updates import AppUpdateRejected
+from app.services.server_code import is_server_code_stale
 
 
 router = APIRouter(prefix='/auth/app-update', tags=['updates'])
@@ -19,6 +20,13 @@ router = APIRouter(prefix='/auth/app-update', tags=['updates'])
 
 class AppUpdateRequest(BaseModel):
     target_version: str = Field(pattern=r'^[0-9]+\.[0-9]+\.[0-9]+$')
+
+
+# Whether this server runs older code than is on disk (server_code.py): the page says to
+# restart MetaList rather than show an unexplained error.
+@router.get('/server-code')
+def check_server_code():
+    return {'stale': is_server_code_stale()}
 
 
 @router.get('/check')

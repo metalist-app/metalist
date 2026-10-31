@@ -21,7 +21,7 @@
 - Search semantics (server behavior): `docs/ui/search-semantics.md`
 - Tag bar grammar (tags/comments/wrappers): `docs/ui/tag-bar.md`
 - Reminders: `docs/ui/reminders.md`
-- AI chat: `docs/ui/ai-chat.md`; AI providers (OpenAI, Anthropic, Google): `docs/design/ai-providers.md`
+- AI chat: `docs/ui/ai-chat.md` (long chats: summaries of earlier turns and the history meter, its Long chats section); AI providers (OpenAI, Anthropic, Google): `docs/design/ai-providers.md`
 - Modal architecture pattern, dialog and menu conventions, errors and status (error dialogs, messages under a field, the check): `docs/ui/modals.md`
 - Floating messages (news, errors, the connection card) and Recent Messages: `docs/ui/floating-messages.md`
 - Client state-handling philosophy: `docs/ui/state-handling.md`
@@ -60,7 +60,7 @@
 - Tried and rejected (dragging a note to any level by the note released on; needs a different control system): `docs/future-plans/drag-across-levels.md`
 - Future plan (a hover card on the Referenced by badge listing the referring notes): `docs/future-plans/referenced-by-hover-card.md`
 - Future plan (an embedded email drawn as its card in exports and prints, not as its file card): `docs/future-plans/email-in-exports.md`
-- Agreed designs ready to build, not started: `docs/ready-to-build/` (AI conversation compaction with a readable summary: `ai-conversation-compaction.md`; several views on one vault with editing locked per root note: `multi-view-editing.md`; the phone as the desktop app on a smaller screen, editing, with search contexts and the AI chat: `phone-same-app.md`; summaries beside the result count and `@datetime`: `super-tag-summaries-and-date.md`; deployment profiles (personal, self-hosted, hosted) and hardening self-hosted for the internet: `deployment-profiles.md`; a short community-only self-hosting page, no packaging: `self-hosting-page.md`; Obsidian and Logseq imports, an Obsidian-compatible Markdown export and an import report, for launch: `import-export-launch.md`)
+- Agreed designs ready to build, not started: `docs/ready-to-build/` (several views on one vault with editing locked per root note: `multi-view-editing.md`; the phone as the desktop app on a smaller screen, editing, with search contexts and the AI chat: `phone-same-app.md`; deployment profiles (personal, self-hosted, hosted) and hardening self-hosted for the internet: `deployment-profiles.md`; a short community-only self-hosting page, no packaging: `self-hosting-page.md`; Obsidian and Logseq imports, an Obsidian-compatible Markdown export and an import report, for launch: `import-export-launch.md`)
 - Incoming design notes, processed into the folders above as soon as they are seen: `docs/inbox/` (see AGENTS.md, "Design Inbox")
 
 ## Clients

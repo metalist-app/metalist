@@ -516,3 +516,18 @@ def test_search_index_matches_word_boundaries_in_quoted_text() -> None:
     assert index.query_note_ids('interesting "Fat"') == {"n1", "n2", "n3"}
     assert index.query_note_ids('interesting "Fat "') == {"n2", "n3"}
     assert index.query_note_ids('interesting -"fat "') == {"n1"}
+
+
+def test_meta_tag_suggestions_offer_only_known_tags_and_one_datetime() -> None:
+    """An @ tag MetaList does not know (the tag bar drops it on save) is not offered, nor
+    the dates notes carry: a tag bar offers @datetime with the date it is given."""
+    tags_by_note = {"n1": "@date-headline @datetime=2026-10-01", "n2": "@datetime=2026-10-02T08:30 @done"}
+    index = _build_index([
+        SearchRecord(note_id=note_id, content_text=note_id, tags=tags, tag_terms=extract_tags_for_search(tags))
+        for note_id, tags in tags_by_note.items()
+    ])
+
+    suggestions = index.suggest_meta_tag_completions(prefix="@d", limit=20, datetime_term="@datetime=2026-10-29")
+    assert suggestions == ["@done", "@datetime=2026-10-29", "@diff"]
+    # A search finds no note by such a date, so the search box offers none.
+    assert index.suggest_tag_completions(query="@dat", limit=20) == []

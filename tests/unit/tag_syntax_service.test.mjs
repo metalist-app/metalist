@@ -272,3 +272,23 @@ test('the renamed built-in tags are kept and the old names are not', () => {
     assert.equal(analyzeTagBarInput(kept).sanitizedText, kept);
     assert.equal(analyzeTagBarInput('@llm @highlighter @list-bulleted @list-numbered journal').sanitizedText, 'journal');
 });
+
+test('@datetime keeps the colon of its time and saves only a real date', () => {
+    assert.equal(enforceTagBarInputForEditing('@datetime=2026-10-24T08:'), '@datetime=2026-10-24T08:');
+    for (const tags of ['@datetime=2026-10-24 food', '@datetime=2026-10-24T08:30 food', '@DateTime=2026-10-24t23:59']) {
+        const analysis = analyzeTagBarInput(tags);
+        assert.equal(analysis.sanitizedText, tags);
+        assert.equal(analysis.reminderMessage, '');
+    }
+    for (const tags of ['@datetime=2026-02-30', '@datetime=2026-10', '@datetime=2026-10-24T24:00']) {
+        const analysis = analyzeTagBarInput(tags);
+        assert.equal(analysis.sanitizedText, '');
+        assert.equal(analysis.reminderMessage, '@datetime needs a date: YYYY-MM-DD or YYYY-MM-DDTHH:MM');
+    }
+});
+
+test('a note has one @datetime', () => {
+    const analysis = analyzeTagBarInput('@datetime=2026-10-24 @datetime=2026-10-25');
+    assert.equal(analysis.sanitizedText, '@datetime=2026-10-24');
+    assert.equal(analysis.reminderMessage, '@datetime is already on this note');
+});

@@ -2,7 +2,9 @@
 range of local dates (docs/ui/command-palette.md, Date range).
 
 The dates are the ones the Created and Updated sort orders use: a root's own
-creation time, or the latest update anywhere in its subtree. Relative ranges
+creation time, or the latest update anywhere in its subtree. A root's own `@datetime`
+(note_datetime.py) dates it in place of its creation time; Updated stays the real last
+edit. Relative ranges
 (Today, Last 7 days, ...) are counted from the day the view is built, so they move
 with the calendar; a custom range has fixed dates, either end open.
 """
@@ -16,7 +18,9 @@ from datetime import date, datetime, timedelta
 from typing import Dict, List
 
 from app.services.input_errors import InputRejected
-from app.services.root_sorting import get_root_sort_timestamps
+from app.services.note_datetime import note_date_of_tags
+from app.services.note_store import store as note_store
+from app.services.root_sorting import SORT_MODE_CREATED, get_root_sort_timestamps
 
 DATE_FILTER_FIELDS = frozenset({"created", "updated"})
 DATE_RANGE_TODAY = "today"
@@ -145,6 +149,10 @@ def filter_root_ids_by_date(root_ids: List[str], date_filter: RootDateFilter, *,
         if root_id not in timestamps:
             raise RuntimeError(f"Missing root {date_filter.field} timestamp for {root_id}")
         root_date = timestamps[root_id].astimezone().date()
+        if date_filter.field == SORT_MODE_CREATED:
+            dated = note_date_of_tags(note_store.get_note(root_id).tags)
+            if dated is not None:
+                root_date = dated
         if first is not None and root_date < first:
             continue
         if last is not None and root_date > last:

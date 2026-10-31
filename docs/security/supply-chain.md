@@ -1,5 +1,11 @@
 # Supply-chain controls and audit
 
+## Update dated 2026-10-30 (America/Los_Angeles)
+
+The local dependency audit before merging `feature/super-tag-summaries` failed on seven newly published advisories, all in one runtime dependency:
+
+- `pypdf` 6.21.2 (CVE-2026-119203 to CVE-2026-119209): a crafted PDF can make pypdf use a great deal of memory or time, or loop forever. MetaList reads PDFs only when the AI opens one on the web (`app/services/agent/web_fetch.py`; web access is off unless the user turns it on). Fixed by raising the exact pin in `pyproject.toml` to **6.21.4**, the first version that fixes all seven, and `uv lock --upgrade-package pypdf` (no other package moved; both exports regenerated and installed with `--require-hashes`).
+
 ## Update dated 2026-10-28 (America/Los_Angeles)
 
 The root `package-lock.json` (the browser suites' `puppeteer` 23.11.1 and `@mermaid-js/mermaid-cli`) is tracked from 2026-10-28, so the browser-suites workflow installs exactly it with `npm ci`; until then it was git-ignored, the workflow could not install, and Dependabot did not see it.

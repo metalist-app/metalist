@@ -12,7 +12,9 @@ from typing import Callable, Dict, FrozenSet, Iterable, List, Mapping, Optional,
 
 from loguru import logger
 
-from app.services.content_formatting import _tokenize_tag_bar, _unwrap_tag_token, list_known_meta_tag_terms
+from app.services.content_formatting import (
+    _tokenize_tag_bar, _unwrap_tag_token, is_known_meta_tag_term, list_known_meta_tag_terms,
+)
 from app.services.shared_sets import SharedSetColumn, SharedSets
 from app.services.search_query import SearchClause, parse_search_query
 from app.services.tag_term_matching import tag_term_matches_prefix
@@ -45,6 +47,7 @@ from app.services.tag_properties import (
     value_satisfies,
 )
 from app.services.link_titles import link_title_store
+from app.services.note_datetime import is_datetime_tag_term
 from app.services.ontology_rules_store import get_ontology_if_ready
 from app.services.tag_ontology import TagOntology
 from app.services.search_text import (
@@ -968,9 +971,11 @@ class SearchIndex:
 
         if partial_prefix.startswith("@"):
             with self._lock:
+                # A search finds no note by a date only now suggests (suggest_meta_tag_completions).
                 return self._suggest_meta_tag_completions_locked(
                     partial_prefix=partial_prefix,
                     limit=limit,
+                    datetime_term=None,
                 )
 
         anchor_casefold_set = frozenset(
@@ -1872,19 +1877,44 @@ class SearchIndex:
         return (lower_case_penalty, term)
 
     def _meta_tag_suggestion_terms_locked(self) -> List[str]:
-        """The known meta tags, the @ tags notes carry (@code=python) and each one's
-        family (@code), once each by casefold; a known spelling wins (@LaTeX)."""
+        """The known meta tags, the known @ tags notes carry (@code=python) and each one's
+        family (@code), once each by casefold; a known spelling wins (@LaTeX). An @ tag
+        MetaList does not know (@date-headline) is not offered: saving would drop it. The dates
+        notes carry are not offered: a tag bar suggests one (suggest_meta_tag_completions)."""
         by_casefold: Dict[str, str] = {}
-        in_use = [term for term, _note_count in self._tag_notes.items() if term.startswith("@")]
+        in_use = [
+            term for term, _note_count in self._tag_notes.items()
+            if term.startswith("@") and not is_datetime_tag_term(term) and is_known_meta_tag_term(term)
+        ]
         families = [term.split(TAG_VALUE_SEPARATOR, 1)[0] for term in in_use if TAG_VALUE_SEPARATOR in term]
         for term in [*families, *in_use, *list_known_meta_tag_terms()]:
             by_casefold[term.casefold()] = term
         return list(by_casefold.values())
 
-    def _suggest_meta_tag_completions_locked(self, *, partial_prefix: str, limit: int) -> List[str]:
+    def suggest_meta_tag_completions(self, *, prefix: str, limit: int, datetime_term: str | None) -> List[str]:
+        """The built-in tags a tag bar offers for `@…`, with `@datetime` offered as
+        datetime_term (note_datetime.suggested_datetime_tag); None when what is typed
+        cannot lead to it."""
+        if not isinstance(prefix, str) or not prefix.startswith("@"):
+            raise ValueError(f"prefix must start with @, got {prefix!r}")
+        if not isinstance(limit, int) or limit <= 0:
+            raise TypeError("limit must be a positive integer")
+        if datetime_term is not None and not is_datetime_tag_term(datetime_term):
+            raise ValueError(f"datetime_term must be a @datetime tag, got {datetime_term!r}")
+        with self._lock:
+            return self._suggest_meta_tag_completions_locked(
+                partial_prefix=prefix, limit=limit, datetime_term=datetime_term,
+            )
+
+    def _suggest_meta_tag_completions_locked(
+        self, *, partial_prefix: str, limit: int, datetime_term: str | None,
+    ) -> List[str]:
         partial_prefix_casefold = partial_prefix.casefold()
         candidates: List[Tuple[int, int, str, str]] = []
-        for term in self._meta_tag_suggestion_terms_locked():
+        terms = self._meta_tag_suggestion_terms_locked()
+        if datetime_term is not None:
+            terms.append(datetime_term)
+        for term in terms:
             if partial_prefix != "" and term.casefold() == partial_prefix_casefold:
                 continue
             if partial_prefix != "" and not term.casefold().startswith(partial_prefix_casefold):

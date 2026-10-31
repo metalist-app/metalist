@@ -5,6 +5,7 @@ import { ApplicationState, stateValuesEqual } from '../../app/static/js/modules/
 import { MS_PER_SECOND } from '../../app/static/js/modules/time-units.js';
 import * as AI_CHAT_SIZE_LIMITS from '../../app/static/js/modules/ai-chat/ai-chat-size-limits.js';
 import * as AI_CHAT_REFUSED_TURNS from '../../app/static/js/modules/ai-chat/ai-chat-refused-turns.js';
+import * as AI_CHAT_SUMMARIES from '../../app/static/js/modules/ai-chat/ai-chat-summaries.js';
 
 function moduleSource(path) {
     return readFileSync(new URL(`../../app/static/js/modules/${path}`, import.meta.url), 'utf8')
@@ -65,6 +66,7 @@ function chatHarness(events) {
         closeBulkProgress: bulk.close, handleBulkEvent: bulk.event,
         MS_PER_SECOND,
         ...AI_CHAT_REFUSED_TURNS,
+        ...AI_CHAT_SUMMARIES,
     };
     const panel = new Function(...Object.keys(dependencies), `${moduleSource('ai-chat/ai-chat-panel-controller.js')}
         captureActiveAgentScope = () => ({}); return AiChatPanel;`)(...Object.values(dependencies));
@@ -74,6 +76,7 @@ function chatHarness(events) {
     panel._render = () => {};
     panel._loadSession = async () => {};
     panel._refreshOpenAiCostSnapshot = async () => {};
+    panel._refreshHistoryMeter = async () => {};
     panel._syncComposerControlsDisabled = () => {};
     return { panel, timers };
 }
