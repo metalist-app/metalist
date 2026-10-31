@@ -47,6 +47,8 @@ RENDERER_ATTRIBUTES: dict[str, frozenset[str]] = {
         "aria-hidden", "aria-label", "class", "data-copy-value", "data-embed-ref-id", "data-file-ref-id",
         "data-file-revision", "data-footnote-scope", "data-latex-source", "data-preview-state", "data-redacted",
         "data-ref-host-note-id", "data-ref-mode", "data-ref-note-id", "data-ref-occurrence", "data-status", "role",
+        # A Markdown task's box (markdown_rendering._task_box).
+        "aria-checked", "data-task-index",
     }),
     "sup": frozenset({"class"}),
     # The icons' inline SVG (credential, email and status icons): shapes only.
@@ -70,7 +72,8 @@ _FIXED_VALUES: dict[tuple[str, str], frozenset[str]] = {
     ("li", "tabindex"): frozenset({"-1"}),
     ("span", "aria-hidden"): frozenset({"true"}),
     ("span", "data-redacted"): frozenset({"true"}),
-    ("span", "role"): frozenset({"img"}),
+    ("span", "role"): frozenset({"img", "checkbox"}),
+    ("span", "aria-checked"): frozenset({"true", "false"}),
     ("svg", "aria-hidden"): frozenset({"true"}),
     ("svg", "focusable"): frozenset({"false"}),
 }

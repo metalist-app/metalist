@@ -11,9 +11,13 @@ from app.services.code_rendering import is_highlighted_fence_language
 from app.services.code_rendering import render_fenced_code
 from app.services.latex_rendering import render_latex_math_to_html
 from app.services.mermaid_note_rendering import found_diagram
+from app.services.status_icons import EMPTY_BOX_ICON, TICKED_BOX_ICON
 
 
 _ORDERED_LIST_RE = re.compile(r"^(\d+)\.\s+(?P<content>.*)$")
+# A task: a list item starting [ ] or [x] (2026-10-31; GFM task lists, as Obsidian writes them).
+_TASK_RE = re.compile(r"^\[(?P<mark>[ xX])\](?P<content>(?:\s.*)?)$")
+_TASK_ICONS = {False: EMPTY_BOX_ICON, True: TICKED_BOX_ICON}
 _UNORDERED_LIST_RE = re.compile(r"^[-+*]\s+(?P<content>.*)$")
 _ATX_HEADING_RE = re.compile(r"^(?P<marks>#{1,6})\s+(?P<content>.*)$")
 _FENCE_RE = re.compile(r"^```([^\s`]*)\s*$")
@@ -82,41 +86,55 @@ def strip_latex_source_attributes(html_text: str) -> str:
 
 
 def render_markdown_to_html(markdown_text: str) -> str:
-    """Markdown as HTML, images left as written: the AI chat and footnotes draw none (an
-    image address in an AI reply could carry data out when the browser loads it)."""
-    return _render_markdown(markdown_text, allows_images=False)
+    """Markdown as HTML, images and tasks left as written: the AI chat and footnotes draw
+    neither (an image address in an AI reply could carry data out when the browser loads
+    it; a reply's task is not the user's to tick)."""
+    return _note_renderer(markdown_text, is_note_text=False).render()
 
 
 def render_note_markdown_to_html(markdown_text: str) -> str:
-    """A Markdown note's text as HTML, ![alt](https://…) images drawn (2026-10-31); the
-    note's rendering then loads them through the image proxy, as other web images."""
-    return _render_markdown(markdown_text, allows_images=True)
+    """A Markdown note's text as HTML (2026-10-31): ![alt](https://…) images drawn (the
+    note's rendering loads them through the image proxy), and - [ ] / - [x] tasks as boxes
+    numbered in order (data-task-index), which a click ticks (toggle_markdown_task)."""
+    return _note_renderer(markdown_text, is_note_text=True).render()
 
 
-def _render_markdown(markdown_text: str, *, allows_images: bool) -> str:
+def markdown_task_lines(markdown_text: str) -> List[int]:
+    """The line of each task in a Markdown note's text, in the order the boxes are
+    numbered: the line a click on box N ticks."""
+    renderer = _note_renderer(markdown_text, is_note_text=True)
+    renderer.render()
+    return list(renderer.task_lines)
+
+
+def _note_renderer(markdown_text: str, *, is_note_text: bool) -> "_MarkdownRenderer":
     if not isinstance(markdown_text, str):
         raise TypeError(f"markdown_text must be a string, got {type(markdown_text)}")
-    if markdown_text == "":
-        return ""
-
     normalized_text = markdown_text.replace("\r\n", "\n").replace("\r", "\n")
-    lines = normalized_text.split("\n")
-    renderer = _MarkdownRenderer(lines=lines, allows_images=allows_images)
-    return renderer.render()
+    return _MarkdownRenderer(
+        lines=normalized_text.split("\n"), is_note_text=is_note_text, line_offset=0, task_lines=[],
+    )
 
 
 class _MarkdownRenderer:
-    def __init__(self, *, lines: List[str], allows_images: bool):
+    def __init__(self, *, lines: List[str], is_note_text: bool, line_offset: int, task_lines: List[int]):
         if not isinstance(lines, list):
             raise TypeError(f"lines must be a list, got {type(lines)}")
         self._lines = lines
         self._index = 0
-        self._allows_images = allows_images
+        # A note's own text draws web images and task boxes; the AI chat and footnotes don't.
+        self._is_note_text = is_note_text
+        # Where these lines start in the note's text (a quote's lines are its own renderer's),
+        # and the task lines found so far, shared with the renderers of quotes.
+        self._line_offset = line_offset
+        self.task_lines = task_lines
 
     def _inline(self, text: str) -> str:
-        return _render_inline_markdown(text, allow_links=True, allows_images=self._allows_images)
+        return _render_inline_markdown(text, allow_links=True, allows_images=self._is_note_text)
 
     def render(self) -> str:
+        if self._lines == [""]:
+            return ""
         blocks: List[str] = []
         while self._index < len(self._lines):
             current_line = self._lines[self._index]
@@ -231,6 +249,7 @@ class _MarkdownRenderer:
         return "".join(parts)
 
     def _render_blockquote_block(self) -> str:
+        quote_start = self._index
         quote_lines: List[str] = []
         while self._index < len(self._lines):
             line = self._lines[self._index]
@@ -247,7 +266,10 @@ class _MarkdownRenderer:
                 stripped = stripped[1:]
             quote_lines.append(stripped)
             self._index += 1
-        inner_html = _render_markdown("\n".join(quote_lines), allows_images=self._allows_images)
+        inner_html = _MarkdownRenderer(
+            lines=quote_lines, is_note_text=self._is_note_text, line_offset=self._line_offset + quote_start,
+            task_lines=self.task_lines,
+        ).render()
         return f"<blockquote>{inner_html}</blockquote>"
 
     def _render_list_block(self) -> str:
@@ -293,6 +315,11 @@ class _MarkdownRenderer:
             match = _UNORDERED_LIST_RE.match(stripped)
         assert match is not None
         item_content = match.group("content")
+        task_box = ""
+        task_match = _TASK_RE.match(item_content)
+        if self._is_note_text and task_match is not None:
+            task_box = self._task_box(is_ticked=task_match.group("mark") != " ")
+            item_content = task_match.group("content").lstrip()
         item_lines = [item_content]
         nested_lists: List[str] = []
         self._index += 1
@@ -325,7 +352,20 @@ class _MarkdownRenderer:
 
         rendered = self._inline("\n".join(item_lines))
         rendered = rendered.replace("\n", "<br>\n")
+        if task_box != "":
+            return f'<li class="meta-markdown-task">{task_box}{rendered}{"".join(nested_lists)}</li>'
         return f"<li>{rendered}{''.join(nested_lists)}</li>"
+
+    def _task_box(self, *, is_ticked: bool) -> str:
+        """The box of the task on the current line, numbered in order through the note."""
+        task_index = len(self.task_lines)
+        self.task_lines.append(self._line_offset + self._index)
+        icon = _TASK_ICONS[is_ticked]
+        state = str(is_ticked).lower()
+        return (
+            f'<span class="meta-markdown-task-toggle" role="checkbox" aria-checked="{state}" '
+            f'data-task-index="{task_index}">{icon}</span>'
+        )
 
     def _next_content_index(self, index: int) -> int:
         """The first line at or after index that is not blank, or the number of lines."""

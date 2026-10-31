@@ -35,6 +35,7 @@ export const CONFIG = {
             RESOLVE_ROBOT_TAG_PROPOSALS: (noteId) => `${API_NOTES_BASE}/${noteId}/tag-proposals/resolve-all`,
             SPLIT: (noteId) => `${API_NOTES_BASE}/${noteId}/split`,
             TOGGLE_TODO: (noteId) => `${API_NOTES_BASE}/${noteId}/toggle-todo`,
+            TOGGLE_MARKDOWN_TASK: (noteId) => `${API_NOTES_BASE}/${noteId}/toggle-markdown-task`,
             UNFORMAT: (noteId) => `${API_NOTES_BASE}/${noteId}/unformat`,
             RESIZE_IMAGE: (noteId) => `${API_NOTES_BASE}/${noteId}/resize-image`,
             EDITING_IMAGE_SIZES: (noteId) => `${API_NOTES_BASE}/${noteId}/editing-image-sizes`,

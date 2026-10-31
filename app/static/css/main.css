@@ -8329,6 +8329,46 @@ html[data-theme="dark"] .meta-code-code .tok-cpf { color: #8b949e; }
     margin: 0.2em 0;
 }
 
+/* A task (- [ ] milk): its box in place of the bullet, drawn as the @todo box. A
+   numbered task keeps its number, the box after it (1. [ ] Book flights). */
+.meta-markdown ul > li.meta-markdown-task {
+    list-style: none;
+}
+
+.meta-markdown-task-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    margin-right: 6px;
+    vertical-align: -4px;
+    color: #444444;
+    cursor: pointer;
+    border-radius: 4px;
+    transition: background-color 0.15s ease;
+}
+
+.meta-markdown-task-toggle:hover {
+    background-color: rgba(0, 0, 0, 0.06);
+}
+
+.meta-markdown-task-toggle svg {
+    width: 18px;
+    height: 18px;
+    display: block;
+}
+
+/* In an embed a task's box shows its source's state but is not a control. */
+.note-embed-node .meta-markdown-task-toggle {
+    cursor: default;
+}
+
+.note-embed-node .meta-markdown-task-toggle:hover,
+html[data-theme="dark"] .note-embed-node .meta-markdown-task-toggle:hover {
+    background-color: transparent;
+}
+
 .meta-markdown code {
     font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
     font-size: 0.92em;
@@ -9475,13 +9515,15 @@ html[data-theme="dark"] .namespace-ports-table thead th {
 }
 
 html[data-theme="dark"] .meta-copyable:hover,
-html[data-theme="dark"] .meta-status-toggle:hover {
+html[data-theme="dark"] .meta-status-toggle:hover,
+html[data-theme="dark"] .meta-markdown-task-toggle:hover {
     background-color: rgba(255, 255, 255, 0.12);
 }
 
 html[data-theme="dark"] .meta-credential-icon,
 html[data-theme="dark"] .meta-email-icon,
-html[data-theme="dark"] .meta-status-toggle {
+html[data-theme="dark"] .meta-status-toggle,
+html[data-theme="dark"] .meta-markdown-task-toggle {
     color: #c8d2df;
 }
 

@@ -425,6 +425,18 @@ export const NotesAPI = {
         });
     },
 
+    // A click on box taskIndex of a Markdown note's tasks; isTicked is the state asked for.
+    async toggleMarkdownTask(noteId, taskIndex, isTicked) {
+        if (typeof noteId !== 'string' || noteId.length === 0 || !Number.isInteger(taskIndex) || typeof isTicked !== 'boolean') {
+            throw new Error('NotesAPI.toggleMarkdownTask requires noteId, taskIndex and isTicked');
+        }
+        return this._apiCall(CONFIG.API.NOTES.TOGGLE_MARKDOWN_TASK(noteId), {
+            method: 'POST',
+            claimSession: true,
+            body: JSON.stringify({ taskIndex, isTicked }),
+        });
+    },
+
     async unformatNote(noteId) {
         if (typeof noteId !== 'string' || noteId.length === 0) {
             throw new Error('NotesAPI.unformatNote requires noteId string');

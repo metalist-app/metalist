@@ -160,7 +160,7 @@ async function refreshWindow(id) {
         entry.title.setAttribute('aria-disabled', 'false');
     }
     for (const editable of entry.tree.querySelectorAll('[contenteditable]')) editable.setAttribute('contenteditable', 'false');
-    for (const control of entry.tree.querySelectorAll('.meta-status-toggle, .note-shell-run, input, textarea, select')) {
+    for (const control of entry.tree.querySelectorAll('.meta-status-toggle, .meta-markdown-task-toggle, .note-shell-run, input, textarea, select')) {
         control.setAttribute('disabled', '');
     }
     ensureAnchorsOpenInNewTabs(entry.tree);

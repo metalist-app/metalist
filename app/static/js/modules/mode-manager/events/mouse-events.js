@@ -5,7 +5,7 @@ import { TypeAhead } from '../services/type-ahead-service.js';
 import { navigateToFootnoteWithExpansion } from '../services/footnote-navigation-service.js';
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import * as Logger from '../mode-logger.js';
-import { createNote, collapseNote, expandNote, getShellRun, moveNoteToSiblingPosition, indentNote, outdentNote, setEmbeddedNoteCollapse, toggleTodoDone, runShellNote } from '../actions/note-actions.js';
+import { createNote, collapseNote, expandNote, getShellRun, moveNoteToSiblingPosition, indentNote, outdentNote, setEmbeddedNoteCollapse, toggleMarkdownTask, toggleTodoDone, runShellNote } from '../actions/note-actions.js';
 import { actionSelectNote, actionDeselectNote, actionSwitchNotes } from '../actions/selection-actions.js';
 import { captureClickAnchor } from '../services/viewport-hold-service.js';
 import { actionEnterSearchMode, actionExitSearchMode } from '../actions/search-actions.js';
@@ -88,6 +88,8 @@ const DRAG_DIRECTION_ICONS = { up: 'up', down: 'down', right: 'indent', left: 'o
 const CREDENTIAL_VALUE_SELECTOR = '.meta-credential-value';
 const EMAIL_VALUE_SELECTOR = '.meta-email-value';
 const STATUS_TOGGLE_SELECTOR = '.meta-status-toggle';
+// A task's box in a Markdown note (- [ ] milk).
+const MARKDOWN_TASK_TOGGLE_SELECTOR = '.meta-markdown-task-toggle';
 // The arrow of a note shown inside an embed (![[UUID]]).
 const EMBED_COLLAPSE_TOGGLE_SELECTOR = '.note-embed-collapse-toggle[data-embed-collapse-note-id]';
 const CREDENTIAL_COPY_CLASS = 'meta-credential-copied';
@@ -597,6 +599,13 @@ function handleImmediateMouseDown(event) {
         return;
     }
 
+    const taskToggle = event.target.closest(MARKDOWN_TASK_TOGGLE_SELECTOR);
+    if (taskToggle && handleMarkdownTaskToggleClick(event, taskToggle)) {
+        rememberMouseDownHandledClick(taskToggle, 'markdown_task_toggle');
+        stopImmediatePropagationIfAvailable(event);
+        return;
+    }
+
     const embedCollapseToggle = event.target.closest(EMBED_COLLAPSE_TOGGLE_SELECTOR);
     if (embedCollapseToggle && handleEmbedCollapseToggle(event, embedCollapseToggle)) {
         rememberMouseDownHandledClick(embedCollapseToggle, 'embed_collapse_toggle');
@@ -703,7 +712,7 @@ function handleMoveDragMouseDown(event) {
     if (isShellInteractiveTarget(event.target)) {
         return;
     }
-    if (event.target instanceof Element && event.target.closest(`${STATUS_TOGGLE_SELECTOR}, .meta-footnote-link, .note-backlinks-link, .note-source-arrow`)) {
+    if (event.target instanceof Element && event.target.closest(`${STATUS_TOGGLE_SELECTOR}, ${MARKDOWN_TASK_TOGGLE_SELECTOR}, .meta-footnote-link, .note-backlinks-link, .note-source-arrow`)) {
         return;
     }
 
@@ -2285,6 +2294,37 @@ function handleTodoToggleClick(event) {
         await toggleTodoDone(noteId);
     });
 
+    return true;
+}
+
+// As the @todo box (handleTodoToggleClick): a press ticks or empties the task; in an
+// embed it shows its source's state and does nothing; a locked or search-hidden note
+// changes nothing.
+function handleMarkdownTaskToggleClick(event, toggleElement) {
+    if (!ModeContext.isConnected) {
+        return false;
+    }
+    const noteElement = toggleElement.closest('.note');
+    if (!noteElement) {
+        throw new Error('Markdown task box missing its note element');
+    }
+    if (noteElement.classList.contains('locked') || noteElement.classList.contains('search-redacted')) {
+        return false;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    if (toggleElement.closest('.note-embed-node') !== null) {
+        return true;
+    }
+    const noteId = noteElement.dataset.noteId;
+    const taskIndex = Number(toggleElement.dataset.taskIndex);
+    if (!noteId || !Number.isInteger(taskIndex)) {
+        throw new Error('Markdown task box missing its note id or task index');
+    }
+    const isTicked = toggleElement.getAttribute('aria-checked') !== 'true';
+    void CommandGate.run('mouse.toggle_markdown_task', async () => {
+        await toggleMarkdownTask(noteId, taskIndex, isTicked);
+    });
     return true;
 }
 

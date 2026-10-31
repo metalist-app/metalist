@@ -346,6 +346,15 @@ class ToggleTodoDoneRequest(TypedDict):
     undoContext: UndoContext
     viewport: Viewport
 
+# A click on box taskIndex of a Markdown note's tasks: isTicked is the state asked for.
+@with_config(ConfigDict(strict=True))
+class ToggleMarkdownTaskRequest(TypedDict):
+    clientId: Identifier
+    taskIndex: Nonnegative
+    isTicked: bool
+    undoContext: UndoContext
+    viewport: Viewport
+
 @with_config(ConfigDict(strict=True))
 class UnformatNoteContentRequest(TypedDict):
     clientId: Identifier

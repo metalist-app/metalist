@@ -44,6 +44,7 @@ from app.services.mermaid_note_rendering import render_mermaid_meta
 from app.services.latex_rendering import render_latex_to_html
 from app.utils.text_utils import HTMLStripper, LinkUrlKeepingStripper, strip_html
 from app.services.markdown_rendering import render_note_markdown_to_html
+from app.services.status_icons import EMPTY_BOX_ICON, TICKED_BOX_ICON
 from app.services.ontology_rules_store import get_ontology_if_ready
 from app.services.file_registry import file_registry
 from app.security.rendered_html import RENDERER_CLASS_PREFIXES
@@ -157,26 +158,8 @@ _EMAIL_META = {
 _STATUS_TAGS = frozenset({"todo", "done"})
 
 _STATUS_META = {
-    "todo": {
-        "icon": (
-            '<svg class="meta-status-icon-svg" viewBox="0 0 24 24" '
-            'aria-hidden="true" focusable="false">'
-            '<rect x="3" y="3" width="18" height="18" rx="3" ry="3" '
-            'fill="none" stroke="currentColor" stroke-width="2" />'
-            "</svg>"
-        ),
-    },
-    "done": {
-        "icon": (
-            '<svg class="meta-status-icon-svg" viewBox="0 0 24 24" '
-            'aria-hidden="true" focusable="false">'
-            '<rect x="3" y="3" width="18" height="18" rx="3" ry="3" '
-            'fill="none" stroke="currentColor" stroke-width="2" />'
-            '<path d="M7 12l3 3 7-7" fill="none" stroke="currentColor" '
-            'stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />'
-            "</svg>"
-        ),
-    },
+    "todo": {"icon": EMPTY_BOX_ICON},
+    "done": {"icon": TICKED_BOX_ICON},
 }
 
 # In a Markdown note, what a scoped renderer drew is kept from the Markdown pass as a

@@ -44,6 +44,7 @@ from app.api.note_requests import (
     ResolveRobotProposalsRequest,
     SplitNoteRequest,
     ToggleTodoDoneRequest,
+    ToggleMarkdownTaskRequest,
     UnformatNoteContentRequest,
     ResizeNoteImageRequest,
     EditingImageSizesRequest,
@@ -124,6 +125,7 @@ from app.usecases.set_collapse_in_context import (
 )
 from app.usecases.copy_note import CmdCopyNote
 from app.usecases.toggle_todo_done import CmdToggleTodoDone
+from app.usecases.toggle_markdown_task import CmdToggleMarkdownTask
 from app.usecases.run_shell import CmdRunShellStart
 from app.usecases.run_shell import CmdRunShellStatus
 from app.usecases.paste_sibling import CmdPasteSibling
@@ -1430,6 +1432,25 @@ def toggle_todo_done(request: Request, note_id: str, body: ToggleTodoDoneRequest
     _require_note_present(note_id, context="notes.toggle-todo")
     cmd = CmdToggleTodoDone(
         note_id=note_id,
+        token=token,
+        client_id=client_id,
+        undo_context=body["undoContext"],
+        viewport=viewport,
+    )
+    return cmd.execute()
+
+
+@router.post("/notes/{note_id}/toggle-markdown-task")
+@transactional_route
+def toggle_markdown_task(request: Request, note_id: str, body: ToggleMarkdownTaskRequest):
+    client_id = body["clientId"]
+    viewport = _require_viewport(body)
+    token = _require_bearer_token(request)
+    _require_note_present(note_id, context="notes.toggle-markdown-task")
+    cmd = CmdToggleMarkdownTask(
+        note_id=note_id,
+        task_index=body["taskIndex"],
+        is_ticked=body["isTicked"],
         token=token,
         client_id=client_id,
         undo_context=body["undoContext"],

@@ -307,6 +307,21 @@ export async function toggleTodoDone(noteId) {
     await actionRefreshAndMaybeSelect({ startedAt, context: 'toggleTodoDone' });
 }
 
+// A click on a task's box in a Markdown note (docs/ui/content-formatting.md, Tasks).
+export async function toggleMarkdownTask(noteId, taskIndex, isTicked) {
+    const startedAt = performance.now();
+    Logger.logAction('toggleMarkdownTask', { noteId, taskIndex, isTicked });
+    await exitEditingBeforeTodoToggle({
+        modeContext: ModeContext,
+        noteId,
+        saveAndExitEditingFn: actionSaveAndExitEditingWithoutRefreshing,
+        logDebugFn: Logger.logDebug,
+    });
+    await NotesAPI.toggleMarkdownTask(noteId, taskIndex, isTicked);
+    await recordNoteInteractionIfNew(noteId, 'command');
+    await actionRefreshAndMaybeSelect({ startedAt, context: 'toggleMarkdownTask' });
+}
+
 export async function addSelectedTextAsTag(noteId, selectedText) {
     if (typeof noteId !== 'string' || noteId.length === 0) {
         throw new Error('addSelectedTextAsTag requires noteId string');
