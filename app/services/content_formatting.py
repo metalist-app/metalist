@@ -43,7 +43,7 @@ from app.services.diff_rendering import render_diff_meta
 from app.services.mermaid_note_rendering import render_mermaid_meta
 from app.services.latex_rendering import render_latex_to_html
 from app.utils.text_utils import HTMLStripper, LinkUrlKeepingStripper, strip_html
-from app.services.markdown_rendering import render_note_markdown_to_html
+from app.services.markdown_rendering import render_note_markdown
 from app.services.status_icons import EMPTY_BOX_ICON, TICKED_BOX_ICON
 from app.services.ontology_rules_store import get_ontology_if_ready
 from app.services.file_registry import file_registry
@@ -552,10 +552,15 @@ def _format_note_content_for_view(
                 formatting_tags=config.global_tags,
             )
         if renderer_tag == "markdown":
-            return _render_markdown_meta(
+            # Its own footnotes ([^1], ^[text]) join the note's, numbered and listed as
+            # {{@footnote}} ones are (docs/ui/content-formatting.md, Markdown footnotes).
+            markdown_html, markdown_footnotes = _render_markdown_meta(
                 content_html=output,
                 formatting_tags=config.global_tags,
+                takes_footnotes=True,
             )
+            footnotes.extend(markdown_footnotes)
+            return markdown_html
         if renderer_tag == "latex":
             return _render_latex_meta(
                 content_html=output,
@@ -1448,11 +1453,13 @@ def _render_shell_meta(*, content_html: str, formatting_tags: FrozenSet[str]) ->
     )
 
 
-def _render_markdown_meta(*, content_html: str, formatting_tags: FrozenSet[str]) -> str:
+def _render_markdown_meta(
+    *, content_html: str, formatting_tags: FrozenSet[str], takes_footnotes: bool,
+) -> tuple[str, list[tuple[str, str]]]:
     raw_text = _extract_plain_text(content_html)
     copy_attr = _copyable_attr(formatting_tags, raw_text)
-    rendered_markdown = render_note_markdown_to_html(raw_text)
-    rendered_markdown = _replace_block_placeholders(_replace_inline_placeholders(rendered_markdown))
+    note_markdown = render_note_markdown(raw_text, takes_footnotes=takes_footnotes)
+    rendered_markdown = _replace_block_placeholders(_replace_inline_placeholders(note_markdown.html))
 
     extra_classes = ""
     if formatting_tags:
@@ -1463,11 +1470,12 @@ def _render_markdown_meta(*, content_html: str, formatting_tags: FrozenSet[str])
         block_class = f"{block_class} {extra_classes}"
     size_style_attr = _meta_size_style_attr(formatting_tags)
 
-    return (
+    markdown_html = (
         f'<div class="{block_class}"{size_style_attr} data-markdown-rendered="true"{copy_attr}>'
         f"{_linkify_view_links(rendered_markdown)}"
         "</div>"
     )
+    return markdown_html, note_markdown.footnotes
 
 
 def _render_latex_meta(*, content_html: str, formatting_tags: FrozenSet[str]) -> str:
@@ -1542,10 +1550,13 @@ def _draw_scoped_region(
             cell_scoped_renderers=filtered_renderers,
         )
     if render_tag == "markdown":
-        return _render_markdown_meta(
+        markdown_html, markdown_footnotes = _render_markdown_meta(
             content_html=content_html,
             formatting_tags=formatting_tags,
+            takes_footnotes=False,
         )
+        assert markdown_footnotes == [], "a Markdown region takes no footnotes"
+        return markdown_html
     if render_tag == "json":
         return _render_json_meta(
             content_html=content_html,

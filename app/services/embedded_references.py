@@ -401,6 +401,14 @@ def _render_note_content_with_embeds(
     )
 
 
+# A Markdown footnote's marks: [^label] (defined on a later line) and ^[inline text].
+_MARKDOWN_FOOTNOTE_MARKS = ("[^", "^[")
+
+
+def _has_markdown_footnotes(*, content_html: str, tags: str) -> bool:
+    return is_markdown_note(tags) and any(mark in content_html for mark in _MARKDOWN_FOOTNOTE_MARKS)
+
+
 def render_collapsed_note_content_with_embeds(
     *,
     note_id: str,
@@ -411,7 +419,7 @@ def render_collapsed_note_content_with_embeds(
     redact_credentials: bool,
 ) -> str:
     preview_source_html = _first_shown_line(extract_collapsed_preview_source_html(content_html), context=context)
-    if has_scoped_footnotes(tags):
+    if has_scoped_footnotes(tags) or _has_markdown_footnotes(content_html=content_html, tags=tags):
         # Footnotes on later source lines can attach markers to the first line.
         preview_source_html = content_html
     return _render_note_content_with_embeds(

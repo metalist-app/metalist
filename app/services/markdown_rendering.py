@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 from app.utils.not_found import NOT_FOUND
+import hashlib
 import html
 import re
 from dataclasses import dataclass
-from typing import List
+from typing import Dict, List, NamedTuple, Tuple
 from urllib.parse import urlsplit
 
 from app.services.code_rendering import is_highlighted_fence_language
@@ -18,6 +19,14 @@ _ORDERED_LIST_RE = re.compile(r"^(\d+)\.\s+(?P<content>.*)$")
 # A task: a list item starting [ ] or [x] (2026-10-31; GFM task lists, as Obsidian writes them).
 _TASK_RE = re.compile(r"^\[(?P<mark>[ xX])\](?P<content>(?:\s.*)?)$")
 _TASK_ICONS = {False: EMPTY_BOX_ICON, True: TICKED_BOX_ICON}
+# Footnotes (2026-10-31, GFM and Obsidian): [^label] where [^label]: text is defined on a
+# line of its own, and ^[inline text].
+_FOOTNOTE_DEFINITION_RE = re.compile(r"^\[\^(?P<label>[^\]\s]+)\]:[ \t]?(?P<text>.*)$")
+_FOOTNOTE_REFERENCE_RE = re.compile(r"\[\^(?P<label>[^\]\s]+)\]")
+_INLINE_FOOTNOTE_RE = re.compile(r"\^\[(?P<text>[^\[\]\n]+)\]")
+# The footnote tokens: plain letters and digits, so no later pass touches them.
+_FOOTNOTE_TOKEN_PREFIX = "MLMDFOOTNOTE"
+_FOOTNOTE_HASH_LENGTH = 16
 _UNORDERED_LIST_RE = re.compile(r"^[-+*]\s+(?P<content>.*)$")
 _ATX_HEADING_RE = re.compile(r"^(?P<marks>#{1,6})\s+(?P<content>.*)$")
 _FENCE_RE = re.compile(r"^```([^\s`]*)\s*$")
@@ -89,35 +98,113 @@ def render_markdown_to_html(markdown_text: str) -> str:
     """Markdown as HTML, images and tasks left as written: the AI chat and footnotes draw
     neither (an image address in an AI reply could carry data out when the browser loads
     it; a reply's task is not the user's to tick)."""
-    return _note_renderer(markdown_text, is_note_text=False).render()
+    return _note_renderer(markdown_text, is_note_text=False, takes_footnotes=False).render()
 
 
-def render_note_markdown_to_html(markdown_text: str) -> str:
+class NoteMarkdown(NamedTuple):
+    """A Markdown note drawn: its HTML, holding a token where each footnote's number goes,
+    and each footnote's token and text as HTML, in order, for footnote_rendering's
+    finish_footnotes to number and list as MetaList's own footnotes."""
+
+    html: str
+    footnotes: List[Tuple[str, str]]
+
+
+def render_note_markdown(markdown_text: str, *, takes_footnotes: bool) -> NoteMarkdown:
     """A Markdown note's text as HTML (2026-10-31): ![alt](https://…) images drawn (the
-    note's rendering loads them through the image proxy), and - [ ] / - [x] tasks as boxes
-    numbered in order (data-task-index), which a click ticks (toggle_markdown_task)."""
-    return _note_renderer(markdown_text, is_note_text=True).render()
+    note's rendering loads them through the image proxy), - [ ] / - [x] tasks as boxes
+    numbered in order (data-task-index), which a click ticks (toggle_markdown_task), and
+    footnotes ([^1] with [^1]: text, ^[text]) collected when takes_footnotes (a whole
+    Markdown note; a Markdown region inside another note leaves them as written)."""
+    renderer = _note_renderer(markdown_text, is_note_text=True, takes_footnotes=takes_footnotes)
+    return NoteMarkdown(html=renderer.render(), footnotes=list(renderer.footnotes.collected))
 
 
 def markdown_task_lines(markdown_text: str) -> List[int]:
     """The line of each task in a Markdown note's text, in the order the boxes are
     numbered: the line a click on box N ticks."""
-    renderer = _note_renderer(markdown_text, is_note_text=True)
+    renderer = _note_renderer(markdown_text, is_note_text=True, takes_footnotes=True)
     renderer.render()
     return list(renderer.task_lines)
 
 
-def _note_renderer(markdown_text: str, *, is_note_text: bool) -> "_MarkdownRenderer":
+def _note_renderer(markdown_text: str, *, is_note_text: bool, takes_footnotes: bool) -> "_MarkdownRenderer":
     if not isinstance(markdown_text, str):
         raise TypeError(f"markdown_text must be a string, got {type(markdown_text)}")
     normalized_text = markdown_text.replace("\r\n", "\n").replace("\r", "\n")
+    lines = normalized_text.split("\n")
+    footnotes = _DISABLED_FOOTNOTES
+    if takes_footnotes:
+        lines, definitions = _take_footnote_definitions(lines)
+        prefix = _FOOTNOTE_TOKEN_PREFIX + hashlib.sha256(normalized_text.encode()).hexdigest()[:_FOOTNOTE_HASH_LENGTH]
+        footnotes = _Footnotes(definitions=definitions, token_prefix=prefix, is_enabled=True)
     return _MarkdownRenderer(
-        lines=normalized_text.split("\n"), is_note_text=is_note_text, line_offset=0, task_lines=[],
+        lines=lines, is_note_text=is_note_text, line_offset=0, task_lines=[], footnotes=footnotes,
     )
 
 
+class _Footnotes:
+    """A Markdown note's footnotes (2026-10-31): their definitions by label, and each
+    reference met so far as its token and its text drawn. Disabled for the AI chat and
+    footnote text itself: there [^1] and ^[text] stay as written."""
+
+    def __init__(self, *, definitions: Dict[str, str], token_prefix: str, is_enabled: bool):
+        self.definitions = definitions
+        self.token_prefix = token_prefix
+        self.is_enabled = is_enabled
+        self.collected: List[Tuple[str, str]] = []
+
+    def marker(self, body_markdown: str) -> str:
+        """The token standing where this footnote's number goes; its text is drawn now."""
+        assert self.is_enabled, "a disabled footnote list takes no footnotes"
+        token = f"{self.token_prefix}N{len(self.collected) + 1}END"
+        body_html = _render_inline_markdown(
+            body_markdown, allow_links=True, allows_images=False, footnotes=_DISABLED_FOOTNOTES,
+        ).replace("\n", "<br>")
+        self.collected.append((token, body_html))
+        return token
+
+
+_DISABLED_FOOTNOTES = _Footnotes(definitions={}, token_prefix="", is_enabled=False)
+
+
+def _take_footnote_definitions(lines: List[str]) -> Tuple[List[str], Dict[str, str]]:
+    """The note's lines with each footnote definition blanked (its line stays, so task boxes
+    keep their line numbers), and the definitions by casefolded label. A definition is
+    [^label]: text on a line of its own, outside code fences, with any indented lines after
+    it; the first definition of a label counts."""
+    kept: List[str] = []
+    definitions: Dict[str, str] = {}
+    in_fence = False
+    index = 0
+    while index < len(lines):
+        line = lines[index]
+        if _FENCE_RE.match(line.strip()) is not None:
+            in_fence = not in_fence
+        match = None
+        if not in_fence:
+            match = _FOOTNOTE_DEFINITION_RE.match(line)
+        if match is None:
+            kept.append(line)
+            index += 1
+            continue
+        body_lines = [match.group("text")]
+        kept.append("")
+        index += 1
+        while index < len(lines) and lines[index].strip() != "" and _indent_width(lines[index]) >= _NESTED_LIST_INDENT:
+            body_lines.append(lines[index].strip())
+            kept.append("")
+            index += 1
+        label = match.group("label").casefold()
+        if label not in definitions:
+            definitions[label] = "\n".join(body_lines)
+    return kept, definitions
+
+
 class _MarkdownRenderer:
-    def __init__(self, *, lines: List[str], is_note_text: bool, line_offset: int, task_lines: List[int]):
+    def __init__(
+        self, *, lines: List[str], is_note_text: bool, line_offset: int, task_lines: List[int], footnotes: _Footnotes,
+    ):
         if not isinstance(lines, list):
             raise TypeError(f"lines must be a list, got {type(lines)}")
         self._lines = lines
@@ -128,9 +215,12 @@ class _MarkdownRenderer:
         # and the task lines found so far, shared with the renderers of quotes.
         self._line_offset = line_offset
         self.task_lines = task_lines
+        self.footnotes = footnotes
 
     def _inline(self, text: str) -> str:
-        return _render_inline_markdown(text, allow_links=True, allows_images=self._is_note_text)
+        return _render_inline_markdown(
+            text, allow_links=True, allows_images=self._is_note_text, footnotes=self.footnotes,
+        )
 
     def render(self) -> str:
         if self._lines == [""]:
@@ -268,7 +358,7 @@ class _MarkdownRenderer:
             self._index += 1
         inner_html = _MarkdownRenderer(
             lines=quote_lines, is_note_text=self._is_note_text, line_offset=self._line_offset + quote_start,
-            task_lines=self.task_lines,
+            task_lines=self.task_lines, footnotes=self.footnotes,
         ).render()
         return f"<blockquote>{inner_html}</blockquote>"
 
@@ -514,7 +604,7 @@ def _is_table_delimiter_row(line: str) -> bool:
     return all(_TABLE_DELIMITER_CELL_RE.match(cell) is not None for cell in cells)
 
 
-def _render_inline_markdown(text: str, *, allow_links: bool, allows_images: bool) -> str:
+def _render_inline_markdown(text: str, *, allow_links: bool, allows_images: bool, footnotes: _Footnotes) -> str:
     if not isinstance(text, str):
         raise TypeError(f"text must be a string, got {type(text)}")
     if text == "":
@@ -524,6 +614,8 @@ def _render_inline_markdown(text: str, *, allow_links: bool, allows_images: bool
     rendered = html.escape(text, quote=False)
     rendered = _extract_code_spans(rendered, placeholders)
     rendered = _ESCAPED_LINE_BREAK_TAG_RE.sub("<br>", rendered)
+    if footnotes.is_enabled:
+        rendered = _extract_footnote_references(rendered, placeholders, footnotes)
     if allow_links:
         rendered = _extract_markdown_links(rendered, placeholders, allows_images=allows_images)
         rendered = _extract_auto_links(rendered, placeholders)
@@ -537,6 +629,25 @@ def _render_inline_markdown(text: str, *, allow_links: bool, allows_images: bool
     for placeholder in placeholders:
         rendered = rendered.replace(placeholder.token, placeholder.html_value)
     return rendered
+
+
+def _extract_footnote_references(text: str, placeholders: List[_InlinePlaceholder], footnotes: _Footnotes) -> str:
+    """[^label] of a defined footnote, and ^[inline text], as footnote tokens; [^label] with
+    no definition stays as written. text is HTML-escaped; footnote text is unescaped to be
+    drawn again as Markdown."""
+
+    def reference(match: re.Match[str]) -> str:
+        label = match.group("label").casefold()
+        if label not in footnotes.definitions:
+            return match.group(0)
+        return _make_placeholder(placeholders=placeholders, html_value=footnotes.marker(footnotes.definitions[label]))
+
+    def inline(match: re.Match[str]) -> str:
+        return _make_placeholder(
+            placeholders=placeholders, html_value=footnotes.marker(html.unescape(match.group("text"))),
+        )
+
+    return _INLINE_FOOTNOTE_RE.sub(inline, _FOOTNOTE_REFERENCE_RE.sub(reference, text))
 
 
 def _extract_code_spans(text: str, placeholders: List[_InlinePlaceholder]) -> str:
@@ -615,7 +726,7 @@ def _extract_markdown_links(text: str, placeholders: List[_InlinePlaceholder], *
         link_html = (
             f'<a href="{html.escape(html.unescape(href), quote=True)}" '
             'target="_blank" rel="noopener noreferrer">'
-            f"{_render_inline_markdown(html.unescape(link_text), allow_links=False, allows_images=False)}"
+            f"{_render_inline_markdown(html.unescape(link_text), allow_links=False, allows_images=False, footnotes=_DISABLED_FOOTNOTES)}"
             "</a>"
         )
         placeholder = _make_placeholder(placeholders=placeholders, html_value=link_html)
