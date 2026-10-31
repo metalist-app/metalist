@@ -146,6 +146,7 @@ This dual approach ensures:
 
 - An HTTP response proves that the server connection is working. `4xx` and `5xx` responses show an application/request error but do not set `ModeContext.isConnected` to false or tear down edit mode.
 - `401` responses retain the dedicated authentication/logout path.
+- Planned (ready to build, agreed 2026-10-24): nothing shown as Saved is ever lost: a 2-second autosave and a save when the tab is hidden, retries with change IDs, and an honest Saving / Saved / Not saved status: `docs/ready-to-build/commit-and-shutdown-protocol.md`.
 - Only transport failures such as a rejected `fetch` or request timeout enter disconnected mode, show the lasting soft-amber "Not saved, reconnecting…" card (`docs/ui/floating-messages.md`), and disable editing. Their expected promise rejections are kept out of the fatal red stack overlay; unexpected client exceptions still surface there and fail loudly.
 - Unexpected client exceptions are rethrown instead of being relabeled as network failures.
 - Note selection sets `isEditing` and `currentNoteId` before awaiting the initial content refresh, so `currentContent` can legitimately still be `null` during that transition. Disconnect cleanup checks each nullable field before clearing it so strict state setters do not receive redundant writes.

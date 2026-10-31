@@ -55,6 +55,8 @@
 - Future plan (charts of super-tag values, embedded like diagrams): `docs/future-plans/charts.md`
 - Future plan (one encrypted file per attachment, with a catalog): `docs/future-plans/file-storage-per-file.md`
 - Future plan (backups to S3-compatible storage, uploaded by MetaList itself; manual or automatic): `docs/future-plans/backups-s3.md`
+- Ready to build (nothing shown as Saved is ever lost: autosave, retries with change IDs, the graceful stop): `docs/ready-to-build/commit-and-shutdown-protocol.md`
+- Future plan (model-checking the save, backup, lock and linked-list protocols with TLA+, with Hypothesis stateful tests on the real code): `docs/future-plans/model-checking-protocols.md`
 - Future plan (user-named styles, `@style=name`, a safe subset of CSS): `docs/future-plans/user-styles.md`
 - Being worked out, don't build yet (a bookmarklet that copies a page's title, address and selection for pasting into MetaList): `docs/future-plans/web-clipper.md`
 - Tried and rejected (dragging a note to any level by the note released on; needs a different control system): `docs/future-plans/drag-across-levels.md`

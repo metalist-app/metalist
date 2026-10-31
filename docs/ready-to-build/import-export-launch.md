@@ -196,10 +196,40 @@ Chosen by the user for an export whose first lines make usable titles (for examp
 ### 6.3 Markdown layout
 
 - **Frontmatter at the top describes the export, not the notes:** the search it came from (or the note's title), the export date-time, the vault name. Nothing per note.
-- **Notes as an outline:** children nested under their parent. Children of a note tagged `@bullets` or `@numbered` are written as that list (decided 2026-10-30); how other children are written is a walkthrough choice with a before/after preview (decided 2026-10-30; the set and default to confirm, §9 item 7): **Outline** (proposed default: every note a list item, nested by depth, any depth kept), **Document** (a note with children a heading for its depth, `#` to `######`, deeper levels as list items; a note without children a paragraph), or **Plain paragraphs** (one after another, nesting not shown). Standard Markdown can't indent a paragraph (four spaces make a code block), so only lists and headings show nesting.
+- **Notes as an outline:** children nested under their parent. Children of a note tagged `@bullets` or `@numbered` are written as that list (decided 2026-10-30); how other children are written is a walkthrough choice with a before/after preview (decided 2026-10-30; set and default confirmed 2026-10-31, §6.3.1): **Outline** (the default: every note a list item, nested by depth, any depth kept), **Document** (a note with children a heading for its depth, `#` to `######`, deeper levels as list items; a note without children a paragraph), or **Plain paragraphs** (one after another, nesting not shown). Standard Markdown can't indent a paragraph (four spaces make a code block), so only lists and headings show nesting.
 - **Embeds** (`![[UUID]]`, a note's whole subtree shown in place): standard Markdown cannot include one file in another. A walkthrough choice, asked only if the export has embeds (§9 item 11): a link where the embed was (default), or a copy of the embedded note in each place (a note embedded in seven places gives seven copies).
 - **Links** (`[[UUID]]`, `[[UUID|text]]`): to a note inside the document, an in-page link to an anchor on that note; to a note outside it, plain text, listed in the summary.
 - **Attachments:** in a folder beside the document, so the export is a `.zip` when there are any and a single `.md` file when there aren't. Images become `![alt](attachments/photo.png)`, other files `[report.pdf](attachments/report.pdf)`, under their original names with ` (2)` on a collision. Before exporting, show the size ("This export includes 3.2 GB of files") and offer a notes-only option.
+
+### 6.3.1 Lists and indentation (decided 2026-10-31)
+
+- **The three layouts are the complete set,** Outline the default: Markdown shows nesting only by lists (indentation) and headings (size), and Outline is the one layout that keeps any depth and reads the same in every Markdown app. Document falls back to Outline below six heading levels.
+- **Indentation (Outline):** 4 spaces per level, never tabs (CommonMark, GitHub and Obsidian accept 2–4; Python-Markdown, as in MkDocs, needs 4; tabs display at the editor's width). A note's first line goes on its bullet; the rest of that note (further paragraphs, code, tables, quotes, its own lists) follows after a blank line, indented 4 deeper than the bullet; then its children at the same depth. The indent is the larger of 4 and the marker's width (`100. ` is five characters). Code blocks are always fenced, never indented.
+
+  ```
+  - Trip to Japan
+      - Book flights
+      - Hotel in Kyoto
+
+          Ask for a room facing the garden.
+  - Groceries
+  ```
+
+- **List markers carry meaning,** so a note whose text is a list never looks like a note with children (CommonMark starts a new list when the bullet character or the number delimiter changes; both render the same, but stay distinct in the raw text for editors, scripts and AI tools). The export rewrites whatever marker the note's text used, in every layout:
+
+  | What | Marker |
+  |---|---|
+  | A note (Outline, and children of a `@bullets` note) | `-` |
+  | A bulleted list inside a note's own text | `*` |
+  | Children of a `@numbered` note | `1.` `2.` … |
+  | A numbered list inside a note's own text | `1)` `2)` … |
+
+  Cost: Python-Markdown doesn't recognize `1)`; such lines show as text starting "1)", still readable.
+- **Escaping:** a line of a note that would read as syntax is escaped: `1990. A great year` → `1990\. A great year` (likewise `1990)` → `1990\)`); a leading `#`, `>`, `-`, `+` or `*` followed by a space; a `---` or `===` line under text (it would make a heading).
+- **Accepted costs:** one multi-paragraph note makes its whole sibling list "loose" (paragraph spacing) when rendered; a note's own list followed by its children renders as two adjacent lists with a little space between.
+- **Open:** check that Obsidian renders `1)` lists; if it doesn't, the maintainer decides.
+- **Found when filed (2026-10-31):** MetaList's own Markdown renderer (`markdown_rendering.py`) reads neither form: `1) one` stays a paragraph (its numbered-list pattern takes only `1.`), and a paragraph indented under an item after a blank line (the Outline example's "Ask for a room…") falls out of the list as a paragraph of its own. The export's output is for other apps, so this doesn't block it; but an imported Obsidian note kept as Markdown with such lists draws wrongly in MetaList, the same kind of gap as A2. **Open:** fix the renderer for both (with the import, or before).
+- **Done when:** (1) Outline output parses in CommonMark (`commonmark` or `markdown-it`) to the same tree as the notes, every note a list item at its depth with its other content inside its item, at depths beyond 10; (2) a note with two paragraphs, a fenced code block and a table, three levels deep, keeps all of it inside its item; (3) a note whose text is a bulleted list, with two children: the text list uses `*`, the children `-`, and likewise `1)` and `1.`; (4) a `@numbered` note with 120 children keeps item 100's content and children inside item 100; (5) lines starting `1990.`, `# `, `> `, `- `, `+ `, `* `, and a `---` line under text, come out as text; (6) no tabs anywhere in the output.
 
 ### 6.4 Tags and metadata: two independent choices
 
@@ -287,7 +317,7 @@ It offers the same scope, the one-file-per-root-note option (§6.2) and the two 
 4. ~~Order in one-file-per-root-note exports~~ **Decided 2026-10-30:** not kept; files sort by name and arranging that is the user's (§6.2). (This item replaced `EXPORT_SHORT_CHILD_MAX_CHARS`, dropped with the short/long children split.)
 5. ~~Excalidraw (and charts) going to Obsidian~~ **Decided 2026-10-30:** a plain `.excalidraw` file plus an image of it; no Obsidian plugin format (standard Markdown goal).
 6. **Image sizes:** Obsidian sets a width per image; MetaList sets a size factor on the note. How close counts as close enough on import, and what does export write? (Already open in `docs/future-plans/obsidian-import-export.md`.)
-7. **Children that aren't a list** (§6.3): a walkthrough choice (decided 2026-10-30). **Open:** confirm the set (Outline, Document, Plain paragraphs) and the default (Outline proposed). (Replaces the two-folder-tags question, dropped with folders.)
+7. ~~Children that aren't a list~~ **Decided 2026-10-31** (§6.3.1): a walkthrough choice of Outline (the default), Document or Plain paragraphs, the complete set; indentation, markers and escaping as written there. (Replaces the two-folder-tags question, dropped with folders.)
 8. ~~Logseq's label at launch~~ **Decided 2026-10-30:** one-way, like Obsidian (§4); the exact wording is still to write.
 9. ~~Finding a folder's notes~~ **Decided 2026-10-30: nothing new.** The main search matches tags exactly, but typing `Projects` in the search suggests every subfolder tag (`Projects/Client-A`, ...), so it is easy to find what to type. No prefix search and no added rules.
 10. **Visible `#tags` that common apps don't read as tags** (§6.4): how to write tags with `=`, `:`, `.`, `@` or a leading digit; list the cases found. (Replaces super tags as frontmatter properties, dropped 2026-10-30: there is no per-note frontmatter; values go in the hidden metadata.)
