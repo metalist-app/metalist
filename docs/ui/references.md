@@ -43,6 +43,8 @@ Typing `[[` in the note being edited opens a list of notes to reference (agreed 
 - **Speed.** The server keeps every note's first line and text, and the words in them by first letter, in a catalog (`app/services/reference_suggestions.py`) updated for the notes that changed since it was last asked (by the note store's revision). The first typing in a note after the page loads asks for it, so it is built (about 3 s for 100,000 notes) before `[[` is typed; then a keystroke takes at most about 115 ms on 100,000 notes (most under 30 ms), and the list waits 100 ms for typing to settle. A fuzzy search looks up the words that match, then the notes holding them, and every tier stops once the list is full. The catalog is a sensitive cache: locking empties it, and it shows in Memory Usage as Reference suggestions.
 - Route: `POST /api2/notes/reference-suggestions` (`{query, editing_note_id, search, tabId, isUntaggedView}`). Editor: `app/static/js/modules/mode-manager/services/reference-suggestions-service.js`. Tests: `tests/unit/test_reference_suggestions.py`, `scripts/browser-reference-suggestion-regressions.mjs` (Chrome and Firefox).
 - After choosing, type `|text` before the `]]` for link text (Status, "Link text").
+- Typing inside a reference already written (`[[` and `]]`, or `[[`…`|text]]`) and choosing a note keeps the closing brackets and the link text there: it writes only `[[UUID` (fixed 2026-10-31: the brackets were doubled, `[[UUID]]]]`). `reference-text.js`; tests: `reference_suggestions_insertion.test.mjs`.
+- Double-clicking a UUID while editing selects all of it, so it can be copied or replaced whole (`docs/ui/controls.md`).
 
 ## Rendering Rules
 - **View mode**:

@@ -13,6 +13,7 @@ import { DOMUtils } from '../../dom-utils.js';
 import { normalizeTagBarForNewTag, placeTagBarCaretAfterLastTag } from '../services/tag-bar-service.js';
 import { updateTagSuggestions } from '../services/tag-suggestions-service.js';
 import { selectTagOnDoubleClick } from '../services/tag-input-selection-service.js';
+import { selectUuidOnDoubleClick } from '../services/uuid-double-click-service.js';
 import { openDiagramEditor, resolveDiagramTarget } from '../../excalidraw/excalidraw-actions.js';
 import { unlessDiagramEditorOpen } from '../../excalidraw/excalidraw-editor-state.js';
 import {
@@ -124,6 +125,7 @@ export function initMouseEvents() {
     listen('mouseup', handleSelectionDragMouseUp, { capture: true });
     listen('click', handleClick, { capture: true });
     listen('dblclick', selectTagOnDoubleClick, { capture: true });
+    listen('dblclick', selectUuidOnDoubleClick, { capture: true });
     listen('dblclick', handleDiagramDoubleClick, { capture: true });
     listen('mouseover', handleMouseOver, { capture: true });
     listen('mouseout', handleMouseOut, { capture: true });

@@ -13,6 +13,8 @@ from app.services.content_formatting import find_global_credential_tag
 from app.services.content_formatting import render_credential_link_row
 from app.services.content_formatting import format_note_content_for_view
 from app.services.content_formatting import has_scoped_footnotes
+from app.services.content_formatting import is_markdown_note
+from app.services.content_formatting import kept_from_markdown
 from app.services.content_formatting import render_standalone_link_title_html
 from app.services.content_formatting import showing_sites_above
 from app.services.content_formatting import sites_linked_in
@@ -382,6 +384,9 @@ def _render_note_content_with_embeds(
         redact_credentials=redact_credentials,
         folds_embeds=folds_embeds,
         is_held=is_held,
+        # A Markdown note draws its text from plain source: its references are carried
+        # through the Markdown pass and drawn after it (docs/ui/content-formatting.md).
+        keeps_from_markdown=is_markdown_note(tags),
     )
     rendered_content = format_note_content_for_view(
         content_html=content_with_embeds,
@@ -652,6 +657,7 @@ def _replace_reference_tokens_in_html(
     redact_credentials: bool,
     folds_embeds: bool,
     is_held: bool,
+    keeps_from_markdown: bool,
 ) -> str:
     parts = _HTML_TOKEN_SPLIT_RE.split(content_html)
     output: List[str] = []
@@ -670,6 +676,7 @@ def _replace_reference_tokens_in_html(
             redact_credentials=redact_credentials,
             folds_embeds=folds_embeds,
             is_held=is_held,
+            keeps_from_markdown=keeps_from_markdown,
         )
         output.append(replaced_text)
         occurrence_index = next_occurrence_index
@@ -687,6 +694,7 @@ def _replace_reference_tokens_in_text(
     redact_credentials: bool,
     folds_embeds: bool,
     is_held: bool,
+    keeps_from_markdown: bool,
 ) -> tuple[str, int]:
     if text == "":
         return "", occurrence_start
@@ -715,21 +723,25 @@ def _replace_reference_tokens_in_text(
             index = token_start + token_open_length
             continue
 
-        output.append(
-            _render_reference_block(
-                host_note_id=host_note_id,
-                reference_note_id=target.note_id,
-                link_text=target.link_text,
-                occurrence_index=occurrence_index,
-                is_embed=is_embed,
-                context=context,
-                ancestry=ancestry,
-                static_export=static_export,
-                redact_credentials=redact_credentials,
-                folds_embeds=folds_embeds,
-                is_held=is_held,
-            )
+        reference_html = _render_reference_block(
+            host_note_id=host_note_id,
+            reference_note_id=target.note_id,
+            link_text=target.link_text,
+            occurrence_index=occurrence_index,
+            is_embed=is_embed,
+            context=context,
+            ancestry=ancestry,
+            static_export=static_export,
+            redact_credentials=redact_credentials,
+            folds_embeds=folds_embeds,
+            is_held=is_held,
+            # In a Markdown paragraph a <div> would end the <p> it sits in.
+            is_in_paragraph=keeps_from_markdown and not is_embed,
         )
+        if keeps_from_markdown:
+            # A link stays in its paragraph; an embed is a block between paragraphs.
+            reference_html = kept_from_markdown(reference_html, is_block=is_embed)
+        output.append(reference_html)
         occurrence_index += 1
         index = end + len(_REFERENCE_CLOSE)
 
@@ -791,6 +803,10 @@ def _is_valid_embed_note_id(note_id: str) -> bool:
     return _UUID_REFERENCE_ID_RE.fullmatch(note_id) is not None
 
 
+# A reference's wrapper, by whether it sits inside a paragraph (a link in a Markdown note).
+_REFERENCE_ELEMENTS = {True: "span", False: "div"}
+
+
 def _render_reference_block(
     *,
     host_note_id: str,
@@ -804,6 +820,7 @@ def _render_reference_block(
     redact_credentials: bool,
     folds_embeds: bool,
     is_held: bool,
+    is_in_paragraph: bool,
 ) -> str:
     mode = "link"
     if is_embed:
@@ -862,17 +879,18 @@ def _render_reference_block(
                 static_export=static_export,
             )
     else:
-        body_html = _render_missing_reference_body(reference_note_id)
+        body_html = _render_missing_reference_body(reference_note_id, element=_REFERENCE_ELEMENTS[is_in_paragraph])
 
+    element = _REFERENCE_ELEMENTS[is_in_paragraph]
     return (
-        f'<div class="{wrapper_classes}" '
+        f'<{element} class="{wrapper_classes}" '
         f'data-ref-host-note-id="{escaped_host_note_id}" '
         f'data-ref-note-id="{escaped_reference_note_id}" '
         f'data-ref-occurrence="{occurrence_index}" '
         f'data-ref-mode="{mode}" '
         f'data-embed-ref-id="{escaped_reference_note_id}">'
-        f'<div class="note-reference-content">{body_html}</div>'
-        "</div>"
+        f'<{element} class="note-reference-content">{body_html}</{element}>'
+        f"</{element}>"
     )
 
 
@@ -1247,13 +1265,13 @@ def render_compact_note_reference_link(
     )
 
 
-def _render_missing_reference_body(reference_note_id: str) -> str:
+def _render_missing_reference_body(reference_note_id: str, *, element: str) -> str:
     escaped_note_id = html.escape(reference_note_id, quote=True)
     return (
-        '<div class="note-reference-marker note-embed-missing">'
+        f'<{element} class="note-reference-marker note-embed-missing">'
         '<span class="note-embed-marker-icon" aria-hidden="true">&#9888;</span>'
         f'<span class="note-embed-marker-text">Missing reference: {escaped_note_id}</span>'
-        "</div>"
+        f"</{element}>"
     )
 
 
@@ -1651,6 +1669,7 @@ def _render_expanded_embedded_content(
         redact_credentials=redact_credentials,
         folds_embeds=False,
         is_held=sole_embed_token(annotated_content) is not None,
+        keeps_from_markdown=is_markdown_note(tags),
     )
     return format_note_content_for_view(
         content_html=rendered_content,

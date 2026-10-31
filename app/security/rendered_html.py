@@ -42,9 +42,11 @@ RENDERER_ATTRIBUTES: dict[str, frozenset[str]] = {
     }),
     "li": frozenset({"class", "data-footnote-reference", "tabindex"}),
     "section": frozenset({"aria-label", "class"}),
+    # A link in a Markdown note's line is a span holding what a reference's div holds.
     "span": frozenset({
-        "aria-hidden", "aria-label", "class", "data-copy-value", "data-file-ref-id", "data-file-revision",
-        "data-footnote-scope", "data-latex-source", "data-preview-state", "data-redacted", "data-status", "role",
+        "aria-hidden", "aria-label", "class", "data-copy-value", "data-embed-ref-id", "data-file-ref-id",
+        "data-file-revision", "data-footnote-scope", "data-latex-source", "data-preview-state", "data-redacted",
+        "data-ref-host-note-id", "data-ref-mode", "data-ref-note-id", "data-ref-occurrence", "data-status", "role",
     }),
     "sup": frozenset({"class"}),
     # The icons' inline SVG (credential, email and status icons): shapes only.

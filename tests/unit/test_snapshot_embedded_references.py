@@ -1153,3 +1153,49 @@ def test_link_text_to_a_markdown_heading_reads_without_its_marker(monkeypatch: p
     state = _state_for(monkeypatch=monkeypatch, notes=notes, children_by_parent={None: [HOST_ID, TARGET_ID]})
 
     assert _link_title_html(state.payloads[HOST_ID]["content"]) == "Trip plan"
+
+
+# A Markdown note keeps its references (step 1b, 2026-10-31; docs/ui/content-formatting.md).
+def _markdown_host(monkeypatch: pytest.MonkeyPatch, lines: List[str]) -> str:
+    content = "".join(f"<div>{line}</div>" for line in lines)
+    notes = {
+        HOST_ID: _Note(HOST_ID, None, None, TARGET_ID, False, content, "@markdown"),
+        TARGET_ID: _Note(TARGET_ID, None, HOST_ID, None, False, "<div>embedded root</div>", ""),
+    }
+    state = _state_for(monkeypatch=monkeypatch, notes=notes, children_by_parent={None: [HOST_ID, TARGET_ID]})
+    return state.payloads[HOST_ID]["content"]
+
+
+@pytest.mark.parametrize(("line", "container"), [
+    ("A **bold** start, [[{id}]] then *italic*.", "p"),
+    ("# Heading with [[{id}]]", "h1"),
+    ("- an item with [[{id}|its own text]]", "li"),
+    ("> a quote with [[{id}]]", "blockquote"),
+])
+def test_a_link_in_a_markdown_note_stays_in_its_line(
+    monkeypatch: pytest.MonkeyPatch, line: str, container: str,
+) -> None:
+    rendered = _markdown_host(monkeypatch, [line.format(id=TARGET_ID)])
+    assert "@@ML" not in rendered
+    assert "data-markdown-rendered" in rendered
+    # A <span>: a <div> would end the paragraph it sits in.
+    link = re.search(rf'<(\w+) class="[^"]*note-reference-link-mode[^"]*"[^>]*data-ref-note-id="{TARGET_ID}"', rendered)
+    assert link is not None and link.group(1) == "span"
+    opened = rendered.rindex(f"<{container}", 0, link.start())
+    assert rendered.find(f"</{container}>", opened) > link.start()
+    assert "<strong>" in rendered or container != "p"
+
+
+def test_a_table_cell_keeps_its_link(monkeypatch: pytest.MonkeyPatch) -> None:
+    rendered = _markdown_host(monkeypatch, ["| Book | Note |", "|---|---|", f"| Dune | [[{TARGET_ID}]] |"])
+    cell = rendered.index("note-reference-link-mode")
+    assert rendered.rindex("<td", 0, cell) > rendered.rindex("</td>", 0, cell)
+
+
+def test_an_embed_in_a_markdown_note_is_a_block_between_its_paragraphs(monkeypatch: pytest.MonkeyPatch) -> None:
+    rendered = _markdown_host(monkeypatch, ["Before the embed.", f"![[{TARGET_ID}]]", "After the embed."])
+    assert "@@ML" not in rendered
+    embed = rendered.index("note-embed-block")
+    assert rendered.index("Before the embed.") < embed < rendered.index("After the embed.")
+    assert rendered.index("</p>", rendered.index("Before the embed.")) < embed
+    assert "embedded root" in rendered

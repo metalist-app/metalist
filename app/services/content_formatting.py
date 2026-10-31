@@ -1224,6 +1224,20 @@ def _find_first_renderer_tag(tags: str) -> str | None:
     return None
 
 
+def is_markdown_note(tags: str) -> bool:
+    """Whether a note is drawn as Markdown: @markdown is its renderer."""
+    return _find_first_renderer_tag(tags) == "markdown"
+
+
+def kept_from_markdown(rendered_html: str, *, is_block: bool) -> str:
+    """Drawn HTML (a reference) written into a Markdown note's source so that the Markdown
+    pass leaves it whole and puts it back after (_render_markdown_meta), as scoped regions
+    are: inline in its paragraph, or a block as a paragraph of its own."""
+    if is_block:
+        return _encode_block_placeholder(rendered_html)
+    return _encode_inline_placeholder(rendered_html)
+
+
 def is_password_note(tags: str) -> bool:
     """A note whose value is a password: tagged @password for the whole note."""
     if not isinstance(tags, str):

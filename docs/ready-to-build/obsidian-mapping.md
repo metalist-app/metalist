@@ -30,7 +30,7 @@ Where a row differs by mode, it says so.
 
 Each was confirmed in the code.
 
-1. **Links and embeds break inside `@markdown` notes.**
+1. **Links and embeds break inside `@markdown` notes.** **Fixed 2026-10-31** (step 1b; `docs/ui/content-formatting.md`), except in a `((@markdown))` region inside another note.
    - Why: references are drawn into the note's HTML first (`embedded_references.py:375`). The `@markdown` renderer then strips every HTML tag and renders the plain text (`structured_note_renderers.py:130`, `_extract_plain_text`).
    - Effect: in an `@markdown` note, `[[UUID]]` shows the target's title as plain text, not a link, and `![[UUID]]` shows nothing.
    - **"No splitting" as planned would lose every link and embed on screen.**

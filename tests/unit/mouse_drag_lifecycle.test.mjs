@@ -5,6 +5,7 @@ import { ApplicationState } from '../../app/static/js/modules/application-state.
 import { half } from '../../app/static/js/modules/half.js';
 import { resolveVerticalSiblingDropDestination, updateMoveDragGestureState } from '../../app/static/js/modules/mode-manager/services/note-drag-service.js';
 import { selectTagOnDoubleClick } from '../../app/static/js/modules/mode-manager/services/tag-input-selection-service.js';
+import { selectUuidOnDoubleClick } from '../../app/static/js/modules/mode-manager/services/uuid-double-click-service.js';
 import { unlessDiagramEditorOpen } from '../../app/static/js/modules/excalidraw/excalidraw-editor-state.js';
 
 const source = readFileSync(new URL(
@@ -46,6 +47,7 @@ function harness() {
         CommandGate: { run: name => actions.push(name) },
         HTMLElement: FakeElement,
         ApplicationState, resolveVerticalSiblingDropDestination, updateMoveDragGestureState, selectTagOnDoubleClick,
+        selectUuidOnDoubleClick,
         document: {
             addEventListener: register,
             // A detached probe resolving the child indentation (32px).

@@ -7,6 +7,7 @@ import { restoreSelection } from '../../editor-selection.js';
 // Placed as the paste format card is: below its anchor, or above it near the window's bottom.
 import { placePasteFormatOffer } from './floating-card-placement.js';
 import { PREVIEW_OWNERS, hideReferencePreview, placeReferencePreview, showReferencePreview } from './reference-preview-card-service.js';
+import { chosenReferenceText } from './reference-text.js';
 
 // Typing `[[` in a note opens a list of notes to reference (docs/ui/references.md,
 // "Suggestions"); what is typed after it narrows the list, and choosing a note
@@ -375,7 +376,7 @@ function choose(index) {
     if (trigger === null || trigger.node !== moduleState.triggerNode || trigger.start !== moduleState.triggerStart) {
         throw new Error('The `[[` a reference suggestion was chosen for is gone');
     }
-    const reference = `${TRIGGER}${suggestion.noteId}]]`;
+    const reference = chosenReferenceText(suggestion.noteId, trigger.node.data.slice(trigger.end));
     closeReferenceSuggestions();
     const range = document.createRange();
     range.setStart(trigger.node, trigger.start);
