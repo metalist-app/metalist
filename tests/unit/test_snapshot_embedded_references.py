@@ -1199,3 +1199,11 @@ def test_an_embed_in_a_markdown_note_is_a_block_between_its_paragraphs(monkeypat
     assert rendered.index("Before the embed.") < embed < rendered.index("After the embed.")
     assert rendered.index("</p>", rendered.index("Before the embed.")) < embed
     assert "embedded root" in rendered
+
+
+def test_a_markdown_image_loads_through_the_image_proxy(monkeypatch: pytest.MonkeyPatch) -> None:
+    rendered = _markdown_host(monkeypatch, ["See ![a cat](https://example.com/cat.png) here."])
+    assert 'alt="a cat"' in rendered
+    assert "data-remote-image-proxy-src=" in rendered
+    # The browser asks MetaList for it, never the site.
+    assert 'src="https://example.com/cat.png"' not in rendered

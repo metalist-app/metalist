@@ -23,6 +23,9 @@ _CURRENCY_AMOUNT_RE = re.compile(
     r"\$(?:\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)(?![\dA-Za-z_.$])"
 )
 _ALLOWED_MARKDOWN_LINK_SCHEMES = frozenset({"http", "https", "mailto"})
+# ![alt](https://…) in a note: web images only.
+_IMAGE_SCHEMES = frozenset({"http", "https"})
+_IMAGE_MARK = "!"
 # A table starts with a header row and a delimiter row.
 _TABLE_HEAD_LINE_COUNT = 2
 _HORIZONTAL_RULE_MIN_CHARS = 3
@@ -79,6 +82,18 @@ def strip_latex_source_attributes(html_text: str) -> str:
 
 
 def render_markdown_to_html(markdown_text: str) -> str:
+    """Markdown as HTML, images left as written: the AI chat and footnotes draw none (an
+    image address in an AI reply could carry data out when the browser loads it)."""
+    return _render_markdown(markdown_text, allows_images=False)
+
+
+def render_note_markdown_to_html(markdown_text: str) -> str:
+    """A Markdown note's text as HTML, ![alt](https://…) images drawn (2026-10-31); the
+    note's rendering then loads them through the image proxy, as other web images."""
+    return _render_markdown(markdown_text, allows_images=True)
+
+
+def _render_markdown(markdown_text: str, *, allows_images: bool) -> str:
     if not isinstance(markdown_text, str):
         raise TypeError(f"markdown_text must be a string, got {type(markdown_text)}")
     if markdown_text == "":
@@ -86,16 +101,20 @@ def render_markdown_to_html(markdown_text: str) -> str:
 
     normalized_text = markdown_text.replace("\r\n", "\n").replace("\r", "\n")
     lines = normalized_text.split("\n")
-    renderer = _MarkdownRenderer(lines=lines)
+    renderer = _MarkdownRenderer(lines=lines, allows_images=allows_images)
     return renderer.render()
 
 
 class _MarkdownRenderer:
-    def __init__(self, *, lines: List[str]):
+    def __init__(self, *, lines: List[str], allows_images: bool):
         if not isinstance(lines, list):
             raise TypeError(f"lines must be a list, got {type(lines)}")
         self._lines = lines
         self._index = 0
+        self._allows_images = allows_images
+
+    def _inline(self, text: str) -> str:
+        return _render_inline_markdown(text, allow_links=True, allows_images=self._allows_images)
 
     def render(self) -> str:
         blocks: List[str] = []
@@ -174,7 +193,7 @@ class _MarkdownRenderer:
         level = len(match.group("marks"))
         content = match.group("content").strip()
         self._index += 1
-        rendered = _render_inline_markdown(content, allow_links=True)
+        rendered = self._inline(content)
         return f"<h{level}>{rendered}</h{level}>"
 
     def _render_table_block(self) -> str:
@@ -198,14 +217,14 @@ class _MarkdownRenderer:
         # The wrapper scrolls a table sideways when its words can't all fit side by side.
         parts: List[str] = ['<div class="meta-markdown-table-wrap">', "<table>", "<thead>", "<tr>"]
         for cell in header_cells:
-            parts.append(f"<th>{_render_inline_markdown(cell.strip(), allow_links=True)}</th>")
+            parts.append(f"<th>{self._inline(cell.strip())}</th>")
         parts.extend(["</tr>", "</thead>"])
         if body_rows:
             parts.append("<tbody>")
             for row in body_rows:
                 parts.append("<tr>")
                 for cell in row:
-                    parts.append(f"<td>{_render_inline_markdown(cell.strip(), allow_links=True)}</td>")
+                    parts.append(f"<td>{self._inline(cell.strip())}</td>")
                 parts.append("</tr>")
             parts.append("</tbody>")
         parts.extend(["</table>", "</div>"])
@@ -228,7 +247,7 @@ class _MarkdownRenderer:
                 stripped = stripped[1:]
             quote_lines.append(stripped)
             self._index += 1
-        inner_html = render_markdown_to_html("\n".join(quote_lines))
+        inner_html = _render_markdown("\n".join(quote_lines), allows_images=self._allows_images)
         return f"<blockquote>{inner_html}</blockquote>"
 
     def _render_list_block(self) -> str:
@@ -304,7 +323,7 @@ class _MarkdownRenderer:
                 continue
             break
 
-        rendered = _render_inline_markdown("\n".join(item_lines), allow_links=True)
+        rendered = self._inline("\n".join(item_lines))
         rendered = rendered.replace("\n", "<br>\n")
         return f"<li>{rendered}{''.join(nested_lists)}</li>"
 
@@ -334,7 +353,7 @@ class _MarkdownRenderer:
             paragraph_lines.append(line)
             self._index += 1
 
-        rendered = _render_inline_markdown("\n".join(paragraph_lines), allow_links=True)
+        rendered = self._inline("\n".join(paragraph_lines))
         rendered = rendered.replace("\n", "<br>\n")
         return f"<p>{rendered}</p>"
 
@@ -455,7 +474,7 @@ def _is_table_delimiter_row(line: str) -> bool:
     return all(_TABLE_DELIMITER_CELL_RE.match(cell) is not None for cell in cells)
 
 
-def _render_inline_markdown(text: str, *, allow_links: bool) -> str:
+def _render_inline_markdown(text: str, *, allow_links: bool, allows_images: bool) -> str:
     if not isinstance(text, str):
         raise TypeError(f"text must be a string, got {type(text)}")
     if text == "":
@@ -466,7 +485,7 @@ def _render_inline_markdown(text: str, *, allow_links: bool) -> str:
     rendered = _extract_code_spans(rendered, placeholders)
     rendered = _ESCAPED_LINE_BREAK_TAG_RE.sub("<br>", rendered)
     if allow_links:
-        rendered = _extract_markdown_links(rendered, placeholders)
+        rendered = _extract_markdown_links(rendered, placeholders, allows_images=allows_images)
         rendered = _extract_auto_links(rendered, placeholders)
     rendered = _extract_currency_amounts(rendered, placeholders)
     rendered = _extract_latex_math(rendered, placeholders)
@@ -507,7 +526,7 @@ def _extract_code_spans(text: str, placeholders: List[_InlinePlaceholder]) -> st
     return "".join(output)
 
 
-def _extract_markdown_links(text: str, placeholders: List[_InlinePlaceholder]) -> str:
+def _extract_markdown_links(text: str, placeholders: List[_InlinePlaceholder], *, allows_images: bool) -> str:
     if not isinstance(text, str):
         raise TypeError("text must be a string")
 
@@ -526,9 +545,20 @@ def _extract_markdown_links(text: str, placeholders: List[_InlinePlaceholder]) -
         if close_paren == NOT_FOUND:
             output.append(text[cursor:])
             break
-        output.append(text[cursor:start])
         link_text = text[start + 1 : open_paren]
         href = text[open_paren + len(_LINK_TEXT_TO_HREF) : close_paren].strip()
+        is_image = allows_images and start > cursor and text[start - len(_IMAGE_MARK)] == _IMAGE_MARK
+        if is_image:
+            image_html = _markdown_image_html(alt=link_text, src=href)
+            if image_html is None:
+                # A path or another scheme: no image to load, so the text stays as written.
+                output.append(text[cursor : close_paren + 1])
+            else:
+                output.append(text[cursor : start - len(_IMAGE_MARK)])
+                output.append(_make_placeholder(placeholders=placeholders, html_value=image_html))
+            cursor = close_paren + 1
+            continue
+        output.append(text[cursor:start])
         if href == "":
             output.append(text[start : close_paren + 1])
             cursor = close_paren + 1
@@ -544,13 +574,25 @@ def _extract_markdown_links(text: str, placeholders: List[_InlinePlaceholder]) -
         link_html = (
             f'<a href="{html.escape(html.unescape(href), quote=True)}" '
             'target="_blank" rel="noopener noreferrer">'
-            f"{_render_inline_markdown(html.unescape(link_text), allow_links=False)}"
+            f"{_render_inline_markdown(html.unescape(link_text), allow_links=False, allows_images=False)}"
             "</a>"
         )
         placeholder = _make_placeholder(placeholders=placeholders, html_value=link_html)
         output.append(placeholder)
         cursor = close_paren + 1
     return "".join(output)
+
+
+def _markdown_image_html(*, alt: str, src: str) -> str | None:
+    """![alt](https://…) as an image, or None for any other address (a path, another
+    scheme): that stays as written. alt and src arrive HTML-escaped."""
+    address = html.unescape(src)
+    if urlsplit(address).scheme.casefold() not in _IMAGE_SCHEMES:
+        return None
+    return (
+        f'<img src="{html.escape(address, quote=True)}" '
+        f'alt="{html.escape(html.unescape(alt), quote=True)}" loading="lazy">'
+    )
 
 
 def _extract_auto_links(text: str, placeholders: List[_InlinePlaceholder]) -> str:

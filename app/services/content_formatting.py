@@ -43,7 +43,7 @@ from app.services.diff_rendering import render_diff_meta
 from app.services.mermaid_note_rendering import render_mermaid_meta
 from app.services.latex_rendering import render_latex_to_html
 from app.utils.text_utils import HTMLStripper, LinkUrlKeepingStripper, strip_html
-from app.services.markdown_rendering import render_markdown_to_html
+from app.services.markdown_rendering import render_note_markdown_to_html
 from app.services.ontology_rules_store import get_ontology_if_ready
 from app.services.file_registry import file_registry
 from app.security.rendered_html import RENDERER_CLASS_PREFIXES
@@ -1468,7 +1468,7 @@ def _render_shell_meta(*, content_html: str, formatting_tags: FrozenSet[str]) ->
 def _render_markdown_meta(*, content_html: str, formatting_tags: FrozenSet[str]) -> str:
     raw_text = _extract_plain_text(content_html)
     copy_attr = _copyable_attr(formatting_tags, raw_text)
-    rendered_markdown = render_markdown_to_html(raw_text)
+    rendered_markdown = render_note_markdown_to_html(raw_text)
     rendered_markdown = _replace_block_placeholders(_replace_inline_placeholders(rendered_markdown))
 
     extra_classes = ""
