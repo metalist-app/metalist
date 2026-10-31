@@ -2,7 +2,7 @@
 
 ----
 
-## After a backup restore, a background save can land on the lock page instead of the login screen (open, found 2026-10-18)
+## After a backup restore, a background save can land on the lock page instead of the login screen (fixed 2026-10-30, found 2026-10-18)
 
 Seen twice in the browser smoke (`core`, the encrypted-backup step), once under load and
 once not; passes when rerun. The restore restarts the server. A background tab-state save
@@ -11,9 +11,19 @@ browser treats it as an expired session ("Forcing logout") and navigates to `/lo
 while the restore flow expects the login panel. The check then waits 30 s for
 `#login-panel[data-revealed="true"]`. Order of events in the disposable logs:
 `restore` 200, `tab-state` connection refused during the restart, `tab-state` 401 right
-after it, `Forcing logout`, navigate `/locked`. Next step: a failing test that sends a
-tab-state save right after a restore's restart, then decide which screen the restore
-should land on and make the background save not override it.
+after it, `Forcing logout`, navigate `/locked`.
+
+On 2026-10-28 the `core` step was changed to send the restore from a page without the app,
+which hid the flake, but the restore dialog had the same hole: while the open vault was
+restored it paused the connection poll and lost-connection cards, but any other background
+request answered "not logged in" (tab-state, reminders, link titles) still forced the
+logout. Fix: the page lands where the dialog sends it, the login screen when the dialog is
+closed. While this page restores the open vault (`restore-session-end.js`, set and cleared
+with the dialog's restore transition), `Auth.forceLogout` leaves the page alone, as it does
+during a password change; after a failed restore, or once the page has reloaded, a lost
+session locks it as usual. Tests: `tests/unit/restore_logout.test.mjs` and the browser suite
+`restore-session` (the real dialog, a faked restart, then a tab-state save answered 401),
+which went to `/locked` before the fix.
 
 ----
 

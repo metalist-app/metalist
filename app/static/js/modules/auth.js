@@ -14,6 +14,7 @@ import { ReminderSurface } from './reminder-surface-service.js';
 import { AiChatPanel } from './ai-chat/ai-chat-panel-controller.js';
 import { clearLegacyAuthStorage, resolveStoredThemePreference } from './client-state-migration.js';
 import { consumeBooleanQueryFlag } from './location-flags.js';
+import { isRestoringOpenVault } from './restore-session-end.js';
 import {
     buildLoginNamespaceStartingNote,
     buildNamespaceLoginUrl,
@@ -837,6 +838,10 @@ export const Auth = {
         }
         if (this._isPasswordChanging) {
             console.log('[Auth] Session ended by the password change; the page reloads into the new state');
+            return;
+        }
+        if (isRestoringOpenVault()) {
+            console.log('[Auth] Session ended by the restore; closing its dialog reloads the page');
             return;
         }
         if (this._forcingLogout) {
