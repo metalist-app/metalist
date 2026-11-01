@@ -2195,7 +2195,8 @@ class CommandPaletteController {
 
     // Delete Notes (Current View)… (docs/ui/command-palette.md): the notes the view finds, each
     // with everything under it, or every note when nothing narrows the view; confirmed with
-    // the count, which the server checks again before it deletes.
+    // the count (as the list counts notes: those under them uncounted), which the server
+    // checks again before it deletes.
     async deleteNotesInView() {
         const isReady = await this._prepareForModalOpen('commandPalette.deleteNotesInView');
         if (!isReady) {
@@ -2212,10 +2213,10 @@ class CommandPaletteController {
             return;
         }
         let title = `Delete the ${noteCount} notes in this view?`;
-        let description = `This deletes every note this view's search finds, with everything under it (${noteCount} notes in all). Notes above them stay.`;
+        let description = `This deletes the ${noteCount} notes this view's search finds, each with the notes under it. Notes above them stay.`;
         if (isWholeVault) {
             title = `Delete all ${noteCount} notes in this vault?`;
-            description = `No search is active, so this deletes every note in this vault: all ${noteCount} of them.`;
+            description = `No search is active, so this deletes all ${noteCount} notes in this vault, with the notes under them.`;
         }
         const confirmed = await this._confirmAction('commandPalette.deleteNotesInView.confirm', {
             eyebrow: 'Delete Notes',
@@ -2909,7 +2910,7 @@ class CommandPaletteController {
         });
     }
 
-    // Import Notes (PLAN.md, phase 2).
+    // Import… (PLAN.md, phase 2).
     async openImportWizard() {
         const isReady = await this._prepareForModalOpen('commandPalette.openImportWizard');
         if (!isReady) {

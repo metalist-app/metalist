@@ -324,6 +324,7 @@ function aiStep() {
 const NOTES_SOURCES = [
     { value: 'obsidian', title: 'Obsidian vault', badge: '', text: 'Bring in a vault, its folders, links and attachments.' },
     { value: 'markdown', title: 'Markdown folder', badge: '', text: 'A folder of .md files from any app.' },
+    { value: 'files', title: 'Any folder', badge: '', text: 'Every file in it a note.' },
     { value: 'empty', title: 'Start empty', badge: '', text: 'Begin with a blank list.' },
 ];
 

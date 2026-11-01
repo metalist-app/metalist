@@ -1,6 +1,7 @@
-"""What the importer can import (PLAN.md, slices 1 and 1c): an Obsidian vault, or a plain
-folder of Markdown files from any app. Both go through the same importer; they differ in
-their source tag, their report's words and whether Obsidian's own line breaks apply."""
+"""What the importer can import (PLAN.md, slices 1 and 1c): an Obsidian vault, a plain folder
+of Markdown files from any app, or a folder of any files (folder-import-and-file-previews.md).
+The first two go through the same importer, differing in their source tag, their words and
+whether Obsidian's own line breaks apply; a folder of files has its own (every file a note)."""
 
 from __future__ import annotations
 
@@ -31,4 +32,9 @@ MARKDOWN = ImportSource(
     key="markdown", label="Markdown", folder_word="folder", follows_obsidian_line_breaks=False,
     folder_prompt="Choose a folder of Markdown files to import into MetaList",
 )
-IMPORT_SOURCES: Dict[str, ImportSource] = {source.key: source for source in (OBSIDIAN, MARKDOWN)}
+# Any folder: every file a note (docs/ready-to-build/folder-import-and-file-previews.md).
+FILES = ImportSource(
+    key="files", label="Any folder", folder_word="folder", follows_obsidian_line_breaks=False,
+    folder_prompt="Choose a folder to import into MetaList",
+)
+IMPORT_SOURCES: Dict[str, ImportSource] = {source.key: source for source in (OBSIDIAN, MARKDOWN, FILES)}

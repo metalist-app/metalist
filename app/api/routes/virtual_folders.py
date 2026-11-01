@@ -125,5 +125,5 @@ def count_virtual_folder_notes(request: Request, body: FolderNotesRequest) -> Di
     require_request_auth_token(request)
     if not is_folder_tag(body["folder"]):
         raise InputRejected(f"{body['folder']} is not a folder.")
-    return {"noteCount": len(notes_in_folder(body["folder"]).top_note_ids)}
+    return {"noteCount": notes_in_folder(body["folder"]).note_count}
 

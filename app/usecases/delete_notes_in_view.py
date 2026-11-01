@@ -23,7 +23,9 @@ _TOP_LEVEL = None
 
 @dataclass(frozen=True)
 class NotesToDelete:
-    """The notes a deletion takes: the topmost ones, each with its subtree, and how many in all."""
+    """The notes a deletion takes: the topmost ones, each with its subtree, and how many of
+    them, counted as the list counts notes: the notes under them go with them, uncounted (the
+    maintainer, 2026-11-01: a count of every note under them was confusing)."""
 
     top_note_ids: List[str]
     note_count: int
@@ -34,15 +36,15 @@ def notes_to_delete(scope: ResolvedViewScope) -> NotesToDelete:
     """What deleting in the view takes: the notes it finds, none under another found one."""
     if not scope.filter_active:
         roots = store.children(_TOP_LEVEL)
-        return NotesToDelete(top_note_ids=roots, note_count=_subtree_size(roots), is_whole_vault=True)
+        return NotesToDelete(top_note_ids=roots, note_count=len(roots), is_whole_vault=True)
     return topmost_with_subtrees(scope.matched_note_ids)
 
 
 def topmost_with_subtrees(note_ids: frozenset[str]) -> NotesToDelete:
     """Deleting note_ids, each with everything under it: the ones under no other of them, in
-    list order, and how many notes that takes in all."""
+    list order, and how many they are."""
     top = [note_id for note_id in _in_list_order(note_ids) if not _has_matched_ancestor(note_id, note_ids)]
-    return NotesToDelete(top_note_ids=top, note_count=_subtree_size(top), is_whole_vault=False)
+    return NotesToDelete(top_note_ids=top, note_count=len(top), is_whole_vault=False)
 
 
 def _in_list_order(note_ids: frozenset[str]) -> List[str]:
@@ -64,16 +66,6 @@ def _has_matched_ancestor(note_id: str, matched: frozenset[str]) -> bool:
             return True
         parent_id = store.get(parent_id).parent_id
     return False
-
-
-def _subtree_size(top_note_ids: List[str]) -> int:
-    count = 0
-    stack = list(top_note_ids)
-    while stack:
-        note_id = stack.pop()
-        count += 1
-        stack.extend(store.children(note_id))
-    return count
 
 
 @dataclass

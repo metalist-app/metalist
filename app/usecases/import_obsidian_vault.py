@@ -17,13 +17,27 @@ from typing import Dict, List, Tuple
 from app.services.file_storage import create_file
 from app.services.file_text_preview import plain_text_to_note_html
 from app.services.input_errors import InputRejected
+from app.services.obsidian_import.file_groups import (
+    FILE_GROUP_KINDS,
+    MARKDOWN_SUFFIXES,
+    TEXT_SUFFIXES,
+    FolderFile,
+    folder_files,
+)
 from app.services.obsidian_import.links import LinkReference, with_tokens_replaced
-from app.services.obsidian_import.notes import PlannedNote, folder_tag_for, plan_file_note, source_tag_for
+from app.services.obsidian_import.notes import (
+    PlannedNote,
+    folder_tag_for,
+    import_folder_prefix,
+    plan_file_note,
+    source_tag_for,
+)
 from app.services.obsidian_import.resolve import VaultIndex
-from app.services.obsidian_import.sources import IMPORT_SOURCES, ImportSource
+from app.services.obsidian_import.sources import FILES, IMPORT_SOURCES, ImportSource
 from app.services.obsidian_import.tree import CONTENT_FORMATS, SPLIT_MODES, NoteNode, count_notes
-from app.services.obsidian_import.vault import NOT_UTF8_REASON, VaultContents, read_vault
+from app.services.obsidian_import.vault import NOT_UTF8_REASON, VaultContents, VaultFile, read_text_file, read_vault
 from app.services.store import store
+from app.services.virtual_folders import all_folder_tags
 from app.upload_limits import MAX_ATTACHMENT_BYTES
 from app.usecases.base import QueryCommand
 from app.usecases.delete_subtree import apply_restore_records
@@ -62,16 +76,22 @@ class CmdImportObsidianVault(QueryCommand):
     folder_path: str
     split_mode: str
     content_format: str
+    # The folder everything goes under, as typed ('' for none), and whether to add to it when
+    # it exists already (docs/ready-to-build/import-prefix-folder.md).
+    folder_prefix: str
+    add_to_existing: bool
     token: str
     imported_at: datetime
 
     def execute(self) -> Dict[str, object]:
         plan = _plan_import(
             source_key=self.source, folder_path=self.folder_path, split_mode=self.split_mode,
-            content_format=self.content_format, imported_at=self.imported_at,
+            content_format=self.content_format, folder_prefix=self.folder_prefix, imported_at=self.imported_at,
         )
+        if import_folder_exists(plan.folder_prefix) and not self.add_to_existing:
+            raise InputRejected(f"{plan.folder_prefix} already exists. Tick Add to it, or choose another name.")
         folder, vault, planned, source_tag = plan.folder, plan.vault, plan.planned, plan.source_tag
-        linked = _linked(folder, vault, planned, source_tag=source_tag, token=self.token)
+        linked = _linked(folder, vault, planned, source_tag=source_tag, folder_prefix=plan.folder_prefix, token=self.token)
         planned = linked.planned
         note_count = sum(count_notes(note.root) for note in planned) + len(linked.kept)
         roots = [
@@ -99,9 +119,20 @@ class _ImportPlan:
     vault: VaultContents
     planned: List[PlannedNote]
     source_tag: str
+    # The folder everything goes under, cleaned ('' for none).
+    folder_prefix: str
 
 
-def _plan_import(*, source_key: str, folder_path: str, split_mode: str, content_format: str, imported_at: datetime) -> _ImportPlan:
+def import_folder_exists(folder_prefix: str) -> bool:
+    """Whether some note is in that folder or below it already ('' is no folder)."""
+    if folder_prefix == "":
+        return False
+    return any(tag.casefold().startswith(folder_prefix.casefold()) for tag in all_folder_tags())
+
+
+def _plan_import(
+    *, source_key: str, folder_path: str, split_mode: str, content_format: str, folder_prefix: str, imported_at: datetime,
+) -> _ImportPlan:
     if split_mode not in SPLIT_MODES or content_format not in CONTENT_FORMATS:
         raise InputRejected("Choose how to split the notes and what to write them in.")
     assert source_key in IMPORT_SOURCES, f"unknown import source {source_key!r}"
@@ -115,14 +146,17 @@ def _plan_import(*, source_key: str, folder_path: str, split_mode: str, content_
     if len(vault.markdown_files) == 0:
         raise InputRejected(f"{folder} holds no Markdown files. Choose a folder that does.")
     source_tag = source_tag_for(imported_at, source.key)
+    prefix = import_folder_prefix(folder_prefix)
     planned = [
         plan_file_note(
             vault_file, uses_strict_line_breaks=vault.uses_strict_line_breaks, source_tag=source_tag,
-            split_mode=split_mode, content_format=content_format,
+            split_mode=split_mode, content_format=content_format, folder_prefix=prefix,
         )
         for vault_file in vault.markdown_files
     ]
-    return _ImportPlan(source=source, folder=folder, vault=vault, planned=planned, source_tag=source_tag)
+    return _ImportPlan(
+        source=source, folder=folder, vault=vault, planned=planned, source_tag=source_tag, folder_prefix=prefix,
+    )
 
 
 @dataclass
@@ -135,12 +169,13 @@ class CmdPreviewImport(QueryCommand):
     folder_path: str
     split_mode: str
     content_format: str
+    folder_prefix: str
     imported_at: datetime
 
     def execute(self) -> Dict[str, object]:
         plan = _plan_import(
             source_key=self.source, folder_path=self.folder_path, split_mode=self.split_mode,
-            content_format=self.content_format, imported_at=self.imported_at,
+            content_format=self.content_format, folder_prefix=self.folder_prefix, imported_at=self.imported_at,
         )
         index = VaultIndex(plan.planned, plan.vault.other_files)
         resolved = [
@@ -152,6 +187,8 @@ class CmdPreviewImport(QueryCommand):
         findings = [note.findings for note in plan.planned]
         kept_note_count = sum(1 for path in kept_paths if path in storable)
         return {
+            # The folder the notes go into ('' for none), as the summary shows it.
+            "prefixFolder": plan.folder_prefix,
             "fileCount": len(plan.planned),
             "noteCount": sum(count_notes(note.root) for note in plan.planned) + kept_note_count,
             # The notes at the top of the list (each file's, and each kept file's), the report aside.
@@ -166,6 +203,8 @@ class CmdPreviewImport(QueryCommand):
             "unusedAttachmentCount": sum(
                 1 for path in plan.vault.other_files if path not in linked_paths and not _is_kept_file(path)
             ),
+            # Linked or kept files over the per-file limit: left out.
+            "overLimitCount": len({*linked_paths, *kept_paths} - storable),
         }
 
 
@@ -187,7 +226,9 @@ class _Linked:
     kept: List[Tuple[str, _Written]]
 
 
-def _linked(folder: Path, vault: VaultContents, planned: List[PlannedNote], *, source_tag: str, token: str) -> _Linked:
+def _linked(
+    folder: Path, vault: VaultContents, planned: List[PlannedNote], *, source_tag: str, folder_prefix: str, token: str,
+) -> _Linked:
     """Every link and embed resolved, and the files they reach stored (with the Canvas, Base
     and Excalidraw files, which come in linked to or not)."""
     index = VaultIndex(planned, vault.other_files)
@@ -200,7 +241,10 @@ def _linked(folder: Path, vault: VaultContents, planned: List[PlannedNote], *, s
             replace(note, root=_with_links(note.root, _replacements(resolved[note.source_path], file_ids)))
             for note in planned
         ],
-        kept=[_kept_file_note(folder, path, file_ids[path], source_tag=source_tag) for path in kept_paths if path in file_ids],
+        kept=[
+            _kept_file_note(folder, path, file_ids[path], source_tag=source_tag, folder_prefix=folder_prefix)
+            for path in kept_paths if path in file_ids
+        ],
     )
 
 
@@ -282,9 +326,11 @@ def _store_files(folder: Path, paths: List[PurePosixPath], *, token: str) -> Tup
     return file_ids, too_large
 
 
-def _kept_file_note(folder: Path, path: PurePosixPath, file_id: str, *, source_tag: str) -> Tuple[str, _Written]:
+def _kept_file_note(
+    folder: Path, path: PurePosixPath, file_id: str, *, source_tag: str, folder_prefix: str,
+) -> Tuple[str, _Written]:
     """A Canvas, Base or Excalidraw file's own note: the file embedded, tagged as a note of its folder."""
-    tags = [tag for tag in (folder_tag_for(path), source_tag) if tag != ""]
+    tags = [tag for tag in (folder_tag_for(path, folder_prefix), source_tag) if tag != ""]
     modified_at = datetime.fromtimestamp((folder / Path(path)).stat().st_mtime, tz=timezone.utc)
     node = NoteNode(
         note_id=str(uuid.uuid4()), content_html=plain_text_to_note_html(f"{_EMBED_MARK}[[{file_id}]]"),
@@ -355,3 +401,193 @@ def _record(
         created_at=written.created_at,
         updated_at=written.updated_at,
     )
+
+
+# --- A folder of any files (docs/ready-to-build/folder-import-and-file-previews.md) --------
+
+
+@dataclass(frozen=True)
+class FileSelection:
+    """What the checklist ticked (folder-import-and-file-previews.md §3): the kinds left out,
+    and the files ticked against their kind (the maintainer, 2026-11-01): left out of a
+    ticked kind, or brought in from an unticked one, by their paths in the folder."""
+
+    excluded_groups: Tuple[str, ...]
+    excluded_files: Tuple[str, ...]
+    included_files: Tuple[str, ...]
+    # Markdown files kept as files, each in a note of its own as a PDF is, instead of turned
+    # into notes (the maintainer, 2026-11-01: one choice for all of them; READMEs and docs).
+    keeps_markdown_as_files: bool
+
+    def includes(self, folder_file: FolderFile) -> bool:
+        path = str(folder_file.path)
+        if folder_file.group.key in self.excluded_groups:
+            return path in self.included_files
+        return path not in self.excluded_files
+
+
+@dataclass(frozen=True)
+class _FilesPlan:
+    """A folder of files read and planned: its text files as notes, every other file (and a
+    text file that isn't UTF-8) to be attached in a note of its own; nothing stored yet."""
+
+    folder: Path
+    planned: List[PlannedNote]
+    attached: List[PurePosixPath]
+    # Files of the ticked groups over the per-file limit: left out (§3).
+    over_limit_count: int
+    source_tag: str
+    folder_prefix: str
+
+
+def _plan_folder_of_files(
+    *, folder_path: str, selection: FileSelection, split_mode: str, content_format: str, folder_prefix: str,
+    imported_at: datetime,
+) -> _FilesPlan:
+    if split_mode not in SPLIT_MODES or content_format not in CONTENT_FORMATS:
+        raise InputRejected("Choose how to split the notes and what to write them in.")
+    unknown = sorted(set(selection.excluded_groups) - set(FILE_GROUP_KINDS))
+    if unknown:
+        raise InputRejected(f"Unknown kinds of file: {', '.join(unknown)}.")
+    folder = Path(folder_path)
+    if not folder.is_absolute():
+        raise InputRejected("Choose the folder with Choose Folder.")
+    if not folder.is_dir():
+        raise InputRejected(f"There is no folder at {folder}. Choose the folder again.")
+    found = folder_files(folder)
+    named = {*selection.excluded_files, *selection.included_files}
+    missing = named - {str(folder_file.path) for folder_file in found}
+    if missing:
+        raise InputRejected(f"{len(missing)} of the files you ticked or unticked are no longer in the folder. Choose the folder again.")
+    ticked = [folder_file for folder_file in found if selection.includes(folder_file)]
+    chosen = [folder_file for folder_file in ticked if folder_file.size <= MAX_ATTACHMENT_BYTES]
+    if not chosen:
+        raise InputRejected("Nothing to import: tick at least one kind of file.")
+    source_tag = source_tag_for(imported_at, FILES.key)
+    prefix = import_folder_prefix(folder_prefix)
+    text_files: List[VaultFile] = []
+    attached: List[PurePosixPath] = []
+    for folder_file in chosen:
+        text_file = None
+        suffix = folder_file.path.suffix.casefold()
+        is_kept_as_file = selection.keeps_markdown_as_files and suffix in MARKDOWN_SUFFIXES
+        if suffix in TEXT_SUFFIXES and not is_kept_as_file:
+            text_file = read_text_file(folder, folder_file.path)
+        if text_file is None:
+            attached.append(folder_file.path)
+            continue
+        text_files.append(text_file)
+    planned = [
+        plan_file_note(
+            text_file, uses_strict_line_breaks=True, source_tag=source_tag, split_mode=split_mode,
+            content_format=content_format, folder_prefix=prefix,
+        )
+        for text_file in text_files
+    ]
+    return _FilesPlan(
+        folder=folder, planned=planned, attached=attached, over_limit_count=len(ticked) - len(chosen),
+        source_tag=source_tag, folder_prefix=prefix,
+    )
+
+
+@dataclass
+class CmdPreviewFolderOfFiles(QueryCommand):
+    """What importing a folder of files would do, for the wizard's summary; writes nothing."""
+
+    folder_path: str
+    selection: FileSelection
+    split_mode: str
+    content_format: str
+    folder_prefix: str
+    imported_at: datetime
+
+    def execute(self) -> Dict[str, object]:
+        plan = _plan_folder_of_files(
+            folder_path=self.folder_path, selection=self.selection, split_mode=self.split_mode,
+            content_format=self.content_format, folder_prefix=self.folder_prefix, imported_at=self.imported_at,
+        )
+        index = VaultIndex(plan.planned, plan.attached)
+        resolved = [
+            _resolve(index, reference, from_path=note.source_path) for note in plan.planned for reference in note.links
+        ]
+        findings = [note.findings for note in plan.planned]
+        folder_tags = {note.folder_tag for note in plan.planned} | {
+            folder_tag_for(path, plan.folder_prefix) for path in plan.attached
+        }
+        return {
+            "prefixFolder": plan.folder_prefix,
+            "fileCount": len(plan.planned) + len(plan.attached),
+            "noteCount": sum(count_notes(note.root) for note in plan.planned) + len(plan.attached),
+            "rootNoteCount": len(plan.planned) + len(plan.attached),
+            "attachmentCount": len(plan.attached),
+            "folderTagCount": len(folder_tags - {""}),
+            "filesWithCommentsCount": sum(1 for finding in findings if finding.has_comments),
+            "blockIdCount": sum(finding.block_id_count for finding in findings),
+            "calloutCount": sum(finding.callout_count for finding in findings),
+            "missingLinkCount": sum(1 for item in resolved if item.note is None and item.file_path is None),
+            # A text file that isn't UTF-8 is attached instead: nothing is left out for it.
+            "unreadableFileCount": 0,
+            "unusedAttachmentCount": 0,
+            "overLimitCount": plan.over_limit_count,
+        }
+
+
+@dataclass
+class CmdImportFolderOfFiles(QueryCommand):
+    """Import a folder of any files (folder-import-and-file-previews.md §2): each text file a
+    note with its text, every other file in a note of its own, each
+    with its folder's tag under the import's folder; the groups unticked in the checklist and
+    files over the per-file limit left out."""
+
+    folder_path: str
+    selection: FileSelection
+    split_mode: str
+    content_format: str
+    folder_prefix: str
+    add_to_existing: bool
+    token: str
+    imported_at: datetime
+
+    def execute(self) -> Dict[str, object]:
+        plan = _plan_folder_of_files(
+            folder_path=self.folder_path, selection=self.selection, split_mode=self.split_mode,
+            content_format=self.content_format, folder_prefix=self.folder_prefix, imported_at=self.imported_at,
+        )
+        if import_folder_exists(plan.folder_prefix) and not self.add_to_existing:
+            raise InputRejected(f"{plan.folder_prefix} already exists. Tick Add to it, or choose another name.")
+        file_ids, too_large = _store_files(plan.folder, plan.attached, token=self.token)
+        assert not too_large, "files over the limit were left out when planned"
+        index = VaultIndex(plan.planned, plan.attached)
+        planned = [
+            replace(note, root=_with_links(note.root, _replacements(
+                [_resolve(index, reference, from_path=note.source_path) for reference in note.links], file_ids,
+            )))
+            for note in plan.planned
+        ]
+        roots = [
+            *((note.source_path, _Written(node=note.root, created_at=note.created_at, updated_at=note.updated_at)) for note in planned),
+            *(
+                _attached_file_note(plan.folder, path, file_ids[path], source_tag=plan.source_tag, folder_prefix=plan.folder_prefix)
+                for path in plan.attached
+            ),
+        ]
+        roots.sort(key=lambda pair: _file_list_key(PurePosixPath(pair[0])))
+        apply_restore_records(_records([written for _path, written in roots]), self.token)
+        note_count = sum(count_notes(note.root) for note in planned) + len(plan.attached)
+        return {"status": "success", "noteCount": note_count, "sourceTag": plan.source_tag}
+
+
+def _attached_file_note(
+    folder: Path, path: PurePosixPath, file_id: str, *, source_tag: str, folder_prefix: str,
+) -> Tuple[str, _Written]:
+    """A file's own note: the file alone (its card shows its name; the maintainer, 2026-11-01:
+    a name line over it said it twice), tagged as a note of its folder. Search finds it by the
+    file's name (search_text: the names of files a note shows)."""
+    tags = [tag for tag in (folder_tag_for(path, folder_prefix), source_tag) if tag != ""]
+    stat = (folder / Path(path)).stat()
+    modified_at = datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc)
+    node = NoteNode(
+        note_id=str(uuid.uuid4()), content_html=plain_text_to_note_html(f"{_EMBED_MARK}[[{file_id}]]"),
+        tags=tuple(tags), anchors=(), children=(),
+    )
+    return str(path), _Written(node=node, created_at=modified_at, updated_at=modified_at)

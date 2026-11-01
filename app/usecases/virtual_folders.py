@@ -94,7 +94,7 @@ def delete_folder_and_notes(
     if not is_folder_tag(folder):
         raise InputRejected(f"{folder} is not a folder.")
     deletion = notes_in_folder(folder)
-    note_count = len(deletion.top_note_ids)
+    note_count = deletion.note_count
     if note_count != expected_note_count:
         raise InputRejected(
             f"{folder} now holds {note_count} notes, not the {expected_note_count} you confirmed. "

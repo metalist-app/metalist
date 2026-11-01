@@ -10,6 +10,7 @@ import { CommandGate } from './mode-manager/services/command-gate-service.js';
 import { buildSessionHeaders } from './session-auth.js';
 import { sanitizeNoteHtmlForStorage } from './note-html-sanitizer.js';
 import { describeApiFailure } from './api-error-diagnostics.js';
+import { inTransferSlot } from './file-transfer-slots.js';
 
 function buildAuthHeaders(includeContentType) {
     return buildSessionHeaders(includeContentType);
@@ -534,24 +535,50 @@ export const NotesAPI = {
     },
 
     // What importing would do (the import wizard's summary), before anything is written.
-    async previewImport(source, folderPath, splitMode, contentFormat) {
+    // An import's choices: { source, folderPath, splitMode, contentFormat, prefixFolder (the
+    // folder everything goes under, as typed; '' for none), addToExisting, and a folder of
+    // files' checklist: excludedGroups (the kinds unticked), excludedFiles and includedFiles
+    // (files ticked against their kind), keepsMarkdownAsFiles; [] and false for the others }.
+    _importBody(choices, caller) {
+        const {
+            source, folderPath, splitMode, contentFormat, prefixFolder, addToExisting, excludedGroups, excludedFiles, includedFiles,
+            keepsMarkdownAsFiles,
+        } = choices;
         if (typeof source !== 'string' || typeof folderPath !== 'string' || folderPath.length === 0
-            || typeof splitMode !== 'string' || typeof contentFormat !== 'string') {
-            throw new Error('NotesAPI.previewImport requires source, folderPath, splitMode and contentFormat');
+            || typeof splitMode !== 'string' || typeof contentFormat !== 'string'
+            || typeof prefixFolder !== 'string' || typeof addToExisting !== 'boolean'
+            || !Array.isArray(excludedGroups) || !Array.isArray(excludedFiles) || !Array.isArray(includedFiles)
+            || typeof keepsMarkdownAsFiles !== 'boolean') {
+            throw new Error(`NotesAPI.${caller} requires every import choice`);
         }
-        return this._apiCall(CONFIG.API.IMPORT.PREVIEW, {
-            method: 'POST', body: JSON.stringify({ source, folderPath, splitMode, contentFormat }),
+        return JSON.stringify({
+            source, folderPath, splitMode, contentFormat, prefixFolder, addToExisting, excludedGroups, excludedFiles, includedFiles,
+            keepsMarkdownAsFiles,
         });
     },
 
-    async importFolder(source, folderPath, splitMode, contentFormat) {
-        if (typeof source !== 'string' || typeof folderPath !== 'string' || folderPath.length === 0
-            || typeof splitMode !== 'string' || typeof contentFormat !== 'string') {
-            throw new Error('NotesAPI.importFolder requires source, folderPath, splitMode and contentFormat');
+    // A folder of files grouped by type for the import's checklist, before anything is copied.
+    async scanImportFolder(folderPath) {
+        if (typeof folderPath !== 'string' || folderPath.length === 0) {
+            throw new Error('NotesAPI.scanImportFolder requires the folder');
         }
-        return this._apiCall(CONFIG.API.IMPORT.FOLDER, {
-            method: 'POST', body: JSON.stringify({ source, folderPath, splitMode, contentFormat }),
-        });
+        return this._apiCall(CONFIG.API.IMPORT.SCAN, { method: 'POST', body: JSON.stringify({ folderPath }) });
+    },
+
+    async previewImport(choices) {
+        return this._apiCall(CONFIG.API.IMPORT.PREVIEW, { method: 'POST', body: this._importBody(choices, 'previewImport') });
+    },
+
+    async importFolder(choices) {
+        return this._apiCall(CONFIG.API.IMPORT.FOLDER, { method: 'POST', body: this._importBody(choices, 'importFolder') });
+    },
+
+    // The folder a typed name makes ({ folder: cleaned, '' for none; exists }).
+    async checkImportPrefixFolder(name) {
+        if (typeof name !== 'string') {
+            throw new Error('NotesAPI.checkImportPrefixFolder requires the typed name');
+        }
+        return this._apiCall(CONFIG.API.IMPORT.PREFIX_FOLDER, { method: 'POST', body: JSON.stringify({ name }) });
     },
 
     async unformatNote(noteId) {
@@ -1436,9 +1463,14 @@ export const FilesAPI = {
             throw new Error('FilesAPI.downloadFile requires fileId string');
         }
 
-        const response = await fetch(CONFIG.API.FILES.DOWNLOAD(fileId), {
-            method: 'GET',
-            headers: buildAuthHeaders(false),
+        // In one of the server's few transfer slots (file-transfer-slots.js), the body read too.
+        const { response, blob } = await inTransferSlot(async () => {
+            const answered = await fetch(CONFIG.API.FILES.DOWNLOAD(fileId), {
+                method: 'GET',
+                headers: buildAuthHeaders(false),
+            });
+            if (!answered.ok) return { response: answered, blob: null };
+            return { response: answered, blob: await answered.blob() };
         });
         if (!response.ok) {
             ErrorHandler.handleApiError(null, response);
@@ -1446,7 +1478,7 @@ export const FilesAPI = {
         }
 
         return {
-            blob: await response.blob(),
+            blob,
             filename: extractFilenameFromContentDisposition(
                 response.headers.get('content-disposition')
             ),

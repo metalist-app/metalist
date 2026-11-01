@@ -153,6 +153,8 @@ export const CONFIG = {
             FOLDER: `${API_BASE}/import/folder`,
             PREVIEW: `${API_BASE}/import/preview`,
             PICK_FOLDER: `${API_BASE}/import/pick-folder`,
+            PREFIX_FOLDER: `${API_BASE}/import/prefix-folder`,
+            SCAN: `${API_BASE}/import/scan`,
         },
         // Virtual folders, an experiment (app/api/routes/virtual_folders.py).
         VIRTUAL_FOLDERS: {

@@ -3,12 +3,12 @@ import { WizardModal } from './wizard-modal.js';
 import { importChoices, importSteps } from './import-wizard-steps.js';
 import { forgetTypedSecrets, newVaultChoices, newVaultSteps } from './new-vault-steps.js';
 
-// The two wizards (PLAN.md, phase 2): Import Notes, and Create Vault with the new vault's setup.
+// The two wizards (PLAN.md, phase 2): Import, and Create Vault with the new vault's setup.
 
 export class ImportWizard extends WizardModal {
     constructor(services) {
         super('importWizard', 'import-wizard', {
-            title: 'Import Notes',
+            title: 'Import',
             steps: importSteps({ withSourceStep: true, withSummaryAndRun: true }),
             commitLabel: 'Import', services,
         });

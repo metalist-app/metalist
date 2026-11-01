@@ -65,8 +65,9 @@ def view(matched: set[str], *, is_filtered: bool) -> ResolvedViewScope:
 
 def test_the_topmost_found_notes_go_with_everything_under_them(note_store: NoteStore) -> None:
     deletion = notes_to_delete(view({"A", "A1", "B1"}, is_filtered=True))
-    assert (deletion.top_note_ids, deletion.note_count, deletion.is_whole_vault) == (["A", "B1"], 4, False)
-    CmdDeleteNotesInView(scope=view({"A", "A1", "B1"}, is_filtered=True), expected_note_count=4, client_id="c", undo_context="u").execute()
+    # Counted as the list counts notes: A1 goes with A, uncounted.
+    assert (deletion.top_note_ids, deletion.note_count, deletion.is_whole_vault) == (["A", "B1"], 2, False)
+    CmdDeleteNotesInView(scope=view({"A", "A1", "B1"}, is_filtered=True), expected_note_count=2, client_id="c", undo_context="u").execute()
     # B stays: it is above a match, not a match.
     assert note_store.get_children(None) == ["B", "C"]
     assert note_store.get_children("B") == []
@@ -74,12 +75,12 @@ def test_the_topmost_found_notes_go_with_everything_under_them(note_store: NoteS
 
 def test_with_nothing_narrowing_the_view_every_note_goes(note_store: NoteStore) -> None:
     deletion = notes_to_delete(view(set(), is_filtered=False))
-    assert (deletion.note_count, deletion.is_whole_vault) == (6, True)
-    CmdDeleteNotesInView(scope=view(set(), is_filtered=False), expected_note_count=6, client_id="c", undo_context="u").execute()
+    assert (deletion.note_count, deletion.is_whole_vault) == (3, True)
+    CmdDeleteNotesInView(scope=view(set(), is_filtered=False), expected_note_count=3, client_id="c", undo_context="u").execute()
     assert note_store.get_children(None) == []
 
 
 def test_a_count_that_changed_since_the_confirmation_deletes_nothing(note_store: NoteStore) -> None:
-    with pytest.raises(InputRejected, match="now holds 6 notes, not the 5 you confirmed"):
-        CmdDeleteNotesInView(scope=view(set(), is_filtered=False), expected_note_count=5, client_id="c", undo_context="u").execute()
+    with pytest.raises(InputRejected, match="now holds 3 notes, not the 2 you confirmed"):
+        CmdDeleteNotesInView(scope=view(set(), is_filtered=False), expected_note_count=2, client_id="c", undo_context="u").execute()
     assert note_store.get_children(None) == ["A", "B", "C"]

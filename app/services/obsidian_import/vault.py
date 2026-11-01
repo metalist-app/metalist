@@ -110,6 +110,20 @@ def read_vault(folder: Path, *, reads_line_break_setting: bool) -> VaultContents
     )
 
 
+def read_text_file(folder: Path, relative: PurePosixPath) -> VaultFile | None:
+    """The text file at relative in folder as a vault's Markdown file is read (a folder of
+    files: folder-import-and-file-previews.md §2), or None when it isn't UTF-8 text."""
+    file_path = folder / Path(relative)
+    text = _utf8_text(file_path.read_bytes())
+    if text is None:
+        return None
+    stat = file_path.stat()
+    return VaultFile(
+        path=relative, text=text, created_at=_file_created_at(stat),
+        modified_at=datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc),
+    )
+
+
 def count_markdown_files(folder: Path) -> int:
     """How many Markdown files read_vault would read in folder (before reading any)."""
     count = 0

@@ -1,30 +1,49 @@
 """Importing from other apps: the developer version (PLAN.md) of the Obsidian import and of
 the plain Markdown folder import (slice 1c), in every environment (the maintainer,
-2026-10-31)."""
+2026-10-31), and a folder of any files (docs/ready-to-build/folder-import-and-file-previews.md)."""
 
 from __future__ import annotations
 
+import os
+import shutil
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Annotated, Literal, TypedDict
+from typing import Annotated, List, Literal, TypedDict
 
 from fastapi import APIRouter, Request
 from pydantic import ConfigDict, Field, with_config
 
 from app.api.request_auth import require_request_auth_token
 from app.api.transactions import transactional_route
+from app.data_directory import resolve_data_directory
+from app.services.input_errors import InputRejected
 from app.services.native_folder_picker import pick_folder
-from app.services.obsidian_import.sources import IMPORT_SOURCES
+from app.services.obsidian_import.file_groups import file_groups, folder_files, is_over_limit
+from app.services.obsidian_import.notes import import_folder_prefix
+from app.services.obsidian_import.sources import FILES, IMPORT_SOURCES
 from app.services.obsidian_import.vault import count_markdown_files
 from app.services.reference_suggestions import build_catalog_in_background
-from app.usecases.import_obsidian_vault import CmdImportObsidianVault, CmdPreviewImport
+from app.upload_limits import MAX_ATTACHMENT_BYTES
+from app.usecases.import_obsidian_vault import (
+    CmdImportFolderOfFiles,
+    CmdImportObsidianVault,
+    CmdPreviewFolderOfFiles,
+    CmdPreviewImport,
+    FileSelection,
+    import_folder_exists,
+)
 
 router = APIRouter(prefix="/import", tags=["import"])
 
 # A folder path as the operating system's folder dialog gives it.
 _MAX_FOLDER_PATH_LENGTH = 4096
 # obsidian_import.sources' IMPORT_SOURCES.
-ImportSourceKey = Literal["obsidian", "markdown"]
+ImportSourceKey = Literal["obsidian", "markdown", "files"]
+# obsidian_import.file_groups' FILE_GROUP_KINDS: the checklist's rows a folder of files leaves out.
+FileGroupKey = Literal[
+    "hidden", "dependencies", "build", "text", "images", "pdf", "documents", "spreadsheets", "presentations",
+    "audio", "video", "archives", "code", "other",
+]
 
 
 @with_config(ConfigDict(strict=True))
@@ -39,17 +58,71 @@ class ImportFolderRequest(TypedDict):
     # obsidian_import.tree's SPLIT_MODES and CONTENT_FORMATS (import-export-launch.md §2.2).
     splitMode: Literal["none", "headings-and-lists", "paragraphs"]
     contentFormat: Literal["rich", "markdown"]
+    # The folder everything goes under, as typed ('' for none), and whether to add to it when
+    # it exists already (docs/ready-to-build/import-prefix-folder.md).
+    prefixFolder: Annotated[str, Field(max_length=_MAX_FOLDER_PATH_LENGTH)]
+    addToExisting: bool
+    # A folder of files: the kinds of file unticked in the checklist, and the files ticked
+    # against their kind (by path in the folder): left out of a ticked kind, brought in from
+    # an unticked one. All empty for the other sources.
+    excludedGroups: List[FileGroupKey]
+    excludedFiles: List[Annotated[str, Field(min_length=1, max_length=_MAX_FOLDER_PATH_LENGTH)]]
+    includedFiles: List[Annotated[str, Field(min_length=1, max_length=_MAX_FOLDER_PATH_LENGTH)]]
+    # A folder of files: its Markdown files kept as files instead of turned into notes.
+    keepsMarkdownAsFiles: bool
+
+
+@with_config(ConfigDict(strict=True))
+class ScanImportFolderRequest(TypedDict):
+    folderPath: Annotated[str, Field(min_length=1, max_length=_MAX_FOLDER_PATH_LENGTH)]
+
+
+@with_config(ConfigDict(strict=True))
+class ImportPrefixFolderRequest(TypedDict):
+    name: Annotated[str, Field(max_length=_MAX_FOLDER_PATH_LENGTH)]
 
 
 @router.post("/pick-folder")
 @transactional_route
 def pick_import_folder(request: Request, body: PickImportFolderRequest) -> dict[str, object]:
-    """The folder picked and how many Markdown files it holds."""
+    """The folder picked and how many files the source reads in it (Markdown files for a
+    vault or a Markdown folder; every file for a folder of files)."""
     require_request_auth_token(request)
     folder_path = pick_folder(prompt=IMPORT_SOURCES[body["source"]].folder_prompt)
     if folder_path is None:
-        return {"selected": False, "folderPath": "", "markdownFileCount": 0}
-    return {"selected": True, "folderPath": folder_path, "markdownFileCount": count_markdown_files(Path(folder_path))}
+        return {"selected": False, "folderPath": "", "fileCount": 0}
+    if body["source"] == FILES.key:
+        return {"selected": True, "folderPath": folder_path, "fileCount": len(folder_files(Path(folder_path)))}
+    return {"selected": True, "folderPath": folder_path, "fileCount": count_markdown_files(Path(folder_path))}
+
+
+@router.post("/scan")
+@transactional_route
+def scan_import_folder(request: Request, body: ScanImportFolderRequest) -> dict[str, object]:
+    """A folder of files grouped by type for the checklist, before anything is copied
+    (folder-import-and-file-previews.md §3): each group's files and size, the largest first,
+    which start unticked, and the space left where MetaList keeps its files."""
+    require_request_auth_token(request)
+    folder = Path(body["folderPath"])
+    if not folder.is_absolute() or not folder.is_dir():
+        raise InputRejected(f"There is no folder at {folder}. Choose the folder again.")
+    groups = file_groups(folder_files(folder))
+    return {
+        "groups": [
+            {
+                "key": group.kind.key, "label": group.kind.label, "isSkippedByDefault": group.kind.is_skipped_by_default,
+                "fileCount": group.file_count, "bytes": group.total_bytes, "importableBytes": group.importable_bytes,
+                "overLimitCount": group.over_limit_count,
+                # Its files, the largest first: [path in the folder, size, over the limit].
+                "files": [
+                    [str(folder_file.path), folder_file.size, is_over_limit(folder_file)] for folder_file in group.files
+                ],
+            }
+            for group in groups
+        ],
+        "freeBytes": shutil.disk_usage(resolve_data_directory(environ=os.environ)).free,
+        "maxFileBytes": MAX_ATTACHMENT_BYTES,
+    }
 
 
 @router.post("/preview")
@@ -57,20 +130,63 @@ def pick_import_folder(request: Request, body: PickImportFolderRequest) -> dict[
 def preview_import(request: Request, body: ImportFolderRequest) -> dict[str, object]:
     """What importing the folder would do, before anything is written (the wizard's summary)."""
     require_request_auth_token(request)
+    if body["source"] == FILES.key:
+        return CmdPreviewFolderOfFiles(
+            folder_path=body["folderPath"], selection=_file_selection(body), split_mode=body["splitMode"],
+            content_format=body["contentFormat"], folder_prefix=body["prefixFolder"], imported_at=datetime.now(timezone.utc),
+        ).execute()
+    _require_no_excluded_groups(body)
     return CmdPreviewImport(
         source=body["source"], folder_path=body["folderPath"], split_mode=body["splitMode"],
-        content_format=body["contentFormat"], imported_at=datetime.now(timezone.utc),
+        content_format=body["contentFormat"], folder_prefix=body["prefixFolder"], imported_at=datetime.now(timezone.utc),
     ).execute()
+
+
+def _file_selection(body: ImportFolderRequest) -> FileSelection:
+    return FileSelection(
+        excluded_groups=tuple(body["excludedGroups"]), excluded_files=tuple(body["excludedFiles"]),
+        included_files=tuple(body["includedFiles"]), keeps_markdown_as_files=body["keepsMarkdownAsFiles"],
+    )
+
+
+def _require_no_excluded_groups(body: ImportFolderRequest) -> None:
+    # Only a folder of files has the checklist.
+    if body["excludedGroups"] or body["excludedFiles"] or body["includedFiles"] or body["keepsMarkdownAsFiles"]:
+        raise InputRejected("Only a folder of files leaves kinds of file out or keeps Markdown files as files.")
+
+
+@router.post("/prefix-folder")
+@transactional_route
+def check_import_prefix_folder(request: Request, body: ImportPrefixFolderRequest) -> dict[str, object]:
+    """The folder a typed name makes (cleaned as folder names are; '' for none), whether it
+    exists already, and what is wrong with the name ('' when nothing): the import's folder
+    step shows them as the name is typed, so a name it can't use is said there, not as an
+    error after each keystroke."""
+    require_request_auth_token(request)
+    try:
+        folder = import_folder_prefix(body["name"])
+    except InputRejected as rejected:
+        return {"folder": "", "exists": False, "problem": str(rejected)}
+    return {"folder": folder, "exists": import_folder_exists(folder), "problem": ""}
 
 
 @router.post("/folder")
 @transactional_route
 def import_folder(request: Request, body: ImportFolderRequest) -> dict[str, object]:
     token = require_request_auth_token(request)
-    result = CmdImportObsidianVault(
-        source=body["source"], folder_path=body["folderPath"], split_mode=body["splitMode"],
-        content_format=body["contentFormat"], token=token, imported_at=datetime.now(timezone.utc),
-    ).execute()
+    if body["source"] == FILES.key:
+        result = CmdImportFolderOfFiles(
+            folder_path=body["folderPath"], selection=_file_selection(body), split_mode=body["splitMode"],
+            content_format=body["contentFormat"], folder_prefix=body["prefixFolder"], add_to_existing=body["addToExisting"],
+            token=token, imported_at=datetime.now(timezone.utc),
+        ).execute()
+    else:
+        _require_no_excluded_groups(body)
+        result = CmdImportObsidianVault(
+            source=body["source"], folder_path=body["folderPath"], split_mode=body["splitMode"],
+            content_format=body["contentFormat"], folder_prefix=body["prefixFolder"], add_to_existing=body["addToExisting"],
+            token=token, imported_at=datetime.now(timezone.utc),
+        ).execute()
     # The imported notes join the `[[` catalog now, not at the first `[[`.
     build_catalog_in_background()
     return result

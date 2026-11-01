@@ -51,7 +51,7 @@ Filed from `docs/inbox/2026-10-27-import-export-launch.md`.
 - **The main search can't find a folder's notes by prefix** (§9 item 9): it matches tags exactly, "never a shorter prefix" (`docs/ui/search-semantics.md`, Tag Terms), so `Projects` doesn't find `Projects/Client-A`. Only the tag bar's suggestions and the ontology editor's tag search match prefixes, and both are for picking one tag.
 - **MetaList has task tags:** `@todo` and `@done` are built-in meta tags (`tag-syntax-service.js`). §9 item 3's "until MetaList has tasks" doesn't hold; Logseq's `TODO`/`DONE` could map to them.
 - **Tag values:** MetaList writes them as `name=value` or `tag:name=value`, with no spaces in a value, and a super tag once per note (`docs/ui/tag-bar.md`, Super Tags). `key:: value` lines and frontmatter keys with spaces in their values come in with dashes, which the report should list as approximated.
-- **Notes have no title field:** a note's title is its first line. "The title comes from the file name" means the importer writes the file name as the note's first line, unless the file already starts with it as a heading.
+- **Notes have no title field:** a note's title is its first line. "The title comes from the file name" means the importer writes the file name as the note's first line, unless the file already starts with it as a heading. **Built as a heading (2026-11-01, the maintainer):** without splitting, the name goes in as a top-level heading (`# Name`) over the file's text; when the file is split, its top note holds just the name and gets `@heading`, so it draws as the heading over its children. A file that already starts with its name as a heading keeps it as written; one that starts with a different heading gets its name above that heading.
 
 ---
 

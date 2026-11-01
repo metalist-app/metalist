@@ -12032,6 +12032,33 @@ suggestions as pills. */
     color: var(--modal-text-subtle);
 }
 
+/* The card opens the folder dialog, as Choose Folder… does. */
+.wizard-folder-chosen[role="button"] {
+    cursor: pointer;
+}
+
+.wizard-folder-chosen.is-empty:hover {
+    border-color: var(--modal-border-strong);
+    background: var(--modal-hover);
+}
+
+.wizard-folder-chosen:focus-visible {
+    outline: 2px solid var(--modal-focus-ring);
+    outline-offset: 2px;
+}
+
+/* A folder chosen: as a chosen card (.wizard-choice.is-chosen), its check at the top right. */
+.wizard-folder-chosen.is-chosen {
+    position: relative;
+    padding-right: 52px;
+    border-color: var(--modal-accent);
+    background: var(--modal-selected);
+}
+
+.wizard-folder-chosen.is-chosen .wizard-choice-check {
+    display: block;
+}
+
 .wizard-folder-name {
     font-size: 17px;
     font-weight: 650;
@@ -12052,6 +12079,16 @@ suggestions as pills. */
 
 .wizard-split .wizard-choices {
     grid-template-columns: 1fr;
+}
+
+/* The Markdown screen: three sets of choices, wider than the sample, so two-across cards
+   keep to two lines and the screen to its height. */
+.wizard-split.is-choices-wide {
+    grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+}
+
+.wizard-split .wizard-choices.is-compact.is-pair {
+    grid-template-columns: 1fr 1fr;
 }
 
 .wizard-sample {
@@ -12088,9 +12125,85 @@ suggestions as pills. */
     font-weight: 700;
 }
 
-.wizard-sample-unit.is-item::before {
-    content: "• ";
-    color: var(--modal-text-subtle);
+/* Markdown kept as files: the sample is a file's card, its kind and its name. */
+.wizard-sample-file {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 13.5px;
+}
+
+.wizard-sample-badge {
+    padding: 1px 8px;
+    border-radius: 999px;
+    background: var(--modal-border);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    color: var(--modal-text-muted);
+}
+
+.wizard-sample-file-name {
+    text-decoration: underline;
+}
+
+/* Markdown: a heading is a line like the others, its # showing. */
+.wizard-write-sample.is-markdown .wizard-sample-unit.is-heading {
+    font-weight: 400;
+}
+
+/* Two sets of choices on one screen (Split each file, Write as): small cards, the title and
+   its badge on one line, the text under them. */
+.wizard-choices.is-compact {
+    grid-template-columns: 1fr;
+    gap: 8px;
+}
+
+/* Two choices side by side: the screen keeps its height. */
+.wizard-choices.is-compact.is-pair {
+    grid-template-columns: 1fr 1fr;
+}
+
+.modal.wizard-modal .modal-content .wizard-choices.is-compact button.wizard-choice {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 2px 8px;
+    padding: 10px 44px 10px 14px;
+    border-radius: 10px;
+}
+
+.wizard-choices.is-compact .wizard-choice-title {
+    font-size: 14.5px;
+}
+
+.wizard-choices.is-compact .wizard-choice-text {
+    flex-basis: 100%;
+    font-size: 13px;
+}
+
+.wizard-choices.is-compact .wizard-choice-check {
+    top: 50%;
+    right: 12px;
+    width: 20px;
+    height: 20px;
+    margin-top: -10px;
+    line-height: 20px;
+}
+
+.modal.wizard-modal .wizard h3.wizard-choice-group {
+    margin: 0 0 8px;
+    font-size: 13px;
+    font-weight: 650;
+    letter-spacing: 0.02em;
+    color: var(--modal-text-muted);
+}
+
+/* A rule between the sets of choices (the maintainer, 2026-11-01). */
+.modal.wizard-modal .wizard h3.wizard-choice-group:not(:first-child) {
+    margin-top: 14px;
+    padding-top: 12px;
+    border-top: 1px solid var(--modal-border);
 }
 
 .wizard-caption {
@@ -12174,6 +12287,196 @@ body.pref-animated-transitions .wizard-toggled {
     margin: 10px 0 0;
     font-size: 13px;
     color: var(--modal-text-subtle);
+}
+
+/* A folder of files' checklist (folder-import-and-file-previews.md §3): a row per kind of
+   file, a neutral bar each, and a total under them. Red only for going over a limit. */
+.wizard-kinds {
+    display: grid;
+    gap: 2px;
+    max-width: 640px;
+}
+
+.wizard-kind {
+    display: grid;
+    grid-template-columns: 27px 22px minmax(0, 1fr) 90px 72px 140px;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 8px;
+    border-radius: 6px;
+    cursor: pointer;
+}
+
+.wizard-kind:hover {
+    background: var(--modal-selected);
+}
+
+.modal-content .wizard-kind input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+    margin: 0;
+}
+
+.wizard-kind-label {
+    min-width: 0;
+    cursor: pointer;
+}
+
+/* A kind's arrow: opens the list of its files. The same arrow as a note's
+   (.note-collapse-toggle): its glyphs, size and colours, not a dialog button (named with its
+   row, to outrank the dialog's own button and hover rules). */
+.modal.wizard-modal .modal-content .wizard-kind button.wizard-kind-arrow,
+.modal.wizard-modal .modal-content .wizard-kind button.wizard-kind-arrow:hover,
+.modal.wizard-modal .modal-content .wizard-kind button.wizard-kind-arrow:focus,
+.modal.wizard-modal .modal-content .wizard-kind button.wizard-kind-arrow:active {
+    width: 27px;
+    height: 27px;
+    padding: 0;
+    border: none;
+    border-radius: 0;
+    background: none;
+    box-shadow: none;
+    color: rgba(0, 0, 0, 0.35);
+    font-size: 23px;
+    line-height: 27px;
+    text-align: center;
+    cursor: pointer;
+}
+
+.modal.wizard-modal .modal-content .wizard-kind button.wizard-kind-arrow:hover {
+    color: #000000;
+}
+
+html[data-theme="dark"] .modal.wizard-modal .modal-content .wizard-kind button.wizard-kind-arrow {
+    color: rgba(235, 235, 235, 0.4);
+}
+
+html[data-theme="dark"] .modal.wizard-modal .modal-content .wizard-kind button.wizard-kind-arrow:hover {
+    color: #ffffff;
+}
+
+/* Reached by Tab: a ring, as a note's arrow has. */
+.modal.wizard-modal .modal-content .wizard-kind button.wizard-kind-arrow:focus-visible {
+    outline: 2px solid var(--modal-focus-ring);
+    outline-offset: 1px;
+    border-radius: 3px;
+}
+
+.wizard-kind-files {
+    max-height: 260px;
+    overflow-y: auto;
+    /* Indented under its kind: the files' boxes line up with the kind's name (its row's
+       padding, arrow, box and the gaps between them). */
+    margin: 2px 0 8px 77px;
+    padding: 0 8px 0 0;
+    list-style: none;
+}
+
+.wizard-kind-file {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 72px;
+    gap: 10px;
+    padding: 2px 0;
+    font-size: 13px;
+}
+
+.wizard-kind-file-path {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    cursor: pointer;
+}
+
+.modal-content .wizard-kind-file-path input[type="checkbox"] {
+    flex: none;
+    width: 14px;
+    height: 14px;
+    margin: 0;
+}
+
+.wizard-kind-file-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.wizard-kind-file-folder {
+    color: var(--modal-text-subtle);
+}
+
+.wizard-kind-file .wizard-kind-over {
+    display: inline;
+    margin-left: 8px;
+}
+
+.wizard-kind-over {
+    display: block;
+    font-size: 12px;
+    color: var(--modal-danger);
+}
+
+.wizard-kind-count,
+.wizard-kind-size {
+    font-size: 13px;
+    color: var(--modal-text-subtle);
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+.wizard-kind-bar {
+    display: flex;
+    height: 8px;
+    border-radius: 4px;
+    background: var(--modal-border);
+    overflow: hidden;
+}
+
+/* Green: will be imported; grey: won't be (the maintainer, 2026-11-01). */
+.wizard-kind-bar > span {
+    display: block;
+    flex: none;
+    height: 100%;
+}
+
+.wizard-kind-bar > .is-imported {
+    background: var(--modal-success);
+}
+
+.wizard-kind-bar > .is-left-out {
+    background: var(--modal-text-subtle);
+    opacity: 0.45;
+}
+
+.wizard-total {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 140px;
+    align-items: center;
+    gap: 10px;
+    max-width: 640px;
+    margin-top: 14px;
+    padding: 10px 8px 0;
+    border-top: 1px solid var(--modal-border);
+    font-size: 13px;
+}
+
+.wizard-total-text.is-over {
+    color: var(--modal-danger);
+}
+
+.wizard-kind-bar.is-over > .is-imported {
+    background: var(--modal-danger);
+}
+
+/* The folder the import goes into, under the folder picked (one screen). */
+.wizard-into-field {
+    margin-top: 28px;
+}
+
+/* A typed name the step can't use (the import's folder): said as the wizard's warnings are. */
+.wizard-note.is-problem {
+    color: var(--modal-warning);
 }
 
 .modal.wizard-modal .wizard h3.wizard-subtitle {

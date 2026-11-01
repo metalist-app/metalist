@@ -26,6 +26,6 @@ test('the import wizard starts with no source chosen, and asks for one', async (
     const choices = wizard.initialChoices();
     assert.equal(choices.source, '');
     const sourceStep = wizard._wizardSteps.find((step) => step.key === 'source');
-    assert.equal(sourceStep.missing(choices, null), 'Choose where your notes are.');
+    assert.equal(sourceStep.missing(choices, null), 'Choose what you are importing.');
     assert.equal(sourceStep.missing({ ...choices, source: 'markdown' }, null), '');
 });

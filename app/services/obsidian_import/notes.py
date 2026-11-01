@@ -16,6 +16,7 @@ from typing import Dict, List, Tuple
 import yaml
 
 from app.services.exception_capture import CapturedExceptionContext
+from app.services.input_errors import InputRejected
 from app.services.obsidian_import.links import LinkReference, tokenize_links
 from app.services.obsidian_import.tree import (
     BLOCK_MARKER_FORMAT,
@@ -52,6 +53,10 @@ _TAG_FORBIDDEN_STARTS = frozenset("-+/\"'()")
 _WHITESPACE_RE = re.compile(r"\s+")
 _TAG_WORD_JOINER = "-"
 
+# The file's name over a whole file's text, as a top-level heading.
+_TITLE_HEADING_MARK = "# "
+# A split file's top note, holding just its name: drawn as a heading.
+_HEADING_TAG = "@heading"
 _ATX_HEADING_RE = re.compile(r"^ {0,3}#{1,6}\s+(?P<text>.*?)(?:\s+#+)?\s*$")
 _FENCE_RE = re.compile(r"^ {0,3}(?:```|~~~)")
 _MATH_BLOCK_FENCE = "$$"
@@ -107,14 +112,16 @@ class PlannedNote:
 
 def plan_file_note(
     vault_file: VaultFile, *, uses_strict_line_breaks: bool, source_tag: str, split_mode: str, content_format: str,
+    folder_prefix: str,
 ) -> PlannedNote:
-    """The notes vault_file becomes (PLAN.md, slices 1 and 4)."""
+    """The notes vault_file becomes (PLAN.md, slices 1 and 4), its folder tag under folder_prefix
+    (import_folder_prefix; '' for none)."""
     text = vault_file.text.replace("\r\n", "\n").replace("\r", "\n")
     frontmatter, body, frontmatter_problem = _read_frontmatter(text)
     renamed_tags: List[Tuple[str, str]] = []
     dropped_tags: List[str] = []
     tags: List[str] = []
-    folder_tag = _folder_tag(vault_file.path, renamed_tags=renamed_tags, dropped_tags=dropped_tags)
+    folder_tag = _folder_tag(vault_file.path, folder_prefix, renamed_tags=renamed_tags, dropped_tags=dropped_tags)
     if folder_tag != "":
         tags.append(folder_tag)
     for name in _frontmatter_tag_names(frontmatter):
@@ -129,6 +136,14 @@ def plan_file_note(
     links: List[LinkReference] = []
     lines = tokenize_links(lines, links)
     title_line, rest = _title_and_body(_title(vault_file), lines)
+    # The file's name is its note's title (the maintainer, 2026-11-01): kept whole, it goes on
+    # top as a heading; split, the top note holding it is a heading note. A file whose first
+    # heading is its name has its title already.
+    title_is_heading = _ATX_HEADING_RE.match(title_line) is not None
+    if not title_is_heading and split_mode == SPLIT_NONE:
+        title_line = f"{_TITLE_HEADING_MARK}{title_line}"
+    if not title_is_heading and split_mode != SPLIT_NONE:
+        tags.append(_HEADING_TAG)
     root = _file_root(title_line, rest, split_mode=split_mode, content_format=content_format)
     root = replace(root, tags=tuple(_unique_tags([*tags, *root.tags, source_tag])))
     times_problem = ""
@@ -157,10 +172,31 @@ def plan_file_note(
     )
 
 
-def folder_tag_for(path: PurePosixPath) -> str:
+def folder_tag_for(path: PurePosixPath, folder_prefix: str) -> str:
     """The tag of the folder holding path, for a file that is no note (its renames are not
     reported: the notes in the same folder report them)."""
-    return _folder_tag(path, renamed_tags=[], dropped_tags=[])
+    return _folder_tag(path, folder_prefix, renamed_tags=[], dropped_tags=[])
+
+
+# A typed folder path may use either separator.
+_TYPED_FOLDER_SEPARATORS_RE = re.compile(r"[\\/]+")
+
+
+def import_folder_prefix(name: str) -> str:
+    """The folder an import goes into (docs/ready-to-build/import-prefix-folder.md), from the
+    name the user typed: each part of a path made a tag part as a folder's name is (spaces as
+    dashes), ending in `/`; '' for a blank name (no prefix). A name with nothing a tag can
+    hold is refused."""
+    parts = [_tag_text(part) for part in _TYPED_FOLDER_SEPARATORS_RE.split(name)]
+    kept = [part for part in parts if part != ""]
+    if not kept:
+        if name.strip() != "":
+            raise InputRejected(f"{name.strip()} has nothing a folder name can use. Choose another name.")
+        return ""
+    prefix = _FOLDER_SEPARATOR.join(kept) + _FOLDER_SEPARATOR
+    if not is_valid_tag_token(prefix):
+        raise InputRejected(f"{name.strip()} can't be a folder name. Choose another name.")
+    return prefix
 
 
 def source_tag_for(imported_at: datetime, source: str) -> str:
@@ -240,20 +276,24 @@ def _frontmatter_time(frontmatter: Dict[str, object], key: str, file_time: datet
     return file_time, f" {key}: {value!r} is not a date, so the file's own time was used."
 
 
-def _folder_tag(path: PurePosixPath, *, renamed_tags: List[Tuple[str, str]], dropped_tags: List[str]) -> str:
+def _folder_tag(
+    path: PurePosixPath, folder_prefix: str, *, renamed_tags: List[Tuple[str, str]], dropped_tags: List[str],
+) -> str:
     """The folder path as one tag ending in `/`, which makes it a folder
     (`Projects/Client A/` → `Projects/Client-A/`: docs/ready-to-build/virtual-folders.md §1;
-    nested tags stay `a/b`); "" at the vault's top. Each folder's name is made a tag part as
-    a tag is."""
+    nested tags stay `a/b`), under folder_prefix (import_folder_prefix); at the vault's top,
+    folder_prefix itself ("" without one). Each folder's name is made a tag part as a tag is."""
+    assert folder_prefix == "" or folder_prefix.endswith(_FOLDER_SEPARATOR), folder_prefix
     folders = path.parent.parts
     if len(folders) == 0:
-        return ""
+        return folder_prefix
     original = _FOLDER_SEPARATOR.join(folders) + _FOLDER_SEPARATOR
     parts = [_tag_text(folder) for folder in folders]
     tag = _FOLDER_SEPARATOR.join(part for part in parts if part != "")
     if tag != "":
         tag += _FOLDER_SEPARATOR
-    return _checked_tag(original, tag, renamed_tags=renamed_tags, dropped_tags=dropped_tags)
+    checked = _checked_tag(original, tag, renamed_tags=renamed_tags, dropped_tags=dropped_tags)
+    return folder_prefix + checked
 
 
 def _made_tag(name: str, *, renamed_tags: List[Tuple[str, str]], dropped_tags: List[str]) -> str:

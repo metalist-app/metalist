@@ -575,7 +575,7 @@ export function buildCommandPaletteEndpoints(deps) {
         {
             id: 'form.import_wizard',
             kind: 'form',
-            label: 'Import Notes…',
+            label: 'Import…',
             execute: async () => openImportWizard(),
         },
         {

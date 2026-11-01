@@ -1,4 +1,5 @@
 import { escapeHtml } from '../html-escape.js';
+import { formatByteSize } from '../byte-sizes.js';
 import { NotesAPI } from '../api-client.js';
 import { CommandGate } from '../mode-manager/services/command-gate-service.js';
 
@@ -16,7 +17,9 @@ const NEXT = 'Next';
 const ALWAYS = () => true;
 const NOTHING_TO_WIRE = () => {};
 export const NOTHING_MISSING = () => '';
-const CHOICE_LAYOUTS = ['grid', 'stacked'];
+const CHOICE_LAYOUTS = ['grid', 'stacked', 'compact', 'pair'];
+// A layout's classes: a pair is compact cards two across.
+const LAYOUT_CLASSES = { grid: 'is-grid', stacked: 'is-stacked', compact: 'is-compact', pair: 'is-compact is-pair' };
 
 /**
  * A step's yes or no, at its top (the maintainer, 2026-10-31: unticking it is the obvious
@@ -49,6 +52,10 @@ export function wireToggles(screen, wizard) {
  * differently. The import's preview and the new vault's.
  */
 export function importPreviewHtml(preview) {
+    let into = '';
+    if (preview.prefixFolder !== '') {
+        into = `<p class="wizard-note">Everything goes into the folder <code>${escapeHtml(preview.prefixFolder)}</code>.</p>`;
+    }
     const counts = [
         [preview.fileCount, `files will become ${preview.noteCount} notes (${preview.rootNoteCount} root notes)`],
         [preview.attachmentCount, 'attachments will be copied into MetaList'],
@@ -66,6 +73,9 @@ export function importPreviewHtml(preview) {
         [preview.unreadableFileCount, 'files', 'isn\'t UTF-8 text and will be left out.', 'aren\'t UTF-8 text and will be left out.'],
         [preview.unusedAttachmentCount, 'attachments', 'isn\'t linked from any note and will be left out.',
             'aren\'t linked from any note and will be left out.'],
+        // A folder of files: files over the per-file limit (folder-import-and-file-previews.md §3).
+        [preview.overLimitCount, 'files', 'is over the size limit for a file and will be left out.',
+            'are over the size limit for a file and will be left out.'],
     ].filter(([count]) => count > 0);
     let differencesHtml = '';
     if (differences.length > 0) {
@@ -75,7 +85,7 @@ export function importPreviewHtml(preview) {
                     <li><strong>${count} of your ${what}</strong> ${count === 1 ? restForOne : restForSeveral}</li>`).join('')}
                 </ul>`;
     }
-    return `
+    return `${into}
                 <div class="wizard-stats">${counts.map(([count, label]) => `
                     <span class="wizard-stat">${count}</span><span class="wizard-stat-label">${escapeHtml(label)}</span>`).join('')}
                 </div>${differencesHtml}`;
@@ -83,8 +93,7 @@ export function importPreviewHtml(preview) {
 
 /** The server's preview for the choices so far, drawn into the summary (summarySelector). */
 export async function fillImportPreview(screen, wizard, summarySelector) {
-    const { source, folderPath, split, content } = wizard.choices;
-    const preview = await NotesAPI.previewImport(source, folderPath, split, content);
+    const preview = await NotesAPI.previewImport(importRequest(wizard.choices));
     const summary = screen.querySelector(summarySelector);
     if (summary === null || !summary.isConnected) return;
     summary.innerHTML = importPreviewHtml(preview);
@@ -133,17 +142,41 @@ function progressReporter(screen) {
  * the import wizard and by the new vault wizard's setup.
  */
 export async function runImport(wizard, progress) {
-    const { source, folderPath, split, content } = wizard.choices;
     progress.working('Importing your files…');
     let result = null;
     await CommandGate.run('importWizard.import', async () => {
-        result = await NotesAPI.importFolder(source, folderPath, split, content);
+        result = await NotesAPI.importFolder(importRequest(wizard.choices));
         if (!Number.isInteger(result.noteCount) || typeof result.sourceTag !== 'string') {
             throw new Error('The import answered without its notes');
         }
         // Behind the wizard, a new search context of the imported notes: there when it closes.
         await wizard.services.afterImport(result.sourceTag);
     });
+}
+
+// The wizard's choices as the import and its preview take them.
+function importRequest(choices) {
+    return {
+        source: choices.source, folderPath: choices.folderPath,
+        splitMode: turnsMarkdownIntoNotes(choices) ? choices.split : WHOLE_FILES, contentFormat: choices.content,
+        prefixFolder: choices.prefixText, addToExisting: choices.addToExisting,
+        ...fileSelection(choices),
+    };
+}
+
+// A folder of files' checklist as the import takes it: the kinds unticked, and the files
+// ticked against their kind (left out of a ticked kind, brought in from an unticked one).
+function fileSelection(choices) {
+    if (choices.source !== FILES_SOURCE) {
+        return { excludedGroups: [], excludedFiles: [], includedFiles: [], keepsMarkdownAsFiles: false };
+    }
+    const groupOfPath = new Map(choices.scan.groups.flatMap((group) => group.files.map(([path]) => [path, group.key])));
+    const excludedFiles = choices.fileExceptions.filter((path) => isTicked(choices, groupOfPath.get(path)));
+    const includedFiles = choices.fileExceptions.filter((path) => !isTicked(choices, groupOfPath.get(path)));
+    return {
+        excludedGroups: choices.excludedGroups, excludedFiles, includedFiles,
+        keepsMarkdownAsFiles: choices.markdownAs === MARKDOWN_AS_FILES,
+    };
 }
 
 /** A step with every field given (wizard-modal.js says what each does). */
@@ -156,13 +189,15 @@ export function makeStep(fields) {
     return Object.freeze(fields);
 }
 
-// The choices as cards: side by side ('grid'), or one under another ('stacked': a list that
-// grows, as the import's sources will). A card's badge and text show when it has them.
+// The choices as cards: side by side ('grid'), one under another ('stacked': a list that
+// grows, as the import's sources will), or small and one under another ('compact': two sets
+// of choices on one screen), or two small cards side by side ('pair'). A card's badge and
+// text show when it has them.
 export function choiceCardsHtml(key, chosen, cards, layout) {
     if (!CHOICE_LAYOUTS.includes(layout)) {
         throw new Error(`choiceCardsHtml requires a layout: ${CHOICE_LAYOUTS.join(' or ')}`);
     }
-    return `<div class="wizard-choices is-${layout}">${cards.map((card) => `
+    return `<div class="wizard-choices ${LAYOUT_CLASSES[layout]}">${cards.map((card) => `
         <button type="button" class="wizard-choice${card.value === chosen ? ' is-chosen' : ''}"
             data-choice-key="${escapeHtml(key)}" data-choice-value="${escapeHtml(card.value)}" aria-pressed="${card.value === chosen}">
             <span class="wizard-choice-check" aria-hidden="true">✓</span>
@@ -172,21 +207,54 @@ export function choiceCardsHtml(key, chosen, cards, layout) {
         </button>`).join('')}</div>`;
 }
 
-// The sources, by name alone (the maintainer, 2026-11-01): more will come.
+// The sources, by name alone (the maintainer, 2026-11-01): more will come. The wizard says
+// nothing about a source until it is picked (the maintainer, 2026-11-01: an import may be any
+// folder); then the folder step says what that source brings in (folderIntro) and counts
+// what it reads (fileWord).
 const SOURCES = [
-    { value: 'obsidian', title: 'Obsidian vault', badge: '', text: '' },
-    { value: 'markdown', title: 'Markdown folder', badge: '', text: '' },
+    { value: 'obsidian', title: 'Obsidian vault', badge: '', text: '',
+        folderIntro: 'Choose the vault\'s folder. Each Markdown file in it becomes a note, with its folder, its tags, its links and the files it shows.',
+        fileWord: 'Markdown files' },
+    { value: 'markdown', title: 'Markdown folder', badge: '', text: '',
+        folderIntro: 'Choose the folder. Each Markdown file in it becomes a note, tagged with the folder it was in.',
+        fileWord: 'Markdown files' },
+    { value: 'files', title: 'Any folder', badge: '', text: '',
+        folderIntro: 'Choose any folder. Each file in it becomes a note: Markdown and text files with their text, every other file as its card or picture.',
+        fileWord: 'files' },
 ];
+// A folder of any files (folder-import-and-file-previews.md): its checklist, and Split and
+// Write as only for the text files it brings in.
+const FILES_SOURCE = 'files';
+const TEXT_GROUP = 'text';
+// A file as one note: what text files are when no Markdown file asks how to split.
+const WHOLE_FILES = 'none';
 
-// The built-in sample the split modes are shown on, as units of text with their kind.
+function sourceOf(choices) {
+    const source = SOURCES.find((candidate) => candidate.value === choices.source);
+    if (source === undefined) {
+        throw new Error(`Unknown import source ${choices.source}`);
+    }
+    return source;
+}
+
+// One note of the sample as it shows while edited: Markdown's marks are there in both
+// formats, hidden in rich text, so switching slides them in or out (main.css).
+function mark(text) {
+    return `<span class="wizard-md-mark">${escapeHtml(text)}</span>`;
+}
+
+const BULLET = '<span class="wizard-rich-bullet">•&nbsp;</span>';
+
+// The built-in sample both Markdown choices are shown on (the maintainer, 2026-11-01: one
+// screen, the sample following both): units of text with their kind, written in Markdown.
 const SAMPLE = [
-    { id: 'title', kind: 'heading', text: 'Trip to Lisbon' },
-    { id: 'p1', kind: 'paragraph', text: 'Three days, mostly on foot.' },
-    { id: 'p2', kind: 'paragraph', text: 'Book the ferry a day ahead.' },
-    { id: 'l1', kind: 'item', text: 'Pastéis de Belém' },
-    { id: 'l2', kind: 'item', text: 'Tram 28' },
-    { id: 'h2', kind: 'heading', text: 'Day 1' },
-    { id: 'p3', kind: 'paragraph', text: 'Alfama in the morning, before the heat.' },
+    { id: 'title', kind: 'heading', html: `${mark('# ')}Trip to Lisbon` },
+    { id: 'p1', kind: 'paragraph', html: `Three days, mostly ${mark('*')}<span class="wizard-md-em">on foot</span>${mark('*')}.` },
+    { id: 'p2', kind: 'paragraph', html: `Book the ${mark('**')}<span class="wizard-md-strong">ferry</span>${mark('**')} a day ahead.` },
+    { id: 'l1', kind: 'item', html: `${BULLET}${mark('- ')}Pastéis de Belém` },
+    { id: 'l2', kind: 'item', html: `${BULLET}${mark('- ')}Tram 28` },
+    { id: 'h2', kind: 'heading', html: `${mark('## ')}Day 1` },
+    { id: 'p3', kind: 'paragraph', html: `Ride ${mark('[')}<span class="wizard-md-link">the yellow tram</span>${mark('](https://carris.pt)')} at dawn.` },
 ];
 
 // Each mode's notes: [unit ids in the note, children].
@@ -203,41 +271,75 @@ const SPLIT_TREES = {
     ]]],
 };
 
+// The choices, short (the maintainer, 2026-11-01: both on one screen).
 const SPLITS = [
-    { value: 'paragraphs', title: 'Headings, lists and paragraphs', badge: 'Recommended',
-        text: 'Every paragraph can be moved, tagged or linked on its own. A quoted search finds one paragraph at a time.' },
-    { value: 'headings-and-lists', title: 'Headings and lists',
-        text: 'Sections and list items stand alone; a run of paragraphs stays together, reading as it did.' },
-    { value: 'none', title: 'No splitting',
-        text: 'Each file is one note and comes back out exactly. Its sections can\'t be folded, tagged or moved on their own.' },
+    { value: 'paragraphs', title: 'Headings, lists and paragraphs', badge: 'Recommended', text: 'Every paragraph its own note.' },
+    { value: 'headings-and-lists', title: 'Headings and lists', badge: '', text: 'Paragraphs stay together.' },
+    { value: 'none', title: 'No splitting', badge: '', text: 'One note per file.' },
+];
+
+// A folder of files' Markdown: notes, or kept as files (the maintainer, 2026-11-01: one
+// choice for all of them; READMEs and docs are often not notes).
+const MARKDOWN_AS_NOTES = 'notes';
+const MARKDOWN_AS_FILES = 'files';
+const MARKDOWN_AS = [
+    { value: MARKDOWN_AS_NOTES, title: 'Turn into notes', badge: 'Recommended', text: 'Split and written as below.' },
+    { value: MARKDOWN_AS_FILES, title: 'Keep as files', badge: '', text: 'File cards, unchanged.' },
 ];
 
 const CONTENTS = [
-    { value: 'rich', title: 'Rich text', badge: 'Recommended',
-        text: 'MetaList\'s own formatting: bold, links, headings and lists drawn as you edit.' },
-    { value: 'markdown', title: 'Markdown', badge: '',
-        text: 'The text as written in your files, marks and all, in notes tagged @markdown; drawn when you aren\'t editing.' },
+    { value: 'rich', title: 'Rich text', badge: 'Recommended', text: 'Formatting drawn as you edit.' },
+    { value: 'markdown', title: 'Markdown', badge: '', text: 'As written, tagged @markdown.' },
 ];
 
-// One note of the sample as it shows while edited: Markdown's marks are there in both
-// modes, hidden in rich text, so switching slides them in or out (main.css).
-function mark(text) {
-    return `<span class="wizard-md-mark">${escapeHtml(text)}</span>`;
+function unitHtml(unit) {
+    return `<span class="wizard-sample-unit is-${unit.kind}" data-unit="${unit.id}">${unit.html}</span>`;
 }
 
-const WRITE_SAMPLE_HTML = `
-    <div class="wizard-sample-note wizard-write-note">
-        <div class="wizard-write-line is-heading">${mark('# ')}Trip to Lisbon</div>
-        <div class="wizard-write-line">Book the ${mark('**')}<span class="wizard-md-strong">ferry</span>${mark('**')} a day ahead.</div>
-        <div class="wizard-write-line">Walk ${mark('*')}<span class="wizard-md-em">slowly</span>${mark('*')} up to the castle.</div>
-        <div class="wizard-write-line is-item"><span class="wizard-rich-bullet">•&nbsp;</span>${mark('- ')}Pastéis de Belém</div>
-        <div class="wizard-write-line is-item"><span class="wizard-rich-bullet">•&nbsp;</span>${mark('- ')}Tram 28</div>
-        <div class="wizard-write-line">Ride ${mark('[')}<span class="wizard-md-link">the yellow tram</span>${mark('](https://carris.pt)')} at dawn.</div>
-    </div>
-    <div class="wizard-write-tag"><span>@markdown</span></div>`;
+// Markdown kept as files: the sample is a file's card, as the list shows it.
+const FILE_CARD_SAMPLE_HTML = `
+    <div class="wizard-sample" aria-label="Sample">
+        <div class="wizard-sample-note wizard-sample-file"><span class="wizard-sample-badge">.MD</span><span class="wizard-sample-file-name">Trip to Lisbon.md</span></div>
+    </div>`;
 
-function unitHtml(unit) {
-    return `<span class="wizard-sample-unit is-${unit.kind}" data-unit="${unit.id}">${escapeHtml(unit.text)}</span>`;
+// Whether the Markdown files are split and written as chosen (not kept as files).
+function turnsMarkdownIntoNotes(choices) {
+    return bringsInMarkdown(choices) && !(choices.source === FILES_SOURCE && choices.markdownAs === MARKDOWN_AS_FILES);
+}
+
+// The Markdown screen's left side: a folder of files first asks notes or files; notes then
+// asks how to split and write them.
+function markdownChoicesHtml(choices) {
+    let asWhat = '';
+    if (choices.source === FILES_SOURCE) {
+        asWhat = `
+            <h3 class="wizard-choice-group">Markdown files</h3>
+            ${choiceCardsHtml('markdownAs', choices.markdownAs, MARKDOWN_AS, 'pair')}`;
+    }
+    if (!turnsMarkdownIntoNotes(choices)) return asWhat;
+    return `${asWhat}
+        <h3 class="wizard-choice-group">Split each file</h3>
+        ${choiceCardsHtml('split', choices.split, SPLITS, 'compact')}
+        <h3 class="wizard-choice-group">Write as</h3>
+        ${choiceCardsHtml('content', choices.content, CONTENTS, 'pair')}`;
+}
+
+// The sample with both choices: notes as split, written as chosen; Markdown's tag under it.
+function sampleHtml(choices) {
+    if (!turnsMarkdownIntoNotes(choices)) return FILE_CARD_SAMPLE_HTML;
+    return `
+        <div class="wizard-sample wizard-write-sample is-${escapeHtml(choices.content)}" aria-label="Sample">
+            <div class="wizard-sample-tree">${sampleTreeHtml(SPLIT_TREES[choices.split])}</div>
+            <div class="wizard-write-tag"><span>@markdown</span></div>
+        </div>`;
+}
+
+function markChosenCards(screen, key, value) {
+    for (const card of screen.querySelectorAll(`.wizard-choice[data-choice-key="${CSS.escape(key)}"]`)) {
+        const isChosen = card.dataset.choiceValue === value;
+        card.classList.toggle('is-chosen', isChosen);
+        card.setAttribute('aria-pressed', String(isChosen));
+    }
 }
 
 function sampleTreeHtml(nodes) {
@@ -294,15 +396,273 @@ function folderName(folderPath) {
 async function chooseFolder(wizard) {
     const picked = await NotesAPI.pickImportFolder(wizard.choices.source);
     if (typeof picked.selected !== 'boolean' || typeof picked.folderPath !== 'string'
-        || !Number.isInteger(picked.markdownFileCount)) {
+        || !Number.isInteger(picked.fileCount)) {
         throw new Error('Import folder pick response malformed');
     }
     if (!picked.selected) return;
+    const name = folderName(picked.folderPath);
+    // The folder the notes go into starts as the vault's name (import-prefix-folder.md §2).
     wizard.chooseMany({
-        folderPath: picked.folderPath, folderName: folderName(picked.folderPath),
-        markdownFileCount: picked.markdownFileCount,
+        folderPath: picked.folderPath, folderName: name, fileCount: picked.fileCount, prefixText: name,
+        // A new folder is read again for the checklist.
+        scan: null,
     });
     wizard.redrawScreen();
+}
+
+// --- The folder the notes go into (docs/ready-to-build/import-prefix-folder.md) -----------
+
+// What the typed name makes, as the server last said: the folder (cleaned as folder names
+// are), whether it exists, and what is wrong with the name; prefixCheckedFor is the text it
+// was said for, so an answer for older text is dropped.
+function prefixStatusHtml(choices) {
+    if (choices.prefixText.trim() === '') {
+        return '<p class="wizard-note">No folder: your folders stay at the top.</p>';
+    }
+    if (choices.prefixCheckedFor !== choices.prefixText) return '<p class="wizard-note">&nbsp;</p>';
+    if (choices.prefixProblem !== '') return `<p class="wizard-note is-problem">${escapeHtml(choices.prefixProblem)}</p>`;
+    const folder = `<code>${escapeHtml(choices.prefixFolder)}</code>`;
+    if (!choices.prefixExists) return `<p class="wizard-note">The notes go into ${folder}.</p>`;
+    return `
+        <p class="wizard-note">${folder} already exists.</p>
+        <label class="wizard-toggle"><input type="checkbox" data-wizard-add-existing${choices.addToExisting ? ' checked' : ''}> Add the notes to it</label>`;
+}
+
+async function checkPrefix(screen, wizard) {
+    const typed = wizard.choices.prefixText;
+    const answer = await NotesAPI.checkImportPrefixFolder(typed);
+    if (typeof answer.folder !== 'string' || typeof answer.exists !== 'boolean' || typeof answer.problem !== 'string') {
+        throw new Error('Import folder check answered malformed');
+    }
+    // Typed on since: the answer is for older text.
+    if (wizard.choices.prefixText !== typed) return;
+    wizard.chooseMany({
+        prefixCheckedFor: typed, prefixFolder: answer.folder, prefixExists: answer.exists, prefixProblem: answer.problem,
+    });
+    const status = screen.querySelector('.wizard-prefix-status');
+    if (status === null || !status.isConnected) return;
+    status.innerHTML = prefixStatusHtml(wizard.choices);
+    wirePrefixStatus(status, wizard);
+    // Next follows the answer (the wizard listens for input).
+    screen.dispatchEvent(new Event('input'));
+}
+
+function wirePrefixStatus(status, wizard) {
+    const box = status.querySelector('[data-wizard-add-existing]');
+    if (box !== null) box.onchange = () => wizard.choose('addToExisting', box.checked);
+}
+
+// --- What comes in, for a folder of files (folder-import-and-file-previews.md §3) --------
+
+async function scanFolder(wizard) {
+    const scan = await NotesAPI.scanImportFolder(wizard.choices.folderPath);
+    if (!Array.isArray(scan.groups) || !Number.isInteger(scan.freeBytes) || !Number.isInteger(scan.maxFileBytes)) {
+        throw new Error('Import folder scan answered malformed');
+    }
+    // The smart defaults: the junk kinds start unticked; the user decides.
+    const excludedGroups = scan.groups.filter((group) => group.isSkippedByDefault).map((group) => group.key);
+    wizard.chooseMany({ scan, excludedGroups, fileExceptions: [] });
+    wizard.redrawScreen();
+}
+
+function isTicked(choices, key) {
+    return !choices.excludedGroups.includes(key);
+}
+
+// A file is ticked as its kind is, unless it was ticked against it (fileExceptions); one over
+// the size limit never comes in.
+function isFileTicked(choices, flipped, groupKey, path, isOverLimit) {
+    if (isOverLimit) return false;
+    return isTicked(choices, groupKey) !== flipped.has(path);
+}
+
+// The files that will come in: [group key, path, size] of each.
+function tickedFiles(choices) {
+    const flipped = new Set(choices.fileExceptions);
+    return choices.scan.groups.flatMap((group) => group.files
+        .filter(([path, , isOverLimit]) => isFileTicked(choices, flipped, group.key, path, isOverLimit))
+        .map(([path, size]) => [group.key, path, size]));
+}
+
+function tickedBytes(choices) {
+    return tickedFiles(choices).reduce((total, [, , size]) => total + size, NONE);
+}
+
+// A kind some of whose files were ticked against it shows its box as a dash.
+function isKindMixed(choices, group) {
+    const flipped = new Set(choices.fileExceptions);
+    return group.files.some(([path]) => flipped.has(path));
+}
+
+const NONE = 0;
+const SINGLE = 1;
+
+function filesWord(count) {
+    return count === SINGLE ? 'file' : 'files';
+}
+
+// A bar's length, out of the largest (the bars compare kinds with each other).
+function barPercent(bytes, largest) {
+    if (largest === NONE) return NONE;
+    return Math.max((bytes / largest) * PERCENT, MIN_BAR_PERCENT);
+}
+
+const MIN_BAR_PERCENT = 1;
+
+function checklistHtml(choices) {
+    if (choices.scan === null) return '<p class="wizard-note">Reading the folder…</p>';
+    const { groups, freeBytes, maxFileBytes } = choices.scan;
+    const largest = largestKindBytes(choices);
+    const rows = groups.map((group) => {
+        let over = '';
+        if (group.overLimitCount > NONE) {
+            // Red only for going over a limit, never for being large (§3).
+            over = `<span class="wizard-kind-over">${group.overLimitCount} ${filesWord(group.overLimitCount)} over ${escapeHtml(formatByteSize(maxFileBytes))}, left out</span>`;
+        }
+        const isOpen = choices.openKinds.includes(group.key);
+        const boxId = `wizard-kind-${group.key}`;
+        const mixed = isKindMixed(choices, group) ? ' data-wizard-mixed' : '';
+        return `
+            <div class="wizard-kind-group" data-wizard-kind-group="${escapeHtml(group.key)}">
+                <div class="wizard-kind">
+                    <button type="button" class="wizard-kind-arrow" data-wizard-kind-open="${escapeHtml(group.key)}"
+                        aria-expanded="${isOpen}" title="Show its files">${isOpen ? '▾' : '▸'}</button>
+                    <input type="checkbox" id="${boxId}" data-wizard-kind="${escapeHtml(group.key)}"${isTicked(choices, group.key) ? ' checked' : ''}${mixed}>
+                    <label class="wizard-kind-label" for="${boxId}">${escapeHtml(group.label)}${over}</label>
+                    <span class="wizard-kind-count">${group.fileCount.toLocaleString()} ${filesWord(group.fileCount)}</span>
+                    <span class="wizard-kind-size">${escapeHtml(formatByteSize(group.bytes))}</span>
+                    ${kindBarHtml(choices, group, largest)}
+                </div>
+                ${isOpen ? kindFilesHtml(group, choices) : ''}
+            </div>`;
+    }).join('');
+    return `
+        <div class="wizard-kinds">${rows}</div>
+        <div class="wizard-total">${totalHtml(choices)}</div>`;
+}
+
+// A kind's bar, as long as its size beside the largest: green for what will be imported,
+// grey for what won't (the maintainer, 2026-11-01), both when its files are mixed.
+function kindBarHtml(choices, group, largest) {
+    const flipped = new Set(choices.fileExceptions);
+    const importedBytes = group.files
+        .filter(([path, , isOverLimit]) => isFileTicked(choices, flipped, group.key, path, isOverLimit))
+        .reduce((total, [, size]) => total + size, NONE);
+    const whole = barPercent(group.bytes, largest);
+    let imported = NONE;
+    if (group.bytes > NONE) imported = (importedBytes / group.bytes) * whole;
+    return `<span class="wizard-kind-bar" data-wizard-kind-bar><span class="is-imported" style="width:${imported}%"></span><span class="is-left-out" style="width:${whole - imported}%"></span></span>`;
+}
+
+function largestKindBytes(choices) {
+    return choices.scan.groups.reduce((most, group) => Math.max(most, group.bytes), NONE);
+}
+
+// What is ticked against the space left: red only when it won't fit (§3).
+function totalHtml(choices) {
+    const { freeBytes } = choices.scan;
+    const ticked = tickedBytes(choices);
+    const isOver = ticked > freeBytes;
+    let width = PERCENT;
+    if (freeBytes > NONE) width = Math.min((ticked / freeBytes) * PERCENT, PERCENT);
+    return `
+            <span class="wizard-total-text${isOver ? ' is-over' : ''}">${escapeHtml(formatByteSize(ticked))} ticked, ${escapeHtml(formatByteSize(freeBytes))} free</span>
+            <span class="wizard-kind-bar${isOver ? ' is-over' : ''}"><span class="is-imported" style="width:${width}%"></span></span>`;
+}
+
+// A checkbox's dash (some of a kind's files ticked against it) is set on the element, not in HTML.
+function markMixedKinds(screen) {
+    for (const box of screen.querySelectorAll('[data-wizard-kind]')) {
+        box.indeterminate = box.hasAttribute('data-wizard-mixed');
+    }
+}
+
+// A file ticked or unticked against its kind: its box is already changed; the kind's dash,
+// the total and Next follow in place, the open lists staying where they are. Split and
+// Write as come or go with the text ticked, which draws the screen again.
+function tickFile(screen, wizard, box) {
+    const path = box.dataset.wizardFile;
+    const hadText = bringsInMarkdown(wizard.choices);
+    const exceptions = wizard.choices.fileExceptions.filter((flipped) => flipped !== path);
+    const isAgainstKind = box.checked !== isTicked(wizard.choices, box.dataset.wizardFileKind);
+    wizard.choose('fileExceptions', isAgainstKind ? [...exceptions, path] : exceptions);
+    if (bringsInMarkdown(wizard.choices) !== hadText) {
+        wizard.redrawScreen();
+        return;
+    }
+    const groupElement = box.closest('[data-wizard-kind-group]');
+    const group = wizard.choices.scan.groups.find((candidate) => candidate.key === box.dataset.wizardFileKind);
+    groupElement.querySelector('[data-wizard-kind]').indeterminate = isKindMixed(wizard.choices, group);
+    groupElement.querySelector('[data-wizard-kind-bar]').outerHTML = kindBarHtml(wizard.choices, group, largestKindBytes(wizard.choices));
+    screen.querySelector('.wizard-total').innerHTML = totalHtml(wizard.choices);
+}
+
+// A kind opened to show its files (the maintainer, 2026-11-01: to see which file is left
+// out, by name): each file's folder and name, its size, the largest first; one over the
+// limit says so in red. Built only when opened: a kind can hold thousands.
+function kindFilesHtml(group, choices) {
+    const { maxFileBytes } = choices.scan;
+    const flipped = new Set(choices.fileExceptions);
+    const items = group.files.map(([path, size, isOverLimit]) => {
+        const cut = path.lastIndexOf('/');
+        const folder = cut === -1 ? '' : path.slice(0, cut + 1);
+        const name = path.slice(cut + 1);
+        let over = '';
+        if (isOverLimit) over = `<span class="wizard-kind-over">over ${escapeHtml(formatByteSize(maxFileBytes))}, left out</span>`;
+        // Each file ticked as its kind is unless ticked against it (the maintainer, 2026-11-01).
+        const isChecked = isFileTicked(choices, flipped, group.key, path, isOverLimit);
+        return `
+            <li class="wizard-kind-file" title="${escapeHtml(path)}">
+                <label class="wizard-kind-file-path">
+                    <input type="checkbox" data-wizard-file="${escapeHtml(path)}" data-wizard-file-kind="${escapeHtml(group.key)}"${isChecked ? ' checked' : ''}${isOverLimit ? ' disabled' : ''}>
+                    <span class="wizard-kind-file-name"><span class="wizard-kind-file-folder">${escapeHtml(folder)}</span>${escapeHtml(name)}${over}</span>
+                </label>
+                <span class="wizard-kind-size">${escapeHtml(formatByteSize(size))}</span>
+            </li>`;
+    }).join('');
+    return `<ul class="wizard-kind-files">${items}</ul>`;
+}
+
+// Open or close a kind's files in place: the rows around it stay where they are.
+function toggleKindFiles(screen, wizard, key) {
+    const groupElement = screen.querySelector(`[data-wizard-kind-group="${CSS.escape(key)}"]`);
+    const arrow = groupElement.querySelector('[data-wizard-kind-open]');
+    const isOpen = wizard.choices.openKinds.includes(key);
+    if (isOpen) {
+        wizard.choose('openKinds', wizard.choices.openKinds.filter((open) => open !== key));
+        groupElement.querySelector('.wizard-kind-files').remove();
+    } else {
+        wizard.choose('openKinds', [...wizard.choices.openKinds, key]);
+        const group = wizard.choices.scan.groups.find((candidate) => candidate.key === key);
+        groupElement.insertAdjacentHTML('beforeend', kindFilesHtml(group, wizard.choices));
+    }
+    arrow.textContent = isOpen ? '▸' : '▾';
+    arrow.setAttribute('aria-expanded', String(!isOpen));
+}
+
+function checklistProblem(choices) {
+    if (choices.scan === null) return 'Reading the folder…';
+    if (tickedFiles(choices).length === NONE) return 'Tick at least one file.';
+    if (tickedBytes(choices) > choices.scan.freeBytes) return 'The ticked files won\'t fit in the space left. Untick some.';
+    return '';
+}
+
+// Split and Write as are about Markdown: asked only when Markdown files come in (the
+// maintainer, 2026-11-01). Without them, a folder of files' text files come in whole.
+const MARKDOWN_FILE_RE = /\.(md|markdown)$/i;
+
+function bringsInMarkdown(choices) {
+    if (choices.source !== FILES_SOURCE) return true;
+    if (choices.scan === null) return false;
+    return tickedFiles(choices).some(([groupKey, path]) => groupKey === TEXT_GROUP && MARKDOWN_FILE_RE.test(path));
+}
+
+function prefixProblem(choices) {
+    if (choices.prefixText.trim() === '') return '';
+    if (choices.prefixCheckedFor !== choices.prefixText) return 'Checking the folder name…';
+    if (choices.prefixProblem !== '') return choices.prefixProblem;
+    if (choices.prefixExists && !choices.addToExisting) return 'That folder already exists: tick Add the notes to it, or choose another name.';
+    return '';
 }
 
 /**
@@ -314,79 +674,129 @@ async function chooseFolder(wizard) {
 export function importSteps({ withSourceStep, withSummaryAndRun }) {
     return [
         makeStep({
-            key: 'source', label: 'Source', title: 'Where are your notes?',
+            key: 'source', label: 'Source', title: 'What are you importing?',
             intro: '',
             nextLabel: NEXT, isAction: false, applies: () => withSourceStep,
             render: (choices) => choiceCardsHtml('source', choices.source, SOURCES, 'stacked'),
             wire: NOTHING_TO_WIRE, onChoice: null, onNext: null,
             // None is chosen for you (the maintainer, 2026-11-01).
-            missing: ({ source }) => (source === '' ? 'Choose where your notes are.' : ''),
+            missing: ({ source }) => (source === '' ? 'Choose what you are importing.' : ''),
         }),
         makeStep({
             key: 'folder', label: 'Folder', title: 'Choose the folder',
-            intro: 'Every Markdown file in it becomes a note, tagged with the folder it was in and with the tags written in the file.',
+            intro: '',
             nextLabel: NEXT, isAction: false, applies: ALWAYS,
+            // The folder to import and the folder it goes into in MetaList, on one screen (the
+            // maintainer, 2026-11-01): the second starts as the first's name.
             render: (choices) => {
-                let chosen = '<div class="wizard-folder-chosen is-empty">No folder chosen yet</div>';
+                const source = sourceOf(choices);
+                // The card opens the folder dialog too, as Choose Folder… does (the maintainer, 2026-11-01).
+                let chosen = '<div class="wizard-folder-chosen is-empty" role="button" tabindex="0" title="Choose Folder…">No folder chosen yet</div>';
+                let into = '';
                 if (choices.folderPath !== '') {
-                    chosen = `<div class="wizard-folder-chosen" title="${escapeHtml(choices.folderPath)}">
+                    // Chosen: drawn as a chosen card is, with its check (the maintainer, 2026-11-01).
+                    chosen = `<div class="wizard-folder-chosen is-chosen" role="button" tabindex="0" title="${escapeHtml(choices.folderPath)}">
+                        <span class="wizard-choice-check" aria-hidden="true">✓</span>
                         <span class="wizard-folder-name">${escapeHtml(choices.folderName)}</span>
-                        <span class="wizard-folder-counts">${choices.markdownFileCount} Markdown files</span></div>`;
+                        <span class="wizard-folder-counts">${choices.fileCount} ${escapeHtml(source.fileWord)}</span></div>`;
+                    into = `
+                        <label class="wizard-field wizard-into-field"><span>Folder as it will appear in MetaList</span>
+                            <input type="text" class="wizard-input" data-wizard-prefix value="${escapeHtml(choices.prefixText)}"
+                                autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"></label>
+                        <div class="wizard-prefix-status">${prefixStatusHtml(choices)}</div>`;
                 }
-                return `${chosen}<button type="button" class="secondary-btn wizard-choose-folder" data-wizard-focus>Choose Folder…</button>`;
+                return `<p class="wizard-intro">${escapeHtml(source.folderIntro)}</p>
+                    ${chosen}<button type="button" class="secondary-btn wizard-choose-folder" data-wizard-focus>Choose Folder…</button>${into}`;
             },
             wire: (screen, wizard) => {
                 screen.querySelector('.wizard-choose-folder').onclick = async () => chooseFolder(wizard);
+                const card = screen.querySelector('.wizard-folder-chosen');
+                card.onclick = async () => chooseFolder(wizard);
+                card.onkeydown = (event) => {
+                    if (event.key !== 'Enter' && event.key !== ' ') return;
+                    event.preventDefault();
+                    void chooseFolder(wizard);
+                };
+                const input = screen.querySelector('[data-wizard-prefix]');
+                if (input === null) return;
+                input.addEventListener('input', () => {
+                    wizard.choose('prefixText', input.value);
+                    void checkPrefix(screen, wizard);
+                });
+                wirePrefixStatus(screen.querySelector('.wizard-prefix-status'), wizard);
+                if (wizard.choices.prefixCheckedFor !== wizard.choices.prefixText) void checkPrefix(screen, wizard);
             },
             onChoice: null, onNext: null,
-            missing: ({ folderPath, markdownFileCount }) => {
-                if (folderPath === '') return 'Choose the folder your notes are in first.';
-                if (markdownFileCount === 0) return 'That folder holds no Markdown files. Choose another.';
-                return '';
+            missing: (choices) => {
+                if (choices.folderPath === '') return 'Choose the folder first.';
+                if (choices.fileCount === 0) return 'That folder holds nothing this import reads. Choose another.';
+                return prefixProblem(choices);
             },
         }),
         makeStep({
-            key: 'split', label: 'Split', title: 'How should each file become notes?',
-            intro: 'Shown on a sample: this is exactly how the notes will look in MetaList.',
-            nextLabel: NEXT, isAction: false, applies: ALWAYS,
-            render: (choices) => `
-                <div class="wizard-split">
-                    ${choiceCardsHtml('split', choices.split, SPLITS, 'grid')}
-                    <div class="wizard-sample" aria-label="Sample">${sampleTreeHtml(SPLIT_TREES[choices.split])}</div>
-                </div>`,
-            wire: NOTHING_TO_WIRE,
-            onChoice: (screen, key, value) => {
-                for (const card of screen.querySelectorAll('.wizard-choice')) {
-                    const isChosen = card.dataset.choiceValue === value;
-                    card.classList.toggle('is-chosen', isChosen);
-                    card.setAttribute('aria-pressed', String(isChosen));
+            key: 'kinds', label: 'Files', title: 'What should be imported?',
+            intro: 'Everything in the folder, by kind of file, largest first. Untick what you don\'t want; nothing is copied yet.',
+            nextLabel: NEXT, isAction: false, applies: (choices) => choices.source === FILES_SOURCE,
+            render: (choices) => checklistHtml(choices),
+            wire: (screen, wizard) => {
+                if (wizard.choices.scan === null) {
+                    void scanFolder(wizard);
+                    return;
                 }
-                animateSample(screen.querySelector('.wizard-sample'), value);
+                for (const arrow of screen.querySelectorAll('[data-wizard-kind-open]')) {
+                    arrow.onclick = () => toggleKindFiles(screen, wizard, arrow.dataset.wizardKindOpen);
+                }
+                markMixedKinds(screen);
+                for (const box of screen.querySelectorAll('[data-wizard-kind]')) {
+                    // A kind's box sets all its files again: the ones ticked against it follow it.
+                    box.onchange = () => {
+                        const key = box.dataset.wizardKind;
+                        const group = wizard.choices.scan.groups.find((candidate) => candidate.key === key);
+                        const paths = new Set(group.files.map(([path]) => path));
+                        const others = wizard.choices.excludedGroups.filter((excluded) => excluded !== key);
+                        wizard.chooseMany({
+                            excludedGroups: box.checked ? others : [...others, key],
+                            fileExceptions: wizard.choices.fileExceptions.filter((path) => !paths.has(path)),
+                        });
+                        wizard.redrawScreen();
+                    };
+                }
+                // The files' boxes, in lists opened later too.
+                screen.querySelector('.wizard-kinds').onchange = (event) => {
+                    if (event.target instanceof HTMLInputElement && event.target.hasAttribute('data-wizard-file')) {
+                        tickFile(screen, wizard, event.target);
+                    }
+                };
             },
-            onNext: null, missing: NOTHING_MISSING,
+            onChoice: null, onNext: null, missing: checklistProblem,
         }),
         makeStep({
-            key: 'content', label: 'Write as', title: 'Rich text or Markdown?',
-            intro: 'Rich text is MetaList\'s own formatting, edited as you see it. Markdown keeps the text as written, in notes tagged <code>@markdown</code>.',
-            nextLabel: NEXT, isAction: false, applies: ALWAYS,
+            key: 'markdown', label: 'Markdown', title: 'How should your Markdown files come in?',
+            intro: 'Shown on a sample: this is exactly how the notes will look in MetaList.',
+            nextLabel: NEXT, isAction: false, applies: bringsInMarkdown,
             render: (choices) => `
-                <div class="wizard-split">
-                    ${choiceCardsHtml('content', choices.content, CONTENTS, 'grid')}
+                <div class="wizard-split is-choices-wide">
+                    <div>${markdownChoicesHtml(choices)}</div>
                     <div>
-                        <span class="wizard-caption">While you edit a note</span>
-                        <div class="wizard-sample wizard-write-sample is-${escapeHtml(choices.content)}" aria-label="Sample">${WRITE_SAMPLE_HTML}</div>
+                        <span class="wizard-caption">${turnsMarkdownIntoNotes(choices) ? 'A Markdown file\'s notes, while you edit them' : 'A Markdown file, as it will show'}</span>
+                        ${sampleHtml(choices)}
                     </div>
                 </div>`,
             wire: NOTHING_TO_WIRE,
-            // The sample changes in place: Markdown's marks slide in as the formatting falls
-            // away (CSS transitions on the sample's class), and back.
-            onChoice: (screen, key, value) => {
-                for (const card of screen.querySelectorAll('.wizard-choice')) {
-                    const isChosen = card.dataset.choiceValue === value;
-                    card.classList.toggle('is-chosen', isChosen);
-                    card.setAttribute('aria-pressed', String(isChosen));
+            // The sample follows both choices in place: a split moves its notes, the format
+            // slides Markdown's marks in or out (CSS transitions on the sample's class).
+            onChoice: (screen, key, value, wizard) => {
+                // Notes or files changes what the screen asks: drawn again.
+                if (key === 'markdownAs') {
+                    wizard.redrawScreen();
+                    return;
                 }
+                markChosenCards(screen, key, value);
                 const sample = screen.querySelector('.wizard-write-sample');
+                if (key === 'split') {
+                    animateSample(sample.querySelector('.wizard-sample-tree'), value);
+                    return;
+                }
                 for (const content of CONTENTS) {
                     sample.classList.toggle(`is-${content.value}`, content.value === value);
                 }
@@ -408,6 +818,16 @@ export function importSteps({ withSourceStep, withSummaryAndRun }) {
 // A run's choices: no source yet (the person picks one), Split and Write as on the recommended.
 export function importChoices() {
     return {
-        source: '', folderPath: '', folderName: '', markdownFileCount: 0, split: 'paragraphs', content: 'rich',
+        source: '', folderPath: '', folderName: '', fileCount: 0, split: 'paragraphs', content: 'rich',
+        // A folder of files: what the server read of it ({ groups, freeBytes, maxFileBytes }, null
+        // until read) and the kinds unticked in its checklist.
+        scan: null, excludedGroups: [],
+        // The kinds opened to show their files, and the files ticked against their kind.
+        openKinds: [], fileExceptions: [],
+        // A folder of files' Markdown files: turned into notes (recommended) or kept as files.
+        markdownAs: MARKDOWN_AS_NOTES,
+        // The folder the notes go into, as typed (the vault's name once a folder is chosen), and
+        // what the server last said of it (prefixStatusHtml); adding to an existing one is ticked.
+        prefixText: '', prefixCheckedFor: null, prefixFolder: '', prefixExists: false, prefixProblem: '', addToExisting: true,
     };
 }

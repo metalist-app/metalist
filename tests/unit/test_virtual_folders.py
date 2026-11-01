@@ -65,7 +65,7 @@ def imported_vault(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> NoteStore
         (tmp_path / relative).write_text(text)
     CmdImportObsidianVault(
         source="obsidian", folder_path=str(tmp_path), split_mode=SPLIT_HEADINGS_AND_LISTS,
-        content_format=CONTENT_MARKDOWN, token=TOKEN, imported_at=IMPORTED_AT,
+        content_format=CONTENT_MARKDOWN, folder_prefix="", add_to_existing=False, token=TOKEN, imported_at=IMPORTED_AT,
     ).execute()
     yield store
     session.close()
@@ -113,15 +113,12 @@ def _root_titled(store: NoteStore, title: str) -> str:
     raise AssertionError(f"No root note titled {title}")
 
 
-def _subtree_size(store: NoteStore, note_id: str) -> int:
-    return 1 + sum(_subtree_size(store, child_id) for child_id in store.get_children(note_id))
-
-
 def test_a_folders_notes_are_the_notes_filed_in_it_and_below_it_with_their_subtrees(imported_vault: NoteStore) -> None:
     filed = [_root_titled(imported_vault, title) for title in ("Plan", "Notes", "Budget", "Overview")]
     deletion = virtual_folder_usecases.notes_in_folder("Projects/")
     assert sorted(deletion.top_note_ids) == sorted(filed)
-    assert deletion.note_count == sum(_subtree_size(imported_vault, note_id) for note_id in filed)
+    # Counted as the list counts notes; the notes under them go with them, uncounted.
+    assert deletion.note_count == len(filed)
     assert virtual_folder_usecases.notes_in_folder("Projects/Client-B/").top_note_ids == [_root_titled(imported_vault, "Budget")]
 
 
