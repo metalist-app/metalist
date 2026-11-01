@@ -6,18 +6,18 @@ from __future__ import annotations
 
 import hashlib
 from datetime import datetime, timezone
-from http import HTTPStatus
 from pathlib import Path, PurePosixPath
 
 import pytest
-from fastapi import HTTPException
 
 import app.api.routes.imports as imports_routes
+from app.db.file_session import begin_file_writer
 from app.db.notes_sql import insert_note
 from app.models.database import SafeSession
 from app.security import encryption
 from app.services import note_store as note_store_module
 from app.services import store as store_module
+from app.services.file_registry import file_registry
 from app.services.input_errors import InputRejected
 from app.services.note_store import NoteStore
 from app.services.obsidian_import.notes import PlannedNote, plan_file_note, source_tag_for
@@ -34,12 +34,15 @@ from app.services.obsidian_import.vault import VaultFile, read_vault
 from app.services.search_index import SearchIndex, tag_bar_values
 from app.services.structured_note_renderers import extract_plain_text_from_note_html
 from app.services.tag_ontology import TagOntology
+import app.usecases.import_obsidian_vault as import_module
 from app.usecases.import_obsidian_vault import CmdImportObsidianVault
 
 FIXTURE_VAULT = Path(__file__).resolve().parents[1] / "fixtures" / "obsidian-vault"
 IMPORTED_AT = datetime(2026, 10, 31, 21, 5, tzinfo=timezone.utc)
 SOURCE_TAG = source_tag_for(IMPORTED_AT)
 FILE_TIME = datetime(2025, 1, 2, 3, 4, tzinfo=timezone.utc)
+# The vault is not encrypted in these tests: any token stores files in plain text.
+TOKEN = "token"
 
 
 def planned(path: str, text: str, *, strict: bool) -> PlannedNote:
@@ -69,12 +72,14 @@ def test_the_vault_reads_markdown_files_in_name_order_and_reports_the_rest() -> 
     vault = read_vault(FIXTURE_VAULT)
     assert [str(file.path) for file in vault.markdown_files] == [
         "1. First steps.md", "Broken frontmatter.md", "Daily/2026/2026-10-30.md", "Empty.md",
-        "Home/Notes/Index.md", "Projects/Client A/Plan.md", "Projects/Client B/Notes.md",
+        "Home/Notes/Index.md", "Links.md", "Projects/Client A/Plan.md", "Projects/Client B/Notes.md",
         "snake_case_name.md", "Weird [Folder]/Inside.md", "Welcome.md", "Work/Notes/Index.md",
     ]
+    assert [str(path) for path in vault.other_files] == [
+        "attachments/photo.png", "attachments/report.pdf", "attachments/unused.txt",
+    ]
     assert [(entry.path, entry.reason) for entry in vault.skipped] == [
-        (".obsidian/", "hidden folder"), (".trash/", "hidden folder"),
-        ("attachments/photo.png", "not a Markdown file"), ("Latin1 note.md", "not UTF-8 text"),
+        (".obsidian/", "hidden folder"), (".trash/", "hidden folder"), ("Latin1 note.md", "not UTF-8 text"),
     ]
     assert vault.uses_strict_line_breaks is False
     assert vault.settings_problem == ""
@@ -157,9 +162,11 @@ def test_unreadable_frontmatter_is_reported_and_the_body_kept() -> None:
     assert "created: 'yesterday' is not a date" in dated.findings.frontmatter_problem
 
 
-def test_block_ids_are_removed_and_comments_noticed_outside_code() -> None:
+def test_block_ids_are_hidden_and_comments_noticed_outside_code() -> None:
     note = planned("Note.md", "Para ^abc-1\n\n^def\n\n```\nkeep ^ghi\n%% in code %%\n```", strict=True)
-    assert text_of(note) == "Note\n\nPara\n\n\n```\nkeep ^ghi\n%% in code %%\n```"
+    assert text_of(note) == "Note\n\nPara\n\n```\nkeep ^ghi\n%% in code %%\n```"
+    # Kept whole, the note holds both blocks: links to either reach it.
+    assert note.root.anchors == ("^abc-1", "^def")
     assert note.findings.block_id_count == 2
     assert note.findings.has_comments is False
     assert planned("Note.md", "A %%hidden%% word", strict=True).findings.has_comments is True
@@ -207,6 +214,9 @@ def note_store(monkeypatch: pytest.MonkeyPatch) -> NoteStore:
     SafeSession.use_memory_db()
     SafeSession.disable_read_guard()
     encryption.set_encryption_required(False)
+    file_registry.reset()
+    with begin_file_writer() as connection:
+        connection.execute("DELETE FROM files")
     store = NoteStore()
     store._timing_enabled = False
     monkeypatch.setattr(store_module, "_note_store", store)
@@ -230,6 +240,7 @@ def note_store(monkeypatch: pytest.MonkeyPatch) -> NoteStore:
     monkeypatch.setattr(store, "add_notes_from_db", add_with_contents)
     yield store
     session.close()
+    file_registry.reset()
 
 
 def folder_fingerprint(folder: Path) -> list[tuple[str, str, int]]:
@@ -245,39 +256,46 @@ def first_line(store: NoteStore, note_id: str) -> str:
 
 def test_a_vault_comes_in_as_root_notes_at_the_top_with_the_report_first(note_store: NoteStore) -> None:
     before = folder_fingerprint(FIXTURE_VAULT)
-    result = CmdImportObsidianVault(folder_path=str(FIXTURE_VAULT), split_mode=SPLIT_NONE, content_format=CONTENT_MARKDOWN, token="", imported_at=IMPORTED_AT).execute()
+    result = CmdImportObsidianVault(folder_path=str(FIXTURE_VAULT), split_mode=SPLIT_NONE, content_format=CONTENT_MARKDOWN, token=TOKEN, imported_at=IMPORTED_AT).execute()
     roots = note_store.get_children(None)
-    assert len(roots) == 1 + 11 + 1
+    assert len(roots) == 1 + 12 + 1
     assert roots[0] == result["reportNoteId"]
     assert roots[-1] == "mine"
     assert first_line(note_store, roots[0]).startswith("Import report — Obsidian — obsidian-vault — ")
     assert [first_line(note_store, note_id) for note_id in roots[1:4]] == ["1\\. First steps", "Broken frontmatter", "2026-10-30"]
-    plan = note_store.get_note(roots[6])
-    assert first_line(note_store, roots[6]) == "# Plan"
+    plan = note_store.get_note(roots[7])
+    assert first_line(note_store, roots[7]) == "# Plan"
     assert plan.created_at.date().isoformat() in ("2024-02-29", "2024-03-01")
-    assert result["noteCount"] == 11
+    assert result["noteCount"] == 12
     assert folder_fingerprint(FIXTURE_VAULT) == before
 
 
 def test_the_report_lists_what_was_left_out_and_changed(note_store: NoteStore) -> None:
-    result = CmdImportObsidianVault(folder_path=str(FIXTURE_VAULT), split_mode=SPLIT_NONE, content_format=CONTENT_MARKDOWN, token="", imported_at=IMPORTED_AT).execute()
+    result = CmdImportObsidianVault(folder_path=str(FIXTURE_VAULT), split_mode=SPLIT_NONE, content_format=CONTENT_MARKDOWN, token=TOKEN, imported_at=IMPORTED_AT).execute()
     report = extract_plain_text_from_note_html(note_store.get_note(result["reportNoteId"]).content)
     for line in [
-        "**One-way.**", "- 11 Markdown files, as 11 notes: each file a note at the top of the list, kept whole, in Markdown.",
-        "- 6 folder tags.",
-        "- `attachments/photo.png`: not a Markdown file", "- `Latin1 note.md`: not UTF-8 text",
-        "- `aliases`: in 1 file(s)", "- `author`: in 1 file(s)",
+        "**One-way.**", "- 12 Markdown files, as 12 notes: each file a note at the top of the list, kept whole, in Markdown.",
+        "- 6 folder tags.", "- 12 links and embeds, to notes and files of the vault.",
+        "- 2 files the notes link to or embed, attached to them.",
+        "- `attachments/unused.txt`: no note links to it or embeds it", "- `Latin1 note.md`: not UTF-8 text",
+        "- `author`: in 1 file(s)",
         "- `Broken frontmatter.md`: frontmatter is not valid YAML",
         "- Tag `Projects/Client A` became `Projects/Client-A`.",
-        "- `%%comments%%` stay as visible text, in 1 file(s).", "- 1 block IDs (`^abc123`) were removed.",
+        "- `[[Nowhere]]` in `Links.md`: no such note or file, so it stays as written.",
+        "- `[[Welcome#Links target]]` in `Links.md`: points at the whole note.",
+        "- `[[Welcome#^intro-para]]` in `Links.md`: points at the whole note.",
+        "- `%%comments%%` stay as visible text, in 1 file(s).",
+        "- 1 block IDs (`^abc123`) are no longer shown; links to them point at the note holding the block.",
         "- `Welcome.md`",
     ]:
         assert line in report
+    # Aliases are read now: no longer a property left out.
+    assert "`aliases`" not in report
 
 
 def test_importing_the_same_vault_again_says_so(note_store: NoteStore) -> None:
-    CmdImportObsidianVault(folder_path=str(FIXTURE_VAULT), split_mode=SPLIT_NONE, content_format=CONTENT_MARKDOWN, token="", imported_at=IMPORTED_AT).execute()
-    again = CmdImportObsidianVault(folder_path=str(FIXTURE_VAULT), split_mode=SPLIT_NONE, content_format=CONTENT_MARKDOWN, token="", imported_at=IMPORTED_AT).execute()
+    CmdImportObsidianVault(folder_path=str(FIXTURE_VAULT), split_mode=SPLIT_NONE, content_format=CONTENT_MARKDOWN, token=TOKEN, imported_at=IMPORTED_AT).execute()
+    again = CmdImportObsidianVault(folder_path=str(FIXTURE_VAULT), split_mode=SPLIT_NONE, content_format=CONTENT_MARKDOWN, token=TOKEN, imported_at=IMPORTED_AT).execute()
     report = extract_plain_text_from_note_html(note_store.get_note(again["reportNoteId"]).content)
     assert "**This vault was imported before:** 1 earlier import report(s)" in report
 
@@ -288,36 +306,23 @@ def test_importing_the_same_vault_again_says_so(note_store: NoteStore) -> None:
 ])
 def test_a_folder_that_is_no_vault_is_refused(note_store: NoteStore, folder: str, message: str) -> None:
     with pytest.raises(InputRejected, match=message):
-        CmdImportObsidianVault(folder_path=folder, split_mode=SPLIT_NONE, content_format=CONTENT_MARKDOWN, token="", imported_at=IMPORTED_AT).execute()
+        CmdImportObsidianVault(folder_path=folder, split_mode=SPLIT_NONE, content_format=CONTENT_MARKDOWN, token=TOKEN, imported_at=IMPORTED_AT).execute()
 
 
 def test_a_folder_without_markdown_is_refused(note_store: NoteStore, tmp_path: Path) -> None:
     (tmp_path / "picture.png").write_bytes(b"x")
     with pytest.raises(InputRejected, match="holds no Markdown files"):
-        CmdImportObsidianVault(folder_path=str(tmp_path), split_mode=SPLIT_NONE, content_format=CONTENT_MARKDOWN, token="", imported_at=IMPORTED_AT).execute()
+        CmdImportObsidianVault(folder_path=str(tmp_path), split_mode=SPLIT_NONE, content_format=CONTENT_MARKDOWN, token=TOKEN, imported_at=IMPORTED_AT).execute()
     assert note_store.get_children(None) == ["mine"]
 
 
-# --- The developer version's routes ------------------------------------------------------
+# --- The import routes ------------------------------------------------------
 
 class _Request:
-    """A request as require_request_auth_token reads it is not needed when the gate refuses."""
-
-
-def test_the_import_routes_do_not_exist_outside_development(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(imports_routes, "is_development_environment", lambda: False)
-    with pytest.raises(HTTPException) as raised:
-        imports_routes.import_obsidian_vault(request=_Request(), body={
-            "folderPath": str(FIXTURE_VAULT), "splitMode": SPLIT_NONE, "contentFormat": CONTENT_MARKDOWN,
-        })
-    assert raised.value.status_code == HTTPStatus.NOT_FOUND
-    with pytest.raises(HTTPException) as raised:
-        imports_routes.pick_obsidian_vault_folder(request=_Request())
-    assert raised.value.status_code == HTTPStatus.NOT_FOUND
+    """No request is read: require_request_auth_token is replaced."""
 
 
 def test_the_folder_picker_answers_with_the_chosen_folder(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(imports_routes, "is_development_environment", lambda: True)
     monkeypatch.setattr(imports_routes, "require_request_auth_token", lambda request: "token")
     monkeypatch.setattr(imports_routes, "pick_folder", lambda *, prompt: str(FIXTURE_VAULT))
     assert imports_routes.pick_obsidian_vault_folder(request=_Request()) == {
@@ -344,19 +349,20 @@ def outline(node: NoteNode) -> list:
 
 def test_headings_lists_and_paragraphs_each_become_a_note() -> None:
     root = planned_as("Trip.md", SPLIT_SAMPLE, strict=True, split_mode=SPLIT_PARAGRAPHS, content_format=CONTENT_RICH).root
-    assert outline(root) == ["Trip", [], [
+    # A heading note is its text tagged @heading, as MetaList writes headings.
+    assert outline(root) == ["Trip", ["@heading"], [
         ["Intro.", ["@bullets"], [["one", [], []], ["two", ["@todo"], []]]],
         ["Closing bold.\nSame paragraph.", [], []],
         ["Second paragraph.", [], []],
         # The heading holds the list and more, so it shows no list numbers of its own.
-        ["Day 1", [], [
+        ["Day 1", ["@heading"], [
             ["Ferry", [], []],
             ["Museum", [], [["Closed Mondays.", [], []]]],
             ["x = 1", ["@code=python"], []],
             ["x^2", ["@LaTeX"], []],
         ]],
     ]]
-    assert root.content_html == "<h1>Trip</h1>"
+    assert root.content_html == "Trip"
     assert root.children[1].content_html == "Closing <strong>bold</strong>.\nSame paragraph."
 
 
@@ -369,9 +375,9 @@ def test_headings_and_lists_keep_a_run_of_paragraphs_together() -> None:
 
 def test_a_list_after_a_heading_tags_it_only_when_the_list_is_all_it_holds() -> None:
     only_list = planned_as("N.md", "## H\n\n- a\n- b", strict=True, split_mode=SPLIT_PARAGRAPHS, content_format=CONTENT_RICH)
-    assert outline(only_list.root)[2][0][1] == ["@bullets"]
+    assert outline(only_list.root)[2][0][1] == ["@heading", "@bullets"]
     with_more = planned_as("N.md", "## H\n\n- a\n\n```\ncode\n```", strict=True, split_mode=SPLIT_PARAGRAPHS, content_format=CONTENT_RICH)
-    assert outline(with_more.root)[2][0][1] == []
+    assert outline(with_more.root)[2][0][1] == ["@heading"]
 
 
 def test_rich_text_keeps_formulas_as_latex_and_footnotes_as_metalist_footnotes() -> None:
@@ -382,7 +388,31 @@ def test_rich_text_keeps_formulas_as_latex_and_footnotes_as_metalist_footnotes()
     paragraph, callout = note.root.children
     assert paragraph.content_html == "A (((x^2))) sum{{Source}} and <mark>mark</mark>."
     assert set(paragraph.tags) == {"(((@LaTeX)))", "{{@footnote}}"}
-    assert sanitize_note_html(callout.content_html) == "<blockquote><p><strong>Tip: Hint</strong></p><p>Body</p></blockquote>"
+    # A callout is an @quote note, its first line the type and title in bold.
+    assert sanitize_note_html(callout.content_html) == "<p><strong>Tip: Hint</strong></p><p>Body</p>"
+    assert "@quote" in callout.tags
+
+
+@pytest.mark.parametrize(("quote", "html"), [
+    ("> One line", "One line"),
+    ("> Two\\\n> lines", "Two<br>\nlines"),
+    ("> [!note] Title\n> Body", "<p><strong>Note: Title</strong></p><p>Body</p>"),
+    ("> Holds\n>\n> - a list", "<p>Holds</p><ul><li>a list</li></ul>"),
+])
+def test_a_quote_of_its_own_is_an_at_quote_note(quote: str, html: str) -> None:
+    note = planned_as("N.md", f"Before.\n\n{quote}", strict=True, split_mode=SPLIT_PARAGRAPHS, content_format=CONTENT_RICH)
+    quoted = note.root.children[1]
+    assert (sanitize_note_html(quoted.content_html), quoted.tags) == (html, ("@quote",))
+
+
+def test_a_quote_in_a_note_holding_more_is_a_quote_region() -> None:
+    note = planned_as("N.md", "Before.\n\n> [!note] Title\n> Body\n\nAfter.", strict=True, split_mode=SPLIT_NONE, content_format=CONTENT_RICH)
+    assert "<p>((<strong>Note: Title</strong></p><p>Body))</p>" in note.root.content_html
+    assert "((@quote))" in note.root.tags
+    # A quote a region could not hold whole (a list in it) stays a quote as HTML.
+    listed = planned_as("N.md", "Before.\n\n> Holds\n>\n> - a list", strict=True, split_mode=SPLIT_NONE, content_format=CONTENT_RICH)
+    assert "<blockquote><p>Holds</p><ul><li>a list</li></ul></blockquote>" in listed.root.content_html
+    assert "((@quote))" not in listed.root.tags
 
 
 def test_markdown_notes_keep_their_markdown_and_tasks_are_metalist_tasks() -> None:
@@ -409,21 +439,142 @@ def test_a_file_kept_whole_as_rich_text_is_one_note() -> None:
 
 def test_a_split_import_writes_each_files_notes_under_it(note_store: NoteStore) -> None:
     result = CmdImportObsidianVault(
-        folder_path=str(FIXTURE_VAULT), split_mode=SPLIT_PARAGRAPHS, content_format=CONTENT_RICH, token="",
+        folder_path=str(FIXTURE_VAULT), split_mode=SPLIT_PARAGRAPHS, content_format=CONTENT_RICH, token=TOKEN,
         imported_at=IMPORTED_AT,
     ).execute()
     roots = note_store.get_children(None)
-    welcome = roots[10]
+    welcome = roots[11]
     assert first_line(note_store, welcome) == "Welcome"
     intro = note_store.get_children(welcome)[0]
     assert len(note_store.get_children(intro)) == 3
-    assert result["noteCount"] > 11
+    assert result["noteCount"] > 12
 
 
 def test_the_report_comes_in_split_as_the_vault_does(note_store: NoteStore) -> None:
     result = CmdImportObsidianVault(
-        folder_path=str(FIXTURE_VAULT), split_mode=SPLIT_PARAGRAPHS, content_format=CONTENT_RICH, token="",
+        folder_path=str(FIXTURE_VAULT), split_mode=SPLIT_PARAGRAPHS, content_format=CONTENT_RICH, token=TOKEN,
         imported_at=IMPORTED_AT,
     ).execute()
     sections = [first_line(note_store, note_id) for note_id in note_store.get_children(result["reportNoteId"])]
     assert "Imported" in sections and "Left out" in sections and "Files" in sections
+
+
+# --- Slice 2: links, embeds and attachments -------------------------------------------------
+
+def imported_tree(store: NoteStore, *, split_mode: str, content_format: str) -> dict[str, str]:
+    """Import the fixture vault; each imported note's id by its first line (the first one wins)."""
+    CmdImportObsidianVault(
+        folder_path=str(FIXTURE_VAULT), split_mode=split_mode, content_format=content_format, token=TOKEN,
+        imported_at=IMPORTED_AT,
+    ).execute()
+    ids: dict[str, str] = {}
+    stack = list(reversed(store.get_children(None)))
+    while stack:
+        note_id = stack.pop()
+        line = first_line(store, note_id)
+        if line not in ids:
+            ids[line] = note_id
+        stack.extend(reversed(store.get_children(note_id)))
+    return ids
+
+
+def readable(store: NoteStore, note_id: str, ids: dict[str, str]) -> str:
+    """note_id's stored HTML with each note id written as its first line, each file id as its name."""
+    content = store.get_note(note_id).content
+    for line, other_id in ids.items():
+        content = content.replace(other_id, f"<{line}>")
+    for file_id in file_registry.list_ids():
+        content = content.replace(file_id, f"<file {file_registry.title_of(file_id)}>")
+    return content
+
+
+def test_split_links_reach_notes_headings_blocks_and_files(note_store: NoteStore) -> None:
+    ids = imported_tree(note_store, split_mode=SPLIT_PARAGRAPHS, content_format=CONTENT_RICH)
+    links = readable(note_store, note_store.get_children(ids["Links"])[0], ids)
+    assert links == (
+        "A wiki link to [[<Plan>]], one with its own text: [[<Plan>|the plan]], and one through an alias: [[<Plan>]].<br>\n"
+        "A Markdown link to [[<2026-10-30>|the daily note]] and one with spaces: [[<Notes>|Client B]].<br>\n"
+        "A heading link: [[<Links target>]] and a block link: [[<A paragraph with a block ID.>]].<br>\n"
+        "A link to a missing note: [[Nowhere]]. A link in code stays as written: <code>[[Plan]]</code>.<br>\n"
+        "A PDF: [[<file report.pdf>]]."
+    )
+    embeds = [readable(note_store, child, ids) for child in note_store.get_children(ids["Links"])[1:]]
+    assert embeds == ["![[<Notes>]]", "![[<file photo.png>|300]]", "![[<file photo.png>]]"]
+    # A link back: Welcome's heading section links to the Links note.
+    assert readable(note_store, note_store.get_children(ids["Links target"])[0], ids) == "The heading [[<Links>]] points here."
+
+
+def test_a_file_kept_whole_links_to_whole_notes(note_store: NoteStore) -> None:
+    ids = imported_tree(note_store, split_mode=SPLIT_NONE, content_format=CONTENT_MARKDOWN)
+    links = readable(note_store, ids["# Links"], ids)
+    assert "A heading link: [[<# Welcome>|Welcome &gt; Links target]] and a block link: [[<# Welcome>]]." in links
+    assert "![[<file photo.png>|300]]" in links
+
+
+def test_only_files_a_note_links_to_are_stored_each_once(note_store: NoteStore) -> None:
+    imported_tree(note_store, split_mode=SPLIT_NONE, content_format=CONTENT_MARKDOWN)
+    assert sorted(file_registry.title_of(file_id) for file_id in file_registry.list_ids()) == ["photo.png", "report.pdf"]
+
+
+@pytest.mark.parametrize(("written", "expected"), [
+    # From the vault's top, from the file's folder, by the end of a path (the shortest first).
+    ("[[Projects/Client A/Plan]]", "Plan"),
+    ("[[Plan.md]]", "Plan"),
+    ("[x](Plan.md)", "Plan"),
+    ("[[Index]]", "Home"),
+    ("[[Work/Notes/Index]]", "Work"),
+    ("[[Client B/Notes]]", "Notes"),
+    ("[[the plan]]", "Plan"),
+    # A wiki link in a table writes its | as \\|.
+    ("[[Plan\\|text]]", "Plan"),
+])
+def test_links_find_notes_as_obsidian_does(tmp_path: Path, note_store: NoteStore, written: str, expected: str) -> None:
+    for path, text in [
+        ("Projects/Client A/Plan.md", "---\naliases: [The Plan]\n---\nPlan"), ("Projects/Client A/Other.md", written),
+        ("Projects/Client B/Notes.md", "Notes"), ("Home/Index.md", "Home"), ("Work/Notes/Index.md", "Work"),
+    ]:
+        (tmp_path / path).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / path).write_text(text)
+    CmdImportObsidianVault(
+        folder_path=str(tmp_path), split_mode=SPLIT_NONE, content_format=CONTENT_RICH, token=TOKEN, imported_at=IMPORTED_AT,
+    ).execute()
+    # Each note's last line is its file's text, which tells the two Index notes apart.
+    by_body = {
+        extract_plain_text_from_note_html(note_store.get_note(note_id).content).split("\n")[-1]: note_id
+        for note_id in note_store.get_children(None)
+    }
+    linking = [note_id for note_id in note_store.get_children(None) if "[[" in note_store.get_note(note_id).content]
+    assert len(linking) == 1
+    assert f"[[{by_body[expected]}" in note_store.get_note(linking[0]).content
+
+
+def test_a_canvas_comes_in_as_a_file_in_a_note_of_its_own(tmp_path: Path, note_store: NoteStore) -> None:
+    (tmp_path / "Note.md").write_text("Text")
+    (tmp_path / "Board.canvas").write_text('{"nodes": [], "edges": []}')
+    (tmp_path / "Sketch.excalidraw.md").write_text("# Excalidraw Data")
+    result = CmdImportObsidianVault(
+        folder_path=str(tmp_path), split_mode=SPLIT_NONE, content_format=CONTENT_RICH, token=TOKEN, imported_at=IMPORTED_AT,
+    ).execute()
+    roots = note_store.get_children(None)
+    names = {file_id: file_registry.title_of(file_id) for file_id in file_registry.list_ids()}
+    contents = [note_store.get_note(note_id).content for note_id in roots[1:-1]]
+    assert len(contents) == 3
+    assert contents[0] == f"![[{next(i for i, n in names.items() if n == 'Board.canvas')}]]"
+    assert "Text" in contents[1]
+    assert contents[2] == f"![[{next(i for i, n in names.items() if n == 'Sketch.excalidraw.md')}]]"
+    report = extract_plain_text_from_note_html(note_store.get_note(result["reportNoteId"]).content)
+    assert "2 Canvas, Base and Excalidraw files, each kept as a file in a note of its own." in report
+
+
+def test_a_file_too_large_is_left_out_and_its_links_stay_as_written(tmp_path: Path, note_store: NoteStore, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(import_module, "MAX_ATTACHMENT_BYTES", 2)
+    (tmp_path / "Note.md").write_text("See ![[big.png]]")
+    (tmp_path / "big.png").write_bytes(b"12345")
+    result = CmdImportObsidianVault(
+        folder_path=str(tmp_path), split_mode=SPLIT_NONE, content_format=CONTENT_RICH, token=TOKEN, imported_at=IMPORTED_AT,
+    ).execute()
+    assert "See ![[big.png]]" in extract_plain_text_from_note_html(note_store.get_note(note_store.get_children(None)[1]).content)
+    report = extract_plain_text_from_note_html(note_store.get_note(result["reportNoteId"]).content)
+    assert "big.png: larger than a file can be in MetaList (0 MB); links to it stay as written" in report
+    assert "Changed" not in report
+    assert file_registry.list_ids() == set()

@@ -7830,6 +7830,21 @@ html[data-theme="dark"] ::highlight(metalist-find-current) {
     letter-spacing: 0.01em;
 }
 
+/* @quote: a quote as Markdown draws one, a block with a bar at its left (as
+   .meta-markdown blockquote). A region mid-line is a block of its own, the text around it
+   on lines of its own; regions on lines next to each other join into one bar. */
+.meta-quote {
+    display: block;
+    padding-left: 0.8em;
+    border-left: 3px solid rgba(0, 0, 0, 0.2);
+    color: #555555;
+}
+
+html[data-theme="dark"] .meta-quote {
+    color: var(--app-text-muted);
+    border-left-color: rgba(235, 235, 235, 0.24);
+}
+
 .meta-bold {
     font-weight: 700;
 }

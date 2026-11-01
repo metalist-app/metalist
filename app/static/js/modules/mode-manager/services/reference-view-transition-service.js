@@ -80,7 +80,23 @@ function buildColumnGhost(notesContainer) {
     ghost.style.width = `${rect.width}px`;
     ghost.style.minHeight = `${Math.max(0, window.innerHeight - rect.top)}px`;
     notesContainer.after(ghost);
+    alignGhostWithColumn(ghost, notesContainer);
     return ghost;
+}
+
+// The copy lays out on its own: a margin that the live column passes on to the page
+// (the first note's top margin) stays inside it, and its notes sat 2 px lower
+// (2026-10-31). Moved by what its first note is off, it shows each note where it was.
+function alignGhostWithColumn(ghost, notesContainer) {
+    const liveFirst = notesContainer.firstElementChild;
+    const copyFirst = ghost.firstElementChild;
+    if (liveFirst === null || copyFirst === null) {
+        return;
+    }
+    const live = liveFirst.getBoundingClientRect();
+    const copy = copyFirst.getBoundingClientRect();
+    ghost.style.top = `${parseFloat(ghost.style.top) + live.top - copy.top}px`;
+    ghost.style.left = `${parseFloat(ghost.style.left) + live.left - copy.left}px`;
 }
 
 export function isReferenceViewTransitionPending() {

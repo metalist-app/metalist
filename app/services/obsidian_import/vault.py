@@ -20,6 +20,8 @@ _APP_SETTINGS_FILE = "app.json"
 _STRICT_LINE_BREAKS_SETTING = "strictLineBreaks"
 _HIDDEN_PREFIX = "."
 _MARKDOWN_SUFFIX = ".md"
+# An Excalidraw drawing is Markdown on disk but no note: it comes in as a file (mapping J4).
+_DRAWING_SUFFIX = ".excalidraw.md"
 _UTF8 = "utf-8"
 _UTF8_BOM = b"\xef\xbb\xbf"
 
@@ -47,6 +49,8 @@ class SkippedEntry:
 class VaultContents:
     name: str
     markdown_files: List[VaultFile]
+    # Every other file outside hidden folders: an attachment if a note refers to it.
+    other_files: List[PurePosixPath]
     skipped: List[SkippedEntry]
     # Obsidian's "Strict line breaks": a single Return is then no line break.
     uses_strict_line_breaks: bool
@@ -60,6 +64,7 @@ def read_vault(folder: Path) -> VaultContents:
     if not folder.is_dir():
         raise ValueError(f"vault folder must be a folder: {folder}")
     markdown_files: List[VaultFile] = []
+    other_files: List[PurePosixPath] = []
     skipped: List[SkippedEntry] = []
     for directory, folder_names, file_names in os.walk(folder):
         here = Path(directory)
@@ -72,8 +77,8 @@ def read_vault(folder: Path) -> VaultContents:
             if file_name.startswith(_HIDDEN_PREFIX):
                 skipped.append(SkippedEntry(path=relative, reason="hidden file"))
                 continue
-            if not file_name.lower().endswith(_MARKDOWN_SUFFIX):
-                skipped.append(SkippedEntry(path=relative, reason="not a Markdown file"))
+            if not file_name.lower().endswith(_MARKDOWN_SUFFIX) or file_name.lower().endswith(_DRAWING_SUFFIX):
+                other_files.append(PurePosixPath(relative))
                 continue
             text = _utf8_text(file_path.read_bytes())
             if text is None:
@@ -87,11 +92,13 @@ def read_vault(folder: Path) -> VaultContents:
                 modified_at=datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc),
             ))
     markdown_files.sort(key=lambda vault_file: _sort_key(str(vault_file.path)))
+    other_files.sort(key=lambda path: _sort_key(str(path)))
     skipped.sort(key=lambda entry: _sort_key(entry.path))
     uses_strict_line_breaks, settings_problem = _read_line_break_setting(folder)
     return VaultContents(
         name=unicodedata.normalize("NFC", folder.name),
         markdown_files=markdown_files,
+        other_files=other_files,
         skipped=skipped,
         uses_strict_line_breaks=uses_strict_line_breaks,
         settings_problem=settings_problem,

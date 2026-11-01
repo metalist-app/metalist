@@ -10,6 +10,7 @@ const WRAPPER_TYPES = Object.freeze([
 export const ADD_STYLE_OPTIONS = Object.freeze([
     Object.freeze({ id: 'footnote', label: 'Footnote', tag: '@footnote', selectionOnly: true }),
     Object.freeze({ id: 'heading', label: 'Heading', tag: '@heading' }),
+    Object.freeze({ id: 'quote', label: 'Quote', tag: '@quote' }),
     Object.freeze({ id: 'bold', label: 'Bold', tag: '@bold' }),
     Object.freeze({ id: 'italic', label: 'Italic', tag: '@italic' }),
     Object.freeze({ id: 'strikethrough', label: 'Strikethrough', tag: '@strikethrough' }),

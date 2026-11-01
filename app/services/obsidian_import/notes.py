@@ -8,20 +8,22 @@ from __future__ import annotations
 
 import re
 import unicodedata
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, datetime, time, timezone
+from pathlib import PurePosixPath
 from typing import Dict, List, Tuple
 
 import yaml
 
 from app.services.exception_capture import CapturedExceptionContext
-from app.services.file_text_preview import plain_text_to_note_html
+from app.services.obsidian_import.links import LinkReference, tokenize_links
 from app.services.obsidian_import.tree import (
+    BLOCK_MARKER_FORMAT,
     CONTENT_MARKDOWN,
-    MARKDOWN_TAG,
     SPLIT_NONE,
     NoteNode,
     build_file_tree,
+    whole_markdown_note,
 )
 from app.services.obsidian_import.vault import VaultFile
 from app.services.tag_characters import clean_tag_text
@@ -37,7 +39,8 @@ _FRONTMATTER_ENDS = (_FRONTMATTER_FENCE, "...")
 _TAGS_KEYS = ("tags", "tag")
 _CREATED_KEY = "created"
 _UPDATED_KEY = "updated"
-_HANDLED_KEYS = frozenset({*_TAGS_KEYS, _CREATED_KEY, _UPDATED_KEY})
+_ALIASES_KEYS = ("aliases", "alias")
+_HANDLED_KEYS = frozenset({*_TAGS_KEYS, *_ALIASES_KEYS, _CREATED_KEY, _UPDATED_KEY})
 _TAG_LIST_SEPARATORS_RE = re.compile(r"[,\s]+")
 _TAG_MARK = "#"
 _META_TAG_MARK = "@"
@@ -52,7 +55,7 @@ _TAG_WORD_JOINER = "-"
 _ATX_HEADING_RE = re.compile(r"^ {0,3}#{1,6}\s+(?P<text>.*?)(?:\s+#+)?\s*$")
 _FENCE_RE = re.compile(r"^ {0,3}(?:```|~~~)")
 _MATH_BLOCK_FENCE = "$$"
-_BLOCK_ID_RE = re.compile(r"(?:^|\s+)\^[A-Za-z0-9-]+\s*$")
+_BLOCK_ID_RE = re.compile(r"(?:^|\s+)\^(?P<id>[A-Za-z0-9-]+)\s*$")
 _COMMENT_MARK = "%%"
 _COMMENT_MARKS_PER_COMMENT = 2
 _LIST_ITEM_RE = re.compile(r"^\s*(?:[-+*]|\d+[.)])\s")
@@ -91,6 +94,9 @@ class PlannedNote:
     root: NoteNode
     # The file's folder as a tag ("" at the vault's top).
     folder_tag: str
+    # Its links and embeds, each a token in the notes' HTML (links.py), and its other names.
+    links: List[LinkReference]
+    aliases: List[str]
     created_at: datetime
     updated_at: datetime
     source_path: str
@@ -106,7 +112,7 @@ def plan_file_note(
     renamed_tags: List[Tuple[str, str]] = []
     dropped_tags: List[str] = []
     tags: List[str] = []
-    folder_tag = _folder_tag(vault_file, renamed_tags=renamed_tags, dropped_tags=dropped_tags)
+    folder_tag = _folder_tag(vault_file.path, renamed_tags=renamed_tags, dropped_tags=dropped_tags)
     if folder_tag != "":
         tags.append(folder_tag)
     for name in _frontmatter_tag_names(frontmatter):
@@ -114,15 +120,15 @@ def plan_file_note(
         if tag != "":
             tags.append(tag)
     lines = body.split("\n")
-    lines, block_id_count = _without_block_ids(lines)
+    lines, block_id_count = _with_block_markers(lines)
     has_comments = _has_comments(lines)
     if not uses_strict_line_breaks:
         lines = _with_standard_line_breaks(lines)
+    links: List[LinkReference] = []
+    lines = tokenize_links(lines, links)
     title_line, rest = _title_and_body(_title(vault_file), lines)
     root = _file_root(title_line, rest, split_mode=split_mode, content_format=content_format)
-    root = NoteNode(
-        content_html=root.content_html, tags=tuple(_unique_tags([*tags, *root.tags, source_tag])), children=root.children,
-    )
+    root = replace(root, tags=tuple(_unique_tags([*tags, *root.tags, source_tag])))
     times_problem = ""
     created_at, problem = _frontmatter_time(frontmatter, _CREATED_KEY, vault_file.created_at)
     times_problem += problem
@@ -139,11 +145,19 @@ def plan_file_note(
     return PlannedNote(
         root=root,
         folder_tag=folder_tag,
+        links=links,
+        aliases=_frontmatter_aliases(frontmatter),
         created_at=created_at,
         updated_at=updated_at,
         source_path=str(vault_file.path),
         findings=findings,
     )
+
+
+def folder_tag_for(path: PurePosixPath) -> str:
+    """The tag of the folder holding path, for a file that is no note (its renames are not
+    reported: the notes in the same folder report them)."""
+    return _folder_tag(path, renamed_tags=[], dropped_tags=[])
 
 
 def source_tag_for(imported_at: datetime) -> str:
@@ -194,6 +208,20 @@ def _frontmatter_tag_names(frontmatter: Dict[str, object]) -> List[str]:
     return [name.strip().removeprefix(_TAG_MARK) for name in names]
 
 
+def _frontmatter_aliases(frontmatter: Dict[str, object]) -> List[str]:
+    """The file's other names, which links may use instead of its name (mapping C3)."""
+    aliases: List[str] = []
+    for key, value in frontmatter.items():
+        if key.casefold() not in _ALIASES_KEYS:
+            continue
+        if isinstance(value, list):
+            aliases.extend(str(entry).strip() for entry in value if entry is not None)
+            continue
+        if value is not None:
+            aliases.append(str(value).strip())
+    return [alias for alias in aliases if alias != ""]
+
+
 def _frontmatter_time(frontmatter: Dict[str, object], key: str, file_time: datetime) -> Tuple[datetime, str]:
     """The frontmatter's date or date-time under key, or the file's own time when there is
     none; a value that is no date is reported and the file's time used."""
@@ -209,10 +237,10 @@ def _frontmatter_time(frontmatter: Dict[str, object], key: str, file_time: datet
     return file_time, f" {key}: {value!r} is not a date, so the file's own time was used."
 
 
-def _folder_tag(vault_file: VaultFile, *, renamed_tags: List[Tuple[str, str]], dropped_tags: List[str]) -> str:
+def _folder_tag(path: PurePosixPath, *, renamed_tags: List[Tuple[str, str]], dropped_tags: List[str]) -> str:
     """The folder path as one tag (`Projects/Client A/` → `Projects/Client-A`); "" at the
     vault's top. Each folder's name is made a tag part as a tag is."""
-    folders = vault_file.path.parent.parts
+    folders = path.parent.parts
     if len(folders) == 0:
         return ""
     original = _FOLDER_SEPARATOR.join(folders)
@@ -278,7 +306,7 @@ def _file_root(title_line: str, body: str, *, split_mode: str, content_format: s
         text = title_line
         if body != "":
             text = f"{title_line}\n\n{body}"
-        return NoteNode(content_html=plain_text_to_note_html(text), tags=(MARKDOWN_TAG,), children=())
+        return whole_markdown_note(text)
     return build_file_tree(title_line=title_line, body=body, split_mode=split_mode, content_format=content_format)
 
 
@@ -322,20 +350,25 @@ def _outside_fences(lines: List[str]) -> List[bool]:
     return flags
 
 
-def _without_block_ids(lines: List[str]) -> Tuple[List[str], int]:
-    """The lines without Obsidian's block IDs (`text ^37066d`, or `^37066d` on a line of its
-    own), outside code; and how many there were (mapping F1)."""
-    kept: List[str] = []
+def _with_block_markers(lines: List[str]) -> Tuple[List[str], int]:
+    """The lines with Obsidian's block IDs (`text ^37066d`, or `^37066d` on a line of its
+    own), outside code, as markers the notes take as anchors (tree.py, mapping F1); and how
+    many there were. An ID on its own line right under its block's last line joins that line."""
+    marked: List[str] = []
     count = 0
     for line, is_text in zip(lines, _outside_fences(lines)):
-        if not is_text or _BLOCK_ID_RE.search(line) is None:
-            kept.append(line)
+        block_id = _BLOCK_ID_RE.search(line)
+        if not is_text or block_id is None:
+            marked.append(line)
             continue
         count += 1
+        marker = BLOCK_MARKER_FORMAT.format(hex=block_id.group("id").encode().hex())
         without = _BLOCK_ID_RE.sub("", line)
-        if without.strip() != "" or line.strip() == "":
-            kept.append(without)
-    return kept, count
+        if without.strip() == "" and len(marked) > 0 and marked[-1].strip() != "":
+            marked[-1] = f"{marked[-1]} {marker}"
+            continue
+        marked.append(f"{without} {marker}".lstrip())
+    return marked, count
 
 
 def _has_comments(lines: List[str]) -> bool:

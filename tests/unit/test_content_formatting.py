@@ -505,6 +505,40 @@ def test_format_note_content_for_view_basic_meta_tags_apply_classes() -> None:
     assert 'meta-serif' in rendered
 
 
+def test_quote_makes_the_whole_note_a_quote() -> None:
+    rendered = format_note_content_for_view(content_html="<div>To be.</div><div>Or not.</div>", tags="@quote")
+    assert rendered == '<span class="meta-global meta-quote"><div>To be.</div><div>Or not.</div></span>'
+
+
+def test_a_scoped_quote_is_a_quote_block_even_mid_line() -> None:
+    # The region is its own block (main.css: .meta-quote is display: block), so the text
+    # before and after it sits on lines of its own.
+    rendered = format_note_content_for_view(content_html="<div>He said ((it's done)) and left</div>", tags="((@quote))")
+    assert rendered == "<div>He said <span class=\"meta-scope meta-quote\">it's done</span> and left</div>"
+    # Over several lines, each line's part is a block; one under another, they draw one bar.
+    rendered = format_note_content_for_view(content_html="<div>a ((one</div><div>two)) b</div>", tags="((@quote))")
+    assert rendered == (
+        '<div>a <span class="meta-scope meta-quote">one</span></div>'
+        '<div><span class="meta-scope meta-quote">two</span> b</div>'
+    )
+
+
+def test_a_quote_region_takes_the_line_break_after_it() -> None:
+    # Pasted text keeps its lines as <br>. The region is a block, so the <br> after it
+    # would start an empty line (2026-10-31): the block's own end ends that line.
+    rendered = format_note_content_for_view(
+        content_html="Before the quote<br>((First quoted line<br>Second quoted line))<br>After the quote<br>Last",
+        tags="((@quote))",
+    )
+    assert rendered == (
+        'Before the quote<br><span class="meta-scope meta-quote">First quoted line<br>Second quoted line</span>'
+        "After the quote<br>Last"
+    )
+    # Only the break right after it: text after the region keeps its own line breaks.
+    rendered = format_note_content_for_view(content_html="He said ((done)) and left<br>Next", tags="((@quote))")
+    assert rendered == 'He said <span class="meta-scope meta-quote">done</span> and left<br>Next'
+
+
 def test_format_note_content_for_view_dark_theme_meta_is_ignored() -> None:
     html = "<div>hello</div>"
     rendered = format_note_content_for_view(content_html=html, tags="@dark-theme")

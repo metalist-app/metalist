@@ -22,6 +22,7 @@ suggestions of `@` tags are in the tag-suggestions topic.
   - Scopes may cross multiple editor blocks/lines; visual styles are rendered as valid per-block spans across the full selected range.
 - Basic formatting tags:
   - `@heading` increases font size and weight.
+  - `@quote` draws a quote as Markdown does: indented with a grey bar at its left. Scoped (`((@quote))`), each region is a quote block on lines of its own, even one written mid-line.
   - `@bold`, `@italic`, `@strikethrough` apply basic text styling.
   - `@serif` switches to a serif font.
   - `@red`, `@green`, `@blue`, `@grey` (or `@gray`) apply text colors.

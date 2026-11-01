@@ -15,7 +15,7 @@
 Why: the path Obsidian → MetaList → back to Obsidian is the one where the user has left, so it isn't worth special machinery. The export's job is trust before signing up, and standard Markdown gives that to everyone, including people who started in MetaList.
 
 **Two phases** (the maintainer, 2026-10-30), so decisions about how it works and how it looks are never made at the same time:
-1. **A plain developer version first,** to prove the import works: shown only when MetaList runs in development (`METALIST_ENVIRONMENT=development`, as the AI cost display is), with plain controls: pick a vault folder with the existing folder picker (the backup dialog's), pick a split mode, import, read the report. Tried against real public Obsidian vaults. No polish, no animation.
+1. **A plain developer version first,** to prove the import works: first shown only in development, then in production too so the maintainer can try it in their own MetaList (2026-10-31), with plain controls: pick a vault folder with the existing folder picker (the backup dialog's), pick a split mode, import, read the report. Tried against real public Obsidian vaults. No polish, no animation.
 2. **The polished flow (§3a) later,** once the import is right.
 
 **Build order** (the maintainer, 2026-10-30), each step with its own early look:

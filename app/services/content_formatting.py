@@ -75,6 +75,8 @@ _META_TAG_TO_CLASS = {
     "footnote": "meta-footnote",
     "monospace": "meta-monospace",
     "heading": "meta-heading",
+    # A quote as Markdown means it: a block with a bar at its left (2026-10-31).
+    "quote": "meta-quote",
     "red": "meta-red",
     "green": "meta-green",
     "blue": "meta-blue",
@@ -187,6 +189,9 @@ _URL_LABEL_ANCHOR_RE = re.compile(
     r'(?P<opener><a\b[^>]*>)(?P<label>https?://[^<]*)</a\s*>', re.IGNORECASE,
 )
 _NEW_TAB_REL_TOKENS = ("noopener", "noreferrer")
+_QUOTE_CLASS = "meta-quote"
+_SPAN_TAG_RE = re.compile(r"<(?P<closing>/?)span\b[^>]*>", re.IGNORECASE)
+_LINE_BREAK_TAG_RE = re.compile(r"<br\s*/?>", re.IGNORECASE)
 _SELF_CLOSING_TAG_END = "/>"
 _BLOCK_HTML_TAG_RE = re.compile(
     r"<(?:blockquote|div|dl|fieldset|figure|figcaption|footer|form|h[1-6]|header|hr|li|ol|p|pre|section|table|tbody|td|tfoot|th|thead|tr|ul)\b",
@@ -1945,7 +1950,40 @@ def _apply_scoped_meta_tags(
     for frame in stack:
         output[frame.placeholder_index] = frame.opener_text
 
-    return "".join(output)
+    return _without_breaks_after_quotes("".join(output))
+
+
+def _without_breaks_after_quotes(rendered_html: str) -> str:
+    """rendered_html without the <br> right after a quote region: the region is a block
+    (@quote, main.css), whose end already ends its line, so that <br> would leave an empty
+    line under it (2026-10-31)."""
+    if _QUOTE_CLASS not in rendered_html:
+        return rendered_html
+    kept: List[str] = []
+    # For each open span, whether it is a quote's.
+    open_spans: List[bool] = []
+    drops_next_break = False
+    for part in _HTML_TAG_SPLIT_RE.split(rendered_html):
+        if part == "":
+            continue
+        if drops_next_break and _LINE_BREAK_TAG_RE.fullmatch(part) is not None:
+            drops_next_break = False
+            continue
+        drops_next_break = False
+        span = _SPAN_TAG_RE.fullmatch(part)
+        if span is not None and span.group("closing") == "" and not part.endswith(_SELF_CLOSING_TAG_END):
+            open_spans.append(_QUOTE_CLASS in _span_classes(part))
+        elif span is not None and span.group("closing") != "" and len(open_spans) > 0:
+            drops_next_break = open_spans.pop()
+        kept.append(part)
+    return "".join(kept)
+
+
+def _span_classes(span_tag: str) -> List[str]:
+    found = _ANCHOR_CLASS_ATTR_RE.search(span_tag)
+    if found is None:
+        return []
+    return found.group("value").split()
 
 
 def _apply_scoped_meta_tags_to_plain_text(

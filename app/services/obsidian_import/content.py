@@ -32,6 +32,15 @@ _PLAIN_CODE_LANGUAGE = "text"
 CODE_TAG_FORMAT = "@code={language}"
 MERMAID_TAG = "@mermaid"
 LATEX_NOTE_TAG = "@LaTeX"
+# A quote (a callout too) is MetaList's @quote: a note of its own tagged @quote, or in a
+# note holding more, a ((…)) region (PLAN.md, @quote; the maintainer, 2026-10-31).
+QUOTE_TAG = "@quote"
+QUOTE_REGION_TAG = "((@quote))"
+_QUOTE_REGION_OPEN = "(("
+_QUOTE_REGION_CLOSE = "))"
+_QUOTE_RE = re.compile(r"^<blockquote[^>]*>(?P<inner>.*)</blockquote>$", re.DOTALL)
+# What a quote region may hold: paragraphs of text, no other block (a list, a fold).
+_PARAGRAPHS_ONLY_RE = re.compile(r"^(?:<p>(?:(?!<p>|</p>|<(?:ul|ol|li|div|details|summary|blockquote|pre|table)\b).)*</p>)+$", re.DOTALL)
 
 
 class Content(NamedTuple):
@@ -71,6 +80,35 @@ def rich_block(markdown: str, footnote_definitions: List[str]) -> Content:
         rendered = rendered.replace(token, _FOOTNOTE_SCOPE_FORMAT.format(body=body_html))
         tags.add(FOOTNOTE_TAG)
     return Content(html=rendered, tags=frozenset(tags))
+
+
+def quote_note(markdown: str, footnote_definitions: List[str]) -> Content:
+    """A quote or callout as a note of its own: what it says, tagged @quote (a callout's
+    first line its type and title in bold, as the renderer draws it)."""
+    rendered = rich_block(markdown, footnote_definitions)
+    quote = _QUOTE_RE.match(rendered.html)
+    assert quote is not None, "a quote block renders as one blockquote"
+    inner = quote.group("inner")
+    if inner.startswith(_PARAGRAPH_OPEN) and inner.endswith(_PARAGRAPH_CLOSE) and inner.count(_PARAGRAPH_OPEN) == 1:
+        inner = inner[len(_PARAGRAPH_OPEN):-len(_PARAGRAPH_CLOSE)]
+    return Content(html=inner, tags=rendered.tags | {QUOTE_TAG})
+
+
+def quote_region(markdown: str, footnote_definitions: List[str]) -> Content:
+    """A quote inside a note holding more: its paragraphs as a ((…)) region tagged
+    ((@quote)). One holding a list or a fold, or (( or )) of its own, stays a quote as
+    HTML: a region could not hold it whole."""
+    rendered = rich_block(markdown, footnote_definitions)
+    quote = _QUOTE_RE.match(rendered.html)
+    assert quote is not None, "a quote block renders as one blockquote"
+    inner = quote.group("inner")
+    if _PARAGRAPHS_ONLY_RE.match(inner) is None or _QUOTE_REGION_OPEN in inner or _QUOTE_REGION_CLOSE in inner:
+        return rendered
+    region = (
+        _PARAGRAPH_OPEN + _QUOTE_REGION_OPEN + inner[len(_PARAGRAPH_OPEN):-len(_PARAGRAPH_CLOSE)]
+        + _QUOTE_REGION_CLOSE + _PARAGRAPH_CLOSE
+    )
+    return Content(html=region, tags=rendered.tags | {QUOTE_REGION_TAG})
 
 
 def markdown_note(markdown: str, footnote_definitions: List[str]) -> Content:

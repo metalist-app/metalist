@@ -49,7 +49,7 @@ function isRendererTag(folded) {
     return CODE_RENDERER_TAG_RE.test(folded);
 }
 const KNOWN_META_TAGS = new Set([
-    '@footnote', '@monospace', '@heading', '@red', '@green', '@blue', '@grey', '@gray',
+    '@footnote', '@monospace', '@heading', '@quote', '@red', '@green', '@blue', '@grey', '@gray',
     '@highlight', '@bold', '@italic', '@strikethrough', '@serif', '@copyable',
     '@bullets', '@numbered', '@username', '@password', '@email',
     '@todo', '@done', '@markdown', '@ai', '@latex', '@shell', '@json', '@csv', '@chess', '@diff', '@mermaid',

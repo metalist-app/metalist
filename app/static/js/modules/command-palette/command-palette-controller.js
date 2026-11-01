@@ -61,7 +61,6 @@ import { exportNotes } from '../mode-manager/services/export-service.js';
 
 import { VersionInfoModal } from '../modals/version-info-modal.js';
 import { ObsidianImportModal } from '../modals/obsidian-import-modal.js';
-import { isDevelopmentEnvironment } from '../development-environment.js';
 import { MemoryUsageModal } from '../modals/memory-usage-modal.js';
 import { showErrorDialogFor } from '../modals/error-dialog.js';
 import { RecentMessagesModal } from '../modals/recent-messages-modal.js';
@@ -1272,7 +1271,6 @@ class CommandPaletteController {
         const state = {
             hasPassword: Auth.hasPassword,
             isRootReorderLocked: isRootReorderLocked(this.getSortMode()),
-            isDevelopment: isDevelopmentEnvironment(),
         };
         return this._endpoints.filter((endpoint) => isCommandAvailable(endpoint.id, state));
     }

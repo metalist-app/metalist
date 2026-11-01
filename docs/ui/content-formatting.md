@@ -96,6 +96,7 @@ Other (non-meta) tags may also appear inside wrapper tokens (e.g. `{{foo bar}}`)
 - `@red`: renders the (scoped) region in red.
 ## Basic formatting tags
 - `@heading`: increases font size and weight.
+- `@quote` (2026-10-31): a quote as Markdown draws one, indented with a grey bar at its left (lighter in the dark theme), in Add Style as **Quote**. On a whole note it quotes all of it; folded, the note shows its first line with the bar. Scoped (`((@quote))`, any bracket and depth) each region is a quote block: a region mid-line breaks out onto lines of its own, the text before and after it on lines of their own, and a region over several lines draws one bar. The line break right after a region is dropped, since the block's end already ends its line (`_without_breaks_after_quotes`). The Obsidian import writes quotes and callouts with it (`PLAN.md`). Tests: `test_content_formatting.py`.
 - `@bold`: renders bold text.
 - `@italic`: renders italic text.
 - `@strikethrough`: renders struck-through text.

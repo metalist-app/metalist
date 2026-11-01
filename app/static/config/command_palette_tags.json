@@ -318,7 +318,7 @@
     },
     {
       "id": "action.delete_notes_in_view",
-      "tags": ["delete", "remove", "clear", "erase", "wipe", "notes", "all", "everything", "current", "view", "search", "results", "bulk", "import", "imported"]
+      "tags": ["delete", "remove", "clear", "erase", "wipe", "notes", "all", "everything", "current", "view", "search", "results", "bulk"]
     },
     {
       "id": "action.reset_updated_at_to_created_at",

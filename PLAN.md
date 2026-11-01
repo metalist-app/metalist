@@ -7,9 +7,8 @@ come later.
 
 ## What the developer version is
 
-- **Only in development** (`METALIST_ENVIRONMENT=development`, as the AI cost display is).
-  The route answers 404 otherwise; the browser learns the flag as the cost display does
-  (a `data-` attribute from `index.html`).
+- **In every environment** (the maintainer, 2026-10-31; it was first only in development).
+  Until the polished flow, anyone given a release gets this developer version.
 - **Plain controls:**
   - "Import Obsidian vault…" in the command palette opens a small dialog, into the vault in
     use. Creating a vault offers the same import into the new vault (slice 1b).
@@ -58,8 +57,8 @@ come later.
 
 ### Slice 1: files in, as Markdown, with a report
 **Built 2026-10-31** (checkpoint `a8135b8b`).
-1. In development the command palette has "Import Obsidian vault…"; in production it isn't
-   there and the route answers 404.
+1. The command palette has "Import Obsidian vault…" (first only in development; since
+   2026-10-31 in production too).
 2. Importing a vault makes one root note per `.md` file, wherever it sits. `.obsidian/`,
    `.trash/` and hidden folders are skipped, and so are other files (until slice 2).
 3. A note's first line is its file name without `.md`. A first heading that repeats the name
@@ -86,7 +85,7 @@ come later.
 ### Slice 1b: offered when a vault is created (the maintainer, 2026-10-31)
 Importing works into the vault in use (slice 1) and also when a new vault is made, the
 onboarding idea of §3a brought forward.
-1. In development, the Create Vault dialog has a choice "Import an Obsidian vault into it".
+1. The Create Vault dialog has a choice "Import an Obsidian vault into it".
 2. With it chosen, Create and Open Vault opens the new vault as usual, and the import dialog
    is already open there, ready to pick the Obsidian folder. Cancelling it leaves an empty vault.
 3. The import runs in the new vault, never in the one the dialog was opened from.
@@ -94,7 +93,7 @@ onboarding idea of §3a brought forward.
 
 ### Slice 1c: a plain Markdown folder (the maintainer, 2026-10-31)
 The same importer, offered as its own option, for a folder of Markdown files from any app.
-1. In development the command palette also has "Import Markdown folder…", and creating a
+1. The command palette also has "Import Markdown folder…", and creating a
    vault offers it too.
 2. Files, folders, frontmatter, times and the report work as for an Obsidian vault. The
    notes are tagged `imported:source=markdown:at=…`, and the report is titled "Import report
@@ -105,6 +104,13 @@ The same importer, offered as its own option, for a folder of Markdown files fro
    for Obsidian once slice 2 is built.
 
 ### Slice 2: links, embeds and attachments
+**Built 2026-10-31** (`app/services/obsidian_import/links.py`, `resolve.py`). Settled while
+building it: links are tokens while each file is planned and become `[[UUID]]` once every
+note has its id; a note is found as Obsidian finds it (the path from the vault's top or the
+linking file's folder, then the shortest path ending with it, then an alias); block IDs are
+hidden and kept as anchors of the note holding them; a link to a heading kept whole reads
+"Note > Heading"; a file over the attachment limit is left out and listed, its links kept
+as written. Not yet: `|300` doesn't size a picture (MetaList keeps the text only).
 1. `[[Note]]`, `[[Note|alias]]`, `[[Folder/Note]]` and `[text](Note%20Name.md)` become links to
    the right note (`[[UUID]]`, `[[UUID|alias]]`). Frontmatter `aliases` resolve too.
 2. `![[Note]]` becomes an embed of that note.
@@ -148,13 +154,36 @@ chosen. Also built alongside it: `Delete Notes (Current View)…` (`docs/ui/comm
 4. **Rich text:**
    - Bold, italic, strike, highlight, inline code and links become MetaList's own HTML.
    - Tables become tables.
-   - A callout becomes a quote with a bold title (H19).
+   - A quote or callout becomes an `@quote` note (a `((@quote))` region in a note holding
+     more), a callout's title in bold (H19).
    - A fenced code block becomes its own note `@code=<language>`; Mermaid becomes `@mermaid`.
    - `$$…$$` becomes an `@LaTeX` note, and inline `$…$` a scoped LaTeX region.
    - Footnotes become MetaList's footnotes.
 5. `- [ ]` / `- [x]` items become notes tagged `@todo` / `@done`.
 6. In the split modes, `[[Note#Heading]]` and block links point at that heading's or
    paragraph's note.
+
+### `@quote`: a style tag for quotes (the maintainer, 2026-10-31)
+**Built 2026-10-31**, callouts included (`docs/ui/content-formatting.md`). Check 4's Markdown
+export comes with the export.
+A quote as Markdown means it: a block with a bar at its left. Like `@heading`, it keeps
+imported notes in MetaList's own formatting, so the export stays clean.
+1. A note tagged `@quote` shows its text as a Markdown quote does: indented, a grey bar at
+   its left, in light and dark themes. Its children and its tag bar are unchanged.
+2. Folded, an `@quote` note shows its first line with the bar.
+3. `((@quote))` in the tag bar (or `[[@quote]]`, `{{@quote}}`, any depth) makes each matching
+   region a quote. A region on lines of its own is a quote block there; a region mid-line
+   breaks out onto lines of its own, the text before and after it on lines of their own
+   (as an embed amid text does). The brackets hide in view mode and show while editing.
+4. The HTML export and printing show it as the list does. The Markdown export (not built
+   yet) writes each line with `> `.
+5. **Import:** a quote that becomes a note of its own is its text tagged `@quote`; a quote
+   inside a note holding more (No splitting, or a run of paragraphs under Headings and lists)
+   is a `((…))` region with `((@quote))`. A quote holding a list or several paragraphs keeps
+   them inside its note.
+6. **Callouts:** `@quote` too, its first line the type and title in bold
+   (`**Note: A callout**`) (agreed 2026-10-31).
+7. The tag docs and the AI help skills list `@quote` with the other style tags.
 
 ## Decisions (the maintainer, 2026-10-31, approving this plan)
 
