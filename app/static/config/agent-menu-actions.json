@@ -115,13 +115,13 @@
     "alternate_dialog": {
       "when": "there is no other vault to open",
       "label": "Create vault",
-      "selector": "#create-namespace-modal"
+      "selector": "#new-vault-wizard"
     }
   },
   {
     "id": "form.create_namespace",
     "label": "Create Vault…",
-    "selector": "#create-namespace-modal",
+    "selector": "#new-vault-wizard",
     "presentation": "dialog"
   },
   {

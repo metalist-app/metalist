@@ -13,11 +13,9 @@ from pydantic import ConfigDict, Field, with_config
 
 from app.api.request_auth import require_request_auth_token
 from app.api.transactions import transactional_route
-from app.services.ai_setup import AiProvider, describe_ai_setup
 from app.services.native_folder_picker import pick_folder
 from app.services.obsidian_import.sources import IMPORT_SOURCES
 from app.services.obsidian_import.vault import count_markdown_files
-from app.services.tokens import token_service
 from app.usecases.import_obsidian_vault import CmdImportObsidianVault, CmdPreviewImport
 
 router = APIRouter(prefix="/import", tags=["import"])
@@ -31,8 +29,6 @@ ImportSourceKey = Literal["obsidian", "markdown"]
 @with_config(ConfigDict(strict=True))
 class PickImportFolderRequest(TypedDict):
     source: ImportSourceKey
-    # The AI the chat uses now: whether it can suggest tags for the import (slice 2b).
-    provider: AiProvider
 
 
 @with_config(ConfigDict(strict=True))
@@ -47,17 +43,12 @@ class ImportFolderRequest(TypedDict):
 @router.post("/pick-folder")
 @transactional_route
 def pick_import_folder(request: Request, body: PickImportFolderRequest) -> dict[str, object]:
-    """The folder picked, how many Markdown files it holds, and whether the AI is set up to
-    suggest tags for them (PLAN.md, slice 2b)."""
-    token = require_request_auth_token(request)
+    """The folder picked and how many Markdown files it holds."""
+    require_request_auth_token(request)
     folder_path = pick_folder(prompt=IMPORT_SOURCES[body["source"]].folder_prompt)
     if folder_path is None:
-        return {"selected": False, "folderPath": "", "markdownFileCount": 0, "canSuggestTags": False}
-    setup = describe_ai_setup(token=token, session_key=token_service.get_session_key(token))
-    return {
-        "selected": True, "folderPath": folder_path, "markdownFileCount": count_markdown_files(Path(folder_path)),
-        "canSuggestTags": setup.is_ready_for(body["provider"]),
-    }
+        return {"selected": False, "folderPath": "", "markdownFileCount": 0}
+    return {"selected": True, "folderPath": folder_path, "markdownFileCount": count_markdown_files(Path(folder_path))}
 
 
 @router.post("/preview")

@@ -5,7 +5,8 @@ vault is not a search context. Search contexts are saved searches within the sam
 Open/Switch Vault… opens a picker of reachable vaults with two buttons: Open in
 This Tab (switching keeps one tab) and Open in New Tab; with no other vault
 yet it opens Create Vault… instead. Create Vault… opens
-a name/port form. Rename Current Vault… opens a rename form. Delete Vault…
+the new vault wizard: name and ports, then, in the new vault, a password, an AI
+and bringing in notes. Rename Current Vault… opens a rename form. Delete Vault…
 opens a confirmation form; do not execute deletion or imply it has happened.
 Manage Vault Ports… edits saved future launch profiles; saving does not launch,
 switch to, or restart a vault. Port changes take effect on a later launch.

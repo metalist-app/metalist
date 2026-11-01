@@ -7,7 +7,8 @@ import { FloatingMessages } from './floating-messages.js';
  * Authentication module for handling login/logout and password management
  */
 import { CONFIG } from './config.js';
-import { initializeSessionIdentity, getRequiredTabId } from './session-auth.js';
+import { buildSessionHeaders, initializeSessionIdentity, getRequiredTabId } from './session-auth.js';
+import { readPasswordOperationResponse } from './password-operation-response.js';
 import { CommandPalette } from './command-palette/command-palette-controller.js';
 import { PhoneMode } from './phone/phone-mode.js';
 import { ReminderSurface } from './reminder-surface-service.js';
@@ -529,7 +530,11 @@ export const Auth = {
 
     async _runHydrationFlow() {
         this._showHydrationUI();
+        await this._hydrate((status) => this._updateHydrationUI(status));
+    },
 
+    // Load the notes after a login (POST /hydrate), reporting each status until ready.
+    async _hydrate(onStatus) {
         const headers = {
             'X-Metalist-Tab-Id': getRequiredTabId(),
         };
@@ -545,7 +550,7 @@ export const Auth = {
         }
 
         let status = await startResponse.json();
-        this._updateHydrationUI(status);
+        onStatus(status);
 
         while (status.status !== 'ready') {
             if (status.status === 'error') {
@@ -567,8 +572,38 @@ export const Auth = {
                 throw new HttpRequestError(`Hydration status failed: ${pollResponse.status} ${detail}`);
             }
             status = await pollResponse.json();
-            this._updateHydrationUI(status);
+            onStatus(status);
         }
+    },
+
+    /**
+     * Give a vault without one its password and stay logged in, in this window (the new
+     * vault wizard, PLAN.md phase 2): the server logs this window in with it, every other
+     * session ends, and the notes load again behind the page, onProgress(percent) as they
+     * do. No reload, no login screen.
+     */
+    async setPasswordKeepingThisWindow(password, onProgress) {
+        if (typeof password !== 'string' || password === '' || typeof onProgress !== 'function') {
+            throw new Error('Auth.setPasswordKeepingThisWindow requires the password and onProgress');
+        }
+        if (this.hasPassword) {
+            throw new Error('This vault has a password already');
+        }
+        await this.runPasswordChange(async () => {
+            const response = await fetch(CONFIG.API.AUTH.SETTINGS.PASSWORD.CREATE, {
+                method: 'POST',
+                headers: buildSessionHeaders(true),
+                body: JSON.stringify({ password, keeps_window_logged_in: true }),
+            });
+            const answer = await readPasswordOperationResponse(response);
+            if (answer.hydrationRequired !== true) {
+                throw new Error('Setting the password did not keep this window logged in');
+            }
+            await this._hydrate((status) => onProgress(status.overall_percent));
+        });
+        this.hasPassword = true;
+        // Done: a lost session locks the page again, as it always does.
+        this._isPasswordChanging = false;
     },
 
     async handleLoginNamespaceChange(event) {

@@ -331,7 +331,7 @@ async function checkEncryptedLogin(context, origin) {
       if (!tabId) throw new Error('The app did not leave its tab identity behind');
       const response = await fetch('/api2/auth/settings/password/create', {
         method: 'POST', headers: {'X-Metalist-Tab-Id': tabId, 'Content-Type': 'application/json'},
-        body: JSON.stringify({password: value}),
+        body: JSON.stringify({password: value, keeps_window_logged_in: false}),
       });
       if (!response.ok) throw new Error(`Password setup failed: ${response.status}`);
     }, password);

@@ -12,7 +12,7 @@ from typing import Dict
 class ImportSource:
     # The source tag's value (`imported:source=<key>`) and the API's name for it.
     key: str
-    # Its name in the report's title and in messages: "Obsidian", "Markdown".
+    # Its name in messages: "Obsidian", "Markdown".
     label: str
     # What the folder is called: "vault", "folder".
     folder_word: str
@@ -21,23 +21,14 @@ class ImportSource:
     follows_obsidian_line_breaks: bool
     # What the folder dialog asks for.
     folder_prompt: str
-    # The import report's first words: what comes back out of MetaList.
-    one_way_text: str
 
 
 OBSIDIAN = ImportSource(
     key="obsidian", label="Obsidian", folder_word="vault", follows_obsidian_line_breaks=True,
     folder_prompt="Choose an Obsidian vault to import into MetaList",
-    one_way_text=(
-        "**One-way.** MetaList exports standard Markdown, so your notes, text, links and files come "
-        "back out, but features only Obsidian has may not."
-    ),
 )
 MARKDOWN = ImportSource(
     key="markdown", label="Markdown", folder_word="folder", follows_obsidian_line_breaks=False,
     folder_prompt="Choose a folder of Markdown files to import into MetaList",
-    one_way_text=(
-        "**One-way.** MetaList exports standard Markdown, so your notes, text, links and files come back out."
-    ),
 )
 IMPORT_SOURCES: Dict[str, ImportSource] = {source.key: source for source in (OBSIDIAN, MARKDOWN)}

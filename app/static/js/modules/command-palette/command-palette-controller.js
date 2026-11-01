@@ -45,7 +45,6 @@ import { RandomPasswordModal } from '../modals/random-password-modal.js';
 import { HelpModal } from '../modals/help-modal.js';
 import { LinkTitleRetryModal } from '../modals/link-title-retry-modal.js';
 import {
-    CreateNamespaceModal,
     fetchHasOtherNamespace,
     ManageNamespacePortsModal,
     RenameNamespaceModal,
@@ -117,7 +116,7 @@ import { isRootReorderLocked, normalizeRootSortMode } from '../mode-manager/serv
 import { blockRootNoteCreation, requireCreatedNoteId } from '../mode-manager/services/root-note-creation-service.js';
 import { createNoteAtTop } from '../mode-manager/actions/note-actions.js';
 import { typeReferenceOpenerAtCaret } from '../mode-manager/services/reference-suggestions-service.js';
-import { AI_STEP, PASSWORD_STEP, importSourceOfStep, readSetupSteps, writeSetupSteps } from '../new-vault-setup.js';
+import { VAULT_WIZARD_STEP, readSetupSteps, writeSetupSteps } from '../new-vault-setup.js';
 import {
     setTabDateFilterOnServer, setTabFileFilterOnServer, setTabSortModeOnServer,
 } from '../mode-manager/services/tab-state-service.js';
@@ -420,7 +419,6 @@ class CommandPaletteController {
         this._linkTitleRetryModal = null;
         this._sessionTimeoutModal = null;
         this._openNamespaceModal = null;
-        this._createNamespaceModal = null;
         this._manageNamespacePortsModal = null;
         this._renameNamespaceModal = null;
         this._deleteNamespaceModal = null;
@@ -520,7 +518,6 @@ class CommandPaletteController {
 
                 openVersionInfo: this.openVersionInfo.bind(this),
                 openImportWizard: this.openImportWizard.bind(this),
-                openNewVaultWizard: this.openNewVaultWizard.bind(this),
                 openMemoryUsage: this.openMemoryUsage.bind(this),
                 openRecentMessages: this.openRecentMessages.bind(this),
                 openNoteLayoutAppearance: this.openNoteLayoutAppearance.bind(this),
@@ -2559,6 +2556,14 @@ class CommandPaletteController {
         await this._backupRestoreModal.open();
     }
 
+    // Over the new vault wizard: its "Use This Password" fills the wizard's fields (onUse).
+    async _openPasswordGeneratorToUse(onUse) {
+        if (this._randomPasswordModal === null) {
+            this._randomPasswordModal = new RandomPasswordModal();
+        }
+        await this._randomPasswordModal.openToUse(onUse);
+    }
+
     async openRandomPasswordGenerator() {
         const isReady = await this._prepareForModalOpen('commandPalette.openRandomPasswordGenerator');
         if (!isReady) {
@@ -2608,10 +2613,7 @@ class CommandPaletteController {
             return;
         }
         if (!hasOtherResult.value) {
-            if (this._createNamespaceModal === null) {
-                this._createNamespaceModal = new CreateNamespaceModal();
-            }
-            await this._createNamespaceModal.open();
+            await this._newVaultWizardFor({ continuesSetup: false }).open();
             return;
         }
 
@@ -2621,16 +2623,13 @@ class CommandPaletteController {
         await this._openNamespaceModal.open();
     }
 
+    // Create Vault is the new vault wizard's first step (PLAN.md, phase 2).
     async openCreateNamespace() {
         const isReady = await this._prepareForModalOpen('commandPalette.openCreateNamespace');
         if (!isReady) {
             return;
         }
-
-        if (this._createNamespaceModal === null) {
-            this._createNamespaceModal = new CreateNamespaceModal();
-        }
-        await this._createNamespaceModal.open();
+        await this._newVaultWizardFor({ continuesSetup: false }).open();
     }
 
     async openManageNamespacePorts() {
@@ -2804,32 +2803,19 @@ class CommandPaletteController {
     // new-vault-setup.js): each step's dialog in turn, the next once it closes. Each step
     // leaves the address as it starts, so adding a password, which reloads the vault, goes
     // on after the login with the steps left.
+    // A new vault opened by Create Vault goes on with the wizard (#setup=wizard), once.
     async runSetupRequestedByAddress() {
-        let steps = readSetupSteps();
-        while (steps.length > 0) {
-            const [step, ...rest] = steps;
-            writeSetupSteps(rest);
-            await this._runSetupStep(step);
-            steps = readSetupSteps();
+        const steps = readSetupSteps();
+        if (steps.length === 0) return;
+        writeSetupSteps([]);
+        if (steps.length !== 1 || steps[0] !== VAULT_WIZARD_STEP) {
+            throw new Error(`Unknown new vault setup: ${steps.join('+')}`);
         }
-    }
-
-    async _runSetupStep(step) {
-        if (step === PASSWORD_STEP) {
-            // A vault given a password meanwhile (another window) needs none added.
-            if (Auth.hasPassword) return;
-            await this._untilClosed(() => this.openAddPassword(), () => this._addPasswordModal);
-            return;
-        }
-        if (step === AI_STEP) {
-            await this._untilClosed(() => this.openAiAgentSettings(false), () => this._aiAgentSettingsModal);
-            return;
-        }
-        const sourceKey = importSourceOfStep(step);
-        if (sourceKey === null) {
-            throw new Error(`Unknown new vault setup step: ${step}`);
-        }
-        await this._untilClosed(() => this.openImportWizard(sourceKey), () => this._importWizard);
+        // A vault given a password meanwhile (another window) is set up already.
+        if (Auth.hasPassword) return;
+        await this._untilClosed(
+            () => this._newVaultWizardFor({ continuesSetup: true }).open(), () => this._newVaultWizard,
+        );
     }
 
     // Opens a dialog and waits until it closes; one that did not open is done at once.
@@ -2847,10 +2833,8 @@ class CommandPaletteController {
         });
     }
 
-    // The setup and import wizards (PLAN.md, phase 2), a prototype for now: their screens
-    // and choices, nothing applied yet.
-    // sourceKey: what the wizard starts on (import-sources.js; Obsidian from the palette).
-    async openImportWizard(sourceKey) {
+    // Import Notes (PLAN.md, phase 2).
+    async openImportWizard() {
         const isReady = await this._prepareForModalOpen('commandPalette.openImportWizard');
         if (!isReady) {
             return;
@@ -2858,7 +2842,7 @@ class CommandPaletteController {
         if (this._importWizard === null) {
             this._importWizard = new ImportWizard(this._wizardServices());
         }
-        await this._importWizard.openFor(sourceKey);
+        await this._importWizard.open();
     }
 
     // What the wizards need from the app: the chat's AI settings, and, once notes came in, a
@@ -2868,6 +2852,9 @@ class CommandPaletteController {
         return {
             getAiSettings: this.getAiSettings.bind(this),
             saveAiSettings: this.saveAiSettings.bind(this),
+            // The new vault wizard sets the password keeping this window logged in.
+            setPassword: async (password, onProgress) => Auth.setPasswordKeepingThisWindow(password, onProgress),
+            openPasswordGenerator: async (onUse) => this._openPasswordGeneratorToUse(onUse),
             afterImport: async (sourceTag) => {
                 const newTabId = await openSearchInNewSearchContext(sourceTag, 'importWizard.showImported');
                 if (newTabId === null) {
@@ -2877,15 +2864,13 @@ class CommandPaletteController {
         };
     }
 
-    async openNewVaultWizard() {
-        const isReady = await this._prepareForModalOpen('commandPalette.openNewVaultWizard');
-        if (!isReady) {
-            return;
-        }
+    // The new vault wizard: from Vault (Create Vault), or, in the new vault, from Password on.
+    _newVaultWizardFor({ continuesSetup }) {
         if (this._newVaultWizard === null) {
             this._newVaultWizard = new NewVaultWizard(this._wizardServices());
         }
-        await this._newVaultWizard.open();
+        this._newVaultWizard.setContinuesSetup(continuesSetup);
+        return this._newVaultWizard;
     }
 
     async openVersionInfo() {

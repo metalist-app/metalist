@@ -1,13 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-// The import wizard opens for one source after another, and for the same one twice
-// (2026-10-31: the import dialog it replaced crashed opening again for the same source,
-// with "Redundant state change").
-test('the import wizard opens again for the same source and for another one', async (t) => {
+// The import wizard starts with no source chosen (the maintainer, 2026-11-01: none picked for
+// you; Next stays greyed until one is), every time it opens.
+test('the import wizard starts with no source chosen, and asks for one', async (t) => {
     const originalSessionStorage = globalThis.sessionStorage;
     globalThis.sessionStorage = { getItem() { return null; }, setItem() {}, removeItem() {} };
-    // Its imports (the AI's tag suggestions, the login) set globals on the page.
+    // Its imports (the login) set globals on the page.
     const hadWindow = typeof globalThis.window !== 'undefined';
     if (!hadWindow) globalThis.window = {};
     t.after(() => {
@@ -19,14 +18,14 @@ test('the import wizard opens again for the same source and for another one', as
         }
     });
     const { ImportWizard } = await import('../../app/static/js/modules/wizard/setup-wizards.js');
-    const services = { getAiSettings: () => ({ provider: 'openai' }), saveAiSettings: async () => {}, afterImport: async () => {} };
-    const wizard = new ImportWizard(services);
-    const opened = [];
-    wizard.open = async () => {
-        opened.push(wizard.initialChoices().source);
+    const services = {
+        getAiSettings: () => ({ provider: 'openai' }), saveAiSettings: async () => {}, afterImport: async () => {},
+        setPassword: async () => {}, openPasswordGenerator: async () => {},
     };
-    for (const source of ['obsidian', 'obsidian', 'markdown', 'markdown']) {
-        await wizard.openFor(source);
-    }
-    assert.deepEqual(opened, ['obsidian', 'obsidian', 'markdown', 'markdown']);
+    const wizard = new ImportWizard(services);
+    const choices = wizard.initialChoices();
+    assert.equal(choices.source, '');
+    const sourceStep = wizard._wizardSteps.find((step) => step.key === 'source');
+    assert.equal(sourceStep.missing(choices, null), 'Choose where your notes are.');
+    assert.equal(sourceStep.missing({ ...choices, source: 'markdown' }, null), '');
 });

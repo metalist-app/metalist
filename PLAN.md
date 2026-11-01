@@ -125,6 +125,9 @@ Acceptance checks:
    Markdown folder once slice 1c is built), and its import dialog opens last.
 
 ### Slice 2b: the AI suggests tags for an import (the maintainer, 2026-10-31)
+**Dropped 2026-11-01** (the maintainer: the AI has too little context, and the wait is too
+long): no AI in the import at all; the new vault wizard sets an AI up and nothing more. The
+notes below are kept as the record of what was built and removed.
 1. With an AI set up, the import dialog has "Have the AI suggest tags" (unticked), with the
    number of notes beside it.
 2. After the import, the AI suggests tags for the imported notes exactly as it does for a
@@ -271,7 +274,30 @@ as its first step; the new vault opens straight into the rest.
    continues into the import wizard's steps, which join the progress bar.
 4. **Summary ("Ready to set up your vault"):** what will happen (password, AI, and the
    import's preview when importing); its button is the green Set Up Vault.
-5. **Setting up:** the last step, its progress; done, "Your vault is ready" and Done.
+5. **Setting up:** the last step, its progress; done, the wizard closes on the vault (no
+   done screen: the maintainer, 2026-11-01).
+
+#### Acceptance checks (wiring, 2026-11-01)
+1. "Create Vault…" opens the full-window wizard on its first step, Vault: the name and the
+   ports, the progress bar naming every step (Vault, Password, AI, Your notes, Summary,
+   Set up). Next is greyed out until the name and ports are valid.
+2. Its green "Create Vault" creates the vault and opens it in a new tab, straight into the
+   wizard on Password, Vault ticked in the bar and no Back to it; the first tab's wizard
+   closes.
+3. Password: "Protect this vault with a password" ticked, Password and Confirm with the
+   strength meter; "Generate Password…" opens the existing generator, whose "Use This
+   Password" fills both fields. Next is greyed out until the password is long and strong
+   enough and the two match.
+4. AI: the three providers and the key; Next refuses a key that can't be one (wrong start,
+   too short) on this step, saying why, before anything is saved.
+5. Your notes: Obsidian, Markdown or Start empty; importing goes on through Folder, Split
+   and Write as.
+6. Summary lists the password, the AI and the import's preview; its button is the green
+   "Set Up Vault". Nothing has changed before it.
+7. Setting up, in order: the password (no login screen, ever), the AI key (kept, as the
+   vault has a password), the import; then the wizard closes on the vault.
+   Done leaves the vault showing the import's search context; reloading the page asks for
+   no password.
 
 ### The import wizard
 **Wired 2026-10-31:** "Import Notes…" in the palette runs the real import (the developer
@@ -289,18 +315,15 @@ version's two commands and dialog are gone); the summary is the server's preview
 4. **Write as:** rich text or Markdown, the choices beside a sample note that changes in
    place as Split's does: Markdown's marks slide in, the formatting falls away, the
    `@markdown` tag appears (the maintainer, 2026-10-31).
-5. **AI tags** (the maintainer, 2026-10-31: one step, a checkbox at its top): "Have an AI
-   suggest tags", unticked; with no AI set up, ticking it opens the providers (OpenAI,
-   Anthropic, Google) and the key. In the new vault wizard it shows only when "Set up an
-   AI" was ticked there, and is the checkbox alone (slice 2b: proposals, never the folder
-   tags).
+5. ~~**AI tags**~~: dropped 2026-11-01 (the maintainer): the import never mentions AI; the
+   new vault wizard sets one up and does not use it on the import.
 6. **Summary ("Ready to import"):** a preview of what the import will do, before anything
    is written: how many files will become how many notes, attachments and folder tags, and
    what will appear differently (comments, block IDs, callouts as `@quote`, …), each line
    "N of your … will …". Its button is the green Import.
-7. **Importing:** the last step (the maintainer, 2026-10-31): its progress; done, the same
-   screen says so ("Your notes are in", the report being the first note) and its button is
-   Done, which closes the wizard. No Done step after it.
+7. **Importing:** the last step (the maintainer, 2026-10-31): its progress; done, the wizard
+   closes on the imported notes, in their new search context, the report first (2026-11-01:
+   no screen saying it is done, "a waste of time").
 
 ### Motion cases (interaction principles; agree before code)
 Principle: only the person's action changes the screen, and the slide shows where they went.
@@ -319,6 +342,13 @@ Principle: only the person's action changes the screen, and the slide shows wher
 - Full window, or a large centered panel over the dimmed list? (Recommended: full window.)
 - An early look as a clickable prototype first (the real frame and screens, choices not yet
   wired), so the look is agreed before the wiring? (Recommended.)
+
+## Changed since (the maintainer, 2026-11-01)
+- **No import report:** the report note is gone (slices 1, 1c and 2 below still describe it, as built then). The
+  wizard's Summary says beforehand what will appear differently or be left out; Decision 4's "the report says it
+  was imported before" goes with it. The files come in at the top as Obsidian's file list orders them: in each folder its
+  subfolders first, then its files, each A to Z.
+- **No done screen:** the import wizard closes on the imported notes; the new vault wizard on the vault.
 
 ## Decisions (the maintainer, 2026-10-31, approving this plan)
 

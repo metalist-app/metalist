@@ -13,18 +13,15 @@ import {
     buildNamespaceLoginUrl,
     navigateNamespaceInNewTab,
     openPendingNamespaceTab,
-    rewriteNamespaceUrlPreservingCurrentHost,
 } from '../login-namespace-picker.js';
 import { buildSessionHeaders } from '../session-auth.js';
 import { renderNamespaceLoadingTab } from './namespace-loading-page.js';
 import { selectNamespacePortsEditorProfile } from './namespace-ports-profile.js';
-import { buildNamespaceRenamePayload, vaultNameProblem } from './namespace-rename-validation.js';
+import { buildNamespaceRenamePayload } from './namespace-rename-validation.js';
 import { showErrorDialog, showErrorDialogFor, showOpenFailure } from './error-dialog.js';
 import { escapeHtml } from '../html-escape.js';
 import { actionRowHtml } from './action-row.js';
 import { requires } from '../../shockharness/contracts.js';
-import { AI_STEP, PASSWORD_STEP, importStep, withSetupSteps } from '../new-vault-setup.js';
-import { IMPORT_SOURCES } from '../import-sources.js';
 
 
 const STATUS_BANNER_SECONDS = 5;
@@ -44,7 +41,7 @@ function parseResponseError(responseBody, statusCode) {
 }
 
 
-function stringifyPort(portValue) {
+export function stringifyPort(portValue) {
     if (portValue === null) {
         return '';
     }
@@ -56,7 +53,7 @@ function stringifyPort(portValue) {
 
 
 
-function assertCatalogShape(catalog) {
+export function assertCatalogShape(catalog) {
     if (!catalog || typeof catalog !== 'object') {
         throw new Error('Namespace catalog response missing body');
     }
@@ -69,7 +66,7 @@ function assertCatalogShape(catalog) {
 }
 
 
-function assertProfileShape(profile) {
+export function assertProfileShape(profile) {
     if (!profile || typeof profile !== 'object') {
         throw new Error('Namespace profile missing');
     }
@@ -83,7 +80,7 @@ function assertProfileShape(profile) {
 
 
 // What is wrong with a typed port, said for the user, or '' when nothing is.
-function portProblem(rawValue, label) {
+export function portProblem(rawValue, label) {
     if (typeof rawValue !== 'string' || rawValue.trim().length === 0) {
         return `Enter the ${label}.`;
     }
@@ -94,7 +91,7 @@ function portProblem(rawValue, label) {
     return '';
 }
 
-function parsePort(rawValue) {
+export function parsePort(rawValue) {
     return parseDecimalInteger(rawValue.trim());
 }
 
@@ -132,7 +129,7 @@ function findNamespaceEntry(catalog, namespace) {
 
 // A port used twice: one problem for each later use, naming the field it is typed in.
 // rows: [{ namespace, port, https_port, portFieldId, httpsPortFieldId }], ports already parsed.
-function portOverlapProblems(portRows) {
+export function portOverlapProblems(portRows) {
     if (!Array.isArray(portRows)) {
         throw new Error('portOverlapProblems requires rows array');
     }
@@ -184,6 +181,38 @@ function renderLoadingModal({ title, status, cancelId }) {
             })}
         </div>
     `;
+}
+
+
+/** A call to the vaults API (list, create, ports, rename), refused with the server's reason. */
+export async function requestVaultApi(url, method, bodyObject) {
+    if (typeof url !== 'string' || url.length === 0) {
+        throw new Error('requestVaultApi requires url string');
+    }
+    if (typeof method !== 'string' || method.length === 0) {
+        throw new Error('requestVaultApi requires method string');
+    }
+    if (bodyObject !== null && typeof bodyObject !== 'object') {
+        throw new Error('requestVaultApi bodyObject must be object or null');
+    }
+
+    const hasBody = bodyObject !== null;
+    const response = await fetch(url, {
+        method,
+        headers: buildSessionHeaders(hasBody),
+        body: hasBody ? JSON.stringify(bodyObject) : undefined,
+    });
+
+    let payload = null;
+    const contentType = response.headers.get('content-type');
+    if (typeof contentType === 'string' && contentType.includes('application/json')) {
+        payload = await response.json();
+    }
+
+    if (!response.ok) {
+        throw new HttpRequestError(parseResponseError(payload, response.status));
+    }
+    return payload;
 }
 
 
@@ -265,38 +294,8 @@ class NamespaceModalBase extends BaseModal {
         }
     }
 
-    _buildAuthHeaders(includeContentType) {
-        return buildSessionHeaders(includeContentType);
-    }
-
     async _authRequest(url, method, bodyObject) {
-        if (typeof url !== 'string' || url.length === 0) {
-            throw new Error('_authRequest requires url string');
-        }
-        if (typeof method !== 'string' || method.length === 0) {
-            throw new Error('_authRequest requires method string');
-        }
-        if (bodyObject !== null && typeof bodyObject !== 'object') {
-            throw new Error('_authRequest bodyObject must be object or null');
-        }
-
-        const hasBody = bodyObject !== null;
-        const response = await fetch(url, {
-            method,
-            headers: this._buildAuthHeaders(hasBody),
-            body: hasBody ? JSON.stringify(bodyObject) : undefined,
-        });
-
-        let payload = null;
-        const contentType = response.headers.get('content-type');
-        if (typeof contentType === 'string' && contentType.includes('application/json')) {
-            payload = await response.json();
-        }
-
-        if (!response.ok) {
-            throw new HttpRequestError(parseResponseError(payload, response.status));
-        }
-        return payload;
+        return requestVaultApi(url, method, bodyObject);
     }
 
     // What the dialog is doing shows as a card in the corner (floating-messages.js).
@@ -581,291 +580,6 @@ export class OpenNamespaceModal extends NamespaceModalBase {
             });
             this.renderModalContent();
             await showErrorDialogFor(switchResult.error, null);
-        }
-    }
-}
-
-
-// The new vault's setup questions (PLAN.md, slice 1d): checkbox id and state key, in order.
-const SETUP_CHECKBOXES = Object.freeze([
-    ['create-namespace-password', 'protectsWithPassword'],
-    ['create-namespace-ai', 'setsUpAi'],
-    ['create-namespace-import', 'importsFrom'],
-]);
-
-function setupChoicesHtml(state, isDisabled) {
-    const disabled = isDisabled ? ' disabled' : '';
-    const checked = (isChecked) => (isChecked ? ' checked' : '');
-    let keyNote = '';
-    if (state.setsUpAi && !state.protectsWithPassword) {
-        keyNote = '<p class="create-namespace-setup-note">Without a password, the key is kept only until MetaList restarts.</p>';
-    }
-    let sources = '';
-    if (state.importsFrom) {
-        const options = IMPORT_SOURCES.map((source) => `<option value="${escapeHtml(source.key)}"${
-            source.key === state.importSource ? ' selected' : ''}>${escapeHtml(source.choiceLabel)}</option>`).join('');
-        sources = `<select id="create-namespace-import-source" aria-label="Import from"${disabled}>${options}</select>`;
-    }
-    return `
-        <div class="create-namespace-setup">
-            <label class="create-namespace-setup-choice">
-                <input id="create-namespace-password" type="checkbox"${checked(state.protectsWithPassword)}${disabled}>
-                <span>Protect it with a password</span>
-            </label>
-            <label class="create-namespace-setup-choice">
-                <input id="create-namespace-ai" type="checkbox"${checked(state.setsUpAi)}${disabled}>
-                <span>Set up AI in it</span>
-            </label>
-            ${keyNote}
-            <div class="create-namespace-setup-row">
-                <label class="create-namespace-setup-choice">
-                    <input id="create-namespace-import" type="checkbox"${checked(state.importsFrom)}${disabled}>
-                    <span>Import from</span>
-                </label>
-                ${sources}
-            </div>
-        </div>`;
-}
-
-// The steps the new vault runs once it has opened (new-vault-setup.js), in order.
-function setupSteps(state) {
-    const steps = [];
-    if (state.protectsWithPassword) steps.push(PASSWORD_STEP);
-    if (state.setsUpAi) steps.push(AI_STEP);
-    if (state.importsFrom) steps.push(importStep(state.importSource));
-    return steps;
-}
-
-export class CreateNamespaceModal extends NamespaceModalBase {
-    constructor() {
-        super('createNamespaceModal', 'create-namespace-modal');
-
-        ApplicationState.own(this, 'CreateNamespaceModal', new.target === CreateNamespaceModal);
-    }
-
-    getInitialModalState() {
-        return {
-            loading: false,
-            submitting: false,
-            catalog: null,
-            namespace: '',
-            port: '',
-            httpsPort: '',
-            // The new vault's setup (PLAN.md, slice 1d), asked in this order.
-            protectsWithPassword: false,
-            setsUpAi: false,
-            importsFrom: false,
-            importSource: IMPORT_SOURCES[0].key,
-            status: 'Loading vault defaults...',
-        };
-    }
-
-    async onOpen() {
-        await this.loadCatalog();
-    }
-
-    renderModalContent() {
-        const state = this.getModalState();
-        const loading = Boolean(state.loading);
-        const submitting = Boolean(state.submitting);
-        const catalog = state.catalog;
-        const namespace = typeof state.namespace === 'string' ? state.namespace : '';
-        const port = typeof state.port === 'string' ? state.port : '';
-        const httpsPort = typeof state.httpsPort === 'string' ? state.httpsPort : '';
-
-        if (loading || !catalog) {
-            this._renderLoading('Create Vault', 'create-namespace-cancel-loading-btn');
-            return;
-        }
-
-        const supportsHttps = Boolean(catalog.supports_https);
-        this._renderIntoModal(`
-            <div class="modal-content namespace-modal-content create-namespace-modal-content">
-                <h3>Create Vault</h3>
-                <div class="form-group">
-                    <label for="create-namespace-name">Vault Name</label>
-                    <input id="create-namespace-name" type="text" value="${escapeHtml(namespace)}" placeholder="work" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" ${submitting ? 'disabled' : ''}>
-                </div>
-                <div class="namespace-modal-port-grid">
-                    <div class="form-group">
-                        <label for="create-namespace-http-port">HTTP Port</label>
-                        <input id="create-namespace-http-port" type="number" min="${LOWEST_PORT}" max="${HIGHEST_PORT}" value="${escapeHtml(port)}" ${submitting ? 'disabled' : ''}>
-                    </div>
-                    ${supportsHttps ? `
-                        <div class="form-group">
-                            <label for="create-namespace-https-port">HTTPS Port</label>
-                            <input id="create-namespace-https-port" type="number" min="${LOWEST_PORT}" max="${HIGHEST_PORT}" value="${escapeHtml(httpsPort)}" ${submitting ? 'disabled' : ''}>
-                        </div>
-                    ` : ''}
-                </div>
-                ${setupChoicesHtml(state, submitting)}
-                ${actionRowHtml({
-                    alternative: null,
-                    cancel: { id: 'create-namespace-cancel-btn', label: 'Cancel', disabled: submitting, attributes: [] },
-                    main: {
-                            id: 'create-namespace-submit-btn', label: 'Create and Open Vault', disabled: submitting, attributes: [],
-                            isDestructive: false, isEnterAction: false, type: 'button',
-                        },
-                    rowClass: 'namespace-modal-actions',
-                })}
-            </div>
-        `);
-        this.setupFormEventListeners();
-    }
-
-    setupFormEventListeners() {
-        this._wireTextInput('create-namespace-name', 'namespace');
-        this._wireTextInput('create-namespace-http-port', 'port');
-        this._wireTextInput('create-namespace-https-port', 'httpsPort');
-        for (const [elementId, stateKey] of SETUP_CHECKBOXES) {
-            const choice = document.getElementById(elementId);
-            if (choice instanceof HTMLInputElement) {
-                choice.onchange = () => {
-                    this.updateModalState({ [stateKey]: choice.checked });
-                    this.renderModalContent();
-                };
-            }
-        }
-        const sourceChoice = document.getElementById('create-namespace-import-source');
-        if (sourceChoice instanceof HTMLSelectElement) {
-            sourceChoice.onchange = () => {
-                this.updateModalState({ importSource: sourceChoice.value });
-            };
-        }
-
-        const submitButton = document.getElementById('create-namespace-submit-btn');
-        if (submitButton instanceof HTMLButtonElement) {
-            submitButton.onclick = async () => {
-                await this.handleSubmit();
-            };
-        }
-        this._wireCancelButton('create-namespace-cancel-btn');
-    }
-
-    _wireTextInput(elementId, stateKey) {
-        const input = document.getElementById(elementId);
-        if (input instanceof HTMLInputElement) {
-            input.oninput = () => {
-                this.updateModalState({
-                    [stateKey]: input.value,
-                    status: '',
-                });
-            };
-        }
-    }
-
-    async loadCatalog() {
-        const generation = this._openGeneration;
-        this.updateModalState({
-            loading: true,
-            submitting: false,
-            status: 'Loading vault defaults...',
-        });
-        this.renderModalContent();
-        const catalogResult = await settleResult(async () => {
-            const catalog = await this._authRequest(this.apiEndpoints.list, 'GET', null);
-            if (!this.isCurrentOpen(generation)) return;
-            assertCatalogShape(catalog);
-            const profile = catalog.new_namespace_profile;
-            assertProfileShape(profile);
-            this.updateModalState({
-                loading: false,
-                catalog,
-                namespace: '',
-                port: stringifyPort(profile.port),
-                httpsPort: stringifyPort(profile.https_port),
-                status: '',
-            });
-        });
-        if (!this.isCurrentOpen(generation)) return;
-        if (!catalogResult.ok) {
-            this._closeAfterLoadFailure(catalogResult.error);
-            return;
-        }
-        this.renderModalContent();
-    }
-
-    // Every problem with what was typed, each with its field.
-    _problems() {
-        const state = this.getModalState();
-        const catalog = state.catalog;
-        assertCatalogShape(catalog);
-        const namespace = typeof state.namespace === 'string' ? state.namespace.trim() : '';
-        const checks = [
-            ['create-namespace-name', vaultNameProblem({
-                name: namespace,
-                existingNamespaces: catalog.namespaces.map((entry) => entry.namespace),
-                currentNamespace: null,
-            })],
-            ['create-namespace-http-port', portProblem(state.port, 'HTTP port')],
-        ];
-        if (Boolean(catalog.supports_https)) {
-            checks.push(['create-namespace-https-port', portProblem(state.httpsPort, 'HTTPS port')]);
-        }
-        const problems = checks.filter(([, text]) => text !== '').map(([fieldId, text]) => ({ text, fieldId }));
-        if (problems.length > 0) {
-            return problems;
-        }
-        return portOverlapProblems([this._payloadRow()]);
-    }
-
-    _payloadRow() {
-        const state = this.getModalState();
-        const supportsHttps = Boolean(state.catalog.supports_https);
-        return {
-            namespace: state.namespace.trim(),
-            port: parsePort(state.port),
-            https_port: supportsHttps ? parsePort(state.httpsPort) : null,
-            portFieldId: 'create-namespace-http-port',
-            httpsPortFieldId: 'create-namespace-https-port',
-        };
-    }
-
-    async handleSubmit() {
-        const problems = this._problems();
-        if (problems.length > 0) {
-            await showErrorDialog(problems);
-            return;
-        }
-        const row = this._payloadRow();
-        const payload = { namespace: row.namespace, port: row.port, https_port: row.https_port };
-        const pendingTab = window.open('about:blank', '_blank');
-        renderNamespaceLoadingTab(pendingTab, payload.namespace);
-        this.updateModalState({
-            submitting: true,
-        });
-        this.renderModalContent();
-        this._startProgress('Creating vault…');
-
-        const createResult = await settleResult(async () => {
-            const response = await this._authRequest(this.apiEndpoints.open, 'POST', payload);
-            if (!response || typeof response !== 'object') {
-                throw new Error('Namespace create response missing body');
-            }
-            if (typeof response.url !== 'string' || response.url.length === 0) {
-                throw new Error('Namespace create response missing url');
-            }
-            const navigationUrl = withSetupSteps(
-                rewriteNamespaceUrlPreservingCurrentHost(response.url, window.location), setupSteps(this.getModalState()),
-            );
-            if (pendingTab && !pendingTab.closed) {
-                pendingTab.location.replace(navigationUrl);
-            } else {
-                window.open(navigationUrl, '_blank', 'noopener,noreferrer');
-            }
-            this.close();
-        });
-        if (!createResult.ok) {
-            if (pendingTab && !pendingTab.closed) {
-                pendingTab.close();
-            }
-            this._endProgress();
-            this.updateModalState({
-                submitting: false,
-                status: '',
-            });
-            this.renderModalContent();
-            await showErrorDialogFor(createResult.error, null);
         }
     }
 }

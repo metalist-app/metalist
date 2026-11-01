@@ -335,7 +335,7 @@ async function checkRemovePassword(page, password) {
   await page.evaluate(async secret => {
     const {buildSessionHeaders} = await import('/static/js/modules/session-auth.js');
     const response = await fetch('/api2/auth/settings/password/create',
-      {method: 'POST', headers: buildSessionHeaders(true), body: JSON.stringify({password: secret})});
+      {method: 'POST', headers: buildSessionHeaders(true), body: JSON.stringify({password: secret, keeps_window_logged_in: false})});
     if (!response.ok) throw new Error(`Password setup failed: ${response.status}`);
   }, password);
   await page.reload();

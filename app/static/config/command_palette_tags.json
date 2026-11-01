@@ -209,12 +209,8 @@
       "tags": ["import", "obsidian", "vault", "markdown", "md", "folder", "notes", "files", "bring", "migrate", "wizard"]
     },
     {
-      "id": "form.new_vault_wizard",
-      "tags": ["setup", "set", "up", "vault", "wizard", "onboarding", "password", "ai"]
-    },
-    {
       "id": "form.create_namespace",
-      "tags": ["vault", "vaults", "namespace", "namespaces", "create", "new", "add", "ports", "database", "instance", "workspace"]
+      "tags": ["vault", "vaults", "namespace", "namespaces", "create", "new", "add", "ports", "database", "instance", "workspace", "setup", "wizard", "onboarding"]
     },
     {
       "id": "form.manage_namespace_ports",

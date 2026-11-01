@@ -81,7 +81,7 @@ Filed from `docs/inbox/2026-10-27-import-export-launch.md`.
 ### 2.1 Files and folders
 
 - **Each file becomes a root note,** wherever it sat in the vault. The title comes from the file name.
-- **Folders become folder tags, never notes.** A file in `Projects/Client A/` gets the tag `Projects/Client-A`:
+- **Folders become folder tags, never notes.** A file in `Projects/Client A/` gets the tag `Projects/Client-A` (agreed 2026-11-01 to gain a trailing slash, `Projects/Client-A/`, marking it a folder: `docs/ready-to-build/virtual-folders.md` §1):
   - the full folder path, with `/` between levels
   - made valid the way the tag bar makes a new tag: capitalization kept, spaces become dashes, disallowed characters removed (`docs/ui/tag-bar.md`, new-tag rule)
   - the path is only the tag's name; **no ontology rules are added**
@@ -157,6 +157,8 @@ Every format in the import picker shows one label, repeated on the confirmation 
 Also shown before every import: what will be approximated for that format. (It first said "and that the source is never modified"; dropped 2026-10-31 by the maintainer: said on screen, it reads oddly.)
 
 ## 5. The import report
+
+**Dropped 2026-11-01** (the maintainer): no report note. The import wizard's Summary says, before anything is written, what will come in, what will appear differently and what will be left out; the wizard then closes on the imported notes. The rest of this section is kept as the record of what was built and removed.
 
 Shown at the end of every import, and also saved as a note in the vault ("Import report — Obsidian — 2026-10-27") so it can be found later:
 - **Counts:** notes, children, tags, folder tags, tag values, references, files.

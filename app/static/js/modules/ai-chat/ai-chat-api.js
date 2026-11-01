@@ -177,27 +177,6 @@ export async function requestNoteTagSuggestions({ noteId, includeChildren, scope
     return readTagSuggestions(response, onProgress);
 }
 
-/**
- * Tags for an import's files (fileNoteIds), seen together so files on one topic get the same
- * tags; excludedTags (its folder tags and its own) are never offered. onProgress(done, total)
- * counts the AI's batches. Resolves to { noteId: [tags] }; AiApiError when the AI failed.
- */
-export async function requestImportTagSuggestions({ fileNoteIds, excludedTags, scope, provider, model, thinkingLevel, onProgress }) {
-    if (!Array.isArray(fileNoteIds) || fileNoteIds.length === 0 || !Array.isArray(excludedTags)) {
-        throw new Error('requestImportTagSuggestions requires fileNoteIds and excludedTags');
-    }
-    validateTagSuggestionRequest({ scope, provider, model, thinkingLevel, onProgress });
-    const response = await fetchAi(CONFIG.API.AI.IMPORT_TAG_SUGGESTIONS, {
-        method: 'POST',
-        headers: buildSessionHeaders(true),
-        body: JSON.stringify({
-            provider, model, thinking_level: thinkingLevel, file_note_ids: fileNoteIds, excluded_tags: excludedTags,
-            search: scope.search, tab_id: scope.tabId, is_untagged_view: scope.isUntaggedView,
-        }),
-    });
-    return readTagSuggestions(response, onProgress);
-}
-
 function validateTagSuggestionRequest({ scope, provider, model, thinkingLevel, onProgress }) {
     if (!scope || typeof scope.search !== 'string' || typeof scope.tabId !== 'string' || typeof scope.isUntaggedView !== 'boolean') {
         throw new Error('Tag suggestions require the view scope');
@@ -443,6 +422,20 @@ export async function saveAiCredential(provider, apiKey) {
         body: JSON.stringify({ api_key: apiKey }),
     });
     return await readJsonResponse(response, 'Failed to save the API key');
+}
+
+
+/** Whether a typed key can be one (its start, its length), saving nothing; refused, why. */
+export async function checkAiCredential(provider, apiKey) {
+    if (typeof apiKey !== 'string' || apiKey.trim() === '') {
+        throw new Error('checkAiCredential requires API key');
+    }
+    const response = await fetchAi(`${aiCredentialUrl(provider)}/check`, {
+        method: 'POST',
+        headers: buildSessionHeaders(true),
+        body: JSON.stringify({ api_key: apiKey }),
+    });
+    return await readJsonResponse(response, 'The API key was refused');
 }
 
 

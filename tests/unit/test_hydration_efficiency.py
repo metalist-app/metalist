@@ -76,6 +76,8 @@ def test_cache_hydration_sanitizes_and_extracts_text_once_per_note(
     monkeypatch.setattr(content_cache, "raw_sqlite_connection", lambda connection: connection)
     # A database not yet recorded as cleaned: this unlock cleans every note once.
     monkeypatch.setattr(content_cache, "is_content_migration_complete", lambda _connection, _migration_id: False)
+    # Backup settings are not this test's: none to convert.
+    monkeypatch.setattr(content_cache, "backup_settings_need_conversion", lambda _connection: False)
     stored_cleaned: list[dict[str, str]] = []
     monkeypatch.setattr(
         content_cache, "_store_cleaned_notes",

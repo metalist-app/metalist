@@ -25,6 +25,7 @@ const FORWARD = 1;
 const BACKWARD = -1;
 const FULL_SHIFT_PERCENT = 100;
 const LAST_OFFSET = 1;
+const WIZARD_SERVICES = ['getAiSettings', 'saveAiSettings', 'afterImport', 'setPassword', 'openPasswordGenerator'];
 
 function isMotionEnabled() {
     return document.body.classList.contains('pref-animated-transitions');
@@ -58,13 +59,14 @@ function isStepBefore(index, actionIndex) {
 }
 
 export class WizardModal extends BaseModal {
-    // services: what the steps need from the app ({ getAiSettings, saveAiSettings, afterImport }).
+    // services: what the steps need from the app ({ getAiSettings, saveAiSettings, afterImport,
+    // setPassword, openPasswordGenerator }).
     constructor(modalName, modalElementId, { title, steps, commitLabel, services }) {
         super(modalName, modalElementId);
         if (typeof title !== 'string' || !Array.isArray(steps) || steps.length === 0 || typeof commitLabel !== 'string') {
             throw new Error('WizardModal requires a title, steps and the label of the button that starts the work');
         }
-        for (const service of ['getAiSettings', 'saveAiSettings', 'afterImport']) {
+        for (const service of WIZARD_SERVICES) {
             if (typeof services[service] !== 'function') {
                 throw new Error(`WizardModal requires the ${service} service`);
             }
@@ -83,8 +85,19 @@ export class WizardModal extends BaseModal {
         throw new Error(`${this.modalName} must give its initial choices`);
     }
 
+    // The step a run starts on: the first (subclasses: a later one, the steps before it done
+    // elsewhere, shown ticked, with no Back to them).
+    startStepKey() {
+        return this._wizardSteps[0].key;
+    }
+
     getInitialModalState() {
-        return { stepKey: this._wizardSteps[0].key, choices: this.initialChoices() };
+        return { stepKey: this.startStepKey(), choices: this.initialChoices() };
+    }
+
+    // Whether the step's button starts the work: the green one (subclasses: another too).
+    isCommitStep(step, index, actionIndex) {
+        return index + 1 === actionIndex;
     }
 
     shouldCloseOnClickOutside() {
@@ -213,30 +226,6 @@ export class WizardModal extends BaseModal {
         this._focusNext();
     }
 
-    /**
-     * The work (the last step) is done: its screen says so (title, and intro as HTML), its
-     * mark in the progress bar is ticked, and Done closes the wizard.
-     */
-    finishAction({ title, introHtml }) {
-        if (!this.isOpen) return;
-        const element = this._element();
-        const screen = element.querySelector('.wizard-screen:not(.is-leaving)');
-        screen.querySelector('.wizard-screen-title').textContent = title;
-        const intro = document.createElement('p');
-        intro.className = 'wizard-intro';
-        intro.innerHTML = introHtml;
-        screen.querySelector('.wizard-screen-title').after(intro);
-        const current = element.querySelector('.wizard-progress-step.is-current');
-        current.classList.remove('is-current');
-        current.classList.add('is-done');
-        const footer = element.querySelector('.wizard-footer');
-        footer.innerHTML = `
-            <span class="wizard-footer-space"></span>
-            <button type="button" class="primary-btn wizard-next" data-modal-enter-action>Done</button>`;
-        footer.querySelector('.wizard-next').onclick = () => this.close();
-        this._focusNext();
-    }
-
     _focusNext() {
         const next = this._element().querySelector('.wizard-next');
         if (next instanceof HTMLElement) next.focus({ preventScroll: true });
@@ -264,12 +253,15 @@ export class WizardModal extends BaseModal {
         const step = steps[index];
         const actionIndex = this._actionIndex();
         const isBeforeAction = isStepBefore(index, actionIndex);
-        const canGoBack = index > 0 && isBeforeAction;
+        const startIndex = steps.findIndex((candidate) => candidate.key === this.startStepKey());
+        const canGoBack = index > startIndex && isBeforeAction;
         // The button that starts the work (Import) stands out: it is the one that commits.
         let commitClass = '';
         let nextLabel = step.nextLabel;
-        if (index + 1 === actionIndex) {
+        if (this.isCommitStep(step, index, actionIndex)) {
             commitClass = ' is-commit';
+        }
+        if (index + 1 === actionIndex) {
             nextLabel = this._commitLabel;
         }
         const footer = this._element().querySelector('.wizard-footer');

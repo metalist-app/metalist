@@ -625,12 +625,6 @@ exception = "AiApiError"
 reason = "the AI could not answer: the user is told why, in a banner"
 
 [[tool.shockharness.rules.exceptions.boundaries]]
-path = "app/static/js/modules/import-tag-suggestions.js"
-language = "javascript"
-exception = "AiApiError"
-reason = "the AI could not suggest tags for an import: the run stops and the user is told why, in a banner"
-
-[[tool.shockharness.rules.exceptions.boundaries]]
 path = "app/static/js/modules/excalidraw/excalidraw-scene.js"
 language = "javascript"
 exception = "SyntaxError"

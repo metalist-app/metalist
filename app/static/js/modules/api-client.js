@@ -482,11 +482,11 @@ export const NotesAPI = {
     // import-sources.js): the folder, picked in the operating system's own dialog, then
     // imported into the vault in use.
     // provider: the AI the chat uses now; the answer says whether it can suggest tags.
-    async pickImportFolder(source, provider) {
-        if (typeof source !== 'string' || source.length === 0 || typeof provider !== 'string' || provider.length === 0) {
-            throw new Error('NotesAPI.pickImportFolder requires a source and the AI provider');
+    async pickImportFolder(source) {
+        if (typeof source !== 'string' || source.length === 0) {
+            throw new Error('NotesAPI.pickImportFolder requires a source');
         }
-        return this._apiCall(CONFIG.API.IMPORT.PICK_FOLDER, { method: 'POST', body: JSON.stringify({ source, provider }) });
+        return this._apiCall(CONFIG.API.IMPORT.PICK_FOLDER, { method: 'POST', body: JSON.stringify({ source }) });
     },
 
     // What importing would do (the import wizard's summary), before anything is written.

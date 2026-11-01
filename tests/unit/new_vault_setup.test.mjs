@@ -2,11 +2,12 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-    AI_STEP, PASSWORD_STEP, importSourceOfStep, importStep, readSetupSteps, withSetupSteps, writeSetupSteps,
+    VAULT_WIZARD_STEP, readSetupSteps, withSetupSteps, writeSetupSteps,
 } from '../../app/static/js/modules/new-vault-setup.js';
 
-// Setting up a new vault (PLAN.md, slice 1d): the steps Create Vault asked for travel in the
-// new vault's address and leave it one by one, so a reload never repeats a finished one.
+// Setting up a new vault (PLAN.md, phase 2): Create Vault's address asks the new vault to go
+// on with the wizard, and the step leaves the address as it starts, so a reload never
+// repeats it.
 
 function fakeWindow(address) {
     const url = new URL(address);
@@ -23,9 +24,8 @@ function fakeWindow(address) {
     };
 }
 
-test('the new vault\'s address carries the steps in order, and nothing with none', () => {
-    const steps = [PASSWORD_STEP, AI_STEP, importStep('obsidian')];
-    assert.equal(withSetupSteps('https://127.0.0.1:8444/', steps), 'https://127.0.0.1:8444/#setup=password+ai+import-obsidian');
+test('the new vault\'s address asks for the wizard, and for nothing with no step', () => {
+    assert.equal(withSetupSteps('https://127.0.0.1:8444/', [VAULT_WIZARD_STEP]), 'https://127.0.0.1:8444/#setup=wizard');
     assert.equal(withSetupSteps('https://127.0.0.1:8444/', []), 'https://127.0.0.1:8444/');
 });
 
@@ -38,11 +38,6 @@ test('the steps are read back and leave the address one by one', () => {
     assert.equal(window.location.hash, '');
     assert.deepEqual(readSetupSteps(), []);
     delete globalThis.window;
-});
-
-test('an import step names its source', () => {
-    assert.equal(importSourceOfStep(importStep('markdown')), 'markdown');
-    assert.equal(importSourceOfStep(AI_STEP), null);
 });
 
 test('an address with another fragment asks for nothing', () => {

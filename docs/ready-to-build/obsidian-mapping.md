@@ -59,7 +59,7 @@ Each was confirmed in the code.
 |---|---|---|---|---|
 | B1 | A `.md` file | ★ A root note. Its first line is the file name; the rest comes in by the split mode | One `.md` file per root note | None |
 | B2 | The file name as title | ★ The first line, as plain text. If the file starts with a heading that repeats the name, that heading becomes the title line instead of a second one | File name from the first line (`import-export-launch.md` §6.2) | **Form** when the name had characters MetaList dropped; the original name is kept for export (B9) |
-| B3 | Folder `Projects/Client A/` | ★ The folder tag `Projects/Client-A` (decided, §2.1). No folder notes | The file goes back into the folder, under its original name | **None**, given B9 |
+| B3 | Folder `Projects/Client A/` | ★ The folder tag `Projects/Client-A` (decided, §2.1; to become `Projects/Client-A/`, a folder, in `virtual-folders.md` §1). No folder notes | The file goes back into the folder, under its original name | **None**, given B9 |
 | B4 | Files at the vault's top | No folder tag | Top of the export | None |
 | B5 | Created / modified times (from the file system) | ★ `created_at` / `updated_at` through the database layer (A6) | The zip entry's modified time. Creation time can't be set portably | **Lossy:** the created time doesn't come back as a file time. Mitigation: also write a `created` property (F) when the file had none |
 | B6 | Daily notes (`2026-10-30.md`, maybe in `YYYY/MM/` folders) | ★ An ordinary file, plus `@datetime=2026-10-30` on the root (a name matching a date). Folder tags as usual | Same name and folder | None. `@datetime` is removed on export when it only came from the name |

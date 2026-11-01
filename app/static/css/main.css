@@ -609,10 +609,6 @@ html:has(> body > .login-page[style*="display: flex"]:not(.login-page-covering):
     width: min(520px, 100%);
 }
 
-.create-namespace-modal-content .namespace-modal-port-grid {
-    grid-template-columns: repeat(2, minmax(0, 160px));
-}
-
 .namespace-ports-modal-content {
     width: min(860px, 96vw);
 }
@@ -721,46 +717,6 @@ html[data-theme="dark"] .visual-cues-description {
     margin: 12px 0 0;
     color: #6b7280;
     font-size: 0.9rem;
-}
-
-/* Create Vault's setup questions (PLAN.md, slice 1d). */
-.create-namespace-setup {
-    display: grid;
-    gap: 8px;
-    margin: 4px 0 16px;
-}
-
-.create-namespace-setup-choice {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    cursor: pointer;
-}
-
-.modal-content .create-namespace-setup-choice input[type="checkbox"] {
-    flex: none;
-    width: auto;
-    margin: 0;
-}
-
-.create-namespace-setup-row {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-}
-
-.modal-content .create-namespace-setup-row select {
-    width: auto;
-}
-
-.create-namespace-setup-note {
-    margin: -4px 0 0 21px;
-    font-size: 0.85em;
-    color: #6b7280;
-}
-
-html[data-theme="dark"] .create-namespace-setup-note {
-    color: var(--app-text-muted);
 }
 
 .note-layout-description {
@@ -11964,6 +11920,12 @@ suggestions as pills. */
     gap: 14px;
 }
 
+/* One under another: a list of options that grows (the import's sources). */
+.wizard-choices.is-stacked {
+    grid-template-columns: minmax(0, 420px);
+    gap: 10px;
+}
+
 /* Above the dialogs' rule for their buttons (.modal-content button:not(...)). */
 .modal.wizard-modal .modal-content button.wizard-choice {
     display: flex;
@@ -11978,6 +11940,9 @@ suggestions as pills. */
     color: var(--modal-text);
     font-weight: inherit;
     text-align: left;
+    /* Room for the check (.wizard-choice-check) at the top right. */
+    position: relative;
+    padding-right: 52px;
     box-shadow: none;
     cursor: pointer;
     transition: border-color 150ms ease, box-shadow 150ms ease, transform 150ms ease, background-color 150ms ease;
@@ -12006,6 +11971,28 @@ suggestions as pills. */
 .modal.wizard-modal .modal-content button.wizard-choice.is-chosen:focus {
     border-color: var(--modal-accent);
     background: var(--modal-selected);
+}
+
+/* The chosen card's check, beside its title at the top right (the maintainer, 2026-11-01:
+   which one is chosen at a glance). Only the chosen card shows it. */
+.wizard-choice-check {
+    position: absolute;
+    top: 17px;
+    right: 16px;
+    display: none;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: var(--modal-accent);
+    color: #ffffff;
+    font-size: 13px;
+    font-weight: 800;
+    line-height: 22px;
+    text-align: center;
+}
+
+.wizard-choice.is-chosen .wizard-choice-check {
+    display: block;
 }
 
 .wizard-choice-title {
@@ -12302,6 +12289,18 @@ body.pref-animated-transitions .wizard-toggled {
     background: var(--wizard-commit-green);
     color: #ffffff;
     filter: brightness(1.08);
+}
+
+/* Create Vault's ports, side by side. */
+.wizard-port-row {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 180px));
+    gap: 16px;
+}
+
+/* The password generator, opened to fill the new vault wizard's password, shows over it. */
+.modal.opens-over-wizard {
+    z-index: 15001;
 }
 
 /* A step not done yet (no folder chosen, no key typed): Next is greyed out, and pressing it

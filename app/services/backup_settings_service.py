@@ -15,7 +15,7 @@ import sqlite3
 
 from app.config import ACTIVE_NAMESPACE
 from app.db.backup_settings_sql import fetch_backup_settings_row, upsert_backup_settings_row
-from app.db.content_migrations_sql import record_content_migration_complete
+from app.db.content_migrations_sql import is_content_migration_complete, record_content_migration_complete
 from app.db.raw_connection import raw_sqlite_connection
 from app.db.session import begin_writer
 from app.models.database import SafeSession
@@ -262,6 +262,29 @@ def convert_backup_settings_to_unchecked(*, available_namespaces: list[str]) -> 
         )
 
 
+def backup_settings_need_conversion(connection: sqlite3.Connection) -> bool:
+    """Whether this database's backup settings are converted at this unlock: never yet, or
+    saved in the old form again since by an older MetaList opened on the vault (2026-11-01:
+    the conversion was recorded, the settings were old again, and every login failed)."""
+    if not is_content_migration_complete(connection, BACKUP_SETTINGS_UNCHECKED_MIGRATION_ID):
+        return True
+    row = fetch_backup_settings_row(connection)
+    if row is None:
+        return False
+    payload_json = _stored_payload_json(row, token="")
+    if payload_json is None:
+        return False
+    stored = json.loads(payload_json)
+    if not isinstance(stored, dict):
+        raise RuntimeError("backup settings payload must be an object")
+    return not _is_current_form(stored)
+
+
+# Settings saved since 2026-10-29 name the vaults left out and the synced-folder warnings answered.
+def _is_current_form(stored: dict[str, object]) -> bool:
+    return "unchecked_namespaces" in stored and "synced_plaintext_acknowledged" in stored
+
+
 # Stores the settings as the vaults left out; how many settings that converted (0 or 1).
 def _convert_stored_settings(connection: sqlite3.Connection, *, available_namespaces: list[str]) -> int:
     row = fetch_backup_settings_row(connection)
@@ -274,7 +297,7 @@ def _convert_stored_settings(connection: sqlite3.Connection, *, available_namesp
     stored = json.loads(payload_json)
     if not isinstance(stored, dict):
         raise RuntimeError("backup settings payload must be an object")
-    if "unchecked_namespaces" in stored and "synced_plaintext_acknowledged" in stored:
+    if _is_current_form(stored):
         return 0
     if "unchecked_namespaces" not in stored:
         stored["unchecked_namespaces"] = _left_out_by(stored, available_namespaces=available_namespaces)

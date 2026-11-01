@@ -818,7 +818,8 @@ class PasswordOperationModal extends BaseModal {
         switch (mode) {
             case 'create':
                 endpoint = this.apiEndpoints.create;
-                body = { password: formData.newPassword };
+                // Add Password reloads into the login (the new vault wizard keeps the window).
+                body = { password: formData.newPassword, keeps_window_logged_in: false };
                 method = 'POST';
                 break;
                 
