@@ -4,6 +4,9 @@ frontmatter tags and times, in the order of Obsidian's file list; the vault is o
 
 from __future__ import annotations
 
+import app.services.content_cache as content_cache
+from app.utils.text_utils import strip_html
+
 import hashlib
 import typing
 from datetime import datetime, timezone
@@ -119,12 +122,13 @@ def test_a_notes_first_line_is_its_file_name(path: str, text: str, expected: str
     assert text_of(planned(path, text, strict=True)) == expected
 
 
+# A folder tag ends in `/`, which makes it a folder (docs/ready-to-build/virtual-folders.md §1).
 @pytest.mark.parametrize(("path", "folder_tag"), [
     ("Note.md", ""),
-    ("Projects/Client A/Note.md", "Projects/Client-A"),
-    ("Weird [Folder]/Note.md", "Weird-Folder"),
-    ("Daily/2026/Note.md", "Daily/2026"),
-    ("-Dash first/Note.md", "Dash-first"),
+    ("Projects/Client A/Note.md", "Projects/Client-A/"),
+    ("Weird [Folder]/Note.md", "Weird-Folder/"),
+    ("Daily/2026/Note.md", "Daily/2026/"),
+    ("-Dash first/Note.md", "Dash-first/"),
 ])
 def test_a_files_folder_is_one_tag(path: str, folder_tag: str) -> None:
     note = planned(path, "", strict=True)
@@ -454,6 +458,23 @@ def test_the_summary_counts_every_note_the_import_writes(note_store: NoteStore) 
     ).execute()
     # Every note the import wrote (once 38 said, 75 written: a split report the summary missed).
     assert len(note_store.list_note_ids()) - before == preview["noteCount"]
+
+
+# Restored notes (an import, an undone delete: apply_restore_records) are in the content
+# caches as a new note is (2026-11-01: renaming a tag after an import failed with "Cache
+# missing raw text" on every imported note).
+def test_imported_notes_are_in_the_content_caches(note_store: NoteStore) -> None:
+    CmdImportObsidianVault(
+        source="obsidian", folder_path=str(FIXTURE_VAULT), split_mode=SPLIT_PARAGRAPHS, content_format=CONTENT_RICH, token=TOKEN,
+        imported_at=IMPORTED_AT,
+    ).execute()
+    for note_id in note_store.list_note_ids():
+        if note_id == "mine":
+            continue
+        record = note_store.get_note(note_id)
+        assert content_cache.get_cached_text(note_id) == strip_html(record.content)
+        assert content_cache.get_cached_tags(note_id) == record.tags
+        assert content_cache.get_cached_proposed_tags(note_id) == record.proposed_tags
 
 
 # --- Slice 2: links, embeds and attachments -------------------------------------------------

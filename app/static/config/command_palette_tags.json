@@ -209,6 +209,10 @@
       "tags": ["import", "obsidian", "vault", "markdown", "md", "folder", "notes", "files", "bring", "migrate", "wizard"]
     },
     {
+      "id": "action.toggle_virtual_folders",
+      "tags": ["virtual", "folders", "folder", "tree", "sidebar", "explorer", "files"]
+    },
+    {
       "id": "form.create_namespace",
       "tags": ["vault", "vaults", "namespace", "namespaces", "create", "new", "add", "ports", "database", "instance", "workspace", "setup", "wizard", "onboarding"]
     },

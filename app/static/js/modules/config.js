@@ -154,6 +154,14 @@ export const CONFIG = {
             PREVIEW: `${API_BASE}/import/preview`,
             PICK_FOLDER: `${API_BASE}/import/pick-folder`,
         },
+        // Virtual folders, an experiment (app/api/routes/virtual_folders.py).
+        VIRTUAL_FOLDERS: {
+            LIST: `${API_BASE}/virtual-folders`,
+            FILTER: `${API_BASE}/virtual-folders/filter`,
+            RENAME: `${API_BASE}/virtual-folders/rename`,
+            MOVE: `${API_BASE}/virtual-folders/move`,
+            DELETE: `${API_BASE}/virtual-folders/delete`,
+        },
         FILES: {
             UPLOAD: `${API_FILES_BASE}/upload`,
             DOWNLOAD: (fileId) => `${API_FILES_BASE}/${fileId}/download`,

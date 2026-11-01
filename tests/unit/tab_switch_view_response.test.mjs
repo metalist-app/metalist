@@ -77,7 +77,7 @@ function buildHarness() {
         attachEditorSurface() {}, clearEditingStateForHiddenFilteredNote() {},
         initializeEditSessionCollapseStateFromNoteElement() {},
         DOMUtils: { getNoteContentHTML: () => '', getNoteContent: () => ({}), setNoteEditable() {}, revealCaret() {}, focusNoteEdge() {} },
-        updateSearchResultsCount() {}, updateRootSortIndicator() {}, updateDateRangeIndicator() {}, updateFileFilterIndicator() {}, updateUntaggedViewIndicator() {}, updateReferenceSourceIndicator() {},
+        updateSearchResultsCount() {}, updateRootSortIndicator() {}, updateDateRangeIndicator() {}, updateFileFilterIndicator() {}, async updateVirtualFolders() {}, updateUntaggedViewIndicator() {}, updateReferenceSourceIndicator() {},
         rebuildRootDateSeparators() {}, async refreshBacklinksPanel() {},
         captureViewportRoot: () => null, holdViewportRoot() {},
     };

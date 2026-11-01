@@ -133,7 +133,11 @@ import { settleResult } from '../async-result.js';
 import { buildSessionHeaders } from '../session-auth.js';
 import { isValidTagToken } from '../tag-token.js';
 import { updateSearchContextsOverlayPlacement } from '../mode-manager/services/search-contexts-overlay-service.js';
-import { openSearchInNewSearchContext } from '../mode-manager/events/keyboard-events.js';
+import { navigateToReferenceOrigin, openSearchInNewSearchContext } from '../mode-manager/events/keyboard-events.js';
+import { FolderNameModal } from '../modals/folder-name-modal.js';
+import {
+    activeVirtualFolder, isVirtualFoldersShown, setVirtualFoldersShown, wireVirtualFolders,
+} from '../mode-manager/services/virtual-folders-service.js';
 import {
     DEFAULT_SEARCH_SUGGESTION_WINDOWS_VALUE,
     parseSearchSuggestionWindowsValue,
@@ -431,6 +435,7 @@ class CommandPaletteController {
         this._versionInfoModal = null;
         this._importWizard = null;
         this._newVaultWizard = null;
+        this._folderNameModal = null;
         this._memoryUsageModal = null;
         this._recentMessagesModal = null;
         this._noteLayoutAppearanceModal = null;
@@ -455,6 +460,14 @@ class CommandPaletteController {
         if (this._initialized) {
             return;
         }
+        wireVirtualFolders({
+            // In the command gate, waiting for a command still running (a click while editing:
+            // the note's save), so one click leaves the note and shows the folder.
+            setFilter: async (folder) => CommandGate.runWhenFree('virtualFolders.filter', async () => this.setVirtualFolder(folder)),
+            confirm: async (context) => this._confirmAction('virtualFolders.confirm', context),
+            askName: async (form) => this._askFolderName(form),
+            afterChange: async () => actionRefreshAndMaybeSelect({ startedAt: performance.now(), context: 'virtualFolders.change' }),
+        });
         const clientState = await migrateLegacyClientState({
             clientState: await loadClientState(),
             persistClientPreferencesFn: persistClientPreferences,
@@ -505,6 +518,7 @@ class CommandPaletteController {
                 retryFailedLinkTitles: this.retryFailedLinkTitles.bind(this),
                 openOpenNamespace: this.openOpenNamespace.bind(this),
                 openCreateNamespace: this.openCreateNamespace.bind(this),
+                toggleVirtualFolders: this.toggleVirtualFolders.bind(this),
                 openManageNamespacePorts: this.openManageNamespacePorts.bind(this),
                 openRenameCurrentNamespace: this.openRenameCurrentNamespace.bind(this),
                 openDeleteCurrentNamespace: this.openDeleteCurrentNamespace.bind(this),
@@ -1624,6 +1638,53 @@ class CommandPaletteController {
         await actionRefreshAndMaybeSelect({
             startedAt: performance.now(),
             context: `dateFilter.${filter.rangeKind}`,
+            animateNoteChanges: false,
+        });
+    }
+
+    // Virtual folders, an experiment (virtual-folders-service.js): the toggle.
+    async toggleVirtualFolders() {
+        setVirtualFoldersShown(!isVirtualFoldersShown());
+    }
+
+    // A virtual folder's name (FolderNameModal), or null when nothing changes.
+    async _askFolderName(form) {
+        const isReady = await this._prepareForModalOpen('virtualFolders.name');
+        if (!isReady) {
+            return null;
+        }
+        if (this._folderNameModal === null) {
+            this._folderNameModal = new FolderNameModal();
+        }
+        return this._folderNameModal.openFor(form);
+    }
+
+    /** Narrow the view to a virtual folder and the folders below it ('' for every folder
+     * again), as a Files filter; from a reference view, back to the view the reference views
+     * started from first. */
+    async setVirtualFolder(folder) {
+        if (typeof folder !== 'string') {
+            throw new Error('setVirtualFolder requires a folder tag or ""');
+        }
+        if (isViewingReferenceSource()) {
+            await navigateToReferenceOrigin();
+        }
+        const activeTabId = ModeContext.activeTabId;
+        if (typeof activeTabId !== 'string' || activeTabId.length === 0) {
+            throw new Error('ModeContext.activeTabId must be a non-empty string');
+        }
+        if (activeVirtualFolder() === folder) {
+            return;
+        }
+        if (ModeContext.isEditing) {
+            await actionSaveAndExitEditingWithoutRefreshing();
+        }
+        ModeContext.bumpUndoContextEpoch('virtualFolder');
+        await NotesAPI.setVirtualFolderFilter(activeTabId, folder);
+        this._showChangedViewFromTop(activeTabId);
+        await actionRefreshAndMaybeSelect({
+            startedAt: performance.now(),
+            context: 'virtualFolder',
             animateNoteChanges: false,
         });
     }
@@ -2856,6 +2917,8 @@ class CommandPaletteController {
             setPassword: async (password, onProgress) => Auth.setPasswordKeepingThisWindow(password, onProgress),
             openPasswordGenerator: async (onUse) => this._openPasswordGeneratorToUse(onUse),
             afterImport: async (sourceTag) => {
+                // An import shows its folders at once (Virtual Folders, an experiment).
+                setVirtualFoldersShown(true);
                 const newTabId = await openSearchInNewSearchContext(sourceTag, 'importWizard.showImported');
                 if (newTabId === null) {
                     await actionRefreshAndMaybeSelect({ startedAt: performance.now(), context: 'importWizard' });

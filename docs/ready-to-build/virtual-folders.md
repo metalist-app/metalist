@@ -6,6 +6,15 @@ Written from a read-only look at the repo; filed from `docs/inbox/` on 2026-11-0
 
 ---
 
+## First try (2026-11-01, branch `feature/virtual-folders`)
+Built for the maintainer to try: §1's trailing slash in the import (`_folder_tag`), §2's tree
+(`virtual-folders-service.js`, `app/api/routes/virtual_folders.py`, `app/services/virtual_folders.py`)
+with the column moved right, §3's filter chip, and the toggle (palette: Show/Hide Virtual Folders;
+an import turns it on). **Nothing is stored:** the toggle and each tab's filter live in the
+server's memory (a restart turns the tree off), so dropping the branch leaves the database as it
+was. The filter narrows the view, find and the current-view commands; exports and the AI read the
+search alone. Not built yet: §4 drags, §5 renames, §6 New Folder, the new search-context icon.
+
 ## 0. Today (from the code)
 
 - Tags may contain `/` and end with one; only a leading `/` is refused, since it opens a regex in rules (`tag-token.js` `isValidTagToken`; `app/services/tag_ontology.py` `_is_valid_tag_token`). *Check* that a trailing `/` survives the tag bar, search and suggestions.

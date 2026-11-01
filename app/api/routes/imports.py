@@ -66,7 +66,8 @@ def preview_import(request: Request, body: ImportFolderRequest) -> dict[str, obj
 @transactional_route
 def import_folder(request: Request, body: ImportFolderRequest) -> dict[str, object]:
     token = require_request_auth_token(request)
-    return CmdImportObsidianVault(
+    result = CmdImportObsidianVault(
         source=body["source"], folder_path=body["folderPath"], split_mode=body["splitMode"],
         content_format=body["contentFormat"], token=token, imported_at=datetime.now(timezone.utc),
     ).execute()
+    return result

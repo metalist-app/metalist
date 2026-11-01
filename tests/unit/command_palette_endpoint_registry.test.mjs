@@ -22,6 +22,7 @@ test('buildCommandPaletteEndpoints includes utility action endpoints', async () 
             openSoundManager: noop,
             openVersionInfo: noop,
             openImportWizard: noop,
+            toggleVirtualFolders: noop,
             deleteNotesInView: noop,
             openMemoryUsage: noop,
             openRecentMessages: noop,

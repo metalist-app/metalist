@@ -12467,3 +12467,187 @@ body.pref-animated-transitions .wizard-write-tag {
         transition: none;
     }
 }
+
+/* Virtual folders, an experiment (docs/ready-to-build/virtual-folders.md;
+   virtual-folders-service.js): a folder tree in the left margin, and the notes column moved
+   right to make room while the toggle is on. Desktop only. */
+:root {
+    --virtual-folders-width: 240px;
+    --virtual-folders-gap: 4px;
+    --virtual-folders-arrow-room: 32px;
+}
+
+.virtual-folders {
+    position: fixed;
+    top: calc(var(--app-control-top) + 3.25rem);
+    left: var(--side-rail-edge);
+    width: var(--virtual-folders-width);
+    max-height: calc(100vh - var(--app-control-top) - 3.25rem - 1rem);
+    box-sizing: border-box;
+    overflow-y: auto;
+    padding: 8px 4px;
+    z-index: 5;
+    font-size: 14px;
+    color: var(--text-color);
+    /* A subtle box around the tree (the maintainer, 2026-11-01). */
+    border: 1px solid var(--border-color);
+    border-radius: var(--note-corner-radius);
+    background: var(--bg-color);
+}
+
+.virtual-folders[hidden] {
+    display: none;
+}
+
+.virtual-folders-title {
+    padding: 0 8px 6px;
+    color: var(--app-text-subtle, #8a8a8a);
+    font-size: 11px;
+    font-weight: 650;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+
+.virtual-folder-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    padding: 3px 8px 3px calc(8px + var(--virtual-folder-depth) * 14px);
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.virtual-folder-row:hover {
+    background: rgba(127, 127, 127, 0.12);
+}
+
+/* The chosen folder looks as a wizard's chosen card does (.wizard-choice.is-chosen). */
+.virtual-folder-row {
+    border: 1.5px solid transparent;
+}
+
+.virtual-folder.is-filtered > .virtual-folder-row,
+.virtual-folder.is-filtered > .virtual-folder-row:hover {
+    border-color: var(--modal-accent);
+    background: var(--modal-selected);
+    font-weight: 650;
+}
+
+/* The same arrow as a note's (.note-collapse-toggle): its glyphs, size and colour. */
+.virtual-folder-arrow {
+    flex: none;
+    width: 18px;
+    height: 20px;
+    margin-left: -4px;
+    color: rgba(0, 0, 0, 0.35);
+    font-size: 23px;
+    line-height: 20px;
+    text-align: center;
+}
+
+.virtual-folder-row:hover .virtual-folder-arrow {
+    color: #000000;
+}
+
+html[data-theme="dark"] .virtual-folder-arrow {
+    color: rgba(235, 235, 235, 0.4);
+}
+
+html[data-theme="dark"] .virtual-folder-row:hover .virtual-folder-arrow {
+    color: #ffffff;
+}
+
+/* An ordinary folder: a tab on top of a box. */
+.virtual-folder-icon {
+    flex: none;
+    position: relative;
+    width: 14px;
+    height: 10px;
+    margin-top: 2px;
+    border: 1.5px solid currentColor;
+    border-radius: 2px;
+    opacity: 0.7;
+}
+
+.virtual-folder-icon::before {
+    content: "";
+    position: absolute;
+    top: -4px;
+    left: -1.5px;
+    width: 6px;
+    height: 3px;
+    border: 1.5px solid currentColor;
+    border-bottom: none;
+    border-radius: 2px 2px 0 0;
+}
+
+/* How many notes the folder shows, with its subfolders, in the view's search. */
+.virtual-folder-count {
+    flex: none;
+    opacity: 0.55;
+    font-weight: 400;
+    font-variant-numeric: tabular-nums;
+}
+
+.virtual-folder-name {
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+/* A New Folder no note is in yet: dimmed, in italics, until a folder is moved into it. */
+.virtual-folder.is-new > .virtual-folder-row {
+    font-style: italic;
+    opacity: 0.55;
+}
+
+/* Where a dragged folder would go: a folder, or the tree itself for the top. */
+.virtual-folder-row.is-drop-target,
+.virtual-folders.is-drop-target {
+    outline: 2px dashed var(--modal-accent);
+    outline-offset: -2px;
+}
+
+/* The column moves right by half the tree, never nearer the left edge than the tree. */
+/* The column sits just right of the tree at every width (the maintainer, 2026-11-01: a
+   centred column left too wide a gap on a wide window). */
+body.virtual-folders-on #app {
+    margin-left: calc(var(--side-rail-edge) + var(--virtual-folders-width) + var(--virtual-folders-gap));
+    margin-right: auto;
+    width: min(
+        calc(var(--app-content-width) + 2 * var(--virtual-folders-arrow-room)),
+        calc(100% - var(--side-rail-edge) - var(--virtual-folders-width) - var(--virtual-folders-gap))
+    );
+}
+
+/* Beside the tree, the column's sides hold just the notes' fold arrows; the notes keep their
+   usual width. */
+body.virtual-folders-on #app > .container {
+    padding-inline: var(--virtual-folders-arrow-room);
+}
+
+@media (max-width: 900px) {
+    .virtual-folders {
+        display: none;
+    }
+
+    body.virtual-folders-on #app {
+        margin: 0 auto;
+        width: min(var(--app-shell-width), 100%);
+    }
+
+    body.virtual-folders-on #app > .container {
+        padding-inline: clamp(
+            calc(var(--app-min-visible-gutter) - var(--app-page-padding)),
+            calc((100% - var(--app-content-width)) / 2),
+            5rem
+        );
+    }
+}

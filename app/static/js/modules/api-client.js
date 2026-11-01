@@ -245,6 +245,7 @@ export const NotesAPI = {
         const body = {
             first_visible_note_id: firstVisibleNoteId,
             search_query: searchQuery,
+            tabId: ModeContext.activeTabId,
         };
 
         return this._apiCall(CONFIG.API.NOTES.CREATE, {
@@ -257,6 +258,7 @@ export const NotesAPI = {
     async createSibling(noteId, searchQuery) {
         const body = {
             search_query: searchQuery,
+            tabId: ModeContext.activeTabId,
         };
 
         return this._apiCall(CONFIG.API.NOTES.CREATE_SIBLING(noteId), { 
@@ -269,6 +271,7 @@ export const NotesAPI = {
     async createChild(noteId, searchQuery) {
         const body = {
             search_query: searchQuery,
+            tabId: ModeContext.activeTabId,
         };
 
         return this._apiCall(CONFIG.API.NOTES.CREATE_CHILD(noteId), { 
@@ -487,6 +490,36 @@ export const NotesAPI = {
             throw new Error('NotesAPI.pickImportFolder requires a source');
         }
         return this._apiCall(CONFIG.API.IMPORT.PICK_FOLDER, { method: 'POST', body: JSON.stringify({ source }) });
+    },
+
+    // Virtual folders, an experiment: whether the tree shows, the tab's folder filter, and
+    // the folders the view's notes are filed in.
+    async listVirtualFolders() {
+        return this._apiCall(CONFIG.API.VIRTUAL_FOLDERS.LIST, { method: 'POST', body: JSON.stringify(this.viewScope()) });
+    },
+
+    // A folder renamed, moved into another ('' for the top) or deleted, with every folder below it.
+    async renameVirtualFolder(folder, newPath) {
+        return this._apiCall(CONFIG.API.VIRTUAL_FOLDERS.RENAME, { method: 'POST', body: JSON.stringify({ folder, newPath }) });
+    },
+
+    async moveVirtualFolder(folder, into) {
+        return this._apiCall(CONFIG.API.VIRTUAL_FOLDERS.MOVE, { method: 'POST', body: JSON.stringify({ folder, into }) });
+    },
+
+    async deleteVirtualFolder(folder) {
+        return this._apiCall(CONFIG.API.VIRTUAL_FOLDERS.DELETE, { method: 'POST', body: JSON.stringify({ folder }) });
+    },
+
+    // folder: the folder tag ('Projects/'), or '' for every folder again.
+    async setVirtualFolderFilter(tabId, folder) {
+        if (typeof tabId !== 'string' || tabId === '' || typeof folder !== 'string') {
+            throw new Error('NotesAPI.setVirtualFolderFilter requires the tab and the folder');
+        }
+        return this._apiCall(CONFIG.API.VIRTUAL_FOLDERS.FILTER, {
+            method: 'POST',
+            body: JSON.stringify({ tabId, folder, clientId: ModeContext.clientId, undoContext: captureUndoContext() }),
+        });
     },
 
     // What importing would do (the import wizard's summary), before anything is written.

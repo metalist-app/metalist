@@ -240,6 +240,8 @@ class SearchTagDetailsRequest(TypedDict):
 class CreateNoteTopRequest(TypedDict):
     first_visible_note_id: Text | None
     search_query: Text | None
+    # The search context the note is made in: its virtual folder (an experiment) files it there.
+    tabId: Identifier
     clientId: Identifier
     undoContext: UndoContext
     viewport: Viewport
@@ -247,6 +249,7 @@ class CreateNoteTopRequest(TypedDict):
 @with_config(ConfigDict(strict=True))
 class CreateSiblingRequest(TypedDict):
     search_query: Text | None
+    tabId: Identifier
     clientId: Identifier
     undoContext: UndoContext
     viewport: Viewport
@@ -254,6 +257,7 @@ class CreateSiblingRequest(TypedDict):
 @with_config(ConfigDict(strict=True))
 class CreateChildRequest(TypedDict):
     search_query: Text | None
+    tabId: Identifier
     clientId: Identifier
     undoContext: UndoContext
     viewport: Viewport

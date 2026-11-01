@@ -17,11 +17,11 @@ function chatToggle(isAiChatVisible, toggles) {
         {
             kind: 'view', searchAllowsNewNotes: true, isMac: true, isEditing: false, canPasteNoteAtTop: false, canGoToTop: false, canGoToBottom: false,
             isUntaggedView: false, theme: 'system', sortMode: 'normal', dateRangeKind: 'none', dateRangeField: 'updated', fileFilterKind: 'none',
-            areTabsVisible: false, isAiChatVisible, areNoteTagsVisible: false,
+            areTabsVisible: false, isAiChatVisible, areNoteTagsVisible: false, areVirtualFoldersVisible: false,
         },
         {
             onAddNoteAtTop: noop, onUndo: noop, onRedo: noop, onExpandAll: noop, onCollapseAll: noop, onFullyExpandAll: noop, onFullyCollapseAll: noop,
-            onSetUntaggedView: noop, onSetSortMode: noop, onToggleTabs: noop, onToggleNoteTags: noop,
+            onSetUntaggedView: noop, onSetSortMode: noop, onToggleTabs: noop, onToggleNoteTags: noop, onToggleVirtualFolders: noop,
             onSetDateRangeField: noop, onSetDateRangePreset: noop, onOpenCustomDateRange: noop, onSetFileFilter: noop,
             onToggleAiChat: (nextValue) => toggles.push(nextValue),
             onSetTheme: noop, onNewTab: noop, onOpenNamespace: noop, onOpenReminders: noop,

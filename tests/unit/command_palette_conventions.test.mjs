@@ -82,6 +82,7 @@ const LABELS = {
     'form.dictation_settings': 'Dictation Settings…',
     'form.open_namespace': 'Open/Switch Vault…',
     'form.import_wizard': 'Import Notes…',
+    'action.toggle_virtual_folders': 'Show Virtual Folders',
     'form.create_namespace': 'Create Vault…',
     'form.manage_namespace_ports': 'Manage Vault Ports…',
     'form.rename_current_namespace': 'Rename Current Vault…',

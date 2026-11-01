@@ -13,7 +13,7 @@ const VIEW_HANDLER_NAMES = [
     'onAddNoteAtTop', 'onPasteNoteAtTop', 'onUndo', 'onRedo', 'onGoToTop', 'onGoToBottom', 'onExpandAll', 'onCollapseAll', 'onFullyExpandAll',
     'onFullyCollapseAll', 'onSetUntaggedView', 'onSetSortMode', 'onSetDateRangeField', 'onSetDateRangePreset',
     'onOpenCustomDateRange', 'onSetFileFilter', 'onToggleAiChat', 'onToggleTabs',
-    'onToggleNoteTags', 'onSetTheme', 'onNewTab', 'onOpenNamespace', 'onOpenReminders',
+    'onToggleNoteTags', 'onToggleVirtualFolders', 'onSetTheme', 'onNewTab', 'onOpenNamespace', 'onOpenReminders',
     'onExportViewHtml', 'onPrintView', 'onLogOut',
 ];
 
@@ -25,7 +25,7 @@ function viewMenu(overrides, calls) {
     return buildContextMenuItems({
         kind: 'view', searchAllowsNewNotes: true, isMac: true, isEditing: false, canPasteNoteAtTop: true, canGoToTop: true, canGoToBottom: true,
         isUntaggedView: false, theme: 'system', sortMode: 'normal', dateRangeKind: 'none', dateRangeField: 'updated',
-        fileFilterKind: 'none', areTabsVisible: false, isAiChatVisible: false, areNoteTagsVisible: false,
+        fileFilterKind: 'none', areTabsVisible: false, isAiChatVisible: false, areNoteTagsVisible: false, areVirtualFoldersVisible: false,
         ...overrides,
     }, viewHandlers(calls));
 }

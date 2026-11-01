@@ -1,3 +1,4 @@
+import { isVirtualFoldersShown } from '../mode-manager/services/virtual-folders-state.js';
 import {
     baseRootSortMode,
     isRootSortModeReversed,
@@ -165,6 +166,7 @@ export function buildCommandPaletteEndpoints(deps) {
 
     const openVersionInfo = requireAction(actions, 'openVersionInfo');
     const openImportWizard = requireAction(actions, 'openImportWizard');
+    const toggleVirtualFolders = requireAction(actions, 'toggleVirtualFolders');
     const openMemoryUsage = requireAction(actions, 'openMemoryUsage');
     const openRecentMessages = requireAction(actions, 'openRecentMessages');
     const openNoteLayoutAppearance = requireAction(actions, 'openNoteLayoutAppearance');
@@ -575,6 +577,16 @@ export function buildCommandPaletteEndpoints(deps) {
             kind: 'form',
             label: 'Import Notes…',
             execute: async () => openImportWizard(),
+        },
+        {
+            // Virtual folders, an experiment (docs/ready-to-build/virtual-folders.md).
+            id: 'action.toggle_virtual_folders',
+            kind: 'action',
+            get label() {
+                return `${isVirtualFoldersShown() ? 'Hide' : 'Show'} Virtual Folders`;
+            },
+            closeOnExecute: true,
+            execute: async () => toggleVirtualFolders(),
         },
         {
             id: 'form.create_namespace',

@@ -13,6 +13,7 @@ import { rebuildRootDateSeparators } from '../services/root-date-separator-servi
 import { updateRootSortIndicator } from '../services/root-sort-indicator-service.js';
 import { updateDateRangeIndicator } from '../services/date-range-filter-service.js';
 import { updateFileFilterIndicator } from '../services/file-filter-service.js';
+import { updateVirtualFolders } from '../services/virtual-folders-service.js';
 import { updateUntaggedViewIndicator } from '../services/untagged-view-indicator-service.js';
 import { updateReferenceSourceIndicator } from '../services/reference-source-navigation-service.js';
 import { hasRootsBelowLoadedWindow, resetInfiniteScrollState } from '../services/infinite-scroll-service.js';
@@ -197,6 +198,8 @@ export async function actionRefreshAndMaybeSelect(options) {
         updateRootSortIndicator(snapshot);
         updateDateRangeIndicator();
         updateFileFilterIndicator();
+        // Virtual folders (an experiment): read after the view, never holding it up.
+        void updateVirtualFolders();
         updateUntaggedViewIndicator(snapshot);
         const previousRootCountTotals = ModeContext.getRootCountTotals(requestTabId);
         // Incremental notes.view refreshes can return the same totals when only note content changed.

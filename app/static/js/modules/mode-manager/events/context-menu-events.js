@@ -1,3 +1,5 @@
+import { isVirtualFoldersShown } from '../services/virtual-folders-state.js';
+import { showVirtualFoldersMenu } from '../services/virtual-folders-service.js';
 import { MS_PER_SECOND } from '../../time-units.js';
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import { ApplicationState } from '../../application-state.js';
@@ -1399,6 +1401,7 @@ function showViewContextMenu(event) {
         isUntaggedView: ModeContext.isUntaggedView === true,
         theme: themeAttribute === 'light' || themeAttribute === 'dark' ? themeAttribute : 'system',
         areTabsVisible: document.body.classList.contains('pref-show-tab-ui'),
+        areVirtualFoldersVisible: isVirtualFoldersShown(),
         isAiChatVisible: document.body.classList.contains('pref-show-ai-chat'),
         areNoteTagsVisible: document.body.classList.contains('pref-show-note-tags'),
         sortMode: ModeContext.activeTabSortMode,
@@ -1465,6 +1468,9 @@ function showViewContextMenu(event) {
         onToggleNoteTags: (nextValue) => {
             void CommandPalette.applyPreference('pref.show_note_tags', nextValue);
         },
+        onToggleVirtualFolders: () => {
+            void CommandPalette.toggleVirtualFolders();
+        },
         onAddNoteAtTop: () => {
             void CommandGate.run('contextMenu.view.add_at_top', async () => {
                 await addNoteAtTopFromContextMenu();
@@ -1513,6 +1519,11 @@ function handleContextMenu(event) {
         return;
     }
     if (element.closest('#ai-chat-panel')) return;
+    // The virtual folders tree has a menu of its own (an experiment).
+    if (element.closest('#virtual-folders')) {
+        showVirtualFoldersMenu(event);
+        return;
+    }
 
     const priorityTarget = resolvePriorityContextMenuTarget(element, {
         isInLeftRail: isInLeftTabRail(event),

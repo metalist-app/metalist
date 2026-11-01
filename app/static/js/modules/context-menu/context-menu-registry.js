@@ -898,6 +898,7 @@ function buildViewContextItems(context, handlers) {
     const canGoToBottom = requireViewFlag(context, 'canGoToBottom');
     const isUntaggedView = requireViewFlag(context, 'isUntaggedView');
     const areTabsVisible = requireViewFlag(context, 'areTabsVisible');
+    const areVirtualFoldersVisible = requireViewFlag(context, 'areVirtualFoldersVisible');
     const isAiChatVisible = requireViewFlag(context, 'isAiChatVisible');
     const areNoteTagsVisible = requireViewFlag(context, 'areNoteTagsVisible');
     if (!['system', 'light', 'dark'].includes(context.theme)) {
@@ -975,6 +976,7 @@ function buildViewContextItems(context, handlers) {
     const onToggleAiChat = requireViewHandler(handlers, 'onToggleAiChat');
     const onToggleTabs = requireViewHandler(handlers, 'onToggleTabs');
     const onToggleNoteTags = requireViewHandler(handlers, 'onToggleNoteTags');
+    const onToggleVirtualFolders = requireViewHandler(handlers, 'onToggleVirtualFolders');
     const onSetTheme = requireViewHandler(handlers, 'onSetTheme');
     const themeChoices = [['system', 'System Theme'], ['light', 'Light Theme'], ['dark', 'Dark Theme']];
     items.push(
@@ -988,6 +990,10 @@ function buildViewContextItems(context, handlers) {
                 { id: 'show-chat', label: 'Chat', icon: 'chat', checked: isAiChatVisible, enabled: true, onSelect: () => onToggleAiChat(!isAiChatVisible) },
                 { id: 'show-tabs', label: 'Search Contexts', icon: 'tabs', checked: areTabsVisible, enabled: true, onSelect: () => onToggleTabs(!areTabsVisible) },
                 { id: 'show-note-tags', label: 'Tags in List', icon: 'tag', checked: areNoteTagsVisible, enabled: true, onSelect: () => onToggleNoteTags(!areNoteTagsVisible) },
+                {
+                    id: 'show-virtual-folders', label: 'Virtual Folders', icon: 'folder', checked: areVirtualFoldersVisible, enabled: true,
+                    onSelect: () => onToggleVirtualFolders(),
+                },
                 ...themeChoices.map(([value, label], index) => choiceItem({
                     id: `theme-${value}`, label, icon: null, isCurrent: context.theme === value, separated: index === 0,
                     onChoose: () => onSetTheme(value),

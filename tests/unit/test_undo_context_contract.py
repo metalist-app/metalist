@@ -48,6 +48,7 @@ def test_mutations_accept_the_same_long_undo_context() -> None:
     reference_query = " OR ".join(str(uuid.uuid4()) for _ in range(300))
     payload = {
         "search_query": reference_query,
+        "tabId": "tab-1",
         "clientId": "client-1",
         "undoContext": _client_undo_context(reference_query),
         "viewport": {"scrollY": 0, "scrollAnchor": None},

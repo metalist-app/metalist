@@ -241,14 +241,18 @@ def _frontmatter_time(frontmatter: Dict[str, object], key: str, file_time: datet
 
 
 def _folder_tag(path: PurePosixPath, *, renamed_tags: List[Tuple[str, str]], dropped_tags: List[str]) -> str:
-    """The folder path as one tag (`Projects/Client A/` → `Projects/Client-A`); "" at the
-    vault's top. Each folder's name is made a tag part as a tag is."""
+    """The folder path as one tag ending in `/`, which makes it a folder
+    (`Projects/Client A/` → `Projects/Client-A/`: docs/ready-to-build/virtual-folders.md §1;
+    nested tags stay `a/b`); "" at the vault's top. Each folder's name is made a tag part as
+    a tag is."""
     folders = path.parent.parts
     if len(folders) == 0:
         return ""
-    original = _FOLDER_SEPARATOR.join(folders)
+    original = _FOLDER_SEPARATOR.join(folders) + _FOLDER_SEPARATOR
     parts = [_tag_text(folder) for folder in folders]
     tag = _FOLDER_SEPARATOR.join(part for part in parts if part != "")
+    if tag != "":
+        tag += _FOLDER_SEPARATOR
     return _checked_tag(original, tag, renamed_tags=renamed_tags, dropped_tags=dropped_tags)
 
 

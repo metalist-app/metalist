@@ -68,6 +68,10 @@ const CONTEXT_MENU_ICONS = {
         'M9.5 9.5V6h8l3-3H32a2.5 2.5 0 0 1 2.5 2.5V20a2.5 2.5 0 0 1-2.5 2.5H30',
         'M4 9.5h9l3-3h11.5a2.5 2.5 0 0 1 2.5 2.5v14.5a2.5 2.5 0 0 1-2.5 2.5h-21A2.5 2.5 0 0 1 4 23.5z',
     ],
+    // One folder (virtual folders, an experiment).
+    folder: [
+        'M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z',
+    ],
     sort: [
         'M4 6h16',
         'M4 12h11',

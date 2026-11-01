@@ -498,7 +498,7 @@ function buildViewContext(overrides) {
         kind: 'view', searchAllowsNewNotes: true, isMac: true, isEditing: false, canPasteNoteAtTop: false, canGoToTop: false, canGoToBottom: false,
         isUntaggedView: false, theme: 'system', sortMode: 'normal', dateRangeKind: 'none', dateRangeField: 'updated',
         fileFilterKind: 'none',
-        areTabsVisible: false, isAiChatVisible: false, areNoteTagsVisible: false,
+        areTabsVisible: false, isAiChatVisible: false, areNoteTagsVisible: false, areVirtualFoldersVisible: false,
         ...overrides,
     };
 }
@@ -507,7 +507,7 @@ const VIEW_HANDLER_NAMES = [
     'onAddNoteAtTop', 'onPasteNoteAtTop', 'onUndo', 'onRedo', 'onGoToTop', 'onGoToBottom', 'onExpandAll', 'onCollapseAll', 'onFullyExpandAll',
     'onFullyCollapseAll', 'onSetUntaggedView', 'onSetSortMode', 'onSetDateRangeField', 'onSetDateRangePreset',
     'onOpenCustomDateRange', 'onSetFileFilter', 'onToggleAiChat', 'onToggleTabs',
-    'onToggleNoteTags', 'onSetTheme', 'onNewTab', 'onOpenNamespace', 'onOpenReminders',
+    'onToggleNoteTags', 'onToggleVirtualFolders', 'onSetTheme', 'onNewTab', 'onOpenNamespace', 'onOpenReminders',
     'onExportViewHtml', 'onPrintView', 'onLogOut',
 ];
 
@@ -549,7 +549,7 @@ test('the background menu groups adding, going, the outline, the view, opening a
     assert.deepEqual(submenu('add'), ['Add Note at Top ↩', 'Paste Note at Top ⌘V']);
     assert.deepEqual(submenu('go-to'), ['Top', 'Bottom']);
     assert.deepEqual(submenu('outline'), ['Expand All Root Notes', 'Collapse All Root Notes', '— Fully Expand All', 'Fully Collapse All']);
-    assert.deepEqual(submenu('show'), ['Chat', 'Search Contexts', 'Tags in List', '— System Theme', 'Light Theme', 'Dark Theme']);
+    assert.deepEqual(submenu('show'), ['Chat', 'Search Contexts', 'Tags in List', 'Virtual Folders', '— System Theme', 'Light Theme', 'Dark Theme']);
     assert.deepEqual(submenu('open'), ['New Search Context', 'Vault…', 'Reminders']);
     assert.deepEqual(submenu('export-print'), ['View as HTML…', 'Print View…']);
 });
@@ -621,6 +621,7 @@ test('View and Show (with the theme) tick the current state', () => {
     const calls = [];
     const items = buildContextMenuItems(buildViewContext({
         isUntaggedView: true, theme: 'dark', isAiChatVisible: true, areTabsVisible: false, areNoteTagsVisible: true,
+        areVirtualFoldersVisible: true,
     }), buildViewHandlers(calls));
     const submenu = (id) => items.find((item) => item.id === id).submenu;
     const ticks = (id) => submenu(id).map((item) => [item.label, item.checked, item.enabled]);
@@ -628,18 +629,19 @@ test('View and Show (with the theme) tick the current state', () => {
     // The current choice is ticked but not greyed: picking it changes nothing.
     assert.deepEqual(ticks('view'), [['All Notes', false, true], ['Untagged Notes', true, true]]);
     assert.deepEqual(ticks('show'), [
-        ['Chat', true, true], ['Search Contexts', false, true], ['Tags in List', true, true],
+        ['Chat', true, true], ['Search Contexts', false, true], ['Tags in List', true, true], ['Virtual Folders', true, true],
         ['System Theme', false, true], ['Light Theme', false, true], ['Dark Theme', true, true],
     ]);
 
     submenu('view')[0].onSelect();
-    for (const item of submenu('show').slice(0, 3)) item.onSelect();
-    submenu('show')[4].onSelect();
+    for (const item of submenu('show').slice(0, 4)) item.onSelect();
+    submenu('show')[5].onSelect();
     assert.deepEqual(calls, [
         ['onSetUntaggedView', false],
         ['onToggleAiChat', false],
         ['onToggleTabs', true],
         ['onToggleNoteTags', false],
+        ['onToggleVirtualFolders'],
         ['onSetTheme', 'light'],
     ]);
 });

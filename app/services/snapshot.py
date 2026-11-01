@@ -188,14 +188,44 @@ def _positive_text_clause(phrase: str) -> SearchClause:
     )
 
 
+def clause_excluded_note_ids(clause: SearchClause) -> Set[str]:
+    """The notes a clause's exclusions (-tag, -"text", -property) take out of what it finds."""
+    excluded_note_ids: Set[str] = set()
+    for tag in clause.forbidden_tags:
+        excluded_note_ids.update(search_index.query_clause_note_ids(_positive_tag_clause(tag)))
+    for phrase in clause.forbidden_text:
+        excluded_note_ids.update(search_index.query_clause_note_ids(_positive_text_clause(phrase)))
+    for condition in clause.forbidden_properties:
+        # -jogging:miles=MAX removes the longest of the notes the clause finds.
+        excluding_clause = _positive_property_clause(condition)
+        if condition.is_extreme:
+            excluding_clause = clause.requiring(condition)
+        excluded_note_ids.update(search_index.query_clause_note_ids(excluding_clause))
+    return excluded_note_ids
+
+
+def clause_has_positive_terms(clause: SearchClause) -> bool:
+    """Whether a clause finds notes by what they have; without, it starts from every note."""
+    return any((bool(clause.required_tags), bool(clause.required_text), bool(clause.required_properties)))
+
+
+def is_plain_clause(clause: SearchClause) -> bool:
+    """A clause whose found notes are just the notes each matching it on its own: no stats
+    or value terms (read through the note tree) and no note named by its id (which brings
+    its subtree), and no MAX/MIN (which picks among what the clause finds). Adding a tag to
+    a plain clause narrows what it finds to the notes with it."""
+    conditions = clause.required_properties + clause.forbidden_properties
+    if clause.has_stats_terms or clause.has_value_terms or any(condition.is_extreme for condition in conditions):
+        return False
+    return not _extract_direct_uuid_note_ids(clause)
+
+
 def _resolve_clause_note_sets(
     *,
     clause: SearchClause,
     ordered_root_ids: List[str],
 ) -> Tuple[Set[str], Set[str]]:
-    has_positive_terms = bool(clause.required_tags)
-    if clause.required_text or clause.required_properties:
-        has_positive_terms = True
+    has_positive_terms = clause_has_positive_terms(clause)
     direct_uuid_note_ids = _extract_direct_uuid_note_ids(clause)
 
     if has_positive_terms:
@@ -215,17 +245,7 @@ def _resolve_clause_note_sets(
         _include_descendants(positively_matched_note_ids, starting_ids=set(positively_matched_note_ids))
     allowed_note_ids = set(positively_matched_note_ids)
 
-    excluded_note_ids: Set[str] = set()
-    for tag in clause.forbidden_tags:
-        excluded_note_ids.update(search_index.query_clause_note_ids(_positive_tag_clause(tag)))
-    for phrase in clause.forbidden_text:
-        excluded_note_ids.update(search_index.query_clause_note_ids(_positive_text_clause(phrase)))
-    for condition in clause.forbidden_properties:
-        # -jogging:miles=MAX removes the longest of the notes the clause finds.
-        excluding_clause = _positive_property_clause(condition)
-        if condition.is_extreme:
-            excluding_clause = clause.requiring(condition)
-        excluded_note_ids.update(search_index.query_clause_note_ids(excluding_clause))
+    excluded_note_ids = clause_excluded_note_ids(clause)
 
     # With every note already allowed, ancestor/descendant closure is a no-op.
     if has_positive_terms:

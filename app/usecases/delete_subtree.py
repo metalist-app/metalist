@@ -17,6 +17,8 @@ from app.db.notes_sql import (
 )
 from app.security.encryption import encrypt
 from app.security.note_html import sanitize_note_html
+from app.services.content_cache import cache_note, cache_note_proposed_tags, cache_note_tags, cache_note_text
+from app.utils.text_utils import strip_html
 
 
 def _collect_subtree_ids(root_id: str) -> List[str]:
@@ -146,6 +148,13 @@ def apply_restore_records(records: List[NodeRecord], token: str) -> None:
 
     # Update in-memory store after commit
     store.restore_subtree(sanitized_records)
+    # As a new note is (create_note.py): restored notes were missing from these, and renaming
+    # or deleting a tag on them then failed ("Cache missing raw text", 2026-11-01).
+    for rec in sanitized_records:
+        cache_note(rec.id, rec.content)
+        cache_note_tags(rec.id, rec.tags)
+        cache_note_proposed_tags(rec.id, rec.proposed_tags)
+        cache_note_text(rec.id, strip_html(rec.content))
 
 
 @dataclass
