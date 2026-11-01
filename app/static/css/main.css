@@ -785,6 +785,20 @@ html[data-theme="dark"] .visual-cues-description {
     cursor: pointer;
 }
 
+.create-namespace-import-choice {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 4px 0 16px;
+    cursor: pointer;
+}
+
+.modal-content .create-namespace-import-choice input[type="checkbox"] {
+    flex: none;
+    width: auto;
+    margin: 0;
+}
+
 .modal-content .obsidian-import-choice input[type="radio"] {
     flex: none;
     width: auto;
@@ -4421,6 +4435,17 @@ html[data-theme="dark"] .ai-chat-header-actions #ai-chat-spend-toggle[aria-press
 
 .note.search-redacted .note-content::before {
     content: none;
+}
+
+/* A grey bar shows nothing of what the note holds: its text is not drawn, and neither is
+   anything in it (a link's icon, a checkbox, a picture, an embed), which showed through
+   the bar's 6 px where it started at the note's top (2026-10-31). */
+.note.search-redacted .note-content {
+    color: transparent;
+}
+
+.note.search-redacted .note-content * {
+    visibility: hidden;
 }
 
 .note.search-revealed {

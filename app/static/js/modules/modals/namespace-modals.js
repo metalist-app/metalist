@@ -23,6 +23,7 @@ import { showErrorDialog, showErrorDialogFor, showOpenFailure } from './error-di
 import { escapeHtml } from '../html-escape.js';
 import { actionRowHtml } from './action-row.js';
 import { requires } from '../../shockharness/contracts.js';
+import { withObsidianImportRequest } from '../import-on-open.js';
 
 
 const STATUS_BANNER_SECONDS = 5;
@@ -599,6 +600,7 @@ export class CreateNamespaceModal extends NamespaceModalBase {
             namespace: '',
             port: '',
             httpsPort: '',
+            importsObsidian: false,
             status: 'Loading vault defaults...',
         };
     }
@@ -641,6 +643,10 @@ export class CreateNamespaceModal extends NamespaceModalBase {
                         </div>
                     ` : ''}
                 </div>
+                <label class="create-namespace-import-choice">
+                    <input id="create-namespace-import-obsidian" type="checkbox" ${state.importsObsidian ? 'checked' : ''} ${submitting ? 'disabled' : ''}>
+                    <span>Import an Obsidian vault into it</span>
+                </label>
                 ${actionRowHtml({
                     alternative: null,
                     cancel: { id: 'create-namespace-cancel-btn', label: 'Cancel', disabled: submitting, attributes: [] },
@@ -659,6 +665,12 @@ export class CreateNamespaceModal extends NamespaceModalBase {
         this._wireTextInput('create-namespace-name', 'namespace');
         this._wireTextInput('create-namespace-http-port', 'port');
         this._wireTextInput('create-namespace-https-port', 'httpsPort');
+        const importChoice = document.getElementById('create-namespace-import-obsidian');
+        if (importChoice instanceof HTMLInputElement) {
+            importChoice.onchange = () => {
+                this.updateModalState({ importsObsidian: importChoice.checked });
+            };
+        }
 
         const submitButton = document.getElementById('create-namespace-submit-btn');
         if (submitButton instanceof HTMLButtonElement) {
@@ -772,7 +784,10 @@ export class CreateNamespaceModal extends NamespaceModalBase {
             if (typeof response.url !== 'string' || response.url.length === 0) {
                 throw new Error('Namespace create response missing url');
             }
-            const navigationUrl = rewriteNamespaceUrlPreservingCurrentHost(response.url, window.location);
+            let navigationUrl = rewriteNamespaceUrlPreservingCurrentHost(response.url, window.location);
+            if (this.getModalState().importsObsidian === true) {
+                navigationUrl = withObsidianImportRequest(navigationUrl);
+            }
             if (pendingTab && !pendingTab.closed) {
                 pendingTab.location.replace(navigationUrl);
             } else {

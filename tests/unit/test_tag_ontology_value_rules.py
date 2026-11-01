@@ -118,18 +118,18 @@ def _load(monkeypatch: pytest.MonkeyPatch, specs: dict[str, tuple[str | None, st
     return index
 
 
-def test_an_inferred_tag_is_the_notes_own_and_passes_to_children_and_referencing_notes(monkeypatch) -> None:
+def test_an_inferred_tag_is_the_notes_own_and_passes_to_children_and_embedding_notes(monkeypatch) -> None:
     index = _load(monkeypatch, {
         PARENT: (None, "Races", "race"),
         RUN: (PARENT, "Marathon day", "jogging:miles=26.2"),
         CHILD: (RUN, "Splits", ""),
-        HOST: (None, f"[[{RUN}]]", ""),
+        HOST: (None, f"![[{RUN}]]", ""),
     })
     # The run carries race from its parent, so it is a marathon; its child inherits both,
     # never miles=26.2.
     assert index.query_note_ids("long-run") == {RUN, CHILD, HOST}
-    # A referencing note gets the run's own tags, not those it inherits (race), as
-    # references always have: so long-run, not marathon.
+    # A note embedding the run gets the run's own tags, not those it inherits (race), as
+    # embeds always have: so long-run, not marathon. (A link passes no tags.)
     assert index.query_note_ids("marathon") == {RUN, CHILD}
     assert index.query_note_ids("jogging:miles>10") == {RUN}
 
@@ -163,13 +163,13 @@ def test_saving_a_value_rule_refreshes_only_the_notes_it_concerns(monkeypatch) -
         PARENT: (None, "Races", "race"),
         RUN: (PARENT, "Marathon day", "jogging:miles=26.2"),
         CHILD: (RUN, "Splits", ""),
-        HOST: (None, f"[[{RUN}]]", ""),
+        HOST: (None, f"![[{RUN}]]", ""),
     })
     assert index.query_note_ids("long-run") == set()
     monkeypatch.setitem(globals(), "ONTOLOGY", compile_rules(
         rules=parse_rules_text(text=rules_without + rule + "\n", filename="test"), filename="test",
     ))
     refreshed = _STORE["store"].refresh_tags_for_value_rules(rule_texts=[rule])
-    # The run, its child and the note referencing it; not the parent.
+    # The run, its child and the note embedding it; not the parent.
     assert refreshed == 3
     assert index.query_note_ids("long-run") == {RUN, CHILD, HOST}

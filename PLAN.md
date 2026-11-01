@@ -85,11 +85,44 @@ come later.
 ### Slice 1b: offered when a vault is created (the maintainer, 2026-10-31)
 Importing works into the vault in use (slice 1) and also when a new vault is made, the
 onboarding idea of §3a brought forward.
-1. The Create Vault dialog has a choice "Import an Obsidian vault into it".
-2. With it chosen, Create and Open Vault opens the new vault as usual, and the import dialog
-   is already open there, ready to pick the Obsidian folder. Cancelling it leaves an empty vault.
-3. The import runs in the new vault, never in the one the dialog was opened from.
-4. Without the choice, creating a vault is unchanged.
+1. The Create Vault dialog has a checkbox "Import an Obsidian vault into it", under the
+   ports, unticked, its box and words on one line, in light and dark themes.
+2. Ticked, Create and Open Vault opens the new vault in its own tab as usual; once it has
+   opened (after its login, if it asks for one), the Import Obsidian Vault dialog is open
+   there, ready for Choose Folder.
+3. The import goes into the new vault; the vault the dialog was opened from is unchanged.
+4. Closing the import dialog leaves the new vault empty. Reloading the new vault doesn't
+   open the dialog again (the request travels in the address as `#import-obsidian`, removed
+   once read).
+5. Unticked, creating a vault is unchanged.
+
+**Built 2026-10-31** (`app/static/js/modules/import-on-open.js`). Slice 1d replaces its
+checkbox with "Import from".
+
+### Slice 1d: setting up a new vault (the maintainer, 2026-10-31)
+Create Vault asks three questions, each a checkbox; the new vault opens each ticked step in
+this order, the next when the one before closes, and an unticked one is skipped (all
+unticked: the vault opens as today). Acceptance checks to be written before building.
+1. **Protect it with a password:** Add Password opens first.
+2. **Set up AI in it:** AI Agent Settings opens next. Ticked without a password, a line
+   under it says the key is kept only until MetaList restarts (a vault without a password
+   keeps keys only in the server's memory, `docs/design/ai-providers.md` §3; never in the
+   browser).
+3. **Import from:** ticked, a drop-down shows what can be imported (Obsidian vault; a
+   Markdown folder once slice 1c is built), and its import dialog opens last.
+
+### Slice 2b: the AI suggests tags for an import (the maintainer, 2026-10-31)
+1. With an AI set up, the import dialog has "Have the AI suggest tags" (unticked), with the
+   number of notes beside it.
+2. After the import, the AI suggests tags for the imported notes exactly as it does for a
+   note and its children today (`docs/ui/tag-bar.md`, AI Tag Proposals): proposals, shown as
+   robot counts, that search already finds; nothing is accepted for the user. A floating card
+   shows how far it has got, and work goes on meanwhile.
+3. New tags are allowed whatever AI Tagging Vocabulary says: a new vault holds almost no
+   tags but the folder ones.
+4. The import's folder tags are never proposed: a note gets its folder's tag from its file
+   and any other note it would be wrong on, by definition. This is enforced in code, not
+   only asked of the AI.
 
 ### Slice 1c: a plain Markdown folder (the maintainer, 2026-10-31)
 The same importer, offered as its own option, for a folder of Markdown files from any app.

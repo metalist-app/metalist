@@ -18,8 +18,14 @@ import { waitForAppQuiet } from './browser-app-idle.mjs';
 //  11. nothing moves: marks change no position and no scroll
 //  12. full screen and floating windows are not marked
 //  13. (colour: CSS)          14. tag-bar comments are marked
+// And a note left out of the search, beside a match, is a grey bar showing nothing of what
+// it holds: no link icon, checkbox, picture or embed (2026-10-31: those showed through).
 
 const FIXTURE_TAG = 'searchmarkfixture';
+const BARS_TAG = 'zzgreybarsmatch';
+// A small picture for a file embed: its size only has to cover the bar.
+const BAR_PICTURE_WIDTH = 40;
+const BAR_PICTURE_HEIGHT = 24;
 const HIGHLIGHT_NAME = 'metalist-search';
 const REQUESTS_QUIET_MS = 300;
 const PAINT_FRAMES = 2;
@@ -219,13 +225,75 @@ async function checkFullscreenAndFloating(page, ids) {
   });
 }
 
+// The grey bars of notes left out beside a match: what in them still shows.
+async function checkGreyBars(page) {
+  const ids = await page.evaluate(async ({tag, width, height}) => {
+    const {NotesAPI, FilesAPI} = await import('/static/js/modules/api-client.js');
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext('2d');
+    context.fillStyle = '#3366aa';
+    context.fillRect(0, 0, width, height);
+    const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+    const file = await FilesAPI.uploadFile(new File([blob], 'grey-bar-picture.png', {type: 'image/png'}));
+    const make = async (parent, html, tags) => {
+      let note;
+      if (parent === null) note = await NotesAPI.createNote(null, '');
+      else note = await NotesAPI.createChild(parent, '');
+      await NotesAPI.saveNote(note.id, html, tags);
+      return note.id;
+    };
+    const target = await make(null, '<p>Grey bar link target</p>', '');
+    const parent = await make(null, '<p>Grey bars parent</p>', '');
+    // Written as the Obsidian import writes notes, with no paragraph margin above them.
+    const left = [
+      await make(parent, `[[${target}]] linked`, ''),
+      await make(parent, `![[${file.file_id}]]`, ''),
+      await make(parent, 'A task', '@todo'),
+      await make(parent, `![[${target}]]`, ''),
+    ];
+    const match = await make(parent, '<p>Grey bars match</p>', tag);
+    return {target, parent, left, match};
+  }, {tag: BARS_TAG, width: BAR_PICTURE_WIDTH, height: BAR_PICTURE_HEIGHT});
+  try {
+    await search(page, BARS_TAG);
+    // Pictures load after the list is drawn.
+    await page.waitForFunction(ids => ids.every(id => {
+      const note = document.querySelector(`#notes-container .note[data-note-id="${id}"]`);
+      return note !== null && [...note.querySelectorAll('img')].every(image => image.complete);
+    }), {}, ids.left);
+    const bars = await page.evaluate(ids => ids.map(id => {
+      const note = document.querySelector(`#notes-container .note[data-note-id="${id}"]`);
+      const content = note.querySelector(':scope > .note-content');
+      const box = content.getBoundingClientRect();
+      const showing = [...content.querySelectorAll('*')].filter(element => {
+        const rect = element.getBoundingClientRect();
+        const overlaps = rect.width > 0 && rect.height > 0 && rect.bottom > box.top && rect.top < box.bottom;
+        return overlaps && getComputedStyle(element).visibility !== 'hidden';
+      }).map(element => element.getAttribute('class') || element.tagName);
+      return {isBar: note.classList.contains('search-redacted'), textColor: getComputedStyle(content).color, showing};
+    }), ids.left);
+    // Each left-out note (a link, a picture, a task, an embed) is a bar with nothing drawn in it.
+    assert.deepEqual(bars, ids.left.map(() => ({isBar: true, textColor: 'rgba(0, 0, 0, 0)', showing: []})),
+      'every left-out note is a bar showing nothing of what it holds');
+  } finally {
+    await page.evaluate(async ids => {
+      const {NotesAPI} = await import('/static/js/modules/api-client.js');
+      await NotesAPI.deleteNote(ids.parent);
+      await NotesAPI.deleteNote(ids.target);
+    }, ids);
+  }
+}
+
 export async function checkSearchHighlight(page) {
   const ids = await seed(page);
   await runThenCleanUp('search highlight', async () => {
     // Every case runs, and their assertion failures are reported together.
     const failures = [];
     for (const [label, run] of [['phrases', checkPhraseCases], ['editing', checkEditing],
-      ['nothing moves', checkNothingMoves], ['full screen and floating', checkFullscreenAndFloating]]) {
+      ['nothing moves', checkNothingMoves], ['full screen and floating', checkFullscreenAndFloating],
+      ['grey bars', checkGreyBars]]) {
       try {
         await run(page, ids);
       } catch (error) {

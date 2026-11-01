@@ -103,8 +103,9 @@ Super tag atom notes:
   `swimming => exercise`); its tag atoms read the tags the note carries, inherited ones
   too; its text atoms read the note's text.
 - The tag it gives is the note's own: children inherit it like a written tag, and so do
-  notes referencing the note (from the note's own tags: a tag atom satisfied only by an
-  inherited tag does not reach them, as references never carry inherited tags). Values
+  notes embedding the note (from the note's own tags: a tag atom satisfied only by an
+  inherited tag does not reach them, as embeds never carry inherited tags; links carry no
+  tags at all). Values
   are never inherited.
 - MAX and MIN are refused: whether a note holds the largest value depends on the other
   notes, so a tag could move between notes when one is added.

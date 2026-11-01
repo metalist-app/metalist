@@ -117,6 +117,7 @@ import { isRootReorderLocked, normalizeRootSortMode } from '../mode-manager/serv
 import { blockRootNoteCreation, requireCreatedNoteId } from '../mode-manager/services/root-note-creation-service.js';
 import { createNoteAtTop } from '../mode-manager/actions/note-actions.js';
 import { typeReferenceOpenerAtCaret } from '../mode-manager/services/reference-suggestions-service.js';
+import { takeObsidianImportRequest } from '../import-on-open.js';
 import {
     setTabDateFilterOnServer, setTabFileFilterOnServer, setTabSortModeOnServer,
 } from '../mode-manager/services/tab-state-service.js';
@@ -2794,6 +2795,14 @@ class CommandPaletteController {
             this._recentMessagesModal = new RecentMessagesModal();
         }
         await this._recentMessagesModal.open();
+    }
+
+    // A vault created with "Import an Obsidian vault into it" opens the import once it has
+    // opened (PLAN.md, slice 1b; import-on-open.js).
+    async openImportRequestedByAddress() {
+        if (takeObsidianImportRequest()) {
+            await this.openObsidianImport();
+        }
     }
 
     // The Obsidian import's developer version (PLAN.md): its notes show once it has run.

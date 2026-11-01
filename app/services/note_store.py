@@ -282,16 +282,20 @@ class NoteStore:
     def _get_children_locked(self, parent_id: Optional[str]) -> List[str]:
         return self._ordering.children(self._note_map, parent_id)
 
-    def _reference_targets_locked(self, note_id: str) -> set[str]:
-        return set(self._backlink_index.get_target_ids(note_id)) & self._note_map.keys()
-
     def _referrers_locked(self, note_id: str) -> set[str]:
         return self._backlink_index.get_counts(note_id).keys() & self._note_map.keys()
+
+    # Tags pass through embeds only, not links (docs/ui/search-semantics.md, 2026-10-31).
+    def _embedded_targets_locked(self, note_id: str) -> set[str]:
+        return set(self._backlink_index.get_embedded_target_ids(note_id)) & self._note_map.keys()
+
+    def _embedders_locked(self, note_id: str) -> set[str]:
+        return self._backlink_index.get_embedder_ids(note_id) & self._note_map.keys()
 
     def _inherited_tag_terms_locked(
         self, note_id: str, effective: SharedSetMap, subtree: SharedSetMap,
     ) -> FrozenSet[str]:
-        terms = frozenset().union(*(subtree[target] for target in self._reference_targets_locked(note_id)))
+        terms = frozenset().union(*(subtree[target] for target in self._embedded_targets_locked(note_id)))
         parent_id = self._note_map[note_id].parent_id
         if parent_id is not None:
             terms |= effective[parent_id]
@@ -360,7 +364,7 @@ class NoteStore:
             if note_id in subtree_affected:
                 continue
             subtree_affected.add(note_id)
-            referrers = self._referrers_locked(note_id)
+            referrers = self._embedders_locked(note_id)
             effective_roots.update(referrers)
             pending.extend(referrers - subtree_affected)
             parent_id = self._note_map[note_id].parent_id
@@ -415,7 +419,7 @@ class NoteStore:
         proposed = _PendingTermSets(self._effective_proposed_non_meta_tag_terms)
         for note_id in self._parents_first_locked(affected):
             record = self._note_map[note_id]
-            targets = self._reference_targets_locked(note_id)
+            targets = self._embedded_targets_locked(note_id)
             own_accepted = record.non_meta_tag_terms | frozenset().union(
                 *(self._subtree_non_meta_tag_terms[target] for target in targets))
             own_proposed = record.proposed_non_meta_tag_terms | frozenset().union(
@@ -449,7 +453,7 @@ class NoteStore:
             )
             proposed[note_id] = record.proposed_non_meta_tag_terms
             dependencies[note_id] = (set(self._get_children_locked(note_id))
-                                     | self._reference_targets_locked(note_id))
+                                     | self._embedded_targets_locked(note_id))
         self._propagate_tag_dependencies_locked(dependencies, accepted, proposed)
         accepted.publish()
         proposed.publish()
@@ -1036,9 +1040,9 @@ class NoteStore:
             self._note_map[note_id] = updated
 
             if current.content != plaintext or current.tags != tags:
-                old_targets = self._backlink_index.get_target_ids(updated.id)
+                old_targets = self._backlink_index.get_embedded_target_ids(updated.id)
                 self._backlink_index.upsert(updated.id, updated.content, updated.tags)
-                if old_targets != self._backlink_index.get_target_ids(updated.id):
+                if old_targets != self._backlink_index.get_embedded_target_ids(updated.id):
                     tag_sources_changed = True
 
             if tag_sources_changed:
