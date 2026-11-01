@@ -101,15 +101,16 @@ Typing `[[` in the note being edited opens a list of notes to reference (agreed 
 - Drag/drop follows the same attachment path for non-image files.
   - Dropping onto the actively edited note inserts into that note.
   - Dropping anywhere else creates a new top note first, then inserts there.
-- Dropped text files: a dropped `.txt`, `.md`/`.markdown`, `.csv` or `.json` file also gets its text as a new child note of the note holding its pill.
+- Dropped text files: a dropped `.txt`, `.md`/`.markdown`, `.csv` or `.json` file, code file (`.py`, `.js`, `.sh`, `.sql`, `.yaml` and the rest of `_CODE_LANGUAGES_BY_EXTENSION`) or web page (`.html`/`.htm`) also gets its text as a new child note of the note holding its pill: note data beside the file data (2026-11-01; an Any-folder import gives the same child to the kinds its Previews screen ticks).
   - The child is the note's last child (after any existing children), in drop order when several files are dropped together.
-  - Markdown children get `@markdown`, CSV children `@csv`, JSON children `@json`, text children no render tag; a child also gets the tags a new child gets from the current search.
+  - Markdown children get `@markdown`, CSV children `@csv`, JSON children `@json`, code children `@code=<language>` (by the file's ending), text and web page children no render tag; a child also gets the tags a new child gets from the current search.
+  - A web page's child is its body sanitized as a note's HTML (head, scripts and styles left out). A PDF gets no child (decided 2026-11-01): its text is to be searchable with the file instead (`docs/ready-to-build/folder-import-and-file-previews.md`, "Searchable file text").
   - The child starts expanded, so the dropped text is visible; collapse the pill note's children to hide it.
   - The child is an ordinary note: editing, moving or deleting it never changes the stored file, and the pill still downloads the original.
-  - Files over 200 KB or not in UTF-8 keep only their pill; an info banner says why. Picking a file with `Attach File…` adds no child.
-  - The text is stored line for line as escaped plain text (`<br>` between lines), never read as HTML.
+  - Files over 200 KB (a web page: over 200 KB once sanitized), not in UTF-8, or a web page with nothing to show keep only their pill; an info banner says why. Picking a file with `Attach File…` adds no child.
+  - The text is stored line for line as escaped plain text (`<br>` between lines), never read as HTML (a web page's child aside).
   - Implementation: `app/services/file_text_preview.py`, `POST /api2/notes/file-preview-child/{note_id}` (`app/usecases/create_file_preview_child.py`), `dropped-file-preview-service.js`. Tests: `tests/unit/test_file_text_preview.py`, `BROWSER_TEST_SUITE=file-drop-previews npm run test:browser`.
-  - Planned (agreed 2026-11-01, ready to build): previews for code files (as `@code=<language>`), PDF, RTF and `.docx`, HTML, audio and video, for drops and imports alike: `docs/ready-to-build/folder-import-and-file-previews.md` §5.
+  - Planned (agreed 2026-11-01, ready to build): previews for RTF and `.docx`, the text of PDF, Word and RTF files searchable with the file, PDFs and audio and video shown by the browser: `docs/ready-to-build/folder-import-and-file-previews.md` §5.
 - Named image files dropped or pasted into the editor prompt for one of two paths:
   - `Paste Inline`: embed the image into note HTML as compressed `data:image/...`.
   - `Save as File`: upload the original file without recompression and insert its `![[UUID]]` token.

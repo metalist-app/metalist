@@ -542,18 +542,18 @@ export const NotesAPI = {
     _importBody(choices, caller) {
         const {
             source, folderPath, splitMode, contentFormat, prefixFolder, addToExisting, excludedGroups, excludedFiles, includedFiles,
-            keepsMarkdownAsFiles, compressesImages, imageLongestSide,
+            keepsMarkdownAsFiles, previewKinds, compressesImages, imageLongestSide,
         } = choices;
         if (typeof source !== 'string' || typeof folderPath !== 'string' || folderPath.length === 0
             || typeof splitMode !== 'string' || typeof contentFormat !== 'string'
             || typeof prefixFolder !== 'string' || typeof addToExisting !== 'boolean'
             || !Array.isArray(excludedGroups) || !Array.isArray(excludedFiles) || !Array.isArray(includedFiles)
-            || typeof keepsMarkdownAsFiles !== 'boolean' || typeof compressesImages !== 'boolean' || !Number.isInteger(imageLongestSide)) {
+            || typeof keepsMarkdownAsFiles !== 'boolean' || !Array.isArray(previewKinds) || typeof compressesImages !== 'boolean' || !Number.isInteger(imageLongestSide)) {
             throw new Error(`NotesAPI.${caller} requires every import choice`);
         }
         return JSON.stringify({
             source, folderPath, splitMode, contentFormat, prefixFolder, addToExisting, excludedGroups, excludedFiles, includedFiles,
-            keepsMarkdownAsFiles, compressesImages, imageLongestSide,
+            keepsMarkdownAsFiles, previewKinds, compressesImages, imageLongestSide,
         });
     },
 
@@ -568,6 +568,11 @@ export const NotesAPI = {
     // The images an import would compress: { imageCount, imageBytes, compressedBytes } (about).
     async estimateImportImages(choices) {
         return this._apiCall(CONFIG.API.IMPORT.IMAGES, { method: 'POST', body: this._importBody(choices, 'estimateImportImages') });
+    },
+
+    // A folder of files' files that could get a preview, by kind: { kinds: [{ key, fileCount, noteBytes }] }.
+    async estimateImportPreviews(choices) {
+        return this._apiCall(CONFIG.API.IMPORT.PREVIEWS, { method: 'POST', body: this._importBody(choices, 'estimateImportPreviews') });
     },
 
     async previewImport(choices) {

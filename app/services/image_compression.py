@@ -14,6 +14,7 @@ from typing import Dict, List, Tuple
 from PIL import Image, ImageOps, UnidentifiedImageError
 
 from app.services.exception_capture import CapturedExceptionContext
+from app.utils.sampling import spread_sample
 
 # The longest sides a compressed image may keep (the maintainer, 2026-11-01: chosen by size,
 # each shown with what it comes to; 2560, sharp full-screen, at first).
@@ -119,12 +120,7 @@ def estimated_compressed_bytes(files: List[Tuple[Path, int]]) -> Dict[int, int]:
     if not files:
         return {side: 0 for side in IMAGE_LONGEST_SIDES}
     by_size = sorted(files, key=lambda pair: pair[1])
-    last = len(by_size) - 1
-    sample_count = min(ESTIMATE_SAMPLE_COUNT, len(by_size))
-    if sample_count == len(by_size):
-        sample = by_size
-    else:
-        sample = [by_size[index * last // (sample_count - 1)] for index in range(sample_count)]
+    sample = spread_sample(by_size, ESTIMATE_SAMPLE_COUNT)
     before = sum(size for _path, size in sample)
     total = sum(size for _path, size in by_size)
     jobs = [(path, size, side) for side in IMAGE_LONGEST_SIDES for path, size in sample]

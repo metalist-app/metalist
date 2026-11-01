@@ -107,6 +107,10 @@ Text matching is:
   file registry's reader (`FileRegistry.read_stored_file`, which `file_storage` installs), and
   keeps its words in a sensitive cache, emptied when the vault locks; only files whose kind can
   be an email (`other`, `text`) are read. An email's content never changes in place.
+- Planned (agreed 2026-11-01, ready to build): also against the text of the PDF, Word and RTF
+  files the note references, kept encrypted with each file and found through a per-file bloom
+  filter of 4-letter pieces, only possible matches decrypted and checked:
+  `docs/ready-to-build/folder-import-and-file-previews.md`, "Searchable file text".
 - Also against the titles of web pages linked in the note: for each `http(s)` URL
   in the note (written out, or hidden behind a link label), the page title
   MetaList has already fetched and stored. Titles are fetched when a URL on its own

@@ -12236,6 +12236,29 @@ suggestions as pills. */
     font-weight: 600;
 }
 
+/* The import's Previews screen: a box, the kind, and its files and note data at the right. */
+.wizard-preview-kinds {
+    display: grid;
+    gap: 10px;
+    max-width: 620px;
+}
+
+.wizard-preview-kind {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    border: 1px solid var(--modal-border);
+    border-radius: 10px;
+    font-size: 15px;
+}
+
+.wizard-preview-kind-size {
+    font-size: 13px;
+    color: var(--modal-text-subtle);
+}
+
 .wizard-toggle {
     display: flex;
     align-items: center;

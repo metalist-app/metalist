@@ -71,6 +71,7 @@ export function importPreviewHtml(preview, choices) {
             [preview.textFileCount, `text files will become ${notesWord(textNoteCount)} (${preview.textFileCount} root ${preview.textFileCount === 1 ? 'note' : 'notes'})`],
             [preview.keptImageCount, 'images will be stored as file data, each shown as its picture in a note of its own'],
             [otherFileCount, `${otherFiles} will be stored as file data, each shown as its card in a note of its own`],
+            [preview.previewFileCount, 'files will get a preview where they have text: copied into a note under each, as note data'],
         ];
     }
     counts = [...counts, [preview.folderTagCount, 'tags will be added based on the folder structure']].filter(([count]) => count > NONE);
@@ -193,7 +194,7 @@ function importRequest(choices) {
 // ticked against their kind (left out of a ticked kind, brought in from an unticked one).
 function fileSelection(choices) {
     if (choices.source !== FILES_SOURCE) {
-        return { excludedGroups: [], excludedFiles: [], includedFiles: [], keepsMarkdownAsFiles: false };
+        return { excludedGroups: [], excludedFiles: [], includedFiles: [], keepsMarkdownAsFiles: false, previewKinds: [] };
     }
     const groupOfPath = new Map(choices.scan.groups.flatMap((group) => group.files.map(([path]) => [path, group.key])));
     const excludedFiles = choices.fileExceptions.filter((path) => isTicked(choices, groupOfPath.get(path)));
@@ -201,6 +202,7 @@ function fileSelection(choices) {
     return {
         excludedGroups: choices.excludedGroups, excludedFiles, includedFiles,
         keepsMarkdownAsFiles: choices.markdownAs === MARKDOWN_AS_FILES,
+        previewKinds: choices.previewKinds,
     };
 }
 
@@ -269,6 +271,17 @@ const IMAGES_AS = [
 // see the size); 2560, sharp full-screen, at first.
 const IMAGE_LONGEST_SIDES = ['1280', '1920', '2560', '3840'];
 const FIRST_IMAGE_LONGEST_SIDE = '2560';
+// Previews (folder-import-and-file-previews.md: a file's text copied into a note under it,
+// note data beside the file data): one row per kind, file_text_preview.py's
+// IMPORT_PREVIEW_KINDS; none ticked at first (the maintainer, 2026-11-01: they come in numbers,
+// and a preview copies the whole file). A PDF has no row: its text is to be searchable with the
+// file instead ("Searchable file text").
+const PREVIEW_KINDS = [
+    { key: 'code', label: 'Code' },
+    { key: 'html', label: 'Web pages' },
+    { key: 'data', label: 'CSV and JSON' },
+];
+const FIRST_PREVIEW_KINDS = [];
 
 function sourceOf(choices) {
     const source = SOURCES.find((candidate) => candidate.value === choices.source);
@@ -522,7 +535,7 @@ function tickedFiles(choices) {
     const flipped = new Set(choices.fileExceptions);
     return choices.scan.groups.flatMap((group) => group.files
         .filter(([path, , isOverLimit]) => isFileTicked(choices, flipped, group.key, path, isOverLimit))
-        .map(([path, size]) => [group.key, path, size]));
+        .map(([path, size, , previewKind]) => [group.key, path, size, previewKind]));
 }
 
 function tickedBytes(choices) {
@@ -756,6 +769,68 @@ async function estimateImages(screen, wizard) {
     }
 }
 
+// The Previews screen shows only when ticked files can get a preview (the scan says which).
+function bringsInPreviews(choices) {
+    if (choices.source !== FILES_SOURCE || choices.scan === null) return false;
+    return tickedFiles(choices).some(([, , , previewKind]) => previewKind !== '');
+}
+
+// The ticked files that can get a preview, counted by kind.
+function previewFileCounts(choices) {
+    const counts = new Map();
+    for (const [, , , previewKind] of tickedFiles(choices)) {
+        if (previewKind === '') continue;
+        if (!counts.has(previewKind)) counts.set(previewKind, NONE);
+        counts.set(previewKind, counts.get(previewKind) + 1);
+    }
+    return counts;
+}
+
+function previewEstimateRequestKey(choices) {
+    return JSON.stringify({
+        ...importRequest(choices), previewKinds: [], compressesImages: false, imageLongestSide: Number(FIRST_IMAGE_LONGEST_SIDE),
+    });
+}
+
+function hasPreviewEstimate(choices) {
+    return choices.previewEstimate !== null && choices.previewEstimate.request === previewEstimateRequestKey(choices);
+}
+
+// A kind's files and about how much note data their previews add ('…' until measured).
+function previewSizeText(choices, kind, fileCount) {
+    const files = `${fileCount} ${fileCount === 1 ? 'file' : 'files'}`;
+    if (!hasPreviewEstimate(choices)) return `${files}, …`;
+    const measured = choices.previewEstimate.estimate.kinds.find((candidate) => candidate.key === kind);
+    if (measured === undefined) return files;
+    return `${files}, about ${formatByteSize(measured.noteBytes)} of note data`;
+}
+
+function previewRowsHtml(choices) {
+    const counts = previewFileCounts(choices);
+    return PREVIEW_KINDS.filter(({ key }) => counts.has(key)).map(({ key, label }) => `
+        <label class="wizard-preview-kind">
+            <input type="checkbox" data-wizard-preview-kind="${escapeHtml(key)}"${choices.previewKinds.includes(key) ? ' checked' : ''}>
+            <span class="wizard-preview-kind-name">${escapeHtml(label)}</span>
+            <span class="wizard-preview-kind-size" data-wizard-preview-size="${escapeHtml(key)}">${escapeHtml(previewSizeText(choices, key, counts.get(key)))}</span>
+        </label>`).join('');
+}
+
+async function estimatePreviews(screen, wizard) {
+    const request = previewEstimateRequestKey(wizard.choices);
+    if (hasPreviewEstimate(wizard.choices)) return;
+    const estimate = await NotesAPI.estimateImportPreviews(JSON.parse(request));
+    if (!Array.isArray(estimate.kinds) || estimate.kinds.some((kind) => typeof kind.key !== 'string' || !Number.isInteger(kind.noteBytes))) {
+        throw new Error('Import preview estimate answered malformed');
+    }
+    wizard.choose('previewEstimate', { request, estimate });
+    // The rows on screen take their sizes in place: drawn again, their boxes would lose their handlers.
+    const counts = previewFileCounts(wizard.choices);
+    for (const size of screen.querySelectorAll('[data-wizard-preview-size]')) {
+        const kind = size.dataset.wizardPreviewSize;
+        size.textContent = previewSizeText(wizard.choices, kind, counts.get(kind));
+    }
+}
+
 function prefixProblem(choices) {
     if (choices.prefixText.trim() === '') return '';
     if (choices.prefixCheckedFor !== choices.prefixText) return 'Checking the folder name…';
@@ -924,6 +999,23 @@ export function importSteps({ withSourceStep, withSummaryAndRun }) {
             onNext: null, missing: NOTHING_MISSING,
         }),
         makeStep({
+            key: 'previews', label: 'Previews', title: 'Which files should get a preview?',
+            intro: 'A preview copies a file\'s text into a note under it, so search finds it. It is stored as note data, beside the file.',
+            nextLabel: NEXT, isAction: false, applies: bringsInPreviews,
+            render: (choices) => `<div class="wizard-preview-kinds">${previewRowsHtml(choices)}</div>`,
+            wire: (screen, wizard) => {
+                for (const box of screen.querySelectorAll('[data-wizard-preview-kind]')) {
+                    box.onchange = () => {
+                        const kind = box.dataset.wizardPreviewKind;
+                        const others = wizard.choices.previewKinds.filter((ticked) => ticked !== kind);
+                        wizard.choose('previewKinds', box.checked ? [...others, kind] : others);
+                    };
+                }
+                void estimatePreviews(screen, wizard);
+            },
+            onChoice: null, onNext: null, missing: NOTHING_MISSING,
+        }),
+        makeStep({
             key: 'summary', label: 'Summary', title: 'Ready to import',
             intro: 'Here is what the import will do. Nothing has changed yet.',
             nextLabel: NEXT, isAction: false, applies: () => withSummaryAndRun,
@@ -950,6 +1042,9 @@ export function importChoices() {
         // 2026-11-01); how many compression would shrink in the folder; and the server's
         // estimate ({ request, estimate }, null until asked) for the choices it was asked for.
         imagesAs: IMAGES_ORIGINALS, imageLongestSide: FIRST_IMAGE_LONGEST_SIDE, imageCount: 0, imageEstimate: null,
+        // A folder of files: the kinds of file that get a preview, and the server's estimate of
+        // their note data ({ request, estimate }, null until asked).
+        previewKinds: [...FIRST_PREVIEW_KINDS], previewEstimate: null,
         // The folder the notes go into, as typed (the vault's name once a folder is chosen), and
         // what the server last said of it (prefixStatusHtml); adding to an existing one is ticked.
         prefixText: '', prefixCheckedFor: null, prefixFolder: '', prefixExists: false, prefixProblem: '', addToExisting: true,

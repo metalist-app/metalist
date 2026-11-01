@@ -156,6 +156,7 @@ export const CONFIG = {
             PREFIX_FOLDER: `${API_BASE}/import/prefix-folder`,
             SCAN: `${API_BASE}/import/scan`,
             IMAGES: `${API_BASE}/import/images`,
+            PREVIEWS: `${API_BASE}/import/previews`,
         },
         // Virtual folders, an experiment (app/api/routes/virtual_folders.py).
         VIRTUAL_FOLDERS: {

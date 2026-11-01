@@ -50,6 +50,7 @@ import app.usecases.import_obsidian_vault as import_module
 from app.services.file_storage import DownloadedFile
 from app.usecases.import_obsidian_vault import (
     CmdEstimateImportImages,
+    CmdEstimateImportPreviews,
     CmdImportFolderOfFiles,
     CmdImportObsidianVault,
     CmdPreviewFolderOfFiles,
@@ -762,7 +763,7 @@ def test_each_file_is_in_one_checklist_group(path: str, group: str) -> None:
 def _selection(excluded_groups: list[str], *, excluded_files: tuple[str, ...], included_files: tuple[str, ...]) -> FileSelection:
     return FileSelection(
         excluded_groups=tuple(excluded_groups), excluded_files=excluded_files, included_files=included_files,
-        keeps_markdown_as_files=False,
+        keeps_markdown_as_files=False, preview_kinds=(),
     )
 
 
@@ -857,7 +858,7 @@ def test_a_ticked_file_no_longer_in_the_folder_is_refused(tmp_path: Path, note_s
 # holding just the file, as a PDF is; a .txt file still comes in with its text.
 def test_markdown_files_can_be_kept_as_files(tmp_path: Path, note_store: NoteStore) -> None:
     _write_files(tmp_path, {"README.md": b"# Readme\nHello", "notes.txt": b"Plain text"})
-    selection = FileSelection(excluded_groups=(), excluded_files=(), included_files=(), keeps_markdown_as_files=True)
+    selection = FileSelection(excluded_groups=(), excluded_files=(), included_files=(), keeps_markdown_as_files=True, preview_kinds=())
     CmdImportFolderOfFiles(
         folder_path=str(tmp_path), selection=selection, split_mode=SPLIT_NONE, content_format=CONTENT_MARKDOWN,
         folder_prefix="", add_to_existing=False, images=KEEP_ORIGINALS, token=TOKEN, imported_at=IMPORTED_AT,
@@ -959,3 +960,58 @@ def test_a_folder_of_files_preview_counts_text_files_kept_files_and_images(tmp_p
         content_format=CONTENT_MARKDOWN, folder_prefix="", imported_at=IMPORTED_AT,
     ).execute()
     assert (preview["textFileCount"], preview["keptFileCount"], preview["keptImageCount"]) == (1, 3, 2)
+
+
+
+# Previews in the import (folder-import-and-file-previews.md, acceptance checks of
+# 2026-11-01, (6) to (8)): a ticked kind's files get the child note a drop gives them, an
+# unticked kind's just their card; the summary and the screen count them.
+def test_a_ticked_kinds_files_get_their_preview_and_the_rest_only_their_card(tmp_path: Path, note_store: NoteStore) -> None:
+    _write_files(tmp_path, {
+        "page.html": b"<html><body><p>Hello <b>page</b></p></body></html>", "tool.py": b"print(1)\n",
+        "broken.pdf": b"not a pdf",
+    })
+    selection = FileSelection(
+        excluded_groups=(), excluded_files=(), included_files=(), keeps_markdown_as_files=False, preview_kinds=("html",),
+    )
+    preview = CmdPreviewFolderOfFiles(
+        folder_path=str(tmp_path), selection=selection, split_mode=SPLIT_NONE, content_format=CONTENT_MARKDOWN,
+        folder_prefix="", imported_at=IMPORTED_AT,
+    ).execute()
+    assert preview["previewFileCount"] == 1
+    result = CmdImportFolderOfFiles(
+        folder_path=str(tmp_path), selection=selection, split_mode=SPLIT_NONE, content_format=CONTENT_MARKDOWN,
+        folder_prefix="", add_to_existing=False, images=KEEP_ORIGINALS, token=TOKEN, imported_at=IMPORTED_AT,
+    ).execute()
+    roots = {_shown_as(note_store, note_id): note_id for note_id in note_store.get_children(None)[:-1]}
+    page_children = note_store.get_children(roots["page.html"])
+    assert len(page_children) == 1
+    assert "<b>page</b>" in note_store.get_note(page_children[0]).content
+    # Code unticked: its card only. A PDF: its card only (no preview note; its text is to be
+    # searchable with the file instead).
+    assert note_store.get_children(roots["tool.py"]) == []
+    assert note_store.get_children(roots["broken.pdf"]) == []
+    pdf_selection = FileSelection(
+        excluded_groups=(), excluded_files=(), included_files=(), keeps_markdown_as_files=False, preview_kinds=("pdf",),
+    )
+    with pytest.raises(InputRejected, match="Unknown kinds of preview: pdf"):
+        CmdPreviewFolderOfFiles(
+            folder_path=str(tmp_path), selection=pdf_selection, split_mode=SPLIT_NONE, content_format=CONTENT_MARKDOWN,
+            folder_prefix="", imported_at=IMPORTED_AT,
+        ).execute()
+    assert result["noteCount"] == 4
+
+
+def test_the_preview_estimate_counts_files_and_note_data_by_kind(tmp_path: Path, note_store: NoteStore) -> None:
+    _write_files(tmp_path, {"a.py": b"x = 1\n" * 100, "b.js": b"let y = 2;\n", "data.csv": b"a,b\n1,2\n", "photo.png": b"x"})
+    selection = FileSelection(
+        excluded_groups=(), excluded_files=(), included_files=(), keeps_markdown_as_files=False, preview_kinds=(),
+    )
+    estimate = CmdEstimateImportPreviews(
+        folder_path=str(tmp_path), selection=selection, split_mode=SPLIT_NONE, content_format=CONTENT_MARKDOWN,
+        folder_prefix="", imported_at=IMPORTED_AT,
+    ).execute()
+    kinds = {kind["key"]: kind for kind in typing.cast(list[dict[str, int]], estimate["kinds"])}
+    assert sorted(kinds) == ["code", "data"]
+    assert kinds["code"]["fileCount"] == 2
+    assert 600 < kinds["code"]["noteBytes"] < 1200

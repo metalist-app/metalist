@@ -12,10 +12,13 @@ import pytest
 
 import app.usecases.create_file_preview_child as preview_child_module
 from app.services.embedded_references import _format_file_badge
+import app.services.file_text_preview as file_text_preview_module
+from app.services.code_rendering import is_known_code_language
 from app.services.file_text_preview import (
     MAX_PREVIEW_BYTES,
     build_file_text_preview,
     plain_text_to_note_html,
+    preview_kind_of,
     text_file_badge,
 )
 from app.services.note_store import NoteRecord
@@ -69,8 +72,10 @@ def test_a_previewable_file_gets_its_text_and_render_tag(filename: str, render_t
 
 
 def test_files_without_a_preview_say_why() -> None:
+    # A PDF gets no preview note: its text is to be searchable with the file instead.
     assert build_file_text_preview(original_filename="report.pdf", content_bytes=b"%PDF").status == "not_previewable"
     assert build_file_text_preview(original_filename="server.log", content_bytes=b"x").status == "not_previewable"
+    assert build_file_text_preview(original_filename="archive.zip", content_bytes=b"PK").status == "not_previewable"
     too_large = build_file_text_preview(original_filename="big.txt", content_bytes=b"x" * (MAX_PREVIEW_BYTES + 1))
     assert (too_large.status, too_large.content_html, too_large.render_tag) == ("too_large", "", "")
     at_limit = build_file_text_preview(original_filename="big.txt", content_bytes=b"x" * MAX_PREVIEW_BYTES)
@@ -165,6 +170,9 @@ def test_a_file_without_a_preview_creates_nothing(monkeypatch: pytest.MonkeyPatc
     result, inserted = _run(monkeypatch, filename="big.txt", content_bytes=b"x" * (MAX_PREVIEW_BYTES + 1),
                             parent_content=f"![[{FILE_ID}]]", children=[], initial_tags="")
     assert (result, inserted) == ({"status": "too_large"}, [])
+    result, inserted = _run(monkeypatch, filename="archive.zip", content_bytes=b"PK",
+                            parent_content=f"![[{FILE_ID}]]", children=[], initial_tags="")
+    assert (result, inserted) == ({"status": "not_previewable"}, [])
     result, inserted = _run(monkeypatch, filename="report.pdf", content_bytes=b"%PDF",
                             parent_content=f"![[{FILE_ID}]]", children=[], initial_tags="")
     assert (result, inserted) == ({"status": "not_previewable"}, [])
@@ -174,3 +182,37 @@ def test_the_note_must_hold_the_file(monkeypatch: pytest.MonkeyPatch) -> None:
     with pytest.raises(ValueError):
         _run(monkeypatch, filename="readme.md", content_bytes=b"# Hi", parent_content="no pill here",
              children=[], initial_tags="")
+
+
+
+# --- Code and HTML previews (docs/ready-to-build/folder-import-and-file-previews.md §5;
+# the acceptance checks of 2026-11-01) --------------------------------------------------------
+
+
+@pytest.mark.parametrize(("filename", "language"), [
+    ("script.py", "python"), ("app.JS", "javascript"), ("run.sh", "bash"), ("query.sql", "sql"), ("config.yml", "yaml"),
+])
+def test_a_code_file_gets_its_code_drawn_in_its_language(filename: str, language: str) -> None:
+    preview = build_file_text_preview(original_filename=filename, content_bytes=b"x = 1\nprint(x)\n")
+    assert (preview.status, preview.render_tag) == ("ready", f"@code={language}")
+    assert extract_plain_text_from_note_html(preview.content_html) == "x = 1\nprint(x)"
+    assert preview_kind_of(filename) == "code"
+
+
+def test_every_code_language_is_one_code_drawing_knows() -> None:
+    for language in file_text_preview_module._CODE_LANGUAGES_BY_EXTENSION.values():
+        assert is_known_code_language(language), language
+
+
+def test_a_web_page_shows_its_body_sanitized_without_scripts_styles_or_head() -> None:
+    page = (
+        b"<html><head><title>Tab title</title><style>p{color:red}</style><script>alert(1)</script></head>"
+        b"<body onload='x()'><h1>Trip</h1><p>Day <b>one</b></p><script>steal()</script></body></html>"
+    )
+    preview = build_file_text_preview(original_filename="page.html", content_bytes=page)
+    assert (preview.status, preview.render_tag) == ("ready", "")
+    assert "<b>one</b>" in preview.content_html and "<h1>Trip</h1>" in preview.content_html
+    for gone in ("Tab title", "color:red", "alert", "steal", "onload", "<script"):
+        assert gone not in preview.content_html
+    empty = build_file_text_preview(original_filename="blank.htm", content_bytes=b"<html><body><script>x</script></body></html>")
+    assert empty.status == "no_text"

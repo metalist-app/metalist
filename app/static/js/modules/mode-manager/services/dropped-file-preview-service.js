@@ -4,12 +4,14 @@ import { MS_PER_SECOND } from '../../time-units.js';
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import { actionRefreshAndMaybeSelect } from '../actions/ui-actions.js';
 
-// A dropped .txt, .md, .csv or .json file also gets its text as a child note of the
-// note holding its pill (app/services/file_text_preview.py decides which files).
+// A dropped .txt, .md, .csv or .json file, code file or web page also gets its text as
+// a child note of the note holding its pill (app/services/file_text_preview.py decides which
+// files).
 
 const SKIPPED_PREVIEW_REASONS = {
     too_large: 'is too large to preview',
     not_text: 'is not UTF-8 text, so it has no preview',
+    no_text: 'has no text to preview',
 };
 const SKIPPED_PREVIEWS_BANNER_SECONDS = 6;
 

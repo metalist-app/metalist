@@ -7,7 +7,7 @@ from __future__ import annotations
 import os
 import shutil
 from datetime import datetime, timezone
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Annotated, List, Literal, TypedDict
 
 from fastapi import APIRouter, Request
@@ -21,12 +21,14 @@ from app.services.native_folder_picker import pick_folder
 from app.services.obsidian_import.file_groups import file_groups, folder_files, is_over_limit
 from app.services.obsidian_import.notes import import_folder_prefix
 from app.services.obsidian_import.sources import FILES, IMPORT_SOURCES
+from app.services.file_text_preview import IMPORT_PREVIEW_KINDS, NO_PREVIEW, preview_kind_of
 from app.services.image_compression import COMPRESSIBLE_SUFFIXES, IMAGE_LONGEST_SIDES, ImageChoice
 from app.services.obsidian_import.vault import count_compressible_images, count_markdown_files
 from app.services.reference_suggestions import build_catalog_in_background
 from app.upload_limits import MAX_ATTACHMENT_BYTES
 from app.usecases.import_obsidian_vault import (
     CmdEstimateImportImages,
+    CmdEstimateImportPreviews,
     CmdImportFolderOfFiles,
     CmdImportObsidianVault,
     CmdPreviewFolderOfFiles,
@@ -72,6 +74,9 @@ class ImportFolderRequest(TypedDict):
     includedFiles: List[Annotated[str, Field(min_length=1, max_length=_MAX_FOLDER_PATH_LENGTH)]]
     # A folder of files: its Markdown files kept as files instead of turned into notes.
     keepsMarkdownAsFiles: bool
+    # A folder of files: the kinds of file that get a preview (file_text_preview's
+    # IMPORT_PREVIEW_KINDS). Empty for the other sources.
+    previewKinds: List[Literal["code", "html", "data"]]
     # Images compressed as they come in, and the longest side they keep (image_compression's
     # IMAGE_LONGEST_SIDES; folder-import-and-file-previews.md, Images compressed).
     compressesImages: bool
@@ -126,9 +131,11 @@ def scan_import_folder(request: Request, body: ScanImportFolderRequest) -> dict[
                 "key": group.kind.key, "label": group.kind.label, "isSkippedByDefault": group.kind.is_skipped_by_default,
                 "fileCount": group.file_count, "bytes": group.total_bytes, "importableBytes": group.importable_bytes,
                 "overLimitCount": group.over_limit_count,
-                # Its files, the largest first: [path in the folder, size, over the limit].
+                # Its files, the largest first: [path in the folder, size, over the limit, the kind of
+                # preview it can get ('' for none; the Previews screen shows for those ticked)].
                 "files": [
-                    [str(folder_file.path), folder_file.size, is_over_limit(folder_file)] for folder_file in group.files
+                    [str(folder_file.path), folder_file.size, is_over_limit(folder_file), _import_preview_kind(folder_file.path)]
+                    for folder_file in group.files
                 ],
             }
             for group in groups
@@ -155,6 +162,20 @@ def preview_import(request: Request, body: ImportFolderRequest) -> dict[str, obj
     ).execute()
 
 
+@router.post("/previews")
+@transactional_route
+def estimate_import_previews(request: Request, body: ImportFolderRequest) -> dict[str, object]:
+    """A folder of files' files that could get a preview, by kind: how many, and about how much
+    note data their previews add (the wizard's Previews screen). Writes nothing."""
+    require_request_auth_token(request)
+    if body["source"] != FILES.key:
+        raise InputRejected("Only a folder of files makes previews.")
+    return CmdEstimateImportPreviews(
+        folder_path=body["folderPath"], selection=_file_selection(body), split_mode=body["splitMode"],
+        content_format=body["contentFormat"], folder_prefix=body["prefixFolder"], imported_at=datetime.now(timezone.utc),
+    ).execute()
+
+
 @router.post("/images")
 @transactional_route
 def estimate_import_images(request: Request, body: ImportFolderRequest) -> dict[str, object]:
@@ -169,10 +190,18 @@ def estimate_import_images(request: Request, body: ImportFolderRequest) -> dict[
     ).execute()
 
 
+def _import_preview_kind(path: PurePosixPath) -> str:
+    kind = preview_kind_of(path.name)
+    if kind not in IMPORT_PREVIEW_KINDS:
+        return NO_PREVIEW
+    return kind
+
+
 def _file_selection(body: ImportFolderRequest) -> FileSelection:
     return FileSelection(
         excluded_groups=tuple(body["excludedGroups"]), excluded_files=tuple(body["excludedFiles"]),
         included_files=tuple(body["includedFiles"]), keeps_markdown_as_files=body["keepsMarkdownAsFiles"],
+        preview_kinds=tuple(body["previewKinds"]),
     )
 
 
@@ -184,8 +213,8 @@ def _image_choice(body: ImportFolderRequest) -> ImageChoice:
 
 def _require_no_excluded_groups(body: ImportFolderRequest) -> None:
     # Only a folder of files has the checklist.
-    if body["excludedGroups"] or body["excludedFiles"] or body["includedFiles"] or body["keepsMarkdownAsFiles"]:
-        raise InputRejected("Only a folder of files leaves kinds of file out or keeps Markdown files as files.")
+    if any((body["excludedGroups"], body["excludedFiles"], body["includedFiles"], body["keepsMarkdownAsFiles"], body["previewKinds"])):
+        raise InputRejected("Only a folder of files leaves kinds of file out, keeps Markdown files as files or makes previews.")
 
 
 @router.post("/prefix-folder")
