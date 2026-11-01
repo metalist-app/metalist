@@ -361,8 +361,11 @@ test('cloud AI privacy settings and hover visualization share a server boundary'
     const chatApi = readFileSync(CHAT_API_URL, 'utf8');
     const css = readFileSync(CSS_URL, 'utf8');
 
-    assert.match(settingsModal, /id="ai-agent-blacklist-input"/);
-    assert.match(settingsModal, /id="ai-agent-whitelist-input"/);
+    // Each rule field (ai-agent-blacklist-input, ai-agent-whitelist-input) with its Add button.
+    assert.match(settingsModal, /id="ai-agent-\$\{side\}-input"/);
+    assert.match(settingsModal, /id="ai-agent-\$\{side\}-add"/);
+    assert.match(settingsModal, /ruleEntryHtml\('blacklist'/);
+    assert.match(settingsModal, /ruleEntryHtml\('whitelist'/);
     assert.match(settingsModal, /Never send notes with <span class="ai-settings-term">\(blacklist\)<\/span>/);
     assert.match(settingsModal, /Only send notes with <span class="ai-settings-term">\(whitelist\)<\/span>/);
     assert.match(settingsModal, /@password and @username notes are never sent/);

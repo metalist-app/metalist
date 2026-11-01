@@ -45,7 +45,7 @@ test('login and workspace requests retain the authenticated tab identity when br
     t.mock.method(CommandPalette, 'init', async () => {});
     t.mock.method(CommandPalette, 'startUpdateNotice', () => {});
     t.mock.method(CommandPalette, 'startBackupReminder', async () => {});
-    t.mock.method(CommandPalette, 'openImportRequestedByAddress', async () => {});
+    t.mock.method(CommandPalette, 'runSetupRequestedByAddress', async () => {});
     t.mock.method(AiChatPanel, 'init', async () => {});
     t.mock.method(PhoneMode, 'init', () => {});
     t.mock.method(Auth, 'revealMainApp', () => {});

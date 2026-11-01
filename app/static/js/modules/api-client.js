@@ -478,19 +478,24 @@ export const NotesAPI = {
         });
     },
 
-    // The Obsidian import (developer version, PLAN.md): the vault's folder, picked in the
-    // operating system's own dialog, then imported into the vault in use.
-    async pickObsidianVaultFolder() {
-        return this._apiCall(CONFIG.API.IMPORT.OBSIDIAN_PICK_FOLDER, { method: 'POST', body: JSON.stringify({}) });
+    // The folder import (developer version, PLAN.md; source 'obsidian' or 'markdown',
+    // import-sources.js): the folder, picked in the operating system's own dialog, then
+    // imported into the vault in use.
+    // provider: the AI the chat uses now; the answer says whether it can suggest tags.
+    async pickImportFolder(source, provider) {
+        if (typeof source !== 'string' || source.length === 0 || typeof provider !== 'string' || provider.length === 0) {
+            throw new Error('NotesAPI.pickImportFolder requires a source and the AI provider');
+        }
+        return this._apiCall(CONFIG.API.IMPORT.PICK_FOLDER, { method: 'POST', body: JSON.stringify({ source, provider }) });
     },
 
-    async importObsidianVault(folderPath, splitMode, contentFormat) {
-        if (typeof folderPath !== 'string' || folderPath.length === 0
+    async importFolder(source, folderPath, splitMode, contentFormat) {
+        if (typeof source !== 'string' || typeof folderPath !== 'string' || folderPath.length === 0
             || typeof splitMode !== 'string' || typeof contentFormat !== 'string') {
-            throw new Error('NotesAPI.importObsidianVault requires folderPath, splitMode and contentFormat');
+            throw new Error('NotesAPI.importFolder requires source, folderPath, splitMode and contentFormat');
         }
-        return this._apiCall(CONFIG.API.IMPORT.OBSIDIAN, {
-            method: 'POST', body: JSON.stringify({ folderPath, splitMode, contentFormat }),
+        return this._apiCall(CONFIG.API.IMPORT.FOLDER, {
+            method: 'POST', body: JSON.stringify({ source, folderPath, splitMode, contentFormat }),
         });
     },
 

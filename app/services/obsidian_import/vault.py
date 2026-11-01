@@ -58,7 +58,7 @@ class VaultContents:
     settings_problem: str
 
 
-def read_vault(folder: Path) -> VaultContents:
+def read_vault(folder: Path, *, reads_line_break_setting: bool) -> VaultContents:
     """The vault at folder: every .md file outside hidden folders, sorted by path as
     Obsidian sorts names (case ignored); hidden folders and other files are skipped."""
     if not folder.is_dir():
@@ -94,7 +94,10 @@ def read_vault(folder: Path) -> VaultContents:
     markdown_files.sort(key=lambda vault_file: _sort_key(str(vault_file.path)))
     other_files.sort(key=lambda path: _sort_key(str(path)))
     skipped.sort(key=lambda entry: _sort_key(entry.path))
-    uses_strict_line_breaks, settings_problem = _read_line_break_setting(folder)
+    # A plain Markdown folder (slice 1c) keeps its line breaks as written: as strict ones.
+    uses_strict_line_breaks, settings_problem = True, ""
+    if reads_line_break_setting:
+        uses_strict_line_breaks, settings_problem = _read_line_break_setting(folder)
     return VaultContents(
         name=unicodedata.normalize("NFC", folder.name),
         markdown_files=markdown_files,
@@ -103,6 +106,19 @@ def read_vault(folder: Path) -> VaultContents:
         uses_strict_line_breaks=uses_strict_line_breaks,
         settings_problem=settings_problem,
     )
+
+
+def count_markdown_files(folder: Path) -> int:
+    """How many Markdown files read_vault would read in folder (before reading any)."""
+    count = 0
+    for _directory, folder_names, file_names in os.walk(folder):
+        folder_names[:] = [name for name in folder_names if not name.startswith(_HIDDEN_PREFIX)]
+        count += sum(
+            1 for name in file_names
+            if not name.startswith(_HIDDEN_PREFIX) and name.lower().endswith(_MARKDOWN_SUFFIX)
+            and not name.lower().endswith(_DRAWING_SUFFIX)
+        )
+    return count
 
 
 def _utf8_text(content: bytes) -> str | None:

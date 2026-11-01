@@ -1,4 +1,4 @@
-"""Importing an Obsidian vault into the vault in use (PLAN.md, slice 1;
+"""Importing an Obsidian vault, or a plain folder of Markdown files, into the vault in use (PLAN.md, slices 1 and 1c;
 docs/ready-to-build/import-export-launch.md §2, §5): every file planned first, then all of
 it written at once, as new root notes at the top of the list with the report note first.
 The vault's folder is only read."""
@@ -21,6 +21,7 @@ from app.services.input_errors import InputRejected
 from app.services.obsidian_import.links import LinkReference, with_tokens_replaced
 from app.services.obsidian_import.notes import PlannedNote, folder_tag_for, plan_file_note, source_tag_for
 from app.services.obsidian_import.resolve import VaultIndex
+from app.services.obsidian_import.sources import IMPORT_SOURCES, ImportSource
 from app.services.obsidian_import.tree import (
     CONTENT_FORMATS,
     CONTENT_MARKDOWN,
@@ -40,13 +41,9 @@ from app.upload_limits import MAX_ATTACHMENT_BYTES
 from app.usecases.base import QueryCommand
 from app.usecases.delete_subtree import apply_restore_records
 
-REPORT_TITLE_FORMAT = "Import report — Obsidian — {vault} — {at}"
+REPORT_TITLE_FORMAT = "Import report — {source} — {vault} — {at}"
 _REPORT_TIME_FORMAT = "%Y-%m-%d %H:%M"
 _REPORT_TITLE_END = " — "
-_DIRECTION_LABEL = (
-    "**One-way.** MetaList exports standard Markdown, so your notes, text, links and files come "
-    "back out, but features only Obsidian has may not. Your vault's folder was only read, never changed."
-)
 # The root notes' parent: the top of the list.
 _TOP_LEVEL = None
 _SPLIT_DESCRIPTIONS = {
@@ -89,9 +86,11 @@ class _LinkReport:
 
 @dataclass
 class CmdImportObsidianVault(QueryCommand):
-    """Import the Obsidian vault at folder_path (the developer version, PLAN.md), each file
-    split and written as split_mode and content_format say."""
+    """Import the folder at folder_path, an Obsidian vault or a plain Markdown folder as source
+    says (the developer version, PLAN.md, slices 1 and 1c), each file split and written as
+    split_mode and content_format say."""
 
+    source: str
     folder_path: str
     split_mode: str
     content_format: str
@@ -101,15 +100,17 @@ class CmdImportObsidianVault(QueryCommand):
     def execute(self) -> Dict[str, object]:
         if self.split_mode not in SPLIT_MODES or self.content_format not in CONTENT_FORMATS:
             raise InputRejected("Choose how to split the notes and what to write them in.")
+        assert self.source in IMPORT_SOURCES, f"unknown import source {self.source!r}"
+        source = IMPORT_SOURCES[self.source]
         folder = Path(self.folder_path)
         if not folder.is_absolute():
-            raise InputRejected("Choose the vault's folder with Choose Folder.")
+            raise InputRejected(f"Choose the {source.folder_word}'s folder with Choose Folder.")
         if not folder.is_dir():
-            raise InputRejected(f"There is no folder at {folder}. Choose the vault's folder again.")
-        vault = read_vault(folder)
+            raise InputRejected(f"There is no folder at {folder}. Choose the {source.folder_word}'s folder again.")
+        vault = read_vault(folder, reads_line_break_setting=source.follows_obsidian_line_breaks)
         if len(vault.markdown_files) == 0:
-            raise InputRejected(f"{folder} holds no Markdown files. Choose an Obsidian vault's folder.")
-        source_tag = source_tag_for(self.imported_at)
+            raise InputRejected(f"{folder} holds no Markdown files. Choose a folder that does.")
+        source_tag = source_tag_for(self.imported_at, source.key)
         planned = [
             plan_file_note(
                 vault_file, uses_strict_line_breaks=vault.uses_strict_line_breaks, source_tag=source_tag,
@@ -121,7 +122,7 @@ class CmdImportObsidianVault(QueryCommand):
         planned = linked.planned
         note_count = sum(count_notes(note.root) for note in planned) + len(linked.kept)
         report_text = _report_text(
-            vault, planned, imported_at=self.imported_at, earlier_imports=_earlier_imports(vault),
+            vault, planned, source=source, imported_at=self.imported_at, earlier_imports=_earlier_imports(vault, source),
             note_count=note_count, split_mode=self.split_mode, content_format=self.content_format,
             links=linked.links, files=linked.files,
         )
@@ -142,7 +143,13 @@ class CmdImportObsidianVault(QueryCommand):
         roots.sort(key=lambda pair: _path_key(PurePosixPath(pair[0])))
         records = _records([report, *(written for _path, written in roots)])
         apply_restore_records(records, self.token)
-        return {"status": "success", "reportNoteId": report.node.note_id, "noteCount": note_count}
+        return {
+            "status": "success", "reportNoteId": report.node.note_id, "noteCount": note_count,
+            # For the AI's tag suggestions after the import (PLAN.md, slice 2b): each file's
+            # note, and the folder tags it must never propose.
+            "fileNoteIds": [note.root.note_id for note in planned],
+            "folderTags": sorted({note.folder_tag for note in planned if note.folder_tag != ""}),
+        }
 
 
 @dataclass(frozen=True)
@@ -346,9 +353,10 @@ def _record(
     )
 
 
-def _earlier_imports(vault: VaultContents) -> int:
-    """How many earlier import reports of this vault are root notes in the list."""
-    prefix = REPORT_TITLE_FORMAT.format(vault=vault.name, at="").removesuffix(_REPORT_TITLE_END) + _REPORT_TITLE_END
+def _earlier_imports(vault: VaultContents, source: ImportSource) -> int:
+    """How many earlier import reports of this folder, from this source, are root notes in the list."""
+    title_start = REPORT_TITLE_FORMAT.format(source=source.label, vault=vault.name, at="")
+    prefix = title_start.removesuffix(_REPORT_TITLE_END) + _REPORT_TITLE_END
     first_lines = [
         extract_plain_text_from_note_html(store.get(note_id).content).split("\n")[0]
         for note_id in store.children(_TOP_LEVEL)
@@ -357,15 +365,18 @@ def _earlier_imports(vault: VaultContents) -> int:
 
 
 def _report_text(
-    vault: VaultContents, planned: List[PlannedNote], *, imported_at: datetime, earlier_imports: int, note_count: int,
+    vault: VaultContents, planned: List[PlannedNote], *, source: ImportSource, imported_at: datetime, earlier_imports: int,
+    note_count: int,
     split_mode: str, content_format: str, links: _LinkReport, files: _FileReport,
 ) -> str:
     """The import report as Markdown (§5): counts, what was left out or changed, and every
     imported file."""
     at = imported_at.astimezone().strftime(_REPORT_TIME_FORMAT)
-    lines = [REPORT_TITLE_FORMAT.format(vault=vault.name, at=at), "", _DIRECTION_LABEL, ""]
+    lines = [REPORT_TITLE_FORMAT.format(source=source.label, vault=vault.name, at=at), "", source.one_way_text, ""]
     if earlier_imports > 0:
-        lines += [f"**This vault was imported before:** {earlier_imports} earlier import report(s) are in your list.", ""]
+        lines += [
+            f"**This {source.folder_word} was imported before:** {earlier_imports} earlier import report(s) are in your list.", "",
+        ]
     folder_tags = {note.folder_tag for note in planned if note.folder_tag != ""}
     lines += [
         "## Imported", "",
@@ -374,7 +385,7 @@ def _report_text(
         f"- {len(folder_tags)} folder tags.",
     ]
     if links.reached_count > 0:
-        lines.append(f"- {links.reached_count} links and embeds, to notes and files of the vault.")
+        lines.append(f"- {links.reached_count} links and embeds, to notes and files of the {source.folder_word}.")
     if len(files.attached) > 0:
         lines.append(f"- {len(files.attached)} files the notes link to or embed, attached to them.")
     if len(files.kept) > 0:

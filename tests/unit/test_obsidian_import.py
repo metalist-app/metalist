@@ -5,6 +5,7 @@ frontmatter tags and times, and a report note first; the vault is only read."""
 from __future__ import annotations
 
 import hashlib
+import typing
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 
@@ -17,10 +18,12 @@ from app.models.database import SafeSession
 from app.security import encryption
 from app.services import note_store as note_store_module
 from app.services import store as store_module
+from app.services.ai_setup import AiSetup
 from app.services.file_registry import file_registry
 from app.services.input_errors import InputRejected
 from app.services.note_store import NoteStore
 from app.services.obsidian_import.notes import PlannedNote, plan_file_note, source_tag_for
+from app.services.obsidian_import.sources import IMPORT_SOURCES
 from app.security.note_html import sanitize_note_html
 from app.services.obsidian_import.tree import (
     CONTENT_MARKDOWN,
@@ -39,7 +42,7 @@ from app.usecases.import_obsidian_vault import CmdImportObsidianVault
 
 FIXTURE_VAULT = Path(__file__).resolve().parents[1] / "fixtures" / "obsidian-vault"
 IMPORTED_AT = datetime(2026, 10, 31, 21, 5, tzinfo=timezone.utc)
-SOURCE_TAG = source_tag_for(IMPORTED_AT)
+SOURCE_TAG = source_tag_for(IMPORTED_AT, "obsidian")
 FILE_TIME = datetime(2025, 1, 2, 3, 4, tzinfo=timezone.utc)
 # The vault is not encrypted in these tests: any token stores files in plain text.
 TOKEN = "token"
@@ -69,7 +72,7 @@ def tags_of(note: PlannedNote) -> str:
 # --- Reading the vault -------------------------------------------------------------------
 
 def test_the_vault_reads_markdown_files_in_name_order_and_reports_the_rest() -> None:
-    vault = read_vault(FIXTURE_VAULT)
+    vault = read_vault(FIXTURE_VAULT, reads_line_break_setting=True)
     assert [str(file.path) for file in vault.markdown_files] == [
         "1. First steps.md", "Broken frontmatter.md", "Daily/2026/2026-10-30.md", "Empty.md",
         "Home/Notes/Index.md", "Links.md", "Projects/Client A/Plan.md", "Projects/Client B/Notes.md",
@@ -95,7 +98,7 @@ def test_obsidians_line_break_setting_is_read(tmp_path: Path, settings: str, is_
     (tmp_path / ".obsidian").mkdir()
     (tmp_path / ".obsidian" / "app.json").write_text(settings)
     (tmp_path / "Note.md").write_text("x")
-    vault = read_vault(tmp_path)
+    vault = read_vault(tmp_path, reads_line_break_setting=True)
     assert (vault.uses_strict_line_breaks, vault.settings_problem) == (is_strict, problem)
 
 
@@ -256,7 +259,7 @@ def first_line(store: NoteStore, note_id: str) -> str:
 
 def test_a_vault_comes_in_as_root_notes_at_the_top_with_the_report_first(note_store: NoteStore) -> None:
     before = folder_fingerprint(FIXTURE_VAULT)
-    result = CmdImportObsidianVault(folder_path=str(FIXTURE_VAULT), split_mode=SPLIT_NONE, content_format=CONTENT_MARKDOWN, token=TOKEN, imported_at=IMPORTED_AT).execute()
+    result = CmdImportObsidianVault(source="obsidian", folder_path=str(FIXTURE_VAULT), split_mode=SPLIT_NONE, content_format=CONTENT_MARKDOWN, token=TOKEN, imported_at=IMPORTED_AT).execute()
     roots = note_store.get_children(None)
     assert len(roots) == 1 + 12 + 1
     assert roots[0] == result["reportNoteId"]
@@ -267,11 +270,14 @@ def test_a_vault_comes_in_as_root_notes_at_the_top_with_the_report_first(note_st
     assert first_line(note_store, roots[7]) == "# Plan"
     assert plan.created_at.date().isoformat() in ("2024-02-29", "2024-03-01")
     assert result["noteCount"] == 12
+    # Each file's note, for the AI's tag suggestions, and the folder tags it must not propose.
+    assert result["fileNoteIds"] == roots[1:-1]
+    assert result["folderTags"] == ["Daily/2026", "Home/Notes", "Projects/Client-A", "Projects/Client-B", "Weird-Folder", "Work/Notes"]
     assert folder_fingerprint(FIXTURE_VAULT) == before
 
 
 def test_the_report_lists_what_was_left_out_and_changed(note_store: NoteStore) -> None:
-    result = CmdImportObsidianVault(folder_path=str(FIXTURE_VAULT), split_mode=SPLIT_NONE, content_format=CONTENT_MARKDOWN, token=TOKEN, imported_at=IMPORTED_AT).execute()
+    result = CmdImportObsidianVault(source="obsidian", folder_path=str(FIXTURE_VAULT), split_mode=SPLIT_NONE, content_format=CONTENT_MARKDOWN, token=TOKEN, imported_at=IMPORTED_AT).execute()
     report = extract_plain_text_from_note_html(note_store.get_note(result["reportNoteId"]).content)
     for line in [
         "**One-way.**", "- 12 Markdown files, as 12 notes: each file a note at the top of the list, kept whole, in Markdown.",
@@ -294,8 +300,8 @@ def test_the_report_lists_what_was_left_out_and_changed(note_store: NoteStore) -
 
 
 def test_importing_the_same_vault_again_says_so(note_store: NoteStore) -> None:
-    CmdImportObsidianVault(folder_path=str(FIXTURE_VAULT), split_mode=SPLIT_NONE, content_format=CONTENT_MARKDOWN, token=TOKEN, imported_at=IMPORTED_AT).execute()
-    again = CmdImportObsidianVault(folder_path=str(FIXTURE_VAULT), split_mode=SPLIT_NONE, content_format=CONTENT_MARKDOWN, token=TOKEN, imported_at=IMPORTED_AT).execute()
+    CmdImportObsidianVault(source="obsidian", folder_path=str(FIXTURE_VAULT), split_mode=SPLIT_NONE, content_format=CONTENT_MARKDOWN, token=TOKEN, imported_at=IMPORTED_AT).execute()
+    again = CmdImportObsidianVault(source="obsidian", folder_path=str(FIXTURE_VAULT), split_mode=SPLIT_NONE, content_format=CONTENT_MARKDOWN, token=TOKEN, imported_at=IMPORTED_AT).execute()
     report = extract_plain_text_from_note_html(note_store.get_note(again["reportNoteId"]).content)
     assert "**This vault was imported before:** 1 earlier import report(s)" in report
 
@@ -306,13 +312,13 @@ def test_importing_the_same_vault_again_says_so(note_store: NoteStore) -> None:
 ])
 def test_a_folder_that_is_no_vault_is_refused(note_store: NoteStore, folder: str, message: str) -> None:
     with pytest.raises(InputRejected, match=message):
-        CmdImportObsidianVault(folder_path=folder, split_mode=SPLIT_NONE, content_format=CONTENT_MARKDOWN, token=TOKEN, imported_at=IMPORTED_AT).execute()
+        CmdImportObsidianVault(source="obsidian", folder_path=folder, split_mode=SPLIT_NONE, content_format=CONTENT_MARKDOWN, token=TOKEN, imported_at=IMPORTED_AT).execute()
 
 
 def test_a_folder_without_markdown_is_refused(note_store: NoteStore, tmp_path: Path) -> None:
     (tmp_path / "picture.png").write_bytes(b"x")
     with pytest.raises(InputRejected, match="holds no Markdown files"):
-        CmdImportObsidianVault(folder_path=str(tmp_path), split_mode=SPLIT_NONE, content_format=CONTENT_MARKDOWN, token=TOKEN, imported_at=IMPORTED_AT).execute()
+        CmdImportObsidianVault(source="obsidian", folder_path=str(tmp_path), split_mode=SPLIT_NONE, content_format=CONTENT_MARKDOWN, token=TOKEN, imported_at=IMPORTED_AT).execute()
     assert note_store.get_children(None) == ["mine"]
 
 
@@ -325,11 +331,19 @@ class _Request:
 def test_the_folder_picker_answers_with_the_chosen_folder(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(imports_routes, "require_request_auth_token", lambda request: "token")
     monkeypatch.setattr(imports_routes, "pick_folder", lambda *, prompt: str(FIXTURE_VAULT))
-    assert imports_routes.pick_obsidian_vault_folder(request=_Request()) == {
-        "selected": True, "folderPath": str(FIXTURE_VAULT),
+    monkeypatch.setattr(imports_routes.token_service, "get_session_key", lambda token: "session")
+    monkeypatch.setattr(imports_routes, "describe_ai_setup", lambda *, token, session_key: AiSetup(ready_providers=("openai",)))
+    body = {"source": "obsidian", "provider": "openai"}
+    # The fixture's Markdown files, its Excalidraw-free top and hidden folders aside.
+    assert imports_routes.pick_import_folder(request=_Request(), body=body) == {
+        "selected": True, "folderPath": str(FIXTURE_VAULT), "markdownFileCount": 13, "canSuggestTags": True,
     }
+    monkeypatch.setattr(imports_routes, "describe_ai_setup", lambda *, token, session_key: AiSetup(ready_providers=()))
+    assert imports_routes.pick_import_folder(request=_Request(), body=body)["canSuggestTags"] is False
     monkeypatch.setattr(imports_routes, "pick_folder", lambda *, prompt: None)
-    assert imports_routes.pick_obsidian_vault_folder(request=_Request()) == {"selected": False, "folderPath": ""}
+    assert imports_routes.pick_import_folder(request=_Request(), body=body) == {
+        "selected": False, "folderPath": "", "markdownFileCount": 0, "canSuggestTags": False,
+    }
 
 
 # --- Slice 4: split modes and rich text ----------------------------------------------------
@@ -439,7 +453,7 @@ def test_a_file_kept_whole_as_rich_text_is_one_note() -> None:
 
 def test_a_split_import_writes_each_files_notes_under_it(note_store: NoteStore) -> None:
     result = CmdImportObsidianVault(
-        folder_path=str(FIXTURE_VAULT), split_mode=SPLIT_PARAGRAPHS, content_format=CONTENT_RICH, token=TOKEN,
+        source="obsidian", folder_path=str(FIXTURE_VAULT), split_mode=SPLIT_PARAGRAPHS, content_format=CONTENT_RICH, token=TOKEN,
         imported_at=IMPORTED_AT,
     ).execute()
     roots = note_store.get_children(None)
@@ -452,7 +466,7 @@ def test_a_split_import_writes_each_files_notes_under_it(note_store: NoteStore) 
 
 def test_the_report_comes_in_split_as_the_vault_does(note_store: NoteStore) -> None:
     result = CmdImportObsidianVault(
-        folder_path=str(FIXTURE_VAULT), split_mode=SPLIT_PARAGRAPHS, content_format=CONTENT_RICH, token=TOKEN,
+        source="obsidian", folder_path=str(FIXTURE_VAULT), split_mode=SPLIT_PARAGRAPHS, content_format=CONTENT_RICH, token=TOKEN,
         imported_at=IMPORTED_AT,
     ).execute()
     sections = [first_line(note_store, note_id) for note_id in note_store.get_children(result["reportNoteId"])]
@@ -464,7 +478,7 @@ def test_the_report_comes_in_split_as_the_vault_does(note_store: NoteStore) -> N
 def imported_tree(store: NoteStore, *, split_mode: str, content_format: str) -> dict[str, str]:
     """Import the fixture vault; each imported note's id by its first line (the first one wins)."""
     CmdImportObsidianVault(
-        folder_path=str(FIXTURE_VAULT), split_mode=split_mode, content_format=content_format, token=TOKEN,
+        source="obsidian", folder_path=str(FIXTURE_VAULT), split_mode=split_mode, content_format=content_format, token=TOKEN,
         imported_at=IMPORTED_AT,
     ).execute()
     ids: dict[str, str] = {}
@@ -536,7 +550,7 @@ def test_links_find_notes_as_obsidian_does(tmp_path: Path, note_store: NoteStore
         (tmp_path / path).parent.mkdir(parents=True, exist_ok=True)
         (tmp_path / path).write_text(text)
     CmdImportObsidianVault(
-        folder_path=str(tmp_path), split_mode=SPLIT_NONE, content_format=CONTENT_RICH, token=TOKEN, imported_at=IMPORTED_AT,
+        source="obsidian", folder_path=str(tmp_path), split_mode=SPLIT_NONE, content_format=CONTENT_RICH, token=TOKEN, imported_at=IMPORTED_AT,
     ).execute()
     # Each note's last line is its file's text, which tells the two Index notes apart.
     by_body = {
@@ -553,7 +567,7 @@ def test_a_canvas_comes_in_as_a_file_in_a_note_of_its_own(tmp_path: Path, note_s
     (tmp_path / "Board.canvas").write_text('{"nodes": [], "edges": []}')
     (tmp_path / "Sketch.excalidraw.md").write_text("# Excalidraw Data")
     result = CmdImportObsidianVault(
-        folder_path=str(tmp_path), split_mode=SPLIT_NONE, content_format=CONTENT_RICH, token=TOKEN, imported_at=IMPORTED_AT,
+        source="obsidian", folder_path=str(tmp_path), split_mode=SPLIT_NONE, content_format=CONTENT_RICH, token=TOKEN, imported_at=IMPORTED_AT,
     ).execute()
     roots = note_store.get_children(None)
     names = {file_id: file_registry.title_of(file_id) for file_id in file_registry.list_ids()}
@@ -571,10 +585,49 @@ def test_a_file_too_large_is_left_out_and_its_links_stay_as_written(tmp_path: Pa
     (tmp_path / "Note.md").write_text("See ![[big.png]]")
     (tmp_path / "big.png").write_bytes(b"12345")
     result = CmdImportObsidianVault(
-        folder_path=str(tmp_path), split_mode=SPLIT_NONE, content_format=CONTENT_RICH, token=TOKEN, imported_at=IMPORTED_AT,
+        source="obsidian", folder_path=str(tmp_path), split_mode=SPLIT_NONE, content_format=CONTENT_RICH, token=TOKEN, imported_at=IMPORTED_AT,
     ).execute()
     assert "See ![[big.png]]" in extract_plain_text_from_note_html(note_store.get_note(note_store.get_children(None)[1]).content)
     report = extract_plain_text_from_note_html(note_store.get_note(result["reportNoteId"]).content)
     assert "big.png: larger than a file can be in MetaList (0 MB); links to it stay as written" in report
     assert "Changed" not in report
     assert file_registry.list_ids() == set()
+
+
+# --- Slice 1c: a plain Markdown folder ------------------------------------------------------
+
+def test_a_markdown_folder_comes_in_with_its_own_source_and_report(tmp_path: Path, note_store: NoteStore) -> None:
+    (tmp_path / "Notes").mkdir()
+    (tmp_path / "Notes" / "Trip.md").write_text("First line\nsecond line\n\n- [x] booked")
+    # An Obsidian setting in such a folder is not read: plain Markdown keeps its line breaks.
+    (tmp_path / ".obsidian").mkdir()
+    (tmp_path / ".obsidian" / "app.json").write_text("{broken")
+    result = CmdImportObsidianVault(
+        source="markdown", folder_path=str(tmp_path), split_mode=SPLIT_NONE, content_format=CONTENT_MARKDOWN,
+        token=TOKEN, imported_at=IMPORTED_AT,
+    ).execute()
+    roots = note_store.get_children(None)
+    report = extract_plain_text_from_note_html(note_store.get_note(result["reportNoteId"]).content)
+    assert report.startswith(f"Import report — Markdown — {tmp_path.name} — ")
+    assert "come back out. Your folder was only read, never changed." in report
+    assert "of the vault" not in report
+    assert "Obsidian's settings" not in report
+    trip = note_store.get_note(roots[1])
+    assert extract_plain_text_from_note_html(trip.content) == "Trip\n\nFirst line\nsecond line\n\n- [x] booked"
+    assert source_tag_for(IMPORTED_AT, "markdown") in trip.tags
+    assert "imported:source=markdown" in source_tag_for(IMPORTED_AT, "markdown")
+
+
+def test_importing_a_markdown_folder_twice_says_so_and_an_obsidian_import_of_it_does_not_count(tmp_path: Path, note_store: NoteStore) -> None:
+    (tmp_path / "A.md").write_text("a")
+    for source in ("obsidian", "markdown", "markdown"):
+        result = CmdImportObsidianVault(
+            source=source, folder_path=str(tmp_path), split_mode=SPLIT_NONE, content_format=CONTENT_MARKDOWN,
+            token=TOKEN, imported_at=IMPORTED_AT,
+        ).execute()
+    report = extract_plain_text_from_note_html(note_store.get_note(result["reportNoteId"]).content)
+    assert "**This folder was imported before:** 1 earlier import report(s)" in report
+
+
+def test_the_routes_know_every_import_source() -> None:
+    assert set(typing.get_args(imports_routes.ImportSourceKey)) == set(IMPORT_SOURCES)

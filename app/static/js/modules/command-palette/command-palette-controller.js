@@ -60,7 +60,7 @@ import { printNotes } from '../mode-manager/services/print-service.js';
 import { exportNotes } from '../mode-manager/services/export-service.js';
 
 import { VersionInfoModal } from '../modals/version-info-modal.js';
-import { ObsidianImportModal } from '../modals/obsidian-import-modal.js';
+import { FolderImportModal } from '../modals/folder-import-modal.js';
 import { MemoryUsageModal } from '../modals/memory-usage-modal.js';
 import { showErrorDialogFor } from '../modals/error-dialog.js';
 import { RecentMessagesModal } from '../modals/recent-messages-modal.js';
@@ -117,7 +117,7 @@ import { isRootReorderLocked, normalizeRootSortMode } from '../mode-manager/serv
 import { blockRootNoteCreation, requireCreatedNoteId } from '../mode-manager/services/root-note-creation-service.js';
 import { createNoteAtTop } from '../mode-manager/actions/note-actions.js';
 import { typeReferenceOpenerAtCaret } from '../mode-manager/services/reference-suggestions-service.js';
-import { takeObsidianImportRequest } from '../import-on-open.js';
+import { AI_STEP, PASSWORD_STEP, importSourceOfStep, readSetupSteps, writeSetupSteps } from '../new-vault-setup.js';
 import {
     setTabDateFilterOnServer, setTabFileFilterOnServer, setTabSortModeOnServer,
 } from '../mode-manager/services/tab-state-service.js';
@@ -430,7 +430,7 @@ class CommandPaletteController {
         this._reminderModal = null;
 
         this._versionInfoModal = null;
-        this._obsidianImportModal = null;
+        this._folderImportModal = null;
         this._memoryUsageModal = null;
         this._recentMessagesModal = null;
         this._noteLayoutAppearanceModal = null;
@@ -517,7 +517,7 @@ class CommandPaletteController {
                 openReminders: this.openReminders.bind(this),
 
                 openVersionInfo: this.openVersionInfo.bind(this),
-                openObsidianImport: this.openObsidianImport.bind(this),
+                openFolderImport: this.openFolderImport.bind(this),
                 openMemoryUsage: this.openMemoryUsage.bind(this),
                 openRecentMessages: this.openRecentMessages.bind(this),
                 openNoteLayoutAppearance: this.openNoteLayoutAppearance.bind(this),
@@ -2797,26 +2797,66 @@ class CommandPaletteController {
         await this._recentMessagesModal.open();
     }
 
-    // A vault created with "Import an Obsidian vault into it" opens the import once it has
-    // opened (PLAN.md, slice 1b; import-on-open.js).
-    async openImportRequestedByAddress() {
-        if (takeObsidianImportRequest()) {
-            await this.openObsidianImport();
+    // A new vault runs the setup Create Vault asked for (PLAN.md, slice 1d;
+    // new-vault-setup.js): each step's dialog in turn, the next once it closes. Each step
+    // leaves the address as it starts, so adding a password, which reloads the vault, goes
+    // on after the login with the steps left.
+    async runSetupRequestedByAddress() {
+        let steps = readSetupSteps();
+        while (steps.length > 0) {
+            const [step, ...rest] = steps;
+            writeSetupSteps(rest);
+            await this._runSetupStep(step);
+            steps = readSetupSteps();
         }
     }
 
-    // The Obsidian import's developer version (PLAN.md): its notes show once it has run.
-    async openObsidianImport() {
-        const isReady = await this._prepareForModalOpen('commandPalette.openObsidianImport');
+    async _runSetupStep(step) {
+        if (step === PASSWORD_STEP) {
+            // A vault given a password meanwhile (another window) needs none added.
+            if (Auth.hasPassword) return;
+            await this._untilClosed(() => this.openAddPassword(), () => this._addPasswordModal);
+            return;
+        }
+        if (step === AI_STEP) {
+            await this._untilClosed(() => this.openAiAgentSettings(false), () => this._aiAgentSettingsModal);
+            return;
+        }
+        const sourceKey = importSourceOfStep(step);
+        if (sourceKey === null) {
+            throw new Error(`Unknown new vault setup step: ${step}`);
+        }
+        await this._untilClosed(() => this.openFolderImport(sourceKey), () => this._folderImportModal);
+    }
+
+    // Opens a dialog and waits until it closes; one that did not open is done at once.
+    async _untilClosed(open, modalOf) {
+        await open();
+        const modal = modalOf();
+        if (modal === null || !modal.isOpen) return;
+        await new Promise((resolve) => {
+            const onClosed = (event) => {
+                if (event.detail.modalName !== modal.modalName) return;
+                document.removeEventListener('metalist:modal-closed', onClosed);
+                resolve();
+            };
+            document.addEventListener('metalist:modal-closed', onClosed);
+        });
+    }
+
+    // The folder import's developer version (PLAN.md; an Obsidian vault or a Markdown
+    // folder, import-sources.js): its notes show once it has run.
+    async openFolderImport(sourceKey) {
+        const isReady = await this._prepareForModalOpen('commandPalette.openFolderImport');
         if (!isReady) {
             return;
         }
-        if (this._obsidianImportModal === null) {
-            this._obsidianImportModal = new ObsidianImportModal(async () => {
-                await actionRefreshAndMaybeSelect({ startedAt: performance.now(), context: 'obsidianImport' });
-            });
+        if (this._folderImportModal === null) {
+            this._folderImportModal = new FolderImportModal(async () => {
+                await actionRefreshAndMaybeSelect({ startedAt: performance.now(), context: 'folderImport' });
+            }, this.getAiSettings.bind(this));
         }
-        await this._obsidianImportModal.open();
+        await this._folderImportModal.openFor(sourceKey);
     }
 
     async openVersionInfo() {

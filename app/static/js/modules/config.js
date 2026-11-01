@@ -150,8 +150,8 @@ export const CONFIG = {
         },
         // The Obsidian import's developer version (PLAN.md): development only.
         IMPORT: {
-            OBSIDIAN: `${API_BASE}/import/obsidian`,
-            OBSIDIAN_PICK_FOLDER: `${API_BASE}/import/obsidian/pick-folder`,
+            FOLDER: `${API_BASE}/import/folder`,
+            PICK_FOLDER: `${API_BASE}/import/pick-folder`,
         },
         FILES: {
             UPLOAD: `${API_FILES_BASE}/upload`,

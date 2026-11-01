@@ -758,7 +758,7 @@ export const Auth = {
                 document.body.dataset.appReady = 'true';
                 finishStartupTiming();
                 CommandPalette.startUpdateNotice();
-                await CommandPalette.openImportRequestedByAddress();
+                await CommandPalette.runSetupRequestedByAddress();
             } else {
                 startupPhase = enterStartupStage('reloading the workspace');
                 window.location.reload();

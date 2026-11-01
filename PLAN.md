@@ -102,7 +102,20 @@ checkbox with "Import from".
 ### Slice 1d: setting up a new vault (the maintainer, 2026-10-31)
 Create Vault asks three questions, each a checkbox; the new vault opens each ticked step in
 this order, the next when the one before closes, and an unticked one is skipped (all
-unticked: the vault opens as today). Acceptance checks to be written before building.
+unticked: the vault opens as today).
+Acceptance checks:
+- Create Vault shows, under the ports, three checkboxes in this order, unticked: "Protect it
+  with a password", "Set up AI in it", "Import from". Ticking "Import from" shows a
+  drop-down beside it (Obsidian vault, Markdown folder), Obsidian vault chosen.
+- "Set up AI in it" ticked without a password: a line under it says "Without a password,
+  the key is kept only until MetaList restarts."
+- The new vault opens each ticked step's dialog in turn, the next when one closes: Add
+  Password, AI Agent Settings, the import dialog for the chosen source.
+- Adding the password reloads the vault and asks for the login; once logged in, the
+  remaining steps go on. Closing a dialog without finishing it goes on to the next step.
+- The steps travel in the address (`#setup=password+ai+import-obsidian`), each taken out as
+  it starts: a reload never repeats a finished step.
+- Nothing ticked: the vault opens as today.
 1. **Protect it with a password:** Add Password opens first.
 2. **Set up AI in it:** AI Agent Settings opens next. Ticked without a password, a line
    under it says the key is kept only until MetaList restarts (a vault without a password
@@ -217,6 +230,81 @@ imported notes in MetaList's own formatting, so the export stays clean.
 6. **Callouts:** `@quote` too, its first line the type and title in bold
    (`**Note: A callout**`) (agreed 2026-10-31).
 7. The tag docs and the AI help skills list `@quote` with the other style tags.
+
+## Phase 2: the setup and import wizards (the maintainer, 2026-10-31)
+
+Creating a vault and importing into one are workflows the person walks through, and they
+look slick: `import-export-launch.md` §3a, brought forward. Built before the Markdown export
+(the maintainer: how these are set up will inform the exporter), and the importer is nailed
+down first. They replace the developer version's dialogs (slices 1b, 1d, 2b keep working
+underneath: the same import, the same steps, the same AI proposals). Slice 3 (properties and
+tags) is built inside the import wizard. **To agree before any code.**
+
+### One frame for both
+- A full-window page over the list: a progress bar across the top names every step (Password,
+  AI, Import, Done; or the import's own), the current one marked, finished ones ticked, so the
+  person always sees how many questions there are and how far along they are.
+- Going forward, the screen slides out to the left and the next comes in from the right; Back
+  slides the other way. Same slide as the reference views (250 ms, the same easing); with
+  Reduce Motion a quick fade (120 ms); with Animated Transitions off, no motion.
+- Each screen: a title, one or two sentences of explanation (wanted here, §3a), its choices,
+  and Back, the main button (Next), and "Finish with these choices" (every question has a
+  default, §3a). Enter is the main button; Escape asks before leaving a wizard half done.
+- A question shows only when it applies (§3a): no AI step's tag question without an AI set
+  up; no "what will be approximated" screen when nothing would be.
+
+### The new vault wizard
+Create Vault (in the vault it is opened from) asks only the name and ports, in the same frame
+as its first step; the new vault opens straight into the rest.
+1. **Password:** set one (strength meter, "Generate Password…" opening the existing
+   generator with "Use This Password"), or Not now. One line says what each means: notes
+   encrypted; without one, the AI key is kept only until MetaList restarts. Setting it keeps
+   this window logged in: no second login (the server opens a session for the window that
+   set it; other windows of the vault are logged out, as today).
+2. **AI:** a provider's key (the AI settings' key row), or Not now.
+3. **Bring in your notes:** Obsidian vault, Markdown folder, or Start empty. Choosing one
+   continues into the import wizard's steps, which join the progress bar.
+4. **Done:** what was set up; Open My Vault.
+
+### The import wizard
+From the palette's "Import…" (one command with the source chosen inside), and from step 3
+above.
+1. **Source:** Obsidian vault or Markdown folder, each with its direction label (§4: one-way,
+   and the sentence saying what comes back out).
+2. **Folder:** Choose Folder…; then its name, its Markdown files and attachments counted.
+3. **Split:** the three modes shown on samples exactly as the notes would look: a built-in
+   sample and one of the person's own files (one with headings and lists, picked for them;
+   another can be picked). Switching modes animates the notes splitting apart or joining.
+   Each mode's good and bad in a line or two (§3a).
+4. **Write as:** rich text or Markdown, with a before/after from the same file.
+5. **AI:** only when no AI is set up (the maintainer, 2026-10-31): the same step as the new
+   vault wizard's (a provider's key, or Not now), so the AI can suggest tags for the import.
+6. **Tags:** frontmatter and inline tags (slice 3), and, with an AI set up (before or in the
+   step above), "Have the AI suggest tags" (slice 2b: proposals, never the folder tags).
+7. **What changes:** what will be approximated in these files (comments, block IDs, callouts
+   as `@quote`, …), and that the folder is only read (§4). Shown only when something would be.
+8. **Importing:** progress (files, attachments, then the AI's tags as they come).
+9. **Done:** the counts; Open the Report.
+
+Inside the new vault wizard, the import's AI step never shows: that wizard has just asked.
+
+### Motion cases (interaction principles; agree before code)
+Principle: only the person's action changes the screen, and the slide shows where they went.
+1. Next: the screen slides left, the next one in from the right; the progress bar's mark moves
+   to the next step at the same time.
+2. Back: the reverse.
+3. A step that does not apply is skipped: the slide goes straight to the following one, and
+   the bar shows the skipped step as not part of this run.
+4. Reduce Motion: a 120 ms fade in place, nothing moves. Animated Transitions off: no motion.
+5. A window resized mid-slide: the slide ends where it was going; nothing is left half off
+   screen.
+6. The split preview: switching modes moves the sample notes between their places (splitting
+   apart or joining); the screen around them stays still.
+
+### Open
+- Full window, or a large centered panel over the dimmed list? (Recommended: full window.)
+- An early look as a clickable prototype first (the real frame and screens, choices not yet
+  wired), so the look is agreed before the wiring? (Recommended.)
 
 ## Decisions (the maintainer, 2026-10-31, approving this plan)
 

@@ -31,7 +31,7 @@ from app.services.tag_ontology import is_valid_tag_token
 
 # Every imported root note carries it: `imported` finds (and `-imported` hides) every import,
 # children included; its values tell the source and the import apart (the maintainer, 2026-10-31).
-SOURCE_TAG_FORMAT = "imported:source=obsidian:at={at}"
+SOURCE_TAG_FORMAT = "imported:source={source}:at={at}"
 SOURCE_TAG_TIME_FORMAT = "%Y-%m-%dT%H:%M"
 
 _FRONTMATTER_FENCE = "---"
@@ -160,10 +160,10 @@ def folder_tag_for(path: PurePosixPath) -> str:
     return _folder_tag(path, renamed_tags=[], dropped_tags=[])
 
 
-def source_tag_for(imported_at: datetime) -> str:
+def source_tag_for(imported_at: datetime, source: str) -> str:
     """The source tag of an import made at imported_at, in the importing user's local time."""
     assert imported_at.tzinfo is not None, "an import time knows its zone"
-    return SOURCE_TAG_FORMAT.format(at=imported_at.astimezone().strftime(SOURCE_TAG_TIME_FORMAT))
+    return SOURCE_TAG_FORMAT.format(source=source, at=imported_at.astimezone().strftime(SOURCE_TAG_TIME_FORMAT))
 
 
 def _read_frontmatter(text: str) -> Tuple[Dict[str, object], str, str]:

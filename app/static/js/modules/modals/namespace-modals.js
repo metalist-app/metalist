@@ -23,7 +23,8 @@ import { showErrorDialog, showErrorDialogFor, showOpenFailure } from './error-di
 import { escapeHtml } from '../html-escape.js';
 import { actionRowHtml } from './action-row.js';
 import { requires } from '../../shockharness/contracts.js';
-import { withObsidianImportRequest } from '../import-on-open.js';
+import { AI_STEP, PASSWORD_STEP, importStep, withSetupSteps } from '../new-vault-setup.js';
+import { IMPORT_SOURCES } from '../import-sources.js';
 
 
 const STATUS_BANNER_SECONDS = 5;
@@ -585,6 +586,56 @@ export class OpenNamespaceModal extends NamespaceModalBase {
 }
 
 
+// The new vault's setup questions (PLAN.md, slice 1d): checkbox id and state key, in order.
+const SETUP_CHECKBOXES = Object.freeze([
+    ['create-namespace-password', 'protectsWithPassword'],
+    ['create-namespace-ai', 'setsUpAi'],
+    ['create-namespace-import', 'importsFrom'],
+]);
+
+function setupChoicesHtml(state, isDisabled) {
+    const disabled = isDisabled ? ' disabled' : '';
+    const checked = (isChecked) => (isChecked ? ' checked' : '');
+    let keyNote = '';
+    if (state.setsUpAi && !state.protectsWithPassword) {
+        keyNote = '<p class="create-namespace-setup-note">Without a password, the key is kept only until MetaList restarts.</p>';
+    }
+    let sources = '';
+    if (state.importsFrom) {
+        const options = IMPORT_SOURCES.map((source) => `<option value="${escapeHtml(source.key)}"${
+            source.key === state.importSource ? ' selected' : ''}>${escapeHtml(source.choiceLabel)}</option>`).join('');
+        sources = `<select id="create-namespace-import-source" aria-label="Import from"${disabled}>${options}</select>`;
+    }
+    return `
+        <div class="create-namespace-setup">
+            <label class="create-namespace-setup-choice">
+                <input id="create-namespace-password" type="checkbox"${checked(state.protectsWithPassword)}${disabled}>
+                <span>Protect it with a password</span>
+            </label>
+            <label class="create-namespace-setup-choice">
+                <input id="create-namespace-ai" type="checkbox"${checked(state.setsUpAi)}${disabled}>
+                <span>Set up AI in it</span>
+            </label>
+            ${keyNote}
+            <div class="create-namespace-setup-row">
+                <label class="create-namespace-setup-choice">
+                    <input id="create-namespace-import" type="checkbox"${checked(state.importsFrom)}${disabled}>
+                    <span>Import from</span>
+                </label>
+                ${sources}
+            </div>
+        </div>`;
+}
+
+// The steps the new vault runs once it has opened (new-vault-setup.js), in order.
+function setupSteps(state) {
+    const steps = [];
+    if (state.protectsWithPassword) steps.push(PASSWORD_STEP);
+    if (state.setsUpAi) steps.push(AI_STEP);
+    if (state.importsFrom) steps.push(importStep(state.importSource));
+    return steps;
+}
+
 export class CreateNamespaceModal extends NamespaceModalBase {
     constructor() {
         super('createNamespaceModal', 'create-namespace-modal');
@@ -600,7 +651,11 @@ export class CreateNamespaceModal extends NamespaceModalBase {
             namespace: '',
             port: '',
             httpsPort: '',
-            importsObsidian: false,
+            // The new vault's setup (PLAN.md, slice 1d), asked in this order.
+            protectsWithPassword: false,
+            setsUpAi: false,
+            importsFrom: false,
+            importSource: IMPORT_SOURCES[0].key,
             status: 'Loading vault defaults...',
         };
     }
@@ -643,10 +698,7 @@ export class CreateNamespaceModal extends NamespaceModalBase {
                         </div>
                     ` : ''}
                 </div>
-                <label class="create-namespace-import-choice">
-                    <input id="create-namespace-import-obsidian" type="checkbox" ${state.importsObsidian ? 'checked' : ''} ${submitting ? 'disabled' : ''}>
-                    <span>Import an Obsidian vault into it</span>
-                </label>
+                ${setupChoicesHtml(state, submitting)}
                 ${actionRowHtml({
                     alternative: null,
                     cancel: { id: 'create-namespace-cancel-btn', label: 'Cancel', disabled: submitting, attributes: [] },
@@ -665,10 +717,19 @@ export class CreateNamespaceModal extends NamespaceModalBase {
         this._wireTextInput('create-namespace-name', 'namespace');
         this._wireTextInput('create-namespace-http-port', 'port');
         this._wireTextInput('create-namespace-https-port', 'httpsPort');
-        const importChoice = document.getElementById('create-namespace-import-obsidian');
-        if (importChoice instanceof HTMLInputElement) {
-            importChoice.onchange = () => {
-                this.updateModalState({ importsObsidian: importChoice.checked });
+        for (const [elementId, stateKey] of SETUP_CHECKBOXES) {
+            const choice = document.getElementById(elementId);
+            if (choice instanceof HTMLInputElement) {
+                choice.onchange = () => {
+                    this.updateModalState({ [stateKey]: choice.checked });
+                    this.renderModalContent();
+                };
+            }
+        }
+        const sourceChoice = document.getElementById('create-namespace-import-source');
+        if (sourceChoice instanceof HTMLSelectElement) {
+            sourceChoice.onchange = () => {
+                this.updateModalState({ importSource: sourceChoice.value });
             };
         }
 
@@ -784,10 +845,9 @@ export class CreateNamespaceModal extends NamespaceModalBase {
             if (typeof response.url !== 'string' || response.url.length === 0) {
                 throw new Error('Namespace create response missing url');
             }
-            let navigationUrl = rewriteNamespaceUrlPreservingCurrentHost(response.url, window.location);
-            if (this.getModalState().importsObsidian === true) {
-                navigationUrl = withObsidianImportRequest(navigationUrl);
-            }
+            const navigationUrl = withSetupSteps(
+                rewriteNamespaceUrlPreservingCurrentHost(response.url, window.location), setupSteps(this.getModalState()),
+            );
             if (pendingTab && !pendingTab.closed) {
                 pendingTab.location.replace(navigationUrl);
             } else {

@@ -206,7 +206,11 @@
     },
     {
       "id": "form.import_obsidian_vault",
-      "tags": ["import", "obsidian", "vault", "markdown", "folder", "migrate", "bring", "developer"]
+      "tags": ["import", "obsidian", "vault", "migrate", "bring", "developer"]
+    },
+    {
+      "id": "form.import_markdown_folder",
+      "tags": ["import", "markdown", "md", "folder", "files", "notes", "migrate", "bring", "developer"]
     },
     {
       "id": "form.create_namespace",

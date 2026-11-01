@@ -785,20 +785,51 @@ html[data-theme="dark"] .visual-cues-description {
     cursor: pointer;
 }
 
-.create-namespace-import-choice {
+/* Create Vault's setup questions (PLAN.md, slice 1d). */
+.create-namespace-setup {
+    display: grid;
+    gap: 8px;
+    margin: 4px 0 16px;
+}
+
+.create-namespace-setup-choice {
     display: flex;
     align-items: center;
     gap: 8px;
-    margin: 4px 0 16px;
     cursor: pointer;
 }
 
-.modal-content .create-namespace-import-choice input[type="checkbox"] {
+.modal-content .create-namespace-setup-choice input[type="checkbox"] {
     flex: none;
     width: auto;
     margin: 0;
 }
 
+.create-namespace-setup-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.modal-content .create-namespace-setup-row select {
+    width: auto;
+}
+
+.create-namespace-setup-note {
+    margin: -4px 0 0 21px;
+    font-size: 0.85em;
+    color: #6b7280;
+}
+
+html[data-theme="dark"] .create-namespace-setup-note {
+    color: var(--app-text-muted);
+}
+
+.folder-import-suggest-tags {
+    margin: 0 0 16px;
+}
+
+.modal-content .obsidian-import-choice input[type="checkbox"],
 .modal-content .obsidian-import-choice input[type="radio"] {
     flex: none;
     width: auto;
@@ -3855,6 +3886,22 @@ details.ai-chat-thinking > .ai-chat-thinking-heading {
 
 .ai-settings-chips:empty {
     display: none;
+}
+
+/* A rule field and its Add button on one line. */
+.ai-settings-rule-entry {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.ai-settings-rule-entry input {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.ai-settings-rule-entry button {
+    flex: none;
 }
 
 .ai-settings-chip {
