@@ -58,6 +58,8 @@ from app.services.search_text import (
     build_searchable_base_text_casefold,
     list_link_title_urls,
 )
+from app.services.file_registry import file_registry
+from app.services.file_text_search import SEARCHABLE_FILE_KINDS, file_texts
 from app.services.text_terms import text_term_matches
 from app.utils.time_units import MS_PER_SECOND
 
@@ -516,6 +518,9 @@ class SearchIndex:
         self._alive: Set[int] = set()
 
         self._note_text_casefold: List[str] = []
+        # The files whose text a note is also searched by (file_text_search.py: PDFs it shows),
+        # for the notes showing some.
+        self._note_text_file_ids: Dict[int, Tuple[str, ...]] = {}
         # Notes are also searchable by the cached titles of URLs written in them.
         # A title can arrive or disappear later, so keep each note's URLs (and,
         # for notes with URLs, its text without titles) to recompose its text.
@@ -1496,6 +1501,8 @@ class SearchIndex:
         for term_casefold in {term.casefold() for term in self._note_raw_tag_terms[note_int_id]}:
             self._raw_tag_notes_casefold.remove(term_casefold)
         self._note_text_casefold[note_int_id] = ""
+        if note_int_id in self._note_text_file_ids:
+            del self._note_text_file_ids[note_int_id]
         self._set_note_properties_locked(note_int_id, "")
         self._set_link_title_urls_locked(note_int_id, frozenset())
         if note_int_id in self._note_base_text_casefold:
@@ -1995,6 +2002,29 @@ class SearchIndex:
         elif note_int_id in self._note_base_text_casefold:
             del self._note_base_text_casefold[note_int_id]
         self._note_text_casefold[note_int_id] = append_link_titles_casefold(base_text_casefold, link_title_urls)
+        text_file_ids = tuple(
+            file_id for file_id, _name in file_registry.referenced_file_names(content_text)
+            if file_registry.thumbnail_kind_of(file_id) in SEARCHABLE_FILE_KINDS
+        )
+        if text_file_ids:
+            self._note_text_file_ids[note_int_id] = text_file_ids
+        elif note_int_id in self._note_text_file_ids:
+            del self._note_text_file_ids[note_int_id]
+
+    def file_texts_changed(self) -> None:
+        """Files' text became searchable: results kept from before are worked out again (a view
+        already drawn is not: only a new search shows them, docs/ui/interaction-principles.md 2)."""
+        with self._lock:
+            self._revision += 1
+            self._result_cache.clear()
+
+    def _text_term_matches_locked(self, note_int_id: int, term: str) -> bool:
+        """Whether the quoted term is in the note's searchable text or the text of a file it shows."""
+        if text_term_matches(term, self._note_text_casefold[note_int_id]):
+            return True
+        if note_int_id not in self._note_text_file_ids:
+            return False
+        return any(file_texts.term_matches(file_id, term) for file_id in self._note_text_file_ids[note_int_id])
 
     def _set_link_title_urls_locked(self, note_int_id: int, urls: FrozenSet[str]) -> None:
         previous_urls = self._note_link_title_urls[note_int_id]
@@ -2157,12 +2187,11 @@ class SearchIndex:
         }
 
     def _verify_note_matches_locked(self, note_int_id: int, clause: SearchClause) -> bool:
-        text_casefold = self._note_text_casefold[note_int_id]
         for term in clause.required_text:
-            if not text_term_matches(term, text_casefold):
+            if not self._text_term_matches_locked(note_int_id, term):
                 return False
         for term in clause.forbidden_text:
-            if text_term_matches(term, text_casefold):
+            if self._text_term_matches_locked(note_int_id, term):
                 return False
         note_tag_terms_casefold = self._note_tag_terms_casefold[note_int_id]
         for tag in clause.forbidden_tags:
@@ -2203,6 +2232,7 @@ class SearchIndex:
 
 
 search_index = SearchIndex()
+file_texts.on_changed(search_index.file_texts_changed)
 # A fetched, decrypted or cleared URL title changes which notes match a text search.
 link_title_store.add_titles_changed_listener(search_index.refresh_link_titles)
 

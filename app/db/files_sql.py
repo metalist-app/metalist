@@ -6,7 +6,7 @@ import sqlite3
 from datetime import datetime
 from typing import Iterable, Optional
 
-from app.db.file_schema import FILE_PREVIEW_VARIANTS, FILE_PREVIEWS_TABLE, FILES_TABLE
+from app.db.file_schema import FILE_PREVIEW_VARIANTS, FILE_PREVIEWS_TABLE, FILE_TEXTS_TABLE, FILES_TABLE
 
 
 def _serialize_datetime(value: datetime) -> str:
@@ -400,3 +400,109 @@ def update_file_preview_storage_fields(
     )
     if cursor.rowcount != 1:
         raise RuntimeError(f"file preview rewrite expected one row | file_id={file_id} variant={variant}")
+
+
+
+# --- A file's text for search (file_schema's FILE_TEXTS_TABLE) ------------------------------
+
+
+def upsert_file_text(
+    connection: sqlite3.Connection,
+    *,
+    file_id: str,
+    text_data: bytes,
+    text_encryption_nonce: Optional[bytes],
+    text_encryption_tag: Optional[bytes],
+    filter_data: bytes,
+    filter_encryption_nonce: Optional[bytes],
+    filter_encryption_tag: Optional[bytes],
+    is_cut: bool,
+    content_revision: int,
+    updated_at: datetime,
+) -> None:
+    if not isinstance(content_revision, int) or content_revision < 1:
+        raise TypeError(f"file_texts.content_revision must be a positive integer | file_id={file_id}")
+    connection.execute(
+        f"""
+        INSERT INTO {FILE_TEXTS_TABLE} (
+            file_id, text_data, text_encryption_nonce, text_encryption_tag, filter_data,
+            filter_encryption_nonce, filter_encryption_tag, is_cut, content_revision, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(file_id) DO UPDATE SET
+            text_data = excluded.text_data,
+            text_encryption_nonce = excluded.text_encryption_nonce,
+            text_encryption_tag = excluded.text_encryption_tag,
+            filter_data = excluded.filter_data,
+            filter_encryption_nonce = excluded.filter_encryption_nonce,
+            filter_encryption_tag = excluded.filter_encryption_tag,
+            is_cut = excluded.is_cut,
+            content_revision = excluded.content_revision,
+            updated_at = excluded.updated_at
+        """,
+        (
+            file_id, text_data, text_encryption_nonce, text_encryption_tag, filter_data,
+            filter_encryption_nonce, filter_encryption_tag, int(is_cut), content_revision, _serialize_datetime(updated_at),
+        ),
+    )
+
+
+def fetch_file_text(connection: sqlite3.Connection, file_id: str) -> Optional[dict[str, object]]:
+    """A file's stored text (still encrypted), or None when it has none yet."""
+    row = connection.execute(
+        f"SELECT file_id, text_data, text_encryption_nonce, text_encryption_tag, is_cut, content_revision "
+        f"FROM {FILE_TEXTS_TABLE} WHERE file_id = ?",
+        (file_id,),
+    ).fetchone()
+    if row is None:
+        return None
+    return dict(row)
+
+
+def fetch_all_file_text_filters(connection: sqlite3.Connection) -> list[dict[str, object]]:
+    """Every stored file text's filter (still encrypted), cut flag and revision: what login loads."""
+    rows = connection.execute(
+        f"SELECT file_id, filter_data, filter_encryption_nonce, filter_encryption_tag, is_cut, content_revision "
+        f"FROM {FILE_TEXTS_TABLE} ORDER BY file_id ASC"
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def fetch_all_file_texts(connection: sqlite3.Connection) -> list[dict[str, object]]:
+    rows = connection.execute(f"SELECT * FROM {FILE_TEXTS_TABLE} ORDER BY file_id ASC").fetchall()
+    return [dict(row) for row in rows]
+
+
+def update_file_text_storage_fields(
+    connection: sqlite3.Connection,
+    *,
+    file_id: str,
+    text_data: bytes,
+    text_encryption_nonce: Optional[bytes],
+    text_encryption_tag: Optional[bytes],
+    filter_data: bytes,
+    filter_encryption_nonce: Optional[bytes],
+    filter_encryption_tag: Optional[bytes],
+) -> None:
+    """Rewrite a file text's ciphertext during encryption migrations, nothing else."""
+    cursor = connection.execute(
+        f"""
+        UPDATE {FILE_TEXTS_TABLE}
+        SET text_data = ?, text_encryption_nonce = ?, text_encryption_tag = ?,
+            filter_data = ?, filter_encryption_nonce = ?, filter_encryption_tag = ?
+        WHERE file_id = ?
+        """,
+        (text_data, text_encryption_nonce, text_encryption_tag, filter_data, filter_encryption_nonce, filter_encryption_tag, file_id),
+    )
+    if cursor.rowcount != 1:
+        raise RuntimeError(f"file text rewrite expected one row | file_id={file_id}")
+
+
+
+def fetch_content_revisions(connection: sqlite3.Connection, file_ids: list[str]) -> dict[str, int]:
+    """The content revision of each of these files still present, by id."""
+    revisions: dict[str, int] = {}
+    for file_id in file_ids:
+        row = connection.execute(f"SELECT content_revision FROM {FILES_TABLE} WHERE id = ?", (file_id,)).fetchone()
+        if row is not None:
+            revisions[file_id] = int(row["content_revision"])
+    return revisions

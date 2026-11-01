@@ -18,6 +18,10 @@ from app.db.files_sql import (
     fetch_all_file_ids,
     fetch_all_file_metadata,
     fetch_all_file_previews,
+    fetch_all_file_text_filters,
+    fetch_all_file_texts,
+    fetch_content_revisions,
+    fetch_file_text,
     fetch_file_metadata,
     fetch_file_preview,
     require_file_size,
@@ -29,6 +33,8 @@ from app.db.files_sql import (
     update_file_preview_storage_fields,
     update_file_storage_fields,
     upsert_file_preview,
+    upsert_file_text,
+    update_file_text_storage_fields,
 )
 from app.security.encryption import (
     get_encryption_service,
@@ -36,6 +42,14 @@ from app.security.encryption import (
     is_encryption_required,
 )
 from app.services.file_registry import FileDetails, file_registry
+from app.services.file_text_search import (
+    SEARCHABLE_FILE_KINDS,
+    ExtractedText,
+    FileTextStorage,
+    StoredFileText,
+    StoredFilter,
+    file_texts,
+)
 from app.services.input_errors import InputRejected
 from app.services.note_store import store as note_store
 from app.utils.file_names import MAX_FILE_NAME_CHARACTERS, replace_unsafe_filename_characters, split_extension
@@ -270,6 +284,9 @@ def create_file(
         )
 
     file_registry.add_with_thumbnail_kind(file_id, thumbnail_kind=metadata["thumbnail_kind"], title=title)
+    if metadata["thumbnail_kind"] in SEARCHABLE_FILE_KINDS:
+        # Its text, for search, beside the request (folder-import-and-file-previews.md).
+        file_texts.refresh_in_background()
     return FileReferenceRecord(
         id=file_id,
         title=title,
@@ -745,6 +762,11 @@ def encrypt_all_files_for_active_dek(*, encryption_service: object) -> int:
             decrypt_encryption_service=service,
             encrypt_encryption_service=service,
         )
+        _rewrite_file_texts(
+            connection=connection,
+            decrypt_encryption_service=service,
+            encrypt_encryption_service=service,
+        )
     return rewritten_count
 
 
@@ -769,6 +791,11 @@ def decrypt_all_files_for_plaintext(*, encryption_service: object) -> int:
             )
             rewritten_count += 1
         _rewrite_file_previews(
+            connection=connection,
+            decrypt_encryption_service=service,
+            encrypt_encryption_service=None,
+        )
+        _rewrite_file_texts(
             connection=connection,
             decrypt_encryption_service=service,
             encrypt_encryption_service=None,
@@ -1163,3 +1190,127 @@ def _parse_file_metadata(metadata_json: str, *, file_id: str) -> dict[str, objec
         "size_bytes": size_bytes,
         "thumbnail_kind": thumbnail_kind,
     }
+
+
+
+# --- A file's text for search (file_text_search.py; folder-import-and-file-previews.md) ------
+
+
+def _stored_payload(
+    *, encryption_service: object, row: dict[str, object], field: str, file_id: str,
+) -> bytes:
+    return _decrypt_blob_field(
+        encryption_service=encryption_service,
+        value=row[f"{field}_data"],
+        nonce=row[f"{field}_encryption_nonce"],
+        tag=row[f"{field}_encryption_tag"],
+        field_name=f"{field}_data",
+        file_id=file_id,
+    )
+
+
+def _read_file_text(file_id: str) -> StoredFileText | None:
+    encryption_service = _resolve_encryption_service(None)
+    with connect_file_reader() as connection:
+        row = fetch_file_text(connection, file_id)
+    if row is None:
+        return None
+    text = _stored_payload(encryption_service=encryption_service, row=row, field="text", file_id=file_id)
+    return StoredFileText(text=text.decode("utf-8"), is_cut=bool(row["is_cut"]), content_revision=int(row["content_revision"]))
+
+
+def _read_file_text_filters() -> list[StoredFilter]:
+    encryption_service = _resolve_encryption_service(None)
+    with connect_file_reader() as connection:
+        rows = fetch_all_file_text_filters(connection)
+    return [
+        StoredFilter(
+            file_id=str(row["file_id"]),
+            filter_bytes=_stored_payload(encryption_service=encryption_service, row=row, field="filter", file_id=str(row["file_id"])),
+            is_cut=bool(row["is_cut"]),
+            content_revision=int(row["content_revision"]),
+        )
+        for row in rows
+    ]
+
+
+def _searchable_files() -> dict[str, int]:
+    file_ids = sorted(set().union(*(file_registry.file_ids_of_kind(kind) for kind in SEARCHABLE_FILE_KINDS)))
+    with connect_file_reader() as connection:
+        return fetch_content_revisions(connection, file_ids)
+
+
+def _store_file_text(file_id: str, extracted: ExtractedText, filter_bytes: bytes, content_revision: int) -> None:
+    encryption_service = _resolve_encryption_service(None)
+    text_data, text_nonce, text_tag = _encrypt_bytes_for_storage(
+        encryption_service=encryption_service, plaintext=extracted.text.encode("utf-8"),
+    )
+    filter_data, filter_nonce, filter_tag = _encrypt_bytes_for_storage(
+        encryption_service=encryption_service, plaintext=filter_bytes,
+    )
+    with begin_file_writer() as connection:
+        # Deleted meanwhile: nothing to keep.
+        if fetch_file(connection, file_id) is None:
+            return
+        upsert_file_text(
+            connection, file_id=file_id, text_data=text_data, text_encryption_nonce=text_nonce,
+            text_encryption_tag=text_tag, filter_data=filter_data, filter_encryption_nonce=filter_nonce,
+            filter_encryption_tag=filter_tag, is_cut=extracted.is_cut, content_revision=content_revision,
+            updated_at=datetime.now(timezone.utc),
+        )
+
+
+def _file_bytes_if_present(file_id: str) -> bytes | None:
+    """The file's content, or None when it was deleted (a background read races deletions)."""
+    encryption_service = _resolve_encryption_service(None)
+    with connect_file_reader() as connection:
+        row = fetch_file(connection, file_id)
+    if row is None:
+        return None
+    return _decrypt_blob_field(
+        encryption_service=encryption_service, value=row["blob_data"], nonce=row["blob_encryption_nonce"],
+        tag=row["blob_encryption_tag"], field_name="blob_data", file_id=file_id,
+    )
+
+
+file_texts.install_storage(FileTextStorage(
+    read_text=_read_file_text,
+    read_filters=_read_file_text_filters,
+    searchable_files=_searchable_files,
+    read_file_bytes=_file_bytes_if_present,
+    file_name=file_registry.title_of,
+    store_text=_store_file_text,
+))
+
+
+def _rewrite_file_texts(
+    *,
+    connection,
+    decrypt_encryption_service: object,
+    encrypt_encryption_service: object | None,
+) -> None:
+    for row in fetch_all_file_texts(connection):
+        file_id = str(row["file_id"])
+        text_data, text_nonce, text_tag = _rewritten_payload(
+            row=row, field="text", file_id=file_id,
+            decrypt_encryption_service=decrypt_encryption_service, encrypt_encryption_service=encrypt_encryption_service,
+        )
+        filter_data, filter_nonce, filter_tag = _rewritten_payload(
+            row=row, field="filter", file_id=file_id,
+            decrypt_encryption_service=decrypt_encryption_service, encrypt_encryption_service=encrypt_encryption_service,
+        )
+        update_file_text_storage_fields(
+            connection, file_id=file_id, text_data=text_data, text_encryption_nonce=text_nonce, text_encryption_tag=text_tag,
+            filter_data=filter_data, filter_encryption_nonce=filter_nonce, filter_encryption_tag=filter_tag,
+        )
+
+
+def _rewritten_payload(
+    *, row: dict[str, object], field: str, file_id: str,
+    decrypt_encryption_service: object, encrypt_encryption_service: object | None,
+) -> tuple[bytes, Optional[bytes], Optional[bytes]]:
+    """One payload of a file text decrypted, then encrypted again (or left plain without a key)."""
+    plaintext = _stored_payload(encryption_service=decrypt_encryption_service, row=row, field=field, file_id=file_id)
+    if encrypt_encryption_service is None:
+        return plaintext, None, None
+    return _encrypt_bytes_for_storage(encryption_service=encrypt_encryption_service, plaintext=plaintext)

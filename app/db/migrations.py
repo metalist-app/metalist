@@ -9,6 +9,7 @@ import re
 
 from app.db.version import CURRENT_DATABASE_VERSION
 from app.db.editable_files_migration import add_editable_file_schema
+from app.db.file_texts_migration import add_file_texts_table
 from app.db.retire_sounds import retire_sounds
 from app.db.schema import LINK_ICONS_COLUMNS, LINK_ICONS_TABLE, create_link_icons_table, create_namespace_content_migrations_table
 from app.services.encryption import EncryptionService
@@ -434,6 +435,7 @@ _MIGRATION_STEPS: tuple[Callable[..., int], ...] = (
     add_editable_file_schema,
     add_ai_provider_credential_columns,
     add_link_icons_table,
+    add_file_texts_table,
 )
 _MIGRATIONS: dict[int, Callable[..., int]] = dict(enumerate(_MIGRATION_STEPS))
 assert len(_MIGRATION_STEPS) == CURRENT_DATABASE_VERSION, "every database version below the current one needs a step"

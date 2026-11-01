@@ -37,6 +37,7 @@ from app.services.root_sorting import normalize_sort_mode
 from app.services.root_date_filter import RootDateFilter, filter_root_ids_by_date, local_today
 from app.services.quoted_values import split_tokens
 from app.services.search_index import search_index
+from app.services.file_text_snippets import with_file_text_snippets
 from app.services.search_query import ParsedSearchQuery, SearchClause, parse_search_query, search_highlight_phrases
 from app.services.tag_properties import PropertyCondition, tag_part_of_token
 from app.services.sync import get_all_locks
@@ -1092,6 +1093,15 @@ def _render_note_content_html(rec: NoteRecord, *, is_collapsed: bool, context: E
     )
 
 
+def shows_file_text_snippets(flags: Dict[str, object], *, is_search_redacted: bool) -> bool:
+    """Whether a note in the list shows its files' search snippets: not while edited (its cards
+    are their lines then), not folded (folding was the user's choice, and a snippet would make
+    the note taller), not hidden by the search. A note saved folded with nothing to fold shows
+    them: it folds nothing, and has no arrow to open it with."""
+    is_folded = bool(flags["isCollapsed"]) and bool(flags["isCollapsible"])
+    return not flags["isEditing"] and not is_folded and not is_search_redacted
+
+
 def _render_view_note(
     rec: NoteRecord, *, editing_note_id: str | None, is_search_redacted: bool,
     force_uncollapsed_ids: Set[str], filter_active: bool,
@@ -1206,6 +1216,8 @@ def build_view_state(
     filter_active = selection.scope.search_active
     allowed_note_ids = selection.scope.allowed_note_ids
     visible_root_ids_ordered = selection.visible_roots
+    # The search's quoted phrases: a file whose text holds one shows a snippet under its card.
+    snippet_phrases = tuple(view_search_highlight_phrases(search))
     force_uncollapsed_ids = selection.forced_open_ids
 
     def traverse(parent_id: Optional[str]) -> None:
@@ -1241,6 +1253,8 @@ def build_view_state(
                 allowed_note_ids=allowed_note_ids, traversal_cache=traversal_cache,
                 embed_render_context=embed_render_context,
             )
+            if shows_file_text_snippets(flags, is_search_redacted=is_search_redacted):
+                rendered_content = with_file_text_snippets(rendered_content, snippet_phrases)
 
             h = _compute_hash(
                 rendered_content,

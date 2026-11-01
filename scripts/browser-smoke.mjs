@@ -31,6 +31,7 @@ import {checkSortedTabs} from './browser-sorted-tab-regressions.mjs';
 import {checkDateRange, checkFileFilter, checkOpenQuoteSearch, checkSearchBarMenu, checkSearchInputRejected} from './browser-search-input-regressions.mjs';
 import {checkDictationPaste} from './browser-dictation-paste-regressions.mjs';
 import {checkFileDropPreviews} from './browser-file-drop-preview-regressions.mjs';
+import {checkFileTextSnippets} from './browser-file-text-snippet-regressions.mjs';
 import {checkImageMenu} from './browser-image-menu-regressions.mjs';
 import {checkTagSuggestionMenu} from './browser-tag-suggestion-menu-regressions.mjs';
 import {checkPasteFormats} from './browser-paste-format-regressions.mjs';
@@ -407,6 +408,10 @@ try {
     await checkEditPreviews(page);
     assert.deepEqual(errors, []);
     console.log(`PASS edit preview regressions in ${await browser.version()}`);
+  } else if (process.env.BROWSER_TEST_SUITE === 'file-text-snippets') {
+    await checkFileTextSnippets(page);
+    assert.deepEqual(errors, []);
+    console.log(`PASS file text snippet regressions in ${await browser.version()}`);
   } else if (process.env.BROWSER_TEST_SUITE === 'email-files') {
     await checkEmailFiles(page);
     assert.deepEqual(errors, []);

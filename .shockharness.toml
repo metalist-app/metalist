@@ -493,6 +493,12 @@ exception = "json.JSONDecodeError"
 reason = "an uploaded Excalidraw scene is user input: invalid JSON is rejected as invalid file content"
 
 [[tool.shockharness.rules.exceptions.boundaries]]
+path = "app/services/file_text_search.py"
+language = "python"
+exceptions = ["ValueError", "pypdf.errors.PyPdfError"]
+reason = "A PDF is the user's file: one that can't be read keeps no searchable text and matches by name only."
+
+[[tool.shockharness.rules.exceptions.boundaries]]
 path = "app/services/image_compression.py"
 language = "python"
 exceptions = ["OSError", "PIL.Image.DecompressionBombError", "PIL.UnidentifiedImageError", "SyntaxError", "ValueError"]

@@ -42,6 +42,13 @@ payload; this is distinct from readable database structure and container sizes.
 Excalidraw diagram previews (`file_previews.preview_data`) are encrypted like
 attachment bytes; their file ID, light/dark variant, SVG MIME type and the file
 content revision counter are readable structural metadata.
+Files' text for search (`file_texts`, database version 13: a PDF's extracted text and a bloom
+filter of its four-letter pieces) encrypts both the text (`text_data`) and the filter
+(`filter_data`): a filter can be asked whether a file holds a word. Their file ID, whether the
+text was cut at its 5 MB cap (`is_cut`), the file content revision it was read from and its
+time are readable structural metadata. At login only the filters are decrypted into memory;
+a file's text is decrypted only when a search's filter check says it may match, and kept in a
+bounded cache; both are dropped when the vault locks (`app/services/file_text_search.py`).
 Site icons beside link titles (`link_icons`, database version 12) encrypt the site
 (`origin`) and the icon (`icon_png`) like link titles; their lookup status, last
 error kind, failure count and check timestamps are readable structural metadata.
@@ -783,6 +790,8 @@ Attachment uploads default to 100 MiB per file, configurable with positive-byte 
 Lock ownership: synchronous route transactions and background hydration/link publication use `bulk_operation_guard.lock`; its separate short admission mutex protects mutation counts and bulk operation/question state. No admission mutex is held across an await. Bulk answers/cancellation are queued with `call_soon_threadsafe`. Tokens and sync/clipboard operations each have their own RLock and return copied snapshots; clipboard snapshots copy nested values. NoteStore, search index, tab/reminder/link stores and sensitive caches retain their existing private locks. Hydration/link work checks the runtime generation before publishing. Acquire the outer bulk lock before admission/service locks; do not acquire the outer bulk lock from inside a service lock. These guards protect existing mutation paths, not a general serializable snapshot API spanning every independent GET.
 
 Temporary DB read permission is a ContextVar layered over startup's global read state, so one thread/task cannot enable another's reads or restore a stale global value.
+
+Database version 13 adds the `file_texts` table (encrypted text and bloom filter of a file, for search) to the files database. The step is additive and idempotent, so it also accepts a files database the app already upgraded on open; the encryption audit accepts the table missing or present before version 13 and requires it from version 13.
 
 Database version 10 adds `content_revision` to attachments and the `file_previews` table (encrypted Excalidraw diagram previews) to the files database. The step is additive and idempotent, so it also accepts a files database the app already upgraded on open; the encryption audit accepts either shape before version 10 and requires both from version 10.
 

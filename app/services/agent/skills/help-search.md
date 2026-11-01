@@ -173,6 +173,11 @@ Text matching is:
 - Also against the names of files the note references (a PDF or other file shown by
   its name): `"congratulation"` finds a note holding `0025018697_CongratulationLetter.pdf`.
   Find (⌘F) finds file names in the list too.
+- Also against the text inside the PDFs the note shows: `"rent is due"` finds a note holding
+  a lease PDF that says it, with a line of the PDF's text shown under its card, the words
+  marked. A new PDF is searchable a few seconds after it arrives; a scanned, damaged or
+  password-locked PDF is found by name only; search covers a PDF's first ~2,000 pages. Find
+  (⌘F) doesn't search PDF text.
 - Also against the titles of web pages linked in the note: for each `http(s)` URL
   in the note (written out, or hidden behind a link label), the page title
   MetaList has already fetched and stored. Titles are fetched when a URL on its own

@@ -107,10 +107,18 @@ Text matching is:
   file registry's reader (`FileRegistry.read_stored_file`, which `file_storage` installs), and
   keeps its words in a sensitive cache, emptied when the vault locks; only files whose kind can
   be an email (`other`, `text`) are read. An email's content never changes in place.
-- Planned (agreed 2026-11-01, ready to build): also against the text of the PDF, Word and RTF
-  files the note references, kept encrypted with each file and found through a per-file bloom
-  filter of 4-letter pieces, only possible matches decrypted and checked:
-  `docs/ready-to-build/folder-import-and-file-previews.md`, "Searchable file text".
+- Also against the text of the PDFs the note shows (built 2026-11-01; Word and RTF to follow):
+  each PDF's text is extracted once in the background when it arrives (or after login, for
+  files already in MetaList), up to 5 MB, and kept encrypted with the file beside a bloom filter
+  of its 4-letter pieces (`file_texts`, files database version 13). At login only the filters
+  are loaded; a quoted term of 4 or more characters reads a file's text only when its filter says
+  it may be there, a shorter one reads every file's, so the results are those of reading every
+  file whole. Text read stays in a 64 MB cache emptied when the vault locks. A PDF not read yet
+  (just added, just after login) matches by name only until it is; an open view doesn't change
+  when that happens, the next search finds it. A scan or a PDF that can't be read matches by
+  name only. `app/services/file_text_search.py`; tests: `tests/unit/test_file_text_search.py`.
+  Where a required phrase is in a file's text, a snippet of it shows under the file's card (see
+  docs/ui/references.md, "File text snippets"). Find in the list (`Cmd+F`) doesn't search it.
 - Also against the titles of web pages linked in the note: for each `http(s)` URL
   in the note (written out, or hidden behind a link label), the page title
   MetaList has already fetched and stored. Titles are fetched when a URL on its own

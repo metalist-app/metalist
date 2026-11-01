@@ -1,4 +1,7 @@
 const NOTE_CONTENT_SELECTOR = '.note-content';
+// A file's search snippet under its card (file_text_snippets.py): no part of the note's text,
+// and gone when the note folds, so its lines never make a note foldable.
+const FILE_TEXT_SNIPPET_SELECTOR = '.note-file-text-snippet';
 const META_STATUS_TEXT_SELECTOR = ':scope > .meta-status > .meta-status-text, :scope > .note-with-backlinks > .meta-status > .meta-status-text';
 const COLLAPSED_DATA_KEY = 'isCollapsed';
 const CAN_COLLAPSE_DATA_KEY = 'canCollapse';
@@ -73,6 +76,7 @@ function textLineRects(contentElement) {
     const walker = globalThis.document.createTreeWalker(contentElement, globalThis.NodeFilter.SHOW_TEXT);
     const rects = [];
     for (let text = walker.nextNode(); text !== null; text = walker.nextNode()) {
+        if (text.parentElement.closest(FILE_TEXT_SNIPPET_SELECTOR) !== null) continue;
         range.selectNodeContents(text);
         rects.push(...range.getClientRects());
     }

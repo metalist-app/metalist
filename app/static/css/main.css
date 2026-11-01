@@ -4860,6 +4860,22 @@ img.link-title-icon,
     gap: 6px;
 }
 
+/* A search's phrase in the file's text: a line or two of it under the card, the phrase marked
+   by the search highlight (docs/ready-to-build/folder-import-and-file-previews.md, "Searchable
+   file text"). Part of the card, so a click on it does what a click on the card does. */
+.note-file-text-snippet {
+    display: block;
+    font-size: 13px;
+    line-height: 1.45;
+    color: #4b5563;
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+
+html[data-theme="dark"] .note-file-text-snippet {
+    color: rgba(229, 231, 235, 0.75);
+}
+
 .note-file-image-embed {
     display: flex;
     flex-direction: column;
