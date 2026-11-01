@@ -7,6 +7,25 @@ import { CommandGate } from '../mode-manager/services/command-gate-service.js';
 import { FloatingMessages } from '../floating-messages.js';
 
 const NO_FOLDER = 'No folder chosen';
+// The import's two choices (import-export-launch.md §2.2), the defaults first.
+const SPLIT_CHOICES = [
+    { value: 'paragraphs', label: 'Headings, lists and paragraphs', title: 'Every heading, list item and paragraph becomes a note of its own, nested as in the file.' },
+    { value: 'headings-and-lists', label: 'Headings and lists', title: 'Headings and list items become notes; a run of paragraphs stays together in one note.' },
+    { value: 'none', label: 'No splitting', title: 'Each file becomes one note.' },
+];
+const CONTENT_CHOICES = [
+    { value: 'rich', label: 'Rich text', title: "MetaList's own formatting: bold, links, tables and the rest drawn as you edit." },
+    { value: 'markdown', label: 'Markdown', title: 'The Markdown as written, in notes tagged @markdown.' },
+];
+
+function choicesHtml(name, legend, choices, chosen, isDisabled) {
+    const options = choices.map((choice) => `
+            <label class="obsidian-import-choice" title="${escapeHtml(choice.title)}">
+                <input type="radio" name="${name}" value="${choice.value}"${choice.value === chosen ? ' checked' : ''}${isDisabled ? ' disabled' : ''}>
+                ${escapeHtml(choice.label)}
+            </label>`).join('');
+    return `<fieldset class="obsidian-import-choices"><legend>${escapeHtml(legend)}</legend>${options}</fieldset>`;
+}
 const PATH_SEPARATOR_RE = /[\\/]+$/;
 
 // A chosen folder as its name and the path above it (the path as the folder dialog gave it).
@@ -34,7 +53,7 @@ export class ObsidianImportModal extends BaseModal {
     }
 
     getInitialModalState() {
-        return { folderPath: '', busy: false };
+        return { folderPath: '', busy: false, splitMode: SPLIT_CHOICES[0].value, contentFormat: CONTENT_CHOICES[0].value };
     }
 
     showModalElement() {
@@ -63,8 +82,8 @@ export class ObsidianImportModal extends BaseModal {
             <div class="modal-content obsidian-import-modal-content">
                 <h2>Import Obsidian Vault</h2>
                 <p class="note-layout-description">Developer version. Every Markdown file becomes a note at the top of
-                    your list, as Markdown, tagged with its folder and <code>imported:source=obsidian</code>.
-                    The vault's folder is only read.</p>
+                    your list, tagged with its folder and <code>imported:source=obsidian</code>. The vault's folder
+                    is only read.</p>
                 <div class="obsidian-import-folder">
                     <div class="obsidian-import-folder-box" title="${escapeHtml(state.folderPath)}">
                         <span class="obsidian-import-folder-name">${escapeHtml(folder.name)}</span>
@@ -72,6 +91,8 @@ export class ObsidianImportModal extends BaseModal {
                     </div>
                     <button type="button" class="secondary-btn" data-obsidian-import-choose${state.busy ? ' disabled' : ''}>Choose Folder…</button>
                 </div>
+                ${choicesHtml('obsidian-import-split', 'Split each file into', SPLIT_CHOICES, state.splitMode, state.busy)}
+                ${choicesHtml('obsidian-import-content', 'Write notes as', CONTENT_CHOICES, state.contentFormat, state.busy)}
                 ${actionRowHtml({
                     alternative: null,
                     cancel: null,
@@ -84,6 +105,12 @@ export class ObsidianImportModal extends BaseModal {
             </div>
         `;
         modalElement.querySelector('[data-obsidian-import-choose]').onclick = async () => this._chooseFolder();
+        for (const input of modalElement.querySelectorAll('input[name="obsidian-import-split"]')) {
+            input.onchange = () => this.updateModalState({ splitMode: input.value });
+        }
+        for (const input of modalElement.querySelectorAll('input[name="obsidian-import-content"]')) {
+            input.onchange = () => this.updateModalState({ contentFormat: input.value });
+        }
         modalElement.querySelector('[data-obsidian-import-run]').onclick = async () => this._import();
     }
 
@@ -107,7 +134,8 @@ export class ObsidianImportModal extends BaseModal {
         // dialog stays as it was, ready for another folder.
         // Through the command gate, as every server action: a second click meanwhile is dropped.
         await CommandGate.run('obsidianImport.import', async () => {
-            const result = await NotesAPI.importObsidianVault(this.getModalState().folderPath);
+            const { folderPath, splitMode, contentFormat } = this.getModalState();
+            const result = await NotesAPI.importObsidianVault(folderPath, splitMode, contentFormat);
             if (!Number.isInteger(result.noteCount)) {
                 throw new Error('Obsidian import response missing noteCount');
             }

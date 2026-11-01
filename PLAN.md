@@ -57,6 +57,7 @@ come later.
 ## Slices, each with its own early look and sample vault
 
 ### Slice 1: files in, as Markdown, with a report
+**Built 2026-10-31** (checkpoint `a8135b8b`).
 1. In development the command palette has "Import Obsidian vault…"; in production it isn't
    there and the route answers 404.
 2. Importing a vault makes one root note per `.md` file, wherever it sits. `.obsidian/`,
@@ -128,6 +129,12 @@ The same importer, offered as its own option, for a folder of Markdown files fro
 5. A daily note named `2026-10-30.md` also gets `@datetime=2026-10-30` (B6).
 
 ### Slice 4: split modes and rich text
+**Built 2026-10-31** (`app/services/obsidian_import/blocks.py`, `content.py`, `tree.py`). Settled
+while building it: tasks are MetaList tasks (`@todo`, `@done`) in either content, since an
+`@markdown` note can't show a task box; a list right after a heading gives the heading
+`@bullets`/`@numbered` only when the list is all its section holds; No splitting as rich text
+is one note, tasks there shown as ☐ and ☑; the import report comes in split and written as
+chosen. Also built alongside it: `Delete Notes (Current View)…` (`docs/ui/command-palette.md`).
 1. The dialog offers the split modes: No splitting, Headings and lists, and Headings, lists
    and paragraphs (the default). It also offers the content: Rich text (the default) or
    Markdown.

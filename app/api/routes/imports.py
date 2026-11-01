@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from http import HTTPStatus
-from typing import Annotated, TypedDict
+from typing import Annotated, Literal, TypedDict
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import ConfigDict, Field, with_config
@@ -26,6 +26,9 @@ _FOLDER_PROMPT = "Choose an Obsidian vault to import into MetaList"
 @with_config(ConfigDict(strict=True))
 class ObsidianImportRequest(TypedDict):
     folderPath: Annotated[str, Field(min_length=1, max_length=_MAX_FOLDER_PATH_LENGTH)]
+    # obsidian_import.tree's SPLIT_MODES and CONTENT_FORMATS (import-export-launch.md §2.2).
+    splitMode: Literal["none", "headings-and-lists", "paragraphs"]
+    contentFormat: Literal["rich", "markdown"]
 
 
 def _require_development() -> None:
@@ -50,5 +53,6 @@ def import_obsidian_vault(request: Request, body: ObsidianImportRequest) -> dict
     _require_development()
     token = require_request_auth_token(request)
     return CmdImportObsidianVault(
-        folder_path=body["folderPath"], token=token, imported_at=datetime.now(timezone.utc),
+        folder_path=body["folderPath"], split_mode=body["splitMode"], content_format=body["contentFormat"],
+        token=token, imported_at=datetime.now(timezone.utc),
     ).execute()

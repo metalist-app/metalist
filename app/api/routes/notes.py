@@ -10,6 +10,8 @@ from fastapi.responses import Response
 from pydantic import BaseModel
 
 from app.api.note_requests import (
+    CountNotesInViewRequest,
+    DeleteNotesInViewRequest,
     ViewScope,
     ViewDiffRequest,
     FindInListRequest,
@@ -86,7 +88,8 @@ from app.services.root_date_filter import make_root_date_filter
 from app.services.snapshot import build_view_state
 from app.services.snapshot import find_in_view
 from app.services.snapshot import resolve_search_scope
-from app.services.snapshot import resolve_view_scope_membership
+from app.services.snapshot import ResolvedViewScope, resolve_view_scope_membership
+from app.usecases.delete_notes_in_view import CmdDeleteNotesInView, notes_to_delete
 from app.services.note_store import store as note_store
 from app.services.exception_capture import CapturedExceptionContext
 from app.usecases.create_note import CmdCreateNote
@@ -1340,13 +1343,36 @@ def add_tag_proposals(request: Request, note_id: str, body: AddTagProposalsReque
 def _view_note_ids(body: ViewScope) -> frozenset[str]:
     """The notes a tab's view shows (as /notes/view resolves them): what a robot count counts, and
     what ranks first in the `[[` suggestions."""
+    return _resolved_view(body).allowed_note_ids
+
+
+def _resolved_view(body: ViewScope) -> ResolvedViewScope:
     return resolve_view_scope_membership(
         search=body["search"],
         sort_mode=_resolve_tab_sort_mode(body["tabId"]),
         date_filter=_resolve_tab_date_filter(body["tabId"]),
         file_filter=_resolve_tab_file_filter(body["tabId"]),
         is_untagged_view=body["isUntaggedView"],
-    ).allowed_note_ids
+    )
+
+
+@router.post("/notes/view/delete-count")
+@transactional_route
+def count_notes_to_delete_in_view(body: CountNotesInViewRequest) -> dict[str, object]:
+    deletion = notes_to_delete(_resolved_view(body))
+    return {"noteCount": deletion.note_count, "isWholeVault": deletion.is_whole_vault}
+
+
+@router.post("/notes/view/delete")
+@transactional_route
+def delete_notes_in_view(body: DeleteNotesInViewRequest) -> dict[str, object]:
+    _require_viewport(body)
+    return CmdDeleteNotesInView(
+        scope=_resolved_view(body),
+        expected_note_count=body["expectedNoteCount"],
+        client_id=body["clientId"],
+        undo_context=body["undoContext"],
+    ).execute()
 
 
 @router.post("/notes/{note_id}/tag-proposals/open")

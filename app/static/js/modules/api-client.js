@@ -351,6 +351,23 @@ export const NotesAPI = {
         return { search, tabId, isUntaggedView: ModeContext.isUntaggedView };
     },
 
+    // Delete Notes (Current View)…: what the view would delete, then the deletion, which the
+    // server refuses if the count changed since the user confirmed it.
+    async countNotesToDeleteInView() {
+        return this._apiCall(CONFIG.API.NOTES.DELETE_IN_VIEW_COUNT, {
+            method: 'POST', body: JSON.stringify(this.viewScope()),
+        });
+    },
+
+    async deleteNotesInView(expectedNoteCount) {
+        if (!Number.isInteger(expectedNoteCount) || expectedNoteCount < 0) {
+            throw new Error('NotesAPI.deleteNotesInView requires the confirmed note count');
+        }
+        return this._apiCall(CONFIG.API.NOTES.DELETE_IN_VIEW, {
+            method: 'POST', claimSession: true, body: JSON.stringify({ expectedNoteCount, ...this.viewScope() }),
+        });
+    },
+
     // Click on a collapsed note's robot: open the way to every proposal it counts.
     async openToTagProposals(noteId) {
         if (typeof noteId !== 'string' || noteId.length === 0) {
@@ -467,11 +484,14 @@ export const NotesAPI = {
         return this._apiCall(CONFIG.API.IMPORT.OBSIDIAN_PICK_FOLDER, { method: 'POST', body: JSON.stringify({}) });
     },
 
-    async importObsidianVault(folderPath) {
-        if (typeof folderPath !== 'string' || folderPath.length === 0) {
-            throw new Error('NotesAPI.importObsidianVault requires folderPath');
+    async importObsidianVault(folderPath, splitMode, contentFormat) {
+        if (typeof folderPath !== 'string' || folderPath.length === 0
+            || typeof splitMode !== 'string' || typeof contentFormat !== 'string') {
+            throw new Error('NotesAPI.importObsidianVault requires folderPath, splitMode and contentFormat');
         }
-        return this._apiCall(CONFIG.API.IMPORT.OBSIDIAN, { method: 'POST', body: JSON.stringify({ folderPath }) });
+        return this._apiCall(CONFIG.API.IMPORT.OBSIDIAN, {
+            method: 'POST', body: JSON.stringify({ folderPath, splitMode, contentFormat }),
+        });
     },
 
     async unformatNote(noteId) {

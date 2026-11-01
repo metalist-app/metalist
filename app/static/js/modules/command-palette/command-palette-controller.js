@@ -110,6 +110,7 @@ import {
 } from '../mode-manager/services/search-input-service.js';
 import { isViewingReferenceSource } from '../mode-manager/services/reference-source-navigation-service.js';
 import { CommandGate } from '../mode-manager/services/command-gate-service.js';
+import { FloatingMessages } from '../floating-messages.js';
 import { openFindBar } from '../mode-manager/services/find-in-list-service.js';
 import { cancelDebouncedSearchExecution } from '../mode-manager/services/search-debounce-service.js';
 import { attachPickedFileToCurrentNote, pickFileForAttachment } from '../mode-manager/services/file-reference-service.js';
@@ -512,6 +513,7 @@ class CommandPaletteController {
                 alphabetizeRootNotesAsc: this.alphabetizeRootNotesAsc.bind(this),
                 alphabetizeRootNotesDesc: this.alphabetizeRootNotesDesc.bind(this),
                 resetUpdatedAtToCreatedAt: this.resetUpdatedAtToCreatedAt.bind(this),
+                deleteNotesInView: this.deleteNotesInView.bind(this),
                 openReminders: this.openReminders.bind(this),
 
                 openVersionInfo: this.openVersionInfo.bind(this),
@@ -2114,6 +2116,49 @@ class CommandPaletteController {
 
     async alphabetizeRootNotesDesc() {
         await this._alphabetizeRootNotes('desc');
+    }
+
+    // Delete Notes (Current View)… (docs/ui/command-palette.md): the notes the view finds, each
+    // with everything under it, or every note when nothing narrows the view; confirmed with
+    // the count, which the server checks again before it deletes.
+    async deleteNotesInView() {
+        const isReady = await this._prepareForModalOpen('commandPalette.deleteNotesInView');
+        if (!isReady) {
+            return;
+        }
+        const { noteCount, isWholeVault } = await NotesAPI.countNotesToDeleteInView();
+        if (!Number.isInteger(noteCount) || typeof isWholeVault !== 'boolean') {
+            throw new Error('Delete-in-view count response malformed');
+        }
+        if (noteCount === 0) {
+            FloatingMessages.show({
+                text: 'This view shows no notes to delete.', type: 'info', detail: '', isClosable: false, isLasting: false, key: null,
+            });
+            return;
+        }
+        let title = `Delete the ${noteCount} notes in this view?`;
+        let description = `This deletes every note this view's search finds, with everything under it (${noteCount} notes in all). Notes above them stay.`;
+        if (isWholeVault) {
+            title = `Delete all ${noteCount} notes in this vault?`;
+            description = `No search is active, so this deletes every note in this vault: all ${noteCount} of them.`;
+        }
+        const confirmed = await this._confirmAction('commandPalette.deleteNotesInView.confirm', {
+            eyebrow: 'Delete Notes',
+            title,
+            description: `${description} ⌘Z can't bring them back, and undo history is cleared; only a backup can.`,
+            confirmLabel: `Delete ${noteCount} Notes`,
+            isDangerous: true,
+        });
+        if (!confirmed) {
+            return;
+        }
+        await CommandGate.run('commandPalette.deleteNotesInView', async () => {
+            const result = await NotesAPI.deleteNotesInView(noteCount);
+            await actionRefreshAndMaybeSelect({ startedAt: performance.now(), context: 'deleteNotesInView' });
+            FloatingMessages.show({
+                text: `Deleted ${result.deletedCount} notes.`, type: 'success', detail: '', isClosable: false, isLasting: false, key: null,
+            });
+        });
     }
 
     async resetUpdatedAtToCreatedAt() {

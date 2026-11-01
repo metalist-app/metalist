@@ -317,6 +317,10 @@
       "tags": ["alphabetize", "alphabetical", "alpha", "sort", "content", "root", "notes", "current", "view", "search", "desc", "descending", "z", "a", "journal", "order", "reorder"]
     },
     {
+      "id": "action.delete_notes_in_view",
+      "tags": ["delete", "remove", "clear", "erase", "wipe", "notes", "all", "everything", "current", "view", "search", "results", "bulk", "import", "imported"]
+    },
+    {
       "id": "action.reset_updated_at_to_created_at",
       "tags": ["repair", "fix", "restore", "set", "reset", "updated", "created", "updated_at", "created_at", "timestamp", "timestamps", "time", "date", "dates", "last", "modified", "edited", "edit", "root", "notes", "current", "view", "search", "journal"]
     },

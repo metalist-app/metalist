@@ -65,6 +65,7 @@ export const COMMAND_SHORTCUTS = Object.freeze({
 export const DESTRUCTIVE_COMMAND_IDS = Object.freeze(new Set([
     'action.alphabetize_root_notes_asc',
     'action.alphabetize_root_notes_desc',
+    'action.delete_notes_in_view',
     'action.prioritize_tag_back',
     'action.prioritize_tag_front',
     'action.remove_all_tag_suggestions_current_context',
@@ -166,6 +167,7 @@ export function buildCommandPaletteEndpoints(deps) {
     const alphabetizeRootNotesAsc = requireAction(actions, 'alphabetizeRootNotesAsc');
     const alphabetizeRootNotesDesc = requireAction(actions, 'alphabetizeRootNotesDesc');
     const resetUpdatedAtToCreatedAt = requireAction(actions, 'resetUpdatedAtToCreatedAt');
+    const deleteNotesInView = requireAction(actions, 'deleteNotesInView');
     const openReminders = requireAction(actions, 'openReminders');
 
     const openVersionInfo = requireAction(actions, 'openVersionInfo');
@@ -754,6 +756,13 @@ export function buildCommandPaletteEndpoints(deps) {
             label: 'Repair: Reset Updated Time to Created Time (Current View)…',
             closeOnExecute: true,
             execute: async () => resetUpdatedAtToCreatedAt(),
+        },
+        {
+            id: 'action.delete_notes_in_view',
+            kind: 'action',
+            label: 'Delete Notes (Current View)…',
+            closeOnExecute: true,
+            execute: async () => deleteNotesInView(),
         },
         {
             id: 'action.open_keyboard_shortcuts_help',

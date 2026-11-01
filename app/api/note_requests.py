@@ -304,6 +304,24 @@ class ViewScope(TypedDict):
     tabId: Identifier
     isUntaggedView: bool
 
+# Deleting the notes a view shows (Delete Notes (Current View)…): first counted for the
+# confirmation, then deleted only if that count still holds.
+@with_config(ConfigDict(strict=True))
+class CountNotesInViewRequest(TypedDict):
+    search: Text
+    tabId: Identifier
+    isUntaggedView: bool
+
+@with_config(ConfigDict(strict=True))
+class DeleteNotesInViewRequest(TypedDict):
+    search: Text
+    tabId: Identifier
+    isUntaggedView: bool
+    expectedNoteCount: Nonnegative
+    clientId: Identifier
+    undoContext: UndoContext
+    viewport: Viewport
+
 # The view a robot count (🤖 N) was shown in: its tab, search ('' for none) and kind.
 @with_config(ConfigDict(strict=True))
 class OpenToTagProposalsRequest(TypedDict):

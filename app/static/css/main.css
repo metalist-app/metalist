@@ -763,6 +763,34 @@ html[data-theme="dark"] .visual-cues-description {
     flex: none;
 }
 
+.obsidian-import-choices {
+    display: grid;
+    gap: 6px;
+    margin: 0 0 16px;
+    padding: 0;
+    border: none;
+}
+
+.obsidian-import-choices legend {
+    margin-bottom: 6px;
+    padding: 0;
+    font-weight: 600;
+}
+
+.obsidian-import-choice {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 8px;
+    cursor: pointer;
+}
+
+.modal-content .obsidian-import-choice input[type="radio"] {
+    flex: none;
+    width: auto;
+    margin: 0;
+}
+
 html[data-theme="dark"] .obsidian-import-folder-box {
     border-color: #3a3a3a;
     background: #1c1c1c;

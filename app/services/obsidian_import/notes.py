@@ -15,11 +15,18 @@ from typing import Dict, List, Tuple
 import yaml
 
 from app.services.exception_capture import CapturedExceptionContext
+from app.services.file_text_preview import plain_text_to_note_html
+from app.services.obsidian_import.tree import (
+    CONTENT_MARKDOWN,
+    MARKDOWN_TAG,
+    SPLIT_NONE,
+    NoteNode,
+    build_file_tree,
+)
 from app.services.obsidian_import.vault import VaultFile
 from app.services.tag_characters import clean_tag_text
 from app.services.tag_ontology import is_valid_tag_token
 
-MARKDOWN_TAG = "@markdown"
 # Every imported root note carries it: `imported` finds (and `-imported` hides) every import,
 # children included; its values tell the source and the import apart (the maintainer, 2026-10-31).
 SOURCE_TAG_FORMAT = "imported:source=obsidian:at={at}"
@@ -78,11 +85,10 @@ class FileFindings:
 
 @dataclass(frozen=True)
 class PlannedNote:
-    """A note the import will write: its Markdown (first line the title), its tags, times,
-    and the file it comes from."""
+    """The notes a file becomes: its root note (with the file's tags) and what is under it,
+    their times, and the file they come from."""
 
-    text: str
-    tags: str
+    root: NoteNode
     # The file's folder as a tag ("" at the vault's top).
     folder_tag: str
     created_at: datetime
@@ -91,8 +97,10 @@ class PlannedNote:
     findings: FileFindings
 
 
-def plan_file_note(vault_file: VaultFile, *, uses_strict_line_breaks: bool, source_tag: str) -> PlannedNote:
-    """The note vault_file becomes (PLAN.md, slice 1)."""
+def plan_file_note(
+    vault_file: VaultFile, *, uses_strict_line_breaks: bool, source_tag: str, split_mode: str, content_format: str,
+) -> PlannedNote:
+    """The notes vault_file becomes (PLAN.md, slices 1 and 4)."""
     text = vault_file.text.replace("\r\n", "\n").replace("\r", "\n")
     frontmatter, body, frontmatter_problem = _read_frontmatter(text)
     renamed_tags: List[Tuple[str, str]] = []
@@ -105,13 +113,16 @@ def plan_file_note(vault_file: VaultFile, *, uses_strict_line_breaks: bool, sour
         tag = _made_tag(name, renamed_tags=renamed_tags, dropped_tags=dropped_tags)
         if tag != "":
             tags.append(tag)
-    tags.extend([MARKDOWN_TAG, source_tag])
     lines = body.split("\n")
     lines, block_id_count = _without_block_ids(lines)
     has_comments = _has_comments(lines)
     if not uses_strict_line_breaks:
         lines = _with_standard_line_breaks(lines)
-    note_text = _titled_text(_title(vault_file), lines)
+    title_line, rest = _title_and_body(_title(vault_file), lines)
+    root = _file_root(title_line, rest, split_mode=split_mode, content_format=content_format)
+    root = NoteNode(
+        content_html=root.content_html, tags=tuple(_unique_tags([*tags, *root.tags, source_tag])), children=root.children,
+    )
     times_problem = ""
     created_at, problem = _frontmatter_time(frontmatter, _CREATED_KEY, vault_file.created_at)
     times_problem += problem
@@ -126,8 +137,7 @@ def plan_file_note(vault_file: VaultFile, *, uses_strict_line_breaks: bool, sour
         block_id_count=block_id_count,
     )
     return PlannedNote(
-        text=note_text,
-        tags=" ".join(_unique_tags(tags)),
+        root=root,
         folder_tag=folder_tag,
         created_at=created_at,
         updated_at=updated_at,
@@ -249,20 +259,27 @@ def _title(vault_file: VaultFile) -> str:
     return unicodedata.normalize("NFC", vault_file.path.stem)
 
 
-def _titled_text(title: str, lines: List[str]) -> str:
-    """The note's Markdown: its first line the title, then the file's text. A first heading
-    that repeats the title is that first line (mapping B2)."""
+def _title_and_body(title: str, lines: List[str]) -> Tuple[str, str]:
+    """The root note's first line and the file's text under it: a first heading that repeats
+    the title is that first line (mapping B2), otherwise the title as Markdown text."""
     content_index = 0
     while content_index < len(lines) and lines[content_index].strip() == "":
         content_index += 1
     if content_index < len(lines):
         heading = _ATX_HEADING_RE.match(lines[content_index])
         if heading is not None and _same_title(heading.group("text"), title):
-            return "\n".join(lines[content_index:]).rstrip("\n")
-    rest = "\n".join(lines[content_index:]).rstrip("\n")
-    if rest == "":
-        return _escaped_title(title)
-    return f"{_escaped_title(title)}\n\n{rest}"
+            return lines[content_index].strip(), "\n".join(lines[content_index + 1:]).strip("\n")
+    return _escaped_title(title), "\n".join(lines[content_index:]).rstrip("\n")
+
+
+def _file_root(title_line: str, body: str, *, split_mode: str, content_format: str) -> NoteNode:
+    """The file's notes. Kept whole as Markdown, the note is the file's text as written."""
+    if split_mode == SPLIT_NONE and content_format == CONTENT_MARKDOWN:
+        text = title_line
+        if body != "":
+            text = f"{title_line}\n\n{body}"
+        return NoteNode(content_html=plain_text_to_note_html(text), tags=(MARKDOWN_TAG,), children=())
+    return build_file_tree(title_line=title_line, body=body, split_mode=split_mode, content_format=content_format)
 
 
 def _same_title(heading: str, title: str) -> bool:

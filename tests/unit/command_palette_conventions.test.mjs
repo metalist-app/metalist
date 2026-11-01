@@ -110,6 +110,7 @@ const LABELS = {
     'action.alphabetize_root_notes_asc': 'Alphabetize Root Notes A-Z (Current View)…',
     'action.alphabetize_root_notes_desc': 'Alphabetize Root Notes Z-A (Current View)…',
     'action.reset_updated_at_to_created_at': 'Repair: Reset Updated Time to Created Time (Current View)…',
+    'action.delete_notes_in_view': 'Delete Notes (Current View)…',
     'action.open_keyboard_shortcuts_help': 'Keyboard Shortcuts',
 };
 
@@ -129,6 +130,7 @@ test('destructive commands are the ones that lose what cannot be brought back', 
     assert.deepEqual([...DESTRUCTIVE_COMMAND_IDS].sort(), [
         'action.alphabetize_root_notes_asc',
         'action.alphabetize_root_notes_desc',
+        'action.delete_notes_in_view',
         'action.prioritize_tag_back',
         'action.prioritize_tag_front',
         'action.remove_all_tag_suggestions_current_context',
