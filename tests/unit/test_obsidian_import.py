@@ -9,11 +9,13 @@ from app.utils.text_utils import strip_html
 
 import hashlib
 import re
+from io import BytesIO
 import typing
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 
 import pytest
+from PIL import Image
 
 import app.api.routes.imports as imports_routes
 import app.services.obsidian_import.file_groups as file_groups_module
@@ -22,6 +24,7 @@ from app.db.file_session import begin_file_writer
 from app.db.notes_sql import insert_note
 from app.models.database import SafeSession
 from app.security import encryption
+from app.services.image_compression import ImageChoice
 from app.services import note_store as note_store_module
 from app.services import store as store_module
 from app.services.file_registry import file_registry
@@ -44,7 +47,15 @@ from app.services.search_index import SearchIndex, tag_bar_values
 from app.services.structured_note_renderers import extract_plain_text_from_note_html
 from app.services.tag_ontology import TagOntology
 import app.usecases.import_obsidian_vault as import_module
-from app.usecases.import_obsidian_vault import CmdImportFolderOfFiles, CmdImportObsidianVault, CmdPreviewImport, FileSelection
+from app.services.file_storage import DownloadedFile
+from app.usecases.import_obsidian_vault import (
+    CmdEstimateImportImages,
+    CmdImportFolderOfFiles,
+    CmdImportObsidianVault,
+    CmdPreviewFolderOfFiles,
+    CmdPreviewImport,
+    FileSelection,
+)
 
 FIXTURE_VAULT = Path(__file__).resolve().parents[1] / "fixtures" / "obsidian-vault"
 IMPORTED_AT = datetime(2026, 10, 31, 21, 5, tzinfo=timezone.utc)
@@ -52,6 +63,8 @@ SOURCE_TAG = source_tag_for(IMPORTED_AT, "obsidian")
 FILE_TIME = datetime(2025, 1, 2, 3, 4, tzinfo=timezone.utc)
 # The vault is not encrypted in these tests: any token stores files in plain text.
 TOKEN = "token"
+# Images as they are (the Images screen's first choice).
+KEEP_ORIGINALS = ImageChoice(compresses=False, longest_side_px=2560)
 
 
 def planned(path: str, text: str, *, strict: bool) -> PlannedNote:
@@ -274,7 +287,7 @@ def first_line(store: NoteStore, note_id: str) -> str:
 # No import report (the maintainer, 2026-11-01): the files alone, at the top, folders first.
 def test_a_vault_comes_in_as_root_notes_at_the_top_folders_first(note_store: NoteStore) -> None:
     before = folder_fingerprint(FIXTURE_VAULT)
-    result = CmdImportObsidianVault(source="obsidian", folder_path=str(FIXTURE_VAULT), split_mode=SPLIT_NONE, content_format=CONTENT_MARKDOWN, folder_prefix="", add_to_existing=False, token=TOKEN, imported_at=IMPORTED_AT).execute()
+    result = CmdImportObsidianVault(source="obsidian", folder_path=str(FIXTURE_VAULT), split_mode=SPLIT_NONE, content_format=CONTENT_MARKDOWN, folder_prefix="", add_to_existing=False, images=KEEP_ORIGINALS, token=TOKEN, imported_at=IMPORTED_AT).execute()
     roots = note_store.get_children(None)
     assert len(roots) == 12 + 1
     assert roots[-1] == "mine"
@@ -297,7 +310,7 @@ def test_files_come_in_folders_first_each_a_to_z(tmp_path: Path, note_store: Not
         (tmp_path / path).write_text(Path(path).stem)
     CmdImportObsidianVault(
         source="obsidian", folder_path=str(tmp_path), split_mode=SPLIT_NONE, content_format=CONTENT_MARKDOWN,
-        folder_prefix="", add_to_existing=False, token=TOKEN, imported_at=IMPORTED_AT,
+        folder_prefix="", add_to_existing=False, images=KEEP_ORIGINALS, token=TOKEN, imported_at=IMPORTED_AT,
     ).execute()
     roots = note_store.get_children(None)[:-1]
     assert [first_line(note_store, note_id) for note_id in roots] == ["y", "z", "x", "a", "b"]
@@ -309,13 +322,13 @@ def test_files_come_in_folders_first_each_a_to_z(tmp_path: Path, note_store: Not
 ])
 def test_a_folder_that_is_no_vault_is_refused(note_store: NoteStore, folder: str, message: str) -> None:
     with pytest.raises(InputRejected, match=message):
-        CmdImportObsidianVault(source="obsidian", folder_path=folder, split_mode=SPLIT_NONE, content_format=CONTENT_MARKDOWN, folder_prefix="", add_to_existing=False, token=TOKEN, imported_at=IMPORTED_AT).execute()
+        CmdImportObsidianVault(source="obsidian", folder_path=folder, split_mode=SPLIT_NONE, content_format=CONTENT_MARKDOWN, folder_prefix="", add_to_existing=False, images=KEEP_ORIGINALS, token=TOKEN, imported_at=IMPORTED_AT).execute()
 
 
 def test_a_folder_without_markdown_is_refused(note_store: NoteStore, tmp_path: Path) -> None:
     (tmp_path / "picture.png").write_bytes(b"x")
     with pytest.raises(InputRejected, match="holds no Markdown files"):
-        CmdImportObsidianVault(source="obsidian", folder_path=str(tmp_path), split_mode=SPLIT_NONE, content_format=CONTENT_MARKDOWN, folder_prefix="", add_to_existing=False, token=TOKEN, imported_at=IMPORTED_AT).execute()
+        CmdImportObsidianVault(source="obsidian", folder_path=str(tmp_path), split_mode=SPLIT_NONE, content_format=CONTENT_MARKDOWN, folder_prefix="", add_to_existing=False, images=KEEP_ORIGINALS, token=TOKEN, imported_at=IMPORTED_AT).execute()
     assert note_store.get_children(None) == ["mine"]
 
 
@@ -329,13 +342,14 @@ def test_the_folder_picker_answers_with_the_chosen_folder(monkeypatch: pytest.Mo
     monkeypatch.setattr(imports_routes, "require_request_auth_token", lambda request: "token")
     monkeypatch.setattr(imports_routes, "pick_folder", lambda *, prompt: str(FIXTURE_VAULT))
     body = {"source": "obsidian"}
-    # The fixture's Markdown files, its Excalidraw-free top and hidden folders aside.
+    # The fixture's Markdown files, its Excalidraw-free top and hidden folders aside, and its
+    # one image compression would shrink (the Images screen shows).
     assert imports_routes.pick_import_folder(request=_Request(), body=body) == {
-        "selected": True, "folderPath": str(FIXTURE_VAULT), "fileCount": 13,
+        "selected": True, "folderPath": str(FIXTURE_VAULT), "fileCount": 13, "imageCount": 1,
     }
     monkeypatch.setattr(imports_routes, "pick_folder", lambda *, prompt: None)
     assert imports_routes.pick_import_folder(request=_Request(), body=body) == {
-        "selected": False, "folderPath": "", "fileCount": 0,
+        "selected": False, "folderPath": "", "fileCount": 0, "imageCount": 0,
     }
 
 
@@ -446,7 +460,7 @@ def test_a_file_kept_whole_as_rich_text_is_one_note() -> None:
 
 def test_a_split_import_writes_each_files_notes_under_it(note_store: NoteStore) -> None:
     result = CmdImportObsidianVault(
-        source="obsidian", folder_path=str(FIXTURE_VAULT), split_mode=SPLIT_PARAGRAPHS, content_format=CONTENT_RICH, folder_prefix="", add_to_existing=False, token=TOKEN,
+        source="obsidian", folder_path=str(FIXTURE_VAULT), split_mode=SPLIT_PARAGRAPHS, content_format=CONTENT_RICH, folder_prefix="", add_to_existing=False, images=KEEP_ORIGINALS, token=TOKEN,
         imported_at=IMPORTED_AT,
     ).execute()
     roots = note_store.get_children(None)
@@ -464,7 +478,7 @@ def test_the_summary_counts_every_note_the_import_writes(note_store: NoteStore) 
     ).execute()
     before = len(note_store.list_note_ids())
     CmdImportObsidianVault(
-        source="obsidian", folder_path=str(FIXTURE_VAULT), split_mode=SPLIT_PARAGRAPHS, content_format=CONTENT_RICH, folder_prefix="", add_to_existing=False, token=TOKEN,
+        source="obsidian", folder_path=str(FIXTURE_VAULT), split_mode=SPLIT_PARAGRAPHS, content_format=CONTENT_RICH, folder_prefix="", add_to_existing=False, images=KEEP_ORIGINALS, token=TOKEN,
         imported_at=IMPORTED_AT,
     ).execute()
     # Every note the import wrote (once 38 said, 75 written: a split report the summary missed).
@@ -476,7 +490,7 @@ def test_the_summary_counts_every_note_the_import_writes(note_store: NoteStore) 
 # missing raw text" on every imported note).
 def test_imported_notes_are_in_the_content_caches(note_store: NoteStore) -> None:
     CmdImportObsidianVault(
-        source="obsidian", folder_path=str(FIXTURE_VAULT), split_mode=SPLIT_PARAGRAPHS, content_format=CONTENT_RICH, folder_prefix="", add_to_existing=False, token=TOKEN,
+        source="obsidian", folder_path=str(FIXTURE_VAULT), split_mode=SPLIT_PARAGRAPHS, content_format=CONTENT_RICH, folder_prefix="", add_to_existing=False, images=KEEP_ORIGINALS, token=TOKEN,
         imported_at=IMPORTED_AT,
     ).execute()
     for note_id in note_store.list_note_ids():
@@ -493,7 +507,7 @@ def test_imported_notes_are_in_the_content_caches(note_store: NoteStore) -> None
 def imported_tree(store: NoteStore, *, split_mode: str, content_format: str) -> dict[str, str]:
     """Import the fixture vault; each imported note's id by its first line (the first one wins)."""
     CmdImportObsidianVault(
-        source="obsidian", folder_path=str(FIXTURE_VAULT), split_mode=split_mode, content_format=content_format, folder_prefix="", add_to_existing=False, token=TOKEN,
+        source="obsidian", folder_path=str(FIXTURE_VAULT), split_mode=split_mode, content_format=content_format, folder_prefix="", add_to_existing=False, images=KEEP_ORIGINALS, token=TOKEN,
         imported_at=IMPORTED_AT,
     ).execute()
     ids: dict[str, str] = {}
@@ -565,7 +579,7 @@ def test_links_find_notes_as_obsidian_does(tmp_path: Path, note_store: NoteStore
         (tmp_path / path).parent.mkdir(parents=True, exist_ok=True)
         (tmp_path / path).write_text(text)
     CmdImportObsidianVault(
-        source="obsidian", folder_path=str(tmp_path), split_mode=SPLIT_NONE, content_format=CONTENT_RICH, folder_prefix="", add_to_existing=False, token=TOKEN, imported_at=IMPORTED_AT,
+        source="obsidian", folder_path=str(tmp_path), split_mode=SPLIT_NONE, content_format=CONTENT_RICH, folder_prefix="", add_to_existing=False, images=KEEP_ORIGINALS, token=TOKEN, imported_at=IMPORTED_AT,
     ).execute()
     # Each note's last line is its file's text, which tells the two Index notes apart.
     by_body = {
@@ -582,7 +596,7 @@ def test_a_canvas_comes_in_as_a_file_in_a_note_of_its_own(tmp_path: Path, note_s
     (tmp_path / "Board.canvas").write_text('{"nodes": [], "edges": []}')
     (tmp_path / "Sketch.excalidraw.md").write_text("# Excalidraw Data")
     CmdImportObsidianVault(
-        source="obsidian", folder_path=str(tmp_path), split_mode=SPLIT_NONE, content_format=CONTENT_RICH, folder_prefix="", add_to_existing=False, token=TOKEN, imported_at=IMPORTED_AT,
+        source="obsidian", folder_path=str(tmp_path), split_mode=SPLIT_NONE, content_format=CONTENT_RICH, folder_prefix="", add_to_existing=False, images=KEEP_ORIGINALS, token=TOKEN, imported_at=IMPORTED_AT,
     ).execute()
     roots = note_store.get_children(None)
     names = {file_id: file_registry.title_of(file_id) for file_id in file_registry.list_ids()}
@@ -598,7 +612,7 @@ def test_a_file_too_large_is_left_out_and_its_links_stay_as_written(tmp_path: Pa
     (tmp_path / "Note.md").write_text("See ![[big.png]]")
     (tmp_path / "big.png").write_bytes(b"12345")
     CmdImportObsidianVault(
-        source="obsidian", folder_path=str(tmp_path), split_mode=SPLIT_NONE, content_format=CONTENT_RICH, folder_prefix="", add_to_existing=False, token=TOKEN, imported_at=IMPORTED_AT,
+        source="obsidian", folder_path=str(tmp_path), split_mode=SPLIT_NONE, content_format=CONTENT_RICH, folder_prefix="", add_to_existing=False, images=KEEP_ORIGINALS, token=TOKEN, imported_at=IMPORTED_AT,
     ).execute()
     assert "See ![[big.png]]" in extract_plain_text_from_note_html(note_store.get_note(note_store.get_children(None)[0]).content)
     assert file_registry.list_ids() == set()
@@ -614,7 +628,7 @@ def test_a_markdown_folder_comes_in_with_its_own_source(tmp_path: Path, note_sto
     (tmp_path / ".obsidian" / "app.json").write_text("{broken")
     CmdImportObsidianVault(
         source="markdown", folder_path=str(tmp_path), split_mode=SPLIT_NONE, content_format=CONTENT_MARKDOWN,
-        folder_prefix="", add_to_existing=False, token=TOKEN, imported_at=IMPORTED_AT,
+        folder_prefix="", add_to_existing=False, images=KEEP_ORIGINALS, token=TOKEN, imported_at=IMPORTED_AT,
     ).execute()
     roots = note_store.get_children(None)
     trip = note_store.get_note(roots[0])
@@ -637,12 +651,13 @@ def test_the_preview_counts_what_the_import_would_do_and_writes_nothing(note_sto
     ).execute()
     imported = CmdImportObsidianVault(
         source="obsidian", folder_path=str(FIXTURE_VAULT), split_mode=SPLIT_PARAGRAPHS, content_format=CONTENT_RICH,
-        folder_prefix="", add_to_existing=False, token=TOKEN, imported_at=IMPORTED_AT,
+        folder_prefix="", add_to_existing=False, images=KEEP_ORIGINALS, token=TOKEN, imported_at=IMPORTED_AT,
     ).execute()
     # Every root note but the list's own note ("mine").
     imported_root_count = len(note_store.get_children(None)) - 1
     assert preview == {
-        "prefixFolder": "", "fileCount": 12, "noteCount": imported["noteCount"], "rootNoteCount": imported_root_count, "attachmentCount": 2, "folderTagCount": 6,
+        "prefixFolder": "", "fileCount": 12, "noteCount": imported["noteCount"], "rootNoteCount": imported_root_count,
+        "textFileCount": 12, "keptFileCount": imported_root_count - 12, "attachmentCount": 2, "folderTagCount": 6,
         "filesWithCommentsCount": 1, "blockIdCount": 1, "calloutCount": 1, "missingLinkCount": 1,
         "unreadableFileCount": 1, "unusedAttachmentCount": 1, "overLimitCount": 0,
     }
@@ -681,7 +696,7 @@ def test_a_folder_name_with_nothing_a_tag_can_hold_is_refused() -> None:
 def _import_into(tmp_path: Path, prefix: str, *, add_to_existing: bool) -> None:
     CmdImportObsidianVault(
         source="obsidian", folder_path=str(tmp_path), split_mode=SPLIT_NONE, content_format=CONTENT_MARKDOWN,
-        folder_prefix=prefix, add_to_existing=add_to_existing, token=TOKEN, imported_at=IMPORTED_AT,
+        folder_prefix=prefix, add_to_existing=add_to_existing, images=KEEP_ORIGINALS, token=TOKEN, imported_at=IMPORTED_AT,
     ).execute()
 
 
@@ -788,7 +803,7 @@ def test_a_folder_of_files_comes_in_every_file_a_note_the_unticked_left_out(tmp_
     })
     result = CmdImportFolderOfFiles(
         folder_path=str(tmp_path), selection=_selection(["hidden", "dependencies", "build"], excluded_files=(), included_files=()), split_mode=SPLIT_NONE,
-        content_format=CONTENT_MARKDOWN, folder_prefix="Stuff", add_to_existing=False, token=TOKEN, imported_at=IMPORTED_AT,
+        content_format=CONTENT_MARKDOWN, folder_prefix="Stuff", add_to_existing=False, images=KEEP_ORIGINALS, token=TOKEN, imported_at=IMPORTED_AT,
     ).execute()
     assert result["noteCount"] == 4
     roots = note_store.get_children(None)[:-1]
@@ -808,7 +823,7 @@ def test_nothing_ticked_is_refused(tmp_path: Path, note_store: NoteStore) -> Non
     with pytest.raises(InputRejected, match="tick at least one kind"):
         CmdImportFolderOfFiles(
             folder_path=str(tmp_path), selection=_selection(["hidden"], excluded_files=(), included_files=()), split_mode=SPLIT_NONE, content_format=CONTENT_MARKDOWN,
-            folder_prefix="", add_to_existing=False, token=TOKEN, imported_at=IMPORTED_AT,
+            folder_prefix="", add_to_existing=False, images=KEEP_ORIGINALS, token=TOKEN, imported_at=IMPORTED_AT,
         ).execute()
 
 
@@ -821,7 +836,7 @@ def test_single_files_can_be_ticked_against_their_kind(tmp_path: Path, note_stor
     CmdImportFolderOfFiles(
         folder_path=str(tmp_path),
         selection=_selection(["hidden"], excluded_files=("skip.png",), included_files=(".config/wanted.txt",)),
-        split_mode=SPLIT_NONE, content_format=CONTENT_MARKDOWN, folder_prefix="", add_to_existing=False, token=TOKEN,
+        split_mode=SPLIT_NONE, content_format=CONTENT_MARKDOWN, folder_prefix="", add_to_existing=False, images=KEEP_ORIGINALS, token=TOKEN,
         imported_at=IMPORTED_AT,
     ).execute()
     lines = {_shown_as(note_store, note_id) for note_id in note_store.get_children(None)[:-1]}
@@ -833,7 +848,7 @@ def test_a_ticked_file_no_longer_in_the_folder_is_refused(tmp_path: Path, note_s
     with pytest.raises(InputRejected, match="no longer in the folder"):
         CmdImportFolderOfFiles(
             folder_path=str(tmp_path), selection=_selection([], excluded_files=("gone.png",), included_files=()), split_mode=SPLIT_NONE,
-            content_format=CONTENT_MARKDOWN, folder_prefix="", add_to_existing=False, token=TOKEN, imported_at=IMPORTED_AT,
+            content_format=CONTENT_MARKDOWN, folder_prefix="", add_to_existing=False, images=KEEP_ORIGINALS, token=TOKEN, imported_at=IMPORTED_AT,
         ).execute()
 
 
@@ -845,7 +860,7 @@ def test_markdown_files_can_be_kept_as_files(tmp_path: Path, note_store: NoteSto
     selection = FileSelection(excluded_groups=(), excluded_files=(), included_files=(), keeps_markdown_as_files=True)
     CmdImportFolderOfFiles(
         folder_path=str(tmp_path), selection=selection, split_mode=SPLIT_NONE, content_format=CONTENT_MARKDOWN,
-        folder_prefix="", add_to_existing=False, token=TOKEN, imported_at=IMPORTED_AT,
+        folder_prefix="", add_to_existing=False, images=KEEP_ORIGINALS, token=TOKEN, imported_at=IMPORTED_AT,
     ).execute()
     roots = note_store.get_children(None)[:-1]
     assert {_shown_as(note_store, note_id) for note_id in roots} == {"README.md", "notes"}
@@ -865,3 +880,82 @@ def test_a_split_files_top_note_is_a_heading_note(text: str, split_mode: str) ->
 
 def test_a_whole_file_is_no_heading_note() -> None:
     assert "@heading" not in planned("Plan.md", "Body.", strict=True).root.tags
+
+
+# Images compressed (folder-import-and-file-previews.md, Images compressed; the maintainer,
+# 2026-11-01): acceptance checks (3), (4) and (9) through the import.
+PHOTO_SIZE = (4000, 3000)
+NOISE_SIGMA = 40
+PHOTO_QUALITY = 95
+
+
+def _photo_bytes() -> bytes:
+    picture = Image.merge("RGB", [Image.effect_noise(PHOTO_SIZE, NOISE_SIGMA) for _band in range(3)])
+    out = BytesIO()
+    picture.save(out, "JPEG", quality=PHOTO_QUALITY)
+    return out.getvalue()
+
+
+def _stored_file(store: NoteStore, note_id: str) -> bytes:
+    file_id = re.search(r"\[\[([0-9a-f-]{36})\]\]", strip_html(store.get_note(note_id).content)).group(1)
+    return typing.cast(DownloadedFile, file_registry.read_stored_file(file_id)).content_bytes
+
+
+@pytest.mark.parametrize("compresses_images", [False, True])
+def test_a_folder_of_files_images_come_in_compressed_only_when_asked(
+    tmp_path: Path, note_store: NoteStore, compresses_images: bool,
+) -> None:
+    photo = _photo_bytes()
+    _write_files(tmp_path, {"photo.jpg": photo, "notes.txt": b"Text"})
+    CmdImportFolderOfFiles(
+        folder_path=str(tmp_path), selection=_selection([], excluded_files=(), included_files=()), split_mode=SPLIT_NONE,
+        content_format=CONTENT_MARKDOWN, folder_prefix="", add_to_existing=False, images=ImageChoice(compresses=compresses_images, longest_side_px=2560),
+        token=TOKEN, imported_at=IMPORTED_AT,
+    ).execute()
+    photo_note = next(note_id for note_id in note_store.get_children(None)[:-1] if _shown_as(note_store, note_id) == "photo.jpg")
+    stored = _stored_file(note_store, photo_note)
+    if not compresses_images:
+        assert stored == photo
+        return
+    assert Image.open(BytesIO(stored)).size == (2560, 1920)
+    assert len(stored) < len(photo)
+
+
+def test_a_vaults_linked_image_comes_in_compressed(tmp_path: Path, note_store: NoteStore) -> None:
+    _write_files(tmp_path, {"Trip.md": b"Look:\n\n![[photo.jpg]]\n", "photo.jpg": _photo_bytes()})
+    CmdImportObsidianVault(
+        source="obsidian", folder_path=str(tmp_path), split_mode=SPLIT_NONE, content_format=CONTENT_MARKDOWN,
+        folder_prefix="", add_to_existing=False, images=ImageChoice(compresses=True, longest_side_px=2560), token=TOKEN, imported_at=IMPORTED_AT,
+    ).execute()
+    trip = note_store.get_children(None)[0]
+    assert Image.open(BytesIO(_stored_file(note_store, trip))).size == (2560, 1920)
+
+
+def test_the_image_estimate_counts_the_images_the_import_stores(tmp_path: Path, note_store: NoteStore) -> None:
+    photo = _photo_bytes()
+    _write_files(tmp_path, {"Trip.md": b"![[shown.jpg]]", "shown.jpg": photo, "unused.jpg": photo, "anim.gif": b"GIF89a"})
+    estimate = CmdEstimateImportImages(
+        source="obsidian", folder_path=str(tmp_path), selection=_selection([], excluded_files=(), included_files=()),
+        split_mode=SPLIT_NONE, content_format=CONTENT_MARKDOWN, folder_prefix="", imported_at=IMPORTED_AT,
+    ).execute()
+    assert estimate["imageCount"] == 1
+    assert estimate["imageBytes"] == len(photo)
+    by_side = typing.cast(dict[str, int], estimate["compressedBytes"])
+    assert sorted(by_side) == ["1280", "1920", "2560", "3840"]
+    assert 0 < by_side["1280"] < by_side["2560"] < len(photo)
+    files_estimate = CmdEstimateImportImages(
+        source="files", folder_path=str(tmp_path), selection=_selection([], excluded_files=("unused.jpg",), included_files=()),
+        split_mode=SPLIT_NONE, content_format=CONTENT_MARKDOWN, folder_prefix="", imported_at=IMPORTED_AT,
+    ).execute()
+    assert (files_estimate["imageCount"], files_estimate["imageBytes"]) == (1, len(photo))
+
+
+# The summary says how a folder of files' images come in: each a file in a note of its own,
+# shown as its picture (the maintainer, 2026-11-01: inside notes or as files?).
+def test_a_folder_of_files_preview_counts_text_files_kept_files_and_images(tmp_path: Path, note_store: NoteStore) -> None:
+    _write_files(tmp_path, {"notes.md": b"# Notes", "a.jpg": b"x", "Sub/b.PNG": b"x", "report.pdf": b"%PDF"})
+    preview = CmdPreviewFolderOfFiles(
+        folder_path=str(tmp_path), selection=_selection([], excluded_files=(), included_files=()), split_mode=SPLIT_NONE,
+        content_format=CONTENT_MARKDOWN, folder_prefix="", imported_at=IMPORTED_AT,
+    ).execute()
+    assert (preview["textFileCount"], preview["keptFileCount"], preview["keptImageCount"]) == (1, 3, 2)

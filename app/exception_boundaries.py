@@ -9,6 +9,8 @@ CAPTURE_BOUNDARIES = {
     # are reported, and the rest of the vault still comes in (PLAN.md).
     'app/services/obsidian_import/vault.py:_read_line_break_setting:settings_capture': ('JSONDecodeError',),
     'app/services/obsidian_import/notes.py:_read_frontmatter:yaml_capture': ('YAMLError',),
+    # An imported image that can't be read comes in uncompressed, as it is.
+    'app/services/image_compression.py:compressed_image:image_capture': ('DecompressionBombError', 'OSError', 'SyntaxError', 'UnidentifiedImageError', 'ValueError'),
     # Web retrieval translates only expected failures from untrusted remote targets.
     'app/services/agent/web_fetch.py:fetch_web_page:target_capture': ('PublicHttpTargetRejected',),
     'app/services/agent/web_fetch.py:_download_one_url:transport_capture': (

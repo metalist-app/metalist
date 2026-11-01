@@ -6,7 +6,7 @@ import test from 'node:test';
 // The body carries every field the server's ImportFolderRequest requires.
 const IMPORT_REQUEST_FIELDS = [
     'source', 'folderPath', 'splitMode', 'contentFormat', 'prefixFolder', 'addToExisting',
-    'excludedGroups', 'excludedFiles', 'includedFiles', 'keepsMarkdownAsFiles',
+    'excludedGroups', 'excludedFiles', 'includedFiles', 'keepsMarkdownAsFiles', 'compressesImages', 'imageLongestSide',
 ];
 
 test('an import request carries every field the server requires, the checklist\'s files too', async (t) => {
@@ -26,9 +26,11 @@ test('an import request carries every field the server requires, the checklist\'
     const body = JSON.parse(NotesAPI._importBody({
         source: 'files', folderPath: '/notes', splitMode: 'none', contentFormat: 'rich', prefixFolder: 'Notes',
         addToExisting: true, excludedGroups: ['hidden'], excludedFiles: ['a.png'], includedFiles: ['.config/b.txt'],
-        keepsMarkdownAsFiles: true,
+        keepsMarkdownAsFiles: true, compressesImages: true, imageLongestSide: 1920,
     }, 'previewImport'));
     assert.deepEqual(Object.keys(body).sort(), [...IMPORT_REQUEST_FIELDS].sort());
     assert.deepEqual(body.excludedFiles, ['a.png']);
     assert.deepEqual(body.includedFiles, ['.config/b.txt']);
+    assert.equal(body.compressesImages, true);
+    assert.equal(body.imageLongestSide, 1920);
 });

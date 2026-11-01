@@ -175,6 +175,12 @@ exceptions = ["FileNotFoundError", "app.services.input_errors.NamespaceInputReje
 reason = "Translate explicitly validated domain input/resource rejection."
 
 [[tool.shockharness.rules.exceptions.boundaries]]
+path = "app/api/routes/imports.py"
+language = "python"
+exception = "app.services.input_errors.InputRejected"
+reason = "A typed import folder name is user input: what is wrong with it is shown beside the field as it is typed."
+
+[[tool.shockharness.rules.exceptions.boundaries]]
 path = "app/api/routes/notes.py"
 language = "python"
 exceptions = ["app.services.input_errors.InputRejected", "app.services.selected_text_tag.SelectedTextTagValidationError"]
@@ -485,6 +491,12 @@ path = "app/services/file_storage.py"
 language = "python"
 exception = "json.JSONDecodeError"
 reason = "an uploaded Excalidraw scene is user input: invalid JSON is rejected as invalid file content"
+
+[[tool.shockharness.rules.exceptions.boundaries]]
+path = "app/services/image_compression.py"
+language = "python"
+exceptions = ["OSError", "PIL.Image.DecompressionBombError", "PIL.UnidentifiedImageError", "SyntaxError", "ValueError"]
+reason = "An imported image is the user's file: one that can't be read comes in uncompressed, as it is."
 
 [[tool.shockharness.rules.exceptions.boundaries]]
 path = "app/services/link_icons.py"

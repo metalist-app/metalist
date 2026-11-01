@@ -17,9 +17,9 @@ const NEXT = 'Next';
 const ALWAYS = () => true;
 const NOTHING_TO_WIRE = () => {};
 export const NOTHING_MISSING = () => '';
-const CHOICE_LAYOUTS = ['grid', 'stacked', 'compact', 'pair'];
-// A layout's classes: a pair is compact cards two across.
-const LAYOUT_CLASSES = { grid: 'is-grid', stacked: 'is-stacked', compact: 'is-compact', pair: 'is-compact is-pair' };
+const CHOICE_LAYOUTS = ['grid', 'stacked', 'compact', 'pair', 'quad'];
+// A layout's classes: a pair is compact cards two across, a quad four across.
+const LAYOUT_CLASSES = { grid: 'is-grid', stacked: 'is-stacked', compact: 'is-compact', pair: 'is-compact is-pair', quad: 'is-compact is-quad' };
 
 /**
  * A step's yes or no, at its top (the maintainer, 2026-10-31: unticking it is the obvious
@@ -49,18 +49,37 @@ export function wireToggles(screen, wizard) {
 /**
  * What the import will do, shown before it runs (the maintainer, 2026-10-31: the summary
  * comes before the import, which is the last step): what will come in, and what will appear
- * differently. The import's preview and the new vault's.
+ * differently. The import's preview and the new vault's. How each kind of file comes in is
+ * said outright: note data or file data, which back up differently (the maintainer, 2026-11-01).
  */
-export function importPreviewHtml(preview) {
+export function importPreviewHtml(preview, choices) {
     let into = '';
     if (preview.prefixFolder !== '') {
         into = `<p class="wizard-note">Everything goes into the folder <code>${escapeHtml(preview.prefixFolder)}</code>.</p>`;
     }
-    const counts = [
-        [preview.fileCount, `files will become ${preview.noteCount} notes (${preview.rootNoteCount} root notes)`],
-        [preview.attachmentCount, 'attachments will be copied into MetaList'],
-        [preview.folderTagCount, 'tags will be added based on the folder structure'],
-    ].filter(([count]) => count > 0);
+    const textNoteCount = preview.noteCount - preview.keptFileCount;
+    let counts = [
+        [preview.textFileCount, `Markdown files will become ${notesWord(textNoteCount)} (${preview.textFileCount} root ${preview.textFileCount === 1 ? 'note' : 'notes'})`],
+        [preview.attachmentCount, 'images and files your notes show or link to will be stored as file data, shown where the notes show them'],
+        [preview.keptFileCount, 'Canvas, Base and Excalidraw files will be stored as file data, each shown in a note of its own'],
+    ];
+    if (choices.source === FILES_SOURCE) {
+        const otherFileCount = preview.keptFileCount - preview.keptImageCount;
+        let otherFiles = 'files';
+        if (preview.keptImageCount > NONE) otherFiles = 'other files';
+        counts = [
+            [preview.textFileCount, `text files will become ${notesWord(textNoteCount)} (${preview.textFileCount} root ${preview.textFileCount === 1 ? 'note' : 'notes'})`],
+            [preview.keptImageCount, 'images will be stored as file data, each shown as its picture in a note of its own'],
+            [otherFileCount, `${otherFiles} will be stored as file data, each shown as its card in a note of its own`],
+        ];
+    }
+    counts = [...counts, [preview.folderTagCount, 'tags will be added based on the folder structure']].filter(([count]) => count > NONE);
+    let images = '';
+    if (bringsInImages(choices) && choices.imagesAs === IMAGES_COMPRESSED) {
+        images = `<p class="wizard-note">Images will be compressed: at most ${escapeHtml(choices.imageLongestSide)} pixels on the longest side, without location and camera data.</p>`;
+    } else if (bringsInImages(choices)) {
+        images = '<p class="wizard-note">Images will come in as they are.</p>';
+    }
     // [count, what, the rest for one, the rest for several]
     const differences = [
         [preview.filesWithCommentsCount, 'files with comments', '(<code>%%…%%</code>) will show them as visible text.',
@@ -88,7 +107,11 @@ export function importPreviewHtml(preview) {
     return `${into}
                 <div class="wizard-stats">${counts.map(([count, label]) => `
                     <span class="wizard-stat">${count}</span><span class="wizard-stat-label">${escapeHtml(label)}</span>`).join('')}
-                </div>${differencesHtml}`;
+                </div>${images}${differencesHtml}`;
+}
+
+function notesWord(count) {
+    return `${count} ${count === 1 ? 'note' : 'notes'}`;
 }
 
 /** The server's preview for the choices so far, drawn into the summary (summarySelector). */
@@ -96,7 +119,7 @@ export async function fillImportPreview(screen, wizard, summarySelector) {
     const preview = await NotesAPI.previewImport(importRequest(wizard.choices));
     const summary = screen.querySelector(summarySelector);
     if (summary === null || !summary.isConnected) return;
-    summary.innerHTML = importPreviewHtml(preview);
+    summary.innerHTML = importPreviewHtml(preview, wizard.choices);
 }
 
 /**
@@ -160,6 +183,8 @@ function importRequest(choices) {
         source: choices.source, folderPath: choices.folderPath,
         splitMode: turnsMarkdownIntoNotes(choices) ? choices.split : WHOLE_FILES, contentFormat: choices.content,
         prefixFolder: choices.prefixText, addToExisting: choices.addToExisting,
+        compressesImages: bringsInImages(choices) && choices.imagesAs === IMAGES_COMPRESSED,
+        imageLongestSide: Number(choices.imageLongestSide),
         ...fileSelection(choices),
     };
 }
@@ -228,6 +253,22 @@ const FILES_SOURCE = 'files';
 const TEXT_GROUP = 'text';
 // A file as one note: what text files are when no Markdown file asks how to split.
 const WHOLE_FILES = 'none';
+
+// Images: kept as they are (chosen at first) or compressed (folder-import-and-file-previews.md,
+// Images compressed; the maintainer, 2026-11-01). The endings compression shrinks:
+// image_compression.py's COMPRESSIBLE_SUFFIXES.
+const IMAGES_ORIGINALS = 'originals';
+const IMAGES_COMPRESSED = 'compressed';
+const COMPRESSIBLE_IMAGE_RE = /\.(jpe?g|png|webp|tiff?|bmp)$/i;
+const IMAGES_AS = [
+    { value: IMAGES_ORIGINALS, title: 'Keep originals', badge: '', text: 'Each image as it is.' },
+    { value: IMAGES_COMPRESSED, title: 'Compress', badge: '', text: 'Smaller, without location and camera data.' },
+];
+// The longest side a compressed image keeps (image_compression.py's IMAGE_LONGEST_SIDES), each
+// card with about what the images come to (the maintainer, 2026-11-01: pick by sharpness,
+// see the size); 2560, sharp full-screen, at first.
+const IMAGE_LONGEST_SIDES = ['1280', '1920', '2560', '3840'];
+const FIRST_IMAGE_LONGEST_SIDE = '2560';
 
 function sourceOf(choices) {
     const source = SOURCES.find((candidate) => candidate.value === choices.source);
@@ -396,14 +437,14 @@ function folderName(folderPath) {
 async function chooseFolder(wizard) {
     const picked = await NotesAPI.pickImportFolder(wizard.choices.source);
     if (typeof picked.selected !== 'boolean' || typeof picked.folderPath !== 'string'
-        || !Number.isInteger(picked.fileCount)) {
+        || !Number.isInteger(picked.fileCount) || !Number.isInteger(picked.imageCount)) {
         throw new Error('Import folder pick response malformed');
     }
     if (!picked.selected) return;
     const name = folderName(picked.folderPath);
     // The folder the notes go into starts as the vault's name (import-prefix-folder.md §2).
     wizard.chooseMany({
-        folderPath: picked.folderPath, folderName: name, fileCount: picked.fileCount, prefixText: name,
+        folderPath: picked.folderPath, folderName: name, fileCount: picked.fileCount, imageCount: picked.imageCount, prefixText: name,
         // A new folder is read again for the checklist.
         scan: null,
     });
@@ -657,6 +698,64 @@ function bringsInMarkdown(choices) {
     return tickedFiles(choices).some(([groupKey, path]) => groupKey === TEXT_GROUP && MARKDOWN_FILE_RE.test(path));
 }
 
+// The Images screen shows only when images compression shrinks come in: a folder of files'
+// ticked ones, a vault's or Markdown folder's (its estimate then counts the ones notes show).
+function bringsInImages(choices) {
+    if (choices.source !== FILES_SOURCE) return choices.imageCount > NONE;
+    if (choices.scan === null) return false;
+    return tickedFiles(choices).some(([, path]) => COMPRESSIBLE_IMAGE_RE.test(path));
+}
+
+// How many images and their size now, and about their size at each longest side: asked of
+// the server for the choices so far, kept while they stay the same (picking a card draws the
+// screen again).
+function hasImageEstimate(choices) {
+    return choices.imageEstimate !== null && choices.imageEstimate.request === imageEstimateRequestKey(choices);
+}
+
+function imageEstimateHtml(choices) {
+    if (!hasImageEstimate(choices)) return '<p class="wizard-intro">Measuring the images…</p>';
+    const { imageCount, imageBytes } = choices.imageEstimate.estimate;
+    return `<p class="wizard-intro">${imageCount} ${imageCount === 1 ? 'image' : 'images'}, ${escapeHtml(formatByteSize(imageBytes))} now</p>`;
+}
+
+// Compressing: the longest side, each card with about what the images come to at it.
+function imageSizesHtml(choices) {
+    if (choices.imagesAs !== IMAGES_COMPRESSED) return '';
+    const cards = IMAGE_LONGEST_SIDES.map((side) => ({ value: side, title: `${side} px`, badge: '', text: imageSizeText(choices, side) }));
+    return `
+        <h3 class="wizard-choice-group">Longest side</h3>
+        ${choiceCardsHtml('imageLongestSide', choices.imageLongestSide, cards, 'quad')}`;
+}
+
+function imageSizeText(choices, side) {
+    if (!hasImageEstimate(choices)) return '…';
+    return `about ${formatByteSize(choices.imageEstimate.estimate.compressedBytes[side])}`;
+}
+
+// The estimate is the same whatever is chosen on this screen.
+function imageEstimateRequestKey(choices) {
+    return JSON.stringify({ ...importRequest(choices), compressesImages: false, imageLongestSide: Number(FIRST_IMAGE_LONGEST_SIDE) });
+}
+
+async function estimateImages(screen, wizard) {
+    const request = imageEstimateRequestKey(wizard.choices);
+    if (wizard.choices.imageEstimate !== null && wizard.choices.imageEstimate.request === request) return;
+    const estimate = await NotesAPI.estimateImportImages(JSON.parse(request));
+    if (!Number.isInteger(estimate.imageCount) || !Number.isInteger(estimate.imageBytes)
+        || IMAGE_LONGEST_SIDES.some((side) => !Number.isInteger(estimate.compressedBytes[side]))) {
+        throw new Error('Import image estimate answered malformed');
+    }
+    wizard.choose('imageEstimate', { request, estimate });
+    const line = screen.querySelector('.wizard-image-estimate');
+    if (line === null || !line.isConnected) return;
+    line.innerHTML = imageEstimateHtml(wizard.choices);
+    // The cards on screen take their sizes in place: drawn again, they would lose their clicks.
+    for (const card of screen.querySelectorAll('[data-choice-key="imageLongestSide"]')) {
+        card.querySelector('.wizard-choice-text').textContent = imageSizeText(wizard.choices, card.dataset.choiceValue);
+    }
+}
+
 function prefixProblem(choices) {
     if (choices.prefixText.trim() === '') return '';
     if (choices.prefixCheckedFor !== choices.prefixText) return 'Checking the folder name…';
@@ -804,6 +903,27 @@ export function importSteps({ withSourceStep, withSummaryAndRun }) {
             onNext: null, missing: NOTHING_MISSING,
         }),
         makeStep({
+            key: 'images', label: 'Images', title: 'Should images be compressed?',
+            intro: '',
+            nextLabel: NEXT, isAction: false, applies: bringsInImages,
+            render: (choices) => `
+                <div class="wizard-image-estimate">${imageEstimateHtml(choices)}</div>
+                ${choiceCardsHtml('imagesAs', choices.imagesAs, IMAGES_AS, 'pair')}
+                <div class="wizard-image-sizes">${imageSizesHtml(choices)}</div>`,
+            wire: (screen, wizard) => {
+                void estimateImages(screen, wizard);
+            },
+            // Compress or not shows or hides the sizes: drawn again.
+            onChoice: (screen, key, value, wizard) => {
+                if (key === 'imagesAs') {
+                    wizard.redrawScreen();
+                    return;
+                }
+                markChosenCards(screen, key, value);
+            },
+            onNext: null, missing: NOTHING_MISSING,
+        }),
+        makeStep({
             key: 'summary', label: 'Summary', title: 'Ready to import',
             intro: 'Here is what the import will do. Nothing has changed yet.',
             nextLabel: NEXT, isAction: false, applies: () => withSummaryAndRun,
@@ -826,6 +946,10 @@ export function importChoices() {
         openKinds: [], fileExceptions: [],
         // A folder of files' Markdown files: turned into notes (recommended) or kept as files.
         markdownAs: MARKDOWN_AS_NOTES,
+        // Images: kept as they are unless compressed (chosen at first: the maintainer,
+        // 2026-11-01); how many compression would shrink in the folder; and the server's
+        // estimate ({ request, estimate }, null until asked) for the choices it was asked for.
+        imagesAs: IMAGES_ORIGINALS, imageLongestSide: FIRST_IMAGE_LONGEST_SIDE, imageCount: 0, imageEstimate: null,
         // The folder the notes go into, as typed (the vault's name once a folder is chosen), and
         // what the server last said of it (prefixStatusHtml); adding to an existing one is ticked.
         prefixText: '', prefixCheckedFor: null, prefixFolder: '', prefixExists: false, prefixProblem: '', addToExisting: true,

@@ -21,10 +21,12 @@ from app.services.native_folder_picker import pick_folder
 from app.services.obsidian_import.file_groups import file_groups, folder_files, is_over_limit
 from app.services.obsidian_import.notes import import_folder_prefix
 from app.services.obsidian_import.sources import FILES, IMPORT_SOURCES
-from app.services.obsidian_import.vault import count_markdown_files
+from app.services.image_compression import COMPRESSIBLE_SUFFIXES, IMAGE_LONGEST_SIDES, ImageChoice
+from app.services.obsidian_import.vault import count_compressible_images, count_markdown_files
 from app.services.reference_suggestions import build_catalog_in_background
 from app.upload_limits import MAX_ATTACHMENT_BYTES
 from app.usecases.import_obsidian_vault import (
+    CmdEstimateImportImages,
     CmdImportFolderOfFiles,
     CmdImportObsidianVault,
     CmdPreviewFolderOfFiles,
@@ -70,6 +72,10 @@ class ImportFolderRequest(TypedDict):
     includedFiles: List[Annotated[str, Field(min_length=1, max_length=_MAX_FOLDER_PATH_LENGTH)]]
     # A folder of files: its Markdown files kept as files instead of turned into notes.
     keepsMarkdownAsFiles: bool
+    # Images compressed as they come in, and the longest side they keep (image_compression's
+    # IMAGE_LONGEST_SIDES; folder-import-and-file-previews.md, Images compressed).
+    compressesImages: bool
+    imageLongestSide: int
 
 
 @with_config(ConfigDict(strict=True))
@@ -90,10 +96,17 @@ def pick_import_folder(request: Request, body: PickImportFolderRequest) -> dict[
     require_request_auth_token(request)
     folder_path = pick_folder(prompt=IMPORT_SOURCES[body["source"]].folder_prompt)
     if folder_path is None:
-        return {"selected": False, "folderPath": "", "fileCount": 0}
+        return {"selected": False, "folderPath": "", "fileCount": 0, "imageCount": 0}
+    folder = Path(folder_path)
     if body["source"] == FILES.key:
-        return {"selected": True, "folderPath": folder_path, "fileCount": len(folder_files(Path(folder_path)))}
-    return {"selected": True, "folderPath": folder_path, "fileCount": count_markdown_files(Path(folder_path))}
+        found = folder_files(folder)
+        image_count = sum(1 for folder_file in found if folder_file.path.suffix.casefold() in COMPRESSIBLE_SUFFIXES)
+        return {"selected": True, "folderPath": folder_path, "fileCount": len(found), "imageCount": image_count}
+    return {
+        "selected": True, "folderPath": folder_path, "fileCount": count_markdown_files(folder),
+        # Images compression shrinks: the wizard asks about them only when there are some.
+        "imageCount": count_compressible_images(folder),
+    }
 
 
 @router.post("/scan")
@@ -142,11 +155,31 @@ def preview_import(request: Request, body: ImportFolderRequest) -> dict[str, obj
     ).execute()
 
 
+@router.post("/images")
+@transactional_route
+def estimate_import_images(request: Request, body: ImportFolderRequest) -> dict[str, object]:
+    """The images the import would compress: how many, their size, and about their size
+    compressed (the wizard's Images screen). Writes nothing."""
+    require_request_auth_token(request)
+    if body["source"] != FILES.key:
+        _require_no_excluded_groups(body)
+    return CmdEstimateImportImages(
+        source=body["source"], folder_path=body["folderPath"], selection=_file_selection(body), split_mode=body["splitMode"],
+        content_format=body["contentFormat"], folder_prefix=body["prefixFolder"], imported_at=datetime.now(timezone.utc),
+    ).execute()
+
+
 def _file_selection(body: ImportFolderRequest) -> FileSelection:
     return FileSelection(
         excluded_groups=tuple(body["excludedGroups"]), excluded_files=tuple(body["excludedFiles"]),
         included_files=tuple(body["includedFiles"]), keeps_markdown_as_files=body["keepsMarkdownAsFiles"],
     )
+
+
+def _image_choice(body: ImportFolderRequest) -> ImageChoice:
+    if body["imageLongestSide"] not in IMAGE_LONGEST_SIDES:
+        raise InputRejected("Choose one of the image sizes offered.")
+    return ImageChoice(compresses=body["compressesImages"], longest_side_px=body["imageLongestSide"])
 
 
 def _require_no_excluded_groups(body: ImportFolderRequest) -> None:
@@ -178,14 +211,14 @@ def import_folder(request: Request, body: ImportFolderRequest) -> dict[str, obje
         result = CmdImportFolderOfFiles(
             folder_path=body["folderPath"], selection=_file_selection(body), split_mode=body["splitMode"],
             content_format=body["contentFormat"], folder_prefix=body["prefixFolder"], add_to_existing=body["addToExisting"],
-            token=token, imported_at=datetime.now(timezone.utc),
+            images=_image_choice(body), token=token, imported_at=datetime.now(timezone.utc),
         ).execute()
     else:
         _require_no_excluded_groups(body)
         result = CmdImportObsidianVault(
             source=body["source"], folder_path=body["folderPath"], split_mode=body["splitMode"],
             content_format=body["contentFormat"], folder_prefix=body["prefixFolder"], add_to_existing=body["addToExisting"],
-            token=token, imported_at=datetime.now(timezone.utc),
+            images=_image_choice(body), token=token, imported_at=datetime.now(timezone.utc),
         ).execute()
     # The imported notes join the `[[` catalog now, not at the first `[[`.
     build_catalog_in_background()

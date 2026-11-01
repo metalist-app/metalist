@@ -15,6 +15,7 @@ import app.usecases.virtual_folders as virtual_folder_usecases
 from app.db.file_session import begin_file_writer
 from app.models.database import SafeSession
 from app.security import encryption
+from app.services.image_compression import ImageChoice
 from app.services import note_store as note_store_module
 from app.services import store as store_module
 from app.services.file_registry import file_registry
@@ -27,6 +28,8 @@ from app.services.tag_ontology import TagOntology
 from app.usecases.import_obsidian_vault import CmdImportObsidianVault
 
 TOKEN = "token"
+# Images as they are (the Images screen's first choice).
+KEEP_ORIGINALS = ImageChoice(compresses=False, longest_side_px=2560)
 IMPORTED_AT = datetime(2026, 11, 1, 9, 0, tzinfo=timezone.utc)
 # Folders, tags and notes under notes (headings and list items become children).
 VAULT = {
@@ -65,7 +68,7 @@ def imported_vault(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> NoteStore
         (tmp_path / relative).write_text(text)
     CmdImportObsidianVault(
         source="obsidian", folder_path=str(tmp_path), split_mode=SPLIT_HEADINGS_AND_LISTS,
-        content_format=CONTENT_MARKDOWN, folder_prefix="", add_to_existing=False, token=TOKEN, imported_at=IMPORTED_AT,
+        content_format=CONTENT_MARKDOWN, folder_prefix="", add_to_existing=False, images=KEEP_ORIGINALS, token=TOKEN, imported_at=IMPORTED_AT,
     ).execute()
     yield store
     session.close()

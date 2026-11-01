@@ -13,6 +13,7 @@ from pathlib import Path, PurePosixPath
 from typing import List
 
 from app.services.exception_capture import CapturedExceptionContext
+from app.services.image_compression import COMPRESSIBLE_SUFFIXES
 
 # Obsidian's own settings, and its trash: never notes.
 _SETTINGS_FOLDER = ".obsidian"
@@ -133,6 +134,19 @@ def count_markdown_files(folder: Path) -> int:
             1 for name in file_names
             if not name.startswith(_HIDDEN_PREFIX) and name.lower().endswith(_MARKDOWN_SUFFIX)
             and not name.lower().endswith(_DRAWING_SUFFIX)
+        )
+    return count
+
+
+def count_compressible_images(folder: Path) -> int:
+    """How many images compression would shrink in folder, outside hidden folders: whether
+    the import's Images screen shows (an estimate then counts only the ones notes show)."""
+    count = 0
+    for _directory, folder_names, file_names in os.walk(folder):
+        folder_names[:] = [name for name in folder_names if not name.startswith(_HIDDEN_PREFIX)]
+        count += sum(
+            1 for name in file_names
+            if not name.startswith(_HIDDEN_PREFIX) and Path(name).suffix.casefold() in COMPRESSIBLE_SUFFIXES
         )
     return count
 

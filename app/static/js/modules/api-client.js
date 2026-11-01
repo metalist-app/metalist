@@ -542,18 +542,18 @@ export const NotesAPI = {
     _importBody(choices, caller) {
         const {
             source, folderPath, splitMode, contentFormat, prefixFolder, addToExisting, excludedGroups, excludedFiles, includedFiles,
-            keepsMarkdownAsFiles,
+            keepsMarkdownAsFiles, compressesImages, imageLongestSide,
         } = choices;
         if (typeof source !== 'string' || typeof folderPath !== 'string' || folderPath.length === 0
             || typeof splitMode !== 'string' || typeof contentFormat !== 'string'
             || typeof prefixFolder !== 'string' || typeof addToExisting !== 'boolean'
             || !Array.isArray(excludedGroups) || !Array.isArray(excludedFiles) || !Array.isArray(includedFiles)
-            || typeof keepsMarkdownAsFiles !== 'boolean') {
+            || typeof keepsMarkdownAsFiles !== 'boolean' || typeof compressesImages !== 'boolean' || !Number.isInteger(imageLongestSide)) {
             throw new Error(`NotesAPI.${caller} requires every import choice`);
         }
         return JSON.stringify({
             source, folderPath, splitMode, contentFormat, prefixFolder, addToExisting, excludedGroups, excludedFiles, includedFiles,
-            keepsMarkdownAsFiles,
+            keepsMarkdownAsFiles, compressesImages, imageLongestSide,
         });
     },
 
@@ -563,6 +563,11 @@ export const NotesAPI = {
             throw new Error('NotesAPI.scanImportFolder requires the folder');
         }
         return this._apiCall(CONFIG.API.IMPORT.SCAN, { method: 'POST', body: JSON.stringify({ folderPath }) });
+    },
+
+    // The images an import would compress: { imageCount, imageBytes, compressedBytes } (about).
+    async estimateImportImages(choices) {
+        return this._apiCall(CONFIG.API.IMPORT.IMAGES, { method: 'POST', body: this._importBody(choices, 'estimateImportImages') });
     },
 
     async previewImport(choices) {

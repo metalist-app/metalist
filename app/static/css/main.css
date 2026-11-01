@@ -12164,6 +12164,17 @@ suggestions as pills. */
     grid-template-columns: 1fr 1fr;
 }
 
+/* Four small choices across (an image's longest side); two across on a narrow screen. */
+.wizard-choices.is-compact.is-quad {
+    grid-template-columns: repeat(4, 1fr);
+}
+
+@media (max-width: 640px) {
+    .wizard-choices.is-compact.is-quad {
+        grid-template-columns: 1fr 1fr;
+    }
+}
+
 .modal.wizard-modal .modal-content .wizard-choices.is-compact button.wizard-choice {
     flex-direction: row;
     flex-wrap: wrap;
@@ -12199,8 +12210,10 @@ suggestions as pills. */
     color: var(--modal-text-muted);
 }
 
-/* A rule between the sets of choices (the maintainer, 2026-11-01). */
-.modal.wizard-modal .wizard h3.wizard-choice-group:not(:first-child) {
+/* A rule between the sets of choices (the maintainer, 2026-11-01); the image sizes' set
+   follows the Compress card from inside a box of its own. */
+.modal.wizard-modal .wizard h3.wizard-choice-group:not(:first-child),
+.modal.wizard-modal .wizard .wizard-image-sizes h3.wizard-choice-group {
     margin-top: 14px;
     padding-top: 12px;
     border-top: 1px solid var(--modal-border);
