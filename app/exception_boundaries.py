@@ -5,6 +5,10 @@ syntax suppressions and is consumed by runtime capture and the startup gate.
 """
 
 CAPTURE_BOUNDARIES = {
+    # An Obsidian vault being imported is the user's files: unreadable settings or frontmatter
+    # are reported, and the rest of the vault still comes in (PLAN.md).
+    'app/services/obsidian_import/vault.py:_read_line_break_setting:settings_capture': ('JSONDecodeError',),
+    'app/services/obsidian_import/notes.py:_read_frontmatter:yaml_capture': ('YAMLError',),
     # Web retrieval translates only expected failures from untrusted remote targets.
     'app/services/agent/web_fetch.py:fetch_web_page:target_capture': ('PublicHttpTargetRejected',),
     'app/services/agent/web_fetch.py:_download_one_url:transport_capture': (

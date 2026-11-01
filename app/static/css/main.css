@@ -723,6 +723,51 @@ html[data-theme="dark"] .visual-cues-description {
     font-size: 0.9rem;
 }
 
+/* The Obsidian import's folder row (developer version, PLAN.md): the folder's name, its path
+   under it cut at the start when too long, and Choose Folder… beside them. */
+.obsidian-import-folder {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 0 0 18px;
+}
+
+.obsidian-import-folder-box {
+    display: grid;
+    flex: 1;
+    min-width: 0;
+    padding: 8px 12px;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    background: #f9fafb;
+}
+
+.obsidian-import-folder-name {
+    overflow: hidden;
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.obsidian-import-folder-parent {
+    overflow: hidden;
+    color: #6b7280;
+    font-size: 0.8rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    direction: rtl;
+    text-align: left;
+}
+
+.obsidian-import-folder > button {
+    flex: none;
+}
+
+html[data-theme="dark"] .obsidian-import-folder-box {
+    border-color: #3a3a3a;
+    background: #1c1c1c;
+}
+
 .note-layout-description {
     margin: 0 0 18px;
     color: #6b7280;

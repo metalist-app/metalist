@@ -762,8 +762,9 @@ def test_format_note_content_for_view_markdown_keeps_non_math_dollars_literal() 
     rendered = format_note_content_for_view(content_html=html, tags="@markdown")
 
     assert "Budget: $5 and $10." in rendered
-    assert "Escaped example: \\$x\\$." in rendered
-    assert "Unclosed example: \\(x + 1." in rendered
+    # Backslash escapes show the character (standard Markdown, 2026-10-31); still no formula.
+    assert "Escaped example: $x$." in rendered
+    assert "Unclosed example: (x + 1." in rendered
     assert "<math" not in rendered
 
 

@@ -60,6 +60,8 @@ import { printNotes } from '../mode-manager/services/print-service.js';
 import { exportNotes } from '../mode-manager/services/export-service.js';
 
 import { VersionInfoModal } from '../modals/version-info-modal.js';
+import { ObsidianImportModal } from '../modals/obsidian-import-modal.js';
+import { isDevelopmentEnvironment } from '../development-environment.js';
 import { MemoryUsageModal } from '../modals/memory-usage-modal.js';
 import { showErrorDialogFor } from '../modals/error-dialog.js';
 import { RecentMessagesModal } from '../modals/recent-messages-modal.js';
@@ -427,6 +429,7 @@ class CommandPaletteController {
         this._reminderModal = null;
 
         this._versionInfoModal = null;
+        this._obsidianImportModal = null;
         this._memoryUsageModal = null;
         this._recentMessagesModal = null;
         this._noteLayoutAppearanceModal = null;
@@ -512,6 +515,7 @@ class CommandPaletteController {
                 openReminders: this.openReminders.bind(this),
 
                 openVersionInfo: this.openVersionInfo.bind(this),
+                openObsidianImport: this.openObsidianImport.bind(this),
                 openMemoryUsage: this.openMemoryUsage.bind(this),
                 openRecentMessages: this.openRecentMessages.bind(this),
                 openNoteLayoutAppearance: this.openNoteLayoutAppearance.bind(this),
@@ -1266,6 +1270,7 @@ class CommandPaletteController {
         const state = {
             hasPassword: Auth.hasPassword,
             isRootReorderLocked: isRootReorderLocked(this.getSortMode()),
+            isDevelopment: isDevelopmentEnvironment(),
         };
         return this._endpoints.filter((endpoint) => isCommandAvailable(endpoint.id, state));
     }
@@ -2746,6 +2751,20 @@ class CommandPaletteController {
             this._recentMessagesModal = new RecentMessagesModal();
         }
         await this._recentMessagesModal.open();
+    }
+
+    // The Obsidian import's developer version (PLAN.md): its notes show once it has run.
+    async openObsidianImport() {
+        const isReady = await this._prepareForModalOpen('commandPalette.openObsidianImport');
+        if (!isReady) {
+            return;
+        }
+        if (this._obsidianImportModal === null) {
+            this._obsidianImportModal = new ObsidianImportModal(async () => {
+                await actionRefreshAndMaybeSelect({ startedAt: performance.now(), context: 'obsidianImport' });
+            });
+        }
+        await this._obsidianImportModal.open();
     }
 
     async openVersionInfo() {

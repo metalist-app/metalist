@@ -111,6 +111,10 @@ _HTML_BLOCK_NAMES = frozenset({
 _HTML_BLOCK_ENDS_AT_BLANK_LINE = "blank line"
 _HTML_BLOCK_ENDS_AT_RAW_CLOSE = "raw close"
 _HTML_BLOCK_ENDS_AT_COMMENT_CLOSE = "comment close"
+# A backslash before ASCII punctuation shows that character as written (CommonMark backslash
+# escapes), in HTML-escaped text: the punctuation may be one of its entities.
+_ESCAPED_PUNCTUATION_RE = re.compile(r"\\(&lt;|&gt;|&amp;|[!-/:-@\[-`{-~])")
+
 _ESCAPED_LINE_BREAK_TAG_RE = re.compile(r"&lt;br\s*/?&gt;", re.IGNORECASE)
 
 
@@ -881,6 +885,7 @@ def _render_inline_markdown(
     placeholders: List[_InlinePlaceholder] = []
     rendered = html.escape(text, quote=False)
     rendered = _extract_code_spans(rendered, placeholders)
+    rendered = _without_backslash_escapes(rendered, placeholders)
     rendered = _ESCAPED_LINE_BREAK_TAG_RE.sub("<br>", rendered)
     if footnotes.is_enabled:
         rendered = _extract_footnote_references(rendered, placeholders, footnotes)
@@ -978,6 +983,20 @@ def _kept_tag(*, name: str, attributes: List[Tuple[str, str | None]], is_closing
             )
         kept.append(f' {attribute}="{html.escape(checked, quote=True)}"')
     return f"<{name}{''.join(kept)}>"
+
+
+def _without_backslash_escapes(text: str, placeholders: List[_InlinePlaceholder]) -> str:
+    """Each backslash escape (CommonMark) as the character it shows, set aside so no later
+    pass reads it as Markdown; a formula (LaTeX inside Markdown, $…$, \\(…\\) and the rest) is
+    left whole for the LaTeX pass, its backslashes TeX's own."""
+    formulas = _latex_formula_spans(text)
+
+    def shown(escape: re.Match[str]) -> str:
+        if any(start <= escape.start() < end for start, end in formulas):
+            return escape.group(0)
+        return _make_placeholder(placeholders=placeholders, html_value=escape.group(1))
+
+    return _ESCAPED_PUNCTUATION_RE.sub(shown, text)
 
 
 def _extract_footnote_references(text: str, placeholders: List[_InlinePlaceholder], footnotes: _Footnotes) -> str:
@@ -1106,7 +1125,7 @@ def _extract_auto_links(text: str, placeholders: List[_InlinePlaceholder]) -> st
     cursor = 0
     for match in _AUTO_LINK_RE.finditer(text):
         output.append(text[cursor:match.start()])
-        url = match.group(1)
+        url = _without_trailing_punctuation(match.group(1))
         placeholder = _make_placeholder(
             placeholders=placeholders,
             html_value=(
@@ -1117,9 +1136,49 @@ def _extract_auto_links(text: str, placeholders: List[_InlinePlaceholder]) -> st
             ),
         )
         output.append(placeholder)
-        cursor = match.end()
+        cursor = match.start(1) + len(url)
     output.append(text[cursor:])
     return "".join(output)
+
+
+# What ends a sentence after a bare address rather than the address itself (GFM autolinks).
+_AUTO_LINK_TRAILING_PUNCTUATION = "?!.,:*_~'\""
+_OPEN_PAREN = "("
+_CLOSE_PAREN = ")"
+
+
+def _without_trailing_punctuation(url: str) -> str:
+    """url without the punctuation a sentence puts after it: trailing ? ! . , : * _ ~ and
+    quotes, and a ) with no ( to match it (GFM extended autolinks)."""
+    while url != "":
+        if url[-1] in _AUTO_LINK_TRAILING_PUNCTUATION:
+            url = url[:-1]
+            continue
+        if url[-1] == _CLOSE_PAREN and url.count(_CLOSE_PAREN) > url.count(_OPEN_PAREN):
+            url = url[:-1]
+            continue
+        return url
+    return url
+
+
+def _latex_formula_spans(text: str) -> List[Tuple[int, int]]:
+    """Where _extract_latex_math finds a formula in text, delimiters included."""
+    spans: List[Tuple[int, int]] = []
+    cursor = 0
+    while cursor < len(text):
+        delimiter = _latex_delimiter_at(text=text, index=cursor)
+        if delimiter is None:
+            cursor += 1
+            continue
+        close_index = _find_latex_closing_delimiter(
+            text=text, start=cursor + len(delimiter.opener), delimiter=delimiter,
+        )
+        if close_index == NOT_FOUND:
+            cursor += 1
+            continue
+        spans.append((cursor, close_index + len(delimiter.closer)))
+        cursor = close_index + len(delimiter.closer)
+    return spans
 
 
 def _extract_latex_math(text: str, placeholders: List[_InlinePlaceholder]) -> str:
@@ -1313,14 +1372,15 @@ def _is_valid_inline_dollar_closer(*, text: str, index: int) -> bool:
     return text[next_index] != "$"
 
 
+# An underscore inside a word never emphasizes (CommonMark): `snake_case_name` stays as written.
 def _replace_strong(text: str) -> str:
     text = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", text)
-    return re.sub(r"__(.+?)__", r"<strong>\1</strong>", text)
+    return re.sub(r"(?<!\w)__(.+?)__(?!\w)", r"<strong>\1</strong>", text)
 
 
 def _replace_emphasis(text: str) -> str:
     text = re.sub(r"(?<!\*)\*(?!\s)(.+?)(?<!\s)\*(?!\*)", r"<em>\1</em>", text)
-    return re.sub(r"(?<!_)_(?!\s)(.+?)(?<!\s)_(?!_)", r"<em>\1</em>", text)
+    return re.sub(r"(?<![\w_])_(?!\s)(.+?)(?<!\s)_(?![\w_])", r"<em>\1</em>", text)
 
 
 def _replace_strikethrough(text: str) -> str:
@@ -1369,6 +1429,7 @@ def _find_unescaped_char(*, text: str, start: int, target: str) -> int:
 def _make_placeholder(*, placeholders: List[_InlinePlaceholder], html_value: str) -> str:
     if not isinstance(html_value, str):
         raise TypeError(f"html_value must be a string, got {type(html_value)}")
-    token = f"@@MLMD[{len(placeholders)}]@@"
+    # Letters and digits only, so no Markdown pass reads a token as syntax.
+    token = f"MLMDPLACEHOLDER{len(placeholders)}END"
     placeholders.append(_InlinePlaceholder(token=token, html_value=html_value))
     return token

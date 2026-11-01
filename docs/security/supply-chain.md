@@ -1,5 +1,9 @@
 # Supply-chain controls and audit
 
+## Update dated 2026-10-31 (America/Los_Angeles)
+
+One new runtime dependency, approved by the maintainer for the Obsidian import (`PLAN.md`): **PyYAML 6.0.3**, to read the YAML frontmatter at the top of Obsidian notes. It is used only through `yaml.safe_load`, which builds plain dictionaries, lists, strings, numbers, booleans and dates and never constructs arbitrary Python objects. It has no dependencies of its own; only it was added to `uv.lock` (107 packages resolved, nothing else moved), both exports regenerated. `check_supply_chain.py check` and `audit`: no known advisories.
+
 ## Update dated 2026-10-30 (America/Los_Angeles)
 
 The local dependency audit before merging `feature/super-tag-summaries` failed on seven newly published advisories, all in one runtime dependency:

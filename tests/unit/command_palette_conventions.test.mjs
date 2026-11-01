@@ -81,6 +81,7 @@ const LABELS = {
     'form.visual_cues': 'Visual Cues…',
     'form.dictation_settings': 'Dictation Settings…',
     'form.open_namespace': 'Open/Switch Vault…',
+    'form.import_obsidian_vault': 'Import Obsidian Vault…',
     'form.create_namespace': 'Create Vault…',
     'form.manage_namespace_ports': 'Manage Vault Ports…',
     'form.rename_current_namespace': 'Rename Current Vault…',
@@ -145,9 +146,9 @@ test('destructive commands are the ones that lose what cannot be brought back', 
 });
 
 test('commands that cannot apply are hidden', () => {
-    const withPassword = { hasPassword: true, isRootReorderLocked: false };
-    const withoutPassword = { hasPassword: false, isRootReorderLocked: false };
-    const sorted = { hasPassword: false, isRootReorderLocked: true };
+    const withPassword = { hasPassword: true, isRootReorderLocked: false, isDevelopment: false };
+    const withoutPassword = { hasPassword: false, isRootReorderLocked: false, isDevelopment: false };
+    const sorted = { hasPassword: false, isRootReorderLocked: true, isDevelopment: false };
     assert.equal(isCommandAvailable('form.add_password', withPassword), false);
     assert.equal(isCommandAvailable('form.add_password', withoutPassword), true);
     for (const id of ['form.change_password', 'form.remove_password']) {
@@ -160,6 +161,9 @@ test('commands that cannot apply are hidden', () => {
         assert.equal(isCommandAvailable(id, sorted), false);
     }
     assert.equal(isCommandAvailable('action.logout', sorted), true);
+    // Developer tools only in development (the Obsidian import, PLAN.md).
+    assert.equal(isCommandAvailable('form.import_obsidian_vault', withPassword), false);
+    assert.equal(isCommandAvailable('form.import_obsidian_vault', { ...withPassword, isDevelopment: true }), true);
 });
 
 test('every list the palette shows or activates comes from the available commands', async () => {

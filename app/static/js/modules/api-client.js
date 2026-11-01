@@ -461,6 +461,19 @@ export const NotesAPI = {
         });
     },
 
+    // The Obsidian import (developer version, PLAN.md): the vault's folder, picked in the
+    // operating system's own dialog, then imported into the vault in use.
+    async pickObsidianVaultFolder() {
+        return this._apiCall(CONFIG.API.IMPORT.OBSIDIAN_PICK_FOLDER, { method: 'POST', body: JSON.stringify({}) });
+    },
+
+    async importObsidianVault(folderPath) {
+        if (typeof folderPath !== 'string' || folderPath.length === 0) {
+            throw new Error('NotesAPI.importObsidianVault requires folderPath');
+        }
+        return this._apiCall(CONFIG.API.IMPORT.OBSIDIAN, { method: 'POST', body: JSON.stringify({ folderPath }) });
+    },
+
     async unformatNote(noteId) {
         if (typeof noteId !== 'string' || noteId.length === 0) {
             throw new Error('NotesAPI.unformatNote requires noteId string');

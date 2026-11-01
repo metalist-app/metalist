@@ -13,3 +13,4 @@ app/static/img/favicon.svg -text
 app/static/config/tag-characters.json -text
 app/static/js/modules/tag-characters-data.js -text
 tests/unit/fixtures/unicode-lowercase.json -text
+tests/fixtures/obsidian-vault/** -text

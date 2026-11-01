@@ -523,6 +523,18 @@ exceptions = ["OSError", "sqlite3.Error"]
 reason = "Handle expected external I/O, provider, image or LaTeX parsing failure."
 
 [[tool.shockharness.rules.exceptions.boundaries]]
+path = "app/services/obsidian_import/vault.py"
+language = "python"
+exception = "json.JSONDecodeError"
+reason = "An imported vault's .obsidian/app.json is the user's file: invalid JSON is reported and Obsidian's default applies."
+
+[[tool.shockharness.rules.exceptions.boundaries]]
+path = "app/services/obsidian_import/notes.py"
+language = "python"
+exception = "yaml.YAMLError"
+reason = "An imported note's frontmatter is the user's text: invalid YAML is reported and the note comes in without it."
+
+[[tool.shockharness.rules.exceptions.boundaries]]
 path = "app/services/namespace_switcher.py"
 language = "python"
 exceptions = ["ProcessLookupError", "subprocess.TimeoutExpired"]

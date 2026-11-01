@@ -3,10 +3,7 @@ from __future__ import annotations
 from app.utils.tcp_ports import HIGHEST_PORT
 from http import HTTPStatus
 import secrets
-import shutil
 import sqlite3
-import subprocess
-import sys
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel, Field
 from typing import Annotated
@@ -42,6 +39,7 @@ from app.server_runtime import resolve_namespace_directory
 from app.server_runtime import resolve_namespaced_database_path
 from app.server_runtime import save_namespace_launch_profile
 from app.server_runtime import validate_namespace
+from app.services.native_folder_picker import pick_folder
 from app.services.synced_folders import provider_syncing, suggested_backup_folders
 from app.services.backup_settings_service import (
     acknowledged_unprotected_namespaces,
@@ -349,85 +347,8 @@ def _unchecked_namespaces_for(*, selected_namespaces: list[str]) -> list[str]:
     return [namespace for namespace in list_available_namespaces() if namespace not in selected_namespaces]
 
 
-def _run_native_folder_picker_command(*, command: list[str]) -> str | None:
-    if not isinstance(command, list) or len(command) == 0:
-        raise TypeError("command must be a non-empty list")
-    completed = subprocess.run(
-        command,
-        capture_output=True,
-        check=False,
-        text=True,
-    )
-    stdout = completed.stdout.strip()
-    stderr = completed.stderr.strip()
-    if completed.returncode == 0:
-        if stdout == "":
-            return None
-        return stdout
-    if completed.returncode == 1 and (stderr == "" or "User canceled" in stderr or "(-128)" in stderr):
-        return None
-    raise RuntimeError(
-        f"Native folder picker failed: exit={completed.returncode} stdout={stdout!r} stderr={stderr!r}"
-    )
-
-
 def _pick_backup_folder_path() -> str | None:
-    if sys.platform == "darwin":
-        osascript_path = shutil.which("osascript")
-        if osascript_path is None:
-            raise RuntimeError("`osascript` is required for the macOS folder picker")
-        return _run_native_folder_picker_command(
-            command=[
-                osascript_path,
-                "-e",
-                'POSIX path of (choose folder with prompt "Choose a backup folder for MetaList")',
-            ]
-        )
-
-    if sys.platform.startswith("linux"):
-        zenity_path = shutil.which("zenity")
-        if zenity_path is not None:
-            return _run_native_folder_picker_command(
-                command=[
-                    zenity_path,
-                    "--file-selection",
-                    "--directory",
-                    "--title=Choose a backup folder for MetaList",
-                ]
-            )
-        kdialog_path = shutil.which("kdialog")
-        if kdialog_path is not None:
-            return _run_native_folder_picker_command(
-                command=[
-                    kdialog_path,
-                    "--getexistingdirectory",
-                    "",
-                    "--title",
-                    "Choose a backup folder for MetaList",
-                ]
-            )
-        raise RuntimeError("No supported Linux folder picker was found (`zenity` or `kdialog`)")
-
-    if sys.platform == "win32":
-        powershell_path = shutil.which("powershell")
-        if powershell_path is None:
-            powershell_path = shutil.which("pwsh")
-        if powershell_path is None:
-            raise RuntimeError("PowerShell is required for the Windows folder picker")
-        script = (
-            "Add-Type -AssemblyName System.Windows.Forms; "
-            "$dialog = New-Object System.Windows.Forms.FolderBrowserDialog; "
-            "$dialog.Description = 'Choose a backup folder for MetaList'; "
-            "$dialog.ShowNewFolderButton = $true; "
-            "if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { "
-            "Write-Output $dialog.SelectedPath; exit 0 }; "
-            "exit 1"
-        )
-        return _run_native_folder_picker_command(
-            command=[powershell_path, "-NoProfile", "-Command", script]
-        )
-
-    raise RuntimeError(f"Native folder picker is not supported on platform: {sys.platform}")
+    return pick_folder(prompt="Choose a backup folder for MetaList")
 
 
 def _folder_backup_id(*, namespace: str, filename: str) -> str:

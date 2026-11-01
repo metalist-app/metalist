@@ -318,3 +318,47 @@ def test_a_footnotes_lines_join_and_a_bracket_numbered_task_has_its_box() -> Non
     assert [body for _token, body in note.footnotes] == ["line one\nline two"]
     assert 'data-task-index="0"' in note_html("1) [ ] task")
     assert markdown_task_lines("1) [ ] a\n2) [x] b") == [0, 1]
+
+
+# Backslash escapes and underscores inside words, as CommonMark has them (found importing an
+# Obsidian vault, 2026-10-31: `snake\_case` showed its backslashes, `a_b_c` italicized b).
+@pytest.mark.parametrize(("markdown", "expected"), [
+    ("\\*not emphasis\\*", "<p>*not emphasis*</p>"),
+    ("1\\. not a list", "<p>1. not a list</p>"),
+    ("\\# not a heading", "<p># not a heading</p>"),
+    ("snake\\_case", "<p>snake_case</p>"),
+    # The address after an escaped [ is a bare one, linked without the unmatched ) (GFM).
+    (
+        "\\[not a link](https://e.com)",
+        '<p>[not a link](<a href="https://e.com" target="_blank" rel="noopener noreferrer">https://e.com</a>)</p>',
+    ),
+    ("a\\\\b", "<p>a\\b</p>"),
+    ("\\a stays", "<p>\\a stays</p>"),
+    ("`\\_ in code`", "<p><code>\\_ in code</code></p>"),
+    ("\\<br> as text", "<p>&lt;br&gt; as text</p>"),
+    ("snake_case_name", "<p>snake_case_name</p>"),
+    ("a__b__c", "<p>a__b__c</p>"),
+    ("_em_ and __strong__", "<p><em>em</em> and <strong>strong</strong></p>"),
+    ("a*b*c", "<p>a<em>b</em>c</p>"),
+])
+def test_backslash_escapes_and_intraword_underscores(markdown: str, expected: str) -> None:
+    assert render_markdown_to_html(markdown) == expected
+
+
+def test_a_matched_backslash_pair_is_a_formula_not_two_escapes() -> None:
+    # MetaList's LaTeX on top of Markdown: \(x\) is a formula; a lone escape still escapes.
+    rendered = render_markdown_to_html("\\(x\\) and a\\_b")
+    assert rendered.startswith('<p><span class="meta-latex meta-latex-inline" data-latex-source="x">')
+    assert rendered.endswith(" and a_b</p>")
+
+
+# A bare web address leaves a trailing full stop, comma or unmatched ) out of its link (GFM).
+@pytest.mark.parametrize(("markdown", "linked", "after"), [
+    ("See https://e.com.", "https://e.com", "."),
+    ("(see https://e.com)", "https://e.com", ")"),
+    ("https://en.wikipedia.org/wiki/Foo_(bar)", "https://en.wikipedia.org/wiki/Foo_(bar)", ""),
+    ("Is it https://e.com/a?", "https://e.com/a", "?"),
+])
+def test_a_bare_address_leaves_trailing_punctuation_out(markdown: str, linked: str, after: str) -> None:
+    rendered = render_markdown_to_html(markdown)
+    assert f'<a href="{linked}" target="_blank" rel="noopener noreferrer">{linked}</a>{after}' in rendered

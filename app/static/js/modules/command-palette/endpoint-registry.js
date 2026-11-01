@@ -85,16 +85,24 @@ const ROOT_REORDER_COMMANDS = new Set([
     'action.alphabetize_root_notes_desc',
 ]);
 
+// Developer tools: only when MetaList runs in development (the Obsidian import's developer version, PLAN.md).
+const DEVELOPMENT_COMMANDS = new Set(['form.import_obsidian_vault']);
+
 /**
  * Whether a command can apply now; one that cannot is left out of the palette (rule 5).
- * `state` is { hasPassword, isRootReorderLocked } (a sorted tab orders its root notes itself).
+ * `state` is { hasPassword, isRootReorderLocked, isDevelopment } (a sorted tab orders its
+ * root notes itself).
  */
 export function isCommandAvailable(commandId, state) {
     if (typeof commandId !== 'string' || commandId === '') {
         throw new Error('isCommandAvailable requires a command id');
     }
-    if (typeof state.hasPassword !== 'boolean' || typeof state.isRootReorderLocked !== 'boolean') {
-        throw new Error('isCommandAvailable requires boolean hasPassword and isRootReorderLocked');
+    if (typeof state.hasPassword !== 'boolean' || typeof state.isRootReorderLocked !== 'boolean'
+        || typeof state.isDevelopment !== 'boolean') {
+        throw new Error('isCommandAvailable requires boolean hasPassword, isRootReorderLocked and isDevelopment');
+    }
+    if (DEVELOPMENT_COMMANDS.has(commandId)) {
+        return state.isDevelopment;
     }
     if (PASSWORD_COMMANDS_WITHOUT_ONE.has(commandId)) {
         return !state.hasPassword;
@@ -161,6 +169,7 @@ export function buildCommandPaletteEndpoints(deps) {
     const openReminders = requireAction(actions, 'openReminders');
 
     const openVersionInfo = requireAction(actions, 'openVersionInfo');
+    const openObsidianImport = requireAction(actions, 'openObsidianImport');
     const openMemoryUsage = requireAction(actions, 'openMemoryUsage');
     const openRecentMessages = requireAction(actions, 'openRecentMessages');
     const openNoteLayoutAppearance = requireAction(actions, 'openNoteLayoutAppearance');
@@ -565,6 +574,12 @@ export function buildCommandPaletteEndpoints(deps) {
             kind: 'form',
             label: 'Open/Switch Vault…',
             execute: async () => openOpenNamespace(),
+        },
+        {
+            id: 'form.import_obsidian_vault',
+            kind: 'form',
+            label: 'Import Obsidian Vault…',
+            execute: async () => openObsidianImport(),
         },
         {
             id: 'form.create_namespace',

@@ -145,6 +145,11 @@ export const CONFIG = {
             RESTORE_IMPORT: `${API_BASE}/backup/restore/import`,
             FOLDER_PICK: `${API_BASE}/backup/folder/pick`,
         },
+        // The Obsidian import's developer version (PLAN.md): development only.
+        IMPORT: {
+            OBSIDIAN: `${API_BASE}/import/obsidian`,
+            OBSIDIAN_PICK_FOLDER: `${API_BASE}/import/obsidian/pick-folder`,
+        },
         FILES: {
             UPLOAD: `${API_FILES_BASE}/upload`,
             DOWNLOAD: (fileId) => `${API_FILES_BASE}/${fileId}/download`,

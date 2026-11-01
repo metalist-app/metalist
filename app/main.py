@@ -74,6 +74,7 @@ from app.api.routes.ontology import router as api2_ontology_router
 from app.api.routes.backups import router as api2_backup_router
 from app.api.routes.reminders import router as api2_reminders_router
 from app.api.routes.remote_images import router as api2_remote_images_router
+from app.api.routes.imports import router as api2_imports_router
 from app.api.routes.ai import router as api2_ai_router
 from app.api.routes.test import router as api2_test_router  # shockharness: ignore[STUB002] reason="mounted only when TEST_MODE is on, and the endpoint asserts it too"
 from app.api.transactions import transactional_route
@@ -418,6 +419,7 @@ app.include_router(api2_files_router, prefix=API_PREFIX)
 app.include_router(api2_ontology_router, prefix=API_PREFIX)
 app.include_router(api2_reminders_router, prefix=API_PREFIX)
 app.include_router(api2_remote_images_router, prefix=API_PREFIX)
+app.include_router(api2_imports_router, prefix=API_PREFIX)
 app.include_router(api2_ai_router, prefix=API_PREFIX)
 if TEST_MODE:
     app.include_router(dev.router, prefix="/dev", tags=["dev"])
@@ -533,6 +535,7 @@ async def home(request: Request, db: Annotated[SafeSession, Depends(get_db)]):
             needs_auth=True,
             shows_login_at_once=login_is_certainly_needed(request),
             shows_ai_cost_estimate=is_development_environment(),
+            is_development=is_development_environment(),
             vault_name=ACTIVE_NAMESPACE,
         )
     return template.render(
@@ -544,6 +547,7 @@ async def home(request: Request, db: Annotated[SafeSession, Depends(get_db)]):
         needs_auth=False,
         shows_login_at_once=False,
         shows_ai_cost_estimate=is_development_environment(),
+        is_development=is_development_environment(),
         vault_name=ACTIVE_NAMESPACE,
     )
 

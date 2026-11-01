@@ -91,6 +91,18 @@ onboarding idea of §3a brought forward.
 3. The import runs in the new vault, never in the one the dialog was opened from.
 4. Without the choice, creating a vault is unchanged.
 
+### Slice 1c: a plain Markdown folder (the maintainer, 2026-10-31)
+The same importer, offered as its own option, for a folder of Markdown files from any app.
+1. In development the command palette also has "Import Markdown folder…", and creating a
+   vault offers it too.
+2. Files, folders, frontmatter, times and the report work as for an Obsidian vault. The
+   notes are tagged `imported:source=markdown:at=…`, and the report is titled "Import report
+   — Markdown — <folder> — <date>".
+3. Line breaks stay as written: plain Markdown already uses standard breaks, so no backslash
+   is added (only an Obsidian vault without strict line breaks gets them).
+4. Obsidian-only syntax found in such a folder (`[[links]]`, `%%comments%%`) is handled as
+   for Obsidian once slice 2 is built.
+
 ### Slice 2: links, embeds and attachments
 1. `[[Note]]`, `[[Note|alias]]`, `[[Folder/Note]]` and `[text](Note%20Name.md)` become links to
    the right note (`[[UUID]]`, `[[UUID|alias]]`). Frontmatter `aliases` resolve too.
@@ -147,4 +159,4 @@ onboarding idea of §3a brought forward.
 4. **The same vault imported twice:** imported again; the report says it was imported before.
 5. **The source tag:** `imported:source=obsidian:at=<date and time>`, without the vault's name
    (the report note names it).
-6. **Slice order:** 1 → 1b → 2 → 3 → 4.
+6. **Slice order:** 1 → 4 → 2 → 1b → 1c → 3 (1c added, and the import choices of slice 4 brought forward after trying slice 1, by the maintainer, 2026-10-31).
