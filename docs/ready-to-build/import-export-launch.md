@@ -86,6 +86,7 @@ Filed from `docs/inbox/2026-10-27-import-export-launch.md`.
   - made valid the way the tag bar makes a new tag: capitalization kept, spaces become dashes, disallowed characters removed (`docs/ui/tag-bar.md`, new-tag rule)
   - the path is only the tag's name; **no ontology rules are added**
   - files at the top of the vault get no folder tag
+  - **planned (agreed 2026-11-01):** a prefix folder the user picks, the vault's name by default, that every folder tag starts with, top-level files included: `docs/ready-to-build/import-prefix-folder.md`
 - **No container note.** The vault is never gathered under one "Imported from Obsidian" note.
 - ~~Remember which tags came from folders and their original names~~ **Dropped 2026-10-30:** the export no longer rebuilds folders (§6.1), so nothing needs it. Folder tags stay as tags.
 
@@ -309,6 +310,7 @@ It offers the same scope, the one-file-per-root-note option (§6.2) and the two 
 - ~~A Logseq export~~ **Dropped 2026-10-30:** the standard Markdown export is the one export.
 - ~~AI-suggested folders~~ **Replaced 2026-10-30:** no AI folder feature in MetaList. Instead **the user's AI agent can do an export following the user's own instructions** ("set this up as an Obsidian vault with folders", "one file per month"), with nothing codified by MetaList. It sees only what the AI privacy settings allow (hidden notes stay in the flat list), and needs an export it can drive (which note goes in which folder, which choices) without rewriting notes. Design it when it's built.
 - **Imports from Evernote (ENEX), then Notion**, both one-way.
+- **A folder of any files** (agreed 2026-11-01, ready to build): every file a note, with its folder tag, after a size check and file-type checklist, and previews for code, PDF, RTF/.docx, HTML, audio and video: `docs/ready-to-build/folder-import-and-file-previews.md`.
 - **Links into part of a note** (considered 2026-10-30, not ruled out; design open): MetaList links point at whole notes, so with no splitting an Obsidian heading or block link (`[[Plan#Budget]]`, `[[Plan#^abc123]]`) can only point at the whole note. Links could later be extended to point at a heading or block inside a note.
 
 ## 9. Open (ask the maintainer; don't decide)

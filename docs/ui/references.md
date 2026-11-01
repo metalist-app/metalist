@@ -109,6 +109,7 @@ Typing `[[` in the note being edited opens a list of notes to reference (agreed 
   - Files over 200 KB or not in UTF-8 keep only their pill; an info banner says why. Picking a file with `Attach File…` adds no child.
   - The text is stored line for line as escaped plain text (`<br>` between lines), never read as HTML.
   - Implementation: `app/services/file_text_preview.py`, `POST /api2/notes/file-preview-child/{note_id}` (`app/usecases/create_file_preview_child.py`), `dropped-file-preview-service.js`. Tests: `tests/unit/test_file_text_preview.py`, `BROWSER_TEST_SUITE=file-drop-previews npm run test:browser`.
+  - Planned (agreed 2026-11-01, ready to build): previews for code files (as `@code=<language>`), PDF, RTF and `.docx`, HTML, audio and video, for drops and imports alike: `docs/ready-to-build/folder-import-and-file-previews.md` §5.
 - Named image files dropped or pasted into the editor prompt for one of two paths:
   - `Paste Inline`: embed the image into note HTML as compressed `data:image/...`.
   - `Save as File`: upload the original file without recompression and insert its `![[UUID]]` token.

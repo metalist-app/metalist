@@ -53,6 +53,8 @@
 - Future plan (Obsidian import and export, aliases and image widths mapped both ways): `docs/future-plans/obsidian-import-export.md`; scheduled for launch in `docs/ready-to-build/import-export-launch.md`, with every Obsidian feature mapped into MetaList in `docs/ready-to-build/obsidian-mapping.md`
 - Planned, not scheduled (the same tag more than once in a note): `docs/future-plans/same-tag-twice.md`
 - Ready to build, an experiment behind a setting (virtual folders: a tag ending in `/` is a folder, shown as a tree in the left margin; the import's folder tags get the slash): `docs/ready-to-build/virtual-folders.md`
+- Ready to build (a prefix folder for every import, so a whole import is one folder): `docs/ready-to-build/import-prefix-folder.md`
+- Ready to build (importing a folder of any files, with a size check and file-type checklist; previews for code, PDF, RTF/.docx, HTML, audio and video): `docs/ready-to-build/folder-import-and-file-previews.md`
 - Future plan (charts of super-tag values, embedded like diagrams): `docs/future-plans/charts.md`
 - Future plan (one encrypted file per attachment, with a catalog): `docs/future-plans/file-storage-per-file.md`
 - Future plan (backups to S3-compatible storage, uploaded by MetaList itself; manual or automatic): `docs/future-plans/backups-s3.md`
