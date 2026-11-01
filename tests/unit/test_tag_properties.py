@@ -9,7 +9,7 @@ import pytest
 
 import app.services.search_index as search_index_module
 from app.services.input_errors import InputRejected
-from app.services.search_index import SearchIndex, SearchRecord, extract_ordered_tags_for_search, extract_tags_for_search
+from app.services.search_index import NOTHING_INHERITED, SearchIndex, SearchRecord, extract_ordered_tags_for_search, extract_tags_for_search
 from app.services.search_query import format_search_query, parse_search_query
 from app.services.tag_ontology import compile_rules, parse_rules_text
 from app.services.tag_properties import (
@@ -23,6 +23,11 @@ from app.services.tag_properties import (
 )
 from app.services.tag_rename import delete_tag_from_tag_bar, rename_tag_in_tag_bar
 from app.usecases import search_context_tags
+
+
+def _inherits_nothing(note_ids):
+    """A search index alone has no note tree: its notes inherit no values."""
+    return {note_id: NOTHING_INHERITED for note_id in note_ids}
 
 # Seconds after midnight of 22:30.
 HALF_PAST_TEN_PM = (22 * 60 + 30) * 60
@@ -111,6 +116,7 @@ NOTES = {
 @pytest.fixture
 def index() -> SearchIndex:
     search_index = SearchIndex()
+    search_index.attach_inherited_values_reader(_inherits_nothing)
     records = [
         SearchRecord(note_id=note_id, content_text="", tags=tags, tag_terms=extract_tags_for_search(tags))
         for note_id, tags in NOTES.items()
@@ -181,6 +187,7 @@ def upward_index(monkeypatch: pytest.MonkeyPatch) -> SearchIndex:
     ontology = compile_rules(rules=parse_rules_text(text=RULES, filename="test"), filename="test")
     monkeypatch.setattr(search_index_module, "get_ontology_if_ready", lambda: ontology)
     search_index = SearchIndex()
+    search_index.attach_inherited_values_reader(_inherits_nothing)
     search_index.rebuild(
         [SearchRecord(note_id=note_id, content_text="", tags=tags, tag_terms=extract_tags_for_search(tags))
          for note_id, tags in UPWARD_NOTES.items()],
@@ -232,6 +239,7 @@ def suggestion_index(monkeypatch: pytest.MonkeyPatch) -> SearchIndex:
     )
     monkeypatch.setattr(search_index_module, "get_ontology_if_ready", lambda: ontology)
     search_index = SearchIndex()
+    search_index.attach_inherited_values_reader(_inherits_nothing)
     search_index.rebuild(
         [SearchRecord(note_id=note_id, content_text="", tags=tags, tag_terms=extract_tags_for_search(tags))
          for note_id, tags in SUGGESTION_NOTES.items()],
@@ -320,6 +328,7 @@ def test_max_and_min_keep_the_extreme_notes_among_those_found(
     )
     monkeypatch.setattr(search_index_module, "get_ontology_if_ready", lambda: ontology)
     search_index = SearchIndex()
+    search_index.attach_inherited_values_reader(_inherits_nothing)
     search_index.rebuild(
         [SearchRecord(note_id=note_id, content_text="", tags=tags, tag_terms=extract_tags_for_search(tags))
          for note_id, tags in EXTREME_NOTES.items()],

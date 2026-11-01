@@ -81,8 +81,8 @@ const LABELS = {
     'form.visual_cues': 'Visual Cues…',
     'form.dictation_settings': 'Dictation Settings…',
     'form.open_namespace': 'Open/Switch Vault…',
-    'form.import_obsidian_vault': 'Import Obsidian Vault…',
-    'form.import_markdown_folder': 'Import Markdown Folder…',
+    'form.import_wizard': 'Import Notes…',
+    'form.new_vault_wizard': 'Set Up This Vault…',
     'form.create_namespace': 'Create Vault…',
     'form.manage_namespace_ports': 'Manage Vault Ports…',
     'form.rename_current_namespace': 'Rename Current Vault…',
@@ -165,7 +165,7 @@ test('commands that cannot apply are hidden', () => {
     }
     assert.equal(isCommandAvailable('action.logout', sorted), true);
     // The Obsidian import exists in production too (the maintainer, 2026-10-31).
-    assert.equal(isCommandAvailable('form.import_obsidian_vault', withPassword), true);
+    assert.equal(isCommandAvailable('form.import_wizard', withPassword), true);
 });
 
 test('every list the palette shows or activates comes from the available commands', async () => {

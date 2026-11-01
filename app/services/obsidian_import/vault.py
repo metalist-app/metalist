@@ -23,6 +23,8 @@ _MARKDOWN_SUFFIX = ".md"
 # An Excalidraw drawing is Markdown on disk but no note: it comes in as a file (mapping J4).
 _DRAWING_SUFFIX = ".excalidraw.md"
 _UTF8 = "utf-8"
+# Why a Markdown file is left out when it isn't UTF-8 text (the wizard's summary counts these).
+NOT_UTF8_REASON = "not UTF-8 text"
 _UTF8_BOM = b"\xef\xbb\xbf"
 
 
@@ -82,7 +84,7 @@ def read_vault(folder: Path, *, reads_line_break_setting: bool) -> VaultContents
                 continue
             text = _utf8_text(file_path.read_bytes())
             if text is None:
-                skipped.append(SkippedEntry(path=relative, reason="not UTF-8 text"))
+                skipped.append(SkippedEntry(path=relative, reason=NOT_UTF8_REASON))
                 continue
             stat = file_path.stat()
             markdown_files.append(VaultFile(

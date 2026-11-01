@@ -73,6 +73,8 @@ from app.services.bulk_operation import bulk_operation_guard
 from app.services.tab_state import MAX_TAB_ID_LENGTH, tab_state_store
 from app.services.tokens import token_service
 from app.services.agent.inference import InferenceProviderError
+from app.services.agent.note_tag_suggestions import build_import_tag_request
+from app.services.tag_properties import tag_part_of_token
 from app.services.agent.note_tag_suggestions import build_note_tag_request
 from app.services.agent.export_title_suggestions import MAX_PREVIOUS_TITLES
 from app.services.agent.export_title_suggestions import ExportTitleRequest
@@ -93,6 +95,8 @@ from app.startup_environment import is_development_environment
 router = APIRouter(prefix="/ai", tags=["ai"])
 
 _MAX_PRIVACY_PREVIEW_NOTE_IDS = 20_000
+# An import's files whose tags one request suggests, and the tags it leaves out.
+_MAX_IMPORT_FILE_NOTE_IDS = 20_000
 _MAX_CHAT_MESSAGE_CHARS = 32_000
 _MAX_SELECTED_NOTE_ID_LENGTH = 128
 _MAX_EXPORTED_NOTE_ID_LENGTH = 256
@@ -202,6 +206,27 @@ class AiChatRequest(BaseModel):
 
     @model_validator(mode="after")
     def validate_thinking_level_for_model(self) -> Self:
+        validate_model_name(self.model)
+        return self
+
+
+class ImportTagSuggestionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    provider: AiProvider
+    model: str
+    thinking_level: Literal["off", "low", "medium", "high"]
+    # The import's file notes (its answer's fileNoteIds), tagged as one collection.
+    file_note_ids: list[str] = Field(..., min_length=1, max_length=_MAX_IMPORT_FILE_NOTE_IDS)
+    # Never offered to the AI: the import's folder tags and its own tag.
+    excluded_tags: list[str] = Field(..., max_length=_MAX_IMPORT_FILE_NOTE_IDS)
+    # The view the import is in ('' for no search).
+    search: str = Field(..., max_length=MIB)
+    tab_id: str = Field(..., min_length=1, max_length=MAX_TAB_ID_LENGTH)
+    is_untagged_view: bool
+
+    @model_validator(mode="after")
+    def validate_model_for_provider(self) -> Self:
         validate_model_name(self.model)
         return self
 
@@ -579,6 +604,56 @@ def suggest_tags_for_note_with_ai(
     events = _note_tag_suggestion_events(
         request=request, connection=connection, payload=payload,
         web_settings=resolve_agent_web_settings(preferences=preferences), session_key=session_key,
+        trace_label="Suggest Tags with AI",
+    )
+    return StreamingResponse(
+        events,
+        media_type="application/x-ndjson",
+        headers={"X-Accel-Buffering": "no", "Cache-Control": "no-store", "Content-Encoding": "identity"},
+    )
+
+
+@router.post("/import-tag-suggestions")
+@transactional_route
+def suggest_tags_for_import_with_ai(
+    payload: ImportTagSuggestionRequest,
+    token: Annotated[str, Depends(require_request_auth_token)],
+) -> StreamingResponse:
+    """Ask the AI for tags for an import's files, seen together so files on one topic get the
+    same tags (the import wizard, PLAN.md slice 2b). Files the AI may not see are left out.
+    Streams as the note's suggestions do; nothing is written."""
+    for note_id in payload.file_note_ids:
+        if not note_store.has_note(note_id):
+            raise HTTPException(status_code=HTTPStatus.NOT_FOUND, detail=f"Note not found: {note_id}")
+    session_key = token_service.get_session_key(token)
+    connection = _require_ai_connection(
+        provider=payload.provider, model=payload.model, token=token, session_key=session_key,
+    )
+    preferences = load_client_preferences(token=token)
+    boundary = resolve_cloud_privacy_boundary(preferences=preferences, provider=payload.provider)
+    scope = resolve_view_scope_membership(
+        search=payload.search,
+        sort_mode=tab_state_store.get_sort_mode(tab_id=payload.tab_id),
+        date_filter=tab_state_store.get_date_filter(tab_id=payload.tab_id),
+        file_filter=tab_state_store.get_file_filter(tab_id=payload.tab_id),
+        is_untagged_view=payload.is_untagged_view,
+    )
+    visible = tuple(
+        note_id for note_id in payload.file_note_ids
+        if note_id in scope.allowed_note_ids and cloud_privacy_evaluator.exclusion_reason(note_id=note_id, boundary=boundary) == ""
+    )
+    if len(visible) == 0:
+        raise InputRejected("Your AI privacy settings hide every imported note from the AI, so it can't suggest tags for them")
+    request = build_import_tag_request(
+        file_note_ids=visible,
+        excluded_tags=frozenset(tag_part_of_token(tag).casefold() for tag in payload.excluded_tags),
+        boundary=boundary, tag_skill=DEFAULT_AGENT_SKILLS.for_action("tag_proposals"),
+        scope_note_ids=scope.allowed_note_ids, batch_tokens=resolve_tagging_batch_tokens(preferences, payload.provider),
+    )
+    events = _note_tag_suggestion_events(
+        request=request, connection=connection, payload=payload,
+        web_settings=resolve_agent_web_settings(preferences=preferences), session_key=session_key,
+        trace_label="Suggest tags for an import",
     )
     return StreamingResponse(
         events,
@@ -588,13 +663,13 @@ def suggest_tags_for_note_with_ai(
 
 
 async def _note_tag_suggestion_events(
-    *, request: NoteTagRequest, connection: AiConnection, payload: NoteTagSuggestionRequest,
-    web_settings: AgentWebSettings, session_key: str,
+    *, request: NoteTagRequest, connection: AiConnection, payload: NoteTagSuggestionRequest | ImportTagSuggestionRequest,
+    web_settings: AgentWebSettings, session_key: str, trace_label: str,
 ) -> AsyncIterator[str]:
     requires(request, "cloud_disclosable")
     # Its own run in the session's trace (diagnostics, AI history), as a chat answer has.
     run_id = agent_trace_store.start_run(
-        session_key=session_key, model=payload.model, user_message="Suggest Tags with AI",
+        session_key=session_key, model=payload.model, user_message=trace_label,
     )
     events = suggest_note_tags(
         request=request, inference=connection.inference, base_url=connection.base_url,

@@ -172,8 +172,18 @@ bar's reference and `docs/design/tag-properties.md`). A search compares a note's
   skipped: `miles>2` ignores `miles=far`.
 - Units are labels: `drug:dosage>5mg` compares only `mg` values; `drug:dosage>5` compares
   every unit (`10mg`, `10kg`, `10`), which shows when a search should name one.
-- Values belong to the note they are written on: a child of a 3-mile run inherits
-  `jogging`, never `miles=3`.
+- Values follow their tag (agreed 2026-11-01): a search reads a note's own values and
+  those it inherits, through parents and embeds as tags are, never links. The nearest
+  value wins: a child of a 3-mile run has `miles=3`, unless it writes its own
+  (`jogging:miles=1`); a nearer ancestor's value hides a farther one's. So
+  `jogging:miles>2 knee` finds the knee note under a 3-mile run, a note embedding the run
+  matches `jogging:miles=3`, and an import's search (`imported:source=…:at=…`) shows every
+  note under the imported files, not grey bars. `jogging:miles?` (a missing value) and
+  stats figures (`@sum:…`) stay the note's own; `=MAX` and `=MIN` keep the notes with the
+  extreme value, a run and the notes under it. Before, a value matched only the note it
+  was written on. Implementation: `SearchIndex._tree_clause_note_ids` reads
+  `NoteStore._read_inherited_values` outside the index's lock, as stats figures are read;
+  tests: `tests/unit/test_inherited_values_search.py`.
 - A note added while such a search is active gets the term's tag and value
   (`jogging:miles=3` adds `jogging:miles=3`). A search whose term names no value a new
   note could carry (`jogging:miles>2`) refuses new notes at the top (Creating Notes From

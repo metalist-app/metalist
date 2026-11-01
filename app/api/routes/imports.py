@@ -18,7 +18,7 @@ from app.services.native_folder_picker import pick_folder
 from app.services.obsidian_import.sources import IMPORT_SOURCES
 from app.services.obsidian_import.vault import count_markdown_files
 from app.services.tokens import token_service
-from app.usecases.import_obsidian_vault import CmdImportObsidianVault
+from app.usecases.import_obsidian_vault import CmdImportObsidianVault, CmdPreviewImport
 
 router = APIRouter(prefix="/import", tags=["import"])
 
@@ -58,6 +58,17 @@ def pick_import_folder(request: Request, body: PickImportFolderRequest) -> dict[
         "selected": True, "folderPath": folder_path, "markdownFileCount": count_markdown_files(Path(folder_path)),
         "canSuggestTags": setup.is_ready_for(body["provider"]),
     }
+
+
+@router.post("/preview")
+@transactional_route
+def preview_import(request: Request, body: ImportFolderRequest) -> dict[str, object]:
+    """What importing the folder would do, before anything is written (the wizard's summary)."""
+    require_request_auth_token(request)
+    return CmdPreviewImport(
+        source=body["source"], folder_path=body["folderPath"], split_mode=body["splitMode"],
+        content_format=body["contentFormat"], imported_at=datetime.now(timezone.utc),
+    ).execute()
 
 
 @router.post("/folder")

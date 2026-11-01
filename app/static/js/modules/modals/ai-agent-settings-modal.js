@@ -20,7 +20,7 @@ import { validateAgentWebAccessMode } from '../ai-chat/agent-web-settings.js';
 import { escapeHtml } from '../html-escape.js';
 import { actionRowHtml } from './action-row.js';
 import { showErrorDialog, showErrorDialogFor } from './error-dialog.js';
-import { AI_PROVIDERS, aiProvider } from '../ai-chat/ai-providers.js';
+import { AI_KEY_WARNINGS, AI_PROVIDERS, aiProvider } from '../ai-chat/ai-providers.js';
 
 // AI Agent Settings (docs/ui/ai-chat.md, "AI Agent Settings"): one folder tab per
 // provider holding its key; then web access, the rules
@@ -30,14 +30,7 @@ import { AI_PROVIDERS, aiProvider } from '../ai-chat/ai-providers.js';
 // One tab per provider MetaList offers, in its order (app/services/ai_catalog.py).
 const PROVIDER_TABS = AI_PROVIDERS;
 // Shown under a provider's key when what it does with the user's data depends on the key.
-const KEY_WARNINGS = Object.freeze({
-    gemini: Object.freeze({
-        text: 'Use a key with billing turned on: on the free tier, Google may use what you send to improve its products, and people may read it.',
-        tooltip: 'Google\'s Gemini API terms (Unpaid Services): prompts and responses sent on free quota may be used to improve '
-            + 'Google\'s products and read by human reviewers. This does not apply in the EEA, Switzerland or the UK. '
-            + 'Use a key from a Google Cloud project with billing enabled.',
-    }),
-});
+const KEY_WARNINGS = AI_KEY_WARNINGS;
 const WEB_ACCESS_CHOICES = Object.freeze([
     ['none', 'Off', 'The AI never opens web pages.'],
     ['contextual', 'Links in your notes', 'The AI may open links that appear in the notes it can see or in your message.'],

@@ -21,8 +21,7 @@ class ImportSource:
     follows_obsidian_line_breaks: bool
     # What the folder dialog asks for.
     folder_prompt: str
-    # The import report's first words: what comes back out of MetaList, and that the folder
-    # was only read.
+    # The import report's first words: what comes back out of MetaList.
     one_way_text: str
 
 
@@ -31,15 +30,14 @@ OBSIDIAN = ImportSource(
     folder_prompt="Choose an Obsidian vault to import into MetaList",
     one_way_text=(
         "**One-way.** MetaList exports standard Markdown, so your notes, text, links and files come "
-        "back out, but features only Obsidian has may not. Your vault's folder was only read, never changed."
+        "back out, but features only Obsidian has may not."
     ),
 )
 MARKDOWN = ImportSource(
     key="markdown", label="Markdown", folder_word="folder", follows_obsidian_line_breaks=False,
     folder_prompt="Choose a folder of Markdown files to import into MetaList",
     one_way_text=(
-        "**One-way.** MetaList exports standard Markdown, so your notes, text, links and files come "
-        "back out. Your folder was only read, never changed."
+        "**One-way.** MetaList exports standard Markdown, so your notes, text, links and files come back out."
     ),
 )
 IMPORT_SOURCES: Dict[str, ImportSource] = {source.key: source for source in (OBSIDIAN, MARKDOWN)}

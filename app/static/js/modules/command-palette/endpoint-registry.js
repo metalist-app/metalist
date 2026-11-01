@@ -164,7 +164,8 @@ export function buildCommandPaletteEndpoints(deps) {
     const openReminders = requireAction(actions, 'openReminders');
 
     const openVersionInfo = requireAction(actions, 'openVersionInfo');
-    const openFolderImport = requireAction(actions, 'openFolderImport');
+    const openImportWizard = requireAction(actions, 'openImportWizard');
+    const openNewVaultWizard = requireAction(actions, 'openNewVaultWizard');
     const openMemoryUsage = requireAction(actions, 'openMemoryUsage');
     const openRecentMessages = requireAction(actions, 'openRecentMessages');
     const openNoteLayoutAppearance = requireAction(actions, 'openNoteLayoutAppearance');
@@ -571,16 +572,16 @@ export function buildCommandPaletteEndpoints(deps) {
             execute: async () => openOpenNamespace(),
         },
         {
-            id: 'form.import_obsidian_vault',
+            id: 'form.import_wizard',
             kind: 'form',
-            label: 'Import Obsidian Vault…',
-            execute: async () => openFolderImport('obsidian'),
+            label: 'Import Notes…',
+            execute: async () => openImportWizard('obsidian'),
         },
         {
-            id: 'form.import_markdown_folder',
+            id: 'form.new_vault_wizard',
             kind: 'form',
-            label: 'Import Markdown Folder…',
-            execute: async () => openFolderImport('markdown'),
+            label: 'Set Up This Vault…',
+            execute: async () => openNewVaultWizard(),
         },
         {
             id: 'form.create_namespace',

@@ -57,12 +57,12 @@ _RULES_MESSAGE_INDEX = 2
 
 _REQUEST = "Suggest tags for these notes."
 _VOCABULARY_SCOPE = "The accepted_vocabulary lists the user's existing tags that this request may see."
-_VOCABULARY_RULES = (
-    "accepted_vocabulary is ordered by relevance to the edited note first, then by use; "
+_PREFER_EXISTING_TAGS = (
     "accepted_vocabulary_note_counts gives how many notes carry each tag, in the same order. "
     "Strongly prefer existing tags. Propose a new tag only when no existing tag fits, "
     f"and at most {MAX_NEW_TAGS} new tags per note."
 )
+_VOCABULARY_RULES = "accepted_vocabulary is ordered by relevance to the edited note first, then by use; " + _PREFER_EXISTING_TAGS
 _ONE_NOTE_RULES = (
     "This request tags the one note in result_trees, which the user is editing. ancestors are "
     "the notes above it, top first, for context only: never return their note IDs, and do not "
@@ -75,10 +75,21 @@ _SUBTREE_RULES = (
     "repeat their tags. Tags inherit from parents to children, so put a tag on the parent when it "
     "fits the whole group. " + _VOCABULARY_RULES
 )
+_IMPORT_RULES = (
+    "This request tags notes the user has just imported into MetaList: each tree in result_trees "
+    "is one imported file's note with the notes below it (children nested under their parent; a "
+    "batch may hold only some of the files, or only part of a large file). ancestors, when given, "
+    "are notes above a batch's notes, for context only: never return their note IDs, and do not "
+    "repeat their tags. Tag the files as one collection: give files about the same topic the same "
+    "tags, so they can be found together. Tags inherit from parents to children, so put a tag on "
+    "a file's note when it fits the whole file. accepted_vocabulary is ordered by use; "
+    + _PREFER_EXISTING_TAGS
+)
 
 
 @dataclass(frozen=True, slots=True)
 class NoteTagRequest:
+    # The note asked about (an import's: its first file).
     note_id: str
     # Every note the AI may tag in this request.
     note_ids: frozenset[str]
@@ -121,6 +132,15 @@ def ranked_vocabulary(*, note_id: str, boundary: CloudPrivacyBoundary) -> tuple[
         if key in counts and key not in own_keys and key not in vocabulary:
             vocabulary[key] = (display[key], counts[key])
     return tuple(vocabulary.values())
+
+
+def most_used_vocabulary(
+    *, boundary: CloudPrivacyBoundary, excluded_tags: frozenset[str],
+) -> tuple[tuple[str, int], ...]:
+    """(tag, notes carrying it) the AI may see, most used first, without excluded_tags (casefolded)."""
+    display, counts = visible_tag_counts(boundary)
+    kept = [key for key in counts if key not in excluded_tags]
+    return tuple((display[key], counts[key]) for key in sorted(kept, key=lambda key: (-counts[key], key))[:MOST_USED_LIMIT])
 
 
 def _note_text(note_id: str) -> dict[str, object]:
@@ -178,7 +198,6 @@ def build_note_tag_request(
         parent_id = note_store.get_note(parent_id).parent_id
     ancestors.reverse()
     vocabulary = ranked_vocabulary(note_id=note_id, boundary=boundary)
-    words = tuple(tag for tag, _count in vocabulary)
 
     if include_children:
         hidden = cloud_privacy_evaluator.hidden_note_ids(
@@ -189,28 +208,76 @@ def build_note_tag_request(
         if _batch_payload_tokens((whole,), tuple(ancestors), vocabulary) <= batch_tokens:
             groups = (((whole,), tuple(ancestors)),)
         else:
-            # Too big for one batch: the note alone, then each child's subtree.
-            alone = {key: value for key, value in whole.items() if key != "children"}
-            trees = (alone, *whole["children"])
-            with_note = (*ancestors, _note_text(note_id))
-            groups = tuple(
-                (batch.trees, tuple(ancestors) if alone in batch.trees else with_note)
-                for batch in partition_trees(trees, batch_tokens)
-            )
+            groups = _split_subtree(whole, tuple(ancestors), batch_tokens)
         rules = _SUBTREE_RULES
     else:
         note_ids = frozenset({note_id})
         groups = (((_note_node(note_id),), tuple(ancestors)),)
         rules = _ONE_NOTE_RULES
+    # The note was checked visible, its children and the vocabulary are filtered by the
+    # evaluator, and the ancestors are visible by the hierarchy rule.
+    return _request_of_groups(
+        note_id=note_id, note_ids=note_ids, groups=groups, vocabulary=vocabulary, rules=rules,
+        tag_skill=tag_skill, boundary=boundary,
+    )
 
+
+def build_import_tag_request(
+    *, file_note_ids: tuple[str, ...], excluded_tags: frozenset[str], boundary: CloudPrivacyBoundary,
+    tag_skill: AgentSkill, scope_note_ids: frozenset[str], batch_tokens: int,
+) -> NoteTagRequest:
+    """The request for an import's files (each file's note with the notes below it), tagged as
+    one collection: as many files in each batch as fit, so the AI sees what they share, and
+    batch 1's new tags offered to the rest. A file too big for a batch is split as a note's
+    subtree is. The caller has left out the files the AI may not see; excluded_tags
+    (casefolded: the import's folder tags and its own) are kept out of the vocabulary."""
+    assert len(file_note_ids) > 0 and batch_tokens > 0
+    for note_id in file_note_ids:
+        assert cloud_privacy_evaluator.exclusion_reason(note_id=note_id, boundary=boundary) == ""
+        assert note_store.get_note(note_id).parent_id is None, "an imported file's note is a root note"
+    vocabulary = most_used_vocabulary(boundary=boundary, excluded_tags=excluded_tags)
+    hidden = cloud_privacy_evaluator.hidden_note_ids(note_ids=tuple(note_store.list_note_ids()), boundary=boundary)
+    fitting: list[dict[str, object]] = []
+    too_big: list[tuple[tuple[dict, ...], tuple]] = []
+    for note_id in file_note_ids:
+        whole = _subtree_node(note_id, scope_note_ids, hidden)
+        # A file alone too big with nothing below it still goes whole, in a batch of its own.
+        if "children" not in whole or _batch_payload_tokens((whole,), (), vocabulary) <= batch_tokens:
+            fitting.append(whole)
+        else:
+            too_big.extend(_split_subtree(whole, (), batch_tokens))
+    groups = (*((batch.trees, ()) for batch in partition_trees(tuple(fitting), batch_tokens)), *too_big)
+    note_ids = frozenset(id for trees, _context in groups for tree in trees for id in _node_note_ids(tree))
+    return _request_of_groups(
+        note_id=file_note_ids[0], note_ids=note_ids, groups=groups, vocabulary=vocabulary, rules=_IMPORT_RULES,
+        tag_skill=tag_skill, boundary=boundary,
+    )
+
+
+def _split_subtree(whole: dict[str, object], ancestors: tuple, batch_tokens: int) -> tuple[tuple[tuple[dict, ...], tuple], ...]:
+    """A subtree too big for one batch: the note alone, then each child's subtree, in batches;
+    the batches without the note get its text as context."""
+    alone = {key: value for key, value in whole.items() if key != "children"}
+    trees = (alone, *whole["children"])
+    with_note = (*ancestors, _note_text(whole["note_id"]))
+    return tuple(
+        (batch.trees, ancestors if alone in batch.trees else with_note)
+        for batch in partition_trees(trees, batch_tokens)
+    )
+
+
+def _request_of_groups(
+    *, note_id: str, note_ids: frozenset[str], groups: tuple, vocabulary: tuple[tuple[str, int], ...], rules: str,
+    tag_skill: AgentSkill, boundary: CloudPrivacyBoundary,
+) -> NoteTagRequest:
+    """The request whose batches are groups ((trees, ancestors) each), all of note_ids between them."""
+    words = tuple(tag for tag, _count in vocabulary)
     batches = tuple(
         TagBatch(trees=trees, note_ids=frozenset(id for tree in trees for id in _node_note_ids(tree)),
                  vocabulary=words, tokens=_batch_payload_tokens(trees, context, vocabulary))
         for trees, context in groups
     )
     assert frozenset().union(*(batch.note_ids for batch in batches)) == note_ids
-    # The note was checked visible, its children and the vocabulary are filtered by the
-    # evaluator, and the ancestors are visible by the hierarchy rule.
     return produces(NoteTagRequest(
         note_id=note_id, note_ids=note_ids, batches=batches,
         ancestors_by_batch=tuple(context for _trees, context in groups),

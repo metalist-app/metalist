@@ -185,8 +185,8 @@ as written. Not yet: `|300` doesn't size a picture (MetaList keeps the text only
 while building it: tasks are MetaList tasks (`@todo`, `@done`) in either content, since an
 `@markdown` note can't show a task box; a list right after a heading gives the heading
 `@bullets`/`@numbered` only when the list is all its section holds; No splitting as rich text
-is one note, tasks there shown as ☐ and ☑; the import report comes in split and written as
-chosen. Also built alongside it: `Delete Notes (Current View)…` (`docs/ui/command-palette.md`).
+is one note, tasks there shown as ☐ and ☑; the import report comes in written as chosen, and
+as one note (2026-11-01: split, it was dozens of notes the summary never counted). Also built alongside it: `Delete Notes (Current View)…` (`docs/ui/command-palette.md`).
 1. The dialog offers the split modes: No splitting, Headings and lists, and Headings, lists
    and paragraphs (the default). It also offers the content: Rich text (the default) or
    Markdown.
@@ -248,45 +248,59 @@ tags) is built inside the import wizard. **To agree before any code.**
   slides the other way. Same slide as the reference views (250 ms, the same easing); with
   Reduce Motion a quick fade (120 ms); with Animated Transitions off, no motion.
 - Each screen: a title, one or two sentences of explanation (wanted here, §3a), its choices,
-  and Back, the main button (Next), and "Finish with these choices" (every question has a
-  default, §3a). Enter is the main button; Escape asks before leaving a wizard half done.
+  and Back and the main button (Next). Every question has a default, but the person goes
+  through every step: no button skips ahead (the maintainer, 2026-10-31, replacing §3a's
+  "Import with these choices"). Enter is the main button; Escape asks before leaving a
+  wizard half done.
 - A question shows only when it applies (§3a): no AI step's tag question without an AI set
   up; no "what will be approximated" screen when nothing would be.
 
 ### The new vault wizard
 Create Vault (in the vault it is opened from) asks only the name and ports, in the same frame
 as its first step; the new vault opens straight into the rest.
-1. **Password:** set one (strength meter, "Generate Password…" opening the existing
-   generator with "Use This Password"), or Not now. One line says what each means: notes
+1. **Password:** "Protect this vault with a password", ticked; unticking it folds the fields
+   away (the maintainer, 2026-10-31: a checkbox, not "leave it empty to skip"). The fields:
+   strength meter, "Generate Password…" opening the existing generator with "Use This
+   Password". One line says what each means: notes
    encrypted; without one, the AI key is kept only until MetaList restarts. Setting it keeps
    this window logged in: no second login (the server opens a session for the window that
    set it; other windows of the vault are logged out, as today).
-2. **AI:** a provider's key (the AI settings' key row), or Not now.
+2. **AI:** "Set up an AI", ticked, over the providers (OpenAI, Anthropic, Google, as cards)
+   and the chosen one's key, with Google's billing warning (as AI Agent Settings).
 3. **Bring in your notes:** Obsidian vault, Markdown folder, or Start empty. Choosing one
    continues into the import wizard's steps, which join the progress bar.
-4. **Done:** what was set up; Open My Vault.
+4. **Summary ("Ready to set up your vault"):** what will happen (password, AI, and the
+   import's preview when importing); its button is the green Set Up Vault.
+5. **Setting up:** the last step, its progress; done, "Your vault is ready" and Done.
 
 ### The import wizard
-From the palette's "Import…" (one command with the source chosen inside), and from step 3
-above.
+**Wired 2026-10-31:** "Import Notes…" in the palette runs the real import (the developer
+version's two commands and dialog are gone); the summary is the server's preview
+(`CmdPreviewImport`, `POST /import/preview`). From the palette, and from step 3 above.
 1. **Source:** Obsidian vault or Markdown folder, each with its direction label (§4: one-way,
    and the sentence saying what comes back out).
 2. **Folder:** Choose Folder…; then its name, its Markdown files and attachments counted.
+   Each note is tagged with its folder and the tags written in its file (slice 3); nothing to
+   choose, so no checkbox (the maintainer, 2026-10-31).
 3. **Split:** the three modes shown on samples exactly as the notes would look: a built-in
    sample and one of the person's own files (one with headings and lists, picked for them;
    another can be picked). Switching modes animates the notes splitting apart or joining.
    Each mode's good and bad in a line or two (§3a).
-4. **Write as:** rich text or Markdown, with a before/after from the same file.
-5. **AI:** only when no AI is set up (the maintainer, 2026-10-31): the same step as the new
-   vault wizard's (a provider's key, or Not now), so the AI can suggest tags for the import.
-6. **Tags:** frontmatter and inline tags (slice 3), and, with an AI set up (before or in the
-   step above), "Have the AI suggest tags" (slice 2b: proposals, never the folder tags).
-7. **What changes:** what will be approximated in these files (comments, block IDs, callouts
-   as `@quote`, …), and that the folder is only read (§4). Shown only when something would be.
-8. **Importing:** progress (files, attachments, then the AI's tags as they come).
-9. **Done:** the counts; Open the Report.
-
-Inside the new vault wizard, the import's AI step never shows: that wizard has just asked.
+4. **Write as:** rich text or Markdown, the choices beside a sample note that changes in
+   place as Split's does: Markdown's marks slide in, the formatting falls away, the
+   `@markdown` tag appears (the maintainer, 2026-10-31).
+5. **AI tags** (the maintainer, 2026-10-31: one step, a checkbox at its top): "Have an AI
+   suggest tags", unticked; with no AI set up, ticking it opens the providers (OpenAI,
+   Anthropic, Google) and the key. In the new vault wizard it shows only when "Set up an
+   AI" was ticked there, and is the checkbox alone (slice 2b: proposals, never the folder
+   tags).
+6. **Summary ("Ready to import"):** a preview of what the import will do, before anything
+   is written: how many files will become how many notes, attachments and folder tags, and
+   what will appear differently (comments, block IDs, callouts as `@quote`, …), each line
+   "N of your … will …". Its button is the green Import.
+7. **Importing:** the last step (the maintainer, 2026-10-31): its progress; done, the same
+   screen says so ("Your notes are in", the report being the first note) and its button is
+   Done, which closes the wizard. No Done step after it.
 
 ### Motion cases (interaction principles; agree before code)
 Principle: only the person's action changes the screen, and the slide shows where they went.

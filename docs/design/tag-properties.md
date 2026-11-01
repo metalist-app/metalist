@@ -34,10 +34,12 @@ Everything is a triple on a note: *tag*, *property*, *value*.
   property `value` (`jogging:value=3`). Today's valued tags (`priority=high`) keep
   working unchanged and become a special case of the model.
 - A note carries each tag at most once, so a tag's properties all live in one token.
-- Values belong to the note they are written on. Child notes and notes referencing
-  it inherit the **tag** (as non-meta tags inherit today), never its **values**.
-  Otherwise a child of a 3-mile run would itself match `jogging:miles>2`, and any
-  later totals would count those miles twice.
+- Values belong to the note they are written on for counting: totals and stats figures
+  read only the values a note writes, so a child of a 3-mile run never counts those miles
+  twice. A search reads them as it reads tags (changed 2026-11-01): child notes and
+  embedding notes inherit the tag and its values, the nearest value winning, so a child of
+  a 3-mile run matches `jogging:miles>2` (`docs/ui/search-semantics.md`, Super Tag
+  Searches).
 
 ## Syntax in the tag bar
 

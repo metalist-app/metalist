@@ -925,8 +925,10 @@ test('AI settings offer the registered providers and no local model downloads', 
     assert.match(modal, /const PROVIDER_TABS = AI_PROVIDERS;/);
     const providers = readFileSync(new URL('../../app/static/js/modules/ai-chat/ai-providers.js', import.meta.url), 'utf8');
     for (const label of ['OpenAI', 'Anthropic', 'Google']) assert.match(providers, new RegExp(`label: '${label}'`));
-    // Gemini's free tier may train on what is sent: its tab says so under the key.
-    assert.match(modal, /gemini: Object\.freeze\(\{\s*text: 'Use a key with billing turned on/);
+    // Gemini's free tier may train on what is sent: its tab (and the setup wizards' AI step)
+    // says so under the key.
+    assert.match(providers, /gemini: Object\.freeze\(\{\s*text: 'Use a key with billing turned on/);
+    assert.match(modal, /const KEY_WARNINGS = AI_KEY_WARNINGS;/);
     assert.doesNotMatch(modal, /Ollama|ai-agent-provider|id="ai-agent-download/);
     assert.doesNotMatch(chatApi, /PULL_MODEL|pullOllamaModel/);
     assert.doesNotMatch(controller, /model = this\._models\[0\]/);

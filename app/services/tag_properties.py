@@ -276,6 +276,13 @@ class PropertyCondition:
         return self.operator == "=" and self.value_text in EXTREME_KEYWORDS
 
     @property
+    def reads_values(self) -> bool:
+        """jogging:miles>2, jogging:miles, jogging:miles=MAX: about a value a note has,
+        its own or inherited (docs/ui/search-semantics.md, Super Tag Searches); not a
+        missing one (jogging:miles?) or a stats figure, which stay the note's own."""
+        return self.operator != MISSING_OPERATOR and not self.is_stats
+
+    @property
     def is_stats(self) -> bool:
         """@sum:calories>2000: about the figure a stats tag shows, not a value on a note."""
         return self.key[0] in STATS_TERM_TAGS

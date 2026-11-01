@@ -8,10 +8,15 @@ import pytest
 
 import app.services.search_index as search_index_module
 from app.services.input_errors import InputRejected
-from app.services.search_index import SearchIndex, SearchRecord, extract_tags_for_search
+from app.services.search_index import NOTHING_INHERITED, SearchIndex, SearchRecord, extract_tags_for_search
 from app.services.search_query import parse_search_query
 from app.services.tag_ontology import OntologyParseError, compile_rules, parse_rules_text
 from app.usecases.search_comment_autofill import compute_initial_tags_for_new_note
+
+
+def _inherits_nothing(note_ids):
+    """A search index alone has no note tree: its notes inherit no values."""
+    return {note_id: NOTHING_INHERITED for note_id in note_ids}
 
 NOTES = {
     "one-tag": "x:foo=bar:baz=5",
@@ -31,6 +36,7 @@ def index(monkeypatch: pytest.MonkeyPatch) -> SearchIndex:
     )
     monkeypatch.setattr(search_index_module, "get_ontology_if_ready", lambda: ontology)
     search_index = SearchIndex()
+    search_index.attach_inherited_values_reader(_inherits_nothing)
     search_index.rebuild(
         [SearchRecord(note_id=note_id, content_text="", tags=tags, tag_terms=extract_tags_for_search(tags))
          for note_id, tags in NOTES.items()],

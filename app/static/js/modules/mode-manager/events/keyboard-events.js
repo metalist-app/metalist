@@ -54,6 +54,7 @@ import { CONFIG } from '../../config.js';
 import { NotesAPI } from '../../api-client.js';
 import { addDroppedFilePreviews } from '../services/dropped-file-preview-service.js';
 import { ErrorHandler } from '../../error-handler.js';
+import { isCopyOfDialogSelection } from '../services/dialog-copy-service.js';
 import { persistTabStateSnapshot, createTabOnServer, deleteTabOnServer, setTabSortModeOnServer } from '../services/tab-state-service.js';
 import { endDateFilterOfLeftTab } from '../services/root-sort-indicator-service.js';
 import { cacheNotesDomForTab, restoreNotesDomForTab, cloneNotesDomForTab, clearCachedNotesDomForTab, clearActiveNotesDom } from '../services/tab-dom-cache-service.js';
@@ -493,6 +494,9 @@ function handleKeyDown(event) {
     if (ModeContext.modalStack && ModeContext.modalStack.length > 0) {
         const targetElement = event.target instanceof Element ? event.target.closest('.modal') : null;
         if (targetElement) {
+            return;
+        }
+        if (isCopyOfDialogSelection({ shortcutKey: shortcutKeyOf(event), metaOrCtrl, selection: window.getSelection() })) {
             return;
         }
 
@@ -3676,6 +3680,31 @@ async function duplicateTabContext(sourceTabId, animateNoteChanges, shouldSwitch
 }
 
 export async function createBlankSearchContextFromHover() {
+    const newTabId = await openBlankSearchContext();
+    if (newTabId === null) {
+        return null;
+    }
+    focusSearchInputAndSelectAllText();
+    await persistTabStateSnapshot();
+    return newTabId;
+}
+
+/**
+ * A new search context searching query (an import's notes, once it is done), switched to;
+ * null when the limit of search contexts is reached (a banner says so).
+ */
+export async function openSearchInNewSearchContext(query, context) {
+    const newTabId = await openBlankSearchContext();
+    if (newTabId === null) {
+        return null;
+    }
+    await runReferenceSearchInActiveTab(query, context);
+    await persistTabStateSnapshot();
+    return newTabId;
+}
+
+// A new, blank search context in Normal order, switched to in search mode; null at the limit.
+async function openBlankSearchContext() {
     closeOpenSearchQuote();
     const sourceTabId = ModeContext.activeTabId;
     if (typeof sourceTabId !== 'string' || sourceTabId.length === 0) {
@@ -3728,8 +3757,6 @@ export async function createBlankSearchContextFromHover() {
 
     await switchToTabLeavingItsSort(newTabId, {});
     await actionEnterSearchMode();
-    focusSearchInputAndSelectAllText();
-    await persistTabStateSnapshot();
     return newTabId;
 }
 

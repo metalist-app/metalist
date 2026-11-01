@@ -84,6 +84,8 @@ class FileFindings:
     unread_keys: List[str]
     has_comments: bool
     block_id_count: int
+    # Callouts (`> [!note] …`), which come in as @quote notes or regions.
+    callout_count: int
 
 
 @dataclass(frozen=True)
@@ -141,6 +143,7 @@ def plan_file_note(
         unread_keys=sorted(key for key in frontmatter if key.casefold() not in _HANDLED_KEYS),
         has_comments=has_comments,
         block_id_count=block_id_count,
+        callout_count=_callout_count(lines),
     )
     return PlannedNote(
         root=root,
@@ -369,6 +372,14 @@ def _with_block_markers(lines: List[str]) -> Tuple[List[str], int]:
             continue
         marked.append(f"{without} {marker}".lstrip())
     return marked, count
+
+
+def _callout_count(lines: List[str]) -> int:
+    """How many callouts (a quote whose first line is `[!type]`) the text holds outside code."""
+    return sum(
+        1 for line, is_text in zip(lines, _outside_fences(lines))
+        if is_text and _CALLOUT_HEADER_RE.match(line) is not None
+    )
 
 
 def _has_comments(lines: List[str]) -> bool:

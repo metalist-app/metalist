@@ -60,7 +60,7 @@ import { printNotes } from '../mode-manager/services/print-service.js';
 import { exportNotes } from '../mode-manager/services/export-service.js';
 
 import { VersionInfoModal } from '../modals/version-info-modal.js';
-import { FolderImportModal } from '../modals/folder-import-modal.js';
+import { ImportWizard, NewVaultWizard } from '../wizard/setup-wizards.js';
 import { MemoryUsageModal } from '../modals/memory-usage-modal.js';
 import { showErrorDialogFor } from '../modals/error-dialog.js';
 import { RecentMessagesModal } from '../modals/recent-messages-modal.js';
@@ -134,6 +134,7 @@ import { settleResult } from '../async-result.js';
 import { buildSessionHeaders } from '../session-auth.js';
 import { isValidTagToken } from '../tag-token.js';
 import { updateSearchContextsOverlayPlacement } from '../mode-manager/services/search-contexts-overlay-service.js';
+import { openSearchInNewSearchContext } from '../mode-manager/events/keyboard-events.js';
 import {
     DEFAULT_SEARCH_SUGGESTION_WINDOWS_VALUE,
     parseSearchSuggestionWindowsValue,
@@ -430,7 +431,8 @@ class CommandPaletteController {
         this._reminderModal = null;
 
         this._versionInfoModal = null;
-        this._folderImportModal = null;
+        this._importWizard = null;
+        this._newVaultWizard = null;
         this._memoryUsageModal = null;
         this._recentMessagesModal = null;
         this._noteLayoutAppearanceModal = null;
@@ -517,7 +519,8 @@ class CommandPaletteController {
                 openReminders: this.openReminders.bind(this),
 
                 openVersionInfo: this.openVersionInfo.bind(this),
-                openFolderImport: this.openFolderImport.bind(this),
+                openImportWizard: this.openImportWizard.bind(this),
+                openNewVaultWizard: this.openNewVaultWizard.bind(this),
                 openMemoryUsage: this.openMemoryUsage.bind(this),
                 openRecentMessages: this.openRecentMessages.bind(this),
                 openNoteLayoutAppearance: this.openNoteLayoutAppearance.bind(this),
@@ -2826,7 +2829,7 @@ class CommandPaletteController {
         if (sourceKey === null) {
             throw new Error(`Unknown new vault setup step: ${step}`);
         }
-        await this._untilClosed(() => this.openFolderImport(sourceKey), () => this._folderImportModal);
+        await this._untilClosed(() => this.openImportWizard(sourceKey), () => this._importWizard);
     }
 
     // Opens a dialog and waits until it closes; one that did not open is done at once.
@@ -2844,19 +2847,45 @@ class CommandPaletteController {
         });
     }
 
-    // The folder import's developer version (PLAN.md; an Obsidian vault or a Markdown
-    // folder, import-sources.js): its notes show once it has run.
-    async openFolderImport(sourceKey) {
-        const isReady = await this._prepareForModalOpen('commandPalette.openFolderImport');
+    // The setup and import wizards (PLAN.md, phase 2), a prototype for now: their screens
+    // and choices, nothing applied yet.
+    // sourceKey: what the wizard starts on (import-sources.js; Obsidian from the palette).
+    async openImportWizard(sourceKey) {
+        const isReady = await this._prepareForModalOpen('commandPalette.openImportWizard');
         if (!isReady) {
             return;
         }
-        if (this._folderImportModal === null) {
-            this._folderImportModal = new FolderImportModal(async () => {
-                await actionRefreshAndMaybeSelect({ startedAt: performance.now(), context: 'folderImport' });
-            }, this.getAiSettings.bind(this));
+        if (this._importWizard === null) {
+            this._importWizard = new ImportWizard(this._wizardServices());
         }
-        await this._folderImportModal.openFor(sourceKey);
+        await this._importWizard.openFor(sourceKey);
+    }
+
+    // What the wizards need from the app: the chat's AI settings, and, once notes came in, a
+    // new search context of them (searching the import's tag); at the limit of search
+    // contexts, the list as it is, refreshed.
+    _wizardServices() {
+        return {
+            getAiSettings: this.getAiSettings.bind(this),
+            saveAiSettings: this.saveAiSettings.bind(this),
+            afterImport: async (sourceTag) => {
+                const newTabId = await openSearchInNewSearchContext(sourceTag, 'importWizard.showImported');
+                if (newTabId === null) {
+                    await actionRefreshAndMaybeSelect({ startedAt: performance.now(), context: 'importWizard' });
+                }
+            },
+        };
+    }
+
+    async openNewVaultWizard() {
+        const isReady = await this._prepareForModalOpen('commandPalette.openNewVaultWizard');
+        if (!isReady) {
+            return;
+        }
+        if (this._newVaultWizard === null) {
+            this._newVaultWizard = new NewVaultWizard(this._wizardServices());
+        }
+        await this._newVaultWizard.open();
     }
 
     async openVersionInfo() {

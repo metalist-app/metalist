@@ -32,6 +32,7 @@ from app.services.agent.inference import InferenceContextWindow
 from app.services.agent.inference import InferenceProviderError
 from app.services.agent.inference import InferenceResponse
 from app.services.agent.note_tag_suggestions import MAX_NEW_TAGS
+from app.services.agent.note_tag_suggestions import build_import_tag_request
 from app.services.agent.note_tag_suggestions import build_note_tag_request
 from app.services.agent.note_tag_suggestions import request_messages
 from app.services.agent.note_tag_suggestions import ranked_vocabulary
@@ -577,6 +578,48 @@ def test_a_subtree_too_big_for_one_batch_is_split_by_child_with_the_note_as_cont
     }, "at most two new tags per note; kyoto is existing"
     assert inference.payloads[0]["prior_batch_new_tags"] == []
     assert inference.payloads[1]["prior_batch_new_tags"] == ["japan", "travel-plans"], "later batches see batch 1's new tags"
+
+
+# An import's files are tagged as one collection (the import wizard, PLAN.md slice 2b).
+
+def _imported_files() -> tuple[str, ...]:
+    _note("lisbon", None, content="<p>Lisbon trip</p>", tags="Trips imported:source=obsidian:at=2026-11-01T10:00")
+    _note("tram", "lisbon", content="<p>Tram 28 at dawn</p>", tags="")
+    _note("porto", None, content="<p>Porto weekend</p>", tags="Trips imported:source=obsidian:at=2026-11-01T10:00")
+    _note("bread", None, content="<p>Sourdough notes</p>", tags="Kitchen imported:source=obsidian:at=2026-11-01T10:00")
+    _note("old", None, content="<p>Older note</p>", tags="travel")
+    return ("lisbon", "porto", "bread")
+
+
+def _import_request(batch_tokens: int):
+    return build_import_tag_request(
+        file_note_ids=_imported_files(), excluded_tags=frozenset({"trips", "kitchen", "imported"}),
+        boundary=_boundary(blacklist_tags=(), whitelist_tags=()), tag_skill=TAG_SKILL,
+        scope_note_ids=frozenset(store.list_note_ids()), batch_tokens=batch_tokens,
+    )
+
+
+def test_an_imports_files_go_together_with_the_production_instructions_and_no_folder_tags(live_database) -> None:
+    request = _import_request(batch_tokens=100_000)
+
+    assert len(request.batches) == 1, "every file in one request, so the AI sees what they share"
+    messages = request_messages(request, 0, ())
+    payload = json.loads(messages[-1]["content"])
+    assert [tree["note_id"] for tree in payload["result_trees"]] == ["lisbon", "porto", "bread"]
+    assert payload["result_trees"][0]["children"][0]["note_id"] == "tram"
+    assert "Tag the files as one collection" in messages[2]["content"]
+    assert payload["accepted_vocabulary"] == ["travel"], "the import's folder tags and its own tag are never offered"
+
+
+def test_an_import_too_big_for_one_request_offers_batch_ones_new_tags_to_the_rest(live_database) -> None:
+    request = _import_request(batch_tokens=1)
+
+    # Files that fit go first; a file too big is split as a note's subtree is.
+    assert [sorted(batch.note_ids) for batch in request.batches] == [["porto"], ["bread"], ["lisbon"], ["tram"]]
+    inference = _TreeFakeInference({"porto": ["portugal", "city-break"], "lisbon": ["portugal"], "bread": ["baking"]})
+    _progress, proposals = _run(request, inference)
+    assert proposals == {"porto": ["portugal", "city-break"], "lisbon": ["portugal"], "bread": ["baking"]}
+    assert all(payload["prior_batch_new_tags"] == ["portugal", "city-break"] for payload in inference.payloads[1:])
 
 
 def test_suggesting_tags_after_a_chat_answer_records_its_own_trace_run(live_database, monkeypatch) -> None:

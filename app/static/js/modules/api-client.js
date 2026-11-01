@@ -489,6 +489,17 @@ export const NotesAPI = {
         return this._apiCall(CONFIG.API.IMPORT.PICK_FOLDER, { method: 'POST', body: JSON.stringify({ source, provider }) });
     },
 
+    // What importing would do (the import wizard's summary), before anything is written.
+    async previewImport(source, folderPath, splitMode, contentFormat) {
+        if (typeof source !== 'string' || typeof folderPath !== 'string' || folderPath.length === 0
+            || typeof splitMode !== 'string' || typeof contentFormat !== 'string') {
+            throw new Error('NotesAPI.previewImport requires source, folderPath, splitMode and contentFormat');
+        }
+        return this._apiCall(CONFIG.API.IMPORT.PREVIEW, {
+            method: 'POST', body: JSON.stringify({ source, folderPath, splitMode, contentFormat }),
+        });
+    },
+
     async importFolder(source, folderPath, splitMode, contentFormat) {
         if (typeof source !== 'string' || typeof folderPath !== 'string' || folderPath.length === 0
             || typeof splitMode !== 'string' || typeof contentFormat !== 'string') {

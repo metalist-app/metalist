@@ -34,7 +34,9 @@ from app.services.note_ordering import NoteOrdering
 from app.services.tag_ontology import TagOntology
 from app.services.note_image_tags import infer_image_tag_terms
 from app.services.ontology_rules_store import get_ontology, get_ontology_if_ready
-from app.services.search_index import SearchRecord, extract_tags_for_search, search_index, tag_bar_values
+from app.services.search_index import (
+    NOTHING_INHERITED, InheritedValues, SearchRecord, extract_tags_for_search, search_index, tag_bar_values,
+)
 from app.services.tag_ontology import rule_text_conditions
 from app.services.subtree_stats import stats_figure_values
 from app.services.tag_properties import PROPERTY_ASSIGNMENT, PropertyCondition, PropertyValue
@@ -242,6 +244,14 @@ class NoteRecord:
     created_at: Optional[datetime]
     updated_at: Optional[datetime]
 
+
+
+def _own_values(record: NoteRecord) -> Dict[Tuple[str, str], PropertyValue]:
+    """A note's own super tag values, by casefolded (tag, property), as the search index keeps them."""
+    # Only a token with = has a value (jogging=3, jogging:miles=3).
+    if PROPERTY_ASSIGNMENT not in record.tags:
+        return {}
+    return tag_bar_values(record.tags)[1]
 
 
 @dataclass(frozen=True)
@@ -605,11 +615,63 @@ class NoteStore:
             note_map, content_text_by_id, tag_only_terms_by_id, ontology,
             timing_enabled=timing_enabled,
         )
-        # Stats terms in a search (@sum:calories>2000) read each note's subtree here.
+        # Stats terms in a search (@sum:calories>2000) read each note's subtree here, and
+        # terms about values (jogging:miles>2) the values each note inherits.
         search_index.attach_stats_reader(self._read_stats_figure)
+        search_index.attach_inherited_values_reader(self._read_inherited_values)
 
     def _read_stats_figure(self, note_id: str, condition: PropertyCondition) -> Optional[Tuple[PropertyValue, ...]]:
         return stats_figure_values(note_id=note_id, condition=condition, context=_StoreStatsContext(store=self))
+
+    def _read_inherited_values(self, note_ids: FrozenSet[str]) -> Dict[str, InheritedValues]:
+        """The values each note inherits for a search: values follow tags (agreed 2026-11-01;
+        docs/ui/search-semantics.md, Super Tag Searches), through parents and embeds, never
+        links. Its ancestors' values, the nearest ancestor's where several give one, and those
+        of each note in the subtrees it or an ancestor embeds."""
+        with self._lock:
+            embedded_by_source: Dict[str, Tuple[Dict[Tuple[str, str], PropertyValue], ...]] = {}
+            return {note_id: self._inherited_values_locked(note_id, embedded_by_source) for note_id in note_ids}
+
+    def _inherited_values_locked(
+        self, note_id: str, embedded_by_source: Dict[str, Tuple[Dict[Tuple[str, str], PropertyValue], ...]],
+    ) -> InheritedValues:
+        from_ancestors: Dict[Tuple[str, str], PropertyValue] = {}
+        from_embeds: List[Dict[Tuple[str, str], PropertyValue]] = []
+        current: Optional[str] = note_id
+        while current is not None:
+            if current != note_id:
+                # Walking up: a nearer ancestor's value is kept over a farther one's.
+                for key, value in _own_values(self._note_map[current]).items():
+                    if key not in from_ancestors:
+                        from_ancestors[key] = value
+            for target in sorted(self._embedded_targets_locked(current)):
+                # An embedded subtree passes the same values to every note below the host.
+                if target not in embedded_by_source:
+                    embedded_by_source[target] = self._embedded_values_locked(target, {target})
+                from_embeds.extend(embedded_by_source[target])
+            current = self._note_map[current].parent_id
+        if not from_ancestors and not from_embeds:
+            return NOTHING_INHERITED
+        return InheritedValues(from_ancestors=from_ancestors, from_embeds=tuple(from_embeds))
+
+    def _embedded_values_locked(
+        self, source_id: str, embedding: set[str],
+    ) -> Tuple[Dict[Tuple[str, str], PropertyValue], ...]:
+        """What an embed of source_id passes on, as its tags (never what the source inherits
+        from above it): one map for each note of its subtree with values, that note's over
+        those of the notes above it in the subtree, then those of the notes they embed in
+        turn. embedding: the sources being read on this path, where a cycle of embeds stops."""
+        maps: List[Dict[Tuple[str, str], PropertyValue]] = []
+        pending: List[Tuple[str, Dict[Tuple[str, str], PropertyValue]]] = [(source_id, {})]
+        while pending:
+            note_id, above = pending.pop()
+            here = {**above, **_own_values(self._note_map[note_id])}
+            if here:
+                maps.append(here)
+            for target in sorted(self._embedded_targets_locked(note_id) - embedding):
+                maps.extend(self._embedded_values_locked(target, embedding | {target}))
+            pending.extend((child_id, here) for child_id in self._get_children_locked(note_id))
+        return tuple(maps)
 
     def _apply_hydrated_matchers(
         self, note_map: Mapping[str, NoteRecord], content_text_by_id: Mapping[str, str],

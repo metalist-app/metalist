@@ -151,6 +151,7 @@ export const CONFIG = {
         // The Obsidian import's developer version (PLAN.md): development only.
         IMPORT: {
             FOLDER: `${API_BASE}/import/folder`,
+            PREVIEW: `${API_BASE}/import/preview`,
             PICK_FOLDER: `${API_BASE}/import/pick-folder`,
         },
         FILES: {
@@ -195,6 +196,7 @@ export const CONFIG = {
             CLOUD_PRIVACY_PREVIEW: `${API_AI_BASE}/cloud-privacy/preview`,
             NOTE_TAG_SUGGESTION_AVAILABILITY: (noteId) => `${API_AI_BASE}/notes/${noteId}/tag-suggestions/availability`,
             NOTE_TAG_SUGGESTIONS: (noteId) => `${API_AI_BASE}/notes/${noteId}/tag-suggestions`,
+            IMPORT_TAG_SUGGESTIONS: `${API_AI_BASE}/import-tag-suggestions`,
             EXPORT_TITLE_AVAILABILITY: `${API_AI_BASE}/export-title/availability`,
             EXPORT_TITLE: `${API_AI_BASE}/export-title`,
             CHAT: `${API_AI_BASE}/chat`,

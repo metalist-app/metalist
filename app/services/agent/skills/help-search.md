@@ -215,8 +215,11 @@ Super tags carry values (`jogging:miles=3`, `drug:dosage=10mg`; see Super Tags i
   skipped: `miles>2` ignores `miles=far`.
 - Units are labels: `drug:dosage>5mg` compares only `mg` values; `drug:dosage>5` compares
   every unit (`10mg`, `10kg`, `10`), which shows when a search should name one.
-- Values belong to the note they are written on: a child of a 3-mile run inherits
-  `jogging`, never `miles=3`.
+- Values follow their tag: a search reads a note's own values and those it inherits,
+  through parents and embeds as tags are, never links. The nearest value wins: a child of
+  a 3-mile run has `miles=3` unless it writes its own. So `jogging:miles>2 knee` finds the
+  knee note under a 3-mile run. `jogging:miles?` (a missing value) and stats figures
+  (`@sum:…`) stay the note's own.
 - A note added while such a search is active gets the term's tag and value
   (`jogging:miles=3` adds `jogging:miles=3`). A search whose term names no value a new
   note could carry (`jogging:miles>2`) refuses new notes at the top (Creating Notes From

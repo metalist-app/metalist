@@ -19,13 +19,18 @@ from app.services.quoted_values import (
     split_tokens,
     unquote_value,
 )
-from app.services.search_index import SearchIndex, SearchRecord, extract_tags_for_search, tag_bar_values
+from app.services.search_index import NOTHING_INHERITED, SearchIndex, SearchRecord, extract_tags_for_search, tag_bar_values
 from app.services.search_query import parse_search_query
 from app.services.search_text import extract_tag_bar_comment_text
 from app.services.tag_ontology import OntologyParseError, compile_rules, is_valid_proposal_token, parse_rules_text
 from app.services.tag_rename import delete_tag_from_tag_bar, rename_tag_in_tag_bar
 from app.usecases.search_comment_autofill import compute_initial_tags_for_new_note
 from app.usecases.tag_proposals import _proposal_tokens
+
+
+def _inherits_nothing(note_ids):
+    """A search index alone has no note tree: its notes inherit no values."""
+    return {note_id: NOTHING_INHERITED for note_id in note_ids}
 
 NOTES = {
     "le-guin": 'author="Ursula Le Guin" book:title="A Wizard of Earthsea":year=1968',
@@ -42,6 +47,7 @@ NOTES = {
 @pytest.fixture
 def index() -> SearchIndex:
     search_index = SearchIndex()
+    search_index.attach_inherited_values_reader(_inherits_nothing)
     search_index.rebuild(
         [SearchRecord(note_id=note_id, content_text="", tags=tags, tag_terms=extract_tags_for_search(tags))
          for note_id, tags in NOTES.items()],

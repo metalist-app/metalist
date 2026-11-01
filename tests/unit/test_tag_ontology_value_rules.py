@@ -125,13 +125,14 @@ def test_an_inferred_tag_is_the_notes_own_and_passes_to_children_and_embedding_n
         CHILD: (RUN, "Splits", ""),
         HOST: (None, f"![[{RUN}]]", ""),
     })
-    # The run carries race from its parent, so it is a marathon; its child inherits both,
-    # never miles=26.2.
+    # The run carries race from its parent, so it is a marathon; its child inherits both
+    # (a rule reads the note's own values; the child's tags come from the run).
     assert index.query_note_ids("long-run") == {RUN, CHILD, HOST}
     # A note embedding the run gets the run's own tags, not those it inherits (race), as
     # embeds always have: so long-run, not marathon. (A link passes no tags.)
     assert index.query_note_ids("marathon") == {RUN, CHILD}
-    assert index.query_note_ids("jogging:miles>10") == {RUN}
+    # Values follow tags (2026-11-01): the child and the embedding note have miles=26.2 too.
+    assert index.query_note_ids("jogging:miles>10") == {RUN, CHILD, HOST}
 
 
 def test_renaming_a_tag_rewrites_its_super_tag_terms_in_rules() -> None:

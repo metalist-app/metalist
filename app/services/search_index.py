@@ -206,6 +206,24 @@ _TYPED_STATS_TERM_RE = re.compile(
 StatsFigureReader = Callable[[str, PropertyCondition], Optional[Tuple[PropertyValue, ...]]]
 
 
+@dataclass(frozen=True, slots=True)
+class InheritedValues:
+    """The super tag values a note inherits, as its tags (docs/ui/search-semantics.md, Super
+    Tag Searches; agreed 2026-11-01): from_ancestors, its ancestors' values by casefolded
+    (tag, property), the nearest ancestor's where several give one; from_embeds, one map
+    for each note in the subtrees it or an ancestor embeds, that note's values with those
+    of the notes above it inside the embedded subtree. A note's own value hides an
+    ancestor's for the same (tag, property)."""
+    from_ancestors: Mapping[Tuple[str, str], PropertyValue]
+    from_embeds: Tuple[Mapping[Tuple[str, str], PropertyValue], ...]
+
+
+NOTHING_INHERITED = InheritedValues(from_ancestors={}, from_embeds=())
+# The values notes inherit, read from the note store's tree outside the index's lock, as
+# stats figures are: an InheritedValues for each note asked about.
+InheritedValuesReader = Callable[[FrozenSet[str]], Mapping[str, InheritedValues]]
+
+
 def _note_noun(count: int) -> str:
     if count == 1:
         return "note"
@@ -227,6 +245,38 @@ def _figure_meets(figure: Optional[Tuple[PropertyValue, ...]], condition: Proper
     if condition.operator == PRESENT_OPERATOR:
         return True
     return any(value_satisfies(value, condition) for value in figure)
+
+
+@dataclass(frozen=True, slots=True)
+class _NoteValues:
+    """The values of a clause's found notes: their own (from the index) and what they inherit
+    (from the note tree; empty when the clause reads no values)."""
+    own_values: Mapping[str, Mapping[Tuple[str, str], PropertyValue]]
+    inherited: Mapping[str, InheritedValues]
+
+    def maps(self, note_id: str) -> Tuple[Mapping[Tuple[str, str], PropertyValue], ...]:
+        """The note's values, a term holding when one map meets it: its own over its
+        ancestors' (the nearest value wins), then each embedded note's."""
+        inherited = self.inherited[note_id]
+        return ({**inherited.from_ancestors, **self.own_values[note_id]}, *inherited.from_embeds)
+
+
+def _notes_with_extreme_value(found_by_note: Mapping[str, List[PropertyValue]], condition: PropertyCondition) -> Set[str]:
+    """Of these notes (each with the values of the term's property it has), those holding the
+    largest (MAX) or smallest (MIN), ties included. Values are compared within one kind: the
+    kind most of the values are (numbers first on a tie); units are labels and do not count."""
+    if not found_by_note:
+        return set()
+    kind_counts = Counter(value.kind for found in found_by_note.values() for value in found)
+    kind = max(VALUE_KIND_ORDER, key=lambda candidate: (kind_counts[candidate], -VALUE_KIND_ORDER.index(candidate)))
+    pick = _EXTREME_PICKS[condition.value_text]
+    best_by_note = {
+        note_id: pick(value.sort_key for value in found if value.kind == kind)
+        for note_id, found in found_by_note.items()
+        if any(value.kind == kind for value in found)
+    }
+    extreme = pick(best_by_note.values())
+    return {note_id for note_id, best in best_by_note.items() if best == extreme}
 
 
 def _posting_or_empty(postings: Mapping[_PostingKey, Set[int]], key: _PostingKey) -> Set[int]:
@@ -458,6 +508,8 @@ class SearchIndex:
         self._revision = 0
         # Attached by the note store once it has loaded (attach_stats_reader).
         self._stats_reader: StatsFigureReader | None = None
+        # And the values notes inherit (attach_inherited_values_reader).
+        self._inherited_values_reader: InheritedValuesReader | None = None
 
         self._uuid_to_id: Dict[str, int] = {}
         self._id_to_uuid: List[str] = []
@@ -490,7 +542,8 @@ class SearchIndex:
 
         # Each note's own property values (docs/design/tag-properties.md), by casefolded
         # tag and property name: jogging:miles=3 is ("jogging", "miles"). Only notes
-        # with values are kept; values are never inherited.
+        # with values are kept. What a note inherits is read from the note tree when a
+        # search asks (attach_inherited_values_reader).
         self._note_properties: Dict[int, Dict[Tuple[str, str], PropertyValue]] = {}
         self._property_notes: Dict[Tuple[str, str], Set[int]] = {}
         # Upward search: a property term about a tag also reads the values of every tag
@@ -865,6 +918,28 @@ class SearchIndex:
                     described[term] = cooccurrence
         return described
 
+    # Suggestions read a search's completed clause without its stats terms (no subtree walks
+    # for them); one about values reads what notes inherit, from the tree, before the lock.
+    @staticmethod
+    def _suggestion_clause(completed_clause: str) -> SearchClause:
+        assert completed_clause.strip() != "", "a completed clause"
+        return parse_search_query(completed_clause).first_clause.without_stats_terms()
+
+    def _tree_matches_for_suggestions(self, completed_clause: str) -> FrozenSet[str]:
+        """The notes the completed clause finds when it reads values (outside the lock); none
+        to read otherwise, the index answering it alone (_suggestion_matching_ids_locked)."""
+        if completed_clause.strip() == "" or not self._suggestion_clause(completed_clause).has_value_terms:
+            return frozenset()
+        return frozenset(self._tree_clause_note_ids(self._suggestion_clause(completed_clause)))
+
+    def _suggestion_matching_ids_locked(self, completed_clause: str, tree_matches: FrozenSet[str]) -> Set[int]:
+        if completed_clause.strip() == "":
+            return self._alive
+        clause = self._suggestion_clause(completed_clause)
+        if clause.has_value_terms:
+            return {self._uuid_to_id[note_id] for note_id in tree_matches if note_id in self._uuid_to_id}
+        return self._matching_note_int_ids_for_clause_locked(clause)
+
     def describe_search_suggestions(self, *, query: str, terms: Iterable[str]) -> SearchSuggestionFacts:
         """The facts `suggest_all_tag_completions` ranked and filtered these terms by."""
         context = _parse_search_suggestion_context(query)
@@ -872,14 +947,10 @@ class SearchIndex:
         if context.partial_prefix is not None:
             partial_prefix = context.partial_prefix
         shown = list(terms)
+        tree_matches = self._tree_matches_for_suggestions(context.completed_clause)
         with self._lock:
             has_completed_clause = context.completed_clause.strip() != ""
-            if has_completed_clause:
-                # Suggestions read the clause without its stats terms (no subtree walks here).
-                clause = parse_search_query(context.completed_clause).first_clause.without_stats_terms()
-                matching_ids = self._matching_note_int_ids_for_clause_locked(clause)
-            else:
-                matching_ids = self._alive
+            matching_ids = self._suggestion_matching_ids_locked(context.completed_clause, tree_matches)
             note_counts: Dict[str, int] = {}
             matching_counts: Dict[str, int] = {}
             for term in shown:
@@ -1108,18 +1179,14 @@ class SearchIndex:
         Note-tag recommendations retain partial co-occurrence ranking through
         suggest_tag_completions; search completions must satisfy the whole clause.
         """
+        context = _parse_search_suggestion_context(query)
+        tree_matches = self._tree_matches_for_suggestions(context.completed_clause)
         with self._lock:
             candidate_capacity = len(self._tag_notes) + len(list_known_meta_tag_terms()) + 1
             suggestions = self.suggest_tag_completions(query=query, limit=candidate_capacity)
             if not suggestions:
                 return []
-            context = _parse_search_suggestion_context(query)
-            if context.completed_clause.strip() == '':
-                matching_ids = self._alive
-            else:
-                # Suggestions read the clause without its stats terms (no subtree walks here).
-                clause = parse_search_query(context.completed_clause).first_clause.without_stats_terms()
-                matching_ids = self._matching_note_int_ids_for_clause_locked(clause)
+            matching_ids = self._suggestion_matching_ids_locked(context.completed_clause, tree_matches)
             if not matching_ids:
                 return []
             completions: List[str] = []
@@ -1194,17 +1261,10 @@ class SearchIndex:
         required_text_count = sum(len(clause.required_text) for clause in parsed.clauses)
         forbidden_text_count = sum(len(clause.forbidden_text) for clause in parsed.clauses)
 
-        if any(clause.has_stats_terms for clause in parsed.clauses):
-            # A stats figure is read from each note's subtree, outside the lock.
+        if any(clause.has_stats_terms or clause.has_value_terms for clause in parsed.clauses):
+            # Stats figures and inherited values are read from the note tree, outside the
+            # lock; MAX and MIN are decided per clause, across the notes it finds.
             return {note_id for clause in parsed.clauses for note_id in self.query_clause_note_ids(clause)}
-        if any(clause.has_extreme_terms for clause in parsed.clauses):
-            # MAX and MIN are decided per clause, across the notes it finds.
-            with self._lock:
-                return {
-                    self._id_to_uuid[note_int_id]
-                    for clause in parsed.clauses
-                    for note_int_id in self._matching_note_int_ids_for_clause_locked(clause)
-                }
 
         t1 = time.perf_counter()
         with self._lock:
@@ -1287,11 +1347,19 @@ class SearchIndex:
         with self._lock:
             self._stats_reader = reader
 
+    def attach_inherited_values_reader(self, reader: InheritedValuesReader) -> None:
+        """What answers terms about values (jogging:miles>2) for the values notes inherit:
+        the note store's tree, which this index does not hold."""
+        if not callable(reader):
+            raise TypeError("the inherited values reader must be callable")
+        with self._lock:
+            self._inherited_values_reader = reader
+
     def query_clause_note_ids(self, clause: SearchClause) -> Set[str]:
         if not isinstance(clause, SearchClause):
             raise TypeError(f"clause must be SearchClause, got {type(clause)}")
-        if clause.has_stats_terms:
-            return self._stats_clause_note_ids(clause)
+        if clause.has_stats_terms or clause.has_value_terms:
+            return self._tree_clause_note_ids(clause)
         with self._lock:
             return {
                 self._id_to_uuid[note_int_id]
@@ -1808,71 +1876,104 @@ class SearchIndex:
             tag_names=self._property_tags_locked(*condition.key),
         )
 
-    def _extreme_notes_locked(self, note_int_ids: Set[int], condition: PropertyCondition) -> Set[int]:
-        """Of these notes, those holding the largest (MAX) or smallest (MIN) value of the
-        term's property, ties included. Values are compared within one kind: the kind most
-        of the values are (numbers first on a tie); units are labels and do not count."""
-        tag_names = self._property_tags_locked(*condition.key)
-        values_by_note: Dict[int, List[PropertyValue]] = {}
-        for note_int_id in note_int_ids:
-            if note_int_id not in self._note_properties:
-                continue
-            note_values = self._note_properties[note_int_id]
-            found = [note_values[(tag_name, condition.key[1])] for tag_name in tag_names
-                     if (tag_name, condition.key[1]) in note_values]
-            if found:
-                values_by_note[note_int_id] = found
-        if not values_by_note:
-            return set()
-        kind_counts = Counter(value.kind for found in values_by_note.values() for value in found)
-        kind = max(VALUE_KIND_ORDER, key=lambda candidate: (kind_counts[candidate], -VALUE_KIND_ORDER.index(candidate)))
-        pick = _EXTREME_PICKS[condition.value_text]
-        best_by_note = {
-            note_int_id: pick(value.sort_key for value in found if value.kind == kind)
-            for note_int_id, found in values_by_note.items()
-            if any(value.kind == kind for value in found)
-        }
-        extreme = pick(best_by_note.values())
-        return {note_int_id for note_int_id, best in best_by_note.items() if best == extreme}
-
-    def _stats_clause_note_ids(self, clause: SearchClause) -> Set[str]:
-        """A clause with stats terms (docs/ui/search-semantics.md, Stats figures): the index
-        finds the notes the rest of it holds for, among those carrying each required stats
-        tag; each stats term then compares the figure the note shows. MAX and MIN come last,
-        in the order written, among the notes everything else finds."""
-        reader = self._stats_reader
-        if reader is None:
-            raise RuntimeError("Stats terms need the note store's reader (attach_stats_reader)")
-        rest = clause.without_stats_terms()
+    def _tree_clause_note_ids(self, clause: SearchClause) -> Set[str]:
+        """A clause with terms read from the note tree, outside the lock: values, which notes
+        inherit (jogging:miles>2, docs/ui/search-semantics.md), and stats figures
+        (@sum:calories>2000). The index finds the notes the rest of the clause holds for,
+        among those carrying each required term's tag (themselves or by inheritance); each
+        term then reads the note's values or figure. MAX and MIN come last, in the order
+        written, among the notes everything else finds."""
+        rest = clause.without_stats_terms().without_value_terms()
+        conditions = clause.required_properties + clause.forbidden_properties
         with self._lock:
             candidates = self._candidate_note_ids_locked(rest)
             for condition in clause.required_properties:
                 if condition.is_stats:
                     candidates &= self._tag_family_posting_locked(condition.key[0])
-            matched = {
-                self._id_to_uuid[note_int_id] for note_int_id in candidates
+                elif condition.reads_values:
+                    candidates &= self._carrying_property_tags_locked(condition)
+            matched_int_ids = {
+                note_int_id for note_int_id in candidates
                 if note_int_id in self._alive and self._verify_note_matches_locked(note_int_id, rest)
             }
+            own_values = {
+                self._id_to_uuid[note_int_id]: self._own_values_locked(note_int_id) for note_int_id in matched_int_ids
+            }
+            tag_names = {condition: self._property_tags_locked(*condition.key)
+                         for condition in conditions if condition.reads_values}
+        values = _NoteValues(own_values=own_values, inherited=self._read_inherited_values(clause, frozenset(own_values)))
+        matched = set(own_values)
         for condition in clause.required_properties:
-            if condition.is_stats and not condition.is_extreme:
-                matched = {note_id for note_id in matched if _figure_meets(reader(note_id, condition), condition)}
+            if not condition.is_extreme:
+                matched = {note_id for note_id in matched if self._meets(note_id, condition, values, tag_names)}
         for condition in clause.forbidden_properties:
-            if condition.is_stats and not condition.is_extreme:
-                matched = {note_id for note_id in matched if not _figure_meets(reader(note_id, condition), condition)}
+            if not condition.is_extreme:
+                matched = {note_id for note_id in matched if not self._meets(note_id, condition, values, tag_names)}
         for condition in clause.required_properties:
             if condition.is_extreme:
-                matched = self._extreme_note_ids(matched, condition, reader)
+                matched = self._extreme_note_ids(matched, condition, values, tag_names)
         for condition in clause.forbidden_properties:
             if condition.is_extreme:
-                matched -= self._extreme_note_ids(matched, condition, reader)
+                matched -= self._extreme_note_ids(matched, condition, values, tag_names)
         return matched
 
-    def _extreme_note_ids(self, note_ids: Set[str], condition: PropertyCondition, reader: StatsFigureReader) -> Set[str]:
+    def _own_values_locked(self, note_int_id: int) -> Mapping[Tuple[str, str], PropertyValue]:
+        if note_int_id not in self._note_properties:  # shockharness: ignore[DEF002] reason="only notes with values are kept"
+            return {}
+        return self._note_properties[note_int_id]
+
+    def _carrying_property_tags_locked(self, condition: PropertyCondition) -> Set[int]:
+        """The notes carrying, themselves or by inheritance, a tag whose values the term reads."""
+        notes: Set[int] = set()
+        for tag_name in self._property_tags_locked(*condition.key):
+            notes |= self._tag_family_posting_locked(tag_name)
+        return notes
+
+    def _read_inherited_values(self, clause: SearchClause, note_ids: FrozenSet[str]) -> Mapping[str, InheritedValues]:
+        """The values these notes inherit, when the clause reads values (outside the lock)."""
+        if not clause.has_value_terms:
+            return {}
+        reader = self._inherited_values_reader
+        if reader is None:
+            raise RuntimeError("Terms about values need the note store's reader (attach_inherited_values_reader)")
+        inherited = reader(note_ids)
+        assert inherited.keys() == note_ids, "the reader answers for every note asked about"
+        return inherited
+
+    def _meets(
+        self, note_id: str, condition: PropertyCondition, values: _NoteValues,
+        tag_names: Mapping[PropertyCondition, FrozenSet[str]],
+    ) -> bool:
+        """Whether a found note meets a term read from the tree: its values (own or
+        inherited, any one map of them) or its stats figure."""
+        if condition.is_stats:
+            return _figure_meets(self._require_stats_reader()(note_id, condition), condition)
+        # A value term never asks for a missing value, the only kind reading own_tag_names.
+        return any(
+            condition_holds(condition, values=value_map, own_tag_names=frozenset(), tag_names=tag_names[condition])
+            for value_map in values.maps(note_id)
+        )
+
+    def _require_stats_reader(self) -> StatsFigureReader:
+        reader = self._stats_reader
+        if reader is None:
+            raise RuntimeError("Stats terms need the note store's reader (attach_stats_reader)")
+        return reader
+
+    def _extreme_note_ids(
+        self, note_ids: Set[str], condition: PropertyCondition, values: _NoteValues,
+        tag_names: Mapping[PropertyCondition, FrozenSet[str]],
+    ) -> Set[str]:
         """Of these notes, those with the largest (MAX) or smallest (MIN) value or figure."""
         if not condition.is_stats:
-            with self._lock:
-                note_int_ids = {self._uuid_to_id[note_id] for note_id in note_ids}
-                return {self._id_to_uuid[note_int_id] for note_int_id in self._extreme_notes_locked(note_int_ids, condition)}
+            found_by_note: Dict[str, List[PropertyValue]] = {}
+            for note_id in note_ids:
+                found = [value_map[(tag_name, condition.key[1])] for value_map in values.maps(note_id)
+                         for tag_name in tag_names[condition] if (tag_name, condition.key[1]) in value_map]
+                if found:
+                    found_by_note[note_id] = found
+            return _notes_with_extreme_value(found_by_note, condition)
+        reader = self._require_stats_reader()
         pick = _EXTREME_PICKS[condition.value_text]
         best_by_note: Dict[str, Decimal] = {}
         for note_id in note_ids:
@@ -2040,19 +2141,9 @@ class SearchIndex:
         return candidate_ids
 
     def _matching_note_int_ids_for_clause_locked(self, clause: SearchClause) -> Set[int]:
+        # Values and stats figures are read from the note tree (_tree_clause_note_ids).
+        assert not clause.has_value_terms and not clause.has_stats_terms, "the index alone answers this clause"
         candidate_ids = self._candidate_note_ids_locked(clause)
-        if clause.has_extreme_terms:
-            matched = {
-                note_int_id for note_int_id in candidate_ids
-                if note_int_id in self._alive and self._verify_note_matches_locked(note_int_id, clause)
-            }
-            for condition in clause.required_properties:
-                if condition.is_extreme:
-                    matched = self._extreme_notes_locked(matched, condition)
-            for condition in clause.forbidden_properties:
-                if condition.is_extreme:
-                    matched -= self._extreme_notes_locked(matched, condition)
-            return matched
         if not clause.required_text and not clause.forbidden_text and not clause.has_property_terms:
             # Tags alone: the postings answer exactly. They hold only live notes (removing
             # a note discards it from each), and the forbidden tags' notes are removed

@@ -38,7 +38,7 @@ from app.services.search_index import SearchIndex, tag_bar_values
 from app.services.structured_note_renderers import extract_plain_text_from_note_html
 from app.services.tag_ontology import TagOntology
 import app.usecases.import_obsidian_vault as import_module
-from app.usecases.import_obsidian_vault import CmdImportObsidianVault
+from app.usecases.import_obsidian_vault import CmdImportObsidianVault, CmdPreviewImport
 
 FIXTURE_VAULT = Path(__file__).resolve().parents[1] / "fixtures" / "obsidian-vault"
 IMPORTED_AT = datetime(2026, 10, 31, 21, 5, tzinfo=timezone.utc)
@@ -273,6 +273,9 @@ def test_a_vault_comes_in_as_root_notes_at_the_top_with_the_report_first(note_st
     # Each file's note, for the AI's tag suggestions, and the folder tags it must not propose.
     assert result["fileNoteIds"] == roots[1:-1]
     assert result["folderTags"] == ["Daily/2026", "Home/Notes", "Projects/Client-A", "Projects/Client-B", "Weird-Folder", "Work/Notes"]
+    # The tag the wizard's new search context searches: on the report and every file's note.
+    assert result["sourceTag"] == SOURCE_TAG
+    assert all(result["sourceTag"] in note_store.get_note(note_id).tags for note_id in roots[:-1])
     assert folder_fingerprint(FIXTURE_VAULT) == before
 
 
@@ -464,13 +467,21 @@ def test_a_split_import_writes_each_files_notes_under_it(note_store: NoteStore) 
     assert result["noteCount"] > 12
 
 
-def test_the_report_comes_in_split_as_the_vault_does(note_store: NoteStore) -> None:
+def test_the_report_is_one_note_and_the_summary_counts_every_note_written(note_store: NoteStore) -> None:
+    preview = CmdPreviewImport(
+        source="obsidian", folder_path=str(FIXTURE_VAULT), split_mode=SPLIT_PARAGRAPHS, content_format=CONTENT_RICH,
+        imported_at=IMPORTED_AT,
+    ).execute()
+    before = len(note_store.list_note_ids())
     result = CmdImportObsidianVault(
         source="obsidian", folder_path=str(FIXTURE_VAULT), split_mode=SPLIT_PARAGRAPHS, content_format=CONTENT_RICH, token=TOKEN,
         imported_at=IMPORTED_AT,
     ).execute()
-    sections = [first_line(note_store, note_id) for note_id in note_store.get_children(result["reportNoteId"])]
-    assert "Imported" in sections and "Left out" in sections and "Files" in sections
+    assert note_store.get_children(result["reportNoteId"]) == []
+    report_text = extract_plain_text_from_note_html(note_store.get_note(result["reportNoteId"]).content)
+    assert "Imported" in report_text and "Left out" in report_text and "Files" in report_text
+    # The summary's notes, and the report: every note the import wrote (once 38 said, 75 written).
+    assert len(note_store.list_note_ids()) - before == preview["noteCount"] + 1
 
 
 # --- Slice 2: links, embeds and attachments -------------------------------------------------
@@ -609,7 +620,7 @@ def test_a_markdown_folder_comes_in_with_its_own_source_and_report(tmp_path: Pat
     roots = note_store.get_children(None)
     report = extract_plain_text_from_note_html(note_store.get_note(result["reportNoteId"]).content)
     assert report.startswith(f"Import report — Markdown — {tmp_path.name} — ")
-    assert "come back out. Your folder was only read, never changed." in report
+    assert "files come back out." in report
     assert "of the vault" not in report
     assert "Obsidian's settings" not in report
     trip = note_store.get_note(roots[1])
@@ -631,3 +642,34 @@ def test_importing_a_markdown_folder_twice_says_so_and_an_obsidian_import_of_it_
 
 def test_the_routes_know_every_import_source() -> None:
     assert set(typing.get_args(imports_routes.ImportSourceKey)) == set(IMPORT_SOURCES)
+
+
+# --- Phase 2: the import wizard's summary, before anything is written ----------------------
+
+def test_the_preview_counts_what_the_import_would_do_and_writes_nothing(note_store: NoteStore) -> None:
+    before = folder_fingerprint(FIXTURE_VAULT)
+    preview = CmdPreviewImport(
+        source="obsidian", folder_path=str(FIXTURE_VAULT), split_mode=SPLIT_PARAGRAPHS, content_format=CONTENT_RICH,
+        imported_at=IMPORTED_AT,
+    ).execute()
+    imported = CmdImportObsidianVault(
+        source="obsidian", folder_path=str(FIXTURE_VAULT), split_mode=SPLIT_PARAGRAPHS, content_format=CONTENT_RICH,
+        token=TOKEN, imported_at=IMPORTED_AT,
+    ).execute()
+    # Every root note but the report and the list's own note ("mine").
+    imported_root_count = len(note_store.get_children(None)) - 2
+    assert preview == {
+        "fileCount": 12, "noteCount": imported["noteCount"], "rootNoteCount": imported_root_count, "attachmentCount": 2, "folderTagCount": 6,
+        "filesWithCommentsCount": 1, "blockIdCount": 1, "calloutCount": 1, "missingLinkCount": 1,
+        "unreadableFileCount": 1, "unusedAttachmentCount": 1,
+    }
+    assert folder_fingerprint(FIXTURE_VAULT) == before
+
+
+def test_the_preview_writes_no_notes_and_stores_no_files(note_store: NoteStore) -> None:
+    CmdPreviewImport(
+        source="markdown", folder_path=str(FIXTURE_VAULT), split_mode=SPLIT_NONE, content_format=CONTENT_MARKDOWN,
+        imported_at=IMPORTED_AT,
+    ).execute()
+    assert note_store.get_children(None) == ["mine"]
+    assert file_registry.list_ids() == set()

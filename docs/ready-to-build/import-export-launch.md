@@ -144,7 +144,7 @@ Importing and exporting should feel slick, the way a first-run setup should: a f
 - **Each mode says what it's good and bad at,** in a line or two. For example, no splitting: the file comes back from export exactly, and a quoted search covers the whole document, but sections can't be folded, tagged or moved on their own. Headings, lists and paragraphs: any paragraph can be moved, tagged or linked, but a quoted search covers one paragraph.
 - **Explanatory text is wanted here,** unlike the rest of MetaList's UI, which keeps text minimal and puts detail in tooltips: these are one-time decisions about a whole vault (the maintainer, 2026-10-30).
 - **A question appears only if it applies** to what's imported or exported: no embeds, no embed question; no password notes, no password question; and so on (agreed 2026-10-30).
-- **Every question has a default,** and an "Export with these choices" (or "Import with these choices") button is on every screen, so someone who doesn't care finishes in one click.
+- **Every question has a default,** and the person goes through every step (the maintainer, 2026-10-31: no "Import with these choices" button skipping the rest, as first planned here).
 - **Each choice shows a small before/after preview** from the user's own notes, as the import's split choice does.
 - **Onboarding:** the import walkthrough can be offered during first-time setup ("Do you have an Obsidian vault you'd like to bring in?").
 
@@ -154,7 +154,7 @@ Every format in the import picker shows one label, repeated on the confirmation 
 - **Round-trip:** "You can export back to this format at any time with your notes, structure and tags intact." For: the MetaList backup only.
 - **One-way:** Obsidian, Markdown folders and Logseq (2026-10-30: no round-trip promise). The sentence says MetaList exports standard Markdown, so notes, text, links and files come back out, but features only that app has may not.
 
-Also shown before every import: what will be approximated for that format, and that the source is never modified.
+Also shown before every import: what will be approximated for that format. (It first said "and that the source is never modified"; dropped 2026-10-31 by the maintainer: said on screen, it reads oddly.)
 
 ## 5. The import report
 

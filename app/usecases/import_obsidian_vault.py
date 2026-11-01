@@ -34,7 +34,7 @@ from app.services.obsidian_import.tree import (
     build_file_tree,
     count_notes,
 )
-from app.services.obsidian_import.vault import VaultContents, read_vault
+from app.services.obsidian_import.vault import NOT_UTF8_REASON, VaultContents, read_vault
 from app.services.store import store
 from app.services.structured_note_renderers import extract_plain_text_from_note_html
 from app.upload_limits import MAX_ATTACHMENT_BYTES
@@ -98,26 +98,11 @@ class CmdImportObsidianVault(QueryCommand):
     imported_at: datetime
 
     def execute(self) -> Dict[str, object]:
-        if self.split_mode not in SPLIT_MODES or self.content_format not in CONTENT_FORMATS:
-            raise InputRejected("Choose how to split the notes and what to write them in.")
-        assert self.source in IMPORT_SOURCES, f"unknown import source {self.source!r}"
-        source = IMPORT_SOURCES[self.source]
-        folder = Path(self.folder_path)
-        if not folder.is_absolute():
-            raise InputRejected(f"Choose the {source.folder_word}'s folder with Choose Folder.")
-        if not folder.is_dir():
-            raise InputRejected(f"There is no folder at {folder}. Choose the {source.folder_word}'s folder again.")
-        vault = read_vault(folder, reads_line_break_setting=source.follows_obsidian_line_breaks)
-        if len(vault.markdown_files) == 0:
-            raise InputRejected(f"{folder} holds no Markdown files. Choose a folder that does.")
-        source_tag = source_tag_for(self.imported_at, source.key)
-        planned = [
-            plan_file_note(
-                vault_file, uses_strict_line_breaks=vault.uses_strict_line_breaks, source_tag=source_tag,
-                split_mode=self.split_mode, content_format=self.content_format,
-            )
-            for vault_file in vault.markdown_files
-        ]
+        plan = _plan_import(
+            source_key=self.source, folder_path=self.folder_path, split_mode=self.split_mode,
+            content_format=self.content_format, imported_at=self.imported_at,
+        )
+        source, folder, vault, planned, source_tag = plan.source, plan.folder, plan.vault, plan.planned, plan.source_tag
         linked = _linked(folder, vault, planned, source_tag=source_tag, token=self.token)
         planned = linked.planned
         note_count = sum(count_notes(note.root) for note in planned) + len(linked.kept)
@@ -126,10 +111,11 @@ class CmdImportObsidianVault(QueryCommand):
             note_count=note_count, split_mode=self.split_mode, content_format=self.content_format,
             links=linked.links, files=linked.files,
         )
-        # The report comes in as the vault does: split and written as chosen.
+        # The report is one note, written as chosen: split, it was dozens of notes the import's
+        # summary never counted (the maintainer, 2026-11-01: told 38 notes, deleted 75).
         report_title, report_body = report_text.split("\n", 1)
         report_root = build_file_tree(
-            title_line=report_title, body=report_body.strip("\n"), split_mode=self.split_mode,
+            title_line=report_title, body=report_body.strip("\n"), split_mode=SPLIT_NONE,
             content_format=self.content_format,
         )
         report = _Written(
@@ -149,6 +135,87 @@ class CmdImportObsidianVault(QueryCommand):
             # note, and the folder tags it must never propose.
             "fileNoteIds": [note.root.note_id for note in planned],
             "folderTags": sorted({note.folder_tag for note in planned if note.folder_tag != ""}),
+            # Every note of this import has it: the wizard opens a search context on it.
+            "sourceTag": source_tag,
+        }
+
+
+@dataclass(frozen=True)
+class _ImportPlan:
+    """A folder read and every file planned as notes, nothing stored or written yet."""
+
+    source: ImportSource
+    folder: Path
+    vault: VaultContents
+    planned: List[PlannedNote]
+    source_tag: str
+
+
+def _plan_import(*, source_key: str, folder_path: str, split_mode: str, content_format: str, imported_at: datetime) -> _ImportPlan:
+    if split_mode not in SPLIT_MODES or content_format not in CONTENT_FORMATS:
+        raise InputRejected("Choose how to split the notes and what to write them in.")
+    assert source_key in IMPORT_SOURCES, f"unknown import source {source_key!r}"
+    source = IMPORT_SOURCES[source_key]
+    folder = Path(folder_path)
+    if not folder.is_absolute():
+        raise InputRejected(f"Choose the {source.folder_word}'s folder with Choose Folder.")
+    if not folder.is_dir():
+        raise InputRejected(f"There is no folder at {folder}. Choose the {source.folder_word}'s folder again.")
+    vault = read_vault(folder, reads_line_break_setting=source.follows_obsidian_line_breaks)
+    if len(vault.markdown_files) == 0:
+        raise InputRejected(f"{folder} holds no Markdown files. Choose a folder that does.")
+    source_tag = source_tag_for(imported_at, source.key)
+    planned = [
+        plan_file_note(
+            vault_file, uses_strict_line_breaks=vault.uses_strict_line_breaks, source_tag=source_tag,
+            split_mode=split_mode, content_format=content_format,
+        )
+        for vault_file in vault.markdown_files
+    ]
+    return _ImportPlan(source=source, folder=folder, vault=vault, planned=planned, source_tag=source_tag)
+
+
+@dataclass
+class CmdPreviewImport(QueryCommand):
+    """What importing the folder would do, as the import wizard's summary shows it before
+    anything is written (PLAN.md, phase 2): counts, and what would appear differently. Reads
+    the folder and plans every file; stores and writes nothing."""
+
+    source: str
+    folder_path: str
+    split_mode: str
+    content_format: str
+    imported_at: datetime
+
+    def execute(self) -> Dict[str, object]:
+        plan = _plan_import(
+            source_key=self.source, folder_path=self.folder_path, split_mode=self.split_mode,
+            content_format=self.content_format, imported_at=self.imported_at,
+        )
+        index = VaultIndex(plan.planned, plan.vault.other_files)
+        resolved = [
+            _resolve(index, reference, from_path=note.source_path) for note in plan.planned for reference in note.links
+        ]
+        kept_paths = [path for path in plan.vault.other_files if _is_kept_file(path)]
+        linked_paths = {item.file_path for item in resolved if item.file_path is not None}
+        storable = {path for path in {*linked_paths, *kept_paths} if (plan.folder / Path(path)).stat().st_size <= MAX_ATTACHMENT_BYTES}
+        findings = [note.findings for note in plan.planned]
+        kept_note_count = sum(1 for path in kept_paths if path in storable)
+        return {
+            "fileCount": len(plan.planned),
+            "noteCount": sum(count_notes(note.root) for note in plan.planned) + kept_note_count,
+            # The notes at the top of the list (each file's, and each kept file's), the report aside.
+            "rootNoteCount": len(plan.planned) + kept_note_count,
+            "attachmentCount": sum(1 for path in linked_paths if path in storable and not _is_kept_file(path)),
+            "folderTagCount": len({note.folder_tag for note in plan.planned if note.folder_tag != ""}),
+            "filesWithCommentsCount": sum(1 for finding in findings if finding.has_comments),
+            "blockIdCount": sum(finding.block_id_count for finding in findings),
+            "calloutCount": sum(finding.callout_count for finding in findings),
+            "missingLinkCount": sum(1 for item in resolved if item.note is None and item.file_path is None),
+            "unreadableFileCount": sum(1 for entry in plan.vault.skipped if entry.reason == NOT_UTF8_REASON),
+            "unusedAttachmentCount": sum(
+                1 for path in plan.vault.other_files if path not in linked_paths and not _is_kept_file(path)
+            ),
         }
 
 

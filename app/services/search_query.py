@@ -50,6 +50,21 @@ class SearchClause:
         """@sum:calories>2000: a figure read from each note's subtree (subtree_stats.py)."""
         return any(condition.is_stats for condition in self.required_properties + self.forbidden_properties)
 
+    @property
+    def has_value_terms(self) -> bool:
+        """jogging:miles>2: about values notes inherit, read from the note tree."""
+        return any(condition.reads_values for condition in self.required_properties + self.forbidden_properties)
+
+    def without_value_terms(self) -> SearchClause:
+        """This clause without the terms about values (it keeps missing ones, jogging:miles?,
+        and stats terms)."""
+        return SearchClause(
+            required_tags=self.required_tags, forbidden_tags=self.forbidden_tags,
+            required_text=self.required_text, forbidden_text=self.forbidden_text,
+            required_properties=tuple(condition for condition in self.required_properties if not condition.reads_values),
+            forbidden_properties=tuple(condition for condition in self.forbidden_properties if not condition.reads_values),
+        )
+
     def without_stats_terms(self) -> SearchClause:
         """This clause with its stats terms left out: what the search index answers alone."""
         return SearchClause(

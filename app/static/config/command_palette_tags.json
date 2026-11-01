@@ -205,12 +205,12 @@
       "tags": ["vault", "vaults", "namespace", "namespaces", "open", "switch", "switcher", "change", "go", "select", "new", "same", "tab", "window", "launch", "database", "instance", "workspace"]
     },
     {
-      "id": "form.import_obsidian_vault",
-      "tags": ["import", "obsidian", "vault", "migrate", "bring", "developer"]
+      "id": "form.import_wizard",
+      "tags": ["import", "obsidian", "vault", "markdown", "md", "folder", "notes", "files", "bring", "migrate", "wizard"]
     },
     {
-      "id": "form.import_markdown_folder",
-      "tags": ["import", "markdown", "md", "folder", "files", "notes", "migrate", "bring", "developer"]
+      "id": "form.new_vault_wizard",
+      "tags": ["setup", "set", "up", "vault", "wizard", "onboarding", "password", "ai"]
     },
     {
       "id": "form.create_namespace",
