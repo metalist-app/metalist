@@ -29,7 +29,7 @@ _HTML_TOKEN_RE = re.compile(
 _LINE_BREAK = "\n"
 _NO_BREAK_SPACE = " "
 # A task line: any quote marks, its list marker, then [ ] or [x] (markdown_rendering._TASK_RE).
-_TASK_LINE_RE = re.compile(r"^\s*(?:>\s?)*\s*(?:[-+*]|\d+\.)\s+\[(?P<mark>[ xX])\]")
+_TASK_LINE_RE = re.compile(r"^\s*(?:>\s?)*\s*(?:[-+*]|\d+[.)])\s+\[(?P<mark>[ xX])\]")
 _TICKED_MARK = "x"
 _EMPTY_MARK = " "
 # A folding callout's line: its quote marks, then [!type] and - or + (markdown_rendering._CALLOUT_RE).

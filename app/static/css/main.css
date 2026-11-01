@@ -8325,6 +8325,12 @@ html[data-theme="dark"] .meta-code-code .tok-cpf { color: #8b949e; }
     padding-left: 0.2em;
 }
 
+/* Two lists side by side (`*` items then `-` items, `1)` then `1.`) are two lists in
+   standard Markdown: a gap shows they are (docs/ui/content-formatting.md, Lists). */
+.meta-markdown :is(ul, ol) + :is(ul, ol) {
+    margin-top: 1em;
+}
+
 .meta-markdown li {
     margin: 0.2em 0;
 }

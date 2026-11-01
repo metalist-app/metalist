@@ -15,7 +15,10 @@ from app.services.mermaid_note_rendering import found_diagram
 from app.services.status_icons import EMPTY_BOX_ICON, TICKED_BOX_ICON
 
 
-_ORDERED_LIST_RE = re.compile(r"^(\d+)\.\s+(?P<content>.*)$")
+# A list item's marker: a bullet (-, + or *) or a number and its delimiter (. or )); a
+# different bullet or delimiter starts a new list (CommonMark).
+_ORDERED_LIST_RE = re.compile(r"^(\d+)(?P<marker>[.)])\s+(?P<content>.*)$")
+_ORDERED_DELIMITERS = frozenset({".", ")"})
 # A task: a list item starting [ ] or [x] (2026-10-31; GFM task lists, as Obsidian writes them).
 _TASK_RE = re.compile(r"^\[(?P<mark>[ xX])\](?P<content>(?:\s.*)?)$")
 _TASK_ICONS = {False: EMPTY_BOX_ICON, True: TICKED_BOX_ICON}
@@ -31,7 +34,7 @@ _INLINE_FOOTNOTE_RE = re.compile(r"\^\[(?P<text>[^\[\]\n]+)\]")
 # The footnote tokens: plain letters and digits, so no later pass touches them.
 _FOOTNOTE_TOKEN_PREFIX = "MLMDFOOTNOTE"
 _FOOTNOTE_HASH_LENGTH = 16
-_UNORDERED_LIST_RE = re.compile(r"^[-+*]\s+(?P<content>.*)$")
+_UNORDERED_LIST_RE = re.compile(r"^(?P<marker>[-+*])\s+(?P<content>.*)$")
 _ATX_HEADING_RE = re.compile(r"^(?P<marks>#{1,6})\s+(?P<content>.*)$")
 _FENCE_RE = re.compile(r"^```([^\s`]*)\s*$")
 _TABLE_DELIMITER_CELL_RE = re.compile(r"^\s*:?-{3,}:?\s*$")
@@ -61,6 +64,10 @@ _TAB_WIDTH = 4
 _ESCAPE_SEQUENCE_LENGTH = 2
 # The one raw HTML tag Markdown text may carry: a line break, the standard way to break
 # a line in a table cell. Matched after HTML escaping, so code spans keep it as text.
+# A paragraph's line ending in two or more spaces, or in a backslash, breaks there; any
+# other line joins the next with a space (CommonMark hard and soft line breaks).
+_HARD_BREAK_SPACES = "  "
+_LINE_BREAK_TAG = "<br>"
 _ESCAPED_LINE_BREAK_TAG_RE = re.compile(r"&lt;br\s*/?&gt;", re.IGNORECASE)
 
 
@@ -172,8 +179,9 @@ class _Footnotes:
         assert self.is_enabled, "a disabled footnote list takes no footnotes"
         token = f"{self.token_prefix}N{len(self.collected) + 1}END"
         body_html = _render_inline_markdown(
-            body_markdown, allow_links=True, allows_images=False, footnotes=_DISABLED_FOOTNOTES,
-        ).replace("\n", "<br>")
+            _joined_lines(body_markdown.split("\n")), allow_links=True, allows_images=False,
+            footnotes=_DISABLED_FOOTNOTES,
+        )
         self.collected.append((token, body_html))
         return token
 
@@ -358,28 +366,27 @@ class _MarkdownRenderer:
         quote_lines: List[str] = []
         while self._index < len(self._lines):
             line = self._lines[self._index]
-            # A blank line (no >) ends a callout, as in Obsidian; a plain quote goes on past it.
-            if line.strip() == "" and _CALLOUT_RE.match(quote_lines[0].strip()) is not None:
-                break
+            # A blank line ends a quote; a line holding only > is a blank line inside it.
             if line.strip() == "":
-                quote_lines.append("")
-                self._index += 1
-                continue
+                break
             if not self._is_blockquote_start(line):
+                # A line without > right after the quote's text goes on with it (CommonMark's
+                # lazy continuation).
+                if quote_lines[-1].strip() != "" and not self._is_block_start(line):
+                    quote_lines.append(line)
+                    self._index += 1
+                    continue
                 break
-            stripped = _without_quote_mark(line)
-            # A callout after a blank line starts a quote of its own, as in Obsidian.
-            if len(quote_lines) > 0 and quote_lines[-1] == "" and _CALLOUT_RE.match(stripped.strip()) is not None:
-                break
-            quote_lines.append(stripped)
+            quote_lines.append(_without_quote_mark(line))
             self._index += 1
         callout = _CALLOUT_RE.match(quote_lines[0].strip())
         if callout is not None:
             return self._render_callout(callout, body_lines=quote_lines[1:], header_line=quote_start)
-        inner_html = self._quote_renderer(quote_lines, start=quote_start).render()
+        inner_html = self._sub_renderer(quote_lines, start=quote_start).render()
         return f"<blockquote>{inner_html}</blockquote>"
 
-    def _quote_renderer(self, lines: List[str], *, start: int) -> "_MarkdownRenderer":
+    def _sub_renderer(self, lines: List[str], *, start: int) -> "_MarkdownRenderer":
+        """A renderer of a quote's or a list item's own lines, which start at line start."""
         return _MarkdownRenderer(
             lines=lines, is_note_text=self._is_note_text, line_offset=self._line_offset + start,
             task_lines=self.task_lines, callout_lines=self.callout_lines, footnotes=self.footnotes,
@@ -397,7 +404,7 @@ class _MarkdownRenderer:
         callout_index = len(self.callout_lines)
         if callout.group("fold") != "" and self._is_note_text:
             self.callout_lines.append(self._line_offset + header_line)
-        body_html = self._quote_renderer(body_lines, start=header_line + 1).render()
+        body_html = self._sub_renderer(body_lines, start=header_line + 1).render()
         if callout.group("fold") == "":
             return f'<blockquote class="meta-markdown-callout"><p>{heading_html}</p>{body_html}</blockquote>'
         open_attr = ""
@@ -412,10 +419,11 @@ class _MarkdownRenderer:
         )
 
     def _render_list_block(self) -> str:
-        """A list and the lists nested in its items (2026-10-31): an item indented at least
-        _NESTED_LIST_INDENT columns more than its list belongs inside the item above it."""
+        """A list (2026-10-31, CommonMark): its items share a marker, and a line indented as
+        far as an item's text belongs inside that item, a nested list or a block."""
         first_line = self._lines[self._index]
         list_indent = _indent_width(first_line)
+        marker = _list_marker(first_line)
         ordered_match = _ORDERED_LIST_RE.match(first_line.strip())
         is_ordered = ordered_match is not None
         tag_name = "ul"
@@ -428,24 +436,32 @@ class _MarkdownRenderer:
             if start_number != 1:
                 opening_tag = f'<ol start="{start_number}">'
         items: List[str] = []
+        # Where the last item's text starts: a line indented less is the next item's.
+        content_column = list_indent + _NESTED_LIST_INDENT
 
         while self._index < len(self._lines):
             line = self._lines[self._index]
             if line.strip() == "":
                 next_content_index = self._next_content_index(self._index)
                 if next_content_index < len(self._lines) and self._is_sibling_item(
-                    line=self._lines[next_content_index], list_indent=list_indent, is_ordered=is_ordered,
+                    line=self._lines[next_content_index], list_indent=list_indent, marker=marker,
+                    content_column=content_column,
                 ):
                     self._index = next_content_index
                     continue
                 break
-            if not self._is_sibling_item(line=line, list_indent=list_indent, is_ordered=is_ordered):
+            if not self._is_sibling_item(
+                line=line, list_indent=list_indent, marker=marker, content_column=content_column,
+            ):
                 break
-            items.append(self._render_list_item(is_ordered=is_ordered, list_indent=list_indent))
+            item_html, content_column = self._render_list_item(is_ordered=is_ordered, list_indent=list_indent)
+            items.append(item_html)
 
         return f"{opening_tag}{''.join(items)}</{tag_name}>"
 
-    def _render_list_item(self, *, is_ordered: bool, list_indent: int) -> str:
+    def _render_list_item(self, *, is_ordered: bool, list_indent: int) -> Tuple[str, int]:
+        """An item and where its text starts: its lines, then what is indented that far
+        under it (nested lists, and after a blank line paragraphs, code and quotes)."""
         line = self._lines[self._index]
         stripped = line.strip()
         if is_ordered:
@@ -453,6 +469,7 @@ class _MarkdownRenderer:
         else:
             match = _UNORDERED_LIST_RE.match(stripped)
         assert match is not None
+        content_column = list_indent + len(stripped) - len(match.group("content"))
         item_content = match.group("content")
         task_box = ""
         task_match = _TASK_RE.match(item_content)
@@ -460,40 +477,63 @@ class _MarkdownRenderer:
             task_box = self._task_box(is_ticked=task_match.group("mark") != " ")
             item_content = task_match.group("content").lstrip()
         item_lines = [item_content]
-        nested_lists: List[str] = []
+        inner_blocks: List[str] = []
+        has_blocks = False
         self._index += 1
 
         while self._index < len(self._lines):
             next_line = self._lines[self._index]
             if next_line.strip() == "":
-                # A blank line before a nested list keeps it in this item.
+                # After a blank line, what is indented as far as the item's text is still
+                # the item's: a nested list, or a paragraph, code or a quote.
                 next_content_index = self._next_content_index(self._index)
-                if next_content_index < len(self._lines) and self._is_nested_item(
-                    line=self._lines[next_content_index], list_indent=list_indent,
-                ):
-                    self._index = next_content_index
+                if next_content_index < len(self._lines) and _indent_width(
+                    self._lines[next_content_index],
+                ) >= content_column:
+                    if self._is_list_start(self._lines[next_content_index]):
+                        self._index = next_content_index
+                        continue
+                    inner_blocks.append(self._render_item_blocks(start=next_content_index, content_column=content_column))
+                    has_blocks = True
                     continue
                 break
-            if self._is_nested_item(line=next_line, list_indent=list_indent):
-                nested_lists.append(self._render_list_block())
-                continue
             if self._is_list_start(next_line):
+                if _indent_width(next_line) >= content_column:
+                    inner_blocks.append(self._render_list_block())
+                    continue
                 break
             if self._is_block_start(next_line):
                 break
-            if nested_lists:
+            if inner_blocks:
                 break
-            if next_line.startswith("  ") or next_line.startswith("\t"):
-                item_lines.append(next_line.lstrip())
-                self._index += 1
-                continue
-            break
+            # Any other line goes on with the item's text (CommonMark's lazy continuation).
+            item_lines.append(next_line)
+            self._index += 1
 
-        rendered = self._inline("\n".join(item_lines))
-        rendered = rendered.replace("\n", "<br>\n")
+        rendered = self._inline(_joined_lines(item_lines))
+        if has_blocks:
+            rendered = f"<p>{rendered}</p>"
         if task_box != "":
-            return f'<li class="meta-markdown-task">{task_box}{rendered}{"".join(nested_lists)}</li>'
-        return f"<li>{rendered}{''.join(nested_lists)}</li>"
+            return f'<li class="meta-markdown-task">{task_box}{rendered}{"".join(inner_blocks)}</li>', content_column
+        return f"<li>{rendered}{''.join(inner_blocks)}</li>", content_column
+
+    def _render_item_blocks(self, *, start: int, content_column: int) -> str:
+        """The lines from start indented at least content_column, blank lines between them
+        included, drawn as blocks of their own without that indent."""
+        end = start
+        last_content = start
+        while end < len(self._lines):
+            line = self._lines[end]
+            if line.strip() != "":
+                if _indent_width(line) < content_column:
+                    break
+                last_content = end
+            end += 1
+        block_lines = [
+            line.expandtabs(_TAB_WIDTH)[content_column:] for line in self._lines[start:last_content + 1]
+        ]
+        self._index = last_content + 1
+        return self._sub_renderer(block_lines, start=start).render()
 
     def _task_box(self, *, is_ticked: bool) -> str:
         """The box of the task on the current line, numbered in order through the note."""
@@ -512,14 +552,11 @@ class _MarkdownRenderer:
             index += 1
         return index
 
-    def _is_nested_item(self, *, line: str, list_indent: int) -> bool:
-        return self._is_list_start(line) and _indent_width(line) >= list_indent + _NESTED_LIST_INDENT
-
-    def _is_sibling_item(self, *, line: str, list_indent: int, is_ordered: bool) -> bool:
+    def _is_sibling_item(self, *, line: str, list_indent: int, marker: str, content_column: int) -> bool:
         indent = _indent_width(line)
-        if indent < list_indent or indent >= list_indent + _NESTED_LIST_INDENT:
+        if indent < list_indent or indent >= content_column:
             return False
-        return self._is_matching_list_item(line=line, is_ordered=is_ordered)
+        return self._is_list_start(line) and _list_marker(line) == marker
 
     def _render_paragraph_block(self) -> str:
         paragraph_lines: List[str] = []
@@ -532,9 +569,7 @@ class _MarkdownRenderer:
             paragraph_lines.append(line)
             self._index += 1
 
-        rendered = self._inline("\n".join(paragraph_lines))
-        rendered = rendered.replace("\n", "<br>\n")
-        return f"<p>{rendered}</p>"
+        return f"<p>{self._inline(_joined_lines(paragraph_lines))}</p>"
 
     def _is_block_start(self, line: str) -> bool:
         if self._is_heading(line):
@@ -568,12 +603,6 @@ class _MarkdownRenderer:
             return True
         return False
 
-    def _is_matching_list_item(self, *, line: str, is_ordered: bool) -> bool:
-        stripped = line.strip()
-        if is_ordered:
-            return _ORDERED_LIST_RE.match(stripped) is not None
-        return _UNORDERED_LIST_RE.match(stripped) is not None
-
     def _is_horizontal_rule(self, line: str) -> bool:
         stripped = line.strip()
         if len(stripped) < _HORIZONTAL_RULE_MIN_CHARS:
@@ -600,6 +629,35 @@ def _indent_width(line: str) -> int:
     """The columns of space before a line's text, a tab counting _TAB_WIDTH."""
     expanded = line.expandtabs(_TAB_WIDTH)
     return len(expanded) - len(expanded.lstrip())
+
+
+def _list_marker(line: str) -> str:
+    """A list item's bullet (-, + or *) or its number's delimiter (. or ))."""
+    stripped = line.strip()
+    ordered = _ORDERED_LIST_RE.match(stripped)
+    if ordered is not None:
+        return ordered.group("marker")
+    unordered = _UNORDERED_LIST_RE.match(stripped)
+    assert unordered is not None, f"not a list item: {line!r}"
+    return unordered.group("marker")
+
+
+def _joined_lines(lines: List[str]) -> str:
+    """A paragraph's lines as one text (CommonMark): each without its leading and trailing
+    space; one ending in two spaces or an unescaped backslash breaks (the <br> the inline
+    pass draws), any other joins the next as a soft break, shown as a space."""
+    parts: List[str] = []
+    last = len(lines) - 1
+    for position, line in enumerate(lines):
+        text = line.lstrip()
+        trimmed = text.rstrip()
+        backslashes = len(trimmed) - len(trimmed.rstrip(_MARKDOWN_ESCAPE))
+        if position != last and backslashes % _BACKSLASHES_PER_ESCAPED_BACKSLASH == 1:
+            trimmed = trimmed[: -len(_MARKDOWN_ESCAPE)] + _LINE_BREAK_TAG
+        elif position != last and text.endswith(_HARD_BREAK_SPACES):
+            trimmed += _LINE_BREAK_TAG
+        parts.append(trimmed)
+    return "\n".join(parts)
 
 
 def _without_quote_mark(line: str) -> str:

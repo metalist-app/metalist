@@ -168,6 +168,8 @@ Split modes convert to rich text (A3). "No splitting" keeps the Markdown, and is
 |---|---|---|---|---|
 | H1 | Paragraph | ★ Mode 3: a note per paragraph. Mode 2: consecutive paragraphs in one note, separated by blank lines | Paragraphs | None |
 | H2 | A line break inside a paragraph (two spaces, or a single newline, depending on the strict line-breaks setting, B10) | ★ `<br>` | A newline, or two spaces then a newline, matching the vault's setting | **Form** |
+
+*H2, found 2026-10-31:* MetaList's Markdown now follows the standard, where a single newline joins the lines (`docs/ui/content-formatting.md`, Markdown meta tags). A note kept as Markdown from a vault without strict line breaks (Obsidian's default) must have each such newline written as a standard break (a backslash, or two spaces, before it), or its lines run together in MetaList. **Open:** which of the two the import writes.
 | H3 | `**bold**`/`__bold__`, `*it*`/`_it_`, `***both***` | ★ `<strong>`, `<em>` | `**`, `*` | **Form** (`__`/`_` come back as `**`/`*`) |
 | H4 | `~~strike~~`, `<s>`, `<u>` | ★ `<s>`, `<u>` | `~~x~~`, `<u>x</u>` | None |
 | H5 | `==highlight==` | ★ `<mark>` | `==x==` | None |

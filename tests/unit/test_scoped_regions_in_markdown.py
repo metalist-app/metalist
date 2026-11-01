@@ -44,7 +44,7 @@ def test_a_block_region_stands_between_the_paragraphs_around_it(tag: str, body: 
     region = _drawn_alone(tag, body)
     rendered = _drawn_in_markdown(tag, body)
 
-    assert f"<p>Before </p>{region}<p> after</p>" in rendered, rendered
+    assert f"<p>Before</p>{region}<p>after</p>" in rendered, rendered
     # Nothing for the sanitizer to move: a block never sits inside a paragraph.
     assert sanitize_rendered_html(rendered) == rendered
 
@@ -65,4 +65,4 @@ def test_markdown_around_a_region_still_renders() -> None:
     region = _drawn_alone("((@csv))", "((Item,Qty</div><div>Milk,2))")
 
     assert "<h1>Groceries</h1>" in rendered, rendered
-    assert f"<p>This <strong>week</strong> </p>{region}<p> and <code>code</code>.</p>" in rendered, rendered
+    assert f"<p>This <strong>week</strong></p>{region}<p>and <code>code</code>.</p>" in rendered, rendered

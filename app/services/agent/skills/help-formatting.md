@@ -146,6 +146,7 @@ Other (non-meta) tags may also appear inside wrapper tokens (e.g. `{{foo bar}}`)
 - `@done`: renders the note content with a checked box icon in view mode; clicking the icon toggles the tag to `@todo`.
 
 ## Markdown meta tags
+- Markdown follows standard Markdown (CommonMark with GitHub's tables, task lists and footnotes). Extras on top: Obsidian's callouts, `==highlights==` and `[[links]]`, LaTeX math, Mermaid diagrams.
 - `@markdown`: renders the note content as Markdown in view mode on the server.
 - Scoped Markdown renders only the matching wrapped region.
 - Lists nest by indent: an item two or more spaces (or a tab) deeper than its list sits inside the item above it, bullets and numbers mixed; one space deeper stays a sibling.

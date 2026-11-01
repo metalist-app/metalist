@@ -854,7 +854,8 @@ def test_format_note_content_for_view_markdown_with_scoped_latex_renders_server_
     assert "<h1>Math Test</h1>" in rendered
     # Formulas carry their TeX source (as written) for mapping clicks to the source.
     assert 'Inline math inside markdown: <span class="meta-latex meta-latex-inline" data-latex-source="$E = mc^2$">' in rendered
-    assert "Display math inside markdown:<br>" in rendered
+    # One Return joins the lines, as in standard Markdown (2026-10-31).
+    assert "Display math inside markdown:\n" in rendered
     assert '<math xmlns="http://www.w3.org/1998/Math/MathML" display="block">' in rendered
     assert "<mfrac>" in rendered
     assert "@@MLLATEX[" not in rendered

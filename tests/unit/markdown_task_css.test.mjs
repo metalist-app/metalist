@@ -13,3 +13,9 @@ test('only a bulleted task hides its marker', async () => {
         .filter((selector) => selector.includes('meta-markdown-task'));
     assert.deepEqual(hidingRules, ['.meta-markdown ul > li.meta-markdown-task']);
 });
+
+// Two lists side by side are two lists in standard Markdown; a gap shows they are (2026-10-31).
+test('a list right after another list stands apart from it', async () => {
+    const css = (await readFile(MAIN_CSS_URL, 'utf8')).replace(/\/\*[\s\S]*?\*\//g, '');
+    assert.match(css, /\.meta-markdown :is\(ul, ol\) \+ :is\(ul, ol\) \{\s*margin-top: 1em;\s*\}/);
+});

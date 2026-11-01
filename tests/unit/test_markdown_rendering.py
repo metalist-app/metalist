@@ -32,8 +32,8 @@ def test_malformed_external_markdown_table_renders_as_text() -> None:
 
     assert rendered == (
         "<p>Answer before table.</p>"
-        "<p>| Topic | Detail |<br>\n"
-        "| --- |<br>\n"
+        "<p>| Topic | Detail |\n"
+        "| --- |\n"
         "| caching | reused input |</p>"
     )
 
@@ -208,7 +208,7 @@ def note_html(markdown: str) -> str:
     ("3. three\n   - a bullet\n4. four", '<ol start="3"><li>three<ul><li>a bullet</li></ul></li><li>four</li></ol>'),
     ("- a\n  - b\n    3. c", '<ul><li>a<ul><li>b<ol start="3"><li>c</li></ol></li></ul></li></ul>'),
     ("- a\n\t- tabbed\n\t\t- twice\n- b", "<ul><li>a<ul><li>tabbed<ul><li>twice</li></ul></li></ul></li><li>b</li></ul>"),
-    ("- a\n  continued\n- b", "<ul><li>a<br>\ncontinued</li><li>b</li></ul>"),
+    ("- a\n  continued\n- b", "<ul><li>a\ncontinued</li><li>b</li></ul>"),
     # One column deeper is a sibling, as in standard Markdown.
     ("- a\n - b\n- c", "<ul><li>a</li><li>b</li><li>c</li></ul>"),
     ("- a\n  - b\n\nAfter", "<ul><li>a<ul><li>b</li></ul></li></ul><p>After</p>"),
@@ -279,3 +279,42 @@ def test_a_fenced_task_and_the_ai_chat_draw_no_box() -> None:
 ])
 def test_double_equals_highlight(markdown: str, expected: str) -> None:
     assert render_markdown_to_html(markdown) == expected
+
+
+# Standard Markdown wins (2026-10-31; docs/ui/content-formatting.md, Markdown meta tags):
+# CommonMark's paragraphs, line breaks, lists and quotes, in notes and the AI chat alike.
+@pytest.mark.parametrize(("markdown", "expected"), [
+    # One Return joins the lines; a blank line starts a new paragraph.
+    ("one\ntwo\n\nthree", "<p>one\ntwo</p><p>three</p>"),
+    # Two spaces or a backslash at a line's end break it; an escaped backslash does not.
+    ("a  \nb\\\nc", "<p>a<br>\nb<br>\nc</p>"),
+    ("a\\\\\nb", "<p>a\\\nb</p>"),
+    # A list item's following lines join it, indented or not.
+    ("- a\nlazy\n  indented", "<ul><li>a\nlazy\nindented</li></ul>"),
+    # 1) is a numbered list; another delimiter or bullet starts a new list.
+    ("1) one\n2) two", "<ol><li>one</li><li>two</li></ol>"),
+    ("3) three", '<ol start="3"><li>three</li></ol>'),
+    ("1) a\n1. b", "<ol><li>a</li></ol><ol><li>b</li></ol>"),
+    ("* a\n- b", "<ul><li>a</li></ul><ul><li>b</li></ul>"),
+    # Indented as far as the item's text, after a blank line: the item's own blocks.
+    (
+        "- Hotel\n\n  Ask for a garden room.\n\n  ```\n  code\n  ```\n- Groceries",
+        "<ul><li><p>Hotel</p><p>Ask for a garden room.</p><pre><code>code</code></pre></li><li>Groceries</li></ul>",
+    ),
+    ("1. One\n\n   Under one\n2. Two", "<ol><li><p>One</p><p>Under one</p></li><li>Two</li></ol>"),
+    # Indented less than the item's text: not the item's.
+    ("1. One\n\n  Not under one", "<ol><li>One</li></ol><p>Not under one</p>"),
+    # A blank line ends a quote; a line holding only > keeps it going; a line without >
+    # right after its text goes on with it.
+    ("> one\n\n> two", "<blockquote><p>one</p></blockquote><blockquote><p>two</p></blockquote>"),
+    ("> a\n>\n> b\nlazy", "<blockquote><p>a</p><p>b\nlazy</p></blockquote>"),
+])
+def test_standard_markdown_renders_as_the_standard_says(markdown: str, expected: str) -> None:
+    assert render_markdown_to_html(markdown) == expected
+
+
+def test_a_footnotes_lines_join_and_a_bracket_numbered_task_has_its_box() -> None:
+    note = render_note_markdown("A[^1]\n\n[^1]: line one\n    line two", takes_footnotes=True)
+    assert [body for _token, body in note.footnotes] == ["line one\nline two"]
+    assert 'data-task-index="0"' in note_html("1) [ ] task")
+    assert markdown_task_lines("1) [ ] a\n2) [x] b") == [0, 1]

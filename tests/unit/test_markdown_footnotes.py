@@ -37,7 +37,7 @@ def markers(rendered: str) -> list[str]:
 def references(rendered: str) -> list[str]:
     section = rendered.split("<section", 1)[1]
     return [" ".join(re.sub(r"<[^>]+>", " ", body).split())
-            for body in re.findall(r'<div class="meta-footnote-body">(.*?)</div></li>', section)]
+            for body in re.findall(r'<div class="meta-footnote-body">(.*?)</div></li>', section, re.S)]
 
 
 def test_footnotes_are_numbered_by_first_appearance_and_listed() -> None:

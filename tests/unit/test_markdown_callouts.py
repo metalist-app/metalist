@@ -31,7 +31,7 @@ def note_html(markdown: str) -> str:
         '<blockquote class="meta-markdown-callout"><p><strong>Tip: a</strong></p></blockquote>'
         "<blockquote><p>plain</p></blockquote>",
     ),
-    ("> plain\n> [!note] later", "<blockquote><p>plain<br>\n[!note] later</p></blockquote>"),
+    ("> plain\n> [!note] later", "<blockquote><p>plain\n[!note] later</p></blockquote>"),
 ])
 def test_a_callout_is_a_quote_led_by_its_type_and_title(markdown: str, expected: str) -> None:
     assert note_html(markdown) == expected
