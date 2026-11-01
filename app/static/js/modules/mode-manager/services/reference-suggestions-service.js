@@ -43,9 +43,6 @@ const MAIN_BUTTON = 0;
 
 const moduleState = ApplicationState.createFields('reference-suggestions-service', {
     initialized: false,
-    // The catalog of notes is built on the server the first time it is asked for:
-    // asked for at the first typing in a note, it is ready by the time `[[` is.
-    warmed: false,
     list: null,
     noteId: null,
     // The `[[` the list is for: its text node and place in it, and the text typed after it.
@@ -309,14 +306,6 @@ async function requestSuggestions(query, noteId) {
     renderList(query, response.suggestions.map(requireSuggestion));
 }
 
-function warmCatalog(noteId) {
-    moduleState.warmed = true;
-    NotesAPI.fetchReferenceSuggestions('', noteId, new AbortController().signal).catch((error) => {
-        rethrowUnexpectedError(error);
-        throw error;
-    });
-}
-
 function checkStillEditing() {
     if (moduleState.noteId === null || !ModeContext.isEditingNote(moduleState.noteId)) {
         closeReferenceSuggestions();
@@ -328,7 +317,6 @@ export function updateReferenceSuggestions(content, noteId) {
     if (!(content instanceof HTMLElement) || typeof noteId !== 'string' || noteId === '') {
         throw new Error('updateReferenceSuggestions requires the edited note and its content');
     }
-    if (!moduleState.warmed) warmCatalog(noteId);
     const trigger = triggerAtCaret(content);
     const isDismissed = trigger !== null && trigger.node === moduleState.dismissedNode
         && trigger.start === moduleState.dismissedStart;

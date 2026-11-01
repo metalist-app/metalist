@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 from threading import Lock
-from typing import Dict, FrozenSet, List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
 from app.services.input_errors import InputRejected
 from app.services.note_store import store as note_store
@@ -158,50 +158,53 @@ def folder_note_counts(search: str) -> Dict[str, int]:
 def _count_notes_by_folder(search: str) -> Dict[str, int]:
     root_ids = note_store.get_children(None)
     paths = folder_paths()
-    counts = {NO_FOLDER: _count_roots(search, root_ids)}
     clauses = parse_search_query(search).clauses
     if all(is_plain_clause(clause) for clause in clauses):
-        counts.update(_count_in_one_pass(clauses, paths))
-        return counts
+        return _count_in_one_pass(clauses, paths, root_ids)
     # Stats, values, MAX/MIN or a note's id: each folder searched as clicking it would.
+    counts = {NO_FOLDER: _count_roots(search, root_ids)}
     for path in paths:
         counts[path] = _count_roots(search_in_folder(search, path), root_ids)
     return counts
 
 
-def _count_in_one_pass(clauses: Tuple[SearchClause, ...], paths: List[str]) -> Dict[str, int]:
-    """The counts search_in_folder's view would show, for every folder at once. A view
-    narrowed to a folder shows a root when, for some clause, a note under the root (or the
+def _count_in_one_pass(clauses: Tuple[SearchClause, ...], paths: List[str], root_ids: List[str]) -> Dict[str, int]:
+    """The counts search_in_folder's view would show, for every folder (and the top, every
+    note) at once. A view shows a root when, for some clause, a note under the root (or the
     root) is found by the clause, carries one of the folder's tags, and the root itself is
     not excluded by the clause (snapshot.resolve_search_scope); with a plain clause, the
     notes it finds with a tag added are those it finds that carry the tag."""
     tags = all_folder_tags()
-    notes_by_path: Dict[str, Set[str]] = {}
     holders_by_tag = {tag: search_index.query_clause_note_ids(_tag_clause(tag)) for tag in tags}
+    notes_by_path: Dict[str, Set[str]] = {}
     for path in paths:
         notes: Set[str] = set()
         for tag in tags:
             if tag.casefold().startswith(path.casefold()):
                 notes |= holders_by_tag[tag]
         notes_by_path[path] = notes
+    top_level = frozenset(root_ids)
     root_by_note: Dict[str, str] = {}
-    roots_by_path: Dict[str, Set[str]] = {path: set() for path in paths}
-    every_note = frozenset(note_store.list_note_ids())
+    roots_by_key: Dict[str, Set[str]] = {key: set() for key in [NO_FOLDER, *paths]}
     for clause in clauses:
-        found = _found_by(clause, every_note)
         excluded = clause_excluded_note_ids(clause)
+        if clause_has_positive_terms(clause):
+            found = frozenset(search_index.query_clause_note_ids(clause))
+            roots_by_key[NO_FOLDER] |= _roots_of(found, top_level, root_by_note) - excluded
+            for path in paths:
+                roots_by_key[path] |= _roots_of(notes_by_path[path] & found, top_level, root_by_note) - excluded
+            continue
+        # Exclusions only: every note is found.
+        roots_by_key[NO_FOLDER] |= top_level - excluded
         for path in paths:
-            for note_id in notes_by_path[path] & found:
-                root_id = _root_of(note_id, root_by_note)
-                if root_id not in excluded:
-                    roots_by_path[path].add(root_id)
-    return {path: len(roots) for path, roots in roots_by_path.items()}
+            roots_by_key[path] |= _roots_of(notes_by_path[path], top_level, root_by_note) - excluded
+    return {key: len(roots) for key, roots in roots_by_key.items()}
 
 
-def _found_by(clause: SearchClause, every_note: FrozenSet[str]) -> FrozenSet[str]:
-    if not clause_has_positive_terms(clause):
-        return every_note
-    return frozenset(search_index.query_clause_note_ids(clause))
+def _roots_of(note_ids: Set[str] | frozenset[str], top_level: frozenset[str], root_by_note: Dict[str, str]) -> Set[str]:
+    """The top-level notes the notes are in: most are top-level themselves (a set operation),
+    the rest walked up once each."""
+    return set(note_ids & top_level) | {_root_of(note_id, root_by_note) for note_id in note_ids - top_level}
 
 
 def _tag_clause(tag: str) -> SearchClause:

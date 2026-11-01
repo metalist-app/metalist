@@ -135,6 +135,7 @@ import { isValidTagToken } from '../tag-token.js';
 import { updateSearchContextsOverlayPlacement } from '../mode-manager/services/search-contexts-overlay-service.js';
 import { navigateToReferenceOrigin, openSearchInNewSearchContext } from '../mode-manager/events/keyboard-events.js';
 import { FolderNameModal } from '../modals/folder-name-modal.js';
+import { DeleteFolderModal } from '../modals/delete-folder-modal.js';
 import {
     activeVirtualFolder, isVirtualFoldersShown, setVirtualFoldersShown, wireVirtualFolders,
 } from '../mode-manager/services/virtual-folders-service.js';
@@ -436,6 +437,7 @@ class CommandPaletteController {
         this._importWizard = null;
         this._newVaultWizard = null;
         this._folderNameModal = null;
+        this._deleteFolderModal = null;
         this._memoryUsageModal = null;
         this._recentMessagesModal = null;
         this._noteLayoutAppearanceModal = null;
@@ -466,6 +468,7 @@ class CommandPaletteController {
             setFilter: async (folder) => CommandGate.runWhenFree('virtualFolders.filter', async () => this.setVirtualFolder(folder)),
             confirm: async (context) => this._confirmAction('virtualFolders.confirm', context),
             askName: async (form) => this._askFolderName(form),
+            askDeleteFolder: async (form) => this._askDeleteFolder(form),
             afterChange: async () => actionRefreshAndMaybeSelect({ startedAt: performance.now(), context: 'virtualFolders.change' }),
         });
         const clientState = await migrateLegacyClientState({
@@ -1657,6 +1660,18 @@ class CommandPaletteController {
             this._folderNameModal = new FolderNameModal();
         }
         return this._folderNameModal.openFor(form);
+    }
+
+    // Delete Folder's question (DeleteFolderModal): { deleteNotes }, or null when nothing changes.
+    async _askDeleteFolder(form) {
+        const isReady = await this._prepareForModalOpen('virtualFolders.delete');
+        if (!isReady) {
+            return null;
+        }
+        if (this._deleteFolderModal === null) {
+            this._deleteFolderModal = new DeleteFolderModal();
+        }
+        return this._deleteFolderModal.openFor(form);
     }
 
     /** Narrow the view to a virtual folder and the folders below it ('' for every folder

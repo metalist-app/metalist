@@ -507,8 +507,19 @@ export const NotesAPI = {
         return this._apiCall(CONFIG.API.VIRTUAL_FOLDERS.MOVE, { method: 'POST', body: JSON.stringify({ folder, into }) });
     },
 
-    async deleteVirtualFolder(folder) {
-        return this._apiCall(CONFIG.API.VIRTUAL_FOLDERS.DELETE, { method: 'POST', body: JSON.stringify({ folder }) });
+    // deleteNotes: also delete the notes filed in it, if still expectedNoteCount of them.
+    async deleteVirtualFolder(folder, deleteNotes, expectedNoteCount) {
+        if (typeof deleteNotes !== 'boolean' || !Number.isInteger(expectedNoteCount)) {
+            throw new Error('NotesAPI.deleteVirtualFolder requires deleteNotes and the confirmed note count');
+        }
+        return this._apiCall(CONFIG.API.VIRTUAL_FOLDERS.DELETE, {
+            method: 'POST', body: JSON.stringify({ folder, deleteNotes, expectedNoteCount }),
+        });
+    },
+
+    // How many notes deleting the folder's notes would delete (Delete Folder's checkbox).
+    async countVirtualFolderNotes(folder) {
+        return this._apiCall(CONFIG.API.VIRTUAL_FOLDERS.NOTES, { method: 'POST', body: JSON.stringify({ folder }) });
     },
 
     // folder: the folder tag ('Projects/'), or '' for every folder again.

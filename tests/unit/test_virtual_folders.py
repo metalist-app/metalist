@@ -11,12 +11,14 @@ import pytest
 
 import app.services.snapshot as snapshot_module
 import app.services.virtual_folders as virtual_folders
+import app.usecases.virtual_folders as virtual_folder_usecases
 from app.db.file_session import begin_file_writer
 from app.models.database import SafeSession
 from app.security import encryption
 from app.services import note_store as note_store_module
 from app.services import store as store_module
 from app.services.file_registry import file_registry
+from app.services.input_errors import InputRejected
 from app.services.note_store import NoteStore
 from app.services.obsidian_import.tree import CONTENT_MARKDOWN, SPLIT_HEADINGS_AND_LISTS
 from app.services.search_index import SearchIndex
@@ -53,8 +55,9 @@ def imported_vault(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> NoteStore
     store = NoteStore()
     store._timing_enabled = False
     monkeypatch.setattr(store_module, "_note_store", store)
-    for module in (snapshot_module, virtual_folders):
+    for module in (snapshot_module, virtual_folders, virtual_folder_usecases):
         monkeypatch.setattr(module, "note_store", store)
+    monkeypatch.setattr(virtual_folder_usecases, "search_index", index)
     session = SafeSession()
     store.load_from_db(session, prefetched_rows=None)
     for relative, text in VAULT.items():
@@ -87,8 +90,9 @@ def test_the_one_pass_counts_are_what_clicking_each_folder_shows(imported_vault:
     paths = virtual_folders.folder_paths()
     clauses = parse_search_query(search).clauses
     assert all(snapshot_module.is_plain_clause(clause) for clause in clauses)
-    one_pass = virtual_folders._count_in_one_pass(clauses, paths)
+    one_pass = virtual_folders._count_in_one_pass(clauses, paths, root_ids)
     searched = {path: virtual_folders._count_roots(virtual_folders.search_in_folder(search, path), root_ids) for path in paths}
+    searched[virtual_folders.NO_FOLDER] = virtual_folders._count_roots(search, root_ids)
     assert one_pass == searched
 
 
@@ -98,3 +102,51 @@ def test_a_folder_count_follows_the_search(imported_vault: NoteStore) -> None:
     assert counts["Projects/"] == 2
     assert counts["Projects/Client-A/"] == 1
     assert counts["Daily/"] == 0
+
+
+# --- Delete Folder, with its notes --------------------------------------------------------
+
+def _root_titled(store: NoteStore, title: str) -> str:
+    for root_id in store.get_children(None):
+        if title in store.get_note(root_id).content:
+            return root_id
+    raise AssertionError(f"No root note titled {title}")
+
+
+def _subtree_size(store: NoteStore, note_id: str) -> int:
+    return 1 + sum(_subtree_size(store, child_id) for child_id in store.get_children(note_id))
+
+
+def test_a_folders_notes_are_the_notes_filed_in_it_and_below_it_with_their_subtrees(imported_vault: NoteStore) -> None:
+    filed = [_root_titled(imported_vault, title) for title in ("Plan", "Notes", "Budget", "Overview")]
+    deletion = virtual_folder_usecases.notes_in_folder("Projects/")
+    assert sorted(deletion.top_note_ids) == sorted(filed)
+    assert deletion.note_count == sum(_subtree_size(imported_vault, note_id) for note_id in filed)
+    assert virtual_folder_usecases.notes_in_folder("Projects/Client-B/").top_note_ids == [_root_titled(imported_vault, "Budget")]
+
+
+def test_deleting_a_folder_with_its_notes_keeps_the_notes_elsewhere(imported_vault: NoteStore, monkeypatch: pytest.MonkeyPatch) -> None:
+    resets: list[tuple[str, str]] = []
+    monkeypatch.setattr(virtual_folder_usecases, "reset_undo_stack", lambda client_id, undo_context: resets.append((client_id, undo_context)))
+    deletion = virtual_folder_usecases.notes_in_folder("Projects/")
+    kept = [_root_titled(imported_vault, title) for title in ("Today", "Top")]
+    roots_before = len(imported_vault.get_children(None))
+    result = virtual_folder_usecases.delete_folder_and_notes(
+        folder="Projects/", expected_note_count=4, token=TOKEN, client_id="client", undo_context="undo",
+    )
+    # The total drops by the number the dialog gave (the notes under them go uncounted).
+    assert result["deletedNoteCount"] == 4
+    assert len(imported_vault.get_children(None)) == roots_before - 4
+    assert not any(imported_vault.has_note(note_id) for note_id in deletion.top_note_ids)
+    assert all(imported_vault.has_note(note_id) for note_id in kept)
+    assert virtual_folders.all_folder_tags() == ["Daily/2026/"]
+    assert resets == [("client", "undo")]
+
+
+def test_deleting_a_folders_notes_is_refused_when_their_count_changed(imported_vault: NoteStore) -> None:
+    deletion = virtual_folder_usecases.notes_in_folder("Projects/")
+    with pytest.raises(InputRejected, match="now holds"):
+        virtual_folder_usecases.delete_folder_and_notes(
+            folder="Projects/", expected_note_count=len(deletion.top_note_ids) + 1, token=TOKEN, client_id="client", undo_context="undo",
+        )
+    assert all(imported_vault.has_note(note_id) for note_id in deletion.top_note_ids)

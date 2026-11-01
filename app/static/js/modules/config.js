@@ -161,6 +161,7 @@ export const CONFIG = {
             RENAME: `${API_BASE}/virtual-folders/rename`,
             MOVE: `${API_BASE}/virtual-folders/move`,
             DELETE: `${API_BASE}/virtual-folders/delete`,
+            NOTES: `${API_BASE}/virtual-folders/notes`,
         },
         FILES: {
             UPLOAD: `${API_FILES_BASE}/upload`,

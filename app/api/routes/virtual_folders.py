@@ -9,12 +9,13 @@ from typing import Dict
 from fastapi import APIRouter, Request
 from typing_extensions import TypedDict
 
-from app.api.note_requests import Identifier, Text, UndoContext, ViewScope
+from app.api.note_requests import Identifier, Nonnegative, Text, UndoContext, ViewScope
 from app.api.request_auth import require_request_auth_token
 from app.api.transactions import transactional_route
 from app.services.undo_state import reset_undo_stack
-from app.services.virtual_folders import NO_FOLDER, all_folder_tags, folder_note_counts, folder_paths, virtual_folder_state
-from app.usecases.virtual_folders import delete_folder, move_folder, rename_folder
+from app.services.input_errors import InputRejected
+from app.services.virtual_folders import NO_FOLDER, all_folder_tags, folder_note_counts, folder_paths, is_folder_tag, virtual_folder_state
+from app.usecases.virtual_folders import delete_folder, delete_folder_and_notes, move_folder, notes_in_folder, rename_folder
 
 router = APIRouter(prefix="/virtual-folders", tags=["virtual-folders"])
 
@@ -32,6 +33,16 @@ class MoveVirtualFolderRequest(TypedDict):
 
 
 class DeleteVirtualFolderRequest(TypedDict):
+    folder: Text
+    # Also delete the notes filed in it (unchecked unless the user ticks it), if there are
+    # still expectedNoteCount of them (0 when not deleting notes).
+    deleteNotes: bool
+    expectedNoteCount: Nonnegative
+    clientId: Identifier
+    undoContext: UndoContext
+
+
+class FolderNotesRequest(TypedDict):
     folder: Text
 
 
@@ -95,7 +106,24 @@ def move_virtual_folder(request: Request, body: MoveVirtualFolderRequest) -> Dic
 @router.post("/delete")
 @transactional_route
 def delete_virtual_folder(request: Request, body: DeleteVirtualFolderRequest) -> Dict[str, object]:
-    """Take a folder, and every folder below it, off every note; the notes stay."""
+    """Take a folder, and every folder below it, off every note; the notes stay, unless the
+    user chose to delete them too."""
     token = require_request_auth_token(request)
-    return delete_folder(folder=body["folder"], token=token)
+    if not body["deleteNotes"]:
+        return delete_folder(folder=body["folder"], token=token)
+    return delete_folder_and_notes(
+        folder=body["folder"], expected_note_count=body["expectedNoteCount"], token=token,
+        client_id=body["clientId"], undo_context=body["undoContext"],
+    )
+
+
+@router.post("/notes")
+@transactional_route
+def count_virtual_folder_notes(request: Request, body: FolderNotesRequest) -> Dict[str, object]:
+    """How many notes deleting the folder's notes would delete, as the list counts notes (the
+    notes under them go with them): Delete Folder's checkbox."""
+    require_request_auth_token(request)
+    if not is_folder_tag(body["folder"]):
+        raise InputRejected(f"{body['folder']} is not a folder.")
+    return {"noteCount": len(notes_in_folder(body["folder"]).top_note_ids)}
 

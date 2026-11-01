@@ -51,17 +51,19 @@ const moduleState = ApplicationState.createFields('virtual-folders-service', {
 
 // Wired by the command palette: setFilter(folder) narrows the view to it;
 // confirm(context) asks (ConfirmationModal); askName(form) asks a name (FolderNameModal);
+// askDeleteFolder(form) asks whether to delete a folder, and its notes (DeleteFolderModal);
 // afterChange() shows the view again once tags changed.
 const handlers = ApplicationState.createFields('virtual-folders-handlers', {
     setFilter: null,
     confirm: null,
     askName: null,
+    askDeleteFolder: null,
     afterChange: null,
 });
 
 /** The palette's ways to filter, open, ask and refresh (set once at startup). */
 export function wireVirtualFolders(wiring) {
-    for (const name of ['setFilter', 'confirm', 'askName', 'afterChange']) {
+    for (const name of ['setFilter', 'confirm', 'askName', 'askDeleteFolder', 'afterChange']) {
         if (typeof wiring[name] !== 'function') {
             throw new Error(`wireVirtualFolders requires ${name}`);
         }
@@ -407,13 +409,14 @@ async function deleteFolder(path) {
         render();
         return;
     }
-    const isConfirmed = await handlers.confirm({
-        eyebrow: 'Virtual folders', title: `Delete ${path}?`,
-        description: 'The folder, and every folder in it, comes off its notes. The notes stay, filed in no folder.',
-        confirmLabel: 'Delete Folder', isDangerous: true,
-    });
-    if (!isConfirmed) return;
-    await NotesAPI.deleteVirtualFolder(path);
+    const counted = await NotesAPI.countVirtualFolderNotes(path);
+    if (!Number.isInteger(counted.noteCount)) {
+        throw new Error('Counting a folder\'s notes answered without a count');
+    }
+    const choice = await handlers.askDeleteFolder({ path, noteCount: counted.noteCount });
+    if (choice === null) return;
+    const expectedNoteCount = choice.deleteNotes ? counted.noteCount : NO_NOTES;
+    await NotesAPI.deleteVirtualFolder(path, choice.deleteNotes, expectedNoteCount);
     await handlers.afterChange();
 }
 

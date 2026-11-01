@@ -16,6 +16,7 @@ from app.api.transactions import transactional_route
 from app.services.native_folder_picker import pick_folder
 from app.services.obsidian_import.sources import IMPORT_SOURCES
 from app.services.obsidian_import.vault import count_markdown_files
+from app.services.reference_suggestions import build_catalog_in_background
 from app.usecases.import_obsidian_vault import CmdImportObsidianVault, CmdPreviewImport
 
 router = APIRouter(prefix="/import", tags=["import"])
@@ -70,4 +71,6 @@ def import_folder(request: Request, body: ImportFolderRequest) -> dict[str, obje
         source=body["source"], folder_path=body["folderPath"], split_mode=body["splitMode"],
         content_format=body["contentFormat"], token=token, imported_at=datetime.now(timezone.utc),
     ).execute()
+    # The imported notes join the `[[` catalog now, not at the first `[[`.
+    build_catalog_in_background()
     return result

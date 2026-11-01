@@ -35,8 +35,13 @@ def notes_to_delete(scope: ResolvedViewScope) -> NotesToDelete:
     if not scope.filter_active:
         roots = store.children(_TOP_LEVEL)
         return NotesToDelete(top_note_ids=roots, note_count=_subtree_size(roots), is_whole_vault=True)
-    matched = scope.matched_note_ids
-    top = [note_id for note_id in _in_list_order(matched) if not _has_matched_ancestor(note_id, matched)]
+    return topmost_with_subtrees(scope.matched_note_ids)
+
+
+def topmost_with_subtrees(note_ids: frozenset[str]) -> NotesToDelete:
+    """Deleting note_ids, each with everything under it: the ones under no other of them, in
+    list order, and how many notes that takes in all."""
+    top = [note_id for note_id in _in_list_order(note_ids) if not _has_matched_ancestor(note_id, note_ids)]
     return NotesToDelete(top_note_ids=top, note_count=_subtree_size(top), is_whole_vault=False)
 
 

@@ -12587,6 +12587,23 @@ html[data-theme="dark"] .virtual-folder-row:hover .virtual-folder-arrow {
     border-radius: 2px 2px 0 0;
 }
 
+/* Delete Folder's "also delete its notes" box (delete-folder-modal.js). */
+.delete-folder-notes-toggle {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-top: 10px;
+    cursor: pointer;
+}
+
+.modal-content .delete-folder-notes-toggle input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    margin: 0;
+    padding: 0;
+    flex: 0 0 auto;
+}
+
 /* How many notes the folder shows, with its subfolders, in the view's search. */
 .virtual-folder-count {
     flex: none;
