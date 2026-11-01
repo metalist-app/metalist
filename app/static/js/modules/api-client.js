@@ -449,6 +449,18 @@ export const NotesAPI = {
         });
     },
 
+    // A click on the title of <details> fold foldIndex in a Markdown note; isOpen is the state asked for.
+    async toggleMarkdownFold(noteId, foldIndex, isOpen) {
+        if (typeof noteId !== 'string' || noteId.length === 0 || !Number.isInteger(foldIndex) || typeof isOpen !== 'boolean') {
+            throw new Error('NotesAPI.toggleMarkdownFold requires noteId, foldIndex and isOpen');
+        }
+        return this._apiCall(CONFIG.API.NOTES.TOGGLE_MARKDOWN_FOLD(noteId), {
+            method: 'POST',
+            claimSession: true,
+            body: JSON.stringify({ foldIndex, isOpen }),
+        });
+    },
+
     async unformatNote(noteId) {
         if (typeof noteId !== 'string' || noteId.length === 0) {
             throw new Error('NotesAPI.unformatNote requires noteId string');

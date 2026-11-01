@@ -1,7 +1,8 @@
-"""Clicks that write into a Markdown note (docs/ui/content-formatting.md, Tasks and
-Callouts; agreed 2026-10-31): a click on box N rewrites that task's [ ] to [x], or back,
-and a click on folding callout N's title its - (folded) to + (open), or back, in the
-note's stored text, and nothing else.
+"""Clicks that write into a Markdown note (docs/ui/content-formatting.md, Tasks, Callouts
+and HTML; agreed 2026-10-31): a click on box N rewrites that task's [ ] to [x], or back, a
+click on folding callout N's title its - (folded) to + (open), or back, and a click on
+<details> fold N's title adds or removes its open attribute, in the note's stored text,
+and nothing else.
 
 The boxes and callouts are numbered as the renderer draws them (markdown_task_lines,
 markdown_callout_lines) over the note's
@@ -17,7 +18,7 @@ import re
 from typing import Callable, List, NamedTuple
 
 from app.services.input_errors import InputRejected
-from app.services.markdown_rendering import markdown_callout_lines, markdown_task_lines
+from app.services.markdown_rendering import markdown_callout_lines, markdown_fold_states, markdown_task_lines
 
 # As structured_note_renderers._extract_plain_text reads note HTML: these start a line,
 # these closing tags vanish, every other tag vanishes, an entity is its character, and a
@@ -38,6 +39,13 @@ _OPEN_MARK = "+"
 _FOLDED_MARK = "-"
 _CHANGED_MESSAGE = "This note changed since it was shown; try the box again."
 _CALLOUT_CHANGED_MESSAGE = "This note changed since it was shown; try the title again."
+# A <details> tag written in the note, and the open attribute in one.
+_DETAILS_TAG_RE = re.compile(r"<details\b[^<>]*>", re.IGNORECASE)
+_OPEN_ATTRIBUTE_RE = re.compile(
+    r"\sopen(?:\s*=\s*(?:\"[^\"]*\"|'[^']*'|[^\s\"'<>=`]+))?(?=[\s/>])", re.IGNORECASE,
+)
+_OPEN_ATTRIBUTE = " open"
+_SELF_CLOSING_END = "/>"
 
 
 class _PlainCharacter(NamedTuple):
@@ -80,6 +88,51 @@ def toggle_callout_fold_in_note_html(*, content_html: str, callout_index: int, i
         line_re=_CALLOUT_LINE_RE, is_already=lambda mark: mark == new_mark, new_mark=new_mark,
         changed_message=_CALLOUT_CHANGED_MESSAGE,
     )
+
+
+def toggle_html_fold_in_note_html(*, content_html: str, fold_index: int, is_open: bool) -> str:
+    """The note's HTML with <details> fold fold_index opened (is_open) or closed by adding or
+    removing its open attribute. It must be the opposite now; if the note changed under it,
+    InputRejected says to try again. The fold's tag is found by trying each <details> in the
+    text and drawing the note: the one whose change opens or closes that fold and no other,
+    so one in code, a comment or a formula is never touched."""
+    if not isinstance(content_html, str):
+        raise TypeError(f"content_html must be a string, got {type(content_html)}")
+    if not isinstance(fold_index, int) or fold_index < 0:
+        raise ValueError(f"fold_index must be a non-negative integer, got {fold_index!r}")
+    characters = _plain_characters(content_html)
+    plain_text = "".join(character.character for character in characters)
+    leading_breaks = len(plain_text) - len(plain_text.lstrip(_LINE_BREAK))
+    text = plain_text.strip(_LINE_BREAK)
+    states = markdown_fold_states(text)
+    if fold_index >= len(states) or states[fold_index] == is_open:
+        raise InputRejected(_CALLOUT_CHANGED_MESSAGE)
+    expected = list(states)
+    expected[fold_index] = is_open
+    for tag in _DETAILS_TAG_RE.finditer(text):
+        start, end, replacement = _open_attribute_edit(tag, is_open=is_open)
+        if markdown_fold_states(text[:start] + replacement + text[end:]) != expected:
+            continue
+        html_start = characters[leading_breaks + start].html_start
+        html_end = html_start
+        if end > start:
+            html_end = characters[leading_breaks + end - 1].html_end
+        return content_html[:html_start] + html.escape(replacement, quote=False) + content_html[html_end:]
+    raise InputRejected(_CALLOUT_CHANGED_MESSAGE)
+
+
+def _open_attribute_edit(tag: re.Match[str], *, is_open: bool) -> tuple[int, int, str]:
+    """Where in the text, and with what, to add the open attribute to a <details> tag (at its
+    end) or remove it."""
+    if is_open:
+        position = tag.end() - len(">")
+        if tag.group(0).endswith(_SELF_CLOSING_END):
+            position = tag.end() - len(_SELF_CLOSING_END)
+        return position, position, _OPEN_ATTRIBUTE
+    attribute = _OPEN_ATTRIBUTE_RE.search(tag.group(0))
+    if attribute is None:
+        return tag.start(), tag.start(), ""
+    return tag.start() + attribute.start(), tag.start() + attribute.end(), ""
 
 
 def _rewrite_mark(

@@ -364,6 +364,15 @@ class ToggleMarkdownCalloutRequest(TypedDict):
     undoContext: UndoContext
     viewport: Viewport
 
+# A click on the title of <details> fold foldIndex in a Markdown note: isOpen is the state asked for.
+@with_config(ConfigDict(strict=True))
+class ToggleMarkdownFoldRequest(TypedDict):
+    clientId: Identifier
+    foldIndex: Nonnegative
+    isOpen: bool
+    undoContext: UndoContext
+    viewport: Viewport
+
 @with_config(ConfigDict(strict=True))
 class UnformatNoteContentRequest(TypedDict):
     clientId: Identifier

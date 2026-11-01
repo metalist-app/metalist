@@ -8367,7 +8367,8 @@ html[data-theme="dark"] .meta-code-code .tok-cpf { color: #8b949e; }
 
 /* A folding callout's title (docs/ui/content-formatting.md, Callouts): the browser's own
    arrow, and the title on its line. */
-.meta-markdown-callout-fold > summary {
+.meta-markdown-callout-fold > summary,
+.meta-markdown-html-fold > summary {
     cursor: pointer;
 }
 
@@ -8375,7 +8376,8 @@ html[data-theme="dark"] .meta-code-code .tok-cpf { color: #8b949e; }
     margin-bottom: 0.35em;
 }
 
-.note.collapsed .meta-markdown-callout-fold > summary {
+.note.collapsed .meta-markdown-callout-fold > summary,
+.note.collapsed .meta-markdown-html-fold > summary {
     cursor: inherit;
 }
 

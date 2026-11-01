@@ -115,3 +115,18 @@ test('ordinary notes that share a few signs with code are not offered', () => {
     assert.equal(offered('Please select the best one from the list.'), null, 'a sentence is not SQL');
     assert.equal(offered('Call the plumber (again) tomorrow.\nBuy milk; eggs too.'), null);
 });
+
+// Markdown holds HTML (2026-10-31, docs/ui/content-formatting.md): text that reads as
+// Markdown and has HTML tags is offered as Markdown first, then as HTML; HTML alone stays HTML.
+test('Markdown with HTML tags in it is offered as Markdown first', () => {
+    const mixed = [
+        'Some <u>underlined</u>, H<sub>2</sub>O, x<sup>2</sup> and <mark>marked</mark> text.', '',
+        '<u>**Bold** inside underline</u> and <kbd>Ctrl</kbd> keeps its text.', '',
+        '<details>', '<summary>Click to open</summary>', '', '- Markdown **inside** the fold', '', '</details>', '',
+        '<span style="color:red">Colour is dropped</span>', '',
+        '<script>alert(1)</script>Nothing above this sentence from the script.', '',
+        '<!-- this comment is hidden -->', '', 'Code stays as written: `<u>not underlined</u>`, and a < b.',
+    ].join('\n');
+    assert.deepEqual(offered(mixed), { kind: 'markdown', tags: ['@markdown', '@code=html'] });
+    assert.deepEqual(offered('<div class="card">\n  <p>Hello</p>\n  <a href="/x">Go</a>\n</div>'), { kind: 'code', tags: ['@code=html'] });
+});

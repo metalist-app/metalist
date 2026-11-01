@@ -29,7 +29,7 @@ RENDERER_ATTRIBUTES: dict[str, frozenset[str]] = {
     "article": frozenset({"class"}),
     # A callout (markdown_rendering._render_callout); a folding one's index and state.
     "blockquote": frozenset({"class"}),
-    "details": frozenset({"class", "data-callout-index", "open"}),
+    "details": frozenset({"class", "data-callout-index", "data-fold-index", "open"}),
     "button": frozenset({
         "aria-expanded", "aria-label", "class", "data-embed-collapse-note-id", "data-file-ref-id",
         "data-footnote-number", "data-referrer-count", "data-source-note-id", "title", "type",

@@ -226,6 +226,8 @@ const HEADING_RE = /^#{1,6}\s+\S/;
 const FENCE_RE = /^(?:```|~~~)[\w+#.-]*$/;
 // A table or a fenced block is Markdown whatever else the text holds, even code inside the fence.
 const DECISIVE_MARKDOWN_KINDS = Object.freeze(['table', 'fence']);
+const MARKDOWN_OPTION = Object.freeze({ tag: '@markdown', label: 'Markdown' });
+const HTML_CODE_TAG = '@code=html';
 
 // The kinds of Markdown signs in the text: headings, lists, emphasis, inline
 // code, links, quotes, a table, a fenced code block.
@@ -393,7 +395,12 @@ export function guessPastedFormat(plainText) {
     // A Markdown table or fenced block is unmistakable; otherwise strong code
     // wins over a `# comment` or `- item` that only looks like Markdown.
     if (isDecisiveMarkdown(kinds) || (looksLikeMarkdown(text, kinds) && languages.length === 0)) {
-        return { kind: 'markdown', options: [{ tag: '@markdown', label: 'Markdown' }] };
+        return { kind: 'markdown', options: [MARKDOWN_OPTION] };
+    }
+    // Markdown holds HTML (docs/ui/content-formatting.md): Markdown signs with HTML the only
+    // code found is Markdown first, HTML second.
+    if (looksLikeMarkdown(text, kinds) && languages.every(({ tag }) => tag === HTML_CODE_TAG)) {
+        return { kind: 'markdown', options: [MARKDOWN_OPTION, ...languages.map(({ tag, label }) => ({ tag, label }))] };
     }
     if (languages.length > 0) {
         return { kind: 'code', options: languages.map(({ tag, label }) => ({ tag, label })) };

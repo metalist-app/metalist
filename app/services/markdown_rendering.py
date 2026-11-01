@@ -5,8 +5,13 @@ import hashlib
 import html
 import re
 from dataclasses import dataclass
+from functools import lru_cache
+from html.parser import HTMLParser
 from typing import Dict, List, NamedTuple, Tuple
 from urllib.parse import urlsplit
+
+from app.security.note_html import load_note_html_policy, sanitize_note_attribute
+from app.security.rendered_html import sanitize_rendered_html
 
 from app.services.code_rendering import is_highlighted_fence_language
 from app.services.code_rendering import render_fenced_code
@@ -68,6 +73,44 @@ _ESCAPE_SEQUENCE_LENGTH = 2
 # other line joins the next with a space (CommonMark hard and soft line breaks).
 _HARD_BREAK_SPACES = "  "
 _LINE_BREAK_TAG = "<br>"
+# HTML in a note's Markdown (2026-10-31, CommonMark's raw HTML): each tag is kept as the
+# stored-note policy keeps pasted HTML (note-html-policy.json), the rest dropped. Matched in
+# HTML-escaped text: a tag, a comment, and a tag whose content goes with it (<script>).
+_ESCAPED_TAG_RE = re.compile(
+    r"&lt;(?P<closing>/?)(?P<name>[A-Za-z][A-Za-z0-9-]*)(?:\s(?:(?!&lt;|&gt;).)*)?&gt;", re.DOTALL,
+)
+_ESCAPED_HTML_COMMENT_RE = re.compile(r"&lt;!--.*?--&gt;", re.DOTALL)
+_VOID_TAGS = frozenset({"br", "hr", "img", "wbr"})
+# Attributes holding an address: kept only with a scheme the policy allows, or none.
+_URL_ATTRIBUTES = frozenset({"href", "src", "cite"})
+# A <details> written in a note: a fold whose title a click opens or closes, saved in the
+# note as its open attribute (2026-10-31, as callouts save - and +).
+_FOLD_TAG = "details"
+_FOLD_OPEN_ATTRIBUTE = "open"
+_HTML_FOLD_CLASS = "meta-markdown-html-fold"
+_ALL_TAGS_ATTRIBUTES = "*"
+# HTML blocks (CommonMark): a raw block runs to its closing tag, a comment to -->, any other
+# to the next blank line. A line holding only a tag of another name starts one too, but
+# can't interrupt a paragraph.
+_HTML_RAW_BLOCK_RE = re.compile(r"^ {0,3}<(?P<name>script|pre|style|textarea)(?:\s|>|$)", re.IGNORECASE)
+_HTML_RAW_BLOCK_END_RE = re.compile(r"</(?:script|pre|style|textarea)>", re.IGNORECASE)
+_HTML_COMMENT_BLOCK_RE = re.compile(r"^ {0,3}<!--")
+_HTML_COMMENT_END = "-->"
+_HTML_BLOCK_TAG_RE = re.compile(r"^ {0,3}</?(?P<name>[A-Za-z][A-Za-z0-9-]*)(?:\s|/?>|$)")
+_HTML_LONE_TAG_RE = re.compile(
+    r"^ {0,3}(?:<[A-Za-z][A-Za-z0-9-]*(?:\s[^<>]*)?/?>|</[A-Za-z][A-Za-z0-9-]*\s*>)\s*$",
+)
+_HTML_BLOCK_NAMES = frozenset({
+    "address", "article", "aside", "base", "basefont", "blockquote", "body", "caption", "center", "col",
+    "colgroup", "dd", "details", "dialog", "dir", "div", "dl", "dt", "fieldset", "figcaption", "figure",
+    "footer", "form", "frame", "frameset", "h1", "h2", "h3", "h4", "h5", "h6", "head", "header", "hr",
+    "html", "iframe", "legend", "li", "link", "main", "menu", "menuitem", "nav", "noframes", "ol",
+    "optgroup", "option", "p", "param", "search", "section", "summary", "table", "tbody", "td", "tfoot",
+    "th", "thead", "title", "tr", "track", "ul",
+})
+_HTML_BLOCK_ENDS_AT_BLANK_LINE = "blank line"
+_HTML_BLOCK_ENDS_AT_RAW_CLOSE = "raw close"
+_HTML_BLOCK_ENDS_AT_COMMENT_CLOSE = "comment close"
 _ESCAPED_LINE_BREAK_TAG_RE = re.compile(r"&lt;br\s*/?&gt;", re.IGNORECASE)
 
 
@@ -128,7 +171,14 @@ def render_note_markdown(markdown_text: str, *, takes_footnotes: bool) -> NoteMa
     footnotes ([^1] with [^1]: text, ^[text]) collected when takes_footnotes (a whole
     Markdown note; a Markdown region inside another note leaves them as written)."""
     renderer = _note_renderer(markdown_text, is_note_text=True, takes_footnotes=takes_footnotes)
-    return NoteMarkdown(html=renderer.render(), footnotes=list(renderer.footnotes.collected))
+    rendered = renderer.render()
+    footnotes = list(renderer.footnotes.collected)
+    if renderer.raw_html.was_used or renderer.footnotes.raw_html.was_used:
+        # HTML written in the note: its tags are each kept or dropped already, and here
+        # closed where the note left them open, so none reaches past the note.
+        rendered = sanitize_rendered_html(rendered)
+        footnotes = [(token, sanitize_rendered_html(body)) for token, body in footnotes]
+    return NoteMarkdown(html=rendered, footnotes=footnotes)
 
 
 def markdown_task_lines(markdown_text: str) -> List[int]:
@@ -137,6 +187,14 @@ def markdown_task_lines(markdown_text: str) -> List[int]:
     renderer = _note_renderer(markdown_text, is_note_text=True, takes_footnotes=True)
     renderer.render()
     return list(renderer.task_lines)
+
+
+def markdown_fold_states(markdown_text: str) -> List[bool]:
+    """Whether each <details> fold written in a Markdown note's text is open, in the order
+    they are numbered (data-fold-index)."""
+    renderer = _note_renderer(markdown_text, is_note_text=True, takes_footnotes=True)
+    renderer.render()
+    return list(renderer.raw_html.fold_states)
 
 
 def markdown_callout_lines(markdown_text: str) -> List[int]:
@@ -157,10 +215,57 @@ def _note_renderer(markdown_text: str, *, is_note_text: bool, takes_footnotes: b
         lines, definitions = _take_footnote_definitions(lines)
         prefix = _FOOTNOTE_TOKEN_PREFIX + hashlib.sha256(normalized_text.encode()).hexdigest()[:_FOOTNOTE_HASH_LENGTH]
         footnotes = _Footnotes(definitions=definitions, token_prefix=prefix, is_enabled=True)
+    raw_html = _NO_RAW_HTML
+    if is_note_text:
+        raw_html = _RawHtml(is_enabled=True, numbers_folds=True)
+    if takes_footnotes:
+        footnotes.raw_html = _RawHtml(is_enabled=True, numbers_folds=False)
     return _MarkdownRenderer(
         lines=lines, is_note_text=is_note_text, line_offset=0, task_lines=[], callout_lines=[],
-        footnotes=footnotes,
+        footnotes=footnotes, raw_html=raw_html,
     )
+
+
+class _RawHtml:
+    """Whether a Markdown text keeps the HTML written in it (a note's own text does; the AI
+    chat's replies don't), and whether it kept any, so the result is closed where the text
+    left a tag open (render_note_markdown). Where numbers_folds (the note's text, not its
+    footnotes), each <details> is a fold numbered in order, whose open state a click on its
+    title writes into the note (markdown_tasks.toggle_html_fold_in_note_html)."""
+
+    def __init__(self, *, is_enabled: bool, numbers_folds: bool):
+        assert is_enabled or not numbers_folds, "only kept HTML has folds"
+        self.is_enabled = is_enabled
+        self.numbers_folds = numbers_folds
+        self.was_used = False
+        self.fold_states: List[bool] = []
+
+    def kept(self, raw_tag: str) -> str:
+        assert self.is_enabled, "HTML is kept only where it is enabled"
+        self.was_used = True
+        reader = _TagReader()
+        reader.feed(raw_tag)
+        reader.close()
+        if len(reader.tags) != 1:
+            return ""
+        name, attributes, is_closing = reader.tags[0]
+        if not self.numbers_folds or name != _FOLD_TAG or is_closing:
+            return _kept_tag(name=name, attributes=attributes, is_closing=is_closing)
+        is_open = any(attribute == _FOLD_OPEN_ATTRIBUTE for attribute, _value in attributes)
+        # The writer's own attributes as the policy keeps them (a class of its own goes),
+        # then the fold's class, number and state, which only MetaList writes.
+        own = _kept_tag(
+            name=name, attributes=[(attribute, value) for attribute, value in attributes if attribute != "class"],
+            is_closing=False,
+        )
+        fold = f' class="{_HTML_FOLD_CLASS}" data-fold-index="{len(self.fold_states)}"'
+        if is_open:
+            fold += ' open=""'
+        self.fold_states.append(is_open)
+        return f"<{name}{fold}{own[len(name) + len('<'):]}"
+
+
+_NO_RAW_HTML = _RawHtml(is_enabled=False, numbers_folds=False)
 
 
 class _Footnotes:
@@ -173,6 +278,8 @@ class _Footnotes:
         self.token_prefix = token_prefix
         self.is_enabled = is_enabled
         self.collected: List[Tuple[str, str]] = []
+        # The note's own, set by _note_renderer: footnote text is the note's text too.
+        self.raw_html = _NO_RAW_HTML
 
     def marker(self, body_markdown: str) -> str:
         """The token standing where this footnote's number goes; its text is drawn now."""
@@ -180,7 +287,7 @@ class _Footnotes:
         token = f"{self.token_prefix}N{len(self.collected) + 1}END"
         body_html = _render_inline_markdown(
             _joined_lines(body_markdown.split("\n")), allow_links=True, allows_images=False,
-            footnotes=_DISABLED_FOOTNOTES,
+            raw_html=self.raw_html, footnotes=_DISABLED_FOOTNOTES,
         )
         self.collected.append((token, body_html))
         return token
@@ -225,7 +332,7 @@ def _take_footnote_definitions(lines: List[str]) -> Tuple[List[str], Dict[str, s
 class _MarkdownRenderer:
     def __init__(
         self, *, lines: List[str], is_note_text: bool, line_offset: int, task_lines: List[int],
-        callout_lines: List[int], footnotes: _Footnotes,
+        callout_lines: List[int], footnotes: _Footnotes, raw_html: _RawHtml,
     ):
         if not isinstance(lines, list):
             raise TypeError(f"lines must be a list, got {type(lines)}")
@@ -239,10 +346,12 @@ class _MarkdownRenderer:
         self.task_lines = task_lines
         self.callout_lines = callout_lines
         self.footnotes = footnotes
+        self.raw_html = raw_html
 
     def _inline(self, text: str) -> str:
         return _render_inline_markdown(
-            text, allow_links=True, allows_images=self._is_note_text, footnotes=self.footnotes,
+            text, allow_links=True, allows_images=self._is_note_text, raw_html=self.raw_html,
+            footnotes=self.footnotes,
         )
 
     def render(self) -> str:
@@ -256,6 +365,9 @@ class _MarkdownRenderer:
                 continue
             if self._is_fence_start(current_line):
                 blocks.append(self._render_fence_block())
+                continue
+            if self._html_block_end(current_line, is_in_paragraph=False) != "":
+                blocks.append(self._render_html_block())
                 continue
             if self._is_heading(current_line):
                 blocks.append(self._render_heading_block())
@@ -390,6 +502,7 @@ class _MarkdownRenderer:
         return _MarkdownRenderer(
             lines=lines, is_note_text=self._is_note_text, line_offset=self._line_offset + start,
             task_lines=self.task_lines, callout_lines=self.callout_lines, footnotes=self.footnotes,
+            raw_html=self.raw_html,
         )
 
     def _render_callout(self, callout: re.Match[str], *, body_lines: List[str], header_line: int) -> str:
@@ -584,7 +697,43 @@ class _MarkdownRenderer:
             return True
         if self._is_table_start():
             return True
+        if self._html_block_end(line, is_in_paragraph=True) != "":
+            return True
         return False
+
+    def _html_block_end(self, line: str, *, is_in_paragraph: bool) -> str:
+        """What ends the HTML block line starts (_HTML_BLOCK_ENDS_AT_*), or "" when it starts
+        none: only a note's own text holds HTML."""
+        if not self.raw_html.is_enabled:
+            return ""
+        if _HTML_RAW_BLOCK_RE.match(line) is not None:
+            return _HTML_BLOCK_ENDS_AT_RAW_CLOSE
+        if _HTML_COMMENT_BLOCK_RE.match(line) is not None:
+            return _HTML_BLOCK_ENDS_AT_COMMENT_CLOSE
+        block_tag = _HTML_BLOCK_TAG_RE.match(line)
+        if block_tag is not None and block_tag.group("name").casefold() in _HTML_BLOCK_NAMES:
+            return _HTML_BLOCK_ENDS_AT_BLANK_LINE
+        if not is_in_paragraph and _HTML_LONE_TAG_RE.match(line) is not None:
+            return _HTML_BLOCK_ENDS_AT_BLANK_LINE
+        return ""
+
+    def _render_html_block(self) -> str:
+        """An HTML block (CommonMark): its lines as written, no Markdown inside, each tag kept
+        or dropped by the stored-note policy and its text escaped."""
+        end = self._html_block_end(self._lines[self._index], is_in_paragraph=False)
+        block_lines: List[str] = []
+        while self._index < len(self._lines):
+            line = self._lines[self._index]
+            if end == _HTML_BLOCK_ENDS_AT_BLANK_LINE and line.strip() == "":
+                break
+            block_lines.append(line)
+            self._index += 1
+            if end == _HTML_BLOCK_ENDS_AT_RAW_CLOSE and _HTML_RAW_BLOCK_END_RE.search(line) is not None:
+                break
+            if end == _HTML_BLOCK_ENDS_AT_COMMENT_CLOSE and _HTML_COMMENT_END in line:
+                break
+        escaped = _without_dropped_html(html.escape("\n".join(block_lines), quote=False))
+        return _ESCAPED_TAG_RE.sub(lambda tag: self.raw_html.kept(html.unescape(tag.group(0))), escaped)
 
     def _is_heading(self, line: str) -> bool:
         return _ATX_HEADING_RE.match(line.strip()) is not None
@@ -721,7 +870,9 @@ def _is_table_delimiter_row(line: str) -> bool:
     return all(_TABLE_DELIMITER_CELL_RE.match(cell) is not None for cell in cells)
 
 
-def _render_inline_markdown(text: str, *, allow_links: bool, allows_images: bool, footnotes: _Footnotes) -> str:
+def _render_inline_markdown(
+    text: str, *, allow_links: bool, allows_images: bool, raw_html: _RawHtml, footnotes: _Footnotes,
+) -> str:
     if not isinstance(text, str):
         raise TypeError(f"text must be a string, got {type(text)}")
     if text == "":
@@ -734,10 +885,16 @@ def _render_inline_markdown(text: str, *, allow_links: bool, allows_images: bool
     if footnotes.is_enabled:
         rendered = _extract_footnote_references(rendered, placeholders, footnotes)
     if allow_links:
-        rendered = _extract_markdown_links(rendered, placeholders, allows_images=allows_images)
+        rendered = _extract_markdown_links(
+            rendered, placeholders, allows_images=allows_images, raw_html=raw_html,
+        )
         rendered = _extract_auto_links(rendered, placeholders)
     rendered = _extract_currency_amounts(rendered, placeholders)
     rendered = _extract_latex_math(rendered, placeholders)
+    # After code and formulas, whose tags stay text, and before emphasis, which must not
+    # reach inside a tag; web addresses in quoted attributes were never linked.
+    if raw_html.is_enabled:
+        rendered = _extract_raw_html(rendered, placeholders, raw_html)
     rendered = _replace_strong(rendered)
     rendered = _replace_emphasis(rendered)
     rendered = _replace_strikethrough(rendered)
@@ -746,6 +903,81 @@ def _render_inline_markdown(text: str, *, allow_links: bool, allows_images: bool
     for placeholder in placeholders:
         rendered = rendered.replace(placeholder.token, placeholder.html_value)
     return rendered
+
+
+def _extract_raw_html(text: str, placeholders: List[_InlinePlaceholder], raw_html: _RawHtml) -> str:
+    """Each HTML tag written in the (HTML-escaped) text as the tag the stored-note policy
+    keeps, or nothing; comments, and <script> and the like with their content, go."""
+    kept = _without_dropped_html(text)
+    return _ESCAPED_TAG_RE.sub(
+        lambda tag: _make_placeholder(placeholders=placeholders, html_value=raw_html.kept(html.unescape(tag.group(0)))),
+        kept,
+    )
+
+
+def _without_dropped_html(escaped_text: str) -> str:
+    """HTML-escaped text without its comments, nor any tag the policy drops with its content."""
+    return _dropped_content_re().sub("", _ESCAPED_HTML_COMMENT_RE.sub("", escaped_text))
+
+
+@lru_cache(maxsize=1)
+def _dropped_content_re() -> re.Pattern[str]:
+    names = "|".join(re.escape(name) for name in load_note_html_policy()["clean_content_tags"])
+    return re.compile(
+        rf"&lt;(?P<name>{names})\b(?:(?!&gt;).)*&gt;.*?&lt;/(?P=name)\s*&gt;", re.IGNORECASE | re.DOTALL,
+    )
+
+
+class _TagReader(HTMLParser):
+    """The one tag in a piece of HTML: its name, attributes and whether it closes."""
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.tags: List[Tuple[str, List[Tuple[str, str | None]], bool]] = []
+
+    def handle_starttag(self, tag: str, attrs: List[Tuple[str, str | None]]) -> None:
+        self.tags.append((tag, attrs, False))
+
+    def handle_startendtag(self, tag: str, attrs: List[Tuple[str, str | None]]) -> None:
+        self.tags.append((tag, attrs, False))
+
+    def handle_endtag(self, tag: str) -> None:
+        self.tags.append((tag, [], True))
+
+
+def _kept_tag(*, name: str, attributes: List[Tuple[str, str | None]], is_closing: bool) -> str:
+    """A tag as the stored-note policy keeps it, written as the rendered-HTML pass writes
+    it: its allowed attributes, each value checked, an address only with an allowed scheme;
+    "" for a tag the policy doesn't keep."""
+    policy = load_note_html_policy()
+    if name not in policy["allowed_tags"]:
+        return ""
+    if is_closing:
+        if name in _VOID_TAGS:
+            return ""
+        return f"</{name}>"
+    allowed = set(policy["allowed_attributes"].get(name, [])) | set(policy["allowed_attributes"][_ALL_TAGS_ATTRIBUTES])
+    kept: List[str] = []
+    for attribute, value in attributes:
+        if attribute not in allowed:
+            continue
+        written = ""
+        if value is not None:
+            written = value
+        checked = sanitize_note_attribute(name, attribute, written)
+        if checked is None:
+            continue
+        if attribute in _URL_ATTRIBUTES and urlsplit(checked.strip()).scheme.casefold() not in {
+            "", *policy["allowed_url_schemes"],
+        }:
+            continue
+        if attribute == "style":
+            checked = ";".join(
+                ":".join(part.strip() for part in declaration.split(":", 1))
+                for declaration in checked.split(";") if declaration.strip() != ""
+            )
+        kept.append(f' {attribute}="{html.escape(checked, quote=True)}"')
+    return f"<{name}{''.join(kept)}>"
 
 
 def _extract_footnote_references(text: str, placeholders: List[_InlinePlaceholder], footnotes: _Footnotes) -> str:
@@ -795,7 +1027,9 @@ def _extract_code_spans(text: str, placeholders: List[_InlinePlaceholder]) -> st
     return "".join(output)
 
 
-def _extract_markdown_links(text: str, placeholders: List[_InlinePlaceholder], *, allows_images: bool) -> str:
+def _extract_markdown_links(
+    text: str, placeholders: List[_InlinePlaceholder], *, allows_images: bool, raw_html: _RawHtml,
+) -> str:
     if not isinstance(text, str):
         raise TypeError("text must be a string")
 
@@ -843,7 +1077,7 @@ def _extract_markdown_links(text: str, placeholders: List[_InlinePlaceholder], *
         link_html = (
             f'<a href="{html.escape(html.unescape(href), quote=True)}" '
             'target="_blank" rel="noopener noreferrer">'
-            f"{_render_inline_markdown(html.unescape(link_text), allow_links=False, allows_images=False, footnotes=_DISABLED_FOOTNOTES)}"
+            f"{_render_inline_markdown(html.unescape(link_text), allow_links=False, allows_images=False, raw_html=raw_html, footnotes=_DISABLED_FOOTNOTES)}"
             "</a>"
         )
         placeholder = _make_placeholder(placeholders=placeholders, html_value=link_html)

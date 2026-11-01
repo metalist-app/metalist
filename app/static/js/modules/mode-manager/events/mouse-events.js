@@ -5,7 +5,7 @@ import { TypeAhead } from '../services/type-ahead-service.js';
 import { navigateToFootnoteWithExpansion } from '../services/footnote-navigation-service.js';
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import * as Logger from '../mode-logger.js';
-import { createNote, collapseNote, expandNote, getShellRun, moveNoteToSiblingPosition, indentNote, outdentNote, setEmbeddedNoteCollapse, toggleMarkdownCallout, toggleMarkdownTask, toggleTodoDone, runShellNote } from '../actions/note-actions.js';
+import { createNote, collapseNote, expandNote, getShellRun, moveNoteToSiblingPosition, indentNote, outdentNote, setEmbeddedNoteCollapse, toggleMarkdownCallout, toggleMarkdownFold, toggleMarkdownTask, toggleTodoDone, runShellNote } from '../actions/note-actions.js';
 import { actionSelectNote, actionDeselectNote, actionSwitchNotes } from '../actions/selection-actions.js';
 import { captureClickAnchor } from '../services/viewport-hold-service.js';
 import { actionEnterSearchMode, actionExitSearchMode } from '../actions/search-actions.js';
@@ -2330,9 +2330,10 @@ function handleMarkdownTaskToggleClick(event, toggleElement) {
     return true;
 }
 
-// A click on a folding callout's title (docs/ui/content-formatting.md, Callouts): the
-// browser opens or closes it at once, and its - or + is written into the note so the fold
-// stays; in an embed it folds there only, and a locked or search-hidden note changes nothing.
+// A click on a folding callout's title, or a <details> fold's (docs/ui/content-formatting.md,
+// Callouts and HTML): the browser opens or closes it at once, and its - or + (the fold's
+// open attribute) is written into the note so the fold stays; in an embed it folds there
+// only, and a locked or search-hidden note changes nothing.
 function handleMarkdownCalloutTitleClick(event) {
     const summary = viewModeCalloutTitleAt(event.target);
     if (summary === null || !ModeContext.isConnected) {
@@ -2348,12 +2349,22 @@ function handleMarkdownCalloutTitleClick(event) {
     }
     const fold = summary.parentElement;
     const noteId = noteElement.dataset.noteId;
+    // The click's own toggle comes after this handler: the state asked for is the opposite.
+    const isOpen = !fold.open;
+    if (fold.classList.contains('meta-markdown-html-fold')) {
+        const foldIndex = Number(fold.dataset.foldIndex);
+        if (!noteId || !Number.isInteger(foldIndex)) {
+            throw new Error('Markdown fold title missing its note id or fold index');
+        }
+        void CommandGate.run('mouse.toggle_markdown_fold', async () => {
+            await toggleMarkdownFold(noteId, foldIndex, isOpen);
+        });
+        return;
+    }
     const calloutIndex = Number(fold.dataset.calloutIndex);
     if (!noteId || !Number.isInteger(calloutIndex)) {
         throw new Error('Markdown callout title missing its note id or callout index');
     }
-    // The click's own toggle comes after this handler: the state asked for is the opposite.
-    const isOpen = !fold.open;
     void CommandGate.run('mouse.toggle_markdown_callout', async () => {
         await toggleMarkdownCallout(noteId, calloutIndex, isOpen);
     });

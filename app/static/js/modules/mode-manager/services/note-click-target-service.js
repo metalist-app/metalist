@@ -1,3 +1,5 @@
+const MARKDOWN_FOLD_SELECTOR = 'details.meta-markdown-callout-fold, details.meta-markdown-html-fold';
+
 function supportsClosest(target) {
     return target !== null && typeof target === 'object' && typeof target.closest === 'function';
 }
@@ -33,15 +35,16 @@ export function isViewModeNoteDisclosureToggle(target) {
     return note !== null && !note.classList.contains('editing');
 }
 
-// The title of a folding Markdown callout (docs/ui/content-formatting.md, Callouts) in a
-// note being viewed, open (not collapsed to its first line): a click there folds it, as
-// the browser's own disclosure does, without editing or dragging the note. Null elsewhere.
+// The title of a folding Markdown callout, or of a <details> fold written in a Markdown
+// note (docs/ui/content-formatting.md, Callouts and HTML), in a note being viewed, open (not
+// collapsed to its first line): a click there folds it, as the browser's own disclosure
+// does, without editing or dragging the note. Null elsewhere.
 export function viewModeCalloutTitleAt(target) {
     if (!supportsClosest(target)) {
         return null;
     }
     const summary = target.closest('summary');
-    if (!summary || !summary.parentElement || !summary.parentElement.matches('details.meta-markdown-callout-fold')) {
+    if (!summary || !summary.parentElement || !summary.parentElement.matches(MARKDOWN_FOLD_SELECTOR)) {
         return null;
     }
     if (!summary.closest('.note-content')) {
