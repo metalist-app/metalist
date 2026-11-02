@@ -96,6 +96,11 @@ class FindInListRequest(TypedDict):
     direction: Literal['forward', 'backward']
 
 @with_config(ConfigDict(strict=True))
+class FindFileSnippetRequest(TypedDict):
+    fileId: Identifier
+    text: Annotated[str, Field(min_length=1, max_length=KIB)]
+
+@with_config(ConfigDict(strict=True))
 class ReferenceOriginScope(TypedDict):
     scopeTabId: Identifier
     searchQuery: Text

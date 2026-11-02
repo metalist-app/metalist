@@ -26,11 +26,13 @@ from app.services.file_registry import file_registry
 from app.services.file_storage import create_file, decrypt_all_files_for_plaintext, encrypt_all_files_for_active_dek
 from app.services.file_text_search import (
     FILTER_PIECE_LENGTH,
+    ExtractedText,
     build_filter,
     extract_file_text,
     file_texts,
     filter_may_contain,
 )
+from app.services.file_text_snippets import file_text_snippet
 from app.services.search_index import NOTHING_INHERITED, SearchIndex, SearchRecord, extract_tags_for_search
 from app.services.text_terms import text_term_matches
 
@@ -292,3 +294,28 @@ def test_adding_and_removing_a_password_rewrites_file_texts(files) -> None:
         assert row["text_encryption_nonce"] is None and b"Rent is due" in typing.cast(bytes, row["text_data"])
     finally:
         clear_encryption_key()
+
+
+# Typeset PDFs write "ffi", "fi" and "fl" as one ligature glyph ("coeﬃcients"). Search read them
+# as letters (casefold does) but the snippet did not, so Find stopped on the file with no snippet
+# and marked the whole card (2026-11-02). A file's text is kept, and read, as letters.
+LIGATURED = "the classical coeﬃcients of a ﬁeld"
+AS_LETTERS = "the classical coefficients of a field"
+
+
+def test_ligatures_in_a_pdfs_text_are_kept_as_letters(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(file_text_search_module, "_pdf_pages", lambda content: [LIGATURED])
+    assert extract_file_text("paper.pdf", b"%PDF").text == AS_LETTERS
+
+
+def test_text_kept_before_with_ligatures_reads_as_letters(files) -> None:
+    file_id = _pdf_note("paper.pdf", LEASE)
+    file_texts.refresh()
+    storage = file_texts._require_storage()
+    revision = storage.searchable_files()[file_id]
+    storage.store_text(file_id, ExtractedText(text=LIGATURED, is_cut=False), build_filter(LIGATURED.casefold()), revision)
+    file_texts.refresh()
+
+    assert file_texts.term_matches(file_id, "classical coef") is True
+    assert file_texts.text_of(file_id) == AS_LETTERS
+    assert "classical coefficients" in file_text_snippet(file_id, ("classical coef",))

@@ -129,7 +129,7 @@ Found:
     7. Deleting a file deletes its text; a file whose content is replaced gets its text extracted again.
     8. A scanned PDF (no text), a damaged one and one locked with a password come in as files that match by name only, with no error.
     9. A PDF with more than 5 MB of text keeps the first 5 MB; its card's tooltip says search covers the first ~2,000 pages.
-    10. Full screen, floating windows, export, print, copied text and find in the list (`Cmd+F`) neither show nor search file text.
+    10. Full screen, floating windows, export, print and copied text neither show nor search file text. (Find in the list was in this check too; changed the same day, the maintainer: Find finds file text, one stop per file showing a snippet, docs/ui/find.md "Inside files".)
   - **The snippet's cases** (principles 1, 2, 3 and 5 of `docs/ui/interaction-principles.md`; proposed, to be agreed):
     - *Shows* under a file's card, in a note in the list, when a required quoted phrase of the search is in that file's text: a line or two of text around the first match, cut at word edges with "…", every required phrase in it marked as search highlights are (soft yellow; dark gold in the dark theme). The search is the user's action and the list is drawn again for it anyway, so the snippet adds no movement of its own (2); the mark tells where in the file the search matched, which the user can't see otherwise (5).
     - *Several files* in one note: a snippet under each file that matched; *one file, several phrases*: one snippet, from the first match, marking every phrase it shows.

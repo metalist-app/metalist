@@ -4276,7 +4276,7 @@ html[data-theme="dark"] .ai-chat-header-actions #ai-chat-spend-toggle[aria-press
 
 /* A folded note's first line is drawn as one line of text; an embed on it is an
    embed, drawn as everywhere (docs/ui/references.md), so these leave it alone. */
-.note.collapsed:not(.editing) .note-content :not(img):not(:where(.note-reference-note.note-embed-block, .note-reference-note.note-embed-block *)) {
+.note.collapsed:not(.editing) .note-content :not(img):not(:where(.note-reference-note.note-embed-block, .note-reference-note.note-embed-block *, .note-reference-file, .note-reference-file *)) {
     font-size: inherit !important;
     line-height: inherit !important;
 }
@@ -4311,7 +4311,7 @@ html[data-theme="dark"] .ai-chat-header-actions #ai-chat-spend-toggle[aria-press
     tr,
     th,
     td
-):not(:where(.note-reference-note.note-embed-block, .note-reference-note.note-embed-block *)) {
+):not(:where(.note-reference-note.note-embed-block, .note-reference-note.note-embed-block *, .note-reference-file, .note-reference-file *)) {
     display: block;
     margin: 0 !important;
     padding: 0;
@@ -4805,13 +4805,8 @@ img.link-title-icon,
     color: var(--note-tag-muted);
 }
 
-.note.collapsed:not(.editing) .note-file-email-card,
-.note-embed-collapsed .note-file-email-card {
-    padding: 0;
-    border: none;
-    background: transparent;
-}
-
+/* A folded email keeps its card's box (as every file keeps its box when folded: the maintainer,
+   2026-11-01), so its one line sits where its subject was and nothing moves. */
 .note.collapsed:not(.editing) .note-file-email-card > :not(.note-file-email-line),
 .note-embed-collapsed .note-file-email-card > :not(.note-file-email-line) {
     display: none;
@@ -4870,6 +4865,11 @@ img.link-title-icon,
     color: #4b5563;
     white-space: normal;
     overflow-wrap: anywhere;
+}
+
+/* The search's snippet while find shows its own in the same card (docs/ui/find.md). */
+.note-file-text-snippet.is-giving-way-to-find {
+    display: none;
 }
 
 html[data-theme="dark"] .note-file-text-snippet {
@@ -5330,12 +5330,11 @@ html[data-theme="dark"] .note-fullscreen-close {
     display: block;
 }
 
+/* A folded note keeps a file's grey box as it is: folding only hides what is below, so the
+   file on the first line moves nowhere (the maintainer, 2026-11-01; interaction principle 1;
+   scripts/browser-folded-file-regressions.mjs). Drawing the box flat moved it up and left. */
 .note.collapsed:not(.editing) .note-reference-block.note-reference-file-image {
-    align-items: center;
     gap: 0;
-    padding: 0;
-    border: none;
-    background: transparent;
     min-width: 0;
 }
 
@@ -5415,11 +5414,7 @@ html[data-theme="dark"] .note.collapsed:not(.editing) .note-content img.note-fil
 }
 
 .note.collapsed:not(.editing) .note-reference-block.note-reference-file:not(.note-reference-file-image):not(.note-reference-file-excalidraw) {
-    align-items: center;
     gap: 0;
-    padding: 0;
-    border: none;
-    background: transparent;
     min-width: 0;
 }
 
@@ -5440,11 +5435,6 @@ html[data-theme="dark"] .note.collapsed:not(.editing) .note-content img.note-fil
     flex: 1;
     min-width: 0;
     gap: 8px;
-}
-
-.note.collapsed:not(.editing) .note-reference-block.note-reference-file:not(.note-reference-file-image) .note-file-reference-badge {
-    min-width: 34px;
-    padding: 1px 5px;
 }
 
 .note.collapsed:not(.editing) .note-reference-block.note-reference-file:not(.note-reference-file-image) .note-file-reference-title {
@@ -7664,6 +7654,20 @@ html[data-theme="dark"] ::highlight(metalist-find) {
 html[data-theme="dark"] ::highlight(metalist-find-current) {
     background-color: #e07800;
     color: #000000;
+}
+
+/* A diagram that is the current match with no label showing the words (only its code holds
+   them): outlined in the current match's colour. An outline takes no space, so nothing moves. */
+.meta-mermaid-diagram.is-find-current,
+.meta-mermaid-source.is-find-current {
+    outline: 2px solid #ff9632;
+    outline-offset: 2px;
+    border-radius: 4px;
+}
+
+html[data-theme="dark"] .meta-mermaid-diagram.is-find-current,
+html[data-theme="dark"] .meta-mermaid-source.is-find-current {
+    outline-color: #e07800;
 }
 
 /* The find bar floats just under the search controls, at their right; it takes no space. */

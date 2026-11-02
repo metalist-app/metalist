@@ -78,7 +78,7 @@ On macOS, `⌘ + Y` normally opens Safari History rather than performing native 
 
 ### Find in the List
 - `⌘ + F` (`Ctrl + F` on Windows and Linux) opens MetaList's find bar, under the search controls at the right. Unlike the browser's own find, it also finds text far below the loaded notes and inside folded notes.
-- It finds what notes show (their text, the text of expanded embeds, tag-bar comments), in any case and inside words, in the current search context's notes in list order. It does not find tag names (search does) or the grey placeholder lines a search leaves.
+- It finds what notes show (their text, the text of expanded embeds, tag-bar comments), in any case and inside words, in the current search context's notes in list order. It does not find tag names (search does) or the grey placeholder lines a search leaves. A PDF whose text holds the words is one match, showing a line of its text under its card; a Mermaid diagram whose code holds them is one match too, its labels marked, or the diagram outlined when only its code has the words.
 - The count reads like `3 of 12`; `3 of 50+` means more may lie beyond what has been read, since find reads 50 matching notes at a time. `No matches` dims the arrows.
 - `Enter` / `⌘ + G`: next match; `⇧ + Enter` / `⇧ + ⌘ + G`: previous; both wrap. A match in view does not scroll; one out of view moves just into view. A match inside a folded note opens that note for the moment only (its saved collapse stays) and folds back when find moves on or closes.
 - `Esc`, the `×`, or clicking into a note closes find and clears its marks. The palette command `Find in List` opens it too.

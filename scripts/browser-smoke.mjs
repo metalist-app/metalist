@@ -32,6 +32,9 @@ import {checkDateRange, checkFileFilter, checkOpenQuoteSearch, checkSearchBarMen
 import {checkDictationPaste} from './browser-dictation-paste-regressions.mjs';
 import {checkFileDropPreviews} from './browser-file-drop-preview-regressions.mjs';
 import {checkFileTextSnippets} from './browser-file-text-snippet-regressions.mjs';
+import {checkFoldedFiles} from './browser-folded-file-regressions.mjs';
+import {checkFindInFiles} from './browser-find-in-file-regressions.mjs';
+import {checkFindInDiagrams} from './browser-find-in-diagram-regressions.mjs';
 import {checkImageMenu} from './browser-image-menu-regressions.mjs';
 import {checkTagSuggestionMenu} from './browser-tag-suggestion-menu-regressions.mjs';
 import {checkPasteFormats} from './browser-paste-format-regressions.mjs';
@@ -408,6 +411,18 @@ try {
     await checkEditPreviews(page);
     assert.deepEqual(errors, []);
     console.log(`PASS edit preview regressions in ${await browser.version()}`);
+  } else if (process.env.BROWSER_TEST_SUITE === 'find-in-files') {
+    await checkFindInFiles(page);
+    assert.deepEqual(errors, []);
+    console.log(`PASS find in file regressions in ${await browser.version()}`);
+  } else if (process.env.BROWSER_TEST_SUITE === 'find-in-diagrams') {
+    await checkFindInDiagrams(page);
+    assert.deepEqual(errors, []);
+    console.log(`PASS find in diagram regressions in ${await browser.version()}`);
+  } else if (process.env.BROWSER_TEST_SUITE === 'folded-files') {
+    await checkFoldedFiles(page);
+    assert.deepEqual(errors, []);
+    console.log(`PASS folded file regressions in ${await browser.version()}`);
   } else if (process.env.BROWSER_TEST_SUITE === 'file-text-snippets') {
     await checkFileTextSnippets(page);
     assert.deepEqual(errors, []);

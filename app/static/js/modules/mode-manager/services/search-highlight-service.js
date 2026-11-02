@@ -20,6 +20,17 @@ const TEXT_BREAKING_ELEMENTS = new Set([
     'TH', 'THEAD', 'TR', 'UL',
 ]);
 const WHITESPACE = /\s/;
+// A file's snippet under its card (file_text_snippets.py): no note's text, though in it.
+const FILE_TEXT_SNIPPET_CLASS = 'note-file-text-snippet';
+const READS_EVERYTHING = () => false;
+// A card's words while it is filled in ("Loading image..."), or its status after: no note's
+// text, never read (app/services/find_text.py reads past them too).
+const LOADING_PLACEHOLDER_CLASS = 'note-loading-placeholder';
+// Text no one sees: a drawn diagram's style sheet (an SVG <style>).
+const UNSEEN_TEXT_ELEMENTS = new Set(['style', 'script']);
+// A Mermaid diagram, drawn or showing its code: no note's text; find makes it one stop of its
+// own (find-in-list-service.js, docs/ui/find.md "Diagrams").
+export const DIAGRAM_SELECTOR = '.meta-mermaid-diagram, pre.meta-mermaid-source';
 
 const moduleState = ApplicationState.createFields('search-highlight-service', {
     phrases: [],
@@ -42,7 +53,7 @@ function validatePhrases(phrases) {
 // One element's text as the search reads it, with the text node and offset of each
 // character: every run of whitespace, and every break between blocks or lines, is one
 // space (a break has no node of its own).
-function readVisibleText(root) {
+function readVisibleText(root, isSkipped) {
     const reading = { text: '', nodes: [], offsets: [] };
     const addSpace = (node, offset) => {
         if (reading.text === '' || reading.text.endsWith(' ')) {
@@ -66,7 +77,7 @@ function readVisibleText(root) {
             }
             return;
         }
-        if (node.nodeType !== Node.ELEMENT_NODE) {
+        if (node.nodeType !== Node.ELEMENT_NODE || isUnseen(node) || isSkipped(node)) {
             return;
         }
         const breaksText = TEXT_BREAKING_ELEMENTS.has(node.tagName);
@@ -86,7 +97,31 @@ function readVisibleText(root) {
 
 // The ranges where phrases occur in an element's text, in text order (find uses them too).
 export function phraseRangesIn(root, phrases) {
-    const reading = readVisibleText(root);
+    return phraseRangesReading(root, phrases, READS_EVERYTHING);
+}
+
+// The same in a note's own text: a file's snippet under its card and a diagram are left out
+// (find counts each as one stop of its own, docs/ui/find.md).
+export function phraseRangesInNoteText(root, phrases) {
+    return phraseRangesReading(root, phrases, isNotNoteText);
+}
+
+function isNotNoteText(element) {
+    if (element.classList.contains(FILE_TEXT_SNIPPET_CLASS)) {
+        return true;
+    }
+    return element.matches(DIAGRAM_SELECTOR);
+}
+
+function isUnseen(element) {
+    if (element.classList.contains(LOADING_PLACEHOLDER_CLASS)) {
+        return true;
+    }
+    return UNSEEN_TEXT_ELEMENTS.has(element.localName);
+}
+
+function phraseRangesReading(root, phrases, isSkipped) {
+    const reading = readVisibleText(root, isSkipped);
     return findPhraseMatches(reading.text, phrases).map(([start, end]) => {
         // A phrase is trimmed before matching, so it starts and ends on real text.
         const startNode = reading.nodes[start];

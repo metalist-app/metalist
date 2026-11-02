@@ -11,7 +11,10 @@ import app.services.snapshot as snapshot
 from app.services.find_text import count_occurrences, read_comment_text, read_visible_text
 from app.services.search_index import SearchIndex, SearchRecord, extract_tags_for_search
 from app.services.snapshot import build_view_state, find_in_view
+from app.services.file_storage import create_file
+from app.services.file_text_search import file_texts
 from tests.unit.snapshot_note_fixture import SnapshotTestNote as _Note
+from tests.unit.test_file_text_search import LEASE, _pdf, files  # noqa: F401 (the files fixture)
 
 HOST_ID = "11111111-1111-4111-8111-111111111111"
 SOURCE_ID = "22222222-2222-4222-8222-222222222222"
@@ -239,3 +242,113 @@ def test_the_note_find_opened_shows_open_for_the_view_only(monkeypatch) -> None:
 
     # A note that is gone opens nothing.
     assert [entry["id"] for entry in view("gone").structure] == ["top", "after"]
+
+
+# --- Inside files (docs/ui/find.md; the cases agreed 2026-11-01) -----------------------------
+# A file the note shows whose text holds the find text is one stop of the note's, after its
+# own text and comments, however often the text occurs in the file.
+
+
+def _note_showing(note_id: str, file_id: str, text: str) -> Dict[str, _Note]:
+    return _siblings(None, [(note_id, False, f"<div>{text}</div><div>![[{file_id}]]</div>", "")])
+
+
+def test_a_file_holding_the_text_is_one_stop_of_its_note(monkeypatch, files) -> None:
+    lease = create_file(original_filename="Lease.pdf", mime_type="application/pdf", content_bytes=_pdf(LEASE * 3), token="token")
+    file_texts.refresh()
+    _install(monkeypatch, _note_showing("lease-note", lease.id, "Signed copy"), {})
+
+    window = _find("rent is due", from_root_index=0, direction="forward", search="")
+
+    assert [(match.note_id, match.content_count, match.comment_count, match.file_ids) for match in window.matches] == [
+        ("lease-note", 0, 0, (lease.id,)),
+    ]
+
+
+def test_a_notes_own_text_and_its_file_both_count(monkeypatch, files) -> None:
+    lease = create_file(original_filename="Lease.pdf", mime_type="application/pdf", content_bytes=_pdf(LEASE), token="token")
+    file_texts.refresh()
+    _install(monkeypatch, _note_showing("lease-note", lease.id, "the deposit is paid"), {})
+
+    window = _find("deposit", from_root_index=0, direction="forward", search="")
+
+    assert [(match.content_count, match.file_ids) for match in window.matches] == [(1, (lease.id,))]
+
+
+def test_a_file_without_the_text_or_not_read_yet_is_no_stop(monkeypatch, files) -> None:
+    lease = create_file(original_filename="Lease.pdf", mime_type="application/pdf", content_bytes=_pdf(LEASE), token="token")
+    _install(monkeypatch, _note_showing("lease-note", lease.id, "Signed copy"), {})
+    # Not read yet: found by name only.
+    assert _find("rent is due", from_root_index=0, direction="forward", search="").matches == ()
+    file_texts.refresh()
+    assert _find("harbor", from_root_index=0, direction="forward", search="").matches == ()
+
+
+# A picture's, diagram's or email's card says "Loading …" until the browser fills it in, then
+# the words go: they are no note's text. The server counted them and the page did not, so typing
+# "lo" stopped on a note with a picture and Find failed to show it (2026-11-02).
+_ONE_PIXEL_PNG = bytes.fromhex(
+    "89504e470d0a1a0a0000000d4948445200000001000000010806000000"
+    "1f15c4890000000d49444154789c6360000002000154a24f5d0000000049454e44ae426082"
+)
+_EMAIL = b"From: Ada <ada@example.org>\r\nSubject: The plan\r\nContent-Type: text/plain\r\n\r\nHello there\r\n"
+_DIAGRAM = b'{"type": "excalidraw", "version": 2, "elements": [], "appState": {}, "files": {}}'
+
+
+@pytest.mark.parametrize(("filename", "mime_type", "content"), [
+    ("Photo.png", "image/png", _ONE_PIXEL_PNG),
+    ("plan.eml", "message/rfc822", _EMAIL),
+    ("Sketch.excalidraw", "application/json", _DIAGRAM),
+])
+@pytest.mark.parametrize("reference", ["<div>![[{file_id}]]</div>", "<div>see [[{file_id}]] here</div>"])
+def test_a_cards_loading_words_are_no_match(monkeypatch, files, filename, mime_type, content, reference) -> None:
+    record = create_file(original_filename=filename, mime_type=mime_type, content_bytes=content, token="token")
+    # The note's own text holds the words once, so it is found; the card's words add nothing.
+    html = reference.format(file_id=record.id) + "<div>loading dock</div>"
+    _install(monkeypatch, _siblings(None, [("card-note", False, html, "")]), {})
+
+    # "loadi": the picture's "download image" button shows on the page too.
+    for text in ("loadi", "loading"):
+        window = _find(text, from_root_index=0, direction="forward", search="")
+        assert [(match.note_id, match.content_count) for match in window.matches] == [("card-note", 1)], text
+
+
+def test_a_loading_placeholder_reads_as_no_text() -> None:
+    html = '<div>before<span class="note-loading-placeholder">Loading image...</span>after</div>'
+    assert read_visible_text(html) == "beforeafter "
+
+
+# A Mermaid diagram is stored as its code and drawn by the browser: what the server reads (the code)
+# and what the page shows (the drawing, with hidden style text) differ. Find treats a diagram as one
+# stop whose code holds the words, on both sides alike (docs/ui/find.md, "Diagrams", 2026-11-02).
+_DIAGRAM_LINES = ["graph TD", "  Idea --> Draft", "  Draft --> Review", "  Review -->|changes| Draft"]
+
+
+def _lines(lines: List[str]) -> str:
+    return "".join(f"<div>{line}</div>" for line in lines)
+
+
+def test_a_diagram_is_one_stop_however_often_its_code_holds_the_words(monkeypatch) -> None:
+    _install(monkeypatch, _siblings(None, [("diagram", False, _lines(_DIAGRAM_LINES), "@mermaid")]), {})
+
+    def counts(text: str) -> List[tuple]:
+        return [(match.note_id, match.content_count) for match in _find(text, from_root_index=0, direction="forward", search="").matches]
+
+    assert counts("draft") == [("diagram", 1)]
+    # Only in the code, not in a label: still the one stop (a quoted search finds it too).
+    assert counts("graph") == [("diagram", 1)]
+    assert counts("zebra") == []
+
+
+def test_a_diagram_counts_once_beside_the_text_around_it(monkeypatch) -> None:
+    fence = ["the draft plan", "```mermaid", "graph TD", "  A[Draft] --> B[Draft]", "```", "a second draft"]
+    _install(monkeypatch, _siblings(None, [("plan", False, _lines(fence), "@markdown")]), {})
+
+    window = _find("draft", from_root_index=0, direction="forward", search="")
+
+    assert [(match.note_id, match.content_count) for match in window.matches] == [("plan", 3)]
+
+
+def test_a_diagrams_code_is_no_text_of_the_note() -> None:
+    html = '<p>before</p><pre class="meta-mermaid-source"><code class="language-mermaid">graph TD\nA--&gt;B</code></pre><p>after</p>'
+    assert read_visible_text(html) == "before after "

@@ -118,7 +118,7 @@ Text matching is:
   when that happens, the next search finds it. A scan or a PDF that can't be read matches by
   name only. `app/services/file_text_search.py`; tests: `tests/unit/test_file_text_search.py`.
   Where a required phrase is in a file's text, a snippet of it shows under the file's card (see
-  docs/ui/references.md, "File text snippets"). Find in the list (`Cmd+F`) doesn't search it.
+  docs/ui/references.md, "File text snippets"). Find in the list (`Cmd+F`) finds file text too (docs/ui/find.md, "Inside files").
 - Also against the titles of web pages linked in the note: for each `http(s)` URL
   in the note (written out, or hidden behind a link label), the page title
   MetaList has already fetched and stored. Titles are fetched when a URL on its own

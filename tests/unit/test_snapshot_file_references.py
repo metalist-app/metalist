@@ -468,7 +468,7 @@ def test_an_embedded_email_is_a_card_and_its_note_folds(monkeypatch: pytest.Monk
     rendered = state.payloads["a"]["content"]
     assert (
         f'<div class="note-file-email-embed" data-file-ref-id="{file_id}" data-file-revision="1" data-preview-state="idle">'
-        '<div class="note-file-email-placeholder">Loading email…</div></div>'
+        '<div class="note-file-email-placeholder note-loading-placeholder">Loading email…</div></div>'
     ) in rendered
     assert state.payloads["a"]["flags"]["isCollapsible"] is True
 

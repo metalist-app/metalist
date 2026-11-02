@@ -10,11 +10,10 @@ import { waitForAppQuiet } from './browser-app-idle.mjs';
 //   2. clicking the snippet edits the note: the card turns into its line, the snippet goes,
 //      the note's top stays where it was
 //   3. Escape brings the card and its snippet back exactly where they were; nothing scrolls
-//   4. folding a note hides the snippet and moves nothing a fold without a snippet doesn't: the
-//      note's top stays, the card lands where it lands without a search, its arrow stays;
-//      unfolding brings the snippet back with the card where it was. (Folding a note whose first
-//      line is a file card moves the card up 9 px with or without a snippet, an older break of
-//      principle 1 found here, 2026-11-01: its own fix, docs/ui/references.md.)
+//   4. folding a note hides the snippet and moves nothing: the note's top and the card stay
+//      exactly where they were, its arrow stays; unfolding brings the snippet back with the card
+//      where it was. (Folding used to move a first-line card 9 px up, with or without a snippet:
+//      fixed 2026-11-01, scripts/browser-folded-file-regressions.mjs.)
 
 const WINDOW = {width: 1100, height: 900};
 const REQUESTS_QUIET_MS = 300;
@@ -170,20 +169,8 @@ async function editThenEscape(page, ids) {
   assert.equal(after.scrollY, before.scrollY, '3: nothing scrolls');
 }
 
-async function foldedWithoutSnippet(page, ids, toggle) {
-  await search(page, FIXTURE_TAG);
-  await page.click(toggle);
-  await idle(page);
-  const folded = await noteState(page, ids.foldNote);
-  await page.click(toggle);
-  await idle(page);
-  await search(page, `${FIXTURE_TAG} "${PHRASE}"`);
-  return folded;
-}
-
 async function foldThenUnfold(page, ids) {
   const toggle = `.note[data-note-id="${ids.foldNote}"] > .note-collapse-toggle`;
-  const withoutSnippet = await foldedWithoutSnippet(page, ids, toggle);
   const before = await noteState(page, ids.foldNote);
   assert.notEqual(before.snippet, '', '4: the snippet shows before folding');
   await page.click(toggle);
@@ -191,7 +178,7 @@ async function foldThenUnfold(page, ids) {
   const folded = await noteState(page, ids.foldNote);
   assert.equal(folded.snippet, '', '4: a folded note shows no snippet');
   assert.equal(folded.noteTop, before.noteTop, '4: the note\'s top stays where it was');
-  assert.equal(folded.cardTop, withoutSnippet.cardTop, '4: the card lands where a fold without a snippet puts it');
+  assert.equal(folded.cardTop, before.cardTop, '4: the card on its first line stays exactly where it was');
   assert.equal(folded.canCollapse, 'true', '4: its arrow stays, to open it again');
 
   await page.click(toggle);

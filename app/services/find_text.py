@@ -21,6 +21,16 @@ _TEXT_BREAKING_ELEMENTS = frozenset({
     "th", "thead", "tr", "ul",
 })
 _WHITESPACE_RE = re.compile(r"\s")
+# A card's words while the browser fills it in ("Loading image..."), or its status after: no
+# note's text, and gone from the page once the card is drawn (search-highlight-service.js
+# LOADING_PLACEHOLDER_CLASS). A placeholder holds text only.
+_LOADING_PLACEHOLDER_CLASS = "note-loading-placeholder"
+# A Mermaid diagram as stored: its code, which the browser swaps for the drawing. Neither is the
+# note's text; the diagram is one stop when its code holds the words (find-in-list-service.js
+# diagramStops; docs/ui/find.md, "Diagrams").
+_DIAGRAM_SOURCE_CLASS = "meta-mermaid-source"
+_DIAGRAM_SOURCE_TAG = "pre"
+_DIAGRAM_WHITESPACE_RE = re.compile(r"\s+")
 _WORD_CHARACTER_RE = re.compile(r"[^\W_]")
 
 
@@ -29,6 +39,12 @@ class _VisibleTextReader(HTMLParser):
         super().__init__(convert_charrefs=True)
         self.parts: list[str] = []
         self._ends_with_space = True
+        # The tag of the placeholder being read, whose words are skipped; None outside one.
+        self._placeholder_tag: str | None = None
+        # Each diagram's code, in order; the one being read, and how deep in it the reader is.
+        self.diagram_sources: list[str] = []
+        self._diagram_parts: list[str] | None = None
+        self._diagram_depth = 0
 
     def _add_space(self) -> None:
         if self._ends_with_space:
@@ -37,18 +53,50 @@ class _VisibleTextReader(HTMLParser):
         self._ends_with_space = True
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if self._diagram_parts is not None:
+            self._diagram_depth += 1
+            return
+        if tag == _DIAGRAM_SOURCE_TAG and _DIAGRAM_SOURCE_CLASS in _classes_of(attrs):
+            # Skipped whole, as the browser's reading skips the drawing: no break either.
+            self._diagram_parts = []
+            return
+        if self._placeholder_tag is not None:
+            raise ValueError(f"A loading placeholder holds text only, not a <{tag}>")
+        # Skipped whole, as the browser's reading skips it: no break either.
+        if _LOADING_PLACEHOLDER_CLASS in _classes_of(attrs):
+            self._placeholder_tag = tag
+            return
         if tag in _TEXT_BREAKING_ELEMENTS:
             self._add_space()
 
     def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if self._diagram_parts is not None:
+            return
         if tag in _TEXT_BREAKING_ELEMENTS:
             self._add_space()
 
     def handle_endtag(self, tag: str) -> None:
+        if self._diagram_parts is not None:
+            if self._diagram_depth > 0:
+                self._diagram_depth -= 1
+                return
+            assert tag == _DIAGRAM_SOURCE_TAG, f"A diagram's code ended by </{tag}>"
+            self.diagram_sources.append("".join(self._diagram_parts))
+            self._diagram_parts = None
+            return
+        if self._placeholder_tag is not None:
+            assert tag == self._placeholder_tag, f"A loading placeholder <{self._placeholder_tag}> ended by </{tag}>"
+            self._placeholder_tag = None
+            return
         if tag in _TEXT_BREAKING_ELEMENTS:
             self._add_space()
 
     def handle_data(self, data: str) -> None:
+        if self._diagram_parts is not None:
+            self._diagram_parts.append(data)
+            return
+        if self._placeholder_tag is not None:
+            return
         for character in data:
             if _WHITESPACE_RE.match(character):
                 self._add_space()
@@ -57,15 +105,39 @@ class _VisibleTextReader(HTMLParser):
                 self._ends_with_space = False
 
 
+def _classes_of(attrs: list[tuple[str, str | None]]) -> list[str]:
+    for name, value in attrs:
+        if name == "class" and value is not None:
+            return value.split()
+    return []
+
+
 def read_visible_text(html: str) -> str:
     """An element's text as the browser's marks read it: every run of whitespace, and
     every break between blocks or lines, is one space."""
+    return "".join(_read(html).parts)
+
+
+def count_find_stops(html: str, find_text: str) -> int:
+    """The stops find makes in a note's rendered HTML: each occurrence in its text, and each
+    diagram whose code holds the find text once, however often (the page counts the same,
+    find-in-list-service.js pageRangesFor)."""
+    reader = _read(html)
+    diagrams = sum(
+        1 for source in reader.diagram_sources
+        if count_occurrences(_DIAGRAM_WHITESPACE_RE.sub(" ", source).strip(), find_text) > 0
+    )
+    return count_occurrences("".join(reader.parts), find_text) + diagrams
+
+
+def _read(html: str) -> _VisibleTextReader:
     if not isinstance(html, str):
         raise TypeError(f"html must be a string, got {type(html)}")
     reader = _VisibleTextReader()
     reader.feed(html)
     reader.close()
-    return "".join(reader.parts)
+    assert reader._diagram_parts is None, "A diagram's code was never closed"
+    return reader
 
 
 def read_comment_text(comment: str) -> str:

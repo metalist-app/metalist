@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import hashlib
 import re
+import unicodedata
 import warnings
 from dataclasses import dataclass
 from io import BytesIO
@@ -51,6 +52,8 @@ _UTF8 = "utf-8"
 _WHITESPACE_RE = re.compile(r"\s+")
 _PDF_SUFFIX = ".pdf"
 _NO_PASSWORD = ""
+# Unicode's compatibility composition: a ligature glyph becomes its letters.
+_LETTERS_FORM = "NFKC"
 # Text read for searches, kept for the next ones (search-as-you-type, suggestions).
 _TEXT_CACHE_FILES = 4096
 _TEXT_CACHE_MIB = 64
@@ -115,10 +118,17 @@ def extract_file_text(file_name: str, content: bytes) -> ExtractedText:
         pages = _pdf_pages(content)
     if pdf_capture.captured_exception is not None or pages is None:
         return ExtractedText(text="", is_cut=False)
-    text = _WHITESPACE_RE.sub(" ", " ".join(pages)).strip()
+    text = _WHITESPACE_RE.sub(" ", as_letters(" ".join(pages))).strip()
     if len(text) <= MAX_FILE_TEXT_CHARACTERS:
         return ExtractedText(text=text, is_cut=False)
     return ExtractedText(text=text[:MAX_FILE_TEXT_CHARACTERS], is_cut=True)
+
+
+def as_letters(text: str) -> str:
+    """Text as plain letters: a typeset PDF's ligature glyphs ("coe\ufb03cients") as the letters
+    they join ("coefficients"), as search reads them, so the snippet and find's marks read them
+    the same (NFKC; text kept before this was so is read through it, 2026-11-02)."""
+    return unicodedata.normalize(_LETTERS_FORM, text)
 
 
 def _pdf_pages(content: bytes) -> Optional[List[str]]:
@@ -227,11 +237,11 @@ class FileTexts:
         return text_term_matches(term, self._text_casefold(file_id, loaded.content_revision))
 
     def text_of(self, file_id: str) -> str:
-        """The file's stored text, as extracted (for the snippet under its card)."""
+        """The file's stored text, as letters (for the snippet under its card)."""
         stored = self._require_storage().read_text(file_id)
         if stored is None:
             return ""
-        return stored.text
+        return as_letters(stored.text)
 
     def _text_casefold(self, file_id: str, content_revision: int) -> str:
         key = (file_id, content_revision)
@@ -241,7 +251,7 @@ class FileTexts:
         stored = self._require_storage().read_text(file_id)
         text = ""
         if stored is not None and stored.content_revision == content_revision:
-            text = stored.text.casefold()
+            text = as_letters(stored.text).casefold()
         self._text_cache.store(key, text)
         return text
 

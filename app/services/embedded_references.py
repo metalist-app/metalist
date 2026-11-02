@@ -1160,7 +1160,7 @@ def _render_file_link_thumbnail(*, record: object, file_id: str, thumbnail_kind:
             f'<span class="note-reference-link-thumbnail {kind_class} note-file-excalidraw-embed" '
             f'data-file-ref-id="{escaped_file_id}" data-file-revision="{content_revision}" data-preview-state="idle">'
             f'<span class="note-file-excalidraw-frame">{images}'
-            '<span class="note-file-excalidraw-placeholder">Loading diagram...</span>'
+            '<span class="note-file-excalidraw-placeholder note-loading-placeholder">Loading diagram...</span>'
             "</span></span>"
         )
     # Hydrated by the image file preview service.
@@ -1169,7 +1169,7 @@ def _render_file_link_thumbnail(*, record: object, file_id: str, thumbnail_kind:
         f'data-file-ref-id="{escaped_file_id}" data-preview-state="idle">'
         '<span class="note-file-image-preview-frame">'
         '<img class="note-file-image-preview" alt="" loading="lazy" decoding="async" draggable="false" hidden />'
-        '<span class="note-file-image-preview-placeholder">Loading image...</span>'
+        '<span class="note-file-image-preview-placeholder note-loading-placeholder">Loading image...</span>'
         "</span></span>"
     )
 
@@ -1372,7 +1372,7 @@ def _render_file_body(
             f'<div class="note-file-image-embed" data-file-ref-id="{escaped_note_id}" data-preview-state="idle">'
             '<div class="note-file-image-preview-frame">'
             f'<img class="note-file-image-preview" data-file-ref-id="{escaped_note_id}" alt="{escaped_title_attribute}" loading="lazy" decoding="async" hidden />'
-            '<div class="note-file-image-preview-placeholder">Loading image preview...</div>'
+            '<div class="note-file-image-preview-placeholder note-loading-placeholder">Loading image preview...</div>'
             "</div>"
             f'<button type="button" class="note-file-image-download-link" data-file-ref-id="{escaped_note_id}" aria-label="Download image file">'
             "download image"
@@ -1405,7 +1405,7 @@ def _render_email_embed(*, record: object, escaped_note_id: str) -> str:
     return (
         f'<div class="note-file-email-embed" data-file-ref-id="{escaped_note_id}" '
         f'data-file-revision="{content_revision}" data-preview-state="idle">'
-        '<div class="note-file-email-placeholder">Loading email…</div>'
+        '<div class="note-file-email-placeholder note-loading-placeholder">Loading email…</div>'
         "</div>"
     )
 
@@ -1426,7 +1426,7 @@ def _render_excalidraw_embed(*, record: object, escaped_note_id: str, escaped_ti
         f'data-file-revision="{content_revision}" data-preview-state="idle" title="Double-click to edit the diagram">'
         '<div class="note-file-excalidraw-frame">'
         f"{images}"
-        '<div class="note-file-excalidraw-placeholder">Loading diagram...</div>'
+        '<div class="note-file-excalidraw-placeholder note-loading-placeholder">Loading diagram...</div>'
         "</div>"
         "</div>"
     )

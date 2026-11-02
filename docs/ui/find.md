@@ -37,6 +37,66 @@ marking each place the text occurs.
 - Only the notes of the current search context, search and sort order, in list order: each note,
   then its children, then the next root.
 
+## Inside files
+
+Find also finds the words in the text of the files a note shows (PDFs; Word and RTF when they
+keep their text: `docs/ui/search-semantics.md`), agreed 2026-11-01:
+
+| Case | Result |
+|---|---|
+| Typing | A file whose text holds the words is one stop of its note, after its own text and comments, however often they occur in it. Nothing on the page changes while typing. |
+| Stopping on a file | A snippet of its text shows under its card, from the first place the words are, the words marked as the current match (`POST /api2/notes/find/file-snippet`). Only what is below the card moves down. |
+| The card is out of view | Placed as any match, the card and its snippet whole. |
+| The card is in a folded note | The note opens for this view only, as for any match folded away. |
+| Moving on, or closing find | The snippet goes (what is below moves back up by it); what find opened folds back with its first line where it was. |
+| The card already shows the search's snippet | Find's snippet takes its place while find stops on the file; the search's comes back after. |
+| A file not read yet, a scan | Matches by its name only. |
+
+Typing on while find stops on a file keeps its snippet on the page every frame: find reads the
+new snippet before it changes anything, then swaps it in one step (the same card's changes only
+its text), and a redrawn card gets it back at once (it had gone and come back on every
+keystroke, fixed 2026-11-01).
+
+Words inside a snippet (the search's or find's) are never counted as the note's own text
+(`phraseRangesInNoteText`, `search-highlight-service.js`). Neither are a card's loading words
+("Loading image preview...", "Loading diagram...", "Loading email…") or the status that replaces
+them: they carry `note-loading-placeholder`, and the server's reading (`find_text.py`) and the
+page's skip them alike. The server counted them while the page, once the picture was drawn, did
+not, so typing "lo" stopped on words that were not there and find failed (fixed 2026-11-02). The
+server must never count more in a note than the page shows.
+
+A file's text is read as plain letters (NFKC, `file_text_search.as_letters`): a typeset PDF's
+ligature glyphs ("coeﬃcients") read as the letters they join, for the search, the snippet and
+find's marks alike, text kept before included (fixed 2026-11-02: find stopped on the file without
+a snippet and marked the whole card). Tests: `tests/unit/test_find_in_list.py`,
+`scripts/browser-find-in-file-regressions.mjs` (`BROWSER_TEST_SUITE=find-in-files`, Chrome and Firefox).
+
+## Diagrams
+
+A Mermaid diagram is stored as its code and drawn by the browser, so the server (which reads the
+code) and the page (which shows the drawing, with hidden style text) read different words. Find
+treats a diagram as one stop whose code holds the words, on both sides alike
+(`find_text.count_find_stops`, `find-in-list-service.js` `diagramStops`; the page keeps a drawn
+diagram's code in `data-mermaid-source`). Agreed 2026-11-02:
+
+| Case | Result |
+|---|---|
+| The words are in its labels | One stop, in its place among the note's matches; every label holding them is lightly marked, the first the current match. |
+| The words are only in its code ("graph") | One stop (a quoted search finds the note by them too); the diagram is outlined in the current match's colour. |
+| Its drawing's style text | Never found, by find or the search highlight (`<style>` is unseen text). |
+| A diagram not drawn, or invalid and showing its code | The same one stop, its words marked in the code; the "Invalid Mermaid diagram" badge is never found. |
+| Several labels hold the words | Still one stop. |
+| A diagram in a folded note | As any match folded away: the note opens for this view only. |
+
+An outlined diagram counts as on screen when any part of it shows below the find bar, for where
+typing starts and for whether moving to it scrolls; everything else counts by its top edge
+(agreed 2026-11-02). At the top of the list the bar covers the first note's top right, so a
+diagram there in plain view was skipped and find started on the next note.
+
+Before, the server counted the code's words and the page the drawing's, so a word only in the
+code ("-->") made find stop on nothing there. Tests: `tests/unit/test_find_in_list.py`,
+`scripts/browser-find-in-diagram-regressions.mjs` (`BROWSER_TEST_SUITE=find-in-diagrams`).
+
 ## Where the page goes
 
 Every match on the loaded part of the list gets a light mark and the current match a

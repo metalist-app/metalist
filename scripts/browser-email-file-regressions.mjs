@@ -5,14 +5,16 @@ import { waitForAppQuiet } from './browser-app-idle.mjs';
 // Email files (.eml) as cards (docs/ui/references.md, "Email files"; agreed 2026-10-29):
 // an embedded email shows its subject, From/To/Cc/Date, its sanitized body and its
 // attachments, each downloading itself; a long body is cut until Show all, which edits
-// nothing; a note that is only an email folds to one line (EML, subject, sender); a
+// nothing; a note that is only an email folds to one line (EML, subject, sender), kept in its
+// boxes so folding moves nothing (the maintainer, 2026-11-01:
+// scripts/browser-folded-file-regressions.mjs checks the positions); a
 // search finds the note by a word of the email's body.
 
 const WINDOW = {width: 1100, height: 900};
 const REQUESTS_QUIET_MS = 300;
 const FRAMES_TO_SETTLE = 3;
 const CARD_WAIT_MS = 4000;
-// A folded note is one line: no taller than this many of its lines.
+// A folded email's one line: no taller than this many lines.
 const ONE_LINE = 1.5;
 const LONG_PARAGRAPHS = 30;
 
@@ -131,12 +133,12 @@ async function foldsToOneLine(page, ids) {
       lineText: [...line.children].map(child => child.textContent),
       lineShown: getComputedStyle(line).display,
       cardShown: getComputedStyle(content.querySelector('.note-file-email-body')).display,
-      lines: content.getBoundingClientRect().height / Number.parseFloat(getComputedStyle(content).lineHeight),
+      lines: line.getBoundingClientRect().height / Number.parseFloat(getComputedStyle(content).lineHeight),
     };
   });
   assert.deepEqual([folded.isCollapsed, folded.lineText, folded.lineShown, folded.cardShown],
     [true, ['EML', 'Réunion: the plan', 'Ada Lovelace'], 'flex', 'none'], 'folded: the one line');
-  assert.ok(folded.lines <= ONE_LINE, `folded: one line tall (${folded.lines} lines)`);
+  assert.ok(folded.lines <= ONE_LINE, `folded: its line is one line tall (${folded.lines} lines)`);
   await page.click(`${note} > .note-collapse-toggle`);
   await idle(page);
 }

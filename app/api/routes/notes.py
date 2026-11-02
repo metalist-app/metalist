@@ -14,6 +14,7 @@ from app.api.note_requests import (
     DeleteNotesInViewRequest,
     ViewScope,
     ViewDiffRequest,
+    FindFileSnippetRequest,
     FindInListRequest,
     UpdateTabStateRequest,
     UpdateTabDateFilterRequest,
@@ -97,6 +98,7 @@ from app.usecases.create_note import CmdCreateNote
 from app.usecases.base import QueryCommand
 from app.usecases.create_sibling import CmdCreateSibling
 from app.services.file_registry import file_registry
+from app.services.file_text_snippets import file_text_snippet
 from app.usecases.create_child import CmdCreateChild
 from app.usecases.create_file_preview_child import CmdCreateFilePreviewChild
 from app.usecases.update_content import CmdUpdateContent
@@ -186,7 +188,7 @@ from app.usecases.prioritize import list_prioritize_tag_suggestions
 from app.services.selected_text_tag import SelectedTextTagValidationError
 from app.api.request_auth import require_request_auth_token
 from app.security.shell_execution import is_loopback_host
-from app.services.input_errors import InputRejected
+from app.services.input_errors import InputRejected, ResourceNotFound
 from app.services.editing_image_sizes import editing_image_size_factors
 from app.services.memory_breakdown import measure_memory_breakdown
 from app.services.memory_usage import describe_memory_usage
@@ -830,6 +832,7 @@ def find_in_list(payload: FindInListRequest) -> Dict[str, object]:
                 "noteId": match.note_id, "rootId": match.root_id, "rootIndex": match.root_index,
                 "contentCount": match.content_count, "commentCount": match.comment_count,
                 "previewCount": match.preview_count, "isUnderFoldedNote": match.is_under_folded_note,
+                "fileIds": list(match.file_ids),
             }
             for match in window.matches
         ],
@@ -837,6 +840,18 @@ def find_in_list(payload: FindInListRequest) -> Dict[str, object]:
         "endRootIndex": window.end_root_index,
         "rootCount": window.root_count,
     }
+
+
+@router.post("/notes/find/file-snippet")
+@transactional_route
+def find_file_snippet(payload: FindFileSnippetRequest) -> Dict[str, object]:
+    """The snippet find shows under a file's card when it stops on the file: a line of its
+    text around the first place the find text is (docs/ui/find.md). Empty when it isn't there."""
+    if payload["text"].strip() == "":
+        raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail="text must hold more than spaces")
+    if not file_registry.has_file(payload["fileId"]):
+        raise ResourceNotFound(f"There is no file {payload['fileId']}.")
+    return {"snippet": file_text_snippet(payload["fileId"], (payload["text"],))}
 
 
 @router.get("/notes/memory-usage/breakdown")

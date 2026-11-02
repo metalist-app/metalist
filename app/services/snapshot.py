@@ -24,7 +24,7 @@ from app.services.embedded_references import render_note_content_with_embeds
 from app.services.file_kinds import FILE_KIND_IMAGE
 from app.services.file_registry import file_registry
 from app.services.file_storage import get_file_reference_record
-from app.services.find_text import count_occurrences, read_comment_text, read_visible_text
+from app.services.find_text import count_find_stops, count_occurrences, read_comment_text
 from app.services.link_titles import link_title_store
 from app.services.note_store import NoteRecord, store as note_store
 from app.services.ontology_rules_store import get_ontology_if_ready
@@ -37,6 +37,7 @@ from app.services.root_sorting import normalize_sort_mode
 from app.services.root_date_filter import RootDateFilter, filter_root_ids_by_date, local_today
 from app.services.quoted_values import split_tokens
 from app.services.search_index import search_index
+from app.services.file_text_search import SEARCHABLE_FILE_KINDS, file_texts
 from app.services.file_text_snippets import with_file_text_snippets
 from app.services.search_query import ParsedSearchQuery, SearchClause, parse_search_query, search_highlight_phrases
 from app.services.tag_properties import PropertyCondition, tag_part_of_token
@@ -1351,9 +1352,11 @@ FIND_DIRECTIONS = ("forward", "backward")
 @dataclass(frozen=True, slots=True)
 class FindMatch:
     """A note the find's text occurs in. Its occurrences, in page order, are those of its
-    content (content_count) and then of its tag-bar comments (comment_count). Shown
-    without opening anything are the first preview_count of the content's (all of them
-    unless the note is folded) and the comments', unless a note above it is folded."""
+    content (content_count), then of its tag-bar comments (comment_count), then one per file
+    it shows whose text holds the find text (file_ids, in the note's order: one stop each
+    however often the text occurs in it, docs/ui/find.md). Shown without opening anything are
+    the first preview_count of the content's (all of them unless the note is folded) and the
+    comments', unless a note above it is folded."""
 
     note_id: str
     root_id: str
@@ -1362,6 +1365,7 @@ class FindMatch:
     comment_count: int
     preview_count: int
     is_under_folded_note: bool
+    file_ids: Tuple[str, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -1418,24 +1422,31 @@ def _count_find_match(
     rec: NoteRecord, *, find_text: str, root_id: str, root_index: int, is_under_folded_note: bool,
     context: EmbedRenderContext,
 ) -> FindMatch | None:
-    content_count = count_occurrences(
-        read_visible_text(_render_note_content_html(rec, is_collapsed=False, context=context)), find_text,
-    )
+    content_count = count_find_stops(_render_note_content_html(rec, is_collapsed=False, context=context), find_text)
     comment_count = sum(
         count_occurrences(read_comment_text(comment), find_text) for comment in _tag_bar_comments(rec.tags)
     )
-    if content_count == 0 and comment_count == 0:
+    file_ids = _files_holding_find_text(rec, find_text)
+    if content_count == 0 and comment_count == 0 and not file_ids:
         return None
     preview_count = content_count
     if content_count > 0 and _is_shown_collapsed(rec, context):
-        preview_count = count_occurrences(
-            read_visible_text(_render_note_content_html(rec, is_collapsed=True, context=context)), find_text,
-        )
+        preview_count = count_find_stops(_render_note_content_html(rec, is_collapsed=True, context=context), find_text)
     return FindMatch(
         note_id=rec.id, root_id=root_id, root_index=root_index, content_count=content_count,
         comment_count=comment_count, preview_count=min(preview_count, content_count),
-        is_under_folded_note=is_under_folded_note,
+        is_under_folded_note=is_under_folded_note, file_ids=file_ids,
     )
+
+
+def _files_holding_find_text(rec: NoteRecord, find_text: str) -> Tuple[str, ...]:
+    """The files the note shows whose kept text holds the find text, each once, in the note's
+    order (file_text_search.py: PDFs; one not read yet holds nothing)."""
+    shown: List[str] = []
+    for file_id, _name in file_registry.referenced_file_names(rec.content):
+        if file_id not in shown and file_registry.thumbnail_kind_of(file_id) in SEARCHABLE_FILE_KINDS:
+            shown.append(file_id)
+    return tuple(file_id for file_id in shown if file_texts.term_matches(file_id, find_text))
 
 
 def _find_in_root(

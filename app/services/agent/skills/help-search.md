@@ -177,7 +177,8 @@ Text matching is:
   a lease PDF that says it, with a line of the PDF's text shown under its card, the words
   marked. A new PDF is searchable a few seconds after it arrives; a scanned, damaged or
   password-locked PDF is found by name only; search covers a PDF's first ~2,000 pages. Find
-  (⌘F) doesn't search PDF text.
+  (⌘F) finds PDF text too: a PDF holding the words is one stop of its note, and stopping on
+  it shows a line of its text under the card with the words marked.
 - Also against the titles of web pages linked in the note: for each `http(s)` URL
   in the note (written out, or hidden behind a link label), the page title
   MetaList has already fetched and stored. Titles are fetched when a URL on its own

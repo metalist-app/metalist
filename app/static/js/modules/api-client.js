@@ -911,6 +911,17 @@ export const NotesAPI = {
         });
     },
 
+    // The snippet find shows under a file's card when it stops on the file: { snippet }.
+    async fetchFindFileSnippet(fileId, text) {
+        if (typeof fileId !== 'string' || fileId.length === 0) {
+            throw new Error('NotesAPI.fetchFindFileSnippet requires fileId');
+        }
+        if (typeof text !== 'string' || text.trim() === '') {
+            throw new Error('NotesAPI.fetchFindFileSnippet requires text');
+        }
+        return this._apiCall(CONFIG.API.NOTES.FIND_FILE_SNIPPET, { method: 'POST', body: JSON.stringify({ fileId, text }) });
+    },
+
     async fetchSearchSuggestions(query, windowDays) {
         if (typeof query !== 'string') {
             throw new Error('NotesAPI.fetchSearchSuggestions requires query string');
