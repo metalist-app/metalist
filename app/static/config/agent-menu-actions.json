@@ -167,12 +167,6 @@
     "presentation": "palette"
   },
   {
-    "id": "pref.show_tab_ui",
-    "label": "Show Search Contexts",
-    "selector": "#command-palette-modal",
-    "presentation": "palette"
-  },
-  {
     "id": "pref.show_search_results_count",
     "label": "Hide Search Result Count",
     "selector": "#command-palette-modal",

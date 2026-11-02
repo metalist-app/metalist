@@ -1,4 +1,3 @@
-import { isVirtualFoldersShown } from '../services/virtual-folders-state.js';
 import { showVirtualFoldersMenu } from '../services/virtual-folders-service.js';
 import { MS_PER_SECOND } from '../../time-units.js';
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
@@ -1400,10 +1399,6 @@ function showViewContextMenu(event) {
         canGoToBottom: !scrollToBottomButton.disabled,
         isUntaggedView: ModeContext.isUntaggedView === true,
         theme: themeAttribute === 'light' || themeAttribute === 'dark' ? themeAttribute : 'system',
-        areTabsVisible: document.body.classList.contains('pref-show-tab-ui'),
-        areVirtualFoldersVisible: isVirtualFoldersShown(),
-        isAiChatVisible: document.body.classList.contains('pref-show-ai-chat'),
-        areNoteTagsVisible: document.body.classList.contains('pref-show-note-tags'),
         sortMode: ModeContext.activeTabSortMode,
         searchAllowsNewNotes: findUnfillableSearchTerm(ModeContext.searchQuery) === null,
         ...dateRangeMenuContext(),
@@ -1458,18 +1453,6 @@ function showViewContextMenu(event) {
         },
         onLogOut: () => {
             void CommandPalette.logout();
-        },
-        onToggleTabs: (nextValue) => {
-            void CommandPalette.applyPreference('pref.show_tab_ui', nextValue);
-        },
-        onToggleAiChat: (nextValue) => {
-            void CommandPalette.applyPreference('pref.show_ai_chat', nextValue);
-        },
-        onToggleNoteTags: (nextValue) => {
-            void CommandPalette.applyPreference('pref.show_note_tags', nextValue);
-        },
-        onToggleVirtualFolders: () => {
-            void CommandPalette.toggleVirtualFolders();
         },
         onAddNoteAtTop: () => {
             void CommandGate.run('contextMenu.view.add_at_top', async () => {

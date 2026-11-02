@@ -4,7 +4,7 @@ News, errors and lasting conditions float above the page as cards; nothing on th
 
 ## Where
 
-- Upper-right corner, just left of the floating buttons (≡, chat, scroll), the first card level with the first button. With the chat shown they follow the buttons beside it (`--global-controls-right` in `main.css`).
+- Upper-right corner, just left of the floating buttons (≡, ↑, ↓), the first card level with the first button. With the chat shown they follow the buttons beside it (`--global-controls-right` in `main.css`).
 - On the phone (under 640 px): just under the search header, the page's width less its 8 px side padding.
 - A new card goes below the others; when one leaves, the ones below move up. They fade in and out instead of sliding, so a card stands where it stays.
 - Nothing shifts: no scroll, no layout change, and focus and the caret stay where they were (pressing a card's × does not take focus).

@@ -389,13 +389,6 @@ async function clickTab(page, tabId) {
   await idle(page);
 }
 
-async function showTabs(page, isShown) {
-  await page.evaluate(async isShown => {
-    const {CommandPalette} = await import('/static/js/modules/command-palette/command-palette-controller.js');
-    await CommandPalette.applyPreference('pref.show_tab_ui', isShown);
-  }, isShown);
-}
-
 // Case 1 (and "where the target lands is unchanged"): a reference followed from the search.
 async function checkFollowFromSearch(page, ids) {
   // Where the target lands with no motion, the way it has always landed.
@@ -619,7 +612,6 @@ async function checkReducedMotion(page, ids) {
 // Case 11, and reference views kept with the tabs: no animation on a reload, a tab
 // switch, or opening a tab already in a reference view; another window labels them too.
 async function checkNoAnimationWithoutNavigation(page, ids) {
-  await showTabs(page, true);
   const searchTabId = (await barState(page)).activeTabId;
   await navigate(page, () => clickReferenceLink(page, ids.holder, ids.target));
   const shown = await barState(page);
@@ -652,7 +644,6 @@ async function checkNoAnimationWithoutNavigation(page, ids) {
   assert.deepEqual(await tabLabels(page), expectedTabs, 'after a reload the tabs are labeled the same way');
 
   await navigate(page, () => page.click('#reference-source-indicator-clear'));
-  await showTabs(page, false);
 }
 
 async function inputChipsState(page) {

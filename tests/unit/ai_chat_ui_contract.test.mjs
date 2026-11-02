@@ -490,13 +490,15 @@ test('global controls place the shared chat toggle between menu and go-to-top', 
     const css = readFileSync(CSS_URL, 'utf8');
     const controller = readFileSync(CONTROLLER_URL, 'utf8');
 
+    // A pull tab on the right edge, its icon above an arrow (the maintainer, 2026-11-02), not a
+    // square in the ≡ column any more.
     assert.match(
+        template,
+        /id="chat-toggle-button"[\s\S]*?class="edge-tab edge-tab-chat[\s\S]*?aria-pressed="false"[\s\S]*?<path d="M4 5h16v11H9l-5 4z"[\s\S]*?class="edge-tab-arrow"/,
+    );
+    assert.doesNotMatch(
         template,
         /id="menu-button"[\s\S]*?id="chat-toggle-button"[\s\S]*?id="scroll-to-top-button"/,
-    );
-    assert.match(
-        template,
-        /id="chat-toggle-button"[\s\S]*?aria-pressed="false"[\s\S]*?<path d="M4 5h16v11H9l-5 4z"/,
     );
     assert.match(
         css,
@@ -950,4 +952,16 @@ test('a $ header button shows and hides the spend panel and remembers the choice
     assert.match(controller, /await this\._saveSpendVisible\(nextVisibility\)/);
     assert.match(css, /\.ai-chat-header-actions button\[hidden\]\s*\{\s*display: none;/);
     assert.match(css, /#ai-chat-spend-toggle\[aria-pressed="true"\]/);
+});
+
+
+// The ↑ and ↓ buttons are ≡'s square (the maintainer, 2026-11-02: they shrank to the chat icon's
+// 20px when the chat button left the ≡ column and its rule took them with it).
+test('the scroll buttons are the floating square, as ≡ is', () => {
+    const css = readFileSync(new URL('../../app/static/css/main.css', import.meta.url), 'utf8');
+    const rule = css.match(/(?:^|\n)\.scroll-to-top-button\s*\{([^}]*)\}/);
+    assert.ok(rule, 'expected a rule of the scroll buttons\' own');
+    assert.match(rule[1], /width:\s*var\(--floating-button-size\);/);
+    assert.match(rule[1], /height:\s*var\(--floating-button-size\);/);
+    assert.doesNotMatch(css, /\.scroll-to-top-button,\s*\.chat-toggle-button svg\s*\{/);
 });

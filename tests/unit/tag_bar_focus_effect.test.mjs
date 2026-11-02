@@ -42,5 +42,4 @@ test('dark theme tag bar and search shell share a grey control surface that stan
     assert.match(cssSource, /html\[data-theme="dark"\] \.note-tag-bar\s*\{[^}]*background:\s*var\(--app-control-surface\)/);
     assert.match(cssSource, /html\[data-theme="dark"\] \.note-tag-bar-empty-icon-front\s*\{[^}]*fill:\s*var\(--app-control-surface\)/);
     assert.match(cssSource, /html\[data-theme="dark"\] \.controls\s*\{[^}]*background:\s*var\(--app-control-surface\)/);
-    assert.match(cssSource, /html\[data-theme="dark"\] \.controls \.tab-ui-folder-icon-front\s*\{[^}]*fill:\s*var\(--app-control-surface\)/);
 });

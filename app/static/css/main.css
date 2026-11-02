@@ -3862,6 +3862,7 @@ details.ai-chat-thinking > .ai-chat-thinking-heading {
 }
 
 html[data-theme="dark"] .ai-chat-panel,
+html[data-theme="dark"] .virtual-folders,
 html[data-theme="dark"] .ai-chat-header,
 html[data-theme="dark"] .ai-chat-composer,
 html[data-theme="dark"] .ai-chat-message,
@@ -5176,7 +5177,8 @@ body.note-fullscreen-open {
 
 body.note-fullscreen-open .menu-button,
 body.note-fullscreen-open .chat-toggle-button,
-body.note-fullscreen-open .scroll-to-top-button {
+body.note-fullscreen-open .scroll-to-top-button,
+body.note-fullscreen-open .edge-tab {
     display: none;
 }
 
@@ -6394,7 +6396,7 @@ body.pref-animated-transitions .note-tag-bar:focus-within::after {
     cursor: default;
 }
 
-.controls .tab-ui-folder-icon {
+.controls .tab-ui-icon {
     position: absolute;
     left: 6px;
     top: 50%;
@@ -6411,15 +6413,11 @@ body.pref-animated-transitions .note-tag-bar:focus-within::after {
     transition: opacity 0.15s ease;
 }
 
-.controls .tab-ui-folder-icon-front {
-    fill: var(--search-shell-surface);
-}
-
-body.pref-show-tab-ui .controls .tab-ui-folder-icon {
+body.pref-show-tab-ui .controls .tab-ui-icon {
     opacity: 0.78;
 }
 
-body.pref-show-tab-ui .controls .tab-hover-zone:hover .tab-ui-folder-icon {
+body.pref-show-tab-ui .controls .tab-hover-zone:hover .tab-ui-icon {
     opacity: 1;
 }
 
@@ -7249,8 +7247,7 @@ html.reference-sliding body {
     z-index: 12000;
 }
 
-.scroll-to-top-button,
-.chat-toggle-button {
+.scroll-to-top-button {
     width: var(--floating-button-size);
     height: var(--floating-button-size);
     border: 1px solid var(--border-color);
@@ -7277,24 +7274,17 @@ html.reference-sliding body {
     stroke-linejoin: round;
 }
 
-body.pref-show-ai-chat .chat-toggle-button {
-    border-color: rgba(0, 102, 204, 0.45);
-    background: #eff6ff;
-    color: var(--primary-color);
-}
-
 .scroll-to-top-button:disabled {
     opacity: 0.35;
     cursor: default;
 }
 
-.scroll-to-top-button:hover,
-.chat-toggle-button:hover {
+.scroll-to-top-button:hover {
     background: #ffffff;
 }
 
 .scroll-to-top-button:focus-visible,
-.chat-toggle-button:focus-visible {
+.edge-tab:focus-visible {
     outline: 2px solid rgba(0, 102, 204, 0.5);
     outline-offset: 2px;
 }
@@ -7317,6 +7307,155 @@ body.pref-show-ai-chat .chat-toggle-button {
 
 .menu-button:hover {
     background-color: var(--hover-color);
+}
+
+/* Pull tabs (the maintainer, 2026-11-02): the virtual folders on the left edge, the AI chat on
+   the right, at the window's middle; each its icon above an arrow pointing the way a click
+   moves its panel. Closed, a tab sits on the window's edge; open, on its panel's edge. */
+:root {
+    --edge-tab-width: 28px;
+    --edge-tab-height: 68px;
+}
+
+.edge-tab {
+    position: fixed;
+    top: 50%;
+    z-index: 12000;
+    width: var(--edge-tab-width);
+    height: var(--edge-tab-height);
+    box-sizing: border-box;
+    transform: translateY(-50%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 0;
+    border: 1px solid var(--border-color);
+    background: rgba(255, 255, 255, 0.95);
+    color: var(--text-color);
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.edge-tab:hover {
+    background: var(--hover-color);
+}
+
+.edge-tab svg {
+    fill: none;
+    stroke: currentColor;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+.edge-tab-arrow {
+    font-size: 18px;
+    line-height: 1;
+    color: #6b7280;
+}
+
+.edge-tab-folders {
+    left: 0;
+    border-left: none;
+    border-radius: 0 10px 10px 0;
+}
+
+.edge-tab-folders svg {
+    width: 22px;
+    height: 17px;
+    stroke-width: 2;
+}
+
+.edge-tab-folders .edge-tab-arrow::before {
+    content: "›";
+}
+
+/* Open, outside the panel on its right edge: the chat's tab's mirror image (the maintainer,
+   2026-11-02). */
+body.virtual-folders-on .edge-tab-folders {
+    left: calc(var(--side-rail-edge) + var(--virtual-folders-width));
+}
+
+body.virtual-folders-on .edge-tab-folders .edge-tab-arrow::before {
+    content: "‹";
+}
+
+.edge-tab-chat {
+    right: 0;
+    border-right: none;
+    border-radius: 10px 0 0 10px;
+}
+
+.edge-tab-chat .edge-tab-arrow::before {
+    content: "‹";
+}
+
+body.pref-show-ai-chat .edge-tab-chat {
+    right: var(--ai-chat-effective-width);
+}
+
+body.pref-show-ai-chat .edge-tab-chat .edge-tab-arrow::before {
+    content: "›";
+}
+
+/* The tree's width handle, on the panel's right edge, as the chat's is on its left
+   (.ai-chat-resizer). */
+.virtual-folders-resizer {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: calc(var(--side-rail-edge) + var(--virtual-folders-width) - 4px);
+    z-index: 6;
+    width: 8px;
+    display: none;
+    cursor: col-resize;
+    touch-action: none;
+}
+
+body.virtual-folders-on .virtual-folders-resizer {
+    display: block;
+}
+
+.virtual-folders-resizer::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 3px;
+    width: 2px;
+    background: transparent;
+}
+
+.virtual-folders-resizer:hover::after,
+.virtual-folders-resizer:focus-visible::after,
+body.virtual-folders-resizing .virtual-folders-resizer::after {
+    background: var(--primary-color);
+}
+
+.virtual-folders-resizer:focus-visible {
+    outline: none;
+}
+
+body.virtual-folders-resizing,
+body.virtual-folders-resizing * {
+    cursor: col-resize !important;
+    user-select: none !important;
+}
+
+/* Where the tree can't show (it hides at 900px and below), its tab doesn't either. */
+@media (max-width: 900px) {
+    .edge-tab-folders,
+    body.virtual-folders-on .virtual-folders-resizer {
+        display: none;
+    }
+}
+
+/* Nor the chat's, where the chat can't show. */
+@media (max-width: 760px), (max-height: 300px) {
+    .edge-tab-chat {
+        display: none;
+    }
 }
 
 /* Loading state styling */
@@ -9469,9 +9608,6 @@ html[data-theme="dark"] .controls {
     box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.14);
 }
 
-html[data-theme="dark"] .controls .tab-ui-folder-icon-front {
-    fill: var(--app-control-surface);
-}
 
 /* The light theme's translucent black tabs dropdown lets dark notes show through;
    in dark it is an opaque grey panel, a step lighter than the search bar. */
@@ -9556,8 +9692,12 @@ html[data-theme="dark"] .controls .search-suggestion.is-selected {
     border-color: rgba(90, 169, 255, 0.28);
 }
 
+html[data-theme="dark"] .edge-tab .edge-tab-arrow {
+    color: rgba(240, 240, 240, 0.6);
+}
+
 html[data-theme="dark"] .menu-button,
-html[data-theme="dark"] .chat-toggle-button,
+html[data-theme="dark"] .edge-tab,
 html[data-theme="dark"] .scroll-to-top-button {
     background: rgba(255, 255, 255, 0.08);
     border-color: rgba(255, 255, 255, 0.12);
@@ -9565,16 +9705,10 @@ html[data-theme="dark"] .scroll-to-top-button {
 }
 
 html[data-theme="dark"] .menu-button:hover,
-html[data-theme="dark"] .chat-toggle-button:hover,
+html[data-theme="dark"] .edge-tab:hover,
 html[data-theme="dark"] .scroll-to-top-button:hover {
     background: rgba(255, 255, 255, 0.16);
     border-color: rgba(255, 255, 255, 0.18);
-}
-
-html[data-theme="dark"] body.pref-show-ai-chat .chat-toggle-button {
-    border-color: rgba(90, 169, 255, 0.5);
-    background: rgba(90, 169, 255, 0.16);
-    color: var(--app-accent);
 }
 
 html[data-theme="dark"] .namespace-modal-radio-row,
@@ -12894,27 +13028,33 @@ body.pref-animated-transitions .wizard-write-tag {
    virtual-folders-service.js): a folder tree in the left margin, and the notes column moved
    right to make room while the toggle is on. Desktop only. */
 :root {
+    /* The tree's width at first; dragging its edge sets it (virtual-folders-service.js). */
     --virtual-folders-width: 240px;
-    --virtual-folders-gap: 4px;
-    --virtual-folders-arrow-room: 32px;
+    /* From the tree's edge to the notes, to the pixel as from the notes to the chat's edge (the
+       maintainer, 2026-11-02): --app-min-visible-gutter, 10px + ≡'s 30px + 8px, which ≡, ↑ and ↓
+       need beside the chat. The tab (28px) and the notes' fold arrows fit in it. In pixels:
+       virtual-folders-width.js reads it. */
+    --virtual-folders-gap: 48px;
+    /* Where the notes start: the panel and the gap. */
+    --virtual-folders-room: calc(var(--side-rail-edge) + var(--virtual-folders-width) + var(--virtual-folders-gap));
 }
 
 .virtual-folders {
     position: fixed;
-    top: calc(var(--app-control-top) + 3.25rem);
-    left: var(--side-rail-edge);
-    width: var(--virtual-folders-width);
-    max-height: calc(100vh - var(--app-control-top) - 3.25rem - 1rem);
+    top: 0;
+    bottom: 0;
+    left: 0;
+    /* A full-height panel at the left, as the chat is at the right (the maintainer, 2026-11-02;
+       a box at the top before). */
+    width: calc(var(--side-rail-edge) + var(--virtual-folders-width));
     box-sizing: border-box;
     overflow-y: auto;
-    padding: 8px 4px;
+    padding: calc(var(--app-control-top) + 0.35rem) 8px 1rem calc(var(--side-rail-edge) + 4px);
     z-index: 5;
     font-size: 14px;
     color: var(--text-color);
-    /* A subtle box around the tree (the maintainer, 2026-11-01). */
-    border: 1px solid var(--border-color);
-    border-radius: var(--note-corner-radius);
-    background: var(--bg-color);
+    border-right: 1px solid #d1d5db;
+    background: #f8fafc;
 }
 
 .virtual-folders[hidden] {
@@ -13057,19 +13197,20 @@ html[data-theme="dark"] .virtual-folder-row:hover .virtual-folder-arrow {
 /* The column moves right by half the tree, never nearer the left edge than the tree. */
 /* The column sits just right of the tree at every width (the maintainer, 2026-11-01: a
    centred column left too wide a gap on a wide window). */
+/* The column starts at the panel's edge (the page's padding taken back), the gap its padding. */
 body.virtual-folders-on #app {
-    margin-left: calc(var(--side-rail-edge) + var(--virtual-folders-width) + var(--virtual-folders-gap));
+    margin-left: calc(var(--side-rail-edge) + var(--virtual-folders-width) - var(--app-page-padding));
     margin-right: auto;
     width: min(
-        calc(var(--app-content-width) + 2 * var(--virtual-folders-arrow-room)),
-        calc(100% - var(--side-rail-edge) - var(--virtual-folders-width) - var(--virtual-folders-gap))
+        calc(var(--app-content-width) + 2 * var(--virtual-folders-gap)),
+        calc(100% + var(--app-page-padding) - var(--side-rail-edge) - var(--virtual-folders-width))
     );
 }
 
 /* Beside the tree, the column's sides hold just the notes' fold arrows; the notes keep their
    usual width. */
 body.virtual-folders-on #app > .container {
-    padding-inline: var(--virtual-folders-arrow-room);
+    padding-inline: var(--virtual-folders-gap);
 }
 
 @media (max-width: 900px) {
@@ -13085,6 +13226,60 @@ body.virtual-folders-on #app > .container {
     body.virtual-folders-on #app > .container {
         padding-inline: clamp(
             calc(var(--app-min-visible-gutter) - var(--app-page-padding)),
+            calc((100% - var(--app-content-width)) / 2),
+            5rem
+        );
+    }
+}
+
+/* Beside the AI chat too (the maintainer, 2026-11-02: the column started right of the tree but
+   kept its width, under the chat and the floating buttons). The tree, the notes and the chat
+   share the window: the chat keeps its third while the notes have their 480px beside the tree,
+   narrowing to its 280px least first; the column starts right of the tree as without the chat
+   and ends clear of the buttons beside the chat, the notes narrowing to fit. */
+@media (min-width: 901px) {
+    body.virtual-folders-on:not(.virtual-folders-crowded) {
+        --ai-chat-effective-width: clamp(
+            280px,
+            var(--ai-chat-width),
+            calc(100vw - var(--ai-chat-min-notes-width) - var(--virtual-folders-room))
+        );
+    }
+
+    body.pref-show-ai-chat.virtual-folders-on:not(.virtual-folders-crowded) #app {
+        margin-left: calc(var(--side-rail-edge) + var(--virtual-folders-width) - var(--app-page-padding));
+        margin-right: 0;
+        width: min(
+            calc(var(--app-content-width) + var(--virtual-folders-gap) + var(--app-min-visible-gutter)),
+            calc(100% + (2 * var(--app-page-padding)) - var(--ai-chat-effective-width) - var(--side-rail-edge) - var(--virtual-folders-width))
+        );
+    }
+
+    body.pref-show-ai-chat.virtual-folders-on:not(.virtual-folders-crowded) #app > .container {
+        padding-inline: var(--virtual-folders-gap) var(--app-min-visible-gutter);
+    }
+}
+
+/* Where the tree, 480px of notes and the chat's least don't fit (virtual-folders-service.js sets
+   virtual-folders-crowded: the tree's width moves the line), the tree and its tab hide and the
+   chat stays (the maintainer, 2026-11-02); the column is as with the chat alone. Where the chat
+   shows (it hides itself at 760px and narrower). */
+body.virtual-folders-crowded .virtual-folders,
+body.virtual-folders-crowded .edge-tab-folders,
+body.virtual-folders-crowded .virtual-folders-resizer {
+    display: none;
+}
+
+@media (min-width: 761px) and (min-height: 301px) {
+    body.pref-show-ai-chat.virtual-folders-on.virtual-folders-crowded #app {
+        width: calc(100% + (2 * var(--app-page-padding)) - var(--ai-chat-effective-width));
+        margin-left: calc(-1 * var(--app-page-padding));
+        margin-right: 0;
+    }
+
+    body.pref-show-ai-chat.virtual-folders-on.virtual-folders-crowded #app > .container {
+        padding-inline: clamp(
+            var(--app-min-visible-gutter),
             calc((100% - var(--app-content-width)) / 2),
             5rem
         );

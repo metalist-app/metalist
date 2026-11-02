@@ -51,6 +51,35 @@
 
 <!-- Main App (hidden when login required) -->
 <div id="main-app" style="display: ${'none' if shows_login_at_once else 'block'};">
+    <!-- Pull tabs (the maintainer, 2026-11-02): the virtual folders on the left edge, the AI chat
+         on the right, each its icon above an arrow pointing the way a click moves the panel. -->
+    <button
+        id="virtual-folders-button"
+        class="edge-tab edge-tab-folders interactive"
+        type="button"
+        aria-label="Show virtual folders"
+        aria-pressed="false"
+        title="Show virtual folders"
+    >
+        <svg viewBox="0 0 40 30" focusable="false" aria-hidden="true">
+            <path d="M9.5 9.5V6h8l3-3H32a2.5 2.5 0 0 1 2.5 2.5V20a2.5 2.5 0 0 1-2.5 2.5H30" />
+            <path d="M4 9.5h9l3-3h11.5a2.5 2.5 0 0 1 2.5 2.5v14.5a2.5 2.5 0 0 1-2.5 2.5h-21A2.5 2.5 0 0 1 4 23.5z" />
+        </svg>
+        <span class="edge-tab-arrow" aria-hidden="true"></span>
+    </button>
+    <button
+        id="chat-toggle-button"
+        class="edge-tab edge-tab-chat chat-toggle-button interactive"
+        type="button"
+        aria-label="Show chat"
+        aria-pressed="false"
+        title="Show chat"
+    >
+        <svg viewBox="0 0 24 24" focusable="false" aria-hidden="true">
+            <path d="M4 5h16v11H9l-5 4z" />
+        </svg>
+        <span class="edge-tab-arrow" aria-hidden="true"></span>
+    </button>
     <div class="global-controls">
         <button
             id="menu-button"
@@ -59,18 +88,6 @@
             aria-label="Menu (Cmd/Ctrl+/)"
             title="Menu (Cmd/Ctrl+/)"
         >≡</button>
-        <button
-            id="chat-toggle-button"
-            class="chat-toggle-button interactive"
-            type="button"
-            aria-label="Show chat"
-            aria-pressed="false"
-            title="Show chat"
-        >
-            <svg viewBox="0 0 24 24" focusable="false" aria-hidden="true">
-                <path d="M4 5h16v11H9l-5 4z" />
-            </svg>
-        </button>
         <button
             id="scroll-to-top-button"
             class="scroll-to-top-button interactive"
@@ -210,20 +227,19 @@
                             class="tab-hover-zone"
                             aria-hidden="true"
                         >
+                            <!-- Search contexts: two cards and a magnifier (the maintainer,
+                                 2026-11-02), the parts the front card and the lens hide left
+                                 out, as the menu draws it (context-menu-service.js, tabs). -->
                             <svg
-                                class="tab-ui-folder-icon"
+                                class="tab-ui-icon"
                                 viewBox="0 0 40 30"
                                 focusable="false"
                                 aria-hidden="true"
                             >
-                                <path
-                                    class="tab-ui-folder-icon-back"
-                                    d="M9.5 6h8l3-3H32a2.5 2.5 0 0 1 2.5 2.5V20a2.5 2.5 0 0 1-2.5 2.5H12A2.5 2.5 0 0 1 9.5 20z"
-                                />
-                                <path
-                                    class="tab-ui-folder-icon-front"
-                                    d="M4 9.5h9l3-3h11.5a2.5 2.5 0 0 1 2.5 2.5v14.5a2.5 2.5 0 0 1-2.5 2.5h-21A2.5 2.5 0 0 1 4 23.5z"
-                                />
+                                <path class="tab-ui-icon-back" d="M11 8V5.5A2.5 2.5 0 0 1 13.5 3h16A2.5 2.5 0 0 1 32 5.5v10.2" />
+                                <path class="tab-ui-icon-front" d="M22.5 23H7.5A2.5 2.5 0 0 1 5 20.5v-10A2.5 2.5 0 0 1 7.5 8h16a2.5 2.5 0 0 1 2.5 2.5v2.6" />
+                                <path class="tab-ui-icon-lens" d="M33 19a6 6 0 1 1-12 0a6 6 0 1 1 12 0z" />
+                                <path class="tab-ui-icon-handle" d="M31.5 23.5l4 4" />
                             </svg>
                         </div>
                         <input type="text" id="search-input" class="search-input interactive" aria-label="Search notes" title="Search" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">

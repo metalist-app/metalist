@@ -656,8 +656,10 @@ class CommandPaletteController {
         const showTags = this._getBoolean('pref.show_note_tags', false);
         document.body.classList.toggle('pref-show-note-tags', showTags);
 
-        const showTabUi = this._getBoolean('pref.show_tab_ui', false);
-        document.body.classList.toggle('pref-show-tab-ui', showTabUi);
+        // Search contexts always show (the maintainer, 2026-11-02: too useful to hide). The stored
+        // pref.show_tab_ui stays a known preference that nothing reads, so a vault holding it
+        // still loads in an older MetaList.
+        document.body.classList.add('pref-show-tab-ui');
 
         const showSearchResultsCount = this._getBoolean(
             'pref.show_search_results_count',
@@ -717,9 +719,6 @@ class CommandPaletteController {
 
         const searchContextsList = document.getElementById('search-contexts-list');
         if (searchContextsList) {
-            if (!showTabUi) {
-                searchContextsList.style.display = 'none';
-            }
             updateSearchContextsOverlayPlacement();
         }
 

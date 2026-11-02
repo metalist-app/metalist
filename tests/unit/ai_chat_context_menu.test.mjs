@@ -11,36 +11,32 @@ const CONTEXT_MENU_SERVICE_URL = new URL(
 const CSS_URL = new URL('../../app/static/css/main.css', import.meta.url);
 
 
-function chatToggle(isAiChatVisible, toggles) {
+function backgroundMenu() {
     const noop = () => {};
-    const items = buildContextMenuItems(
+    return buildContextMenuItems(
         {
             kind: 'view', searchAllowsNewNotes: true, isMac: true, isEditing: false, canPasteNoteAtTop: false, canGoToTop: false, canGoToBottom: false,
             isUntaggedView: false, theme: 'system', sortMode: 'normal', dateRangeKind: 'none', dateRangeField: 'updated', fileFilterKind: 'none',
-            areTabsVisible: false, isAiChatVisible, areNoteTagsVisible: false, areVirtualFoldersVisible: false,
         },
         {
             onAddNoteAtTop: noop, onUndo: noop, onRedo: noop, onExpandAll: noop, onCollapseAll: noop, onFullyExpandAll: noop, onFullyCollapseAll: noop,
-            onSetUntaggedView: noop, onSetSortMode: noop, onToggleTabs: noop, onToggleNoteTags: noop, onToggleVirtualFolders: noop,
+            onSetUntaggedView: noop, onSetSortMode: noop,
             onSetDateRangeField: noop, onSetDateRangePreset: noop, onOpenCustomDateRange: noop, onSetFileFilter: noop,
-            onToggleAiChat: (nextValue) => toggles.push(nextValue),
             onSetTheme: noop, onNewTab: noop, onOpenNamespace: noop, onOpenReminders: noop,
             onExportViewHtml: noop, onPrintView: noop, onLogOut: noop,
         },
     );
-    return items.find((item) => item.id === 'show').submenu.find((item) => item.id === 'show-chat');
 }
 
 
-test('the background menu shows the chat toggle with an icon under Show', () => {
-    const toggles = [];
-    const chatItem = chatToggle(false, toggles);
-    assert.equal(chatItem.label, 'Chat');
-    assert.equal(chatItem.icon, 'chat');
-    assert.equal(chatItem.checked, false);
-    assert.equal(chatItem.emphasized, undefined);
-    chatItem.onSelect();
-    assert.deepEqual(toggles, [true]);
+// The chat and the virtual folders open with their tabs, always on screen; the menu's Show became
+// Themes alone (the maintainer, 2026-11-02).
+test('the background menu has no chat or folders switch: Themes lists the themes alone', () => {
+    const items = backgroundMenu();
+    assert.equal(items.find((item) => item.id === 'show'), undefined);
+    const themes = items.find((item) => item.id === 'themes');
+    assert.equal(themes.label, 'Themes');
+    assert.deepEqual(themes.submenu.map((item) => item.label), ['System', 'Light', 'Dark']);
 });
 
 
@@ -51,13 +47,4 @@ test('context menu renderer provides the shared chat bubble icon without emphasi
     assert.match(serviceSource, /chat:\s*\[\s*'M4 5h16v11H9l-5 4z'/);
     assert.doesNotMatch(serviceSource, /item\.emphasized|is-emphasized/);
     assert.doesNotMatch(cssSource, /is-emphasized/);
-});
-
-
-test('an open AI chat is ticked and selecting it hides the chat', () => {
-    const toggles = [];
-    const chatItem = chatToggle(true, toggles);
-    assert.equal(chatItem.checked, true);
-    chatItem.onSelect();
-    assert.deepEqual(toggles, [false]);
 });

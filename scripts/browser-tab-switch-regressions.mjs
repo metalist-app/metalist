@@ -84,10 +84,6 @@ function expectTab(state, tabId, query, label) {
 }
 
 export async function checkTabSwitching(page) {
-  await page.evaluate(async () => {
-    const {CommandPalette} = await import('/static/js/modules/command-palette/command-palette-controller.js');
-    await CommandPalette.applyPreference('pref.show_tab_ui', true);
-  });
   const ids = await createNotes(page);
   await page.reload();
   await page.waitForSelector('[data-app-ready="true"]');

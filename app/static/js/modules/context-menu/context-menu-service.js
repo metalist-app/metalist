@@ -13,6 +13,8 @@ const SVG_NAMESPACE = 'http://www.w3.org/2000/svg';
 const CONTEXT_MENU_CHARACTER_ICONS = {
     robot: '🤖',
 };
+// Icons drawn on the top bar's 40 by 30 grid, not the menu's 24 by 24.
+const WIDE_ICONS = new Set(['tabs']);
 const CONTEXT_MENU_ICONS = {
     undo: ['M9 14 4 9l5-5', 'M4 9h11a5 5 0 0 1 0 10h-3'],
     redo: ['M15 14l5-5-5-5', 'M20 9H9a5 5 0 0 0 0 10h3'],
@@ -63,10 +65,13 @@ const CONTEXT_MENU_ICONS = {
         'M4 12h16',
     ],
     tabs: [
-        // Same stacked folders as the top bar, with the hidden back outline
-        // omitted so the icon works on both normal and hovered menu surfaces.
-        'M9.5 9.5V6h8l3-3H32a2.5 2.5 0 0 1 2.5 2.5V20a2.5 2.5 0 0 1-2.5 2.5H30',
-        'M4 9.5h9l3-3h11.5a2.5 2.5 0 0 1 2.5 2.5v14.5a2.5 2.5 0 0 1-2.5 2.5h-21A2.5 2.5 0 0 1 4 23.5z',
+        // Search contexts: two cards and a magnifier, as the top bar draws them (the
+        // maintainer, 2026-11-02), the parts the front card and the lens hide left out so
+        // the icon works on both normal and hovered menu surfaces.
+        'M11 8V5.5A2.5 2.5 0 0 1 13.5 3h16A2.5 2.5 0 0 1 32 5.5v10.2',
+        'M22.5 23H7.5A2.5 2.5 0 0 1 5 20.5v-10A2.5 2.5 0 0 1 7.5 8h16a2.5 2.5 0 0 1 2.5 2.5v2.6',
+        'M33 19a6 6 0 1 1-12 0a6 6 0 1 1 12 0z',
+        'M31.5 23.5l4 4',
     ],
     // One folder (virtual folders, an experiment).
     folder: [
@@ -708,7 +713,7 @@ function createMenuIcon(iconName) {
 
     const svg = document.createElementNS(SVG_NAMESPACE, 'svg');
     svg.classList.add('context-menu-item-icon');
-    svg.setAttribute('viewBox', iconName === 'tabs' ? '0 0 40 30' : '0 0 24 24');
+    svg.setAttribute('viewBox', WIDE_ICONS.has(iconName) ? '0 0 40 30' : '0 0 24 24');
     svg.setAttribute('aria-hidden', 'true');
     svg.setAttribute('focusable', 'false');
 

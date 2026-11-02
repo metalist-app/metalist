@@ -897,10 +897,6 @@ function buildViewContextItems(context, handlers) {
     const canGoToTop = requireViewFlag(context, 'canGoToTop');
     const canGoToBottom = requireViewFlag(context, 'canGoToBottom');
     const isUntaggedView = requireViewFlag(context, 'isUntaggedView');
-    const areTabsVisible = requireViewFlag(context, 'areTabsVisible');
-    const areVirtualFoldersVisible = requireViewFlag(context, 'areVirtualFoldersVisible');
-    const isAiChatVisible = requireViewFlag(context, 'isAiChatVisible');
-    const areNoteTagsVisible = requireViewFlag(context, 'areNoteTagsVisible');
     if (!['system', 'light', 'dark'].includes(context.theme)) {
         throw new Error('View context theme must be system, light or dark');
     }
@@ -973,32 +969,21 @@ function buildViewContextItems(context, handlers) {
     ]);
 
     const onSetUntaggedView = requireViewHandler(handlers, 'onSetUntaggedView');
-    const onToggleAiChat = requireViewHandler(handlers, 'onToggleAiChat');
-    const onToggleTabs = requireViewHandler(handlers, 'onToggleTabs');
-    const onToggleNoteTags = requireViewHandler(handlers, 'onToggleNoteTags');
-    const onToggleVirtualFolders = requireViewHandler(handlers, 'onToggleVirtualFolders');
     const onSetTheme = requireViewHandler(handlers, 'onSetTheme');
-    const themeChoices = [['system', 'System Theme'], ['light', 'Light Theme'], ['dark', 'Dark Theme']];
+    const themeChoices = [['system', 'System'], ['light', 'Light'], ['dark', 'Dark']];
     items.push(
         { ...buildViewModeItem(isUntaggedView, onSetUntaggedView), separated: true },
         buildSortModeItem(context.sortMode, handlers.onSetSortMode),
         buildDateRangeItem(context, handlers),
         buildFileFilterItem(context, handlers),
+        // Themes alone (the maintainer, 2026-11-02: Show's other switches have buttons always on
+        // screen, the chat's and the virtual folders' tabs; Tags in List stays in the palette).
         {
-            id: 'show', label: 'Show', icon: 'show', enabled: true,
-            submenu: [
-                { id: 'show-chat', label: 'Chat', icon: 'chat', checked: isAiChatVisible, enabled: true, onSelect: () => onToggleAiChat(!isAiChatVisible) },
-                { id: 'show-tabs', label: 'Search Contexts', icon: 'tabs', checked: areTabsVisible, enabled: true, onSelect: () => onToggleTabs(!areTabsVisible) },
-                { id: 'show-note-tags', label: 'Tags in List', icon: 'tag', checked: areNoteTagsVisible, enabled: true, onSelect: () => onToggleNoteTags(!areNoteTagsVisible) },
-                {
-                    id: 'show-virtual-folders', label: 'Virtual Folders', icon: 'folder', checked: areVirtualFoldersVisible, enabled: true,
-                    onSelect: () => onToggleVirtualFolders(),
-                },
-                ...themeChoices.map(([value, label], index) => choiceItem({
-                    id: `theme-${value}`, label, icon: null, isCurrent: context.theme === value, separated: index === 0,
-                    onChoose: () => onSetTheme(value),
-                })),
-            ],
+            id: 'themes', label: 'Themes', icon: 'theme', enabled: true,
+            submenu: themeChoices.map(([value, label]) => choiceItem({
+                id: `theme-${value}`, label, icon: null, isCurrent: context.theme === value, separated: false,
+                onChoose: () => onSetTheme(value),
+            })),
         },
     );
 

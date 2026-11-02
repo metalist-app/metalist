@@ -1041,6 +1041,11 @@ class AiChatPanelController {
         if (!Number.isInteger(width) || width < AI_CHAT_MINIMUM_WIDTH || width > AI_CHAT_MAXIMUM_WIDTH) {
             throw new Error('Rendered AI chat width is outside the persisted range');
         }
+        // Released where it was pressed (or a width that rounds to the saved one): nothing to
+        // save, and the preferences refuse a value they already hold.
+        if (width === this._getPanelWidth()) {
+            return;
+        }
         await this._savePanelWidth(width);
     }
 

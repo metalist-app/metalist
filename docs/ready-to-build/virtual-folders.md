@@ -42,7 +42,7 @@ search alone. Not built yet: §4 drags, §5 renames, §6 New Folder, the new sea
 - **Expands and collapses like a file explorer:** a folder lists its subfolders first, then its notes.
 - **A folder's notes:** those carrying that folder tag themselves, each one line, drawn the way a link draws a note's first line (cut with `…`). Children that inherit the tag aren't listed; they come with their parent.
 - **Clicking a note** opens it exactly as clicking a link to it does.
-- An ordinary folder icon. The search-context trigger's stacked-folder icon changes, so the two don't read as one thing: **two stacked cards with a small magnifying glass on the front one** (saved searches you flip between; decided 2026-11-01 as a first try, to change later if it doesn't read).
+- An ordinary folder icon. The search-context trigger's stacked-folder icon changes, so the two don't read as one thing: **two stacked cards with a small magnifying glass on the front one** (saved searches you flip between; decided 2026-11-01 as a first try, to change later if it doesn't read). **Built 2026-11-02:** the search contexts have the cards and magnifier; the stacked folders are the virtual folders' (Show → Virtual Folders, and the pull tab that shows and hides the tree, a full-height panel whose width drags: `docs/ui/controls.md`, Pull tabs). The tree's heading reads Virtual Folders.
 
 ## 3. Clicking a folder filters
 
@@ -97,7 +97,7 @@ Allowed: a second folder tag added by hand puts the note in both folders. The tw
 - **The import's folder tag:** `folder_tag_for` (`app/services/obsidian_import/notes.py`) only wraps `_folder_tag`, which builds every file's folder tag; §1's change belongs in `_folder_tag`. The obsidian-mapping row B3 and `import-export-launch.md` §2.1 still say `Projects/Client-A`.
 - **Search stays exact:** as §0 says (`docs/ui/search-semantics.md`, Tag Terms; `import-export-launch.md` §9 item 9).
 - **View-indicator chips:** `docs/ui/controls.md` (lines on view indicators); a folder chip joins Untagged, the date range, Notes with files and the sort chip.
-- **The search-context trigger's stacked-folder icon:** `docs/ui/controls.md` ("a white outline stacked-folder icon"); §2 asks for it to change.
+- **The search-context trigger's stacked-folder icon:** `docs/ui/controls.md`; §2 asked for it to change, and it did (2026-11-02).
 - **Renaming many tags at once is new:** Edit Tag Relationships renames one tag at a time (`docs/design/ontology-rules-v1.md`, "Editing the focused tag"). §4's folder move and §5's rename rename every tag starting with a path; that's new, built on the one-tag rename.
 - **Undo:** a tag rename today is not on the ⌘Z history (nothing in the docs says it is); §4–§5 ask for one undo step each, which is new too.
 - **"Locked root note (multi-view)" (§4):** multi-view editing is in `docs/ready-to-build/multi-view-editing.md`, not built; the rule applies once it is.

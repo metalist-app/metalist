@@ -40,7 +40,7 @@ test('note full screen hides all global controls', async () => {
     const css = await readFile(MAIN_CSS_URL, 'utf8');
     assert.match(
         css,
-        /body\.note-fullscreen-open \.menu-button,\s*body\.note-fullscreen-open \.chat-toggle-button,\s*body\.note-fullscreen-open \.scroll-to-top-button\s*\{[^}]*display:\s*none/s,
+        /body\.note-fullscreen-open \.menu-button,\s*body\.note-fullscreen-open \.chat-toggle-button,\s*body\.note-fullscreen-open \.scroll-to-top-button,\s*body\.note-fullscreen-open \.edge-tab\s*\{[^}]*display:\s*none/s,
     );
 });
 

@@ -6,6 +6,7 @@ import { isViewingReferenceSource } from './reference-source-navigation-service.
 import { showContextMenu } from '../../context-menu/context-menu-service.js';
 import { showErrorDialog } from '../../modals/error-dialog.js';
 import { isVirtualFoldersShown, rememberVirtualFoldersShown } from './virtual-folders-state.js';
+import { initVirtualFoldersWidth } from './virtual-folders-width.js';
 
 export { isVirtualFoldersShown } from './virtual-folders-state.js';
 
@@ -21,6 +22,7 @@ export { isVirtualFoldersShown } from './virtual-folders-state.js';
 const FOLDER_MARK = '/';
 const TREE_ID = 'virtual-folders';
 const ON_CLASS = 'virtual-folders-on';
+const TOGGLE_BUTTON_ID = 'virtual-folders-button';
 const DRAG_TYPE = 'application/x-metalist-folder';
 const DROP_CLASS = 'is-drop-target';
 // Dropped on the tree's empty space: to the top.
@@ -36,6 +38,8 @@ const moduleState = ApplicationState.createFields('virtual-folders-service', {
     // How many notes clicking each folder shows, with the folders below it, in the view's
     // search (the maintainer, 2026-11-01); the top's under ''.
     noteCounts: Object.freeze({}),
+    // Whether a view's folders have been read yet: the tree is drawn only from them.
+    hasReadFolders: false,
     // The folders the person opened in the tree, by path.
     openPaths: Object.freeze([]),
     // Whether the top, `/`, is open: closed, the tree is one line (the maintainer, 2026-11-01).
@@ -70,6 +74,11 @@ export function wireVirtualFolders(wiring) {
         handlers[name] = wiring[name];
     }
     rememberVirtualFoldersShown(window.localStorage.getItem(SHOWN_KEY) === SHOWN);
+    initVirtualFoldersWidth();
+    // The first view's folders can be read before this runs, the tree drawn hidden: drawn again
+    // with the remembered choice, so it shows and its button says so without waiting for a
+    // refresh. Read after, they draw it themselves.
+    if (moduleState.hasReadFolders) render();
 }
 
 export function activeVirtualFolder() {
@@ -99,6 +108,7 @@ export async function updateVirtualFolders() {
     remember('folder', answer.folder);
     remember('folders', Object.freeze(answer.folders));
     remember('noteCounts', Object.freeze({ ...answer.noteCounts }));
+    remember('hasReadFolders', true);
     // A new folder stays new until something is in it: a note carrying its tag, or a folder below it.
     const known = answer.folders;
     remember('newPaths', Object.freeze(moduleState.newPaths.filter((path) => !known.some((knownPath) => knownPath.startsWith(path)))));
@@ -448,13 +458,29 @@ function render() {
     // then too, empty or not, so a first folder can be made in it (right-click).
     document.body.classList.toggle(ON_CLASS, isVirtualFoldersShown());
     tree.hidden = !isVirtualFoldersShown();
+    renderToggleButton();
     if (isVirtualFoldersShown()) {
         const built = buildTree(moduleState.folders);
-        tree.innerHTML = `<div class="virtual-folders-title">Folders</div>${rootHtml(built)}`;
+        tree.innerHTML = `<div class="virtual-folders-title">Virtual Folders</div>${rootHtml(built)}`;
     } else {
         tree.innerHTML = '';
     }
     updateVirtualFolderIndicator();
+}
+
+// The button at the top left (the maintainer, 2026-11-02): a click shows or hides the tree, as
+// View > Show > Virtual Folders and the command palette do; it looks the same either way, its
+// tooltip saying what a click does.
+function renderToggleButton() {
+    const button = document.getElementById(TOGGLE_BUTTON_ID);
+    if (!(button instanceof HTMLButtonElement)) {
+        throw new Error('virtual-folders-button element missing');
+    }
+    const label = isVirtualFoldersShown() ? 'Hide virtual folders' : 'Show virtual folders';
+    button.title = label;
+    button.setAttribute('aria-label', label);
+    button.setAttribute('aria-pressed', String(isVirtualFoldersShown()));
+    button.onclick = () => setVirtualFoldersShown(!isVirtualFoldersShown());
 }
 
 /** The chip in the search input: shown while the active tab is narrowed to a folder. */

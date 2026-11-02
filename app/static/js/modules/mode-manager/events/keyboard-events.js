@@ -3334,8 +3334,6 @@ export function updateSearchContextsList() {
     const searchContextsList = document.getElementById('search-contexts-list');
     updateReferenceSourceIndicator();
     if (!searchContextsList) return;
-    const showTabUi = document.body.classList.contains('pref-show-tab-ui');
-    
     const tabs = ModeContext.tabs;
     const activeTabId = ModeContext.activeTabId;
     const tabOrder = ModeContext.tabOrder;
@@ -3397,9 +3395,6 @@ export function updateSearchContextsList() {
     
     if (contextsList.length > 0) {
         searchContextsList.innerHTML = contextsList.join('');
-        if (!showTabUi) {
-            searchContextsList.style.display = 'none';
-        }
         updateSearchContextsOverlayPlacement();
         
         // Add click handlers to each tab context item

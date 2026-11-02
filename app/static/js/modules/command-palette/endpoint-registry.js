@@ -194,7 +194,6 @@ export function buildCommandPaletteEndpoints(deps) {
 
     const defaults = {
         showNoteTags: false,
-        showTabUi: false,
         showSearchResultsCount: true,
         showAiChat: false,
         animatedTransitions: true,
@@ -218,16 +217,6 @@ export function buildCommandPaletteEndpoints(deps) {
             persistenceKey: 'pref.show_note_tags',
             defaultValue: defaults.showNoteTags,
             apply: (next) => applyPreference('pref.show_note_tags', next),
-        },
-        {
-            id: 'pref.show_tab_ui',
-            kind: 'boolean',
-            get label() {
-                return visibilityLabel(preferencesStore, 'pref.show_tab_ui', defaults.showTabUi, 'Search Contexts');
-            },
-            persistenceKey: 'pref.show_tab_ui',
-            defaultValue: defaults.showTabUi,
-            apply: (next) => applyPreference('pref.show_tab_ui', next),
         },
         {
             id: 'pref.show_search_results_count',

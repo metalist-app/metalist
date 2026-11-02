@@ -35,6 +35,7 @@ import {checkFileTextSnippets} from './browser-file-text-snippet-regressions.mjs
 import {checkFoldedFiles} from './browser-folded-file-regressions.mjs';
 import {checkFindInFiles} from './browser-find-in-file-regressions.mjs';
 import {checkFindInDiagrams} from './browser-find-in-diagram-regressions.mjs';
+import {checkEdgeTabs} from './browser-edge-tab-regressions.mjs';
 import {checkImageMenu} from './browser-image-menu-regressions.mjs';
 import {checkTagSuggestionMenu} from './browser-tag-suggestion-menu-regressions.mjs';
 import {checkPasteFormats} from './browser-paste-format-regressions.mjs';
@@ -419,6 +420,10 @@ try {
     await checkFindInDiagrams(page);
     assert.deepEqual(errors, []);
     console.log(`PASS find in diagram regressions in ${await browser.version()}`);
+  } else if (process.env.BROWSER_TEST_SUITE === 'edge-tabs') {
+    await checkEdgeTabs(page);
+    assert.deepEqual(errors, []);
+    console.log(`PASS edge tab regressions in ${await browser.version()}`);
   } else if (process.env.BROWSER_TEST_SUITE === 'folded-files') {
     await checkFoldedFiles(page);
     assert.deepEqual(errors, []);

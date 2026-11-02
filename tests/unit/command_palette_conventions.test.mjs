@@ -28,7 +28,6 @@ function endpoints() {
 
 const LABELS = {
     'pref.show_note_tags': 'Show Tags in List',
-    'pref.show_tab_ui': 'Show Search Contexts',
     'pref.show_search_results_count': 'Hide Search Result Count',
     'pref.show_ai_chat': 'Show AI Chat',
     'action.summarize_ai_chat': 'AI Chat: Summarize Now',

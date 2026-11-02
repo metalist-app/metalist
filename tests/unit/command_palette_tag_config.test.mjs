@@ -219,7 +219,8 @@ test('collected palette tags are the plain tag strings from every config row', a
 test('a mistyped palette query suggests tags one edit away', async (t) => {
     const allTags = collectCommandPaletteTags(await loadRealTagMap(t));
 
-    assert.deepEqual(findNearMissTags(allTags, 'tabz'), ['tab', 'tabs']);
+    // 'tabs' left with Show/Hide Search Contexts (2026-11-02); 'tab' is New Search Context's.
+    assert.deepEqual(findNearMissTags(allTags, 'tabz'), ['tab']);
 });
 
 test('an unmatched palette word suggests tags that start with it', async (t) => {

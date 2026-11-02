@@ -5,10 +5,6 @@
       "tags": ["tags", "show", "hide", "toggle", "view", "notes", "list"]
     },
     {
-      "id": "pref.show_tab_ui",
-      "tags": ["tabs", "tab", "contexts", "context", "search", "searches", "saved", "view", "show", "hide", "toggle"]
-    },
-    {
       "id": "pref.show_search_results_count",
       "tags": ["search", "result", "results", "count", "number", "total", "show", "hide", "toggle", "view"]
     },
