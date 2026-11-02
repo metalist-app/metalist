@@ -8,7 +8,7 @@ from typing import Callable, Dict, FrozenSet, Iterable, List, Tuple
 
 from app.config import TAG_SUGGESTION_CONNECTORS
 from app.config import TAG_SUGGESTION_SUPPRESS_REDUNDANT_CONTENT_VARIANTS
-from app.services.note_datetime import datetime_tag_in_text, is_datetime_tag_term, may_be_datetime_tag
+from app.services.note_datetime import DATETIME_TAG, datetime_tag_in_text, is_datetime_tag_term, may_be_datetime_tag
 from app.services.note_datetime import suggested_datetime_tag
 from app.utils.text_utils import strip_html
 from app.services.note_store import store as note_store
@@ -1098,17 +1098,54 @@ def _rank_by_what_is_typed(
     limit: int,
 ) -> _RankedSuggestions:
     if prefix == "":
-        return _suggest_tags(
+        empty_bar = _suggest_tags(
             note_id=note_id, anchors=anchors, explicit_tags=explicit_tags, content_html=content_html,
             limit=limit, include_unranked=True,
         )
+        return _with_datetime_dated(empty_bar, note_id=note_id, content_html=content_html)
     if prefix.startswith("@"):
         return _suggest_meta_tags(note_id=note_id, prefix=prefix, content_html=content_html, limit=limit)
-    typed = _suggest_while_typing(
-        note_id=note_id, anchors=list(anchors), explicit_tags=list(explicit_tags), prefix=prefix,
-        content_html=content_html, limit=limit,
+    typed = _with_datetime_dated(
+        _suggest_while_typing(
+            note_id=note_id, anchors=list(anchors), explicit_tags=list(explicit_tags), prefix=prefix,
+            content_html=content_html, limit=limit,
+        ),
+        note_id=note_id, content_html=content_html,
     )
     return _with_meta_tags_after(typed, note_id=note_id, prefix=prefix, content_html=content_html, limit=limit)
+
+
+def _with_datetime_dated(ranked: _RankedSuggestions, *, note_id: str, content_html: str) -> _RankedSuggestions:
+    """`@datetime`, where the ranking put it for going with the note's tags, as the date the
+    tag bar offers (suggested_datetime_tag: the text's first date, else now), never bare and
+    never an earlier note's date."""
+    if DATETIME_TAG not in ranked.tags:
+        return ranked
+    dated = suggested_datetime_tag(
+        text=strip_html(content_html), now=datetime.now(), year_if_missing=_year_last_updated(note_id),
+    )
+    tags = [dated if tag == DATETIME_TAG else tag for tag in ranked.tags]
+
+    def explain(shown: str) -> Tuple[str, ...]:
+        if shown == dated:
+            return ranked.explain(DATETIME_TAG)
+        return ranked.explain(shown)
+
+    return _RankedSuggestions(tags=tags, explain=explain)
+
+
+def _datetime_goes_with_written_tags(*, note_id: str, written: List[str]) -> bool:
+    """Whether notes carrying the note's own tags carry `@datetime` (journal entries are
+    dated) while the note has none. Inherited tags don't count: a note under a journal
+    entry is part of that entry, dated with it."""
+    if any(tag.startswith("@") and is_datetime_tag_term(tag) for tag in written):
+        return False
+    own = [tag for tag in written if not tag.startswith("@")]
+    if not own:
+        return False
+    return DATETIME_TAG in search_index.describe_tag_cooccurrence(
+        anchors=own, terms=[DATETIME_TAG], excluded_note_ids=frozenset({note_id}), by_family=True,
+    )
 
 
 def _with_meta_tags_after(
@@ -1277,13 +1314,21 @@ def _suggest_while_typing(
     for term, explain in ordered:
         if term.casefold() in explain_by_term or term.casefold() in left_out:
             continue
-        if not tag_term_matches_prefix(term=term, prefix=prefix):
+        if not _typed_leads_to(term=term, prefix=prefix):
             continue
         shown.append(term)
         explain_by_term[term.casefold()] = explain
         if len(shown) == limit:
             break
     return _RankedSuggestions(tags=shown, explain=lambda term: explain_by_term[term.casefold()](term))
+
+
+def _typed_leads_to(*, term: str, prefix: str) -> bool:
+    """Whether typing prefix offers term; `@datetime` (offered for going with the note's
+    tags) as built-in tags are, without the @ (`d` → `@datetime`)."""
+    if term == DATETIME_TAG:
+        return may_be_datetime_tag(f"@{prefix}")
+    return tag_term_matches_prefix(term=term, prefix=prefix)
 
 
 @dataclass(frozen=True)
@@ -1444,9 +1489,16 @@ def _suggest_tags(
     direct_standalone_literal_terms = content_candidates.literal_terms
     exact_synonym_content_hits = content_candidates.exact_synonyms
 
+    # Of the built-in tags, only @datetime is offered for going with the note's tags.
+    cooccurrence_vocabulary, cooccurrence_candidates = all_terms, candidate_terms
+    reason_counts = exact_tag_counts
+    if _datetime_goes_with_written_tags(note_id=note_id, written=explicit_tag_list):
+        cooccurrence_vocabulary = [*all_terms, DATETIME_TAG]
+        cooccurrence_candidates = [*candidate_terms, DATETIME_TAG]
+        reason_counts = {**exact_tag_counts, DATETIME_TAG: search_index.count_notes_in_tag_family(DATETIME_TAG)}
     cooccurrence, cooccurrence_rank, cooccurrence_hit_terms, cooccurrence_anchors = _collect_cooccurrence_candidates(
-        all_terms=all_terms,
-        candidate_terms=candidate_terms,
+        all_terms=cooccurrence_vocabulary,
+        candidate_terms=cooccurrence_candidates,
         explicit_anchors=anchor_list,
         inherited_non_meta=inherited_non_meta,
     )
@@ -1511,7 +1563,7 @@ def _suggest_tags(
     evidence = SuggestionEvidence(
         index=search_index,
         writer=ReasonWriter.build(
-            exact_tag_counts=exact_tag_counts, ontology_only_casefold=ontology_only_casefold,
+            exact_tag_counts=reason_counts, ontology_only_casefold=ontology_only_casefold,
             inherited_non_meta=inherited_non_meta, base_tags=base_tags, ontology=ontology,
             prefix="", content_html=content_html,
         ),

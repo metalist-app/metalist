@@ -171,7 +171,7 @@ Shown at the end of every import, and also saved as a note in the vault ("Import
 
 Be specific. This report is where a new user's trust starts.
 
-**Importing the same vault twice** should be noticed ("this vault was already imported on …") and offered as "import as a copy" or "cancel," never silently duplicated (proposed: record a fingerprint of each import).
+**Importing the same vault twice** should be noticed ("this vault was already imported on …") and offered as "import as a copy" or "cancel," never silently duplicated (proposed: record a fingerprint of each import). **Replaced 2026-11-02** by `docs/ready-to-build/importing-again.md`: a second import skips unchanged items, brings changed ones in as copies and marks the old versions `replaced`, and marks items gone from the source `removed`; it never overwrites or deletes. Browser bookmarks, a further source, follow the same rule (`docs/ready-to-build/bookmark-import.md`).
 
 ## 6. The export: one ordered document (Markdown and HTML)
 

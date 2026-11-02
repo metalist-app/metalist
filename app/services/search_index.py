@@ -50,7 +50,7 @@ from app.services.tag_properties import (
     value_satisfies,
 )
 from app.services.link_titles import link_title_store
-from app.services.note_datetime import is_datetime_tag_term
+from app.services.note_datetime import DATETIME_TAG, is_datetime_tag_term
 from app.services.ontology_rules_store import get_ontology_if_ready
 from app.services.tag_ontology import TagOntology
 from app.services.search_text import (
@@ -1072,6 +1072,13 @@ class SearchIndex:
                 return 0
             return len(self._tag_notes_casefold[term_casefold])
 
+    def count_notes_in_tag_family(self, tag: str) -> int:
+        """Notes carrying the tag with or without a value (@datetime counts every dated note)."""
+        if not isinstance(tag, str) or tag == "":
+            raise TypeError("tag must be a non-empty string")
+        with self._lock:
+            return len(self._tag_family_posting_locked(tag.casefold()))
+
     def suggest_tag_completions(self, *, query: str, limit: int, by_family: bool) -> List[str]:
         """Tags ranked by how they go with the query's tags, then by use. by_family: each tag
         counted over all its notes whatever their values (jogging=3, jogging=5 as jogging), as
@@ -1108,6 +1115,12 @@ class SearchIndex:
                 partial_prefix=partial_prefix,
                 by_family=by_family,
             )
+            # By family, a date goes with tags as any tag does (journal and @datetime); the tag
+            # bar offers it dated, and only for the note's own tags (tag_suggestions).
+            if by_family and self._tag_family_posting_locked(DATETIME_TAG) and tag_term_matches_prefix(
+                term=DATETIME_TAG, prefix=partial_prefix,
+            ):
+                representative_by_casefold[DATETIME_TAG] = DATETIME_TAG
             candidate_casefolds = list(representative_by_casefold.keys())
             postings = {
                 term_casefold: self._suggestion_posting_locked(term_casefold, by_family=by_family)
