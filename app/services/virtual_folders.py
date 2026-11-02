@@ -155,6 +155,23 @@ def folder_note_counts(search: str) -> Dict[str, int]:
         return _counts_cache["counts"]
 
 
+# Every folder's count with no search, until the notes change: what a count under a search reads
+# out of (docs/ready-to-build/folder-counts.md §2). Kept apart from the search's, which it would
+# otherwise evict on every call.
+_totals_cache_lock = Lock()
+_totals_cache: Dict[str, object] = {"key": None, "totals": {}}
+
+
+def folder_note_totals() -> Dict[str, int]:
+    """How many notes each folder shows with no search (folder_note_counts of '')."""
+    key: Tuple[int, int] = (note_store.revision, search_index.revision)
+    with _totals_cache_lock:
+        if _totals_cache["key"] != key:
+            _totals_cache["totals"] = _count_notes_by_folder("")
+            _totals_cache["key"] = key
+        return _totals_cache["totals"]
+
+
 def _count_notes_by_folder(search: str) -> Dict[str, int]:
     root_ids = note_store.get_children(None)
     paths = folder_paths()

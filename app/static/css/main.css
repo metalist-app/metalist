@@ -7310,21 +7310,30 @@ html.reference-sliding body {
 }
 
 /* Pull tabs (the maintainer, 2026-11-02): the virtual folders on the left edge, the AI chat on
-   the right, at the window's middle; each its icon above an arrow pointing the way a click
-   moves its panel. Closed, a tab sits on the window's edge; open, on its panel's edge. */
+   the right, at the window's bottom, as far up as ≡ is down from the top (at its middle until
+   the maintainer moved them, the same day); each its icon above an arrow pointing the way a
+   click moves its panel. Closed, a tab sits on the window's edge; open, on its panel's edge. */
 :root {
     --edge-tab-width: 28px;
     --edge-tab-height: 68px;
 }
 
+/* Where the chat's tab stands off the right edge: beside the chat while it shows. */
+body {
+    --chat-tab-right: 0px;
+}
+
+body.pref-show-ai-chat {
+    --chat-tab-right: var(--ai-chat-effective-width);
+}
+
 .edge-tab {
     position: fixed;
-    top: 50%;
+    bottom: var(--global-controls-top);
     z-index: 12000;
     width: var(--edge-tab-width);
     height: var(--edge-tab-height);
     box-sizing: border-box;
-    transform: translateY(-50%);
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -7392,7 +7401,7 @@ body.virtual-folders-on .edge-tab-folders .edge-tab-arrow::before {
 }
 
 body.pref-show-ai-chat .edge-tab-chat {
-    right: var(--ai-chat-effective-width);
+    right: var(--chat-tab-right);
 }
 
 body.pref-show-ai-chat .edge-tab-chat .edge-tab-arrow::before {
@@ -7455,6 +7464,15 @@ body.virtual-folders-resizing * {
 @media (max-width: 760px), (max-height: 300px) {
     .edge-tab-chat {
         display: none;
+    }
+
+    body.pref-show-ai-chat {
+        --chat-tab-right: 0px;
+    }
+
+    /* No chat's tab to clear: the corner, as before. */
+    .app-notice-stack {
+        right: 18px;
     }
 }
 
@@ -11311,7 +11329,9 @@ body.ai-tagging-locked .ai-chat-tag-operation select:enabled { cursor: pointer !
    notice and the backup reminder never cover each other. */
 .app-notice-stack {
     position: fixed;
-    right: 18px;
+    /* Clear of the chat's tab at the bottom right, beside the chat while it shows (the
+       maintainer, 2026-11-02): 18px from it, as from the corner before. */
+    right: calc(var(--chat-tab-right) + var(--edge-tab-width) + 18px);
     bottom: 18px;
     z-index: 1100;
     display: flex;
@@ -13184,6 +13204,12 @@ html[data-theme="dark"] .virtual-folder-row:hover .virtual-folder-arrow {
 /* A New Folder no note is in yet: dimmed, in italics, until a folder is moved into it. */
 .virtual-folder.is-new > .virtual-folder-row {
     font-style: italic;
+    opacity: 0.55;
+}
+
+/* Holding notes, none of which the search shows: dimmed as a new folder is, without its italics;
+   still clickable and a drop target (docs/ready-to-build/folder-counts.md §3). */
+.virtual-folder.is-unmatched > .virtual-folder-row {
     opacity: 0.55;
 }
 

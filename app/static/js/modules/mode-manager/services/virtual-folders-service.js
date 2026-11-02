@@ -29,6 +29,7 @@ const DROP_CLASS = 'is-drop-target';
 const TOP = '';
 // A New Folder no note carries yet.
 const NO_NOTES = 0;
+const ONE_NOTE = 1;
 
 const moduleState = ApplicationState.createFields('virtual-folders-service', {
     // The active tab's filter, as the server last sent it: a folder, or '' for none.
@@ -38,6 +39,9 @@ const moduleState = ApplicationState.createFields('virtual-folders-service', {
     // How many notes clicking each folder shows, with the folders below it, in the view's
     // search (the maintainer, 2026-11-01); the top's under ''.
     noteCounts: Object.freeze({}),
+    // How many each shows with no search: a count the search narrows reads out of it
+    // (docs/ready-to-build/folder-counts.md); the top's under ''.
+    noteTotals: Object.freeze({}),
     // Whether a view's folders have been read yet: the tree is drawn only from them.
     hasReadFolders: false,
     // The folders the person opened in the tree, by path.
@@ -100,7 +104,8 @@ export async function updateVirtualFolders() {
     }
     const answer = await NotesAPI.listVirtualFolders();
     if (typeof answer.folder !== 'string' || !Array.isArray(answer.folders)
-        || answer.noteCounts === null || typeof answer.noteCounts !== 'object') {
+        || answer.noteCounts === null || typeof answer.noteCounts !== 'object'
+        || answer.noteTotals === null || typeof answer.noteTotals !== 'object') {
         throw new Error('Virtual folders answer malformed');
     }
     // A folder newly chosen shows in the tree; a refresh leaves what the person closed closed.
@@ -108,6 +113,7 @@ export async function updateVirtualFolders() {
     remember('folder', answer.folder);
     remember('folders', Object.freeze(answer.folders));
     remember('noteCounts', Object.freeze({ ...answer.noteCounts }));
+    remember('noteTotals', Object.freeze({ ...answer.noteTotals }));
     remember('hasReadFolders', true);
     // A new folder stays new until something is in it: a note carrying its tag, or a folder below it.
     const known = answer.folders;
@@ -204,7 +210,7 @@ function folderHtml(path, tree, depth) {
         body = children.map((child) => folderHtml(child, tree, depth + 1)).join('');
     }
     return `
-        <div class="virtual-folder${isFiltered ? ' is-filtered' : ''}${isNew ? ' is-new' : ''}">
+        <div class="virtual-folder${isFiltered ? ' is-filtered' : ''}${isNew ? ' is-new' : ''}${!isNew && isUnmatched(path) ? ' is-unmatched' : ''}">
             <button type="button" class="virtual-folder-row interactive" data-virtual-folder="${escapeHtml(path)}" draggable="${!isNew}"
                 style="--virtual-folder-depth:${depth}"${isInnermost ? '' : ` aria-expanded="${isOpen}"`} title="${escapeHtml(path)}">
                 ${isInnermost
@@ -212,7 +218,7 @@ function folderHtml(path, tree, depth) {
                     : `<span class="virtual-folder-arrow" data-virtual-folder-arrow aria-hidden="true">${isOpen ? '▾' : '▸'}</span>`}
                 <span class="virtual-folder-icon" aria-hidden="true"></span>
                 <span class="virtual-folder-name">${escapeHtml(node.name)}</span>
-                ${countHtml(isNew ? NO_NOTES : noteCountOf(path))}
+                ${isNew ? countHtml(NO_NOTES, NO_NOTES) : countHtml(noteCountOf(path), noteTotalOf(path))}
             </button>
             ${body}
         </div>`;
@@ -225,8 +231,32 @@ function noteCountOf(path) {
     return moduleState.noteCounts[path];
 }
 
-function countHtml(count) {
-    return `<span class="virtual-folder-count">(${count})</span>`;
+function noteTotalOf(path) {
+    if (!Object.prototype.hasOwnProperty.call(moduleState.noteTotals, path)) {
+        throw new Error(`No note total for the folder ${path}`);
+    }
+    return moduleState.noteTotals[path];
+}
+
+// Holding notes, none of which this search shows: dimmed, never hidden (folder-counts.md §3).
+function isUnmatched(path) {
+    return noteCountOf(path) === NO_NOTES && noteTotalOf(path) > NO_NOTES;
+}
+
+function notesWord(count) {
+    return `${count.toLocaleString()} ${count === ONE_NOTE ? 'note' : 'notes'}`;
+}
+
+// The notes clicking a folder shows, out of all it holds when the search narrows it, so a count
+// of none doesn't read as an empty folder (the maintainer, 2026-11-02: "(0/17)"); its tooltip
+// says it in words.
+function countHtml(count, total) {
+    if (count === total) {
+        return `<span class="virtual-folder-count" title="${escapeHtml(notesWord(total))}">(${total.toLocaleString()})</span>`;
+    }
+    const verb = total === ONE_NOTE ? 'matches' : 'match';
+    const words = `${count.toLocaleString()} of ${notesWord(total)} ${verb} this search`;
+    return `<span class="virtual-folder-count" title="${escapeHtml(words)}">(${count.toLocaleString()}/${total.toLocaleString()})</span>`;
 }
 
 // The top, `/`, over every folder (the maintainer, 2026-11-01): clicking it shows every note
@@ -236,13 +266,13 @@ function rootHtml(built) {
     const isChosen = moduleState.isRootClicked && moduleState.folder === TOP;
     const isOpen = moduleState.isRootOpen;
     return `
-        <div class="virtual-folder${isChosen ? ' is-filtered' : ''}">
+        <div class="virtual-folder${isChosen ? ' is-filtered' : ''}${isUnmatched(TOP) ? ' is-unmatched' : ''}">
             <button type="button" class="virtual-folder-row interactive" data-virtual-folder-root
                 style="--virtual-folder-depth:0" aria-expanded="${isOpen}" title="Every folder: show every note">
                 <span class="virtual-folder-arrow" data-virtual-folder-arrow aria-hidden="true">${isOpen ? '▾' : '▸'}</span>
                 <span class="virtual-folder-icon" aria-hidden="true"></span>
                 <span class="virtual-folder-name">/</span>
-                ${countHtml(noteCountOf(TOP))}
+                ${countHtml(noteCountOf(TOP), noteTotalOf(TOP))}
             </button>
             ${isOpen ? built.tops.map((path) => folderHtml(path, built, 1)).join('') : ''}
         </div>`;

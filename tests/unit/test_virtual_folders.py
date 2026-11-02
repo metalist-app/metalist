@@ -107,6 +107,18 @@ def test_a_folder_count_follows_the_search(imported_vault: NoteStore) -> None:
     assert counts["Daily/"] == 0
 
 
+def test_the_totals_are_the_counts_with_no_search(imported_vault: NoteStore) -> None:
+    # A count under a search reads out of the folder's total (docs/ready-to-build/folder-counts.md §2).
+    assert virtual_folders.folder_note_totals() == virtual_folders.folder_note_counts("")
+
+
+def test_the_totals_and_a_searchs_counts_are_kept_apart(imported_vault: NoteStore) -> None:
+    searched = virtual_folders.folder_note_counts("urgent")
+    totals = virtual_folders.folder_note_totals()
+    assert virtual_folders.folder_note_counts("urgent") is searched, "asking for the totals kept the search's counts"
+    assert totals["Daily/"] == 1 and searched["Daily/"] == 0
+
+
 # --- Delete Folder, with its notes --------------------------------------------------------
 
 def _root_titled(store: NoteStore, title: str) -> str:

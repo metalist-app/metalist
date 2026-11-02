@@ -14,7 +14,7 @@ from app.api.request_auth import require_request_auth_token
 from app.api.transactions import transactional_route
 from app.services.undo_state import reset_undo_stack
 from app.services.input_errors import InputRejected
-from app.services.virtual_folders import NO_FOLDER, all_folder_tags, folder_note_counts, folder_paths, is_folder_tag, virtual_folder_state
+from app.services.virtual_folders import NO_FOLDER, all_folder_tags, folder_note_counts, folder_note_totals, folder_paths, is_folder_tag, virtual_folder_state
 from app.usecases.virtual_folders import delete_folder, delete_folder_and_notes, move_folder, notes_in_folder, rename_folder
 
 router = APIRouter(prefix="/virtual-folders", tags=["virtual-folders"])
@@ -70,6 +70,9 @@ def list_virtual_folders(request: Request, body: ViewScope) -> Dict[str, object]
         "folder": virtual_folder_state.filter_of(body["tabId"]),
         "folders": all_folder_tags(),
         "noteCounts": counts,
+        # Each folder's count with no search: a count the search narrows reads out of it
+        # (docs/ready-to-build/folder-counts.md).
+        "noteTotals": folder_note_totals(),
     }
 
 

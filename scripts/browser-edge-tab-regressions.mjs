@@ -3,10 +3,12 @@ import { runThenCleanUp } from './suite-outcome.mjs';
 import { waitForAppQuiet } from './browser-app-idle.mjs';
 
 // The pull tabs (the maintainer, 2026-11-02; docs/ui/controls.md): the virtual folders' on the
-// left edge, the AI chat's on the right, at the window's middle, each its icon above an arrow
+// left edge, the AI chat's on the right, at the window's bottom (its middle until the maintainer
+// moved them, 2026-11-02), as far up as ≡ is down from the top, each its icon above an arrow
 // pointing the way a click moves its panel; a click shows or hides the panel as View > Show does.
 //   1. closed, a tab sits on the window's edge; open, on its panel's edge; both at the window's
-//      middle, the arrow pointing the way a click moves the panel
+//      bottom, the arrow pointing the way a click moves the panel; the notices at the bottom
+//      right keep clear of the chat's tab, with the chat open or closed
 //   2. a click shows the tree and says a click will hide it; another hides it again
 //   3. the tree is a full-height panel at the left
 //   4. a reload keeps the tree shown, the tab saying so (the tree had stayed hidden until the
@@ -61,6 +63,8 @@ const KEY_STEP_PX = 24;
 const WIDTH_KEY = 'metalist.virtual_folders.width';
 const DRAGGED_PX = 60;
 const QUARTERS = 4;
+// The notices' gap from what is beside them (.app-notice-stack, 18px from the corner before).
+const NOTICE_GAP_PX = 18;
 const CLOSED_TOWARD_LEFT = '‹';
 const OPENS_TOWARD_RIGHT = '›';
 // The chat's share of the window, its least width, and what the notes keep beside it (main.css:
@@ -116,6 +120,12 @@ function layout(page) {
       fixedRight: document.querySelector('.global-controls').getBoundingClientRect().right
         + parseFloat(getComputedStyle(document.querySelector('.global-controls')).right),
       windowHeight: window.innerHeight,
+      menuTop: document.getElementById('menu-button').getBoundingClientRect().top,
+      // The notices' column (app-notice-stack.js): where its right edge is placed.
+      noticesRight: document.querySelector('.app-notice-stack') === null ? null
+        : document.querySelector('.global-controls').getBoundingClientRect().right
+          + parseFloat(getComputedStyle(document.querySelector('.global-controls')).right)
+          - parseFloat(getComputedStyle(document.querySelector('.app-notice-stack')).right),
       tree: tree === null ? null : box('virtual-folders'),
       chat: getComputedStyle(chat).display === 'none' ? null : chat.getBoundingClientRect().toJSON(),
       title: button.title, label: button.getAttribute('aria-label'), pressed: button.getAttribute('aria-pressed'),
@@ -248,7 +258,7 @@ function treeLayout(page) {
 
 async function dragHandleTo(page, x) {
   const seen = await treeLayout(page);
-  // Above the tab, which sits on the edge at the window's middle.
+  // Above the tab, which sits on the edge at the window's bottom.
   const y = seen.handle.top + seen.handle.height / QUARTERS;
   await page.mouse.move(seen.handle.left + seen.handle.width / 2, y);
   await page.mouse.down();
@@ -345,22 +355,38 @@ function overlaps(a, b) {
   return a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
 }
 
-function assertMiddle(tab, seen, label) {
-  assert.equal(tab.top + tab.height / 2, seen.windowHeight / 2, `${label}: at the window's middle`);
+// As far up from the window's bottom as ≡ is down from its top.
+function assertBottom(tab, seen, label) {
+  const fromBottom = seen.windowHeight - tab.bottom;
+  assert.ok(Math.abs(fromBottom - seen.menuTop) < SAME_PX,
+    `${label}: ${fromBottom}px from the window's bottom, as ≡ is ${seen.menuTop}px from its top`);
+}
+
+// The notices' column ends a notice's gap (18px) short of the chat's tab.
+function assertNoticesClear(seen, label) {
+  const expected = seen.chatTab.left - NOTICE_GAP_PX;
+  assert.ok(Math.abs(seen.noticesRight - expected) < SAME_PX,
+    `${label}: the notices end at ${seen.noticesRight}, ${NOTICE_GAP_PX}px left of the chat's tab is ${expected}`);
 }
 
 // 1, 3: where each tab sits, closed and open, and which way its arrow points.
 async function tabsOnTheirEdges(page) {
+  // The notices' column, made as the first notice makes it.
+  await page.evaluate(async () => {
+    const {appNoticeStack} = await import('/static/js/modules/app-notice-stack.js');
+    appNoticeStack();
+  });
   await withChat(page, false);
   let seen = await layout(page);
   assert.equal(seen.tree.isShown, false);
   assert.equal(seen.folders.left, 0, 'the closed folders tab is on the window\'s left edge');
   assert.equal(seen.folders.width, TAB_WIDTH_PX);
   assert.equal(seen.folders.arrow, OPENS_TOWARD_RIGHT);
-  assertMiddle(seen.folders, seen, 'the closed folders tab');
+  assertBottom(seen.folders, seen, 'the closed folders tab');
   assert.equal(seen.chatTab.right, seen.fixedRight, 'the closed chat tab is on the window\'s right edge');
   assert.equal(seen.chatTab.arrow, CLOSED_TOWARD_LEFT);
-  assertMiddle(seen.chatTab, seen, 'the closed chat tab');
+  assertBottom(seen.chatTab, seen, 'the closed chat tab');
+  assertNoticesClear(seen, 'chat closed');
   await page.click('#virtual-folders-button');
   await withChat(page, true);
   seen = await layout(page);
@@ -369,10 +395,11 @@ async function tabsOnTheirEdges(page) {
   // 13: outside the panel, on its right edge, as the chat's is outside the chat.
   assert.equal(seen.folders.left, seen.tree.right, 'the open folders tab is on the tree\'s right edge, outside it');
   assert.equal(seen.folders.arrow, CLOSED_TOWARD_LEFT);
-  assertMiddle(seen.folders, seen, 'the open folders tab');
+  assertBottom(seen.folders, seen, 'the open folders tab');
   assert.equal(seen.chatTab.right, seen.chat.left, 'the open chat tab is on the chat\'s left edge');
   assert.equal(seen.chatTab.arrow, OPENS_TOWARD_RIGHT);
-  assertMiddle(seen.chatTab, seen, 'the open chat tab');
+  assertBottom(seen.chatTab, seen, 'the open chat tab');
+  assertNoticesClear(seen, 'chat open');
   await withChat(page, false);
   await page.click('#virtual-folders-button');
   await idle(page);

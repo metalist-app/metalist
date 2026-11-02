@@ -100,7 +100,8 @@ function cardAt(page) {
       top: rect.top, right: rect.right, bottom: rect.bottom, left: rect.left,
       // The visible right edge: the page's layout width. documentElement.clientWidth reports the
       // whole window in current Chrome even while a scrollbar strip is reserved (docs/ui/controls.md).
-      expectedRight: document.documentElement.offsetWidth - edge,
+      // 18px short of the chat's tab, which stands at the bottom right (2026-11-02).
+      expectedRight: document.getElementById('chat-toggle-button').getBoundingClientRect().left - edge,
       expectedBottom: document.documentElement.clientHeight - edge,
     };
   }, STACK_EDGE_PX);
@@ -165,7 +166,7 @@ async function useBackupFolder(page, folder) {
 
 function assertAtStackCorner(position, label) {
   assert.notEqual(position, null, `${label}: the card shows`);
-  assert.equal(position.right, position.expectedRight, `${label}: card's right edge is ${STACK_EDGE_PX}px from the window`);
+  assert.equal(position.right, position.expectedRight, `${label}: card's right edge is ${STACK_EDGE_PX}px from the chat's tab`);
   assert.equal(position.bottom, position.expectedBottom, `${label}: card's bottom edge is ${STACK_EDGE_PX}px from the window`);
 }
 
