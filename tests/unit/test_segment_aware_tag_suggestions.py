@@ -199,13 +199,13 @@ def test_search_completion_matches_connector_separated_segments() -> None:
         ]
     )
 
-    suggestions = index.suggest_tag_completions(query="wor", limit=20)
+    suggestions = index.suggest_tag_completions(query="wor", limit=20, by_family=False)
 
     assert "workspaces" in suggestions
     assert "databricks-workspaces" in suggestions
     assert "databricks.workspaces" in suggestions
     assert "databricks_workspaces" in suggestions
-    assert index.suggest_tag_completions(query="orksp", limit=20) == []
+    assert index.suggest_tag_completions(query="orksp", limit=20, by_family=False) == []
 
 
 def test_tag_suggestions_promote_astra_without_family_or_version_in_content(

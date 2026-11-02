@@ -131,6 +131,13 @@ class _NoteCounts:
 TAG_VALUE_SEPARATOR = "="
 
 
+def tag_family_of(term: str) -> str:
+    """The tag a term is a member of: itself, or for one carrying a value (jogging=3) the tag
+    the value is on (jogging). The tag bar ranks a tag over all its notes, whatever their values
+    (docs/design/tag-properties.md, "Last time's values")."""
+    return term.split(TAG_VALUE_SEPARATOR, 1)[0]
+
+
 def tag_family_prefix(tag_casefold: str) -> str | None:
     """What every valued member of a tag's family starts with ("@code=" for @code), or
     None for a tag that carries a value itself (it matches only itself)."""
@@ -538,6 +545,10 @@ class SearchIndex:
         self._explicit_tag_notes = _NoteCounts()
         self._explicit_tag_notes_casefold = _NoteCounts()
         self._raw_tag_notes_casefold = _NoteCounts()
+        # The same two counts by tag family (tag_family_of): jogging=3 and jogging=5 count as jogging,
+        # each note once.
+        self._explicit_tag_family_notes = _NoteCounts()
+        self._raw_tag_family_notes_casefold = _NoteCounts()
         self._tag_notes = _NoteCounts()
         self._tag_notes_casefold: Dict[str, Set[int]] = {}
         # Each tag family's valued members (@code: @code=python, @code=sql), as
@@ -595,6 +606,8 @@ class SearchIndex:
             self._explicit_tag_notes.clear()
             self._explicit_tag_notes_casefold.clear()
             self._raw_tag_notes_casefold.clear()
+            self._explicit_tag_family_notes.clear()
+            self._raw_tag_family_notes_casefold.clear()
             self._tag_notes.clear()
             self._tag_notes_casefold.clear()
             self._tag_family_members.clear()
@@ -797,6 +810,7 @@ class SearchIndex:
                     self._raw_tag_notes_casefold.remove(term_casefold)
                 for term_casefold in new_raw_casefold - old_raw_casefold:
                     self._raw_tag_notes_casefold.add(term_casefold)
+                self._update_raw_families_locked(old_raw_casefold, new_raw_casefold)
 
                 self._note_raw_tag_terms[note_int_id] = new_raw_tag_terms
                 touched += 1
@@ -829,12 +843,15 @@ class SearchIndex:
         meta suggestions draw on (known ones, those in use, and their families), so any
         suggestion picked is a known tag."""
         with self._lock:
-            representatives = self._build_suggestion_representatives_locked(
-                anchor_casefold_set=frozenset(),
-                partial_prefix="",
+            # The search box offers each term (jogging=3), the tag bar each family (jogging).
+            terms = self._build_suggestion_representatives_locked(
+                anchor_casefold_set=frozenset(), partial_prefix="", by_family=False,
+            )
+            families = self._build_suggestion_representatives_locked(
+                anchor_casefold_set=frozenset(), partial_prefix="", by_family=True,
             )
             return frozenset(
-                tuple(representatives.values()) + tuple(self._meta_tag_suggestion_terms_locked())
+                tuple(terms.values()) + tuple(families.values()) + tuple(self._meta_tag_suggestion_terms_locked())
             )
 
     def list_tag_frequencies(self) -> Dict[str, int]:
@@ -879,6 +896,25 @@ class SearchIndex:
                 raise KeyError(f"Note {note_id} is not active in SearchIndex")
             return self._note_tag_terms[note_int_id]
 
+    def list_raw_tag_family_frequencies_by_casefold(self) -> Dict[str, int]:
+        """list_raw_tag_frequencies_by_casefold by tag family: jogging counts every note with
+        jogging or jogging=<value> (tag_family_of)."""
+        with self._lock:
+            return {
+                family: note_count
+                for family, note_count in self._raw_tag_family_notes_casefold.items()
+                if family and not family.startswith("@")
+            }
+
+    def list_explicit_tag_family_frequencies(self) -> Dict[str, int]:
+        """list_explicit_tag_frequencies by tag family (tag_family_of), each note once."""
+        with self._lock:
+            return {
+                family: note_count
+                for family, note_count in self._explicit_tag_family_notes.items()
+                if family and not family.startswith("@")
+            }
+
     def list_explicit_tag_frequencies(self) -> Dict[str, int]:
         """Return explicitly written tag term -> note count (excluding @meta tags)."""
         with self._lock:
@@ -889,7 +925,7 @@ class SearchIndex:
             }
 
     def describe_tag_cooccurrence(
-        self, *, anchors: Iterable[str], terms: Iterable[str], excluded_note_ids: FrozenSet[str],
+        self, *, anchors: Iterable[str], terms: Iterable[str], excluded_note_ids: FrozenSet[str], by_family: bool,
     ) -> Dict[str, TagCooccurrence]:
         """For each term, the notes carrying it together with the most of the anchors.
 
@@ -906,9 +942,9 @@ class SearchIndex:
             excluded = {self._uuid_to_id[note_id] for note_id in excluded_note_ids if note_id in self._uuid_to_id}
             for term in terms:
                 term_casefold = term.casefold()
-                if term_casefold not in self._tag_notes_casefold:
+                term_notes = self._suggestion_posting_locked(term_casefold, by_family=by_family)
+                if not term_notes:
                     continue
-                term_notes = self._tag_notes_casefold[term_casefold]
                 if excluded:
                     term_notes = term_notes - excluded
                 shared_by_anchor = {
@@ -967,7 +1003,7 @@ class SearchIndex:
                 note_counts[term] = len(posting)
                 matching_counts[term] = len(posting & matching_ids)
             cooccurrences = self.describe_tag_cooccurrence(
-                anchors=context.anchors, terms=shown, excluded_note_ids=frozenset(),
+                anchors=context.anchors, terms=shown, excluded_note_ids=frozenset(), by_family=False,
             )
             return SearchSuggestionFacts(
                 partial_prefix=partial_prefix, anchors=tuple(context.anchors),
@@ -1036,7 +1072,10 @@ class SearchIndex:
                 return 0
             return len(self._tag_notes_casefold[term_casefold])
 
-    def suggest_tag_completions(self, *, query: str, limit: int) -> List[str]:
+    def suggest_tag_completions(self, *, query: str, limit: int, by_family: bool) -> List[str]:
+        """Tags ranked by how they go with the query's tags, then by use. by_family: each tag
+        counted over all its notes whatever their values (jogging=3, jogging=5 as jogging), as
+        the tag bar offers them; else every term on its own, as a search can name a value."""
         if not isinstance(query, str):
             raise TypeError(f"query must be a string, got {type(query)}")
         if not isinstance(limit, int) or limit <= 0:
@@ -1067,8 +1106,13 @@ class SearchIndex:
             representative_by_casefold = self._build_suggestion_representatives_locked(
                 anchor_casefold_set=anchor_casefold_set,
                 partial_prefix=partial_prefix,
+                by_family=by_family,
             )
             candidate_casefolds = list(representative_by_casefold.keys())
+            postings = {
+                term_casefold: self._suggestion_posting_locked(term_casefold, by_family=by_family)
+                for term_casefold in candidate_casefolds
+            }
 
             if not candidate_casefolds and partial_prefix != "":
                 return []
@@ -1076,7 +1120,7 @@ class SearchIndex:
             if not anchor_casefold_set:
                 candidate_casefolds.sort(
                     key=lambda term_casefold: (
-                        -len(self._tag_notes_casefold[term_casefold]),
+                        -len(postings[term_casefold]),
                         *self._suggestion_term_tiebreak_locked(representative_by_casefold[term_casefold]),
                     )
                 )
@@ -1111,16 +1155,15 @@ class SearchIndex:
 
             # term -> (most anchors one of its notes carries, notes carrying that many)
             co_occurrence = self._suggestion_co_occurrence_locked(
-                candidate_casefolds=candidate_casefolds,
+                postings=postings,
                 anchor_counts=anchor_counts,
                 notes_by_anchor_count=notes_by_anchor_count,
+                by_family=by_family,
             )
 
             scored: List[Tuple[int, float, int, str]] = []
             for term_casefold in candidate_casefolds:
-                if term_casefold not in self._tag_notes_casefold:
-                    continue
-                candidate_count = len(self._tag_notes_casefold[term_casefold])
+                candidate_count = len(postings[term_casefold])
                 if candidate_count == 0:
                     continue
 
@@ -1143,33 +1186,40 @@ class SearchIndex:
             scored.sort()
             return [representative_by_casefold[term.casefold()] for _, __, ___, term in scored[:limit]]
 
+    def _suggestion_posting_locked(self, term_casefold: str, *, by_family: bool) -> Set[int]:
+        """The notes a suggestion candidate counts: its family's (tag_family_of) or its own."""
+        if by_family:
+            return self._tag_family_posting_locked(term_casefold)
+        return _posting_or_empty(self._tag_notes_casefold, term_casefold)
+
     def _suggestion_co_occurrence_locked(
         self,
         *,
-        candidate_casefolds: List[str],
+        postings: Dict[str, Set[int]],
         anchor_counts: Dict[int, int],
         notes_by_anchor_count: List[Set[int]],
+        by_family: bool,
     ) -> Dict[str, Tuple[int, int]]:
         """Map each co-occurring candidate to (max anchors on one note, notes with that many).
 
-        Few anchor notes: walk their own terms. Many: intersect each candidate's
-        postings with the anchor-count groups, which runs in C.
+        Few anchor notes: walk their own terms (by family when by_family). Many: intersect each
+        candidate's postings with the anchor-count groups, which runs in C.
         """
         co_occurrence: Dict[str, Tuple[int, int]] = {}
         anchor_terms_size = sum(len(self._note_tag_terms_casefold[note_id]) for note_id in anchor_counts)
-        if anchor_terms_size <= SUGGESTION_INTERSECT_COST_RATIO * len(candidate_casefolds):
-            candidate_set = set(candidate_casefolds)
+        if anchor_terms_size <= SUGGESTION_INTERSECT_COST_RATIO * len(postings):
+            candidate_set = set(postings)
             for note_id, count in anchor_counts.items():
-                for term_casefold in self._note_tag_terms_casefold[note_id] & candidate_set:
+                note_terms = self._note_tag_terms_casefold[note_id]
+                if by_family:
+                    note_terms = frozenset(tag_family_of(term_casefold) for term_casefold in note_terms)
+                for term_casefold in note_terms & candidate_set:
                     if term_casefold not in co_occurrence or count > co_occurrence[term_casefold][0]:
                         co_occurrence[term_casefold] = (count, 1)
                     elif count == co_occurrence[term_casefold][0]:
                         co_occurrence[term_casefold] = (count, co_occurrence[term_casefold][1] + 1)
             return co_occurrence
-        for term_casefold in candidate_casefolds:
-            if term_casefold not in self._tag_notes_casefold:
-                continue
-            note_ids = self._tag_notes_casefold[term_casefold]
+        for term_casefold, note_ids in postings.items():
             for k in range(len(notes_by_anchor_count) - 1, 0, -1):
                 if notes_by_anchor_count[k]:
                     shared = len(note_ids & notes_by_anchor_count[k])
@@ -1188,7 +1238,7 @@ class SearchIndex:
         tree_matches = self._tree_matches_for_suggestions(context.completed_clause)
         with self._lock:
             candidate_capacity = len(self._tag_notes) + len(list_known_meta_tag_terms()) + 1
-            suggestions = self.suggest_tag_completions(query=query, limit=candidate_capacity)
+            suggestions = self.suggest_tag_completions(query=query, limit=candidate_capacity, by_family=False)
             if not suggestions:
                 return []
             matching_ids = self._suggestion_matching_ids_locked(context.completed_clause, tree_matches)
@@ -1422,6 +1472,7 @@ class SearchIndex:
         # Once per note: Trip and trip are one lowercased tag.
         for term_casefold in raw_casefold:
             self._raw_tag_notes_casefold.add(term_casefold)
+        self._update_raw_families_locked(set(), raw_casefold)
         tag_terms_casefold = []
         for term in tag_terms:
             if term not in casefold_by_term:
@@ -1439,12 +1490,26 @@ class SearchIndex:
         # Once per note: Trip and trip are one lowercased tag.
         for term_casefold in {term.casefold() for term in terms}:
             self._explicit_tag_notes_casefold.add(term_casefold)
+        # Once per note: jogging=3 and jogging:miles=4 on one note are one jogging.
+        for family in {tag_family_of(term) for term in terms}:
+            self._explicit_tag_family_notes.add(family)
 
     def _remove_explicit_terms_locked(self, terms: FrozenSet[str]) -> None:
         for term in terms:
             self._explicit_tag_notes.remove(term)
         for term_casefold in {term.casefold() for term in terms}:
             self._explicit_tag_notes_casefold.remove(term_casefold)
+        for family in {tag_family_of(term) for term in terms}:
+            self._explicit_tag_family_notes.remove(family)
+
+    def _update_raw_families_locked(self, old_raw_casefold: Set[str], new_raw_casefold: Set[str]) -> None:
+        """A note's raw tags changed from old to new: its families' counts follow, once per note."""
+        old_families = {tag_family_of(term_casefold) for term_casefold in old_raw_casefold}
+        new_families = {tag_family_of(term_casefold) for term_casefold in new_raw_casefold}
+        for family in old_families - new_families:
+            self._raw_tag_family_notes_casefold.remove(family)
+        for family in new_families - old_families:
+            self._raw_tag_family_notes_casefold.add(family)
 
     def _update_existing_locked(
         self,
@@ -1472,6 +1537,9 @@ class SearchIndex:
                 self._raw_tag_notes_casefold.remove(term_casefold)
             for term_casefold in {term.casefold() for term in new_raw_tag_terms}:
                 self._raw_tag_notes_casefold.add(term_casefold)
+            self._update_raw_families_locked(
+                {term.casefold() for term in old_raw_tag_terms}, {term.casefold() for term in new_raw_tag_terms},
+            )
             self._note_raw_tag_terms[note_int_id] = new_raw_tag_terms
 
         if old_tag_terms != new_tag_terms:
@@ -1500,6 +1568,7 @@ class SearchIndex:
         self._remove_explicit_terms_locked(self._note_explicit_tag_terms[note_int_id])
         for term_casefold in {term.casefold() for term in self._note_raw_tag_terms[note_int_id]}:
             self._raw_tag_notes_casefold.remove(term_casefold)
+        self._update_raw_families_locked({term.casefold() for term in self._note_raw_tag_terms[note_int_id]}, set())
         self._note_text_casefold[note_int_id] = ""
         if note_int_id in self._note_text_file_ids:
             del self._note_text_file_ids[note_int_id]
@@ -2044,10 +2113,20 @@ class SearchIndex:
         *,
         anchor_casefold_set: FrozenSet[str],
         partial_prefix: str,
+        by_family: bool,
     ) -> Dict[str, str]:
         partial_prefix_casefold = partial_prefix.casefold()
         representatives: Dict[str, str] = {}
-        for term, _note_count in self._tag_notes.items():
+        # How many notes each spelling is on; by family, its members' summed (Jogging=3 is a Jogging).
+        spelling_counts: Dict[str, int] = {}
+        for term, note_count in self._tag_notes.items():
+            if by_family:
+                term = tag_family_of(term)
+            if term in spelling_counts:
+                spelling_counts[term] += note_count
+            else:
+                spelling_counts[term] = note_count
+        for term in spelling_counts:
             if not term or term == "OR" or term.startswith("@"):
                 continue
             term_casefold = term.casefold()
@@ -2061,13 +2140,13 @@ class SearchIndex:
                 representatives[term_casefold] = term
                 continue
             current = representatives[term_casefold]
-            if self._is_better_suggestion_variant_locked(candidate=term, incumbent=current):
+            if self._is_better_suggestion_variant_locked(candidate=term, incumbent=current, counts=spelling_counts):
                 representatives[term_casefold] = term
         return representatives
 
-    def _is_better_suggestion_variant_locked(self, *, candidate: str, incumbent: str) -> bool:
-        candidate_count = self._tag_notes.count(candidate)
-        incumbent_count = self._tag_notes.count(incumbent)
+    def _is_better_suggestion_variant_locked(self, *, candidate: str, incumbent: str, counts: Dict[str, int]) -> bool:
+        candidate_count = counts[candidate]
+        incumbent_count = counts[incumbent]
         if candidate_count != incumbent_count:
             return candidate_count > incumbent_count
         candidate_penalty, candidate_tiebreak = self._suggestion_term_tiebreak_locked(candidate)

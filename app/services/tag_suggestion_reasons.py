@@ -310,7 +310,7 @@ class SuggestionEvidence:
         cooccurrences = self.index.describe_tag_cooccurrence(
             anchors=self.cooccurrence_anchors,
             terms=[subject for subject in subjects if subject in self.cooccurrence_terms],
-            excluded_note_ids=frozenset(),
+            excluded_note_ids=frozenset(), by_family=True,
         )
         lines: List[str] = []
         for subject in subjects:

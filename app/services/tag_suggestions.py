@@ -16,7 +16,7 @@ from app.services.ontology_rules_store import extract_ontology_tags
 from app.services.ontology_rules_store import get_ontology
 from app.security.sensitive_cache import SensitiveMemo
 from app.services.resource_limits import SENSITIVE_MEMO_BYTES
-from app.services.search_index import own_value_token, search_index
+from app.services.search_index import own_value_token, search_index, tag_family_of
 from app.services.tag_properties import tag_part_of_token
 from app.services.tag_plural_variants import PluralSpellings
 from app.services.tag_suggestion_reasons import ContextOverlap
@@ -274,6 +274,7 @@ def _collect_cooccurrence_candidates(
     ranked_terms = search_index.suggest_tag_completions(
         query=query,
         limit=max(1, len(all_terms)),
+        by_family=True,
     )
     candidate_by_casefold = {term.casefold(): term for term in candidate_terms}
 
@@ -369,7 +370,9 @@ def _list_content_match_terms_for_candidate(*, term: str, ontology) -> Tuple[str
 
 
 def _collect_explicit_tag_statistics() -> Tuple[List[str], Dict[str, int]]:
-    exact_tag_counts = search_index.list_explicit_tag_frequencies()
+    # By tag family: jogging=3 and jogging=5 are jogging, offered with last time's values
+    # (_with_last_values), never each on its own.
+    exact_tag_counts = search_index.list_explicit_tag_family_frequencies()
     if exact_tag_counts and note_store.loaded:
         preferred_terms = _select_preferred_case_variants(
             terms=exact_tag_counts.keys(),
@@ -394,9 +397,9 @@ def _collect_explicit_tag_statistics() -> Tuple[List[str], Dict[str, int]]:
     saved_tag_counts: Counter[str] = Counter()
     for note_id in _list_saved_note_ids():
         record = note_store.get_note(note_id)
-        for tag in record.non_meta_tag_terms:
-            if tag:
-                saved_tag_counts[tag] += 1
+        for family in {tag_family_of(tag) for tag in record.non_meta_tag_terms}:
+            if family:
+                saved_tag_counts[family] += 1
 
     preferred_terms = _select_preferred_case_variants(
         terms=saved_tag_counts.keys(),
@@ -1204,7 +1207,7 @@ def _typing_basis(
         note_id=note_id, anchors=anchors, explicit_tags=empty_bar_explicit, content_html=content_html,
         limit=_TYPING_EVIDENCE_DEPTH, include_unranked=False,
     )
-    raw_tag_counts = search_index.list_raw_tag_frequencies_by_casefold()
+    raw_tag_counts = search_index.list_raw_tag_family_frequencies_by_casefold()
     explicit_terms, exact_tag_counts = _collect_explicit_tag_statistics()
     all_terms, ontology_only_casefold = _merge_ontology_tag_terms(
         explicit_terms=explicit_terms, exact_tag_counts=exact_tag_counts, ontology=ontology,

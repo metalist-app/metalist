@@ -276,6 +276,16 @@ before, so you write `miles` again rather than `distance`.
   `app/services/search_index.py`; tests: `tests/unit/test_super_tag_last_values.py`,
   the `super-tags` browser suite. Open: also offering the most-used values when they
   differ from the last ones.
+  The tag bar ranks a tag over all its notes, whatever their values: `jogging=3`,
+  `jogging=5` and `jogging:miles=4` all count as `jogging`, so the list reads
+  `jogging=3`, `jogging`, then the other tags, and no older value is offered on its own
+  (fixed 2026-11-02: each value had counted as a tag of its own, so the list read
+  `jogging=3`, `jogging=3`, `jogging`, `jogging=2`, `jogging=5` and pushed the other tags
+  down). Code: `tag_family_of`, `suggest_tag_completions(by_family=True)` and the
+  family counts (`list_explicit_tag_family_frequencies`,
+  `list_raw_tag_family_frequencies_by_casefold`) in `app/services/search_index.py`;
+  the search box still offers each value (`by_family=False`). Tests:
+  `tests/unit/test_valued_tag_suggestions.py`.
 - **Values** (built 2026-10-31): after `=`, the values notes give the property, most
   used first, those starting with what is typed before those holding it elsewhere;
   written as they must be typed, quoted when needed (`book:title="Dune: Messiah"`). A
