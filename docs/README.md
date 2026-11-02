@@ -55,7 +55,6 @@
 - Ready to build, an experiment behind a setting (virtual folders: a tag ending in `/` is a folder, shown as a tree in the left margin; the import's folder tags get the slash): `docs/ready-to-build/virtual-folders.md`
 - Ready to build (a prefix folder for every import, so a whole import is one folder): `docs/ready-to-build/import-prefix-folder.md`
 - Ready to build (importing a folder of any files, with a size check and file-type checklist; previews for code, PDF, RTF/.docx, HTML, audio and video): `docs/ready-to-build/folder-import-and-file-previews.md`
-- Ready to build (importing the same source again: unchanged items skipped, changed ones in as copies, old versions marked `replaced`, items gone from the source marked `removed`; an import never overwrites or deletes): `docs/ready-to-build/importing-again.md`
 - Ready to build (browser bookmarks as an import source: one note per address, folders as folder tags, dated when bookmarked; a dropped bookmarks file opens the walkthrough): `docs/ready-to-build/bookmark-import.md`
 - Future plan (charts of super-tag values, embedded like diagrams): `docs/future-plans/charts.md`
 - Future plan (one encrypted file per attachment, with a catalog): `docs/future-plans/file-storage-per-file.md`

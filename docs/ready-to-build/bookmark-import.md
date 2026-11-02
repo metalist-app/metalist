@@ -1,6 +1,6 @@
 # Importing browser bookmarks
 
-**Status:** Agreed with the maintainer 2026-11-02. Ready to build. A new import source beside Obsidian vault, Markdown folder and Any folder. Builds on folder tags ending in `/` (`virtual-folders`), the import's prefix folder (`import-prefix-folder`) and importing the same source again (`importing-again`, handed over the same day).
+**Status:** Agreed with the maintainer 2026-11-02. Ready to build. A new import source beside Obsidian vault, Markdown folder and Any folder. Builds on folder tags ending in `/` (`virtual-folders`), and the import's prefix folder (`import-prefix-folder`). Importing the file again adds everything again (§3).
 
 Written from a read-only look at the repo; filed from `docs/inbox/` on 2026-11-02, with the references checked (§9).
 
@@ -27,18 +27,18 @@ It's nested folders (`<DL>`, `<DT><H3>name</H3>`) of links (`<DT><A HREF="…" A
 
 ## 2. What each bookmark becomes
 
-- **One root note per bookmark:** the page title as its first line, then the address as a link. If the title is empty, the address alone.
+- **One root note per bookmark, one line:** the bookmark's title as a link to its address, shown as the site's icon, the title, then ` · domain` (`docs/ui/content-formatting.md`, Links In View Mode). A link with its own text keeps it and its page's title is never fetched, so the user's own name for a bookmark stays and a dead page still shows its title. If the title is empty, the bare address, which shows its fetched title once one is known. (Decided 2026-11-02; replaces the title on one line and the address on the next, which showed the title twice.)
 - **Created when it was bookmarked:** the note's created date is `ADD_DATE`, as the other imports keep a file's dates. If it's missing, the import time.
 - **Folders become folder tags** under the prefix folder: `Bookmarks/Recipes/Soups/`.
 - **The browser's own top folders are left out:** Chrome's "Bookmarks bar", "Other bookmarks" and "Mobile bookmarks"; Safari's "Favorites" and "Bookmarks Menu"; Firefox's "Bookmarks Toolbar", "Bookmarks Menu" and "Other Bookmarks". They say where the browser showed a bookmark, not what it's about. A folder on Chrome's bar comes in as `Bookmarks/Recipes/`, and a bookmark loose in a top folder goes straight into the prefix folder. *Check* how each browser marks these in the file (Chrome's bar carries `PERSONAL_TOOLBAR_FOLDER="true"`); recognize them by that, or by their position as the top level, rather than by their name, which is translated.
 - **Firefox's tags become ordinary tags.**
 - **Source tag:** `imported:source=bookmarks:at=…`.
-- **Nothing is fetched from the bookmarked sites:** no titles, descriptions or page text. It would be slow, many pages are dead or need a login, and it would contact every site the user saved. Favicons in the file are left out.
+- **The import fetches nothing from the bookmarked sites:** no titles, descriptions or page text. It would be slow, many pages are dead or need a login, and it would contact every site the user saved. Favicons in the file are left out. Once imported, a bookmark is a link like any other: its site's icon is looked up the first time its note is shown.
 
 ## 3. Duplicates
 
 - **One address is one note.** The same address in two folders is one note carrying both folder tags.
-- **Importing again follows `importing-again`:** a bookmark is matched on its address, exactly as written, against earlier bookmark imports. Unchanged: skipped. Title or folders changed: comes in as a copy, and the old version's import tag gains `replaced=<time>`. Gone from the browser: stays, and gains `removed=<time>`. Nothing is overwritten or deleted.
+- **Importing again only adds** (decided 2026-11-02, `import-export-launch.md` §5): every bookmark in the file comes in again beside the earlier import, with its own import tag. Nothing is matched against earlier imports. (Replaces matching on the address with `replaced` and `removed` marks, from the dropped `importing-again` note.)
 
 ## 4. Through the import walkthrough
 
@@ -47,7 +47,7 @@ A new source card, **Browser bookmarks**. Its steps:
 1. **Source:** Browser bookmarks.
 2. **File:** the Folder screen's shape for one file. A card showing the file's name and "1,240 bookmarks in 38 folders", **Choose File…** to pick one or another, and under it **Folder as it will appear in MetaList**, defaulting to `Bookmarks/`, with the same notice when that folder exists (keep and merge, or rename). The file is uploaded from the browser, so this works on hosted and self-hosted servers as well as on the user's own machine. A file that isn't a bookmarks export is refused on this screen with a sentence saying so.
 3. Files, Markdown, Images and Previews don't apply and are skipped.
-4. **Summary:** how many bookmarks are new, changed (come in as copies), unchanged (skipped) and gone from the browser, and the prefix folder.
+4. **Summary:** how many bookmarks will come in and in how many folders, the bookmarks left out (decided below), and the prefix folder.
 5. **Import**, and the report as the other imports give it, with any bookmark left out and why (no address, say).
 
 ## 5. Dropping a bookmarks file
@@ -59,27 +59,27 @@ A new source card, **Browser bookmarks**. Its steps:
 - Cancelling the walkthrough adds nothing; the file isn't attached.
 - Recognition reads the start of the file, before any upload or preview. Every other `.html` file is dropped as today.
 
-*Check* where a dropped file is handled today, and whether a drop onto a note (as an attachment) should behave the same; the maintainer has only discussed a drop onto MetaList.
+- **Wherever it is dropped** (decided 2026-11-02): onto the list or into a note being edited, a bookmarks file opens the walkthrough and is never attached. One rule anyone can predict; a bookmarks file can't be kept as a file in a note by dropping it.
 
 ## 6. Invariants
 
 1. A bookmarks file is recognized by its contents, never by its name alone.
 2. Nothing is imported before the user has seen the Summary.
-3. Nothing is fetched from the bookmarked sites.
-4. One address is one note however many folders hold it; importing again never copies an unchanged bookmark.
+3. The import fetches nothing from the bookmarked sites.
+4. One address is one note however many folders hold it, within one import.
 5. The browser's own top folders never become folder tags.
 
 ## 7. Done when
 
 1. Browser bookmarks is a source in the walkthrough and in `IMPORT_SOURCES`, with the steps in §4.
 2. Exports from Chrome, Safari and Firefox import with their folders, dates and (Firefox) tags, without the top folders; tests use a small sample of each.
-3. Importing the same file twice adds no notes; a changed file behaves as `importing-again` describes.
+3. Importing the same file twice brings it in twice, each import under its own import tag.
 4. Dropping a bookmarks file opens the walkthrough as in §5; dropping any other `.html` file is unchanged.
 5. `docs/ready-to-build/import-export-launch.md` lists the source.
 
 ## 8. Still open
 
-- Whether the note shows the date added as a line. Suggested: no, since the note's created date already is that date.
+- ~~Whether the note shows the date added as a line.~~ **Decided 2026-11-02: no;** the note's Created date already is that date (shown in its menu, used by sorting by Created and the Created date range).
 
 ## 9. Checked against the code (2026-11-02, when filed)
 
@@ -89,8 +89,27 @@ Found:
 
 - **No import takes an uploaded file today.** Every source is a folder path picked in the server's own dialog (`POST /import/pick-folder`, then `ImportFolderRequest.folderPath` in `app/api/routes/imports.py`). §4's upload from the browser is new: a route that takes the file, and `ImportSourceKey` (the same file) gains `bookmarks`. The hosted folder upload (`folder-import-and-file-previews.md` §4) isn't built either, so this would be the first upload into an import.
 - **There is no import report any more** (dropped 2026-11-01, `import-export-launch.md` §5): the walkthrough closes on a search context of the import's tag. §4's "the report as the other imports give it" can only mean the Summary, so bookmarks left out (no address) would be listed there, before the import. *Ask.*
-- **Drops** are handled in `keyboard-events.js` (`handleDropEvent`, `processDroppedFiles`, with `shouldCreateTopNoteForFileDrop` in `file-drop-policy-service.js`). A drop onto a note and one onto the list both go through it; §5's open point (whether a drop onto a note opens the walkthrough too) stays open.
+- **Drops** are handled in `keyboard-events.js` (`handleDropEvent`, `processDroppedFiles`, with `shouldCreateTopNoteForFileDrop` in `file-drop-policy-service.js`). A drop onto a note and one onto the list both go through it; Recognizing a bookmarks file goes before both, so the walkthrough opens wherever it lands (§5).
 - **Folder and tag names** would go through the same cleanup as a vault's (`_tag_text`, `_checked_tag` in `notes.py`: spaces become dashes, renames reported), and under the prefix folder (`import_folder_prefix`, `folder_tag_for`).
 - **The exports themselves can't be checked from the repo:** there is no sample from any browser. Tests need a small real export from Chrome, Safari and Firefox (§7.2), including how each marks its top folders (§2).
-- **Builds on `importing-again`** for §3's second import, which isn't built.
 - Aside: `app/static/js/modules/import-sources.js` holds a second, older `IMPORT_SOURCES` (Obsidian and Markdown only) that nothing imports; the walkthrough's `SOURCES` is the live list.
+
+### Decided (the maintainer, 2026-11-02)
+
+- **Bookmarks that can't be used in MetaList are left out and listed on the Summary,** before anything is imported; there is no report afterwards (the import report was dropped 2026-11-01). **Only website addresses come in** (`http:` and `https:`; the maintainer: "we only want URLs to websites"). Everything else is left out: a bookmark with no address, Firefox's smart folders (`place:` addresses such as "Most Visited"), bookmarklets (`javascript:`), browser-internal pages (`chrome://`, `about:`, `edge://` and the like) and files on the computer (`file:`, found in the Firefox export). The Summary gives the count by kind ("3 left out: 2 Firefox smart folders, 1 bookmarklet") with a fold arrow listing each by title. This replaces §4's "the report as the other imports give it".
+- **The file is uploaded from the browser,** for Choose File and for a drop alike (§4, §5): one path that works on personal, self-hosted and hosted, read in memory with no plaintext temporary file. It is the first import that uploads; the folder imports keep the server's folder dialog on a personal install until their hosted upload (`folder-import-and-file-previews.md` §4) is built.
+- **A dropped bookmarks file opens the walkthrough wherever it is dropped,** into a note being edited as well as onto the list (§5): the same rule everywhere, as with imports only adding.
+- **Each bookmark is one line, its title linked to its address, with no date line** (§2, §8): no repetition, the user's own title kept, nothing fetched for it.
+- **Tests start from a real Firefox export** (Chrome's next, once it can be exported; Chrome wouldn't open on 2026-11-02), which the maintainer provides outside the repo. Only its structure is read (elements, attributes, how the top folders, dates and any tags are written, counts), never its titles or addresses; the committed samples are made up with the same structure. Chrome's and Safari's formats stay unchecked until an export of each is at hand: §7.2's samples for them must not be written from memory and passed off as checked.
+
+### Checked against a real Firefox export (2026-11-02)
+
+Structure only, from the maintainer's own export (Firefox on macOS, 123 bookmarks in 11 folders, nested 3 deep); no titles or addresses were copied:
+
+- The first line is `<!DOCTYPE NETSCAPE-Bookmark-file-1>`, as §1 says. A `<meta>` Content-Security-Policy and `<TITLE>Bookmarks</TITLE>` follow.
+- **Firefox's top level is the Bookmarks Menu itself:** the menu's own bookmarks and folders sit directly in the outermost list, with no folder for the menu. Bookmarks Toolbar is a folder there, marked `PERSONAL_TOOLBAR_FOLDER="true"` (as Chrome's bar is). So "recognize the top folders by their position as the top level" (§2) is wrong for Firefox: a folder the user made in the menu is at the same level as the toolbar and must be kept. Leave out only the marked folder, and keep everything else at its path.
+- **Other Bookmarks didn't appear** (it was empty in this export), so how Firefox marks it when it has bookmarks is still unchecked.
+- **Firefox's own "Mozilla Firefox" folder** (the bookmarks it comes with) is an ordinary, unmarked folder in the menu, so it comes in as `Bookmarks/Mozilla-Firefox/` unless the user deleted it in Firefox.
+- Every link has `HREF`, `ADD_DATE` and `LAST_MODIFIED`, both dates in seconds (10 digits). Folders carry the same dates. Most links carry `ICON_URI` and an `ICON` data URI (left out, §2).
+- No `TAGS` attribute (this user tags nothing in Firefox) and no `place:` smart folders, so neither is checked yet.
+- Addresses: 115 `https`, 5 `http`, 2 `file:` and 1 `about:`. One address appears in two folders (§3: one note with both folder tags). No bookmark has an empty title.
