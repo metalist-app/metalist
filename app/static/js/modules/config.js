@@ -158,6 +158,8 @@ export const CONFIG = {
             SCAN: `${API_BASE}/import/scan`,
             IMAGES: `${API_BASE}/import/images`,
             PREVIEWS: `${API_BASE}/import/previews`,
+            BOOKMARKS_PREVIEW: `${API_BASE}/import/bookmarks/preview`,
+            BOOKMARKS: `${API_BASE}/import/bookmarks`,
         },
         // Virtual folders, an experiment (app/api/routes/virtual_folders.py).
         VIRTUAL_FOLDERS: {

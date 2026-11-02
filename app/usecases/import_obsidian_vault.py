@@ -115,13 +115,13 @@ class CmdImportObsidianVault(QueryCommand):
         planned = linked.planned
         note_count = sum(count_notes(note.root) for note in planned) + len(linked.kept)
         roots = [
-            *((note.source_path, _Written(node=note.root, created_at=note.created_at, updated_at=note.updated_at)) for note in planned),
+            *((note.source_path, WrittenRoot(node=note.root, created_at=note.created_at, updated_at=note.updated_at)) for note in planned),
             *linked.kept,
         ]
         roots.sort(key=lambda pair: _file_list_key(PurePosixPath(pair[0])))
         # The files at the top of the list as Obsidian's file list orders them (no import
         # report: the maintainer, 2026-11-01).
-        records = _records([written for _path, written in roots])
+        records = root_records([written for _path, written in roots])
         apply_restore_records(records, self.token)
         return {
             "status": "success", "noteCount": note_count,
@@ -232,7 +232,7 @@ class CmdPreviewImport(QueryCommand):
 
 
 @dataclass(frozen=True)
-class _Written:
+class WrittenRoot:
     """A root note to write with its subtree, and its times."""
 
     node: NoteNode
@@ -246,7 +246,7 @@ class _Linked:
     Excalidraw files (with their paths)."""
 
     planned: List[PlannedNote]
-    kept: List[Tuple[str, _Written]]
+    kept: List[Tuple[str, WrittenRoot]]
 
 
 def _linked(
@@ -370,7 +370,7 @@ def _stored_content(folder: Path, path: PurePosixPath, *, images: ImageChoice) -
 
 def _kept_file_note(
     folder: Path, path: PurePosixPath, file_id: str, *, source_tag: str, folder_prefix: str,
-) -> Tuple[str, _Written]:
+) -> Tuple[str, WrittenRoot]:
     """A Canvas, Base or Excalidraw file's own note: the file embedded, tagged as a note of its folder."""
     tags = [tag for tag in (folder_tag_for(path, folder_prefix), source_tag) if tag != ""]
     modified_at = datetime.fromtimestamp((folder / Path(path)).stat().st_mtime, tz=timezone.utc)
@@ -378,7 +378,7 @@ def _kept_file_note(
         note_id=str(uuid.uuid4()), content_html=plain_text_to_note_html(f"{_EMBED_MARK}[[{file_id}]]"),
         tags=tuple(tags), anchors=(), children=(),
     )
-    return str(path), _Written(node=node, created_at=modified_at, updated_at=modified_at)
+    return str(path), WrittenRoot(node=node, created_at=modified_at, updated_at=modified_at)
 
 
 def _is_kept_file(path: PurePosixPath) -> bool:
@@ -401,7 +401,7 @@ def _file_list_key(path: PurePosixPath) -> Tuple[Tuple[int, str], ...]:
     return (*folders, (_FILE_RANK, path.name.casefold()))
 
 
-def _records(roots: List[_Written]) -> List[SimpleNamespace]:
+def root_records(roots: List[WrittenRoot]) -> List[SimpleNamespace]:
     """The notes as records for apply_restore_records: the root notes, in this order, ahead of
     the list's first root note, each followed by its subtree. Roots go in last first: each
     at the top, just ahead of the one after it; children are appended under their parent;
@@ -420,7 +420,7 @@ def _records(roots: List[_Written]) -> List[SimpleNamespace]:
     return records
 
 
-def _append_children(records: List[SimpleNamespace], node: NoteNode, written: _Written, *, parent_id: str) -> None:
+def _append_children(records: List[SimpleNamespace], node: NoteNode, written: WrittenRoot, *, parent_id: str) -> None:
     prev_id = None
     for child in node.children:
         records.append(_record(child, written, parent_id=parent_id, prev_id=prev_id, next_id=None))
@@ -429,7 +429,7 @@ def _append_children(records: List[SimpleNamespace], node: NoteNode, written: _W
 
 
 def _record(
-    node: NoteNode, written: _Written, *, parent_id: str | None, prev_id: str | None, next_id: str | None,
+    node: NoteNode, written: WrittenRoot, *, parent_id: str | None, prev_id: str | None, next_id: str | None,
 ) -> SimpleNamespace:
     return SimpleNamespace(
         id=node.note_id,
@@ -632,18 +632,18 @@ class CmdImportFolderOfFiles(QueryCommand):
             for path in plan.attached
         ]
         roots = [
-            *((note.source_path, _Written(node=note.root, created_at=note.created_at, updated_at=note.updated_at)) for note in planned),
+            *((note.source_path, WrittenRoot(node=note.root, created_at=note.created_at, updated_at=note.updated_at)) for note in planned),
             *attached,
         ]
         roots.sort(key=lambda pair: _file_list_key(PurePosixPath(pair[0])))
-        apply_restore_records(_records([written for _path, written in roots]), self.token)
+        apply_restore_records(root_records([written for _path, written in roots]), self.token)
         note_count = sum(count_notes(note.root) for note in planned) + sum(count_notes(written.node) for _path, written in attached)
         return {"status": "success", "noteCount": note_count, "sourceTag": plan.source_tag}
 
 
 def _attached_file_note(
     folder: Path, path: PurePosixPath, file_id: str, *, source_tag: str, folder_prefix: str, makes_preview: bool,
-) -> Tuple[str, _Written]:
+) -> Tuple[str, WrittenRoot]:
     """A file's own note: the file alone (its card shows its name; the maintainer, 2026-11-01:
     a name line over it said it twice), tagged as a note of its folder, with the preview a
     drop gives it as its child when its kind is ticked. Search finds it by the file's name
@@ -658,7 +658,7 @@ def _attached_file_note(
         note_id=str(uuid.uuid4()), content_html=plain_text_to_note_html(f"{_EMBED_MARK}[[{file_id}]]"),
         tags=tuple(tags), anchors=(), children=children,
     )
-    return str(path), _Written(node=node, created_at=modified_at, updated_at=modified_at)
+    return str(path), WrittenRoot(node=node, created_at=modified_at, updated_at=modified_at)
 
 
 @dataclass

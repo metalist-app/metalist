@@ -583,6 +583,25 @@ export const NotesAPI = {
         return this._apiCall(CONFIG.API.IMPORT.FOLDER, { method: 'POST', body: this._importBody(choices, 'importFolder') });
     },
 
+    // A browser's bookmarks export (docs/ready-to-build/bookmark-import.md): what importing it
+    // would do ({ prefixFolder, bookmarkCount, folderCount, folderTagCount, leftOut: [[title, why]] }),
+    // and the import itself ({ noteCount, sourceTag }). fileText: the file as the browser read it.
+    async previewBookmarkImport({ fileText, prefixFolder }) {
+        if (typeof fileText !== 'string' || fileText.length === 0 || typeof prefixFolder !== 'string') {
+            throw new Error('NotesAPI.previewBookmarkImport requires the file\'s text and the folder');
+        }
+        return this._apiCall(CONFIG.API.IMPORT.BOOKMARKS_PREVIEW, { method: 'POST', body: JSON.stringify({ fileText, prefixFolder }) });
+    },
+
+    async importBookmarks({ fileText, prefixFolder, addToExisting }) {
+        if (typeof fileText !== 'string' || fileText.length === 0 || typeof prefixFolder !== 'string' || typeof addToExisting !== 'boolean') {
+            throw new Error('NotesAPI.importBookmarks requires the file\'s text, the folder and whether to add to it');
+        }
+        return this._apiCall(CONFIG.API.IMPORT.BOOKMARKS, {
+            method: 'POST', body: JSON.stringify({ fileText, prefixFolder, addToExisting }),
+        });
+    },
+
     // The folder a typed name makes ({ folder: cleaned, '' for none; exists }).
     async checkImportPrefixFolder(name) {
         if (typeof name !== 'string') {

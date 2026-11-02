@@ -26,6 +26,7 @@ from app.services.image_compression import COMPRESSIBLE_SUFFIXES, IMAGE_LONGEST_
 from app.services.obsidian_import.vault import count_compressible_images, count_markdown_files
 from app.services.reference_suggestions import build_catalog_in_background
 from app.upload_limits import MAX_ATTACHMENT_BYTES
+from app.usecases.import_bookmarks import CmdImportBookmarks, CmdPreviewBookmarkImport
 from app.usecases.import_obsidian_vault import (
     CmdEstimateImportImages,
     CmdEstimateImportPreviews,
@@ -86,6 +87,21 @@ class ImportFolderRequest(TypedDict):
 @with_config(ConfigDict(strict=True))
 class ScanImportFolderRequest(TypedDict):
     folderPath: Annotated[str, Field(min_length=1, max_length=_MAX_FOLDER_PATH_LENGTH)]
+
+
+@with_config(ConfigDict(strict=True))
+class BookmarksPreviewRequest(TypedDict):
+    # The bookmarks export's text, as the browser read the chosen or dropped file
+    # (docs/ready-to-build/bookmark-import.md §4: uploaded, so it works on every deployment).
+    fileText: Annotated[str, Field(min_length=1, max_length=MAX_ATTACHMENT_BYTES)]
+    prefixFolder: Annotated[str, Field(max_length=_MAX_FOLDER_PATH_LENGTH)]
+
+
+@with_config(ConfigDict(strict=True))
+class BookmarksImportRequest(TypedDict):
+    fileText: Annotated[str, Field(min_length=1, max_length=MAX_ATTACHMENT_BYTES)]
+    prefixFolder: Annotated[str, Field(max_length=_MAX_FOLDER_PATH_LENGTH)]
+    addToExisting: bool
 
 
 @with_config(ConfigDict(strict=True))
@@ -250,5 +266,28 @@ def import_folder(request: Request, body: ImportFolderRequest) -> dict[str, obje
             images=_image_choice(body), token=token, imported_at=datetime.now(timezone.utc),
         ).execute()
     # The imported notes join the `[[` catalog now, not at the first `[[`.
+    build_catalog_in_background()
+    return result
+
+
+@router.post("/bookmarks/preview")
+@transactional_route
+def preview_bookmark_import(request: Request, body: BookmarksPreviewRequest) -> dict[str, object]:
+    """What importing a bookmarks export would do (the File and Summary screens); writes nothing.
+    A file that isn't one is refused with a sentence saying so."""
+    require_request_auth_token(request)
+    return CmdPreviewBookmarkImport(
+        file_text=body["fileText"], folder_prefix=body["prefixFolder"], imported_at=datetime.now(timezone.utc),
+    ).execute()
+
+
+@router.post("/bookmarks")
+@transactional_route
+def import_bookmarks(request: Request, body: BookmarksImportRequest) -> dict[str, object]:
+    token = require_request_auth_token(request)
+    result = CmdImportBookmarks(
+        file_text=body["fileText"], folder_prefix=body["prefixFolder"], add_to_existing=body["addToExisting"],
+        token=token, imported_at=datetime.now(timezone.utc),
+    ).execute()
     build_catalog_in_background()
     return result

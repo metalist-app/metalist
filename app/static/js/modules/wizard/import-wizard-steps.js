@@ -2,6 +2,7 @@ import { escapeHtml } from '../html-escape.js';
 import { formatByteSize } from '../byte-sizes.js';
 import { NotesAPI } from '../api-client.js';
 import { CommandGate } from '../mode-manager/services/command-gate-service.js';
+import { bookmarksFileChoices } from './bookmarks-file.js';
 
 // The import wizard's steps (PLAN.md, phase 2), shared by the import wizard and the new
 // vault wizard, which runs them after its own: the folder picked in the system's dialog,
@@ -117,10 +118,15 @@ function notesWord(count) {
 
 /** The server's preview for the choices so far, drawn into the summary (summarySelector). */
 export async function fillImportPreview(screen, wizard, summarySelector) {
-    const preview = await NotesAPI.previewImport(importRequest(wizard.choices));
+    let html = '';
+    if (wizard.choices.source === BOOKMARKS_SOURCE) {
+        html = bookmarksPreviewHtml(await NotesAPI.previewBookmarkImport(bookmarksRequest(wizard.choices)));
+    } else {
+        html = importPreviewHtml(await NotesAPI.previewImport(importRequest(wizard.choices)), wizard.choices);
+    }
     const summary = screen.querySelector(summarySelector);
     if (summary === null || !summary.isConnected) return;
-    summary.innerHTML = importPreviewHtml(preview, wizard.choices);
+    summary.innerHTML = html;
 }
 
 /**
@@ -166,10 +172,15 @@ function progressReporter(screen) {
  * the import wizard and by the new vault wizard's setup.
  */
 export async function runImport(wizard, progress) {
-    progress.working('Importing your files…');
+    const isBookmarks = wizard.choices.source === BOOKMARKS_SOURCE;
+    progress.working(isBookmarks ? 'Importing your bookmarks…' : 'Importing your files…');
     let result = null;
     await CommandGate.run('importWizard.import', async () => {
-        result = await NotesAPI.importFolder(importRequest(wizard.choices));
+        if (isBookmarks) {
+            result = await NotesAPI.importBookmarks({ ...bookmarksRequest(wizard.choices), addToExisting: wizard.choices.addToExisting });
+        } else {
+            result = await NotesAPI.importFolder(importRequest(wizard.choices));
+        }
         if (!Number.isInteger(result.noteCount) || typeof result.sourceTag !== 'string') {
             throw new Error('The import answered without its notes');
         }
@@ -248,7 +259,12 @@ const SOURCES = [
     { value: 'files', title: 'Any folder', badge: '', text: '',
         folderIntro: 'Choose any folder. Each file in it becomes a note: Markdown and text files with their text, every other file as its card or picture.',
         fileWord: 'files' },
+    // A browser's bookmarks export: a file, not a folder (docs/ready-to-build/bookmark-import.md).
+    { value: 'bookmarks', title: 'Browser bookmarks', badge: '', text: '',
+        folderIntro: 'Choose the bookmarks file your browser exported. Each bookmark becomes a note, in its folder.',
+        fileWord: 'bookmarks' },
 ];
+const BOOKMARKS_SOURCE = 'bookmarks';
 // A folder of any files (folder-import-and-file-previews.md): its checklist, and Split and
 // Write as only for the text files it brings in.
 const FILES_SOURCE = 'files';
@@ -464,7 +480,99 @@ async function chooseFolder(wizard) {
     wizard.redrawScreen();
 }
 
+// --- A browser's bookmarks export (docs/ready-to-build/bookmark-import.md) ---------------
+
+function countedWord(count, one, several) {
+    return `${count.toLocaleString()} ${count === SINGLE ? one : several}`;
+}
+
+// The File screen: the export chosen (its name, how many bookmarks in how many folders) or
+// why it can't be imported, and the folder the notes go into (Bookmarks at first).
+function bookmarksFileHtml(choices) {
+    let chosen = '<div class="wizard-folder-chosen is-empty" role="button" tabindex="0" title="Choose File…">No file chosen yet</div>';
+    let below = '';
+    if (choices.bookmarksFileName !== '' && choices.bookmarksProblem !== '') {
+        chosen = `<div class="wizard-folder-chosen is-empty" role="button" tabindex="0" title="Choose File…">${escapeHtml(choices.bookmarksFileName)}</div>`;
+        below = `<p class="wizard-note is-problem">${escapeHtml(choices.bookmarksProblem)}</p>`;
+    } else if (choices.bookmarksFileName !== '') {
+        const counts = `${countedWord(choices.bookmarkCount, 'bookmark', 'bookmarks')} in ${countedWord(choices.bookmarkFolderCount, 'folder', 'folders')}`;
+        chosen = `<div class="wizard-folder-chosen is-chosen" role="button" tabindex="0" title="Choose File…">
+            <span class="wizard-choice-check" aria-hidden="true">✓</span>
+            <span class="wizard-folder-name">${escapeHtml(choices.bookmarksFileName)}</span>
+            <span class="wizard-folder-counts">${escapeHtml(counts)}</span></div>`;
+        below = prefixFieldHtml(choices);
+    }
+    return `<p class="wizard-intro">${escapeHtml(sourceOf(choices).folderIntro)}</p>
+        ${chosen}<button type="button" class="secondary-btn wizard-choose-folder" data-wizard-focus>Choose File…</button>${below}`;
+}
+
+// The browser's own file picker: the file is read in the browser and sent, so this works on
+// every deployment (bookmark-import.md, Decided).
+function chooseBookmarksFile(wizard) {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.html,.htm,text/html';
+    input.onchange = async () => {
+        if (input.files === null || input.files.length === NONE) return;
+        wizard.chooseMany({ ...await bookmarksFileChoices(input.files[0]), prefixCheckedFor: null });
+        wizard.redrawScreen();
+    };
+    input.click();
+}
+
+function bookmarksRequest(choices) {
+    return { fileText: choices.bookmarksText, prefixFolder: choices.prefixText };
+}
+
+// The Summary: how many bookmarks come in, the folder tags, the folder it all goes into, and
+// what is left out (not a website address), listed under an arrow.
+function bookmarksPreviewHtml(preview) {
+    let into = '';
+    if (preview.prefixFolder !== '') {
+        into = `<p class="wizard-note">Everything goes into the folder <code>${escapeHtml(preview.prefixFolder)}</code>.</p>`;
+    }
+    const counts = [
+        [preview.bookmarkCount, 'bookmarks will become notes, each its title linked to its page'],
+        [preview.folderTagCount, 'tags will be added based on the bookmark folders'],
+    ].filter(([count]) => count > NONE);
+    let leftOut = '';
+    if (preview.leftOut.length > NONE) {
+        const items = preview.leftOut.map(([title, why]) => `
+            <li class="wizard-kind-file"><span class="wizard-kind-file-name">${escapeHtml(title)}</span>
+                <span class="wizard-kind-size">${escapeHtml(why)}</span></li>`).join('');
+        leftOut = `
+            <h3 class="wizard-subtitle">Left out</h3>
+            <details class="wizard-left-out">
+                <summary><span class="wizard-kind-arrow" aria-hidden="true"></span>${escapeHtml(countedWord(preview.leftOut.length, 'bookmark isn\'t', 'bookmarks aren\'t'))} a website address</summary>
+                <ul class="wizard-kind-files">${items}</ul>
+            </details>`;
+    }
+    return `${into}
+        <div class="wizard-stats">${counts.map(([count, label]) => `
+            <span class="wizard-stat">${count}</span><span class="wizard-stat-label">${escapeHtml(label)}</span>`).join('')}
+        </div>${leftOut}`;
+}
+
 // --- The folder the notes go into (docs/ready-to-build/import-prefix-folder.md) -----------
+
+function prefixFieldHtml(choices) {
+    return `
+        <label class="wizard-field wizard-into-field"><span>Folder as it will appear in MetaList</span>
+            <input type="text" class="wizard-input" data-wizard-prefix value="${escapeHtml(choices.prefixText)}"
+                autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"></label>
+        <div class="wizard-prefix-status">${prefixStatusHtml(choices)}</div>`;
+}
+
+function wirePrefixField(screen, wizard) {
+    const input = screen.querySelector('[data-wizard-prefix]');
+    if (input === null) return;
+    input.addEventListener('input', () => {
+        wizard.choose('prefixText', input.value);
+        void checkPrefix(screen, wizard);
+    });
+    wirePrefixStatus(screen.querySelector('.wizard-prefix-status'), wizard);
+    if (wizard.choices.prefixCheckedFor !== wizard.choices.prefixText) void checkPrefix(screen, wizard);
+}
 
 // What the typed name makes, as the server last said: the folder (cleaned as folder names
 // are), whether it exists, and what is wrong with the name; prefixCheckedFor is the text it
@@ -706,6 +814,7 @@ function checklistProblem(choices) {
 const MARKDOWN_FILE_RE = /\.(md|markdown)$/i;
 
 function bringsInMarkdown(choices) {
+    if (choices.source === BOOKMARKS_SOURCE) return false;
     if (choices.source !== FILES_SOURCE) return true;
     if (choices.scan === null) return false;
     return tickedFiles(choices).some(([groupKey, path]) => groupKey === TEXT_GROUP && MARKDOWN_FILE_RE.test(path));
@@ -859,7 +968,7 @@ export function importSteps({ withSourceStep, withSummaryAndRun }) {
         makeStep({
             key: 'folder', label: 'Folder', title: 'Choose the folder',
             intro: '',
-            nextLabel: NEXT, isAction: false, applies: ALWAYS,
+            nextLabel: NEXT, isAction: false, applies: (choices) => choices.source !== BOOKMARKS_SOURCE,
             // The folder to import and the folder it goes into in MetaList, on one screen (the
             // maintainer, 2026-11-01): the second starts as the first's name.
             render: (choices) => {
@@ -873,11 +982,7 @@ export function importSteps({ withSourceStep, withSummaryAndRun }) {
                         <span class="wizard-choice-check" aria-hidden="true">✓</span>
                         <span class="wizard-folder-name">${escapeHtml(choices.folderName)}</span>
                         <span class="wizard-folder-counts">${choices.fileCount} ${escapeHtml(source.fileWord)}</span></div>`;
-                    into = `
-                        <label class="wizard-field wizard-into-field"><span>Folder as it will appear in MetaList</span>
-                            <input type="text" class="wizard-input" data-wizard-prefix value="${escapeHtml(choices.prefixText)}"
-                                autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"></label>
-                        <div class="wizard-prefix-status">${prefixStatusHtml(choices)}</div>`;
+                    into = prefixFieldHtml(choices);
                 }
                 return `<p class="wizard-intro">${escapeHtml(source.folderIntro)}</p>
                     ${chosen}<button type="button" class="secondary-btn wizard-choose-folder" data-wizard-focus>Choose Folder…</button>${into}`;
@@ -891,19 +996,35 @@ export function importSteps({ withSourceStep, withSummaryAndRun }) {
                     event.preventDefault();
                     void chooseFolder(wizard);
                 };
-                const input = screen.querySelector('[data-wizard-prefix]');
-                if (input === null) return;
-                input.addEventListener('input', () => {
-                    wizard.choose('prefixText', input.value);
-                    void checkPrefix(screen, wizard);
-                });
-                wirePrefixStatus(screen.querySelector('.wizard-prefix-status'), wizard);
-                if (wizard.choices.prefixCheckedFor !== wizard.choices.prefixText) void checkPrefix(screen, wizard);
+                wirePrefixField(screen, wizard);
             },
             onChoice: null, onNext: null,
             missing: (choices) => {
                 if (choices.folderPath === '') return 'Choose the folder first.';
                 if (choices.fileCount === 0) return 'That folder holds nothing this import reads. Choose another.';
+                return prefixProblem(choices);
+            },
+        }),
+        makeStep({
+            key: 'bookmarksFile', label: 'File', title: 'Choose the bookmarks file',
+            intro: '',
+            nextLabel: NEXT, isAction: false, applies: (choices) => choices.source === BOOKMARKS_SOURCE,
+            render: (choices) => bookmarksFileHtml(choices),
+            wire: (screen, wizard) => {
+                screen.querySelector('.wizard-choose-folder').onclick = () => chooseBookmarksFile(wizard);
+                const card = screen.querySelector('.wizard-folder-chosen');
+                card.onclick = () => chooseBookmarksFile(wizard);
+                card.onkeydown = (event) => {
+                    if (event.key !== 'Enter' && event.key !== ' ') return;
+                    event.preventDefault();
+                    chooseBookmarksFile(wizard);
+                };
+                wirePrefixField(screen, wizard);
+            },
+            onChoice: null, onNext: null,
+            missing: (choices) => {
+                if (choices.bookmarksFileName === '') return 'Choose the bookmarks file first.';
+                if (choices.bookmarksProblem !== '') return choices.bookmarksProblem;
                 return prefixProblem(choices);
             },
         }),
@@ -1048,5 +1169,8 @@ export function importChoices() {
         // The folder the notes go into, as typed (the vault's name once a folder is chosen), and
         // what the server last said of it (prefixStatusHtml); adding to an existing one is ticked.
         prefixText: '', prefixCheckedFor: null, prefixFolder: '', prefixExists: false, prefixProblem: '', addToExisting: true,
+        // A bookmarks export (bookmarks-file.js): its name, its text, its counts, and the
+        // sentence saying it isn't one ('' when it is).
+        bookmarksFileName: '', bookmarksText: '', bookmarkCount: 0, bookmarkFolderCount: 0, bookmarksProblem: '',
     };
 }

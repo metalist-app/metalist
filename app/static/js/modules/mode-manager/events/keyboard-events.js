@@ -133,6 +133,8 @@ import {
     updateSearchContextsOverlayPlacement,
 } from '../services/search-contexts-overlay-service.js';
 import { CommandPalette } from '../../command-palette/command-palette-controller.js';
+import { hasWebPageName, isBookmarksExportFile } from '../../wizard/bookmarks-file.js';
+import { IMPORT_BOOKMARKS, promptForBookmarksDropChoice } from '../services/bookmarks-drop-choice-modal-service.js';
 import { CommandGate } from '../services/command-gate-service.js';
 import { unlessDiagramEditorOpen } from '../../excalidraw/excalidraw-editor-state.js';
 import { unlessNoteFullscreenOpen } from '../services/note-fullscreen-service.js';
@@ -143,6 +145,8 @@ import { TypeAhead } from '../services/type-ahead-service.js';
 const helpModal = new HelpModal();
 
 const MODIFIER_KEYS = new Set(['Control', 'Alt', 'Shift', 'Meta']);
+// A drop of one file only can be a bookmarks export to import.
+const LONE_FILE = 1;
 const NAVIGATION_KEYS = new Set([
     'ArrowUp',
     'ArrowDown',
@@ -2609,7 +2613,41 @@ function handleDropEvent(event) {
     if (droppedFiles.length === 0) {
         return;
     }
+    // A browser's bookmarks export asks first: import it (the default) or keep it as a file
+    // (docs/ready-to-build/bookmark-import.md §5). Only a lone web page is read to tell.
+    if (droppedFiles.length === LONE_FILE && hasWebPageName(droppedFiles[0])) {
+        void dropPossibleBookmarksFile(event, droppedFiles).catch((error) => {
+            rethrowUnexpectedError(error);
+            const message = error instanceof Error ? error.message : String(error);
+            ErrorHandler.showErrorBanner(
+                `File drop failed: ${message}`,
+                'error',
+                FAILURE_WITH_DETAIL_BANNER_SECONDS * MS_PER_SECOND,
+                { closable: true },
+            );
+        });
+        return;
+    }
+    dropFilesWhereDropped(event, droppedFiles);
+}
 
+async function dropPossibleBookmarksFile(event, droppedFiles) {
+    const file = droppedFiles[0];
+    if (await isBookmarksExportFile(file)) {
+        const choice = await promptForBookmarksDropChoice(file.name);
+        if (choice === null) {
+            return;
+        }
+        if (choice === IMPORT_BOOKMARKS) {
+            await CommandPalette.openImportWizardWithBookmarksFile(file);
+            return;
+        }
+    }
+    dropFilesWhereDropped(event, droppedFiles);
+}
+
+// Files dropped where the drop lands: a note's text being edited, or a new note at the top.
+function dropFilesWhereDropped(event, droppedFiles) {
     const target = resolveEditingDropTarget(event);
     const imageFiles = droppedFiles.filter((file) => isImageFile(file));
     const onlyImages = imageFiles.length === droppedFiles.length;

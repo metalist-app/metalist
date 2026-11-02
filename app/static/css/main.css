@@ -562,13 +562,20 @@ html:has(> body > .login-page[style*="display: flex"]:not(.login-page-covering):
     margin-right: auto;
 }
 
-.image-file-insert-choice-modal-content {
+.image-file-insert-choice-modal-content,
+.bookmarks-drop-choice-modal-content {
     width: min(460px, 92vw);
 }
 
-.image-file-insert-choice-modal-content p {
+.image-file-insert-choice-modal-content p,
+.bookmarks-drop-choice-modal-content p {
     margin: 0 0 18px;
     line-height: 1.45;
+}
+
+/* The dropped file's name, as long as it is. */
+.bookmarks-drop-choice-file {
+    overflow-wrap: anywhere;
 }
 
 .link-title-retry-modal-content {
@@ -12416,6 +12423,62 @@ html[data-theme="dark"] .modal.wizard-modal .modal-content .wizard-kind button.w
     outline: 2px solid var(--modal-focus-ring);
     outline-offset: 1px;
     border-radius: 3px;
+}
+
+/* A bookmarks import's Summary: what is left out, under the note-sized arrow the Files step's
+   kinds have (docs/ready-to-build/bookmark-import.md). */
+.wizard-left-out summary {
+    display: flex;
+    align-items: center;
+    list-style: none;
+    cursor: pointer;
+}
+
+.wizard-left-out summary::-webkit-details-marker {
+    display: none;
+}
+
+.wizard-left-out .wizard-kind-arrow {
+    width: 27px;
+    height: 27px;
+    color: rgba(0, 0, 0, 0.35);
+    font-size: 23px;
+    line-height: 27px;
+    text-align: center;
+}
+
+.wizard-left-out .wizard-kind-arrow::before {
+    content: "▸";
+}
+
+.wizard-left-out[open] .wizard-kind-arrow::before {
+    content: "▾";
+}
+
+.wizard-left-out summary:hover .wizard-kind-arrow {
+    color: #000000;
+}
+
+html[data-theme="dark"] .wizard-left-out .wizard-kind-arrow {
+    color: rgba(235, 235, 235, 0.4);
+}
+
+html[data-theme="dark"] .wizard-left-out summary:hover .wizard-kind-arrow {
+    color: #ffffff;
+}
+
+/* Under the arrow, not under a kind's box. */
+.wizard-left-out .wizard-kind-files {
+    margin-left: 27px;
+}
+
+/* Why it is left out, on one line: its column as wide as the longest why. */
+.wizard-left-out .wizard-kind-file {
+    grid-template-columns: minmax(0, 1fr) max-content;
+}
+
+.wizard-left-out .wizard-kind-size {
+    white-space: nowrap;
 }
 
 .wizard-kind-files {

@@ -12,11 +12,25 @@ export class ImportWizard extends WizardModal {
             steps: importSteps({ withSourceStep: true, withSummaryAndRun: true }),
             commitLabel: 'Import', services,
         });
+        // Choices already made when it opens (a dropped bookmarks file: Browser bookmarks chosen,
+        // its File step filled in; bookmark-import.md §5), or null for none.
+        this._presetChoices = null;
         ApplicationState.own(this, 'ImportWizard', new.target === ImportWizard);
     }
 
+    setPresetChoices(presetChoices) {
+        if (presetChoices !== null && typeof presetChoices !== 'object') {
+            throw new Error('ImportWizard.setPresetChoices requires choices or null');
+        }
+        // Owned state refuses a change to the value it has.
+        if (this._presetChoices !== presetChoices) {
+            this._presetChoices = presetChoices;
+        }
+    }
+
     initialChoices() {
-        return importChoices();
+        if (this._presetChoices === null) return importChoices();
+        return { ...importChoices(), ...this._presetChoices };
     }
 }
 

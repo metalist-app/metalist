@@ -296,6 +296,24 @@ def _folder_tag(
     return folder_prefix + checked
 
 
+def folder_tag_of_names(names: Tuple[str, ...], folder_prefix: str) -> str:
+    """The folder tag of a folder given by its names from the top (a browser's bookmark
+    folders: docs/ready-to-build/bookmark-import.md §2), under folder_prefix, each name made
+    a tag part as a vault folder's is; a `/` inside a name keeps it one folder."""
+    assert folder_prefix == "" or folder_prefix.endswith(_FOLDER_SEPARATOR), folder_prefix
+    parts = [_tag_text(name.replace(_FOLDER_SEPARATOR, _TAG_WORD_JOINER)) for name in names]
+    tag = _FOLDER_SEPARATOR.join(part for part in parts if part != "")
+    if tag == "":
+        return folder_prefix
+    return folder_prefix + _checked_tag(tag, tag + _FOLDER_SEPARATOR, renamed_tags=[], dropped_tags=[])
+
+
+def tag_of_name(name: str) -> str:
+    """name made a tag as an imported tag is (spaces as dashes, forbidden characters removed);
+    '' when nothing of it can be a tag."""
+    return _made_tag(name, renamed_tags=[], dropped_tags=[])
+
+
 def _made_tag(name: str, *, renamed_tags: List[Tuple[str, str]], dropped_tags: List[str]) -> str:
     return _checked_tag(name, _tag_text(name), renamed_tags=renamed_tags, dropped_tags=dropped_tags)
 

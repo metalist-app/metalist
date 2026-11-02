@@ -60,6 +60,7 @@ import { exportNotes } from '../mode-manager/services/export-service.js';
 
 import { VersionInfoModal } from '../modals/version-info-modal.js';
 import { ImportWizard, NewVaultWizard } from '../wizard/setup-wizards.js';
+import { bookmarksFileChoices } from '../wizard/bookmarks-file.js';
 import { MemoryUsageModal } from '../modals/memory-usage-modal.js';
 import { showErrorDialogFor } from '../modals/error-dialog.js';
 import { RecentMessagesModal } from '../modals/recent-messages-modal.js';
@@ -2912,6 +2913,16 @@ class CommandPaletteController {
 
     // Import… (PLAN.md, phase 2).
     async openImportWizard() {
+        await this._openImportWizardWith(null);
+    }
+
+    // A dropped bookmarks export the person chose to import: Browser bookmarks chosen and its
+    // File step filled in; Next, Next, Import (docs/ready-to-build/bookmark-import.md §5).
+    async openImportWizardWithBookmarksFile(file) {
+        await this._openImportWizardWith(await bookmarksFileChoices(file));
+    }
+
+    async _openImportWizardWith(presetChoices) {
         const isReady = await this._prepareForModalOpen('commandPalette.openImportWizard');
         if (!isReady) {
             return;
@@ -2919,6 +2930,7 @@ class CommandPaletteController {
         if (this._importWizard === null) {
             this._importWizard = new ImportWizard(this._wizardServices());
         }
+        this._importWizard.setPresetChoices(presetChoices);
         await this._importWizard.open();
     }
 
