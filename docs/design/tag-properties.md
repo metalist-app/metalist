@@ -36,8 +36,8 @@ Everything is a triple on a note: *tag*, *property*, *value*.
 - A note carries each tag at most once, so a tag's properties all live in one token.
 - Values belong to the note they are written on for counting: totals and stats figures
   read only the values a note writes, so a child of a 3-mile run never counts those miles
-  twice. A search reads them as it reads tags (changed 2026-11-01): child notes and
-  embedding notes inherit the tag and its values, the nearest value winning, so a child of
+  twice. A search reads them as it reads tags (changed 2026-11-01): child notes inherit
+  the tag and its values (embedding notes don't, 2026-11-03), the nearest value winning, so a child of
   a 3-mile run matches `jogging:miles>2` (`docs/ui/search-semantics.md`, Super Tag
   Searches).
 

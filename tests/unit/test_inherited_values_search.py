@@ -1,6 +1,6 @@
 """Values follow tags in a search (agreed 2026-11-01; docs/ui/search-semantics.md, Super Tag
-Searches): through parents and embeds, never links; the nearest value wins; missing-value
-searches and stats figures stay the note's own. Before, a search on values found only the
+Searches): through parents only, never embeds or links (2026-11-03); the nearest value wins;
+missing-value searches and stats figures stay the note's own. Before, a search on values found only the
 note the value was written on, so an import's search (imported:source=obsidian:at=...)
 showed every note under the imported files as grey bars."""
 
@@ -104,8 +104,8 @@ def test_the_nearest_ancestors_value_wins(index: SearchIndex) -> None:
 
 
 def test_a_value_combines_with_a_tag_on_a_note_below_it(index: SearchIndex) -> None:
-    # The week embeds the run, knee note and all, so it has both too, as it has the tags.
-    assert index.query_note_ids("jogging:miles>2 knee") == {KNEE, WEEK, WEEK_DAY}
+    # The week embeds the run, knee note and all, but an embed passes neither (2026-11-03).
+    assert index.query_note_ids("jogging:miles>2 knee") == {KNEE}
 
 
 def test_an_excluded_value_leaves_out_the_notes_under_it(index: SearchIndex) -> None:
@@ -129,10 +129,10 @@ def test_a_stats_figure_never_reads_an_inherited_value(index: SearchIndex) -> No
     assert MEAL_TOTAL not in index.query_note_ids("@sum:calories>2000")
 
 
-def test_an_embed_passes_its_values_and_a_link_does_not(index: SearchIndex) -> None:
+def test_an_embed_or_link_passes_no_values(index: SearchIndex) -> None:
     found = index.query_note_ids("jogging:miles=3")
-    assert {WEEK, WEEK_DAY} <= found
-    assert LINKING not in found
+    assert RUN in found
+    assert not {WEEK, WEEK_DAY, LINKING} & found
 
 
 def test_an_imports_search_finds_every_note_of_its_files(index: SearchIndex) -> None:

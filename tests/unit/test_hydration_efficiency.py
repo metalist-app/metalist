@@ -4,7 +4,6 @@ import base64
 import os
 import random
 import re
-from collections import deque
 
 import pytest
 from cryptography.exceptions import InvalidTag
@@ -269,63 +268,3 @@ def test_plain_tag_bar_fast_path_matches_scanner() -> None:
     assert _tokenize_tag_bar("a {{@bold b}} /* note */ c") == ["a", "{{@bold b}}", "c"]
 
 
-def _worklist_propagate(
-    dependencies: dict[str, set[str]], accepted: dict[str, frozenset[str]], proposed: dict[str, frozenset[str]],
-) -> None:
-    """The previous arbitrary-order worklist fixed point, kept as the reference."""
-    dependents: dict[str, set[str]] = {note_id: set() for note_id in dependencies}
-    for note_id, sources in dependencies.items():
-        for source_id in sources:
-            if source_id in dependencies:
-                dependents[source_id].add(note_id)
-            else:
-                accepted[note_id] |= accepted[source_id]
-                proposed[note_id] |= proposed[source_id]
-    pending = deque(dependencies)
-    queued = set(dependencies)
-    while pending:
-        source_id = pending.popleft()
-        queued.remove(source_id)
-        for note_id in dependents[source_id]:
-            next_accepted = accepted[note_id] | accepted[source_id]
-            next_proposed = proposed[note_id] | proposed[source_id]
-            if next_accepted == accepted[note_id] and next_proposed == proposed[note_id]:
-                continue
-            accepted[note_id] = next_accepted
-            proposed[note_id] = next_proposed
-            if note_id not in queued:
-                pending.append(note_id)
-                queued.add(note_id)
-
-
-def test_component_propagation_matches_worklist_fixed_point() -> None:
-    rng = random.Random(19)
-    for _ in range(300):
-        node_count = rng.randint(1, 30)
-        nodes = [f"n{index}" for index in range(node_count)]
-        external = [f"x{index}" for index in range(3)]
-        affected = rng.sample(nodes, rng.randint(1, node_count))
-        dependencies = {
-            note_id: set(rng.sample(nodes + external, rng.randint(0, min(4, node_count))))
-            for note_id in affected
-        }
-        terms = {note_id: frozenset(rng.sample("abcdefgh", rng.randint(0, 3))) for note_id in nodes + external}
-        proposed = {note_id: frozenset(rng.sample("PQRS", rng.randint(0, 1))) for note_id in nodes + external}
-        expected_accepted, expected_proposed = dict(terms), dict(proposed)
-        _worklist_propagate(dependencies, expected_accepted, expected_proposed)
-
-        NoteStore._propagate_tag_dependencies_locked(dependencies, terms, proposed)
-
-        assert terms == expected_accepted
-        assert proposed == expected_proposed
-
-
-def test_component_order_handles_deep_chains_without_recursion() -> None:
-    depth = 3_000  # beyond the default recursion limit
-    dependencies = {f"n{index}": ({f"n{index - 1}"} if index else set()) for index in range(depth)}
-    accepted = {note_id: frozenset({note_id}) for note_id in dependencies}
-    proposed = {note_id: frozenset() for note_id in dependencies}
-
-    NoteStore._propagate_tag_dependencies_locked(dependencies, accepted, proposed)
-
-    assert len(accepted[f"n{depth - 1}"]) == depth

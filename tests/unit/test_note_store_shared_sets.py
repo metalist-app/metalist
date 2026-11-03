@@ -12,7 +12,6 @@ from app.services.tag_ontology import TagOntology
 
 _TAG_SET_MAPS = (
     "_effective_non_meta_tag_terms", "_effective_proposed_non_meta_tag_terms",
-    "_subtree_non_meta_tag_terms", "_subtree_proposed_non_meta_tag_terms",
 )
 
 

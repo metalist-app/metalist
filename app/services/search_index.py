@@ -219,15 +219,12 @@ StatsFigureReader = Callable[[str, PropertyCondition], Optional[Tuple[PropertyVa
 class InheritedValues:
     """The super tag values a note inherits, as its tags (docs/ui/search-semantics.md, Super
     Tag Searches; agreed 2026-11-01): from_ancestors, its ancestors' values by casefolded
-    (tag, property), the nearest ancestor's where several give one; from_embeds, one map
-    for each note in the subtrees it or an ancestor embeds, that note's values with those
-    of the notes above it inside the embedded subtree. A note's own value hides an
-    ancestor's for the same (tag, property)."""
+    (tag, property), the nearest ancestor's where several give one. Embeds and links pass
+    none (2026-11-03). A note's own value hides an ancestor's for the same (tag, property)."""
     from_ancestors: Mapping[Tuple[str, str], PropertyValue]
-    from_embeds: Tuple[Mapping[Tuple[str, str], PropertyValue], ...]
 
 
-NOTHING_INHERITED = InheritedValues(from_ancestors={}, from_embeds=())
+NOTHING_INHERITED = InheritedValues(from_ancestors={})
 # The values notes inherit, read from the note store's tree outside the index's lock, as
 # stats figures are: an InheritedValues for each note asked about.
 InheritedValuesReader = Callable[[FrozenSet[str]], Mapping[str, InheritedValues]]
@@ -265,9 +262,9 @@ class _NoteValues:
 
     def maps(self, note_id: str) -> Tuple[Mapping[Tuple[str, str], PropertyValue], ...]:
         """The note's values, a term holding when one map meets it: its own over its
-        ancestors' (the nearest value wins), then each embedded note's."""
+        ancestors' (the nearest value wins)."""
         inherited = self.inherited[note_id]
-        return ({**inherited.from_ancestors, **self.own_values[note_id]}, *inherited.from_embeds)
+        return ({**inherited.from_ancestors, **self.own_values[note_id]},)
 
 
 def _notes_with_extreme_value(found_by_note: Mapping[str, List[PropertyValue]], condition: PropertyCondition) -> Set[str]:

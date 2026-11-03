@@ -28,8 +28,8 @@ rules as the tag bar:
 - Wrapper tokens (e.g. `{{foo bar}}`) contribute inner terms (`foo` and `bar`).
 - `/* ... */` comment regions are ignored.
 
-In addition, notes implicitly inherit **non-meta** tag terms from parents and embedded notes:
-- A note’s effective tags include its own tags plus non-meta tags inherited through its parents and its embeds (`![[UUID]]`). A link (`[[UUID]]`) passes no tags (the maintainer, 2026-10-31: if note A links to note B and B has tag X, a search for X doesn't find A; before, links passed tags too, and an imported vault's links made a folder's tag find notes several links away). An embed contributes tags from its source and that source's complete descendant subtree, including further embeds within the subtree (not its links). It excludes tags inherited from ancestors above the source. Children of the referencing note inherit its effective tags normally. Accepted and proposed tag contributions remain separate until combined for search.
+In addition, notes implicitly inherit **non-meta** tag terms from their parents:
+- A note’s effective tags are its own plus the non-meta tags it inherits from its parents. Nothing comes through an embed (`![[UUID]]`) or a link (`[[UUID]]`): if note A embeds or links to note B and B has tag X, a search for X finds B, not A, and A isn't in B's folder or its count (the maintainer, 2026-11-03: an embed is a window onto another note, not a statement that the host is about it too; before, an embed passed its source's tags and its whole subtree's, so a search for a tag listed every note embedding the note that had it. Links stopped passing tags on 2026-10-31). Adding, removing or changing an embed or link never changes which searches, folders or counts a note is in. A note whose only tags came through an embed is now untagged. Accepted and proposed tag contributions remain separate until combined for search.
 - Tags starting with `@` (meta tags like `@monospace`) are **not** inherited.
 - Tag-bar `/* ... */` comments are **not** inherited (they only affect text search for the note that contains them).
 
@@ -185,11 +185,11 @@ bar's reference and `docs/design/tag-properties.md`). A search compares a note's
 - Units are labels: `drug:dosage>5mg` compares only `mg` values; `drug:dosage>5` compares
   every unit (`10mg`, `10kg`, `10`), which shows when a search should name one.
 - Values follow their tag (agreed 2026-11-01): a search reads a note's own values and
-  those it inherits, through parents and embeds as tags are, never links. The nearest
+  those it inherits from its parents, as tags are, never through embeds or links (2026-11-03). The nearest
   value wins: a child of a 3-mile run has `miles=3`, unless it writes its own
   (`jogging:miles=1`); a nearer ancestor's value hides a farther one's. So
-  `jogging:miles>2 knee` finds the knee note under a 3-mile run, a note embedding the run
-  matches `jogging:miles=3`, and an import's search (`imported:source=…:at=…`) shows every
+  `jogging:miles>2 knee` finds the knee note under a 3-mile run (a note embedding the run
+  doesn't match `jogging:miles=3`), and an import's search (`imported:source=…:at=…`) shows every
   note under the imported files, not grey bars. `jogging:miles?` (a missing value) and
   stats figures (`@sum:…`) stay the note's own; `=MAX` and `=MIN` keep the notes with the
   extreme value, a run and the notes under it. Before, a value matched only the note it
@@ -307,9 +307,9 @@ Results are still **windowed by root notes**:
 
 ## Embedded References and Search
 
-Embeds (`![[UUID]]`) participate in tag inheritance; links (`[[UUID]]`) don't (2026-10-31):
-- Non-meta tags on the source or its descendants supply required/forbidden tag hits for the host and its children, including through chains of embeds. For `foo → bar → baz`, an embed of `bar` matches tags on `bar` and `baz`, but excludes tags inherited from `foo`. Searching for a tag on `baz` includes the embedding host; an expanded embed displays the full `bar → baz` subtree. A link to `bar` matches none of them, and turning a link into an embed (adding `!`) or back updates the host's tags at once. Implementation: `BacklinkIndex` keeps the embeds apart (`get_embedded_target_ids`, `get_embedder_ids`); tests: `tests/unit/test_reference_tag_inheritance.py`.
-- Canonical notes still inherit their own ancestors' tags. The referencing host also retains inheritance from its own parents. Source text does not supply required/forbidden quoted-text hits; source meta tags and comments do not pass through references.
-- Subtree/reference cycles converge from direct tags, without importing parent inheritance. Removing a tag/reference clears stale contributions, including within cycles. An explicit reference to an ancestor still contributes that referenced subtree's tags.
-- Inherited-tag metadata, suggestions, and Untagged Notes use the same computed tags. Ontology inference continues to run per note after inheritance.
-- Updates are maintained in memory on edits, tag changes, moves, deletion, and restoration; collapse/expand does not rebuild tag inheritance.
+Embeds (`![[UUID]]`) and links (`[[UUID]]`) pass no tags (2026-11-03; links since 2026-10-31):
+- A search for a tag finds the note that has it and the notes below it, never a note embedding or linking to one. `-tag` doesn't leave out a note embedding a note with the tag. An embed in a matching note still shows its source and children; a search for the source's tag finds the source.
+- The host's own content still counts: an embedded picture file makes it `@image`, Notes with Files reads its own references, and quoted text search reads its own text (never an embed's).
+- Super tag values follow tags: only a note's own and its ancestors' (Super Tag Searches).
+- Inherited-tag metadata, suggestions, folder membership and counts, and Untagged Notes use the same computed tags. Ontology inference runs per note after inheritance.
+- Updates are maintained in memory on tag changes and moves (a note and the notes below it); editing a note's text, collapse/expand and deletion recompute nothing. Implementation: `NoteStore._propagate_inherited_tag_terms_locked` (parents first); tests: `tests/unit/test_reference_tag_inheritance.py`, `tests/unit/test_inherited_values_search.py`.

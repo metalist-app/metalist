@@ -1,4 +1,9 @@
-from types import SimpleNamespace
+"""Only parents pass tags on; embeds and links pass none (the maintainer, 2026-11-03;
+docs/ready-to-build/embeds-pass-no-tags.md). Before, an embed passed its source's tags (and
+its whole subtree's) to the host, so a search for a tag listed every note embedding the
+note that had it, and embedding a note from a folder pulled the host into that folder.
+Links passed none since 2026-10-31."""
+
 from random import Random
 
 import pytest
@@ -16,6 +21,7 @@ HOST = "22222222-2222-4222-8222-222222222222"
 CHILD = "33333333-3333-4333-8333-333333333333"
 OTHER = "44444444-4444-4444-8444-444444444444"
 PARENT = "55555555-5555-4555-8555-555555555555"
+HOST_CHILD = "66666666-6666-4666-8666-666666666666"
 
 
 def _load(monkeypatch, specs):
@@ -50,106 +56,55 @@ def _load(monkeypatch, specs):
     return store, index
 
 
-def test_reference_search_stops_at_source_ancestors_and_includes_source_descendants(monkeypatch):
-    prefix = "!"
+def _save(store, note_id, *, content, tags):
+    store.update_note_content(note_id=note_id, plaintext=content, tags=tags, proposed_tags="",
+                              updated_at=store.get_note(note_id).updated_at)
+
+
+def _embedding_specs(reference):
+    """PARENT > SOURCE > CHILD, and HOST (tagged host) > HOST_CHILD, HOST holding `reference`
+    to SOURCE."""
+    return {
+        PARENT: (None, "Parent", "ancestor", ""),
+        SOURCE: (PARENT, "Source", "source", "source-proposal"),
+        CHILD: (SOURCE, "Child", "descendant", ""),
+        HOST: (None, f"Host {reference}", "host", ""),
+        HOST_CHILD: (HOST, "Host child", "", ""),
+    }
+
+
+@pytest.mark.parametrize("reference", [f"![[{SOURCE}]]", f"[[{SOURCE}]]"], ids=["embed", "link"])
+def test_an_embed_or_link_passes_no_tags(monkeypatch, reference):
+    store, index = _load(monkeypatch, _embedding_specs(reference))
+    assert index.query_note_ids("source") == {SOURCE, CHILD}
+    assert index.query_note_ids("source-proposal") == {SOURCE, CHILD}
+    assert index.query_note_ids("descendant") == {CHILD}
+    assert index.query_note_ids("ancestor") == {PARENT, SOURCE, CHILD}
+    # An excluded tag doesn't leave out a note embedding a note with it.
+    assert index.query_note_ids("host -source") == {HOST, HOST_CHILD}
+    assert store.get_inherited_non_meta_tag_terms(HOST) == frozenset()
+    assert store.get_inherited_proposed_non_meta_tag_terms(HOST) == frozenset()
+    assert store.get_inherited_non_meta_tag_terms(HOST_CHILD) == {"host"}
+
+
+def test_parents_still_pass_tags_and_proposals_down(monkeypatch):
     store, index = _load(monkeypatch, {
-        PARENT: (None, "foo", "ancestor", "ancestor-proposal"),
-        SOURCE: (PARENT, "bar", "source", ""),
-        CHILD: (SOURCE, "baz", "descendant @red /*comment*/", "descendant-proposal"),
-        HOST: (None, f"{prefix}[[{SOURCE}]]", "", ""),
+        PARENT: (None, "Parent", "ancestor @red /*comment*/", "ancestor-proposal"),
+        SOURCE: (PARENT, "Source", "", ""),
+        CHILD: (SOURCE, "Child", "", ""),
     })
     assert index.query_note_ids("ancestor") == {PARENT, SOURCE, CHILD}
     assert index.query_note_ids("ancestor-proposal") == {PARENT, SOURCE, CHILD}
-    assert index.query_note_ids("descendant") == {CHILD, HOST}
-    assert index.query_note_ids("descendant-proposal") == {CHILD, HOST}
-    assert index.query_note_ids("@red") == {CHILD}
-    assert store.get_inherited_non_meta_tag_terms(HOST) == {"source", "descendant"}
-    assert store.get_inherited_proposed_non_meta_tag_terms(HOST) == {"descendant-proposal"}
-    store.update_note_content(note_id=CHILD, plaintext="baz", tags="replacement", proposed_tags="", updated_at=store.get_note(CHILD).updated_at)
-    assert index.query_note_ids("descendant") == set()
-    assert index.query_note_ids("descendant-proposal") == set()
-    assert index.query_note_ids("replacement") == {CHILD, HOST}
+    assert index.query_note_ids("@red") == {PARENT}
+    assert store.get_inherited_non_meta_tag_terms(CHILD) == {"ancestor"}
+    assert store.get_inherited_proposed_non_meta_tag_terms(CHILD) == {"ancestor-proposal"}
+    _save(store, PARENT, content="Parent", tags="replacement")
+    assert index.query_note_ids("ancestor") == set()
+    assert index.query_note_ids("replacement") == {PARENT, SOURCE, CHILD}
 
 
-def test_descendant_tag_search_renders_referenced_subtree(monkeypatch):
-    store, index = _load(monkeypatch, {
-        PARENT: (None, "foo", "ancestor", ""),
-        SOURCE: (PARENT, "bar", "", ""),
-        CHILD: (SOURCE, "baz", "descendant", ""),
-        HOST: (None, f"![[{SOURCE}]]", "", ""),
-    })
-    monkeypatch.setattr(snapshot_module, "note_store", store)
-    monkeypatch.setattr(snapshot_module, "search_index", index)
-    monkeypatch.setattr(snapshot_module, "get_all_locks", lambda: {})
-    state = snapshot_module.build_view_state(
-        editing_note_id=None, find_reveal_note_id=None, search="descendant", sort_mode="normal", date_filter=None, file_filter=None,
-        client_known_note_ids=set(), previous_root_ids=[], visible_top_root_id=None,
-        visible_bottom_root_id=None, is_untagged_view=False,
-        start_at_list_end=False,
-    )
-    assert HOST in state.payloads
-    rendered = state.payloads[HOST]["content"]
-    assert f'data-embed-note-id="{SOURCE}"' in rendered
-    assert f'data-embed-note-id="{CHILD}"' in rendered
-    assert "bar" in rendered and "baz" in rendered
-    assert sorted(store.get_inherited_non_meta_tag_terms(HOST)) == ["descendant"]
-
-
-@pytest.mark.parametrize("bulk", [False, True])
-def test_moving_descendant_updates_references_to_old_and_new_subtrees(monkeypatch, bulk):
-    store, index = _load(monkeypatch, {
-        SOURCE: (None, "bar", "", ""),
-        CHILD: (SOURCE, "baz", "descendant", ""),
-        OTHER: (None, "New source", "", ""),
-        HOST: (None, f"![[{SOURCE}]]", "", ""),
-        PARENT: (None, f"![[{OTHER}]]", "", ""),
-    })
-    assert index.query_note_ids("descendant") == {CHILD, HOST}
-    move = NotePosition(note_id=CHILD, parent_id=OTHER, prev_id=None, next_id=None)
-    if bulk:
-        store.move_notes([move])
-    else:
-        store.move_note(move)
-    assert index.query_note_ids("descendant") == {CHILD, PARENT}
-    store.rebuild_search_index_tag_terms()
-    assert index.query_note_ids("descendant") == {CHILD, PARENT}
-
-
-def test_deleted_and_restored_descendant_updates_subtree_references(monkeypatch):
-    store, index = _load(monkeypatch, {
-        SOURCE: (None, "bar", "", ""),
-        CHILD: (SOURCE, "baz", "descendant", ""),
-        HOST: (None, f"![[{SOURCE}]]", "", ""),
-    })
-    assert index.query_note_ids("descendant") == {CHILD, HOST}
-    store.remove_note(CHILD)
-    assert index.query_note_ids("descendant") == set()
-    store.add_note_from_db(SimpleNamespace(id=CHILD, parent_id=SOURCE, prev_id=None, next_id=None, is_collapsed=False, created_at=None, updated_at=None),
-                           "Restored baz", "restored", "")
-    assert index.query_note_ids("restored") == {CHILD, HOST}
-
-
-def test_subtree_reference_cycle_clears_removed_accepted_and_proposed_tags(monkeypatch):
-    store, index = _load(monkeypatch, {
-        SOURCE: (None, "bar", "", ""),
-        CHILD: (SOURCE, f"baz ![[{SOURCE}]]", "descendant", "proposal"),
-        HOST: (None, f"![[{SOURCE}]]", "", ""),
-    })
-    assert index.query_note_ids("descendant proposal") == {CHILD, HOST}
-    store.update_note_content(note_id=CHILD, plaintext=f"baz ![[{SOURCE}]]", tags="", proposed_tags="", updated_at=store.get_note(CHILD).updated_at)
-    assert index.query_note_ids("descendant") == set()
-    assert index.query_note_ids("proposal") == set()
-    assert store.get_inherited_non_meta_tag_terms(HOST) == set()
-    assert store.get_inherited_proposed_non_meta_tag_terms(HOST) == set()
-
-
-def test_descendant_edit_does_not_reindex_source_ancestors_or_siblings(monkeypatch):
-    store, index = _load(monkeypatch, {
-        SOURCE: (None, "bar", "source", ""),
-        CHILD: (SOURCE, "baz", "descendant", ""),
-        OTHER: (SOURCE, "Sibling", "sibling", ""),
-        HOST: (None, f"![[{SOURCE}]]", "", ""),
-    })
+def test_adding_or_removing_an_embed_changes_no_search_and_recomputes_nothing(monkeypatch):
+    store, index = _load(monkeypatch, _embedding_specs(f"[[{SOURCE}]]"))
     affected_sets = []
     original = store._propagate_inherited_tag_terms_locked
 
@@ -158,210 +113,112 @@ def test_descendant_edit_does_not_reindex_source_ancestors_or_siblings(monkeypat
         return original(affected)
 
     monkeypatch.setattr(store, "_propagate_inherited_tag_terms_locked", track)
-    store.update_note_content(note_id=CHILD, plaintext="baz", tags="replacement", proposed_tags="", updated_at=store.get_note(CHILD).updated_at)
-    assert affected_sets == [{CHILD, HOST}]
-    assert index.query_note_ids("replacement") == {CHILD, HOST}
-    assert index.query_note_ids("source") == {SOURCE, CHILD, OTHER, HOST}
+    for content in (f"Host ![[{SOURCE}]]", f"Host ![[{SOURCE}]] ![[{SOURCE}]]", "Host"):
+        _save(store, HOST, content=content, tags="host")
+        assert index.query_note_ids("source") == {SOURCE, CHILD}
+        assert index.query_note_ids("host") == {HOST, HOST_CHILD}
+    assert affected_sets == []
+    assert store.get_backlink_counts(SOURCE) == {}
 
 
-def test_reference_tags_reach_host_and_children_on_hydration(monkeypatch):
-    prefix = "!"
-    store, index = _load(monkeypatch, {
-        PARENT: (None, "Parent", "ancestor", ""),
-        SOURCE: (PARENT, "Source text", "foo @red /*comment*/", "suggestion"),
-        HOST: (None, f"{prefix}[[{SOURCE}]]", "host-tag", ""),
-        CHILD: (HOST, "Child", "", ""),
-        OTHER: (None, "Other", "", ""),
-    })
-    assert index.query_note_ids("foo") == {SOURCE, HOST, CHILD}
-    assert index.query_note_ids("foo host-tag") == {HOST, CHILD}
-    assert index.query_note_ids("ancestor") == {PARENT, SOURCE}
-    assert index.query_note_ids("suggestion") == {SOURCE, HOST, CHILD}
-    assert index.query_note_ids("-foo") == {PARENT, OTHER}
-    assert index.query_note_ids("@red") == {SOURCE}
-    assert index.query_note_ids('"Source text"') == {SOURCE}
-    assert store.get_inherited_non_meta_tag_terms(HOST) == {"foo"}
-    assert store.get_inherited_non_meta_tag_terms(CHILD) == {"foo", "host-tag"}
-    assert store.get_inherited_proposed_non_meta_tag_terms(CHILD) == {"suggestion"}
+def test_a_tag_change_recomputes_the_note_and_its_descendants_only(monkeypatch):
+    store, index = _load(monkeypatch, _embedding_specs(f"![[{SOURCE}]]"))
+    affected_sets = []
+    original = store._propagate_inherited_tag_terms_locked
 
+    def track(affected):
+        affected_sets.append(affected)
+        return original(affected)
 
-def test_edits_update_reference_dependents_and_remove_old_hits(monkeypatch):
-    store, index = _load(monkeypatch, {
-        SOURCE: (None, "Source", "foo", ""),
-        HOST: (None, f"![[{SOURCE}]]", "", ""),
-        CHILD: (HOST, "Child", "", ""),
-        OTHER: (None, "Other", "bar", ""),
-    })
-    store.update_note_content(note_id=SOURCE, plaintext="Source", tags="new-tag", proposed_tags="", updated_at=store.get_note(SOURCE).updated_at)
-    assert index.query_note_ids("foo") == set()
-    assert index.query_note_ids("new-tag") == {SOURCE, HOST, CHILD}
-    store.update_note_content(note_id=HOST, plaintext=f"![[{OTHER}]]", tags="", proposed_tags="", updated_at=store.get_note(HOST).updated_at)
-    assert index.query_note_ids("new-tag") == {SOURCE}
-    assert index.query_note_ids("bar") == {OTHER, HOST, CHILD}
-    store.update_note_content(note_id=HOST, plaintext="No reference", tags="", proposed_tags="", updated_at=store.get_note(HOST).updated_at)
-    assert index.query_note_ids("bar") == {OTHER}
-
-
-def test_chains_cycles_and_tag_removal_reach_least_fixed_point(monkeypatch):
-    store, index = _load(monkeypatch, {
-        SOURCE: (None, f"![[{HOST}]]", "foo", ""),
-        HOST: (None, f"![[{SOURCE}]]", "bar", ""),
-        CHILD: (HOST, "Child", "", ""),
-        OTHER: (None, f"![[{CHILD}]]", "", ""),
-    })
-    assert index.query_note_ids("foo bar") == {SOURCE, HOST, CHILD}
-    store.update_note_content(note_id=SOURCE, plaintext=f"![[{HOST}]]", tags="", proposed_tags="", updated_at=store.get_note(SOURCE).updated_at)
-    assert index.query_note_ids("foo") == set()
-    assert index.query_note_ids("bar") == {SOURCE, HOST, CHILD}
-    store.update_note_content(note_id=HOST, plaintext="No reference", tags="", proposed_tags="", updated_at=store.get_note(HOST).updated_at)
-    assert index.query_note_ids("bar") == set()
-
-
-def test_bulk_tags_update_edges_and_note_id_links_beat_formatting_scopes(monkeypatch):
-    # A [[...]] holding exactly a note id is a link even beside a [[...]] wrapper tag.
-    store, index = _load(monkeypatch, {
-        SOURCE: (None, "Source", "foo", ""),
-        HOST: (None, f"![[{SOURCE}]]", "[[@red]]", ""),
-        CHILD: (HOST, "Child", "", ""),
-    })
-    assert index.query_note_ids("foo") == {SOURCE, HOST, CHILD}
-    store.apply_bulk_tag_sources({HOST: ("", ""), SOURCE: ("bar", "pending")})
-    assert index.query_note_ids("bar pending") == {SOURCE, HOST, CHILD}
-    assert index.query_note_ids("foo") == set()
-    store.apply_bulk_tag_sources({HOST: ("[[@red]]", "")})
-    assert index.query_note_ids("bar") == {SOURCE, HOST, CHILD}
-
-
-def test_deleted_and_restored_source_updates_surviving_referrers(monkeypatch):
-    store, index = _load(monkeypatch, {
-        SOURCE: (None, "Source", "foo", ""),
-        HOST: (None, f"![[{SOURCE}]]", "", ""),
-        CHILD: (HOST, "Child", "", ""),
-    })
-    store.remove_note(SOURCE)
-    assert index.query_note_ids("foo") == set()
-    store.add_note_from_db(SimpleNamespace(id=SOURCE, parent_id=None, prev_id=HOST, next_id=None, is_collapsed=False, created_at=None, updated_at=None),
-                           "Restored", "restored-tag", "")
-    assert index.query_note_ids("restored-tag") == {SOURCE, HOST, CHILD}
-    store.remove_note(HOST)
-    assert index.query_note_ids("restored-tag") == {SOURCE}
-
-
-def test_new_child_inherits_reference_tags(monkeypatch):
-    store, index = _load(monkeypatch, {
-        SOURCE: (None, "Source", "foo", ""),
-        HOST: (None, f"![[{SOURCE}]]", "", ""),
-    })
-    store.add_note_from_db(SimpleNamespace(id=CHILD, parent_id=HOST, prev_id=None, next_id=None, is_collapsed=False, created_at=None, updated_at=None),
-                           "New child", "", "")
-    assert index.query_note_ids("foo") == {SOURCE, HOST, CHILD}
+    monkeypatch.setattr(store, "_propagate_inherited_tag_terms_locked", track)
+    _save(store, SOURCE, content="Source", tags="renamed")
+    assert affected_sets == [{SOURCE, CHILD}]
+    assert index.query_note_ids("renamed") == {SOURCE, CHILD}
+    affected_sets.clear()
+    store.set_collapsed(HOST, True)
+    store.set_collapsed(HOST, False)
+    assert affected_sets == []
 
 
 @pytest.mark.parametrize("bulk", [False, True])
-def test_moving_source_or_referrer_updates_both_paths(monkeypatch, bulk):
+def test_moving_a_note_takes_its_new_parents_tags(monkeypatch, bulk):
     store, index = _load(monkeypatch, {
-        PARENT: (None, "Parent", "foo", ""),
-        SOURCE: (PARENT, "Source", "", ""),
-        OTHER: (None, "Other", "bar", ""),
-        HOST: (None, f"![[{SOURCE}]]", "", ""),
-        CHILD: (HOST, "Child", "", ""),
+        PARENT: (None, "Parent", "old-home", ""),
+        OTHER: (None, "Other", "new-home", ""),
+        CHILD: (PARENT, "Child", "", ""),
+        HOST: (None, f"![[{CHILD}]]", "", ""),
     })
-    move = NotePosition(note_id=SOURCE, parent_id=OTHER, prev_id=None, next_id=None)
+    move = NotePosition(note_id=CHILD, parent_id=OTHER, prev_id=None, next_id=None)
     if bulk:
         store.move_notes([move])
     else:
         store.move_note(move)
-    assert index.query_note_ids("foo") == {PARENT}
-    assert index.query_note_ids("bar") == {OTHER, SOURCE}
-    # Moving the child away stops parent-derived contributions.
-    move = NotePosition(note_id=CHILD, parent_id=PARENT, prev_id=None, next_id=None)
-    if bulk:
-        store.move_notes([move])
-    else:
-        store.move_note(move)
-    assert index.query_note_ids("foo") == {PARENT, CHILD}
-    assert index.query_note_ids("bar") == {OTHER, SOURCE}
+    assert index.query_note_ids("old-home") == {PARENT}
+    assert index.query_note_ids("new-home") == {OTHER, CHILD}
+    store.rebuild_search_index_tag_terms()
+    assert index.query_note_ids("new-home") == {OTHER, CHILD}
 
 
-def test_reference_to_descendant_forms_valid_cycle_without_stale_tags(monkeypatch):
-    store, index = _load(monkeypatch, {
-        HOST: (None, f"![[{CHILD}]]", "foo", ""),
-        CHILD: (HOST, "Child", "bar", ""),
-    })
-    assert index.query_note_ids("foo bar") == {HOST, CHILD}
-    store.update_note_content(note_id=CHILD, plaintext="Child", tags="", proposed_tags="", updated_at=store.get_note(CHILD).updated_at)
-    assert index.query_note_ids("bar") == set()
-    assert index.query_note_ids("foo") == {HOST, CHILD}
+def test_deleting_an_embedded_note_leaves_the_host_alone(monkeypatch):
+    store, index = _load(monkeypatch, _embedding_specs(f"![[{SOURCE}]]"))
+    store.remove_note(SOURCE)
+    assert index.query_note_ids("source") == set()
+    assert index.query_note_ids("host") == {HOST, HOST_CHILD}
+    assert store.get_inherited_non_meta_tag_terms(HOST) == frozenset()
 
 
 def test_parent_cycles_still_fail_loudly(monkeypatch):
     store, _ = _load(monkeypatch, {
-        HOST: (None, "Parent", "foo", ""),
+        HOST: (None, "Host", "foo", ""),
         CHILD: (HOST, "Child", "bar", ""),
     })
     with pytest.raises(RuntimeError, match="hierarchy cycle"):
         store.move_note(NotePosition(note_id=HOST, parent_id=CHILD, prev_id=None, next_id=None))
 
 
-def test_only_affected_notes_recompute_and_plain_edits_and_collapse_reuse_cache(monkeypatch):
-    store, index = _load(monkeypatch, {
-        SOURCE: (None, "Source", "foo", ""),
-        HOST: (None, f"![[{SOURCE}]] ![[{SOURCE}]]", "", ""),
-        CHILD: (HOST, "Child", "", ""),
-        OTHER: (None, "Unrelated", "unrelated", ""),
-    })
-    affected_sets = []
-    original = store._propagate_inherited_tag_terms_locked
-
-    def track(affected):
-        affected_sets.append(affected)
-        return original(affected)
-
-    monkeypatch.setattr(store, "_propagate_inherited_tag_terms_locked", track)
-    store.update_note_content(note_id=SOURCE, plaintext="Source", tags="bar", proposed_tags="", updated_at=store.get_note(SOURCE).updated_at)
-    assert affected_sets == [{SOURCE, HOST, CHILD}]
-    affected_sets.clear()
-    store.set_collapsed(HOST, True)
-    store.set_collapsed(HOST, False)
-    store.update_note_content(note_id=HOST, plaintext=f"Text ![[{SOURCE}]]", tags="", proposed_tags="", updated_at=store.get_note(HOST).updated_at)
-    assert affected_sets == []
-    assert index.query_note_ids("bar") == {SOURCE, HOST, CHILD}
-    assert store.get_backlink_counts(SOURCE) == {HOST: 1}
-
-
-def test_search_snapshot_shows_references_and_inherited_metadata(monkeypatch):
-    store, index = _load(monkeypatch, {
-        SOURCE: (None, "Source", "foo", ""),
-        HOST: (None, f"![[{SOURCE}]]", "", ""),
-        CHILD: (HOST, "Child", "", ""),
-        OTHER: (None, "Unrelated", "", ""),
-    })
+def _view(store, index, monkeypatch, *, search, is_untagged_view):
     monkeypatch.setattr(snapshot_module, "note_store", store)
     monkeypatch.setattr(snapshot_module, "search_index", index)
     monkeypatch.setattr(snapshot_module, "get_all_locks", lambda: {})
-    state = snapshot_module.build_view_state(
-        editing_note_id=None, find_reveal_note_id=None, search="foo", sort_mode="normal", date_filter=None, file_filter=None,
-        client_known_note_ids=set(), previous_root_ids=[], visible_top_root_id=None,
-        visible_bottom_root_id=None, is_untagged_view=False,
-        start_at_list_end=False,
+    return snapshot_module.build_view_state(
+        editing_note_id=None, find_reveal_note_id=None, search=search, sort_mode="normal", date_filter=None,
+        file_filter=None, client_known_note_ids=set(), previous_root_ids=[], visible_top_root_id=None,
+        visible_bottom_root_id=None, is_untagged_view=is_untagged_view, start_at_list_end=False,
     )
-    assert set(state.payloads) == {SOURCE, HOST, CHILD}
-    assert sorted(store.get_inherited_non_meta_tag_terms(HOST)) == ["foo"]
-    assert sorted(store.get_inherited_non_meta_tag_terms(CHILD)) == ["foo"]
-    untagged = snapshot_module.build_view_state(
-        editing_note_id=None, find_reveal_note_id=None, search=None, sort_mode="normal", date_filter=None, file_filter=None,
-        client_known_note_ids=set(), previous_root_ids=[], visible_top_root_id=None,
-        visible_bottom_root_id=None, is_untagged_view=True,
-        start_at_list_end=False,
-    )
-    assert set(untagged.payloads) == {OTHER}
 
 
-def test_ontology_applies_to_reference_tags_using_each_notes_own_text(monkeypatch):
+def test_a_search_shows_the_note_with_the_tag_not_the_notes_embedding_it(monkeypatch):
+    store, index = _load(monkeypatch, {
+        SOURCE: (None, "Source", "foo", ""),
+        CHILD: (SOURCE, "Child", "", ""),
+        HOST: (None, f"![[{SOURCE}]]", "", ""),
+        HOST_CHILD: (HOST, "Host child", "", ""),
+    })
+    assert set(_view(store, index, monkeypatch, search="foo", is_untagged_view=False).payloads) == {SOURCE, CHILD}
+    # A note whose only tags came through an embed is untagged.
+    untagged = _view(store, index, monkeypatch, search=None, is_untagged_view=True)
+    assert set(untagged.payloads) == {HOST, HOST_CHILD}
+
+
+def test_an_embed_still_shows_its_source_and_children(monkeypatch):
+    store, index = _load(monkeypatch, {
+        SOURCE: (None, "bar", "", ""),
+        CHILD: (SOURCE, "baz", "", ""),
+        HOST: (None, f"![[{SOURCE}]]", "host", ""),
+    })
+    state = _view(store, index, monkeypatch, search="host", is_untagged_view=False)
+    rendered = state.payloads[HOST]["content"]
+    assert f'data-embed-note-id="{SOURCE}"' in rendered
+    assert f'data-embed-note-id="{CHILD}"' in rendered
+    assert "bar" in rendered and "baz" in rendered
+
+
+def test_tag_rules_read_each_notes_own_and_parents_tags_only(monkeypatch):
     store, index = _load(monkeypatch, {
         SOURCE: (None, "Source", "foo", ""),
         HOST: (None, f"Special ![[{SOURCE}]]", "", ""),
         CHILD: (HOST, "Child", "", ""),
+        OTHER: (None, "Special", "foo", ""),
     })
     ontology = compile_rules(
         rules=parse_rules_text(text='foo => category\n(foo "special") => matched', filename="test"),
@@ -369,112 +226,44 @@ def test_ontology_applies_to_reference_tags_using_each_notes_own_text(monkeypatc
     )
     monkeypatch.setattr(note_store_module, "get_ontology", lambda: ontology)
     store.rebuild_search_index_tag_terms()
-    assert index.query_note_ids("category") == {SOURCE, HOST, CHILD}
-    assert index.query_note_ids("matched") == {HOST}
-    store.update_note_content(note_id=SOURCE, plaintext="Source", tags="", proposed_tags="", updated_at=store.get_note(SOURCE).updated_at)
-    assert index.query_note_ids("category") == set()
-    assert index.query_note_ids("matched") == set()
+    assert index.query_note_ids("category") == {SOURCE, OTHER}
+    assert index.query_note_ids("matched") == {OTHER}
 
 
 @pytest.mark.parametrize("seed", [714, 715, 716])
-def test_incremental_graph_updates_match_independent_reachability_oracle(monkeypatch, seed):
+def test_incremental_updates_match_an_ancestry_oracle(monkeypatch, seed):
     random = Random(seed)
     ids = [f"{n:08x}-1111-4111-8111-111111111111" for n in range(16)]
+    tag_count = 4
     specs = {}
-    dependencies = {}
     own_tags = {}
     for n, note_id in enumerate(ids):
         parent = None
         if n % 2:
             parent = ids[n - 1]
-        targets = set(random.sample(ids, 2))
-        dependencies[note_id] = targets - {note_id}
-        own_tags[note_id] = {f"tag-{n % 4}"}
-        specs[note_id] = (parent, " ".join(f"![[{target}]]" for target in targets),
-                          f"tag-{n % 4}", "")
+        targets = random.sample(ids, 2)
+        own_tags[note_id] = {f"tag-{n % tag_count}"}
+        specs[note_id] = (parent, " ".join(f"![[{target}]]" for target in targets), f"tag-{n % tag_count}", "")
     store, index = _load(monkeypatch, specs)
 
     def assert_matches_oracle():
         for note_id in ids:
-            visited = set()
-            pending = []
             expected = set()
-            # Canonical ancestry supplies direct tags and reference entry points.
             current = note_id
             while current is not None:
                 expected.update(own_tags[current])
-                pending.extend(dependencies[current])
                 current = specs[current][0]
-            # Once inside a reference, walk downward and through further links.
-            while pending:
-                current = pending.pop()
-                if current in visited:
-                    continue
-                visited.add(current)
-                expected.update(own_tags[current])
-                pending.extend(dependencies[current])
-                pending.extend(child for child in ids if specs[child][0] == current)
             assert index.list_raw_tag_terms_for_note(note_id) == expected
 
     assert_matches_oracle()
     for _ in range(60):
         note_id = random.choice(ids)
-        targets = set(random.sample(ids, random.randrange(3)))
-        tags = set(random.sample(["tag-0", "tag-1", "tag-2", "tag-3"], random.randrange(2)))
-        dependencies[note_id] = targets - {note_id}
+        targets = random.sample(ids, random.randrange(3))
+        tags = set(random.sample([f"tag-{n}" for n in range(tag_count)], random.randrange(2)))
         own_tags[note_id] = tags
         content = " ".join(f"![[{target}]]" for target in targets)
         specs[note_id] = (specs[note_id][0], content, " ".join(tags), "")
-        store.update_note_content(note_id=note_id, plaintext=content, tags=" ".join(tags), proposed_tags="", updated_at=store.get_note(note_id).updated_at)
+        _save(store, note_id, content=content, tags=" ".join(tags))
         assert_matches_oracle()
     store.rebuild_search_index_tag_terms()
     assert_matches_oracle()
-
-
-# Only embeds pass tags on; a link only links (the maintainer, 2026-10-31: an imported
-# vault's links made a search for one folder's tag find notes three links away).
-
-def test_a_link_passes_no_tags(monkeypatch):
-    store, index = _load(monkeypatch, {
-        SOURCE: (None, "Source", "foo", "suggestion"),
-        HOST: (None, f"See [[{SOURCE}]]", "", ""),
-        CHILD: (HOST, "Child", "", ""),
-    })
-    assert index.query_note_ids("foo") == {SOURCE}
-    assert index.query_note_ids("suggestion") == {SOURCE}
-    assert store.get_inherited_non_meta_tag_terms(HOST) == frozenset()
-
-
-def test_making_a_link_an_embed_passes_its_tags_and_back(monkeypatch):
-    store, index = _load(monkeypatch, {
-        SOURCE: (None, "Source", "foo", ""),
-        HOST: (None, f"See [[{SOURCE}]]", "", ""),
-        CHILD: (HOST, "Child", "", ""),
-    })
-    store.update_note_content(note_id=HOST, plaintext=f"See ![[{SOURCE}]]", tags="", proposed_tags="", updated_at=store.get_note(HOST).updated_at)
-    assert index.query_note_ids("foo") == {SOURCE, HOST, CHILD}
-    store.update_note_content(note_id=HOST, plaintext=f"See [[{SOURCE}]]", tags="", proposed_tags="", updated_at=store.get_note(HOST).updated_at)
-    assert index.query_note_ids("foo") == {SOURCE}
-
-
-def test_a_link_inside_an_embedded_note_passes_nothing_on(monkeypatch):
-    # HOST embeds SOURCE; SOURCE's child links to OTHER: OTHER's tag stops at the link.
-    store, index = _load(monkeypatch, {
-        OTHER: (None, "Other", "far", ""),
-        SOURCE: (None, "Source", "near", ""),
-        CHILD: (SOURCE, f"Links to [[{OTHER}]]", "", ""),
-        HOST: (None, f"![[{SOURCE}]]", "", ""),
-    })
-    assert index.query_note_ids("near") == {SOURCE, CHILD, HOST}
-    assert index.query_note_ids("far") == {OTHER}
-
-
-def test_a_note_that_links_and_embeds_takes_the_embedded_tags_only(monkeypatch):
-    store, index = _load(monkeypatch, {
-        SOURCE: (None, "Source", "embedded", ""),
-        OTHER: (None, "Other", "linked", ""),
-        HOST: (None, f"![[{SOURCE}]] and [[{OTHER}]]", "", ""),
-    })
-    assert store.get_inherited_non_meta_tag_terms(HOST) == {"embedded"}
-    # Deleting the linked note changes nothing for the host's tags.
-    assert index.query_note_ids("linked") == {OTHER}

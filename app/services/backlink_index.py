@@ -3,9 +3,9 @@
 Only UUIDs and occurrence counts are retained, never note text. Targets may be
 missing (or files); retaining those edges lets a restored note regain backlinks
 without reparsing its referrers. It also keeps which notes show a picture inline
-(an <img> in their own text), for the Files filter's Images (file_kinds.py),
-and which references are embeds: only an embed passes its source's tags on
-(docs/ui/search-semantics.md; a link only links, 2026-10-31).
+(an <img> in their own text), for the Files filter's Images (file_kinds.py).
+No reference passes tags on (docs/ui/search-semantics.md, 2026-11-03), so embeds
+and links are kept alike.
 """
 
 from collections import Counter
@@ -20,32 +20,20 @@ class BacklinkIndex:
     def __init__(self) -> None:
         self._outgoing: dict[str, dict[str, int]] = {}
         self._incoming: dict[str, dict[str, int]] = {}
-        # The same edges, embeds only; every note upserted has its entry, empty or not.
-        self._embedded_outgoing: dict[str, frozenset[str]] = {}
-        self._embedded_incoming: dict[str, set[str]] = {}
         self._inline_image_note_ids: set[str] = set()
 
     def clear(self) -> None:
         self._outgoing.clear()
         self._incoming.clear()
-        self._embedded_outgoing.clear()
-        self._embedded_incoming.clear()
         self._inline_image_note_ids.clear()
 
     def upsert(self, note_id: str, content: str, tags: str) -> None:
         assert isinstance(note_id, str) and note_id
         tokens = [token for token in collect_active_reference_tokens(content) if token.note_id != note_id]
         counts = dict(Counter(token.note_id for token in tokens))
-        embedded = frozenset(token.note_id for token in tokens if token.is_embed)
         self.remove(note_id)
         if _INLINE_IMAGE_RE.search(content) is not None:
             self._inline_image_note_ids.add(note_id)
-        self._embedded_outgoing[note_id] = embedded
-        if embedded:
-            for target_id in embedded:
-                if target_id not in self._embedded_incoming:
-                    self._embedded_incoming[target_id] = set()
-                self._embedded_incoming[target_id].add(note_id)
         if not counts:
             return
         self._outgoing[note_id] = counts
@@ -56,12 +44,6 @@ class BacklinkIndex:
 
     def remove(self, note_id: str) -> None:
         self._inline_image_note_ids.discard(note_id)
-        if note_id in self._embedded_outgoing:
-            for target_id in self._embedded_outgoing.pop(note_id):
-                embedders = self._embedded_incoming[target_id]
-                embedders.discard(note_id)
-                if not embedders:
-                    del self._embedded_incoming[target_id]
         if note_id not in self._outgoing:
             return
         for target_id in self._outgoing.pop(note_id):
@@ -82,16 +64,6 @@ class BacklinkIndex:
         if note_id not in self._outgoing:
             return frozenset()
         return frozenset(self._outgoing[note_id])
-
-    def get_embedded_target_ids(self, note_id: str) -> frozenset[str]:
-        """What note_id (a note upserted) embeds (![[id]]): the sources whose tags it takes."""
-        return self._embedded_outgoing[note_id]
-
-    def get_embedder_ids(self, note_id: str) -> frozenset[str]:
-        """The notes embedding note_id: they take its tags."""
-        if note_id not in self._embedded_incoming:
-            return frozenset()
-        return frozenset(self._embedded_incoming[note_id])
 
     def inline_image_note_ids(self) -> frozenset[str]:
         return frozenset(self._inline_image_note_ids)

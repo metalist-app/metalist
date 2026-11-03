@@ -42,7 +42,7 @@ A super tag is a tag carrying values, its properties, written in the tag bar as 
 - While typing, properties stay as typed. On leaving the tag bar, a property without a value (`jogging:miles=` or `jogging:mi`) is removed, and so is a property repeated in the same token (`jogging:miles=3:miles=5` keeps `miles=3`).
 - A note carries a super tag once. Adding the same tag again (`jogging` beside `jogging:miles=3`) is refused: the tag bar says "jogging is already on this note" and the second one is not saved. Put all of a tag's properties in its one token instead. Plain tags are unaffected (`priority=high priority=low` stays).
 - Meta tags (`@size=2`) and tags inside scopes (`{{...}}`) have no properties; their colons are removed as before.
-- A super tag counts as its plain tag everywhere: searching `jogging` finds a note tagged `jogging:miles=3`; children and embedding notes inherit `jogging`, and in a search its values (the nearest wins); ontology rules about `jogging` apply; tag suggestions treat it as `jogging`. Right-clicking anywhere on the token opens the menu for `jogging`.
+- A super tag counts as its plain tag everywhere: searching `jogging` finds a note tagged `jogging:miles=3`; children inherit `jogging` (embedding notes don't), and in a search its values (the nearest wins); ontology rules about `jogging` apply; tag suggestions treat it as `jogging`. Right-clicking anywhere on the token opens the menu for `jogging`.
 - Renaming a tag (Edit Tag Relationships) keeps its properties: `jogging:miles=3` becomes `running:miles=3`. Deleting the tag removes the whole token.
 - The note list shows the token as written.
 - Searching by values (`jogging:miles>2`, `jogging:miles?`, `date>=2024-01`) is described in `help-search` (Super Tag Searches).
