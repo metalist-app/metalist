@@ -13,7 +13,7 @@ import { hydrateRemoteImageProxies } from './remote-image-proxy-service.js';
 import { downloadFileReference } from './file-reference-service.js';
 import { openFileViewer, opensInViewer } from './file-viewer-service.js';
 import { playMediaFile } from './media-player-service.js';
-import { copyTextToClipboard, normalizeCopyableText } from '../events/mouse-events.js';
+import { handleValueButtonClick } from './value-buttons-service.js';
 import { openReferenceInNewTab } from '../events/keyboard-events.js';
 import { serverRenderedHtml } from '../../server-rendered-html.js';
 
@@ -194,19 +194,7 @@ function handleWindowClick(event, target, id) {
         closeFloatingNote(id);
         return;
     }
-    const credential = target.closest('.meta-credential-value');
-    const copyable = target.closest('.meta-copyable');
-    if (credential) {
-        event.preventDefault();
-        void copyTextToClipboard(credential.dataset.copyValue, credential, 'meta-credential-copied');
-        return;
-    }
-    if (copyable && !target.closest('a') && window.getSelection()?.isCollapsed) {
-        event.preventDefault();
-        const value = typeof copyable.dataset.copyValue === 'string' ? copyable.dataset.copyValue : copyable.textContent;
-        void copyTextToClipboard(normalizeCopyableText(value), copyable, 'meta-copyable-copied');
-        return;
-    }
+    if (handleValueButtonClick(event, target)) return;
     const reference = target.closest('.note-reference-link');
     if (reference) {
         event.preventDefault();

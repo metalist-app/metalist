@@ -9,6 +9,7 @@ import html
 import re
 from pathlib import Path
 
+from app.services.credential_display import CredentialDisplay
 from app.security.rendered_html import sanitize_exported_html
 from app.services.content_formatting import find_list_style
 from app.services.content_formatting import showing_sites_above
@@ -133,12 +134,7 @@ html[data-theme="dark"] .html-export-body .note:not(.editing):not(.locked):hover
     display: block !important;
 }
 
-/* Passwords an export or print includes are there to be read; hidden ones
-   are not there to copy. */
-.html-export-body .meta-credential-password .meta-credential-value:not([data-redacted]) {
-    filter: none;
-}
-
+/* Hidden passwords and usernames are not there to copy. */
 .html-export-body .meta-credential-value[data-redacted] {
     cursor: default;
     text-decoration: none;
@@ -371,7 +367,7 @@ def build_notes_export_document(
         token=token,
         collapsible=is_download,
         open_note_ids=_open_while_editing(editing_note_id),
-        redact_credentials=not include_credentials,
+        credentials=_export_credentials(include_credentials),
     )
     stylesheet = _load_export_stylesheet()
     document_title = title.strip()
@@ -562,9 +558,17 @@ def _open_while_editing(editing_note_id: str | None) -> frozenset[str]:
     return frozenset(open_ids)
 
 
+def _export_credentials(include_credentials: bool) -> CredentialDisplay:
+    """Passwords and usernames as their text in an export the user included them in,
+    hidden as the mask otherwise."""
+    if include_credentials:
+        return CredentialDisplay.SHOWN
+    return CredentialDisplay.HIDDEN
+
+
 def _render_exported_notes_markup(
     *, root_ids: list[str], allowed_note_ids: set[str] | None, token: str, collapsible: bool,
-    open_note_ids: frozenset[str], redact_credentials: bool,
+    open_note_ids: frozenset[str], credentials: CredentialDisplay,
 ) -> str:
     if not isinstance(token, str) or token == "":
         raise TypeError("token must be a non-empty string")
@@ -624,7 +628,7 @@ def _render_exported_notes_markup(
                 embed_render_context=embed_render_context,
                 collapsible=collapsible,
                 open_note_ids=open_note_ids,
-                redact_credentials=redact_credentials,
+                credentials=credentials,
             )
         )
     return "\n".join(parts)
@@ -640,7 +644,7 @@ def _build_file_data_url(*, mime_type: str, content_bytes: bytes) -> str:
     return f"data:{mime_type};base64,{encoded}"
 
 
-def _render_exported_note(*, note_id, allowed_note_ids, embed_render_context, collapsible, open_note_ids, redact_credentials):
+def _render_exported_note(*, note_id, allowed_note_ids, embed_render_context, collapsible, open_note_ids, credentials):
     pending = [(note_id, False)]
     visiting = set()
     rendered = {}
@@ -662,7 +666,7 @@ def _render_exported_note(*, note_id, allowed_note_ids, embed_render_context, co
             continue
         visiting.remove(current)
         with showing_sites_above(sites_above.pop(current)):
-            rendered[current] = _render_exported_note_node(note_id=current, allowed_note_ids=allowed_note_ids, embed_render_context=embed_render_context, children_html_parts=[rendered.pop(child) for child in children], collapsible=collapsible, open_note_ids=open_note_ids, redact_credentials=redact_credentials)
+            rendered[current] = _render_exported_note_node(note_id=current, allowed_note_ids=allowed_note_ids, embed_render_context=embed_render_context, children_html_parts=[rendered.pop(child) for child in children], collapsible=collapsible, open_note_ids=open_note_ids, credentials=credentials)
     return rendered[note_id]
 
 
@@ -674,7 +678,7 @@ def _render_exported_note_node(
     embed_render_context: EmbedRenderContext,
     collapsible: bool,
     open_note_ids: frozenset[str],
-    redact_credentials: bool,
+    credentials: CredentialDisplay,
 ) -> str:
     record = note_store.get_note(note_id)
     record_content = record.content
@@ -690,7 +694,7 @@ def _render_exported_note_node(
         tags=record_tags,
         context=embed_render_context,
         static_export=True,
-        redact_credentials=redact_credentials,
+        credentials=credentials,
     )))
 
     classes = ["note"]
@@ -731,7 +735,7 @@ def _render_exported_note_node(
             tags=record_tags,
             context=embed_render_context,
             static_export=True,
-            redact_credentials=redact_credentials,
+            credentials=credentials,
         )))
         # It starts as MetaList shows it: a note that is only a reference folds as its source.
         shown_state_id = resolve_held_source(

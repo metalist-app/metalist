@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import pytest
 
+from app.services.credential_display import CredentialDisplay
 from app.security.rendered_html import sanitize_rendered_html
 from app.services.content_formatting import format_note_content_for_view
 
@@ -30,13 +31,13 @@ INLINE_REGIONS = [
 
 # The region as a note without @markdown draws it, between "Before " and " after".
 def _drawn_alone(tag: str, body: str) -> str:
-    plain = format_note_content_for_view(content_html=f"{BEFORE}{body}{AFTER}", tags=tag, redact_credentials=False)
+    plain = format_note_content_for_view(content_html=f"{BEFORE}{body}{AFTER}", tags=tag, credentials=CredentialDisplay.DOTS)
     assert plain.startswith(BEFORE) and plain.endswith(AFTER), plain
     return plain[len(BEFORE):-len(AFTER)]
 
 
 def _drawn_in_markdown(tag: str, body: str) -> str:
-    return format_note_content_for_view(content_html=f"{BEFORE}{body}{AFTER}", tags=f"@markdown {tag}", redact_credentials=False)
+    return format_note_content_for_view(content_html=f"{BEFORE}{body}{AFTER}", tags=f"@markdown {tag}", credentials=CredentialDisplay.DOTS)
 
 
 @pytest.mark.parametrize(("tag", "body"), BLOCK_REGIONS)
@@ -60,7 +61,7 @@ def test_an_inline_region_stays_in_its_paragraph(tag: str, body: str) -> None:
 def test_markdown_around_a_region_still_renders() -> None:
     rendered = format_note_content_for_view(
         content_html="<div># Groceries</div><div>This **week** ((Item,Qty</div><div>Milk,2)) and `code`.</div>",
-        tags="@markdown ((@csv))", redact_credentials=False,
+        tags="@markdown ((@csv))", credentials=CredentialDisplay.DOTS,
     )
     region = _drawn_alone("((@csv))", "((Item,Qty</div><div>Milk,2))")
 

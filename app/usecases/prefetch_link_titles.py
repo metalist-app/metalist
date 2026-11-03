@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 
+from app.services.credential_display import CredentialDisplay
 from app.security.note_html import sanitize_note_html
 from app.services.content_formatting import format_note_content_for_view
 from app.usecases.base import QueryCommand
@@ -16,6 +17,6 @@ class CmdPrefetchLinkTitles(QueryCommand):
         format_note_content_for_view(
             content_html=sanitize_note_html(self.content),
             tags=self.tags,
-            redact_credentials=True,
+            credentials=CredentialDisplay.HIDDEN,
         )
         return {"status": "success"}

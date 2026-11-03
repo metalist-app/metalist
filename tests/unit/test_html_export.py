@@ -571,9 +571,8 @@ def test_passwords_show_only_when_the_user_includes_them(monkeypatch: pytest.Mon
     included = _export(monkeypatch, notes, children, purpose=purpose, title="", include_credentials=True, editing_note_id=None)
     assert 'data-copy-value="sekret">sekret<' in included
     assert "data-redacted" not in included.split("</style>")[1].split("<script>")[0]
-    rule = ".meta-credential-password .meta-credential-value:not([data-redacted]) { filter: none; }"
-    assert rule in " ".join(included.split()), (
-        "readable, not blurred: on paper or in a backup a blurred password is no use"
+    assert re.search(r"meta-credential-password[^{]*\{[^}]*blur", included) is None, (
+        "readable: on paper or in a backup a blurred password is no use"
     )
 
 

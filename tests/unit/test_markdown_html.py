@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import pytest
 
+from app.services.credential_display import CredentialDisplay
 from app.services.content_formatting import format_note_content_for_view
 from app.services.input_errors import InputRejected
 from app.services.markdown_rendering import markdown_fold_states, render_markdown_to_html, render_note_markdown
@@ -71,7 +72,7 @@ def test_formulas_keep_their_text_and_the_ai_chat_shows_html_as_text() -> None:
     shown = format_note_content_for_view(
         content_html="<div>$\\text{&lt;b&gt;x&lt;/b&gt;}$ and &lt;u&gt;y&lt;/u&gt;</div>",
         tags="@markdown",
-        redact_credentials=False,
+        credentials=CredentialDisplay.DOTS,
     )
     assert "<mtext>&lt;b&gt;x&lt;/b&gt;</mtext>" in shown
     assert "<u>y</u>" in shown
@@ -79,7 +80,7 @@ def test_formulas_keep_their_text_and_the_ai_chat_shows_html_as_text() -> None:
 
 def test_a_markdown_region_inside_another_note_keeps_html_too() -> None:
     shown = format_note_content_for_view(
-        content_html="<div>x ((&lt;u&gt;under&lt;/u&gt;))</div>", tags="((@markdown))", redact_credentials=False,
+        content_html="<div>x ((&lt;u&gt;under&lt;/u&gt;))</div>", tags="((@markdown))", credentials=CredentialDisplay.DOTS,
     )
     assert "<u>under</u>" in shown
 

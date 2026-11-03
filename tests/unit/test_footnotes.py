@@ -2,13 +2,14 @@ from html.parser import HTMLParser
 
 import pytest
 
+from app.services.credential_display import CredentialDisplay
 from app.services.link_titles import link_title_store
 
 from app.services.content_formatting import format_note_content_for_view, list_known_meta_tag_terms, remove_added_style_tags
 
 
 def render(content: str, tags: str) -> str:
-    return format_note_content_for_view(content_html=content, tags=tags, redact_credentials=False)
+    return format_note_content_for_view(content_html=content, tags=tags, credentials=CredentialDisplay.DOTS)
 
 
 class AnchorValidator(HTMLParser):
@@ -111,7 +112,7 @@ def test_same_link_label_with_different_destinations_remains_distinct():
 def test_password_redaction_does_not_append_secret_footnote_bodies():
     rendered = format_note_content_for_view(
         content_html='body{{secret reference}}', tags='@password {{@footnote}}',
-        redact_credentials=True,
+        credentials=CredentialDisplay.HIDDEN,
     )
     assert 'secret reference' not in rendered
     assert 'data-footnote-reference' not in rendered

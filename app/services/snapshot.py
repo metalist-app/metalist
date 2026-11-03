@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from app.services.credential_display import CredentialDisplay
 from app.utils.byte_sizes import MIB
 import hashlib
 import json
@@ -968,7 +969,7 @@ def _render_note_view_html_below_sites(
             tags=rec.tags,
             context=context,
             static_export=False,
-            redact_credentials=False,
+            credentials=CredentialDisplay.DOTS,
         )
     else:
         rendered_content = render_note_content_with_embeds(
@@ -977,7 +978,7 @@ def _render_note_view_html_below_sites(
             tags=rec.tags,
             context=context,
             static_export=False,
-            redact_credentials=False,
+            credentials=CredentialDisplay.DOTS,
         )
     # Sized inline images keep their space while decoding, so text below them
     # does not move after the note renders.

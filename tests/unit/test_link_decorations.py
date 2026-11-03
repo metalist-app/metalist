@@ -14,6 +14,7 @@ import sqlite3
 from PIL import Image
 import pytest
 
+from app.services.credential_display import CredentialDisplay
 import app.services.content_formatting as content_formatting
 import app.services.link_icons as link_icons
 import app.services.link_titles as link_titles
@@ -77,7 +78,7 @@ def _with_title(connection: sqlite3.Connection, url: str, title: str) -> None:
 
 
 def _rendered(html: str, tags: str) -> str:
-    return format_note_content_for_view(content_html=html, tags=tags, redact_credentials=False)
+    return format_note_content_for_view(content_html=html, tags=tags, credentials=CredentialDisplay.DOTS)
 
 
 def _decorated(text: str) -> str:

@@ -5,6 +5,7 @@ import re
 import sqlite3
 import pytest
 
+from app.services.credential_display import CredentialDisplay
 from app.db.link_titles_sql import insert_link_title_row
 from app.db.schema import initialize_schema
 from app.services import content_formatting as content_formatting_module
@@ -24,7 +25,7 @@ def format_note_content_for_view(*, content_html: str, tags: str) -> str:
     return _format_note_content_for_view(
         content_html=content_html,
         tags=tags,
-        redact_credentials=False,
+        credentials=CredentialDisplay.DOTS,
     )
 
 
@@ -617,7 +618,9 @@ def test_format_note_content_for_view_password_meta_renders_copyable_value() -> 
     assert 'meta-credential-password' in rendered
     assert 'title="Password"' in rendered and 'Password:' not in rendered
     assert 'data-copy-value="sekret"' in rendered
-    assert ">sekret<" in rendered
+    # Shown as dots, the value only copied (2026-11-03).
+    assert ">\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022<" in rendered
+    assert ">sekret<" not in rendered
 
 
 def test_format_note_content_for_view_password_meta_applies_other_global_classes() -> None:
@@ -631,7 +634,7 @@ def test_format_note_content_for_view_password_meta_redacts_underlying_value() -
     rendered = _format_note_content_for_view(
         content_html=html,
         tags="@password",
-        redact_credentials=True,
+        credentials=CredentialDisplay.HIDDEN,
     )
     # A fixed mask: the length stays hidden too.
     assert 'data-redacted="true" data-copy-value="\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022"' in rendered
@@ -1079,8 +1082,8 @@ def test_the_agent_never_reads_a_username_or_a_password() -> None:
 
 
 def test_a_hidden_username_shows_the_same_mask_as_a_password() -> None:
-    rendered = _format_note_content_for_view(content_html="<div>evolvingstuff</div>", tags="@username", redact_credentials=True)
+    rendered = _format_note_content_for_view(content_html="<div>evolvingstuff</div>", tags="@username", credentials=CredentialDisplay.HIDDEN)
     assert "evolvingstuff" not in rendered
     assert f'data-redacted="true" data-copy-value="{CREDENTIAL_MASK}">{CREDENTIAL_MASK}<' in rendered
-    shown = _format_note_content_for_view(content_html="<div>evolvingstuff</div>", tags="@username", redact_credentials=False)
+    shown = _format_note_content_for_view(content_html="<div>evolvingstuff</div>", tags="@username", credentials=CredentialDisplay.DOTS)
     assert 'data-copy-value="evolvingstuff">evolvingstuff<' in shown, "MetaList itself shows it"

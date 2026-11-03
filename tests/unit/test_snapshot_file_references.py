@@ -3,6 +3,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 from typing import Dict, List, Optional
 
+from app.services.credential_display import CredentialDisplay
 import app.services.snapshot as snapshot_module
 import pytest
 
@@ -385,7 +386,7 @@ def test_redacted_password_and_ai_chat_references_stay_text_only() -> None:
         tags="",
         context=context_for(password_source),
         static_export=True,
-        redact_credentials=True,
+        credentials=CredentialDisplay.HIDDEN,
     )
     assert "note-reference-link-thumbnail" not in exported
     assert "hunter2" not in exported
@@ -394,7 +395,7 @@ def test_redacted_password_and_ai_chat_references_stay_text_only() -> None:
     chat_link = render_compact_note_reference_link(
         reference_note_id=_SOURCE_ID,
         context=context_for(plain_source),
-        redact_credentials=True,
+        credentials=CredentialDisplay.HIDDEN,
     )
     assert "note-reference-link-thumbnail" not in chat_link
     assert "(empty note)" in chat_link
@@ -421,7 +422,7 @@ def test_exported_compact_reference_embeds_the_diagram_preview() -> None:
                 static_collapse_arrows=False,
             ),
             static_export=True,
-            redact_credentials=True,
+            credentials=CredentialDisplay.HIDDEN,
         )
 
     rendered = export("data:image/svg+xml;base64,PHN2Zy8+")

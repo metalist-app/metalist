@@ -6,6 +6,7 @@ import * as Logger from './mode-logger.js';
 
 import { initKeyboardEvents } from './events/keyboard-events.js';
 import { initMouseEvents } from './events/mouse-events.js';
+import { startValueButtons } from './services/value-buttons-service.js';
 import { initContextMenuEvents } from './events/context-menu-events.js';
 import { initInputEvents } from './events/input-events.js';
 import { initFocusEvents } from './events/focus-events.js';
@@ -57,6 +58,8 @@ const ModeManager = {
     async _registerEventListeners(config) {
         initKeyboardEvents();
         initMouseEvents();
+        // Copy and show buttons on every copyable value drawn in the page.
+        startValueButtons();
         initContextMenuEvents();
         initInputEvents();
         initFocusEvents();

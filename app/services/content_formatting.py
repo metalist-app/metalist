@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from typing import Dict, FrozenSet, Iterator, List, Mapping, Set, Tuple
 
 # Keep existing formatting helper imports available to callers during this extraction.
+from app.services.credential_display import CredentialDisplay
 from app.services.structured_note_renderers import (
     CsvScopeFormatting,
     _render_json_meta as render_json,
@@ -113,9 +114,12 @@ _REMOVABLE_FORMATTING_TAGS = frozenset(set(_META_TAG_TO_CLASS) | set(_RENDERER_T
 
 _CREDENTIAL_TAGS = frozenset({"username", "password"})
 # A hidden password or username shows this, whatever its length, so the length
-# stays hidden too.
+# stays hidden too; MetaList shows a password so (CredentialDisplay.DOTS).
 _CREDENTIAL_MASK_LENGTH = 8
 CREDENTIAL_MASK = "\u2022" * _CREDENTIAL_MASK_LENGTH
+# What a screen reader says for a password's dots, instead of eight bullets; its copy and
+# show buttons are added in the page (value-buttons-service.js).
+_HIDDEN_PASSWORD_LABEL = "Hidden password"
 _EMAIL_TAGS = frozenset({"email"})
 
 _CREDENTIAL_META = {
@@ -475,30 +479,30 @@ def extract_agent_note_text(
     return text, False
 
 
-def format_note_content_for_view(*, content_html: str, tags: str, redact_credentials: bool) -> str:
+def format_note_content_for_view(*, content_html: str, tags: str, credentials: CredentialDisplay) -> str:
     if not isinstance(content_html, str):
         raise TypeError(f"content_html must be a string, got {type(content_html)}")
     if not isinstance(tags, str):
         raise TypeError(f"tags must be a string, got {type(tags)}")
-    if not isinstance(redact_credentials, bool):
-        raise TypeError(f"redact_credentials must be a bool, got {type(redact_credentials)}")
+    if not isinstance(credentials, CredentialDisplay):
+        raise TypeError(f"credentials must be a CredentialDisplay, got {type(credentials)}")
 
     if _LINK_FETCHES_IN_RENDER.get() is not None:
-        return _format_note_content_with_footnotes(content_html=content_html, tags=tags, redact_credentials=redact_credentials)
+        return _format_note_content_with_footnotes(content_html=content_html, tags=tags, credentials=credentials)
     reset_token = _LINK_FETCHES_IN_RENDER.set(set())
     try:
-        return _format_note_content_with_footnotes(content_html=content_html, tags=tags, redact_credentials=redact_credentials)
+        return _format_note_content_with_footnotes(content_html=content_html, tags=tags, credentials=credentials)
     finally:
         _LINK_FETCHES_IN_RENDER.reset(reset_token)
 
 
-def _format_note_content_with_footnotes(*, content_html: str, tags: str, redact_credentials: bool) -> str:
+def _format_note_content_with_footnotes(*, content_html: str, tags: str, credentials: CredentialDisplay) -> str:
     footnotes: list[tuple[str, str]] = []
     output = _format_note_content_for_view(
-        content_html=content_html, tags=tags, redact_credentials=redact_credentials,
+        content_html=content_html, tags=tags, credentials=credentials,
         footnotes=footnotes,
     )
-    if not footnotes or (redact_credentials and _find_global_credential_tag(tags) is not None):
+    if not footnotes or (credentials is CredentialDisplay.HIDDEN and _find_global_credential_tag(tags) is not None):
         return output
     return _linkify_plain_view_links(
         finish_footnotes(output, footnotes, _render_footnote_url_titles),
@@ -506,7 +510,7 @@ def _format_note_content_with_footnotes(*, content_html: str, tags: str, redact_
 
 
 def _format_note_content_for_view(
-    *, content_html: str, tags: str, redact_credentials: bool,
+    *, content_html: str, tags: str, credentials: CredentialDisplay,
     footnotes: list[tuple[str, str]],
 ) -> str:
     config = _parse_meta_tags(tags)
@@ -615,7 +619,7 @@ def _format_note_content_for_view(
                 content_html=output,
                 credential_tag=credential_tag,
                 formatting_tags=config.global_tags,
-                redact_credentials=redact_credentials,
+                credentials=credentials,
             )
         )
 
@@ -1286,24 +1290,16 @@ def _render_credential_meta(
     content_html: str,
     credential_tag: str,
     formatting_tags: FrozenSet[str],
-    redact_credentials: bool,
+    credentials: CredentialDisplay,
 ) -> str:
     if credential_tag not in _CREDENTIAL_TAGS:
         raise KeyError(f"Unknown credential meta tag: {credential_tag}")
-    if not isinstance(redact_credentials, bool):
-        raise TypeError(f"redact_credentials must be a bool, got {type(redact_credentials)}")
+    if not isinstance(credentials, CredentialDisplay):
+        raise TypeError(f"credentials must be a CredentialDisplay, got {type(credentials)}")
 
     credential_meta = _CREDENTIAL_META[credential_tag]
     label_text = credential_meta["label"]
     icon_html = credential_meta["icon"]
-
-    value_text = strip_html(content_html)
-    display_text = value_text
-    redacted_attr = ""
-    if redact_credentials:
-        display_text = CREDENTIAL_MASK
-        redacted_attr = ' data-redacted="true"'
-    escaped_value = html.escape(display_text, quote=True)
 
     extra_classes = ""
     if formatting_tags:
@@ -1313,30 +1309,55 @@ def _render_credential_meta(
     if extra_classes:
         value_class = f"{value_class} {extra_classes}"
     size_style_attr = _meta_size_style_attr(formatting_tags)
+    value_html = _credential_value_html(
+        value_text=strip_html(content_html), credential_tag=credential_tag, credentials=credentials,
+        value_class=value_class, style_attr=size_style_attr,
+    )
 
     return (
         f'<div class="meta-credential meta-credential-{credential_tag}">'
         # The icon says what the value is, on hover and to screen readers.
         f'<span class="meta-credential-icon" role="img" title="{label_text}" aria-label="{label_text}">{icon_html}</span>'
-        f'<span class="{value_class}"{size_style_attr}{redacted_attr} data-copy-value="{escaped_value}">'
-        f"{escaped_value}"
-        "</span>"
+        f"{value_html}"
         "</div>"
     )
 
 
+def _credential_value_html(
+    *, value_text: str, credential_tag: str, credentials: CredentialDisplay, value_class: str, style_attr: str,
+) -> str:
+    """A credential's click-to-copy value: its text, or CREDENTIAL_MASK where it is hidden
+    (HIDDEN: nothing to copy) and for a password in MetaList (DOTS: the value only in
+    data-copy-value, never the page's text; the maintainer, 2026-11-03)."""
+    assert credential_tag in _CREDENTIAL_TAGS
+    if credentials is CredentialDisplay.HIDDEN:
+        return f'<span class="{value_class}"{style_attr} data-redacted="true" data-copy-value="{CREDENTIAL_MASK}">{CREDENTIAL_MASK}</span>'
+    escaped_value = html.escape(value_text, quote=True)
+    if credentials is CredentialDisplay.DOTS and credential_tag == "password":
+        return (
+            f'<span class="{value_class}"{style_attr} role="img" aria-label="{_HIDDEN_PASSWORD_LABEL}" '
+            f'data-copy-value="{escaped_value}">{CREDENTIAL_MASK}</span>'
+        )
+    return f'<span class="{value_class}"{style_attr} data-copy-value="{escaped_value}">{escaped_value}</span>'
+
+
 # A credential note's row inside a link to it (docs/ui/references.md): the same icon and
-# click-to-copy value as the note's own row (a password blurred), in a span to sit in a line.
-def render_credential_link_row(*, content_html: str, credential_tag: str) -> str:
+# click-to-copy value as the note's own row (a password as dots), in a span to sit in a line.
+def render_credential_link_row(*, content_html: str, credential_tag: str, credentials: CredentialDisplay) -> str:
     if credential_tag not in _CREDENTIAL_TAGS:
         raise KeyError(f"Unknown credential meta tag: {credential_tag}")
+    if credentials is CredentialDisplay.HIDDEN:
+        raise ValueError("a link to a credential note is its row only where credentials are not hidden")
     credential_meta = _CREDENTIAL_META[credential_tag]
     label_text = credential_meta["label"]
-    escaped_value = html.escape(strip_html(content_html), quote=True)
+    value_html = _credential_value_html(
+        value_text=strip_html(content_html), credential_tag=credential_tag, credentials=credentials,
+        value_class="meta-credential-value", style_attr="",
+    )
     return (
         f'<span class="meta-credential meta-credential-{credential_tag}">'
         f'<span class="meta-credential-icon" role="img" title="{label_text}" aria-label="{label_text}">{credential_meta["icon"]}</span>'
-        f'<span class="meta-credential-value" data-copy-value="{escaped_value}">{escaped_value}</span>'
+        f"{value_html}"
         "</span>"
     )
 

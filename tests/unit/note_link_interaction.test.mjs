@@ -41,6 +41,8 @@ function harness(isEditing) {
         CommandGate: { run: (name) => events.push(name) },
         SHELL_SELECTOR: '.meta-shell', SHELL_CLOSE_SELECTOR: '.meta-shell-close',
         resolveDiagramTarget: () => null,
+        // Not a copy or show button (value-buttons-service.js).
+        handleValueButtonClick: () => false, VALUE_BUTTONS_SELECTOR: '.meta-value-buttons',
     };
     const handlers = new Function('ApplicationState', ...Object.keys(dependencies), `${source}\nreturn {
         handleImmediateMouseDown, handleMoveDragMouseDown, handleClick,

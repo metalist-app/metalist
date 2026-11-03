@@ -19,6 +19,7 @@ import httpx
 from PIL import Image
 import pytest
 
+from app.services.credential_display import CredentialDisplay
 import app.services.link_icons as link_icons
 import app.services.link_titles as link_titles
 from app.db.link_icons_sql import fetch_all_link_icon_rows
@@ -530,7 +531,7 @@ def _titled(connection: sqlite3.Connection, url: str) -> None:
 
 
 def _rendered(url: str) -> str:
-    return format_note_content_for_view(content_html=f"<div>{url}</div>", tags="", redact_credentials=False)
+    return format_note_content_for_view(content_html=f"<div>{url}</div>", tags="", credentials=CredentialDisplay.DOTS)
 
 
 def test_the_icon_goes_before_the_title(icon_database) -> None:

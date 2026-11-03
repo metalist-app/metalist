@@ -19,6 +19,7 @@ import re
 from dataclasses import dataclass
 from typing import Sequence
 
+from app.services.credential_display import CredentialDisplay
 from app.security.rendered_html import sanitize_rendered_html
 from app.services.content_formatting import REGION_CSV
 from app.services.content_formatting import REGION_JSON
@@ -125,7 +126,7 @@ def edit_preview_at_caret(*, marked_content_html: str, tags: str) -> EditPreview
 
 def _found_in(*, content_html: str, tags: str) -> _Found:
     with holding_link_fetches(), finding_formulas() as formulas, finding_regions() as regions, finding_diagrams() as diagrams:
-        format_note_content_for_view(content_html=content_html, tags=tags, redact_credentials=True)
+        format_note_content_for_view(content_html=content_html, tags=tags, credentials=CredentialDisplay.HIDDEN)
     return _Found(formulas=formulas, regions=regions, diagrams=diagrams)
 
 
@@ -236,5 +237,5 @@ def format_preview_html(*, text: str, tags: str) -> str:
     if not isinstance(text, str) or not isinstance(tags, str):
         raise TypeError("format_preview_html requires text and tags strings")
     with holding_link_fetches():
-        rendered = format_note_content_for_view(content_html=plain_text_to_note_html(text), tags=tags, redact_credentials=True)
+        rendered = format_note_content_for_view(content_html=plain_text_to_note_html(text), tags=tags, credentials=CredentialDisplay.HIDDEN)
     return sanitize_rendered_html(rendered)

@@ -1,4 +1,5 @@
 import { NOT_IN_TAB_ORDER } from '../../dom-focus.js';
+import { CREDENTIAL_MASK, observeValueButtons } from './value-buttons-service.js';
 
 const FLOATING_NOTE_TITLE_MAX_CHARS = 120;
 
@@ -55,16 +56,16 @@ export function createFloatingNoteElements(id) {
     resize.setAttribute('aria-label', 'Resize floating note');
     resize.title = 'Drag to resize; arrow keys also resize';
     shadow.append(header, scroll, resize);
+    observeValueButtons(shadow);
     return {element, tree, title, status, scroll};
 }
 
 export function getFloatingNoteTitle(tree) {
     const content = tree.querySelector(':scope > .note > .note-content');
     if (!content) throw new Error('Floating note is missing root content');
+    // A password is its dots in the title, even while its eye shows it in the note.
     const preview = content.cloneNode(true);
-    // Passwords are only visually masked in the note; never expose their text
-    // in the window chrome or its accessible label.
-    for (const password of preview.querySelectorAll('.meta-credential-password')) password.textContent = '••••';
+    for (const password of preview.querySelectorAll('.meta-credential-password .meta-credential-value')) password.textContent = CREDENTIAL_MASK;
     const text = preview.textContent.replace(/\s+/g, ' ').trim();
     if (text.length === 0) return 'Untitled note';
     return text.length > FLOATING_NOTE_TITLE_MAX_CHARS

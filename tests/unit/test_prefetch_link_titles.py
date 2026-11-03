@@ -3,6 +3,7 @@ from fastapi import HTTPException
 from pydantic import ValidationError
 from starlette.requests import Request
 
+from app.services.credential_display import CredentialDisplay
 from app.api.routes.notes import LinkTitlePrefetchRequest, prefetch_link_titles
 from app.services.link_titles import link_title_store
 from app.services.content_formatting import format_note_content_for_view
@@ -65,7 +66,7 @@ def test_completed_prefetch_is_used_by_first_view_render(monkeypatch, content, t
     CmdPrefetchLinkTitles(content=content, tags=tags).execute()
     assert queued == ["https://example.com/article"]
     titles[queued[0]] = "Article & Details"
-    rendered = format_note_content_for_view(content_html=content, tags=tags, redact_credentials=False)
+    rendered = format_note_content_for_view(content_html=content, tags=tags, credentials=CredentialDisplay.DOTS)
     assert '<span class="link-title-text">Article &amp; Details</span>' in rendered
     assert '<span class="link-title-domain"> · example.com</span>' in rendered
     assert 'target="_blank"' in rendered

@@ -56,7 +56,6 @@
 - Ready to build (a prefix folder for every import, so a whole import is one folder): `docs/ready-to-build/import-prefix-folder.md`
 - Ready to build (importing a folder of any files, with a size check and file-type checklist; previews for code, PDF, RTF/.docx, HTML, audio and video): `docs/ready-to-build/folder-import-and-file-previews.md`
 - Ready to build, replacing that note's preview notes (files shown, not copied: kept text for every file with text, a viewer with Open and Download, audio and video players, dropped `.md`/`.txt` asked about, Convert to Note): `docs/ready-to-build/files-shown-not-copied.md`
-- Ready to build (passwords shown as dots, not blurred): `docs/ready-to-build/password-dots-not-blur.md`
 - Ready to build (a link dragged from a browser becomes a note holding it, on the column, a tree folder or into an edited note): `docs/ready-to-build/dropped-links.md`
 - Built 2026-11-02, Chrome's and Safari's exports still to check (browser bookmarks as an import source: one note per website address, its title linked, folders as folder tags, dated when bookmarked; a dropped export asks Import or Keep as File): `docs/ready-to-build/bookmark-import.md`
 - Future plan (charts of super-tag values, embedded like diagrams): `docs/future-plans/charts.md`

@@ -25,6 +25,7 @@ import {
     hideSearchContextsOverlayForPointerMove,
 } from '../services/search-contexts-overlay-service.js';
 import { CommandGate } from '../services/command-gate-service.js';
+import { handleValueButtonClick, VALUE_BUTTONS_SELECTOR } from '../services/value-buttons-service.js';
 import { deleteEditedNoteAskingIfReferenced } from '../services/referenced-note-removal-service.js';
 import { actionSaveNote } from '../actions/content-actions.js';
 import { CommandPalette } from '../../command-palette/command-palette-controller.js';
@@ -88,16 +89,12 @@ const DIAGRAM_SINGLE_CLICK_EDIT_DELAY_MS = 400;
 const MOVE_DRAG_COMMIT_THRESHOLD_SQ = MOVE_DRAG_COMMIT_THRESHOLD_PX * MOVE_DRAG_COMMIT_THRESHOLD_PX;
 // The cursor icon shown for each drag direction.
 const DRAG_DIRECTION_ICONS = { up: 'up', down: 'down', right: 'indent', left: 'outdent' };
-const CREDENTIAL_VALUE_SELECTOR = '.meta-credential-value';
 const EMAIL_VALUE_SELECTOR = '.meta-email-value';
 const STATUS_TOGGLE_SELECTOR = '.meta-status-toggle';
 // A task's box in a Markdown note (- [ ] milk).
 const MARKDOWN_TASK_TOGGLE_SELECTOR = '.meta-markdown-task-toggle';
 // The arrow of a note shown inside an embed (![[UUID]]).
 const EMBED_COLLAPSE_TOGGLE_SELECTOR = '.note-embed-collapse-toggle[data-embed-collapse-note-id]';
-const CREDENTIAL_COPY_CLASS = 'meta-credential-copied';
-const COPYABLE_SELECTOR = '.meta-copyable';
-const COPYABLE_COPY_CLASS = 'meta-copyable-copied';
 const COLLAPSED_CHILDREN_INDICATOR_SELECTOR = '.note-collapsed-children-indicator';
 const TAG_PROPOSAL_ACTION_SELECTOR = '.note-tag-proposal-action';
 const SHELL_RUN_TIMEOUT_SECONDS = 0;
@@ -340,9 +337,9 @@ function isMouseDownOutsideEditExclusion(target) {
             'button.note-file-reference-link',
             '.note-file-action',
             '.note-file-media-embed',
-            CREDENTIAL_VALUE_SELECTOR,
+            // A copy or show button acts on its value; the value itself is part of the note.
+            VALUE_BUTTONS_SELECTOR,
             EMAIL_VALUE_SELECTOR,
-            COPYABLE_SELECTOR,
             SHELL_SELECTOR,
             SHELL_CLOSE_SELECTOR,
         ].join(',')
@@ -579,7 +576,7 @@ function handleImmediateMouseDown(event) {
         return;
     }
 
-    if (event.target.closest('.meta-footnote-link, .note-backlinks-link, .note-source-arrow')) {
+    if (event.target.closest(`.meta-footnote-link, .note-backlinks-link, .note-source-arrow, ${VALUE_BUTTONS_SELECTOR}`)) {
         return;
     }
 
@@ -719,7 +716,7 @@ function handleMoveDragMouseDown(event) {
     if (isShellInteractiveTarget(event.target)) {
         return;
     }
-    if (event.target instanceof Element && event.target.closest(`${STATUS_TOGGLE_SELECTOR}, ${MARKDOWN_TASK_TOGGLE_SELECTOR}, .meta-footnote-link, .note-backlinks-link, .note-source-arrow`)) {
+    if (event.target instanceof Element && event.target.closest(`${STATUS_TOGGLE_SELECTOR}, ${MARKDOWN_TASK_TOGGLE_SELECTOR}, .meta-footnote-link, .note-backlinks-link, .note-source-arrow, ${VALUE_BUTTONS_SELECTOR}`)) {
         return;
     }
 
@@ -1519,9 +1516,9 @@ function handleClick(event) {
         return;
     }
 
-    // A link to a password or username note holds that note's copyable row: a click on the
-    // value copies it; the rest of the link (its reference icon) goes to the note.
-    if (handleCredentialCopyClick(event)) {
+    // A copy or show button on a copyable value (value-buttons-service.js); a click on the
+    // value itself does what a click elsewhere in the note, or the link around it, does.
+    if (handleValueButtonClick(event, event.target)) {
         return;
     }
 
@@ -1534,10 +1531,6 @@ function handleClick(event) {
     }
 
     if (handleEmailClick(event)) {
-        return;
-    }
-
-    if (handleCopyableClick(event)) {
         return;
     }
 
@@ -2384,33 +2377,6 @@ function handleMarkdownCalloutTitleClick(event) {
     });
 }
 
-function handleCredentialCopyClick(event) {
-    if (!event) {
-        throw new Error('handleCredentialCopyClick called without an event object');
-    }
-    if (!event.target) {
-        throw new Error('Credential copy click missing target element');
-    }
-
-    const valueElement = event.target.closest(CREDENTIAL_VALUE_SELECTOR);
-    if (!valueElement) {
-        return false;
-    }
-
-    const copyValue = valueElement.dataset.copyValue;
-    if (typeof copyValue !== 'string') {
-        throw new Error('Credential value missing data-copy-value attribute');
-    }
-
-    event.preventDefault();
-    event.stopPropagation();
-
-    triggerCopyFeedback(valueElement, CREDENTIAL_COPY_CLASS);
-    void copyTextToClipboard(copyValue, valueElement, CREDENTIAL_COPY_CLASS);
-    Logger.logAction('credential.copy', { valueLength: copyValue.length });
-    return true;
-}
-
 function handleEmailClick(event) {
     if (!event) {
         throw new Error('handleEmailClick called without an event object');
@@ -2429,52 +2395,6 @@ function handleEmailClick(event) {
     }
 
     event.stopPropagation();
-    return true;
-}
-
-function handleCopyableClick(event) {
-    if (!event) {
-        throw new Error('handleCopyableClick called without an event object');
-    }
-    if (!event.target) {
-        throw new Error('Copyable click missing target element');
-    }
-
-    const copyableElement = event.target.closest(COPYABLE_SELECTOR);
-    if (!copyableElement) {
-        return false;
-    }
-
-    if (ModeContext.isEditing) {
-        return false;
-    }
-
-    const selection = window.getSelection();
-    if (selection && !selection.isCollapsed) {
-        return false;
-    }
-
-    if (event.target.closest('a')) {
-        return false;
-    }
-
-    let copyValue = '';
-    if (typeof copyableElement.dataset.copyValue === 'string') {
-        copyValue = copyableElement.dataset.copyValue;
-    } else if (copyableElement.textContent !== null) {
-        copyValue = copyableElement.textContent;
-    }
-
-    copyValue = normalizeCopyableText(copyValue);
-    if (copyValue === '') {
-        return false;
-    }
-
-    event.preventDefault();
-    event.stopPropagation();
-
-    void copyTextToClipboard(copyValue, copyableElement, COPYABLE_COPY_CLASS);
-    Logger.logAction('copyable.copy', { valueLength: copyValue.length });
     return true;
 }
 

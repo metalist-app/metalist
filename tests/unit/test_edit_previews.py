@@ -9,6 +9,7 @@ import sys
 
 import pytest
 
+from app.services.credential_display import CredentialDisplay
 import app.services.content_formatting as content_formatting_module
 from app.security.rendered_html import sanitize_rendered_html
 from app.services.content_formatting import format_note_content_for_view
@@ -132,7 +133,7 @@ def test_a_preview_fetches_no_link_title_or_icon(monkeypatch: pytest.MonkeyPatch
     assert _preview(content_html, "").kind == PREVIEW_NONE
     assert fetched == []
     # Showing the note itself still asks for the link's title.
-    format_note_content_for_view(content_html=content_html.replace("|", ""), tags="", redact_credentials=True)
+    format_note_content_for_view(content_html=content_html.replace("|", ""), tags="", credentials=CredentialDisplay.HIDDEN)
     assert fetched == ["https://half-typed.example.org/pa"]
 
 
@@ -194,7 +195,7 @@ def _lines(lines: list[str]) -> str:
 
 # The table as the note draws it.
 def _note_shows(content_html: str, tags: str) -> str:
-    return format_note_content_for_view(content_html=content_html.replace("|", ""), tags=tags, redact_credentials=True)
+    return format_note_content_for_view(content_html=content_html.replace("|", ""), tags=tags, credentials=CredentialDisplay.HIDDEN)
 
 
 @pytest.mark.parametrize(

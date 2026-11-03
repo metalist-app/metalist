@@ -5,6 +5,7 @@ docs/ui/content-formatting.md, "Diff meta tags" and "Code meta tags".
 
 import re
 
+from app.services.credential_display import CredentialDisplay
 from app.services.code_rendering import parse_code_tag_language
 from app.services.content_formatting import format_note_content_for_view
 from app.services.content_formatting import list_known_meta_tag_terms
@@ -14,7 +15,7 @@ from app.services.diff_rendering import classify_diff_line
 
 def _render(lines: list[str], tags: str) -> str:
     content_html = "".join(f"<p>{line}</p>" for line in lines)
-    return format_note_content_for_view(content_html=content_html, tags=tags, redact_credentials=False)
+    return format_note_content_for_view(content_html=content_html, tags=tags, credentials=CredentialDisplay.DOTS)
 
 
 def _diff_kinds(rendered: str) -> list[tuple[str, str]]:

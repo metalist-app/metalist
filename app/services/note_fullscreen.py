@@ -3,6 +3,7 @@ from __future__ import annotations
 import html
 from typing import FrozenSet, Set
 
+from app.services.credential_display import CredentialDisplay
 from app.security.rendered_html import sanitize_rendered_html
 from app.services.content_formatting import find_list_style
 from app.services.content_formatting import showing_sites_above
@@ -46,13 +47,13 @@ class _EveryNote(_Allowance):
 
 def build_note_fullscreen_markup(note_id: str) -> str:
     """The note and its whole subtree, as full screen and floating windows show them."""
-    return _build_markup(note_id, allowance=_EveryNote(), redact_credentials=False)
+    return _build_markup(note_id, allowance=_EveryNote(), credentials=CredentialDisplay.DOTS)
 
 
 def build_note_preview_markup(note_id: str) -> str:
     """The top of a note as the list draws it, for a reference's preview card: the note
     and its first descendants, passwords and usernames hidden as an export hides them."""
-    return _build_markup(note_id, allowance=_Allowance(PREVIEW_NOTE_LIMIT), redact_credentials=True)
+    return _build_markup(note_id, allowance=_Allowance(PREVIEW_NOTE_LIMIT), credentials=CredentialDisplay.HIDDEN)
 
 
 def build_file_preview_markup(file_id: str) -> str:
@@ -66,7 +67,7 @@ def build_file_preview_markup(file_id: str) -> str:
         tags="",
         context=_render_context(),
         static_export=False,
-        redact_credentials=True,
+        credentials=CredentialDisplay.HIDDEN,
     )
     return sanitize_rendered_html(
         '<article class="note"><div class="note-content" contenteditable="false">'
@@ -87,7 +88,7 @@ def build_file_view_markup(file_id: str, view: FileView) -> str:
         tags=view.render_tag,
         context=_render_context(),
         static_export=False,
-        redact_credentials=True,
+        credentials=CredentialDisplay.HIDDEN,
     )
     return sanitize_rendered_html(
         '<article class="note"><div class="note-content" contenteditable="false">'
@@ -114,7 +115,7 @@ def _render_context() -> EmbedRenderContext:
     )
 
 
-def _build_markup(note_id: str, *, allowance: _Allowance, redact_credentials: bool) -> str:
+def _build_markup(note_id: str, *, allowance: _Allowance, credentials: CredentialDisplay) -> str:
     if not isinstance(note_id, str) or note_id == "":
         raise TypeError("note_id must be a non-empty string")
 
@@ -125,7 +126,7 @@ def _build_markup(note_id: str, *, allowance: _Allowance, redact_credentials: bo
         render_context=render_context,
         visiting=set(),
         allowance=allowance,
-        redact_credentials=redact_credentials,
+        credentials=credentials,
         # Shown without its ancestors: its own links keep their sites.
         sites_above=frozenset(),
     ))
@@ -137,7 +138,7 @@ def _render_fullscreen_note(
     render_context: EmbedRenderContext,
     visiting: Set[str],
     allowance: _Allowance,
-    redact_credentials: bool,
+    credentials: CredentialDisplay,
     sites_above: FrozenSet[str],
 ) -> str:
     if note_id in visiting:
@@ -158,7 +159,7 @@ def _render_fullscreen_note(
             tags=record.tags,
             context=render_context,
             static_export=False,
-            redact_credentials=redact_credentials,
+            credentials=credentials,
         )
 
     classes = ["note"]
@@ -187,7 +188,7 @@ def _render_fullscreen_note(
             render_context=render_context,
             visiting=visiting,
             allowance=allowance,
-            redact_credentials=redact_credentials,
+            credentials=credentials,
             sites_above=sites_above | sites_linked_in(record.content),
         ))
     if child_parts:

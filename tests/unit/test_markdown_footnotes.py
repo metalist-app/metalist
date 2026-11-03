@@ -8,6 +8,7 @@ import re
 
 import pytest
 
+from app.services.credential_display import CredentialDisplay
 from app.services.content_formatting import format_note_content_for_view
 from app.services.embedded_references import EmbedRenderContext, render_collapsed_note_content_with_embeds
 from app.services.markdown_rendering import markdown_task_lines, render_markdown_to_html, render_note_markdown
@@ -27,7 +28,7 @@ LISBON = [
 
 def render(lines: list[str], tags: str) -> str:
     content = "".join(f"<div>{line}</div>" for line in lines)
-    return format_note_content_for_view(content_html=content, tags=tags, redact_credentials=False)
+    return format_note_content_for_view(content_html=content, tags=tags, credentials=CredentialDisplay.DOTS)
 
 
 def markers(rendered: str) -> list[str]:
@@ -104,7 +105,7 @@ def test_a_folded_note_shows_the_numbers_of_its_first_line() -> None:
     )
     rendered = render_collapsed_note_content_with_embeds(
         note_id=NOTE_ID, content_html="".join(f"<div>{line}</div>" for line in LISBON), tags="@markdown",
-        context=context, static_export=False, redact_credentials=False,
+        context=context, static_export=False, credentials=CredentialDisplay.DOTS,
     )
     assert markers(rendered)[:2] == ["1", "2"]
     assert "[^ferry]" not in rendered

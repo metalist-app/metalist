@@ -36,7 +36,6 @@
 .floating-note-tree .note-content { cursor: text; padding: 4px; font-size: var(--top-level-note-font-size); }
 .floating-note-tree .note-children { flex-basis: 100%; margin-left: 12px; }
 .floating-note-tree .note-tags { display: none; }
-.floating-note-tree .meta-credential-value, .floating-note-tree .meta-copyable { cursor: pointer; }
 .floating-note-resize {
     position: absolute; bottom: 0; right: 0; width: 22px; height: 22px;
     border: 0; background: linear-gradient(135deg, transparent 50%, #999 50%, #999 55%, transparent 55%, transparent 65%, #999 65%, #999 70%, transparent 70%);
