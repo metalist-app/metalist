@@ -211,16 +211,19 @@ export async function checkDateRange(page) {
   assert.equal(await dateRangeChip(page), '', 'the × ends the date range');
   assert.equal(await rootCount(page), all, 'every note is back');
 
-  // Typing a new search ends it too.
+  // Typing a new search keeps it: it stays until its × ends it (the maintainer, 2026-11-02,
+  // docs/ui/state-handling.md; a new search had ended it).
   await pickDateRange(page, 'Today');
   assert.equal(await dateRangeChip(page), 'Updated · today');
   await page.click('#search-input');
   await page.keyboard.type('datecheck');
   await idle(page);
-  assert.equal(await dateRangeChip(page), '', 'a new search ends the date range');
-  const ended = await page.evaluate(async () => (await import('/static/js/modules/mode-manager/services/date-range-filter-service.js')).getActiveDateFilter());
-  assert.equal(ended, null, 'the server has no date range for the tab');
+  assert.equal(await dateRangeChip(page), 'Updated · today', 'a new search keeps the date range');
+  const kept = await page.evaluate(async () => (await import('/static/js/modules/mode-manager/services/date-range-filter-service.js')).getActiveDateFilter());
+  assert.notEqual(kept, null, 'the tab still has its date range');
   await page.keyboard.press('Escape');
+  await page.click('#date-range-indicator-clear');
+  await idle(page);
   await clearSearch(page);
 }
 

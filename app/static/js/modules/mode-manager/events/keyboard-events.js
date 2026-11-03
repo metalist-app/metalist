@@ -55,8 +55,7 @@ import { NotesAPI } from '../../api-client.js';
 import { addDroppedFilePreviews } from '../services/dropped-file-preview-service.js';
 import { ErrorHandler } from '../../error-handler.js';
 import { isCopyOfDialogSelection } from '../services/dialog-copy-service.js';
-import { persistTabStateSnapshot, createTabOnServer, deleteTabOnServer, setTabSortModeOnServer } from '../services/tab-state-service.js';
-import { endDateFilterOfLeftTab } from '../services/root-sort-indicator-service.js';
+import { persistTabStateSnapshot, createTabOnServer, deleteTabOnServer } from '../services/tab-state-service.js';
 import { cacheNotesDomForTab, restoreNotesDomForTab, cloneNotesDomForTab, clearCachedNotesDomForTab, clearActiveNotesDom } from '../services/tab-dom-cache-service.js';
 import { finalizeDuplicatedTabClone, getDuplicateTabCloneOptions } from '../services/tab-duplication-service.js';
 import { areScrollAnchorsEqual, computeScrollAnchor } from '../services/scroll-anchor-service.js';
@@ -3413,19 +3412,11 @@ export function updateSearchContextsList() {
                     ? null
                     : NotesAPI.recordTabSearchSelection(searchQuery);
                 hideSearchContextsOverlay();
+                // Picking the search context already shown changes nothing: its Untagged view
+                // stays until View → All Notes or its chip's × ends it (docs/ui/state-handling.md).
                 void CommandGate.run('tab.select', async () => {
-                    if (tabId === ModeContext.activeTabId) {
-                        if (ModeContext.isUntaggedView) {
-                            ModeContext.setUntaggedView(false);
-                            syncSearchInputField();
-                            ModeContext.resetTabDiffCache(tabId, { preserveRootAnchor: false });
-                            clearCachedNotesDomForTab(tabId);
-                            clearActiveNotesDom();
-                            const { actionRefreshAndMaybeSelect } = await import('../actions/ui-actions.js');
-                            await actionRefreshAndMaybeSelect({ context: 'untaggedView.dismissTab', animateNoteChanges: false });
-                        }
-                    } else {
-                        await switchToTabLeavingItsSort(tabId, {});
+                    if (tabId !== ModeContext.activeTabId) {
+                        await switchToTabContext(tabId, {});
                     }
                 });
                 if (activityPromise !== null) await activityPromise;
@@ -3441,7 +3432,7 @@ export function updateSearchContextsList() {
                 }
                 const sourceTabId = e.currentTarget.getAttribute('data-source-tab-id');
 	                void CommandGate.run('tab.duplicate', async () => {
-	                    await duplicateTabContext(sourceTabId, true, CONFIG.TABS.CREATE_AND_SWITCH);
+	                    await duplicateTabContext(sourceTabId, true, true, CONFIG.TABS.CREATE_AND_SWITCH);
 	                });
 	            });
 	        });
@@ -3506,23 +3497,13 @@ export async function switchToTabContext(tabId, options) {
     }
     const perfContext = `switchTab tab#${previousTabIndex + 1}→tab#${nextTabIndex + 1}`;
 
-    const dismissedUntaggedView = ModeContext.isUntaggedView;
-    if (dismissedUntaggedView) {
-        ModeContext.setUntaggedView(false);
-        ModeContext.resetTabDiffCache(previousTabId, { preserveRootAnchor: false });
-        clearCachedNotesDomForTab(previousTabId);
-        clearActiveNotesDom();
-    }
-
 	ModeContext.beginIgnoreScrollEvents();
 	await (async () => {
 		await persistCurrentTabState();
 
 		await settleViewRequestsBeforeTabChange();
 		ModeContext.switchToTab(tabId, { force: true });
-		if (!dismissedUntaggedView) {
-			cacheNotesDomForTab(previousTabId);
-		}
+		cacheNotesDomForTab(previousTabId);
 		const restoredDom = restoreNotesDomForTab(tabId);
 		if (restoredDom.restored) {
 			ModeContext.restoreScrollForActiveTabNow();
@@ -3553,35 +3534,6 @@ export async function switchToTabContext(tabId, options) {
 	});
 }
 
-/**
- * The user going to another tab (picking it, or a new one): the tab they leave
- * drops its sort order, so it shows in normal order when they come back. The
- * Untagged view already ends with any tab switch. Reference navigation switches
- * with switchToTabContext and keeps the sort: × returns to the list as it was.
- */
-async function switchToTabLeavingItsSort(tabId, options) {
-    const leftTabId = ModeContext.activeTabId;
-    await switchToTabContext(tabId, options);
-    if (!ModeContext.tabs[leftTabId]) {
-        return;
-    }
-    // Its date range ends too.
-    let response = await endDateFilterOfLeftTab(leftTabId);
-    if (ModeContext.getTabSortMode(leftTabId) !== 'normal') {
-        ModeContext.bumpUndoContextEpoch('sortMode.tabLeft');
-        response = await setTabSortModeOnServer(leftTabId, 'normal');
-    }
-    if (response === null) {
-        return;
-    }
-    // The tab now shown keeps its loaded notes and scroll tracking.
-    ModeContext.hydrateTabState(response, { emitUpdate: false, preserveActiveRootTracking: true });
-    ModeContext.clearTabRevealedRedactions(leftTabId);
-    ModeContext.resetTabDiffCache(leftTabId, { preserveRootAnchor: false });
-    clearCachedNotesDomForTab(leftTabId);
-    updateSearchContextsList();
-}
-
 function snapshotActiveTabScrollState() {
     const currentScroll = Math.max(0, Math.round(window.scrollY));
     // Multiple tab commands can snapshot without an intervening scroll event.
@@ -3595,7 +3547,14 @@ function snapshotActiveTabScrollState() {
     }
 }
 
-async function duplicateTabContext(sourceTabId, animateNoteChanges, shouldSwitchImmediately) {
+// A copy of sourceTabId. With copiesView, a duplicate of everything it shows (search, sort,
+// date range, Files filter, folder, Untagged view); without it, a new view that starts with
+// nothing (a reference view, docs/ui/state-handling.md) though its notes are cloned from the source
+// for the slide.
+async function duplicateTabContext(sourceTabId, copiesView, animateNoteChanges, shouldSwitchImmediately) {
+    if (typeof copiesView !== 'boolean') {
+        throw new Error('duplicateTabContext requires copiesView boolean');
+    }
     if (typeof animateNoteChanges !== 'boolean') {
         throw new Error('duplicateTabContext requires animateNoteChanges boolean');
     }
@@ -3640,7 +3599,7 @@ async function duplicateTabContext(sourceTabId, animateNoteChanges, shouldSwitch
         throw new Error(`Cannot duplicate tab with missing state: ${sourceTabId}`);
     }
 
-    const response = await createTabOnServer(sourceTabId);
+    const response = await createTabOnServer(sourceTabId, copiesView);
     const newTabId = response?.newTabId;
     if (typeof newTabId !== 'string' || newTabId.length === 0) {
         throw new Error('Server did not return newTabId');
@@ -3704,7 +3663,7 @@ async function duplicateTabContext(sourceTabId, animateNoteChanges, shouldSwitch
     if (shouldSwitchImmediately) {
         const switchOptions = { animateNoteChanges };
 
-        await switchToTabLeavingItsSort(newTabId, switchOptions);
+        await switchToTabContext(newTabId, switchOptions);
         focusSearchInputAndSelectAllText();
         return newTabId;
     }
@@ -3759,36 +3718,25 @@ async function openBlankSearchContext() {
     snapshotActiveTabScrollState();
     await persistTabStateSnapshot();
 
-    const created = await createTabOnServer(sourceTabId);
-    const newTabId = created?.newTabId;
+    // The server starts it with nothing: no search, Normal order, no filter, all notes.
+    const response = await createTabOnServer(sourceTabId, false);
+    const newTabId = response?.newTabId;
     if (typeof newTabId !== 'string' || newTabId.length === 0) {
         throw new Error('Server did not return newTabId');
     }
-    if (!created || typeof created !== 'object' || !created.tabs || typeof created.tabs !== 'object') {
+    if (!response || typeof response !== 'object' || !response.tabs || typeof response.tabs !== 'object') {
         throw new Error('Server did not return tab-state payload');
     }
-    if (!created.tabs[newTabId] || typeof created.tabs[newTabId] !== 'object') {
-        throw new Error('Server tab-state response missing new tab payload');
-    }
-    // A blank tab starts unsorted: the tab it was made from may be sorted.
-    const response = created.tabs[newTabId].sortMode === 'normal'
-        ? created
-        : await setTabSortModeOnServer(newTabId, 'normal');
     const newTab = response.tabs[newTabId];
     if (!newTab || typeof newTab !== 'object') {
         throw new Error('Server tab-state response missing new tab payload');
     }
 
-    newTab.searchQuery = '';
-    newTab.scrollY = 0;
-    newTab.scrollAnchor = null;
-    newTab.anchorRootId = null;
-
     await settleViewRequestsBeforeTabChange();
     ModeContext.hydrateTabState(response);
     ModeContext.resetTabDiffCache(newTabId, { preserveRootAnchor: false });
 
-    await switchToTabLeavingItsSort(newTabId, {});
+    await switchToTabContext(newTabId, {});
     await actionEnterSearchMode();
     return newTabId;
 }
@@ -3937,7 +3885,7 @@ async function openReferenceQueryBehindTransition(
 
     const sourceTabId = ModeContext.activeTabId;
     const originScope = captureReferenceOriginScopeForActiveTab();
-    const newTabId = await duplicateTabContext(sourceTabId, false, false);
+    const newTabId = await duplicateTabContext(sourceTabId, false, false, false);
     if (typeof newTabId !== 'string' || newTabId.length === 0) {
         throw new Error('Reference navigation expected duplicateTabContext to return a tab id');
     }

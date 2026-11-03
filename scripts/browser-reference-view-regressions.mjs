@@ -701,6 +701,7 @@ async function checkInputChips(page) {
   await idle(page);
   chips = await inputChipsState(page);
   assert.deepEqual([chips.sort.shown, chips.sort.animating], [true, false], 'after a reload the sort chip is simply there');
+  assert.deepEqual([chips.untagged.shown, chips.untagged.animating], [true, false], 'and so is the Untagged chip: the tab keeps it');
 
   // × on the sort chip returns to Normal, not reversed.
   await page.click('#root-sort-indicator-clear');
@@ -710,15 +711,18 @@ async function checkInputChips(page) {
     return mode.activeTabSortMode;
   }), 'normal', '× ends the sort order and its direction');
 
-  // Typing a new search ends the sort and Untagged.
+  // Typing a new search keeps the sort, which stays until its × ends it (the maintainer,
+  // 2026-11-02, docs/ui/state-handling.md); Untagged still ends.
   await setSortMode(page, 'alphabetical');
   await searchFor(page, SEARCH);
   chips = await inputChipsState(page);
-  assert.deepEqual([chips.sort.shown, chips.untagged.shown], [false, false], 'a new search ends the sort and Untagged');
+  assert.deepEqual([chips.sort.shown, chips.untagged.shown], [true, false], 'a new search keeps the sort and ends Untagged');
   assert.equal(await page.evaluate(async () => {
     const {ModeContextInstance: mode} = await import('/static/js/modules/mode-manager/mode-context.js');
     return mode.activeTabSortMode;
-  }), 'normal', 'a new search runs in normal order');
+  }), 'alphabetical', 'a new search runs in the tab\'s sort');
+  await page.click('#root-sort-indicator-clear');
+  await idle(page);
 }
 
 export async function checkReferenceViews(page) {

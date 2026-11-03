@@ -19,6 +19,7 @@ from app.api.note_requests import (
     UpdateTabStateRequest,
     UpdateTabDateFilterRequest,
     UpdateTabFileFilterRequest,
+    UpdateTabUntaggedViewRequest,
     UpdateTabSortModeRequest,
     CreateNewTabRequest,
     DeleteTabRequest,
@@ -572,6 +573,16 @@ def update_tab_file_filter(payload: UpdateTabFileFilterRequest) -> Dict[str, obj
     return response
 
 
+@router.post("/notes/tab-state/untagged-view")
+@transactional_route
+def update_tab_untagged_view(payload: UpdateTabUntaggedViewRequest) -> Dict[str, object]:
+    """Show a tab's untagged notes, or its search again."""
+    response = tab_state_store.set_untagged_view(tab_id=payload["tabId"], is_untagged_view=payload["isUntaggedView"])
+    if response["changed"] is True:
+        reset_undo_stack(payload["clientId"], payload["undoContext"])
+    return response
+
+
 @router.post("/notes/tab-state/new-tab")
 @transactional_route
 def create_new_tab(payload: CreateNewTabRequest) -> Dict[str, object]:
@@ -580,7 +591,7 @@ def create_new_tab(payload: CreateNewTabRequest) -> Dict[str, object]:
     copy_from_tab_id = payload["copyFromTabId"]
     capture = CapturedExceptionContext(InputRejected, boundary='app/api/routes/notes.py:create_new_tab:capture')
     with capture:
-        response = tab_state_store.create_tab(copy_from_tab_id=copy_from_tab_id)
+        response = tab_state_store.create_tab(copy_from_tab_id=copy_from_tab_id, copies_view=payload["copiesView"])
     if capture.captured_exception is not None:
         raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail="Invalid or stale tab state") from capture.captured_exception
     # The browser clones the source tab's DOM into the new tab, so the new tab
@@ -588,6 +599,8 @@ def create_new_tab(payload: CreateNewTabRequest) -> Dict[str, object]:
     view_cache.copy_tab(
         client_id=payload["clientId"], source_tab_id=copy_from_tab_id, target_tab_id=response["newTabId"],
     )
+    if payload["copiesView"]:
+        virtual_folder_state.copy_filter(copy_from_tab_id, response["newTabId"])
     return response
 
 

@@ -115,12 +115,12 @@ def test_a_tab_keeps_its_range_across_a_reload_and_starts_again_at_its_top(memor
     assert store.get_date_filter(tab_id=tab_id) is None
 
 
-def test_a_new_tab_starts_without_its_sources_range_and_a_closed_tab_drops_its_own(memory_db) -> None:
+def test_a_blank_new_tab_starts_without_its_sources_range_and_a_closed_tab_drops_its_own(memory_db) -> None:
     store = TabStateStore()
     source_tab_id = store.snapshot()["activeTabId"]
     store.set_date_filter(tab_id=source_tab_id, date_filter=_preset("today", field="updated"))
 
-    new_tab_id = store.create_tab(copy_from_tab_id=source_tab_id)["newTabId"]
+    new_tab_id = store.create_tab(copy_from_tab_id=source_tab_id, copies_view=False)["newTabId"]
     assert store.get_date_filter(tab_id=new_tab_id) is None
 
     store.set_date_filter(tab_id=new_tab_id, date_filter=_preset("this-year", field="created"))

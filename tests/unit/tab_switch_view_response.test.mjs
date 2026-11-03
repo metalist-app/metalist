@@ -46,7 +46,7 @@ function buildHarness() {
         getRootCountTotals: () => ({ rootCountTotal: 1, searchRootCountTotal: 1 }),
         setRootCountTotals() {}, hasNoteHash: () => false,
         beginIgnoreScrollEvents() {}, endIgnoreScrollEvents() {}, restoreScrollForActiveTab() {},
-        resetTabDiffCache() {}, setUntaggedView() {},
+        resetTabDiffCache() {},
         switchToTab(tabId) { events.push(`switch:${tabId}`); this.activeTabId = tabId; },
         restoreScrollForActiveTabNow() { events.push(`scroll-now:${this.activeTabId}`); },
     };

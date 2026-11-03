@@ -18,6 +18,7 @@ const TAB_STATE_DELETE_TAB_ENDPOINT = CONFIG.API.NOTES.TAB_STATE_DELETE_TAB;
 const TAB_STATE_SORT_MODE_ENDPOINT = CONFIG.API.NOTES.TAB_STATE_SORT_MODE;
 const TAB_STATE_DATE_FILTER_ENDPOINT = CONFIG.API.NOTES.TAB_STATE_DATE_FILTER;
 const TAB_STATE_FILE_FILTER_ENDPOINT = CONFIG.API.NOTES.TAB_STATE_FILE_FILTER;
+const TAB_STATE_UNTAGGED_VIEW_ENDPOINT = CONFIG.API.NOTES.TAB_STATE_UNTAGGED_VIEW;
 const SCROLL_POLL_INTERVAL_MS = 1000;
 const TAB_STATE_PERSIST_DEBOUNCE_MS = 300;
 
@@ -122,10 +123,11 @@ function captureServerSignature(state) {
 // The server answers a post that changes nothing (e.g. one differing only in
 // what it normalises away) with the state and version it already had, so its
 // signature can equal the recorded one. Every answer also carries the tabs' date
-// range and Files filters, which only the server changes.
+// range and Files filters and Untagged views, which only the server changes.
 function recordServerSignature(state) {
     recordDateFiltersFromServer(state);
     recordFileFiltersFromServer(state);
+    ModeContext.recordUntaggedViewsFromServer(state);
     const signature = serializeState(canonicalizeState(state));
     if (moduleState.lastSignature !== signature) {
         moduleState.lastSignature = signature;
@@ -166,12 +168,20 @@ async function callTabStateApiAt(endpoint, method, body) {
     return await response.json();
 }
 
-export async function createTabOnServer(copyFromTabId) {
+/**
+ * A new tab after copyFromTabId: with copiesView a duplicate of everything it shows (search,
+ * sort, date range, Files filter, folder, Untagged view), without it a blank one.
+ */
+export async function createTabOnServer(copyFromTabId, copiesView) {
     if (typeof copyFromTabId !== 'string' || copyFromTabId.length === 0) {
         throw new Error('copyFromTabId must be a non-empty string');
     }
+    if (typeof copiesView !== 'boolean') {
+        throw new Error('createTabOnServer requires copiesView boolean');
+    }
     const response = await callTabStateApiAt(TAB_STATE_NEW_TAB_ENDPOINT, 'POST', {
         copyFromTabId,
+        copiesView,
         clientId: ModeContext.clientId,
     });
     captureServerSignature(response);
@@ -255,6 +265,23 @@ export async function setTabFileFilterOnServer(tabId, kind) {
     const response = await callTabStateApiAt(TAB_STATE_FILE_FILTER_ENDPOINT, 'POST', {
         tabId,
         kind,
+        clientId: ModeContext.clientId,
+        undoContext: captureUndoContext(),
+    });
+    captureServerSignature(response);
+    return response;
+}
+
+export async function setTabUntaggedViewOnServer(tabId, isUntaggedView) {
+    if (typeof tabId !== 'string' || tabId.length === 0) {
+        throw new Error('tabId must be a non-empty string');
+    }
+    if (typeof isUntaggedView !== 'boolean') {
+        throw new Error('setTabUntaggedViewOnServer requires isUntaggedView boolean');
+    }
+    const response = await callTabStateApiAt(TAB_STATE_UNTAGGED_VIEW_ENDPOINT, 'POST', {
+        tabId,
+        isUntaggedView,
         clientId: ModeContext.clientId,
         undoContext: captureUndoContext(),
     });

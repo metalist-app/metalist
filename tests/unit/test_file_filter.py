@@ -219,7 +219,7 @@ def test_a_tab_keeps_its_files_filter_across_a_reload_and_a_closed_tab_drops_it(
         session.close()
     assert reloaded.get_file_filter(tab_id=tab_id) == "pdf"
 
-    new_tab_id = store.create_tab(copy_from_tab_id=tab_id)["newTabId"]
+    new_tab_id = store.create_tab(copy_from_tab_id=tab_id, copies_view=False)["newTabId"]
     assert store.get_file_filter(tab_id=new_tab_id) is None
     store.set_file_filter(tab_id=new_tab_id, file_filter="image")
     assert list(store.delete_tab(tab_id=new_tab_id)["fileFilters"]) == [tab_id]

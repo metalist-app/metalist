@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 import json
 import re
 from threading import Lock
-from typing import Callable, Dict, List, Optional
+from typing import Callable, Dict, List, Optional, Set
 from uuid import uuid4
 
 from app.db.session import begin_writer
@@ -147,6 +147,23 @@ def _normalize_file_filters(filters: object, tabs: Dict[str, Dict[str, object]])
     return {tab_id: make_file_filter(kind) for tab_id, kind in filters.items() if tab_id in tabs}
 
 
+def _normalize_untagged_views(tab_ids: object, tabs: Dict[str, Dict[str, object]]) -> Set[str]:
+    """The tabs showing the Untagged view; a tab that is gone shows none."""
+    if not isinstance(tab_ids, list) or not all(isinstance(tab_id, str) for tab_id in tab_ids):
+        raise InputRejected("untaggedViews must be a list of tab ids")
+    return {tab_id for tab_id in tab_ids if tab_id in tabs}
+
+
+def _blank_tab_entry() -> Dict[str, object]:
+    return {
+        "searchQuery": "",
+        "scrollY": 0,
+        "anchorRootId": None,
+        "scrollAnchor": None,
+        "sortMode": SORT_MODE_NORMAL,
+    }
+
+
 def _is_uuid_string(value: str) -> bool:
     if not isinstance(value, str):
         return False
@@ -169,6 +186,7 @@ class TabStateStore:
         self._reference_views: Dict[str, Dict[str, object]] = {}
         self._date_filters: Dict[str, Dict[str, str]] = {}
         self._file_filters: Dict[str, str] = {}
+        self._untagged_views: Set[str] = set()
         # The version at which each tab's scroll last started again at the top.
         self._scroll_restarted_at_version: Dict[str, int] = {}
         self._install_default_state_locked(version=0)
@@ -228,7 +246,12 @@ class TabStateStore:
             self._clear_encrypted_state_locked()
             self._install_default_state_locked(version=0)
 
-    def create_tab(self, *, copy_from_tab_id: str) -> Dict[str, object]:
+    def create_tab(self, *, copy_from_tab_id: str, copies_view: bool) -> Dict[str, object]:
+        """A new tab after copy_from_tab_id. A duplicate (copies_view) copies everything that
+        decides which notes the tab shows and their order; a new tab starts with nothing
+        (the maintainer, 2026-11-02, docs/ui/state-handling.md)."""
+        if not isinstance(copies_view, bool):
+            raise TypeError("copies_view must be a bool")
         if not isinstance(copy_from_tab_id, str) or not copy_from_tab_id:
             raise InputRejected("copyFromTabId must be a non-empty string")
         if not _is_uuid_string(copy_from_tab_id):
@@ -245,10 +268,16 @@ class TabStateStore:
             while new_tab_id in self._tabs:
                 new_tab_id = self._new_tab_id()
 
-            source = deepcopy(self._tabs[copy_from_tab_id])
-            self._tabs[new_tab_id] = source
-            # A date range ends when the user leaves its tab, so a copy starts without
-            # one (a reference view then always shows its source).
+            if copies_view:
+                self._tabs[new_tab_id] = deepcopy(self._tabs[copy_from_tab_id])
+                if copy_from_tab_id in self._date_filters:
+                    self._date_filters[new_tab_id] = deepcopy(self._date_filters[copy_from_tab_id])
+                if copy_from_tab_id in self._file_filters:
+                    self._file_filters[new_tab_id] = self._file_filters[copy_from_tab_id]
+                if copy_from_tab_id in self._untagged_views:
+                    self._untagged_views.add(new_tab_id)
+            else:
+                self._tabs[new_tab_id] = _blank_tab_entry()
             self._tab_order.append(new_tab_id)
             self._version += 1
             self._persist_locked(connection=None, encryption_service=None, force_plaintext=False)
@@ -290,6 +319,7 @@ class TabStateStore:
                 del self._date_filters[tab_id]
             if tab_id in self._file_filters:
                 del self._file_filters[tab_id]
+            self._untagged_views.discard(tab_id)
             if tab_id in self._scroll_restarted_at_version:
                 del self._scroll_restarted_at_version[tab_id]
             self._version += 1
@@ -416,6 +446,28 @@ class TabStateStore:
             snapshot["changed"] = changed
             return snapshot
 
+    def set_untagged_view(self, *, tab_id: str, is_untagged_view: bool) -> Dict[str, object]:
+        """Show the tab's untagged notes, or (False) its search again. Like a Files filter
+        it changes what the view shows, so the tab's scroll starts again at the top."""
+        if not isinstance(tab_id, str) or not tab_id:
+            raise InputRejected("tabId must be a non-empty string")
+        if not isinstance(is_untagged_view, bool):
+            raise TypeError("is_untagged_view must be a bool")
+        with self._lock:
+            self._try_decrypt_locked(token="", require_success=True)
+            if tab_id not in self._tabs:
+                raise InputRejected("tabId must reference an existing tab")
+            changed = (tab_id in self._untagged_views) != is_untagged_view
+            if changed:
+                if is_untagged_view:
+                    self._untagged_views.add(tab_id)
+                else:
+                    self._untagged_views.remove(tab_id)
+                self._restart_tab_scroll_locked(tab_id)
+            snapshot = self._snapshot_locked()
+            snapshot["changed"] = changed
+            return snapshot
+
     def _restart_tab_scroll_locked(self, tab_id: str) -> None:
         entry = self._tabs[tab_id]
         entry["scrollY"] = 0
@@ -515,19 +567,12 @@ class TabStateStore:
             raise TypeError("version must be a non-negative int")
         default_tab_id = self._new_tab_id()
         self._active_tab_id = default_tab_id
-        self._tabs = {
-            default_tab_id: {
-                "searchQuery": "",
-                "scrollY": 0,
-                "anchorRootId": None,
-                "scrollAnchor": None,
-                "sortMode": SORT_MODE_NORMAL,
-            }
-        }
+        self._tabs = {default_tab_id: _blank_tab_entry()}
         self._tab_order = [default_tab_id]
         self._reference_views = {}
         self._date_filters = {}
         self._file_filters = {}
+        self._untagged_views = set()
         self._scroll_restarted_at_version = {}
         self._version = version
 
@@ -539,6 +584,7 @@ class TabStateStore:
             "referenceViews": deepcopy(self._reference_views),
             "dateFilters": deepcopy(self._date_filters),
             "fileFilters": dict(self._file_filters),
+            "untaggedViews": sorted(self._untagged_views),
             "version": self._version,
         }
 
@@ -564,8 +610,8 @@ class TabStateStore:
             raise RuntimeError("tab-state JSON version must be a non-negative integer")
         if not isinstance(tab_order, list):
             raise RuntimeError("tab-state JSON tabOrder must be a list")
-        # Tab state saved before reference views (or date or Files filters) were kept
-        # with the tabs has none.
+        # Tab state saved before reference views (or date or Files filters, or Untagged
+        # views) were kept with the tabs has none.
         reference_views: object = {}
         if "referenceViews" in parsed:
             reference_views = parsed["referenceViews"]
@@ -575,6 +621,9 @@ class TabStateStore:
         file_filters: object = {}
         if "fileFilters" in parsed:
             file_filters = parsed["fileFilters"]
+        untagged_views: object = []
+        if "untaggedViews" in parsed:
+            untagged_views = parsed["untaggedViews"]
         return {
             "activeTabId": active_tab_id,
             "tabs": self._normalize_tabs(tabs, from_storage=True),
@@ -582,6 +631,7 @@ class TabStateStore:
             "referenceViews": reference_views,
             "dateFilters": date_filters,
             "fileFilters": file_filters,
+            "untaggedViews": untagged_views,
             "version": version,
         }
 
@@ -613,6 +663,7 @@ class TabStateStore:
             snapshot["dateFilters"], normalized_tabs,
         )
         self._file_filters = _normalize_file_filters(snapshot["fileFilters"], normalized_tabs)
+        self._untagged_views = _normalize_untagged_views(snapshot["untaggedViews"], normalized_tabs)
         self._scroll_restarted_at_version = {}
         self._active_tab_id = active_tab_id
         self._version = version

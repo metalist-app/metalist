@@ -119,7 +119,7 @@ import { createNoteAtTop } from '../mode-manager/actions/note-actions.js';
 import { typeReferenceOpenerAtCaret } from '../mode-manager/services/reference-suggestions-service.js';
 import { VAULT_WIZARD_STEP, readSetupSteps, writeSetupSteps } from '../new-vault-setup.js';
 import {
-    setTabDateFilterOnServer, setTabFileFilterOnServer, setTabSortModeOnServer,
+    setTabDateFilterOnServer, setTabFileFilterOnServer, setTabSortModeOnServer, setTabUntaggedViewOnServer,
 } from '../mode-manager/services/tab-state-service.js';
 import { FILE_FILTER_KINDS, getActiveFileFilterKind } from '../mode-manager/services/file-filter-service.js';
 import {
@@ -1801,7 +1801,9 @@ class CommandPaletteController {
         }
 
         ModeContext.bumpUndoContextEpoch(`untaggedView.${isUntaggedView ? 'on' : 'off'}`);
-        ModeContext.setUntaggedView(isUntaggedView);
+        // Each search context keeps its own Untagged view (docs/ui/state-handling.md).
+        const response = await setTabUntaggedViewOnServer(activeTabId, isUntaggedView);
+        ModeContext.hydrateTabState(response, { emitUpdate: false });
         const searchInput = document.getElementById('search-input');
         if (!(searchInput instanceof HTMLInputElement)) {
             throw new Error('search-input missing from DOM');
@@ -1814,21 +1816,7 @@ class CommandPaletteController {
                 isViewingReferenceSource(),
             ),
         );
-        ModeContext.clearTabRevealedRedactions(activeTabId);
-        ModeContext.resetTabDiffCache(activeTabId, { preserveRootAnchor: false });
-        if (ModeContext.getTabScrollPosition(activeTabId) !== 0) {
-            ModeContext.updateTabScroll(activeTabId, 0, { emit: false });
-        }
-        if (ModeContext.getTabScrollAnchor(activeTabId) !== null) {
-            ModeContext.updateTabScrollAnchor(activeTabId, null, { emit: false });
-        }
-        if (ModeContext.getRootAnchorId() !== null) {
-            ModeContext.setRootAnchorId(null);
-        }
-
-        ModeContext.beginIgnoreScrollEvents();
-        window.scrollTo(0, 0);
-        ModeContext.endIgnoreScrollEvents();
+        this._showChangedViewFromTop(activeTabId);
 
         // As for a sort order: a view request in flight shows the old view.
         await actionRefreshAndMaybeSelect({
@@ -2314,7 +2302,8 @@ class CommandPaletteController {
             }
 
             if (ModeContext.isUntaggedView) {
-                ModeContext.setUntaggedView(false);
+                const response = await setTabUntaggedViewOnServer(ModeContext.activeTabId, false);
+                ModeContext.hydrateTabState(response, { emitUpdate: false });
             }
 
             const searchInput = document.getElementById('search-input');

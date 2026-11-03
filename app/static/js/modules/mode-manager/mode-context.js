@@ -56,7 +56,8 @@ class ModeContext {
         this._lastContentChangeTime = null;
         this._searchQuery = '';
         this._isInitialPageLoad = true;
-        this._isUntaggedView = false;
+        // The tabs showing their untagged notes, as the server last sent them (untaggedViews).
+        this._untaggedViewTabIds = Object.freeze([]);
         // The note find opened to show a match folded away, for the view only (docs/ui/find.md).
         this._findRevealNoteId = null;
         this._scrollRestoreVersion = 0;
@@ -1639,18 +1640,30 @@ class ModeContext {
         return this.getTabSortMode(this._activeTabId);
     }
 
-    setUntaggedView(value) {
-        if (typeof value !== 'boolean') {
-            throw new Error('isUntaggedView must be a boolean');
+    /** Take the Untagged views from a tab-state response (every one carries untaggedViews). */
+    recordUntaggedViewsFromServer(serverState) {
+        if (!serverState || typeof serverState !== 'object') {
+            throw new Error('recordUntaggedViewsFromServer requires the server tab state');
         }
-        this._assertStateChanged('isUntaggedView', this._isUntaggedView, value);
-        this._isUntaggedView = value;
-        this._notifyListeners('isUntaggedView', value);
+        const tabIds = serverState.untaggedViews;
+        if (!Array.isArray(tabIds) || !tabIds.every(tabId => typeof tabId === 'string')) {
+            throw new Error('Tab state response missing untaggedViews');
+        }
+        const next = [...tabIds].sort();
+        if (JSON.stringify(next) === JSON.stringify(this._untaggedViewTabIds)) {
+            return this;
+        }
+        const wasUntaggedView = this.isUntaggedView;
+        this._untaggedViewTabIds = Object.freeze(next);
+        if (this.isUntaggedView !== wasUntaggedView) {
+            this._notifyListeners('isUntaggedView', this.isUntaggedView);
+        }
         return this;
     }
 
+    /** Whether the active tab shows its untagged notes instead of its search. */
     get isUntaggedView() {
-        return this._isUntaggedView;
+        return this._untaggedViewTabIds.includes(this._activeTabId);
     }
 
     setFindRevealNoteId(noteId) {

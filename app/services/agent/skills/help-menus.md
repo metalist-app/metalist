@@ -37,7 +37,7 @@ Opening or dismissing the command palette does not clear undo/redo. Global actio
 
 ## Sort Order
 - The notes-view background and side-rail right-click menus also offer **Sort by**: Normal, Datetime Created, Datetime Last Updated, Alphabetical, and Content volume, then **Reverse Order**, a check item that combines with any of them (Normal too: the manual order bottom to top). Reversed, Alphabetical is Z to A, the date orders start from the oldest, and Content volume from the smallest; date separators flip with the notes. Picking another order keeps Reverse Order. The current mode is ticked and disabled. Choosing a mode updates the same saved per-tab setting as the command palette; Normal restores manual order.
-- `Sort order` is a per-search-context, server-owned view setting. Duplicating a search context inherits its current sort mode.
+- `Sort order` is a per-search-context, server-owned view setting. Duplicating a search context copies its sort mode; a new one, a reference view included, starts in Normal order.
 - Modes are exposed as distinct actions: `Sort Order: Normal`, `Sort Order: Datetime Created`, `Sort Order: Datetime Last Updated`, `Sort Order: Alphabetical`, and `Sort Order: Content Volume`, plus `Sort Order: Reverse`, which turns Reverse Order on or off.
 - Datetime Created orders roots newest-first by each root note's own creation timestamp; children do not affect its position or date group.
 - Datetime Last Updated orders roots newest-first by the latest update timestamp anywhere in the root's subtree, including the root and all descendants. Date groups use that same timestamp.
@@ -48,14 +48,14 @@ Opening or dismissing the command palette does not clear undo/redo. Global actio
 - In a non-normal sort order, new root notes are limited and editing freezes the order: Datetime Created and Datetime Last Updated allow a new root note only at the top (`Enter` outside edit mode, Add Note, pasting into a new note), never below a root note; Alphabetical, Content volume and any reversed order (Normal too) allow no new root notes. Child notes can always be added. Blocked actions show a banner. While a note is edited, it stays in place even if saving changes its sort position (in date orders, under its neighbour's date header); after leaving edit mode it moves to its sorted place and the screen stays on the surrounding notes. Details: `help-notes` (Sorted search contexts).
 - When a non-normal sort mode is active, a gray chip at the right end inside the search input names it (`Created`, `Updated`, `A–Z`, `Size`; reversed: `Created ↑`, `Updated ↑`, `Z–A`, `Size ↑`, or `Reversed` for Normal reversed; the full name is its tooltip). Its `×` returns to Normal order, not reversed. Untagged notes shows the same kind of chip, `Untagged`, before it, and a date range its own (`Updated · today`) between them.
 - Changing sort mode is treated as a global view-context switch: the search context's scroll state resets and undo/redo history is blanked for it.
-- Changing the search input resets the active search context's sort mode to Normal (and ends Reverse Order) before executing the search. Leaving a search context (picking another or opening a new one) does the same for the one left; a new blank search context starts in Normal order. Following a reference and coming back keeps the sort.
+- A search context keeps its sort order (Reverse Order too) until its chip's × ends it or another order is picked: a new search keeps it, and so does switching to another search context and back. A new blank search context starts in Normal order. Following a reference and coming back keeps the sort.
 
 ## Date Range
 - **Date Range** (after Sort by in the background, side-rail and search-box right-click menus) shows only the root notes whose date is in a range, each with its children. First the date, ticked: **Last Updated** (the latest update anywhere in the root's subtree) or **Created** (the root's own creation, or the date of its own `@datetime` tag, such as `@datetime=2026-10-24`; sorting by Created still uses the creation). Then the range: **Any Date** (no filter), **Today**, **Last 7 Days**, **Last 30 Days**, **This Year** (counted back from today, today included), and **Custom Range…**, a dialog with Last updated/Created and From and To dates (both included; either may be left empty). Picking the other date moves the active range to it; with no range it is used for the next one.
 - Palette actions: `Date Range: Last Updated`, `Date Range: Created`, `Date Range: Any Date`, `Date Range: Today`, `Date Range: Last 7 Days`, `Date Range: Last 30 Days`, `Date Range: This Year`, `Date Range: Custom Range…`.
 - It combines with a search, Untagged notes and any sort order.
 - A gray chip inside the search input names it (`Updated · today`, `Created · Oct 1–22`, `Updated · since Oct 1`); the full wording is its tooltip and its `×` shows every date again.
-- Like a sort order it is kept per tab and ends with its `×`, a new search, or leaving the tab; a new tab starts without one; following a reference and coming back keeps it.
+- Like a sort order it is kept per tab until its `×` ends it, through a new search and switching tabs; a new tab starts without one; following a reference and coming back keeps it.
 
 ## Notes With Files
 - **Notes with Files** (after Date range in the background, side-rail and search-box right-click menus) shows only the notes with an attached file, or a file of one kind, each with the notes above it: **All Notes** (no filter), **Any File**, **Images**, **PDFs**, **Markdown Files**. A note counts by a `[[file]]` link or `![[file]]` embed in its own text; **Images** also finds pictures pasted into a note. Markdown files are known by a `.md` or `.markdown` name.
@@ -68,8 +68,8 @@ Opening or dismissing the command palette does not clear undo/redo. Global actio
 ## Untagged Notes View
 - `View: Untagged Notes` temporarily overrides the displayed results with notes that have no non-meta effective tags while preserving the active search context and its search. Its search box is visually blank because the preserved query is not active.
 - `View: All Notes` returns to the underlying search context. The active untagged view also appears as an `Untagged` chip inside the search input, before any sort chip.
-- The setting is transient and not tied to a search context: it is not persisted or inherited when one is duplicated.
-- Clicking any search context, changing the search input, or dismissing the chip exits the untagged view. Changing it resets the active display's scroll state and undo/redo context.
+- It belongs to its search context: switching to another search context and back keeps it, and so do a reload and clicking the search context already shown. A duplicated search context copies it; a new one, a reference view included, starts without it. Following a reference and coming back keeps it.
+- Changing the search input, the chip's ×, `View: All Notes` and Reset Current View Filters end it. Changing it resets the active display's scroll state and undo/redo context.
 
 ## Config
 - Tag mappings live in `app/static/config/command_palette_tags.json`.

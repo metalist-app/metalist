@@ -58,6 +58,12 @@ class VirtualFolderState:
             elif tab_id in self._filters:
                 del self._filters[tab_id]
 
+    def copy_filter(self, source_tab_id: str, target_tab_id: str) -> None:
+        """A duplicated tab shows its source's folder."""
+        with self._lock:
+            if source_tab_id in self._filters:
+                self._filters[target_tab_id] = self._filters[source_tab_id]
+
     def move_filters(self, folder: str, new_path: str) -> None:
         """A renamed or moved folder: a tab filtered to it, or below it, follows it."""
         with self._lock:

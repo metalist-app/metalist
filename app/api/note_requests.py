@@ -154,7 +154,16 @@ class UpdateTabFileFilterRequest(TypedDict):
 @with_config(ConfigDict(strict=True))
 class CreateNewTabRequest(TypedDict):
     copyFromTabId: Identifier
+    # True duplicates the tab, everything it shows included; False opens a blank one.
+    copiesView: bool
     clientId: Identifier
+
+@with_config(ConfigDict(strict=True))
+class UpdateTabUntaggedViewRequest(TypedDict):
+    tabId: Identifier
+    isUntaggedView: bool
+    clientId: Identifier
+    undoContext: UndoContext
 
 @with_config(ConfigDict(strict=True))
 class DeleteTabRequest(TypedDict):
