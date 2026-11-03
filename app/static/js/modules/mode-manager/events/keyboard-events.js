@@ -52,8 +52,10 @@ import { closeFindBar, isFindBarOpen, isFindInput, moveToMatch, openFindBar } fr
 import { DOMUtils } from '../../dom-utils.js';
 import { CONFIG } from '../../config.js';
 import { NotesAPI } from '../../api-client.js';
-import { addDroppedFilePreviews } from '../services/dropped-file-preview-service.js';
 import { ErrorHandler } from '../../error-handler.js';
+import { describeDroppedItems, loneDroppedFolderEntry, readDroppedFolder } from '../services/dropped-folders.js';
+import { fileNewNoteInFolder, virtualFolderAt } from '../services/virtual-folders-service.js';
+import { checkBackgroundWork } from '../services/background-work-cards.js';
 import { isCopyOfDialogSelection } from '../services/dialog-copy-service.js';
 import { persistTabStateSnapshot, createTabOnServer, deleteTabOnServer } from '../services/tab-state-service.js';
 import { cacheNotesDomForTab, restoreNotesDomForTab, cloneNotesDomForTab, clearCachedNotesDomForTab, clearActiveNotesDom } from '../services/tab-dom-cache-service.js';
@@ -134,6 +136,7 @@ import {
 import { CommandPalette } from '../../command-palette/command-palette-controller.js';
 import { hasWebPageName, isBookmarksExportFile } from '../../wizard/bookmarks-file.js';
 import { IMPORT_BOOKMARKS, promptForBookmarksDropChoice } from '../services/bookmarks-drop-choice-modal-service.js';
+import { AS_FILE, promptForTextDropChoice } from '../services/text-drop-choice-modal-service.js';
 import { CommandGate } from '../services/command-gate-service.js';
 import { unlessDiagramEditorOpen } from '../../excalidraw/excalidraw-editor-state.js';
 import { unlessNoteFullscreenOpen } from '../services/note-fullscreen-service.js';
@@ -173,6 +176,17 @@ const IMAGE_TOO_LARGE_BANNER_SECONDS = 6;
 const IMAGE_SHRINK_FAILURE_BANNER_SECONDS = 6.5;
 const FILE_REFERENCE_PASTE_BANNER_SECONDS = 7;
 const TAB_LIMIT_BANNER_SECONDS = 6;
+// A dropped folder with anything else.
+const DROPPED_FOLDER_BANNER_SECONDS = 6;
+const FOLDER_ON_ITS_OWN_TEXT = 'Drop a folder on its own.';
+// Dropped text files ask Note or File; Markdown ones open the import walkthrough
+// (docs/ready-to-build/files-shown-not-copied.md §5).
+const DROPPED_TEXT_FILE_RE = /\.(md|markdown|txt)$/i;
+const DROPPED_MARKDOWN_FILE_RE = /\.(md|markdown)$/i;
+// Between dropped text files' text put into one note.
+const TEXT_FILES_SEPARATOR = '\n\n';
+// How often a text file's question looks whether the drop's other files are in.
+const OTHER_FILES_POLL_MS = 50;
 const NO_BACKLINKS_BANNER_SECONDS = 3;
 
 const moduleState = ApplicationState.createFields('keyboard-events', {
@@ -2500,7 +2514,6 @@ async function processDroppedFiles(droppedFiles, options) {
     let insertedAnything = false;
     let sawAttachedFile = false;
     let pendingSelectionRange = selectionRange;
-    const attachedFiles = [];
 
     let i = 0;
     while (i < droppedFiles.length) {
@@ -2545,16 +2558,11 @@ async function processDroppedFiles(droppedFiles, options) {
                 pendingSelectionRange = null;
             }
             sawAttachedFile = true;
-            const uploaded = await attachPickedFileToCurrentNote(file, currentTargetNoteId, {
+            await attachPickedFileToCurrentNote(file, currentTargetNoteId, {
                 createAtTop: createTopNote && !createdTopNote && currentTargetNoteId === null,
             });
             insertedAnything = true;
             currentTargetNoteId = ModeContext.currentNoteId;
-            attachedFiles.push({
-                noteId: currentTargetNoteId,
-                fileId: uploaded.file_id,
-                filename: uploaded.original_filename,
-            });
             if (createTopNote) {
                 createdTopNote = true;
             }
@@ -2578,7 +2586,8 @@ async function processDroppedFiles(droppedFiles, options) {
     ) {
         await actionSaveNote(ModeContext.currentNoteId);
     }
-    await addDroppedFilePreviews(attachedFiles);
+    // A dropped file's text is read next, beside the user's work: shown as it goes.
+    if (sawAttachedFile) void checkBackgroundWork();
 
     return insertedAnything;
 }
@@ -2608,14 +2617,30 @@ function handleDropEvent(event) {
     event.preventDefault();
     event.stopPropagation();
 
+    // A folder is handed over as a file the browser can't read (uploading it failed with
+    // "NetworkError when attempting to fetch resource", 2026-11-02): looked at before anything
+    // is uploaded. With anything else it is refused; alone it is to go through the import
+    // walkthrough (docs/ready-to-build/desktop-drops-into-folders.md).
+    // On a virtual folder (or the tree's top), what is dropped goes into it.
+    const intoFolder = virtualFolderAt(event.target);
+    const dropped = describeDroppedItems(event.dataTransfer);
+    if (dropped.folderCount > 0) {
+        if (dropped.itemCount !== LONE_FILE) {
+            ErrorHandler.showInfoBanner(FOLDER_ON_ITS_OWN_TEXT, DROPPED_FOLDER_BANNER_SECONDS * MS_PER_SECOND);
+            return;
+        }
+        void openDroppedFolder(loneDroppedFolderEntry(event.dataTransfer), intoFolder === null ? '' : intoFolder);
+        return;
+    }
+
     const droppedFiles = getFilesFromTransfer(event.dataTransfer);
     if (droppedFiles.length === 0) {
         return;
     }
-    // A browser's bookmarks export asks first: import it (the default) or keep it as a file
-    // (docs/ready-to-build/bookmark-import.md §5). Only a lone web page is read to tell.
-    if (droppedFiles.length === LONE_FILE && hasWebPageName(droppedFiles[0])) {
-        void dropPossibleBookmarksFile(event, droppedFiles).catch((error) => {
+    // Dropped text files ask first: a note or a file; with a Markdown file among them, the
+    // import walkthrough at its Markdown screen (docs/ready-to-build/files-shown-not-copied.md §5).
+    if (droppedFiles.some(isDroppedTextFile)) {
+        void dropWithTextFiles(event, droppedFiles, intoFolder).catch((error) => {
             rethrowUnexpectedError(error);
             const message = error instanceof Error ? error.message : String(error);
             ErrorHandler.showErrorBanner(
@@ -2627,10 +2652,137 @@ function handleDropEvent(event) {
         });
         return;
     }
-    dropFilesWhereDropped(event, droppedFiles);
+    // A browser's bookmarks export asks first: import it (the default) or keep it as a file
+    // (docs/ready-to-build/bookmark-import.md §5). Only a lone web page is read to tell.
+    if (droppedFiles.length === LONE_FILE && hasWebPageName(droppedFiles[0])) {
+        void dropPossibleBookmarksFile(event, droppedFiles, intoFolder).catch((error) => {
+            rethrowUnexpectedError(error);
+            const message = error instanceof Error ? error.message : String(error);
+            ErrorHandler.showErrorBanner(
+                `File drop failed: ${message}`,
+                'error',
+                FAILURE_WITH_DETAIL_BANNER_SECONDS * MS_PER_SECOND,
+                { closable: true },
+            );
+        });
+        return;
+    }
+    dropFilesThere(event, droppedFiles, intoFolder);
 }
 
-async function dropPossibleBookmarksFile(event, droppedFiles) {
+function isDroppedTextFile(file) {
+    return DROPPED_TEXT_FILE_RE.test(file.name);
+}
+
+// Dropped text files (files-shown-not-copied.md §5, checks 22 to 26). Into a note being edited:
+// one question, then the text (or the cards) at the drop point, then the other files. Elsewhere
+// the other files come in at once, then the text files ask Note or File, or, with a Markdown
+// file among them, all of them go through the walkthrough's Markdown screen.
+async function dropWithTextFiles(event, droppedFiles, intoFolder) {
+    const textFiles = droppedFiles.filter(isDroppedTextFile);
+    const otherFiles = droppedFiles.filter((file) => !isDroppedTextFile(file));
+    let editingTarget = null;
+    if (intoFolder === null) editingTarget = resolveEditingDropTarget(event);
+    if (editingTarget instanceof HTMLElement) {
+        const choice = await promptForTextDropChoice(textFiles.map((file) => file.name));
+        if (choice === null) return;
+        if (choice === AS_FILE) {
+            dropFilesWhereDropped(event, droppedFiles);
+            return;
+        }
+        await insertTextFilesWhereDropped(event, textFiles);
+        if (otherFiles.length > 0) dropFilesWhereDropped(event, otherFiles);
+        return;
+    }
+    if (otherFiles.length > 0) {
+        dropFilesThere(event, otherFiles, intoFolder);
+        await untilNothingElseAsks();
+    }
+    let folder = '';
+    if (intoFolder !== null) folder = intoFolder;
+    if (textFiles.some((file) => DROPPED_MARKDOWN_FILE_RE.test(file.name))) {
+        await CommandPalette.openImportWizardWithDroppedTextFiles(textFiles, folder);
+        return;
+    }
+    const choice = await promptForTextDropChoice(textFiles.map((file) => file.name));
+    if (choice === null) return;
+    if (choice === AS_FILE) {
+        dropFilesThere(event, textFiles, intoFolder);
+        return;
+    }
+    await makeNotesOfTextFiles(textFiles, intoFolder);
+}
+
+// The drop's other files are coming in: their own question (pictures: embed or attach) and
+// their upload go first, so no two dialogs open at once.
+async function untilNothingElseAsks() {
+    do {
+        await new Promise((resolve) => setTimeout(resolve, OTHER_FILES_POLL_MS));
+    } while (ModeContext.modalStack.length > 0 || CommandGate.isBusy());
+}
+
+// Note, dropped into a note being edited: the files' text at the drop point, one after another.
+async function insertTextFilesWhereDropped(event, textFiles) {
+    const texts = await Promise.all(textFiles.map((file) => file.text()));
+    await CommandGate.runWhenFree('keyboard.dropTextIntoNote', async () => {
+        const target = resolveEditingDropTarget(event);
+        if (!(target instanceof HTMLElement)) {
+            throw new Error('The note a text file was dropped into is no longer being edited');
+        }
+        focusDropTargetForInsertion(target, event);
+        insertPlainTextAtCurrentSelection(texts.join(TEXT_FILES_SEPARATOR));
+        await actionSaveNote(ModeContext.currentNoteId);
+    }, {
+        timeoutMs: PASTE_AND_DROP_TIMEOUT_SECONDS * MS_PER_SECOND,
+    });
+}
+
+// Note, dropped elsewhere: a note at the top for each file, holding its text, in the order
+// dropped; on a tree folder, filed in it. The top one stays open to edit, as a dropped file's.
+async function makeNotesOfTextFiles(textFiles, intoFolder) {
+    const texts = await Promise.all(textFiles.map((file) => file.text()));
+    await CommandGate.runWhenFree('keyboard.dropTextFilesAsNotes', async () => {
+        if (ModeContext.isEditing) {
+            await actionSaveAndExitEditingWithoutRefreshing();
+        }
+        if (blockRootNoteCreation('top', 'dropTextFilesAsNotes')) {
+            return;
+        }
+        // Each goes to the top: the last made first.
+        for (const [index, text] of [...texts].reverse().entries()) {
+            requireCreatedNoteId(await createNoteAtTop(), 'dropTextFileNote');
+            insertPlainTextAtCurrentSelection(text);
+            const noteId = ModeContext.currentNoteId;
+            await actionSaveNote(noteId);
+            const isTopNote = index === texts.length - 1;
+            if (intoFolder !== null || !isTopNote) {
+                await actionSaveAndExitEditingWithoutRefreshing();
+            }
+            if (intoFolder !== null) {
+                await fileNewNoteInFolder(noteId, intoFolder);
+            }
+        }
+    }, {
+        timeoutMs: PASTE_AND_DROP_TIMEOUT_SECONDS * MS_PER_SECOND,
+    });
+}
+
+// A folder dropped alone: the import walkthrough on Any folder, its files read in the browser
+// (nothing sent yet), going into the folder it was dropped on.
+async function openDroppedFolder(folderEntry, intoFolder) {
+    const folder = await readDroppedFolder(folderEntry);
+    await CommandPalette.openImportWizardWithDroppedFolder(folder, intoFolder);
+}
+
+function dropFilesThere(event, droppedFiles, intoFolder) {
+    if (intoFolder === null) {
+        dropFilesWhereDropped(event, droppedFiles);
+        return;
+    }
+    void dropFilesIntoFolder(droppedFiles, intoFolder);
+}
+
+async function dropPossibleBookmarksFile(event, droppedFiles, intoFolder) {
     const file = droppedFiles[0];
     if (await isBookmarksExportFile(file)) {
         const choice = await promptForBookmarksDropChoice(file.name);
@@ -2638,11 +2790,40 @@ async function dropPossibleBookmarksFile(event, droppedFiles) {
             return;
         }
         if (choice === IMPORT_BOOKMARKS) {
-            await CommandPalette.openImportWizardWithBookmarksFile(file);
+            await CommandPalette.openImportWizardWithBookmarksFile(file, intoFolder === null ? '' : intoFolder);
             return;
         }
     }
-    dropFilesWhereDropped(event, droppedFiles);
+    dropFilesThere(event, droppedFiles, intoFolder);
+}
+
+// Files dropped on a virtual folder: the new note at the top a drop on the column makes, then
+// in exactly that folder ('' the top: in none), left open no longer
+// (docs/ready-to-build/desktop-drops-into-folders.md §1).
+async function dropFilesIntoFolder(droppedFiles, intoFolder) {
+    let imageHandlingMode = 'embed';
+    const imageFiles = droppedFiles.filter((file) => isImageFile(file));
+    if (imageFiles.length > 0) {
+        const choice = await resolveImageFileHandlingMode(imageFiles, 'drop');
+        if (choice === null) {
+            return;
+        }
+        imageHandlingMode = choice;
+    }
+    await CommandGate.run('keyboard.dropFilesIntoFolder', async () => {
+        if (ModeContext.isEditing) {
+            await actionSaveAndExitEditingWithoutRefreshing();
+        }
+        const inserted = await processDroppedFiles(droppedFiles, { createTopNote: true, imageHandlingMode, selectionRange: null });
+        if (inserted === false) {
+            return;
+        }
+        const noteId = ModeContext.currentNoteId;
+        await actionSaveAndExitEditingWithoutRefreshing();
+        await fileNewNoteInFolder(noteId, intoFolder);
+    }, {
+        timeoutMs: PASTE_AND_DROP_TIMEOUT_SECONDS * MS_PER_SECOND,
+    });
 }
 
 // Files dropped where the drop lands: a note's text being edited, or a new note at the top.

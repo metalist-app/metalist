@@ -59,7 +59,7 @@ from app.services.search_text import (
     list_link_title_urls,
 )
 from app.services.file_registry import file_registry
-from app.services.file_text_search import SEARCHABLE_FILE_KINDS, file_texts
+from app.services.file_text_search import file_texts, is_searchable_file_name
 from app.services.text_terms import text_term_matches
 from app.utils.time_units import MS_PER_SECOND
 
@@ -2086,7 +2086,7 @@ class SearchIndex:
         self._note_text_casefold[note_int_id] = append_link_titles_casefold(base_text_casefold, link_title_urls)
         text_file_ids = tuple(
             file_id for file_id, _name in file_registry.referenced_file_names(content_text)
-            if file_registry.thumbnail_kind_of(file_id) in SEARCHABLE_FILE_KINDS
+            if is_searchable_file_name(_name)
         )
         if text_file_ids:
             self._note_text_file_ids[note_int_id] = text_file_ids

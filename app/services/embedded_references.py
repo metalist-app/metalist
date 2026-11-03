@@ -3,6 +3,7 @@ from __future__ import annotations
 from app.utils.byte_sizes import MIB
 import html
 import re
+from pathlib import PurePath
 from dataclasses import dataclass
 from html.parser import HTMLParser
 from itertools import islice
@@ -19,8 +20,9 @@ from app.services.content_formatting import render_standalone_link_title_html
 from app.services.content_formatting import showing_sites_above
 from app.services.content_formatting import sites_linked_in
 from app.services.content_formatting import sites_shown_above
-from app.services.file_text_preview import text_file_badge
-from app.services.email_files import EMAIL_BADGE, is_email_file
+from app.services.file_view import NO_VIEW, VIEW_EMAIL, text_file_badge, view_kind_of
+from app.services.email_cards import email_card_name
+from app.services.email_files import email_badge, is_email_file
 from app.services.inline_image_occurrences import annotate_inline_image_occurrences
 from app.services.subtree_stats import render_subtree_stats_footer
 from app.services.remote_image_proxy import (
@@ -567,16 +569,6 @@ def preview_html_has_image_file_embed(*, preview_source_html: str, context: Embe
         if not isinstance(thumbnail_kind, str):
             raise TypeError("file thumbnail_kind must be a string")
         if thumbnail_kind in {"image", "excalidraw"}:
-            return True
-    return False
-
-
-def _preview_html_has_email_embed(*, preview_source_html: str, context: EmbedRenderContext) -> bool:
-    for token in collect_reference_tokens_from_html(preview_source_html):
-        if not token.is_embed or not context.has_file(token.note_id):
-            continue
-        record = context.get_file(token.note_id)
-        if is_email_file(mime_type=getattr(record, "mime_type"), original_filename=getattr(record, "original_filename")):
             return True
     return False
 
@@ -1349,9 +1341,11 @@ def _render_file_body(
     is_email = is_email_file(mime_type=mime_type, original_filename=original_filename)
     badge_text = html.escape(_format_file_badge(thumbnail_kind=thumbnail_kind, original_filename=original_filename))
     if is_email:
-        badge_text = EMAIL_BADGE
-    if is_embed and is_email and not static_export:
-        return _render_email_embed(record=record, escaped_note_id=escaped_note_id)
+        # A card as any file's, named by its subject and sender, opened in the viewer (2026-11-03).
+        badge_text = html.escape(email_badge(original_filename))
+        card_name = email_card_name(reference_note_id)
+        if card_name != "" and link_text is None:
+            escaped_title = html.escape(card_name)
     if static_export:
         return _render_static_file_body(
             record=record,
@@ -1367,6 +1361,8 @@ def _render_file_body(
             escaped_note_id=escaped_note_id,
             escaped_title_attribute=escaped_title_attribute,
         )
+    # A picture stored as a file shows itself, with no download line (files-shown-not-copied.md
+    # §3, 2026-11-03): its right-click menu's Download File gets the original.
     if is_embed and thumbnail_kind == "image":
         return (
             f'<div class="note-file-image-embed" data-file-ref-id="{escaped_note_id}" data-preview-state="idle">'
@@ -1374,38 +1370,64 @@ def _render_file_body(
             f'<img class="note-file-image-preview" data-file-ref-id="{escaped_note_id}" alt="{escaped_title_attribute}" loading="lazy" decoding="async" hidden />'
             '<div class="note-file-image-preview-placeholder note-loading-placeholder">Loading image preview...</div>'
             "</div>"
-            f'<button type="button" class="note-file-image-download-link" data-file-ref-id="{escaped_note_id}" aria-label="Download image file">'
-            "download image"
-            "</button>"
             "</div>"
         )
-    button_classes = "note-file-reference-link"
-    if is_embed:
-        button_classes = f"{button_classes} note-file-reference-link-embed"
-
-    download_tooltip = html.escape(f"Click to download {original_filename}", quote=True)
+    if is_embed and thumbnail_kind in _MEDIA_KINDS:
+        return _render_media_embed(escaped_note_id=escaped_note_id, escaped_title=escaped_title, media_kind=thumbnail_kind)
+    view_kind = view_kind_of(original_filename)
+    if is_email:
+        view_kind = VIEW_EMAIL
+    if not is_embed:
+        # A file linked in text is its name: a click opens it in the viewer, or downloads one the
+        # viewer doesn't show (the maintainer, 2026-11-03).
+        action = "Open"
+        if view_kind == NO_VIEW:
+            action = "Download"
+        link_tooltip = html.escape(f"{action} {original_filename}", quote=True)
+        return (
+            f'<button type="button" class="note-file-reference-link" data-file-ref-id="{escaped_note_id}" '
+            f'data-file-view="{view_kind}" title="{link_tooltip}">'
+            f'<span class="note-file-reference-header">'
+            f'<span class="note-file-reference-badge">{badge_text}</span>'
+            f'<span class="note-file-reference-title"><span class="note-file-reference-name">{escaped_title}</span></span>'
+            "</span>"
+            "</button>"
+        )
+    # An embedded file's card: its badge and name, then Open (a file the viewer shows) and
+    # Download (files-shown-not-copied.md §3). A click elsewhere on it edits the note.
+    open_button = ""
+    if view_kind != NO_VIEW:
+        open_button = (
+            f'<button type="button" class="note-file-action note-file-open" data-file-ref-id="{escaped_note_id}" '
+            f'data-file-view="{view_kind}" title="{html.escape(f"Open {original_filename}", quote=True)}">Open</button>'
+        )
     return (
-        f'<button type="button" class="{button_classes}" data-file-ref-id="{escaped_note_id}" '
-        f'title="{download_tooltip}">'
+        f'<span class="note-file-reference-link note-file-reference-link-embed" data-file-ref-id="{escaped_note_id}">'
         f'<span class="note-file-reference-header">'
         f'<span class="note-file-reference-badge">{badge_text}</span>'
-        # The name's own text, inline, so only its lines download (main.css, .note-file-reference-name).
         f'<span class="note-file-reference-title"><span class="note-file-reference-name">{escaped_title}</span></span>'
+        f'<span class="note-file-actions">{open_button}'
+        f'<button type="button" class="note-file-action note-file-download" data-file-ref-id="{escaped_note_id}" '
+        f'title="{html.escape(f"Download {original_filename}", quote=True)}">Download</button>'
         "</span>"
-        "</button>"
+        "</span>"
+        "</span>"
     )
 
 
-def _render_email_embed(*, record: object, escaped_note_id: str) -> str:
-    """An email file as a card (docs/ui/references.md, "Email files"), filled in by the
-    browser from GET /files/{id}/email (file-email-preview-service.js)."""
-    content_revision = getattr(record, "content_revision")
-    if not isinstance(content_revision, int) or content_revision < 1:
-        raise TypeError("email file content_revision must be a positive int")
+# Files the note plays in the browser's own player (files-shown-not-copied.md §3).
+_MEDIA_KINDS = frozenset({"audio", "video"})
+
+
+def _render_media_embed(*, escaped_note_id: str, escaped_title: str, media_kind: str) -> str:
+    """An audio or video file as its player: Play loads the whole file, then plays it (a file
+    request needs the tab's header, which a player can't send: the maintainer, 2026-11-03)."""
     return (
-        f'<div class="note-file-email-embed" data-file-ref-id="{escaped_note_id}" '
-        f'data-file-revision="{content_revision}" data-preview-state="idle">'
-        '<div class="note-file-email-placeholder note-loading-placeholder">Loading email…</div>'
+        f'<div class="note-file-media-embed" data-file-ref-id="{escaped_note_id}" data-media-kind="{media_kind}" data-media-state="idle">'
+        f'<button type="button" class="note-file-media-play" data-file-ref-id="{escaped_note_id}" aria-label="Play {escaped_title}">'
+        '<span class="note-file-media-play-icon" aria-hidden="true">▶</span>'
+        f'<span class="note-file-media-name">{escaped_title}</span>'
+        "</button>"
         "</div>"
     )
 
@@ -1729,9 +1751,6 @@ def _is_content_collapsible(*, content_html: str, context: EmbedRenderContext, f
         return True
     if preview_html_has_image_file_embed(preview_source_html=collapsed_preview_source, context=context):
         return True
-    if _preview_html_has_email_embed(preview_source_html=collapsed_preview_source, context=context):
-        # An email's card folds to one line, its subject and sender (agreed 2026-10-29).
-        return True
     if preview_html_has_note_embed(preview_source_html=collapsed_preview_source, context=context):
         # Only an embed: it shows its source, so it folds when the source does;
         # an arrow that would change nothing is not shown (docs/ui/references.md).
@@ -1881,11 +1900,22 @@ def _extract_html_closing_tag_name(tag_html: str) -> str:
     return match.group(1).lower()
 
 
+# A pill fits an extension this long (.DOCX); a longer one (.excalidraw) shows the file's kind.
+_MAX_BADGE_EXTENSION_LETTERS = 4
+_EXTENSION_DOT = "."
+
+
 def _format_file_badge(*, thumbnail_kind: str, original_filename: str) -> str:
-    """The pill label: a previewable text file's extension (.MD, .CSV, .JSON, .TXT), else its kind."""
+    """The pill label: the file's own type, its extension (.CSS, .RTF, .PDF; a Markdown file's
+    .MD), as the user knows the file (the maintainer, 2026-11-02: TXT for a .css and FILE for
+    an .rtf were "very nonspecific"); its kind (FILE, DRAW) when it has no short extension."""
     text_badge = text_file_badge(original_filename)
     if text_badge != "":
         return text_badge
+    extension = PurePath(original_filename).suffix
+    letters = extension[len(_EXTENSION_DOT):]
+    if letters != "" and len(letters) <= _MAX_BADGE_EXTENSION_LETTERS and letters.isascii() and letters.isalnum():
+        return extension.upper()
     return _format_thumbnail_badge(thumbnail_kind)
 
 

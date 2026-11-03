@@ -116,11 +116,14 @@ class CmdImportBookmarks(QueryCommand):
     add_to_existing: bool
     token: str
     imported_at: datetime
+    # The tags of the search context the file was dropped in (drop_context_tags), on each
+    # bookmark's note; '' for an import from the menu.
+    context_tags: str
 
     def execute(self) -> Dict[str, object]:
         plan = _plan(file_text=self.file_text, folder_prefix=self.folder_prefix, imported_at=self.imported_at)
         if import_folder_exists(plan.folder_prefix) and not self.add_to_existing:
             raise InputRejected(f"{plan.folder_prefix} already exists. Tick Add to it, or choose another name.")
         roots = [_written(bookmark, plan=plan, imported_at=self.imported_at) for bookmark in plan.bookmarks_file.bookmarks]
-        apply_restore_records(root_records(roots), self.token)
+        apply_restore_records(root_records(roots, context_tags=self.context_tags), self.token)
         return {"status": "success", "noteCount": len(roots), "sourceTag": plan.source_tag}

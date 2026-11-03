@@ -5,6 +5,13 @@ browser's find, but it also finds matches far below what is loaded and inside fo
 notes. The browser only ever holds a band of about 150 root notes around where you are
 (see the root band in `docs/AI-SUMMARY.md`), so its own find cannot see the rest.
 
+Every view request tells the server which root notes are in the window as it is made
+(`measureVisibleRootRange`, infinite-scroll-service.js), not where the scroll check last saw
+them: that check skips while a command runs, and typing in find runs one find after another.
+After find had loaded a far match's notes, the next letter's request said the window was
+still where it had been, the band went back there, and find failed ("Find could not show
+occurrence 0 of note …: the note is not on the page", 2026-11-03).
+
 Search filters which notes the list shows; find moves through the notes it shows,
 marking each place the text occurs.
 

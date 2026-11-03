@@ -10,11 +10,15 @@ from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel
 
 from app.api.note_requests import DiscardFileEditSessionRequest, FinishFileEditSessionRequest, RenameFileRequest
-from app.api.transactions import transactional_route
+from app.api.transactions import serialized_read_route, transactional_route
 from app.api.upload_limits import read_attachment
 from app.api.request_auth import require_request_auth_token
 from app.services.file_registry import file_registry
 from app.services.email_files import email_attachment, is_email_file, read_email
+from app.services.file_view import (
+    NO_VIEW, STATUS_READY, VIEW_EMAIL, VIEW_PAGE, VIEW_PDF, build_email_view, build_file_view, view_kind_of,
+)
+from app.services.note_fullscreen import build_file_view_markup
 from app.services.note_store import store as note_store
 from app.services.unused_files import trim as trim_unused_and_unrestorable_files, unused_files
 from app.db.file_schema import FILE_PREVIEW_VARIANTS
@@ -136,6 +140,51 @@ def _downloaded_email(request: Request, file_id: str):
     if not is_email_file(mime_type=downloaded.record.mime_type, original_filename=downloaded.record.original_filename):
         raise HTTPException(status_code=HTTPStatus.NOT_FOUND, detail=f"File is not an email: {file_id}")
     return downloaded
+
+
+@router.get("/{file_id}/view")
+@serialized_read_route
+def view_file_endpoint(request: Request, file_id: str) -> dict[str, object]:
+    """A file as the viewer shows it (docs/ready-to-build/files-shown-not-copied.md §4), made
+    now and never stored: its name; "pdf" (the browser's viewer shows the downloaded file), or
+    "page" with its status and its note HTML (`isCut`: a text file's first 5 MB only)."""
+    token = _require_bearer_token(request)
+    file_name = file_registry.title_of(file_id)
+    if file_name is None:
+        raise HTTPException(status_code=HTTPStatus.NOT_FOUND, detail=f"File not found: {file_id}")
+    kind = view_kind_of(file_name)
+    if kind == VIEW_PDF:
+        return {"name": file_name, "kind": VIEW_PDF, "status": STATUS_READY, "html": "", "isCut": False}
+    downloaded = download_file(file_id, token)
+    record = downloaded.record
+    # An email (or a web page saved whole) by its type or name, as its card is (2026-11-03).
+    if is_email_file(mime_type=record.mime_type, original_filename=record.original_filename):
+        return _email_view(file_id, file_name, downloaded.content_bytes)
+    if kind == NO_VIEW:
+        raise HTTPException(status_code=HTTPStatus.NOT_FOUND, detail=f"File has no viewer: {file_id}")
+    view = build_file_view(original_filename=record.original_filename, content_bytes=downloaded.content_bytes)
+    if view.status != STATUS_READY:
+        return {"name": file_name, "kind": VIEW_PAGE, "status": view.status, "html": "", "isCut": False}
+    return {
+        "name": file_name, "kind": VIEW_PAGE, "status": STATUS_READY, "html": build_file_view_markup(file_id, view),
+        "isCut": view.is_cut,
+    }
+
+
+def _email_view(file_id: str, file_name: str, content_bytes: bytes) -> dict[str, object]:
+    """An email in the viewer: its subject, From, To, Cc and Date, its body drawn as a note's,
+    and its attachments by name and size (each downloaded by its index)."""
+    view, email = build_email_view(content_bytes)
+    body = ""
+    if view.status == STATUS_READY:
+        body = build_file_view_markup(file_id, view)
+    return {
+        "name": file_name, "kind": VIEW_EMAIL, "status": view.status, "html": body, "isCut": False,
+        "email": {
+            "subject": email.subject, "from": email.sender, "to": email.to, "cc": email.cc, "date": email.date,
+            "attachments": [{"name": attachment.name, "sizeBytes": attachment.size_bytes} for attachment in email.attachments],
+        },
+    }
 
 
 @router.get("/{file_id}/email")

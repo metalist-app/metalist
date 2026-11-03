@@ -16,7 +16,7 @@ import { updateFileFilterIndicator } from '../services/file-filter-service.js';
 import { updateVirtualFolders } from '../services/virtual-folders-service.js';
 import { updateUntaggedViewIndicator } from '../services/untagged-view-indicator-service.js';
 import { updateReferenceSourceIndicator } from '../services/reference-source-navigation-service.js';
-import { hasRootsBelowLoadedWindow, resetInfiniteScrollState } from '../services/infinite-scroll-service.js';
+import { hasRootsBelowLoadedWindow, measureVisibleRootRange, resetInfiniteScrollState } from '../services/infinite-scroll-service.js';
 import {
     captureEditingFocus, captureViewportRoot, holdViewportRoot, placeCaretAtClickAnchor, restoreEditingFocus,
 } from '../services/viewport-hold-service.js';
@@ -375,6 +375,11 @@ function resolveVisibleRootRange(options, tabId) {
     }
     if (typeof options.visibleRootAnchorId === 'string' && options.visibleRootAnchorId.length > 0) {
         return { topRootId: options.visibleRootAnchorId, bottomRootId: options.visibleRootAnchorId };
+    }
+    // Where the window is as the request is made, not where the poll last saw it.
+    const measured = measureVisibleRootRange();
+    if (measured !== null) {
+        return measured;
     }
     const live = ModeContext.getVisibleRootRange();
     if (live.topRootId !== null || live.bottomRootId !== null) {

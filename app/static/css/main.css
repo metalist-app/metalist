@@ -563,18 +563,21 @@ html:has(> body > .login-page[style*="display: flex"]:not(.login-page-covering):
 }
 
 .image-file-insert-choice-modal-content,
-.bookmarks-drop-choice-modal-content {
+.bookmarks-drop-choice-modal-content,
+.text-drop-choice-modal-content {
     width: min(460px, 92vw);
 }
 
 .image-file-insert-choice-modal-content p,
-.bookmarks-drop-choice-modal-content p {
+.bookmarks-drop-choice-modal-content p,
+.text-drop-choice-modal-content p {
     margin: 0 0 18px;
     line-height: 1.45;
 }
 
 /* The dropped file's name, as long as it is. */
-.bookmarks-drop-choice-file {
+.bookmarks-drop-choice-file,
+.text-drop-choice-files {
     overflow-wrap: anywhere;
 }
 
@@ -4703,140 +4706,6 @@ img.link-title-icon,
     text-decoration-thickness: 2px;
 }
 
-/* An email file as a card (file-email-preview-service.js; docs/ui/references.md, "Email files"). */
-.note-file-email-embed {
-    margin: 4px 0;
-}
-
-.note-file-email-placeholder,
-.note-file-email-unreadable {
-    color: var(--note-tag-muted);
-    font-size: 0.9em;
-}
-
-.note-file-email-card {
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    padding: 10px 12px;
-    background: var(--bg-color);
-}
-
-.note-file-email-subject {
-    font-weight: 600;
-    margin-bottom: 4px;
-}
-
-.note-file-email-headers {
-    display: grid;
-    grid-template-columns: max-content 1fr;
-    gap: 1px 10px;
-    margin: 0 0 8px;
-    font-size: 0.85em;
-    color: var(--note-tag-muted);
-}
-
-.note-file-email-header {
-    display: contents;
-}
-
-.note-file-email-header-name,
-.note-file-email-header-value {
-    margin: 0;
-    overflow-wrap: anywhere;
-}
-
-/* A long body is cut with a fade until Show all. */
-.note-file-email-body {
-    max-height: 18em;
-    overflow: hidden;
-    overflow-wrap: anywhere;
-    -webkit-mask-image: linear-gradient(to bottom, #000 80%, transparent);
-    mask-image: linear-gradient(to bottom, #000 80%, transparent);
-}
-
-.note-file-email-card.is-expanded .note-file-email-body {
-    max-height: none;
-    -webkit-mask-image: none;
-    mask-image: none;
-}
-
-.note-file-email-body img {
-    max-width: 100%;
-    height: auto;
-}
-
-.note-file-email-text {
-    white-space: pre-wrap;
-}
-
-.note-file-email-attachments {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-    margin-top: 8px;
-}
-
-.note-file-email-attachment,
-.note-file-email-more {
-    border: 1px solid var(--border-color);
-    border-radius: 6px;
-    padding: 2px 8px;
-    background: transparent;
-    color: inherit;
-    font: inherit;
-    font-size: 0.85em;
-    cursor: pointer;
-}
-
-.note-file-email-attachment-size {
-    margin-left: 6px;
-    color: var(--note-tag-muted);
-}
-
-/* Folded (the note's or an embed's ▾/▸): one line, as a file's pill. */
-.note-file-email-line {
-    display: none;
-    align-items: baseline;
-    gap: 8px;
-    min-width: 0;
-    white-space: nowrap;
-}
-
-.note-file-email-line-subject {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    font-weight: 600;
-}
-
-.note-file-email-line-sender {
-    flex-shrink: 0;
-    color: var(--note-tag-muted);
-}
-
-/* A folded email keeps its card's box (as every file keeps its box when folded: the maintainer,
-   2026-11-01), so its one line sits where its subject was and nothing moves. */
-.note.collapsed:not(.editing) .note-file-email-card > :not(.note-file-email-line),
-.note-embed-collapsed .note-file-email-card > :not(.note-file-email-line) {
-    display: none;
-}
-
-.note.collapsed:not(.editing) .note-file-email-line,
-.note-embed-collapsed .note-file-email-line {
-    display: flex;
-}
-
-/* The badge as on a file's pill: a folded note sets every font size to its own (above). */
-.note.collapsed:not(.editing) .note-file-email-line .note-file-reference-badge,
-.note-embed-collapsed .note-file-email-line .note-file-reference-badge {
-    font-size: 10px !important;
-}
-
-.note-file-email-more {
-    margin-top: 8px;
-    border-color: transparent;
-    color: var(--note-tag-muted);
-}
-
 .note-file-reference-link {
     display: flex;
     flex-direction: column;
@@ -4914,6 +4783,17 @@ html[data-theme="dark"] .note-file-text-snippet {
 
 .note-file-image-preview[hidden] {
     display: none;
+}
+
+/* Loaded, a picture shows at its own size, never larger, its frame hugging it; a large one
+   still fills the card (the maintainer, 2026-11-02: small ones stretched "look weird"). */
+.note-file-image-embed[data-preview-state="loaded"] .note-file-image-preview-frame {
+    width: fit-content;
+    min-height: 0;
+}
+
+.note-file-image-embed[data-preview-state="loaded"] .note-file-image-preview {
+    width: auto;
 }
 
 .note-file-image-preview-placeholder {
@@ -5107,26 +4987,199 @@ html[data-theme="dark"] .note-reference-block.note-reference-file-excalidraw {
     min-height: 0;
 }
 
-.note-file-image-download-link {
-    padding: 0;
-    border: none;
-    background: transparent;
+/* An embedded file's card says what a click does: Open (a file the viewer shows) and Download,
+   after its name; its name is no link, and a click anywhere else on it edits the note
+   (docs/ready-to-build/files-shown-not-copied.md §3). They wrap under the name when narrow. */
+.note-file-reference-link-embed .note-file-reference-header {
+    flex-wrap: wrap;
+    row-gap: 4px;
+}
+
+.note-file-reference-link-embed .note-file-reference-badge,
+.note-file-reference-link-embed .note-file-reference-name {
+    pointer-events: none;
+    cursor: inherit;
+}
+
+.note-file-reference-link-embed .note-file-reference-title {
+    text-decoration: none;
+}
+
+.note-file-actions {
+    display: inline-flex;
+    flex-shrink: 0;
+    gap: 6px;
+    pointer-events: auto;
+}
+
+.note-file-action,
+.file-viewer-download {
+    padding: 0 10px;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    background: #ffffff;
     color: #1f2937;
-    text-decoration: underline;
-    text-underline-offset: 2px;
-    cursor: pointer;
     font: inherit;
+    font-size: 13px;
+    line-height: 22px;
+    cursor: pointer;
 }
 
-.note-file-image-download-link:hover,
-.note-file-image-download-link:focus-visible {
-    text-decoration-thickness: 2px;
+.note-file-action:hover,
+.note-file-action:focus-visible,
+.file-viewer-download:hover,
+.file-viewer-download:focus-visible {
+    border-color: #94a3b8;
+    background: #f1f5f9;
+    outline: none;
 }
 
-.note-file-image-download-link:focus-visible {
-    outline: 2px solid rgba(37, 99, 235, 0.25);
-    outline-offset: 2px;
-    border-radius: 4px;
+/* Audio and video: Play, then the browser's own player, never wider than the note and a video
+   never enlarged past its own size (files-shown-not-copied.md §3). */
+.note-file-media-embed {
+    display: block;
+    max-width: 100%;
+}
+
+.note-file-media-play {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    max-width: 100%;
+    padding: 4px 14px 4px 10px;
+    border: 1px solid #cbd5e1;
+    border-radius: 999px;
+    background: #ffffff;
+    color: #1f2937;
+    font: inherit;
+    cursor: pointer;
+}
+
+.note-file-media-play:hover,
+.note-file-media-play:focus-visible {
+    border-color: #94a3b8;
+    background: #f1f5f9;
+    outline: none;
+}
+
+.note-file-media-play:disabled {
+    cursor: progress;
+    opacity: 0.6;
+}
+
+.note-file-media-play-icon {
+    font-size: 12px;
+}
+
+.note-file-media-name {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.note-file-media-player {
+    display: block;
+    max-width: 100%;
+}
+
+audio.note-file-media-player {
+    width: min(100%, 480px);
+}
+
+/* The file viewer: over MetaList as the image zoom is (file-viewer-service.js), and over the
+   phone's bottom bar (13000); below menus and modals (15000). */
+.file-viewer-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 13500;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 32px;
+    background: rgba(15, 23, 42, 0.86);
+}
+
+.file-viewer-panel {
+    display: flex;
+    flex-direction: column;
+    width: min(1000px, 100%);
+    height: 100%;
+    overflow: hidden;
+    border-radius: 10px;
+    background: #ffffff;
+    color: #1f2937;
+    box-shadow: 0 18px 48px rgba(0, 0, 0, 0.35);
+}
+
+.file-viewer-bar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px 8px 16px;
+    border-bottom: 1px solid #e2e8f0;
+}
+
+.file-viewer-name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.file-viewer-close {
+    width: 32px;
+    height: 32px;
+    flex-shrink: 0;
+    border: none;
+    border-radius: 50%;
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+    font: 24px/1 Arial, sans-serif;
+}
+
+.file-viewer-close:hover,
+.file-viewer-close:focus-visible {
+    background: #f1f5f9;
+    outline: none;
+}
+
+.file-viewer-body {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    overscroll-behavior: contain;
+    padding: 16px 20px;
+}
+
+/* A frame fills it: a PDF, or a drawn file (its padding is in file-viewer.css). */
+.file-viewer-body:has(> iframe) {
+    overflow: hidden;
+    padding: 0;
+}
+
+.file-viewer-pdf,
+.file-viewer-drawing {
+    display: block;
+    width: 100%;
+    height: 100%;
+    border: 0;
+}
+
+.file-viewer-message {
+    margin: 0;
+    color: #64748b;
+}
+
+@media (max-width: 600px) {
+    .file-viewer-overlay {
+        padding: 0;
+    }
+
+    .file-viewer-panel {
+        border-radius: 0;
+    }
 }
 
 .image-zoom-overlay {
@@ -5345,10 +5398,6 @@ html[data-theme="dark"] .note-fullscreen-close {
 .note.collapsed:not(.editing) .note-reference-block.note-reference-file-image {
     gap: 0;
     min-width: 0;
-}
-
-.note.collapsed:not(.editing) .note-reference-block.note-reference-file-image .note-file-image-download-link {
-    display: none;
 }
 
 .note.collapsed:not(.editing) .note-reference-block.note-reference-file-image .note-reference-content {
@@ -8756,6 +8805,25 @@ html[data-theme="dark"] .note-embed-node .meta-markdown-task-toggle:hover {
     background: #f8fafc;
 }
 
+/* A table in a note's rich text (a Markdown file imported as rich text, a pasted table) gets a
+   Markdown table's lines (the maintainer, 2026-11-03: without them it was hard to read). Not in
+   a collapsed note's one-line summary, nor in the file viewer, which draws its own (an email's
+   tables are its layout); a Markdown table's own rules outrank these. */
+:where(html:not(.file-viewer-document)) :where(.note:not(.collapsed), .note.editing) :where(.note-content) table {
+    border-collapse: collapse;
+    margin: 0.35em 0;
+}
+
+:where(html:not(.file-viewer-document)) :where(.note:not(.collapsed), .note.editing) :where(.note-content) :is(th, td) {
+    border: 1px solid rgba(0, 0, 0, 0.12);
+    padding: 6px 10px;
+    vertical-align: top;
+}
+
+:where(html[data-theme="dark"]:not(.file-viewer-document)) :where(.note:not(.collapsed), .note.editing) :where(.note-content) :is(th, td) {
+    border-color: var(--app-border-soft);
+}
+
 /* LaTeX meta tags */
 /* Wide formulas scroll sideways. Scrolling on one axis makes the other scroll
    too, and tall symbols (integrals, sums, nested fractions) reach a few pixels
@@ -9127,6 +9195,90 @@ html[data-theme="dark"] .note-embed-node .meta-markdown-task-toggle:hover {
     background-color: rgba(255, 255, 255, 0.2);
 }
 
+/* Work running beside the user's (reading PDF text): in the window's lower left, just above the
+   folders' pull tab, out of the search bar's and the menu's way. It stays there whether the
+   folders show or not (the maintainer, 2026-11-03), and never covers the tab. */
+.floating-work {
+    position: fixed;
+    bottom: calc(var(--global-controls-top) + var(--edge-tab-height) + 8px);
+    left: var(--side-rail-edge);
+    z-index: 20000;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+    max-width: min(420px, calc(100vw - (2 * var(--side-rail-edge))));
+    pointer-events: none;
+}
+
+/* It has nothing to press: clicks go through it to the notes under it. Its width is fixed:
+   sized to its text, it grew and shrank as the counts and times changed (the maintainer,
+   2026-11-03). */
+.floating-work .floating-message {
+    pointer-events: none;
+    box-sizing: border-box;
+    width: min(420px, calc(100vw - (2 * var(--side-rail-edge))));
+}
+
+/* Work running beside the user's (reading PDF text): the text over a bar that fills. */
+.floating-message-work {
+    flex-wrap: wrap;
+}
+
+/* Above the bar: the time spent at the left, the time left at the right. */
+.floating-message-work-times {
+    flex: 1 0 100%;
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    margin-top: 2px;
+    font-size: 13px;
+    font-variant-numeric: tabular-nums;
+    opacity: 0.85;
+}
+
+.floating-message-progress {
+    flex: 1 0 100%;
+    height: 4px;
+    border-radius: 2px;
+    overflow: hidden;
+    background: color-mix(in srgb, currentColor 18%, transparent);
+}
+
+.floating-message-progress-fill {
+    height: 100%;
+    width: 0;
+    background: currentColor;
+    transition: width 0.3s ease;
+}
+
+.floating-message-progress.is-indeterminate .floating-message-progress-fill {
+    width: 30%;
+    animation: floating-message-progress-move 1.2s ease-in-out infinite;
+}
+
+@keyframes floating-message-progress-move {
+    from { transform: translateX(-100%); }
+    to { transform: translateX(340%); }
+}
+
+/* What a message offers (Undo after a note moved into a folder): a small outlined button. */
+.floating-message-action {
+    flex: 0 0 auto;
+    padding: 2px 10px;
+    border: 1px solid currentColor;
+    border-radius: 6px;
+    background: none;
+    color: inherit;
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.floating-message-action:hover {
+    background-color: rgba(255, 255, 255, 0.2);
+}
+
 /* Error dialogs (modals/error-dialog.js): a small dialog over the one the user was in,
    whose layout never changes for it. */
 .modal.error-dialog-layer {
@@ -9495,7 +9647,6 @@ html[data-theme="dark"] .note-reference-link-mode {
     background: var(--app-surface-2);
 }
 
-html[data-theme="dark"] .note-file-image-download-link,
 html[data-theme="dark"] .note-reference-link,
 html[data-theme="dark"] .note-file-reference-link {
     color: #d9e5f7;
@@ -9524,6 +9675,39 @@ html[data-theme="dark"] .note-file-image-preview-frame {
 }
 
 html[data-theme="dark"] .note-file-image-preview-placeholder {
+    color: var(--app-text-muted);
+}
+
+html[data-theme="dark"] .note-file-action,
+html[data-theme="dark"] .file-viewer-download,
+html[data-theme="dark"] .note-file-media-play {
+    border-color: var(--app-border-strong);
+    background: var(--app-surface-2);
+    color: #d9e5f7;
+}
+
+html[data-theme="dark"] .note-file-action:hover,
+html[data-theme="dark"] .note-file-action:focus-visible,
+html[data-theme="dark"] .file-viewer-download:hover,
+html[data-theme="dark"] .file-viewer-download:focus-visible,
+html[data-theme="dark"] .note-file-media-play:hover,
+html[data-theme="dark"] .note-file-media-play:focus-visible,
+html[data-theme="dark"] .file-viewer-close:hover,
+html[data-theme="dark"] .file-viewer-close:focus-visible {
+    border-color: var(--app-text-subtle);
+    background: var(--app-surface-0);
+}
+
+html[data-theme="dark"] .file-viewer-panel {
+    background: var(--app-surface-1);
+    color: #e5e5e5;
+}
+
+html[data-theme="dark"] .file-viewer-bar {
+    border-bottom-color: var(--app-border-soft);
+}
+
+html[data-theme="dark"] .file-viewer-message {
     color: var(--app-text-muted);
 }
 
@@ -11916,6 +12100,19 @@ suggestions as pills. */
         background: var(--modal-surface);
     }
 
+    /* Work cards: along the bottom, the page's width. */
+    .floating-work {
+        left: 8px;
+        right: 8px;
+        bottom: 8px;
+        max-width: none;
+        align-items: stretch;
+    }
+
+    .floating-work .floating-message {
+        width: auto;
+    }
+
     /* Floating messages hang under the search header, the page's width. */
     .floating-messages {
         top: calc(var(--search-header-bottom) + 8px);
@@ -12415,29 +12612,6 @@ suggestions as pills. */
     margin-bottom: 14px;
     font-size: 13px;
     font-weight: 600;
-}
-
-/* The import's Previews screen: a box, the kind, and its files and note data at the right. */
-.wizard-preview-kinds {
-    display: grid;
-    gap: 10px;
-    max-width: 620px;
-}
-
-.wizard-preview-kind {
-    display: grid;
-    grid-template-columns: auto 1fr auto;
-    align-items: center;
-    gap: 10px;
-    padding: 10px 14px;
-    border: 1px solid var(--modal-border);
-    border-radius: 10px;
-    font-size: 15px;
-}
-
-.wizard-preview-kind-size {
-    font-size: 13px;
-    color: var(--modal-text-subtle);
 }
 
 .wizard-toggle {

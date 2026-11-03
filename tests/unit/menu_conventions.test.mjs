@@ -35,14 +35,14 @@ const NOTE_HANDLER_NAMES = [
     'onMakeImageBigger', 'onMakeImageSmaller', 'onResetImageSize', 'onExportNoteHtml', 'onExportViewHtml',
     'onPrintNote', 'onPrintView', 'onViewNoteFullscreen', 'onFullyExpandNote', 'onFullyCollapseNote', 'onAddNoteAtTop',
     'onAddSiblingNote', 'onAddChildNote', 'onDeleteNote', 'onMoveNoteToTop', 'onMoveNoteToBottom', 'onMoveNoteUp',
-    'onMoveNoteDown', 'onIndentNote', 'onOutdentNote',
+    'onMoveNoteDown', 'onIndentNote', 'onOutdentNote', 'onDownloadFile',
 ];
 
 function noteMenu() {
     return buildContextMenuItems({
         kind: 'note', noteId: 'note-1', noteTimestamps: { created: 'Oct 24, 2026', updated: 'Oct 24, 2026' }, isMac: true,
         hasChildren: true, canMoveToTop: true, canMoveToBottom: true, canMoveUp: true, canMoveDown: true,
-        canIndent: true, canOutdent: true, fileCardFileId: null,
+        canIndent: true, canOutdent: true, fileCardFileId: null, filePlayerFileId: null,
     }, Object.fromEntries(NOTE_HANDLER_NAMES.map((name) => [name, () => {}])));
 }
 

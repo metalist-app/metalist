@@ -43,6 +43,7 @@ function buildNoteHandlers(calls) {
         onIndentNote: (noteId) => calls.push(['indent', noteId]),
         onOutdentNote: (noteId) => calls.push(['outdent', noteId]),
         onRenameFile: (fileId) => calls.push(['renameFile', fileId]),
+        onDownloadFile: (fileId) => calls.push(['downloadFile', fileId]),
     };
 }
 
@@ -63,6 +64,7 @@ function buildNoteContext(overrides = {}) {
         canIndent: true,
         canOutdent: true,
         fileCardFileId: null,
+        filePlayerFileId: null,
         ...overrides,
     };
 }
@@ -966,6 +968,7 @@ test('Rename File… leads a file card menu and follows Save Image or Save Diagr
         ...buildNoteHandlers(calls),
         onCopyImage: () => {},
         onSaveImage: () => {},
+        onDownloadFile: () => {},
         onZoomImage: () => {},
         onOpenImageInNewTab: () => {},
         onEditDiagram: () => {},

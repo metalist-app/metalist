@@ -10,7 +10,7 @@ import re
 from typing import FrozenSet, List, NamedTuple
 
 from app.services.code_rendering import is_highlighted_fence_language
-from app.services.file_text_preview import plain_text_to_note_html
+from app.services.file_view import plain_text_to_note_html
 from app.services.markdown_rendering import render_note_markdown
 
 LATEX_REGION_TAG = "(((@LaTeX)))"

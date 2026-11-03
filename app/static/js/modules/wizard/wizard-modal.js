@@ -25,7 +25,7 @@ const FORWARD = 1;
 const BACKWARD = -1;
 const FULL_SHIFT_PERCENT = 100;
 const LAST_OFFSET = 1;
-const WIZARD_SERVICES = ['getAiSettings', 'saveAiSettings', 'afterImport', 'setPassword', 'openPasswordGenerator'];
+const WIZARD_SERVICES = ['getAiSettings', 'saveAiSettings', 'afterImport', 'showDroppedImport', 'setPassword', 'openPasswordGenerator'];
 
 function isMotionEnabled() {
     return document.body.classList.contains('pref-animated-transitions');
@@ -124,6 +124,12 @@ export class WizardModal extends BaseModal {
 
     currentStep() {
         return this.visibleSteps()[this._currentIndex()];
+    }
+
+    /** This opening of the walkthrough: an answer arriving after it closed checks
+     * isCurrentOpen(openGeneration) and is dropped. */
+    get openGeneration() {
+        return this._openGeneration;
     }
 
     /** Set one choice; nothing happens when it already has that value. */

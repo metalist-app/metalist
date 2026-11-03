@@ -101,7 +101,7 @@ function requireElement(id, constructor) {
 
 // A passing floating card about the chat (docs/ui/floating-messages.md).
 function showChatNotice(text, type) {
-    FloatingMessages.show({ text, type, detail: '', isClosable: true, isLasting: false, key: null });
+    FloatingMessages.show({ text, type, detail: '', isClosable: true, isLasting: false, key: null, action: null });
 }
 
 // The id a rendered chat item carries: a message's, a summary's or the divider's.

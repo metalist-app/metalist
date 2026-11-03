@@ -116,6 +116,7 @@ export const ErrorHandler = {
                 isClosable: false,
                 isLasting: true,
                 key: CONNECTION_CARD_KEY,
+                action: null,
             });
             FloatingMessages.escalateAfter(CONNECTION_CARD_KEY, CONNECTION_ESCALATION_TEXT);
             this.disableEditingUI();
@@ -145,6 +146,7 @@ export const ErrorHandler = {
                     isClosable: false,
                     isLasting: false,
                     key: null,
+                    action: null,
                 });
                 this.enableEditingUI();
             }
@@ -239,6 +241,7 @@ export const ErrorHandler = {
             isClosable: options.closable,
             isLasting: duration === 0,
             key: null,
+            action: null,
         });
     },
     

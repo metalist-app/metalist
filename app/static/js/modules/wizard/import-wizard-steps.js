@@ -2,13 +2,20 @@ import { escapeHtml } from '../html-escape.js';
 import { formatByteSize } from '../byte-sizes.js';
 import { NotesAPI } from '../api-client.js';
 import { CommandGate } from '../mode-manager/services/command-gate-service.js';
+import { ModeContextInstance as ModeContext } from '../mode-manager/mode-context.js';
 import { bookmarksFileChoices } from './bookmarks-file.js';
+import { heldDroppedFolder } from '../mode-manager/services/dropped-folders.js';
+import { checkBackgroundWork, setShownElsewhere } from '../mode-manager/services/background-work-cards.js';
+import { workProgressText } from '../mode-manager/services/background-work-text.js';
 
 // The import wizard's steps (PLAN.md, phase 2), shared by the import wizard and the new
 // vault wizard, which runs them after its own: the folder picked in the system's dialog,
 // the choices, the server's preview of what the import will do, then the import itself.
 
 const PERCENT = 100;
+// The import's progress, asked this often while it runs (background_work.py's IMPORT_KEY).
+const IMPORT_PROGRESS_POLL_MS = 300;
+const IMPORT_WORK_KEY = 'import';
 // The split sample's notes: one new to the mode fades in, the others move to their place.
 const SAMPLE_FADE_IN_MS = 300;
 const SAMPLE_MOVE_MS = 380;
@@ -72,7 +79,6 @@ export function importPreviewHtml(preview, choices) {
             [preview.textFileCount, `text files will become ${notesWord(textNoteCount)} (${preview.textFileCount} root ${preview.textFileCount === 1 ? 'note' : 'notes'})`],
             [preview.keptImageCount, 'images will be stored as file data, each shown as its picture in a note of its own'],
             [otherFileCount, `${otherFiles} will be stored as file data, each shown as its card in a note of its own`],
-            [preview.previewFileCount, 'files will get a preview where they have text: copied into a note under each, as note data'],
         ];
     }
     counts = [...counts, [preview.folderTagCount, 'tags will be added based on the folder structure']].filter(([count]) => count > NONE);
@@ -168,8 +174,9 @@ function progressReporter(screen) {
 }
 
 /**
- * The import with the wizard's choices, its notes then shown in a new search context. Used by
- * the import wizard and by the new vault wizard's setup.
+ * The import with the wizard's choices, its notes then shown in a new search context; files
+ * dropped on the page, at the top of the search context they were dropped in, which stays as it
+ * is (the maintainer, 2026-11-03). Used by the import wizard and by the new vault wizard's setup.
  */
 export async function runImport(wizard, progress) {
     const isBookmarks = wizard.choices.source === BOOKMARKS_SOURCE;
@@ -177,16 +184,54 @@ export async function runImport(wizard, progress) {
     let result = null;
     await CommandGate.run('importWizard.import', async () => {
         if (isBookmarks) {
-            result = await NotesAPI.importBookmarks({ ...bookmarksRequest(wizard.choices), addToExisting: wizard.choices.addToExisting });
+            result = await NotesAPI.importBookmarks({
+                ...bookmarksRequest(wizard.choices), addToExisting: wizard.choices.addToExisting, dropContext: dropContext(wizard.choices),
+            });
         } else {
-            result = await NotesAPI.importFolder(importRequest(wizard.choices));
+            // The bar follows the files stored, as the server counts them (the maintainer,
+            // 2026-11-02: "I have no idea how long it's going to take").
+            setShownElsewhere(IMPORT_WORK_KEY, true);
+            result = await importShowingProgress(wizard.choices, progress);
+            setShownElsewhere(IMPORT_WORK_KEY, false);
+            // The PDFs' text is read next, beside the user's work: shown as it goes.
+            void checkBackgroundWork();
         }
         if (!Number.isInteger(result.noteCount) || typeof result.sourceTag !== 'string') {
             throw new Error('The import answered without its notes');
         }
+        if (wizard.choices.isDrop) {
+            await wizard.services.showDroppedImport();
+            return;
+        }
         // Behind the wizard, a new search context of the imported notes: there when it closes.
         await wizard.services.afterImport(result.sourceTag);
     });
+}
+
+// Where the files were dropped, as the import takes it: their notes get that search context's
+// tags; none from the menu.
+function dropContext(choices) {
+    return { isDrop: choices.isDrop, tabId: ModeContext.activeTabId, search: choices.dropSearch };
+}
+
+// The folder import, its bar filled by the files stored as the server counts them.
+async function importShowingProgress(choices, progress) {
+    const imported = NotesAPI.importFolder(importRequest(choices));
+    let isDone = false;
+    const settled = imported.finally(() => {
+        isDone = true;
+    });
+    while (!isDone) {
+        // A failed import rejects here, and its error goes on up.
+        await Promise.race([settled, new Promise((resolve) => { setTimeout(resolve, IMPORT_PROGRESS_POLL_MS); })]);
+        if (isDone) break;
+        const { work } = await NotesAPI.fetchBackgroundWork();
+        const running = work.find((entry) => entry.key === IMPORT_WORK_KEY);
+        if (!isDone && running !== undefined && running.total > NONE) {
+            progress.counted(running.done, running.total, workProgressText(running));
+        }
+    }
+    return await imported;
 }
 
 // The wizard's choices as the import and its preview take them.
@@ -197,6 +242,7 @@ function importRequest(choices) {
         prefixFolder: choices.prefixText, addToExisting: choices.addToExisting,
         compressesImages: bringsInImages(choices) && choices.imagesAs === IMAGES_COMPRESSED,
         imageLongestSide: Number(choices.imageLongestSide),
+        dropContext: dropContext(choices),
         ...fileSelection(choices),
     };
 }
@@ -205,7 +251,13 @@ function importRequest(choices) {
 // ticked against their kind (left out of a ticked kind, brought in from an unticked one).
 function fileSelection(choices) {
     if (choices.source !== FILES_SOURCE) {
-        return { excludedGroups: [], excludedFiles: [], includedFiles: [], keepsMarkdownAsFiles: false, previewKinds: [] };
+        return { excludedGroups: [], excludedFiles: [], includedFiles: [], keepsMarkdownAsFiles: false };
+    }
+    // A dropped folder's holding folder has the ticked files alone: every one comes in.
+    if (choices.droppedFolderId !== '') {
+        return {
+            excludedGroups: [], excludedFiles: [], includedFiles: [], keepsMarkdownAsFiles: choices.markdownAs === MARKDOWN_AS_FILES,
+        };
     }
     const groupOfPath = new Map(choices.scan.groups.flatMap((group) => group.files.map(([path]) => [path, group.key])));
     const excludedFiles = choices.fileExceptions.filter((path) => isTicked(choices, groupOfPath.get(path)));
@@ -213,7 +265,6 @@ function fileSelection(choices) {
     return {
         excludedGroups: choices.excludedGroups, excludedFiles, includedFiles,
         keepsMarkdownAsFiles: choices.markdownAs === MARKDOWN_AS_FILES,
-        previewKinds: choices.previewKinds,
     };
 }
 
@@ -287,18 +338,6 @@ const IMAGES_AS = [
 // see the size); 2560, sharp full-screen, at first.
 const IMAGE_LONGEST_SIDES = ['1280', '1920', '2560', '3840'];
 const FIRST_IMAGE_LONGEST_SIDE = '2560';
-// Previews (folder-import-and-file-previews.md: a file's text copied into a note under it,
-// note data beside the file data): one row per kind, file_text_preview.py's
-// IMPORT_PREVIEW_KINDS; none ticked at first (the maintainer, 2026-11-01: they come in numbers,
-// and a preview copies the whole file). A PDF has no row: its text is to be searchable with the
-// file instead ("Searchable file text").
-const PREVIEW_KINDS = [
-    { key: 'code', label: 'Code' },
-    { key: 'html', label: 'Web pages' },
-    { key: 'data', label: 'CSV and JSON' },
-];
-const FIRST_PREVIEW_KINDS = [];
-
 function sourceOf(choices) {
     const source = SOURCES.find((candidate) => candidate.value === choices.source);
     if (source === undefined) {
@@ -470,10 +509,13 @@ async function chooseFolder(wizard) {
         throw new Error('Import folder pick response malformed');
     }
     if (!picked.selected) return;
+    // A folder chosen here replaces one dropped on the page, and its files copied so far.
+    await discardDroppedUpload(wizard);
     const name = folderName(picked.folderPath);
     // The folder the notes go into starts as the vault's name (import-prefix-folder.md §2).
     wizard.chooseMany({
         folderPath: picked.folderPath, folderName: name, fileCount: picked.fileCount, imageCount: picked.imageCount, prefixText: name,
+        droppedFolderId: '',
         // A new folder is read again for the checklist.
         scan: null,
     });
@@ -617,7 +659,12 @@ function wirePrefixStatus(status, wizard) {
 // --- What comes in, for a folder of files (folder-import-and-file-previews.md §3) --------
 
 async function scanFolder(wizard) {
-    const scan = await NotesAPI.scanImportFolder(wizard.choices.folderPath);
+    const run = wizard.openGeneration;
+    // A dropped folder: its checklist from the browser's list of its files, nothing sent yet.
+    const scan = wizard.choices.droppedFolderId === ''
+        ? await NotesAPI.scanImportFolder(wizard.choices.folderPath)
+        : await NotesAPI.scanImportListing(heldDroppedFolder(wizard.choices.droppedFolderId).files.map(({ path, size }) => ({ path, size })));
+    if (!wizard.isCurrentOpen(run)) return;
     if (!Array.isArray(scan.groups) || !Number.isInteger(scan.freeBytes) || !Number.isInteger(scan.maxFileBytes)) {
         throw new Error('Import folder scan answered malformed');
     }
@@ -625,6 +672,124 @@ async function scanFolder(wizard) {
     const excludedGroups = scan.groups.filter((group) => group.isSkippedByDefault).map((group) => group.key);
     wizard.chooseMany({ scan, excludedGroups, fileExceptions: [] });
     wizard.redrawScreen();
+}
+
+// --- A folder dropped on the page (docs/ready-to-build/desktop-drops-into-folders.md) --------
+// The browser lists its files for the checklist; the ticked ones are then copied, one by one,
+// into a holding folder on the server, outside the vault, which the rest of the walkthrough
+// reads as a folder chosen on this computer. Closing the walkthrough discards it.
+
+function hasFolder(choices) {
+    if (choices.folderPath !== '') return true;
+    return choices.droppedFolderId !== '';
+}
+
+function uploadSelection(choices) {
+    return JSON.stringify(tickedFiles(choices).map(([, path]) => path));
+}
+
+function isUploaded(choices) {
+    return choices.uploadedSelection !== '' && choices.uploadedSelection === uploadSelection(choices);
+}
+
+/** The walkthrough's choices for a folder dropped on the page, held as droppedFolderId:
+ * Any folder, the folder in, going into intoFolder ('' for the top) under its own name. */
+export function droppedFolderChoices(droppedFolderId, folder, intoFolder) {
+    return {
+        source: FILES_SOURCE, droppedFolderId, folderName: folder.name, fileCount: folder.files.length,
+        imageCount: folder.files.filter(({ path }) => COMPRESSIBLE_IMAGE_RE.test(path)).length,
+        prefixText: `${intoFolder}${folder.name}`,
+    };
+}
+
+/** The walkthrough's choices for text files dropped on the page with a Markdown file among them
+ * (files-shown-not-copied.md §5): copied to a holding folder and scanned first, so it opens at
+ * the Markdown screen (MARKDOWN_STEP), going into intoFolder ('' for the top, in no folder). */
+export async function droppedTextFilesChoices(files, intoFolder) {
+    if (!Array.isArray(files) || files.length === 0 || !files.every((file) => file instanceof File)) {
+        throw new Error('droppedTextFilesChoices requires the dropped files');
+    }
+    const started = await NotesAPI.startImportUpload();
+    if (typeof started.uploadId !== 'string' || typeof started.folderPath !== 'string') {
+        throw new Error('The import upload answered malformed');
+    }
+    // As the server writes paths (macOS gives names decomposed).
+    for (const file of files) await NotesAPI.uploadImportFile(started.uploadId, file.name.normalize('NFC'), file);
+    const scan = await NotesAPI.scanImportFolder(started.folderPath);
+    if (!Array.isArray(scan.groups) || !Number.isInteger(scan.freeBytes) || !Number.isInteger(scan.maxFileBytes)) {
+        throw new Error('Import folder scan answered malformed');
+    }
+    let prefix = { prefixCheckedFor: null, prefixFolder: '', prefixExists: false, prefixProblem: '' };
+    // The Folder screen, which checks the folder's name, isn't shown: checked here.
+    if (intoFolder !== '') {
+        const answer = await NotesAPI.checkImportPrefixFolder(intoFolder);
+        if (typeof answer.folder !== 'string' || typeof answer.exists !== 'boolean' || typeof answer.problem !== 'string') {
+            throw new Error('Import folder check answered malformed');
+        }
+        prefix = { prefixCheckedFor: intoFolder, prefixFolder: answer.folder, prefixExists: answer.exists, prefixProblem: answer.problem };
+    }
+    return {
+        source: FILES_SOURCE, folderPath: started.folderPath, uploadId: started.uploadId, folderName: files[0].name,
+        fileCount: files.length, imageCount: NONE, scan, excludedGroups: [], fileExceptions: [],
+        prefixText: intoFolder, ...prefix,
+    };
+}
+
+export const MARKDOWN_STEP = 'markdown';
+
+export async function discardDroppedUpload(wizard) {
+    const uploadId = wizard.choices.uploadId;
+    if (uploadId === '') return;
+    wizard.chooseMany({ uploadId: '', uploadedSelection: '', folderPath: '' });
+    await NotesAPI.discardImportUpload(uploadId);
+}
+
+function uploadHtml(choices) {
+    const count = tickedFiles(choices).length;
+    if (isUploaded(choices)) {
+        return `<div class="wizard-import-progress"><div class="wizard-progress-fill" style="width: ${PERCENT}%"></div></div>
+            <p class="wizard-import-count">Copied ${count} ${filesWord(count)}.</p>`;
+    }
+    return `<div class="wizard-import-progress is-indeterminate"><div class="wizard-progress-fill"></div></div>
+        <p class="wizard-import-count">Copying ${count} ${filesWord(count)}…</p>`;
+}
+
+// The ticked files, one by one; stops if the walkthrough leaves this screen (a new choice of
+// files copies them again into a new holding folder).
+async function uploadDroppedFiles(screen, wizard) {
+    if (isUploaded(wizard.choices)) return;
+    await discardDroppedUpload(wizard);
+    const selection = uploadSelection(wizard.choices);
+    const folder = heldDroppedFolder(wizard.choices.droppedFolderId);
+    const fileOfPath = new Map(folder.files.map(({ path, file }) => [path, file]));
+    const paths = tickedFiles(wizard.choices).map(([, path]) => path);
+    const progress = progressReporter(screen);
+    const run = wizard.openGeneration;
+    const started = await NotesAPI.startImportUpload();
+    if (typeof started.uploadId !== 'string' || typeof started.folderPath !== 'string') {
+        throw new Error('The import upload answered malformed');
+    }
+    // Closed meanwhile: its holding folder is not the walkthrough's yet, so it goes here.
+    if (!wizard.isCurrentOpen(run)) {
+        await NotesAPI.discardImportUpload(started.uploadId);
+        return;
+    }
+    wizard.choose('uploadId', started.uploadId);
+    for (const [index, path] of paths.entries()) {
+        // Closed, the walkthrough discarded its holding folder itself (ImportWizard.onClose).
+        if (!wizard.isCurrentOpen(run)) return;
+        if (!screen.isConnected) {
+            await discardDroppedUpload(wizard);
+            return;
+        }
+        progress.counted(index, paths.length, `Copying ${index + 1} of ${paths.length} ${filesWord(paths.length)}…`);
+        await NotesAPI.uploadImportFile(started.uploadId, path, fileOfPath.get(path));
+    }
+    if (!wizard.isCurrentOpen(run)) return;
+    wizard.chooseMany({ folderPath: started.folderPath, uploadedSelection: selection });
+    if (!screen.isConnected) return;
+    wizard.redrawScreen();
+    wizard.next();
 }
 
 function isTicked(choices, key) {
@@ -643,7 +808,7 @@ function tickedFiles(choices) {
     const flipped = new Set(choices.fileExceptions);
     return choices.scan.groups.flatMap((group) => group.files
         .filter(([path, , isOverLimit]) => isFileTicked(choices, flipped, group.key, path, isOverLimit))
-        .map(([path, size, , previewKind]) => [group.key, path, size, previewKind]));
+        .map(([path, size]) => [group.key, path, size]));
 }
 
 function tickedBytes(choices) {
@@ -863,7 +1028,12 @@ function imageEstimateRequestKey(choices) {
 async function estimateImages(screen, wizard) {
     const request = imageEstimateRequestKey(wizard.choices);
     if (wizard.choices.imageEstimate !== null && wizard.choices.imageEstimate.request === request) return;
+    const run = wizard.openGeneration;
     const estimate = await NotesAPI.estimateImportImages(JSON.parse(request));
+    // A big folder's estimate can answer after the walkthrough closed (2026-11-02): dropped.
+    if (!wizard.isCurrentOpen(run)) return;
+    // Asked twice for these choices (Compress picked while the first ran): the first answer kept.
+    if (wizard.choices.imageEstimate !== null && wizard.choices.imageEstimate.request === request) return;
     if (!Number.isInteger(estimate.imageCount) || !Number.isInteger(estimate.imageBytes)
         || IMAGE_LONGEST_SIDES.some((side) => !Number.isInteger(estimate.compressedBytes[side]))) {
         throw new Error('Import image estimate answered malformed');
@@ -875,68 +1045,6 @@ async function estimateImages(screen, wizard) {
     // The cards on screen take their sizes in place: drawn again, they would lose their clicks.
     for (const card of screen.querySelectorAll('[data-choice-key="imageLongestSide"]')) {
         card.querySelector('.wizard-choice-text').textContent = imageSizeText(wizard.choices, card.dataset.choiceValue);
-    }
-}
-
-// The Previews screen shows only when ticked files can get a preview (the scan says which).
-function bringsInPreviews(choices) {
-    if (choices.source !== FILES_SOURCE || choices.scan === null) return false;
-    return tickedFiles(choices).some(([, , , previewKind]) => previewKind !== '');
-}
-
-// The ticked files that can get a preview, counted by kind.
-function previewFileCounts(choices) {
-    const counts = new Map();
-    for (const [, , , previewKind] of tickedFiles(choices)) {
-        if (previewKind === '') continue;
-        if (!counts.has(previewKind)) counts.set(previewKind, NONE);
-        counts.set(previewKind, counts.get(previewKind) + 1);
-    }
-    return counts;
-}
-
-function previewEstimateRequestKey(choices) {
-    return JSON.stringify({
-        ...importRequest(choices), previewKinds: [], compressesImages: false, imageLongestSide: Number(FIRST_IMAGE_LONGEST_SIDE),
-    });
-}
-
-function hasPreviewEstimate(choices) {
-    return choices.previewEstimate !== null && choices.previewEstimate.request === previewEstimateRequestKey(choices);
-}
-
-// A kind's files and about how much note data their previews add ('…' until measured).
-function previewSizeText(choices, kind, fileCount) {
-    const files = `${fileCount} ${fileCount === 1 ? 'file' : 'files'}`;
-    if (!hasPreviewEstimate(choices)) return `${files}, …`;
-    const measured = choices.previewEstimate.estimate.kinds.find((candidate) => candidate.key === kind);
-    if (measured === undefined) return files;
-    return `${files}, about ${formatByteSize(measured.noteBytes)} of note data`;
-}
-
-function previewRowsHtml(choices) {
-    const counts = previewFileCounts(choices);
-    return PREVIEW_KINDS.filter(({ key }) => counts.has(key)).map(({ key, label }) => `
-        <label class="wizard-preview-kind">
-            <input type="checkbox" data-wizard-preview-kind="${escapeHtml(key)}"${choices.previewKinds.includes(key) ? ' checked' : ''}>
-            <span class="wizard-preview-kind-name">${escapeHtml(label)}</span>
-            <span class="wizard-preview-kind-size" data-wizard-preview-size="${escapeHtml(key)}">${escapeHtml(previewSizeText(choices, key, counts.get(key)))}</span>
-        </label>`).join('');
-}
-
-async function estimatePreviews(screen, wizard) {
-    const request = previewEstimateRequestKey(wizard.choices);
-    if (hasPreviewEstimate(wizard.choices)) return;
-    const estimate = await NotesAPI.estimateImportPreviews(JSON.parse(request));
-    if (!Array.isArray(estimate.kinds) || estimate.kinds.some((kind) => typeof kind.key !== 'string' || !Number.isInteger(kind.noteBytes))) {
-        throw new Error('Import preview estimate answered malformed');
-    }
-    wizard.choose('previewEstimate', { request, estimate });
-    // The rows on screen take their sizes in place: drawn again, their boxes would lose their handlers.
-    const counts = previewFileCounts(wizard.choices);
-    for (const size of screen.querySelectorAll('[data-wizard-preview-size]')) {
-        const kind = size.dataset.wizardPreviewSize;
-        size.textContent = previewSizeText(wizard.choices, kind, counts.get(kind));
     }
 }
 
@@ -976,9 +1084,10 @@ export function importSteps({ withSourceStep, withSummaryAndRun }) {
                 // The card opens the folder dialog too, as Choose Folder… does (the maintainer, 2026-11-01).
                 let chosen = '<div class="wizard-folder-chosen is-empty" role="button" tabindex="0" title="Choose Folder…">No folder chosen yet</div>';
                 let into = '';
-                if (choices.folderPath !== '') {
+                if (hasFolder(choices)) {
                     // Chosen: drawn as a chosen card is, with its check (the maintainer, 2026-11-01).
-                    chosen = `<div class="wizard-folder-chosen is-chosen" role="button" tabindex="0" title="${escapeHtml(choices.folderPath)}">
+                    const where = choices.droppedFolderId === '' ? choices.folderPath : choices.folderName;
+                    chosen = `<div class="wizard-folder-chosen is-chosen" role="button" tabindex="0" title="${escapeHtml(where)}">
                         <span class="wizard-choice-check" aria-hidden="true">✓</span>
                         <span class="wizard-folder-name">${escapeHtml(choices.folderName)}</span>
                         <span class="wizard-folder-counts">${choices.fileCount} ${escapeHtml(source.fileWord)}</span></div>`;
@@ -1000,7 +1109,7 @@ export function importSteps({ withSourceStep, withSummaryAndRun }) {
             },
             onChoice: null, onNext: null,
             missing: (choices) => {
-                if (choices.folderPath === '') return 'Choose the folder first.';
+                if (!hasFolder(choices)) return 'Choose the folder first.';
                 if (choices.fileCount === 0) return 'That folder holds nothing this import reads. Choose another.';
                 return prefixProblem(choices);
             },
@@ -1066,7 +1175,18 @@ export function importSteps({ withSourceStep, withSummaryAndRun }) {
             onChoice: null, onNext: null, missing: checklistProblem,
         }),
         makeStep({
-            key: 'markdown', label: 'Markdown', title: 'How should your Markdown files come in?',
+            key: 'upload', label: 'Copy', title: 'Copying your files',
+            intro: 'The files you ticked are copied to MetaList. Nothing is in your vault until you import.',
+            nextLabel: NEXT, isAction: false, applies: (choices) => choices.droppedFolderId !== '',
+            render: (choices) => uploadHtml(choices),
+            wire: (screen, wizard) => {
+                void uploadDroppedFiles(screen, wizard);
+            },
+            onChoice: null, onNext: null,
+            missing: (choices) => (isUploaded(choices) ? '' : 'Your files are still being copied.'),
+        }),
+        makeStep({
+            key: MARKDOWN_STEP, label: 'Markdown', title: 'How should your Markdown files come in?',
             intro: 'Shown on a sample: this is exactly how the notes will look in MetaList.',
             nextLabel: NEXT, isAction: false, applies: bringsInMarkdown,
             render: (choices) => `
@@ -1120,23 +1240,6 @@ export function importSteps({ withSourceStep, withSummaryAndRun }) {
             onNext: null, missing: NOTHING_MISSING,
         }),
         makeStep({
-            key: 'previews', label: 'Previews', title: 'Which files should get a preview?',
-            intro: 'A preview copies a file\'s text into a note under it, so search finds it. It is stored as note data, beside the file.',
-            nextLabel: NEXT, isAction: false, applies: bringsInPreviews,
-            render: (choices) => `<div class="wizard-preview-kinds">${previewRowsHtml(choices)}</div>`,
-            wire: (screen, wizard) => {
-                for (const box of screen.querySelectorAll('[data-wizard-preview-kind]')) {
-                    box.onchange = () => {
-                        const kind = box.dataset.wizardPreviewKind;
-                        const others = wizard.choices.previewKinds.filter((ticked) => ticked !== kind);
-                        wizard.choose('previewKinds', box.checked ? [...others, kind] : others);
-                    };
-                }
-                void estimatePreviews(screen, wizard);
-            },
-            onChoice: null, onNext: null, missing: NOTHING_MISSING,
-        }),
-        makeStep({
             key: 'summary', label: 'Summary', title: 'Ready to import',
             intro: 'Here is what the import will do. Nothing has changed yet.',
             nextLabel: NEXT, isAction: false, applies: () => withSummaryAndRun,
@@ -1163,14 +1266,18 @@ export function importChoices() {
         // 2026-11-01); how many compression would shrink in the folder; and the server's
         // estimate ({ request, estimate }, null until asked) for the choices it was asked for.
         imagesAs: IMAGES_ORIGINALS, imageLongestSide: FIRST_IMAGE_LONGEST_SIDE, imageCount: 0, imageEstimate: null,
-        // A folder of files: the kinds of file that get a preview, and the server's estimate of
-        // their note data ({ request, estimate }, null until asked).
-        previewKinds: [...FIRST_PREVIEW_KINDS], previewEstimate: null,
         // The folder the notes go into, as typed (the vault's name once a folder is chosen), and
         // what the server last said of it (prefixStatusHtml); adding to an existing one is ticked.
         prefixText: '', prefixCheckedFor: null, prefixFolder: '', prefixExists: false, prefixProblem: '', addToExisting: true,
         // A bookmarks export (bookmarks-file.js): its name, its text, its counts, and the
         // sentence saying it isn't one ('' when it is).
         bookmarksFileName: '', bookmarksText: '', bookmarkCount: 0, bookmarkFolderCount: 0, bookmarksProblem: '',
+        // A folder dropped on the page (dropped-folders.js holds its files under this id; '' for
+        // none), its holding folder on the server once the ticked files are copied, and which
+        // files they were.
+        droppedFolderId: '', uploadId: '', uploadedSelection: '',
+        // Files dropped on the page: the search of the context they were dropped in ('' for
+        // none), which their notes take the tags of and stay in.
+        isDrop: false, dropSearch: '',
     };
 }

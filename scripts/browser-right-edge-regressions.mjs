@@ -206,7 +206,7 @@ async function checkReminderCorner(page, layout, label) {
 async function checkFloatingMessage(page, layout, label) {
   const card = await page.evaluate(async () => {
     const {FloatingMessages} = await import('/static/js/modules/floating-messages.js');
-    FloatingMessages.show({text: 'Right edge message', type: 'info', detail: '', isClosable: true, isLasting: true, key: 'right-edge'});
+    FloatingMessages.show({text: 'Right edge message', type: 'info', detail: '', isClosable: true, isLasting: true, key: 'right-edge', action: null});
     const stack = document.querySelector('.floating-messages').getBoundingClientRect();
     FloatingMessages.dismissAll();
     return {right: stack.right};

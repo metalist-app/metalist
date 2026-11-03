@@ -12,7 +12,7 @@ import uuid
 from dataclasses import dataclass
 from typing import List, Tuple
 
-from app.services.file_text_preview import plain_text_to_note_html
+from app.services.file_view import plain_text_to_note_html
 from app.services.obsidian_import import blocks as block_kinds
 from app.services.obsidian_import.blocks import Block, ListItem, parse_blocks, split_footnote_definitions
 from app.services.obsidian_import.content import (

@@ -35,6 +35,11 @@ and persisted AI API keys (one slot per provider: OpenAI, and from database
 version 11 Claude and Gemini). The authoritative payload/schema inventory is
 in `app/encryption_audit.py`.
 
+A folder dropped on the page for import is not covered until it is imported:
+its ticked files wait, as sent and unencrypted, in a holding folder in the data
+directory (`import-uploads/`, `app/services/import_uploads.py`) until the
+import walkthrough closes (cancelled or imported) or the server restarts.
+
 Structural and operational metadata remain readable: note IDs, hierarchy/order,
 collapse flags, timestamps, namespace names/ports, schema/vault versions and
 cryptographic metadata. Attachment filename/MIME metadata is inside an encrypted
@@ -49,6 +54,8 @@ text was cut at its 5 MB cap (`is_cut`), the file content revision it was read f
 time are readable structural metadata. At login only the filters are decrypted into memory;
 a file's text is decrypted only when a search's filter check says it may match, and kept in a
 bounded cache; both are dropped when the vault locks (`app/services/file_text_search.py`).
+From database version 14 the versions of the reader and of the filter that made a file's text
+(`file_texts.reader_version`, `filter_version`) are readable structural metadata too.
 Site icons beside link titles (`link_icons`, database version 12) encrypt the site
 (`origin`) and the icon (`icon_png`) like link titles; their lookup status, last
 error kind, failure count and check timestamps are readable structural metadata.
@@ -790,6 +797,8 @@ Attachment uploads default to 100 MiB per file, configurable with positive-byte 
 Lock ownership: synchronous route transactions and background hydration/link publication use `bulk_operation_guard.lock`; its separate short admission mutex protects mutation counts and bulk operation/question state. No admission mutex is held across an await. Bulk answers/cancellation are queued with `call_soon_threadsafe`. Tokens and sync/clipboard operations each have their own RLock and return copied snapshots; clipboard snapshots copy nested values. NoteStore, search index, tab/reminder/link stores and sensitive caches retain their existing private locks. Hydration/link work checks the runtime generation before publishing. Acquire the outer bulk lock before admission/service locks; do not acquire the outer bulk lock from inside a service lock. These guards protect existing mutation paths, not a general serializable snapshot API spanning every independent GET.
 
 Temporary DB read permission is a ContextVar layered over startup's global read state, so one thread/task cannot enable another's reads or restore a stale global value.
+
+Database version 14 adds `reader_version` and `filter_version` to `file_texts` in the files database. The step is additive and idempotent, so it also accepts a files database the app already upgraded on open; the encryption audit accepts them missing or present before version 14 and requires them from version 14.
 
 Database version 13 adds the `file_texts` table (encrypted text and bloom filter of a file, for search) to the files database. The step is additive and idempotent, so it also accepts a files database the app already upgraded on open; the encryption audit accepts the table missing or present before version 13 and requires it from version 13.
 

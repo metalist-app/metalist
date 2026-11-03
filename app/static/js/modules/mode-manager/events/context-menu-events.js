@@ -961,6 +961,22 @@ function fileCardFileIdAt(target) {
     return fileId;
 }
 
+// The file a right-click on an audio or video player names, or null elsewhere.
+function filePlayerFileIdAt(target) {
+    if (!(target instanceof Element)) {
+        return null;
+    }
+    const player = target.closest('.note-file-media-embed[data-file-ref-id]');
+    if (player === null) {
+        return null;
+    }
+    const fileId = player.getAttribute('data-file-ref-id');
+    if (typeof fileId !== 'string' || fileId === '') {
+        throw new Error('A player is missing its file id');
+    }
+    return fileId;
+}
+
 function showNoteContextMenu(event, noteId, imageContext, selectedTextRange, referenceContext) {
     if (typeof noteId !== 'string' || noteId.trim() === '') {
         return;
@@ -1004,6 +1020,7 @@ function showNoteContextMenu(event, noteId, imageContext, selectedTextRange, ref
         },
         imageContext,
         fileCardFileId: fileCardFileIdAt(event.target),
+        filePlayerFileId: filePlayerFileIdAt(event.target),
         hasSelectedText,
         hasNoteClipboard,
         canInsertReference: referenceRange !== null,
@@ -1134,6 +1151,9 @@ function showNoteContextMenu(event, noteId, imageContext, selectedTextRange, ref
             },
             onRenameFile: (fileId) => {
                 void renameFileFromMenu(fileId);
+            },
+            onDownloadFile: (fileId) => {
+                void CommandGate.run('contextMenu.download_file', () => downloadFileReference(fileId));
             },
             onSaveDiagram: (targetImageContext) => {
                 void CommandGate.run('contextMenu.diagram.save', async () => {

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import os
 from email.message import EmailMessage
 from pathlib import Path
@@ -13,7 +14,9 @@ import pytest
 
 import app.services.email_search_text as email_search_module
 import app.services.search_text as search_text_module
+import app.services.email_cards as email_cards_module
 from app.services.email_files import email_attachment, is_email_file, read_email
+from app.services.file_view import build_email_view
 
 
 def _email(*, html: str | None, text: str, attachments: list[tuple[bytes, str, str, str | None]]) -> bytes:
@@ -160,3 +163,74 @@ print("ROUTES OK")
     result = subprocess.run([sys.executable, "-c", script], env=environment, capture_output=True, encoding="utf-8", timeout=60)
     assert result.returncode == 0, (result.stdout[-2000:], result.stderr[-3000:])
     assert "ROUTES OK" in result.stdout
+
+
+# A web page saved whole (.mht, "Saved by Microsoft Internet Explorer 5") is read as an email:
+# its pictures pointed at their old addresses, so opening it fetched some 200 from sites long
+# gone, 16 seconds each, holding up every request of the page behind them; and its saved
+# copies were listed as attachments (the maintainer, 2026-11-03). Its own copies show in
+# place; a picture it didn't save shows nothing, and nothing is fetched.
+LOGO = b"GIF89a-logo-bytes"
+PHOTO = b"\xff\xd8\xff-photo-bytes"
+SAVED_PAGE = (
+    b"From: <Saved by Microsoft Internet Explorer 5>\r\n"
+    b"Subject: ConsumerLab.com - Multivitamin review\r\n"
+    b"Date: Mon, 30 Jan 2006 09:14:41 -0800\r\n"
+    b"MIME-Version: 1.0\r\n"
+    b'Content-Type: multipart/related; boundary="----=_NextPart"; type="text/html"\r\n'
+    b"\r\n"
+    b"------=_NextPart\r\n"
+    b"Content-Type: text/html; charset=\"Windows-1252\"\r\n"
+    b"Content-Transfer-Encoding: 7bit\r\n"
+    b"Content-Location: http://www.consumerlab.com/results/multi.asp\r\n"
+    b"\r\n"
+    b'<html><body><p>Multivitamin review</p><img src="../images/logo.gif" alt="Logo">'
+    b'<img src="http://www.consumerlab.com/images/photo.jpg"><img src="http://ads.example.com/banner.gif">'
+    # A description holding a ">" (an old page's broken HTML): the picture is still found.
+    b'<img alt="Fitness, Inc.</h1>" src="http://www.consumerlab.com/images/logo.gif">'
+    b"</body></html>\r\n"
+    b"------=_NextPart\r\n"
+    b"Content-Type: image/gif\r\n"
+    b"Content-Transfer-Encoding: base64\r\n"
+    b"Content-Location: http://www.consumerlab.com/images/logo.gif\r\n"
+    b"\r\n" + base64.b64encode(LOGO) + b"\r\n"
+    b"------=_NextPart\r\n"
+    b"Content-Type: image/jpeg\r\n"
+    b"Content-Transfer-Encoding: base64\r\n"
+    b"Content-Location: http://www.consumerlab.com/images/photo.jpg\r\n"
+    b"\r\n" + base64.b64encode(PHOTO) + b"\r\n"
+    b"------=_NextPart--\r\n"
+)
+
+
+def test_a_saved_web_pages_pictures_are_its_own_copies_and_nothing_is_fetched() -> None:
+    page = read_email(SAVED_PAGE)
+    assert "data:image/gif;base64," + base64.b64encode(LOGO).decode() in page.body_html
+    assert "data:image/jpeg;base64," + base64.b64encode(PHOTO).decode() in page.body_html
+    assert "http://" not in page.body_html, "no picture of the page is left to fetch from the web"
+    assert "Multivitamin review" in page.body_html
+
+
+def test_a_saved_web_pages_own_pictures_are_no_attachments() -> None:
+    assert read_email(SAVED_PAGE).attachments == ()
+    # An email's attachments are listed as before.
+    assert [attachment.name for attachment in read_email(PLAN).attachments] == ["plan.pdf", "attachment-2.pdf"]
+
+
+def test_an_emails_card_is_named_by_its_subject_and_sender_and_a_saved_page_by_its_title(monkeypatch: pytest.MonkeyPatch) -> None:
+    pages = {"mail": ("plan.eml", PLAN), "page": ("review.mht", SAVED_PAGE)}
+    monkeypatch.setattr(
+        email_cards_module.file_registry, "read_stored_file",
+        lambda file_id: SimpleNamespace(record=SimpleNamespace(original_filename=pages[file_id][0]), content_bytes=pages[file_id][1]),
+    )
+    email_cards_module.email_card_name.cache_clear()
+    assert email_cards_module.email_card_name("mail") == "Réunion: the plan ✓ · Ada Lovelace"
+    assert email_cards_module.email_card_name("page") == "ConsumerLab.com - Multivitamin review"
+    email_cards_module.email_card_name.cache_clear()
+
+
+def test_the_viewer_shows_an_email_its_headers_body_and_attachments() -> None:
+    view, email = build_email_view(PLAN)
+    assert view.status == "ready" and "The plan." in view.content_html
+    assert (email.subject, email.sender_name) == ("Réunion: the plan ✓", "Ada Lovelace")
+    assert [attachment.name for attachment in email.attachments] == ["plan.pdf", "attachment-2.pdf"]

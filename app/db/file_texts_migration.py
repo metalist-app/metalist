@@ -10,7 +10,7 @@ from contextlib import closing
 from pathlib import Path
 import sqlite3
 
-from app.db.file_schema import FILE_TEXTS_COLUMNS, FILE_TEXTS_TABLE, create_file_texts_table
+from app.db.file_schema import FILE_TEXTS_COLUMNS, FILE_TEXTS_COLUMNS_SINCE_13, FILE_TEXTS_TABLE, create_file_texts_table
 
 # Same shared in-memory database FileSession uses when the notes database is in memory.
 _FILE_MEMORY_URI = "file:metalist_files_memory?mode=memory&cache=shared"
@@ -23,7 +23,8 @@ def _upgrade(files: sqlite3.Connection) -> None:
     create_file_texts_table(files)
     files.commit()
     columns = {row[_TABLE_INFO_NAME_COLUMN] for row in files.execute(f"PRAGMA table_info({FILE_TEXTS_TABLE})").fetchall()}
-    if columns != set(FILE_TEXTS_COLUMNS):
+    # Opening the database may already have added 13→14's columns.
+    if columns not in (set(FILE_TEXTS_COLUMNS_SINCE_13), set(FILE_TEXTS_COLUMNS)):
         raise RuntimeError(f"Database migration 12→13 found a {FILE_TEXTS_TABLE} table with other columns: {sorted(columns)}")
 
 

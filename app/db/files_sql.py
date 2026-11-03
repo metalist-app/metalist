@@ -6,7 +6,12 @@ import sqlite3
 from datetime import datetime
 from typing import Iterable, Optional
 
-from app.db.file_schema import FILE_PREVIEW_VARIANTS, FILE_PREVIEWS_TABLE, FILE_TEXTS_TABLE, FILES_TABLE
+from app.db.file_schema import (
+    FILE_PREVIEW_VARIANTS,
+    FILE_PREVIEWS_TABLE,
+    FILE_TEXTS_TABLE,
+    FILES_TABLE,
+)
 
 
 def _serialize_datetime(value: datetime) -> str:
@@ -418,16 +423,22 @@ def upsert_file_text(
     filter_encryption_tag: Optional[bytes],
     is_cut: bool,
     content_revision: int,
+    reader_version: int,
+    filter_version: int,
     updated_at: datetime,
 ) -> None:
     if not isinstance(content_revision, int) or content_revision < 1:
         raise TypeError(f"file_texts.content_revision must be a positive integer | file_id={file_id}")
+    for name, version in (("reader_version", reader_version), ("filter_version", filter_version)):
+        if not isinstance(version, int) or version < 1:
+            raise TypeError(f"file_texts.{name} must be a positive integer | file_id={file_id}")
     connection.execute(
         f"""
         INSERT INTO {FILE_TEXTS_TABLE} (
             file_id, text_data, text_encryption_nonce, text_encryption_tag, filter_data,
-            filter_encryption_nonce, filter_encryption_tag, is_cut, content_revision, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            filter_encryption_nonce, filter_encryption_tag, is_cut, content_revision, reader_version,
+            filter_version, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(file_id) DO UPDATE SET
             text_data = excluded.text_data,
             text_encryption_nonce = excluded.text_encryption_nonce,
@@ -437,11 +448,14 @@ def upsert_file_text(
             filter_encryption_tag = excluded.filter_encryption_tag,
             is_cut = excluded.is_cut,
             content_revision = excluded.content_revision,
+            reader_version = excluded.reader_version,
+            filter_version = excluded.filter_version,
             updated_at = excluded.updated_at
         """,
         (
             file_id, text_data, text_encryption_nonce, text_encryption_tag, filter_data,
-            filter_encryption_nonce, filter_encryption_tag, int(is_cut), content_revision, _serialize_datetime(updated_at),
+            filter_encryption_nonce, filter_encryption_tag, int(is_cut), content_revision, reader_version, filter_version,
+            _serialize_datetime(updated_at),
         ),
     )
 
@@ -449,7 +463,7 @@ def upsert_file_text(
 def fetch_file_text(connection: sqlite3.Connection, file_id: str) -> Optional[dict[str, object]]:
     """A file's stored text (still encrypted), or None when it has none yet."""
     row = connection.execute(
-        f"SELECT file_id, text_data, text_encryption_nonce, text_encryption_tag, is_cut, content_revision "
+        f"SELECT file_id, text_data, text_encryption_nonce, text_encryption_tag, is_cut, content_revision, reader_version "
         f"FROM {FILE_TEXTS_TABLE} WHERE file_id = ?",
         (file_id,),
     ).fetchone()
@@ -461,8 +475,8 @@ def fetch_file_text(connection: sqlite3.Connection, file_id: str) -> Optional[di
 def fetch_all_file_text_filters(connection: sqlite3.Connection) -> list[dict[str, object]]:
     """Every stored file text's filter (still encrypted), cut flag and revision: what login loads."""
     rows = connection.execute(
-        f"SELECT file_id, filter_data, filter_encryption_nonce, filter_encryption_tag, is_cut, content_revision "
-        f"FROM {FILE_TEXTS_TABLE} ORDER BY file_id ASC"
+        f"SELECT file_id, filter_data, filter_encryption_nonce, filter_encryption_tag, is_cut, content_revision, "
+        f"reader_version, filter_version FROM {FILE_TEXTS_TABLE} ORDER BY file_id ASC"
     ).fetchall()
     return [dict(row) for row in rows]
 

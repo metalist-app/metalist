@@ -31,11 +31,13 @@ import { CommandPalette } from '../../command-palette/command-palette-controller
 import { NotesAPI } from '../../api-client.js';
 import { isContextMenuInteractionTarget } from '../../context-menu/context-menu-target-service.js';
 import { downloadEmailAttachment, downloadFileReference } from '../services/file-reference-service.js';
-import { toggleEmailBody } from '../services/file-email-preview-service.js';
+import { openFileViewer, opensInViewer } from '../services/file-viewer-service.js';
+import { playMediaFile } from '../services/media-player-service.js';
 import { parseDecimalInteger } from '../../decimal-integer.js';
 import { revealRedactedNoteWithScrollPreservation } from '../services/search-redaction-reveal-service.js';
 import { resolveVerticalSiblingDropDestination, updateMoveDragGestureState } from '../services/note-drag-service.js';
 import { hideNoteDragIndicators, renderNoteDragIndicators } from '../services/note-drag-indicator-service.js';
+import { dropNoteOnFolder, noteDropAt, showNoteDropTarget } from '../services/virtual-folders-service.js';
 import { isRootReorderLocked } from '../services/root-sort-service.js';
 import {
     isViewModeNoteDisclosureToggle,
@@ -333,10 +335,11 @@ function isMouseDownOutsideEditExclusion(target) {
             '.note-reference-link',
             '.note-backlinks-link',
             '.ai-chat-open-all-references',
-            '.note-file-reference-link',
-            '.note-file-image-download-link',
-            '.note-file-email-attachment',
-            '.note-file-email-more',
+            // A file linked in text, a card's Open and Download, a player: a click elsewhere on an
+            // embedded file's card edits the note (files-shown-not-copied.md §3).
+            'button.note-file-reference-link',
+            '.note-file-action',
+            '.note-file-media-embed',
             CREDENTIAL_VALUE_SELECTOR,
             EMAIL_VALUE_SELECTOR,
             COPYABLE_SELECTOR,
@@ -886,6 +889,14 @@ function measureDragGhostRect(noteElement) {
 }
 
 function renderMoveDragIndicators(context, pointerTarget) {
+    // Over the virtual folders' tree the drag is a drop into the folder under the pointer: the
+    // folder highlights and the column shows no drop (docs/ready-to-build/virtual-folders.md §4).
+    const folderDrop = noteDropAt(pointerTarget, DOMUtils.getNoteById(context.noteId));
+    showNoteDropTarget(folderDrop === null ? null : folderDrop.row);
+    if (folderDrop !== null) {
+        hideNoteDragIndicators();
+        return;
+    }
     // The ghost, drop indicator and direction icon are separate preferences
     // (all on by default; CSS hides whichever is off). Drags work the same either way.
     const bodyClasses = document.body.classList;
@@ -1155,6 +1166,7 @@ function handleMoveDragMouseUp(event) {
     if (context.dragActive) {
         setMoveDragCursorActive(false);
     }
+    showNoteDropTarget(null);
 
     const dx = event.clientX - context.startX;
     const dy = event.clientY - context.startY;
@@ -1188,6 +1200,13 @@ function handleMoveDragMouseUp(event) {
         throw new Error('Move drag context missing noteId on mouseup');
     }
 
+    const folderDrop = noteDropAt(event.target, DOMUtils.getNoteById(context.noteId));
+    if (folderDrop !== null) {
+        void CommandGate.run('mouse.drag_into_folder', async () => {
+            await dropNoteOnFolder(context.noteId, folderDrop);
+        });
+        return;
+    }
     const drop = resolveMoveDragDrop(context.noteId, dx, dy, event.clientY, event.target);
     if (drop === null) {
         return;
@@ -1493,10 +1512,6 @@ function handleClick(event) {
     }
 
     if (handleFileReferenceClick(event)) {
-        return;
-    }
-
-    if (handleEmailCardClick(event)) {
         return;
     }
 
@@ -2128,7 +2143,7 @@ function handleFileReferenceClick(event) {
         throw new Error('File reference click missing target element');
     }
 
-    const button = event.target.closest('.note-file-reference-link, .note-file-image-download-link');
+    const button = event.target.closest('button.note-file-reference-link, .note-file-action, .note-file-media-play');
     if (!button) {
         return false;
     }
@@ -2151,38 +2166,22 @@ function handleFileReferenceClick(event) {
         throw new Error('File reference click missing file id');
     }
 
+    if (button.classList.contains('note-file-media-play')) {
+        void CommandGate.run('mouse.play_media_file', async () => {
+            await playMediaFile(button);
+        });
+        return true;
+    }
+    // Open, or a link to a file the viewer shows, opens it; Download, or a link to any other,
+    // downloads it (files-shown-not-copied.md §3).
+    if (opensInViewer(button)) {
+        void CommandGate.run('mouse.open_file_viewer', async () => {
+            await openFileViewer(fileId);
+        });
+        return true;
+    }
     void CommandGate.run('mouse.download_file_reference', async () => {
         await downloadFileReference(fileId);
-    });
-    return true;
-}
-
-// An email card's attachment downloads it; Show all opens or closes the whole body.
-function handleEmailCardClick(event) {
-    const target = event.target instanceof Element ? event.target : null;
-    if (target === null) return false;
-    const more = target.closest('.note-file-email-more');
-    if (more !== null) {
-        event.preventDefault();
-        event.stopPropagation();
-        toggleEmailBody(more);
-        return true;
-    }
-    const attachment = target.closest('.note-file-email-attachment');
-    if (attachment === null) return false;
-    event.preventDefault();
-    event.stopPropagation();
-    if (!ModeContext.isConnected) {
-        Logger.logNoop('Email attachment click ignored while disconnected', { isConnected: false });
-        return true;
-    }
-    const fileId = attachment.dataset.fileRefId;
-    const index = parseDecimalInteger(attachment.dataset.attachmentIndex);
-    if (typeof fileId !== 'string' || fileId === '' || !Number.isInteger(index)) {
-        throw new Error('Email attachment click missing its file id or index');
-    }
-    void CommandGate.run('mouse.download_email_attachment', async () => {
-        await downloadEmailAttachment(fileId, index);
     });
     return true;
 }

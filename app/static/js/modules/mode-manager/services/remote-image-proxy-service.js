@@ -121,7 +121,7 @@ function getTargets(rootNode) {
 }
 
 function applyObjectUrl(target, objectUrl) {
-    if (!(target instanceof HTMLImageElement)) {
+    if (!isImageElement(target)) {
         throw new Error('Remote image proxy target must be an HTMLImageElement');
     }
     if (typeof objectUrl !== 'string' || objectUrl.length === 0) {
@@ -132,7 +132,7 @@ function applyObjectUrl(target, objectUrl) {
 }
 
 function applyFailure(target) {
-    if (!(target instanceof HTMLImageElement)) {
+    if (!isImageElement(target)) {
         throw new Error('Remote image proxy target must be an HTMLImageElement');
     }
     target.removeAttribute('src');
@@ -185,17 +185,35 @@ async function fetchObjectUrl(proxyPath) {
     return await request;
 }
 
-function matchingDocumentTargets(proxyPath) {
-    return Array.from(document.querySelectorAll('img[data-remote-image-proxy-src]')).filter(
+// A node's nodeType when it is a document (Node.DOCUMENT_NODE).
+const DOCUMENT_NODE_TYPE = 9;
+
+// The file viewer draws a document in a frame of its own (file-viewer-service.js): its pictures
+// are the frame's elements, of the frame's HTMLImageElement, and are looked for in its document.
+function isImageElement(node) {
+    if (node instanceof HTMLImageElement) return true;
+    return node instanceof node.ownerDocument.defaultView.HTMLImageElement;
+}
+
+function matchingDocumentTargets(scope, proxyPath) {
+    return Array.from(scope.querySelectorAll('img[data-remote-image-proxy-src]')).filter(
         (target) => target.dataset.remoteImageProxySrc === proxyPath,
     );
 }
 
 export function hydrateRemoteImageProxies(rootNode) {
     const targets = getTargets(rootNode);
+    // Every picture of its document waiting on the same proxied address takes the answer: the
+    // page's own document, or the viewer frame's for a root of that document.
+    let scope = document;
+    if (rootNode.nodeType === DOCUMENT_NODE_TYPE) {
+        scope = rootNode;
+    } else if (rootNode.ownerDocument instanceof Object && rootNode.ownerDocument !== document) {
+        scope = rootNode.ownerDocument;
+    }
     const proxyPaths = new Set();
     for (const target of targets) {
-        if (!(target instanceof HTMLImageElement)) {
+        if (!isImageElement(target)) {
             throw new Error('Remote image proxy target must be an HTMLImageElement');
         }
         const proxyPath = target.dataset.remoteImageProxySrc;
@@ -213,13 +231,13 @@ export function hydrateRemoteImageProxies(rootNode) {
     for (const proxyPath of proxyPaths) {
         requests.push(fetchObjectUrl(proxyPath)
             .then((objectUrl) => {
-                for (const target of matchingDocumentTargets(proxyPath)) {
+                for (const target of matchingDocumentTargets(scope, proxyPath)) {
                     applyObjectUrl(target, objectUrl);
                 }
             })
             .catch((error) => {
             rethrowUnexpectedError(error);
-                for (const target of matchingDocumentTargets(proxyPath)) {
+                for (const target of matchingDocumentTargets(scope, proxyPath)) {
                     applyFailure(target);
                 }
             }));

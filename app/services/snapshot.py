@@ -37,7 +37,7 @@ from app.services.root_sorting import normalize_sort_mode
 from app.services.root_date_filter import RootDateFilter, filter_root_ids_by_date, local_today
 from app.services.quoted_values import split_tokens
 from app.services.search_index import search_index
-from app.services.file_text_search import SEARCHABLE_FILE_KINDS, file_texts
+from app.services.file_text_search import file_texts, is_searchable_file_name
 from app.services.file_text_snippets import with_file_text_snippets
 from app.services.search_query import ParsedSearchQuery, SearchClause, parse_search_query, search_highlight_phrases
 from app.services.tag_properties import PropertyCondition, tag_part_of_token
@@ -1441,10 +1441,11 @@ def _count_find_match(
 
 def _files_holding_find_text(rec: NoteRecord, find_text: str) -> Tuple[str, ...]:
     """The files the note shows whose kept text holds the find text, each once, in the note's
-    order (file_text_search.py: PDFs; one not read yet holds nothing)."""
+    order (file_text_search.py: every file with a reader; one not read yet holds nothing).
+    Only PDFs were looked in until 2026-11-03: an RTF's words were found by search, not by find."""
     shown: List[str] = []
-    for file_id, _name in file_registry.referenced_file_names(rec.content):
-        if file_id not in shown and file_registry.thumbnail_kind_of(file_id) in SEARCHABLE_FILE_KINDS:
+    for file_id, name in file_registry.referenced_file_names(rec.content):
+        if file_id not in shown and is_searchable_file_name(name):
             shown.append(file_id)
     return tuple(file_id for file_id in shown if file_texts.term_matches(file_id, find_text))
 

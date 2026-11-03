@@ -10,7 +10,16 @@ CAPTURE_BOUNDARIES = {
     'app/services/obsidian_import/vault.py:_read_line_break_setting:settings_capture': ('JSONDecodeError',),
     'app/services/obsidian_import/notes.py:_read_frontmatter:yaml_capture': ('YAMLError',),
     # A PDF that can't be read keeps no searchable text; it matches by name only.
-    'app/services/file_text_search.py:extract_file_text:pdf_capture': ('PyPdfError', 'ValueError'),
+    'app/services/file_text_worker.py:read_pages:pdf_capture': ('PdfiumError', 'ValueError'),
+    'app/services/file_text_worker.py:read_document:document_capture': ('UnreadableDocument',),
+    # A Word document is the user's file: a damaged zip or text keeps its card, by name only.
+    'app/services/document_text.py:_docx_xml:zip_capture': ('BadZipFile',),
+    'app/services/document_text.py:_docx_root:xml_capture': ('ParseError',),
+    'app/services/file_view.py:_document_view:document_capture': ('UnreadableDocument',),
+    'app/services/document_text.py:require_safe_docx:zip_capture': ('BadZipFile',),
+    'app/services/document_text.py:_doc_streams:ole_capture': ('OSError', 'ValueError'),
+    # mammoth reading a Word document for its preview: a damaged zip, a missing part or broken XML.
+    'app/services/file_view.py:_word_html:mammoth_capture': ('BadZipFile', 'OSError', 'ExpatError'),
     # An imported image that can't be read comes in uncompressed, as it is.
     'app/services/image_compression.py:compressed_image:image_capture': ('DecompressionBombError', 'OSError', 'SyntaxError', 'UnidentifiedImageError', 'ValueError'),
     # Web retrieval translates only expected failures from untrusted remote targets.

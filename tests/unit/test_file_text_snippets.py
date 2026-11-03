@@ -4,9 +4,13 @@ cases agreed 2026-11-01)."""
 
 from __future__ import annotations
 
+import re
+from types import SimpleNamespace
+
 import pytest
 
 import app.services.file_text_search as file_text_search_module
+from app.services.embedded_references import _render_file_embed_body, _render_file_link_body
 from app.services.file_text_search import file_texts
 from app.services.file_text_snippets import file_text_snippet, with_file_text_snippets
 from app.services.snapshot import shows_file_text_snippets
@@ -20,13 +24,18 @@ LEASE_TEXT = (
 )
 
 
+def _file(name: str) -> SimpleNamespace:
+    return SimpleNamespace(title=name, original_filename=name, mime_type="application/pdf", size_bytes=1, thumbnail_kind="pdf")
+
+
+# Cards and links drawn as the list draws them: a snippet test on hand-made markup kept passing
+# when the card changed shape, while the list showed no snippets (2026-11-03).
 def _card(file_id: str, name: str) -> str:
-    return (
-        f'<button type="button" class="note-file-reference-link note-file-reference-link-embed" data-file-ref-id="{file_id}" '
-        f'title="Click to download {name}"><span class="note-file-reference-header">'
-        f'<span class="note-file-reference-badge">PDF</span><span class="note-file-reference-title">'
-        f'<span class="note-file-reference-name">{name}</span></span></span></button>'
-    )
+    return _render_file_embed_body(record=_file(name), reference_note_id=file_id, static_export=False)
+
+
+def _link(file_id: str, name: str) -> str:
+    return _render_file_link_body(record=_file(name), reference_note_id=file_id, link_text=None, static_export=False)
 
 
 @pytest.fixture
@@ -62,9 +71,9 @@ def test_the_snippet_goes_inside_the_matched_cards_only(texts) -> None:
     shown = with_file_text_snippets(rendered, ("rent is due",))
     assert shown.count('class="note-file-text-snippet"') == 1
     lease_card = shown[shown.index(f'data-file-ref-id="{FILE}"'):shown.index(f'data-file-ref-id="{OTHER}"')]
-    # Inside the card, so clicking it does what clicking the card does.
-    assert 'class="note-file-text-snippet"' in lease_card
-    assert lease_card.index('class="note-file-text-snippet"') < lease_card.index("</button>")
+    # Inside the card, last: under its name and buttons, then the card closes.
+    assert lease_card.index('class="note-file-text-snippet"') > lease_card.index("note-file-download")
+    assert re.search(r'class="note-file-text-snippet">[^<]*</span></span> and ', shown) is not None
 
 
 def test_several_matched_files_each_get_their_snippet(texts) -> None:
@@ -92,14 +101,14 @@ def test_the_snippet_text_is_escaped(texts) -> None:
 
 
 def test_a_link_to_a_file_in_running_text_gets_no_snippet(texts) -> None:
-    link = _card(FILE, "Lease.pdf").replace(" note-file-reference-link-embed", "")
+    link = _link(FILE, "Lease.pdf")
     assert with_file_text_snippets(link, ("rent is due",)) == link
 
 
 def test_a_cut_files_card_says_how_far_search_reaches(texts, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(file_texts, "is_cut", lambda file_id: True)
     shown = with_file_text_snippets(_card(FILE, "Lease.pdf"), ("harbor",))
-    assert 'title="Click to download Lease.pdf. Search covers its first ~2,000 pages."' in shown
+    assert f'data-file-ref-id="{FILE}" title="Search covers its first ~2,000 pages.">' in shown
     assert file_text_search_module.MAX_FILE_TEXT_CHARACTERS > 0
 
 

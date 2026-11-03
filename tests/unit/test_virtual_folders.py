@@ -6,13 +6,16 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Dict
 
 import pytest
 
 import app.services.snapshot as snapshot_module
+import app.usecases.import_obsidian_vault as import_module
 import app.services.virtual_folders as virtual_folders
 import app.usecases.virtual_folders as virtual_folder_usecases
 from app.db.file_session import begin_file_writer
+from app.services.background_work import background_work
 from app.models.database import SafeSession
 from app.security import encryption
 from app.services.image_compression import ImageChoice
@@ -68,7 +71,7 @@ def imported_vault(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> NoteStore
         (tmp_path / relative).write_text(text)
     CmdImportObsidianVault(
         source="obsidian", folder_path=str(tmp_path), split_mode=SPLIT_HEADINGS_AND_LISTS,
-        content_format=CONTENT_MARKDOWN, folder_prefix="", add_to_existing=False, images=KEEP_ORIGINALS, token=TOKEN, imported_at=IMPORTED_AT,
+        content_format=CONTENT_MARKDOWN, folder_prefix="", add_to_existing=False, images=KEEP_ORIGINALS, token=TOKEN, imported_at=IMPORTED_AT, context_tags="",
     ).execute()
     yield store
     session.close()
@@ -171,3 +174,86 @@ def test_a_duplicated_tab_keeps_its_sources_folder_and_a_blank_one_has_none() ->
     assert state.filter_of("duplicate") == "Projects/"
     state.copy_filter("blank-source", "blank")
     assert state.filter_of("blank") == virtual_folders.NO_FOLDER
+
+
+# A root note dragged from the column onto a folder ends up in exactly that folder; dropped
+# on the top, in none (docs/ready-to-build/virtual-folders.md §4).
+@pytest.mark.parametrize(("tags", "folder", "refiled"), [
+    ("work", "Projects/", "work Projects/"),
+    ("work Archive/", "Projects/", "work Projects/"),
+    ("Archive/ work Old/Stuff/", "Projects/Client-A/", "work Projects/Client-A/"),
+    ("work Archive/", "", "work"),
+    ("Archive/", "", ""),
+    ("running:miles=3 Archive/", "Projects/", "running:miles=3 Projects/"),
+])
+def test_a_refiled_tag_bar_keeps_its_other_tags_and_has_only_the_target_folder(tags: str, folder: str, refiled: str) -> None:
+    assert virtual_folders.refile_tag_bar(tags, folder) == refiled
+
+
+def _file(note_id: str, folder: str) -> Dict[str, object]:
+    return virtual_folder_usecases.file_note_in_folder(
+        note_id=note_id, folder=folder, token=TOKEN, client_id="client", undo_context="undo", viewport={},
+    )
+
+
+def test_a_root_note_dropped_on_a_folder_moves_there_in_one_undo_step(imported_vault: NoteStore, monkeypatch: pytest.MonkeyPatch) -> None:
+    recorded: list[tuple[str, str, str]] = []
+    monkeypatch.setattr(virtual_folder_usecases, "record_update", lambda client_id, undo_context, note_id, **step: recorded.append(
+        (note_id, step["before_tags"], step["after_tags"])))
+    plan = _root_titled(imported_vault, "Plan")
+    before = imported_vault.get_note(plan).tags
+    assert "Projects/Client-A/" in before.split()
+
+    result = _file(plan, "Daily/")
+
+    after = imported_vault.get_note(plan).tags
+    assert result["tags"] == after
+    assert [tag for tag in after.split() if virtual_folders.is_folder_tag(tag)] == ["Daily/"]
+    assert [tag for tag in after.split() if not virtual_folders.is_folder_tag(tag)] == [
+        tag for tag in before.split() if not virtual_folders.is_folder_tag(tag)]
+    assert recorded == [(plan, before, after)]
+    assert virtual_folder_usecases.notes_in_folder("Daily/").top_note_ids.count(plan) == 1
+
+
+def test_a_root_note_in_no_folder_moves_into_one_and_one_dropped_on_the_top_leaves_every_folder(imported_vault: NoteStore, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(virtual_folder_usecases, "record_update", lambda *args, **kwargs: None)
+    top = _root_titled(imported_vault, "Top")
+    _file(top, "Projects/")
+    assert top in virtual_folder_usecases.notes_in_folder("Projects/").top_note_ids
+    budget = _root_titled(imported_vault, "Budget")
+    _file(budget, "")
+    assert not any(virtual_folders.is_folder_tag(tag) for tag in imported_vault.get_note(budget).tags.split())
+
+
+def test_a_child_note_or_a_drop_that_changes_nothing_is_refused(imported_vault: NoteStore) -> None:
+    plan = _root_titled(imported_vault, "Plan")
+    child = imported_vault.get_children(plan)[0]
+    tags = imported_vault.get_note(child).tags
+    with pytest.raises(InputRejected, match="Only top-level notes can go in a folder"):
+        _file(child, "Daily/")
+    assert imported_vault.get_note(child).tags == tags
+    with pytest.raises(InputRejected, match="already"):
+        _file(plan, "Projects/Client-A/")
+    with pytest.raises(InputRejected, match="not a folder"):
+        _file(plan, "Daily")
+
+
+def test_an_import_lists_its_progress_a_part_per_file(
+    imported_vault: NoteStore, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seen: list[tuple[int, int]] = []
+    real_create = import_module.create_file
+    monkeypatch.setattr(import_module, "create_file", lambda **kwargs: (real_create(**kwargs), seen.append(
+        tuple((entry["done"], entry["total"]) for entry in background_work.snapshot() if entry["key"] == "import")[0]))[0])
+    folder = tmp_path / "progress"
+    folder.mkdir()
+    (folder / "a.md").write_text("# A\n![[one.png]] ![[two.png]]\n")
+    for name in ("one.png", "two.png"):
+        (folder / name).write_bytes(b"png")
+    CmdImportObsidianVault(
+        source="obsidian", folder_path=str(folder), split_mode=SPLIT_HEADINGS_AND_LISTS, content_format=CONTENT_MARKDOWN,
+        folder_prefix="Progress", add_to_existing=False, images=KEEP_ORIGINALS, token=TOKEN, imported_at=IMPORTED_AT, context_tags="",
+    ).execute()
+    # Seen as each file is stored, before its count goes up: out of the files it imports.
+    assert seen == [(0, 2), (1, 2)]
+    assert background_work.snapshot() == []

@@ -32,6 +32,14 @@ const LEASE_PAGES = [
 ];
 const EXTRACTION_ATTEMPTS = 40;
 const EXTRACTION_RETRY_MS = 250;
+// 9: a file match below the loaded notes, under fillers of its own tag.
+const FAR_FILLERS = 200;
+const FAR_TAG = 'findfarfixture';
+const FAR_WORD = 'zqfarpdf';
+const FAR_PAGES = ['Ledger zqfarpdf ledger entries for the harbor office.'];
+const FAR_FIND_TIMEOUT_MS = 15000;
+// Each letter's find and the view it asks for, with the scroll check skipping.
+const FAR_TYPED_ON_SETTLE_MS = 2500;
 
 // Positions are multiples of a layout unit: Firefox lays out in 1/60 px, Chrome in 1/64 px.
 const LAYOUT_UNITS_PER_PX = 60;
@@ -349,6 +357,81 @@ async function loadingWordsAreNoText(page, ids) {
   await idle(page);
 }
 
+// 9 (2026-11-03): typing on, letter by letter, after find loaded a far file match's notes. Each
+// letter's find runs as a command, and the scroll check that records which notes are in the
+// window skips while one runs: the next view request told the server the window was where it
+// had been, the list came back without the match, and find failed ("Find could not show
+// occurrence 0 of note …: the note is not on the page"; the maintainer's vault, typing
+// "neuropsychiatric disorders"). Here the check skips throughout, as it did while typing.
+async function typingOnAfterAFarFileMatch(page) {
+  const ids = await page.evaluate(async ({farPdf, tag, fillers}) => {
+    const {NotesAPI, FilesAPI} = await import('/static/js/modules/api-client.js');
+    const made = [];
+    const make = async html => {
+      const note = await NotesAPI.createNote(null, '');
+      await NotesAPI.saveNote(note.id, html, tag);
+      made.push(note.id);
+      return note.id;
+    };
+    const fileId = (await FilesAPI.uploadFile(new File([farPdf], 'Far ledger.pdf', {type: 'application/pdf'}))).file_id;
+    // createNote puts each note at the top: the file's note ends up below the fillers.
+    const far = await make(`<div>![[${fileId}]]</div>`);
+    for (let index = 0; index < fillers; index += 1) await make(`<div>Filler ${index}</div>`);
+    return {far, made};
+  }, {farPdf: pdf(FAR_PAGES), tag: FAR_TAG, fillers: FAR_FILLERS});
+  const shown = () => page.evaluate(far => {
+    const current = CSS.highlights.get('metalist-find-current');
+    let currentNoteId = null;
+    if (current !== undefined && current.size > 0) currentNoteId = [...current][0].startContainer.parentElement.closest('.note').dataset.noteId;
+    return {
+      count: document.getElementById('find-in-list-count').textContent,
+      isCurrentTheFar: currentNoteId === far,
+      isFarOnPage: document.querySelector(`#notes-container .note[data-note-id="${far}"]`) !== null,
+    };
+  }, ids.far);
+  await runThenCleanUp('typing on after a far file match', async () => {
+    for (let attempt = 0; attempt < EXTRACTION_ATTEMPTS; attempt += 1) {
+      await search(page, `${FAR_TAG} "${FAR_WORD}"`);
+      if (await page.$$eval('.note-file-text-snippet', snippets => snippets.length) >= 1) break;
+      await pause(EXTRACTION_RETRY_MS);
+    }
+    await search(page, FAR_TAG);
+    // The scroll check has recorded the notes at the top of the window, as it had before ⌘F.
+    await page.waitForFunction(async () => {
+      const {ModeContextInstance: mode} = await import('/static/js/modules/mode-manager/mode-context.js');
+      return mode.getVisibleRootRange().topRootId !== null;
+    }, {timeout: FAR_FIND_TIMEOUT_MS});
+    await page.evaluate(async () => {
+      const {CommandGate} = await import('/static/js/modules/mode-manager/services/command-gate-service.js');
+      window.realCommandGateIsBusy = CommandGate.isBusy;
+      CommandGate.isBusy = () => true;
+    });
+    // The suites' idle wait counts a running command as busy: these steps wait for what find shows.
+    await openFind(page);
+    await clickAndSelectAll(page, '#find-in-list-input');
+    await page.keyboard.press('Backspace');
+    await page.keyboard.type(FAR_WORD);
+    await page.waitForFunction(far => document.getElementById('find-in-list-count').textContent === '1 of 1'
+      && document.querySelector(`#notes-container .note[data-note-id="${far}"] .note-find-snippet`) !== null, {timeout: FAR_FIND_TIMEOUT_MS}, ids.far);
+    await pause(SETTLE_MS);
+    assert.deepEqual(await shown(), {count: '1 of 1', isCurrentTheFar: true, isFarOnPage: true}, 'find loads the far match and shows it');
+    await page.keyboard.type(' l');
+    await pause(FAR_TYPED_ON_SETTLE_MS);
+    assert.deepEqual(await shown(), {count: '1 of 1', isCurrentTheFar: true, isFarOnPage: true}, 'typed on, the far match stays shown');
+  }, async () => {
+    await page.evaluate(async () => {
+      const {CommandGate} = await import('/static/js/modules/mode-manager/services/command-gate-service.js');
+      if (window.realCommandGateIsBusy !== undefined) CommandGate.isBusy = window.realCommandGateIsBusy;
+    });
+    await page.keyboard.press('Escape');
+    await search(page, '');
+    await page.evaluate(async made => {
+      const {NotesAPI} = await import('/static/js/modules/api-client.js');
+      for (const id of made) await NotesAPI.deleteNote(id);
+    }, ids.made);
+  });
+}
+
 export async function checkFindInFiles(page) {
   await page.setViewport(WINDOW);
   const ids = await seedNotes(page);
@@ -375,6 +458,8 @@ export async function checkFindInFiles(page) {
     await attempt('6 snippet text is no note text', () => snippetTextIsNoNoteText(page, ids));
     await attempt('7 the snippet stays while typing', () => snippetStaysWhileTyping(page, ids));
     await attempt('8 a card\'s loading words are no text', () => loadingWordsAreNoText(page, ids));
+    await page.keyboard.press('Escape');
+    await attempt('9 typing on after a far file match', () => typingOnAfterAFarFileMatch(page));
     assert.deepEqual(failures, []);
   }, async () => {
     await page.keyboard.press('Escape');

@@ -11,7 +11,7 @@ Written from a read-only look at the repo; filed from `docs/inbox/` on 2026-11-0
 - Nothing reads bookmarks. The import sources are `obsidian`, `markdown` and `files` (`app/services/obsidian_import/sources.py`, `IMPORT_SOURCES`; `app/static/js/modules/wizard/import-wizard-steps.js`, `SOURCES`).
 - The walkthrough's steps: Source (nothing chosen at first), Folder (the folder, and "Folder as it will appear in MetaList" on the same screen), Files, Markdown, Images, Previews (each only when it applies), Summary, Import (`importSteps`).
 - Imported notes keep their original dates (`app/services/obsidian_import/notes.py`, `created_at`).
-- A dropped `.html` file gets a web-page preview note (`app/services/file_text_preview.py`, `_HTML_EXTENSIONS`). A dropped bookmarks export would become one long page of links.
+- A dropped `.html` file gets a web-page preview note (`app/services/file_view.py`, `_HTML_EXTENSIONS`). A dropped bookmarks export would become one long page of links.
 
 ## 1. The file
 
@@ -83,7 +83,7 @@ A new source card, **Browser bookmarks**. Its steps:
 
 ## 9. Checked against the code (2026-11-02, when filed)
 
-The references in §0 hold: `IMPORT_SOURCES` (`obsidian`, `markdown`, `files`) in `app/services/obsidian_import/sources.py`; the walkthrough's `SOURCES` and `importSteps` (Source, Folder, Files, Markdown, Images, Previews, Summary) in `import-wizard-steps.js`; `created_at` in `notes.py`; `_HTML_EXTENSIONS` in `file_text_preview.py`.
+The references in §0 hold: `IMPORT_SOURCES` (`obsidian`, `markdown`, `files`) in `app/services/obsidian_import/sources.py`; the walkthrough's `SOURCES` and `importSteps` (Source, Folder, Files, Markdown, Images, Previews, Summary) in `import-wizard-steps.js`; `created_at` in `notes.py`; `_HTML_EXTENSIONS` in `file_view.py`.
 
 Found:
 

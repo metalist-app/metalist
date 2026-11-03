@@ -49,6 +49,10 @@ import {checkClickCaret} from './browser-click-caret-regressions.mjs';
 import {checkEditableEmbeds} from './browser-editable-embed-regressions.mjs';
 import {checkCollapseOutlines} from './browser-collapse-outline-regressions.mjs';
 import {checkTabSwitching} from './browser-tab-switch-regressions.mjs';
+import {checkFolderNoteDrag} from './browser-folder-note-drag-regressions.mjs';
+import {checkFolderDrops} from './browser-folder-drop-regressions.mjs';
+import {checkBackgroundWork} from './browser-background-work-regressions.mjs';
+import {checkImageSizes} from './browser-image-size-regressions.mjs';
 import {checkAiChatRefusal} from './browser-ai-chat-refusal-regressions.mjs';
 import {checkAiChatSummary} from './browser-ai-chat-summary-regressions.mjs';
 import {checkRestoreSession} from './browser-restore-session-regressions.mjs';
@@ -420,6 +424,22 @@ try {
     await checkFindInDiagrams(page);
     assert.deepEqual(errors, []);
     console.log(`PASS find in diagram regressions in ${await browser.version()}`);
+  } else if (process.env.BROWSER_TEST_SUITE === 'image-sizes') {
+    await checkImageSizes(page);
+    assert.deepEqual(errors, []);
+    console.log(`PASS image size regressions in ${await browser.version()}`);
+  } else if (process.env.BROWSER_TEST_SUITE === 'background-work') {
+    await checkBackgroundWork(page);
+    assert.deepEqual(errors, []);
+    console.log(`PASS background work regressions in ${await browser.version()}`);
+  } else if (process.env.BROWSER_TEST_SUITE === 'folder-drops') {
+    await checkFolderDrops(page);
+    assert.deepEqual(errors, []);
+    console.log(`PASS folder drop regressions in ${await browser.version()}`);
+  } else if (process.env.BROWSER_TEST_SUITE === 'folder-note-drag') {
+    await checkFolderNoteDrag(page);
+    assert.deepEqual(errors, []);
+    console.log(`PASS folder note drag regressions in ${await browser.version()}`);
   } else if (process.env.BROWSER_TEST_SUITE === 'edge-tabs') {
     await checkEdgeTabs(page);
     assert.deepEqual(errors, []);

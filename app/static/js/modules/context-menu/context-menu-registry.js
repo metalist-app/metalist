@@ -212,6 +212,10 @@ function buildNoteContextItems(context, handlers) {
     const onMakeImageSmaller = handlers.onMakeImageSmaller;
     const onResetImageSize = handlers.onResetImageSize;
     const onSaveImage = handlers.onSaveImage;
+    const onDownloadFile = handlers.onDownloadFile;
+    if (typeof onDownloadFile !== 'function') {
+        throw new Error('Note context missing onDownloadFile handler');
+    }
     const onZoomImage = handlers.onZoomImage;
     const onOpenImageInNewTab = handlers.onOpenImageInNewTab;
     const onExportNoteHtml = handlers.onExportNoteHtml;
@@ -268,7 +272,17 @@ function buildNoteContextItems(context, handlers) {
     if (referenceNoteId !== undefined) {
         items.push(buildReferenceSourceItem(referenceNoteId, onOpenReferenceSource));
     }
-    // A file card ([[id]]) right-clicked: what was clicked comes first.
+    // A file card ([[id]]) right-clicked: what was clicked comes first. A player has no
+    // Download button of its own: its menu has it.
+    if (context.filePlayerFileId !== null) {
+        items.push({
+            id: 'download-file',
+            label: 'Download File',
+            icon: 'download',
+            enabled: true,
+            onSelect: () => onDownloadFile(context.filePlayerFileId),
+        }, buildRenameFileItem(context.filePlayerFileId, onRenameFile));
+    }
     if (context.fileCardFileId !== null) {
         items.push(buildRenameFileItem(context.fileCardFileId, onRenameFile));
     }
@@ -337,7 +351,9 @@ function buildNoteContextItems(context, handlers) {
             copyImageItem,
             {
                 id: 'save-image',
-                label: 'Save Image',
+                // A picture stored as a file downloads its original, which may be much larger than
+                // what shows (files-shown-not-copied.md §3: it replaced the download line).
+                label: imageContext.sourceKind === 'file' ? 'Download File' : 'Save Image',
                 icon: 'download',
                 enabled: true,
                 onSelect: () => onSaveImage(imageContext),

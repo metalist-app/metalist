@@ -109,8 +109,8 @@ def test_7_a_note_that_is_only_link_text_is_a_link() -> None:
 def test_8_link_text_on_a_file() -> None:
     content = f"<div>[[{MAP_ID}|the map]]</div>"
     rendered = _render(content, _context(kyoto_first_line="Kyoto trip"))
-    # The file's kind badge, then the link text in place of its name.
-    assert _visible_text(rendered) == "IMG the map"
+    # The file's badge (its own type: the maintainer, 2026-11-02), then the link text in place of its name.
+    assert _visible_text(rendered) == ".PNG the map"
     assert "map.png" not in _visible_text(rendered)
     assert f'data-file-ref-id="{MAP_ID}"' in rendered
     assert referenced_file_ids(content) == [MAP_ID]

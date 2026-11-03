@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import html
 import mimetypes
+import re
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, replace
@@ -15,16 +16,10 @@ from pathlib import Path, PurePosixPath
 from types import SimpleNamespace
 from typing import Dict, List, Tuple
 
+from app.services.background_work import IMPORT_KEY, WorkProgress, background_work
 from app.services.file_storage import create_file
 from app.services.image_compression import COMPRESSIBLE_SUFFIXES, ImageChoice, compressed_image, estimated_compressed_bytes
-from app.services.file_text_preview import (
-    IMPORT_PREVIEW_KINDS,
-    STATUS_READY,
-    build_file_text_preview,
-    estimated_note_bytes,
-    plain_text_to_note_html,
-    preview_kind_of,
-)
+from app.services.file_view import plain_text_to_note_html
 from app.services.input_errors import InputRejected
 from app.services.obsidian_import.file_groups import (
     FILE_GROUP_KINDS,
@@ -48,10 +43,11 @@ from app.services.obsidian_import.sources import FILES, IMPORT_SOURCES, ImportSo
 from app.services.obsidian_import.tree import CONTENT_FORMATS, SPLIT_MODES, NoteNode, count_notes
 from app.services.obsidian_import.vault import NOT_UTF8_REASON, VaultContents, VaultFile, read_text_file, read_vault
 from app.services.store import store
-from app.services.virtual_folders import all_folder_tags
+from app.services.virtual_folders import all_folder_tags, search_for_new_note
 from app.upload_limits import MAX_ATTACHMENT_BYTES
 from app.usecases.base import QueryCommand
 from app.usecases.delete_subtree import apply_restore_records
+from app.usecases.search_comment_autofill import compute_initial_tags_for_new_note
 
 # The root notes' parent: the top of the list.
 _TOP_LEVEL = None
@@ -67,6 +63,8 @@ _EMBED_MARK = "!"
 # how many files are read ahead of the one being stored.
 _COMPRESSING_THREADS = 4
 _READ_AHEAD_FILES = 8
+# An import's progress: a part per file stored (as many as the files it says it imports).
+IMPORTING_LABEL = "Importing files"
 
 
 @dataclass(frozen=True)
@@ -99,8 +97,16 @@ class CmdImportObsidianVault(QueryCommand):
     images: ImageChoice
     token: str
     imported_at: datetime
+    # The tags of the search context the files were dropped in (drop_context_tags), on each
+    # top note; '' for an import from the menu.
+    context_tags: str
 
     def execute(self) -> Dict[str, object]:
+        # Shown as it goes: the walkthrough's bar (the maintainer, 2026-11-02).
+        with background_work.track(IMPORT_KEY, IMPORTING_LABEL, total=0) as progress:
+            return self._import(progress)
+
+    def _import(self, progress: WorkProgress) -> Dict[str, object]:
         plan = _plan_import(
             source_key=self.source, folder_path=self.folder_path, split_mode=self.split_mode,
             content_format=self.content_format, folder_prefix=self.folder_prefix, imported_at=self.imported_at,
@@ -110,7 +116,7 @@ class CmdImportObsidianVault(QueryCommand):
         folder, vault, planned, source_tag = plan.folder, plan.vault, plan.planned, plan.source_tag
         linked = _linked(
             folder, vault, planned, source_tag=source_tag, folder_prefix=plan.folder_prefix,
-            images=self.images, token=self.token,
+            images=self.images, token=self.token, progress=progress,
         )
         planned = linked.planned
         note_count = sum(count_notes(note.root) for note in planned) + len(linked.kept)
@@ -121,7 +127,7 @@ class CmdImportObsidianVault(QueryCommand):
         roots.sort(key=lambda pair: _file_list_key(PurePosixPath(pair[0])))
         # The files at the top of the list as Obsidian's file list orders them (no import
         # report: the maintainer, 2026-11-01).
-        records = root_records([written for _path, written in roots])
+        records = root_records([written for _path, written in roots], context_tags=self.context_tags)
         apply_restore_records(records, self.token)
         return {
             "status": "success", "noteCount": note_count,
@@ -251,7 +257,7 @@ class _Linked:
 
 def _linked(
     folder: Path, vault: VaultContents, planned: List[PlannedNote], *, source_tag: str, folder_prefix: str,
-    images: ImageChoice, token: str,
+    images: ImageChoice, token: str, progress: WorkProgress,
 ) -> _Linked:
     """Every link and embed resolved, and the files they reach stored (with the Canvas, Base
     and Excalidraw files, which come in linked to or not)."""
@@ -260,7 +266,7 @@ def _linked(
     kept_paths = [path for path in vault.other_files if _is_kept_file(path)]
     linked_paths = {item.file_path for items in resolved.values() for item in items if item.file_path is not None}
     file_ids, _too_large = _store_files(
-        folder, sorted({*linked_paths, *kept_paths}, key=_path_key), images=images, token=token,
+        folder, sorted({*linked_paths, *kept_paths}, key=_path_key), images=images, token=token, progress=progress,
     )
     return _Linked(
         planned=[
@@ -335,13 +341,15 @@ def _with_links(node: NoteNode, replacements: Dict[int, str]) -> NoteNode:
 
 
 def _store_files(
-    folder: Path, paths: List[PurePosixPath], *, images: ImageChoice, token: str,
+    folder: Path, paths: List[PurePosixPath], *, images: ImageChoice, token: str, progress: WorkProgress,
 ) -> Tuple[Dict[PurePosixPath, str], List[PurePosixPath]]:
     """Each file at paths stored in MetaList (its id by path), images compressed when
-    images say, except those over the size limit for a file, returned second."""
+    images say, except those over the size limit for a file, returned second. progress counts
+    each file stored."""
     too_large = [path for path in paths if (folder / Path(path)).stat().st_size > MAX_ATTACHMENT_BYTES]
     left_out = set(too_large)
     storable = [path for path in paths if path not in left_out]
+    progress.set_total(len(storable))
     file_ids: Dict[PurePosixPath, str] = {}
     # A few at a time: compressing runs on threads, never far ahead of the storing.
     with ThreadPoolExecutor(max_workers=_COMPRESSING_THREADS) as executor:
@@ -351,6 +359,7 @@ def _store_files(
             for path, (filename, mime_type, content) in zip(batch, contents):
                 record = create_file(original_filename=filename, mime_type=mime_type, content_bytes=content, token=token)
                 file_ids[path] = record.id
+                progress.advance()
     return file_ids, too_large
 
 
@@ -401,15 +410,17 @@ def _file_list_key(path: PurePosixPath) -> Tuple[Tuple[int, str], ...]:
     return (*folders, (_FILE_RANK, path.name.casefold()))
 
 
-def root_records(roots: List[WrittenRoot]) -> List[SimpleNamespace]:
+def root_records(roots: List[WrittenRoot], *, context_tags: str) -> List[SimpleNamespace]:
     """The notes as records for apply_restore_records: the root notes, in this order, ahead of
     the list's first root note, each followed by its subtree. Roots go in last first: each
     at the top, just ahead of the one after it; children are appended under their parent;
-    so a note's neighbours are always next to each other when it is inserted."""
+    so a note's neighbours are always next to each other when it is inserted. Each root note
+    also gets context_tags (drop_context_tags), its notes below inheriting them."""
     existing_roots = store.children(_TOP_LEVEL)
     records: List[SimpleNamespace] = []
     for index in reversed(range(len(roots))):
         written = roots[index]
+        written = replace(written, node=replace(written.node, tags=with_context_tags(written.node.tags, context_tags)))
         next_id = None
         if index < len(roots) - 1:
             next_id = roots[index + 1].node.note_id
@@ -418,6 +429,34 @@ def root_records(roots: List[WrittenRoot]) -> List[SimpleNamespace]:
         records.append(_record(written.node, written, parent_id=_TOP_LEVEL, prev_id=None, next_id=next_id))
         _append_children(records, written.node, written, parent_id=written.node.note_id)
     return records
+
+
+# A tag string's tokens: a comment (/*two words*/) is one.
+_TAG_TOKEN_RE = re.compile(r"/\*.*?\*/|\S+")
+
+
+def with_context_tags(tags: Tuple[str, ...], context_tags: str) -> Tuple[str, ...]:
+    """tags with context_tags' tokens after them, those it has already (whatever the case) left out."""
+    present = {tag.casefold() for tag in tags}
+    added: List[str] = []
+    for token in _TAG_TOKEN_RE.findall(context_tags):
+        if token.casefold() not in present:
+            present.add(token.casefold())
+            added.append(token)
+    return (*tags, *added)
+
+
+def drop_context_tags(*, search: str, folder_filter: str, folder_prefix: str) -> str:
+    """The tags an import of files dropped in a search context gives its top notes, so they
+    show in it (the maintainer, 2026-11-03): those a note made there would get (search: the
+    context's search, '' for none). In a context narrowed to a virtual folder they are filed
+    in it, as a new note is, unless they go into a folder of their own (folder_prefix, as typed)."""
+    context_search = None
+    if search.strip() != "":
+        context_search = search
+    if import_folder_prefix(folder_prefix) == "":
+        context_search = search_for_new_note(context_search, folder_filter)
+    return compute_initial_tags_for_new_note(parent_id=None, search_query=context_search)
 
 
 def _append_children(records: List[SimpleNamespace], node: NoteNode, written: WrittenRoot, *, parent_id: str) -> None:
@@ -460,13 +499,6 @@ class FileSelection:
     # Markdown files kept as files, each in a note of its own as a PDF is, instead of turned
     # into notes (the maintainer, 2026-11-01: one choice for all of them; READMEs and docs).
     keeps_markdown_as_files: bool
-    # The kinds of file whose notes get a preview child (file_text_preview's
-    # IMPORT_PREVIEW_KINDS; the Previews screen, folder-import-and-file-previews.md).
-    preview_kinds: Tuple[str, ...]
-
-    def previews(self, path: PurePosixPath) -> bool:
-        """Whether the file at path gets a preview child: its kind ticked."""
-        return preview_kind_of(path.name) in self.preview_kinds
 
     def includes(self, folder_file: FolderFile) -> bool:
         path = str(folder_file.path)
@@ -498,9 +530,6 @@ def _plan_folder_of_files(
     unknown = sorted(set(selection.excluded_groups) - set(FILE_GROUP_KINDS))
     if unknown:
         raise InputRejected(f"Unknown kinds of file: {', '.join(unknown)}.")
-    unknown_previews = sorted(set(selection.preview_kinds) - set(IMPORT_PREVIEW_KINDS))
-    if unknown_previews:
-        raise InputRejected(f"Unknown kinds of preview: {', '.join(unknown_previews)}.")
     folder = Path(folder_path)
     if not folder.is_absolute():
         raise InputRejected("Choose the folder with Choose Folder.")
@@ -576,8 +605,6 @@ class CmdPreviewFolderOfFiles(QueryCommand):
             # Of those, images: each shown as its picture in its note (the maintainer, 2026-11-01:
             # say whether they come in inside notes or as files). By name, wherever they sit.
             "keptImageCount": sum(1 for path in plan.attached if group_of(PurePosixPath(path.name)) == IMAGES),
-            # Files whose ticked kind gets a preview: their text copied into a child note (note data).
-            "previewFileCount": sum(1 for path in plan.attached if self.selection.previews(path)),
             "attachmentCount": len(plan.attached),
             "folderTagCount": len(folder_tags - {""}),
             "filesWithCommentsCount": sum(1 for finding in findings if finding.has_comments),
@@ -607,15 +634,22 @@ class CmdImportFolderOfFiles(QueryCommand):
     images: ImageChoice
     token: str
     imported_at: datetime
+    # As CmdImportObsidianVault's.
+    context_tags: str
 
     def execute(self) -> Dict[str, object]:
+        # Shown as it goes: the walkthrough's bar (the maintainer, 2026-11-02).
+        with background_work.track(IMPORT_KEY, IMPORTING_LABEL, total=0) as progress:
+            return self._import(progress)
+
+    def _import(self, progress: WorkProgress) -> Dict[str, object]:
         plan = _plan_folder_of_files(
             folder_path=self.folder_path, selection=self.selection, split_mode=self.split_mode,
             content_format=self.content_format, folder_prefix=self.folder_prefix, imported_at=self.imported_at,
         )
         if import_folder_exists(plan.folder_prefix) and not self.add_to_existing:
             raise InputRejected(f"{plan.folder_prefix} already exists. Tick Add to it, or choose another name.")
-        file_ids, too_large = _store_files(plan.folder, plan.attached, images=self.images, token=self.token)
+        file_ids, too_large = _store_files(plan.folder, plan.attached, images=self.images, token=self.token, progress=progress)
         assert not too_large, "files over the limit were left out when planned"
         index = VaultIndex(plan.planned, plan.attached)
         planned = [
@@ -627,7 +661,6 @@ class CmdImportFolderOfFiles(QueryCommand):
         attached = [
             _attached_file_note(
                 plan.folder, path, file_ids[path], source_tag=plan.source_tag, folder_prefix=plan.folder_prefix,
-                makes_preview=self.selection.previews(path),
             )
             for path in plan.attached
         ]
@@ -636,27 +669,23 @@ class CmdImportFolderOfFiles(QueryCommand):
             *attached,
         ]
         roots.sort(key=lambda pair: _file_list_key(PurePosixPath(pair[0])))
-        apply_restore_records(root_records([written for _path, written in roots]), self.token)
+        apply_restore_records(root_records([written for _path, written in roots], context_tags=self.context_tags), self.token)
         note_count = sum(count_notes(note.root) for note in planned) + sum(count_notes(written.node) for _path, written in attached)
         return {"status": "success", "noteCount": note_count, "sourceTag": plan.source_tag}
 
 
 def _attached_file_note(
-    folder: Path, path: PurePosixPath, file_id: str, *, source_tag: str, folder_prefix: str, makes_preview: bool,
+    folder: Path, path: PurePosixPath, file_id: str, *, source_tag: str, folder_prefix: str,
 ) -> Tuple[str, WrittenRoot]:
     """A file's own note: the file alone (its card shows its name; the maintainer, 2026-11-01:
-    a name line over it said it twice), tagged as a note of its folder, with the preview a
-    drop gives it as its child when its kind is ticked. Search finds it by the file's name
-    (search_text: the names of files a note shows)."""
+    a name line over it said it twice), tagged as a note of its folder. Search finds it by the
+    file's name, and by its words once its text is read (file_text_search.py)."""
     tags = [tag for tag in (folder_tag_for(path, folder_prefix), source_tag) if tag != ""]
     stat = (folder / Path(path)).stat()
     modified_at = datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc)
-    children: Tuple[NoteNode, ...] = ()
-    if makes_preview:
-        children = _preview_children(folder, path)
     node = NoteNode(
         note_id=str(uuid.uuid4()), content_html=plain_text_to_note_html(f"{_EMBED_MARK}[[{file_id}]]"),
-        tags=tuple(tags), anchors=(), children=children,
+        tags=tuple(tags), anchors=(), children=(),
     )
     return str(path), WrittenRoot(node=node, created_at=modified_at, updated_at=modified_at)
 
@@ -709,42 +738,3 @@ def _linked_file_paths(plan: _ImportPlan) -> List[PurePosixPath]:
     return sorted({item.file_path for item in resolved if item.file_path is not None}, key=_path_key)
 
 
-def _preview_children(folder: Path, path: PurePosixPath) -> Tuple[NoteNode, ...]:
-    """The file's preview as a child note, as a dropped file gets it, or none when it has none
-    (too large, not text, a scan, damaged)."""
-    preview = build_file_text_preview(original_filename=path.name, content_bytes=(folder / Path(path)).read_bytes())
-    if preview.status != STATUS_READY:
-        return ()
-    tags = tuple(tag for tag in (preview.render_tag,) if tag != "")
-    return (NoteNode(note_id=str(uuid.uuid4()), content_html=preview.content_html, tags=tags, anchors=(), children=()),)
-
-
-@dataclass
-class CmdEstimateImportPreviews(QueryCommand):
-    """The files of a folder of files that could get a preview, by kind, for the wizard's
-    Previews screen: how many, and about how much note data their previews add. Writes nothing."""
-
-    folder_path: str
-    selection: FileSelection
-    split_mode: str
-    content_format: str
-    folder_prefix: str
-    imported_at: datetime
-
-    def execute(self) -> Dict[str, object]:
-        plan = _plan_folder_of_files(
-            folder_path=self.folder_path, selection=self.selection, split_mode=self.split_mode,
-            content_format=self.content_format, folder_prefix=self.folder_prefix, imported_at=self.imported_at,
-        )
-        files_by_kind: Dict[str, List[Tuple[Path, int]]] = {kind: [] for kind in IMPORT_PREVIEW_KINDS}
-        for path in plan.attached:
-            kind = preview_kind_of(path.name)
-            if kind in files_by_kind:
-                file_path = plan.folder / Path(path)
-                files_by_kind[kind].append((file_path, file_path.stat().st_size))
-        return {
-            "kinds": [
-                {"key": kind, "fileCount": len(files), "noteBytes": estimated_note_bytes(files)}
-                for kind, files in files_by_kind.items() if files
-            ],
-        }

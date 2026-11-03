@@ -1,4 +1,5 @@
 import { ApplicationState } from '../application-state.js';
+import { NotesAPI } from '../api-client.js';
 import { WizardModal } from './wizard-modal.js';
 import { importChoices, importSteps } from './import-wizard-steps.js';
 import { forgetTypedSecrets, newVaultChoices, newVaultSteps } from './new-vault-steps.js';
@@ -15,7 +16,24 @@ export class ImportWizard extends WizardModal {
         // Choices already made when it opens (a dropped bookmarks file: Browser bookmarks chosen,
         // its File step filled in; bookmark-import.md §5), or null for none.
         this._presetChoices = null;
+        // The step it opens on: null for the first; dropped text files open at the Markdown
+        // screen, the steps before it done when they were dropped (files-shown-not-copied.md §5).
+        this._startStep = null;
         ApplicationState.own(this, 'ImportWizard', new.target === ImportWizard);
+    }
+
+    setStartStep(stepKey) {
+        if (stepKey !== null && (typeof stepKey !== 'string' || stepKey === '')) {
+            throw new Error('ImportWizard.setStartStep requires a step key or null');
+        }
+        if (this._startStep !== stepKey) {
+            this._startStep = stepKey;
+        }
+    }
+
+    startStepKey() {
+        if (this._startStep === null) return super.startStepKey();
+        return this._startStep;
     }
 
     setPresetChoices(presetChoices) {
@@ -31,6 +49,14 @@ export class ImportWizard extends WizardModal {
     initialChoices() {
         if (this._presetChoices === null) return importChoices();
         return { ...importChoices(), ...this._presetChoices };
+    }
+
+    // A dropped folder's files copied to the server's holding folder go with the walkthrough,
+    // cancelled or imported (docs/ready-to-build/desktop-drops-into-folders.md).
+    onClose() {
+        super.onClose();
+        const uploadId = this.choices.uploadId;
+        if (uploadId !== '') void NotesAPI.discardImportUpload(uploadId);
     }
 }
 

@@ -80,6 +80,7 @@ function buildHarness() {
         updateSearchResultsCount() {}, updateRootSortIndicator() {}, updateDateRangeIndicator() {}, updateFileFilterIndicator() {}, async updateVirtualFolders() {}, updateUntaggedViewIndicator() {}, updateReferenceSourceIndicator() {},
         rebuildRootDateSeparators() {}, async refreshBacklinksPanel() {},
         captureViewportRoot: () => null, holdViewportRoot() {},
+        measureVisibleRootRange: () => null,
     };
     const uiFunctionNames = ['actionRefreshAndMaybeSelect'];
     if (/function resolveVisibleRootRange\(/.test(uiSource)) uiFunctionNames.push('resolveVisibleRootRange');

@@ -7,6 +7,7 @@ import { ErrorHandler } from '../../error-handler.js';
 import { CONFIG } from '../../config.js';
 import { buildSessionHeaders } from '../../session-auth.js';
 import { CommandGate } from './command-gate-service.js';
+import { checkBackgroundWork } from './background-work-cards.js';
 
 const moduleState = ApplicationState.createFields('polling-service', {
     pollingInterval: null,
@@ -65,6 +66,9 @@ export function startPolling() {
         if (document.hidden) return;
         runConnectivityCheck();
     }, CONFIG.SYNC.POLL_INTERVAL_MS);
+    // Once at once: work the server started with the page (reading files' text after a restart)
+    // shows its card while it runs, not only from the first poll on (the maintainer, 2026-11-03).
+    runConnectivityCheck();
     if (moduleState.visibilityListener === null) {
         moduleState.visibilityListener = handleVisibilityChange;
         document.addEventListener('visibilitychange', handleVisibilityChange);
@@ -137,6 +141,8 @@ async function pingAuthStatus() {
         const status = await response.json();
         handleLinkTitleRevision(status);
         ErrorHandler.handleConnectionRestored();
+        // The server's work beside the user's, shown as it goes (background-work-cards.js).
+        if (status.authenticated === true) await checkBackgroundWork();
         return;
     }
 

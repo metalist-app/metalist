@@ -18,7 +18,7 @@ from typing import Dict, List, Optional, Set, Tuple
 
 from app.services.input_errors import InputRejected
 from app.services.note_store import store as note_store
-from app.services.search_index import search_index
+from app.services.search_index import extract_ordered_tags_for_search, search_index
 from app.services.search_query import SearchClause, format_search_query, parse_search_query
 from app.services.snapshot import (
     clause_excluded_note_ids,
@@ -27,6 +27,7 @@ from app.services.snapshot import (
     resolve_search_scope,
 )
 from app.services.tag_ontology import _is_valid_tag_token
+from app.services.tag_rename import delete_tag_from_tag_bar
 
 FOLDER_MARK = "/"
 # A tab with no folder filter.
@@ -85,6 +86,28 @@ virtual_folder_state = VirtualFolderState()
 def is_folder_tag(tag: str) -> bool:
     """A tag ending in `/` is a folder; `a/b` stays an ordinary tag."""
     return tag.endswith(FOLDER_MARK) and _is_valid_tag_token(tag)
+
+
+def folder_tags_of(tags: str) -> List[str]:
+    """The folder tags in a note's tag bar, in its order."""
+    return [tag for tag in extract_ordered_tags_for_search(tags) if is_folder_tag(tag)]
+
+
+def refile_tag_bar(tags: str, folder: str) -> str:
+    """The tag bar with its folder tags replaced by folder ('' for none): the note ends up in
+    exactly that folder. Every other tag, with its properties, stays as written."""
+    if folder != NO_FOLDER and not is_folder_tag(folder):
+        raise InputRejected(f"{folder} is not a folder.")
+    kept = tags
+    for tag in folder_tags_of(tags):
+        kept, changed = delete_tag_from_tag_bar(tags=kept, tag=tag)
+        assert changed, tag
+    kept = kept.strip()
+    if folder == NO_FOLDER:
+        return kept
+    if kept == "":
+        return folder
+    return f"{kept} {folder}"
 
 
 def search_in_folder(search: str, folder: str) -> str:

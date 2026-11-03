@@ -1,0 +1,210 @@
+/* The file viewer's drawn file (file-viewer-service.js): a document of its own in the viewer's
+   frame, with the list's stylesheet and the page's theme, drawn as its note would be, without
+   the note's own box and indent. Its rules start at its root's class to outrank the list's
+   (html[data-theme="dark"] body, html[data-theme="dark"] .note): the panel's colour shows. */
+html.file-viewer-document,
+html.file-viewer-document body {
+    background: transparent;
+    scrollbar-gutter: auto;
+}
+
+html.file-viewer-document body {
+    margin: 0;
+    padding: 16px 20px;
+}
+
+html.file-viewer-document body > article.note {
+    margin: 0;
+    padding: 0;
+    border: none;
+    background: none;
+    box-shadow: none;
+}
+
+html.file-viewer-document body > article.note > .note-content {
+    margin: 0;
+    padding: 0;
+}
+
+/* Its text can be selected and copied, as a PDF's can: the list's notes can't be while not
+   edited (main.css, .note:not(.editing) .note-content *), and the drawn file is never edited
+   (the maintainer, 2026-11-03). */
+html.file-viewer-document .note .note-content,
+html.file-viewer-document .note .note-content * {
+    -webkit-user-select: text;
+    user-select: text;
+    cursor: text;
+}
+
+/* A document's tables get the lines a Markdown table has; an email's or a saved web page's are
+   its layout, drawn without them (2026-11-03). */
+table {
+    border-collapse: collapse;
+}
+
+html.file-viewer-document:not(.is-email) td,
+html.file-viewer-document:not(.is-email) th {
+    padding: 4px 10px;
+    border: 1px solid #d0d7de;
+    vertical-align: top;
+}
+
+html[data-theme="dark"].file-viewer-document:not(.is-email) td,
+html[data-theme="dark"].file-viewer-document:not(.is-email) th {
+    border-color: var(--app-border-soft);
+}
+
+td > p:first-child,
+th > p:first-child {
+    margin-top: 0;
+}
+
+td > p:last-child,
+th > p:last-child {
+    margin-bottom: 0;
+}
+
+/* A document's highlights, in Word's own colours (document_highlights.py), the text black on a
+   light one and white on a dark one, so a highlight reads the same in either theme. */
+html.file-viewer-document mark {
+    padding: 0;
+}
+
+html.file-viewer-document mark.file-highlight-black {
+    background: #000000;
+    color: #ffffff;
+}
+
+html.file-viewer-document mark.file-highlight-blue {
+    background: #0000ff;
+    color: #ffffff;
+}
+
+html.file-viewer-document mark.file-highlight-cyan {
+    background: #00ffff;
+    color: #000000;
+}
+
+html.file-viewer-document mark.file-highlight-green {
+    background: #00ff00;
+    color: #000000;
+}
+
+html.file-viewer-document mark.file-highlight-magenta {
+    background: #ff00ff;
+    color: #ffffff;
+}
+
+html.file-viewer-document mark.file-highlight-red {
+    background: #ff0000;
+    color: #ffffff;
+}
+
+html.file-viewer-document mark.file-highlight-yellow {
+    background: #ffff00;
+    color: #000000;
+}
+
+html.file-viewer-document mark.file-highlight-white {
+    background: #ffffff;
+    color: #000000;
+}
+
+html.file-viewer-document mark.file-highlight-dark-blue {
+    background: #000080;
+    color: #ffffff;
+}
+
+html.file-viewer-document mark.file-highlight-dark-cyan {
+    background: #008080;
+    color: #ffffff;
+}
+
+html.file-viewer-document mark.file-highlight-dark-green {
+    background: #008000;
+    color: #ffffff;
+}
+
+html.file-viewer-document mark.file-highlight-dark-magenta {
+    background: #800080;
+    color: #ffffff;
+}
+
+html.file-viewer-document mark.file-highlight-dark-red {
+    background: #800000;
+    color: #ffffff;
+}
+
+html.file-viewer-document mark.file-highlight-dark-yellow {
+    background: #808000;
+    color: #000000;
+}
+
+html.file-viewer-document mark.file-highlight-dark-gray {
+    background: #808080;
+    color: #000000;
+}
+
+html.file-viewer-document mark.file-highlight-light-gray {
+    background: #c0c0c0;
+    color: #000000;
+}
+
+/* An email in the viewer (file-viewer-service.js): its subject, From, To, Cc and Date above its
+   body, its attachments below, each a button that downloads it. */
+html.file-viewer-document .file-viewer-email-header {
+    margin: 0 0 16px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+html.file-viewer-document .file-viewer-email-subject {
+    margin: 0 0 8px;
+    font-size: 1.25em;
+}
+
+html.file-viewer-document .file-viewer-email-rows {
+    margin: 0;
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 2px 12px;
+}
+
+html.file-viewer-document .file-viewer-email-row {
+    display: contents;
+}
+
+html.file-viewer-document .file-viewer-email-label {
+    color: var(--note-tag-muted);
+}
+
+html.file-viewer-document .file-viewer-email-value {
+    margin: 0;
+    overflow-wrap: anywhere;
+    user-select: text;
+}
+
+html.file-viewer-document .file-viewer-email-attachments {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 16px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border-color);
+}
+
+html.file-viewer-document .file-viewer-email-attachment {
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 2px 8px;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    font-size: 0.85em;
+    cursor: pointer;
+}
+
+html.file-viewer-document .file-viewer-email-attachment-size {
+    margin-left: 6px;
+    color: var(--note-tag-muted);
+}

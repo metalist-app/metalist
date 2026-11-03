@@ -6,6 +6,8 @@ from typing import Dict, List, Optional
 import app.services.snapshot as snapshot_module
 import pytest
 
+import app.services.embedded_references as embedded_references_module
+
 from app.services.snapshot import build_view_state
 from tests.unit.snapshot_note_fixture import SnapshotTestNote as _Note
 
@@ -123,10 +125,10 @@ def test_link_file_reference_renders_compact_file_link(monkeypatch: pytest.Monke
     assert "note-file-reference-link" in rendered
     assert "note-file-reference-meta" not in rendered
     assert "clip.mp4" in rendered
-    assert "VID" in rendered
+    assert ".MP4" in rendered
 
 
-def test_embed_image_file_reference_renders_preview_with_download_link(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_embed_image_file_reference_renders_its_picture_with_no_download_line(monkeypatch: pytest.MonkeyPatch) -> None:
     file_id = "f9989d26-5ec9-4b09-9647-909c58ad997a"
     notes = {
         "a": _Note("a", None, None, None, False, f"<div>![[{file_id}]]</div>", ""),
@@ -151,7 +153,8 @@ def test_embed_image_file_reference_renders_preview_with_download_link(monkeypat
     assert "note-reference-file-image" in rendered
     assert "note-file-image-embed" in rendered
     assert "note-file-image-preview" in rendered
-    assert "download image" in rendered
+    # Its right-click menu's Download File gets the original (files-shown-not-copied.md §3).
+    assert "download image" not in rendered and "note-file-image-download-link" not in rendered
     assert "note-file-reference-badge" not in rendered
     assert state.payloads["a"]["flags"]["isCollapsible"] is True
 
@@ -427,28 +430,54 @@ def test_exported_compact_reference_embeds_the_diagram_preview() -> None:
     assert "(empty note)" in export("")
 
 
-def test_file_pill_tooltip_says_clicking_downloads_the_file(monkeypatch: pytest.MonkeyPatch) -> None:
-    file_id = "9ec1c81f-2d96-46f1-a455-e3e77798ae1f"
-    notes = {"a": _Note("a", None, None, None, False, f"![[{file_id}]]", "")}
-    file_record = SimpleNamespace(
-        id=file_id,
-        title='Q&A "notes".md',
-        original_filename='Q&A "notes".md',
-        mime_type="text/markdown",
-        size_bytes=10,
-        thumbnail_kind="text",
-    )
-    state = _state_for(
-        monkeypatch=monkeypatch,
-        notes=notes,
-        children_by_parent={None: ["a"]},
-        file_ids={file_id},
-        file_record=file_record,
-    )
+def _rendered(monkeypatch: pytest.MonkeyPatch, content: str, file_id: str, name: str, mime_type: str, kind: str) -> str:
+    notes = {"a": _Note("a", None, None, None, False, content, "")}
+    file_record = SimpleNamespace(id=file_id, title=name, original_filename=name, mime_type=mime_type, size_bytes=10, thumbnail_kind=kind)
+    state = _state_for(monkeypatch=monkeypatch, notes=notes, children_by_parent={None: ["a"]}, file_ids={file_id}, file_record=file_record)
+    return state.payloads["a"]["content"]
 
-    rendered = state.payloads["a"]["content"]
-    assert 'title="Click to download Q&amp;A &quot;notes&quot;.md"' in rendered
-    assert '<span class="note-file-reference-badge">.MD</span>' in rendered
+
+# Files shown, not copied (docs/ready-to-build/files-shown-not-copied.md §3, acceptance checks
+# 1 to 3 and 12): a card says what its buttons do; clicking its name downloads nothing.
+def test_a_card_the_viewer_shows_has_open_and_download(monkeypatch: pytest.MonkeyPatch) -> None:
+    file_id = "9ec1c81f-2d96-46f1-a455-e3e77798ae1f"
+    rendered = _rendered(monkeypatch, f"![[{file_id}]]", file_id, 'Q&A "notes".md', "text/markdown", "text")
+    assert (
+        f'<span class="note-file-reference-link note-file-reference-link-embed" data-file-ref-id="{file_id}">'
+        '<span class="note-file-reference-header"><span class="note-file-reference-badge">.MD</span>'
+        '<span class="note-file-reference-title"><span class="note-file-reference-name">Q&amp;A "notes".md</span></span>'
+        '<span class="note-file-actions">'
+        f'<button type="button" class="note-file-action note-file-open" data-file-ref-id="{file_id}" data-file-view="page" '
+        'title="Open Q&amp;A &quot;notes&quot;.md">Open</button>'
+        f'<button type="button" class="note-file-action note-file-download" data-file-ref-id="{file_id}" '
+        'title="Download Q&amp;A &quot;notes&quot;.md">Download</button></span></span></span>'
+    ) in rendered
+
+
+def test_a_card_the_viewer_doesnt_show_has_download_only(monkeypatch: pytest.MonkeyPatch) -> None:
+    file_id = "9ec1c81f-2d96-46f1-a455-e3e77798ae1f"
+    rendered = _rendered(monkeypatch, f"![[{file_id}]]", file_id, "archive.zip", "application/zip", "archive")
+    assert "note-file-download" in rendered
+    assert "note-file-open" not in rendered
+
+
+@pytest.mark.parametrize(("name", "view", "action"), [("lease.pdf", "pdf", "Open"), ("archive.zip", "", "Download")])
+def test_a_file_linked_in_text_opens_or_downloads(monkeypatch: pytest.MonkeyPatch, name: str, view: str, action: str) -> None:
+    file_id = "9ec1c81f-2d96-46f1-a455-e3e77798ae1f"
+    rendered = _rendered(monkeypatch, f"<div>See [[{file_id}]]</div>", file_id, name, "application/octet-stream", "other")
+    assert f'<button type="button" class="note-file-reference-link" data-file-ref-id="{file_id}" data-file-view="{view}" title="{action} {name}">' in rendered
+    assert "note-file-actions" not in rendered
+
+
+@pytest.mark.parametrize(("name", "kind"), [("song.mp3", "audio"), ("clip.mp4", "video")])
+def test_audio_and_video_are_their_player(monkeypatch: pytest.MonkeyPatch, name: str, kind: str) -> None:
+    file_id = "9ec1c81f-2d96-46f1-a455-e3e77798ae1f"
+    rendered = _rendered(monkeypatch, f"![[{file_id}]]", file_id, name, f"{kind}/x", kind)
+    assert (
+        f'<div class="note-file-media-embed" data-file-ref-id="{file_id}" data-media-kind="{kind}" data-media-state="idle">'
+        f'<button type="button" class="note-file-media-play" data-file-ref-id="{file_id}" aria-label="Play {name}">'
+    ) in rendered
+    assert "note-file-reference-link" not in rendered
 
 
 def _email_record(file_id: str) -> SimpleNamespace:
@@ -458,26 +487,45 @@ def _email_record(file_id: str) -> SimpleNamespace:
     )
 
 
-# An embedded email is a card the browser fills in (docs/ui/references.md, "Email files");
-# a note that is only an email folds, to the card's one line (2026-10-29).
-def test_an_embedded_email_is_a_card_and_its_note_folds(monkeypatch: pytest.MonkeyPatch) -> None:
+# An email is a card as any file is (the maintainer, 2026-11-03): its pill EMAIL, its name its
+# subject and sender, Open showing it in the viewer and Download; nothing of it drawn in the
+# note, so a note that is only an email has nothing to fold.
+def test_an_embedded_email_is_a_card_named_by_its_subject_and_sender(monkeypatch: pytest.MonkeyPatch) -> None:
     file_id = "5d0a3bb3-91a4-4a52-9a1b-4c6f0b1c2d3e"
+    monkeypatch.setattr(embedded_references_module, "email_card_name", lambda found: "The plan · Ada Lovelace")
     notes = {"a": _Note("a", None, None, None, False, f"<div>![[{file_id}]]</div>", "")}
     state = _state_for(monkeypatch=monkeypatch, notes=notes, children_by_parent={None: ["a"]}, file_ids={file_id}, file_record=_email_record(file_id))
 
     rendered = state.payloads["a"]["content"]
-    assert (
-        f'<div class="note-file-email-embed" data-file-ref-id="{file_id}" data-file-revision="1" data-preview-state="idle">'
-        '<div class="note-file-email-placeholder note-loading-placeholder">Loading email…</div></div>'
-    ) in rendered
-    assert state.payloads["a"]["flags"]["isCollapsible"] is True
+    assert '<span class="note-file-reference-badge">EMAIL</span>' in rendered
+    assert '<span class="note-file-reference-name">The plan · Ada Lovelace</span>' in rendered
+    assert f'data-file-ref-id="{file_id}" data-file-view="email" title="Open plan.eml">Open</button>' in rendered
+    assert "note-file-download" in rendered
+    assert "note-file-email-embed" not in rendered
+    assert state.payloads["a"]["flags"]["isCollapsible"] is False
 
 
-def test_a_link_to_an_email_is_its_pill_with_an_eml_badge(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_a_link_to_an_email_is_its_pill_and_opens_it(monkeypatch: pytest.MonkeyPatch) -> None:
     file_id = "5d0a3bb3-91a4-4a52-9a1b-4c6f0b1c2d3e"
+    monkeypatch.setattr(embedded_references_module, "email_card_name", lambda found: "The plan · Ada Lovelace")
     notes = {"a": _Note("a", None, None, None, False, f"<div>See [[{file_id}]]</div>", "")}
     state = _state_for(monkeypatch=monkeypatch, notes=notes, children_by_parent={None: ["a"]}, file_ids={file_id}, file_record=_email_record(file_id))
 
     rendered = state.payloads["a"]["content"]
-    assert '<span class="note-file-reference-badge">EML</span>' in rendered
-    assert "note-file-email-embed" not in rendered
+    assert '<span class="note-file-reference-badge">EMAIL</span>' in rendered
+    assert 'data-file-view="email" title="Open plan.eml"' in rendered
+
+
+def test_a_saved_web_page_is_a_web_page_card_named_by_its_title(monkeypatch: pytest.MonkeyPatch) -> None:
+    file_id = "5d0a3bb3-91a4-4a52-9a1b-4c6f0b1c2d3e"
+    monkeypatch.setattr(embedded_references_module, "email_card_name", lambda found: "Multivitamin review")
+    record = SimpleNamespace(
+        id=file_id, title="review.mht", original_filename="review.mht", mime_type="message/rfc822",
+        size_bytes=4096, thumbnail_kind="other", content_revision=1,
+    )
+    notes = {"a": _Note("a", None, None, None, False, f"<div>![[{file_id}]]</div>", "")}
+    state = _state_for(monkeypatch=monkeypatch, notes=notes, children_by_parent={None: ["a"]}, file_ids={file_id}, file_record=record)
+
+    rendered = state.payloads["a"]["content"]
+    assert '<span class="note-file-reference-badge">WEB PAGE</span>' in rendered
+    assert '<span class="note-file-reference-name">Multivitamin review</span>' in rendered

@@ -16,6 +16,11 @@ import { ApplicationState } from './application-state.js';
 import { MS_PER_SECOND } from './time-units.js';
 
 const STACK_ID = 'floating-messages';
+const WORK_STACK_ID = 'floating-work';
+// The times above a work card's bar say what they are only in their tooltips.
+const WORK_SPENT_TOOLTIP = 'Time so far';
+const WORK_LEFT_TOOLTIP = 'About this long left';
+const ESTIMATE_MARK = '~';
 const TYPES = new Set(['info', 'success', 'error', 'connection']);
 const NEWS_MIN_SECONDS = 4;
 const NEWS_MAX_SECONDS = 10;
@@ -25,6 +30,8 @@ const READING_MS_PER_CHARACTER = 60;
 // Matches the .floating-message opacity transition in main.css.
 const FADE_MS = 200;
 const RECENT_LIMIT = 20;
+// A work card's bar: done of total as a width.
+const WORK_PERCENT = 100;
 const STATUS_ESCALATE_SECONDS = 30;
 // Errors are announced at once; the rest wait for a pause in what is being read.
 const ROLE_BY_TYPE = { info: 'status', success: 'status', error: 'alert', connection: 'status' };
@@ -64,6 +71,24 @@ function stack() {
     return created;
 }
 
+// Work cards (showWorkProgress) sit apart, in the lower left beside the folders' pull tab: at
+// the top right they covered the search bar and the menu (the maintainer, 2026-11-02).
+function workStack() {
+    const existing = document.getElementById(WORK_STACK_ID);
+    if (existing) {
+        return existing;
+    }
+    const created = document.createElement('div');
+    created.id = WORK_STACK_ID;
+    created.className = 'floating-work';
+    document.body.appendChild(created);
+    return created;
+}
+
+function workCard(key) {
+    return workStack().querySelector(`.floating-message[data-key="${CSS.escape(key)}"]:not([data-leaving="true"])`);
+}
+
 // On the phone the cards hang just under the search header, whose height its pills change.
 function placeUnderSearchHeader(container) {
     const header = document.querySelector('.controls');
@@ -93,6 +118,10 @@ function validateSpec(spec) {
     }
     if (spec.key !== null && (typeof spec.key !== 'string' || spec.key.length === 0)) {
         throw new Error('A floating message key is a name or null');
+    }
+    if (spec.action !== null && (spec.action === undefined || typeof spec.action.label !== 'string'
+        || spec.action.label.length === 0 || typeof spec.action.onSelect !== 'function')) {
+        throw new Error('A floating message action is { label, onSelect } or null');
     }
 }
 
@@ -137,6 +166,19 @@ function buildCard(spec) {
     // Plain text: messages can quote what the user typed or what an AI answered.
     text.textContent = spec.text;
     card.appendChild(text);
+    // A button doing what the message offers ("Moved to Projects/" with Undo); the card leaves as it is pressed.
+    if (spec.action !== null) {
+        const action = document.createElement('button');
+        action.type = 'button';
+        action.className = 'floating-message-action';
+        action.textContent = spec.action.label;
+        action.addEventListener('mousedown', event => event.preventDefault());
+        action.addEventListener('click', () => {
+            leave(card);
+            spec.action.onSelect();
+        });
+        card.appendChild(action);
+    }
     if (spec.detail !== '') {
         card.title = spec.detail;
     }
@@ -168,7 +210,8 @@ function reveal(card) {
 }
 
 export const FloatingMessages = {
-    // spec: { text, type, detail, isClosable, isLasting, key }. A keyed card already
+    // spec: { text, type, detail, isClosable, isLasting, key, action }, action a button
+    // ({ label, onSelect }) or null. A keyed card already
     // showing keeps its place and takes the new text.
     show(spec) {
         validateSpec(spec);
@@ -204,7 +247,7 @@ export const FloatingMessages = {
 
     // A card saying what is running, until end(key).
     showProgress(key, text) {
-        const spec = { text, type: 'info', detail: '', isClosable: false, isLasting: true, key };
+        const spec = { text, type: 'info', detail: '', isClosable: false, isLasting: true, key, action: null };
         validateSpec(spec);
         if (keyedCard(key)) {
             throw new Error(`Progress card ${key} is already showing`);
@@ -216,9 +259,55 @@ export const FloatingMessages = {
         reveal(card);
     },
 
-    // The keyed card leaves, if it shows.
+    // A card for work running beside the user's (reading PDF text): its text, and a bar filled
+    // done of total (moving while total is 0: not yet known). Shown again, it takes the new
+    // text and fill in place; end(key) takes it away. Not kept for Recent Messages.
+    // parts: workProgressParts (background-work-text.js): the line, then above the bar the time
+    // spent at the left and the time left at the right (none until there is an estimate).
+    showWorkProgress(key, parts, done, total) {
+        if (!Number.isInteger(done) || !Number.isInteger(total) || done < 0 || total < 0 || (total > 0 && done > total)) {
+            throw new Error('showWorkProgress requires done and total counts');
+        }
+        if (parts === null || typeof parts !== 'object'
+            || !['label', 'spent', 'left'].every((name) => typeof parts[name] === 'string')) {
+            throw new Error('showWorkProgress requires the work\'s line and times');
+        }
+        let card = workCard(key);
+        if (!card) {
+            const spec = { text: parts.label, type: 'info', detail: '', isClosable: false, isLasting: true, key, action: null };
+            validateSpec(spec);
+            const container = workStack();
+            card = buildCard(spec);
+            card.classList.add('floating-message-work');
+            const times = document.createElement('div');
+            times.className = 'floating-message-work-times';
+            const spent = times.appendChild(document.createElement('span'));
+            spent.className = 'floating-message-work-spent';
+            spent.title = WORK_SPENT_TOOLTIP;
+            const left = times.appendChild(document.createElement('span'));
+            left.className = 'floating-message-work-left';
+            left.title = WORK_LEFT_TOOLTIP;
+            card.appendChild(times);
+            const bar = document.createElement('div');
+            bar.className = 'floating-message-progress';
+            bar.appendChild(document.createElement('div')).className = 'floating-message-progress-fill';
+            card.appendChild(bar);
+            container.appendChild(card);
+            reveal(card);
+        }
+        card.querySelector('.floating-message-text').textContent = parts.label;
+        card.querySelector('.floating-message-work-spent').textContent = parts.spent;
+        // An estimate: ~ in front (the maintainer, 2026-11-03).
+        card.querySelector('.floating-message-work-left').textContent = parts.left === '' ? '' : `${ESTIMATE_MARK}${parts.left}`;
+        const bar = card.querySelector('.floating-message-progress');
+        bar.classList.toggle('is-indeterminate', total === 0);
+        bar.firstChild.style.width = total === 0 ? '' : `${(done / total) * WORK_PERCENT}%`;
+    },
+
+    // The keyed card leaves, if it shows (a work card too).
     end(key) {
-        const card = keyedCard(key);
+        let card = keyedCard(key);
+        if (!card) card = workCard(key);
         if (card) {
             leave(card);
         }

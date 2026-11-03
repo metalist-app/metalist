@@ -7,6 +7,7 @@ import { showContextMenu } from '../../context-menu/context-menu-service.js';
 import { showErrorDialog } from '../../modals/error-dialog.js';
 import { isVirtualFoldersShown, rememberVirtualFoldersShown } from './virtual-folders-state.js';
 import { initVirtualFoldersWidth } from './virtual-folders-width.js';
+import { FloatingMessages } from '../../floating-messages.js';
 
 export { isVirtualFoldersShown } from './virtual-folders-state.js';
 
@@ -60,18 +61,19 @@ const moduleState = ApplicationState.createFields('virtual-folders-service', {
 // Wired by the command palette: setFilter(folder) narrows the view to it;
 // confirm(context) asks (ConfirmationModal); askName(form) asks a name (FolderNameModal);
 // askDeleteFolder(form) asks whether to delete a folder, and its notes (DeleteFolderModal);
-// afterChange() shows the view again once tags changed.
+// afterChange() shows the view again once tags changed; undo() is ⌘Z.
 const handlers = ApplicationState.createFields('virtual-folders-handlers', {
     setFilter: null,
     confirm: null,
     askName: null,
     askDeleteFolder: null,
     afterChange: null,
+    undo: null,
 });
 
 /** The palette's ways to filter, open, ask and refresh (set once at startup). */
 export function wireVirtualFolders(wiring) {
-    for (const name of ['setFilter', 'confirm', 'askName', 'askDeleteFolder', 'afterChange']) {
+    for (const name of ['setFilter', 'confirm', 'askName', 'askDeleteFolder', 'afterChange', 'undo']) {
         if (typeof wiring[name] !== 'function') {
             throw new Error(`wireVirtualFolders requires ${name}`);
         }
@@ -360,6 +362,18 @@ function clearDropTarget() {
 }
 
 function onDragOver(event) {
+    // Files or a folder from the desktop: the folder they would go into (the top over empty space).
+    if (moduleState.draggedPath === '' && event.dataTransfer.types.includes('Files')) {
+        clearDropTarget();
+        const into = virtualFolderAt(event.target);
+        const row = into === TOP
+            ? document.querySelector(`#${TREE_ID} [data-virtual-folder-root]`)
+            : event.target.closest('[data-virtual-folder]');
+        row.classList.add(DROP_CLASS);
+        event.preventDefault();
+        event.dataTransfer.dropEffect = 'copy';
+        return;
+    }
     const target = dropTargetOf(event);
     clearDropTarget();
     if (target === null) return;
@@ -380,6 +394,108 @@ async function onDrop(event) {
     if (target === null) return;
     event.preventDefault();
     await moveFolder(dragged, target.into);
+}
+
+// --- Dragging a note from the column onto a folder ------------------------------------------
+// (docs/ready-to-build/virtual-folders.md §4). The column's own drag (mouse-events.js)
+// asks here once the pointer is over the tree: there it is a drop into the folder under the
+// pointer, or the top for no folder.
+
+const MOVED_CARD_KEY = 'virtual-folders.moved';
+const ONLY_ROOT_NOTES_TEXT = 'Only top-level notes can go in a folder.';
+
+// The folder tags written in a note's tag bar (the column keeps it on the note's element).
+function folderTagsOfNote(noteElement) {
+    const tags = noteElement.dataset.noteTags;
+    if (typeof tags !== 'string') {
+        throw new Error('A dragged note has no tags on its element');
+    }
+    return tags.split(/\s+/).filter((tag) => tag.endsWith(FOLDER_MARK));
+}
+
+/**
+ * What a note dragged from the column would do at pointerTarget: null when the pointer is not
+ * over the tree (an ordinary note drag); over it, { folder, row, isChild } with folder the
+ * folder it would go into ('' the top) or null when the drop would do nothing: a child (it
+ * inherits its parent's folder), or the folder the note is in already.
+ */
+export function noteDropAt(pointerTarget, noteElement) {
+    if (!(pointerTarget instanceof Element) || pointerTarget.closest(`#${TREE_ID}`) === null) return null;
+    const isChild = noteElement.parentElement.closest('.note') !== null;
+    if (isChild) return { folder: null, row: null, isChild };
+    const folderRow = pointerTarget.closest('[data-virtual-folder]');
+    // The top: `/` or the tree's empty space.
+    const row = folderRow === null ? document.querySelector(`#${TREE_ID} [data-virtual-folder-root]`) : folderRow;
+    const into = folderRow === null ? TOP : folderRow.dataset.virtualFolder;
+    const current = folderTagsOfNote(noteElement);
+    const isThereAlready = into === TOP ? current.length === 0 : current.length === 1 && current[0] === into;
+    if (isThereAlready) return { folder: null, row: null, isChild };
+    return { folder: into, row, isChild };
+}
+
+/** The virtual folder a drop from the desktop landed on: its path, '' for the top (`/` or the
+ * tree's empty space), null when it landed outside the tree. */
+export function virtualFolderAt(target) {
+    if (!(target instanceof Element) || target.closest(`#${TREE_ID}`) === null) return null;
+    const folderRow = target.closest('[data-virtual-folder]');
+    if (folderRow === null) return TOP;
+    return folderRow.dataset.virtualFolder;
+}
+
+/** Highlight the folder a note would be dropped into (null: none). */
+export function showNoteDropTarget(row) {
+    clearDropTarget();
+    if (row !== null) row.classList.add(DROP_CLASS);
+}
+
+/** A note dropped on the tree: into the folder, or why not. One undo step; the message offers Undo. */
+export async function dropNoteOnFolder(noteId, drop) {
+    clearDropTarget();
+    if (drop.isChild) {
+        FloatingMessages.show({ text: ONLY_ROOT_NOTES_TEXT, type: 'info', detail: '', isClosable: false, isLasting: false, key: null, action: null });
+        return;
+    }
+    if (drop.folder === null) return;
+    await NotesAPI.fileNoteInVirtualFolder(noteId, drop.folder);
+    await handlers.afterChange();
+    showMovedMessage(drop.folder === TOP ? 'Moved out of every folder' : `Moved to ${drop.folder}`);
+}
+
+/** A note just made at the top (files dropped on a folder) put in exactly that folder ('' none). */
+export async function fileNewNoteInFolder(noteId, folder) {
+    const noteElement = document.querySelector(`#notes-container .note[data-note-id="${noteId}"]`);
+    if (!(noteElement instanceof HTMLElement)) {
+        throw new Error(`The note made for the dropped files is not shown: ${noteId}`);
+    }
+    const current = folderTagsOfNote(noteElement);
+    // Made in that folder's view, it is there already.
+    const isThereAlready = folder === TOP ? current.length === 0 : current.length === 1 && current[0] === folder;
+    if (!isThereAlready) await NotesAPI.fileNoteInVirtualFolder(noteId, folder);
+    await handlers.afterChange();
+}
+
+// The message stays until the next thing the person does, so its Undo never undoes anything else.
+function showMovedMessage(text) {
+    FloatingMessages.end(MOVED_CARD_KEY);
+    const closeOnNextAction = (event) => {
+        if (event.target instanceof Element && event.target.closest('.floating-message-action') !== null) return;
+        document.removeEventListener('keydown', closeOnNextAction, true);
+        document.removeEventListener('mousedown', closeOnNextAction, true);
+        FloatingMessages.end(MOVED_CARD_KEY);
+    };
+    FloatingMessages.show({
+        text, type: 'success', detail: '', isClosable: false, isLasting: false, key: MOVED_CARD_KEY,
+        action: {
+            label: 'Undo',
+            onSelect: () => {
+                document.removeEventListener('keydown', closeOnNextAction, true);
+                document.removeEventListener('mousedown', closeOnNextAction, true);
+                void handlers.undo();
+            },
+        },
+    });
+    document.addEventListener('keydown', closeOnNextAction, true);
+    document.addEventListener('mousedown', closeOnNextAction, true);
 }
 
 // --- Changing folders -----------------------------------------------------------------------

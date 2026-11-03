@@ -38,7 +38,6 @@ from app.api.note_requests import (
     CreateNoteTopRequest,
     CreateSiblingRequest,
     CreateChildRequest,
-    CreateFilePreviewChildRequest,
     SaveNoteRequest,
     AddSelectedTextTagRequest,
     AcceptTagProposalRequest,
@@ -101,7 +100,6 @@ from app.usecases.create_sibling import CmdCreateSibling
 from app.services.file_registry import file_registry
 from app.services.file_text_snippets import file_text_snippet
 from app.usecases.create_child import CmdCreateChild
-from app.usecases.create_file_preview_child import CmdCreateFilePreviewChild
 from app.usecases.update_content import CmdUpdateContent
 from app.usecases.prefetch_link_titles import CmdPrefetchLinkTitles
 from app.services.link_title_retry import (
@@ -1270,27 +1268,6 @@ def create_child(request: Request, note_id: str, body: CreateChildRequest):
     cmd = CmdCreateChild(
         parent_note_id=note_id,
         search_query=_new_note_search(body["search_query"], body["tabId"]),
-        token=token,
-        client_id=body["clientId"],
-        undo_context=body["undoContext"],
-        viewport=viewport,
-    )
-    return cmd.execute()
-
-
-@router.post("/notes/file-preview-child/{note_id}")
-@transactional_route
-def create_file_preview_child(request: Request, note_id: str, body: CreateFilePreviewChildRequest):
-    token = _require_bearer_token(request)
-    viewport = _require_viewport(body)
-    _require_note_present(note_id, context="notes.file-preview-child")
-    file_id = body["fileId"]
-    if not file_registry.has_file(file_id):
-        raise HTTPException(status_code=HTTPStatus.NOT_FOUND, detail=f"File not found: {file_id}")
-    cmd = CmdCreateFilePreviewChild(
-        parent_note_id=note_id,
-        file_id=file_id,
-        search_query=body["search_query"],
         token=token,
         client_id=body["clientId"],
         undo_context=body["undoContext"],

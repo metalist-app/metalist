@@ -1,10 +1,19 @@
 # Dropping files and folders from the desktop
 
-**Status:** Agreed with the maintainer 2026-11-02. Ready to build. Builds on the folder tree (`docs/ready-to-build/virtual-folders.md`), the folder-of-files import (`docs/ready-to-build/folder-import-and-file-previews.md`), the import prefix folder, and dragging a note into a folder (`drag-note-into-folder`, handed over the same day).
+**Status:** Agreed with the maintainer 2026-11-02. Ready to build. Builds on the folder tree (`docs/ready-to-build/virtual-folders.md`), the folder-of-files import (`docs/ready-to-build/folder-import-and-file-previews.md`), the import prefix folder, and dragging a note into a folder (`drag-note-into-folder`, handed over the same day). Links dragged from a browser join these drops: `docs/ready-to-build/dropped-links.md` (2026-11-02).
 
 Written from a read-only look at the repo. Check the code references before relying on them.
 
 ---
+
+**Built 2026-11-02** (decided with the maintainer the same day, below). Code: `dropped-folders.js` (what a drop holds, reading a dropped folder), `handleDropEvent` and `dropFilesIntoFolder` in `keyboard-events.js`, `virtualFolderAt` / `fileNewNoteInFolder` in `virtual-folders-service.js`, the walkthrough's Copy step in `import-wizard-steps.js`, `app/services/import_uploads.py` with `POST /import/scan-listing`, `/import/uploads`, `/import/uploads/{id}/file` and `/discard`. Tests: `tests/unit/dropped_folders.test.mjs`, `tests/unit/test_import_uploads.py`, `scripts/browser-folder-drop-regressions.mjs` (suite `folder-drops`; a test browser can't fake a dropped folder, so it starts at the walkthrough). Not built: resuming an interrupted upload (point C).
+
+### Decided while building (the maintainer, 2026-11-02)
+
+- **A. The ticked files upload right after the checklist**, into a holding folder in the data directory, outside the vault (the Summary needs their contents). Only the ticked files leave the computer; nothing is in the vault until Import; closing the walkthrough, cancelled or imported, discards the holding folder, and a restart discards any left. Invariant 2 reads: nothing is uploaded before the checklist. The holding folder keeps the files unencrypted until it goes.
+- **B. Files dropped on a tree folder go at the top**, as a drop on the column off any note does. Found: such a drop makes **one** new note holding every dropped file (not one note per file, as §1 said); a drop on a folder keeps that, puts the note in the folder, and leaves it closed. The walkthrough for a dropped folder starts on Source, Any folder chosen, as a dropped bookmarks file's does.
+- **C. An interrupted upload starts over** for now; the resume rule (`folder-import-and-file-previews.md`) is a later step.
+- The error that started it: a folder dropped anywhere was uploaded as a file and failed with "NetworkError when attempting to fetch resource". A drop is now looked at first (`webkitGetAsEntry`).
 
 ## 0. Today (from the code)
 

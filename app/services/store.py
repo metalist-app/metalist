@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from types import SimpleNamespace
-from typing import Iterable, Mapping, Optional, List
+from typing import Iterable, Mapping, Optional, List, Set
 
 from app.services.note_store import store as _note_store
 from app.services.note_store import NoteRecord as NodeRecord
@@ -29,6 +29,10 @@ class _AdapterStore:
 
     def children(self, parent_id: Optional[str]) -> List[str]:
         return _note_store.get_children(parent_id)
+
+    def note_ids_referencing(self, target_ids: Set[str]) -> Set[str]:
+        """The notes whose own text links to or embeds any of target_ids (notes or files)."""
+        return _note_store.note_ids_referencing(target_ids)
 
     # Mutations --------------------------------------------------------------
     def insert_after(self, note: NodeRecord, parent_id: Optional[str], prev_id: Optional[str]) -> None:

@@ -25,7 +25,7 @@ from app.services.content_formatting import REGION_JSON
 from app.services.content_formatting import FoundRegion
 from app.services.content_formatting import finding_regions
 from app.services.content_formatting import format_note_content_for_view
-from app.services.file_text_preview import plain_text_to_note_html
+from app.services.file_view import plain_text_to_note_html
 from app.services.content_formatting import holding_link_fetches
 from app.services.latex_rendering import FoundFormula
 from app.services.latex_rendering import finding_formulas

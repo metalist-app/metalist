@@ -17,6 +17,7 @@ import {
 } from '../ai-chat/proposal-menu.js';
 import { ModeContextInstance as ModeContext } from '../mode-manager/mode-context.js';
 import { actionRefreshAndMaybeSelect } from '../mode-manager/actions/ui-actions.js';
+import { actionUndo } from '../mode-manager/actions/history-actions.js';
 import {
     actionDeselectNote,
     actionSaveAndExitEditingWithoutRefreshing,
@@ -61,6 +62,8 @@ import { exportNotes } from '../mode-manager/services/export-service.js';
 import { VersionInfoModal } from '../modals/version-info-modal.js';
 import { ImportWizard, NewVaultWizard } from '../wizard/setup-wizards.js';
 import { bookmarksFileChoices } from '../wizard/bookmarks-file.js';
+import { MARKDOWN_STEP, droppedFolderChoices, droppedTextFilesChoices } from '../wizard/import-wizard-steps.js';
+import { holdDroppedFolder } from '../mode-manager/services/dropped-folders.js';
 import { MemoryUsageModal } from '../modals/memory-usage-modal.js';
 import { showErrorDialogFor } from '../modals/error-dialog.js';
 import { RecentMessagesModal } from '../modals/recent-messages-modal.js';
@@ -190,6 +193,12 @@ const LONG_COMMAND_TIMEOUT_SECONDS = 120;
 // A theme change cross-fades the whole page from the old colours to the new (main.css,
 // ::view-transition(root)). Opening in the saved theme, a background tab, reduced motion and
 // Animated transitions off switch at once, as does a browser without view transitions.
+// An import of files dropped on the page: its notes take the tags of the search context they
+// were dropped in, as a note made there does, and show at its top (the maintainer, 2026-11-03).
+function droppedHere() {
+    return { isDrop: true, dropSearch: ModeContext.searchQuery };
+}
+
 function applyTheme(theme) {
     const root = document.documentElement;
     const nextTheme = theme === 'system' ? null : theme;
@@ -471,6 +480,7 @@ class CommandPaletteController {
             askName: async (form) => this._askFolderName(form),
             askDeleteFolder: async (form) => this._askDeleteFolder(form),
             afterChange: async () => actionRefreshAndMaybeSelect({ startedAt: performance.now(), context: 'virtualFolders.change' }),
+            undo: async () => CommandGate.run('virtualFolders.undoMove', async () => actionUndo()),
         });
         const clientState = await migrateLegacyClientState({
             clientState: await loadClientState(),
@@ -2196,7 +2206,7 @@ class CommandPaletteController {
         }
         if (noteCount === 0) {
             FloatingMessages.show({
-                text: 'This view shows no notes to delete.', type: 'info', detail: '', isClosable: false, isLasting: false, key: null,
+                text: 'This view shows no notes to delete.', type: 'info', detail: '', isClosable: false, isLasting: false, key: null, action: null,
             });
             return;
         }
@@ -2220,7 +2230,7 @@ class CommandPaletteController {
             const result = await NotesAPI.deleteNotesInView(noteCount);
             await actionRefreshAndMaybeSelect({ startedAt: performance.now(), context: 'deleteNotesInView' });
             FloatingMessages.show({
-                text: `Deleted ${result.deletedCount} notes.`, type: 'success', detail: '', isClosable: false, isLasting: false, key: null,
+                text: `Deleted ${result.deletedCount} notes.`, type: 'success', detail: '', isClosable: false, isLasting: false, key: null, action: null,
             });
         });
     }
@@ -2901,16 +2911,29 @@ class CommandPaletteController {
 
     // Import… (PLAN.md, phase 2).
     async openImportWizard() {
-        await this._openImportWizardWith(null);
+        await this._openImportWizardWith(null, null);
     }
 
     // A dropped bookmarks export the person chose to import: Browser bookmarks chosen and its
     // File step filled in; Next, Next, Import (docs/ready-to-build/bookmark-import.md §5).
-    async openImportWizardWithBookmarksFile(file) {
-        await this._openImportWizardWith(await bookmarksFileChoices(file));
+    // intoFolder: the virtual folder it was dropped on ('Projects/'), '' for none: the import's
+    // folder starts there (docs/ready-to-build/desktop-drops-into-folders.md).
+    async openImportWizardWithBookmarksFile(file, intoFolder) {
+        const choices = await bookmarksFileChoices(file);
+        await this._openImportWizardWith({ ...choices, prefixText: `${intoFolder}${choices.prefixText}`, ...droppedHere() }, null);
     }
 
-    async _openImportWizardWith(presetChoices) {
+    /** A folder dropped on the page: Any folder chosen, the folder in, its files read. */
+    async openImportWizardWithDroppedFolder(folder, intoFolder) {
+        await this._openImportWizardWith({ ...droppedFolderChoices(holdDroppedFolder(folder), folder, intoFolder), ...droppedHere() }, null);
+    }
+
+    /** Text files dropped on the page, a Markdown file among them: at the Markdown screen. */
+    async openImportWizardWithDroppedTextFiles(files, intoFolder) {
+        await this._openImportWizardWith({ ...await droppedTextFilesChoices(files, intoFolder), ...droppedHere() }, MARKDOWN_STEP);
+    }
+
+    async _openImportWizardWith(presetChoices, startStep) {
         const isReady = await this._prepareForModalOpen('commandPalette.openImportWizard');
         if (!isReady) {
             return;
@@ -2919,6 +2942,7 @@ class CommandPaletteController {
             this._importWizard = new ImportWizard(this._wizardServices());
         }
         this._importWizard.setPresetChoices(presetChoices);
+        this._importWizard.setStartStep(startStep);
         await this._importWizard.open();
     }
 
@@ -2939,6 +2963,11 @@ class CommandPaletteController {
                 if (newTabId === null) {
                     await actionRefreshAndMaybeSelect({ startedAt: performance.now(), context: 'importWizard' });
                 }
+            },
+            // Files dropped on the page: their notes at the top of the search context they were
+            // dropped in, which stays as it is (the maintainer, 2026-11-03).
+            showDroppedImport: async () => {
+                await actionRefreshAndMaybeSelect({ startedAt: performance.now(), context: 'importWizard.showDropped' });
             },
         };
     }

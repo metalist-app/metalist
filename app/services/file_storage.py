@@ -41,11 +41,12 @@ from app.security.encryption import (
     get_encryption_service_with_token,
     is_encryption_required,
 )
+from app.services.file_kinds import FILE_FILTER_ANY
 from app.services.file_registry import FileDetails, file_registry
 from app.services.file_text_search import (
-    SEARCHABLE_FILE_KINDS,
-    ExtractedText,
+    is_searchable_file_name,
     FileTextStorage,
+    KeptText,
     StoredFileText,
     StoredFilter,
     file_texts,
@@ -284,7 +285,7 @@ def create_file(
         )
 
     file_registry.add_with_thumbnail_kind(file_id, thumbnail_kind=metadata["thumbnail_kind"], title=title)
-    if metadata["thumbnail_kind"] in SEARCHABLE_FILE_KINDS:
+    if is_searchable_file_name(title):
         # Its text, for search, beside the request (folder-import-and-file-previews.md).
         file_texts.refresh_in_background()
     return FileReferenceRecord(
@@ -1216,7 +1217,10 @@ def _read_file_text(file_id: str) -> StoredFileText | None:
     if row is None:
         return None
     text = _stored_payload(encryption_service=encryption_service, row=row, field="text", file_id=file_id)
-    return StoredFileText(text=text.decode("utf-8"), is_cut=bool(row["is_cut"]), content_revision=int(row["content_revision"]))
+    return StoredFileText(
+        text=text.decode("utf-8"), is_cut=bool(row["is_cut"]), content_revision=int(row["content_revision"]),
+        reader_version=int(row["reader_version"]),
+    )
 
 
 def _read_file_text_filters() -> list[StoredFilter]:
@@ -1229,24 +1233,30 @@ def _read_file_text_filters() -> list[StoredFilter]:
             filter_bytes=_stored_payload(encryption_service=encryption_service, row=row, field="filter", file_id=str(row["file_id"])),
             is_cut=bool(row["is_cut"]),
             content_revision=int(row["content_revision"]),
+            reader_version=int(row["reader_version"]),
+            filter_version=int(row["filter_version"]),
         )
         for row in rows
     ]
 
 
 def _searchable_files() -> dict[str, int]:
-    file_ids = sorted(set().union(*(file_registry.file_ids_of_kind(kind) for kind in SEARCHABLE_FILE_KINDS)))
+    file_ids = sorted(
+        file_id for file_id in file_registry.file_ids_of_kind(FILE_FILTER_ANY)
+        # Its reader goes by its ending (TEXT_READER_VERSIONS): a PDF named without one has none.
+        if is_searchable_file_name(file_registry.title_of(file_id))
+    )
     with connect_file_reader() as connection:
         return fetch_content_revisions(connection, file_ids)
 
 
-def _store_file_text(file_id: str, extracted: ExtractedText, filter_bytes: bytes, content_revision: int) -> None:
+def _store_file_text(file_id: str, kept: KeptText) -> None:
     encryption_service = _resolve_encryption_service(None)
     text_data, text_nonce, text_tag = _encrypt_bytes_for_storage(
-        encryption_service=encryption_service, plaintext=extracted.text.encode("utf-8"),
+        encryption_service=encryption_service, plaintext=kept.extracted.text.encode("utf-8"),
     )
     filter_data, filter_nonce, filter_tag = _encrypt_bytes_for_storage(
-        encryption_service=encryption_service, plaintext=filter_bytes,
+        encryption_service=encryption_service, plaintext=kept.filter_bytes,
     )
     with begin_file_writer() as connection:
         # Deleted meanwhile: nothing to keep.
@@ -1255,8 +1265,8 @@ def _store_file_text(file_id: str, extracted: ExtractedText, filter_bytes: bytes
         upsert_file_text(
             connection, file_id=file_id, text_data=text_data, text_encryption_nonce=text_nonce,
             text_encryption_tag=text_tag, filter_data=filter_data, filter_encryption_nonce=filter_nonce,
-            filter_encryption_tag=filter_tag, is_cut=extracted.is_cut, content_revision=content_revision,
-            updated_at=datetime.now(timezone.utc),
+            filter_encryption_tag=filter_tag, is_cut=kept.extracted.is_cut, content_revision=kept.content_revision,
+            reader_version=kept.reader_version, filter_version=kept.filter_version, updated_at=datetime.now(timezone.utc),
         )
 
 

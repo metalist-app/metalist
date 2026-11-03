@@ -72,6 +72,7 @@ function refreshHarness({ isRemoved, isAnimated, isFullSnapshot }) {
         updateSearchResultsCount() {}, updateRootSortIndicator() {}, updateDateRangeIndicator() {}, updateFileFilterIndicator() {}, async updateVirtualFolders() {}, updateUntaggedViewIndicator() {}, updateReferenceSourceIndicator() {},
         rebuildRootDateSeparators() {}, async refreshBacklinksPanel() {},
         captureViewportRoot: () => null, holdViewportRoot() {},
+        measureVisibleRootRange: () => null,
     };
     const refresh = new Function(...Object.keys(dependencies),
         `let viewRequestInFlight = false;\n${refreshSource}\nreturn actionRefreshAndMaybeSelect;`,

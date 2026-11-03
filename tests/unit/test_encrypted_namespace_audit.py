@@ -827,7 +827,7 @@ def _insert_file_text(connection: sqlite3.Connection, *, file_id: str, text: byt
     if nonce_byte is not None:
         text_nonce, filter_nonce, tag = bytes([nonce_byte]) * 12, bytes([nonce_byte + 1]) * 12, b"t" * 16
     connection.execute(
-        "INSERT INTO file_texts VALUES (?, ?, ?, ?, ?, ?, ?, 0, 1, 'now')",
+        "INSERT INTO file_texts VALUES (?, ?, ?, ?, ?, ?, ?, 0, 1, 'now', 1, 1)",
         (file_id, text, text_nonce, tag, filter_data, filter_nonce, tag),
     )
 
@@ -851,3 +851,29 @@ def test_audit_accepts_encrypted_file_texts_and_reports_plaintext_ones(tmp_path:
         ("file_texts", "text_data"), ("file_texts", "filter_data"),
     }
     assert "rent is due" not in report.render_text()
+
+
+# Version 14 adds file_texts' reader and filter versions (docs/ready-to-build/folder-import-and-
+# file-previews.md, "Text versions"). Before 14 they may be missing or already added on open; from
+# 14 they are required.
+@pytest.mark.parametrize(("version", "has_additions", "allowed"), [(13, False, True), (13, True, True), (14, True, True), (14, False, False)])
+def test_version_14_requires_text_versions(tmp_path: Path, version: int, has_additions: bool, allowed: bool) -> None:
+    namespaces_directory = tmp_path / "namespaces"
+    database_path = _create_namespace_database(namespaces_directory, namespace="private", encryption_enabled=True)
+    with sqlite3.connect(database_path) as connection:
+        connection.execute(f"PRAGMA user_version = {version}")
+    connection = sqlite3.connect(resolve_file_database_path(database_path))
+    initialize_file_schema(connection)
+    if not has_additions:
+        connection.execute("ALTER TABLE file_texts DROP COLUMN reader_version")
+        connection.execute("ALTER TABLE file_texts DROP COLUMN filter_version")
+    connection.commit()
+    connection.close()
+
+    report = audit_all_namespaces(namespaces_directory=namespaces_directory)
+
+    assert report.startup_allowed is allowed, report.render_text()
+    if not allowed:
+        assert {(finding.table, finding.field) for finding in report.fatal_findings} == {
+            ("file_texts", "reader_version"), ("file_texts", "filter_version"),
+        }

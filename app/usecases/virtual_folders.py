@@ -13,12 +13,15 @@ from app.services.note_store import store as note_store
 from app.services.search_index import extract_ordered_tags_for_search, search_index
 from app.services.search_query import SearchClause
 from app.services.sync import generate_new_uuid
-from app.services.undo_state import reset_undo_stack
-from app.services.virtual_folders import FOLDER_MARK, all_folder_tags, is_folder_tag, virtual_folder_state
+from app.services.undo_state import record_update, reset_undo_stack
+from app.services.virtual_folders import (
+    FOLDER_MARK, NO_FOLDER, all_folder_tags, folder_tags_of, is_folder_tag, refile_tag_bar, virtual_folder_state,
+)
 from app.usecases.delete_notes_in_view import NotesToDelete, topmost_with_subtrees
 from app.usecases.delete_subtree import apply_delete_subtree
 from app.usecases.delete_tag import apply_delete_tag_everywhere
 from app.usecases.rename_tag import apply_rename_tag_everywhere
+from app.usecases.update_content import apply_update_content
 
 
 def folder_tags_under(folder: str) -> List[str]:
@@ -40,6 +43,30 @@ def rename_folder(*, folder: str, new_path: str, token: str) -> Dict[str, object
         apply_rename_tag_everywhere(old=tag, new=new_path + tag[len(folder):], token=token)
     virtual_folder_state.move_filters(folder, new_path)
     return {"renamedTagCount": len(tags)}
+
+
+def file_note_in_folder(
+    *, note_id: str, folder: str, token: str, client_id: str, undo_context: str, viewport: Dict[str, object],
+) -> Dict[str, object]:
+    """A root note dragged from the column onto a folder ('' the top): it ends up in exactly
+    that folder (or in none), in one undo step (docs/ready-to-build/virtual-folders.md §4).
+    A child inherits its parent's folder, so a drag would not move it: it is refused."""
+    if folder != NO_FOLDER and not is_folder_tag(folder):
+        raise InputRejected(f"{folder} is not a folder.")
+    if not note_store.has_note(note_id):
+        raise InputRejected("That note is gone.")
+    record = note_store.get_note(note_id)
+    if record.parent_id is not None:
+        raise InputRejected("Only top-level notes can go in a folder.")
+    if folder_tags_of(record.tags) == [tag for tag in [folder] if tag != NO_FOLDER]:
+        raise InputRejected("The note is already there.")
+    next_tags = refile_tag_bar(record.tags, folder)
+    apply_update_content(note_id, record.content, next_tags, token)
+    record_update(
+        client_id, undo_context, note_id,
+        before=record.content, after=record.content, before_tags=record.tags, after_tags=next_tags, viewport=viewport,
+    )
+    return {"tags": next_tags, "updateUUID": generate_new_uuid()}
 
 
 def move_folder(*, folder: str, into: str, token: str) -> Dict[str, object]:

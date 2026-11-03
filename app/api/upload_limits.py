@@ -30,6 +30,9 @@ def _is_upload_request(scope) -> bool:
     path = scope['path']
     if path.endswith('/files/upload'):
         return True
+    # A dropped folder's files, one by one, into the import's holding folder (import_uploads.py).
+    if '/import/uploads/' in path and path.endswith('/file'):
+        return True
     # In-place updates of MetaList-edited files (Excalidraw scenes and their previews) are uploads too.
     if '/files/' not in path:
         return False

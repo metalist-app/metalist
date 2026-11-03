@@ -11,6 +11,7 @@ from app.services.embedded_references import EmbedRenderContext
 from app.services.embedded_references import render_note_content_with_embeds
 from app.services.file_registry import file_registry
 from app.services.file_storage import get_file_reference_record
+from app.services.file_view import STATUS_READY, FileView
 from app.services.note_store import store as note_store
 from app.services.search_index import search_index
 
@@ -70,6 +71,27 @@ def build_file_preview_markup(file_id: str) -> str:
     return sanitize_rendered_html(
         '<article class="note"><div class="note-content" contenteditable="false">'
         f"{rendered_embed}</div></article>"
+    )
+
+
+def build_file_view_markup(file_id: str, view: FileView) -> str:
+    """A file as the viewer shows it (docs/ready-to-build/files-shown-not-copied.md §4): its
+    note HTML drawn as a note with its meta tag is (`@markdown`, `@csv`, `@json`, `@code=…`)."""
+    if not isinstance(file_id, str) or not file_registry.has_file(file_id):
+        raise ValueError("file_id must name a file")
+    if view.status != STATUS_READY:
+        raise ValueError(f"only a ready view is drawn, not {view.status!r}")
+    rendered = render_note_content_with_embeds(
+        note_id=file_id,
+        content_html=view.content_html,
+        tags=view.render_tag,
+        context=_render_context(),
+        static_export=False,
+        redact_credentials=True,
+    )
+    return sanitize_rendered_html(
+        '<article class="note"><div class="note-content" contenteditable="false">'
+        f"{rendered}</div></article>"
     )
 
 

@@ -42,6 +42,8 @@ function harness() {
         DOMUtils: { getNoteById: id => (id === 'note-2' ? below : noteElement), getNoteId: element => element.dataset.noteId },
         renderNoteDragIndicators: description => indicators.push(description),
         hideNoteDragIndicators: () => indicators.push('hidden'),
+        // The pointer is never over the virtual folders' tree here (scripts/browser-folder-note-drag-regressions.mjs).
+        noteDropAt: () => null, showNoteDropTarget: () => {}, dropNoteOnFolder: async () => {},
         isRootReorderLocked: () => false,
         // Records any move a release would start.
         CommandGate: { run: name => actions.push(name) },

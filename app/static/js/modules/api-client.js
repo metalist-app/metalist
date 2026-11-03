@@ -81,6 +81,12 @@ async function postFileEditSession(url, body, description) {
     return data;
 }
 
+// Where an import's files were dropped: { isDrop, tabId, search } (isDrop false from the menu).
+function isDropContext(dropContext) {
+    return dropContext !== null && typeof dropContext === 'object' && typeof dropContext.isDrop === 'boolean'
+        && typeof dropContext.tabId === 'string' && dropContext.tabId !== '' && typeof dropContext.search === 'string';
+}
+
 function extractFilenameFromContentDisposition(disposition) {
     if (typeof disposition !== 'string' || disposition.length === 0) {
         return null;
@@ -279,14 +285,6 @@ export const NotesAPI = {
             method: 'POST',
             claimSession: true,
             body: JSON.stringify(body)
-        });
-    },
-
-    async createFilePreviewChild(noteId, fileId, searchQuery) {
-        return this._apiCall(CONFIG.API.NOTES.CREATE_FILE_PREVIEW_CHILD(noteId), {
-            method: 'POST',
-            claimSession: true,
-            body: JSON.stringify({ fileId, search_query: searchQuery }),
         });
     },
 
@@ -523,6 +521,16 @@ export const NotesAPI = {
         return this._apiCall(CONFIG.API.VIRTUAL_FOLDERS.NOTES, { method: 'POST', body: JSON.stringify({ folder }) });
     },
 
+    // A root note dragged onto a folder ('' the tree's top): in exactly that folder, one undo step.
+    async fileNoteInVirtualFolder(noteId, folder) {
+        if (typeof noteId !== 'string' || noteId === '' || typeof folder !== 'string') {
+            throw new Error('NotesAPI.fileNoteInVirtualFolder requires the note and the folder');
+        }
+        return this._apiCall(CONFIG.API.VIRTUAL_FOLDERS.FILE_NOTE, {
+            method: 'POST', claimSession: true, body: JSON.stringify({ noteId, folder }),
+        });
+    },
+
     // folder: the folder tag ('Projects/'), or '' for every folder again.
     async setVirtualFolderFilter(tabId, folder) {
         if (typeof tabId !== 'string' || tabId === '' || typeof folder !== 'string') {
@@ -542,18 +550,19 @@ export const NotesAPI = {
     _importBody(choices, caller) {
         const {
             source, folderPath, splitMode, contentFormat, prefixFolder, addToExisting, excludedGroups, excludedFiles, includedFiles,
-            keepsMarkdownAsFiles, previewKinds, compressesImages, imageLongestSide,
+            keepsMarkdownAsFiles, compressesImages, imageLongestSide, dropContext,
         } = choices;
         if (typeof source !== 'string' || typeof folderPath !== 'string' || folderPath.length === 0
             || typeof splitMode !== 'string' || typeof contentFormat !== 'string'
             || typeof prefixFolder !== 'string' || typeof addToExisting !== 'boolean'
             || !Array.isArray(excludedGroups) || !Array.isArray(excludedFiles) || !Array.isArray(includedFiles)
-            || typeof keepsMarkdownAsFiles !== 'boolean' || !Array.isArray(previewKinds) || typeof compressesImages !== 'boolean' || !Number.isInteger(imageLongestSide)) {
+            || typeof keepsMarkdownAsFiles !== 'boolean' || typeof compressesImages !== 'boolean' || !Number.isInteger(imageLongestSide)
+            || !isDropContext(dropContext)) {
             throw new Error(`NotesAPI.${caller} requires every import choice`);
         }
         return JSON.stringify({
             source, folderPath, splitMode, contentFormat, prefixFolder, addToExisting, excludedGroups, excludedFiles, includedFiles,
-            keepsMarkdownAsFiles, previewKinds, compressesImages, imageLongestSide,
+            keepsMarkdownAsFiles, compressesImages, imageLongestSide, dropContext,
         });
     },
 
@@ -565,14 +574,56 @@ export const NotesAPI = {
         return this._apiCall(CONFIG.API.IMPORT.SCAN, { method: 'POST', body: JSON.stringify({ folderPath }) });
     },
 
+    // A dropped folder's checklist, from the browser's list of its files ([{ path, size }]):
+    // nothing is sent but the list (desktop-drops-into-folders.md §4).
+    async scanImportListing(files) {
+        if (!Array.isArray(files)) {
+            throw new Error('NotesAPI.scanImportListing requires the files');
+        }
+        return this._apiCall(CONFIG.API.IMPORT.SCAN_LISTING, { method: 'POST', body: JSON.stringify({ files }) });
+    },
+
+    // A holding folder for a dropped folder's ticked files: { uploadId, folderPath }.
+    async startImportUpload() {
+        return this._apiCall(CONFIG.API.IMPORT.UPLOADS, { method: 'POST', body: JSON.stringify({}) });
+    },
+
+    // One ticked file, at its path in the dropped folder.
+    async uploadImportFile(uploadId, path, file) {
+        if (typeof uploadId !== 'string' || typeof path !== 'string' || !(file instanceof Blob)) {
+            throw new Error('NotesAPI.uploadImportFile requires the upload, the path and the file');
+        }
+        // In one of the server's few transfer slots, as previews loading meanwhile are
+        // (file-transfer-slots.js); one answered 429 is sent again.
+        const { response, answer } = await inTransferSlot(async () => {
+            const formData = new FormData();
+            formData.append('path', path);
+            formData.append('file', file);
+            const sent = await fetch(CONFIG.API.IMPORT.UPLOAD_FILE(uploadId), {
+                method: 'POST', headers: buildAuthHeaders(false), body: formData,
+            });
+            if (!sent.ok) return { response: sent, answer: null };
+            return { response: sent, answer: await sent.json() };
+        });
+        if (!response.ok) {
+            ErrorHandler.handleApiError(null, response);
+            throw new HttpRequestError(`Import upload failed: ${response.status} ${response.statusText}`);
+        }
+        return answer;
+    },
+
+    // The work the server does beside the requests: [{ key, label, done, total }].
+    async fetchBackgroundWork() {
+        return this._apiCall(CONFIG.API.IMPORT.BACKGROUND_WORK, { method: 'GET' });
+    },
+
+    async discardImportUpload(uploadId) {
+        return this._apiCall(CONFIG.API.IMPORT.DISCARD_UPLOAD(uploadId), { method: 'POST', body: JSON.stringify({}) });
+    },
+
     // The images an import would compress: { imageCount, imageBytes, compressedBytes } (about).
     async estimateImportImages(choices) {
         return this._apiCall(CONFIG.API.IMPORT.IMAGES, { method: 'POST', body: this._importBody(choices, 'estimateImportImages') });
-    },
-
-    // A folder of files' files that could get a preview, by kind: { kinds: [{ key, fileCount, noteBytes }] }.
-    async estimateImportPreviews(choices) {
-        return this._apiCall(CONFIG.API.IMPORT.PREVIEWS, { method: 'POST', body: this._importBody(choices, 'estimateImportPreviews') });
     },
 
     async previewImport(choices) {
@@ -593,12 +644,14 @@ export const NotesAPI = {
         return this._apiCall(CONFIG.API.IMPORT.BOOKMARKS_PREVIEW, { method: 'POST', body: JSON.stringify({ fileText, prefixFolder }) });
     },
 
-    async importBookmarks({ fileText, prefixFolder, addToExisting }) {
-        if (typeof fileText !== 'string' || fileText.length === 0 || typeof prefixFolder !== 'string' || typeof addToExisting !== 'boolean') {
+    // dropContext: where it was dropped ({ isDrop, tabId, search }), as _importBody takes it.
+    async importBookmarks({ fileText, prefixFolder, addToExisting, dropContext }) {
+        if (typeof fileText !== 'string' || fileText.length === 0 || typeof prefixFolder !== 'string' || typeof addToExisting !== 'boolean'
+            || !isDropContext(dropContext)) {
             throw new Error('NotesAPI.importBookmarks requires the file\'s text, the folder and whether to add to it');
         }
         return this._apiCall(CONFIG.API.IMPORT.BOOKMARKS, {
-            method: 'POST', body: JSON.stringify({ fileText, prefixFolder, addToExisting }),
+            method: 'POST', body: JSON.stringify({ fileText, prefixFolder, addToExisting, dropContext }),
         });
     },
 
@@ -1482,20 +1535,25 @@ export const FilesAPI = {
             throw new Error('FilesAPI.uploadFile requires File');
         }
 
-        const formData = new FormData();
-        formData.append('file', file);
-
-        const response = await fetch(CONFIG.API.FILES.UPLOAD, {
-            method: 'POST',
-            headers: buildAuthHeaders(false),
-            body: formData,
+        // In one of the server's few transfer slots (file-transfer-slots.js): previews loading
+        // meanwhile could otherwise have it answered 429 (2026-11-02).
+        const { response, answer } = await inTransferSlot(async () => {
+            const formData = new FormData();
+            formData.append('file', file);
+            const sent = await fetch(CONFIG.API.FILES.UPLOAD, {
+                method: 'POST',
+                headers: buildAuthHeaders(false),
+                body: formData,
+            });
+            if (!sent.ok) return { response: sent, answer: null };
+            return { response: sent, answer: await sent.json() };
         });
         if (!response.ok) {
             ErrorHandler.handleApiError(null, response);
             throw new HttpRequestError(`File upload failed: ${response.status} ${response.statusText}`);
         }
 
-        return await response.json();
+        return answer;
     },
 
     async downloadFile(fileId) {
@@ -1683,6 +1741,27 @@ export const FilesAPI = {
             throw new HttpRequestError(`File preview download failed: ${response.status} ${response.statusText}`);
         }
         return { status: 'ready', blob: await response.blob(), revision: readFileRevision(response) };
+    },
+
+    // A file as the viewer shows it: { name, kind: 'pdf' | 'page', status, html, isCut }
+    // (docs/ready-to-build/files-shown-not-copied.md §4).
+    async viewFile(fileId) {
+        requireFileId(fileId, 'viewFile');
+        const response = await fetch(CONFIG.API.FILES.VIEW(fileId), {
+            method: 'GET',
+            headers: buildAuthHeaders(false),
+        });
+        if (!response.ok) {
+            ErrorHandler.handleApiError(null, response);
+            throw new HttpRequestError(`Opening the file failed: ${response.status} ${response.statusText}`);
+        }
+        const view = await response.json();
+        // An email's (2026-11-03) also carries its headers and attachments (file-viewer-service.js).
+        if (typeof view.name !== 'string' || !['pdf', 'page', 'email'].includes(view.kind) || typeof view.status !== 'string'
+            || typeof view.html !== 'string' || typeof view.isCut !== 'boolean') {
+            throw new Error('File view response malformed');
+        }
+        return view;
     },
 
     // The file's name, extension included (what its cards show and its downloads use).

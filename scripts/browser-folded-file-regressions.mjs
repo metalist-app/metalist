@@ -9,7 +9,7 @@ import { waitForAppQuiet } from './browser-app-idle.mjs';
 //   1. a file card on the first line (a PDF): the card's name and the fold arrow stay put
 //   2. a link to a file inside the first line's text: the link's name stays put
 //   3. a picture on the first line: its picture stays put
-//   4. an email on the first line: its card stays put (folded, it shows one line of it)
+//   4. an email on the first line: its card stays put (a card as any file's since 2026-11-03)
 //   5. text first, a card further down: the text stays put (it did before)
 // Unfolding puts everything back where it was too.
 
@@ -84,8 +84,8 @@ const WATCHED = {
   card: '.note-file-reference-name',
   link: '.note-file-reference-name',
   picture: '.note-file-image-preview-frame',
-  // Folded, an email shows one line of its card: the card is what stays put.
-  email: '.note-file-email-card',
+  // An email is a card as any file is (2026-11-03): its name is what stays put.
+  email: '.note-file-reference-name',
   text: '.note-content > div',
 };
 
@@ -138,7 +138,7 @@ export async function checkFoldedFiles(page) {
   await runThenCleanUp('folded files', async () => {
     await search(page, FIXTURE_TAG);
     await page.waitForSelector(`.note[data-note-id="${ids.picture}"] .note-file-image-preview:not([hidden])`, {timeout: LOADED_WAIT_MS});
-    await page.waitForSelector(`.note[data-note-id="${ids.email}"] .note-file-email-subject`, {timeout: LOADED_WAIT_MS});
+    await page.waitForSelector(`.note[data-note-id="${ids.email}"] .note-file-reference-name`, {timeout: LOADED_WAIT_MS});
     await idle(page);
     await attempt('1 a file card first', () => foldMovesNothing(page, ids.card, WATCHED.card));
     await attempt('2 a link to a file in the first line', () => foldMovesNothing(page, ids.link, WATCHED.link));

@@ -17,18 +17,19 @@ from typing import Iterable, Tuple
 
 from app.services.file_text_search import file_texts
 
-# An embedded file's card (embedded_references._render_file_body): its id, then its tooltip.
+# An embedded file's card (embedded_references._render_file_body): a span holding spans (its
+# header, then Open and Download), so its end is found by counting them.
 _EMBED_CARD_RE = re.compile(
-    r'<button type="button" class="note-file-reference-link note-file-reference-link-embed" '
-    r'data-file-ref-id="(?P<file_id>[^"]+)" title="(?P<title>[^"]*)">'
+    r'<span class="note-file-reference-link note-file-reference-link-embed" data-file-ref-id="(?P<file_id>[^"]+)">'
 )
-_CARD_END = "</button>"
+_SPAN_TAG_RE = re.compile(r"<span\b|</span>")
+_SPAN_END = "</span>"
 # The text shown around the first match: this many characters before it, this many in all.
 _CONTEXT_BEFORE = 70
 _SNIPPET_LENGTH = 220
 _ELLIPSIS = "…"
 _WORD_EDGE = " "
-_CUT_TOOLTIP = ". Search covers its first ~2,000 pages."
+_CUT_TOOLTIP = "Search covers its first ~2,000 pages."
 
 
 def with_file_text_snippets(rendered: str, phrases: Tuple[str, ...]) -> str:
@@ -43,10 +44,10 @@ def with_file_text_snippets(rendered: str, phrases: Tuple[str, ...]) -> str:
         file_id = html.unescape(card.group("file_id"))
         if file_id not in loaded:
             continue
-        end = rendered.index(_CARD_END, card.end())
+        end = _card_end(rendered, card.end())
         opening = card.group(0)
         if file_texts.is_cut(file_id):
-            opening = opening.replace(f'title="{card.group("title")}"', f'title="{card.group("title")}{_CUT_TOOLTIP}"')
+            opening = f'{opening[:-1]} title="{_CUT_TOOLTIP}">'
         snippet = file_text_snippet(file_id, phrases)
         inside = rendered[card.end():end]
         if snippet != "":
@@ -56,6 +57,19 @@ def with_file_text_snippets(rendered: str, phrases: Tuple[str, ...]) -> str:
         position = end
     pieces.append(rendered[position:])
     return "".join(pieces)
+
+
+def _card_end(rendered: str, inside_start: int) -> int:
+    """Where the card whose contents start at inside_start closes (its last </span>)."""
+    depth = 1
+    for tag in _SPAN_TAG_RE.finditer(rendered, inside_start):
+        if tag.group(0) == _SPAN_END:
+            depth -= 1
+        else:
+            depth += 1
+        if depth == 0:
+            return tag.start()
+    raise ValueError("an embedded file's card must close")
 
 
 def file_text_snippet(file_id: str, phrases: Iterable[str]) -> str:

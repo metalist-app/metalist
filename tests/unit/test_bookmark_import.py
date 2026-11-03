@@ -132,7 +132,7 @@ def test_the_summary_counts_what_comes_in_and_what_is_left_out(live_database) ->
 
 def test_each_bookmark_is_one_note_at_the_top_its_title_linked(live_database) -> None:  # noqa: F811
     result = CmdImportBookmarks(
-        file_text=_FIREFOX_LIKE, folder_prefix="Bookmarks", add_to_existing=True, token="", imported_at=_IMPORTED_AT,
+        file_text=_FIREFOX_LIKE, folder_prefix="Bookmarks", add_to_existing=True, token="", imported_at=_IMPORTED_AT, context_tags="",
     ).execute()
 
     assert result["noteCount"] == 6
@@ -153,19 +153,19 @@ def test_each_bookmark_is_one_note_at_the_top_its_title_linked(live_database) ->
 
 def test_an_existing_folder_is_added_to_only_when_ticked(live_database) -> None:  # noqa: F811
     CmdImportBookmarks(
-        file_text=_FIREFOX_LIKE, folder_prefix="Bookmarks", add_to_existing=True, token="", imported_at=_IMPORTED_AT,
+        file_text=_FIREFOX_LIKE, folder_prefix="Bookmarks", add_to_existing=True, token="", imported_at=_IMPORTED_AT, context_tags="",
     ).execute()
 
     with pytest.raises(InputRejected, match="already exists"):
         CmdImportBookmarks(
-            file_text=_FIREFOX_LIKE, folder_prefix="Bookmarks", add_to_existing=False, token="", imported_at=_IMPORTED_AT,
+            file_text=_FIREFOX_LIKE, folder_prefix="Bookmarks", add_to_existing=False, token="", imported_at=_IMPORTED_AT, context_tags="",
         ).execute()
 
 
 def test_importing_again_only_adds(live_database) -> None:  # noqa: F811
     for _ in range(2):
         CmdImportBookmarks(
-            file_text=_FIREFOX_LIKE, folder_prefix="Bookmarks", add_to_existing=True, token="", imported_at=_IMPORTED_AT,
+            file_text=_FIREFOX_LIKE, folder_prefix="Bookmarks", add_to_existing=True, token="", imported_at=_IMPORTED_AT, context_tags="",
         ).execute()
 
     assert len(tree.children(None)) == 12

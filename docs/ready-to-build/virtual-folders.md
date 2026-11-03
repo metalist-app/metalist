@@ -10,10 +10,10 @@ Written from a read-only look at the repo; filed from `docs/inbox/` on 2026-11-0
 Built for the maintainer to try: §1's trailing slash in the import (`_folder_tag`), §2's tree
 (`virtual-folders-service.js`, `app/api/routes/virtual_folders.py`, `app/services/virtual_folders.py`)
 with the column moved right, §3's filter chip, and the toggle (palette: Show/Hide Virtual Folders;
-an import turns it on). **Nothing is stored:** the toggle and each tab's filter live in the
+an import turns it on), and dragging a root note from the column onto a folder (2026-11-02, §4). **Nothing is stored:** the toggle and each tab's filter live in the
 server's memory (a restart turns the tree off), so dropping the branch leaves the database as it
 was. The filter narrows the view, find and the current-view commands; exports and the AI read the
-search alone. Not built yet: §4 drags, §5 renames, §6 New Folder, the new search-context icon.
+search alone. Not built yet: §4's other drags, §5 renames, §6 New Folder, the new search-context icon.
 
 ## 0. Today (from the code)
 
@@ -61,7 +61,8 @@ search alone. Not built yet: §4 drags, §5 renames, §6 New Folder, the new sea
 - If the target already exists, the two merge, after one confirmation.
 - Each drag is one undo step.
 - From the notes column, only a root note can be dropped on a folder: a child inherits its parent's folder tag, so a new one would put it in two folders, not move it. A child dragged over the tree highlights no folder and says why (the maintainer, 2026-11-02).
-- A note dropped from the column under a folder filter leaves the column; the target's count updates at once and a floating message ("Moved to `Projects/Client-A/`") offers Undo. Details and what is still open: `docs/ready-to-build/virtual-folders-note-drag.md`.
+- **A note from the column (built 2026-11-02, decided with the maintainer the same day).** The column's own note drag (up and down reorder, sideways indent or outdent) becomes, once the pointer is over the tree, a drop into the folder under the pointer: that folder highlights (dashed outline) and the column's ghost and drop line go; back over the column it is a note drag again. No conflict: a root note can't be outdented, so dragging one left changed nothing before. The tree's top `/` (or its empty space) means no folder. The folder the note is in already, alone, doesn't highlight (nor the top for a note in no folder). Released, the note's folder tags are replaced by the target (`file_note_in_folder`, `POST /virtual-folders/file-note`), one undo step; its place in the one global list stays (not chosen: moving it above the folder's first note, which would make it jump in views that still show it, breaking the global list's logic). The target's count updates at once. Under a folder filter the note leaves the column, the note above still, the note below closing the gap; in a view that still shows it, nothing moves. A floating message says "Moved to `Projects/Client-A/`" (or "Moved out of every folder") with **Undo**, until the next key or click (`docs/ui/floating-messages.md`); ⌘Z undoes it too. Code: `noteDropAt` / `dropNoteOnFolder` in `virtual-folders-service.js`, called from the note drag in `mouse-events.js`; tests: `tests/unit/test_virtual_folders.py`, `scripts/browser-folder-note-drag-regressions.mjs` (suite `folder-note-drag`).
+- A folder tag typed on a child note in the tag bar is allowed (the maintainer, 2026-11-02): an ordinary tag, the child then in both folders, its parent's and the typed one (§7). Only drags are limited to root notes.
 - Files and folders dropped from the desktop onto a folder (files tagged with it, a folder through the import walkthrough under it): `docs/ready-to-build/desktop-drops-into-folders.md`.
 - A locked root note (multi-view) follows the existing rules: tag changes to it are refused like any other edit to it.
 

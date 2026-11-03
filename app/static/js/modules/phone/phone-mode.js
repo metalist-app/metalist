@@ -28,6 +28,7 @@ import { actionRowHtml } from '../modals/action-row.js';
 
 const PHONE_MEDIA_QUERY = '(max-width: 640px)';
 const PHONE_CLASS = 'phone-layout';
+const PHONE_FILE_CONTROLS = '.note-file-action, button.note-file-reference-link, .note-file-media-play, .note-file-media-player';
 // Temporary developer switch (not a user setting): what tapping a tag pill does.
 const TAG_PILL_SWITCH = 'metalist.dev.phoneTagPills';
 const NARROW_TAG_PILLS = 'narrow';
@@ -245,6 +246,11 @@ function onNoteInteraction(event) {
     }
     const note = event.target.closest('#notes-container .note');
     if (note === null || event.target.closest('.note-collapse-toggle') !== null) {
+        return;
+    }
+    // A file's Open, Download and Play, a file linked in text and a player's own controls do
+    // what they say: none edits (files-shown-not-copied.md §3).
+    if (event.target.closest(PHONE_FILE_CONTROLS) !== null) {
         return;
     }
     event.stopImmediatePropagation();

@@ -88,6 +88,21 @@ export function handleTabSwitch() {
     receivePollReset(false);
 }
 
+// The roots in the window now, for a view request: the server builds the band around them.
+// The poll records them too, but skips while a command runs, and typing in find runs one
+// after another: the view request after find had loaded a far match's notes told the server
+// the window was where it had been, and the band went back there without the match (2026-11-03,
+// "Find could not show occurrence 0 of note …: the note is not on the page"). Empty when no
+// root is in the window (the page's first view): the request then uses what was recorded.
+export function measureVisibleRootRange() {
+    const { visible } = collectRootVisibility();
+    if (visible.length === 0) {
+        return null;
+    }
+    ModeContext.setVisibleRootRange(visible[0], visible[visible.length - 1]);
+    return { topRootId: visible[0], bottomRootId: visible[visible.length - 1] };
+}
+
 function collectRootVisibility() {
     // Root notes are direct children of the container; scanning every nested
     // note each tick only to discard children made the poll scale with the
