@@ -60,6 +60,9 @@ search alone. Not built yet: §4 drags, §5 renames, §6 New Folder, the new sea
 - A folder can't be dropped into itself or one of its subfolders.
 - If the target already exists, the two merge, after one confirmation.
 - Each drag is one undo step.
+- From the notes column, only a root note can be dropped on a folder: a child inherits its parent's folder tag, so a new one would put it in two folders, not move it. A child dragged over the tree highlights no folder and says why (the maintainer, 2026-11-02).
+- A note dropped from the column under a folder filter leaves the column; the target's count updates at once and a floating message ("Moved to `Projects/Client-A/`") offers Undo. Details and what is still open: `docs/ready-to-build/virtual-folders-note-drag.md`.
+- Files and folders dropped from the desktop onto a folder (files tagged with it, a folder through the import walkthrough under it): `docs/ready-to-build/desktop-drops-into-folders.md`.
 - A locked root note (multi-view) follows the existing rules: tag changes to it are refused like any other edit to it.
 
 ## 5. Renaming folders

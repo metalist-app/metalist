@@ -43,7 +43,7 @@ Before anything is copied, the walkthrough shows what the folder holds, grouped 
 
 ## 4. Choosing the folder on hosted
 
-The current dialog runs on the server's machine, which is the user's computer only in the personal deployment. **Hosted and self-hosted need the folder from the browser:** a folder picker or a folder dropped on the page. The browser can list names and sizes before uploading, so the checklist in §3 comes first; then the ticked files upload one by one. *Check* how browsers cope with very large folders.
+The current dialog runs on the server's machine, which is the user's computer only in the personal deployment. **Hosted and self-hosted need the folder from the browser:** a folder picker or a folder dropped on the page. The browser can list names and sizes before uploading, so the checklist in §3 comes first; then the ticked files upload one by one. *Check* how browsers cope with very large folders. A folder dropped on the page (`docs/ready-to-build/desktop-drops-into-folders.md`) needs this browser upload on every deployment, the personal one too: a browser never gives the page a dropped folder's path.
 
 ## 5. Previews, in order
 
