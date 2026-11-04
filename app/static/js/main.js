@@ -70,6 +70,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         document.body.dataset.appReady = 'true';
         CommandPalette.startUpdateNotice();
         await CommandPalette.runSetupRequestedByAddress();
+        await CommandPalette.offerLegacyImport();
     } else {
         console.log('+++ main.js: Skipping ModeManager init due to auth requirement');
     }

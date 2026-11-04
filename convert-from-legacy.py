@@ -10,6 +10,7 @@ destructive.
 from __future__ import annotations
 
 import argparse
+import getpass
 import html
 import importlib.util
 import json
@@ -40,6 +41,10 @@ from app.server_runtime import NamespaceLaunchProfile
 from app.server_runtime import resolve_namespace_launch_defaults
 from app.server_runtime import save_namespace_launch_profile
 from app.services.exception_capture import CapturedExceptionContext
+from app.services.legacy_metalist import decrypted_legacy_items
+from app.services.legacy_metalist import legacy_password_opens
+from app.services.legacy_metalist import read_legacy_database
+from app.services.legacy_metalist import require_legacy_encryption_scheme
 from app.services.tag_ontology import OntologyParseError
 from app.services.tag_ontology import parse_rules_text
 from app.utils.text_utils import strip_html
@@ -59,6 +64,8 @@ _DEFAULT_NAMESPACE = "default"
 _DEFAULT_KDF_TIME_COST = 3
 _DEFAULT_KDF_MIN_TIME_COST = 1
 _DEFAULT_KDF_MAX_TIME_COST = 10
+# The keys MetaList sends with --passwords-from-stdin (app/services/legacy_metalist_conversion.py).
+_SUPPLIED_PASSWORD_KEYS = {"legacy_password", "password"}
 
 DATABASE_URL: str
 KDF_MAX_TIME_COST: int
@@ -80,6 +87,14 @@ class BootstrapArgs:
     namespace: str | None
     port: int | None
     https_port: int | None
+
+
+@dataclass(frozen=True)
+class SuppliedPasswords:
+    """--passwords-from-stdin: the old MetaList's password and the converted one's, each None
+    for none, so nothing is asked (MetaList runs the converter; legacy_metalist_conversion.py)."""
+    legacy_password: str | None
+    password: str | None
 
 
 @dataclass(frozen=True)
@@ -191,7 +206,18 @@ def parse_args(
     parser.add_argument(
         "--input",
         dest="input_path",
-        help="Path to the legacy JSON export. If omitted, a file picker opens.",
+        help="Path to the legacy JSON export. If omitted (and --legacy-database too), a file picker opens.",
+    )
+    parser.add_argument(
+        "--legacy-database",
+        dest="legacy_database_path",
+        help="Path to the old MetaList's own database (~/MetaList/metalist.db), read instead of an export; never changed.",
+    )
+    parser.add_argument(
+        "--passwords-from-stdin",
+        dest="passwords_from_stdin",
+        action="store_true",
+        help="Read the passwords as one JSON line on stdin instead of asking (used by MetaList itself).",
     )
     parser.add_argument(
         "--namespace",
@@ -229,11 +255,19 @@ def _prompt_input(*, prompt: str) -> str:
 
 
 def _prompt_yes_no(*, prompt: str) -> bool:
-    response = input(prompt).strip().lower()
+    response = _prompt_input(prompt=prompt).strip().lower()
     return response in {"y", "yes"}
 
 
+def _prompt_yes_unless_no(*, prompt: str) -> bool:
+    response = _prompt_input(prompt=prompt).strip().lower()
+    return response not in {"n", "no"}
+
+
 def _prompt_secret_input(*, prompt: str) -> str:
+    # At a terminal, what is typed is not shown; piped input is never shown anyway.
+    if sys.stdin.isatty():
+        return getpass.getpass(prompt)
     return input(prompt)
 
 
@@ -284,12 +318,18 @@ def _configure_namespace_launch_profile(argv: list[str]) -> NamespaceLaunchProfi
         namespace=namespace,
         environ=os.environ,
     )
+    # MetaList running it (--passwords-from-stdin) asks nothing: an omitted port is the default.
+    asks = "--passwords-from-stdin" not in argv
     port = bootstrap_args.port
-    if port is None:
+    if port is None and asks:
         port = _prompt_for_optional_port(label="HTTP port", default_port=defaults.port)
+    elif port is None:
+        port = defaults.port
     https_port = bootstrap_args.https_port
-    if https_port is None:
+    if https_port is None and asks:
         https_port = _prompt_for_optional_port(label="HTTPS port", default_port=defaults.https_port)
+    elif https_port is None:
+        https_port = defaults.https_port
     return NamespaceLaunchProfile(
         namespace=namespace,
         port=port,
@@ -366,7 +406,18 @@ def _resolve_input_path(input_path: str | None) -> Path:
     return path
 
 
-def _prompt_for_password() -> str | None:
+def _prompt_for_password(legacy_password: str | None) -> str | None:
+    """The password for the converted MetaList, or None for none. Checked against the new
+    MetaList's rules here, before the database is created: AuthService refusing it after the
+    import would leave the notes unprotected."""
+    if legacy_password is not None:
+        legacy_policy_error = AuthService.password_policy_error(legacy_password)
+        if legacy_policy_error is None:
+            if _prompt_yes_unless_no(prompt="Protect the converted MetaList with the same password? [Y/n]: "):
+                return legacy_password
+        else:
+            print(f"The old password is too weak for the new MetaList: {legacy_policy_error}")
+
     if not _prompt_yes_no(prompt="Enable password protection? [y/N]: "):
         return None
 
@@ -375,11 +426,63 @@ def _prompt_for_password() -> str | None:
         if password == "":
             print("Password cannot be empty.")
             continue
+        policy_error = AuthService.password_policy_error(password)
+        if policy_error is not None:
+            print(policy_error)
+            continue
         confirmation = _prompt_secret_input(prompt="Confirm password: ")
         if password != confirmation:
             print("Passwords do not match. Please try again.")
             continue
         return password
+
+
+def _read_supplied_passwords() -> SuppliedPasswords:
+    raw = json.loads(sys.stdin.readline())
+    if not isinstance(raw, dict) or set(raw) != _SUPPLIED_PASSWORD_KEYS:
+        raise ValueError(f"--passwords-from-stdin expects exactly {sorted(_SUPPLIED_PASSWORD_KEYS)}")
+    for key in _SUPPLIED_PASSWORD_KEYS:
+        if raw[key] is not None and not isinstance(raw[key], str):
+            raise TypeError(f"--passwords-from-stdin {key} must be text or null")
+    return SuppliedPasswords(legacy_password=raw["legacy_password"], password=raw["password"])
+
+
+def _password_for_conversion(legacy_password: str | None, supplied: SuppliedPasswords | None) -> str | None:
+    if supplied is None:
+        return _prompt_for_password(legacy_password)
+    if supplied.password is None:
+        return None
+    policy_error = AuthService.password_policy_error(supplied.password)
+    if policy_error is not None:
+        raise ValueError(f"The new password does not meet the password rules: {policy_error}")
+    return supplied.password
+
+
+def _legacy_items(payload: dict[str, Any], supplied: SuppliedPasswords | None) -> tuple[list[Any], str | None]:
+    """The export's items, decrypted, and the old password (None when it was not encrypted).
+    Without supplied passwords it asks for the old one until it opens the notes."""
+    encryption = _require_dict(payload, "encryption")
+    if "encrypted" not in encryption:
+        raise KeyError("Missing required field: encryption.encrypted")
+    if encryption["encrypted"] is False:
+        if supplied is not None and supplied.legacy_password is not None:
+            raise ValueError("A password was supplied for old notes that are not encrypted")
+        return _require_list(payload, "data"), None
+    if encryption["encrypted"] is not True:
+        raise ValueError(f"Legacy export has encryption.encrypted = {encryption['encrypted']!r}")
+    require_legacy_encryption_scheme(encryption)
+    items = _require_list(payload, "data")
+    if len(items) == 0:
+        raise ValueError("The encrypted legacy export holds no notes: there is nothing to convert.")
+    if supplied is not None:
+        if supplied.legacy_password is None or not legacy_password_opens(items, supplied.legacy_password):
+            raise ValueError("The supplied password does not open the old MetaList's notes")
+        return decrypted_legacy_items(items, supplied.legacy_password), supplied.legacy_password
+    while True:
+        password = _prompt_secret_input(prompt="Password of the old MetaList: ")
+        if legacy_password_opens(items, password):
+            return decrypted_legacy_items(items, password), password
+        print("Incorrect password.")
 
 
 def _load_json(path: Path) -> dict[str, Any]:
@@ -810,14 +913,6 @@ def _mark_database_current() -> None:
         session.close()
 
 
-def _assert_encryption_disabled(payload: dict[str, Any]) -> None:
-    encryption = _require_dict(payload, "encryption")
-    if "encrypted" not in encryption:
-        raise KeyError("Missing required field: encryption.encrypted")
-    if encryption["encrypted"] is not False:
-        raise ValueError("Legacy export must have encryption.encrypted = false.")
-
-
 def _import_item(
     db: SafeSession,
     item: dict[str, Any],
@@ -1008,11 +1103,19 @@ def main(argv: list[str]) -> int:
         kdf_min_time_cost=KDF_MIN_TIME_COST,
         kdf_max_time_cost=KDF_MAX_TIME_COST,
     )
-    input_path = _resolve_input_path(args.input_path)
-    payload = _load_json(input_path)
-    password = _prompt_for_password()
-    _assert_encryption_disabled(payload)
-    items = _require_list(payload, "data")
+    if args.legacy_database_path is not None:
+        if args.input_path is not None:
+            raise ValueError("Pass --input or --legacy-database, not both")
+        input_path = Path(args.legacy_database_path).expanduser()
+        payload = read_legacy_database(input_path)
+    else:
+        input_path = _resolve_input_path(args.input_path)
+        payload = _load_json(input_path)
+    supplied: SuppliedPasswords | None = None
+    if args.passwords_from_stdin:
+        supplied = _read_supplied_passwords()
+    items, legacy_password = _legacy_items(payload, supplied)
+    password = _password_for_conversion(legacy_password, supplied)
 
     db_path = _prepare_database()
     print(f"Importing legacy data from {input_path}")

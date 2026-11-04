@@ -194,6 +194,12 @@ CAPTURE_BOUNDARIES = {
     'app/services/shell_session_service.py:_terminate_tree:capture': ('ProcessLookupError',),
     # Handle expected external I/O, provider, image or LaTeX parsing failure.
     'convert-from-legacy.py:_legacy_rule_is_currently_valid:parse_capture': ('OntologyParseError',),
+    # A wrong password typed for the old MetaList's notes: ask for it again.
+    'app/services/legacy_metalist.py:legacy_password_opens:wrong_password_capture': ('InvalidTag',),
+    # Record operation failure and re-raise; never resume the failed operation.
+    'app/services/legacy_metalist.py:decrypted_legacy_items:corruption_capture': ('InvalidTag',),
+    # A file named metalist.db that is not an SQLite database is not the old MetaList's.
+    'app/services/legacy_metalist.py:find_legacy_database:not_a_database_capture': ('DatabaseError',),
     # Handle expected external I/O, provider, image or LaTeX parsing failure.
     'app/startup_shockharness.py:shockharness_report_lines:analysis_capture': ('ShockHarnessError',),
     'main.py:_bind_https_proxy_server:bind_capture': ('OSError',),

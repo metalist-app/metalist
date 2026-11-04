@@ -794,6 +794,7 @@ export const Auth = {
                 finishStartupTiming();
                 CommandPalette.startUpdateNotice();
                 await CommandPalette.runSetupRequestedByAddress();
+                await CommandPalette.offerLegacyImport();
             } else {
                 startupPhase = enterStartupStage('reloading the workspace');
                 window.location.reload();

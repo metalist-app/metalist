@@ -692,8 +692,20 @@ swap, or filesystem snapshots.
 For fresh imports using `convert-from-legacy.py`:
 
 1. This is a destructive fresh-import path (existing DB is deleted first).
-2. Import plaintext legacy data into a new SQLite database.
-3. Optionally set a password at import time.
+2. Import legacy data into a new SQLite database. An export the old MetaList encrypted
+   (its Backup's "Password Protected", the default) is decrypted with the old password,
+   typed at the prompt and never accepted as an argument. The old scheme
+   (`MetaList_old/js/utils/crypto.js`) keys AES-GCM with one unsalted SHA-256 of the
+   password, each top-level item with its own 12-byte IV; the importer accepts only
+   `encryption_scheme_version` 1, `SHA-256` and `AES-GCM`. A wrong password asks again
+   (the first item tells); a later item that does not open fails the import as damaged.
+   Every item is decrypted before the target database is deleted. That scheme is fast
+   to attack, so old encrypted exports deserve the care of plaintext ones: delete them
+   once the converted namespace works.
+3. Optionally set a password at import time. After an encrypted export, the importer
+   offers the old password, when the new password rules accept it. Every password is
+   checked against those rules before the database is created; before, a weak one was
+   refused only after the import, leaving the notes unprotected.
 4. Password enablement writes the same vault metadata (`vault_version`, `kdf_algorithm`)
    and KDF parameters used by the runtime auth service.
 5. Input selection:
@@ -705,6 +717,16 @@ For fresh imports using `convert-from-legacy.py`:
 7. Launch profile prompting:
    - if `--namespace`, `--port`, or `--https-port` are omitted, the importer prompts for them
    - the chosen ports are saved in the namespace DB so later `python main.py work` can reuse them.
+8. From MetaList itself (`docs/ui/legacy-import.md`): a namespace with no notes and no password
+   whose data folder holds the old MetaList's `metalist.db` offers its notes. The old file is
+   opened read-only and hashed before and after; a change installs nothing. The server runs the
+   importer as its own process with `--legacy-database` and `--passwords-from-stdin` (both
+   passwords as one JSON line on stdin, never in its arguments or environment), so setting the
+   converted namespace's password never touches the server's keys. The importer writes into a
+   staging folder beside the old file, removed afterwards; the converted namespace is installed
+   under the recovery journal as a restore installs an archive, and the server restarts. The
+   password check (`/api2/legacy-import/check-password`) decrypts one old item and reports the
+   password rules; neither password is logged or kept once the dialog closes.
 
 ## API Endpoints
 

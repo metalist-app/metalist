@@ -30,6 +30,17 @@ the current live password or choose a new password. A later explicit password
 change affects only that restored live copy. A backup is not the same
 as an HTML export.
 
+Notes from the old MetaList (the Node app before this one): a vault with no notes
+and no password, whose data folder holds the old MetaList's file, offers them in a
+dialog when it opens. Protected old notes ask for the old password (a wrong one
+says Incorrect password under the field); bringing them in replaces the empty vault,
+MetaList restarts, and the old password then opens it. An old password too weak
+for the password rules asks for a new one. Not Now is remembered; Bring In Notes
+from Old MetaList… in the palette stays while the vault has no notes and no
+password. The old file is only read, never changed; once the notes are in, the
+user can delete it and old exports, as the old encryption is weak. At a
+terminal, convert-from-legacy.py does the same from an export or the old file.
+
 Export View as HTML… exports the current view for viewing/sharing, not a full restorable
 database backup. It and Print (note menu, view menu, palette `Print View…`) show
 the view as it is shown (search, sort, Untagged; notes a search leaves out are

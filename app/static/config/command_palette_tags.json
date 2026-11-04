@@ -241,6 +241,10 @@
       "tags": ["backup", "restore", "recover", "database", "sqlite", "snapshot"]
     },
     {
+      "id": "form.bring_in_old_metalist",
+      "tags": ["old", "legacy", "previous", "metalist", "import", "convert", "migrate", "bring", "notes"]
+    },
+    {
       "id": "action.logout",
       "tags": ["logout", "log", "out", "signout", "session", "auth"]
     },

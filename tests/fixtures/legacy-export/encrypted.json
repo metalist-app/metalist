@@ -1,0 +1,55 @@
+{
+    "data_schema_version": 23,
+    "encryption": {
+        "encrypted": true,
+        "encryption_scheme_version": 1,
+        "digest": "SHA-256",
+        "alg": "AES-GCM"
+    },
+    "data": [
+        {
+            "id": 1,
+            "prev": null,
+            "next": 2,
+            "creation": 1700000000000,
+            "last_edit": 1700000001000,
+            "iv": {
+                "0": 6,
+                "1": 254,
+                "2": 101,
+                "3": 88,
+                "4": 191,
+                "5": 227,
+                "6": 244,
+                "7": 158,
+                "8": 209,
+                "9": 69,
+                "10": 4,
+                "11": 39
+            },
+            "subitems_enc": "c369e77848b62a4a00d8c0f960a93bd330a05807c2e9827511a9c1add96f7f93335427398cbae5d223da04a7814c8140c09fd38f7d02292d08480c3338cedc6793eaa7b9e85e057abe23d89f939b48446ca7d615509b683fa3da5cd51d29168f06e552f6f28e1841e325245e8a7569a453102f58615c071da3aa9be9c3653d8e410f50c8e84dc3c1377adc0835f076836bfc66949747c10d037313875f29c95b2871aae00710159ff3"
+        },
+        {
+            "id": 2,
+            "prev": 1,
+            "next": null,
+            "creation": 1700000002000,
+            "last_edit": 1700000003000,
+            "iv": {
+                "0": 110,
+                "1": 219,
+                "2": 240,
+                "3": 124,
+                "4": 71,
+                "5": 139,
+                "6": 136,
+                "7": 152,
+                "8": 125,
+                "9": 155,
+                "10": 24,
+                "11": 75
+            },
+            "subitems_enc": "893816b0078940679098a469cd1b33e7c7fbcaa69cce54158a3b6501e80c34aeff3751850ae822604999e80ea3b6ba7df3f27d479fedeb2b1c2c8e0019c7152d3f4a41f24aa152924d939fe672867aca"
+        }
+    ]
+}

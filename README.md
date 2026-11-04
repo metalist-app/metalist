@@ -239,6 +239,15 @@ Do not widen that list beyond the actual proxy addresses.
 
 This is destructive. It deletes the existing notes DB and related files DB before rebuilding the namespace.
 
+An export the old MetaList encrypted is read too: the importer asks for the old password, then offers it for the converted namespace. Delete old exports once the conversion works; the old encryption is weak.
+
+It also reads the old MetaList's own file instead of an export, and never changes it:
+```bash
+convert-from-legacy.py --namespace work --legacy-database ~/MetaList/metalist.db
+```
+
+Most people never need the command: a newly installed MetaList that finds the old MetaList's file in its data folder offers its notes when it opens (`docs/ui/legacy-import.md`).
+
 Example usage:
 ```bash
 convert-from-legacy.py --input /path/to/legacy-export.json

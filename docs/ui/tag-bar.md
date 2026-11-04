@@ -71,7 +71,7 @@ Examples (autocorrected while typing):
   - `@serif` switches to a serif font.
   - `@red`, `@green`, `@blue`, `@grey` (or `@gray`) apply text colors.
   - `@highlight` adds a fluorescent-yellow, slightly irregular marker stroke behind the text.
-  - `@copyable` gives the rendered content a copy button that copies its raw text to the clipboard; clicking the text itself edits the note (2026-11-03; `docs/ui/content-formatting.md`, Copy buttons).
+  - `@copyable` makes the rendered content click-to-copy: clicking it copies its raw text to the clipboard (`docs/ui/content-formatting.md`, Click to copy).
   - `@size=0.1`, `0.25`, `0.5`, `0.75`, `1.0`, `1.25`, `1.5`, `2.0`, or `3.0` scales a whole note or scoped region non-destructively in view mode.
   - Ontology implication rules can add these formatting tags implicitly (e.g. `bug => @red`).
 - List meta tags:
@@ -79,8 +79,8 @@ Examples (autocorrected while typing):
   - `@numbered` renders the note's immediate children with numbered markers.
   - Only the **direct** children are affected (grandchildren are not).
 - Credential meta tags:
-  - `@username` renders a view-only user-icon row with its value and a copy button.
-  - `@password` renders a view-only lock-icon row: `••••••••`, an eye that shows the value until the next click or key, and a copy button (`docs/ui/content-formatting.md`).
+  - `@username` renders a view-only user-icon row with its value; clicking it copies it.
+  - `@password` renders a view-only lock-icon row: `••••••••` and an eye that shows the value until the next click or key; clicking the dots copies it (`docs/ui/content-formatting.md`).
 - Email meta tags:
   - `@email` renders a view-only envelope row with a mailto link.
 - Status meta tags:

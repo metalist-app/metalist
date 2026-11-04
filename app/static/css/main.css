@@ -7994,12 +7994,12 @@ html[data-theme="dark"] .meta-mermaid-source.is-find-current {
     border-radius: 6px;
 }
 
-/* An export copies a value when it is clicked (html_export.py); MetaList has copy buttons. */
-.html-export-body .meta-copyable {
+/* A click copies it, in MetaList (mouse-events.js) and in an export (html_export.py). */
+.meta-copyable {
     cursor: pointer;
 }
 
-.html-export-body .meta-copyable:hover {
+.meta-copyable:hover {
     background-color: rgba(0, 0, 0, 0.14);
 }
 
@@ -8142,59 +8142,53 @@ html[data-theme="dark"] .meta-quote {
 }
 
 .meta-credential-value {
+    cursor: pointer;
     user-select: text;
     border-radius: 6px;
     position: relative;
 }
 
-.html-export-body .meta-credential-value:not([data-redacted]) {
-    cursor: pointer;
-}
-
-.html-export-body .meta-credential-value:not([data-redacted]):hover {
+/* A click copies a value (mouse-events.js); one hidden in an export has nothing to copy. */
+.meta-credential-value:not([data-redacted]):hover {
     text-decoration: underline;
 }
 
-/* A password in MetaList (value-buttons-service.js) sits in a space as wide for every password,
-   monospaced (to tell l, 1 and I apart when its eye shows it): showing it moves nothing after
-   it, and the space says nothing of its length. A longer one wraps inside the space; the row
-   keeps its icons on its first line. */
-.meta-credential-value.meta-credential-slot {
-    display: inline-block;
-    width: 24ch;
-    max-width: 100%;
+.meta-credential-value[data-redacted] {
+    cursor: auto;
+}
+
+/* A folded note draws its first line as text, every block in it as a block: a credential row
+   stays a row, its eye where it is when the note is open. */
+.note.collapsed:not(.editing) .note-content .meta-credential {
+    display: inline-flex;
+}
+
+/* A password in MetaList (value-buttons-service.js) is monospaced, to tell l, 1 and I apart
+   when its eye shows it; the eye sits right after it. A long one wraps, the eye after its end,
+   the row's lock on its first line. */
+.meta-credential-value.meta-credential-monospace {
     font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
     font-size: 0.97em;
     overflow-wrap: anywhere;
 }
 
-.meta-credential-password:has(> .meta-credential-slot) {
+/* A folded note sets every font to its own size; the password keeps its size, so the eye is
+   where it is when the note is open. */
+.note.collapsed:not(.editing) .note-content .meta-credential-value.meta-credential-monospace {
+    font-size: 0.97em !important;
+}
+
+.meta-credential.meta-credential-with-eye {
     align-items: flex-start;
 }
 
-/* Copy and show buttons on copyable values (value-buttons-service.js): always there, faint,
-   darker on hover; a check mark for a moment after a copy. */
+/* A password's eye (value-buttons-service.js): always there, faint, darker on hover. */
 .meta-value-buttons {
     display: inline-flex;
     align-items: center;
     gap: 2px;
     vertical-align: middle;
     user-select: none;
-}
-
-.meta-value-buttons-inline {
-    margin-left: 4px;
-}
-
-.meta-copyable:has(> .meta-value-buttons-corner) {
-    position: relative;
-    padding-right: 26px;
-}
-
-.meta-value-buttons-corner {
-    position: absolute;
-    top: 0;
-    right: 0;
 }
 
 .meta-value-button {
@@ -8223,30 +8217,18 @@ html[data-theme="dark"] .meta-quote {
     height: 15px;
 }
 
-.meta-value-button-check-icon,
 .meta-value-button-eye-off-icon,
-.meta-value-button-copied .meta-value-button-copy-icon,
 .meta-value-button[aria-pressed="true"] .meta-value-button-eye-icon {
     display: none;
 }
 
-.meta-value-button-copied .meta-value-button-check-icon,
 .meta-value-button[aria-pressed="true"] .meta-value-button-eye-off-icon {
     display: inline;
-}
-
-.meta-value-button-copied {
-    opacity: 0.85;
-    color: #2e7d32;
 }
 
 html[data-theme="dark"] .meta-value-button:hover,
 html[data-theme="dark"] .meta-value-button:focus-visible {
     background-color: rgba(255, 255, 255, 0.12);
-}
-
-html[data-theme="dark"] .meta-value-button-copied {
-    color: #81c784;
 }
 
 .meta-credential-value.meta-credential-copied {
@@ -10030,7 +10012,7 @@ html[data-theme="dark"] .namespace-ports-table thead th {
     color: #dbe7ff;
 }
 
-html[data-theme="dark"] .html-export-body .meta-copyable:hover,
+html[data-theme="dark"] .meta-copyable:hover,
 html[data-theme="dark"] .meta-status-toggle:hover,
 html[data-theme="dark"] .meta-markdown-task-toggle:hover {
     background-color: rgba(255, 255, 255, 0.12);

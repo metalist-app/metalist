@@ -511,6 +511,12 @@ exceptions = ["OSError", "PIL.Image.DecompressionBombError", "PIL.UnidentifiedIm
 reason = "Handle expected external I/O, provider, image or LaTeX parsing failure."
 
 [[tool.shockharness.rules.exceptions.boundaries]]
+path = "app/services/legacy_metalist.py"
+language = "python"
+exceptions = ["sqlite3.DatabaseError", "cryptography.exceptions.InvalidTag"]
+reason = "The old MetaList's file is outside data: a file of that name that is no database is not the old MetaList's, a wrong password is asked again, and a later item that does not open is re-raised as damage."
+
+[[tool.shockharness.rules.exceptions.boundaries]]
 path = "app/services/link_titles.py"
 language = "python"
 exceptions = ["UnicodeDecodeError", "app.services.public_http.PublicHttpTargetRejected", "httpcore.NetworkError", "httpcore.ProtocolError", "httpcore.TimeoutException", "httpx.HTTPError", "httpx.NetworkError", "httpx.TimeoutException", "json.JSONDecodeError"]
