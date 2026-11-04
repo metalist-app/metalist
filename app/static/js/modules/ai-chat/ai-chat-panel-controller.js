@@ -608,6 +608,15 @@ class AiChatPanelController {
         this._syncComposerControlsDisabled();
         this._render({ shouldScrollToBottom: false });
         this._revealChatItem(SUMMARY_PENDING_ID);
+        // The summary is done once the chat is read again with it: Clear and Send wait for
+        // that, or the read, answered after Clear, puts the cleared chat back (2026-11-04).
+        await this._summarizeAndReload(settings).finally(() => {
+            this._activeSummary = null;
+            finishSummary();
+        });
+    }
+
+    async _summarizeAndReload(settings) {
         let outcome = '';
         try {
             outcome = await summarizeAiChat({ settings });
@@ -620,8 +629,6 @@ class AiChatPanelController {
         } finally {
             this._isSummarizing = false;
             this._syncComposerControlsDisabled();
-            this._activeSummary = null;
-            finishSummary();
         }
         if (outcome === 'nothing') {
             showChatNotice('Nothing to summarize yet', 'info');
@@ -1741,6 +1748,9 @@ class AiChatPanelController {
             error: message,
             provider: settings.provider,
             model: settings.model,
+            // As every message carries one since long chats (ai-chat-summaries.js); local, as
+            // the turn's own local messages are.
+            visibility: SUMMARY_VISIBILITY_SENT,
             activities: [],
         });
         this._render({ shouldScrollToBottom: true });

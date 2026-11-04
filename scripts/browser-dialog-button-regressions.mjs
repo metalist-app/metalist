@@ -156,9 +156,8 @@ const CASES = [
   simpleCase({label: 'Back Up Now', open: page => openModal(page, '/static/js/modules/modals/backup-settings-modal.js',
     'BackupSettingsModal', 'openForBackup', null),
   mainSelector: '#backup-settings-run-btn', labels: ['Cancel', 'Back Up Now'], mainClass: 'primary-btn', hasAlternative: false}),
-  simpleCase({label: 'Create Vault', open: page => openPalette(page, 'openCreateNamespace', null),
-    mainSelector: '#create-namespace-submit-btn', labels: ['Cancel', 'Create and Open Vault'], mainClass: 'primary-btn',
-    hasAlternative: false}),
+  // Create Vault is the new vault wizard (2026-10-31): a full-window page whose footer is Back
+  // and its main button (wizard-modal.js), not a dialog's action row; error-dialogs checks it.
   simpleCase({label: 'Rename Vault', open: page => openPalette(page, 'openRenameCurrentNamespace', null),
     mainSelector: '#rename-namespace-submit-btn', labels: ['Cancel', 'Rename and Restart'], mainClass: 'primary-btn',
     hasAlternative: false}),

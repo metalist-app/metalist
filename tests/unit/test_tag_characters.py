@@ -54,6 +54,12 @@ def test_casefold_exceptions_agree_with_this_python() -> None:
             assert character.lower() == character.casefold(), key
 
 
+def test_the_fixture_lists_what_its_unicode_version_leaves_unassigned() -> None:
+    if LOWERCASE["unicodeVersion"] != unicodedata.unidata_version:
+        pytest.skip(f"the fixture is Unicode {LOWERCASE['unicodeVersion']}, this Python {unicodedata.unidata_version}")
+    assert LOWERCASE["unassigned"] == generator.unassigned_ranges()
+
+
 def test_the_lowercase_fixture_agrees_with_this_python() -> None:
     # tag_characters.test.mjs checks the browser's toLowerCase against this fixture.
     lowercase = LOWERCASE["lowercase"]

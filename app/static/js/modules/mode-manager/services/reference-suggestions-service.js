@@ -5,7 +5,7 @@ import { unlessDiagramEditorOpen } from '../../excalidraw/excalidraw-editor-stat
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import { restoreSelection } from '../../editor-selection.js';
 // Placed as the paste format card is: below its anchor, or above it near the window's bottom.
-import { placePasteFormatOffer } from './floating-card-placement.js';
+import { contentMaxHeight, placePasteFormatOffer } from './floating-card-placement.js';
 import { PREVIEW_OWNERS, hideReferencePreview, placeReferencePreview, showReferencePreview } from './reference-preview-card-service.js';
 import { chosenReferenceText } from './reference-text.js';
 
@@ -143,13 +143,16 @@ function anchorRect(node, start) {
 
 function placeList() {
     const list = moduleState.list;
-    const { left, top } = placePasteFormatOffer({
+    // Measured at its full height, then cut to the room it has, scrolling inside it.
+    list.style.maxHeight = 'none';
+    const { left, top, maxHeight } = placePasteFormatOffer({
         anchor: anchorRect(moduleState.triggerNode, moduleState.triggerStart),
         width: list.offsetWidth, height: list.offsetHeight,
         viewportWidth: window.innerWidth, viewportHeight: window.innerHeight,
     });
     list.style.left = `${left}px`;
     list.style.top = `${top}px`;
+    list.style.maxHeight = `${contentMaxHeight(maxHeight, window.getComputedStyle(list))}px`;
     placeReferencePreview();
 }
 

@@ -157,7 +157,9 @@ function caretRect(caret) {
 function placePanel(caret) {
     const panel = moduleState.panel;
     const line = caretRect(caret);
-    const { left, top } = placePasteFormatOffer({
+    // Measured at its own height (at most 40% of the window, main.css), then cut to the room it has.
+    panel.style.maxHeight = '';
+    const { left, top, maxHeight } = placePasteFormatOffer({
         anchor: { left: line.left, top: line.top, bottom: line.bottom },
         // Its exact size: a whole-pixel height would put it a fraction off the line above it.
         width: panel.getBoundingClientRect().width, height: panel.getBoundingClientRect().height,
@@ -165,6 +167,7 @@ function placePanel(caret) {
     });
     panel.style.left = `${left}px`;
     panel.style.top = `${top}px`;
+    panel.style.maxHeight = `min(40vh, ${maxHeight}px)`;
 }
 
 // Full strength at once, or fading toward the ghost.

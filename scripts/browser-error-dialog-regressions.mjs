@@ -107,38 +107,45 @@ async function closeEverything(page) {
   await idle(page);
 }
 
-async function createExistingCase(page) {
+// Create Vault is the new vault wizard's Vault step (the maintainer, 2026-10-31); its fields
+// show once the vault list is read.
+async function openCreateVault(page) {
   await openFromPalette(page, 'openCreateNamespace', []);
-  await typeInto(page, '#create-namespace-name', 'default');
-  const before = await layout(page, '#create-namespace-modal');
-  const nameBox = (await fieldState(page, '#create-namespace-name')).box;
-  await page.click('#create-namespace-submit-btn');
+  await page.waitForSelector('#new-vault-name', {visible: true});
+}
+
+async function createExistingCase(page) {
+  await openCreateVault(page);
+  await typeInto(page, '#new-vault-name', 'default');
+  const before = await layout(page, '#new-vault-wizard');
+  const nameBox = (await fieldState(page, '#new-vault-name')).box;
+  await page.click('#new-vault-wizard .wizard-next');
   await idle(page);
   const shown = await errorDialog(page);
   assert.notEqual(shown, null, 'pressing Create with an existing name opens an error dialog');
   assert.deepEqual(shown.problems, ['That vault already exists. Pick another name.']);
   assert.deepEqual(shown.buttons, ['Close'], 'the error dialog has only its ×');
   assert.equal(shown.hasFocus, true, 'focus moves into the error dialog');
-  assert.deepEqual(await layout(page, '#create-namespace-modal'), before, 'nothing in Create Vault moves');
+  assert.deepEqual(await layout(page, '#new-vault-wizard'), before, 'nothing in Create Vault moves');
   await page.keyboard.press('Escape');
   await settle(page);
   assert.equal(await errorDialog(page), null, 'Escape closes the error dialog');
-  assert.equal(await isShown(page, '#create-namespace-modal'), true, 'Escape leaves Create Vault open');
-  const name = await fieldState(page, '#create-namespace-name');
+  assert.equal(await isShown(page, '#new-vault-wizard'), true, 'Escape leaves Create Vault open');
+  const name = await fieldState(page, '#new-vault-name');
   assert.deepEqual([name.value, name.focused, name.atFault, name.outline], ['default', true, true, 'solid'],
     'the name keeps its text, has focus and a red outline');
   assert.deepEqual(name.box, nameBox, 'the outline changes no size');
-  assert.deepEqual(await layout(page, '#create-namespace-modal'), before, 'nothing in Create Vault moved');
+  assert.deepEqual(await layout(page, '#new-vault-wizard'), before, 'nothing in Create Vault moved');
   await page.keyboard.type('x');
-  assert.equal((await fieldState(page, '#create-namespace-name')).atFault, false, 'typing clears the outline');
+  assert.equal((await fieldState(page, '#new-vault-name')).atFault, false, 'typing clears the outline');
   await closeEverything(page);
 }
 
 async function createSeveralCase(page) {
-  await openFromPalette(page, 'openCreateNamespace', []);
-  await typeInto(page, '#create-namespace-name', 'Bad Name');
-  await typeInto(page, '#create-namespace-http-port', LOW_PORT);
-  await page.click('#create-namespace-submit-btn');
+  await openCreateVault(page);
+  await typeInto(page, '#new-vault-name', 'Bad Name');
+  await typeInto(page, '#new-vault-http-port', LOW_PORT);
+  await page.click('#new-vault-wizard .wizard-next');
   await idle(page);
   const shown = await errorDialog(page);
   assert.notEqual(shown, null, 'pressing Create with two mistakes opens an error dialog');
@@ -150,9 +157,9 @@ async function createSeveralCase(page) {
   await page.mouse.click(2, 2);
   await settle(page);
   assert.equal(await errorDialog(page), null, 'a click outside closes the error dialog');
-  assert.equal(await isShown(page, '#create-namespace-modal'), true, 'the click outside leaves Create Vault open');
-  assert.equal((await fieldState(page, '#create-namespace-name')).focused, true, 'focus goes to the first field at fault');
-  assert.equal((await fieldState(page, '#create-namespace-http-port')).atFault, true, 'the port is outlined too');
+  assert.equal(await isShown(page, '#new-vault-wizard'), true, 'the click outside leaves Create Vault open');
+  assert.equal((await fieldState(page, '#new-vault-name')).focused, true, 'focus goes to the first field at fault');
+  assert.equal((await fieldState(page, '#new-vault-http-port')).atFault, true, 'the port is outlined too');
   await closeEverything(page);
 }
 
@@ -254,7 +261,7 @@ async function loadFailureCase(page) {
     await page.keyboard.press('Escape');
     await settle(page);
     assert.equal(await errorDialog(page), null, 'Escape closes the error dialog');
-    assert.equal(await isShown(page, '#create-namespace-modal'), false, 'and the dialog that failed to load');
+    assert.equal(await isShown(page, '#new-vault-wizard'), false, 'and the dialog that failed to load');
     // Open Vault reads it before it opens.
     await openFromPalette(page, 'openOpenNamespace', []);
     assert.equal(await fatalShown(page), false, 'a failed read before Open Vault is not a crash');

@@ -13,6 +13,8 @@ import { waitForAppQuiet } from './browser-app-idle.mjs';
 const SETTLE_MS = 300;
 const TURN_COUNT = 6;
 const LONG_ANSWER_SENTENCES = 12;
+// How late the fake server answers a read of the chat, for the Clear-during-a-summary race.
+const SLOW_SESSION_MS = 300;
 
 async function installFakeServer(page) {
     await page.evaluate(async ({turnCount, sentences}) => {
@@ -22,7 +24,7 @@ async function installFakeServer(page) {
         const groups = [{provider, label: 'OpenAI', models: [model]}];
         if (!stateValuesEqual(AiChatPanel._modelGroups, groups)) AiChatPanel._modelGroups = groups;
         AiChatPanel._syncSettingsControls();
-        const fake = {originalFetch: window.fetch, transcript: [], summaries: [], chats: 0, summarizeRequests: 0,
+        const fake = {originalFetch: window.fetch, transcript: [], summaries: [], chats: 0, summarizeRequests: 0, sessionDelayMs: 0,
             release: null};
         window.chatSummaryTest = fake;
         const message = (id, role, content) => ({
@@ -42,7 +44,10 @@ async function installFakeServer(page) {
             const path = new URL(url, location.href).pathname;
             const method = options && options.method ? options.method : 'GET';
             if (path === '/api2/ai/session' && method === 'GET') {
-                return json({messages: fake.transcript, summaries: fake.summaries}, 200);
+                // The chat as it was when asked, answered after sessionDelayMs.
+                const answer = {messages: [...fake.transcript], summaries: [...fake.summaries]};
+                await new Promise(resolve => setTimeout(resolve, fake.sessionDelayMs));
+                return json(answer, 200);
             }
             if (path === '/api2/ai/session' && method === 'DELETE') {
                 fake.transcript.splice(0);
@@ -87,8 +92,10 @@ function menuLabels(page) {
         .filter(button => button.getClientRects().length).map(button => button.textContent.trim()));
 }
 
+// The menu is read once it shows: Firefox draws it a moment later (CI, 2026-11-04).
 async function rightClickAnswer(page, messageId) {
     await page.click(`[data-message-id="${messageId}"] .ai-chat-message-content`, {button: 'right'});
+    await page.waitForSelector('.context-menu.is-visible button', {visible: true});
 }
 
 // Where an element's top and bottom sit, measured from the top of the chat's scroll area,
@@ -110,6 +117,8 @@ async function chooseSummarizeNow(page, messageId) {
     const buttons = await page.$$('.context-menu.is-visible button');
     await buttons[1].click();
     await page.waitForFunction(() => window.chatSummaryTest.release !== null);
+    // A click while the menu still shows only closes it: the next step waits for it to go.
+    await page.waitForFunction(() => document.querySelector('.context-menu.is-visible') === null);
 }
 
 async function finishSummary(page) {
@@ -203,7 +212,10 @@ export async function checkAiChatSummary(page) {
         const second = await placeInChat(page, '[data-summary-id="summary-2"]');
         assert.equal(Math.round(second.bottom), Math.round(second.end), 'the new entry shows at the bottom edge');
 
-        // Clear while a summary is made: the chat ends empty and the summary is dropped.
+        // Clear while a summary is made: the chat ends empty and the summary is dropped. The
+        // chat read again after the summary lands late: Clear waited for the summary but not
+        // for that read, which put the chat back after Clear emptied it (Firefox, CI, 2026-11-04).
+        await page.evaluate(delayMs => { window.chatSummaryTest.sessionDelayMs = delayMs; }, SLOW_SESSION_MS);
         await page.evaluate(number => window.chatSummaryTest.addTurn(number), TURN_COUNT + 2);
         await page.evaluate(async () => {
             const {AiChatPanel} = await import('/static/js/modules/ai-chat/ai-chat-panel-controller.js');

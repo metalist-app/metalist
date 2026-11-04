@@ -143,6 +143,12 @@ async function clickParagraph(page, prefix) {
 // as the removed position cue was) meanwhile: leaving edit mode must never put
 // a highlight over the notes. Mermaid's temporary render boxes are not overlays.
 async function exitWithEscape(page, prefix) {
+  // A preview while editing (a formula, table or value at the caret) takes the first Escape:
+  // it hides without leaving editing (docs/ui/content-formatting.md, previews while editing).
+  if (await page.evaluate(() => document.querySelector('.edit-preview') !== null)) {
+    await page.keyboard.press('Escape');
+    await page.waitForFunction(() => document.querySelector('.edit-preview') === null);
+  }
   await page.evaluate(prefix => {
     window.__scrollSamples = [];
     window.__bodyOverlays = 0;

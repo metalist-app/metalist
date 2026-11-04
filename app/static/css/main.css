@@ -6702,8 +6702,10 @@ html[data-theme="dark"] .context-menu-item.is-submenu-open {
     font-size: 13px;
 }
 
-/* The paste drawn in the format offered, under the buttons, cut with a fade. */
+/* The paste drawn in the format offered, under the buttons, cut with a fade; in a short
+   window the card is cut to the room it has (paste-format-offer-service.js). */
 .paste-format-offer:has(.paste-format-offer-preview:not([hidden])) {
+    overflow: hidden;
     max-width: min(640px, calc(100vw - 16px));
 }
 
@@ -6800,6 +6802,8 @@ html[data-theme="dark"] .context-menu-item.is-submenu-open {
     color: var(--text-color);
     box-shadow: 0 8px 18px rgba(0, 0, 0, 0.16);
     font-size: 13px;
+    /* Cut to the room it has in a short window (reference-suggestions-service.js). */
+    overflow-y: auto;
 }
 
 .reference-suggestion {

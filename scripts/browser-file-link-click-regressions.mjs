@@ -2,17 +2,17 @@ import assert from 'node:assert/strict';
 import { runThenCleanUp } from './suite-outcome.mjs';
 import { waitForAppQuiet } from './browser-app-idle.mjs';
 
-// A file shown as a link (`.MD pkms_multi_provider_ai_integration.md`) downloads
-// only from its badge and its underlined name (docs/ui/references.md). The rest
-// of the note's line is the note: a click there edits it and a press-and-drag
-// moves it. The link's button used to fill the note's width, so a click an inch
-// right of the name downloaded the file (2026-10-21).
+// A file embedded in a note (`.MD pkms_multi_provider_ai_integration.md`) is a card: only its
+// Open and Download buttons act on the file (files-shown-not-copied.md §3, 2026-11-03: before,
+// its badge and name downloaded it). The rest, the badge and name too, is the note: a click
+// there edits it and a press-and-drag moves it. The link's button used to fill the note's
+// width, so a click an inch right of the name downloaded the file (2026-10-21).
 
 const SETTLE_MS = 400;
 // Requests count as quiet after this long without one starting or ending.
 const REQUESTS_QUIET_MS = 300;
-// How far right of the name's end "beside the name" is.
-const BESIDE_NAME_PX = 40;
+// The least room beside the card that a click there can land in.
+const MIN_BESIDE_GAP_PX = 8;
 // A floating window is narrower: its click goes halfway into the gap after the name, which must be this wide.
 const MIN_FLOATING_GAP_PX = 16;
 const HALF = 0.5;
@@ -94,6 +94,8 @@ async function linkGeometry(page, hostId) {
     const box = rect => ({left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom});
     return {
       badge: box(note.querySelector('.note-file-reference-badge').getBoundingClientRect()),
+      open: box(note.querySelector('.note-file-open').getBoundingClientRect()),
+      download: box(note.querySelector('.note-file-download').getBoundingClientRect()),
       firstLine: box(lines[0]),
       lastLine: box(lines[lines.length - 1]),
       lineCount: new Set(lines.map(rect => Math.round(rect.top))).size,
@@ -106,10 +108,12 @@ function centerOf(rect) {
   return {x: (rect.left + rect.right) / 2, y: (rect.top + rect.bottom) / 2};
 }
 
+// Halfway between the end of `line` (the card's last button, or a line of its name) and the
+// note's right edge: a folded note leaves little room after Download.
 function besideEndOf(line, content) {
-  const point = {x: line.right + BESIDE_NAME_PX, y: (line.top + line.bottom) / 2};
-  assert.ok(point.x < content.right, `the point beside the name is still inside the note: ${point.x} < ${content.right}`);
-  return point;
+  const gap = content.right - line.right;
+  assert.ok(gap >= MIN_BESIDE_GAP_PX, `the note leaves room beside it: ${gap} px`);
+  return {x: line.right + gap * HALF, y: (line.top + line.bottom) / 2};
 }
 
 function editState(page) {
@@ -143,9 +147,26 @@ async function leaveEditing(page) {
   assert.equal(await editState(page), null, 'Escape leaves editing');
 }
 
+function viewerIsOpen(page) {
+  return page.evaluate(() => document.querySelector('.file-viewer-overlay') !== null);
+}
+
+async function closeViewer(page) {
+  await page.keyboard.press('Escape');
+  await page.waitForFunction(() => document.querySelector('.file-viewer-overlay') === null, {timeout: 10000});
+  await idle(page);
+}
+
 async function clickDownloads(page, point, label) {
   assert.equal(await downloadsDuring(page, () => page.mouse.click(point.x, point.y)), 1, `${label}: downloads the file`);
   assert.equal(await editState(page), null, `${label}: does not edit the note`);
+}
+
+async function clickOpensViewer(page, point, label) {
+  assert.equal(await downloadsDuring(page, () => page.mouse.click(point.x, point.y)), 0, `${label}: downloads nothing`);
+  await page.waitForSelector('.file-viewer-overlay', {timeout: 10000});
+  assert.equal(await editState(page), null, `${label}: does not edit the note`);
+  await closeViewer(page);
 }
 
 async function clickEdits(page, hostId, point, label) {
@@ -156,14 +177,16 @@ async function clickEdits(page, hostId, point, label) {
 
 async function nameAndBadgeCases(page, ids, where) {
   const geometry = await linkGeometry(page, ids.hostId);
-  await clickDownloads(page, centerOf(geometry.firstLine), `${where}, click on the name`);
-  await clickDownloads(page, centerOf(geometry.badge), `${where}, click on the badge`);
-  await clickEdits(page, ids.hostId, besideEndOf(geometry.firstLine, geometry.content), `${where}, click right of the name`);
+  await clickOpensViewer(page, centerOf(geometry.open), `${where}, click on Open`);
+  await clickDownloads(page, centerOf(geometry.download), `${where}, click on Download`);
+  await clickEdits(page, ids.hostId, centerOf(geometry.firstLine), `${where}, click on the name`);
+  await clickEdits(page, ids.hostId, centerOf(geometry.badge), `${where}, click on the badge`);
+  await clickEdits(page, ids.hostId, besideEndOf(geometry.download, geometry.content), `${where}, click right of the card`);
 }
 
 async function dragBesideNameCase(page, ids) {
   const geometry = await linkGeometry(page, ids.hostId);
-  const start = besideEndOf(geometry.firstLine, geometry.content);
+  const start = besideEndOf(geometry.download, geometry.content);
   const neighborBox = await (await page.$(`.note[data-note-id="${ids.neighborId}"]`)).boundingBox();
   const targetY = neighborBox.y + neighborBox.height + DROP_BELOW_PX;
   const downloads = await downloadsDuring(page, async () => {
@@ -185,16 +208,14 @@ async function dragBesideNameCase(page, ids) {
 async function wrappedNameCase(page, ids) {
   const geometry = await linkGeometry(page, ids.hostId);
   assert.ok(geometry.lineCount >= 2, `the long name wraps (${geometry.lineCount} lines)`);
-  assert.ok(geometry.lastLine.right + BESIDE_NAME_PX < geometry.firstLine.right,
-    'the last line is shorter than the first, leaving room beside it');
-  await clickDownloads(page, centerOf(geometry.lastLine), 'wrapped name, click on its last line');
-  await clickEdits(page, ids.hostId, besideEndOf(geometry.lastLine, geometry.content), 'wrapped name, click right of its last line');
+  await clickEdits(page, ids.hostId, centerOf(geometry.lastLine), 'wrapped name, click on its last line');
+  await clickOpensViewer(page, centerOf(geometry.open), 'wrapped name, click on Open');
 }
 
 // While its own note is edited, the reference is text and never downloads.
 async function editingCase(page, ids) {
   const geometry = await linkGeometry(page, ids.hostId);
-  const beside = besideEndOf(geometry.firstLine, geometry.content);
+  const beside = besideEndOf(geometry.download, geometry.content);
   await page.mouse.click(beside.x, beside.y);
   await idle(page);
   assert.equal(await editState(page), ids.hostId, 'the host is being edited');
@@ -220,17 +241,26 @@ async function floatingWindowCase(page, ids) {
     range.selectNodeContents(title);
     const line = [...range.getClientRects()].filter(rect => rect.width > 0)[0];
     const content = host.shadowRoot.querySelector('.note-content').getBoundingClientRect();
+    const open = host.shadowRoot.querySelector('.note-file-open').getBoundingClientRect();
+    const actionsEnd = host.shadowRoot.querySelector('.note-file-download').getBoundingClientRect();
     return {
       name: {x: (line.left + line.right) * half, y: (line.top + line.bottom) * half},
-      beside: {x: line.right + (content.right - line.right) * half, y: (line.top + line.bottom) * half},
-      gap: content.right - line.right,
+      open: {x: (open.left + open.right) * half, y: (open.top + open.bottom) * half},
+      beside: {x: actionsEnd.right + (content.right - actionsEnd.right) * half, y: (actionsEnd.top + actionsEnd.bottom) * half},
+      gap: content.right - actionsEnd.right,
     };
   }, HALF);
-  assert.ok(geometry.gap >= MIN_FLOATING_GAP_PX, `the floating window leaves room beside the name: ${JSON.stringify(geometry)}`);
-  assert.equal(await downloadsDuring(page, () => page.mouse.click(geometry.name.x, geometry.name.y)), 1,
-    'floating window, click on the name: downloads the file');
+  assert.ok(geometry.gap >= MIN_FLOATING_GAP_PX, `the floating window leaves room beside the card: ${JSON.stringify(geometry)}`);
+  assert.equal(await downloadsDuring(page, () => page.mouse.click(geometry.name.x, geometry.name.y)), 0,
+    'floating window, click on the name: downloads nothing');
+  assert.equal(await viewerIsOpen(page), false, 'floating window, click on the name: opens nothing');
+  assert.equal(await downloadsDuring(page, () => page.mouse.click(geometry.open.x, geometry.open.y)), 0,
+    'floating window, click on Open: downloads nothing');
+  await page.waitForSelector('.file-viewer-overlay', {timeout: 10000});
+  await closeViewer(page);
   assert.equal(await downloadsDuring(page, () => page.mouse.click(geometry.beside.x, geometry.beside.y)), 0,
-    'floating window, click right of the name: does not download');
+    'floating window, click right of the card: does not download');
+  assert.equal(await viewerIsOpen(page), false, 'floating window, click right of the card: opens nothing');
   await page.evaluate(async () => {
     const {closeAllFloatingNotes} = await import('/static/js/modules/mode-manager/services/floating-note-service.js');
     closeAllFloatingNotes();

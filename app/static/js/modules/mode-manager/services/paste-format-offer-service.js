@@ -4,7 +4,7 @@ import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import { NotesAPI } from '../../api-client.js';
 import { serverRenderedHtml } from '../../server-rendered-html.js';
 import { queueMermaidDiagramRendering } from './mermaid-render-service.js';
-import { placePasteFormatOffer } from './floating-card-placement.js';
+import { contentMaxHeight, placePasteFormatOffer } from './floating-card-placement.js';
 
 // The card offering a guessed format for a paste: "Apply as Markdown" (or a
 // few languages for code) and "Skip" (docs/ui/content-formatting.md, "Paste
@@ -131,13 +131,16 @@ function buildButton(label, className, onActivate) {
     return button;
 }
 
+// Measured at its full height, then cut to the room it has: it never covers the paste's end.
 function placeCard(card, anchor) {
-    const { left, top } = placePasteFormatOffer({
+    card.style.maxHeight = 'none';
+    const { left, top, maxHeight } = placePasteFormatOffer({
         anchor, width: card.offsetWidth, height: card.offsetHeight,
         viewportWidth: window.innerWidth, viewportHeight: window.innerHeight,
     });
     card.style.left = `${left}px`;
     card.style.top = `${top}px`;
+    card.style.maxHeight = `${contentMaxHeight(maxHeight, window.getComputedStyle(card))}px`;
 }
 
 // Offer the guessed formats for the paste just made into noteId.

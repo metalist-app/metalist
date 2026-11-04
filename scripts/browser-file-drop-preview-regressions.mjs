@@ -9,9 +9,10 @@ const REQUESTS_QUIET_MS = 300;
 const DROP_REQUESTS_QUIET_MS = 800;
 const DROP_SETTLE_TIMEOUT_MS = 15000;
 
-// A dropped .txt, .md, .csv or .json file keeps its pill (labelled by extension) and
-// gets its text as the last child of the note holding the pill, rendered by
-// @markdown, @csv or @json (docs/ui/references.md, "Dropped text files").
+// Dropped files are shown, not copied (docs/ready-to-build/files-shown-not-copied.md, agreed
+// 2026-11-03): a dropped file is a card, with no preview note under it. A dropped .md file
+// opens the import walkthrough at its Markdown screen; a dropped .txt file asks Note or File
+// (checks 22 to 26). Before, every text, CSV or JSON file got a preview child.
 
 async function idle(page) {
   await waitForAppQuiet(page, REQUESTS_QUIET_MS);
@@ -90,61 +91,80 @@ async function leaveEditing(page) {
   await idle(page);
 }
 
+async function textDropChoice(page) {
+  await page.waitForSelector('#text-drop-choice-modal .text-drop-choice-title', {visible: true, timeout: 10000});
+  return page.evaluate(() => ({
+    title: document.querySelector('#text-drop-choice-modal .text-drop-choice-title').textContent,
+    files: document.querySelector('#text-drop-choice-modal .text-drop-choice-files').textContent,
+    focused: document.activeElement?.id,
+  }));
+}
+
+async function noteTexts(page) {
+  return page.$$eval('#notes-container > .note > .note-content', contents => contents.map(content => content.innerText.trim()));
+}
+
 export async function checkFileDropPreviews(page) {
   await page.reload();
   await page.waitForSelector('[data-app-ready="true"]');
   await idle(page);
   const createdIds = [];
+  const track = async () => {
+    for (const note of await filesView(page)) if (!createdIds.includes(note.id)) createdIds.push(note.id);
+  };
   try {
-    // A Markdown file dropped on the list: a new note with an MD pill and its
-    // rendered text as an expanded child.
-    await drop(page, '#notes-container', [{name: 'readme.md', type: 'text/markdown', text: '# Hello\n\n- one\n- two'}],
-      'center');
-    await settle(page);
-    await leaveEditing(page);
-    await waitForNote(page, 'readme.md');
-    let markdown = byFirstPill(await filesView(page), 'readme.md');
-    createdIds.push(markdown.id);
-    assert.deepEqual(markdown.pills, [['.MD', 'readme.md']], 'markdown: the pill says .MD');
-    assert.deepEqual(markdown.tooltips, ['Click to download readme.md'], 'markdown: hovering the pill says it downloads');
-    assert.equal(markdown.children.length, 1, 'markdown: one preview child');
-    assert.equal(markdown.children[0].visible, true, 'markdown: the preview starts expanded');
-    assert.equal(markdown.children[0].markdownHeading, 'Hello', 'markdown: the preview renders as Markdown');
-
-    // CSV, text and JSON dropped together: one note, pills in drop order, a child each in drop order.
+    // A CSV and a JSON file dropped together: one note, their cards in drop order, no preview notes.
     await drop(page, '#notes-container', [
       {name: 'data.csv', type: 'text/csv', text: 'name,count\napples,3'},
-      {name: 'notes.txt', type: 'text/plain', text: 'First line\n<b>not bold</b>'},
       {name: 'config.json', type: 'application/json', text: '{"name": "apples", "count": 3}'},
     ], 'center');
     await settle(page);
     await leaveEditing(page);
-    await waitForNote(page, 'notes.txt');
+    await waitForNote(page, 'config.json');
     const both = byFirstPill(await filesView(page), 'data.csv');
-    createdIds.push(both.id);
-    assert.deepEqual(both.pills, [['.CSV', 'data.csv'], ['.TXT', 'notes.txt'], ['.JSON', 'config.json']],
-      'csv, txt and json: pills by extension');
-    assert.equal(both.children.length, 3, 'csv, txt and json: a preview child each');
-    assert.deepEqual(both.children[0].csvCells, ['name', 'count', 'apples', '3'], 'csv: the preview is a table');
-    assert.equal(both.children[1].text, 'First line\n<b>not bold</b>', 'txt: the preview is the plain text');
-    assert.equal(both.children[2].json, '{\n  "name": "apples",\n  "count": 3\n}', 'json: the preview is pretty-printed JSON');
+    await track();
+    assert.deepEqual(both.pills, [['.CSV', 'data.csv'], ['.JSON', 'config.json']], 'csv and json: cards by extension, in drop order');
+    assert.equal(both.children.length, 0, 'csv and json: no preview notes');
 
-    // A file too large to preview keeps its pill alone and says why.
-    await drop(page, '#notes-container', [{name: 'big.txt', type: 'text/plain', text: 'x'.repeat(300 * 1024)}],
-      'center');
+    // A .txt file alone asks Note or File, Note focused; Cancel makes nothing.
+    const before = await noteTexts(page);
+    await drop(page, '#notes-container', [{name: 'notes.txt', type: 'text/plain', text: 'First line\n<b>not bold</b>'}], 'center');
+    assert.deepEqual(await textDropChoice(page), {title: 'Text file', files: 'notes.txt', focused: 'text-drop-choice-note'},
+      'txt: it asks Note or File, Note focused');
+    await page.click('#text-drop-choice-cancel');
+    await idle(page);
+    assert.deepEqual(await noteTexts(page), before, 'txt, Cancel: nothing is made');
+
+    // Note: a note at the top holding its text, as plain text.
+    await drop(page, '#notes-container', [{name: 'notes.txt', type: 'text/plain', text: 'First line\n<b>not bold</b>'}], 'center');
+    await textDropChoice(page);
+    await page.click('#text-drop-choice-note');
     await settle(page);
     await leaveEditing(page);
-    await waitForNote(page, 'big.txt');
-    await page.waitForFunction(() => document.body.innerText.includes('big.txt is too large to preview.'),
-      {timeout: 10000});
-    const big = byFirstPill(await filesView(page), 'big.txt');
-    createdIds.push(big.id);
-    assert.deepEqual([big.pills, big.children.length], [[['.TXT', 'big.txt']], 0], 'too large: pill only');
+    assert.equal((await noteTexts(page))[0], 'First line\n<b>not bold</b>', 'txt, Note: a note at the top with its text');
+    await track();
 
-    // Dropped into the note being edited: the pill goes into it, the preview
-    // becomes its last child, editing continues, and the note does not move.
-    markdown = byFirstPill(await filesView(page), 'readme.md');
-    const contentSelector = `.note[data-note-id="${markdown.id}"] .note-content`;
+    // File: a card, as any file, with no preview note.
+    await drop(page, '#notes-container', [{name: 'kept.txt', type: 'text/plain', text: 'kept as a file'}], 'center');
+    await textDropChoice(page);
+    await page.click('#text-drop-choice-file');
+    await settle(page);
+    await leaveEditing(page);
+    await waitForNote(page, 'kept.txt');
+    const kept = byFirstPill(await filesView(page), 'kept.txt');
+    await track();
+    assert.deepEqual([kept.pills, kept.children.length], [[['.TXT', 'kept.txt']], 0], 'txt, File: a card alone');
+
+    // A .md file alone opens the import walkthrough at its Markdown screen.
+    await drop(page, '#notes-container', [{name: 'readme.md', type: 'text/markdown', text: '# Hello\n\n- one\n- two'}], 'center');
+    await page.waitForSelector('#import-wizard [data-choice-key="markdownAs"]', {visible: true, timeout: 10000});
+    await page.keyboard.press('Escape');
+    await page.waitForFunction(() => document.getElementById('import-wizard').style.display !== 'block', {timeout: 10000});
+    await idle(page);
+
+    // Dropped into the note being edited: the card goes into it, editing continues, and the
+    // note does not move; no preview note.
+    const contentSelector = `.note[data-note-id="${both.id}"] .note-content`;
     // In the middle of the window: a drop that keeps everything in sight moves nothing.
     // (At the window's bottom edge the inserted file would be out of sight, and Firefox
     // scrolls it back in view.)
@@ -159,25 +179,16 @@ export async function checkFileDropPreviews(page) {
       {timeout: 5000}, contentSelector);
     // A drop while entering edit mode is still running is refused ("another command is still running").
     await settle(page);
-    const topBefore = byId(await filesView(page), markdown.id).top;
-    const scrollBefore = await page.evaluate(() => window.scrollY);
-    const place = await page.evaluate(selector => {
-      const rect = document.querySelector(selector).getBoundingClientRect();
-      return {contentTop: rect.top, contentBottom: rect.bottom, windowHeight: window.innerHeight};
-    }, contentSelector);
+    const topBefore = byId(await filesView(page), both.id).top;
     await drop(page, contentSelector, [{name: 'extra.csv', type: 'text/csv', text: 'x,y\n1,2'}], 'end');
     await settle(page);
-    const edited = byId(await filesView(page), markdown.id);
-    const scrollAfter = await page.evaluate(() => window.scrollY);
+    const edited = byId(await filesView(page), both.id);
     assert.equal(edited.editing, true, 'drop while editing: the note is still being edited');
-    assert.equal(edited.top, topBefore,
-      `drop while editing: the note stays where it was (the page scrolled from ${scrollBefore} to ${scrollAfter}; ${JSON.stringify(place)})`);
-    assert.equal(edited.children.length, 2, 'drop while editing: a second child');
-    assert.equal(edited.children[0].markdownHeading, 'Hello', 'drop while editing: existing children come first');
-    assert.deepEqual(edited.children[1].csvCells, ['x', 'y', '1', '2'], 'drop while editing: the preview is last');
+    assert.equal(edited.top, topBefore, 'drop while editing: the note stays where it was');
+    assert.equal(edited.children.length, 0, 'drop while editing: no preview note');
     await leaveEditing(page);
-    assert.deepEqual(byFirstPill(await filesView(page), 'readme.md').pills,
-      [['.MD', 'readme.md'], ['.CSV', 'extra.csv']], 'drop while editing: the pill is in the note');
+    assert.deepEqual(byFirstPill(await filesView(page), 'data.csv').pills,
+      [['.CSV', 'data.csv'], ['.JSON', 'config.json'], ['.CSV', 'extra.csv']], 'drop while editing: the card is in the note');
   } finally {
     await page.evaluate(async ids => {
       const {NotesAPI} = await import('/static/js/modules/api-client.js');
@@ -263,7 +274,7 @@ async function newTokenPlace(page, contentSelector, before) {
 function dropAt(page, contentSelector, point, name) {
   return page.evaluate(({contentSelector, point, name}) => {
     const data = new DataTransfer();
-    data.items.add(new File([`Dropped ${name}`], name, {type: 'text/plain'}));
+    data.items.add(new File([`Dropped ${name}`], name, {type: 'text/csv'}));
     document.querySelector(contentSelector).dispatchEvent(new DragEvent('drop',
       {dataTransfer: data, bubbles: true, cancelable: true, clientX: point.x, clientY: point.y}));
   }, {contentSelector, point, name});
@@ -307,7 +318,7 @@ async function dropKeepsTheFileInSight(page) {
       const line = await lineOf(page, contentSelector, text);
       const before = await fileTokens(page, contentSelector);
       const scrollBefore = await page.evaluate(() => window.scrollY);
-      await dropAt(page, contentSelector, {x: line.right - INSIDE_PX, y: line.top + INSIDE_PX}, 'middle.txt');
+      await dropAt(page, contentSelector, {x: line.right - INSIDE_PX, y: line.top + INSIDE_PX}, 'middle.csv');
       await settle(page);
       await newTokenPlace(page, contentSelector, before);
       assert.ok(Math.abs(await page.evaluate(() => window.scrollY) - scrollBefore) < SAME_PIXEL, 'nothing scrolls');
@@ -323,7 +334,7 @@ async function dropKeepsTheFileInSight(page) {
         await putLineTopAt(page, contentSelector, text, place(height, lineHeight));
         const line = await lineOf(page, contentSelector, text);
         const before = await fileTokens(page, contentSelector);
-        await dropAt(page, contentSelector, {x: line.right - INSIDE_PX, y: Math.min(line.bottom, height) - INSIDE_PX}, 'bottom.txt');
+        await dropAt(page, contentSelector, {x: line.right - INSIDE_PX, y: Math.min(line.bottom, height) - INSIDE_PX}, 'bottom.csv');
         await settle(page);
         const token = await newTokenPlace(page, contentSelector, before);
         assert.ok(Math.abs(token.bottom - token.windowHeight) < SAME_PIXEL,
@@ -339,7 +350,7 @@ async function dropKeepsTheFileInSight(page) {
       await putLineTopAt(page, contentSelector, text, await page.evaluate(() => window.innerHeight / 2));
       const line = await lineOf(page, contentSelector, text);
       const before = await fileTokens(page, contentSelector);
-      await dropAt(page, contentSelector, {x: line.left + 1, y: line.top + INSIDE_PX}, 'start.txt');
+      await dropAt(page, contentSelector, {x: line.left + 1, y: line.top + INSIDE_PX}, 'start.csv');
       await settle(page);
       const token = await newTokenPlace(page, contentSelector, before);
       assert.ok(Math.abs(token.top - line.top) < SAME_PIXEL, `the file's line is where the line was (${line.top}; ${JSON.stringify(token)})`);
@@ -353,7 +364,7 @@ async function dropKeepsTheFileInSight(page) {
       await putLineTopAt(page, contentSelector, text, controlsBottom - lineHeight + PARTLY_SHOWN_PX);
       const line = await lineOf(page, contentSelector, text);
       const before = await fileTokens(page, contentSelector);
-      await dropAt(page, contentSelector, {x: line.left + 1, y: line.bottom - INSIDE_PX}, 'top.txt');
+      await dropAt(page, contentSelector, {x: line.left + 1, y: line.bottom - INSIDE_PX}, 'top.csv');
       await settle(page);
       const token = await newTokenPlace(page, contentSelector, before);
       assert.ok(Math.abs(token.top - (token.controlsBottom + CONTROLS_GAP_PX)) < SAME_PIXEL,
