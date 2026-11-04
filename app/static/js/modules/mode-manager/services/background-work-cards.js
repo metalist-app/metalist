@@ -28,6 +28,13 @@ function cardKey(key) {
     return `${CARD_KEY_PREFIX}${key}`;
 }
 
+// When a piece of work listed now was first seen: at an earlier listing, or now when this is
+// the first listing it is in.
+function firstSeenTime(key, now) {
+    if (Object.hasOwn(moduleState.firstSeenAt, key)) return moduleState.firstSeenAt[key];
+    return now;
+}
+
 /** Draw the cards for the work the server listed; the cards of work gone leave. */
 export function showBackgroundWork(work, now) {
     if (!Array.isArray(work)) {
@@ -39,7 +46,7 @@ export function showBackgroundWork(work, now) {
             || !Number.isInteger(entry.total) || !Number.isInteger(entry.elapsedSeconds)) {
             throw new Error('Background work listed malformed');
         }
-        firstSeenAt[entry.key] = Object.hasOwn(moduleState.firstSeenAt, entry.key) ? moduleState.firstSeenAt[entry.key] : now;
+        firstSeenAt[entry.key] = firstSeenTime(entry.key, now);
         const isOldEnough = now - firstSeenAt[entry.key] >= SHOW_AFTER_MS;
         if (isOldEnough && !moduleState.shownElsewhere.includes(entry.key)) {
             FloatingMessages.showWorkProgress(cardKey(entry.key), workProgressParts(entry), entry.done, entry.total);

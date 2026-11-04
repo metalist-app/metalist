@@ -169,7 +169,8 @@ function state(page, ids) {
         cardTop: card === null ? null : card.getBoundingClientRect().top,
         cardBottom: card === null ? null : card.getBoundingClientRect().bottom,
         folded: note.classList.contains('collapsed'),
-        findSnippet: findSnippet === null ? '' : findSnippet.textContent,
+        // null: find shows no snippet in the note.
+        findSnippet: findSnippet === null ? null : findSnippet.textContent,
         searchSnippetShown: searchSnippet !== null && getComputedStyle(searchSnippet).display !== 'none',
       };
     };
@@ -201,7 +202,7 @@ async function typingCountsFiles(page, ids) {
   assert.equal(typed.currentText, 'rent is due', '1: the first stop is the note\'s own text');
   assert.deepEqual([typed.card.top, typed.card.cardTop, typed.scrollY], [before.card.top, before.card.cardTop, before.scrollY],
     '1: typing moves nothing');
-  assert.equal(typed.card.findSnippet, '', '1: no snippet until find stops on the file');
+  assert.equal(typed.card.findSnippet, null, '1: no snippet until find stops on the file');
 }
 
 async function stopOnFile(page, ids) {
@@ -222,7 +223,7 @@ async function stopInFoldedNote(page, ids) {
   assert.equal(opened.count, '3 of 3', '3: the folded note\'s file is the last stop');
   assert.equal(opened.folded.folded, false, '3: the folded note opens for this view');
   assert.match(opened.folded.findSnippet, /Rent is due/, '3: its file\'s snippet shows');
-  assert.equal(opened.card.findSnippet, '', '4: moving on, the previous file\'s snippet goes');
+  assert.equal(opened.card.findSnippet, null, '4: moving on, the previous file\'s snippet goes');
   // Moving on, the previous card's snippet goes: the card stays, what is below moves up by it.
   assert.equal(opened.card.cardTop, before.card.cardTop, '4: the previous card stays where it was');
   // Compared in layout units, the browser's own steps (Firefox: 1/60 px): the two moves are
@@ -238,7 +239,7 @@ async function closingCleansUp(page, ids) {
   await idle(page);
   const closed = await state(page, ids);
   assert.equal(closed.count, null, '4: Escape closes find');
-  assert.equal(closed.folded.findSnippet, '', '4: the snippet goes');
+  assert.equal(closed.folded.findSnippet, null, '4: the snippet goes');
   assert.equal(closed.folded.folded, true, '4: what find opened folds back');
   assert.equal(closed.folded.top, opened.folded.top, '4: with its first line where it was');
 }
@@ -251,7 +252,7 @@ async function searchSnippetGivesWay(page, ids) {
   await typeFind(page, 'harbor road');
   // Both files hold it; find starts below its bar, at the folded note's: on to the card's.
   let onFile = await state(page, ids);
-  if (onFile.card.findSnippet === '') {
+  if (onFile.card.findSnippet === null) {
     await pressNext(page);
     onFile = await state(page, ids);
   }
@@ -261,7 +262,7 @@ async function searchSnippetGivesWay(page, ids) {
   await pause(SETTLE_MS);
   await idle(page);
   const closed = await state(page, ids);
-  assert.equal(closed.card.findSnippet, '', '5: closing find, its snippet goes');
+  assert.equal(closed.card.findSnippet, null, '5: closing find, its snippet goes');
   assert.equal(closed.card.searchSnippetShown, true, '5: and the search\'s comes back');
 }
 
@@ -284,7 +285,7 @@ async function snippetStaysWhileTyping(page, ids) {
   await typeFind(page, 'thirty');
   await pressNext(page);
   const onFile = await state(page, ids);
-  assert.ok(onFile.card.findSnippet !== '' || onFile.folded.findSnippet !== '', '7: find stops on a file');
+  assert.ok(onFile.card.findSnippet !== null || onFile.folded.findSnippet !== null, '7: find stops on a file');
   await page.evaluate(() => {
     window.__findSnippetMissingFrames = 0;
     window.__watchingFindSnippet = true;

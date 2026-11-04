@@ -154,9 +154,10 @@ class _Reader(HTMLParser):
             self._heading = []
             self._heading_is_browser_folder = any(mark in attributes for mark in _BROWSER_FOLDER_MARKS)
         elif tag == _LIST_ELEMENT:
-            opens = self._next_folder is not None
-            if opens:
-                self._folders.append(self._next_folder)
+            next_folder = self._next_folder
+            opens = next_folder is not None
+            if next_folder is not None:
+                self._folders.append(next_folder)
             self._opened.append(opens)
             self._next_folder = None
         elif tag == _LINK_ELEMENT:

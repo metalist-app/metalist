@@ -70,8 +70,13 @@ async function dragState(page) {
       const element = document.querySelector(selector);
       return element !== null && !element.hidden;
     };
+    // The top's row (`/`) has no folder path of its own.
+    const folderOfRow = row => {
+      if (row.hasAttribute('data-virtual-folder-root')) return '/';
+      return row.dataset.virtualFolder;
+    };
     return {
-      highlighted: [...document.querySelectorAll('#virtual-folders .is-drop-target')].map(row => row.dataset.virtualFolder ?? '/'),
+      highlighted: [...document.querySelectorAll('#virtual-folders .is-drop-target')].map(folderOfRow),
       ghost: isShown('.note-drag-ghost'),
       line: isShown('.note-drop-line'),
     };
@@ -116,10 +121,14 @@ async function count(page, folder) {
 }
 
 async function messages(page) {
-  return page.$$eval('#floating-messages .floating-message:not([data-leaving="true"])', cards => cards.map(card => ({
-    text: card.querySelector('.floating-message-text').textContent,
-    action: card.querySelector('.floating-message-action')?.textContent ?? null,
-  })));
+  return page.$$eval('#floating-messages .floating-message:not([data-leaving="true"])', cards => cards.map(card => {
+    const actionButton = card.querySelector('.floating-message-action');
+    return {
+      text: card.querySelector('.floating-message-text').textContent,
+      // null: the card offers no action.
+      action: actionButton === null ? null : actionButton.textContent,
+    };
+  }));
 }
 
 async function chooseFolder(page, folder) {

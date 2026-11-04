@@ -7,12 +7,21 @@ from __future__ import annotations
 import time
 from contextlib import contextmanager
 from threading import Condition
-from typing import Dict, Iterator, List
+from typing import Dict, Iterator, List, TypedDict
 
 
 # The work there is.
 IMPORT_KEY = "import"
 READING_PDF_TEXT_KEY = "file-texts"
+
+
+class _RunningWork(TypedDict):
+    """One piece of work as the page lists it: done of total parts."""
+
+    key: str
+    label: str
+    done: int
+    total: int
 
 
 class WorkProgress:
@@ -33,7 +42,7 @@ class WorkProgress:
 class BackgroundWork:
     def __init__(self) -> None:
         self._lock = Condition()
-        self._running: Dict[str, Dict[str, object]] = {}
+        self._running: Dict[str, _RunningWork] = {}
         self._started_at: Dict[str, float] = {}
 
     @contextmanager
@@ -57,14 +66,14 @@ class BackgroundWork:
         with self._lock:
             entry = self._running[key]
             assert entry["done"] < entry["total"], f"{key} is past its total"
-            entry["done"] = int(entry["done"]) + 1
+            entry["done"] = entry["done"] + 1
 
     def _set_total(self, key: str, total: int) -> None:
         if not isinstance(total, int) or total < 0:
             raise ValueError("total must be a non-negative int")
         with self._lock:
             entry = self._running[key]
-            assert int(entry["done"]) <= total, f"{key} is past the new total"
+            assert entry["done"] <= total, f"{key} is past the new total"
             entry["total"] = total
 
     def wait_until_finished(self, key: str) -> None:
@@ -78,7 +87,7 @@ class BackgroundWork:
         now = time.monotonic()
         with self._lock:
             return [
-                {**entry, "elapsedSeconds": int(now - self._started_at[str(entry["key"])])}
+                {**entry, "elapsedSeconds": int(now - self._started_at[entry["key"]])}
                 for entry in self._running.values()
             ]
 

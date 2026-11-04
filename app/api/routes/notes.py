@@ -3,6 +3,7 @@ from __future__ import annotations
 from http import HTTPStatus
 import logging
 import urllib.parse
+from collections.abc import Mapping
 from typing import Dict
 
 from fastapi import APIRouter, HTTPException, Request
@@ -592,13 +593,15 @@ def create_new_tab(payload: CreateNewTabRequest) -> Dict[str, object]:
         response = tab_state_store.create_tab(copy_from_tab_id=copy_from_tab_id, copies_view=payload["copiesView"])
     if capture.captured_exception is not None:
         raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail="Invalid or stale tab state") from capture.captured_exception
+    new_tab_id = response["newTabId"]
+    assert isinstance(new_tab_id, str), "create_tab always returns the new tab's id as a string"
     # The browser clones the source tab's DOM into the new tab, so the new tab
     # starts from the source tab's warm view.
     view_cache.copy_tab(
-        client_id=payload["clientId"], source_tab_id=copy_from_tab_id, target_tab_id=response["newTabId"],
+        client_id=payload["clientId"], source_tab_id=copy_from_tab_id, target_tab_id=new_tab_id,
     )
     if payload["copiesView"]:
-        virtual_folder_state.copy_filter(copy_from_tab_id, response["newTabId"])
+        virtual_folder_state.copy_filter(copy_from_tab_id, new_tab_id)
     return response
 
 
@@ -1700,9 +1703,12 @@ def _move_note_to_edge(note_id: str, body: MoveNoteToTopEndpointRequest, *, comm
 def indent_note_endpoint(note_id: str, body: IndentNoteEndpointRequest):
     viewport = _require_viewport(body)
     _require_note_present(note_id, context="notes.indent")
+    visible_prev_id = body["visible_prev_id"]
+    if visible_prev_id is None:
+        raise TypeError("visible_prev_id must be a non-empty string")
     cmd = CmdIndent(
         note_id=note_id,
-        visible_prev_id=body["visible_prev_id"],
+        visible_prev_id=visible_prev_id,
         client_id=body["clientId"],
         undo_context=body["undoContext"],
         viewport=viewport,
@@ -1961,7 +1967,7 @@ def paste_child_endpoint(request: Request, target_note_id: str, body: PasteChild
     return cmd.execute()
 
 
-def _require_viewport(body: dict) -> dict:
+def _require_viewport(body: Mapping[str, object]) -> dict:
     viewport = body["viewport"]
     if not isinstance(viewport, dict):
         raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail="viewport is required")

@@ -8,7 +8,9 @@ import os
 import shutil
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
-from typing import Annotated, List, Literal, TypedDict
+from typing import Annotated, List, Literal
+
+from typing_extensions import TypedDict
 
 from fastapi import APIRouter, File, Form, Request, UploadFile
 from pydantic import ConfigDict, Field, with_config

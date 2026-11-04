@@ -37,7 +37,7 @@ export async function playMediaFile(playButton) {
     embed.dataset.mediaState = PLAYING;
     // A file that took long to load may need a click of the browser's own (NotAllowedError):
     // its Play is there.
-    await player.play().catch((error) => {
+    await player.play().catch((error) => { // shockharness: ignore[EXC002] reason="a start the browser refused or cut short leaves its own player on screen, with its Play button: the person's click there is the remedy, so nothing is left to do here"
         rethrowUnexpectedError(error);
     });
 }

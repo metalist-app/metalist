@@ -19,7 +19,7 @@ import unicodedata
 from dataclasses import dataclass
 from pathlib import PurePath
 from threading import Lock, Thread
-from typing import Callable, Dict, FrozenSet, List, Optional, Tuple
+from typing import Callable, Dict, FrozenSet, List, Literal, Optional, Tuple
 
 
 from app.security.sensitive_cache import SensitiveMemo, register_sensitive_cache, sensitive_caches_enabled
@@ -45,7 +45,7 @@ _FILTER_HASH_COUNT = 7
 _MIN_FILTER_BITS = 1024
 _BITS_PER_BYTE = 8
 _FILTER_HEADER_BYTES = 4
-_BYTE_ORDER = "little"
+_BYTE_ORDER: Literal["little"] = "little"
 # Two 4-byte halves of one digest make every hash position (double hashing).
 _HASH_HALF_BYTES = 4
 _HASH_DIGEST_BYTES = 8
@@ -65,11 +65,16 @@ _PDF_SUFFIX = ".pdf"
 # §2, 2026-11-03): read as they are, a web page's visible text only.
 _PLAIN_TEXT_READER_VERSION = 1
 _WEB_PAGE_READER_VERSION = 1
+# PDF 2: PDFium, with the spaces between words pypdf lost; RTF 3: its named characters
+# (\emdash, \rquote...) and page breaks, which joined words when skipped (2026-11-03).
+# .doc 1: Word 97-2003's text, read since 2026-11-03.
+_PDF_READER_VERSION = 2
+_DOCX_READER_VERSION = 1
+_RTF_READER_VERSION = 3
+_DOC_READER_VERSION = 1
 TEXT_READER_VERSIONS = {
-    # PDF 2: PDFium, with the spaces between words pypdf lost; RTF 3: its named characters
-    # (\emdash, \rquote...) and page breaks, which joined words when skipped (2026-11-03).
-    # .doc 1: Word 97-2003's text, read since 2026-11-03.
-    _PDF_SUFFIX: 2, DOCX_EXTENSION: 1, RTF_EXTENSION: 3, DOC_EXTENSION: 1,
+    _PDF_SUFFIX: _PDF_READER_VERSION, DOCX_EXTENSION: _DOCX_READER_VERSION, RTF_EXTENSION: _RTF_READER_VERSION,
+    DOC_EXTENSION: _DOC_READER_VERSION,
     **{ending: _PLAIN_TEXT_READER_VERSION for ending in PLAIN_TEXT_ENDINGS},
     **{ending: _WEB_PAGE_READER_VERSION for ending in WEB_PAGE_ENDINGS},
 }
@@ -82,10 +87,13 @@ FILTER_VERSION = 1
 # The work card: PDFs, Word documents and RTFs read for search.
 READING_TEXT_LABEL = "Reading document text"
 # Unicode's compatibility composition: a ligature glyph becomes its letters.
-_LETTERS_FORM = "NFKC"
+_LETTERS_FORM: Literal["NFKC"] = "NFKC"
 # Text read for searches, kept for the next ones (search-as-you-type, suggestions).
 _TEXT_CACHE_FILES = 4096
 _TEXT_CACHE_MIB = 64
+# The worker process's creation flags: none (subprocess's own default) but on Windows, where it
+# runs at below-normal priority.
+_NO_CREATION_FLAGS = 0
 
 
 @dataclass(frozen=True)
@@ -197,12 +205,12 @@ def _file_pages(extension: str, content: bytes) -> Optional[List[str]]:
     """The file's text (a PDF's pages', read only until there is more than the cap; a Word
     document's or an RTF's whole), by a process of its own at low priority; None when it is
     locked or can't be read."""
-    options: Dict[str, object] = {}
+    creation_flags = _NO_CREATION_FLAGS
     if sys.platform == "win32":
-        options["creationflags"] = subprocess.BELOW_NORMAL_PRIORITY_CLASS
+        creation_flags = subprocess.BELOW_NORMAL_PRIORITY_CLASS
     completed = subprocess.run(
         [sys.executable, "-m", "app.services.file_text_worker", str(MAX_FILE_TEXT_CHARACTERS), extension],
-        input=content, capture_output=True, check=True, **options,
+        input=content, capture_output=True, check=True, creationflags=creation_flags,
     )
     answer = json.loads(completed.stdout)
     if file_text_worker.PAGES not in answer:

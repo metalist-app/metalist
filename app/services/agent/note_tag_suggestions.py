@@ -146,11 +146,20 @@ def _subtree_node(note_id: str, scope_note_ids: frozenset[str], hidden: frozense
 
 
 def _node_note_ids(node: dict[str, object]) -> list[str]:
-    ids = [node["note_id"]]
+    note_id = node["note_id"]
+    assert isinstance(note_id, str), "a tree node always carries its note id"
+    ids = [note_id]
     if "children" in node:
-        for child in node["children"]:
+        for child in _node_children(node):
             ids.extend(_node_note_ids(child))
     return ids
+
+
+def _node_children(node: dict[str, object]) -> list[dict[str, object]]:
+    """The child nodes of a tree node that has them (_subtree_node)."""
+    children = node["children"]
+    assert isinstance(children, list), "a tree node's children are always a list of nodes"
+    return children
 
 
 def _batch_payload_tokens(trees: tuple[dict, ...], ancestors: tuple, vocabulary: tuple[tuple[str, int], ...]) -> int:
@@ -177,6 +186,7 @@ def build_note_tag_request(
     ancestors.reverse()
     vocabulary = ranked_vocabulary(note_id=note_id, boundary=boundary)
 
+    groups: tuple[tuple[tuple[dict[str, object], ...], tuple[dict[str, object], ...]], ...]
     if include_children:
         hidden = cloud_privacy_evaluator.hidden_note_ids(
             note_ids=tuple(note_store.list_note_ids()), boundary=boundary,
@@ -204,8 +214,10 @@ def _split_subtree(whole: dict[str, object], ancestors: tuple, batch_tokens: int
     """A subtree too big for one batch: the note alone, then each child's subtree, in batches;
     the batches without the note get its text as context."""
     alone = {key: value for key, value in whole.items() if key != "children"}
-    trees = (alone, *whole["children"])
-    with_note = (*ancestors, _note_text(whole["note_id"]))
+    note_id = whole["note_id"]
+    assert isinstance(note_id, str), "a tree node always carries its note id"
+    trees = (alone, *_node_children(whole))
+    with_note = (*ancestors, _note_text(note_id))
     return tuple(
         (batch.trees, ancestors if alone in batch.trees else with_note)
         for batch in partition_trees(trees, batch_tokens)

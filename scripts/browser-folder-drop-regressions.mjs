@@ -118,16 +118,15 @@ async function checkFolderOnAFolder(page) {
     assert.ok(note.folders.every(tag => tag.startsWith(`${FOLDER}${DROPPED_FOLDER}/`)) && note.folders.length > 0,
       `imported under the target: ${note.folders}`);
   }
+  // Discarding it again is refused as gone (app/services/import_uploads.py _upload_folder).
   const discard = await page.evaluate(async id => {
     const {NotesAPI} = await import('/static/js/modules/api-client.js');
-    try {
-      await NotesAPI.discardImportUpload(id);
-      return 'still there';
-    } catch (error) {
-      return 'gone';
-    }
+    const {settleResult} = await import('/static/js/modules/async-result.js');
+    const outcome = await settleResult(() => NotesAPI.discardImportUpload(id));
+    return {isDiscarded: outcome.ok, refusal: outcome.ok ? null : `${outcome.error.name}: ${outcome.error.message}`};
   }, uploadId);
-  assert.equal(discard, 'gone', 'the holding folder went with the walkthrough');
+  assert.deepEqual(discard, {isDiscarded: false, refusal: 'ServerInputRejectedError: That upload is gone. Drop the folder again.'},
+    'the holding folder went with the walkthrough');
   return imported.map(note => note.id);
 }
 

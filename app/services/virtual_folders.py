@@ -12,7 +12,7 @@ they come with it."""
 
 from __future__ import annotations
 
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from threading import Lock
 from typing import Dict, List, Optional, Set, Tuple
 
@@ -44,7 +44,7 @@ class VirtualFolderState:
     def filter_of(self, tab_id: str) -> str:
         """The tab's folder, '' for none."""
         with self._lock:
-            if tab_id not in self._filters:
+            if tab_id not in self._filters:  # shockharness: ignore[DEF002] reason="set_filter keeps no entry for a tab with no folder filter: its absence is NO_FOLDER"
                 return NO_FOLDER
             return self._filters[tab_id]
 
@@ -168,8 +168,16 @@ def folder_paths() -> List[str]:
 
 
 # The counts for the last view asked about, until the notes change.
+@dataclass
+class _CachedCounts:
+    """Folder counts and the view they were counted for (None before any was)."""
+
+    key: Optional[Tuple[object, ...]]
+    counts: Dict[str, int]
+
+
 _counts_cache_lock = Lock()
-_counts_cache: Dict[str, object] = {"key": None, "counts": {}}
+_counts_cache = _CachedCounts(key=None, counts={})
 
 
 def folder_note_counts(search: str) -> Dict[str, int]:
@@ -178,27 +186,27 @@ def folder_note_counts(search: str) -> Dict[str, int]:
     searched for narrow it). NO_FOLDER, the top, counts every note the view shows."""
     key: Tuple[int, int, str] = (note_store.revision, search_index.revision, search)
     with _counts_cache_lock:
-        if _counts_cache["key"] != key:
-            _counts_cache["counts"] = _count_notes_by_folder(search)
-            _counts_cache["key"] = key
-        return _counts_cache["counts"]
+        if _counts_cache.key != key:
+            _counts_cache.counts = _count_notes_by_folder(search)
+            _counts_cache.key = key
+        return _counts_cache.counts
 
 
 # Every folder's count with no search, until the notes change: what a count under a search reads
 # out of (docs/ready-to-build/folder-counts.md §2). Kept apart from the search's, which it would
 # otherwise evict on every call.
 _totals_cache_lock = Lock()
-_totals_cache: Dict[str, object] = {"key": None, "totals": {}}
+_totals_cache = _CachedCounts(key=None, counts={})
 
 
 def folder_note_totals() -> Dict[str, int]:
     """How many notes each folder shows with no search (folder_note_counts of '')."""
     key: Tuple[int, int] = (note_store.revision, search_index.revision)
     with _totals_cache_lock:
-        if _totals_cache["key"] != key:
-            _totals_cache["totals"] = _count_notes_by_folder("")
-            _totals_cache["key"] = key
-        return _totals_cache["totals"]
+        if _totals_cache.key != key:
+            _totals_cache.counts = _count_notes_by_folder("")
+            _totals_cache.key = key
+        return _totals_cache.counts
 
 
 def _count_notes_by_folder(search: str) -> Dict[str, int]:

@@ -126,3 +126,16 @@ test('style and phone readers keep a quoted value whole', () => {
     assert.deepEqual(scanTopLevelTagTokens('author="Ursula Le Guin" [x]'), ['author="Ursula Le Guin"', '[x]']);
     assert.deepEqual(searchTermsOf('sf author="Le Guin" -x').map((term) => term.text), ['sf', 'author="Le Guin"', '-x']);
 });
+
+test('closing a property value keeps escaped backslashes and drops one left escaping the end', () => {
+    assert.equal(enforceTagBarInput('jogging:note="a\\'), 'jogging:note="a"');
+    assert.equal(enforceTagBarInput('jogging:note="a\\\\'), 'jogging:note="a\\\\"');
+    assert.equal(enforceTagBarInput('jogging:note="a\\\\\\'), 'jogging:note="a\\\\"');
+    assert.equal(enforceTagBarInput('jogging:note="\\'), 'jogging');
+});
+
+test('a property without a value, or named twice, is removed once the user moves on', () => {
+    assert.equal(enforceTagBarInput('jogging:miles:note="x"'), 'jogging:note="x"');
+    assert.equal(enforceTagBarInput('jogging:miles=3:miles=4'), 'jogging:miles=3');
+    assert.equal(enforceTagBarInput('jogging:=3'), 'jogging');
+});

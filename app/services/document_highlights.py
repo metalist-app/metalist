@@ -64,5 +64,5 @@ def highlight_of_colour(colour: Tuple[int, ...]) -> str:
     assert len(colour) == len(WORD_HIGHLIGHTS[0][1]), "a colour is red, green and blue"
     return min(
         WORD_HIGHLIGHTS,
-        key=lambda highlight: sum((wanted - given) ** 2 for wanted, given in zip(highlight[1], colour)),
+        key=lambda highlight: sum((wanted - given) * (wanted - given) for wanted, given in zip(highlight[1], colour)),
     )[0]

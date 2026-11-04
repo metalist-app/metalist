@@ -268,6 +268,8 @@ _DEFAULT_CODE_PAGE = "cp1252"
 _UNICODE_SIGNED_BASE = 65536
 _LINE_ENDS = frozenset({"\n", "\r"})
 _SYMBOLS = {"~": "\u00a0", "-": "", "_": "\u2011", "\\": "\\", "{": "{", "}": "}"}
+# \'hh is a character by its byte in hexadecimal.
+_HEX_BASE = 16
 # Characters RTF names with a control word. Skipped, they joined the words around them
 # ("450,000 babiesthat's", page ranges "521534": the maintainer's RTFs, 2026-11-03).
 _NAMED_CHARACTERS = {
@@ -290,7 +292,9 @@ _BACKGROUND_WORDS = frozenset({"cb", "chcbpat"})
 _COLOUR_TABLE = "colortbl"
 _COLOUR_PARTS = ("red", "green", "blue")
 _COLOUR_END = ";"
-_WHITE = (255, 255, 255)
+# A colour channel at its brightest (RTF colour tables give each 0 to 255).
+_FULL_CHANNEL = 255
+_WHITE = (_FULL_CHANNEL, _FULL_CHANNEL, _FULL_CHANNEL)
 
 
 @dataclass
@@ -380,7 +384,7 @@ def _rtf_blocks(content: bytes) -> List[_Block]:
             elif character in _SYMBOLS:
                 add(_SYMBOLS[character])
         elif hex_byte is not None:
-            add(bytes([int(hex_byte, 16)]).decode(code_page, errors="replace"))
+            add(bytes([int(hex_byte, _HEX_BASE)]).decode(code_page, errors="replace"))
         elif word is not None:
             name = word.decode("ascii")
             value = None
@@ -470,7 +474,17 @@ _U32_BYTES = 4
 # footnotes, headers and footers, comments, endnotes, text boxes and headers' text boxes, kept
 # in that order after it. All are the document's words: reading the main text alone left out a
 # letterhead's address and a title set in the header (the maintainer's .doc files, 2026-11-03).
-_STORY_LENGTH_INDEXES = (3, 4, 5, 7, 8, 9, 10)
+# FibRgLw97's fields by index (MS-DOC 2.5.5).
+_CCP_TEXT_INDEX = 3
+_CCP_FTN_INDEX = 4
+_CCP_HDD_INDEX = 5
+_CCP_ATN_INDEX = 7
+_CCP_EDN_INDEX = 8
+_CCP_TXBX_INDEX = 9
+_CCP_HDR_TXBX_INDEX = 10
+_STORY_LENGTH_INDEXES = (
+    _CCP_TEXT_INDEX, _CCP_FTN_INDEX, _CCP_HDD_INDEX, _CCP_ATN_INDEX, _CCP_EDN_INDEX, _CCP_TXBX_INDEX, _CCP_HDR_TXBX_INDEX,
+)
 _CLX_PAIR_INDEX = 33
 _FC_LCB_PAIR_BYTES = 8
 _CLX_PRC = 0x01
@@ -507,9 +521,21 @@ _PAGE_NUMBER_MASK = 0x3FFFFF
 _CHPX_OFFSET_UNIT = 2
 _SPRA_SHIFT = 13
 _SPRM_BYTES = 2
-# The operand's size by the sprm's spra; 6 is variable, its first byte the size.
-_OPERAND_BYTES = {0: 1, 1: 1, 2: 2, 3: 4, 4: 2, 5: 2, 7: 3}
+# The operand's size by the sprm's spra (MS-DOC 2.2.5.1); 6 is variable, its first byte the size.
+_SPRA_TOGGLE = 0
+_SPRA_BYTE = 1
+_SPRA_WORD = 2
+_SPRA_LONG = 3
+_SPRA_SPACING = 4
+_SPRA_POSITION = 5
 _VARIABLE_SPRA = 6
+_SPRA_THREE_BYTES = 7
+_BYTE_BYTES = 1
+_THREE_BYTES = 3
+_OPERAND_BYTES = {
+    _SPRA_TOGGLE: _BYTE_BYTES, _SPRA_BYTE: _BYTE_BYTES, _SPRA_WORD: _U16_BYTES, _SPRA_LONG: _U32_BYTES,
+    _SPRA_SPACING: _U16_BYTES, _SPRA_POSITION: _U16_BYTES, _SPRA_THREE_BYTES: _THREE_BYTES,
+}
 _SPRM_BOLD = 0x0835
 _SPRM_ITALIC = 0x0836
 _SPRM_STRIKE = 0x0837
@@ -517,7 +543,9 @@ _SPRM_DOUBLE_STRIKE = 0x2A53
 _SPRM_UNDERLINE = 0x2A3E
 _SPRM_HIGHLIGHT = 0x2A0C
 # A toggle's on: 1, or 0x81 (the opposite of the style's, which is read as off).
-_TOGGLES_ON = frozenset({1, 0x81})
+_TOGGLE_ON = 1
+_TOGGLE_OPPOSITE_OF_STYLE = 0x81
+_TOGGLES_ON = frozenset({_TOGGLE_ON, _TOGGLE_OPPOSITE_OF_STYLE})
 
 
 def _u16(data: bytes, offset: int) -> int:
@@ -706,9 +734,12 @@ def _look_at(looks: List[Tuple[int, int, _Look]], starts: List[int], position: i
     """The look of the character at a file position: the run holding it (starts: the runs'
     first positions), else plain."""
     index = bisect.bisect_right(starts, position) - 1
-    if index < 0 or position >= looks[index][1]:
+    if index < 0:
         return _PLAIN
-    return looks[index][2]
+    _start, end, look = looks[index]
+    if position >= end:
+        return _PLAIN
+    return look
 
 
 def _doc_blocks(content: bytes) -> List[_Block]:

@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from types import SimpleNamespace
-from typing import Dict, List
+from typing import Dict, List, Sequence
 
 from app.usecases.base import QueryCommand
 from app.services.store import store, NodeRecord
@@ -80,10 +80,11 @@ def apply_delete_subtree(note_id: str) -> None:
     store.delete_subtree(note_id)
 
 
-def apply_restore_records(records: List[NodeRecord], token: str) -> None:
-    # Reinsert records in preorder; rely on stored prev/next pointers
-    # Insert in DB
-    sanitized_records: List[NodeRecord] = []
+def apply_restore_records(records: Sequence[NodeRecord | SimpleNamespace], token: str) -> None:
+    # Reinsert records in preorder; rely on stored prev/next pointers. An import or undo
+    # passes SimpleNamespace records with the same fields (import_obsidian_vault.py,
+    # import_bookmarks.py, undo_state.py).
+    sanitized_records: List[NodeRecord | SimpleNamespace] = []
     with begin_writer() as connection:
         now = datetime.now(timezone.utc)
         for rec in records:
@@ -101,6 +102,7 @@ def apply_restore_records(records: List[NodeRecord], token: str) -> None:
             if not isinstance(updated_at, datetime):
                 raise TypeError(f"Restored note updated_at must be a datetime: note_id={rec.id}")
             sanitized_content = sanitize_note_html(rec.content)
+            sanitized_record: NodeRecord | SimpleNamespace
             if isinstance(rec, NodeRecord):
                 sanitized_record = replace(
                     rec,

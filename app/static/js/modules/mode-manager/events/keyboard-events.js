@@ -149,6 +149,8 @@ const helpModal = new HelpModal();
 const MODIFIER_KEYS = new Set(['Control', 'Alt', 'Shift', 'Meta']);
 // A drop of one file only can be a bookmarks export to import.
 const LONE_FILE = 1;
+// The folder prefix of an import that goes into no virtual folder (the import walkthrough's top).
+const IMPORT_INTO_NO_FOLDER = '';
 const NAVIGATION_KEYS = new Set([
     'ArrowUp',
     'ArrowDown',
@@ -2629,7 +2631,7 @@ function handleDropEvent(event) {
             ErrorHandler.showInfoBanner(FOLDER_ON_ITS_OWN_TEXT, DROPPED_FOLDER_BANNER_SECONDS * MS_PER_SECOND);
             return;
         }
-        void openDroppedFolder(loneDroppedFolderEntry(event.dataTransfer), intoFolder === null ? '' : intoFolder);
+        void openDroppedFolder(loneDroppedFolderEntry(event.dataTransfer), importFolderOf(intoFolder));
         return;
     }
 
@@ -2698,10 +2700,8 @@ async function dropWithTextFiles(event, droppedFiles, intoFolder) {
         dropFilesThere(event, otherFiles, intoFolder);
         await untilNothingElseAsks();
     }
-    let folder = '';
-    if (intoFolder !== null) folder = intoFolder;
     if (textFiles.some((file) => DROPPED_MARKDOWN_FILE_RE.test(file.name))) {
-        await CommandPalette.openImportWizardWithDroppedTextFiles(textFiles, folder);
+        await CommandPalette.openImportWizardWithDroppedTextFiles(textFiles, importFolderOf(intoFolder));
         return;
     }
     const choice = await promptForTextDropChoice(textFiles.map((file) => file.name));
@@ -2767,6 +2767,13 @@ async function makeNotesOfTextFiles(textFiles, intoFolder) {
     });
 }
 
+// The folder an import walkthrough started by a drop goes into: the virtual folder it was dropped
+// on (the tree's top is ''); a drop outside the tree goes into no folder.
+function importFolderOf(intoFolder) {
+    if (intoFolder === null) return IMPORT_INTO_NO_FOLDER;
+    return intoFolder;
+}
+
 // A folder dropped alone: the import walkthrough on Any folder, its files read in the browser
 // (nothing sent yet), going into the folder it was dropped on.
 async function openDroppedFolder(folderEntry, intoFolder) {
@@ -2790,7 +2797,7 @@ async function dropPossibleBookmarksFile(event, droppedFiles, intoFolder) {
             return;
         }
         if (choice === IMPORT_BOOKMARKS) {
-            await CommandPalette.openImportWizardWithBookmarksFile(file, intoFolder === null ? '' : intoFolder);
+            await CommandPalette.openImportWizardWithBookmarksFile(file, importFolderOf(intoFolder));
             return;
         }
     }

@@ -499,6 +499,30 @@ exceptions = ["ValueError", "pypdf.errors.PyPdfError"]
 reason = "A PDF is the user's file: one that can't be read keeps no searchable text and matches by name only."
 
 [[tool.shockharness.rules.exceptions.boundaries]]
+path = "app/services/file_text_worker.py"
+language = "python"
+exceptions = ["pypdfium2.PdfiumError", "ValueError", "app.services.document_text.UnreadableDocument"]
+reason = "A PDF or a Word document is the user's file: one that is locked or can't be read keeps no searchable text and matches by name only."
+
+[[tool.shockharness.rules.exceptions.boundaries]]
+path = "app/services/document_text.py"
+language = "python"
+exceptions = ["zipfile.BadZipFile", "xml.etree.ElementTree.ParseError"]
+reason = "A .docx is the user's file: a damaged zip or text part is raised as UnreadableDocument, and the file matches by name only."
+
+[[tool.shockharness.rules.exceptions.boundaries]]
+path = "app/services/document_text.py"
+language = "python"
+exceptions = ["OSError", "ValueError"]
+reason = "A .doc is the user's file: olefile raises OleFileError (an OSError) or ValueError for a damaged one, raised as UnreadableDocument."
+
+[[tool.shockharness.rules.exceptions.boundaries]]
+path = "app/services/file_view.py"
+language = "python"
+exceptions = ["app.services.document_text.UnreadableDocument", "zipfile.BadZipFile", "OSError", "xml.parsers.expat.ExpatError"]
+reason = "A Word document or an RTF is the user's file: one mammoth or MetaList's reader can't read shows in the viewer as not readable."
+
+[[tool.shockharness.rules.exceptions.boundaries]]
 path = "app/services/image_compression.py"
 language = "python"
 exceptions = ["OSError", "PIL.Image.DecompressionBombError", "PIL.UnidentifiedImageError", "SyntaxError", "ValueError"]

@@ -172,7 +172,11 @@ def _sort_key(path: str) -> str:
 def _file_created_at(stat: os.stat_result) -> datetime:
     # macOS and Windows know when a file was made; elsewhere its last change stands in.
     if hasattr(stat, "st_birthtime"):
-        return datetime.fromtimestamp(stat.st_birthtime, tz=timezone.utc)
+        # Read by name: typeshed declares st_birthtime only off Linux, and mypy checks the
+        # code as Linux ([tool.mypy] in pyproject.toml), where this branch never runs.
+        birthtime = getattr(stat, "st_birthtime")
+        assert isinstance(birthtime, float), "st_birthtime is a timestamp in seconds"
+        return datetime.fromtimestamp(birthtime, tz=timezone.utc)
     return datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc)
 
 

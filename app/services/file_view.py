@@ -33,13 +33,16 @@ from app.utils.text_utils import strip_html
 
 # A text file shows its first 5 MB; the viewer says the rest is in the download (the maintainer,
 # 2026-11-03).
-MAX_VIEW_TEXT_BYTES = 5 * MIB
+_MAX_VIEW_TEXT_MIB = 5
+MAX_VIEW_TEXT_BYTES = _MAX_VIEW_TEXT_MIB * MIB
 # Drawn HTML larger than this isn't shown (a Word document's pictures go first).
-MAX_VIEW_HTML_BYTES = 32 * MIB
+_MAX_VIEW_HTML_MIB = 32
+MAX_VIEW_HTML_BYTES = _MAX_VIEW_HTML_MIB * MIB
 _UTF8 = "utf-8"
 # A web page, a Word document or an RTF larger than this is not read for the viewer (its text
 # still is, for search).
-_MAX_PAGE_SOURCE_BYTES = 20 * MIB
+_MAX_PAGE_SOURCE_MIB = 20
+_MAX_PAGE_SOURCE_BYTES = _MAX_PAGE_SOURCE_MIB * MIB
 # A Word document's pictures, left out when keeping them would pass MAX_VIEW_HTML_BYTES.
 _IMAGE_TAG_RE = re.compile(r"<img\b[^>]*>", re.IGNORECASE)
 _HTML_BODY_RE = re.compile(r"<body\b[^>]*>(.*?)(?:</body\s*>|\Z)", re.IGNORECASE | re.DOTALL)
@@ -201,12 +204,7 @@ def _document_view(original_filename: str, content_bytes: bytes) -> FileView:
     capture = CapturedExceptionContext(UnreadableDocument, boundary='app/services/file_view.py:_document_view:document_capture')
     converted = ""
     with capture:
-        if PurePath(original_filename).suffix.lower() == DOCX_EXTENSION:
-            converted = _word_html(content_bytes)
-        else:
-            # An RTF, or a Word 97-2003 .doc (its text, paragraph by paragraph), read here.
-            assert PurePath(original_filename).suffix.lower() in (RTF_EXTENSION, DOC_EXTENSION)
-            converted = document_html(original_filename, content_bytes)
+        converted = _converted_document(original_filename, content_bytes)
     if capture.captured_exception is not None:
         return _no_view(STATUS_NOT_READABLE)
     # Sanitized as a note's content, its highlights kept (the viewer's own pass).
@@ -218,6 +216,16 @@ def _document_view(original_filename: str, content_bytes: bytes) -> FileView:
     if len(content_html.encode(_UTF8)) > MAX_VIEW_HTML_BYTES:
         return _no_view(STATUS_TOO_LARGE)
     return FileView(status=STATUS_READY, content_html=content_html, render_tag="", is_cut=False)
+
+
+def _converted_document(original_filename: str, content_bytes: bytes) -> str:
+    """A Word document (mammoth), an RTF or a .doc (document_text.py) as HTML, not yet
+    sanitized. Raises UnreadableDocument for one that can't be read."""
+    if PurePath(original_filename).suffix.lower() == DOCX_EXTENSION:
+        return _word_html(content_bytes)
+    # An RTF, or a Word 97-2003 .doc (its text, paragraph by paragraph), read here.
+    assert PurePath(original_filename).suffix.lower() in (RTF_EXTENSION, DOC_EXTENSION)
+    return document_html(original_filename, content_bytes)
 
 
 # What mammoth shows beyond its own defaults: a run's highlight as the viewer's mark (one of
@@ -238,9 +246,15 @@ def _word_html(content_bytes: bytes) -> str:
     )
     converted = ""
     with capture:
-        converted = mammoth.convert_to_html(BytesIO(content_bytes), style_map=_WORD_STYLE_MAP).value
+        converted = _mammoth_html(content_bytes)
     if capture.captured_exception is not None:
         raise UnreadableDocument("a damaged Word document") from capture.captured_exception
+    return converted
+
+
+def _mammoth_html(content_bytes: bytes) -> str:
+    converted = mammoth.convert_to_html(BytesIO(content_bytes), style_map=_WORD_STYLE_MAP).value
+    assert isinstance(converted, str), "mammoth converts a document to HTML text"
     return converted
 
 

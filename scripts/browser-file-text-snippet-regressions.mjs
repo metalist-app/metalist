@@ -115,7 +115,8 @@ function noteState(page, noteId) {
     return {
       noteTop: note.getBoundingClientRect().top,
       cardTop: card === null ? null : card.getBoundingClientRect().top,
-      snippet: snippet === null ? '' : snippet.textContent,
+      // null: the note shows no snippet.
+      snippet: snippet === null ? null : snippet.textContent,
       snippetInCard: snippet !== null && card !== null && card.contains(snippet),
       marks,
       editing: note.classList.contains('editing'),
@@ -130,7 +131,7 @@ async function searchOnceExtracted(page, ids) {
   for (let attempt = 0; attempt < EXTRACTION_ATTEMPTS; attempt += 1) {
     await search(page, `${FIXTURE_TAG} "${PHRASE}"`);
     const states = [await noteState(page, ids.cardNote), await noteState(page, ids.foldNote)];
-    if (states.every(state => state.snippet !== '')) return;
+    if (states.every(state => state.snippet !== null)) return;
     await search(page, '');
     await new Promise(resolve => setTimeout(resolve, EXTRACTION_RETRY_MS));
   }
@@ -155,7 +156,7 @@ async function editThenEscape(page, ids) {
   await idle(page);
   const editing = await noteState(page, ids.foldNote);
   assert.equal(editing.editing, true, '2: clicking the snippet edits the note');
-  assert.equal(editing.snippet, '', '2: the card turns into its line and the snippet goes');
+  assert.equal(editing.snippet, null, '2: the card turns into its line and the snippet goes');
   assert.equal(editing.noteTop, before.noteTop, '2: the note\'s top stays where it was');
   assert.equal(editing.scrollY, before.scrollY, '2: nothing scrolls');
 
@@ -172,11 +173,11 @@ async function editThenEscape(page, ids) {
 async function foldThenUnfold(page, ids) {
   const toggle = `.note[data-note-id="${ids.foldNote}"] > .note-collapse-toggle`;
   const before = await noteState(page, ids.foldNote);
-  assert.notEqual(before.snippet, '', '4: the snippet shows before folding');
+  assert.notEqual(before.snippet, null, '4: the snippet shows before folding');
   await page.click(toggle);
   await idle(page);
   const folded = await noteState(page, ids.foldNote);
-  assert.equal(folded.snippet, '', '4: a folded note shows no snippet');
+  assert.equal(folded.snippet, null, '4: a folded note shows no snippet');
   assert.equal(folded.noteTop, before.noteTop, '4: the note\'s top stays where it was');
   assert.equal(folded.cardTop, before.cardTop, '4: the card on its first line stays exactly where it was');
   assert.equal(folded.canCollapse, 'true', '4: its arrow stays, to open it again');

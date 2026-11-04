@@ -114,7 +114,7 @@ def group_of(path: PurePosixPath) -> FileGroupKind:
     suffix = PurePosixPath(name).suffix
     if any(folder in _BUILD_FOLDERS for folder in folders) or suffix in _COMPILED_SUFFIXES:
         return BUILD
-    if suffix in _SUFFIX_GROUPS:
+    if suffix in _SUFFIX_GROUPS:  # shockharness: ignore[DEF002] reason="the groups list the endings they take; a file of any other ending is in OTHER, the checklist's 'Other files' row"
         return _SUFFIX_GROUPS[suffix]
     return OTHER
 

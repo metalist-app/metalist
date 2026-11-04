@@ -349,12 +349,19 @@ function onDragStart(event) {
 function dropTargetOf(event) {
     const dragged = moduleState.draggedPath;
     if (dragged === '') return null;
-    // The top (`/` or the tree's empty space), or the folder under the pointer.
-    const folderRow = event.target.closest('[data-virtual-folder]');
-    const row = folderRow === null ? event.target.closest('[data-virtual-folder-root]') : folderRow;
-    const into = folderRow === null ? TOP : folderRow.dataset.virtualFolder;
-    if (into.startsWith(dragged) || into === parentOf(dragged)) return null;
-    return { into, row };
+    const target = folderDropAt(event.target);
+    if (target.into.startsWith(dragged) || target.into === parentOf(dragged)) return null;
+    return target;
+}
+
+// The folder under the pointer and the row it highlights: a folder's own row; the top over `/`
+// (its row) or over the tree's empty space (the tree itself).
+function folderDropAt(pointerTarget) {
+    const folderRow = pointerTarget.closest('[data-virtual-folder]');
+    if (folderRow !== null) return { into: folderRow.dataset.virtualFolder, row: folderRow };
+    const rootRow = pointerTarget.closest('[data-virtual-folder-root]');
+    if (rootRow !== null) return { into: TOP, row: rootRow };
+    return { into: TOP, row: requireTree() };
 }
 
 function clearDropTarget() {
@@ -379,7 +386,7 @@ function onDragOver(event) {
     if (target === null) return;
     event.preventDefault();
     event.dataTransfer.dropEffect = 'move';
-    (target.row === null ? requireTree() : target.row).classList.add(DROP_CLASS);
+    target.row.classList.add(DROP_CLASS);
 }
 
 function onDragEnd() {
@@ -423,14 +430,16 @@ export function noteDropAt(pointerTarget, noteElement) {
     if (!(pointerTarget instanceof Element) || pointerTarget.closest(`#${TREE_ID}`) === null) return null;
     const isChild = noteElement.parentElement.closest('.note') !== null;
     if (isChild) return { folder: null, row: null, isChild };
-    const folderRow = pointerTarget.closest('[data-virtual-folder]');
-    // The top: `/` or the tree's empty space.
-    const row = folderRow === null ? document.querySelector(`#${TREE_ID} [data-virtual-folder-root]`) : folderRow;
-    const into = folderRow === null ? TOP : folderRow.dataset.virtualFolder;
     const current = folderTagsOfNote(noteElement);
-    const isThereAlready = into === TOP ? current.length === 0 : current.length === 1 && current[0] === into;
-    if (isThereAlready) return { folder: null, row: null, isChild };
-    return { folder: into, row, isChild };
+    const folderRow = pointerTarget.closest('[data-virtual-folder]');
+    if (folderRow === null) {
+        // The top: `/` or the tree's empty space; `/`'s row is highlighted.
+        if (current.length === 0) return { folder: null, row: null, isChild };
+        return { folder: TOP, row: document.querySelector(`#${TREE_ID} [data-virtual-folder-root]`), isChild };
+    }
+    const into = folderRow.dataset.virtualFolder;
+    if (current.length === 1 && current[0] === into) return { folder: null, row: null, isChild };
+    return { folder: into, row: folderRow, isChild };
 }
 
 /** The virtual folder a drop from the desktop landed on: its path, '' for the top (`/` or the

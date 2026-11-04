@@ -107,7 +107,7 @@ const STATS_TERM_EXAMPLE_PROPERTY = 'calories>2000';
 // = < > opens a value, author="Ursula Le Guin" (quoted-values.js). Checked with each
 // quoted value masked as MASKED_VALUE, so the patterns above see one plain character.
 const MASKED_VALUE = 'v';
-const EMPTY_QUOTED_VALUE_RE = /(?:>=|<=|>|<|=)""$/;
+const EMPTY_QUOTED_VALUE_RE = /(>=|<=|>|<|=)""$/;
 // author="Le Guin": the tag's own value, matched as quoted text (tag_properties.py).
 const QUOTED_VALUE_TERM_RE = /^[^:=<>?@][^:=<>?]*="v"$/u;
 const QUOTED_VALUE_START_RE = /^[^:=<>?@"][^:=<>?"]*="/u;
@@ -179,7 +179,7 @@ function describePropertyTermProblem(typedTerm) {
     const term = maskQuotedValues(typedTerm);
     const emptyValue = EMPTY_QUOTED_VALUE_RE.exec(term);
     if (emptyValue) {
-        return `Write a value after ${emptyValue[0].slice(0, -VALUE_QUOTE.length * 2)}`;
+        return `Write a value after ${emptyValue[1]}`;
     }
     const statsStart = STATS_TERM_START_RE.exec(term);
     if (!statsStart && !(term.startsWith(PROPERTY_SEPARATOR) && term.endsWith('?'))) {
@@ -229,7 +229,8 @@ function describeChainProblem(term) {
     }
     const isTagless = separatorIndex === 0;
     const segments = term.slice(separatorIndex + PROPERTY_SEPARATOR.length).split(CHAIN_SEPARATOR_RE);
-    if (segments.length < 2) {
+    if (segments.length === 1) {
+        // One property: no chain.
         return '';
     }
     const exampleTag = isTagless ? '' : 'jogging';

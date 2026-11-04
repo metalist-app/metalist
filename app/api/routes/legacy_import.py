@@ -92,6 +92,8 @@ def _require_offered(db: SafeSession, *, encrypted: bool) -> LegacyDatabase:
 
 
 def _convert(legacy: LegacyDatabase, *, legacy_password: str | None, password: str | None) -> ConversionResponse:
+    if ACTIVE_NAMESPACE is None:
+        raise RuntimeError("Bringing in the old MetaList's notes needs an active namespace")
     request = LegacyConversionRequest(
         legacy=legacy,
         legacy_password=legacy_password,

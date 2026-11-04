@@ -33,6 +33,8 @@ from app.services.exception_capture import CapturedExceptionContext
 _LOW_PRIORITY = 10
 # The module name, MAX_CHARACTERS and the file's EXTENSION.
 _EXPECTED_ARGV_LENGTH = 3
+_MAX_CHARACTERS_ARGUMENT = 1
+_EXTENSION_ARGUMENT = 2
 PDF_EXTENSION = ".pdf"
 
 LOCKED = "locked"
@@ -195,7 +197,7 @@ def main() -> None:
         raise SystemExit("usage: python -m app.services.file_text_worker MAX_CHARACTERS EXTENSION")
     if hasattr(os, "nice"):
         os.nice(_LOW_PRIORITY)
-    answer = read_file_text(sys.argv[2], sys.stdin.buffer.read(), int(sys.argv[1]))
+    answer = read_file_text(sys.argv[_EXTENSION_ARGUMENT], sys.stdin.buffer.read(), int(sys.argv[_MAX_CHARACTERS_ARGUMENT]))
     sys.stdout.write(json.dumps(answer))
 
 

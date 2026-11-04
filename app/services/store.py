@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from types import SimpleNamespace
-from typing import Iterable, Mapping, Optional, List, Set
+from typing import Iterable, Mapping, Optional, List, Sequence, Set
 
 from app.services.note_store import store as _note_store
 from app.services.note_store import NoteRecord as NodeRecord
@@ -77,7 +77,7 @@ class _AdapterStore:
     def delete_subtree(self, note_id: str) -> None:
         _note_store.remove_note(note_id)
 
-    def restore_subtree(self, records: List[NodeRecord]) -> None:
+    def restore_subtree(self, records: Sequence[NodeRecord | SimpleNamespace]) -> None:
         # Preorder restoration can reference a sibling restored later in this batch.
         pending_ids = {record.id for record in records}
         entries = []

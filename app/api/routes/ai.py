@@ -495,9 +495,10 @@ def check_ai_credential(
     vault wizard checks the key on its AI step and saves it once the vault has its password
     (a key saved before would be lost with the session the password ends)."""
     response.headers["Cache-Control"] = "no-store"
+    submitted_api_key = payload.api_key.get_secret_value()
     # lint: allow-PY001 rationale="validate user-supplied secret after Pydantic has masked it"
     try:
-        validate_ai_api_key(provider, payload.api_key.get_secret_value())
+        validate_ai_api_key(provider, submitted_api_key)
     # lint: allow-PY001 rationale="return a concise validation error without echoing the secret"
     except AiCredentialInputError as exc:
         raise HTTPException(status_code=HTTPStatus.UNPROCESSABLE_ENTITY, detail=str(exc)) from exc

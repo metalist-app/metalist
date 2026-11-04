@@ -194,11 +194,13 @@ function closeValue(value) {
     let closed = value;
     if (!quotedValueEnd(text, PROPERTY_ASSIGNMENT.length).isClosed) {
         let open = value;
-        let trailingEscapes = 0;
-        while (trailingEscapes < open.length - 1 && open[open.length - 1 - trailingEscapes] === VALUE_ESCAPE) {
-            trailingEscapes += 1;
+        // Each backslash escapes the next one: of a run of backslashes at the end, the last one is
+        // left escaping the end when the run is odd.
+        let isEndEscaped = false;
+        for (let index = open.length - 1; index > 0 && open[index] === VALUE_ESCAPE; index -= 1) {
+            isEndEscaped = !isEndEscaped;
         }
-        if (trailingEscapes % 2 === 1) {
+        if (isEndEscaped) {
             open = open.slice(0, -1);
         }
         closed = `${open}${VALUE_QUOTE}`;
@@ -364,10 +366,12 @@ function enforcePropertyTagToken(rawToken, options) {
     const seenNames = new Set();
     const kept = [];
     for (const typedSegment of segments) {
-        const segment = typedSegment.value === null
-            ? typedSegment
-            : { name: typedSegment.name, value: closeValue(typedSegment.value) };
-        const isComplete = segment.name.length > 0 && segment.value !== null && segment.value.length > 0;
+        // A property without a value is removed.
+        if (typedSegment.value === null) {
+            continue;
+        }
+        const segment = { name: typedSegment.name, value: closeValue(typedSegment.value) };
+        const isComplete = segment.name.length > 0 && segment.value.length > 0;
         if (!isComplete || seenNames.has(foldTagCase(segment.name))) {
             continue;
         }

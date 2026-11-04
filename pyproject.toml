@@ -72,6 +72,14 @@ plugins = ["pydantic.mypy"]
 show_error_codes = true
 cache_dir = ".mypy-cache"
 
+# These libraries ship no type information (no py.typed marker), and the project installs
+# no stub packages for them, so mypy reads their imports as untyped modules: their names
+# are Any rather than an import-untyped error. Listed one by one, so a new untyped import
+# elsewhere is still reported.
+[[tool.mypy.overrides]]
+module = ["olefile", "mammoth", "pypdfium2", "pypdfium2.raw", "yaml"]
+ignore_missing_imports = true
+
 [tool.setuptools]
 include-package-data = true
 py-modules = ["main"]

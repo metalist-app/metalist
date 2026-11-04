@@ -257,3 +257,15 @@ test('an open quote after a stray prefix is closed too, and still explained', ()
     assert.equal(analysis.warningMessage, SPACED_PREFIX_WARNING);
     assert.equal(analysis.closedText, '- "abc"');
 });
+
+test('an empty quoted value names the operator it follows', () => {
+    for (const [typed, warning] of [
+        ['jogging:miles>"" ', 'Write a value after >'],
+        ['jogging:miles>="" ', 'Write a value after >='],
+        [':size<="" ', 'Write a value after <='],
+    ]) {
+        const analysis = analyzeSearchQueryInput(typed);
+        assert.equal(analysis.isComplete, false, typed);
+        assert.equal(analysis.warningMessage, warning, typed);
+    }
+});

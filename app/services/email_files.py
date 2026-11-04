@@ -22,7 +22,7 @@ import mimetypes
 import re
 from dataclasses import dataclass
 from email import policy
-from email.message import EmailMessage
+from email.message import EmailMessage, MIMEPart
 from email.parser import BytesParser
 from email.utils import parseaddr
 from pathlib import PurePath
@@ -48,7 +48,7 @@ _TRACKING_PIXEL_MAX = 1
 _IMG_TAG_RE = re.compile(r"""<img\b(?:[^>"']|"[^"]*"|'[^']*')*>""", re.IGNORECASE)
 _SRC_RE = re.compile(r'\ssrc="[^"]+"', re.IGNORECASE)
 _SIZE_RE = re.compile(r'\s(?:width|height)="(?P<size>\d+)"', re.IGNORECASE)
-_SRC_VALUE_RE = re.compile(r'(\ssrc=")(?P<src>[^"]+)(")', re.IGNORECASE)
+_SRC_VALUE_RE = re.compile(r'(?P<before>\ssrc=")(?P<src>[^"]+)(?P<after>")', re.IGNORECASE)
 # A saved web page's files are named by the address they were saved from.
 _SAVED_FROM = "Content-Location"
 # The pictures shown from a saved page's own files: those the note sanitizer takes as data.
@@ -173,7 +173,7 @@ def _is_saved_page(message: EmailMessage) -> bool:
     return any(_SAVED_FROM in part for part in message.walk() if part is not message)
 
 
-def _saved_from(part: EmailMessage) -> str:
+def _saved_from(part: MIMEPart) -> str:
     if _SAVED_FROM not in part:
         return ""
     return str(part[_SAVED_FROM]).strip()
@@ -197,7 +197,7 @@ def _with_saved_pictures(body_html: str, page_address: str, saved: dict[str, Ema
             return ""
         part = saved[address]
         data = f"data:{part.get_content_type()};base64,{base64.b64encode(_payload(part)).decode('ascii')}"
-        return _SRC_VALUE_RE.sub(lambda found: f"{found.group(1)}{data}{found.group(3)}", tag, count=1)
+        return _SRC_VALUE_RE.sub(lambda found: f"{found.group('before')}{data}{found.group('after')}", tag, count=1)
 
     return _IMG_TAG_RE.sub(shown, body_html)
 

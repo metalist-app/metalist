@@ -108,7 +108,12 @@ function state(page, ids) {
       const range = [...current][0];
       currentText = range.toString();
       const holder = range.startContainer.parentElement.closest('.meta-mermaid-diagram, .meta-mermaid-source');
-      currentIn = holder === null ? 'text' : holder.className.split(' ')[0];
+      if (holder === null) {
+        // In the note's own text, outside any diagram.
+        currentIn = 'text';
+      } else {
+        currentIn = holder.className.split(' ')[0];
+      }
     }
     const marks = CSS.highlights.get(markName);
     const marksIn = id => {

@@ -34,7 +34,7 @@ def _holding_root() -> Path:
     return resolve_data_directory(environ=os.environ) / HOLDING_FOLDER_NAME
 
 
-def relative_path(path: str) -> PurePosixPath:
+def relative_path(path: object) -> PurePosixPath:
     """A file's path inside the dropped folder, as the browser gave it ('notes/plan.md'),
     refused if it could point anywhere else."""
     if not isinstance(path, str) or path == "" or path.startswith("/") or "\\" in path or _DRIVE_RE.match(path):

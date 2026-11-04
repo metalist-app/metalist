@@ -1210,6 +1210,14 @@ def _stored_payload(
     )
 
 
+def _integer_column(row: dict[str, object], column: str, *, file_id: str) -> int:
+    """An INTEGER column of a stored file text's row, which SQLite returns as an int."""
+    value = row[column]
+    if not isinstance(value, int):
+        raise TypeError(f"file_texts.{column} must be an integer for file {file_id}, got {type(value).__name__}")
+    return value
+
+
 def _read_file_text(file_id: str) -> StoredFileText | None:
     encryption_service = _resolve_encryption_service(None)
     with connect_file_reader() as connection:
@@ -1218,8 +1226,9 @@ def _read_file_text(file_id: str) -> StoredFileText | None:
         return None
     text = _stored_payload(encryption_service=encryption_service, row=row, field="text", file_id=file_id)
     return StoredFileText(
-        text=text.decode("utf-8"), is_cut=bool(row["is_cut"]), content_revision=int(row["content_revision"]),
-        reader_version=int(row["reader_version"]),
+        text=text.decode("utf-8"), is_cut=bool(row["is_cut"]),
+        content_revision=_integer_column(row, "content_revision", file_id=file_id),
+        reader_version=_integer_column(row, "reader_version", file_id=file_id),
     )
 
 
@@ -1232,19 +1241,27 @@ def _read_file_text_filters() -> list[StoredFilter]:
             file_id=str(row["file_id"]),
             filter_bytes=_stored_payload(encryption_service=encryption_service, row=row, field="filter", file_id=str(row["file_id"])),
             is_cut=bool(row["is_cut"]),
-            content_revision=int(row["content_revision"]),
-            reader_version=int(row["reader_version"]),
-            filter_version=int(row["filter_version"]),
+            content_revision=_integer_column(row, "content_revision", file_id=str(row["file_id"])),
+            reader_version=_integer_column(row, "reader_version", file_id=str(row["file_id"])),
+            filter_version=_integer_column(row, "filter_version", file_id=str(row["file_id"])),
         )
         for row in rows
     ]
+
+
+def _registered_file_title(file_id: str) -> str:
+    """The name of a file the registry lists (title_of is None only for an id that is no file's)."""
+    title = file_registry.title_of(file_id)
+    if title is None:
+        raise RuntimeError(f"file {file_id} is listed by the file registry but has no title")
+    return title
 
 
 def _searchable_files() -> dict[str, int]:
     file_ids = sorted(
         file_id for file_id in file_registry.file_ids_of_kind(FILE_FILTER_ANY)
         # Its reader goes by its ending (TEXT_READER_VERSIONS): a PDF named without one has none.
-        if is_searchable_file_name(file_registry.title_of(file_id))
+        if is_searchable_file_name(_registered_file_title(file_id))
     )
     with connect_file_reader() as connection:
         return fetch_content_revisions(connection, file_ids)
