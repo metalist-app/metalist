@@ -361,8 +361,11 @@ test('cloud AI privacy settings and hover visualization share a server boundary'
     const chatApi = readFileSync(CHAT_API_URL, 'utf8');
     const css = readFileSync(CSS_URL, 'utf8');
 
-    assert.match(settingsModal, /id="ai-agent-blacklist-input"/);
-    assert.match(settingsModal, /id="ai-agent-whitelist-input"/);
+    // Each rule field (ai-agent-blacklist-input, ai-agent-whitelist-input) with its Add button.
+    assert.match(settingsModal, /id="ai-agent-\$\{side\}-input"/);
+    assert.match(settingsModal, /id="ai-agent-\$\{side\}-add"/);
+    assert.match(settingsModal, /ruleEntryHtml\('blacklist'/);
+    assert.match(settingsModal, /ruleEntryHtml\('whitelist'/);
     assert.match(settingsModal, /Never send notes with <span class="ai-settings-term">\(blacklist\)<\/span>/);
     assert.match(settingsModal, /Only send notes with <span class="ai-settings-term">\(whitelist\)<\/span>/);
     assert.match(settingsModal, /@password and @username notes are never sent/);
@@ -487,13 +490,15 @@ test('global controls place the shared chat toggle between menu and go-to-top', 
     const css = readFileSync(CSS_URL, 'utf8');
     const controller = readFileSync(CONTROLLER_URL, 'utf8');
 
+    // A pull tab on the right edge, its icon above an arrow (the maintainer, 2026-11-02), not a
+    // square in the ≡ column any more.
     assert.match(
+        template,
+        /id="chat-toggle-button"[\s\S]*?class="edge-tab edge-tab-chat[\s\S]*?aria-pressed="false"[\s\S]*?<path d="M4 5h16v11H9l-5 4z"[\s\S]*?class="edge-tab-arrow"/,
+    );
+    assert.doesNotMatch(
         template,
         /id="menu-button"[\s\S]*?id="chat-toggle-button"[\s\S]*?id="scroll-to-top-button"/,
-    );
-    assert.match(
-        template,
-        /id="chat-toggle-button"[\s\S]*?aria-pressed="false"[\s\S]*?<path d="M4 5h16v11H9l-5 4z"/,
     );
     assert.match(
         css,
@@ -922,8 +927,10 @@ test('AI settings offer the registered providers and no local model downloads', 
     assert.match(modal, /const PROVIDER_TABS = AI_PROVIDERS;/);
     const providers = readFileSync(new URL('../../app/static/js/modules/ai-chat/ai-providers.js', import.meta.url), 'utf8');
     for (const label of ['OpenAI', 'Anthropic', 'Google']) assert.match(providers, new RegExp(`label: '${label}'`));
-    // Gemini's free tier may train on what is sent: its tab says so under the key.
-    assert.match(modal, /gemini: Object\.freeze\(\{\s*text: 'Use a key with billing turned on/);
+    // Gemini's free tier may train on what is sent: its tab (and the setup wizards' AI step)
+    // says so under the key.
+    assert.match(providers, /gemini: Object\.freeze\(\{\s*text: 'Use a key with billing turned on/);
+    assert.match(modal, /const KEY_WARNINGS = AI_KEY_WARNINGS;/);
     assert.doesNotMatch(modal, /Ollama|ai-agent-provider|id="ai-agent-download/);
     assert.doesNotMatch(chatApi, /PULL_MODEL|pullOllamaModel/);
     assert.doesNotMatch(controller, /model = this\._models\[0\]/);
@@ -945,4 +952,16 @@ test('a $ header button shows and hides the spend panel and remembers the choice
     assert.match(controller, /await this\._saveSpendVisible\(nextVisibility\)/);
     assert.match(css, /\.ai-chat-header-actions button\[hidden\]\s*\{\s*display: none;/);
     assert.match(css, /#ai-chat-spend-toggle\[aria-pressed="true"\]/);
+});
+
+
+// The ↑ and ↓ buttons are ≡'s square (the maintainer, 2026-11-02: they shrank to the chat icon's
+// 20px when the chat button left the ≡ column and its rule took them with it).
+test('the scroll buttons are the floating square, as ≡ is', () => {
+    const css = readFileSync(new URL('../../app/static/css/main.css', import.meta.url), 'utf8');
+    const rule = css.match(/(?:^|\n)\.scroll-to-top-button\s*\{([^}]*)\}/);
+    assert.ok(rule, 'expected a rule of the scroll buttons\' own');
+    assert.match(rule[1], /width:\s*var\(--floating-button-size\);/);
+    assert.match(rule[1], /height:\s*var\(--floating-button-size\);/);
+    assert.doesNotMatch(css, /\.scroll-to-top-button,\s*\.chat-toggle-button svg\s*\{/);
 });

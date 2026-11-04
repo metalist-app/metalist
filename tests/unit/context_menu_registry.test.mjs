@@ -43,6 +43,7 @@ function buildNoteHandlers(calls) {
         onIndentNote: (noteId) => calls.push(['indent', noteId]),
         onOutdentNote: (noteId) => calls.push(['outdent', noteId]),
         onRenameFile: (fileId) => calls.push(['renameFile', fileId]),
+        onDownloadFile: (fileId) => calls.push(['downloadFile', fileId]),
     };
 }
 
@@ -63,6 +64,7 @@ function buildNoteContext(overrides = {}) {
         canIndent: true,
         canOutdent: true,
         fileCardFileId: null,
+        filePlayerFileId: null,
         ...overrides,
     };
 }
@@ -495,10 +497,9 @@ test('buildContextMenuItems adds a top note action to non-editing note context',
 
 function buildViewContext(overrides) {
     return {
-        kind: 'view', isMac: true, isEditing: false, canPasteNoteAtTop: false, canGoToTop: false, canGoToBottom: false,
+        kind: 'view', searchAllowsNewNotes: true, isMac: true, isEditing: false, canPasteNoteAtTop: false, canGoToTop: false, canGoToBottom: false,
         isUntaggedView: false, theme: 'system', sortMode: 'normal', dateRangeKind: 'none', dateRangeField: 'updated',
         fileFilterKind: 'none',
-        areTabsVisible: false, isAiChatVisible: false, areNoteTagsVisible: false,
         ...overrides,
     };
 }
@@ -506,8 +507,7 @@ function buildViewContext(overrides) {
 const VIEW_HANDLER_NAMES = [
     'onAddNoteAtTop', 'onPasteNoteAtTop', 'onUndo', 'onRedo', 'onGoToTop', 'onGoToBottom', 'onExpandAll', 'onCollapseAll', 'onFullyExpandAll',
     'onFullyCollapseAll', 'onSetUntaggedView', 'onSetSortMode', 'onSetDateRangeField', 'onSetDateRangePreset',
-    'onOpenCustomDateRange', 'onSetFileFilter', 'onToggleAiChat', 'onToggleTabs',
-    'onToggleNoteTags', 'onSetTheme', 'onNewTab', 'onOpenNamespace', 'onOpenReminders',
+    'onOpenCustomDateRange', 'onSetFileFilter', 'onSetTheme', 'onNewTab', 'onOpenNamespace', 'onOpenReminders',
     'onExportViewHtml', 'onPrintView', 'onLogOut',
 ];
 
@@ -540,7 +540,7 @@ test('the background menu groups adding, going, the outline, the view, opening a
         'Sort by',
         'Date Range',
         'Notes with Files',
-        'Show',
+        'Themes',
         '— Open',
         'Export & Print',
         '— Log Out',
@@ -549,7 +549,8 @@ test('the background menu groups adding, going, the outline, the view, opening a
     assert.deepEqual(submenu('add'), ['Add Note at Top ↩', 'Paste Note at Top ⌘V']);
     assert.deepEqual(submenu('go-to'), ['Top', 'Bottom']);
     assert.deepEqual(submenu('outline'), ['Expand All Root Notes', 'Collapse All Root Notes', '— Fully Expand All', 'Fully Collapse All']);
-    assert.deepEqual(submenu('show'), ['Chat', 'Search Contexts', 'Tags in List', '— System Theme', 'Light Theme', 'Dark Theme']);
+    // Themes alone (the maintainer, 2026-11-02: the chat and the folders have their tabs on screen).
+    assert.deepEqual(submenu('themes'), ['System', 'Light', 'Dark']);
     assert.deepEqual(submenu('open'), ['New Search Context', 'Vault…', 'Reminders']);
     assert.deepEqual(submenu('export-print'), ['View as HTML…', 'Print View…']);
 });
@@ -617,31 +618,19 @@ test('background actions call their handlers', () => {
     ]);
 });
 
-test('View and Show (with the theme) tick the current state', () => {
+test('View and Themes tick the current state', () => {
     const calls = [];
-    const items = buildContextMenuItems(buildViewContext({
-        isUntaggedView: true, theme: 'dark', isAiChatVisible: true, areTabsVisible: false, areNoteTagsVisible: true,
-    }), buildViewHandlers(calls));
+    const items = buildContextMenuItems(buildViewContext({ isUntaggedView: true, theme: 'dark' }), buildViewHandlers(calls));
     const submenu = (id) => items.find((item) => item.id === id).submenu;
     const ticks = (id) => submenu(id).map((item) => [item.label, item.checked, item.enabled]);
 
     // The current choice is ticked but not greyed: picking it changes nothing.
     assert.deepEqual(ticks('view'), [['All Notes', false, true], ['Untagged Notes', true, true]]);
-    assert.deepEqual(ticks('show'), [
-        ['Chat', true, true], ['Search Contexts', false, true], ['Tags in List', true, true],
-        ['System Theme', false, true], ['Light Theme', false, true], ['Dark Theme', true, true],
-    ]);
+    assert.deepEqual(ticks('themes'), [['System', false, true], ['Light', false, true], ['Dark', true, true]]);
 
     submenu('view')[0].onSelect();
-    for (const item of submenu('show').slice(0, 3)) item.onSelect();
-    submenu('show')[4].onSelect();
-    assert.deepEqual(calls, [
-        ['onSetUntaggedView', false],
-        ['onToggleAiChat', false],
-        ['onToggleTabs', true],
-        ['onToggleNoteTags', false],
-        ['onSetTheme', 'light'],
-    ]);
+    submenu('themes')[1].onSelect();
+    assert.deepEqual(calls, [['onSetUntaggedView', false], ['onSetTheme', 'light']]);
 });
 
 test('the background menu fails loudly on missing state', () => {
@@ -979,6 +968,7 @@ test('Rename File… leads a file card menu and follows Save Image or Save Diagr
         ...buildNoteHandlers(calls),
         onCopyImage: () => {},
         onSaveImage: () => {},
+        onDownloadFile: () => {},
         onZoomImage: () => {},
         onOpenImageInNewTab: () => {},
         onEditDiagram: () => {},

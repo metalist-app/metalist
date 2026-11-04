@@ -1,3 +1,3 @@
 """Database schema version constants without runtime configuration imports."""
 
-CURRENT_DATABASE_VERSION = 12
+CURRENT_DATABASE_VERSION = 14

@@ -28,7 +28,6 @@ function endpoints() {
 
 const LABELS = {
     'pref.show_note_tags': 'Show Tags in List',
-    'pref.show_tab_ui': 'Show Search Contexts',
     'pref.show_search_results_count': 'Hide Search Result Count',
     'pref.show_ai_chat': 'Show AI Chat',
     'action.summarize_ai_chat': 'AI Chat: Summarize Now',
@@ -81,6 +80,8 @@ const LABELS = {
     'form.visual_cues': 'Visual Cues…',
     'form.dictation_settings': 'Dictation Settings…',
     'form.open_namespace': 'Open/Switch Vault…',
+    'form.import_wizard': 'Import…',
+    'action.toggle_virtual_folders': 'Show Virtual Folders',
     'form.create_namespace': 'Create Vault…',
     'form.manage_namespace_ports': 'Manage Vault Ports…',
     'form.rename_current_namespace': 'Rename Current Vault…',
@@ -89,6 +90,7 @@ const LABELS = {
     'pref.backup_reminder': 'Backup Reminder',
     'pref.trim_reminder': 'Trim Reminder',
     'form.restore_backup': 'Restore from Backup…',
+    'form.bring_in_old_metalist': 'Bring In Notes from Old MetaList…',
     'action.logout': 'Log Out',
     'form.random_password_generator': 'Generate Random Password…',
     'action.find_in_list': 'Find in List',
@@ -109,6 +111,7 @@ const LABELS = {
     'action.alphabetize_root_notes_asc': 'Alphabetize Root Notes A-Z (Current View)…',
     'action.alphabetize_root_notes_desc': 'Alphabetize Root Notes Z-A (Current View)…',
     'action.reset_updated_at_to_created_at': 'Repair: Reset Updated Time to Created Time (Current View)…',
+    'action.delete_notes_in_view': 'Delete Notes (Current View)…',
     'action.open_keyboard_shortcuts_help': 'Keyboard Shortcuts',
 };
 
@@ -128,6 +131,7 @@ test('destructive commands are the ones that lose what cannot be brought back', 
     assert.deepEqual([...DESTRUCTIVE_COMMAND_IDS].sort(), [
         'action.alphabetize_root_notes_asc',
         'action.alphabetize_root_notes_desc',
+        'action.delete_notes_in_view',
         'action.prioritize_tag_back',
         'action.prioritize_tag_front',
         'action.remove_all_tag_suggestions_current_context',
@@ -145,9 +149,9 @@ test('destructive commands are the ones that lose what cannot be brought back', 
 });
 
 test('commands that cannot apply are hidden', () => {
-    const withPassword = { hasPassword: true, isRootReorderLocked: false };
-    const withoutPassword = { hasPassword: false, isRootReorderLocked: false };
-    const sorted = { hasPassword: false, isRootReorderLocked: true };
+    const withPassword = { hasPassword: true, isRootReorderLocked: false, legacyImportOffered: false };
+    const withoutPassword = { hasPassword: false, isRootReorderLocked: false, legacyImportOffered: false };
+    const sorted = { hasPassword: false, isRootReorderLocked: true, legacyImportOffered: false };
     assert.equal(isCommandAvailable('form.add_password', withPassword), false);
     assert.equal(isCommandAvailable('form.add_password', withoutPassword), true);
     for (const id of ['form.change_password', 'form.remove_password']) {
@@ -160,6 +164,11 @@ test('commands that cannot apply are hidden', () => {
         assert.equal(isCommandAvailable(id, sorted), false);
     }
     assert.equal(isCommandAvailable('action.logout', sorted), true);
+    // The Obsidian import exists in production too (the maintainer, 2026-10-31).
+    assert.equal(isCommandAvailable('form.import_wizard', withPassword), true);
+    // The old MetaList's notes only while they are offered (docs/ui/legacy-import.md).
+    assert.equal(isCommandAvailable('form.bring_in_old_metalist', withoutPassword), false);
+    assert.equal(isCommandAvailable('form.bring_in_old_metalist', { ...withoutPassword, legacyImportOffered: true }), true);
 });
 
 test('every list the palette shows or activates comes from the available commands', async () => {

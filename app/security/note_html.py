@@ -10,6 +10,8 @@ from typing import Any
 
 import nh3
 
+from app.services.document_highlights import HIGHLIGHT_CLASSES
+
 
 _POLICY_PATH = Path(__file__).resolve().parents[1] / "static" / "note-html-policy.json"
 # Base64 writes every 3 bytes as 4 characters.
@@ -373,3 +375,48 @@ def sanitize_note_html(content: str) -> str:
     if not isinstance(content, str):
         raise TypeError("content must be a string")
     return _build_cleaner().clean(content)
+
+
+# --- A document in the file viewer ---------------------------------------------------------
+# As a note's content, plus a document's highlights: a mark's class, one of Word's 16
+# (document_highlights.py), and nothing else of the file's style. Stored notes never carry it.
+
+_HIGHLIGHT_TAG = "mark"
+_CLASS = "class"
+
+
+def _sanitize_viewed_document_attribute(tag_name: str, attribute_name: str, value: str) -> str | None:
+    if tag_name == _HIGHLIGHT_TAG and attribute_name == _CLASS:
+        kept = [name for name in value.split() if name in HIGHLIGHT_CLASSES]
+        if not kept:
+            return None
+        return " ".join(kept)
+    return sanitize_note_attribute(tag_name, attribute_name, value)
+
+
+@lru_cache(maxsize=1)
+def _build_viewed_document_cleaner() -> nh3.Cleaner:
+    policy = load_note_html_policy()
+    allowed_attributes = {
+        tag_name: set(attribute_names)
+        for tag_name, attribute_names in policy["allowed_attributes"].items()
+    }
+    allowed_attributes.setdefault(_HIGHLIGHT_TAG, set()).add(_CLASS)
+    return nh3.Cleaner(
+        tags=set(policy["allowed_tags"]),
+        clean_content_tags=set(policy["clean_content_tags"]),
+        attributes=allowed_attributes,
+        attribute_filter=_sanitize_viewed_document_attribute,
+        strip_comments=True,
+        link_rel=None,
+        url_schemes=set(policy["allowed_url_schemes"]),
+        filter_style_properties=set(policy["allowed_style_properties"]),
+    )
+
+
+def sanitize_viewed_document_html(content: str) -> str:
+    """A Word document's or an RTF's HTML for the file viewer: sanitized as a note's content,
+    its highlights kept (file_view._document_view)."""
+    if not isinstance(content, str):
+        raise TypeError("content must be a string")
+    return _build_viewed_document_cleaner().clean(content)

@@ -18,6 +18,7 @@ import pytest
 
 from app.security import rendered_html
 from app.services import link_titles
+from app.services.file_text_search import file_texts
 
 
 # Elements that never have an end tag in HTML.
@@ -142,6 +143,17 @@ class _RecordedLookups:
 @pytest.fixture(autouse=True)
 def _no_background_lookups(monkeypatch):
     monkeypatch.setattr(link_titles, "_FETCHER_EXECUTOR", _RecordedLookups())
+
+
+@pytest.fixture(autouse=True)
+def _no_background_file_texts(monkeypatch):
+    """A file stored in a unit test starts no background text extraction (file_text_search.py):
+    it ran on into the next tests against databases they had replaced (2026-11-01). A test that
+    wants files' text calls file_texts.refresh() itself; no filters carry over between tests."""
+    monkeypatch.setattr(file_texts, "refresh_in_background", lambda: None)
+    file_texts.clear()
+    yield
+    file_texts.clear()
 
 
 @pytest.fixture

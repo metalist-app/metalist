@@ -6,6 +6,7 @@ read-only rendering of one note's content and tags.
 
 import re
 
+from app.services.credential_display import CredentialDisplay
 from app.services.content_formatting import format_note_content_for_view
 from app.services.content_formatting import extract_plain_text_from_note_html
 from app.services.content_formatting import note_tags_include
@@ -52,7 +53,7 @@ def _format_note_content_standard(*, content_html: str, tags: str) -> str:
     return format_note_content_for_view(
         content_html=content_html,
         tags=tags,
-        redact_credentials=False,
+        credentials=CredentialDisplay.DOTS,
     )
 
 

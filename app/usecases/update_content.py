@@ -13,6 +13,7 @@ from app.db.notes_sql import update_note_fields as db_update_note_fields
 from app.db.notes_sql import update_note_fields_preserving_updated_at as db_update_note_fields_preserving_updated_at
 from app.security.encryption import encrypt
 from app.security.note_html import sanitize_note_html
+from app.services.tag_characters import clean_tag_text
 from app.services.search_history import current_local_date, record_explicit_tag_additions
 from app.services.content_cache import (
     cache_note,
@@ -51,6 +52,9 @@ def apply_update_note_sources(
     if not isinstance(proposed_tags, str):
         raise TypeError("proposed_tags must be a string")
     sanitized_content = sanitize_note_html(content)
+    # Tags are stored in one Unicode form without invisible characters (tag_characters.py).
+    tags = clean_tag_text(tags)
+    proposed_tags = clean_tag_text(proposed_tags)
 
     # Validate existence without DB reads
     if not store.contains(note_id):

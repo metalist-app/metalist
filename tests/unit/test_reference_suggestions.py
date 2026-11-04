@@ -7,6 +7,7 @@ password it holds: it is suggested by its parent's first line, shown masked."""
 
 from __future__ import annotations
 
+import threading
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -17,12 +18,18 @@ from app.security.sensitive_cache import disable_and_clear_sensitive_caches, ena
 from app.models.database import SafeSession
 from app.security.encryption import clear_encryption_key, set_encryption_required
 from app.services import auth_service
+from app.services.auth_cache_state import mark_cache_ready
 from app.services.content_cache import clear_cache
 from app.services.content_formatting import CREDENTIAL_MASK
 from app.services.file_registry import file_registry
 from app.services.note_store import store
 from app.services.ontology_rules_store import bootstrap_ontology_rules_store
-from app.services.reference_suggestions import REFERENCE_SUGGESTION_LIMIT, _catalog, suggest_references
+from app.services.reference_suggestions import (
+    REFERENCE_SUGGESTION_LIMIT,
+    _catalog,
+    build_catalog_in_background,
+    suggest_references,
+)
 from app.usecases.create_note import apply_insert_note
 
 _START = datetime(2026, 10, 1, 8, 0, tzinfo=timezone.utc)
@@ -291,3 +298,24 @@ def test_a_note_that_is_only_a_reference_reads_as_its_source(notes) -> None:
     assert lines["password-link"] == CREDENTIAL_MASK
     # A note with nothing to read isn't suggested.
     assert "blank" not in lines
+
+
+# Built beside the requests once the notes are loaded (2026-11-01): built by the first request
+# needing it, a whole vault's worth held up the save or note opening that came next.
+def test_the_catalog_is_built_in_the_background_once_the_notes_are_loaded(notes) -> None:
+    _note("one", ["Bank login"])
+    assert _catalog._revision != store.revision
+
+    mark_cache_ready()
+    for thread in threading.enumerate():
+        if thread.name == "metalist-reference-catalog":
+            thread.join()
+
+    assert _catalog._revision == store.revision
+    assert _ids("bank") == ["one"]
+
+
+def test_imported_notes_join_the_catalog_in_the_background(notes) -> None:
+    _note("one", ["Bank login"])
+    build_catalog_in_background().join()
+    assert _catalog._revision == store.revision

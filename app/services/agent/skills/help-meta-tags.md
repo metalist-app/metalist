@@ -22,11 +22,12 @@ suggestions of `@` tags are in the tag-suggestions topic.
   - Scopes may cross multiple editor blocks/lines; visual styles are rendered as valid per-block spans across the full selected range.
 - Basic formatting tags:
   - `@heading` increases font size and weight.
+  - `@quote` draws a quote as Markdown does: indented with a grey bar at its left. Scoped (`((@quote))`), each region is a quote block on lines of its own, even one written mid-line.
   - `@bold`, `@italic`, `@strikethrough` apply basic text styling.
   - `@serif` switches to a serif font.
   - `@red`, `@green`, `@blue`, `@grey` (or `@gray`) apply text colors.
   - `@highlight` adds a fluorescent-yellow, slightly irregular marker stroke behind the text.
-  - `@copyable` makes the rendered content clickable to copy its raw text to the clipboard.
+  - `@copyable` makes the rendered content click-to-copy: clicking it copies its raw text to the clipboard.
   - `@size=0.1`, `0.25`, `0.5`, `0.75`, `1.0`, `1.25`, `1.5`, `2.0`, or `3.0` scales a whole note or scoped region non-destructively in view mode.
   - Ontology implication rules can add these formatting tags implicitly (e.g. `bug => @red`).
 - List meta tags:
@@ -34,8 +35,8 @@ suggestions of `@` tags are in the tag-suggestions topic.
   - `@numbered` renders the note's immediate children with numbered markers.
   - Only the **direct** children are affected (grandchildren are not).
 - Credential meta tags:
-  - `@username` renders a view-only user-icon row with a copyable value.
-  - `@password` renders a view-only lock-icon row with a blurred, copyable value.
+  - `@username` renders a view-only user-icon row with its value; clicking it copies it.
+  - `@password` renders a view-only lock-icon row: `••••••••` and an eye that shows the value until the next click or key; clicking the dots copies it.
 - Email meta tags:
   - `@email` renders a view-only envelope row with a mailto link.
 - Status meta tags:

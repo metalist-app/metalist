@@ -6,33 +6,53 @@ From, To, Cc, Date and Subject decoded, its body (the HTML version sanitized as 
 note's stored HTML is, else the plain text), and its attachments by name, type and
 size, each downloadable. Nothing in the email runs or loads unasked: scripts,
 styles and inline (cid:) pictures are dropped, as are 1-pixel tracking pictures.
+
+A web page saved whole (.mht, read the same way: an email of one page and its files) shows its
+own saved pictures in place and fetches nothing: its pictures pointed at their old addresses,
+and opening one fetched some 200 from sites long gone, 16 seconds each, holding up every
+request of the page behind them (the maintainer, 2026-11-03). A picture it didn't save shows
+nothing, and the files it saved are the page's, not attachments.
 """
 
 from __future__ import annotations
 
+import base64
+import html
 import mimetypes
 import re
 from dataclasses import dataclass
 from email import policy
-from email.message import EmailMessage
+from email.message import EmailMessage, MIMEPart
 from email.parser import BytesParser
 from email.utils import parseaddr
 from pathlib import PurePath
+from urllib.parse import urljoin
 
 from app.security.note_html import sanitize_note_html
 
 EMAIL_MIME_TYPE = "message/rfc822"
 EMAIL_EXTENSION = ".eml"
-EMAIL_BADGE = "EML"
+# A card's pill says what the file is (the maintainer, 2026-11-03): an email, or a web page saved
+# whole (.mht, read as an email of one page and its files).
+EMAIL_BADGE = "EMAIL"
+SAVED_PAGE_BADGE = "WEB PAGE"
+SAVED_PAGE_EXTENSIONS = frozenset({".mht", ".mhtml"})
 # The parts a body is read from, best first.
 _BODY_PREFERENCE = ("html", "plain")
 _HTML_SUBTYPE = "html"
 # A picture this small or smaller on either side shows nothing: it only tells the sender
 # the email was opened.
 _TRACKING_PIXEL_MAX = 1
-_IMG_TAG_RE = re.compile(r"<img\b[^>]*>", re.IGNORECASE)
+# A picture's tag, its quoted values read whole: a value may hold a ">" (an old page's
+# description "Fitness, Inc.</h1>", 2026-11-03).
+_IMG_TAG_RE = re.compile(r"""<img\b(?:[^>"']|"[^"]*"|'[^']*')*>""", re.IGNORECASE)
 _SRC_RE = re.compile(r'\ssrc="[^"]+"', re.IGNORECASE)
 _SIZE_RE = re.compile(r'\s(?:width|height)="(?P<size>\d+)"', re.IGNORECASE)
+_SRC_VALUE_RE = re.compile(r'(?P<before>\ssrc=")(?P<src>[^"]+)(?P<after>")', re.IGNORECASE)
+# A saved web page's files are named by the address they were saved from.
+_SAVED_FROM = "Content-Location"
+# The pictures shown from a saved page's own files: those the note sanitizer takes as data.
+_SAVED_PICTURE_TYPES = frozenset({"image/png", "image/gif", "image/jpeg", "image/webp", "image/bmp", "image/avif"})
 
 
 def is_email_file(*, mime_type: str, original_filename: str) -> bool:
@@ -42,6 +62,18 @@ def is_email_file(*, mime_type: str, original_filename: str) -> bool:
     if mime_type.strip().lower() == EMAIL_MIME_TYPE:
         return True
     return PurePath(original_filename).suffix.lower() == EMAIL_EXTENSION
+
+
+def is_saved_page_name(original_filename: str) -> bool:
+    """A web page saved whole, by its name."""
+    return PurePath(original_filename).suffix.lower() in SAVED_PAGE_EXTENSIONS
+
+
+def email_badge(original_filename: str) -> str:
+    """An email file's pill: WEB PAGE for a saved page, else EMAIL."""
+    if is_saved_page_name(original_filename):
+        return SAVED_PAGE_BADGE
+    return EMAIL_BADGE
 
 
 @dataclass(frozen=True, slots=True)
@@ -78,7 +110,7 @@ def read_email(content_bytes: bytes) -> ReadEmail:
     body_html, body_text = _body(message)
     attachments = tuple(
         EmailAttachment(name=_attachment_name(part, index), content_type=part.get_content_type(), size_bytes=len(_payload(part)))
-        for index, part in enumerate(message.iter_attachments())
+        for index, part in enumerate(_attachment_parts(message))
     )
     # Readable when it has any of an email's headers, or a body.
     is_readable = any(value != "" for value in [*headers.values(), body_html, body_text])
@@ -93,7 +125,7 @@ def email_attachment(content_bytes: bytes, index: int) -> tuple[EmailAttachment,
     """The attachment at `index` (counted from 0, as read_email lists them) and its bytes."""
     if not isinstance(content_bytes, bytes):
         raise TypeError("content_bytes must be bytes")
-    parts = list(_parse(content_bytes).iter_attachments())
+    parts = _attachment_parts(_parse(content_bytes))
     if not isinstance(index, int) or not 0 <= index < len(parts):
         raise IndexError(f"The email has no attachment {index}")
     part = parts[index]
@@ -127,9 +159,56 @@ def _body(message: EmailMessage) -> tuple[str, str]:
         return "", ""
     content = part.get_content()
     assert isinstance(content, str), "a text part's content is text"
-    if part.get_content_subtype() == _HTML_SUBTYPE:
-        return _without_hidden_pictures(sanitize_note_html(content)), ""
-    return "", content
+    if part.get_content_subtype() != _HTML_SUBTYPE:
+        return "", content
+    body_html = sanitize_note_html(content)
+    if _is_saved_page(message):
+        # Its own copies put in as data, sanitized again as any picture in a note is.
+        body_html = sanitize_note_html(_with_saved_pictures(body_html, _saved_from(part), _saved_files(message)))
+    return _without_hidden_pictures(body_html), ""
+
+
+def _is_saved_page(message: EmailMessage) -> bool:
+    """A web page saved whole: its files say where each was saved from."""
+    return any(_SAVED_FROM in part for part in message.walk() if part is not message)
+
+
+def _saved_from(part: MIMEPart) -> str:
+    if _SAVED_FROM not in part:
+        return ""
+    return str(part[_SAVED_FROM]).strip()
+
+
+def _saved_files(message: EmailMessage) -> dict[str, EmailMessage]:
+    """A saved page's files by the address each was saved from."""
+    return {_saved_from(part): part for part in message.walk() if _SAVED_FROM in part and not part.is_multipart()}
+
+
+def _with_saved_pictures(body_html: str, page_address: str, saved: dict[str, EmailMessage]) -> str:
+    """Each picture of a saved page as the copy it saved (relative addresses read from the page's
+    own); a picture it didn't save, gone: nothing of it is fetched from the web."""
+    def shown(match: re.Match[str]) -> str:
+        tag = match.group(0)
+        source = _SRC_VALUE_RE.search(tag)
+        if source is None:
+            return tag
+        address = urljoin(page_address, html.unescape(source.group("src")))
+        if address not in saved or saved[address].get_content_type() not in _SAVED_PICTURE_TYPES:
+            return ""
+        part = saved[address]
+        data = f"data:{part.get_content_type()};base64,{base64.b64encode(_payload(part)).decode('ascii')}"
+        return _SRC_VALUE_RE.sub(lambda found: f"{found.group('before')}{data}{found.group('after')}", tag, count=1)
+
+    return _IMG_TAG_RE.sub(shown, body_html)
+
+
+def _attachment_parts(message: EmailMessage) -> list[EmailMessage]:
+    """The email's attachments, as listed and downloaded by index; a saved page's own files
+    (saved from an address) are the page's, not attachments."""
+    parts = list(message.iter_attachments())
+    if not _is_saved_page(message):
+        return parts
+    return [part for part in parts if _SAVED_FROM not in part]
 
 
 # Pictures with no source left (an inline cid: picture the sanitizer emptied) or a

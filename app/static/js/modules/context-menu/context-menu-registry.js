@@ -212,6 +212,10 @@ function buildNoteContextItems(context, handlers) {
     const onMakeImageSmaller = handlers.onMakeImageSmaller;
     const onResetImageSize = handlers.onResetImageSize;
     const onSaveImage = handlers.onSaveImage;
+    const onDownloadFile = handlers.onDownloadFile;
+    if (typeof onDownloadFile !== 'function') {
+        throw new Error('Note context missing onDownloadFile handler');
+    }
     const onZoomImage = handlers.onZoomImage;
     const onOpenImageInNewTab = handlers.onOpenImageInNewTab;
     const onExportNoteHtml = handlers.onExportNoteHtml;
@@ -268,7 +272,17 @@ function buildNoteContextItems(context, handlers) {
     if (referenceNoteId !== undefined) {
         items.push(buildReferenceSourceItem(referenceNoteId, onOpenReferenceSource));
     }
-    // A file card ([[id]]) right-clicked: what was clicked comes first.
+    // A file card ([[id]]) right-clicked: what was clicked comes first. A player has no
+    // Download button of its own: its menu has it.
+    if (context.filePlayerFileId !== null) {
+        items.push({
+            id: 'download-file',
+            label: 'Download File',
+            icon: 'download',
+            enabled: true,
+            onSelect: () => onDownloadFile(context.filePlayerFileId),
+        }, buildRenameFileItem(context.filePlayerFileId, onRenameFile));
+    }
     if (context.fileCardFileId !== null) {
         items.push(buildRenameFileItem(context.fileCardFileId, onRenameFile));
     }
@@ -337,7 +351,9 @@ function buildNoteContextItems(context, handlers) {
             copyImageItem,
             {
                 id: 'save-image',
-                label: 'Save Image',
+                // A picture stored as a file downloads its original, which may be much larger than
+                // what shows (files-shown-not-copied.md §3: it replaced the download line).
+                label: imageContext.sourceKind === 'file' ? 'Download File' : 'Save Image',
                 icon: 'download',
                 enabled: true,
                 onSelect: () => onSaveImage(imageContext),
@@ -897,9 +913,6 @@ function buildViewContextItems(context, handlers) {
     const canGoToTop = requireViewFlag(context, 'canGoToTop');
     const canGoToBottom = requireViewFlag(context, 'canGoToBottom');
     const isUntaggedView = requireViewFlag(context, 'isUntaggedView');
-    const areTabsVisible = requireViewFlag(context, 'areTabsVisible');
-    const isAiChatVisible = requireViewFlag(context, 'isAiChatVisible');
-    const areNoteTagsVisible = requireViewFlag(context, 'areNoteTagsVisible');
     if (!['system', 'light', 'dark'].includes(context.theme)) {
         throw new Error('View context theme must be system, light or dark');
     }
@@ -911,9 +924,13 @@ function buildViewContextItems(context, handlers) {
     // Related actions sit in submenus so the menu fits a window 800 px tall; a group with
     // one action that applies shows that action in place (pushGroup).
     const items = [];
-    // A sorted tab places root notes by its order, so nothing is added at the top there
-    // (the keys still say why, root-note-creation-service.js).
-    const canAddAtTop = !isRootReorderLocked(context.sortMode);
+    // A sorted tab places root notes by its order, and a new note could not match a search
+    // like jogging:miles>3, so nothing is added at the top there (the keys still say why,
+    // root-note-creation-service.js).
+    if (typeof context.searchAllowsNewNotes !== 'boolean') {
+        throw new Error('View context requires searchAllowsNewNotes boolean');
+    }
+    const canAddAtTop = !isRootReorderLocked(context.sortMode) && context.searchAllowsNewNotes;
     if (!isEditing) {
         const addEntries = [];
         if (canAddAtTop) {
@@ -968,27 +985,21 @@ function buildViewContextItems(context, handlers) {
     ]);
 
     const onSetUntaggedView = requireViewHandler(handlers, 'onSetUntaggedView');
-    const onToggleAiChat = requireViewHandler(handlers, 'onToggleAiChat');
-    const onToggleTabs = requireViewHandler(handlers, 'onToggleTabs');
-    const onToggleNoteTags = requireViewHandler(handlers, 'onToggleNoteTags');
     const onSetTheme = requireViewHandler(handlers, 'onSetTheme');
-    const themeChoices = [['system', 'System Theme'], ['light', 'Light Theme'], ['dark', 'Dark Theme']];
+    const themeChoices = [['system', 'System'], ['light', 'Light'], ['dark', 'Dark']];
     items.push(
         { ...buildViewModeItem(isUntaggedView, onSetUntaggedView), separated: true },
         buildSortModeItem(context.sortMode, handlers.onSetSortMode),
         buildDateRangeItem(context, handlers),
         buildFileFilterItem(context, handlers),
+        // Themes alone (the maintainer, 2026-11-02: Show's other switches have buttons always on
+        // screen, the chat's and the virtual folders' tabs; Tags in List stays in the palette).
         {
-            id: 'show', label: 'Show', icon: 'show', enabled: true,
-            submenu: [
-                { id: 'show-chat', label: 'Chat', icon: 'chat', checked: isAiChatVisible, enabled: true, onSelect: () => onToggleAiChat(!isAiChatVisible) },
-                { id: 'show-tabs', label: 'Search Contexts', icon: 'tabs', checked: areTabsVisible, enabled: true, onSelect: () => onToggleTabs(!areTabsVisible) },
-                { id: 'show-note-tags', label: 'Tags in List', icon: 'tag', checked: areNoteTagsVisible, enabled: true, onSelect: () => onToggleNoteTags(!areNoteTagsVisible) },
-                ...themeChoices.map(([value, label], index) => choiceItem({
-                    id: `theme-${value}`, label, icon: null, isCurrent: context.theme === value, separated: index === 0,
-                    onChoose: () => onSetTheme(value),
-                })),
-            ],
+            id: 'themes', label: 'Themes', icon: 'theme', enabled: true,
+            submenu: themeChoices.map(([value, label]) => choiceItem({
+                id: `theme-${value}`, label, icon: null, isCurrent: context.theme === value, separated: false,
+                onChoose: () => onSetTheme(value),
+            })),
         },
     );
 

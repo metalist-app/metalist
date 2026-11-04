@@ -76,13 +76,14 @@ function installComputedStyle(t, styles) {
 function installRangeRects(t, rects) {
     const originalDocument = globalThis.document;
     globalThis.document = {
-        // The measured element stands in for its one text node.
+        // The measured element stands in for its one text node, outside any file snippet.
         createTreeWalker(root) {
             let given = false;
             return {
                 nextNode() {
                     if (given) return null;
                     given = true;
+                    if (!('parentElement' in root)) root.parentElement = { closest: () => null };
                     return root;
                 },
             };
@@ -109,13 +110,14 @@ function installRangeRects(t, rects) {
 function installRangeRectsBySelectedNode(t, rectsByNode) {
     const originalDocument = globalThis.document;
     globalThis.document = {
-        // The measured element stands in for its one text node.
+        // The measured element stands in for its one text node, outside any file snippet.
         createTreeWalker(root) {
             let given = false;
             return {
                 nextNode() {
                     if (given) return null;
                     given = true;
+                    if (!('parentElement' in root)) root.parentElement = { closest: () => null };
                     return root;
                 },
             };
@@ -550,6 +552,59 @@ test('search redaction blocks rendered-height collapse promotion', async (t) => 
             if (selector === ':scope > .note-collapse-toggle') {
                 return null;
             }
+            throw new Error(`Unexpected selector: ${selector}`);
+        },
+    };
+
+    updateCollapseAffordanceForNote(noteElement);
+
+    assert.equal(noteElement.dataset.canCollapse, 'false');
+});
+
+// A file's search snippet is no part of the note's text (it goes when the note folds), so its
+// lines don't make a one-card note foldable: they did, folding it hid both the snippet and the
+// arrow, and the note could not be opened again (2026-11-01).
+test('a file text snippet under a card does not make the note foldable', async (t) => {
+    installBrowserStorage(t);
+    installComputedStyle(t, { lineHeight: '20px', fontSize: '16px' });
+    const snippetElement = { className: 'note-file-text-snippet' };
+    const cardName = { parentElement: { closest: () => null } };
+    const snippetLine = { parentElement: { closest: (selector) => (selector === '.note-file-text-snippet' ? snippetElement : null) } };
+    const rectsByNode = new Map([
+        [cardName, [{ top: 10, width: 120, height: 20 }]],
+        [snippetLine, [{ top: 34, width: 600, height: 18 }, { top: 52, width: 400, height: 18 }]],
+    ]);
+    const originalDocument = globalThis.document;
+    globalThis.document = {
+        createTreeWalker() {
+            const nodes = [cardName, snippetLine];
+            return { nextNode: () => nodes.shift() ?? null };  // shockharness: ignore[DEF003] reason="a tree walker answers null when done"
+        },
+        createRange() {
+            let selected = null;
+            return {
+                selectNodeContents(node) { selected = node; },
+                getClientRects() { return rectsByNode.get(selected); },
+                detach() {},
+            };
+        },
+    };
+    const originalNodeFilter = globalThis.NodeFilter;
+    globalThis.NodeFilter = { SHOW_TEXT: 4 };
+    t.after(() => {
+        globalThis.document = originalDocument;
+        globalThis.NodeFilter = originalNodeFilter;
+    });
+    const { updateCollapseAffordanceForNote } = await import(
+        '../../app/static/js/modules/mode-manager/services/collapse-affordance-service.js'
+    );
+    const contentElement = { ...createMeasuredContent({ rectHeight: 60, scrollHeight: 60 }), querySelector: () => null };
+    const noteElement = {
+        classList: createClassList(['note']),
+        dataset: { isCollapsed: 'false', isCollapsible: 'false', searchRedacted: 'false' },
+        querySelector(selector) {
+            if (selector === ':scope > .note-content') return contentElement;
+            if (selector === ':scope > .note-collapse-toggle') return null;
             throw new Error(`Unexpected selector: ${selector}`);
         },
     };

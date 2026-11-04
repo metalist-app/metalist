@@ -2,10 +2,11 @@ import { ApplicationState } from '../../application-state.js';
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import * as Logger from '../mode-logger.js';
 
-// Keys typed while a clicked note is still opening. MetaList ignores keys while a command
-// runs (keyboard-events.js), so on a slow machine or connection the first letters typed
-// after a click were lost. The plain characters typed then are kept and typed into the
-// clicked note once it is editable, at its caret, as ordinary typing (agreed 2026-10-28).
+// Keys typed while a clicked note is still opening, or while the note being edited
+// autosaves (inactivity-events.js; agreed 2026-10-31). MetaList ignores keys while a
+// command runs (keyboard-events.js), so on a slow machine or connection the first letters
+// typed after a click were lost. The plain characters typed then are kept and typed into
+// the note once it is editable, at its caret, as ordinary typing (agreed 2026-10-28).
 // Shortcuts and other keys pressed then are still ignored.
 
 // No note is opening; also what a command that never ran (MetaList was busy) finishes.
@@ -36,8 +37,8 @@ function typesCharacter(event) {
 export const TypeAhead = {
     NONE,
 
-    // The clicked note starts opening, inside the command that opens it: keep what is typed
-    // until it has. Returns this opening's number, for finish.
+    // The clicked note starts opening, or the edited note saving, inside the command that
+    // does it: keep what is typed until it has. Returns this opening's number, for finish.
     begin(noteId) {
         if (typeof noteId !== 'string' || noteId === '') {
             throw new Error('TypeAhead.begin requires a note id');
@@ -52,7 +53,7 @@ export const TypeAhead = {
         return opening;
     },
 
-    // Keeps a key pressed while busy when a clicked note is opening and the key types a
+    // Keeps a key pressed while busy when a note is opening or saving and the key types a
     // character; returns whether it was kept.
     keep(event) {
         if (moduleState.opening === NONE || !typesCharacter(event)) {

@@ -1,3 +1,4 @@
+import { isVirtualFoldersShown } from '../mode-manager/services/virtual-folders-state.js';
 import {
     baseRootSortMode,
     isRootSortModeReversed,
@@ -65,6 +66,7 @@ export const COMMAND_SHORTCUTS = Object.freeze({
 export const DESTRUCTIVE_COMMAND_IDS = Object.freeze(new Set([
     'action.alphabetize_root_notes_asc',
     'action.alphabetize_root_notes_desc',
+    'action.delete_notes_in_view',
     'action.prioritize_tag_back',
     'action.prioritize_tag_front',
     'action.remove_all_tag_suggestions_current_context',
@@ -77,6 +79,8 @@ export const DESTRUCTIVE_COMMAND_IDS = Object.freeze(new Set([
 ]));
 
 const PASSWORD_COMMANDS_WITHOUT_ONE = new Set(['form.add_password']);
+// Only while the old MetaList's notes are offered: this namespace empty and without a password.
+const LEGACY_IMPORT_COMMAND = 'form.bring_in_old_metalist';
 const PASSWORD_COMMANDS_WITH_ONE = new Set(['form.change_password', 'form.remove_password']);
 const ROOT_REORDER_COMMANDS = new Set([
     'action.prioritize_tag_front',
@@ -87,14 +91,19 @@ const ROOT_REORDER_COMMANDS = new Set([
 
 /**
  * Whether a command can apply now; one that cannot is left out of the palette (rule 5).
- * `state` is { hasPassword, isRootReorderLocked } (a sorted tab orders its root notes itself).
+ * `state` is { hasPassword, isRootReorderLocked, legacyImportOffered } (a sorted tab
+ * orders its root notes itself).
  */
 export function isCommandAvailable(commandId, state) {
     if (typeof commandId !== 'string' || commandId === '') {
         throw new Error('isCommandAvailable requires a command id');
     }
-    if (typeof state.hasPassword !== 'boolean' || typeof state.isRootReorderLocked !== 'boolean') {
-        throw new Error('isCommandAvailable requires boolean hasPassword and isRootReorderLocked');
+    if (typeof state.hasPassword !== 'boolean' || typeof state.isRootReorderLocked !== 'boolean'
+        || typeof state.legacyImportOffered !== 'boolean') {
+        throw new Error('isCommandAvailable requires boolean hasPassword, isRootReorderLocked and legacyImportOffered');
+    }
+    if (commandId === LEGACY_IMPORT_COMMAND) {
+        return state.legacyImportOffered;
     }
     if (PASSWORD_COMMANDS_WITHOUT_ONE.has(commandId)) {
         return !state.hasPassword;
@@ -126,6 +135,7 @@ export function buildCommandPaletteEndpoints(deps) {
     const openSessionTimeoutSettings = requireAction(actions, 'openSessionTimeoutSettings');
     const createBackup = requireAction(actions, 'createBackup');
     const openBackupRestore = requireAction(actions, 'openBackupRestore');
+    const openLegacyImport = requireAction(actions, 'openLegacyImport');
     const logout = requireAction(actions, 'logout');
     const openRandomPasswordGenerator = requireAction(actions, 'openRandomPasswordGenerator');
     const collapseAll = requireAction(actions, 'collapseAll');
@@ -158,9 +168,12 @@ export function buildCommandPaletteEndpoints(deps) {
     const alphabetizeRootNotesAsc = requireAction(actions, 'alphabetizeRootNotesAsc');
     const alphabetizeRootNotesDesc = requireAction(actions, 'alphabetizeRootNotesDesc');
     const resetUpdatedAtToCreatedAt = requireAction(actions, 'resetUpdatedAtToCreatedAt');
+    const deleteNotesInView = requireAction(actions, 'deleteNotesInView');
     const openReminders = requireAction(actions, 'openReminders');
 
     const openVersionInfo = requireAction(actions, 'openVersionInfo');
+    const openImportWizard = requireAction(actions, 'openImportWizard');
+    const toggleVirtualFolders = requireAction(actions, 'toggleVirtualFolders');
     const openMemoryUsage = requireAction(actions, 'openMemoryUsage');
     const openRecentMessages = requireAction(actions, 'openRecentMessages');
     const openNoteLayoutAppearance = requireAction(actions, 'openNoteLayoutAppearance');
@@ -188,7 +201,6 @@ export function buildCommandPaletteEndpoints(deps) {
 
     const defaults = {
         showNoteTags: false,
-        showTabUi: false,
         showSearchResultsCount: true,
         showAiChat: false,
         animatedTransitions: true,
@@ -212,16 +224,6 @@ export function buildCommandPaletteEndpoints(deps) {
             persistenceKey: 'pref.show_note_tags',
             defaultValue: defaults.showNoteTags,
             apply: (next) => applyPreference('pref.show_note_tags', next),
-        },
-        {
-            id: 'pref.show_tab_ui',
-            kind: 'boolean',
-            get label() {
-                return visibilityLabel(preferencesStore, 'pref.show_tab_ui', defaults.showTabUi, 'Search Contexts');
-            },
-            persistenceKey: 'pref.show_tab_ui',
-            defaultValue: defaults.showTabUi,
-            apply: (next) => applyPreference('pref.show_tab_ui', next),
         },
         {
             id: 'pref.show_search_results_count',
@@ -567,6 +569,22 @@ export function buildCommandPaletteEndpoints(deps) {
             execute: async () => openOpenNamespace(),
         },
         {
+            id: 'form.import_wizard',
+            kind: 'form',
+            label: 'Import…',
+            execute: async () => openImportWizard(),
+        },
+        {
+            // Virtual folders, an experiment (docs/ready-to-build/virtual-folders.md).
+            id: 'action.toggle_virtual_folders',
+            kind: 'action',
+            get label() {
+                return `${isVirtualFoldersShown() ? 'Hide' : 'Show'} Virtual Folders`;
+            },
+            closeOnExecute: true,
+            execute: async () => toggleVirtualFolders(),
+        },
+        {
             id: 'form.create_namespace',
             kind: 'form',
             label: 'Create Vault…',
@@ -619,6 +637,12 @@ export function buildCommandPaletteEndpoints(deps) {
             kind: 'form',
             label: 'Restore from Backup…',
             execute: async () => openBackupRestore(),
+        },
+        {
+            id: LEGACY_IMPORT_COMMAND,
+            kind: 'form',
+            label: 'Bring In Notes from Old MetaList…',
+            execute: async () => openLegacyImport(),
         },
         {
             id: 'action.logout',
@@ -739,6 +763,13 @@ export function buildCommandPaletteEndpoints(deps) {
             label: 'Repair: Reset Updated Time to Created Time (Current View)…',
             closeOnExecute: true,
             execute: async () => resetUpdatedAtToCreatedAt(),
+        },
+        {
+            id: 'action.delete_notes_in_view',
+            kind: 'action',
+            label: 'Delete Notes (Current View)…',
+            closeOnExecute: true,
+            execute: async () => deleteNotesInView(),
         },
         {
             id: 'action.open_keyboard_shortcuts_help',

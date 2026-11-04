@@ -15,7 +15,7 @@ const BESIDE_LIST_Y = 400;
 const REQUESTS_QUIET_MS = 300;
 const FRAMES_TO_SETTLE = 3;
 const EXPECTED_ROWS = [
-  'Add', 'Undo', 'Redo', 'Go to', 'Outline', 'View', 'Sort by', 'Date Range', 'Notes with Files', 'Show',
+  'Add', 'Undo', 'Redo', 'Go to', 'Outline', 'View', 'Sort by', 'Date Range', 'Notes with Files', 'Themes',
   'Open', 'Export & Print', 'Log Out',
 ];
 

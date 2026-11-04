@@ -42,8 +42,26 @@ function showCopyState(copyButton, isCopied) {
 export class RandomPasswordModal extends BaseModal {
     constructor() {
         super('randomPasswordModal', 'random-password-modal');
+        // Opened from a form that takes the password (the new vault wizard): its "Use This
+        // Password" gives it the candidate; null when opened alone.
+        this._onUse = null;
 
         ApplicationState.own(this, 'RandomPasswordModal', new.target === RandomPasswordModal);
+    }
+
+    // Opened to fill the new vault wizard's password, it opens over the wizard.
+    opensOver() {
+        if (this._onUse === null) return [];
+        return ['newVaultWizard'];
+    }
+
+    /** Open over a form that takes the password: "Use This Password" gives onUse the candidate. */
+    async openToUse(onUse) {
+        if (typeof onUse !== 'function') {
+            throw new Error('RandomPasswordModal.openToUse requires onUse');
+        }
+        this._onUse = onUse;
+        await this.open();
     }
 
     getInitialModalState() {
@@ -66,6 +84,8 @@ export class RandomPasswordModal extends BaseModal {
             modalElement.style.display = 'none';
             document.body.appendChild(modalElement);
         }
+        // Over the wizard's full window, not under it.
+        modalElement.classList.toggle('opens-over-wizard', this._onUse !== null);
         this.renderModalContent();
         modalElement.style.display = 'block';
     }
@@ -97,6 +117,7 @@ export class RandomPasswordModal extends BaseModal {
     onClose() {
         // BaseModal disposes the state scope; clear retained form DOM as well.
         document.getElementById(this.modalElementId).replaceChildren();
+        if (this._onUse !== null) this._onUse = null;
     }
 
     onKeyDown(event) {
@@ -221,7 +242,8 @@ ${charsetGroup}
                 </div>
 
                 <div class="form-actions random-password-modal-actions">
-                    <button type="button" class="primary-btn" id="password-regenerate-btn">Regenerate</button>
+                    <button type="button" class="${this._onUse === null ? 'primary-btn' : 'secondary-btn'}" id="password-regenerate-btn">Regenerate</button>
+                    ${this._onUse === null ? '' : '<button type="button" class="primary-btn" id="password-use-btn">Use This Password</button>'}
                 </div>
 
             </div>
@@ -336,6 +358,16 @@ ${charsetGroup}
         const regenerateButton = document.getElementById('password-regenerate-btn');
         if (regenerateButton instanceof HTMLButtonElement) {
             regenerateButton.onclick = () => this.regeneratePassword();
+        }
+
+        const useButton = document.getElementById('password-use-btn');
+        if (useButton instanceof HTMLButtonElement) {
+            useButton.onclick = () => {
+                const candidate = document.getElementById('password-result-output').value;
+                const onUse = this._onUse;
+                this.close();
+                onUse(candidate);
+            };
         }
 
         const copyButton = document.getElementById('password-copy-btn');

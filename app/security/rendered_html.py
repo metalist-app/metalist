@@ -20,6 +20,7 @@ from functools import lru_cache
 import nh3
 
 from app.security.note_html import load_note_html_policy, sanitize_note_attribute
+from app.services.document_highlights import HIGHLIGHT_CLASSES
 
 # Markup only the renderers emit (stored notes never contain it). tests/unit/conftest.py
 # fails any unit test whose rendering this pass would change, so the lists stay complete.
@@ -27,14 +28,21 @@ RENDERER_TAGS = frozenset({"article", "button", "path", "rect", "svg"})
 RENDERER_ATTRIBUTES: dict[str, frozenset[str]] = {
     "a": frozenset({"aria-label", "class", "rel", "target"}),
     "article": frozenset({"class"}),
+    # A callout (markdown_rendering._render_callout); a folding one's index and state.
+    "blockquote": frozenset({"class"}),
+    "details": frozenset({"class", "data-callout-index", "data-fold-index", "open"}),
     "button": frozenset({
         "aria-expanded", "aria-label", "class", "data-embed-collapse-note-id", "data-file-ref-id",
         "data-footnote-number", "data-referrer-count", "data-source-note-id", "title", "type",
+        # A file card's Open and its link: how the viewer shows the file (file_view.view_kind_of).
+        "data-file-view",
     }),
     "div": frozenset({
         "aria-hidden", "aria-live", "class", "contenteditable", "data-copy-value", "data-embed-note-id",
         "data-embed-ref-id", "data-file-ref-id", "data-file-revision", "data-latex-source", "data-preview-state",
         "data-ref-host-note-id", "data-ref-mode", "data-ref-note-id", "data-ref-occurrence", "title",
+        # An audio or video file's player (embedded_references._render_media_embed).
+        "data-media-kind", "data-media-state",
     }),
     "img": frozenset({
         "class", "data-file-kind", "data-file-ref-id", "data-inline-image-occurrence", "data-preview-variant",
@@ -42,9 +50,13 @@ RENDERER_ATTRIBUTES: dict[str, frozenset[str]] = {
     }),
     "li": frozenset({"class", "data-footnote-reference", "tabindex"}),
     "section": frozenset({"aria-label", "class"}),
+    # A link in a Markdown note's line is a span holding what a reference's div holds.
     "span": frozenset({
-        "aria-hidden", "aria-label", "class", "data-copy-value", "data-file-ref-id", "data-file-revision",
-        "data-footnote-scope", "data-latex-source", "data-preview-state", "data-redacted", "data-status", "role",
+        "aria-hidden", "aria-label", "class", "data-copy-value", "data-embed-ref-id", "data-file-ref-id",
+        "data-file-revision", "data-footnote-scope", "data-latex-source", "data-preview-state", "data-redacted",
+        "data-ref-host-note-id", "data-ref-mode", "data-ref-note-id", "data-ref-occurrence", "data-status", "role",
+        # A Markdown task's box (markdown_rendering._task_box).
+        "aria-checked", "data-task-index",
     }),
     "sup": frozenset({"class"}),
     # The icons' inline SVG (credential, email and status icons): shapes only.
@@ -63,12 +75,14 @@ _FIXED_VALUES: dict[tuple[str, str], frozenset[str]] = {
     ("div", "contenteditable"): frozenset({"false"}),
     ("img", "decoding"): frozenset({"async"}),
     ("img", "draggable"): frozenset({"true", "false"}),
+    ("details", "open"): frozenset({"", "open"}),
     ("img", "hidden"): frozenset({"", "hidden"}),
     ("img", "loading"): frozenset({"lazy"}),
     ("li", "tabindex"): frozenset({"-1"}),
     ("span", "aria-hidden"): frozenset({"true"}),
     ("span", "data-redacted"): frozenset({"true"}),
-    ("span", "role"): frozenset({"img"}),
+    ("span", "role"): frozenset({"img", "checkbox"}),
+    ("span", "aria-checked"): frozenset({"true", "false"}),
     ("svg", "aria-hidden"): frozenset({"true"}),
     ("svg", "focusable"): frozenset({"false"}),
 }
@@ -76,7 +90,8 @@ _FIXED_VALUES: dict[tuple[str, str], frozenset[str]] = {
 # ai-chat-web-*, Pygments' tok-*, the JSON view's json-*, full-screen notes' own): inert names the app's own CSS
 # and scripts give meaning to.
 RENDERER_CLASS_PREFIXES = ("note-", "meta-", "link-title", "ai-chat-", "tok-", "json-")
-RENDERER_CLASS_NAMES = frozenset({"list-bulleted", "list-numbered", "note"})
+# A document's highlights in the file viewer (document_highlights.py), one of Word's 16.
+RENDERER_CLASS_NAMES = frozenset({"list-bulleted", "list-numbered", "note"}) | HIGHLIGHT_CLASSES
 # The size tags' factor (@size=2), a CSS variable the stylesheet scales text by.
 _SIZE_FACTOR_PROPERTY = "--meta-size-factor"
 _SIZE_FACTOR_DECLARATION_RE = re.compile(r"^--meta-size-factor\s*:\s*[0-9]+(?:\.[0-9]+)?$")

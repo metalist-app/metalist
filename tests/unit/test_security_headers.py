@@ -23,6 +23,15 @@ def test_content_security_policy_allows_only_nonce_or_self_scripts() -> None:
     assert "base-uri 'none'" in policy
 
 
+# A PDF opens in the file viewer through the browser's own viewer, from a blob: MetaList makes of
+# the decrypted file (docs/ready-to-build/files-shown-not-copied.md §4): frames of blob: only.
+def test_content_security_policy_frames_only_blob_addresses() -> None:
+    policy = build_content_security_policy(nonce=NONCE)
+
+    frame_sources = [directive for directive in policy.split("; ") if directive.startswith("frame-src")]
+    assert frame_sources == ["frame-src blob:"]
+
+
 def test_content_security_policy_blocks_direct_remote_images() -> None:
     policy = build_content_security_policy(nonce=NONCE)
 

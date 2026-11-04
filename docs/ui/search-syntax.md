@@ -40,12 +40,22 @@ Notes:
 - `jogging:miles>2`, `jogging:miles<=5mg`, `jogging:miles=3`, `jogging:miles?`, `jogging:miles`,
   `date>=2024-01`, with an optional `-` or `+` before them.
 - The tag comes first; a property name starts with a letter; a value may contain `:`
-  (`run:start>10:30pm`) but not `<`, `>`, `?` or `=`.
+  (`run:start>10:30pm`) but not `<`, `>`, `?` or `=`, unless quoted.
+- A quoted value holds anything: `author="Ursula Le Guin"`, `book:title="Dune: Messiah"`,
+  `author>"M"`. A `"` straight after `=`, `<` or `>` opens it; `\"` and `\\` inside, as
+  in quoted text. It is a text match inside the value (`:foo="ba"` finds `foo=bar` and
+  `foo=aba`), a bare value an exact one. An open value searches as you type and closes
+  when the user moves on, as an open quote does; `author="` alone is removed.
 - Or no tag: `:version`, `:version=0.24.5`, `:version>0.24` (a property on any tag), but
   not `:version?`.
 - An unfinished term does not run: `jogging:` and `jogging:miles>` while typing. Once a
   space follows it, the warning says how to finish it ("Name a property after the colon",
-  "Write a value after >"). A term with two properties says "Search one property per term".
+  "Write a value after >").
+- A term may chain conditions that one tag meets: `jogging:miles>2:duration<40`,
+  `:foo="bar":baz>3:zed<100`. A colon followed by a letter starts the next condition.
+  `?`, `MAX` and `MIN` go in terms of their own ("Search a missing property in a term of
+  its own", "MAX goes in a term of its own"), and a property named twice says "Name each
+  property once in a search term". A value holding `<`, `>`, `?` or `=` is quoted.
 - Semantics: `docs/ui/search-semantics.md` (Super Tag Searches).
 
 ### Text Terms
@@ -53,6 +63,9 @@ A text term is a quoted string using either quote character, as long as the open
 - Double-quoted: `"some text"`
 - Single-quoted: `'some text'`
 - Negated forms: `-"some text"`, `-'some text'`
+- Quoted text, tags and property names may use any script (`"naïve"`, `日記:時間>2`; since 2026-10-30, before which non-ASCII characters were dropped, so `"naïve"` searched for `nave`). A search is kept in one Unicode form and matches note text in either form of an accented letter (`docs/ui/tag-bar.md`, Whitespace + Tokens).
+
+A quote straight after `=`, `<` or `>` opens a tag's value, not a text term (Super Tag Searches above): `author="Ursula Le Guin"` is one term, `author "Ursula Le Guin"` a tag plus a text search.
 
 Escapes inside quoted text (backslash approach):
 - Within `"..."`: allow `\\` and `\"`

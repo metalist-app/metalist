@@ -18,7 +18,7 @@ view options) does the job.
   the usual suggestions; leaving the field turns it back into pills. × drops one term and searches
   again (`phone-search-terms.js` splits a search into terms).
 - **Rows:** notes as on the desktop, without tag chips; the expand arrow sits inside the row.
-- **Hidden:** search contexts, the floating buttons (≡, chat, scroll) and the AI chat.
+- **Hidden:** search contexts, the floating buttons (≡, ↑, ↓), the pull tabs (virtual folders, chat) and the AI chat.
 - **Bottom bar:** ☰ at the left opens the menu sheet; a black ＋ at the right opens capture;
   between them "Read-only" while a note shows its tags. Floating notices and reminders sit above it.
 

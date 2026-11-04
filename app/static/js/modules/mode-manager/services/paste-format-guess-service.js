@@ -45,6 +45,10 @@ const MIN_CSV_COLUMNS = 2;
 const MIN_LIST_LINES = 2;
 const FENCE_LINES = 2;
 const MIN_MARKDOWN_SIGN_KINDS = 2;
+const LIST_ITEM_RE = /^\s*(?:[-*+]|\d+[.)])\s+\S/;
+// As markdown_rendering.py nests a list: two columns deeper, a tab counting four.
+const NESTED_LIST_INDENT = 2;
+const TAB_WIDTH = 4;
 const MIN_OUTLINE_HEADINGS = 2;
 // YAML: at least this many `key: value` lines.
 const MIN_YAML_KEY_LINES = 3;
@@ -222,6 +226,8 @@ const HEADING_RE = /^#{1,6}\s+\S/;
 const FENCE_RE = /^(?:```|~~~)[\w+#.-]*$/;
 // A table or a fenced block is Markdown whatever else the text holds, even code inside the fence.
 const DECISIVE_MARKDOWN_KINDS = Object.freeze(['table', 'fence']);
+const MARKDOWN_OPTION = Object.freeze({ tag: '@markdown', label: 'Markdown' });
+const HTML_CODE_TAG = '@code=html';
 
 // The kinds of Markdown signs in the text: headings, lists, emphasis, inline
 // code, links, quotes, a table, a fenced code block.
@@ -229,8 +235,11 @@ export function markdownSignKinds(text) {
     const lines = text.split('\n');
     const kinds = new Set();
     if (lines.some((line) => HEADING_RE.test(line))) kinds.add('heading');
-    const listLines = lines.filter((line) => /^\s*(?:[-*+]|\d+[.)])\s+\S/.test(line));
+    const listLines = lines.filter((line) => LIST_ITEM_RE.test(line));
     if (listLines.length >= MIN_LIST_LINES) kinds.add('list');
+    // A nested list is a second sign by itself (2026-10-31): plain text rarely indents an
+    // item under another, so with 'list' it is enough to offer Markdown.
+    if (hasNestedListItem(lines)) kinds.add('nested-list');
     if (/(\*\*|__)(?=\S)[^\n]*?\S\1/.test(text)) kinds.add('emphasis');
     if (/`[^`\n]+`/.test(text)) kinds.add('inline-code');
     if (/!?\[[^\]\n]+\]\((?:https?:\/\/|\/|#|mailto:)[^)\s]*\)/.test(text)) kinds.add('link');
@@ -238,6 +247,39 @@ export function markdownSignKinds(text) {
     if (lines.some((line, index) => index > 0 && TABLE_SEPARATOR_RE.test(line) && lines[index - 1].includes('|'))) kinds.add('table');
     if (lines.filter((line) => FENCE_RE.test(line.trim())).length >= FENCE_LINES) kinds.add('fence');
     return kinds;
+}
+
+// An item indented at least NESTED_LIST_INDENT columns more than the item on the line
+// above it (blank lines between are skipped), as markdown_rendering.py nests it.
+function hasNestedListItem(lines) {
+    let previousItemIndent = null;
+    for (const line of lines) {
+        if (line.trim() === '') continue;
+        if (!LIST_ITEM_RE.test(line)) {
+            previousItemIndent = null;
+            continue;
+        }
+        const indent = indentWidth(line);
+        if (previousItemIndent !== null && indent >= previousItemIndent + NESTED_LIST_INDENT) {
+            return true;
+        }
+        previousItemIndent = indent;
+    }
+    return false;
+}
+
+function indentWidth(line) {
+    let width = 0;
+    for (const char of line) {
+        if (char === ' ') {
+            width += 1;
+        } else if (char === '\t') {
+            width += TAB_WIDTH - (width % TAB_WIDTH);
+        } else {
+            break;
+        }
+    }
+    return width;
 }
 
 function isDecisiveMarkdown(kinds) {
@@ -353,7 +395,12 @@ export function guessPastedFormat(plainText) {
     // A Markdown table or fenced block is unmistakable; otherwise strong code
     // wins over a `# comment` or `- item` that only looks like Markdown.
     if (isDecisiveMarkdown(kinds) || (looksLikeMarkdown(text, kinds) && languages.length === 0)) {
-        return { kind: 'markdown', options: [{ tag: '@markdown', label: 'Markdown' }] };
+        return { kind: 'markdown', options: [MARKDOWN_OPTION] };
+    }
+    // Markdown holds HTML (docs/ui/content-formatting.md): Markdown signs with HTML the only
+    // code found is Markdown first, HTML second.
+    if (looksLikeMarkdown(text, kinds) && languages.every(({ tag }) => tag === HTML_CODE_TAG)) {
+        return { kind: 'markdown', options: [MARKDOWN_OPTION, ...languages.map(({ tag, label }) => ({ tag, label }))] };
     }
     if (languages.length > 0) {
         return { kind: 'code', options: languages.map(({ tag, label }) => ({ tag, label })) };

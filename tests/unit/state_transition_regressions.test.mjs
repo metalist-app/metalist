@@ -248,7 +248,10 @@ test('tab-state persistence accepts a server echo of the state it already has', 
     const dependencies = {
         ApplicationState,
         CONFIG: { API: { NOTES: { TAB_STATE: '/tab-state', TAB_STATE_NEW_TAB: '/new', TAB_STATE_DELETE_TAB: '/delete', TAB_STATE_SORT_MODE: '/sort' } } },
-        ModeContext: { tabStateVersion: 7, setTabStateVersion(version) { this.tabStateVersion = version; }, getTabStatePayload: () => browserState },
+        ModeContext: {
+            tabStateVersion: 7, setTabStateVersion(version) { this.tabStateVersion = version; }, getTabStatePayload: () => browserState,
+            recordUntaggedViewsFromServer() {},
+        },
         ErrorHandler: { handleApiError() {} },
         HttpRequestError: Error,
         buildSessionHeaders: () => ({}),

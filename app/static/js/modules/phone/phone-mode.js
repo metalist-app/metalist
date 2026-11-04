@@ -10,6 +10,7 @@ import { syncSearchInputValue } from '../mode-manager/services/search-input-serv
 import { getSearchSuggestionWindowDays } from '../mode-manager/services/search-suggestion-windows-service.js';
 import { splitTagsForDisplay } from '../mode-manager/services/tag-syntax-service.js';
 import { sanitizeTags } from '../mode-manager/services/tag-bar-service.js';
+import { tokenEnd } from '../quoted-values.js';
 import {
     ROOT_SORT_MODES,
     baseRootSortMode,
@@ -27,6 +28,7 @@ import { actionRowHtml } from '../modals/action-row.js';
 
 const PHONE_MEDIA_QUERY = '(max-width: 640px)';
 const PHONE_CLASS = 'phone-layout';
+const PHONE_FILE_CONTROLS = '.note-file-action, button.note-file-reference-link, .note-file-media-play, .note-file-media-player';
 // Temporary developer switch (not a user setting): what tapping a tag pill does.
 const TAG_PILL_SWITCH = 'metalist.dev.phoneTagPills';
 const NARROW_TAG_PILLS = 'narrow';
@@ -246,6 +248,11 @@ function onNoteInteraction(event) {
     if (note === null || event.target.closest('.note-collapse-toggle') !== null) {
         return;
     }
+    // A file's Open, Download and Play, a file linked in text and a player's own controls do
+    // what they say: none edits (files-shown-not-copied.md §3).
+    if (event.target.closest(PHONE_FILE_CONTROLS) !== null) {
+        return;
+    }
     event.stopImmediatePropagation();
     if (event.target.closest('a[href]') !== null) {
         return;
@@ -441,10 +448,29 @@ async function suggestCaptureTags(prefix) {
     suggestions.innerHTML = tags.map((tag) => `<button type="button" class="phone-tag-pill" data-capture-tag="${escapeHtml(tag)}">${escapeHtml(tag)}</button>`).join('');
 }
 
+// The tags typed so far that a space has ended, and the one still being typed; a space
+// inside a quoted value (author="Ursula Le Guin") ends nothing.
+function captureTagParts(text) {
+    const parts = [];
+    let index = 0;
+    while (index < text.length) {
+        if (/\s/u.test(text[index])) {
+            index += 1;
+            continue;
+        }
+        const end = tokenEnd(text, index);
+        if (end === text.length) {
+            return { parts, typing: text.slice(index) };
+        }
+        parts.push(text.slice(index, end));
+        index = end;
+    }
+    return { parts, typing: '' };
+}
+
 function onCaptureTagsInput(event) {
     const input = event.target;
-    const parts = input.value.split(/\s+/u);
-    const typing = parts.pop();
+    const { parts, typing } = captureTagParts(input.value);
     for (const part of parts) {
         addCaptureTag(part);
     }

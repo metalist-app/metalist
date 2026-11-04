@@ -34,10 +34,12 @@ Everything is a triple on a note: *tag*, *property*, *value*.
   property `value` (`jogging:value=3`). Today's valued tags (`priority=high`) keep
   working unchanged and become a special case of the model.
 - A note carries each tag at most once, so a tag's properties all live in one token.
-- Values belong to the note they are written on. Child notes and notes referencing
-  it inherit the **tag** (as non-meta tags inherit today), never its **values**.
-  Otherwise a child of a 3-mile run would itself match `jogging:miles>2`, and any
-  later totals would count those miles twice.
+- Values belong to the note they are written on for counting: totals and stats figures
+  read only the values a note writes, so a child of a 3-mile run never counts those miles
+  twice. A search reads them as it reads tags (changed 2026-11-01): child notes inherit
+  the tag and its values (embedding notes don't, 2026-11-03), the nearest value winning, so a child of
+  a 3-mile run matches `jogging:miles>2` (`docs/ui/search-semantics.md`, Super Tag
+  Searches).
 
 ## Syntax in the tag bar
 
@@ -46,19 +48,18 @@ jogging:miles=3
 jogging:miles=3:duration=30
 run:start=10:30:miles=3
 meeting:at=2026-10-23T10:30:room=b2
-book:author=Ursula-Le-Guin
+book:author="Ursula Le Guin"
 ```
 
 - The tag is everything before the first `:`. It follows today's tag grammar.
 - After it, each property is `name=value`, introduced by `:`.
-- **Property names start with a letter.** Then they follow tag characters.
+- **Property names start with a letter,** in any script (`Größe`, `時間`; `str.isalpha`, the browser's `\p{L}`). Then they follow tag characters.
 - **A colon followed by a letter starts the next property. Any other colon belongs to
   the value.** This is what lets values hold times and date-times: in
   `run:start=10:30:miles=3`, `10:30` is the start and `miles` the next property.
   `https://…` stays inside a value too (the colon is followed by `/`).
-- Values have no spaces (tags never do): `author=Ursula-Le-Guin`.
-- A value cannot contain a colon followed by a letter (`ref=abc:def` would split).
-  Accepted as rare.
+- A bare value has no spaces and cannot contain a colon followed by a letter
+  (`ref=abc:def` would split); quote it for either (Quoted values, below).
 - Each property appears at most once per token. The tag bar removes a repeated one
   while typing, as it removes a second `=` today. Properties keep the order typed;
   nothing sorts them.
@@ -78,6 +79,32 @@ book:author=Ursula-Le-Guin
 
 **Proposed:**
 - Property names match with the same case rule as tag names in search.
+
+### Quoted values
+
+Built 2026-10-31 (step 1a of `docs/ready-to-build/import-export-launch.md`). A value in double quotes
+holds spaces and any character: `author="Ursula Le Guin"`, `book:title="Dune: Messiah"`,
+`title="The \"Best\" Book"`.
+
+- **A `"` straight after an operator opens a value** (`=` in the tag bar; `=`, `<`, `>`,
+  `<=`, `>=` in a search and in rules), which runs to the closing quote. Inside it `\"`
+  is a quote and `\\` a backslash. A quote anywhere else opens nothing:
+  `author "Ursula Le Guin"` is a tag and a quoted text search, `author=O'Brien` an
+  ordinary value. Single quotes never open a value (apostrophes).
+- **Quotes never change a value:** `zed:foo="asdf-jkl"` and `zed:foo=asdf-jkl` are the
+  same value, and search treats them as the same tag.
+- **An open value** closes when the user leaves it (the tag bar, or a search term the
+  user moves on from); an empty one (`author="`, `author=""`) leaves the bare tag in the
+  tag bar and is removed from a search. While typed in the search box it searches as if
+  closed.
+- The tag bar shows a value with its quotes. Scopes (`[...]`) and `@` tags take no
+  quoted values: their quotes are dropped.
+- One reader for every place: `app/services/quoted_values.py` on the server
+  (`split_tokens`, `token_end`, `unquote_value`, `quote_value`) and
+  `app/static/js/modules/quoted-values.js` in the browser. The tag bar, search, rules
+  and their rename, AI proposals, dictation and paste cleanup, `@datetime`, tag-bar
+  comments and the phone read tokens through them. A tag string without `"` still
+  splits with `str.split()`.
 
 ## Types
 
@@ -146,10 +173,26 @@ jogging:miles
 -jogging:miles>10
 ```
 
-- One property per term. Operators: `=`, `>`, `<`, `>=`, `<=`. Terms combine as
-  today: space is AND, `OR` separates clauses, `-` excludes.
+- Operators: `=`, `>`, `<`, `>=`, `<=`. Terms combine as today: space is AND, `OR`
+  separates clauses, `-` excludes.
+- **A quoted value is a text match inside the value** (decided 2026-10-31), like a
+  quoted text search: anywhere in it, any case, a space marking a word edge.
+  `:foo="ba"` finds `baz:foo=bar`, `zed:foo=bag` and `x:foo=aba`; `author="Ursula"`
+  finds `author="Ursula Le Guin"`. A bare value is an exact match (`:foo=ba` finds
+  none of them). A comparison compares the unquoted value (`author>"M"`).
 - Since a note has each tag once, `jogging:miles>2 jogging:duration<40` means the
-  same note satisfies both, so search needs no chained conditions in one term.
+  same note's `jogging` satisfies both. Through implications (`exercise:...`) or on any
+  tag (`:...`) separate terms may be met by different tags, hence chains.
+- **Chained conditions** (built 2026-10-31): `book:title="Dune":year>1960`,
+  `:foo="bar":baz>3:zed<100`. One tag on the note meets every condition, where separate
+  terms may each be met by a different tag: `:foo="bar":baz>3` finds `x:foo=bar:baz=5`,
+  not `x:foo=bar y:baz=5`; with `jogging => exercise` and `cycling => exercise`,
+  `exercise:miles>2:duration<40` finds `jogging:miles=3:duration=30`, not
+  `jogging:miles=3 cycling:duration=30`. A chain takes comparisons, `=` and a bare name
+  (`jogging:miles>2:duration`); `?`, `MAX` and `MIN` go in terms of their own, each
+  property is named once, and stats terms compare one figure. `-` leaves out only notes
+  where one tag meets them all. Ontology rules keep one property per condition. (`PropertyCondition.chained`,
+  `condition_holds`; tests: `test_chained_conditions.py`).
 - `jogging:miles?` finds notes **missing** the property: notes with `jogging` but no
   `miles`. It is for auditing incomplete data.
 - **Proposed:** `jogging:miles` with no operator finds notes that have the property
@@ -233,7 +276,23 @@ before, so you write `miles` again rather than `distance`.
   `app/services/search_index.py`; tests: `tests/unit/test_super_tag_last_values.py`,
   the `super-tags` browser suite. Open: also offering the most-used values when they
   differ from the last ones.
-- After `miles=`, no values are suggested.
+  The tag bar ranks a tag over all its notes, whatever their values: `jogging=3`,
+  `jogging=5` and `jogging:miles=4` all count as `jogging`, so the list reads
+  `jogging=3`, `jogging`, then the other tags, and no older value is offered on its own
+  (fixed 2026-11-02: each value had counted as a tag of its own, so the list read
+  `jogging=3`, `jogging=3`, `jogging`, `jogging=2`, `jogging=5` and pushed the other tags
+  down). Code: `tag_family_of`, `suggest_tag_completions(by_family=True)` and the
+  family counts (`list_explicit_tag_family_frequencies`,
+  `list_raw_tag_family_frequencies_by_casefold`) in `app/services/search_index.py`;
+  the search box still offers each value (`by_family=False`). Tests:
+  `tests/unit/test_valued_tag_suggestions.py`.
+- **Values** (built 2026-10-31): after `=`, the values notes give the property, most
+  used first, those starting with what is typed before those holding it elsewhere;
+  written as they must be typed, quoted when needed (`book:title="Dune: Messiah"`). A
+  bare partial matches a value's start, a quoted one anywhere in it. In the search box
+  `MAX` and `MIN` come first, but only for a property with a number, date or time
+  value; after a number, its units follow the values (`SearchIndex._value_suggestions`;
+  tests: `test_quoted_values.py`, `test_tag_properties.py`).
 - Activity credit (search suggestion statistics) goes to the tag, as today, never to
   properties.
 
@@ -331,6 +390,10 @@ Decided 2026-10-23:
 
 ## Later
 
+- **The AI tagging prompt and quoted values** (open, 2026-10-31): proposals with quoted
+  values (`book:title="A Wizard of Earthsea"`) are accepted, but the prompt
+  (`app/services/agent/skills/tag-proposals.md`) still says values have no spaces.
+  Changing it needs a live eval.
 - Renaming properties; property synonyms in the ontology.
 - Totals, averages and sorting by a property (for example "miles this month" beside
   the result count, or Sort by `jogging:miles`). Built 2026-10-30: the `@datetime`

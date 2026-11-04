@@ -40,7 +40,7 @@ def _login_request() -> Request:
 def test_password_request_models_never_render_submitted_passwords() -> None:
     requests = (
         LoginRequest(password=PASSWORD_CANARY),
-        PasswordCreateRequest(password=PASSWORD_CANARY),
+        PasswordCreateRequest(password=PASSWORD_CANARY, keeps_window_logged_in=False),
         PasswordChangeRequest(
             current_password=PASSWORD_CANARY,
             new_password=f"new-{PASSWORD_CANARY}",

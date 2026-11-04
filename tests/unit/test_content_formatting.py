@@ -5,6 +5,7 @@ import re
 import sqlite3
 import pytest
 
+from app.services.credential_display import CredentialDisplay
 from app.db.link_titles_sql import insert_link_title_row
 from app.db.schema import initialize_schema
 from app.services import content_formatting as content_formatting_module
@@ -24,7 +25,7 @@ def format_note_content_for_view(*, content_html: str, tags: str) -> str:
     return _format_note_content_for_view(
         content_html=content_html,
         tags=tags,
-        redact_credentials=False,
+        credentials=CredentialDisplay.DOTS,
     )
 
 
@@ -505,6 +506,40 @@ def test_format_note_content_for_view_basic_meta_tags_apply_classes() -> None:
     assert 'meta-serif' in rendered
 
 
+def test_quote_makes_the_whole_note_a_quote() -> None:
+    rendered = format_note_content_for_view(content_html="<div>To be.</div><div>Or not.</div>", tags="@quote")
+    assert rendered == '<span class="meta-global meta-quote"><div>To be.</div><div>Or not.</div></span>'
+
+
+def test_a_scoped_quote_is_a_quote_block_even_mid_line() -> None:
+    # The region is its own block (main.css: .meta-quote is display: block), so the text
+    # before and after it sits on lines of its own.
+    rendered = format_note_content_for_view(content_html="<div>He said ((it's done)) and left</div>", tags="((@quote))")
+    assert rendered == "<div>He said <span class=\"meta-scope meta-quote\">it's done</span> and left</div>"
+    # Over several lines, each line's part is a block; one under another, they draw one bar.
+    rendered = format_note_content_for_view(content_html="<div>a ((one</div><div>two)) b</div>", tags="((@quote))")
+    assert rendered == (
+        '<div>a <span class="meta-scope meta-quote">one</span></div>'
+        '<div><span class="meta-scope meta-quote">two</span> b</div>'
+    )
+
+
+def test_a_quote_region_takes_the_line_break_after_it() -> None:
+    # Pasted text keeps its lines as <br>. The region is a block, so the <br> after it
+    # would start an empty line (2026-10-31): the block's own end ends that line.
+    rendered = format_note_content_for_view(
+        content_html="Before the quote<br>((First quoted line<br>Second quoted line))<br>After the quote<br>Last",
+        tags="((@quote))",
+    )
+    assert rendered == (
+        'Before the quote<br><span class="meta-scope meta-quote">First quoted line<br>Second quoted line</span>'
+        "After the quote<br>Last"
+    )
+    # Only the break right after it: text after the region keeps its own line breaks.
+    rendered = format_note_content_for_view(content_html="He said ((done)) and left<br>Next", tags="((@quote))")
+    assert rendered == 'He said <span class="meta-scope meta-quote">done</span> and left<br>Next'
+
+
 def test_format_note_content_for_view_dark_theme_meta_is_ignored() -> None:
     html = "<div>hello</div>"
     rendered = format_note_content_for_view(content_html=html, tags="@dark-theme")
@@ -583,7 +618,9 @@ def test_format_note_content_for_view_password_meta_renders_copyable_value() -> 
     assert 'meta-credential-password' in rendered
     assert 'title="Password"' in rendered and 'Password:' not in rendered
     assert 'data-copy-value="sekret"' in rendered
-    assert ">sekret<" in rendered
+    # Shown as dots, the value only copied (2026-11-03).
+    assert ">\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022<" in rendered
+    assert ">sekret<" not in rendered
 
 
 def test_format_note_content_for_view_password_meta_applies_other_global_classes() -> None:
@@ -597,7 +634,7 @@ def test_format_note_content_for_view_password_meta_redacts_underlying_value() -
     rendered = _format_note_content_for_view(
         content_html=html,
         tags="@password",
-        redact_credentials=True,
+        credentials=CredentialDisplay.HIDDEN,
     )
     # A fixed mask: the length stays hidden too.
     assert 'data-redacted="true" data-copy-value="\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022"' in rendered
@@ -762,8 +799,9 @@ def test_format_note_content_for_view_markdown_keeps_non_math_dollars_literal() 
     rendered = format_note_content_for_view(content_html=html, tags="@markdown")
 
     assert "Budget: $5 and $10." in rendered
-    assert "Escaped example: \\$x\\$." in rendered
-    assert "Unclosed example: \\(x + 1." in rendered
+    # Backslash escapes show the character (standard Markdown, 2026-10-31); still no formula.
+    assert "Escaped example: $x$." in rendered
+    assert "Unclosed example: (x + 1." in rendered
     assert "<math" not in rendered
 
 
@@ -854,7 +892,8 @@ def test_format_note_content_for_view_markdown_with_scoped_latex_renders_server_
     assert "<h1>Math Test</h1>" in rendered
     # Formulas carry their TeX source (as written) for mapping clicks to the source.
     assert 'Inline math inside markdown: <span class="meta-latex meta-latex-inline" data-latex-source="$E = mc^2$">' in rendered
-    assert "Display math inside markdown:<br>" in rendered
+    # One Return joins the lines, as in standard Markdown (2026-10-31).
+    assert "Display math inside markdown:\n" in rendered
     assert '<math xmlns="http://www.w3.org/1998/Math/MathML" display="block">' in rendered
     assert "<mfrac>" in rendered
     assert "@@MLLATEX[" not in rendered
@@ -1043,8 +1082,8 @@ def test_the_agent_never_reads_a_username_or_a_password() -> None:
 
 
 def test_a_hidden_username_shows_the_same_mask_as_a_password() -> None:
-    rendered = _format_note_content_for_view(content_html="<div>evolvingstuff</div>", tags="@username", redact_credentials=True)
+    rendered = _format_note_content_for_view(content_html="<div>evolvingstuff</div>", tags="@username", credentials=CredentialDisplay.HIDDEN)
     assert "evolvingstuff" not in rendered
     assert f'data-redacted="true" data-copy-value="{CREDENTIAL_MASK}">{CREDENTIAL_MASK}<' in rendered
-    shown = _format_note_content_for_view(content_html="<div>evolvingstuff</div>", tags="@username", redact_credentials=False)
+    shown = _format_note_content_for_view(content_html="<div>evolvingstuff</div>", tags="@username", credentials=CredentialDisplay.DOTS)
     assert 'data-copy-value="evolvingstuff">evolvingstuff<' in shown, "MetaList itself shows it"

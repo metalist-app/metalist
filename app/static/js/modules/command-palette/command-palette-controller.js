@@ -17,6 +17,7 @@ import {
 } from '../ai-chat/proposal-menu.js';
 import { ModeContextInstance as ModeContext } from '../mode-manager/mode-context.js';
 import { actionRefreshAndMaybeSelect } from '../mode-manager/actions/ui-actions.js';
+import { actionUndo } from '../mode-manager/actions/history-actions.js';
 import {
     actionDeselectNote,
     actionSaveAndExitEditingWithoutRefreshing,
@@ -39,13 +40,13 @@ import {
 import { SessionTimeoutModal } from '../modals/session-timeout-modal.js';
 import { BackupResultModal } from '../modals/backup-result-modal.js';
 import { BackupRestoreModal } from '../modals/backup-restore-modal.js';
+import { LEGACY_IMPORT_DECLINED_PREFERENCE, LegacyImportModal } from '../modals/legacy-import-modal.js';
 import { BackupSettingsModal } from '../modals/backup-settings-modal.js';
 import { OntologyModal } from '../modals/ontology-modal.js';
 import { RandomPasswordModal } from '../modals/random-password-modal.js';
 import { HelpModal } from '../modals/help-modal.js';
 import { LinkTitleRetryModal } from '../modals/link-title-retry-modal.js';
 import {
-    CreateNamespaceModal,
     fetchHasOtherNamespace,
     ManageNamespacePortsModal,
     RenameNamespaceModal,
@@ -60,6 +61,10 @@ import { printNotes } from '../mode-manager/services/print-service.js';
 import { exportNotes } from '../mode-manager/services/export-service.js';
 
 import { VersionInfoModal } from '../modals/version-info-modal.js';
+import { ImportWizard, NewVaultWizard } from '../wizard/setup-wizards.js';
+import { bookmarksFileChoices } from '../wizard/bookmarks-file.js';
+import { MARKDOWN_STEP, droppedFolderChoices, droppedTextFilesChoices } from '../wizard/import-wizard-steps.js';
+import { holdDroppedFolder } from '../mode-manager/services/dropped-folders.js';
 import { MemoryUsageModal } from '../modals/memory-usage-modal.js';
 import { showErrorDialogFor } from '../modals/error-dialog.js';
 import { RecentMessagesModal } from '../modals/recent-messages-modal.js';
@@ -108,6 +113,7 @@ import {
 } from '../mode-manager/services/search-input-service.js';
 import { isViewingReferenceSource } from '../mode-manager/services/reference-source-navigation-service.js';
 import { CommandGate } from '../mode-manager/services/command-gate-service.js';
+import { FloatingMessages } from '../floating-messages.js';
 import { openFindBar } from '../mode-manager/services/find-in-list-service.js';
 import { cancelDebouncedSearchExecution } from '../mode-manager/services/search-debounce-service.js';
 import { attachPickedFileToCurrentNote, pickFileForAttachment } from '../mode-manager/services/file-reference-service.js';
@@ -115,8 +121,9 @@ import { isRootReorderLocked, normalizeRootSortMode } from '../mode-manager/serv
 import { blockRootNoteCreation, requireCreatedNoteId } from '../mode-manager/services/root-note-creation-service.js';
 import { createNoteAtTop } from '../mode-manager/actions/note-actions.js';
 import { typeReferenceOpenerAtCaret } from '../mode-manager/services/reference-suggestions-service.js';
+import { VAULT_WIZARD_STEP, readSetupSteps, writeSetupSteps } from '../new-vault-setup.js';
 import {
-    setTabDateFilterOnServer, setTabFileFilterOnServer, setTabSortModeOnServer,
+    setTabDateFilterOnServer, setTabFileFilterOnServer, setTabSortModeOnServer, setTabUntaggedViewOnServer,
 } from '../mode-manager/services/tab-state-service.js';
 import { FILE_FILTER_KINDS, getActiveFileFilterKind } from '../mode-manager/services/file-filter-service.js';
 import {
@@ -131,6 +138,12 @@ import { settleResult } from '../async-result.js';
 import { buildSessionHeaders } from '../session-auth.js';
 import { isValidTagToken } from '../tag-token.js';
 import { updateSearchContextsOverlayPlacement } from '../mode-manager/services/search-contexts-overlay-service.js';
+import { navigateToReferenceOrigin, openSearchInNewSearchContext } from '../mode-manager/events/keyboard-events.js';
+import { FolderNameModal } from '../modals/folder-name-modal.js';
+import { DeleteFolderModal } from '../modals/delete-folder-modal.js';
+import {
+    activeVirtualFolder, isVirtualFoldersShown, setVirtualFoldersShown, wireVirtualFolders,
+} from '../mode-manager/services/virtual-folders-service.js';
 import {
     DEFAULT_SEARCH_SUGGESTION_WINDOWS_VALUE,
     parseSearchSuggestionWindowsValue,
@@ -181,6 +194,12 @@ const LONG_COMMAND_TIMEOUT_SECONDS = 120;
 // A theme change cross-fades the whole page from the old colours to the new (main.css,
 // ::view-transition(root)). Opening in the saved theme, a background tab, reduced motion and
 // Animated transitions off switch at once, as does a browser without view transitions.
+// An import of files dropped on the page: its notes take the tags of the search context they
+// were dropped in, as a note made there does, and show at its top (the maintainer, 2026-11-03).
+function droppedHere() {
+    return { isDrop: true, dropSearch: ModeContext.searchQuery };
+}
+
 function applyTheme(theme) {
     const root = document.documentElement;
     const nextTheme = theme === 'system' ? null : theme;
@@ -408,6 +427,10 @@ class CommandPaletteController {
         this._backupSettingsModal = null;
         this._backupResultModal = null;
         this._backupRestoreModal = null;
+        this._legacyImportModal = null;
+        // The old MetaList's notes, when this namespace is offered them (legacy_import.py's
+        // status): { offered, encrypted }; offered false until the status is read.
+        this._legacyImport = Object.freeze({ offered: false, encrypted: false });
         this._addPasswordModal = null;
         this._changePasswordModal = null;
         this._removePasswordModal = null;
@@ -416,7 +439,6 @@ class CommandPaletteController {
         this._linkTitleRetryModal = null;
         this._sessionTimeoutModal = null;
         this._openNamespaceModal = null;
-        this._createNamespaceModal = null;
         this._manageNamespacePortsModal = null;
         this._renameNamespaceModal = null;
         this._deleteNamespaceModal = null;
@@ -427,6 +449,10 @@ class CommandPaletteController {
         this._reminderModal = null;
 
         this._versionInfoModal = null;
+        this._importWizard = null;
+        this._newVaultWizard = null;
+        this._folderNameModal = null;
+        this._deleteFolderModal = null;
         this._memoryUsageModal = null;
         this._recentMessagesModal = null;
         this._noteLayoutAppearanceModal = null;
@@ -451,6 +477,16 @@ class CommandPaletteController {
         if (this._initialized) {
             return;
         }
+        wireVirtualFolders({
+            // In the command gate, waiting for a command still running (a click while editing:
+            // the note's save), so one click leaves the note and shows the folder.
+            setFilter: async (folder) => CommandGate.runWhenFree('virtualFolders.filter', async () => this.setVirtualFolder(folder)),
+            confirm: async (context) => this._confirmAction('virtualFolders.confirm', context),
+            askName: async (form) => this._askFolderName(form),
+            askDeleteFolder: async (form) => this._askDeleteFolder(form),
+            afterChange: async () => actionRefreshAndMaybeSelect({ startedAt: performance.now(), context: 'virtualFolders.change' }),
+            undo: async () => CommandGate.run('virtualFolders.undoMove', async () => actionUndo()),
+        });
         const clientState = await migrateLegacyClientState({
             clientState: await loadClientState(),
             persistClientPreferencesFn: persistClientPreferences,
@@ -480,6 +516,7 @@ class CommandPaletteController {
                 summarizeAiChat: () => document.dispatchEvent(new CustomEvent('metalist:ai-chat-summarize-requested')),
                 createBackup: this.createBackup.bind(this),
                 openBackupRestore: this.openBackupRestore.bind(this),
+                openLegacyImport: this.openLegacyImport.bind(this),
                 logout: this.logout.bind(this),
                 openRandomPasswordGenerator: this.openRandomPasswordGenerator.bind(this),
                 collapseAll: this.collapseAll.bind(this),
@@ -501,6 +538,7 @@ class CommandPaletteController {
                 retryFailedLinkTitles: this.retryFailedLinkTitles.bind(this),
                 openOpenNamespace: this.openOpenNamespace.bind(this),
                 openCreateNamespace: this.openCreateNamespace.bind(this),
+                toggleVirtualFolders: this.toggleVirtualFolders.bind(this),
                 openManageNamespacePorts: this.openManageNamespacePorts.bind(this),
                 openRenameCurrentNamespace: this.openRenameCurrentNamespace.bind(this),
                 openDeleteCurrentNamespace: this.openDeleteCurrentNamespace.bind(this),
@@ -509,9 +547,11 @@ class CommandPaletteController {
                 alphabetizeRootNotesAsc: this.alphabetizeRootNotesAsc.bind(this),
                 alphabetizeRootNotesDesc: this.alphabetizeRootNotesDesc.bind(this),
                 resetUpdatedAtToCreatedAt: this.resetUpdatedAtToCreatedAt.bind(this),
+                deleteNotesInView: this.deleteNotesInView.bind(this),
                 openReminders: this.openReminders.bind(this),
 
                 openVersionInfo: this.openVersionInfo.bind(this),
+                openImportWizard: this.openImportWizard.bind(this),
                 openMemoryUsage: this.openMemoryUsage.bind(this),
                 openRecentMessages: this.openRecentMessages.bind(this),
                 openNoteLayoutAppearance: this.openNoteLayoutAppearance.bind(this),
@@ -632,8 +672,10 @@ class CommandPaletteController {
         const showTags = this._getBoolean('pref.show_note_tags', false);
         document.body.classList.toggle('pref-show-note-tags', showTags);
 
-        const showTabUi = this._getBoolean('pref.show_tab_ui', false);
-        document.body.classList.toggle('pref-show-tab-ui', showTabUi);
+        // Search contexts always show (the maintainer, 2026-11-02: too useful to hide). The stored
+        // pref.show_tab_ui stays a known preference that nothing reads, so a vault holding it
+        // still loads in an older MetaList.
+        document.body.classList.add('pref-show-tab-ui');
 
         const showSearchResultsCount = this._getBoolean(
             'pref.show_search_results_count',
@@ -693,9 +735,6 @@ class CommandPaletteController {
 
         const searchContextsList = document.getElementById('search-contexts-list');
         if (searchContextsList) {
-            if (!showTabUi) {
-                searchContextsList.style.display = 'none';
-            }
             updateSearchContextsOverlayPlacement();
         }
 
@@ -1266,6 +1305,7 @@ class CommandPaletteController {
         const state = {
             hasPassword: Auth.hasPassword,
             isRootReorderLocked: isRootReorderLocked(this.getSortMode()),
+            legacyImportOffered: this._legacyImport.offered,
         };
         return this._endpoints.filter((endpoint) => isCommandAvailable(endpoint.id, state));
     }
@@ -1622,6 +1662,65 @@ class CommandPaletteController {
         });
     }
 
+    // Virtual folders, an experiment (virtual-folders-service.js): the toggle.
+    async toggleVirtualFolders() {
+        setVirtualFoldersShown(!isVirtualFoldersShown());
+    }
+
+    // A virtual folder's name (FolderNameModal), or null when nothing changes.
+    async _askFolderName(form) {
+        const isReady = await this._prepareForModalOpen('virtualFolders.name');
+        if (!isReady) {
+            return null;
+        }
+        if (this._folderNameModal === null) {
+            this._folderNameModal = new FolderNameModal();
+        }
+        return this._folderNameModal.openFor(form);
+    }
+
+    // Delete Folder's question (DeleteFolderModal): { deleteNotes }, or null when nothing changes.
+    async _askDeleteFolder(form) {
+        const isReady = await this._prepareForModalOpen('virtualFolders.delete');
+        if (!isReady) {
+            return null;
+        }
+        if (this._deleteFolderModal === null) {
+            this._deleteFolderModal = new DeleteFolderModal();
+        }
+        return this._deleteFolderModal.openFor(form);
+    }
+
+    /** Narrow the view to a virtual folder and the folders below it ('' for every folder
+     * again), as a Files filter; from a reference view, back to the view the reference views
+     * started from first. */
+    async setVirtualFolder(folder) {
+        if (typeof folder !== 'string') {
+            throw new Error('setVirtualFolder requires a folder tag or ""');
+        }
+        if (isViewingReferenceSource()) {
+            await navigateToReferenceOrigin();
+        }
+        const activeTabId = ModeContext.activeTabId;
+        if (typeof activeTabId !== 'string' || activeTabId.length === 0) {
+            throw new Error('ModeContext.activeTabId must be a non-empty string');
+        }
+        if (activeVirtualFolder() === folder) {
+            return;
+        }
+        if (ModeContext.isEditing) {
+            await actionSaveAndExitEditingWithoutRefreshing();
+        }
+        ModeContext.bumpUndoContextEpoch('virtualFolder');
+        await NotesAPI.setVirtualFolderFilter(activeTabId, folder);
+        this._showChangedViewFromTop(activeTabId);
+        await actionRefreshAndMaybeSelect({
+            startedAt: performance.now(),
+            context: 'virtualFolder',
+            animateNoteChanges: false,
+        });
+    }
+
     // The active tab's Files filter (file-filter-service.js): 'none' when it shows every note.
     getFileFilterKind() {
         return getActiveFileFilterKind();
@@ -1719,7 +1818,9 @@ class CommandPaletteController {
         }
 
         ModeContext.bumpUndoContextEpoch(`untaggedView.${isUntaggedView ? 'on' : 'off'}`);
-        ModeContext.setUntaggedView(isUntaggedView);
+        // Each search context keeps its own Untagged view (docs/ui/state-handling.md).
+        const response = await setTabUntaggedViewOnServer(activeTabId, isUntaggedView);
+        ModeContext.hydrateTabState(response, { emitUpdate: false });
         const searchInput = document.getElementById('search-input');
         if (!(searchInput instanceof HTMLInputElement)) {
             throw new Error('search-input missing from DOM');
@@ -1732,21 +1833,7 @@ class CommandPaletteController {
                 isViewingReferenceSource(),
             ),
         );
-        ModeContext.clearTabRevealedRedactions(activeTabId);
-        ModeContext.resetTabDiffCache(activeTabId, { preserveRootAnchor: false });
-        if (ModeContext.getTabScrollPosition(activeTabId) !== 0) {
-            ModeContext.updateTabScroll(activeTabId, 0, { emit: false });
-        }
-        if (ModeContext.getTabScrollAnchor(activeTabId) !== null) {
-            ModeContext.updateTabScrollAnchor(activeTabId, null, { emit: false });
-        }
-        if (ModeContext.getRootAnchorId() !== null) {
-            ModeContext.setRootAnchorId(null);
-        }
-
-        ModeContext.beginIgnoreScrollEvents();
-        window.scrollTo(0, 0);
-        ModeContext.endIgnoreScrollEvents();
+        this._showChangedViewFromTop(activeTabId);
 
         // As for a sort order: a view request in flight shows the old view.
         await actionRefreshAndMaybeSelect({
@@ -2111,6 +2198,50 @@ class CommandPaletteController {
         await this._alphabetizeRootNotes('desc');
     }
 
+    // Delete Notes (Current View)… (docs/ui/command-palette.md): the notes the view finds, each
+    // with everything under it, or every note when nothing narrows the view; confirmed with
+    // the count (as the list counts notes: those under them uncounted), which the server
+    // checks again before it deletes.
+    async deleteNotesInView() {
+        const isReady = await this._prepareForModalOpen('commandPalette.deleteNotesInView');
+        if (!isReady) {
+            return;
+        }
+        const { noteCount, isWholeVault } = await NotesAPI.countNotesToDeleteInView();
+        if (!Number.isInteger(noteCount) || typeof isWholeVault !== 'boolean') {
+            throw new Error('Delete-in-view count response malformed');
+        }
+        if (noteCount === 0) {
+            FloatingMessages.show({
+                text: 'This view shows no notes to delete.', type: 'info', detail: '', isClosable: false, isLasting: false, key: null, action: null,
+            });
+            return;
+        }
+        let title = `Delete the ${noteCount} notes in this view?`;
+        let description = `This deletes the ${noteCount} notes this view's search finds, each with the notes under it. Notes above them stay.`;
+        if (isWholeVault) {
+            title = `Delete all ${noteCount} notes in this vault?`;
+            description = `No search is active, so this deletes all ${noteCount} notes in this vault, with the notes under them.`;
+        }
+        const confirmed = await this._confirmAction('commandPalette.deleteNotesInView.confirm', {
+            eyebrow: 'Delete Notes',
+            title,
+            description: `${description} ⌘Z can't bring them back, and undo history is cleared; only a backup can.`,
+            confirmLabel: `Delete ${noteCount} Notes`,
+            isDangerous: true,
+        });
+        if (!confirmed) {
+            return;
+        }
+        await CommandGate.run('commandPalette.deleteNotesInView', async () => {
+            const result = await NotesAPI.deleteNotesInView(noteCount);
+            await actionRefreshAndMaybeSelect({ startedAt: performance.now(), context: 'deleteNotesInView' });
+            FloatingMessages.show({
+                text: `Deleted ${result.deletedCount} notes.`, type: 'success', detail: '', isClosable: false, isLasting: false, key: null, action: null,
+            });
+        });
+    }
+
     async resetUpdatedAtToCreatedAt() {
         const isReady = await this._prepareForModalOpen('commandPalette.resetUpdatedAtToCreatedAt');
         if (!isReady) {
@@ -2188,7 +2319,8 @@ class CommandPaletteController {
             }
 
             if (ModeContext.isUntaggedView) {
-                ModeContext.setUntaggedView(false);
+                const response = await setTabUntaggedViewOnServer(ModeContext.activeTabId, false);
+                ModeContext.hydrateTabState(response, { emitUpdate: false });
             }
 
             const searchInput = document.getElementById('search-input');
@@ -2507,6 +2639,42 @@ class CommandPaletteController {
         await this._backupRestoreModal.open();
     }
 
+    async openLegacyImport() {
+        const isReady = await this._prepareForModalOpen('commandPalette.openLegacyImport');
+        if (!isReady) {
+            return;
+        }
+        if (this._legacyImportModal === null) {
+            this._legacyImportModal = new LegacyImportModal({
+                request: (url, method, body) => this._authRequest(url, method, body),
+                preferences: this._preferences,
+            });
+        }
+        await this._legacyImportModal.openFor({ encrypted: this._legacyImport.encrypted });
+    }
+
+    // Once the app has opened: a namespace with no notes and no password, in a data folder
+    // that holds the old MetaList's notes, offers them, unless they were declined here
+    // (docs/ui/legacy-import.md).
+    async offerLegacyImport() {
+        const status = await this._authRequest(CONFIG.API.LEGACY_IMPORT.STATUS, 'GET', null);
+        if (typeof status.offered !== 'boolean' || typeof status.encrypted !== 'boolean') {
+            throw new Error('The legacy import status needs offered and encrypted');
+        }
+        const legacyImport = Object.freeze({ offered: status.offered, encrypted: status.encrypted });
+        if (!stateValuesEqual(this._legacyImport, legacyImport)) this._legacyImport = legacyImport;
+        if (!status.offered || this._preferences.getRaw(LEGACY_IMPORT_DECLINED_PREFERENCE) !== null) return;
+        await this.openLegacyImport();
+    }
+
+    // Over the new vault wizard: its "Use This Password" fills the wizard's fields (onUse).
+    async _openPasswordGeneratorToUse(onUse) {
+        if (this._randomPasswordModal === null) {
+            this._randomPasswordModal = new RandomPasswordModal();
+        }
+        await this._randomPasswordModal.openToUse(onUse);
+    }
+
     async openRandomPasswordGenerator() {
         const isReady = await this._prepareForModalOpen('commandPalette.openRandomPasswordGenerator');
         if (!isReady) {
@@ -2556,10 +2724,7 @@ class CommandPaletteController {
             return;
         }
         if (!hasOtherResult.value) {
-            if (this._createNamespaceModal === null) {
-                this._createNamespaceModal = new CreateNamespaceModal();
-            }
-            await this._createNamespaceModal.open();
+            await this._newVaultWizardFor({ continuesSetup: false }).open();
             return;
         }
 
@@ -2569,16 +2734,13 @@ class CommandPaletteController {
         await this._openNamespaceModal.open();
     }
 
+    // Create Vault is the new vault wizard's first step (PLAN.md, phase 2).
     async openCreateNamespace() {
         const isReady = await this._prepareForModalOpen('commandPalette.openCreateNamespace');
         if (!isReady) {
             return;
         }
-
-        if (this._createNamespaceModal === null) {
-            this._createNamespaceModal = new CreateNamespaceModal();
-        }
-        await this._createNamespaceModal.open();
+        await this._newVaultWizardFor({ continuesSetup: false }).open();
     }
 
     async openManageNamespacePorts() {
@@ -2746,6 +2908,112 @@ class CommandPaletteController {
             this._recentMessagesModal = new RecentMessagesModal();
         }
         await this._recentMessagesModal.open();
+    }
+
+    // A new vault runs the setup Create Vault asked for (PLAN.md, slice 1d;
+    // new-vault-setup.js): each step's dialog in turn, the next once it closes. Each step
+    // leaves the address as it starts, so adding a password, which reloads the vault, goes
+    // on after the login with the steps left.
+    // A new vault opened by Create Vault goes on with the wizard (#setup=wizard), once.
+    async runSetupRequestedByAddress() {
+        const steps = readSetupSteps();
+        if (steps.length === 0) return;
+        writeSetupSteps([]);
+        if (steps.length !== 1 || steps[0] !== VAULT_WIZARD_STEP) {
+            throw new Error(`Unknown new vault setup: ${steps.join('+')}`);
+        }
+        // A vault given a password meanwhile (another window) is set up already.
+        if (Auth.hasPassword) return;
+        await this._untilClosed(
+            () => this._newVaultWizardFor({ continuesSetup: true }).open(), () => this._newVaultWizard,
+        );
+    }
+
+    // Opens a dialog and waits until it closes; one that did not open is done at once.
+    async _untilClosed(open, modalOf) {
+        await open();
+        const modal = modalOf();
+        if (modal === null || !modal.isOpen) return;
+        await new Promise((resolve) => {
+            const onClosed = (event) => {
+                if (event.detail.modalName !== modal.modalName) return;
+                document.removeEventListener('metalist:modal-closed', onClosed);
+                resolve();
+            };
+            document.addEventListener('metalist:modal-closed', onClosed);
+        });
+    }
+
+    // Import… (PLAN.md, phase 2).
+    async openImportWizard() {
+        await this._openImportWizardWith(null, null);
+    }
+
+    // A dropped bookmarks export the person chose to import: Browser bookmarks chosen and its
+    // File step filled in; Next, Next, Import (docs/ready-to-build/bookmark-import.md §5).
+    // intoFolder: the virtual folder it was dropped on ('Projects/'), '' for none: the import's
+    // folder starts there (docs/ready-to-build/desktop-drops-into-folders.md).
+    async openImportWizardWithBookmarksFile(file, intoFolder) {
+        const choices = await bookmarksFileChoices(file);
+        await this._openImportWizardWith({ ...choices, prefixText: `${intoFolder}${choices.prefixText}`, ...droppedHere() }, null);
+    }
+
+    /** A folder dropped on the page: Any folder chosen, the folder in, its files read. */
+    async openImportWizardWithDroppedFolder(folder, intoFolder) {
+        await this._openImportWizardWith({ ...droppedFolderChoices(holdDroppedFolder(folder), folder, intoFolder), ...droppedHere() }, null);
+    }
+
+    /** Text files dropped on the page, a Markdown file among them: at the Markdown screen. */
+    async openImportWizardWithDroppedTextFiles(files, intoFolder) {
+        await this._openImportWizardWith({ ...await droppedTextFilesChoices(files, intoFolder), ...droppedHere() }, MARKDOWN_STEP);
+    }
+
+    async _openImportWizardWith(presetChoices, startStep) {
+        const isReady = await this._prepareForModalOpen('commandPalette.openImportWizard');
+        if (!isReady) {
+            return;
+        }
+        if (this._importWizard === null) {
+            this._importWizard = new ImportWizard(this._wizardServices());
+        }
+        this._importWizard.setPresetChoices(presetChoices);
+        this._importWizard.setStartStep(startStep);
+        await this._importWizard.open();
+    }
+
+    // What the wizards need from the app: the chat's AI settings, and, once notes came in, a
+    // new search context of them (searching the import's tag); at the limit of search
+    // contexts, the list as it is, refreshed.
+    _wizardServices() {
+        return {
+            getAiSettings: this.getAiSettings.bind(this),
+            saveAiSettings: this.saveAiSettings.bind(this),
+            // The new vault wizard sets the password keeping this window logged in.
+            setPassword: async (password, onProgress) => Auth.setPasswordKeepingThisWindow(password, onProgress),
+            openPasswordGenerator: async (onUse) => this._openPasswordGeneratorToUse(onUse),
+            afterImport: async (sourceTag) => {
+                // An import shows its folders at once (Virtual Folders, an experiment).
+                setVirtualFoldersShown(true);
+                const newTabId = await openSearchInNewSearchContext(sourceTag, 'importWizard.showImported');
+                if (newTabId === null) {
+                    await actionRefreshAndMaybeSelect({ startedAt: performance.now(), context: 'importWizard' });
+                }
+            },
+            // Files dropped on the page: their notes at the top of the search context they were
+            // dropped in, which stays as it is (the maintainer, 2026-11-03).
+            showDroppedImport: async () => {
+                await actionRefreshAndMaybeSelect({ startedAt: performance.now(), context: 'importWizard.showDropped' });
+            },
+        };
+    }
+
+    // The new vault wizard: from Vault (Create Vault), or, in the new vault, from Password on.
+    _newVaultWizardFor({ continuesSetup }) {
+        if (this._newVaultWizard === null) {
+            this._newVaultWizard = new NewVaultWizard(this._wizardServices());
+        }
+        this._newVaultWizard.setContinuesSetup(continuesSetup);
+        return this._newVaultWizard;
     }
 
     async openVersionInfo() {

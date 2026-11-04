@@ -55,7 +55,7 @@ def _migrate(notes: Path, *, encrypted: bool) -> tuple[int, ...]:
 def test_version_11_gains_the_link_icons_table(tmp_path: Path, encrypted: bool, has_table: bool) -> None:
     notes = _version_11_namespace(tmp_path, has_table=has_table)
 
-    assert _migrate(notes, encrypted=encrypted) == (12,)
+    assert _migrate(notes, encrypted=encrypted) == (12, 13, 14)
     assert _migrate(notes, encrypted=encrypted) == ()
 
 

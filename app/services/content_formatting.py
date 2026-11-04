@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from typing import Dict, FrozenSet, Iterator, List, Mapping, Set, Tuple
 
 # Keep existing formatting helper imports available to callers during this extraction.
+from app.services.credential_display import CredentialDisplay
 from app.services.structured_note_renderers import (
     CsvScopeFormatting,
     _render_json_meta as render_json,
@@ -43,11 +44,13 @@ from app.services.diff_rendering import render_diff_meta
 from app.services.mermaid_note_rendering import render_mermaid_meta
 from app.services.latex_rendering import render_latex_to_html
 from app.utils.text_utils import HTMLStripper, LinkUrlKeepingStripper, strip_html
-from app.services.markdown_rendering import render_markdown_to_html
+from app.services.markdown_rendering import render_note_markdown
+from app.services.status_icons import EMPTY_BOX_ICON, TICKED_BOX_ICON
 from app.services.ontology_rules_store import get_ontology_if_ready
 from app.services.file_registry import file_registry
 from app.security.rendered_html import RENDERER_CLASS_PREFIXES
 from app.services.link_titles import display_domain_for_url
+from app.services.quoted_values import VALUE_QUOTE, token_end
 from app.services.link_titles import site_of_url
 from app.services.link_icons import link_icon_store
 from app.services.link_titles import link_title_store
@@ -73,6 +76,8 @@ _META_TAG_TO_CLASS = {
     "footnote": "meta-footnote",
     "monospace": "meta-monospace",
     "heading": "meta-heading",
+    # A quote as Markdown means it: a block with a bar at its left (2026-10-31).
+    "quote": "meta-quote",
     "red": "meta-red",
     "green": "meta-green",
     "blue": "meta-blue",
@@ -109,9 +114,12 @@ _REMOVABLE_FORMATTING_TAGS = frozenset(set(_META_TAG_TO_CLASS) | set(_RENDERER_T
 
 _CREDENTIAL_TAGS = frozenset({"username", "password"})
 # A hidden password or username shows this, whatever its length, so the length
-# stays hidden too.
+# stays hidden too; MetaList shows a password so (CredentialDisplay.DOTS).
 _CREDENTIAL_MASK_LENGTH = 8
 CREDENTIAL_MASK = "\u2022" * _CREDENTIAL_MASK_LENGTH
+# What a screen reader says for a password's dots, instead of eight bullets; its copy and
+# show buttons are added in the page (value-buttons-service.js).
+_HIDDEN_PASSWORD_LABEL = "Hidden password"
 _EMAIL_TAGS = frozenset({"email"})
 
 _CREDENTIAL_META = {
@@ -156,26 +164,8 @@ _EMAIL_META = {
 _STATUS_TAGS = frozenset({"todo", "done"})
 
 _STATUS_META = {
-    "todo": {
-        "icon": (
-            '<svg class="meta-status-icon-svg" viewBox="0 0 24 24" '
-            'aria-hidden="true" focusable="false">'
-            '<rect x="3" y="3" width="18" height="18" rx="3" ry="3" '
-            'fill="none" stroke="currentColor" stroke-width="2" />'
-            "</svg>"
-        ),
-    },
-    "done": {
-        "icon": (
-            '<svg class="meta-status-icon-svg" viewBox="0 0 24 24" '
-            'aria-hidden="true" focusable="false">'
-            '<rect x="3" y="3" width="18" height="18" rx="3" ry="3" '
-            'fill="none" stroke="currentColor" stroke-width="2" />'
-            '<path d="M7 12l3 3 7-7" fill="none" stroke="currentColor" '
-            'stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />'
-            "</svg>"
-        ),
-    },
+    "todo": {"icon": EMPTY_BOX_ICON},
+    "done": {"icon": TICKED_BOX_ICON},
 }
 
 # In a Markdown note, what a scoped renderer drew is kept from the Markdown pass as a
@@ -203,6 +193,9 @@ _URL_LABEL_ANCHOR_RE = re.compile(
     r'(?P<opener><a\b[^>]*>)(?P<label>https?://[^<]*)</a\s*>', re.IGNORECASE,
 )
 _NEW_TAB_REL_TOKENS = ("noopener", "noreferrer")
+_QUOTE_CLASS = "meta-quote"
+_SPAN_TAG_RE = re.compile(r"<(?P<closing>/?)span\b[^>]*>", re.IGNORECASE)
+_LINE_BREAK_TAG_RE = re.compile(r"<br\s*/?>", re.IGNORECASE)
 _SELF_CLOSING_TAG_END = "/>"
 _BLOCK_HTML_TAG_RE = re.compile(
     r"<(?:blockquote|div|dl|fieldset|figure|figcaption|footer|form|h[1-6]|header|hr|li|ol|p|pre|section|table|tbody|td|tfoot|th|thead|tr|ul)\b",
@@ -486,30 +479,30 @@ def extract_agent_note_text(
     return text, False
 
 
-def format_note_content_for_view(*, content_html: str, tags: str, redact_credentials: bool) -> str:
+def format_note_content_for_view(*, content_html: str, tags: str, credentials: CredentialDisplay) -> str:
     if not isinstance(content_html, str):
         raise TypeError(f"content_html must be a string, got {type(content_html)}")
     if not isinstance(tags, str):
         raise TypeError(f"tags must be a string, got {type(tags)}")
-    if not isinstance(redact_credentials, bool):
-        raise TypeError(f"redact_credentials must be a bool, got {type(redact_credentials)}")
+    if not isinstance(credentials, CredentialDisplay):
+        raise TypeError(f"credentials must be a CredentialDisplay, got {type(credentials)}")
 
     if _LINK_FETCHES_IN_RENDER.get() is not None:
-        return _format_note_content_with_footnotes(content_html=content_html, tags=tags, redact_credentials=redact_credentials)
+        return _format_note_content_with_footnotes(content_html=content_html, tags=tags, credentials=credentials)
     reset_token = _LINK_FETCHES_IN_RENDER.set(set())
     try:
-        return _format_note_content_with_footnotes(content_html=content_html, tags=tags, redact_credentials=redact_credentials)
+        return _format_note_content_with_footnotes(content_html=content_html, tags=tags, credentials=credentials)
     finally:
         _LINK_FETCHES_IN_RENDER.reset(reset_token)
 
 
-def _format_note_content_with_footnotes(*, content_html: str, tags: str, redact_credentials: bool) -> str:
+def _format_note_content_with_footnotes(*, content_html: str, tags: str, credentials: CredentialDisplay) -> str:
     footnotes: list[tuple[str, str]] = []
     output = _format_note_content_for_view(
-        content_html=content_html, tags=tags, redact_credentials=redact_credentials,
+        content_html=content_html, tags=tags, credentials=credentials,
         footnotes=footnotes,
     )
-    if not footnotes or (redact_credentials and _find_global_credential_tag(tags) is not None):
+    if not footnotes or (credentials is CredentialDisplay.HIDDEN and _find_global_credential_tag(tags) is not None):
         return output
     return _linkify_plain_view_links(
         finish_footnotes(output, footnotes, _render_footnote_url_titles),
@@ -517,7 +510,7 @@ def _format_note_content_with_footnotes(*, content_html: str, tags: str, redact_
 
 
 def _format_note_content_for_view(
-    *, content_html: str, tags: str, redact_credentials: bool,
+    *, content_html: str, tags: str, credentials: CredentialDisplay,
     footnotes: list[tuple[str, str]],
 ) -> str:
     config = _parse_meta_tags(tags)
@@ -568,10 +561,15 @@ def _format_note_content_for_view(
                 formatting_tags=config.global_tags,
             )
         if renderer_tag == "markdown":
-            return _render_markdown_meta(
+            # Its own footnotes ([^1], ^[text]) join the note's, numbered and listed as
+            # {{@footnote}} ones are (docs/ui/content-formatting.md, Markdown footnotes).
+            markdown_html, markdown_footnotes = _render_markdown_meta(
                 content_html=output,
                 formatting_tags=config.global_tags,
+                takes_footnotes=True,
             )
+            footnotes.extend(markdown_footnotes)
+            return markdown_html
         if renderer_tag == "latex":
             return _render_latex_meta(
                 content_html=output,
@@ -621,7 +619,7 @@ def _format_note_content_for_view(
                 content_html=output,
                 credential_tag=credential_tag,
                 formatting_tags=config.global_tags,
-                redact_credentials=redact_credentials,
+                credentials=credentials,
             )
         )
 
@@ -1223,6 +1221,20 @@ def _find_first_renderer_tag(tags: str) -> str | None:
     return None
 
 
+def is_markdown_note(tags: str) -> bool:
+    """Whether a note is drawn as Markdown: @markdown is its renderer."""
+    return _find_first_renderer_tag(tags) == "markdown"
+
+
+def kept_from_markdown(rendered_html: str, *, is_block: bool) -> str:
+    """Drawn HTML (a reference) written into a Markdown note's source so that the Markdown
+    pass leaves it whole and puts it back after (_render_markdown_meta), as scoped regions
+    are: inline in its paragraph, or a block as a paragraph of its own."""
+    if is_block:
+        return _encode_block_placeholder(rendered_html)
+    return _encode_inline_placeholder(rendered_html)
+
+
 def is_password_note(tags: str) -> bool:
     """A note whose value is a password: tagged @password for the whole note."""
     if not isinstance(tags, str):
@@ -1278,24 +1290,16 @@ def _render_credential_meta(
     content_html: str,
     credential_tag: str,
     formatting_tags: FrozenSet[str],
-    redact_credentials: bool,
+    credentials: CredentialDisplay,
 ) -> str:
     if credential_tag not in _CREDENTIAL_TAGS:
         raise KeyError(f"Unknown credential meta tag: {credential_tag}")
-    if not isinstance(redact_credentials, bool):
-        raise TypeError(f"redact_credentials must be a bool, got {type(redact_credentials)}")
+    if not isinstance(credentials, CredentialDisplay):
+        raise TypeError(f"credentials must be a CredentialDisplay, got {type(credentials)}")
 
     credential_meta = _CREDENTIAL_META[credential_tag]
     label_text = credential_meta["label"]
     icon_html = credential_meta["icon"]
-
-    value_text = strip_html(content_html)
-    display_text = value_text
-    redacted_attr = ""
-    if redact_credentials:
-        display_text = CREDENTIAL_MASK
-        redacted_attr = ' data-redacted="true"'
-    escaped_value = html.escape(display_text, quote=True)
 
     extra_classes = ""
     if formatting_tags:
@@ -1305,30 +1309,55 @@ def _render_credential_meta(
     if extra_classes:
         value_class = f"{value_class} {extra_classes}"
     size_style_attr = _meta_size_style_attr(formatting_tags)
+    value_html = _credential_value_html(
+        value_text=strip_html(content_html), credential_tag=credential_tag, credentials=credentials,
+        value_class=value_class, style_attr=size_style_attr,
+    )
 
     return (
         f'<div class="meta-credential meta-credential-{credential_tag}">'
         # The icon says what the value is, on hover and to screen readers.
         f'<span class="meta-credential-icon" role="img" title="{label_text}" aria-label="{label_text}">{icon_html}</span>'
-        f'<span class="{value_class}"{size_style_attr}{redacted_attr} data-copy-value="{escaped_value}">'
-        f"{escaped_value}"
-        "</span>"
+        f"{value_html}"
         "</div>"
     )
 
 
+def _credential_value_html(
+    *, value_text: str, credential_tag: str, credentials: CredentialDisplay, value_class: str, style_attr: str,
+) -> str:
+    """A credential's click-to-copy value: its text, or CREDENTIAL_MASK where it is hidden
+    (HIDDEN: nothing to copy) and for a password in MetaList (DOTS: the value only in
+    data-copy-value, never the page's text; the maintainer, 2026-11-03)."""
+    assert credential_tag in _CREDENTIAL_TAGS
+    if credentials is CredentialDisplay.HIDDEN:
+        return f'<span class="{value_class}"{style_attr} data-redacted="true" data-copy-value="{CREDENTIAL_MASK}">{CREDENTIAL_MASK}</span>'
+    escaped_value = html.escape(value_text, quote=True)
+    if credentials is CredentialDisplay.DOTS and credential_tag == "password":
+        return (
+            f'<span class="{value_class}"{style_attr} role="img" aria-label="{_HIDDEN_PASSWORD_LABEL}" '
+            f'data-copy-value="{escaped_value}">{CREDENTIAL_MASK}</span>'
+        )
+    return f'<span class="{value_class}"{style_attr} data-copy-value="{escaped_value}">{escaped_value}</span>'
+
+
 # A credential note's row inside a link to it (docs/ui/references.md): the same icon and
-# click-to-copy value as the note's own row (a password blurred), in a span to sit in a line.
-def render_credential_link_row(*, content_html: str, credential_tag: str) -> str:
+# click-to-copy value as the note's own row (a password as dots), in a span to sit in a line.
+def render_credential_link_row(*, content_html: str, credential_tag: str, credentials: CredentialDisplay) -> str:
     if credential_tag not in _CREDENTIAL_TAGS:
         raise KeyError(f"Unknown credential meta tag: {credential_tag}")
+    if credentials is CredentialDisplay.HIDDEN:
+        raise ValueError("a link to a credential note is its row only where credentials are not hidden")
     credential_meta = _CREDENTIAL_META[credential_tag]
     label_text = credential_meta["label"]
-    escaped_value = html.escape(strip_html(content_html), quote=True)
+    value_html = _credential_value_html(
+        value_text=strip_html(content_html), credential_tag=credential_tag, credentials=credentials,
+        value_class="meta-credential-value", style_attr="",
+    )
     return (
         f'<span class="meta-credential meta-credential-{credential_tag}">'
         f'<span class="meta-credential-icon" role="img" title="{label_text}" aria-label="{label_text}">{credential_meta["icon"]}</span>'
-        f'<span class="meta-credential-value" data-copy-value="{escaped_value}">{escaped_value}</span>'
+        f"{value_html}"
         "</span>"
     )
 
@@ -1450,11 +1479,13 @@ def _render_shell_meta(*, content_html: str, formatting_tags: FrozenSet[str]) ->
     )
 
 
-def _render_markdown_meta(*, content_html: str, formatting_tags: FrozenSet[str]) -> str:
+def _render_markdown_meta(
+    *, content_html: str, formatting_tags: FrozenSet[str], takes_footnotes: bool,
+) -> tuple[str, list[tuple[str, str]]]:
     raw_text = _extract_plain_text(content_html)
     copy_attr = _copyable_attr(formatting_tags, raw_text)
-    rendered_markdown = render_markdown_to_html(raw_text)
-    rendered_markdown = _replace_block_placeholders(_replace_inline_placeholders(rendered_markdown))
+    note_markdown = render_note_markdown(raw_text, takes_footnotes=takes_footnotes)
+    rendered_markdown = _replace_block_placeholders(_replace_inline_placeholders(note_markdown.html))
 
     extra_classes = ""
     if formatting_tags:
@@ -1465,11 +1496,12 @@ def _render_markdown_meta(*, content_html: str, formatting_tags: FrozenSet[str])
         block_class = f"{block_class} {extra_classes}"
     size_style_attr = _meta_size_style_attr(formatting_tags)
 
-    return (
+    markdown_html = (
         f'<div class="{block_class}"{size_style_attr} data-markdown-rendered="true"{copy_attr}>'
         f"{_linkify_view_links(rendered_markdown)}"
         "</div>"
     )
+    return markdown_html, note_markdown.footnotes
 
 
 def _render_latex_meta(*, content_html: str, formatting_tags: FrozenSet[str]) -> str:
@@ -1544,10 +1576,13 @@ def _draw_scoped_region(
             cell_scoped_renderers=filtered_renderers,
         )
     if render_tag == "markdown":
-        return _render_markdown_meta(
+        markdown_html, markdown_footnotes = _render_markdown_meta(
             content_html=content_html,
             formatting_tags=formatting_tags,
+            takes_footnotes=False,
         )
+        assert markdown_footnotes == [], "a Markdown region takes no footnotes"
+        return markdown_html
     if render_tag == "json":
         return _render_json_meta(
             content_html=content_html,
@@ -1729,10 +1764,10 @@ def _parse_meta_tags(tags: str) -> MetaTagConfig:
 
 
 def _tokenize_tag_bar(tags: str) -> List[str]:
-    # Without comments or wrapper openers the scanner below only splits on
-    # whitespace (str.isspace, the same set str.split uses), so take the
-    # C-speed path for plain tag strings.
-    if "/*" not in tags and _WRAPPER_OPENER_RE.search(tags) is None:
+    # Without comments, wrapper openers or quoted values the scanner below only
+    # splits on whitespace (str.isspace, the same set str.split uses), so take
+    # the C-speed path for plain tag strings.
+    if "/*" not in tags and VALUE_QUOTE not in tags and _WRAPPER_OPENER_RE.search(tags) is None:
         return tags.split()
     return _scan_tag_bar_tokens(tags)
 
@@ -1770,8 +1805,8 @@ def _scan_tag_bar_tokens(tags: str) -> List[str]:
                         tokens.append(token)
                     continue
 
-        while index < len(tags) and not tags[index].isspace():
-            index += 1
+        # A quoted value (author="Ursula Le Guin") keeps its spaces.
+        index = token_end(tags, index)
         token = tags[start:index]
         if token:
             tokens.append(token)
@@ -1820,8 +1855,7 @@ def _tokenize_tag_bar_preserving_comments(tags: str) -> List[str]:
                     tokens.append(tags[start:index])
                     continue
 
-        while index < len(tags) and not tags[index].isspace():
-            index += 1
+        index = token_end(tags, index)
         tokens.append(tags[start:index])
     return tokens
 
@@ -1937,7 +1971,40 @@ def _apply_scoped_meta_tags(
     for frame in stack:
         output[frame.placeholder_index] = frame.opener_text
 
-    return "".join(output)
+    return _without_breaks_after_quotes("".join(output))
+
+
+def _without_breaks_after_quotes(rendered_html: str) -> str:
+    """rendered_html without the <br> right after a quote region: the region is a block
+    (@quote, main.css), whose end already ends its line, so that <br> would leave an empty
+    line under it (2026-10-31)."""
+    if _QUOTE_CLASS not in rendered_html:
+        return rendered_html
+    kept: List[str] = []
+    # For each open span, whether it is a quote's.
+    open_spans: List[bool] = []
+    drops_next_break = False
+    for part in _HTML_TAG_SPLIT_RE.split(rendered_html):
+        if part == "":
+            continue
+        if drops_next_break and _LINE_BREAK_TAG_RE.fullmatch(part) is not None:
+            drops_next_break = False
+            continue
+        drops_next_break = False
+        span = _SPAN_TAG_RE.fullmatch(part)
+        if span is not None and span.group("closing") == "" and not part.endswith(_SELF_CLOSING_TAG_END):
+            open_spans.append(_QUOTE_CLASS in _span_classes(part))
+        elif span is not None and span.group("closing") != "" and len(open_spans) > 0:
+            drops_next_break = open_spans.pop()
+        kept.append(part)
+    return "".join(kept)
+
+
+def _span_classes(span_tag: str) -> List[str]:
+    found = _ANCHOR_CLASS_ATTR_RE.search(span_tag)
+    if found is None:
+        return []
+    return found.group("value").split()
 
 
 def _apply_scoped_meta_tags_to_plain_text(

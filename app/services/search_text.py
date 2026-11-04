@@ -3,9 +3,11 @@ from __future__ import annotations
 import re
 
 from app.services.content_formatting import COMMENT_CLOSE, COMMENT_OPEN, find_plain_text_urls
+from app.services.quoted_values import VALUE_QUOTE, opens_value, quoted_value_end
 from app.services.email_search_text import EMAIL_THUMBNAIL_KINDS, email_search_words
 from app.services.file_registry import file_registry
 from app.services.link_titles import link_title_store, normalize_url_for_link_title
+from app.services.tag_characters import normalize_text
 from app.utils.text_utils import strip_html_keeping_link_urls
 
 
@@ -23,7 +25,7 @@ def extract_tag_bar_comment_text(tags: str) -> str:
     comments: list[str] = []
     index = 0
     while index < len(tags):
-        start = tags.find(COMMENT_OPEN, index)
+        start = _find_comment_open(tags, index)
         if start == -1:
             break
 
@@ -39,6 +41,22 @@ def extract_tag_bar_comment_text(tags: str) -> str:
         index = end + len(COMMENT_CLOSE)
 
     return " ".join(comments)
+
+
+def _find_comment_open(tags: str, start: int) -> int:
+    """The next comment opener at or after start outside a quoted value (title="a /* b" holds
+    none), or -1."""
+    if VALUE_QUOTE not in tags:
+        return tags.find(COMMENT_OPEN, start)
+    index = start
+    while index < len(tags):
+        if opens_value(tags, index):
+            index = quoted_value_end(tags, index).end
+            continue
+        if tags.startswith(COMMENT_OPEN, index):
+            return index
+        index += 1
+    return -1
 
 
 def list_link_title_urls(content_text: str) -> frozenset[str]:
@@ -121,7 +139,8 @@ def build_searchable_base_text_casefold(content_text: str, tags: str) -> str:
         else:
             combined = comment_text
 
-    return combined.casefold()
+    # One Unicode form, as searches are (app/services/tag_characters.py).
+    return normalize_text(combined).casefold()
 
 
 def build_searchable_text_casefold(content_html: str, tags: str) -> str:
@@ -133,36 +152,3 @@ def build_searchable_text_casefold(content_html: str, tags: str) -> str:
     return build_searchable_text_casefold_from_plaintext(strip_html_keeping_link_urls(content_html), tags)
 
 
-def text_term_matches(term: str, text_casefold: str) -> bool:
-    """Whether a quoted search term occurs in casefolded note text.
-
-    A term matches anywhere, also inside words ("fat" in "father"), except that a
-    space at its edge marks a word boundary on that side: "fat " needs the word to
-    end there (a space, punctuation or the end of the text follows), " fat" needs it
-    to start there (docs/ui/search-semantics.md).
-    """
-    if not isinstance(term, str) or not isinstance(text_casefold, str):
-        raise TypeError("text_term_matches requires strings")
-    core = term.strip().casefold()
-    if core == "":
-        raise ValueError("A quoted search term must not be blank")
-    word_starts = term.startswith(" ")
-    word_ends = term.endswith(" ")
-    if not word_starts and not word_ends:
-        return core in text_casefold
-    start = text_casefold.find(core)
-    while start != -1:
-        end = start + len(core)
-        if _is_word_edge(text_casefold, start - 1, word_starts) and _is_word_edge(text_casefold, end, word_ends):
-            return True
-        start = text_casefold.find(core, start + 1)
-    return False
-
-
-def _is_word_edge(text: str, index: int, required: bool) -> bool:
-    """Whether position `index` (just outside a match) ends a word, when required."""
-    if not required:
-        return True
-    if index < 0 or index >= len(text):
-        return True
-    return not text[index].isalnum()

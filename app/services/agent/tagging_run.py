@@ -29,6 +29,7 @@ from app.services.content_formatting import extract_note_text_for_agent
 from app.services.search_index import extract_ordered_tags_for_agent
 from app.services.search_index import search_index
 from app.services.note_store import store
+from app.services.quoted_values import split_tokens
 from app.services.sync import get_current_sync_uuid
 from app.services.tokens import token_service
 from app.services.snapshot import resolve_view_scope_membership
@@ -90,7 +91,7 @@ def tagging_trees(snapshot):
         assert not redacted, "Disclosure boundary must exclude protected ancestors"
         payloads[note_id] = {"note_id": note_id, "content_text": content,
                              "tags": list(extract_ordered_tags_for_agent(record.tags)),
-                             "proposed_tags": list(record.proposed_tags.split())}
+                             "proposed_tags": list(split_tokens(record.proposed_tags))}
     for note_id, node in snapshot.tree_nodes_by_id.items():
         if node.child_ids:
             payloads[note_id]["children"] = [payloads[child_id] for child_id in node.child_ids]

@@ -12,6 +12,7 @@ import {
 test('Add Style exposes the supported formatting and renderer tags', () => {
     const tags = ADD_STYLE_OPTIONS.map((option) => option.tag);
     assert.equal(tags.includes('@heading'), true);
+    assert.equal(tags.includes('@quote'), true);
     assert.equal(tags.includes('@red'), true);
     assert.equal(tags.includes('@blue'), true);
     assert.equal(tags.includes('@highlight'), true);

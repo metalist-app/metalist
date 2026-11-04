@@ -1,3 +1,4 @@
+import { showVirtualFoldersMenu } from '../services/virtual-folders-service.js';
 import { MS_PER_SECOND } from '../../time-units.js';
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import { ApplicationState } from '../../application-state.js';
@@ -65,7 +66,7 @@ import {
 } from '../services/context-menu-target-service.js';
 import { OntologyModal } from '../../modals/ontology-modal.js';
 import { findTagAtIndexInTagBar } from '../services/tag-syntax-service.js';
-import { findSearchTagAtIndex } from '../services/search-syntax-service.js';
+import { findSearchTagAtIndex, findUnfillableSearchTerm } from '../services/search-syntax-service.js';
 import { getInputCaretIndexFromPoint, isInputPointPastText } from '../../context-menu/input-caret-service.js';
 import { buildContextMenuItems } from '../../context-menu/context-menu-registry.js';
 import { initContextMenuService, showContextMenu } from '../../context-menu/context-menu-service.js';
@@ -960,6 +961,22 @@ function fileCardFileIdAt(target) {
     return fileId;
 }
 
+// The file a right-click on an audio or video player names, or null elsewhere.
+function filePlayerFileIdAt(target) {
+    if (!(target instanceof Element)) {
+        return null;
+    }
+    const player = target.closest('.note-file-media-embed[data-file-ref-id]');
+    if (player === null) {
+        return null;
+    }
+    const fileId = player.getAttribute('data-file-ref-id');
+    if (typeof fileId !== 'string' || fileId === '') {
+        throw new Error('A player is missing its file id');
+    }
+    return fileId;
+}
+
 function showNoteContextMenu(event, noteId, imageContext, selectedTextRange, referenceContext) {
     if (typeof noteId !== 'string' || noteId.trim() === '') {
         return;
@@ -1003,6 +1020,7 @@ function showNoteContextMenu(event, noteId, imageContext, selectedTextRange, ref
         },
         imageContext,
         fileCardFileId: fileCardFileIdAt(event.target),
+        filePlayerFileId: filePlayerFileIdAt(event.target),
         hasSelectedText,
         hasNoteClipboard,
         canInsertReference: referenceRange !== null,
@@ -1012,7 +1030,7 @@ function showNoteContextMenu(event, noteId, imageContext, selectedTextRange, ref
         canRemoveFormatting: ModeContext.isEditingNote(noteId),
         canAddDiagram: ModeContext.isEditingNote(noteId),
         canEditDiagram: true,
-        canAddNoteAtTop: !ModeContext.isEditing,
+        canAddNoteAtTop: !ModeContext.isEditing && findUnfillableSearchTerm(ModeContext.searchQuery) === null,
         canViewFullscreen: true,
         canOpenFloatingNote: true,
     };
@@ -1133,6 +1151,9 @@ function showNoteContextMenu(event, noteId, imageContext, selectedTextRange, ref
             },
             onRenameFile: (fileId) => {
                 void renameFileFromMenu(fileId);
+            },
+            onDownloadFile: (fileId) => {
+                void CommandGate.run('contextMenu.download_file', () => downloadFileReference(fileId));
             },
             onSaveDiagram: (targetImageContext) => {
                 void CommandGate.run('contextMenu.diagram.save', async () => {
@@ -1398,10 +1419,8 @@ function showViewContextMenu(event) {
         canGoToBottom: !scrollToBottomButton.disabled,
         isUntaggedView: ModeContext.isUntaggedView === true,
         theme: themeAttribute === 'light' || themeAttribute === 'dark' ? themeAttribute : 'system',
-        areTabsVisible: document.body.classList.contains('pref-show-tab-ui'),
-        isAiChatVisible: document.body.classList.contains('pref-show-ai-chat'),
-        areNoteTagsVisible: document.body.classList.contains('pref-show-note-tags'),
         sortMode: ModeContext.activeTabSortMode,
+        searchAllowsNewNotes: findUnfillableSearchTerm(ModeContext.searchQuery) === null,
         ...dateRangeMenuContext(),
     };
     const items = buildContextMenuItems(context, {
@@ -1455,15 +1474,6 @@ function showViewContextMenu(event) {
         onLogOut: () => {
             void CommandPalette.logout();
         },
-        onToggleTabs: (nextValue) => {
-            void CommandPalette.applyPreference('pref.show_tab_ui', nextValue);
-        },
-        onToggleAiChat: (nextValue) => {
-            void CommandPalette.applyPreference('pref.show_ai_chat', nextValue);
-        },
-        onToggleNoteTags: (nextValue) => {
-            void CommandPalette.applyPreference('pref.show_note_tags', nextValue);
-        },
         onAddNoteAtTop: () => {
             void CommandGate.run('contextMenu.view.add_at_top', async () => {
                 await addNoteAtTopFromContextMenu();
@@ -1512,6 +1522,11 @@ function handleContextMenu(event) {
         return;
     }
     if (element.closest('#ai-chat-panel')) return;
+    // The virtual folders tree has a menu of its own (an experiment).
+    if (element.closest('#virtual-folders')) {
+        showVirtualFoldersMenu(event);
+        return;
+    }
 
     const priorityTarget = resolvePriorityContextMenuTarget(element, {
         isInLeftRail: isInLeftTabRail(event),

@@ -69,6 +69,41 @@ def test_search_cases(pasted: str, expected: str) -> None:
 
 
 @pytest.mark.parametrize("pasted,expected", [
+    # A property search is pasted search syntax too, kept as it is (reported 2026-10-30:
+    # pasting Lauf:Größe>3 left the search bar empty).
+    ("Lauf:Größe>3", "Lauf:Größe>3"),
+    ("jogging:miles>3", "jogging:miles>3"),
+    ("python jogging:miles>=3", "python jogging:miles>=3"),
+    ("jogging:miles?", "jogging:miles?"),
+    (":version=0.24", ":version=0.24"),
+    ("@sum:calories>2000", "@sum:calories>2000"),
+    ("-jogging:miles>3", "-jogging:miles>3"),
+    # A dictated time is no property search: an unknown word, dropped as before.
+    ("python at 10:30", "python"),
+])
+def test_pasted_property_searches_are_kept(pasted: str, expected: str) -> None:
+    assert _search(pasted) == expected
+
+
+@pytest.mark.parametrize("pasted,expected", [
+    # A tag with values is pasted tag syntax, kept as it is (reported 2026-10-30: pasting
+    # Lauf:Größe=5 into the tag bar gave LaufGröße5).
+    ("Lauf:Größe=5", "Lauf:Größe=5"),
+    ("jogging:miles=3", "jogging:miles=3"),
+    ("jogging:miles=3:duration=30 python", "jogging:miles=3:duration=30 python"),
+    ("author=Ursula-Le-Guin", "author=Ursula-Le-Guin"),
+    ("asdf=1234", "asdf=1234"),
+    ("@code=python @datetime=2026-10-24", "@code=python @datetime=2026-10-24"),
+    # Not tag syntax: a sentence's colon, a time, a property with no value.
+    ("Notes: python", "notes python"),
+    ("10:30", "1030"),
+    ("jogging:miles=", "joggingmiles"),
+])
+def test_pasted_tags_with_values_are_kept(pasted: str, expected: str) -> None:
+    assert _tags(pasted) == expected
+
+
+@pytest.mark.parametrize("pasted,expected", [
     ("Neural network, transformers.", "neural-network transformers"),
     ("gpt and the transformer", "GPT transformer"),
     # Quote phrases quote nothing in the tag bar: their words are dropped.

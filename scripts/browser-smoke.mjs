@@ -1,5 +1,5 @@
 import {checkAgentHelpMenus} from './browser-agent-help-regressions.mjs';
-import {checkAiPrivacyPreview} from './browser-ai-privacy-regressions.mjs';
+import {checkAiPrivacyPreview, checkPrivacyRuleEntry} from './browser-ai-privacy-regressions.mjs';
 import {checkAiSelectedNote} from './browser-ai-selected-note-regressions.mjs';
 import {checkAiResponseMenu} from './browser-ai-response-menu-regressions.mjs';
 /** A small real-browser smoke test. Every server run owns a fresh temporary namespace. */
@@ -31,6 +31,11 @@ import {checkSortedTabs} from './browser-sorted-tab-regressions.mjs';
 import {checkDateRange, checkFileFilter, checkOpenQuoteSearch, checkSearchBarMenu, checkSearchInputRejected} from './browser-search-input-regressions.mjs';
 import {checkDictationPaste} from './browser-dictation-paste-regressions.mjs';
 import {checkFileDropPreviews} from './browser-file-drop-preview-regressions.mjs';
+import {checkFileTextSnippets} from './browser-file-text-snippet-regressions.mjs';
+import {checkFoldedFiles} from './browser-folded-file-regressions.mjs';
+import {checkFindInFiles} from './browser-find-in-file-regressions.mjs';
+import {checkFindInDiagrams} from './browser-find-in-diagram-regressions.mjs';
+import {checkEdgeTabs} from './browser-edge-tab-regressions.mjs';
 import {checkImageMenu} from './browser-image-menu-regressions.mjs';
 import {checkTagSuggestionMenu} from './browser-tag-suggestion-menu-regressions.mjs';
 import {checkPasteFormats} from './browser-paste-format-regressions.mjs';
@@ -44,9 +49,14 @@ import {checkClickCaret} from './browser-click-caret-regressions.mjs';
 import {checkEditableEmbeds} from './browser-editable-embed-regressions.mjs';
 import {checkCollapseOutlines} from './browser-collapse-outline-regressions.mjs';
 import {checkTabSwitching} from './browser-tab-switch-regressions.mjs';
+import {checkFolderNoteDrag} from './browser-folder-note-drag-regressions.mjs';
+import {checkFolderDrops} from './browser-folder-drop-regressions.mjs';
+import {checkBackgroundWork} from './browser-background-work-regressions.mjs';
+import {checkImageSizes} from './browser-image-size-regressions.mjs';
 import {checkAiChatRefusal} from './browser-ai-chat-refusal-regressions.mjs';
 import {checkAiChatSummary} from './browser-ai-chat-summary-regressions.mjs';
 import {checkRestoreSession} from './browser-restore-session-regressions.mjs';
+import {checkLegacyImport} from './browser-legacy-import-regressions.mjs';
 import {checkSearchSuggestions} from './browser-search-suggestion-regressions.mjs';
 import {checkTagBarSuggestions} from './browser-tag-bar-suggestion-regressions.mjs';
 import {checkInputTarget} from './browser-input-target-regressions.mjs';
@@ -199,6 +209,7 @@ try {
     console.log(`PASS AI response menu regressions in ${await browser.version()}`);
   } else if (process.env.BROWSER_TEST_SUITE === 'ai-privacy') {
     await checkAiPrivacyPreview(page);
+    await checkPrivacyRuleEntry(page);
     assert.deepEqual(errors, []);
     console.log(`PASS AI privacy preview regressions in ${await browser.version()}`);
   } else if (process.env.BROWSER_TEST_SUITE === 'agent-help') {
@@ -329,6 +340,10 @@ try {
     await checkAiChatSummary(page);
     assert.deepEqual(errors, []);
     console.log(`PASS AI chat summary regressions in ${await browser.version()}`);
+  } else if (process.env.BROWSER_TEST_SUITE === 'legacy-import') {
+    await checkLegacyImport(page, {python: resolve(python), directory});
+    assert.deepEqual(errors, []);
+    console.log(`PASS legacy import regressions in ${await browser.version()}`);
   } else if (process.env.BROWSER_TEST_SUITE === 'restore-session') {
     await checkRestoreSession(page);
     assert.deepEqual(errors, []);
@@ -406,6 +421,42 @@ try {
     await checkEditPreviews(page);
     assert.deepEqual(errors, []);
     console.log(`PASS edit preview regressions in ${await browser.version()}`);
+  } else if (process.env.BROWSER_TEST_SUITE === 'find-in-files') {
+    await checkFindInFiles(page);
+    assert.deepEqual(errors, []);
+    console.log(`PASS find in file regressions in ${await browser.version()}`);
+  } else if (process.env.BROWSER_TEST_SUITE === 'find-in-diagrams') {
+    await checkFindInDiagrams(page);
+    assert.deepEqual(errors, []);
+    console.log(`PASS find in diagram regressions in ${await browser.version()}`);
+  } else if (process.env.BROWSER_TEST_SUITE === 'image-sizes') {
+    await checkImageSizes(page);
+    assert.deepEqual(errors, []);
+    console.log(`PASS image size regressions in ${await browser.version()}`);
+  } else if (process.env.BROWSER_TEST_SUITE === 'background-work') {
+    await checkBackgroundWork(page);
+    assert.deepEqual(errors, []);
+    console.log(`PASS background work regressions in ${await browser.version()}`);
+  } else if (process.env.BROWSER_TEST_SUITE === 'folder-drops') {
+    await checkFolderDrops(page);
+    assert.deepEqual(errors, []);
+    console.log(`PASS folder drop regressions in ${await browser.version()}`);
+  } else if (process.env.BROWSER_TEST_SUITE === 'folder-note-drag') {
+    await checkFolderNoteDrag(page);
+    assert.deepEqual(errors, []);
+    console.log(`PASS folder note drag regressions in ${await browser.version()}`);
+  } else if (process.env.BROWSER_TEST_SUITE === 'edge-tabs') {
+    await checkEdgeTabs(page);
+    assert.deepEqual(errors, []);
+    console.log(`PASS edge tab regressions in ${await browser.version()}`);
+  } else if (process.env.BROWSER_TEST_SUITE === 'folded-files') {
+    await checkFoldedFiles(page);
+    assert.deepEqual(errors, []);
+    console.log(`PASS folded file regressions in ${await browser.version()}`);
+  } else if (process.env.BROWSER_TEST_SUITE === 'file-text-snippets') {
+    await checkFileTextSnippets(page);
+    assert.deepEqual(errors, []);
+    console.log(`PASS file text snippet regressions in ${await browser.version()}`);
   } else if (process.env.BROWSER_TEST_SUITE === 'email-files') {
     await checkEmailFiles(page);
     assert.deepEqual(errors, []);
@@ -882,7 +933,7 @@ try {
   const password = 'Smoke-only-password!2026';
   await page.evaluate(async password => {
     const {buildSessionHeaders} = await import('/static/js/modules/session-auth.js');
-    const response = await fetch('/api2/auth/settings/password/create', {method:'POST', headers:buildSessionHeaders(true), body:JSON.stringify({password})});
+    const response = await fetch('/api2/auth/settings/password/create', {method:'POST', headers:buildSessionHeaders(true), body:JSON.stringify({password, keeps_window_logged_in: false})});
     if (!response.ok) throw new Error(`Password setup failed: ${response.status}`);
   }, password);
   await page.reload();

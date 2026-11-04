@@ -5,10 +5,6 @@
       "tags": ["tags", "show", "hide", "toggle", "view", "notes", "list"]
     },
     {
-      "id": "pref.show_tab_ui",
-      "tags": ["tabs", "tab", "contexts", "context", "search", "searches", "saved", "view", "show", "hide", "toggle"]
-    },
-    {
       "id": "pref.show_search_results_count",
       "tags": ["search", "result", "results", "count", "number", "total", "show", "hide", "toggle", "view"]
     },
@@ -205,8 +201,16 @@
       "tags": ["vault", "vaults", "namespace", "namespaces", "open", "switch", "switcher", "change", "go", "select", "new", "same", "tab", "window", "launch", "database", "instance", "workspace"]
     },
     {
+      "id": "form.import_wizard",
+      "tags": ["import", "obsidian", "vault", "markdown", "md", "folder", "notes", "files", "bring", "migrate", "wizard"]
+    },
+    {
+      "id": "action.toggle_virtual_folders",
+      "tags": ["virtual", "folders", "folder", "tree", "sidebar", "explorer", "files"]
+    },
+    {
       "id": "form.create_namespace",
-      "tags": ["vault", "vaults", "namespace", "namespaces", "create", "new", "add", "ports", "database", "instance", "workspace"]
+      "tags": ["vault", "vaults", "namespace", "namespaces", "create", "new", "add", "ports", "database", "instance", "workspace", "setup", "wizard", "onboarding"]
     },
     {
       "id": "form.manage_namespace_ports",
@@ -235,6 +239,10 @@
     {
       "id": "form.restore_backup",
       "tags": ["backup", "restore", "recover", "database", "sqlite", "snapshot"]
+    },
+    {
+      "id": "form.bring_in_old_metalist",
+      "tags": ["old", "legacy", "previous", "metalist", "import", "convert", "migrate", "bring", "notes"]
     },
     {
       "id": "action.logout",
@@ -311,6 +319,10 @@
     {
       "id": "action.alphabetize_root_notes_desc",
       "tags": ["alphabetize", "alphabetical", "alpha", "sort", "content", "root", "notes", "current", "view", "search", "desc", "descending", "z", "a", "journal", "order", "reorder"]
+    },
+    {
+      "id": "action.delete_notes_in_view",
+      "tags": ["delete", "remove", "clear", "erase", "wipe", "notes", "all", "everything", "current", "view", "search", "results", "bulk"]
     },
     {
       "id": "action.reset_updated_at_to_created_at",

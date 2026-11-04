@@ -171,6 +171,8 @@ test('renderMermaidCodeElement replaces valid source with accessible SVG', async
     assert.equal(diagram.getAttribute('role'), 'img');
     assert.equal(diagram.getAttribute('aria-label'), 'Mermaid diagram');
     assert.equal(diagram.getAttribute('data-mermaid-state'), 'rendered');
+    // Its code, kept for find (docs/ui/find.md, "Diagrams").
+    assert.equal(diagram.getAttribute('data-mermaid-source'), source);
     assert.match(diagram.innerHTML, /^<svg/);
     assert.equal(mermaidApi.calls.boundElement, diagram);
 });

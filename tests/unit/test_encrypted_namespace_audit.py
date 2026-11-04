@@ -796,3 +796,84 @@ def test_a_plaintext_icon_or_site_in_an_encrypted_namespace_is_reported(tmp_path
     assert report.startup_allowed is False
     assert (LINK_ICONS_TABLE, column) in {(finding.table, finding.field) for finding in report.fatal_findings}
     assert "secret.example.com" not in report.render_text()
+
+
+# Version 13 adds file_texts (a file's text and bloom filter, for search: docs/ready-to-build/
+# folder-import-and-file-previews.md, "Searchable file text"). Before 13 the table may be missing
+# or already added on open; from 13 it is required, and its two payloads are encrypted.
+@pytest.mark.parametrize(("version", "has_table", "allowed"), [(12, False, True), (12, True, True), (13, True, True), (13, False, False)])
+def test_version_13_requires_the_file_texts_table(tmp_path: Path, version: int, has_table: bool, allowed: bool) -> None:
+    namespaces_directory = tmp_path / "namespaces"
+    database_path = _create_namespace_database(namespaces_directory, namespace="private", encryption_enabled=True)
+    with sqlite3.connect(database_path) as connection:
+        connection.execute(f"PRAGMA user_version = {version}")
+    connection = sqlite3.connect(resolve_file_database_path(database_path))
+    initialize_file_schema(connection)
+    if not has_table:
+        connection.execute("DROP TABLE file_texts")
+    connection.commit()
+    connection.close()
+
+    report = audit_all_namespaces(namespaces_directory=namespaces_directory)
+
+    assert report.startup_allowed is allowed, report.render_text()
+    if not allowed:
+        assert {(finding.table, finding.field) for finding in report.fatal_findings} == {("file_texts", "*")}
+
+
+def _insert_file_text(connection: sqlite3.Connection, *, file_id: str, text: bytes, filter_data: bytes, nonce_byte: int | None) -> None:
+    # Nonces must never repeat: the text's and the filter's differ.
+    text_nonce, filter_nonce, tag = None, None, None
+    if nonce_byte is not None:
+        text_nonce, filter_nonce, tag = bytes([nonce_byte]) * 12, bytes([nonce_byte + 1]) * 12, b"t" * 16
+    connection.execute(
+        "INSERT INTO file_texts VALUES (?, ?, ?, ?, ?, ?, ?, 0, 1, 'now', 1, 1)",
+        (file_id, text, text_nonce, tag, filter_data, filter_nonce, tag),
+    )
+
+
+def test_audit_accepts_encrypted_file_texts_and_reports_plaintext_ones(tmp_path: Path) -> None:
+    namespaces_directory = tmp_path / "namespaces"
+    database_path = _create_namespace_database(namespaces_directory, namespace="private", encryption_enabled=True)
+    connection = sqlite3.connect(resolve_file_database_path(database_path))
+    initialize_file_schema(connection)
+    _insert_encrypted_file(connection, file_id="sealed", nonce_byte=10)
+    _insert_encrypted_file(connection, file_id="open", nonce_byte=20)
+    _insert_file_text(connection, file_id="sealed", text=b"ciphertext", filter_data=b"cipherfilter", nonce_byte=30)
+    _insert_file_text(connection, file_id="open", text=b"rent is due on the first", filter_data=b"\x00\x04bits", nonce_byte=None)
+    connection.commit()
+    connection.close()
+
+    report = audit_all_namespaces(namespaces_directory=namespaces_directory)
+
+    assert report.startup_allowed is False
+    assert {(finding.table, finding.field) for finding in report.fatal_findings} == {
+        ("file_texts", "text_data"), ("file_texts", "filter_data"),
+    }
+    assert "rent is due" not in report.render_text()
+
+
+# Version 14 adds file_texts' reader and filter versions (docs/ready-to-build/folder-import-and-
+# file-previews.md, "Text versions"). Before 14 they may be missing or already added on open; from
+# 14 they are required.
+@pytest.mark.parametrize(("version", "has_additions", "allowed"), [(13, False, True), (13, True, True), (14, True, True), (14, False, False)])
+def test_version_14_requires_text_versions(tmp_path: Path, version: int, has_additions: bool, allowed: bool) -> None:
+    namespaces_directory = tmp_path / "namespaces"
+    database_path = _create_namespace_database(namespaces_directory, namespace="private", encryption_enabled=True)
+    with sqlite3.connect(database_path) as connection:
+        connection.execute(f"PRAGMA user_version = {version}")
+    connection = sqlite3.connect(resolve_file_database_path(database_path))
+    initialize_file_schema(connection)
+    if not has_additions:
+        connection.execute("ALTER TABLE file_texts DROP COLUMN reader_version")
+        connection.execute("ALTER TABLE file_texts DROP COLUMN filter_version")
+    connection.commit()
+    connection.close()
+
+    report = audit_all_namespaces(namespaces_directory=namespaces_directory)
+
+    assert report.startup_allowed is allowed, report.render_text()
+    if not allowed:
+        assert {(finding.table, finding.field) for finding in report.fatal_findings} == {
+            ("file_texts", "reader_version"), ("file_texts", "filter_version"),
+        }

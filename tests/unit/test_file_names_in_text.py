@@ -10,6 +10,7 @@ import pytest
 import app.services.content_formatting as content_formatting
 import app.services.search_text as search_text
 from app.services.file_registry import FileDetails, FileRegistry
+from app.services.text_terms import text_term_matches
 
 PDF_ID = "9a7ddc26-a797-4af7-a8ab-f4ac3ca43357"
 IMAGE_ID = "1c9e7b52-3f4a-4d8e-a6b0-7e2f9d1c5a38"
@@ -62,8 +63,8 @@ def test_referenced_file_names_lists_each_file_once_in_order(registry) -> None:
 
 def test_search_text_holds_the_names_of_the_files_a_note_references(registry) -> None:
     text = search_text.build_searchable_text_casefold(f"<div>no tags here</div><div>![[{PDF_ID}]]</div>", "")
-    assert search_text.text_term_matches("congratulation", text)
-    assert search_text.text_term_matches("_onlinereport", text) is False
+    assert text_term_matches("congratulation", text)
+    assert text_term_matches("_onlinereport", text) is False
     # A note's own reference ([[id]] of a note) adds nothing.
     assert search_text.build_searchable_text_casefold(f"<div>[[{NOTE_ID}]]</div>", "") == f"[[{NOTE_ID}]]".casefold()
 

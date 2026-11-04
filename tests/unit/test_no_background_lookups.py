@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import sqlite3
 
+from app.services.credential_display import CredentialDisplay
 import app.services.link_titles as link_titles
 from app.db.schema import initialize_schema
 from app.security.encryption import clear_encryption_key
@@ -28,7 +29,7 @@ def test_a_render_asks_for_lookups_and_none_runs() -> None:
     try:
         format_note_content_for_view(
             content_html='<div>https://example.org/untitled</div><div><a href="https://example.net/x">Label</a></div>',
-            tags="", redact_credentials=False,
+            tags="", credentials=CredentialDisplay.DOTS,
         )
     finally:
         link_title_store.reset()

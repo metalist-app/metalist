@@ -108,9 +108,24 @@ async function installTransitionRecorder(page) {
       const ghost = document.querySelector('.reference-slide-ghost');
       const ghostAnimations = [];
       if (ghost !== null) ghostAnimations.push(...describe(ghost));
+      // How far the still copy draws each note on screen from where the live column drew
+      // it, the moment the copy covers the column (agreed 2026-10-31: it was 2 px lower).
+      const ghostOffsets = [];
+      if (state === 'pending' && ghost !== null) {
+        const liveNotes = [...document.querySelectorAll('#notes-container .note')];
+        const copies = [...ghost.querySelectorAll('.note')];
+        liveNotes.forEach((note, index) => {
+          const live = note.getBoundingClientRect();
+          if (live.bottom < 0 || live.top > window.innerHeight) return;
+          const copy = copies[index].getBoundingClientRect();
+          ghostOffsets.push({top: copy.top - live.top, left: copy.left - live.left});
+        });
+      }
       window.__referenceTransitions.push({
         state,
         ghost: ghostAnimations,
+        hasGhost: ghost !== null,
+        ghostOffsets,
         column: describe(document.getElementById('notes-container')),
         isChipAnimating: row.classList.contains('is-chip-animating'),
         isChipShown: document.getElementById('reference-source-indicator').classList.contains('is-shown'),
@@ -143,7 +158,21 @@ async function navigate(page, action) {
   const records = await page.evaluate(count => window.__referenceTransitions.slice(count), before);
   const playing = records.filter(record => record.state === 'playing');
   assert.equal(playing.length, 1, 'one transition played');
+  expectCopyInPlace(records.filter(record => record.state === 'pending'));
   return playing[0];
+}
+
+// Before it slides, the still copy of the column shows every note exactly where the live
+// column showed it: going deeper and coming back, scrolled or not.
+function expectCopyInPlace(pending) {
+  assert.equal(pending.length, 1, 'one transition began');
+  // Without motion (or with Reduce Motion's fade) there is no copy.
+  if (!pending[0].hasGhost) return;
+  assert.ok(pending[0].ghostOffsets.length > 0, 'the copy covers notes on screen');
+  for (const offset of pending[0].ghostOffsets) {
+    expectSameSpot(offset.top, 0, 'the still copy shows each note at its height');
+    expectSameSpot(offset.left, 0, 'the still copy shows each note at its side');
+  }
 }
 
 function expectSlide(record, direction, label) {
@@ -358,13 +387,6 @@ async function clickTab(page, tabId) {
   await pause(SETTLE_MS);
   await page.click(item);
   await idle(page);
-}
-
-async function showTabs(page, isShown) {
-  await page.evaluate(async isShown => {
-    const {CommandPalette} = await import('/static/js/modules/command-palette/command-palette-controller.js');
-    await CommandPalette.applyPreference('pref.show_tab_ui', isShown);
-  }, isShown);
 }
 
 // Case 1 (and "where the target lands is unchanged"): a reference followed from the search.
@@ -590,7 +612,6 @@ async function checkReducedMotion(page, ids) {
 // Case 11, and reference views kept with the tabs: no animation on a reload, a tab
 // switch, or opening a tab already in a reference view; another window labels them too.
 async function checkNoAnimationWithoutNavigation(page, ids) {
-  await showTabs(page, true);
   const searchTabId = (await barState(page)).activeTabId;
   await navigate(page, () => clickReferenceLink(page, ids.holder, ids.target));
   const shown = await barState(page);
@@ -623,7 +644,6 @@ async function checkNoAnimationWithoutNavigation(page, ids) {
   assert.deepEqual(await tabLabels(page), expectedTabs, 'after a reload the tabs are labeled the same way');
 
   await navigate(page, () => page.click('#reference-source-indicator-clear'));
-  await showTabs(page, false);
 }
 
 async function inputChipsState(page) {
@@ -681,6 +701,7 @@ async function checkInputChips(page) {
   await idle(page);
   chips = await inputChipsState(page);
   assert.deepEqual([chips.sort.shown, chips.sort.animating], [true, false], 'after a reload the sort chip is simply there');
+  assert.deepEqual([chips.untagged.shown, chips.untagged.animating], [true, false], 'and so is the Untagged chip: the tab keeps it');
 
   // × on the sort chip returns to Normal, not reversed.
   await page.click('#root-sort-indicator-clear');
@@ -690,15 +711,18 @@ async function checkInputChips(page) {
     return mode.activeTabSortMode;
   }), 'normal', '× ends the sort order and its direction');
 
-  // Typing a new search ends the sort and Untagged.
+  // Typing a new search keeps the sort, which stays until its × ends it (the maintainer,
+  // 2026-11-02, docs/ui/state-handling.md); Untagged still ends.
   await setSortMode(page, 'alphabetical');
   await searchFor(page, SEARCH);
   chips = await inputChipsState(page);
-  assert.deepEqual([chips.sort.shown, chips.untagged.shown], [false, false], 'a new search ends the sort and Untagged');
+  assert.deepEqual([chips.sort.shown, chips.untagged.shown], [true, false], 'a new search keeps the sort and ends Untagged');
   assert.equal(await page.evaluate(async () => {
     const {ModeContextInstance: mode} = await import('/static/js/modules/mode-manager/mode-context.js');
     return mode.activeTabSortMode;
-  }), 'normal', 'a new search runs in normal order');
+  }), 'alphabetical', 'a new search runs in the tab\'s sort');
+  await page.click('#root-sort-indicator-clear');
+  await idle(page);
 }
 
 export async function checkReferenceViews(page) {

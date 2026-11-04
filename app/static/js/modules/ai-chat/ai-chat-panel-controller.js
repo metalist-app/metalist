@@ -101,7 +101,7 @@ function requireElement(id, constructor) {
 
 // A passing floating card about the chat (docs/ui/floating-messages.md).
 function showChatNotice(text, type) {
-    FloatingMessages.show({ text, type, detail: '', isClosable: true, isLasting: false, key: null });
+    FloatingMessages.show({ text, type, detail: '', isClosable: true, isLasting: false, key: null, action: null });
 }
 
 // The id a rendered chat item carries: a message's, a summary's or the divider's.
@@ -1040,6 +1040,11 @@ class AiChatPanelController {
         const width = Math.round(this._elements.panel.getBoundingClientRect().width);
         if (!Number.isInteger(width) || width < AI_CHAT_MINIMUM_WIDTH || width > AI_CHAT_MAXIMUM_WIDTH) {
             throw new Error('Rendered AI chat width is outside the persisted range');
+        }
+        // Released where it was pressed (or a width that rounds to the saved one): nothing to
+        // save, and the preferences refuse a value they already hold.
+        if (width === this._getPanelWidth()) {
+            return;
         }
         await this._savePanelWidth(width);
     }

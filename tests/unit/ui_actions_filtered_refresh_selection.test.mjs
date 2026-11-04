@@ -69,9 +69,10 @@ function refreshHarness({ isRemoved, isAnimated, isFullSnapshot }) {
             getNoteContentHTML: () => '<p>saved</p>', getNoteContent: () => ({}),
             setNoteEditable() {}, revealCaret() {}, focusNoteEdge() {},
         },
-        updateSearchResultsCount() {}, updateRootSortIndicator() {}, updateDateRangeIndicator() {}, updateFileFilterIndicator() {}, updateUntaggedViewIndicator() {}, updateReferenceSourceIndicator() {},
+        updateSearchResultsCount() {}, updateRootSortIndicator() {}, updateDateRangeIndicator() {}, updateFileFilterIndicator() {}, async updateVirtualFolders() {}, updateUntaggedViewIndicator() {}, updateReferenceSourceIndicator() {},
         rebuildRootDateSeparators() {}, async refreshBacklinksPanel() {},
         captureViewportRoot: () => null, holdViewportRoot() {},
+        measureVisibleRootRange: () => null,
     };
     const refresh = new Function(...Object.keys(dependencies),
         `let viewRequestInFlight = false;\n${refreshSource}\nreturn actionRefreshAndMaybeSelect;`,

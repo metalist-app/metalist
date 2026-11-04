@@ -3,6 +3,7 @@ from __future__ import annotations
 from http import HTTPStatus
 import logging
 import urllib.parse
+from collections.abc import Mapping
 from typing import Dict
 
 from fastapi import APIRouter, HTTPException, Request
@@ -10,12 +11,16 @@ from fastapi.responses import Response
 from pydantic import BaseModel
 
 from app.api.note_requests import (
+    CountNotesInViewRequest,
+    DeleteNotesInViewRequest,
     ViewScope,
     ViewDiffRequest,
+    FindFileSnippetRequest,
     FindInListRequest,
     UpdateTabStateRequest,
     UpdateTabDateFilterRequest,
     UpdateTabFileFilterRequest,
+    UpdateTabUntaggedViewRequest,
     UpdateTabSortModeRequest,
     CreateNewTabRequest,
     DeleteTabRequest,
@@ -34,7 +39,6 @@ from app.api.note_requests import (
     CreateNoteTopRequest,
     CreateSiblingRequest,
     CreateChildRequest,
-    CreateFilePreviewChildRequest,
     SaveNoteRequest,
     AddSelectedTextTagRequest,
     AcceptTagProposalRequest,
@@ -44,6 +48,9 @@ from app.api.note_requests import (
     ResolveRobotProposalsRequest,
     SplitNoteRequest,
     ToggleTodoDoneRequest,
+    ToggleMarkdownCalloutRequest,
+    ToggleMarkdownFoldRequest,
+    ToggleMarkdownTaskRequest,
     UnformatNoteContentRequest,
     ResizeNoteImageRequest,
     EditingImageSizesRequest,
@@ -76,21 +83,24 @@ from app.services.tag_properties import PROPERTY_SUGGESTIONS_IN_TAG_BAR
 from app.services.tag_properties import PropertySuggestion
 from app.services.tag_properties import has_property_syntax
 from app.services.subtree_stats import STATS_STYLES, suggest_summary_properties, typed_summary_property
+from app.services.quoted_values import token_end
 from app.services.tag_properties import is_property_term, is_stats_term, is_tagless_property_term
 from app.services.root_date_filter import RootDateFilter
 from app.services.root_date_filter import make_root_date_filter
 from app.services.snapshot import build_view_state
+from app.services.virtual_folders import NO_FOLDER, search_for_new_note, search_in_folder, virtual_folder_state
 from app.services.snapshot import find_in_view
 from app.services.snapshot import resolve_search_scope
-from app.services.snapshot import resolve_view_scope_membership
+from app.services.snapshot import ResolvedViewScope, resolve_view_scope_membership
+from app.usecases.delete_notes_in_view import CmdDeleteNotesInView, notes_to_delete
 from app.services.note_store import store as note_store
 from app.services.exception_capture import CapturedExceptionContext
 from app.usecases.create_note import CmdCreateNote
 from app.usecases.base import QueryCommand
 from app.usecases.create_sibling import CmdCreateSibling
 from app.services.file_registry import file_registry
+from app.services.file_text_snippets import file_text_snippet
 from app.usecases.create_child import CmdCreateChild
-from app.usecases.create_file_preview_child import CmdCreateFilePreviewChild
 from app.usecases.update_content import CmdUpdateContent
 from app.usecases.prefetch_link_titles import CmdPrefetchLinkTitles
 from app.services.link_title_retry import (
@@ -123,6 +133,7 @@ from app.usecases.set_collapse_in_context import (
 )
 from app.usecases.copy_note import CmdCopyNote
 from app.usecases.toggle_todo_done import CmdToggleTodoDone
+from app.usecases.toggle_markdown_task import CmdToggleMarkdownCallout, CmdToggleMarkdownFold, CmdToggleMarkdownTask
 from app.usecases.run_shell import CmdRunShellStart
 from app.usecases.run_shell import CmdRunShellStatus
 from app.usecases.paste_sibling import CmdPasteSibling
@@ -177,7 +188,7 @@ from app.usecases.prioritize import list_prioritize_tag_suggestions
 from app.services.selected_text_tag import SelectedTextTagValidationError
 from app.api.request_auth import require_request_auth_token
 from app.security.shell_execution import is_loopback_host
-from app.services.input_errors import InputRejected
+from app.services.input_errors import InputRejected, ResourceNotFound
 from app.services.editing_image_sizes import editing_image_size_factors
 from app.services.memory_breakdown import measure_memory_breakdown
 from app.services.memory_usage import describe_memory_usage
@@ -279,6 +290,20 @@ def _resolve_tab_sort_mode(tab_id: object) -> str:
     return sort_mode
 
 
+def _in_tab_folder(search: str, tab_id: str) -> str:
+    """The view's search narrowed to the tab's virtual folder, when one is chosen (an
+    experiment, app/services/virtual_folders.py; exports and the AI read the search alone)."""
+    if not isinstance(search, str):
+        raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail="search must be a string")
+    return search_in_folder(search, virtual_folder_state.filter_of(tab_id))
+
+
+def _new_note_search(search: str | None, tab_id: str) -> str | None:
+    """The search a new note takes its tags from: in a tab narrowed to a virtual folder (an
+    experiment), the note is filed in that folder, so the view shows it."""
+    return search_for_new_note(search, virtual_folder_state.filter_of(tab_id))
+
+
 def _resolve_tab_file_filter(tab_id: str) -> str | None:
     """The tab's Files filter kind (None: every note)."""
     if not isinstance(tab_id, str) or tab_id == "":
@@ -334,8 +359,17 @@ def view_diff(payload: ViewDiffRequest):
     touch_client(client_id)
     editing_note_id = payload["editingNoteId"]
     find_reveal_note_id = payload["findRevealNoteId"]
-    search = payload["search"]
     tab_id = payload["tabId"]
+    search = payload["search"]
+    visible_search = search
+    # A virtual folder or note chosen in the tree narrows the roots the view lists, as a Files
+    # filter does: the browser pages through the narrowed count, and gets its own search back.
+    is_narrowed_by_tree = virtual_folder_state.filter_of(tab_id) != NO_FOLDER
+    # No search (null or "") with a virtual folder chosen is that folder alone.
+    if isinstance(search, str):
+        search = _in_tab_folder(search, tab_id)
+    elif search is None and virtual_folder_state.filter_of(tab_id) != NO_FOLDER:
+        search = _in_tab_folder("", tab_id)
     undo_context = payload["undoContext"]
     tab_view_empty = payload["tabViewEmpty"]
     visible_top_root_id = payload["visibleTopRootId"]
@@ -420,11 +454,11 @@ def view_diff(payload: ViewDiffRequest):
         "updateUUID": update_uuid,
         "version": VERSION,
         "currentClientId": client_id,
-        "searchQuery": search,
+        "searchQuery": visible_search,
         "searchHighlightPhrases": state.metadata["searchHighlightPhrases"],
         "sortMode": sort_mode,
         "isUntaggedView": is_untagged_view,
-        "rootCountTotal": state.metadata["rootCountTotal"],
+        "rootCountTotal": state.metadata["searchRootCountTotal"] if is_narrowed_by_tree else state.metadata["rootCountTotal"],
         "searchRootCountTotal": state.metadata["searchRootCountTotal"],
         "rootSortBuckets": state.metadata["rootSortBuckets"],
         "rootWindowStart": state.metadata["rootWindowStart"],
@@ -538,6 +572,16 @@ def update_tab_file_filter(payload: UpdateTabFileFilterRequest) -> Dict[str, obj
     return response
 
 
+@router.post("/notes/tab-state/untagged-view")
+@transactional_route
+def update_tab_untagged_view(payload: UpdateTabUntaggedViewRequest) -> Dict[str, object]:
+    """Show a tab's untagged notes, or its search again."""
+    response = tab_state_store.set_untagged_view(tab_id=payload["tabId"], is_untagged_view=payload["isUntaggedView"])
+    if response["changed"] is True:
+        reset_undo_stack(payload["clientId"], payload["undoContext"])
+    return response
+
+
 @router.post("/notes/tab-state/new-tab")
 @transactional_route
 def create_new_tab(payload: CreateNewTabRequest) -> Dict[str, object]:
@@ -546,14 +590,18 @@ def create_new_tab(payload: CreateNewTabRequest) -> Dict[str, object]:
     copy_from_tab_id = payload["copyFromTabId"]
     capture = CapturedExceptionContext(InputRejected, boundary='app/api/routes/notes.py:create_new_tab:capture')
     with capture:
-        response = tab_state_store.create_tab(copy_from_tab_id=copy_from_tab_id)
+        response = tab_state_store.create_tab(copy_from_tab_id=copy_from_tab_id, copies_view=payload["copiesView"])
     if capture.captured_exception is not None:
         raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail="Invalid or stale tab state") from capture.captured_exception
+    new_tab_id = response["newTabId"]
+    assert isinstance(new_tab_id, str), "create_tab always returns the new tab's id as a string"
     # The browser clones the source tab's DOM into the new tab, so the new tab
     # starts from the source tab's warm view.
     view_cache.copy_tab(
-        client_id=payload["clientId"], source_tab_id=copy_from_tab_id, target_tab_id=response["newTabId"],
+        client_id=payload["clientId"], source_tab_id=copy_from_tab_id, target_tab_id=new_tab_id,
     )
+    if payload["copiesView"]:
+        virtual_folder_state.copy_filter(copy_from_tab_id, new_tab_id)
     return response
 
 
@@ -645,15 +693,32 @@ def search_suggestions(request: Request, payload: SearchSuggestionsRequest) -> D
 
 
 def _typed_property_term(query: str) -> str | None:
-    """The property term being typed at the end of a search, without its - or +."""
-    if query == "" or query[-1].isspace():
+    """The property term being typed at the end of a search, without its - or +. A quoted
+    value it ends in may still be open, spaces and all (:author="Ursula Le)."""
+    term_start = _last_term_start(query)
+    if term_start is None:
         return None
-    term = query.split()[-1].lstrip("+-")
-    if '"' in term or "'" in term:
+    term = query[term_start:].lstrip("+-")
+    if term.startswith(("\"", "'")):
         return None
     if not is_property_term(term) and not is_stats_term(term) and not is_tagless_property_term(term):
         return None
     return term
+
+
+def _last_term_start(query: str) -> int | None:
+    """Where the search's last term starts when the query ends inside it, else None (it
+    ends in a space after the term)."""
+    index = 0
+    term_start = None
+    while index < len(query):
+        if query[index].isspace():
+            index += 1
+            term_start = None
+            continue
+        term_start = index
+        index = token_end(query, index)
+    return term_start
 
 
 def _property_suggestions_response(suggestions: list[PropertySuggestion], *, personalized: bool) -> Dict[str, object]:
@@ -765,6 +830,7 @@ def find_in_list(payload: FindInListRequest) -> Dict[str, object]:
     else:
         # A search that does not parse is answered as rejected input, as the view does.
         parse_search_query(search)
+    search = _in_tab_folder(search, payload["tabId"])
     if payload["text"].strip() == "":
         raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail="text must hold more than spaces")
     window = find_in_view(
@@ -780,6 +846,7 @@ def find_in_list(payload: FindInListRequest) -> Dict[str, object]:
                 "noteId": match.note_id, "rootId": match.root_id, "rootIndex": match.root_index,
                 "contentCount": match.content_count, "commentCount": match.comment_count,
                 "previewCount": match.preview_count, "isUnderFoldedNote": match.is_under_folded_note,
+                "fileIds": list(match.file_ids),
             }
             for match in window.matches
         ],
@@ -787,6 +854,18 @@ def find_in_list(payload: FindInListRequest) -> Dict[str, object]:
         "endRootIndex": window.end_root_index,
         "rootCount": window.root_count,
     }
+
+
+@router.post("/notes/find/file-snippet")
+@transactional_route
+def find_file_snippet(payload: FindFileSnippetRequest) -> Dict[str, object]:
+    """The snippet find shows under a file's card when it stops on the file: a line of its
+    text around the first place the find text is (docs/ui/find.md). Empty when it isn't there."""
+    if payload["text"].strip() == "":
+        raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail="text must hold more than spaces")
+    if not file_registry.has_file(payload["fileId"]):
+        raise ResourceNotFound(f"There is no file {payload['fileId']}.")
+    return {"snippet": file_text_snippet(payload["fileId"], (payload["text"],))}
 
 
 @router.get("/notes/memory-usage/breakdown")
@@ -1157,7 +1236,7 @@ def create_note_top(request: Request, body: CreateNoteTopRequest):
     viewport = _require_viewport(body)
     cmd = CmdCreateNote(
         first_visible_note_id=body["first_visible_note_id"],
-        search_query=body["search_query"],
+        search_query=_new_note_search(body["search_query"], body["tabId"]),
         token=token,
         client_id=body["clientId"],
         undo_context=body["undoContext"],
@@ -1174,7 +1253,7 @@ def create_sibling(request: Request, note_id: str, body: CreateSiblingRequest):
     _require_note_present(note_id, context="notes.new-sibling")
     cmd = CmdCreateSibling(
         reference_note_id=note_id,
-        search_query=body["search_query"],
+        search_query=_new_note_search(body["search_query"], body["tabId"]),
         token=token,
         client_id=body["clientId"],
         undo_context=body["undoContext"],
@@ -1191,28 +1270,7 @@ def create_child(request: Request, note_id: str, body: CreateChildRequest):
     _require_note_present(note_id, context="notes.new-child")
     cmd = CmdCreateChild(
         parent_note_id=note_id,
-        search_query=body["search_query"],
-        token=token,
-        client_id=body["clientId"],
-        undo_context=body["undoContext"],
-        viewport=viewport,
-    )
-    return cmd.execute()
-
-
-@router.post("/notes/file-preview-child/{note_id}")
-@transactional_route
-def create_file_preview_child(request: Request, note_id: str, body: CreateFilePreviewChildRequest):
-    token = _require_bearer_token(request)
-    viewport = _require_viewport(body)
-    _require_note_present(note_id, context="notes.file-preview-child")
-    file_id = body["fileId"]
-    if not file_registry.has_file(file_id):
-        raise HTTPException(status_code=HTTPStatus.NOT_FOUND, detail=f"File not found: {file_id}")
-    cmd = CmdCreateFilePreviewChild(
-        parent_note_id=note_id,
-        file_id=file_id,
-        search_query=body["search_query"],
+        search_query=_new_note_search(body["search_query"], body["tabId"]),
         token=token,
         client_id=body["clientId"],
         undo_context=body["undoContext"],
@@ -1318,13 +1376,36 @@ def add_tag_proposals(request: Request, note_id: str, body: AddTagProposalsReque
 def _view_note_ids(body: ViewScope) -> frozenset[str]:
     """The notes a tab's view shows (as /notes/view resolves them): what a robot count counts, and
     what ranks first in the `[[` suggestions."""
+    return _resolved_view(body).allowed_note_ids
+
+
+def _resolved_view(body: ViewScope) -> ResolvedViewScope:
     return resolve_view_scope_membership(
-        search=body["search"],
+        search=_in_tab_folder(body["search"], body["tabId"]),
         sort_mode=_resolve_tab_sort_mode(body["tabId"]),
         date_filter=_resolve_tab_date_filter(body["tabId"]),
         file_filter=_resolve_tab_file_filter(body["tabId"]),
         is_untagged_view=body["isUntaggedView"],
-    ).allowed_note_ids
+    )
+
+
+@router.post("/notes/view/delete-count")
+@transactional_route
+def count_notes_to_delete_in_view(body: CountNotesInViewRequest) -> dict[str, object]:
+    deletion = notes_to_delete(_resolved_view(body))
+    return {"noteCount": deletion.note_count, "isWholeVault": deletion.is_whole_vault}
+
+
+@router.post("/notes/view/delete")
+@transactional_route
+def delete_notes_in_view(body: DeleteNotesInViewRequest) -> dict[str, object]:
+    _require_viewport(body)
+    return CmdDeleteNotesInView(
+        scope=_resolved_view(body),
+        expected_note_count=body["expectedNoteCount"],
+        client_id=body["clientId"],
+        undo_context=body["undoContext"],
+    ).execute()
 
 
 @router.post("/notes/{note_id}/tag-proposals/open")
@@ -1412,6 +1493,63 @@ def toggle_todo_done(request: Request, note_id: str, body: ToggleTodoDoneRequest
     _require_note_present(note_id, context="notes.toggle-todo")
     cmd = CmdToggleTodoDone(
         note_id=note_id,
+        token=token,
+        client_id=client_id,
+        undo_context=body["undoContext"],
+        viewport=viewport,
+    )
+    return cmd.execute()
+
+
+@router.post("/notes/{note_id}/toggle-markdown-task")
+@transactional_route
+def toggle_markdown_task(request: Request, note_id: str, body: ToggleMarkdownTaskRequest):
+    client_id = body["clientId"]
+    viewport = _require_viewport(body)
+    token = _require_bearer_token(request)
+    _require_note_present(note_id, context="notes.toggle-markdown-task")
+    cmd = CmdToggleMarkdownTask(
+        note_id=note_id,
+        task_index=body["taskIndex"],
+        is_ticked=body["isTicked"],
+        token=token,
+        client_id=client_id,
+        undo_context=body["undoContext"],
+        viewport=viewport,
+    )
+    return cmd.execute()
+
+
+@router.post("/notes/{note_id}/toggle-markdown-callout")
+@transactional_route
+def toggle_markdown_callout(request: Request, note_id: str, body: ToggleMarkdownCalloutRequest):
+    client_id = body["clientId"]
+    viewport = _require_viewport(body)
+    token = _require_bearer_token(request)
+    _require_note_present(note_id, context="notes.toggle-markdown-callout")
+    cmd = CmdToggleMarkdownCallout(
+        note_id=note_id,
+        callout_index=body["calloutIndex"],
+        is_open=body["isOpen"],
+        token=token,
+        client_id=client_id,
+        undo_context=body["undoContext"],
+        viewport=viewport,
+    )
+    return cmd.execute()
+
+
+@router.post("/notes/{note_id}/toggle-markdown-fold")
+@transactional_route
+def toggle_markdown_fold(request: Request, note_id: str, body: ToggleMarkdownFoldRequest):
+    client_id = body["clientId"]
+    viewport = _require_viewport(body)
+    token = _require_bearer_token(request)
+    _require_note_present(note_id, context="notes.toggle-markdown-fold")
+    cmd = CmdToggleMarkdownFold(
+        note_id=note_id,
+        fold_index=body["foldIndex"],
+        is_open=body["isOpen"],
         token=token,
         client_id=client_id,
         undo_context=body["undoContext"],
@@ -1565,9 +1703,12 @@ def _move_note_to_edge(note_id: str, body: MoveNoteToTopEndpointRequest, *, comm
 def indent_note_endpoint(note_id: str, body: IndentNoteEndpointRequest):
     viewport = _require_viewport(body)
     _require_note_present(note_id, context="notes.indent")
+    visible_prev_id = body["visible_prev_id"]
+    if visible_prev_id is None:
+        raise TypeError("visible_prev_id must be a non-empty string")
     cmd = CmdIndent(
         note_id=note_id,
-        visible_prev_id=body["visible_prev_id"],
+        visible_prev_id=visible_prev_id,
         client_id=body["clientId"],
         undo_context=body["undoContext"],
         viewport=viewport,
@@ -1826,7 +1967,7 @@ def paste_child_endpoint(request: Request, target_note_id: str, body: PasteChild
     return cmd.execute()
 
 
-def _require_viewport(body: dict) -> dict:
+def _require_viewport(body: Mapping[str, object]) -> dict:
     viewport = body["viewport"]
     if not isinstance(viewport, dict):
         raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail="viewport is required")

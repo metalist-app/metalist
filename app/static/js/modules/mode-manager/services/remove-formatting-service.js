@@ -3,6 +3,7 @@ import {
     chooseStyleScope,
 } from './add-style-service.js';
 import { COMMENT_CLOSE, COMMENT_OPEN, MAX_WRAPPER_DEPTH } from './tag-syntax-service.js';
+import { tokenEnd } from '../../quoted-values.js';
 
 const WRAPPER_TYPES = Object.freeze([
     Object.freeze({ opener: '{', closer: '}' }),
@@ -62,9 +63,7 @@ function scanTopLevelTokens(tagBarText) {
             }
         }
 
-        while (index < tagBarText.length && !/\s/.test(tagBarText[index])) {
-            index += 1;
-        }
+        index = tokenEnd(tagBarText, start);
         tokens.push(tagBarText.slice(start, index));
     }
     return tokens;

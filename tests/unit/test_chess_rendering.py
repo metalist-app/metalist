@@ -4,6 +4,7 @@ import re
 
 import pytest
 
+from app.services.credential_display import CredentialDisplay
 from app.services.chess_rendering import parse_fen
 from app.services.content_formatting import format_note_content_for_view
 from app.services.content_formatting import list_known_meta_tag_terms
@@ -12,7 +13,7 @@ START = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
 
 
 def _render(content: str, tags: str) -> str:
-    return format_note_content_for_view(content_html=f"<p>{content}</p>", tags=tags, redact_credentials=False)
+    return format_note_content_for_view(content_html=f"<p>{content}</p>", tags=tags, credentials=CredentialDisplay.DOTS)
 
 
 def test_the_start_position_is_drawn_square_by_square() -> None:
@@ -81,7 +82,7 @@ def test_a_fen_that_does_not_parse_says_what_to_fix(fen: str, message: str) -> N
 
 def test_invalid_input_is_shown_escaped() -> None:
     rendered = format_note_content_for_view(
-        content_html="<p>&lt;script&gt;alert(1)&lt;/script&gt;</p>", tags="@chess", redact_credentials=False,
+        content_html="<p>&lt;script&gt;alert(1)&lt;/script&gt;</p>", tags="@chess", credentials=CredentialDisplay.DOTS,
     )
     assert "<script>" not in rendered
     assert "&lt;script&gt;alert(1)&lt;/script&gt;" in rendered

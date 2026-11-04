@@ -91,8 +91,8 @@ def test_a_tag_whose_last_note_is_gone_is_no_longer_listed() -> None:
 
     index.remove_many({"n1"})
 
-    assert "edgefixture" not in index.suggest_tag_completions(query="", limit=10), "nor in the search bar's suggestions"
-    assert "edgefixture" not in index.suggest_tag_completions(query="edge", limit=10)
+    assert "edgefixture" not in index.suggest_tag_completions(query="", limit=10, by_family=False), "nor in the search bar's suggestions"
+    assert "edgefixture" not in index.suggest_tag_completions(query="edge", limit=10, by_family=False)
     assert index.list_explicit_tag_frequencies() == {"kept": 1}
     assert index.list_tag_frequencies() == {"kept": 1}
     # Retagging empties a tag the same way.

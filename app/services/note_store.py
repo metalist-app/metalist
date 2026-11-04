@@ -10,7 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from datetime import datetime
 from threading import RLock
-from typing import Dict, FrozenSet, Iterable, List, Optional, Protocol, Sequence, Mapping, Set, Tuple
+from typing import Dict, FrozenSet, Iterable, List, Optional, Sequence, Mapping, Set, Tuple
 from types import SimpleNamespace
 import time
 import logging
@@ -34,7 +34,9 @@ from app.services.note_ordering import NoteOrdering
 from app.services.tag_ontology import TagOntology
 from app.services.note_image_tags import infer_image_tag_terms
 from app.services.ontology_rules_store import get_ontology, get_ontology_if_ready
-from app.services.search_index import SearchRecord, extract_tags_for_search, search_index, tag_bar_values
+from app.services.search_index import (
+    NOTHING_INHERITED, InheritedValues, SearchRecord, extract_tags_for_search, search_index, tag_bar_values,
+)
 from app.services.tag_ontology import rule_text_conditions
 from app.services.subtree_stats import stats_figure_values
 from app.services.tag_properties import PROPERTY_ASSIGNMENT, PropertyCondition, PropertyValue
@@ -84,65 +86,6 @@ def _parse_tag_string_terms(tag_string: str) -> tuple[FrozenSet[str], FrozenSet[
     tag_terms = extract_tags_for_search(tag_string)
     non_meta_tag_terms = frozenset(term for term in tag_terms if not term.startswith("@"))
     return tag_terms, non_meta_tag_terms
-
-
-def _components_sources_first(dependencies: Mapping[str, Set[str]]) -> List[List[str]]:
-    """Strongly connected components of note -> source edges, sources first.
-
-    Iterative Tarjan: a component is emitted only after every component it
-    draws from, so one pass in emission order sees finalized sources.
-    """
-    index: Dict[str, int] = {}
-    low: Dict[str, int] = {}
-    stack: List[str] = []
-    on_stack: set[str] = set()
-    components: List[List[str]] = []
-    for root in dependencies:
-        if root in index:
-            continue
-        index[root] = low[root] = len(index)
-        stack.append(root)
-        on_stack.add(root)
-        work = [(root, iter(dependencies[root]))]
-        while work:
-            node, sources = work[-1]
-            descended = False
-            for source in sources:
-                if source not in dependencies:
-                    continue
-                if source not in index:
-                    index[source] = low[source] = len(index)
-                    stack.append(source)
-                    on_stack.add(source)
-                    work.append((source, iter(dependencies[source])))
-                    descended = True
-                    break
-                if source in on_stack:
-                    low[node] = min(low[node], index[source])
-            if descended:
-                continue
-            work.pop()
-            if work:
-                parent = work[-1][0]
-                low[parent] = min(low[parent], low[node])
-            if low[node] != index[node]:
-                continue
-            component: List[str] = []
-            while True:
-                member = stack.pop()
-                on_stack.remove(member)
-                component.append(member)
-                if member == node:
-                    break
-            components.append(component)
-    assert len(index) == len(dependencies) and not stack
-    return components
-
-
-class _TermSets(Protocol):
-    def __getitem__(self, note_id: str) -> FrozenSet[str]: ...
-    def __setitem__(self, note_id: str, value: FrozenSet[str]) -> None: ...
-    def __contains__(self, note_id: object) -> bool: ...
 
 
 class _PendingTermSets:
@@ -244,6 +187,14 @@ class NoteRecord:
 
 
 
+def _own_values(record: NoteRecord) -> Dict[Tuple[str, str], PropertyValue]:
+    """A note's own super tag values, by casefolded (tag, property), as the search index keeps them."""
+    # Only a token with = has a value (jogging=3, jogging:miles=3).
+    if PROPERTY_ASSIGNMENT not in record.tags:
+        return {}
+    return tag_bar_values(record.tags)[1]
+
+
 @dataclass(frozen=True)
 class _StoreStatsContext:
     """The tree a stats figure is read from, for a search (subtree_stats.StatsContext)."""
@@ -273,8 +224,6 @@ class NoteStore:
         self._shared_tag_sets = SharedSets()
         self._effective_non_meta_tag_terms = SharedSetMap(self._shared_tag_sets)
         self._effective_proposed_non_meta_tag_terms = SharedSetMap(self._shared_tag_sets)
-        self._subtree_non_meta_tag_terms = SharedSetMap(self._shared_tag_sets)
-        self._subtree_proposed_non_meta_tag_terms = SharedSetMap(self._shared_tag_sets)
         self._loaded = False
         self._revision = 0
         self._timing_enabled = True
@@ -282,20 +231,16 @@ class NoteStore:
     def _get_children_locked(self, parent_id: Optional[str]) -> List[str]:
         return self._ordering.children(self._note_map, parent_id)
 
-    def _reference_targets_locked(self, note_id: str) -> set[str]:
-        return set(self._backlink_index.get_target_ids(note_id)) & self._note_map.keys()
-
     def _referrers_locked(self, note_id: str) -> set[str]:
         return self._backlink_index.get_counts(note_id).keys() & self._note_map.keys()
 
-    def _inherited_tag_terms_locked(
-        self, note_id: str, effective: SharedSetMap, subtree: SharedSetMap,
-    ) -> FrozenSet[str]:
-        terms = frozenset().union(*(subtree[target] for target in self._reference_targets_locked(note_id)))
+    # Only parents pass tags on, never embeds or links (docs/ui/search-semantics.md;
+    # the maintainer, 2026-11-03).
+    def _inherited_tag_terms_locked(self, note_id: str, effective: SharedSetMap) -> FrozenSet[str]:
         parent_id = self._note_map[note_id].parent_id
-        if parent_id is not None:
-            terms |= effective[parent_id]
-        return terms
+        if parent_id is None:
+            return frozenset()
+        return effective[parent_id]
 
     def _raw_tag_terms_locked(self, note_id: str) -> FrozenSet[str]:
         record = self._note_map[note_id]
@@ -326,7 +271,6 @@ class NoteStore:
         return frozenset(term for term in inferred if not term.startswith("@"))
 
     def _rebuild_effective_tag_terms_locked(self) -> Dict[str, FrozenSet[str]]:
-        # Hierarchy cycles remain invalid; reference cycles are valid dependencies.
         visited: set[str] = set()
         pending = self._get_children_locked(None)
         while pending:
@@ -340,39 +284,12 @@ class NoteStore:
             raise RuntimeError("Integrity failure: unreachable notes during tag inheritance")
         self._effective_non_meta_tag_terms.clear()
         self._effective_proposed_non_meta_tag_terms.clear()
-        self._subtree_non_meta_tag_terms.clear()
-        self._subtree_proposed_non_meta_tag_terms.clear()
-        self._propagate_subtree_tag_terms_locked(visited)
         return self._propagate_inherited_tag_terms_locked(visited)
 
-    def _recompute_effective_tag_terms_locked(
-        self, root_ids: Iterable[str], *, subtree_root_ids: Iterable[str],
-    ) -> Dict[str, FrozenSet[str]]:
-        roots = set(root_ids)
-        # Subtree contributions flow upward and across references, never through
-        # inherited parent tags. Include former parents after moves/deletions.
-        subtree_affected: set[str] = set()
-        pending = list(roots | set(subtree_root_ids))
-        effective_roots = set(roots)
-        while pending:
-            note_id = pending.pop()
-            assert note_id in self._note_map
-            if note_id in subtree_affected:
-                continue
-            subtree_affected.add(note_id)
-            referrers = self._referrers_locked(note_id)
-            effective_roots.update(referrers)
-            pending.extend(referrers - subtree_affected)
-            parent_id = self._note_map[note_id].parent_id
-            if parent_id is not None:
-                pending.append(parent_id)
-        self._assert_acyclic_parent_paths_locked(subtree_affected)
-        self._propagate_subtree_tag_terms_locked(subtree_affected)
-
-        # Ordinary inheritance flows down from changed notes and referrers only;
-        # siblings of an edited source descendant need no search-index update.
+    def _recompute_effective_tag_terms_locked(self, root_ids: Iterable[str]) -> Dict[str, FrozenSet[str]]:
+        """The tags of these notes and of every note below them, which inherit from them."""
         affected: set[str] = set()
-        pending = list(effective_roots)
+        pending = list(root_ids)
         while pending:
             note_id = pending.pop()
             assert note_id in self._note_map
@@ -415,11 +332,8 @@ class NoteStore:
         proposed = _PendingTermSets(self._effective_proposed_non_meta_tag_terms)
         for note_id in self._parents_first_locked(affected):
             record = self._note_map[note_id]
-            targets = self._reference_targets_locked(note_id)
-            own_accepted = record.non_meta_tag_terms | frozenset().union(
-                *(self._subtree_non_meta_tag_terms[target] for target in targets))
-            own_proposed = record.proposed_non_meta_tag_terms | frozenset().union(
-                *(self._subtree_proposed_non_meta_tag_terms[target] for target in targets))
+            own_accepted = record.non_meta_tag_terms
+            own_proposed = record.proposed_non_meta_tag_terms
             if record.parent_id is None:
                 carried = own_accepted
                 proposed[note_id] = own_proposed
@@ -435,53 +349,6 @@ class NoteStore:
         accepted.publish()
         proposed.publish()
         return {note_id: self._raw_tag_terms_locked(note_id) for note_id in affected}
-
-    def _propagate_subtree_tag_terms_locked(self, affected: set[str]) -> None:
-        dependencies = {}
-        accepted = _PendingTermSets(self._subtree_non_meta_tag_terms)
-        proposed = _PendingTermSets(self._subtree_proposed_non_meta_tag_terms)
-        for note_id in affected:
-            record = self._note_map[note_id]
-            # A source's value-inferred tags reach notes referencing it, read from the
-            # source's own tags.
-            accepted[note_id] = record.non_meta_tag_terms | self._value_inferred_terms_locked(
-                record, base_terms=record.non_meta_tag_terms,
-            )
-            proposed[note_id] = record.proposed_non_meta_tag_terms
-            dependencies[note_id] = (set(self._get_children_locked(note_id))
-                                     | self._reference_targets_locked(note_id))
-        self._propagate_tag_dependencies_locked(dependencies, accepted, proposed)
-        accepted.publish()
-        proposed.publish()
-
-    @staticmethod
-    def _propagate_tag_dependencies_locked(
-        dependencies: Dict[str, set[str]],
-        accepted_terms: _TermSets, proposed_terms: _TermSets,
-    ) -> None:
-        # Callers reset the affected closure to direct contributions first, so
-        # cycles converge to the least fixed point even when tags are removed.
-        # Every member of a strongly connected component reaches every other,
-        # so each component's fixed point is one shared union of its members'
-        # direct terms and its (already final) outside sources.
-        for component in _components_sources_first(dependencies):
-            members = set(component)
-            accepted_parts: List[FrozenSet[str]] = []
-            proposed_parts: List[FrozenSet[str]] = []
-            for note_id in component:
-                assert note_id in accepted_terms and note_id in proposed_terms
-                accepted_parts.append(accepted_terms[note_id])
-                proposed_parts.append(proposed_terms[note_id])
-                for source_id in dependencies[note_id]:
-                    if source_id in members:
-                        continue
-                    accepted_parts.append(accepted_terms[source_id])
-                    proposed_parts.append(proposed_terms[source_id])
-            accepted = _union_term_sets(accepted_parts)
-            proposed = _union_term_sets(proposed_parts)
-            for note_id in component:
-                accepted_terms[note_id] = accepted
-                proposed_terms[note_id] = proposed
 
     def _publish_tag_updates(self, raw_terms_by_id: Dict[str, FrozenSet[str]]) -> None:
         if not raw_terms_by_id:
@@ -508,8 +375,6 @@ class NoteStore:
             self._ordering = NoteOrdering()
             self._effective_non_meta_tag_terms.clear()
             self._effective_proposed_non_meta_tag_terms.clear()
-            self._subtree_non_meta_tag_terms.clear()
-            self._subtree_proposed_non_meta_tag_terms.clear()
             self._loaded = False
             search_index.rebuild(
                 [],
@@ -601,11 +466,34 @@ class NoteStore:
             note_map, content_text_by_id, tag_only_terms_by_id, ontology,
             timing_enabled=timing_enabled,
         )
-        # Stats terms in a search (@sum:calories>2000) read each note's subtree here.
+        # Stats terms in a search (@sum:calories>2000) read each note's subtree here, and
+        # terms about values (jogging:miles>2) the values each note inherits.
         search_index.attach_stats_reader(self._read_stats_figure)
+        search_index.attach_inherited_values_reader(self._read_inherited_values)
 
     def _read_stats_figure(self, note_id: str, condition: PropertyCondition) -> Optional[Tuple[PropertyValue, ...]]:
         return stats_figure_values(note_id=note_id, condition=condition, context=_StoreStatsContext(store=self))
+
+    def _read_inherited_values(self, note_ids: FrozenSet[str]) -> Dict[str, InheritedValues]:
+        """The values each note inherits for a search: values follow tags (agreed 2026-11-01;
+        docs/ui/search-semantics.md, Super Tag Searches), through parents only, never embeds
+        or links (2026-11-03). Its ancestors' values, the nearest ancestor's where several
+        give one."""
+        with self._lock:
+            return {note_id: self._inherited_values_locked(note_id) for note_id in note_ids}
+
+    def _inherited_values_locked(self, note_id: str) -> InheritedValues:
+        from_ancestors: Dict[Tuple[str, str], PropertyValue] = {}
+        current = self._note_map[note_id].parent_id
+        while current is not None:
+            # Walking up: a nearer ancestor's value is kept over a farther one's.
+            for key, value in _own_values(self._note_map[current]).items():
+                if key not in from_ancestors:
+                    from_ancestors[key] = value
+            current = self._note_map[current].parent_id
+        if not from_ancestors:
+            return NOTHING_INHERITED
+        return InheritedValues(from_ancestors=from_ancestors)
 
     def _apply_hydrated_matchers(
         self, note_map: Mapping[str, NoteRecord], content_text_by_id: Mapping[str, str],
@@ -909,7 +797,7 @@ class NoteStore:
             self._backlink_index.upsert(record.id, record.content, record.tags)
             self._insert_link(record.parent_id, record.id, record.prev_id, record.next_id)
 
-            tag_updates = self._recompute_effective_tag_terms_locked({record.id}, subtree_root_ids=())
+            tag_updates = self._recompute_effective_tag_terms_locked({record.id})
             effective_tag_terms = tag_updates.pop(record.id)
 
         ontology = get_ontology()
@@ -974,7 +862,7 @@ class NoteStore:
                 self._insert_link(record.parent_id, record.id, record.prev_id, record.next_id)
                 records.append(record)
             tag_updates = self._recompute_effective_tag_terms_locked(
-                {record.id for record in records}, subtree_root_ids=())
+                {record.id for record in records})
 
         ontology = get_ontology()
         for record, entry in zip(records, prepared):
@@ -1036,14 +924,11 @@ class NoteStore:
             self._note_map[note_id] = updated
 
             if current.content != plaintext or current.tags != tags:
-                old_targets = self._backlink_index.get_target_ids(updated.id)
                 self._backlink_index.upsert(updated.id, updated.content, updated.tags)
-                if old_targets != self._backlink_index.get_target_ids(updated.id):
-                    tag_sources_changed = True
 
             if tag_sources_changed:
                 effective_tag_terms_by_id = self._recompute_effective_tag_terms_locked(
-                    {note_id}, subtree_root_ids=())
+                    {note_id})
             else:
                 effective_tag_terms = self._raw_tag_terms_locked(updated.id)
 
@@ -1091,11 +976,8 @@ class NoteStore:
             self._insert_link(position.parent_id, note_id, position.prev_id, next_id)
             tag_updates = {}
             if record.parent_id != position.parent_id:
-                former_parents = set()
-                if record.parent_id is not None:
-                    former_parents.add(record.parent_id)
                 tag_updates = self._recompute_effective_tag_terms_locked(
-                    {note_id}, subtree_root_ids=former_parents)
+                    {note_id})
         self._publish_tag_updates(tag_updates)
 
     def move_notes(self, positions: Iterable[NotePosition]) -> None:
@@ -1110,7 +992,6 @@ class NoteStore:
             self._revision += 1
             replacements = {}
             moved_ids: Set[str] = set()
-            former_parents: Set[str] = set()
             for position in payload:
                 record = self._note_map[position.note_id]
                 replacements[position.note_id] = replace(
@@ -1118,8 +999,6 @@ class NoteStore:
                 )
                 if record.parent_id != position.parent_id:
                     moved_ids.add(position.note_id)
-                    if record.parent_id is not None:
-                        former_parents.add(record.parent_id)
             next_records = dict(self._note_map)
             next_records.update(replacements)
             if moved_ids:
@@ -1128,7 +1007,7 @@ class NoteStore:
             self._note_map = next_records
             if moved_ids:
                 tag_updates = self._recompute_effective_tag_terms_locked(
-                    moved_ids, subtree_root_ids=former_parents)
+                    moved_ids)
         self._publish_tag_updates(tag_updates)
 
     def set_updated_ats(self, updated_ats: Mapping[str, Optional[datetime]]) -> None:
@@ -1163,26 +1042,15 @@ class NoteStore:
                     del self._ordering.heads[removed_id]
                     del self._ordering.tails[removed_id]
 
-            referrer_ids = set()
-            for removed_id in removed_ids:
-                referrer_ids.update(self._backlink_index.get_counts(removed_id))
             for removed_id in removed_ids:
                 self._backlink_index.remove(removed_id)
                 # Every note has its tag terms computed, so every removed note has entries.
                 del self._effective_non_meta_tag_terms[removed_id]
                 del self._effective_proposed_non_meta_tag_terms[removed_id]
-                del self._subtree_non_meta_tag_terms[removed_id]
-                del self._subtree_proposed_non_meta_tag_terms[removed_id]
 
-            former_parents = set()
-            if root.parent_id is not None:
-                former_parents.add(root.parent_id)
-            tag_updates = self._recompute_effective_tag_terms_locked(
-                referrer_ids & self._note_map.keys(), subtree_root_ids=former_parents)
-
+        # No note left takes tags from a removed one: only a removed note's children did.
         if removed_ids:
             search_index.remove_many(removed_ids)
-        self._publish_tag_updates(tag_updates)
 
     def set_collapsed(self, note_id: str, collapsed: bool) -> None:
         if not self._loaded:
@@ -1294,7 +1162,7 @@ class NoteStore:
         """The note's searchable tags if its own tags and text were the unsaved draft.
 
         Like the saved note's tags: its own tags, its proposals, what its
-        parents and embeds give it, and what the tag rules infer from them and
+        parents give it, and what the tag rules infer from them and
         the text.
         """
         if not isinstance(tags, str):
@@ -1313,7 +1181,7 @@ class NoteStore:
 
     def draft_accepted_effective_tag_terms(self, *, note_id: str, tags: str, plaintext: str) -> FrozenSet[str]:
         """draft_effective_tag_terms without any proposal: its own `tags`, the accepted
-        tags its parents and embeds give it, and what the tag rules infer from those and
+        tags its parents give it, and what the tag rules infer from those and
         the text. The cloud privacy whitelist counts only these, so a proposed tag can
         never make a note visible to the AI."""
         if not isinstance(tags, str):
@@ -1348,8 +1216,7 @@ class NoteStore:
             if note_id not in self._note_map:
                 raise KeyError(f"Note {note_id} not present in NoteStore")
 
-            return self._inherited_tag_terms_locked(
-                note_id, self._effective_non_meta_tag_terms, self._subtree_non_meta_tag_terms)
+            return self._inherited_tag_terms_locked(note_id, self._effective_non_meta_tag_terms)
 
     def get_inherited_proposed_non_meta_tag_terms(self, note_id: str) -> FrozenSet[str]:
         if not isinstance(note_id, str) or not note_id:
@@ -1359,8 +1226,7 @@ class NoteStore:
                 raise RuntimeError("NoteStore is not loaded")
             if note_id not in self._note_map:
                 raise KeyError(f"Note {note_id} not present in NoteStore")
-            return self._inherited_tag_terms_locked(
-                note_id, self._effective_proposed_non_meta_tag_terms, self._subtree_proposed_non_meta_tag_terms)
+            return self._inherited_tag_terms_locked(note_id, self._effective_proposed_non_meta_tag_terms)
 
     def apply_bulk_tag_sources(self, changes: Mapping[str, tuple[str, str]]) -> None:
         """Publish many notes' tag sources with one incremental recompute.
@@ -1383,7 +1249,7 @@ class NoteStore:
                     tag_terms=own, non_meta_tag_terms=non_meta,
                     proposed_tag_terms=proposed, proposed_non_meta_tag_terms=proposed_non_meta)
             self._note_map.update(replacements)
-            tag_updates = self._recompute_effective_tag_terms_locked(set(replacements), subtree_root_ids=())
+            tag_updates = self._recompute_effective_tag_terms_locked(set(replacements))
         self._publish_tag_updates(tag_updates)
         ontology = get_ontology()
         for note_id, record in replacements.items():
@@ -1408,8 +1274,7 @@ class NoteStore:
     def refresh_tags_for_value_rules(self, *, rule_texts: list[str]) -> int:
         """After a rule testing values changed: the tags of the notes it can concern (with a
         value of a property it tests, or carrying a tag a `?` term tests, on the tag or a tag
-        implying it), and through them their children and the notes referencing them; not
-        the whole vault. rule_texts: the rule as it was and as it is."""
+        implying it), and through them the notes below them; not the whole vault. rule_texts: the rule as it was and as it is."""
         if not self._loaded:
             return 0
         conditions = [condition for text in rule_texts for condition in rule_text_conditions(text)]
@@ -1419,7 +1284,7 @@ class NoteStore:
             candidate_ids &= self._note_map.keys()
             if not candidate_ids:
                 return 0
-            tag_updates = self._recompute_effective_tag_terms_locked(candidate_ids, subtree_root_ids=candidate_ids)
+            tag_updates = self._recompute_effective_tag_terms_locked(candidate_ids)
         self._publish_tag_updates(tag_updates)
         return len(tag_updates)
 

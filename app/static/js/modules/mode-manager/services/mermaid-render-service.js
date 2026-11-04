@@ -185,6 +185,8 @@ function showInvalidMermaidSource(codeElement) {
     sourceBlock.classList.add('meta-mermaid-invalid');
     const badge = ownerDocument.createElement('div');
     badge.classList.add('meta-mermaid-error-badge');
+    // A status, not the note's text: find and the search highlight read past it.
+    badge.classList.add('note-loading-placeholder');
     badge.textContent = 'Invalid Mermaid diagram';
     sourceBlock.insertBefore(badge, codeElement);
     codeElement.setAttribute('data-mermaid-state', 'invalid');
@@ -237,6 +239,9 @@ export async function renderMermaidCodeElement(codeElement, mermaidApi) {
     diagram.setAttribute('role', 'img');
     diagram.setAttribute('aria-label', 'Mermaid diagram');
     diagram.setAttribute('data-mermaid-state', 'rendered');
+    // Its code, out of sight: find stops on a diagram whose code holds the words, as the server
+    // does (docs/ui/find.md, "Diagrams").
+    diagram.setAttribute('data-mermaid-source', storedSource);
     // Mermaid runs with securityLevel 'strict' (buildMermaidConfig), which sanitizes the
     // labels it renders; the browser smoke checks a render is clean.
     diagram.innerHTML = produces(renderResult.svg, 'sanitized_html');

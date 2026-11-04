@@ -8,6 +8,7 @@ const UNAUTHORIZED = 401;
 const NOT_FOUND = 404;
 const CONFLICT = 409;
 const GONE = 410;
+const TOO_MANY_REQUESTS = 429;
 const INTERNAL_SERVER_ERROR = 500;
 
 export const HTTP_STATUS = Object.freeze({
@@ -18,6 +19,7 @@ export const HTTP_STATUS = Object.freeze({
     NOT_FOUND,
     CONFLICT,
     GONE,
+    TOO_MANY_REQUESTS,
     INTERNAL_SERVER_ERROR,
 });
 

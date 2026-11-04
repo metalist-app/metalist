@@ -20,10 +20,11 @@ from collections import Counter
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 import re
-from threading import Lock
+from threading import Lock, Thread
 from typing import Callable, Dict, FrozenSet, Hashable, Iterable, List, Set, Tuple
 
 from app.security.sensitive_cache import register_sensitive_cache, sensitive_caches_enabled
+from app.services.auth_cache_state import on_cache_ready
 from app.services.content_formatting import CREDENTIAL_MASK, find_global_credential_tag
 from app.services.embedded_references import EMPTY_NOTE_PREVIEW, first_line_preview, sole_reference_token
 from app.services.note_store import NoteRecord, store
@@ -285,6 +286,22 @@ class _Catalog:
 
 _catalog = _Catalog()
 register_sensitive_cache(_catalog.clear)
+
+
+def build_catalog_in_background() -> Thread:
+    """Bring the catalog up to date beside the requests, as soon as many notes arrived (loaded,
+    imported): built by the first request needing it, a whole vault's worth (half a second for
+    40,000 notes) held up whatever the user did next, a save or opening a note (2026-11-01)."""
+    thread = Thread(target=_catalog.refreshed, name="metalist-reference-catalog", daemon=True)
+    thread.start()
+    return thread
+
+
+def _build_catalog_once_loaded() -> None:
+    build_catalog_in_background()
+
+
+on_cache_ready(_build_catalog_once_loaded)
 
 
 class _ViewOrder:

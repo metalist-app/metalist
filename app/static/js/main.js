@@ -69,6 +69,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         await CommandPalette.startBackupReminder();
         document.body.dataset.appReady = 'true';
         CommandPalette.startUpdateNotice();
+        await CommandPalette.runSetupRequestedByAddress();
+        await CommandPalette.offerLegacyImport();
     } else {
         console.log('+++ main.js: Skipping ModeManager init due to auth requirement');
     }

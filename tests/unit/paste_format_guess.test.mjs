@@ -29,6 +29,19 @@ test('Markdown-like text needs two kinds of signs, or a table', () => {
     assert.equal(offered('A plain paragraph of text.\n\nAnother one.'), null);
 });
 
+// A nested list is Markdown by itself (agreed 2026-10-31): plain text rarely indents an
+// item under another. A flat list still is not.
+test('a nested list alone is offered as Markdown', () => {
+    const markdown = { kind: 'markdown', tags: ['@markdown'] };
+    assert.deepEqual(offered('- Saturday\n  - Morning\n  - Afternoon\n- Sunday'), markdown);
+    assert.deepEqual(offered('1. Run\n   - 5 miles\n2. Coffee'), markdown);
+    assert.deepEqual(offered('- Top\n\t- tabbed child'), markdown);
+    assert.deepEqual(offered('- Sunday\n\n  - Rest, after a blank line'), markdown);
+    assert.equal(offered('- milk\n - eggs\n- bread'), null, 'one space in is not nested');
+    assert.equal(offered('Shopping:\n  - milk\n  - eggs'), null, 'indented under a line that is not an item');
+    assert.equal(offered('dependencies:\n  - fastapi\n  - pygments')?.kind === 'markdown', false);
+});
+
 // An answer copied from an AI chat: prose, a heading, and a fenced app.
 const HTML_APP = [
     '<!DOCTYPE html>', '<html>', '<head>', '  <title>Labyrinth</title>', '  <style>', '    body { margin: 0; }', '  </style>',
@@ -101,4 +114,19 @@ test('ordinary notes that share a few signs with code are not offered', () => {
     assert.equal(offered('Meeting: Monday\nAgenda: budget\nAttendees: Bob, Ann'), null, 'key: value lines are not YAML');
     assert.equal(offered('Please select the best one from the list.'), null, 'a sentence is not SQL');
     assert.equal(offered('Call the plumber (again) tomorrow.\nBuy milk; eggs too.'), null);
+});
+
+// Markdown holds HTML (2026-10-31, docs/ui/content-formatting.md): text that reads as
+// Markdown and has HTML tags is offered as Markdown first, then as HTML; HTML alone stays HTML.
+test('Markdown with HTML tags in it is offered as Markdown first', () => {
+    const mixed = [
+        'Some <u>underlined</u>, H<sub>2</sub>O, x<sup>2</sup> and <mark>marked</mark> text.', '',
+        '<u>**Bold** inside underline</u> and <kbd>Ctrl</kbd> keeps its text.', '',
+        '<details>', '<summary>Click to open</summary>', '', '- Markdown **inside** the fold', '', '</details>', '',
+        '<span style="color:red">Colour is dropped</span>', '',
+        '<script>alert(1)</script>Nothing above this sentence from the script.', '',
+        '<!-- this comment is hidden -->', '', 'Code stays as written: `<u>not underlined</u>`, and a < b.',
+    ].join('\n');
+    assert.deepEqual(offered(mixed), { kind: 'markdown', tags: ['@markdown', '@code=html'] });
+    assert.deepEqual(offered('<div class="card">\n  <p>Hello</p>\n  <a href="/x">Go</a>\n</div>'), { kind: 'code', tags: ['@code=html'] });
 });

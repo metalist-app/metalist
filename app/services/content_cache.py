@@ -20,7 +20,7 @@ from ..models.database import SafeSession
 from ..utils.encryption import encrypt, get_encryption_service
 from app.services.hydration_state import hydration_state
 from app.services.backup_settings_service import (
-    BACKUP_SETTINGS_UNCHECKED_MIGRATION_ID, convert_backup_settings_to_unchecked, list_available_namespaces,
+    backup_settings_need_conversion, convert_backup_settings_to_unchecked, list_available_namespaces,
 )
 from app.services.meta_tag_renames import (
     META_TAG_RENAMES_MIGRATION_ID, META_TAG_RENAMES_PREFIX, rename_meta_tags_in_search, rename_meta_tags_in_tag_bar,
@@ -147,7 +147,8 @@ def populate_cache_from_db(db: SafeSession, *, saved_searches: SavedSearches) ->
         migration_id = stored_html_cleaned_migration_id()
         clean_stored_html = not is_content_migration_complete(raw, migration_id)
         rename_meta_tags = not is_content_migration_complete(raw, META_TAG_RENAMES_MIGRATION_ID)
-        convert_backup_settings = not is_content_migration_complete(raw, BACKUP_SETTINGS_UNCHECKED_MIGRATION_ID)
+        # Checked at every unlock: an older MetaList may have saved them in the old form again.
+        convert_backup_settings = backup_settings_need_conversion(raw)
         structures, cleaned_notes, renamed_tags = _populate_from_rows(
             count_notes(raw), iter_all_for_cache(raw), clean_stored_html=clean_stored_html,
             rename_meta_tags=rename_meta_tags,

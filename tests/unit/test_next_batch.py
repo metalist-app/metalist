@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from app.services.credential_display import CredentialDisplay
 from app.api.middleware import auth as auth_middleware
 from app.services import tokens
 import json
@@ -271,7 +272,7 @@ def test_cycles_fail_in_view_copy_and_export(monkeypatch, deep_store):
     with pytest.raises(RuntimeError, match='[Cc]ycle'):
         copy_note.snapshot_subtree_preorder('0')
     with pytest.raises(RuntimeError, match='[Cc]ycle'):
-        html_export._render_exported_note(note_id='0', allowed_note_ids=None, embed_render_context=None, collapsible=True, open_note_ids=frozenset(), redact_credentials=True)
+        html_export._render_exported_note(note_id='0', allowed_note_ids=None, embed_render_context=None, collapsible=True, open_note_ids=frozenset(), credentials=CredentialDisplay.HIDDEN)
 
 
 def test_sort_aggregates_follow_edits_moves_deletes_and_hydration(monkeypatch, deep_store):

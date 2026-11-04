@@ -96,6 +96,11 @@ class FindInListRequest(TypedDict):
     direction: Literal['forward', 'backward']
 
 @with_config(ConfigDict(strict=True))
+class FindFileSnippetRequest(TypedDict):
+    fileId: Identifier
+    text: Annotated[str, Field(min_length=1, max_length=KIB)]
+
+@with_config(ConfigDict(strict=True))
 class ReferenceOriginScope(TypedDict):
     scopeTabId: Identifier
     searchQuery: Text
@@ -149,7 +154,16 @@ class UpdateTabFileFilterRequest(TypedDict):
 @with_config(ConfigDict(strict=True))
 class CreateNewTabRequest(TypedDict):
     copyFromTabId: Identifier
+    # True duplicates the tab, everything it shows included; False opens a blank one.
+    copiesView: bool
     clientId: Identifier
+
+@with_config(ConfigDict(strict=True))
+class UpdateTabUntaggedViewRequest(TypedDict):
+    tabId: Identifier
+    isUntaggedView: bool
+    clientId: Identifier
+    undoContext: UndoContext
 
 @with_config(ConfigDict(strict=True))
 class DeleteTabRequest(TypedDict):
@@ -240,6 +254,8 @@ class SearchTagDetailsRequest(TypedDict):
 class CreateNoteTopRequest(TypedDict):
     first_visible_note_id: Text | None
     search_query: Text | None
+    # The search context the note is made in: its virtual folder (an experiment) files it there.
+    tabId: Identifier
     clientId: Identifier
     undoContext: UndoContext
     viewport: Viewport
@@ -247,6 +263,7 @@ class CreateNoteTopRequest(TypedDict):
 @with_config(ConfigDict(strict=True))
 class CreateSiblingRequest(TypedDict):
     search_query: Text | None
+    tabId: Identifier
     clientId: Identifier
     undoContext: UndoContext
     viewport: Viewport
@@ -254,14 +271,7 @@ class CreateSiblingRequest(TypedDict):
 @with_config(ConfigDict(strict=True))
 class CreateChildRequest(TypedDict):
     search_query: Text | None
-    clientId: Identifier
-    undoContext: UndoContext
-    viewport: Viewport
-
-@with_config(ConfigDict(strict=True))
-class CreateFilePreviewChildRequest(TypedDict):
-    fileId: Identifier
-    search_query: Text | None
+    tabId: Identifier
     clientId: Identifier
     undoContext: UndoContext
     viewport: Viewport
@@ -304,6 +314,24 @@ class ViewScope(TypedDict):
     tabId: Identifier
     isUntaggedView: bool
 
+# Deleting the notes a view shows (Delete Notes (Current View)…): first counted for the
+# confirmation, then deleted only if that count still holds.
+@with_config(ConfigDict(strict=True))
+class CountNotesInViewRequest(TypedDict):
+    search: Text
+    tabId: Identifier
+    isUntaggedView: bool
+
+@with_config(ConfigDict(strict=True))
+class DeleteNotesInViewRequest(TypedDict):
+    search: Text
+    tabId: Identifier
+    isUntaggedView: bool
+    expectedNoteCount: Nonnegative
+    clientId: Identifier
+    undoContext: UndoContext
+    viewport: Viewport
+
 # The view a robot count (🤖 N) was shown in: its tab, search ('' for none) and kind.
 @with_config(ConfigDict(strict=True))
 class OpenToTagProposalsRequest(TypedDict):
@@ -343,6 +371,33 @@ class SplitNoteRequest(TypedDict):
 @with_config(ConfigDict(strict=True))
 class ToggleTodoDoneRequest(TypedDict):
     clientId: Identifier
+    undoContext: UndoContext
+    viewport: Viewport
+
+# A click on box taskIndex of a Markdown note's tasks: isTicked is the state asked for.
+@with_config(ConfigDict(strict=True))
+class ToggleMarkdownTaskRequest(TypedDict):
+    clientId: Identifier
+    taskIndex: Nonnegative
+    isTicked: bool
+    undoContext: UndoContext
+    viewport: Viewport
+
+# A click on folding callout calloutIndex's title in a Markdown note: isOpen is the state asked for.
+@with_config(ConfigDict(strict=True))
+class ToggleMarkdownCalloutRequest(TypedDict):
+    clientId: Identifier
+    calloutIndex: Nonnegative
+    isOpen: bool
+    undoContext: UndoContext
+    viewport: Viewport
+
+# A click on the title of <details> fold foldIndex in a Markdown note: isOpen is the state asked for.
+@with_config(ConfigDict(strict=True))
+class ToggleMarkdownFoldRequest(TypedDict):
+    clientId: Identifier
+    foldIndex: Nonnegative
+    isOpen: bool
     undoContext: UndoContext
     viewport: Viewport
 

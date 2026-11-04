@@ -12,6 +12,7 @@ import re
 
 from app.services.content_formatting import _unwrap_tag_token
 from app.services.search_index import tag_bar_values
+from app.services.quoted_values import split_tokens
 from app.services.tag_ontology import is_valid_proposal_token
 from app.services.tag_properties import (
     PROPERTY_ASSIGNMENT,
@@ -33,7 +34,7 @@ from app.utils.text_utils import strip_html
 def _proposal_tokens(proposed_tags: str) -> tuple[str, ...]:
     if not isinstance(proposed_tags, str):
         raise TypeError("proposed_tags must be a string")
-    tokens = tuple(proposed_tags.split())
+    tokens = tuple(split_tokens(proposed_tags))
     for token in tokens:
         if not is_valid_proposal_token(token):
             raise RuntimeError(f"Stored proposal is not a valid tag or super tag: {token!r}")

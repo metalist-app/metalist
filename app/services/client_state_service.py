@@ -77,6 +77,8 @@ _ALLOWED_CLIENT_PREFERENCES = {
     "pref.trim_reminder": {"on", "off"},
     # How many bytes of unused files there were when its card was last dismissed.
     "pref.trim_reminder_dismissed_bytes": "byte_count",
+    # The old MetaList's notes were offered and declined (legacy-import-modal.js): not offered again.
+    "pref.legacy_import_declined": {"true"},
     "pref.note_layout.top_level_note_size": {"same", "larger", "largest"},
     "pref.note_layout.child_indentation": {"compact", "standard", "wide"},
     "pref.note_layout.vertical_spacing": {"compact", "comfortable", "spacious"},

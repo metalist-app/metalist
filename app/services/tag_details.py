@@ -54,8 +54,9 @@ def describe_tag_bar_tag(*, note_id: str, tag: str, tags_text: str, content_html
         if anchor.casefold() != tag.casefold()
     ))
     # Other notes only: this note having its own tags says nothing.
+    # Counted as the tag bar ranks it: jogging over all its notes, whatever their values.
     cooccurrences = search_index.describe_tag_cooccurrence(
-        anchors=anchors, terms=[tag], excluded_note_ids=frozenset({note_id}),
+        anchors=anchors, terms=[tag], excluded_note_ids=frozenset({note_id}), by_family=True,
     )
     if tag in cooccurrences:
         lines.append(_sentence(cooccurrence_phrase(
@@ -92,7 +93,7 @@ def describe_search_tag(
         lines.append(f"Searching for it finds {count_notes(note_count)}")
         anchors = _other_required_tags(rest=rest, tag=tag)
         cooccurrences = search_index.describe_tag_cooccurrence(
-            anchors=anchors, terms=[tag], excluded_note_ids=frozenset(),
+            anchors=anchors, terms=[tag], excluded_note_ids=frozenset(), by_family=False,
         )
         if tag in cooccurrences:
             lines.append(_sentence(cooccurrence_phrase(

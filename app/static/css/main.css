@@ -562,13 +562,23 @@ html:has(> body > .login-page[style*="display: flex"]:not(.login-page-covering):
     margin-right: auto;
 }
 
-.image-file-insert-choice-modal-content {
+.image-file-insert-choice-modal-content,
+.bookmarks-drop-choice-modal-content,
+.text-drop-choice-modal-content {
     width: min(460px, 92vw);
 }
 
-.image-file-insert-choice-modal-content p {
+.image-file-insert-choice-modal-content p,
+.bookmarks-drop-choice-modal-content p,
+.text-drop-choice-modal-content p {
     margin: 0 0 18px;
     line-height: 1.45;
+}
+
+/* The dropped file's name, as long as it is. */
+.bookmarks-drop-choice-file,
+.text-drop-choice-files {
+    overflow-wrap: anywhere;
 }
 
 .link-title-retry-modal-content {
@@ -607,10 +617,6 @@ html:has(> body > .login-page[style*="display: flex"]:not(.login-page-covering):
 
 .create-namespace-modal-content {
     width: min(520px, 100%);
-}
-
-.create-namespace-modal-content .namespace-modal-port-grid {
-    grid-template-columns: repeat(2, minmax(0, 160px));
 }
 
 .namespace-ports-modal-content {
@@ -3770,6 +3776,22 @@ details.ai-chat-thinking > .ai-chat-thinking-heading {
     display: none;
 }
 
+/* A rule field and its Add button on one line. */
+.ai-settings-rule-entry {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.ai-settings-rule-entry input {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.ai-settings-rule-entry button {
+    flex: none;
+}
+
 .ai-settings-chip {
     display: inline-flex;
     align-items: center;
@@ -3843,6 +3865,7 @@ details.ai-chat-thinking > .ai-chat-thinking-heading {
 }
 
 html[data-theme="dark"] .ai-chat-panel,
+html[data-theme="dark"] .virtual-folders,
 html[data-theme="dark"] .ai-chat-header,
 html[data-theme="dark"] .ai-chat-composer,
 html[data-theme="dark"] .ai-chat-message,
@@ -4264,7 +4287,7 @@ html[data-theme="dark"] .ai-chat-header-actions #ai-chat-spend-toggle[aria-press
 
 /* A folded note's first line is drawn as one line of text; an embed on it is an
    embed, drawn as everywhere (docs/ui/references.md), so these leave it alone. */
-.note.collapsed:not(.editing) .note-content :not(img):not(:where(.note-reference-note.note-embed-block, .note-reference-note.note-embed-block *)) {
+.note.collapsed:not(.editing) .note-content :not(img):not(:where(.note-reference-note.note-embed-block, .note-reference-note.note-embed-block *, .note-reference-file, .note-reference-file *)) {
     font-size: inherit !important;
     line-height: inherit !important;
 }
@@ -4299,7 +4322,7 @@ html[data-theme="dark"] .ai-chat-header-actions #ai-chat-spend-toggle[aria-press
     tr,
     th,
     td
-):not(:where(.note-reference-note.note-embed-block, .note-reference-note.note-embed-block *)) {
+):not(:where(.note-reference-note.note-embed-block, .note-reference-note.note-embed-block *, .note-reference-file, .note-reference-file *)) {
     display: block;
     margin: 0 !important;
     padding: 0;
@@ -4348,6 +4371,17 @@ html[data-theme="dark"] .ai-chat-header-actions #ai-chat-spend-toggle[aria-press
 
 .note.search-redacted .note-content::before {
     content: none;
+}
+
+/* A grey bar shows nothing of what the note holds: its text is not drawn, and neither is
+   anything in it (a link's icon, a checkbox, a picture, an embed), which showed through
+   the bar's 6 px where it started at the note's top (2026-10-31). */
+.note.search-redacted .note-content {
+    color: transparent;
+}
+
+.note.search-redacted .note-content * {
+    visibility: hidden;
 }
 
 .note.search-revealed {
@@ -4672,145 +4706,6 @@ img.link-title-icon,
     text-decoration-thickness: 2px;
 }
 
-/* An email file as a card (file-email-preview-service.js; docs/ui/references.md, "Email files"). */
-.note-file-email-embed {
-    margin: 4px 0;
-}
-
-.note-file-email-placeholder,
-.note-file-email-unreadable {
-    color: var(--note-tag-muted);
-    font-size: 0.9em;
-}
-
-.note-file-email-card {
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    padding: 10px 12px;
-    background: var(--bg-color);
-}
-
-.note-file-email-subject {
-    font-weight: 600;
-    margin-bottom: 4px;
-}
-
-.note-file-email-headers {
-    display: grid;
-    grid-template-columns: max-content 1fr;
-    gap: 1px 10px;
-    margin: 0 0 8px;
-    font-size: 0.85em;
-    color: var(--note-tag-muted);
-}
-
-.note-file-email-header {
-    display: contents;
-}
-
-.note-file-email-header-name,
-.note-file-email-header-value {
-    margin: 0;
-    overflow-wrap: anywhere;
-}
-
-/* A long body is cut with a fade until Show all. */
-.note-file-email-body {
-    max-height: 18em;
-    overflow: hidden;
-    overflow-wrap: anywhere;
-    -webkit-mask-image: linear-gradient(to bottom, #000 80%, transparent);
-    mask-image: linear-gradient(to bottom, #000 80%, transparent);
-}
-
-.note-file-email-card.is-expanded .note-file-email-body {
-    max-height: none;
-    -webkit-mask-image: none;
-    mask-image: none;
-}
-
-.note-file-email-body img {
-    max-width: 100%;
-    height: auto;
-}
-
-.note-file-email-text {
-    white-space: pre-wrap;
-}
-
-.note-file-email-attachments {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-    margin-top: 8px;
-}
-
-.note-file-email-attachment,
-.note-file-email-more {
-    border: 1px solid var(--border-color);
-    border-radius: 6px;
-    padding: 2px 8px;
-    background: transparent;
-    color: inherit;
-    font: inherit;
-    font-size: 0.85em;
-    cursor: pointer;
-}
-
-.note-file-email-attachment-size {
-    margin-left: 6px;
-    color: var(--note-tag-muted);
-}
-
-/* Folded (the note's or an embed's ▾/▸): one line, as a file's pill. */
-.note-file-email-line {
-    display: none;
-    align-items: baseline;
-    gap: 8px;
-    min-width: 0;
-    white-space: nowrap;
-}
-
-.note-file-email-line-subject {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    font-weight: 600;
-}
-
-.note-file-email-line-sender {
-    flex-shrink: 0;
-    color: var(--note-tag-muted);
-}
-
-.note.collapsed:not(.editing) .note-file-email-card,
-.note-embed-collapsed .note-file-email-card {
-    padding: 0;
-    border: none;
-    background: transparent;
-}
-
-.note.collapsed:not(.editing) .note-file-email-card > :not(.note-file-email-line),
-.note-embed-collapsed .note-file-email-card > :not(.note-file-email-line) {
-    display: none;
-}
-
-.note.collapsed:not(.editing) .note-file-email-line,
-.note-embed-collapsed .note-file-email-line {
-    display: flex;
-}
-
-/* The badge as on a file's pill: a folded note sets every font size to its own (above). */
-.note.collapsed:not(.editing) .note-file-email-line .note-file-reference-badge,
-.note-embed-collapsed .note-file-email-line .note-file-reference-badge {
-    font-size: 10px !important;
-}
-
-.note-file-email-more {
-    margin-top: 8px;
-    border-color: transparent;
-    color: var(--note-tag-muted);
-}
-
 .note-file-reference-link {
     display: flex;
     flex-direction: column;
@@ -4835,6 +4730,27 @@ img.link-title-icon,
 
 .note-file-reference-link-embed {
     gap: 6px;
+}
+
+/* A search's phrase in the file's text: a line or two of it under the card, the phrase marked
+   by the search highlight (docs/ready-to-build/folder-import-and-file-previews.md, "Searchable
+   file text"). Part of the card, so a click on it does what a click on the card does. */
+.note-file-text-snippet {
+    display: block;
+    font-size: 13px;
+    line-height: 1.45;
+    color: #4b5563;
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+
+/* The search's snippet while find shows its own in the same card (docs/ui/find.md). */
+.note-file-text-snippet.is-giving-way-to-find {
+    display: none;
+}
+
+html[data-theme="dark"] .note-file-text-snippet {
+    color: rgba(229, 231, 235, 0.75);
 }
 
 .note-file-image-embed {
@@ -4867,6 +4783,17 @@ img.link-title-icon,
 
 .note-file-image-preview[hidden] {
     display: none;
+}
+
+/* Loaded, a picture shows at its own size, never larger, its frame hugging it; a large one
+   still fills the card (the maintainer, 2026-11-02: small ones stretched "look weird"). */
+.note-file-image-embed[data-preview-state="loaded"] .note-file-image-preview-frame {
+    width: fit-content;
+    min-height: 0;
+}
+
+.note-file-image-embed[data-preview-state="loaded"] .note-file-image-preview {
+    width: auto;
 }
 
 .note-file-image-preview-placeholder {
@@ -5060,26 +4987,199 @@ html[data-theme="dark"] .note-reference-block.note-reference-file-excalidraw {
     min-height: 0;
 }
 
-.note-file-image-download-link {
-    padding: 0;
-    border: none;
-    background: transparent;
+/* An embedded file's card says what a click does: Open (a file the viewer shows) and Download,
+   after its name; its name is no link, and a click anywhere else on it edits the note
+   (docs/ready-to-build/files-shown-not-copied.md §3). They wrap under the name when narrow. */
+.note-file-reference-link-embed .note-file-reference-header {
+    flex-wrap: wrap;
+    row-gap: 4px;
+}
+
+.note-file-reference-link-embed .note-file-reference-badge,
+.note-file-reference-link-embed .note-file-reference-name {
+    pointer-events: none;
+    cursor: inherit;
+}
+
+.note-file-reference-link-embed .note-file-reference-title {
+    text-decoration: none;
+}
+
+.note-file-actions {
+    display: inline-flex;
+    flex-shrink: 0;
+    gap: 6px;
+    pointer-events: auto;
+}
+
+.note-file-action,
+.file-viewer-download {
+    padding: 0 10px;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    background: #ffffff;
     color: #1f2937;
-    text-decoration: underline;
-    text-underline-offset: 2px;
-    cursor: pointer;
     font: inherit;
+    font-size: 13px;
+    line-height: 22px;
+    cursor: pointer;
 }
 
-.note-file-image-download-link:hover,
-.note-file-image-download-link:focus-visible {
-    text-decoration-thickness: 2px;
+.note-file-action:hover,
+.note-file-action:focus-visible,
+.file-viewer-download:hover,
+.file-viewer-download:focus-visible {
+    border-color: #94a3b8;
+    background: #f1f5f9;
+    outline: none;
 }
 
-.note-file-image-download-link:focus-visible {
-    outline: 2px solid rgba(37, 99, 235, 0.25);
-    outline-offset: 2px;
-    border-radius: 4px;
+/* Audio and video: Play, then the browser's own player, never wider than the note and a video
+   never enlarged past its own size (files-shown-not-copied.md §3). */
+.note-file-media-embed {
+    display: block;
+    max-width: 100%;
+}
+
+.note-file-media-play {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    max-width: 100%;
+    padding: 4px 14px 4px 10px;
+    border: 1px solid #cbd5e1;
+    border-radius: 999px;
+    background: #ffffff;
+    color: #1f2937;
+    font: inherit;
+    cursor: pointer;
+}
+
+.note-file-media-play:hover,
+.note-file-media-play:focus-visible {
+    border-color: #94a3b8;
+    background: #f1f5f9;
+    outline: none;
+}
+
+.note-file-media-play:disabled {
+    cursor: progress;
+    opacity: 0.6;
+}
+
+.note-file-media-play-icon {
+    font-size: 12px;
+}
+
+.note-file-media-name {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.note-file-media-player {
+    display: block;
+    max-width: 100%;
+}
+
+audio.note-file-media-player {
+    width: min(100%, 480px);
+}
+
+/* The file viewer: over MetaList as the image zoom is (file-viewer-service.js), and over the
+   phone's bottom bar (13000); below menus and modals (15000). */
+.file-viewer-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 13500;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 32px;
+    background: rgba(15, 23, 42, 0.86);
+}
+
+.file-viewer-panel {
+    display: flex;
+    flex-direction: column;
+    width: min(1000px, 100%);
+    height: 100%;
+    overflow: hidden;
+    border-radius: 10px;
+    background: #ffffff;
+    color: #1f2937;
+    box-shadow: 0 18px 48px rgba(0, 0, 0, 0.35);
+}
+
+.file-viewer-bar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px 8px 16px;
+    border-bottom: 1px solid #e2e8f0;
+}
+
+.file-viewer-name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.file-viewer-close {
+    width: 32px;
+    height: 32px;
+    flex-shrink: 0;
+    border: none;
+    border-radius: 50%;
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+    font: 24px/1 Arial, sans-serif;
+}
+
+.file-viewer-close:hover,
+.file-viewer-close:focus-visible {
+    background: #f1f5f9;
+    outline: none;
+}
+
+.file-viewer-body {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    overscroll-behavior: contain;
+    padding: 16px 20px;
+}
+
+/* A frame fills it: a PDF, or a drawn file (its padding is in file-viewer.css). */
+.file-viewer-body:has(> iframe) {
+    overflow: hidden;
+    padding: 0;
+}
+
+.file-viewer-pdf,
+.file-viewer-drawing {
+    display: block;
+    width: 100%;
+    height: 100%;
+    border: 0;
+}
+
+.file-viewer-message {
+    margin: 0;
+    color: #64748b;
+}
+
+@media (max-width: 600px) {
+    .file-viewer-overlay {
+        padding: 0;
+    }
+
+    .file-viewer-panel {
+        border-radius: 0;
+    }
 }
 
 .image-zoom-overlay {
@@ -5130,7 +5230,8 @@ body.note-fullscreen-open {
 
 body.note-fullscreen-open .menu-button,
 body.note-fullscreen-open .chat-toggle-button,
-body.note-fullscreen-open .scroll-to-top-button {
+body.note-fullscreen-open .scroll-to-top-button,
+body.note-fullscreen-open .edge-tab {
     display: none;
 }
 
@@ -5291,17 +5392,12 @@ html[data-theme="dark"] .note-fullscreen-close {
     display: block;
 }
 
+/* A folded note keeps a file's grey box as it is: folding only hides what is below, so the
+   file on the first line moves nowhere (the maintainer, 2026-11-01; interaction principle 1;
+   scripts/browser-folded-file-regressions.mjs). Drawing the box flat moved it up and left. */
 .note.collapsed:not(.editing) .note-reference-block.note-reference-file-image {
-    align-items: center;
     gap: 0;
-    padding: 0;
-    border: none;
-    background: transparent;
     min-width: 0;
-}
-
-.note.collapsed:not(.editing) .note-reference-block.note-reference-file-image .note-file-image-download-link {
-    display: none;
 }
 
 .note.collapsed:not(.editing) .note-reference-block.note-reference-file-image .note-reference-content {
@@ -5376,11 +5472,7 @@ html[data-theme="dark"] .note.collapsed:not(.editing) .note-content img.note-fil
 }
 
 .note.collapsed:not(.editing) .note-reference-block.note-reference-file:not(.note-reference-file-image):not(.note-reference-file-excalidraw) {
-    align-items: center;
     gap: 0;
-    padding: 0;
-    border: none;
-    background: transparent;
     min-width: 0;
 }
 
@@ -5401,11 +5493,6 @@ html[data-theme="dark"] .note.collapsed:not(.editing) .note-content img.note-fil
     flex: 1;
     min-width: 0;
     gap: 8px;
-}
-
-.note.collapsed:not(.editing) .note-reference-block.note-reference-file:not(.note-reference-file-image) .note-file-reference-badge {
-    min-width: 34px;
-    padding: 1px 5px;
 }
 
 .note.collapsed:not(.editing) .note-reference-block.note-reference-file:not(.note-reference-file-image) .note-file-reference-title {
@@ -6358,7 +6445,7 @@ body.pref-animated-transitions .note-tag-bar:focus-within::after {
     cursor: default;
 }
 
-.controls .tab-ui-folder-icon {
+.controls .tab-ui-icon {
     position: absolute;
     left: 6px;
     top: 50%;
@@ -6375,15 +6462,11 @@ body.pref-animated-transitions .note-tag-bar:focus-within::after {
     transition: opacity 0.15s ease;
 }
 
-.controls .tab-ui-folder-icon-front {
-    fill: var(--search-shell-surface);
-}
-
-body.pref-show-tab-ui .controls .tab-ui-folder-icon {
+body.pref-show-tab-ui .controls .tab-ui-icon {
     opacity: 0.78;
 }
 
-body.pref-show-tab-ui .controls .tab-hover-zone:hover .tab-ui-folder-icon {
+body.pref-show-tab-ui .controls .tab-hover-zone:hover .tab-ui-icon {
     opacity: 1;
 }
 
@@ -7213,8 +7296,7 @@ html.reference-sliding body {
     z-index: 12000;
 }
 
-.scroll-to-top-button,
-.chat-toggle-button {
+.scroll-to-top-button {
     width: var(--floating-button-size);
     height: var(--floating-button-size);
     border: 1px solid var(--border-color);
@@ -7241,24 +7323,17 @@ html.reference-sliding body {
     stroke-linejoin: round;
 }
 
-body.pref-show-ai-chat .chat-toggle-button {
-    border-color: rgba(0, 102, 204, 0.45);
-    background: #eff6ff;
-    color: var(--primary-color);
-}
-
 .scroll-to-top-button:disabled {
     opacity: 0.35;
     cursor: default;
 }
 
-.scroll-to-top-button:hover,
-.chat-toggle-button:hover {
+.scroll-to-top-button:hover {
     background: #ffffff;
 }
 
 .scroll-to-top-button:focus-visible,
-.chat-toggle-button:focus-visible {
+.edge-tab:focus-visible {
     outline: 2px solid rgba(0, 102, 204, 0.5);
     outline-offset: 2px;
 }
@@ -7281,6 +7356,173 @@ body.pref-show-ai-chat .chat-toggle-button {
 
 .menu-button:hover {
     background-color: var(--hover-color);
+}
+
+/* Pull tabs (the maintainer, 2026-11-02): the virtual folders on the left edge, the AI chat on
+   the right, at the window's bottom, as far up as ≡ is down from the top (at its middle until
+   the maintainer moved them, the same day); each its icon above an arrow pointing the way a
+   click moves its panel. Closed, a tab sits on the window's edge; open, on its panel's edge. */
+:root {
+    --edge-tab-width: 28px;
+    --edge-tab-height: 68px;
+}
+
+/* Where the chat's tab stands off the right edge: beside the chat while it shows. */
+body {
+    --chat-tab-right: 0px;
+}
+
+body.pref-show-ai-chat {
+    --chat-tab-right: var(--ai-chat-effective-width);
+}
+
+.edge-tab {
+    position: fixed;
+    bottom: var(--global-controls-top);
+    z-index: 12000;
+    width: var(--edge-tab-width);
+    height: var(--edge-tab-height);
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 0;
+    border: 1px solid var(--border-color);
+    background: rgba(255, 255, 255, 0.95);
+    color: var(--text-color);
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.edge-tab:hover {
+    background: var(--hover-color);
+}
+
+.edge-tab svg {
+    fill: none;
+    stroke: currentColor;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+.edge-tab-arrow {
+    font-size: 18px;
+    line-height: 1;
+    color: #6b7280;
+}
+
+.edge-tab-folders {
+    left: 0;
+    border-left: none;
+    border-radius: 0 10px 10px 0;
+}
+
+.edge-tab-folders svg {
+    width: 22px;
+    height: 17px;
+    stroke-width: 2;
+}
+
+.edge-tab-folders .edge-tab-arrow::before {
+    content: "›";
+}
+
+/* Open, outside the panel on its right edge: the chat's tab's mirror image (the maintainer,
+   2026-11-02). */
+body.virtual-folders-on .edge-tab-folders {
+    left: calc(var(--side-rail-edge) + var(--virtual-folders-width));
+}
+
+body.virtual-folders-on .edge-tab-folders .edge-tab-arrow::before {
+    content: "‹";
+}
+
+.edge-tab-chat {
+    right: 0;
+    border-right: none;
+    border-radius: 10px 0 0 10px;
+}
+
+.edge-tab-chat .edge-tab-arrow::before {
+    content: "‹";
+}
+
+body.pref-show-ai-chat .edge-tab-chat {
+    right: var(--chat-tab-right);
+}
+
+body.pref-show-ai-chat .edge-tab-chat .edge-tab-arrow::before {
+    content: "›";
+}
+
+/* The tree's width handle, on the panel's right edge, as the chat's is on its left
+   (.ai-chat-resizer). */
+.virtual-folders-resizer {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: calc(var(--side-rail-edge) + var(--virtual-folders-width) - 4px);
+    z-index: 6;
+    width: 8px;
+    display: none;
+    cursor: col-resize;
+    touch-action: none;
+}
+
+body.virtual-folders-on .virtual-folders-resizer {
+    display: block;
+}
+
+.virtual-folders-resizer::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 3px;
+    width: 2px;
+    background: transparent;
+}
+
+.virtual-folders-resizer:hover::after,
+.virtual-folders-resizer:focus-visible::after,
+body.virtual-folders-resizing .virtual-folders-resizer::after {
+    background: var(--primary-color);
+}
+
+.virtual-folders-resizer:focus-visible {
+    outline: none;
+}
+
+body.virtual-folders-resizing,
+body.virtual-folders-resizing * {
+    cursor: col-resize !important;
+    user-select: none !important;
+}
+
+/* Where the tree can't show (it hides at 900px and below), its tab doesn't either. */
+@media (max-width: 900px) {
+    .edge-tab-folders,
+    body.virtual-folders-on .virtual-folders-resizer {
+        display: none;
+    }
+}
+
+/* Nor the chat's, where the chat can't show. */
+@media (max-width: 760px), (max-height: 300px) {
+    .edge-tab-chat {
+        display: none;
+    }
+
+    body.pref-show-ai-chat {
+        --chat-tab-right: 0px;
+    }
+
+    /* No chat's tab to clear: the corner, as before. */
+    .app-notice-stack {
+        right: 18px;
+    }
 }
 
 /* Loading state styling */
@@ -7627,6 +7869,20 @@ html[data-theme="dark"] ::highlight(metalist-find-current) {
     color: #000000;
 }
 
+/* A diagram that is the current match with no label showing the words (only its code holds
+   them): outlined in the current match's colour. An outline takes no space, so nothing moves. */
+.meta-mermaid-diagram.is-find-current,
+.meta-mermaid-source.is-find-current {
+    outline: 2px solid #ff9632;
+    outline-offset: 2px;
+    border-radius: 4px;
+}
+
+html[data-theme="dark"] .meta-mermaid-diagram.is-find-current,
+html[data-theme="dark"] .meta-mermaid-source.is-find-current {
+    outline-color: #e07800;
+}
+
 /* The find bar floats just under the search controls, at their right; it takes no space. */
 .find-in-list-bar {
     position: fixed;
@@ -7734,9 +7990,13 @@ html[data-theme="dark"] ::highlight(metalist-find-current) {
 }
 
 .meta-copyable {
-    cursor: pointer;
     user-select: text;
     border-radius: 6px;
+}
+
+/* A click copies it, in MetaList (mouse-events.js) and in an export (html_export.py). */
+.meta-copyable {
+    cursor: pointer;
 }
 
 .meta-copyable:hover {
@@ -7755,6 +8015,21 @@ html[data-theme="dark"] ::highlight(metalist-find-current) {
     font-size: 1.35em;
     font-weight: 650;
     letter-spacing: 0.01em;
+}
+
+/* @quote: a quote as Markdown draws one, a block with a bar at its left (as
+   .meta-markdown blockquote). A region mid-line is a block of its own, the text around it
+   on lines of its own; regions on lines next to each other join into one bar. */
+.meta-quote {
+    display: block;
+    padding-left: 0.8em;
+    border-left: 3px solid rgba(0, 0, 0, 0.2);
+    color: #555555;
+}
+
+html[data-theme="dark"] .meta-quote {
+    color: var(--app-text-muted);
+    border-left-color: rgba(235, 235, 235, 0.24);
 }
 
 .meta-bold {
@@ -7873,22 +8148,93 @@ html[data-theme="dark"] ::highlight(metalist-find-current) {
     position: relative;
 }
 
-.meta-credential-value:hover {
+/* A click copies a value (mouse-events.js); one hidden in an export has nothing to copy. */
+.meta-credential-value:not([data-redacted]):hover {
     text-decoration: underline;
+}
+
+.meta-credential-value[data-redacted] {
+    cursor: auto;
+}
+
+/* A folded note draws its first line as text, every block in it as a block: a credential row
+   stays a row, its eye where it is when the note is open. */
+.note.collapsed:not(.editing) .note-content .meta-credential {
+    display: inline-flex;
+}
+
+/* A password in MetaList (value-buttons-service.js) is monospaced, to tell l, 1 and I apart
+   when its eye shows it; the eye sits right after it. A long one wraps, the eye after its end,
+   the row's lock on its first line. */
+.meta-credential-value.meta-credential-monospace {
+    font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    font-size: 0.97em;
+    overflow-wrap: anywhere;
+}
+
+/* A folded note sets every font to its own size; the password keeps its size, so the eye is
+   where it is when the note is open. */
+.note.collapsed:not(.editing) .note-content .meta-credential-value.meta-credential-monospace {
+    font-size: 0.97em !important;
+}
+
+.meta-credential.meta-credential-with-eye {
+    align-items: flex-start;
+}
+
+/* A password's eye (value-buttons-service.js): always there, faint, darker on hover. */
+.meta-value-buttons {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    vertical-align: middle;
+    user-select: none;
+}
+
+.meta-value-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    border: none;
+    border-radius: 4px;
+    background: transparent;
+    color: inherit;
+    opacity: 0.35;
+    cursor: pointer;
+}
+
+.meta-value-button:hover,
+.meta-value-button:focus-visible {
+    opacity: 0.85;
+    background-color: rgba(0, 0, 0, 0.08);
+}
+
+.meta-value-button-icon {
+    width: 15px;
+    height: 15px;
+}
+
+.meta-value-button-eye-off-icon,
+.meta-value-button[aria-pressed="true"] .meta-value-button-eye-icon {
+    display: none;
+}
+
+.meta-value-button[aria-pressed="true"] .meta-value-button-eye-off-icon {
+    display: inline;
+}
+
+html[data-theme="dark"] .meta-value-button:hover,
+html[data-theme="dark"] .meta-value-button:focus-visible {
+    background-color: rgba(255, 255, 255, 0.12);
 }
 
 .meta-credential-value.meta-credential-copied {
     animation: meta-credential-copied 0.7s ease;
 }
 
-
-.meta-credential-password .meta-credential-value.meta-credential-copied {
-    filter: blur(4px);
-}
-
-.meta-credential-password .meta-credential-value {
-    filter: blur(4px);
-}
 
 @keyframes meta-credential-copied {
     0% {
@@ -8325,8 +8671,70 @@ html[data-theme="dark"] .meta-code-code .tok-cpf { color: #8b949e; }
     padding-left: 0.2em;
 }
 
+/* Two lists side by side (`*` items then `-` items, `1)` then `1.`) are two lists in
+   standard Markdown: a gap shows they are (docs/ui/content-formatting.md, Lists). */
+.meta-markdown :is(ul, ol) + :is(ul, ol) {
+    margin-top: 1em;
+}
+
 .meta-markdown li {
     margin: 0.2em 0;
+}
+
+/* A task (- [ ] milk): its box in place of the bullet, drawn as the @todo box. A
+   numbered task keeps its number, the box after it (1. [ ] Book flights). */
+.meta-markdown ul > li.meta-markdown-task {
+    list-style: none;
+}
+
+.meta-markdown-task-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    margin-right: 6px;
+    vertical-align: -4px;
+    color: #444444;
+    cursor: pointer;
+    border-radius: 4px;
+    transition: background-color 0.15s ease;
+}
+
+.meta-markdown-task-toggle:hover {
+    background-color: rgba(0, 0, 0, 0.06);
+}
+
+.meta-markdown-task-toggle svg {
+    width: 18px;
+    height: 18px;
+    display: block;
+}
+
+/* A folding callout's title (docs/ui/content-formatting.md, Callouts): the browser's own
+   arrow, and the title on its line. */
+.meta-markdown-callout-fold > summary,
+.meta-markdown-html-fold > summary {
+    cursor: pointer;
+}
+
+.meta-markdown-callout-fold[open] > summary {
+    margin-bottom: 0.35em;
+}
+
+.note.collapsed .meta-markdown-callout-fold > summary,
+.note.collapsed .meta-markdown-html-fold > summary {
+    cursor: inherit;
+}
+
+/* In an embed a task's box shows its source's state but is not a control. */
+.note-embed-node .meta-markdown-task-toggle {
+    cursor: default;
+}
+
+.note-embed-node .meta-markdown-task-toggle:hover,
+html[data-theme="dark"] .note-embed-node .meta-markdown-task-toggle:hover {
+    background-color: transparent;
 }
 
 .meta-markdown code {
@@ -8470,6 +8878,25 @@ html[data-theme="dark"] .meta-code-code .tok-cpf { color: #8b949e; }
 
 .meta-markdown tr:nth-child(even) td {
     background: #f8fafc;
+}
+
+/* A table in a note's rich text (a Markdown file imported as rich text, a pasted table) gets a
+   Markdown table's lines (the maintainer, 2026-11-03: without them it was hard to read). Not in
+   a collapsed note's one-line summary, nor in the file viewer, which draws its own (an email's
+   tables are its layout); a Markdown table's own rules outrank these. */
+:where(html:not(.file-viewer-document)) :where(.note:not(.collapsed), .note.editing) :where(.note-content) table {
+    border-collapse: collapse;
+    margin: 0.35em 0;
+}
+
+:where(html:not(.file-viewer-document)) :where(.note:not(.collapsed), .note.editing) :where(.note-content) :is(th, td) {
+    border: 1px solid rgba(0, 0, 0, 0.12);
+    padding: 6px 10px;
+    vertical-align: top;
+}
+
+:where(html[data-theme="dark"]:not(.file-viewer-document)) :where(.note:not(.collapsed), .note.editing) :where(.note-content) :is(th, td) {
+    border-color: var(--app-border-soft);
 }
 
 /* LaTeX meta tags */
@@ -8843,6 +9270,90 @@ html[data-theme="dark"] .meta-code-code .tok-cpf { color: #8b949e; }
     background-color: rgba(255, 255, 255, 0.2);
 }
 
+/* Work running beside the user's (reading PDF text): in the window's lower left, just above the
+   folders' pull tab, out of the search bar's and the menu's way. It stays there whether the
+   folders show or not (the maintainer, 2026-11-03), and never covers the tab. */
+.floating-work {
+    position: fixed;
+    bottom: calc(var(--global-controls-top) + var(--edge-tab-height) + 8px);
+    left: var(--side-rail-edge);
+    z-index: 20000;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+    max-width: min(420px, calc(100vw - (2 * var(--side-rail-edge))));
+    pointer-events: none;
+}
+
+/* It has nothing to press: clicks go through it to the notes under it. Its width is fixed:
+   sized to its text, it grew and shrank as the counts and times changed (the maintainer,
+   2026-11-03). */
+.floating-work .floating-message {
+    pointer-events: none;
+    box-sizing: border-box;
+    width: min(420px, calc(100vw - (2 * var(--side-rail-edge))));
+}
+
+/* Work running beside the user's (reading PDF text): the text over a bar that fills. */
+.floating-message-work {
+    flex-wrap: wrap;
+}
+
+/* Above the bar: the time spent at the left, the time left at the right. */
+.floating-message-work-times {
+    flex: 1 0 100%;
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    margin-top: 2px;
+    font-size: 13px;
+    font-variant-numeric: tabular-nums;
+    opacity: 0.85;
+}
+
+.floating-message-progress {
+    flex: 1 0 100%;
+    height: 4px;
+    border-radius: 2px;
+    overflow: hidden;
+    background: color-mix(in srgb, currentColor 18%, transparent);
+}
+
+.floating-message-progress-fill {
+    height: 100%;
+    width: 0;
+    background: currentColor;
+    transition: width 0.3s ease;
+}
+
+.floating-message-progress.is-indeterminate .floating-message-progress-fill {
+    width: 30%;
+    animation: floating-message-progress-move 1.2s ease-in-out infinite;
+}
+
+@keyframes floating-message-progress-move {
+    from { transform: translateX(-100%); }
+    to { transform: translateX(340%); }
+}
+
+/* What a message offers (Undo after a note moved into a folder): a small outlined button. */
+.floating-message-action {
+    flex: 0 0 auto;
+    padding: 2px 10px;
+    border: 1px solid currentColor;
+    border-radius: 6px;
+    background: none;
+    color: inherit;
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.floating-message-action:hover {
+    background-color: rgba(255, 255, 255, 0.2);
+}
+
 /* Error dialogs (modals/error-dialog.js): a small dialog over the one the user was in,
    whose layout never changes for it. */
 .modal.error-dialog-layer {
@@ -9211,7 +9722,6 @@ html[data-theme="dark"] .note-reference-link-mode {
     background: var(--app-surface-2);
 }
 
-html[data-theme="dark"] .note-file-image-download-link,
 html[data-theme="dark"] .note-reference-link,
 html[data-theme="dark"] .note-file-reference-link {
     color: #d9e5f7;
@@ -9240,6 +9750,39 @@ html[data-theme="dark"] .note-file-image-preview-frame {
 }
 
 html[data-theme="dark"] .note-file-image-preview-placeholder {
+    color: var(--app-text-muted);
+}
+
+html[data-theme="dark"] .note-file-action,
+html[data-theme="dark"] .file-viewer-download,
+html[data-theme="dark"] .note-file-media-play {
+    border-color: var(--app-border-strong);
+    background: var(--app-surface-2);
+    color: #d9e5f7;
+}
+
+html[data-theme="dark"] .note-file-action:hover,
+html[data-theme="dark"] .note-file-action:focus-visible,
+html[data-theme="dark"] .file-viewer-download:hover,
+html[data-theme="dark"] .file-viewer-download:focus-visible,
+html[data-theme="dark"] .note-file-media-play:hover,
+html[data-theme="dark"] .note-file-media-play:focus-visible,
+html[data-theme="dark"] .file-viewer-close:hover,
+html[data-theme="dark"] .file-viewer-close:focus-visible {
+    border-color: var(--app-text-subtle);
+    background: var(--app-surface-0);
+}
+
+html[data-theme="dark"] .file-viewer-panel {
+    background: var(--app-surface-1);
+    color: #e5e5e5;
+}
+
+html[data-theme="dark"] .file-viewer-bar {
+    border-bottom-color: var(--app-border-soft);
+}
+
+html[data-theme="dark"] .file-viewer-message {
     color: var(--app-text-muted);
 }
 
@@ -9342,9 +9885,6 @@ html[data-theme="dark"] .controls {
     box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.14);
 }
 
-html[data-theme="dark"] .controls .tab-ui-folder-icon-front {
-    fill: var(--app-control-surface);
-}
 
 /* The light theme's translucent black tabs dropdown lets dark notes show through;
    in dark it is an opaque grey panel, a step lighter than the search bar. */
@@ -9429,8 +9969,12 @@ html[data-theme="dark"] .controls .search-suggestion.is-selected {
     border-color: rgba(90, 169, 255, 0.28);
 }
 
+html[data-theme="dark"] .edge-tab .edge-tab-arrow {
+    color: rgba(240, 240, 240, 0.6);
+}
+
 html[data-theme="dark"] .menu-button,
-html[data-theme="dark"] .chat-toggle-button,
+html[data-theme="dark"] .edge-tab,
 html[data-theme="dark"] .scroll-to-top-button {
     background: rgba(255, 255, 255, 0.08);
     border-color: rgba(255, 255, 255, 0.12);
@@ -9438,16 +9982,10 @@ html[data-theme="dark"] .scroll-to-top-button {
 }
 
 html[data-theme="dark"] .menu-button:hover,
-html[data-theme="dark"] .chat-toggle-button:hover,
+html[data-theme="dark"] .edge-tab:hover,
 html[data-theme="dark"] .scroll-to-top-button:hover {
     background: rgba(255, 255, 255, 0.16);
     border-color: rgba(255, 255, 255, 0.18);
-}
-
-html[data-theme="dark"] body.pref-show-ai-chat .chat-toggle-button {
-    border-color: rgba(90, 169, 255, 0.5);
-    background: rgba(90, 169, 255, 0.16);
-    color: var(--app-accent);
 }
 
 html[data-theme="dark"] .namespace-modal-radio-row,
@@ -9475,13 +10013,15 @@ html[data-theme="dark"] .namespace-ports-table thead th {
 }
 
 html[data-theme="dark"] .meta-copyable:hover,
-html[data-theme="dark"] .meta-status-toggle:hover {
+html[data-theme="dark"] .meta-status-toggle:hover,
+html[data-theme="dark"] .meta-markdown-task-toggle:hover {
     background-color: rgba(255, 255, 255, 0.12);
 }
 
 html[data-theme="dark"] .meta-credential-icon,
 html[data-theme="dark"] .meta-email-icon,
-html[data-theme="dark"] .meta-status-toggle {
+html[data-theme="dark"] .meta-status-toggle,
+html[data-theme="dark"] .meta-markdown-task-toggle {
     color: #c8d2df;
 }
 
@@ -11048,7 +11588,9 @@ body.ai-tagging-locked .ai-chat-tag-operation select:enabled { cursor: pointer !
    notice and the backup reminder never cover each other. */
 .app-notice-stack {
     position: fixed;
-    right: 18px;
+    /* Clear of the chat's tab at the bottom right, beside the chat while it shows (the
+       maintainer, 2026-11-02): 18px from it, as from the corner before. */
+    right: calc(var(--chat-tab-right) + var(--edge-tab-width) + 18px);
     bottom: 18px;
     z-index: 1100;
     display: flex;
@@ -11633,6 +12175,19 @@ suggestions as pills. */
         background: var(--modal-surface);
     }
 
+    /* Work cards: along the bottom, the page's width. */
+    .floating-work {
+        left: 8px;
+        right: 8px;
+        bottom: 8px;
+        max-width: none;
+        align-items: stretch;
+    }
+
+    .floating-work .floating-message {
+        width: auto;
+    }
+
     /* Floating messages hang under the search header, the page's width. */
     .floating-messages {
         top: calc(var(--search-header-bottom) + 8px);
@@ -11646,5 +12201,1362 @@ suggestions as pills. */
     .app-notice-stack,
     .reminder-surface {
         bottom: calc(var(--phone-bar-height) + env(safe-area-inset-bottom) + 12px);
+    }
+}
+
+/* ===== Setup and import wizards (PLAN.md, phase 2; wizard/wizard-modal.js) =====
+   A full-window page: the progress bar across the top, one screen at a time sliding
+   sideways, the buttons along the bottom. Colours from the dialog tokens, so both themes. */
+.modal.wizard-modal {
+    background: var(--modal-surface);
+}
+
+.modal.wizard-modal > .modal-content.wizard {
+    position: fixed;
+    inset: 0;
+    width: auto;
+    max-width: none;
+    max-height: none;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+    display: flex;
+    flex-direction: column;
+    background: var(--modal-surface);
+    color: var(--modal-text);
+    color-scheme: var(--modal-color-scheme);
+    overflow: hidden;
+}
+
+.wizard > .modal-close-button {
+    position: absolute;
+    top: 18px;
+    right: 22px;
+    z-index: 2;
+}
+
+.wizard-header {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 18px;
+    padding: 22px 64px 10px;
+}
+
+.wizard-title {
+    font-size: 13px;
+    font-weight: 650;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--modal-text-subtle);
+}
+
+.wizard-progress-holder {
+    width: min(760px, 100%);
+}
+
+/* The steps as dots on a line: done ones filled, the current one ringed, its name dark. */
+.wizard-progress {
+    display: grid;
+    grid-template-columns: repeat(var(--wizard-step-count), minmax(0, 1fr));
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.wizard-progress-step {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+}
+
+/* The line to the step before: accent once that step is behind. */
+.wizard-progress-step + .wizard-progress-step::before {
+    content: "";
+    position: absolute;
+    top: 6px;
+    right: 50%;
+    width: 100%;
+    height: 2px;
+    background: var(--modal-track);
+    transition: background-color 250ms ease;
+}
+
+.wizard-progress-step.is-done + .wizard-progress-step::before,
+.wizard-progress-step.is-current::before,
+.wizard-progress-step.is-done::before {
+    background: var(--modal-accent);
+}
+
+.wizard-progress-dot {
+    position: relative;
+    z-index: 1;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    border: 2px solid var(--modal-track);
+    background: var(--modal-surface);
+    transition: background-color 250ms ease, border-color 250ms ease, box-shadow 250ms ease;
+}
+
+.wizard-progress-step.is-done .wizard-progress-dot {
+    border-color: var(--modal-accent);
+    background: var(--modal-accent);
+}
+
+.wizard-progress-step.is-current .wizard-progress-dot {
+    border-color: var(--modal-accent);
+    box-shadow: 0 0 0 4px var(--modal-selected);
+}
+
+.wizard-progress-label {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 12px;
+    color: var(--modal-text-subtle);
+}
+
+.wizard-progress-step.is-current .wizard-progress-label {
+    font-weight: 650;
+    color: var(--modal-text);
+}
+
+.wizard-progress-caption {
+    display: none;
+}
+
+/* The screens slide inside this window; one leaving lies over the one coming in. */
+.wizard-viewport {
+    position: relative;
+    flex: 1 1 auto;
+    overflow: hidden;
+}
+
+.wizard-screen {
+    position: absolute;
+    inset: 0;
+    overflow-y: auto;
+    padding: 36px 24px 48px;
+}
+
+.wizard-screen-inner {
+    width: min(760px, 100%);
+    margin: 0 auto;
+}
+
+.wizard-screen-title {
+    margin: 0 0 10px;
+    font-size: 30px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    color: var(--modal-text);
+}
+
+.wizard-intro {
+    margin: 0 0 28px;
+    max-width: 620px;
+    font-size: 15px;
+    line-height: 1.55;
+    color: var(--modal-text-muted);
+}
+
+.wizard-choices {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 14px;
+}
+
+/* One under another: a list of options that grows (the import's sources). */
+.wizard-choices.is-stacked {
+    grid-template-columns: minmax(0, 420px);
+    gap: 10px;
+}
+
+/* Above the dialogs' rule for their buttons (.modal-content button:not(...)). */
+.modal.wizard-modal .modal-content button.wizard-choice {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+    width: auto;
+    padding: 18px 18px 16px;
+    border: 1.5px solid var(--modal-border);
+    border-radius: 14px;
+    background: var(--modal-surface-raised);
+    color: var(--modal-text);
+    font-weight: inherit;
+    text-align: left;
+    /* Room for the check (.wizard-choice-check) at the top right. */
+    position: relative;
+    padding-right: 52px;
+    box-shadow: none;
+    cursor: pointer;
+    transition: border-color 150ms ease, box-shadow 150ms ease, transform 150ms ease, background-color 150ms ease;
+}
+
+.modal.wizard-modal .modal-content button.wizard-choice:hover,
+.modal.wizard-modal .modal-content button.wizard-choice:focus,
+.modal.wizard-modal .modal-content button.wizard-choice:active {
+    background: var(--modal-surface-raised);
+    color: var(--modal-text);
+}
+
+.modal.wizard-modal .modal-content button.wizard-choice:focus-visible {
+    outline: 2px solid var(--modal-accent);
+    outline-offset: 2px;
+}
+
+.modal.wizard-modal .modal-content button.wizard-choice:hover {
+    border-color: var(--modal-quiet-border-hover);
+    transform: translateY(-1px);
+    box-shadow: var(--modal-menu-shadow);
+}
+
+.modal.wizard-modal .modal-content button.wizard-choice.is-chosen,
+.modal.wizard-modal .modal-content button.wizard-choice.is-chosen:hover,
+.modal.wizard-modal .modal-content button.wizard-choice.is-chosen:focus {
+    border-color: var(--modal-accent);
+    background: var(--modal-selected);
+}
+
+/* The chosen card's check, beside its title at the top right (the maintainer, 2026-11-01:
+   which one is chosen at a glance). Only the chosen card shows it. */
+.wizard-choice-check {
+    position: absolute;
+    top: 17px;
+    right: 16px;
+    display: none;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: var(--modal-accent);
+    color: #ffffff;
+    font-size: 13px;
+    font-weight: 800;
+    line-height: 22px;
+    text-align: center;
+}
+
+.wizard-choice.is-chosen .wizard-choice-check {
+    display: block;
+}
+
+.wizard-choice-title {
+    font-size: 16px;
+    font-weight: 650;
+}
+
+.wizard-choice-badge {
+    padding: 1px 8px;
+    border-radius: 999px;
+    background: var(--modal-heading-tint);
+    color: var(--modal-heading-text);
+    font-size: 11px;
+    font-weight: 650;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.wizard-choice-text {
+    font-size: 13.5px;
+    line-height: 1.45;
+    color: var(--modal-text-muted);
+}
+
+.wizard-folder-chosen {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-bottom: 16px;
+    padding: 16px 18px;
+    border: 1.5px solid var(--modal-border);
+    border-radius: 14px;
+    background: var(--modal-surface-raised);
+}
+
+.wizard-folder-chosen.is-empty {
+    color: var(--modal-text-subtle);
+}
+
+/* The card opens the folder dialog, as Choose Folder… does. */
+.wizard-folder-chosen[role="button"] {
+    cursor: pointer;
+}
+
+.wizard-folder-chosen.is-empty:hover {
+    border-color: var(--modal-border-strong);
+    background: var(--modal-hover);
+}
+
+.wizard-folder-chosen:focus-visible {
+    outline: 2px solid var(--modal-focus-ring);
+    outline-offset: 2px;
+}
+
+/* A folder chosen: as a chosen card (.wizard-choice.is-chosen), its check at the top right. */
+.wizard-folder-chosen.is-chosen {
+    position: relative;
+    padding-right: 52px;
+    border-color: var(--modal-accent);
+    background: var(--modal-selected);
+}
+
+.wizard-folder-chosen.is-chosen .wizard-choice-check {
+    display: block;
+}
+
+.wizard-folder-name {
+    font-size: 17px;
+    font-weight: 650;
+}
+
+.wizard-folder-counts {
+    font-size: 13px;
+    color: var(--modal-text-muted);
+}
+
+/* Split: the modes on the left, the sample as MetaList draws notes on the right. */
+.wizard-split {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
+    gap: 24px;
+    align-items: start;
+}
+
+.wizard-split .wizard-choices {
+    grid-template-columns: 1fr;
+}
+
+/* The Markdown screen: three sets of choices, wider than the sample, so two-across cards
+   keep to two lines and the screen to its height. */
+.wizard-split.is-choices-wide {
+    grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+}
+
+.wizard-split .wizard-choices.is-compact.is-pair {
+    grid-template-columns: 1fr 1fr;
+}
+
+.wizard-sample {
+    padding: 14px;
+    border: 1.5px dashed var(--modal-border);
+    border-radius: 14px;
+    background: var(--bg-color);
+}
+
+.wizard-sample-note {
+    margin: 4px 0;
+    padding: 6px 10px;
+    border: 1px solid var(--modal-border);
+    border-radius: 8px;
+    background: var(--modal-surface);
+}
+
+.wizard-sample-children {
+    margin: 6px 0 0 18px;
+}
+
+.wizard-sample-text {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.wizard-sample-unit {
+    font-size: 13.5px;
+    line-height: 1.4;
+}
+
+.wizard-sample-unit.is-heading {
+    font-weight: 700;
+}
+
+/* Markdown kept as files: the sample is a file's card, its kind and its name. */
+.wizard-sample-file {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 13.5px;
+}
+
+.wizard-sample-badge {
+    padding: 1px 8px;
+    border-radius: 999px;
+    background: var(--modal-border);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    color: var(--modal-text-muted);
+}
+
+.wizard-sample-file-name {
+    text-decoration: underline;
+}
+
+/* Markdown: a heading is a line like the others, its # showing. */
+.wizard-write-sample.is-markdown .wizard-sample-unit.is-heading {
+    font-weight: 400;
+}
+
+/* Two sets of choices on one screen (Split each file, Write as): small cards, the title and
+   its badge on one line, the text under them. */
+.wizard-choices.is-compact {
+    grid-template-columns: 1fr;
+    gap: 8px;
+}
+
+/* Two choices side by side: the screen keeps its height. */
+.wizard-choices.is-compact.is-pair {
+    grid-template-columns: 1fr 1fr;
+}
+
+/* Four small choices across (an image's longest side); two across on a narrow screen. */
+.wizard-choices.is-compact.is-quad {
+    grid-template-columns: repeat(4, 1fr);
+}
+
+@media (max-width: 640px) {
+    .wizard-choices.is-compact.is-quad {
+        grid-template-columns: 1fr 1fr;
+    }
+}
+
+.modal.wizard-modal .modal-content .wizard-choices.is-compact button.wizard-choice {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 2px 8px;
+    padding: 10px 44px 10px 14px;
+    border-radius: 10px;
+}
+
+.wizard-choices.is-compact .wizard-choice-title {
+    font-size: 14.5px;
+}
+
+.wizard-choices.is-compact .wizard-choice-text {
+    flex-basis: 100%;
+    font-size: 13px;
+}
+
+.wizard-choices.is-compact .wizard-choice-check {
+    top: 50%;
+    right: 12px;
+    width: 20px;
+    height: 20px;
+    margin-top: -10px;
+    line-height: 20px;
+}
+
+.modal.wizard-modal .wizard h3.wizard-choice-group {
+    margin: 0 0 8px;
+    font-size: 13px;
+    font-weight: 650;
+    letter-spacing: 0.02em;
+    color: var(--modal-text-muted);
+}
+
+/* A rule between the sets of choices (the maintainer, 2026-11-01); the image sizes' set
+   follows the Compress card from inside a box of its own. */
+.modal.wizard-modal .wizard h3.wizard-choice-group:not(:first-child),
+.modal.wizard-modal .wizard .wizard-image-sizes h3.wizard-choice-group {
+    margin-top: 14px;
+    padding-top: 12px;
+    border-top: 1px solid var(--modal-border);
+}
+
+.wizard-caption {
+    display: block;
+    margin-bottom: 6px;
+    font-size: 12px;
+    color: var(--modal-text-subtle);
+}
+
+.wizard-field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-width: 440px;
+    margin-bottom: 14px;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.wizard-toggle {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 12px;
+    font-size: 15px;
+}
+
+.modal-content .wizard-toggle input[type="checkbox"] {
+    flex: none;
+    width: auto;
+    margin: 0;
+}
+
+.wizard code {
+    padding: 0 3px;
+}
+
+.wizard-key-field {
+    margin-top: 22px;
+}
+
+/* A step's yes or no at its top; unticked, the fields under it fold away. */
+.wizard-toggle.wizard-toggle-lead {
+    margin-bottom: 20px;
+    font-size: 16px;
+    font-weight: 600;
+}
+
+.wizard-toggled {
+    display: grid;
+    grid-template-rows: 1fr;
+    opacity: 1;
+}
+
+.wizard-toggled.is-off {
+    grid-template-rows: 0fr;
+    opacity: 0;
+}
+
+.wizard-toggled-inner {
+    min-height: 0;
+    overflow: hidden;
+}
+
+body.pref-animated-transitions .wizard-toggled {
+    transition: grid-template-rows 300ms cubic-bezier(0.4, 0, 0.2, 1), opacity 220ms ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    body.pref-animated-transitions .wizard-toggled {
+        transition: none;
+    }
+}
+
+.wizard-warning {
+    max-width: 520px;
+    color: var(--modal-warning);
+}
+
+.wizard-note {
+    margin: 10px 0 0;
+    font-size: 13px;
+    color: var(--modal-text-subtle);
+}
+
+/* A folder of files' checklist (folder-import-and-file-previews.md §3): a row per kind of
+   file, a neutral bar each, and a total under them. Red only for going over a limit. */
+.wizard-kinds {
+    display: grid;
+    gap: 2px;
+    max-width: 640px;
+}
+
+.wizard-kind {
+    display: grid;
+    grid-template-columns: 27px 22px minmax(0, 1fr) 90px 72px 140px;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 8px;
+    border-radius: 6px;
+    cursor: pointer;
+}
+
+.wizard-kind:hover {
+    background: var(--modal-selected);
+}
+
+.modal-content .wizard-kind input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+    margin: 0;
+}
+
+.wizard-kind-label {
+    min-width: 0;
+    cursor: pointer;
+}
+
+/* A kind's arrow: opens the list of its files. The same arrow as a note's
+   (.note-collapse-toggle): its glyphs, size and colours, not a dialog button (named with its
+   row, to outrank the dialog's own button and hover rules). */
+.modal.wizard-modal .modal-content .wizard-kind button.wizard-kind-arrow,
+.modal.wizard-modal .modal-content .wizard-kind button.wizard-kind-arrow:hover,
+.modal.wizard-modal .modal-content .wizard-kind button.wizard-kind-arrow:focus,
+.modal.wizard-modal .modal-content .wizard-kind button.wizard-kind-arrow:active {
+    width: 27px;
+    height: 27px;
+    padding: 0;
+    border: none;
+    border-radius: 0;
+    background: none;
+    box-shadow: none;
+    color: rgba(0, 0, 0, 0.35);
+    font-size: 23px;
+    line-height: 27px;
+    text-align: center;
+    cursor: pointer;
+}
+
+.modal.wizard-modal .modal-content .wizard-kind button.wizard-kind-arrow:hover {
+    color: #000000;
+}
+
+html[data-theme="dark"] .modal.wizard-modal .modal-content .wizard-kind button.wizard-kind-arrow {
+    color: rgba(235, 235, 235, 0.4);
+}
+
+html[data-theme="dark"] .modal.wizard-modal .modal-content .wizard-kind button.wizard-kind-arrow:hover {
+    color: #ffffff;
+}
+
+/* Reached by Tab: a ring, as a note's arrow has. */
+.modal.wizard-modal .modal-content .wizard-kind button.wizard-kind-arrow:focus-visible {
+    outline: 2px solid var(--modal-focus-ring);
+    outline-offset: 1px;
+    border-radius: 3px;
+}
+
+/* A bookmarks import's Summary: what is left out, under the note-sized arrow the Files step's
+   kinds have (docs/ready-to-build/bookmark-import.md). */
+.wizard-left-out summary {
+    display: flex;
+    align-items: center;
+    list-style: none;
+    cursor: pointer;
+}
+
+.wizard-left-out summary::-webkit-details-marker {
+    display: none;
+}
+
+.wizard-left-out .wizard-kind-arrow {
+    width: 27px;
+    height: 27px;
+    color: rgba(0, 0, 0, 0.35);
+    font-size: 23px;
+    line-height: 27px;
+    text-align: center;
+}
+
+.wizard-left-out .wizard-kind-arrow::before {
+    content: "▸";
+}
+
+.wizard-left-out[open] .wizard-kind-arrow::before {
+    content: "▾";
+}
+
+.wizard-left-out summary:hover .wizard-kind-arrow {
+    color: #000000;
+}
+
+html[data-theme="dark"] .wizard-left-out .wizard-kind-arrow {
+    color: rgba(235, 235, 235, 0.4);
+}
+
+html[data-theme="dark"] .wizard-left-out summary:hover .wizard-kind-arrow {
+    color: #ffffff;
+}
+
+/* Under the arrow, not under a kind's box. */
+.wizard-left-out .wizard-kind-files {
+    margin-left: 27px;
+}
+
+/* Why it is left out, on one line: its column as wide as the longest why. */
+.wizard-left-out .wizard-kind-file {
+    grid-template-columns: minmax(0, 1fr) max-content;
+}
+
+.wizard-left-out .wizard-kind-size {
+    white-space: nowrap;
+}
+
+.wizard-kind-files {
+    max-height: 260px;
+    overflow-y: auto;
+    /* Indented under its kind: the files' boxes line up with the kind's name (its row's
+       padding, arrow, box and the gaps between them). */
+    margin: 2px 0 8px 77px;
+    padding: 0 8px 0 0;
+    list-style: none;
+}
+
+.wizard-kind-file {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 72px;
+    gap: 10px;
+    padding: 2px 0;
+    font-size: 13px;
+}
+
+.wizard-kind-file-path {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    cursor: pointer;
+}
+
+.modal-content .wizard-kind-file-path input[type="checkbox"] {
+    flex: none;
+    width: 14px;
+    height: 14px;
+    margin: 0;
+}
+
+.wizard-kind-file-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.wizard-kind-file-folder {
+    color: var(--modal-text-subtle);
+}
+
+.wizard-kind-file .wizard-kind-over {
+    display: inline;
+    margin-left: 8px;
+}
+
+.wizard-kind-over {
+    display: block;
+    font-size: 12px;
+    color: var(--modal-danger);
+}
+
+.wizard-kind-count,
+.wizard-kind-size {
+    font-size: 13px;
+    color: var(--modal-text-subtle);
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+.wizard-kind-bar {
+    display: flex;
+    height: 8px;
+    border-radius: 4px;
+    background: var(--modal-border);
+    overflow: hidden;
+}
+
+/* Green: will be imported; grey: won't be (the maintainer, 2026-11-01). */
+.wizard-kind-bar > span {
+    display: block;
+    flex: none;
+    height: 100%;
+}
+
+.wizard-kind-bar > .is-imported {
+    background: var(--modal-success);
+}
+
+.wizard-kind-bar > .is-left-out {
+    background: var(--modal-text-subtle);
+    opacity: 0.45;
+}
+
+.wizard-total {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 140px;
+    align-items: center;
+    gap: 10px;
+    max-width: 640px;
+    margin-top: 14px;
+    padding: 10px 8px 0;
+    border-top: 1px solid var(--modal-border);
+    font-size: 13px;
+}
+
+.wizard-total-text.is-over {
+    color: var(--modal-danger);
+}
+
+.wizard-kind-bar.is-over > .is-imported {
+    background: var(--modal-danger);
+}
+
+/* The folder the import goes into, under the folder picked (one screen). */
+.wizard-into-field {
+    margin-top: 28px;
+}
+
+/* A typed name the step can't use (the import's folder): said as the wizard's warnings are. */
+.wizard-note.is-problem {
+    color: var(--modal-warning);
+}
+
+.modal.wizard-modal .wizard h3.wizard-subtitle {
+    margin: 30px 0 8px;
+    font-size: 16px;
+    font-weight: 650;
+    color: var(--modal-text);
+}
+
+.wizard-list {
+    margin: 0;
+    padding-left: 20px;
+    font-size: 15px;
+    line-height: 1.9;
+}
+
+.wizard-import-progress {
+    height: 8px;
+    max-width: 520px;
+    border-radius: 999px;
+    background: var(--modal-track);
+    overflow: hidden;
+}
+
+/* While the length is unknown, a short piece of the bar sweeps across it. */
+.wizard-import-progress.is-indeterminate .wizard-progress-fill {
+    width: 30%;
+    animation: wizard-progress-sweep 1.2s ease-in-out infinite;
+}
+
+@keyframes wizard-progress-sweep {
+    from { transform: translateX(-100%); }
+    to { transform: translateX(340%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .wizard-import-progress.is-indeterminate .wizard-progress-fill {
+        width: 100%;
+        animation: none;
+        opacity: 0.4;
+    }
+}
+
+.wizard-progress-fill {
+    width: 0;
+    height: 100%;
+    border-radius: inherit;
+    background: var(--modal-accent);
+    transition: width 160ms ease-out;
+}
+
+.wizard-import-count {
+    margin-top: 12px;
+    font-size: 14px;
+    color: var(--modal-text-muted);
+}
+
+/* One count per row: the numbers right-aligned in one column, each label beside its number. */
+.wizard-stats {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    column-gap: 14px;
+    row-gap: 4px;
+    align-items: baseline;
+}
+
+.wizard-stat {
+    justify-self: end;
+    font-size: 30px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    color: var(--modal-accent);
+}
+
+.wizard-stat-label {
+    font-size: 17px;
+    color: var(--modal-text-muted);
+}
+
+.wizard-footer {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 14px max(24px, calc((100% - 760px) / 2));
+    border-top: 1px solid var(--modal-border);
+    background: var(--modal-surface);
+}
+
+.wizard-footer:empty {
+    display: none;
+}
+
+.wizard-footer-space {
+    flex: 1 1 auto;
+}
+
+/* The button that starts the import: green, bigger, bold (above the dialogs' button rule).
+   One green in both themes, dark enough for white text. */
+.modal.wizard-modal .modal-content button.wizard-next.is-commit {
+    --wizard-commit-green: #178a51;
+    padding: 12px 30px;
+    border: 1px solid transparent;
+    border-radius: 10px;
+    background: var(--wizard-commit-green);
+    color: #ffffff;
+    font-size: 17px;
+    font-weight: 700;
+    box-shadow: 0 6px 18px rgba(23, 138, 81, 0.32);
+}
+
+.modal.wizard-modal .modal-content button.wizard-next.is-commit:hover,
+.modal.wizard-modal .modal-content button.wizard-next.is-commit:focus {
+    background: var(--wizard-commit-green);
+    color: #ffffff;
+    filter: brightness(1.08);
+}
+
+/* Create Vault's ports, side by side. */
+.wizard-port-row {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 180px));
+    gap: 16px;
+}
+
+/* The password generator, opened to fill the new vault wizard's password, shows over it. */
+.modal.opens-over-wizard {
+    z-index: 15001;
+}
+
+/* A step not done yet (no folder chosen, no key typed): Next is greyed out, and pressing it
+   still says what is missing. */
+.modal.wizard-modal .modal-content button.wizard-next.is-incomplete,
+.modal.wizard-modal .modal-content button.wizard-next.is-incomplete:hover,
+.modal.wizard-modal .modal-content button.wizard-next.is-incomplete:focus {
+    opacity: 0.4;
+    filter: none;
+    box-shadow: none;
+    cursor: default;
+}
+
+@media (max-width: 640px) {
+    .wizard-header {
+        padding: 16px 48px 6px 16px;
+    }
+
+    .wizard-progress-label {
+        display: none;
+    }
+
+    .wizard-progress-caption {
+        display: block;
+        margin: 10px 0 0;
+        text-align: center;
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--modal-text);
+    }
+
+
+    .wizard-screen {
+        padding: 24px 16px 32px;
+    }
+
+    .wizard-screen-title {
+        font-size: 24px;
+    }
+
+    .wizard-split {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* Write as: the sample note while edited. Rich text draws the formatting and hides the
+   marks; Markdown shows the text as written, marks and all, plainly, with its tag. The
+   switch slides the marks in or out, with Animated Transitions on and no Reduce Motion. */
+.wizard-write-note {
+    padding: 12px 14px;
+}
+
+.wizard-write-line {
+    font-size: 14px;
+    line-height: 1.7;
+}
+
+.wizard-write-line.is-heading {
+    font-size: 19px;
+    font-weight: 700;
+}
+
+.wizard-md-mark {
+    display: inline-block;
+    max-width: 0;
+    overflow: hidden;
+    vertical-align: bottom;
+    white-space: pre;
+    opacity: 0;
+    color: var(--modal-text-subtle);
+}
+
+.wizard-md-strong {
+    font-weight: 700;
+}
+
+.wizard-md-em {
+    font-style: italic;
+}
+
+.wizard-md-link {
+    color: var(--modal-accent);
+    text-decoration: underline;
+}
+
+.wizard-rich-bullet {
+    display: inline-block;
+    max-width: 2em;
+    overflow: hidden;
+    vertical-align: bottom;
+    color: var(--modal-text-subtle);
+}
+
+.wizard-write-tag {
+    display: grid;
+    grid-template-rows: 0fr;
+    opacity: 0;
+}
+
+.wizard-write-tag > span {
+    overflow: hidden;
+    justify-self: start;
+    margin-top: 8px;
+    padding: 2px 8px;
+    border: 1px solid var(--modal-border);
+    border-radius: 6px;
+    font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    font-size: 12px;
+    color: var(--modal-text-muted);
+}
+
+.wizard-write-sample.is-markdown .wizard-md-mark {
+    max-width: 16em;
+    opacity: 1;
+}
+
+.wizard-write-sample.is-markdown .wizard-write-line.is-heading {
+    font-size: 14px;
+    font-weight: 400;
+}
+
+.wizard-write-sample.is-markdown .wizard-md-strong {
+    font-weight: 400;
+}
+
+.wizard-write-sample.is-markdown .wizard-md-em {
+    font-style: normal;
+}
+
+.wizard-write-sample.is-markdown .wizard-md-link {
+    color: inherit;
+    text-decoration: none;
+}
+
+.wizard-write-sample.is-markdown .wizard-rich-bullet {
+    max-width: 0;
+}
+
+.wizard-write-sample.is-markdown .wizard-write-tag {
+    grid-template-rows: 1fr;
+    opacity: 1;
+}
+
+body.pref-animated-transitions .wizard-md-mark,
+body.pref-animated-transitions .wizard-rich-bullet {
+    transition: max-width 380ms cubic-bezier(0.4, 0, 0.2, 1), opacity 380ms ease;
+}
+
+body.pref-animated-transitions .wizard-write-line.is-heading,
+body.pref-animated-transitions .wizard-md-link {
+    transition: font-size 380ms cubic-bezier(0.4, 0, 0.2, 1), color 380ms ease;
+}
+
+body.pref-animated-transitions .wizard-write-tag {
+    transition: grid-template-rows 380ms cubic-bezier(0.4, 0, 0.2, 1), opacity 380ms ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    body.pref-animated-transitions .wizard-md-mark,
+    body.pref-animated-transitions .wizard-rich-bullet,
+    body.pref-animated-transitions .wizard-write-line.is-heading,
+    body.pref-animated-transitions .wizard-md-link,
+    body.pref-animated-transitions .wizard-write-tag {
+        transition: none;
+    }
+}
+
+/* Virtual folders, an experiment (docs/ready-to-build/virtual-folders.md;
+   virtual-folders-service.js): a folder tree in the left margin, and the notes column moved
+   right to make room while the toggle is on. Desktop only. */
+:root {
+    /* The tree's width at first; dragging its edge sets it (virtual-folders-service.js). */
+    --virtual-folders-width: 240px;
+    /* From the tree's edge to the notes, to the pixel as from the notes to the chat's edge (the
+       maintainer, 2026-11-02): --app-min-visible-gutter, 10px + ≡'s 30px + 8px, which ≡, ↑ and ↓
+       need beside the chat. The tab (28px) and the notes' fold arrows fit in it. In pixels:
+       virtual-folders-width.js reads it. */
+    --virtual-folders-gap: 48px;
+    /* Where the notes start: the panel and the gap. */
+    --virtual-folders-room: calc(var(--side-rail-edge) + var(--virtual-folders-width) + var(--virtual-folders-gap));
+}
+
+.virtual-folders {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    /* A full-height panel at the left, as the chat is at the right (the maintainer, 2026-11-02;
+       a box at the top before). */
+    width: calc(var(--side-rail-edge) + var(--virtual-folders-width));
+    box-sizing: border-box;
+    overflow-y: auto;
+    padding: calc(var(--app-control-top) + 0.35rem) 8px 1rem calc(var(--side-rail-edge) + 4px);
+    z-index: 5;
+    font-size: 14px;
+    color: var(--text-color);
+    border-right: 1px solid #d1d5db;
+    background: #f8fafc;
+}
+
+.virtual-folders[hidden] {
+    display: none;
+}
+
+.virtual-folders-title {
+    padding: 0 8px 6px;
+    color: var(--app-text-subtle, #8a8a8a);
+    font-size: 11px;
+    font-weight: 650;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+
+.virtual-folder-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    padding: 3px 8px 3px calc(8px + var(--virtual-folder-depth) * 14px);
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.virtual-folder-row:hover {
+    background: rgba(127, 127, 127, 0.12);
+}
+
+/* The chosen folder looks as a wizard's chosen card does (.wizard-choice.is-chosen). */
+.virtual-folder-row {
+    border: 1.5px solid transparent;
+}
+
+.virtual-folder.is-filtered > .virtual-folder-row,
+.virtual-folder.is-filtered > .virtual-folder-row:hover {
+    border-color: var(--modal-accent);
+    background: var(--modal-selected);
+    font-weight: 650;
+}
+
+/* The same arrow as a note's (.note-collapse-toggle): its glyphs, size and colour. */
+.virtual-folder-arrow {
+    flex: none;
+    width: 18px;
+    height: 20px;
+    margin-left: -4px;
+    color: rgba(0, 0, 0, 0.35);
+    font-size: 23px;
+    line-height: 20px;
+    text-align: center;
+}
+
+.virtual-folder-row:hover .virtual-folder-arrow {
+    color: #000000;
+}
+
+html[data-theme="dark"] .virtual-folder-arrow {
+    color: rgba(235, 235, 235, 0.4);
+}
+
+html[data-theme="dark"] .virtual-folder-row:hover .virtual-folder-arrow {
+    color: #ffffff;
+}
+
+/* An ordinary folder: a tab on top of a box. */
+.virtual-folder-icon {
+    flex: none;
+    position: relative;
+    width: 14px;
+    height: 10px;
+    margin-top: 2px;
+    border: 1.5px solid currentColor;
+    border-radius: 2px;
+    opacity: 0.7;
+}
+
+.virtual-folder-icon::before {
+    content: "";
+    position: absolute;
+    top: -4px;
+    left: -1.5px;
+    width: 6px;
+    height: 3px;
+    border: 1.5px solid currentColor;
+    border-bottom: none;
+    border-radius: 2px 2px 0 0;
+}
+
+/* Delete Folder's "also delete its notes" box (delete-folder-modal.js). */
+.delete-folder-notes-toggle {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-top: 10px;
+    cursor: pointer;
+}
+
+.modal-content .delete-folder-notes-toggle input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    margin: 0;
+    padding: 0;
+    flex: 0 0 auto;
+}
+
+/* How many notes the folder shows, with its subfolders, in the view's search. */
+.virtual-folder-count {
+    flex: none;
+    opacity: 0.55;
+    font-weight: 400;
+    font-variant-numeric: tabular-nums;
+}
+
+.virtual-folder-name {
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+/* A New Folder no note is in yet: dimmed, in italics, until a folder is moved into it. */
+.virtual-folder.is-new > .virtual-folder-row {
+    font-style: italic;
+    opacity: 0.55;
+}
+
+/* Holding notes, none of which the search shows: dimmed as a new folder is, without its italics;
+   still clickable and a drop target (docs/ready-to-build/folder-counts.md §3). */
+.virtual-folder.is-unmatched > .virtual-folder-row {
+    opacity: 0.55;
+}
+
+/* Where a dragged folder would go: a folder, or the tree itself for the top. */
+.virtual-folder-row.is-drop-target,
+.virtual-folders.is-drop-target {
+    outline: 2px dashed var(--modal-accent);
+    outline-offset: -2px;
+}
+
+/* The column moves right by half the tree, never nearer the left edge than the tree. */
+/* The column sits just right of the tree at every width (the maintainer, 2026-11-01: a
+   centred column left too wide a gap on a wide window). */
+/* The column starts at the panel's edge (the page's padding taken back), the gap its padding. */
+body.virtual-folders-on #app {
+    margin-left: calc(var(--side-rail-edge) + var(--virtual-folders-width) - var(--app-page-padding));
+    margin-right: auto;
+    width: min(
+        calc(var(--app-content-width) + 2 * var(--virtual-folders-gap)),
+        calc(100% + var(--app-page-padding) - var(--side-rail-edge) - var(--virtual-folders-width))
+    );
+}
+
+/* Beside the tree, the column's sides hold just the notes' fold arrows; the notes keep their
+   usual width. */
+body.virtual-folders-on #app > .container {
+    padding-inline: var(--virtual-folders-gap);
+}
+
+@media (max-width: 900px) {
+    .virtual-folders {
+        display: none;
+    }
+
+    body.virtual-folders-on #app {
+        margin: 0 auto;
+        width: min(var(--app-shell-width), 100%);
+    }
+
+    body.virtual-folders-on #app > .container {
+        padding-inline: clamp(
+            calc(var(--app-min-visible-gutter) - var(--app-page-padding)),
+            calc((100% - var(--app-content-width)) / 2),
+            5rem
+        );
+    }
+}
+
+/* Beside the AI chat too (the maintainer, 2026-11-02: the column started right of the tree but
+   kept its width, under the chat and the floating buttons). The tree, the notes and the chat
+   share the window: the chat keeps its third while the notes have their 480px beside the tree,
+   narrowing to its 280px least first; the column starts right of the tree as without the chat
+   and ends clear of the buttons beside the chat, the notes narrowing to fit. */
+@media (min-width: 901px) {
+    body.virtual-folders-on:not(.virtual-folders-crowded) {
+        --ai-chat-effective-width: clamp(
+            280px,
+            var(--ai-chat-width),
+            calc(100vw - var(--ai-chat-min-notes-width) - var(--virtual-folders-room))
+        );
+    }
+
+    body.pref-show-ai-chat.virtual-folders-on:not(.virtual-folders-crowded) #app {
+        margin-left: calc(var(--side-rail-edge) + var(--virtual-folders-width) - var(--app-page-padding));
+        margin-right: 0;
+        width: min(
+            calc(var(--app-content-width) + var(--virtual-folders-gap) + var(--app-min-visible-gutter)),
+            calc(100% + (2 * var(--app-page-padding)) - var(--ai-chat-effective-width) - var(--side-rail-edge) - var(--virtual-folders-width))
+        );
+    }
+
+    body.pref-show-ai-chat.virtual-folders-on:not(.virtual-folders-crowded) #app > .container {
+        padding-inline: var(--virtual-folders-gap) var(--app-min-visible-gutter);
+    }
+}
+
+/* Where the tree, 480px of notes and the chat's least don't fit (virtual-folders-service.js sets
+   virtual-folders-crowded: the tree's width moves the line), the tree and its tab hide and the
+   chat stays (the maintainer, 2026-11-02); the column is as with the chat alone. Where the chat
+   shows (it hides itself at 760px and narrower). */
+body.virtual-folders-crowded .virtual-folders,
+body.virtual-folders-crowded .edge-tab-folders,
+body.virtual-folders-crowded .virtual-folders-resizer {
+    display: none;
+}
+
+@media (min-width: 761px) and (min-height: 301px) {
+    body.pref-show-ai-chat.virtual-folders-on.virtual-folders-crowded #app {
+        width: calc(100% + (2 * var(--app-page-padding)) - var(--ai-chat-effective-width));
+        margin-left: calc(-1 * var(--app-page-padding));
+        margin-right: 0;
+    }
+
+    body.pref-show-ai-chat.virtual-folders-on.virtual-folders-crowded #app > .container {
+        padding-inline: clamp(
+            var(--app-min-visible-gutter),
+            calc((100% - var(--app-content-width)) / 2),
+            5rem
+        );
     }
 }

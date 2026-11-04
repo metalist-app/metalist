@@ -32,6 +32,7 @@
   suggestions (`docs/ui/references.md`).
 
 ## Entry Points
+- Ready to build (2026-11-02): a link dragged from a browser becomes a note holding it, on the column, a tree folder or into an edited note: `docs/ready-to-build/dropped-links.md`.
 - Clipboard/drop handler: `app/static/js/modules/mode-manager/events/keyboard-events.js`
   - `handleDragOverEvent(...)`
   - `handleDropEvent(...)`

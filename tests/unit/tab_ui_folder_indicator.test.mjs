@@ -11,7 +11,7 @@ const COMMAND_PALETTE_CONTROLLER_URL = new URL(
 );
 
 
-test('enabled tabs expose an outline folder indicator inside the hover trigger', async () => {
+test('enabled tabs expose an outline cards-and-magnifier indicator inside the hover trigger', async () => {
     const [templateSource, cssSource, commandPaletteControllerSource] = await Promise.all([
         readFile(TEMPLATE_URL, 'utf8'),
         readFile(CSS_URL, 'utf8'),
@@ -24,17 +24,17 @@ test('enabled tabs expose an outline folder indicator inside the hover trigger',
 
     assert.ok(hoverZoneStart >= 0);
     assert.ok(hoverZoneEnd > hoverZoneStart);
-    assert.match(hoverZoneSource, /class="tab-ui-folder-icon"/);
-    assert.match(hoverZoneSource, /class="tab-ui-folder-icon-back"/);
-    assert.match(hoverZoneSource, /class="tab-ui-folder-icon-front"/);
-    assert.match(
-        hoverZoneSource,
-        /class="tab-ui-folder-icon-back"[\s\S]*V20a2\.5 2\.5 0 0 1-2\.5 2\.5H12A2\.5 2\.5 0 0 1 9\.5 20z/,
-    );
-    assert.match(cssSource, /\.controls \.tab-ui-folder-icon\s*\{[\s\S]*stroke: var\(--search-shell-ink\);/);
+    // Two cards and a magnifier (the maintainer, 2026-11-02; the stacked folders went to
+    // virtual folders), drawn as the menu's search contexts icon is.
+    assert.match(hoverZoneSource, /class="tab-ui-icon"/);
+    assert.match(hoverZoneSource, /class="tab-ui-icon-back" d="M11 8V5\.5A2\.5 2\.5 0 0 1 13\.5 3h16A2\.5 2\.5 0 0 1 32 5\.5v10\.2"/);
+    assert.match(hoverZoneSource, /class="tab-ui-icon-front" d="M22\.5 23H7\.5/);
+    assert.match(hoverZoneSource, /class="tab-ui-icon-lens" d="M33 19a6 6 0 1 1-12 0a6 6 0 1 1 12 0z"/);
+    assert.match(hoverZoneSource, /class="tab-ui-icon-handle" d="M31\.5 23\.5l4 4"/);
+    assert.match(cssSource, /\.controls \.tab-ui-icon\s*\{[\s\S]*stroke: var\(--search-shell-ink\);/);
     assert.match(
         cssSource,
-        /\.controls \.tab-ui-folder-icon\s*\{[\s\S]*left: 6px;[\s\S]*transform: translateY\(-50%\);/,
+        /\.controls \.tab-ui-icon\s*\{[\s\S]*left: 6px;[\s\S]*transform: translateY\(-50%\);/,
     );
     assert.match(
         cssSource,
@@ -64,10 +64,9 @@ test('enabled tabs expose an outline folder indicator inside the hover trigger',
         commandPaletteControllerSource,
         /'pref\.show_search_results_count',[\s\S]*?true,[\s\S]*?'pref-show-search-results-count'/,
     );
-    assert.match(cssSource, /\.controls \.tab-ui-folder-icon-front\s*\{[\s\S]*fill: var\(--search-shell-surface\);/);
     assert.match(
         cssSource,
-        /body\.pref-show-tab-ui \.controls \.tab-ui-folder-icon\s*\{[\s\S]*opacity: 0\.78;/,
+        /body\.pref-show-tab-ui \.controls \.tab-ui-icon\s*\{[\s\S]*opacity: 0\.78;/,
     );
 });
 

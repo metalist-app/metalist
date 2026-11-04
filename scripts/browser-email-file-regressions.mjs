@@ -2,18 +2,17 @@ import assert from 'node:assert/strict';
 import { runThenCleanUp } from './suite-outcome.mjs';
 import { waitForAppQuiet } from './browser-app-idle.mjs';
 
-// Email files (.eml) as cards (docs/ui/references.md, "Email files"; agreed 2026-10-29):
-// an embedded email shows its subject, From/To/Cc/Date, its sanitized body and its
-// attachments, each downloading itself; a long body is cut until Show all, which edits
-// nothing; a note that is only an email folds to one line (EML, subject, sender); a
-// search finds the note by a word of the email's body.
+// Email files (.eml) as cards (docs/ui/references.md, "Email files"; the maintainer,
+// 2026-11-03: emails open in the viewer, nothing of them drawn in the note): an email's card has
+// the EMAIL pill, its subject and sender as its name, Open and Download; Open shows its subject,
+// From/To/Cc/Date, its sanitized body and its attachments, each downloading itself, its text
+// selectable; a note that is only an email has nothing to fold; a search finds the note by a
+// word of the email's body.
 
 const WINDOW = {width: 1100, height: 900};
 const REQUESTS_QUIET_MS = 300;
 const FRAMES_TO_SETTLE = 3;
 const CARD_WAIT_MS = 4000;
-// A folded note is one line: no taller than this many of its lines.
-const ONE_LINE = 1.5;
 const LONG_PARAGRAPHS = 30;
 
 async function settle(page) {
@@ -64,81 +63,71 @@ async function seedNotes(page) {
   }, emails());
 }
 
-const cardOf = id => `.note[data-note-id="${id}"] .note-file-email-embed[data-preview-state="loaded"]`;
-
-async function cardText(page, id) {
-  return page.$eval(cardOf(id), embed => ({
-    subject: embed.querySelector('.note-file-email-subject').textContent,
-    headers: [...embed.querySelectorAll('.note-file-email-header')].map(row => `${row.children[0].textContent}: ${row.children[1].textContent}`),
-    bodyHtml: embed.querySelector('.note-file-email-body').innerHTML,
-    attachments: [...embed.querySelectorAll('.note-file-email-attachment')].map(button => button.textContent),
-  }));
-}
+const noteOf = id => `.note[data-note-id="${id}"]`;
 
 async function cardShows(page, ids) {
-  await page.waitForSelector(cardOf(ids.planNote), {timeout: CARD_WAIT_MS});
-  assert.deepEqual(await cardText(page, ids.planNote), {
+  await page.waitForSelector(`${noteOf(ids.planNote)} .note-file-reference-name`, {timeout: CARD_WAIT_MS});
+  const card = await page.$eval(noteOf(ids.planNote), note => ({
+    pill: note.querySelector('.note-file-reference-badge').textContent,
+    name: note.querySelector('.note-file-reference-name').textContent,
+    buttons: [...note.querySelectorAll('.note-file-action')].map(button => button.textContent),
+    drawnInNote: note.querySelector('[class*="note-file-email"]') !== null,
+    // The note's own flag, which its arrow follows (differential-view-service.js).
+    canFold: note.dataset.isCollapsible === 'true',
+  }));
+  assert.deepEqual(card, {pill: 'EMAIL', name: 'Réunion: the plan · Ada Lovelace', buttons: ['Open', 'Download'], drawnInNote: false, canFold: false});
+}
+
+async function openViewer(page, noteId) {
+  await page.click(`${noteOf(noteId)} .note-file-open`);
+  await page.waitForSelector('.file-viewer-drawing:not([style*=hidden])', {timeout: CARD_WAIT_MS});
+  return (await page.$('.file-viewer-drawing')).contentFrame();
+}
+
+async function closeViewer(page) {
+  await page.keyboard.press('Escape');
+  await page.waitForFunction(() => document.querySelector('.file-viewer-overlay') === null);
+}
+
+async function viewerShows(page, ids) {
+  const frame = await openViewer(page, ids.planNote);
+  const shown = await frame.evaluate(() => ({
+    subject: document.querySelector('.file-viewer-email-subject').textContent,
+    headers: [...document.querySelectorAll('.file-viewer-email-row')].map(row => `${row.children[0].textContent}: ${row.children[1].textContent}`),
+    hasScript: document.querySelector('script') !== null,
+    link: document.querySelector('.note-content a').getAttribute('href'),
+    bold: document.querySelector('.note-content b').textContent,
+    attachments: [...document.querySelectorAll('.file-viewer-email-attachment')].map(button => button.textContent),
+    selectable: getComputedStyle(document.querySelector('.note-content p')).userSelect,
+  }));
+  assert.deepEqual(shown, {
     subject: 'Réunion: the plan',
     headers: ['From: Ada Lovelace <ada@example.org>', 'To: Grace Hopper <grace@example.org>', 'Cc: Linus <linus@example.org>',
       'Date: Thu, 29 Oct 2026 10:15:00 -0700'],
-    bodyHtml: '<p>Hi <b>Grace</b>,</p><p><a href="https://example.org/plan" target="_blank" rel="noopener noreferrer">Open the plan</a></p>',
+    hasScript: false, link: 'https://example.org/plan', bold: 'Grace',
     // "Name,Role", the email's CRLF line break and "Ada,Analyst": 22 bytes.
     attachments: ['team.csv22 B', 'plan.pdf13 B'],
+    selectable: 'text',
   });
+  await closeViewer(page);
 }
 
 async function attachmentDownloads(page, ids) {
+  const frame = await openViewer(page, ids.planNote);
   const download = page.waitForResponse(response => response.url().endsWith(`/files/${ids.planFile}/email/attachments/0`));
-  await page.click(`${cardOf(ids.planNote)} .note-file-email-attachment[data-attachment-index="0"]`);
+  await (await frame.$('.file-viewer-email-attachment')).click();
   const response = await download;
   assert.equal(response.status(), 200);
   assert.equal(response.headers()['content-disposition'], "attachment; filename*=UTF-8''team.csv");
+  await closeViewer(page);
   assert.equal(await page.$('.note.editing'), null, 'downloading edits nothing');
-  // What is saved (the page has read the response the click downloaded).
-  const saved = await page.evaluate(async fileId => {
-    const {FilesAPI} = await import('/static/js/modules/api-client.js');
-    const payload = await FilesAPI.downloadEmailAttachment(fileId, 0);
-    return [payload.filename, await payload.blob.text()];
-  }, ids.planFile);
-  assert.deepEqual(saved, ['team.csv', 'Name,Role\r\nAda,Analyst']);
 }
 
-async function showAll(page, ids) {
-  await page.waitForSelector(cardOf(ids.longNote), {timeout: CARD_WAIT_MS});
-  const more = `${cardOf(ids.longNote)} .note-file-email-more`;
-  const cut = await page.$eval(`${cardOf(ids.longNote)} .note-file-email-body`, body => ({cut: body.scrollHeight > body.clientHeight}));
-  assert.deepEqual(cut, {cut: true}, 'a long body is cut');
-  assert.equal(await page.$eval(more, button => [button.hidden, button.textContent].join()), 'false,Show all');
-  await page.evaluate(selector => document.querySelector(selector).scrollIntoView({block: 'center'}), more);
-  await page.click(more);
-  await settle(page);
-  const open = await page.$eval(`${cardOf(ids.longNote)} .note-file-email-body`, body => body.scrollHeight <= body.clientHeight);
-  assert.equal(open, true, 'Show all shows the whole body');
-  assert.equal(await page.$eval(more, button => button.textContent), 'Show less');
-  assert.equal(await page.$('.note.editing'), null, 'Show all edits nothing');
-}
-
-async function foldsToOneLine(page, ids) {
-  const note = `.note[data-note-id="${ids.planNote}"]`;
-  await page.evaluate(selector => document.querySelector(selector).scrollIntoView({block: 'center'}), note);
-  await page.click(`${note} > .note-collapse-toggle`);
-  await idle(page);
-  const folded = await page.$eval(note, element => {
-    const content = element.querySelector(':scope > .note-content');
-    const line = content.querySelector('.note-file-email-line');
-    return {
-      isCollapsed: element.classList.contains('collapsed'),
-      lineText: [...line.children].map(child => child.textContent),
-      lineShown: getComputedStyle(line).display,
-      cardShown: getComputedStyle(content.querySelector('.note-file-email-body')).display,
-      lines: content.getBoundingClientRect().height / Number.parseFloat(getComputedStyle(content).lineHeight),
-    };
-  });
-  assert.deepEqual([folded.isCollapsed, folded.lineText, folded.lineShown, folded.cardShown],
-    [true, ['EML', 'Réunion: the plan', 'Ada Lovelace'], 'flex', 'none'], 'folded: the one line');
-  assert.ok(folded.lines <= ONE_LINE, `folded: one line tall (${folded.lines} lines)`);
-  await page.click(`${note} > .note-collapse-toggle`);
-  await idle(page);
+async function longBodyShowsWhole(page, ids) {
+  const frame = await openViewer(page, ids.longNote);
+  const text = await frame.evaluate(() => document.body.innerText);
+  assert.ok(text.includes('Paragraph 1:') && text.includes(`Paragraph ${LONG_PARAGRAPHS}:`), 'the whole body, in the viewer');
+  await closeViewer(page);
 }
 
 async function foundBySearch(page, ids) {
@@ -171,10 +160,10 @@ export async function checkEmailFiles(page) {
     }
   };
   await runThenCleanUp('email files', async () => {
-    await attempt('1 the card: subject, headers, sanitized body, attachments', () => cardShows(page, ids));
-    await attempt('2 an attachment downloads', () => attachmentDownloads(page, ids));
-    await attempt('3 a long body is cut until Show all', () => showAll(page, ids));
-    await attempt('4 a note that is only an email folds to one line', () => foldsToOneLine(page, ids));
+    await attempt('1 the card: EMAIL, subject and sender, Open and Download', () => cardShows(page, ids));
+    await attempt('2 Open: subject, headers, sanitized body, attachments', () => viewerShows(page, ids));
+    await attempt('3 an attachment downloads from the viewer', () => attachmentDownloads(page, ids));
+    await attempt('4 a long body shows whole in the viewer', () => longBodyShowsWhole(page, ids));
     await attempt('5 a search finds the note by a word of the email', () => foundBySearch(page, ids));
     assert.deepEqual(failures, []);
   }, async () => {

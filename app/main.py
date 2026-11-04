@@ -2,6 +2,7 @@ from http import HTTPStatus
 from starlette.concurrency import run_in_threadpool
 from fastapi import FastAPI, Request, Depends
 from app.db.files_sql import AttachmentSizeExceeded
+from app.services import import_uploads
 from app.services.file_storage import FileNotEditable, FilePreviewMissing, FileRevisionConflict, InvalidFileContent
 from app.services.file_edit_sessions import FileEditSessionMissing
 from app.services.hierarchy import HierarchyError
@@ -74,6 +75,10 @@ from app.api.routes.ontology import router as api2_ontology_router
 from app.api.routes.backups import router as api2_backup_router
 from app.api.routes.reminders import router as api2_reminders_router
 from app.api.routes.remote_images import router as api2_remote_images_router
+from app.api.routes.imports import router as api2_imports_router
+from app.api.routes.legacy_import import router as api2_legacy_import_router
+from app.api.routes.virtual_folders import router as api2_virtual_folders_router
+from app.api.routes.background_work import router as api2_background_work_router
 from app.api.routes.ai import router as api2_ai_router
 from app.api.routes.test import router as api2_test_router  # shockharness: ignore[STUB002] reason="mounted only when TEST_MODE is on, and the endpoint asserts it too"
 from app.api.transactions import transactional_route
@@ -171,6 +176,12 @@ configure_process_diagnostics(
 
 app = FastAPI()
 app.add_middleware(UploadLimitMiddleware)
+
+
+@app.on_event("startup")
+async def discard_left_import_uploads():
+    # A dropped folder's upload interrupted by a restart starts over (import_uploads.py).
+    import_uploads.discard_every_upload()
 
 
 @app.on_event("startup")
@@ -418,6 +429,10 @@ app.include_router(api2_files_router, prefix=API_PREFIX)
 app.include_router(api2_ontology_router, prefix=API_PREFIX)
 app.include_router(api2_reminders_router, prefix=API_PREFIX)
 app.include_router(api2_remote_images_router, prefix=API_PREFIX)
+app.include_router(api2_imports_router, prefix=API_PREFIX)
+app.include_router(api2_legacy_import_router, prefix=API_PREFIX)
+app.include_router(api2_virtual_folders_router, prefix=API_PREFIX)
+app.include_router(api2_background_work_router, prefix=API_PREFIX)
 app.include_router(api2_ai_router, prefix=API_PREFIX)
 if TEST_MODE:
     app.include_router(dev.router, prefix="/dev", tags=["dev"])

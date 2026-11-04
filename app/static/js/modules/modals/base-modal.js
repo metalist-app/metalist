@@ -123,8 +123,8 @@ export class BaseModal {
             errors.push('Cannot open modal while application is loading');
         }
         
-        // Check if another modal is already open (unless we support stacking)
-        if (ModeContext.modalStack.length > 0) {
+        // Check if another modal is already open (unless this one opens over it)
+        if (ModeContext.modalStack.length > 0 && !this.opensOver().includes(ModeContext.topModal)) {
             errors.push(`Cannot open modal while ${ModeContext.topModal} is open`);
         }
         
@@ -377,6 +377,12 @@ export class BaseModal {
         // Override in subclasses
     }
     
+    // The dialogs this one may open over (their names), as the password generator opens over
+    // the new vault wizard to fill its fields; none by default.
+    opensOver() {
+        return [];
+    }
+
     /**
      * Called before modal closes
      * Override in subclasses for modal-specific cleanup

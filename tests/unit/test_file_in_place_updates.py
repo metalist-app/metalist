@@ -619,7 +619,7 @@ def download(client, file_id):
 
 with TestClient(app, base_url="http://localhost", raise_server_exceptions=False) as client:
     note = client.post(API_PREFIX + "/notes/new", headers=headers, json={
-        "first_visible_note_id": None, "search_query": None, "clientId": "client",
+        "first_visible_note_id": None, "search_query": None, "tabId": "main", "clientId": "client",
         "undoContext": undo_context, "viewport": viewport,
     })
     assert note.status_code == 200, note.text

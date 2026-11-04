@@ -4,6 +4,14 @@ from dataclasses import dataclass
 import re
 from typing import Callable, Dict, FrozenSet, Iterable, List, Mapping, Optional, Sequence, Set, Tuple
 
+from app.services.quoted_values import (
+    has_open_value,
+    is_closed_quoted_value,
+    is_quoted,
+    opens_value,
+    quoted_value_end,
+    unquote_value,
+)
 from app.services.tag_properties import (
     MISSING_OPERATOR,
     PropertyCondition,
@@ -179,10 +187,18 @@ def is_valid_proposal_token(token: str) -> bool:
         name, has_value, value = segment.partition("=")
         if not has_value or value == "" or not is_property_name(name) or name.casefold() in names:
             return False
-        if any(ch.isspace() or (ch in _DISALLOWED_TAG_CHARS and ch != ":") for ch in value):
+        if not _is_proposal_value(value):
             return False
         names.add(name.casefold())
     return True
+
+
+def _is_proposal_value(value: str) -> bool:
+    """A complete value: quoted and closed with some text (title="A Wizard of Earthsea"), or
+    bare with no space or tag-bar character."""
+    if is_quoted(value):
+        return is_closed_quoted_value(value) and unquote_value(value).strip() != ""
+    return not any(ch.isspace() or (ch in _DISALLOWED_TAG_CHARS and ch != ":") for ch in value)
 
 
 def parse_rules_text(*, text: str, filename: str) -> List[Rule]:
@@ -395,7 +411,11 @@ def _parse_property_atom(token: str, *, line: str, index: int, filename: str, li
     problem = property_term_problem(token)
     if problem != "":
         raise error(problem)
+    if has_open_value(token):
+        raise error(f"Close the quoted value in {token}")
     condition = parse_property_term(token)
+    if condition.chained:
+        raise error(f"One property per condition in a rule (for example {condition.links[0].format()} {condition.links[1].format()})")
     if condition.is_extreme:
         raise error(f"{condition.value_text} is for searches: a rule decides from one note, not among notes")
     return PropertyAtom(condition=condition)
@@ -404,6 +424,10 @@ def _parse_property_atom(token: str, *, line: str, index: int, filename: str, li
 def _read_bare_token(line: str, index: int) -> tuple[str, int]:
     start = index
     while index < len(line):
+        if opens_value(line, index):
+            # A quoted value is part of its term: book:title="A Wizard of Earthsea".
+            index = quoted_value_end(line, index).end
+            continue
         ch = line[index]
         if ch.isspace() or ch == ")":
             break

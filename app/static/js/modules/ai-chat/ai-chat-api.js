@@ -165,13 +165,7 @@ export async function requestNoteTagSuggestions({ noteId, includeChildren, scope
     if (typeof noteId !== 'string' || noteId === '' || typeof includeChildren !== 'boolean') {
         throw new Error('requestNoteTagSuggestions requires noteId and includeChildren');
     }
-    if (!scope || typeof scope.search !== 'string' || typeof scope.tabId !== 'string' || typeof scope.isUntaggedView !== 'boolean') {
-        throw new Error('requestNoteTagSuggestions requires the view scope');
-    }
-    if (typeof provider !== 'string' || typeof model !== 'string' || model === '' || typeof onProgress !== 'function') {
-        throw new Error('requestNoteTagSuggestions requires provider, model and onProgress');
-    }
-    validateAiThinkingLevel(thinkingLevel);
+    validateTagSuggestionRequest({ scope, provider, model, thinkingLevel, onProgress });
     const response = await fetchAi(CONFIG.API.AI.NOTE_TAG_SUGGESTIONS(noteId), {
         method: 'POST',
         headers: buildSessionHeaders(true),
@@ -180,6 +174,21 @@ export async function requestNoteTagSuggestions({ noteId, includeChildren, scope
             search: scope.search, tab_id: scope.tabId, is_untagged_view: scope.isUntaggedView,
         }),
     });
+    return readTagSuggestions(response, onProgress);
+}
+
+function validateTagSuggestionRequest({ scope, provider, model, thinkingLevel, onProgress }) {
+    if (!scope || typeof scope.search !== 'string' || typeof scope.tabId !== 'string' || typeof scope.isUntaggedView !== 'boolean') {
+        throw new Error('Tag suggestions require the view scope');
+    }
+    if (typeof provider !== 'string' || typeof model !== 'string' || model === '' || typeof onProgress !== 'function') {
+        throw new Error('Tag suggestions require provider, model and onProgress');
+    }
+    validateAiThinkingLevel(thinkingLevel);
+}
+
+// The streamed answer: progress lines, then the proposals or why the AI failed.
+async function readTagSuggestions(response, onProgress) {
     if (!response.ok) {
         await readJsonResponse(response, 'Failed to ask the AI for tags');
         throw new Error('readJsonResponse returns only for a successful response');
@@ -413,6 +422,20 @@ export async function saveAiCredential(provider, apiKey) {
         body: JSON.stringify({ api_key: apiKey }),
     });
     return await readJsonResponse(response, 'Failed to save the API key');
+}
+
+
+/** Whether a typed key can be one (its start, its length), saving nothing; refused, why. */
+export async function checkAiCredential(provider, apiKey) {
+    if (typeof apiKey !== 'string' || apiKey.trim() === '') {
+        throw new Error('checkAiCredential requires API key');
+    }
+    const response = await fetchAi(`${aiCredentialUrl(provider)}/check`, {
+        method: 'POST',
+        headers: buildSessionHeaders(true),
+        body: JSON.stringify({ api_key: apiKey }),
+    });
+    return await readJsonResponse(response, 'The API key was refused');
 }
 
 

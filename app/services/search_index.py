@@ -12,6 +12,7 @@ from typing import Callable, Dict, FrozenSet, Iterable, List, Mapping, Optional,
 
 from loguru import logger
 
+from app.services.quoted_values import canonical_valued_token, quote_value, token_end, unquote_value
 from app.services.content_formatting import (
     _tokenize_tag_bar, _unwrap_tag_token, is_known_meta_tag_term, list_known_meta_tag_terms,
 )
@@ -31,9 +32,11 @@ from app.services.tag_properties import (
     EXTREME_KEYWORDS,
     VALUE_KIND_ORDER,
     VALUE_NUMBER,
+    VALUE_TEXT,
     PropertyCompletion,
     PropertySuggestion,
     read_property_completion,
+    value_completes,
     PROPERTY_ASSIGNMENT,
     PropertyCondition,
     PropertyValue,
@@ -47,15 +50,17 @@ from app.services.tag_properties import (
     value_satisfies,
 )
 from app.services.link_titles import link_title_store
-from app.services.note_datetime import is_datetime_tag_term
+from app.services.note_datetime import DATETIME_TAG, is_datetime_tag_term
 from app.services.ontology_rules_store import get_ontology_if_ready
 from app.services.tag_ontology import TagOntology
 from app.services.search_text import (
     append_link_titles_casefold,
     build_searchable_base_text_casefold,
     list_link_title_urls,
-    text_term_matches,
 )
+from app.services.file_registry import file_registry
+from app.services.file_text_search import file_texts, is_searchable_file_name
+from app.services.text_terms import text_term_matches
 from app.utils.time_units import MS_PER_SECOND
 
 
@@ -126,6 +131,13 @@ class _NoteCounts:
 TAG_VALUE_SEPARATOR = "="
 
 
+def tag_family_of(term: str) -> str:
+    """The tag a term is a member of: itself, or for one carrying a value (jogging=3) the tag
+    the value is on (jogging). The tag bar ranks a tag over all its notes, whatever their values
+    (docs/design/tag-properties.md, "Last time's values")."""
+    return term.split(TAG_VALUE_SEPARATOR, 1)[0]
+
+
 def tag_family_prefix(tag_casefold: str) -> str | None:
     """What every valued member of a tag's family starts with ("@code=" for @code), or
     None for a tag that carries a value itself (it matches only itself)."""
@@ -194,13 +206,28 @@ _EXTREME_PICKS = {MAX_KEYWORD: max, MIN_KEYWORD: min}
 _EXTREME_WORDS = {MAX_KEYWORD: "largest", MIN_KEYWORD: "smallest"}
 # A stats term being typed in a search: @sum:ca, or @sum:calories=MA for MAX and MIN.
 _TYPED_STATS_TERM_RE = re.compile(
-    r"(?P<tag>@(?:sum|avg|min|max|count)):(?P<name>[A-Za-z][^:=<>?]*|)(?:(?P<assignment>=)(?P<partial>[A-Z]*))?",
+    r"(?P<tag>@(?:sum|avg|min|max|count)):(?P<name>[^\W\d_][^:=<>?]*|)(?:(?P<assignment>=)(?P<partial>[A-Z]*))?",
     re.IGNORECASE,
 )
 # The figure a note's stats tag shows for a term (subtree_stats.stats_figure_values): its
 # numbers per unit, () for a dash, None when the note shows no such figure. It walks the
 # note's subtree in the note store, so the index calls it outside its own lock.
 StatsFigureReader = Callable[[str, PropertyCondition], Optional[Tuple[PropertyValue, ...]]]
+
+
+@dataclass(frozen=True, slots=True)
+class InheritedValues:
+    """The super tag values a note inherits, as its tags (docs/ui/search-semantics.md, Super
+    Tag Searches; agreed 2026-11-01): from_ancestors, its ancestors' values by casefolded
+    (tag, property), the nearest ancestor's where several give one. Embeds and links pass
+    none (2026-11-03). A note's own value hides an ancestor's for the same (tag, property)."""
+    from_ancestors: Mapping[Tuple[str, str], PropertyValue]
+
+
+NOTHING_INHERITED = InheritedValues(from_ancestors={})
+# The values notes inherit, read from the note store's tree outside the index's lock, as
+# stats figures are: an InheritedValues for each note asked about.
+InheritedValuesReader = Callable[[FrozenSet[str]], Mapping[str, InheritedValues]]
 
 
 def _note_noun(count: int) -> str:
@@ -224,6 +251,38 @@ def _figure_meets(figure: Optional[Tuple[PropertyValue, ...]], condition: Proper
     if condition.operator == PRESENT_OPERATOR:
         return True
     return any(value_satisfies(value, condition) for value in figure)
+
+
+@dataclass(frozen=True, slots=True)
+class _NoteValues:
+    """The values of a clause's found notes: their own (from the index) and what they inherit
+    (from the note tree; empty when the clause reads no values)."""
+    own_values: Mapping[str, Mapping[Tuple[str, str], PropertyValue]]
+    inherited: Mapping[str, InheritedValues]
+
+    def maps(self, note_id: str) -> Tuple[Mapping[Tuple[str, str], PropertyValue], ...]:
+        """The note's values, a term holding when one map meets it: its own over its
+        ancestors' (the nearest value wins)."""
+        inherited = self.inherited[note_id]
+        return ({**inherited.from_ancestors, **self.own_values[note_id]},)
+
+
+def _notes_with_extreme_value(found_by_note: Mapping[str, List[PropertyValue]], condition: PropertyCondition) -> Set[str]:
+    """Of these notes (each with the values of the term's property it has), those holding the
+    largest (MAX) or smallest (MIN), ties included. Values are compared within one kind: the
+    kind most of the values are (numbers first on a tie); units are labels and do not count."""
+    if not found_by_note:
+        return set()
+    kind_counts = Counter(value.kind for found in found_by_note.values() for value in found)
+    kind = max(VALUE_KIND_ORDER, key=lambda candidate: (kind_counts[candidate], -VALUE_KIND_ORDER.index(candidate)))
+    pick = _EXTREME_PICKS[condition.value_text]
+    best_by_note = {
+        note_id: pick(value.sort_key for value in found if value.kind == kind)
+        for note_id, found in found_by_note.items()
+        if any(value.kind == kind for value in found)
+    }
+    extreme = pick(best_by_note.values())
+    return {note_id for note_id, best in best_by_note.items() if best == extreme}
 
 
 def _posting_or_empty(postings: Mapping[_PostingKey, Set[int]], key: _PostingKey) -> Set[int]:
@@ -281,8 +340,7 @@ def _parse_search_suggestion_context(raw_input: str) -> _SearchSuggestionContext
             continue
 
         start = index
-        while index < length and not raw_input[index].isspace():
-            index += 1
+        index = token_end(raw_input, start)
 
         token = raw_input[start:index]
         if token == "":
@@ -381,8 +439,9 @@ def extract_ordered_tags_for_search(tags: str) -> tuple[str, ...]:
     for token in _tokenize_tag_bar(tags):
         base, wrapper = _unwrap_tag_token(token)
         if wrapper is None:
-            # A tag with properties is its tag: jogging:miles=3 is jogging.
-            base = tag_part_of_token(base)
+            # A tag with properties is its tag: jogging:miles=3 is jogging. A quoted value
+            # is the same value bare when it needs no quotes: author="Le-Guin" is author=Le-Guin.
+            base = canonical_valued_token(tag_part_of_token(base))
             if base != "OR" and base not in seen_terms:
                 seen_terms.add(base)
                 ordered_terms.append(base)
@@ -455,12 +514,17 @@ class SearchIndex:
         self._revision = 0
         # Attached by the note store once it has loaded (attach_stats_reader).
         self._stats_reader: StatsFigureReader | None = None
+        # And the values notes inherit (attach_inherited_values_reader).
+        self._inherited_values_reader: InheritedValuesReader | None = None
 
         self._uuid_to_id: Dict[str, int] = {}
         self._id_to_uuid: List[str] = []
         self._alive: Set[int] = set()
 
         self._note_text_casefold: List[str] = []
+        # The files whose text a note is also searched by (file_text_search.py: PDFs it shows),
+        # for the notes showing some.
+        self._note_text_file_ids: Dict[int, Tuple[str, ...]] = {}
         # Notes are also searchable by the cached titles of URLs written in them.
         # A title can arrive or disappear later, so keep each note's URLs (and,
         # for notes with URLs, its text without titles) to recompose its text.
@@ -478,6 +542,10 @@ class SearchIndex:
         self._explicit_tag_notes = _NoteCounts()
         self._explicit_tag_notes_casefold = _NoteCounts()
         self._raw_tag_notes_casefold = _NoteCounts()
+        # The same two counts by tag family (tag_family_of): jogging=3 and jogging=5 count as jogging,
+        # each note once.
+        self._explicit_tag_family_notes = _NoteCounts()
+        self._raw_tag_family_notes_casefold = _NoteCounts()
         self._tag_notes = _NoteCounts()
         self._tag_notes_casefold: Dict[str, Set[int]] = {}
         # Each tag family's valued members (@code: @code=python, @code=sql), as
@@ -487,7 +555,8 @@ class SearchIndex:
 
         # Each note's own property values (docs/design/tag-properties.md), by casefolded
         # tag and property name: jogging:miles=3 is ("jogging", "miles"). Only notes
-        # with values are kept; values are never inherited.
+        # with values are kept. What a note inherits is read from the note tree when a
+        # search asks (attach_inherited_values_reader).
         self._note_properties: Dict[int, Dict[Tuple[str, str], PropertyValue]] = {}
         self._property_notes: Dict[Tuple[str, str], Set[int]] = {}
         # Upward search: a property term about a tag also reads the values of every tag
@@ -534,6 +603,8 @@ class SearchIndex:
             self._explicit_tag_notes.clear()
             self._explicit_tag_notes_casefold.clear()
             self._raw_tag_notes_casefold.clear()
+            self._explicit_tag_family_notes.clear()
+            self._raw_tag_family_notes_casefold.clear()
             self._tag_notes.clear()
             self._tag_notes_casefold.clear()
             self._tag_family_members.clear()
@@ -736,6 +807,7 @@ class SearchIndex:
                     self._raw_tag_notes_casefold.remove(term_casefold)
                 for term_casefold in new_raw_casefold - old_raw_casefold:
                     self._raw_tag_notes_casefold.add(term_casefold)
+                self._update_raw_families_locked(old_raw_casefold, new_raw_casefold)
 
                 self._note_raw_tag_terms[note_int_id] = new_raw_tag_terms
                 touched += 1
@@ -768,12 +840,15 @@ class SearchIndex:
         meta suggestions draw on (known ones, those in use, and their families), so any
         suggestion picked is a known tag."""
         with self._lock:
-            representatives = self._build_suggestion_representatives_locked(
-                anchor_casefold_set=frozenset(),
-                partial_prefix="",
+            # The search box offers each term (jogging=3), the tag bar each family (jogging).
+            terms = self._build_suggestion_representatives_locked(
+                anchor_casefold_set=frozenset(), partial_prefix="", by_family=False,
+            )
+            families = self._build_suggestion_representatives_locked(
+                anchor_casefold_set=frozenset(), partial_prefix="", by_family=True,
             )
             return frozenset(
-                tuple(representatives.values()) + tuple(self._meta_tag_suggestion_terms_locked())
+                tuple(terms.values()) + tuple(families.values()) + tuple(self._meta_tag_suggestion_terms_locked())
             )
 
     def list_tag_frequencies(self) -> Dict[str, int]:
@@ -818,6 +893,25 @@ class SearchIndex:
                 raise KeyError(f"Note {note_id} is not active in SearchIndex")
             return self._note_tag_terms[note_int_id]
 
+    def list_raw_tag_family_frequencies_by_casefold(self) -> Dict[str, int]:
+        """list_raw_tag_frequencies_by_casefold by tag family: jogging counts every note with
+        jogging or jogging=<value> (tag_family_of)."""
+        with self._lock:
+            return {
+                family: note_count
+                for family, note_count in self._raw_tag_family_notes_casefold.items()
+                if family and not family.startswith("@")
+            }
+
+    def list_explicit_tag_family_frequencies(self) -> Dict[str, int]:
+        """list_explicit_tag_frequencies by tag family (tag_family_of), each note once."""
+        with self._lock:
+            return {
+                family: note_count
+                for family, note_count in self._explicit_tag_family_notes.items()
+                if family and not family.startswith("@")
+            }
+
     def list_explicit_tag_frequencies(self) -> Dict[str, int]:
         """Return explicitly written tag term -> note count (excluding @meta tags)."""
         with self._lock:
@@ -828,7 +922,7 @@ class SearchIndex:
             }
 
     def describe_tag_cooccurrence(
-        self, *, anchors: Iterable[str], terms: Iterable[str], excluded_note_ids: FrozenSet[str],
+        self, *, anchors: Iterable[str], terms: Iterable[str], excluded_note_ids: FrozenSet[str], by_family: bool,
     ) -> Dict[str, TagCooccurrence]:
         """For each term, the notes carrying it together with the most of the anchors.
 
@@ -845,9 +939,9 @@ class SearchIndex:
             excluded = {self._uuid_to_id[note_id] for note_id in excluded_note_ids if note_id in self._uuid_to_id}
             for term in terms:
                 term_casefold = term.casefold()
-                if term_casefold not in self._tag_notes_casefold:
+                term_notes = self._suggestion_posting_locked(term_casefold, by_family=by_family)
+                if not term_notes:
                     continue
-                term_notes = self._tag_notes_casefold[term_casefold]
                 if excluded:
                     term_notes = term_notes - excluded
                 shared_by_anchor = {
@@ -862,6 +956,28 @@ class SearchIndex:
                     described[term] = cooccurrence
         return described
 
+    # Suggestions read a search's completed clause without its stats terms (no subtree walks
+    # for them); one about values reads what notes inherit, from the tree, before the lock.
+    @staticmethod
+    def _suggestion_clause(completed_clause: str) -> SearchClause:
+        assert completed_clause.strip() != "", "a completed clause"
+        return parse_search_query(completed_clause).first_clause.without_stats_terms()
+
+    def _tree_matches_for_suggestions(self, completed_clause: str) -> FrozenSet[str]:
+        """The notes the completed clause finds when it reads values (outside the lock); none
+        to read otherwise, the index answering it alone (_suggestion_matching_ids_locked)."""
+        if completed_clause.strip() == "" or not self._suggestion_clause(completed_clause).has_value_terms:
+            return frozenset()
+        return frozenset(self._tree_clause_note_ids(self._suggestion_clause(completed_clause)))
+
+    def _suggestion_matching_ids_locked(self, completed_clause: str, tree_matches: FrozenSet[str]) -> Set[int]:
+        if completed_clause.strip() == "":
+            return self._alive
+        clause = self._suggestion_clause(completed_clause)
+        if clause.has_value_terms:
+            return {self._uuid_to_id[note_id] for note_id in tree_matches if note_id in self._uuid_to_id}
+        return self._matching_note_int_ids_for_clause_locked(clause)
+
     def describe_search_suggestions(self, *, query: str, terms: Iterable[str]) -> SearchSuggestionFacts:
         """The facts `suggest_all_tag_completions` ranked and filtered these terms by."""
         context = _parse_search_suggestion_context(query)
@@ -869,14 +985,10 @@ class SearchIndex:
         if context.partial_prefix is not None:
             partial_prefix = context.partial_prefix
         shown = list(terms)
+        tree_matches = self._tree_matches_for_suggestions(context.completed_clause)
         with self._lock:
             has_completed_clause = context.completed_clause.strip() != ""
-            if has_completed_clause:
-                # Suggestions read the clause without its stats terms (no subtree walks here).
-                clause = parse_search_query(context.completed_clause).first_clause.without_stats_terms()
-                matching_ids = self._matching_note_int_ids_for_clause_locked(clause)
-            else:
-                matching_ids = self._alive
+            matching_ids = self._suggestion_matching_ids_locked(context.completed_clause, tree_matches)
             note_counts: Dict[str, int] = {}
             matching_counts: Dict[str, int] = {}
             for term in shown:
@@ -888,7 +1000,7 @@ class SearchIndex:
                 note_counts[term] = len(posting)
                 matching_counts[term] = len(posting & matching_ids)
             cooccurrences = self.describe_tag_cooccurrence(
-                anchors=context.anchors, terms=shown, excluded_note_ids=frozenset(),
+                anchors=context.anchors, terms=shown, excluded_note_ids=frozenset(), by_family=False,
             )
             return SearchSuggestionFacts(
                 partial_prefix=partial_prefix, anchors=tuple(context.anchors),
@@ -957,7 +1069,17 @@ class SearchIndex:
                 return 0
             return len(self._tag_notes_casefold[term_casefold])
 
-    def suggest_tag_completions(self, *, query: str, limit: int) -> List[str]:
+    def count_notes_in_tag_family(self, tag: str) -> int:
+        """Notes carrying the tag with or without a value (@datetime counts every dated note)."""
+        if not isinstance(tag, str) or tag == "":
+            raise TypeError("tag must be a non-empty string")
+        with self._lock:
+            return len(self._tag_family_posting_locked(tag.casefold()))
+
+    def suggest_tag_completions(self, *, query: str, limit: int, by_family: bool) -> List[str]:
+        """Tags ranked by how they go with the query's tags, then by use. by_family: each tag
+        counted over all its notes whatever their values (jogging=3, jogging=5 as jogging), as
+        the tag bar offers them; else every term on its own, as a search can name a value."""
         if not isinstance(query, str):
             raise TypeError(f"query must be a string, got {type(query)}")
         if not isinstance(limit, int) or limit <= 0:
@@ -988,8 +1110,19 @@ class SearchIndex:
             representative_by_casefold = self._build_suggestion_representatives_locked(
                 anchor_casefold_set=anchor_casefold_set,
                 partial_prefix=partial_prefix,
+                by_family=by_family,
             )
+            # By family, a date goes with tags as any tag does (journal and @datetime); the tag
+            # bar offers it dated, and only for the note's own tags (tag_suggestions).
+            if by_family and self._tag_family_posting_locked(DATETIME_TAG) and tag_term_matches_prefix(
+                term=DATETIME_TAG, prefix=partial_prefix,
+            ):
+                representative_by_casefold[DATETIME_TAG] = DATETIME_TAG
             candidate_casefolds = list(representative_by_casefold.keys())
+            postings = {
+                term_casefold: self._suggestion_posting_locked(term_casefold, by_family=by_family)
+                for term_casefold in candidate_casefolds
+            }
 
             if not candidate_casefolds and partial_prefix != "":
                 return []
@@ -997,7 +1130,7 @@ class SearchIndex:
             if not anchor_casefold_set:
                 candidate_casefolds.sort(
                     key=lambda term_casefold: (
-                        -len(self._tag_notes_casefold[term_casefold]),
+                        -len(postings[term_casefold]),
                         *self._suggestion_term_tiebreak_locked(representative_by_casefold[term_casefold]),
                     )
                 )
@@ -1032,16 +1165,15 @@ class SearchIndex:
 
             # term -> (most anchors one of its notes carries, notes carrying that many)
             co_occurrence = self._suggestion_co_occurrence_locked(
-                candidate_casefolds=candidate_casefolds,
+                postings=postings,
                 anchor_counts=anchor_counts,
                 notes_by_anchor_count=notes_by_anchor_count,
+                by_family=by_family,
             )
 
             scored: List[Tuple[int, float, int, str]] = []
             for term_casefold in candidate_casefolds:
-                if term_casefold not in self._tag_notes_casefold:
-                    continue
-                candidate_count = len(self._tag_notes_casefold[term_casefold])
+                candidate_count = len(postings[term_casefold])
                 if candidate_count == 0:
                     continue
 
@@ -1064,33 +1196,40 @@ class SearchIndex:
             scored.sort()
             return [representative_by_casefold[term.casefold()] for _, __, ___, term in scored[:limit]]
 
+    def _suggestion_posting_locked(self, term_casefold: str, *, by_family: bool) -> Set[int]:
+        """The notes a suggestion candidate counts: its family's (tag_family_of) or its own."""
+        if by_family:
+            return self._tag_family_posting_locked(term_casefold)
+        return _posting_or_empty(self._tag_notes_casefold, term_casefold)
+
     def _suggestion_co_occurrence_locked(
         self,
         *,
-        candidate_casefolds: List[str],
+        postings: Dict[str, Set[int]],
         anchor_counts: Dict[int, int],
         notes_by_anchor_count: List[Set[int]],
+        by_family: bool,
     ) -> Dict[str, Tuple[int, int]]:
         """Map each co-occurring candidate to (max anchors on one note, notes with that many).
 
-        Few anchor notes: walk their own terms. Many: intersect each candidate's
-        postings with the anchor-count groups, which runs in C.
+        Few anchor notes: walk their own terms (by family when by_family). Many: intersect each
+        candidate's postings with the anchor-count groups, which runs in C.
         """
         co_occurrence: Dict[str, Tuple[int, int]] = {}
         anchor_terms_size = sum(len(self._note_tag_terms_casefold[note_id]) for note_id in anchor_counts)
-        if anchor_terms_size <= SUGGESTION_INTERSECT_COST_RATIO * len(candidate_casefolds):
-            candidate_set = set(candidate_casefolds)
+        if anchor_terms_size <= SUGGESTION_INTERSECT_COST_RATIO * len(postings):
+            candidate_set = set(postings)
             for note_id, count in anchor_counts.items():
-                for term_casefold in self._note_tag_terms_casefold[note_id] & candidate_set:
+                note_terms = self._note_tag_terms_casefold[note_id]
+                if by_family:
+                    note_terms = frozenset(tag_family_of(term_casefold) for term_casefold in note_terms)
+                for term_casefold in note_terms & candidate_set:
                     if term_casefold not in co_occurrence or count > co_occurrence[term_casefold][0]:
                         co_occurrence[term_casefold] = (count, 1)
                     elif count == co_occurrence[term_casefold][0]:
                         co_occurrence[term_casefold] = (count, co_occurrence[term_casefold][1] + 1)
             return co_occurrence
-        for term_casefold in candidate_casefolds:
-            if term_casefold not in self._tag_notes_casefold:
-                continue
-            note_ids = self._tag_notes_casefold[term_casefold]
+        for term_casefold, note_ids in postings.items():
             for k in range(len(notes_by_anchor_count) - 1, 0, -1):
                 if notes_by_anchor_count[k]:
                     shared = len(note_ids & notes_by_anchor_count[k])
@@ -1105,18 +1244,14 @@ class SearchIndex:
         Note-tag recommendations retain partial co-occurrence ranking through
         suggest_tag_completions; search completions must satisfy the whole clause.
         """
+        context = _parse_search_suggestion_context(query)
+        tree_matches = self._tree_matches_for_suggestions(context.completed_clause)
         with self._lock:
             candidate_capacity = len(self._tag_notes) + len(list_known_meta_tag_terms()) + 1
-            suggestions = self.suggest_tag_completions(query=query, limit=candidate_capacity)
+            suggestions = self.suggest_tag_completions(query=query, limit=candidate_capacity, by_family=False)
             if not suggestions:
                 return []
-            context = _parse_search_suggestion_context(query)
-            if context.completed_clause.strip() == '':
-                matching_ids = self._alive
-            else:
-                # Suggestions read the clause without its stats terms (no subtree walks here).
-                clause = parse_search_query(context.completed_clause).first_clause.without_stats_terms()
-                matching_ids = self._matching_note_int_ids_for_clause_locked(clause)
+            matching_ids = self._suggestion_matching_ids_locked(context.completed_clause, tree_matches)
             if not matching_ids:
                 return []
             completions: List[str] = []
@@ -1191,17 +1326,10 @@ class SearchIndex:
         required_text_count = sum(len(clause.required_text) for clause in parsed.clauses)
         forbidden_text_count = sum(len(clause.forbidden_text) for clause in parsed.clauses)
 
-        if any(clause.has_stats_terms for clause in parsed.clauses):
-            # A stats figure is read from each note's subtree, outside the lock.
+        if any(clause.has_stats_terms or clause.has_value_terms for clause in parsed.clauses):
+            # Stats figures and inherited values are read from the note tree, outside the
+            # lock; MAX and MIN are decided per clause, across the notes it finds.
             return {note_id for clause in parsed.clauses for note_id in self.query_clause_note_ids(clause)}
-        if any(clause.has_extreme_terms for clause in parsed.clauses):
-            # MAX and MIN are decided per clause, across the notes it finds.
-            with self._lock:
-                return {
-                    self._id_to_uuid[note_int_id]
-                    for clause in parsed.clauses
-                    for note_int_id in self._matching_note_int_ids_for_clause_locked(clause)
-                }
 
         t1 = time.perf_counter()
         with self._lock:
@@ -1284,11 +1412,19 @@ class SearchIndex:
         with self._lock:
             self._stats_reader = reader
 
+    def attach_inherited_values_reader(self, reader: InheritedValuesReader) -> None:
+        """What answers terms about values (jogging:miles>2) for the values notes inherit:
+        the note store's tree, which this index does not hold."""
+        if not callable(reader):
+            raise TypeError("the inherited values reader must be callable")
+        with self._lock:
+            self._inherited_values_reader = reader
+
     def query_clause_note_ids(self, clause: SearchClause) -> Set[str]:
         if not isinstance(clause, SearchClause):
             raise TypeError(f"clause must be SearchClause, got {type(clause)}")
-        if clause.has_stats_terms:
-            return self._stats_clause_note_ids(clause)
+        if clause.has_stats_terms or clause.has_value_terms:
+            return self._tree_clause_note_ids(clause)
         with self._lock:
             return {
                 self._id_to_uuid[note_int_id]
@@ -1346,6 +1482,7 @@ class SearchIndex:
         # Once per note: Trip and trip are one lowercased tag.
         for term_casefold in raw_casefold:
             self._raw_tag_notes_casefold.add(term_casefold)
+        self._update_raw_families_locked(set(), raw_casefold)
         tag_terms_casefold = []
         for term in tag_terms:
             if term not in casefold_by_term:
@@ -1363,12 +1500,26 @@ class SearchIndex:
         # Once per note: Trip and trip are one lowercased tag.
         for term_casefold in {term.casefold() for term in terms}:
             self._explicit_tag_notes_casefold.add(term_casefold)
+        # Once per note: jogging=3 and jogging:miles=4 on one note are one jogging.
+        for family in {tag_family_of(term) for term in terms}:
+            self._explicit_tag_family_notes.add(family)
 
     def _remove_explicit_terms_locked(self, terms: FrozenSet[str]) -> None:
         for term in terms:
             self._explicit_tag_notes.remove(term)
         for term_casefold in {term.casefold() for term in terms}:
             self._explicit_tag_notes_casefold.remove(term_casefold)
+        for family in {tag_family_of(term) for term in terms}:
+            self._explicit_tag_family_notes.remove(family)
+
+    def _update_raw_families_locked(self, old_raw_casefold: Set[str], new_raw_casefold: Set[str]) -> None:
+        """A note's raw tags changed from old to new: its families' counts follow, once per note."""
+        old_families = {tag_family_of(term_casefold) for term_casefold in old_raw_casefold}
+        new_families = {tag_family_of(term_casefold) for term_casefold in new_raw_casefold}
+        for family in old_families - new_families:
+            self._raw_tag_family_notes_casefold.remove(family)
+        for family in new_families - old_families:
+            self._raw_tag_family_notes_casefold.add(family)
 
     def _update_existing_locked(
         self,
@@ -1396,6 +1547,9 @@ class SearchIndex:
                 self._raw_tag_notes_casefold.remove(term_casefold)
             for term_casefold in {term.casefold() for term in new_raw_tag_terms}:
                 self._raw_tag_notes_casefold.add(term_casefold)
+            self._update_raw_families_locked(
+                {term.casefold() for term in old_raw_tag_terms}, {term.casefold() for term in new_raw_tag_terms},
+            )
             self._note_raw_tag_terms[note_int_id] = new_raw_tag_terms
 
         if old_tag_terms != new_tag_terms:
@@ -1424,7 +1578,10 @@ class SearchIndex:
         self._remove_explicit_terms_locked(self._note_explicit_tag_terms[note_int_id])
         for term_casefold in {term.casefold() for term in self._note_raw_tag_terms[note_int_id]}:
             self._raw_tag_notes_casefold.remove(term_casefold)
+        self._update_raw_families_locked({term.casefold() for term in self._note_raw_tag_terms[note_int_id]}, set())
         self._note_text_casefold[note_int_id] = ""
+        if note_int_id in self._note_text_file_ids:
+            del self._note_text_file_ids[note_int_id]
         self._set_note_properties_locked(note_int_id, "")
         self._set_link_title_urls_locked(note_int_id, frozenset())
         if note_int_id in self._note_base_text_casefold:
@@ -1549,7 +1706,7 @@ class SearchIndex:
             ]
         completion = PropertyCompletion(
             tag=tag, property_name=None, partial=name, before=typed[: match.start("name")], number="",
-            excluded_names=frozenset(), name_suffix="", offers_extremes=False,
+            excluded_names=frozenset(), name_suffix="", offers_extremes=False, offers_values=False,
         )
         prefix = tag_family_prefix(tag)
         assert prefix is not None, "a stats tag carries no value of its own"
@@ -1610,18 +1767,8 @@ class SearchIndex:
         )
         if completion is None:
             return []
-        if completion.offers_extremes:
-            assert completion.property_name is not None, "MAX and MIN follow a property"
-            extreme_words = {MAX_KEYWORD: "largest", MIN_KEYWORD: "smallest"}
-            return [
-                PropertySuggestion(
-                    replacement=f"{completion.before}{keyword}", label=keyword,
-                    reasons=(f"The {extreme_words[keyword]} {completion.property_name} "
-                             "among the notes the rest of the search finds",),
-                    note_count=0,
-                )
-                for keyword in EXTREME_KEYWORDS if keyword.startswith(completion.partial)
-            ]
+        if completion.offers_values:
+            return self._value_suggestions(completion=completion, place=place, limit=limit)
         with self._lock:
             if place == PROPERTY_SUGGESTIONS_IN_TAG_BAR:
                 tag_names = self._tags_implied_by_locked(completion.tag.casefold())
@@ -1645,6 +1792,88 @@ class SearchIndex:
         return [
             completion.suggestion(name, by_tag) for name, by_tag in ranked[:limit]
         ]
+
+    def _value_suggestions(
+        self, *, completion: PropertyCompletion, place: str, limit: int,
+    ) -> List[PropertySuggestion]:
+        """After a property's =: in a search MAX and MIN first when some value is a number,
+        date or time (never for text alone, agreed 2026-10-31), then the values notes give
+        it, written as they would be typed (quoted when they need it), the closest match and
+        then the most used first."""
+        assert completion.property_name is not None, "values follow a property"
+        property_name = completion.property_name.casefold()
+        with self._lock:
+            if place == PROPERTY_SUGGESTIONS_IN_TAG_BAR:
+                tag_names = self._tags_implied_by_locked(completion.tag.casefold())
+            else:
+                tag_names = self._property_tags_locked(completion.tag.casefold(), property_name)
+            values = self._value_counts_locked(tag_names, property_name)
+        suggestions: List[PropertySuggestion] = []
+        is_ordered = any(value.kind != VALUE_TEXT for value, _ in values.values())
+        if completion.offers_extremes and is_ordered:
+            extreme_words = {MAX_KEYWORD: "largest", MIN_KEYWORD: "smallest"}
+            suggestions += [
+                PropertySuggestion(
+                    replacement=f"{completion.before}{keyword}", label=keyword,
+                    reasons=(f"The {extreme_words[keyword]} {completion.property_name} "
+                             "among the notes the rest of the search finds",),
+                    note_count=0,
+                )
+                for keyword in EXTREME_KEYWORDS if keyword.startswith(completion.partial)
+            ]
+        typed = unquote_value(completion.partial).casefold()
+        ranked = sorted(
+            (
+                (value, by_tag) for value, by_tag in values.values()
+                if value_completes(value.text, completion.partial)
+            ),
+            key=lambda item: (
+                not item[0].text.casefold().startswith(typed), -sum(item[1].values()), item[0].text.casefold(),
+            ),
+        )
+        for value, by_tag in ranked:
+            written = quote_value(value.text)
+            reasons = tuple(
+                f"On {count} {_note_noun(count)} tagged {tag}"
+                for tag, count in sorted(by_tag.items(), key=lambda item: (-item[1], item[0]))
+            )
+            suggestions.append(PropertySuggestion(
+                replacement=f"{completion.before}{written}", label=written, reasons=reasons,
+                note_count=sum(by_tag.values()),
+            ))
+        if completion.number != "":
+            # Then the units the property is written in, after the number typed (10m: 10mg).
+            unit_completion = dataclasses.replace(
+                completion, partial=completion.partial[len(completion.number):],
+                before=f"{completion.before}{completion.number}",
+            )
+            with self._lock:
+                unit_counts = self._unit_counts_locked(tag_names, property_name)
+            offered = {suggestion.replacement for suggestion in suggestions}
+            for unit, by_tag in sorted(unit_counts.items(), key=lambda item: (-sum(item[1].values()), item[0])):
+                suggestion = unit_completion.suggestion(unit, by_tag)
+                if _completes(unit, unit_completion.partial, frozenset()) and suggestion.replacement not in offered:
+                    suggestions.append(suggestion)
+        return suggestions[:limit]
+
+    def _value_counts_locked(
+        self, tag_names: FrozenSet[str], property_name: str,
+    ) -> Dict[str, Tuple[PropertyValue, Dict[str, int]]]:
+        """Per value (casefolded text), one way it is written and how many notes give it
+        with each tag."""
+        values: Dict[str, Tuple[PropertyValue, Dict[str, int]]] = {}
+        for tag_name in tag_names:
+            key = (tag_name, property_name)
+            for note_int_id in _posting_or_empty(self._property_notes, key):
+                value = self._note_properties[note_int_id][key]
+                folded = value.text.casefold()
+                if folded not in values:
+                    values[folded] = (value, {})
+                by_tag = values[folded][1]
+                if tag_name not in by_tag:
+                    by_tag[tag_name] = 0
+                by_tag[tag_name] += 1
+        return values
 
     def _vault_property_names(
         self, *, completion: PropertyCompletion, excluded: FrozenSet[str], limit: int,
@@ -1733,71 +1962,104 @@ class SearchIndex:
             tag_names=self._property_tags_locked(*condition.key),
         )
 
-    def _extreme_notes_locked(self, note_int_ids: Set[int], condition: PropertyCondition) -> Set[int]:
-        """Of these notes, those holding the largest (MAX) or smallest (MIN) value of the
-        term's property, ties included. Values are compared within one kind: the kind most
-        of the values are (numbers first on a tie); units are labels and do not count."""
-        tag_names = self._property_tags_locked(*condition.key)
-        values_by_note: Dict[int, List[PropertyValue]] = {}
-        for note_int_id in note_int_ids:
-            if note_int_id not in self._note_properties:
-                continue
-            note_values = self._note_properties[note_int_id]
-            found = [note_values[(tag_name, condition.key[1])] for tag_name in tag_names
-                     if (tag_name, condition.key[1]) in note_values]
-            if found:
-                values_by_note[note_int_id] = found
-        if not values_by_note:
-            return set()
-        kind_counts = Counter(value.kind for found in values_by_note.values() for value in found)
-        kind = max(VALUE_KIND_ORDER, key=lambda candidate: (kind_counts[candidate], -VALUE_KIND_ORDER.index(candidate)))
-        pick = _EXTREME_PICKS[condition.value_text]
-        best_by_note = {
-            note_int_id: pick(value.sort_key for value in found if value.kind == kind)
-            for note_int_id, found in values_by_note.items()
-            if any(value.kind == kind for value in found)
-        }
-        extreme = pick(best_by_note.values())
-        return {note_int_id for note_int_id, best in best_by_note.items() if best == extreme}
-
-    def _stats_clause_note_ids(self, clause: SearchClause) -> Set[str]:
-        """A clause with stats terms (docs/ui/search-semantics.md, Stats figures): the index
-        finds the notes the rest of it holds for, among those carrying each required stats
-        tag; each stats term then compares the figure the note shows. MAX and MIN come last,
-        in the order written, among the notes everything else finds."""
-        reader = self._stats_reader
-        if reader is None:
-            raise RuntimeError("Stats terms need the note store's reader (attach_stats_reader)")
-        rest = clause.without_stats_terms()
+    def _tree_clause_note_ids(self, clause: SearchClause) -> Set[str]:
+        """A clause with terms read from the note tree, outside the lock: values, which notes
+        inherit (jogging:miles>2, docs/ui/search-semantics.md), and stats figures
+        (@sum:calories>2000). The index finds the notes the rest of the clause holds for,
+        among those carrying each required term's tag (themselves or by inheritance); each
+        term then reads the note's values or figure. MAX and MIN come last, in the order
+        written, among the notes everything else finds."""
+        rest = clause.without_stats_terms().without_value_terms()
+        conditions = clause.required_properties + clause.forbidden_properties
         with self._lock:
             candidates = self._candidate_note_ids_locked(rest)
             for condition in clause.required_properties:
                 if condition.is_stats:
                     candidates &= self._tag_family_posting_locked(condition.key[0])
-            matched = {
-                self._id_to_uuid[note_int_id] for note_int_id in candidates
+                elif condition.reads_values:
+                    candidates &= self._carrying_property_tags_locked(condition)
+            matched_int_ids = {
+                note_int_id for note_int_id in candidates
                 if note_int_id in self._alive and self._verify_note_matches_locked(note_int_id, rest)
             }
+            own_values = {
+                self._id_to_uuid[note_int_id]: self._own_values_locked(note_int_id) for note_int_id in matched_int_ids
+            }
+            tag_names = {condition: self._property_tags_locked(*condition.key)
+                         for condition in conditions if condition.reads_values}
+        values = _NoteValues(own_values=own_values, inherited=self._read_inherited_values(clause, frozenset(own_values)))
+        matched = set(own_values)
         for condition in clause.required_properties:
-            if condition.is_stats and not condition.is_extreme:
-                matched = {note_id for note_id in matched if _figure_meets(reader(note_id, condition), condition)}
+            if not condition.is_extreme:
+                matched = {note_id for note_id in matched if self._meets(note_id, condition, values, tag_names)}
         for condition in clause.forbidden_properties:
-            if condition.is_stats and not condition.is_extreme:
-                matched = {note_id for note_id in matched if not _figure_meets(reader(note_id, condition), condition)}
+            if not condition.is_extreme:
+                matched = {note_id for note_id in matched if not self._meets(note_id, condition, values, tag_names)}
         for condition in clause.required_properties:
             if condition.is_extreme:
-                matched = self._extreme_note_ids(matched, condition, reader)
+                matched = self._extreme_note_ids(matched, condition, values, tag_names)
         for condition in clause.forbidden_properties:
             if condition.is_extreme:
-                matched -= self._extreme_note_ids(matched, condition, reader)
+                matched -= self._extreme_note_ids(matched, condition, values, tag_names)
         return matched
 
-    def _extreme_note_ids(self, note_ids: Set[str], condition: PropertyCondition, reader: StatsFigureReader) -> Set[str]:
+    def _own_values_locked(self, note_int_id: int) -> Mapping[Tuple[str, str], PropertyValue]:
+        if note_int_id not in self._note_properties:  # shockharness: ignore[DEF002] reason="only notes with values are kept"
+            return {}
+        return self._note_properties[note_int_id]
+
+    def _carrying_property_tags_locked(self, condition: PropertyCondition) -> Set[int]:
+        """The notes carrying, themselves or by inheritance, a tag whose values the term reads."""
+        notes: Set[int] = set()
+        for tag_name in self._property_tags_locked(*condition.key):
+            notes |= self._tag_family_posting_locked(tag_name)
+        return notes
+
+    def _read_inherited_values(self, clause: SearchClause, note_ids: FrozenSet[str]) -> Mapping[str, InheritedValues]:
+        """The values these notes inherit, when the clause reads values (outside the lock)."""
+        if not clause.has_value_terms:
+            return {}
+        reader = self._inherited_values_reader
+        if reader is None:
+            raise RuntimeError("Terms about values need the note store's reader (attach_inherited_values_reader)")
+        inherited = reader(note_ids)
+        assert inherited.keys() == note_ids, "the reader answers for every note asked about"
+        return inherited
+
+    def _meets(
+        self, note_id: str, condition: PropertyCondition, values: _NoteValues,
+        tag_names: Mapping[PropertyCondition, FrozenSet[str]],
+    ) -> bool:
+        """Whether a found note meets a term read from the tree: its values (own or
+        inherited, any one map of them) or its stats figure."""
+        if condition.is_stats:
+            return _figure_meets(self._require_stats_reader()(note_id, condition), condition)
+        # A value term never asks for a missing value, the only kind reading own_tag_names.
+        return any(
+            condition_holds(condition, values=value_map, own_tag_names=frozenset(), tag_names=tag_names[condition])
+            for value_map in values.maps(note_id)
+        )
+
+    def _require_stats_reader(self) -> StatsFigureReader:
+        reader = self._stats_reader
+        if reader is None:
+            raise RuntimeError("Stats terms need the note store's reader (attach_stats_reader)")
+        return reader
+
+    def _extreme_note_ids(
+        self, note_ids: Set[str], condition: PropertyCondition, values: _NoteValues,
+        tag_names: Mapping[PropertyCondition, FrozenSet[str]],
+    ) -> Set[str]:
         """Of these notes, those with the largest (MAX) or smallest (MIN) value or figure."""
         if not condition.is_stats:
-            with self._lock:
-                note_int_ids = {self._uuid_to_id[note_id] for note_id in note_ids}
-                return {self._id_to_uuid[note_int_id] for note_int_id in self._extreme_notes_locked(note_int_ids, condition)}
+            found_by_note: Dict[str, List[PropertyValue]] = {}
+            for note_id in note_ids:
+                found = [value_map[(tag_name, condition.key[1])] for value_map in values.maps(note_id)
+                         for tag_name in tag_names[condition] if (tag_name, condition.key[1]) in value_map]
+                if found:
+                    found_by_note[note_id] = found
+            return _notes_with_extreme_value(found_by_note, condition)
+        reader = self._require_stats_reader()
         pick = _EXTREME_PICKS[condition.value_text]
         best_by_note: Dict[str, Decimal] = {}
         for note_id in note_ids:
@@ -1819,6 +2081,29 @@ class SearchIndex:
         elif note_int_id in self._note_base_text_casefold:
             del self._note_base_text_casefold[note_int_id]
         self._note_text_casefold[note_int_id] = append_link_titles_casefold(base_text_casefold, link_title_urls)
+        text_file_ids = tuple(
+            file_id for file_id, _name in file_registry.referenced_file_names(content_text)
+            if is_searchable_file_name(_name)
+        )
+        if text_file_ids:
+            self._note_text_file_ids[note_int_id] = text_file_ids
+        elif note_int_id in self._note_text_file_ids:
+            del self._note_text_file_ids[note_int_id]
+
+    def file_texts_changed(self) -> None:
+        """Files' text became searchable: results kept from before are worked out again (a view
+        already drawn is not: only a new search shows them, docs/ui/interaction-principles.md 2)."""
+        with self._lock:
+            self._revision += 1
+            self._result_cache.clear()
+
+    def _text_term_matches_locked(self, note_int_id: int, term: str) -> bool:
+        """Whether the quoted term is in the note's searchable text or the text of a file it shows."""
+        if text_term_matches(term, self._note_text_casefold[note_int_id]):
+            return True
+        if note_int_id not in self._note_text_file_ids:
+            return False
+        return any(file_texts.term_matches(file_id, term) for file_id in self._note_text_file_ids[note_int_id])
 
     def _set_link_title_urls_locked(self, note_int_id: int, urls: FrozenSet[str]) -> None:
         previous_urls = self._note_link_title_urls[note_int_id]
@@ -1838,10 +2123,20 @@ class SearchIndex:
         *,
         anchor_casefold_set: FrozenSet[str],
         partial_prefix: str,
+        by_family: bool,
     ) -> Dict[str, str]:
         partial_prefix_casefold = partial_prefix.casefold()
         representatives: Dict[str, str] = {}
-        for term, _note_count in self._tag_notes.items():
+        # How many notes each spelling is on; by family, its members' summed (Jogging=3 is a Jogging).
+        spelling_counts: Dict[str, int] = {}
+        for term, note_count in self._tag_notes.items():
+            if by_family:
+                term = tag_family_of(term)
+            if term in spelling_counts:
+                spelling_counts[term] += note_count
+            else:
+                spelling_counts[term] = note_count
+        for term in spelling_counts:
             if not term or term == "OR" or term.startswith("@"):
                 continue
             term_casefold = term.casefold()
@@ -1855,13 +2150,13 @@ class SearchIndex:
                 representatives[term_casefold] = term
                 continue
             current = representatives[term_casefold]
-            if self._is_better_suggestion_variant_locked(candidate=term, incumbent=current):
+            if self._is_better_suggestion_variant_locked(candidate=term, incumbent=current, counts=spelling_counts):
                 representatives[term_casefold] = term
         return representatives
 
-    def _is_better_suggestion_variant_locked(self, *, candidate: str, incumbent: str) -> bool:
-        candidate_count = self._tag_notes.count(candidate)
-        incumbent_count = self._tag_notes.count(incumbent)
+    def _is_better_suggestion_variant_locked(self, *, candidate: str, incumbent: str, counts: Dict[str, int]) -> bool:
+        candidate_count = counts[candidate]
+        incumbent_count = counts[incumbent]
         if candidate_count != incumbent_count:
             return candidate_count > incumbent_count
         candidate_penalty, candidate_tiebreak = self._suggestion_term_tiebreak_locked(candidate)
@@ -1965,19 +2260,9 @@ class SearchIndex:
         return candidate_ids
 
     def _matching_note_int_ids_for_clause_locked(self, clause: SearchClause) -> Set[int]:
+        # Values and stats figures are read from the note tree (_tree_clause_note_ids).
+        assert not clause.has_value_terms and not clause.has_stats_terms, "the index alone answers this clause"
         candidate_ids = self._candidate_note_ids_locked(clause)
-        if clause.has_extreme_terms:
-            matched = {
-                note_int_id for note_int_id in candidate_ids
-                if note_int_id in self._alive and self._verify_note_matches_locked(note_int_id, clause)
-            }
-            for condition in clause.required_properties:
-                if condition.is_extreme:
-                    matched = self._extreme_notes_locked(matched, condition)
-            for condition in clause.forbidden_properties:
-                if condition.is_extreme:
-                    matched -= self._extreme_notes_locked(matched, condition)
-            return matched
         if not clause.required_text and not clause.forbidden_text and not clause.has_property_terms:
             # Tags alone: the postings answer exactly. They hold only live notes (removing
             # a note discards it from each), and the forbidden tags' notes are removed
@@ -1991,12 +2276,11 @@ class SearchIndex:
         }
 
     def _verify_note_matches_locked(self, note_int_id: int, clause: SearchClause) -> bool:
-        text_casefold = self._note_text_casefold[note_int_id]
         for term in clause.required_text:
-            if not text_term_matches(term, text_casefold):
+            if not self._text_term_matches_locked(note_int_id, term):
                 return False
         for term in clause.forbidden_text:
-            if text_term_matches(term, text_casefold):
+            if self._text_term_matches_locked(note_int_id, term):
                 return False
         note_tag_terms_casefold = self._note_tag_terms_casefold[note_int_id]
         for tag in clause.forbidden_tags:
@@ -2037,6 +2321,7 @@ class SearchIndex:
 
 
 search_index = SearchIndex()
+file_texts.on_changed(search_index.file_texts_changed)
 # A fetched, decrypted or cleared URL title changes which notes match a text search.
 link_title_store.add_titles_changed_listener(search_index.refresh_link_titles)
 

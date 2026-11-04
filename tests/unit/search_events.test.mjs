@@ -177,7 +177,9 @@ test('handleSearchInput updates search query even while loading', async (t) => {
     assert.equal(ModeContext.searchQuery, 'ML3');
 });
 
-test('fresh search input dismisses the temporary untagged view', async (t) => {
+// The Untagged view is the server's, per search context; a new search ends it there when it
+// runs (scripts/browser-tab-switch-regressions.mjs checks that end to end).
+test('typing in the Untagged view takes the typed query', async (t) => {
     const restoreDom = installSearchEventsDom(t);
 
     const [{ handleSearchInput }, { cancelDebouncedSearchExecution }, { ModeContextInstance: ModeContext }] = await Promise.all([
@@ -187,13 +189,11 @@ test('fresh search input dismisses the temporary untagged view', async (t) => {
     ]);
 
     ModeContext.setSearchQuery('journal');
-    ModeContext.setUntaggedView(true);
+    ModeContext.recordUntaggedViewsFromServer({ untaggedViews: [ModeContext.activeTabId] });
 
     t.after(() => {
         cancelDebouncedSearchExecution();
-        if (ModeContext.isUntaggedView) {
-            ModeContext.setUntaggedView(false);
-        }
+        ModeContext.recordUntaggedViewsFromServer({ untaggedViews: [] });
         ModeContext.setSearchQuery('');
         restoreDom();
     });
@@ -203,7 +203,18 @@ test('fresh search input dismisses the temporary untagged view', async (t) => {
     });
 
     assert.equal(ModeContext.searchQuery, 'journal entry');
+});
+
+test('the Untagged view belongs to its search context', async () => {
+    const { ModeContextInstance: ModeContext } = await import('../../app/static/js/modules/mode-manager/mode-context.js');
+    const activeTabId = ModeContext.activeTabId;
+    ModeContext.recordUntaggedViewsFromServer({ untaggedViews: ['another-tab'] });
     assert.equal(ModeContext.isUntaggedView, false);
+    ModeContext.recordUntaggedViewsFromServer({ untaggedViews: [activeTabId] });
+    assert.equal(ModeContext.isUntaggedView, true);
+    ModeContext.recordUntaggedViewsFromServer({ untaggedViews: [] });
+    assert.equal(ModeContext.isUntaggedView, false);
+    assert.throws(() => ModeContext.recordUntaggedViewsFromServer({}), /untaggedViews/);
 });
 
 test('typing in search dismisses reference source mode without leaving the active tab', async (t) => {
@@ -260,36 +271,9 @@ test('typing in search dismisses reference source mode without leaving the activ
     assert.equal(isViewingReferenceSource(), false);
 });
 
-test('pasting the preserved tab query into untagged search still dismisses the view', async (t) => {
-    const restoreDom = installSearchEventsDom(t);
-
-    const [{ handleSearchInput }, { cancelDebouncedSearchExecution }, { ModeContextInstance: ModeContext }] = await Promise.all([
-        import('../../app/static/js/modules/mode-manager/events/search-events.js'),
-        import('../../app/static/js/modules/mode-manager/services/search-debounce-service.js'),
-        import('../../app/static/js/modules/mode-manager/mode-context.js'),
-    ]);
-
-    ModeContext.setSearchQuery('journal');
-    ModeContext.setUntaggedView(true);
-
-    t.after(() => {
-        cancelDebouncedSearchExecution();
-        if (ModeContext.isUntaggedView) {
-            ModeContext.setUntaggedView(false);
-        }
-        ModeContext.setSearchQuery('');
-        restoreDom();
-    });
-
-    handleSearchInput({
-        target: createSearchInput('journal'),
-    });
-
-    assert.equal(ModeContext.searchQuery, 'journal');
-    assert.equal(ModeContext.isUntaggedView, false);
-});
-
-test('fresh search input resets the active tab sort without losing the typed query', async (t) => {
+// The tab's sort stays through a new search, until its × ends it (the maintainer, 2026-11-02,
+// docs/ui/state-handling.md; a new search had reset it to Normal).
+test('fresh search input keeps the active tab sort and the typed query', async (t) => {
     const restoreDom = installSearchEventsDom(t);
     const originalFetch = globalThis.fetch;
 
@@ -313,9 +297,10 @@ test('fresh search input resets the active tab sort without losing the typed que
         requests.push({ url, body: JSON.parse(options.body) });
         const responseState = structuredClone(sortedTabState);
         responseState.tabs[activeTabId].sortMode = 'normal';
-        // The server's tab state always carries the tabs' date ranges and Files filters.
+        // The server's tab state always carries the tabs' date ranges, Files filters and Untagged views.
         responseState.dateFilters = {};
         responseState.fileFilters = {};
+        responseState.untaggedViews = [];
         return {
             ok: true,
             async json() {
@@ -337,9 +322,8 @@ test('fresh search input resets the active tab sort without losing the typed que
     cancelDebouncedSearchExecution();
     await new Promise(resolve => setTimeout(resolve, 0));
 
-    assert.equal(requests.length, 1);
-    assert.equal(requests[0].body.sortMode, 'normal');
-    assert.equal(ModeContext.activeTabSortMode, 'normal');
+    assert.deepEqual(requests.filter((request) => Object.hasOwn(request.body, 'sortMode')), [], 'no request changes the sort');
+    assert.equal(ModeContext.activeTabSortMode, 'updated');
     assert.equal(ModeContext.searchQuery, 'journal entry');
 });
 

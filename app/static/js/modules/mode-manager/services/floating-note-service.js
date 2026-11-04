@@ -6,14 +6,16 @@ import { CommandGate } from './command-gate-service.js';
 import { createFloatingNoteElements, applyFloatingNoteRect, getFloatingNoteTitle } from './floating-note-dom.js';
 import { constrainFloatingNoteRect, moveFloatingNoteRect } from './floating-note-layout.js';
 import { hydrateImageFilePreviews } from './file-image-preview-service.js';
-import { hydrateEmailPreviews } from './file-email-preview-service.js';
 import { hydrateExcalidrawPreviews } from '../../excalidraw/excalidraw-preview-service.js';
 import { ensureAnchorsOpenInNewTabs } from './link-target-service.js';
 import { queueMermaidDiagramRendering } from './mermaid-render-service.js';
 import { hydrateRemoteImageProxies } from './remote-image-proxy-service.js';
 import { downloadFileReference } from './file-reference-service.js';
-import { copyTextToClipboard, normalizeCopyableText } from '../events/mouse-events.js';
+import { openFileViewer, opensInViewer } from './file-viewer-service.js';
+import { playMediaFile } from './media-player-service.js';
+import { handleValueButtonClick } from './value-buttons-service.js';
 import { openReferenceInNewTab } from '../events/keyboard-events.js';
+import { copyTextToClipboard, normalizeCopyableText } from '../events/mouse-events.js';
 import { serverRenderedHtml } from '../../server-rendered-html.js';
 
 const moduleState = ApplicationState.createFields('floating-note-service', {
@@ -160,12 +162,11 @@ async function refreshWindow(id) {
         entry.title.setAttribute('aria-disabled', 'false');
     }
     for (const editable of entry.tree.querySelectorAll('[contenteditable]')) editable.setAttribute('contenteditable', 'false');
-    for (const control of entry.tree.querySelectorAll('.meta-status-toggle, .note-shell-run, input, textarea, select')) {
+    for (const control of entry.tree.querySelectorAll('.meta-status-toggle, .meta-markdown-task-toggle, .note-shell-run, input, textarea, select')) {
         control.setAttribute('disabled', '');
     }
     ensureAnchorsOpenInNewTabs(entry.tree);
     hydrateImageFilePreviews(entry.tree);
-    void hydrateEmailPreviews(entry.tree);
     void hydrateExcalidrawPreviews(entry.tree);
     hydrateRemoteImageProxies(entry.tree);
     await queueMermaidDiagramRendering(entry.tree);
@@ -194,6 +195,7 @@ function handleWindowClick(event, target, id) {
         closeFloatingNote(id);
         return;
     }
+    if (handleValueButtonClick(event, target)) return;
     const credential = target.closest('.meta-credential-value');
     const copyable = target.closest('.meta-copyable');
     if (credential) {
@@ -215,9 +217,20 @@ function handleWindowClick(event, target, id) {
         void CommandGate.run('floatingNote.reference', () => openFloatingNote(container.dataset.refNoteId));
         return;
     }
-    const file = target.closest('.note-file-reference-link, .note-file-image-download-link');
+    const play = target.closest('.note-file-media-play');
+    if (play) {
+        event.preventDefault();
+        void CommandGate.run('floatingNote.play', () => playMediaFile(play));
+        return;
+    }
+    // As in the list: Open (or a link to a file the viewer shows) opens it, Download downloads it.
+    const file = target.closest('button.note-file-reference-link, .note-file-action');
     if (file) {
         event.preventDefault();
+        if (opensInViewer(file)) {
+            void CommandGate.run('floatingNote.open', () => openFileViewer(file.dataset.fileRefId));
+            return;
+        }
         void CommandGate.run('floatingNote.download', () => downloadFileReference(file.dataset.fileRefId));
     }
 }

@@ -21,6 +21,9 @@ test('buildCommandPaletteEndpoints includes utility action endpoints', async () 
             openReminders: noop,
             openSoundManager: noop,
             openVersionInfo: noop,
+            openImportWizard: noop,
+            toggleVirtualFolders: noop,
+            deleteNotesInView: noop,
             openMemoryUsage: noop,
             openRecentMessages: noop,
             openNoteLayoutAppearance: noop,
@@ -36,6 +39,7 @@ test('buildCommandPaletteEndpoints includes utility action endpoints', async () 
             summarizeAiChat: noop,
             createBackup: noop,
             openBackupRestore: noop,
+            openLegacyImport: noop,
             logout: noop,
             openRandomPasswordGenerator: noop,
             collapseAll: noop,
@@ -232,7 +236,8 @@ test('buildCommandPaletteEndpoints includes utility action endpoints', async () 
     // The Backlinks panel is gone; ↖ and Referenced by replace it.
     assert.equal(endpointIds.has('pref.show_backlinks'), false);
     assert.equal(endpoints.find((endpoint) => endpoint.id === 'pref.show_note_tags').label, 'Show Tags in List');
-    assert.equal(endpoints.find((endpoint) => endpoint.id === 'pref.show_tab_ui').label, 'Show Search Contexts');
+    // Search contexts always show (the maintainer, 2026-11-02): no switch.
+    assert.equal(endpointIds.has('pref.show_tab_ui'), false);
     assert.equal(
         endpoints.find((endpoint) => endpoint.id === 'pref.show_search_results_count').label,
         'Hide Search Result Count',
@@ -240,13 +245,11 @@ test('buildCommandPaletteEndpoints includes utility action endpoints', async () 
     assert.equal(endpoints.some((endpoint) => endpoint.id === 'pref.show_perf_overlay'), false);
 
     storedPreferences.set('pref.show_note_tags', 'true');
-    storedPreferences.set('pref.show_tab_ui', 'true');
     storedPreferences.set('pref.show_search_results_count', 'false');
     storedPreferences.set('pref.show_perf_overlay', 'true');
     storedPreferences.set('pref.animated_transitions', 'false');
 
     assert.equal(endpoints.find((endpoint) => endpoint.id === 'pref.show_note_tags').label, 'Hide Tags in List');
-    assert.equal(endpoints.find((endpoint) => endpoint.id === 'pref.show_tab_ui').label, 'Hide Search Contexts');
     assert.equal(
         endpoints.find((endpoint) => endpoint.id === 'pref.show_search_results_count').label,
         'Show Search Result Count',

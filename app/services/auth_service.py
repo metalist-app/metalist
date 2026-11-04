@@ -180,8 +180,10 @@ class AuthService:
         )
         return secrets.compare_digest(candidate, settings.auth_verifier)
 
-    def password_policy_error(self, password: str) -> str | None:
-        """Return a user-facing policy error for a new password, if any."""
+    @staticmethod
+    def password_policy_error(password: str) -> str | None:
+        """Return a user-facing policy error for a new password, if any. Static so
+        convert-from-legacy.py can check a password before it creates the database."""
         if not isinstance(password, str):
             raise TypeError("password must be a string")
         if len(password) < PASSWORD_MIN_LENGTH:

@@ -71,7 +71,8 @@ def _typed(prefix: str) -> list[str]:
 
 
 def _narrowed(shorter: list[str], prefix: str) -> list[str]:
-    return [tag for tag in shorter if tag_term_matches_prefix(term=tag, prefix=prefix)]
+    # A built-in tag (@quote) is offered for its name, as typed without the @.
+    return [tag for tag in shorter if tag_term_matches_prefix(term=tag.removeprefix("@"), prefix=prefix)]
 
 
 def test_each_letter_only_narrows_and_a_tag_that_already_applies_stays_first(live_database) -> None:
@@ -81,10 +82,11 @@ def test_each_letter_only_narrows_and_a_tag_that_already_applies_stays_first(liv
     after_qu = _typed("qu")
     after_que = _typed("que")
 
+    # The built-in @quote (2026-10-31) comes after the vault's own tags.
     assert after_q == ["question", "quote", "questions", "QQQ", "Quanta-Magazine", "air-quality",
-                       "beg-the-question", "code-quality", "conditional-quantiles"]
+                       "beg-the-question", "code-quality", "conditional-quantiles", "@quote"]
     assert after_qu == ["question", "quote", "questions", "Quanta-Magazine", "air-quality",
-                        "beg-the-question", "code-quality", "conditional-quantiles"]
+                        "beg-the-question", "code-quality", "conditional-quantiles", "@quote"]
     assert after_que == ["question", "questions", "beg-the-question"]
     assert after_qu == _narrowed(after_q, "qu")
     assert after_que == _narrowed(after_qu, "que")

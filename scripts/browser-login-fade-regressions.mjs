@@ -155,7 +155,7 @@ export async function checkLoginFade(page) {
   const ids = await seedNotes(page);
   await page.evaluate(async password => {
     const {buildSessionHeaders} = await import('/static/js/modules/session-auth.js');
-    const response = await fetch('/api2/auth/settings/password/create', {method: 'POST', headers: buildSessionHeaders(true), body: JSON.stringify({password})});
+    const response = await fetch('/api2/auth/settings/password/create', {method: 'POST', headers: buildSessionHeaders(true), body: JSON.stringify({password, keeps_window_logged_in: false})});
     if (!response.ok) throw new Error(`Password setup failed: ${response.status}`);
   }, PASSWORD);
   await page.reload();

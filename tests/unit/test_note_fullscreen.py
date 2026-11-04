@@ -7,6 +7,7 @@ from typing import Dict, List, Optional
 
 import pytest
 
+from app.services.credential_display import CredentialDisplay
 import app.api.routes.notes as notes_route
 import app.services.note_fullscreen as fullscreen_module
 
@@ -77,7 +78,7 @@ def test_fullscreen_markup_ignores_ancestors_and_renders_all_descendants(
     assert markup.count('class="note-children"') == 2
     assert [call["note_id"] for call in render_calls] == ["root", "child", "grandchild"]
     assert all(call["static_export"] is False for call in render_calls)
-    assert all(call["redact_credentials"] is False for call in render_calls)
+    assert all(call["credentials"] is CredentialDisplay.DOTS for call in render_calls)
 
 
 def test_fullscreen_route_requires_note_and_returns_markup(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -245,7 +246,7 @@ def test_a_file_preview_draws_the_file_as_its_embed_does(monkeypatch: pytest.Mon
     monkeypatch.setattr(fullscreen_module, "render_note_content_with_embeds", _render)
     markup = fullscreen_module.build_file_preview_markup("file-456")
 
-    assert [(call["content_html"], call["tags"], call["redact_credentials"]) for call in drawn] == [("<div>![[file-456]]</div>", "", True)]
+    assert [(call["content_html"], call["tags"], call["credentials"]) for call in drawn] == [("<div>![[file-456]]</div>", "", CredentialDisplay.HIDDEN)]
     assert markup == (
         '<article class="note"><div class="note-content" contenteditable="false">'
         '<div class="note-file-image-embed" data-file-ref-id="file-456">picture</div></div></article>'

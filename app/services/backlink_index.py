@@ -4,6 +4,8 @@ Only UUIDs and occurrence counts are retained, never note text. Targets may be
 missing (or files); retaining those edges lets a restored note regain backlinks
 without reparsing its referrers. It also keeps which notes show a picture inline
 (an <img> in their own text), for the Files filter's Images (file_kinds.py).
+No reference passes tags on (docs/ui/search-semantics.md, 2026-11-03), so embeds
+and links are kept alike.
 """
 
 from collections import Counter
@@ -27,10 +29,8 @@ class BacklinkIndex:
 
     def upsert(self, note_id: str, content: str, tags: str) -> None:
         assert isinstance(note_id, str) and note_id
-        counts = dict(Counter(
-            token.note_id for token in collect_active_reference_tokens(content)
-            if token.note_id != note_id
-        ))
+        tokens = [token for token in collect_active_reference_tokens(content) if token.note_id != note_id]
+        counts = dict(Counter(token.note_id for token in tokens))
         self.remove(note_id)
         if _INLINE_IMAGE_RE.search(content) is not None:
             self._inline_image_note_ids.add(note_id)

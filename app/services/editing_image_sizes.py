@@ -13,6 +13,7 @@ import re
 from decimal import Decimal
 from html.parser import HTMLParser
 
+from app.services.credential_display import CredentialDisplay
 from app.services.content_formatting import format_note_content_for_view
 from app.services.inline_image_occurrences import INLINE_IMAGE_TAG_RE, annotate_inline_image_occurrences
 
@@ -81,7 +82,7 @@ def editing_image_size_factors(*, content_html: str, tags: str) -> list[float]:
     if image_count == 0:
         return []
     rendered = format_note_content_for_view(
-        content_html=annotate_inline_image_occurrences(content_html), tags=tags, redact_credentials=False,
+        content_html=annotate_inline_image_occurrences(content_html), tags=tags, credentials=CredentialDisplay.DOTS,
     )
     reader = _ImageSizeReader()
     reader.feed(rendered)

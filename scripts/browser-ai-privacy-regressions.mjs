@@ -59,3 +59,58 @@ export async function checkAiPrivacyPreview(page) {
     }
     console.log('PASS privacy hover blur without lock icons for blacklist, whitelist exclusion and descendants, both themes, repeated enter/leave');
 }
+
+// The never-send and only-send rules in AI Agent Settings (2026-10-31): what is typed is a
+// rule however the dialog is left by Save, by Enter (which saves, as in any dialog) or by
+// the Add button beside the field (which adds it as a chip and keeps the dialog open).
+// Before, only Enter made a typed rule, and Save dropped what was still in the field.
+export async function checkPrivacyRuleEntry(page) {
+    const open = async () => {
+        await page.evaluate(async () => {
+            const {CommandPalette} = await import('/static/js/modules/command-palette/command-palette-controller.js');
+            await CommandPalette.openAiAgentSettings(false);
+        });
+        await page.waitForSelector('#ai-agent-blacklist-input');
+    };
+    const savedPolicy = () => page.evaluate(async () => {
+        const {CommandPalette} = await import('/static/js/modules/command-palette/command-palette-controller.js');
+        return CommandPalette.getAiSettings().cloudPrivacyPolicy;
+    });
+    const closed = () => page.waitForSelector('#ai-agent-settings-modal', {hidden: true});
+    const original = await savedPolicy();
+
+    await open();
+    await page.type('#ai-agent-blacklist-input', 'typed-then-saved');
+    await page.click('#ai-agent-save');
+    await closed();
+    assert.ok((await savedPolicy()).blacklistTags.includes('typed-then-saved'), 'Save keeps the rule still typed in the field');
+
+    await open();
+    await page.type('#ai-agent-blacklist-input', 'typed-then-enter');
+    await page.keyboard.press('Enter');
+    await closed();
+    assert.ok((await savedPolicy()).blacklistTags.includes('typed-then-enter'), 'Enter saves, with the rule typed');
+
+    await open();
+    await page.type('#ai-agent-blacklist-input', '"an added phrase"');
+    await page.click('#ai-agent-blacklist-add');
+    const afterAdd = await page.evaluate(() => ({
+        isOpen: getComputedStyle(document.getElementById('ai-agent-settings-modal')).display !== 'none',
+        field: document.getElementById('ai-agent-blacklist-input').value,
+        chips: [...document.querySelectorAll('#ai-agent-settings-modal .ai-agent-cloud-privacy-settings .ai-settings-chip')]
+            .map(chip => chip.textContent.trim()),
+    }));
+    assert.equal(afterAdd.isOpen, true, 'Add keeps the dialog open');
+    assert.equal(afterAdd.field, '', 'Add empties the field for the next rule');
+    assert.ok(afterAdd.chips.some(chip => chip.includes('an added phrase')), 'Add shows the rule as a chip');
+    await page.click('#ai-agent-save');
+    await closed();
+    assert.ok((await savedPolicy()).blacklistPhrases.includes('an added phrase'), 'an added rule is saved');
+
+    await page.evaluate(async original => {
+        const {CommandPalette} = await import('/static/js/modules/command-palette/command-palette-controller.js');
+        const {serializeCloudPrivacyPolicy} = await import('/static/js/modules/ai-chat/cloud-privacy-policy.js');
+        await CommandPalette.applyPreference('pref.ai.cloud_privacy_policy', serializeCloudPrivacyPolicy(original));
+    }, original);
+    console.log('PASS privacy rules: a typed rule is kept by Save, by Enter and by Add');
+}

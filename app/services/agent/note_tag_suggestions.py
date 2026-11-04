@@ -37,6 +37,7 @@ from app.services.agent.token_estimation import estimate_input_tokens
 from app.services.agent.web_settings import AgentWebSettings
 from app.services.content_formatting import extract_note_text_for_agent
 from app.services.note_store import store as note_store
+from app.services.quoted_values import split_tokens
 from app.services.search_index import extract_ordered_tags_for_agent, extract_ordered_tags_for_search
 from app.services.tag_properties import tag_part_of_token
 from app.services.search_index import search_index
@@ -74,8 +75,6 @@ _SUBTREE_RULES = (
     "repeat their tags. Tags inherit from parents to children, so put a tag on the parent when it "
     "fits the whole group. " + _VOCABULARY_RULES
 )
-
-
 @dataclass(frozen=True, slots=True)
 class NoteTagRequest:
     note_id: str
@@ -131,7 +130,7 @@ def _note_text(note_id: str) -> dict[str, object]:
 
 def _note_node(note_id: str) -> dict[str, object]:
     return {"note_id": note_id, **_note_text(note_id),
-            "proposed_tags": list(note_store.get_note(note_id).proposed_tags.split())}
+            "proposed_tags": list(split_tokens(note_store.get_note(note_id).proposed_tags))}
 
 
 def _subtree_node(note_id: str, scope_note_ids: frozenset[str], hidden: frozenset[str]) -> dict[str, object]:
@@ -147,11 +146,20 @@ def _subtree_node(note_id: str, scope_note_ids: frozenset[str], hidden: frozense
 
 
 def _node_note_ids(node: dict[str, object]) -> list[str]:
-    ids = [node["note_id"]]
+    note_id = node["note_id"]
+    assert isinstance(note_id, str), "a tree node always carries its note id"
+    ids = [note_id]
     if "children" in node:
-        for child in node["children"]:
+        for child in _node_children(node):
             ids.extend(_node_note_ids(child))
     return ids
+
+
+def _node_children(node: dict[str, object]) -> list[dict[str, object]]:
+    """The child nodes of a tree node that has them (_subtree_node)."""
+    children = node["children"]
+    assert isinstance(children, list), "a tree node's children are always a list of nodes"
+    return children
 
 
 def _batch_payload_tokens(trees: tuple[dict, ...], ancestors: tuple, vocabulary: tuple[tuple[str, int], ...]) -> int:
@@ -177,8 +185,8 @@ def build_note_tag_request(
         parent_id = note_store.get_note(parent_id).parent_id
     ancestors.reverse()
     vocabulary = ranked_vocabulary(note_id=note_id, boundary=boundary)
-    words = tuple(tag for tag, _count in vocabulary)
 
+    groups: tuple[tuple[tuple[dict[str, object], ...], tuple[dict[str, object], ...]], ...]
     if include_children:
         hidden = cloud_privacy_evaluator.hidden_note_ids(
             note_ids=tuple(note_store.list_note_ids()), boundary=boundary,
@@ -188,28 +196,46 @@ def build_note_tag_request(
         if _batch_payload_tokens((whole,), tuple(ancestors), vocabulary) <= batch_tokens:
             groups = (((whole,), tuple(ancestors)),)
         else:
-            # Too big for one batch: the note alone, then each child's subtree.
-            alone = {key: value for key, value in whole.items() if key != "children"}
-            trees = (alone, *whole["children"])
-            with_note = (*ancestors, _note_text(note_id))
-            groups = tuple(
-                (batch.trees, tuple(ancestors) if alone in batch.trees else with_note)
-                for batch in partition_trees(trees, batch_tokens)
-            )
+            groups = _split_subtree(whole, tuple(ancestors), batch_tokens)
         rules = _SUBTREE_RULES
     else:
         note_ids = frozenset({note_id})
         groups = (((_note_node(note_id),), tuple(ancestors)),)
         rules = _ONE_NOTE_RULES
+    # The note was checked visible, its children and the vocabulary are filtered by the
+    # evaluator, and the ancestors are visible by the hierarchy rule.
+    return _request_of_groups(
+        note_id=note_id, note_ids=note_ids, groups=groups, vocabulary=vocabulary, rules=rules,
+        tag_skill=tag_skill, boundary=boundary,
+    )
 
+
+def _split_subtree(whole: dict[str, object], ancestors: tuple, batch_tokens: int) -> tuple[tuple[tuple[dict, ...], tuple], ...]:
+    """A subtree too big for one batch: the note alone, then each child's subtree, in batches;
+    the batches without the note get its text as context."""
+    alone = {key: value for key, value in whole.items() if key != "children"}
+    note_id = whole["note_id"]
+    assert isinstance(note_id, str), "a tree node always carries its note id"
+    trees = (alone, *_node_children(whole))
+    with_note = (*ancestors, _note_text(note_id))
+    return tuple(
+        (batch.trees, ancestors if alone in batch.trees else with_note)
+        for batch in partition_trees(trees, batch_tokens)
+    )
+
+
+def _request_of_groups(
+    *, note_id: str, note_ids: frozenset[str], groups: tuple, vocabulary: tuple[tuple[str, int], ...], rules: str,
+    tag_skill: AgentSkill, boundary: CloudPrivacyBoundary,
+) -> NoteTagRequest:
+    """The request whose batches are groups ((trees, ancestors) each), all of note_ids between them."""
+    words = tuple(tag for tag, _count in vocabulary)
     batches = tuple(
         TagBatch(trees=trees, note_ids=frozenset(id for tree in trees for id in _node_note_ids(tree)),
                  vocabulary=words, tokens=_batch_payload_tokens(trees, context, vocabulary))
         for trees, context in groups
     )
     assert frozenset().union(*(batch.note_ids for batch in batches)) == note_ids
-    # The note was checked visible, its children and the vocabulary are filtered by the
-    # evaluator, and the ancestors are visible by the hierarchy rule.
     return produces(NoteTagRequest(
         note_id=note_id, note_ids=note_ids, batches=batches,
         ancestors_by_batch=tuple(context for _trees, context in groups),

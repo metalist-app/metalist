@@ -1,4 +1,5 @@
 import { COMMENT_CLOSE, COMMENT_OPEN, MAX_WRAPPER_DEPTH } from './tag-syntax-service.js';
+import { tokenEnd } from '../../quoted-values.js';
 
 const WRAPPER_TYPES = Object.freeze([
     Object.freeze({ opener: '{', closer: '}' }),
@@ -9,6 +10,7 @@ const WRAPPER_TYPES = Object.freeze([
 export const ADD_STYLE_OPTIONS = Object.freeze([
     Object.freeze({ id: 'footnote', label: 'Footnote', tag: '@footnote', selectionOnly: true }),
     Object.freeze({ id: 'heading', label: 'Heading', tag: '@heading' }),
+    Object.freeze({ id: 'quote', label: 'Quote', tag: '@quote' }),
     Object.freeze({ id: 'bold', label: 'Bold', tag: '@bold' }),
     Object.freeze({ id: 'italic', label: 'Italic', tag: '@italic' }),
     Object.freeze({ id: 'strikethrough', label: 'Strikethrough', tag: '@strikethrough' }),
@@ -87,9 +89,7 @@ export function scanTopLevelTagTokens(tagBarText) {
             }
         }
 
-        while (index < tagBarText.length && !/\s/.test(tagBarText[index])) {
-            index += 1;
-        }
+        index = tokenEnd(tagBarText, start);
         tokens.push(tagBarText.slice(start, index));
     }
     return tokens;

@@ -19,7 +19,7 @@ from typing import Dict, List, Protocol, Tuple
 from app.services.search_index import tag_bar_values
 from app.services.tag_properties import (
     IMPLICIT_PROPERTY, META_TAG_PREFIX, VALUE_NUMBER, PropertyCondition, PropertySuggestion,
-    PropertyValue,
+    PropertyValue, is_property_name,
 )
 
 
@@ -42,7 +42,6 @@ _SUMMARY_TAG_RE = re.compile(
     r"(?<!\S)@(?P<kind>stats|sum|avg|min|max|count)(?:=(?P<property>[^\s=:]*))?(?!\S)",
     re.IGNORECASE,
 )
-_PROPERTY_NAME_RE = re.compile(r"[A-Za-z][^\s=:]*")
 # What is being typed after a summary tag's = (`@sum=cal`), for suggestions.
 _TYPED_SUMMARY_PROPERTY_RE = re.compile(r"@(?P<kind>sum|avg|min|max|count)=(?P<typed>[^\s=:]*)", re.IGNORECASE)
 
@@ -115,7 +114,7 @@ def parse_summary_requests(tags: str) -> Tuple[SummaryRequest, ...]:
         if kind == STATS_TAG:
             requests.append(SummaryRequest(kind=STATS_TAG, property_name=""))
             continue
-        if property_name is None or _PROPERTY_NAME_RE.fullmatch(property_name) is None:
+        if property_name is None or not is_property_name(property_name):
             property_name = ""
         requests.append(SummaryRequest(kind=kind, property_name=property_name.casefold()))
     return tuple(requests)
@@ -178,18 +177,19 @@ def stats_figure_values(
     if not is_used:
         is_used = context.is_property_used(property_name)
     if _empty_figure(kind, is_used=is_used) == _ZERO:
-        return (PropertyValue(kind=VALUE_NUMBER, sort_key=Decimal(0), unit=""),)
+        return (PropertyValue(kind=VALUE_NUMBER, sort_key=Decimal(0), unit="", text=str(Decimal(0))),)
     return ()
 
 
 def _figure_values(totals: _PropertyTotals, kind: str) -> Tuple[PropertyValue, ...]:
     if kind == COUNT:
-        return (PropertyValue(kind=VALUE_NUMBER, sort_key=Decimal(totals.note_count), unit=""),)
+        return (PropertyValue(
+            kind=VALUE_NUMBER, sort_key=Decimal(totals.note_count), unit="", text=str(totals.note_count),
+        ),)
+    figures = ((unit, _rounded(_calculate(kind, note_totals), kind)) for unit, note_totals in sorted(totals.note_totals_by_unit.items()))
     return tuple(
-        PropertyValue(
-            kind=VALUE_NUMBER, sort_key=_rounded(_calculate(kind, note_totals), kind), unit=unit,
-        )
-        for unit, note_totals in sorted(totals.note_totals_by_unit.items())
+        PropertyValue(kind=VALUE_NUMBER, sort_key=figure, unit=unit, text=f"{figure}{unit}")
+        for unit, figure in figures
     )
 
 

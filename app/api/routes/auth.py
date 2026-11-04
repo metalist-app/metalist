@@ -166,6 +166,10 @@ class HydrationStatusResponse(BaseModel):
 
 class PasswordCreateRequest(BaseModel):
     password: SecretStr
+    # The new vault wizard sets the password and goes on in the same window (PLAN.md,
+    # phase 2): the server logs that window in with it, as a login would, and every other
+    # session ends. Add Password reloads into the login instead.
+    keeps_window_logged_in: bool
 
 
 class PasswordChangeRequest(BaseModel):
@@ -556,7 +560,18 @@ def login(
 
     dek = auth.unwrap_dek_for_password(submitted_password)
     auth.run_authenticated_database_migrations(dek=dek)
+    _open_password_session(request=request, response=response, db=db, dek=dek, tab_id=tab_id)
+    login_rate_limiter.record_success(rate_limit_key)
+    return LoginResponse(
+        message="Login successful",
+        hydration_required=True,
+    )
 
+
+def _open_password_session(*, request: Request, response: Response, db: SafeSession, dek: bytes, tab_id: str) -> None:
+    """Log this window in with the vault's key (dek, unlocked by its password): the runtime
+    state starts clean, and the window gets a session cookie; the notes are then hydrated
+    (POST /hydrate). Login, and setting a password that keeps the window logged in."""
     set_session_dek(dek)
     with SafeSession.allow_reads("auth:search_history_post_migration"):
         search_history_store.bootstrap(connection=db.connection())
@@ -583,12 +598,7 @@ def login(
     shell_session_service.reset()
     token = token_service.create_token(_client_info(request), tab_id, dek=dek)
     set_auth_cookie(request=request, response=response, token=token)
-    login_rate_limiter.record_success(rate_limit_key)
     clear_all_locks()
-    return LoginResponse(
-        message="Login successful",
-        hydration_required=True,
-    )
 
 
 @router.post("/logout")
@@ -1075,13 +1085,17 @@ def hydration_status(token: Annotated[str, Depends(_require_auth)]):
 @router.post("/settings/password/create")
 @transactional_route
 def create_password(
+    request: Request,
+    response: Response,
     payload: PasswordCreateRequest,
+    tab_id: Annotated[str, Depends(_require_tab_id)],
     db: Annotated[SafeSession, Depends(get_db)],
 ):
     auth = AuthService(db)
     if auth.has_password():
         raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail="Password already exists. Use change endpoint instead.")
-    success, message = auth.set_password(payload.password.get_secret_value(), KDF_TIME_COST)
+    password = payload.password.get_secret_value()
+    success, message = auth.set_password(password, KDF_TIME_COST)
     if not success:
         raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail=message)
     token_service.revoke_all_tokens()
@@ -1093,7 +1107,13 @@ def create_password(
     agent_trace_store.reset()
     reset_ai_credentials()
     clear_all_locks()
-    return {"message": message}
+    if payload.keeps_window_logged_in:
+        # The key the password was just set with (the database, read in this request, still
+        # shows the vault as it was before).
+        dek = auth.encryption.dek
+        assert isinstance(dek, bytes), "setting a password leaves its key active"
+        _open_password_session(request=request, response=response, db=db, dek=dek, tab_id=tab_id)
+    return {"message": message, "hydrationRequired": payload.keeps_window_logged_in}
 
 
 @router.put("/settings/password/change")

@@ -35,7 +35,7 @@ const CONFLICT_TEXT = 'This diagram was changed in another window. Close the edi
 function showSaveProblem(problem) {
     if (problem === 'retrying') {
         FloatingMessages.show({
-            text: RETRYING_TEXT, type: 'connection', detail: '', isClosable: false, isLasting: true, key: SAVE_CARD_KEY,
+            text: RETRYING_TEXT, type: 'connection', detail: '', isClosable: false, isLasting: true, key: SAVE_CARD_KEY, action: null,
         });
         FloatingMessages.escalateAfter(SAVE_CARD_KEY, RETRYING_ESCALATION_TEXT);
         return;

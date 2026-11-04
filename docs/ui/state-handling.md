@@ -146,6 +146,8 @@ This dual approach ensures:
 
 - An HTTP response proves that the server connection is working. `4xx` and `5xx` responses show an application/request error but do not set `ModeContext.isConnected` to false or tear down edit mode.
 - `401` responses retain the dedicated authentication/logout path.
+- A note being edited saves 10 s after typing stops (`inactivity-events.js`; 60 s before 2026-10-31). While a save runs MetaList ignores keys, as during any command; letters, digits, symbols and spaces typed then are kept and typed in at the caret once it has finished, as ordinary typing (`type-ahead-service.js`, as while a clicked note opens); Backspace, Enter, arrows and shortcuts are still ignored. Text that arrives without a key press while a save runs (dictation, autocorrect) lands in the note unrecorded; after each save the editor is compared with what was sent, and the note stays changed if it holds more, so the next autosave sends it. Tests: `tests/unit/autosave_type_ahead.test.mjs`, `tests/unit/external_editor_save.test.mjs`.
+- Planned (ready to build, agreed 2026-10-24): nothing shown as Saved is ever lost: a 10-second autosave, a save when the tab is hidden, a warning before closing with unsaved text, retries with change IDs, and an honest Saving / Saved / Not saved status: `docs/ready-to-build/commit-and-shutdown-protocol.md`.
 - Only transport failures such as a rejected `fetch` or request timeout enter disconnected mode, show the lasting soft-amber "Not saved, reconnecting…" card (`docs/ui/floating-messages.md`), and disable editing. Their expected promise rejections are kept out of the fatal red stack overlay; unexpected client exceptions still surface there and fail loudly.
 - Unexpected client exceptions are rethrown instead of being relabeled as network failures.
 - Note selection sets `isEditing` and `currentNoteId` before awaiting the initial content refresh, so `currentContent` can legitimately still be `null` during that transition. Disconnect cleanup checks each nullable field before clearing it so strict state setters do not receive redundant writes.
@@ -430,6 +432,14 @@ The example above illustrates how an action can:
 
 The ModeManager architecture naturally supports extending to multi-tab search contexts without breaking the core design principles.
 
+### What a search context keeps, and what is shared
+
+Decided 2026-11-02 (the maintainer): **anything that changes which notes you see, or the order you see them in, belongs to the search context**: the search, the sort, the date range, the Notes with Files filter, the view (All or Untagged), the virtual folder chosen in the tree. **How the screen is laid out is shared by every search context**: which virtual folders are open (▸/▾), the tree's and the chat's widths, whether the tree and the chat show, the theme. Switching contexts changes what the list shows, never the shape of the screen around it (`docs/ui/interaction-principles.md`); a context's chosen folder still opens the folders above it so it shows.
+
+Duplicating a search context (its `+`) copies all of that: the search, sort, date range, Files filter, chosen folder and Untagged view. A new search context, a reference view included, starts with none of it: no search, Normal order, every note (`TabStateStore.create_tab(copies_view=…)`, `copiesView` on `POST /notes/tab-state/new-tab`). The server keeps the Untagged views with the tabs (`untaggedViews`, `POST /notes/tab-state/untagged-view`), as it keeps the date ranges and Files filters, so a reload keeps them; the browser records them from every tab-state answer (`ModeContext.recordUntaggedViewsFromServer`). Folder choices are kept in the server process's memory only (`virtual_folder_state`).
+
+A new search ends the Untagged view, unlike a sort order, date range or Files filter (decided 2026-11-02, the maintainer): search is antithetical to the Untagged view, which shows the notes no search by tag would find, so the two never combine.
+
 ### Tab State Integration
 
 Tabs add a **minimal layer** above the existing global ModeContext and the
@@ -463,7 +473,7 @@ ModeContext = {
   tab into the hovered tab's former slot, updates `tabOrder`, and persists the updated
   snapshot back to `/api2/notes/tab-state`. Hovering retains the normal pointer; the
   grabbing cursor starts only after the browser begins a drag.
-- New tabs are created by duplicating a source tab so the new tab inherits its search/scroll state, then the search field is focused and its duplicated query text is fully selected so it can be replaced immediately.
+- The `+` duplicates a tab: the new tab copies its search, scroll and everything it shows (above), then the search field is focused and its copied query text is fully selected so it can be replaced immediately. A blank new tab starts with nothing.
 - If the source tab survives a server restart but its detached DOM cache does not, tab duplication still succeeds: the new tab keeps the duplicated tab-state metadata and the next `/notes/view` response bootstraps its DOM from the server.
 - Creating/deleting tabs uses dedicated endpoints so the server remains the source of truth.
 - Scroll/search changes are throttled (≈1 Hz) and POSTed back so the cache stays

@@ -8,6 +8,8 @@ MetaList already exports a note subtree or the current view as HTML. A hidden, m
 
 The file is then both a readable page and a lossless note package. draw.io and Excalidraw do the same thing: they put the full diagram data inside an exported PNG or SVG. Recipients on older MetaList versions, or with no MetaList at all, still get a normal readable page.
 
+**Related (2026-10-30):** the launch export (`docs/ready-to-build/import-export-launch.md` §6.4–6.5) makes HTML the MetaList-to-MetaList format: its optional hidden metadata (dates, and explicit tags with their values) is this page's exchange data, and the file then says visibly that it carries it.
+
 ## What exists today
 
 - **HTML export** (`app/services/html_export.py`, `build_notes_export_document`) already decides what goes out: view membership, notes the search excludes, embeds, collapsed state, the export title, and Hide/Include passwords.

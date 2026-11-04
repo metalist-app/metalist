@@ -1,5 +1,17 @@
 # Supply-chain controls and audit
 
+## Update dated 2026-11-03 (America/Los_Angeles)
+
+One new runtime dependency, approved by the maintainer to show and search Word 97-2003 documents (`.doc`): **olefile 0.47** (released 2023-12-01, BSD 2-Clause, pure Python, no dependencies), which opens the OLE compound files a `.doc` is stored in. MetaList's own reader (`app/services/document_text.py`) reads the text from the WordDocument stream through Word's table of pieces; every offset and length is checked against the file, and a damaged one is a document that can't be read (3,000 randomly damaged copies of a test document: each read or refused, none crashed). It runs in the reading worker's own process. Only olefile was added to `uv.lock` (111 packages resolved, nothing else moved), both exports regenerated and installed with `--require-hashes`. `check_supply_chain.py check` and `audit`: no known advisories.
+
+One new runtime dependency, approved by the maintainer to read PDFs' text for search and find: **pypdfium2 5.14.0** (released 2026-10-04; BSD-3-Clause and Apache-2.0, with PDFium's own licences), Python bindings to PDFium, the PDF engine of Chrome, shipped as ready-built wheels for macOS (arm64, x86_64), Windows and Linux for any Python 3. pypdf read some PDFs without the spaces between words ("Adolescentdrivershavethehighestrate"), so their phrases were never found; PDFium places them from where the words sit (`app/services/file_text_worker.py`). PDFium reads the user's PDFs in the reading worker's own process at low priority, as pypdf did; a PDF it can't open keeps no text and matches by name only. pypdf stays for what else reads PDFs (the AI's web reading). Only pypdfium2 was added to `uv.lock` (110 packages resolved, nothing else moved), both exports regenerated and installed with `--require-hashes`. `check_supply_chain.py check` and `audit`: no known advisories.
+
+One new runtime dependency, approved by the maintainer for Word previews (`docs/ready-to-build/folder-import-and-file-previews.md`, "Word previews through mammoth"): **mammoth 1.13.0** (released 2026-09-26, BSD 2-Clause), with its one dependency **cobble 0.1.4** (BSD). It turns a `.docx` into HTML from the document's structure. A `.docx` is the user's file, so MetaList checks it before mammoth reads it (`document_text.require_safe_docx`: a zip, at most 256 MiB unpacked, no XML part with a DTD), and mammoth's HTML goes through the note sanitizer. mammoth parses XML with Python's `xml.dom.minidom` (expat). Only these two were added to `uv.lock` (109 packages resolved, nothing else moved), both exports regenerated and installed with `--require-hashes`. `check_supply_chain.py check` and `audit`: no known advisories.
+
+## Update dated 2026-10-31 (America/Los_Angeles)
+
+One new runtime dependency, approved by the maintainer for the Obsidian import (`PLAN.md`): **PyYAML 6.0.3**, to read the YAML frontmatter at the top of Obsidian notes. It is used only through `yaml.safe_load`, which builds plain dictionaries, lists, strings, numbers, booleans and dates and never constructs arbitrary Python objects. It has no dependencies of its own; only it was added to `uv.lock` (107 packages resolved, nothing else moved), both exports regenerated. `check_supply_chain.py check` and `audit`: no known advisories.
+
 ## Update dated 2026-10-30 (America/Los_Angeles)
 
 The local dependency audit before merging `feature/super-tag-summaries` failed on seven newly published advisories, all in one runtime dependency:

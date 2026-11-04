@@ -307,6 +307,51 @@ export async function toggleTodoDone(noteId) {
     await actionRefreshAndMaybeSelect({ startedAt, context: 'toggleTodoDone' });
 }
 
+// A click on a task's box in a Markdown note (docs/ui/content-formatting.md, Tasks).
+export async function toggleMarkdownTask(noteId, taskIndex, isTicked) {
+    const startedAt = performance.now();
+    Logger.logAction('toggleMarkdownTask', { noteId, taskIndex, isTicked });
+    await exitEditingBeforeTodoToggle({
+        modeContext: ModeContext,
+        noteId,
+        saveAndExitEditingFn: actionSaveAndExitEditingWithoutRefreshing,
+        logDebugFn: Logger.logDebug,
+    });
+    await NotesAPI.toggleMarkdownTask(noteId, taskIndex, isTicked);
+    await recordNoteInteractionIfNew(noteId, 'command');
+    await actionRefreshAndMaybeSelect({ startedAt, context: 'toggleMarkdownTask' });
+}
+
+// A click on a folding callout's title in a Markdown note (docs/ui/content-formatting.md, Callouts).
+export async function toggleMarkdownCallout(noteId, calloutIndex, isOpen) {
+    const startedAt = performance.now();
+    Logger.logAction('toggleMarkdownCallout', { noteId, calloutIndex, isOpen });
+    await exitEditingBeforeTodoToggle({
+        modeContext: ModeContext,
+        noteId,
+        saveAndExitEditingFn: actionSaveAndExitEditingWithoutRefreshing,
+        logDebugFn: Logger.logDebug,
+    });
+    await NotesAPI.toggleMarkdownCallout(noteId, calloutIndex, isOpen);
+    await recordNoteInteractionIfNew(noteId, 'command');
+    await actionRefreshAndMaybeSelect({ startedAt, context: 'toggleMarkdownCallout' });
+}
+
+// A click on the title of a <details> fold written in a Markdown note (docs/ui/content-formatting.md, HTML).
+export async function toggleMarkdownFold(noteId, foldIndex, isOpen) {
+    const startedAt = performance.now();
+    Logger.logAction('toggleMarkdownFold', { noteId, foldIndex, isOpen });
+    await exitEditingBeforeTodoToggle({
+        modeContext: ModeContext,
+        noteId,
+        saveAndExitEditingFn: actionSaveAndExitEditingWithoutRefreshing,
+        logDebugFn: Logger.logDebug,
+    });
+    await NotesAPI.toggleMarkdownFold(noteId, foldIndex, isOpen);
+    await recordNoteInteractionIfNew(noteId, 'command');
+    await actionRefreshAndMaybeSelect({ startedAt, context: 'toggleMarkdownFold' });
+}
+
 export async function addSelectedTextAsTag(noteId, selectedText) {
     if (typeof noteId !== 'string' || noteId.length === 0) {
         throw new Error('addSelectedTextAsTag requires noteId string');

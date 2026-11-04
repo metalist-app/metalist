@@ -5,6 +5,7 @@ import { ApplicationState } from '../../app/static/js/modules/application-state.
 import { half } from '../../app/static/js/modules/half.js';
 import { resolveVerticalSiblingDropDestination, updateMoveDragGestureState } from '../../app/static/js/modules/mode-manager/services/note-drag-service.js';
 import { selectTagOnDoubleClick } from '../../app/static/js/modules/mode-manager/services/tag-input-selection-service.js';
+import { selectUuidOnDoubleClick } from '../../app/static/js/modules/mode-manager/services/uuid-double-click-service.js';
 import { unlessDiagramEditorOpen } from '../../app/static/js/modules/excalidraw/excalidraw-editor-state.js';
 
 const source = readFileSync(new URL(
@@ -41,11 +42,14 @@ function harness() {
         DOMUtils: { getNoteById: id => (id === 'note-2' ? below : noteElement), getNoteId: element => element.dataset.noteId },
         renderNoteDragIndicators: description => indicators.push(description),
         hideNoteDragIndicators: () => indicators.push('hidden'),
+        // The pointer is never over the virtual folders' tree here (scripts/browser-folder-note-drag-regressions.mjs).
+        noteDropAt: () => null, showNoteDropTarget: () => {}, dropNoteOnFolder: async () => {},
         isRootReorderLocked: () => false,
         // Records any move a release would start.
         CommandGate: { run: name => actions.push(name) },
         HTMLElement: FakeElement,
         ApplicationState, resolveVerticalSiblingDropDestination, updateMoveDragGestureState, selectTagOnDoubleClick,
+        selectUuidOnDoubleClick,
         document: {
             addEventListener: register,
             // A detached probe resolving the child indentation (32px).

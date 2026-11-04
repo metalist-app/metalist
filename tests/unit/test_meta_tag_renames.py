@@ -12,6 +12,7 @@ from pathlib import Path
 
 import pytest
 
+from app.services.credential_display import CredentialDisplay
 import app.services.content_cache as content_cache
 import app.services.meta_tag_renames as meta_tag_renames
 from app.db.notes_sql import insert_note
@@ -194,7 +195,7 @@ def test_an_encrypted_vault_stores_the_renamed_tags_encrypted(namespace) -> None
 
 def test_the_new_names_render_as_the_old_ones_did() -> None:
     def view(tags: str) -> str:
-        return format_note_content_for_view(content_html="<div>text</div>", tags=tags, redact_credentials=False)
+        return format_note_content_for_view(content_html="<div>text</div>", tags=tags, credentials=CredentialDisplay.DOTS)
 
     assert "meta-highlighter" in view("@highlight")
     # Both spellings of gray work, and neither is converted.

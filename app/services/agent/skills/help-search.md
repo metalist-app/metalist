@@ -40,6 +40,7 @@ many words it contains. For example, `A B OR C` has two clauses and three terms.
   used as a tag.
 - Lowercase or mixed-case forms such as `or` and `Or` remain ordinary tag terms.
 - Quoted `"OR"` and `'OR'` remain ordinary text terms.
+- Tags, quoted text and property names may use any script and emoji (`café`, `"naïve"`, `日記:時間>2`); case is ignored in every script. Pasting a property search (`jogging:miles>3`) into the search bar keeps it as pasted.
 
 Examples:
 - `A B C OR D E`
@@ -124,8 +125,8 @@ rules as the tag bar:
 - Wrapper tokens (e.g. `{{foo bar}}`) contribute inner terms (`foo` and `bar`).
 - `/* ... */` comment regions are ignored.
 
-In addition, notes implicitly inherit **non-meta** tag terms from parents and referenced notes:
-- A note’s effective tags include its own tags plus non-meta tags inherited through its parents and note references (`[[UUID]]`, links and embeds). A reference contributes tags from its source and that source's complete descendant subtree, including further references within the subtree. It excludes tags inherited from ancestors above the source. Children of the referencing note inherit its effective tags normally. Accepted and proposed tag contributions remain separate until combined for search.
+In addition, notes implicitly inherit **non-meta** tag terms from their parents:
+- A note’s effective tags are its own plus the non-meta tags it inherits from its parents. Nothing comes through an embed (`![[UUID]]`) or a link (`[[UUID]]`): if note A embeds or links to note B and B has tag X, a search for X finds B, not A, and A isn't in B's folder or its count (the maintainer, 2026-11-03: an embed is a window onto another note, not a statement that the host is about it too; before, an embed passed its source's tags and its whole subtree's, so a search for a tag listed every note embedding the note that had it. Links stopped passing tags on 2026-10-31). Adding, removing or changing an embed or link never changes which searches, folders or counts a note is in. A note whose only tags came through an embed is now untagged. Accepted and proposed tag contributions remain separate until combined for search.
 - Tags starting with `@` (meta tags like `@monospace`) are **not** inherited.
 - Tag-bar `/* ... */` comments are **not** inherited (they only affect text search for the note that contains them).
 
@@ -134,11 +135,11 @@ Ontology rules also add **inferred tags** before search matching:
 - See `docs/design/ontology-rules-v1.md` for the rule language and semantics.
 
 ### Untagged Notes View
-- `View: Untagged Notes` is a temporary view, not tied to a search context, selected from the command palette, not an `@untagged` search token.
+- `View: Untagged Notes` is a view that belongs to its search context (kept when you leave the context and come back, after a reload and in a duplicate), selected from the command palette, not an `@untagged` search token.
 - Selecting it preserves the active search context and its search while temporarily showing notes whose full effective tag set has no non-meta tags. The search box is visually blank while this override is active because the preserved search context's query is not being applied.
 - Inherited and ontology-inferred tags count as tags; formatting/meta tags beginning with `@` do not.
-- The dismissible `Untagged Notes` pill returns to the underlying search context and restores its query in the search box. Clicking any search context or changing the search input also dismisses the temporary view.
-- Changing the search input additionally resets the active search context's sort mode to Normal before executing the search.
+- The dismissible `Untagged Notes` pill returns to the underlying search context and restores its query in the search box. Changing the search input, `View: All Notes` and Reset Current View Filters also end it; clicking a search context does not.
+- Changing the search input keeps the active search context's sort order and date range; each ends with its chip's ×.
 
 ### Notes With Files
 - **Notes with Files** in the right-click menus and the palette (`Notes with Files: Images`, …) keeps a search to the matches whose own text links to or embeds an attached file, or a file of one kind (images, PDFs, Markdown files; Images also counts a picture pasted into the note), with the notes above them. Without a search it alone picks the notes. It is not a search term: a chip in the search box shows it, and a new search keeps it (`docs/ui/command-palette.md`, Notes With Files).
@@ -149,6 +150,8 @@ Ontology rules also add **inferred tags** before search matching:
   clauses are not copied into the new note.
 - If an existing case-equivalent tag spelling is already common in the vault, that spelling is used for the new note. Example: searching `ml3` adds `ML3` when existing notes use `ML3`.
 - If the new note already inherits a case-equivalent non-meta tag from an ancestor, the inherited tag is treated as satisfying the search and is not duplicated.
+- A property term with a named tag and an exact value is copied whole: `jogging:miles=3` and `book:author="Le Guin"` give the new note those tokens.
+- A search no new note can match refuses new notes at the top, as a sorted view does: a property term in the first clause other than a named tag with an exact value (`jogging:miles>3`, `:foo="ba"`, `jogging:miles?`, bare `jogging:miles`, `=MAX`/`=MIN`, a stats term such as `@sum:calories>2000`). Enter, pasting or dropping files at the top and the command palette show the banner "New notes cannot be added in this search: a new note would not match jogging:miles>3.", and Add Note at Top is hidden. Excluded terms (`-jogging:miles>3`) and later `OR` clauses never refuse; children and siblings of nested notes are still added. To add one, search `jogging:miles=3` or add it under a result.
 
 ### Moving Notes During Search
 - A note outdented while a search is active never leaves the results, wherever it lands (under a grandparent or as a root note). If the note matched before the move and would not match at its new place, it gets, as its own tags, the tags it misses for the part of the search (`OR` clause) it matched; it gets nothing when it still matches there, through inherited tags or another clause.
@@ -170,6 +173,12 @@ Text matching is:
 - Also against the names of files the note references (a PDF or other file shown by
   its name): `"congratulation"` finds a note holding `0025018697_CongratulationLetter.pdf`.
   Find (⌘F) finds file names in the list too.
+- Also against the text inside the PDFs the note shows: `"rent is due"` finds a note holding
+  a lease PDF that says it, with a line of the PDF's text shown under its card, the words
+  marked. A new PDF is searchable a few seconds after it arrives; a scanned, damaged or
+  password-locked PDF is found by name only; search covers a PDF's first ~2,000 pages. Find
+  (⌘F) finds PDF text too: a PDF holding the words is one stop of its note, and stopping on
+  it shows a line of its text under the card with the words marked.
 - Also against the titles of web pages linked in the note: for each `http(s)` URL
   in the note (written out, or hidden behind a link label), the page title
   MetaList has already fetched and stored. Titles are fetched when a URL on its own
@@ -197,18 +206,38 @@ Super tags carry values (`jogging:miles=3`, `drug:dosage=10mg`; see Super Tags i
   refused (a missing property needs its tag). A bare `:` suggests the vault's property names.
 - `-` excludes, spaces combine, `OR` separates clauses, as for tags:
   `jogging:miles>2 jogging:duration<40`, `jogging -jogging:miles>10`.
-- One property per term: `jogging:miles>2:duration<40` is refused with how to write it.
+- **Chained conditions** (built 2026-10-31): `book:title="Dune":year>1960`,
+  `:foo="bar":baz>3:zed<100`. One tag on the note meets every condition, where separate
+  terms may each be met by a different tag: `:foo="bar":baz>3` finds `x:foo=bar:baz=5`,
+  not `x:foo=bar y:baz=5`; with `jogging => exercise` and `cycling => exercise`,
+  `exercise:miles>2:duration<40` finds `jogging:miles=3:duration=30`, not
+  `jogging:miles=3 cycling:duration=30`. A chain takes comparisons, `=` and a bare name
+  (`jogging:miles>2:duration`); `?`, `MAX` and `MIN` go in terms of their own, each
+  property is named once, and stats terms compare one figure. `-` leaves out only notes
+  where one tag meets them all. Ontology rules keep one property per condition.
 - Values are compared by kind: numbers, dates (`2024-01` is its first day; a year alone,
   `2026`, is a number), date-times (`2024-01-15T10:30`), times of day (`10:30`, `22:30`,
   `10:30pm`, `10am`; `12am` is midnight) and text (any case). A value of another kind is
   skipped: `miles>2` ignores `miles=far`.
 - Units are labels: `drug:dosage>5mg` compares only `mg` values; `drug:dosage>5` compares
   every unit (`10mg`, `10kg`, `10`), which shows when a search should name one.
-- Values belong to the note they are written on: a child of a 3-mile run inherits
-  `jogging`, never `miles=3`.
-- A note added while such a search is active gets the term's tag; an `=` term also gives
-  it the value (`jogging:miles=3` adds `jogging:miles=3`). Other comparisons name no
-  value, so the new note has the tag only.
+- Values follow their tag: a search reads a note's own values and those it inherits,
+  from its parents as tags are, never through embeds or links. The nearest value wins: a child of
+  a 3-mile run has `miles=3` unless it writes its own. So `jogging:miles>2 knee` finds the
+  knee note under a 3-mile run. `jogging:miles?` (a missing value) and stats figures
+  (`@sum:…`) stay the note's own.
+- A note added while such a search is active gets the term's tag and value
+  (`jogging:miles=3` adds `jogging:miles=3`). A search whose term names no value a new
+  note could carry (`jogging:miles>2`) refuses new notes at the top (Creating Notes From
+  Search above); a child added under a result gets the tag only.
+- **Quoted values:** `author="Ursula Le Guin"` and `book:title="Dune: Messiah"` hold
+  spaces and colons; a `"` straight after `=`, `<` or `>` opens the value, with `\"` and
+  `\\` inside. A quoted value is a text match inside the value, like a quoted text
+  search (`:foo="ba"` finds `foo=bar`, `foo=bag` and `foo=aba`; `author="Ursula"` finds
+  Ursula Le Guin); a bare value is exact. Quotes never change a value:
+  `zed:foo="asdf-jkl"` and `zed:foo=asdf-jkl` are the same tag. `author "Ursula Le Guin"`
+  (with a space) is a tag plus a text search. An open value searches as typed and closes
+  when the user moves on; `author="` alone is removed.
 - **Through implications:** a term about a tag also reads the values of every tag that
   implies it, synonyms included. With `jogging => exercise`, `exercise:miles>2` finds
   `jogging:miles=3`; with `trail-run => jogging`, `trail-run:miles=5` too. Ask at any
@@ -228,7 +257,9 @@ Super tags carry values (`jogging:miles=3`, `drug:dosage=10mg`; see Super Tags i
 - **Suggestions:** after `exercise:` the search box suggests property names used with
   `exercise` and with the tags implying it (`miles` from `jogging`), most used first;
   after a number (`drug:dosage>5`) the units used with that property (`5mg`); after `=`,
-  `MAX` and `MIN`. The list shows only the name, unit or keyword. Picking one earns no
+  the values notes give the property, quoted when needed, after `MAX` and `MIN` when the
+  property has a number, date or time value (a bare partial matches a value's start, a
+  quoted one anywhere in it). The list shows only the name, unit or keyword. Picking one earns no
   activity credit.
 
 ### Stats Figures
@@ -281,9 +312,9 @@ Results are still **windowed by root notes**:
 
 ## Embedded References and Search
 
-Note references (`[[UUID]]`), links and embeds alike, participate in tag inheritance:
-- Non-meta tags on the source or its descendants supply required/forbidden tag hits for the host and its children, including through chains of references. For `foo → bar → baz`, a reference to `bar` matches tags on `bar` and `baz`, but excludes tags inherited from `foo`. Searching for a tag on `baz` includes the reference host; an expanded embed displays the full `bar → baz` subtree. Link-mode references retain their compact rendering.
-- Canonical notes still inherit their own ancestors' tags. The referencing host also retains inheritance from its own parents. Source text does not supply required/forbidden quoted-text hits; source meta tags and comments do not pass through references.
-- Subtree/reference cycles converge from direct tags, without importing parent inheritance. Removing a tag/reference clears stale contributions, including within cycles. An explicit reference to an ancestor still contributes that referenced subtree's tags.
-- Inherited-tag metadata, suggestions, and Untagged Notes use the same computed tags. Ontology inference continues to run per note after inheritance.
-- Updates are maintained in memory on edits, tag changes, moves, deletion, and restoration; collapse/expand does not rebuild tag inheritance.
+Embeds (`![[UUID]]`) and links (`[[UUID]]`) pass no tags (2026-11-03; links since 2026-10-31):
+- A search for a tag finds the note that has it and the notes below it, never a note embedding or linking to one. `-tag` doesn't leave out a note embedding a note with the tag. An embed in a matching note still shows its source and children; a search for the source's tag finds the source.
+- The host's own content still counts: an embedded picture file makes it `@image`, Notes with Files reads its own references, and quoted text search reads its own text (never an embed's).
+- Super tag values follow tags: only a note's own and its ancestors' (Super Tag Searches).
+- Inherited-tag metadata, suggestions, folder membership and counts, and Untagged Notes use the same computed tags. Ontology inference runs per note after inheritance.
+- Updates are maintained in memory on tag changes and moves (a note and the notes below it); editing a note's text, collapse/expand and deletion recompute nothing. Implementation: `NoteStore._propagate_inherited_tag_terms_locked` (parents first); tests: `tests/unit/test_reference_tag_inheritance.py`, `tests/unit/test_inherited_values_search.py`.

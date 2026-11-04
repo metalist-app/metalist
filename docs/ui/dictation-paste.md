@@ -49,7 +49,8 @@ only pastes.
 | Quoted phrase | a text search, `"attention is all you need"` | no quoting: the words are ordinary words |
 | "or" | `OR` between clauses | dropped |
 | The exclusion phrase ("minus" by default), or a typed `-`, `−` or em dash `—` before a term (Superwhisper types "minus" as an em dash) | exclude the next term, `-python`, `-"fat"` | dropped |
-| Pasted search syntax (`-tag`, `+tag`, `OR`, `"text"`) | kept as is | not applicable |
+| Pasted search syntax (`-tag`, `+tag`, `OR`, `"text"`, a property search such as `jogging:miles>3`, `:version=0.24` or `@sum:calories>2000`; a time such as `10:30` is not one) | kept as is | not applicable |
+| A tag with values (`jogging:miles=3`, `asdf=1234`, `@code=python`, `@datetime=2026-10-24`) | not applicable | kept as is (fixed 2026-10-30: the `:` and `=` were dropped) |
 | Pasted with the cursor inside a quoted phrase (after `"`) | no cleanup: inserted exactly as copied, on one line, with quote marks escaped (`\"`) so the phrase does not end early | not applicable |
 
 A spoken word that is one of the user's tags is always that tag: with a tag

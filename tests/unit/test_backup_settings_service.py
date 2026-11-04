@@ -18,6 +18,7 @@ from app.models.database import SafeSession
 from app.security.encryption import set_encryption_required
 from app.services.backup_settings_service import (
     BACKUP_SETTINGS_UNCHECKED_MIGRATION_ID,
+    backup_settings_need_conversion,
     convert_backup_settings_to_unchecked,
     list_available_namespaces,
     load_backup_settings,
@@ -84,6 +85,26 @@ def test_settings_from_before_vaults_could_be_chosen_leave_none_out(settings_dat
         "retention_count": RETENTION_COUNT, "folder_path": "", "unchecked_namespaces": [],
         "synced_plaintext_acknowledged": [],
     }
+
+
+def _needs_conversion() -> bool:
+    with begin_writer() as connection:
+        return backup_settings_need_conversion(raw_sqlite_connection(connection))
+
+
+# An older MetaList opened on the same vault after the conversion saves its settings in the
+# old form again (the maintainer, 2026-11-01: Back Up Now's times failed on every login,
+# "backup settings missing unchecked_namespaces"); the next unlock converts them again.
+def test_settings_an_older_metalist_saved_after_the_conversion_are_converted_again(settings_database: None) -> None:
+    convert_backup_settings_to_unchecked(available_namespaces=AVAILABLE)
+    assert not _needs_conversion()
+
+    _store_payload({"retention_count": RETENTION_COUNT, "folder_path": "/backups", "selected_namespaces": ["default", "work"]})
+    assert _needs_conversion()
+
+    convert_backup_settings_to_unchecked(available_namespaces=AVAILABLE)
+    assert not _needs_conversion()
+    assert load_backup_settings(token="")["unchecked_namespaces"] == ["home"]
 
 
 def test_a_vault_without_saved_settings_is_recorded_as_converted(settings_database: None) -> None:

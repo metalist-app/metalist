@@ -7,8 +7,13 @@ from __future__ import annotations
 import pytest
 
 from app.services.input_errors import InputRejected
-from app.services.search_index import SearchIndex, SearchRecord, extract_tags_for_search
+from app.services.search_index import NOTHING_INHERITED, SearchIndex, SearchRecord, extract_tags_for_search
 from app.services.search_query import parse_search_query
+
+
+def _inherits_nothing(note_ids):
+    """A search index alone has no note tree: its notes inherit no values."""
+    return {note_id: NOTHING_INHERITED for note_id in note_ids}
 
 NOTES = {
     "metalist-0245": "metalist:version=0.24.5",
@@ -23,6 +28,7 @@ NOTES = {
 @pytest.fixture
 def index() -> SearchIndex:
     search_index = SearchIndex()
+    search_index.attach_inherited_values_reader(_inherits_nothing)
     search_index.rebuild(
         [SearchRecord(note_id=note_id, content_text="", tags=tags, tag_terms=extract_tags_for_search(tags))
          for note_id, tags in NOTES.items()],
@@ -65,7 +71,8 @@ def test_a_property_on_any_tag_says_how_to_write_it(search: str, message: str) -
     (":m", [(":miles", "miles")]),
     # Units after a number, from every tag with the property.
     (":miles<5m", [(":miles<5mi", "5mi")]),
-    (":version=", [(":version=MAX", "MAX"), (":version=MIN", "MIN")]),
+    (":version=", [(":version=MAX", "MAX"), (":version=MIN", "MIN"),
+                   (":version=0.23.1", "0.23.1"), (":version=0.24.5", "0.24.5"), (":version=2", "2")]),
 ])
 def test_a_bare_colon_suggests_the_vaults_property_names(index: SearchIndex, typed: str, expected: list[tuple[str, str]]) -> None:
     suggestions = index.suggest_property_completions(typed=typed, place="search", limit=10)

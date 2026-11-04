@@ -3,7 +3,8 @@ import { CONFIG } from '../../config.js';
 import { NotesAPI } from '../../api-client.js';
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import { CommandGate } from './command-gate-service.js';
-import { phraseRangesIn } from './search-highlight-service.js';
+import { DIAGRAM_SELECTOR, phraseRangesIn, phraseRangesInNoteText } from './search-highlight-service.js';
+import { findPhraseMatches } from './search-highlight-matching.js';
 import { DELIBERATE_SCROLL_EVENT, scrollWindowToYFastAnimated } from './animated-scroll-service.js';
 import { clampNumber, getScrollMaxY, getViewportTopInset, VIEWPORT_TOP_BUFFER_PX } from './viewport-reference.js';
 
@@ -27,6 +28,9 @@ const CURRENT_PRIORITY = 2;
 // Counting starts after the typing pauses this long.
 const TYPING_PAUSE_MS = 200;
 const TAG_COMMENT_SELECTOR = '.note-tag--comment';
+// A diagram that is the current stop with no label showing the words is outlined.
+const CURRENT_DIAGRAM_CLASS = 'is-find-current';
+const DIAGRAM_CODE_SELECTOR = 'code.language-mermaid';
 
 const moduleState = ApplicationState.createFields('find-in-list-service', {
     isOpen: false,
@@ -39,6 +43,8 @@ const moduleState = ApplicationState.createFields('find-in-list-service', {
     rootCount: 0,
     // {noteId, occurrence}: the current match.
     current: null,
+    // {noteId, fileId, text}: the snippet shown under a file's card while find stops on it.
+    fileSnippet: null,
     typingTimer: null,
     observer: null,
     isPaintRequested: false,
@@ -81,8 +87,19 @@ export function isFindInput(element) {
 // ---------------------------------------------------------------------------
 // Matches and windows
 
+// A note's occurrences: its content's, then its tag-bar comments', then one per file it shows
+// whose text holds the find text (docs/ui/find.md, "Inside files").
 function occurrenceCount(match) {
-    return match.contentCount + match.commentCount;
+    return match.contentCount + match.commentCount + match.fileIds.length;
+}
+
+// The file an occurrence stops on, or null for one in the note's own text or comments.
+function fileOfOccurrence(match, occurrence) {
+    const index = occurrence - match.contentCount - match.commentCount;
+    if (index < 0) {
+        return null;
+    }
+    return match.fileIds[index];
 }
 
 function allMatches() {
@@ -97,6 +114,9 @@ function validateMatch(match) {
     }
     if (typeof match.noteId !== 'string' || typeof match.rootId !== 'string' || typeof match.isUnderFoldedNote !== 'boolean') {
         throw new Error('A find match needs noteId, rootId and isUnderFoldedNote');
+    }
+    if (!Array.isArray(match.fileIds) || match.fileIds.some(fileId => typeof fileId !== 'string' || fileId === '')) {
+        throw new Error('A find match needs the ids of the files it stops on');
     }
     if (match.previewCount > match.contentCount || occurrenceCount(match) === 0) {
         throw new Error('A find match must have occurrences, its preview no more than its content');
@@ -169,7 +189,13 @@ function directChild(element, className) {
 
 // The note's occurrences on the page: in its content, then in its tag-bar comments.
 function pageRangesOf(noteElement) {
-    const phrases = [moduleState.text];
+    return pageRangesFor(noteElement, moduleState.text);
+}
+
+// Its content's stops in page order (each diagram whose code holds the text one of them), its
+// comments', and every range to mark lightly (a diagram's labels holding the text).
+function pageRangesFor(noteElement, text) {
+    const phrases = [text];
     const content = directChild(noteElement, CONFIG.CLASSES.NOTE_CONTENT);
     if (content === undefined) {
         throw new Error(`Note ${noteElement.dataset.noteId} has no content element`);
@@ -180,7 +206,169 @@ function pageRangesOf(noteElement) {
         commentRanges = Array.from(tags.querySelectorAll(TAG_COMMENT_SELECTOR))
             .flatMap(comment => phraseRangesIn(comment, phrases));
     }
-    return { content: phraseRangesIn(content, phrases), comments: commentRanges };
+    const textRanges = phraseRangesInNoteText(content, phrases);
+    const diagrams = diagramStops(content, phrases);
+    const stops = [...textRanges, ...diagrams.map(diagram => diagram.stop)]
+        .sort((first, second) => first.compareBoundaryPoints(Range.START_TO_START, second));
+    const marks = [...textRanges, ...diagrams.flatMap(diagram => diagram.labels), ...commentRanges];
+    return { content: stops, comments: commentRanges, marks };
+}
+
+// The diagrams whose code holds the phrases (docs/ui/find.md, "Diagrams"): the code decides, as
+// on the server (find_text.py count_find_stops), so both count the same however it is drawn.
+// The stop is the first label showing the words, else the whole diagram (outlined).
+function diagramStops(content, phrases) {
+    const stops = [];
+    for (const diagram of content.querySelectorAll(DIAGRAM_SELECTOR)) {
+        if (findPhraseMatches(diagramCodeOf(diagram).replace(/\s+/g, ' ').trim(), phrases).length === 0) {
+            continue;
+        }
+        const labels = phraseRangesIn(diagram, phrases);
+        let stop = labels[0];
+        if (stop === undefined) {
+            stop = document.createRange();
+            stop.selectNode(diagram);
+        }
+        stops.push({ stop, labels });
+    }
+    return stops;
+}
+
+function diagramCodeOf(diagram) {
+    if (diagram.matches('pre')) {
+        const code = diagram.querySelector(DIAGRAM_CODE_SELECTOR);
+        if (code === null) {
+            throw new Error('A diagram showing its code has no code element');
+        }
+        return code.textContent;
+    }
+    const code = diagram.getAttribute('data-mermaid-source');
+    if (code === null) {
+        throw new Error('A drawn diagram keeps its code (mermaid-render-service.js)');
+    }
+    return code;
+}
+
+// The diagram a stop selects whole (no label shows the words), or null.
+function wholeDiagramOf(range) {
+    const node = range.startContainer.childNodes[range.startOffset];
+    if (range.endContainer !== range.startContainer || range.endOffset !== range.startOffset + 1) {
+        return null;
+    }
+    if (!(node instanceof Element) || !node.matches(DIAGRAM_SELECTOR)) {
+        return null;
+    }
+    return node;
+}
+
+// How many stops the page shows in a note's own content for the text: what the server counts
+// there must never be more (the browser suites check it, docs/ui/find.md).
+export function pageStopCount(noteElement, text) {
+    return pageRangesFor(noteElement, text).content.length;
+}
+
+// ---------------------------------------------------------------------------
+// Files: find stops on a file once, showing a snippet of its text under its card while it
+// is the current stop (docs/ui/find.md, "Inside files"). The card's search snippet, if any,
+// gives way to it meanwhile.
+
+const FIND_SNIPPET_CLASS = 'note-find-snippet';
+const FILE_SNIPPET_CLASS = 'note-file-text-snippet';
+const SNIPPET_GIVING_WAY_CLASS = 'is-giving-way-to-find';
+
+// The note's own card for the file (not one in a note it embeds), or null when it shows none.
+function fileCardOf(noteElement, fileId) {
+    const content = directChild(noteElement, CONFIG.CLASSES.NOTE_CONTENT);
+    for (const card of content.querySelectorAll(`.note-file-reference-link[data-file-ref-id="${CSS.escape(fileId)}"]`)) {
+        if (card.closest(`.${CONFIG.CLASSES.NOTE}`) === noteElement) {
+            return card;
+        }
+    }
+    return null;
+}
+
+function removeFindSnippet() {
+    const container = document.getElementById(NOTES_CONTAINER_ID);
+    if (container === null) {
+        return;
+    }
+    for (const snippet of container.querySelectorAll(`.${FIND_SNIPPET_CLASS}`)) {
+        snippet.remove();
+    }
+    for (const snippet of container.querySelectorAll(`.${SNIPPET_GIVING_WAY_CLASS}`)) {
+        snippet.classList.remove(SNIPPET_GIVING_WAY_CLASS);
+    }
+}
+
+// The current file's snippet in its card (the card drawn again since: put back).
+function placeFindSnippet() {
+    const shown = moduleState.fileSnippet;
+    if (shown === null) {
+        return;
+    }
+    const noteElement = noteElementOf(shown.noteId);
+    if (noteElement === null) {
+        return;
+    }
+    const card = fileCardOf(noteElement, shown.fileId);
+    if (card === null || card.querySelector(`.${FIND_SNIPPET_CLASS}`) !== null) {
+        return;
+    }
+    for (const searchSnippet of card.querySelectorAll(`.${FILE_SNIPPET_CLASS}`)) {
+        searchSnippet.classList.add(SNIPPET_GIVING_WAY_CLASS);
+    }
+    const snippet = document.createElement('span');
+    snippet.className = `${FILE_SNIPPET_CLASS} ${FIND_SNIPPET_CLASS}`;
+    snippet.textContent = shown.text;
+    card.append(snippet);
+}
+
+// The file's snippet text for the find text; null when a newer find began meanwhile.
+async function fetchFileSnippet(fileId) {
+    const generation = moduleState.generation;
+    const answer = await NotesAPI.fetchFindFileSnippet(fileId, moduleState.text);
+    if (typeof answer.snippet !== 'string') {
+        throw new Error('A file snippet answer needs its snippet');
+    }
+    if (generation !== moduleState.generation) {
+        return null;
+    }
+    return answer.snippet;
+}
+
+// The file's snippet in place of the one shown, in one step: any other card's goes, the same
+// card's changes only its text, so nothing on the page goes and comes back.
+function showFileSnippet(match, fileId, text) {
+    update(moduleState, 'fileSnippet', { noteId: match.noteId, fileId, text });
+    const noteElement = noteElementOf(match.noteId);
+    let card = null;
+    if (noteElement !== null) {
+        card = fileCardOf(noteElement, fileId);
+    }
+    const container = document.getElementById(NOTES_CONTAINER_ID);
+    for (const snippet of container.querySelectorAll(`.${FIND_SNIPPET_CLASS}`)) {
+        if (card === null || !card.contains(snippet)) {
+            const elsewhere = snippet.closest('.note-file-reference-link');
+            snippet.remove();
+            for (const searchSnippet of elsewhere.querySelectorAll(`.${SNIPPET_GIVING_WAY_CLASS}`)) {
+                searchSnippet.classList.remove(SNIPPET_GIVING_WAY_CLASS);
+            }
+        }
+    }
+    if (card !== null && card.querySelector(`.${FIND_SNIPPET_CLASS}`) !== null) {
+        card.querySelector(`.${FIND_SNIPPET_CLASS}`).textContent = text;
+        return;
+    }
+    placeFindSnippet();
+}
+
+function clearFindSnippet() {
+    update(moduleState, 'fileSnippet', null);
+    removeFindSnippet();
+}
+
+function findSnippetElement(noteElement) {
+    return noteElement.querySelector(`.${FIND_SNIPPET_CLASS}`);
 }
 
 function isFolded(noteElement) {
@@ -214,10 +402,45 @@ function isShown(match, occurrence) {
     return isShownWithoutReveal(match, occurrence);
 }
 
+// Why an occurrence has no place on the page: what the server counted against what the page
+// shows (no note text, only counts and ids).
+function missingOccurrenceReport(match, occurrence) {
+    const counted = `server counted content ${match.contentCount} (folded ${match.previewCount}), comments ${match.commentCount}, `
+        + `files ${match.fileIds.length}; under a folded note ${match.isUnderFoldedNote}`;
+    const noteElement = noteElementOf(match.noteId);
+    let shown = 'the note is not on the page';
+    if (noteElement !== null) {
+        const ranges = pageRangesOf(noteElement);
+        const cards = match.fileIds.filter(fileId => fileCardOf(noteElement, fileId) !== null).length;
+        shown = `the page shows content ${ranges.content.length}, comments ${ranges.comments.length}, `
+            + `cards ${cards} of ${match.fileIds.length}; folded ${isFolded(noteElement)}, `
+            + `opened by find ${ModeContext.findRevealNoteId === match.noteId}`;
+    }
+    return `Find could not show occurrence ${occurrence} of note ${match.noteId}: ${counted}; ${shown}`;
+}
+
 function pageRangeOf(match, occurrence) {
     const noteElement = noteElementOf(match.noteId);
     if (noteElement === null) {
         return null;
+    }
+    const fileId = fileOfOccurrence(match, occurrence);
+    if (fileId !== null) {
+        // The words in the file's snippet, once find shows it; else the card.
+        const snippet = findSnippetElement(noteElement);
+        if (snippet !== null) {
+            const [range] = phraseRangesIn(snippet, [moduleState.text]);
+            if (range !== undefined) {
+                return range;
+            }
+        }
+        const card = fileCardOf(noteElement, fileId);
+        if (card === null) {
+            return null;
+        }
+        const range = document.createRange();
+        range.selectNodeContents(card);
+        return range;
     }
     const ranges = pageRangesOf(noteElement);
     // A missing range means the page does not show that occurrence (a folded note).
@@ -246,6 +469,26 @@ function usableTopFor(rect) {
     return Math.max(top, Math.round(barRect.bottom + VIEWPORT_TOP_BUFFER_PX));
 }
 
+// Whether something shows at or below the top of the usable screen: by its top edge, but an
+// outlined diagram when any part of it shows below the find bar (agreed 2026-11-02: a diagram in
+// plain view whose top was behind the bar was skipped, and find started on the next note).
+function showsBelowTop(rect, isWholeDiagram) {
+    const top = usableTopFor(rect);
+    if (isWholeDiagram) {
+        return rect.bottom > top;
+    }
+    return rect.top >= top;
+}
+
+// Whether an occurrence, as the page shows it now, is a diagram outlined whole.
+function isWholeDiagramStop(match, occurrence) {
+    if (!isShown(match, occurrence)) {
+        return false;
+    }
+    const range = pageRangeOf(match, occurrence);
+    return range !== null && wholeDiagramOf(range) !== null;
+}
+
 // Where an occurrence is on screen: its own text, or for one folded away the note that
 // hides it (the note, or the folded note above it that is on the page).
 function screenRectOf(match, occurrence) {
@@ -271,7 +514,9 @@ function screenRectOf(match, occurrence) {
 
 function paint() {
     update(moduleState, 'isPaintRequested', false);
+    placeFindSnippet();
     if (!moduleState.isOpen || moduleState.text.trim() === '') {
+        outlineDiagram(null);
         CSS.highlights.delete(MARK_HIGHLIGHT);
         CSS.highlights.delete(CURRENT_HIGHLIGHT);
         return;
@@ -284,11 +529,20 @@ function paint() {
             continue;
         }
         const ranges = pageRangesOf(noteElement);
-        marks.push(...ranges.content, ...ranges.comments);
+        marks.push(...ranges.marks);
         const current = moduleState.current;
         if (current !== null && current.noteId === match.noteId && isShown(match, current.occurrence)) {
             currentRange = pageRangeOf(match, current.occurrence);
         }
+    }
+    // A diagram in which nothing shows the words is outlined, not its every label marked.
+    let outlined = null;
+    if (currentRange !== null) {
+        outlined = wholeDiagramOf(currentRange);
+    }
+    outlineDiagram(outlined);
+    if (outlined !== null) {
+        currentRange = null;
     }
     const markHighlight = new Highlight(...marks);
     markHighlight.priority = MARK_PRIORITY;
@@ -299,6 +553,18 @@ function paint() {
         const currentHighlight = new Highlight(currentRange);
         currentHighlight.priority = CURRENT_PRIORITY;
         CSS.highlights.set(CURRENT_HIGHLIGHT, currentHighlight);
+    }
+}
+
+// Only a change touches the class: find watches the list's classes and repaints on a change.
+function outlineDiagram(diagram) {
+    for (const outlined of document.querySelectorAll(`.${CURRENT_DIAGRAM_CLASS}`)) {
+        if (outlined !== diagram) {
+            outlined.classList.remove(CURRENT_DIAGRAM_CLASS);
+        }
+    }
+    if (diagram !== null && !diagram.classList.contains(CURRENT_DIAGRAM_CLASS)) {
+        diagram.classList.add(CURRENT_DIAGRAM_CLASS);
     }
 }
 
@@ -315,6 +581,8 @@ function watchList() {
         return;
     }
     moduleState.observer = new MutationObserver(() => {
+        // A redrawn card gets its snippet back before the page is painted, not a frame later.
+        placeFindSnippet();
         for (const match of allMatches()) {
             syncCountsWithPage(match);
         }
@@ -484,6 +752,7 @@ export async function closeFindBar() {
     moduleState.generation += 1;
     update(moduleState, 'windows', []);
     update(moduleState, 'current', null);
+    clearFindSnippet();
     if (moduleState.typingTimer !== null) {
         clearTimeout(moduleState.typingTimer);
         update(moduleState, 'typingTimer', null);
@@ -535,8 +804,11 @@ async function startFind(text) {
     update(moduleState, 'text', text);
     update(moduleState, 'windows', []);
     update(moduleState, 'current', null);
+    // A file's snippet stays until the new current match is known: typing on, it would go and
+    // come back on every keystroke (2026-11-01).
     update(moduleState, 'contextKey', contextKeyNow());
     if (text.trim() === '') {
+        clearFindSnippet();
         renderCount();
         paint();
         await showCurrent(null);
@@ -552,7 +824,7 @@ async function startFind(text) {
     for (const match of allMatches().filter(candidate => candidate.rootIndex >= fromRootIndex)) {
         for (let occurrence = 0; occurrence < occurrenceCount(match) && target === null; occurrence += 1) {
             const rect = screenRectOf(match, occurrence);
-            if (rect === null || rect.top >= usableTopFor(rect)) {
+            if (rect === null || showsBelowTop(rect, isWholeDiagramStop(match, occurrence))) {
                 target = { noteId: match.noteId, occurrence };
             }
         }
@@ -693,6 +965,24 @@ export async function moveToMatch(direction) {
 // for (placement): below for the next one, above for the previous or a wrap.
 async function showCurrent(placement) {
     const match = currentMatch();
+    // A file's snippet is read before the view changes, so the page changes once: the note find
+    // opened folding back and the new snippet showing together (a frame without one between).
+    let fileId = null;
+    let fileSnippetText = null;
+    if (match !== null) {
+        fileId = fileOfOccurrence(match, moduleState.current.occurrence);
+    }
+    if (fileId !== null) {
+        fileSnippetText = await fetchFileSnippet(fileId);
+        if (fileSnippetText === null) {
+            return;
+        }
+    }
+    if (fileId !== null) {
+        // Before the view changes: a redrawn list gets the new file's snippet (placeFindSnippet
+        // as it changes), never a moment without one.
+        showFileSnippet(match, fileId, fileSnippetText);
+    }
     let reveal = null;
     if (match !== null && !isShownWithoutReveal(match, moduleState.current.occurrence)) {
         reveal = match.noteId;
@@ -703,11 +993,17 @@ async function showCurrent(placement) {
     }
     await showView({ reveal, isLoaded, match });
     if (match === null) {
+        clearFindSnippet();
         paint();
         return;
     }
     syncCountsWithPage(match);
     renderCount();
+    if (fileId === null) {
+        clearFindSnippet();
+    } else {
+        showFileSnippet(match, fileId, fileSnippetText);
+    }
     let range = pageRangeOf(match, moduleState.current.occurrence);
     if (range === null && reveal === null) {
         // The folded note's first line shows less than the server read in it: open it.
@@ -715,15 +1011,21 @@ async function showCurrent(placement) {
         range = pageRangeOf(match, moduleState.current.occurrence);
     }
     if (range === null) {
-        throw new Error(`Find could not show occurrence ${moduleState.current.occurrence} of note ${match.noteId}`);
+        throw new Error(missingOccurrenceReport(match, moduleState.current.occurrence));
     }
     // A loaded match is placed by where it is; one just loaded by where it was asked for,
     // at once: until it is placed the page shows the new notes' first one, and the list
     // would load more around that (infinite-scroll-service.js) and hold it still.
+    // A file's stop shows its card and snippet whole.
+    let rect = range.getBoundingClientRect();
+    if (fileId !== null) {
+        rect = fileCardOf(noteElementOf(match.noteId), fileId).getBoundingClientRect();
+    }
+    const isWholeDiagram = wholeDiagramOf(range) !== null;
     if (isLoaded) {
-        scrollToShow(range.getBoundingClientRect(), 'nearest', scrollWindowToYFastAnimated);
+        scrollToShow(rect, isWholeDiagram, 'nearest', scrollWindowToYFastAnimated);
     } else {
-        scrollToShow(range.getBoundingClientRect(), placementAfterLoad(placement), scrollWindowToYAtOnce);
+        scrollToShow(rect, isWholeDiagram, placementAfterLoad(placement), scrollWindowToYAtOnce);
     }
     paint();
 }
@@ -755,6 +1057,11 @@ function isShownWithoutReveal(match, occurrence) {
     if (match.isUnderFoldedNote) {
         return false;
     }
+    if (fileOfOccurrence(match, occurrence) !== null) {
+        // A file's card shows in its note opened: a folded note opens for it.
+        const noteElement = noteElementOf(match.noteId);
+        return noteElement !== null && !isFolded(noteElement);
+    }
     if (occurrence >= match.contentCount) {
         return true;
     }
@@ -769,10 +1076,10 @@ function scrollWindowToYAtOnce(targetScrollY) {
     window.scrollTo(0, targetScrollY);
 }
 
-function scrollToShow(rect, placement, scrollTo) {
+function scrollToShow(rect, isWholeDiagram, placement, scrollTo) {
     const top = usableTopFor(rect);
     const bottom = window.innerHeight;
-    if (rect.top >= top && rect.bottom <= bottom) {
+    if (showsBelowTop(rect, isWholeDiagram) && rect.bottom <= bottom) {
         return;
     }
     let delta = 0;

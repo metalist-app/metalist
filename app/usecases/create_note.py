@@ -23,6 +23,7 @@ from app.db.notes_sql import insert_note as db_insert_note
 from app.db.notes_sql import update_links_preserving_updated_at as db_update_links_preserving_updated_at
 from app.security.encryption import encrypt
 from app.security.note_html import sanitize_note_html
+from app.services.tag_characters import clean_tag_text
 from app.utils.text_utils import strip_html
 
 
@@ -40,6 +41,9 @@ def apply_insert_note(
     if not isinstance(content, str):
         raise TypeError("content must be a string")
     sanitized_content = sanitize_note_html(content)
+    # Tags are stored in one Unicode form without invisible characters (tag_characters.py).
+    tags = clean_tag_text(tags)
+    proposed_tags = clean_tag_text(proposed_tags)
     ciphertext, nonce, tag = encrypt(sanitized_content, token)
     tags_ciphertext, tags_nonce, tags_tag = encrypt(tags, token)
     proposed_tags_ciphertext, proposed_tags_nonce, proposed_tags_tag = encrypt(

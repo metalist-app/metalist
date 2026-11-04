@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 
 from app.services.content_formatting import COMMENT_CLOSE, COMMENT_OPEN, MAX_DELIMITER_DEPTH, _unwrap_tag_token
+from app.services.quoted_values import token_end as bare_token_end
 from app.services.tag_properties import tag_part_of_token
 
 
@@ -48,9 +49,7 @@ def delete_tag_from_tag_bar(*, tags: str, tag: str) -> tuple[str, bool]:
                     token_end = close_at + opener_run
 
         if token_end is None:
-            token_end = start
-            while token_end < len(tags) and not tags[token_end].isspace():
-                token_end += 1
+            token_end = bare_token_end(tags, start)
 
         token = tags[start:token_end]
         base, wrapper = _unwrap_tag_token(token)
@@ -131,9 +130,7 @@ def rename_tag_in_tag_bar(*, tags: str, old: str, new: str) -> tuple[str, bool]:
                     token_end = close_at + opener_run
 
         if token_end is None:
-            token_end = start
-            while token_end < len(tags) and not tags[token_end].isspace():
-                token_end += 1
+            token_end = bare_token_end(tags, start)
 
         token = tags[start:token_end]
         base, wrapper = _unwrap_tag_token(token)
@@ -230,9 +227,7 @@ def toggle_meta_tag_pair_in_tag_bar(*, tags: str, tag_a: str, tag_b: str) -> tup
                     token_end = close_at + opener_run
 
         if token_end is None:
-            token_end = start
-            while token_end < len(tags) and not tags[token_end].isspace():
-                token_end += 1
+            token_end = bare_token_end(tags, start)
 
         token = tags[start:token_end]
         base, wrapper = _unwrap_tag_token(token)
@@ -279,9 +274,7 @@ def _has_global_tag(*, tags: str, target: str) -> bool:
                     token_end = close_at + opener_run
 
         if token_end is None:
-            token_end = start
-            while token_end < len(tags) and not tags[token_end].isspace():
-                token_end += 1
+            token_end = bare_token_end(tags, start)
 
         token = tags[start:token_end]
         base, wrapper = _unwrap_tag_token(token)

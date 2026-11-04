@@ -103,6 +103,7 @@ since 2026-10-19 its result is also cleaned once more before it leaves the serve
   script. A download opens from disk, outside MetaList's policy, so the file carries its
   own Content-Security-Policy: images, inline styles, and only its own script, named by
   hash (a print gets `script-src 'none'`).
+- the file viewer's drawn document (`note_fullscreen.build_file_view_markup`, in a frame of its own). A Word document's, a `.doc`'s or an RTF's HTML is first cleaned as a note's content by `note_html.sanitize_viewed_document_html`, which keeps one thing stored notes never carry: a highlight, `<mark class="file-highlight-NAME">`, NAME one of Word's 16 (`app/services/document_highlights.py`), no other class or style of the file; the rendered pass lets those 16 class names through (2026-11-03).
 
 The pass allows the stored-note policy plus exactly the inert markup the
 renderers add: buttons, `data-*` identifiers, ARIA, titles, renderer class names

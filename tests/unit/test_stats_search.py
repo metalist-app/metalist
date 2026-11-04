@@ -128,7 +128,7 @@ def test_a_count_counts_the_notes_with_a_number(index: SearchIndex) -> None:
 
 
 def test_a_note_without_the_figure_has_none(index: SearchIndex) -> None:
-    condition = PropertyCondition(tag="@count", name="calories", operator=">", value_text="1")
+    condition = PropertyCondition(tag="@count", name="calories", operator=">", value_text="1", chained=())
     assert stats_figure_values(note_id="usual-day", condition=condition, context=_Tree(index=index)) is None
 
 

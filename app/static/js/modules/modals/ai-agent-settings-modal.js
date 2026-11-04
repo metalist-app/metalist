@@ -20,7 +20,7 @@ import { validateAgentWebAccessMode } from '../ai-chat/agent-web-settings.js';
 import { escapeHtml } from '../html-escape.js';
 import { actionRowHtml } from './action-row.js';
 import { showErrorDialog, showErrorDialogFor } from './error-dialog.js';
-import { AI_PROVIDERS, aiProvider } from '../ai-chat/ai-providers.js';
+import { AI_KEY_WARNINGS, AI_PROVIDERS, aiProvider } from '../ai-chat/ai-providers.js';
 
 // AI Agent Settings (docs/ui/ai-chat.md, "AI Agent Settings"): one folder tab per
 // provider holding its key; then web access, the rules
@@ -30,14 +30,7 @@ import { AI_PROVIDERS, aiProvider } from '../ai-chat/ai-providers.js';
 // One tab per provider MetaList offers, in its order (app/services/ai_catalog.py).
 const PROVIDER_TABS = AI_PROVIDERS;
 // Shown under a provider's key when what it does with the user's data depends on the key.
-const KEY_WARNINGS = Object.freeze({
-    gemini: Object.freeze({
-        text: 'Use a key with billing turned on: on the free tier, Google may use what you send to improve its products, and people may read it.',
-        tooltip: 'Google\'s Gemini API terms (Unpaid Services): prompts and responses sent on free quota may be used to improve '
-            + 'Google\'s products and read by human reviewers. This does not apply in the EEA, Switzerland or the UK. '
-            + 'Use a key from a Google Cloud project with billing enabled.',
-    }),
-});
+const KEY_WARNINGS = AI_KEY_WARNINGS;
 const WEB_ACCESS_CHOICES = Object.freeze([
     ['none', 'Off', 'The AI never opens web pages.'],
     ['contextual', 'Links in your notes', 'The AI may open links that appear in the notes it can see or in your message.'],
@@ -124,6 +117,29 @@ function renderProviderPanel(state) {
         </div>`;
 }
 
+// state's rules for side (blacklist or whitelist) with entries added, as the state's fields.
+function withRules(state, side, entries) {
+    let tags = nonEmptyLines(state[`${side}TagsText`]);
+    let phrases = nonEmptyLines(state[`${side}PhrasesText`]);
+    for (const entry of entries) {
+        if (entry.trim() === '') continue;
+        const rule = parsePrivacyRuleEntry(entry);
+        if (rule.kind === 'phrase' && !phrases.includes(rule.value)) phrases = [...phrases, rule.value];
+        if (rule.kind === 'tag' && !tags.includes(rule.value)) tags = [...tags, rule.value];
+    }
+    return { [`${side}TagsText`]: tags.join('\n'), [`${side}PhrasesText`]: phrases.join('\n') };
+}
+
+// A rule field with its Add button: Add (or a pasted list) adds rules as chips and keeps the
+// dialog open; Enter saves the dialog, and Save takes what is still typed (2026-10-31).
+function ruleEntryHtml(side, ariaLabel) {
+    return `
+            <div class="ai-settings-rule-entry">
+                <input id="ai-agent-${side}-input" type="text" placeholder="Tag, or &quot;a phrase&quot; in quotes" autocomplete="off" aria-label="${ariaLabel}">
+                <button type="button" id="ai-agent-${side}-add" class="secondary-btn">Add</button>
+            </div>`;
+}
+
 function renderRulesSection(state) {
     const hasWhitelistRules = nonEmptyLines(state.whitelistTagsText).length + nonEmptyLines(state.whitelistPhrasesText).length > 0;
     const showsWhitelist = [state.isWhitelistShown, hasWhitelistRules].includes(true);
@@ -131,13 +147,13 @@ function renderRulesSection(state) {
     if (showsWhitelist) {
         whitelist = `
             <div class="ai-settings-chips">${renderRuleChips(state.whitelistTagsText, state.whitelistPhrasesText, 'whitelist')}</div>
-            <input id="ai-agent-whitelist-input" type="text" placeholder="Tag, or &quot;a phrase&quot; in quotes" autocomplete="off" aria-label="Add an only-send rule">`;
+            ${ruleEntryHtml('whitelist', 'Add an only-send rule')}`;
     }
     return `
         <section class="ai-settings-section ai-agent-cloud-privacy-settings">
             <h3 title="${escapeHtml(PRIVACY_RULES_TOOLTIP)}">Never send notes with <span class="ai-settings-term">(blacklist)</span></h3>
             <div class="ai-settings-chips">${renderRuleChips(state.blacklistTagsText, state.blacklistPhrasesText, 'blacklist')}</div>
-            <input id="ai-agent-blacklist-input" type="text" placeholder="Tag, or &quot;a phrase&quot; in quotes" autocomplete="off" aria-label="Add a never-send rule">
+            ${ruleEntryHtml('blacklist', 'Add a never-send rule')}
             <label class="ai-settings-check" title="${escapeHtml(PRIVACY_RULES_TOOLTIP)}">
                 <input type="checkbox" id="ai-agent-whitelist-toggle" ${showsWhitelist ? 'checked' : ''}>
                 <span>Only send notes with <span class="ai-settings-term">(whitelist)</span></span>
@@ -312,10 +328,7 @@ export class AiAgentSettingsModal extends BaseModal {
         for (const side of ['blacklist', 'whitelist']) {
             const input = document.getElementById(`ai-agent-${side}-input`);
             if (!(input instanceof HTMLInputElement)) continue;
-            input.onkeydown = (event) => {
-                if (event.key !== 'Enter') return;
-                event.preventDefault();
-                event.stopPropagation();
+            this._element(`ai-agent-${side}-add`, HTMLButtonElement).onclick = () => {
                 void this._addRules(side, [input.value], `ai-agent-${side}-input`);
             };
             // A pasted list (one rule per line, or comma-separated) adds every rule.
@@ -354,15 +367,7 @@ export class AiAgentSettingsModal extends BaseModal {
 
     async _addRules(side, entries, focusId) {
         const state = this.getModalState();
-        let tags = nonEmptyLines(state[`${side}TagsText`]);
-        let phrases = nonEmptyLines(state[`${side}PhrasesText`]);
-        for (const entry of entries) {
-            if (entry.trim() === '') continue;
-            const rule = parsePrivacyRuleEntry(entry);
-            if (rule.kind === 'phrase' && !phrases.includes(rule.value)) phrases = [...phrases, rule.value];
-            if (rule.kind === 'tag' && !tags.includes(rule.value)) tags = [...tags, rule.value];
-        }
-        const fields = { [`${side}TagsText`]: tags.join('\n'), [`${side}PhrasesText`]: phrases.join('\n') };
+        const fields = withRules(state, side, entries);
         const problem = getCloudPrivacyTextFieldsValidationMessage({ ...state, ...fields });
         if (problem !== '') {
             await showErrorDialog([{ text: problem, fieldId: focusId }]);
@@ -489,7 +494,14 @@ export class AiAgentSettingsModal extends BaseModal {
     }
 
     async _handleSave() {
-        const state = this.getModalState();
+        // A rule still typed in its field is a rule, as if Add had been pressed first.
+        let state = this.getModalState();
+        for (const side of ['blacklist', 'whitelist']) {
+            const input = document.getElementById(`ai-agent-${side}-input`);
+            if (input instanceof HTMLInputElement && input.value.trim() !== '') {
+                state = { ...state, ...withRules(state, side, [input.value]) };
+            }
+        }
         const retrievalSettings = { maxPageApproximateTokens: state.maxPageApproximateTokens };
         // Every problem at once, the limit with its field.
         const problems = [

@@ -21,7 +21,7 @@ async function harness() {
     };
     const context = {
         activeTabId: 'first', tabStateVersion: 0, isLoading: false,
-        hydrateTabState() {}, setTabStateUpdateHook() {},
+        hydrateTabState() {}, setTabStateUpdateHook() {}, recordUntaggedViewsFromServer() {},
         setTabStateVersion(version) { this.tabStateVersion = version; payload.version = version; },
         getTabStatePayload: () => structuredClone(payload),
         shouldIgnoreScrollEvents: () => false,

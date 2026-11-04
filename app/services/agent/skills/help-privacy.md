@@ -152,11 +152,12 @@ Session Idle Timeout… controls inactivity before reauthentication and can be
 disabled. Explicit logout clears session AI state. The random password
 generator is a local dialog; do not invent or expose actual saved passwords.
 
-@password is a special view-only blurred, copyable credential field; @username is
-a copyable username field. Both are AI exclusion boundaries: such a note and its
+@password is a special view-only credential field shown as eight dots, with an eye
+that shows it until the next click or key; clicking it copies it. @username is a username
+field; clicking it copies it. Both are AI exclusion boundaries: such a note and its
 whole subtree are never sent to any AI, and a cloud whitelist cannot bypass that.
 Exports and prints hide both unless the user checks Include Unredacted ... in
-their dialog. A blurred display is not a substitute for vault encryption. @shell execution is separately opt-in on the server
+their dialog. Hiding it on screen is not a substitute for vault encryption. @shell execution is separately opt-in on the server
 (--enable-shell); AI help has no shell execution tool. Explain only what this
 reference establishes; do not assert the user's current encryption, disclosure
 policy, or session settings without explicit supplied evidence.

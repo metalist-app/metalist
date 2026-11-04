@@ -52,10 +52,12 @@ import { closeFindBar, isFindBarOpen, isFindInput, moveToMatch, openFindBar } fr
 import { DOMUtils } from '../../dom-utils.js';
 import { CONFIG } from '../../config.js';
 import { NotesAPI } from '../../api-client.js';
-import { addDroppedFilePreviews } from '../services/dropped-file-preview-service.js';
 import { ErrorHandler } from '../../error-handler.js';
-import { persistTabStateSnapshot, createTabOnServer, deleteTabOnServer, setTabSortModeOnServer } from '../services/tab-state-service.js';
-import { endDateFilterOfLeftTab } from '../services/root-sort-indicator-service.js';
+import { describeDroppedItems, loneDroppedFolderEntry, readDroppedFolder } from '../services/dropped-folders.js';
+import { fileNewNoteInFolder, virtualFolderAt } from '../services/virtual-folders-service.js';
+import { checkBackgroundWork } from '../services/background-work-cards.js';
+import { isCopyOfDialogSelection } from '../services/dialog-copy-service.js';
+import { persistTabStateSnapshot, createTabOnServer, deleteTabOnServer } from '../services/tab-state-service.js';
 import { cacheNotesDomForTab, restoreNotesDomForTab, cloneNotesDomForTab, clearCachedNotesDomForTab, clearActiveNotesDom } from '../services/tab-dom-cache-service.js';
 import { finalizeDuplicatedTabClone, getDuplicateTabCloneOptions } from '../services/tab-duplication-service.js';
 import { areScrollAnchorsEqual, computeScrollAnchor } from '../services/scroll-anchor-service.js';
@@ -132,6 +134,9 @@ import {
     updateSearchContextsOverlayPlacement,
 } from '../services/search-contexts-overlay-service.js';
 import { CommandPalette } from '../../command-palette/command-palette-controller.js';
+import { hasWebPageName, isBookmarksExportFile } from '../../wizard/bookmarks-file.js';
+import { IMPORT_BOOKMARKS, promptForBookmarksDropChoice } from '../services/bookmarks-drop-choice-modal-service.js';
+import { AS_FILE, promptForTextDropChoice } from '../services/text-drop-choice-modal-service.js';
 import { CommandGate } from '../services/command-gate-service.js';
 import { unlessDiagramEditorOpen } from '../../excalidraw/excalidraw-editor-state.js';
 import { unlessNoteFullscreenOpen } from '../services/note-fullscreen-service.js';
@@ -142,6 +147,10 @@ import { TypeAhead } from '../services/type-ahead-service.js';
 const helpModal = new HelpModal();
 
 const MODIFIER_KEYS = new Set(['Control', 'Alt', 'Shift', 'Meta']);
+// A drop of one file only can be a bookmarks export to import.
+const LONE_FILE = 1;
+// The folder prefix of an import that goes into no virtual folder (the import walkthrough's top).
+const IMPORT_INTO_NO_FOLDER = '';
 const NAVIGATION_KEYS = new Set([
     'ArrowUp',
     'ArrowDown',
@@ -169,6 +178,17 @@ const IMAGE_TOO_LARGE_BANNER_SECONDS = 6;
 const IMAGE_SHRINK_FAILURE_BANNER_SECONDS = 6.5;
 const FILE_REFERENCE_PASTE_BANNER_SECONDS = 7;
 const TAB_LIMIT_BANNER_SECONDS = 6;
+// A dropped folder with anything else.
+const DROPPED_FOLDER_BANNER_SECONDS = 6;
+const FOLDER_ON_ITS_OWN_TEXT = 'Drop a folder on its own.';
+// Dropped text files ask Note or File; Markdown ones open the import walkthrough
+// (docs/ready-to-build/files-shown-not-copied.md §5).
+const DROPPED_TEXT_FILE_RE = /\.(md|markdown|txt)$/i;
+const DROPPED_MARKDOWN_FILE_RE = /\.(md|markdown)$/i;
+// Between dropped text files' text put into one note.
+const TEXT_FILES_SEPARATOR = '\n\n';
+// How often a text file's question looks whether the drop's other files are in.
+const OTHER_FILES_POLL_MS = 50;
 const NO_BACKLINKS_BANNER_SECONDS = 3;
 
 const moduleState = ApplicationState.createFields('keyboard-events', {
@@ -405,7 +425,7 @@ function handleKeyDown(event) {
 
     if ((event.key === 'Enter' || event.key === ' ')
         && event.target instanceof HTMLElement
-        && event.target.closest('.note-source-arrow, .note-backlinks-badge, #reference-source-indicator-clear, #reference-view-chip-back, #reference-view-new-search')) {
+        && event.target.closest('.note-source-arrow, .note-backlinks-badge, #reference-source-indicator-clear, #reference-view-chip-back, #reference-view-new-search, .meta-value-button')) {
         return;
     }
 
@@ -493,6 +513,9 @@ function handleKeyDown(event) {
     if (ModeContext.modalStack && ModeContext.modalStack.length > 0) {
         const targetElement = event.target instanceof Element ? event.target.closest('.modal') : null;
         if (targetElement) {
+            return;
+        }
+        if (isCopyOfDialogSelection({ shortcutKey: shortcutKeyOf(event), metaOrCtrl, selection: window.getSelection() })) {
             return;
         }
 
@@ -2493,7 +2516,6 @@ async function processDroppedFiles(droppedFiles, options) {
     let insertedAnything = false;
     let sawAttachedFile = false;
     let pendingSelectionRange = selectionRange;
-    const attachedFiles = [];
 
     let i = 0;
     while (i < droppedFiles.length) {
@@ -2538,16 +2560,11 @@ async function processDroppedFiles(droppedFiles, options) {
                 pendingSelectionRange = null;
             }
             sawAttachedFile = true;
-            const uploaded = await attachPickedFileToCurrentNote(file, currentTargetNoteId, {
+            await attachPickedFileToCurrentNote(file, currentTargetNoteId, {
                 createAtTop: createTopNote && !createdTopNote && currentTargetNoteId === null,
             });
             insertedAnything = true;
             currentTargetNoteId = ModeContext.currentNoteId;
-            attachedFiles.push({
-                noteId: currentTargetNoteId,
-                fileId: uploaded.file_id,
-                filename: uploaded.original_filename,
-            });
             if (createTopNote) {
                 createdTopNote = true;
             }
@@ -2571,7 +2588,8 @@ async function processDroppedFiles(droppedFiles, options) {
     ) {
         await actionSaveNote(ModeContext.currentNoteId);
     }
-    await addDroppedFilePreviews(attachedFiles);
+    // A dropped file's text is read next, beside the user's work: shown as it goes.
+    if (sawAttachedFile) void checkBackgroundWork();
 
     return insertedAnything;
 }
@@ -2601,11 +2619,222 @@ function handleDropEvent(event) {
     event.preventDefault();
     event.stopPropagation();
 
+    // A folder is handed over as a file the browser can't read (uploading it failed with
+    // "NetworkError when attempting to fetch resource", 2026-11-02): looked at before anything
+    // is uploaded. With anything else it is refused; alone it is to go through the import
+    // walkthrough (docs/ready-to-build/desktop-drops-into-folders.md).
+    // On a virtual folder (or the tree's top), what is dropped goes into it.
+    const intoFolder = virtualFolderAt(event.target);
+    const dropped = describeDroppedItems(event.dataTransfer);
+    if (dropped.folderCount > 0) {
+        if (dropped.itemCount !== LONE_FILE) {
+            ErrorHandler.showInfoBanner(FOLDER_ON_ITS_OWN_TEXT, DROPPED_FOLDER_BANNER_SECONDS * MS_PER_SECOND);
+            return;
+        }
+        void openDroppedFolder(loneDroppedFolderEntry(event.dataTransfer), importFolderOf(intoFolder));
+        return;
+    }
+
     const droppedFiles = getFilesFromTransfer(event.dataTransfer);
     if (droppedFiles.length === 0) {
         return;
     }
+    // Dropped text files ask first: a note or a file; with a Markdown file among them, the
+    // import walkthrough at its Markdown screen (docs/ready-to-build/files-shown-not-copied.md §5).
+    if (droppedFiles.some(isDroppedTextFile)) {
+        void dropWithTextFiles(event, droppedFiles, intoFolder).catch((error) => {
+            rethrowUnexpectedError(error);
+            const message = error instanceof Error ? error.message : String(error);
+            ErrorHandler.showErrorBanner(
+                `File drop failed: ${message}`,
+                'error',
+                FAILURE_WITH_DETAIL_BANNER_SECONDS * MS_PER_SECOND,
+                { closable: true },
+            );
+        });
+        return;
+    }
+    // A browser's bookmarks export asks first: import it (the default) or keep it as a file
+    // (docs/ready-to-build/bookmark-import.md §5). Only a lone web page is read to tell.
+    if (droppedFiles.length === LONE_FILE && hasWebPageName(droppedFiles[0])) {
+        void dropPossibleBookmarksFile(event, droppedFiles, intoFolder).catch((error) => {
+            rethrowUnexpectedError(error);
+            const message = error instanceof Error ? error.message : String(error);
+            ErrorHandler.showErrorBanner(
+                `File drop failed: ${message}`,
+                'error',
+                FAILURE_WITH_DETAIL_BANNER_SECONDS * MS_PER_SECOND,
+                { closable: true },
+            );
+        });
+        return;
+    }
+    dropFilesThere(event, droppedFiles, intoFolder);
+}
 
+function isDroppedTextFile(file) {
+    return DROPPED_TEXT_FILE_RE.test(file.name);
+}
+
+// Dropped text files (files-shown-not-copied.md §5, checks 22 to 26). Into a note being edited:
+// one question, then the text (or the cards) at the drop point, then the other files. Elsewhere
+// the other files come in at once, then the text files ask Note or File, or, with a Markdown
+// file among them, all of them go through the walkthrough's Markdown screen.
+async function dropWithTextFiles(event, droppedFiles, intoFolder) {
+    const textFiles = droppedFiles.filter(isDroppedTextFile);
+    const otherFiles = droppedFiles.filter((file) => !isDroppedTextFile(file));
+    let editingTarget = null;
+    if (intoFolder === null) editingTarget = resolveEditingDropTarget(event);
+    if (editingTarget instanceof HTMLElement) {
+        const choice = await promptForTextDropChoice(textFiles.map((file) => file.name));
+        if (choice === null) return;
+        if (choice === AS_FILE) {
+            dropFilesWhereDropped(event, droppedFiles);
+            return;
+        }
+        await insertTextFilesWhereDropped(event, textFiles);
+        if (otherFiles.length > 0) dropFilesWhereDropped(event, otherFiles);
+        return;
+    }
+    if (otherFiles.length > 0) {
+        dropFilesThere(event, otherFiles, intoFolder);
+        await untilNothingElseAsks();
+    }
+    if (textFiles.some((file) => DROPPED_MARKDOWN_FILE_RE.test(file.name))) {
+        await CommandPalette.openImportWizardWithDroppedTextFiles(textFiles, importFolderOf(intoFolder));
+        return;
+    }
+    const choice = await promptForTextDropChoice(textFiles.map((file) => file.name));
+    if (choice === null) return;
+    if (choice === AS_FILE) {
+        dropFilesThere(event, textFiles, intoFolder);
+        return;
+    }
+    await makeNotesOfTextFiles(textFiles, intoFolder);
+}
+
+// The drop's other files are coming in: their own question (pictures: embed or attach) and
+// their upload go first, so no two dialogs open at once.
+async function untilNothingElseAsks() {
+    do {
+        await new Promise((resolve) => setTimeout(resolve, OTHER_FILES_POLL_MS));
+    } while (ModeContext.modalStack.length > 0 || CommandGate.isBusy());
+}
+
+// Note, dropped into a note being edited: the files' text at the drop point, one after another.
+async function insertTextFilesWhereDropped(event, textFiles) {
+    const texts = await Promise.all(textFiles.map((file) => file.text()));
+    await CommandGate.runWhenFree('keyboard.dropTextIntoNote', async () => {
+        const target = resolveEditingDropTarget(event);
+        if (!(target instanceof HTMLElement)) {
+            throw new Error('The note a text file was dropped into is no longer being edited');
+        }
+        focusDropTargetForInsertion(target, event);
+        insertPlainTextAtCurrentSelection(texts.join(TEXT_FILES_SEPARATOR));
+        await actionSaveNote(ModeContext.currentNoteId);
+    }, {
+        timeoutMs: PASTE_AND_DROP_TIMEOUT_SECONDS * MS_PER_SECOND,
+    });
+}
+
+// Note, dropped elsewhere: a note at the top for each file, holding its text, in the order
+// dropped; on a tree folder, filed in it. The top one stays open to edit, as a dropped file's.
+async function makeNotesOfTextFiles(textFiles, intoFolder) {
+    const texts = await Promise.all(textFiles.map((file) => file.text()));
+    await CommandGate.runWhenFree('keyboard.dropTextFilesAsNotes', async () => {
+        if (ModeContext.isEditing) {
+            await actionSaveAndExitEditingWithoutRefreshing();
+        }
+        if (blockRootNoteCreation('top', 'dropTextFilesAsNotes')) {
+            return;
+        }
+        // Each goes to the top: the last made first.
+        for (const [index, text] of [...texts].reverse().entries()) {
+            requireCreatedNoteId(await createNoteAtTop(), 'dropTextFileNote');
+            insertPlainTextAtCurrentSelection(text);
+            const noteId = ModeContext.currentNoteId;
+            await actionSaveNote(noteId);
+            const isTopNote = index === texts.length - 1;
+            if (intoFolder !== null || !isTopNote) {
+                await actionSaveAndExitEditingWithoutRefreshing();
+            }
+            if (intoFolder !== null) {
+                await fileNewNoteInFolder(noteId, intoFolder);
+            }
+        }
+    }, {
+        timeoutMs: PASTE_AND_DROP_TIMEOUT_SECONDS * MS_PER_SECOND,
+    });
+}
+
+// The folder an import walkthrough started by a drop goes into: the virtual folder it was dropped
+// on (the tree's top is ''); a drop outside the tree goes into no folder.
+function importFolderOf(intoFolder) {
+    if (intoFolder === null) return IMPORT_INTO_NO_FOLDER;
+    return intoFolder;
+}
+
+// A folder dropped alone: the import walkthrough on Any folder, its files read in the browser
+// (nothing sent yet), going into the folder it was dropped on.
+async function openDroppedFolder(folderEntry, intoFolder) {
+    const folder = await readDroppedFolder(folderEntry);
+    await CommandPalette.openImportWizardWithDroppedFolder(folder, intoFolder);
+}
+
+function dropFilesThere(event, droppedFiles, intoFolder) {
+    if (intoFolder === null) {
+        dropFilesWhereDropped(event, droppedFiles);
+        return;
+    }
+    void dropFilesIntoFolder(droppedFiles, intoFolder);
+}
+
+async function dropPossibleBookmarksFile(event, droppedFiles, intoFolder) {
+    const file = droppedFiles[0];
+    if (await isBookmarksExportFile(file)) {
+        const choice = await promptForBookmarksDropChoice(file.name);
+        if (choice === null) {
+            return;
+        }
+        if (choice === IMPORT_BOOKMARKS) {
+            await CommandPalette.openImportWizardWithBookmarksFile(file, importFolderOf(intoFolder));
+            return;
+        }
+    }
+    dropFilesThere(event, droppedFiles, intoFolder);
+}
+
+// Files dropped on a virtual folder: the new note at the top a drop on the column makes, then
+// in exactly that folder ('' the top: in none), left open no longer
+// (docs/ready-to-build/desktop-drops-into-folders.md §1).
+async function dropFilesIntoFolder(droppedFiles, intoFolder) {
+    let imageHandlingMode = 'embed';
+    const imageFiles = droppedFiles.filter((file) => isImageFile(file));
+    if (imageFiles.length > 0) {
+        const choice = await resolveImageFileHandlingMode(imageFiles, 'drop');
+        if (choice === null) {
+            return;
+        }
+        imageHandlingMode = choice;
+    }
+    await CommandGate.run('keyboard.dropFilesIntoFolder', async () => {
+        if (ModeContext.isEditing) {
+            await actionSaveAndExitEditingWithoutRefreshing();
+        }
+        const inserted = await processDroppedFiles(droppedFiles, { createTopNote: true, imageHandlingMode, selectionRange: null });
+        if (inserted === false) {
+            return;
+        }
+        const noteId = ModeContext.currentNoteId;
+        await actionSaveAndExitEditingWithoutRefreshing();
+        await fileNewNoteInFolder(noteId, intoFolder);
+    }, {
+        timeoutMs: PASTE_AND_DROP_TIMEOUT_SECONDS * MS_PER_SECOND,
+    });
+}
+
+// Files dropped where the drop lands: a note's text being edited, or a new note at the top.
+function dropFilesWhereDropped(event, droppedFiles) {
     const target = resolveEditingDropTarget(event);
     const imageFiles = droppedFiles.filter((file) => isImageFile(file));
     const onlyImages = imageFiles.length === droppedFiles.length;
@@ -3292,8 +3521,6 @@ export function updateSearchContextsList() {
     const searchContextsList = document.getElementById('search-contexts-list');
     updateReferenceSourceIndicator();
     if (!searchContextsList) return;
-    const showTabUi = document.body.classList.contains('pref-show-tab-ui');
-    
     const tabs = ModeContext.tabs;
     const activeTabId = ModeContext.activeTabId;
     const tabOrder = ModeContext.tabOrder;
@@ -3355,9 +3582,6 @@ export function updateSearchContextsList() {
     
     if (contextsList.length > 0) {
         searchContextsList.innerHTML = contextsList.join('');
-        if (!showTabUi) {
-            searchContextsList.style.display = 'none';
-        }
         updateSearchContextsOverlayPlacement();
         
         // Add click handlers to each tab context item
@@ -3376,19 +3600,11 @@ export function updateSearchContextsList() {
                     ? null
                     : NotesAPI.recordTabSearchSelection(searchQuery);
                 hideSearchContextsOverlay();
+                // Picking the search context already shown changes nothing: its Untagged view
+                // stays until View → All Notes or its chip's × ends it (docs/ui/state-handling.md).
                 void CommandGate.run('tab.select', async () => {
-                    if (tabId === ModeContext.activeTabId) {
-                        if (ModeContext.isUntaggedView) {
-                            ModeContext.setUntaggedView(false);
-                            syncSearchInputField();
-                            ModeContext.resetTabDiffCache(tabId, { preserveRootAnchor: false });
-                            clearCachedNotesDomForTab(tabId);
-                            clearActiveNotesDom();
-                            const { actionRefreshAndMaybeSelect } = await import('../actions/ui-actions.js');
-                            await actionRefreshAndMaybeSelect({ context: 'untaggedView.dismissTab', animateNoteChanges: false });
-                        }
-                    } else {
-                        await switchToTabLeavingItsSort(tabId, {});
+                    if (tabId !== ModeContext.activeTabId) {
+                        await switchToTabContext(tabId, {});
                     }
                 });
                 if (activityPromise !== null) await activityPromise;
@@ -3404,7 +3620,7 @@ export function updateSearchContextsList() {
                 }
                 const sourceTabId = e.currentTarget.getAttribute('data-source-tab-id');
 	                void CommandGate.run('tab.duplicate', async () => {
-	                    await duplicateTabContext(sourceTabId, true, CONFIG.TABS.CREATE_AND_SWITCH);
+	                    await duplicateTabContext(sourceTabId, true, true, CONFIG.TABS.CREATE_AND_SWITCH);
 	                });
 	            });
 	        });
@@ -3469,23 +3685,13 @@ export async function switchToTabContext(tabId, options) {
     }
     const perfContext = `switchTab tab#${previousTabIndex + 1}→tab#${nextTabIndex + 1}`;
 
-    const dismissedUntaggedView = ModeContext.isUntaggedView;
-    if (dismissedUntaggedView) {
-        ModeContext.setUntaggedView(false);
-        ModeContext.resetTabDiffCache(previousTabId, { preserveRootAnchor: false });
-        clearCachedNotesDomForTab(previousTabId);
-        clearActiveNotesDom();
-    }
-
 	ModeContext.beginIgnoreScrollEvents();
 	await (async () => {
 		await persistCurrentTabState();
 
 		await settleViewRequestsBeforeTabChange();
 		ModeContext.switchToTab(tabId, { force: true });
-		if (!dismissedUntaggedView) {
-			cacheNotesDomForTab(previousTabId);
-		}
+		cacheNotesDomForTab(previousTabId);
 		const restoredDom = restoreNotesDomForTab(tabId);
 		if (restoredDom.restored) {
 			ModeContext.restoreScrollForActiveTabNow();
@@ -3516,35 +3722,6 @@ export async function switchToTabContext(tabId, options) {
 	});
 }
 
-/**
- * The user going to another tab (picking it, or a new one): the tab they leave
- * drops its sort order, so it shows in normal order when they come back. The
- * Untagged view already ends with any tab switch. Reference navigation switches
- * with switchToTabContext and keeps the sort: × returns to the list as it was.
- */
-async function switchToTabLeavingItsSort(tabId, options) {
-    const leftTabId = ModeContext.activeTabId;
-    await switchToTabContext(tabId, options);
-    if (!ModeContext.tabs[leftTabId]) {
-        return;
-    }
-    // Its date range ends too.
-    let response = await endDateFilterOfLeftTab(leftTabId);
-    if (ModeContext.getTabSortMode(leftTabId) !== 'normal') {
-        ModeContext.bumpUndoContextEpoch('sortMode.tabLeft');
-        response = await setTabSortModeOnServer(leftTabId, 'normal');
-    }
-    if (response === null) {
-        return;
-    }
-    // The tab now shown keeps its loaded notes and scroll tracking.
-    ModeContext.hydrateTabState(response, { emitUpdate: false, preserveActiveRootTracking: true });
-    ModeContext.clearTabRevealedRedactions(leftTabId);
-    ModeContext.resetTabDiffCache(leftTabId, { preserveRootAnchor: false });
-    clearCachedNotesDomForTab(leftTabId);
-    updateSearchContextsList();
-}
-
 function snapshotActiveTabScrollState() {
     const currentScroll = Math.max(0, Math.round(window.scrollY));
     // Multiple tab commands can snapshot without an intervening scroll event.
@@ -3558,7 +3735,14 @@ function snapshotActiveTabScrollState() {
     }
 }
 
-async function duplicateTabContext(sourceTabId, animateNoteChanges, shouldSwitchImmediately) {
+// A copy of sourceTabId. With copiesView, a duplicate of everything it shows (search, sort,
+// date range, Files filter, folder, Untagged view); without it, a new view that starts with
+// nothing (a reference view, docs/ui/state-handling.md) though its notes are cloned from the source
+// for the slide.
+async function duplicateTabContext(sourceTabId, copiesView, animateNoteChanges, shouldSwitchImmediately) {
+    if (typeof copiesView !== 'boolean') {
+        throw new Error('duplicateTabContext requires copiesView boolean');
+    }
     if (typeof animateNoteChanges !== 'boolean') {
         throw new Error('duplicateTabContext requires animateNoteChanges boolean');
     }
@@ -3603,7 +3787,7 @@ async function duplicateTabContext(sourceTabId, animateNoteChanges, shouldSwitch
         throw new Error(`Cannot duplicate tab with missing state: ${sourceTabId}`);
     }
 
-    const response = await createTabOnServer(sourceTabId);
+    const response = await createTabOnServer(sourceTabId, copiesView);
     const newTabId = response?.newTabId;
     if (typeof newTabId !== 'string' || newTabId.length === 0) {
         throw new Error('Server did not return newTabId');
@@ -3667,7 +3851,7 @@ async function duplicateTabContext(sourceTabId, animateNoteChanges, shouldSwitch
     if (shouldSwitchImmediately) {
         const switchOptions = { animateNoteChanges };
 
-        await switchToTabLeavingItsSort(newTabId, switchOptions);
+        await switchToTabContext(newTabId, switchOptions);
         focusSearchInputAndSelectAllText();
         return newTabId;
     }
@@ -3676,6 +3860,31 @@ async function duplicateTabContext(sourceTabId, animateNoteChanges, shouldSwitch
 }
 
 export async function createBlankSearchContextFromHover() {
+    const newTabId = await openBlankSearchContext();
+    if (newTabId === null) {
+        return null;
+    }
+    focusSearchInputAndSelectAllText();
+    await persistTabStateSnapshot();
+    return newTabId;
+}
+
+/**
+ * A new search context searching query (an import's notes, once it is done), switched to;
+ * null when the limit of search contexts is reached (a banner says so).
+ */
+export async function openSearchInNewSearchContext(query, context) {
+    const newTabId = await openBlankSearchContext();
+    if (newTabId === null) {
+        return null;
+    }
+    await runReferenceSearchInActiveTab(query, context);
+    await persistTabStateSnapshot();
+    return newTabId;
+}
+
+// A new, blank search context in Normal order, switched to in search mode; null at the limit.
+async function openBlankSearchContext() {
     closeOpenSearchQuote();
     const sourceTabId = ModeContext.activeTabId;
     if (typeof sourceTabId !== 'string' || sourceTabId.length === 0) {
@@ -3697,39 +3906,26 @@ export async function createBlankSearchContextFromHover() {
     snapshotActiveTabScrollState();
     await persistTabStateSnapshot();
 
-    const created = await createTabOnServer(sourceTabId);
-    const newTabId = created?.newTabId;
+    // The server starts it with nothing: no search, Normal order, no filter, all notes.
+    const response = await createTabOnServer(sourceTabId, false);
+    const newTabId = response?.newTabId;
     if (typeof newTabId !== 'string' || newTabId.length === 0) {
         throw new Error('Server did not return newTabId');
     }
-    if (!created || typeof created !== 'object' || !created.tabs || typeof created.tabs !== 'object') {
+    if (!response || typeof response !== 'object' || !response.tabs || typeof response.tabs !== 'object') {
         throw new Error('Server did not return tab-state payload');
     }
-    if (!created.tabs[newTabId] || typeof created.tabs[newTabId] !== 'object') {
-        throw new Error('Server tab-state response missing new tab payload');
-    }
-    // A blank tab starts unsorted: the tab it was made from may be sorted.
-    const response = created.tabs[newTabId].sortMode === 'normal'
-        ? created
-        : await setTabSortModeOnServer(newTabId, 'normal');
     const newTab = response.tabs[newTabId];
     if (!newTab || typeof newTab !== 'object') {
         throw new Error('Server tab-state response missing new tab payload');
     }
 
-    newTab.searchQuery = '';
-    newTab.scrollY = 0;
-    newTab.scrollAnchor = null;
-    newTab.anchorRootId = null;
-
     await settleViewRequestsBeforeTabChange();
     ModeContext.hydrateTabState(response);
     ModeContext.resetTabDiffCache(newTabId, { preserveRootAnchor: false });
 
-    await switchToTabLeavingItsSort(newTabId, {});
+    await switchToTabContext(newTabId, {});
     await actionEnterSearchMode();
-    focusSearchInputAndSelectAllText();
-    await persistTabStateSnapshot();
     return newTabId;
 }
 
@@ -3877,7 +4073,7 @@ async function openReferenceQueryBehindTransition(
 
     const sourceTabId = ModeContext.activeTabId;
     const originScope = captureReferenceOriginScopeForActiveTab();
-    const newTabId = await duplicateTabContext(sourceTabId, false, false);
+    const newTabId = await duplicateTabContext(sourceTabId, false, false, false);
     if (typeof newTabId !== 'string' || newTabId.length === 0) {
         throw new Error('Reference navigation expected duplicateTabContext to return a tab id');
     }

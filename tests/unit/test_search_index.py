@@ -11,7 +11,7 @@ from app.services.search_index import (
 )
 from app.services.input_errors import InputRejected
 from app.services.search_query import parse_search_query
-from app.services.search_text import text_term_matches
+from app.services.text_terms import text_term_matches
 from app.utils.text_utils import strip_html
 
 
@@ -163,7 +163,7 @@ def test_search_suggestions_exclude_security_without_prediction_future(prefix) -
     assert index.suggest_all_tag_completions(query=f'prediction-future {prefix}') == []
     assert index.suggest_all_tag_completions(query=prefix) == ['computer-security']
     # Note-tag recommendations may still suggest new combinations.
-    assert index.suggest_tag_completions(query=f'prediction-future {prefix}', limit=20) == ['computer-security']
+    assert index.suggest_tag_completions(query=f'prediction-future {prefix}', limit=20, by_family=False) == ['computer-security']
 
 
 @pytest.mark.parametrize('query,expected', [
@@ -268,13 +268,13 @@ def test_search_index_tag_suggestions_rank_by_anchor_overlap() -> None:
         ]
     )
 
-    suggestions = index.suggest_tag_completions(query="a b c al", limit=20)
+    suggestions = index.suggest_tag_completions(query="a b c al", limit=20, by_family=False)
     assert suggestions[:3] == ["alpine", "alpha", "alto"]
 
-    suggestions = index.suggest_tag_completions(query="alpha ", limit=20)
+    suggestions = index.suggest_tag_completions(query="alpha ", limit=20, by_family=False)
     assert suggestions == ["a", "b"]
 
-    suggestions = index.suggest_tag_completions(query="alpha", limit=20)
+    suggestions = index.suggest_tag_completions(query="alpha", limit=20, by_family=False)
     assert suggestions == []
 
 
@@ -296,17 +296,17 @@ def test_search_index_tag_suggestions_ignore_quotes_and_include_prefix_only() ->
         ]
     )
 
-    suggestions = index.suggest_tag_completions(query="socrates \"ancient greece\" phil", limit=20)
+    suggestions = index.suggest_tag_completions(query="socrates \"ancient greece\" phil", limit=20, by_family=False)
     assert suggestions == ["philosopher"]
 
-    suggestions = index.suggest_tag_completions(query="a b c jour", limit=20)
+    suggestions = index.suggest_tag_completions(query="a b c jour", limit=20, by_family=False)
     assert suggestions == ["journal"]
 
 
 def test_search_index_tag_suggestions_include_meta_tags() -> None:
     index = _build_index([])
 
-    suggestions = index.suggest_tag_completions(query="@", limit=100)
+    suggestions = index.suggest_tag_completions(query="@", limit=100, by_family=False)
     assert "@json" in suggestions
     assert "@markdown" in suggestions
     assert "@LaTeX" in suggestions
@@ -319,7 +319,7 @@ def test_search_index_tag_suggestions_include_meta_tags() -> None:
     assert "@monospace" in suggestions
     assert "@dark-theme" not in suggestions
 
-    suggestions = index.suggest_tag_completions(query="@d", limit=20)
+    suggestions = index.suggest_tag_completions(query="@d", limit=20, by_family=False)
     assert suggestions == ["@diff", "@done"]
 
 
@@ -365,10 +365,10 @@ def test_search_index_meta_tag_suggestions_rank_by_usage() -> None:
         ]
     )
 
-    suggestions = index.suggest_tag_completions(query="@", limit=20)
+    suggestions = index.suggest_tag_completions(query="@", limit=20, by_family=False)
     assert suggestions[:3] == ["@todo", "@done", "@LaTeX"]
 
-    suggestions = index.suggest_tag_completions(query="@d", limit=20)
+    suggestions = index.suggest_tag_completions(query="@d", limit=20, by_family=False)
     assert suggestions == ["@done", "@diff"]
 
 
@@ -402,14 +402,14 @@ def test_search_index_tag_suggestions_collapse_case_equivalent_terms() -> None:
         ]
     )
 
-    suggestions = index.suggest_tag_completions(query="", limit=20)
+    suggestions = index.suggest_tag_completions(query="", limit=20, by_family=False)
     assert "Databricks" not in suggestions
     assert suggestions[:2] == ["databricks", "delta"]
 
-    suggestions = index.suggest_tag_completions(query="databricks", limit=20)
+    suggestions = index.suggest_tag_completions(query="databricks", limit=20, by_family=False)
     assert suggestions == []
 
-    suggestions = index.suggest_tag_completions(query="Databricks ", limit=20)
+    suggestions = index.suggest_tag_completions(query="Databricks ", limit=20, by_family=False)
     assert suggestions == []
 
 
@@ -465,11 +465,31 @@ def test_suggestion_co_occurrence_strategies_rank_identically(monkeypatch: pytes
     for ratio in (0, 10**9):
         monkeypatch.setattr(search_index_module, "SUGGESTION_INTERSECT_COST_RATIO", ratio)
         rankings.append([
-            (index.suggest_tag_completions(query=query, limit=40), index.suggest_all_tag_completions(query=query))
+            (index.suggest_tag_completions(query=query, limit=40, by_family=False), index.suggest_all_tag_completions(query=query))
             for query in queries
         ])
     assert rankings[0] == rankings[1]
     assert any(suggestions for suggestions, _ in rankings[0])
+
+
+def test_suggestion_co_occurrence_strategies_rank_families_identically(monkeypatch: pytest.MonkeyPatch) -> None:
+    # The tag bar counts a tag over all its notes whatever their values (tag_family_of): both ways
+    # of finding co-occurrence must agree on it too.
+    rng = random.Random(13)
+    vocabulary = [f"tag{index}" for index in range(12)] + [f"run={distance}" for distance in range(8)] + ["run:miles=3"]
+    records = []
+    for index in range(300):
+        tags = frozenset(rng.sample(vocabulary, rng.randrange(1, 6)))
+        records.append(SearchRecord(f"n{index}", "", " ".join(sorted(tags)), extract_tags_for_search(" ".join(sorted(tags)))))
+    index = _build_index(records)
+    queries = ["tag0 ", "tag1 tag2 ", "tag3 r", "run ", "tag4 tag5 tag6 "]
+    rankings = []
+    for ratio in (0, 10**9):
+        monkeypatch.setattr(search_index_module, "SUGGESTION_INTERSECT_COST_RATIO", ratio)
+        rankings.append([index.suggest_tag_completions(query=query, limit=40, by_family=True) for query in queries])
+    assert rankings[0] == rankings[1]
+    assert any("run" in suggestions for suggestions in rankings[0])
+    assert not any(term.startswith("run=") for suggestions in rankings[0] for term in suggestions)
 
 
 # A space at the edge of a quoted term marks a word boundary on that side
@@ -530,4 +550,4 @@ def test_meta_tag_suggestions_offer_only_known_tags_and_one_datetime() -> None:
     suggestions = index.suggest_meta_tag_completions(prefix="@d", limit=20, datetime_term="@datetime=2026-10-29")
     assert suggestions == ["@done", "@datetime=2026-10-29", "@diff"]
     # A search finds no note by such a date, so the search box offers none.
-    assert index.suggest_tag_completions(query="@dat", limit=20) == []
+    assert index.suggest_tag_completions(query="@dat", limit=20, by_family=False) == []

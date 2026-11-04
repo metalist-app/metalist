@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from types import SimpleNamespace
-from typing import Dict, List
+from typing import Dict, List, Sequence
 
 from app.usecases.base import QueryCommand
 from app.services.store import store, NodeRecord
@@ -17,6 +17,8 @@ from app.db.notes_sql import (
 )
 from app.security.encryption import encrypt
 from app.security.note_html import sanitize_note_html
+from app.services.content_cache import cache_note, cache_note_proposed_tags, cache_note_tags, cache_note_text
+from app.utils.text_utils import strip_html
 
 
 def _collect_subtree_ids(root_id: str) -> List[str]:
@@ -78,10 +80,11 @@ def apply_delete_subtree(note_id: str) -> None:
     store.delete_subtree(note_id)
 
 
-def apply_restore_records(records: List[NodeRecord], token: str) -> None:
-    # Reinsert records in preorder; rely on stored prev/next pointers
-    # Insert in DB
-    sanitized_records: List[NodeRecord] = []
+def apply_restore_records(records: Sequence[NodeRecord | SimpleNamespace], token: str) -> None:
+    # Reinsert records in preorder; rely on stored prev/next pointers. An import or undo
+    # passes SimpleNamespace records with the same fields (import_obsidian_vault.py,
+    # import_bookmarks.py, undo_state.py).
+    sanitized_records: List[NodeRecord | SimpleNamespace] = []
     with begin_writer() as connection:
         now = datetime.now(timezone.utc)
         for rec in records:
@@ -99,6 +102,7 @@ def apply_restore_records(records: List[NodeRecord], token: str) -> None:
             if not isinstance(updated_at, datetime):
                 raise TypeError(f"Restored note updated_at must be a datetime: note_id={rec.id}")
             sanitized_content = sanitize_note_html(rec.content)
+            sanitized_record: NodeRecord | SimpleNamespace
             if isinstance(rec, NodeRecord):
                 sanitized_record = replace(
                     rec,
@@ -146,6 +150,13 @@ def apply_restore_records(records: List[NodeRecord], token: str) -> None:
 
     # Update in-memory store after commit
     store.restore_subtree(sanitized_records)
+    # As a new note is (create_note.py): restored notes were missing from these, and renaming
+    # or deleting a tag on them then failed ("Cache missing raw text", 2026-11-01).
+    for rec in sanitized_records:
+        cache_note(rec.id, rec.content)
+        cache_note_tags(rec.id, rec.tags)
+        cache_note_proposed_tags(rec.id, rec.proposed_tags)
+        cache_note_text(rec.id, strip_html(rec.content))
 
 
 @dataclass

@@ -14,6 +14,7 @@ from app.db.ontology_rules_sql import (
     update_rules_bulk as db_update_rules_bulk,
 )
 from app.security.encryption import decrypt, encrypt
+from app.services.quoted_values import opens_value, quoted_value_end
 from app.services.tag_ontology import PropertyAtom, TagAtom, TagOntology, compile_rules, parse_rules_text
 from app.services.tag_properties import is_property_term, property_term_tag
 
@@ -109,6 +110,10 @@ def _replace_tag_tokens_in_line(*, line: str, old: str, new: str) -> str:
 
         start = i
         while i < len(line):
+            if opens_value(line, i):
+                # A quoted value is part of its term: book:title="Dune (1965)".
+                i = quoted_value_end(line, i).end
+                continue
             nxt = line[i]
             if nxt.isspace() or nxt in "()":
                 break

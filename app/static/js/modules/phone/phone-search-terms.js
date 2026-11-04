@@ -1,7 +1,10 @@
 // A search's terms as the phone shows them: one pill per term, removable with one tap
-// (docs/ui/phone.md, "Layout"). A term is a run of non-space text, or a
-// quoted phrase kept whole; a leading minus makes it an exclusion. The search syntax itself
-// is read by search-syntax-service.js; this only splits it for display and removal.
+// (docs/ui/phone.md, "Layout"). A term is a run of non-space text (a quoted value kept
+// whole: author="Le Guin"), or a quoted phrase kept whole; a leading minus makes it an
+// exclusion. The search syntax itself is read by search-syntax-service.js; this only
+// splits it for display and removal.
+
+import { tokenEnd } from '../quoted-values.js';
 
 const EXCLUSION_PREFIX = '-';
 const QUOTES = new Set(['"', "'"]);
@@ -17,10 +20,7 @@ function termEnd(query, start) {
             return closing + 1;
         }
     }
-    while (index < query.length && !/\s/u.test(query[index])) {
-        index += 1;
-    }
-    return index;
+    return tokenEnd(query, index);
 }
 
 function termTexts(query) {

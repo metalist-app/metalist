@@ -7,6 +7,7 @@ import { restoreSelection } from '../../editor-selection.js';
 // Placed as the paste format card is: below its anchor, or above it near the window's bottom.
 import { placePasteFormatOffer } from './floating-card-placement.js';
 import { PREVIEW_OWNERS, hideReferencePreview, placeReferencePreview, showReferencePreview } from './reference-preview-card-service.js';
+import { chosenReferenceText } from './reference-text.js';
 
 // Typing `[[` in a note opens a list of notes to reference (docs/ui/references.md,
 // "Suggestions"); what is typed after it narrows the list, and choosing a note
@@ -42,9 +43,6 @@ const MAIN_BUTTON = 0;
 
 const moduleState = ApplicationState.createFields('reference-suggestions-service', {
     initialized: false,
-    // The catalog of notes is built on the server the first time it is asked for:
-    // asked for at the first typing in a note, it is ready by the time `[[` is.
-    warmed: false,
     list: null,
     noteId: null,
     // The `[[` the list is for: its text node and place in it, and the text typed after it.
@@ -308,14 +306,6 @@ async function requestSuggestions(query, noteId) {
     renderList(query, response.suggestions.map(requireSuggestion));
 }
 
-function warmCatalog(noteId) {
-    moduleState.warmed = true;
-    NotesAPI.fetchReferenceSuggestions('', noteId, new AbortController().signal).catch((error) => {
-        rethrowUnexpectedError(error);
-        throw error;
-    });
-}
-
 function checkStillEditing() {
     if (moduleState.noteId === null || !ModeContext.isEditingNote(moduleState.noteId)) {
         closeReferenceSuggestions();
@@ -327,7 +317,6 @@ export function updateReferenceSuggestions(content, noteId) {
     if (!(content instanceof HTMLElement) || typeof noteId !== 'string' || noteId === '') {
         throw new Error('updateReferenceSuggestions requires the edited note and its content');
     }
-    if (!moduleState.warmed) warmCatalog(noteId);
     const trigger = triggerAtCaret(content);
     const isDismissed = trigger !== null && trigger.node === moduleState.dismissedNode
         && trigger.start === moduleState.dismissedStart;
@@ -375,7 +364,7 @@ function choose(index) {
     if (trigger === null || trigger.node !== moduleState.triggerNode || trigger.start !== moduleState.triggerStart) {
         throw new Error('The `[[` a reference suggestion was chosen for is gone');
     }
-    const reference = `${TRIGGER}${suggestion.noteId}]]`;
+    const reference = chosenReferenceText(suggestion.noteId, trigger.node.data.slice(trigger.end));
     closeReferenceSuggestions();
     const range = document.createRange();
     range.setStart(trigger.node, trigger.start);

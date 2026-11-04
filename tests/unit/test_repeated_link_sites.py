@@ -9,6 +9,7 @@ import re
 
 import pytest
 
+from app.services.credential_display import CredentialDisplay
 import app.services.note_fullscreen as fullscreen_module
 from app.services.content_formatting import format_note_content_for_view, showing_sites_above, sites_linked_in
 from app.services.link_icons import link_icon_store
@@ -78,9 +79,9 @@ def test_the_sites_a_note_links_to_are_read_from_its_whole_text() -> None:
 
 
 def test_links_to_a_site_shown_above_drop_its_icon_and_domain() -> None:
-    assert _links(format_note_content_for_view(content_html=CHAPTERS, tags="", redact_credentials=False)) == CHAPTERS_ALONE
+    assert _links(format_note_content_for_view(content_html=CHAPTERS, tags="", credentials=CredentialDisplay.DOTS)) == CHAPTERS_ALONE
     with showing_sites_above(frozenset({"youtube.com"})):
-        drawn = format_note_content_for_view(content_html=CHAPTERS, tags="", redact_credentials=False)
+        drawn = format_note_content_for_view(content_html=CHAPTERS, tags="", credentials=CredentialDisplay.DOTS)
     assert _links(drawn) == CHAPTERS_UNDER_VIDEO
 
 

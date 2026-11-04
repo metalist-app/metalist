@@ -12,8 +12,7 @@ import { tabContextActionsHtml } from '../../app/static/js/modules/mode-manager/
 const VIEW_HANDLER_NAMES = [
     'onAddNoteAtTop', 'onPasteNoteAtTop', 'onUndo', 'onRedo', 'onGoToTop', 'onGoToBottom', 'onExpandAll', 'onCollapseAll', 'onFullyExpandAll',
     'onFullyCollapseAll', 'onSetUntaggedView', 'onSetSortMode', 'onSetDateRangeField', 'onSetDateRangePreset',
-    'onOpenCustomDateRange', 'onSetFileFilter', 'onToggleAiChat', 'onToggleTabs',
-    'onToggleNoteTags', 'onSetTheme', 'onNewTab', 'onOpenNamespace', 'onOpenReminders',
+    'onOpenCustomDateRange', 'onSetFileFilter', 'onSetTheme', 'onNewTab', 'onOpenNamespace', 'onOpenReminders',
     'onExportViewHtml', 'onPrintView', 'onLogOut',
 ];
 
@@ -23,9 +22,9 @@ function viewHandlers(calls) {
 
 function viewMenu(overrides, calls) {
     return buildContextMenuItems({
-        kind: 'view', isMac: true, isEditing: false, canPasteNoteAtTop: true, canGoToTop: true, canGoToBottom: true,
+        kind: 'view', searchAllowsNewNotes: true, isMac: true, isEditing: false, canPasteNoteAtTop: true, canGoToTop: true, canGoToBottom: true,
         isUntaggedView: false, theme: 'system', sortMode: 'normal', dateRangeKind: 'none', dateRangeField: 'updated',
-        fileFilterKind: 'none', areTabsVisible: false, isAiChatVisible: false, areNoteTagsVisible: false,
+        fileFilterKind: 'none',
         ...overrides,
     }, viewHandlers(calls));
 }
@@ -36,14 +35,14 @@ const NOTE_HANDLER_NAMES = [
     'onMakeImageBigger', 'onMakeImageSmaller', 'onResetImageSize', 'onExportNoteHtml', 'onExportViewHtml',
     'onPrintNote', 'onPrintView', 'onViewNoteFullscreen', 'onFullyExpandNote', 'onFullyCollapseNote', 'onAddNoteAtTop',
     'onAddSiblingNote', 'onAddChildNote', 'onDeleteNote', 'onMoveNoteToTop', 'onMoveNoteToBottom', 'onMoveNoteUp',
-    'onMoveNoteDown', 'onIndentNote', 'onOutdentNote',
+    'onMoveNoteDown', 'onIndentNote', 'onOutdentNote', 'onDownloadFile',
 ];
 
 function noteMenu() {
     return buildContextMenuItems({
         kind: 'note', noteId: 'note-1', noteTimestamps: { created: 'Oct 24, 2026', updated: 'Oct 24, 2026' }, isMac: true,
         hasChildren: true, canMoveToTop: true, canMoveToBottom: true, canMoveUp: true, canMoveDown: true,
-        canIndent: true, canOutdent: true, fileCardFileId: null,
+        canIndent: true, canOutdent: true, fileCardFileId: null, filePlayerFileId: null,
     }, Object.fromEntries(NOTE_HANDLER_NAMES.map((name) => [name, () => {}])));
 }
 
@@ -129,7 +128,7 @@ test('the current choice is ticked, not greyed, and picking it changes nothing',
         [find(items, 'date-range').submenu, 'date-range-field-updated'],
         [find(items, 'date-range').submenu, 'date-range-today'],
         [find(items, 'file-filter').submenu, 'file-filter-image'],
-        [find(items, 'show').submenu, 'theme-dark'],
+        [find(items, 'themes').submenu, 'theme-dark'],
     ];
     for (const [submenu, id] of currentChoices) {
         const item = find(submenu, id);
@@ -138,7 +137,7 @@ test('the current choice is ticked, not greyed, and picking it changes nothing',
         item.onSelect();
     }
     assert.deepEqual(calls, [], 'picking the current choice must change nothing');
-    for (const submenu of [find(items, 'sort-by').submenu, find(items, 'show').submenu]) {
+    for (const submenu of [find(items, 'sort-by').submenu, find(items, 'themes').submenu]) {
         for (const item of submenu) {
             assert.equal(item.enabled, true, `${item.label} must not be greyed`);
         }

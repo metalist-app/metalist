@@ -20,7 +20,9 @@ def build_content_security_policy(*, nonce: str) -> str:
         "font-src 'self' data:",
         "connect-src 'self' data: blob:",
         "object-src 'none'",
-        "frame-src 'none'",
+        # Only a blob: MetaList makes itself from a decrypted PDF, shown by the browser's own
+        # viewer inside the file viewer (docs/ready-to-build/files-shown-not-copied.md §4).
+        "frame-src blob:",
         "base-uri 'none'",
         "frame-ancestors 'none'",
         "form-action 'self'",

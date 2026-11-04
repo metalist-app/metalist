@@ -10,6 +10,7 @@ import { CommandGate } from './mode-manager/services/command-gate-service.js';
 import { buildSessionHeaders } from './session-auth.js';
 import { sanitizeNoteHtmlForStorage } from './note-html-sanitizer.js';
 import { describeApiFailure } from './api-error-diagnostics.js';
+import { inTransferSlot } from './file-transfer-slots.js';
 
 function buildAuthHeaders(includeContentType) {
     return buildSessionHeaders(includeContentType);
@@ -78,6 +79,12 @@ async function postFileEditSession(url, body, description) {
         ModeContext.setLastUpdateUUID(data.updateUUID);
     }
     return data;
+}
+
+// Where an import's files were dropped: { isDrop, tabId, search } (isDrop false from the menu).
+function isDropContext(dropContext) {
+    return dropContext !== null && typeof dropContext === 'object' && typeof dropContext.isDrop === 'boolean'
+        && typeof dropContext.tabId === 'string' && dropContext.tabId !== '' && typeof dropContext.search === 'string';
 }
 
 function extractFilenameFromContentDisposition(disposition) {
@@ -245,6 +252,7 @@ export const NotesAPI = {
         const body = {
             first_visible_note_id: firstVisibleNoteId,
             search_query: searchQuery,
+            tabId: ModeContext.activeTabId,
         };
 
         return this._apiCall(CONFIG.API.NOTES.CREATE, {
@@ -257,6 +265,7 @@ export const NotesAPI = {
     async createSibling(noteId, searchQuery) {
         const body = {
             search_query: searchQuery,
+            tabId: ModeContext.activeTabId,
         };
 
         return this._apiCall(CONFIG.API.NOTES.CREATE_SIBLING(noteId), { 
@@ -269,20 +278,13 @@ export const NotesAPI = {
     async createChild(noteId, searchQuery) {
         const body = {
             search_query: searchQuery,
+            tabId: ModeContext.activeTabId,
         };
 
         return this._apiCall(CONFIG.API.NOTES.CREATE_CHILD(noteId), { 
             method: 'POST',
             claimSession: true,
             body: JSON.stringify(body)
-        });
-    },
-
-    async createFilePreviewChild(noteId, fileId, searchQuery) {
-        return this._apiCall(CONFIG.API.NOTES.CREATE_FILE_PREVIEW_CHILD(noteId), {
-            method: 'POST',
-            claimSession: true,
-            body: JSON.stringify({ fileId, search_query: searchQuery }),
         });
     },
 
@@ -349,6 +351,23 @@ export const NotesAPI = {
             throw new Error('The view scope requires the active tab and its search');
         }
         return { search, tabId, isUntaggedView: ModeContext.isUntaggedView };
+    },
+
+    // Delete Notes (Current View)…: what the view would delete, then the deletion, which the
+    // server refuses if the count changed since the user confirmed it.
+    async countNotesToDeleteInView() {
+        return this._apiCall(CONFIG.API.NOTES.DELETE_IN_VIEW_COUNT, {
+            method: 'POST', body: JSON.stringify(this.viewScope()),
+        });
+    },
+
+    async deleteNotesInView(expectedNoteCount) {
+        if (!Number.isInteger(expectedNoteCount) || expectedNoteCount < 0) {
+            throw new Error('NotesAPI.deleteNotesInView requires the confirmed note count');
+        }
+        return this._apiCall(CONFIG.API.NOTES.DELETE_IN_VIEW, {
+            method: 'POST', claimSession: true, body: JSON.stringify({ expectedNoteCount, ...this.viewScope() }),
+        });
     },
 
     // Click on a collapsed note's robot: open the way to every proposal it counts.
@@ -423,6 +442,225 @@ export const NotesAPI = {
             method: 'POST',
             claimSession: true
         });
+    },
+
+    // A click on box taskIndex of a Markdown note's tasks; isTicked is the state asked for.
+    async toggleMarkdownTask(noteId, taskIndex, isTicked) {
+        if (typeof noteId !== 'string' || noteId.length === 0 || !Number.isInteger(taskIndex) || typeof isTicked !== 'boolean') {
+            throw new Error('NotesAPI.toggleMarkdownTask requires noteId, taskIndex and isTicked');
+        }
+        return this._apiCall(CONFIG.API.NOTES.TOGGLE_MARKDOWN_TASK(noteId), {
+            method: 'POST',
+            claimSession: true,
+            body: JSON.stringify({ taskIndex, isTicked }),
+        });
+    },
+
+    // A click on folding callout calloutIndex's title in a Markdown note; isOpen is the state asked for.
+    async toggleMarkdownCallout(noteId, calloutIndex, isOpen) {
+        if (typeof noteId !== 'string' || noteId.length === 0 || !Number.isInteger(calloutIndex) || typeof isOpen !== 'boolean') {
+            throw new Error('NotesAPI.toggleMarkdownCallout requires noteId, calloutIndex and isOpen');
+        }
+        return this._apiCall(CONFIG.API.NOTES.TOGGLE_MARKDOWN_CALLOUT(noteId), {
+            method: 'POST',
+            claimSession: true,
+            body: JSON.stringify({ calloutIndex, isOpen }),
+        });
+    },
+
+    // A click on the title of <details> fold foldIndex in a Markdown note; isOpen is the state asked for.
+    async toggleMarkdownFold(noteId, foldIndex, isOpen) {
+        if (typeof noteId !== 'string' || noteId.length === 0 || !Number.isInteger(foldIndex) || typeof isOpen !== 'boolean') {
+            throw new Error('NotesAPI.toggleMarkdownFold requires noteId, foldIndex and isOpen');
+        }
+        return this._apiCall(CONFIG.API.NOTES.TOGGLE_MARKDOWN_FOLD(noteId), {
+            method: 'POST',
+            claimSession: true,
+            body: JSON.stringify({ foldIndex, isOpen }),
+        });
+    },
+
+    // The folder import (developer version, PLAN.md; source 'obsidian' or 'markdown',
+    // import-sources.js): the folder, picked in the operating system's own dialog, then
+    // imported into the vault in use.
+    // provider: the AI the chat uses now; the answer says whether it can suggest tags.
+    async pickImportFolder(source) {
+        if (typeof source !== 'string' || source.length === 0) {
+            throw new Error('NotesAPI.pickImportFolder requires a source');
+        }
+        return this._apiCall(CONFIG.API.IMPORT.PICK_FOLDER, { method: 'POST', body: JSON.stringify({ source }) });
+    },
+
+    // Virtual folders, an experiment: whether the tree shows, the tab's folder filter, and
+    // the folders the view's notes are filed in.
+    async listVirtualFolders() {
+        return this._apiCall(CONFIG.API.VIRTUAL_FOLDERS.LIST, { method: 'POST', body: JSON.stringify(this.viewScope()) });
+    },
+
+    // A folder renamed, moved into another ('' for the top) or deleted, with every folder below it.
+    async renameVirtualFolder(folder, newPath) {
+        return this._apiCall(CONFIG.API.VIRTUAL_FOLDERS.RENAME, { method: 'POST', body: JSON.stringify({ folder, newPath }) });
+    },
+
+    async moveVirtualFolder(folder, into) {
+        return this._apiCall(CONFIG.API.VIRTUAL_FOLDERS.MOVE, { method: 'POST', body: JSON.stringify({ folder, into }) });
+    },
+
+    // deleteNotes: also delete the notes filed in it, if still expectedNoteCount of them.
+    async deleteVirtualFolder(folder, deleteNotes, expectedNoteCount) {
+        if (typeof deleteNotes !== 'boolean' || !Number.isInteger(expectedNoteCount)) {
+            throw new Error('NotesAPI.deleteVirtualFolder requires deleteNotes and the confirmed note count');
+        }
+        return this._apiCall(CONFIG.API.VIRTUAL_FOLDERS.DELETE, {
+            method: 'POST', body: JSON.stringify({ folder, deleteNotes, expectedNoteCount }),
+        });
+    },
+
+    // How many notes deleting the folder's notes would delete (Delete Folder's checkbox).
+    async countVirtualFolderNotes(folder) {
+        return this._apiCall(CONFIG.API.VIRTUAL_FOLDERS.NOTES, { method: 'POST', body: JSON.stringify({ folder }) });
+    },
+
+    // A root note dragged onto a folder ('' the tree's top): in exactly that folder, one undo step.
+    async fileNoteInVirtualFolder(noteId, folder) {
+        if (typeof noteId !== 'string' || noteId === '' || typeof folder !== 'string') {
+            throw new Error('NotesAPI.fileNoteInVirtualFolder requires the note and the folder');
+        }
+        return this._apiCall(CONFIG.API.VIRTUAL_FOLDERS.FILE_NOTE, {
+            method: 'POST', claimSession: true, body: JSON.stringify({ noteId, folder }),
+        });
+    },
+
+    // folder: the folder tag ('Projects/'), or '' for every folder again.
+    async setVirtualFolderFilter(tabId, folder) {
+        if (typeof tabId !== 'string' || tabId === '' || typeof folder !== 'string') {
+            throw new Error('NotesAPI.setVirtualFolderFilter requires the tab and the folder');
+        }
+        return this._apiCall(CONFIG.API.VIRTUAL_FOLDERS.FILTER, {
+            method: 'POST',
+            body: JSON.stringify({ tabId, folder, clientId: ModeContext.clientId, undoContext: captureUndoContext() }),
+        });
+    },
+
+    // What importing would do (the import wizard's summary), before anything is written.
+    // An import's choices: { source, folderPath, splitMode, contentFormat, prefixFolder (the
+    // folder everything goes under, as typed; '' for none), addToExisting, and a folder of
+    // files' checklist: excludedGroups (the kinds unticked), excludedFiles and includedFiles
+    // (files ticked against their kind), keepsMarkdownAsFiles; [] and false for the others }.
+    _importBody(choices, caller) {
+        const {
+            source, folderPath, splitMode, contentFormat, prefixFolder, addToExisting, excludedGroups, excludedFiles, includedFiles,
+            keepsMarkdownAsFiles, compressesImages, imageLongestSide, dropContext,
+        } = choices;
+        if (typeof source !== 'string' || typeof folderPath !== 'string' || folderPath.length === 0
+            || typeof splitMode !== 'string' || typeof contentFormat !== 'string'
+            || typeof prefixFolder !== 'string' || typeof addToExisting !== 'boolean'
+            || !Array.isArray(excludedGroups) || !Array.isArray(excludedFiles) || !Array.isArray(includedFiles)
+            || typeof keepsMarkdownAsFiles !== 'boolean' || typeof compressesImages !== 'boolean' || !Number.isInteger(imageLongestSide)
+            || !isDropContext(dropContext)) {
+            throw new Error(`NotesAPI.${caller} requires every import choice`);
+        }
+        return JSON.stringify({
+            source, folderPath, splitMode, contentFormat, prefixFolder, addToExisting, excludedGroups, excludedFiles, includedFiles,
+            keepsMarkdownAsFiles, compressesImages, imageLongestSide, dropContext,
+        });
+    },
+
+    // A folder of files grouped by type for the import's checklist, before anything is copied.
+    async scanImportFolder(folderPath) {
+        if (typeof folderPath !== 'string' || folderPath.length === 0) {
+            throw new Error('NotesAPI.scanImportFolder requires the folder');
+        }
+        return this._apiCall(CONFIG.API.IMPORT.SCAN, { method: 'POST', body: JSON.stringify({ folderPath }) });
+    },
+
+    // A dropped folder's checklist, from the browser's list of its files ([{ path, size }]):
+    // nothing is sent but the list (desktop-drops-into-folders.md §4).
+    async scanImportListing(files) {
+        if (!Array.isArray(files)) {
+            throw new Error('NotesAPI.scanImportListing requires the files');
+        }
+        return this._apiCall(CONFIG.API.IMPORT.SCAN_LISTING, { method: 'POST', body: JSON.stringify({ files }) });
+    },
+
+    // A holding folder for a dropped folder's ticked files: { uploadId, folderPath }.
+    async startImportUpload() {
+        return this._apiCall(CONFIG.API.IMPORT.UPLOADS, { method: 'POST', body: JSON.stringify({}) });
+    },
+
+    // One ticked file, at its path in the dropped folder.
+    async uploadImportFile(uploadId, path, file) {
+        if (typeof uploadId !== 'string' || typeof path !== 'string' || !(file instanceof Blob)) {
+            throw new Error('NotesAPI.uploadImportFile requires the upload, the path and the file');
+        }
+        // In one of the server's few transfer slots, as previews loading meanwhile are
+        // (file-transfer-slots.js); one answered 429 is sent again.
+        const { response, answer } = await inTransferSlot(async () => {
+            const formData = new FormData();
+            formData.append('path', path);
+            formData.append('file', file);
+            const sent = await fetch(CONFIG.API.IMPORT.UPLOAD_FILE(uploadId), {
+                method: 'POST', headers: buildAuthHeaders(false), body: formData,
+            });
+            if (!sent.ok) return { response: sent, answer: null };
+            return { response: sent, answer: await sent.json() };
+        });
+        if (!response.ok) {
+            ErrorHandler.handleApiError(null, response);
+            throw new HttpRequestError(`Import upload failed: ${response.status} ${response.statusText}`);
+        }
+        return answer;
+    },
+
+    // The work the server does beside the requests: [{ key, label, done, total }].
+    async fetchBackgroundWork() {
+        return this._apiCall(CONFIG.API.IMPORT.BACKGROUND_WORK, { method: 'GET' });
+    },
+
+    async discardImportUpload(uploadId) {
+        return this._apiCall(CONFIG.API.IMPORT.DISCARD_UPLOAD(uploadId), { method: 'POST', body: JSON.stringify({}) });
+    },
+
+    // The images an import would compress: { imageCount, imageBytes, compressedBytes } (about).
+    async estimateImportImages(choices) {
+        return this._apiCall(CONFIG.API.IMPORT.IMAGES, { method: 'POST', body: this._importBody(choices, 'estimateImportImages') });
+    },
+
+    async previewImport(choices) {
+        return this._apiCall(CONFIG.API.IMPORT.PREVIEW, { method: 'POST', body: this._importBody(choices, 'previewImport') });
+    },
+
+    async importFolder(choices) {
+        return this._apiCall(CONFIG.API.IMPORT.FOLDER, { method: 'POST', body: this._importBody(choices, 'importFolder') });
+    },
+
+    // A browser's bookmarks export (docs/ready-to-build/bookmark-import.md): what importing it
+    // would do ({ prefixFolder, bookmarkCount, folderCount, folderTagCount, leftOut: [[title, why]] }),
+    // and the import itself ({ noteCount, sourceTag }). fileText: the file as the browser read it.
+    async previewBookmarkImport({ fileText, prefixFolder }) {
+        if (typeof fileText !== 'string' || fileText.length === 0 || typeof prefixFolder !== 'string') {
+            throw new Error('NotesAPI.previewBookmarkImport requires the file\'s text and the folder');
+        }
+        return this._apiCall(CONFIG.API.IMPORT.BOOKMARKS_PREVIEW, { method: 'POST', body: JSON.stringify({ fileText, prefixFolder }) });
+    },
+
+    // dropContext: where it was dropped ({ isDrop, tabId, search }), as _importBody takes it.
+    async importBookmarks({ fileText, prefixFolder, addToExisting, dropContext }) {
+        if (typeof fileText !== 'string' || fileText.length === 0 || typeof prefixFolder !== 'string' || typeof addToExisting !== 'boolean'
+            || !isDropContext(dropContext)) {
+            throw new Error('NotesAPI.importBookmarks requires the file\'s text, the folder and whether to add to it');
+        }
+        return this._apiCall(CONFIG.API.IMPORT.BOOKMARKS, {
+            method: 'POST', body: JSON.stringify({ fileText, prefixFolder, addToExisting, dropContext }),
+        });
+    },
+
+    // The folder a typed name makes ({ folder: cleaned, '' for none; exists }).
+    async checkImportPrefixFolder(name) {
+        if (typeof name !== 'string') {
+            throw new Error('NotesAPI.checkImportPrefixFolder requires the typed name');
+        }
+        return this._apiCall(CONFIG.API.IMPORT.PREFIX_FOLDER, { method: 'POST', body: JSON.stringify({ name }) });
     },
 
     async unformatNote(noteId) {
@@ -743,6 +981,17 @@ export const NotesAPI = {
             method: 'POST',
             body: JSON.stringify({ tabId, search, isUntaggedView, text, fromRootIndex, direction }),
         });
+    },
+
+    // The snippet find shows under a file's card when it stops on the file: { snippet }.
+    async fetchFindFileSnippet(fileId, text) {
+        if (typeof fileId !== 'string' || fileId.length === 0) {
+            throw new Error('NotesAPI.fetchFindFileSnippet requires fileId');
+        }
+        if (typeof text !== 'string' || text.trim() === '') {
+            throw new Error('NotesAPI.fetchFindFileSnippet requires text');
+        }
+        return this._apiCall(CONFIG.API.NOTES.FIND_FILE_SNIPPET, { method: 'POST', body: JSON.stringify({ fileId, text }) });
     },
 
     async fetchSearchSuggestions(query, windowDays) {
@@ -1286,20 +1535,25 @@ export const FilesAPI = {
             throw new Error('FilesAPI.uploadFile requires File');
         }
 
-        const formData = new FormData();
-        formData.append('file', file);
-
-        const response = await fetch(CONFIG.API.FILES.UPLOAD, {
-            method: 'POST',
-            headers: buildAuthHeaders(false),
-            body: formData,
+        // In one of the server's few transfer slots (file-transfer-slots.js): previews loading
+        // meanwhile could otherwise have it answered 429 (2026-11-02).
+        const { response, answer } = await inTransferSlot(async () => {
+            const formData = new FormData();
+            formData.append('file', file);
+            const sent = await fetch(CONFIG.API.FILES.UPLOAD, {
+                method: 'POST',
+                headers: buildAuthHeaders(false),
+                body: formData,
+            });
+            if (!sent.ok) return { response: sent, answer: null };
+            return { response: sent, answer: await sent.json() };
         });
         if (!response.ok) {
             ErrorHandler.handleApiError(null, response);
             throw new HttpRequestError(`File upload failed: ${response.status} ${response.statusText}`);
         }
 
-        return await response.json();
+        return answer;
     },
 
     async downloadFile(fileId) {
@@ -1307,9 +1561,14 @@ export const FilesAPI = {
             throw new Error('FilesAPI.downloadFile requires fileId string');
         }
 
-        const response = await fetch(CONFIG.API.FILES.DOWNLOAD(fileId), {
-            method: 'GET',
-            headers: buildAuthHeaders(false),
+        // In one of the server's few transfer slots (file-transfer-slots.js), the body read too.
+        const { response, blob } = await inTransferSlot(async () => {
+            const answered = await fetch(CONFIG.API.FILES.DOWNLOAD(fileId), {
+                method: 'GET',
+                headers: buildAuthHeaders(false),
+            });
+            if (!answered.ok) return { response: answered, blob: null };
+            return { response: answered, blob: await answered.blob() };
         });
         if (!response.ok) {
             ErrorHandler.handleApiError(null, response);
@@ -1317,7 +1576,7 @@ export const FilesAPI = {
         }
 
         return {
-            blob: await response.blob(),
+            blob,
             filename: extractFilenameFromContentDisposition(
                 response.headers.get('content-disposition')
             ),
@@ -1482,6 +1741,27 @@ export const FilesAPI = {
             throw new HttpRequestError(`File preview download failed: ${response.status} ${response.statusText}`);
         }
         return { status: 'ready', blob: await response.blob(), revision: readFileRevision(response) };
+    },
+
+    // A file as the viewer shows it: { name, kind: 'pdf' | 'page', status, html, isCut }
+    // (docs/ready-to-build/files-shown-not-copied.md §4).
+    async viewFile(fileId) {
+        requireFileId(fileId, 'viewFile');
+        const response = await fetch(CONFIG.API.FILES.VIEW(fileId), {
+            method: 'GET',
+            headers: buildAuthHeaders(false),
+        });
+        if (!response.ok) {
+            ErrorHandler.handleApiError(null, response);
+            throw new HttpRequestError(`Opening the file failed: ${response.status} ${response.statusText}`);
+        }
+        const view = await response.json();
+        // An email's (2026-11-03) also carries its headers and attachments (file-viewer-service.js).
+        if (typeof view.name !== 'string' || !['pdf', 'page', 'email'].includes(view.kind) || typeof view.status !== 'string'
+            || typeof view.html !== 'string' || typeof view.isCut !== 'boolean') {
+            throw new Error('File view response malformed');
+        }
+        return view;
     },
 
     // The file's name, extension included (what its cards show and its downloads use).

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from types import SimpleNamespace
-from typing import Iterable, Mapping, Optional, List
+from typing import Iterable, Mapping, Optional, List, Sequence, Set
 
 from app.services.note_store import store as _note_store
 from app.services.note_store import NoteRecord as NodeRecord
@@ -29,6 +29,10 @@ class _AdapterStore:
 
     def children(self, parent_id: Optional[str]) -> List[str]:
         return _note_store.get_children(parent_id)
+
+    def note_ids_referencing(self, target_ids: Set[str]) -> Set[str]:
+        """The notes whose own text links to or embeds any of target_ids (notes or files)."""
+        return _note_store.note_ids_referencing(target_ids)
 
     # Mutations --------------------------------------------------------------
     def insert_after(self, note: NodeRecord, parent_id: Optional[str], prev_id: Optional[str]) -> None:
@@ -73,7 +77,7 @@ class _AdapterStore:
     def delete_subtree(self, note_id: str) -> None:
         _note_store.remove_note(note_id)
 
-    def restore_subtree(self, records: List[NodeRecord]) -> None:
+    def restore_subtree(self, records: Sequence[NodeRecord | SimpleNamespace]) -> None:
         # Preorder restoration can reference a sibling restored later in this batch.
         pending_ids = {record.id for record in records}
         entries = []

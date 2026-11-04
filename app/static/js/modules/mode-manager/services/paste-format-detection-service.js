@@ -1,4 +1,5 @@
 import { ApplicationState } from '../../application-state.js';
+import { splitTokens } from '../../quoted-values.js';
 
 // Pasting text in a recognisable format tags the note for it at once
 // (docs/ui/content-formatting.md, "Paste format detection"). Only unambiguous
@@ -347,7 +348,7 @@ export function detectPastedFormat(plainText) {
 }
 
 function tagBarTokens(tags) {
-    return tags.split(/\s+/).filter((token) => token.length > 0);
+    return splitTokens(tags);
 }
 
 function isRendererToken(token) {

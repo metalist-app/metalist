@@ -1,5 +1,6 @@
 import pytest
 
+from app.services.credential_display import CredentialDisplay
 from app.security.rendered_html import sanitize_rendered_html
 from app.services.content_formatting import format_note_content_for_view
 from app.services.latex_rendering import render_latex_math_to_html
@@ -36,7 +37,7 @@ def test_markup_typed_in_formula_text_shows_as_text_in_the_note() -> None:
     shown = format_note_content_for_view(
         content_html="<div>$$\\text{&lt;b&gt;x&lt;/b&gt;}$$</div>",
         tags="@markdown",
-        redact_credentials=False,
+        credentials=CredentialDisplay.DOTS,
     )
     assert "<mtext>&lt;b&gt;x&lt;/b&gt;</mtext>" in shown
     assert "<b>" not in shown

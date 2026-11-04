@@ -126,12 +126,19 @@ class _FootnoteMarkdown(HTMLParser):
         if self.literal_depth:
             self.output.append(html.escape(data, quote=False))
             return
+        if data.strip() == "":
+            self.output.append(data)
+            return
         rendered = render_markdown_to_html(data)
         if rendered.startswith(_PARAGRAPH_OPEN) and rendered.endswith(_PARAGRAPH_CLOSE):
             rendered = rendered[len(_PARAGRAPH_OPEN) : -len(_PARAGRAPH_CLOSE)].replace(
                 _PARAGRAPH_CLOSE + _PARAGRAPH_OPEN, "<br><br>"
             )
-        self.output.append(rendered)
+        # Markdown trims a paragraph's ends; text between tags keeps the spaces that part it
+        # from them.
+        leading = data[: len(data) - len(data.lstrip())]
+        trailing = data[len(data.rstrip()) :]
+        self.output.append(f"{leading}{rendered}{trailing}")
 
 
 def collect_footnotes(content_html: str) -> tuple[str, list[tuple[str, str]]]:

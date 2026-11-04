@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from app.services.credential_display import CredentialDisplay
 from app.utils.byte_sizes import MIB
 import hashlib
 import json
@@ -24,7 +25,7 @@ from app.services.embedded_references import render_note_content_with_embeds
 from app.services.file_kinds import FILE_KIND_IMAGE
 from app.services.file_registry import file_registry
 from app.services.file_storage import get_file_reference_record
-from app.services.find_text import count_occurrences, read_comment_text, read_visible_text
+from app.services.find_text import count_find_stops, count_occurrences, read_comment_text
 from app.services.link_titles import link_title_store
 from app.services.note_store import NoteRecord, store as note_store
 from app.services.ontology_rules_store import get_ontology_if_ready
@@ -35,7 +36,10 @@ from app.services.root_sorting import get_root_ids_for_sort_mode
 from app.services.root_sorting import get_root_sort_timestamps
 from app.services.root_sorting import normalize_sort_mode
 from app.services.root_date_filter import RootDateFilter, filter_root_ids_by_date, local_today
+from app.services.quoted_values import split_tokens
 from app.services.search_index import search_index
+from app.services.file_text_search import file_texts, is_searchable_file_name
+from app.services.file_text_snippets import with_file_text_snippets
 from app.services.search_query import ParsedSearchQuery, SearchClause, parse_search_query, search_highlight_phrases
 from app.services.tag_properties import PropertyCondition, tag_part_of_token
 from app.services.sync import get_all_locks
@@ -187,14 +191,44 @@ def _positive_text_clause(phrase: str) -> SearchClause:
     )
 
 
+def clause_excluded_note_ids(clause: SearchClause) -> Set[str]:
+    """The notes a clause's exclusions (-tag, -"text", -property) take out of what it finds."""
+    excluded_note_ids: Set[str] = set()
+    for tag in clause.forbidden_tags:
+        excluded_note_ids.update(search_index.query_clause_note_ids(_positive_tag_clause(tag)))
+    for phrase in clause.forbidden_text:
+        excluded_note_ids.update(search_index.query_clause_note_ids(_positive_text_clause(phrase)))
+    for condition in clause.forbidden_properties:
+        # -jogging:miles=MAX removes the longest of the notes the clause finds.
+        excluding_clause = _positive_property_clause(condition)
+        if condition.is_extreme:
+            excluding_clause = clause.requiring(condition)
+        excluded_note_ids.update(search_index.query_clause_note_ids(excluding_clause))
+    return excluded_note_ids
+
+
+def clause_has_positive_terms(clause: SearchClause) -> bool:
+    """Whether a clause finds notes by what they have; without, it starts from every note."""
+    return any((bool(clause.required_tags), bool(clause.required_text), bool(clause.required_properties)))
+
+
+def is_plain_clause(clause: SearchClause) -> bool:
+    """A clause whose found notes are just the notes each matching it on its own: no stats
+    or value terms (read through the note tree) and no note named by its id (which brings
+    its subtree), and no MAX/MIN (which picks among what the clause finds). Adding a tag to
+    a plain clause narrows what it finds to the notes with it."""
+    conditions = clause.required_properties + clause.forbidden_properties
+    if clause.has_stats_terms or clause.has_value_terms or any(condition.is_extreme for condition in conditions):
+        return False
+    return not _extract_direct_uuid_note_ids(clause)
+
+
 def _resolve_clause_note_sets(
     *,
     clause: SearchClause,
     ordered_root_ids: List[str],
 ) -> Tuple[Set[str], Set[str]]:
-    has_positive_terms = bool(clause.required_tags)
-    if clause.required_text or clause.required_properties:
-        has_positive_terms = True
+    has_positive_terms = clause_has_positive_terms(clause)
     direct_uuid_note_ids = _extract_direct_uuid_note_ids(clause)
 
     if has_positive_terms:
@@ -214,17 +248,7 @@ def _resolve_clause_note_sets(
         _include_descendants(positively_matched_note_ids, starting_ids=set(positively_matched_note_ids))
     allowed_note_ids = set(positively_matched_note_ids)
 
-    excluded_note_ids: Set[str] = set()
-    for tag in clause.forbidden_tags:
-        excluded_note_ids.update(search_index.query_clause_note_ids(_positive_tag_clause(tag)))
-    for phrase in clause.forbidden_text:
-        excluded_note_ids.update(search_index.query_clause_note_ids(_positive_text_clause(phrase)))
-    for condition in clause.forbidden_properties:
-        # -jogging:miles=MAX removes the longest of the notes the clause finds.
-        excluding_clause = _positive_property_clause(condition)
-        if condition.is_extreme:
-            excluding_clause = clause.requiring(condition)
-        excluded_note_ids.update(search_index.query_clause_note_ids(excluding_clause))
+    excluded_note_ids = clause_excluded_note_ids(clause)
 
     # With every note already allowed, ancestor/descendant closure is a no-op.
     if has_positive_terms:
@@ -945,7 +969,7 @@ def _render_note_view_html_below_sites(
             tags=rec.tags,
             context=context,
             static_export=False,
-            redact_credentials=False,
+            credentials=CredentialDisplay.DOTS,
         )
     else:
         rendered_content = render_note_content_with_embeds(
@@ -954,7 +978,7 @@ def _render_note_view_html_below_sites(
             tags=rec.tags,
             context=context,
             static_export=False,
-            redact_credentials=False,
+            credentials=CredentialDisplay.DOTS,
         )
     # Sized inline images keep their space while decoding, so text below them
     # does not move after the note renders.
@@ -1071,6 +1095,15 @@ def _render_note_content_html(rec: NoteRecord, *, is_collapsed: bool, context: E
     )
 
 
+def shows_file_text_snippets(flags: Dict[str, object], *, is_search_redacted: bool) -> bool:
+    """Whether a note in the list shows its files' search snippets: not while edited (its cards
+    are their lines then), not folded (folding was the user's choice, and a snippet would make
+    the note taller), not hidden by the search. A note saved folded with nothing to fold shows
+    them: it folds nothing, and has no arrow to open it with."""
+    is_folded = bool(flags["isCollapsed"]) and bool(flags["isCollapsible"])
+    return not flags["isEditing"] and not is_folded and not is_search_redacted
+
+
 def _render_view_note(
     rec: NoteRecord, *, editing_note_id: str | None, is_search_redacted: bool,
     force_uncollapsed_ids: Set[str], filter_active: bool,
@@ -1113,7 +1146,7 @@ def _render_view_note(
     # Proposals no note has yet: accepting one creates a new tag, so the row marks them.
     # A super tag is new when its tag is (jogging:miles=3 on an existing jogging is not).
     flags["newProposedTags"] = " ".join(
-        term for term in rec.proposed_tags.split() if not search_index.is_tag_on_any_note(tag_part_of_token(term))
+        term for term in split_tokens(rec.proposed_tags) if not search_index.is_tag_on_any_note(tag_part_of_token(term))
     )
 
     is_editing = bool(flags["isEditing"])
@@ -1185,6 +1218,8 @@ def build_view_state(
     filter_active = selection.scope.search_active
     allowed_note_ids = selection.scope.allowed_note_ids
     visible_root_ids_ordered = selection.visible_roots
+    # The search's quoted phrases: a file whose text holds one shows a snippet under its card.
+    snippet_phrases = tuple(view_search_highlight_phrases(search))
     force_uncollapsed_ids = selection.forced_open_ids
 
     def traverse(parent_id: Optional[str]) -> None:
@@ -1220,6 +1255,8 @@ def build_view_state(
                 allowed_note_ids=allowed_note_ids, traversal_cache=traversal_cache,
                 embed_render_context=embed_render_context,
             )
+            if shows_file_text_snippets(flags, is_search_redacted=is_search_redacted):
+                rendered_content = with_file_text_snippets(rendered_content, snippet_phrases)
 
             h = _compute_hash(
                 rendered_content,
@@ -1316,9 +1353,11 @@ FIND_DIRECTIONS = ("forward", "backward")
 @dataclass(frozen=True, slots=True)
 class FindMatch:
     """A note the find's text occurs in. Its occurrences, in page order, are those of its
-    content (content_count) and then of its tag-bar comments (comment_count). Shown
-    without opening anything are the first preview_count of the content's (all of them
-    unless the note is folded) and the comments', unless a note above it is folded."""
+    content (content_count), then of its tag-bar comments (comment_count), then one per file
+    it shows whose text holds the find text (file_ids, in the note's order: one stop each
+    however often the text occurs in it, docs/ui/find.md). Shown without opening anything are
+    the first preview_count of the content's (all of them unless the note is folded) and the
+    comments', unless a note above it is folded."""
 
     note_id: str
     root_id: str
@@ -1327,6 +1366,7 @@ class FindMatch:
     comment_count: int
     preview_count: int
     is_under_folded_note: bool
+    file_ids: Tuple[str, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -1383,24 +1423,32 @@ def _count_find_match(
     rec: NoteRecord, *, find_text: str, root_id: str, root_index: int, is_under_folded_note: bool,
     context: EmbedRenderContext,
 ) -> FindMatch | None:
-    content_count = count_occurrences(
-        read_visible_text(_render_note_content_html(rec, is_collapsed=False, context=context)), find_text,
-    )
+    content_count = count_find_stops(_render_note_content_html(rec, is_collapsed=False, context=context), find_text)
     comment_count = sum(
         count_occurrences(read_comment_text(comment), find_text) for comment in _tag_bar_comments(rec.tags)
     )
-    if content_count == 0 and comment_count == 0:
+    file_ids = _files_holding_find_text(rec, find_text)
+    if content_count == 0 and comment_count == 0 and not file_ids:
         return None
     preview_count = content_count
     if content_count > 0 and _is_shown_collapsed(rec, context):
-        preview_count = count_occurrences(
-            read_visible_text(_render_note_content_html(rec, is_collapsed=True, context=context)), find_text,
-        )
+        preview_count = count_find_stops(_render_note_content_html(rec, is_collapsed=True, context=context), find_text)
     return FindMatch(
         note_id=rec.id, root_id=root_id, root_index=root_index, content_count=content_count,
         comment_count=comment_count, preview_count=min(preview_count, content_count),
-        is_under_folded_note=is_under_folded_note,
+        is_under_folded_note=is_under_folded_note, file_ids=file_ids,
     )
+
+
+def _files_holding_find_text(rec: NoteRecord, find_text: str) -> Tuple[str, ...]:
+    """The files the note shows whose kept text holds the find text, each once, in the note's
+    order (file_text_search.py: every file with a reader; one not read yet holds nothing).
+    Only PDFs were looked in until 2026-11-03: an RTF's words were found by search, not by find."""
+    shown: List[str] = []
+    for file_id, name in file_registry.referenced_file_names(rec.content):
+        if file_id not in shown and is_searchable_file_name(name):
+            shown.append(file_id)
+    return tuple(file_id for file_id in shown if file_texts.term_matches(file_id, find_text))
 
 
 def _find_in_root(

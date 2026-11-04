@@ -4,12 +4,10 @@ from collections.abc import Mapping
 import re
 
 from app.config import TAG_SUGGESTION_CONNECTORS
+from app.services.tag_characters import is_text_character, normalize_text
 
 
 MAX_SELECTED_TEXT_TAG_CHARACTERS = 25
-# Tags keep printable ASCII only: space (0x20) through tilde (0x7E).
-_FIRST_PRINTABLE_ASCII_CODEPOINT = ord(" ")
-_LAST_PRINTABLE_ASCII_CODEPOINT = ord("~")
 
 _TAG_CONTAINS_DISALLOWED = frozenset(
     {
@@ -59,13 +57,13 @@ def _normalize_selected_text(selected_text: str) -> str:
 
 
 def build_default_tag_from_selected_text(selected_text: str) -> str:
-    normalized = _normalize_selected_text(selected_text)
+    # A default tag keeps letters in any script (app/services/tag_characters.py).
+    normalized = normalize_text(_normalize_selected_text(selected_text))
     spaces_joined = normalized.replace(" ", "-")
 
     candidate_characters: list[str] = []
     for char in spaces_joined:
-        codepoint = ord(char)
-        if codepoint < _FIRST_PRINTABLE_ASCII_CODEPOINT or codepoint > _LAST_PRINTABLE_ASCII_CODEPOINT:
+        if not is_text_character(char):
             continue
         if char in _TAG_CONTAINS_DISALLOWED:
             continue

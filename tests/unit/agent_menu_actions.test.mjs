@@ -94,7 +94,7 @@ test('cancellation during opening sends no stale acknowledgement', async () => {
 
 test('opening a namespace with no other one reports the Create namespace dialog it opened', async () => withCatalog(async () => {
     // With no other namespace, Open/Switch namespace opens Create namespace instead.
-    const shown = new Set(['#create-namespace-modal']);
+    const shown = new Set(['#new-vault-wizard']);
     const result = await openAgentMenu({
         menuId: 'form.open_namespace',
         endpoints: catalog.map(entry => ({ id: entry.id, execute: async () => {} })),

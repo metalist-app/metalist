@@ -175,6 +175,12 @@ exceptions = ["FileNotFoundError", "app.services.input_errors.NamespaceInputReje
 reason = "Translate explicitly validated domain input/resource rejection."
 
 [[tool.shockharness.rules.exceptions.boundaries]]
+path = "app/api/routes/imports.py"
+language = "python"
+exception = "app.services.input_errors.InputRejected"
+reason = "A typed import folder name is user input: what is wrong with it is shown beside the field as it is typed."
+
+[[tool.shockharness.rules.exceptions.boundaries]]
 path = "app/api/routes/notes.py"
 language = "python"
 exceptions = ["app.services.input_errors.InputRejected", "app.services.selected_text_tag.SelectedTextTagValidationError"]
@@ -487,10 +493,52 @@ exception = "json.JSONDecodeError"
 reason = "an uploaded Excalidraw scene is user input: invalid JSON is rejected as invalid file content"
 
 [[tool.shockharness.rules.exceptions.boundaries]]
+path = "app/services/file_text_search.py"
+language = "python"
+exceptions = ["ValueError", "pypdf.errors.PyPdfError"]
+reason = "A PDF is the user's file: one that can't be read keeps no searchable text and matches by name only."
+
+[[tool.shockharness.rules.exceptions.boundaries]]
+path = "app/services/file_text_worker.py"
+language = "python"
+exceptions = ["pypdfium2.PdfiumError", "ValueError", "app.services.document_text.UnreadableDocument"]
+reason = "A PDF or a Word document is the user's file: one that is locked or can't be read keeps no searchable text and matches by name only."
+
+[[tool.shockharness.rules.exceptions.boundaries]]
+path = "app/services/document_text.py"
+language = "python"
+exceptions = ["zipfile.BadZipFile", "xml.etree.ElementTree.ParseError"]
+reason = "A .docx is the user's file: a damaged zip or text part is raised as UnreadableDocument, and the file matches by name only."
+
+[[tool.shockharness.rules.exceptions.boundaries]]
+path = "app/services/document_text.py"
+language = "python"
+exceptions = ["OSError", "ValueError"]
+reason = "A .doc is the user's file: olefile raises OleFileError (an OSError) or ValueError for a damaged one, raised as UnreadableDocument."
+
+[[tool.shockharness.rules.exceptions.boundaries]]
+path = "app/services/file_view.py"
+language = "python"
+exceptions = ["app.services.document_text.UnreadableDocument", "zipfile.BadZipFile", "OSError", "xml.parsers.expat.ExpatError"]
+reason = "A Word document or an RTF is the user's file: one mammoth or MetaList's reader can't read shows in the viewer as not readable."
+
+[[tool.shockharness.rules.exceptions.boundaries]]
+path = "app/services/image_compression.py"
+language = "python"
+exceptions = ["OSError", "PIL.Image.DecompressionBombError", "PIL.UnidentifiedImageError", "SyntaxError", "ValueError"]
+reason = "An imported image is the user's file: one that can't be read comes in uncompressed, as it is."
+
+[[tool.shockharness.rules.exceptions.boundaries]]
 path = "app/services/link_icons.py"
 language = "python"
 exceptions = ["OSError", "PIL.Image.DecompressionBombError", "PIL.UnidentifiedImageError", "SyntaxError", "ValueError", "app.services.public_http.PublicHttpTargetRejected", "httpcore.NetworkError", "httpcore.ProtocolError", "httpcore.TimeoutException", "httpx.HTTPError", "httpx.NetworkError", "httpx.TimeoutException"]
 reason = "Handle expected external I/O, provider, image or LaTeX parsing failure."
+
+[[tool.shockharness.rules.exceptions.boundaries]]
+path = "app/services/legacy_metalist.py"
+language = "python"
+exceptions = ["sqlite3.DatabaseError", "cryptography.exceptions.InvalidTag"]
+reason = "The old MetaList's file is outside data: a file of that name that is no database is not the old MetaList's, a wrong password is asked again, and a later item that does not open is re-raised as damage."
 
 [[tool.shockharness.rules.exceptions.boundaries]]
 path = "app/services/link_titles.py"
@@ -521,6 +569,18 @@ path = "app/services/namespace_runtime_guard.py"
 language = "python"
 exceptions = ["OSError", "sqlite3.Error"]
 reason = "Handle expected external I/O, provider, image or LaTeX parsing failure."
+
+[[tool.shockharness.rules.exceptions.boundaries]]
+path = "app/services/obsidian_import/vault.py"
+language = "python"
+exception = "json.JSONDecodeError"
+reason = "An imported vault's .obsidian/app.json is the user's file: invalid JSON is reported and Obsidian's default applies."
+
+[[tool.shockharness.rules.exceptions.boundaries]]
+path = "app/services/obsidian_import/notes.py"
+language = "python"
+exception = "yaml.YAMLError"
+reason = "An imported note's frontmatter is the user's text: invalid YAML is reported and the note comes in without it."
 
 [[tool.shockharness.rules.exceptions.boundaries]]
 path = "app/services/namespace_switcher.py"

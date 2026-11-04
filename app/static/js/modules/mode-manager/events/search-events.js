@@ -3,7 +3,7 @@ import * as Logger from '../mode-logger.js';
 import { CONFIG } from '../../config.js';
 import { actionRefreshAndMaybeSelect } from '../actions/ui-actions.js';
 import { updateSearchContextsList } from './keyboard-events.js';
-import { initializeTabStateService } from '../services/tab-state-service.js';
+import { initializeTabStateService, setTabUntaggedViewOnServer } from '../services/tab-state-service.js';
 import { analyzeSearchQueryInput } from '../services/search-syntax-service.js';
 import { enforceSearchInputElement, setSearchValidationState, syncSearchInputValue } from '../services/search-input-service.js';
 import { CommandGate } from '../services/command-gate-service.js';
@@ -11,8 +11,6 @@ import { isDebouncedSearchPending, scheduleDebouncedSearchExecution } from '../s
 import { primeActiveSearchInteractionState } from '../services/search-interaction-service.js';
 import { initializeSearchSuggestions, updateSearchSuggestions } from '../services/search-suggestions-service.js';
 import { clearActiveNotesDom, clearCachedNotesDomForTab } from '../services/tab-dom-cache-service.js';
-import { clearActiveDateFilterForSearchInput, clearActiveSortModeForSearchInput } from '../services/root-sort-indicator-service.js';
-import { getActiveDateFilter } from '../services/date-range-filter-service.js';
 import {
     dismissReferenceSourceModeForActiveTab,
     isShowingNewSearchInReferenceView,
@@ -90,27 +88,11 @@ export function handleSearchInput(event) {
     }
 
     // Browser input events can re-fire with the same normalized value during autofill/composition.
-    // A new search ends the sort order, the date range and the Untagged view: their chips leave.
-    let viewOverridesClearPromise = null;
-    if (isFreshSearchInput) {
-        if (previousSearchQuery !== analysis.normalizedText) {
-            ModeContext.setSearchQuery(analysis.normalizedText);
-        }
-        if (wasUntaggedView) {
-            ModeContext.setUntaggedView(false);
-        }
-        const isSorted = ModeContext.activeTabSortMode !== 'normal';
-        const hasDateRange = getActiveDateFilter() !== null;
-        if (isSorted || hasDateRange) {
-            const intendedSearchQuery = analysis.normalizedText;
-            viewOverridesClearPromise = (async () => {
-                await clearActiveSortModeForSearchInput();
-                await clearActiveDateFilterForSearchInput();
-                if (ModeContext.searchQuery !== intendedSearchQuery) {
-                    ModeContext.setSearchQuery(intendedSearchQuery);
-                }
-            })();
-        }
+    // A new search ends the Untagged view (its chip leaves) when it runs; the tab's sort order and
+    // date range stay until each is ended with its × (the maintainer, 2026-11-02,
+    // docs/ui/state-handling.md).
+    if (isFreshSearchInput && previousSearchQuery !== analysis.normalizedText) {
+        ModeContext.setSearchQuery(analysis.normalizedText);
     }
 
     // Update search contexts list display
@@ -142,8 +124,8 @@ export function handleSearchInput(event) {
 
         void CommandGate.run('search.execute', async () => {
             Logger.logAction('executeSearch', { searchQuery: currentSearch });
-            if (viewOverridesClearPromise !== null) {
-                await viewOverridesClearPromise;
+            if (wasUntaggedView && ModeContext.isUntaggedView) {
+                await setTabUntaggedViewOnServer(ModeContext.activeTabId, false);
             }
             resetActiveTabForSearchExecution(currentSearch, { isFreshSearchInput });
             ModeContext.resetRootTracking({ clear: true });

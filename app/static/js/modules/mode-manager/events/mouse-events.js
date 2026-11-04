@@ -5,7 +5,7 @@ import { TypeAhead } from '../services/type-ahead-service.js';
 import { navigateToFootnoteWithExpansion } from '../services/footnote-navigation-service.js';
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import * as Logger from '../mode-logger.js';
-import { createNote, collapseNote, expandNote, getShellRun, moveNoteToSiblingPosition, indentNote, outdentNote, setEmbeddedNoteCollapse, toggleTodoDone, runShellNote } from '../actions/note-actions.js';
+import { createNote, collapseNote, expandNote, getShellRun, moveNoteToSiblingPosition, indentNote, outdentNote, setEmbeddedNoteCollapse, toggleMarkdownCallout, toggleMarkdownFold, toggleMarkdownTask, toggleTodoDone, runShellNote } from '../actions/note-actions.js';
 import { actionSelectNote, actionDeselectNote, actionSwitchNotes } from '../actions/selection-actions.js';
 import { captureClickAnchor } from '../services/viewport-hold-service.js';
 import { actionEnterSearchMode, actionExitSearchMode } from '../actions/search-actions.js';
@@ -13,6 +13,7 @@ import { DOMUtils } from '../../dom-utils.js';
 import { normalizeTagBarForNewTag, placeTagBarCaretAfterLastTag } from '../services/tag-bar-service.js';
 import { updateTagSuggestions } from '../services/tag-suggestions-service.js';
 import { selectTagOnDoubleClick } from '../services/tag-input-selection-service.js';
+import { selectUuidOnDoubleClick } from '../services/uuid-double-click-service.js';
 import { openDiagramEditor, resolveDiagramTarget } from '../../excalidraw/excalidraw-actions.js';
 import { unlessDiagramEditorOpen } from '../../excalidraw/excalidraw-editor-state.js';
 import {
@@ -24,20 +25,24 @@ import {
     hideSearchContextsOverlayForPointerMove,
 } from '../services/search-contexts-overlay-service.js';
 import { CommandGate } from '../services/command-gate-service.js';
+import { handleValueButtonClick, VALUE_BUTTONS_SELECTOR } from '../services/value-buttons-service.js';
 import { deleteEditedNoteAskingIfReferenced } from '../services/referenced-note-removal-service.js';
 import { actionSaveNote } from '../actions/content-actions.js';
 import { CommandPalette } from '../../command-palette/command-palette-controller.js';
 import { NotesAPI } from '../../api-client.js';
 import { isContextMenuInteractionTarget } from '../../context-menu/context-menu-target-service.js';
 import { downloadEmailAttachment, downloadFileReference } from '../services/file-reference-service.js';
-import { toggleEmailBody } from '../services/file-email-preview-service.js';
+import { openFileViewer, opensInViewer } from '../services/file-viewer-service.js';
+import { playMediaFile } from '../services/media-player-service.js';
 import { parseDecimalInteger } from '../../decimal-integer.js';
 import { revealRedactedNoteWithScrollPreservation } from '../services/search-redaction-reveal-service.js';
 import { resolveVerticalSiblingDropDestination, updateMoveDragGestureState } from '../services/note-drag-service.js';
 import { hideNoteDragIndicators, renderNoteDragIndicators } from '../services/note-drag-indicator-service.js';
+import { dropNoteOnFolder, noteDropAt, showNoteDropTarget } from '../services/virtual-folders-service.js';
 import { isRootReorderLocked } from '../services/root-sort-service.js';
 import {
     isViewModeNoteDisclosureToggle,
+    viewModeCalloutTitleAt,
     isViewModeNoteLink,
     resolveNonContentNoteSelectionTarget,
 } from '../services/note-click-target-service.js';
@@ -87,6 +92,8 @@ const DRAG_DIRECTION_ICONS = { up: 'up', down: 'down', right: 'indent', left: 'o
 const CREDENTIAL_VALUE_SELECTOR = '.meta-credential-value';
 const EMAIL_VALUE_SELECTOR = '.meta-email-value';
 const STATUS_TOGGLE_SELECTOR = '.meta-status-toggle';
+// A task's box in a Markdown note (- [ ] milk).
+const MARKDOWN_TASK_TOGGLE_SELECTOR = '.meta-markdown-task-toggle';
 // The arrow of a note shown inside an embed (![[UUID]]).
 const EMBED_COLLAPSE_TOGGLE_SELECTOR = '.note-embed-collapse-toggle[data-embed-collapse-note-id]';
 const CREDENTIAL_COPY_CLASS = 'meta-credential-copied';
@@ -124,6 +131,7 @@ export function initMouseEvents() {
     listen('mouseup', handleSelectionDragMouseUp, { capture: true });
     listen('click', handleClick, { capture: true });
     listen('dblclick', selectTagOnDoubleClick, { capture: true });
+    listen('dblclick', selectUuidOnDoubleClick, { capture: true });
     listen('dblclick', handleDiagramDoubleClick, { capture: true });
     listen('mouseover', handleMouseOver, { capture: true });
     listen('mouseout', handleMouseOut, { capture: true });
@@ -299,6 +307,9 @@ function isMouseDownOutsideEditExclusion(target) {
             '#reference-view-new-search',
             '#root-sort-indicator',
             '#date-range-indicator',
+            '#virtual-folder-indicator',
+            // A folder clicked saves and leaves the note itself, then shows the folder: one click.
+            '#virtual-folders',
             '#file-filter-indicator',
             '#untagged-view-indicator',
             '#menu-button',
@@ -325,11 +336,14 @@ function isMouseDownOutsideEditExclusion(target) {
             '.note-reference-link',
             '.note-backlinks-link',
             '.ai-chat-open-all-references',
-            '.note-file-reference-link',
-            '.note-file-image-download-link',
-            '.note-file-email-attachment',
-            '.note-file-email-more',
+            // A file linked in text, a card's Open and Download, a player: a click elsewhere on an
+            // embedded file's card edits the note (files-shown-not-copied.md §3).
+            'button.note-file-reference-link',
+            '.note-file-action',
+            '.note-file-media-embed',
+            // A click on a copyable value copies it; a password's eye shows it.
             CREDENTIAL_VALUE_SELECTOR,
+            VALUE_BUTTONS_SELECTOR,
             EMAIL_VALUE_SELECTOR,
             COPYABLE_SELECTOR,
             SHELL_SELECTOR,
@@ -568,7 +582,7 @@ function handleImmediateMouseDown(event) {
         return;
     }
 
-    if (event.target.closest('.meta-footnote-link, .note-backlinks-link, .note-source-arrow')) {
+    if (event.target.closest(`.meta-footnote-link, .note-backlinks-link, .note-source-arrow, ${VALUE_BUTTONS_SELECTOR}`)) {
         return;
     }
 
@@ -591,6 +605,13 @@ function handleImmediateMouseDown(event) {
     const todoToggle = event.target.closest(STATUS_TOGGLE_SELECTOR);
     if (todoToggle && handleTodoToggleClick(event)) {
         rememberMouseDownHandledClick(todoToggle, 'todo_toggle');
+        stopImmediatePropagationIfAvailable(event);
+        return;
+    }
+
+    const taskToggle = event.target.closest(MARKDOWN_TASK_TOGGLE_SELECTOR);
+    if (taskToggle && handleMarkdownTaskToggleClick(event, taskToggle)) {
+        rememberMouseDownHandledClick(taskToggle, 'markdown_task_toggle');
         stopImmediatePropagationIfAvailable(event);
         return;
     }
@@ -701,7 +722,7 @@ function handleMoveDragMouseDown(event) {
     if (isShellInteractiveTarget(event.target)) {
         return;
     }
-    if (event.target instanceof Element && event.target.closest(`${STATUS_TOGGLE_SELECTOR}, .meta-footnote-link, .note-backlinks-link, .note-source-arrow`)) {
+    if (event.target instanceof Element && event.target.closest(`${STATUS_TOGGLE_SELECTOR}, ${MARKDOWN_TASK_TOGGLE_SELECTOR}, .meta-footnote-link, .note-backlinks-link, .note-source-arrow, ${VALUE_BUTTONS_SELECTOR}`)) {
         return;
     }
 
@@ -871,6 +892,14 @@ function measureDragGhostRect(noteElement) {
 }
 
 function renderMoveDragIndicators(context, pointerTarget) {
+    // Over the virtual folders' tree the drag is a drop into the folder under the pointer: the
+    // folder highlights and the column shows no drop (docs/ready-to-build/virtual-folders.md §4).
+    const folderDrop = noteDropAt(pointerTarget, DOMUtils.getNoteById(context.noteId));
+    showNoteDropTarget(folderDrop === null ? null : folderDrop.row);
+    if (folderDrop !== null) {
+        hideNoteDragIndicators();
+        return;
+    }
     // The ghost, drop indicator and direction icon are separate preferences
     // (all on by default; CSS hides whichever is off). Drags work the same either way.
     const bodyClasses = document.body.classList;
@@ -1140,6 +1169,7 @@ function handleMoveDragMouseUp(event) {
     if (context.dragActive) {
         setMoveDragCursorActive(false);
     }
+    showNoteDropTarget(null);
 
     const dx = event.clientX - context.startX;
     const dy = event.clientY - context.startY;
@@ -1173,6 +1203,13 @@ function handleMoveDragMouseUp(event) {
         throw new Error('Move drag context missing noteId on mouseup');
     }
 
+    const folderDrop = noteDropAt(event.target, DOMUtils.getNoteById(context.noteId));
+    if (folderDrop !== null) {
+        void CommandGate.run('mouse.drag_into_folder', async () => {
+            await dropNoteOnFolder(context.noteId, folderDrop);
+        });
+        return;
+    }
     const drop = resolveMoveDragDrop(context.noteId, dx, dy, event.clientY, event.target);
     if (drop === null) {
         return;
@@ -1346,6 +1383,7 @@ function handleClick(event) {
     if (event.target instanceof Element && event.target.closest('.app-notice-stack, #reminder-surface, #floating-messages, .image-zoom-overlay')) return;
 
     if (isViewModeNoteDisclosureToggle(event.target)) {
+        handleMarkdownCalloutTitleClick(event);
         return;
     }
 
@@ -1480,16 +1518,17 @@ function handleClick(event) {
         return;
     }
 
-    if (handleEmailCardClick(event)) {
-        return;
-    }
-
     if (handleBacklinksLinkClick(event)) {
         return;
     }
 
-    // A link to a password or username note holds that note's copyable row: a click on the
-    // value copies it; the rest of the link (its reference icon) goes to the note.
+    // A password's eye (value-buttons-service.js).
+    if (handleValueButtonClick(event, event.target)) {
+        return;
+    }
+
+    // A click on a password or username copies it, in a link to its note too; the rest of the
+    // link (its reference icon) goes to the note.
     if (handleCredentialCopyClick(event)) {
         return;
     }
@@ -1538,6 +1577,18 @@ function handleClick(event) {
         if (event.target.closest('#date-range-indicator-clear')) {
             void CommandGate.run('dateRangeIndicator.clear', async () => {
                 await CommandPalette.setDateRangePreset('none');
+            });
+        }
+        return;
+    }
+
+    const virtualFolderIndicator = event.target.closest('#virtual-folder-indicator');
+    if (virtualFolderIndicator) {
+        event.preventDefault();
+        event.stopPropagation();
+        if (event.target.closest('#virtual-folder-indicator-clear')) {
+            void CommandGate.run('virtualFolderIndicator.clear', async () => {
+                await CommandPalette.setVirtualFolder('');
             });
         }
         return;
@@ -2100,7 +2151,7 @@ function handleFileReferenceClick(event) {
         throw new Error('File reference click missing target element');
     }
 
-    const button = event.target.closest('.note-file-reference-link, .note-file-image-download-link');
+    const button = event.target.closest('button.note-file-reference-link, .note-file-action, .note-file-media-play');
     if (!button) {
         return false;
     }
@@ -2123,38 +2174,22 @@ function handleFileReferenceClick(event) {
         throw new Error('File reference click missing file id');
     }
 
+    if (button.classList.contains('note-file-media-play')) {
+        void CommandGate.run('mouse.play_media_file', async () => {
+            await playMediaFile(button);
+        });
+        return true;
+    }
+    // Open, or a link to a file the viewer shows, opens it; Download, or a link to any other,
+    // downloads it (files-shown-not-copied.md §3).
+    if (opensInViewer(button)) {
+        void CommandGate.run('mouse.open_file_viewer', async () => {
+            await openFileViewer(fileId);
+        });
+        return true;
+    }
     void CommandGate.run('mouse.download_file_reference', async () => {
         await downloadFileReference(fileId);
-    });
-    return true;
-}
-
-// An email card's attachment downloads it; Show all opens or closes the whole body.
-function handleEmailCardClick(event) {
-    const target = event.target instanceof Element ? event.target : null;
-    if (target === null) return false;
-    const more = target.closest('.note-file-email-more');
-    if (more !== null) {
-        event.preventDefault();
-        event.stopPropagation();
-        toggleEmailBody(more);
-        return true;
-    }
-    const attachment = target.closest('.note-file-email-attachment');
-    if (attachment === null) return false;
-    event.preventDefault();
-    event.stopPropagation();
-    if (!ModeContext.isConnected) {
-        Logger.logNoop('Email attachment click ignored while disconnected', { isConnected: false });
-        return true;
-    }
-    const fileId = attachment.dataset.fileRefId;
-    const index = parseDecimalInteger(attachment.dataset.attachmentIndex);
-    if (typeof fileId !== 'string' || fileId === '' || !Number.isInteger(index)) {
-        throw new Error('Email attachment click missing its file id or index');
-    }
-    void CommandGate.run('mouse.download_email_attachment', async () => {
-        await downloadEmailAttachment(fileId, index);
     });
     return true;
 }
@@ -2286,6 +2321,77 @@ function handleTodoToggleClick(event) {
     return true;
 }
 
+// As the @todo box (handleTodoToggleClick): a press ticks or empties the task; in an
+// embed it shows its source's state and does nothing; a locked or search-hidden note
+// changes nothing.
+function handleMarkdownTaskToggleClick(event, toggleElement) {
+    if (!ModeContext.isConnected) {
+        return false;
+    }
+    const noteElement = toggleElement.closest('.note');
+    if (!noteElement) {
+        throw new Error('Markdown task box missing its note element');
+    }
+    if (noteElement.classList.contains('locked') || noteElement.classList.contains('search-redacted')) {
+        return false;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    if (toggleElement.closest('.note-embed-node') !== null) {
+        return true;
+    }
+    const noteId = noteElement.dataset.noteId;
+    const taskIndex = Number(toggleElement.dataset.taskIndex);
+    if (!noteId || !Number.isInteger(taskIndex)) {
+        throw new Error('Markdown task box missing its note id or task index');
+    }
+    const isTicked = toggleElement.getAttribute('aria-checked') !== 'true';
+    void CommandGate.run('mouse.toggle_markdown_task', async () => {
+        await toggleMarkdownTask(noteId, taskIndex, isTicked);
+    });
+    return true;
+}
+
+// A click on a folding callout's title, or a <details> fold's (docs/ui/content-formatting.md,
+// Callouts and HTML): the browser opens or closes it at once, and its - or + (the fold's
+// open attribute) is written into the note so the fold stays; in an embed it folds there
+// only, and a locked or search-hidden note changes nothing.
+function handleMarkdownCalloutTitleClick(event) {
+    const summary = viewModeCalloutTitleAt(event.target);
+    if (summary === null || !ModeContext.isConnected) {
+        return;
+    }
+    if (summary.closest('.note-embed-node') !== null) {
+        return;
+    }
+    const noteElement = summary.closest('.note');
+    if (noteElement.classList.contains('locked') || noteElement.classList.contains('search-redacted')) {
+        event.preventDefault();
+        return;
+    }
+    const fold = summary.parentElement;
+    const noteId = noteElement.dataset.noteId;
+    // The click's own toggle comes after this handler: the state asked for is the opposite.
+    const isOpen = !fold.open;
+    if (fold.classList.contains('meta-markdown-html-fold')) {
+        const foldIndex = Number(fold.dataset.foldIndex);
+        if (!noteId || !Number.isInteger(foldIndex)) {
+            throw new Error('Markdown fold title missing its note id or fold index');
+        }
+        void CommandGate.run('mouse.toggle_markdown_fold', async () => {
+            await toggleMarkdownFold(noteId, foldIndex, isOpen);
+        });
+        return;
+    }
+    const calloutIndex = Number(fold.dataset.calloutIndex);
+    if (!noteId || !Number.isInteger(calloutIndex)) {
+        throw new Error('Markdown callout title missing its note id or callout index');
+    }
+    void CommandGate.run('mouse.toggle_markdown_callout', async () => {
+        await toggleMarkdownCallout(noteId, calloutIndex, isOpen);
+    });
+}
+
 function handleCredentialCopyClick(event) {
     if (!event) {
         throw new Error('handleCredentialCopyClick called without an event object');
@@ -2309,7 +2415,8 @@ function handleCredentialCopyClick(event) {
 
     triggerCopyFeedback(valueElement, CREDENTIAL_COPY_CLASS);
     void copyTextToClipboard(copyValue, valueElement, CREDENTIAL_COPY_CLASS);
-    Logger.logAction('credential.copy', { valueLength: copyValue.length });
+    // A credential's copy says nothing of the value, not even its length.
+    Logger.logAction('credential.copy', {});
     return true;
 }
 

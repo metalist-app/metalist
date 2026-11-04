@@ -30,6 +30,8 @@ function installMeasurementCounter(t, rects) {
         // The measured element stands in for its one text node.
         createTreeWalker(root) {
             let given = false;
+            // The measured element stands in for its one text node, outside any file snippet.
+            if (!('parentElement' in root)) root.parentElement = { closest: () => null };
             return { nextNode() { const node = given ? null : root; given = true; return node; } };
         },
     };

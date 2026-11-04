@@ -144,15 +144,15 @@ test('ModeContext modal stack uses strict mutators instead of direct array mutat
     );
 });
 
-test('ModeContext keeps the untagged view outside persisted tab state', async (t) => {
+// The server keeps each tab's Untagged view (untaggedViews), as it keeps its Files filter;
+// the browser's snapshot of its tabs never carries it.
+test('ModeContext keeps the untagged view outside the tab state it sends', async (t) => {
     installModeContextGlobals(t);
     const { ModeContextInstance: ModeContext } = await import('../../app/static/js/modules/mode-manager/mode-context.js');
 
-    ModeContext.setUntaggedView(true);
+    ModeContext.recordUntaggedViewsFromServer({ untaggedViews: [ModeContext.activeTabId] });
     t.after(() => {
-        if (ModeContext.isUntaggedView) {
-            ModeContext.setUntaggedView(false);
-        }
+        ModeContext.recordUntaggedViewsFromServer({ untaggedViews: [] });
     });
 
     const serializedTabState = ModeContext.getTabStatePayload();

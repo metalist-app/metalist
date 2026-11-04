@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from app.services.credential_display import CredentialDisplay
 from app.utils.byte_sizes import MIB
 import html
 import re
+from pathlib import PurePath
 from dataclasses import dataclass
 from html.parser import HTMLParser
 from itertools import islice
@@ -13,12 +15,15 @@ from app.services.content_formatting import find_global_credential_tag
 from app.services.content_formatting import render_credential_link_row
 from app.services.content_formatting import format_note_content_for_view
 from app.services.content_formatting import has_scoped_footnotes
+from app.services.content_formatting import is_markdown_note
+from app.services.content_formatting import kept_from_markdown
 from app.services.content_formatting import render_standalone_link_title_html
 from app.services.content_formatting import showing_sites_above
 from app.services.content_formatting import sites_linked_in
 from app.services.content_formatting import sites_shown_above
-from app.services.file_text_preview import text_file_badge
-from app.services.email_files import EMAIL_BADGE, is_email_file
+from app.services.file_view import NO_VIEW, VIEW_EMAIL, text_file_badge, view_kind_of
+from app.services.email_cards import email_card_name
+from app.services.email_files import email_badge, is_email_file
 from app.services.inline_image_occurrences import annotate_inline_image_occurrences
 from app.services.subtree_stats import render_subtree_stats_footer
 from app.services.remote_image_proxy import (
@@ -247,14 +252,14 @@ class _LinkTextDrawing(HTMLParser):
         return _WHITESPACE_RE.sub(" ", "".join(self.output)).strip()
 
 
-def _drawn_link_text_or_none(*, record: object, context: EmbedRenderContext, redact_credentials: bool) -> str | None:
+def _drawn_link_text_or_none(*, record: object, context: EmbedRenderContext, credentials: CredentialDisplay) -> str | None:
     """A link's text as its note's folded first line draws it (agreed 2026-10-29), or None
     when drawing changes nothing (its plain text says it all). Drawing can change the text
     with no formatting left: a Markdown heading `# Trip plan` draws as `Trip plan`."""
     content_html = getattr(record, "content")
     tags = getattr(record, "tags")
     first_line = _first_shown_line(extract_collapsed_preview_source_html(content_html), context=context)
-    drawing = _link_text_drawing(format_note_content_for_view(content_html=first_line, tags=tags, redact_credentials=redact_credentials))
+    drawing = _link_text_drawing(format_note_content_for_view(content_html=first_line, tags=tags, credentials=credentials))
     if drawing.has_drawing:
         return drawing.drawn_html()
     if drawing.has_web_link or drawing.drawn_html() == _link_text_drawing(first_line).drawn_html():
@@ -328,7 +333,7 @@ def render_note_content_with_embeds(
     tags: str,
     context: EmbedRenderContext,
     static_export: bool,
-    redact_credentials: bool,
+    credentials: CredentialDisplay,
 ) -> str:
     rendered_content = _render_note_content_with_embeds(
         note_id=note_id,
@@ -336,7 +341,7 @@ def render_note_content_with_embeds(
         tags=tags,
         context=context,
         static_export=static_export,
-        redact_credentials=redact_credentials,
+        credentials=credentials,
         folds_embeds=False,
         is_held=sole_embed_token(content_html) is not None,
     )
@@ -352,7 +357,7 @@ def _render_note_content_with_embeds(
     tags: str,
     context: EmbedRenderContext,
     static_export: bool,
-    redact_credentials: bool,
+    credentials: CredentialDisplay,
     folds_embeds: bool,
     is_held: bool,
 ) -> str:
@@ -364,8 +369,8 @@ def _render_note_content_with_embeds(
         raise TypeError("tags must be a string")
     if not isinstance(static_export, bool):
         raise TypeError("static_export must be a bool")
-    if not isinstance(redact_credentials, bool):
-        raise TypeError("redact_credentials must be a bool")
+    if not isinstance(credentials, CredentialDisplay):
+        raise TypeError(f"credentials must be a CredentialDisplay, got {type(credentials)}")
     if not isinstance(folds_embeds, bool):
         raise TypeError("folds_embeds must be a bool")
 
@@ -379,14 +384,17 @@ def _render_note_content_with_embeds(
         context=context,
         ancestry=(note_id,),
         static_export=static_export,
-        redact_credentials=redact_credentials,
+        credentials=credentials,
         folds_embeds=folds_embeds,
         is_held=is_held,
+        # A Markdown note draws its text from plain source: its references are carried
+        # through the Markdown pass and drawn after it (docs/ui/content-formatting.md).
+        keeps_from_markdown=is_markdown_note(tags),
     )
     rendered_content = format_note_content_for_view(
         content_html=content_with_embeds,
         tags=tags,
-        redact_credentials=redact_credentials,
+        credentials=credentials,
     )
     if static_export:
         return rendered_content
@@ -396,6 +404,14 @@ def _render_note_content_with_embeds(
     )
 
 
+# A Markdown footnote's marks: [^label] (defined on a later line) and ^[inline text].
+_MARKDOWN_FOOTNOTE_MARKS = ("[^", "^[")
+
+
+def _has_markdown_footnotes(*, content_html: str, tags: str) -> bool:
+    return is_markdown_note(tags) and any(mark in content_html for mark in _MARKDOWN_FOOTNOTE_MARKS)
+
+
 def render_collapsed_note_content_with_embeds(
     *,
     note_id: str,
@@ -403,10 +419,10 @@ def render_collapsed_note_content_with_embeds(
     tags: str,
     context: EmbedRenderContext,
     static_export: bool,
-    redact_credentials: bool,
+    credentials: CredentialDisplay,
 ) -> str:
     preview_source_html = _first_shown_line(extract_collapsed_preview_source_html(content_html), context=context)
-    if has_scoped_footnotes(tags):
+    if has_scoped_footnotes(tags) or _has_markdown_footnotes(content_html=content_html, tags=tags):
         # Footnotes on later source lines can attach markers to the first line.
         preview_source_html = content_html
     return _render_note_content_with_embeds(
@@ -415,7 +431,7 @@ def render_collapsed_note_content_with_embeds(
         tags=tags,
         context=context,
         static_export=static_export,
-        redact_credentials=redact_credentials,
+        credentials=credentials,
         folds_embeds=True,
         # Whether the note is only its embed, not whether its first line is.
         is_held=sole_embed_token(content_html) is not None,
@@ -558,16 +574,6 @@ def preview_html_has_image_file_embed(*, preview_source_html: str, context: Embe
     return False
 
 
-def _preview_html_has_email_embed(*, preview_source_html: str, context: EmbedRenderContext) -> bool:
-    for token in collect_reference_tokens_from_html(preview_source_html):
-        if not token.is_embed or not context.has_file(token.note_id):
-            continue
-        record = context.get_file(token.note_id)
-        if is_email_file(mime_type=getattr(record, "mime_type"), original_filename=getattr(record, "original_filename")):
-            return True
-    return False
-
-
 # The editor's own wrappers around a line; they add nothing visible.
 _EDITOR_WRAPPER_TAG_RE = re.compile(r"</?(?:div|p|span|b|strong|i|em|u|s)\b[^>]*>", re.IGNORECASE)
 # A line break right after text, ending its block: the editor's placeholder,
@@ -649,9 +655,10 @@ def _replace_reference_tokens_in_html(
     context: EmbedRenderContext,
     ancestry: Tuple[str, ...],
     static_export: bool,
-    redact_credentials: bool,
+    credentials: CredentialDisplay,
     folds_embeds: bool,
     is_held: bool,
+    keeps_from_markdown: bool,
 ) -> str:
     parts = _HTML_TOKEN_SPLIT_RE.split(content_html)
     output: List[str] = []
@@ -667,9 +674,10 @@ def _replace_reference_tokens_in_html(
             ancestry=ancestry,
             occurrence_start=occurrence_index,
             static_export=static_export,
-            redact_credentials=redact_credentials,
+            credentials=credentials,
             folds_embeds=folds_embeds,
             is_held=is_held,
+            keeps_from_markdown=keeps_from_markdown,
         )
         output.append(replaced_text)
         occurrence_index = next_occurrence_index
@@ -684,9 +692,10 @@ def _replace_reference_tokens_in_text(
     ancestry: Tuple[str, ...],
     occurrence_start: int,
     static_export: bool,
-    redact_credentials: bool,
+    credentials: CredentialDisplay,
     folds_embeds: bool,
     is_held: bool,
+    keeps_from_markdown: bool,
 ) -> tuple[str, int]:
     if text == "":
         return "", occurrence_start
@@ -715,21 +724,25 @@ def _replace_reference_tokens_in_text(
             index = token_start + token_open_length
             continue
 
-        output.append(
-            _render_reference_block(
-                host_note_id=host_note_id,
-                reference_note_id=target.note_id,
-                link_text=target.link_text,
-                occurrence_index=occurrence_index,
-                is_embed=is_embed,
-                context=context,
-                ancestry=ancestry,
-                static_export=static_export,
-                redact_credentials=redact_credentials,
-                folds_embeds=folds_embeds,
-                is_held=is_held,
-            )
+        reference_html = _render_reference_block(
+            host_note_id=host_note_id,
+            reference_note_id=target.note_id,
+            link_text=target.link_text,
+            occurrence_index=occurrence_index,
+            is_embed=is_embed,
+            context=context,
+            ancestry=ancestry,
+            static_export=static_export,
+            credentials=credentials,
+            folds_embeds=folds_embeds,
+            is_held=is_held,
+            # In a Markdown paragraph a <div> would end the <p> it sits in.
+            is_in_paragraph=keeps_from_markdown and not is_embed,
         )
+        if keeps_from_markdown:
+            # A link stays in its paragraph; an embed is a block between paragraphs.
+            reference_html = kept_from_markdown(reference_html, is_block=is_embed)
+        output.append(reference_html)
         occurrence_index += 1
         index = end + len(_REFERENCE_CLOSE)
 
@@ -791,6 +804,10 @@ def _is_valid_embed_note_id(note_id: str) -> bool:
     return _UUID_REFERENCE_ID_RE.fullmatch(note_id) is not None
 
 
+# A reference's wrapper, by whether it sits inside a paragraph (a link in a Markdown note).
+_REFERENCE_ELEMENTS = {True: "span", False: "div"}
+
+
 def _render_reference_block(
     *,
     host_note_id: str,
@@ -801,9 +818,10 @@ def _render_reference_block(
     context: EmbedRenderContext,
     ancestry: Tuple[str, ...],
     static_export: bool,
-    redact_credentials: bool,
+    credentials: CredentialDisplay,
     folds_embeds: bool,
     is_held: bool,
+    is_in_paragraph: bool,
 ) -> str:
     mode = "link"
     if is_embed:
@@ -836,7 +854,7 @@ def _render_reference_block(
             body_html = _render_note_reference_body(
                 reference_note_id=reference_note_id, display_as_embed=display_as_embed, link_text=link_text,
                 context=context, ancestry=ancestry, static_export=static_export,
-                redact_credentials=redact_credentials, folds_embeds=folds_embeds,
+                credentials=credentials, folds_embeds=folds_embeds,
             )
     elif file_exists:
         wrapper_classes = f"{wrapper_classes} note-reference-file"
@@ -862,17 +880,18 @@ def _render_reference_block(
                 static_export=static_export,
             )
     else:
-        body_html = _render_missing_reference_body(reference_note_id)
+        body_html = _render_missing_reference_body(reference_note_id, element=_REFERENCE_ELEMENTS[is_in_paragraph])
 
+    element = _REFERENCE_ELEMENTS[is_in_paragraph]
     return (
-        f'<div class="{wrapper_classes}" '
+        f'<{element} class="{wrapper_classes}" '
         f'data-ref-host-note-id="{escaped_host_note_id}" '
         f'data-ref-note-id="{escaped_reference_note_id}" '
         f'data-ref-occurrence="{occurrence_index}" '
         f'data-ref-mode="{mode}" '
         f'data-embed-ref-id="{escaped_reference_note_id}">'
-        f'<div class="note-reference-content">{body_html}</div>'
-        "</div>"
+        f'<{element} class="note-reference-content">{body_html}</{element}>'
+        f"</{element}>"
     )
 
 
@@ -884,7 +903,7 @@ def _render_note_reference_body(
     context: EmbedRenderContext,
     ancestry: Tuple[str, ...],
     static_export: bool,
-    redact_credentials: bool,
+    credentials: CredentialDisplay,
     folds_embeds: bool,
 ) -> str:
     if display_as_embed:
@@ -893,7 +912,7 @@ def _render_note_reference_body(
             context=context,
             ancestry=ancestry,
             static_export=static_export,
-            redact_credentials=redact_credentials,
+            credentials=credentials,
             # A folded note shows one line: an embed on it shows its note folded.
             folds_root=folds_embeds,
         )
@@ -905,7 +924,7 @@ def _render_note_reference_body(
         reference_note_id=reference_note_id,
         context=context,
         static_export=static_export,
-        redact_credentials=redact_credentials,
+        credentials=credentials,
         show_media=True,
     )
 
@@ -916,7 +935,7 @@ def _render_embed_body(
     context: EmbedRenderContext,
     ancestry: Tuple[str, ...],
     static_export: bool,
-    redact_credentials: bool,
+    credentials: CredentialDisplay,
     folds_root: bool,
 ) -> str:
     escaped_note_id = html.escape(reference_note_id, quote=True)
@@ -936,7 +955,7 @@ def _render_embed_body(
             is_root=True,
             folds_root=folds_root,
             static_export=static_export,
-            redact_credentials=redact_credentials,
+            credentials=credentials,
         )
     if static_export:
         return embedded_content
@@ -954,20 +973,22 @@ def _render_link_body(
     reference_note_id: str,
     context: EmbedRenderContext,
     static_export: bool,
-    redact_credentials: bool,
+    credentials: CredentialDisplay,
     show_media: bool,
 ) -> str:
     escaped_note_id = html.escape(reference_note_id, quote=True)
     preview, redacted_credential = _resolve_note_reference_preview(
         reference_note_id=reference_note_id,
         context=context,
-        redact_credentials=redact_credentials,
+        credentials=credentials,
     )
-    is_credential_preview = redacted_credential != ""
     preview_html = None
-    if not is_credential_preview:
-        # Where credentials are hidden the mask stands in (is_credential_preview).
-        preview_html = _credential_link_row_or_none(reference_note_id=reference_note_id, context=context)
+    if credentials is not CredentialDisplay.HIDDEN:
+        preview_html = _credential_link_row_or_none(
+            reference_note_id=reference_note_id, context=context, credentials=credentials,
+        )
+    # Where credentials are hidden (or the row isn't drawn) the mask stands in.
+    is_credential_preview = preview_html is None and redacted_credential != ""
     title_classes = "note-reference-link-title"
     if show_media and not is_credential_preview and preview_html is None:
         # A source that collapses to a thumbnail is referenced by the same thumbnail.
@@ -987,7 +1008,7 @@ def _render_link_body(
             # Format the entire source first: standalone scopes on later lines
             # can attach their markers to the source's opening line.
             formatted = format_note_content_for_view(
-                content_html=record.content, tags=record.tags, redact_credentials=redact_credentials,
+                content_html=record.content, tags=record.tags, credentials=credentials,
             )
             parser = _FootnoteReferencePreview()
             parser.feed(extract_collapsed_preview_source_html(formatted))
@@ -1000,7 +1021,7 @@ def _render_link_body(
                 record=context.get_note(resolve_held_source(
                     reference_note_id, has_note=context.has_note, content_of=_context_content(context),
                 )),
-                context=context, redact_credentials=redact_credentials,
+                context=context, credentials=credentials,
             )
         if preview_html is None:
             preview_html = render_standalone_link_title_html(preview)
@@ -1043,7 +1064,9 @@ def _render_link_text_body(*, reference_note_id: str, link_text: str, static_exp
     )
 
 
-def _credential_link_row_or_none(*, reference_note_id: str, context: EmbedRenderContext) -> str | None:
+def _credential_link_row_or_none(
+    *, reference_note_id: str, context: EmbedRenderContext, credentials: CredentialDisplay,
+) -> str | None:
     """A link to an @password or @username note (where credentials are not hidden) is that
     note's own copyable row (agreed 2026-10-26): clicking the value copies it, the link's
     reference icon goes to the note. None for any other note."""
@@ -1058,7 +1081,7 @@ def _credential_link_row_or_none(*, reference_note_id: str, context: EmbedRender
     credential_tag = find_global_credential_tag(tags)
     if credential_tag is None:
         return None
-    return render_credential_link_row(content_html=content_html, credential_tag=credential_tag)
+    return render_credential_link_row(content_html=content_html, credential_tag=credential_tag, credentials=credentials)
 
 
 def _render_link_preview_thumbnail(
@@ -1134,7 +1157,7 @@ def _render_file_link_thumbnail(*, record: object, file_id: str, thumbnail_kind:
             f'<span class="note-reference-link-thumbnail {kind_class} note-file-excalidraw-embed" '
             f'data-file-ref-id="{escaped_file_id}" data-file-revision="{content_revision}" data-preview-state="idle">'
             f'<span class="note-file-excalidraw-frame">{images}'
-            '<span class="note-file-excalidraw-placeholder">Loading diagram...</span>'
+            '<span class="note-file-excalidraw-placeholder note-loading-placeholder">Loading diagram...</span>'
             "</span></span>"
         )
     # Hydrated by the image file preview service.
@@ -1143,7 +1166,7 @@ def _render_file_link_thumbnail(*, record: object, file_id: str, thumbnail_kind:
         f'data-file-ref-id="{escaped_file_id}" data-preview-state="idle">'
         '<span class="note-file-image-preview-frame">'
         '<img class="note-file-image-preview" alt="" loading="lazy" decoding="async" draggable="false" hidden />'
-        '<span class="note-file-image-preview-placeholder">Loading image...</span>'
+        '<span class="note-file-image-preview-placeholder note-loading-placeholder">Loading image...</span>'
         "</span></span>"
     )
 
@@ -1165,10 +1188,11 @@ def _resolve_note_reference_preview(
     *,
     reference_note_id: str,
     context: EmbedRenderContext,
-    redact_credentials: bool,
+    credentials: CredentialDisplay,
 ) -> tuple[str, str]:
     """The linked note's first line, and which credential it hides ('' for none):
-    a password or username is shown as the mask when credentials are redacted.
+    a password or username is shown as the mask where credentials are hidden, and a password
+    in MetaList too (CredentialDisplay.DOTS).
     A note that is only a reference shows its source, so a link to it reads
     as the source's first line (followed until a note with content of its own)."""
     visited: List[str] = []
@@ -1183,7 +1207,10 @@ def _resolve_note_reference_preview(
             raise TypeError("linked note tags must be a string")
         visited.append(note_id)
         credential_tag = find_global_credential_tag(record_tags)
-        if redact_credentials and credential_tag is not None:
+        if credential_tag is not None and (
+            credentials is CredentialDisplay.HIDDEN
+            or (credentials is CredentialDisplay.DOTS and credential_tag == "password")
+        ):
             return CREDENTIAL_MASK, credential_tag
         held = sole_reference_token(record_content)
         if held is None or not context.has_note(held.note_id) or held.note_id in visited:
@@ -1199,18 +1226,18 @@ def get_note_reference_preview(
     *,
     reference_note_id: str,
     context: EmbedRenderContext,
-    redact_credentials: bool,
+    credentials: CredentialDisplay,
 ) -> str:
     if not isinstance(reference_note_id, str) or reference_note_id == "":
         raise TypeError("reference_note_id must be a non-empty string")
-    if not isinstance(redact_credentials, bool):
-        raise TypeError("redact_credentials must be a bool")
+    if not isinstance(credentials, CredentialDisplay):
+        raise TypeError(f"credentials must be a CredentialDisplay, got {type(credentials)}")
     if not context.has_note(reference_note_id):
         raise KeyError(f"Cannot preview missing note reference {reference_note_id}")
     preview, _redacted_credential = _resolve_note_reference_preview(
         reference_note_id=reference_note_id,
         context=context,
-        redact_credentials=redact_credentials,
+        credentials=credentials,
     )
     return preview
 
@@ -1219,12 +1246,12 @@ def render_compact_note_reference_link(
     *,
     reference_note_id: str,
     context: EmbedRenderContext,
-    redact_credentials: bool,
+    credentials: CredentialDisplay,
 ) -> str:
     if not isinstance(reference_note_id, str) or reference_note_id == "":
         raise TypeError("reference_note_id must be a non-empty string")
-    if not isinstance(redact_credentials, bool):
-        raise TypeError("redact_credentials must be a bool")
+    if not isinstance(credentials, CredentialDisplay):
+        raise TypeError(f"credentials must be a CredentialDisplay, got {type(credentials)}")
     if not context.has_note(reference_note_id):
         raise KeyError(f"Cannot render missing note reference {reference_note_id}")
     escaped_note_id = html.escape(reference_note_id, quote=True)
@@ -1233,7 +1260,7 @@ def render_compact_note_reference_link(
         reference_note_id=reference_note_id,
         context=context,
         static_export=False,
-        redact_credentials=redact_credentials,
+        credentials=credentials,
         show_media=False,
     )
     return (
@@ -1247,13 +1274,13 @@ def render_compact_note_reference_link(
     )
 
 
-def _render_missing_reference_body(reference_note_id: str) -> str:
+def _render_missing_reference_body(reference_note_id: str, *, element: str) -> str:
     escaped_note_id = html.escape(reference_note_id, quote=True)
     return (
-        '<div class="note-reference-marker note-embed-missing">'
+        f'<{element} class="note-reference-marker note-embed-missing">'
         '<span class="note-embed-marker-icon" aria-hidden="true">&#9888;</span>'
         f'<span class="note-embed-marker-text">Missing reference: {escaped_note_id}</span>'
-        "</div>"
+        f"</{element}>"
     )
 
 
@@ -1323,9 +1350,11 @@ def _render_file_body(
     is_email = is_email_file(mime_type=mime_type, original_filename=original_filename)
     badge_text = html.escape(_format_file_badge(thumbnail_kind=thumbnail_kind, original_filename=original_filename))
     if is_email:
-        badge_text = EMAIL_BADGE
-    if is_embed and is_email and not static_export:
-        return _render_email_embed(record=record, escaped_note_id=escaped_note_id)
+        # A card as any file's, named by its subject and sender, opened in the viewer (2026-11-03).
+        badge_text = html.escape(email_badge(original_filename))
+        card_name = email_card_name(reference_note_id)
+        if card_name != "" and link_text is None:
+            escaped_title = html.escape(card_name)
     if static_export:
         return _render_static_file_body(
             record=record,
@@ -1341,45 +1370,73 @@ def _render_file_body(
             escaped_note_id=escaped_note_id,
             escaped_title_attribute=escaped_title_attribute,
         )
+    # A picture stored as a file shows itself, with no download line (files-shown-not-copied.md
+    # §3, 2026-11-03): its right-click menu's Download File gets the original.
     if is_embed and thumbnail_kind == "image":
         return (
             f'<div class="note-file-image-embed" data-file-ref-id="{escaped_note_id}" data-preview-state="idle">'
             '<div class="note-file-image-preview-frame">'
             f'<img class="note-file-image-preview" data-file-ref-id="{escaped_note_id}" alt="{escaped_title_attribute}" loading="lazy" decoding="async" hidden />'
-            '<div class="note-file-image-preview-placeholder">Loading image preview...</div>'
+            '<div class="note-file-image-preview-placeholder note-loading-placeholder">Loading image preview...</div>'
             "</div>"
-            f'<button type="button" class="note-file-image-download-link" data-file-ref-id="{escaped_note_id}" aria-label="Download image file">'
-            "download image"
-            "</button>"
             "</div>"
         )
-    button_classes = "note-file-reference-link"
-    if is_embed:
-        button_classes = f"{button_classes} note-file-reference-link-embed"
-
-    download_tooltip = html.escape(f"Click to download {original_filename}", quote=True)
+    if is_embed and thumbnail_kind in _MEDIA_KINDS:
+        return _render_media_embed(escaped_note_id=escaped_note_id, escaped_title=escaped_title, media_kind=thumbnail_kind)
+    view_kind = view_kind_of(original_filename)
+    if is_email:
+        view_kind = VIEW_EMAIL
+    if not is_embed:
+        # A file linked in text is its name: a click opens it in the viewer, or downloads one the
+        # viewer doesn't show (the maintainer, 2026-11-03).
+        action = "Open"
+        if view_kind == NO_VIEW:
+            action = "Download"
+        link_tooltip = html.escape(f"{action} {original_filename}", quote=True)
+        return (
+            f'<button type="button" class="note-file-reference-link" data-file-ref-id="{escaped_note_id}" '
+            f'data-file-view="{view_kind}" title="{link_tooltip}">'
+            f'<span class="note-file-reference-header">'
+            f'<span class="note-file-reference-badge">{badge_text}</span>'
+            f'<span class="note-file-reference-title"><span class="note-file-reference-name">{escaped_title}</span></span>'
+            "</span>"
+            "</button>"
+        )
+    # An embedded file's card: its badge and name, then Open (a file the viewer shows) and
+    # Download (files-shown-not-copied.md §3). A click elsewhere on it edits the note.
+    open_button = ""
+    if view_kind != NO_VIEW:
+        open_button = (
+            f'<button type="button" class="note-file-action note-file-open" data-file-ref-id="{escaped_note_id}" '
+            f'data-file-view="{view_kind}" title="{html.escape(f"Open {original_filename}", quote=True)}">Open</button>'
+        )
     return (
-        f'<button type="button" class="{button_classes}" data-file-ref-id="{escaped_note_id}" '
-        f'title="{download_tooltip}">'
+        f'<span class="note-file-reference-link note-file-reference-link-embed" data-file-ref-id="{escaped_note_id}">'
         f'<span class="note-file-reference-header">'
         f'<span class="note-file-reference-badge">{badge_text}</span>'
-        # The name's own text, inline, so only its lines download (main.css, .note-file-reference-name).
         f'<span class="note-file-reference-title"><span class="note-file-reference-name">{escaped_title}</span></span>'
+        f'<span class="note-file-actions">{open_button}'
+        f'<button type="button" class="note-file-action note-file-download" data-file-ref-id="{escaped_note_id}" '
+        f'title="{html.escape(f"Download {original_filename}", quote=True)}">Download</button>'
         "</span>"
-        "</button>"
+        "</span>"
+        "</span>"
     )
 
 
-def _render_email_embed(*, record: object, escaped_note_id: str) -> str:
-    """An email file as a card (docs/ui/references.md, "Email files"), filled in by the
-    browser from GET /files/{id}/email (file-email-preview-service.js)."""
-    content_revision = getattr(record, "content_revision")
-    if not isinstance(content_revision, int) or content_revision < 1:
-        raise TypeError("email file content_revision must be a positive int")
+# Files the note plays in the browser's own player (files-shown-not-copied.md §3).
+_MEDIA_KINDS = frozenset({"audio", "video"})
+
+
+def _render_media_embed(*, escaped_note_id: str, escaped_title: str, media_kind: str) -> str:
+    """An audio or video file as its player: Play loads the whole file, then plays it (a file
+    request needs the tab's header, which a player can't send: the maintainer, 2026-11-03)."""
     return (
-        f'<div class="note-file-email-embed" data-file-ref-id="{escaped_note_id}" '
-        f'data-file-revision="{content_revision}" data-preview-state="idle">'
-        '<div class="note-file-email-placeholder">Loading email…</div>'
+        f'<div class="note-file-media-embed" data-file-ref-id="{escaped_note_id}" data-media-kind="{media_kind}" data-media-state="idle">'
+        f'<button type="button" class="note-file-media-play" data-file-ref-id="{escaped_note_id}" aria-label="Play {escaped_title}">'
+        '<span class="note-file-media-play-icon" aria-hidden="true">▶</span>'
+        f'<span class="note-file-media-name">{escaped_title}</span>'
+        "</button>"
         "</div>"
     )
 
@@ -1400,7 +1457,7 @@ def _render_excalidraw_embed(*, record: object, escaped_note_id: str, escaped_ti
         f'data-file-revision="{content_revision}" data-preview-state="idle" title="Double-click to edit the diagram">'
         '<div class="note-file-excalidraw-frame">'
         f"{images}"
-        '<div class="note-file-excalidraw-placeholder">Loading diagram...</div>'
+        '<div class="note-file-excalidraw-placeholder note-loading-placeholder">Loading diagram...</div>'
         "</div>"
         "</div>"
     )
@@ -1463,7 +1520,7 @@ def _render_embedded_note_node(
     is_root: bool,
     folds_root: bool,
     static_export: bool,
-    redact_credentials: bool,
+    credentials: CredentialDisplay,
 ) -> str:
     record = context.get_note(note_id)
     record_content = record.content
@@ -1506,7 +1563,7 @@ def _render_embedded_note_node(
         return _render_foldable_static_embedded_note_node(
             note_id=note_id, record_tags=record_tags, annotated_content=annotated_content, classes=classes,
             escaped_note_id=escaped_note_id, toggle_html=toggle_html, is_collapsed=is_collapsed, child_ids=child_ids,
-            context=context, ancestry=ancestry, redact_credentials=redact_credentials,
+            context=context, ancestry=ancestry, credentials=credentials,
         )
     children_html = ""
     if is_collapsed:
@@ -1517,7 +1574,7 @@ def _render_embedded_note_node(
             tags=record_tags,
             context=context,
             static_export=static_export,
-            redact_credentials=redact_credentials,
+            credentials=credentials,
         )
     else:
         rendered_content = _render_expanded_embedded_content(
@@ -1527,7 +1584,7 @@ def _render_embedded_note_node(
             context=context,
             ancestry=ancestry,
             static_export=static_export,
-            redact_credentials=redact_credentials,
+            credentials=credentials,
         )
         # Its children are shown under it: its sites are shown above them.
         with showing_sites_above(sites_shown_above() | sites_linked_in(record_content)):
@@ -1536,7 +1593,7 @@ def _render_embedded_note_node(
                 context=context,
                 ancestry=ancestry,
                 static_export=static_export,
-                redact_credentials=redact_credentials,
+                credentials=credentials,
             )
 
     content_classes = "note-embed-content"
@@ -1566,7 +1623,7 @@ def _render_foldable_static_embedded_note_node(
     child_ids: List[str],
     context: EmbedRenderContext,
     ancestry: Tuple[str, ...],
-    redact_credentials: bool,
+    credentials: CredentialDisplay,
 ) -> str:
     """An embedded note in a downloaded export: its first line and its full
     content with its children, the file's arrow showing one or the other."""
@@ -1578,7 +1635,7 @@ def _render_foldable_static_embedded_note_node(
         tags=record_tags,
         context=context,
         static_export=True,
-        redact_credentials=redact_credentials,
+        credentials=credentials,
     )
     expanded_content = _render_expanded_embedded_content(
         note_id=note_id,
@@ -1587,7 +1644,7 @@ def _render_foldable_static_embedded_note_node(
         context=context,
         ancestry=ancestry,
         static_export=True,
-        redact_credentials=redact_credentials,
+        credentials=credentials,
     )
     with showing_sites_above(sites_shown_above() | sites_linked_in(annotated_content)):
         children_html = _render_embedded_children(
@@ -1595,7 +1652,7 @@ def _render_foldable_static_embedded_note_node(
             context=context,
             ancestry=ancestry,
             static_export=True,
-            redact_credentials=redact_credentials,
+            credentials=credentials,
         )
     return (
         f'<div class="{classes}" data-embed-note-id="{escaped_note_id}">'
@@ -1639,7 +1696,7 @@ def _render_expanded_embedded_content(
     context: EmbedRenderContext,
     ancestry: Tuple[str, ...],
     static_export: bool,
-    redact_credentials: bool,
+    credentials: CredentialDisplay,
 ) -> str:
     rendered_content = _replace_reference_tokens_in_html(
         host_note_id=note_id,
@@ -1648,14 +1705,15 @@ def _render_expanded_embedded_content(
         context=context,
         ancestry=ancestry,
         static_export=static_export,
-        redact_credentials=redact_credentials,
+        credentials=credentials,
         folds_embeds=False,
         is_held=sole_embed_token(annotated_content) is not None,
+        keeps_from_markdown=is_markdown_note(tags),
     )
     return format_note_content_for_view(
         content_html=rendered_content,
         tags=tags,
-        redact_credentials=redact_credentials,
+        credentials=credentials,
     )
 
 
@@ -1665,7 +1723,7 @@ def _render_embedded_children(
     context: EmbedRenderContext,
     ancestry: Tuple[str, ...],
     static_export: bool,
-    redact_credentials: bool,
+    credentials: CredentialDisplay,
 ) -> str:
     if len(child_ids) == 0:
         return ""
@@ -1679,7 +1737,7 @@ def _render_embedded_children(
                 is_root=False,
                 folds_root=False,
                 static_export=static_export,
-                redact_credentials=redact_credentials,
+                credentials=credentials,
             )
         )
     return f'<div class="note-embed-children">{"".join(child_parts)}</div>'
@@ -1701,9 +1759,6 @@ def _is_content_collapsible(*, content_html: str, context: EmbedRenderContext, f
     if preview_html_has_media(collapsed_preview_source):
         return True
     if preview_html_has_image_file_embed(preview_source_html=collapsed_preview_source, context=context):
-        return True
-    if _preview_html_has_email_embed(preview_source_html=collapsed_preview_source, context=context):
-        # An email's card folds to one line, its subject and sender (agreed 2026-10-29).
         return True
     if preview_html_has_note_embed(preview_source_html=collapsed_preview_source, context=context):
         # Only an embed: it shows its source, so it folds when the source does;
@@ -1854,11 +1909,22 @@ def _extract_html_closing_tag_name(tag_html: str) -> str:
     return match.group(1).lower()
 
 
+# A pill fits an extension this long (.DOCX); a longer one (.excalidraw) shows the file's kind.
+_MAX_BADGE_EXTENSION_LETTERS = 4
+_EXTENSION_DOT = "."
+
+
 def _format_file_badge(*, thumbnail_kind: str, original_filename: str) -> str:
-    """The pill label: a previewable text file's extension (.MD, .CSV, .JSON, .TXT), else its kind."""
+    """The pill label: the file's own type, its extension (.CSS, .RTF, .PDF; a Markdown file's
+    .MD), as the user knows the file (the maintainer, 2026-11-02: TXT for a .css and FILE for
+    an .rtf were "very nonspecific"); its kind (FILE, DRAW) when it has no short extension."""
     text_badge = text_file_badge(original_filename)
     if text_badge != "":
         return text_badge
+    extension = PurePath(original_filename).suffix
+    letters = extension[len(_EXTENSION_DOT):]
+    if letters != "" and len(letters) <= _MAX_BADGE_EXTENSION_LETTERS and letters.isascii() and letters.isalnum():
+        return extension.upper()
     return _format_thumbnail_badge(thumbnail_kind)
 
 

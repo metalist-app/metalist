@@ -10,6 +10,7 @@ import re
 from types import SimpleNamespace
 from typing import Dict
 
+from app.services.credential_display import CredentialDisplay
 from app.services.backlinks import _extract_preview as backlink_first_line_preview
 from app.services.embedded_references import (
     EmbedRenderContext,
@@ -56,7 +57,7 @@ def _context(*, kyoto_first_line: str) -> EmbedRenderContext:
 def _render(content_html: str, context: EmbedRenderContext) -> str:
     return render_note_content_with_embeds(
         note_id=HOST_ID, content_html=content_html, tags="", context=context,
-        static_export=False, redact_credentials=False,
+        static_export=False, credentials=CredentialDisplay.DOTS,
     )
 
 
@@ -109,8 +110,8 @@ def test_7_a_note_that_is_only_link_text_is_a_link() -> None:
 def test_8_link_text_on_a_file() -> None:
     content = f"<div>[[{MAP_ID}|the map]]</div>"
     rendered = _render(content, _context(kyoto_first_line="Kyoto trip"))
-    # The file's kind badge, then the link text in place of its name.
-    assert _visible_text(rendered) == "IMG the map"
+    # The file's badge (its own type: the maintainer, 2026-11-02), then the link text in place of its name.
+    assert _visible_text(rendered) == ".PNG the map"
     assert "map.png" not in _visible_text(rendered)
     assert f'data-file-ref-id="{MAP_ID}"' in rendered
     assert referenced_file_ids(content) == [MAP_ID]
@@ -126,7 +127,7 @@ def test_9_a_first_line_holding_link_text_reads_with_it() -> None:
 def test_10_a_folded_note_shows_its_link_text() -> None:
     rendered = render_collapsed_note_content_with_embeds(
         note_id=HOST_ID, content_html=f"<div>Plan: [[{KYOTO_ID}|the plan]]</div><div>later</div>",
-        tags="", context=_context(kyoto_first_line="Kyoto trip"), static_export=False, redact_credentials=False,
+        tags="", context=_context(kyoto_first_line="Kyoto trip"), static_export=False, credentials=CredentialDisplay.DOTS,
     )
     assert _visible_text(rendered) == "Plan: the plan"
 

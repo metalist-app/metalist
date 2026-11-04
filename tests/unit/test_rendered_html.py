@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import pytest
 
+from app.services.credential_display import CredentialDisplay
 from app.security.rendered_html import sanitize_rendered_html
 from app.services import ai_chat_rendering
 from app.services.ai_chat_rendering import render_ai_chat_thinking_to_html
@@ -48,10 +49,10 @@ _RENDERED_NOTES = [
 
 
 @pytest.mark.parametrize(("content_html", "tags"), _RENDERED_NOTES)
-@pytest.mark.parametrize("redact_credentials", [False, True])
-def test_every_renderer_passes_through_unchanged(content_html, tags, redact_credentials):
+@pytest.mark.parametrize("credentials", list(CredentialDisplay))
+def test_every_renderer_passes_through_unchanged(content_html, tags, credentials):
     rendered = format_note_content_for_view(
-        content_html=content_html, tags=tags, redact_credentials=redact_credentials,
+        content_html=content_html, tags=tags, credentials=credentials,
     )
     # conftest.py fails this call if the pass removed any tag or attribute.
     sanitize_rendered_html(rendered)

@@ -366,6 +366,16 @@ _ATTACHMENT_COLUMNS = frozenset(
 _FILE_REVISION_COLUMN = "content_revision"
 _FILE_PREVIEWS_TABLE = "file_previews"
 _EDITABLE_FILES_DATABASE_VERSION = 10
+# Migration 12→13 added the encrypted file_texts table (a file's text and bloom filter, for
+# search). Before version 13 it may be missing, or already present because opening a files
+# database adds it ahead of the authenticated migration.
+_FILE_TEXTS_TABLE = "file_texts"
+_FILE_TEXTS_DATABASE_VERSION = 13
+# Migration 13→14 added file_texts' plaintext reader and filter versions. Before version 14
+# they may be missing, or already present because opening a files database adds them ahead of
+# the authenticated migration.
+_FILE_TEXT_VERSION_COLUMNS = frozenset({"reader_version", "filter_version"})
+_TEXT_VERSIONS_DATABASE_VERSION = 14
 # Migration 1→2 added the namespace_content_migrations table.
 _CONTENT_MIGRATIONS_DATABASE_VERSION = 2
 # Migration 2→3 replaced legacy deterministic search history with opaque columns.
@@ -390,6 +400,12 @@ _FILE_SCHEMA = {
             "preview_encryption_tag", "content_revision", "updated_at",
         }
     ),
+    _FILE_TEXTS_TABLE: frozenset(
+        {
+            "file_id", "text_data", "text_encryption_nonce", "text_encryption_tag", "filter_data",
+            "filter_encryption_nonce", "filter_encryption_tag", "is_cut", "content_revision", "updated_at",
+        }
+    ) | _FILE_TEXT_VERSION_COLUMNS,
     "sounds": _ATTACHMENT_COLUMNS,
 }
 
@@ -500,6 +516,8 @@ _FILE_PAYLOADS = tuple(
         _FILE_PREVIEWS_TABLE, "preview_data", "preview_encryption_nonce", "preview_encryption_tag", "bytes",
         is_nullable=False,
     ),
+    _PayloadSpec(_FILE_TEXTS_TABLE, "text_data", "text_encryption_nonce", "text_encryption_tag", "bytes", is_nullable=False),
+    _PayloadSpec(_FILE_TEXTS_TABLE, "filter_data", "filter_encryption_nonce", "filter_encryption_tag", "bytes", is_nullable=False),
 )
 
 # Plaintext fields a not-yet-migrated database may still hold, one entry per
@@ -535,6 +553,10 @@ _MIGRATION_DEFERRED_PLAINTEXT_FIELDS_BY_DATABASE_VERSION = dict(enumerate((
     # version 10
     frozenset(),
     # version 11
+    frozenset(),
+    # version 12
+    frozenset(),
+    # version 13
     frozenset(),
 )))
 
@@ -984,10 +1006,21 @@ def _file_schema_for_database_version(
         for name, columns in _FILE_SCHEMA.items()
         if name != "sounds" or database_version < _SOUNDS_RETIRED_DATABASE_VERSION
     }
-    if database_version >= _EDITABLE_FILES_DATABASE_VERSION:
+    if database_version >= _TEXT_VERSIONS_DATABASE_VERSION:
         return resolved_schema
     connection = _connect_read_only(file_database_path)
     try:
+        # Before version 14 the 13→14 additions may be missing or already added on open.
+        actual_tables = _table_names(connection)
+        if _FILE_TEXTS_TABLE in actual_tables and not _FILE_TEXT_VERSION_COLUMNS & _column_names(connection, table=_FILE_TEXTS_TABLE):
+            resolved_schema[_FILE_TEXTS_TABLE] = resolved_schema[_FILE_TEXTS_TABLE] - _FILE_TEXT_VERSION_COLUMNS
+        if database_version >= _FILE_TEXTS_DATABASE_VERSION:
+            return resolved_schema
+        # Before version 13 the file_texts table may be missing or already added on open.
+        if _FILE_TEXTS_TABLE not in actual_tables:
+            del resolved_schema[_FILE_TEXTS_TABLE]
+        if database_version >= _EDITABLE_FILES_DATABASE_VERSION:
+            return resolved_schema
         return _file_schema_before_editable_files(connection=connection, expected_schema=resolved_schema)
     finally:
         connection.close()

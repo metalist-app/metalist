@@ -132,7 +132,9 @@ def test_successful_conversion_saves_profile_then_marks_database_current(monkeyp
     monkeypatch.setattr(
         converter,
         "parse_args",
-        lambda *args, **kwargs: SimpleNamespace(input_path="legacy.json", kdf_iterations=3),
+        lambda *args, **kwargs: SimpleNamespace(
+            input_path="legacy.json", legacy_database_path=None, passwords_from_stdin=False, kdf_iterations=3,
+        ),
     )
     monkeypatch.setattr(converter, "_resolve_input_path", lambda input_path: Path(input_path))
     monkeypatch.setattr(
@@ -140,7 +142,7 @@ def test_successful_conversion_saves_profile_then_marks_database_current(monkeyp
         "_load_json",
         lambda path: {"encryption": {"encrypted": False}, "data": []},
     )
-    monkeypatch.setattr(converter, "_prompt_for_password", lambda: None)
+    monkeypatch.setattr(converter, "_prompt_for_password", lambda legacy_password: None)
     monkeypatch.setattr(converter, "_prepare_database", lambda: calls.append("prepare") or Path("db"))  # shockharness: ignore[DEF003] reason="the stub records its call, then returns its value (append/update return None)"
 
     class _Session:

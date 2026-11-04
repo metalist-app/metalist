@@ -3,7 +3,8 @@
 // user's vault or 8443), filled with
 // made-up notes that exercise rendering. It prints its address and runs until Ctrl-C, which
 // stops it and deletes its data. Start it with `npm run throwaway`; `--keep` keeps the data
-// folder, `--empty` starts with no sample notes.
+// folder, `--empty` starts with no sample notes, `--development` runs it in development (its
+// developer tools shown, such as the Obsidian import, PLAN.md).
 
 import {spawn} from 'node:child_process';
 import {mkdtemp, rm} from 'node:fs/promises';
@@ -25,7 +26,9 @@ const LONG_NOTE_LINES = 40;
 const TREE_DEPTH = 5;
 const OPTIONS = new Set(process.argv.slice(FIRST_OPTION_INDEX));
 for (const option of OPTIONS) {
-  if (!['--keep', '--empty'].includes(option)) throw new Error(`Unknown option ${option}: use --keep or --empty`);
+  if (!['--keep', '--empty', '--development'].includes(option)) {
+    throw new Error(`Unknown option ${option}: use --keep, --empty or --development`);
+  }
 }
 
 // Stops with a clear message when the port is taken: never a quiet move to another port.
@@ -113,7 +116,9 @@ for (const key of Object.keys(env)) {
   if (key.startsWith('METALIST_') || key === 'TEST_MODE') delete env[key];
 }
 Object.assign(env, {
-  METALIST_DATA_DIRECTORY: directory, METALIST_ENVIRONMENT: 'production', METALIST_PORT: String(port),
+  METALIST_DATA_DIRECTORY: directory,
+  METALIST_ENVIRONMENT: OPTIONS.has('--development') ? 'development' : 'production',
+  METALIST_PORT: String(port),
   METALIST_HTTPS_PORT: String(httpsPort), API_PREFIX: '/api2', V1_API_PREFIX: '/api',
 });
 const python = process.platform === 'win32' ? '.venv/Scripts/python.exe' : '.venv/bin/python';

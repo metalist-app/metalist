@@ -35,6 +35,11 @@ and persisted AI API keys (one slot per provider: OpenAI, and from database
 version 11 Claude and Gemini). The authoritative payload/schema inventory is
 in `app/encryption_audit.py`.
 
+A folder dropped on the page for import is not covered until it is imported:
+its ticked files wait, as sent and unencrypted, in a holding folder in the data
+directory (`import-uploads/`, `app/services/import_uploads.py`) until the
+import walkthrough closes (cancelled or imported) or the server restarts.
+
 Structural and operational metadata remain readable: note IDs, hierarchy/order,
 collapse flags, timestamps, namespace names/ports, schema/vault versions and
 cryptographic metadata. Attachment filename/MIME metadata is inside an encrypted
@@ -42,6 +47,15 @@ payload; this is distinct from readable database structure and container sizes.
 Excalidraw diagram previews (`file_previews.preview_data`) are encrypted like
 attachment bytes; their file ID, light/dark variant, SVG MIME type and the file
 content revision counter are readable structural metadata.
+Files' text for search (`file_texts`, database version 13: a PDF's extracted text and a bloom
+filter of its four-letter pieces) encrypts both the text (`text_data`) and the filter
+(`filter_data`): a filter can be asked whether a file holds a word. Their file ID, whether the
+text was cut at its 5 MB cap (`is_cut`), the file content revision it was read from and its
+time are readable structural metadata. At login only the filters are decrypted into memory;
+a file's text is decrypted only when a search's filter check says it may match, and kept in a
+bounded cache; both are dropped when the vault locks (`app/services/file_text_search.py`).
+From database version 14 the versions of the reader and of the filter that made a file's text
+(`file_texts.reader_version`, `filter_version`) are readable structural metadata too.
 Site icons beside link titles (`link_icons`, database version 12) encrypt the site
 (`origin`) and the icon (`icon_png`) like link titles; their lookup status, last
 error kind, failure count and check timestamps are readable structural metadata.
@@ -678,8 +692,20 @@ swap, or filesystem snapshots.
 For fresh imports using `convert-from-legacy.py`:
 
 1. This is a destructive fresh-import path (existing DB is deleted first).
-2. Import plaintext legacy data into a new SQLite database.
-3. Optionally set a password at import time.
+2. Import legacy data into a new SQLite database. An export the old MetaList encrypted
+   (its Backup's "Password Protected", the default) is decrypted with the old password,
+   typed at the prompt and never accepted as an argument. The old scheme
+   (`MetaList_old/js/utils/crypto.js`) keys AES-GCM with one unsalted SHA-256 of the
+   password, each top-level item with its own 12-byte IV; the importer accepts only
+   `encryption_scheme_version` 1, `SHA-256` and `AES-GCM`. A wrong password asks again
+   (the first item tells); a later item that does not open fails the import as damaged.
+   Every item is decrypted before the target database is deleted. That scheme is fast
+   to attack, so old encrypted exports deserve the care of plaintext ones: delete them
+   once the converted namespace works.
+3. Optionally set a password at import time. After an encrypted export, the importer
+   offers the old password, when the new password rules accept it. Every password is
+   checked against those rules before the database is created; before, a weak one was
+   refused only after the import, leaving the notes unprotected.
 4. Password enablement writes the same vault metadata (`vault_version`, `kdf_algorithm`)
    and KDF parameters used by the runtime auth service.
 5. Input selection:
@@ -691,6 +717,16 @@ For fresh imports using `convert-from-legacy.py`:
 7. Launch profile prompting:
    - if `--namespace`, `--port`, or `--https-port` are omitted, the importer prompts for them
    - the chosen ports are saved in the namespace DB so later `python main.py work` can reuse them.
+8. From MetaList itself (`docs/ui/legacy-import.md`): a namespace with no notes and no password
+   whose data folder holds the old MetaList's `metalist.db` offers its notes. The old file is
+   opened read-only and hashed before and after; a change installs nothing. The server runs the
+   importer as its own process with `--legacy-database` and `--passwords-from-stdin` (both
+   passwords as one JSON line on stdin, never in its arguments or environment), so setting the
+   converted namespace's password never touches the server's keys. The importer writes into a
+   staging folder beside the old file, removed afterwards; the converted namespace is installed
+   under the recovery journal as a restore installs an archive, and the server restarts. The
+   password check (`/api2/legacy-import/check-password`) decrypts one old item and reports the
+   password rules; neither password is logged or kept once the dialog closes.
 
 ## API Endpoints
 
@@ -783,6 +819,10 @@ Attachment uploads default to 100 MiB per file, configurable with positive-byte 
 Lock ownership: synchronous route transactions and background hydration/link publication use `bulk_operation_guard.lock`; its separate short admission mutex protects mutation counts and bulk operation/question state. No admission mutex is held across an await. Bulk answers/cancellation are queued with `call_soon_threadsafe`. Tokens and sync/clipboard operations each have their own RLock and return copied snapshots; clipboard snapshots copy nested values. NoteStore, search index, tab/reminder/link stores and sensitive caches retain their existing private locks. Hydration/link work checks the runtime generation before publishing. Acquire the outer bulk lock before admission/service locks; do not acquire the outer bulk lock from inside a service lock. These guards protect existing mutation paths, not a general serializable snapshot API spanning every independent GET.
 
 Temporary DB read permission is a ContextVar layered over startup's global read state, so one thread/task cannot enable another's reads or restore a stale global value.
+
+Database version 14 adds `reader_version` and `filter_version` to `file_texts` in the files database. The step is additive and idempotent, so it also accepts a files database the app already upgraded on open; the encryption audit accepts them missing or present before version 14 and requires them from version 14.
+
+Database version 13 adds the `file_texts` table (encrypted text and bloom filter of a file, for search) to the files database. The step is additive and idempotent, so it also accepts a files database the app already upgraded on open; the encryption audit accepts the table missing or present before version 13 and requires it from version 13.
 
 Database version 10 adds `content_revision` to attachments and the `file_previews` table (encrypted Excalidraw diagram previews) to the files database. The step is additive and idempotent, so it also accepts a files database the app already upgraded on open; the encryption audit accepts either shape before version 10 and requires both from version 10.
 
