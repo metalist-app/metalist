@@ -610,30 +610,32 @@ class AiChatPanelController {
         this._revealChatItem(SUMMARY_PENDING_ID);
         // The summary is done once the chat is read again with it: Clear and Send wait for
         // that, or the read, answered after Clear, puts the cleared chat back (2026-11-04).
-        try {
-            let outcome = '';
-            try {
-                outcome = await summarizeAiChat({ settings });
-            } catch (error) {
-                rethrowUnexpectedError(error);
-                if (!(error instanceof AiApiError) && !(error instanceof HttpRequestError)) {
-                    throw error;
-                }
-                showChatNotice(error.message, 'error');
-            } finally {
-                this._isSummarizing = false;
-                this._syncComposerControlsDisabled();
-            }
-            if (outcome === 'nothing') {
-                showChatNotice('Nothing to summarize yet', 'info');
-            }
-            await this._loadSession({ shouldScrollToBottom: false });
-            if (outcome === 'summarized' && this._summaries.length > 0) {
-                this._revealChatItem(this._summaries.at(-1).id);
-            }
-        } finally {
+        await this._summarizeAndReload(settings).finally(() => {
             this._activeSummary = null;
             finishSummary();
+        });
+    }
+
+    async _summarizeAndReload(settings) {
+        let outcome = '';
+        try {
+            outcome = await summarizeAiChat({ settings });
+        } catch (error) {
+            rethrowUnexpectedError(error);
+            if (!(error instanceof AiApiError) && !(error instanceof HttpRequestError)) {
+                throw error;
+            }
+            showChatNotice(error.message, 'error');
+        } finally {
+            this._isSummarizing = false;
+            this._syncComposerControlsDisabled();
+        }
+        if (outcome === 'nothing') {
+            showChatNotice('Nothing to summarize yet', 'info');
+        }
+        await this._loadSession({ shouldScrollToBottom: false });
+        if (outcome === 'summarized' && this._summaries.length > 0) {
+            this._revealChatItem(this._summaries.at(-1).id);
         }
     }
 
