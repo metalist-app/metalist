@@ -475,7 +475,9 @@ def _word_document(text: str) -> bytes:
     ("Harold and Lupus.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", _word_document("Lupus waited by the harbor gate."), '"harbor gate"'),
     # Word 97-2003 (written by macOS textutil): read since 2026-11-03.
     ("Harbor plan.doc", "application/msword", (Path(__file__).resolve().parents[1] / "fixtures" / "word97" / "plan.doc").read_bytes(), '"ledger’s copy"'),
-])
+# Named: an id made of the documents' bytes went past Windows' 32,767-character limit on an
+# environment variable (pytest keeps the running test's id in PYTEST_CURRENT_TEST).
+], ids=["rtf", "rtf dropped from a Mac", "docx", "Word 97-2003"])
 def test_a_quoted_search_finds_a_note_by_the_text_of_a_word_document_or_rtf_it_shows(files, name: str, mime_type: str, content: bytes, phrase: str) -> None:
     record = create_file(original_filename=name, mime_type=mime_type, content_bytes=content, token=TOKEN)
     file_texts.refresh()

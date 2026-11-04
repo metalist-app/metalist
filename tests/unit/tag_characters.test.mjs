@@ -12,17 +12,25 @@ import { normalizeSelectedTextForTagAction } from '../../app/static/js/modules/m
 // table, else toLowerCase one character at a time. test_tag_characters.py keeps the table
 // and this lowercase fixture in step with Python.
 
-const LOWERCASE = JSON.parse(readFileSync(new URL('./fixtures/unicode-lowercase.json', import.meta.url), 'utf8')).lowercase;
+const FIXTURE = JSON.parse(readFileSync(new URL('./fixtures/unicode-lowercase.json', import.meta.url), 'utf8'));
+const LOWERCASE = FIXTURE.lowercase;
 const LAST_CODE_POINT = 0x10FFFF;
 const FIRST_SURROGATE = 0xD800;
 const LAST_SURROGATE = 0xDFFF;
 const HEXADECIMAL = 16;
 const MIN_HEX_DIGITS = 4;
+// Code points the fixture's Unicode version leaves unassigned: a newer engine may already
+// lowercase letters added since (CI's Node 22 did, 2026-11-04), as test_tag_characters.py
+// leaves out characters its Python does not know.
+const UNASSIGNED = FIXTURE.unassigned.map(([first, last]) => [Number.parseInt(first, HEXADECIMAL), Number.parseInt(last, HEXADECIMAL)]);
 
 test('the browser lowercases every character as Python does', () => {
     const differing = [];
+    let range = 0;
     for (let codePoint = 0; codePoint <= LAST_CODE_POINT; codePoint += 1) {
         if (codePoint >= FIRST_SURROGATE && codePoint <= LAST_SURROGATE) continue;
+        while (range < UNASSIGNED.length && UNASSIGNED[range][1] < codePoint) range += 1;
+        if (range < UNASSIGNED.length && UNASSIGNED[range][0] <= codePoint) continue;
         const character = String.fromCodePoint(codePoint);
         const key = codePoint.toString(HEXADECIMAL).toUpperCase().padStart(MIN_HEX_DIGITS, '0');
         const expected = Object.hasOwn(LOWERCASE, key) ? LOWERCASE[key] : character;

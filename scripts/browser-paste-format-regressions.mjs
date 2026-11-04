@@ -352,7 +352,8 @@ async function nearBottomCase(page, ids) {
     assert.notEqual(after.card, null, 'the card is offered');
     assert(after.cardTop >= 0 && after.cardBottom <= after.viewportHeight, 'the card stays in the window');
     assert(after.caret !== null, 'the paste ends at the caret');
-    assert(after.cardBottom <= after.caret.top || after.cardTop >= after.caret.bottom, 'the card does not cover the pasted line');
+    assert(after.cardBottom <= after.caret.top || after.cardTop >= after.caret.bottom,
+      `the card does not cover the pasted line (card ${after.cardTop}-${after.cardBottom}, caret line ${after.caret.top}-${after.caret.bottom}, window ${after.viewportHeight})`);
     assert(before.scrollY >= 0);
     await page.keyboard.press('Escape');
     await leaveEditing(page);

@@ -12,7 +12,7 @@ import {
 import { vaultNameProblem } from '../modals/namespace-rename-validation.js';
 import { renderNamespaceLoadingTab } from '../modals/namespace-loading-page.js';
 import { rewriteNamespaceUrlPreservingCurrentHost } from '../login-namespace-picker.js';
-import { showErrorDialogFor } from '../modals/error-dialog.js';
+import { showErrorDialogFor, showOpenFailure } from '../modals/error-dialog.js';
 import { VAULT_WIZARD_STEP, withSetupSteps } from '../new-vault-setup.js';
 import { LOWEST_PORT, HIGHEST_PORT } from '../tcp-ports.js';
 import {
@@ -56,8 +56,17 @@ export function newVaultChoices(importChoices) {
 
 // --- Vault: the name and ports, in the vault Create Vault is opened from -------------------
 
+// A vault list that cannot be read leaves nothing to create: the error dialog says why, and
+// closing it closes the wizard too (docs/ui/modals.md, Errors).
 async function loadVaultCatalog(wizard) {
-    const catalog = await requestVaultApi(CONFIG.API.AUTH.NAMESPACES.LIST, 'GET', null);
+    const listed = await settleResult(() => requestVaultApi(CONFIG.API.AUTH.NAMESPACES.LIST, 'GET', null));
+    if (!listed.ok) {
+        showOpenFailure(listed.error, () => {
+            if (wizard.isOpen) wizard.close();
+        });
+        return;
+    }
+    const catalog = listed.value;
     assertCatalogShape(catalog);
     const profile = catalog.new_namespace_profile;
     assertProfileShape(profile);
@@ -70,19 +79,30 @@ async function loadVaultCatalog(wizard) {
     wizard.redrawScreen();
 }
 
+// The Vault step's fields, so an error dialog can name them (docs/ui/modals.md, Errors).
+const VAULT_NAME_FIELD_ID = 'new-vault-name';
+const HTTP_PORT_FIELD_ID = 'new-vault-http-port';
+const HTTPS_PORT_FIELD_ID = 'new-vault-https-port';
+
+// Every problem with the Vault step, each with the field at fault (docs/ui/modals.md: one
+// error dialog lists every problem; the first field at fault gets focus and each a red outline).
+function vaultProblems(choices) {
+    if (!choices.catalogLoaded) return [{ text: 'The vaults are still loading.', fieldId: null }];
+    const typed = [
+        { text: vaultNameProblem({ name: choices.vaultName.trim(), existingNamespaces: choices.vaultNames, currentNamespace: null }), fieldId: VAULT_NAME_FIELD_ID },
+        { text: portProblem(choices.httpPort, 'HTTP port'), fieldId: HTTP_PORT_FIELD_ID },
+    ];
+    if (choices.supportsHttps) typed.push({ text: portProblem(choices.httpsPort, 'HTTPS port'), fieldId: HTTPS_PORT_FIELD_ID });
+    const problems = typed.filter((problem) => problem.text !== '');
+    if (problems.length > 0) return problems;
+    return portOverlapProblems([vaultPortRow(choices)]);
+}
+
 // What is wrong with the name and ports, said for the user ('' when nothing is).
 function vaultProblem(choices) {
-    if (!choices.catalogLoaded) return 'The vaults are still loading.';
-    const problems = [
-        vaultNameProblem({ name: choices.vaultName.trim(), existingNamespaces: choices.vaultNames, currentNamespace: null }),
-        portProblem(choices.httpPort, 'HTTP port'),
-    ];
-    if (choices.supportsHttps) problems.push(portProblem(choices.httpsPort, 'HTTPS port'));
-    const typed = problems.find((text) => text !== '');
-    if (typed !== undefined) return typed;
-    const overlaps = portOverlapProblems([vaultPortRow(choices)]);
-    if (overlaps.length > 0) return overlaps[0].text;
-    return '';
+    const problems = vaultProblems(choices);
+    if (problems.length === 0) return '';
+    return problems[0].text;
 }
 
 function vaultPortRow(choices) {
@@ -90,13 +110,13 @@ function vaultPortRow(choices) {
     if (choices.supportsHttps) httpsPort = parsePort(choices.httpsPort);
     return {
         namespace: choices.vaultName.trim(), port: parsePort(choices.httpPort), https_port: httpsPort,
-        portFieldId: null, httpsPortFieldId: null,
+        portFieldId: HTTP_PORT_FIELD_ID, httpsPortFieldId: HTTPS_PORT_FIELD_ID,
     };
 }
 
-function portFieldHtml(label, choiceKey, value) {
+function portFieldHtml(label, choiceKey, value, fieldId) {
     return `<label class="wizard-field"><span>${escapeHtml(label)}</span>
-        <input type="number" class="wizard-input" data-wizard-text="${escapeHtml(choiceKey)}" min="${LOWEST_PORT}" max="${HIGHEST_PORT}"
+        <input type="number" id="${fieldId}" class="wizard-input" data-wizard-text="${escapeHtml(choiceKey)}" min="${LOWEST_PORT}" max="${HIGHEST_PORT}"
             value="${escapeHtml(value)}"></label>`;
 }
 
@@ -136,12 +156,12 @@ function vaultStep() {
         render: (choices) => {
             if (!choices.catalogLoaded) return '<p class="wizard-note">Loading your vaults…</p>';
             let httpsField = '';
-            if (choices.supportsHttps) httpsField = portFieldHtml('HTTPS port', 'httpsPort', choices.httpsPort);
+            if (choices.supportsHttps) httpsField = portFieldHtml('HTTPS port', 'httpsPort', choices.httpsPort, HTTPS_PORT_FIELD_ID);
             return `
                 <label class="wizard-field"><span>Vault name</span>
-                    <input type="text" class="wizard-input" data-wizard-text="vaultName" value="${escapeHtml(choices.vaultName)}"
+                    <input type="text" id="${VAULT_NAME_FIELD_ID}" class="wizard-input" data-wizard-text="vaultName" value="${escapeHtml(choices.vaultName)}"
                         placeholder="work" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-wizard-focus></label>
-                <div class="wizard-port-row">${portFieldHtml('HTTP port', 'httpPort', choices.httpPort)}${httpsField}</div>`;
+                <div class="wizard-port-row">${portFieldHtml('HTTP port', 'httpPort', choices.httpPort, HTTP_PORT_FIELD_ID)}${httpsField}</div>`;
         },
         wire: async (screen, wizard) => {
             if (!wizard.choices.catalogLoaded) {
@@ -152,7 +172,7 @@ function vaultStep() {
                 input.addEventListener('input', () => wizard.choose(input.dataset.wizardText, input.value));
             }
         },
-        onChoice: null, onNext: createVault, missing: vaultProblem,
+        onChoice: null, onNext: createVault, problems: vaultProblems, missing: vaultProblem,
     });
 }
 
@@ -242,7 +262,7 @@ function passwordStep() {
             remember('password', password);
             wizard.next();
         },
-        missing: missingPassword,
+        problems: null, missing: missingPassword,
     });
 }
 
@@ -315,7 +335,7 @@ function aiStep() {
             remember('aiKeyProvider', provider);
             wizard.next();
         },
-        missing: (choices, screen) => (choices.setsUpAi ? missingKey(choices, screen, 'go without an AI') : ''),
+        problems: null, missing: (choices, screen) => (choices.setsUpAi ? missingKey(choices, screen, 'go without an AI') : ''),
     });
 }
 
@@ -370,7 +390,7 @@ export function newVaultSteps() {
             nextLabel: NEXT, isAction: false, applies: ALWAYS,
             render: (choices) => choiceCardsHtml('source', choices.source, NOTES_SOURCES, 'grid'),
             wire: NOTHING_TO_WIRE, onChoice: null, onNext: null,
-            missing: ({ source }) => (source === '' ? 'Choose where your notes are, or Start empty.' : ''),
+            problems: null, missing: ({ source }) => (source === '' ? 'Choose where your notes are, or Start empty.' : ''),
         }),
         ...withImport,
         makeStep({
@@ -384,7 +404,7 @@ export function newVaultSteps() {
             wire: async (screen, wizard) => {
                 if (wizard.choices.source !== 'empty') await fillImportPreview(screen, wizard, '.wizard-preview');
             },
-            onChoice: null, onNext: null, missing: NOTHING_MISSING,
+            onChoice: null, onNext: null, problems: null, missing: NOTHING_MISSING,
         }),
         runStep({ key: 'setting-up', label: 'Set up', title: 'Setting up your vault…', run: setUpVault }),
     ];

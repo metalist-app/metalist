@@ -608,27 +608,32 @@ class AiChatPanelController {
         this._syncComposerControlsDisabled();
         this._render({ shouldScrollToBottom: false });
         this._revealChatItem(SUMMARY_PENDING_ID);
-        let outcome = '';
+        // The summary is done once the chat is read again with it: Clear and Send wait for
+        // that, or the read, answered after Clear, puts the cleared chat back (2026-11-04).
         try {
-            outcome = await summarizeAiChat({ settings });
-        } catch (error) {
-            rethrowUnexpectedError(error);
-            if (!(error instanceof AiApiError) && !(error instanceof HttpRequestError)) {
-                throw error;
+            let outcome = '';
+            try {
+                outcome = await summarizeAiChat({ settings });
+            } catch (error) {
+                rethrowUnexpectedError(error);
+                if (!(error instanceof AiApiError) && !(error instanceof HttpRequestError)) {
+                    throw error;
+                }
+                showChatNotice(error.message, 'error');
+            } finally {
+                this._isSummarizing = false;
+                this._syncComposerControlsDisabled();
             }
-            showChatNotice(error.message, 'error');
+            if (outcome === 'nothing') {
+                showChatNotice('Nothing to summarize yet', 'info');
+            }
+            await this._loadSession({ shouldScrollToBottom: false });
+            if (outcome === 'summarized' && this._summaries.length > 0) {
+                this._revealChatItem(this._summaries.at(-1).id);
+            }
         } finally {
-            this._isSummarizing = false;
-            this._syncComposerControlsDisabled();
             this._activeSummary = null;
             finishSummary();
-        }
-        if (outcome === 'nothing') {
-            showChatNotice('Nothing to summarize yet', 'info');
-        }
-        await this._loadSession({ shouldScrollToBottom: false });
-        if (outcome === 'summarized' && this._summaries.length > 0) {
-            this._revealChatItem(this._summaries.at(-1).id);
         }
     }
 
@@ -1741,6 +1746,9 @@ class AiChatPanelController {
             error: message,
             provider: settings.provider,
             model: settings.model,
+            // As every message carries one since long chats (ai-chat-summaries.js); local, as
+            // the turn's own local messages are.
+            visibility: SUMMARY_VISIBILITY_SENT,
             activities: [],
         });
         this._render({ shouldScrollToBottom: true });

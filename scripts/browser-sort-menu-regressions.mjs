@@ -62,7 +62,7 @@ export async function checkBackgroundSortMenu(page) {
         const originalTabId = state.activeTabId;
         await CommandGate.run('smoke.sorted-tabs', async () => {
           await persistTabStateSnapshot();
-          const response = await createTabOnServer(originalTabId);
+          const response = await createTabOnServer(originalTabId, false);
           state.hydrateTabState(response);
           await switchToTabContext(response.newTabId, {animateNoteChanges: false});
           await CommandPalette.setSortMode('updated');

@@ -319,13 +319,20 @@ def test_files_come_in_folders_first_each_a_to_z(tmp_path: Path, note_store: Not
     assert [first_line(note_store, note_id) for note_id in roots] == ["y", "z", "x", "a", "b"]
 
 
-@pytest.mark.parametrize(("folder", "message"), [
-    ("relative/path", "Choose the vault's folder"),
-    ("/no/such/folder/anywhere", "There is no folder at"),
-])
-def test_a_folder_that_is_no_vault_is_refused(note_store: NoteStore, folder: str, message: str) -> None:
-    with pytest.raises(InputRejected, match=message):
-        CmdImportObsidianVault(source="obsidian", folder_path=folder, split_mode=SPLIT_NONE, content_format=CONTENT_MARKDOWN, folder_prefix="", add_to_existing=False, images=KEEP_ORIGINALS, token=TOKEN, imported_at=IMPORTED_AT, context_tags="").execute()
+def _import_folder(folder: str) -> None:
+    CmdImportObsidianVault(source="obsidian", folder_path=folder, split_mode=SPLIT_NONE, content_format=CONTENT_MARKDOWN, folder_prefix="", add_to_existing=False, images=KEEP_ORIGINALS, token=TOKEN, imported_at=IMPORTED_AT, context_tags="").execute()
+
+
+def test_a_relative_folder_is_refused(note_store: NoteStore) -> None:
+    with pytest.raises(InputRejected, match="Choose the vault's folder"):
+        _import_folder("relative/path")
+
+
+def test_a_folder_that_is_not_there_is_refused(note_store: NoteStore, tmp_path: Path) -> None:
+    # An absolute path on this system: on Windows one starts with its drive, so a path from
+    # the root such as /no/such/folder is relative there.
+    with pytest.raises(InputRejected, match="There is no folder at"):
+        _import_folder(str(tmp_path / "no" / "such" / "folder"))
 
 
 def test_a_folder_without_markdown_is_refused(note_store: NoteStore, tmp_path: Path) -> None:

@@ -839,7 +839,7 @@ try {
     const originalTabId = state.activeTabId;
     await CommandGate.run('smoke.tabs', async () => {
       await persistTabStateSnapshot();
-      const response = await createTabOnServer(originalTabId);
+      const response = await createTabOnServer(originalTabId, false);
       state.hydrateTabState(response);
       await switchToTabContext(response.newTabId, {animateNoteChanges: false});
       if (state.activeTabId !== response.newTabId) throw new Error('New tab was not selected');

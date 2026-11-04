@@ -11,8 +11,10 @@ import { showErrorDialog } from '../modals/error-dialog.js';
 //
 // A step: { key, label (in the progress bar), title, intro (HTML, '' for none), nextLabel,
 // isAction, applies(choices), render(choices, wizard) -> HTML, wire(screen, wizard),
-// onChoice, onNext, missing(choices, screen) }. missing says what the step still needs
-// ('' once it is done): until then Next is greyed out, and pressing it says so. Its choices are buttons with data-choice-key and data-choice-value;
+// onChoice, onNext, missing(choices, screen), problems }. missing says what the step still needs
+// ('' once it is done): until then Next is greyed out, and pressing it says so. problems
+// (null for the missing text alone) is problems(choices, screen) -> [{ text, fieldId }]: a
+// step with fields lists every problem, each with its field (docs/ui/modals.md, Errors). Its choices are buttons with data-choice-key and data-choice-value;
 // pressing one sets that choice and draws the screen again in place, unless the step's
 // onChoice(screen, key, value, wizard) (null for none) does it itself, as the split preview
 // does. onNext(wizard) (null for none) replaces Next's going on. The step with isAction runs
@@ -196,9 +198,10 @@ export class WizardModal extends BaseModal {
             };
         }
         step.wire(screen, this);
-        // Typing a key or ticking a box can finish the step (or undo that): Next follows.
-        screen.oninput = () => this._refreshNext();
-        screen.onchange = () => this._refreshNext();
+        // Typing a key or ticking a box can finish the step (or undo that): Next follows. A
+        // field left changed fires its change as it loses focus, after the wizard has closed.
+        screen.oninput = () => this._refreshNextWhileOpen();
+        screen.onchange = () => this._refreshNextWhileOpen();
     }
 
     // The screen being shown: the last one, as a leaving one goes before it.
@@ -209,6 +212,16 @@ export class WizardModal extends BaseModal {
 
     _missing() {
         return this.currentStep().missing(this.choices, this._currentScreen());
+    }
+
+    _problems(missing) {
+        const step = this.currentStep();
+        if (step.problems === null) return [{ text: missing, fieldId: null }];
+        return step.problems(this.choices, this._currentScreen());
+    }
+
+    _refreshNextWhileOpen() {
+        if (this.isOpen) this._refreshNext();
     }
 
     // Next greyed out while the step still needs something.
@@ -283,7 +296,7 @@ export class WizardModal extends BaseModal {
         footer.querySelector('.wizard-next').onclick = async () => {
             const missing = this._missing();
             if (missing !== '') {
-                await showErrorDialog([{ text: missing, fieldId: null }]);
+                await showErrorDialog(this._problems(missing));
                 return;
             }
             if (step.onNext !== null) {

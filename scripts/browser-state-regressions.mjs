@@ -79,7 +79,7 @@ export async function checkAdditionalStateTransitions(page) {
         return new Response(events.map(event => JSON.stringify(event)).join('\n')+'\n', {headers:{'Content-Type':'application/x-ndjson'}});
       }
       if (url === CONFIG.API.AI.SESSION) {
-        return Response.json(options.method === 'DELETE' ? {status:'success'} : {messages:panel._messages});
+        return Response.json(options.method === 'DELETE' ? {status:'success'} : {messages:panel._messages, summaries:[]});
       }
       return originalFetch(url, options);
     };
@@ -121,7 +121,7 @@ export async function checkAdditionalStateTransitions(page) {
         return new Response(JSON.stringify({type:'error', message:explanation})+'\n', {headers:{'Content-Type':'application/x-ndjson'}});
       }
       if (url === CONFIG.API.AI.SESSION) {
-        return Response.json(options.method === 'DELETE' ? {status:'success'} : {messages:panel._messages});
+        return Response.json(options.method === 'DELETE' ? {status:'success'} : {messages:panel._messages, summaries:[]});
       }
       return originalFetch(url, options);
     };
@@ -181,7 +181,7 @@ export async function checkAdditionalStateTransitions(page) {
         return Response.json({status:'answered'});
       }
       if (url === CONFIG.API.AI.SESSION) {
-        return Response.json(options.method === 'DELETE' ? {status:'success'} : {messages:panel._messages});
+        return Response.json(options.method === 'DELETE' ? {status:'success'} : {messages:panel._messages, summaries:[]});
       }
       return originalFetch(url, options);
     };

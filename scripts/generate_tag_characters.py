@@ -11,7 +11,9 @@ It writes:
 - app/static/js/modules/tag-characters-data.js: the same data for the browser, which folds a
   tag's case with it exactly as the server does;
 - tests/unit/fixtures/unicode-lowercase.json: every character's lowercase, so a test checks
-  that the browser lowercases each one as Python does.
+  that the browser lowercases each one as Python does, and the code points this Unicode
+  version leaves unassigned: a newer JavaScript engine may already lowercase letters added
+  since (CI's Node 22 did, 2026-11-04), which neither this data nor the server knows.
 
 tests/unit/test_tag_characters.py fails when a committed file no longer matches what this
 script writes from the JSON, or when the data disagrees with the Python running the tests.
@@ -70,6 +72,22 @@ def tag_character_data() -> dict[str, object]:
     }
 
 
+def unassigned_ranges() -> list[list[str]]:
+    """The unassigned code points as [first, last] ranges, in order."""
+    ranges: list[list[str]] = []
+    first = None
+    for code_point in range(sys.maxunicode + 1):
+        is_unassigned = unicodedata.category(chr(code_point)) == UNASSIGNED_CATEGORY
+        if is_unassigned and first is None:
+            first = code_point
+        if not is_unassigned and first is not None:
+            ranges.append([code_point_key(first), code_point_key(code_point - 1)])
+            first = None
+    if first is not None:
+        ranges.append([code_point_key(first), code_point_key(sys.maxunicode)])
+    return ranges
+
+
 def lowercase_fixture() -> dict[str, object]:
     return {
         "unicodeVersion": unicodedata.unidata_version,
@@ -77,6 +95,7 @@ def lowercase_fixture() -> dict[str, object]:
             code_point_key(ord(character)): character.lower()
             for character in assigned_characters() if character.lower() != character
         },
+        "unassigned": unassigned_ranges(),
     }
 
 

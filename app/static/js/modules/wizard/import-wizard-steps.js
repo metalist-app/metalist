@@ -20,7 +20,7 @@ const IMPORT_WORK_KEY = 'import';
 const SAMPLE_FADE_IN_MS = 300;
 const SAMPLE_MOVE_MS = 380;
 const SAMPLE_MOVE_EASING = 'cubic-bezier(0.4, 0, 0.2, 1)';
-const STEP_FIELDS = ['key', 'label', 'title', 'intro', 'nextLabel', 'isAction', 'applies', 'render', 'wire', 'onChoice', 'onNext', 'missing'];
+const STEP_FIELDS = ['key', 'label', 'title', 'intro', 'nextLabel', 'isAction', 'applies', 'render', 'wire', 'onChoice', 'onNext', 'missing', 'problems'];
 const NEXT = 'Next';
 const ALWAYS = () => true;
 const NOTHING_TO_WIRE = () => {};
@@ -150,7 +150,7 @@ export function runStep({ key, label, title, run }) {
             await run(wizard, progressReporter(screen));
             if (wizard.isOpen) wizard.close();
         },
-        onChoice: null, onNext: null, missing: NOTHING_MISSING,
+        onChoice: null, onNext: null, problems: null, missing: NOTHING_MISSING,
     });
 }
 
@@ -1071,7 +1071,7 @@ export function importSteps({ withSourceStep, withSummaryAndRun }) {
             render: (choices) => choiceCardsHtml('source', choices.source, SOURCES, 'stacked'),
             wire: NOTHING_TO_WIRE, onChoice: null, onNext: null,
             // None is chosen for you (the maintainer, 2026-11-01).
-            missing: ({ source }) => (source === '' ? 'Choose what you are importing.' : ''),
+            problems: null, missing: ({ source }) => (source === '' ? 'Choose what you are importing.' : ''),
         }),
         makeStep({
             key: 'folder', label: 'Folder', title: 'Choose the folder',
@@ -1108,7 +1108,7 @@ export function importSteps({ withSourceStep, withSummaryAndRun }) {
                 wirePrefixField(screen, wizard);
             },
             onChoice: null, onNext: null,
-            missing: (choices) => {
+            problems: null, missing: (choices) => {
                 if (!hasFolder(choices)) return 'Choose the folder first.';
                 if (choices.fileCount === 0) return 'That folder holds nothing this import reads. Choose another.';
                 return prefixProblem(choices);
@@ -1131,7 +1131,7 @@ export function importSteps({ withSourceStep, withSummaryAndRun }) {
                 wirePrefixField(screen, wizard);
             },
             onChoice: null, onNext: null,
-            missing: (choices) => {
+            problems: null, missing: (choices) => {
                 if (choices.bookmarksFileName === '') return 'Choose the bookmarks file first.';
                 if (choices.bookmarksProblem !== '') return choices.bookmarksProblem;
                 return prefixProblem(choices);
@@ -1172,7 +1172,7 @@ export function importSteps({ withSourceStep, withSummaryAndRun }) {
                     }
                 };
             },
-            onChoice: null, onNext: null, missing: checklistProblem,
+            onChoice: null, onNext: null, problems: null, missing: checklistProblem,
         }),
         makeStep({
             key: 'upload', label: 'Copy', title: 'Copying your files',
@@ -1183,7 +1183,7 @@ export function importSteps({ withSourceStep, withSummaryAndRun }) {
                 void uploadDroppedFiles(screen, wizard);
             },
             onChoice: null, onNext: null,
-            missing: (choices) => (isUploaded(choices) ? '' : 'Your files are still being copied.'),
+            problems: null, missing: (choices) => (isUploaded(choices) ? '' : 'Your files are still being copied.'),
         }),
         makeStep({
             key: MARKDOWN_STEP, label: 'Markdown', title: 'How should your Markdown files come in?',
@@ -1216,7 +1216,7 @@ export function importSteps({ withSourceStep, withSummaryAndRun }) {
                     sample.classList.toggle(`is-${content.value}`, content.value === value);
                 }
             },
-            onNext: null, missing: NOTHING_MISSING,
+            onNext: null, problems: null, missing: NOTHING_MISSING,
         }),
         makeStep({
             key: 'images', label: 'Images', title: 'Should images be compressed?',
@@ -1237,7 +1237,7 @@ export function importSteps({ withSourceStep, withSummaryAndRun }) {
                 }
                 markChosenCards(screen, key, value);
             },
-            onNext: null, missing: NOTHING_MISSING,
+            onNext: null, problems: null, missing: NOTHING_MISSING,
         }),
         makeStep({
             key: 'summary', label: 'Summary', title: 'Ready to import',
@@ -1245,7 +1245,7 @@ export function importSteps({ withSourceStep, withSummaryAndRun }) {
             nextLabel: NEXT, isAction: false, applies: () => withSummaryAndRun,
             render: () => '<div class="wizard-preview"><p class="wizard-note">Reading your files…</p></div>',
             wire: async (screen, wizard) => fillImportPreview(screen, wizard, '.wizard-preview'),
-            onChoice: null, onNext: null, missing: NOTHING_MISSING,
+            onChoice: null, onNext: null, problems: null, missing: NOTHING_MISSING,
         }),
         ...(withSummaryAndRun ? [runStep({ key: 'importing', label: 'Import', title: 'Importing…', run: runImport })] : []),
     ];

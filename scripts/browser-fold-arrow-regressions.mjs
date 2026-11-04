@@ -37,8 +37,12 @@ const PHONE_WIDTH_PX = 375;
 const PHONE_HEIGHT_PX = 812;
 const LONG_LINE = 'A first line long enough to wrap onto more lines in any window MetaList is shown in, '
   + 'because it keeps going well past the width of a note and on again past it once more.';
-// One line that fits a note in the test's window but wraps in a narrow one or at the largest note size.
+// The words of one line that fits a note in the test's window but wraps in a narrow one or at
+// the largest note size. A fixed sentence fit on macOS and wrapped in Linux's wider fonts (CI,
+// 2026-11-04): fitMediumLine makes it, in the note's own font, end halfway between the two.
 const MEDIUM_LINE = 'A one-line note that fits its line in a wide window and wraps in a narrow one';
+const MEDIUM_LINE_WORD = 'fits ';
+const HALF = 0.5;
 // Narrow enough for MEDIUM_LINE to wrap, wide enough to stay out of the phone layout (under 640 px).
 const NARROW_WIDTH_PX = 660;
 const PNG_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAADAAAAAwCAIAAADYYG7QAAAAQklEQVR4nO3OQQ0AIAwAsQlDBLKRhQuOR5MK6Jy9vjL5QEhISKgeCAkJCdUDISEhoXogJCQkVA+EhISE6oGQkNBjF21V9KbVaAsfAAAAAElFTkSuQmCC';
@@ -51,6 +55,30 @@ async function reloadApp(page) {
   await page.reload();
   await page.waitForSelector('[data-app-ready="true"]');
   await idle(page);
+}
+
+// The fitsWide note's line made as wide as halfway between the note's width in the narrow
+// window and in this one, measured in its own font (the narrow window takes that much off it).
+async function fitMediumLine(page, noteId) {
+  const text = await page.$eval(`.note[data-note-id="${noteId}"] > .note-content`, (content, {start, word, narrowWidth, half}) => {
+    const target = content.clientWidth - (window.innerWidth - narrowWidth) * half;
+    const probe = document.createElement('span');
+    probe.style.whiteSpace = 'nowrap';
+    content.append(probe);
+    let line = start;
+    probe.textContent = line;
+    while (probe.getBoundingClientRect().width < target) {
+      line += ` ${word.trim()}`;
+      probe.textContent = line;
+    }
+    probe.remove();
+    return line;
+  }, {start: 'A one-line note', word: MEDIUM_LINE_WORD, narrowWidth: NARROW_WIDTH_PX, half: HALF});
+  await page.evaluate(async ({noteId, text}) => {
+    const {NotesAPI} = await import('/static/js/modules/api-client.js');
+    await NotesAPI.saveNote(noteId, `<div>${text}</div>`, '');
+  }, {noteId, text});
+  await reloadApp(page);
 }
 
 // Each note gets a second line or a child, so it can fold and shows its arrow.
@@ -536,6 +564,7 @@ async function foldArrowCases(browser, page, ids) {
 export async function checkFoldArrows(browser, page) {
   const ids = await seedNotes(page);
   await reloadApp(page);
+  await fitMediumLine(page, ids.fitsWide);
   await runThenCleanUp('fold arrows', () => foldArrowCases(browser, page, ids), async () => {
     await reloadApp(page);
     await page.evaluate(async ids => {

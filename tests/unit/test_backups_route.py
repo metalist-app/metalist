@@ -76,8 +76,9 @@ def test_serialize_settings_response_checks_every_vault_not_left_out(
     assert response.model_dump() == {
         "folder_path": "/tmp/backups",
         "suggested_folders": [
-            {"label": "Downloads", "path": "/home/Downloads"},
-            {"label": "Dropbox › MetaList Backups", "path": "/home/Dropbox/MetaList Backups"},
+            # As the operating system writes them (backslashes on Windows).
+            {"label": "Downloads", "path": str(Path("/home/Downloads"))},
+            {"label": "Dropbox › MetaList Backups", "path": str(Path("/home/Dropbox/MetaList Backups"))},
         ],
         "selected_namespaces": ["default", "work"],
         "available_namespaces": ["default", "cla", "work"],
