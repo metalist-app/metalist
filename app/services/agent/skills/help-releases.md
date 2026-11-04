@@ -5,6 +5,21 @@ What changed in each MetaList version, newest first, from its changelog
 Compare with installed_version from the help lookup to tell the user whether
 they already have a release. Version info offers updates (see the data topic).
 
+## 0.26.0
+
+- **Notes from the old MetaList.** A newly installed MetaList that finds the old MetaList's notes in its data folder offers them as soon as it opens. Protected notes ask for the old password, which then protects this MetaList too (a new one when it is too weak). The old file is only read, never changed. At a terminal, `convert-from-legacy.py` now reads protected exports and the old file itself.
+- **Import** from the command palette and when creating a vault: an Obsidian vault, a Markdown folder, any folder of files (with a file checklist, a prefix folder and images compressed to a size you choose), or browser bookmarks. Files dropped on the page come into the search context they were dropped in.
+- **Files open in a viewer**, with previews for code, web pages, CSV, JSON and email (.eml). Text in PDFs is searchable, with snippets under the matched cards; Find looks inside files and diagrams. Rename File… on file cards, pictures and diagrams.
+- **Markdown follows standard Markdown:** line breaks, nested lists and quotes, plus callouts and `<details>` folds (saved in the note), footnotes, `==highlights==`, clickable tasks, web images, and links and embeds.
+- **Passwords show as eight dots**, whatever their length, with an eye that shows one until your next click or key. Clicking a password, username or `@copyable` value copies it.
+- **Previews while editing** for LaTeX, CSV, Mermaid and JSON; Insert LaTeX, CSV or Mermaid Diagram.
+- **AI chat:** long chats keep going, with summaries of earlier turns and a meter showing how full the chat is.
+- Search: tags and searches in any script, quoted tag values, property searches on any tag, OR between rule groups, and quoted searches update as you type. Search contexts keep their sort, date range and Untagged view.
+- `@datetime` dates a note. Notes save themselves 10 seconds after you stop typing. A Referenced by badge shows on notes others link to. An embed no longer gives its tags to the note it is in; only parents do.
+- An experiment, off unless turned on: virtual folders, a folder tree beside the notes.
+- Fixed: restoring the open vault no longer sends the page to Session locked; keys typed while a clicked note opens are no longer lost; adding a note to the AI chat no longer resets its history.
+- Vaults are upgraded (database version 14) when first unlocked: an older MetaList cannot open them afterwards.
+
 ## 0.25.0
 
 - **Claude and Gemini beside OpenAI.** AI Agent Settings has a key for each provider, on your own account; you pick the model in the chat, and a conversation carries on when you switch provider.
@@ -192,23 +207,4 @@ they already have a release. Version info offers updates (see the data topic).
 - Unexpected API 500 errors now show the exception class and MetaList source line in the browser, without exposing note contents, exception messages, or local filesystem paths.
 - A local release command validates the exact cross-platform CI matrix, publishes only its tested artifacts, then verifies the public PyPI package in a clean installation.
 
-## 0.7.4
-
-- Updates use a private, checksum-verified uv release on Windows, macOS, and Linux. The updater does not execute a user-installed uv, and it revalidates both the cached official archive and extracted executable before each use.
-- The HTTPS listener retries one bodyless safe request after a transient backend reset, records final transport failures server-side, and never replays a mutation or request body.
-- Release CI builds one distribution pair, starts independent platform/Python, installed-update, browser-smoke, and browser-soak gates in parallel, and caches only hash- or lockfile-verified dependencies.
-
-## 0.7.3
-
-- Windows updates use a private verified uv release when an older installer is vulnerable to the reported PE-resource access-denied failure. A standalone repair ZIP can bootstrap installations whose existing updater cannot update itself.
-- Release candidates now run the complete test and installed-package matrix on Windows, macOS, and Linux across Python 3.10–3.14. Real Chrome and Firefox exercise repeated cold loads and encrypted login on every operating system; Windows also checks Edge over verified LAN HTTPS and the repair path from a published older release.
-
-## 0.7.2
-
-- Login, hydration, and workspace requests share one initialized browser-tab identity. Losing the `sessionStorage` copy while opening the workspace no longer causes the reported missing-tab-ID crash. The external trigger for that storage loss remains unconfirmed.
-- AI chat preserves the edited note and includes its permitted tree, tags, and cached URL titles. Search redaction and cloud privacy restrictions apply to every node; blocked selections expose only their availability reason.
-- Added on-demand AI help and menu actions, privacy previews, and Copy Response throughout assistant message bubbles. OpenAI is the supported inference provider.
-- LLM regressions use current production prompts, default to five trials with cache-aware parallel scheduling, and can run only cases affected by prompt or skill changes.
-- Improved Grammarly edit preservation and search suggestions that match the complete active clause.
-
-Versions before 0.7.2 are left out; the changelog (CHANGELOG.md) lists them.
+Versions before 0.7.5 are left out; the changelog (CHANGELOG.md) lists them.

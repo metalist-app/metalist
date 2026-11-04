@@ -2,6 +2,21 @@
 
 What changed in each MetaList release, newest first.
 
+## Changes in 0.26.0
+
+- **Notes from the old MetaList.** A newly installed MetaList that finds the old MetaList's notes in its data folder offers them as soon as it opens. Protected notes ask for the old password, which then protects this MetaList too (a new one when it is too weak). The old file is only read, never changed. At a terminal, `convert-from-legacy.py` now reads protected exports and the old file itself.
+- **Import** from the command palette and when creating a vault: an Obsidian vault, a Markdown folder, any folder of files (with a file checklist, a prefix folder and images compressed to a size you choose), or browser bookmarks. Files dropped on the page come into the search context they were dropped in.
+- **Files open in a viewer**, with previews for code, web pages, CSV, JSON and email (.eml). Text in PDFs is searchable, with snippets under the matched cards; Find looks inside files and diagrams. Rename File… on file cards, pictures and diagrams.
+- **Markdown follows standard Markdown:** line breaks, nested lists and quotes, plus callouts and `<details>` folds (saved in the note), footnotes, `==highlights==`, clickable tasks, web images, and links and embeds.
+- **Passwords show as eight dots**, whatever their length, with an eye that shows one until your next click or key. Clicking a password, username or `@copyable` value copies it.
+- **Previews while editing** for LaTeX, CSV, Mermaid and JSON; Insert LaTeX, CSV or Mermaid Diagram.
+- **AI chat:** long chats keep going, with summaries of earlier turns and a meter showing how full the chat is.
+- Search: tags and searches in any script, quoted tag values, property searches on any tag, OR between rule groups, and quoted searches update as you type. Search contexts keep their sort, date range and Untagged view.
+- `@datetime` dates a note. Notes save themselves 10 seconds after you stop typing. A Referenced by badge shows on notes others link to. An embed no longer gives its tags to the note it is in; only parents do.
+- An experiment, off unless turned on: virtual folders, a folder tree beside the notes.
+- Fixed: restoring the open vault no longer sends the page to Session locked; keys typed while a clicked note opens are no longer lost; adding a note to the AI chat no longer resets its history.
+- Vaults are upgraded (database version 14) when first unlocked: an older MetaList cannot open them afterwards.
+
 ## Changes in 0.25.0
 
 - **Claude and Gemini beside OpenAI.** AI Agent Settings has a key for each provider, on your own account; you pick the model in the chat, and a conversation carries on when you switch provider.
