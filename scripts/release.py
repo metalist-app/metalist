@@ -204,14 +204,17 @@ def matching_runs(
     ]
 
 
-def artifact_hashes(archive: bytes, *, version: str) -> dict[str, str]:
-    filenames = {
+def distribution_filenames(version: str) -> set[str]:
+    return {
         f"metalist-{version}-py3-none-any.whl",
         f"metalist-{version}.tar.gz",
     }
+
+
+def artifact_hashes(archive: bytes, *, version: str) -> dict[str, str]:
     with zipfile.ZipFile(BytesIO(archive)) as bundle:
         names = bundle.namelist()
-        if len(names) != len(set(names)) or set(names) != filenames:
+        if len(names) != len(set(names)) or set(names) != distribution_filenames(version):
             raise ReleaseError(f"Distribution artifact had unexpected files: {names}")
         return {
             name: hashlib.sha256(bundle.read(name)).hexdigest()
@@ -233,11 +236,7 @@ def pypi_hashes(payload: dict[str, object], *, version: str) -> dict[str, str]:
         str(entry["filename"]): str(entry["digests"]["sha256"])
         for entry in urls
     }
-    expected_names = {
-        f"metalist-{version}-py3-none-any.whl",
-        f"metalist-{version}.tar.gz",
-    }
-    if set(hashes) != expected_names:
+    if set(hashes) != distribution_filenames(version):
         raise ReleaseError(f"PyPI release had unexpected files: {sorted(hashes)}")
     return hashes
 
@@ -565,23 +564,38 @@ def ensure_remote_tag(root: Path, *, tag: str, commit: str, already_remote: bool
         raise ReleaseError(f"Remote {tag} did not resolve to {commit} after push")
 
 
+def missing_pypi_files(payload: dict[str, object], *, version: str) -> set[str]:
+    """The release's files PyPI does not list yet. PyPI lists each file as its upload lands
+    (0.26.0 answered with the wheel alone for a moment); a file that is not ours stops at once."""
+    urls = payload["urls"]
+    assert isinstance(urls, list)
+    listed = {str(entry["filename"]) for entry in urls}
+    expected = distribution_filenames(version)
+    if not listed <= expected:
+        raise ReleaseError(f"PyPI release had unexpected files: {sorted(listed)}")
+    return expected - listed
+
+
 def wait_for_pypi(*, version: str, console: Console) -> dict[str, object]:
     deadline = time.monotonic() + PYPI_TIMEOUT_SECONDS
     url = f"https://pypi.org/pypi/metalist/{version}/json"
+    missing = distribution_filenames(version)
     with Progress(
         SpinnerColumn(), TextColumn("{task.description}"), TimeElapsedColumn(), console=console
     ) as progress:
         progress.add_task(f"Waiting for metalist {version} on PyPI", total=None)
         while time.monotonic() < deadline:
             response = requests.get(url, timeout=HTTP_REQUEST_TIMEOUT_SECONDS)
+            if response.status_code not in (HTTPStatus.OK, HTTPStatus.NOT_FOUND):
+                raise ReleaseError(f"PyPI returned HTTP {response.status_code} for {version}")
             if response.status_code == HTTPStatus.OK:
                 payload = response.json()
                 assert isinstance(payload, dict)
-                return payload
-            if response.status_code != HTTPStatus.NOT_FOUND:
-                raise ReleaseError(f"PyPI returned HTTP {response.status_code} for {version}")
+                missing = missing_pypi_files(payload, version=version)
+                if not missing:
+                    return payload
             time.sleep(POLL_SECONDS)
-    raise ReleaseError(f"Timed out waiting for metalist {version} on PyPI")
+    raise ReleaseError(f"Timed out waiting for metalist {version} on PyPI; still missing: {sorted(missing)}")
 
 
 # PyPI serves the simple index as HTML and as JSON, cached separately; pip asks
