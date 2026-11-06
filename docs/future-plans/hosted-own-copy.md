@@ -57,11 +57,11 @@ A server-side setting, supplied by the deployment (environment or launch configu
 
 ### 4. One-time prompt
 
-"Download your own copy" is shown once each time a trial ends, the user cancels, the subscription lapses, or the user asks to delete the account, even when the reminder is off.
+"Download your own copy" is shown once each time a trial ends, the user cancels, the subscription lapses, or the user asks to delete the account, even when the reminder is off. A free account granted by the operator that is revoked or ends counts as a lapse (`docs/future-plans/free-accounts.md`).
 
 ### 5. Never gated
 
-The own-copy download works in every account state (trial, active, lapsed, cancelled during the grace period) for as long as the account exists, the same rule as export. Release check: a test downloads and restores the archive in each of those states.
+The own-copy download works in every account state (trial, active, lapsed, cancelled during the grace period) for as long as the account exists, the same rule as export. The states are defined in `docs/future-plans/hosted-account-states.md`. Release check: a test downloads and restores the archive in each of those states.
 
 ## Invariants
 
@@ -74,7 +74,7 @@ The own-copy download works in every account state (trial, active, lapsed, cance
 
 ## Open questions
 
-- **File storage layout.** If hosted file storage differs from the single files database in today's archive (for example, sealed shards), either pack it into the self-hosted format on download or teach self-hosted restore to read the hosted layout. Direction agreed (2026-10-23, filed 2026-10-27): one encrypted file per attachment with a catalog, for self-hosted and hosted alike, sealed shards rejected (`docs/future-plans/file-storage-per-file.md`).
+- **File storage layout.** If hosted file storage differs from the single files database in today's archive (for example, sealed shards), either pack it into the self-hosted format on download or teach self-hosted restore to read the hosted layout. Direction agreed (2026-10-23, filed 2026-10-27): one encrypted file per attachment with a catalog, for self-hosted and hosted alike, sealed shards rejected (`docs/ready-to-build/file-storage-per-file.md`).
 - **Large vaults.** Archives with many files could be many GB. Offer "notes only" and "notes and files" separately? Make the download resumable?
 - **Upload back in.** Can a hosted user restore from a copy they downloaded (upload it as a new vault), or only from retained snapshots?
 

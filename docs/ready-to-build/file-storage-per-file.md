@@ -1,6 +1,6 @@
 # File storage: one encrypted file per attachment, with a catalog
 
-**Status:** Future plan. **Direction agreed with the maintainer 2026-10-23; don't build yet.** It's sent now so nothing new leans further on the single files database. The open points are in §10.
+**Status:** Ready to build, moved from future plans 2026-11-06 by `docs/ready-to-build/streaming-no-file-cap.md`, which builds it first for its streaming encryption and then removes the per-file size limit. Direction agreed with the maintainer 2026-10-23. The open points are in §10; that note leaves its tunables (§10.3, §10.4, and how much random padding in §10.1) to whoever builds it, starting from the proposals here.
 
 Written without looking at the code, apart from a few references noted below. Check every reference before relying on it.
 

@@ -13,7 +13,7 @@ Written from a read-only look at the code, without running it. Check every refer
   2. **S3-compatible storage**, this note: MetaList uploads itself, with an access key. One API covers AWS S3, Backblaze B2, Cloudflare R2, Wasabi and MinIO.
   3. **Never:** signing in to Google, Dropbox or Microsoft (OAuth). Layer 1 covers them through their desktop apps.
 - **Azure Blob Storage** is a different API. Leave it out until someone asks.
-- **Hosted is separate.** It keeps its own snapshot pipeline, where each file blob is uploaded once (`docs/future-plans/file-storage-per-file.md`).
+- **Hosted is separate.** It keeps its own snapshot pipeline, where each file blob is uploaded once (`docs/ready-to-build/file-storage-per-file.md`).
 
 ## 1. Setup
 
@@ -68,7 +68,7 @@ Needs read access; with a write-only key, say so (§4).
 
 ## 8. Checked 2026-10-27 (filed from the inbox)
 
-- Filed as a future plan, as its status asks; nothing built. `docs/future-plans/file-storage-per-file.md` exists, and its §6 anticipates this ("If MetaList later backs up to cloud storage itself").
+- Filed as a future plan, as its status asks; nothing built. `docs/ready-to-build/file-storage-per-file.md` exists, and its §6 anticipates this ("If MetaList later backs up to cloud storage itself").
 - **Depends on per-file storage for §3:** today every attachment lives inside one `<vault>.metalist.files.db`, so "each file once" has no file to upload on its own until `file-storage-per-file.md` is built (or this extracts files from the database itself).
 - **When built:** the key is a new vault setting, so AGENTS.md's "Database Schema Changes Require a Version Bump" applies (migration step, encryption audit, `docs/security/README.md`). Deleting snapshots and blobs from the bucket is retention of backups, so it must follow "Backup Immutability" too.
 - **Open (proposed):** the vault-password requirement, the automatic schedule, and the `Test Connection` wording.

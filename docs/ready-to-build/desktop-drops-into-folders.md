@@ -10,9 +10,9 @@ Written from a read-only look at the repo. Check the code references before rely
 
 ### Decided while building (the maintainer, 2026-11-02)
 
-- **A. The ticked files upload right after the checklist**, into a holding folder in the data directory, outside the vault (the Summary needs their contents). Only the ticked files leave the computer; nothing is in the vault until Import; closing the walkthrough, cancelled or imported, discards the holding folder, and a restart discards any left. Invariant 2 reads: nothing is uploaded before the checklist. The holding folder keeps the files unencrypted until it goes.
+- **A. The ticked files upload right after the checklist**, into a holding folder in the data directory, outside the vault (the Summary needs their contents). Only the ticked files leave the computer; nothing is in the vault until Import; closing the walkthrough, cancelled or imported, discards the holding folder, and a restart discards any left. Invariant 2 reads: nothing is uploaded before the checklist. The holding folder keeps the files unencrypted until it goes. *Decided 2026-11-06:* it will be encrypted and become resumable uploads' store (`docs/ready-to-build/streaming-no-file-cap.md` §8).
 - **B. Files dropped on a tree folder go at the top**, as a drop on the column off any note does. Found: such a drop makes **one** new note holding every dropped file (not one note per file, as §1 said); a drop on a folder keeps that, puts the note in the folder, and leaves it closed. The walkthrough for a dropped folder starts on Source, Any folder chosen, as a dropped bookmarks file's does.
-- **C. An interrupted upload starts over** for now; the resume rule (`folder-import-and-file-previews.md`) is a later step.
+- **C. An interrupted upload starts over** for now; the resume rule (`folder-import-and-file-previews.md`) is a later step, and resuming inside one file is `docs/future-plans/resumable-uploads.md`.
 - The error that started it: a folder dropped anywhere was uploaded as a file and failed with "NetworkError when attempting to fetch resource". A drop is now looked at first (`webkitGetAsEntry`).
 
 ## 0. Today (from the code)

@@ -60,7 +60,10 @@
 - Ready to build (a link dragged from a browser becomes a note holding it, on the column, a tree folder or into an edited note): `docs/ready-to-build/dropped-links.md`
 - Built 2026-11-02, Chrome's and Safari's exports still to check (browser bookmarks as an import source: one note per website address, its title linked, folders as folder tags, dated when bookmarked; a dropped export asks Import or Keep as File): `docs/ready-to-build/bookmark-import.md`
 - Future plan (charts of super-tag values, embedded like diagrams): `docs/future-plans/charts.md`
-- Future plan (one encrypted file per attachment, with a catalog): `docs/future-plans/file-storage-per-file.md`
+- Ready to build (one encrypted file per attachment, with a catalog): `docs/ready-to-build/file-storage-per-file.md`; built first by `docs/ready-to-build/streaming-no-file-cap.md` (files stream, then no 100 MiB per-file limit)
+- Future plan, after streaming (uploads in pieces that resume after a dropped connection): `docs/future-plans/resumable-uploads.md`
+- Future plan, with the hosted control plane (free hosted accounts granted by the operator): `docs/future-plans/free-accounts.md`
+- Future plan (hosted account states: trial, active, cancelled, lapsed and read-only, closed, deleted): `docs/future-plans/hosted-account-states.md`
 - Future plan (backups to S3-compatible storage, uploaded by MetaList itself; manual or automatic): `docs/future-plans/backups-s3.md`
 - Ready to build (nothing shown as Saved is ever lost: autosave, retries with change IDs, the graceful stop): `docs/ready-to-build/commit-and-shutdown-protocol.md`
 - Future plan (model-checking the save, backup, lock and linked-list protocols with TLA+, with Hypothesis stateful tests on the real code): `docs/future-plans/model-checking-protocols.md`
