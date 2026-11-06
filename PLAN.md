@@ -42,6 +42,17 @@ passed. The four fixes shipped in 0.26.1 (553e6e54); this plan is `feature/scale
 - `npm run throwaway` gains `--notes N` (uses the generator instead of the 12 sample notes) and
   `--scripted-ai <file>`, so the reproduction done by hand on 2026-11-05 is one command.
 
+Done 2026-11-06, with two changes found in the code: the browser suites and the throwaway
+never run in `TEST_MODE` (that mode means `./test.db` and no diagnostics), so "test mode
+only" became "only on a server with its own data folder" (`METALIST_DATA_DIRECTORY` set,
+as every test server has; a server on the user's vault refuses to start with the variable).
+And a script is literal (its search word is fixed); the generator puts "Harbor" at the start
+of every tenth note and nowhere else, so one script serves every generated vault. First look
+at 100,000 notes in Chrome: the scripted question was answered in 10 s with the list usable
+meanwhile, but a 100 ms probe of the server waited 4.7 s once during the search: a stall
+part 2's gate will report on its first run (the search scan itself, or the alias step, still
+runs on the request loop at this size).
+
 ### 2. A blocked request loop fails any browser suite
 
 - In test mode `EventLoopWatchdog` records every stall of 1 s or more (threshold from

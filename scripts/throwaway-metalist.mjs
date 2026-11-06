@@ -4,15 +4,21 @@
 // made-up notes that exercise rendering. It prints its address and runs until Ctrl-C, which
 // stops it and deletes its data. Start it with `npm run throwaway`; `--keep` keeps the data
 // folder, `--empty` starts with no sample notes, `--development` runs it in development (its
-// developer tools shown, such as the Obsidian import, PLAN.md).
+// developer tools shown, such as the Obsidian import, PLAN.md). For a look at scale (PLAN.md,
+// scale testing): `--notes N` fills it with N generated notes instead of the samples
+// (scripts/generate_large_vault.py), `--files M` writes M Markdown files to import beside
+// them, and `--scripted-ai FILE` answers every AI question from that script instead of a
+// provider (app/services/agent/scripted_inference.py):
+//   npm run throwaway -- --notes 100000 --files 1200 --scripted-ai tests/fixtures/scripted-ai/search-view.json
 
-import {spawn} from 'node:child_process';
+import {spawn, spawnSync} from 'node:child_process';
 import {mkdtemp, rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join, resolve} from 'node:path';
 import {createServer} from 'node:net';
 import puppeteer from 'puppeteer';
 import {closeBrowser, installedBrowserExecutable} from './installed-browser.mjs';
+import {parseThrowawayOptions} from './throwaway-options.mjs';
 
 // The same address every time, so a bookmark or an open page keeps working (2026-10-29).
 const THROWAWAY_PORT = 8600;
@@ -24,12 +30,9 @@ const APP_READY_TIMEOUT_MS = 30_000;
 const FIRST_OPTION_INDEX = 2;
 const LONG_NOTE_LINES = 40;
 const TREE_DEPTH = 5;
-const OPTIONS = new Set(process.argv.slice(FIRST_OPTION_INDEX));
-for (const option of OPTIONS) {
-  if (!['--keep', '--empty', '--development'].includes(option)) {
-    throw new Error(`Unknown option ${option}: use --keep, --empty or --development`);
-  }
-}
+// The generated vault is the same every time, so a look can be repeated.
+const GENERATED_VAULT_SEED = 1;
+const OPTIONS = parseThrowawayOptions(process.argv.slice(FIRST_OPTION_INDEX));
 
 // Stops with a clear message when the port is taken: never a quiet move to another port.
 async function requirePortFree(port) {
@@ -117,11 +120,22 @@ for (const key of Object.keys(env)) {
 }
 Object.assign(env, {
   METALIST_DATA_DIRECTORY: directory,
-  METALIST_ENVIRONMENT: OPTIONS.has('--development') ? 'development' : 'production',
+  METALIST_ENVIRONMENT: OPTIONS.development ? 'development' : 'production',
   METALIST_PORT: String(port),
   METALIST_HTTPS_PORT: String(httpsPort), API_PREFIX: '/api2', V1_API_PREFIX: '/api',
 });
+if (OPTIONS.scriptedAi !== null) env.METALIST_SCRIPTED_AI = resolve(OPTIONS.scriptedAi);
 const python = process.platform === 'win32' ? '.venv/Scripts/python.exe' : '.venv/bin/python';
+if (OPTIONS.notes !== null) {
+  // Written before the server starts, which loads the vault as it starts.
+  const generatorArguments = ['scripts/generate_large_vault.py', '--notes', String(OPTIONS.notes), '--data-dir', directory, '--seed', String(GENERATED_VAULT_SEED)];
+  if (OPTIONS.files !== null) generatorArguments.push('--files', String(OPTIONS.files));
+  const generated = spawnSync(resolve(python), generatorArguments, {env, stdio: 'inherit'});
+  if (generated.status !== 0) {
+    await rm(directory, {recursive: true, force: true});
+    throw new Error(`Generating the vault failed (${generated.status})`);
+  }
+}
 const server = spawn(resolve(python), ['serve_namespace.py', '--namespace', 'default', '--port', String(port)], {env, stdio: ['ignore', 'pipe', 'pipe']});
 
 // Ready once the server says it is listening; its output is kept for an error.
@@ -147,7 +161,7 @@ function serverReady() {
 
 async function stop() {
   server.kill();
-  if (!OPTIONS.has('--keep')) await rm(directory, {recursive: true, force: true});
+  if (!OPTIONS.keep) await rm(directory, {recursive: true, force: true});
   process.exit(0);
 }
 process.on('SIGINT', stop);
@@ -157,7 +171,7 @@ process.on('SIGHUP', stop);
 
 await serverReady();
 
-if (!OPTIONS.has('--empty')) {
+if (!OPTIONS.empty && OPTIONS.notes === null) {
   const browser = await puppeteer.launch({headless: true, browser: 'chrome', executablePath: installedBrowserExecutable('chrome', process.env)});
   const page = await browser.newPage();
   await page.goto(origin, {waitUntil: 'networkidle0'});
@@ -165,4 +179,4 @@ if (!OPTIONS.has('--empty')) {
   await seed(page);
   await closeBrowser(browser);
 }
-console.log(`Throwaway MetaList at ${origin} (data: ${directory}). Ctrl-C stops it${OPTIONS.has('--keep') ? '' : ' and deletes its data'}.`);
+console.log(`Throwaway MetaList at ${origin} (data: ${directory}). Ctrl-C stops it${OPTIONS.keep ? '' : ' and deletes its data'}.`);

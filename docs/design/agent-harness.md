@@ -438,6 +438,13 @@ answers 404.
 Claude (`anthropic_inference.py`) and Gemini (`openai_compatible_inference.py`) adapters
 sit beside OpenAI's, through the same disclosure boundary (`docs/design/ai-providers.md`).
 
+A test server can answer from a script instead (`scripted_inference.py`,
+`METALIST_SCRIPTED_AI=<file>`; `docs/testing/harness.md`): the OpenAI provider then
+counts as set up without a key and the chat names it "Scripted AI (test)". The script's
+turns run through the real agent loop, tools and frozen scope, from the first turn for
+every question. It is honoured only on a server with its own data folder
+(`METALIST_DATA_DIRECTORY`) and refused at startup on one using the user's vault.
+
 ## Main Files
 
 - `app/services/agent/runtime.py`: run start/recording and the staged summary.
