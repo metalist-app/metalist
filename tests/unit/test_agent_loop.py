@@ -145,6 +145,23 @@ def test_notes_found_by_tools_become_citable_and_references_only_grow() -> None:
     assert "Searched “child_alpha” · read 2 notes" in statuses
 
 
+def test_a_search_that_finds_nothing_is_answered_and_recorded() -> None:
+    # 0.26.0, 2026-11-05: the empty result had no tree lists, and recording it ended the chat
+    # with "AI chat stream ended before completion".
+    model = _ScriptedModel([
+        _turn("", [("search_view_notes", {"query": "absent words"})]),
+        _turn("No note mentions that.", []),
+    ])
+    events = _run_agent(model, web_mode="none", message="Which note mentions absent words?", tagging=None,
+                        on_event=_ignore)
+    assert _tool_results(model.conversations[1])[0]["matching_note_count"] == 0
+    assert _answer(events) == "No note mentions that."
+    assert events[-1]["actions"] == [{
+        "tool": "search_view_notes", "query": "absent words", "matching_notes": 0, "trees_read": 0,
+        "trees_left_unread": 0, "trees_too_large": 0,
+    }]
+
+
 def test_a_rejected_tool_call_is_explained_back_and_the_model_can_recover() -> None:
     model = _ScriptedModel([
         _turn("", [("lookup_metalist_help", {"topics": ["nonsense"]})]),

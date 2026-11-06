@@ -182,6 +182,8 @@ export async function runImport(wizard, progress) {
     const isBookmarks = wizard.choices.source === BOOKMARKS_SOURCE;
     progress.working(isBookmarks ? 'Importing your bookmarks…' : 'Importing your files…');
     let result = null;
+    // No watchdog: an import takes as long as its files, its bar showing it at work, and a
+    // failure rejects (0.26.0, 2026-11-05: 1,127 files passed the 15 seconds and were called stuck).
     await CommandGate.run('importWizard.import', async () => {
         if (isBookmarks) {
             result = await NotesAPI.importBookmarks({
@@ -205,7 +207,7 @@ export async function runImport(wizard, progress) {
         }
         // Behind the wizard, a new search context of the imported notes: there when it closes.
         await wizard.services.afterImport(result.sourceTag);
-    });
+    }, { disableWatchdog: true });
 }
 
 // Where the files were dropped, as the import takes it: their notes get that search context's

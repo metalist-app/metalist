@@ -36,7 +36,17 @@ answer wrap each request in a `provider_wait` activity that the chat shows as
 "Waiting for OpenAI". `ChatTurnStream` records the run's steps and appends
 `where_it_stopped()` to every failure. The frozen scope (`scope.py`) keeps each
 note's HTML as of Send in `NoteText` and extracts its text on first read; the
-snapshot reports `preparation_ms`.
+snapshot reports `preparation_ms`. Work that reads the view's notes (the note tools,
+summary batch planning and root retention) runs in a worker thread through
+`read_notes_off_request_loop`: a whole vault's text takes seconds to extract, and on
+the request loop it held every other request, so the list's own search passed its
+15 s watchdog (0.26.0, 2026-11-05). When the run's task is cancelled while it waits (a
+vault locked or switched, `invalidate_runtime_work`), the snapshot's `TextExtractionMeter`
+is stopped and the thread raises `NoteScanStopped` at its next note. The browser's Stop
+is not such a cancel: the server sees the closed stream only at its next write, so a
+scan under way finishes in the background (the request loop stays free) and the run ends
+after it. `NoteAliases.from_snapshot` gives every note in view its alias in linear time:
+looking each id up in a list made a 144,000-note view take minutes on the request loop.
 
 Structured steps use OpenAI strict structured outputs (`strict_structured_outputs.py`):
 Instructor's JSON_SCHEMA mode sends the schema as a hint only, so a reply could

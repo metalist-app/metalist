@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from functools import partial
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
@@ -21,6 +22,7 @@ from typing import Literal
 
 from app.services.agent.help_catalog import HELP_TOPICS, MENU_ACTIONS, MENU_BY_ID, HelpTopic
 from app.services.agent.investigation import InvestigationEvidencePayload, InvestigationState, RootTreeRead
+from app.services.agent.scope import read_notes_off_request_loop
 from app.services.agent.skill_settings import AgentSkill, AgentSkillSet
 from app.services.agent.tool_calling import AgentTool
 from app.services.agent.token_estimation import estimate_input_tokens
@@ -322,12 +324,16 @@ async def run_agent_tool(*, name: str, arguments: str, context: ToolContext) -> 
         return parsed
     if isinstance(parsed, LookupMetaListHelpArguments):
         return _lookup_metalist_help(parsed, context)
+    # The note tools read the view's notes, a whole vault under an empty search.
+    snapshot = context.investigation.snapshot
     if isinstance(parsed, ViewOverviewArguments):
-        return _view_overview(context)
+        return await read_notes_off_request_loop(snapshot=snapshot, read_notes=partial(_view_overview, context))
     if isinstance(parsed, ReadViewNotesArguments):
-        return _read_view_notes(parsed, context)
+        return await read_notes_off_request_loop(
+            snapshot=snapshot, read_notes=partial(_read_view_notes, parsed, context))
     if isinstance(parsed, SearchViewNotesArguments):
-        return _search_view_notes(parsed, context)
+        return await read_notes_off_request_loop(
+            snapshot=snapshot, read_notes=partial(_search_view_notes, parsed, context))
     if isinstance(parsed, OpenWebPagesArguments):
         return await _open_web_pages(parsed, context)
     raise AssertionError(f"Tool {name} has no implementation")
@@ -406,7 +412,10 @@ def _search_view_notes(arguments: SearchViewNotesArguments, context: ToolContext
         "matching_note_ids": list(matching_note_ids[:MAX_SEARCH_MATCH_IDS]),
     }
     if not matching_note_ids:
-        return ToolResult(content=_json({**search_payload, "trees": []}), is_error=False, disclosed_note_text="",
+        # The shape of every search result, its lists empty (0.26.0, 2026-11-05: without them,
+        # recording the search ended the chat).
+        nothing_read: dict[str, object] = {"trees": [], "unread_root_ids": [], "too_large_root_ids": [], "unknown_ids": []}
+        return ToolResult(content=_json({**search_payload, **nothing_read}), is_error=False, disclosed_note_text="",
                           note_ids=(), note_evidence=(), web_evidence=(), activated_skills=())
     tree_read = context.investigation.read_root_trees(requested_ids=matching_note_ids)
     assert tree_read.unknown_ids == ()

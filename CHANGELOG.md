@@ -2,6 +2,11 @@
 
 What changed in each MetaList release, newest first.
 
+## Changes in 0.26.1
+
+- **Large vaults no longer freeze.** An AI question with an empty search box took minutes on a vault of tens of thousands of notes, holding the server so the search box and Stop got no answer and a "command stuck" error appeared; the step that names each note for the AI is now linear, and reading the notes runs beside the server's other work. An import of more than a few hundred files showed the same error at 15 seconds while it was still running fine; an import now takes as long as its files take, with its progress bar.
+- An AI search that matched no note ended the chat with "stream ended before completion"; it now answers.
+
 ## Changes in 0.26.0
 
 - **Notes from the old MetaList.** A newly installed MetaList that finds the old MetaList's notes in its data folder offers them as soon as it opens. Protected notes ask for the old password, which then protects this MetaList too (a new one when it is too weak). The old file is only read, never changed. At a terminal, `convert-from-legacy.py` now reads protected exports and the old file itself.
