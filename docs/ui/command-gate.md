@@ -12,7 +12,9 @@ Exception:
 `CommandGate` responsibilities:
 - Set/clear `ModeContext.isLoading` (the only place allowed to call `ModeContext.setLoading(...)`).
 - Drop inputs while busy (no queueing/coalescing/replay).
-- Maintain a watchdog timer that throws if a command never finishes.
+- Maintain a watchdog timer that throws if a command never finishes (15 s by default).
+
+Long commands pass options to `run`: `{ timeoutMs }` when they have a known bound (export, print, paste and drop, backup), `{ disableWatchdog: true }` when their length grows with the user's data and they show their own progress (the import wizard's import, bulk AI proposals). A whole folder import passed 15 s in 0.26.0 and the watchdog called it stuck while it ran on.
 
 The loading state immediately blocks overlapping input, but the visible full-screen loading overlay is delayed by `CONFIG.LOADING.SPINNER_DELAY` so fast commands do not flash a pause indicator.
 

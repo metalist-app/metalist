@@ -29,11 +29,10 @@ class NoteAliases:
     @classmethod
     def from_snapshot(cls, snapshot: ScopedSearchSnapshot) -> NoteAliases:
         """Deterministic: view notes and tree structure in view order, then the selected tree."""
-        ordered: list[str] = []
-        for note_id in (*snapshot.ordered_note_ids, *snapshot.tree_nodes_by_id,
-                        *snapshot.selected_note.reference_note_ids):
-            if note_id not in ordered:
-                ordered.append(note_id)
+        # Each id kept once, where it first comes: a dict, as a whole vault can be in view (0.26.0,
+        # 2026-11-05: looking each note up in a list took minutes and held the server).
+        ordered = dict.fromkeys((*snapshot.ordered_note_ids, *snapshot.tree_nodes_by_id,
+                                 *snapshot.selected_note.reference_note_ids))
         return cls(tuple(ordered))
 
     def alias(self, note_id: str) -> str:

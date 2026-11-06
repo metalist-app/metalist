@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import asyncio
+import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from types import MappingProxyType
-from typing import Literal, Mapping
+from typing import Literal, Mapping, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from typing_extensions import Self
@@ -94,17 +96,24 @@ class AgentScopeDescriptor(BaseModel):
             raise ValueError("Only reference scope accepts reference_root_ids")
         return self
 
+class NoteScanStopped(RuntimeError):
+    """The run was stopped while a worker thread was reading its notes. Raised only in
+    that thread, whose result nobody waits for any more."""
+
+
 @dataclass(slots=True, eq=False)
 class TextExtractionMeter:
     """How many of a snapshot's notes had their text extracted, and how long it
-    took, so the chat can say which step paid for it."""
+    took, so the chat can say which step paid for it; and whether the run was
+    stopped, so a worker thread still reading its notes ends at the next one."""
 
     note_count: int
     duration_ms: float
+    stop_requested: threading.Event
 
     @classmethod
     def start(cls) -> TextExtractionMeter:
-        return cls(note_count=0, duration_ms=0.0)
+        return cls(note_count=0, duration_ms=0.0, stop_requested=threading.Event())
 
     def record(self, duration_ms: float) -> None:
         assert duration_ms >= 0.0
@@ -113,6 +122,33 @@ class TextExtractionMeter:
 
     def reading(self) -> tuple[int, float]:
         return self.note_count, self.duration_ms
+
+    def stop(self) -> None:
+        self.stop_requested.set()
+
+    def raise_if_stopped(self) -> None:
+        if self.stop_requested.is_set():
+            raise NoteScanStopped("The run was stopped: its notes are no longer read")
+
+
+_NotesRead = TypeVar("_NotesRead")
+
+
+async def read_notes_off_request_loop(
+    *, snapshot: ScopedSearchSnapshot, read_notes: Callable[[], _NotesRead],
+) -> _NotesRead:
+    """Run work that reads the snapshot's notes in a worker thread: a whole vault's text
+    takes seconds to extract, and on the request loop it held every other request
+    (0.26.0, 2026-11-05: the list's search passed the 15 s watchdog). When the run is
+    stopped, the awaiting task is cancelled and the thread ends at its next note."""
+    is_finished = False
+    try:
+        notes_read = await asyncio.to_thread(read_notes)
+        is_finished = True
+    finally:
+        if not is_finished:
+            snapshot.text_extraction.stop()
+    return notes_read
 
 
 def describe_text_extraction(*, before: tuple[int, float], after: tuple[int, float]) -> str:
@@ -163,6 +199,7 @@ class NoteText:
     def text(self) -> str:
         if self.extracted_text is None:
             assert self.meter is not None, "Text to extract always comes with the snapshot's meter"
+            self.meter.raise_if_stopped()
             started_at = time.perf_counter()
             text, is_redacted = extract_note_text_for_agent(content_html=self.content_html, tags=self.tags_text)
             if is_redacted:

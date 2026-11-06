@@ -1,6 +1,7 @@
 import asyncio
 import json
 import re
+import threading
 from dataclasses import replace
 from pathlib import Path
 from types import MappingProxyType
@@ -8,6 +9,7 @@ from types import MappingProxyType
 import pytest
 
 from app.services.agent.agent_tools import ToolContext
+from app.services.agent.agent_tools import ToolResult
 from app.services.agent.agent_tools import available_agent_tools
 from app.services.agent.agent_tools import run_agent_tool
 from app.services.agent.help_catalog import HELP_TOPICS
@@ -275,3 +277,77 @@ def test_note_tools_report_the_note_text_they_showed_for_the_web_guard() -> None
     overview = _run(context, "view_overview", {})
     assert overview.disclosed_note_text == "ROOT_ALPHA\nTAIL"
     assert _run(context, "lookup_metalist_help", {"topics": ["ai"]}).disclosed_note_text == ""
+
+
+# Long enough that a stalled request loop shows as a failed test, not a hang.
+_SCAN_WAIT_SECONDS = 5.0
+
+
+class _HeldExtraction:
+    """Stands in for turning note HTML into text: the first note holds until released,
+    as a whole-vault scan holds for seconds, and every note read is counted."""
+
+    def __init__(self) -> None:
+        self.started = threading.Event()
+        self.released = threading.Event()
+        self.was_released_during_scan = False
+        self.extracted_html: list[str] = []
+
+    def __call__(self, *, content_html: str, tags: str) -> tuple[str, bool]:
+        self.extracted_html.append(content_html)
+        if not self.started.is_set():
+            self.started.set()
+            self.was_released_during_scan = self.released.wait(_SCAN_WAIT_SECONDS)
+        return content_html, False
+
+
+def _view_needing_extraction() -> ToolContext:
+    """The small view with every note's text still to be extracted, as after Send."""
+    snapshot = _snapshot(large_tail=False)
+    notes = {
+        note_id: replace(note, note_text=NoteText.from_html(
+            content_html=note.content_text, tags_text=note.explicit_tags_text, meter=snapshot.text_extraction))
+        for note_id, note in snapshot.notes_by_id.items()
+    }
+    return _context(snapshot=replace(snapshot, notes_by_id=MappingProxyType(notes)), max_tokens=50_000,
+                    web_mode="none", skills=DEFAULT_AGENT_SKILLS)
+
+
+def test_a_note_search_leaves_the_request_loop_free(monkeypatch) -> None:
+    # 0.26.0 (2026-11-05): an AI search of a whole vault held the server, so the
+    # list's own search waited past the 15 s watchdog and MetaList showed a fatal error.
+    extraction = _HeldExtraction()
+    monkeypatch.setattr("app.services.agent.scope.extract_note_text_for_agent", extraction)
+    context = _view_needing_extraction()
+
+    async def search_while_the_loop_answers() -> ToolResult:
+        search = asyncio.create_task(run_agent_tool(
+            name="search_view_notes", arguments=json.dumps({"query": "alpha"}), context=context))
+        # Another request: it runs only if the scan leaves the loop.
+        await asyncio.to_thread(extraction.started.wait, _SCAN_WAIT_SECONDS)
+        extraction.released.set()
+        return await search
+
+    result = asyncio.run(search_while_the_loop_answers())
+    assert extraction.was_released_during_scan
+    assert json.loads(result.content)["matching_note_count"] == 2
+
+
+def test_stopping_a_note_search_ends_its_scan(monkeypatch) -> None:
+    # Stop cancels the run while a note is being read: the notes after it are not read.
+    extraction = _HeldExtraction()
+    monkeypatch.setattr("app.services.agent.scope.extract_note_text_for_agent", extraction)
+    context = _view_needing_extraction()
+
+    async def stop_during_the_scan() -> None:
+        search = asyncio.create_task(run_agent_tool(
+            name="search_view_notes", arguments=json.dumps({"query": "alpha"}), context=context))
+        await asyncio.to_thread(extraction.started.wait, _SCAN_WAIT_SECONDS)
+        search.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await search
+        extraction.released.set()
+
+    # asyncio.run returns once the scan's thread has ended.
+    asyncio.run(stop_during_the_scan())
+    assert len(extraction.extracted_html) == 1

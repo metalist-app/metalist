@@ -11,6 +11,7 @@ from collections import deque
 from collections.abc import AsyncIterator
 from collections.abc import Callable
 from dataclasses import dataclass
+from functools import partial
 
 from pydantic import BaseModel
 
@@ -48,6 +49,7 @@ from app.services.agent.skill_settings import AgentSkill
 from app.services.agent.skill_settings import AgentSkillSet
 from app.services.agent.scope import ScopedSearchSnapshot
 from app.services.agent.scope import describe_text_extraction
+from app.services.agent.scope import read_notes_off_request_loop
 from app.services.agent.token_estimation import estimate_input_tokens
 from app.services.agent.token_estimation import estimate_message_tokens
 from app.services.agent.token_estimation import estimate_text_tokens
@@ -227,12 +229,10 @@ class AgentRuntime(AgentLoopMixin):
             approx_input_tokens=route_tokens,
         )
         extraction_before = snapshot.text_extraction.reading()
+        plan_batches = partial(state.plan_complete_root_batches, reserved_approximate_tokens=selected_note_tokens)
         # lint: allow-PY001 rationale="translate a user-configured evidence budget overflow into a concise operation failure"
         try:
-            batch_plan = await asyncio.to_thread(
-                state.plan_complete_root_batches,
-                reserved_approximate_tokens=selected_note_tokens,
-            )
+            batch_plan = await read_notes_off_request_loop(snapshot=snapshot, read_notes=plan_batches)
         # lint: allow-PY001 rationale="an atomic root can legitimately exceed the user-configured summary batch limit"
         except ValueError as exc:
             raise AgentExecutionError(str(exc)) from exc
@@ -337,10 +337,10 @@ class AgentRuntime(AgentLoopMixin):
                     return
                 assert choice == "use_prefix"
                 yield {"type": "bulk_complete", "changed": False}
-        retention = await asyncio.to_thread(
+        retention = await read_notes_off_request_loop(snapshot=snapshot, read_notes=partial(
             state.retain_root_prefix_within_token_budget,
             reserved_approximate_tokens=selected_note_tokens,
-        )
+        ))
         dropped_root_count = len(retention.dropped_root_ids)
         self._trace_store.append_event(
             session_key=run.session_key,
