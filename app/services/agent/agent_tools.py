@@ -414,7 +414,7 @@ def _search_view_notes(arguments: SearchViewNotesArguments, context: ToolContext
     if not matching_note_ids:
         # The shape of every search result, its lists empty (0.26.0, 2026-11-05: without them,
         # recording the search ended the chat).
-        nothing_read = {"trees": [], "unread_root_ids": [], "too_large_root_ids": [], "unknown_ids": []}
+        nothing_read: dict[str, object] = {"trees": [], "unread_root_ids": [], "too_large_root_ids": [], "unknown_ids": []}
         return ToolResult(content=_json({**search_payload, **nothing_read}), is_error=False, disclosed_note_text="",
                           note_ids=(), note_evidence=(), web_evidence=(), activated_skills=())
     tree_read = context.investigation.read_root_trees(requested_ids=matching_note_ids)
