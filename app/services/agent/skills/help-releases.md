@@ -5,6 +5,11 @@ What changed in each MetaList version, newest first, from its changelog
 Compare with installed_version from the help lookup to tell the user whether
 they already have a release. Version info offers updates (see the data topic).
 
+## 0.26.1
+
+- **Large vaults no longer freeze.** An AI question with an empty search box took minutes on a vault of tens of thousands of notes, holding the server so the search box and Stop got no answer and a "command stuck" error appeared; the step that names each note for the AI is now linear, and reading the notes runs beside the server's other work. An import of more than a few hundred files showed the same error at 15 seconds while it was still running fine; an import now takes as long as its files take, with its progress bar.
+- An AI search that matched no note ended the chat with "stream ended before completion"; it now answers.
+
 ## 0.26.0
 
 - **Notes from the old MetaList.** A newly installed MetaList that finds the old MetaList's notes in its data folder offers them as soon as it opens. Protected notes ask for the old password, which then protects this MetaList too (a new one when it is too weak). The old file is only read, never changed. At a terminal, `convert-from-legacy.py` now reads protected exports and the old file itself.
@@ -202,9 +207,4 @@ they already have a release. Version info offers updates (see the data topic).
 - Error diagnostics now record safe request IDs, exception types, and source locations through Loguru; full tracebacks are available only in authenticated encrypted logs.
 - Releases run the full cross-platform matrix once on the `main` push. The tag publishes those exact tested distributions without rerunning the matrix.
 
-## 0.7.5
-
-- Unexpected API 500 errors now show the exception class and MetaList source line in the browser, without exposing note contents, exception messages, or local filesystem paths.
-- A local release command validates the exact cross-platform CI matrix, publishes only its tested artifacts, then verifies the public PyPI package in a clean installation.
-
-Versions before 0.7.5 are left out; the changelog (CHANGELOG.md) lists them.
+Versions before 0.8.0 are left out; the changelog (CHANGELOG.md) lists them.
