@@ -7760,11 +7760,14 @@ body.loading::after {
     box-shadow: var(--modal-menu-shadow);
 }
 
+/* The number column is exactly as wide as the longest number (set by keyboard-events.js);
+   the name takes the rest of the row and ends in an ellipsis only where it runs out. */
 .tab-context-item {
     display: grid;
-    grid-template-columns: 2.4em 1fr auto;
+    grid-template-columns: var(--tab-context-index-width) minmax(0, 1fr) auto;
     align-items: center;
-    column-gap: 10px;
+    /* One character, as "5: journal" reads typed (the maintainer, 2026-11-07: 10px was too wide). */
+    column-gap: 1ch;
     padding: 4px 6px;
     border: 1px solid transparent;
     border-radius: 4px;

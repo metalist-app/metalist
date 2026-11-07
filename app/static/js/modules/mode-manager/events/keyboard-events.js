@@ -55,7 +55,7 @@ import { NotesAPI } from '../../api-client.js';
 import { ErrorHandler } from '../../error-handler.js';
 import { describeDroppedItems, loneDroppedFolderEntry, readDroppedFolder } from '../services/dropped-folders.js';
 import { fileNewNoteInFolder, folderOfTab, virtualFolderAt } from '../services/virtual-folders-service.js';
-import { EMPTY_CONTEXT_LABEL, searchContextLabel } from '../services/search-context-label.js';
+import { searchContextLabel } from '../services/search-context-label.js';
 import { checkBackgroundWork } from '../services/background-work-cards.js';
 import { isCopyOfDialogSelection } from '../services/dialog-copy-service.js';
 import { persistTabStateSnapshot, createTabOnServer, deleteTabOnServer } from '../services/tab-state-service.js';
@@ -169,8 +169,6 @@ const TAG_BAR_META_SHORTCUT_KEYS = new Set(['c', 'x', 'v', 'z', 'y', 'r', 's', '
 const MIN_TABS_TO_DRAG = 2;
 // Clicks this soon after a tab drag ends belong to the drag, not to the tab.
 const TAB_DRAG_CLICK_SUPPRESSION_MS = 500;
-// Longer search queries are shortened in the tab list.
-const TAB_LIST_QUERY_MAX_LENGTH = 12;
 const PASTE_AND_DROP_TIMEOUT_SECONDS = 120;
 const COMMAND_BUSY_BANNER_SECONDS = 10;
 const FAILURE_BANNER_SECONDS = 6;
@@ -3549,19 +3547,11 @@ export function updateSearchContextsList() {
         }
         const referenceNavigationLabel = getReferenceNavigationLabelForTab(tabId);
         // A context narrowed to a folder is named by its search and its folder, as its search
-        // box shows them: one with only a folder is that folder, never "(empty)".
-        let displayQuery = referenceNavigationLabel !== ''
+        // box shows them: one with only a folder is that folder, never "(empty)". The name uses
+        // the row's whole width and ends in an ellipsis only where it runs out (main.css).
+        const displayQuery = referenceNavigationLabel !== ''
             ? referenceNavigationLabel
             : searchContextLabel({ search: originalQuery, folder: folderOfTab(tabId) });
-
-        // Truncate long search queries for display
-        if (
-            referenceNavigationLabel === ''
-            && displayQuery.length > TAB_LIST_QUERY_MAX_LENGTH
-            && displayQuery !== EMPTY_CONTEXT_LABEL
-        ) {
-            displayQuery = displayQuery.substring(0, TAB_LIST_QUERY_MAX_LENGTH) + '...';
-        }
         
         const isActive = tabId === activeTabId;
 
@@ -3584,6 +3574,9 @@ export function updateSearchContextsList() {
     }
     
     if (contextsList.length > 0) {
+        // The number column is as wide as the longest number and its colon, in the list's
+        // monospace font: no gap left of "5:" when there are fewer than ten (main.css).
+        searchContextsList.style.setProperty('--tab-context-index-width', `${String(tabOrder.length).length + 1}ch`);
         searchContextsList.innerHTML = contextsList.join('');
         updateSearchContextsOverlayPlacement();
         
