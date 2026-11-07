@@ -2,10 +2,13 @@ from __future__ import annotations
 
 from app.security.crypto_sizes import AES_256_KEY_BYTES
 import asyncio
+from collections import deque
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 import faulthandler
+import json
+import os
 import secrets
 import signal
 import sys
@@ -38,6 +41,12 @@ _DIRECT_APPEND_LOG_PATTERNS = (
 )
 _EVENT_LOOP_PROBE_INTERVAL_SECONDS = 1.0
 _EVENT_LOOP_STALL_SECONDS = 5.0
+# A probe the loop answers this late or later is a recorded stall (recorded_loop_stalls, and
+# the file METALIST_LOOP_STALL_LOG names): the browser suites fail on any (PLAN.md, scale
+# testing, part 2: 0.26.0 held the loop for 100 s and only logged it).
+RECORDED_LOOP_STALL_SECONDS = 1.0
+_MAX_RECORDED_LOOP_STALLS = 50
+LOOP_STALL_LOG_ENVIRONMENT_VARIABLE = "METALIST_LOOP_STALL_LOG"
 _EVENT_LOOP_STALL_LOG_INTERVAL_SECONDS = 5.0
 _SLOW_REQUEST_SECONDS = 10.0
 _SLOW_REQUEST_LOG_INTERVAL_SECONDS = 10.0
@@ -70,6 +79,51 @@ class ActiveRequest:
     user_agent: str
     started_at: float
     last_logged_at: float
+
+
+@dataclass(frozen=True)
+class LoopStall:
+    """The event loop answered a probe late: nothing the server does on the loop ran
+    meanwhile. What was running is captured while the stall is under way (the watchdog
+    looks every second), so a stall that ended before it looked has no stacks."""
+
+    # When the probe was scheduled (UTC, ISO 8601).
+    at: str
+    seconds: float
+    # "METHOD /path 3.2s" for each request active during the stall, oldest first.
+    requests: tuple[str, ...]
+    # Every thread's stack while stalled; "" when the stall ended before the watchdog looked.
+    stacks: str
+
+
+_recorded_loop_stalls: deque[LoopStall] = deque(maxlen=_MAX_RECORDED_LOOP_STALLS)  # shockharness: ignore[STATE001] reason="every access holds _recorded_loop_stalls_lock"
+_recorded_loop_stalls_lock = threading.Lock()
+
+
+def record_loop_stall(stall: LoopStall) -> None:
+    """Keeps the stall (the newest _MAX_RECORDED_LOOP_STALLS), appends it as a JSON line to
+    the file METALIST_LOOP_STALL_LOG names when set, and logs it."""
+    if stall.seconds < RECORDED_LOOP_STALL_SECONDS:
+        raise ValueError(f"a recorded stall is {RECORDED_LOOP_STALL_SECONDS} s or longer, got {stall.seconds}")
+    with _recorded_loop_stalls_lock:
+        _recorded_loop_stalls.append(stall)
+    if LOOP_STALL_LOG_ENVIRONMENT_VARIABLE in os.environ:
+        with open(os.environ[LOOP_STALL_LOG_ENVIRONMENT_VARIABLE], "a", encoding="utf-8") as stall_log:
+            stall_log.write(json.dumps(asdict(stall)) + "\n")
+    logger.warning(
+        "[diagnostics] event loop stall seconds={seconds:.2f} requests={requests}",
+        seconds=stall.seconds, requests=list(stall.requests),
+    )
+
+
+def recorded_loop_stalls() -> list[LoopStall]:
+    with _recorded_loop_stalls_lock:
+        return list(_recorded_loop_stalls)
+
+
+def reset_recorded_loop_stalls() -> None:
+    with _recorded_loop_stalls_lock:
+        _recorded_loop_stalls.clear()
 
 
 @dataclass(frozen=True)
@@ -653,13 +707,29 @@ def _request_watchdog_loop() -> None:
             )
 
 
+def _describe_active_requests(*, now: float) -> tuple[str, ...]:
+    requests = sorted(snapshot_active_requests().values(), key=lambda request: request.started_at)
+    return tuple(f"{request.method} {request.path} {now - request.started_at:.1f}s" for request in requests)
+
+
 class EventLoopWatchdog:
+    """A thread that probes the event loop every second. A probe answered a second or more
+    late is recorded as a LoopStall, with the requests and thread stacks captured while it
+    was still waiting; one five seconds late is also logged with a thread dump."""
+
     def __init__(self, *, loop: asyncio.AbstractEventLoop) -> None:
         self._loop = loop
         self._lock = threading.Lock()
         self._last_ack_at = time.perf_counter()
         self._last_logged_at = self._last_ack_at
         self._probe_pending = False
+        self._probe_scheduled_at = self._last_ack_at
+        self._probe_scheduled_wall_time = ""
+        # What was running while the pending probe waited, once it had waited a second.
+        self._stall_capture: tuple[tuple[str, ...], str] | None = None
+        # Stalls the loop thread finished (acked late), recorded by the watchdog thread.
+        self._stalls_to_record: list[LoopStall] = []
+        self._stopped = threading.Event()
 
     def start(self) -> None:
         thread = threading.Thread(
@@ -669,23 +739,62 @@ class EventLoopWatchdog:
         )
         thread.start()
 
+    def stop(self) -> None:
+        self._stopped.set()
+
     def _ack_probe(self) -> None:
+        now = time.perf_counter()
         with self._lock:
-            self._last_ack_at = time.perf_counter()
+            waited = now - self._probe_scheduled_at
+            self._last_ack_at = now
             self._probe_pending = False
+            capture = self._stall_capture
+            self._stall_capture = None
+            scheduled_wall_time = self._probe_scheduled_wall_time
+            if waited >= RECORDED_LOOP_STALL_SECONDS:
+                requests: tuple[str, ...] = ()
+                stacks = ""
+                if capture is not None:
+                    requests, stacks = capture
+                self._stalls_to_record.append(LoopStall(at=scheduled_wall_time, seconds=waited, requests=requests, stacks=stacks))
 
     def _schedule_probe_if_needed(self) -> None:
         with self._lock:
             if self._probe_pending:
                 return
             self._probe_pending = True
+            self._probe_scheduled_at = time.perf_counter()
+            self._probe_scheduled_wall_time = datetime.now(timezone.utc).isoformat()
+            self._stall_capture = None
         self._loop.call_soon_threadsafe(self._ack_probe)
 
+    def _capture_if_stalled(self, *, now: float) -> None:
+        """Once the pending probe has waited a second, keeps what is running: the requests
+        and every thread's stack, which show what holds the loop."""
+        with self._lock:
+            if not self._probe_pending or self._stall_capture is not None:
+                return
+            if now - self._probe_scheduled_at < RECORDED_LOOP_STALL_SECONDS:
+                return
+        capture = (_describe_active_requests(now=now), _format_thread_stacks())
+        with self._lock:
+            if self._probe_pending and self._stall_capture is None:
+                self._stall_capture = capture
+
+    def _record_finished_stalls(self) -> None:
+        with self._lock:
+            finished = list(self._stalls_to_record)
+            self._stalls_to_record.clear()
+        for stall in finished:
+            record_loop_stall(stall)
+
     def _watch_loop(self) -> None:
-        while True:
-            time.sleep(_EVENT_LOOP_PROBE_INTERVAL_SECONDS)
+        while not self._stopped.wait(_EVENT_LOOP_PROBE_INTERVAL_SECONDS):
+            self._record_finished_stalls()
             self._schedule_probe_if_needed()
-            self._log_stall_if_needed(now=time.perf_counter())
+            now = time.perf_counter()
+            self._capture_if_stalled(now=now)
+            self._log_stall_if_needed(now=now)
 
     def _log_stall_if_needed(self, *, now: float) -> None:
         should_log = False

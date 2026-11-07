@@ -125,6 +125,9 @@ Object.assign(env, {
   METALIST_HTTPS_PORT: String(httpsPort), API_PREFIX: '/api2', V1_API_PREFIX: '/api',
 });
 if (OPTIONS.scriptedAi !== null) env.METALIST_SCRIPTED_AI = resolve(OPTIONS.scriptedAi);
+// Each stall of the server's event loop (a second or longer) is a JSON line here.
+const loopStallLog = join(directory, 'loop-stalls.jsonl');
+env.METALIST_LOOP_STALL_LOG = loopStallLog;
 const python = process.platform === 'win32' ? '.venv/Scripts/python.exe' : '.venv/bin/python';
 if (OPTIONS.notes !== null) {
   // Written before the server starts, which loads the vault as it starts.
@@ -179,4 +182,4 @@ if (!OPTIONS.empty && OPTIONS.notes === null) {
   await seed(page);
   await closeBrowser(browser);
 }
-console.log(`Throwaway MetaList at ${origin} (data: ${directory}). Ctrl-C stops it${OPTIONS.keep ? '' : ' and deletes its data'}.`);
+console.log(`Throwaway MetaList at ${origin} (data: ${directory}; stalls of the server's loop, a second or longer: ${loopStallLog}). Ctrl-C stops it${OPTIONS.keep ? '' : ' and deletes its data'}.`);

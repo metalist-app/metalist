@@ -63,6 +63,15 @@ runs on the request loop at this size).
   no future code path can hold the server, whatever it is. The first run reports what today's
   suites trip; the threshold is tightened once they are clean.
 
+Done 2026-11-06. The record is a file, not a route: `METALIST_LOOP_STALL_LOG=<file>` gets a
+JSON line per stall (the browser runs and the throwaway name one in their data folder), so
+the check needs no session and works after the run's logout; in memory too
+(`recorded_loop_stalls`) for a route later. The stall's length is measured from the probe
+(scheduled every second), so a loop held 2 s or longer is always recorded and one held 1–2 s
+when the probe fell early enough; a deliberate 2 s `time.sleep` in the HTTP middleware failed
+the `ai-selected-note` suite naming its line. The whole Chrome suite passed with the gate on
+(`npm run test:browser:all`, exit 0): today's suites trip nothing at their size.
+
 ### 3. The `scale` browser suite and its CI job
 
 A focused suite that starts its server on a generated vault (100,000 notes; the number is a

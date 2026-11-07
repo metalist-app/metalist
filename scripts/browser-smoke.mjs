@@ -13,6 +13,7 @@ import {createServer} from 'node:net';
 import {setTimeout as delay} from 'node:timers/promises';
 import puppeteer from 'puppeteer';
 import {closeBrowser, installedBrowserExecutable} from './installed-browser.mjs';
+import {assertNoLoopStalls} from './browser-loop-stalls.mjs';
 import {stopChildrenOnExitSignals} from './stop-children-on-exit.mjs';
 import {checkPastedHeadingFormatting} from './browser-formatting-regressions.mjs';
 import {checkAdditionalStateTransitions, checkEditingShortcutSequences} from './browser-state-regressions.mjs';
@@ -135,6 +136,9 @@ env.METALIST_PORT = String(port);
 env.METALIST_HTTPS_PORT = String(httpsPort);
 env.API_PREFIX = '/api2';
 env.V1_API_PREFIX = '/api';
+// Every stall of the server's event loop (a second or longer) fails the run at its end.
+const loopStallLog = join(directory, 'loop-stalls.jsonl');
+env.METALIST_LOOP_STALL_LOG = loopStallLog;
 const python = process.platform === 'win32' ? '.venv/Scripts/python.exe' : '.venv/bin/python';
 let logs = '';  // shockharness: ignore[STATE001] reason="single-threaded Node: the server output callbacks and the run share one event loop"
 const server = spawn(resolve(python), ['serve_namespace.py','--namespace','default','--port',String(port)], {env, stdio:['ignore','pipe','pipe']});
@@ -987,6 +991,7 @@ try {
   await writeFile(join(directory,'result.json'), JSON.stringify({passed:true,noteId,fileId}));
   console.log(`Browser smoke passed; disposable artifacts: ${directory}`);
   }
+  await assertNoLoopStalls(loopStallLog);
 } catch (error) { // shockharness: ignore[EXC001] reason="the server and browser logs of the failed run are written, then the error is rethrown unchanged"
   await writeFile(join(directory,'server.log'), logs);
   await writeFile(join(directory,'browser.log'), browserDiagnostics.join('\n'));
