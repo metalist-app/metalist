@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from dataclasses import replace
+from html.parser import HTMLParser
 
 import pytest
 from pydantic import ValidationError
@@ -20,6 +21,7 @@ from app.services.agent.scope import AgentScopeDescriptor
 from app.services.agent.scope import ScopedSearchSnapshotFactory
 from app.services.note_store import NoteRecord
 from app.services.content_formatting import extract_note_text_for_agent
+from app.utils.text_utils import strip_html
 from app.services.link_titles import link_title_store
 from app.services.search_index import SearchIndex, SearchRecord
 from app.services.snapshot import ResolvedViewScope
@@ -148,6 +150,10 @@ class _FakeNotes:
 
     def list_note_ids(self) -> list[str]:
         return list(self.records)
+
+    def kept_text(self, note_id: str) -> str:
+        # As the vault keeps it (content_cache): strip_html of the stored note, current on every edit.
+        return strip_html(self.records[note_id].content)
 
 
 def _descriptor() -> AgentScopeDescriptor:
@@ -283,6 +289,30 @@ def test_cached_titles_are_frozen_with_parent_and_never_read_for_excluded_notes(
     assert "private.test" not in str(payload)
     titles["https://example.test/paper"] = "Changed after Send"
     assert snapshot.selected_note.as_payload() == payload
+
+
+def test_note_text_comes_from_the_kept_text_without_parsing_html(monkeypatch):
+    # Every message re-parsed every note's HTML with Python's HTML parser, about 0.4 ms
+    # a note: a minute per message on 144,000 notes (2026-11-07). The vault already keeps
+    # each note's visible text, and a note with links strips without that parser.
+    notes = _FakeNotes()
+    notes.records["match"] = replace(notes.records["match"],
+        content='<p>See <a href="https://example.test/paper">the paper</a> &amp; <b>notes</b></p><ul><li>one</li><li>two</li></ul>')
+    ids = frozenset({"root", "match"})
+    resolved = ResolvedViewScope(filter_active=True, allowed_note_ids=ids,
+        matched_note_ids=ids, ordered_root_ids=("root",), total_root_count=1)
+    snapshot = _factory(notes, lambda **kwargs: resolved).freeze(
+        descriptor=_descriptor(), authoritative_search_query="useful-tag", authoritative_sort_mode="normal", authoritative_date_filter=None, authoritative_file_filter=None,
+        authoritative_active_search_query="useful-tag", authoritative_active_sort_mode="normal", authoritative_active_date_filter=None, authoritative_active_file_filter=None,
+        run_id="kept-text-run", session_key="session-1", privacy_boundary=_local_privacy_boundary(), selected_note_id="")
+    expected = {note_id: extract_note_text_for_agent(content_html=notes.records[note_id].content, tags="")[0] for note_id in ids}
+
+    def parse_html(parser, data):
+        raise AssertionError(f"Python's HTML parser read {data!r}")
+
+    monkeypatch.setattr(HTMLParser, "feed", parse_html)
+    assert snapshot.notes_by_id["root"].content_text == expected["root"] == "Root heading"
+    assert snapshot.notes_by_id["match"].content_text == expected["match"] == "See the paper (https://example.test/paper) & notes one two"
 
 
 def test_selected_note_respects_cloud_blacklist() -> None:
@@ -686,13 +716,13 @@ def test_freezing_a_view_extracts_no_note_text_until_a_note_is_read(monkeypatch)
     # the whole view: text is extracted when a tool first reads a note, from the
     # HTML as it was at Send.
     calls: list[str] = []
-    real_extract = scope_module.extract_note_text_for_agent
+    real_extract = scope_module.note_text_for_agent_from_kept_text
 
-    def counting_extract(*, content_html: str, tags: str):
+    def counting_extract(*, content_html: str, kept_text: str, tags: str):
         calls.append(content_html)
-        return real_extract(content_html=content_html, tags=tags)
+        return real_extract(content_html=content_html, kept_text=kept_text, tags=tags)
 
-    monkeypatch.setattr(scope_module, "extract_note_text_for_agent", counting_extract)
+    monkeypatch.setattr(scope_module, "note_text_for_agent_from_kept_text", counting_extract)
     notes = _FakeNotes()
     ids = frozenset({"match", "secret", "secret-child"})
     resolved = ResolvedViewScope(filter_active=True, allowed_note_ids=ids | {"root"},

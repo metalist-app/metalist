@@ -293,7 +293,7 @@ class _HeldExtraction:
         self.was_released_during_scan = False
         self.extracted_html: list[str] = []
 
-    def __call__(self, *, content_html: str, tags: str) -> tuple[str, bool]:
+    def __call__(self, *, content_html: str, kept_text: str, tags: str) -> tuple[str, bool]:
         self.extracted_html.append(content_html)
         if not self.started.is_set():
             self.started.set()
@@ -306,7 +306,8 @@ def _view_needing_extraction() -> ToolContext:
     snapshot = _snapshot(large_tail=False)
     notes = {
         note_id: replace(note, note_text=NoteText.from_html(
-            content_html=note.content_text, tags_text=note.explicit_tags_text, meter=snapshot.text_extraction))
+            content_html=note.content_text, kept_text=note.content_text, tags_text=note.explicit_tags_text,
+            meter=snapshot.text_extraction))
         for note_id, note in snapshot.notes_by_id.items()
     }
     return _context(snapshot=replace(snapshot, notes_by_id=MappingProxyType(notes)), max_tokens=50_000,
@@ -317,7 +318,7 @@ def test_a_note_search_leaves_the_request_loop_free(monkeypatch) -> None:
     # 0.26.0 (2026-11-05): an AI search of a whole vault held the server, so the
     # list's own search waited past the 15 s watchdog and MetaList showed a fatal error.
     extraction = _HeldExtraction()
-    monkeypatch.setattr("app.services.agent.scope.extract_note_text_for_agent", extraction)
+    monkeypatch.setattr("app.services.agent.scope.note_text_for_agent_from_kept_text", extraction)
     context = _view_needing_extraction()
 
     async def search_while_the_loop_answers() -> ToolResult:
@@ -336,7 +337,7 @@ def test_a_note_search_leaves_the_request_loop_free(monkeypatch) -> None:
 def test_stopping_a_note_search_ends_its_scan(monkeypatch) -> None:
     # Stop cancels the run while a note is being read: the notes after it are not read.
     extraction = _HeldExtraction()
-    monkeypatch.setattr("app.services.agent.scope.extract_note_text_for_agent", extraction)
+    monkeypatch.setattr("app.services.agent.scope.note_text_for_agent_from_kept_text", extraction)
     context = _view_needing_extraction()
 
     async def stop_during_the_scan() -> None:

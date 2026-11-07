@@ -18,7 +18,7 @@ from app.services.agent.cloud_privacy import CloudPrivacyBoundary
 from app.services.agent.cloud_privacy import CloudPrivacyEvaluator
 from app.services.agent.cloud_privacy import cloud_privacy_evaluator
 from app.services.agent.cloud_privacy import disclosable_search_query
-from app.services.content_formatting import extract_note_text_for_agent
+from app.services.content_formatting import note_text_for_agent_from_kept_text
 from app.services.root_date_filter import RootDateFilter
 from app.services.note_store import NoteRecord
 from app.services.note_store import NoteStore
@@ -172,36 +172,40 @@ def describe_text_extraction(*, before: tuple[int, float], after: tuple[int, flo
 class NoteText:
     """A frozen note's text for the agent, extracted the first time a tool reads it.
 
-    The snapshot keeps the note's HTML as of Send (note records are immutable, so
-    an edit afterwards does not change it); extracting every note's text up front
-    made each message pay for the whole view, even when no note was read."""
+    The snapshot keeps the note's HTML and the vault's kept text of it as of Send (both
+    are immutable strings, so an edit afterwards does not change them); extracting every
+    note's text up front made each message pay for the whole view, even when no note was
+    read. Extracting starts from the kept text, without Python's HTML parser
+    (note_text_for_agent_from_kept_text)."""
 
     content_html: str
+    kept_text: str
     tags_text: str
     extracted_text: str | None
     meter: TextExtractionMeter | None
 
     @classmethod
-    def from_html(cls, *, content_html: str, tags_text: str, meter: TextExtractionMeter) -> NoteText:
-        if not isinstance(content_html, str) or not isinstance(tags_text, str):
-            raise TypeError("NoteText needs the note's HTML and tags")
+    def from_html(cls, *, content_html: str, kept_text: str, tags_text: str, meter: TextExtractionMeter) -> NoteText:
+        if not isinstance(content_html, str) or not isinstance(kept_text, str) or not isinstance(tags_text, str):
+            raise TypeError("NoteText needs the note's HTML, its kept text and its tags")
         if not isinstance(meter, TextExtractionMeter):
             raise TypeError("NoteText from HTML needs the snapshot's extraction meter")
-        return cls(content_html=content_html, tags_text=tags_text, extracted_text=None, meter=meter)
+        return cls(content_html=content_html, kept_text=kept_text, tags_text=tags_text, extracted_text=None, meter=meter)
 
     @classmethod
     def from_text(cls, text: str) -> NoteText:
         """Already-extracted text (fixtures and eval cases)."""
         if not isinstance(text, str):
             raise TypeError("NoteText text must be a string")
-        return cls(content_html="", tags_text="", extracted_text=text, meter=None)
+        return cls(content_html="", kept_text="", tags_text="", extracted_text=text, meter=None)
 
     def text(self) -> str:
         if self.extracted_text is None:
             assert self.meter is not None, "Text to extract always comes with the snapshot's meter"
             self.meter.raise_if_stopped()
             started_at = time.perf_counter()
-            text, is_redacted = extract_note_text_for_agent(content_html=self.content_html, tags=self.tags_text)
+            text, is_redacted = note_text_for_agent_from_kept_text(
+                content_html=self.content_html, kept_text=self.kept_text, tags=self.tags_text)
             if is_redacted:
                 raise RuntimeError("Privacy boundary admitted an @password note into agent scope")
             self.extracted_text = text
@@ -438,7 +442,8 @@ class ScopedSearchSnapshotFactory:
                 note_id=note_id,
                 parent_id=parent_id,
                 root_note_id=root_note_id,
-                note_text=NoteText.from_html(content_html=record.content, tags_text=record.tags, meter=text_extraction),
+                note_text=NoteText.from_html(content_html=record.content, kept_text=self._notes.kept_text(note_id),
+                                             tags_text=record.tags, meter=text_extraction),
                 explicit_tags_text=record.tags,
                 explicit_tag_terms=explicit_tags,
                 proposed_tags_text=record.proposed_tags,
@@ -521,7 +526,8 @@ class ScopedSearchSnapshotFactory:
             if tree_id in hidden_ids:
                 continue
             record = self._notes.get_note(tree_id)
-            content_text, is_redacted = extract_note_text_for_agent(content_html=record.content, tags=record.tags)
+            content_text, is_redacted = note_text_for_agent_from_kept_text(
+                content_html=record.content, kept_text=self._notes.kept_text(tree_id), tags=record.tags)
             assert not is_redacted, "Selected tree must pass the disclosure boundary"
             parent_id = ""
             if record.parent_id is not None:

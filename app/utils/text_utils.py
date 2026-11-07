@@ -226,3 +226,27 @@ def strip_sanitized_html_keeping_link_urls(sanitized_html: str) -> str:
         if normalized in _BLOCK_TAGS:
             pieces.append(" ")
     return " ".join("".join(pieces).split())
+
+
+def sanitized_anchor_hrefs(sanitized_html: str) -> list[str]:
+    """Each link's href in the note sanitizer's output, in order, as Python's HTML parser
+    reports them (unescaped, empty ones left out), without that parser (see
+    strip_sanitized_html)."""
+    if not isinstance(sanitized_html, str):
+        raise TypeError(f"sanitized_html must be a string, got {type(sanitized_html)}")
+    if "href" not in sanitized_html:
+        return []
+    if _UNSANITIZED_MARKUP_RE.search(sanitized_html):
+        raise ValueError("sanitized_anchor_hrefs needs the note sanitizer's output: found a comment, script or style")
+    hrefs: list[str] = []
+    for token in _SANITIZED_TOKEN_RE.finditer(sanitized_html):
+        name = token.group("name")
+        if name is None or name.lower() != "a" or token.group("end") == "/":
+            continue
+        href_match = _SANITIZED_HREF_RE.search(token.group("body"))
+        if href_match is None:
+            continue
+        href = html.unescape(href_match.group("href"))
+        if href:
+            hrefs.append(href)
+    return hrefs
