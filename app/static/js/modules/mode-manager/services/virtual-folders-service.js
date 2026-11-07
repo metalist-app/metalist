@@ -35,6 +35,9 @@ const ONE_NOTE = 1;
 const moduleState = ApplicationState.createFields('virtual-folders-service', {
     // The active tab's filter, as the server last sent it: a folder, or '' for none.
     folder: '',
+    // Every tab's folder, as the server last sent it (a tab in none is absent): the list of
+    // search contexts names a tab narrowed to a folder by it.
+    tabFolders: Object.freeze({}),
     // The folders the server last sent, by path.
     folders: Object.freeze([]),
     // How many notes clicking each folder shows, with the folders below it, in the view's
@@ -91,6 +94,15 @@ export function activeVirtualFolder() {
     return moduleState.folder;
 }
 
+/** The folder a tab is narrowed to, '' for none (the server lists only tabs in a folder). */
+export function folderOfTab(tabId) {
+    if (typeof tabId !== 'string' || tabId === '') {
+        throw new Error('folderOfTab requires a tab id');
+    }
+    if (!Object.prototype.hasOwnProperty.call(moduleState.tabFolders, tabId)) return '';
+    return moduleState.tabFolders[tabId];
+}
+
 function remember(field, value) {
     if (JSON.stringify(moduleState[field]) !== JSON.stringify(value)) {
         moduleState[field] = value;
@@ -106,6 +118,8 @@ export async function updateVirtualFolders() {
     }
     const answer = await NotesAPI.listVirtualFolders();
     if (typeof answer.folder !== 'string' || !Array.isArray(answer.folders)
+        || answer.tabFolders === null || typeof answer.tabFolders !== 'object'
+        || Object.values(answer.tabFolders).some((folder) => typeof folder !== 'string')
         || answer.noteCounts === null || typeof answer.noteCounts !== 'object'
         || answer.noteTotals === null || typeof answer.noteTotals !== 'object') {
         throw new Error('Virtual folders answer malformed');
@@ -113,6 +127,8 @@ export async function updateVirtualFolders() {
     // A folder newly chosen shows in the tree; a refresh leaves what the person closed closed.
     const isNewlyChosen = answer.folder !== moduleState.folder;
     remember('folder', answer.folder);
+    const haveTabFoldersChanged = JSON.stringify(answer.tabFolders) !== JSON.stringify(moduleState.tabFolders);
+    remember('tabFolders', Object.freeze({ ...answer.tabFolders }));
     remember('folders', Object.freeze(answer.folders));
     remember('noteCounts', Object.freeze({ ...answer.noteCounts }));
     remember('noteTotals', Object.freeze({ ...answer.noteTotals }));
@@ -122,6 +138,8 @@ export async function updateVirtualFolders() {
     remember('newPaths', Object.freeze(moduleState.newPaths.filter((path) => !known.some((knownPath) => knownPath.startsWith(path)))));
     if (isNewlyChosen && answer.folder.endsWith(FOLDER_MARK)) openTo(answer.folder);
     render();
+    // The list of search contexts names each tab by its folder too (keyboard-events.js listens).
+    if (haveTabFoldersChanged) document.dispatchEvent(new CustomEvent('metalist:tab-folders-changed'));
 }
 
 // Whether the tree shows, remembered by this browser (the maintainer, 2026-11-01: the choice

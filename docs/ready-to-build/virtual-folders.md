@@ -46,7 +46,7 @@ search alone. Not built yet: §4's other drags, §5 renames, §6 New Folder, the
 
 ## 3. Clicking a folder filters
 
-- **It narrows the current results to notes in exactly that folder,** shown as a view-indicator chip in the search box (`Projects/ ×`). The search text and the search context don't change; `×` removes the filter.
+- **It narrows the current results to notes in exactly that folder,** shown as a view-indicator chip in the search box (`Projects/ ×`). The search text and the search context don't change; `×` removes the filter. In the list of search contexts the context is named by its search, then its folder (`journal Projects/`), or by the folder alone with no search (`Projects/`, never `(empty)`; built 2026-11-07: the server lists every tab's folder, `tabFolders`, and `search-context-label.js` names it).
 - **Exact folder only:** `Projects/` shows notes filed directly in it, not those in `Projects/Client-A/`. Subfolders are a click away in the tree.
 
 ## 4. Drag and drop moves

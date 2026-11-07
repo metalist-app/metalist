@@ -48,6 +48,11 @@ class VirtualFolderState:
                 return NO_FOLDER
             return self._filters[tab_id]
 
+    def filters(self) -> Dict[str, str]:
+        """Every tab narrowed to a folder, with its folder (the list of search contexts names them)."""
+        with self._lock:
+            return dict(self._filters)
+
     def set_filter(self, tab_id: str, folder: str) -> None:
         if not isinstance(tab_id, str) or tab_id == "":
             raise ValueError("set_filter requires a tab id")

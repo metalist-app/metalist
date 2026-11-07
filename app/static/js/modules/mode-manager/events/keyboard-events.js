@@ -54,7 +54,8 @@ import { CONFIG } from '../../config.js';
 import { NotesAPI } from '../../api-client.js';
 import { ErrorHandler } from '../../error-handler.js';
 import { describeDroppedItems, loneDroppedFolderEntry, readDroppedFolder } from '../services/dropped-folders.js';
-import { fileNewNoteInFolder, virtualFolderAt } from '../services/virtual-folders-service.js';
+import { fileNewNoteInFolder, folderOfTab, virtualFolderAt } from '../services/virtual-folders-service.js';
+import { EMPTY_CONTEXT_LABEL, searchContextLabel } from '../services/search-context-label.js';
 import { checkBackgroundWork } from '../services/background-work-cards.js';
 import { isCopyOfDialogSelection } from '../services/dialog-copy-service.js';
 import { persistTabStateSnapshot, createTabOnServer, deleteTabOnServer } from '../services/tab-state-service.js';
@@ -250,6 +251,7 @@ export function initKeyboardEvents() {
     document.addEventListener('click', handleTabDragClick, { capture: true });
     window.addEventListener('blur', handleWindowBlur, { capture: false });
     window.addEventListener('resize', handleSearchContextsViewportChange, { passive: true });
+    document.addEventListener('metalist:tab-folders-changed', () => updateSearchContextsList());
     initializeSearchContextsHover();
         
     Logger.logInit('Keyboard events handler');
@@ -3546,16 +3548,17 @@ export function updateSearchContextsList() {
             originalQuery = '';
         }
         const referenceNavigationLabel = getReferenceNavigationLabelForTab(tabId);
+        // A context narrowed to a folder is named by its search and its folder, as its search
+        // box shows them: one with only a folder is that folder, never "(empty)".
         let displayQuery = referenceNavigationLabel !== ''
             ? referenceNavigationLabel
-            : originalQuery;
-        if (!displayQuery) displayQuery = '(empty)';
+            : searchContextLabel({ search: originalQuery, folder: folderOfTab(tabId) });
 
         // Truncate long search queries for display
         if (
             referenceNavigationLabel === ''
             && displayQuery.length > TAB_LIST_QUERY_MAX_LENGTH
-            && displayQuery !== '(empty)'
+            && displayQuery !== EMPTY_CONTEXT_LABEL
         ) {
             displayQuery = displayQuery.substring(0, TAB_LIST_QUERY_MAX_LENGTH) + '...';
         }

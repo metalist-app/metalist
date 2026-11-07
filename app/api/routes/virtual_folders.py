@@ -70,6 +70,8 @@ def list_virtual_folders(request: Request, body: ViewScope) -> Dict[str, object]
         counts = folder_note_counts(body["search"])
     return {
         "folder": virtual_folder_state.filter_of(body["tabId"]),
+        # Every tab's folder, for the list of search contexts (a tab in none is absent).
+        "tabFolders": virtual_folder_state.filters(),
         "folders": all_folder_tags(),
         "noteCounts": counts,
         # Each folder's count with no search: a count the search narrows reads out of it
