@@ -10,9 +10,10 @@ Written from a read-only look at the repo; filed from `docs/inbox/` on 2026-11-0
 Built for the maintainer to try: §1's trailing slash in the import (`_folder_tag`), §2's tree
 (`virtual-folders-service.js`, `app/api/routes/virtual_folders.py`, `app/services/virtual_folders.py`)
 with the column moved right, §3's filter chip, and the toggle (palette: Show/Hide Virtual Folders;
-an import turns it on), and dragging a root note from the column onto a folder (2026-11-02, §4). **Nothing is stored:** the toggle and each tab's filter live in the
-server's memory (a restart turns the tree off), so dropping the branch leaves the database as it
-was. The filter narrows the view, find and the current-view commands; exports and the AI read the
+an import turns it on), and dragging a root note from the column onto a folder (2026-11-02, §4). Each tab's filter is kept with the tab's other filters in tab state (`tab_state.py`,
+`folderFilters`), so a server restart keeps it (the maintainer, 2026-11-07: "my selections of
+folders or other things that affect the view need to persist across server resets"; before, it
+lived in the server's memory and a restart dropped it). The toggle stays in the browser's storage. The filter narrows the view, find and the current-view commands; exports and the AI read the
 search alone. Not built yet: §4's other drags, §5 renames, §6 New Folder, the new search-context icon.
 
 ## 0. Today (from the code)

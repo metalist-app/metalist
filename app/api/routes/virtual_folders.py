@@ -14,7 +14,8 @@ from app.api.request_auth import require_request_auth_token
 from app.api.transactions import transactional_route
 from app.services.undo_state import reset_undo_stack
 from app.services.input_errors import InputRejected
-from app.services.virtual_folders import NO_FOLDER, all_folder_tags, folder_note_counts, folder_note_totals, folder_paths, is_folder_tag, virtual_folder_state
+from app.services.tab_state import tab_state_store
+from app.services.virtual_folders import NO_FOLDER, all_folder_tags, folder_note_counts, folder_note_totals, folder_paths, is_folder_tag
 from app.usecases.virtual_folders import (
     delete_folder, delete_folder_and_notes, file_note_in_folder, move_folder, notes_in_folder, rename_folder,
 )
@@ -69,9 +70,9 @@ def list_virtual_folders(request: Request, body: ViewScope) -> Dict[str, object]
     else:
         counts = folder_note_counts(body["search"])
     return {
-        "folder": virtual_folder_state.filter_of(body["tabId"]),
+        "folder": tab_state_store.get_folder_filter(tab_id=body["tabId"]),
         # Every tab's folder, for the list of search contexts (a tab in none is absent).
-        "tabFolders": virtual_folder_state.filters(),
+        "tabFolders": tab_state_store.folder_filters(),
         "folders": all_folder_tags(),
         "noteCounts": counts,
         # Each folder's count with no search: a count the search narrows reads out of it
@@ -87,11 +88,12 @@ def set_virtual_folder_filter(request: Request, body: VirtualFolderFilterRequest
     undo history starts again, as for a Files filter."""
     require_request_auth_token(request)
     tab_id = body["tabId"]
-    changed = virtual_folder_state.filter_of(tab_id) != body["folder"]
-    virtual_folder_state.set_filter(tab_id, body["folder"])
+    # Kept with the tab's other filters, so a server restart keeps it (tab_state.py).
+    result = tab_state_store.set_folder_filter(tab_id=tab_id, folder=body["folder"])
+    changed = result["changed"]
     if changed:
         reset_undo_stack(body["clientId"], body["undoContext"])
-    return {"folder": virtual_folder_state.filter_of(tab_id), "changed": changed}
+    return {"folder": tab_state_store.get_folder_filter(tab_id=tab_id), "changed": changed}
 
 
 class FileNoteInFolderRequest(TypedDict):

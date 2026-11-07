@@ -167,24 +167,7 @@ def test_deleting_a_folders_notes_is_refused_when_their_count_changed(imported_v
     assert all(imported_vault.has_note(note_id) for note_id in deletion.top_note_ids)
 
 
-def test_a_duplicated_tab_keeps_its_sources_folder_and_a_blank_one_has_none() -> None:
-    state = virtual_folders.VirtualFolderState()
-    state.set_filter("source", "Projects/")
-    state.copy_filter("source", "duplicate")
-    assert state.filter_of("duplicate") == "Projects/"
-    state.copy_filter("blank-source", "blank")
-    assert state.filter_of("blank") == virtual_folders.NO_FOLDER
-
-
-def test_every_tabs_folder_is_listed_for_the_search_context_list() -> None:
-    # The list of search contexts names a tab narrowed to a folder by it, not "(empty)"
-    # (2026-11-07): it needs every tab's folder, not only the open tab's.
-    state = virtual_folders.VirtualFolderState()
-    state.set_filter("pictures", "OLD_PICS/")
-    state.set_filter("work", "Projects/Client-A/")
-    state.set_filter("cleared", "Projects/")
-    state.set_filter("cleared", virtual_folders.NO_FOLDER)
-    assert state.filters() == {"pictures": "OLD_PICS/", "work": "Projects/Client-A/"}
+# Each tab's folder is kept in tab state; its tests are in test_tab_state.py.
 
 
 # A root note dragged from the column onto a folder ends up in exactly that folder; dropped
