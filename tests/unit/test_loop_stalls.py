@@ -57,8 +57,38 @@ def test_a_blocked_loop_is_recorded_with_what_was_running(tmp_path: Path, monkey
     assert SHORTEST_STALL_SEEN <= stall.seconds <= LONGEST_STALL_SEEN
     assert len(stall.requests) == 1 and stall.requests[0].startswith("POST /api2/ai/chat ")
     assert "# Thread MainThread" in stall.stacks and "time.sleep(blocked_seconds)" in stall.stacks
+    assert stall.is_over
+    # One line: the record written while the loop was held was replaced by the finished stall's.
     recorded = [json.loads(line) for line in stall_log.read_text(encoding="utf-8").splitlines()]
-    assert recorded == [{"at": stall.at, "seconds": stall.seconds, "requests": list(stall.requests), "stacks": stall.stacks}]
+    assert recorded == [{"at": stall.at, "seconds": stall.seconds, "requests": list(stall.requests), "stacks": stall.stacks, "is_over": True}]
+
+
+def test_a_stall_under_way_is_on_file_before_it_ends(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A server stopped while its loop is still held leaves the stall's stacks behind."""
+    stall_log = tmp_path / "loop-stalls.jsonl"
+    monkeypatch.setenv(diagnostics.LOOP_STALL_LOG_ENVIRONMENT_VARIABLE, str(stall_log))
+    seen_while_held: list[str] = []
+
+    async def watched() -> None:
+        watchdog = diagnostics.EventLoopWatchdog(loop=asyncio.get_running_loop())
+        watchdog.start()
+        await asyncio.sleep(0.1)
+        time.sleep(BLOCKED_SECONDS)
+        # Still on the loop's thread, before the ack: the file already names the stall.
+        if stall_log.exists():
+            seen_while_held.append(stall_log.read_text(encoding="utf-8"))
+        await asyncio.sleep(RECORDING_WAIT_SECONDS)
+        watchdog.stop()
+
+    asyncio.run(watched())
+
+    assert len(seen_while_held) == 1, "the stall was written while the loop was held"
+    held = json.loads(seen_while_held[0].splitlines()[0])
+    assert held["is_over"] is False and held["seconds"] >= 1.0 and "time.sleep(BLOCKED_SECONDS)" in held["stacks"]
+    finished = [json.loads(line) for line in stall_log.read_text(encoding="utf-8").splitlines()]
+    assert len(finished) == 1 and finished[0]["is_over"] is True and finished[0]["stacks"] == held["stacks"]
+    assert diagnostics.recorded_loop_stalls() == [diagnostics.LoopStall(
+        at=finished[0]["at"], seconds=finished[0]["seconds"], requests=tuple(finished[0]["requests"]), stacks=finished[0]["stacks"], is_over=True)]
 
 
 def test_a_loop_that_answers_within_a_second_records_nothing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -73,4 +103,5 @@ def test_a_loop_that_answers_within_a_second_records_nothing(tmp_path: Path, mon
 
 def test_a_stall_shorter_than_the_threshold_is_refused() -> None:
     with pytest.raises(ValueError, match="1.0 s or longer"):
-        diagnostics.record_loop_stall(diagnostics.LoopStall(at="2026-11-06T00:00:00+00:00", seconds=0.5, requests=(), stacks=""))
+        diagnostics.record_loop_stall(
+            diagnostics.LoopStall(at="2026-11-06T00:00:00+00:00", seconds=0.5, requests=(), stacks="", is_over=True), replaces_line_at=None)

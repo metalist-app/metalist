@@ -94,6 +94,29 @@ minutes, not seconds), on Linux and Windows (the reporter runs Windows), Chrome.
 macOS can follow as the harness doc's symmetry note asks. Its logs and stall reports are kept
 as artifacts on failure.
 
+Done 2026-11-07 (`scripts/browser-scale-regressions.mjs`; the folder dialog is answered from
+`METALIST_TEST_PICK_FOLDER`, accepted like the scripted AI only on a server with its own data
+folder). Measured locally, Chrome, 100,000 notes: the import of 1,200 files 4.7 s (budget
+180 s); the AI question with the whole vault in view 4.1 s (120 s); the list's text search
+typed while the AI read the vault 3.8 s, up to 7.5 s with another MetaList busy on the
+machine (the plan guessed 3 s; budget 20 s: the server's search of 100,000 notes alone takes
+2.5 s there, worth a look later, and a freeze never answers); Send back after Stop at once;
+the band of roots moving 0.2 to 1.6 s (5 s); a collapse 0.3 s (3 s); a tag search 1.0 s
+(5 s). No stall of the request loop. Two things learnt on the way: a bare word in the search
+box is a tag search, so the suite types `"Harbor"`; and a click on a fold arrow while the
+list is loading its band is ignored, so the suite waits for quiet first (its first collapse
+took 2.9 s for that reason, not MetaList's). Against 0.26.0's code (436ccebf, with the test
+tooling copied in) the suite fails at the AI question: the list's search is never answered
+while the vault is read on the request loop. The import freeze is not reproduced: 1,200
+files import in 4.7 s here, under 0.26.0's 15 s watchdog, which the reporter's slower machine
+passed; part 4's unit test is that freeze's guard (an import longer than 15 s would need
+more or larger files and a slower CI job: the maintainer's call). The first 0.26.0 run also
+showed a gap in part 2: a stall still under way when the server is stopped was never written,
+so the watchdog now writes the stall when it takes the stacks and replaces that line with the
+finished stall (`LoopStall.is_over`). With that, the 0.26.0 run's record names the culprit
+outright: `note_aliases.py` line 36, `ordered.append(note_id)`, holding the list's view,
+tab-state and suggestion requests, which is the quadratic loop 0.26.1 fixed.
+
 ### 4. Every CommandGate command declares its watchdog
 
 `CommandGate.run(name, fn, options)` and `runWhenFree` require `options.watchdog`, one of:
@@ -161,7 +184,8 @@ with the stall gate on) and to the maintainer's looks between checkpoints.
 - `npm run throwaway -- --notes 100000 --scripted-ai tests/fixtures/scripted-ai/search-view.json`
   starts in under a minute and answers an AI question with the list usable meanwhile.
 - The `scale` suite fails on 436ccebf (0.26.0) for the import, the AI question and Stop, and
-  passes on this branch.
+  passes on this branch. (2026-11-07: it fails there at the AI question, the first of the three
+  it reaches; the import at 1,200 files is under the 15 s watchdog, see part 3's note.)
 - A deliberate 2 s `time.sleep` in an async route fails every browser suite with the route named.
 - A `CommandGate.run` call without `watchdog` fails `npm test` and throws in the browser.
 - Removing a field from the empty-search branch fails the type check.

@@ -84,6 +84,7 @@ from app.api.routes.test import router as api2_test_router  # shockharness: igno
 from app.api.transactions import transactional_route
 from app.config import API_PREFIX, TEST_MODE, V1_API_PREFIX
 from app.services.agent.scripted_inference import scripted_ai_script_path
+from app.services.native_folder_picker import answered_folder_pick
 from .models.database import SafeSession
 from loguru import logger
 import io
@@ -170,8 +171,10 @@ def _resolve_diagnostics_namespace(*, namespace: str | None) -> str:
     return namespace
 
 
-# A scripted AI (scripted_inference.py) is refused outside a test server before anything starts.
+# A scripted AI (scripted_inference.py) and a folder dialog answered for a test
+# (native_folder_picker.py) are refused outside a test server before anything starts.
 scripted_ai_script_path(environ=os.environ)
+answered_folder_pick(environ=os.environ)
 
 configure_process_diagnostics(
     namespace=_resolve_diagnostics_namespace(namespace=ACTIVE_NAMESPACE),

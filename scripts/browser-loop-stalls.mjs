@@ -25,7 +25,9 @@ export function describeLoopStalls(text) {
   if (stalls.length === 0) return null;
   const details = stalls.map(stall => {
     const during = stall.requests.length === 0 ? 'no request active' : `during ${stall.requests.join(', ')}`;
-    return `  at ${stall.at}: ${stall.seconds.toFixed(1)} s, ${during}\n${stackOfMainThread(stall.stacks)}`;
+    // A stall still under way when the server stopped: its length is what the watchdog saw.
+    const length = stall.is_over ? `${stall.seconds.toFixed(1)} s` : `at least ${stall.seconds.toFixed(1)} s (still held when the server stopped)`;
+    return `  at ${stall.at}: ${length}, ${during}\n${stackOfMainThread(stall.stacks)}`;
   });
   return `The server's event loop stalled ${stalls.length} time(s) for a second or longer; MetaList answered nothing meanwhile:\n${details.join('\n')}`;
 }

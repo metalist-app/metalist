@@ -14,7 +14,7 @@ const STACKS = [
   '  File "note_aliases.py", line 20, in from_snapshot\n    ordered.append(note_id)\n',
 ].join('');
 
-const STALL = {at: '2026-11-06T18:00:00+00:00', seconds: 4.68, requests: ['POST /api2/ai/chat 3.2s', 'GET /api2/background-work 0.4s'], stacks: STACKS};
+const STALL = {at: '2026-11-06T18:00:00+00:00', seconds: 4.68, requests: ['POST /api2/ai/chat 3.2s', 'GET /api2/background-work 0.4s'], stacks: STACKS, is_over: true};
 
 test('a stall log with no stalls is a run with none', () => {
   assert.equal(describeLoopStalls(''), null);
@@ -28,6 +28,12 @@ test('each stall is described with its length, its requests and the main thread 
   assert.match(message, /ordered\.append\(note_id\)/);
   assert.doesNotMatch(message, /_watch_loop/);
   assert.match(message, /4\.7 s, no request active\n {4}\(stall ended before the watchdog looked: no stacks\)/);
+});
+
+test('a stall still under way when the server stopped says so', () => {
+  const message = describeLoopStalls(`${JSON.stringify({...STALL, seconds: 1.2, is_over: false})}\n`);
+  assert.match(message, /at least 1\.2 s \(still held when the server stopped\), during POST/);
+  assert.match(message, /ordered\.append\(note_id\)/);
 });
 
 test('a missing stall log passes and one with a stall fails the run', async () => {
