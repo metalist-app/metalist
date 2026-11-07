@@ -18,6 +18,16 @@ The states and transitions of a chat turn, the tool loop, summaries, tag proposa
 and structured steps are mapped as diagrams in `agent-state-machines.md`, with the
 gaps that map shows.
 
+Every provider request (OpenAI, Anthropic, OpenAI-compatible) goes through
+`provider_limits.py`'s transport (2026-11-07). It records the rate limits each answer reports
+(`x-ratelimit-*`, `anthropic-ratelimit-*`) for its endpoint and model, which batch senders
+use to send as many batches at once as the limits allow. A request the provider refuses as
+too many (429) or answers as overloaded (500, 502, 503, 504, 529) waits the time it names
+(`retry-after`; otherwise 1, 2, 4… s) and goes again, up to 6 times, below the SDK, so
+every request of every batch gets it. A wait asked for longer than 120 s, or a 7th
+refusal, returns the provider's answer, which fails as before. The wait is not network
+silence: the silence limit below counts only time waiting on the connection.
+
 Every OpenAI request has a silence limit (`openai_silence_limit_seconds`: 15 s at
 Off and Low, measured; 60 s Medium and 120 s High, unmeasured), passed as the
 request timeout so the library's 600 s default never applies; a timeout becomes
@@ -293,10 +303,13 @@ behavior, or cancellation.
 For complete processing, `plan_complete_root_batches()` partitions all permitted
 root trees in canonical order. There is no cap on the number of batches. A root is
 atomic and cannot be divided; if one root cannot fit, the operation fails visibly.
-Batch 1 runs alone to seed the provider cache. Remaining batches are drained by a
-pool of at most four workers; a worker emits a `writing` preview only after taking a
-batch, throttled `streaming` previews while the model writes, and a `complete`
-preview afterward. Batches waiting for a worker are reported as queued, never as
+Batch 1 runs alone to seed the provider cache. Every remaining batch then waits for
+room in the provider's rate limits (`provider_limits.RateLimitGate`, 2026-11-07; before, a
+pool of at most four workers): as many go at once as the remaining requests and tokens
+allow, or four while the limits are unknown (a provider that reports none). A batch emits
+a `writing` preview only once admitted, and a batch admitted after another has failed
+does not start, throttled `streaming` previews while the model writes, and a `complete`
+preview afterward. Batches waiting for room are reported as queued, never as
 writing. Streaming previews come from Instructor's partial objects: the structured
 inference capture stores the latest partial on the current attempt and attaches it
 to `output_progress` events as `partial_output`. Each preview carries only the
@@ -480,7 +493,7 @@ Generation captures the search-visible trees. Visible ancestors supply content, 
 - Every pass uses token-sized requests, configured alongside the evidence limit in AI settings: `pref.ai.openai.tagging.batch_tokens` (default 100,000). Bounds match the corresponding evidence setting (500–500,000). Shared vocabulary overhead counts toward every batch. Whole roots may exceed the target window, but the full request must still fit the model context. There is no fixed note-count subdivision or partial-JSON parsing. The inline progress bar advances by completed input-token weight after each validated batch.
 - Chat tag generation renders its choice and progress controls inside the transcript. The focus selector has three real options and no explanation paragraph or placeholder; Continue explicitly submits the selected option. No preparation overlay. Chat input and surrounding UI are locked while operation controls stay usable. Non-chat regions are inert, greyed, slightly blurred, and use a not-allowed cursor. Transcript rerenders preserve the live operation element and its selected value/focus. Programmatic acceptance/removal stays in the ordinary chat working state through its atomic update and never creates a progress or cancellation panel. Menu choice and confirmation dialogs use normal modals, but submitting a programmatic acceptance/removal operation shows only the application busy state with no second progress modal.
 - An application-owned modal locks normal interaction while the batch guard rejects conflicting server mutations. Pending question answers remain available, and Cancel aborts the stream before final application. The final synchronous commit phase disables Cancel.
-- Validated proposals accumulate only in session memory. Batch 1 runs alone so its new terms can be supplied separately to every later batch as optional `prior_batch_new_tags`, allowing consistent reuse without treating them as accepted or required vocabulary. Remaining batches run in waves with at most four concurrent requests; there is no cap on the total number of batches, and validated results are merged in original batch order. Parallel batches do not consume one another's new terms. All batches must succeed before one database transaction writes the result. A failed or cancelled batch aborts outstanding work and applies nothing. Canonical note sources and inheritance/search indexes are then published without an async yield, and existing undo/redo is cleared only when changes were applied. No bulk undo entry is created. After a successful mutation, the client discards the active view's root window and pagination terminal state before fetching a fresh first window, so proposal-driven search-membership changes cannot strand infinite scroll.
+- Validated proposals accumulate only in session memory. Batch 1 runs alone so its new terms can be supplied separately to every later batch as optional `prior_batch_new_tags`, allowing consistent reuse without treating them as accepted or required vocabulary. Remaining batches go as fast as the provider's rate limits allow (`provider_limits.py`; four at a time while they are unknown; before 2026-11-07, always at most four); there is no cap on the total number of batches, and validated results are merged in original batch order. Parallel batches do not consume one another's new terms. All batches must succeed before one database transaction writes the result. A failed or cancelled batch aborts outstanding work and applies nothing. Canonical note sources and inheritance/search indexes are then published without an async yield, and existing undo/redo is cleared only when changes were applied. No bulk undo entry is created. After a successful mutation, the client discards the active view's root window and pagination terminal state before fetching a fresh first window, so proposal-driven search-membership changes cannot strand infinite scroll.
 - A successful generation response lists each newly added proposal and cites every note that received it. Inline numbered markers remain clickable, while the ordinary expandable References section is replaced for this response type by one **Show all new tag proposals** link. That link uses the same combined exact-note query as Open all references. Canonical conversation history retains the tag names while stripping citation UUIDs before later model calls; subsequent tagging also reads each note's authoritative pending proposals and explicitly excludes duplicates.
 - Failure/cancellation applies no pending results; no-change results preserve history. Individual proposal controls retain their undo semantics.
 

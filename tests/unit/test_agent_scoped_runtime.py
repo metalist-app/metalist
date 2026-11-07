@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+import time
 from dataclasses import replace
 from types import MappingProxyType
 
@@ -18,6 +19,7 @@ from app.services.agent.inference import StructuredInferenceProgress
 from app.services.agent.model_policy import SingleModelPolicy
 from app.services.agent.prompt_settings import DEFAULT_AGENT_PROMPTS
 from app.services.agent.retrieval_settings import AgentRetrievalSettings
+from app.services.agent import provider_limits
 from app.services.agent import runtime as runtime_module
 from app.services.agent.runtime import AgentExecutionError
 from app.services.agent.runtime import AgentRuntime
@@ -671,7 +673,29 @@ def test_staged_summary_shows_first_batch_writing_before_it_fails() -> None:
     assert inference.final_messages == []
 
 
-def test_complete_scope_summary_has_no_total_batch_cap_but_runs_only_four_at_once() -> None:
+def test_with_room_in_the_provider_limits_every_later_summary_batch_goes_at_once(monkeypatch) -> None:
+    # Until 2026-11-07 a summary sent at most four batches at a time, whatever the account allowed.
+    monkeypatch.setattr(provider_limits, "_GATES", {})
+    provider_limits.gate_for(base_url="https://api.openai.com/v1", model="gpt-5.6-sol").record(
+        provider_limits.ProviderLimits(
+            request_limit=30_000, remaining_requests=30_000, requests_reset_at=time.monotonic() + 60,
+            token_limit=180_000_000, remaining_tokens=180_000_000, tokens_reset_at=time.monotonic() + 60))
+    inference = _FakeInference()
+
+    _events_with_summary_answer(
+        inference=inference,
+        snapshot=_summary_snapshot(11),
+        message="Summarize every note in this scope.",
+        token_limit=900,
+        answer="summarize_all",
+    )
+
+    assert len(inference.summary_batch_calls) == 11
+    # Batch 1 alone, then the other ten together.
+    assert inference.maximum_parallel_summary_calls == 10
+
+
+def test_complete_scope_summary_has_no_total_batch_cap_and_runs_four_at_once_until_the_limits_are_known() -> None:
     inference = _FakeInference()
     snapshot = _summary_snapshot(11)
 

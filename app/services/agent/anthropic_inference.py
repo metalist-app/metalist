@@ -58,7 +58,8 @@ from app.services.agent.inference import TARGET_AGENT_CONTEXT_TOKENS
 from app.services.agent.inference import UNMEASURED_SILENCE_LIMIT_SECONDS
 from app.services.agent.inference import connection_lost_message
 from app.services.agent.structured_inference import _broken_rules
-from app.services.agent.structured_inference import _structured_max_output_tokens
+from app.services.agent.structured_inference import structured_max_output_tokens
+from app.services.agent.provider_limits import anthropic_transport
 from app.services.agent.structured_inference import structured_retry_messages
 from app.services.agent.token_estimation import estimate_text_tokens
 from app.services.agent.tool_calling import AgentTool
@@ -286,7 +287,7 @@ class AnthropicInferenceAdapter:
         if base_url != self._base_url:
             raise ValueError("Claude inference requires the official API base URL")
 
-    def _client(self, on_wire_request: Callable[[dict[str, object]], None]) -> AsyncAnthropic:
+    def _client(self, on_wire_request: Callable[[dict[str, object]], None], *, model: str) -> AsyncAnthropic:
         async def capture_wire_request(request: httpx2.Request) -> None:
             body = json.loads(await request.aread())
             if not isinstance(body, dict):
@@ -296,6 +297,7 @@ class AnthropicInferenceAdapter:
             on_wire_request(wire_request)
 
         http_client = DefaultAsyncHttpxClient(
+            transport=anthropic_transport(base_url=self._base_url, model=model),
             event_hooks={"request": [capture_wire_request]},
             follow_redirects=False,
             trust_env=False,
@@ -360,7 +362,7 @@ class AnthropicInferenceAdapter:
         system, request_messages = claude_request_messages(messages)
         request: dict[str, Any] = {
             "model": model,
-            "max_tokens": _structured_max_output_tokens(response_model),
+            "max_tokens": structured_max_output_tokens(response_model),
             "system": system,
             "messages": request_messages,
             "thinking": _ADAPTIVE_THINKING,
@@ -371,7 +373,7 @@ class AnthropicInferenceAdapter:
             "cache_control": _CACHE_PREFIX,
         }
         attempts.start(request)
-        client = self._client(attempts.record_wire_request)
+        client = self._client(attempts.record_wire_request, model=model)
         # lint: allow-PY001 rationale="Claude API and transport failures are external provider failures"
         try:
             async with client.messages.stream(**request, timeout=claude_silence_limit_seconds(thinking_level)) as stream:  # shockharness: ignore[EXC003] reason="opening Claude's stream is the external operation; its body reads that stream"
@@ -475,7 +477,7 @@ class AnthropicInferenceAdapter:
         if tools:
             request["tools"] = [_claude_tool(tool) for tool in tools]
             request["tool_choice"] = {"type": "auto"}
-        client = self._client(on_request)
+        client = self._client(on_request, model=model)
         has_provider_started = False
         # lint: allow-PY001 rationale="Claude streaming and transport failures are external provider failures"
         try:

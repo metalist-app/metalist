@@ -70,7 +70,7 @@ def _serve(monkeypatch: pytest.MonkeyPatch, *replies: bytes) -> list[dict]:
         return httpx2.Response(200, headers={"content-type": "text/event-stream"}, content=pending.pop(0))
 
     def client(**options: object) -> DefaultAsyncHttpxClient:
-        return DefaultAsyncHttpxClient(**options, transport=httpx2.MockTransport(handle))
+        return DefaultAsyncHttpxClient(**{**options, "transport": httpx2.MockTransport(handle)})
 
     monkeypatch.setattr(anthropic_inference, "DefaultAsyncHttpxClient", client)
     return sent
@@ -283,7 +283,7 @@ def _serve_breaking(monkeypatch: pytest.MonkeyPatch, failure_type: type[httpx2.T
                                stream=_BrokenStream(first_event, failure_type("stream broke", request=request)))
 
     def client(**options: object) -> DefaultAsyncHttpxClient:
-        return DefaultAsyncHttpxClient(**options, transport=httpx2.MockTransport(handle))
+        return DefaultAsyncHttpxClient(**{**options, "transport": httpx2.MockTransport(handle)})
 
     monkeypatch.setattr(anthropic_inference, "DefaultAsyncHttpxClient", client)
 

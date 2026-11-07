@@ -7,7 +7,6 @@ from contextlib import aclosing
 import json
 import math
 import time
-from collections import deque
 from collections.abc import AsyncIterator
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -50,6 +49,8 @@ from app.services.agent.skill_settings import AgentSkillSet
 from app.services.agent.scope import ScopedSearchSnapshot
 from app.services.agent.scope import describe_text_extraction
 from app.services.agent.scope import read_notes_off_request_loop
+from app.services.agent.provider_limits import gate_for
+from app.services.agent.structured_inference import structured_max_output_tokens
 from app.services.agent.token_estimation import estimate_input_tokens
 from app.services.agent.token_estimation import estimate_message_tokens
 from app.services.agent.token_estimation import estimate_text_tokens
@@ -66,7 +67,6 @@ from app.services.agent.ai_send import send_text_stream
 from app.utils.time_units import MS_PER_SECOND
 
 
-_STAGED_SUMMARY_CONCURRENCY = 4
 _MAX_STAGED_SUMMARY_REDUCTION_LEVELS = 8
 # One batch is a plain summary; staging starts at two.
 _MIN_STAGED_SUMMARY_BATCHES = 2
@@ -294,9 +294,7 @@ class AgentRuntime(AgentLoopMixin):
                         f"evidence budget: its {batch_plan.result_tree_count} root "
                         f"notes need {len(batch_plan.batches)} evidence batches "
                         "plus a final synthesis "
-                        f"(at least {minimum_model_calls} model calls). "
-                        f"MetaList runs at most {_STAGED_SUMMARY_CONCURRENCY} "
-                        "batch requests at once."
+                        f"(at least {minimum_model_calls} model calls)."
                     ),
                     "root_count": batch_plan.result_tree_count,
                     "batch_count": len(batch_plan.batches),
@@ -724,21 +722,34 @@ class AgentRuntime(AgentLoopMixin):
                 _SummaryBatchCompleted(batch_index=index, summary=summary)
             )
 
-        async def drain(
-            indexes: tuple[int, ...],
-            worker_count: int,
-        ) -> AsyncIterator[dict[str, object]]:
-            assert indexes and 1 <= worker_count <= _STAGED_SUMMARY_CONCURRENCY
-            pending_indexes = deque(indexes)
+        gate = gate_for(base_url=run.base_url, model=run.selected_model)
 
-            async def summarize_pending_batches() -> None:
-                while pending_indexes:
-                    await summarize_batch(pending_indexes.popleft())
+        def batch_tokens(index: int) -> int:
+            return (plan.batches[index].returned_approximate_token_count
+                    + structured_max_output_tokens(SummaryBatchResult))
 
-            workers = [
-                asyncio.create_task(summarize_pending_batches())
-                for _ in range(min(worker_count, len(indexes)))
-            ]
+        async def drain(indexes: tuple[int, ...]) -> AsyncIterator[dict[str, object]]:
+            """Every batch waits for room in the provider's limits (provider_limits), then
+            starts, unless one has failed meanwhile: batches not started yet never start."""
+            assert indexes
+            has_failed = False
+
+            async def summarize_when_admitted(index: int) -> None:
+                nonlocal has_failed
+                async with gate.slot(batch_tokens(index)):
+                    if has_failed:
+                        return
+                    is_finished = False
+                    try:
+                        await summarize_batch(index)
+                        is_finished = True
+                    finally:
+                        # Said before this batch's room is given to a waiting one, so that one
+                        # sees it and does not start.
+                        if not is_finished:
+                            has_failed = True
+
+            workers = [asyncio.create_task(summarize_when_admitted(index)) for index in indexes]
             running_workers = set(workers)
             first_failure: BaseException | None = None
             try:
@@ -758,7 +769,7 @@ class AgentRuntime(AgentLoopMixin):
                         if failure is not None and first_failure is None:
                             # Batches not started yet do not start; running ones finish and are kept.
                             first_failure = failure
-                            pending_indexes.clear()
+                            has_failed = True
                     if next_transition in done:
                         yield apply_transition(next_transition.result())
                 if first_failure is not None:
@@ -772,14 +783,12 @@ class AgentRuntime(AgentLoopMixin):
         to_run = tuple(index for index in range(batch_count) if batch_states[index] == "queued")
         if to_run:
             # The first batch runs alone so later requests can reuse the provider-side prompt cache.
-            async with aclosing(drain(to_run[:1], 1)) as first_batch_events:
+            async with aclosing(drain(to_run[:1])) as first_batch_events:
                 async for event in first_batch_events:
                     yield event
         if len(to_run) > 1:
-            async with aclosing(drain(
-                to_run[1:],
-                _STAGED_SUMMARY_CONCURRENCY,
-            )) as later_batch_events:
+            # The provider's limits, known from batch 1's answer, decide how many go at once.
+            async with aclosing(drain(to_run[1:])) as later_batch_events:
                 async for event in later_batch_events:
                     yield event
         if batch_states != ["complete"] * batch_count:
@@ -964,10 +973,13 @@ class AgentRuntime(AgentLoopMixin):
                 group_index=0,
                 group_count=len(groups),
             )
-            semaphore = asyncio.Semaphore(_STAGED_SUMMARY_CONCURRENCY)
+            gate = gate_for(base_url=run.base_url, model=run.selected_model)
 
             async def reduce_group(index: int) -> tuple[int, SummaryBatchResult]:
-                async with semaphore:
+                # As many groups go at once as the provider's limits allow (provider_limits).
+                group_tokens = (estimate_summary_results_tokens(groups[index])
+                                + structured_max_output_tokens(SummaryBatchResult))
+                async with gate.slot(group_tokens):
                     result = await self._infer_summary_reduction_group(
                         run=run,
                         canonical_messages=canonical_messages,

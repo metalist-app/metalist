@@ -55,7 +55,8 @@ from app.services.agent.structured_inference import _attach_trace_capture
 from app.services.agent.structured_inference import _create_structured_completion
 from app.services.agent.structured_inference import _extract_reasoning
 from app.services.agent.structured_inference import _json_object
-from app.services.agent.structured_inference import _structured_max_output_tokens
+from app.services.agent.structured_inference import structured_max_output_tokens
+from app.services.agent.provider_limits import provider_transport
 from app.services.agent.tool_calling import AgentTool
 from app.services.agent.tool_calling import validate_tool_conversation
 from app.services.ai_catalog import catalog_entry
@@ -157,9 +158,11 @@ def _compatible_tool(tool: AgentTool) -> dict[str, object]:
     }}
 
 
-def http_client(on_wire_request: Callable[[httpx.Request], object]) -> httpx.AsyncClient:
-    """The provider's own HTTP client: no redirects, no proxy settings from the environment."""
-    return httpx.AsyncClient(event_hooks={"request": [on_wire_request]}, follow_redirects=False, trust_env=False)
+def http_client(on_wire_request: Callable[[httpx.Request], object], *, base_url: str, model: str) -> httpx.AsyncClient:
+    """The provider's own HTTP client: no redirects, no proxy settings from the environment, and
+    its rate limits respected (provider_limits)."""
+    return httpx.AsyncClient(transport=provider_transport(base_url=base_url, model=model),
+                             event_hooks={"request": [on_wire_request]}, follow_redirects=False, trust_env=False)
 
 
 class _StreamedToolCall:
@@ -237,8 +240,9 @@ class OpenAICompatibleInferenceAdapter:
             f"{self._provider.label} API request failed: {detail[:_PROVIDER_ERROR_DETAIL_CHARS]}"
         )
 
-    def _client(self, on_wire_request: Callable[[httpx.Request], object]) -> AsyncOpenAI:
-        return AsyncOpenAI(api_key=self._api_key, base_url=self._base_url, http_client=http_client(on_wire_request), max_retries=0)
+    def _client(self, on_wire_request: Callable[[httpx.Request], object], *, model: str) -> AsyncOpenAI:
+        return AsyncOpenAI(api_key=self._api_key, base_url=self._base_url, max_retries=0,
+                           http_client=http_client(on_wire_request, base_url=self._base_url, model=model))
 
     def _capture_requests(self, on_request: Callable[[dict[str, object]], None]) -> Callable[[httpx.Request], object]:
         async def capture_wire_request(request: httpx.Request) -> None:
@@ -275,11 +279,11 @@ class OpenAICompatibleInferenceAdapter:
         normalized_model = validate_model_name(model)
         capture = _InstructorTraceCapture(on_progress=on_progress)
         client = cast(AsyncInstructor, instructor.from_openai(
-            self._client(capture.record_wire_request), model=normalized_model, mode=instructor.Mode.JSON_SCHEMA,
+            self._client(capture.record_wire_request, model=model), model=normalized_model, mode=instructor.Mode.JSON_SCHEMA,
         ))
         _attach_trace_capture(client=client, capture=capture)
         request_options = {
-            "max_completion_tokens": _structured_max_output_tokens(response_model),
+            "max_completion_tokens": structured_max_output_tokens(response_model),
             "timeout": compatible_silence_limit_seconds(thinking_level),
             "reasoning_effort": self._reasoning_effort(thinking_level),
             "stream_options": {"include_usage": True},
@@ -382,7 +386,7 @@ class OpenAICompatibleInferenceAdapter:
         if tools:
             request["tools"] = [_compatible_tool(tool) for tool in tools]
             request["tool_choice"] = "auto"
-        client = self._client(self._capture_requests(on_request))
+        client = self._client(self._capture_requests(on_request), model=model)
         streamed_calls: dict[int, _StreamedToolCall] = {}
         finish_reason = ""
         usage: dict[str, int] = {}

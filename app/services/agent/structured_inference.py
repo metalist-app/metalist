@@ -44,7 +44,7 @@ _SUMMARY_BATCH_MAX_OUTPUT_TOKENS = 8_192
 _OUTPUT_PROGRESS_STEP_TOKENS = 8
 
 
-def _structured_max_output_tokens(response_model: type[BaseModel]) -> int:
+def structured_max_output_tokens(response_model: type[BaseModel]) -> int:
     limits = {
         OutputJudgment: _STRUCTURED_MIN_OUTPUT_TOKENS,
         TagBatchResult: TAG_BATCH_MAX_OUTPUT_TOKENS,

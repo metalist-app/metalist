@@ -18,6 +18,7 @@ from app.services.agent.inference import StructuredInferenceError
 # The context room kept for the model's answer when checking that a batch fits is the
 # batch's own output cap.
 from app.services.agent.structured_inference import TAG_BATCH_MAX_OUTPUT_TOKENS
+from app.services.agent.provider_limits import gate_for
 from app.services.agent.failure_explanations import FailureSetup, explain_structured_failure
 from app.services.agent.context import format_active_skill
 from app.services.agent.token_estimation import estimate_message_tokens, estimate_input_tokens
@@ -39,7 +40,6 @@ from app.contracts import preserves, requires
 
 
 _TAGGING_CORRECTION_ATTEMPTS = 3
-_TAGGING_PARALLEL_CONCURRENCY = 4
 
 
 _FOCUS_INSTRUCTIONS = {
@@ -154,7 +154,9 @@ async def infer_validated_batch(
                            + TAG_BATCH_MAX_OUTPUT_TOKENS)
         if required_tokens > context_tokens:
             raise InferenceProviderError("The tagging request exceeds this model's context. Reduce the tagging batch window or narrow the search; nothing was applied.")
-        response = await infer_with_progress(inference, run, attempt_messages, TagBatchResult, lambda progress: None)
+        # As many batches go at once as the provider's limits allow (provider_limits).
+        async with gate_for(base_url=run.base_url, model=run.selected_model).slot(required_tokens):
+            response = await infer_with_progress(inference, run, attempt_messages, TagBatchResult, lambda progress: None)
         # lint: allow-PY001 rationale="one bounded correction for invalid external model proposals"
         try:
             return _validated_batch_proposals(
@@ -419,11 +421,9 @@ class TaggingRun:
             yield {"type": "bulk_progress", "committing": False,
                    "label": f"Completed 1 / {len(batches)} batches",
                    "completed_tokens": completed_tokens, "total_tokens": total_batch_tokens}
-        semaphore = asyncio.Semaphore(_TAGGING_PARALLEL_CONCURRENCY)
-
+        # Every later batch starts now; the provider's limits decide how many are sent at once.
         async def infer_remaining(index):
-            async with semaphore:
-                return await infer_batch(index, tuple(prior_batch_new_tags.values()))
+            return await infer_batch(index, tuple(prior_batch_new_tags.values()))
 
         tasks = [
             asyncio.create_task(infer_remaining(index))

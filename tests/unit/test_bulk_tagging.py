@@ -4,6 +4,7 @@ import asyncio
 from collections import Counter
 import json
 from contextlib import contextmanager
+import time
 from types import SimpleNamespace
 
 import pytest
@@ -16,6 +17,7 @@ from app.services.agent.tagging import (
 )
 import app.services.agent.tagging as tagging
 import app.services.agent.tagging_run as runs
+from app.services.agent import provider_limits
 import app.usecases.bulk_tag_proposals as mutations
 from app.services.agent.retrieval_settings import resolve_tagging_batch_tokens
 from app.services.bulk_operation import BulkOperationGuard, BulkOperationBusy
@@ -200,7 +202,8 @@ def test_invalid_model_vocabulary_gets_bounded_correction_attempts(monkeypatch, 
         return SimpleNamespace(content=TagBatchResult(proposals=[{"note_id": "a", "tags": [tag]}]).model_dump_json())
     monkeypatch.setattr(runs, "infer_with_progress", infer)
     async def consume():
-        return await runs.infer_validated_batch(None, None, [{"role": "user", "content": "evidence"}],
+        run = SimpleNamespace(base_url="http://local", selected_model="test")
+        return await runs.infer_validated_batch(None, run, [{"role": "user", "content": "evidence"}],
                                                batch, batch.note_ids,
                                                "existing", 100000, {"cooking": "Cooking"})
     if repairs:
@@ -562,7 +565,15 @@ def test_first_use_category_permission_reports_batch_size(monkeypatch, choice, p
     }]
 
 
-def test_tagging_seeds_first_batch_then_runs_four_batches_concurrently(monkeypatch):
+@pytest.mark.parametrize("limits_known, most_at_once", [(False, 4), (True, 6)],
+                         ids=["limits not known yet: four", "room in the limits: every batch"])
+def test_tagging_seeds_first_batch_then_runs_as_many_as_the_limits_allow(monkeypatch, limits_known, most_at_once):
+    # Until 2026-11-07 at most four batches ran at once, whatever the account allowed.
+    monkeypatch.setattr(provider_limits, "_GATES", {})
+    if limits_known:
+        provider_limits.gate_for(base_url="http://local", model="test").record(provider_limits.ProviderLimits(
+            request_limit=30_000, remaining_requests=30_000, requests_reset_at=time.monotonic() + 60,
+            token_limit=180_000_000, remaining_tokens=180_000_000, tokens_reset_at=time.monotonic() + 60))
     roots = tuple(tree(f"root-{index}", "accepted", ()) for index in range(7))
     batch_tokens = make_batch((roots[0],)).tokens
     active = 0
@@ -625,7 +636,7 @@ def test_tagging_seeds_first_batch_then_runs_four_batches_concurrently(monkeypat
     asyncio.run(consume())
     assert starts[0] == ("root-0", 0)
     assert starts[1][1] == 0
-    assert maximum_active == 4
+    assert maximum_active == most_at_once
     assert len(starts) == len(roots)
 
 

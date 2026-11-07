@@ -51,7 +51,7 @@ def _serve(monkeypatch: pytest.MonkeyPatch, *replies: bytes) -> list[dict]:
         sent.append({"url": str(request.url), **json.loads(request.content)})
         return httpx.Response(200, headers={"content-type": "text/event-stream"}, content=pending.pop(0))
 
-    def client(on_wire_request) -> httpx.AsyncClient:
+    def client(on_wire_request, *, base_url: str, model: str) -> httpx.AsyncClient:
         return httpx.AsyncClient(event_hooks={"request": [on_wire_request]}, transport=httpx.MockTransport(handle))
 
     monkeypatch.setattr(compatible, "http_client", client)
@@ -158,7 +158,7 @@ GOOGLE_BUSY = [{"error": {"code": 503, "status": "UNAVAILABLE", "message": (
 
 
 def _fail(monkeypatch: pytest.MonkeyPatch, handle) -> None:
-    def client(on_wire_request) -> httpx.AsyncClient:
+    def client(on_wire_request, *, base_url: str, model: str) -> httpx.AsyncClient:
         return httpx.AsyncClient(event_hooks={"request": [on_wire_request]}, transport=httpx.MockTransport(handle))
     monkeypatch.setattr(compatible, "http_client", client)
 

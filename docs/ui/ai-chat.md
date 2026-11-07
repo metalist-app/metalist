@@ -178,9 +178,13 @@ with the tag-focus selector (existing, new, or both) added above the buttons:
 Cancel (last and tinted red in both). If multiple
 batches are required, the user can summarize everything, use only the leading
 single-payload prefix, or cancel. Complete processing keeps every root tree intact,
-has no cap on the total number of batches, and runs at most four model requests at
-once. The first batch runs alone to seed provider caching; later batches run in
-parallel waves and are restored to original scope order before synthesis.
+has no cap on the total number of batches, and sends as many model requests at once
+as the provider's rate limits allow (2026-11-07; before, at most four). The first batch
+runs alone to seed provider caching, and its answer reports the account's limits; later
+batches go together and are restored to original scope order before synthesis. A request
+the provider refuses as too many (429) or answers as overloaded waits the time the
+provider names and goes again, so a busy moment no longer fails the summary
+(`app/services/agent/provider_limits.py`).
 The progress widget sits in the conversation immediately above the answer it is
 producing: earlier messages and the current request stay above it, and the final
 answer streams in below it. Its status line reports the total batch count and how

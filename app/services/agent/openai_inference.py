@@ -35,7 +35,8 @@ from app.services.agent.structured_inference import _attach_trace_capture
 from app.services.agent.structured_inference import _create_structured_completion
 from app.services.agent.structured_inference import _extract_reasoning
 from app.services.agent.structured_inference import _json_object
-from app.services.agent.structured_inference import _structured_max_output_tokens
+from app.services.agent.structured_inference import structured_max_output_tokens
+from app.services.agent.provider_limits import provider_transport
 from app.services.agent.openai_models import OPENAI_API_BASE_URL
 from app.services.agent.openai_models import OPENAI_MODEL_CONTEXT_TOKENS
 from app.services.ai_catalog import validate_model_name
@@ -104,6 +105,7 @@ def _create_instructor_client(
     capture: _InstructorTraceCapture,
 ) -> AsyncInstructor:
     http_client = httpx.AsyncClient(
+        transport=provider_transport(base_url=OPENAI_API_BASE_URL, model=model),
         event_hooks={"request": [capture.record_wire_request]},
         follow_redirects=False,
         trust_env=False,
@@ -329,7 +331,7 @@ class OpenAIInferenceAdapter:
         )
         _attach_trace_capture(client=client, capture=capture)
         request_options = {
-            "max_completion_tokens": _structured_max_output_tokens(response_model),
+            "max_completion_tokens": structured_max_output_tokens(response_model),
             "timeout": openai_silence_limit_seconds(thinking_level),
             "reasoning_effort": reasoning_effort,
             "stream_options": {"include_usage": True},
@@ -407,6 +409,7 @@ class OpenAIInferenceAdapter:
             )
 
         http_client = httpx.AsyncClient(
+            transport=provider_transport(base_url=OPENAI_API_BASE_URL, model=model),
             event_hooks={"request": [capture_wire_request]},
             follow_redirects=False,
             trust_env=False,
@@ -514,6 +517,7 @@ class OpenAIInferenceAdapter:
             on_request({"method": request.method, "url": str(request.url), "body": body})
 
         http_client = httpx.AsyncClient(
+            transport=provider_transport(base_url=OPENAI_API_BASE_URL, model=model),
             event_hooks={"request": [capture_wire_request]},
             follow_redirects=False,
             trust_env=False,

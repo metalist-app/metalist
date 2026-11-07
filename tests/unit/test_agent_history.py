@@ -19,7 +19,7 @@ def install_transport(monkeypatch, handler):
 
     class Client(real_client):
         def __init__(self, **kwargs):
-            super().__init__(**kwargs, transport=httpx.MockTransport(handler))
+            super().__init__(**{**kwargs, "transport": httpx.MockTransport(handler)})
 
     monkeypatch.setattr(provider.httpx, "AsyncClient", Client)
     return provider.OpenAIInferenceAdapter(api_key="sk-test-not-exported", cost_tracker=OpenAICostTracker())
