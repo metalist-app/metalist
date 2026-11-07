@@ -431,7 +431,7 @@ export function buildCommandPaletteEndpoints(deps) {
             id: 'form.ai_agent_settings',
             kind: 'form',
             label: 'AI Agent Settings…',
-            execute: async () => openAiAgentSettings(false),
+            execute: async () => openAiAgentSettings('keys'),
         },
         {
             id: 'form.cloud_ai_privacy',

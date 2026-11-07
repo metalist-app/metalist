@@ -1,13 +1,9 @@
 import { ApplicationState } from '../application-state.js';
-import { HttpRequestError } from '../expected-errors.js';
 import { settleResult } from '../async-result.js';
-import { CONFIG } from '../config.js';
-import { buildSessionHeaders } from '../session-auth.js';
 import { BaseModal } from '../modals/base-modal.js';
 import { actionRowHtml } from '../modals/action-row.js';
-import { showErrorDialogFor, showOpenFailure } from '../modals/error-dialog.js';
+import { showErrorDialogFor } from '../modals/error-dialog.js';
 import { ErrorHandler } from '../error-handler.js';
-import { escapeHtml } from '../html-escape.js';
 import { MS_PER_SECOND } from '../time-units.js';
 import { captureActiveAgentScope } from './ai-chat-panel-controller.js';
 import { runMenuProposalOperation } from './bulk-proposal-ui.js';
@@ -22,13 +18,12 @@ export async function removeAllTagSuggestionsFromCurrentContext() {
     });
 }
 
-// AI-Proposed Tags and AI Tagging Vocabulary: MetaList dialogs like every other (docs/ui/modals.md),
-// with the shared button row; a refused or failed Apply/Save opens the error dialog over them,
-// and Apply's result is a corner card (docs/ui/floating-messages.md).
-const VIEWS = Object.freeze({
-    proposals: { modalName: 'aiProposedTagsModal', elementId: 'ai-proposed-tags-modal' },
-    vocabulary: { modalName: 'aiTaggingVocabularyModal', elementId: 'ai-tagging-vocabulary-modal' },
-});
+// AI-Proposed Tags: a MetaList dialog like every other (docs/ui/modals.md), with the shared
+// button row; a refused or failed Apply opens the error dialog over it, and Apply's result is
+// a corner card (docs/ui/floating-messages.md). Which tags the AI may propose is set on AI
+// Agent Settings' Tagging tab.
+const MODAL_NAME = 'aiProposedTagsModal';
+const MODAL_ELEMENT_ID = 'ai-proposed-tags-modal';
 const RESULT_CARD_SECONDS = 6;
 
 function proposalsFormHtml() {
@@ -50,46 +45,15 @@ function proposalsFormHtml() {
         })}`;
 }
 
-function vocabularyFormHtml(policy) {
-    const option = (value, label) => `<option value="${escapeHtml(value)}"${value === policy ? ' selected' : ''}${value === '' ? ' disabled' : ''}>${escapeHtml(label)}</option>`;
-    return `
-        <h2>AI Tagging Vocabulary</h2>
-        <p>Which tags the AI chat may propose when it tags your notes.</p>
-        <label>Vocabulary <select name="policy">${option('', 'Not chosen yet')}${option('existing', 'Existing tags only')}${option('new', 'Existing and new tags')}</select></label>
-        ${actionRowHtml({
-            alternative: null,
-            cancel: { id: 'ai-vocabulary-cancel', label: 'Cancel', disabled: false, attributes: [] },
-            main: {
-                id: 'ai-vocabulary-save', label: 'Save', disabled: false, attributes: [],
-                isDestructive: false, isEnterAction: true, type: 'button',
-            },
-            rowClass: '',
-        })}`;
-}
-
-async function loadVocabularyPolicy() {
-    const response = await fetch(CONFIG.API.AI.CHAT.replace(/\/chat$/u, '/proposals/settings'), { headers: buildSessionHeaders(false) });
-    if (!response.ok) throw new HttpRequestError('The tagging vocabulary could not be read. Try again in a moment.');
-    const settings = await response.json();
-    if (typeof settings.policy !== 'string') throw new Error('Tagging settings response missing policy');
-    return settings.policy;
-}
-
-class AiTaggingModal extends BaseModal {
-    constructor(preferences, settingsOnly) {
-        const view = settingsOnly ? VIEWS.vocabulary : VIEWS.proposals;
-        super(view.modalName, view.elementId);
-        if (typeof settingsOnly !== 'boolean') {
-            throw new Error('AiTaggingModal requires settingsOnly');
-        }
-        this._preferences = preferences;
-        this._settingsOnly = settingsOnly;
+class AiProposalsModal extends BaseModal {
+    constructor() {
+        super(MODAL_NAME, MODAL_ELEMENT_ID);
         this._scope = captureActiveAgentScope();
-        ApplicationState.own(this, 'AiTaggingModal', new.target === AiTaggingModal);
+        ApplicationState.own(this, 'AiProposalsModal', new.target === AiProposalsModal);
     }
 
     getInitialModalState() {
-        return { policy: '' };
+        return {};
     }
 
     showModalElement() {
@@ -105,40 +69,13 @@ class AiTaggingModal extends BaseModal {
         modalElement.style.display = 'block';
     }
 
-    // The vocabulary is read first; one that cannot be read leaves nothing to choose, so the
-    // error dialog says why and closing it closes this one.
-    async onOpen() {
-        if (!this._settingsOnly) {
-            return;
-        }
-        const generation = this._openGeneration;
-        const loaded = await settleResult(() => loadVocabularyPolicy());
-        if (!this.isCurrentOpen(generation)) return;
-        if (!loaded.ok) {
-            showOpenFailure(loaded.error, () => {
-                if (this.isCurrentOpen(generation)) this.close();
-            });
-            return;
-        }
-        if (loaded.value !== this.getModalState().policy) {
-            this.updateModalState({ policy: loaded.value });
-            this.renderModalContent();
-        }
-    }
-
     renderModalContent() {
         const modalElement = document.getElementById(this.modalElementId);
         if (!(modalElement instanceof HTMLElement)) {
             throw new Error(`Modal element missing: ${this.modalElementId}`);
         }
-        const form = this._settingsOnly ? vocabularyFormHtml(this.getModalState().policy) : proposalsFormHtml();
-        modalElement.innerHTML = `<div class="modal-content ai-tagging-modal-content">${form}</div>`;
-        const cancelId = this._settingsOnly ? 'ai-vocabulary-cancel' : 'ai-proposals-cancel';
-        modalElement.querySelector(`#${cancelId}`).addEventListener('click', () => this.requestClose());
-        if (this._settingsOnly) {
-            modalElement.querySelector('#ai-vocabulary-save').addEventListener('click', () => void this._save());
-            return;
-        }
+        modalElement.innerHTML = `<div class="modal-content ai-tagging-modal-content">${proposalsFormHtml()}</div>`;
+        modalElement.querySelector('#ai-proposals-cancel').addEventListener('click', () => this.requestClose());
         // Dictated text pasted into the tag filter becomes one tag.
         modalElement.querySelector('input[name="tag"]').addEventListener('paste', (event) => handleDictationPasteEvent(event, 'tag'));
         modalElement.querySelector('#ai-proposals-apply').addEventListener('click', () => void this._apply());
@@ -150,15 +87,6 @@ class AiTaggingModal extends BaseModal {
             throw new Error(`AI tagging field missing: ${name}`);
         }
         return field;
-    }
-
-    async _save() {
-        const policy = this._field('policy').value;
-        // Nothing to save until a vocabulary is chosen.
-        if (policy !== '') {
-            await this._preferences.setMany({ 'pref.ai.tagging.vocabulary': policy });
-        }
-        this.close();
     }
 
     async _apply() {
@@ -181,6 +109,6 @@ class AiTaggingModal extends BaseModal {
     }
 }
 
-export async function openProposalMenu(preferences, settingsOnly) {
-    await new AiTaggingModal(preferences, settingsOnly).open();
+export async function openProposalMenu() {
+    await new AiProposalsModal().open();
 }

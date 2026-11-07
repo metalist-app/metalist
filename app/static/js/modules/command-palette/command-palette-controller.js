@@ -84,7 +84,7 @@ import {
 import { receiveDictationPhrases } from '../mode-manager/services/dictation-paste-service.js';
 import { SearchSuggestionStatisticsModal } from '../modals/search-suggestion-statistics-modal.js';
 import { ConfirmationModal } from '../modals/confirmation-modal.js';
-import { AiAgentSettingsModal } from '../modals/ai-agent-settings-modal.js';
+import { AiAgentSettingsModal, TAGGING_VOCABULARIES } from '../modals/ai-agent-settings-modal.js';
 import {
     AI_THINKING_LEVEL_OPTIONS,
     DEFAULT_AI_THINKING_LEVEL,
@@ -238,6 +238,8 @@ function trimToken(token) {
 const BACKUP_COMMAND_AVAILABILITY_TIMEOUT_MS = 30000;
 const BACKUP_COMMAND_AVAILABILITY_POLL_INTERVAL_MS = 50;
 const MAX_SUGGESTED_TAGS = 10;
+// Which tags the AI may propose (app/services/agent/tagging.py, TAGGING_POLICY_KEY).
+const TAGGING_VOCABULARY_PREFERENCE_KEY = 'pref.ai.tagging.vocabulary';
 
 function tokenizeQuery(rawQuery) {
     if (typeof rawQuery !== 'string') {
@@ -571,7 +573,7 @@ class CommandPaletteController {
                 openAiAgentSettings: this.openAiAgentSettings.bind(this),
                 openCloudPrivacySettings: this.openCloudPrivacySettings.bind(this),
                 openProposalManager: async () => {
-                    if (await this._prepareForModalOpen('proposalManager')) await openProposalMenu(this._preferences, false);
+                    if (await this._prepareForModalOpen('proposalManager')) await openProposalMenu();
                 },
                 removeAllTagSuggestionsFromCurrentContext: async () => {
                     const confirmed = await this._confirmAction(
@@ -588,9 +590,7 @@ class CommandPaletteController {
                         await removeAllTagSuggestionsFromCurrentContext();
                     }
                 },
-                openTaggingVocabulary: async () => {
-                    if (await this._prepareForModalOpen('taggingVocabulary')) await openProposalMenu(this._preferences, true);
-                },
+                openTaggingVocabulary: async () => this.openAiAgentSettings('tagging'),
             },
         });
 
@@ -881,6 +881,7 @@ class CommandPaletteController {
                 (key) => this._preferences.getRaw(key),
             ),
             openAiRetrievalSettings,
+            taggingVocabulary: this._taggingVocabulary(),
             cloudPrivacyPolicy: readCloudPrivacyPolicy(
                 (key) => this._preferences.getRaw(key),
             ),
@@ -989,9 +990,27 @@ class CommandPaletteController {
         await this._saveAiSettings(settings);
     }
 
+    // Which tags the AI may propose: '' until chosen, in AI Agent Settings or when a tagging run asks.
+    _taggingVocabulary() {
+        const saved = this._preferences.getRaw(TAGGING_VOCABULARY_PREFERENCE_KEY);
+        if (saved === null) return '';
+        if (!TAGGING_VOCABULARIES.includes(saved)) {
+            throw new Error(`Unsupported tagging vocabulary preference: ${saved}`);
+        }
+        return saved;
+    }
+
     async _saveAiAgentSettings(settings) {
         if (!settings || typeof settings !== 'object') {
             throw new Error('_saveAiAgentSettings requires settings object');
+        }
+        if (!TAGGING_VOCABULARIES.includes(settings.taggingVocabulary)) {
+            throw new Error(`Unsupported tagging vocabulary: ${settings.taggingVocabulary}`);
+        }
+        // Not chosen yet stays not chosen; a choice is saved only when it changed (_saveChangedPreferences).
+        const vocabularyUpdate = {};
+        if (settings.taggingVocabulary !== '') {
+            vocabularyUpdate[TAGGING_VOCABULARY_PREFERENCE_KEY] = settings.taggingVocabulary;
         }
         const openAiRetrievalSettings = validateAgentRetrievalSettings(
             settings.openAiRetrievalSettings,
@@ -1010,6 +1029,7 @@ class CommandPaletteController {
                 cloudPrivacyPolicy,
             ),
             [AGENT_WEB_ACCESS_MODE_PREFERENCE_KEY]: webAccessMode,
+            ...vocabularyUpdate,
         });
         if (!didChange) return;
         document.dispatchEvent(new CustomEvent(
@@ -3096,9 +3116,10 @@ class CommandPaletteController {
         await this._dictationSettingsModal.open();
     }
 
-    async openAiAgentSettings(focusCloudPrivacy) {
-        if (typeof focusCloudPrivacy !== 'boolean') {
-            throw new Error('openAiAgentSettings requires boolean focusCloudPrivacy');
+    // section: the tab it opens on (AI_SETTINGS_SECTIONS: keys, privacy, reading, tagging).
+    async openAiAgentSettings(section) {
+        if (typeof section !== 'string') {
+            throw new Error('openAiAgentSettings requires the tab to open on');
         }
         const isReady = await this._prepareForModalOpen('commandPalette.openAiAgentSettings');
         if (!isReady) {
@@ -3110,14 +3131,11 @@ class CommandPaletteController {
                 this._saveAiAgentSettings.bind(this),
             );
         }
-        await this._aiAgentSettingsModal.open();
-        if (focusCloudPrivacy) {
-            this._aiAgentSettingsModal.focusCloudPrivacySettings();
-        }
+        await this._aiAgentSettingsModal.openOn(section);
     }
 
     async openCloudPrivacySettings() {
-        await this.openAiAgentSettings(true);
+        await this.openAiAgentSettings('privacy');
     }
 
     async openSearchSuggestionStatistics() {

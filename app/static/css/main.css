@@ -3602,15 +3602,17 @@ details.ai-chat-thinking > .ai-chat-thinking-heading {
     width: min(560px, 94vw);
 }
 
-/* AI Agent Settings: folder tabs per provider, then sections; the dialog's own colors. */
-.ai-settings-tabs {
+/* AI Agent Settings: four folder tabs (Keys, Privacy, Reading, Tagging) over panels stacked in
+   one grid cell, so the dialog keeps the largest panel's size and switching tabs moves nothing;
+   the Keys tab's provider switch looks like the other segmented choices. The dialog's own colors. */
+.ai-settings-section-tabs {
     display: flex;
     gap: 4px;
     margin: 4px 0 0;
     border-bottom: 1px solid var(--modal-border);
 }
 
-#ai-agent-settings-modal button.ai-settings-tab {
+#ai-agent-settings-modal button.ai-settings-section-tab {
     margin-bottom: -1px;
     padding: 8px 16px;
     border: 1px solid transparent;
@@ -3621,7 +3623,7 @@ details.ai-chat-thinking > .ai-chat-thinking-heading {
     font-size: 14px;
 }
 
-#ai-agent-settings-modal button.ai-settings-tab[aria-selected="true"] {
+#ai-agent-settings-modal button.ai-settings-section-tab[aria-selected="true"] {
     border-color: var(--modal-border);
     border-bottom-color: var(--modal-surface);
     background: var(--modal-surface);
@@ -3629,13 +3631,68 @@ details.ai-chat-thinking > .ai-chat-thinking-heading {
     font-weight: 600;
 }
 
-.ai-settings-tab-panel {
+#ai-agent-settings-modal button.ai-settings-section-tab[aria-selected="false"]:hover {
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--modal-text);
+}
+
+.ai-settings-panels {
     display: grid;
-    gap: 10px;
     padding: 14px 14px 12px;
     border: 1px solid var(--modal-border);
     border-top: 0;
     border-radius: 0 0 8px 8px;
+}
+
+.ai-settings-section-panel {
+    grid-area: 1 / 1;
+    display: grid;
+    align-content: start;
+    gap: 12px;
+}
+
+.ai-settings-section-panel[inert] {
+    visibility: hidden;
+}
+
+/* A panel's first section starts at the panel's top, with no dividing line above it. */
+.ai-settings-section-panel > .ai-settings-section:first-child {
+    margin-top: 0;
+    padding-top: 0;
+    border-top: 0;
+}
+
+.ai-settings-provider-switch {
+    display: flex;
+    overflow: hidden;
+    border: 1px solid var(--modal-border-strong);
+    border-radius: 8px;
+}
+
+#ai-agent-settings-modal .ai-settings-provider-switch button.ai-settings-tab {
+    flex: 1;
+    padding: 8px 6px;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    color: var(--modal-text-muted);
+    font-size: 13px;
+}
+
+#ai-agent-settings-modal .ai-settings-provider-switch button.ai-settings-tab + button.ai-settings-tab {
+    border-left: 1px solid var(--modal-border);
+}
+
+#ai-agent-settings-modal .ai-settings-provider-switch button.ai-settings-tab[aria-selected="true"] {
+    background: rgba(138, 180, 255, 0.28);
+    color: var(--modal-text);
+    font-weight: 600;
+}
+
+.ai-settings-tab-panel {
+    display: grid;
+    gap: 10px;
 }
 
 .ai-settings-row {

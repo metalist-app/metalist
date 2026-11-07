@@ -93,7 +93,7 @@ match).
   unchanged). Route models take `AiProvider`.
 - Key formats: OpenAI `sk-`, Anthropic `sk-ant-`, Google `AIza` or `AQ.` (Google's newer
   keys, 2026-10-24).
-- AI Agent Settings has one folder tab per provider: the key, a link to that provider's
+- AI Agent Settings' Keys tab has a switch per provider (one folder tab each until 2026-11-07, when the dialog became four tabs: `docs/ui/ai-chat.md`): the key, a link to that provider's
   usage and billing page, and for Google a warning under the key (checked 2026-10-23
   against Google's terms): on unpaid quota Google uses prompts and responses to improve its
   products and human reviewers may read them, except in the EEA, Switzerland and the UK.

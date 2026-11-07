@@ -22,10 +22,25 @@ import { actionRowHtml } from './action-row.js';
 import { showErrorDialog, showErrorDialogFor } from './error-dialog.js';
 import { AI_KEY_WARNINGS, AI_PROVIDERS, aiProvider } from '../ai-chat/ai-providers.js';
 
-// AI Agent Settings (docs/ui/ai-chat.md, "AI Agent Settings"): one folder tab per
-// provider holding its key; then web access, the rules
-// for what the AI may see, and the token window. Picking a model (and so
-// a provider) happens in the chat. Explanations live in tooltips.
+// AI Agent Settings (docs/ui/ai-chat.md, "AI Agent Settings"): four folder tabs, one Save.
+// Keys: a switch per provider holding its key. Privacy: the rules for what the AI may see.
+// Reading: web access and the token window. Tagging: which tags the AI may propose.
+// Picking a model (and so a provider) happens in the chat. Explanations live in tooltips.
+
+// The tabs, in order. Every panel is drawn, stacked in one place, and only the open one is
+// visible: the dialog keeps the size of the largest, and switching tabs redraws nothing,
+// so what is typed but not yet saved stays.
+export const AI_SETTINGS_SECTIONS = Object.freeze([
+    ['keys', 'Keys'], ['privacy', 'Privacy'], ['reading', 'Reading'], ['tagging', 'Tagging'],
+]);
+const SECTION_IDS = AI_SETTINGS_SECTIONS.map(([id]) => id);
+// '' until the vocabulary has been chosen (here, or when a tagging run first asks).
+const VOCABULARY_CHOICES = Object.freeze([
+    ['existing', 'Existing tags only', 'The AI proposes only tags your notes already have.'],
+    ['new', 'Existing and new tags', 'The AI may also propose tags no note has yet.'],
+]);
+export const TAGGING_VOCABULARIES = Object.freeze(['', ...VOCABULARY_CHOICES.map(([value]) => value)]);
+const TAGGING_TOOLTIP = 'Which tags the AI may propose when it suggests tags for your notes.';
 
 // One tab per provider MetaList offers, in its order (app/services/ai_catalog.py).
 const PROVIDER_TABS = AI_PROVIDERS;
@@ -163,6 +178,22 @@ function renderRulesSection(state) {
         </section>`;
 }
 
+function renderTaggingSection(state) {
+    const choices = VOCABULARY_CHOICES.map(([value, label, tooltip]) => (
+        `<button type="button" role="radio" class="ai-settings-segment" aria-checked="${state.taggingVocabulary === value}" data-vocabulary="${value}" title="${escapeHtml(tooltip)}">${escapeHtml(label)}</button>`
+    )).join('');
+    return `
+        <section class="ai-settings-section">
+            <h3 title="${escapeHtml(TAGGING_TOOLTIP)}">Tags the AI may propose</h3>
+            <div class="ai-settings-segments" role="radiogroup" aria-label="Tags the AI may propose" id="ai-agent-tagging-vocabulary">${choices}</div>
+        </section>`;
+}
+
+function sectionPanelHtml(state, section, content) {
+    const inert = state.section === section ? '' : 'inert';
+    return `<div class="ai-settings-section-panel" role="tabpanel" id="ai-agent-panel-${section}" aria-labelledby="ai-agent-section-${section}" ${inert}>${content}</div>`;
+}
+
 // A key saved or removed changes which models the chat offers, Save or not.
 function announceKeyChange() {
     document.dispatchEvent(new CustomEvent('metalist:ai-settings-changed', { detail: { reloadModels: true } }));
@@ -179,6 +210,8 @@ export class AiAgentSettingsModal extends BaseModal {
         }
         this._readSettings = readSettings;
         this._saveSettings = saveSettings;
+        // The tab the next open starts on (openOn).
+        this._openingSection = SECTION_IDS[0];
 
         ApplicationState.own(this, 'AiAgentSettingsModal', new.target === AiAgentSettingsModal);
     }
@@ -189,8 +222,12 @@ export class AiAgentSettingsModal extends BaseModal {
         if (tab === undefined) {
             throw new Error(`Unsupported AI provider: ${settings.provider}`);
         }
+        if (!TAGGING_VOCABULARIES.includes(settings.taggingVocabulary)) {
+            throw new Error(`Unsupported tagging vocabulary: ${settings.taggingVocabulary}`);
+        }
         return {
-            // The open tab: it starts on the provider the chat uses.
+            section: this._openingSection,
+            // The provider switch starts on the provider the chat uses.
             provider: settings.provider,
             // The token window belongs to the provider the chat uses, whichever tab is open.
             chatProvider: settings.provider,
@@ -198,6 +235,7 @@ export class AiAgentSettingsModal extends BaseModal {
             webAccessMode: validateAgentWebAccessMode(settings.webAccessMode),
             ...cloudPrivacyPolicyToTextFields(settings.cloudPrivacyPolicy),
             ...retrievalStateFields(settings.openAiRetrievalSettings, settings.provider),
+            taggingVocabulary: settings.taggingVocabulary,
             isWhitelistShown: false,
             isLoadingCredential: false,
             isChangingKey: false,
@@ -206,18 +244,18 @@ export class AiAgentSettingsModal extends BaseModal {
         };
     }
 
-    // The right-click menu's Cloud privacy item opens the dialog at its rules.
-    focusCloudPrivacySettings() {
-        if (!this.isOpen) {
-            throw new Error('Cloud privacy settings cannot be focused while the modal is closed');
+    // Opens on one tab: AI Agent Settings on Keys, Cloud AI Privacy on Privacy (its first rule
+    // field focused), AI Tagging Vocabulary on Tagging.
+    async openOn(section) {
+        if (!SECTION_IDS.includes(section)) {
+            throw new Error(`Unknown AI settings tab: ${section}`);
         }
-        const section = document.querySelector('#ai-agent-settings-modal .ai-agent-cloud-privacy-settings');
-        const firstInput = document.getElementById('ai-agent-blacklist-input');
-        if (!(section instanceof HTMLElement) || !(firstInput instanceof HTMLInputElement)) {
-            throw new Error('AI settings privacy rules missing');
+        // Owned state rejects a write that changes nothing: opening on the same tab again.
+        if (this._openingSection !== section) this._openingSection = section;
+        await this.open();
+        if (section === 'privacy') {
+            this._element('ai-agent-blacklist-input', HTMLInputElement).focus();
         }
-        section.scrollIntoView({ block: 'start' });
-        firstInput.focus({ preventScroll: true });
     }
 
     showModalElement() {
@@ -239,6 +277,9 @@ export class AiAgentSettingsModal extends BaseModal {
             throw new Error(`Modal element missing: ${this.modalElementId}`);
         }
         const state = this.getModalState();
+        const sectionTabs = AI_SETTINGS_SECTIONS.map(([section, label]) => (
+            `<button type="button" role="tab" id="ai-agent-section-${section}" class="ai-settings-section-tab" aria-selected="${state.section === section}" aria-controls="ai-agent-panel-${section}" data-section="${section}">${escapeHtml(label)}</button>`
+        )).join('');
         const tabs = PROVIDER_TABS.map((tab) => {
             const selected = tab.provider === state.provider;
             return `<button type="button" role="tab" id="ai-agent-tab-${tab.provider}" class="ai-settings-tab" aria-selected="${selected}" data-provider="${tab.provider}">${escapeHtml(tab.label)}</button>`;
@@ -249,22 +290,28 @@ export class AiAgentSettingsModal extends BaseModal {
         modalElement.innerHTML = `
             <div class="modal-content ai-agent-settings-modal-content">
                 <h2>AI Agent Settings</h2>
-                <div class="ai-settings-tabs" role="tablist" aria-label="AI provider">${tabs}</div>
-                ${renderProviderPanel(state)}
-                <section class="ai-settings-section">
-                    <h3>Web access</h3>
-                    <div class="ai-settings-segments" role="radiogroup" aria-label="Web access" id="ai-agent-web-access">${webChoices}</div>
-                </section>
-                ${renderRulesSection(state)}
-                <section class="ai-settings-section ai-settings-limits">
-                    <div class="ai-settings-stacked">
-                        <span class="ai-settings-wide-label">
-                            <label for="ai-agent-max-page-approximate-tokens">Max token window</label>
-                            <span class="ai-settings-help" tabindex="0" role="img" aria-label="${escapeHtml(TOKEN_WINDOW_TOOLTIP)}" title="${escapeHtml(TOKEN_WINDOW_TOOLTIP)}">?</span>
-                        </span>
-                        <input id="ai-agent-max-page-approximate-tokens" type="number" autocomplete="off" data-1p-ignore data-lpignore="true" min="500" max="500000" step="100" value="${escapeHtml(String(state.maxPageApproximateTokens))}">
-                    </div>
-                </section>
+                <div class="ai-settings-section-tabs" role="tablist" aria-label="AI settings">${sectionTabs}</div>
+                <div class="ai-settings-panels">
+                    ${sectionPanelHtml(state, 'keys', `
+                        <div class="ai-settings-tabs ai-settings-provider-switch" role="tablist" aria-label="AI provider">${tabs}</div>
+                        ${renderProviderPanel(state)}`)}
+                    ${sectionPanelHtml(state, 'privacy', renderRulesSection(state))}
+                    ${sectionPanelHtml(state, 'reading', `
+                        <section class="ai-settings-section">
+                            <h3>Web access</h3>
+                            <div class="ai-settings-segments" role="radiogroup" aria-label="Web access" id="ai-agent-web-access">${webChoices}</div>
+                        </section>
+                        <section class="ai-settings-section ai-settings-limits">
+                            <div class="ai-settings-stacked">
+                                <span class="ai-settings-wide-label">
+                                    <label for="ai-agent-max-page-approximate-tokens">Max token window</label>
+                                    <span class="ai-settings-help" tabindex="0" role="img" aria-label="${escapeHtml(TOKEN_WINDOW_TOOLTIP)}" title="${escapeHtml(TOKEN_WINDOW_TOOLTIP)}">?</span>
+                                </span>
+                                <input id="ai-agent-max-page-approximate-tokens" type="number" autocomplete="off" data-1p-ignore data-lpignore="true" min="500" max="500000" step="100" value="${escapeHtml(String(state.maxPageApproximateTokens))}">
+                            </div>
+                        </section>`)}
+                    ${sectionPanelHtml(state, 'tagging', renderTaggingSection(state))}
+                </div>
                 ${actionRowHtml({
                     alternative: null,
                     cancel: { id: 'ai-agent-cancel', label: 'Cancel', disabled: false, attributes: [] },
@@ -289,6 +336,12 @@ export class AiAgentSettingsModal extends BaseModal {
 
     _setupControls() {
         const state = this.getModalState();
+        for (const tab of document.querySelectorAll('#ai-agent-settings-modal .ai-settings-section-tab')) {
+            tab.onclick = () => this._showSection(tab.dataset.section);
+        }
+        for (const segment of document.querySelectorAll('#ai-agent-tagging-vocabulary .ai-settings-segment')) {
+            segment.onclick = () => this._update({ taggingVocabulary: segment.dataset.vocabulary });
+        }
         for (const tab of document.querySelectorAll('#ai-agent-settings-modal .ai-settings-tab')) {
             tab.onclick = () => void this._selectProvider(tab.dataset.provider);
         }
@@ -352,6 +405,19 @@ export class AiAgentSettingsModal extends BaseModal {
             // Off sends every note again: its rules go.
             this._update({ isWhitelistShown: false, whitelistTagsText: '', whitelistPhrasesText: '' });
         };
+    }
+
+    // Shows one tab's panel without redrawing, so what is typed in the others stays.
+    _showSection(section) {
+        if (!SECTION_IDS.includes(section)) {
+            throw new Error(`Unknown AI settings tab: ${section}`);
+        }
+        this._setState({ section });
+        for (const [id] of AI_SETTINGS_SECTIONS) {
+            const isOpen = id === section;
+            this._element(`ai-agent-section-${id}`, HTMLButtonElement).setAttribute('aria-selected', String(isOpen));
+            this._element(`ai-agent-panel-${id}`, HTMLElement).toggleAttribute('inert', !isOpen);
+        }
     }
 
     // The state store rejects a write that changes nothing; a repeated status or error is one.
@@ -513,6 +579,7 @@ export class AiAgentSettingsModal extends BaseModal {
             return;
         }
         await this._saveSettings({
+            taggingVocabulary: state.taggingVocabulary,
             webAccessMode: validateAgentWebAccessMode(state.webAccessMode),
             openAiRetrievalSettings: validateAgentRetrievalSettings(retrievalSettings, state.chatProvider),
             cloudPrivacyPolicy: parseCloudPrivacyTextFields(state),

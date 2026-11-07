@@ -1,6 +1,6 @@
 # MetaList privacy and security controls
 
-Cloud AI Privacy… opens the privacy section of AI Agent Settings…: **Never send
+Cloud AI Privacy… opens AI Agent Settings… on its Privacy tab: **Never send
 notes with (blacklist)** and, behind its checkbox, **Only send notes with
 (whitelist)**. Each takes entries one at a time as chips: a tag as typed, or "a
 phrase" in quotes; a pasted list becomes one chip per line.

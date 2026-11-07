@@ -5,7 +5,8 @@ saved settings or notes. Defaults below do not establish their current values.
 
 MetaList's AI runs on the user's own key from OpenAI, Anthropic (Claude models) or
 Google (Gemini models); Ollama/local model support has been removed. AI agent settings (also found
-by searching AI, LLM, or OpenAI in the menu) has a folder tab per provider holding its
+by searching AI, LLM, or OpenAI in the menu) has four tabs, Keys, Privacy, Reading and Tagging,
+and one Save. Keys has a switch per provider holding its
 API key and a link to the provider's usage and billing page; the Google tab warns that on Gemini's free tier what is
 sent may be used to improve Google's products and read by people, so a key with
 billing turned on is the one to use. Below it are
@@ -129,7 +130,7 @@ one below it. Clicking the note itself just edits it, as always. Right-clicking 
 Suggested Tags** for exactly what it counts; ⌘Z undoes either in one step.
 
 Accept or reject AI-proposed tags opens the bulk acceptance/removal form. AI tagging vocabulary
-chooses existing tags only, or existing and new tags. The AI's prompts and skills
+opens AI agent settings on its Tagging tab: existing tags only, or existing and new tags. The AI's prompts and skills
 (including the tagging instructions and these help texts) are built into MetaList
 and cannot be edited, so the AI behaves the same for everyone; instructions saved
 by older versions are ignored. A model's knowledge of an operation does not make

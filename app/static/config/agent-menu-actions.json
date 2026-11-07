@@ -20,7 +20,7 @@
   {
     "id": "form.tagging_vocabulary",
     "label": "AI Tagging Vocabulary…",
-    "selector": "#ai-tagging-vocabulary-modal",
+    "selector": "#ai-agent-settings-modal",
     "presentation": "dialog"
   },
   {

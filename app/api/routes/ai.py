@@ -67,7 +67,6 @@ from app.services.agent.web_settings import AgentWebSettings
 from app.services.agent.web_settings import resolve_agent_web_settings
 from app.services.agent.web_evidence import web_evidence_store
 from app.services.agent.summary_batch_store import summary_batch_store
-from app.services.agent.tagging import TAGGING_POLICY_KEY
 from app.usecases.bulk_tag_proposals import apply_bulk_proposals, prepare_proposal_changes
 from app.services.bulk_operation import bulk_operation_guard
 from app.services.tab_state import MAX_TAB_ID_LENGTH, tab_state_store
@@ -85,7 +84,6 @@ from app.services.html_export import resolve_export_scope
 from app.services.ai_setup import describe_ai_setup
 from app.services.input_errors import InputRejected
 from app.utils.text_utils import strip_html
-from app.services.preference_values import preference_or_default
 from app.contracts import requires
 from app.startup_environment import is_development_environment
 
@@ -1276,9 +1274,3 @@ def manage_bulk_proposals(payload: BulkManageRequest, token: Annotated[str, Depe
             apply_bulk_proposals(changes=changes, token=token)
             yield json.dumps({"changed": bool(changes), "notes": len(changes), "proposals": count})
     return StreamingResponse(execute(), media_type="application/json")
-
-
-@router.get("/proposals/settings")
-def get_tagging_settings(token: Annotated[str, Depends(require_request_auth_token)]):
-    preferences = load_client_preferences(token=token)
-    return {"policy": preference_or_default(preferences, TAGGING_POLICY_KEY, default="")}

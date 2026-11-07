@@ -51,7 +51,7 @@
 
 ## Web access
 
-**AI Agent Settings** has three enforced browsing modes:
+**AI Agent Settings** (its Reading tab) has three enforced browsing modes:
 
 - **No web access** is the default. The agent cannot open pages and
   explains that limitation when a request needs the web.
@@ -254,17 +254,26 @@ read returns. Tagging batches use the same limit; there is no separate tagging w
   and limit overrides are retained; the retired tagging batch preference
   (`pref.ai.openai.tagging.batch_tokens`) is dropped from the vault.
 
-- Open `AI Agent Settings…` from the command palette or chat gear. Its layout, top
-  to bottom:
-  - One folder tab per provider; it opens on the provider the chat uses. A tab only
-    shows that provider's settings and picks nothing. It holds the API key (saved,
-    changed or removed at once, apart from Save: "Key saved, encrypted in this
-    vault" or "Key saved for this session") and a **Usage and billing** link to the
-    provider's own page.
-  - **Web access**: three segments, Off / Links in your notes / Any public page,
-    each explained in its tooltip.
-  - The privacy rules (below).
-  - **Max token window**, in tokens, with a `?` whose tooltip explains it.
+- Open `AI Agent Settings…` from the command palette or chat gear. Four folder tabs and
+  one Save (agreed 2026-11-07; before, one long page and a separate AI Tagging Vocabulary
+  dialog):
+  - **Keys**: a switch per provider (OpenAI, Anthropic, Google); it starts on the provider
+    the chat uses. The switch only shows that provider's settings and picks nothing. It
+    holds the API key (saved, changed or removed at once, apart from Save: "Key saved,
+    encrypted in this vault" or "Key saved for this session") and a **Usage and billing**
+    link to the provider's own page.
+  - **Privacy**: the privacy rules (below).
+  - **Reading**: **Web access**, three segments, Off / Links in your notes / Any public
+    page, each explained in its tooltip; and **Max token window**, in tokens, with a `?`
+    whose tooltip explains it.
+  - **Tagging**: **Tags the AI may propose**, Existing tags only / Existing and new tags
+    (`pref.ai.tagging.vocabulary`; neither until chosen here or when a tagging run asks).
+  - `AI Agent Settings…` opens on Keys, `Cloud AI Privacy…` on Privacy with the cursor in
+    its first rule field, and `AI Tagging Vocabulary…` on Tagging.
+  - Every tab's panel is drawn, stacked in one place, and only the open one is shown: the
+    dialog keeps the size of the largest whichever tab is open, and switching tabs redraws
+    nothing, so what is typed but not yet saved stays. One Save saves every tab; a value
+    that did not change is not written again.
 - The dialog has no model or thinking picker: both are chosen beside chat Send.
 - The Google tab says under the key, with Google's terms in its tooltip: "Use a key
   with billing turned on: on the free tier, Google may use what you send to improve its
