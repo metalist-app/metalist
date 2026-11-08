@@ -339,56 +339,9 @@ def test_unchanged_update_keeps_version_and_skips_persistence(monkeypatch: pytes
     assert writes == [True]
 
 
-# A search context's folder (the folder tree's filter) is kept with its other filters, so a
-# server restart keeps it (the maintainer, 2026-11-07: "my selections of folders or other
-# things that affect the view need to persist across server resets"). Until then it lived in
-# the server's memory only.
-def test_a_tabs_folder_survives_a_restart() -> None:
-    store = TabStateStore()
-    tab_id = store.snapshot()["activeTabId"]
-
-    result = store.set_folder_filter(tab_id=tab_id, folder="OLD_PICS/")
-    assert result["changed"] is True
-    assert result["folderFilters"] == {tab_id: "OLD_PICS/"}
-    assert store.set_folder_filter(tab_id=tab_id, folder="OLD_PICS/")["changed"] is False
-
-    reloaded = _bootstrapped_copy()
-    assert reloaded.get_folder_filter(tab_id=tab_id) == "OLD_PICS/"
-    assert reloaded.folder_filters() == {tab_id: "OLD_PICS/"}
-
-    assert store.set_folder_filter(tab_id=tab_id, folder="")["folderFilters"] == {}
-    assert _bootstrapped_copy().get_folder_filter(tab_id=tab_id) == ""
-
-
-def test_a_duplicate_copies_its_folder_a_new_tab_has_none_and_a_closed_tab_drops_it() -> None:
-    store = TabStateStore()
-    tab_id = store.snapshot()["activeTabId"]
-    store.set_folder_filter(tab_id=tab_id, folder="Projects/")
-
-    duplicate_id = store.create_tab(copy_from_tab_id=tab_id, copies_view=True)["newTabId"]
-    blank_id = store.create_tab(copy_from_tab_id=tab_id, copies_view=False)["newTabId"]
-    assert store.folder_filters() == {tab_id: "Projects/", duplicate_id: "Projects/"}
-
-    assert store.delete_tab(tab_id=duplicate_id)["folderFilters"] == {tab_id: "Projects/"}
-    assert store.get_folder_filter(tab_id=blank_id) == ""
-
-
-def test_a_renamed_folder_carries_its_tabs_and_a_deleted_one_drops_them_across_a_restart() -> None:
-    store = TabStateStore()
-    first = store.snapshot()["activeTabId"]
-    second = store.create_tab(copy_from_tab_id=first, copies_view=False)["newTabId"]
-    third = store.create_tab(copy_from_tab_id=first, copies_view=False)["newTabId"]
-    store.set_folder_filter(tab_id=first, folder="Projects/Client-A/")
-    store.set_folder_filter(tab_id=second, folder="Projects/")
-    store.set_folder_filter(tab_id=third, folder="Journal/")
-
-    store.move_folder_filters(folder="Projects/", new_path="Work/")
-    assert _bootstrapped_copy().folder_filters() == {first: "Work/Client-A/", second: "Work/", third: "Journal/"}
-
-    store.drop_folder_filters_under(folder="Work/")
-    assert _bootstrapped_copy().folder_filters() == {third: "Journal/"}
-
-
+# A search context's folder is kept with its other filters, so a server restart keeps it (the
+# maintainer, 2026-11-07); since the same day only the folder context has one. Its restart,
+# duplicate, rename and delete cases are in test_folder_context.py.
 def test_a_folder_filter_must_be_a_folder() -> None:
     store = TabStateStore()
     tab_id = store.snapshot()["activeTabId"]

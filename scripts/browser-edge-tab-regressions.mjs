@@ -44,7 +44,6 @@ const WINDOW = {width: 1440, height: 900};
 const TREE_HIDDEN_WIDTH = 900;
 const TREE_SHOWN_WIDTH = 901;
 const REQUESTS_QUIET_MS = 300;
-const SHOWN_KEY = 'metalist.virtual_folders.shown';
 const FIXTURE_TAG = 'foldersbuttonfixture';
 // The tabs: --edge-tab-width; the tree's panel, --side-rail-edge + --virtual-folders-width.
 const TAB_WIDTH_PX = 28;
@@ -92,10 +91,15 @@ async function idle(page) {
   await waitForAppQuiet(page, REQUESTS_QUIET_MS);
 }
 
+// The tree shows in folder contexts (docs/ready-to-build/virtual-folders.md, "Folder contexts"): after the
+// reload, the folders tab opens or closes it.
 async function reloadWithFolders(page, isShown) {
-  await page.evaluate(({key, isShown}) => window.localStorage.setItem(key, isShown ? 'true' : 'false'), {key: SHOWN_KEY, isShown});
   await page.reload();
   await page.waitForSelector('[data-app-ready="true"]');
+  await idle(page);
+  const isOn = await page.evaluate(() => document.body.classList.contains('virtual-folders-on'));
+  if (isOn === isShown) return;
+  await page.click('#virtual-folders-button');
   await idle(page);
 }
 
@@ -471,7 +475,6 @@ export async function checkEdgeTabs(page) {
     await NotesAPI.saveNote(note.id, '<div>Folders button fixture</div>', tag);
     return note.id;
   }, FIXTURE_TAG);
-  const wasShown = await page.evaluate(key => window.localStorage.getItem(key), SHOWN_KEY);
   const hadWidth = await page.evaluate(key => window.localStorage.getItem(key), WIDTH_KEY);
   const failures = [];
   const attempt = async (label, run) => {
@@ -504,13 +507,12 @@ export async function checkEdgeTabs(page) {
   }, async () => {
     await page.setViewport(WINDOW);
     await withChat(page, false);
-    await page.evaluate(async ({id, key, wasShown, widthKey, hadWidth}) => {
+    await reloadWithFolders(page, false);
+    await page.evaluate(async ({id, widthKey, hadWidth}) => {
       const {NotesAPI} = await import('/static/js/modules/api-client.js');
       await NotesAPI.deleteNote(id);
-      if (wasShown === null) window.localStorage.removeItem(key);
-      else window.localStorage.setItem(key, wasShown);
       if (hadWidth === null) window.localStorage.removeItem(widthKey);
       else window.localStorage.setItem(widthKey, hadWidth);
-    }, {id: noteId, key: SHOWN_KEY, wasShown, widthKey: WIDTH_KEY, hadWidth});
+    }, {id: noteId, widthKey: WIDTH_KEY, hadWidth});
   });
 }

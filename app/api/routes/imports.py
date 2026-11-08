@@ -29,7 +29,7 @@ from app.services.obsidian_import.sources import FILES, IMPORT_SOURCES
 from app.services.image_compression import COMPRESSIBLE_SUFFIXES, IMAGE_LONGEST_SIDES, ImageChoice
 from app.services.obsidian_import.vault import count_compressible_images, count_markdown_files
 from app.services.reference_suggestions import build_catalog_in_background
-from app.api.folder_tree_switch import applied_folder
+from app.services.tab_state import tab_state_store
 from app.upload_limits import MAX_ATTACHMENT_BYTES
 from app.usecases.import_bookmarks import CmdImportBookmarks, CmdPreviewBookmarkImport
 from app.usecases.import_obsidian_vault import (
@@ -305,7 +305,7 @@ def _context_tags(context: ImportDropContext, prefix_folder: str) -> str:
     if not context["isDrop"]:
         return ""
     return drop_context_tags(
-        search=context["search"], folder_filter=applied_folder(context["tabId"]),
+        search=context["search"], folder_filter=tab_state_store.get_folder_filter(tab_id=context["tabId"]),
         folder_prefix=prefix_folder,
     )
 

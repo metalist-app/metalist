@@ -15,12 +15,9 @@ import { watchFoldability } from './modules/mode-manager/services/collapse-affor
 import {
     queueMermaidDiagramRendering,
 } from './modules/mode-manager/services/mermaid-render-service.js';
-import { rememberVirtualFoldersShown, storedVirtualFoldersShown } from './modules/mode-manager/services/virtual-folders-state.js';
 document.addEventListener('DOMContentLoaded', async () => {
     console.log('DOMContentLoaded fired');
     document.body.dataset.appReady = 'false';
-    // Before any request: every request says whether the folder tree is open (session-auth.js).
-    rememberVirtualFoldersShown(storedVirtualFoldersShown());
     checkReleaseOnPageLoad();
 
     await initializeNoteHtmlSanitizer();

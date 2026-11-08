@@ -51,7 +51,7 @@ import {checkEditableEmbeds} from './browser-editable-embed-regressions.mjs';
 import {checkCollapseOutlines} from './browser-collapse-outline-regressions.mjs';
 import {checkTabSwitching} from './browser-tab-switch-regressions.mjs';
 import {checkFolderNoteDrag} from './browser-folder-note-drag-regressions.mjs';
-import {checkFolderTabSwitch} from './browser-folder-tab-switch-regressions.mjs';
+import {checkFolderContext} from './browser-folder-context-regressions.mjs';
 import {checkFolderDrops} from './browser-folder-drop-regressions.mjs';
 import {checkBackgroundWork} from './browser-background-work-regressions.mjs';
 import {checkImageSizes} from './browser-image-size-regressions.mjs';
@@ -467,10 +467,10 @@ try {
     await checkFolderNoteDrag(page);
     assert.deepEqual(errors, []);
     console.log(`PASS folder note drag regressions in ${await browser.version()}`);
-  } else if (process.env.BROWSER_TEST_SUITE === 'folder-tab-switch') {
-    await checkFolderTabSwitch(page);
+  } else if (process.env.BROWSER_TEST_SUITE === 'folder-context') {
+    await checkFolderContext(page);
     assert.deepEqual(errors, []);
-    console.log(`PASS folder tab switch regressions in ${await browser.version()}`);
+    console.log(`PASS folder context regressions in ${await browser.version()}`);
   } else if (process.env.BROWSER_TEST_SUITE === 'edge-tabs') {
     await checkEdgeTabs(page);
     assert.deepEqual(errors, []);

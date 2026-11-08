@@ -178,6 +178,8 @@ export const CONFIG = {
         VIRTUAL_FOLDERS: {
             LIST: `${API_BASE}/virtual-folders`,
             FILTER: `${API_BASE}/virtual-folders/filter`,
+            FOLDER_CONTEXT: `${API_BASE}/virtual-folders/folder-context`,
+            FOLDER_CONTEXT_NEW: `${API_BASE}/virtual-folders/folder-context/new`,
             RENAME: `${API_BASE}/virtual-folders/rename`,
             MOVE: `${API_BASE}/virtual-folders/move`,
             FILE_NOTE: `${API_BASE}/virtual-folders/file-note`,

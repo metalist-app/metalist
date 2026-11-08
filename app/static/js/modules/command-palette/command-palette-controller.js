@@ -139,11 +139,13 @@ import { settleResult } from '../async-result.js';
 import { buildSessionHeaders } from '../session-auth.js';
 import { isValidTagToken } from '../tag-token.js';
 import { updateSearchContextsOverlayPlacement } from '../mode-manager/services/search-contexts-overlay-service.js';
-import { navigateToReferenceOrigin, openSearchInNewSearchContext } from '../mode-manager/events/keyboard-events.js';
+import {
+    chooseFolder, closeFoldersTab, navigateToReferenceOrigin, openFoldersTab, openSearchInNewSearchContext,
+} from '../mode-manager/events/keyboard-events.js';
 import { FolderNameModal } from '../modals/folder-name-modal.js';
 import { DeleteFolderModal } from '../modals/delete-folder-modal.js';
 import {
-    activeVirtualFolder, isVirtualFoldersShown, setVirtualFoldersShown, wireVirtualFolders,
+    activeVirtualFolder, toggleFolderContextFromTab, wireVirtualFolders,
 } from '../mode-manager/services/virtual-folders-service.js';
 import {
     DEFAULT_SEARCH_SUGGESTION_WINDOWS_VALUE,
@@ -483,8 +485,9 @@ class CommandPaletteController {
         wireVirtualFolders({
             // In the command gate, waiting for a command still running (a click while editing:
             // the note's save), so one click leaves the note and shows the folder.
-            setFilter: async (folder) => CommandGate.runWhenFree('virtualFolders.filter', async () => this.setVirtualFolder(folder)),
-            folderSwitchChanged: async () => CommandGate.runWhenFree('virtualFolders.switch', async () => this.showFolderSwitch()),
+            setFilter: async (folder) => CommandGate.runWhenFree('virtualFolders.chooseFolder', async () => chooseFolder(folder)),
+            openFoldersTab: async () => CommandGate.runWhenFree('virtualFolders.openFoldersTab', async () => openFoldersTab()),
+            closeFoldersTab: async () => CommandGate.runWhenFree('virtualFolders.closeFoldersTab', async () => closeFoldersTab()),
             confirm: async (context) => this._confirmAction('virtualFolders.confirm', context),
             askName: async (form) => this._askFolderName(form),
             askDeleteFolder: async (form) => this._askDeleteFolder(form),
@@ -1686,7 +1689,7 @@ class CommandPaletteController {
 
     // Virtual folders, an experiment (virtual-folders-service.js): the toggle.
     async toggleVirtualFolders() {
-        setVirtualFoldersShown(!isVirtualFoldersShown());
+        toggleFolderContextFromTab();
     }
 
     // A virtual folder's name (FolderNameModal), or null when nothing changes.
@@ -1713,9 +1716,10 @@ class CommandPaletteController {
         return this._deleteFolderModal.openFor(form);
     }
 
-    /** Narrow the view to a virtual folder and the folders below it ('' for every folder
-     * again), as a Files filter; from a reference view, back to the view the reference views
-     * started from first. */
+    /** Narrow the folder context shown to a virtual folder and the folders below it ('' for
+     * every folder again: the chip's ×), as a Files filter, its search kept; from a reference
+     * view, back to the view the reference views started from first. A folder clicked in the
+     * tree also empties the search (chooseFolder). */
     async setVirtualFolder(folder) {
         if (typeof folder !== 'string') {
             throw new Error('setVirtualFolder requires a folder tag or ""');
@@ -1739,30 +1743,6 @@ class CommandPaletteController {
         await actionRefreshAndMaybeSelect({
             startedAt: performance.now(),
             context: 'virtualFolder',
-            animateNoteChanges: false,
-        });
-    }
-
-    // The folder tree was opened or closed while the active context has a folder: its folder
-    // came on or went off (docs/ready-to-build/virtual-folders.md, the folder tree switch), so it is shown again as
-    // choosing a folder shows it, from the top, editing ended first. The server already knows:
-    // every request carries the switch (session-auth.js).
-    async showFolderSwitch() {
-        if (isViewingReferenceSource()) {
-            await navigateToReferenceOrigin();
-        }
-        const activeTabId = ModeContext.activeTabId;
-        if (typeof activeTabId !== 'string' || activeTabId.length === 0) {
-            throw new Error('ModeContext.activeTabId must be a non-empty string');
-        }
-        if (ModeContext.isEditing) {
-            await actionSaveAndExitEditingWithoutRefreshing();
-        }
-        ModeContext.bumpUndoContextEpoch('virtualFolder');
-        this._showChangedViewFromTop(activeTabId);
-        await actionRefreshAndMaybeSelect({
-            startedAt: performance.now(),
-            context: 'virtualFolders.switch',
             animateNoteChanges: false,
         });
     }
@@ -3038,8 +3018,8 @@ class CommandPaletteController {
             setPassword: async (password, onProgress) => Auth.setPasswordKeepingThisWindow(password, onProgress),
             openPasswordGenerator: async (onUse) => this._openPasswordGeneratorToUse(onUse),
             afterImport: async (sourceTag) => {
-                // An import shows its folders at once (Virtual Folders, an experiment).
-                setVirtualFoldersShown(true);
+                // Its own plain search, with no tree: the tree shows only in folder contexts
+                // (docs/ready-to-build/virtual-folders.md, "Folder contexts").
                 const newTabId = await openSearchInNewSearchContext(sourceTag, 'importWizard.showImported');
                 if (newTabId === null) {
                     await actionRefreshAndMaybeSelect({ startedAt: performance.now(), context: 'importWizard' });

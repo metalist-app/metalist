@@ -167,16 +167,15 @@ async function checkUntaggedViewStaysWithItsTab(page, firstTabId, secondTabId, u
 // Case 5: + duplicates everything the tab shows; a new tab starts with nothing.
 async function checkDuplicateCopiesEverything(page, firstTabId) {
   await clickTab(page, firstTabId);
-  await page.evaluate(async folder => {
+  await page.evaluate(async () => {
     const {CommandPalette} = await import('/static/js/modules/command-palette/command-palette-controller.js');
-    const {NotesAPI} = await import('/static/js/modules/api-client.js');
-    const {ModeContextInstance: mode} = await import('/static/js/modules/mode-manager/mode-context.js');
     await CommandPalette.setSortMode('created');
     await CommandPalette.setDateRangePreset('last-30-days');
     await CommandPalette.setFileFilter('any');
-    await NotesAPI.setVirtualFolderFilter(mode.activeTabId, folder);
+    // Only a folder context has a folder (docs/ready-to-build/virtual-folders.md, "Folder contexts"): its
+    // duplicate is checked in browser-folder-context-regressions.mjs.
     await CommandPalette.setIsUntaggedView(true);
-  }, FOLDER);
+  });
   await idle(page);
   const everything = async () => {
     const state = await viewState(page);
@@ -191,7 +190,7 @@ async function checkDuplicateCopiesEverything(page, firstTabId) {
     };
   };
   const narrowed = {
-    search: TAB_QUERIES[0], sort: ['created', 'created'], dateRange: [true, true], fileFilter: 'any', folder: FOLDER,
+    search: TAB_QUERIES[0], sort: ['created', 'created'], dateRange: [true, true], fileFilter: 'any', folder: '',
     untagged: [true, true],
   };
   assert.deepEqual(await everything(), narrowed, 'the first tab is narrowed every way');

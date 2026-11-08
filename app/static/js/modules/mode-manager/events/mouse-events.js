@@ -310,8 +310,8 @@ function isMouseDownOutsideEditExclusion(target) {
             '#virtual-folder-indicator',
             // A folder clicked saves and leaves the note itself, then shows the folder: one click.
             '#virtual-folders',
-            // The tab opening and closing the tree: with a folder in play the view changes, and
-            // it saves and leaves the note itself; with none nothing moves and editing goes on.
+            // The tab opening and closing the tree: when a folder context shows, the view
+            // changes and it saves and leaves the note itself; otherwise editing goes on.
             '#virtual-folders-button',
             '#file-filter-indicator',
             '#untagged-view-indicator',
@@ -1628,8 +1628,8 @@ function handleClick(event) {
         return;
     }
 
-    // The tree's tab acts on its own click (virtual-folders-service.js): with no folder in play,
-    // editing goes on.
+    // The tree's tab acts on its own click (virtual-folders-service.js): unless a folder
+    // context shows, editing goes on.
     if (event.target.closest('#virtual-folders-button')) {
         return;
     }

@@ -10,6 +10,7 @@ import { AuthenticationRequiredError } from '../../client-state-api.js';
 import { getReferenceViewsPayload, restoreReferenceNavigation } from './reference-source-navigation-service.js';
 import { recordDateFiltersFromServer } from './date-range-filter-service.js';
 import { recordFileFiltersFromServer } from './file-filter-service.js';
+import { recordFolderContextsFromServer, recordRecentTabsFromServer } from './folder-context-state.js';
 
 const HTTP_UNAUTHORIZED = 401;
 const TAB_STATE_ENDPOINT = CONFIG.API.NOTES.TAB_STATE;
@@ -19,6 +20,8 @@ const TAB_STATE_SORT_MODE_ENDPOINT = CONFIG.API.NOTES.TAB_STATE_SORT_MODE;
 const TAB_STATE_DATE_FILTER_ENDPOINT = CONFIG.API.NOTES.TAB_STATE_DATE_FILTER;
 const TAB_STATE_FILE_FILTER_ENDPOINT = CONFIG.API.NOTES.TAB_STATE_FILE_FILTER;
 const TAB_STATE_UNTAGGED_VIEW_ENDPOINT = CONFIG.API.NOTES.TAB_STATE_UNTAGGED_VIEW;
+const FOLDER_CONTEXT_ENDPOINT = CONFIG.API.VIRTUAL_FOLDERS.FOLDER_CONTEXT;
+const FOLDER_CONTEXT_NEW_ENDPOINT = CONFIG.API.VIRTUAL_FOLDERS.FOLDER_CONTEXT_NEW;
 const SCROLL_POLL_INTERVAL_MS = 1000;
 const TAB_STATE_PERSIST_DEBOUNCE_MS = 300;
 
@@ -123,10 +126,13 @@ function captureServerSignature(state) {
 // The server answers a post that changes nothing (e.g. one differing only in
 // what it normalises away) with the state and version it already had, so its
 // signature can equal the recorded one. Every answer also carries the tabs' date
-// range and Files filters and Untagged views, which only the server changes.
+// range and Files filters, Untagged views, folder contexts and the order the tabs were used in,
+// which only the server changes.
 function recordServerSignature(state) {
     recordDateFiltersFromServer(state);
     recordFileFiltersFromServer(state);
+    recordFolderContextsFromServer(state);
+    recordRecentTabsFromServer(state);
     ModeContext.recordUntaggedViewsFromServer(state);
     const signature = serializeState(canonicalizeState(state));
     if (moduleState.lastSignature !== signature) {
@@ -193,6 +199,30 @@ export async function deleteTabOnServer(tabId) {
         throw new Error('tabId must be a non-empty string');
     }
     const response = await callTabStateApiAt(TAB_STATE_DELETE_TAB_ENDPOINT, 'POST', { tabId });
+    captureServerSignature(response);
+    return response;
+}
+
+/** A folder clicked in the tree ('' for `/`) of the folder context tabId: narrowed to it, its
+ * search emptied (docs/ready-to-build/virtual-folders.md, "Folder contexts"). The tab state answered. */
+export async function chooseFolderOnServer(tabId, folder) {
+    if (typeof tabId !== 'string' || tabId.length === 0 || typeof folder !== 'string') {
+        throw new Error('chooseFolderOnServer requires the folder context and the folder');
+    }
+    const response = await callTabStateApiAt(FOLDER_CONTEXT_ENDPOINT, 'POST', {
+        tabId,
+        folder,
+        clientId: ModeContext.clientId,
+        undoContext: captureUndoContext(),
+    });
+    captureServerSignature(response);
+    return response;
+}
+
+/** Open folders tab with no folder context: a new one at the end of the list (newTabId). The
+ * caller switches to it. */
+export async function createFolderContextOnServer() {
+    const response = await callTabStateApiAt(FOLDER_CONTEXT_NEW_ENDPOINT, 'POST', null);
     captureServerSignature(response);
     return response;
 }

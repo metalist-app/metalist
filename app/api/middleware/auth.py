@@ -11,7 +11,6 @@ from app.services.tokens import token_service
 from app.services.maintenance_mode import maintenance_service
 from app.security.encryption import is_encryption_required
 from app.config import API_PREFIX, TEST_MODE
-from app.api.folder_tree_switch import record_folders_shown
 
 # An API request that arrives during maintenance waits this long for it to end, checking
 # this often. Setting a password re-encrypts every note, so the wait is generous.
@@ -118,8 +117,6 @@ class AuthMiddleware(BaseHTTPMiddleware):
         if "x-metalist-tab-id" not in request.headers or request.headers["x-metalist-tab-id"] == "":
             return JSONResponse(status_code=HTTPStatus.BAD_REQUEST, content={"detail": "X-Metalist-Tab-Id header required"})
         tab_id = request.headers["x-metalist-tab-id"]
-        # Whether this browser's folder tree is open: a search context's folder applies only then.
-        record_folders_shown(request.headers)
 
         # A tab claims the session once, after login; other requests leave the header out.
         claim = "x-metalist-claim" in request.headers and request.headers["x-metalist-claim"] == "1"

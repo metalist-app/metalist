@@ -54,11 +54,16 @@ import { CONFIG } from '../../config.js';
 import { NotesAPI } from '../../api-client.js';
 import { ErrorHandler } from '../../error-handler.js';
 import { describeDroppedItems, loneDroppedFolderEntry, readDroppedFolder } from '../services/dropped-folders.js';
-import { appliedFolderOfTab, fileNewNoteInFolder, virtualFolderAt } from '../services/virtual-folders-service.js';
+import {
+    fileNewNoteInFolder, folderOfTab, recordFolderContextFolder, showFolderOfActiveContext, virtualFolderAt,
+} from '../services/virtual-folders-service.js';
+import { isFolderContext, usedLastAmong } from '../services/folder-context-state.js';
 import { searchContextLabel } from '../services/search-context-label.js';
 import { checkBackgroundWork } from '../services/background-work-cards.js';
 import { isCopyOfDialogSelection } from '../services/dialog-copy-service.js';
-import { persistTabStateSnapshot, createTabOnServer, deleteTabOnServer } from '../services/tab-state-service.js';
+import {
+    persistTabStateSnapshot, createTabOnServer, deleteTabOnServer, chooseFolderOnServer, createFolderContextOnServer,
+} from '../services/tab-state-service.js';
 import { cacheNotesDomForTab, restoreNotesDomForTab, cloneNotesDomForTab, clearCachedNotesDomForTab, clearActiveNotesDom } from '../services/tab-dom-cache-service.js';
 import { finalizeDuplicatedTabClone, getDuplicateTabCloneOptions } from '../services/tab-duplication-service.js';
 import { areScrollAnchorsEqual, computeScrollAnchor } from '../services/scroll-anchor-service.js';
@@ -3517,6 +3522,13 @@ function buildTabReferenceIconHtml(tabId) {
     return `<span class="${iconClasses.join(' ')} tab-context-reference-icon" aria-hidden="true"></span>`;
 }
 
+// A folder context's row starts with the tree's folder icon, beside its folder's name (the
+// maintainer, 2026-11-07).
+function buildTabFolderIconHtml(tabId) {
+    if (!isFolderContext(tabId)) return '';
+    return '<span class="virtual-folder-icon tab-context-folder-icon" aria-hidden="true"></span>';
+}
+
 export function updateSearchContextsList() {
     const searchContextsList = document.getElementById('search-contexts-list');
     updateReferenceSourceIndicator();
@@ -3551,7 +3563,7 @@ export function updateSearchContextsList() {
         // the row's whole width and ends in an ellipsis only where it runs out (main.css).
         const displayQuery = referenceNavigationLabel !== ''
             ? referenceNavigationLabel
-            : searchContextLabel({ search: originalQuery, folder: appliedFolderOfTab(tabId) });
+            : searchContextLabel({ search: originalQuery, folder: folderOfTab(tabId), isFolderContext: isFolderContext(tabId) });
         
         const isActive = tabId === activeTabId;
 
@@ -3567,7 +3579,7 @@ export function updateSearchContextsList() {
             + `<span class="tab-context-index">${i + 1}:</span>`
             // The search is the user's text: shown as text, never as markup.
             // A reference view's tab starts with its chip's icon.
-            + `<span class="tab-context-query">${buildTabReferenceIconHtml(tabId)}${escapeHtml(displayQuery)}</span>`
+            + `<span class="tab-context-query">${buildTabFolderIconHtml(tabId)}${buildTabReferenceIconHtml(tabId)}${escapeHtml(displayQuery)}</span>`
             + `<span class="tab-context-actions">${actions}</span>`
             + `</div>`
         );
@@ -3694,6 +3706,10 @@ export async function switchToTabContext(tabId, options) {
 		}
 
 		syncSearchInputField();
+		// Into or out of a reference view, the tree follows once the slide lands (navigateWithReferenceSlide).
+		if (!isReferenceViewTransitionPending()) {
+			showFolderOfActiveContext();
+		}
 		updateSearchContextsList();
 
 		// Persist new tab selection and any newly created tab immediately
@@ -3925,6 +3941,98 @@ async function openBlankSearchContext() {
     return newTabId;
 }
 
+/**
+ * A folder clicked in the tree ('' for `/`): the folder context it was clicked in, narrowed to it,
+ * its search emptied, shown from the top (docs/ready-to-build/virtual-folders.md, "Folder contexts"). From a
+ * reference view opened from it, back there first.
+ */
+export async function chooseFolder(folder) {
+    if (typeof folder !== 'string') {
+        throw new Error('chooseFolder requires a folder or \'\'');
+    }
+    if (isViewingReferenceSource()) {
+        await navigateToReferenceOrigin();
+    }
+    const folderTabId = ModeContext.activeTabId;
+    if (!isFolderContext(folderTabId)) {
+        throw new Error('A folder is chosen only in a folder context: the tree shows nowhere else');
+    }
+    closeOpenSearchQuote();
+    if (ModeContext.isEditing) {
+        await actionSaveAndExitEditingWithoutRefreshing();
+    }
+    await persistTabStateSnapshot();
+    const response = await chooseFolderOnServer(folderTabId, folder);
+    ModeContext.bumpUndoContextEpoch('virtualFolder');
+    recordFolderContextFolder(folderTabId, folder);
+    await settleViewRequestsBeforeTabChange();
+    // Its emptied search and top scroll come with the answer; it is the search the view now runs.
+    ModeContext.hydrateTabState(response, { preserveActiveRootTracking: true });
+    ModeContext.clearTabRevealedRedactions(folderTabId);
+    ModeContext.clearActiveTabDiffCacheForSearchExecution(ModeContext.searchQuery, { forceClear: true });
+    if (ModeContext.getRootAnchorId() !== null) {
+        ModeContext.setRootAnchorId(null);
+    }
+    ModeContext.beginIgnoreScrollEvents();
+    window.scrollTo(0, 0);
+    ModeContext.endIgnoreScrollEvents();
+    syncSearchInputField();
+    showFolderOfActiveContext();
+    updateSearchContextsList();
+    const { actionRefreshAndMaybeSelect } = await import('../actions/ui-actions.js');
+    await actionRefreshAndMaybeSelect({ startedAt: performance.now(), context: 'folderContext.choose', animateNoteChanges: false });
+}
+
+/** Open folders tab: the folder context used last, as left; with none, a new one at the end of
+ * the list on every note (`/`), the tree with it (docs/ready-to-build/virtual-folders.md, "Folder contexts"). */
+export async function openFoldersTab() {
+    if (isViewingReferenceSource()) {
+        await navigateToReferenceOrigin();
+    }
+    const usedLast = usedLastAmong(ModeContext.tabOrder.filter((tabId) => isFolderContext(tabId)));
+    if (usedLast !== '') {
+        await switchToTabContext(usedLast, { animateNoteChanges: false });
+        return;
+    }
+    if (ModeContext.tabOrder.length >= CONFIG.TABS.MAX_TABS) {
+        ErrorHandler.showInfoBanner(
+            `Search context limit reached (${CONFIG.TABS.MAX_TABS}). Close one before adding another.`,
+            TAB_LIMIT_BANNER_SECONDS * MS_PER_SECOND,
+        );
+        return;
+    }
+    closeOpenSearchQuote();
+    snapshotActiveTabScrollState();
+    await persistTabStateSnapshot();
+    const response = await createFolderContextOnServer();
+    const folderTabId = response.newTabId;
+    if (typeof folderTabId !== 'string' || !response.tabs[folderTabId] || !isFolderContext(folderTabId)) {
+        throw new Error('The server made no folder context');
+    }
+    await settleViewRequestsBeforeTabChange();
+    ModeContext.hydrateTabState(response, { preserveActiveRootTracking: true });
+    ModeContext.resetTabDiffCache(folderTabId, { preserveRootAnchor: false });
+    await switchToTabContext(folderTabId, { animateNoteChanges: false });
+}
+
+/** Close folders tab: the plain search used last, as left, with no tree; with none, a new blank
+ * one at the end of the list. Nothing is deleted. */
+export async function closeFoldersTab() {
+    if (isViewingReferenceSource()) {
+        await navigateToReferenceOrigin();
+    }
+    // A reference view is a passing look, not a search to go back to.
+    const plainSearches = ModeContext.tabOrder.filter(
+        (tabId) => !isFolderContext(tabId) && getReferenceViewKindForTab(tabId) === '',
+    );
+    const usedLast = usedLastAmong(plainSearches);
+    if (usedLast !== '') {
+        await switchToTabContext(usedLast, { animateNoteChanges: false });
+        return;
+    }
+    await openBlankSearchContext();
+}
+
 export async function openReferenceInNewTab(referenceNoteId) {
     if (typeof referenceNoteId !== 'string' || referenceNoteId.length === 0) {
         throw new Error('openReferenceInNewTab requires referenceNoteId');
@@ -4034,6 +4142,8 @@ async function navigateWithReferenceSlide(direction, navigate) {
     if (!hasNavigated) {
         return false;
     }
+    // A reference view opened from a folder context keeps the tree; back at a search, it closes.
+    showFolderOfActiveContext();
     const isReferenceView = isViewingReferenceSource();
     // Back at the search, the input fades in with its text; into a reference view, it
     // fades out with the text it had and is emptied once out of sight.
@@ -4193,6 +4303,7 @@ async function deleteTabContext(deleteTabId) {
 	if (ModeContext.isEditing) {
 		await actionSaveAndExitEditingWithoutRefreshing();
 	}
+
     await settleViewRequestsBeforeTabChange();
     if (typeof deleteTabId !== 'string' || deleteTabId.length === 0) {
         throw new Error('deleteTabId is required for tab deletion');

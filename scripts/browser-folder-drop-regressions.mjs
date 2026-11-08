@@ -8,7 +8,6 @@ import { waitForAppQuiet } from './browser-app-idle.mjs';
 
 const REQUESTS_QUIET_MS = 300;
 const SETTLE_MS = 300;
-const SHOWN_KEY = 'metalist.virtual_folders.shown';
 // Wide enough for the tree beside the column (scripts/browser-edge-tab-regressions.mjs).
 const WINDOW = {width: 1440, height: 900};
 const FOLDER = 'Dropzone/';
@@ -138,9 +137,11 @@ export async function checkFolderDrops(page) {
     return note.id;
   }, FOLDER);
   await page.setViewport(WINDOW);
-  await page.evaluate(key => window.localStorage.setItem(key, 'true'), SHOWN_KEY);
   await page.reload();
   await page.waitForSelector('[data-app-ready="true"]');
+  await idle(page);
+  // The tree shows in folder contexts (docs/ready-to-build/virtual-folders.md, "Folder contexts"): the folders tab opens it.
+  await page.click('#virtual-folders-button');
   await idle(page);
   const created = [folderNoteId];
   await runThenCleanUp('folder drops', async () => {
@@ -148,10 +149,11 @@ export async function checkFolderDrops(page) {
     created.push(await checkFilesOnAFolder(page));
     created.push(...await checkFolderOnAFolder(page));
   }, async () => {
-    await page.evaluate(async ({ids, key}) => {
-      window.localStorage.setItem(key, 'false');
+    await page.evaluate(async ({ids}) => {
+      // Closes the folder context, and the tree with it.
+      if (document.body.classList.contains('virtual-folders-on')) document.getElementById('virtual-folders-button').click();
       const {NotesAPI} = await import('/static/js/modules/api-client.js');
       for (const id of ids) await NotesAPI.deleteNote(id);
-    }, {ids: created, key: SHOWN_KEY});
+    }, {ids: created});
   });
 }

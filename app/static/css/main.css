@@ -7248,6 +7248,18 @@ body:not(.pref-show-search-results-count) .controls .search-results-count {
     margin-right: 0.35em;
 }
 
+/* The folder context's row: the tree's folder icon (.virtual-folder-icon), a little smaller for
+   the list's 12px text, standing on the text's baseline, with a gap before the name. Both classes,
+   to win over .virtual-folder-icon, which comes later. */
+.virtual-folder-icon.tab-context-folder-icon {
+    display: inline-block;
+    vertical-align: baseline;
+    width: 12px;
+    height: 8px;
+    margin-top: 0;
+    margin-right: 0.45em;
+}
+
 /* A reference view's chip starts with its icon: one note, or several. */
 .controls .reference-view-chip-icon {
     flex: none;

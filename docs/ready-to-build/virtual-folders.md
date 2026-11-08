@@ -13,8 +13,53 @@ with the column moved right, §3's filter chip, and the toggle (palette: Show/Hi
 an import turns it on), and dragging a root note from the column onto a folder (2026-11-02, §4). Each tab's filter is kept with the tab's other filters in tab state (`tab_state.py`,
 `folderFilters`), so a server restart keeps it (the maintainer, 2026-11-07: "my selections of
 folders or other things that affect the view need to persist across server resets"; before, it
-lived in the server's memory and a restart dropped it). The toggle stays in the browser's storage. Closing the tree turns every search context's folder off, opening it turns each back on (built 2026-11-07, the maintainer: "closing the tree means you're done browsing folders"): each request says whether this browser's tree is open (`X-Metalist-Folders-Shown`, `session-auth.js`), and the server applies a context's folder only then (`app/api/folder_tree_switch.py`, `applied_folder`), so two browsers on one vault can differ. The folder stays saved either way. Closed, each context shows its search alone with no chip, and the list of search contexts names it by its search alone. The view changes only for a context with a folder, as choosing a folder does (from the top, editing ended first); with none nothing moves and editing goes on. The chip's × clears the folder for good. Tests: `tests/unit/test_folder_tree_switch.py`, `BROWSER_TEST_SUITE=folder-tab-switch`. **Proposed to replace it** (2026-11-07, filed with an open question): one folder context that a folder click opens, `docs/ready-to-build/folder-context.md`. The filter narrows the view, find and the current-view commands; exports and the AI read the
+lived in the server's memory and a restart dropped it). The tree belongs to folder contexts (below, built 2026-11-07). The filter narrows the view, find and the current-view commands; exports and the AI read the
 search alone. Not built yet: §4's other drags, §5 renames, §6 New Folder, the new search-context icon.
+
+## Folder contexts (built 2026-11-07)
+
+Agreed with the maintainer 2026-11-07, cases 1-8, replacing §2's toggle and §3's "clicking a folder
+narrows the current search context". **A search context is a folder context or a plain search.**
+
+- **A folder context** has the tree and its own folder (or none, `/`: every note). In the list of
+  search contexts its row starts with the tree's folder icon and is named by its folder, then what is
+  typed in it (`Projects/ @todo`; `/` with no folder). **A plain search** has no tree and never a
+  folder; it is named by its search, `(empty)` with none.
+- **Open folders tab** (the tab at the bottom left, or Show Virtual Folders): the folder context used
+  last, as left. With none in the list, a new one at the end, on `/`.
+- **Close folders tab** (the same tab, or Hide Virtual Folders): the plain search used last, as left.
+  With none, a new blank one at the end. It deletes nothing: a context goes only with its `-`.
+- **Used last:** the server keeps every tab in the order it was last shown (`recentTabs`); when the
+  one used last was deleted, the most recent of that kind still there. A reference view is a
+  passing look, not a plain search to go back to.
+- **Clicking a folder** in the tree narrows the folder context shown to it and the folders below it,
+  its search emptied, from the top (folders often showed nothing under a search typed elsewhere: the
+  maintainer, "it looks like an empty folder"). Typing then narrows the folder (`@todo` in
+  `Projects/`). The chosen folder clicked again, or `/`, shows every note; the chip's `×` clears the
+  folder and keeps what is typed.
+- **`+` on a folder context** makes another, with the same folder and search; each keeps its own.
+- **The tree shows only while a folder context does,** or a reference view opened from one (a folder
+  clicked there goes back to it). Switching between the two kinds moves the notes column sideways as
+  the tree opens or closes; the maintainer accepted it (2026-11-07), and it is the one exception to
+  "the shape of the screen is shared by every search context" (`docs/ui/state-handling.md`).
+- **An import** opens its own plain search, so the tree is closed there (before, an import showed it).
+- **Kept** with the search contexts in tab state (`app/services/tab_state.py`: `folderContexts`,
+  `recentTabs`, `folderFilters`), so a reload or a server restart keeps them. Only a folder context
+  has a folder (`InputRejected` otherwise). Older saved state: a folder saved on a plain search is
+  dropped; the one folder context of the build tried earlier the same day stays one.
+- **Code:** `TabStateStore.create_folder_context`, `choose_folder`; `POST /virtual-folders/folder-context/new`
+  and `/folder-context` (`app/api/routes/virtual_folders.py`); in the browser `folder-context-state.js`,
+  `openFoldersTab`, `closeFoldersTab` and `chooseFolder` (`keyboard-events.js`),
+  `toggleFolderContextFromTab` and `showFolderOfActiveContext` (`virtual-folders-service.js`; the tree
+  and the chip follow the context shown at once, not one refresh later). Whether the tree shows is no
+  longer stored in the browser (`metalist.virtual_folders.shown`, read by nothing now).
+- **Tests:** `tests/unit/test_folder_context.py`; `BROWSER_TEST_SUITE=folder-context` (exact positions,
+  and frame by frame: no tree or chip beside a plain search, the tree in every frame of a reference
+  view). The folders tab acts on a click while a note is edited (`mouse-events.js` leaves its clicks to it).
+- **Tried the same day and replaced:** a switch where closing the tree turned every context's folder
+  off (each request saying whether the tree was open), then one folder context that a folder click
+  opened, remembering where it came from. The design notes were `docs/ready-to-build/folder-tab-switch.md`
+  and `folder-context.md`, both removed.
 
 ## 0. Today (from the code)
 
