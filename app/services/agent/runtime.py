@@ -31,12 +31,15 @@ from app.services.agent.investigation import InvestigationState
 from app.services.agent.investigation import CompleteRootBatchPlan
 from app.services.agent.model_policy import InferencePurpose
 from app.services.agent.model_policy import SingleModelPolicy
+from app.services.agent.note_aliases import NoteAliases
 from app.services.agent.staged_summary import SummaryBatchResult
 from app.services.agent.staged_summary import SummaryFindingsResult
 from app.services.agent.summary_batch_store import summary_batch_key
 from app.services.agent.summary_batch_store import summary_batch_store
 from app.services.agent.staged_summary import attach_summary_coverage
+from app.services.agent.staged_summary import UNCITABLE_ABSENT_FROM_REQUEST
 from app.services.agent.staged_summary import classify_uncitable_note_ids
+from app.services.agent.staged_summary import drop_citations
 from app.services.agent.staged_summary import estimate_summary_results_tokens
 from app.services.agent.staged_summary import partition_summary_results
 from app.services.agent.staged_summary import structural_placeholder_note_ids
@@ -547,6 +550,7 @@ class AgentRuntime(AgentLoopMixin):
                     skill=skill,
                     snapshot=state.snapshot,
                     summaries=ordered_summaries,
+                    note_aliases=state.note_aliases,
                 )
             )
             yield {"type": "bulk_complete", "changed": False}
@@ -588,7 +592,7 @@ class AgentRuntime(AgentLoopMixin):
         plan: CompleteRootBatchPlan,
         summaries: list[SummaryBatchResult | None],
     ) -> AsyncIterator[dict[str, object]]:
-        """Seed the prompt cache with the first batch to run, then drain the rest through a bounded worker pool.
+        """Run every batch through a worker pool the provider's limits bound (provider_limits.py).
 
         ``summaries`` arrives with any batches reused from a failed attempt already
         filled in; the others are filled in canonical batch order, with one progress
@@ -750,8 +754,11 @@ class AgentRuntime(AgentLoopMixin):
                             has_failed = True
 
             workers = [asyncio.create_task(summarize_when_admitted(index)) for index in indexes]
+            index_of_worker = dict(zip(workers, indexes))
             running_workers = set(workers)
-            first_failure: BaseException | None = None
+            # By batch: with every batch at once, several can fail together; the lowest-numbered
+            # is the one reported, whichever finished first.
+            failures: dict[int, BaseException] = {}
             try:
                 while running_workers or not transitions.empty():
                     next_transition = asyncio.create_task(transitions.get())
@@ -766,14 +773,14 @@ class AgentRuntime(AgentLoopMixin):
                     for worker in done - {next_transition}:
                         running_workers.remove(worker)
                         failure = worker.exception()
-                        if failure is not None and first_failure is None:
+                        if failure is not None:
                             # Batches not started yet do not start; running ones finish and are kept.
-                            first_failure = failure
+                            failures[index_of_worker[worker]] = failure
                             has_failed = True
                     if next_transition in done:
                         yield apply_transition(next_transition.result())
-                if first_failure is not None:
-                    raise first_failure
+                if failures:
+                    raise failures[min(failures)]
             finally:
                 for worker in workers:
                     if not worker.done():
@@ -782,14 +789,11 @@ class AgentRuntime(AgentLoopMixin):
 
         to_run = tuple(index for index in range(batch_count) if batch_states[index] == "queued")
         if to_run:
-            # The first batch runs alone so later requests can reuse the provider-side prompt cache.
-            async with aclosing(drain(to_run[:1])) as first_batch_events:
-                async for event in first_batch_events:
-                    yield event
-        if len(to_run) > 1:
-            # The provider's limits, known from batch 1's answer, decide how many go at once.
-            async with aclosing(drain(to_run[1:])) as later_batch_events:
-                async for event in later_batch_events:
+            # Every batch at once, as many as the provider's limits allow (the gate: four until a
+            # first answer's headers tell them). Until 2026-11-08 batch 1 ran alone first to seed
+            # the provider's prompt cache, a whole batch's wait for a small share of each batch.
+            async with aclosing(drain(to_run)) as batch_events:
+                async for event in batch_events:
                     yield event
         if batch_states != ["complete"] * batch_count:
             raise RuntimeError("Staged summary workers stopped before every batch completed")
@@ -816,10 +820,12 @@ class AgentRuntime(AgentLoopMixin):
             evidence_payload=evidence_payload,
             batch_index=batch_index,
             batch_count=batch_count,
+            note_aliases=state.note_aliases,
         )
         return await self._infer_cited_summary_findings(
             run=run,
             messages=messages,
+            note_aliases=state.note_aliases,
             expected_root_ids=evidence_payload.result_tree_ids,
             allowed_note_ids=frozenset((
                 *evidence_payload.evidence_note_ids,
@@ -837,13 +843,18 @@ class AgentRuntime(AgentLoopMixin):
         *,
         run: _RunContext,
         messages: list[dict[str, str]],
+        note_aliases: NoteAliases,
         expected_root_ids: tuple[str, ...],
         allowed_note_ids: frozenset[str],
         structural_note_ids: frozenset[str],
         stage_label: str,
         on_stream: Callable[[StructuredInferenceProgress], None],
     ) -> SummaryBatchResult:
-        """Request summary findings, asking once for a correction of uncitable IDs."""
+        """Request summary findings, asking once for a correction of uncitable IDs. The model sees
+        and cites short note IDs (n1, n2…): citations are checked as it wrote them, and the
+        findings kept carry note ids."""
+        allowed_aliases = frozenset(note_aliases.alias(note_id) for note_id in allowed_note_ids)
+        structural_aliases = frozenset(note_aliases.alias(note_id) for note_id in structural_note_ids)
 
         def on_progress(progress: StructuredInferenceProgress) -> None:
             self._record_inference_progress(
@@ -867,15 +878,21 @@ class AgentRuntime(AgentLoopMixin):
                 on_progress=on_progress,
             )
             findings = SummaryFindingsResult.model_validate_json(response.content)
+            # Against what the batch was sent: the correction request quotes the rejected IDs.
             rejected_note_ids = classify_uncitable_note_ids(
                 result=findings,
-                allowed_note_ids=allowed_note_ids,
-                structural_note_ids=structural_note_ids,
-                request_text=json.dumps(attempt_messages),
+                allowed_note_ids=allowed_aliases,
+                structural_note_ids=structural_aliases,
+                request_text=json.dumps(messages),
             )
+            if rejected_note_ids and correction_round == _SUMMARY_CITATION_CORRECTIONS:
+                findings, rejected_note_ids = self._drop_citations_never_sent(
+                    run=run, stage_label=stage_label, findings=findings, rejected_note_ids=rejected_note_ids,
+                    note_aliases=note_aliases,
+                )
             if not rejected_note_ids:
                 result = attach_summary_coverage(
-                    result=findings,
+                    result=SummaryFindingsResult.model_validate(note_aliases.unaliased(findings.model_dump(mode="json"))),
                     expected_root_ids=expected_root_ids,
                     allowed_note_ids=allowed_note_ids,
                 )
@@ -892,8 +909,9 @@ class AgentRuntime(AgentLoopMixin):
                 parsed=findings.model_dump(mode="json"),
                 purpose=InferencePurpose.SUMMARY_BATCH,
             )
+            # Named by note id where the short ID is one, as written otherwise.
             rejected_detail = "; ".join(
-                f"{note_id} ({reason})" for note_id, reason in rejected_note_ids
+                f"{note_aliases.note_id(note_id)} ({reason})" for note_id, reason in rejected_note_ids
             )
             self._trace_store.append_event(
                 session_key=run.session_key,
@@ -903,7 +921,7 @@ class AgentRuntime(AgentLoopMixin):
                 detail={
                     "correction_round": correction_round,
                     "rejected_note_ids": [
-                        {"note_id": note_id, "reason": reason}
+                        {"note_id": note_aliases.note_id(note_id), "reason": reason}
                         for note_id, reason in rejected_note_ids
                     ],
                 },
@@ -923,6 +941,37 @@ class AgentRuntime(AgentLoopMixin):
                 )
             )
         raise RuntimeError("Summary citation correction loop exited without a result")
+
+    def _drop_citations_never_sent(
+        self,
+        *,
+        run: _RunContext,
+        stage_label: str,
+        findings: SummaryFindingsResult,
+        rejected_note_ids: tuple[tuple[str, str], ...],
+        note_aliases: NoteAliases,
+    ) -> tuple[SummaryFindingsResult, tuple[tuple[str, str], ...]]:
+        """After the correction, citations to notes the batch was never sent (a garbled ID, the
+        maintainer's 10,087-note summary on 2026-11-08) link to nothing: dropped, with any finding
+        left citing nothing, and listed in the diagnostics, so the summary goes on. The others (a
+        heading without content, a note sent but not citable, such as a private one) still stop it."""
+        never_sent = frozenset(note_id for note_id, reason in rejected_note_ids if reason == UNCITABLE_ABSENT_FROM_REQUEST)
+        still_rejected = tuple((note_id, reason) for note_id, reason in rejected_note_ids if note_id not in never_sent)
+        if not never_sent or still_rejected:
+            return findings, rejected_note_ids
+        kept, dropped_finding_count = drop_citations(result=findings, note_ids=never_sent)
+        self._trace_store.append_event(
+            session_key=run.session_key,
+            run_id=run.run_id,
+            event_type="SUMMARY_CITATIONS_DROPPED",
+            label=f"{stage_label}: dropped citations to notes it was never sent",
+            detail={
+                "dropped_note_ids": sorted(note_aliases.note_id(note_id) for note_id in never_sent),
+                "dropped_finding_count": dropped_finding_count,
+            },
+            duration_ms=0.0,
+        )
+        return kept, ()
 
     async def _reduce_staged_summaries(
         self,
@@ -1055,10 +1104,12 @@ class AgentRuntime(AgentLoopMixin):
             stage_index=stage_index,
             group_index=group_index,
             group_count=group_count,
+            note_aliases=state.note_aliases,
         )
         return await self._infer_cited_summary_findings(
             run=run,
             messages=messages,
+            note_aliases=state.note_aliases,
             expected_root_ids=expected_root_ids,
             allowed_note_ids=allowed_note_ids,
             structural_note_ids=frozenset(),

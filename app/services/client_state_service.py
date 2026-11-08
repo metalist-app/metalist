@@ -13,6 +13,7 @@ from app.db.settings_sql import (
     insert_default_settings,
     update_client_preferences_json,
     update_command_palette_usage_json,
+    update_provider_rate_limits_json,
     update_tag_prefix_settings_json,
 )
 from app.models.database import SafeSession
@@ -590,6 +591,12 @@ def rewrite_client_state_storage(
             "tag_prefix_settings_encryption_nonce",
             "tag_prefix_settings_encryption_tag",
         ),
+        # Each model's saved rate limits (saved_rate_limits.py): which models you use.
+        (
+            "provider_rate_limits_json",
+            "provider_rate_limits_encryption_nonce",
+            "provider_rate_limits_encryption_tag",
+        ),
     )
     settings = fetch_settings(connection)
     if settings is None:
@@ -629,6 +636,13 @@ def rewrite_client_state_storage(
                 command_palette_usage_json=stored_value,
                 command_palette_usage_encryption_nonce=next_nonce,
                 command_palette_usage_encryption_tag=next_tag,
+            )
+        elif value_column == "provider_rate_limits_json":
+            update_provider_rate_limits_json(
+                connection,
+                provider_rate_limits_json=stored_value,
+                provider_rate_limits_encryption_nonce=next_nonce,
+                provider_rate_limits_encryption_tag=next_tag,
             )
         else:
             if value_column != "tag_prefix_settings_json":

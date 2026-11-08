@@ -15,6 +15,7 @@ from app.services.agent import provider_limits
 from app.services.agent.provider_limits import (
     RateLimitGate,
     RateLimitedTransport,
+    SavedLimits,
     gate_for,
     limits_from_headers,
 )
@@ -168,3 +169,44 @@ def _most_at_once(gate: RateLimitGate, *, batches: int, tokens: int) -> int:
 
     asyncio.run(run_all())
     return most
+
+
+# Each model's limits are saved in the vault (the maintainer, 2026-11-08): after a restart its
+# batches go out as the saved limits allow, not four at once until a first answer reports them.
+def test_saved_limits_let_every_batch_go_at_once_after_a_restart(saved_rate_limits) -> None:
+    saved_rate_limits.saved[(BASE_URL, MODEL)] = SavedLimits(request_limit=30_000, token_limit=180_000_000)
+    gate = gate_for(base_url=BASE_URL, model=MODEL)
+    assert _most_at_once(gate, batches=36, tokens=500_000) == 36
+
+
+def test_another_model_has_its_own_saved_limits(saved_rate_limits) -> None:
+    saved_rate_limits.saved[(BASE_URL, "model-b")] = SavedLimits(request_limit=30_000, token_limit=180_000_000)
+    gate = gate_for(base_url=BASE_URL, model=MODEL)
+    assert _most_at_once(gate, batches=12, tokens=1_000) == provider_limits.UNKNOWN_LIMITS_CONCURRENCY
+
+
+def test_an_answer_saves_the_limits_only_when_they_change(saved_rate_limits) -> None:
+    changed = {**_openai_headers(requests=29_000, tokens=170_000_000), "x-ratelimit-limit-tokens": "30000000"}
+    transport, _sent = _transport([
+        httpx.Response(200, headers=_openai_headers(requests=29_999, tokens=179_000_000)),
+        httpx.Response(200, headers=_openai_headers(requests=29_998, tokens=178_000_000)),
+        httpx.Response(200, headers=changed),
+    ])
+
+    async def three_requests() -> None:
+        for _ in range(3):
+            await _post(transport)
+
+    asyncio.run(three_requests())
+    # What is left changes with every answer; only the account's limits are saved, once each.
+    assert saved_rate_limits.saves == [
+        ((BASE_URL, MODEL), SavedLimits(request_limit=30_000, token_limit=180_000_000)),
+        ((BASE_URL, MODEL), SavedLimits(request_limit=30_000, token_limit=30_000_000)),
+    ]
+
+
+def test_limits_already_saved_are_not_saved_again(saved_rate_limits) -> None:
+    saved_rate_limits.saved[(BASE_URL, MODEL)] = SavedLimits(request_limit=30_000, token_limit=180_000_000)
+    transport, _sent = _transport([httpx.Response(200, headers=_openai_headers(requests=29_999, tokens=179_000_000))])
+    asyncio.run(_post(transport))
+    assert saved_rate_limits.saves == []

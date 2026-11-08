@@ -163,7 +163,10 @@ result view with:
 Reads take complete trees in visible order until the evidence limit; a result says
 which trees were left unread (readable in a later call) or are too large on their
 own. The model sees short note ids (`n1`, `n2`…) instead of UUIDs and cites them as
-`[[n12]]`; MetaList turns these into ordinary note references as the answer streams.
+`[[n12]]`; MetaList turns these into ordinary note references as the answer streams. A
+summary's batches, condensing stages and final answer use the same short ids (2026-11-08,
+after a summary failed on a miscopied UUID): about 20 tokens less per note, 11% of a generated
+45,000-note vault's evidence.
 
 `summarize_view` is for summarizing, comparing or synthesizing the complete view.
 In an empty view the agent says there is nothing to summarize.
@@ -179,9 +182,14 @@ Cancel (last and tinted red in both). If multiple
 batches are required, the user can summarize everything, use only the leading
 single-payload prefix, or cancel. Complete processing keeps every root tree intact,
 has no cap on the total number of batches, and sends as many model requests at once
-as the provider's rate limits allow (2026-11-07; before, at most four). The first batch
-runs alone to seed provider caching, and its answer reports the account's limits; later
-batches go together and are restored to original scope order before synthesis. A request
+as the provider's rate limits allow (2026-11-07; before, at most four): every batch starts
+at once (2026-11-08; before, the first ran alone to seed provider caching, a whole batch's wait
+for a small share of each batch), four until a first answer reports the account's limits, and
+the findings are restored to original scope order before synthesis. Each model's limits are saved
+in the vault, encrypted like the AI settings, when an answer reports new ones (2026-11-08, database
+version 15, `app/services/agent/saved_rate_limits.py`), so after a restart the batches go out as
+the account allows from the first one; that first answer still corrects them. When several batches fail,
+the lowest-numbered failure is the one reported. A request
 the provider refuses as too many (429) or answers as overloaded waits the time the
 provider names and goes again, so a busy moment no longer fails the summary
 (`app/services/agent/provider_limits.py`).
@@ -204,7 +212,9 @@ streams rather than leaving disabled choices behind.
 
 If the verified batch findings are themselves too large for one synthesis call,
 MetaList condenses them through additional ordered stages until they fit. Exact
-root coverage and disclosed original-note citations are validated at each stage.
+root coverage and disclosed original-note citations are validated at each stage. After one
+correction, a citation to a note the batch was never sent (a garbled ID) is dropped and listed in
+the diagnostics rather than stopping the summary (2026-11-08); other invalid citations still stop it.
 The final answer appears only after every batch succeeds. Failure or cancellation
 stops outstanding work and never presents a partial result as complete.
 

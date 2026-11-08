@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import cached_property
 
 from app.services.agent.evidence_serialization import EvidenceNoteTokenSource
 from app.services.agent.evidence_serialization import EvidenceTreeTokenSource
 from app.services.agent.evidence_serialization import estimate_cached_root_tree_tokens
 from app.services.agent.evidence_serialization import serialize_evidence_note_payload
 from app.services.agent.evidence_serialization import serialize_evidence_result_trees
+from app.services.agent.note_aliases import NoteAliases
 from app.services.agent.retrieval_settings import AgentRetrievalSettings
 from app.services.agent.scope import ScopedSearchSnapshot
 from app.services.agent.token_estimation import estimate_input_tokens
@@ -98,6 +100,12 @@ class InvestigationState:
     @property
     def snapshot(self) -> ScopedSearchSnapshot:
         return self._snapshot
+
+    @cached_property
+    def note_aliases(self) -> NoteAliases:
+        """The short note IDs (n1, n2…) a summary's requests carry: the chat's, from the same
+        snapshot, so its answer's citations translate as the chat's do (note_aliases.py)."""
+        return NoteAliases.from_snapshot(self._snapshot)
 
     @property
     def max_page_approximate_tokens(self) -> int:

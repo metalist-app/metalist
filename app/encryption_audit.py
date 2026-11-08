@@ -251,6 +251,17 @@ _AI_PROVIDER_CREDENTIAL_COLUMNS = frozenset(
     }
 )
 
+# Migration 14→15 added each model's saved rate limits beside the API keys, encrypted like the
+# AI settings (app/services/agent/saved_rate_limits.py).
+_PROVIDER_RATE_LIMIT_COLUMNS = frozenset(
+    {
+        "provider_rate_limits_json",
+        "provider_rate_limits_encryption_nonce",
+        "provider_rate_limits_encryption_tag",
+    }
+)
+_PROVIDER_RATE_LIMITS_DATABASE_VERSION = 15
+
 # Migration 11→12 added the link_icons table. Before version 12 it may be missing, or
 # already present because opening a database creates it ahead of the migration.
 _LINK_ICONS_TABLE = "link_icons"
@@ -288,6 +299,7 @@ _MAIN_SCHEMA_BEFORE_CONTENT_MIGRATIONS = {
             "tag_prefix_settings_encryption_nonce", "tag_prefix_settings_encryption_tag",
             *_OPENAI_CREDENTIAL_COLUMNS,
             *_AI_PROVIDER_CREDENTIAL_COLUMNS,
+            *_PROVIDER_RATE_LIMIT_COLUMNS,
             "session_timeout_minutes", "created_at", "updated_at",
         }
     ),
@@ -425,6 +437,10 @@ _MAIN_PAYLOADS_WITHOUT_SEARCH_HISTORY = (
         "backup_settings_encryption_tag", "text", is_nullable=True,
     ),
     _PayloadSpec(
+        "app_settings", "provider_rate_limits_json", "provider_rate_limits_encryption_nonce",
+        "provider_rate_limits_encryption_tag", "text", is_nullable=True,
+    ),
+    _PayloadSpec(
         "app_settings", "client_preferences_json", "client_preferences_encryption_nonce",
         "client_preferences_encryption_tag", "text", is_nullable=True,
     ),
@@ -558,6 +574,8 @@ _MIGRATION_DEFERRED_PLAINTEXT_FIELDS_BY_DATABASE_VERSION = dict(enumerate((
     frozenset(),
     # version 13
     frozenset(),
+    # version 14
+    frozenset(),
 )))
 
 
@@ -613,6 +631,17 @@ def _main_schema_for_database_version(
         resolved_schema = {
             **resolved_schema,
             "app_settings": resolved_schema["app_settings"] - _AI_PROVIDER_CREDENTIAL_COLUMNS,
+        }
+    # Before version 15 the saved rate limits may be absent, or already added by the on-open
+    # schema helper.
+    if database_version < _PROVIDER_RATE_LIMITS_DATABASE_VERSION and _PROVIDER_RATE_LIMIT_COLUMNS.isdisjoint(
+        actual_app_settings_columns
+    ):
+        if not _PROVIDER_RATE_LIMIT_COLUMNS.issubset(resolved_schema["app_settings"]):
+            raise RuntimeError("Current audit schema is missing the saved rate limit columns")
+        resolved_schema = {
+            **resolved_schema,
+            "app_settings": resolved_schema["app_settings"] - _PROVIDER_RATE_LIMIT_COLUMNS,
         }
     if database_version < _LINK_ICONS_DATABASE_VERSION and _LINK_ICONS_TABLE not in actual_tables:
         resolved_schema = {table: columns for table, columns in resolved_schema.items() if table != _LINK_ICONS_TABLE}

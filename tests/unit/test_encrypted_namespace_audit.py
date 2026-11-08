@@ -877,3 +877,45 @@ def test_version_14_requires_text_versions(tmp_path: Path, version: int, has_add
         assert {(finding.table, finding.field) for finding in report.fatal_findings} == {
             ("file_texts", "reader_version"), ("file_texts", "filter_version"),
         }
+
+
+_PROVIDER_RATE_LIMIT_COLUMNS = (
+    "provider_rate_limits_json", "provider_rate_limits_encryption_nonce", "provider_rate_limits_encryption_tag",
+)
+
+
+# Before version 15 the saved rate limits may be absent, or already added by the on-open schema helper.
+@pytest.mark.parametrize(("version", "has_columns", "allowed"), [(14, False, True), (14, True, True), (15, True, True), (15, False, False)])
+def test_version_15_requires_the_saved_rate_limits(tmp_path: Path, version: int, has_columns: bool, allowed: bool) -> None:
+    namespaces_directory = tmp_path / "namespaces"
+    database_path = _create_namespace_database(namespaces_directory, namespace="private", encryption_enabled=True)
+    with sqlite3.connect(database_path) as connection:
+        if not has_columns:
+            for column in _PROVIDER_RATE_LIMIT_COLUMNS:
+                connection.execute(f"ALTER TABLE app_settings DROP COLUMN {column}")
+        connection.execute(f"PRAGMA user_version = {version}")
+
+    report = audit_all_namespaces(namespaces_directory=namespaces_directory)
+
+    assert report.startup_allowed is allowed, report.render_text()
+    if not allowed:
+        assert {(finding.table, finding.field) for finding in report.fatal_findings} == {
+            ("app_settings", column) for column in _PROVIDER_RATE_LIMIT_COLUMNS
+        }
+
+
+def test_plaintext_saved_rate_limits_in_an_encrypted_namespace_are_reported(tmp_path: Path) -> None:
+    namespaces_directory = tmp_path / "namespaces"
+    database_path = _create_namespace_database(namespaces_directory, namespace="private", encryption_enabled=True)
+    with sqlite3.connect(database_path) as connection:
+        connection.execute(
+            "UPDATE app_settings SET provider_rate_limits_json = "
+            "'[{\"baseUrl\": \"https://api.openai.com/v1\", \"model\": \"gpt-5.6-sol\"}]'"
+        )
+
+    report = audit_all_namespaces(namespaces_directory=namespaces_directory)
+
+    assert report.startup_allowed is False
+    assert ("app_settings", "provider_rate_limits_json") in {
+        (finding.table, finding.field) for finding in report.fatal_findings
+    }

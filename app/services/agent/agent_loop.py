@@ -557,10 +557,14 @@ class AgentLoopMixin:
                     if is_first_delta:
                         text = self._separator(state) + text
                         is_first_delta = False
-                    yield state.content_event(text)
+                    # A summary's answer cites short note IDs, as the agent's own text does.
+                    for translated in state.model_text_events(text):
+                        yield translated
                 elif event["type"] == "done":
                     state.add_operation_references(note_ids=event["reference_note_ids"],
                                                    web_ids=event["reference_web_ids"])
+                    for remaining in state.model_turn_end_events():
+                        yield remaining
                     yield state.done_event()
                 else:
                     yield event

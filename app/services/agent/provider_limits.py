@@ -13,6 +13,8 @@ smallest accounts' limits, and a single 429 failed the whole run. Now:
   provider names (retry-after), or a growing pause without one, and the same request goes
   again, up to MAX_RETRIES times; after that the provider's answer stands, as before.
   The waiting happens below the provider SDK, so every request of every batch has it.
+- Each model's limits are saved in the vault when an answer reports new ones (2026-11-08,
+  saved_rate_limits.py), and a gate made after a restart starts from them.
 """
 
 from __future__ import annotations
@@ -23,12 +25,15 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime
 from email.utils import parsedate_to_datetime
+from typing import Protocol
 from http import HTTPStatus
 import re
 import time
 
 import httpx
 import httpx2
+
+from app.services.agent.saved_rate_limits import DatabaseSavedLimits, SavedLimits
 
 # How many batches go at once before the limits are known, or for a provider that sends none:
 # the number every run used before 2026-11-07.
@@ -138,11 +143,35 @@ async def _pause(seconds: float) -> None:
     await asyncio.sleep(seconds)
 
 
+class SavedLimitsStore(Protocol):
+    """Where each model's limits are kept between runs (the vault: saved_rate_limits.py)."""
+
+    def load(self, *, base_url: str, model: str) -> SavedLimits | None: ...
+
+    def save(self, *, base_url: str, model: str, limits: SavedLimits) -> None: ...
+
+
+_SAVED_LIMITS: SavedLimitsStore = DatabaseSavedLimits()
+
+
+def _saved_limits_of(limits: ProviderLimits) -> SavedLimits:
+    return SavedLimits(request_limit=limits.request_limit, token_limit=limits.token_limit)
+
+
 class RateLimitGate:
     """Admits batches for one endpoint and model while its last known limits have room."""
 
-    def __init__(self) -> None:
+    def __init__(self, saved: SavedLimits | None) -> None:
         self.limits: ProviderLimits | None = None
+        # The limits saved in the vault, as last read or written.
+        self.saved = saved
+        if saved is not None:
+            # A full window of them: the first answer tells what is left.
+            now = time.monotonic()
+            self.limits = ProviderLimits(
+                request_limit=saved.request_limit, remaining_requests=saved.request_limit, requests_reset_at=now,
+                token_limit=saved.token_limit, remaining_tokens=saved.token_limit, tokens_reset_at=now,
+            )
         self._in_flight = 0
         self._in_flight_tokens = 0
         self._waiters: list[asyncio.Future[None]] = []
@@ -202,11 +231,24 @@ _GATES: dict[tuple[str, str], RateLimitGate] = {}
 
 
 def gate_for(*, base_url: str, model: str) -> RateLimitGate:
-    """The gate every batch to this endpoint and model shares, for as long as MetaList runs."""
+    """The gate every batch to this endpoint and model shares, for as long as MetaList runs,
+    starting from the limits saved in the vault."""
     key = (base_url, model)
     if key not in _GATES:
-        _GATES[key] = RateLimitGate()
+        _GATES[key] = RateLimitGate(_SAVED_LIMITS.load(base_url=base_url, model=model))
     return _GATES[key]
+
+
+async def _record(limits: ProviderLimits, *, base_url: str, model: str) -> None:
+    """An answer's limits for its gate, and saved in the vault when the account's limits changed
+    (what is left changes with every answer and is not saved)."""
+    gate = gate_for(base_url=base_url, model=model)
+    gate.record(limits)
+    saved = _saved_limits_of(limits)
+    if gate.saved == saved:
+        return
+    gate.saved = saved
+    await asyncio.to_thread(_SAVED_LIMITS.save, base_url=base_url, model=model, limits=saved)
 
 
 async def _send_with_retries(inner, request, *, base_url: str, model: str):
@@ -219,7 +261,7 @@ async def _send_with_retries(inner, request, *, base_url: str, model: str):
         response = await inner.handle_async_request(request)
         limits = limits_from_headers(response.headers, now=time.monotonic())
         if limits is not None:
-            gate_for(base_url=base_url, model=model).record(limits)
+            await _record(limits, base_url=base_url, model=model)
         if response.status_code not in RETRIED_STATUSES or retry == MAX_RETRIES:
             return response
         seconds = _pause_seconds(response.headers, retry)

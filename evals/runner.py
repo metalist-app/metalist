@@ -6,9 +6,11 @@ import hashlib
 import json
 import time
 
+from app.services.agent.citation_tokens import ShortCitationTranslator
 from app.services.agent.history import record_history
 from app.services.agent.inference import InferenceProviderError
 from app.services.agent.judging import OutputJudgment
+from app.services.agent.note_aliases import NoteAliases
 from app.services.agent.openai_inference import OPENAI_API_BASE_URL
 from app.services.agent.trace import AgentTraceStore
 from evals.models import PreparedCase, PreviousOutput, RegressionCase
@@ -67,6 +69,19 @@ async def call_step(adapter, *, case, step, messages):
     return "".join(chunks)
 
 
+def with_note_ids(output: str, *, kind: str, note_ids_by_alias: dict[str, str]) -> str:
+    """A step's output with the short note IDs (n1, n2…) the request named notes by translated
+    back, as the runtime translates them: in a structured result's note-id fields, and in a text
+    answer's [[nK]] citations."""
+    if kind == "structured":
+        aliases = NoteAliases(tuple(note_ids_by_alias.values()))
+        assert aliases.id_by_alias() == note_ids_by_alias, "The short IDs are n1, n2… in order"
+        return json.dumps(aliases.unaliased(json.loads(output)), ensure_ascii=False)
+    assert kind == "text"
+    translator = ShortCitationTranslator(evidence_ids_by_number=dict, note_ids_by_alias=note_ids_by_alias)
+    return translator.feed(output) + translator.flush()
+
+
 async def evaluate_output(adapter, *, expectation, messages, output, judge):
     if expectation.kind == "action":
         actual = json.loads(output)
@@ -122,10 +137,12 @@ async def run_prepared_case(case, *, prepared, adapter, judge, on_repetition, re
                         for message in step.messages
                     ]
                     output = await call_step(adapter, case=prepared, step=step, messages=messages)
+                    # A later step reads the model's own words; the grade reads the case's note ids.
                     outputs.append(output)
+                    graded = with_note_ids(output, kind=step.kind, note_ids_by_alias=step.note_ids_by_alias)
                     verdict = await evaluate_output(adapter, expectation=step.expectation,
-                        messages=messages, output=output, judge=judge)
-                    results.append({"output": output, **verdict})
+                        messages=messages, output=graded, judge=judge)
+                    results.append({"output": graded, **verdict})
                     if not verdict["correct"]:
                         status = "incorrect"
             # lint: allow-PY001 rationale="persist external provider errors in the repetition report, never count them as correct"

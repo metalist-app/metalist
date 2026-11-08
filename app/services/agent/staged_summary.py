@@ -138,6 +138,23 @@ def classify_uncitable_note_ids(
     return tuple(classified)
 
 
+def drop_citations(
+    *,
+    result: SummaryFindingsResult,
+    note_ids: frozenset[str],
+) -> tuple[SummaryFindingsResult, int]:
+    """result without citations to note_ids, and without the findings left citing nothing;
+    with how many findings were dropped."""
+    if not isinstance(result, SummaryFindingsResult):
+        raise TypeError("result must be SummaryFindingsResult")
+    kept: list[SummaryFinding] = []
+    for finding in result.findings:
+        supporting = [note_id for note_id in finding.supporting_note_ids if note_id not in note_ids]
+        if supporting:
+            kept.append(finding.model_copy(update={"supporting_note_ids": supporting}))
+    return SummaryFindingsResult(findings=kept), len(result.findings) - len(kept)
+
+
 def summarize_partial_findings(
     *,
     partial_output: dict[str, object],

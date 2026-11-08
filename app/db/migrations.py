@@ -422,6 +422,35 @@ def add_link_icons_table(
     return 0
 
 
+PROVIDER_RATE_LIMIT_COLUMNS: tuple[tuple[str, str], ...] = (
+    ("provider_rate_limits_json", "TEXT"),
+    ("provider_rate_limits_encryption_nonce", "BLOB"),
+    ("provider_rate_limits_encryption_tag", "BLOB"),
+)
+
+
+def add_provider_rate_limit_columns(
+    *,
+    connection: sqlite3.Connection,
+    encryption_enabled: bool,  # noqa: ARG001
+    encryption_service: EncryptionService | None,  # noqa: ARG001
+) -> int:
+    """Version 14→15: each model's rate limits, saved beside the API keys and encrypted like
+    them (app/services/agent/saved_rate_limits.py), so a restart starts with them. The on-open
+    schema helper may have added some or all of the columns already; the missing ones are
+    added, then the shape is checked. Nothing is saved until a model's first answer."""
+    columns = _table_columns(connection, table="app_settings")
+    for column, sql_type in PROVIDER_RATE_LIMIT_COLUMNS:
+        if column not in columns:
+            connection.execute(f"ALTER TABLE app_settings ADD COLUMN {column} {sql_type}")
+    missing = {column for column, _sql_type in PROVIDER_RATE_LIMIT_COLUMNS} - _table_columns(
+        connection, table="app_settings",
+    )
+    if missing:
+        raise RuntimeError(f"Database migration 14→15 left saved rate limit columns missing: {sorted(missing)}")
+    return 0
+
+
 # One step per database version, in order: the step at position N upgrades version N to N + 1.
 _MIGRATION_STEPS: tuple[Callable[..., int], ...] = (
     _migration_0_to_1,
@@ -438,6 +467,7 @@ _MIGRATION_STEPS: tuple[Callable[..., int], ...] = (
     add_link_icons_table,
     add_file_texts_table,
     add_text_versions,
+    add_provider_rate_limit_columns,
 )
 _MIGRATIONS: dict[int, Callable[..., int]] = dict(enumerate(_MIGRATION_STEPS))
 assert len(_MIGRATION_STEPS) == CURRENT_DATABASE_VERSION, "every database version below the current one needs a step"

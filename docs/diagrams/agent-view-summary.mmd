@@ -10,9 +10,8 @@ stateDiagram-v2
     LeadingRoots --> OnePayload : later roots omitted, and the answer says so
     OnePayload --> FinalAnswer
     state Batches {
-        [*] --> FirstBatch : seeds the prompt cache
-        FirstBatch --> OtherBatches : up to 4 at once
-        OtherBatches --> [*] : all complete
+        [*] --> AllBatches : every batch at once, within the provider's limits
+        AllBatches --> [*] : all complete
     }
     Batches --> Failed : a batch fails, queued ones do not start, running ones finish
     Batches --> FinalAnswer : findings fit the evidence budget

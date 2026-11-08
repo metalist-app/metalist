@@ -303,8 +303,10 @@ behavior, or cancellation.
 For complete processing, `plan_complete_root_batches()` partitions all permitted
 root trees in canonical order. There is no cap on the number of batches. A root is
 atomic and cannot be divided; if one root cannot fit, the operation fails visibly.
-Batch 1 runs alone to seed the provider cache. Every remaining batch then waits for
-room in the provider's rate limits (`provider_limits.RateLimitGate`, 2026-11-07; before, a
+Every batch starts at once (2026-11-08; before, batch 1 ran alone to seed the provider cache,
+which cost a whole batch's wait: timed with a stand-in AI, one batch's time saved at every size),
+each waiting for room in the provider's rate limits (saved in the vault per model since
+2026-11-08, so a restart starts with them) (`provider_limits.RateLimitGate`, 2026-11-07; before, a
 pool of at most four workers): as many go at once as the remaining requests and tokens
 allow, or four while the limits are unknown (a provider that reports none). A batch emits
 a `writing` preview only once admitted, and a batch admitted after another has failed
@@ -327,11 +329,21 @@ the model returns only findings. Every batch and reduction prompt also carries
 selected notes (blacklisted, search-redacted, password-protected, not whitelisted,
 or missing) contribute no citable IDs, and any other ID is rejected. Tree nodes
 serialized as `is_evidence: false` are structural ancestors whose content was not
-disclosed and are never citable. When a batch or reduction cites an uncitable ID,
+disclosed and are never citable. Every summary request names notes by the run's short note IDs (`n1`, `n2`…, `NoteAliases` on
+`InvestigationState`, the same table as the agent loop's): batches, reductions, the selected-note
+context and the final reference catalog. Citations are checked as the model wrote them and kept
+as note ids; the final answer's `[[nK]]` citations are translated as the agent's own text is
+(2026-11-08). When a batch or reduction cites an uncitable ID,
 MetaList sends one correction request that names each rejected ID and its reason
 (structural placeholder, present in the request but not citable evidence such as
-earlier conversation, or absent from the request). A second failure aborts the
-summary with those reasons and records a `SUMMARY_CITATION_REJECTED` trace event. The final
+earlier conversation, or absent from the request), each judged against what the batch was
+sent, not the correction request, which quotes the rejected IDs back. Each rejection records a
+`SUMMARY_CITATION_REJECTED` trace event. If the corrected answer still cites only notes the batch
+was never sent (a garbled ID: the maintainer's 10,087-note summary failed on one, 2026-11-08),
+those citations are dropped, with any finding left citing nothing, a
+`SUMMARY_CITATIONS_DROPPED` event lists them in the diagnostics, and the summary goes on. A
+private selected note is never sent, so a citation to it is dropped the same way and never
+reaches the answer. Any other uncitable ID after the correction still aborts the summary. The final
 synthesis reference catalog likewise includes the permitted selected-note tree. If
 the combined findings cannot fit in one synthesis request, MetaList recursively
 groups and condenses them, preserving application-owned root coverage and
