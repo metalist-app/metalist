@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+import math
+
 from pydantic import BaseModel
 from pydantic import ConfigDict
 from pydantic import Field
@@ -12,6 +15,20 @@ from app.services.agent.token_estimation import estimate_input_tokens
 SUMMARY_FINDING_MAX_CHARS = 2_000
 SUMMARY_FINDING_MAX_SUPPORTING_NOTES = 24
 SUMMARY_MAX_FINDINGS = 128
+SUMMARY_PROGRESS_COMPLETE_PERCENT = 100
+_SUMMARY_PROGRESS_START_PERCENT = 5
+_COMPLETE_BATCH_STATE = "complete"
+_LEAST_FRACTION_BY_BATCH_STATE = {"queued": 0.0, "writing": 0.0, "responding": 0.5}
+_MOST_FRACTION_FROM_THE_CLOCK = 0.9
+# The bar glides to the estimate (a third of the way about every 1.2 seconds), and creeps toward its
+# ceiling whatever the estimate says, so it cannot stall.
+_BAR_GLIDE_SECONDS = 3.0
+_BAR_CREEP_SECONDS = 50.0
+_BAR_CEILING_PERCENT = 95.0
+_TOKENS_PER_MILLION = 1_000_000
+_FEWEST_TIMED_BATCHES = 2
+# Batches closer in size than this cannot tell startup cost from time per token.
+_LEAST_SIZE_RATIO_FOR_A_LINE = 1.5
 
 
 class SummaryFinding(BaseModel):
@@ -155,28 +172,87 @@ def drop_citations(
     return SummaryFindingsResult(findings=kept), len(result.findings) - len(kept)
 
 
-def summarize_partial_findings(
+@dataclass(frozen=True, slots=True)
+class ModelTiming:
+    """How long a model takes over a batch: a fixed startup cost, then time per token."""
+
+    startup_seconds: float
+    seconds_per_million_tokens: float
+
+    def __post_init__(self) -> None:
+        if not math.isfinite(self.startup_seconds) or self.startup_seconds < 0:
+            raise ValueError("A model's startup time must be zero or more seconds")
+        if not math.isfinite(self.seconds_per_million_tokens) or self.seconds_per_million_tokens <= 0:
+            raise ValueError("A model's time per token must be above zero")
+
+    def expected_seconds(self, tokens: int) -> float:
+        return self.startup_seconds + tokens * self.seconds_per_million_tokens / _TOKENS_PER_MILLION
+
+
+def fit_model_timing(timed_batches: tuple[tuple[int, float], ...]) -> ModelTiming | None:
+    """The line through finished batches (tokens, seconds): two sizes separate startup cost from
+    time per token (the maintainer, 2026-11-08). Batches of about one size, or jitter that gives a
+    line no model could follow, leave only time per token. None until two batches have finished."""
+    if len(timed_batches) < _FEWEST_TIMED_BATCHES:
+        return None
+    sizes = [tokens for tokens, _seconds in timed_batches]
+    seconds = [taken for _tokens, taken in timed_batches]
+    time_per_token_only = ModelTiming(
+        startup_seconds=0.0, seconds_per_million_tokens=sum(seconds) / sum(sizes) * _TOKENS_PER_MILLION,
+    )
+    if max(sizes) < min(sizes) * _LEAST_SIZE_RATIO_FOR_A_LINE:
+        return time_per_token_only
+    mean_size = sum(sizes) / len(sizes)
+    mean_seconds = sum(seconds) / len(seconds)
+    slope = sum((size - mean_size) * (taken - mean_seconds) for size, taken in zip(sizes, seconds)) / sum(
+        (size - mean_size) ** 2 for size in sizes
+    )
+    startup_seconds = mean_seconds - slope * mean_size
+    if slope <= 0 or startup_seconds < 0:
+        return time_per_token_only
+    return ModelTiming(startup_seconds=startup_seconds, seconds_per_million_tokens=slope * _TOKENS_PER_MILLION)
+
+
+def _batch_fraction_done(*, tokens: int, state: str, elapsed_seconds: float, timing: ModelTiming | None) -> float:
+    if state == _COMPLETE_BATCH_STATE:
+        return 1.0
+    least = _LEAST_FRACTION_BY_BATCH_STATE[state]
+    if timing is None:
+        return least
+    return max(least, min(_MOST_FRACTION_FROM_THE_CLOCK, elapsed_seconds / timing.expected_seconds(tokens)))
+
+
+def summary_progress_percent(
     *,
-    partial_output: dict[str, object],
-    tail_characters: int,
-) -> tuple[int, str]:
-    """Return the streamed finding count and the tail of the newest finding text."""
-    if tail_characters < 1:
-        raise ValueError("Preview tail length must be positive")
-    if "findings" not in partial_output:
-        return 0, ""
-    findings = partial_output["findings"]
-    if not isinstance(findings, list):
-        raise TypeError("Partial summary findings must be a list")
-    latest_text = ""
-    for finding in findings:
-        if not isinstance(finding, dict):
-            raise TypeError("Partial summary findings must be objects")
-        if "text" in finding:
-            if not isinstance(finding["text"], str):
-                raise TypeError("Partial summary finding text must be a string")
-            latest_text = finding["text"]
-    return len(findings), latest_text[-tail_characters:]
+    batch_tokens: tuple[int, ...],
+    batch_states: tuple[str, ...],
+    batch_elapsed_seconds: tuple[float, ...],
+    timing: ModelTiming | None,
+) -> int:
+    """How far a summary's batches are, each weighed by its size. Above zero from the first
+    moment; the clock moves a batch up to 90% against the model's timing, a batch counts half
+    once its response starts arriving, and only finishing completes it."""
+    assert len(batch_tokens) == len(batch_states) == len(batch_elapsed_seconds)
+    assert all(tokens > 0 for tokens in batch_tokens)
+    tokens_done = sum(
+        tokens * _batch_fraction_done(tokens=tokens, state=state, elapsed_seconds=elapsed, timing=timing)
+        for tokens, state, elapsed in zip(batch_tokens, batch_states, batch_elapsed_seconds)
+    )
+    percent_to_earn = SUMMARY_PROGRESS_COMPLETE_PERCENT - _SUMMARY_PROGRESS_START_PERCENT
+    return _SUMMARY_PROGRESS_START_PERCENT + int(percent_to_earn * tokens_done / sum(batch_tokens))
+
+
+def advanced_progress_percent(*, shown: float, target: float, seconds: float) -> float:
+    """Where the bar goes next: the estimate says where it should be, but an estimate can jump,
+    stand still or fall behind, and the bar must do none of those (the maintainer, 2026-11-08:
+    "stuck on 27% for like 20 seconds straight"). It glides toward the estimate and always
+    creeps, slower as it nears its ceiling; only every batch finishing fills it."""
+    assert seconds >= 0
+    if target >= SUMMARY_PROGRESS_COMPLETE_PERCENT:
+        return float(SUMMARY_PROGRESS_COMPLETE_PERCENT)
+    glide = (target - shown) * (1 - math.exp(-seconds / _BAR_GLIDE_SECONDS))
+    creep = (_BAR_CEILING_PERCENT - shown) * (1 - math.exp(-seconds / _BAR_CREEP_SECONDS))
+    return shown + max(glide, creep, 0.0)
 
 
 def summary_reference_note_ids(

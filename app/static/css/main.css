@@ -11297,104 +11297,6 @@ html[data-theme="dark"] body.loading::after {
 .ai-chat-tag-controls progress::-moz-progress-bar { background: var(--modal-accent); }
 .ai-chat-tag-controls h2 { margin: 0 0 10px; font-size: 14px; }
 .ai-chat-tag-controls p { margin: 8px 0; line-height: 1.5; }
-#ai-chat-panel .ai-chat-summary-operation .summary-batch-stack {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    max-height: min(260px, 36vh);
-    margin: 8px 0;
-    padding-right: 3px;
-    overflow-y: auto;
-}
-#ai-chat-panel .ai-chat-summary-operation .summary-batch-stack[hidden] { display: none; }
-#ai-chat-panel .ai-chat-summary-operation .summary-batch-preview {
-    flex: none;
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    column-gap: 8px;
-    row-gap: 2px;
-    padding: 5px 8px;
-    border: 1px solid var(--modal-border);
-    border-radius: 6px;
-    background: var(--modal-surface);
-    font-size: 12px;
-    animation: summary-batch-arrive 160ms ease-out;
-}
-#ai-chat-panel .ai-chat-summary-operation .summary-batch-preview.is-complete {
-    padding: 3px 8px;
-    border-color: var(--modal-border);
-    background: transparent;
-}
-#ai-chat-panel .ai-chat-summary-operation .summary-batch-heading {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    color: var(--modal-heading-text);
-    font-weight: 600;
-}
-#ai-chat-panel .ai-chat-summary-operation .summary-batch-heading::before {
-    content: '';
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: var(--modal-accent);
-    animation: summary-batch-pulse 1.1s ease-in-out infinite;
-}
-#ai-chat-panel .ai-chat-summary-operation .summary-batch-meta {
-    color: var(--modal-text-subtle);
-    font-size: 11px;
-    font-variant-numeric: tabular-nums;
-    white-space: nowrap;
-}
-/* Fixed two-line window anchored to the newest streamed text. */
-#ai-chat-panel .ai-chat-summary-operation .summary-batch-ticker {
-    grid-column: 1 / -1;
-    display: flex;
-    flex-direction: column;
-    justify-content: flex-end;
-    height: 2.7em;
-    overflow: hidden;
-    color: var(--modal-text-muted);
-    line-height: 1.35;
-    overflow-wrap: anywhere;
-    -webkit-mask-image: linear-gradient(to bottom, transparent, #000 55%);
-    mask-image: linear-gradient(to bottom, transparent, #000 55%);
-}
-/* Before any finding text arrives (including model reasoning), show a moving shimmer. */
-#ai-chat-panel .ai-chat-summary-operation .summary-batch-ticker:empty {
-    height: 3px;
-    margin: 0.4em 0;
-    border-radius: 2px;
-    background: linear-gradient(90deg, var(--modal-track) 0%, var(--modal-accent) 50%, var(--modal-track) 100%);
-    background-size: 200% 100%;
-    animation: summary-batch-shimmer 1.3s linear infinite;
-    -webkit-mask-image: none;
-    mask-image: none;
-}
-#ai-chat-panel .ai-chat-summary-operation .summary-batch-line {
-    grid-column: 1 / -1;
-    overflow: hidden;
-    color: var(--modal-text-subtle);
-    white-space: nowrap;
-    text-overflow: ellipsis;
-}
-@keyframes summary-batch-pulse {
-    0%, 100% { opacity: 0.35; }
-    50% { opacity: 1; }
-}
-@keyframes summary-batch-shimmer {
-    from { background-position: 100% 0; }
-    to { background-position: -100% 0; }
-}
-@keyframes summary-batch-arrive {
-    from { opacity: 0; transform: translateY(4px); }
-    to { opacity: 1; transform: translateY(0); }
-}
-@media (prefers-reduced-motion: reduce) {
-    #ai-chat-panel .ai-chat-summary-operation .summary-batch-heading::before,
-    #ai-chat-panel .ai-chat-summary-operation .summary-batch-ticker:empty,
-    #ai-chat-panel .ai-chat-summary-operation .summary-batch-preview { animation: none; }
-}
 .ai-chat-tag-controls select {
     width: 100%;
     box-sizing: border-box;
@@ -11448,7 +11350,8 @@ html[data-theme="dark"] body.loading::after {
     line-height: 26px;
 }
 .ai-chat-tag-controls button:disabled { opacity: .5; cursor: default; }
-.ai-chat-tag-controls [data-elapsed] { color: var(--modal-text-subtle); font-variant-numeric: tabular-nums; }
+.ai-chat-tag-controls .bulk-status-row { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 12px; }
+.ai-chat-tag-controls [data-elapsed] { margin-left: auto; color: var(--modal-text-subtle); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .ai-chat-tag-controls [data-error] { color: var(--modal-danger); }
 .ai-chat-tag-controls [data-error]:empty { display: none; }
 

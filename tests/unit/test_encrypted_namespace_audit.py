@@ -904,6 +904,48 @@ def test_version_15_requires_the_saved_rate_limits(tmp_path: Path, version: int,
         }
 
 
+_MODEL_TIMING_COLUMNS = (
+    "model_timings_json", "model_timings_encryption_nonce", "model_timings_encryption_tag",
+)
+
+
+# Before version 16 the saved timings may be absent, or already added by the on-open schema helper.
+@pytest.mark.parametrize(("version", "has_columns", "allowed"), [(15, False, True), (15, True, True), (16, True, True), (16, False, False)])
+def test_version_16_requires_the_saved_model_timings(tmp_path: Path, version: int, has_columns: bool, allowed: bool) -> None:
+    namespaces_directory = tmp_path / "namespaces"
+    database_path = _create_namespace_database(namespaces_directory, namespace="private", encryption_enabled=True)
+    with sqlite3.connect(database_path) as connection:
+        if not has_columns:
+            for column in _MODEL_TIMING_COLUMNS:
+                connection.execute(f"ALTER TABLE app_settings DROP COLUMN {column}")
+        connection.execute(f"PRAGMA user_version = {version}")
+
+    report = audit_all_namespaces(namespaces_directory=namespaces_directory)
+
+    assert report.startup_allowed is allowed, report.render_text()
+    if not allowed:
+        assert {(finding.table, finding.field) for finding in report.fatal_findings} == {
+            ("app_settings", column) for column in _MODEL_TIMING_COLUMNS
+        }
+
+
+def test_plaintext_saved_model_timings_in_an_encrypted_namespace_are_reported(tmp_path: Path) -> None:
+    namespaces_directory = tmp_path / "namespaces"
+    database_path = _create_namespace_database(namespaces_directory, namespace="private", encryption_enabled=True)
+    with sqlite3.connect(database_path) as connection:
+        connection.execute(
+            "UPDATE app_settings SET model_timings_json = "
+            "'[{\"baseUrl\": \"https://api.openai.com/v1\", \"model\": \"gpt-5.6-sol\"}]'"
+        )
+
+    report = audit_all_namespaces(namespaces_directory=namespaces_directory)
+
+    assert report.startup_allowed is False
+    assert ("app_settings", "model_timings_json") in {
+        (finding.table, finding.field) for finding in report.fatal_findings
+    }
+
+
 def test_plaintext_saved_rate_limits_in_an_encrypted_namespace_are_reported(tmp_path: Path) -> None:
     namespaces_directory = tmp_path / "namespaces"
     database_path = _create_namespace_database(namespaces_directory, namespace="private", encryption_enabled=True)

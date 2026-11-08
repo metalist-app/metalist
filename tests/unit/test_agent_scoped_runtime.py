@@ -10,6 +10,8 @@ from types import MappingProxyType
 
 import pytest
 
+from app.services.agent.investigation import InvestigationState
+from app.services.agent.staged_summary import ModelTiming
 from app.services.ai_catalog import AI_CATALOG
 from app.services.agent.context import AgentContextBuilder
 from app.services.agent.inference import InferenceAttempt
@@ -152,6 +154,7 @@ class _FakeInference:
         self.agent_messages: list[dict[str, object]] = []
         self.summary_batch_calls: list[tuple[str, ...]] = []
         self.active_summary_calls = 0
+        self.summary_completion_order: list[str] = []
         self.maximum_parallel_summary_calls = 0
         self.summary_reduction_calls = 0
 
@@ -238,6 +241,7 @@ class _FakeInference:
                 )
             finally:
                 self.active_summary_calls -= 1
+            self.summary_completion_order.append(expected_root_ids[0])
             if self.failed_summary_root_id in expected_root_ids and self.failed_summary_as_agent_error:
                 raise AgentExecutionError(f"Fixture summary failure for {self.failed_summary_root_id}")
             if self.failed_summary_root_id in expected_root_ids:
@@ -394,11 +398,8 @@ def _final_payload(inference: _FakeInference) -> dict[str, object]:
     return aliases.unaliased(payload)
 
 
-def _summary_previews(events: list[dict[str, object]]) -> list[dict[str, object]]:
-    return [
-        event["summary_batch_preview"]
-        for event in events if "summary_batch_preview" in event
-    ]
+def _summary_progress(events: list[dict[str, object]]) -> list[dict[str, object]]:
+    return [event for event in events if "operation" in event and event["operation"] == "summary"]
 
 
 def _summary_snapshot(root_count: int) -> ScopedSearchSnapshot:
@@ -459,13 +460,6 @@ def test_a_many_batch_summary_goes_straight_to_its_batches_in_parallel() -> None
     assert len(inference.summary_batch_calls) == 5
     assert inference.summary_batch_calls[0] == ("root-0",)
     assert inference.maximum_parallel_summary_calls >= 2
-    previews = _summary_previews(events)
-    assert {preview["batch_number"] for preview in previews} == set(range(1, 6))
-    assert all(preview["batch_count"] == 5 for preview in previews)
-    assert all(
-        preview["finding_count"] == 1
-        for preview in previews if preview["status"] == "complete"
-    )
     final_payload = _final_payload(inference)
     assert final_payload["evidence_coverage"]["omitted_result_tree_count"] == 0
     assert tuple(
@@ -491,111 +485,174 @@ def test_a_summary_reaches_its_final_answer_with_every_provider(provider_label: 
     assert inference.final_messages, "the final answer was asked for"
 
 
-def test_staged_summary_previews_show_writing_before_each_completion() -> None:
+def test_summary_progress_is_a_percentage_starting_above_zero() -> None:
     inference = _FakeInference()
-    snapshot = _summary_snapshot(11)
 
     events = _summary_events(
         inference=inference,
-        snapshot=snapshot,
+        snapshot=_summary_snapshot(11),
         message="Summarize every note in this scope.",
         token_limit=900,
     )
 
-    previews = [
-        preview for preview in _summary_previews(events)
-        if preview["status"] != "streaming"
-    ]
-    transitions = [
-        (preview["batch_number"], preview["status"]) for preview in previews
-    ]
-    # The first four together (four at once until the provider's limits are known).
-    assert transitions[:4] == [(number, "writing") for number in range(1, 5)]
-    assert sorted(transitions) == sorted(
-        [(number, "writing") for number in range(1, 12)]
-        + [(number, "complete") for number in range(1, 12)]
+    summarizing = [event for event in _summary_progress(events) if event["label"].startswith("Summarizing")]
+    percents = [event["percent"] for event in summarizing]
+    assert percents[0] == 5
+    assert percents == sorted(percents)
+    assert percents[-1] == 100
+    assert [event["label"] for event in summarizing] == [f"Summarizing · {int(percent)}%" for percent in percents]
+    # Started, first response, finished: the fixture streams twice, and counts once.
+    assert len(summarizing) == 33
+    assert inference.maximum_parallel_summary_calls == 4
+    for event in _summary_progress(events):
+        assert "batch" not in event["label"].replace("batch summaries for final", "")
+        assert "summary_batch_preview" not in event
+
+
+_SUMMARY_MODEL_KEY = ("https://api.openai.com/v1", "gpt-5.6-sol")
+
+
+def _timing_plan(root_count: int, limit: int, *, with_timing_probes: bool):
+    state = InvestigationState.start(
+        snapshot=_summary_snapshot(root_count),
+        settings=AgentRetrievalSettings(max_page_approximate_tokens=limit),
     )
-    writing_batches: set[int] = set()
-    maximum_visible_writing = 0
-    for preview in previews:
-        assert preview["batch_count"] == 11
-        if preview["status"] == "writing":
-            assert preview["finding_count"] == 0
-            assert preview["latest_text"] == ""
-            assert preview["batch_number"] not in writing_batches
-            writing_batches.add(preview["batch_number"])
-        else:
-            assert preview["status"] == "complete"
-            assert preview["finding_count"] == 1
-            writing_batches.remove(preview["batch_number"])
-        maximum_visible_writing = max(maximum_visible_writing, len(writing_batches))
-    assert writing_batches == set()
-    assert maximum_visible_writing == 4
-    labels = [
-        event["label"]
-        for event in events
-        if event["type"] == "bulk_progress" and "summary_batch_preview" in event
-    ]
-    assert all("11 batches" in label for label in labels)
-    assert any("queued" in label for label in labels)
+    return state.plan_complete_root_batches(reserved_approximate_tokens=0, with_timing_probes=with_timing_probes)
 
 
-def test_staged_summary_streams_compact_previews_between_start_and_completion(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(runtime_module, "_SUMMARY_STREAM_INTERVAL_SECONDS", 0.0)
+def test_timing_probes_are_a_tenth_and_a_fifth_of_a_batch_and_every_root_stays_in_order() -> None:
+    plain = _timing_plan(120, 40_000, with_timing_probes=False)
+    plan = _timing_plan(120, 40_000, with_timing_probes=True)
+
+    sizes = [batch.returned_approximate_token_count for batch in plan.batches]
+    assert 0 < sizes[0] <= 4_000
+    assert 4_000 < sizes[1] <= 8_000
+    assert sizes[1] > sizes[0] * 1.5
+    assert all(size <= 40_000 for size in sizes[2:])
+    assert max(sizes[2:]) > 8_000
+    assert len(plan.batches) > len(plain.batches)
+    assert tuple(root for batch in plan.batches for root in batch.result_tree_ids) == tuple(
+        root for batch in plain.batches for root in batch.result_tree_ids)
+
+
+def test_a_view_that_fits_one_batch_gets_no_timing_probes() -> None:
+    assert len(_timing_plan(3, 40_000, with_timing_probes=True).batches) == 1
+
+
+def test_a_root_larger_than_a_timing_probe_stands_alone_instead_of_failing() -> None:
+    plan = _timing_plan(5, 900, with_timing_probes=True)
+    assert [batch.result_tree_ids for batch in plan.batches] == [(f"root-{index}",) for index in range(5)]
+
+
+def test_a_model_with_no_saved_timing_starts_with_two_small_real_batches(saved_model_timings) -> None:
     inference = _FakeInference()
-    inference.large_summary_results = True
+
+    _summary_events(
+        inference=inference,
+        snapshot=_summary_snapshot(120),
+        message="Summarize every note in this scope.",
+        token_limit=40_000,
+    )
+
+    assert len(saved_model_timings.saves) == 1
+    final_payload = _final_payload(inference)
+    roots = [len(summary["covered_root_ids"]) for summary in final_payload["authoritative_batch_findings"]]
+    assert roots[0] < roots[1] < roots[2]
+    assert sum(roots) == 120
+
+
+def test_a_model_with_saved_timing_splits_normally_and_saves_the_new_timing(saved_model_timings) -> None:
+    earlier = ModelTiming(startup_seconds=1.0, seconds_per_million_tokens=1.0)
+    saved_model_timings.saved[_SUMMARY_MODEL_KEY] = earlier
+    inference = _FakeInference()
+
+    _summary_events(
+        inference=inference,
+        snapshot=_summary_snapshot(120),
+        message="Summarize every note in this scope.",
+        token_limit=40_000,
+    )
+
+    final_payload = _final_payload(inference)
+    roots = [len(summary["covered_root_ids"]) for summary in final_payload["authoritative_batch_findings"]]
+    assert roots[0] == roots[1]
+    assert saved_model_timings.saved[_SUMMARY_MODEL_KEY] != earlier
+
+
+def test_a_failed_summary_saves_no_timing(saved_model_timings) -> None:
+    inference = _FakeInference()
+    inference.failed_summary_root_id = "root-0"
+
+    with pytest.raises(RuntimeError, match="Fixture summary failure for root-0"):
+        _collect_summary_events(
+            inference=inference,
+            snapshot=_multi_batch_summary_snapshot(),
+            message="Summarize all of these notes.",
+            token_limit=900,
+            events=[],
+        )
+
+    assert saved_model_timings.saves == []
+
+
+def test_with_saved_timing_the_bar_moves_while_batches_are_still_reading(saved_model_timings, monkeypatch) -> None:
+    monkeypatch.setattr(runtime_module, "_SUMMARY_PROGRESS_TICK_SECONDS", 0.005)
+    saved_model_timings.saved[_SUMMARY_MODEL_KEY] = ModelTiming(startup_seconds=0.1, seconds_per_million_tokens=1.0)
+    inference = _FakeInference()
+    inference.summary_delay_seconds_by_root_id = {f"root-{index}": 0.06 for index in range(11)}
 
     events = _summary_events(
         inference=inference,
+        snapshot=_summary_snapshot(11),
+        message="Summarize every note in this scope.",
+        token_limit=900,
+    )
+
+    summarizing = [event for event in _summary_progress(events) if event["label"].startswith("Summarizing")]
+    percents = [event["percent"] for event in summarizing]
+    # Three events per batch are the batch's own; the rest are the clock moving the bar.
+    assert len(summarizing) > 33
+    assert percents == sorted(percents)
+    assert percents[-1] == 100
+
+
+def test_with_no_timing_at_all_the_bar_still_moves_before_any_batch_answers(monkeypatch) -> None:
+    monkeypatch.setattr(runtime_module, "_SUMMARY_PROGRESS_TICK_SECONDS", 0.005)
+    inference = _FakeInference()
+    inference.summary_delay_seconds_by_root_id = {f"root-{index}": 0.06 for index in range(5)}
+
+    events = _summary_events(
+        inference=inference,
+        snapshot=_multi_batch_summary_snapshot(),
+        message="Summarize every note in this scope.",
+        token_limit=900,
+    )
+
+    summarizing = [event for event in _summary_progress(events) if event["label"].startswith("Summarizing")]
+    # Three events per batch are the batch's own; the rest are the bar creeping.
+    assert len(summarizing) > 15
+
+
+def test_a_streamed_answer_does_not_recount_its_whole_request(monkeypatch) -> None:
+    # The maintainer, 2026-11-08: the bar froze for 20 seconds. Counting a 500,000-token request
+    # for every few words streamed held the event loop, and with it every progress event.
+    counted: list[object] = []
+    monkeypatch.setattr(
+        runtime_module.AgentRuntime, "_wire_request_input_tokens",
+        staticmethod(lambda wire_request: counted.append(wire_request) or 1),
+    )
+
+    _summary_events(
+        inference=_FakeInference(),
         snapshot=_multi_batch_summary_snapshot(),
         message="Summarize all of these notes.",
         token_limit=900,
     )
 
-    batch_one = [
-        preview for preview in _summary_previews(events)
-        if preview["batch_number"] == 1
-    ]
-    assert [preview["status"] for preview in batch_one] == [
-        "writing", "streaming", "streaming", "complete",
-    ]
-    first_stream, second_stream = batch_one[1], batch_one[2]
-    assert first_stream["finding_count"] == 1
-    assert 0 < first_stream["output_tokens"] < second_stream["output_tokens"]
-    # Only the newest tail is sent so the card stays compact.
-    full_text = ("Finding for root-0 detail") * 60
-    assert len(full_text) > 240
-    assert first_stream["latest_text"] == full_text[: len(full_text) // 2][-240:]
-    assert second_stream["latest_text"] == full_text[-240:]
-    completed = batch_one[3]
-    assert completed["finding_count"] == 1
-    assert completed["latest_text"] == full_text[:240]
-    assert completed["output_tokens"] == second_stream["output_tokens"]
+    assert counted == []
 
 
-def test_staged_summary_stream_previews_are_throttled_per_batch() -> None:
-    inference = _FakeInference()
-
-    events = _summary_events(
-        inference=inference,
-        snapshot=_multi_batch_summary_snapshot(),
-        message="Summarize all of these notes.",
-        token_limit=900,
-    )
-
-    for batch_number in range(1, 6):
-        streaming = [
-            preview for preview in _summary_previews(events)
-            if preview["batch_number"] == batch_number
-            and preview["status"] == "streaming"
-        ]
-        # The fixture streams twice within far less than the throttle interval.
-        assert len(streaming) == 1
-
-
-def test_staged_summary_previews_arrive_out_of_order_but_synthesis_is_canonical() -> None:
+def test_batches_finishing_out_of_order_are_synthesized_in_canonical_order() -> None:
     inference = _FakeInference()
     snapshot = _multi_batch_summary_snapshot()
     inference.summary_delay_seconds_by_root_id = {
@@ -612,12 +669,7 @@ def test_staged_summary_previews_arrive_out_of_order_but_synthesis_is_canonical(
         token_limit=900,
     )
 
-    completion_order = [
-        preview["batch_number"]
-        for preview in _summary_previews(events)
-        if preview["status"] == "complete"
-    ]
-    assert completion_order == [1, 5, 4, 3, 2]
+    assert inference.summary_completion_order == ["root-0", "root-4", "root-3", "root-2", "root-1"]
     final_payload = _final_payload(inference)
     assert tuple(
         root_id
@@ -646,11 +698,10 @@ def test_closing_staged_summary_stream_cancels_running_batch_workers() -> None:
             web_settings=DEFAULT_AGENT_WEB_SETTINGS,
             frozen_scope=_multi_batch_summary_snapshot(),
         )
+        progress_events = 0
         async for event in stream:
-            if (
-                "summary_batch_preview" in event
-                and event["summary_batch_preview"]["batch_number"] > 1
-            ):
+            progress_events += "operation" in event and event["operation"] == "summary"
+            if progress_events == 2:
                 break
         await stream.aclose()
         await asyncio.sleep(0)
@@ -660,7 +711,7 @@ def test_closing_staged_summary_stream_cancels_running_batch_workers() -> None:
     assert inference.final_messages == []
 
 
-def test_staged_summary_shows_the_batches_writing_before_the_first_fails() -> None:
+def test_when_a_summary_batch_fails_later_batches_do_not_start() -> None:
     inference = _FakeInference()
     inference.failed_summary_root_id = "root-0"
     events: list[dict[str, object]] = []
@@ -674,14 +725,7 @@ def test_staged_summary_shows_the_batches_writing_before_the_first_fails() -> No
             events=events,
         )
 
-    transitions = [
-        (preview["batch_number"], preview["status"])
-        for preview in _summary_previews(events)
-        if preview["status"] != "streaming"
-    ]
     # Batches 1-4 started together; batch 1 failed, the others finished, batch 5 never started.
-    assert transitions[:4] == [(number, "writing") for number in range(1, 5)]
-    assert sorted(transitions[4:]) == [(number, "complete") for number in range(2, 5)]
     assert sorted(inference.summary_batch_calls) == [(f"root-{index}",) for index in range(4)]
     assert inference.final_messages == []
 
@@ -1138,7 +1182,7 @@ def test_continuing_reuses_the_kept_batches_and_runs_only_the_rest_with_the_orig
     assert sorted(inference.summary_batch_calls) == [("root-2",), ("root-4",), ("root-5",), ("root-6",)]
     assert set(inference.summary_requests) == {_ORIGINAL_SUMMARY_REQUEST}
     assert not any(event["type"] == "bulk_question" for event in events)
-    assert any("label" in event and "Reused 3 of 7 batches from your earlier attempt" in str(event["label"]) for event in events)
+    assert any("label" in event and event["label"] == "Reusing your earlier attempt" for event in events)
     final_payload = _final_payload(inference)
     assert [root for summary in final_payload["authoritative_batch_findings"] for root in summary["covered_root_ids"]] == [
         f"root-{index}" for index in range(7)

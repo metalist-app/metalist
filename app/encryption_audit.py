@@ -262,6 +262,17 @@ _PROVIDER_RATE_LIMIT_COLUMNS = frozenset(
 )
 _PROVIDER_RATE_LIMITS_DATABASE_VERSION = 15
 
+# Migration 15→16 added each model's saved timing beside its rate limits, encrypted like them
+# (app/services/agent/saved_rate_limits.py).
+_MODEL_TIMING_COLUMNS = frozenset(
+    {
+        "model_timings_json",
+        "model_timings_encryption_nonce",
+        "model_timings_encryption_tag",
+    }
+)
+_MODEL_TIMINGS_DATABASE_VERSION = 16
+
 # Migration 11→12 added the link_icons table. Before version 12 it may be missing, or
 # already present because opening a database creates it ahead of the migration.
 _LINK_ICONS_TABLE = "link_icons"
@@ -300,6 +311,7 @@ _MAIN_SCHEMA_BEFORE_CONTENT_MIGRATIONS = {
             *_OPENAI_CREDENTIAL_COLUMNS,
             *_AI_PROVIDER_CREDENTIAL_COLUMNS,
             *_PROVIDER_RATE_LIMIT_COLUMNS,
+            *_MODEL_TIMING_COLUMNS,
             "session_timeout_minutes", "created_at", "updated_at",
         }
     ),
@@ -441,6 +453,10 @@ _MAIN_PAYLOADS_WITHOUT_SEARCH_HISTORY = (
         "provider_rate_limits_encryption_tag", "text", is_nullable=True,
     ),
     _PayloadSpec(
+        "app_settings", "model_timings_json", "model_timings_encryption_nonce",
+        "model_timings_encryption_tag", "text", is_nullable=True,
+    ),
+    _PayloadSpec(
         "app_settings", "client_preferences_json", "client_preferences_encryption_nonce",
         "client_preferences_encryption_tag", "text", is_nullable=True,
     ),
@@ -576,6 +592,8 @@ _MIGRATION_DEFERRED_PLAINTEXT_FIELDS_BY_DATABASE_VERSION = dict(enumerate((
     frozenset(),
     # version 14
     frozenset(),
+    # version 15
+    frozenset(),
 )))
 
 
@@ -642,6 +660,16 @@ def _main_schema_for_database_version(
         resolved_schema = {
             **resolved_schema,
             "app_settings": resolved_schema["app_settings"] - _PROVIDER_RATE_LIMIT_COLUMNS,
+        }
+    # Before version 16 the saved timings may be absent, or already added by the on-open schema helper.
+    if database_version < _MODEL_TIMINGS_DATABASE_VERSION and _MODEL_TIMING_COLUMNS.isdisjoint(
+        actual_app_settings_columns
+    ):
+        if not _MODEL_TIMING_COLUMNS.issubset(resolved_schema["app_settings"]):
+            raise RuntimeError("Current audit schema is missing the saved model timing columns")
+        resolved_schema = {
+            **resolved_schema,
+            "app_settings": resolved_schema["app_settings"] - _MODEL_TIMING_COLUMNS,
         }
     if database_version < _LINK_ICONS_DATABASE_VERSION and _LINK_ICONS_TABLE not in actual_tables:
         resolved_schema = {table: columns for table, columns in resolved_schema.items() if table != _LINK_ICONS_TABLE}

@@ -34,7 +34,8 @@ tab state, tag activity, reminders, cached link URLs/titles and site icons, clie
 and persisted AI API keys (one slot per provider: OpenAI, and from database
 version 11 Claude and Gemini), and from database version 15 each model's saved rate limits
 (`app_settings.provider_rate_limits_json`: endpoint, model and its limits per minute, which
-say which models you use). The authoritative payload/schema inventory is
+say which models you use), and from database version 16 each model's saved timing
+(`app_settings.model_timings_json`: endpoint, model, its startup cost and time per token). The authoritative payload/schema inventory is
 in `app/encryption_audit.py`.
 
 A folder dropped on the page for import is not covered until it is imported:

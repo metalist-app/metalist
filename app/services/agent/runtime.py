@@ -44,7 +44,12 @@ from app.services.agent.staged_summary import estimate_summary_results_tokens
 from app.services.agent.staged_summary import partition_summary_results
 from app.services.agent.staged_summary import structural_placeholder_note_ids
 from app.services.agent.staged_summary import summary_reference_note_ids
-from app.services.agent.staged_summary import summarize_partial_findings
+from app.services.agent.saved_rate_limits import DatabaseSavedTimings
+from app.services.agent.staged_summary import ModelTiming
+from app.services.agent.staged_summary import advanced_progress_percent
+from app.services.agent.staged_summary import SUMMARY_PROGRESS_COMPLETE_PERCENT
+from app.services.agent.staged_summary import fit_model_timing
+from app.services.agent.staged_summary import summary_progress_percent
 from app.services.agent.prompt_settings import AgentPromptSet
 from app.services.agent.retrieval_settings import AgentRetrievalSettings
 from app.services.agent.skill_settings import AgentSkill
@@ -77,40 +82,39 @@ _FINAL_RESPONSE_MAX_ATTEMPTS = 2
 # One corrective request when a summary cites IDs that were not disclosed as evidence.
 _SUMMARY_CITATION_CORRECTIONS = 1
 # Streamed batch previews are throttled per batch and trimmed to a compact tail.
-_SUMMARY_STREAM_INTERVAL_SECONDS = 0.3
-_SUMMARY_PREVIEW_TAIL_CHARACTERS = 240
 # While the final response streams, its output-token count is reported again
 # after at least this many more tokens.
 _OUTPUT_PROGRESS_REPORT_TOKENS = 8
 
 
 
+# How often a running summary's bar is moved by the clock.
+_SUMMARY_PROGRESS_TICK_SECONDS = 0.5
+# The bar's value is sent to a tenth of a percent: it moves in small steps.
+_SUMMARY_PROGRESS_DECIMALS = 1
+_SAVED_TIMINGS = DatabaseSavedTimings()
+
+
 @dataclass(frozen=True, slots=True)
 class _SummaryBatchStarted:
     batch_index: int
+    started_at: float
 
 
 @dataclass(frozen=True, slots=True)
-class _SummaryBatchStreaming:
+class _SummaryBatchResponding:
     batch_index: int
-    finding_count: int
-    latest_text: str
-    output_tokens: int
-
-    def __post_init__(self) -> None:
-        assert self.finding_count >= 0
-        assert self.output_tokens >= 0
-        assert len(self.latest_text) <= _SUMMARY_PREVIEW_TAIL_CHARACTERS
 
 
 @dataclass(frozen=True, slots=True)
 class _SummaryBatchCompleted:
     batch_index: int
     summary: SummaryBatchResult
+    finished_at: float
 
 
 _SummaryBatchTransition = (
-    _SummaryBatchStarted | _SummaryBatchStreaming | _SummaryBatchCompleted
+    _SummaryBatchStarted | _SummaryBatchResponding | _SummaryBatchCompleted
 )
 
 
@@ -231,7 +235,11 @@ class AgentRuntime(AgentLoopMixin):
             approx_input_tokens=route_tokens,
         )
         extraction_before = snapshot.text_extraction.reading()
-        plan_batches = partial(state.plan_complete_root_batches, reserved_approximate_tokens=selected_note_tokens)
+        saved_timing = await asyncio.to_thread(_SAVED_TIMINGS.load, base_url=run.base_url, model=run.selected_model)
+        plan_batches = partial(
+            state.plan_complete_root_batches, reserved_approximate_tokens=selected_note_tokens,
+            with_timing_probes=saved_timing is None,
+        )
         # lint: allow-PY001 rationale="translate a user-configured evidence budget overflow into a concise operation failure"
         try:
             batch_plan = await read_notes_off_request_loop(snapshot=snapshot, read_notes=plan_batches)
@@ -267,6 +275,7 @@ class AgentRuntime(AgentLoopMixin):
                         plan=batch_plan,
                         batch_keys=batch_keys,
                         reused=reused,
+                        saved_timing=saved_timing,
                     )) as staged_events:
                         async for event in staged_events:
                             yield event
@@ -280,6 +289,7 @@ class AgentRuntime(AgentLoopMixin):
                 plan=batch_plan,
                 batch_keys=batch_keys,
                 reused={},
+                saved_timing=saved_timing,
             )) as staged_events:
                 async for event in staged_events:
                     yield event
@@ -420,6 +430,7 @@ class AgentRuntime(AgentLoopMixin):
         plan: CompleteRootBatchPlan,
         batch_keys: tuple[str, ...],
         reused: dict[int, SummaryBatchResult],
+        saved_timing: ModelTiming | None,
     ) -> AsyncIterator[dict[str, object]]:
         """Batches, condensing and the final answer. If anything fails or the run
         stops, the finished batches are kept (summary_batch_store.py) so the summary
@@ -442,6 +453,7 @@ class AgentRuntime(AgentLoopMixin):
                 skill=skill,
                 plan=plan,
                 summaries=summaries,
+                saved_timing=saved_timing,
             )) as batch_events:
                 async for event in batch_events:
                     yield event
@@ -467,8 +479,7 @@ class AgentRuntime(AgentLoopMixin):
                     "operation": "summary",
                     "committing": False,
                     "label": "Condensing batch summaries for final synthesis",
-                    "completed_tokens": plan.approximate_token_count,
-                    "total_tokens": plan.approximate_token_count,
+                    "percent": SUMMARY_PROGRESS_COMPLETE_PERCENT,
                 }
                 ordered_summaries = await self._reduce_staged_summaries(
                     run=run,
@@ -482,11 +493,8 @@ class AgentRuntime(AgentLoopMixin):
                 "type": "bulk_progress",
                 "operation": "summary",
                 "committing": False,
-                "label": (
-                    f"Writing final answer from {len(plan.batches)} batch summaries"
-                ),
-                "completed_tokens": plan.approximate_token_count,
-                "total_tokens": plan.approximate_token_count,
+                "label": "Writing the final answer",
+                "percent": SUMMARY_PROGRESS_COMPLETE_PERCENT,
             }
             final_messages, reference_note_ids = (
                 self._context_builder.build_staged_summary_final_messages(
@@ -537,40 +545,76 @@ class AgentRuntime(AgentLoopMixin):
         skill: AgentSkill,
         plan: CompleteRootBatchPlan,
         summaries: list[SummaryBatchResult | None],
+        saved_timing: ModelTiming | None,
     ) -> AsyncIterator[dict[str, object]]:
         """Run every batch through a worker pool the provider's limits bound (provider_limits.py).
 
         ``summaries`` arrives with any batches reused from a failed attempt already
         filled in; the others are filled in canonical batch order, with one progress
-        event for every batch transition, including throttled previews of streamed
-        findings. When a batch fails, batches not started yet do not start, the ones
+        event each time a batch starts, starts responding and finishes, and the clock moves the
+        bar between them against the model's timing. When a batch fails, batches not started yet do not start, the ones
         running finish (their results stay in ``summaries`` to be kept), and the first
         failure then propagates, so no final synthesis runs on partial results.
         """
         batch_count = len(plan.batches)
         assert batch_count >= _MIN_STAGED_SUMMARY_BATCHES
         assert len(summaries) == batch_count
-        batch_states = ["queued"] * batch_count
-        batch_output_tokens = [0] * batch_count
-        completed_tokens = 0
-        for index, summary in enumerate(summaries):
-            if summary is not None:
-                batch_states[index] = "complete"
-                completed_tokens += plan.batches[index].returned_approximate_token_count
-        reused_count = batch_states.count("complete")
-        if reused_count:
+        batch_states = ["complete" if summary is not None else "queued" for summary in summaries]
+        batch_sizes = tuple(batch.returned_approximate_token_count for batch in plan.batches)
+
+        batch_started_at = [0.0] * batch_count
+        timed_batches: list[tuple[int, float]] = []
+        def timing_in_use() -> ModelTiming | None:
+            """This run's own batches once two have finished; until then what was saved, if anything."""
+            fitted = fit_model_timing(tuple(timed_batches))
+            if fitted is not None:
+                return fitted
+            return saved_timing
+
+        def estimated_percent() -> int:
+            now = time.monotonic()
+            return summary_progress_percent(
+                batch_tokens=batch_sizes,
+                batch_states=tuple(batch_states),
+                batch_elapsed_seconds=tuple(
+                    now - started_at if state in ("writing", "responding") else 0.0
+                    for state, started_at in zip(batch_states, batch_started_at)
+                ),
+                timing=timing_in_use(),
+            )
+
+        shown_percent = float(estimated_percent())
+        shown_at = time.monotonic()
+
+        def percent_done() -> float:
+            nonlocal shown_percent, shown_at
+            now = time.monotonic()
+            shown_percent = advanced_progress_percent(
+                shown=shown_percent, target=estimated_percent(), seconds=now - shown_at,
+            )
+            shown_at = now
+            return round(shown_percent, _SUMMARY_PROGRESS_DECIMALS)
+
+        def summarizing_event(percent: float) -> dict[str, object]:
+            return {
+                "type": "bulk_progress",
+                "operation": "summary",
+                "committing": False,
+                "label": f"Summarizing · {int(percent)}%",
+                "percent": percent,
+            }
+
+        if "complete" in batch_states:
             yield {
                 "type": "bulk_progress",
                 "operation": "summary",
                 "committing": False,
-                "label": f"Reused {reused_count} of {batch_count} batches from your earlier attempt",
-                "completed_tokens": completed_tokens,
-                "total_tokens": plan.approximate_token_count,
+                "label": "Reusing your earlier attempt",
+                "percent": percent_done(),
             }
         transitions: asyncio.Queue[_SummaryBatchTransition] = asyncio.Queue()
 
         def apply_transition(transition: _SummaryBatchTransition) -> dict[str, object]:
-            nonlocal completed_tokens
             index = transition.batch_index
             if not 0 <= index < batch_count:
                 raise RuntimeError(f"Summary batch index {index} is outside the plan")
@@ -579,84 +623,36 @@ class AgentRuntime(AgentLoopMixin):
                 if batch_state != "queued":
                     raise RuntimeError(f"Summary batch {index + 1} started more than once")
                 batch_states[index] = "writing"
-                status, finding_count, latest_text = "writing", 0, ""
-            elif isinstance(transition, _SummaryBatchStreaming):
+                batch_started_at[index] = transition.started_at
+            elif isinstance(transition, _SummaryBatchResponding):
                 if batch_state != "writing":
-                    raise RuntimeError(
-                        f"Summary batch {index + 1} streamed outside its request"
-                    )
-                batch_output_tokens[index] = transition.output_tokens
-                status = "streaming"
-                finding_count = transition.finding_count
-                latest_text = transition.latest_text
+                    raise RuntimeError(f"Summary batch {index + 1} responded outside its request")
+                batch_states[index] = "responding"
             else:
                 assert isinstance(transition, _SummaryBatchCompleted)
                 if batch_state == "complete":
-                    raise RuntimeError(
-                        f"Summary batch {index + 1} completed more than once"
-                    )
-                if batch_state != "writing":
-                    raise RuntimeError(
-                        f"Summary batch {index + 1} completed before it started"
-                    )
+                    raise RuntimeError(f"Summary batch {index + 1} completed more than once")
+                if batch_state not in ("writing", "responding"):
+                    raise RuntimeError(f"Summary batch {index + 1} completed before it started")
                 batch_states[index] = "complete"
                 summaries[index] = transition.summary
-                completed_tokens += plan.batches[index].returned_approximate_token_count
-                findings = transition.summary.findings
-                status, finding_count = "complete", len(findings)
-                latest_text = ""
-                if findings:
-                    latest_text = findings[0].text[:_SUMMARY_PREVIEW_TAIL_CHARACTERS]
-            complete_count = batch_states.count("complete")
-            writing_count = batch_states.count("writing")
-            queued_count = batch_states.count("queued")
-            assert complete_count + writing_count + queued_count == batch_count
-            return {
-                "type": "bulk_progress",
-                "operation": "summary",
-                "committing": False,
-                "label": (
-                    f"Summarizing {batch_count} batches · {complete_count} complete · "
-                    f"{writing_count} writing · {queued_count} queued"
-                ),
-                "completed_tokens": completed_tokens,
-                "total_tokens": plan.approximate_token_count,
-                "summary_batch_preview": {
-                    "batch_number": index + 1,
-                    "batch_count": batch_count,
-                    "status": status,
-                    "finding_count": finding_count,
-                    "latest_text": latest_text,
-                    "output_tokens": batch_output_tokens[index],
-                },
-            }
+                timed_batches.append((batch_sizes[index], transition.finished_at - batch_started_at[index]))
+            return summarizing_event(percent_done())
 
-        def stream_reporter(index: int) -> Callable[[StructuredInferenceProgress], None]:
-            last_reported_at = -math.inf
+        def first_response_reporter(index: int) -> Callable[[StructuredInferenceProgress], None]:
+            has_reported = False
 
             def report(progress: StructuredInferenceProgress) -> None:
-                nonlocal last_reported_at
-                if progress.phase != "output_progress":
+                nonlocal has_reported
+                if progress.phase != "output_progress" or has_reported:
                     return
-                reported_at = time.monotonic()
-                if reported_at - last_reported_at < _SUMMARY_STREAM_INTERVAL_SECONDS:
-                    return
-                last_reported_at = reported_at
-                finding_count, latest_text = summarize_partial_findings(
-                    partial_output=progress.partial_output,
-                    tail_characters=_SUMMARY_PREVIEW_TAIL_CHARACTERS,
-                )
-                transitions.put_nowait(_SummaryBatchStreaming(
-                    batch_index=index,
-                    finding_count=finding_count,
-                    latest_text=latest_text,
-                    output_tokens=progress.output_tokens_received,
-                ))
+                has_reported = True
+                transitions.put_nowait(_SummaryBatchResponding(batch_index=index))
 
             return report
 
         async def summarize_batch(index: int) -> None:
-            transitions.put_nowait(_SummaryBatchStarted(batch_index=index))
+            transitions.put_nowait(_SummaryBatchStarted(batch_index=index, started_at=time.monotonic()))
             summary = await self._infer_staged_summary_batch(
                 run=run,
                 canonical_messages=canonical_messages,
@@ -666,10 +662,10 @@ class AgentRuntime(AgentLoopMixin):
                 evidence_payload=plan.batches[index],
                 batch_index=index,
                 batch_count=batch_count,
-                on_stream=stream_reporter(index),
+                on_stream=first_response_reporter(index),
             )
             transitions.put_nowait(
-                _SummaryBatchCompleted(batch_index=index, summary=summary)
+                _SummaryBatchCompleted(batch_index=index, summary=summary, finished_at=time.monotonic())
             )
 
         gate = gate_for(base_url=run.base_url, model=run.selected_model)
@@ -711,6 +707,7 @@ class AgentRuntime(AgentLoopMixin):
                     try:
                         done, _pending = await asyncio.wait(
                             {next_transition, *running_workers},
+                            timeout=_SUMMARY_PROGRESS_TICK_SECONDS,
                             return_when=asyncio.FIRST_COMPLETED,
                         )
                     finally:
@@ -725,6 +722,11 @@ class AgentRuntime(AgentLoopMixin):
                             has_failed = True
                     if next_transition in done:
                         yield apply_transition(next_transition.result())
+                    else:
+                        percent_before_tick = round(shown_percent, _SUMMARY_PROGRESS_DECIMALS)
+                        percent = percent_done()
+                        if percent > percent_before_tick:
+                            yield summarizing_event(percent)
                 if failures:
                     raise failures[min(failures)]
             finally:
@@ -743,6 +745,9 @@ class AgentRuntime(AgentLoopMixin):
                     yield event
         if batch_states != ["complete"] * batch_count:
             raise RuntimeError("Staged summary workers stopped before every batch completed")
+        timing = fit_model_timing(tuple(timed_batches))
+        if timing is not None:
+            await asyncio.to_thread(_SAVED_TIMINGS.save, base_url=run.base_url, model=run.selected_model, timing=timing)
 
     async def _infer_staged_summary_batch(
         self,
@@ -1173,13 +1178,15 @@ class AgentRuntime(AgentLoopMixin):
         progress: StructuredInferenceProgress,
         purpose: InferencePurpose,
     ) -> None:
+        # Before anything else: building the event counts the whole request's tokens, and this
+        # runs for every few words streamed, on the loop every progress event waits for.
+        if progress.phase == "output_progress":
+            return
         event = self._progress_status_event(
             progress,
             purpose=purpose,
             provider_label=self._provider_label,
         )
-        if progress.phase == "output_progress":
-            return
         if progress.phase == "attempt_started":
             self._record_wire_request(
                 run=run,

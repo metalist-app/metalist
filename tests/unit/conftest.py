@@ -19,6 +19,7 @@ import pytest
 from app.security import rendered_html
 from app.services import link_titles
 from app.services.agent import provider_limits
+from app.services.agent import runtime as agent_runtime_module
 from app.services.file_text_search import file_texts
 
 
@@ -161,6 +162,29 @@ def saved_rate_limits(monkeypatch):
     """A unit test's AI calls save and read rate limits in memory, not in a vault it may not have."""
     store = _SavedRateLimitsInMemory()
     monkeypatch.setattr(provider_limits, "_SAVED_LIMITS", store)
+    return store
+
+
+class _SavedTimingsInMemory:
+    """The vault's saved model timings for unit tests (saved_rate_limits.py writes app_settings)."""
+
+    def __init__(self) -> None:
+        self.saved: dict[tuple[str, str], object] = {}
+        self.saves: list[tuple[tuple[str, str], object]] = []
+
+    def load(self, *, base_url: str, model: str):
+        return self.saved.get((base_url, model))
+
+    def save(self, *, base_url: str, model: str, timing) -> None:
+        self.saved[(base_url, model)] = timing
+        self.saves.append(((base_url, model), timing))
+
+
+@pytest.fixture(autouse=True)
+def saved_model_timings(monkeypatch):
+    """A unit test's summaries save and read model timings in memory, not in a vault it may not have."""
+    store = _SavedTimingsInMemory()
+    monkeypatch.setattr(agent_runtime_module, "_SAVED_TIMINGS", store)
     return store
 
 

@@ -451,6 +451,35 @@ def add_provider_rate_limit_columns(
     return 0
 
 
+MODEL_TIMING_COLUMNS: tuple[tuple[str, str], ...] = (
+    ("model_timings_json", "TEXT"),
+    ("model_timings_encryption_nonce", "BLOB"),
+    ("model_timings_encryption_tag", "BLOB"),
+)
+
+
+def add_model_timing_columns(
+    *,
+    connection: sqlite3.Connection,
+    encryption_enabled: bool,  # noqa: ARG001
+    encryption_service: EncryptionService | None,  # noqa: ARG001
+) -> int:
+    """Version 15→16: each model's timing, saved beside its rate limits and encrypted like them
+    (app/services/agent/saved_rate_limits.py), so a summary's bar moves from its first second. The
+    on-open schema helper may have added some or all of the columns already; the missing ones are
+    added, then the shape is checked. Nothing is saved until a model's first finished summary."""
+    columns = _table_columns(connection, table="app_settings")
+    for column, sql_type in MODEL_TIMING_COLUMNS:
+        if column not in columns:
+            connection.execute(f"ALTER TABLE app_settings ADD COLUMN {column} {sql_type}")
+    missing = {column for column, _sql_type in MODEL_TIMING_COLUMNS} - _table_columns(
+        connection, table="app_settings",
+    )
+    if missing:
+        raise RuntimeError(f"Database migration 15→16 left saved model timing columns missing: {sorted(missing)}")
+    return 0
+
+
 # One step per database version, in order: the step at position N upgrades version N to N + 1.
 _MIGRATION_STEPS: tuple[Callable[..., int], ...] = (
     _migration_0_to_1,
@@ -468,6 +497,7 @@ _MIGRATION_STEPS: tuple[Callable[..., int], ...] = (
     add_file_texts_table,
     add_text_versions,
     add_provider_rate_limit_columns,
+    add_model_timing_columns,
 )
 _MIGRATIONS: dict[int, Callable[..., int]] = dict(enumerate(_MIGRATION_STEPS))
 assert len(_MIGRATION_STEPS) == CURRENT_DATABASE_VERSION, "every database version below the current one needs a step"

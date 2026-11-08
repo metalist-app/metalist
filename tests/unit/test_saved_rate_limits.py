@@ -126,8 +126,7 @@ def test_version_14_gains_the_saved_rate_limits(tmp_path: Path, encrypted: bool,
             assert NEW_COLUMNS <= {row[1] for row in connection.execute("PRAGMA table_info(app_settings)")}
             return result.applied_versions
 
-    assert CURRENT_DATABASE_VERSION == 15
-    assert migrate() == (15,)
+    assert migrate() == (15, 16)
     assert migrate() == ()
     with closing(sqlite3.connect(notes)) as connection:
         row = connection.execute("SELECT provider_rate_limits_json FROM app_settings").fetchone()

@@ -75,8 +75,7 @@ export async function checkAdditionalStateTransitions(page) {
           ? [{type:'bulk_progress', label:'Testing unchanged completion', committing:false}, {type:'bulk_complete', changed:false}, final]
           : scenario === 'summary'
           // A summary asks nothing first: its first event is a batch's progress.
-          ? [{type:'bulk_progress', operation:'summary', committing:false, label:'Summarizing 2 batches', completed_tokens:0, total_tokens:10,
-              summary_batch_preview:{batch_number:1, batch_count:2, status:'writing', finding_count:0, latest_text:'', output_tokens:0}},
+          ? [{type:'bulk_progress', operation:'summary', committing:false, label:'Summarizing · 5%', percent:5},
              {type:'bulk_complete', changed:false}, final]
           : [{type:'thinking_delta', text:' ', rendered_text:''},
              {type:'content_delta', text:'Local simulated answer', rendered_text:final.rendered_content, reference_note_ids:[], reference_web_ids:[]},

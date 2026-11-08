@@ -15,6 +15,9 @@ from app.services.agent.retrieval_settings import AgentRetrievalSettings
 from app.services.agent.scope import ScopedSearchSnapshot
 from app.services.agent.token_estimation import estimate_input_tokens
 
+# The first two batches for a model with no saved timing, as shares of a batch: a tenth, a fifth.
+_TIMING_PROBE_DIVISORS = (10, 5)
+
 
 @dataclass(frozen=True, slots=True)
 class InvestigationEvidencePayload:
@@ -233,8 +236,11 @@ class InvestigationState:
         self,
         *,
         reserved_approximate_tokens: int,
+        with_timing_probes: bool,
     ) -> CompleteRootBatchPlan:
-        """Partition the entire frozen scope without splitting a root tree."""
+        """Partition the entire frozen scope without splitting a root tree. For a model whose
+        timing is not known yet, the first two batches are small and of different sizes: real
+        batches whose times separate its startup cost from its time per token."""
         assert 0 <= reserved_approximate_tokens <= (
             self._settings.max_page_approximate_tokens
         )
@@ -243,9 +249,7 @@ class InvestigationState:
             - reserved_approximate_tokens
         )
         note_ids_by_root_id = self._note_ids_by_root_id()
-        batches: list[InvestigationEvidencePayload] = []
-        batch_root_ids: list[str] = []
-        batch_token_count = 0
+        root_costs: list[tuple[str, int]] = []
         for root_id in self._snapshot.ordered_root_ids:
             root_token_count = self._full_root_token_cost(
                 root_id=root_id,
@@ -257,7 +261,19 @@ class InvestigationState:
                     f"{root_token_count:,} tokens, exceeding the configured "
                     f"per-batch evidence limit of {batch_limit:,} tokens"
                 )
-            if batch_root_ids and batch_token_count + root_token_count > batch_limit:
+            root_costs.append((root_id, root_token_count))
+        needs_probes = with_timing_probes and sum(cost for _root_id, cost in root_costs) > batch_limit
+
+        def limit_of_batch(batch_index: int) -> int:
+            if needs_probes and batch_index < len(_TIMING_PROBE_DIVISORS):
+                return batch_limit // _TIMING_PROBE_DIVISORS[batch_index]
+            return batch_limit
+
+        batches: list[InvestigationEvidencePayload] = []
+        batch_root_ids: list[str] = []
+        batch_token_count = 0
+        for root_id, root_token_count in root_costs:
+            if batch_root_ids and batch_token_count + root_token_count > limit_of_batch(len(batches)):
                 batches.append(self._payload_for_roots(tuple(batch_root_ids)))
                 batch_root_ids = []
                 batch_token_count = 0

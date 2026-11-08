@@ -13,6 +13,7 @@ from app.db.settings_sql import (
     insert_default_settings,
     update_client_preferences_json,
     update_command_palette_usage_json,
+    update_model_timings_json,
     update_provider_rate_limits_json,
     update_tag_prefix_settings_json,
 )
@@ -602,6 +603,12 @@ def rewrite_client_state_storage(
             "provider_rate_limits_encryption_nonce",
             "provider_rate_limits_encryption_tag",
         ),
+        # Each model's saved timing (saved_rate_limits.py): which models you use.
+        (
+            "model_timings_json",
+            "model_timings_encryption_nonce",
+            "model_timings_encryption_tag",
+        ),
     )
     settings = fetch_settings(connection)
     if settings is None:
@@ -648,6 +655,13 @@ def rewrite_client_state_storage(
                 provider_rate_limits_json=stored_value,
                 provider_rate_limits_encryption_nonce=next_nonce,
                 provider_rate_limits_encryption_tag=next_tag,
+            )
+        elif value_column == "model_timings_json":
+            update_model_timings_json(
+                connection,
+                model_timings_json=stored_value,
+                model_timings_encryption_nonce=next_nonce,
+                model_timings_encryption_tag=next_tag,
             )
         else:
             if value_column != "tag_prefix_settings_json":

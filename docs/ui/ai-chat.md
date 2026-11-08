@@ -37,7 +37,7 @@
   enough to diagnose it; Agent Debug remains for the raw requests and responses
   (`app/services/agent/failure_explanations.py`).
 - OpenAI models sometimes wrap a citation in ChatGPT's own markup (U+E200 `cite` U+E202 … U+E201), which would show as boxes and a stray "cite". `ChatTurnStream` removes it as the answer streams (`strip_provider_citation_markup`, holding back markup that has not closed yet), keeping MetaList's own `[[…]]` citations inside it, so the chat, the saved answer and copied text never contain it.
-- A whole-view summary that fails or is stopped keeps its finished batches for the chat (the explanation says how many); asking again ("try that again") continues it: only the remaining batches run, with the original question, and the progress shows "Reused N of M batches from your earlier attempt". A different question starts fresh.
+- A whole-view summary that fails or is stopped keeps its finished batches for the chat (the explanation says how many); asking again ("try that again") continues it: only the remaining batches run, with the original question, and the progress says "Reusing your earlier attempt". A different question starts fresh.
 - Until OpenAI sends its first signal for a request, the heading reads "Waiting for OpenAI…" with the elapsed seconds instead of "Thinking…", so a network stall does not look like thinking.
 - A request OpenAI never answers fails after a silence limit instead of the library's 10 minutes: 15 s at Off and Low thinking (measured on Luna: first signal in 0.7–2 s and streaming gaps under 0.4 s, also with a 180,000-token input), 60 s at Medium and 120 s at High (generous, not measured, since a model may think silently before its first word). The explanation says "OpenAI did not respond for 15 seconds. Check your internet connection and ask again." The same holds when OpenAI goes silent partway through an answer; a connection that drops partway says "The connection to OpenAI broke off. Check your internet connection and ask again." Google and Anthropic do the same with their own silence message and name ("The connection to Google broke off…").
 - Google's overloaded models hang without sending anything (3.8 Flash, 2026-10-24: no answer in two minutes while 3.5 Flash-Lite answered in 3 s), so when Google stays silent the message says "Google did not respond for 30 seconds. gemini-3.8-flash may be busy at Google: ask again later or pick another model." When Google answers that the model is busy (HTTP 503), it says "Google says gemini-3.8-flash is busy right now. Ask again later or pick another model." A failed structured step names its provider on each attempt ("Google did not respond…", "Google said … is busy right now") and suggests asking again later or picking another model, then checking the connection if no model answers.
@@ -191,20 +191,22 @@ provider names and goes again, so a busy moment no longer fails the summary
 (`app/services/agent/provider_limits.py`).
 The progress widget sits in the conversation immediately above the answer it is
 producing: earlier messages and the current request stay above it, and the final
-answer streams in below it. Its status line reports the total batch count and how
-many batches are complete, writing, and queued. As soon as a batch request starts,
-a compact card appears for it: a pulsing heading with a live finding and token
-count, and a fixed two-line window that streams the tail of the newest finding
-as the model writes it (a thin shimmer stands in until the first text arrives).
-When that batch completes, the same card collapses to one ellipsized line such as
-"✓ Batch 3 of 9 · 4 findings — first finding…". The full findings are not
-repeated in the widget. Cards stay in canonical batch-number order even when later
-batches finish first, and the scrollable stack follows the newest batches unless
-the user has scrolled up. Stream previews are throttled on the server, and the
-widget's Cancel button is never replaced while previews arrive. After every batch succeeds the status changes to writing the
-final answer, and the batch cards remain visible above it. When the user chooses
-the leading prefix (or cancels), the permission card closes before the answer
-streams rather than leaving disabled choices behind.
+answer streams in below it. It is one bar, with a status line such as "Summarizing · 42%" on the left
+of the row under it and the processing time on the right (`1m 23s` past a minute, still counting every
+second; "Processing time" is its tooltip). Before 2026-11-08 it was a scrolling card per batch with
+batch counts in the text. The widget closes when every batch has finished and the final answer is
+requested.
+
+No provider says how far along a model is, and a batch spends most of its time reading before it
+writes anything, so the bar is an estimate from the clock (agreed 2026-11-08). Each model's timing, a
+startup cost and a time per million tokens, is saved in the vault after a summary finishes, encrypted
+like the AI settings (database version 16). Two batches of different sizes separate the two, so a model
+with no saved timing starts with two small real batches, a tenth and a fifth of a normal one; a view
+that fits one batch has none. The estimate weighs each batch by its size, moves it by the clock up to
+90%, counts it at least half done once its response starts arriving, and is corrected by this run's
+own batches once two have finished. The bar does not show the estimate directly, since an estimate can
+jump, stand still or fall behind: it starts at 5%, glides toward the estimate and always creeps toward
+95%, so it never stalls or goes backward, and only every batch finishing fills it.
 
 If the verified batch findings are themselves too large for one synthesis call,
 MetaList condenses them through additional ordered stages until they fit. Exact

@@ -1,8 +1,7 @@
 import { ApplicationState } from '../application-state.js';
 import { rethrowUnexpectedError } from '../expected-errors.js';
 import { AiApiError } from './ai-chat-api.js';
-import { createBulkElapsedClock } from './bulk-elapsed-clock.js';
-import { renderSummaryBatchPreview } from './summary-batch-preview.js';
+import { createBulkElapsedClock, formatBulkElapsed } from './bulk-elapsed-clock.js';
 import {
     TAG_FOCUS_CHOICES,
     describeScopeQuestion,
@@ -15,8 +14,8 @@ import { ModeContextInstance as ModeContext } from '../mode-manager/mode-context
 import { actionRefreshAndMaybeSelect } from '../mode-manager/actions/ui-actions.js';
 import { MS_PER_SECOND } from '../time-units.js';
 
-// The batch list counts as scrolled to the newest batch within this distance of its end.
-const FOLLOW_NEWEST_BATCH_SLACK_PX = 24;
+// A summary's progress is a percentage; tagging's counts tokens.
+const FULL_PERCENT = 100;
 
 const baseUrl = CONFIG.API.AI.CHAT.replace(/\/chat$/u, '/proposals');
 const moduleState = ApplicationState.createFields('bulk-proposal-ui', {
@@ -54,7 +53,7 @@ function openProgress(abortController, chatHost, initialEvent) {
     dialog.className = isSummary ? 'ai-chat-summary-operation' : 'ai-chat-tag-operation';
     const operationLabel = isSummary ? 'Complete scope summary' : 'Tag proposals';
     dialog.setAttribute('aria-label', operationLabel);
-    dialog.innerHTML = `<div class="modal-content"><h2>${operationLabel}</h2><progress data-progress hidden aria-label="${isSummary ? 'Summary' : 'Tagging'} progress"></progress><p data-status role="status"></p><p data-elapsed hidden></p><div data-summary-batches class="summary-batch-stack" aria-live="polite" hidden></div><div data-question></div><p data-error role="alert"></p><div class="form-actions"><button type="button" data-cancel class="cancel-btn">Cancel</button><span data-submit></span></div></div>`;
+    dialog.innerHTML = `<div class="modal-content"><h2>${operationLabel}</h2><progress data-progress hidden aria-label="${isSummary ? 'Summary' : 'Tagging'} progress"></progress><div class="bulk-status-row"><p data-status role="status"></p><p data-elapsed title="Processing time" hidden></p></div><div data-question></div><p data-error role="alert"></p><div class="form-actions"><button type="button" data-cancel class="cancel-btn">Cancel</button><span data-submit></span></div></div>`;
     dialog.firstElementChild.className = 'ai-chat-tag-controls';
     const inertSiblings = [];
     chatHost.append(dialog);
@@ -76,7 +75,7 @@ function openProgress(abortController, chatHost, initialEvent) {
     dialog.querySelector('[data-cancel]').addEventListener('click', cancel);
     const clock = createBulkElapsedClock(() => performance.now());
     const timer = setInterval(() => {
-        dialog.querySelector('[data-elapsed]').textContent = `Processing time: ${clock.seconds()}s`;
+        dialog.querySelector('[data-elapsed]').textContent = formatBulkElapsed(clock.seconds());
     }, MS_PER_SECOND);
     let release;
     const waiting = new Promise((resolve) => { release = resolve; });
@@ -116,24 +115,12 @@ export function handleBulkEvent(event, abortController, chatHost) {
     dialog.querySelector('[data-status]').textContent = event.label;
     dialog.querySelector('[data-status]').hidden = false;
     if (event.type === 'bulk_progress') {
-        if ('summary_batch_preview' in event) {
-            if (moduleState.active.operation !== 'summary') {
-                throw new Error('Only summary operations may render batch previews');
-            }
-            const stack = dialog.querySelector('[data-summary-batches]');
-            // Follow the newest batches unless the user scrolled up to read earlier ones.
-            let wasFollowingNewest = true;
-            if (!stack.hidden) {
-                wasFollowingNewest = (
-                    stack.scrollHeight - stack.scrollTop - stack.clientHeight < FOLLOW_NEWEST_BATCH_SLACK_PX
-                );
-            }
-            renderSummaryBatchPreview(stack, event.summary_batch_preview);
-            if (wasFollowingNewest) stack.scrollTop = stack.scrollHeight;
-        }
         const progressBar = dialog.querySelector('[data-progress]');
         progressBar.hidden = false;
-        if ('completed_tokens' in event) {
+        if ('percent' in event) {
+            progressBar.max = FULL_PERCENT;
+            progressBar.value = event.percent;
+        } else if ('completed_tokens' in event) {
             progressBar.max = event.total_tokens;
             progressBar.value = event.completed_tokens;
         }
@@ -233,17 +220,12 @@ async function refreshAfterBulkProposalChange() {
 }
 
 /**
- * A summary card that only asked for permission (prefix, single payload, or cancel)
- * has nothing left to show once the operation completes, so it closes before the
- * answer streams instead of leaving disabled choices behind. Staged summaries keep
- * their batch stack visible above the final answer.
+ * A summary's panel has nothing left to show once the operation completes, so it
+ * closes before the answer streams rather than vanishing above it.
  */
 export function bulkProgressEndsAtCompletion() {
     if (moduleState.active === null || moduleState.active.completion === null) return false;
-    if (moduleState.active.operation !== 'summary') return false;
-    const stack = moduleState.active.dialog.querySelector('[data-summary-batches]');
-    if (stack === null) throw new Error('Summary batch stack is missing');
-    return stack.childElementCount === 0;
+    return moduleState.active.operation === 'summary';
 }
 
 export async function closeBulkProgress() {

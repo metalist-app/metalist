@@ -69,7 +69,7 @@ questions look up selected MetaList help topics, including release notes (what
 changed in each version and the installed version); help text is transient and is
 not automatically added to future turns. Explicit requests to generate/accept/remove
 tag proposals hand over to that operation, which asks first; a request to summarize the
-whole view starts the summary right away, in as many batches as it takes. Asking about that workflow is not permission to run it. The help action can explain and open dialogs only; it cannot set a
+whole view starts the summary right away, in as many batches as it takes, with one progress bar, a percentage and the time in the chat. No AI provider reports how far along a model is, so the percentage is an estimate from how long that model took before; a model's first summary starts with two small batches to learn that. Asking about that workflow is not permission to run it. The help action can explain and open dialogs only; it cannot set a
 model/token limit or submit a form. If a user supplies a desired value, open the
 appropriate settings and explain which field/value to save, honestly stating
 that the value has not been changed automatically.

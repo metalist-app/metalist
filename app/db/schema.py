@@ -92,6 +92,9 @@ CREATE TABLE IF NOT EXISTS {APP_SETTINGS_TABLE} (
     provider_rate_limits_json TEXT,
     provider_rate_limits_encryption_nonce BLOB,
     provider_rate_limits_encryption_tag BLOB,
+    model_timings_json TEXT,
+    model_timings_encryption_nonce BLOB,
+    model_timings_encryption_tag BLOB,
     session_timeout_minutes INTEGER,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
@@ -301,6 +304,9 @@ def initialize_schema(connection: Connection) -> None:
             "provider_rate_limits_json": "TEXT",
             "provider_rate_limits_encryption_nonce": "BLOB",
             "provider_rate_limits_encryption_tag": "BLOB",
+            "model_timings_json": "TEXT",
+            "model_timings_encryption_nonce": "BLOB",
+            "model_timings_encryption_tag": "BLOB",
             "session_timeout_minutes": "INTEGER",
         },
     )

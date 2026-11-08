@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createBulkElapsedClock } from '../../app/static/js/modules/ai-chat/bulk-elapsed-clock.js';
+import { createBulkElapsedClock, formatBulkElapsed } from '../../app/static/js/modules/ai-chat/bulk-elapsed-clock.js';
 
 test('processing time excludes choosing vocabulary, focus, and confirmation', () => {
     let time = 0;
@@ -20,4 +20,13 @@ test('processing time excludes choosing vocabulary, focus, and confirmation', ()
         time += 2000;
     }
     assert.equal(clock.seconds(), 9);
+});
+
+
+test('processing time counts seconds up to a minute, then minutes and seconds', () => {
+    assert.equal(formatBulkElapsed(0), '0s');
+    assert.equal(formatBulkElapsed(59), '59s');
+    assert.equal(formatBulkElapsed(60), '1m 0s');
+    assert.equal(formatBulkElapsed(87), '1m 27s');
+    assert.equal(formatBulkElapsed(3725), '62m 5s');
 });

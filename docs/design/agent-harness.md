@@ -79,7 +79,7 @@ when the user asks to retry or continue (it sees the failed request in the
 history). Then batches whose key matches (notes and content, selected-note
 context, model, thinking level, prompts, summary skill; `summary_batch_key`) are
 reused, the rest run with the failed summary's original question (passed to the
-batch, condensing and final builders as `summary_request`), and the progress shows "Reused N of M batches". A successful summary
+batch, condensing and final builders as `summary_request`), and the progress says "Reusing your earlier attempt". A successful summary
 drops the kept batches; Clear Chat, privacy-boundary changes, login and logout
 clear them with the other session AI memory.
 
@@ -298,25 +298,30 @@ which asks nothing first (2026-11-08; before, several batches meant a question):
 model call when the entire scope fits in one payload, otherwise batches.
 
 For complete processing, `plan_complete_root_batches()` partitions all permitted
-root trees in canonical order. There is no cap on the number of batches. A root is
+root trees in canonical order. For a model with no saved timing (`with_timing_probes`), and a scope
+over one batch, the first two batches are limited to a tenth and a fifth of a batch: real batches
+whose two sizes give the model's timing. A root larger than that stands alone. There is no cap on the number of batches. A root is
 atomic and cannot be divided; if one root cannot fit, the operation fails visibly.
 Every batch starts at once (2026-11-08; before, batch 1 ran alone to seed the provider cache,
 which cost a whole batch's wait: timed with a stand-in AI, one batch's time saved at every size),
 each waiting for room in the provider's rate limits (saved in the vault per model since
 2026-11-08, so a restart starts with them) (`provider_limits.RateLimitGate`, 2026-11-07; before, a
 pool of at most four workers): as many go at once as the remaining requests and tokens
-allow, or four while the limits are unknown (a provider that reports none). A batch emits
-a `writing` preview only once admitted, and a batch admitted after another has failed
-does not start, throttled `streaming` previews while the model writes, and a `complete`
-preview afterward. Batches waiting for room are reported as queued, never as
-writing. Streaming previews come from Instructor's partial objects: the structured
-inference capture stores the latest partial on the current attempt and attaches it
-to `output_progress` events as `partial_output`. Each preview carries only the
-finding count, the output-token estimate, and at most the last 240 characters of
-the newest finding (the first finding on completion), at most once per 0.3 seconds
-per batch. Responses are placed back into their original batch order regardless of
-completion order. Duplicate or out-of-sequence preview transitions fail loudly on
-both server and client. The first worker failure cancels the other
+allow, or four while the limits are unknown (a provider that reports none). A batch becomes
+`writing` only once admitted (one admitted after another has failed does not start),
+`responding` at the first `output_progress` of its response, and `complete` afterward.
+Batches waiting for room stay queued. Each change, and a tick twice a second between them, sends one progress event carrying only a
+percentage. `summary_progress_percent` is the estimate: each batch weighed by its size, moved by the
+clock against the model's `ModelTiming` up to 90%, at least half at `responding`. `advanced_progress_percent`
+is what the bar shows: it starts at 5%, glides toward the estimate and always creeps toward 95%, so a
+wrong or missing estimate cannot stall it or move it backward. `fit_model_timing` draws the line
+through finished batches (tokens, seconds) to get a startup cost and a time per token, falling back to
+time per token alone for batches of about one size or a line that makes no sense. This run's fit
+replaces the saved timing once two batches have finished, and it is saved (`DatabaseSavedTimings`,
+`app_settings.model_timings_json`, database version 16) only when every batch succeeds, so a retried
+summary plans the same batches. Streamed `output_progress` must stay cheap: it runs on the event loop
+every few words, and counting the whole request there froze every progress event (2026-11-08). Responses are placed back into their original batch order regardless of
+completion order. Duplicate or out-of-sequence transitions fail loudly. The first worker failure cancels the other
 workers and propagates; closing the stream also cancels them.
 
 The application attaches the exact roots supplied to each structured batch result;

@@ -377,17 +377,16 @@ Complete-scope summary coverage adds current-production `summary_batch` and
 batch selects supporting note IDs from its supplied evidence, and that final
 synthesis preserves both fixed findings, cites their original note IDs, and
 describes only the complete supplied scope. Runtime tests separately enforce
-application-owned root coverage, permission before inference, unlimited total
-batches with four active requests at most, writing→streaming→complete preview
-transitions (never more than four visibly writing), compact throttled stream
-previews, one correction request for structural-placeholder citations with a
+application-owned root coverage, unlimited total
+batches with four active requests at most while the provider's limits are unknown, progress as a
+percentage that starts above zero, counts a responding batch as half, follows each model's saved timing and
+cannot stall on a wrong estimate, one correction request for structural-placeholder citations with a
 classified failure after that, out-of-order completion with canonical
 synthesis order, citations to the permitted selected-note tree (and rejection when
 that note is unavailable), worker cancellation when the stream closes, recursive
 reduction, cancellation, and atomic failure. `ai_chat_summary_progress.test.mjs`
-behaviorally checks progress-card placement before the streaming answer (without
-ever moving the card), compact streaming and one-line completed batch cards,
-ordering, and invalid-transition failures.
+behaviorally checks that the progress panel sits before the streaming answer (without
+ever moving it).
 
 
 2026-09-17 prompt-suite validation: **1,517 Python tests passed, 7 skipped**;

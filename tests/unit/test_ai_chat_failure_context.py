@@ -69,11 +69,11 @@ def test_a_running_operation_adds_its_latest_progress() -> None:
     message, _ = _failed_stream([
         _status("agent_turn", "completed", "Chose: summarize_view"),
         {"type": "bulk_progress", "operation": "summary", "committing": False,
-         "label": "Summarizing 9 batches · 6 complete · 3 writing · 0 queued",
+         "label": "Summarizing · 66%",
          "completed_tokens": 6, "total_tokens": 9},
     ], pause_before_failure=0.0)
 
-    assert 'latest progress: "Summarizing 9 batches · 6 complete · 3 writing · 0 queued".' in message
+    assert 'latest progress: "Summarizing · 66%".' in message
 
 
 def test_a_failure_before_any_step_says_so() -> None:

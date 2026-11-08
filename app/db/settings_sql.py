@@ -81,6 +81,9 @@ def fetch_settings(connection: GuardedConnection | sqlite3.Connection) -> Option
         "provider_rate_limits_json": row["provider_rate_limits_json"],
         "provider_rate_limits_encryption_nonce": row["provider_rate_limits_encryption_nonce"],
         "provider_rate_limits_encryption_tag": row["provider_rate_limits_encryption_tag"],
+        "model_timings_json": row["model_timings_json"],
+        "model_timings_encryption_nonce": row["model_timings_encryption_nonce"],
+        "model_timings_encryption_tag": row["model_timings_encryption_tag"],
         "session_timeout_minutes": row["session_timeout_minutes"],
         "created_at": datetime.fromisoformat(row["created_at"]),
         "updated_at": datetime.fromisoformat(row["updated_at"]),
@@ -380,6 +383,36 @@ def update_provider_rate_limits_json(
             provider_rate_limits_json,
             provider_rate_limits_encryption_nonce,
             provider_rate_limits_encryption_tag,
+            _serialize_datetime(datetime.now(timezone.utc)),
+        ),
+    )
+
+
+def update_model_timings_json(
+    connection: GuardedConnection | sqlite3.Connection,
+    *,
+    model_timings_json: str,
+    model_timings_encryption_nonce: bytes | None,
+    model_timings_encryption_tag: bytes | None,
+) -> None:
+    """Each model's saved timing (app/services/agent/saved_rate_limits.py)."""
+    if not isinstance(model_timings_json, str):
+        raise TypeError("model_timings_json must be a string")
+
+    conn = _conn(connection)
+    conn.execute(
+        f"""
+        UPDATE {APP_SETTINGS_TABLE}
+        SET model_timings_json = ?,
+            model_timings_encryption_nonce = ?,
+            model_timings_encryption_tag = ?,
+            updated_at = ?
+        WHERE id = 1
+        """,
+        (
+            model_timings_json,
+            model_timings_encryption_nonce,
+            model_timings_encryption_tag,
             _serialize_datetime(datetime.now(timezone.utc)),
         ),
     )
