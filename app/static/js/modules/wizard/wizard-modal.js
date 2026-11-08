@@ -27,7 +27,7 @@ const FORWARD = 1;
 const BACKWARD = -1;
 const FULL_SHIFT_PERCENT = 100;
 const LAST_OFFSET = 1;
-const WIZARD_SERVICES = ['getAiSettings', 'saveAiSettings', 'afterImport', 'showDroppedImport', 'setPassword', 'openPasswordGenerator'];
+const WIZARD_SERVICES = ['getAiSettings', 'saveAiSettings', 'afterImport', 'announceImport', 'showDroppedImport', 'setPassword', 'openPasswordGenerator'];
 
 function isMotionEnabled() {
     return document.body.classList.contains('pref-animated-transitions');

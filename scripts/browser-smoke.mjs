@@ -53,6 +53,7 @@ import {checkTabSwitching} from './browser-tab-switch-regressions.mjs';
 import {checkFolderNoteDrag} from './browser-folder-note-drag-regressions.mjs';
 import {checkFolderContext} from './browser-folder-context-regressions.mjs';
 import {checkFolderDrops} from './browser-folder-drop-regressions.mjs';
+import {checkFileDropNotes} from './browser-file-drop-note-regressions.mjs';
 import {checkBackgroundWork} from './browser-background-work-regressions.mjs';
 import {checkImageSizes} from './browser-image-size-regressions.mjs';
 import {checkAiChatRefusal} from './browser-ai-chat-refusal-regressions.mjs';
@@ -463,6 +464,10 @@ try {
     await checkFolderDrops(page);
     assert.deepEqual(errors, []);
     console.log(`PASS folder drop regressions in ${await browser.version()}`);
+  } else if (process.env.BROWSER_TEST_SUITE === 'file-drop-notes') {
+    await checkFileDropNotes(page);
+    assert.deepEqual(errors, []);
+    console.log(`PASS file drop note regressions in ${await browser.version()}`);
   } else if (process.env.BROWSER_TEST_SUITE === 'folder-note-drag') {
     await checkFolderNoteDrag(page);
     assert.deepEqual(errors, []);

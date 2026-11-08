@@ -49,6 +49,8 @@ const moduleState = ApplicationState.createFields('virtual-folders-service', {
     // How many each shows with no search: a count the search narrows reads out of it
     // (docs/ready-to-build/folder-counts.md); the top's under ''.
     noteTotals: Object.freeze({}),
+    // The tree's latest read, for work that must wait for it.
+    latestUpdate: Promise.resolve(),
     // Whether a view's folders have been read yet: the tree is drawn only from them.
     hasReadFolders: false,
     // The folders the person opened in the tree, by path.
@@ -132,9 +134,20 @@ function remember(field, value) {
     }
 }
 
-/** Read the tree's state for the view shown now and draw it (after every view refresh). A
- * note opened from the tree (a reference view) keeps the folders of the view it came from. */
-export async function updateVirtualFolders() {
+/** Read the tree's state for the view shown now and draw it (after every view refresh). */
+export function updateVirtualFolders() {
+    moduleState.latestUpdate = readAndDrawVirtualFolders();
+    return moduleState.latestUpdate;
+}
+
+/** Done when the tree's latest read is: the server takes one write at a time and this read counts
+ * as one, so work that writes again and again waits for it (several dropped files, 2026-11-08). */
+export function virtualFoldersUpToDate() {
+    return moduleState.latestUpdate;
+}
+
+// A note opened from the tree (a reference view) keeps the folders of the view it came from.
+async function readAndDrawVirtualFolders() {
     if (isViewingReferenceSource()) {
         showFolderOfActiveContext();
         return;

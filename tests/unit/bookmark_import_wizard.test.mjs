@@ -5,7 +5,7 @@ import test from 'node:test';
 // by its first line, its own File step, and the walkthrough opened with a dropped file.
 
 const SERVICES = {
-    getAiSettings: () => ({ provider: 'openai' }), saveAiSettings: async () => {}, afterImport: async () => {}, showDroppedImport: async () => {},
+    getAiSettings: () => ({ provider: 'openai' }), saveAiSettings: async () => {}, announceImport: () => {}, afterImport: async () => {}, showDroppedImport: async () => {},
     setPassword: async () => {}, openPasswordGenerator: async () => {},
 };
 

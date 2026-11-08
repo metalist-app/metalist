@@ -53,6 +53,9 @@ export class BaseModal {
         this.addToModalStack();
         this.initializeModalState();
         
+        // Before the first screen is drawn: work it starts belongs to this opening.
+        this._openGeneration += 1;
+
         // Show modal UI
         this.showModalElement();
         this._installModalCloseButton();
@@ -62,7 +65,6 @@ export class BaseModal {
         this.setupEventListeners();
         
         this.isOpen = true;
-        this._openGeneration += 1;
         console.log(`[BaseModal] ${this.modalName} opened`);
         // Return initialization so callers can acknowledge a ready dialog.
         return this.onOpen();

@@ -64,7 +64,7 @@ import { exportNotes } from '../mode-manager/services/export-service.js';
 import { VersionInfoModal } from '../modals/version-info-modal.js';
 import { ImportWizard, NewVaultWizard } from '../wizard/setup-wizards.js';
 import { bookmarksFileChoices } from '../wizard/bookmarks-file.js';
-import { MARKDOWN_STEP, droppedFolderChoices, droppedTextFilesChoices } from '../wizard/import-wizard-steps.js';
+import { droppedFilesChoices, droppedFilesStartStep, droppedFolderChoices } from '../wizard/import-wizard-steps.js';
 import { holdDroppedFolder } from '../mode-manager/services/dropped-folders.js';
 import { MemoryUsageModal } from '../modals/memory-usage-modal.js';
 import { showErrorDialogFor } from '../modals/error-dialog.js';
@@ -193,6 +193,9 @@ const ERROR_BANNER_SECONDS = 10;
 // Command-gate watchdog for commands that may run long (file upload, prioritize, backup run).
 const LONG_COMMAND_TIMEOUT_SECONDS = 120;
 
+
+const COPYING_DROPPED_FILES_KEY = 'copyingDroppedFiles';
+const COPYING_DROPPED_FILES_TEXT = 'Copying your files…';
 
 // A theme change cross-fades the whole page from the old colours to the new (main.css,
 // ::view-transition(root)). Opening in the saved theme, a background tab, reduced motion and
@@ -2987,9 +2990,13 @@ class CommandPaletteController {
         await this._openImportWizardWith({ ...droppedFolderChoices(holdDroppedFolder(folder), folder, intoFolder), ...droppedHere() }, null);
     }
 
-    /** Text files dropped on the page, a Markdown file among them: at the Markdown screen. */
-    async openImportWizardWithDroppedTextFiles(files, intoFolder) {
-        await this._openImportWizardWith({ ...await droppedTextFilesChoices(files, intoFolder), ...droppedHere() }, MARKDOWN_STEP);
+    /** Files dropped on the page that go through the walkthrough from partway: text files with
+     * Markdown among them, or images on a folder in the tree. Copying them can take a while. */
+    async openImportWizardWithDroppedFiles(files, intoFolder) {
+        FloatingMessages.showProgress(COPYING_DROPPED_FILES_KEY, COPYING_DROPPED_FILES_TEXT);
+        const choices = await droppedFilesChoices(files, intoFolder)
+            .finally(() => FloatingMessages.end(COPYING_DROPPED_FILES_KEY));
+        await this._openImportWizardWith({ ...choices, ...droppedHere() }, droppedFilesStartStep(files));
     }
 
     async _openImportWizardWith(presetChoices, startStep) {
@@ -3023,9 +3030,12 @@ class CommandPaletteController {
                     await actionRefreshAndMaybeSelect({ startedAt: performance.now(), context: 'importWizard' });
                 }
             },
+            announceImport: (text) => {
+                FloatingMessages.show({ text, type: 'success', detail: '', isClosable: false, isLasting: false, key: null, action: null });
+            },
             // Files dropped on the page: their notes in the search context they were dropped in,
-            // which stays as it is (the maintainer, 2026-11-03), after its last note (one alone at
-            // the top: 2026-11-07). The view brings the import's first note into sight, moving the
+            // which stays as it is (the maintainer, 2026-11-03), after its last note (2026-11-07).
+            // The view brings the import's first note into sight, moving the
             // least distance (docs/ui/interaction-principles.md, principle 3).
             showDroppedImport: async (firstRootId) => {
                 if (typeof firstRootId !== 'string' || firstRootId === '') {

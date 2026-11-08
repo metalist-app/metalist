@@ -3,7 +3,7 @@ import { MS_PER_SECOND } from '../../time-units.js';
 import { escapeHtml } from '../../html-escape.js';
 import { tabContextActionsHtml } from '../services/tab-context-actions.js';
 import { ApplicationState } from '../../application-state.js';
-import { rethrowUnexpectedError } from '../../expected-errors.js';
+import { HttpRequestError, rethrowUnexpectedError } from '../../expected-errors.js';
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import * as Logger from '../mode-logger.js';
 import {
@@ -55,7 +55,7 @@ import { NotesAPI } from '../../api-client.js';
 import { ErrorHandler } from '../../error-handler.js';
 import { describeDroppedItems, loneDroppedFolderEntry, readDroppedFolder } from '../services/dropped-folders.js';
 import {
-    fileNewNoteInFolder, folderOfTab, recordFolderContextFolder, showFolderOfActiveContext, virtualFolderAt,
+    fileNewNoteInFolder, virtualFoldersUpToDate, folderOfTab, recordFolderContextFolder, showFolderOfActiveContext, virtualFolderAt,
 } from '../services/virtual-folders-service.js';
 import { isFolderContext, usedLastAmong } from '../services/folder-context-state.js';
 import { searchContextLabel } from '../services/search-context-label.js';
@@ -132,6 +132,8 @@ import {
 import { promptForImageFileInsertMode } from '../services/image-file-insert-choice-modal-service.js';
 import { attachPickedFileToCurrentNote } from '../services/file-reference-service.js';
 import { shouldCreateTopNoteForFileDrop } from '../services/file-drop-policy-service.js';
+import { COMPRESSIBLE_IMAGE_RE } from '../../wizard/compressible-images.js';
+import { scrollNoteIntoView } from '../services/scroll-restoration-service.js';
 import { shouldDeleteSelectedNoteFromKeyboard } from '../services/note-delete-shortcut-policy-service.js';
 import {
     hideSearchContextsOverlay,
@@ -155,6 +157,7 @@ const helpModal = new HelpModal();
 const MODIFIER_KEYS = new Set(['Control', 'Alt', 'Shift', 'Meta']);
 // A drop of one file only can be a bookmarks export to import.
 const LONE_FILE = 1;
+const ATTACH_IMAGES = 'attach';
 // The folder prefix of an import that goes into no virtual folder (the import walkthrough's top).
 const IMPORT_INTO_NO_FOLDER = '';
 const NAVIGATION_KEYS = new Set([
@@ -2187,20 +2190,17 @@ function resolveEditingDropTarget(event) {
         return null;
     }
 
-    const noteContent = rawTarget.closest('.note-content');
-    if (!(noteContent instanceof HTMLElement)) {
-        return null;
-    }
-    if (noteContent.getAttribute('contenteditable') !== 'true') {
-        return null;
-    }
-
-    const noteElement = noteContent.closest('.note');
+    // Anywhere on the note being edited counts, its margin too.
+    const noteElement = rawTarget.closest('.note');
     if (!(noteElement instanceof HTMLElement)) {
         return null;
     }
     const noteId = noteElement.dataset.noteId;
     if (!noteId || noteId !== ModeContext.currentNoteId) {
+        return null;
+    }
+    const noteContent = noteElement.querySelector('.note-content');
+    if (!(noteContent instanceof HTMLElement) || noteContent.getAttribute('contenteditable') !== 'true') {
         return null;
     }
 
@@ -2648,6 +2648,21 @@ function handleDropEvent(event) {
     if (droppedFiles.length === 0) {
         return;
     }
+    // Images dropped on a folder in the tree come in as an import does: its screen asks whether
+    // to compress them, and the whole drop goes with them (the maintainer, 2026-11-08).
+    if (intoFolder !== null && droppedFiles.some((file) => COMPRESSIBLE_IMAGE_RE.test(file.name))) {
+        void CommandPalette.openImportWizardWithDroppedFiles(droppedFiles, importFolderOf(intoFolder)).catch((error) => {
+            rethrowUnexpectedError(error);
+            const message = error instanceof Error ? error.message : String(error);
+            ErrorHandler.showErrorBanner(
+                `File drop failed: ${message}`,
+                'error',
+                FAILURE_WITH_DETAIL_BANNER_SECONDS * MS_PER_SECOND,
+                { closable: true },
+            );
+        });
+        return;
+    }
     // Dropped text files ask first: a note or a file; with a Markdown file among them, the
     // import walkthrough at its Markdown screen (docs/ready-to-build/files-shown-not-copied.md §5).
     if (droppedFiles.some(isDroppedTextFile)) {
@@ -2710,7 +2725,7 @@ async function dropWithTextFiles(event, droppedFiles, intoFolder) {
         await untilNothingElseAsks();
     }
     if (textFiles.some((file) => DROPPED_MARKDOWN_FILE_RE.test(file.name))) {
-        await CommandPalette.openImportWizardWithDroppedTextFiles(textFiles, importFolderOf(intoFolder));
+        await CommandPalette.openImportWizardWithDroppedFiles(textFiles, importFolderOf(intoFolder));
         return;
     }
     const choice = await promptForTextDropChoice(textFiles.map((file) => file.name));
@@ -2747,7 +2762,7 @@ async function insertTextFilesWhereDropped(event, textFiles) {
 }
 
 // Note, dropped elsewhere: a note at the top for each file, holding its text, in the order
-// dropped; on a tree folder, filed in it. The top one stays open to edit, as a dropped file's.
+// dropped; on a tree folder, filed in it. One alone stays open to edit, as a dropped file's.
 async function makeNotesOfTextFiles(textFiles, intoFolder) {
     const texts = await Promise.all(textFiles.map((file) => file.text()));
     await CommandGate.runWhenFree('keyboard.dropTextFilesAsNotes', async () => {
@@ -2758,13 +2773,12 @@ async function makeNotesOfTextFiles(textFiles, intoFolder) {
             return;
         }
         // Each goes to the top: the last made first.
-        for (const [index, text] of [...texts].reverse().entries()) {
+        for (const text of [...texts].reverse()) {
             requireCreatedNoteId(await createNoteAtTop(), 'dropTextFileNote');
             insertPlainTextAtCurrentSelection(text);
             const noteId = ModeContext.currentNoteId;
             await actionSaveNote(noteId);
-            const isTopNote = index === texts.length - 1;
-            if (intoFolder !== null || !isTopNote) {
+            if (intoFolder !== null || texts.length > LONE_FILE) {
                 await actionSaveAndExitEditingWithoutRefreshing();
             }
             if (intoFolder !== null) {
@@ -2816,29 +2830,59 @@ async function dropPossibleBookmarksFile(event, droppedFiles, intoFolder) {
 // Files dropped on a virtual folder: the new note at the top a drop on the column makes, then
 // in exactly that folder ('' the top: in none), left open no longer
 // (docs/ready-to-build/desktop-drops-into-folders.md §1).
-async function dropFilesIntoFolder(droppedFiles, intoFolder) {
-    let imageHandlingMode = 'embed';
-    const imageFiles = droppedFiles.filter((file) => isImageFile(file));
-    if (imageFiles.length > 0) {
-        const choice = await resolveImageFileHandlingMode(imageFiles, 'drop');
-        if (choice === null) {
-            return;
-        }
-        imageHandlingMode = choice;
-    }
-    await CommandGate.run('keyboard.dropFilesIntoFolder', async () => {
-        if (ModeContext.isEditing) {
-            await actionSaveAndExitEditingWithoutRefreshing();
-        }
-        const inserted = await processDroppedFiles(droppedFiles, { createTopNote: true, imageHandlingMode, selectionRange: null });
-        if (inserted === false) {
-            return;
-        }
-        const noteId = ModeContext.currentNoteId;
-        await actionSaveAndExitEditingWithoutRefreshing();
-        await fileNewNoteInFolder(noteId, intoFolder);
+// Files dropped on a folder in the tree: a note each, filed in it. Images compression shrinks
+// went to the walkthrough first, so any here (a GIF) come in as files, with nothing to ask.
+function dropFilesIntoFolder(droppedFiles, intoFolder) {
+    return CommandGate.run('keyboard.dropFilesIntoFolder', async () => {
+        return await makeANoteForEachFile(droppedFiles, ATTACH_IMAGES, intoFolder);
     }, {
         timeoutMs: PASTE_AND_DROP_TIMEOUT_SECONDS * MS_PER_SECOND,
+    });
+}
+
+// Files not aimed at a note get a note each, at the top, the first file on top (the maintainer,
+// 2026-11-08). With several none is left open; the first is brought into sight. A file that
+// fails stops the drop, the notes made staying, and the error says which it was.
+async function makeANoteForEachFile(files, imageHandlingMode, intoFolder) {
+    if (ModeContext.isEditing) {
+        await actionSaveAndExitEditingWithoutRefreshing();
+        await refreshAfterDroppedFiles(null);
+    }
+    const isSeveral = files.length > LONE_FILE;
+    let firstFileNoteId = null;
+    for (const file of [...files].reverse()) {
+        let inserted = false;
+        // lint: allow-JS001 rationale="an upload can fail; the message says which file, internal errors propagate"
+        try {
+            inserted = await processDroppedFiles([file], { createTopNote: true, imageHandlingMode, selectionRange: null });
+        } catch (error) {
+            rethrowUnexpectedError(error);
+            if (isSeveral) await refreshAfterDroppedFiles(null);
+            throw new HttpRequestError(`${file.name}: ${error instanceof Error ? error.message : String(error)}`);
+        }
+        if (inserted === false) return false;
+        const noteId = ModeContext.currentNoteId;
+        if (isSeveral || intoFolder !== null) {
+            await actionSaveAndExitEditingWithoutRefreshing();
+        }
+        if (intoFolder !== null) {
+            await fileNewNoteInFolder(noteId, intoFolder);
+        }
+        firstFileNoteId = noteId;
+        await virtualFoldersUpToDate();
+    }
+    if (isSeveral) {
+        await refreshAfterDroppedFiles(firstFileNoteId);
+        scrollNoteIntoView(firstFileNoteId, { align: 'nearest', jump: true });
+    }
+    return true;
+}
+
+// A note closed without a refresh still shows its files as their ![[tokens]]: this draws them.
+async function refreshAfterDroppedFiles(visibleRootAnchorId) {
+    const { actionRefreshAndMaybeSelect } = await import('../actions/ui-actions.js');
+    await actionRefreshAndMaybeSelect({
+        startedAt: performance.now(), context: 'keyboard.dropFiles', visibleRootAnchorId,
     });
 }
 
@@ -2850,7 +2894,6 @@ function dropFilesWhereDropped(event, droppedFiles) {
     const shouldCreateTopNote = shouldCreateTopNoteForFileDrop({
         isEditing: ModeContext.isEditing,
         currentNoteId: ModeContext.currentNoteId,
-        hasNonImageFile: !onlyImages,
         hasEditingDropTarget: target instanceof HTMLElement,
     });
     let targetSelectionRange = null;
@@ -2916,8 +2959,11 @@ function dropFilesWhereDropped(event, droppedFiles) {
         }
 
         return await CommandGate.run('keyboard.dropFiles', async () => {
+            if (shouldCreateTopNote) {
+                return await makeANoteForEachFile(droppedFiles, imageHandlingMode, null);
+            }
             return await processDroppedFiles(droppedFiles, {
-                createTopNote: shouldCreateTopNote,
+                createTopNote: false,
                 imageHandlingMode,
                 selectionRange: targetSelectionRange,
             });

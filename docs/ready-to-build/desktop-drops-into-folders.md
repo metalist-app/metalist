@@ -11,7 +11,7 @@ Written from a read-only look at the repo. Check the code references before rely
 ### Decided while building (the maintainer, 2026-11-02)
 
 - **A. The ticked files upload right after the checklist**, into a holding folder in the data directory, outside the vault (the Summary needs their contents). Only the ticked files leave the computer; nothing is in the vault until Import; closing the walkthrough, cancelled or imported, discards the holding folder, and a restart discards any left. Invariant 2 reads: nothing is uploaded before the checklist. The holding folder keeps the files unencrypted until it goes. *Decided 2026-11-06:* it will be encrypted and become resumable uploads' store (`docs/ready-to-build/streaming-no-file-cap.md` §8).
-- **B. Files dropped on a tree folder go at the top**, as a drop on the column off any note does. Found: such a drop makes **one** new note holding every dropped file (not one note per file, as §1 said); a drop on a folder keeps that, puts the note in the folder, and leaves it closed. The walkthrough for a dropped folder starts on Source, Any folder chosen, as a dropped bookmarks file's does.
+- **B. Files dropped on a tree folder go at the top**, as a drop on the column off any note does, each file its own note, filed in the folder and left closed (decided 2026-11-08: until then a drop made one note holding every dropped file). Images compression can shrink go through Import's Images screen instead (`docs/ui/references.md`). The walkthrough for a dropped folder starts on Source, Any folder chosen, as a dropped bookmarks file's does.
 - **C. An interrupted upload starts over** for now; the resume rule (`folder-import-and-file-previews.md`) is a later step, and resuming inside one file is `docs/future-plans/resumable-uploads.md`.
 - **D. A dropped folder's notes go after the context's last note** (decided 2026-11-07; before, at its top, where they looked as if they had replaced everything): you stay in the context, and the view goes to the import's first note, at the window's bottom when it fits (`showDroppedImport`, `scrollNoteIntoView` with `jump`). A single note still goes at the top.
 - The error that started it: a folder dropped anywhere was uploaded as a file and failed with "NetworkError when attempting to fetch resource". A drop is now looked at first (`webkitGetAsEntry`).
@@ -50,7 +50,7 @@ Written from a read-only look at the repo. Check the code references before rely
 
 ## 5. Invariants
 
-1. A dropped file never needs the walkthrough, except a browser's bookmarks export, which asks Import Bookmarks or Keep as File first (§8); a dropped folder always goes through it.
+1. A dropped file never needs the walkthrough, except a browser's bookmarks export, which asks Import Bookmarks or Keep as File first (§8), and images compression can shrink dropped on a folder in the tree (2026-11-08); a dropped folder always goes through it.
 2. Nothing from a dropped folder is uploaded before the user has seen the checklist and the Summary.
 3. Files dropped on a folder end up in exactly that folder.
 4. A drop holding a folder and anything else brings nothing in; a floating message says to drop the folder on its own.

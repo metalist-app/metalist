@@ -1,7 +1,7 @@
+// Files go in a note only when aimed at it: dropped on the note being edited (the maintainer, 2026-11-08).
 export function shouldCreateTopNoteForFileDrop({
     isEditing,
     currentNoteId,
-    hasNonImageFile,
     hasEditingDropTarget,
 }) {
     if (typeof isEditing !== 'boolean') {
@@ -16,18 +16,12 @@ export function shouldCreateTopNoteForFileDrop({
     if (!isEditing && currentNoteId !== null) {
         throw new Error('File drop cannot have currentNoteId outside editing mode');
     }
-    if (typeof hasNonImageFile !== 'boolean') {
-        throw new Error('File drop hasNonImageFile must be a boolean');
-    }
     if (typeof hasEditingDropTarget !== 'boolean') {
         throw new Error('File drop hasEditingDropTarget must be a boolean');
     }
 
     if (!isEditing) {
         return true;
-    }
-    if (hasNonImageFile) {
-        return false;
     }
     return !hasEditingDropTarget;
 }

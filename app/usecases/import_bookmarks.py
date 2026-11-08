@@ -1,5 +1,5 @@
 """Importing a browser's bookmarks export (docs/ready-to-build/bookmark-import.md): each
-website bookmark one root note at the top of the list, in the file's order, one line, its
+website bookmark one root note after the list's last one, in the file's order, one line, its
 title linked to its address; its folders as folder tags under the import's folder; created
 when it was bookmarked. An import only adds (import-export-launch.md §5)."""
 
@@ -108,7 +108,7 @@ class CmdPreviewBookmarkImport(QueryCommand):
 
 @dataclass
 class CmdImportBookmarks(QueryCommand):
-    """Import the bookmarks: every website bookmark a note at the top of the list, in the
+    """Import the bookmarks: every website bookmark a note after the list's last one, in the
     file's order."""
 
     file_text: str
@@ -127,4 +127,4 @@ class CmdImportBookmarks(QueryCommand):
         roots = [_written(bookmark, plan=plan, imported_at=self.imported_at) for bookmark in plan.bookmarks_file.bookmarks]
         apply_restore_records(root_records(roots, context_tags=self.context_tags), self.token)
         return {"status": "success", "noteCount": len(roots), "sourceTag": plan.source_tag,
-                "firstRootId": first_root_id(roots)}
+                "firstRootId": first_root_id(roots), "prefixFolder": plan.folder_prefix}

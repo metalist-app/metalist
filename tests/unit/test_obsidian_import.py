@@ -282,7 +282,7 @@ def folder_fingerprint(folder: Path) -> list[tuple[str, str, int]]:
 
 def imported_roots(store: NoteStore) -> list[str]:
     """The import's root notes in their order: every root note but the vault's own "mine",
-    wherever the import put them (several after it, one alone before it)."""
+    after it."""
     return [note_id for note_id in store.get_children(None) if note_id != "mine"]
 
 
@@ -308,7 +308,7 @@ def test_a_vault_comes_in_as_root_notes_after_the_last_one_folders_first(note_st
     plan = note_store.get_note(roots[3])
     assert plan.created_at.date().isoformat() in ("2024-02-29", "2024-03-01")
     # firstRootId: a drop's view brings the import's first note into sight.
-    assert result == {"status": "success", "noteCount": 12, "sourceTag": SOURCE_TAG, "firstRootId": roots[1]}
+    assert result == {"status": "success", "noteCount": 12, "sourceTag": SOURCE_TAG, "firstRootId": roots[1], "prefixFolder": ""}
     # The tag the wizard's new search context searches: on every file's note.
     assert all(SOURCE_TAG in note_store.get_note(note_id).tags for note_id in roots[1:])
     assert folder_fingerprint(FIXTURE_VAULT) == before
@@ -329,12 +329,13 @@ def test_files_come_in_folders_first_each_a_to_z(tmp_path: Path, note_store: Not
     assert [first_line(note_store, note_id) for note_id in roots[1:]] == ["y", "z", "x", "a", "b"]
 
 
-# One note imported goes at the top, where it is seen at once (the maintainer, 2026-11-07).
-def test_an_import_of_one_note_comes_in_at_the_top(tmp_path: Path, note_store: NoteStore) -> None:
+# Anything imported goes to the bottom, a single note too: one rule to reason about (the
+# maintainer, 2026-11-08).
+def test_an_import_of_one_note_comes_in_after_the_last_one(tmp_path: Path, note_store: NoteStore) -> None:
     (tmp_path / "only.md").write_text("only")
     _import_folder(str(tmp_path))
     roots = note_store.get_children(None)
-    assert [first_line(note_store, roots[0]), roots[1]] == ["only", "mine"]
+    assert [roots[0], first_line(note_store, roots[1])] == ["mine", "only"]
 
 
 def _import_folder(folder: str) -> None:

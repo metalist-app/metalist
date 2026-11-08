@@ -7,6 +7,8 @@ import { bookmarksFileChoices } from './bookmarks-file.js';
 import { heldDroppedFolder } from '../mode-manager/services/dropped-folders.js';
 import { checkBackgroundWork, setShownElsewhere } from '../mode-manager/services/background-work-cards.js';
 import { workProgressText } from '../mode-manager/services/background-work-text.js';
+import { importFinishedMessage } from './import-finished-message.js';
+import { COMPRESSIBLE_IMAGE_RE } from './compressible-images.js';
 
 // The import wizard's steps (PLAN.md, phase 2), shared by the import wizard and the new
 // vault wizard, which runs them after its own: the folder picked in the system's dialog,
@@ -175,8 +177,8 @@ function progressReporter(screen) {
 
 /**
  * The import with the wizard's choices, its notes then shown in a new search context; files
- * dropped on the page, at the top of the search context they were dropped in, which stays as it
- * is (the maintainer, 2026-11-03). Used by the import wizard and by the new vault wizard's setup.
+ * dropped on the page, in the search context they were dropped in, which stays as it is (the
+ * maintainer, 2026-11-03). A floating message says what came in. Used by the import wizard and by the new vault wizard's setup.
  */
 export async function runImport(wizard, progress) {
     const isBookmarks = wizard.choices.source === BOOKMARKS_SOURCE;
@@ -199,9 +201,11 @@ export async function runImport(wizard, progress) {
             void checkBackgroundWork();
         }
         if (!Number.isInteger(result.noteCount) || typeof result.sourceTag !== 'string'
-            || typeof result.firstRootId !== 'string' || result.firstRootId === '') {
+            || typeof result.firstRootId !== 'string' || result.firstRootId === ''
+            || typeof result.prefixFolder !== 'string') {
             throw new Error('The import answered without its notes');
         }
+        wizard.services.announceImport(importFinishedMessage(result.noteCount, result.prefixFolder));
         if (wizard.choices.isDrop) {
             await wizard.services.showDroppedImport(result.firstRootId);
             return;
@@ -331,7 +335,6 @@ const WHOLE_FILES = 'none';
 // image_compression.py's COMPRESSIBLE_SUFFIXES.
 const IMAGES_ORIGINALS = 'originals';
 const IMAGES_COMPRESSED = 'compressed';
-const COMPRESSIBLE_IMAGE_RE = /\.(jpe?g|png|webp|tiff?|bmp)$/i;
 const IMAGES_AS = [
     { value: IMAGES_ORIGINALS, title: 'Keep originals', badge: '', text: 'Each image as it is.' },
     { value: IMAGES_COMPRESSED, title: 'Compress', badge: '', text: 'Smaller, without location and camera data.' },
@@ -705,12 +708,13 @@ export function droppedFolderChoices(droppedFolderId, folder, intoFolder) {
     };
 }
 
-/** The walkthrough's choices for text files dropped on the page with a Markdown file among them
- * (files-shown-not-copied.md §5): copied to a holding folder and scanned first, so it opens at
- * the Markdown screen (MARKDOWN_STEP), going into intoFolder ('' for the top, in no folder). */
-export async function droppedTextFilesChoices(files, intoFolder) {
+/** The walkthrough's choices for files dropped on the page that it opens partway for: text files
+ * with a Markdown file among them (files-shown-not-copied.md §5), or images dropped on a folder in
+ * the tree. Copied to a holding folder and scanned first, so it opens at droppedFilesStartStep,
+ * going into intoFolder ('' for the top, in no folder). */
+export async function droppedFilesChoices(files, intoFolder) {
     if (!Array.isArray(files) || files.length === 0 || !files.every((file) => file instanceof File)) {
-        throw new Error('droppedTextFilesChoices requires the dropped files');
+        throw new Error('droppedFilesChoices requires the dropped files');
     }
     const started = await NotesAPI.startImportUpload();
     if (typeof started.uploadId !== 'string' || typeof started.folderPath !== 'string') {
@@ -739,6 +743,12 @@ export async function droppedTextFilesChoices(files, intoFolder) {
 }
 
 export const MARKDOWN_STEP = 'markdown';
+const IMAGES_STEP = 'images';
+
+/** The screen a drop of files opens at: Markdown's when there is any, then images'. */
+export function droppedFilesStartStep(files) {
+    return files.some((file) => MARKDOWN_FILE_RE.test(file.name)) ? MARKDOWN_STEP : IMAGES_STEP;
+}
 
 export async function discardDroppedUpload(wizard) {
     const uploadId = wizard.choices.uploadId;
@@ -1035,13 +1045,13 @@ async function estimateImages(screen, wizard) {
     const estimate = await NotesAPI.estimateImportImages(JSON.parse(request));
     // A big folder's estimate can answer after the walkthrough closed (2026-11-02): dropped.
     if (!wizard.isCurrentOpen(run)) return;
-    // Asked twice for these choices (Compress picked while the first ran): the first answer kept.
-    if (wizard.choices.imageEstimate !== null && wizard.choices.imageEstimate.request === request) return;
     if (!Number.isInteger(estimate.imageCount) || !Number.isInteger(estimate.imageBytes)
         || IMAGE_LONGEST_SIDES.some((side) => !Number.isInteger(estimate.compressedBytes[side]))) {
         throw new Error('Import image estimate answered malformed');
     }
-    wizard.choose('imageEstimate', { request, estimate });
+    // Asked twice for these choices (the screen drawn twice, Compress picked while the first ran):
+    // the first answer kept, and each screen still shows it.
+    if (!hasImageEstimate(wizard.choices)) wizard.choose('imageEstimate', { request, estimate });
     const line = screen.querySelector('.wizard-image-estimate');
     if (line === null || !line.isConnected) return;
     line.innerHTML = imageEstimateHtml(wizard.choices);

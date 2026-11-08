@@ -1,6 +1,6 @@
 """Importing an Obsidian vault, or a plain folder of Markdown files, into the vault in use (PLAN.md, slices 1 and 1c;
 docs/ready-to-build/import-export-launch.md §2, §5): every file planned first, then all of
-it written at once, as new root notes after the list's last one (one alone at the top), in the
+it written at once, as new root notes after the list's last one, in the
 order of Obsidian's file list.
 The vault's folder is only read."""
 
@@ -126,7 +126,7 @@ class CmdImportObsidianVault(QueryCommand):
             *linked.kept,
         ]
         roots.sort(key=lambda pair: _file_list_key(PurePosixPath(pair[0])))
-        # The files after the list's last note (one alone at the top), as Obsidian's file list
+        # The files after the list's last note, as Obsidian's file list
         # orders them (no import report: the maintainer, 2026-11-01).
         written_roots = [written for _path, written in roots]
         records = root_records(written_roots, context_tags=self.context_tags)
@@ -136,6 +136,7 @@ class CmdImportObsidianVault(QueryCommand):
             # Every note of this import has it: the wizard opens a search context on it.
             "sourceTag": source_tag,
             "firstRootId": first_root_id(written_roots),
+            "prefixFolder": plan.folder_prefix,
         }
 
 
@@ -220,7 +221,7 @@ class CmdPreviewImport(QueryCommand):
             "prefixFolder": plan.folder_prefix,
             "fileCount": len(plan.planned),
             "noteCount": sum(count_notes(note.root) for note in plan.planned) + kept_note_count,
-            # The notes at the top of the list (each file's, and each kept file's), the report aside.
+            # The notes at the top level of the list (each file's, and each kept file's), the report aside.
             "rootNoteCount": len(plan.planned) + kept_note_count,
             # The summary says what each becomes: Markdown files notes, the rest a file in a note of its own.
             "textFileCount": len(plan.planned),
@@ -421,12 +422,11 @@ def first_root_id(roots: List[WrittenRoot]) -> str:
 
 def root_records(roots: List[WrittenRoot], *, context_tags: str) -> List[SimpleNamespace]:
     """The notes as records for apply_restore_records: the root notes, in this order, each
-    followed by its subtree. Several go after the list's last root note: imported at the top,
-    they looked as if they had replaced everything to someone who works without a search (the
-    maintainer, 2026-11-07). One alone goes at the top, where it is seen at once. Each root is
-    linked to the note before it, or the one after it, already in place, and children are
-    appended under their parent, so a note's neighbours are always next to each other when it
-    is inserted. Each root note also gets context_tags (drop_context_tags), its notes below
+    followed by its subtree. Anything imported, a single note too, goes after the list's last
+    root note (the maintainer, 2026-11-08: one rule to reason about): imported at the top, notes
+    looked as if they had replaced everything to someone who works without a search. Each root is
+    linked to the note before it, already in place, and children are appended under their parent,
+    so a note's neighbours are always next to each other when it is inserted. Each root note also gets context_tags (drop_context_tags), its notes below
     inheriting them."""
     existing_roots = store.children(_TOP_LEVEL)
     tagged = [
@@ -434,14 +434,6 @@ def root_records(roots: List[WrittenRoot], *, context_tags: str) -> List[SimpleN
         for written in roots
     ]
     records: List[SimpleNamespace] = []
-    if len(tagged) == 1:
-        written = tagged[0]
-        next_id = None
-        if len(existing_roots) > 0:
-            next_id = existing_roots[0]
-        records.append(_record(written.node, written, parent_id=_TOP_LEVEL, prev_id=None, next_id=next_id))
-        _append_children(records, written.node, written, parent_id=written.node.note_id)
-        return records
     prev_id = None
     if len(existing_roots) > 0:
         prev_id = existing_roots[-1]
@@ -694,7 +686,7 @@ class CmdImportFolderOfFiles(QueryCommand):
         apply_restore_records(root_records(written_roots, context_tags=self.context_tags), self.token)
         note_count = sum(count_notes(note.root) for note in planned) + sum(count_notes(written.node) for _path, written in attached)
         return {"status": "success", "noteCount": note_count, "sourceTag": plan.source_tag,
-                "firstRootId": first_root_id(written_roots)}
+                "firstRootId": first_root_id(written_roots), "prefixFolder": plan.folder_prefix}
 
 
 def _attached_file_note(

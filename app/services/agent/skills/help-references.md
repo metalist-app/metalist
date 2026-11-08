@@ -64,10 +64,11 @@ Sources: docs/ui/references.md
 - `Attach File…` in the command palette opens the native file picker.
 - If you are editing a note, the selected file is uploaded and its `![[UUID]]` token is inserted into that note.
 - If no note is active, the app creates a new note first, then inserts the file reference there.
-- Drag/drop follows the same attachment path for non-image files.
-  - Dropping onto the actively edited note inserts into that note.
-  - Dropping anywhere else creates a new top note first, then inserts there.
-  - Dropping files on a virtual folder in the folder tree (the folder highlights while dragging over it): the same new top note, put in that folder, and not left open for editing. On the tree's top `/`, in no folder.
+- Where dropped files go (agreed 2026-11-08, one rule): files aimed at a note go in it; otherwise each file gets its own note.
+  - On the note being edited (its text or its margin): into that note.
+  - Anywhere else: the note being edited is saved and closed, and each file gets a note at the top, the first file dropped on top. With several, none is left open and the first is brought into sight, moving the list as little as it can; one file stays open to edit. A file that fails stops the drop: the notes already made stay, and the error names the file.
+  - On a folder in the folder tree (it highlights while dragging over it): a note each, filed in that folder, not left open. On the tree's top `/`, in no folder.
+  - Images compression can shrink (JPEG, PNG, WebP, TIFF, BMP) dropped on a folder in the tree come in through Import instead of the image question below: it opens at "Should images be compressed?", then Summary and Import, with everything else in the same drop. As with any import each file is its own note, filed in that folder, after the list's last note. Closing it brings nothing in. GIFs and other images it can't shrink have nothing to ask, and come in as files.
   - A folder dropped from the desktop, alone, opens Import on "Any folder" with that folder chosen; its import folder starts as the folder's name, under the virtual folder it was dropped on (`Projects/Photos`). The browser lists its files first; after the checklist only the ticked files are copied to MetaList (a "Copying your files" step), into a holding place outside the vault that cancelling or importing removes. An interrupted copy starts over.
   - A folder dropped with anything else (files, or another folder) brings nothing in: "Drop a folder on its own."
   - A dropped `.txt` asks **Note** (the default; Enter) or **File**: Note makes a note at the top with its text (on a tree folder, filed there), File the usual card; Cancel or Esc brings nothing in. Several `.txt` dropped together are asked once, one note each in the order dropped.
@@ -79,10 +80,11 @@ Sources: docs/ui/references.md
 - A Word document (`.docx`), an older Word document (`.doc`, Word 97-2003) or an RTF opens in the viewer from its card's **Open**: a `.docx`'s headings, bold, italics, lists, tables, links, footnotes and pictures (never its fonts, colours or page layout); a `.doc`'s text, paragraph by paragraph, with its headers, footers and footnotes (no formatting or pictures); an RTF's paragraphs, bold and italics. In the viewer all three show bold, italics, underline, strikethrough and highlights in Word's colours, and their text can be selected and copied. Their words are found by search and find (⌘F). `.pages` files keep **Download** only.
 - Preview notes keep up with MetaList: when it gets a better way to make a kind of file's preview, every preview of that kind nobody has edited is made again in place (a card in the lower left says "Updating previews"); an edited preview stays as written, and a deleted one never comes back. A Word or RTF file imported before Word and RTF previews existed gets its preview at the next start.
 - A PDF gets no child note; its text is searchable instead. A quoted search (`"rent is due"`) finds a note by words inside the PDFs it shows, and a line or two of the PDF's text shows under the card with the words marked. A new PDF becomes searchable a few seconds after it arrives (its text is read in the background); a scanned PDF, or one that is damaged or locked with a password, is found by its name only. Search covers a PDF's first ~2,000 pages (5 MB of text). The text is stored encrypted with the file; the AI can find notes by it but never reads it.
-- Named image files dropped or pasted into the editor prompt for one of two paths:
+- Named image files dropped or pasted (anywhere but a folder in the tree) ask once, for all of them, between two paths:
   - `Paste Inline`: embed the image into note HTML as compressed `data:image/...`.
   - `Save as File`: upload the original file without recompression and insert its `![[UUID]]` token.
 - Pasting a named image while no note is active uses the same prompt and creates the destination note at the top.
+- A paste brings in one image, the largest the clipboard offers: a clipboard carries one picture in several formats.
 - Clipboard image-pixel paste with no meaningful source filename keeps the direct inline embed path by default.
 - The attach flow saves the note immediately after insertion so the new reference survives refresh/reload.
 - `Add Excalidraw Diagram` attaches a new, empty `.excalidraw` file the same way and opens the diagram editor.
