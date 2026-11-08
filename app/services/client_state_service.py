@@ -28,6 +28,8 @@ from app.services.agent.cloud_privacy import validate_cloud_privacy_policy_prefe
 from app.services.agent.privacy_guard import cloud_privacy_revision
 from app.services.preference_values import preference_or_default
 from app.services.agent.retrieval_settings import OPENAI_MAX_PAGE_APPROXIMATE_TOKENS_PREFERENCE_KEY
+from app.services.agent.retrieval_settings import AGENT_WINDOW_PERCENT_PREFERENCE_KEY
+from app.services.agent.retrieval_settings import validate_agent_window_percent_preference
 from app.services.agent.retrieval_settings import validate_openai_max_page_approximate_tokens_preference
 from app.services.agent.web_settings import WEB_ACCESS_MODE_PREFERENCE_KEY
 from app.services.agent.web_settings import WEB_ACCESS_MODES
@@ -102,6 +104,7 @@ _ALLOWED_CLIENT_PREFERENCES = {
     "pref.ai.show_spend": {"true", "false"},
     WEB_ACCESS_MODE_PREFERENCE_KEY: WEB_ACCESS_MODES,
     CLOUD_PRIVACY_POLICY_PREFERENCE_KEY: "cloud_privacy_policy",
+    AGENT_WINDOW_PERCENT_PREFERENCE_KEY: "agent_window_percent",
     OPENAI_MAX_PAGE_APPROXIMATE_TOKENS_PREFERENCE_KEY: (
         "openai_agent_max_page_approximate_tokens"
     ),
@@ -323,6 +326,8 @@ def _validate_client_preferences(preferences: dict[str, object]) -> dict[str, st
             _validate_ai_chat_width_preference(key=key, value=value)
         elif allowed_values == "ai_chat_composer_height":
             _validate_ai_chat_composer_height_preference(key=key, value=value)
+        elif allowed_values == "agent_window_percent":
+            value = validate_agent_window_percent_preference(value)
         elif allowed_values == "openai_agent_max_page_approximate_tokens":
             value = validate_openai_max_page_approximate_tokens_preference(value)
         elif allowed_values == "cloud_privacy_policy":

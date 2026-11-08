@@ -56,13 +56,14 @@ const PRIVACY_RULES_TOOLTIP = [
     'A hidden note hides everything under it, and never-send wins over only-send.',
     'Phrase rules read every note in view each time you send, so many notes start the chat more slowly.',
 ].join(' ');
-const TOKEN_WINDOW_TOOLTIP = 'The most the AI reads from your notes at once, in tokens (about ¾ of a word each), '
-    + 'for one answer or one batch of tag suggestions. A note is never split from its children; '
-    + 'notes past the limit are left out.';
+const WINDOW_PERCENT_TOOLTIP = 'How much of the AI model\'s context window your notes may fill in one request: '
+    + 'one answer, or one batch of a summary or of tag suggestions. It is a share of each model\'s own window, '
+    + 'so one setting fits every model. Higher means fewer batches, each one slower. '
+    + 'A note is never split from its children.';
 const SEARCH_STRIP_QUOTES = /^["“](.*)["”]$/;
 
 function retrievalStateFields(settings, provider) {
-    return { maxPageApproximateTokens: validateAgentRetrievalSettings(settings, provider).maxPageApproximateTokens };
+    return { windowPercent: validateAgentRetrievalSettings(settings, provider).windowPercent };
 }
 
 function nonEmptyLines(text) {
@@ -304,10 +305,13 @@ export class AiAgentSettingsModal extends BaseModal {
                         <section class="ai-settings-section ai-settings-limits">
                             <div class="ai-settings-stacked">
                                 <span class="ai-settings-wide-label">
-                                    <label for="ai-agent-max-page-approximate-tokens">Max token window</label>
-                                    <span class="ai-settings-help" tabindex="0" role="img" aria-label="${escapeHtml(TOKEN_WINDOW_TOOLTIP)}" title="${escapeHtml(TOKEN_WINDOW_TOOLTIP)}">?</span>
+                                    <label for="ai-agent-window-percent">Model window used</label>
+                                    <span class="ai-settings-help" tabindex="0" role="img" aria-label="${escapeHtml(WINDOW_PERCENT_TOOLTIP)}" title="${escapeHtml(WINDOW_PERCENT_TOOLTIP)}">?</span>
                                 </span>
-                                <input id="ai-agent-max-page-approximate-tokens" type="number" autocomplete="off" data-1p-ignore data-lpignore="true" min="500" max="500000" step="100" value="${escapeHtml(String(state.maxPageApproximateTokens))}">
+                                <span class="ai-settings-percent">
+                                    <input id="ai-agent-window-percent" type="number" autocomplete="off" data-1p-ignore data-lpignore="true" min="1" max="100" step="1" value="${escapeHtml(String(state.windowPercent))}">
+                                    <span aria-hidden="true">%</span>
+                                </span>
                             </div>
                         </section>`)}
                     ${sectionPanelHtml(state, 'tagging', renderTaggingSection(state))}
@@ -350,9 +354,9 @@ export class AiAgentSettingsModal extends BaseModal {
             segment.onclick = () => this._update({ webAccessMode: validateAgentWebAccessMode(segment.dataset.mode) });
         }
         this._setupRuleControls();
-        const limitInput = this._element('ai-agent-max-page-approximate-tokens', HTMLInputElement);
+        const limitInput = this._element('ai-agent-window-percent', HTMLInputElement);
         limitInput.oninput = () => {
-            this._setState({ maxPageApproximateTokens: Number(limitInput.value) });
+            this._setState({ windowPercent: Number(limitInput.value) });
         };
         this._element('ai-agent-save', HTMLButtonElement).onclick = () => void this._handleSave();
         this._element('ai-agent-cancel', HTMLButtonElement).onclick = () => this.requestClose();
@@ -568,10 +572,10 @@ export class AiAgentSettingsModal extends BaseModal {
                 state = { ...state, ...withRules(state, side, [input.value]) };
             }
         }
-        const retrievalSettings = { maxPageApproximateTokens: state.maxPageApproximateTokens };
+        const retrievalSettings = { windowPercent: state.windowPercent };
         // Every problem at once, the limit with its field.
         const problems = [
-            { text: getAgentRetrievalSettingsValidationMessage(retrievalSettings, state.chatProvider), fieldId: 'ai-agent-max-page-approximate-tokens' },
+            { text: getAgentRetrievalSettingsValidationMessage(retrievalSettings, state.chatProvider), fieldId: 'ai-agent-window-percent' },
             { text: getCloudPrivacyTextFieldsValidationMessage(state), fieldId: null },
         ].filter((problem) => problem.text !== '');
         if (problems.length > 0) {

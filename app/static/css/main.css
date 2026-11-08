@@ -3899,6 +3899,19 @@ details.ai-chat-thinking > .ai-chat-thinking-heading {
     width: 120px;
 }
 
+/* A percentage field: the % sits right after the number. */
+.ai-settings-percent {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 6px;
+}
+
+#ai-agent-settings-modal .ai-settings-percent > input {
+    margin: 0;
+    width: 80px;
+}
+
 .ai-agent-settings-modal-content input[type="text"],
 .ai-agent-settings-modal-content input[type="password"],
 .ai-agent-settings-modal-content input[type="number"],

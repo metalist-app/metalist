@@ -43,7 +43,7 @@ Read roughly: about **1 s to start**, about **100 output tokens a second**, and 
 `docs/design/agent-harness.md`, "Tag Proposal Operations"; code in `app/services/agent/tagging_run.py`, `tagging.py`, `note_tag_suggestions.py`.
 
 - **Suggest Tags with AI** (one note, or a note and its children): one structured-output call to the chat's model. It sends the note, its ancestors, a ranked vocabulary (up to 60 tags from the tag bar's own ranking, `suggest_tags_for_note`, then the 150 most used) and writes back up to 12 tags per note, at most 2 of them new (`MAX_NEW_TAGS`).
-- **Bulk tagging from chat** (`propose_tag_generation`): the view's trees in batches of up to the Max token window (default 500,000 tokens), the first batch alone, then 4 at a time. Each batch writes JSON proposals; the output is capped at 8,192 tokens (`TAG_BATCH_MAX_OUTPUT_TOKENS`). New tags are allowed unless the focus is "existing".
+- **Bulk tagging from chat** (`propose_tag_generation`): the view's trees in batches of up to Model window used (by default half the model's window, about 500,000 tokens), the first batch alone, then 4 at a time. Each batch writes JSON proposals; the output is capped at 8,192 tokens (`TAG_BATCH_MAX_OUTPUT_TOKENS`). New tags are allowed unless the focus is "existing".
 - The tag bar's own suggestions use no AI (about 200 ms a note; `docs/design/tag-suggestion-learnings.md` measured 4–5 ms for an experimental ranking with better Hit@5).
 
 ### With a decision model
@@ -69,7 +69,7 @@ Read roughly: about **1 s to start**, about **100 output tokens a second**, and 
 
 `app/services/agent/agent_tools.py` (`_search_view_notes`), `investigation.py` (`read_root_trees`, `plan_complete_root_batches`).
 
-- The AI's search keeps notes containing **every** query word (substrings, case-insensitive), then takes their whole trees **in list order** until the Max token window (500,000) is full. The rest are "unread". There is no ranking by relevance.
+- The AI's search keeps notes containing **every** query word (substrings, case-insensitive), then takes their whole trees **in list order** until Model window used (about 500,000 tokens) is full. The rest are "unread". There is no ranking by relevance.
 - On 100,000 notes, the search for "harbor" matched 11,602 trees and sent the first 2,819 notes, about 512,000 tokens, to the AI.
 - A whole-view summary splits the entire view into 500,000-token batches, each read and summarized by the chat model.
 - The system prompt already admits the gap: a word search "cannot find notes by a category or meaning you would have to judge" (`prompts/agent.md`).
@@ -136,5 +136,4 @@ A live benchmark, approved by the maintainer as an exception to Luna-Low-only li
 
 - *To verify on a real vault*: today's one-note request (Suggest Tags with AI) sends `tagging_mode: "new"` with focus "both". On the 50 benchmark notes (no tags yet, every right tag in the vocabulary), Luna proposed two new tags per note and found only 1 of 103 existing ones. In a real vault the vocabulary is ranked by the tag bar first, so it may do better; if it doesn't, existing tags are not being suggested.
 
-- `docs/design/agent-harness.md` (Tag Proposal Operations, the batching paragraph) still describes `pref.ai.openai.tagging.batch_tokens` with a default of 100,000. That setting was retired on 2026-10-23; batches now use the Max token window (default 500,000).
 - *To verify*: a bulk tagging batch may hold up to 500,000 tokens of notes (about 2,700 notes), but its output is capped at 8,192 tokens, about 270 notes' proposals at 30 tokens each. A batch that needs to tag more notes than that may be cut off. Not tested; worth a test whatever this plan decides.

@@ -380,6 +380,7 @@ def _suggestion_lines(note_id: str, *, include_children: bool) -> list[dict[str,
 
 
 def test_the_suggestion_route_streams_tags_or_why_the_ai_failed(live_database, monkeypatch) -> None:
+    monkeypatch.setattr(ai_routes, "_model_context_tokens", lambda *, connection, model: 400_000)
     _note("trip", None, content="<div>Temples in Kyoto</div>", tags="")
     _note("other", None, content="<div>Gion</div>", tags="kyoto")
     monkeypatch.setattr(ai_routes.token_service, "get_session_key", lambda token: "session")
@@ -580,6 +581,7 @@ def test_a_subtree_too_big_for_one_batch_is_split_by_child_with_the_note_as_cont
 
 
 def test_suggesting_tags_after_a_chat_answer_records_its_own_trace_run(live_database, monkeypatch) -> None:
+    monkeypatch.setattr(ai_routes, "_model_context_tokens", lambda *, connection, model: 400_000)
     # The chat traced a run for this session first; Suggest Tags then records its own.
     _note("trip", None, content="<div>Temples in Kyoto</div>", tags="")
     monkeypatch.setattr(ai_routes.token_service, "get_session_key", lambda token: "session")

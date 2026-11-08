@@ -313,14 +313,14 @@ test('agent debugger retains the latest trace and toggles exact detail visibilit
 });
 
 
-test('AI agent settings expose one token window, folded away', () => {
+test('AI agent settings expose one share of the model\'s window, explained by its ?', () => {
     const settingsModal = readFileSync(SETTINGS_MODAL_URL, 'utf8');
     const commandController = readFileSync(COMMAND_CONTROLLER_URL, 'utf8');
 
-    assert.match(settingsModal, /id="ai-agent-max-page-approximate-tokens"/);
-    assert.match(settingsModal, /max="500000"/);
-    assert.match(settingsModal, /<label for="ai-agent-max-page-approximate-tokens">Max token window<\/label>/);
-    assert.match(settingsModal, /class="ai-settings-help" tabindex="0"[^>]*title="\$\{escapeHtml\(TOKEN_WINDOW_TOOLTIP\)\}">\?<\/span>/);
+    assert.match(settingsModal, /id="ai-agent-window-percent"/);
+    assert.match(settingsModal, /min="1" max="100"/);
+    assert.match(settingsModal, /<label for="ai-agent-window-percent">Model window used<\/label>/);
+    assert.match(settingsModal, /class="ai-settings-help" tabindex="0"[^>]*title="\$\{escapeHtml\(WINDOW_PERCENT_TOOLTIP\)\}">\?<\/span>/);
     assert.doesNotMatch(settingsModal, /<details/);
     assert.doesNotMatch(settingsModal, />tokens</);
     assert.match(settingsModal, /A note is never split from its children/);
@@ -334,7 +334,7 @@ test('AI agent settings expose one token window, folded away', () => {
     assert.match(commandController, /openAiRetrievalSettings/);
     assert.doesNotMatch(commandController, /ollamaRetrievalSettings/);
     assert.match(commandController, /readAgentRetrievalSettings/);
-    assert.match(commandController, /maxPageApproximateTokens/);
+    assert.match(commandController, /windowPercent/);
 });
 
 
@@ -418,7 +418,9 @@ test('complete-scope summaries require an explicit choice and expose batch progr
     assert.match(css, /\.ai-chat-summary-operation \.summary-cancel-btn/);
     assert.match(css, /\.ai-chat-summary-operation \.summary-batch-stack/);
     assert.match(bulkUi, /moduleState\.active\.operation !== 'summary'/);
-    assert.match(routes, /"summarize_all"/);
+    // A summary asks nothing first, so its progress events say what is running.
+    assert.match(bulkUi, /const isSummary = initialEvent\.operation === 'summary';/);
+    assert.doesNotMatch(routes, /"summarize_all"/);
     assert.match(routes, /"use_prefix"/);
 });
 

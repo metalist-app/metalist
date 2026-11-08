@@ -22,16 +22,18 @@ export async function checkOpenAiSettings(page) {
     modelPicker: Boolean(document.querySelector('#ai-agent-settings-modal select, #ai-agent-add-model')),
     download: Boolean(document.getElementById('ai-agent-download')),
     webAccessMode: document.querySelector('#ai-agent-web-access [aria-checked="true"]').dataset.mode,
-    tokenWindow: document.getElementById('ai-agent-max-page-approximate-tokens').value,
+    windowPercent: document.getElementById('ai-agent-window-percent').value,
+    windowHelp: document.querySelector('.ai-settings-limits .ai-settings-help').title,
     taggingLimit: Boolean(document.getElementById('ai-agent-tagging-batch-tokens')),
   }));
-  assert.match(initial.text, /\(blacklist\)[\s\S]*\(whitelist\)[\s\S]*Max token window/);
+  assert.match(initial.text, /\(blacklist\)[\s\S]*\(whitelist\)[\s\S]*Model window used/);
   assert.doesNotMatch(initial.text, /Ollama|Download an/);
   assert.deepEqual(initial.tabs, ['OpenAI:true', 'Anthropic:false', 'Google:false']);
   assert.equal(initial.modelPicker, false);
   assert.equal(initial.download, false);
   assert.equal(initial.webAccessMode, 'none');
-  assert.equal(initial.tokenWindow, '500000');
+  assert.equal(initial.windowPercent, '50');
+  assert.match(initial.windowHelp, /share of each model's own window/);
   assert.equal(initial.taggingLimit, false);
   // A key in the wrong format is explained under the key, in its tab; Google's AQ. keys
   // (AI Studio, 2026) are accepted. Test keys reach only this test server.
@@ -85,7 +87,7 @@ export async function checkOpenAiSettings(page) {
   assert.equal(saved.provider, 'openai');
   assert.equal(saved.model, 'gpt-5.6-sol');
   assert.equal(saved.webAccessMode, 'contextual');
-  assert.equal(saved.maxPageApproximateTokens, 500000);
+  assert.equal(saved.windowPercent, 50);
   assert.equal('taggingBatchTokens' in saved, false);
   // Save with nothing changed (or changed back) closes the dialog like any Save.
   await page.evaluate(async () => {

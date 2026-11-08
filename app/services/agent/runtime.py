@@ -63,7 +63,6 @@ from app.services.agent.web_capabilities import build_web_url_capabilities
 from app.services.agent.web_evidence import WebPageEvidence
 from app.services.agent.web_evidence import citation_references_for_pages
 from app.services.agent.web_evidence import web_evidence_store
-from app.services.bulk_operation import bulk_operation_guard
 from app.services.agent.history import record_history
 from app.services.agent.ai_send import send_structured
 from app.services.agent.ai_send import send_text_stream
@@ -215,7 +214,7 @@ class AgentRuntime(AgentLoopMixin):
         route_tokens: int,
         continues_failed_summary: bool,
     ) -> AsyncIterator[dict[str, object]]:
-        """Summarize the whole frozen view after the user confirms (the agent's summarize_view).
+        """Summarize the whole frozen view (the agent's summarize_view).
 
         When the agent says this continues a failed summary, batches kept from it
         (summary_batch_store.py) that match exactly are reused, the rest run with the
@@ -247,8 +246,8 @@ class AgentRuntime(AgentLoopMixin):
             + describe_text_extraction(before=extraction_before, after=snapshot.text_extraction.reading()),
             approx_input_tokens=route_tokens,
         )
-        # One evidence payload means one ordinary model call: no batches to pay
-        # for or choose between, so the summary starts without a question.
+        # A summary covers the whole view, in as many batches as it takes, with no question about
+        # scope (the maintainer, 2026-11-08). One evidence payload is one ordinary model call.
         if len(batch_plan.batches) > 1:
             batch_keys = self._summary_batch_keys(run=run, skill=skill, snapshot=snapshot, plan=batch_plan)
             kept = None
@@ -272,72 +271,19 @@ class AgentRuntime(AgentLoopMixin):
                         async for event in staged_events:
                             yield event
                     return
-            prefix_root_count = InvestigationState.start(
-                snapshot=snapshot,
-                settings=run.retrieval_settings,
-            ).retain_root_prefix_within_token_budget(
-                reserved_approximate_tokens=selected_note_tokens,
-            ).retained_result_tree_count
-            # A summary only reads notes: its question blocks no other change.
-            with bulk_operation_guard.ask(
-                run.session_key, ("summarize_all", "use_prefix", "cancel"),
-            ) as (question_id, answer):
-                # Report scope size against the evidence budget, as tag proposals do.
-                budget_ratio = (
-                    (batch_plan.approximate_token_count + selected_note_tokens)
-                    / run.retrieval_settings.max_page_approximate_tokens
-                )
-                minimum_model_calls = len(batch_plan.batches) + 1
-                yield {
-                    "type": "bulk_question",
-                    "question_id": question_id,
-                    "kind": "summary_confirmation",
-                    "label": (
-                        f"This scope uses approximately {budget_ratio:.2f}× the "
-                        f"evidence budget: its {batch_plan.result_tree_count} root "
-                        f"notes need {len(batch_plan.batches)} evidence batches "
-                        "plus a final synthesis "
-                        f"(at least {minimum_model_calls} model calls)."
-                    ),
-                    "root_count": batch_plan.result_tree_count,
-                    "batch_count": len(batch_plan.batches),
-                    "prefix_root_count": prefix_root_count,
-                }
-                choice = await answer
-                if choice == "cancel":
-                    self._trace_store.complete_run(
-                        session_key=run.session_key,
-                        run_id=run.run_id,
-                    )
-                    yield {"type": "bulk_complete", "changed": False}
-                    yield {
-                        "type": "content_delta",
-                        "text": "Summary cancelled.",
-                        "reference_note_ids": [],
-                        "reference_web_ids": [],
-                    }
-                    yield {
-                        "type": "done",
-                        "reference_note_ids": [],
-                        "reference_web_ids": [],
-                    }
-                    return
-                if choice == "summarize_all":
-                    async with aclosing(self._stream_staged_scope_summary(
-                        run=run,
-                        canonical_messages=canonical_messages,
-                        summary_request=canonical_messages[-1]["content"],
-                        state=state,
-                        skill=skill,
-                        plan=batch_plan,
-                        batch_keys=batch_keys,
-                        reused={},
-                    )) as staged_events:
-                        async for event in staged_events:
-                            yield event
-                    return
-                assert choice == "use_prefix"
-                yield {"type": "bulk_complete", "changed": False}
+            async with aclosing(self._stream_staged_scope_summary(
+                run=run,
+                canonical_messages=canonical_messages,
+                summary_request=canonical_messages[-1]["content"],
+                state=state,
+                skill=skill,
+                plan=batch_plan,
+                batch_keys=batch_keys,
+                reused={},
+            )) as staged_events:
+                async for event in staged_events:
+                    yield event
+            return
         retention = await read_notes_off_request_loop(snapshot=snapshot, read_notes=partial(
             state.retain_root_prefix_within_token_budget,
             reserved_approximate_tokens=selected_note_tokens,

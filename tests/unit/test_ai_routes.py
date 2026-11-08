@@ -76,6 +76,7 @@ def _without_activity_token_counts(
 
 @pytest.fixture(autouse=True)
 def use_fake_chat_dependencies(monkeypatch):
+    monkeypatch.setattr(ai_routes, "_model_context_tokens", lambda *, connection, model: 1_050_000)
     monkeypatch.setattr(ai_credentials_module.ai_credential_stores["openai"], "status", lambda **kwargs: AiCredentialStatus(configured=True, persistent=False))
     # Claude and Gemini have no key here.
     for other_provider in ("anthropic", "gemini"):
@@ -733,7 +734,7 @@ def test_stream_chat_updates_server_history_and_emits_typed_events(monkeypatch) 
             # Instructions are packaged; a stale saved override is never used.
             assert prompts == DEFAULT_AGENT_PROMPTS
             assert skills == DEFAULT_AGENT_SKILLS
-            assert retrieval_settings.max_page_approximate_tokens == 7_000
+            assert retrieval_settings.max_page_approximate_tokens == 10_500
             assert web_settings.mode == "none"
             assert frozen_scope.descriptor == _all_notes_scope()
             assert frozen_scope.session_key == "session-key"
@@ -765,7 +766,7 @@ def test_stream_chat_updates_server_history_and_emits_typed_events(monkeypatch) 
         "load_client_preferences",
         lambda *, token: {
             "pref.ai.prompt.system": "Custom system prompt",
-            "pref.ai.openai.retrieval.max_page_approximate_tokens": "7000",
+            "pref.ai.retrieval.window_percent": "1",
         },
     )
 
@@ -894,7 +895,7 @@ def test_stream_chat_uses_openai_provider_with_cloud_boundary(
             ]
             assert (
                 arguments["retrieval_settings"].max_page_approximate_tokens
-                == 20_000
+                == 21_000
             )
             assert arguments["web_settings"].mode == "none"
             yield {
@@ -916,8 +917,7 @@ def test_stream_chat_uses_openai_provider_with_cloud_boundary(
         ai_routes,
         "load_client_preferences",
         lambda *, token: {
-            "pref.ai.openai.retrieval.max_page_approximate_tokens": "7000",
-            "pref.ai.openai.retrieval.max_page_approximate_tokens": "20000",
+            "pref.ai.retrieval.window_percent": "2",
         },
     )
     def fake_openai_adapter(*, api_key: str, cost_tracker):

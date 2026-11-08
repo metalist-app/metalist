@@ -44,7 +44,7 @@ export async function proposalRequest(path, payload, signal) {
 }
 
 function openProgress(abortController, chatHost, initialEvent) {
-    const isSummary = initialEvent.kind === 'summary_confirmation';
+    const isSummary = initialEvent.operation === 'summary';
     // The operation always runs inside the chat, in the panel the chat opened for it: it is
     // the conversation's content (docs/ui/modals.md, "Errors and status").
     if (!(chatHost instanceof HTMLElement)) {
@@ -159,7 +159,6 @@ export function handleBulkEvent(event, abortController, chatHost) {
         return;
     }
     if (event.type !== 'bulk_question') throw new Error(`Unknown bulk event ${event.type}`);
-    // Summaries and tag proposals share one equivalent scope card.
     const question = describeScopeQuestion(event);
     moduleState.active.clock.pause();
     dialog.querySelector('[data-progress]').hidden = true;

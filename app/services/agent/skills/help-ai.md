@@ -11,11 +11,12 @@ API key and a link to the provider's usage and billing page; the Google tab warn
 sent may be used to improve Google's products and read by people, so a key with
 billing turned on is the one to use. Below it are
 **Web access** (Off, Links in your notes, Any public page), the privacy rules **Never
-send notes with (blacklist)** and **Only send notes with (whitelist)**, and **Max token
-window**: the one context limit, in tokens,
+send notes with (blacklist)** and **Only send notes with (whitelist)**, and **Model window
+used**: the one context limit, a percentage (1–100) of the chat model's own context window,
 for answers and tagging batches alike. Use these exact labels when directing the user.
-The defaults are gpt-5.6-luna and 500,000 tokens; the limit accepts 500–500,000, so
-"250k context" means Max token window = 250000.
+The defaults are gpt-5.6-luna and 50%. Because it is a percentage, one setting fits every
+model and a token count has to be converted: OpenAI's models have a 1,050,000-token window,
+so "250k context" there means Model window used = 24%.
 The model and thinking level are picked only beside chat Send, and the last choice
 sticks; picking a model also picks its provider. The picker lists the models of every
 provider with a saved key, under the provider's name: the ones MetaList ships
@@ -67,8 +68,8 @@ for one request, up to 8 steps. General conversation needs no tools. Product
 questions look up selected MetaList help topics, including release notes (what
 changed in each version and the installed version); help text is transient and is
 not automatically added to future turns. Explicit requests to generate/accept/remove
-tag proposals or summarize the whole view hand over to those operations, which
-ask first. Asking about that workflow is not permission to run it. The help action can explain and open dialogs only; it cannot set a
+tag proposals hand over to that operation, which asks first; a request to summarize the
+whole view starts the summary right away, in as many batches as it takes. Asking about that workflow is not permission to run it. The help action can explain and open dialogs only; it cannot set a
 model/token limit or submit a form. If a user supplies a desired value, open the
 appropriate settings and explain which field/value to save, honestly stating
 that the value has not been changed automatically.

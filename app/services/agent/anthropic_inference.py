@@ -94,6 +94,10 @@ _STRUCTURED_MAX_ATTEMPTS = 2
 _PROVIDER_ERROR_DETAIL_CHARS = 500
 
 
+# Each model's context window once Anthropic has reported it, for as long as MetaList runs.
+_CONTEXT_TOKENS_BY_MODEL: dict[str, int] = {}
+
+
 class AnthropicProviderError(InferenceProviderError):
     """Expected Claude API or transport failure."""
 
@@ -306,13 +310,28 @@ class AnthropicInferenceAdapter:
 
     async def inspect_context_window(self, *, base_url: str, model: str) -> InferenceContextWindow:
         self._validate_base_url(base_url)
-        context_tokens = catalog_entry(_PROVIDER).context_tokens
+        normalized_model = validate_model_name(model)
+        context_tokens = await self._context_tokens(normalized_model)
         return InferenceContextWindow(
-            model=validate_model_name(model),
+            model=normalized_model,
             maximum_tokens=context_tokens,
             loaded_tokens=context_tokens,
             required_tokens=TARGET_AGENT_CONTEXT_TOKENS,
         )
+
+    async def _context_tokens(self, model: str) -> int:
+        """The model's window, as Anthropic's Models API reports it: asked once per model."""
+        if model in _CONTEXT_TOKENS_BY_MODEL:
+            return _CONTEXT_TOKENS_BY_MODEL[model]
+        client = self._client(lambda request: None, model=model)
+        # lint: allow-PY001 rationale="an expected Anthropic API failure becomes the provider error the chat shows"
+        try:
+            info = await client.models.retrieve(model)
+        # lint: allow-PY001 rationale="an expected Anthropic API failure becomes the provider error the chat shows"
+        except APIError as exc:
+            raise AnthropicProviderError(_provider_error_message(exc)) from exc
+        _CONTEXT_TOKENS_BY_MODEL[model] = info.max_input_tokens
+        return info.max_input_tokens
 
     @record_structured_call
     async def infer_structured(

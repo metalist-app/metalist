@@ -93,7 +93,7 @@ MetaList does not have.
 
 Examples: “How does tag inheritance work?” explains from the tags skill.
 “Open AI settings” opens that dialog. “How do I change context to 250k?” opens
-AI settings and identifies Max token window = 250000, leaving
+AI settings and identifies Model window used = 24% (on OpenAI's 1,050,000-token window), leaving
 the user to save. “Open Create backup in the menu” highlights its command without
 creating a backup.
 
@@ -171,16 +171,12 @@ after a summary failed on a miscopied UUID): about 20 tokens less per note, 11% 
 `summarize_view` is for summarizing, comparing or synthesizing the complete view.
 In an empty view the agent says there is nothing to summarize.
 
-When the whole scope fits in one evidence payload, the summary is one ordinary model
-call and starts without a question. When it needs several batches, it asks for
-permission before any summary call. The
-dialog shows how many roots and evidence batches will be processed and the scope's
-size as a multiple of the evidence budget. Tag proposals ask the same single card,
-with the tag-focus selector (existing, new, or both) added above the buttons:
+A summary starts without a question, however large the view (2026-11-08; before, one that
+needed several batches asked first): one ordinary model call when the whole scope fits in one
+evidence payload, otherwise batches. Tag proposals ask one card first: the scope's size as a
+multiple of the evidence budget, the tag-focus selector (existing, new, or both), then
 "Tag all N", "Use first K only" when the scope exceeds the evidence budget, and
-Cancel (last and tinted red in both). If multiple
-batches are required, the user can summarize everything, use only the leading
-single-payload prefix, or cancel. Complete processing keeps every root tree intact,
+Cancel (last and tinted red). Complete processing keeps every root tree intact,
 has no cap on the total number of batches, and sends as many model requests at once
 as the provider's rate limits allow (2026-11-07; before, at most four): every batch starts
 at once (2026-11-08; before, the first ran alone to seed provider caching, a whole batch's wait
@@ -229,8 +225,8 @@ The agent cannot expand beyond the frozen scope or cite an undisclosed note ID. 
   order. SearchIndex membership never becomes ordering.
 - Results near the top are generally newer or more highly user-ranked, which is a
   prioritization hint rather than relevance proof.
-- Each note read packs complete result trees up to the limit. OpenAI defaults
-  to 500,000 approximate tokens and is configurable from 500–500,000.
+- Each note read packs complete result trees up to the limit, a percentage of the
+  model's context window (default 50%, configurable from 1–100%).
 - A root tree is never divided. If the first root alone exceeds the limit, the run
   fails visibly; otherwise the first root that would overflow and all following
   roots are omitted.
@@ -247,9 +243,13 @@ The agent cannot expand beyond the frozen scope or cite an undisclosed note ID. 
   Contentless `is_evidence: false` ancestors preserve paths to nested matches
   without disclosing gray/redacted note information.
 
-The only retrieval control in `AI Agent Settings…` is **Max token window** (its `?`
-explains it in a tooltip): the provider-specific maximum approximate token count of what one
-read returns. Tagging batches use the same limit; there is no separate tagging window.
+The only retrieval control in `AI Agent Settings…` is **Model window used** (its `?`
+explains it in a tooltip): how much of the model's context window what one read returns may
+fill, as a percentage, so one setting fits every model (agreed 2026-11-08; before, a number of
+tokens. One saved earlier reads as its share of OpenAI's 1,050,000-token window, so 500,000 is
+48%). Room for the prompt and a batch's answer is always left. Claude and Gemini report their
+windows through their APIs, asked once per model while MetaList runs (`docs/design/ai-providers.md`).
+Tagging batches use the same limit; there is no separate tagging window.
 
 ## Providers and Configuration
 
@@ -260,7 +260,7 @@ read returns. Tagging batches use the same limit; there is no separate tagging w
   each provider with a key, under the provider's name; picking a model picks its
   provider.
 
-- Defaults: `gpt-5.6-luna` and 500,000 approximate tokens read at once. Saved model
+- Defaults: `gpt-5.6-luna` and 50% of the model's context window read at once. Saved model
   and limit overrides are retained; the retired tagging batch preference
   (`pref.ai.openai.tagging.batch_tokens`) is dropped from the vault.
 
@@ -274,7 +274,7 @@ read returns. Tagging batches use the same limit; there is no separate tagging w
     link to the provider's own page.
   - **Privacy**: the privacy rules (below).
   - **Reading**: **Web access**, three segments, Off / Links in your notes / Any public
-    page, each explained in its tooltip; and **Max token window**, in tokens, with a `?`
+    page, each explained in its tooltip; and **Model window used**, a percentage, with a `?`
     whose tooltip explains it.
   - **Tagging**: **Tags the AI may propose**, Existing tags only / Existing and new tags
     (`pref.ai.tagging.vocabulary`; neither until chosen here or when a tagging run asks).

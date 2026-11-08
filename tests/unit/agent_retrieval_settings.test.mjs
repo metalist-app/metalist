@@ -2,52 +2,52 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
-    DEFAULT_OPENAI_AGENT_RETRIEVAL_SETTINGS,
-    OPENAI_AGENT_RETRIEVAL_PREFERENCE_KEYS,
+    AGENT_RETRIEVAL_PREFERENCE_KEYS,
+    DEFAULT_AGENT_RETRIEVAL_SETTINGS,
     readAgentRetrievalSettings,
     validateAgentRetrievalSettings,
 } from '../../app/static/js/modules/ai-chat/agent-retrieval-settings.js';
 
+const OLD_TOKEN_KEY = 'pref.ai.openai.retrieval.max_page_approximate_tokens';
 
-test('one limit covers answers and tagging batches', () => {
-    assert.deepEqual(DEFAULT_OPENAI_AGENT_RETRIEVAL_SETTINGS, {
-        maxPageApproximateTokens: 500000,
-    });
+function preferences(values) {
+    const stored = new Map(Object.entries(values));
+    return (key) => stored.get(key) ?? null;
+}
+
+
+test('one percentage of the model\'s window covers answers and tagging batches', () => {
+    assert.deepEqual(DEFAULT_AGENT_RETRIEVAL_SETTINGS, { windowPercent: 50 });
 });
 
 
-test('retired local settings do not affect OpenAI limits', () => {
-    const values = new Map([
-        ['pref.ai.retrieval.max_page_approximate_tokens', '7000'],
-        [OPENAI_AGENT_RETRIEVAL_PREFERENCE_KEYS.maxPageApproximateTokens, '500000'],
-        ['pref.ai.tagging.batch_tokens', '3000'],
-        ['pref.ai.openai.tagging.batch_tokens', '12000'],
-    ]);
-    const getPreference = (key) => values.get(key) ?? null;
-    assert.deepEqual(readAgentRetrievalSettings(getPreference, 'openai'), {
-        maxPageApproximateTokens: 500000,
-    });
+test('a saved percentage is read back', () => {
+    assert.deepEqual(readAgentRetrievalSettings(preferences({
+        [AGENT_RETRIEVAL_PREFERENCE_KEYS.windowPercent]: '30',
+        [OLD_TOKEN_KEY]: '500000',
+    }), 'openai'), { windowPercent: 30 });
 });
 
 
-test('legacy OpenAI default migrates to current default', () => {
-    const getPreference = (key) => (
-        key === OPENAI_AGENT_RETRIEVAL_PREFERENCE_KEYS.maxPageApproximateTokens
-            ? '24000'
-            : null
-    );
-    assert.deepEqual(
-        readAgentRetrievalSettings(getPreference, 'openai'),
-        DEFAULT_OPENAI_AGENT_RETRIEVAL_SETTINGS,
-    );
+test('a value saved as tokens reads as its share of OpenAI\'s window', () => {
+    assert.deepEqual(readAgentRetrievalSettings(preferences({ [OLD_TOKEN_KEY]: '500000' }), 'openai'), { windowPercent: 48 });
 });
 
 
-test('validation rejects limits outside the provider range', () => {
-    assert.throws(() => validateAgentRetrievalSettings({
-        maxPageApproximateTokens: 24001,
-    }, 'ollama'));
-    assert.throws(() => validateAgentRetrievalSettings({
-        maxPageApproximateTokens: 500001,
-    }, 'openai'));
+test('the legacy default and retired settings read as the default', () => {
+    assert.deepEqual(readAgentRetrievalSettings(preferences({ [OLD_TOKEN_KEY]: '24000' }), 'openai'), DEFAULT_AGENT_RETRIEVAL_SETTINGS);
+    assert.deepEqual(readAgentRetrievalSettings(preferences({
+        'pref.ai.retrieval.max_page_approximate_tokens': '7000',
+        'pref.ai.tagging.batch_tokens': '3000',
+    }), 'anthropic'), DEFAULT_AGENT_RETRIEVAL_SETTINGS);
+});
+
+
+test('validation keeps the percentage from 1 to 100', () => {
+    assert.deepEqual(validateAgentRetrievalSettings({ windowPercent: 1 }, 'openai'), { windowPercent: 1 });
+    assert.deepEqual(validateAgentRetrievalSettings({ windowPercent: 100 }, 'gemini'), { windowPercent: 100 });
+    for (const windowPercent of [0, 101, 1.5]) {
+        assert.throws(() => validateAgentRetrievalSettings({ windowPercent }, 'openai'));
+    }
+    assert.throws(() => validateAgentRetrievalSettings({ windowPercent: 50 }, 'ollama'));
 });

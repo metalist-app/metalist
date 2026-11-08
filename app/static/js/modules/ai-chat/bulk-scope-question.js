@@ -1,9 +1,8 @@
 /**
- * Pure description of the scope question shared by complete-scope summaries and
- * tag proposals. Both ask one equivalent card: the scope's size against the
+ * Pure description of tag proposals' scope question: the scope's size against the
  * evidence budget (the server label), "<verb> all N", "Use first K only" when a
- * leading prefix fits, and Cancel last. Tagging adds its focus selector when the
- * focus is not already fixed.
+ * leading prefix fits, and Cancel last, with a focus selector when the focus is
+ * not already fixed.
  */
 
 export const TAG_FOCUS_CHOICES = Object.freeze([
@@ -13,10 +12,6 @@ export const TAG_FOCUS_CHOICES = Object.freeze([
 ]);
 
 const SCOPE_QUESTIONS = Object.freeze({
-    summary_confirmation: Object.freeze({
-        allVerb: 'Summarize',
-        offersPrefix: (event) => event.batch_count > 1,
-    }),
     tag_scope_confirmation: Object.freeze({
         allVerb: 'Tag',
         offersPrefix: (event) => event.prefix_root_count > 0,
@@ -72,9 +67,6 @@ export function scopeAnswerValue(event, choice, focusValue) {
     }
     if (description.focusDefault === null) {
         if (focusValue !== null) throw new Error('This scope question has no focus selector');
-        if (event.kind === 'summary_confirmation') {
-            return choice === 'all' ? 'summarize_all' : 'use_prefix';
-        }
         return choice === 'all' ? 'proceed' : 'use_prefix';
     }
     if (!TAG_FOCUS_CHOICES.some(([value]) => value === focusValue)) {

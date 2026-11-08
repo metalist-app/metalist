@@ -202,7 +202,7 @@ On macOS, `⌘ + Y` normally opens Safari History rather than performing native 
 
 ### Command Palette Utility Entries
 - Show/Hide AI Chat (label reflects current visibility)
-- AI Agent Settings… (tabs: Keys for each provider's API key, Privacy, Reading for web access and the token window, Tagging; model and thinking level are selected beside chat Send)
+- AI Agent Settings… (tabs: Keys for each provider's API key, Privacy, Reading for web access and the share of the model's window to use, Tagging; model and thinking level are selected beside chat Send)
 - Back Up Now… (opens Backup Settings, where you choose one backup folder, select the namespaces to include, set retention, and then run the backup; typing `backups` in the palette also matches it, and the completion modal shows archive size)
 - Backup reminder (Off, Daily, Weekly, Every 2 weeks or Monthly; see Backup reminder below)
 - Restore from Backup…

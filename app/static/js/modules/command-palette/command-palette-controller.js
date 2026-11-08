@@ -92,7 +92,7 @@ import {
     validateAiThinkingLevel,
 } from '../ai-chat/ai-thinking-level-service.js';
 import {
-    OPENAI_AGENT_RETRIEVAL_PREFERENCE_KEYS,
+    AGENT_RETRIEVAL_PREFERENCE_KEYS,
     readAgentRetrievalSettings,
     validateAgentRetrievalSettings,
 } from '../ai-chat/agent-retrieval-settings.js';
@@ -1027,9 +1027,7 @@ class CommandPaletteController {
         const webAccessMode = validateAgentWebAccessMode(settings.webAccessMode);
         // The model in use is picked in the chat (saveAiSettings).
         const didChange = await this._saveChangedPreferences({
-            [OPENAI_AGENT_RETRIEVAL_PREFERENCE_KEYS.maxPageApproximateTokens]: String(
-                openAiRetrievalSettings.maxPageApproximateTokens,
-            ),
+            [AGENT_RETRIEVAL_PREFERENCE_KEYS.windowPercent]: String(openAiRetrievalSettings.windowPercent),
             [CLOUD_PRIVACY_POLICY_PREFERENCE_KEY]: serializeCloudPrivacyPolicy(
                 cloudPrivacyPolicy,
             ),

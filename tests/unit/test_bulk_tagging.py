@@ -245,13 +245,13 @@ def test_batches_share_whole_context_vocabulary_and_keep_large_roots():
 def test_a_tagging_batch_reads_as_much_as_an_answer():
     # One limit (AI Agent Settings): the old separate tagging window is ignored.
     preferences = {
-        "pref.ai.openai.retrieval.max_page_approximate_tokens": "12000",
+        "pref.ai.retrieval.window_percent": "25",
         "pref.ai.openai.tagging.batch_tokens": "3000",
     }
-    assert resolve_tagging_batch_tokens(preferences, "openai") == 12000
-    assert resolve_tagging_batch_tokens({}, "openai") == 500000
+    assert resolve_tagging_batch_tokens(preferences, context_tokens=400_000) == 100_000
+    assert resolve_tagging_batch_tokens({}, context_tokens=400_000) == 200_000
     with pytest.raises(ValueError):
-        resolve_tagging_batch_tokens({"pref.ai.tagging.batch_tokens": "499"}, "ollama")
+        resolve_tagging_batch_tokens({"pref.ai.retrieval.window_percent": "0"}, context_tokens=400_000)
 
 
 def test_guard_rejects_concurrent_pass_and_validates_answers():

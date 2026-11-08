@@ -80,6 +80,17 @@ GEMINI = OpenAICompatibleProvider(
 )
 
 _PROVIDER_ERROR_DETAIL_CHARS = 500
+# Google's model information is on its native API, beside the OpenAI-compatible path.
+_OPENAI_COMPATIBLE_PATH = "openai/"
+_INPUT_TOKEN_LIMIT_FIELD = "inputTokenLimit"
+_MODEL_INFO_TIMEOUT_SECONDS = 20.0
+# Each model's context window once the provider has reported it, for as long as MetaList runs.
+_CONTEXT_TOKENS_BY_MODEL: dict[str, int] = {}
+
+
+def _model_info_client() -> httpx.AsyncClient:
+    return httpx.AsyncClient(timeout=_MODEL_INFO_TIMEOUT_SECONDS)
+
 # The fields every streamed tool call has; any other field is the provider's own.
 _STANDARD_TOOL_CALL_FIELDS = frozenset({"index", "id", "type", "function"})
 
@@ -256,13 +267,36 @@ class OpenAICompatibleInferenceAdapter:
 
     async def inspect_context_window(self, *, base_url: str, model: str) -> InferenceContextWindow:
         self._validate_base_url(base_url)
-        context_tokens = catalog_entry(self._provider.provider).context_tokens
+        normalized_model = validate_model_name(model)
+        context_tokens = await self._context_tokens(normalized_model)
         return InferenceContextWindow(
-            model=validate_model_name(model),
+            model=normalized_model,
             maximum_tokens=context_tokens,
             loaded_tokens=context_tokens,
             required_tokens=TARGET_AGENT_CONTEXT_TOKENS,
         )
+
+    async def _context_tokens(self, model: str) -> int:
+        """The model's window, as Google's models.get reports it (inputTokenLimit), on its native
+        endpoint: the OpenAI-compatible one does not say. Asked once per model."""
+        if model in _CONTEXT_TOKENS_BY_MODEL:
+            return _CONTEXT_TOKENS_BY_MODEL[model]
+        url = f"{self._base_url.removesuffix(_OPENAI_COMPATIBLE_PATH)}models/{model}"
+        label = self._provider.label
+        # lint: allow-PY001 rationale="an expected provider API failure becomes the provider error the chat shows"
+        try:
+            async with _model_info_client() as client:
+                response = await client.get(url, headers={"x-goog-api-key": self._api_key})
+        # lint: allow-PY001 rationale="an expected provider API failure becomes the provider error the chat shows"
+        except httpx.TransportError as exc:
+            raise OpenAICompatibleProviderError(connection_lost_message(label)) from exc
+        if response.status_code != HTTPStatus.OK:
+            raise OpenAICompatibleProviderError(f"{label} would not say how much {model} can read (HTTP {response.status_code})")
+        info = response.json()
+        if _INPUT_TOKEN_LIMIT_FIELD not in info:
+            raise OpenAICompatibleProviderError(f"{label} did not say how much {model} can read")
+        _CONTEXT_TOKENS_BY_MODEL[model] = info[_INPUT_TOKEN_LIMIT_FIELD]
+        return info[_INPUT_TOKEN_LIMIT_FIELD]
 
     @record_structured_call
     async def infer_structured(

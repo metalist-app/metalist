@@ -73,6 +73,11 @@ export async function checkAdditionalStateTransitions(page) {
         const final = {type:'done', content:'Local simulated answer ', rendered_content:'<p>Local simulated answer</p>', reference_note_ids:[], reference_web_ids:[]};
         const events = scenario === 'bulk'
           ? [{type:'bulk_progress', label:'Testing unchanged completion', committing:false}, {type:'bulk_complete', changed:false}, final]
+          : scenario === 'summary'
+          // A summary asks nothing first: its first event is a batch's progress.
+          ? [{type:'bulk_progress', operation:'summary', committing:false, label:'Summarizing 2 batches', completed_tokens:0, total_tokens:10,
+              summary_batch_preview:{batch_number:1, batch_count:2, status:'writing', finding_count:0, latest_text:'', output_tokens:0}},
+             {type:'bulk_complete', changed:false}, final]
           : [{type:'thinking_delta', text:' ', rendered_text:''},
              {type:'content_delta', text:'Local simulated answer', rendered_text:final.rendered_content, reference_note_ids:[], reference_web_ids:[]},
              {type:'content_delta', text:' ', rendered_text:final.rendered_content, reference_note_ids:[], reference_web_ids:[]}, final];
@@ -86,7 +91,7 @@ export async function checkAdditionalStateTransitions(page) {
     panel._getSettings = () => ({provider:'openai', model:'state-smoke-model', thinkingLevel:'low'});
     panel._modelGroups = [{provider:'openai', label:'OpenAI', models:['state-smoke-model']}];
     try {
-      for (scenario of ['stream', 'stream', 'bulk']) {
+      for (scenario of ['stream', 'stream', 'bulk', 'summary']) {
         panel._elements.input.value = 'Local simulated request';
         await panel._submitMessage();
         completed.push({status:panel._messages.at(-1).status, content:panel._messages.at(-1).content, busy:panel._isBusy});
@@ -101,8 +106,8 @@ export async function checkAdditionalStateTransitions(page) {
     }
     return completed;
   });
-  assert.deepEqual(completed, Array.from({length:3}, () => ({status:'complete', content:'Local simulated answer ', busy:false})));
-  console.log('PASS simulated streamed chat, unchanged bulk completion, and repeated chat clearing without an AI provider');
+  assert.deepEqual(completed, Array.from({length:4}, () => ({status:'complete', content:'Local simulated answer ', busy:false})));
+  console.log('PASS simulated streamed chat, unchanged bulk completion, a summary with no question first, and repeated chat clearing without an AI provider');
 
   // A failed AI step explains itself in several lines; the chat keeps the lines.
   const failure = await page.evaluate(async () => {

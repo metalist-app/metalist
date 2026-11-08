@@ -7,13 +7,6 @@ import {
 } from '../../app/static/js/modules/ai-chat/bulk-scope-question.js';
 
 
-const SUMMARY = {
-    kind: 'summary_confirmation',
-    root_count: 562,
-    batch_count: 4,
-    prefix_root_count: 121,
-};
-
 const TAGS = {
     kind: 'tag_scope_confirmation',
     root_count: 562,
@@ -24,12 +17,7 @@ const TAGS = {
 };
 
 
-test('summaries and tags over budget offer the same three choices', () => {
-    assert.deepEqual(describeScopeQuestion(SUMMARY), {
-        allLabel: 'Summarize all 562',
-        prefixLabel: 'Use first 121 only',
-        focusDefault: null,
-    });
+test('tags over budget offer three choices', () => {
     assert.deepEqual(describeScopeQuestion(TAGS), {
         allLabel: 'Tag all 562',
         prefixLabel: 'Use first 121 only',
@@ -38,11 +26,7 @@ test('summaries and tags over budget offer the same three choices', () => {
 });
 
 
-test('scopes that fit offer no prefix choice for either operation', () => {
-    assert.equal(
-        describeScopeQuestion({ ...SUMMARY, batch_count: 1, prefix_root_count: 562 }).prefixLabel,
-        null,
-    );
+test('scopes that fit offer no prefix choice', () => {
     assert.equal(
         describeScopeQuestion({ ...TAGS, batch_count: 1, prefix_root_count: 0 }).prefixLabel,
         null,
@@ -51,8 +35,6 @@ test('scopes that fit offer no prefix choice for either operation', () => {
 
 
 test('answers carry the selected tag focus with the scope choice', () => {
-    assert.equal(scopeAnswerValue(SUMMARY, 'all', null), 'summarize_all');
-    assert.equal(scopeAnswerValue(SUMMARY, 'prefix', null), 'use_prefix');
     assert.equal(scopeAnswerValue(TAGS, 'all', 'new'), 'focus_new');
     assert.equal(scopeAnswerValue(TAGS, 'prefix', 'existing'), 'prefix_focus_existing');
     assert.equal(scopeAnswerValue(TAGS, 'cancel', 'new'), 'cancel');
@@ -68,7 +50,7 @@ test('invalid scope questions and answers fail loudly', () => {
     assert.throws(() => describeScopeQuestion({ ...TAGS, focus: 'all' }), /valid focus/);
     assert.throws(() => describeScopeQuestion({ ...TAGS, prefix_root_count: 562 }), /proper leading subset/);
     assert.throws(() => scopeAnswerValue(TAGS, 'all', null), /selected focus/);
-    assert.throws(() => scopeAnswerValue(SUMMARY, 'all', 'new'), /no focus selector/);
+    assert.throws(() => scopeAnswerValue({ ...TAGS, chooses_focus: false }, 'all', 'new'), /no focus selector/);
     assert.throws(
         () => scopeAnswerValue({ ...TAGS, prefix_root_count: 0 }, 'prefix', 'new'),
         /offers no prefix/,

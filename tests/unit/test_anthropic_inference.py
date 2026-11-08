@@ -254,7 +254,8 @@ def test_strict_schemas_close_every_object_and_leave_out_unenforced_rules() -> N
     }
 
 
-def test_only_claudes_own_address_is_used() -> None:
+def test_only_claudes_own_address_is_used(monkeypatch) -> None:
+    monkeypatch.setattr(anthropic_inference, "_CONTEXT_TOKENS_BY_MODEL", {MODEL: 1_000_000})
     adapter = AnthropicInferenceAdapter(api_key="sk-ant-test")
     with pytest.raises(ValueError, match="official API base URL"):
         asyncio.run(adapter.inspect_context_window(base_url="https://example.com", model=MODEL))

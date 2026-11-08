@@ -104,7 +104,11 @@ Agreed 2026-10-23. AI Agent Settings no longer picks a model or provider. The ch
 picker lists the models of every provider with a key, each under its provider's name, and
 picking a model picks its provider (`GET /api2/ai/model-choices`, a read, so it never holds the one mutation slot). The last model and
 thinking level picked are the next default (`pref.ai.provider`, `pref.ai.<provider>_model`).
-The reading limit is one number for every provider (**Max token window**).
+The reading limit is one setting for every provider (**Model window used**), a percentage of
+each model's own context window (agreed 2026-11-08). `inspect_context_window` supplies the size:
+Claude's Models API (`max_input_tokens`) and Gemini's `models.get` (`inputTokenLimit`) report it,
+asked once per model while MetaList runs; OpenAI's models endpoint does not, so its size is in the
+catalog (`OPENAI_MODEL_CONTEXT_TOKENS`). When a provider cannot say, the chat shows that error.
 
 Switching provider keeps the conversation (2026-10-24): one privacy policy covers every
 provider, so the history the next model sees is the same.
