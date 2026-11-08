@@ -53,6 +53,7 @@ test('login and workspace requests retain the authenticated tab identity when br
     t.mock.method(ReminderSurface, 'start', async () => {});
     await Auth.handleLogin({preventDefault() {}});
     assert.equal(document.body.dataset.appReady, 'true');
-    assert.equal(headers.length, 2);
+    // The login, the workspace's start, and saying the page has finished starting.
+    assert.equal(headers.length, 3);
     assert.ok(headers.every(header => header['X-Metalist-Tab-Id'] === loginId));
 });

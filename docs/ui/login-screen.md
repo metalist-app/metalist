@@ -34,7 +34,7 @@ another vault (`BROWSER_TEST_SUITE=login-logo`), in a wide and a narrow window.
 | Wrong password, too many attempts, or the request fails | The reason appears under OK; the field is emptied and focused. Nothing moved |
 | Password accepted | The form slides out to the left while the loading view slides in from the right (350 ms, within the M's width) |
 | Loading | A progress bar as wide as the logo's bars, like a third bar, that never moves backwards; under it, in grey italics, the current step and the seconds elapsed ("Decrypting notes into memory… · 4s") |
-| Loading done | The notes show underneath at once; once the progress bar has visibly filled, the screen fades out over them (300 ms), from black to the page's colour. Until it has gone it covers everything, floating buttons and cards too, so they all appear together. The logo and the notes stand still, and a click during the fade reaches the notes (`auth.js` `_fadeOutLoginPage`, agreed 2026-10-27) |
+| Loading done | The notes show underneath at once; once the progress bar has visibly filled, the screen fades out over them (300 ms), from black to the page's colour. The fade begins on a frame, so a busy page can't use up its 300 ms before any of it shows (2026-11-08). Until it has gone it covers everything, floating buttons and cards too, so they all appear together. The logo and the notes stand still, and a click during the fade reaches the notes (`auth.js` `_fadeOutLoginPage`, agreed 2026-10-27) |
 | Loading fails | The error replaces the step line in red, with the elapsed time frozen; the app does not open |
 
 With the system's reduce-motion setting the fades and the slide become instant; with `Animated transitions` off, the fade after loading does too.

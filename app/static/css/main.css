@@ -94,6 +94,7 @@ html:has(> body > .login-page[style*="display: flex"]:not(.login-page-covering):
    and cards too, so they all fade in together; a click during the fade reaches the notes. */
 .login-page.login-page-covering {
     z-index: 21000; /* above floating messages (20000) */
+    will-change: opacity; /* its own layer before the fade, so the fade starts cleanly */
 }
 
 .login-page.login-page-leaving {

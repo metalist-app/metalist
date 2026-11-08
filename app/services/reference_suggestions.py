@@ -24,7 +24,7 @@ from threading import Lock, Thread
 from typing import Callable, Dict, FrozenSet, Hashable, Iterable, List, Set, Tuple
 
 from app.security.sensitive_cache import register_sensitive_cache, sensitive_caches_enabled
-from app.services.auth_cache_state import on_cache_ready
+from app.services.auth_cache_state import after_page_ready
 from app.services.content_formatting import CREDENTIAL_MASK, find_global_credential_tag
 from app.services.embedded_references import EMPTY_NOTE_PREVIEW, first_line_preview, sole_reference_token
 from app.services.note_store import NoteRecord, store
@@ -301,7 +301,7 @@ def _build_catalog_once_loaded() -> None:
     build_catalog_in_background()
 
 
-on_cache_ready(_build_catalog_once_loaded)
+after_page_ready(_build_catalog_once_loaded)
 
 
 class _ViewOrder:

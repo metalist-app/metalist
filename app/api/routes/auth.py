@@ -1077,6 +1077,14 @@ def hydrate_cache(
     return _build_hydration_status()
 
 
+@router.get("/workspace-ready")
+def workspace_ready(token: Annotated[str, Depends(_require_auth)]) -> dict[str, str]:
+    """The page has finished starting: caches built ahead of use may start."""
+    del token
+    auth_cache_state.page_is_ready()
+    return {"status": "success"}
+
+
 @router.get("/hydration-status", response_model=HydrationStatusResponse)
 def hydration_status(token: Annotated[str, Depends(_require_auth)]):
     return _build_hydration_status()

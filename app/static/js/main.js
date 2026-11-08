@@ -68,6 +68,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         await ReminderSurface.start();
         await CommandPalette.startBackupReminder();
         document.body.dataset.appReady = 'true';
+        await Auth.announceWorkspaceReady();
         CommandPalette.startUpdateNotice();
         await CommandPalette.runSetupRequestedByAddress();
         await CommandPalette.offerLegacyImport();

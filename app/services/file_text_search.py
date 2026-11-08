@@ -23,7 +23,7 @@ from typing import Callable, Dict, FrozenSet, List, Literal, Optional, Tuple
 
 
 from app.security.sensitive_cache import SensitiveMemo, register_sensitive_cache, sensitive_caches_enabled
-from app.services.auth_cache_state import on_cache_ready
+from app.services.auth_cache_state import after_page_ready
 from app.services import file_text_worker
 from app.services.document_text import DOC_EXTENSION, DOCX_EXTENSION, RTF_EXTENSION
 from app.services.file_view import PLAIN_TEXT_ENDINGS, WEB_PAGE_ENDINGS
@@ -499,4 +499,4 @@ class FileTexts:
 
 file_texts = FileTexts()
 # After login (and unlock): the filters, then any file text still missing, beside the requests.
-on_cache_ready(file_texts.refresh_in_background)
+after_page_ready(file_texts.refresh_in_background)

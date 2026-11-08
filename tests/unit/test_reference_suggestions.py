@@ -18,7 +18,7 @@ from app.security.sensitive_cache import disable_and_clear_sensitive_caches, ena
 from app.models.database import SafeSession
 from app.security.encryption import clear_encryption_key, set_encryption_required
 from app.services import auth_service
-from app.services.auth_cache_state import mark_cache_ready
+from app.services.auth_cache_state import mark_cache_ready, page_is_ready
 from app.services.content_cache import clear_cache
 from app.services.content_formatting import CREDENTIAL_MASK
 from app.services.file_registry import file_registry
@@ -307,6 +307,7 @@ def test_the_catalog_is_built_in_the_background_once_the_notes_are_loaded(notes)
     assert _catalog._revision != store.revision
 
     mark_cache_ready()
+    page_is_ready()
     for thread in threading.enumerate():
         if thread.name == "metalist-reference-catalog":
             thread.join()

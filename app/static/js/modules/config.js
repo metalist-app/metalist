@@ -111,6 +111,7 @@ export const CONFIG = {
             SESSIONS: `${API_AUTH_BASE}/sessions`,
             HYDRATE: `${API_AUTH_BASE}/hydrate`,
             HYDRATION_STATUS: `${API_AUTH_BASE}/hydration-status`,
+            WORKSPACE_READY: `${API_AUTH_BASE}/workspace-ready`,
             CLIENT_STATE: `${API_AUTH_BASE}/client-state`,
             CLIENT_PREFERENCES: `${API_AUTH_BASE}/client-state/preferences`,
             COMMAND_PALETTE_USAGE: `${API_AUTH_BASE}/client-state/command-palette-usage`,
