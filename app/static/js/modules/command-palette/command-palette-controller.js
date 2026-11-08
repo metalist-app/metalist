@@ -17,6 +17,7 @@ import {
 } from '../ai-chat/proposal-menu.js';
 import { ModeContextInstance as ModeContext } from '../mode-manager/mode-context.js';
 import { actionRefreshAndMaybeSelect } from '../mode-manager/actions/ui-actions.js';
+import { scrollNoteIntoView } from '../mode-manager/services/scroll-restoration-service.js';
 import { actionUndo } from '../mode-manager/actions/history-actions.js';
 import {
     actionDeselectNote,
@@ -3019,10 +3020,18 @@ class CommandPaletteController {
                     await actionRefreshAndMaybeSelect({ startedAt: performance.now(), context: 'importWizard' });
                 }
             },
-            // Files dropped on the page: their notes at the top of the search context they were
-            // dropped in, which stays as it is (the maintainer, 2026-11-03).
-            showDroppedImport: async () => {
-                await actionRefreshAndMaybeSelect({ startedAt: performance.now(), context: 'importWizard.showDropped' });
+            // Files dropped on the page: their notes in the search context they were dropped in,
+            // which stays as it is (the maintainer, 2026-11-03), after its last note (one alone at
+            // the top: 2026-11-07). The view brings the import's first note into sight, moving the
+            // least distance (docs/ui/interaction-principles.md, principle 3).
+            showDroppedImport: async (firstRootId) => {
+                if (typeof firstRootId !== 'string' || firstRootId === '') {
+                    throw new Error('showDroppedImport requires the import\'s first note');
+                }
+                await actionRefreshAndMaybeSelect({
+                    startedAt: performance.now(), context: 'importWizard.showDropped', visibleRootAnchorId: firstRootId,
+                });
+                scrollNoteIntoView(firstRootId, { align: 'nearest', jump: true });
             },
         };
     }

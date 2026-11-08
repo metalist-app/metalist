@@ -33,7 +33,7 @@ test('an import running for an hour is never called stuck', async (t) => {
     const { NotesAPI } = await import('../../app/static/js/modules/api-client.js');
     let finishImport = null;
     t.mock.method(NotesAPI, 'importBookmarks', () => new Promise((resolve) => {
-        finishImport = () => resolve({ noteCount: 1, sourceTag: 'bookmarks' });
+        finishImport = () => resolve({ noteCount: 1, sourceTag: 'bookmarks', firstRootId: 'imported-root' });
     }));
     t.mock.timers.enable({ apis: ['setTimeout'] });
     const wizard = {

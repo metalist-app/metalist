@@ -198,11 +198,12 @@ export async function runImport(wizard, progress) {
             // The PDFs' text is read next, beside the user's work: shown as it goes.
             void checkBackgroundWork();
         }
-        if (!Number.isInteger(result.noteCount) || typeof result.sourceTag !== 'string') {
+        if (!Number.isInteger(result.noteCount) || typeof result.sourceTag !== 'string'
+            || typeof result.firstRootId !== 'string' || result.firstRootId === '') {
             throw new Error('The import answered without its notes');
         }
         if (wizard.choices.isDrop) {
-            await wizard.services.showDroppedImport();
+            await wizard.services.showDroppedImport(result.firstRootId);
             return;
         }
         // Behind the wizard, a new search context of the imported notes: there when it closes.

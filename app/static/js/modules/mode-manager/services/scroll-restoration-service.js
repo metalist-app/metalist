@@ -257,6 +257,16 @@ export function scrollNoteIntoView(noteId, options) {
     if (targetScrollY === null) {
         return { scrolled: false, reason: 'already_visible' };
     }
+    // `jump`: the view was just rebuilt around the note (a dropped import's first note), so
+    // the page's old position means nothing: it goes straight there, as Go to Bottom does.
+    // Animating from the old position let infinite scroll ask for notes it already had.
+    if (Object.prototype.hasOwnProperty.call(options, 'jump')) {
+        if (options.jump !== true) {
+            throw new Error('scrollNoteIntoView jump must be true when given');
+        }
+        window.scrollTo(0, targetScrollY);
+        return { scrolled: true, reason: 'jump' };
+    }
 
     scrollWindowToYFastAnimated(targetScrollY);
     return { scrolled: true, reason: 'scroll' };
