@@ -437,7 +437,11 @@ function handleKeyDown(event) {
     if (event.key === 'Enter') {
         const searchInput = document.getElementById('search-input');
         const suggestions = document.getElementById('search-suggestions');
-        if (searchInput && suggestions && !suggestions.hidden && document.activeElement === searchInput) {
+        // Open suggestions take Enter, unless the pointer is over the open list of search contexts:
+        // then Enter makes a new one (handleEnterKey), and the suggestions never see it (the
+        // maintainer, 2026-11-08: with suggestions open it did nothing).
+        if (searchInput && suggestions && !suggestions.hidden && document.activeElement === searchInput
+            && !isSearchContextsKeyboardCreateActive()) {
             Logger.logNoop('Ignoring Enter for global shortcuts while search suggestions are open');
             return;
         }

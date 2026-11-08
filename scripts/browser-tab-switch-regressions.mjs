@@ -238,6 +238,42 @@ async function checkDuplicateCopiesEverything(page, firstTabId) {
   await idle(page);
 }
 
+// Enter with the pointer over the open list of search contexts makes a new, blank one and shows
+// it (4aeb5e26; the maintainer, 2026-11-08: "that used to be the case"), the list staying open.
+async function checkEnterOverTheListMakesANewContext(page, rowSelector) {
+  const zone = await (await page.$('#tab-hover-zone')).boundingBox();
+  await page.mouse.move(zone.x + zone.width / 2, zone.y + zone.height / 2);
+  await page.waitForSelector(rowSelector, {visible: true});
+  await pause(SETTLE_MS);
+  const row = await (await page.$(rowSelector)).boundingBox();
+  await page.mouse.move(row.x + row.width / 2, row.y + row.height / 2);
+  await pause(SETTLE_MS);
+  const before = await viewState(page);
+  const orderBefore = await page.evaluate(async () => {
+    const {ModeContextInstance: mode} = await import('/static/js/modules/mode-manager/mode-context.js');
+    return [...mode.tabOrder];
+  });
+  await page.keyboard.press('Enter');
+  await idle(page);
+  await pause(SETTLE_MS);
+  const after = await viewState(page);
+  const orderAfter = await page.evaluate(async () => {
+    const {ModeContextInstance: mode} = await import('/static/js/modules/mode-manager/mode-context.js');
+    return [...mode.tabOrder];
+  });
+  assert.equal(orderAfter.length, orderBefore.length + 1, 'Enter over the list makes a new search context');
+  assert.notEqual(after.activeTabId, before.activeTabId, 'and shows it');
+  assert.equal(after.activeTabId, orderAfter.at(-1), 'the new one, at the end of the list');
+  assert.deepEqual([after.searchQuery, after.searchInput], ['', ''], 'blank');
+  const isListShown = await page.$eval('#search-contexts-list', list => getComputedStyle(list).display !== 'none');
+  assert.equal(isListShown, true, 'the list stays open');
+  await page.evaluate(async tabId => {
+    const {deleteTabOnServer} = await import('/static/js/modules/mode-manager/services/tab-state-service.js');
+    await deleteTabOnServer(tabId);
+  }, after.activeTabId);
+  await reload(page);
+}
+
 async function clickTab(page, tabId) {
   const zone = await (await page.$('#tab-hover-zone')).boundingBox();
   await page.mouse.move(zone.x + zone.width / 2, zone.y + zone.height / 2);
@@ -320,6 +356,38 @@ export async function checkTabSwitching(page) {
     await page.waitForSelector(label, {visible: true});
     assert.deepEqual(await page.$eval(label, node => ({text: node.textContent, elements: node.childElementCount})),
       {text: MARKUP_QUERY, elements: 0}, 'the tab list shows the search text as text');
+    await checkEnterOverTheListMakesANewContext(page, label);
+    // The same with the cursor in the search box,
+    await page.click('#search-input');
+    await pause(SETTLE_MS);
+    await checkEnterOverTheListMakesANewContext(page, label);
+    // with search suggestions open under it (the maintainer's case, 2026-11-08: Enter did nothing),
+    await clickAndSelectAll(page, '#search-input');
+    await page.keyboard.type(TAB_QUERIES[0].slice(0, 3));
+    await idle(page);
+    await pause(SETTLE_MS);
+    assert.equal(await page.$eval('#search-suggestions', list => !list.hidden), true, 'search suggestions are open');
+    await checkEnterOverTheListMakesANewContext(page, label);
+    // in a folder context,
+    await page.setViewport({width: 1440, height: 900});
+    await page.click('#virtual-folders-button');
+    await idle(page);
+    await pause(SETTLE_MS);
+    await checkEnterOverTheListMakesANewContext(page, label);
+    // and just after a folder was clicked in its tree.
+    await page.setViewport({width: 1440, height: 900});
+    if (!(await page.evaluate(() => document.body.classList.contains('virtual-folders-on')))) {
+      await page.click('#virtual-folders-button');
+      await idle(page);
+    }
+    await page.click(`#virtual-folders [data-virtual-folder="${FOLDER}"] .virtual-folder-name`);
+    await idle(page);
+    await pause(SETTLE_MS);
+    const folderTabRow = await page.evaluate(async () => {
+      const {ModeContextInstance: mode} = await import('/static/js/modules/mode-manager/mode-context.js');
+      return mode.activeTabId;
+    });
+    await checkEnterOverTheListMakesANewContext(page, `#search-contexts-list .tab-context-item[data-tab-id="${folderTabRow}"] .tab-context-query`);
   }, async () => {
     await page.evaluate(async ids => {
       const {NotesAPI} = await import('/static/js/modules/api-client.js');
