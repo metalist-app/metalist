@@ -549,5 +549,37 @@ def test_meta_tag_suggestions_offer_only_known_tags_and_one_datetime() -> None:
 
     suggestions = index.suggest_meta_tag_completions(prefix="@d", limit=20, datetime_term="@datetime=2026-10-29")
     assert suggestions == ["@done", "@datetime=2026-10-29", "@diff"]
-    # A search finds no note by such a date, so the search box offers none.
-    assert index.suggest_tag_completions(query="@dat", limit=20, by_family=False) == []
+    # A search finds no note by such a date, so the search box offers @datetime itself.
+    assert index.suggest_tag_completions(query="@dat", limit=20, by_family=False) == ["@datetime"]
+
+
+def _dated_index():
+    tags_by_note = {"j1": "journal @datetime=2026-10-24", "j2": "journal", "w1": "work @datetime=2026-10-25"}
+    return _build_index([
+        SearchRecord(note_id=note_id, content_text=note_id, tags=tags, tag_terms=extract_tags_for_search(tags))
+        for note_id, tags in tags_by_note.items()
+    ])
+
+
+def test_the_search_box_suggests_datetime_after_another_tag() -> None:
+    # The maintainer, 2026-11-08: "journal @date" suggested nothing.
+    index = _dated_index()
+    assert index.suggest_all_tag_completions(query="journal @date") == ["@datetime"]
+    assert index.query_note_ids("journal @datetime") == {"j1"}
+
+
+def test_choosing_the_suggested_datetime_is_a_known_tag() -> None:
+    # The maintainer, 2026-11-08: choosing it failed, 500 at search_history.py:547.
+    index = _dated_index()
+    assert "@datetime" in index.list_tag_suggestion_terms()
+
+
+def test_the_search_box_suggests_datetime_only_where_it_finds_notes() -> None:
+    index = _dated_index()
+    assert index.suggest_all_tag_completions(query="unused-tag @date") == []
+
+
+def test_the_search_box_suggests_no_datetime_in_a_vault_with_no_dates() -> None:
+    index = _build_index([SearchRecord(note_id="n1", content_text="n1", tags="journal", tag_terms=extract_tags_for_search("journal"))])
+    assert index.suggest_all_tag_completions(query="journal @date") == []
+    assert "@datetime" not in index.list_tag_suggestion_terms()

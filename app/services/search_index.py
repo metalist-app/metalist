@@ -847,9 +847,11 @@ class SearchIndex:
             families = self._build_suggestion_representatives_locked(
                 anchor_casefold_set=frozenset(), partial_prefix="", by_family=True,
             )
-            return frozenset(
-                tuple(terms.values()) + tuple(families.values()) + tuple(self._meta_tag_suggestion_terms_locked())
-            )
+            suggestion_terms = {*terms.values(), *families.values(), *self._meta_tag_suggestion_terms_locked()}
+            # The search box offers @datetime itself once notes carry a date.
+            if self._tag_family_posting_locked(DATETIME_TAG):
+                suggestion_terms.add(DATETIME_TAG)
+            return frozenset(suggestion_terms)
 
     def list_tag_frequencies(self) -> Dict[str, int]:
         """Return tag term -> note count (excluding @meta tags)."""
@@ -1093,11 +1095,16 @@ class SearchIndex:
 
         if partial_prefix.startswith("@"):
             with self._lock:
-                # A search finds no note by a date only now suggests (suggest_meta_tag_completions).
+                # A search finds no note by a date only now suggests, so it offers @datetime itself,
+                # which finds every dated note (the tag bar offers it dated:
+                # suggest_meta_tag_completions).
+                searchable_datetime = None
+                if not by_family and self._tag_family_posting_locked(DATETIME_TAG):
+                    searchable_datetime = DATETIME_TAG
                 return self._suggest_meta_tag_completions_locked(
                     partial_prefix=partial_prefix,
                     limit=limit,
-                    datetime_term=None,
+                    datetime_term=searchable_datetime,
                 )
 
         anchor_casefold_set = frozenset(

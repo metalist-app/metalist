@@ -45,6 +45,7 @@ suggestions of `@` tags are in the tag-suggestions topic.
   - If another note is being edited, pressing a status icon saves and exits that edit session before toggling, without selecting the toggled note for editing.
 - Date meta tag:
   - `@datetime=2026-10-24` or `@datetime=2026-10-24T08:30` (local time) says which date a note belongs to; a date alone means that whole day.
+  - The search box suggests `@datetime` itself, which finds every dated note (typing `journal @date` offers it when journal notes have dates); a tag bar suggests it with a date.
   - The Created date range uses a top-level note's own `@datetime` instead of when it was created. Last Updated stays the real last edit, and sorting by Created still uses when the note was typed. A `@datetime` on a note below the top level dates nothing yet.
   - A value that is not a real date or time shows `@datetime needs a date: YYYY-MM-DD or YYYY-MM-DDTHH:MM` and is not saved; a second one on a note is refused (`@datetime is already on this note`).
   - The tag bar suggests it with the date the note's text names, else now (tag-suggestions topic).
