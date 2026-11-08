@@ -60,6 +60,7 @@
 - Ready to build (a link dragged from a browser becomes a note holding it, on the column, a tree folder or into an edited note): `docs/ready-to-build/dropped-links.md`
 - Built 2026-11-02, Chrome's and Safari's exports still to check (browser bookmarks as an import source: one note per website address, its title linked, folders as folder tags, dated when bookmarked; a dropped export asks Import or Keep as File): `docs/ready-to-build/bookmark-import.md`
 - Future plan (charts of super-tag values, embedded like diagrams): `docs/future-plans/charts.md`
+- Being designed, nothing built (a decision model, such as OpenAI's Decisions API, for choosing tags and for choosing which notes the AI reads, with speed estimates): `docs/future-plans/decision-model.md`
 - Ready to build (one encrypted file per attachment, with a catalog): `docs/ready-to-build/file-storage-per-file.md`; built first by `docs/ready-to-build/streaming-no-file-cap.md` (files stream, then no 100 MiB per-file limit)
 - Future plan, after streaming (uploads in pieces that resume after a dropped connection): `docs/future-plans/resumable-uploads.md`
 - Future plan, with the hosted control plane (free hosted accounts granted by the operator): `docs/future-plans/free-accounts.md`
