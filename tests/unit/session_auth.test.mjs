@@ -36,6 +36,6 @@ test('reload reuses stored identity and active requests no longer depend on stor
     globalThis.sessionStorage.getItem = () => { throw new Error('Storage no longer accessible'); };
     assert.equal(api.getRequiredTabId(), 'existing-tab');
     assert.deepEqual(api.buildSessionHeaders(true), {
-        'X-Metalist-Tab-Id': 'existing-tab', 'Content-Type': 'application/json',
+        'X-Metalist-Tab-Id': 'existing-tab', 'X-Metalist-Folders-Shown': 'false', 'Content-Type': 'application/json',
     });
 });

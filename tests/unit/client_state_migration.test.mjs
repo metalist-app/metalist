@@ -66,9 +66,11 @@ test('buildSessionHeaders includes the tab id and optional content type', async 
     assert.deepEqual(buildSessionHeaders(true), {
         'Content-Type': 'application/json',
         'X-Metalist-Tab-Id': 'tab-123',
+        'X-Metalist-Folders-Shown': 'false',
     });
     assert.deepEqual(buildSessionHeaders(false), {
         'X-Metalist-Tab-Id': 'tab-123',
+        'X-Metalist-Folders-Shown': 'false',
     });
 
     restoreGlobals();
@@ -122,6 +124,7 @@ test('client-state API helpers call the database-backed auth endpoints', async (
     assert.equal(requests[0].options.method, 'GET');
     assert.deepEqual(requests[0].options.headers, {
         'X-Metalist-Tab-Id': 'tab-123',
+        'X-Metalist-Folders-Shown': 'false',
     });
 
     assert.equal(requests[1].url, '/api2/auth/client-state/preferences');
@@ -129,6 +132,7 @@ test('client-state API helpers call the database-backed auth endpoints', async (
     assert.deepEqual(requests[1].options.headers, {
         'Content-Type': 'application/json',
         'X-Metalist-Tab-Id': 'tab-123',
+        'X-Metalist-Folders-Shown': 'false',
     });
     assert.equal(
         requests[1].options.body,
@@ -140,6 +144,7 @@ test('client-state API helpers call the database-backed auth endpoints', async (
     assert.deepEqual(requests[2].options.headers, {
         'Content-Type': 'application/json',
         'X-Metalist-Tab-Id': 'tab-123',
+        'X-Metalist-Folders-Shown': 'false',
     });
     assert.equal(
         requests[2].options.body,

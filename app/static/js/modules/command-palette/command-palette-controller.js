@@ -484,6 +484,7 @@ class CommandPaletteController {
             // In the command gate, waiting for a command still running (a click while editing:
             // the note's save), so one click leaves the note and shows the folder.
             setFilter: async (folder) => CommandGate.runWhenFree('virtualFolders.filter', async () => this.setVirtualFolder(folder)),
+            folderSwitchChanged: async () => CommandGate.runWhenFree('virtualFolders.switch', async () => this.showFolderSwitch()),
             confirm: async (context) => this._confirmAction('virtualFolders.confirm', context),
             askName: async (form) => this._askFolderName(form),
             askDeleteFolder: async (form) => this._askDeleteFolder(form),
@@ -1738,6 +1739,30 @@ class CommandPaletteController {
         await actionRefreshAndMaybeSelect({
             startedAt: performance.now(),
             context: 'virtualFolder',
+            animateNoteChanges: false,
+        });
+    }
+
+    // The folder tree was opened or closed while the active context has a folder: its folder
+    // came on or went off (docs/ready-to-build/virtual-folders.md, the folder tree switch), so it is shown again as
+    // choosing a folder shows it, from the top, editing ended first. The server already knows:
+    // every request carries the switch (session-auth.js).
+    async showFolderSwitch() {
+        if (isViewingReferenceSource()) {
+            await navigateToReferenceOrigin();
+        }
+        const activeTabId = ModeContext.activeTabId;
+        if (typeof activeTabId !== 'string' || activeTabId.length === 0) {
+            throw new Error('ModeContext.activeTabId must be a non-empty string');
+        }
+        if (ModeContext.isEditing) {
+            await actionSaveAndExitEditingWithoutRefreshing();
+        }
+        ModeContext.bumpUndoContextEpoch('virtualFolder');
+        this._showChangedViewFromTop(activeTabId);
+        await actionRefreshAndMaybeSelect({
+            startedAt: performance.now(),
+            context: 'virtualFolders.switch',
             animateNoteChanges: false,
         });
     }

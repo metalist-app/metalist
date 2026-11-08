@@ -1,5 +1,6 @@
 import { ApplicationState } from './application-state.js';
 import { createUuid } from './uuid.js';
+import { isVirtualFoldersShown } from './mode-manager/services/virtual-folders-state.js';
 
 const sessionIdentity = ApplicationState.createFields('session-auth', {tabId: null});
 
@@ -35,6 +36,9 @@ export function buildSessionHeaders(includeContentType) {
 
     const headers = {
         'X-Metalist-Tab-Id': getRequiredTabId(),
+        // Whether this browser's folder tree is open: a search context's folder applies only
+        // then (app/api/folder_tree_switch.py). Read from storage first thing at startup (main.js).
+        'X-Metalist-Folders-Shown': String(isVirtualFoldersShown()),
     };
     if (includeContentType) {
         headers['Content-Type'] = 'application/json';

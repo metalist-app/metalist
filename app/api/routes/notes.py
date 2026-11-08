@@ -150,6 +150,7 @@ from app.config import VERSION
 from app.services.view_cache import view_cache
 from app.services.view_diff import generate_diff_ops
 from app.services.tab_state import tab_state_store
+from app.api.folder_tree_switch import applied_folder
 from app.services.backlinks import list_backlinks_for_note
 from app.services.reference_suggestions import suggest_references
 from app.services.client_state_service import copied_note_ids, remember_copied_note
@@ -291,17 +292,17 @@ def _resolve_tab_sort_mode(tab_id: object) -> str:
 
 
 def _in_tab_folder(search: str, tab_id: str) -> str:
-    """The view's search narrowed to the tab's virtual folder, when one is chosen (an
-    experiment, app/services/virtual_folders.py; exports and the AI read the search alone)."""
+    """The view's search narrowed to the tab's virtual folder, when one is chosen and the folder
+    tree is open (folder_tree_switch.py; exports and the AI read the search alone)."""
     if not isinstance(search, str):
         raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail="search must be a string")
-    return search_in_folder(search, tab_state_store.get_folder_filter(tab_id=tab_id))
+    return search_in_folder(search, applied_folder(tab_id))
 
 
 def _new_note_search(search: str | None, tab_id: str) -> str | None:
     """The search a new note takes its tags from: in a tab narrowed to a virtual folder (an
     experiment), the note is filed in that folder, so the view shows it."""
-    return search_for_new_note(search, tab_state_store.get_folder_filter(tab_id=tab_id))
+    return search_for_new_note(search, applied_folder(tab_id))
 
 
 def _resolve_tab_file_filter(tab_id: str) -> str | None:
@@ -364,7 +365,7 @@ def view_diff(payload: ViewDiffRequest):
     visible_search = search
     # A virtual folder or note chosen in the tree narrows the roots the view lists, as a Files
     # filter does: the browser pages through the narrowed count, and gets its own search back.
-    is_narrowed_by_tree = tab_state_store.get_folder_filter(tab_id=tab_id) != NO_FOLDER
+    is_narrowed_by_tree = applied_folder(tab_id) != NO_FOLDER
     # No search (null or "") with a virtual folder chosen is that folder alone.
     if isinstance(search, str):
         search = _in_tab_folder(search, tab_id)

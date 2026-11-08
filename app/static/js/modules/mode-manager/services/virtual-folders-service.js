@@ -5,7 +5,11 @@ import { showSearchInputChip } from './search-input-chip-service.js';
 import { isViewingReferenceSource } from './reference-source-navigation-service.js';
 import { showContextMenu } from '../../context-menu/context-menu-service.js';
 import { showErrorDialog } from '../../modals/error-dialog.js';
-import { isVirtualFoldersShown, rememberVirtualFoldersShown } from './virtual-folders-state.js';
+import {
+    isVirtualFoldersShown, rememberVirtualFoldersShown, storedVirtualFoldersShown,
+    VIRTUAL_FOLDERS_HIDDEN, VIRTUAL_FOLDERS_SHOWN, VIRTUAL_FOLDERS_SHOWN_KEY,
+} from './virtual-folders-state.js';
+import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import { initVirtualFoldersWidth } from './virtual-folders-width.js';
 import { FloatingMessages } from '../../floating-messages.js';
 
@@ -61,12 +65,14 @@ const moduleState = ApplicationState.createFields('virtual-folders-service', {
     draggedPath: '',
 });
 
-// Wired by the command palette: setFilter(folder) narrows the view to it;
+// Wired by the command palette: setFilter(folder) narrows the view to it; folderSwitchChanged()
+// shows the active context again after the tree was opened or closed (its folder on or off);
 // confirm(context) asks (ConfirmationModal); askName(form) asks a name (FolderNameModal);
 // askDeleteFolder(form) asks whether to delete a folder, and its notes (DeleteFolderModal);
 // afterChange() shows the view again once tags changed; undo() is ⌘Z.
 const handlers = ApplicationState.createFields('virtual-folders-handlers', {
     setFilter: null,
+    folderSwitchChanged: null,
     confirm: null,
     askName: null,
     askDeleteFolder: null,
@@ -76,13 +82,13 @@ const handlers = ApplicationState.createFields('virtual-folders-handlers', {
 
 /** The palette's ways to filter, open, ask and refresh (set once at startup). */
 export function wireVirtualFolders(wiring) {
-    for (const name of ['setFilter', 'confirm', 'askName', 'askDeleteFolder', 'afterChange', 'undo']) {
+    for (const name of ['setFilter', 'folderSwitchChanged', 'confirm', 'askName', 'askDeleteFolder', 'afterChange', 'undo']) {
         if (typeof wiring[name] !== 'function') {
             throw new Error(`wireVirtualFolders requires ${name}`);
         }
         handlers[name] = wiring[name];
     }
-    rememberVirtualFoldersShown(window.localStorage.getItem(SHOWN_KEY) === SHOWN);
+    rememberVirtualFoldersShown(storedVirtualFoldersShown());
     initVirtualFoldersWidth();
     // The first view's folders can be read before this runs, the tree drawn hidden: drawn again
     // with the remembered choice, so it shows and its button says so without waiting for a
@@ -142,19 +148,26 @@ export async function updateVirtualFolders() {
     if (haveTabFoldersChanged) document.dispatchEvent(new CustomEvent('metalist:tab-folders-changed'));
 }
 
-// Whether the tree shows, remembered by this browser (the maintainer, 2026-11-01: the choice
-// stays across logins). Not a vault preference: a MetaList that doesn't know a stored
-// preference refuses to load them, so dropping the experiment would leave a vault older
-// MetaLists can't open.
-const SHOWN_KEY = 'metalist.virtual_folders.shown';
-const SHOWN = 'true';
-const HIDDEN = 'false';
-
-/** The toggle: show or hide the tree. An import shows it too. */
+/** The toggle: show or hide the tree. An import shows it too. Closing it turns every search
+ * context's folder off, opening it turns each back on (docs/ready-to-build/virtual-folders.md, the folder tree switch):
+ * every request says which (session-auth.js), so the view changes only when the context shown
+ * has a folder, as choosing a folder changes it; with none, nothing moves. */
 export function setVirtualFoldersShown(isShown) {
-    window.localStorage.setItem(SHOWN_KEY, isShown ? SHOWN : HIDDEN);
+    const wasShown = isVirtualFoldersShown();
+    window.localStorage.setItem(VIRTUAL_FOLDERS_SHOWN_KEY, isShown ? VIRTUAL_FOLDERS_SHOWN : VIRTUAL_FOLDERS_HIDDEN);
     rememberVirtualFoldersShown(isShown);
     render();
+    if (wasShown === isShown) return;
+    updateVirtualFolderIndicator();
+    // The list of search contexts names a context by its folder only while the tree is open.
+    document.dispatchEvent(new CustomEvent('metalist:tab-folders-changed'));
+    if (folderOfTab(ModeContext.activeTabId) !== '') void handlers.folderSwitchChanged();
+}
+
+/** The folder a tab's view applies: its folder while this browser's tree is open, '' otherwise. */
+export function appliedFolderOfTab(tabId) {
+    if (!isVirtualFoldersShown()) return '';
+    return folderOfTab(tabId);
 }
 
 // A folder and every folder above it open, so a filtered folder shows in the tree.
@@ -653,6 +666,8 @@ function renderToggleButton() {
     button.title = label;
     button.setAttribute('aria-label', label);
     button.setAttribute('aria-pressed', String(isVirtualFoldersShown()));
+    // A press keeps the caret in the note being edited: with no folder in play, editing goes on.
+    button.onmousedown = (event) => event.preventDefault();
     button.onclick = () => setVirtualFoldersShown(!isVirtualFoldersShown());
 }
 
@@ -663,7 +678,8 @@ export function updateVirtualFolderIndicator() {
     if (!(indicator instanceof HTMLElement) || !(label instanceof HTMLElement)) {
         throw new Error('virtual-folder-indicator element missing');
     }
-    if (moduleState.folder === '') {
+    // Closed, the tree's folders are off: the context shows its search alone, with no chip.
+    if (moduleState.folder === '' || !isVirtualFoldersShown()) {
         showSearchInputChip(indicator, { isShown: false });
         return;
     }

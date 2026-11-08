@@ -54,7 +54,7 @@ import { CONFIG } from '../../config.js';
 import { NotesAPI } from '../../api-client.js';
 import { ErrorHandler } from '../../error-handler.js';
 import { describeDroppedItems, loneDroppedFolderEntry, readDroppedFolder } from '../services/dropped-folders.js';
-import { fileNewNoteInFolder, folderOfTab, virtualFolderAt } from '../services/virtual-folders-service.js';
+import { appliedFolderOfTab, fileNewNoteInFolder, virtualFolderAt } from '../services/virtual-folders-service.js';
 import { searchContextLabel } from '../services/search-context-label.js';
 import { checkBackgroundWork } from '../services/background-work-cards.js';
 import { isCopyOfDialogSelection } from '../services/dialog-copy-service.js';
@@ -3551,7 +3551,7 @@ export function updateSearchContextsList() {
         // the row's whole width and ends in an ellipsis only where it runs out (main.css).
         const displayQuery = referenceNavigationLabel !== ''
             ? referenceNavigationLabel
-            : searchContextLabel({ search: originalQuery, folder: folderOfTab(tabId) });
+            : searchContextLabel({ search: originalQuery, folder: appliedFolderOfTab(tabId) });
         
         const isActive = tabId === activeTabId;
 

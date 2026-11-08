@@ -733,6 +733,7 @@ For fresh imports using `convert-from-legacy.py`:
 When password protection is enabled, browser requests use:
 - HttpOnly `metalist_auth_<namespace>` cookie
 - `X-Metalist-Tab-Id: <uuid>` (required by auth/token verification)
+- `X-Metalist-Folders-Shown: true|false` (whether this browser's folder tree is open; a search context's folder applies only while it is, and a request that needs it and lacks it is refused with 400)
 
 Non-browser/manual clients may still send:
 - `Authorization: Bearer <token>`
