@@ -20,7 +20,7 @@ Streaming encrypts and decrypts a segment at a time, so memory stays small whate
 
 ## 2. Build per-file storage now
 
-- Build `docs/ready-to-build/file-storage-per-file.md` as written. Streaming comes with it; adding streaming to the single files database first would be built twice. No outside users yet, so the migration is cheapest now.
+- Build `docs/ready-to-build/file-storage-per-file.md` as written. Its streaming encryption is built on its own and not connected yet (that note's §13); the rest of §2 and everything after it are not built. Streaming comes with it; adding streaming to the single files database first would be built twice. No outside users yet, so the migration is cheapest now.
 - Its §10 tunables are yours to choose, starting from its proposals (64 KiB segments).
 - Everything that touches file contents streams: upload, download, backups, export, restore, password changes.
 - Downloads and in-note audio/video playback read only the segments they need (HTTP range requests) (proposed).

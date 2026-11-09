@@ -46,7 +46,7 @@ One row per item.
 
 ## 4. Blob format, encryption and padding
 
-- **Header:** magic `ML`, a suite byte (AES-256-GCM) and a version, followed by segments.
+- **Header:** magic `ML`, a suite byte (AES-256-GCM), a version and a 7-byte random nonce prefix, followed by segments. Built: §13.
 - **A per-item file key:** a fresh random 256-bit key per item, stored wrapped by the vault key in the catalog. This keeps bulk file encryption off the vault key's nonce budget, and lets one item be re-encrypted alone.
 - **Streaming segments in one file:** fixed plaintext segments (64 KiB proposed), each sealed with a counter-derived nonce, the last marked final. This is the standard streaming-AEAD construction, as used by `age` and libsodium's secretstream. Large files stream, never sit wholly in memory, and are never plaintext on disk. Truncation, reordering and segment swapping are detected.
 - **Padding:** the plaintext is padded with Padmé (at most about 12% overhead), plus a small random amount, so stored sizes don't identify known documents. The padding is removed on read using the real size from the catalog.
@@ -117,3 +117,12 @@ Test it like every migration.
 - Filed as a future plan, as its status asks. Confirmed: today's `files` and `file_previews` tables (`app/db/file_schema.py`) in `<vault>.metalist.files.db`; `docs/future-plans/hosted-own-copy.md` notes its layout depends on this.
 - **When built:** this changes the files database's schema, so AGENTS.md's "Database Schema Changes Require a Version Bump" applies: a `CURRENT_DATABASE_VERSION` step in `app/db/migrations.py`, the encryption audit (`app/encryption_audit.py`) keyed on the version, every new plaintext column documented in `docs/security/README.md`, and AGENTS.md's backup immutability rules (§9's migration runs on the live vault only, never on a backup).
 - The trim reminder it mentions was built 2026-10-29 (`Trim Reminder` in `docs/ui/command-palette.md`).
+
+## 13. Built so far (2026-11-08)
+
+- **The streaming encryption is built on its own and connected to nothing yet:** `app/security/streaming_blob.py` (`StreamingBlobWriter`, `StreamingBlobReader`), tests in `tests/unit/test_streaming_blob.py`. The rest of this note is not built: files still live in the `.files.db`, and the 100 MiB limit stays.
+- **Added to §4:** each blob has its own random nonce prefix in its header, because an edit writes a new blob and may keep the item's key; without the prefix the two blobs would reuse nonces. The whole header is each segment's associated data.
+- **Segment size (§10.3):** 64 KiB, as proposed. It is free to change until the first real file is stored; after that a different size needs a new format version.
+- **Padding (§4, §10.1):** sits above this layer. The storage code writes the padded bytes and cuts reads at the real size from the catalog, so the amount needs no format change.
+- **For the storage code:** the caller owns the file key, the `.mlb.tmp`, `fsync`, rename and closing. A failed tag raises `cryptography`'s `InvalidTag`; a blob that cannot be this format raises `BlobFormatError`.
+- **Found while checking:** the files database also has `file_texts` (text and bloom filter per file, `app/db/file_schema.py`), which §9's migration and §12 don't name. §3 says extracted text becomes a blob while its search stays where it is. **Open:** whether `file_texts` moves to blobs or stays a table in the catalog.
