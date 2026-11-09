@@ -24,6 +24,8 @@ _WINDOWS_CREATE_NEW_CONSOLE = 0x00000010
 _PYPI_PROJECT_URL = "https://pypi.org/pypi/metalist/json"
 _PYPI_REQUEST_TIMEOUT_SECONDS = 10.0
 _RELEASE_VERSION_PATTERN = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+")
+# The updater's last step, run by the version just installed and restarted.
+TRIM_SAFETY_BACKUPS_COMMAND = "trim-safety-backups"
 
 
 @dataclass(frozen=True)
@@ -234,6 +236,11 @@ def _build_windows_updater_command(
         f"Write-Host 'MetaList updated to v{target_version}, but restart failed.' "
         "-ForegroundColor Red; "
         "Start-Sleep -Seconds 10; exit $LASTEXITCODE }; "
+        f"& {quoted_metalist} {_quote_powershell_literal(TRIM_SAFETY_BACKUPS_COMMAND)}; "
+        "if ($LASTEXITCODE -ne 0) { "
+        f"Write-Host 'MetaList updated to v{target_version}, but older safety backups were not removed.' "
+        "-ForegroundColor Red; "
+        "Start-Sleep -Seconds 10; exit $LASTEXITCODE }; "
         f"Write-Host 'MetaList updated to v{target_version}.' -ForegroundColor Green; "
         "Start-Sleep -Seconds 3"
     )
@@ -257,6 +264,7 @@ def _build_posix_updater_command(
 ) -> list[str]:
     uv_command = shlex.join(install_command)
     metalist_command = shlex.join([metalist_executable])
+    trim_command = shlex.join([metalist_executable, TRIM_SAFETY_BACKUPS_COMMAND])
     script = (
         f"while kill -0 {current_pid} 2>/dev/null; do sleep 0.1; done\n"
         f"if ! {uv_command}; then\n"
@@ -265,6 +273,10 @@ def _build_posix_updater_command(
         "fi\n"
         f"if ! {metalist_command}; then\n"
         f"  echo 'MetaList updated to v{target_version}, but restart failed.' >&2\n"
+        "  exit 1\n"
+        "fi\n"
+        f"if ! {trim_command}; then\n"
+        f"  echo 'MetaList updated to v{target_version}, but older safety backups were not removed.' >&2\n"
         "  exit 1\n"
         "fi\n"
         f"echo 'MetaList updated to v{target_version}.'\n"

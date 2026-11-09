@@ -313,6 +313,26 @@ def delete_partial_archives(partial_backup_paths):
     assert not any(violation.rule_id == "BKP001" for violation in violations)
 
 
+def test_authenticated_migration_may_create_a_backup_and_trim_safety_backups(tmp_path: Path) -> None:
+    _write_file(
+        tmp_path / "app" / "services" / "auth_service.py",
+        "from app.services.backup_service import create_timestamped_backup, trim_safety_backups\n",
+    )
+
+    _, violations = collect_startup_sanity_violations(tmp_path)
+
+    assert not any(violation.rule_id == "BKP001" for violation in violations)
+
+
+@pytest.mark.parametrize("name", ["delete_oldest_backups_in_directory", "restore_backup", "delete_partial_archives"])
+def test_authenticated_migration_still_may_not_import_any_other_backup_operation(tmp_path: Path, name: str) -> None:
+    _write_file(tmp_path / "app" / "services" / "auth_service.py", f"from app.services.backup_service import {name}\n")
+
+    _, violations = collect_startup_sanity_violations(tmp_path)
+
+    assert any(violation.rule_id == "BKP001" for violation in violations)
+
+
 @pytest.mark.parametrize("statement", [
     'open(backup_path, "r+b")',
     'open(backup_path, "ab")',

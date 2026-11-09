@@ -57,6 +57,50 @@ def _encrypted_legacy_connection(database_path: Path) -> sqlite3.Connection:
     return connection
 
 
+@pytest.fixture(autouse=True)
+def _no_trim_of_the_live_namespace(monkeypatch) -> None:
+    """These tests stub the backup too, so the trim must not reach whatever vault is live."""
+    monkeypatch.setattr("app.services.auth_service.trim_safety_backups", lambda: [])
+
+
+def test_older_safety_backups_are_trimmed_only_after_the_upgrade_succeeds(tmp_path: Path, monkeypatch) -> None:
+    connection = _encrypted_legacy_connection(tmp_path / "namespace.db")
+    events: list[str] = []
+    monkeypatch.setattr("app.services.auth_service.create_timestamped_backup", lambda: events.append("backup"))
+
+    def _trim():
+        events.append(f"trim at version {read_database_version(connection)}")
+
+    monkeypatch.setattr("app.services.auth_service.trim_safety_backups", _trim)
+    AuthService(_DatabaseHandle(connection)).run_authenticated_database_migrations(dek=b"d" * 32)
+    assert events == ["backup", f"trim at version {CURRENT_DATABASE_VERSION}"]
+
+
+def test_a_failed_upgrade_trims_nothing(tmp_path: Path, monkeypatch) -> None:
+    connection = _encrypted_legacy_connection(tmp_path / "namespace.db")
+    events: list[str] = []
+    monkeypatch.setattr("app.services.auth_service.create_timestamped_backup", lambda: events.append("backup"))
+    monkeypatch.setattr("app.services.auth_service.trim_safety_backups", lambda: events.append("trim"))
+
+    def _fail(**_arguments):
+        raise RuntimeError("the upgrade failed")
+
+    monkeypatch.setattr("app.services.auth_service.run_database_migrations", _fail)
+    with pytest.raises(RuntimeError, match="the upgrade failed"):
+        AuthService(_DatabaseHandle(connection)).run_authenticated_database_migrations(dek=b"d" * 32)
+    assert events == ["backup"]
+
+
+def test_a_vault_already_current_neither_backs_up_nor_trims(tmp_path: Path, monkeypatch) -> None:
+    connection = _encrypted_legacy_connection(tmp_path / "namespace.db")
+    connection.execute(f"PRAGMA user_version = {CURRENT_DATABASE_VERSION}")
+    events: list[str] = []
+    monkeypatch.setattr("app.services.auth_service.create_timestamped_backup", lambda: events.append("backup"))
+    monkeypatch.setattr("app.services.auth_service.trim_safety_backups", lambda: events.append("trim"))
+    AuthService(_DatabaseHandle(connection)).run_authenticated_database_migrations(dek=b"d" * 32)
+    assert events == []
+
+
 def test_authenticated_migration_backs_up_before_rewriting(
     tmp_path: Path,
     monkeypatch,

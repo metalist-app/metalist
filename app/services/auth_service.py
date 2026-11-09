@@ -61,6 +61,7 @@ from app.services.maintenance_mode import maintenance_service
 from app.services.note_store import store as note_store
 from app.services.tab_state import tab_state_store
 from app.services.backup_service import create_timestamped_backup
+from app.services.backup_service import trim_safety_backups
 from app.services.client_state_service import rewrite_client_state_storage
 from app.security.encryption import set_encryption_required
 from app.services.password_note_fields import prepare_note_rewrite
@@ -309,6 +310,7 @@ class AuthService:
                 purge_migration_residue(connection)
                 connection.execute(f"PRAGMA user_version = {CURRENT_DATABASE_VERSION}")
                 connection.commit()
+            trim_safety_backups()
             return migration_result
         finally:
             maintenance_service.exit_maintenance()

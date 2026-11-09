@@ -15,7 +15,7 @@ from app.server_runtime import validate_namespace
 _MANIFEST_JSON_INDENT = 2
 
 
-def _namespace_database_paths(namespaces_directory: Path) -> tuple[Path, ...]:
+def namespace_database_paths(namespaces_directory: Path) -> tuple[Path, ...]:
     if not namespaces_directory.exists():
         return ()
     if not namespaces_directory.is_dir():
@@ -152,10 +152,11 @@ def _backup_namespace(database_path: Path) -> Path:
 
 
 def backup_all_namespaces_for_update(*, namespaces_directory: Path) -> tuple[Path, ...]:
-    """Back up all saved namespace data after writers stop; never prune old archives."""
+    """Back up all saved namespace data after writers stop. Old archives stay: the update
+    has not succeeded yet (`metalist trim-safety-backups` runs once it has)."""
     if not isinstance(namespaces_directory, Path):
         raise TypeError("namespaces_directory must be a Path")
-    databases = _namespace_database_paths(namespaces_directory.resolve())
+    databases = namespace_database_paths(namespaces_directory.resolve())
     archives = []
     for database in databases:
         print(f"Backing up vault {database.parent.name}...", flush=True)

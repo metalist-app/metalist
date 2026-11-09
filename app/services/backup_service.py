@@ -63,6 +63,11 @@ class BackupLaunchProfile:
     mcp_port: int | None
 
 
+# Safety backups kept per vault (made by an upgrade at unlock and before an update). More than
+# one: damage noticed only after a later upgrade needs a copy from before it.
+SAFETY_BACKUPS_KEPT = 3
+
+
 def _coerce_optional_db_port(*, value: object) -> int | None:
     if value is None:
         return None
@@ -1061,6 +1066,27 @@ def create_timestamped_backup() -> BackupFileInfo:
     database_path = resolve_live_database_path()
     backup_directory = resolve_backup_directory_for_database(database_path)
     return create_timestamped_backup_for_paths(database_path, backup_directory)
+
+
+def trim_safety_backups_for_database(database_path: Path) -> list[BackupFileInfo]:
+    """Delete all but this vault's newest safety backups, once a new one was made and the
+    upgrade or update it protected has succeeded. They are full copies made without being
+    asked for, so nothing else would ever remove them. The newest is checked first, as a
+    restore would check it: an unreadable one leaves every older copy in place."""
+    backup_directory = resolve_backup_directory_for_database(database_path)
+    newest_first = list_backups_in_directory(backup_directory, database_path=database_path)
+    excess_count = len(newest_first) - SAFETY_BACKUPS_KEPT
+    if excess_count <= 0:
+        return []
+    _validate_archive_contents(
+        backup_directory / newest_first[0].filename,
+        expected_namespace=_derive_namespace_name(database_path),
+    )
+    return delete_oldest_backups_in_directory(backup_directory, excess_count, database_path=database_path)
+
+
+def trim_safety_backups() -> list[BackupFileInfo]:
+    return trim_safety_backups_for_database(resolve_live_database_path())
 
 
 def delete_oldest_backups_in_directory(

@@ -467,3 +467,29 @@ def test_update_preflight_failure_keeps_current_servers_running(monkeypatch):
     with pytest.raises(RuntimeError, match="candidate unavailable"):
         self_update.schedule_self_update(current_version="0.6.1", metalist_executable="/tools/metalist", current_pid=4321, platform_name="darwin", environ={}, expected_target_version=None)
     assert events == ["preflight"]
+
+
+def _steps_in_order(script: str, *steps: str) -> None:
+    positions = [script.index(step) for step in steps]
+    assert positions == sorted(positions), script
+
+
+def test_posix_updater_trims_safety_backups_last_and_only_after_a_restart() -> None:
+    [_shell, _flag, script] = self_update._build_posix_updater_command(
+        shell_executable="/bin/sh", install_command=["uv", "install"], metalist_executable="/bin/metalist",
+        current_pid=4242, target_version="0.3.13",
+    )
+    _steps_in_order(script, "if ! uv install; then", "if ! /bin/metalist; then", "if ! /bin/metalist trim-safety-backups; then")
+    _steps_in_order(script, "if ! /bin/metalist trim-safety-backups; then", "older safety backups", "MetaList updated to v0.3.13.'\n")
+
+
+def test_windows_updater_trims_safety_backups_last_and_only_after_a_restart() -> None:
+    command = self_update._build_windows_updater_command(
+        powershell_executable="powershell.exe", install_command=["uv", "install"], metalist_executable="C:/metalist.exe",
+        current_pid=4242, target_version="0.3.13",
+    )
+    script = command[5]
+    restart = "& 'C:/metalist.exe'; if ($LASTEXITCODE -ne 0)"
+    trim = "& 'C:/metalist.exe' 'trim-safety-backups'; if ($LASTEXITCODE -ne 0)"
+    _steps_in_order(script, "& 'uv' 'install'", restart, trim, "older safety backups")
+    assert script.index("older safety backups") < script.index("-ForegroundColor Green")

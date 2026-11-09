@@ -56,7 +56,9 @@ from app.services.namespace_switcher import build_namespace_catalog
 from app.services.namespace_switcher import NamespaceOpenResult
 from app.services.namespace_switcher import ORCHESTRATED_CHILD_ENV_NAME
 from app.services.namespace_switcher import open_or_launch_all_namespaces
+from app.services.self_update import TRIM_SAFETY_BACKUPS_COMMAND
 from app.services.self_update import schedule_self_update
+from app.services.update_backups import namespace_database_paths
 from app.version import __version__
 from app.network_settings import apply_network_settings
 from app.security.shell_execution import enable_shell_execution_for_launch
@@ -726,6 +728,11 @@ def cli() -> None:
         del os.environ[ORCHESTRATED_CHILD_ENV_NAME]
         run_orchestrated_namespace_server(argv)
         return
+    if len(argv) != 0 and argv[0] == TRIM_SAFETY_BACKUPS_COMMAND:
+        if argv != [TRIM_SAFETY_BACKUPS_COMMAND]:
+            raise RuntimeError(f"Usage: metalist {TRIM_SAFETY_BACKUPS_COMMAND}")
+        _trim_safety_backups_after_update(namespaces_directory=resolve_namespaces_directory())
+        return
     if len(argv) != 0 and argv[0] == "update":
         if argv != ["update"]:
             raise RuntimeError("Usage: metalist update")
@@ -744,6 +751,15 @@ def cli() -> None:
         print(result.message)
         return
     main(argv)
+
+
+def _trim_safety_backups_after_update(*, namespaces_directory: Path) -> None:
+    # Here, not at the top: the backup service reads app.config, which fixes the namespace.
+    from app.services.backup_service import trim_safety_backups_for_database
+    for database_path in namespace_database_paths(namespaces_directory.resolve()):
+        removed = trim_safety_backups_for_database(database_path)
+        if removed:
+            print(f"Removed {len(removed)} older safety backup(s) of vault {database_path.parent.name}.", flush=True)
 
 
 def run_orchestrated_namespace_server(argv: list[str]) -> None:
