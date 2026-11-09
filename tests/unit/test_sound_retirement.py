@@ -7,10 +7,17 @@ import pytest
 
 from app.db.schema import initialize_schema
 from app.db.settings_sql import insert_default_settings
-from app.db.file_schema import initialize_file_schema
+from app.db.legacy_file_schema import initialize_file_schema
 from app.db.migrations import run_database_migrations
 from app.services.encryption import EncryptionService
 from app.services.backup_service import create_timestamped_backup_for_paths
+from app.db import migrations
+
+
+@pytest.fixture(autouse=True)
+def _keep_the_old_files_database_to_inspect(monkeypatch):
+    """This step upgrades the old files database; 16→17 (tested in test_move_files_to_blobs.py) would then delete it."""
+    monkeypatch.setitem(migrations._MIGRATIONS, 16, lambda **_kwargs: 0)
 
 
 @pytest.mark.parametrize('encrypted', [False, True])
@@ -50,7 +57,7 @@ def test_sound_retirement_preserves_reminders_files_and_historical_archive(tmp_p
             service = encryption
         with connection:
             result = run_database_migrations(connection=connection, encryption_enabled=encrypted, encryption_service=service)
-        assert result.applied_versions == (9, 10, 11, 12, 13, 14, 15, 16)
+        assert result.applied_versions == (9, 10, 11, 12, 13, 14, 15, 16, 17)
         row = connection.execute('SELECT payload_json, payload_encryption_nonce, payload_encryption_tag FROM reminders').fetchone()
         payload = row[0]
         if encrypted:

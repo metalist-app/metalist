@@ -559,7 +559,10 @@ def login(
         raise HTTPException(status_code=HTTPStatus.UNAUTHORIZED, detail="Invalid password")
 
     dek = auth.unwrap_dek_for_password(submitted_password)
-    auth.run_authenticated_database_migrations(dek=dek)
+    migration = auth.run_authenticated_database_migrations(dek=dek)
+    # An upgrade may have moved the vault's files into the catalog this process listed as empty.
+    if migration.applied_versions:
+        bootstrap_file_registry()
     _open_password_session(request=request, response=response, db=db, dek=dek, tab_id=tab_id)
     login_rate_limiter.record_success(rate_limit_key)
     return LoginResponse(

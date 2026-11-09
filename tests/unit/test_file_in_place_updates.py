@@ -12,8 +12,8 @@ import sys
 import pytest
 
 from app.api.upload_limits import _is_upload_request
-from app.db.file_schema import FILE_PREVIEWS_TABLE, initialize_file_schema
-from app.db.file_session import begin_file_writer, connect_file_reader
+from app.db.legacy_file_schema import FILE_PREVIEWS_TABLE, initialize_file_schema
+from app.db.file_session import begin_file_writer, connect_file_reader, live_blob_store
 from app.db.files_sql import fetch_file, fetch_file_preview
 from app.models.database import SafeSession
 from app.security.encryption import clear_encryption_key, get_encryption_service, set_encryption_required, set_session_dek
@@ -111,8 +111,8 @@ def test_replace_file_content_bumps_revision_and_stays_encrypted(encrypted_files
     with connect_file_reader() as connection:
         row = fetch_file(connection, file_id)
     assert row is not None
-    assert row["blob_encryption_nonce"] is not None
-    assert SCENE_V2 != row["blob_data"]
+    assert row["blob_seal_encryption_nonce"] is not None
+    assert SCENE_V2 not in live_blob_store().path_of(row["blob_id"]).read_bytes()
 
 
 def test_replace_file_content_rejects_stale_revision(encrypted_files) -> None:
@@ -158,8 +158,8 @@ def test_previews_round_trip_encrypted_for_the_current_revision(encrypted_files)
     with connect_file_reader() as connection:
         row = fetch_file_preview(connection, file_id, "light")
     assert row is not None
-    assert row["preview_encryption_nonce"] is not None
-    assert LIGHT_SVG != row["preview_data"]
+    assert row["blob_seal_encryption_nonce"] is not None
+    assert LIGHT_SVG not in live_blob_store().path_of(row["blob_id"]).read_bytes()
 
 
 def test_previews_reject_stale_revisions_missing_variants_and_non_svg(encrypted_files) -> None:
@@ -224,7 +224,7 @@ def test_encryption_migrations_rewrite_previews(plaintext_files) -> None:
     store_file_previews(file_id=file_id, previews_by_variant={"light": LIGHT_SVG, "dark": DARK_SVG}, content_revision=1, token="token")
     with connect_file_reader() as connection:
         plain_row = fetch_file_preview(connection, file_id, "dark")
-    assert plain_row is not None and plain_row["preview_data"] == DARK_SVG
+    assert plain_row is not None and live_blob_store().path_of(plain_row["blob_id"]).read_bytes() == DARK_SVG
 
     set_session_dek(os.urandom(32))
     service = get_encryption_service()
@@ -232,7 +232,7 @@ def test_encryption_migrations_rewrite_previews(plaintext_files) -> None:
     with connect_file_reader() as connection:
         encrypted_row = fetch_file_preview(connection, file_id, "dark")
     assert encrypted_row is not None
-    assert encrypted_row["preview_encryption_nonce"] is not None
+    assert encrypted_row["blob_seal_encryption_nonce"] is not None
     assert encrypted_row["content_revision"] == 1
     assert get_file_preview(file_id=file_id, variant="dark", token="token").content_bytes == DARK_SVG
 
@@ -240,8 +240,8 @@ def test_encryption_migrations_rewrite_previews(plaintext_files) -> None:
     with connect_file_reader() as connection:
         decrypted_row = fetch_file_preview(connection, file_id, "dark")
     assert decrypted_row is not None
-    assert decrypted_row["preview_data"] == DARK_SVG
-    assert decrypted_row["preview_encryption_nonce"] is None
+    assert live_blob_store().path_of(decrypted_row["blob_id"]).read_bytes() == DARK_SVG
+    assert decrypted_row["blob_seal_encryption_nonce"] is None
 
 
 def test_schema_upgrade_adds_revisions_and_previews_to_existing_file_databases(tmp_path: Path) -> None:
@@ -422,7 +422,7 @@ def test_restoring_a_snapshot_writes_content_and_previews_as_the_next_revision(e
     assert _stored_previews(file_id) == {"light": (LIGHT_SVG, 4), "dark": (DARK_SVG, 4)}
     with connect_file_reader() as connection:
         row = fetch_file_preview(connection, file_id, "light")
-    assert row is not None and row["preview_encryption_nonce"] is not None
+    assert row is not None and row["blob_seal_encryption_nonce"] is not None
 
 
 def test_restoring_a_snapshot_taken_before_any_render_removes_newer_previews(encrypted_files) -> None:

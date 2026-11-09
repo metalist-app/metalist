@@ -11,6 +11,7 @@ from pydantic import BaseModel
 
 from app.api.note_requests import DiscardFileEditSessionRequest, FinishFileEditSessionRequest, RenameFileRequest
 from app.api.transactions import serialized_read_route, transactional_route
+from app.api.byte_ranges import UNSATISFIABLE_RANGE, resolve_byte_range
 from app.api.upload_limits import read_attachment
 from app.api.request_auth import require_request_auth_token
 from app.services.file_registry import file_registry
@@ -27,10 +28,12 @@ from app.services.file_storage import (
     download_file,
     get_file_preview,
     get_file_reference_record,
+    open_file_range,
     rename_file,
     replace_file_content,
     store_file_previews,
 )
+from app.utils.sent_fields import sent_or_none
 from app.usecases.file_edit_session import (
     CmdDiscardFileEditSession,
     CmdFinishFileEditSession,
@@ -120,15 +123,29 @@ def download_file_endpoint(request: Request, file_id: str):
     if not file_registry.has_file(file_id):
         raise HTTPException(status_code=HTTPStatus.NOT_FOUND, detail=f"File not found: {file_id}")
 
-    downloaded = download_file(file_id, token)
-    quoted_filename = quote(downloaded.record.original_filename, safe="")
+    record = get_file_reference_record(file_id, token)
+    byte_range = resolve_byte_range(sent_or_none(request.headers, "range"), file_size=record.size_bytes)
+    if byte_range is UNSATISFIABLE_RANGE:
+        return Response(
+            status_code=HTTPStatus.REQUESTED_RANGE_NOT_SATISFIABLE,
+            headers={"Content-Range": f"bytes */{record.size_bytes}"},
+        )
+    start, length = 0, record.size_bytes
+    if byte_range is not None:
+        start, length = byte_range.start, byte_range.length
+    opened = open_file_range(file_id=file_id, token=token, start=start, length=length)
+    quoted_filename = quote(record.original_filename, safe="")
+    headers = {
+        "Content-Disposition": f"attachment; filename*=UTF-8''{quoted_filename}",
+        "Content-Length": str(length),
+        "Accept-Ranges": "bytes",
+        FILE_REVISION_HEADER: str(record.content_revision),
+    }
+    if byte_range is None:
+        return StreamingResponse(opened.pieces, media_type=record.mime_type, headers=headers)
+    headers["Content-Range"] = f"bytes {start}-{start + length - 1}/{record.size_bytes}"
     return StreamingResponse(
-        BytesIO(downloaded.content_bytes),
-        media_type=downloaded.record.mime_type,
-        headers={
-            "Content-Disposition": f"attachment; filename*=UTF-8''{quoted_filename}",
-            FILE_REVISION_HEADER: str(downloaded.record.content_revision),
-        },
+        opened.pieces, status_code=HTTPStatus.PARTIAL_CONTENT, media_type=record.mime_type, headers=headers,
     )
 
 

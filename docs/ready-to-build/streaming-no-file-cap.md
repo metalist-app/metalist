@@ -23,7 +23,7 @@ Streaming encrypts and decrypts a segment at a time, so memory stays small whate
 - Build `docs/ready-to-build/file-storage-per-file.md` as written. Its streaming encryption is built on its own and not connected yet (that note's §13); the rest of §2 and everything after it are not built. Streaming comes with it; adding streaming to the single files database first would be built twice. No outside users yet, so the migration is cheapest now.
 - Its §10 tunables are yours to choose, starting from its proposals (64 KiB segments).
 - Everything that touches file contents streams: upload, download, backups, export, restore, password changes.
-- Downloads and in-note audio/video playback read only the segments they need (HTTP range requests) (proposed).
+- Downloads and in-note audio/video playback read only the segments they need (HTTP range requests) (decided 2026-11-08).
 
 ## 3. Then remove the per-file limit
 
@@ -63,3 +63,8 @@ The 100 MiB limit stays as it is. No interim override.
   1. **Free space bounds an upload, checked first.** Before storing, MetaList compares the file's size with the free disk space less a reserve (*proposed:* 1 GiB or 5% of the disk, whichever is smaller) and refuses a file that doesn't fit with a plain message saying how much space is missing. A disk that fills mid-write (something else wrote to it) deletes the partial `.mlb.tmp` and gives the same message. A full disk would stop notes saving and backups; refusing one upload is far better. Hosted checks the plan's remaining storage instead.
   2. **The four-transfer limit goes.** Its reason was memory; streaming holds one segment per transfer. A server-side 429 makes images and players fail at random, so the browser queues a folder's uploads a few at a time instead (steadier progress too). Hosted limits bandwidth per account at its edge.
   3. **The dropped-folder holding folder is encrypted, and becomes resumable uploads' store.** A dropped folder's files are unfinished uploads like any other (`docs/future-plans/resumable-uploads.md`): encrypted pieces, held apart from the vault until Import; the Summary reads them by decrypting as it streams. One upload path, and per-file storage's rule that plaintext never touches disk holds. A vault without a password stores files unencrypted anyway, so nothing changes there. Until resumable uploads are built, the holding folder stream-encrypts whole files.
+
+## 9. Found while building (2026-11-08)
+
+- **Built:** per-file storage, and `GET /files/{id}/download` streams and answers `Range`, tested over real HTTP. Still to build from §2 and §3: streaming uploads, then removing the limit.
+- **Open, needs the maintainer:** in-note playback cannot use `Range` yet. `media-player-service.js` fetches the whole file into a blob because a request needs the tab's header, and a browser's own player cannot send one. The options are a short-lived playback link for one file, valid only while the vault is unlocked, or feeding the player through Media Source Extensions, which only some formats support. A link is a new way to authorize a request, so it needs its own decision and security review.

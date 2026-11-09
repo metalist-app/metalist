@@ -411,8 +411,10 @@ No remote-image content migration is active. Remote HTTP(S) image URLs remain en
 
 ### Recovery of live database changes
 
-Password creation/removal and backup restore enlist both the notes database and
-the files database in one recoverable operation. Before the first live
+Password creation/removal and backup restore enlist the notes database and the
+file catalog (and a pre-version-17 files database, if the vault still has one)
+in one recoverable operation. Blobs need no rollback image: they are never
+changed, and none is deleted until the operation commits. Before the first live
 write, `app/db/live_recovery.py` takes consistent SQLite rollback images and
 flushes a checksummed manifest in `.<database-name>.recovery` beside the live DB.
 These are temporary live transaction files, separate from historical backups.
@@ -498,7 +500,9 @@ nonzero for migration findings so backup gates never treat a plaintext archive
 as fully protected.
 
 For each namespace whose `app_settings.encryption_enabled` flag is set, the
-audit checks the main and sibling files databases. It validates every declared
+audit checks the main database and the file catalog (the sibling files database
+before version 17), and that every blob the catalog names exists and starts with
+the encrypted format's header. It validates every declared
 sensitive payload/ciphertext/nonce/tag tuple, AES-GCM nonce and tag sizes,
 cross-database DEK nonce uniqueness, encrypted-vault metadata, SQLite integrity,
 and the complete known table/column contract. Unknown tables or columns fail the
@@ -781,6 +785,8 @@ Attachment uploads default to 100 MiB per file, configurable with positive-byte 
 Lock ownership: synchronous route transactions and background hydration/link publication use `bulk_operation_guard.lock`; its separate short admission mutex protects mutation counts and bulk operation/question state. No admission mutex is held across an await. Bulk answers/cancellation are queued with `call_soon_threadsafe`. Tokens and sync/clipboard operations each have their own RLock and return copied snapshots; clipboard snapshots copy nested values. NoteStore, search index, tab/reminder/link stores and sensitive caches retain their existing private locks. Hydration/link work checks the runtime generation before publishing. Acquire the outer bulk lock before admission/service locks; do not acquire the outer bulk lock from inside a service lock. These guards protect existing mutation paths, not a general serializable snapshot API spanning every independent GET.
 
 Temporary DB read permission is a ContextVar layered over startup's global read state, so one thread/task cannot enable another's reads or restore a stale global value.
+
+Database version 17 moves each vault's files out of `<vault>.metalist.files.db` into `files/catalog.db` and one file per stored item under `files/blobs/`. In a vault with a password each blob is encrypted with its own random 256-bit key by `app/security/streaming_blob.py` (64 KiB AES-256-GCM segments, a nonce of per-blob random prefix, segment index and final flag, the header as associated data) and padded (Padmé, plus a random amount up to 1% of the file's size), and is never on disk in plaintext, including while being written. A vault with no password stores its files as they are, unpadded. Each blob's key, real size and SHA-256 are its seal, encrypted in the catalog like the row's other fields. The catalog's readable structural metadata is: file ID, blob ID (random, unrelated to the content), preview variant and SVG MIME type, the search text's cut flag and reader/filter versions, content revisions and timestamps. The file count and each blob's padded size are visible on disk. The step runs after unlock for a vault with a password and at startup for one without, after a safety backup; every blob is read back against its seal before the old database is deleted. Blobs nothing names any more are unlinked, which unlike SQLite's `secure_delete` cannot promise the bytes are gone from the disk, so plaintext blobs replaced when a password is set may remain recoverable by disk forensics; full-disk encryption covers that.
 
 Database version 14 adds `reader_version` and `filter_version` to `file_texts` in the files database. The step is additive and idempotent, so it also accepts a files database the app already upgraded on open; the encryption audit accepts them missing or present before version 14 and requires them from version 14.
 

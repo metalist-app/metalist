@@ -13,7 +13,7 @@ from app.config import (
     KDF_TIME_COST,
     VAULT_VERSION,
 )
-from app.db.file_session import connect_file_reader
+from app.db.file_session import connect_file_reader, live_blob_store
 from app.db.files_sql import fetch_file
 from app.db.link_icons_sql import StoredLinkIconRow, fetch_all_link_icon_rows, insert_link_icon_row
 from app.db.session import begin_writer
@@ -289,7 +289,7 @@ def test_password_transitions_rewrite_file_storage_rows(
             assert row["title"] == "transition.pdf"
             assert row["title_encryption_nonce"] is None
             assert row["metadata_encryption_nonce"] is None
-            assert row["blob_encryption_nonce"] is None
+            assert row["blob_seal_encryption_nonce"] is None
 
             success, message = auth.set_password("aQ7!mZ2#vL9@xR4", KDF_TIME_COST)
             assert success, message
@@ -300,7 +300,8 @@ def test_password_transitions_rewrite_file_storage_rows(
             assert encrypted_row["title"] != "transition.pdf"
             assert isinstance(encrypted_row["title_encryption_nonce"], bytes)
             assert isinstance(encrypted_row["metadata_encryption_nonce"], bytes)
-            assert isinstance(encrypted_row["blob_encryption_nonce"], bytes)
+            assert isinstance(encrypted_row["blob_seal_encryption_nonce"], bytes)
+            assert b"transition-bytes" not in live_blob_store().path_of(encrypted_row["blob_id"]).read_bytes()
 
             dek = auth.unwrap_dek_for_password("aQ7!mZ2#vL9@xR4")
             set_session_dek(dek)
@@ -318,8 +319,8 @@ def test_password_transitions_rewrite_file_storage_rows(
             assert decrypted_row["title"] == "transition.pdf"
             assert decrypted_row["title_encryption_nonce"] is None
             assert decrypted_row["metadata_encryption_nonce"] is None
-            assert decrypted_row["blob_encryption_nonce"] is None
-            assert decrypted_row["blob_data"] == b"transition-bytes"
+            assert decrypted_row["blob_seal_encryption_nonce"] is None
+            assert live_blob_store().path_of(decrypted_row["blob_id"]).read_bytes() == b"transition-bytes"
 
             restored_record = get_file_reference_record(record.id, token=None)
             assert restored_record.title == "transition.pdf"

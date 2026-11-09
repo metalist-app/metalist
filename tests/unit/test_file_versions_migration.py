@@ -6,11 +6,19 @@ from contextlib import closing
 from pathlib import Path
 import sqlite3
 
-from app.db.file_schema import FILE_TEXTS_COLUMNS, initialize_file_schema
+from app.db.legacy_file_schema import FILE_TEXTS_COLUMNS, initialize_file_schema
 from app.db.migrations import run_database_migrations
 from app.db.schema import initialize_schema
 from app.db.settings_sql import insert_default_settings
 from app.db.version import CURRENT_DATABASE_VERSION
+import pytest
+from app.db import migrations
+
+
+@pytest.fixture(autouse=True)
+def _keep_the_old_files_database_to_inspect(monkeypatch):
+    """This step upgrades the old files database; 16→17 (tested in test_move_files_to_blobs.py) would then delete it."""
+    monkeypatch.setitem(migrations._MIGRATIONS, 16, lambda **_kwargs: 0)
 
 
 def _version_13_namespace(tmp_path: Path) -> Path:
@@ -61,7 +69,7 @@ def test_kept_text_was_read_by_the_first_reader_and_filter(tmp_path: Path) -> No
     notes = _version_13_namespace(tmp_path)
     files = _version_13_files(tmp_path)
 
-    assert _migrate(notes) == (14, 15, 16)
+    assert _migrate(notes) == (14, 15, 16, 17)
 
     assert _columns(files, "file_texts") == set(FILE_TEXTS_COLUMNS)
     with closing(sqlite3.connect(files)) as connection:
@@ -77,7 +85,7 @@ def test_migration_accepts_a_files_database_the_app_already_upgraded(tmp_path: P
         initialize_file_schema(connection)
         connection.commit()
 
-    assert _migrate(notes) == (14, 15, 16)
+    assert _migrate(notes) == (14, 15, 16, 17)
     assert _migrate(notes) == ()
     assert _columns(files, "file_texts") == set(FILE_TEXTS_COLUMNS)
 
@@ -85,5 +93,5 @@ def test_migration_accepts_a_files_database_the_app_already_upgraded(tmp_path: P
 def test_migration_does_not_create_a_missing_files_database(tmp_path: Path) -> None:
     notes = _version_13_namespace(tmp_path)
 
-    assert _migrate(notes) == (14, 15, 16)
+    assert _migrate(notes) == (14, 15, 16, 17)
     assert not (tmp_path / "fixture.metalist.files.db").exists()

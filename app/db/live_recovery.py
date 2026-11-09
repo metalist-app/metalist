@@ -5,6 +5,7 @@ ready manifest is durable before the first live write. An absent committed
 marker means startup restores the entire original set, including absent files.
 """
 
+from app.db.blob_store import resolve_file_catalog_path, resolve_legacy_file_database_path
 from app.utils.byte_sizes import MIB
 from contextlib import contextmanager
 import hashlib
@@ -28,8 +29,10 @@ _active: set[Path] = set()  # shockharness: ignore[STATE001] reason="every acces
 _SNAPSHOT_DIRECTORY_MODE = 0o700
 
 
-def _targets(database_path: Path) -> tuple[Path, Path]:
-    return database_path, database_path.with_name(f'{database_path.stem}.files{database_path.suffix}')
+def _targets(database_path: Path) -> tuple[Path, Path, Path]:
+    """The notes database, a pre-version-17 files database and the catalog. Blobs need no copy:
+    they are never changed, and none is deleted until the change is committed."""
+    return database_path, resolve_legacy_file_database_path(database_path), resolve_file_catalog_path(database_path)
 
 
 def _directory(database_path: Path) -> Path:
@@ -113,7 +116,8 @@ def _recover_locked(database_path: Path) -> None:
     if manifest_path.exists() and not (directory / 'committed').exists():
         manifest = json.loads(manifest_path.read_text())
         targets = _targets(database_path)
-        if manifest['version'] != 1 or len(manifest['files']) != len(targets):
+        # A journal left by a MetaList from before the catalog names only the first two.
+        if manifest['version'] != 1 or len(manifest['files']) > len(targets):
             raise RuntimeError('Unsupported live recovery manifest')
         # Validate the entire recovery set before restoring either database.
         for index, entry in enumerate(manifest['files']):
@@ -124,6 +128,7 @@ def _recover_locked(database_path: Path) -> None:
         for index, entry in enumerate(manifest['files']):
             target = targets[index]
             if entry['existed']:
+                target.parent.mkdir(parents=True, exist_ok=True)
                 _copy_sqlite(directory / f'{index}.sqlite', target)
             else:
                 for path in (target, Path(f'{target}-wal'), Path(f'{target}-shm')):

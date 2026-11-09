@@ -7,12 +7,19 @@ import sqlite3
 
 import pytest
 
-from app.db.file_schema import initialize_file_schema
+from app.db.legacy_file_schema import initialize_file_schema
 from app.db.migrations import run_database_migrations
 from app.db.schema import initialize_schema
 from app.db.settings_sql import insert_default_settings
 from app.db.version import CURRENT_DATABASE_VERSION
 from app.services.encryption import EncryptionService
+from app.db import migrations
+
+
+@pytest.fixture(autouse=True)
+def _keep_the_old_files_database_to_inspect(monkeypatch):
+    """This step upgrades the old files database; 16→17 (tested in test_move_files_to_blobs.py) would then delete it."""
+    monkeypatch.setitem(migrations._MIGRATIONS, 16, lambda **_kwargs: 0)
 
 _LEGACY_FILES_TABLE = """
 CREATE TABLE files (
@@ -77,7 +84,7 @@ def test_migration_upgrades_a_legacy_files_database_and_keeps_attachments(tmp_pa
         )
         connection.commit()
 
-    assert _migrate(notes, encrypted=encrypted) == (10, 11, 12, 13, 14, 15, 16)
+    assert _migrate(notes, encrypted=encrypted) == (10, 11, 12, 13, 14, 15, 16, 17)
 
     tables, columns = _files_schema(files)
     assert "file_previews" in tables
@@ -94,7 +101,7 @@ def test_migration_accepts_a_files_database_the_app_already_upgraded(tmp_path: P
         initialize_file_schema(connection)
         connection.commit()
 
-    assert _migrate(notes, encrypted=True) == (10, 11, 12, 13, 14, 15, 16)
+    assert _migrate(notes, encrypted=True) == (10, 11, 12, 13, 14, 15, 16, 17)
     assert _migrate(notes, encrypted=True) == ()
     tables, columns = _files_schema(files)
     assert "file_previews" in tables and "content_revision" in columns
@@ -103,5 +110,5 @@ def test_migration_accepts_a_files_database_the_app_already_upgraded(tmp_path: P
 def test_migration_does_not_create_a_missing_files_database(tmp_path: Path) -> None:
     notes = _version_9_namespace(tmp_path)
 
-    assert _migrate(notes, encrypted=False) == (10, 11, 12, 13, 14, 15, 16)
+    assert _migrate(notes, encrypted=False) == (10, 11, 12, 13, 14, 15, 16, 17)
     assert not (tmp_path / "fixture.metalist.files.db").exists()

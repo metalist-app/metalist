@@ -88,7 +88,7 @@ Sources: docs/ui/references.md
 - Clipboard image-pixel paste with no meaningful source filename keeps the direct inline embed path by default.
 - The attach flow saves the note immediately after insertion so the new reference survives refresh/reload.
 - `Add Excalidraw Diagram` attaches a new, empty `.excalidraw` file the same way and opens the diagram editor.
-- Files live in a sibling SQLite database derived from the main DB path (`*.files.db`).
+- Files live in a `files` folder beside the notes database: `files/catalog.db` names them and `files/blobs/` holds one file for each.
 - Attachments are immutable except Excalidraw diagrams, which the diagram editor replaces in place.
 - Startup only loads the file UUID registry into memory; file metadata/blob rows are decrypted on demand for rendering/download.
 

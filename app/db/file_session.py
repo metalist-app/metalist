@@ -1,11 +1,13 @@
-"""Dedicated sqlite session helpers for encrypted file storage."""
+"""Dedicated sqlite session helpers for the catalog of a vault's stored files."""
 
 from __future__ import annotations
 
 import sqlite3
 import sys
 from contextlib import contextmanager
+from functools import cache
 from pathlib import Path
+import tempfile
 from threading import RLock
 import os
 import traceback
@@ -13,6 +15,7 @@ from typing import Iterator, Optional
 
 from loguru import logger
 
+from app.db.blob_store import BlobStore, blob_store_for_database, resolve_file_catalog_path
 from app.db.file_schema import initialize_file_schema
 from app.models.database import SafeSession
 
@@ -20,14 +23,16 @@ _FILE_MEMORY_URI = "file:metalist_files_memory?mode=memory&cache=shared"
 _ROLLBACK_STACK_FRAME_LIMIT = 50
 
 
-def resolve_file_database_path(note_database_path: Path) -> Path:
-    if not isinstance(note_database_path, Path):
-        raise TypeError(f"note_database_path must be a Path, got {type(note_database_path)}")
-    suffix = note_database_path.suffix
-    stem = note_database_path.stem
-    if suffix == "":
-        return note_database_path.with_name(f"{stem}.files")
-    return note_database_path.with_name(f"{stem}.files{suffix}")
+@cache
+def _memory_blobs_directory() -> tempfile.TemporaryDirectory:
+    """Where an in-memory notes database (the test harness) keeps its blobs, for the process's life."""
+    return tempfile.TemporaryDirectory(prefix="metalist-memory-blobs-")
+
+
+def live_blob_store() -> BlobStore:
+    if SafeSession._use_memory:  # type: ignore[attr-defined]
+        return BlobStore(Path(_memory_blobs_directory().name))
+    return blob_store_for_database(SafeSession._db_path)  # type: ignore[attr-defined]
 
 
 class FileSession:
@@ -78,7 +83,7 @@ class FileSession:
                 isolation_level="DEFERRED",
             )
         else:
-            database_path = resolve_file_database_path(SafeSession._db_path)  # type: ignore[attr-defined]
+            database_path = resolve_file_catalog_path(SafeSession._db_path)  # type: ignore[attr-defined]
             database_path.parent.mkdir(parents=True, exist_ok=True)
             connection = sqlite3.connect(
                 str(database_path),
@@ -90,7 +95,8 @@ class FileSession:
         connection.execute("PRAGMA foreign_keys = ON")
         connection.execute("PRAGMA journal_mode=WAL")
         connection.execute("PRAGMA secure_delete=ON")
-        connection.execute("PRAGMA synchronous=NORMAL")
+        # A deleted blob must never come back into the catalog after a power cut.
+        connection.execute("PRAGMA synchronous=FULL")
         initialize_file_schema(connection)
         connection.commit()
         return connection

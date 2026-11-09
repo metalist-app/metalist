@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 from starlette.requests import Request
 from starlette.responses import Response
 import pytest
@@ -60,8 +62,9 @@ def test_login_does_not_decrypt_file_metadata_before_hydration(monkeypatch) -> N
             assert password == "abcd"
             return b"d" * 32
 
-        def run_authenticated_database_migrations(self, *, dek: bytes) -> None:
+        def run_authenticated_database_migrations(self, *, dek: bytes) -> SimpleNamespace:
             assert dek == b"d" * 32
+            return SimpleNamespace(applied_versions=())
 
     monkeypatch.setattr(auth_route, "AuthService", lambda db: _AuthService())
     monkeypatch.setattr(auth_route.login_rate_limiter, "check_allowed", lambda key: (True, 0))

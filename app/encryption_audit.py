@@ -12,6 +12,7 @@ import re
 import sqlite3
 import sys
 
+from app.db.blob_store import blob_store_for_database, resolve_file_catalog_path
 from app.db.version import CURRENT_DATABASE_VERSION
 
 
@@ -535,6 +536,36 @@ _OPAQUE_SEARCH_HISTORY_PAYLOADS = (
     ),
 )
 
+_FILES_IN_BLOBS_DATABASE_VERSION = 17
+_BLOB_SEAL_COLUMNS = frozenset({"blob_id", "blob_seal", "blob_seal_encryption_nonce", "blob_seal_encryption_tag"})
+# From version 17 a vault's files are blobs named by this catalog (app/db/file_schema.py). The plaintext
+# columns are its structure: IDs, variant, MIME type of a preview, flags, revisions and times.
+_CATALOG_SCHEMA = {
+    "files": _BLOB_SEAL_COLUMNS | frozenset(
+        {
+            "id", "title", "title_encryption_nonce", "title_encryption_tag", "metadata_json", "metadata_encryption_nonce",
+            "metadata_encryption_tag", "created_at", "updated_at", _FILE_REVISION_COLUMN,
+        }
+    ),
+    _FILE_PREVIEWS_TABLE: _BLOB_SEAL_COLUMNS | frozenset({"file_id", "variant", "mime_type", "content_revision", "updated_at"}),
+    _FILE_TEXTS_TABLE: _BLOB_SEAL_COLUMNS | frozenset(
+        {
+            "file_id", "filter_data", "filter_encryption_nonce", "filter_encryption_tag", "is_cut", "content_revision",
+            "updated_at",
+        }
+    ) | _FILE_TEXT_VERSION_COLUMNS,
+}
+_CATALOG_PAYLOADS = (
+    _PayloadSpec("files", "title", "title_encryption_nonce", "title_encryption_tag", "text", is_nullable=False),
+    _PayloadSpec("files", "metadata_json", "metadata_encryption_nonce", "metadata_encryption_tag", "text", is_nullable=False),
+    *(
+        _PayloadSpec(table, "blob_seal", "blob_seal_encryption_nonce", "blob_seal_encryption_tag", "bytes", is_nullable=False)
+        for table in ("files", _FILE_PREVIEWS_TABLE, _FILE_TEXTS_TABLE)
+    ),
+    _PayloadSpec(_FILE_TEXTS_TABLE, "filter_data", "filter_encryption_nonce", "filter_encryption_tag", "bytes", is_nullable=False),
+)
+_ENCRYPTED_BLOB_HEADER = b"ML\x01\x01"
+
 _FILE_PAYLOADS = tuple(
     _PayloadSpec(table, value, f"{prefix}_encryption_nonce", f"{prefix}_encryption_tag", kind, is_nullable=False)
     for table in ("files", "sounds")
@@ -593,6 +624,8 @@ _MIGRATION_DEFERRED_PLAINTEXT_FIELDS_BY_DATABASE_VERSION = dict(enumerate((
     # version 14
     frozenset(),
     # version 15
+    frozenset(),
+    # version 16
     frozenset(),
 )))
 
@@ -1187,7 +1220,9 @@ def _audit_namespace(*, namespace: str, database_path: Path) -> NamespaceAuditRe
         ),
     )
     file_database_path = _resolve_file_database_path(database_path)
-    if file_database_path.exists():
+    if database_version >= _FILES_IN_BLOBS_DATABASE_VERSION:
+        _audit_catalog(database_path=database_path, state=state)
+    elif file_database_path.exists():
         _audit_database(
             database_path=file_database_path,
             expected_schema=_file_schema_for_database_version(
@@ -1210,6 +1245,35 @@ def _audit_namespace(*, namespace: str, database_path: Path) -> NamespaceAuditRe
         checked_payload_count=state.checked_payload_count,
         findings=state.findings(),
     )
+
+
+def _audit_catalog(*, database_path: Path, state: _AuditState) -> None:
+    """The catalog's encrypted fields, and that every blob it names is there and encrypted."""
+    catalog_path = resolve_file_catalog_path(database_path)
+    if not catalog_path.exists():
+        return
+    _audit_database(
+        database_path=catalog_path,
+        expected_schema=_CATALOG_SCHEMA,
+        payload_specs=_CATALOG_PAYLOADS,
+        state=state,
+        is_main_database=False,
+        migration_deferred_plaintext_fields=frozenset(),
+    )
+    store = blob_store_for_database(database_path)
+    connection = _connect_read_only(catalog_path)
+    try:
+        for table in _CATALOG_SCHEMA:
+            for blob_id, in connection.execute(f"SELECT blob_id FROM {table}").fetchall():
+                path = store.path_of(blob_id)
+                if not path.exists():
+                    state.add_finding(database_path=catalog_path, table=table, field="blob_id", message="names a blob that is missing")
+                    continue
+                with path.open("rb") as blob:
+                    if blob.read(len(_ENCRYPTED_BLOB_HEADER)) != _ENCRYPTED_BLOB_HEADER:
+                        state.add_finding(database_path=catalog_path, table=table, field="blob_id", message="names a blob that is not encrypted")
+    finally:
+        connection.close()
 
 
 def _scan_finding(*, namespaces_directory: Path, message: str) -> AuditFinding:

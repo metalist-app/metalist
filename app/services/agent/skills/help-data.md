@@ -13,7 +13,7 @@ switch to, or restart a vault. Port changes take effect on a later launch.
 
 Back Up Now… is an operation, not merely opening a dialog. It can prompt for
 backup folder/settings and creates one versioned .tar.gz archive per vault
-containing its notes database and sibling files database when present. The result
+containing its notes database and its files (the file catalog and every stored file) when present. The result
 shows one row per vault. The help action cannot invoke backup creation.
 Backup reminder (menu: Off, Daily, Weekly, Every 2 weeks, Monthly; Weekly by
 default) floats a card when this vault's newest backup is older than that;
@@ -41,7 +41,7 @@ When @password or @username notes would show, an Include Unredacted Passwords
 (Usernames, or Usernames and Passwords) checkbox appears (unchecked: shown as
 ••••••••; checked: readable, and the file or print is not encrypted).
 Exported files copy usernames, included passwords and copyable values on click.
-Attach File… stores an attachment in the vault's sibling files database. Default upload limit is 100 MiB and is server-configurable.
+Attach File… stores an attachment in the vault's files folder, one file per attachment. Default upload limit is 100 MiB and is server-configurable.
 Trim Unused Files… removes unused attachments and is not an opening action.
 The agent can explain these operations but cannot execute them through help.
 

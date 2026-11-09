@@ -7,13 +7,22 @@ import shutil
 import sqlite3
 import tarfile
 import tempfile
+from contextlib import closing
 from datetime import datetime
 from pathlib import Path
 
 import pytest
 
-from app.db.file_schema import initialize_file_schema
-from app.db.file_session import resolve_file_database_path
+from app.db.legacy_file_schema import initialize_file_schema
+from app.db.blob_store import (
+    BlobSealError,
+    StoredBlob,
+    blob_store_for_database,
+    resolve_file_catalog_path,
+    resolve_legacy_file_database_path as resolve_file_database_path,
+)
+from app.db.file_schema import initialize_file_schema as initialize_catalog_schema
+from app.db.version import CURRENT_DATABASE_VERSION
 from app.db.schema import NAMESPACE_LAUNCH_PROFILE_TABLE
 from app.db.schema import initialize_schema
 from app.models.database import SafeSession
@@ -286,7 +295,7 @@ def test_create_and_restore_backup_round_trip(tmp_path: Path) -> None:
     assert _archive_member_names(backup_path) == {"manifest.json", "live.db"}
 
     manifest = _read_archive_manifest(backup_path)
-    assert manifest["backup_format_version"] == 1
+    assert manifest["backup_format_version"] == 2
     assert manifest["manifest_schema_version"] == 1
     assert manifest["namespace"] == "live"
     assert manifest["encryption_enabled"] is False
@@ -664,3 +673,249 @@ def test_restore_rejects_unsupported_future_archive_format_before_writing(tmp_pa
         restore_backup_to_paths(backup_path, database_path)
 
     assert _read_counter(database_path) == 99
+
+
+def _vault_with_catalog(tmp_path: Path, contents: dict[str, bytes]) -> tuple[Path, dict[str, StoredBlob]]:
+    """A vault in today's layout: notes, files/catalog.db and one blob per file."""
+    database_path = tmp_path / "fixture" / "fixture.metalist.db"
+    database_path.parent.mkdir(parents=True)
+    _write_counter(database_path, 1)
+    catalog_path = resolve_file_catalog_path(database_path)
+    catalog_path.parent.mkdir()
+    store = blob_store_for_database(database_path)
+    stored_by_id = {file_id: store.write(content, is_encrypted=False) for file_id, content in contents.items()}
+    with closing(sqlite3.connect(catalog_path)) as connection:
+        initialize_catalog_schema(connection)
+        for file_id, stored in stored_by_id.items():
+            _insert_catalog_file(connection, file_id=file_id, stored=stored)
+        connection.commit()
+    return database_path, stored_by_id
+
+
+def _insert_catalog_file(connection: sqlite3.Connection, *, file_id: str, stored: StoredBlob) -> None:
+    connection.execute(
+        "INSERT INTO files (id, title, metadata_json, blob_id, blob_seal, created_at, updated_at) VALUES (?, 't', '{}', ?, ?, 'now', 'now')",
+        (file_id, stored.blob_id, stored.seal.to_bytes()),
+    )
+
+
+def _catalog_ids(database_path: Path) -> set[str]:
+    with closing(sqlite3.connect(resolve_file_catalog_path(database_path))) as connection:
+        return {row[0] for row in connection.execute("SELECT id FROM files")}
+
+
+def _archive_of(database_path: Path, tmp_path: Path) -> Path:
+    backups = tmp_path / "chosen-backups"
+    return backups / backup_service_module.create_timestamped_backup_for_paths(database_path, backups).filename
+
+
+def test_a_backup_holds_the_catalog_and_every_blob_it_names(tmp_path: Path) -> None:
+    database_path, stored = _vault_with_catalog(tmp_path, {"report": b"report bytes", "photo": b"photo bytes"})
+
+    archive = _archive_of(database_path, tmp_path)
+
+    with tarfile.open(archive, "r:gz") as handle:
+        names = set(handle.getnames())
+        manifest = json.loads(handle.extractfile("manifest.json").read())
+    expected_blobs = {f"files/blobs/{item.blob_id[:2]}/{item.blob_id}.mlb" for item in stored.values()}
+    assert expected_blobs <= names and "files/catalog.db" in names
+    assert manifest["backup_format_version"] == 2
+    assert {entry["database_role"] for entry in manifest["files"]} == {"notes", "catalog", "blob"}
+
+
+def test_a_restore_brings_back_the_files_of_the_backup(tmp_path: Path) -> None:
+    database_path, stored = _vault_with_catalog(tmp_path, {"report": b"report bytes"})
+    archive = _archive_of(database_path, tmp_path)
+    source_hash = hashlib.sha256(archive.read_bytes()).digest()
+    store = blob_store_for_database(database_path)
+    store.path_of(stored["report"].blob_id).unlink()
+    with closing(sqlite3.connect(resolve_file_catalog_path(database_path))) as connection:
+        connection.execute("DELETE FROM files")
+        connection.commit()
+
+    backup_service_module.restore_backup_to_paths(archive, database_path)
+
+    assert _catalog_ids(database_path) == {"report"}
+    assert store.read_all(stored["report"].blob_id, stored["report"].seal) == b"report bytes"
+    assert hashlib.sha256(archive.read_bytes()).digest() == source_hash
+
+
+def test_a_restore_removes_blobs_only_the_replaced_catalog_named(tmp_path: Path) -> None:
+    database_path, stored = _vault_with_catalog(tmp_path, {"report": b"report bytes"})
+    archive = _archive_of(database_path, tmp_path)
+    store = blob_store_for_database(database_path)
+    later = store.write(b"added after the backup", is_encrypted=False)
+    with closing(sqlite3.connect(resolve_file_catalog_path(database_path))) as connection:
+        _insert_catalog_file(connection, file_id="later", stored=later)
+        connection.commit()
+
+    backup_service_module.restore_backup_to_paths(archive, database_path)
+
+    assert _catalog_ids(database_path) == {"report"}
+    assert store.contains(stored["report"].blob_id)
+    assert not store.contains(later.blob_id)
+
+
+def test_a_failed_restore_leaves_the_vault_with_every_file_it_had(tmp_path: Path, monkeypatch) -> None:
+    database_path, _stored = _vault_with_catalog(tmp_path, {"report": b"report bytes"})
+    archive = _archive_of(database_path, tmp_path)
+    store = blob_store_for_database(database_path)
+    later = store.write(b"added after the backup", is_encrypted=False)
+    catalog_path = resolve_file_catalog_path(database_path)
+    with closing(sqlite3.connect(catalog_path)) as connection:
+        _insert_catalog_file(connection, file_id="later", stored=later)
+        connection.commit()
+    real_copy = backup_service_module._copy_database
+
+    def fail_on_catalog(source: Path, target: Path) -> None:
+        if target == catalog_path:
+            raise OSError("injected catalog failure")
+        real_copy(source, target)
+
+    monkeypatch.setattr(backup_service_module, "_copy_database", fail_on_catalog)
+
+    with pytest.raises(OSError, match="injected catalog"):
+        backup_service_module.restore_backup_to_paths(archive, database_path)
+
+    assert _catalog_ids(database_path) == {"report", "later"}
+    assert store.read_all(later.blob_id, later.seal) == b"added after the backup"
+
+
+def test_a_restore_of_an_old_format_backup_waits_to_move_its_files(tmp_path: Path) -> None:
+    """A backup from before the catalog puts back its files database; the vault's next migration moves it."""
+    database_path = tmp_path / "fixture" / "fixture.metalist.db"
+    _write_counter(database_path, 1)
+    legacy_path = resolve_file_database_path(database_path)
+    _write_file_marker(legacy_path, "old-file")
+    archive = _archive_of(database_path, tmp_path)
+    with tarfile.open(archive, "r:gz") as handle:
+        assert "fixture.metalist.files.db" in handle.getnames()
+    legacy_path.unlink()
+    stale = blob_store_for_database(database_path).write(b"from the newer layout", is_encrypted=False)
+    catalog_path = resolve_file_catalog_path(database_path)
+    with closing(sqlite3.connect(catalog_path)) as connection:
+        initialize_catalog_schema(connection)
+        _insert_catalog_file(connection, file_id="stale", stored=stale)
+        connection.commit()
+
+    backup_service_module.restore_backup_to_paths(archive, database_path)
+
+    assert _read_file_ids(legacy_path) == ["old-file"]
+    assert _catalog_ids(database_path) == set()
+    assert not blob_store_for_database(database_path).contains(stale.blob_id)
+
+
+def test_a_backup_of_a_vault_not_yet_moved_holds_its_files_database(tmp_path: Path) -> None:
+    """Before unlock a vault has an empty catalog beside the old database that holds everything."""
+    database_path = tmp_path / "fixture" / "fixture.metalist.db"
+    _write_counter(database_path, 1)
+    _write_file_marker(resolve_file_database_path(database_path), "old-file")
+    catalog_path = resolve_file_catalog_path(database_path)
+    catalog_path.parent.mkdir()
+    with closing(sqlite3.connect(catalog_path)) as connection:
+        initialize_catalog_schema(connection)
+
+    archive = _archive_of(database_path, tmp_path)
+
+    with tarfile.open(archive, "r:gz") as handle:
+        manifest = json.loads(handle.extractfile("manifest.json").read())
+    assert {entry["database_role"] for entry in manifest["files"]} == {"notes", "files"}
+
+
+def test_a_restore_keeps_the_copy_of_a_blob_already_there(tmp_path: Path) -> None:
+    database_path, stored = _vault_with_catalog(tmp_path, {"report": b"report bytes"})
+    archive = _archive_of(database_path, tmp_path)
+    path = blob_store_for_database(database_path).path_of(stored["report"].blob_id)
+    before = path.stat().st_mtime_ns
+
+    backup_service_module.restore_backup_to_paths(archive, database_path)
+
+    assert path.stat().st_mtime_ns == before
+
+
+def test_a_restore_refuses_a_blob_that_differs_from_the_one_there(tmp_path: Path) -> None:
+    database_path, stored = _vault_with_catalog(tmp_path, {"report": b"report bytes"})
+    archive = _archive_of(database_path, tmp_path)
+    blob_store_for_database(database_path).path_of(stored["report"].blob_id).write_bytes(b"something else")
+
+    with pytest.raises(BlobSealError, match="differs from the backup"):
+        backup_service_module.restore_backup_to_paths(archive, database_path)
+
+
+def test_a_blob_dropped_during_a_backup_stays_until_it_is_written(tmp_path: Path, monkeypatch) -> None:
+    database_path, stored = _vault_with_catalog(tmp_path, {"report": b"report bytes"})
+    store = blob_store_for_database(database_path)
+    real_write = backup_service_module._write_archive
+    seen: dict[str, bool] = {}
+
+    def retire_then_write(**kwargs: object) -> None:
+        store.retire([stored["report"].blob_id])
+        seen["there while archiving"] = store.contains(stored["report"].blob_id)
+        real_write(**kwargs)
+
+    monkeypatch.setattr(backup_service_module, "_write_archive", retire_then_write)
+
+    archive = _archive_of(database_path, tmp_path)
+
+    assert seen["there while archiving"] is True
+    assert not store.contains(stored["report"].blob_id)
+    with tarfile.open(archive, "r:gz") as handle:
+        assert f"files/blobs/{stored['report'].blob_id[:2]}/{stored['report'].blob_id}.mlb" in handle.getnames()
+
+
+@pytest.mark.parametrize(
+    ("database_role", "archive_name"),
+    [
+        ("blob", "../../evil.mlb"),
+        ("blob", "files/blobs/ab/cd" + "0" * 30 + ".mlb"),
+        ("blob", "files/blobs/ab/ab" + "0" * 30 + ".mlb/x"),
+        ("catalog", "../catalog.db"),
+        ("catalog", "catalog.db"),
+        ("notes", "files/notes.db"),
+    ],
+)
+def test_a_manifest_cannot_name_a_path_its_role_does_not_allow(database_role: str, archive_name: str) -> None:
+    entry = {"archive_name": archive_name, "database_role": database_role, "size_bytes": 1, "sha256": "a" * 64}
+
+    with pytest.raises(RuntimeError, match="manifest"):
+        backup_service_module._validate_manifest_file_entry(entry)
+
+
+def test_a_manifest_may_list_many_blobs_but_one_catalog() -> None:
+    base = {"namespace": "fixture", "created_at": "now", "encryption_enabled": False, "backup_format_version": 2, "manifest_schema_version": 1}
+    notes = {"archive_name": "n.db", "database_role": "notes", "size_bytes": 1, "sha256": "a" * 64}
+    blobs = [
+        {"archive_name": f"files/blobs/ab/ab{index:030d}.mlb", "database_role": "blob", "size_bytes": 1, "sha256": "a" * 64}
+        for index in range(2)
+    ]
+    catalogs = [{"archive_name": "files/catalog.db", "database_role": "catalog", "size_bytes": 1, "sha256": "a" * 64}] * 1
+
+    backup_service_module._validate_archive_manifest({**base, "files": [notes, *blobs, *catalogs]}, expected_namespace="fixture")
+    second_catalog = {**catalogs[0], "archive_name": "files/catalog.db"}
+    with pytest.raises(RuntimeError, match="duplicate"):
+        backup_service_module._validate_archive_manifest({**base, "files": [notes, *catalogs, second_catalog]}, expected_namespace="fixture")
+
+
+def test_a_passwordless_vault_is_backed_up_before_it_upgrades(tmp_path: Path) -> None:
+    database_path = tmp_path / "fixture" / "fixture.metalist.db"
+    _write_counter(database_path, 1)
+    with closing(sqlite3.connect(database_path)) as connection:
+        connection.execute(f"PRAGMA user_version = {CURRENT_DATABASE_VERSION - 1}")
+        connection.commit()
+
+    backup_service_module.back_up_before_passwordless_upgrade(database_path)
+
+    assert len(list((database_path.parent / "backups").glob("*.tar.gz"))) == 1
+
+
+def test_a_current_or_brand_new_vault_needs_no_backup(tmp_path: Path) -> None:
+    database_path = tmp_path / "fixture" / "fixture.metalist.db"
+    backup_service_module.back_up_before_passwordless_upgrade(database_path)
+    _write_counter(database_path, 1)
+    for version in (0, CURRENT_DATABASE_VERSION):
+        with closing(sqlite3.connect(database_path)) as connection:
+            connection.execute(f"PRAGMA user_version = {version}")
+            connection.commit()
+        backup_service_module.back_up_before_passwordless_upgrade(database_path)
+
+    assert not (database_path.parent / "backups").exists()

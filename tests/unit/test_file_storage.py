@@ -4,8 +4,8 @@ from dataclasses import dataclass
 from pathlib import Path
 import os
 
-from app.db.file_session import resolve_file_database_path
-from app.db.file_session import connect_file_reader
+from app.db.blob_store import resolve_legacy_file_database_path as resolve_file_database_path
+from app.db.file_session import connect_file_reader, live_blob_store
 from app.db.files_sql import fetch_file
 from app.models.database import SafeSession
 from app.security.encryption import clear_encryption_key, set_encryption_required, set_session_dek
@@ -43,7 +43,9 @@ def test_create_file_encrypts_at_rest_and_download_round_trips(tmp_path: Path, m
             row = fetch_file(connection, record.id)
         assert row is not None
         assert row["title"] != "report.pdf"
-        assert b"hello encrypted world" != row["blob_data"]
+        assert row["blob_seal_encryption_nonce"] is not None
+        stored = live_blob_store().path_of(row["blob_id"]).read_bytes()
+        assert b"hello encrypted world" not in stored
 
         downloaded = download_file(record.id, "token")
         assert downloaded.record.title == "report.pdf"
@@ -79,9 +81,9 @@ def test_create_file_without_password_stores_plaintext_and_downloads(tmp_path: P
         assert row["title"] == "plain.txt"
         assert row["title_encryption_nonce"] is None
         assert row["title_encryption_tag"] is None
-        assert row["blob_data"] == b"hello plaintext world"
-        assert row["blob_encryption_nonce"] is None
-        assert row["blob_encryption_tag"] is None
+        assert live_blob_store().path_of(row["blob_id"]).read_bytes() == b"hello plaintext world"
+        assert row["blob_seal_encryption_nonce"] is None
+        assert row["blob_seal_encryption_tag"] is None
 
         downloaded = download_file(record.id, "token")
         assert downloaded.record.title == "plain.txt"

@@ -51,8 +51,9 @@ persisted sensitive payloads. This is application field-level encryption, not
 whole-file SQLite encryption or OS full-disk encryption. Coverage includes:
 
 - Note bodies, accepted tags and pending proposed tags; ontology rule text.
-- Attachments in the sibling files database: file title, filename/MIME/other
-  metadata, and file bytes. Embedded-document payloads are encrypted too.
+- Attachments, stored one encrypted file each in the vault's files folder: file
+  title, filename/MIME/other metadata, and file bytes (padded, so a stored size
+  does not reveal the exact size). Embedded-document payloads are encrypted too.
 - Saved search-context state (including saved search state), aggregate tag-activity payloads,
   reminders, and cached link URLs/titles and site icons.
 - UI/client preferences, command-palette usage/query tokens, backup settings,

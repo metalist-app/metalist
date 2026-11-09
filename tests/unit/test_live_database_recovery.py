@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 import os
 import sqlite3
@@ -6,6 +7,7 @@ import sys
 
 import pytest
 
+from app.db.blob_store import resolve_file_catalog_path
 from app.db.live_recovery import LiveDatabaseRecovery, recover_pending_change, _directory
 from app.db import live_recovery
 
@@ -146,3 +148,40 @@ def test_interrupted_rollback_can_retry_the_entire_set(tmp_path, monkeypatch):
     assert _directory(notes).exists()
     recover_pending_change(notes)
     assert read_marker(notes) == read_marker(files) == 'old'
+
+
+def test_a_rollback_restores_the_catalog_and_keeps_every_blob_it_names(tmp_path):
+    notes, _files = make_pair(tmp_path)
+    catalog = resolve_file_catalog_path(notes)
+    catalog.parent.mkdir()
+    with sqlite3.connect(catalog) as connection:
+        connection.execute('CREATE TABLE marker(value TEXT)')
+        connection.execute("INSERT INTO marker VALUES ('old')")
+    change = LiveDatabaseRecovery(notes)
+    change.begin()
+    with sqlite3.connect(catalog) as connection:
+        connection.execute("UPDATE marker SET value='new'")
+
+    change.rollback()
+
+    assert read_marker(catalog) == 'old'
+
+
+def test_a_journal_from_before_the_catalog_still_restores(tmp_path):
+    """A crash during a password change just before updating: its journal names two databases."""
+    notes, files = make_pair(tmp_path)
+    directory = _directory(notes)
+    directory.mkdir()
+    entries = []
+    for index, path in enumerate((notes, files)):
+        image = directory / f'{index}.sqlite'
+        live_recovery._copy_sqlite(path, image)
+        entries.append({'name': path.name, 'existed': True, 'sha256': live_recovery._digest(image)})
+    (directory / 'ready.json').write_text(json.dumps({'version': 1, 'files': entries}))
+    for path in (notes, files):
+        with sqlite3.connect(path) as connection:
+            connection.execute("UPDATE marker SET value='new'")
+
+    recover_pending_change(notes)
+
+    assert read_marker(notes) == 'old' and read_marker(files) == 'old'

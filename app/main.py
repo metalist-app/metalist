@@ -30,7 +30,8 @@ from .db.settings_sql import fetch_settings, insert_default_settings
 from .api.deps import get_db
 from .services.content_cache import populate_cache_from_db
 from .process_memory import release_freed_memory
-from .services.file_storage import bootstrap_file_registry
+from .services.backup_service import back_up_before_passwordless_upgrade
+from .services.file_storage import bootstrap_file_registry, sweep_blob_leftovers
 from .services.auth import AuthService
 from .services.note_store import store as note_store
 from app.services import auth_cache_state
@@ -286,6 +287,8 @@ apply_runtime_hardening()
 _log_startup_step("runtime hardening checks", time.perf_counter() - hardening_start)
 
 schema_start = time.perf_counter()
+if not SafeSession._use_memory:
+    back_up_before_passwordless_upgrade(SafeSession._db_path)
 with begin_writer() as connection:
     initialize_schema(connection.raw_connection)
     settings = fetch_settings(connection)
@@ -326,6 +329,7 @@ set_encryption_required(encryption_enabled)
 
 file_registry_start = time.perf_counter()
 bootstrap_file_registry()
+sweep_blob_leftovers()
 _log_startup_step("file registry bootstrap", time.perf_counter() - file_registry_start)
 
 

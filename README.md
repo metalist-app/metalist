@@ -123,7 +123,7 @@ On first startup, MetaList also auto-generates a self-signed TLS pair at `~/Meta
 Database selection:
 - No explicit namespace on a single-namespace launch: `~/MetaList/namespaces/default/default.metalist.db`
 - `--namespace work` or `METALIST_NAMESPACE=work`: `~/MetaList/namespaces/work/work.metalist.db`
-- The related files DB is derived automatically, so `namespaces/work/work.metalist.db` uses `namespaces/work/work.metalist.files.db`
+- Files sit beside the notes database: `namespaces/work/files/catalog.db` names them and `namespaces/work/files/blobs/` holds one file per stored item
 - Remembered launch ports are stored as plaintext metadata inside each namespace's main `*.metalist.db`
 - Launch precedence is: explicit CLI flags > env vars > saved namespace profile; if a namespace has no saved profile, launch it once with explicit ports or configure ports from the UI
 - Backups stay beside the namespace data under `~/MetaList/namespaces/work/backups/` and use one archive per snapshot with filenames like `work-<timestamp>.metalist-backup.tar.gz`
