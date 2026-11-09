@@ -26,6 +26,7 @@ from app.services.embedded_references import render_note_content_with_embeds
 from app.services.embedded_references import resolve_held_source
 from app.services.markdown_rendering import strip_latex_source_attributes
 from app.services.file_registry import file_registry
+from app.upload_limits import MAX_IN_MEMORY_FILE_BYTES
 from app.services.file_storage import download_file, find_file_preview
 from app.services.file_storage import get_file_reference_record
 from app.services.note_store import store as note_store
@@ -583,7 +584,8 @@ def _render_exported_notes_markup(
                 raise TypeError("file thumbnail_kind must be a non-empty string")
 
             export_data_url = ""
-            if thumbnail_kind == "image":
+            # An image too large to hold in memory exports as a file card.
+            if thumbnail_kind == "image" and record.size_bytes <= MAX_IN_MEMORY_FILE_BYTES:
                 downloaded = download_file(file_id, token)
                 export_data_url = _build_file_data_url(
                     mime_type=downloaded.record.mime_type,

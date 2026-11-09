@@ -3,6 +3,7 @@ A blob is written and synced before the catalog names it, and retired only after
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import json
@@ -10,8 +11,8 @@ from pathlib import Path
 import uuid
 from typing import Callable, Iterator, Optional
 
-from app.upload_limits import MAX_ATTACHMENT_BYTES
-from app.db.blob_store import BlobSeal, StoredBlob
+from app.upload_limits import MAX_IN_MEMORY_FILE_BYTES, UPLOAD_CHUNK_BYTES
+from app.db.blob_store import BlobSeal, BlobWriter, StoredBlob
 from app.db.file_schema import FILE_PREVIEW_VARIANTS
 from app.db.file_session import begin_file_writer, connect_file_reader, live_blob_store
 from app.db.session import after_recoverable_commit
@@ -261,41 +262,77 @@ def create_file(
     content_bytes: bytes,
     token: str,
 ) -> FileReferenceRecord:
-    if not isinstance(original_filename, str) or original_filename == "":
-        raise TypeError("original_filename must be a non-empty string")
-    if not isinstance(mime_type, str) or mime_type == "":
-        raise TypeError("mime_type must be a non-empty string")
     if not isinstance(content_bytes, bytes):
         raise TypeError(f"content_bytes must be bytes, got {type(content_bytes)}")
+    with open_file_upload(token=token) as upload:
+        upload.write(content_bytes)
+        return upload.finish(original_filename=original_filename, mime_type=mime_type)
+
+
+def create_file_from_path(*, path: Path, original_filename: str, mime_type: str, token: str) -> FileReferenceRecord:
+    """A file on this computer stored as it is, a piece at a time: its size doesn't matter."""
+    with open_file_upload(token=token) as upload, path.open("rb") as source:
+        for piece in iter(lambda: source.read(UPLOAD_CHUNK_BYTES), b""):
+            upload.write(piece)
+        return upload.finish(original_filename=original_filename, mime_type=mime_type)
+
+
+class FileUpload:
+    """A new file arriving a piece at a time: encrypted as it comes, listed once it is whole."""
+
+    def __init__(self, *, writer: BlobWriter, encryption_service: object, token: str) -> None:
+        self._writer = writer
+        self._encryption_service = encryption_service
+        self._token = token
+        self._size_bytes = 0
+
+    def write(self, content: bytes) -> None:
+        self._writer.write(content)
+        self._size_bytes += len(content)
+
+    def finish(self, *, original_filename: str, mime_type: str) -> FileReferenceRecord:
+        if not isinstance(original_filename, str) or original_filename == "":
+            raise TypeError("original_filename must be a non-empty string")
+        if not isinstance(mime_type, str) or mime_type == "":
+            raise TypeError("mime_type must be a non-empty string")
+        title = Path(original_filename).name
+        if title == "":
+            raise ValueError("original_filename must resolve to a non-empty basename")
+        sealed = _sealed_for_catalog(stored=self._writer.finish(), encryption_service=self._encryption_service)
+        return _list_new_file(
+            title=title, mime_type=mime_type, size_bytes=self._size_bytes, sealed=sealed, encryption_service=self._encryption_service,
+        )
+
+
+@contextmanager
+def open_file_upload(*, token: str) -> Iterator[FileUpload]:
+    """A new file to write to. Left without finish(), nothing of it remains."""
     if not isinstance(token, str) or token == "":
         raise TypeError("token must be a non-empty string")
+    encryption_service = _resolve_encryption_service(token)
+    is_encrypted = _coerce_encryption_service(encryption_service) is not None
+    if not is_encrypted and is_encryption_required():
+        raise RuntimeError("Encryption is required but no DEK is available")
+    with live_blob_store().writer(is_encrypted=is_encrypted) as writer:
+        yield FileUpload(writer=writer, encryption_service=encryption_service, token=token)
 
-    if len(content_bytes) > MAX_ATTACHMENT_BYTES:
-        raise ValueError("Attachment exceeds the configured size limit")
 
+def _list_new_file(
+    *, title: str, mime_type: str, size_bytes: int, sealed: _SealedBlob, encryption_service: object,
+) -> FileReferenceRecord:
+    """The catalog row and the registry entry of a blob already written and synced."""
     file_id = _generate_unique_file_id()
-    title = Path(original_filename).name
-    if title == "":
-        raise ValueError("original_filename must resolve to a non-empty basename")
-
     metadata = {
         "original_filename": title,
         "mime_type": mime_type,
-        "size_bytes": len(content_bytes),
+        "size_bytes": size_bytes,
         "thumbnail_kind": _derive_thumbnail_kind(mime_type=mime_type, original_filename=title),
     }
     metadata_json = json.dumps(metadata, separators=(",", ":"), ensure_ascii=False)
-
-    encryption_service = _resolve_encryption_service(token)
-    encrypted_title, title_nonce, title_tag = _encrypt_text_for_storage(
-        encryption_service=encryption_service,
-        plaintext=title,
-    )
+    encrypted_title, title_nonce, title_tag = _encrypt_text_for_storage(encryption_service=encryption_service, plaintext=title)
     encrypted_metadata, metadata_nonce, metadata_tag = _encrypt_text_for_storage(
-        encryption_service=encryption_service,
-        plaintext=metadata_json,
+        encryption_service=encryption_service, plaintext=metadata_json,
     )
-    sealed = _write_blob(content_bytes=content_bytes, encryption_service=encryption_service)
 
     now = datetime.now(timezone.utc)
     with begin_file_writer() as connection:
@@ -388,9 +425,12 @@ def download_file(file_id: str, token: str) -> DownloadedFile:
     return _read_stored_file(file_id, token)
 
 
-def read_stored_file(file_id: str) -> DownloadedFile:
-    """A file read with the session's key, as drawing a note reads files' details:
-    for work no request asks for (an email's words in the search index)."""
+def read_stored_file(file_id: str) -> DownloadedFile | None:
+    """A file read with the session's key, as drawing a note reads files' details: for work no
+    request asks for (an email's words in the search index). None when it is too large to hold
+    in memory: it is found by its name alone."""
+    if get_file_reference_record(file_id, None).size_bytes > MAX_IN_MEMORY_FILE_BYTES:
+        return None
     return _read_stored_file(file_id, None)
 
 
@@ -404,8 +444,8 @@ def _read_stored_file(file_id: str, token: Optional[str]) -> DownloadedFile:
         raise KeyError(f"File {file_id} not present")
     try:
         seal = _open_seal(encryption_service=encryption_service, row=row, file_id=file_id)
-        if seal.real_size > MAX_ATTACHMENT_BYTES:
-            raise AttachmentSizeExceeded('Attachment exceeds the configured size limit')
+        if seal.real_size > MAX_IN_MEMORY_FILE_BYTES:
+            raise AttachmentSizeExceeded('This file is too large to open here. Download it instead.')
         record = get_file_reference_record(file_id, token)
         content_bytes = live_blob_store().read_all(str(row["blob_id"]), seal)
     finally:
@@ -445,8 +485,8 @@ def replace_file_content(
         raise TypeError(f"expected_revision must be a positive integer, got {expected_revision!r}")
     if not isinstance(token, str) or token == "":
         raise TypeError("token must be a non-empty string")
-    if len(content_bytes) > MAX_ATTACHMENT_BYTES:
-        raise ValueError("Attachment exceeds the configured size limit")
+    if len(content_bytes) > MAX_IN_MEMORY_FILE_BYTES:
+        raise ValueError("This file is too large to open here. Download it instead.")
 
     record = get_file_reference_record(file_id, token)
     _require_editable(record)
@@ -1010,8 +1050,8 @@ def _validate_editable_content(*, thumbnail_kind: str, content_bytes: bytes) -> 
 def _validate_svg_preview(*, svg_bytes: bytes, variant: str) -> None:
     if not isinstance(svg_bytes, bytes):
         raise TypeError(f"{variant} preview must be bytes, got {type(svg_bytes)}")
-    if len(svg_bytes) > MAX_ATTACHMENT_BYTES:
-        raise ValueError("Attachment exceeds the configured size limit")
+    if len(svg_bytes) > MAX_IN_MEMORY_FILE_BYTES:
+        raise ValueError("This file is too large to open here. Download it instead.")
     text = _decode_utf8_strict(svg_bytes, description=f"{variant} preview").strip()
     if text.startswith("<?xml"):
         if _XML_DECLARATION_END not in text:
@@ -1406,11 +1446,22 @@ def _file_bytes_if_present(file_id: str) -> bytes | None:
     return _read_pinned_blob(encryption_service=encryption_service, row=row, file_id=file_id)
 
 
+def _is_too_large_to_read_for_text(file_id: str) -> bool:
+    """Too large to hold in memory to read: it keeps no text, and is found by its name."""
+    with connect_file_reader() as connection:
+        row = fetch_file(connection, file_id)
+    # Deleted meanwhile: reading it says so.
+    if row is None:
+        return False
+    return _open_seal(encryption_service=_resolve_encryption_service(None), row=row, file_id=file_id).real_size > MAX_IN_MEMORY_FILE_BYTES
+
+
 file_texts.install_storage(FileTextStorage(
     read_text=_read_file_text,
     read_filters=_read_file_text_filters,
     searchable_files=_searchable_files,
     read_file_bytes=_file_bytes_if_present,
+    is_too_large_to_read=_is_too_large_to_read_for_text,
     file_name=file_registry.title_of,
     store_text=_store_file_text,
 ))

@@ -1,6 +1,6 @@
 # File storage: one encrypted file per attachment, with a catalog
 
-**Status:** Built 2026-11-08 and released in 0.27.0, as §13 records, including where the code differs from the sections below. Streaming uploads and removing the 100 MiB limit are `docs/ready-to-build/streaming-no-file-cap.md`.
+**Status:** Built 2026-11-08 and released in 0.27.0, as §13 records, including where the code differs from the sections below. Streaming uploads and no per-file limit came next (`docs/ready-to-build/streaming-no-file-cap.md` §10).
 
 Written without looking at the code, apart from a few references noted below. Check every reference before relying on it.
 
@@ -125,7 +125,7 @@ Test it like every migration.
 
 **Built:** blobs and the catalog (`app/db/blob_store.py`, `app/db/file_schema.py`), streaming encryption (`app/security/streaming_blob.py`), migration 16→17 (`app/db/move_files_to_blobs.py`), backups and restore, crash recovery, the encryption audit, the crash-leftover sweep at startup, and downloads that stream and answer `Range` requests (`app/api/byte_ranges.py`).
 
-**Not built yet (`docs/ready-to-build/streaming-no-file-cap.md`):** uploads still pass through memory and Starlette's temporary file, the 100 MiB limit stays, and in-note audio and video still load the whole file first.
+**Built after it:** uploads stream into blobs and the per-file limit is gone (`docs/ready-to-build/streaming-no-file-cap.md` §10). In-note audio and video still load the whole file first.
 
 Where this differs from the sections above, the code is right:
 

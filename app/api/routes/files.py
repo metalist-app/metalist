@@ -6,29 +6,33 @@ from typing import Annotated
 from urllib.parse import quote
 
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel
 
 from app.api.note_requests import DiscardFileEditSessionRequest, FinishFileEditSessionRequest, RenameFileRequest
 from app.api.transactions import serialized_read_route, transactional_route
 from app.api.byte_ranges import UNSATISFIABLE_RANGE, resolve_byte_range
+from app.api.streaming_upload import declared_body_bytes, receive_upload
 from app.api.upload_limits import read_attachment
 from app.api.request_auth import require_request_auth_token
+from app.services.disk_space import full_disk_is_rejected, require_room_for_files
 from app.services.file_registry import file_registry
+from app.upload_limits import MAX_IN_MEMORY_FILE_BYTES
 from app.services.email_files import email_attachment, is_email_file, read_email
 from app.services.file_view import (
-    NO_VIEW, STATUS_READY, VIEW_EMAIL, VIEW_PAGE, VIEW_PDF, build_email_view, build_file_view, view_kind_of,
+    NO_VIEW, STATUS_READY, STATUS_TOO_LARGE, VIEW_EMAIL, VIEW_PAGE, VIEW_PDF, build_email_view, build_file_view, view_kind_of,
 )
 from app.services.note_fullscreen import build_file_view_markup
 from app.services.note_store import store as note_store
 from app.services.unused_files import trim as trim_unused_and_unrestorable_files, unused_files
 from app.db.file_schema import FILE_PREVIEW_VARIANTS
 from app.services.file_storage import (
-    create_file,
     download_file,
     get_file_preview,
     get_file_reference_record,
     open_file_range,
+    open_file_upload,
     rename_file,
     replace_file_content,
     store_file_previews,
@@ -88,24 +92,15 @@ def _require_known_file(file_id: str) -> None:
 
 @router.post("/upload", response_model=UploadedFileResponse)
 @transactional_route
-async def upload_file_endpoint(
-    request: Request,
-    file: Annotated[UploadFile, File()],
-):
+async def upload_file_endpoint(request: Request):
+    """A file of any size, encrypted and written as it arrives (docs/ready-to-build/streaming-no-file-cap.md)."""
     token = _require_bearer_token(request)
-    if not isinstance(file.filename, str) or file.filename == "":
-        raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail="Uploaded file must include a filename")
-    if not isinstance(file.content_type, str) or file.content_type == "":
-        raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail="Uploaded file must include a non-empty MIME type")
-
-    content_bytes = await read_attachment(file)
-
-    record = create_file(
-        original_filename=file.filename,
-        mime_type=file.content_type,
-        content_bytes=content_bytes,
-        token=token,
-    )
+    declared_bytes = declared_body_bytes(request)
+    if declared_bytes is not None:
+        require_room_for_files([declared_bytes])
+    with full_disk_is_rejected(), open_file_upload(token=token) as upload:
+        file_part, _fields = await receive_upload(request, open_sink=lambda _part, _sent: upload)
+        record = await run_in_threadpool(upload.finish, original_filename=file_part.filename, mime_type=file_part.content_type)
     return UploadedFileResponse(
         file_id=record.id,
         reference_token=f"![[{record.id}]]",
@@ -172,6 +167,8 @@ def view_file_endpoint(request: Request, file_id: str) -> dict[str, object]:
     kind = view_kind_of(file_name)
     if kind == VIEW_PDF:
         return {"name": file_name, "kind": VIEW_PDF, "status": STATUS_READY, "html": "", "isCut": False}
+    if get_file_reference_record(file_id, token).size_bytes > MAX_IN_MEMORY_FILE_BYTES:
+        return {"name": file_name, "kind": VIEW_PAGE, "status": STATUS_TOO_LARGE, "html": "", "isCut": False}
     downloaded = download_file(file_id, token)
     record = downloaded.record
     # An email (or a web page saved whole) by its type or name, as its card is (2026-11-03).

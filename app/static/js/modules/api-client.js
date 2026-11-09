@@ -593,8 +593,7 @@ export const NotesAPI = {
         if (typeof uploadId !== 'string' || typeof path !== 'string' || !(file instanceof Blob)) {
             throw new Error('NotesAPI.uploadImportFile requires the upload, the path and the file');
         }
-        // In one of the server's few transfer slots, as previews loading meanwhile are
-        // (file-transfer-slots.js); one answered 429 is sent again.
+        // A few at a time, as previews loading meanwhile are (file-transfer-slots.js).
         const { response, answer } = await inTransferSlot(async () => {
             const formData = new FormData();
             formData.append('path', path);
@@ -1535,8 +1534,7 @@ export const FilesAPI = {
             throw new Error('FilesAPI.uploadFile requires File');
         }
 
-        // In one of the server's few transfer slots (file-transfer-slots.js): previews loading
-        // meanwhile could otherwise have it answered 429 (2026-11-02).
+        // A few at a time (file-transfer-slots.js).
         const { response, answer } = await inTransferSlot(async () => {
             const formData = new FormData();
             formData.append('file', file);
@@ -1561,7 +1559,7 @@ export const FilesAPI = {
             throw new Error('FilesAPI.downloadFile requires fileId string');
         }
 
-        // In one of the server's few transfer slots (file-transfer-slots.js), the body read too.
+        // A few at a time (file-transfer-slots.js), the body read too.
         const { response, blob } = await inTransferSlot(async () => {
             const answered = await fetch(CONFIG.API.FILES.DOWNLOAD(fileId), {
                 method: 'GET',

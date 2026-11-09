@@ -29,6 +29,7 @@ from app.security import encryption
 from app.services.image_compression import ImageChoice
 from app.services import note_store as note_store_module
 from app.services import store as store_module
+from app.services import file_storage
 from app.services.file_registry import file_registry
 from app.services.input_errors import InputRejected
 from app.services.note_store import NoteStore
@@ -636,15 +637,17 @@ def test_a_canvas_comes_in_as_a_file_in_a_note_of_its_own(tmp_path: Path, note_s
     assert contents[2] == f"![[{next(i for i, n in names.items() if n == 'Sketch.excalidraw.md')}]]"
 
 
-def test_a_file_too_large_is_left_out_and_its_links_stay_as_written(tmp_path: Path, note_store: NoteStore, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(import_module, "MAX_ATTACHMENT_BYTES", 2)
+def test_a_file_too_large_to_hold_in_memory_still_comes_in(tmp_path: Path, note_store: NoteStore, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(import_module, "MAX_IN_MEMORY_FILE_BYTES", 2)
     (tmp_path / "Note.md").write_text("See ![[big.png]]")
     (tmp_path / "big.png").write_bytes(b"12345")
     CmdImportObsidianVault(
-        source="obsidian", folder_path=str(tmp_path), split_mode=SPLIT_NONE, content_format=CONTENT_RICH, folder_prefix="", add_to_existing=False, images=KEEP_ORIGINALS, token=TOKEN, imported_at=IMPORTED_AT, context_tags="",
+        source="obsidian", folder_path=str(tmp_path), split_mode=SPLIT_NONE, content_format=CONTENT_RICH, folder_prefix="", add_to_existing=False,
+        images=KEEP_ORIGINALS, token=TOKEN, imported_at=IMPORTED_AT, context_tags="",
     ).execute()
-    assert "See ![[big.png]]" in extract_plain_text_from_note_html(note_store.get_note(imported_roots(note_store)[0]).content)
-    assert file_registry.list_ids() == set()
+    file_ids = file_registry.list_ids()
+    assert len(file_ids) == 1
+    assert file_storage.download_file(next(iter(file_ids)), TOKEN).content_bytes == b"12345"
 
 
 # --- Slice 1c: a plain Markdown folder ------------------------------------------------------
@@ -687,7 +690,7 @@ def test_the_preview_counts_what_the_import_would_do_and_writes_nothing(note_sto
         "prefixFolder": "", "fileCount": 12, "noteCount": imported["noteCount"], "rootNoteCount": imported_root_count,
         "textFileCount": 12, "keptFileCount": imported_root_count - 12, "attachmentCount": 2, "folderTagCount": 6,
         "filesWithCommentsCount": 1, "blockIdCount": 1, "calloutCount": 1, "missingLinkCount": 1,
-        "unreadableFileCount": 1, "unusedAttachmentCount": 1, "overLimitCount": 0,
+        "unreadableFileCount": 1, "unusedAttachmentCount": 1,
     }
     assert folder_fingerprint(FIXTURE_VAULT) == before
 
@@ -808,20 +811,17 @@ def _write_files(folder: Path, files: dict[str, bytes]) -> None:
         (folder / relative).write_bytes(content)
 
 
-def test_the_checklist_groups_files_largest_first_and_counts_files_over_the_limit(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(file_groups_module, "MAX_ATTACHMENT_BYTES", 100)
+def test_the_checklist_groups_files_largest_first(tmp_path: Path) -> None:
     _write_files(tmp_path, {
         "a.md": b"x" * 10, "b.png": b"x" * 50, "c.png": b"x" * 150, "node_modules/d.js": b"x" * 30,
     })
     groups = file_groups_module.file_groups(file_groups_module.folder_files(tmp_path))
-    assert [(group.kind.key, group.file_count, group.total_bytes, group.over_limit_count, group.importable_bytes) for group in groups] == [
-        ("images", 2, 200, 1, 50), ("dependencies", 1, 30, 0, 30), ("text", 1, 10, 0, 10),
+    assert [(group.kind.key, group.file_count, group.total_bytes) for group in groups] == [
+        ("images", 2, 200), ("dependencies", 1, 30), ("text", 1, 10),
     ]
     assert [group.kind.is_skipped_by_default for group in groups] == [False, True, False]
-    # Each kind's files, the largest first, so the one left out can be seen by name.
-    assert [(str(folder_file.path), file_groups_module.is_over_limit(folder_file)) for folder_file in groups[0].files] == [
-        ("c.png", True), ("b.png", False),
-    ]
+    # Each kind's files, the largest first.
+    assert [str(folder_file.path) for folder_file in groups[0].files] == ["c.png", "b.png"]
 
 
 def test_a_folder_of_files_comes_in_every_file_a_note_the_unticked_left_out(tmp_path: Path, note_store: NoteStore) -> None:

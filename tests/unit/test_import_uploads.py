@@ -22,6 +22,11 @@ def data_directory(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     return tmp_path / "data"
 
 
+def _store(upload_id: str, path: str, content: bytes) -> None:
+    with import_uploads.receive_file(upload_id) as incoming:
+        incoming.open(path).write(content)
+
+
 def test_the_checklist_from_a_list_of_files_is_the_one_a_folder_on_disk_gives(tmp_path: Path) -> None:
     folder = tmp_path / "Photos"
     files = {"beach.jpg": b"j" * 300, "notes/plan.md": b"# Plan\n", ".DS_Store": b"x", "node_modules/a/index.js": b"js"}
@@ -43,26 +48,26 @@ def test_uploaded_files_land_in_their_own_holding_folder_and_leave_with_it(data_
     folder = Path(folder_path)
     assert folder.is_dir() and folder.is_absolute()
     assert data_directory in folder.parents
-    import_uploads.store_file(upload_id, "notes/plan.md", b"# Plan\n")
-    import_uploads.store_file(upload_id, "beach.jpg", b"jpeg")
+    _store(upload_id, "notes/plan.md", b"# Plan\n")
+    _store(upload_id, "beach.jpg", b"jpeg")
     assert (folder / "notes" / "plan.md").read_bytes() == b"# Plan\n"
     assert [str(found.path) for found in folder_files(folder)] == ["beach.jpg", "notes/plan.md"]
     with pytest.raises(InputRejected, match="already"):
-        import_uploads.store_file(upload_id, "beach.jpg", b"again")
+        _store(upload_id, "beach.jpg", b"again")
     import_uploads.discard_upload(upload_id)
     assert not folder.exists()
 
 
 def test_an_unknown_upload_is_refused() -> None:
     with pytest.raises(InputRejected):
-        import_uploads.store_file("not-an-upload", "a.md", b"a")
+        _store("not-an-upload", "a.md", b"a")
     with pytest.raises(InputRejected):
-        import_uploads.store_file("0b6f4c4e-0f43-4a8e-9a2a-2c7f3c1b8e11", "a.md", b"a")
+        _store("0b6f4c4e-0f43-4a8e-9a2a-2c7f3c1b8e11", "a.md", b"a")
 
 
 def test_holding_folders_left_from_before_a_restart_are_discarded() -> None:
     upload_id, folder_path = import_uploads.start_upload()
-    import_uploads.store_file(upload_id, "a.md", b"a")
+    _store(upload_id, "a.md", b"a")
     import_uploads.discard_every_upload()
     assert not Path(folder_path).exists()
     import_uploads.discard_every_upload()
@@ -104,3 +109,14 @@ assert not Path(started["folderPath"]).exists()
     environment = dict(os.environ, METALIST_DATA_DIRECTORY=str(tmp_path / "app-data"), METALIST_ENVIRONMENT="production")
     result = subprocess.run([sys.executable, "-c", script], env=environment, capture_output=True, encoding="utf-8", timeout=60)
     assert result.returncode == 0, (result.stdout + result.stderr)[-3000:]
+
+
+def test_a_file_that_does_not_arrive_whole_leaves_nothing(data_directory: Path) -> None:
+    upload_id, folder_path = import_uploads.start_upload()
+
+    with pytest.raises(OSError, match="connection lost"):
+        with import_uploads.receive_file(upload_id) as incoming:
+            incoming.open("notes/plan.md").write(b"part of it")
+            raise OSError("connection lost")
+
+    assert not (Path(folder_path) / "notes" / "plan.md").exists()

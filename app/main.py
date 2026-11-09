@@ -815,7 +815,7 @@ async def locked_page(request: Request, db: Annotated[SafeSession, Depends(get_d
 
 @app.exception_handler(AttachmentSizeExceeded)
 async def attachment_size_error(request: Request, exc: AttachmentSizeExceeded):
-    return JSONResponse(status_code=HTTPStatus.REQUEST_ENTITY_TOO_LARGE, content={"detail": "Attachment exceeds METALIST_MAX_ATTACHMENT_BYTES; increase this limit to download a larger legacy attachment"})
+    return JSONResponse(status_code=HTTPStatus.REQUEST_ENTITY_TOO_LARGE, content={"detail": str(exc)})
 
 
 @app.exception_handler(FileRevisionConflict)

@@ -68,3 +68,12 @@ The 100 MiB limit stays as it is. No interim override.
 
 - **Built:** per-file storage, and `GET /files/{id}/download` streams and answers `Range`, tested over real HTTP. Still to build from §2 and §3: streaming uploads, then removing the limit.
 - **Open, needs the maintainer:** in-note playback cannot use `Range` yet. `media-player-service.js` fetches the whole file into a blob because a request needs the tab's header, and a browser's own player cannot send one. The options are a short-lived playback link for one file, valid only while the vault is unlocked, or feeding the player through Media Source Extensions, which only some formats support. A link is a new way to authorize a request, so it needs its own decision and security review.
+
+## 10. Built (2026-11-08)
+
+- **Uploads stream into their blob** as they arrive (`app/api/streaming_upload.py`, `FileUpload` in `file_storage.py`): a parsed form would hold them in a plaintext temporary file. The body is read in a context of its own: reading can resume the connection's reader, the event loop keeps the context it was resumed in for that connection, and the open transaction then broke the next request.
+- **No per-file limit,** in the HTTP limits, the HTTPS proxy, imports and the checklist. `METALIST_MAX_ATTACHMENT_BYTES` and the four-transfer limit are gone; the browser still sends a few at a time (`file-transfer-slots.js`).
+- **One limit stays, and why (§3 asks):** 100 MiB, `MAX_IN_MEMORY_FILE_BYTES`, for what must hold a whole file in memory: an edited diagram, an email, the viewer's previews, a file's text for search, an image inlined in an export or compressed on import. Over it the file is stored, downloaded and found by name; a text file that size imports as a file.
+- **Free space is checked first,** with the proposed reserve, and a disk filling mid-write gives the same kind of message (`app/services/disk_space.py`).
+
+**Not built:** the holding folder is still unencrypted (§8, decision 3), and §9's playback question is open, so audio and video load the whole file first.

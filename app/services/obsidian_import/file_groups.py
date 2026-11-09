@@ -10,7 +10,6 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Dict, List, Tuple
 
-from app.upload_limits import MAX_ATTACHMENT_BYTES
 
 
 @dataclass(frozen=True)
@@ -91,12 +90,7 @@ class FileGroup:
     kind: FileGroupKind
     file_count: int
     total_bytes: int
-    # Files over the per-file limit: listed, never brought in (§3).
-    over_limit_count: int
-    # What ticking it brings in: the files under the limit.
-    importable_bytes: int
-    # Its files, the largest first, for the row opened to show them (the maintainer,
-    # 2026-11-01: which file is left out, by name).
+    # Its files, the largest first, for the row opened to show them.
     files: Tuple[FolderFile, ...]
 
 
@@ -150,16 +144,8 @@ def file_groups(files: List[FolderFile]) -> List[FileGroup]:
     return sorted(groups, key=lambda group: (-group.total_bytes, group.kind.label))
 
 
-def is_over_limit(folder_file: FolderFile) -> bool:
-    """Over the size limit for a file: listed, never brought in."""
-    return folder_file.size > MAX_ATTACHMENT_BYTES
-
-
 def _group(kind: FileGroupKind, files: List[FolderFile]) -> FileGroup:
-    over = [folder_file for folder_file in files if is_over_limit(folder_file)]
-    total = sum(folder_file.size for folder_file in files)
     return FileGroup(
-        kind=kind, file_count=len(files), total_bytes=total, over_limit_count=len(over),
-        importable_bytes=total - sum(folder_file.size for folder_file in over),
+        kind=kind, file_count=len(files), total_bytes=sum(folder_file.size for folder_file in files),
         files=tuple(sorted(files, key=lambda folder_file: (-folder_file.size, str(folder_file.path).casefold()))),
     )

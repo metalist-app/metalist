@@ -127,6 +127,24 @@ notify_missing = false
 # handlers that open with an instanceof guard. Every entry is a reported deviation.
 
 [[tool.shockharness.rules.exceptions.boundaries]]
+path = "app/api/streaming_upload.py"
+language = "python"
+exception = "starlette.requests.ClientDisconnect"
+reason = "a person cancelling an upload or losing the connection is expected; it becomes a plain rejected upload"
+
+[[tool.shockharness.rules.exceptions.boundaries]]
+path = "app/api/streaming_upload.py"
+language = "python"
+exception = "python_multipart.exceptions.MultipartParseError"
+reason = "a malformed upload body is rejected user input"
+
+[[tool.shockharness.rules.exceptions.boundaries]]
+path = "app/services/disk_space.py"
+language = "python"
+exception = "OSError"
+reason = "a full disk is an expected external failure, shown as a plain message; any other OS error is re-raised"
+
+[[tool.shockharness.rules.exceptions.boundaries]]
 path = "app/api/routes/ai.py"
 language = "python"
 exception = "ValueError"

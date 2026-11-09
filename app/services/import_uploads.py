@@ -15,8 +15,10 @@ import os
 import re
 import shutil
 import unicodedata
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path, PurePosixPath
-from typing import List, Tuple
+from typing import BinaryIO, List, Tuple
 from uuid import uuid4
 
 from app.data_directory import resolve_data_directory
@@ -75,17 +77,52 @@ def _upload_folder(upload_id: str) -> Path:
     return folder
 
 
-def store_file(upload_id: str, path: str, content: bytes) -> None:
-    """One uploaded file, at its path in the holding folder; never over another."""
-    folder = _upload_folder(upload_id)
-    target = folder.joinpath(*relative_path(path).parts)
-    assert folder in target.parents, target
-    target.parent.mkdir(parents=True, exist_ok=True)
-    if target.exists():
-        raise InputRejected(f"{path} was sent already.")
-    # Exclusive: one sent twice at once fails loudly.
-    with open(target, "xb") as written:
-        written.write(content)
+class IncomingFile:
+    """One file of a dropped folder arriving a piece at a time, at its path in the holding folder."""
+
+    def __init__(self, upload_id: str) -> None:
+        self._folder = _upload_folder(upload_id)
+        self._handle: BinaryIO | None = None
+        self.target: Path | None = None
+
+    def open(self, path: str) -> "IncomingFile":
+        """Start the file at path; never over another, and one sent twice at once fails loudly."""
+        target = self._folder.joinpath(*relative_path(path).parts)
+        assert self._folder in target.parents, target
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if target.exists():
+            raise InputRejected(f"{path} was sent already.")
+        self._handle = open(target, "xb")
+        self.target = target
+        return self
+
+    def write(self, content: bytes) -> None:
+        assert self._handle is not None
+        self._handle.write(content)
+
+    def close(self) -> None:
+        if self._handle is not None:
+            self._handle.close()
+            self._handle = None
+
+
+@contextmanager
+def receive_file(upload_id: str) -> Iterator[IncomingFile]:
+    """A file on its way into the holding folder. One that doesn't arrive whole leaves nothing."""
+    incoming = IncomingFile(upload_id)
+    is_whole = False
+    try:
+        yield incoming
+        incoming.close()
+        is_whole = True
+    finally:
+        if not is_whole:
+            # Closing can fail on a full disk; the partial file goes anyway.
+            try:
+                incoming.close()
+            finally:
+                if incoming.target is not None:
+                    incoming.target.unlink()
 
 
 def discard_upload(upload_id: str) -> None:

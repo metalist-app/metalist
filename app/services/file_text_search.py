@@ -144,6 +144,7 @@ class FileTextStorage:
     searchable_files: Callable[[], Dict[str, int]]
     # A file deleted meanwhile (a search's background read races deletions): None.
     read_file_bytes: Callable[[str], Optional[bytes]]
+    is_too_large_to_read: Callable[[str], bool]
     file_name: Callable[[str], Optional[str]]
     store_text: Callable[[str, KeptText], None]
 
@@ -433,6 +434,9 @@ class FileTexts:
     def extract_and_store(self, file_id: str, content_revision: int) -> None:
         storage = self._require_storage()
         file_name = storage.file_name(file_id)
+        if file_name is not None and storage.is_too_large_to_read(file_id):
+            self._keep_no_text(file_id, file_name, content_revision)
+            return
         content = storage.read_file_bytes(file_id)
         # Deleted meanwhile: nothing to keep.
         if file_name is None or content is None:
@@ -440,6 +444,13 @@ class FileTexts:
         extracted = extract_file_text(file_name, content)
         self._keep(file_id, KeptText(
             extracted=extracted, filter_bytes=build_filter(extracted.text.casefold()), content_revision=content_revision,
+            reader_version=reader_version_of(file_name), filter_version=FILTER_VERSION,
+        ))
+
+    def _keep_no_text(self, file_id: str, file_name: str, content_revision: int) -> None:
+        """A file too large to read: kept with no text, so it isn't tried again, and marked cut."""
+        self._keep(file_id, KeptText(
+            extracted=ExtractedText(text="", is_cut=True), filter_bytes=build_filter(""), content_revision=content_revision,
             reader_version=reader_version_of(file_name), filter_version=FILTER_VERSION,
         ))
 

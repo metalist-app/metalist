@@ -18,8 +18,8 @@ from types import SimpleNamespace
 from typing import Dict, List, Tuple
 
 from app.services.background_work import IMPORT_KEY, WorkProgress, background_work
-from app.services.file_storage import create_file
-from app.services.image_compression import COMPRESSIBLE_SUFFIXES, ImageChoice, compressed_image, estimated_compressed_bytes
+from app.services.file_storage import create_file, create_file_from_path
+from app.services.image_compression import COMPRESSIBLE_SUFFIXES, CompressedImage, ImageChoice, compressed_image, estimated_compressed_bytes
 from app.services.file_view import plain_text_to_note_html
 from app.services.input_errors import InputRejected
 from app.services.obsidian_import.file_groups import (
@@ -45,7 +45,8 @@ from app.services.obsidian_import.tree import CONTENT_FORMATS, SPLIT_MODES, Note
 from app.services.obsidian_import.vault import NOT_UTF8_REASON, VaultContents, VaultFile, read_text_file, read_vault
 from app.services.store import store
 from app.services.virtual_folders import all_folder_tags, search_for_new_note
-from app.upload_limits import MAX_ATTACHMENT_BYTES
+from app.services.disk_space import full_disk_is_rejected, require_room_for_files
+from app.upload_limits import MAX_IN_MEMORY_FILE_BYTES
 from app.usecases.base import QueryCommand
 from app.usecases.delete_subtree import apply_restore_records
 from app.usecases.search_comment_autofill import compute_initial_tags_for_new_note
@@ -213,9 +214,8 @@ class CmdPreviewImport(QueryCommand):
         ]
         kept_paths = [path for path in plan.vault.other_files if _is_kept_file(path)]
         linked_paths = {item.file_path for item in resolved if item.file_path is not None}
-        storable = {path for path in {*linked_paths, *kept_paths} if (plan.folder / Path(path)).stat().st_size <= MAX_ATTACHMENT_BYTES}
         findings = [note.findings for note in plan.planned]
-        kept_note_count = sum(1 for path in kept_paths if path in storable)
+        kept_note_count = len(kept_paths)
         return {
             # The folder the notes go into ('' for none), as the summary shows it.
             "prefixFolder": plan.folder_prefix,
@@ -226,7 +226,7 @@ class CmdPreviewImport(QueryCommand):
             # The summary says what each becomes: Markdown files notes, the rest a file in a note of its own.
             "textFileCount": len(plan.planned),
             "keptFileCount": kept_note_count,
-            "attachmentCount": sum(1 for path in linked_paths if path in storable and not _is_kept_file(path)),
+            "attachmentCount": sum(1 for path in linked_paths if not _is_kept_file(path)),
             "folderTagCount": len({note.folder_tag for note in plan.planned if note.folder_tag != ""}),
             "filesWithCommentsCount": sum(1 for finding in findings if finding.has_comments),
             "blockIdCount": sum(finding.block_id_count for finding in findings),
@@ -236,8 +236,6 @@ class CmdPreviewImport(QueryCommand):
             "unusedAttachmentCount": sum(
                 1 for path in plan.vault.other_files if path not in linked_paths and not _is_kept_file(path)
             ),
-            # Linked or kept files over the per-file limit: left out.
-            "overLimitCount": len({*linked_paths, *kept_paths} - storable),
         }
 
 
@@ -269,7 +267,7 @@ def _linked(
     resolved = {note.source_path: [_resolve(index, reference, from_path=note.source_path) for reference in note.links] for note in planned}
     kept_paths = [path for path in vault.other_files if _is_kept_file(path)]
     linked_paths = {item.file_path for items in resolved.values() for item in items if item.file_path is not None}
-    file_ids, _too_large = _store_files(
+    file_ids = _store_files(
         folder, sorted({*linked_paths, *kept_paths}, key=_path_key), images=images, token=token, progress=progress,
     )
     return _Linked(
@@ -346,39 +344,42 @@ def _with_links(node: NoteNode, replacements: Dict[int, str]) -> NoteNode:
 
 def _store_files(
     folder: Path, paths: List[PurePosixPath], *, images: ImageChoice, token: str, progress: WorkProgress,
-) -> Tuple[Dict[PurePosixPath, str], List[PurePosixPath]]:
-    """Each file at paths stored in MetaList (its id by path), images compressed when
-    images say, except those over the size limit for a file, returned second. progress counts
-    each file stored."""
-    too_large = [path for path in paths if (folder / Path(path)).stat().st_size > MAX_ATTACHMENT_BYTES]
-    left_out = set(too_large)
-    storable = [path for path in paths if path not in left_out]
-    progress.set_total(len(storable))
+) -> Dict[PurePosixPath, str]:
+    """Each file at paths stored in MetaList (its id by path), images compressed when images say.
+    progress counts each file stored."""
+    require_room_for_files([(folder / Path(path)).stat().st_size for path in paths])
+    progress.set_total(len(paths))
     file_ids: Dict[PurePosixPath, str] = {}
     # A few at a time: compressing runs on threads, never far ahead of the storing.
-    with ThreadPoolExecutor(max_workers=_COMPRESSING_THREADS) as executor:
-        for start in range(0, len(storable), _READ_AHEAD_FILES):
-            batch = storable[start:start + _READ_AHEAD_FILES]
-            contents = executor.map(lambda path: _stored_content(folder, path, images=images), batch)
-            for path, (filename, mime_type, content) in zip(batch, contents):
-                record = create_file(original_filename=filename, mime_type=mime_type, content_bytes=content, token=token)
-                file_ids[path] = record.id
+    with full_disk_is_rejected(), ThreadPoolExecutor(max_workers=_COMPRESSING_THREADS) as executor:
+        for start in range(0, len(paths), _READ_AHEAD_FILES):
+            batch = paths[start:start + _READ_AHEAD_FILES]
+            compressed_files = executor.map(lambda path: _compressed_if_asked(folder, path, images=images), batch)
+            for path, compressed in zip(batch, compressed_files):
+                file_ids[path] = _store_one_file(folder, path, compressed=compressed, token=token)
                 progress.advance()
-    return file_ids, too_large
+    return file_ids
 
 
-def _stored_content(folder: Path, path: PurePosixPath, *, images: ImageChoice) -> Tuple[str, str, bytes]:
-    """The name, type and bytes a file is stored with: an image compressed when asked and
-    smaller so, every other file as it is."""
-    content = (folder / Path(path)).read_bytes()
-    if images.compresses:
-        compressed = compressed_image(content, path.name, longest_side_px=images.longest_side_px)
-        if compressed is not None:
-            return compressed.filename, compressed.mime_type, compressed.content
+def _store_one_file(folder: Path, path: PurePosixPath, *, compressed: CompressedImage | None, token: str) -> str:
+    """A compressed image as it was made, every other file streamed from the folder."""
+    if compressed is not None:
+        return create_file(
+            original_filename=compressed.filename, mime_type=compressed.mime_type, content_bytes=compressed.content, token=token,
+        ).id
     mime_type, _encoding = mimetypes.guess_type(path.name)
     if mime_type is None:
         mime_type = _UNKNOWN_MIME_TYPE
-    return path.name, mime_type, content
+    return create_file_from_path(path=folder / Path(path), original_filename=path.name, mime_type=mime_type, token=token).id
+
+
+def _compressed_if_asked(folder: Path, path: PurePosixPath, *, images: ImageChoice) -> CompressedImage | None:
+    """The image compressed when asked and it comes out smaller; None for anything else, which
+    is stored as it is. Compressing holds the image in memory, so a huge one is left whole."""
+    file_path = folder / Path(path)
+    if not images.compresses or file_path.stat().st_size > MAX_IN_MEMORY_FILE_BYTES:
+        return None
+    return compressed_image(file_path.read_bytes(), path.name, longest_side_px=images.longest_side_px)
 
 
 def _kept_file_note(
@@ -528,8 +529,6 @@ class _FilesPlan:
     folder: Path
     planned: List[PlannedNote]
     attached: List[PurePosixPath]
-    # Files of the ticked groups over the per-file limit: left out (§3).
-    over_limit_count: int
     source_tag: str
     folder_prefix: str
 
@@ -553,8 +552,7 @@ def _plan_folder_of_files(
     missing = named - {str(folder_file.path) for folder_file in found}
     if missing:
         raise InputRejected(f"{len(missing)} of the files you ticked or unticked are no longer in the folder. Choose the folder again.")
-    ticked = [folder_file for folder_file in found if selection.includes(folder_file)]
-    chosen = [folder_file for folder_file in ticked if folder_file.size <= MAX_ATTACHMENT_BYTES]
+    chosen = [folder_file for folder_file in found if selection.includes(folder_file)]
     if not chosen:
         raise InputRejected("Nothing to import: tick at least one kind of file.")
     source_tag = source_tag_for(imported_at, FILES.key)
@@ -565,7 +563,8 @@ def _plan_folder_of_files(
         text_file = None
         suffix = folder_file.path.suffix.casefold()
         is_kept_as_file = selection.keeps_markdown_as_files and suffix in MARKDOWN_SUFFIXES
-        if suffix in TEXT_SUFFIXES and not is_kept_as_file:
+        # A text file too large to hold in memory comes in as a file, like one that isn't UTF-8.
+        if suffix in TEXT_SUFFIXES and not is_kept_as_file and folder_file.size <= MAX_IN_MEMORY_FILE_BYTES:
             text_file = read_text_file(folder, folder_file.path)
         if text_file is None:
             attached.append(folder_file.path)
@@ -579,7 +578,7 @@ def _plan_folder_of_files(
         for text_file in text_files
     ]
     return _FilesPlan(
-        folder=folder, planned=planned, attached=attached, over_limit_count=len(ticked) - len(chosen),
+        folder=folder, planned=planned, attached=attached,
         source_tag=source_tag, folder_prefix=prefix,
     )
 
@@ -627,7 +626,6 @@ class CmdPreviewFolderOfFiles(QueryCommand):
             # A text file that isn't UTF-8 is attached instead: nothing is left out for it.
             "unreadableFileCount": 0,
             "unusedAttachmentCount": 0,
-            "overLimitCount": plan.over_limit_count,
         }
 
 
@@ -662,8 +660,7 @@ class CmdImportFolderOfFiles(QueryCommand):
         )
         if import_folder_exists(plan.folder_prefix) and not self.add_to_existing:
             raise InputRejected(f"{plan.folder_prefix} already exists. Tick Add to it, or choose another name.")
-        file_ids, too_large = _store_files(plan.folder, plan.attached, images=self.images, token=self.token, progress=progress)
-        assert not too_large, "files over the limit were left out when planned"
+        file_ids = _store_files(plan.folder, plan.attached, images=self.images, token=self.token, progress=progress)
         index = VaultIndex(plan.planned, plan.attached)
         planned = [
             replace(note, root=_with_links(note.root, _replacements(
@@ -736,7 +733,7 @@ class CmdEstimateImportImages(QueryCommand):
             (folder / Path(path), (folder / Path(path)).stat().st_size)
             for path in stored if path.suffix.casefold() in COMPRESSIBLE_SUFFIXES
         ]
-        images = [(image_path, size) for image_path, size in images if size <= MAX_ATTACHMENT_BYTES]
+        images = [(image_path, size) for image_path, size in images if size <= MAX_IN_MEMORY_FILE_BYTES]
         return {
             "imageCount": len(images),
             "imageBytes": sum(size for _image_path, size in images),
