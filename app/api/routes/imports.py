@@ -25,6 +25,7 @@ from app.data_directory import resolve_data_directory
 from app.services.input_errors import InputRejected
 from app.services.native_folder_picker import pick_folder
 from app.services.obsidian_import.file_groups import FolderFile, file_groups, folder_files
+from app.services.obsidian_import.import_folder import DiskFolder
 from app.services.obsidian_import.notes import import_folder_prefix
 from app.services.obsidian_import.sources import FILES, IMPORT_SOURCES
 from app.services.image_compression import COMPRESSIBLE_SUFFIXES, IMAGE_LONGEST_SIDES, ImageChoice
@@ -151,13 +152,13 @@ def pick_import_folder(request: Request, body: PickImportFolderRequest) -> dict[
         return {"selected": False, "folderPath": "", "fileCount": 0, "imageCount": 0}
     folder = Path(folder_path)
     if body["source"] == FILES.key:
-        found = folder_files(folder)
+        found = folder_files(DiskFolder(folder))
         image_count = sum(1 for folder_file in found if folder_file.path.suffix.casefold() in COMPRESSIBLE_SUFFIXES)
         return {"selected": True, "folderPath": folder_path, "fileCount": len(found), "imageCount": image_count}
     return {
-        "selected": True, "folderPath": folder_path, "fileCount": count_markdown_files(folder),
+        "selected": True, "folderPath": folder_path, "fileCount": count_markdown_files(DiskFolder(folder)),
         # Images compression shrinks: the wizard asks about them only when there are some.
-        "imageCount": count_compressible_images(folder),
+        "imageCount": count_compressible_images(DiskFolder(folder)),
     }
 
 
@@ -171,7 +172,7 @@ def scan_import_folder(request: Request, body: ScanImportFolderRequest) -> dict[
     folder = Path(body["folderPath"])
     if not folder.is_absolute() or not folder.is_dir():
         raise InputRejected(f"There is no folder at {folder}. Choose the folder again.")
-    return _checklist(folder_files(folder))
+    return _checklist(folder_files(import_uploads.open_import_folder(folder)))
 
 
 @router.post("/scan-listing")

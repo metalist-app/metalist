@@ -201,8 +201,8 @@ function treeContextTabId() {
     return '';
 }
 
-// A folder and every folder above it open, so a filtered folder shows in the tree.
-function openTo(path) {
+/** A folder and every folder above it open, so a filtered folder shows in the tree. */
+export function openTo(path) {
     if (!moduleState.isRootOpen) remember('isRootOpen', true);
     const open = new Set(moduleState.openPaths);
     for (const ancestor of ancestorsOf(path)) open.add(ancestor);

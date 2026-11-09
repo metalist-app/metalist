@@ -45,6 +45,7 @@ from app.services.obsidian_import.tree import (
     SPLIT_PARAGRAPHS,
     NoteNode,
 )
+from app.services.obsidian_import.import_folder import DiskFolder
 from app.services.obsidian_import.vault import VaultFile, read_vault
 from app.services.search_index import SearchIndex, tag_bar_values
 from app.services.structured_note_renderers import extract_plain_text_from_note_html
@@ -95,7 +96,7 @@ def tags_of(note: PlannedNote) -> str:
 # --- Reading the vault -------------------------------------------------------------------
 
 def test_the_vault_reads_markdown_files_in_name_order_and_reports_the_rest() -> None:
-    vault = read_vault(FIXTURE_VAULT, reads_line_break_setting=True)
+    vault = read_vault(DiskFolder(FIXTURE_VAULT), reads_line_break_setting=True)
     assert [str(file.path) for file in vault.markdown_files] == [
         "1. First steps.md", "Broken frontmatter.md", "Daily/2026/2026-10-30.md", "Empty.md",
         "Home/Notes/Index.md", "Links.md", "Projects/Client A/Plan.md", "Projects/Client B/Notes.md",
@@ -121,7 +122,7 @@ def test_obsidians_line_break_setting_is_read(tmp_path: Path, settings: str, is_
     (tmp_path / ".obsidian").mkdir()
     (tmp_path / ".obsidian" / "app.json").write_text(settings)
     (tmp_path / "Note.md").write_text("x")
-    vault = read_vault(tmp_path, reads_line_break_setting=True)
+    vault = read_vault(DiskFolder(tmp_path), reads_line_break_setting=True)
     assert (vault.uses_strict_line_breaks, vault.settings_problem) == (is_strict, problem)
 
 
@@ -309,7 +310,7 @@ def test_a_vault_comes_in_as_root_notes_after_the_last_one_folders_first(note_st
     plan = note_store.get_note(roots[3])
     assert plan.created_at.date().isoformat() in ("2024-02-29", "2024-03-01")
     # firstRootId: a drop's view brings the import's first note into sight.
-    assert result == {"status": "success", "noteCount": 12, "sourceTag": SOURCE_TAG, "firstRootId": roots[1], "prefixFolder": ""}
+    assert result == {"status": "success", "noteCount": 12, "sourceTag": SOURCE_TAG, "firstRootId": roots[1], "prefixFolder": "", "isNewFolder": False}
     # The tag the wizard's new search context searches: on every file's note.
     assert all(SOURCE_TAG in note_store.get_note(note_id).tags for note_id in roots[1:])
     assert folder_fingerprint(FIXTURE_VAULT) == before
@@ -768,6 +769,32 @@ def test_an_existing_import_folder_is_added_to_only_when_asked(tmp_path: Path, n
     assert sum(1 for note_id in note_store.get_children(None) if first_line(note_store, note_id) == "top") == 2
 
 
+def _import_files_into(folder: Path, prefix: str) -> dict[str, object]:
+    return CmdImportFolderOfFiles(
+        folder_path=str(folder), selection=_selection([], excluded_files=(), included_files=()), split_mode=SPLIT_NONE,
+        content_format=CONTENT_MARKDOWN, folder_prefix=prefix, add_to_existing=True, images=KEEP_ORIGINALS, token=TOKEN, imported_at=IMPORTED_AT, context_tags="",
+    ).execute()
+
+
+# A drop lands on the folder it made; one that already held notes shows old and new together.
+def test_a_folder_of_files_says_whether_it_made_a_new_folder(tmp_path: Path, note_store: NoteStore) -> None:
+    (tmp_path / "top.md").write_text("top")
+    first = _import_files_into(tmp_path, "Big Files")
+    again = _import_files_into(tmp_path, "Big Files")
+    in_no_folder = _import_files_into(tmp_path, "")
+    assert (first["isNewFolder"], first["prefixFolder"]) == (True, "Big-Files/")
+    assert (again["isNewFolder"], again["prefixFolder"]) == (False, "Big-Files/")
+    assert (in_no_folder["isNewFolder"], in_no_folder["prefixFolder"]) == (False, "")
+
+
+# Each import's search finds its own notes: a note carrying a second import's tag (dropped while
+# viewing that import's search) has two values for the property, and is found by neither.
+def test_a_drop_in_an_earlier_imports_search_does_not_take_its_tag(note_store: NoteStore) -> None:
+    earlier = "imported:source=files:at=2020-01-02T03:04"
+    assert drop_context_tags(search=earlier, folder_filter="", folder_prefix="Big Files") == ""
+    assert drop_context_tags(search=f"{earlier} @todo", folder_filter="", folder_prefix="Big Files") == "@todo"
+
+
 # --- A folder of any files (docs/ready-to-build/folder-import-and-file-previews.md) ---------
 
 @pytest.mark.parametrize(("path", "group"), [
@@ -815,7 +842,7 @@ def test_the_checklist_groups_files_largest_first(tmp_path: Path) -> None:
     _write_files(tmp_path, {
         "a.md": b"x" * 10, "b.png": b"x" * 50, "c.png": b"x" * 150, "node_modules/d.js": b"x" * 30,
     })
-    groups = file_groups_module.file_groups(file_groups_module.folder_files(tmp_path))
+    groups = file_groups_module.file_groups(file_groups_module.folder_files(DiskFolder(tmp_path)))
     assert [(group.kind.key, group.file_count, group.total_bytes) for group in groups] == [
         ("images", 2, 200), ("dependencies", 1, 30), ("text", 1, 10),
     ]

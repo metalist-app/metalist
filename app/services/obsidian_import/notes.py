@@ -32,7 +32,8 @@ from app.services.tag_ontology import is_valid_tag_token
 
 # Every imported root note carries it: `imported` finds (and `-imported` hides) every import,
 # children included; its values tell the source and the import apart (the maintainer, 2026-10-31).
-SOURCE_TAG_FORMAT = "imported:source={source}:at={at}"
+_SOURCE_TAG_START = "imported:source="
+SOURCE_TAG_FORMAT = _SOURCE_TAG_START + "{source}:at={at}"
 SOURCE_TAG_TIME_FORMAT = "%Y-%m-%dT%H:%M"
 
 _FRONTMATTER_FENCE = "---"
@@ -203,6 +204,11 @@ def source_tag_for(imported_at: datetime, source: str) -> str:
     """The source tag of an import made at imported_at, in the importing user's local time."""
     assert imported_at.tzinfo is not None, "an import time knows its zone"
     return SOURCE_TAG_FORMAT.format(source=source, at=imported_at.astimezone().strftime(SOURCE_TAG_TIME_FORMAT))
+
+
+def is_source_tag(tag: str) -> bool:
+    """Whether a tag says which import a note came from."""
+    return tag.casefold().startswith(_SOURCE_TAG_START)
 
 
 def _read_frontmatter(text: str) -> Tuple[Dict[str, object], str, str]:

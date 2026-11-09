@@ -93,7 +93,7 @@ def _require_known_file(file_id: str) -> None:
 @router.post("/upload", response_model=UploadedFileResponse)
 @transactional_route
 async def upload_file_endpoint(request: Request):
-    """A file of any size, encrypted and written as it arrives (docs/ready-to-build/streaming-no-file-cap.md)."""
+    """A file of any size, encrypted and written as it arrives (docs/design/file-storage.md)."""
     token = _require_bearer_token(request)
     declared_bytes = declared_body_bytes(request)
     if declared_bytes is not None:

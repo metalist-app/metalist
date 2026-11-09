@@ -4,11 +4,12 @@ in one group, with how many and how large, and which groups start unticked. Only
 
 from __future__ import annotations
 
-import os
 import unicodedata
 from dataclasses import dataclass
-from pathlib import Path, PurePosixPath
+from pathlib import PurePosixPath
 from typing import Dict, List, Tuple
+
+from app.services.obsidian_import.import_folder import ImportFolder
 
 
 
@@ -113,21 +114,18 @@ def group_of(path: PurePosixPath) -> FileGroupKind:
     return OTHER
 
 
-def folder_files(folder: Path) -> List[FolderFile]:
+def folder_files(folder: ImportFolder) -> List[FolderFile]:
     """Every file in folder, at any depth, hidden ones too, in path order (case ignored).
     Links are not followed."""
-    if not folder.is_dir():
-        raise ValueError(f"import folder must be a folder: {folder}")
     found: List[FolderFile] = []
-    for directory, folder_names, file_names in os.walk(folder):
+    for here, folder_names, file_names in folder.walk():
         folder_names.sort()
-        here = Path(directory)
         for file_name in file_names:
             file_path = here / file_name
-            if file_path.is_symlink() or not file_path.is_file():
+            if not folder.is_plain_file(file_path):
                 continue
-            relative = PurePosixPath(unicodedata.normalize("NFC", file_path.relative_to(folder).as_posix()))
-            found.append(FolderFile(path=relative, size=file_path.stat().st_size, group=group_of(relative)))
+            relative = PurePosixPath(unicodedata.normalize("NFC", file_path.as_posix()))
+            found.append(FolderFile(path=relative, size=folder.size(file_path), group=group_of(relative)))
     found.sort(key=lambda folder_file: str(folder_file.path).casefold())
     return found
 

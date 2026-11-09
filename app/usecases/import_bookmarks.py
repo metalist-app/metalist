@@ -17,7 +17,7 @@ from app.services.obsidian_import.notes import folder_tag_of_names, import_folde
 from app.services.obsidian_import.tree import NoteNode
 from app.usecases.base import QueryCommand
 from app.usecases.delete_subtree import apply_restore_records
-from app.usecases.import_obsidian_vault import WrittenRoot, first_root_id, import_folder_exists, root_records
+from app.usecases.import_obsidian_vault import WrittenRoot, first_root_id, import_folder_exists, is_new_import_folder, root_records
 
 # The source tag's value: `imported:source=bookmarks:at=…`.
 BOOKMARKS_SOURCE = "bookmarks"
@@ -124,7 +124,8 @@ class CmdImportBookmarks(QueryCommand):
         plan = _plan(file_text=self.file_text, folder_prefix=self.folder_prefix, imported_at=self.imported_at)
         if import_folder_exists(plan.folder_prefix) and not self.add_to_existing:
             raise InputRejected(f"{plan.folder_prefix} already exists. Tick Add to it, or choose another name.")
+        is_new_folder = is_new_import_folder(plan.folder_prefix)
         roots = [_written(bookmark, plan=plan, imported_at=self.imported_at) for bookmark in plan.bookmarks_file.bookmarks]
         apply_restore_records(root_records(roots, context_tags=self.context_tags), self.token)
         return {"status": "success", "noteCount": len(roots), "sourceTag": plan.source_tag,
-                "firstRootId": first_root_id(roots), "prefixFolder": plan.folder_prefix}
+                "firstRootId": first_root_id(roots), "prefixFolder": plan.folder_prefix, "isNewFolder": is_new_folder}

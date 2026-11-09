@@ -18,7 +18,9 @@ from types import SimpleNamespace
 from typing import Dict, List, Tuple
 
 from app.services.background_work import IMPORT_KEY, WorkProgress, background_work
-from app.services.file_storage import create_file, create_file_from_path
+from app.services.file_storage import create_file, create_file_from_pieces
+from app.services.import_uploads import open_import_folder
+from app.services.obsidian_import.import_folder import ImportFolder
 from app.services.image_compression import COMPRESSIBLE_SUFFIXES, CompressedImage, ImageChoice, compressed_image, estimated_compressed_bytes
 from app.services.file_view import plain_text_to_note_html
 from app.services.input_errors import InputRejected
@@ -37,6 +39,7 @@ from app.services.obsidian_import.notes import (
     folder_tag_for,
     import_folder_prefix,
     plan_file_note,
+    is_source_tag,
     source_tag_for,
 )
 from app.services.obsidian_import.resolve import VaultIndex
@@ -115,6 +118,7 @@ class CmdImportObsidianVault(QueryCommand):
         )
         if import_folder_exists(plan.folder_prefix) and not self.add_to_existing:
             raise InputRejected(f"{plan.folder_prefix} already exists. Tick Add to it, or choose another name.")
+        is_new_folder = is_new_import_folder(plan.folder_prefix)
         folder, vault, planned, source_tag = plan.folder, plan.vault, plan.planned, plan.source_tag
         linked = _linked(
             folder, vault, planned, source_tag=source_tag, folder_prefix=plan.folder_prefix,
@@ -138,6 +142,7 @@ class CmdImportObsidianVault(QueryCommand):
             "sourceTag": source_tag,
             "firstRootId": first_root_id(written_roots),
             "prefixFolder": plan.folder_prefix,
+            "isNewFolder": is_new_folder,
         }
 
 
@@ -146,7 +151,7 @@ class _ImportPlan:
     """A folder read and every file planned as notes, nothing stored or written yet."""
 
     source: ImportSource
-    folder: Path
+    folder: ImportFolder
     vault: VaultContents
     planned: List[PlannedNote]
     source_tag: str
@@ -161,6 +166,11 @@ def import_folder_exists(folder_prefix: str) -> bool:
     return any(tag.casefold().startswith(folder_prefix.casefold()) for tag in all_folder_tags())
 
 
+def is_new_import_folder(folder_prefix: str) -> bool:
+    """Whether an import into that folder makes it ('' is no folder): asked before its notes are written."""
+    return folder_prefix != "" and not import_folder_exists(folder_prefix)
+
+
 def _plan_import(
     *, source_key: str, folder_path: str, split_mode: str, content_format: str, folder_prefix: str, imported_at: datetime,
 ) -> _ImportPlan:
@@ -173,7 +183,8 @@ def _plan_import(
         raise InputRejected(f"Choose the {source.folder_word}'s folder with Choose Folder.")
     if not folder.is_dir():
         raise InputRejected(f"There is no folder at {folder}. Choose the {source.folder_word}'s folder again.")
-    vault = read_vault(folder, reads_line_break_setting=source.follows_obsidian_line_breaks)
+    import_folder = open_import_folder(folder)
+    vault = read_vault(import_folder, reads_line_break_setting=source.follows_obsidian_line_breaks)
     if len(vault.markdown_files) == 0:
         raise InputRejected(f"{folder} holds no Markdown files. Choose a folder that does.")
     source_tag = source_tag_for(imported_at, source.key)
@@ -186,7 +197,7 @@ def _plan_import(
         for vault_file in vault.markdown_files
     ]
     return _ImportPlan(
-        source=source, folder=folder, vault=vault, planned=planned, source_tag=source_tag, folder_prefix=prefix,
+        source=source, folder=import_folder, vault=vault, planned=planned, source_tag=source_tag, folder_prefix=prefix,
     )
 
 
@@ -258,7 +269,7 @@ class _Linked:
 
 
 def _linked(
-    folder: Path, vault: VaultContents, planned: List[PlannedNote], *, source_tag: str, folder_prefix: str,
+    folder: ImportFolder, vault: VaultContents, planned: List[PlannedNote], *, source_tag: str, folder_prefix: str,
     images: ImageChoice, token: str, progress: WorkProgress,
 ) -> _Linked:
     """Every link and embed resolved, and the files they reach stored (with the Canvas, Base
@@ -343,11 +354,11 @@ def _with_links(node: NoteNode, replacements: Dict[int, str]) -> NoteNode:
 
 
 def _store_files(
-    folder: Path, paths: List[PurePosixPath], *, images: ImageChoice, token: str, progress: WorkProgress,
+    folder: ImportFolder, paths: List[PurePosixPath], *, images: ImageChoice, token: str, progress: WorkProgress,
 ) -> Dict[PurePosixPath, str]:
     """Each file at paths stored in MetaList (its id by path), images compressed when images say.
     progress counts each file stored."""
-    require_room_for_files([(folder / Path(path)).stat().st_size for path in paths])
+    require_room_for_files([folder.size(path) for path in paths])
     progress.set_total(len(paths))
     file_ids: Dict[PurePosixPath, str] = {}
     # A few at a time: compressing runs on threads, never far ahead of the storing.
@@ -361,7 +372,7 @@ def _store_files(
     return file_ids
 
 
-def _store_one_file(folder: Path, path: PurePosixPath, *, compressed: CompressedImage | None, token: str) -> str:
+def _store_one_file(folder: ImportFolder, path: PurePosixPath, *, compressed: CompressedImage | None, token: str) -> str:
     """A compressed image as it was made, every other file streamed from the folder."""
     if compressed is not None:
         return create_file(
@@ -370,24 +381,23 @@ def _store_one_file(folder: Path, path: PurePosixPath, *, compressed: Compressed
     mime_type, _encoding = mimetypes.guess_type(path.name)
     if mime_type is None:
         mime_type = _UNKNOWN_MIME_TYPE
-    return create_file_from_path(path=folder / Path(path), original_filename=path.name, mime_type=mime_type, token=token).id
+    return create_file_from_pieces(pieces=folder.pieces(path), original_filename=path.name, mime_type=mime_type, token=token).id
 
 
-def _compressed_if_asked(folder: Path, path: PurePosixPath, *, images: ImageChoice) -> CompressedImage | None:
+def _compressed_if_asked(folder: ImportFolder, path: PurePosixPath, *, images: ImageChoice) -> CompressedImage | None:
     """The image compressed when asked and it comes out smaller; None for anything else, which
     is stored as it is. Compressing holds the image in memory, so a huge one is left whole."""
-    file_path = folder / Path(path)
-    if not images.compresses or file_path.stat().st_size > MAX_IN_MEMORY_FILE_BYTES:
+    if not images.compresses or folder.size(path) > MAX_IN_MEMORY_FILE_BYTES:
         return None
-    return compressed_image(file_path.read_bytes(), path.name, longest_side_px=images.longest_side_px)
+    return compressed_image(folder.read_bytes(path), path.name, longest_side_px=images.longest_side_px)
 
 
 def _kept_file_note(
-    folder: Path, path: PurePosixPath, file_id: str, *, source_tag: str, folder_prefix: str,
+    folder: ImportFolder, path: PurePosixPath, file_id: str, *, source_tag: str, folder_prefix: str,
 ) -> Tuple[str, WrittenRoot]:
     """A Canvas, Base or Excalidraw file's own note: the file embedded, tagged as a note of its folder."""
     tags = [tag for tag in (folder_tag_for(path, folder_prefix), source_tag) if tag != ""]
-    modified_at = datetime.fromtimestamp((folder / Path(path)).stat().st_mtime, tz=timezone.utc)
+    _created_at, modified_at = folder.file_times(path)
     node = NoteNode(
         note_id=str(uuid.uuid4()), content_html=plain_text_to_note_html(f"{_EMBED_MARK}[[{file_id}]]"),
         tags=tuple(tags), anchors=(), children=(),
@@ -464,13 +474,15 @@ def drop_context_tags(*, search: str, folder_filter: str, folder_prefix: str) ->
     """The tags an import of files dropped in a search context gives its top notes, so they
     show in it (the maintainer, 2026-11-03): those a note made there would get (search: the
     context's search, '' for none). In a context narrowed to a virtual folder they are filed
-    in it, as a new note is, unless they go into a folder of their own (folder_prefix, as typed)."""
+    in it, as a new note is, unless they go into a folder of their own (folder_prefix, as typed).
+    Never another import's tag: a note with two is found by neither import's search."""
     context_search = None
     if search.strip() != "":
         context_search = search
     if import_folder_prefix(folder_prefix) == "":
         context_search = search_for_new_note(context_search, folder_filter)
-    return compute_initial_tags_for_new_note(parent_id=None, search_query=context_search)
+    tags = compute_initial_tags_for_new_note(parent_id=None, search_query=context_search)
+    return " ".join(token for token in _TAG_TOKEN_RE.findall(tags) if not is_source_tag(token))
 
 
 def _append_children(records: List[SimpleNamespace], node: NoteNode, written: WrittenRoot, *, parent_id: str) -> None:
@@ -526,7 +538,7 @@ class _FilesPlan:
     """A folder of files read and planned: its text files as notes, every other file (and a
     text file that isn't UTF-8) to be attached in a note of its own; nothing stored yet."""
 
-    folder: Path
+    folder: ImportFolder
     planned: List[PlannedNote]
     attached: List[PurePosixPath]
     source_tag: str
@@ -547,7 +559,8 @@ def _plan_folder_of_files(
         raise InputRejected("Choose the folder with Choose Folder.")
     if not folder.is_dir():
         raise InputRejected(f"There is no folder at {folder}. Choose the folder again.")
-    found = folder_files(folder)
+    import_folder = open_import_folder(folder)
+    found = folder_files(import_folder)
     named = {*selection.excluded_files, *selection.included_files}
     missing = named - {str(folder_file.path) for folder_file in found}
     if missing:
@@ -565,7 +578,7 @@ def _plan_folder_of_files(
         is_kept_as_file = selection.keeps_markdown_as_files and suffix in MARKDOWN_SUFFIXES
         # A text file too large to hold in memory comes in as a file, like one that isn't UTF-8.
         if suffix in TEXT_SUFFIXES and not is_kept_as_file and folder_file.size <= MAX_IN_MEMORY_FILE_BYTES:
-            text_file = read_text_file(folder, folder_file.path)
+            text_file = read_text_file(import_folder, folder_file.path)
         if text_file is None:
             attached.append(folder_file.path)
             continue
@@ -578,7 +591,7 @@ def _plan_folder_of_files(
         for text_file in text_files
     ]
     return _FilesPlan(
-        folder=folder, planned=planned, attached=attached,
+        folder=import_folder, planned=planned, attached=attached,
         source_tag=source_tag, folder_prefix=prefix,
     )
 
@@ -660,6 +673,7 @@ class CmdImportFolderOfFiles(QueryCommand):
         )
         if import_folder_exists(plan.folder_prefix) and not self.add_to_existing:
             raise InputRejected(f"{plan.folder_prefix} already exists. Tick Add to it, or choose another name.")
+        is_new_folder = is_new_import_folder(plan.folder_prefix)
         file_ids = _store_files(plan.folder, plan.attached, images=self.images, token=self.token, progress=progress)
         index = VaultIndex(plan.planned, plan.attached)
         planned = [
@@ -683,18 +697,17 @@ class CmdImportFolderOfFiles(QueryCommand):
         apply_restore_records(root_records(written_roots, context_tags=self.context_tags), self.token)
         note_count = sum(count_notes(note.root) for note in planned) + sum(count_notes(written.node) for _path, written in attached)
         return {"status": "success", "noteCount": note_count, "sourceTag": plan.source_tag,
-                "firstRootId": first_root_id(written_roots), "prefixFolder": plan.folder_prefix}
+                "firstRootId": first_root_id(written_roots), "prefixFolder": plan.folder_prefix, "isNewFolder": is_new_folder}
 
 
 def _attached_file_note(
-    folder: Path, path: PurePosixPath, file_id: str, *, source_tag: str, folder_prefix: str,
+    folder: ImportFolder, path: PurePosixPath, file_id: str, *, source_tag: str, folder_prefix: str,
 ) -> Tuple[str, WrittenRoot]:
     """A file's own note: the file alone (its card shows its name; the maintainer, 2026-11-01:
     a name line over it said it twice), tagged as a note of its folder. Search finds it by the
     file's name, and by its words once its text is read (file_text_search.py)."""
     tags = [tag for tag in (folder_tag_for(path, folder_prefix), source_tag) if tag != ""]
-    stat = (folder / Path(path)).stat()
-    modified_at = datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc)
+    _created_at, modified_at = folder.file_times(path)
     node = NoteNode(
         note_id=str(uuid.uuid4()), content_html=plain_text_to_note_html(f"{_EMBED_MARK}[[{file_id}]]"),
         tags=tuple(tags), anchors=(), children=(),
@@ -730,15 +743,14 @@ class CmdEstimateImportImages(QueryCommand):
             )
             folder, stored = plan.folder, _linked_file_paths(plan)
         images = [
-            (folder / Path(path), (folder / Path(path)).stat().st_size)
-            for path in stored if path.suffix.casefold() in COMPRESSIBLE_SUFFIXES
+            (path, folder.size(path)) for path in stored if path.suffix.casefold() in COMPRESSIBLE_SUFFIXES
         ]
         images = [(image_path, size) for image_path, size in images if size <= MAX_IN_MEMORY_FILE_BYTES]
         return {
             "imageCount": len(images),
             "imageBytes": sum(size for _image_path, size in images),
             # About their size compressed at each longest side the screen offers.
-            "compressedBytes": {str(side): size for side, size in estimated_compressed_bytes(images).items()},
+            "compressedBytes": {str(side): size for side, size in estimated_compressed_bytes(images, folder.read_bytes).items()},
         }
 
 

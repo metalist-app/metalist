@@ -144,7 +144,7 @@ import {
 import { FolderNameModal } from '../modals/folder-name-modal.js';
 import { DeleteFolderModal } from '../modals/delete-folder-modal.js';
 import {
-    activeVirtualFolder, toggleFolderContextFromTab, wireVirtualFolders,
+    activeVirtualFolder, openTo, toggleFolderContextFromTab, wireVirtualFolders,
 } from '../mode-manager/services/virtual-folders-service.js';
 import {
     DEFAULT_SEARCH_SUGGESTION_WINDOWS_VALUE,
@@ -200,7 +200,7 @@ const COPYING_DROPPED_FILES_TEXT = 'Copying your files…';
 // ::view-transition(root)). Opening in the saved theme, a background tab, reduced motion and
 // Animated transitions off switch at once, as does a browser without view transitions.
 // An import of files dropped on the page: its notes take the tags of the search context they
-// were dropped in, as a note made there does, and show at its top (the maintainer, 2026-11-03).
+// were dropped in, as a note made there does (the maintainer, 2026-11-03).
 function droppedHere() {
     return { isDrop: true, dropSearch: ModeContext.searchQuery };
 }
@@ -2998,7 +2998,13 @@ class CommandPaletteController {
             announceImport: (text) => {
                 FloatingMessages.show({ text, type: 'success', detail: '', isClosable: false, isLasting: false, key: null, action: null });
             },
-            // Files dropped on the page: their notes in the search context they were dropped in,
+            // A dropped folder that made a new folder, with the tree showing: that folder, in
+            // sight in the tree, chosen as a click on it chooses it (the maintainer, 2026-11-09).
+            showImportedFolder: async (folder) => {
+                openTo(folder);
+                await chooseFolder(folder);
+            },
+            // Loose files dropped on the page: their notes in the search context they were dropped in,
             // which stays as it is (the maintainer, 2026-11-03), after its last note (2026-11-07).
             // The view brings the import's first note into sight, moving the
             // least distance (docs/ui/interaction-principles.md, principle 3).

@@ -8,6 +8,8 @@ import { heldDroppedFolder } from '../mode-manager/services/dropped-folders.js';
 import { checkBackgroundWork, setShownElsewhere } from '../mode-manager/services/background-work-cards.js';
 import { workProgressText } from '../mode-manager/services/background-work-text.js';
 import { importFinishedMessage } from './import-finished-message.js';
+import { DROPPED_IMPORT_VIEWS, droppedImportView } from './dropped-import-view.js';
+import { isFolderContext } from '../mode-manager/services/folder-context-state.js';
 import { COMPRESSIBLE_IMAGE_RE } from './compressible-images.js';
 
 // The import wizard's steps (PLAN.md, phase 2), shared by the import wizard and the new
@@ -199,17 +201,32 @@ export async function runImport(wizard, progress) {
         }
         if (!Number.isInteger(result.noteCount) || typeof result.sourceTag !== 'string'
             || typeof result.firstRootId !== 'string' || result.firstRootId === ''
-            || typeof result.prefixFolder !== 'string') {
+            || typeof result.prefixFolder !== 'string' || typeof result.isNewFolder !== 'boolean') {
             throw new Error('The import answered without its notes');
         }
         wizard.services.announceImport(importFinishedMessage(result.noteCount, result.prefixFolder));
-        if (wizard.choices.isDrop) {
-            await wizard.services.showDroppedImport(result.firstRootId);
-            return;
-        }
-        // Behind the wizard, a new search context of the imported notes: there when it closes.
-        await wizard.services.afterImport(result.sourceTag);
+        await showFinishedImport(wizard, result, isBookmarks);
     }, { disableWatchdog: true });
+}
+
+// Behind the wizard, what came in: there when it closes.
+async function showFinishedImport(wizard, result, isBookmarks) {
+    if (!wizard.choices.isDrop) {
+        await wizard.services.afterImport(result.sourceTag);
+        return;
+    }
+    const view = droppedImportView({
+        isDroppedFiles: !isBookmarks && wizard.choices.droppedFolderId === '',
+        isNewFolder: result.isNewFolder,
+        isInFolderContext: isFolderContext(ModeContext.activeTabId),
+    });
+    if (view === DROPPED_IMPORT_VIEWS.IN_ITS_CONTEXT) {
+        await wizard.services.showDroppedImport(result.firstRootId);
+    } else if (view === DROPPED_IMPORT_VIEWS.ITS_NEW_FOLDER) {
+        await wizard.services.showImportedFolder(result.prefixFolder);
+    } else {
+        await wizard.services.afterImport(result.sourceTag);
+    }
 }
 
 // Where the files were dropped, as the import takes it: their notes get that search context's

@@ -38,10 +38,11 @@ say which models you use), and from database version 16 each model's saved timin
 (`app_settings.model_timings_json`: endpoint, model, its startup cost and time per token). The authoritative payload/schema inventory is
 in `app/encryption_audit.py`.
 
-A folder dropped on the page for import is not covered until it is imported:
-its ticked files wait, as sent and unencrypted, in a holding folder in the data
+A folder dropped on the page for import is encrypted while it waits, with or
+without a vault password: its ticked files are kept under random names, with
+their keys and real paths only in the server's memory, in a holding folder in the data
 directory (`import-uploads/`, `app/services/import_uploads.py`) until the
-import walkthrough closes (cancelled or imported) or the server restarts.
+import walkthrough closes (cancelled or imported), the vault locks or the server restarts.
 
 Structural and operational metadata remain readable: note IDs, hierarchy/order,
 collapse flags, timestamps, namespace names/ports, schema/vault versions and
@@ -780,7 +781,7 @@ The HTTPS transport retains separate listeners and sends response headers and bo
 
 Strict required note request contracts and client preference/usage validation run before route mutations. Invalid external bodies return sanitized 422 without their input values; stale note IDs return 404. Host/Origin validation precedes URL parsing by other middleware. Internal invariant failures still propagate. The obsolete v1 API returns 410 instead of terminating the server.
 
-A file of any size can be stored. Uploads are parsed as they arrive (`app/api/streaming_upload.py`) and encrypted straight into their blob: never whole in memory and never plaintext in a temporary file, except that a folder dropped on the page waits unencrypted in its holding folder until Import or cancel (`docs/ready-to-build/streaming-no-file-cap.md` §8). Before a file is stored its size is checked against the free disk space less a reserve of 1 GiB or 5% of the disk, whichever is smaller, and a disk that fills mid-write removes the partial file; both refuse with a plain message (`app/services/disk_space.py`). One limit stays, 100 MiB (`app/upload_limits.py`), because these have to hold a whole file in memory: an edited diagram's content and previews, an email read for its card or search words, the viewer's previews, the text read from a file for search, an image inlined in an export and an image compressed on import. Over it the file is still stored, downloaded and found by name. Downloads, backups, restores and password changes process one segment at a time. No aggregate namespace quota is imposed.
+A file of any size can be stored. Uploads are parsed as they arrive (`app/api/streaming_upload.py`) and encrypted straight into their blob: never whole in memory and never plaintext in a temporary file. A folder dropped on the page waits in its holding folder encrypted, each file under a random name, with its key and real path only in the server's memory, so it ends with a restart or a lock (`app/services/import_uploads.py`). Before a file is stored its size is checked against the free disk space less a reserve of 1 GiB or 5% of the disk, whichever is smaller, and a disk that fills mid-write removes the partial file; both refuse with a plain message (`app/services/disk_space.py`). One limit stays, 100 MiB (`app/upload_limits.py`), because these have to hold a whole file in memory: an edited diagram's content and previews, an email read for its card or search words, the viewer's previews, the text read from a file for search, an image inlined in an export and an image compressed on import. Over it the file is still stored, downloaded and found by name. Downloads, backups, restores and password changes process one segment at a time. No aggregate namespace quota is imposed.
 
 Lock ownership: synchronous route transactions and background hydration/link publication use `bulk_operation_guard.lock`; its separate short admission mutex protects mutation counts and bulk operation/question state. No admission mutex is held across an await. Bulk answers/cancellation are queued with `call_soon_threadsafe`. Tokens and sync/clipboard operations each have their own RLock and return copied snapshots; clipboard snapshots copy nested values. NoteStore, search index, tab/reminder/link stores and sensitive caches retain their existing private locks. Hydration/link work checks the runtime generation before publishing. Acquire the outer bulk lock before admission/service locks; do not acquire the outer bulk lock from inside a service lock. These guards protect existing mutation paths, not a general serializable snapshot API spanning every independent GET.
 

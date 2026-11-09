@@ -9,9 +9,9 @@ from datetime import datetime, timezone
 import json
 from pathlib import Path
 import uuid
-from typing import Callable, Iterator, Optional
+from typing import Callable, Iterable, Iterator, Optional
 
-from app.upload_limits import MAX_IN_MEMORY_FILE_BYTES, UPLOAD_CHUNK_BYTES
+from app.upload_limits import MAX_IN_MEMORY_FILE_BYTES
 from app.db.blob_store import BlobSeal, BlobWriter, StoredBlob
 from app.db.file_schema import FILE_PREVIEW_VARIANTS
 from app.db.file_session import begin_file_writer, connect_file_reader, live_blob_store
@@ -269,10 +269,10 @@ def create_file(
         return upload.finish(original_filename=original_filename, mime_type=mime_type)
 
 
-def create_file_from_path(*, path: Path, original_filename: str, mime_type: str, token: str) -> FileReferenceRecord:
-    """A file on this computer stored as it is, a piece at a time: its size doesn't matter."""
-    with open_file_upload(token=token) as upload, path.open("rb") as source:
-        for piece in iter(lambda: source.read(UPLOAD_CHUNK_BYTES), b""):
+def create_file_from_pieces(*, pieces: Iterable[bytes], original_filename: str, mime_type: str, token: str) -> FileReferenceRecord:
+    """A file stored a piece at a time as it is read: its size doesn't matter."""
+    with open_file_upload(token=token) as upload:
+        for piece in pieces:
             upload.write(piece)
         return upload.finish(original_filename=original_filename, mime_type=mime_type)
 

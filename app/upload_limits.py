@@ -1,4 +1,4 @@
-"""The one size limit left on files (docs/ready-to-build/streaming-no-file-cap.md): what has to be
+"""The one size limit left on files (docs/design/file-storage.md): what has to be
 held whole in memory to be used. A file of any size is stored, downloaded, backed up and found by
 name; over this it can't be previewed, read for its text or edited in place."""
 

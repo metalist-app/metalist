@@ -1,5 +1,5 @@
 """A file is refused before it is stored when it wouldn't fit, and when the disk fills while it
-is being written (docs/ready-to-build/streaming-no-file-cap.md, section 8): a full disk would stop
+is being written (docs/design/file-storage.md, section 14): a full disk would stop
 notes saving and backups, and refusing one file is far better."""
 
 from __future__ import annotations

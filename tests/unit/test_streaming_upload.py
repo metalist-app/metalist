@@ -1,4 +1,4 @@
-"""A file of any size comes in as it arrives (docs/ready-to-build/streaming-no-file-cap.md): straight
+"""A file of any size comes in as it arrives (docs/design/file-storage.md): straight
 into encrypted storage, never whole in memory or plaintext in a temporary file, and refused plainly
 when it won't fit."""
 

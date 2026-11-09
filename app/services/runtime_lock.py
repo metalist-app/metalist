@@ -12,6 +12,7 @@ from app.models.database import SafeSession
 from app.services import auth_cache_state
 from app.services.content_cache import clear_cache
 from app.services.file_registry import file_registry
+from app.services import import_uploads
 from app.services.file_storage import bootstrap_file_registry
 from app.services.hydration_state import hydration_state
 from app.services.link_titles import link_title_store
@@ -56,6 +57,8 @@ def purge_decrypted_runtime_state() -> bool:
         return False
 
     view_cache.clear()
+    # A dropped folder held for import: its keys go with the session.
+    import_uploads.discard_every_upload()
     ai_chat_store.reset()
     web_evidence_store.reset()
     agent_trace_store.reset()
