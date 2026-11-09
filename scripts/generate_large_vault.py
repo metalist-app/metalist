@@ -183,6 +183,8 @@ def write_vault(*, data_dir: Path, drafts: list[_Draft]) -> Path:
     if (data_dir / NAMESPACES_FOLDER).exists():
         raise FileExistsError(f"{data_dir} already holds a vault ({NAMESPACES_FOLDER}/): this script never touches an existing one")
     os.environ["METALIST_DATA_DIRECTORY"] = str(data_dir)
+    # Run as a script, only scripts/ is on the path; the app is this repository's, installed or not.
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
     # Imported here, not at the top: app.server_runtime reads the data directory from the
     # environment when it is imported, and that directory is this call's argument.
     from app.db.notes_sql import insert_note
