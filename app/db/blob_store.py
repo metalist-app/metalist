@@ -1,5 +1,5 @@
 """Each stored item as one file on disk, named by a random ID
-(docs/ready-to-build/file-storage-per-file.md, sections 2, 4, 5 and 7).
+(docs/design/file-storage.md, sections 2, 4, 5 and 7).
 
 A blob is written once and never changed: it goes to `<id>.mlb.tmp`, is synced, and only then
 takes its name, so a catalog row never points at a half-written file. In a vault with a password

@@ -1,5 +1,5 @@
 """One encrypted item as one stream, a segment at a time, so memory stays small at any file size
-(docs/ready-to-build/file-storage-per-file.md, section 4). Not connected to file storage yet.
+(docs/design/file-storage.md, section 4). Not connected to file storage yet.
 
 The format, version 1:
 

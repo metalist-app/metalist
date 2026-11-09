@@ -1,5 +1,7 @@
 # PLAN: scale testing, so a large vault cannot freeze MetaList unnoticed again
 
+**Status (2026-11-08):** parts 1 to 3 are built; parts 4 to 7 are agreed and not built. This was `PLAN.md` on `feature/scale-testing`, kept here when that branch merged with other finished work.
+
 Written 2026-11-05, after 0.26.0 froze on a real vault (an import of 1,127 files, an AI question
 with an empty search box) while 4,488 unit tests, 83 browser suites and a three-OS CI matrix
 passed. The four fixes shipped in 0.26.1 (553e6e54); this plan is `feature/scale-testing`.

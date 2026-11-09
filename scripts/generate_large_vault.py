@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""A large vault for scale checks (PLAN.md, scale testing, part 1): N notes written straight
+"""A large vault for scale checks (docs/future-plans/scale-testing.md, part 1): N notes written straight
 into a fresh data folder's default namespace, deterministic from a seed, in seconds (the
 import path takes a minute per 100,000 notes). A mix of short and long notes, trees three
 deep, folder tags, a few tables and diagrams, so search, scopes and rendering all have work;

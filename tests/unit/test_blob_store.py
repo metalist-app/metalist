@@ -1,4 +1,4 @@
-"""One file per stored item (docs/ready-to-build/file-storage-per-file.md): written whole or not at
+"""One file per stored item (docs/design/file-storage.md): written whole or not at
 all, padded while the vault has a password, and never deleted while something still needs it."""
 
 from __future__ import annotations

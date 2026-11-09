@@ -1,6 +1,6 @@
 # Stream files, then no 100 MB cap
 
-**Status:** Agreed with the maintainer 2026-11-03. Ready to build. **Moves `docs/ready-to-build/file-storage-per-file.md` to ready to build,** for its streaming encryption, then removes the per-file size limit.
+**Status:** Agreed with the maintainer 2026-11-03. Ready to build. **Moves `docs/design/file-storage.md` to ready to build,** for its streaming encryption, then removes the per-file size limit.
 
 Written from a read-only look at the repo. Check the code references before relying on them.
 
@@ -11,7 +11,7 @@ Written from a read-only look at the repo. Check the code references before rely
 - Each file may be up to 100 MiB (`app/upload_limits.py`, `MAX_ATTACHMENT_BYTES`, set 2026-09-12 in `97c06464`), changeable only by `METALIST_MAX_ATTACHMENT_BYTES` at start.
 - Reason (`docs/security/README.md`): encryption and decryption require complete per-file buffers, with four transfers admitted at once.
 - Folder and Obsidian imports skip larger files with no way to include them (`app/usecases/import_obsidian_vault.py`, `app/services/obsidian_import/file_groups.py`). The maintainer hit this importing a folder: two files over 100 MB left out.
-- Files are blobs in one SQLite files database. `docs/ready-to-build/file-storage-per-file.md` (one encrypted file per item, streaming segments) is a future plan; its open points (§10) are tunables.
+- Files are blobs in one SQLite files database. `docs/design/file-storage.md` (one encrypted file per item, streaming segments) is a future plan; its open points (§10) are tunables.
 - Requests have a 30-minute total deadline.
 
 ## 1. Why
@@ -20,7 +20,7 @@ Streaming encrypts and decrypts a segment at a time, so memory stays small whate
 
 ## 2. Build per-file storage now
 
-- Build `docs/ready-to-build/file-storage-per-file.md` as written. Its streaming encryption is built on its own and not connected yet (that note's §13); the rest of §2 and everything after it are not built. Streaming comes with it; adding streaming to the single files database first would be built twice. No outside users yet, so the migration is cheapest now.
+- Per-file storage is built (`docs/design/file-storage.md`); §9 says what of this note is left. Streaming comes with it; adding streaming to the single files database first would be built twice. No outside users yet, so the migration is cheapest now.
 - Its §10 tunables are yours to choose, starting from its proposals (64 KiB segments).
 - Everything that touches file contents streams: upload, download, backups, export, restore, password changes.
 - Downloads and in-note audio/video playback read only the segments they need (HTTP range requests) (decided 2026-11-08).
@@ -54,7 +54,7 @@ The 100 MiB limit stays as it is. No interim override.
 
 ## 8. Checked 2026-11-06 (filed from the inbox)
 
-- Filed as ready to build, as its status asks; `docs/future-plans/file-storage-per-file.md` moved to `docs/ready-to-build/file-storage-per-file.md` with it, and every link to it updated. Nothing built.
+- Filed as ready to build, as its status asks; `docs/future-plans/file-storage-per-file.md` moved to `docs/design/file-storage.md` with it, and every link to it updated. Nothing built.
 - Confirmed: `MAX_ATTACHMENT_BYTES` (100 MiB) and `METALIST_MAX_ATTACHMENT_BYTES` in `app/upload_limits.py`, set in `97c06464` (2026-09-12); the reason in `docs/security/README.md` (attachment paragraph: "Encryption/decryption still require complete per-file buffers"); the Obsidian/folder import skips in `app/usecases/import_obsidian_vault.py` and `file_groups.py` (`is_over_limit`: "listed, never brought in").
 - **More places use the limit** than the note names: `app/main.py`, `app/api/upload_limits.py` (the multipart envelope, the limit plus 1 MiB as `MAX_UPLOAD_REQUEST_BYTES`), `app/api/routes/imports.py` (the dropped-folder uploads, `/import/uploads/{id}/file`) and `app/services/file_storage.py` (downloads' preflight that rejects oversized legacy files with 413). Tests: `tests/unit/test_phase_two_http.py`, `tests/unit/test_obsidian_import.py`. §3 removes all of them.
 - **Correction:** the 30-minute deadline (§0, §5) is the HTTPS proxy's only (`app/https_proxy.py`, `MAX_REQUEST_SECONDS`); plain HTTP has no total request deadline. It bounds downloads over HTTPS as well as uploads.

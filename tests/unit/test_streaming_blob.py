@@ -1,4 +1,4 @@
-"""One encrypted item as one stream (docs/ready-to-build/file-storage-per-file.md, section 4):
+"""One encrypted item as one stream (docs/design/file-storage.md, section 4):
 any size in or out a segment at a time, and a blob someone cut, reordered or spliced never
 reads back as if it were whole. The format numbers are written out here rather than imported,
 so a change to the format on disk fails these tests instead of following along."""

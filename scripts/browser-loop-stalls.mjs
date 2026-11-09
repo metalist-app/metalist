@@ -1,4 +1,4 @@
-// The stall gate of every browser run (PLAN.md, scale testing, part 2): the server lists
+// The stall gate of every browser run (docs/future-plans/scale-testing.md, part 2): the server lists
 // each time its event loop stalled for a second or longer in the file METALIST_LOOP_STALL_LOG
 // names (app/services/diagnostics.py, one JSON line per stall), and a run with any stall
 // fails, naming what was running. 0.26.0 held the loop for 100 s under tests that passed.

@@ -46,6 +46,7 @@
 - Known bugs: `docs/BUGS.md`
 - Refactor notes: `docs/REFACTORS.md`
 - TODO list: `docs/TODO.md`
+- Future plan (scale testing, parts 4 to 7): `docs/future-plans/scale-testing.md`
 - Future UI plan (toolbar): `docs/future-plans/PLAN.toolbar.md`
 - Future plan (hosted MetaList: downloading your own copy, the backup reminder): `docs/future-plans/hosted-own-copy.md`
 - Future plan (AI providers, what is left: evals for Claude and Gemini, the demo vault, hosted questions): `docs/future-plans/ai-providers-remaining.md`
@@ -60,7 +61,7 @@
 - Built 2026-11-02, Chrome's and Safari's exports still to check (browser bookmarks as an import source: one note per website address, its title linked, folders as folder tags, dated when bookmarked; a dropped export asks Import or Keep as File): `docs/ready-to-build/bookmark-import.md`
 - Future plan (charts of super-tag values, embedded like diagrams): `docs/future-plans/charts.md`
 - Being designed, nothing built (a decision model, such as OpenAI's Decisions API, for choosing tags and for choosing which notes the AI reads, with speed estimates): `docs/future-plans/decision-model.md`
-- Ready to build (one encrypted file per attachment, with a catalog): `docs/ready-to-build/file-storage-per-file.md`; built first by `docs/ready-to-build/streaming-no-file-cap.md` (files stream, then no 100 MiB per-file limit)
+- File storage (one encrypted file per stored item, with a catalog): `docs/design/file-storage.md`; what is left, streaming uploads and removing the 100 MiB limit: `docs/ready-to-build/streaming-no-file-cap.md`
 - Future plan, after streaming (uploads in pieces that resume after a dropped connection): `docs/future-plans/resumable-uploads.md`
 - Future plan, with the hosted control plane (free hosted accounts granted by the operator): `docs/future-plans/free-accounts.md`
 - Future plan (hosted account states: trial, active, cancelled, lapsed and read-only, closed, deleted): `docs/future-plans/hosted-account-states.md`

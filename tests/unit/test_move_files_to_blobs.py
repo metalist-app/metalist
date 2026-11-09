@@ -1,4 +1,4 @@
-"""Migration 16→17 (docs/ready-to-build/file-storage-per-file.md, section 9): every file leaves the
+"""Migration 16→17 (docs/design/file-storage.md, section 9): every file leaves the
 single files database for its own blob, and the old database goes only once all of them check out."""
 
 from __future__ import annotations

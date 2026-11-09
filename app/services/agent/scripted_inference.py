@@ -1,6 +1,6 @@
 """A scripted AI for a test server: the turns of every chat come from a JSON file, so a
 browser suite or a throwaway MetaList runs the real agent loop, its tools and its frozen scope
-without any provider (PLAN.md, scale testing, part 1: the 0.26.0 freezes were in that code,
+without any provider (docs/future-plans/scale-testing.md, part 1: the 0.26.0 freezes were in that code,
 which no browser test ran).
 
 ``METALIST_SCRIPTED_AI=<file>`` names the script. It is honoured only on a server with its

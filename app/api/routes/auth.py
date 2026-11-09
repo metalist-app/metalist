@@ -166,7 +166,7 @@ class HydrationStatusResponse(BaseModel):
 
 class PasswordCreateRequest(BaseModel):
     password: SecretStr
-    # The new vault wizard sets the password and goes on in the same window (PLAN.md,
+    # The new vault wizard sets the password and goes on in the same window (docs/future-plans/scale-testing.md,
     # phase 2): the server logs that window in with it, as a login would, and every other
     # session ends. Add Password reloads into the login instead.
     keeps_window_logged_in: bool

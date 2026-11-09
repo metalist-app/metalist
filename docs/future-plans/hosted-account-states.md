@@ -25,7 +25,7 @@ Three notes lean on these states and none defines them:
 | **Closed** | Lapsed ran out | The vault doesn't open. The user can sign in to subscribe (→ Active, everything intact) or download their own copy | After 90 days (*proposed*) → Deleted |
 | **Deleted** | Closed ran out, or the user deletes the account | Nothing; the account is gone | — |
 
-- **Account deletion** by the user shows the own-copy prompt first (`hosted-own-copy.md` §4), then deletes. Retained snapshots go as the privacy policy says (`docs/ready-to-build/file-storage-per-file.md` §10.2).
+- **Account deletion** by the user shows the own-copy prompt first (`hosted-own-copy.md` §4), then deletes. Retained snapshots go as the privacy policy says (`docs/design/file-storage.md` §10.2).
 - **Emails** (*proposed*): 14 days before a trial ends, a grant ends (`free-accounts.md` §4), and Closed ends; one when an account becomes Lapsed.
 
 ## 3. What this repository does

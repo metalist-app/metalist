@@ -4,7 +4,7 @@ import {join, resolve} from 'node:path';
 import {setTimeout as delay} from 'node:timers/promises';
 import {waitForAppIdle, waitForAppQuiet} from './browser-app-idle.mjs';
 
-// The `scale` suite (PLAN.md, scale testing, part 3): MetaList on a large vault, in a real
+// The `scale` suite (docs/future-plans/scale-testing.md, part 3): MetaList on a large vault, in a real
 // browser, against the server's own AI. 0.26.0 froze on a real vault three ways that 4,488 unit
 // tests and 83 browser suites on a handful of notes could not see: an import of 1,127 files
 // passed a 15 s watchdog and was called stuck; an AI question with an empty search box put a
@@ -51,7 +51,7 @@ const IMPORT_BUDGET_MS = 180_000;
 const ANSWER_BUDGET_MS = 120_000;
 // Typing in the list's search box while the AI reads the vault: the list follows. A text
 // search of 100,000 notes took the server 2.5 s locally while the agent's thread shared
-// the CPU, and the step 4 to 8 s with other work on the machine (PLAN.md guessed 3 s);
+// the CPU, and the step 4 to 8 s with other work on the machine (its plan guessed 3 s);
 // a freeze is minutes, with the request never answered.
 const LIST_FILTER_BUDGET_MS = 20_000;
 // Stop during the agent's search: Send is back.

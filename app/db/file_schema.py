@@ -1,5 +1,5 @@
 """The catalog of a vault's stored files: `<vault>/files/catalog.db`, everything about each item
-except its bytes (docs/ready-to-build/file-storage-per-file.md, section 3). The bytes are blobs
+except its bytes (docs/design/file-storage.md, section 3). The bytes are blobs
 (blob_store.py), named by blob_id. blob_seal holds a blob's key, real size and checksum, encrypted
 like the row's other fields while the vault has a password."""
 

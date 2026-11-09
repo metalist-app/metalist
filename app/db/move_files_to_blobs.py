@@ -1,5 +1,5 @@
 """Migration 16→17: a vault's files leave its single `<vault>.metalist.files.db` for one blob each
-plus `files/catalog.db` (docs/ready-to-build/file-storage-per-file.md, section 9).
+plus `files/catalog.db` (docs/design/file-storage.md, section 9).
 
 Every item is written as a blob and committed to the catalog one at a time, so a crash resumes
 where it stopped. Once all are in, every blob is read back against its seal and the catalog is

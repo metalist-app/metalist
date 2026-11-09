@@ -4,7 +4,7 @@
 // made-up notes that exercise rendering. It prints its address and runs until Ctrl-C, which
 // stops it and deletes its data. Start it with `npm run throwaway`; `--keep` keeps the data
 // folder, `--empty` starts with no sample notes, `--development` runs it in development (its
-// developer tools shown, such as the Obsidian import, PLAN.md). For a look at scale (PLAN.md,
+// developer tools shown, such as the Obsidian import, PLAN.md). For a look at scale (docs/future-plans/scale-testing.md,
 // scale testing): `--notes N` fills it with N generated notes instead of the samples
 // (scripts/generate_large_vault.py), `--files M` writes M Markdown files to import beside
 // them, and `--scripted-ai FILE` answers every AI question from that script instead of a

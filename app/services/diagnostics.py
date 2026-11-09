@@ -42,8 +42,8 @@ _DIRECT_APPEND_LOG_PATTERNS = (
 _EVENT_LOOP_PROBE_INTERVAL_SECONDS = 1.0
 _EVENT_LOOP_STALL_SECONDS = 5.0
 # A probe the loop answers this late or later is a recorded stall (recorded_loop_stalls, and
-# the file METALIST_LOOP_STALL_LOG names): the browser suites fail on any (PLAN.md, scale
-# testing, part 2: 0.26.0 held the loop for 100 s and only logged it).
+# the file METALIST_LOOP_STALL_LOG names): the browser suites fail on any (docs/future-plans/scale-testing.md,
+# part 2: 0.26.0 held the loop for 100 s and only logged it).
 RECORDED_LOOP_STALL_SECONDS = 1.0
 _MAX_RECORDED_LOOP_STALLS = 50
 LOOP_STALL_LOG_ENVIRONMENT_VARIABLE = "METALIST_LOOP_STALL_LOG"
