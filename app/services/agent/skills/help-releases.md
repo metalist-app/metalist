@@ -200,23 +200,4 @@ they already have a release. Version info offers updates (see the data topic).
 - Fixed undo of deleting a note whose children have several children, and "accept all" failing on tag bars with leading or trailing spaces.
 - Fixed crashes in the status check after returning to a tab and in scroll-position saving.
 
-## 0.10.0
-
-- Excalidraw diagrams: add one from the note's right-click menu or the command palette, and double-click a diagram to edit it full screen. Diagrams autosave, show light and dark previews, resize like images, and each editing session is one undo step. The editor is bundled locally and needs no Node server.
-- The dark theme uses neutral greys with a brighter accent, the light theme header is darker, and Note Layout & Appearance adds note corner and tag style settings.
-- References to a note that starts with an image or diagram show its thumbnail. Collapsed notes, reference titles, and backlink previews show only the first line.
-- Fixed a command palette crash on queries with no matches.
-- The database schema moves to version 10. Password-protected namespaces migrate after unlock, with the usual automatic backup first.
-
-## 0.9.0
-
-- AI chat can browse the web in disabled, contextual, or unrestricted mode, fetch multiple pages concurrently, and cite the specific pages used as evidence.
-- Complete-scope summaries and tag suggestions can process every permitted note in bounded parallel batches after user approval, with visible per-batch progress and final synthesis.
-- AI chat retains selected-note and tree context while enforcing redaction boundaries, and reference navigation uses temporary result collections without polluting search history.
-
-## 0.8.0
-
-- Error diagnostics now record safe request IDs, exception types, and source locations through Loguru; full tracebacks are available only in authenticated encrypted logs.
-- Releases run the full cross-platform matrix once on the `main` push. The tag publishes those exact tested distributions without rerunning the matrix.
-
-Versions before 0.8.0 are left out; the changelog (CHANGELOG.md) lists them.
+Versions before 0.11.0 are left out; the changelog (CHANGELOG.md) lists them.

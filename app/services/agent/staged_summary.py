@@ -18,7 +18,8 @@ SUMMARY_MAX_FINDINGS = 128
 SUMMARY_PROGRESS_COMPLETE_PERCENT = 100
 _SUMMARY_PROGRESS_START_PERCENT = 5
 _COMPLETE_BATCH_STATE = "complete"
-_LEAST_FRACTION_BY_BATCH_STATE = {"queued": 0.0, "writing": 0.0, "responding": 0.5}
+_LEAST_FRACTION_ONCE_RESPONDING = 0.5
+_LEAST_FRACTION_BY_BATCH_STATE = {"queued": 0.0, "writing": 0.0, "responding": _LEAST_FRACTION_ONCE_RESPONDING}
 _MOST_FRACTION_FROM_THE_CLOCK = 0.9
 # The bar glides to the estimate (a third of the way about every 1.2 seconds), and creeps toward its
 # ceiling whatever the estimate says, so it cannot stall.
@@ -205,7 +206,7 @@ def fit_model_timing(timed_batches: tuple[tuple[int, float], ...]) -> ModelTimin
     mean_size = sum(sizes) / len(sizes)
     mean_seconds = sum(seconds) / len(seconds)
     slope = sum((size - mean_size) * (taken - mean_seconds) for size, taken in zip(sizes, seconds)) / sum(
-        (size - mean_size) ** 2 for size in sizes
+        (size - mean_size) * (size - mean_size) for size in sizes
     )
     startup_seconds = mean_seconds - slope * mean_size
     if slope <= 0 or startup_seconds < 0:

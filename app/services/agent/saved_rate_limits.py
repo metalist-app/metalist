@@ -57,6 +57,8 @@ def _entries(settings: dict[str, object], *, payload: str, entry_keys: frozenset
         raise RuntimeError(f"{payload}_json has incomplete encryption metadata")
     plaintext = stored
     if nonce is not None:
+        if not isinstance(nonce, bytes) or not isinstance(tag, bytes):
+            raise RuntimeError(f"{payload}_json encryption metadata must be bytes")
         service = get_encryption_service()
         if service is None:
             raise RuntimeError(f"Reading {payload} requires an active DEK")
@@ -87,6 +89,20 @@ def _read_settings(reason: str) -> dict[str, object] | None:
         session.close()
 
 
+def _whole_number(entry: dict[str, object], key: str) -> int:
+    value = entry[key]
+    if not isinstance(value, int):
+        raise RuntimeError(f"A saved {key} must be a whole number")
+    return value
+
+
+def _number(entry: dict[str, object], key: str) -> float:
+    value = entry[key]
+    if not isinstance(value, (int, float)):
+        raise RuntimeError(f"A saved {key} must be a number")
+    return float(value)
+
+
 def _matches(entry: dict[str, object], *, base_url: str, model: str) -> bool:
     return entry[_BASE_URL_KEY] == base_url and entry[_MODEL_KEY] == model
 
@@ -101,7 +117,7 @@ class DatabaseSavedLimits:
             return None
         for entry in _entries(settings, payload="provider_rate_limits", entry_keys=_ENTRY_KEYS):
             if _matches(entry, base_url=base_url, model=model):
-                return SavedLimits(request_limit=entry[_REQUEST_LIMIT_KEY], token_limit=entry[_TOKEN_LIMIT_KEY])
+                return SavedLimits(request_limit=_whole_number(entry, _REQUEST_LIMIT_KEY), token_limit=_whole_number(entry, _TOKEN_LIMIT_KEY))
         return None
 
     def save(self, *, base_url: str, model: str, limits: SavedLimits) -> None:
@@ -139,8 +155,8 @@ class DatabaseSavedTimings:
         for entry in _entries(settings, payload="model_timings", entry_keys=_TIMING_ENTRY_KEYS):
             if _matches(entry, base_url=base_url, model=model):
                 return ModelTiming(
-                    startup_seconds=entry[_STARTUP_SECONDS_KEY],
-                    seconds_per_million_tokens=entry[_SECONDS_PER_MILLION_TOKENS_KEY],
+                    startup_seconds=_number(entry, _STARTUP_SECONDS_KEY),
+                    seconds_per_million_tokens=_number(entry, _SECONDS_PER_MILLION_TOKENS_KEY),
                 )
         return None
 

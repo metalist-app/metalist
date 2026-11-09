@@ -713,7 +713,7 @@ class AgentRuntime(AgentLoopMixin):
                     finally:
                         if not next_transition.done():
                             next_transition.cancel()
-                    for worker in done - {next_transition}:
+                    for worker in running_workers.intersection(done):
                         running_workers.remove(worker)
                         failure = worker.exception()
                         if failure is not None:

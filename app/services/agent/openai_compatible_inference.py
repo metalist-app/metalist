@@ -283,13 +283,13 @@ class OpenAICompatibleInferenceAdapter:
             return _CONTEXT_TOKENS_BY_MODEL[model]
         url = f"{self._base_url.removesuffix(_OPENAI_COMPATIBLE_PATH)}models/{model}"
         label = self._provider.label
-        # lint: allow-PY001 rationale="an expected provider API failure becomes the provider error the chat shows"
-        try:
-            async with _model_info_client() as client:
+        async with _model_info_client() as client:
+            # lint: allow-PY001 rationale="an expected provider API failure becomes the provider error the chat shows"
+            try:
                 response = await client.get(url, headers={"x-goog-api-key": self._api_key})
-        # lint: allow-PY001 rationale="an expected provider API failure becomes the provider error the chat shows"
-        except httpx.TransportError as exc:
-            raise OpenAICompatibleProviderError(connection_lost_message(label)) from exc
+            # lint: allow-PY001 rationale="an expected provider API failure becomes the provider error the chat shows"
+            except httpx.TransportError as exc:
+                raise OpenAICompatibleProviderError(connection_lost_message(label)) from exc
         if response.status_code != HTTPStatus.OK:
             raise OpenAICompatibleProviderError(f"{label} would not say how much {model} can read (HTTP {response.status_code})")
         info = response.json()

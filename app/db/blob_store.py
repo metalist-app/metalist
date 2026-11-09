@@ -26,7 +26,7 @@ import re
 import secrets
 from threading import RLock
 import time
-from typing import BinaryIO
+from typing import IO, BinaryIO
 
 from app.security.crypto_sizes import AES_256_KEY_BYTES
 from app.security.streaming_blob import StreamingBlobReader, StreamingBlobWriter
@@ -318,7 +318,7 @@ class BlobStore:
             raise BlobSealError(f"Blob {blob_id} does not match its checksum")
         return copied
 
-    def install_stored(self, blob_id: str, source: BinaryIO, *, sha256: str) -> None:
+    def install_stored(self, blob_id: str, source: IO[bytes], *, sha256: str) -> None:
         """Put a blob's stored bytes back from a backup. Blobs never change, so one already here
         under this ID must be this same blob, and stays."""
         final_path = self.path_of(blob_id)

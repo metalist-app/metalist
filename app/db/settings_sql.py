@@ -26,7 +26,7 @@ def _serialize_datetime(value: Optional[datetime]) -> str:
     return value.isoformat()
 
 
-def fetch_settings(connection: GuardedConnection | sqlite3.Connection) -> Optional[dict]:
+def fetch_settings(connection: GuardedConnection | SessionGuardedConnection | sqlite3.Connection) -> Optional[dict]:
     conn = _conn(connection)
     row = conn.execute(
         f"SELECT * FROM {APP_SETTINGS_TABLE} WHERE id = 1",
@@ -359,7 +359,7 @@ def update_tag_prefix_settings_json(
 
 
 def update_provider_rate_limits_json(
-    connection: GuardedConnection | sqlite3.Connection,
+    connection: GuardedConnection | SessionGuardedConnection | sqlite3.Connection,
     *,
     provider_rate_limits_json: str,
     provider_rate_limits_encryption_nonce: bytes | None,
@@ -389,7 +389,7 @@ def update_provider_rate_limits_json(
 
 
 def update_model_timings_json(
-    connection: GuardedConnection | sqlite3.Connection,
+    connection: GuardedConnection | SessionGuardedConnection | sqlite3.Connection,
     *,
     model_timings_json: str,
     model_timings_encryption_nonce: bytes | None,

@@ -15,13 +15,14 @@ import sqlite3
 
 from app.db.blob_store import BlobSeal, BlobStore, blob_store_for_database, resolve_file_catalog_path, resolve_legacy_file_database_path
 from app.db.file_schema import FILE_PREVIEWS_TABLE, FILE_TEXTS_TABLE, FILES_TABLE, initialize_file_schema
+from app.services.encryption import EncryptionService
 
 # PRAGMA database_list rows are (seq, name, file).
 _DATABASE_LIST_FILE_COLUMN = 2
 _LEGACY_SIDECAR_SUFFIXES = ("", "-wal", "-shm")
 
 
-def _plaintext(*, encryption_service: object, value: bytes, nonce: bytes | None, tag: bytes | None) -> bytes:
+def _plaintext(*, encryption_service: EncryptionService | None, value: bytes, nonce: bytes | None, tag: bytes | None) -> bytes:
     if nonce is None and tag is None:
         return value
     if encryption_service is None:
@@ -31,7 +32,7 @@ def _plaintext(*, encryption_service: object, value: bytes, nonce: bytes | None,
 
 class _FileMove:
     def __init__(
-        self, *, legacy: sqlite3.Connection, catalog: sqlite3.Connection, store: BlobStore, encryption_enabled: bool, encryption_service: object,
+        self, *, legacy: sqlite3.Connection, catalog: sqlite3.Connection, store: BlobStore, encryption_enabled: bool, encryption_service: EncryptionService | None,
     ) -> None:
         self._legacy = legacy
         self._catalog = catalog
@@ -47,6 +48,8 @@ class _FileMove:
         seal = stored.seal.to_bytes()
         if not self._encryption_enabled:
             return stored.blob_id, seal, None, None
+        if self._encryption_service is None:
+            raise RuntimeError("Moving files in a vault with a password requires the vault's key")
         return (stored.blob_id, *self._encryption_service.encrypt_bytes_for_storage(seal))
 
     def _is_moved(self, table: str, where: str, key: tuple[str, ...]) -> bool:
@@ -147,7 +150,7 @@ def move_files_to_blobs(
     *,
     connection: sqlite3.Connection,
     encryption_enabled: bool,
-    encryption_service: object,
+    encryption_service: EncryptionService | None,
 ) -> int:
     database = connection.execute("PRAGMA database_list").fetchone()[_DATABASE_LIST_FILE_COLUMN]
     # An in-memory notes database's catalog is current from the start.

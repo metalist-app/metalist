@@ -330,8 +330,11 @@ class AnthropicInferenceAdapter:
         # lint: allow-PY001 rationale="an expected Anthropic API failure becomes the provider error the chat shows"
         except APIError as exc:
             raise AnthropicProviderError(_provider_error_message(exc)) from exc
-        _CONTEXT_TOKENS_BY_MODEL[model] = info.max_input_tokens
-        return info.max_input_tokens
+        context_tokens = info.max_input_tokens
+        if context_tokens is None:
+            raise AnthropicProviderError(f"Anthropic did not say how much {model} can read")
+        _CONTEXT_TOKENS_BY_MODEL[model] = context_tokens
+        return context_tokens
 
     @record_structured_call
     async def infer_structured(

@@ -162,10 +162,13 @@ async function fadeCases(page) {
     await logOut(page);
     const samples = await logIn(page);
     const fadeBeganInFrame = await page.evaluate(() => window.__fadeBeganInFrame);
-    // A suite runs every case and reports all their failures at once.
-    try {
+    const checkThisCase = () => {
       check(samples);
       if (isAnimated) assert.equal(fadeBeganInFrame, true, 'the fade began between frames');
+    };
+    // A suite runs every case and reports all their failures at once.
+    try {
+      checkThisCase();
     } catch (error) {
       if (!(error instanceof assert.AssertionError)) throw error;
       failures.push(`${label}: ${error.message}`);

@@ -116,11 +116,10 @@ def _require_ai_connection(*, provider: AiProvider, model: str, token: str, sess
 def _model_context_tokens(*, connection: AiConnection, model: str) -> int:
     """The model's context window, asked of the provider once per model (the adapters remember
     it). These routes run in a worker thread, so this waits on the server's event loop."""
+    ask_the_provider = partial(connection.inference.inspect_context_window, base_url=connection.base_url, model=model)
     # lint: allow-PY001 rationale="the provider could not say: an expected failure, shown as the chat's error"
     try:
-        window = anyio.from_thread.run(partial(
-            connection.inference.inspect_context_window, base_url=connection.base_url, model=model,
-        ))
+        window = anyio.from_thread.run(ask_the_provider)
     # lint: allow-PY001 rationale="the provider could not say: an expected failure, shown as the chat's error"
     except InferenceProviderError as exc:
         raise HTTPException(status_code=HTTPStatus.BAD_GATEWAY, detail=str(exc)) from exc

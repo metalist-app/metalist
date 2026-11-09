@@ -16,7 +16,9 @@ from app.services.agent.scope import ScopedSearchSnapshot
 from app.services.agent.token_estimation import estimate_input_tokens
 
 # The first two batches for a model with no saved timing, as shares of a batch: a tenth, a fifth.
-_TIMING_PROBE_DIVISORS = (10, 5)
+_FIRST_TIMING_PROBE_DIVISOR = 10
+_SECOND_TIMING_PROBE_DIVISOR = 5
+_TIMING_PROBE_DIVISORS = (_FIRST_TIMING_PROBE_DIVISOR, _SECOND_TIMING_PROBE_DIVISOR)
 
 
 @dataclass(frozen=True, slots=True)

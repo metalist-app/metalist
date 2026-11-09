@@ -84,7 +84,10 @@ async function isEditing(page) {
 }
 
 async function imageDialogShows(page) {
-  return page.$eval(IMAGE_DIALOG, node => getComputedStyle(node).display !== 'none').catch(() => false);
+  return page.evaluate(selector => {
+    const node = document.querySelector(selector);
+    return node !== null && getComputedStyle(node).display !== 'none';
+  }, IMAGE_DIALOG);
 }
 
 async function waitForImageDialog(page) {

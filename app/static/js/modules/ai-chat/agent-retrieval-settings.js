@@ -6,7 +6,8 @@ export const AGENT_RETRIEVAL_PREFERENCE_KEYS = Object.freeze({
     windowPercent: 'pref.ai.retrieval.window_percent',
 });
 
-export const DEFAULT_AGENT_RETRIEVAL_SETTINGS = Object.freeze({ windowPercent: 50 });
+const DEFAULT_WINDOW_PERCENT = 50;
+export const DEFAULT_AGENT_RETRIEVAL_SETTINGS = Object.freeze({ windowPercent: DEFAULT_WINDOW_PERCENT });
 
 const MINIMUM_WINDOW_PERCENT = 1;
 const MAXIMUM_WINDOW_PERCENT = 100;
