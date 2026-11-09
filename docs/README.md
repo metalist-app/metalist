@@ -54,6 +54,9 @@
 - Future plan (Obsidian import and export, aliases and image widths mapped both ways): `docs/future-plans/obsidian-import-export.md`; scheduled for launch in `docs/ready-to-build/import-export-launch.md`, with every Obsidian feature mapped into MetaList in `docs/ready-to-build/obsidian-mapping.md`
 - Planned, not scheduled (the same tag more than once in a note): `docs/future-plans/same-tag-twice.md`
 - Ready to build, an experiment behind a setting (virtual folders: a tag ending in `/` is a folder, shown as a tree in the left margin, in folder contexts only since 2026-11-07; the import's folder tags get the slash): `docs/ready-to-build/virtual-folders.md`; files and folders dropped from the desktop (built 2026-11-02, resuming an interrupted upload not yet): `docs/ready-to-build/desktop-drops-into-folders.md`
+- Ready to build (the AI reads the whole view, files included, in batches when it must; a warning before very large requests): `docs/ready-to-build/ai-reads-whole-view.md`
+- Ready to build (how much text a conversation has sent, under the chat header): `docs/ready-to-build/ai-chat-size-line.md`
+- Ready to build (AI conversations survive a restart or an upgrade): `docs/ready-to-build/ai-chat-survives-restart.md`
 - Ready to build (a prefix folder for every import, so a whole import is one folder): `docs/ready-to-build/import-prefix-folder.md`
 - Ready to build (importing a folder of any files, with a size check and file-type checklist; previews for code, PDF, RTF/.docx, HTML, audio and video): `docs/ready-to-build/folder-import-and-file-previews.md`
 - Ready to build, replacing that note's preview notes (files shown, not copied: kept text for every file with text, a viewer with Open and Download, audio and video players, dropped `.md`/`.txt` asked about, Convert to Note): `docs/ready-to-build/files-shown-not-copied.md`

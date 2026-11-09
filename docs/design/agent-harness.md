@@ -1,5 +1,7 @@
 # Agent Harness: the Tool-using Agent
 
+**Agreed, not built (2026-11-08):** the AI will read the whole view in batches rather than part of it (`docs/ready-to-build/ai-reads-whole-view.md`).
+
 ## Contract
 
 MetaList owns orchestration, evidence access and every change. The selected model

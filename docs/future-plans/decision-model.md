@@ -76,9 +76,9 @@ Read roughly: about **1 s to start**, about **100 output tokens a second**, and 
 
 ### With a decision model (decided 2026-11-07: replaces the word search, first)
 
-- **Ranking**: each candidate tree gets a predicate, "Does this note help answer: <the user's question>?" (or a score of 2–5 levels). The candidates are the trees the word search matched, or the whole view when the question is about meaning.
-- **What Luna reads**: only the trees above a threshold, best first, up to a much smaller budget (*proposed*: 20,000–50,000 tokens), instead of the first trees in list order up to 500,000.
-- **Summaries**: the same ranking first, so a summary reads the relevant trees instead of every batch of the view.
+- **Ranking**: each candidate tree gets a predicate, "Does this note help answer: <the user's question>?" (or a score of 2–5 levels). The candidates are **always the whole view**; no word search first (§10).
+- **What Luna reads**: every tree above the threshold, with no budget. If they don't all fit, it answers in batches, as `docs/ready-to-build/ai-reads-whole-view.md` describes (§10).
+- **Summaries**: a summary of a whole view reads every tree. The filter may narrow only a summary of notes fitting a description (§10).
 
 ### How much faster (*estimates*)
 
@@ -96,14 +96,14 @@ Read roughly: about **1 s to start**, about **100 output tokens a second**, and 
 - **Privacy**: the decision model sees exactly what the chat model may see. The cloud privacy boundary (`cloud_privacy.py`) and `@password` redaction apply before any note reaches it.
 - **Off the request loop**, as the AI's note tools already are (`read_notes_off_request_loop`), with Stop ending the requests still running.
 - **Thresholds from the vault itself**: tags the user accepted or rejected (`proposed_tags` history) are labelled examples for tag thresholds; nothing invented.
-- **Fallback**: when the decision model fails, today's path runs, and the chat shows which one answered.
+- **Fallback**: when the decision model fails, the whole view is read in batches, never a word search or a cut-off, and the chat shows which one answered (§10).
 
 ## 6. Invariants
 
 1. A decision model never sees a note the chat model may not see.
 2. The chat model still writes every answer and every new tag; the decision model only chooses.
 3. A proposal from a decision model is a proposal like any other: nothing is tagged until the user accepts it.
-4. When the decision model is off or unavailable, everything works as today.
+4. When the decision model is off or unavailable, everything still works, without a partial read (§10).
 
 ## 7. Measured 2026-11-07
 
@@ -122,12 +122,14 @@ A live benchmark, approved by the maintainer as an exception to Luna-Low-only li
 - **Jev** (TypeSafe, `docs.typesafe.ai`): the same shape with no cap on questions (64,000 tokens a request, 32,000 for the input plus any one question), input billed once at $0.042 per million tokens, no per-question overhead stated, 70–500 ms a request. Not measured: it needs its own key.
 - **Not measured**: a real vault's notes and tags, a bulk run end to end, rate limits on other accounts, and probabilities' calibration beyond these 50 notes.
 
+Ranking in this benchmark used each tree's first 400 characters and a reading budget. §10 replaces both, so these figures and the §4 estimates understate what ranking costs.
+
 ## 8. Open, for the maintainer
 
 1. **New tags**: a decision model chooses only among existing tags. Keep new-tag suggestions on the chat model (both run, results merged), or make decision-model tagging existing-only?
 2. **Provider-neutral**: only OpenAI offers this natively. Is an OpenAI-only feature acceptable, with other providers keeping today's path?
 3. ~~**Benchmark**~~ **Done 2026-11-07** (§7). **New:** the decision model costs more per tag than Luna (per-question overhead). Is about $3.60 per 10,000 notes acceptable for 3 times faster bulk tagging and much faster one-note suggestions?
-4. **Note selection**: rank by full note text (better, about 7 times the cost) or by first line and tags?
+4. ~~**Note selection**~~ **Decided 2026-11-08:** full text, with the note's file text too when that switch is on. A landlord's number on a long note's last line has to count (§10).
 5. ~~**Order of work**~~ **Decided 2026-11-07:** replacing the AI's word search with decision-model ranking comes first. The maintainer: matching literal words is worse than retrieval by meaning, and it should not be how the AI finds notes. Tags come after.
 
 ## 9. Found while writing this
@@ -137,3 +139,24 @@ A live benchmark, approved by the maintainer as an exception to Luna-Low-only li
 - *To verify on a real vault*: today's one-note request (Suggest Tags with AI) sends `tagging_mode: "new"` with focus "both". On the 50 benchmark notes (no tags yet, every right tag in the vocabulary), Luna proposed two new tags per note and found only 1 of 103 existing ones. In a real vault the vocabulary is ranked by the tag bar first, so it may do better; if it doesn't, existing tags are not being suggested.
 
 - *To verify*: a bulk tagging batch may hold up to 500,000 tokens of notes (about 2,700 notes), but its output is capped at 8,192 tokens, about 270 notes' proposals at 30 tokens each. A batch that needs to tag more notes than that may be cut off. Not tested; worth a test whatever this plan decides.
+
+## 10. A relevance filter never caps what the AI reads (agreed 2026-11-08)
+
+**The AI must never miss the needle in the haystack.** The maintainer: "if they need to see more, we'll just batch it." Showing only the top N notes, or the top so many tokens, is never acceptable, in any feature that chooses what the AI reads. This goes with `docs/ready-to-build/ai-reads-whole-view.md`.
+
+What the filter may do:
+
+- **Drop what isn't relevant, never what doesn't fit.** Size is never a reason to leave a note out.
+- **When it isn't sure, the note goes in.** The threshold is low, tuned from labelled examples so that missing a relevant note is rare; extra notes only cost a little more.
+- **The answer says it was filtered,** with **Go through everything**, which reads the whole view in batches, after the size warning if it's large.
+- **The size warning counts the filter's pass** and names where the text goes: everything sent to the filter and everything then sent to the main AI.
+
+Which model is not decided. The maintainer expects OpenAI's Decisions API not to be cheap enough at full text, and Jev to be the cost-effective choice, so measure Jev first (it needs its own key), on full text and on real-sized views. If it's Jev, it is a separate provider receiving the notes: its own key, its own line in the AI settings and the privacy wording, and only what the chat model may see. Check its data retention and training terms first; nobody has yet.
+
+Invariants:
+
+1. No feature limits what the AI reads to a top N or a size budget.
+2. Only relevance removes a note, never size, and uncertainty keeps it.
+3. A filter failure never falls back to a partial read.
+
+Checked when filed: the design and UI docs still describe today's partial read in `docs/ui/ai-chat.md` ("trees were left unread") and the evidence budget in `docs/design/agent-harness.md`; those change when `ai-reads-whole-view` is built. Bulk tagging's **Use first K only** is no exception: it goes when that note is built (§7 there).

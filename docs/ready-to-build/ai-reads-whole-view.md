@@ -27,7 +27,7 @@ Written from a read-only look at the repo. Check the code references before rely
 - **It never reports what it skipped for lack of room,** because it doesn't skip.
 - Word search remains only for a question literally about which notes contain a word.
 - **A long answer must survive combining:** if 300 notes match, the final answer keeps all 300. Test exactly that.
-- Tag proposals are unchanged.
+- **Tag proposals work the same way as summaries** (decided 2026-11-08, §7): every note, in as many batches as it takes, with the warning in §4 above the threshold and nothing else about size. **Use first K only** goes, and the card still asks which tags to use.
 
 ## 2. File text travels with its note
 
@@ -73,3 +73,19 @@ A downloaded PDF can hold instructions aimed at the AI.
 3. With the switch on, file text is read and batched with its note; with it off, none reaches a provider.
 4. The warning appears at the threshold, before any send, and the setting raises or turns it off.
 5. `docs/design/agent-harness.md`, `docs/ui/ai-chat.md` and the AI help describe this. Tests cover: a view that needs batches with a "which ones" question, several matches for a lookup, a 300-match answer through combining, file text on and off, a hidden note's file, a never-send phrase in a file, a word from a file in a web address, a cut-off file, the threshold and the setting.
+
+## 7. Checked 2026-11-08 (filed from the inbox)
+
+- Filed as ready to build, as its status asks. Nothing built.
+- **Confirmed:** the four tools in `agent_tools.py`; `MAX_AGENT_TURNS = 8` (`agent_loop.py`); the `prompts/agent.md` wording on `summarize_view` and `read_view_notes`; `DEFAULT_AGENT_WINDOW_PERCENT = 50` (`retrieval_settings.py`); `211dff4e`; the 5 MiB file text limit, which is 5 MiB of *characters* (`MAX_FILE_TEXT_CHARACTERS`); `NoteTextGuard`, built from the note text shown to the model; no agent code reads file text.
+- **What the AI is shown about a file today (§0's check):** the names of the files a note references (`[[id]]`, `![[id]]`), with the note's text (`docs/design/agent-harness.md`). Never their contents.
+- **"Never-send phrase" (§2)** exists: the blacklist phrases of `cloud_privacy.py`, set under **Never send notes with** on the AI Privacy tab.
+- **File text now lives in blobs** (`docs/design/file-storage.md` §3): its reader is `file_texts.text_of`, and §2 reads through that.
+- **Companion notes:** `docs/ready-to-build/ai-chat-size-line.md` (same unit) and the rule folded into `docs/future-plans/decision-model.md` §10.
+- **Docs that describe today's partial read,** to change when this is built: `docs/ui/ai-chat.md` ("trees were left unread") and the evidence budget in `docs/design/agent-harness.md`.
+
+**Decided 2026-11-08:** bulk tagging's **Use first K only** button goes (`tagging_run.py`, `bulk-scope-question.js`, and the size against the evidence budget on its card). The maintainer: exactly as summaries are done, everything uniform. Above the threshold in §4 the person is warned; otherwise MetaList makes as many batches as the job needs.
+
+**Decided 2026-11-08, the tag choice:** the bulk tagging card stays for one question alone, **existing tags, new tags or both**, asked every time unless the person's message already says which; the last answer is preselected (`pref.ai.tagging.focus`). The **Tags the AI may propose** setting goes, with `pref.ai.tagging.vocabulary`, the `AI Tagging Vocabulary…` command and AI Agent Settings' Tagging tab, which holds nothing else. Checked: only `tagging_run.py` reads that setting (one-note Suggest Tags always allows new tags), and it can override what the message said, which also goes.
+
+Everything else in this note is agreed, with none of it built.

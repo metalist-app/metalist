@@ -1,5 +1,7 @@
 # AI Chat, Product Help and Scoped Investigation
 
+**Agreed, not built (2026-11-08):** the AI will read the whole view in batches rather than part of it (`docs/ready-to-build/ai-reads-whole-view.md`), a line will show how much text a conversation has sent (`docs/ready-to-build/ai-chat-size-line.md`), and conversations will survive a restart (`docs/ready-to-build/ai-chat-survives-restart.md`).
+
 ## Scope
 
 - MetaList chats with one user-selected model (OpenAI, Anthropic or Google) through an

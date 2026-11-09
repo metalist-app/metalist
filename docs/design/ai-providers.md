@@ -115,7 +115,7 @@ provider, so the history the next model sees is the same.
 
 ## 5. Cost estimate: development mode only
 
-Users never see an AI dollar figure: the estimate is MetaList's price table applied to token
+Users never see an AI dollar figure (what they see instead, agreed and not built: `docs/ready-to-build/ai-chat-size-line.md`): the estimate is MetaList's price table applied to token
 counts, can be wrong, and would need upkeep for three providers. The cost routes and the
 chat panel's `$` exist only when `METALIST_ENVIRONMENT=development`
 (`is_development_environment()`, `data-shows-cost-estimate`); in production the routes
