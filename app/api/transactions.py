@@ -19,7 +19,7 @@ P = ParamSpec("P")
 R = TypeVar("R")
 _TRANSACTIONAL_ROUTE_MARKER = "__transactional_route__"
 _MUTATION_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
-_STORAGE_TRANSITIONS = frozenset({"create_password", "remove_password", "restore_from_backup", "restore_backup", "import_backup", "convert_legacy_metalist", "convert_protected_legacy_metalist"})
+_STORAGE_TRANSITIONS = frozenset({"create_password", "remove_password", "restore_from_backup", "restore_backup", "import_backup"})
 
 
 @contextmanager

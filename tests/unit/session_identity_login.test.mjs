@@ -46,7 +46,6 @@ test('login and workspace requests retain the authenticated tab identity when br
     t.mock.method(CommandPalette, 'startUpdateNotice', () => {});
     t.mock.method(CommandPalette, 'startBackupReminder', async () => {});
     t.mock.method(CommandPalette, 'runSetupRequestedByAddress', async () => {});
-    t.mock.method(CommandPalette, 'offerLegacyImport', async () => {});
     t.mock.method(AiChatPanel, 'init', async () => {});
     t.mock.method(PhoneMode, 'init', () => {});
     t.mock.method(Auth, 'revealMainApp', () => {});
@@ -56,4 +55,28 @@ test('login and workspace requests retain the authenticated tab identity when br
     // The login, the workspace's start, and saying the page has finished starting.
     assert.equal(headers.length, 3);
     assert.ok(headers.every(header => header['X-Metalist-Tab-Id'] === loginId));
+});
+
+test('saying the page has finished starting reads the whole reply', async t => {
+    const stored = new Map([['metalist_tab_id', 'fixture-tab']]);
+    globalThis.sessionStorage = {
+        getItem: key => stored.get(key) ?? null,
+        setItem: (key, value) => stored.set(key, String(value)),
+    };
+    globalThis.window = {};
+    globalThis.document = {body: {classList: {add() {}, remove() {}}, dataset: {}}};
+    t.after(() => {
+        delete globalThis.sessionStorage;
+        delete globalThis.window;
+        delete globalThis.document;
+    });
+    const {Auth} = await import('../../app/static/js/modules/auth.js');
+    const {initializeSessionIdentity} = await import('../../app/static/js/modules/session-auth.js');
+    initializeSessionIdentity();
+    const reply = new Response('{"status":"success"}');
+    t.mock.method(globalThis, 'fetch', async () => reply);
+    await Auth.announceWorkspaceReady();
+    // A browser counts a request as open until its reply is read, so an unread one
+    // means the page never goes quiet for anything waiting on its network to settle.
+    assert.equal(reply.bodyUsed, true);
 });

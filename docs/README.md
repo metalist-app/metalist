@@ -25,7 +25,6 @@
 - Modal architecture pattern, dialog and menu conventions, errors and status (error dialogs, messages under a field, the check): `docs/ui/modals.md`
 - Floating messages (news, errors, the connection card) and Recent Messages: `docs/ui/floating-messages.md`
 - Client state-handling philosophy: `docs/ui/state-handling.md`
-- Bringing in the old MetaList's notes (a fresh install offers them; the old file only read): `docs/ui/legacy-import.md`
 
 ## Security
 - Auth + encryption design/notes: `docs/security/README.md`

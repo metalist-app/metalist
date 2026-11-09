@@ -96,12 +96,6 @@
     "presentation": "dialog"
   },
   {
-    "id": "form.bring_in_old_metalist",
-    "label": "Bring In Notes from Old MetaList…",
-    "selector": "#legacy-import-modal",
-    "presentation": "dialog"
-  },
-  {
     "id": "form.session_timeout",
     "label": "Session Idle Timeout…",
     "selector": "#session-timeout-modal",

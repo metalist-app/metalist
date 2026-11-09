@@ -39,7 +39,6 @@ test('buildCommandPaletteEndpoints includes utility action endpoints', async () 
             summarizeAiChat: noop,
             createBackup: noop,
             openBackupRestore: noop,
-            openLegacyImport: noop,
             logout: noop,
             openRandomPasswordGenerator: noop,
             collapseAll: noop,

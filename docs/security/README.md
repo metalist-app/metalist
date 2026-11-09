@@ -281,7 +281,7 @@ Stored note bodies use a strict shared allowlist in
   model write with nh3 before encryption/database persistence. Browser output
   is never trusted as the authoritative check.
 - Rows stored some other way (before sanitizing existed, under an earlier
-  sanitizer, by a restore, an import or `convert-from-legacy.py`) are sanitized
+  sanitizer, by a restore or an import) are sanitized
   once, at the first unlock of a database without the record for the current
   sanitizer: each row the sanitizer changes is stored sanitized (updated time
   kept) in the same write that adds the record to `namespace_content_migrations`.
@@ -689,47 +689,6 @@ swap, or filesystem snapshots.
   results locally with the official JavaScript zxcvbn build. The browser scorer is
   lazy-loaded only when the generator opens; generated passwords are not submitted
   to a server for scoring.
-
-## Data Import Strategy
-
-For fresh imports using `convert-from-legacy.py`:
-
-1. This is a destructive fresh-import path (existing DB is deleted first).
-2. Import legacy data into a new SQLite database. An export the old MetaList encrypted
-   (its Backup's "Password Protected", the default) is decrypted with the old password,
-   typed at the prompt and never accepted as an argument. The old scheme
-   (`MetaList_old/js/utils/crypto.js`) keys AES-GCM with one unsalted SHA-256 of the
-   password, each top-level item with its own 12-byte IV; the importer accepts only
-   `encryption_scheme_version` 1, `SHA-256` and `AES-GCM`. A wrong password asks again
-   (the first item tells); a later item that does not open fails the import as damaged.
-   Every item is decrypted before the target database is deleted. That scheme is fast
-   to attack, so old encrypted exports deserve the care of plaintext ones: delete them
-   once the converted namespace works.
-3. Optionally set a password at import time. After an encrypted export, the importer
-   offers the old password, when the new password rules accept it. Every password is
-   checked against those rules before the database is created; before, a weak one was
-   refused only after the import, leaving the notes unprotected.
-4. Password enablement writes the same vault metadata (`vault_version`, `kdf_algorithm`)
-   and KDF parameters used by the runtime auth service.
-5. Input selection:
-   - pass `--input /path/to/export.json` for non-interactive runs
-   - omit `--input` to use the Tk file picker.
-6. Namespace targeting:
-   - pass `--namespace work` to import into `~/MetaList/namespaces/work/work.metalist.db`
-   - omit `--namespace` to import into `~/MetaList/namespaces/default/default.metalist.db`.
-7. Launch profile prompting:
-   - if `--namespace`, `--port`, or `--https-port` are omitted, the importer prompts for them
-   - the chosen ports are saved in the namespace DB so later `python main.py work` can reuse them.
-8. From MetaList itself (`docs/ui/legacy-import.md`): a namespace with no notes and no password
-   whose data folder holds the old MetaList's `metalist.db` offers its notes. The old file is
-   opened read-only and hashed before and after; a change installs nothing. The server runs the
-   importer as its own process with `--legacy-database` and `--passwords-from-stdin` (both
-   passwords as one JSON line on stdin, never in its arguments or environment), so setting the
-   converted namespace's password never touches the server's keys. The importer writes into a
-   staging folder beside the old file, removed afterwards; the converted namespace is installed
-   under the recovery journal as a restore installs an archive, and the server restarts. The
-   password check (`/api2/legacy-import/check-password`) decrypts one old item and reports the
-   password rules; neither password is logged or kept once the dialog closes.
 
 ## API Endpoints
 

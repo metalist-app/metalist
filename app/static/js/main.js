@@ -71,7 +71,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         await Auth.announceWorkspaceReady();
         CommandPalette.startUpdateNotice();
         await CommandPalette.runSetupRequestedByAddress();
-        await CommandPalette.offerLegacyImport();
     } else {
         console.log('+++ main.js: Skipping ModeManager init due to auth requirement');
     }

@@ -59,7 +59,6 @@ import {checkImageSizes} from './browser-image-size-regressions.mjs';
 import {checkAiChatRefusal} from './browser-ai-chat-refusal-regressions.mjs';
 import {checkAiChatSummary} from './browser-ai-chat-summary-regressions.mjs';
 import {checkRestoreSession} from './browser-restore-session-regressions.mjs';
-import {checkLegacyImport} from './browser-legacy-import-regressions.mjs';
 import {checkSearchSuggestions} from './browser-search-suggestion-regressions.mjs';
 import {checkTagBarSuggestions} from './browser-tag-bar-suggestion-regressions.mjs';
 import {checkInputTarget} from './browser-input-target-regressions.mjs';
@@ -363,10 +362,6 @@ try {
     await checkAiChatSummary(page);
     assert.deepEqual(errors, []);
     console.log(`PASS AI chat summary regressions in ${await browser.version()}`);
-  } else if (process.env.BROWSER_TEST_SUITE === 'legacy-import') {
-    await checkLegacyImport(page, {python: resolve(python), directory});
-    assert.deepEqual(errors, []);
-    console.log(`PASS legacy import regressions in ${await browser.version()}`);
   } else if (process.env.BROWSER_TEST_SUITE === 'restore-session') {
     await checkRestoreSession(page);
     assert.deepEqual(errors, []);

@@ -41,7 +41,6 @@ import {
 import { SessionTimeoutModal } from '../modals/session-timeout-modal.js';
 import { BackupResultModal } from '../modals/backup-result-modal.js';
 import { BackupRestoreModal } from '../modals/backup-restore-modal.js';
-import { LEGACY_IMPORT_DECLINED_PREFERENCE, LegacyImportModal } from '../modals/legacy-import-modal.js';
 import { BackupSettingsModal } from '../modals/backup-settings-modal.js';
 import { OntologyModal } from '../modals/ontology-modal.js';
 import { RandomPasswordModal } from '../modals/random-password-modal.js';
@@ -435,10 +434,6 @@ class CommandPaletteController {
         this._backupSettingsModal = null;
         this._backupResultModal = null;
         this._backupRestoreModal = null;
-        this._legacyImportModal = null;
-        // The old MetaList's notes, when this namespace is offered them (legacy_import.py's
-        // status): { offered, encrypted }; offered false until the status is read.
-        this._legacyImport = Object.freeze({ offered: false, encrypted: false });
         this._addPasswordModal = null;
         this._changePasswordModal = null;
         this._removePasswordModal = null;
@@ -526,7 +521,6 @@ class CommandPaletteController {
                 summarizeAiChat: () => document.dispatchEvent(new CustomEvent('metalist:ai-chat-summarize-requested')),
                 createBackup: this.createBackup.bind(this),
                 openBackupRestore: this.openBackupRestore.bind(this),
-                openLegacyImport: this.openLegacyImport.bind(this),
                 logout: this.logout.bind(this),
                 openRandomPasswordGenerator: this.openRandomPasswordGenerator.bind(this),
                 collapseAll: this.collapseAll.bind(this),
@@ -1331,7 +1325,6 @@ class CommandPaletteController {
         const state = {
             hasPassword: Auth.hasPassword,
             isRootReorderLocked: isRootReorderLocked(this.getSortMode()),
-            legacyImportOffered: this._legacyImport.offered,
         };
         return this._endpoints.filter((endpoint) => isCommandAvailable(endpoint.id, state));
     }
@@ -2664,34 +2657,6 @@ class CommandPaletteController {
             this._backupRestoreModal = new BackupRestoreModal();
         }
         await this._backupRestoreModal.open();
-    }
-
-    async openLegacyImport() {
-        const isReady = await this._prepareForModalOpen('commandPalette.openLegacyImport');
-        if (!isReady) {
-            return;
-        }
-        if (this._legacyImportModal === null) {
-            this._legacyImportModal = new LegacyImportModal({
-                request: (url, method, body) => this._authRequest(url, method, body),
-                preferences: this._preferences,
-            });
-        }
-        await this._legacyImportModal.openFor({ encrypted: this._legacyImport.encrypted });
-    }
-
-    // Once the app has opened: a namespace with no notes and no password, in a data folder
-    // that holds the old MetaList's notes, offers them, unless they were declined here
-    // (docs/ui/legacy-import.md).
-    async offerLegacyImport() {
-        const status = await this._authRequest(CONFIG.API.LEGACY_IMPORT.STATUS, 'GET', null);
-        if (typeof status.offered !== 'boolean' || typeof status.encrypted !== 'boolean') {
-            throw new Error('The legacy import status needs offered and encrypted');
-        }
-        const legacyImport = Object.freeze({ offered: status.offered, encrypted: status.encrypted });
-        if (!stateValuesEqual(this._legacyImport, legacyImport)) this._legacyImport = legacyImport;
-        if (!status.offered || this._preferences.getRaw(LEGACY_IMPORT_DECLINED_PREFERENCE) !== null) return;
-        await this.openLegacyImport();
     }
 
     // Over the new vault wizard: its "Use This Password" fills the wizard's fields (onUse).

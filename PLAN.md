@@ -173,7 +173,7 @@ gate starts green rather than being waived on its first day.
 4. Part 5 (typed payloads): checkpoint.
 5. Part 7 (release driver gate, after the two Firefox jobs are green): checkpoint.
 6. Part 6 (AGENTS.md and docs), then COMMIT FEATURE: `full_checks.py --no-browser`, the
-   `scale`, `legacy-import`, `ai-chat-summary`, `ai-selected-note` and `agent-help` suites alone.
+   `scale`, `ai-chat-summary`, `ai-selected-note` and `agent-help` suites alone.
 
 Estimate: all seven parts in one session. The writing is small; the time goes to runs (generating
 the vault, the `scale` suite against 0.26.0 and against this branch, the existing suites once

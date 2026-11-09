@@ -201,7 +201,6 @@ Require a Version Bump"):
 - Audit: an encrypted namespace has at least one row, a plaintext one has none;
   classify every new column; accept the previous and the new version.
 - Restoring an older backup migrates only the installed live copy, as always.
-- `convert-from-legacy.py` (friend Joe's old MetaList) writes into the new table.
 - Update the two-key section of [README.md](README.md).
 
 Optional groundwork, at any time: a thin accessor (`get_wrapper(kind)`,

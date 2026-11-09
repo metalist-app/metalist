@@ -234,32 +234,6 @@ The reverse proxy must preserve the browser-facing `Host` header and set
 scheme/client metadata is accepted only from `METALIST_FORWARDED_ALLOW_IPS`.
 Do not widen that list beyond the actual proxy addresses.
 
-### Legacy Import
-`convert-from-legacy.py` replaces the SQLite database referenced by `app.config.DATABASE_URL`, clears its files sidecar, and imports notes from a legacy JSON export.
-
-This is destructive. It deletes the existing notes DB and related files DB before rebuilding the namespace.
-
-An export the old MetaList encrypted is read too: the importer asks for the old password, then offers it for the converted namespace. Delete old exports once the conversion works; the old encryption is weak.
-
-It also reads the old MetaList's own file instead of an export, and never changes it:
-```bash
-convert-from-legacy.py --namespace work --legacy-database ~/MetaList/metalist.db
-```
-
-Most people never need the command: a newly installed MetaList that finds the old MetaList's file in its data folder offers its notes when it opens (`docs/ui/legacy-import.md`).
-
-Example usage:
-```bash
-convert-from-legacy.py --input /path/to/legacy-export.json
-```
-
-Target a namespaced database during import:
-```bash
-convert-from-legacy.py --namespace work --input /path/to/legacy-export.json
-```
-
-If `--namespace`, `--port`, or `--https-port` are omitted, the import script prompts for them and saves the resulting launch profile inside the target namespace DB. That means a one-time import into `work` can immediately seed later shorthand launches like `metalist work`.
-
 Namespace startup allows 120 seconds per child, reports progress every five seconds, and stops/reaps a failed child instead of leaving it running after reporting failure. Set `METALIST_STARTUP_TIMEOUT_SECONDS` to a positive number of seconds to allow more time on a heavily loaded machine. A crashed child still fails immediately. This is a startup allowance, not a guarantee that any machine will finish within two minutes.
 
 The preflight is a disposable empty namespace; it cannot guarantee startup against every real database or prevent a later disk/process failure. If installation succeeds but real namespace startup fails, the new package remains installed: resolve the reported startup issue and run `metalist` again. No automatic code/database rollback is attempted, and backups remain unchanged.
@@ -280,9 +254,6 @@ Recommended release path:
 2. Develop and review the candidate on a feature branch with focused checks. Merge it into `main` and push `main` once. This runs the full `Publish to PyPI` validation matrix for that exact commit. GitHub-hosted Windows, macOS, and Linux runners install the built wheel and test application startup outside the source checkout on the supported Python endpoints, 3.11 and 3.14. Every installed-package matrix job also exercises the real `metalist update` path with uv, backups, interpreter preservation, and two-namespace restart against a local release index. The old-version fixture carries the candidate updater so this validates the mechanism being shipped; it does not retroactively fix older installed updaters. You do not need those operating systems locally. Archive verification checks runtime files, including agent Markdown resources, against both the wheel and source distribution.
 3. Wait for the exact-commit main release matrix to pass, then run `.venv/bin/python scripts/release.py X.Y.Z` to create and push the tag. Any intervening change requires a new main validation run before tagging.
 4. The tag job independently verifies every main-job conclusion and reuses the wheel and source distribution from that run for GitHub Trusted Publishing; it does not repeat the matrix. Manual dispatch cannot publish. The release driver compares PyPI hashes with the tested artifact and checks a clean public install. Users can then run it with `uvx metalist`, install it persistently with `uv tool install metalist`, or install it with `pip install metalist`.
-
-If `--input` is omitted, a file picker opens (when `tkinter` and its native `_tkinter` component are available).
-Notes tagged with `@implies` are converted into ontology rules and are not imported as notes. Legacy rules that are invalid under the current ontology grammar are reported and skipped while valid rules continue importing.
 
 ### Run Tests
 

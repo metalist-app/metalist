@@ -120,49 +120,6 @@ def insert_note(
 _LINK_FIELDS = {"parent_id", "prev_id", "next_id", "is_collapsed"}
 
 
-def update_links(
-    connection: GuardedConnection | sqlite3.Connection,
-    note_id: str,
-    **updates: Any,
-) -> None:
-    if "updated_at" not in updates:
-        raise ValueError("update_links requires updated_at")
-    updated_at = updates.pop("updated_at")
-    if not isinstance(updated_at, datetime):
-        raise TypeError("update_links updated_at must be a datetime")
-
-    fields: list[str] = ["updated_at = ?"]
-    values: list = [_serialize_datetime(updated_at)]
-
-    for key in updates:
-        if key not in _LINK_FIELDS:
-            raise ValueError(f"update_links received unexpected field: {key}")
-
-    if "parent_id" in updates:
-        fields.append("parent_id = ?")
-        values.append(updates["parent_id"])
-    if "prev_id" in updates:
-        fields.append("prev_id = ?")
-        values.append(updates["prev_id"])
-    if "next_id" in updates:
-        fields.append("next_id = ?")
-        values.append(updates["next_id"])
-    if "is_collapsed" in updates:
-        is_collapsed = updates["is_collapsed"]
-        if not isinstance(is_collapsed, bool):
-            raise TypeError("update_links is_collapsed must be a bool")
-        fields.append("is_collapsed = ?")
-        values.append(int(is_collapsed))
-
-    values.append(note_id)
-
-    conn = _conn(connection)
-    if "parent_id" in updates:
-        validate_database_parent(conn, note_id, updates["parent_id"], is_new=False)
-    sql = f"UPDATE {NOTES_TABLE} SET " + ", ".join(fields) + " WHERE id = ?"
-    conn.execute(sql, tuple(values))
-
-
 def update_links_preserving_updated_at(
     connection: GuardedConnection | sqlite3.Connection,
     note_id: str,

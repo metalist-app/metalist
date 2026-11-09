@@ -90,7 +90,6 @@ const LABELS = {
     'pref.backup_reminder': 'Backup Reminder',
     'pref.trim_reminder': 'Trim Reminder',
     'form.restore_backup': 'Restore from Backup…',
-    'form.bring_in_old_metalist': 'Bring In Notes from Old MetaList…',
     'action.logout': 'Log Out',
     'form.random_password_generator': 'Generate Random Password…',
     'action.find_in_list': 'Find in List',
@@ -149,9 +148,9 @@ test('destructive commands are the ones that lose what cannot be brought back', 
 });
 
 test('commands that cannot apply are hidden', () => {
-    const withPassword = { hasPassword: true, isRootReorderLocked: false, legacyImportOffered: false };
-    const withoutPassword = { hasPassword: false, isRootReorderLocked: false, legacyImportOffered: false };
-    const sorted = { hasPassword: false, isRootReorderLocked: true, legacyImportOffered: false };
+    const withPassword = { hasPassword: true, isRootReorderLocked: false };
+    const withoutPassword = { hasPassword: false, isRootReorderLocked: false };
+    const sorted = { hasPassword: false, isRootReorderLocked: true };
     assert.equal(isCommandAvailable('form.add_password', withPassword), false);
     assert.equal(isCommandAvailable('form.add_password', withoutPassword), true);
     for (const id of ['form.change_password', 'form.remove_password']) {
@@ -166,9 +165,6 @@ test('commands that cannot apply are hidden', () => {
     assert.equal(isCommandAvailable('action.logout', sorted), true);
     // The Obsidian import exists in production too (the maintainer, 2026-10-31).
     assert.equal(isCommandAvailable('form.import_wizard', withPassword), true);
-    // The old MetaList's notes only while they are offered (docs/ui/legacy-import.md).
-    assert.equal(isCommandAvailable('form.bring_in_old_metalist', withoutPassword), false);
-    assert.equal(isCommandAvailable('form.bring_in_old_metalist', { ...withoutPassword, legacyImportOffered: true }), true);
 });
 
 test('every list the palette shows or activates comes from the available commands', async () => {

@@ -25,10 +25,9 @@ _KNOWN_WRITERS = {
         "password_note_fields.prepare_note_rewrite cleans each note it re-encrypts",
     ("app/services/content_cache.py", "_store_cleaned_notes"): "stores the cleaning's output",
     ("app/usecases/bulk_tag_proposals.py", "apply_bulk_proposals"): "writes proposed tags only",
-    # The two below store uncleaned content, into databases without the record (a
-    # version below 8; a newly converted one), so their first unlock cleans them.
+    # Stores uncleaned content, into databases without the record (a version below 8),
+    # so their first unlock cleans them.
     ("app/db/migrations.py", "_remove_retired_document_references"): "runs on databases below version 8",
-    ("convert-from-legacy.py", "_import_item"): "fills a new database",
 }
 
 

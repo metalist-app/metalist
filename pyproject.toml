@@ -83,7 +83,7 @@ ignore_missing_imports = true
 [tool.setuptools]
 include-package-data = true
 py-modules = ["main"]
-script-files = ["convert-from-legacy.py", "scripts/generate-lan-cert.sh"]
+script-files = ["scripts/generate-lan-cert.sh"]
 
 [tool.setuptools.package-data]
 "app.services.agent.prompts" = ["*.md"]

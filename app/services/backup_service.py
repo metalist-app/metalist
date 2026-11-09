@@ -1057,32 +1057,6 @@ def restore_backup_to_paths_from_namespace(
     )
 
 
-def install_converted_databases(
-    *,
-    notes_stage: Path,
-    files_stage: Path,
-    database_path: Path,
-) -> None:
-    """Install a namespace the legacy converter wrote (legacy_metalist_conversion.py) as the
-    live one, as a restore installs an archive's: checked, copied under the recovery journal."""
-    if notes_stage.resolve() == database_path.resolve():
-        raise ValueError("Converted database and live database destination must differ")
-    SafeSession.invalidate_schema_bootstrap()
-    _validate_staged_database(notes_stage)
-    # A namespace with no attachments may have no files database: it gets an empty one, as a
-    # restore of an archive without one does.
-    if not files_stage.exists():
-        _reset_file_database_to_empty(files_stage)
-    _validate_staged_database(files_stage)
-    with recoverable_database_change(database_path):
-        with _BACKUP_LOCK:
-            _copy_database(notes_stage, database_path)
-            _checkpoint_database(database_path)
-            file_database_path = _resolve_related_file_database_path(database_path)
-            _copy_database(files_stage, file_database_path)
-            _checkpoint_database(file_database_path)
-
-
 def create_timestamped_backup() -> BackupFileInfo:
     database_path = resolve_live_database_path()
     backup_directory = resolve_backup_directory_for_database(database_path)

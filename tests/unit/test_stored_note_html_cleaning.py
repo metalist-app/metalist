@@ -1,7 +1,7 @@
 """Unlocking cleans the stored notes once per cleaning, not every time.
 
 Every save cleans a note before storing it. A note stored some other way (before
-cleaning existed, a restore, an import, convert-from-legacy.py) is in a database
+cleaning existed, a restore, an import) is in a database
 without the record for the current cleaning: the first unlock cleans every note,
 stores the ones it changed and records it. Later unlocks trust what is stored, until
 the cleaning changes. Cleaning every note was a quarter of unlocking (2026-10-19)."""
@@ -47,7 +47,7 @@ def namespace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
 
 
 def _store_raw(note_id: str, html: str, *, prev_id: str | None, next_id: str | None) -> None:
-    """Stores html as it is, the way a restore or convert-from-legacy.py brings notes."""
+    """Stores html as it is, the way a restore brings notes."""
     content, nonce, tag = encrypt(html, "")
     with begin_writer() as connection:
         insert_note(

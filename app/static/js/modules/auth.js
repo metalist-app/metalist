@@ -520,6 +520,8 @@ export const Auth = {
     /** The server's caches built ahead of use wait for this, so they don't slow the page's start. */
     async announceWorkspaceReady() {
         const response = await fetch(CONFIG.API.AUTH.WORKSPACE_READY, { headers: { 'X-Metalist-Tab-Id': getRequiredTabId() } });
+        // Read to the end: a browser counts a request as open until its reply is read.
+        await response.text();
         if (!response.ok) {
             throw new Error(`Workspace ready failed (${response.status})`);
         }
@@ -818,7 +820,6 @@ export const Auth = {
                 await this.announceWorkspaceReady();
                 CommandPalette.startUpdateNotice();
                 await CommandPalette.runSetupRequestedByAddress();
-                await CommandPalette.offerLegacyImport();
             } else {
                 startupPhase = enterStartupStage('reloading the workspace');
                 window.location.reload();

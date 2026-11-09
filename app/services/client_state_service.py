@@ -81,8 +81,6 @@ _ALLOWED_CLIENT_PREFERENCES = {
     "pref.trim_reminder": {"on", "off"},
     # How many bytes of unused files there were when its card was last dismissed.
     "pref.trim_reminder_dismissed_bytes": "byte_count",
-    # The old MetaList's notes were offered and declined (legacy-import-modal.js): not offered again.
-    "pref.legacy_import_declined": {"true"},
     "pref.note_layout.top_level_note_size": {"same", "larger", "largest"},
     "pref.note_layout.child_indentation": {"compact", "standard", "wide"},
     "pref.note_layout.vertical_spacing": {"compact", "comfortable", "spacious"},
@@ -126,6 +124,8 @@ _preferences_write_lock = threading.Lock()
 
 _OBSOLETE_CLIENT_PREFERENCES = frozenset(
     {
+        # The offer of the old MetaList's notes, declined; the offer was removed (2026-11-08).
+        "pref.legacy_import_declined",
         # Tagging batches now read as much as an answer does: one limit (2026-10-23).
         "pref.ai.openai.tagging.batch_tokens",
         # Models a vault typed in (2026-10-23, removed the same day): MetaList offers

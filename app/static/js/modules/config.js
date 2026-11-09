@@ -150,13 +150,6 @@ export const CONFIG = {
             RESTORE_IMPORT: `${API_BASE}/backup/restore/import`,
             FOLDER_PICK: `${API_BASE}/backup/folder/pick`,
         },
-        // The old MetaList's notes, offered to an empty namespace (legacy_import.py).
-        LEGACY_IMPORT: {
-            STATUS: `${API_BASE}/legacy-import/status`,
-            CHECK_PASSWORD: `${API_BASE}/legacy-import/check-password`,
-            CONVERT: `${API_BASE}/legacy-import/convert`,
-            CONVERT_PROTECTED: `${API_BASE}/legacy-import/convert-protected`,
-        },
         // The Obsidian import's developer version (PLAN.md): development only.
         IMPORT: {
             FOLDER: `${API_BASE}/import/folder`,
