@@ -40,8 +40,14 @@ def note_text_for_tag_matching(content_html: str) -> str:
     """
     if not isinstance(content_html, str):
         raise TypeError("content_html must be a string")
-    plaintext = _URL_RE.sub(lambda url: f" {site_name_of_url(url.group(0))} ", strip_html(content_html))
-    return normalize_tag_match_text(plaintext)
+    return normalize_tag_match_text(note_text_with_site_names(content_html))
+
+
+def note_text_with_site_names(content_html: str) -> str:
+    """A note's text as written, each web address reduced to its site's name."""
+    if not isinstance(content_html, str):
+        raise TypeError("content_html must be a string")
+    return _URL_RE.sub(lambda url: f" {site_name_of_url(url.group(0))} ", strip_html(content_html))
 
 
 def with_link_titles(normalized_text: str, link_titles: tuple[str, ...]) -> str:

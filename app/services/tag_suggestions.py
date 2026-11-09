@@ -24,6 +24,7 @@ from app.services.tag_suggestion_reasons import ReasonWriter
 from app.services.tag_suggestion_reasons import SuggestionEvidence
 from app.services.tag_suggestion_reasons import TagSuggestion
 from app.services.tag_suggestion_reasons import meta_tag_reasons
+from app.services.tag_suggestion_reasons import quoted
 from app.services.tag_term_matching import NormalizedContentMatchContext
 from app.services.tag_term_matching import TagContentMatch
 from app.services.tag_term_matching import build_normalized_content_match_context
@@ -31,9 +32,11 @@ from app.services.tag_term_matching import list_significant_content_match_segmen
 from app.services.tag_term_matching import match_tag_term_in_content_match_context
 from app.services.tag_term_matching import normalize_tag_match_text
 from app.services.tag_term_matching import note_text_for_tag_matching
+from app.services.tag_term_matching import note_text_with_site_names
 from app.services.tag_term_matching import split_tag_term_segments
 from app.services.tag_term_matching import tag_term_matches_prefix
 from app.services.tag_term_matching import with_link_titles
+from app.services.tag_words_in_note import tags_from_words
 from app.services.link_titles import link_title_store
 from app.services.search_text import link_titles_in_html
 
@@ -1032,16 +1035,44 @@ def _rank_tag_suggestions(
     if not isinstance(prefix, str):
         raise TypeError("prefix must be a string")
     explicit_list = list(explicit_tags)
+    anchor_list = list(anchors)
     ranked = _rank_by_what_is_typed(
-        note_id=note_id, anchors=anchors, explicit_tags=explicit_list, prefix=prefix,
+        note_id=note_id, anchors=anchor_list, explicit_tags=explicit_list, prefix=prefix,
         content_html=content_html, limit=limit,
     )
     text_datetime = _datetime_named_in_text(
         note_id=note_id, explicit_tags=explicit_list, prefix=prefix, content_html=content_html,
     )
-    if text_datetime is None:
+    if text_datetime is not None:
+        return _with_first(ranked, term=text_datetime, reasons=("A date in the note's text",), limit=limit)
+    if ranked.tags or prefix == "" or prefix.startswith("@"):
         return ranked
-    return _with_first(ranked, term=text_datetime, reasons=("A date in the note's text",), limit=limit)
+    written = _written_besides_typed(explicit_tags=explicit_list, prefix=prefix)
+    basis = _typing_basis(note_id=note_id, anchors=anchor_list, empty_bar_explicit=written, content_html=content_html)
+    # A tag typed in full is left out of the list, yet it matches: Enter must not replace it.
+    if any(term.casefold() == prefix.casefold() for term in basis.all_terms_by_use):
+        return ranked
+    return _new_tags_from_note_words(written=written, prefix=prefix, content_html=content_html, limit=limit)
+
+
+def _new_tags_from_note_words(*, written: List[str], prefix: str, content_html: str, limit: int) -> _RankedSuggestions:
+    """What is typed matches no tag: words of the note's text it can complete to, as a new
+    tag (tag_words_in_note.py). Its own text first, then the titles of its links."""
+    left_out = {tag.casefold() for tag in written} | _synonyms_of_written_tags(tags=written, ontology=get_ontology())
+    places = (
+        ("this note", note_text_with_site_names(content_html)),
+        ("the title of a link in this note", "\n".join(link_titles_in_html(content_html))),
+    )
+    shown: Dict[str, str] = {}
+    reasons: Dict[str, Tuple[str, ...]] = {}
+    for where, text in places:
+        for tag in tags_from_words(typed=prefix, text=text, limit=limit):
+            folded = tag.casefold()
+            if folded in left_out or folded in shown:
+                continue
+            shown[folded] = tag
+            reasons[folded] = (f"Named in {where}: {quoted(tag)}", "Not a tag yet")
+    return _RankedSuggestions(tags=list(shown.values())[:limit], explain=lambda term: reasons[term.casefold()])
 
 
 def _year_last_updated(note_id: str) -> int:
