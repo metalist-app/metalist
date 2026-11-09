@@ -734,7 +734,10 @@ function buildLinkContextItems(context, handlers) {
     return items;
 }
 
-function buildSortModeItem(sortMode, onSetSortMode) {
+function buildSortModeItem(sortMode, fileFilterKind, onSetSortMode) {
+    if (!Object.values(FILE_FILTER_KINDS).includes(fileFilterKind)) {
+        throw new Error('Sort by needs the view\'s fileFilterKind');
+    }
     // An order and its direction are chosen apart: picking an order keeps Reverse Order.
     const currentMode = baseRootSortMode(normalizeRootSortMode(sortMode));
     const isReversed = isRootSortModeReversed(sortMode);
@@ -748,6 +751,9 @@ function buildSortModeItem(sortMode, onSetSortMode) {
         [ROOT_SORT_MODES.ALPHABETICAL, 'Alphabetical', 'alphabetical'],
         [ROOT_SORT_MODES.CONTENT_VOLUME, 'Content Volume', 'volume'],
     ];
+    if (fileFilterKind !== FILE_FILTER_KINDS.NONE) {
+        options.push([ROOT_SORT_MODES.FILE_SIZE, 'File Size', 'attachment']);
+    }
     return {
         id: 'sort-by',
         label: 'Sort by',
@@ -894,7 +900,7 @@ function buildViewModeItem(isUntaggedView, onSetUntaggedView) {
 function buildSearchBarContextItems(context, handlers) {
     return [
         buildViewModeItem(requireViewFlag(context, 'isUntaggedView'), requireViewHandler(handlers, 'onSetUntaggedView')),
-        buildSortModeItem(context.sortMode, requireViewHandler(handlers, 'onSetSortMode')),
+        buildSortModeItem(context.sortMode, context.fileFilterKind, requireViewHandler(handlers, 'onSetSortMode')),
         buildDateRangeItem(context, handlers),
         buildFileFilterItem(context, handlers),
     ];
@@ -989,7 +995,7 @@ function buildViewContextItems(context, handlers) {
     const themeChoices = [['system', 'System'], ['light', 'Light'], ['dark', 'Dark']];
     items.push(
         { ...buildViewModeItem(isUntaggedView, onSetUntaggedView), separated: true },
-        buildSortModeItem(context.sortMode, handlers.onSetSortMode),
+        buildSortModeItem(context.sortMode, context.fileFilterKind, handlers.onSetSortMode),
         buildDateRangeItem(context, handlers),
         buildFileFilterItem(context, handlers),
         // Themes alone (the maintainer, 2026-11-02: Show's other switches have buttons always on

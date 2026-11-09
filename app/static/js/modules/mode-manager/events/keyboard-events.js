@@ -4030,7 +4030,7 @@ export async function chooseFolder(folder) {
     showFolderOfActiveContext();
     updateSearchContextsList();
     const { actionRefreshAndMaybeSelect } = await import('../actions/ui-actions.js');
-    await actionRefreshAndMaybeSelect({ startedAt: performance.now(), context: 'folderContext.choose', animateNoteChanges: false });
+    await actionRefreshAndMaybeSelect({ startedAt: performance.now(), context: 'folderContext.choose', animateNoteChanges: false, startAtListTop: true, scrollToTopAfterRender: true });
 }
 
 /** Open folders tab: the folder context used last, as left; with none, a new one at the end of

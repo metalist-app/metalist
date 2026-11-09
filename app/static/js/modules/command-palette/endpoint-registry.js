@@ -89,15 +89,16 @@ const ROOT_REORDER_COMMANDS = new Set([
 
 /**
  * Whether a command can apply now; one that cannot is left out of the palette (rule 5).
- * `state` is { hasPassword, isRootReorderLocked } (a sorted tab orders its root notes
- * itself).
+ * `state` is { hasPassword, isRootReorderLocked, hasFileFilter } (a sorted tab orders
+ * its root notes itself; the File size order needs a Files filter on).
  */
 export function isCommandAvailable(commandId, state) {
     if (typeof commandId !== 'string' || commandId === '') {
         throw new Error('isCommandAvailable requires a command id');
     }
-    if (typeof state.hasPassword !== 'boolean' || typeof state.isRootReorderLocked !== 'boolean') {
-        throw new Error('isCommandAvailable requires boolean hasPassword and isRootReorderLocked');
+    if (typeof state.hasPassword !== 'boolean' || typeof state.isRootReorderLocked !== 'boolean'
+        || typeof state.hasFileFilter !== 'boolean') {
+        throw new Error('isCommandAvailable requires boolean hasPassword, isRootReorderLocked and hasFileFilter');
     }
     if (PASSWORD_COMMANDS_WITHOUT_ONE.has(commandId)) {
         return !state.hasPassword;
@@ -107,6 +108,9 @@ export function isCommandAvailable(commandId, state) {
     }
     if (ROOT_REORDER_COMMANDS.has(commandId)) {
         return !state.isRootReorderLocked;
+    }
+    if (commandId === 'view.sort_mode.file_size') {
+        return state.hasFileFilter;
     }
     return true;
 }
@@ -314,6 +318,14 @@ export function buildCommandPaletteEndpoints(deps) {
             getValue: () => sortModeActionValue('content-volume'),
             closeOnExecute: true,
             execute: async () => setSortOrderKeepingDirection('content-volume'),
+        },
+        {
+            id: 'view.sort_mode.file_size',
+            kind: 'action',
+            label: 'Sort Order: File Size',
+            getValue: () => sortModeActionValue('file-size'),
+            closeOnExecute: true,
+            execute: async () => setSortOrderKeepingDirection('file-size'),
         },
         {
             id: 'view.sort_mode.reverse',

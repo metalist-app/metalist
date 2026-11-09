@@ -40,10 +40,10 @@ def _registry() -> FileRegistry:
     registry = FileRegistry()
     registry.replace_all_with_thumbnail_kinds({IMAGE_ID: "image", PDF_ID: "pdf", MARKDOWN_ID: "text", ZIP_ID: "archive"})
     details = {
-        IMAGE_ID: FileDetails(title="photo.png", thumbnail_kind="image"),
-        PDF_ID: FileDetails(title="report.pdf", thumbnail_kind="pdf"),
-        MARKDOWN_ID: FileDetails(title="plan.md", thumbnail_kind="text"),
-        ZIP_ID: FileDetails(title="backup.zip", thumbnail_kind="archive"),
+        IMAGE_ID: FileDetails(title="photo.png", thumbnail_kind="image", size_bytes=1),
+        PDF_ID: FileDetails(title="report.pdf", thumbnail_kind="pdf", size_bytes=1),
+        MARKDOWN_ID: FileDetails(title="plan.md", thumbnail_kind="text", size_bytes=1),
+        ZIP_ID: FileDetails(title="backup.zip", thumbnail_kind="archive", size_bytes=1),
     }
     registry.install_details_loader(lambda: details)
     return registry
@@ -65,10 +65,10 @@ def test_a_vault_read_while_locked_learns_its_files_kinds_once_unlocked() -> Non
     registry = FileRegistry()
     registry.replace_all({IMAGE_ID, PDF_ID, MARKDOWN_ID, ZIP_ID})
     details = {
-        IMAGE_ID: FileDetails(title="photo.png", thumbnail_kind="image"),
-        PDF_ID: FileDetails(title="report.pdf", thumbnail_kind="pdf"),
-        MARKDOWN_ID: FileDetails(title="plan.md", thumbnail_kind="text"),
-        ZIP_ID: FileDetails(title="backup.zip", thumbnail_kind="archive"),
+        IMAGE_ID: FileDetails(title="photo.png", thumbnail_kind="image", size_bytes=1),
+        PDF_ID: FileDetails(title="report.pdf", thumbnail_kind="pdf", size_bytes=1),
+        MARKDOWN_ID: FileDetails(title="plan.md", thumbnail_kind="text", size_bytes=1),
+        ZIP_ID: FileDetails(title="backup.zip", thumbnail_kind="archive", size_bytes=1),
     }
     registry.install_details_loader(lambda: details)
     assert registry.file_ids_of_kind("pdf") == {PDF_ID}
@@ -234,3 +234,36 @@ def test_an_unknown_file_kind_is_rejected(memory_db) -> None:
     with pytest.raises(InputRejected):
         store.set_file_filter(tab_id=store.snapshot()["activeTabId"], file_filter="video")
 
+
+
+def _tab_with_a_filter(*, sort_mode: str) -> tuple[TabStateStore, str]:
+    store = TabStateStore()
+    tab_id = store.snapshot()["activeTabId"]
+    store.set_file_filter(tab_id=tab_id, file_filter="any")
+    store.set_sort_mode(tab_id=tab_id, sort_mode=sort_mode)
+    return store, tab_id
+
+
+@pytest.mark.parametrize("sort_mode", ["file-size", "file-size-reversed"])
+def test_the_file_size_order_needs_the_filter_on(memory_db, sort_mode: str) -> None:
+    store = TabStateStore()
+    tab_id = store.snapshot()["activeTabId"]
+    with pytest.raises(InputRejected, match="Notes with Files"):
+        store.set_sort_mode(tab_id=tab_id, sort_mode=sort_mode)
+    assert store.get_sort_mode(tab_id=tab_id) == "normal"
+
+
+@pytest.mark.parametrize("sort_mode", ["file-size", "file-size-reversed"])
+def test_ending_the_filter_ends_the_file_size_order(memory_db, sort_mode: str) -> None:
+    store, tab_id = _tab_with_a_filter(sort_mode=sort_mode)
+    assert store.set_file_filter(tab_id=tab_id, file_filter=None)["tabs"][tab_id]["sortMode"] == "normal"
+
+
+def test_ending_the_filter_keeps_any_other_order(memory_db) -> None:
+    store, tab_id = _tab_with_a_filter(sort_mode="alphabetical-reversed")
+    assert store.set_file_filter(tab_id=tab_id, file_filter=None)["tabs"][tab_id]["sortMode"] == "alphabetical-reversed"
+
+
+def test_changing_the_kind_of_file_keeps_the_file_size_order(memory_db) -> None:
+    store, tab_id = _tab_with_a_filter(sort_mode="file-size")
+    assert store.set_file_filter(tab_id=tab_id, file_filter="image")["tabs"][tab_id]["sortMode"] == "file-size"

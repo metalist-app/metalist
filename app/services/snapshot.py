@@ -32,6 +32,7 @@ from app.services.ontology_rules_store import get_ontology_if_ready
 from app.services.reference_presentation import decorate_note_references
 from app.services.inline_image_dimensions import add_inline_image_dimensions
 from app.services.root_sorting import build_root_sort_buckets
+from app.services.root_sorting import build_file_size_labels
 from app.services.root_sorting import get_root_ids_for_sort_mode
 from app.services.root_sorting import get_root_sort_timestamps
 from app.services.root_sorting import normalize_sort_mode
@@ -354,7 +355,7 @@ def _apply_untagged_view(
     )
 
 
-def _ordered_view_root_ids(normalized_sort_mode: str, date_filter: RootDateFilter | None) -> List[str]:
+def _ordered_view_root_ids(normalized_sort_mode: str, date_filter: RootDateFilter | None, file_filter: str | None) -> List[str]:
     """The roots a view lists, in its order, kept to the date range when it has one."""
     if normalized_sort_mode == "normal":
         ordered_root_ids = note_store.get_children(None)
@@ -362,6 +363,7 @@ def _ordered_view_root_ids(normalized_sort_mode: str, date_filter: RootDateFilte
         ordered_root_ids = get_root_ids_for_sort_mode(
             normalized_sort_mode,
             root_timestamps=get_root_sort_timestamps(normalized_sort_mode),
+            file_filter=file_filter,
         )
     if date_filter is None:
         return ordered_root_ids
@@ -436,7 +438,7 @@ def resolve_view_scope_membership(
     if not isinstance(is_untagged_view, bool):
         raise TypeError("is_untagged_view must be a bool")
     normalized_sort_mode = normalize_sort_mode(sort_mode)
-    ordered_root_ids = _ordered_view_root_ids(normalized_sort_mode, date_filter)
+    ordered_root_ids = _ordered_view_root_ids(normalized_sort_mode, date_filter, file_filter)
     if is_untagged_view:
         search_scope = _apply_untagged_view(ordered_root_ids=ordered_root_ids)
     else:
@@ -735,6 +737,7 @@ def _select_view(
         ordered_root_ids = get_root_ids_for_sort_mode(
             normalized_sort_mode,
             root_timestamps=root_sort_timestamps,
+            file_filter=file_filter,
         )
     ordered_root_ids = _roots_in_date_range(
         ordered_root_ids, date_filter, editing_note_id=editing_note_id, traversal_cache=traversal_cache,
@@ -1314,6 +1317,7 @@ def build_view_state(
             selection.sort_mode,
             root_timestamps=selection.root_timestamps,
         ),
+        "fileSizes": build_file_size_labels(visible_root_ids, selection.sort_mode, file_filter=file_filter),
         # Index of the first windowed root among all roots in this view, and
         # the date bucket just above the window, so the browser knows what lies
         # beyond each edge and only starts a date header where the day changes.

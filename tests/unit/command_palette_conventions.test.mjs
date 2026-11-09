@@ -38,6 +38,7 @@ const LABELS = {
     'view.sort_mode.updated': 'Sort Order: Datetime Last Updated',
     'view.sort_mode.alphabetical': 'Sort Order: Alphabetical',
     'view.sort_mode.content_volume': 'Sort Order: Content Volume',
+    'view.sort_mode.file_size': 'Sort Order: File Size',
     'view.sort_mode.reverse': 'Sort Order: Reverse',
     'view.all_notes': 'View: All Notes',
     'view.untagged_notes': 'View: Untagged Notes',
@@ -148,9 +149,9 @@ test('destructive commands are the ones that lose what cannot be brought back', 
 });
 
 test('commands that cannot apply are hidden', () => {
-    const withPassword = { hasPassword: true, isRootReorderLocked: false };
-    const withoutPassword = { hasPassword: false, isRootReorderLocked: false };
-    const sorted = { hasPassword: false, isRootReorderLocked: true };
+    const withPassword = { hasPassword: true, isRootReorderLocked: false, hasFileFilter: false };
+    const withoutPassword = { hasPassword: false, isRootReorderLocked: false, hasFileFilter: false };
+    const sorted = { hasPassword: false, isRootReorderLocked: true, hasFileFilter: false };
     assert.equal(isCommandAvailable('form.add_password', withPassword), false);
     assert.equal(isCommandAvailable('form.add_password', withoutPassword), true);
     for (const id of ['form.change_password', 'form.remove_password']) {
@@ -163,6 +164,8 @@ test('commands that cannot apply are hidden', () => {
         assert.equal(isCommandAvailable(id, sorted), false);
     }
     assert.equal(isCommandAvailable('action.logout', sorted), true);
+    assert.equal(isCommandAvailable('view.sort_mode.file_size', withoutPassword), false);
+    assert.equal(isCommandAvailable('view.sort_mode.file_size', { ...withoutPassword, hasFileFilter: true }), true);
     // The Obsidian import exists in production too (the maintainer, 2026-10-31).
     assert.equal(isCommandAvailable('form.import_wizard', withPassword), true);
 });

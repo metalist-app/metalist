@@ -1325,6 +1325,7 @@ class CommandPaletteController {
         const state = {
             hasPassword: Auth.hasPassword,
             isRootReorderLocked: isRootReorderLocked(this.getSortMode()),
+            hasFileFilter: this.getFileFilterKind() !== FILE_FILTER_KINDS.NONE,
         };
         return this._endpoints.filter((endpoint) => isCommandAvailable(endpoint.id, state));
     }
@@ -1616,13 +1617,7 @@ class CommandPaletteController {
         // tick while waiting left: their roots on screen and the view they cached belong
         // to the old order or its window, and asking with them opened the sorted list
         // partway down (2026-10-27). The cache is cleared again once it is this one's turn.
-        await actionRefreshAndMaybeSelect({
-            startedAt: performance.now(),
-            context: `sortMode.${normalizedSortMode}`,
-            animateNoteChanges: false,
-            startAtListTop: true,
-            resetViewCacheBeforeFetch: true,
-        });
+        await this._refreshChangedViewFromTop(`sortMode.${normalizedSortMode}`);
     }
 
     // The active tab's date range (date-range-filter-service.js): 'none' when it shows every date.
@@ -1674,11 +1669,7 @@ class CommandPaletteController {
         ModeContext.hydrateTabState(response, { emitUpdate: false });
         this._showChangedViewFromTop(activeTabId);
         // As for a sort order: a view request in flight shows the old range.
-        await actionRefreshAndMaybeSelect({
-            startedAt: performance.now(),
-            context: `dateFilter.${filter.rangeKind}`,
-            animateNoteChanges: false,
-        });
+        await this._refreshChangedViewFromTop(`dateFilter.${filter.rangeKind}`);
     }
 
     // Virtual folders, an experiment (virtual-folders-service.js): the toggle.
@@ -1734,11 +1725,7 @@ class CommandPaletteController {
         ModeContext.bumpUndoContextEpoch('virtualFolder');
         await NotesAPI.setVirtualFolderFilter(activeTabId, folder);
         this._showChangedViewFromTop(activeTabId);
-        await actionRefreshAndMaybeSelect({
-            startedAt: performance.now(),
-            context: 'virtualFolder',
-            animateNoteChanges: false,
-        });
+        await this._refreshChangedViewFromTop('virtualFolder');
     }
 
     // The active tab's Files filter (file-filter-service.js): 'none' when it shows every note.
@@ -1766,10 +1753,19 @@ class CommandPaletteController {
         ModeContext.hydrateTabState(response, { emitUpdate: false });
         this._showChangedViewFromTop(activeTabId);
         // As for a sort order: a view request in flight shows the old filter.
+        await this._refreshChangedViewFromTop(`fileFilter.${kind}`);
+    }
+
+    // Not held to the note that was on top: the new view can list it far down, and the page
+    // followed it there (2026-11-09).
+    async _refreshChangedViewFromTop(context) {
         await actionRefreshAndMaybeSelect({
             startedAt: performance.now(),
-            context: `fileFilter.${kind}`,
+            context,
             animateNoteChanges: false,
+            startAtListTop: true,
+            scrollToTopAfterRender: true,
+            resetViewCacheBeforeFetch: true,
         });
     }
 
@@ -1856,11 +1852,7 @@ class CommandPaletteController {
         this._showChangedViewFromTop(activeTabId);
 
         // As for a sort order: a view request in flight shows the old view.
-        await actionRefreshAndMaybeSelect({
-            startedAt: performance.now(),
-            context: `untaggedView.${isUntaggedView ? 'on' : 'off'}`,
-            animateNoteChanges: false,
-        });
+        await this._refreshChangedViewFromTop(`untaggedView.${isUntaggedView ? 'on' : 'off'}`);
     }
 
     // Print the view as shown (print-service.js): the palette closes first.

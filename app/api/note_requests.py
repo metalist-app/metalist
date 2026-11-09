@@ -58,8 +58,9 @@ class Viewport(TypedDict):
 
 # A root sort order, and the same order reversed (app/services/root_sorting.py).
 SortMode = Literal[
-    'normal', 'created', 'updated', 'alphabetical', 'content-volume',
+    'normal', 'created', 'updated', 'alphabetical', 'content-volume', 'file-size',
     'normal-reversed', 'created-reversed', 'updated-reversed', 'alphabetical-reversed', 'content-volume-reversed',
+    'file-size-reversed',
 ]
 
 @with_config(ConfigDict(strict=True))

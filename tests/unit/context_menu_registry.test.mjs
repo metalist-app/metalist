@@ -658,6 +658,31 @@ test('view context menu no longer exposes the note timestamp visibility preferen
     );
 });
 
+test('background sorting offers File Size only while a Files filter is on', () => {
+    const sortIds = (context) => buildContextMenuItems(buildViewContext(context), buildViewHandlers([]))
+        .find((item) => item.id === 'sort-by').submenu.map((item) => item.id);
+    assert.equal(sortIds({ fileFilterKind: 'none' }).includes('sort-by-file-size'), false);
+    for (const fileFilterKind of ['any', 'image', 'pdf', 'markdown']) {
+        const ids = sortIds({ fileFilterKind });
+        assert.equal(ids[ids.indexOf('sort-by-content-volume') + 1], 'sort-by-file-size');
+    }
+});
+
+test('picking File Size keeps Reverse Order and ticks it', () => {
+    const calls = [];
+    const submenu = buildContextMenuItems(
+        buildViewContext({ fileFilterKind: 'any', sortMode: 'alphabetical-reversed' }),
+        buildViewHandlers(calls),
+    ).find((item) => item.id === 'sort-by').submenu;
+    submenu.find((item) => item.id === 'sort-by-file-size').onSelect();
+    assert.deepEqual(calls.map((call) => call[1]), ['file-size-reversed']);
+    const inFileSize = buildContextMenuItems(
+        buildViewContext({ fileFilterKind: 'any', sortMode: 'file-size' }),
+        buildViewHandlers([]),
+    ).find((item) => item.id === 'sort-by').submenu;
+    assert.deepEqual(inFileSize.filter((item) => item.checked).map((item) => item.id), ['sort-by-file-size']);
+});
+
 test('background sorting offers all modes and ticks only the current mode', () => {
     const modes = ['normal', 'created', 'updated', 'alphabetical', 'content-volume'];
     for (const isReversed of [false, true]) {

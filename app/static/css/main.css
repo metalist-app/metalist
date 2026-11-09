@@ -5414,6 +5414,48 @@ html[data-theme="dark"] .note-fullscreen-close {
     letter-spacing: 0.08em;
 }
 
+/* The File size order: a file's size, right after its name (file-size-pill-service.js). */
+.note-file-reference-header[data-file-size]::after {
+    content: attr(data-file-size);
+    flex-shrink: 0;
+    padding: 1px 6px;
+    border-radius: 999px;
+    background: #d8dde6;
+    color: #334155;
+    font-size: 10px;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+/* A note's total, in the margin to its right. */
+.note-file-total {
+    position: absolute;
+    top: 4px;
+    /* From the padding box: 1px is the note's border, so the visible gap is 8px. */
+    left: calc(100% + 1px + 8px);
+}
+
+.note-file-total > span {
+    display: inline-block;
+    padding: 1px 8px;
+    border-radius: 999px;
+    background: #d8dde6;
+    color: #334155;
+    font-size: 11px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    user-select: none;
+}
+
+/* No room in that margin: on its own row at the top right of its note (file-size-pill-service.js). */
+.file-totals-in-note .note-file-total {
+    position: static;
+    order: -1;
+    flex: 0 0 100%;
+    text-align: right;
+}
+
 .note-file-reference-title {
     min-width: 0;
     overflow-wrap: anywhere;
@@ -5573,6 +5615,11 @@ html[data-theme="dark"] .note.collapsed:not(.editing) .note-content img.note-fil
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+}
+
+/* The File size order keeps a file's size right after its name here too. */
+.note.collapsed:not(.editing) .note-reference-block.note-reference-file:not(.note-reference-file-image) .note-file-reference-header[data-file-size] .note-file-reference-title {
+    flex: 0 1 auto;
 }
 
 .note-embed-node {
@@ -9876,7 +9923,9 @@ html[data-theme="dark"] .file-viewer-message {
     color: var(--app-text-muted);
 }
 
-html[data-theme="dark"] .note-file-reference-badge {
+html[data-theme="dark"] .note-file-reference-badge,
+html[data-theme="dark"] .note-file-reference-header[data-file-size]::after,
+html[data-theme="dark"] .note-file-total > span {
     background: rgba(90, 169, 255, 0.14);
     color: #cfe0ff;
 }

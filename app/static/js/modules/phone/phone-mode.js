@@ -46,8 +46,9 @@ const SORT_ROWS = [[ROOT_SORT_MODES.NORMAL, 'Normal'], [ROOT_SORT_MODES.CREATED,
 const MORE_SORT_ROWS = [
     [ROOT_SORT_MODES.UPDATED, 'Updated'],
     [ROOT_SORT_MODES.ALPHABETICAL, 'A–Z'],
-    [ROOT_SORT_MODES.CONTENT_VOLUME, 'Size'],
+    [ROOT_SORT_MODES.CONTENT_VOLUME, 'Length'],
 ];
+const FILE_SIZE_SORT_ROW = [ROOT_SORT_MODES.FILE_SIZE, 'File size'];
 
 // Under the date and file menus: what each current choice is called.
 const DATE_VALUE_LABELS = new Map([
@@ -296,14 +297,15 @@ function sheetHtml() {
     const isReversed = isRootSortModeReversed(sortMode);
     const dateKind = CommandPalette.getDateRangeKind();
     const fileKind = CommandPalette.getFileFilterKind();
-    const moreLabels = MORE_SORT_ROWS.map(([, label]) => label).join(' · ');
+    const moreRows = fileKind === FILE_FILTER_KINDS.NONE ? MORE_SORT_ROWS : [...MORE_SORT_ROWS, FILE_SIZE_SORT_ROW];
+    const moreLabels = moreRows.map(([, label]) => label).join(' · ');
     return `
         <div class="phone-sheet-handle" aria-hidden="true"></div>
         <p class="phone-sheet-heading">Sort order</p>
         ${SORT_ROWS.map(([mode, label]) => choiceHtml(`sort:${mode}`, label, mode === currentSort)).join('')}
         ${disclosureHtml('sort-more', moreLabels, '')}
         <div class="phone-sheet-group" data-phone-group-items="sort-more" hidden>
-            ${MORE_SORT_ROWS.map(([mode, label]) => choiceHtml(`sort:${mode}`, label, mode === currentSort)).join('')}
+            ${moreRows.map(([mode, label]) => choiceHtml(`sort:${mode}`, label, mode === currentSort)).join('')}
         </div>
         ${choiceHtml('sort:reverse', 'Reverse', isReversed)}
         ${disclosureHtml('date', 'Date Range', valueLabel(DATE_VALUE_LABELS, dateKind))}

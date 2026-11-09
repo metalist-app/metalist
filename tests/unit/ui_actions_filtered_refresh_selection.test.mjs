@@ -70,7 +70,7 @@ function refreshHarness({ isRemoved, isAnimated, isFullSnapshot }) {
             setNoteEditable() {}, revealCaret() {}, focusNoteEdge() {},
         },
         updateSearchResultsCount() {}, updateRootSortIndicator() {}, updateDateRangeIndicator() {}, updateFileFilterIndicator() {}, async updateVirtualFolders() {}, updateUntaggedViewIndicator() {}, updateReferenceSourceIndicator() {},
-        rebuildRootDateSeparators() {}, async refreshBacklinksPanel() {},
+        rebuildRootDateSeparators() {}, rebuildFileSizePills() {}, async refreshBacklinksPanel() {},
         captureViewportRoot: () => null, holdViewportRoot() {},
         measureVisibleRootRange: () => null,
     };

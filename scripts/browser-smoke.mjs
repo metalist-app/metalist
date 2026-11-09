@@ -53,6 +53,8 @@ import {checkTabSwitching} from './browser-tab-switch-regressions.mjs';
 import {checkFolderNoteDrag} from './browser-folder-note-drag-regressions.mjs';
 import {checkFolderContext} from './browser-folder-context-regressions.mjs';
 import {checkFolderDrops} from './browser-folder-drop-regressions.mjs';
+import {checkFileSizeSort} from './browser-file-size-sort-regressions.mjs';
+import {checkViewChangeTop} from './browser-view-change-top-regressions.mjs';
 import {checkFileDropNotes} from './browser-file-drop-note-regressions.mjs';
 import {checkBackgroundWork} from './browser-background-work-regressions.mjs';
 import {checkImageSizes} from './browser-image-size-regressions.mjs';
@@ -455,6 +457,14 @@ try {
     await checkBackgroundWork(page);
     assert.deepEqual(errors, []);
     console.log(`PASS background work regressions in ${await browser.version()}`);
+  } else if (process.env.BROWSER_TEST_SUITE === 'view-change-top') {
+    await checkViewChangeTop(page);
+    assert.deepEqual(errors, []);
+    console.log(`PASS view change top regressions in ${await browser.version()}`);
+  } else if (process.env.BROWSER_TEST_SUITE === 'file-size-sort') {
+    await checkFileSizeSort(page);
+    assert.deepEqual(errors, []);
+    console.log(`PASS file size sort regressions in ${await browser.version()}`);
   } else if (process.env.BROWSER_TEST_SUITE === 'folder-drops') {
     await checkFolderDrops(page);
     assert.deepEqual(errors, []);

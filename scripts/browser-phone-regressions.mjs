@@ -215,6 +215,30 @@ async function sheetCase(page) {
     return state.activeTabSortMode === 'normal' && !state.isLoading;
   });
   await waitQuiet(page);
+  await fileSizeRowCase(page);
+}
+
+// File size is offered only while Notes with Files is on, and the text order reads Length.
+async function fileSizeRowCase(page) {
+  const offered = async () => {
+    await page.tap('#phone-menu-button');
+    await page.waitForSelector('#phone-sheet', {visible: true});
+    const labels = await page.$$eval('#phone-sheet [data-phone-choice]', nodes => nodes.map(node => node.dataset.phoneChoice));
+    const texts = await page.$$eval('#phone-sheet [data-phone-group-items="sort-more"] [data-phone-choice]', nodes => nodes.map(node => node.textContent.trim()));
+    await page.tap('#phone-sheet-backdrop');
+    await page.waitForSelector('#phone-sheet', {hidden: true});
+    return {hasFileSize: labels.includes('sort:file-size'), texts};
+  };
+  const setFilter = kind => page.evaluate(async kind => {
+    const {CommandPalette} = await import('/static/js/modules/command-palette/command-palette-controller.js');
+    await CommandPalette.setFileFilter(kind);
+  }, kind);
+  assert.deepEqual(await offered(), {hasFileSize: false, texts: ['Updated', 'A–Z', 'Length']});
+  await setFilter('any');
+  await waitQuiet(page);
+  assert.deepEqual(await offered(), {hasFileSize: true, texts: ['Updated', 'A–Z', 'Length', 'File size']});
+  await setFilter('none');
+  await waitQuiet(page);
 }
 
 async function saveButtonState(page) {

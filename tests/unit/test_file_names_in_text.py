@@ -29,8 +29,8 @@ def registry(monkeypatch: pytest.MonkeyPatch) -> tuple[FileRegistry, list[int]]:
     def load() -> dict[str, FileDetails]:
         loads.append(1)
         return {
-            PDF_ID: FileDetails(title=PDF_NAME, thumbnail_kind="pdf"),
-            IMAGE_ID: FileDetails(title=IMAGE_NAME, thumbnail_kind="image"),
+            PDF_ID: FileDetails(title=PDF_NAME, thumbnail_kind="pdf", size_bytes=1),
+            IMAGE_ID: FileDetails(title=IMAGE_NAME, thumbnail_kind="image", size_bytes=1),
         }
 
     registry.install_details_loader(load)
@@ -47,7 +47,7 @@ def test_file_names_are_read_once_and_a_notes_id_has_none(registry) -> None:
     assert loads == [1]
     # A file added later is known by name without reading them all again.
     added_id = "0b1c2d3e-4f5a-4b6c-8d7e-9f0a1b2c3d4e"
-    files.add_with_thumbnail_kind(added_id, thumbnail_kind="pdf", title="later.pdf")
+    files.add_with_thumbnail_kind(added_id, thumbnail_kind="pdf", title="later.pdf", size_bytes=1)
     assert files.title_of(added_id) == "later.pdf"
     assert loads == [1]
     files.remove_many({added_id})

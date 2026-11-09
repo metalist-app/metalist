@@ -461,6 +461,7 @@ def view_diff(payload: ViewDiffRequest):
         "rootCountTotal": state.metadata["searchRootCountTotal"] if is_narrowed_by_tree else state.metadata["rootCountTotal"],
         "searchRootCountTotal": state.metadata["searchRootCountTotal"],
         "rootSortBuckets": state.metadata["rootSortBuckets"],
+        "fileSizes": state.metadata["fileSizes"],
         "rootWindowStart": state.metadata["rootWindowStart"],
         "rootBandMargin": state.metadata["rootBandMargin"],
         "rootSortKeyBeforeWindow": state.metadata["rootSortKeyBeforeWindow"],

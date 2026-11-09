@@ -222,7 +222,7 @@ def sweep_blob_leftovers() -> int:
 
 
 def _load_file_details() -> dict[str, FileDetails]:
-    """Every file's name and kind by id, decrypted (the file registry asks once, when
+    """Every file's name, kind and size by id, decrypted (the file registry asks once, when
     notes are read, searched or filtered, which is only once the vault is unlocked)."""
     with connect_file_reader() as connection:
         rows = fetch_all_file_metadata(connection)
@@ -246,9 +246,10 @@ def _load_file_details() -> dict[str, FileDetails]:
             field_name="metadata_json",
             file_id=file_id,
         )
-        thumbnail_kind = _parse_file_metadata(metadata_json, file_id=file_id)["thumbnail_kind"]
+        metadata = _parse_file_metadata(metadata_json, file_id=file_id)
+        thumbnail_kind = metadata["thumbnail_kind"]
         assert isinstance(thumbnail_kind, str)
-        details[file_id] = FileDetails(title=title, thumbnail_kind=thumbnail_kind)
+        details[file_id] = FileDetails(title=title, thumbnail_kind=thumbnail_kind, size_bytes=metadata["size_bytes"])
     return details
 
 
@@ -353,7 +354,9 @@ def _list_new_file(
             updated_at=now,
         )
 
-    file_registry.add_with_thumbnail_kind(file_id, thumbnail_kind=metadata["thumbnail_kind"], title=title)
+    file_registry.add_with_thumbnail_kind(
+        file_id, thumbnail_kind=metadata["thumbnail_kind"], title=title, size_bytes=metadata["size_bytes"],
+    )
     if is_searchable_file_name(title):
         # Its text, for search, beside the request (folder-import-and-file-previews.md).
         file_texts.refresh_in_background()
@@ -524,6 +527,7 @@ def replace_file_content(
     updated = get_file_reference_record(file_id, token)
     assert updated.content_revision == expected_revision + 1
     assert updated.size_bytes == len(content_bytes)
+    file_registry.set_size(file_id, size_bytes=updated.size_bytes)
     return updated
 
 
@@ -696,6 +700,7 @@ def restore_file_snapshot(*, snapshot: FileSnapshot, token: str) -> FileReferenc
     updated = get_file_reference_record(snapshot.file_id, token)
     assert updated.content_revision == next_revision
     assert updated.size_bytes == len(snapshot.content_bytes)
+    file_registry.set_size(snapshot.file_id, size_bytes=updated.size_bytes)
     return updated
 
 

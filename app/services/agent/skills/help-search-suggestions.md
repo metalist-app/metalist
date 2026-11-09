@@ -56,6 +56,7 @@ From docs/ui/controls.md.
   | Datetime Last Updated | order frozen | allowed: it lands at the top | blocked |
   | Alphabetical | order frozen | blocked | blocked |
   | Content volume | order frozen, also while editing a child note | blocked | blocked |
+  | File size | order frozen, also while editing a child note | blocked | blocked |
 
   - Child notes (`⇧ + ⌘ + Enter`, paste as child, or a sibling of a child note) can always be added: the sort orders only root notes.
   - A blocked action does nothing and shows a banner saying why (switch to Normal order, or add a child note). Pasting a copied note onto an empty note fills that note, so it is never blocked.

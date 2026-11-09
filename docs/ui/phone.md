@@ -33,7 +33,7 @@ view options) does the job.
   before a pill starts a new search; back restores the previous search.
 
 ## Menu sheet (☰)
-Sort order (Normal, Created, then Updated · A–Z · Size), Reverse, Date Range ›, Notes with
+Sort order (Normal, Created, then Updated · A–Z · Length, and File size while Notes with Files is on), Reverse, Date Range ›, Notes with
 Files ›, Untagged Notes, then **Lock** and **Sign Out**. Picking an option applies it and closes
 the sheet; tapping outside closes it. Lock and Sign Out both log out: each vault has its own
 address, so the vault stays picked and getting back in is just the password.

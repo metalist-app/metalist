@@ -15,7 +15,7 @@ from app.security.encryption import (
     get_encryption_service_with_token,
     is_encryption_required,
 )
-from app.services.root_sorting import SORT_MODE_NORMAL, SORT_MODES, normalize_sort_mode
+from app.services.root_sorting import SORT_MODE_FILE_SIZE, SORT_MODE_NORMAL, SORT_MODES, base_sort_mode, normalize_sort_mode
 from app.services.input_errors import InputRejected
 from app.services.file_kinds import make_file_filter
 from app.services.virtual_folders import NO_FOLDER, is_folder_tag
@@ -501,7 +501,8 @@ class TabStateStore:
 
     def set_file_filter(self, *, tab_id: str, file_filter: str | None) -> Dict[str, object]:
         """Set (or, with None, remove) a tab's Files filter. Like a date range it changes
-        what the view shows, so the tab's scroll starts again at the top."""
+        what the view shows, so the tab's scroll starts again at the top. Removing it
+        ends the File size order, which means nothing without it."""
         if not isinstance(tab_id, str) or not tab_id:
             raise InputRejected("tabId must be a non-empty string")
         with self._lock:
@@ -515,6 +516,8 @@ class TabStateStore:
             if changed:
                 if file_filter is None:
                     del self._file_filters[tab_id]
+                    if base_sort_mode(self._tabs[tab_id]["sortMode"]) == SORT_MODE_FILE_SIZE:
+                        self._tabs[tab_id]["sortMode"] = SORT_MODE_NORMAL
                 else:
                     self._file_filters[tab_id] = make_file_filter(file_filter)
                 self._restart_tab_scroll_locked(tab_id)
@@ -740,6 +743,9 @@ class TabStateStore:
             self._try_decrypt_locked(token="", require_success=True)
             if tab_id not in self._tabs:
                 raise InputRejected("tabId must reference an existing tab")
+
+            if base_sort_mode(normalized_sort_mode) == SORT_MODE_FILE_SIZE and tab_id not in self._file_filters:
+                raise InputRejected("File size order needs Notes with Files on. Turn that on first.")
 
             entry = self._tabs[tab_id]
             changed = entry["sortMode"] != normalized_sort_mode
