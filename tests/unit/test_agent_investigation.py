@@ -152,7 +152,7 @@ def test_complete_scope_batches_preserve_every_root_in_canonical_order() -> None
         settings=AgentRetrievalSettings(max_page_approximate_tokens=8_200),
     )
 
-    plan = state.plan_complete_root_batches(reserved_approximate_tokens=0)
+    plan = state.plan_complete_root_batches(reserved_approximate_tokens=0, with_timing_probes=False)
 
     assert len(plan.batches) == 2
     assert tuple(
@@ -179,7 +179,7 @@ def test_complete_scope_batching_rejects_any_indivisible_oversized_root() -> Non
         settings=AgentRetrievalSettings(max_page_approximate_tokens=500),
     )
     with pytest.raises(ValueError, match="complete result tree a"):
-        state.plan_complete_root_batches(reserved_approximate_tokens=0)
+        state.plan_complete_root_batches(reserved_approximate_tokens=0, with_timing_probes=False)
 
 
 def test_payload_requires_exactly_one_prior_retention_pass() -> None:

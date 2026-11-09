@@ -132,7 +132,7 @@ def populate_cache_from_db(db: SafeSession, *, saved_searches: SavedSearches) ->
 
     Every save cleans a note before storing it, so stored notes are cleaned already.
     Notes stored some other way (before cleaning existed, under an earlier cleaning, by
-    a restore, an import or convert-from-legacy.py) are in a database without the
+    a restore or an import) are in a database without the
     record for the current cleaning: then every note is cleaned here once, and a note
     the cleaning changes is stored cleaned in the same write that adds the record.
     Cleaning every note took a quarter of unlocking (2026-10-19).

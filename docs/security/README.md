@@ -32,7 +32,10 @@ whole-file SQLite encryption. Protected payloads include note bodies and
 accepted/proposed tags, ontology text, attachment titles/metadata/bytes, saved
 tab state, tag activity, reminders, cached link URLs/titles and site icons, client preferences
 and persisted AI API keys (one slot per provider: OpenAI, and from database
-version 11 Claude and Gemini). The authoritative payload/schema inventory is
+version 11 Claude and Gemini), and from database version 15 each model's saved rate limits
+(`app_settings.provider_rate_limits_json`: endpoint, model and its limits per minute, which
+say which models you use), and from database version 16 each model's saved timing
+(`app_settings.model_timings_json`: endpoint, model, its startup cost and time per token). The authoritative payload/schema inventory is
 in `app/encryption_audit.py`.
 
 A folder dropped on the page for import is not covered until it is imported:
@@ -132,7 +135,7 @@ Login Flow:
 3. Derive KEK (kek_salt + kek_iterations)
 4. Retrieve Encrypted DEK from database
 5. Decrypt DEK using KEK
-6. If `PRAGMA user_version` is behind, create an automatic namespace backup and run every database migration in order with the DEK.
+6. If `PRAGMA user_version` is behind, create an automatic namespace backup and run every database migration in order with the DEK. Once they succeed, older safety backups are trimmed (see Backup Immutability).
 7. Purge obsolete SQLite pages/WAL data in the live database and advance its version. Historical backup files remain byte-for-byte unchanged.
 8. Discard KEK; keep only DEK in memory for session.
 9. Use DEK for all note operations.
@@ -278,7 +281,7 @@ Stored note bodies use a strict shared allowlist in
   model write with nh3 before encryption/database persistence. Browser output
   is never trusted as the authoritative check.
 - Rows stored some other way (before sanitizing existed, under an earlier
-  sanitizer, by a restore, an import or `convert-from-legacy.py`) are sanitized
+  sanitizer, by a restore or an import) are sanitized
   once, at the first unlock of a database without the record for the current
   sanitizer: each row the sanitizer changes is stored sanitized (updated time
   kept) in the same write that adds the record to `namespace_content_migrations`.
@@ -400,7 +403,7 @@ Database migration `2 → 3` removes the legacy search-history schema that expos
 
 ### Backup Immutability
 
-Existing backup archives are immutable. MetaList can create a new archive using exclusive creation, validate/read one, restore from one, or delete one through the explicit retention/delete or namespace-deletion workflow. It never rewrites, replaces, renames, repackages, migrates, touches, or changes permissions on an existing archive. A new archive is published by hard link (approved 2026-10-29): it is written to `<name>.partial` (opened with exclusive create), fsynced, and `os.link`ed to its name, which fails if that name exists, so a sync app never uploads a half-written archive and a crash never leaves a truncated one under a backup's name. Only `backup_service.delete_partial_archives` removes `.partial` files, and it asserts each is one; the `BKP001` gate allows it and exclusive-create opens (`app/startup_sanity.py`), and still forbids writing to or deleting anything else. Login and database migrations do not enumerate user-configured backup folders.
+Existing backup archives are immutable. MetaList can create a new archive using exclusive creation, validate/read one, restore from one, or delete one through the explicit retention/delete or namespace-deletion workflow. Safety backups, the full copies in a vault's internal `backups` folder made by an upgrade at unlock and before an update, have one retention path of their own (approved 2026-11-08): nothing else would ever remove them, and one vault had reached 3.7 GB. `backup_service.trim_safety_backups_for_database` keeps the newest 3, after the newest passes the same size and checksum check as a restore and only once the upgrade has succeeded (`AuthService.run_authenticated_database_migrations`) or the updated MetaList has restarted (`metalist trim-safety-backups`, the updater's last step). Backups in a folder the user chose keep their own retention setting. The `BKP001` gate allows the upgrade path this import and no other backup operation. It never rewrites, replaces, renames, repackages, migrates, touches, or changes permissions on an existing archive. A new archive is published by hard link (approved 2026-10-29): it is written to `<name>.partial` (opened with exclusive create), fsynced, and `os.link`ed to its name, which fails if that name exists, so a sync app never uploads a half-written archive and a crash never leaves a truncated one under a backup's name. Only `backup_service.delete_partial_archives` removes `.partial` files, and it asserts each is one; the `BKP001` gate allows it and exclusive-create opens (`app/startup_sanity.py`), and still forbids writing to or deleting anything else. Login and database migrations do not enumerate user-configured backup folders.
 
 Restore hashes the selected archive and every legacy sidecar before reading it, installs the database into the live destination, and hashes the sources again. Any byte change fails loudly. A restored passwordless database is migrated after installation; an encrypted older version stays locked and migrates after its own password unwraps its DEK. The source backup remains unchanged in either case. `BKP001` startup sanity rejects overwrite-capable archive modes, historical-backup transformation functions, backup-service imports from database migrations, archive replacement/move APIs, and deletion outside the explicit retention path. The gate cannot be suppressed.
 
@@ -408,8 +411,10 @@ No remote-image content migration is active. Remote HTTP(S) image URLs remain en
 
 ### Recovery of live database changes
 
-Password creation/removal and backup restore enlist both the notes database and
-the files database in one recoverable operation. Before the first live
+Password creation/removal and backup restore enlist the notes database and the
+file catalog (and a pre-version-17 files database, if the vault still has one)
+in one recoverable operation. Blobs need no rollback image: they are never
+changed, and none is deleted until the operation commits. Before the first live
 write, `app/db/live_recovery.py` takes consistent SQLite rollback images and
 flushes a checksummed manifest in `.<database-name>.recovery` beside the live DB.
 These are temporary live transaction files, separate from historical backups.
@@ -495,7 +500,9 @@ nonzero for migration findings so backup gates never treat a plaintext archive
 as fully protected.
 
 For each namespace whose `app_settings.encryption_enabled` flag is set, the
-audit checks the main and sibling files databases. It validates every declared
+audit checks the main database and the file catalog (the sibling files database
+before version 17), and that every blob the catalog names exists and starts with
+the encrypted format's header. It validates every declared
 sensitive payload/ciphertext/nonce/tag tuple, AES-GCM nonce and tag sizes,
 cross-database DEK nonce uniqueness, encrypted-vault metadata, SQLite integrity,
 and the complete known table/column contract. Unknown tables or columns fail the
@@ -687,47 +694,6 @@ swap, or filesystem snapshots.
   lazy-loaded only when the generator opens; generated passwords are not submitted
   to a server for scoring.
 
-## Data Import Strategy
-
-For fresh imports using `convert-from-legacy.py`:
-
-1. This is a destructive fresh-import path (existing DB is deleted first).
-2. Import legacy data into a new SQLite database. An export the old MetaList encrypted
-   (its Backup's "Password Protected", the default) is decrypted with the old password,
-   typed at the prompt and never accepted as an argument. The old scheme
-   (`MetaList_old/js/utils/crypto.js`) keys AES-GCM with one unsalted SHA-256 of the
-   password, each top-level item with its own 12-byte IV; the importer accepts only
-   `encryption_scheme_version` 1, `SHA-256` and `AES-GCM`. A wrong password asks again
-   (the first item tells); a later item that does not open fails the import as damaged.
-   Every item is decrypted before the target database is deleted. That scheme is fast
-   to attack, so old encrypted exports deserve the care of plaintext ones: delete them
-   once the converted namespace works.
-3. Optionally set a password at import time. After an encrypted export, the importer
-   offers the old password, when the new password rules accept it. Every password is
-   checked against those rules before the database is created; before, a weak one was
-   refused only after the import, leaving the notes unprotected.
-4. Password enablement writes the same vault metadata (`vault_version`, `kdf_algorithm`)
-   and KDF parameters used by the runtime auth service.
-5. Input selection:
-   - pass `--input /path/to/export.json` for non-interactive runs
-   - omit `--input` to use the Tk file picker.
-6. Namespace targeting:
-   - pass `--namespace work` to import into `~/MetaList/namespaces/work/work.metalist.db`
-   - omit `--namespace` to import into `~/MetaList/namespaces/default/default.metalist.db`.
-7. Launch profile prompting:
-   - if `--namespace`, `--port`, or `--https-port` are omitted, the importer prompts for them
-   - the chosen ports are saved in the namespace DB so later `python main.py work` can reuse them.
-8. From MetaList itself (`docs/ui/legacy-import.md`): a namespace with no notes and no password
-   whose data folder holds the old MetaList's `metalist.db` offers its notes. The old file is
-   opened read-only and hashed before and after; a change installs nothing. The server runs the
-   importer as its own process with `--legacy-database` and `--passwords-from-stdin` (both
-   passwords as one JSON line on stdin, never in its arguments or environment), so setting the
-   converted namespace's password never touches the server's keys. The importer writes into a
-   staging folder beside the old file, removed afterwards; the converted namespace is installed
-   under the recovery journal as a restore installs an archive, and the server restarts. The
-   password check (`/api2/legacy-import/check-password`) decrypts one old item and reports the
-   password rules; neither password is logged or kept once the dialog closes.
-
 ## API Endpoints
 
 When password protection is enabled, browser requests use:
@@ -814,11 +780,13 @@ The HTTPS transport retains separate listeners and sends response headers and bo
 
 Strict required note request contracts and client preference/usage validation run before route mutations. Invalid external bodies return sanitized 422 without their input values; stale note IDs return 404. Host/Origin validation precedes URL parsing by other middleware. Internal invariant failures still propagate. The obsolete v1 API returns 410 instead of terminating the server.
 
-Attachment uploads default to 100 MiB per file, configurable with positive-byte `METALIST_MAX_ATTACHMENT_BYTES`. The multipart envelope limit is that value plus 1 MiB, enforced on actual received bytes as well as declared length. Four concurrent attachment transfers (uploads and downloads) are admitted; excess requests return 429. Over-limit files return 413 before storage/registry changes. Readers close their temporary file in `finally`; multipart overflow uses the parser's cleanup path. Downloads preflight stored blob length and reject oversized legacy attachments before reading the blob; increase the configured limit when retrieving one. Startup and metadata lookups omit blobs. Encryption/decryption still require complete per-file buffers; password transitions process one file at a time. No aggregate namespace quota is imposed.
+Attachment uploads default to 100 MiB per file, configurable with positive-byte `METALIST_MAX_ATTACHMENT_BYTES`. The multipart envelope limit is that value plus 1 MiB, enforced on actual received bytes as well as declared length. Four concurrent attachment transfers (uploads and downloads) are admitted; excess requests return 429. Over-limit files return 413 before storage/registry changes. Readers close their temporary file in `finally`; multipart overflow uses the parser's cleanup path. Downloads preflight stored blob length and reject oversized legacy attachments before reading the blob; increase the configured limit when retrieving one. Startup and metadata lookups omit blobs. Encryption/decryption still require complete per-file buffers; password transitions process one file at a time. No aggregate namespace quota is imposed. Planned: streaming encryption and no per-file limit (`docs/ready-to-build/streaming-no-file-cap.md`), then resumable uploads (`docs/future-plans/resumable-uploads.md`).
 
 Lock ownership: synchronous route transactions and background hydration/link publication use `bulk_operation_guard.lock`; its separate short admission mutex protects mutation counts and bulk operation/question state. No admission mutex is held across an await. Bulk answers/cancellation are queued with `call_soon_threadsafe`. Tokens and sync/clipboard operations each have their own RLock and return copied snapshots; clipboard snapshots copy nested values. NoteStore, search index, tab/reminder/link stores and sensitive caches retain their existing private locks. Hydration/link work checks the runtime generation before publishing. Acquire the outer bulk lock before admission/service locks; do not acquire the outer bulk lock from inside a service lock. These guards protect existing mutation paths, not a general serializable snapshot API spanning every independent GET.
 
 Temporary DB read permission is a ContextVar layered over startup's global read state, so one thread/task cannot enable another's reads or restore a stale global value.
+
+Database version 17 moves each vault's files out of `<vault>.metalist.files.db` into `files/catalog.db` and one file per stored item under `files/blobs/`. In a vault with a password each blob is encrypted with its own random 256-bit key by `app/security/streaming_blob.py` (64 KiB AES-256-GCM segments, a nonce of per-blob random prefix, segment index and final flag, the header as associated data) and padded (Padmé, plus a random amount up to 1% of the file's size), and is never on disk in plaintext, including while being written. A vault with no password stores its files as they are, unpadded. Each blob's key, real size and SHA-256 are its seal, encrypted in the catalog like the row's other fields. The catalog's readable structural metadata is: file ID, blob ID (random, unrelated to the content), preview variant and SVG MIME type, the search text's cut flag and reader/filter versions, content revisions and timestamps. The file count and each blob's padded size are visible on disk. The step runs after unlock for a vault with a password and at startup for one without, after a safety backup; every blob is read back against its seal before the old database is deleted. Blobs nothing names any more are unlinked, which unlike SQLite's `secure_delete` cannot promise the bytes are gone from the disk, so plaintext blobs replaced when a password is set may remain recoverable by disk forensics; full-disk encryption covers that.
 
 Database version 14 adds `reader_version` and `filter_version` to `file_texts` in the files database. The step is additive and idempotent, so it also accepts a files database the app already upgraded on open; the encryption audit accepts them missing or present before version 14 and requires them from version 14.
 

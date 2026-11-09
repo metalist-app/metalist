@@ -10,6 +10,7 @@ from app.db.session import begin_writer
 from app.db.tab_state_sql import upsert_tab_state_row
 from app.models.database import SafeSession
 from app.security.encryption import set_encryption_required
+from app.services.input_errors import InputRejected
 from app.services.root_date_filter import make_root_date_filter
 from app.services.tab_state import TabStateStore
 
@@ -336,3 +337,20 @@ def test_unchanged_update_keeps_version_and_skips_persistence(monkeypatch: pytes
     )
     assert moved["version"] == changed["version"] + 1
     assert writes == [True]
+
+
+# A search context's folder is kept with its other filters, so a server restart keeps it (the
+# maintainer, 2026-11-07); since the same day only the folder context has one. Its restart,
+# duplicate, rename and delete cases are in test_folder_context.py.
+def test_a_folder_filter_must_be_a_folder() -> None:
+    store = TabStateStore()
+    tab_id = store.snapshot()["activeTabId"]
+    with pytest.raises(InputRejected, match="not a folder"):
+        store.set_folder_filter(tab_id=tab_id, folder="journal")
+
+
+def test_tab_state_saved_before_folders_were_kept_has_none() -> None:
+    store = TabStateStore()
+    snapshot = store.snapshot()
+    stored = json.dumps({key: snapshot[key] for key in ("activeTabId", "tabs", "tabOrder", "version")})
+    assert store._deserialize_snapshot_json(stored)["folderFilters"] == {}

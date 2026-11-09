@@ -21,7 +21,7 @@ from PIL import Image
 import app.services.file_text_search as file_text_search_module
 import app.services.search_index as search_index_module
 import app.services.snapshot as snapshot_module
-from app.db.file_session import begin_file_writer, connect_file_reader
+from app.db.file_session import begin_file_writer, connect_file_reader, live_blob_store
 from app.db.files_sql import delete_files, fetch_file_text
 from app.models.database import SafeSession
 from app.security import encryption
@@ -290,14 +290,18 @@ def _stored_row(file_id: str) -> dict[str, object]:
     return row
 
 
+def _stored_text_bytes(row: dict[str, object]) -> bytes:
+    return live_blob_store().path_of(str(row["blob_id"])).read_bytes()
+
+
 def test_in_a_vault_with_a_password_the_text_and_filter_are_stored_encrypted(files) -> None:
     set_session_dek(os.urandom(32))
     try:
         file_id = _pdf_note("Lease.pdf", LEASE)
         file_texts.refresh()
         row = _stored_row(file_id)
-        assert row["text_encryption_nonce"] is not None
-        assert b"Rent" not in typing.cast(bytes, row["text_data"])
+        assert row["blob_seal_encryption_nonce"] is not None
+        assert b"Rent" not in _stored_text_bytes(row)
         index = _index({"lease-note": f"![[{file_id}]]"})
         assert index.query_note_ids('"rent is due"') == {"lease-note"}
     finally:
@@ -307,18 +311,18 @@ def test_in_a_vault_with_a_password_the_text_and_filter_are_stored_encrypted(fil
 def test_adding_and_removing_a_password_rewrites_file_texts(files) -> None:
     file_id = _pdf_note("Lease.pdf", LEASE)
     file_texts.refresh()
-    assert _stored_row(file_id)["text_encryption_nonce"] is None
+    assert _stored_row(file_id)["blob_seal_encryption_nonce"] is None
     set_session_dek(os.urandom(32))
     try:
         service = get_encryption_service()
         encrypt_all_files_for_active_dek(encryption_service=service)
-        assert _stored_row(file_id)["text_encryption_nonce"] is not None
+        assert _stored_row(file_id)["blob_seal_encryption_nonce"] is not None
         file_texts.clear()
         file_texts.refresh()
         assert file_texts.term_matches(file_id, "rent is due")
         decrypt_all_files_for_plaintext(encryption_service=service)
         row = _stored_row(file_id)
-        assert row["text_encryption_nonce"] is None and b"Rent is due" in typing.cast(bytes, row["text_data"])
+        assert row["blob_seal_encryption_nonce"] is None and b"Rent is due" in _stored_text_bytes(row)
     finally:
         clear_encryption_key()
 

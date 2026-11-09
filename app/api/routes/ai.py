@@ -7,9 +7,11 @@ from http import HTTPStatus
 import json
 import math
 from collections.abc import AsyncIterator
+from functools import partial
 from typing import Annotated, Any, Literal
 from uuid import uuid4
 
+import anyio.from_thread
 from fastapi import APIRouter, Depends, HTTPException, Response
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
@@ -67,7 +69,6 @@ from app.services.agent.web_settings import AgentWebSettings
 from app.services.agent.web_settings import resolve_agent_web_settings
 from app.services.agent.web_evidence import web_evidence_store
 from app.services.agent.summary_batch_store import summary_batch_store
-from app.services.agent.tagging import TAGGING_POLICY_KEY
 from app.usecases.bulk_tag_proposals import apply_bulk_proposals, prepare_proposal_changes
 from app.services.bulk_operation import bulk_operation_guard
 from app.services.tab_state import MAX_TAB_ID_LENGTH, tab_state_store
@@ -85,7 +86,6 @@ from app.services.html_export import resolve_export_scope
 from app.services.ai_setup import describe_ai_setup
 from app.services.input_errors import InputRejected
 from app.utils.text_utils import strip_html
-from app.services.preference_values import preference_or_default
 from app.contracts import requires
 from app.startup_environment import is_development_environment
 
@@ -111,6 +111,19 @@ def _require_ai_connection(*, provider: AiProvider, model: str, token: str, sess
     # lint: allow-PY001 rationale="the user removed or never added the AI's key: an expected 409, not a defect"
     except AiNotSetUp as exc:
         raise HTTPException(status_code=HTTPStatus.CONFLICT, detail="The AI is not set up: add its API key in AI settings") from exc
+
+
+def _model_context_tokens(*, connection: AiConnection, model: str) -> int:
+    """The model's context window, asked of the provider once per model (the adapters remember
+    it). These routes run in a worker thread, so this waits on the server's event loop."""
+    ask_the_provider = partial(connection.inference.inspect_context_window, base_url=connection.base_url, model=model)
+    # lint: allow-PY001 rationale="the provider could not say: an expected failure, shown as the chat's error"
+    try:
+        window = anyio.from_thread.run(ask_the_provider)
+    # lint: allow-PY001 rationale="the provider could not say: an expected failure, shown as the chat's error"
+    except InferenceProviderError as exc:
+        raise HTTPException(status_code=HTTPStatus.BAD_GATEWAY, detail=str(exc)) from exc
+    return window.maximum_tokens
 
 
 def _agent_runtime(*, inference: InferenceAdapter) -> AgentRuntime:
@@ -596,7 +609,9 @@ def suggest_tags_for_note_with_ai(
     request = build_note_tag_request(
         note_id=note_id, include_children=payload.include_children, boundary=boundary,
         tag_skill=DEFAULT_AGENT_SKILLS.for_action("tag_proposals"), scope_note_ids=scope.allowed_note_ids,
-        batch_tokens=resolve_tagging_batch_tokens(preferences, payload.provider),
+        batch_tokens=resolve_tagging_batch_tokens(
+            preferences, context_tokens=_model_context_tokens(connection=connection, model=payload.model),
+        ),
     )
     events = _note_tag_suggestion_events(
         request=request, connection=connection, payload=payload,
@@ -1072,9 +1087,10 @@ def stream_ai_chat(
     preferences = load_client_preferences(token=token)
     prompts = DEFAULT_AGENT_PROMPTS
     skills = DEFAULT_AGENT_SKILLS
+    context_tokens = _model_context_tokens(connection=connection, model=payload.model)
     retrieval_settings = resolve_agent_retrieval_settings(
         preferences=preferences,
-        provider=payload.provider,
+        context_tokens=context_tokens,
     )
     web_settings = resolve_agent_web_settings(preferences=preferences)
     privacy_boundary = resolve_cloud_privacy_boundary(
@@ -1121,7 +1137,7 @@ def stream_ai_chat(
     )
     tagging_run = TaggingRun(token=token, snapshot=frozen_scope, privacy_boundary=privacy_boundary,
         preferences=preferences, sync_uuid=get_current_sync_uuid(),
-        batch_tokens=resolve_tagging_batch_tokens(preferences, payload.provider))
+        batch_tokens=retrieval_settings.max_page_approximate_tokens)
     disclosure_changed = ai_chat_store.synchronize_disclosure_boundary(
         session_key=session_key,
         disclosure=cloud_privacy_evaluator.history_disclosure(boundary=privacy_boundary),
@@ -1224,7 +1240,6 @@ class BulkAnswerRequest(BaseModel):
         "prefix_focus_existing",
         "prefix_focus_new",
         "prefix_focus_both",
-        "summarize_all",
         "use_prefix",
         "yes",
         "no",
@@ -1276,9 +1291,3 @@ def manage_bulk_proposals(payload: BulkManageRequest, token: Annotated[str, Depe
             apply_bulk_proposals(changes=changes, token=token)
             yield json.dumps({"changed": bool(changes), "notes": len(changes), "proposals": count})
     return StreamingResponse(execute(), media_type="application/json")
-
-
-@router.get("/proposals/settings")
-def get_tagging_settings(token: Annotated[str, Depends(require_request_auth_token)]):
-    preferences = load_client_preferences(token=token)
-    return {"policy": preference_or_default(preferences, TAGGING_POLICY_KEY, default="")}

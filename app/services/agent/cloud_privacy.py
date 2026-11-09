@@ -17,7 +17,7 @@ from app.services.search_query import format_search_query, format_search_term, p
 from app.services.search_index import extract_ordered_tags_for_agent
 from app.services.tag_ontology import is_valid_tag_token
 from app.services.tag_properties import PROPERTY_SEPARATOR, has_property_syntax, split_property_segments, tag_part_of_token
-from app.services.content_formatting import extract_note_text_for_agent
+from app.services.content_formatting import extract_note_text_for_agent, note_text_for_agent_from_kept_text
 from app.services.ai_catalog import AI_CATALOG
 
 
@@ -465,9 +465,11 @@ class CloudPrivacyEvaluator:
         if not isinstance(draft_content_html, str):
             raise TypeError("draft_content_html must be a string")
         match_plan = self._match_plan(boundary)
+        # An unsaved draft has no kept text yet: its HTML is read with the parser.
         reasons = {self._exclusion_reason_for(
             effective_tags=draft_effective_tags, accepted_tags=lambda: draft_accepted_tags,
-            content_html=draft_content_html, match_plan=match_plan,
+            sent_text=lambda: extract_note_text_for_agent(content_html=draft_content_html, tags="")[0],
+            match_plan=match_plan,
         )}
         reasons |= self._ancestor_exclusion_reasons(note_id=note_id, match_plan=match_plan)
         return _strongest_reason(reasons)
@@ -487,13 +489,14 @@ class CloudPrivacyEvaluator:
         return self._exclusion_reason_for(
             effective_tags=self._effective_tags_provider(note_id),
             accepted_tags=lambda: self._accepted_tags_provider(note_id),
-            content_html=self._notes.get_note(note_id).content,
+            sent_text=lambda: note_text_for_agent_from_kept_text(
+                content_html=self._notes.get_note(note_id).content, kept_text=self._notes.kept_text(note_id), tags="")[0],
             match_plan=match_plan,
         )
 
     @staticmethod
     def _exclusion_reason_for(
-        *, effective_tags: frozenset[str], accepted_tags: Callable[[], frozenset[str]], content_html: str,
+        *, effective_tags: frozenset[str], accepted_tags: Callable[[], frozenset[str]], sent_text: Callable[[], str],
         match_plan: _CloudPrivacyMatchPlan,
     ) -> str:
         effective_tags_casefold = {tag.casefold() for tag in effective_tags}
@@ -512,10 +515,9 @@ class CloudPrivacyEvaluator:
         plaintext_casefold = ""
         if needs_plaintext:
             # Phrases are matched against exactly the text the AI is sent: the visible
-            # text plus link addresses a label hides and cached titles of linked pages.
-            # The tags argument only decides credential redaction, handled above.
-            sent_text, _ = extract_note_text_for_agent(content_html=content_html, tags="")
-            plaintext_casefold = sent_text.casefold()
+            # text plus link addresses a label hides and cached titles of linked pages,
+            # read without credential redaction (handled above).
+            plaintext_casefold = sent_text().casefold()
         if any(
             phrase in plaintext_casefold for phrase in match_plan.blacklist_phrases
         ):

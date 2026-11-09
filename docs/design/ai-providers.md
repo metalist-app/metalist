@@ -93,7 +93,7 @@ match).
   unchanged). Route models take `AiProvider`.
 - Key formats: OpenAI `sk-`, Anthropic `sk-ant-`, Google `AIza` or `AQ.` (Google's newer
   keys, 2026-10-24).
-- AI Agent Settings has one folder tab per provider: the key, a link to that provider's
+- AI Agent Settings' Keys tab has a switch per provider (one folder tab each until 2026-11-07, when the dialog became four tabs: `docs/ui/ai-chat.md`): the key, a link to that provider's
   usage and billing page, and for Google a warning under the key (checked 2026-10-23
   against Google's terms): on unpaid quota Google uses prompts and responses to improve its
   products and human reviewers may read them, except in the EEA, Switzerland and the UK.
@@ -104,7 +104,11 @@ Agreed 2026-10-23. AI Agent Settings no longer picks a model or provider. The ch
 picker lists the models of every provider with a key, each under its provider's name, and
 picking a model picks its provider (`GET /api2/ai/model-choices`, a read, so it never holds the one mutation slot). The last model and
 thinking level picked are the next default (`pref.ai.provider`, `pref.ai.<provider>_model`).
-The reading limit is one number for every provider (**Max token window**).
+The reading limit is one setting for every provider (**Model window used**), a percentage of
+each model's own context window (agreed 2026-11-08). `inspect_context_window` supplies the size:
+Claude's Models API (`max_input_tokens`) and Gemini's `models.get` (`inputTokenLimit`) report it,
+asked once per model while MetaList runs; OpenAI's models endpoint does not, so its size is in the
+catalog (`OPENAI_MODEL_CONTEXT_TOKENS`). When a provider cannot say, the chat shows that error.
 
 Switching provider keeps the conversation (2026-10-24): one privacy policy covers every
 provider, so the history the next model sees is the same.

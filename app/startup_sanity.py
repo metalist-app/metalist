@@ -38,6 +38,9 @@ _BACKUP_DELETE_FUNCTION = "delete_oldest_backups_in_directory"
 # deletes no file with a backup's name (backup_service.delete_partial_archives; approved
 # by the maintainer 2026-10-29).
 _PARTIAL_ARCHIVE_DELETE_FUNCTION = "delete_partial_archives"
+# What the upgrade at unlock may do to backups: make its safety backup and, once the upgrade has
+# succeeded, keep only the newest few (approved by the maintainer 2026-11-08).
+_AUTH_SERVICE_BACKUP_IMPORTS = frozenset({"create_timestamped_backup", "trim_safety_backups"})
 # Open modes that write to an existing file. Exclusive create ("x") is allowed, as
 # tarfile's "x" mode is: it fails if the name exists, so no backup is ever touched.
 _EXISTING_FILE_WRITE_MODE_MARKERS = ("w", "a", "+")
@@ -527,11 +530,11 @@ class _StartupSanityChecker(ast.NodeVisitor):
             )
         if self._relative_path == _AUTH_SERVICE_PATH and node.module == _BACKUP_SERVICE_MODULE:
             for alias in node.names:
-                if alias.name != "create_timestamped_backup":
+                if alias.name not in _AUTH_SERVICE_BACKUP_IMPORTS:
                     self._add(
                         node=node,
                         rule_id="BKP001",
-                        message="authenticated migration may only create a new backup",
+                        message="authenticated migration may only create a new backup and trim safety backups",
                     )
         self.generic_visit(node)
 

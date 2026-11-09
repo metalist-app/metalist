@@ -80,8 +80,8 @@ Code: `structured_inference._run_structured_attempt` and
 
 These are observations, not decisions; each would be its own change.
 
-1. **Waiting happens inside one HTTP stream.** A pending question (summary or
-   tag scope, a Yes/No confirmation, a web-address confirmation) or menu is an
+1. **Waiting happens inside one HTTP stream.** A pending question (tag
+   scope, a Yes/No confirmation, a web-address confirmation) or menu is an
    in-memory wait inside the streaming request. Reloading the page or restarting
    the server cancels the stream, the question is lost, and the turn fails as
    "Cancelled by user" even though the user cancelled nothing.

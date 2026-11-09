@@ -10,7 +10,6 @@ import { clickAndSelectAll } from './browser-select-field.mjs';
 
 const REQUESTS_QUIET_MS = 300;
 const SETTLE_MS = 300;
-const SHOWN_KEY = 'metalist.virtual_folders.shown';
 // Wide enough for the tree beside the column (scripts/browser-edge-tab-regressions.mjs).
 const WINDOW = {width: 1440, height: 900};
 // Every note of the suite carries it, so its search shows only them.
@@ -270,9 +269,11 @@ async function searchFor(page, query) {
 export async function checkFolderNoteDrag(page) {
   const ids = await createNotes(page);
   await page.setViewport(WINDOW);
-  await page.evaluate(key => window.localStorage.setItem(key, 'true'), SHOWN_KEY);
   await page.reload();
   await page.waitForSelector('[data-app-ready="true"]');
+  await idle(page);
+  // The tree shows in folder contexts (docs/ready-to-build/virtual-folders.md, "Folder contexts"): the folders tab opens it.
+  await page.click('#virtual-folders-button');
   await idle(page);
   await runThenCleanUp('dragging notes into folders', async () => {
     await searchFor(page, SEARCH);
@@ -282,10 +283,11 @@ export async function checkFolderNoteDrag(page) {
     await checkDropLeavingTheFolderView(page, ids);
     await checkTopAndChild(page, ids);
   }, async () => {
-    await page.evaluate(async ({ids, key}) => {
-      window.localStorage.setItem(key, 'false');
+    await page.evaluate(async ({ids}) => {
+      // Closes the folder context, and the tree with it.
+      if (document.body.classList.contains('virtual-folders-on')) document.getElementById('virtual-folders-button').click();
       const {NotesAPI} = await import('/static/js/modules/api-client.js');
       for (const id of [ids.above, ids.mover, ids.below, ids.plain, ids.two]) await NotesAPI.deleteNote(id);
-    }, {ids, key: SHOWN_KEY});
+    }, {ids});
   });
 }

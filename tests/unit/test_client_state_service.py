@@ -114,6 +114,7 @@ def test_save_client_preferences_drops_obsolete_preferences(
             "pref.show_rhs_panel": "true",
             "pref.show_perf_overlay": "true",
             "pref.show_backlinks": "false",
+            "pref.legacy_import_declined": "true",
         }
     )
 

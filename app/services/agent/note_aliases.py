@@ -17,7 +17,11 @@ from app.services.agent.scope import ScopedSearchSnapshot
 ALIAS_RE = re.compile(r"^n[1-9]\d*$")
 # Payload keys whose value is one note id, and keys whose value is a list of note ids.
 _ID_KEYS = frozenset({"note_id", "root_id", "root_note_id", "parent_id"})
-_ID_LIST_KEYS = frozenset({"matching_note_ids", "unread_root_ids", "too_large_root_ids"})
+_ID_LIST_KEYS = frozenset({
+    "matching_note_ids", "unread_root_ids", "too_large_root_ids",
+    # A summary's batches, reductions and final request (runtime.py).
+    "expected_root_ids", "supporting_note_ids", "covered_root_ids",
+})
 
 
 class NoteAliases:

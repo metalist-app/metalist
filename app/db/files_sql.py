@@ -1,4 +1,4 @@
-"""Composable sqlite helpers for the encrypted files table."""
+"""Composable sqlite helpers for the catalog of stored files."""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ from datetime import datetime
 from typing import Iterable, Optional
 
 from app.db.file_schema import (
+    BLOB_TABLES,
     FILE_PREVIEW_VARIANTS,
     FILE_PREVIEWS_TABLE,
     FILE_TEXTS_TABLE,
@@ -41,9 +42,10 @@ def _deserialize_row(row: sqlite3.Row) -> dict[str, object]:
         "metadata_json": row["metadata_json"],
         "metadata_encryption_nonce": row["metadata_encryption_nonce"],
         "metadata_encryption_tag": row["metadata_encryption_tag"],
-        "blob_data": row["blob_data"],
-        "blob_encryption_nonce": row["blob_encryption_nonce"],
-        "blob_encryption_tag": row["blob_encryption_tag"],
+        "blob_id": row["blob_id"],
+        "blob_seal": row["blob_seal"],
+        "blob_seal_encryption_nonce": row["blob_seal_encryption_nonce"],
+        "blob_seal_encryption_tag": row["blob_seal_encryption_tag"],
         "created_at": _parse_datetime("created_at"),
         "updated_at": _parse_datetime("updated_at"),
         "content_revision": content_revision,
@@ -60,9 +62,10 @@ def insert_file(
     metadata_json: str,
     metadata_encryption_nonce: Optional[bytes],
     metadata_encryption_tag: Optional[bytes],
-    blob_data: bytes,
-    blob_encryption_nonce: Optional[bytes],
-    blob_encryption_tag: Optional[bytes],
+    blob_id: str,
+    blob_seal: bytes,
+    blob_seal_encryption_nonce: Optional[bytes],
+    blob_seal_encryption_tag: Optional[bytes],
     created_at: datetime,
     updated_at: datetime,
 ) -> None:
@@ -76,12 +79,13 @@ def insert_file(
             metadata_json,
             metadata_encryption_nonce,
             metadata_encryption_tag,
-            blob_data,
-            blob_encryption_nonce,
-            blob_encryption_tag,
+            blob_id,
+            blob_seal,
+            blob_seal_encryption_nonce,
+            blob_seal_encryption_tag,
             created_at,
             updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             file_id,
@@ -91,16 +95,14 @@ def insert_file(
             metadata_json,
             metadata_encryption_nonce,
             metadata_encryption_tag,
-            blob_data,
-            blob_encryption_nonce,
-            blob_encryption_tag,
+            blob_id,
+            blob_seal,
+            blob_seal_encryption_nonce,
+            blob_seal_encryption_tag,
             _serialize_datetime(created_at),
             _serialize_datetime(updated_at),
         ),
     )
-
-
-_METADATA_COLUMNS = "id, title, title_encryption_nonce, title_encryption_tag, metadata_json, metadata_encryption_nonce, metadata_encryption_tag, created_at, updated_at, content_revision, X'' AS blob_data, blob_encryption_nonce, blob_encryption_tag"
 
 
 class AttachmentSizeExceeded(ValueError):
@@ -108,28 +110,42 @@ class AttachmentSizeExceeded(ValueError):
 
 
 def fetch_file_metadata(connection: sqlite3.Connection, file_id: str):
-    row = connection.execute(f"SELECT {_METADATA_COLUMNS} FROM {FILES_TABLE} WHERE id=?", (file_id,)).fetchone()
+    row = connection.execute(f"SELECT * FROM {FILES_TABLE} WHERE id=?", (file_id,)).fetchone()
     if row is None:
         return None
     return _deserialize_row(row)
 
 
 def fetch_all_file_metadata(connection: sqlite3.Connection):
-    return [_deserialize_row(row) for row in connection.execute(f"SELECT {_METADATA_COLUMNS} FROM {FILES_TABLE} ORDER BY created_at ASC")]
+    return [_deserialize_row(row) for row in connection.execute(f"SELECT * FROM {FILES_TABLE} ORDER BY created_at ASC")]
 
 
-def sum_stored_file_sizes(connection: sqlite3.Connection, file_ids: list[str]) -> int:
+def fetch_blob_ids_of_files(connection: sqlite3.Connection, file_ids: list[str]) -> list[str]:
+    """Each of these files' own content blob, as many as are still present."""
     placeholders = ",".join("?" for _ in file_ids)
-    row = connection.execute(
-        f"SELECT COALESCE(SUM(length(blob_data)), 0) FROM {FILES_TABLE} WHERE id IN ({placeholders})", file_ids,
-    ).fetchone()
-    return int(row[0])
+    rows = connection.execute(f"SELECT blob_id FROM {FILES_TABLE} WHERE id IN ({placeholders})", tuple(file_ids)).fetchall()
+    return [str(row["blob_id"]) for row in rows]
 
 
-def require_file_size(connection: sqlite3.Connection, file_id: str, limit: int) -> None:
-    row = connection.execute(f"SELECT length(blob_data) FROM {FILES_TABLE} WHERE id=?", (file_id,)).fetchone()
-    if row is not None and row[0] > limit:
-        raise AttachmentSizeExceeded('Attachment exceeds the configured size limit')
+def fetch_every_blob_id_of_files(connection: sqlite3.Connection, file_ids: list[str]) -> list[str]:
+    """The content, preview and text blobs of these files: everything deleting them leaves behind."""
+    if not file_ids:
+        return []
+    placeholders = ",".join("?" for _ in file_ids)
+    parameters = tuple(file_ids)
+    blob_ids = fetch_blob_ids_of_files(connection, file_ids)
+    for table in (FILE_PREVIEWS_TABLE, FILE_TEXTS_TABLE):
+        rows = connection.execute(f"SELECT blob_id FROM {table} WHERE file_id IN ({placeholders})", parameters).fetchall()
+        blob_ids.extend(str(row["blob_id"]) for row in rows)
+    return blob_ids
+
+
+def fetch_all_blob_ids(connection: sqlite3.Connection) -> set[str]:
+    """Every blob the catalog names. Plaintext columns only: needs no key."""
+    blob_ids: set[str] = set()
+    for table in BLOB_TABLES:
+        blob_ids.update(str(row[0]) for row in connection.execute(f"SELECT blob_id FROM {table}").fetchall())
+    return blob_ids
 
 
 def fetch_file(connection: sqlite3.Connection, file_id: str) -> Optional[dict[str, object]]:
@@ -163,9 +179,10 @@ def update_file_storage_fields(
     metadata_json: str,
     metadata_encryption_nonce: Optional[bytes],
     metadata_encryption_tag: Optional[bytes],
-    blob_data: bytes,
-    blob_encryption_nonce: Optional[bytes],
-    blob_encryption_tag: Optional[bytes],
+    blob_id: str,
+    blob_seal: bytes,
+    blob_seal_encryption_nonce: Optional[bytes],
+    blob_seal_encryption_tag: Optional[bytes],
     updated_at: datetime,
 ) -> None:
     connection.execute(
@@ -178,9 +195,10 @@ def update_file_storage_fields(
             metadata_json = ?,
             metadata_encryption_nonce = ?,
             metadata_encryption_tag = ?,
-            blob_data = ?,
-            blob_encryption_nonce = ?,
-            blob_encryption_tag = ?,
+            blob_id = ?,
+            blob_seal = ?,
+            blob_seal_encryption_nonce = ?,
+            blob_seal_encryption_tag = ?,
             updated_at = ?
         WHERE id = ?
         """,
@@ -191,9 +209,10 @@ def update_file_storage_fields(
             metadata_json,
             metadata_encryption_nonce,
             metadata_encryption_tag,
-            blob_data,
-            blob_encryption_nonce,
-            blob_encryption_tag,
+            blob_id,
+            blob_seal,
+            blob_seal_encryption_nonce,
+            blob_seal_encryption_tag,
             _serialize_datetime(updated_at),
             file_id,
         ),
@@ -260,9 +279,10 @@ def replace_file_content_fields(
     metadata_json: str,
     metadata_encryption_nonce: Optional[bytes],
     metadata_encryption_tag: Optional[bytes],
-    blob_data: bytes,
-    blob_encryption_nonce: Optional[bytes],
-    blob_encryption_tag: Optional[bytes],
+    blob_id: str,
+    blob_seal: bytes,
+    blob_seal_encryption_nonce: Optional[bytes],
+    blob_seal_encryption_tag: Optional[bytes],
     expected_revision: int,
     updated_at: datetime,
 ) -> int:
@@ -276,9 +296,10 @@ def replace_file_content_fields(
             metadata_json = ?,
             metadata_encryption_nonce = ?,
             metadata_encryption_tag = ?,
-            blob_data = ?,
-            blob_encryption_nonce = ?,
-            blob_encryption_tag = ?,
+            blob_id = ?,
+            blob_seal = ?,
+            blob_seal_encryption_nonce = ?,
+            blob_seal_encryption_tag = ?,
             updated_at = ?,
             content_revision = content_revision + 1
         WHERE id = ? AND content_revision = ?
@@ -287,9 +308,10 @@ def replace_file_content_fields(
             metadata_json,
             metadata_encryption_nonce,
             metadata_encryption_tag,
-            blob_data,
-            blob_encryption_nonce,
-            blob_encryption_tag,
+            blob_id,
+            blob_seal,
+            blob_seal_encryption_nonce,
+            blob_seal_encryption_tag,
             _serialize_datetime(updated_at),
             file_id,
             expected_revision,
@@ -315,9 +337,10 @@ def _deserialize_preview_row(row: sqlite3.Row) -> dict[str, object]:
         "file_id": file_id,
         "variant": row["variant"],
         "mime_type": row["mime_type"],
-        "preview_data": row["preview_data"],
-        "preview_encryption_nonce": row["preview_encryption_nonce"],
-        "preview_encryption_tag": row["preview_encryption_tag"],
+        "blob_id": row["blob_id"],
+        "blob_seal": row["blob_seal"],
+        "blob_seal_encryption_nonce": row["blob_seal_encryption_nonce"],
+        "blob_seal_encryption_tag": row["blob_seal_encryption_tag"],
         "content_revision": content_revision,
         "updated_at": datetime.fromisoformat(updated_at),
     }
@@ -329,9 +352,10 @@ def upsert_file_preview(
     file_id: str,
     variant: str,
     mime_type: str,
-    preview_data: bytes,
-    preview_encryption_nonce: Optional[bytes],
-    preview_encryption_tag: Optional[bytes],
+    blob_id: str,
+    blob_seal: bytes,
+    blob_seal_encryption_nonce: Optional[bytes],
+    blob_seal_encryption_tag: Optional[bytes],
     content_revision: int,
     updated_at: datetime,
 ) -> None:
@@ -339,14 +363,15 @@ def upsert_file_preview(
     connection.execute(
         f"""
         INSERT INTO {FILE_PREVIEWS_TABLE} (
-            file_id, variant, mime_type, preview_data, preview_encryption_nonce,
-            preview_encryption_tag, content_revision, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            file_id, variant, mime_type, blob_id, blob_seal, blob_seal_encryption_nonce,
+            blob_seal_encryption_tag, content_revision, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(file_id, variant) DO UPDATE SET
             mime_type = excluded.mime_type,
-            preview_data = excluded.preview_data,
-            preview_encryption_nonce = excluded.preview_encryption_nonce,
-            preview_encryption_tag = excluded.preview_encryption_tag,
+            blob_id = excluded.blob_id,
+            blob_seal = excluded.blob_seal,
+            blob_seal_encryption_nonce = excluded.blob_seal_encryption_nonce,
+            blob_seal_encryption_tag = excluded.blob_seal_encryption_tag,
             content_revision = excluded.content_revision,
             updated_at = excluded.updated_at
         """,
@@ -354,9 +379,10 @@ def upsert_file_preview(
             file_id,
             variant,
             mime_type,
-            preview_data,
-            preview_encryption_nonce,
-            preview_encryption_tag,
+            blob_id,
+            blob_seal,
+            blob_seal_encryption_nonce,
+            blob_seal_encryption_tag,
             content_revision,
             _serialize_datetime(updated_at),
         ),
@@ -389,19 +415,20 @@ def update_file_preview_storage_fields(
     *,
     file_id: str,
     variant: str,
-    preview_data: bytes,
-    preview_encryption_nonce: Optional[bytes],
-    preview_encryption_tag: Optional[bytes],
+    blob_id: str,
+    blob_seal: bytes,
+    blob_seal_encryption_nonce: Optional[bytes],
+    blob_seal_encryption_tag: Optional[bytes],
 ) -> None:
     """Rewrite preview ciphertext during encryption migrations without changing its revision."""
     _require_preview_variant(variant)
     cursor = connection.execute(
         f"""
         UPDATE {FILE_PREVIEWS_TABLE}
-        SET preview_data = ?, preview_encryption_nonce = ?, preview_encryption_tag = ?
+        SET blob_id = ?, blob_seal = ?, blob_seal_encryption_nonce = ?, blob_seal_encryption_tag = ?
         WHERE file_id = ? AND variant = ?
         """,
-        (preview_data, preview_encryption_nonce, preview_encryption_tag, file_id, variant),
+        (blob_id, blob_seal, blob_seal_encryption_nonce, blob_seal_encryption_tag, file_id, variant),
     )
     if cursor.rowcount != 1:
         raise RuntimeError(f"file preview rewrite expected one row | file_id={file_id} variant={variant}")
@@ -415,9 +442,10 @@ def upsert_file_text(
     connection: sqlite3.Connection,
     *,
     file_id: str,
-    text_data: bytes,
-    text_encryption_nonce: Optional[bytes],
-    text_encryption_tag: Optional[bytes],
+    blob_id: str,
+    blob_seal: bytes,
+    blob_seal_encryption_nonce: Optional[bytes],
+    blob_seal_encryption_tag: Optional[bytes],
     filter_data: bytes,
     filter_encryption_nonce: Optional[bytes],
     filter_encryption_tag: Optional[bytes],
@@ -435,14 +463,15 @@ def upsert_file_text(
     connection.execute(
         f"""
         INSERT INTO {FILE_TEXTS_TABLE} (
-            file_id, text_data, text_encryption_nonce, text_encryption_tag, filter_data,
+            file_id, blob_id, blob_seal, blob_seal_encryption_nonce, blob_seal_encryption_tag, filter_data,
             filter_encryption_nonce, filter_encryption_tag, is_cut, content_revision, reader_version,
             filter_version, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(file_id) DO UPDATE SET
-            text_data = excluded.text_data,
-            text_encryption_nonce = excluded.text_encryption_nonce,
-            text_encryption_tag = excluded.text_encryption_tag,
+            blob_id = excluded.blob_id,
+            blob_seal = excluded.blob_seal,
+            blob_seal_encryption_nonce = excluded.blob_seal_encryption_nonce,
+            blob_seal_encryption_tag = excluded.blob_seal_encryption_tag,
             filter_data = excluded.filter_data,
             filter_encryption_nonce = excluded.filter_encryption_nonce,
             filter_encryption_tag = excluded.filter_encryption_tag,
@@ -453,7 +482,7 @@ def upsert_file_text(
             updated_at = excluded.updated_at
         """,
         (
-            file_id, text_data, text_encryption_nonce, text_encryption_tag, filter_data,
+            file_id, blob_id, blob_seal, blob_seal_encryption_nonce, blob_seal_encryption_tag, filter_data,
             filter_encryption_nonce, filter_encryption_tag, int(is_cut), content_revision, reader_version, filter_version,
             _serialize_datetime(updated_at),
         ),
@@ -463,7 +492,7 @@ def upsert_file_text(
 def fetch_file_text(connection: sqlite3.Connection, file_id: str) -> Optional[dict[str, object]]:
     """A file's stored text (still encrypted), or None when it has none yet."""
     row = connection.execute(
-        f"SELECT file_id, text_data, text_encryption_nonce, text_encryption_tag, is_cut, content_revision, reader_version "
+        f"SELECT file_id, blob_id, blob_seal, blob_seal_encryption_nonce, blob_seal_encryption_tag, is_cut, content_revision, reader_version "
         f"FROM {FILE_TEXTS_TABLE} WHERE file_id = ?",
         (file_id,),
     ).fetchone()
@@ -490,9 +519,10 @@ def update_file_text_storage_fields(
     connection: sqlite3.Connection,
     *,
     file_id: str,
-    text_data: bytes,
-    text_encryption_nonce: Optional[bytes],
-    text_encryption_tag: Optional[bytes],
+    blob_id: str,
+    blob_seal: bytes,
+    blob_seal_encryption_nonce: Optional[bytes],
+    blob_seal_encryption_tag: Optional[bytes],
     filter_data: bytes,
     filter_encryption_nonce: Optional[bytes],
     filter_encryption_tag: Optional[bytes],
@@ -501,11 +531,11 @@ def update_file_text_storage_fields(
     cursor = connection.execute(
         f"""
         UPDATE {FILE_TEXTS_TABLE}
-        SET text_data = ?, text_encryption_nonce = ?, text_encryption_tag = ?,
+        SET blob_id = ?, blob_seal = ?, blob_seal_encryption_nonce = ?, blob_seal_encryption_tag = ?,
             filter_data = ?, filter_encryption_nonce = ?, filter_encryption_tag = ?
         WHERE file_id = ?
         """,
-        (text_data, text_encryption_nonce, text_encryption_tag, filter_data, filter_encryption_nonce, filter_encryption_tag, file_id),
+        (blob_id, blob_seal, blob_seal_encryption_nonce, blob_seal_encryption_tag, filter_data, filter_encryption_nonce, filter_encryption_tag, file_id),
     )
     if cursor.rowcount != 1:
         raise RuntimeError(f"file text rewrite expected one row | file_id={file_id}")

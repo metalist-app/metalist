@@ -122,7 +122,7 @@ class AgentContextBuilder:
         ]
 
     def append_selected_note_context(
-        self, *, messages: list[dict[str, str]], snapshot: ScopedSearchSnapshot,
+        self, *, messages: list[dict[str, str]], snapshot: ScopedSearchSnapshot, note_aliases: NoteAliases,
     ) -> list[dict[str, str]]:
         payload = {
             "instruction": (
@@ -152,7 +152,8 @@ class AgentContextBuilder:
                 "as [[note_id]] using the ID of the actual supporting tree node, including children or siblings. Selection does not authorize editing, "
                 "creating children, or other note mutations."
             ),
-            "selected_note": snapshot.selected_note.as_payload(),
+            # Short note IDs (n1, n2…), as everywhere a summary's requests name notes.
+            "selected_note": note_aliases.aliased(snapshot.selected_note.as_payload()),
         }
         return [*messages, {"role": "user", "content": "SELECTED_NOTE_CONTEXT\n"
                            + json.dumps(payload, sort_keys=True, separators=(",", ":"))}]
@@ -269,7 +270,7 @@ class AgentContextBuilder:
         )
         base = self.activate_skill(messages=base, skill=skill)
         included_note_count = len(evidence_payload.evidence_note_ids)
-        base = self.append_selected_note_context(messages=base, snapshot=state.snapshot)
+        base = self.append_selected_note_context(messages=base, snapshot=state.snapshot, note_aliases=state.note_aliases)
         included_result_tree_count = len(evidence_payload.result_tree_ids)
         omitted_note_count = state.snapshot.note_count - included_note_count
         omitted_result_tree_count = (
@@ -305,7 +306,7 @@ class AgentContextBuilder:
                 "Do not infer a citation from tree position or merely cite the "
                 "enclosing root."
             ),
-            "authoritative_result_trees": list(evidence_payload.result_trees),
+            "authoritative_result_trees": state.note_aliases.aliased(list(evidence_payload.result_trees)),
         }
         return (
             [
@@ -330,7 +331,10 @@ class AgentContextBuilder:
         evidence_payload: InvestigationEvidencePayload,
         batch_index: int,
         batch_count: int,
+        note_aliases: NoteAliases,
     ) -> list[dict[str, str]]:
+        """A summary batch's request, its notes named by short IDs (n1, n2…), which a model copies
+        reliably, unlike 36-character ids (runtime.py translates its citations back)."""
         if not 0 <= batch_index < batch_count:
             raise ValueError("Summary batch index must be inside batch count")
         base = self.build_initial_messages(
@@ -338,7 +342,7 @@ class AgentContextBuilder:
             prompts=prompts,
         )
         base = self.activate_skill(messages=base, skill=skill)
-        base = self.append_selected_note_context(messages=base, snapshot=snapshot)
+        base = self.append_selected_note_context(messages=base, snapshot=snapshot, note_aliases=note_aliases)
         payload = {
             "instruction": (
                 "Review every supplied root tree for the current user's requested "
@@ -353,12 +357,12 @@ class AgentContextBuilder:
                 "structured result."
             ),
             "current_user_request": summary_request,
-            "batch": {
+            "batch": note_aliases.aliased({
                 "index": batch_index + 1,
                 "count": batch_count,
                 "expected_root_ids": list(evidence_payload.result_tree_ids),
                 "result_trees": list(evidence_payload.result_trees),
-            },
+            }),
         }
         return [
             *base,
@@ -378,7 +382,9 @@ class AgentContextBuilder:
         skill: AgentSkill,
         snapshot: ScopedSearchSnapshot,
         summaries: tuple[SummaryBatchResult, ...],
+        note_aliases: NoteAliases,
     ) -> tuple[list[dict[str, str]], tuple[str, ...]]:
+        """The final request, its notes named and cited by short IDs; the note ids it may cite."""
         if not summaries:
             raise ValueError("Staged summary final generation requires summaries")
         covered_root_ids = tuple(
@@ -397,7 +403,7 @@ class AgentContextBuilder:
             prompts=prompts,
         )
         base = self.activate_skill(messages=base, skill=skill)
-        base = self.append_selected_note_context(messages=base, snapshot=snapshot)
+        base = self.append_selected_note_context(messages=base, snapshot=snapshot, note_aliases=note_aliases)
         payload = {
             "instruction": (
                 "Synthesize one answer to the current user's request from the "
@@ -421,10 +427,10 @@ class AgentContextBuilder:
                 "included_result_tree_count": snapshot.result_tree_count,
                 "omitted_result_tree_count": 0,
             },
-            "authoritative_batch_findings": [
+            "authoritative_batch_findings": note_aliases.aliased([
                 summary.model_dump(mode="json") for summary in summaries
-            ],
-            "reference_catalog": _reference_catalog(reference_note_ids),
+            ]),
+            "reference_catalog": _reference_catalog(tuple(note_aliases.alias(note_id) for note_id in reference_note_ids)),
         }
         return (
             [
@@ -487,6 +493,7 @@ class AgentContextBuilder:
         stage_index: int,
         group_index: int,
         group_count: int,
+        note_aliases: NoteAliases,
     ) -> list[dict[str, str]]:
         if not summaries:
             raise ValueError("Summary reduction requires input summaries")
@@ -502,7 +509,7 @@ class AgentContextBuilder:
             prompts=prompts,
         )
         base = self.activate_skill(messages=base, skill=skill)
-        base = self.append_selected_note_context(messages=base, snapshot=snapshot)
+        base = self.append_selected_note_context(messages=base, snapshot=snapshot, note_aliases=note_aliases)
         payload = {
             "instruction": (
                 "Consolidate these verified findings into a smaller structured "
@@ -514,7 +521,7 @@ class AgentContextBuilder:
                 "coverage; return only the structured findings."
             ),
             "current_user_request": summary_request,
-            "reduction": {
+            "reduction": note_aliases.aliased({
                 "stage": stage_index,
                 "group_index": group_index + 1,
                 "group_count": group_count,
@@ -522,7 +529,7 @@ class AgentContextBuilder:
                 "verified_findings": [
                     summary.model_dump(mode="json") for summary in summaries
                 ],
-            },
+            }),
         }
         return [
             *base,

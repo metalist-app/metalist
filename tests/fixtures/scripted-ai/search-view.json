@@ -1,0 +1,6 @@
+{
+  "turns": [
+    {"text": "", "calls": [{"name": "search_view_notes", "arguments": {"query": "harbor"}}]},
+    {"text": "Done searching: the notes about the harbor are listed above.", "calls": []}
+  ]
+}

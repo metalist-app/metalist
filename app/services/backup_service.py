@@ -15,21 +15,35 @@ import tarfile
 import tempfile
 from threading import Lock
 
-from app.db.session import recoverable_database_change
+from app.db.session import after_recoverable_commit, recoverable_database_change
 from app.db.version import CURRENT_DATABASE_VERSION
 from app.db.file_schema import initialize_file_schema
 from app.db.file_schema import FILE_PREVIEWS_TABLE, FILE_TEXTS_TABLE, FILES_TABLE
-from app.db.file_session import resolve_file_database_path
+from app.db.blob_store import (
+    BLOB_FAN_OUT_CHARACTERS,
+    BLOB_FILE_SUFFIX,
+    BLOB_ID_HEX_CHARACTERS,
+    BLOBS_DIRECTORY_NAME,
+    CATALOG_FILE_NAME,
+    FILES_DIRECTORY_NAME,
+    BlobStore,
+    blob_store_for_database,
+    resolve_file_catalog_path,
+    resolve_legacy_file_database_path,
+)
+from app.db.files_sql import fetch_all_blob_ids
 from app.db.schema import NAMESPACE_LAUNCH_PROFILE_TABLE
 from app.models.database import SafeSession
 
 
 _BACKUP_LOCK = Lock()
-_ARCHIVE_BACKUP_FORMAT_VERSION = 1
+# 2: the files are a catalog and one member per blob. Older archives hold one files database.
+_ARCHIVE_BACKUP_FORMAT_VERSION = 2
+_SINGLE_FILES_DATABASE_FORMAT_VERSION = 1
 _MANIFEST_SCHEMA_VERSION = 1
 _MANIFEST_FILENAME = "manifest.json"
 _MANIFEST_JSON_INDENT = 2
-_SUPPORTED_ARCHIVE_BACKUP_FORMAT_VERSIONS = {_ARCHIVE_BACKUP_FORMAT_VERSION}
+_SUPPORTED_ARCHIVE_BACKUP_FORMAT_VERSIONS = {_SINGLE_FILES_DATABASE_FORMAT_VERSION, _ARCHIVE_BACKUP_FORMAT_VERSION}
 _ARCHIVE_BACKUP_FILENAME_RE = re.compile(
     r"^(?P<namespace>.+)-(?P<timestamp>[0-9]{8}-[0-9]{6}-[0-9]{6})\.metalist-backup\.tar\.gz$"
 )
@@ -41,11 +55,19 @@ _LEGACY_PRIMARY_BACKUP_FILENAME_RE = re.compile(
 _DATABASE_ROLE_NOTES = "notes"
 _DATABASE_ROLE_FILES = "files"
 _DATABASE_ROLE_SEARCH_HISTORY = "search_history"
+_DATABASE_ROLE_CATALOG = "catalog"
+_DATABASE_ROLE_BLOB = "blob"
 _SUPPORTED_DATABASE_ROLES = {
     _DATABASE_ROLE_NOTES,
     _DATABASE_ROLE_FILES,
     _DATABASE_ROLE_SEARCH_HISTORY,
+    _DATABASE_ROLE_CATALOG,
+    _DATABASE_ROLE_BLOB,
 }
+_CATALOG_ARCHIVE_NAME = f"{FILES_DIRECTORY_NAME}/{CATALOG_FILE_NAME}"
+_BLOB_ARCHIVE_NAME_RE = re.compile(
+    rf"^{FILES_DIRECTORY_NAME}/{BLOBS_DIRECTORY_NAME}/(?P<fan_out>[0-9a-f]{{{BLOB_FAN_OUT_CHARACTERS}}})/(?P<blob_id>[0-9a-f]{{{BLOB_ID_HEX_CHARACTERS}}})\{BLOB_FILE_SUFFIX}$"
+)
 
 
 @dataclass(frozen=True)
@@ -61,6 +83,11 @@ class BackupLaunchProfile:
     port: int | None
     https_port: int | None
     mcp_port: int | None
+
+
+# Safety backups kept per vault (made by an upgrade at unlock and before an update). More than
+# one: damage noticed only after a later upgrade needs a copy from before it.
+SAFETY_BACKUPS_KEPT = 3
 
 
 def _coerce_optional_db_port(*, value: object) -> int | None:
@@ -227,7 +254,7 @@ def _derive_any_search_history_backup_filename(filename: str) -> str:
 
 
 def _resolve_related_file_database_path(database_path: Path) -> Path:
-    return resolve_file_database_path(database_path)
+    return resolve_legacy_file_database_path(database_path)
 
 
 def _resolve_related_file_backup_path(
@@ -279,9 +306,9 @@ def _checkpoint_database(database_path: Path) -> None:
         connection.close()
 
 
-def _reset_file_database_to_empty(file_database_path: Path) -> None:
-    file_database_path.parent.mkdir(parents=True, exist_ok=True)
-    connection = sqlite3.connect(str(file_database_path), check_same_thread=False)
+def _empty_catalog_database(catalog_path: Path) -> None:
+    catalog_path.parent.mkdir(parents=True, exist_ok=True)
+    connection = sqlite3.connect(str(catalog_path), check_same_thread=False)
     try:
         initialize_file_schema(connection)
         # Foreign keys are off on this bare connection, so previews are not cascaded.
@@ -295,8 +322,7 @@ def _reset_file_database_to_empty(file_database_path: Path) -> None:
 
 
 def _copy_file_from_archive(archive_handle: tarfile.TarFile, *, archive_name: str, target_path: Path) -> None:
-    if Path(archive_name).name != archive_name:
-        raise RuntimeError(f"Archive member must be a basename: {archive_name}")
+    """A member whose name the manifest check allowed, copied to a path the caller chose."""
     member = archive_handle.getmember(archive_name)
     if not member.isfile():
         raise RuntimeError(f"Archive member is not a file: {archive_name}")
@@ -496,6 +522,21 @@ def _build_manifest_file_entry(*, archive_name: str, database_role: str, path: P
     }
 
 
+def _require_archive_name_of_role(*, archive_name: str, database_role: str) -> None:
+    """An archive member's name never leaves the place its role allows: restore builds paths from it."""
+    if database_role == _DATABASE_ROLE_CATALOG:
+        if archive_name != _CATALOG_ARCHIVE_NAME:
+            raise RuntimeError(f"manifest catalog must be named {_CATALOG_ARCHIVE_NAME}: {archive_name}")
+        return
+    if database_role == _DATABASE_ROLE_BLOB:
+        match = _BLOB_ARCHIVE_NAME_RE.fullmatch(archive_name)
+        if match is None or not match.group("blob_id").startswith(match.group("fan_out")):
+            raise RuntimeError(f"manifest blob name is not a blob's path: {archive_name}")
+        return
+    if Path(archive_name).name != archive_name:
+        raise RuntimeError(f"manifest archive_name must be a basename: {archive_name}")
+
+
 def _validate_manifest_file_entry(raw_entry: object) -> dict[str, object]:
     if not isinstance(raw_entry, dict):
         raise RuntimeError("manifest files entries must be objects")
@@ -504,13 +545,12 @@ def _validate_manifest_file_entry(raw_entry: object) -> dict[str, object]:
     archive_name = raw_entry["archive_name"]
     if not isinstance(archive_name, str) or archive_name == "":
         raise RuntimeError("manifest file entry missing archive_name")
-    if Path(archive_name).name != archive_name:
-        raise RuntimeError(f"manifest archive_name must be a basename: {archive_name}")
     if "database_role" not in raw_entry:
         raise RuntimeError("manifest file entry missing database_role")
     database_role = raw_entry["database_role"]
     if database_role not in _SUPPORTED_DATABASE_ROLES:
         raise RuntimeError(f"manifest file entry has unsupported database_role: {database_role!r}")
+    _require_archive_name_of_role(archive_name=archive_name, database_role=database_role)
     if "size_bytes" not in raw_entry:
         raise RuntimeError("manifest file entry missing valid size_bytes")
     size_bytes = raw_entry["size_bytes"]
@@ -611,7 +651,7 @@ def _validate_archive_manifest(
 
         database_role = entry["database_role"]
         assert isinstance(database_role, str)
-        if database_role in seen_roles:
+        if database_role in seen_roles and database_role != _DATABASE_ROLE_BLOB:
             raise RuntimeError(f"Archive manifest has duplicate database_role: {database_role}")
         seen_roles.add(database_role)
         files.append(entry)
@@ -686,6 +726,8 @@ def _validate_archive_contents(
 
 
 def _collect_existing_database_sources(database_path: Path) -> list[tuple[str, Path]]:
+    """The databases a backup copies, by role. A vault still holding its old files database has
+    all its files there: a catalog beside it is empty or a move not yet finished."""
     if not database_path.exists():
         raise FileNotFoundError(f"Database file not found: {database_path}")
     if not database_path.is_file():
@@ -694,12 +736,43 @@ def _collect_existing_database_sources(database_path: Path) -> list[tuple[str, P
     sources: list[tuple[str, Path]] = [(_DATABASE_ROLE_NOTES, database_path)]
 
     related_file_database_path = _resolve_related_file_database_path(database_path)
+    catalog_path = resolve_file_catalog_path(database_path)
     if related_file_database_path.exists():
         if not related_file_database_path.is_file():
             raise ValueError(f"Related file database path is not a file: {related_file_database_path}")
         sources.append((_DATABASE_ROLE_FILES, related_file_database_path))
+    elif catalog_path.exists():
+        sources.append((_DATABASE_ROLE_CATALOG, catalog_path))
 
     return sources
+
+
+def _catalog_blob_ids(catalog_path: Path) -> set[str]:
+    if not catalog_path.exists():
+        return set()
+    with closing(sqlite3.connect(f"{catalog_path.resolve().as_uri()}?mode=ro", uri=True)) as connection:
+        return fetch_all_blob_ids(connection)
+
+
+def _snapshot_databases(database_path: Path, directory: Path) -> tuple[list[tuple[str, str, Path]], list[str]]:
+    """Each database copied to directory, with its archive name, and the blobs the copied catalog
+    names, now pinned: a blob the live catalog drops while the archive is written stays until unpinned."""
+    store = blob_store_for_database(database_path)
+    with store.lifecycle_lock:
+        entries: list[tuple[str, str, Path]] = []
+        for database_role, source_path in _collect_existing_database_sources(database_path):
+            snapshot_path = directory / source_path.name
+            _copy_database(source_path, snapshot_path)
+            archive_name = snapshot_path.name
+            if database_role == _DATABASE_ROLE_CATALOG:
+                archive_name = _CATALOG_ARCHIVE_NAME
+            entries.append((database_role, archive_name, snapshot_path))
+        blob_ids: list[str] = []
+        for database_role, _, snapshot_path in entries:
+            if database_role == _DATABASE_ROLE_CATALOG:
+                blob_ids = sorted(_catalog_blob_ids(snapshot_path))
+        store.pin(blob_ids)
+    return entries, blob_ids
 
 
 def _create_archive_backup_for_paths(database_path: Path, backup_directory: Path) -> BackupFileInfo:
@@ -720,56 +793,69 @@ def _create_archive_backup_for_paths(database_path: Path, backup_directory: Path
 
         with tempfile.TemporaryDirectory(prefix="metalist-backup-") as temp_directory:
             temp_directory_path = Path(temp_directory)
-            snapshot_entries: list[tuple[str, Path]] = []
-            for database_role, source_path in _collect_existing_database_sources(database_path):
-                snapshot_path = temp_directory_path / source_path.name
-                _copy_database(source_path, snapshot_path)
-                snapshot_entries.append((database_role, snapshot_path))
-
-            notes_snapshot_path = None
-            for database_role, snapshot_path in snapshot_entries:
-                if database_role == _DATABASE_ROLE_NOTES:
-                    notes_snapshot_path = snapshot_path
-                    break
-            assert notes_snapshot_path is not None
-
-            manifest = {
-                "backup_format_version": _ARCHIVE_BACKUP_FORMAT_VERSION,
-                "manifest_schema_version": _MANIFEST_SCHEMA_VERSION,
-                "namespace": namespace,
-                "created_at": now_utc.isoformat(),
-                "encryption_enabled": _detect_encryption_enabled(notes_snapshot_path),
-                "files": [
-                    _build_manifest_file_entry(
-                        archive_name=snapshot_path.name,
-                        database_role=database_role,
-                        path=snapshot_path,
-                    )
-                    for database_role, snapshot_path in snapshot_entries
-                ],
-            }
-            manifest_path = temp_directory_path / _MANIFEST_FILENAME
-            manifest_path.write_text(
-                json.dumps(manifest, indent=_MANIFEST_JSON_INDENT, sort_keys=True),
-                encoding="utf-8",
-            )
-
-            # A backup still being written is never under a backup's name (a sync app could
-            # upload it, a crash could leave it truncated): it is written to .partial, fsynced,
-            # then hard-linked to its name, which fails if that name exists, as "x" does.
-            delete_partial_archives(_leftover_partial_archives(backup_directory, namespace=namespace))
-            partial_backup_path = backup_path.with_name(backup_path.name + _PARTIAL_ARCHIVE_SUFFIX)
-            with open(partial_backup_path, "xb") as partial_backup_file:
-                with tarfile.open(fileobj=partial_backup_file, mode="x:gz") as archive_handle:
-                    archive_handle.add(manifest_path, arcname=_MANIFEST_FILENAME)
-                    for _, snapshot_path in snapshot_entries:
-                        archive_handle.add(snapshot_path, arcname=snapshot_path.name)
-                partial_backup_file.flush()
-                os.fsync(partial_backup_file.fileno())
-            os.link(partial_backup_path, backup_path)
-            delete_partial_archives([partial_backup_path])
+            store = blob_store_for_database(database_path)
+            snapshot_entries, blob_ids = _snapshot_databases(database_path, temp_directory_path)
+            try:
+                _write_archive(
+                    backup_path=backup_path, namespace=namespace, now_utc=now_utc,
+                    temp_directory_path=temp_directory_path, backup_directory=backup_directory,
+                    archive_entries=[
+                        *snapshot_entries,
+                        *((_DATABASE_ROLE_BLOB, _blob_archive_name(store, blob_id), store.path_of(blob_id)) for blob_id in blob_ids),
+                    ],
+                )
+            finally:
+                store.unpin(blob_ids)
 
     return _stat_to_backup_info(backup_path)
+
+
+def _blob_archive_name(store: BlobStore, blob_id: str) -> str:
+    return f"{FILES_DIRECTORY_NAME}/{BLOBS_DIRECTORY_NAME}/{store.path_of(blob_id).relative_to(store.directory).as_posix()}"
+
+
+def _write_archive(
+    *,
+    backup_path: Path,
+    namespace: str,
+    now_utc: datetime,
+    temp_directory_path: Path,
+    backup_directory: Path,
+    archive_entries: list[tuple[str, str, Path]],
+) -> None:
+    """The manifest and every member written to .partial, then published under the backup's name."""
+    notes_snapshot_path = next(path for role, _, path in archive_entries if role == _DATABASE_ROLE_NOTES)
+    manifest = {
+        "backup_format_version": _ARCHIVE_BACKUP_FORMAT_VERSION,
+        "manifest_schema_version": _MANIFEST_SCHEMA_VERSION,
+        "namespace": namespace,
+        "created_at": now_utc.isoformat(),
+        "encryption_enabled": _detect_encryption_enabled(notes_snapshot_path),
+        "files": [
+            _build_manifest_file_entry(archive_name=archive_name, database_role=database_role, path=path)
+            for database_role, archive_name, path in archive_entries
+        ],
+    }
+    manifest_path = temp_directory_path / _MANIFEST_FILENAME
+    manifest_path.write_text(
+        json.dumps(manifest, indent=_MANIFEST_JSON_INDENT, sort_keys=True),
+        encoding="utf-8",
+    )
+
+    # A backup still being written is never under a backup's name (a sync app could
+    # upload it, a crash could leave it truncated): it is written to .partial, fsynced,
+    # then hard-linked to its name, which fails if that name exists, as "x" does.
+    delete_partial_archives(_leftover_partial_archives(backup_directory, namespace=namespace))
+    partial_backup_path = backup_path.with_name(backup_path.name + _PARTIAL_ARCHIVE_SUFFIX)
+    with open(partial_backup_path, "xb") as partial_backup_file:
+        with tarfile.open(fileobj=partial_backup_file, mode="x:gz") as archive_handle:
+            archive_handle.add(manifest_path, arcname=_MANIFEST_FILENAME)
+            for _, archive_name, path in archive_entries:
+                archive_handle.add(path, arcname=archive_name)
+        partial_backup_file.flush()
+        os.fsync(partial_backup_file.fileno())
+    os.link(partial_backup_path, backup_path)
+    delete_partial_archives([partial_backup_path])
 
 
 def _is_partial_archive_name(filename: str) -> bool:
@@ -841,29 +927,105 @@ def _restore_archive_backup_to_paths(
                 )
 
                 _validate_staged_database(notes_temp_path)
-                file_database_path = _resolve_related_file_database_path(database_path)
-                file_temp_path = temp_directory_path / 'staged-files.sqlite'
-                if _DATABASE_ROLE_FILES in file_entry_by_role:
-                    file_entry = file_entry_by_role[_DATABASE_ROLE_FILES]
-                    file_archive_name = file_entry["archive_name"]
-                    assert isinstance(file_archive_name, str)
-                    _copy_file_from_archive(
-                        archive_handle,
-                        archive_name=file_archive_name,
-                        target_path=file_temp_path,
-                    )
-                    _validate_staged_database(file_temp_path)
-                else:
-                    _reset_file_database_to_empty(file_temp_path)
+                staged_files = _stage_archive_files(
+                    archive_handle=archive_handle, file_entry_by_role=file_entry_by_role, directory=temp_directory_path,
+                )
+                _install_archive_blobs(archive_handle=archive_handle, files=files, database_path=database_path)
                 _copy_database(notes_temp_path, database_path)
                 _checkpoint_database(database_path)
-                _copy_database(file_temp_path, file_database_path)
-                _checkpoint_database(file_database_path)
+                _install_staged_files(staged_files=staged_files, database_path=database_path)
         _rewrite_launch_profile_namespace(
             database_path=database_path,
             source_namespace=expected_namespace,
             target_namespace=target_namespace,
         )
+
+
+@dataclass(frozen=True)
+class _StagedFiles:
+    """A restored vault's files, checked and waiting: one is None, or both for a vault with no files."""
+
+    catalog: Path | None
+    legacy_database: Path | None
+
+
+def _stage_archive_files(
+    *,
+    archive_handle: tarfile.TarFile,
+    file_entry_by_role: dict[str, dict[str, object]],
+    directory: Path,
+) -> _StagedFiles:
+    staged: dict[str, Path] = {}
+    for database_role in (_DATABASE_ROLE_FILES, _DATABASE_ROLE_CATALOG):
+        if database_role not in file_entry_by_role:
+            continue
+        archive_name = file_entry_by_role[database_role]["archive_name"]
+        assert isinstance(archive_name, str)
+        staged_path = directory / f"staged-{database_role}.sqlite"
+        _copy_file_from_archive(archive_handle, archive_name=archive_name, target_path=staged_path)
+        _validate_staged_database(staged_path)
+        staged[database_role] = staged_path
+    if _DATABASE_ROLE_FILES in staged and _DATABASE_ROLE_CATALOG in staged:
+        raise RuntimeError("Archive holds both a files database and a catalog")
+    catalog = None
+    if _DATABASE_ROLE_CATALOG in staged:
+        catalog = staged[_DATABASE_ROLE_CATALOG]
+    legacy_database = None
+    if _DATABASE_ROLE_FILES in staged:
+        legacy_database = staged[_DATABASE_ROLE_FILES]
+    return _StagedFiles(catalog=catalog, legacy_database=legacy_database)
+
+
+def _install_archive_blobs(
+    *,
+    archive_handle: tarfile.TarFile,
+    files: list[dict[str, object]],
+    database_path: Path,
+) -> None:
+    """The archive's blobs put in the vault's folder. They only add: what the vault had stays until
+    the restore commits, so a failure leaves the old catalog with every blob it names."""
+    store = blob_store_for_database(database_path)
+    for entry in files:
+        if entry["database_role"] != _DATABASE_ROLE_BLOB:
+            continue
+        archive_name = entry["archive_name"]
+        sha256 = entry["sha256"]
+        assert isinstance(archive_name, str) and isinstance(sha256, str)
+        extracted = archive_handle.extractfile(archive_handle.getmember(archive_name))
+        if extracted is None:
+            raise RuntimeError(f"Archive member could not be read: {archive_name}")
+        try:
+            store.install_stored(Path(archive_name).name.removesuffix(BLOB_FILE_SUFFIX), extracted, sha256=sha256)
+        finally:
+            extracted.close()
+
+
+def _install_staged_files(*, staged_files: _StagedFiles, database_path: Path) -> None:
+    """The live catalog, and an old-format files database only when the backup is that old (it
+    moves to blobs when the vault next migrates, so the catalog starts empty)."""
+    catalog_path = resolve_file_catalog_path(database_path)
+    catalog_path.parent.mkdir(parents=True, exist_ok=True)
+    legacy_path = _resolve_related_file_database_path(database_path)
+    if staged_files.catalog is None:
+        with tempfile.TemporaryDirectory(prefix="metalist-restore-") as directory:
+            empty_catalog = Path(directory) / CATALOG_FILE_NAME
+            _empty_catalog_database(empty_catalog)
+            _copy_database(empty_catalog, catalog_path)
+    else:
+        _copy_database(staged_files.catalog, catalog_path)
+    _checkpoint_database(catalog_path)
+    if staged_files.legacy_database is None:
+        for sidecar in (legacy_path, Path(f"{legacy_path}-wal"), Path(f"{legacy_path}-shm")):
+            sidecar.unlink(missing_ok=True)
+    else:
+        _copy_database(staged_files.legacy_database, legacy_path)
+        _checkpoint_database(legacy_path)
+
+
+def _remove_blobs_the_restored_catalog_does_not_name(database_path: Path) -> None:
+    blob_store_for_database(database_path).sweep(
+        referenced_blob_ids=_catalog_blob_ids(resolve_file_catalog_path(database_path)), grace_seconds=0,
+    )
 
 
 def _validate_staged_database(path: Path) -> None:
@@ -886,13 +1048,13 @@ def _restore_legacy_backup_to_paths(backup_path: Path, database_path: Path) -> N
             file_source = _resolve_related_file_backup_path(
                 backup_path.parent, backup_path.name, database_path=database_path,
             )
+            legacy_database = None
             if file_source.exists():
                 _copy_immutable_database_source(file_source, files_stage)
                 _validate_staged_database(files_stage)
-            else:
-                _reset_file_database_to_empty(files_stage)
+                legacy_database = files_stage
             _copy_database(notes_stage, database_path)
-            _copy_database(files_stage, _resolve_related_file_database_path(database_path))
+            _install_staged_files(staged_files=_StagedFiles(catalog=None, legacy_database=legacy_database), database_path=database_path)
 
 
 def resolve_live_database_path() -> Path:
@@ -1012,6 +1174,8 @@ def _restore_backup_to_paths(
         for source_path in immutable_source_paths
     ]
     with recoverable_database_change(database_path):
+        # What only the replaced catalog named goes once the restore can no longer roll back.
+        after_recoverable_commit(lambda: _remove_blobs_the_restored_catalog_does_not_name(database_path))
         try:
             if _is_archive_backup_filename(backup_path.name):
                 _restore_archive_backup_to_paths(
@@ -1057,36 +1221,44 @@ def restore_backup_to_paths_from_namespace(
     )
 
 
-def install_converted_databases(
-    *,
-    notes_stage: Path,
-    files_stage: Path,
-    database_path: Path,
-) -> None:
-    """Install a namespace the legacy converter wrote (legacy_metalist_conversion.py) as the
-    live one, as a restore installs an archive's: checked, copied under the recovery journal."""
-    if notes_stage.resolve() == database_path.resolve():
-        raise ValueError("Converted database and live database destination must differ")
-    SafeSession.invalidate_schema_bootstrap()
-    _validate_staged_database(notes_stage)
-    # A namespace with no attachments may have no files database: it gets an empty one, as a
-    # restore of an archive without one does.
-    if not files_stage.exists():
-        _reset_file_database_to_empty(files_stage)
-    _validate_staged_database(files_stage)
-    with recoverable_database_change(database_path):
-        with _BACKUP_LOCK:
-            _copy_database(notes_stage, database_path)
-            _checkpoint_database(database_path)
-            file_database_path = _resolve_related_file_database_path(database_path)
-            _copy_database(files_stage, file_database_path)
-            _checkpoint_database(file_database_path)
-
-
 def create_timestamped_backup() -> BackupFileInfo:
     database_path = resolve_live_database_path()
     backup_directory = resolve_backup_directory_for_database(database_path)
     return create_timestamped_backup_for_paths(database_path, backup_directory)
+
+
+def trim_safety_backups_for_database(database_path: Path) -> list[BackupFileInfo]:
+    """Delete all but this vault's newest safety backups, once a new one was made and the
+    upgrade or update it protected has succeeded. They are full copies made without being
+    asked for, so nothing else would ever remove them. The newest is checked first, as a
+    restore would check it: an unreadable one leaves every older copy in place."""
+    backup_directory = resolve_backup_directory_for_database(database_path)
+    newest_first = list_backups_in_directory(backup_directory, database_path=database_path)
+    excess_count = len(newest_first) - SAFETY_BACKUPS_KEPT
+    if excess_count <= 0:
+        return []
+    _validate_archive_contents(
+        backup_directory / newest_first[0].filename,
+        expected_namespace=_derive_namespace_name(database_path),
+    )
+    return delete_oldest_backups_in_directory(backup_directory, excess_count, database_path=database_path)
+
+
+def back_up_before_passwordless_upgrade(database_path: Path) -> None:
+    """A vault with no password upgrades at startup, with no unlock to make its safety backup
+    first. Vaults with a password back up in AuthService when they unlock."""
+    if not database_path.exists() or _detect_encryption_enabled(database_path):
+        return
+    with closing(sqlite3.connect(f"{database_path.resolve().as_uri()}?mode=ro", uri=True)) as connection:
+        database_version = connection.execute("PRAGMA user_version").fetchone()[0]
+    if 0 < database_version < CURRENT_DATABASE_VERSION:
+        create_timestamped_backup_for_paths(
+            database_path=database_path, backup_directory=resolve_backup_directory_for_database(database_path),
+        )
+
+
+def trim_safety_backups() -> list[BackupFileInfo]:
+    return trim_safety_backups_for_database(resolve_live_database_path())
 
 
 def delete_oldest_backups_in_directory(

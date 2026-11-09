@@ -11,15 +11,13 @@ from contextlib import closing
 from pathlib import Path
 import sqlite3
 
-from app.db.file_schema import (
+from app.db.legacy_file_schema import (
     FILE_TEXTS_COLUMNS,
     FILE_TEXTS_TABLE,
     add_file_texts_version_columns,
     create_file_texts_table,
 )
 
-# Same shared in-memory database FileSession uses when the notes database is in memory.
-_FILE_MEMORY_URI = "file:metalist_files_memory?mode=memory&cache=shared"
 # PRAGMA database_list rows are (seq, name, file); PRAGMA table_info rows are (cid, name, ...).
 _DATABASE_LIST_FILE_COLUMN = 2
 _TABLE_INFO_NAME_COLUMN = 1
@@ -45,9 +43,8 @@ def add_text_versions(
     encryption_service: object,  # noqa: ARG001
 ) -> int:
     database = connection.execute("PRAGMA database_list").fetchone()[_DATABASE_LIST_FILE_COLUMN]
+    # An in-memory notes database's catalog is current from the start: this upgrades only a files database.
     if not database:
-        with closing(sqlite3.connect(_FILE_MEMORY_URI, uri=True)) as files:
-            _upgrade(files)
         return 0
     notes = Path(database)
     target = notes.with_name(f"{notes.stem}.files{notes.suffix}")

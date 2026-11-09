@@ -197,8 +197,8 @@ SUMMARIZE_VIEW_TOOL = AgentTool(
     name="summarize_view",
     description=(
         "Summarize every note in the current view, or every note in it that fits the user's description "
-        "(the summary follows the user's request), in batches when it is large. MetaList asks the user "
-        "to confirm large summaries, then writes the summary. Ends your turn."
+        "(the summary follows the user's request), in batches when it is large. MetaList writes the "
+        "summary. Ends your turn."
     ),
     arguments_model=SummarizeViewArguments,
 )

@@ -1,8 +1,10 @@
 from datetime import datetime, timedelta, timezone
+import importlib.util
 from pathlib import Path
 import random
 import re
 import sqlite3
+import sys
 import pytest
 
 from app.services.credential_display import CredentialDisplay
@@ -15,6 +17,8 @@ from app.services.content_formatting import CREDENTIAL_MASK
 from app.services.content_formatting import find_list_style
 from app.services.content_formatting import list_known_meta_tag_terms
 from app.services.content_formatting import extract_note_text_for_agent
+from app.security.note_html import sanitize_note_html
+from app.utils.text_utils import strip_html
 from app.services.content_formatting import format_note_content_for_view as _format_note_content_for_view
 from app.services.content_formatting import remove_added_style_tags
 from app.services.content_formatting import remove_formatting_scope_delimiters
@@ -1087,3 +1091,58 @@ def test_a_hidden_username_shows_the_same_mask_as_a_password() -> None:
     assert f'data-redacted="true" data-copy-value="{CREDENTIAL_MASK}">{CREDENTIAL_MASK}<' in rendered
     shown = _format_note_content_for_view(content_html="<div>evolvingstuff</div>", tags="@username", credentials=CredentialDisplay.DOTS)
     assert 'data-copy-value="evolvingstuff">evolvingstuff<' in shown, "MetaList itself shows it"
+
+
+def _generated_vault_drafts(count: int) -> list:
+    """The notes scripts/generate_large_vault.py writes, made in memory."""
+    spec = importlib.util.spec_from_file_location(
+        "generate_large_vault", Path(__file__).resolve().parents[2] / "scripts" / "generate_large_vault.py")
+    assert spec is not None and spec.loader is not None
+    generator = importlib.util.module_from_spec(spec)
+    # Its dataclasses look their module up while being defined.
+    sys.modules["generate_large_vault"] = generator
+    spec.loader.exec_module(generator)
+    return generator.plan_notes(count, random.Random(7))
+
+
+_TITLED_PAGES = {"https://example.test/paper": "A Paper", "https://example.test/a?b=1&c=2": "Query Page"}
+_KEPT_TEXT_NOTES = [
+    "",
+    "plain words",
+    "<p>One</p><p>Two &amp; three &lt;four&gt;&nbsp;five</p>",
+    "<div><b>bold</b> <i>italic</i> <code>code()</code></div><ul><li>one</li><li>two<ul><li>nested</li></ul></li></ul>",
+    "<table><tr><th>Day</th><th>Place</th></tr><tr><td>1</td><td>Pier</td></tr></table>",
+    "<p>See <a href=\"https://example.test/paper\">the paper</a> and <a href=\"https://example.test/paper\">again</a></p>",
+    "<p><a href=\"https://example.test/a?b=1&amp;c=2\">query</a> <a href=\"https://example.test/shown\">https://example.test/shown</a></p>",
+    "<p><a href=\"mailto:someone@example.test\">mail</a> <a>no address</a> <a href=\"\">empty</a></p>",
+    "<p>A note that says href but links nothing, and https://example.test/paper written out.</p>",
+    "<div>line one<br>line two</div><blockquote>quoted <a href=\"http://old.example.test\">old site</a></blockquote>",
+]
+
+
+@pytest.mark.parametrize("content", _KEPT_TEXT_NOTES)
+@pytest.mark.parametrize("tags", ["", "reading", "@password"])
+def test_the_ai_text_from_the_kept_text_is_the_parsed_text(content, tags) -> None:
+    # The AI reads a stored note from the vault's kept text (strip_html of the sanitizer's
+    # output) and the fast strippers, not Python's HTML parser: the text must be identical.
+    sanitized = sanitize_note_html(content)
+    lookup = _TITLED_PAGES.get
+    parsed = content_formatting_module.extract_agent_note_text(content_html=sanitized, tags=tags, title_lookup=lookup)
+    from_kept_text = content_formatting_module.agent_note_text_from_kept_text(
+        content_html=sanitized, kept_text=strip_html(sanitized), tags=tags, title_lookup=lookup)
+    assert from_kept_text == parsed
+
+
+def test_the_ai_text_from_the_kept_text_matches_on_a_generated_vault() -> None:
+    drafts = _generated_vault_drafts(2_000)
+    rng = random.Random(11)
+    for index, draft in enumerate(drafts):
+        content = draft.content
+        if rng.random() < 0.3:
+            content = content.replace("<div>", f'<div><a href="https://example.test/page/{index}">a page</a> ', 1)
+        sanitized = sanitize_note_html(content)
+        parsed = content_formatting_module.extract_agent_note_text(
+            content_html=sanitized, tags=draft.tags, title_lookup=_TITLED_PAGES.get)
+        assert content_formatting_module.agent_note_text_from_kept_text(
+            content_html=sanitized, kept_text=strip_html(sanitized), tags=draft.tags,
+            title_lookup=_TITLED_PAGES.get) == parsed, draft.content

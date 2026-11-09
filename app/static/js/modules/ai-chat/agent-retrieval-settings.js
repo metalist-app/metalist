@@ -1,20 +1,21 @@
 import { isAiProvider } from './ai-providers.js';
 
-// One limit: how much an answer, or a tagging batch, reads at once.
-export const OPENAI_AGENT_RETRIEVAL_PREFERENCE_KEYS = Object.freeze({
-    maxPageApproximateTokens: 'pref.ai.openai.retrieval.max_page_approximate_tokens',
+// One setting: how much of the model's context window an answer, or a batch of a summary or of
+// tag suggestions, may fill (app/services/agent/retrieval_settings.py).
+export const AGENT_RETRIEVAL_PREFERENCE_KEYS = Object.freeze({
+    windowPercent: 'pref.ai.retrieval.window_percent',
 });
 
-// The same limits as app/services/agent/retrieval_settings.py.
-const DEFAULT_OPENAI_MAX_PAGE_APPROXIMATE_TOKENS = 500000;
+const DEFAULT_WINDOW_PERCENT = 50;
+export const DEFAULT_AGENT_RETRIEVAL_SETTINGS = Object.freeze({ windowPercent: DEFAULT_WINDOW_PERCENT });
 
-export const DEFAULT_OPENAI_AGENT_RETRIEVAL_SETTINGS = Object.freeze({
-    maxPageApproximateTokens: DEFAULT_OPENAI_MAX_PAGE_APPROXIMATE_TOKENS,
-});
-
-const LEGACY_DEFAULT_OPENAI_MAX_PAGE_APPROXIMATE_TOKENS = 24000;
-const MINIMUM_PAGE_APPROXIMATE_TOKENS = 500;
-const MAXIMUM_OPENAI_PAGE_APPROXIMATE_TOKENS = 500000;
+const MINIMUM_WINDOW_PERCENT = 1;
+const MAXIMUM_WINDOW_PERCENT = 100;
+const PERCENT = 100;
+// A value saved as tokens reads as its share of OpenAI's window, as on the server.
+const OLD_TOKEN_LIMIT_PREFERENCE_KEY = 'pref.ai.openai.retrieval.max_page_approximate_tokens';
+const LEGACY_DEFAULT_TOKEN_LIMIT = 24000;
+const OPENAI_MODEL_CONTEXT_TOKENS = 1050000;
 
 
 export class AgentRetrievalSettingsValidationError extends Error {}
@@ -24,16 +25,11 @@ export function validateAgentRetrievalSettings(settings, provider) {
     if (!settings || typeof settings !== 'object' || Array.isArray(settings)) {
         throw new TypeError('Agent retrieval settings must be an object');
     }
-    const validationMessage = getAgentRetrievalSettingsValidationMessage(
-        settings,
-        provider,
-    );
+    const validationMessage = getAgentRetrievalSettingsValidationMessage(settings, provider);
     if (validationMessage !== '') {
         throw new AgentRetrievalSettingsValidationError(validationMessage);
     }
-    return {
-        maxPageApproximateTokens: settings.maxPageApproximateTokens,
-    };
+    return { windowPercent: settings.windowPercent };
 }
 
 
@@ -41,13 +37,12 @@ export function getAgentRetrievalSettingsValidationMessage(settings, provider) {
     if (!settings || typeof settings !== 'object' || Array.isArray(settings)) {
         throw new TypeError('Agent retrieval settings must be an object');
     }
-    const maximum = maximumForProvider(provider);
-    return integerRangeError(
-        settings.maxPageApproximateTokens,
-        'Max token window',
-        MINIMUM_PAGE_APPROXIMATE_TOKENS,
-        maximum,
-    );
+    requireProvider(provider);
+    const { windowPercent } = settings;
+    if (!Number.isInteger(windowPercent) || windowPercent < MINIMUM_WINDOW_PERCENT || windowPercent > MAXIMUM_WINDOW_PERCENT) {
+        return `Model window used must be from ${MINIMUM_WINDOW_PERCENT} to ${MAXIMUM_WINDOW_PERCENT}%.`;
+    }
+    return '';
 }
 
 
@@ -55,56 +50,39 @@ export function readAgentRetrievalSettings(getPreference, provider) {
     if (typeof getPreference !== 'function') {
         throw new Error('readAgentRetrievalSettings requires getPreference');
     }
-    const { preferenceKeys, defaults } = configurationForProvider(provider);
-    let storedValue = parseStoredInteger(
-        getPreference(preferenceKeys.maxPageApproximateTokens),
-        defaults.maxPageApproximateTokens,
-    );
-    if (storedValue === LEGACY_DEFAULT_OPENAI_MAX_PAGE_APPROXIMATE_TOKENS) {
-        storedValue = DEFAULT_OPENAI_AGENT_RETRIEVAL_SETTINGS
-            .maxPageApproximateTokens;
-    }
-    return validateAgentRetrievalSettings({
-        maxPageApproximateTokens: storedValue,
-    }, provider);
+    requireProvider(provider);
+    return validateAgentRetrievalSettings({ windowPercent: storedWindowPercent(getPreference) }, provider);
 }
 
 
-function integerRangeError(value, label, minimum, maximum) {
-    if (!Number.isInteger(value) || value < minimum || value > maximum) {
-        return `${label} must be from ${minimum} to ${maximum}.`;
+function storedWindowPercent(getPreference) {
+    const saved = getPreference(AGENT_RETRIEVAL_PREFERENCE_KEYS.windowPercent);
+    if (isStored(saved)) {
+        return parseStoredInteger(saved);
     }
-    return '';
+    const savedTokens = getPreference(OLD_TOKEN_LIMIT_PREFERENCE_KEY);
+    if (!isStored(savedTokens) || parseStoredInteger(savedTokens) === LEGACY_DEFAULT_TOKEN_LIMIT) {
+        return DEFAULT_AGENT_RETRIEVAL_SETTINGS.windowPercent;
+    }
+    return Math.max(MINIMUM_WINDOW_PERCENT, Math.round(parseStoredInteger(savedTokens) * PERCENT / OPENAI_MODEL_CONTEXT_TOKENS));
 }
 
 
-function parseStoredInteger(value, defaultValue) {
-    if (value === null || value === undefined || value === '') {
-        return defaultValue;
-    }
+function isStored(value) {
+    return value !== null && value !== undefined && value !== '';
+}
+
+
+function parseStoredInteger(value) {
     if (typeof value !== 'string' || !/^[1-9][0-9]*$/.test(value)) {
-        throw new Error('Stored agent evidence-token preference is invalid');
+        throw new Error('Stored agent evidence preference is invalid');
     }
     return Number(value);
 }
 
 
-// The max token window is one setting for every provider, kept under its original
-// OpenAI key (app/services/agent/retrieval_settings.py).
-function maximumForProvider(provider) {
-    if (isAiProvider(provider)) {
-        return MAXIMUM_OPENAI_PAGE_APPROXIMATE_TOKENS;
+function requireProvider(provider) {
+    if (!isAiProvider(provider)) {
+        throw new Error(`Unsupported agent retrieval provider: ${provider}`);
     }
-    throw new Error(`Unsupported agent retrieval provider: ${provider}`);
-}
-
-
-function configurationForProvider(provider) {
-    if (isAiProvider(provider)) {
-        return {
-            preferenceKeys: OPENAI_AGENT_RETRIEVAL_PREFERENCE_KEYS,
-            defaults: DEFAULT_OPENAI_AGENT_RETRIEVAL_SETTINGS,
-        };
-    }
-    throw new Error(`Unsupported agent retrieval provider: ${provider}`);
 }

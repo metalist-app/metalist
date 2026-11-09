@@ -18,6 +18,16 @@ The states and transitions of a chat turn, the tool loop, summaries, tag proposa
 and structured steps are mapped as diagrams in `agent-state-machines.md`, with the
 gaps that map shows.
 
+Every provider request (OpenAI, Anthropic, OpenAI-compatible) goes through
+`provider_limits.py`'s transport (2026-11-07). It records the rate limits each answer reports
+(`x-ratelimit-*`, `anthropic-ratelimit-*`) for its endpoint and model, which batch senders
+use to send as many batches at once as the limits allow. A request the provider refuses as
+too many (429) or answers as overloaded (500, 502, 503, 504, 529) waits the time it names
+(`retry-after`; otherwise 1, 2, 4… s) and goes again, up to 6 times, below the SDK, so
+every request of every batch gets it. A wait asked for longer than 120 s, or a 7th
+refusal, returns the provider's answer, which fails as before. The wait is not network
+silence: the silence limit below counts only time waiting on the connection.
+
 Every OpenAI request has a silence limit (`openai_silence_limit_seconds`: 15 s at
 Off and Low, measured; 60 s Medium and 120 s High, unmeasured), passed as the
 request timeout so the library's 600 s default never applies; a timeout becomes
@@ -69,8 +79,7 @@ when the user asks to retry or continue (it sees the failed request in the
 history). Then batches whose key matches (notes and content, selected-note
 context, model, thinking level, prompts, summary skill; `summary_batch_key`) are
 reused, the rest run with the failed summary's original question (passed to the
-batch, condensing and final builders as `summary_request`), the scope question is
-skipped, and the progress shows "Reused N of M batches". A successful summary
+batch, condensing and final builders as `summary_request`), and the progress says "Reusing your earlier attempt". A successful summary
 drops the kept batches; Clear Chat, privacy-boundary changes, login and logout
 clear them with the other session AI memory.
 
@@ -285,26 +294,34 @@ The `summarize_view` tool is for requests that summarize, compare, or synthesize
 the complete frozen result scope; a question about part of it is answered by
 searching and reading notes. In an empty view the tool reports that there is
 nothing to summarize, without a card. Otherwise it hands over to the staged summary,
-which starts right away when the entire scope fits in one payload (one ordinary model call, nothing to choose) and otherwise asks the user before model work begins. When multiple payloads
-are necessary, the dialog reports the root and batch counts, the minimum number of
-model calls, and offers either complete processing, the previous leading-prefix
-behavior, or cancellation.
+which asks nothing first (2026-11-08; before, several batches meant a question): one ordinary
+model call when the entire scope fits in one payload, otherwise batches.
 
 For complete processing, `plan_complete_root_batches()` partitions all permitted
-root trees in canonical order. There is no cap on the number of batches. A root is
+root trees in canonical order. For a model with no saved timing (`with_timing_probes`), and a scope
+over one batch, the first two batches are limited to a tenth and a fifth of a batch: real batches
+whose two sizes give the model's timing. A root larger than that stands alone. There is no cap on the number of batches. A root is
 atomic and cannot be divided; if one root cannot fit, the operation fails visibly.
-Batch 1 runs alone to seed the provider cache. Remaining batches are drained by a
-pool of at most four workers; a worker emits a `writing` preview only after taking a
-batch, throttled `streaming` previews while the model writes, and a `complete`
-preview afterward. Batches waiting for a worker are reported as queued, never as
-writing. Streaming previews come from Instructor's partial objects: the structured
-inference capture stores the latest partial on the current attempt and attaches it
-to `output_progress` events as `partial_output`. Each preview carries only the
-finding count, the output-token estimate, and at most the last 240 characters of
-the newest finding (the first finding on completion), at most once per 0.3 seconds
-per batch. Responses are placed back into their original batch order regardless of
-completion order. Duplicate or out-of-sequence preview transitions fail loudly on
-both server and client. The first worker failure cancels the other
+Every batch starts at once (2026-11-08; before, batch 1 ran alone to seed the provider cache,
+which cost a whole batch's wait: timed with a stand-in AI, one batch's time saved at every size),
+each waiting for room in the provider's rate limits (saved in the vault per model since
+2026-11-08, so a restart starts with them) (`provider_limits.RateLimitGate`, 2026-11-07; before, a
+pool of at most four workers): as many go at once as the remaining requests and tokens
+allow, or four while the limits are unknown (a provider that reports none). A batch becomes
+`writing` only once admitted (one admitted after another has failed does not start),
+`responding` at the first `output_progress` of its response, and `complete` afterward.
+Batches waiting for room stay queued. Each change, and a tick twice a second between them, sends one progress event carrying only a
+percentage. `summary_progress_percent` is the estimate: each batch weighed by its size, moved by the
+clock against the model's `ModelTiming` up to 90%, at least half at `responding`. `advanced_progress_percent`
+is what the bar shows: it starts at 5%, glides toward the estimate and always creeps toward 95%, so a
+wrong or missing estimate cannot stall it or move it backward. `fit_model_timing` draws the line
+through finished batches (tokens, seconds) to get a startup cost and a time per token, falling back to
+time per token alone for batches of about one size or a line that makes no sense. This run's fit
+replaces the saved timing once two batches have finished, and it is saved (`DatabaseSavedTimings`,
+`app_settings.model_timings_json`, database version 16) only when every batch succeeds, so a retried
+summary plans the same batches. Streamed `output_progress` must stay cheap: it runs on the event loop
+every few words, and counting the whole request there froze every progress event (2026-11-08). Responses are placed back into their original batch order regardless of
+completion order. Duplicate or out-of-sequence transitions fail loudly. The first worker failure cancels the other
 workers and propagates; closing the stream also cancels them.
 
 The application attaches the exact roots supplied to each structured batch result;
@@ -314,11 +331,21 @@ the model returns only findings. Every batch and reduction prompt also carries
 selected notes (blacklisted, search-redacted, password-protected, not whitelisted,
 or missing) contribute no citable IDs, and any other ID is rejected. Tree nodes
 serialized as `is_evidence: false` are structural ancestors whose content was not
-disclosed and are never citable. When a batch or reduction cites an uncitable ID,
+disclosed and are never citable. Every summary request names notes by the run's short note IDs (`n1`, `n2`…, `NoteAliases` on
+`InvestigationState`, the same table as the agent loop's): batches, reductions, the selected-note
+context and the final reference catalog. Citations are checked as the model wrote them and kept
+as note ids; the final answer's `[[nK]]` citations are translated as the agent's own text is
+(2026-11-08). When a batch or reduction cites an uncitable ID,
 MetaList sends one correction request that names each rejected ID and its reason
 (structural placeholder, present in the request but not citable evidence such as
-earlier conversation, or absent from the request). A second failure aborts the
-summary with those reasons and records a `SUMMARY_CITATION_REJECTED` trace event. The final
+earlier conversation, or absent from the request), each judged against what the batch was
+sent, not the correction request, which quotes the rejected IDs back. Each rejection records a
+`SUMMARY_CITATION_REJECTED` trace event. If the corrected answer still cites only notes the batch
+was never sent (a garbled ID: the maintainer's 10,087-note summary failed on one, 2026-11-08),
+those citations are dropped, with any finding left citing nothing, a
+`SUMMARY_CITATIONS_DROPPED` event lists them in the diagnostics, and the summary goes on. A
+private selected note is never sent, so a citation to it is dropped the same way and never
+reaches the answer. Any other uncitable ID after the correction still aborts the summary. The final
 synthesis reference catalog likewise includes the permitted selected-note tree. If
 the combined findings cannot fit in one synthesis request, MetaList recursively
 groups and condenses them, preserving application-owned root coverage and
@@ -329,11 +356,14 @@ coverage.
 
 ## Configuration
 
-The only retrieval setting is a provider-specific maximum approximate evidence
-token count (AI Agent Settings › **Max token window**); tagging batches
-use the same limit:
+The only retrieval setting is a percentage of each model's context window
+(AI Agent Settings › **Model window used**); tagging batches use the same limit:
 
-- OpenAI default 500,000; allowed 500–500,000.
+- Default 50%; allowed 1–100%.
+- The tokens for a request are that share of the window, at most the window less 40,960 for the
+  prompt (32,768) and a batch's answer (8,192), and never under 500
+  (`resolve_agent_retrieval_settings`).
+- A token number saved earlier reads as its share of OpenAI's 1,050,000-token window.
 
 The deterministic estimator covers the serialized JSON, not just note text. The
 same estimate is used for retention and developer feedback.
@@ -438,6 +468,13 @@ answers 404.
 Claude (`anthropic_inference.py`) and Gemini (`openai_compatible_inference.py`) adapters
 sit beside OpenAI's, through the same disclosure boundary (`docs/design/ai-providers.md`).
 
+A test server can answer from a script instead (`scripted_inference.py`,
+`METALIST_SCRIPTED_AI=<file>`; `docs/testing/harness.md`): the OpenAI provider then
+counts as set up without a key and the chat names it "Scripted AI (test)". The script's
+turns run through the real agent loop, tools and frozen scope, from the first turn for
+every question. It is honoured only on a server with its own data folder
+(`METALIST_DATA_DIRECTORY`) and refused at startup on one using the user's vault.
+
 ## Main Files
 
 - `app/services/agent/runtime.py`: run start/recording and the staged summary.
@@ -468,12 +505,12 @@ Generation captures the search-visible trees. Visible ancestors supply content, 
 - Existing-only requests explicitly require exact supplied vocabulary terms, without synonyms or variants. Every batch payload also carries an explicit machine-readable pass mode. New-only instructions require a final case-insensitive comparison against the supplied accepted vocabulary before output.
 - Each batch tolerates up to 10% invalid tag assignments, dropping those assignments and omitting notes left without valid tags. A separate 10% threshold applies to duplicate or non-batch note-ID entries; tolerated entries are discarded whole. Validation distinguishes an ID in another batch of the current permitted scope, a real namespace note outside the current permitted scope, and a nonexistent ID. It uses frozen ID-set membership only and never reads an out-of-scope note. A real out-of-scope ID may have been disclosed under an earlier conversation scope, so it is not labeled proof of a new disclosure leak. The denominators are distinct case-insensitive note/tag assignments and total proposal entries respectively. Existing-only accepts terms found either in disclosed context vocabulary or, after inference, in accepted namespace tags; the latter are canonicalized without disclosing the namespace catalog to the model. New-only rejects accepted tags disclosed in the context. If a new-only candidate happens to match an accepted tag elsewhere in the namespace that was never disclosed to the model, validation silently drops it without counting it as a model error. Both mode permits existing or new terms. Invalid syntax and command tags are invalid in every mode. Above either threshold, the model receives the cumulative validation failures and may regenerate the complete batch up to three times; if the third correction still fails, the pass fails atomically. Malformed response structure remains strict.
 - Generation intent never selects the per-pass focus. Every generation request asks the three-way structured focus question, preselects the exact previous choice, and keeps all choices available. The answer updates both the remembered focus and the two-way vocabulary permission in one submission. Request wording and model interpretation cannot skip the question, including explicit requests for existing, new, or both. Existing focus validates output against batch vocabulary.
-- The configured evidence budget determines batching. Every generation pass asks one `tag_scope_confirmation` card before model work, equivalent to the complete-scope summary card: the scope size as a multiple of the evidence budget, the three-way focus selector, and "Tag all N", "Use first K only" (only above 1×: the leading canonical-order roots that fit one evidence payload, `leading_tree_count_within_budget()`, reported in the completion message), and Cancel. Answers combine focus and scope (`focus_*` or `prefix_focus_*`); there is no separate focus question. `bulk-scope-question.js` derives both cards' labels and answer values. Randomize visible root-tree order before batching so display-adjacent roots do not systematically share requests. Complete visible root trees remain together and preserve their internal hierarchy/order; every requested tree is reviewed. Processing time is hidden and paused during questions; no predicted duration. Proposal dialogs reuse the shared modal-content and form-actions styles.
+- The configured evidence budget determines batching. Every generation pass asks one `tag_scope_confirmation` card before model work: the scope size as a multiple of the evidence budget, the three-way focus selector, and "Tag all N", "Use first K only" (only above 1×: the leading canonical-order roots that fit one evidence payload, `leading_tree_count_within_budget()`, reported in the completion message), and Cancel. Answers combine focus and scope (`focus_*` or `prefix_focus_*`); there is no separate focus question. `bulk-scope-question.js` derives the card's labels and answer values. Randomize visible root-tree order before batching so display-adjacent roots do not systematically share requests. Complete visible root trees remain together and preserve their internal hierarchy/order; every requested tree is reviewed. Processing time is hidden and paused during questions; no predicted duration. Proposal dialogs reuse the shared modal-content and form-actions styles.
 - New-only focus strictly excludes disclosed accepted vocabulary terms (case insensitive). The namespace catalog remains undisclosed, so post-inference validation silently drops a collision with an accepted namespace tag the model could not know about.
-- Every pass uses token-sized requests, configured alongside the evidence limit in AI settings: `pref.ai.openai.tagging.batch_tokens` (default 100,000). Bounds match the corresponding evidence setting (500–500,000). Shared vocabulary overhead counts toward every batch. Whole roots may exceed the target window, but the full request must still fit the model context. There is no fixed note-count subdivision or partial-JSON parsing. The inline progress bar advances by completed input-token weight after each validated batch.
+- Every pass uses token-sized requests, the same limit as answers (**Model window used**). Shared vocabulary overhead counts toward every batch. Whole roots may exceed the target window, but the full request must still fit the model context. There is no fixed note-count subdivision or partial-JSON parsing. The inline progress bar advances by completed input-token weight after each validated batch.
 - Chat tag generation renders its choice and progress controls inside the transcript. The focus selector has three real options and no explanation paragraph or placeholder; Continue explicitly submits the selected option. No preparation overlay. Chat input and surrounding UI are locked while operation controls stay usable. Non-chat regions are inert, greyed, slightly blurred, and use a not-allowed cursor. Transcript rerenders preserve the live operation element and its selected value/focus. Programmatic acceptance/removal stays in the ordinary chat working state through its atomic update and never creates a progress or cancellation panel. Menu choice and confirmation dialogs use normal modals, but submitting a programmatic acceptance/removal operation shows only the application busy state with no second progress modal.
 - An application-owned modal locks normal interaction while the batch guard rejects conflicting server mutations. Pending question answers remain available, and Cancel aborts the stream before final application. The final synchronous commit phase disables Cancel.
-- Validated proposals accumulate only in session memory. Batch 1 runs alone so its new terms can be supplied separately to every later batch as optional `prior_batch_new_tags`, allowing consistent reuse without treating them as accepted or required vocabulary. Remaining batches run in waves with at most four concurrent requests; there is no cap on the total number of batches, and validated results are merged in original batch order. Parallel batches do not consume one another's new terms. All batches must succeed before one database transaction writes the result. A failed or cancelled batch aborts outstanding work and applies nothing. Canonical note sources and inheritance/search indexes are then published without an async yield, and existing undo/redo is cleared only when changes were applied. No bulk undo entry is created. After a successful mutation, the client discards the active view's root window and pagination terminal state before fetching a fresh first window, so proposal-driven search-membership changes cannot strand infinite scroll.
+- Validated proposals accumulate only in session memory. Batch 1 runs alone so its new terms can be supplied separately to every later batch as optional `prior_batch_new_tags`, allowing consistent reuse without treating them as accepted or required vocabulary. Remaining batches go as fast as the provider's rate limits allow (`provider_limits.py`; four at a time while they are unknown; before 2026-11-07, always at most four); there is no cap on the total number of batches, and validated results are merged in original batch order. Parallel batches do not consume one another's new terms. All batches must succeed before one database transaction writes the result. A failed or cancelled batch aborts outstanding work and applies nothing. Canonical note sources and inheritance/search indexes are then published without an async yield, and existing undo/redo is cleared only when changes were applied. No bulk undo entry is created. After a successful mutation, the client discards the active view's root window and pagination terminal state before fetching a fresh first window, so proposal-driven search-membership changes cannot strand infinite scroll.
 - A successful generation response lists each newly added proposal and cites every note that received it. Inline numbered markers remain clickable, while the ordinary expandable References section is replaced for this response type by one **Show all new tag proposals** link. That link uses the same combined exact-note query as Open all references. Canonical conversation history retains the tag names while stripping citation UUIDs before later model calls; subsequent tagging also reads each note's authoritative pending proposals and explicitly excludes duplicates.
 - Failure/cancellation applies no pending results; no-change results preserve history. Individual proposal controls retain their undo semantics.
 

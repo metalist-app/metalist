@@ -37,13 +37,13 @@
   enough to diagnose it; Agent Debug remains for the raw requests and responses
   (`app/services/agent/failure_explanations.py`).
 - OpenAI models sometimes wrap a citation in ChatGPT's own markup (U+E200 `cite` U+E202 … U+E201), which would show as boxes and a stray "cite". `ChatTurnStream` removes it as the answer streams (`strip_provider_citation_markup`, holding back markup that has not closed yet), keeping MetaList's own `[[…]]` citations inside it, so the chat, the saved answer and copied text never contain it.
-- A whole-view summary that fails or is stopped keeps its finished batches for the chat (the explanation says how many); asking again ("try that again") continues it: only the remaining batches run, with the original question, and the progress shows "Reused N of M batches from your earlier attempt". A different question starts fresh.
+- A whole-view summary that fails or is stopped keeps its finished batches for the chat (the explanation says how many); asking again ("try that again") continues it: only the remaining batches run, with the original question, and the progress says "Reusing your earlier attempt". A different question starts fresh.
 - Until OpenAI sends its first signal for a request, the heading reads "Waiting for OpenAI…" with the elapsed seconds instead of "Thinking…", so a network stall does not look like thinking.
 - A request OpenAI never answers fails after a silence limit instead of the library's 10 minutes: 15 s at Off and Low thinking (measured on Luna: first signal in 0.7–2 s and streaming gaps under 0.4 s, also with a 180,000-token input), 60 s at Medium and 120 s at High (generous, not measured, since a model may think silently before its first word). The explanation says "OpenAI did not respond for 15 seconds. Check your internet connection and ask again." The same holds when OpenAI goes silent partway through an answer; a connection that drops partway says "The connection to OpenAI broke off. Check your internet connection and ask again." Google and Anthropic do the same with their own silence message and name ("The connection to Google broke off…").
 - Google's overloaded models hang without sending anything (3.8 Flash, 2026-10-24: no answer in two minutes while 3.5 Flash-Lite answered in 3 s), so when Google stays silent the message says "Google did not respond for 30 seconds. gemini-3.8-flash may be busy at Google: ask again later or pick another model." When Google answers that the model is busy (HTTP 503), it says "Google says gemini-3.8-flash is busy right now. Ask again later or pick another model." A failed structured step names its provider on each attempt ("Google did not respond…", "Google said … is busy right now") and suggests asking again later or picking another model, then checking the connection if no model answers.
 - Every failure explanation ends with where the run stopped: the step it was in (and for how long) or had just finished, the step before, and an operation's latest progress, for example `Where it stopped: during "Thinking" (15.2 s into that step), step 3 of the run; before that: "Scope ready · …".`
 - The first activity line says how long preparing the view took ("Scope ready · All notes · 45,479 notes in … result trees · prepared in 0.2 s"). Preparing records which notes are in view and their content as of Send, but extracts a note's text only when a tool first reads it, so a question that reads no notes does not pay for the whole view. Cloud privacy rules that match phrases still read every note's text at Send to decide what is private.
-- A step that extracted note text says how much on its line, for example "Search complete · … · text extracted for 45,480 notes in 3.8 s" (the first search in an answer reads every note in view; later steps reuse the text). A whole-view summary reports it on its "Planned N evidence batches" line.
+- A step that extracted note text says how much on its line, for example "Search complete · … · text extracted for 45,480 notes in 3.8 s" (the first search in an answer reads every note in view; later steps reuse the text). A stored note's text starts from the visible text the vault already keeps for search, with the link addresses and cached titles added without Python's HTML parser: about 15 µs a note instead of 52 (100,000 generated notes, a fifth with links, 2026-11-07); only an unsaved draft is parsed. A whole-view summary reports it on its "Planned N evidence batches" line.
 - Stop no longer ends in a fatal error: the "Cancelling request" activity carries the fields every activity needs.
 - The AI remembers a failed request and the explanation you saw, so you can follow up
   with "try that again" or ask why it failed (`docs/design/agent-harness.md`).
@@ -51,7 +51,7 @@
 
 ## Web access
 
-**AI Agent Settings** has three enforced browsing modes:
+**AI Agent Settings** (its Reading tab) has three enforced browsing modes:
 
 - **No web access** is the default. The agent cannot open pages and
   explains that limitation when a request needs the web.
@@ -93,7 +93,7 @@ MetaList does not have.
 
 Examples: “How does tag inheritance work?” explains from the tags skill.
 “Open AI settings” opens that dialog. “How do I change context to 250k?” opens
-AI settings and identifies Max token window = 250000, leaving
+AI settings and identifies Model window used = 24% (on OpenAI's 1,050,000-token window), leaving
 the user to save. “Open Create backup in the menu” highlights its command without
 creating a backup.
 
@@ -163,44 +163,56 @@ result view with:
 Reads take complete trees in visible order until the evidence limit; a result says
 which trees were left unread (readable in a later call) or are too large on their
 own. The model sees short note ids (`n1`, `n2`…) instead of UUIDs and cites them as
-`[[n12]]`; MetaList turns these into ordinary note references as the answer streams.
+`[[n12]]`; MetaList turns these into ordinary note references as the answer streams. A
+summary's batches, condensing stages and final answer use the same short ids (2026-11-08,
+after a summary failed on a miscopied UUID): about 20 tokens less per note, 11% of a generated
+45,000-note vault's evidence.
 
 `summarize_view` is for summarizing, comparing or synthesizing the complete view.
 In an empty view the agent says there is nothing to summarize.
 
-When the whole scope fits in one evidence payload, the summary is one ordinary model
-call and starts without a question. When it needs several batches, it asks for
-permission before any summary call. The
-dialog shows how many roots and evidence batches will be processed and the scope's
-size as a multiple of the evidence budget. Tag proposals ask the same single card,
-with the tag-focus selector (existing, new, or both) added above the buttons:
+A summary starts without a question, however large the view (2026-11-08; before, one that
+needed several batches asked first): one ordinary model call when the whole scope fits in one
+evidence payload, otherwise batches. Tag proposals ask one card first: the scope's size as a
+multiple of the evidence budget, the tag-focus selector (existing, new, or both), then
 "Tag all N", "Use first K only" when the scope exceeds the evidence budget, and
-Cancel (last and tinted red in both). If multiple
-batches are required, the user can summarize everything, use only the leading
-single-payload prefix, or cancel. Complete processing keeps every root tree intact,
-has no cap on the total number of batches, and runs at most four model requests at
-once. The first batch runs alone to seed provider caching; later batches run in
-parallel waves and are restored to original scope order before synthesis.
+Cancel (last and tinted red). Complete processing keeps every root tree intact,
+has no cap on the total number of batches, and sends as many model requests at once
+as the provider's rate limits allow (2026-11-07; before, at most four): every batch starts
+at once (2026-11-08; before, the first ran alone to seed provider caching, a whole batch's wait
+for a small share of each batch), four until a first answer reports the account's limits, and
+the findings are restored to original scope order before synthesis. Each model's limits are saved
+in the vault, encrypted like the AI settings, when an answer reports new ones (2026-11-08, database
+version 15, `app/services/agent/saved_rate_limits.py`), so after a restart the batches go out as
+the account allows from the first one; that first answer still corrects them. When several batches fail,
+the lowest-numbered failure is the one reported. A request
+the provider refuses as too many (429) or answers as overloaded waits the time the
+provider names and goes again, so a busy moment no longer fails the summary
+(`app/services/agent/provider_limits.py`).
 The progress widget sits in the conversation immediately above the answer it is
 producing: earlier messages and the current request stay above it, and the final
-answer streams in below it. Its status line reports the total batch count and how
-many batches are complete, writing, and queued. As soon as a batch request starts,
-a compact card appears for it: a pulsing heading with a live finding and token
-count, and a fixed two-line window that streams the tail of the newest finding
-as the model writes it (a thin shimmer stands in until the first text arrives).
-When that batch completes, the same card collapses to one ellipsized line such as
-"✓ Batch 3 of 9 · 4 findings — first finding…". The full findings are not
-repeated in the widget. Cards stay in canonical batch-number order even when later
-batches finish first, and the scrollable stack follows the newest batches unless
-the user has scrolled up. Stream previews are throttled on the server, and the
-widget's Cancel button is never replaced while previews arrive. After every batch succeeds the status changes to writing the
-final answer, and the batch cards remain visible above it. When the user chooses
-the leading prefix (or cancels), the permission card closes before the answer
-streams rather than leaving disabled choices behind.
+answer streams in below it. It is one bar, with a status line such as "Summarizing · 42%" on the left
+of the row under it and the processing time on the right (`1m 23s` past a minute, still counting every
+second; "Processing time" is its tooltip). Before 2026-11-08 it was a scrolling card per batch with
+batch counts in the text. The widget closes when every batch has finished and the final answer is
+requested.
+
+No provider says how far along a model is, and a batch spends most of its time reading before it
+writes anything, so the bar is an estimate from the clock (agreed 2026-11-08). Each model's timing, a
+startup cost and a time per million tokens, is saved in the vault after a summary finishes, encrypted
+like the AI settings (database version 16). Two batches of different sizes separate the two, so a model
+with no saved timing starts with two small real batches, a tenth and a fifth of a normal one; a view
+that fits one batch has none. The estimate weighs each batch by its size, moves it by the clock up to
+90%, counts it at least half done once its response starts arriving, and is corrected by this run's
+own batches once two have finished. The bar does not show the estimate directly, since an estimate can
+jump, stand still or fall behind: it starts at 5%, glides toward the estimate and always creeps toward
+95%, so it never stalls or goes backward, and only every batch finishing fills it.
 
 If the verified batch findings are themselves too large for one synthesis call,
 MetaList condenses them through additional ordered stages until they fit. Exact
-root coverage and disclosed original-note citations are validated at each stage.
+root coverage and disclosed original-note citations are validated at each stage. After one
+correction, a citation to a note the batch was never sent (a garbled ID) is dropped and listed in
+the diagnostics rather than stopping the summary (2026-11-08); other invalid citations still stop it.
 The final answer appears only after every batch succeeds. Failure or cancellation
 stops outstanding work and never presents a partial result as complete.
 
@@ -215,8 +227,8 @@ The agent cannot expand beyond the frozen scope or cite an undisclosed note ID. 
   order. SearchIndex membership never becomes ordering.
 - Results near the top are generally newer or more highly user-ranked, which is a
   prioritization hint rather than relevance proof.
-- Each note read packs complete result trees up to the limit. OpenAI defaults
-  to 500,000 approximate tokens and is configurable from 500–500,000.
+- Each note read packs complete result trees up to the limit, a percentage of the
+  model's context window (default 50%, configurable from 1–100%).
 - A root tree is never divided. If the first root alone exceeds the limit, the run
   fails visibly; otherwise the first root that would overflow and all following
   roots are omitted.
@@ -233,9 +245,13 @@ The agent cannot expand beyond the frozen scope or cite an undisclosed note ID. 
   Contentless `is_evidence: false` ancestors preserve paths to nested matches
   without disclosing gray/redacted note information.
 
-The only retrieval control in `AI Agent Settings…` is **Max token window** (its `?`
-explains it in a tooltip): the provider-specific maximum approximate token count of what one
-read returns. Tagging batches use the same limit; there is no separate tagging window.
+The only retrieval control in `AI Agent Settings…` is **Model window used** (its `?`
+explains it in a tooltip): how much of the model's context window what one read returns may
+fill, as a percentage, so one setting fits every model (agreed 2026-11-08; before, a number of
+tokens. One saved earlier reads as its share of OpenAI's 1,050,000-token window, so 500,000 is
+48%). Room for the prompt and a batch's answer is always left. Claude and Gemini report their
+windows through their APIs, asked once per model while MetaList runs (`docs/design/ai-providers.md`).
+Tagging batches use the same limit; there is no separate tagging window.
 
 ## Providers and Configuration
 
@@ -246,21 +262,30 @@ read returns. Tagging batches use the same limit; there is no separate tagging w
   each provider with a key, under the provider's name; picking a model picks its
   provider.
 
-- Defaults: `gpt-5.6-luna` and 500,000 approximate tokens read at once. Saved model
+- Defaults: `gpt-5.6-luna` and 50% of the model's context window read at once. Saved model
   and limit overrides are retained; the retired tagging batch preference
   (`pref.ai.openai.tagging.batch_tokens`) is dropped from the vault.
 
-- Open `AI Agent Settings…` from the command palette or chat gear. Its layout, top
-  to bottom:
-  - One folder tab per provider; it opens on the provider the chat uses. A tab only
-    shows that provider's settings and picks nothing. It holds the API key (saved,
-    changed or removed at once, apart from Save: "Key saved, encrypted in this
-    vault" or "Key saved for this session") and a **Usage and billing** link to the
-    provider's own page.
-  - **Web access**: three segments, Off / Links in your notes / Any public page,
-    each explained in its tooltip.
-  - The privacy rules (below).
-  - **Max token window**, in tokens, with a `?` whose tooltip explains it.
+- Open `AI Agent Settings…` from the command palette or chat gear. Four folder tabs and
+  one Save (agreed 2026-11-07; before, one long page and a separate AI Tagging Vocabulary
+  dialog):
+  - **Keys**: a switch per provider (OpenAI, Anthropic, Google); it starts on the provider
+    the chat uses. The switch only shows that provider's settings and picks nothing. It
+    holds the API key (saved, changed or removed at once, apart from Save: "Key saved,
+    encrypted in this vault" or "Key saved for this session") and a **Usage and billing**
+    link to the provider's own page.
+  - **Privacy**: the privacy rules (below).
+  - **Reading**: **Web access**, three segments, Off / Links in your notes / Any public
+    page, each explained in its tooltip; and **Model window used**, a percentage, with a `?`
+    whose tooltip explains it.
+  - **Tagging**: **Tags the AI may propose**, Existing tags only / Existing and new tags
+    (`pref.ai.tagging.vocabulary`; neither until chosen here or when a tagging run asks).
+  - `AI Agent Settings…` opens on Keys, `Cloud AI Privacy…` on Privacy with the cursor in
+    its first rule field, and `AI Tagging Vocabulary…` on Tagging.
+  - Every tab's panel is drawn, stacked in one place, and only the open one is shown: the
+    dialog keeps the size of the largest whichever tab is open, and switching tabs redraws
+    nothing, so what is typed but not yet saved stays. One Save saves every tab; a value
+    that did not change is not written again.
 - The dialog has no model or thinking picker: both are chosen beside chat Send.
 - The Google tab says under the key, with Google's terms in its tooltip: "Use a key
   with billing turned on: on the free tier, Google may use what you send to improve its

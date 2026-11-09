@@ -1,4 +1,5 @@
-"""Encrypted file storage and reference helpers."""
+"""Stored files and their references: the catalog (files_sql.py) and the blobs (blob_store.py).
+A blob is written and synced before the catalog names it, and retired only after the catalog stops."""
 
 from __future__ import annotations
 
@@ -7,12 +8,15 @@ from datetime import datetime, timezone
 import json
 from pathlib import Path
 import uuid
-from typing import Optional
+from typing import Callable, Iterator, Optional
 
 from app.upload_limits import MAX_ATTACHMENT_BYTES
+from app.db.blob_store import BlobSeal, StoredBlob
 from app.db.file_schema import FILE_PREVIEW_VARIANTS
-from app.db.file_session import begin_file_writer, connect_file_reader
+from app.db.file_session import begin_file_writer, connect_file_reader, live_blob_store
+from app.db.session import after_recoverable_commit
 from app.db.files_sql import (
+    AttachmentSizeExceeded,
     delete_file_previews,
     delete_files,
     fetch_all_file_ids,
@@ -20,12 +24,13 @@ from app.db.files_sql import (
     fetch_all_file_previews,
     fetch_all_file_text_filters,
     fetch_all_file_texts,
+    fetch_all_blob_ids,
+    fetch_blob_ids_of_files,
     fetch_content_revisions,
+    fetch_every_blob_id_of_files,
     fetch_file_text,
     fetch_file_metadata,
     fetch_file_preview,
-    require_file_size,
-    sum_stored_file_sizes,
     fetch_file,
     insert_file,
     replace_file_content_fields,
@@ -66,6 +71,8 @@ _XML_DECLARATION_END = "?>"
 # A new file ID is drawn at most this many times before giving up on finding
 # one that no note or file already uses.
 _UNIQUE_FILE_ID_ATTEMPTS = 100
+# A blob no catalog row names is a crash's leftover once it is this old (maintainer, 2026-11-08).
+_CRASH_LEFTOVER_GRACE_SECONDS = 60 * 60
 
 
 class FileRevisionConflict(Exception):
@@ -118,6 +125,26 @@ class FilePreview:
     mime_type: str
     content_revision: int
     content_bytes: bytes
+
+
+@dataclass(frozen=True)
+class FileContentRange:
+    """A file opened for reading a part of it: pieces yields exactly bytes start..start+length."""
+
+    record: FileReferenceRecord
+    start: int
+    length: int
+    pieces: Iterator[bytes]
+
+
+@dataclass(frozen=True)
+class _SealedBlob:
+    """A blob just written, and its seal as the catalog stores it."""
+
+    blob_id: str
+    seal: bytes
+    seal_nonce: Optional[bytes]
+    seal_tag: Optional[bytes]
 
 
 @dataclass(frozen=True)
@@ -184,6 +211,13 @@ def bootstrap_file_registry() -> set[str]:
     else:
         file_registry.replace_all(file_ids)
     return file_ids
+
+
+def sweep_blob_leftovers() -> int:
+    """Delete what a crash left in the blob folder. Needs no key, so it can run before unlock."""
+    with connect_file_reader() as connection:
+        referenced_blob_ids = fetch_all_blob_ids(connection)
+    return live_blob_store().sweep(referenced_blob_ids=referenced_blob_ids, grace_seconds=_CRASH_LEFTOVER_GRACE_SECONDS)
 
 
 def _load_file_details() -> dict[str, FileDetails]:
@@ -261,10 +295,7 @@ def create_file(
         encryption_service=encryption_service,
         plaintext=metadata_json,
     )
-    encrypted_blob, blob_nonce, blob_tag = _encrypt_bytes_for_storage(
-        encryption_service=encryption_service,
-        plaintext=content_bytes,
-    )
+    sealed = _write_blob(content_bytes=content_bytes, encryption_service=encryption_service)
 
     now = datetime.now(timezone.utc)
     with begin_file_writer() as connection:
@@ -277,9 +308,10 @@ def create_file(
             metadata_json=encrypted_metadata,
             metadata_encryption_nonce=metadata_nonce,
             metadata_encryption_tag=metadata_tag,
-            blob_data=encrypted_blob,
-            blob_encryption_nonce=blob_nonce,
-            blob_encryption_tag=blob_tag,
+            blob_id=sealed.blob_id,
+            blob_seal=sealed.seal,
+            blob_seal_encryption_nonce=sealed.seal_nonce,
+            blob_seal_encryption_tag=sealed.seal_tag,
             created_at=now,
             updated_at=now,
         )
@@ -367,26 +399,36 @@ file_registry.install_content_reader(read_stored_file)
 
 def _read_stored_file(file_id: str, token: Optional[str]) -> DownloadedFile:
     encryption_service = _resolve_encryption_service(token)
-    with connect_file_reader() as connection:
-        require_file_size(connection, file_id, MAX_ATTACHMENT_BYTES)
-        row = fetch_file(connection, file_id)
+    row = _find_and_pin(lambda connection: fetch_file(connection, file_id))
     if row is None:
         raise KeyError(f"File {file_id} not present")
-
-    record = get_file_reference_record(file_id, token)
-    encrypted_blob = row["blob_data"]
-    if not isinstance(encrypted_blob, bytes):
-        raise TypeError(f"files.blob_data must be bytes for file {file_id}")
-
-    content_bytes = _decrypt_blob_field(
-        encryption_service=encryption_service,
-        value=encrypted_blob,
-        nonce=row["blob_encryption_nonce"],
-        tag=row["blob_encryption_tag"],
-        field_name="blob_data",
-        file_id=file_id,
-    )
+    try:
+        seal = _open_seal(encryption_service=encryption_service, row=row, file_id=file_id)
+        if seal.real_size > MAX_ATTACHMENT_BYTES:
+            raise AttachmentSizeExceeded('Attachment exceeds the configured size limit')
+        record = get_file_reference_record(file_id, token)
+        content_bytes = live_blob_store().read_all(str(row["blob_id"]), seal)
+    finally:
+        live_blob_store().unpin([str(row["blob_id"])])
     return DownloadedFile(record=record, content_bytes=content_bytes)
+
+
+def open_file_range(*, file_id: str, token: str, start: int, length: int) -> FileContentRange:
+    """length bytes of a file from start, read a segment at a time, so memory stays small and a
+    jump into a long video reads only that part. The caller must iterate pieces."""
+    if not isinstance(token, str) or token == "":
+        raise TypeError("token must be a non-empty string")
+    encryption_service = _resolve_encryption_service(token)
+    record = get_file_reference_record(file_id, token)
+    store = live_blob_store()
+    with store.lifecycle_lock:
+        with connect_file_reader() as connection:
+            row = fetch_file(connection, file_id)
+        if row is None:
+            raise KeyError(f"File {file_id} not present")
+        seal = _open_seal(encryption_service=encryption_service, row=row, file_id=file_id)
+        pieces = store.read_range(str(row["blob_id"]), seal, start=start, length=length)
+    return FileContentRange(record=record, start=start, length=length, pieces=pieces)
 
 
 def replace_file_content(
@@ -423,6 +465,7 @@ def replace_file_content(
 
     now = datetime.now(timezone.utc)
     with begin_file_writer() as connection:
+        replaced_blob_ids = fetch_blob_ids_of_files(connection, [file_id])
         updated_rows = replace_file_content_fields(
             connection,
             file_id=file_id,
@@ -431,10 +474,12 @@ def replace_file_content(
             **content_fields,
         )
     if updated_rows != 1:
+        _retire_blobs([str(content_fields["blob_id"])])
         current = get_file_reference_record(file_id, token)
         raise FileRevisionConflict(
             file_id=file_id, expected_revision=expected_revision, current_revision=current.content_revision
         )
+    _retire_blobs(replaced_blob_ids)
 
     updated = get_file_reference_record(file_id, token)
     assert updated.content_revision == expected_revision + 1
@@ -522,17 +567,15 @@ def _encrypt_replacement_content(
         encryption_service=encryption_service,
         plaintext=metadata_json,
     )
-    encrypted_blob, blob_nonce, blob_tag = _encrypt_bytes_for_storage(
-        encryption_service=encryption_service,
-        plaintext=content_bytes,
-    )
+    sealed = _write_blob(content_bytes=content_bytes, encryption_service=encryption_service)
     return {
         "metadata_json": encrypted_metadata,
         "metadata_encryption_nonce": metadata_nonce,
         "metadata_encryption_tag": metadata_tag,
-        "blob_data": encrypted_blob,
-        "blob_encryption_nonce": blob_nonce,
-        "blob_encryption_tag": blob_tag,
+        "blob_id": sealed.blob_id,
+        "blob_seal": sealed.seal,
+        "blob_seal_encryption_nonce": sealed.seal_nonce,
+        "blob_seal_encryption_tag": sealed.seal_tag,
     }
 
 
@@ -576,14 +619,15 @@ def restore_file_snapshot(*, snapshot: FileSnapshot, token: str) -> FileReferenc
         content_bytes=snapshot.content_bytes,
         encryption_service=encryption_service,
     )
-    encrypted_previews = {
-        variant: _encrypt_bytes_for_storage(encryption_service=encryption_service, plaintext=svg_bytes)
+    sealed_previews = {
+        variant: _write_blob(content_bytes=svg_bytes, encryption_service=encryption_service)
         for variant, svg_bytes in snapshot.previews_by_variant.items()
     }
 
     next_revision = record.content_revision + 1
     now = datetime.now(timezone.utc)
     with begin_file_writer() as connection:
+        replaced_blob_ids = _content_and_preview_blob_ids(connection, snapshot.file_id)
         updated_rows = replace_file_content_fields(
             connection,
             file_id=snapshot.file_id,
@@ -594,18 +638,20 @@ def restore_file_snapshot(*, snapshot: FileSnapshot, token: str) -> FileReferenc
         if updated_rows != 1:
             raise RuntimeError(f"File {snapshot.file_id} changed while its snapshot was being restored")
         delete_file_previews(connection, snapshot.file_id)
-        for variant, (preview_data, preview_nonce, preview_tag) in encrypted_previews.items():
+        for variant, sealed in sealed_previews.items():
             upsert_file_preview(
                 connection,
                 file_id=snapshot.file_id,
                 variant=variant,
                 mime_type=FILE_PREVIEW_MIME_TYPE,
-                preview_data=preview_data,
-                preview_encryption_nonce=preview_nonce,
-                preview_encryption_tag=preview_tag,
+                blob_id=sealed.blob_id,
+                blob_seal=sealed.seal,
+                blob_seal_encryption_nonce=sealed.seal_nonce,
+                blob_seal_encryption_tag=sealed.seal_tag,
                 content_revision=next_revision,
                 updated_at=now,
             )
+    _retire_blobs(replaced_blob_ids)
 
     updated = get_file_reference_record(snapshot.file_id, token)
     assert updated.content_revision == next_revision
@@ -638,29 +684,32 @@ def store_file_previews(
         )
 
     encryption_service = _resolve_encryption_service(token)
-    encrypted_previews: dict[str, tuple[bytes, Optional[bytes], Optional[bytes]]] = {}
+    sealed_previews: dict[str, _SealedBlob] = {}
     for variant in FILE_PREVIEW_VARIANTS:
         svg_bytes = previews_by_variant[variant]
         _validate_svg_preview(svg_bytes=svg_bytes, variant=variant)
-        encrypted_previews[variant] = _encrypt_bytes_for_storage(
-            encryption_service=encryption_service,
-            plaintext=svg_bytes,
-        )
+        sealed_previews[variant] = _write_blob(content_bytes=svg_bytes, encryption_service=encryption_service)
 
     now = datetime.now(timezone.utc)
+    replaced_blob_ids: list[str] = []
     with begin_file_writer() as connection:
-        for variant, (preview_data, preview_nonce, preview_tag) in encrypted_previews.items():
+        for variant, sealed in sealed_previews.items():
+            current = fetch_file_preview(connection, file_id, variant)
+            if current is not None:
+                replaced_blob_ids.append(str(current["blob_id"]))
             upsert_file_preview(
                 connection,
                 file_id=file_id,
                 variant=variant,
                 mime_type=FILE_PREVIEW_MIME_TYPE,
-                preview_data=preview_data,
-                preview_encryption_nonce=preview_nonce,
-                preview_encryption_tag=preview_tag,
+                blob_id=sealed.blob_id,
+                blob_seal=sealed.seal,
+                blob_seal_encryption_nonce=sealed.seal_nonce,
+                blob_seal_encryption_tag=sealed.seal_tag,
                 content_revision=content_revision,
                 updated_at=now,
             )
+    _retire_blobs(replaced_blob_ids)
     return record
 
 
@@ -681,18 +730,10 @@ def find_file_preview(*, file_id: str, variant: str, token: str) -> Optional[Fil
         raise TypeError("token must be a non-empty string")
 
     encryption_service = _resolve_encryption_service(token)
-    with connect_file_reader() as connection:
-        row = fetch_file_preview(connection, file_id, variant)
+    row = _find_and_pin(lambda connection: fetch_file_preview(connection, file_id, variant))
     if row is None:
         return None
-    content_bytes = _decrypt_blob_field(
-        encryption_service=encryption_service,
-        value=row["preview_data"],
-        nonce=row["preview_encryption_nonce"],
-        tag=row["preview_encryption_tag"],
-        field_name="preview_data",
-        file_id=file_id,
-    )
+    content_bytes = _read_pinned_blob(encryption_service=encryption_service, row=row, file_id=file_id)
     mime_type = row["mime_type"]
     content_revision = row["content_revision"]
     assert mime_type == FILE_PREVIEW_MIME_TYPE, f"unexpected preview MIME type {mime_type!r}"
@@ -715,17 +756,22 @@ def unused_file_ids(*, kept_file_ids: frozenset[str]) -> set[str]:
 
 
 def stored_size_of_files(file_ids: set[str]) -> int:
-    """The bytes the files take in the files database, as stored (encrypted or not)."""
+    """The bytes the files' content takes on disk, as stored (encrypted and padded or not)."""
     if not file_ids:
         return 0
-    with connect_file_reader() as connection:
-        return sum_stored_file_sizes(connection, sorted(file_ids))
+    store = live_blob_store()
+    with store.lifecycle_lock:
+        with connect_file_reader() as connection:
+            blob_ids = fetch_blob_ids_of_files(connection, sorted(file_ids))
+        return sum(store.stored_size(blob_id) for blob_id in blob_ids)
 
 
 def trim_unused_files(*, kept_file_ids: frozenset[str]) -> TrimUnusedFilesResult:
     deleted_ids = sorted(unused_file_ids(kept_file_ids=kept_file_ids))
     with begin_file_writer() as connection:
+        deleted_blob_ids = fetch_every_blob_id_of_files(connection, deleted_ids)
         deleted_count = delete_files(connection, deleted_ids)
+    _retire_blobs(deleted_blob_ids)
     if deleted_count != len(deleted_ids):
         raise RuntimeError(
             "File trim deleted unexpected number of rows: "
@@ -744,6 +790,7 @@ def encrypt_all_files_for_active_dek(*, encryption_service: object) -> int:
         raise RuntimeError("File encryption migration requires an active DEK")
 
     rewritten_count = 0
+    replaced_blob_ids: list[str] = []
     with begin_file_writer() as connection:
         file_ids = fetch_all_file_ids(connection)
         for file_id in file_ids:
@@ -751,23 +798,24 @@ def encrypt_all_files_for_active_dek(*, encryption_service: object) -> int:
             assert row is not None
             if _row_is_fully_encrypted(row):
                 continue
-            _rewrite_file_row(
+            replaced_blob_ids.append(_rewrite_file_row(
                 connection=connection,
                 row=row,
                 decrypt_encryption_service=service,
                 encrypt_encryption_service=service,
-            )
+            ))
             rewritten_count += 1
-        _rewrite_file_previews(
+        replaced_blob_ids += _rewrite_file_previews(
             connection=connection,
             decrypt_encryption_service=service,
             encrypt_encryption_service=service,
         )
-        _rewrite_file_texts(
+        replaced_blob_ids += _rewrite_file_texts(
             connection=connection,
             decrypt_encryption_service=service,
             encrypt_encryption_service=service,
         )
+    _retire_blobs(replaced_blob_ids)
     return rewritten_count
 
 
@@ -777,6 +825,7 @@ def decrypt_all_files_for_plaintext(*, encryption_service: object) -> int:
         raise RuntimeError("File decryption migration requires an active DEK")
 
     rewritten_count = 0
+    replaced_blob_ids: list[str] = []
     with begin_file_writer() as connection:
         file_ids = fetch_all_file_ids(connection)
         for file_id in file_ids:
@@ -784,23 +833,24 @@ def decrypt_all_files_for_plaintext(*, encryption_service: object) -> int:
             assert row is not None
             if _row_is_fully_plaintext(row):
                 continue
-            _rewrite_file_row(
+            replaced_blob_ids.append(_rewrite_file_row(
                 connection=connection,
                 row=row,
                 decrypt_encryption_service=service,
                 encrypt_encryption_service=None,
-            )
+            ))
             rewritten_count += 1
-        _rewrite_file_previews(
+        replaced_blob_ids += _rewrite_file_previews(
             connection=connection,
             decrypt_encryption_service=service,
             encrypt_encryption_service=None,
         )
-        _rewrite_file_texts(
+        replaced_blob_ids += _rewrite_file_texts(
             connection=connection,
             decrypt_encryption_service=service,
             encrypt_encryption_service=None,
         )
+    _retire_blobs(replaced_blob_ids)
     return rewritten_count
 
 
@@ -841,7 +891,8 @@ def _rewrite_file_row(
     row: dict[str, object],
     decrypt_encryption_service: object,
     encrypt_encryption_service: object | None,
-) -> None:
+) -> str:
+    """Rewrite one file's row and blob; returns the old blob, to retire once all is committed."""
     file_id = row["id"]
     if not isinstance(file_id, str) or file_id == "":
         raise TypeError(f"files.id must be a non-empty string, got {file_id!r}")
@@ -862,13 +913,9 @@ def _rewrite_file_row(
         field_name="metadata_json",
         file_id=file_id,
     )
-    blob_data = _decrypt_blob_field(
-        encryption_service=decrypt_encryption_service,
-        value=row["blob_data"],
-        nonce=row["blob_encryption_nonce"],
-        tag=row["blob_encryption_tag"],
-        field_name="blob_data",
-        file_id=file_id,
+    next_blob = _rewritten_blob(
+        row=row, file_id=file_id,
+        decrypt_encryption_service=decrypt_encryption_service, encrypt_encryption_service=encrypt_encryption_service,
     )
 
     if encrypt_encryption_service is None:
@@ -878,9 +925,6 @@ def _rewrite_file_row(
         next_metadata_json = metadata_json
         next_metadata_nonce = None
         next_metadata_tag = None
-        next_blob_data = blob_data
-        next_blob_nonce = None
-        next_blob_tag = None
     else:
         next_title, next_title_nonce, next_title_tag = _encrypt_text_for_storage(
             encryption_service=encrypt_encryption_service,
@@ -889,10 +933,6 @@ def _rewrite_file_row(
         next_metadata_json, next_metadata_nonce, next_metadata_tag = _encrypt_text_for_storage(
             encryption_service=encrypt_encryption_service,
             plaintext=metadata_json,
-        )
-        next_blob_data, next_blob_nonce, next_blob_tag = _encrypt_bytes_for_storage(
-            encryption_service=encrypt_encryption_service,
-            plaintext=blob_data,
         )
 
     update_file_storage_fields(
@@ -904,11 +944,13 @@ def _rewrite_file_row(
         metadata_json=next_metadata_json,
         metadata_encryption_nonce=next_metadata_nonce,
         metadata_encryption_tag=next_metadata_tag,
-        blob_data=next_blob_data,
-        blob_encryption_nonce=next_blob_nonce,
-        blob_encryption_tag=next_blob_tag,
+        blob_id=next_blob.blob_id,
+        blob_seal=next_blob.seal,
+        blob_seal_encryption_nonce=next_blob.seal_nonce,
+        blob_seal_encryption_tag=next_blob.seal_tag,
         updated_at=datetime.now(timezone.utc),
     )
+    return str(row["blob_id"])
 
 
 def _rewrite_file_previews(
@@ -916,34 +958,28 @@ def _rewrite_file_previews(
     connection,
     decrypt_encryption_service: object,
     encrypt_encryption_service: object | None,
-) -> None:
+) -> list[str]:
+    """Rewrite every preview's blob; returns the old blobs, to retire once all is committed."""
+    replaced_blob_ids: list[str] = []
     for preview in fetch_all_file_previews(connection):
         file_id = preview["file_id"]
         variant = preview["variant"]
         assert isinstance(file_id, str) and isinstance(variant, str)
-        plaintext = _decrypt_blob_field(
-            encryption_service=decrypt_encryption_service,
-            value=preview["preview_data"],
-            nonce=preview["preview_encryption_nonce"],
-            tag=preview["preview_encryption_tag"],
-            field_name="preview_data",
-            file_id=file_id,
+        next_blob = _rewritten_blob(
+            row=preview, file_id=file_id,
+            decrypt_encryption_service=decrypt_encryption_service, encrypt_encryption_service=encrypt_encryption_service,
         )
-        if encrypt_encryption_service is None:
-            next_data, next_nonce, next_tag = plaintext, None, None
-        else:
-            next_data, next_nonce, next_tag = _encrypt_bytes_for_storage(
-                encryption_service=encrypt_encryption_service,
-                plaintext=plaintext,
-            )
         update_file_preview_storage_fields(
             connection,
             file_id=file_id,
             variant=variant,
-            preview_data=next_data,
-            preview_encryption_nonce=next_nonce,
-            preview_encryption_tag=next_tag,
+            blob_id=next_blob.blob_id,
+            blob_seal=next_blob.seal,
+            blob_seal_encryption_nonce=next_blob.seal_nonce,
+            blob_seal_encryption_tag=next_blob.seal_tag,
         )
+        replaced_blob_ids.append(str(preview["blob_id"]))
+    return replaced_blob_ids
 
 
 def _require_editable(record: FileReferenceRecord) -> None:
@@ -1002,10 +1038,10 @@ def _row_is_fully_plaintext(row: dict[str, object]) -> bool:
         )
         is False
         and _field_has_encryption(
-            nonce=row["blob_encryption_nonce"],
-            tag=row["blob_encryption_tag"],
+            nonce=row["blob_seal_encryption_nonce"],
+            tag=row["blob_seal_encryption_tag"],
             file_id=row["id"],
-            field_name="blob_data",
+            field_name="blob_seal",
         )
         is False
     )
@@ -1028,10 +1064,10 @@ def _row_is_fully_encrypted(row: dict[str, object]) -> bool:
         )
         is True
         and _field_has_encryption(
-            nonce=row["blob_encryption_nonce"],
-            tag=row["blob_encryption_tag"],
+            nonce=row["blob_seal_encryption_nonce"],
+            tag=row["blob_seal_encryption_tag"],
             file_id=row["id"],
-            field_name="blob_data",
+            field_name="blob_seal",
         )
         is True
     )
@@ -1149,6 +1185,77 @@ def _decrypt_blob_field(
     return service.decrypt_bytes_from_storage(value, nonce, tag)
 
 
+def _write_blob(*, content_bytes: bytes, encryption_service: object) -> _SealedBlob:
+    """Store content as a new blob, written and synced: encrypted while the vault has a password."""
+    stored = live_blob_store().write(content_bytes, is_encrypted=_coerce_encryption_service(encryption_service) is not None)
+    return _sealed_for_catalog(stored=stored, encryption_service=encryption_service)
+
+
+def _sealed_for_catalog(*, stored: StoredBlob, encryption_service: object) -> _SealedBlob:
+    seal, seal_nonce, seal_tag = _encrypt_bytes_for_storage(encryption_service=encryption_service, plaintext=stored.seal.to_bytes())
+    return _SealedBlob(blob_id=stored.blob_id, seal=seal, seal_nonce=seal_nonce, seal_tag=seal_tag)
+
+
+def _open_seal(*, encryption_service: object, row: dict[str, object], file_id: str) -> BlobSeal:
+    return BlobSeal.from_bytes(_decrypt_blob_field(
+        encryption_service=encryption_service,
+        value=row["blob_seal"],
+        nonce=row["blob_seal_encryption_nonce"],
+        tag=row["blob_seal_encryption_tag"],
+        field_name="blob_seal",
+        file_id=file_id,
+    ))
+
+
+def _find_and_pin(fetch_row: Callable[..., Optional[dict[str, object]]]) -> Optional[dict[str, object]]:
+    """A catalog row and its blob, which cannot be deleted until the caller unpins it."""
+    store = live_blob_store()
+    with store.lifecycle_lock:
+        with connect_file_reader() as connection:
+            row = fetch_row(connection)
+        if row is not None:
+            store.pin([str(row["blob_id"])])
+    return row
+
+
+def _read_pinned_blob(*, encryption_service: object, row: dict[str, object], file_id: str) -> bytes:
+    """The whole blob of a row _find_and_pin returned, and the pin released."""
+    blob_id = str(row["blob_id"])
+    store = live_blob_store()
+    try:
+        return store.read_all(blob_id, _open_seal(encryption_service=encryption_service, row=row, file_id=file_id))
+    finally:
+        store.unpin([blob_id])
+
+
+def _rewritten_blob(
+    *, row: dict[str, object], file_id: str, decrypt_encryption_service: object, encrypt_encryption_service: object | None,
+) -> _SealedBlob:
+    """A row's blob copied, encrypted or not, a piece at a time; the old one stays for retiring."""
+    seal = _open_seal(encryption_service=decrypt_encryption_service, row=row, file_id=file_id)
+    is_encrypted = _coerce_encryption_service(encrypt_encryption_service) is not None
+    copied = live_blob_store().copy(str(row["blob_id"]), seal, is_encrypted=is_encrypted)
+    if not is_encrypted:
+        # Removing a password: encryption is still required until the change commits.
+        return _SealedBlob(blob_id=copied.blob_id, seal=copied.seal.to_bytes(), seal_nonce=None, seal_tag=None)
+    return _sealed_for_catalog(stored=copied, encryption_service=encrypt_encryption_service)
+
+
+def _retire_blobs(blob_ids: list[str]) -> None:
+    """Delete blobs the catalog stopped naming, once a password change or restore can't roll back."""
+    if blob_ids:
+        after_recoverable_commit(lambda: live_blob_store().retire(blob_ids))
+
+
+def _content_and_preview_blob_ids(connection, file_id: str) -> list[str]:
+    blob_ids = fetch_blob_ids_of_files(connection, [file_id])
+    for variant in FILE_PREVIEW_VARIANTS:
+        preview = fetch_file_preview(connection, file_id, variant)
+        if preview is not None:
+            blob_ids.append(str(preview["blob_id"]))
+    return blob_ids
+
+
 def _coerce_encryption_service(encryption_service: object):
     if encryption_service is None:
         return None
@@ -1220,11 +1327,10 @@ def _integer_column(row: dict[str, object], column: str, *, file_id: str) -> int
 
 def _read_file_text(file_id: str) -> StoredFileText | None:
     encryption_service = _resolve_encryption_service(None)
-    with connect_file_reader() as connection:
-        row = fetch_file_text(connection, file_id)
+    row = _find_and_pin(lambda connection: fetch_file_text(connection, file_id))
     if row is None:
         return None
-    text = _stored_payload(encryption_service=encryption_service, row=row, field="text", file_id=file_id)
+    text = _read_pinned_blob(encryption_service=encryption_service, row=row, file_id=file_id)
     return StoredFileText(
         text=text.decode("utf-8"), is_cut=bool(row["is_cut"]),
         content_revision=_integer_column(row, "content_revision", file_id=file_id),
@@ -1269,35 +1375,35 @@ def _searchable_files() -> dict[str, int]:
 
 def _store_file_text(file_id: str, kept: KeptText) -> None:
     encryption_service = _resolve_encryption_service(None)
-    text_data, text_nonce, text_tag = _encrypt_bytes_for_storage(
-        encryption_service=encryption_service, plaintext=kept.extracted.text.encode("utf-8"),
-    )
+    sealed = _write_blob(content_bytes=kept.extracted.text.encode("utf-8"), encryption_service=encryption_service)
     filter_data, filter_nonce, filter_tag = _encrypt_bytes_for_storage(
         encryption_service=encryption_service, plaintext=kept.filter_bytes,
     )
     with begin_file_writer() as connection:
-        # Deleted meanwhile: nothing to keep.
-        if fetch_file(connection, file_id) is None:
-            return
-        upsert_file_text(
-            connection, file_id=file_id, text_data=text_data, text_encryption_nonce=text_nonce,
-            text_encryption_tag=text_tag, filter_data=filter_data, filter_encryption_nonce=filter_nonce,
-            filter_encryption_tag=filter_tag, is_cut=kept.extracted.is_cut, content_revision=kept.content_revision,
-            reader_version=kept.reader_version, filter_version=kept.filter_version, updated_at=datetime.now(timezone.utc),
-        )
+        file_is_present = fetch_file(connection, file_id) is not None
+        replaced_text = fetch_file_text(connection, file_id)
+        if file_is_present:
+            upsert_file_text(
+                connection, file_id=file_id, blob_id=sealed.blob_id, blob_seal=sealed.seal,
+                blob_seal_encryption_nonce=sealed.seal_nonce, blob_seal_encryption_tag=sealed.seal_tag,
+                filter_data=filter_data, filter_encryption_nonce=filter_nonce,
+                filter_encryption_tag=filter_tag, is_cut=kept.extracted.is_cut, content_revision=kept.content_revision,
+                reader_version=kept.reader_version, filter_version=kept.filter_version, updated_at=datetime.now(timezone.utc),
+            )
+    # Deleted meanwhile: nothing to keep.
+    if not file_is_present:
+        _retire_blobs([sealed.blob_id])
+    elif replaced_text is not None:
+        _retire_blobs([str(replaced_text["blob_id"])])
 
 
 def _file_bytes_if_present(file_id: str) -> bytes | None:
     """The file's content, or None when it was deleted (a background read races deletions)."""
     encryption_service = _resolve_encryption_service(None)
-    with connect_file_reader() as connection:
-        row = fetch_file(connection, file_id)
+    row = _find_and_pin(lambda connection: fetch_file(connection, file_id))
     if row is None:
         return None
-    return _decrypt_blob_field(
-        encryption_service=encryption_service, value=row["blob_data"], nonce=row["blob_encryption_nonce"],
-        tag=row["blob_encryption_tag"], field_name="blob_data", file_id=file_id,
-    )
+    return _read_pinned_blob(encryption_service=encryption_service, row=row, file_id=file_id)
 
 
 file_texts.install_storage(FileTextStorage(
@@ -1315,11 +1421,13 @@ def _rewrite_file_texts(
     connection,
     decrypt_encryption_service: object,
     encrypt_encryption_service: object | None,
-) -> None:
+) -> list[str]:
+    """Rewrite every file text's blob and filter; returns the old blobs, to retire once all is committed."""
+    replaced_blob_ids: list[str] = []
     for row in fetch_all_file_texts(connection):
         file_id = str(row["file_id"])
-        text_data, text_nonce, text_tag = _rewritten_payload(
-            row=row, field="text", file_id=file_id,
+        next_blob = _rewritten_blob(
+            row=row, file_id=file_id,
             decrypt_encryption_service=decrypt_encryption_service, encrypt_encryption_service=encrypt_encryption_service,
         )
         filter_data, filter_nonce, filter_tag = _rewritten_payload(
@@ -1327,9 +1435,12 @@ def _rewrite_file_texts(
             decrypt_encryption_service=decrypt_encryption_service, encrypt_encryption_service=encrypt_encryption_service,
         )
         update_file_text_storage_fields(
-            connection, file_id=file_id, text_data=text_data, text_encryption_nonce=text_nonce, text_encryption_tag=text_tag,
+            connection, file_id=file_id, blob_id=next_blob.blob_id, blob_seal=next_blob.seal,
+            blob_seal_encryption_nonce=next_blob.seal_nonce, blob_seal_encryption_tag=next_blob.seal_tag,
             filter_data=filter_data, filter_encryption_nonce=filter_nonce, filter_encryption_tag=filter_tag,
         )
+        replaced_blob_ids.append(str(row["blob_id"]))
+    return replaced_blob_ids
 
 
 def _rewritten_payload(

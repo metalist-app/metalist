@@ -14,8 +14,8 @@ and pressing + is the user's yes.
 With children, the subtree goes as one tree when it fits the tagging batch
 window; otherwise the note alone and each child's subtree are trees, grouped
 into batches, each given the note's text as context. Batch 1 runs first and
-its new tags are offered to the others, which run four at a time, as bulk
-tagging does.
+its new tags are offered to the others, which go as fast as the provider's
+limits allow (provider_limits), as bulk tagging does.
 """
 
 from __future__ import annotations
@@ -50,8 +50,6 @@ RANKED_FOR_NOTE_LIMIT = 60
 MOST_USED_LIMIT = 150
 # New tags kept per note from one answer, in the AI's order; pressing + on each is still the user's choice.
 MAX_NEW_TAGS = 2
-# Batches after the first run this many at a time (as bulk tagging).
-_PARALLEL_BATCHES = 4
 # The ontology rules go after the skill and instruction system messages, before the user payload.
 _RULES_MESSAGE_INDEX = 2
 
@@ -294,16 +292,6 @@ async def _infer_tag_batch(
     )
 
 
-async def _infer_tag_batch_in_turn(
-    semaphore: asyncio.Semaphore, inference: InferenceAdapter, run: _OneNoteRun, request: NoteTagRequest,
-    index: int, prior_batch_new_tags: tuple[str, ...], context_tokens: int,
-) -> dict[str, tuple[str, ...]]:
-    """_infer_tag_batch once the semaphore lets another batch run."""
-    requires(request, "cloud_disclosable")
-    async with semaphore:
-        return await _infer_tag_batch(inference, run, request, index, prior_batch_new_tags, context_tokens)
-
-
 async def suggest_note_tags(
     *, request: NoteTagRequest, inference: InferenceAdapter, base_url: str, model: str,
     thinking_level: str, web_settings: AgentWebSettings, session_key: str, run_id: str,
@@ -326,11 +314,11 @@ async def suggest_note_tags(
     first_new_tags = tuple(dict.fromkeys(
         tag for tags in results[0].values() for tag in tags if tag.casefold() not in request.visible_vocabulary
     ))
-    semaphore = asyncio.Semaphore(_PARALLEL_BATCHES)
+    # Every later batch starts now; the provider's limits decide how many are sent at once.
     tasks = []
     for index in range(1, total):
-        tasks.append(asyncio.create_task(_infer_tag_batch_in_turn(
-            semaphore, inference, run, request, index, first_new_tags, context.loaded_tokens)))
+        tasks.append(asyncio.create_task(_infer_tag_batch(
+            inference, run, request, index, first_new_tags, context.loaded_tokens)))
     try:
         for completed in asyncio.as_completed(tasks):
             results.append(await completed)

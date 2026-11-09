@@ -2,10 +2,10 @@ import assert from 'node:assert/strict';
 import { waitForAppQuiet } from './browser-app-idle.mjs';
 
 // The AI tagging dialogs on MetaList's own dialogs (agreed case by case 2026-10-25): AI-Proposed
-// Tags and AI Tagging Vocabulary open like every other dialog (a × at the top right, the shared
-// button row), 560 px wide; a refused or failed Apply/Save opens the error dialog over them with
-// the choices kept and nothing moved; Apply's result is a corner card; a vocabulary that cannot
-// be read shows the error and leaves nothing open; Escape, a click outside and × close them.
+// Tags opens like every other dialog (a × at the top right, the shared button row), 560 px wide;
+// a refused or failed Apply opens the error dialog over it with the choices kept and nothing
+// moved; Apply's result is a corner card; Escape, a click outside and × close it. AI Tagging
+// Vocabulary is AI Agent Settings' Tagging tab since 2026-11-07 (browser-ai-settings-regressions.mjs).
 
 const WINDOW = {width: 1280, height: 900};
 const DIALOG_WIDTH_PX = 560;
@@ -120,7 +120,7 @@ async function closeEverything(page) {
 }
 
 const PROPOSALS = '#ai-proposed-tags-modal';
-const VOCABULARY = '#ai-tagging-vocabulary-modal';
+const SETTINGS = '#ai-agent-settings-modal';
 
 async function openProposals(page) {
   await runCommand(page, 'form.proposals');
@@ -187,28 +187,14 @@ async function closingCase(page) {
 
 async function vocabularyCase(page) {
   await runCommand(page, 'form.tagging_vocabulary');
-  const state = await dialogState(page, VOCABULARY);
-  assert.equal(state.shown, true, 'AI Tagging Vocabulary opens as a MetaList dialog');
-  assert.equal(state.inModalStack, true, 'a .modal like every other dialog');
-  assert.deepEqual(state.buttons, ['Cancel', 'Save'], 'Cancel, then Save at the right');
-  assert.equal(state.sharedRow, true, 'from the shared button row');
+  const opened = await page.evaluate(selector => ({
+    shown: getComputedStyle(document.querySelector(selector)).display !== 'none',
+    tab: document.querySelector(`${selector} .ai-settings-section-tab[aria-selected="true"]`)?.textContent,
+    oldDialog: Boolean(document.getElementById('ai-tagging-vocabulary-modal')),
+  }), SETTINGS);
+  assert.deepEqual(opened, {shown: true, tab: 'Tagging', oldDialog: false},
+    'AI Tagging Vocabulary opens AI Agent Settings on its Tagging tab, not a dialog of its own');
   await closeEverything(page);
-}
-
-async function vocabularyLoadFailureCase(page) {
-  await answerRequests(page, '/proposals/settings', 500, {detail: 'The tagging settings could not be read (test).'});
-  try {
-    await runCommand(page, 'form.tagging_vocabulary');
-    const shown = await errorText(page);
-    assert.notEqual(shown, null, 'a vocabulary that cannot be read shows an error dialog');
-    await page.keyboard.press('Escape');
-    await settle(page);
-    assert.equal(await errorText(page), null, 'Escape closes it');
-    assert.equal((await dialogState(page, VOCABULARY)).shown, false, 'and nothing else is open');
-    assert.equal(await modalStackDepth(page), 0, 'no dialog is left open');
-  } finally {
-    await restoreRequests(page);
-  }
 }
 
 export async function checkAiTaggingDialogs(page) {
@@ -220,7 +206,7 @@ export async function checkAiTaggingDialogs(page) {
   const cases = [
     ['proposals look', proposalsLookCase], ['proposals refused', proposalsRefusedCase],
     ['proposals result', proposalsResultCase], ['closing', closingCase],
-    ['vocabulary', vocabularyCase], ['vocabulary load failure', vocabularyLoadFailureCase],
+    ['vocabulary', vocabularyCase],
   ];
   for (const [label, run] of cases) {
     try {

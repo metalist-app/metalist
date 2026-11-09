@@ -11,6 +11,7 @@ from app.services.agent.scope import AgentScopeDescriptor, ScopedSearchSnapshot,
 from app.services.agent.scope import TextExtractionMeter
 from app.services.agent.skill_settings import AgentSkillSet, DEFAULT_AGENT_SKILLS
 from app.services.agent.staged_summary import SummaryBatchResult
+from app.services.agent.note_aliases import NoteAliases
 from app.services.agent.staged_summary import SummaryFindingsResult
 from app.services.agent.skills import load_skill
 from app.services.agent.token_estimation import estimate_input_tokens
@@ -98,6 +99,8 @@ def selected_tree_note(note) -> SelectedTreeNote:
 
 
 def build_messages(*, step, canonical_messages, prompts, skills):
+    """The production request for a step, its response model, and the short note IDs it names
+    notes by (as the runtime's: one table per snapshot)."""
     builder = AgentContextBuilder()
     context = step.context
     snapshot = fixture_snapshot(context)
@@ -114,6 +117,10 @@ def build_messages(*, step, canonical_messages, prompts, skills):
                 context.result_trees
             ),
         )
+        # The fixture snapshot holds counts only: the case's own notes get the short IDs, in the
+        # order the runtime gives them (view notes, then the selected tree).
+        note_aliases = NoteAliases(tuple(dict.fromkeys(
+            (*evidence.evidence_note_ids, *snapshot.selected_note.reference_note_ids))))
         return builder.build_staged_summary_batch_messages(
             canonical_messages=canonical_messages,
             summary_request=canonical_messages[-1]["content"],
@@ -123,12 +130,18 @@ def build_messages(*, step, canonical_messages, prompts, skills):
             evidence_payload=evidence,
             batch_index=context.batch_index,
             batch_count=context.batch_count,
-        ), "SummaryFindingsResult"
+            note_aliases=note_aliases,
+        ), "SummaryFindingsResult", note_aliases
     assert context.stage == "summary_final"
     summaries = tuple(
         SummaryBatchResult.model_validate(summary)
         for summary in context.summaries
     )
+    note_aliases = NoteAliases(tuple(dict.fromkeys((
+        *(root_id for summary in summaries for root_id in summary.covered_root_ids),
+        *(note_id for summary in summaries for finding in summary.findings for note_id in finding.supporting_note_ids),
+        *snapshot.selected_note.reference_note_ids,
+    ))))
     messages, _references = builder.build_staged_summary_final_messages(
         canonical_messages=canonical_messages,
         summary_request=canonical_messages[-1]["content"],
@@ -136,8 +149,9 @@ def build_messages(*, step, canonical_messages, prompts, skills):
         skill=skills.for_action("summarize_current_scope"),
         snapshot=snapshot,
         summaries=summaries,
+        note_aliases=note_aliases,
     )
-    return messages, ""
+    return messages, "", note_aliases
 
 
 def _flatten_result_tree(tree: dict) -> tuple[dict, ...]:
@@ -167,7 +181,7 @@ def prepare_step(step, *, prompts, skills) -> PreparedStep:
             if _OUTPUT_MARKER in message.content:
                 raise ValueError("Conversation contains a reserved previous-output marker")
             canonical.append(message.model_dump())
-    messages, response_model = build_messages(step=step, canonical_messages=canonical, prompts=prompts, skills=skills)
+    messages, response_model, note_aliases = build_messages(step=step, canonical_messages=canonical, prompts=prompts, skills=skills)
     prepared_messages = []
     for message in messages:
         if message["role"] == "assistant" and message["content"] in substitutions:
@@ -180,4 +194,4 @@ def prepare_step(step, *, prompts, skills) -> PreparedStep:
         kind = "structured"
         schema = RESPONSE_MODELS[response_model].model_json_schema()
     return PreparedStep(kind=kind, messages=prepared_messages, response_model=response_model,
-        response_schema=schema, expectation=step.expectation)
+        response_schema=schema, expectation=step.expectation, note_ids_by_alias=note_aliases.id_by_alias())

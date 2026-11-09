@@ -48,7 +48,7 @@ Each was confirmed in the code.
    - A wrapper with `{@size=1.25}` sizes one image (`image_size_formatting.py:94-112`), and any positive factor works.
    - An inline `<img width="300">` keeps its pixel width (the sanitizer allows `width`).
    - A file embed `![[UUID]]` takes only a factor, not pixels (row E3).
-6. **Notes can't be created with a given time through the app**, only through the database layer. `notes_sql.insert_note` takes `created_at`/`updated_at`, and `convert-from-legacy.py` already uses it. The importer goes through that layer.
+6. **Notes can't be created with a given time through the app**, only through the database layer. `notes_sql.insert_note` takes `created_at`/`updated_at`. The importer goes through that layer.
 7. **Inside a note, MetaList has no anchors.** A reference points at a whole note (`[[UUID#…]]` stays literal text). The split modes make this mostly moot, since a heading or paragraph *is* a note. Under "No splitting", heading and block links fall back to the whole note (the after-launch "links into part of a note" idea, `import-export-launch.md` §8).
 
 ---

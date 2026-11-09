@@ -8,11 +8,13 @@ it: OpenAI, Anthropic (Claude models) and Google (Gemini models).
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from typing import Literal
 
 from app.services.agent.inference import InferenceAdapter
 from app.services.agent.openai_cost_tracking import openai_cost_tracker
+from app.services.agent.scripted_inference import scripted_ai_adapter
 from app.services.ai_catalog import catalog_entry
 from app.services.ai_credentials import ai_credential_store
 from app.services.agent.privacy_guard import PrivacyGuardedInference, cloud_privacy_revision
@@ -22,6 +24,9 @@ AiProvider = Literal["openai", "anthropic", "gemini"]
 
 # The providers MetaList can use, in the order it prefers them (and lists them).
 AI_PROVIDERS: tuple[AiProvider, ...] = ("openai", "anthropic", "gemini")
+# On a test server with a scripted AI (scripted_inference.py), this provider is set up
+# without a key and answers from the script; the chat's picker still names its models.
+SCRIPTED_AI_PROVIDER: AiProvider = "openai"
 
 
 class AiNotSetUp(RuntimeError):
@@ -51,6 +56,8 @@ class AiConnection:
 
 def _is_provider_ready(provider: AiProvider, *, token: str, session_key: str) -> bool:
     assert provider in AI_PROVIDERS, f"Unregistered AI provider: {provider}"
+    if provider == SCRIPTED_AI_PROVIDER and scripted_ai_adapter(environ=os.environ) is not None:
+        return True
     return ai_credential_store(provider).status(token=token, session_key=session_key).configured
 
 
@@ -68,15 +75,22 @@ def connect_to_ai(*, provider: AiProvider, token: str, session_key: str) -> AiCo
     if not describe_ai_setup(token=token, session_key=session_key).is_ready_for(provider):
         raise AiNotSetUp(f"{provider} is not set up")
     entry = catalog_entry(provider)
-    api_key = ai_credential_store(provider).resolve(token=token, session_key=session_key)
+    scripted = scripted_ai_adapter(environ=os.environ)
+    if provider == SCRIPTED_AI_PROVIDER and scripted is not None:
+        adapter: InferenceAdapter = scripted
+        label = scripted.provider_label
+    else:
+        api_key = ai_credential_store(provider).resolve(token=token, session_key=session_key)
+        adapter = _adapter(provider, api_key=api_key)
+        label = entry.label
     return AiConnection(
         provider=provider,
-        label=entry.label,
-        ready_label=f"{entry.label} API ready · {entry.context_tokens:,}-token context",
+        label=label,
+        ready_label=f"{label} API ready · {entry.context_tokens:,}-token context",
         base_url=entry.base_url,
         # Stops sending once the cloud privacy settings change during the request.
         inference=PrivacyGuardedInference(
-            inner=_adapter(provider, api_key=api_key),
+            inner=adapter,
             privacy_revision_at_start=cloud_privacy_revision.current(),
         ),
     )

@@ -30,7 +30,8 @@ from .db.settings_sql import fetch_settings, insert_default_settings
 from .api.deps import get_db
 from .services.content_cache import populate_cache_from_db
 from .process_memory import release_freed_memory
-from .services.file_storage import bootstrap_file_registry
+from .services.backup_service import back_up_before_passwordless_upgrade
+from .services.file_storage import bootstrap_file_registry, sweep_blob_leftovers
 from .services.auth import AuthService
 from .services.note_store import store as note_store
 from app.services import auth_cache_state
@@ -76,13 +77,14 @@ from app.api.routes.backups import router as api2_backup_router
 from app.api.routes.reminders import router as api2_reminders_router
 from app.api.routes.remote_images import router as api2_remote_images_router
 from app.api.routes.imports import router as api2_imports_router
-from app.api.routes.legacy_import import router as api2_legacy_import_router
 from app.api.routes.virtual_folders import router as api2_virtual_folders_router
 from app.api.routes.background_work import router as api2_background_work_router
 from app.api.routes.ai import router as api2_ai_router
 from app.api.routes.test import router as api2_test_router  # shockharness: ignore[STUB002] reason="mounted only when TEST_MODE is on, and the endpoint asserts it too"
 from app.api.transactions import transactional_route
 from app.config import API_PREFIX, TEST_MODE, V1_API_PREFIX
+from app.services.agent.scripted_inference import scripted_ai_script_path
+from app.services.native_folder_picker import answered_folder_pick
 from .models.database import SafeSession
 from loguru import logger
 import io
@@ -168,6 +170,11 @@ def _resolve_diagnostics_namespace(*, namespace: str | None) -> str:
         raise RuntimeError("Active namespace must not be empty")
     return namespace
 
+
+# A scripted AI (scripted_inference.py) and a folder dialog answered for a test
+# (native_folder_picker.py) are refused outside a test server before anything starts.
+scripted_ai_script_path(environ=os.environ)
+answered_folder_pick(environ=os.environ)
 
 configure_process_diagnostics(
     namespace=_resolve_diagnostics_namespace(namespace=ACTIVE_NAMESPACE),
@@ -280,6 +287,8 @@ apply_runtime_hardening()
 _log_startup_step("runtime hardening checks", time.perf_counter() - hardening_start)
 
 schema_start = time.perf_counter()
+if not SafeSession._use_memory:
+    back_up_before_passwordless_upgrade(SafeSession._db_path)
 with begin_writer() as connection:
     initialize_schema(connection.raw_connection)
     settings = fetch_settings(connection)
@@ -320,6 +329,7 @@ set_encryption_required(encryption_enabled)
 
 file_registry_start = time.perf_counter()
 bootstrap_file_registry()
+sweep_blob_leftovers()
 _log_startup_step("file registry bootstrap", time.perf_counter() - file_registry_start)
 
 
@@ -430,7 +440,6 @@ app.include_router(api2_ontology_router, prefix=API_PREFIX)
 app.include_router(api2_reminders_router, prefix=API_PREFIX)
 app.include_router(api2_remote_images_router, prefix=API_PREFIX)
 app.include_router(api2_imports_router, prefix=API_PREFIX)
-app.include_router(api2_legacy_import_router, prefix=API_PREFIX)
 app.include_router(api2_virtual_folders_router, prefix=API_PREFIX)
 app.include_router(api2_background_work_router, prefix=API_PREFIX)
 app.include_router(api2_ai_router, prefix=API_PREFIX)

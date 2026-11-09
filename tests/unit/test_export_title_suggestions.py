@@ -27,7 +27,7 @@ from app.services.agent.export_title_suggestions import build_export_title_reque
 from app.services.agent.export_title_suggestions import export_title_messages
 from app.services.agent.export_title_suggestions import suggest_export_title
 from app.services.agent.strict_structured_outputs import strict_openai_schema
-from app.services.agent.structured_inference import _structured_max_output_tokens
+from app.services.agent.structured_inference import structured_max_output_tokens
 from app.services.agent.token_estimation import estimate_input_tokens
 from app.services.agent.trace import agent_trace_store
 from app.services.content_cache import clear_cache
@@ -285,7 +285,7 @@ def test_a_print_names_its_note_or_none() -> None:
 def test_the_real_openai_adapter_accepts_the_answer_format() -> None:
     # The stand-ins above skip what the real adapter checks first: an output
     # limit for the answer, and a schema OpenAI strict mode accepts.
-    assert _structured_max_output_tokens(ExportTitleAnswer) == 8_192
+    assert structured_max_output_tokens(ExportTitleAnswer) == 8_192
     schema = strict_openai_schema(ExportTitleAnswer.model_json_schema())
     assert (schema["required"], schema["additionalProperties"]) == (["title"], False)
     assert "maxLength" not in json.dumps(schema), "checked locally, not sent"

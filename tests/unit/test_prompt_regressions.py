@@ -12,7 +12,7 @@ from evals import __main__ as cli
 from evals import production
 from evals.__main__ import compare
 from evals.models import JudgeConfig, RegressionCase
-from evals.runner import fingerprint, matches, prepare_case, run_case
+from evals.runner import fingerprint, matches, prepare_case, run_case, with_note_ids
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -113,11 +113,13 @@ def test_captured_prompts_and_schemas_are_not_allowed_in_scenarios():
 
 def test_selected_note_tree_is_rebuilt_by_current_production_code():
     scenario = with_selected_note(batch_case(), _selected_tree())
-    messages = prepare_case(scenario).steps[0].messages
-    selected = next(m for m in messages if m.content.startswith("SELECTED_NOTE_CONTEXT\n"))
+    step = prepare_case(scenario).steps[0]
+    selected = next(m for m in step.messages if m.content.startswith("SELECTED_NOTE_CONTEXT\n"))
     payload = json.loads(selected.content.split("\n", 1)[1])["selected_note"]
-    assert [node["note_id"] for node in payload["tree_notes"]] == ["root", "child"]
-    assert [node["note_id"] for node in payload["tree_notes"] if node["is_selected"]] == ["child"]
+    # Sent by short note IDs (n1, n2…), as the runtime sends them.
+    note_ids = step.note_ids_by_alias
+    assert [note_ids[node["note_id"]] for node in payload["tree_notes"]] == ["root", "child"]
+    assert [note_ids[node["note_id"]] for node in payload["tree_notes"] if node["is_selected"]] == ["child"]
 
 
 def test_cached_title_case_uses_current_production_extraction(monkeypatch):
@@ -308,3 +310,16 @@ def test_unreviewed_cases_are_refused_before_any_request():
     draft = batch_case().model_copy(update={"reviewed": False})
     with pytest.raises(ValueError, match="Review"):
         prepare_case(draft)
+
+
+# Summary requests name notes by short IDs (n1, n2…, 2026-11-08): a regression grades the model's
+# answer with them translated back, so the cases' expectations keep the notes' own ids.
+def test_answers_are_graded_with_the_cases_note_ids():
+    note_ids = {"n1": "note-a", "n2": "note-b"}
+    structured = '{"findings": [{"text": "A", "supporting_note_ids": ["n2", "n1"]}]}'
+    assert json.loads(with_note_ids(structured, kind="structured", note_ids_by_alias=note_ids)) == {
+        "findings": [{"text": "A", "supporting_note_ids": ["note-b", "note-a"]}],
+    }
+    assert with_note_ids("Themes [[n1]] and [[n2]].", kind="text", note_ids_by_alias=note_ids) == (
+        "Themes [[note-a]] and [[note-b]]."
+    )

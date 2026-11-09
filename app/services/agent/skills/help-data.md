@@ -13,7 +13,7 @@ switch to, or restart a vault. Port changes take effect on a later launch.
 
 Back Up Now… is an operation, not merely opening a dialog. It can prompt for
 backup folder/settings and creates one versioned .tar.gz archive per vault
-containing its notes database and sibling files database when present. The result
+containing its notes database and its files (the file catalog and every stored file) when present. The result
 shows one row per vault. The help action cannot invoke backup creation.
 Backup reminder (menu: Off, Daily, Weekly, Every 2 weeks, Monthly; Weekly by
 default) floats a card when this vault's newest backup is older than that;
@@ -30,17 +30,6 @@ the current live password or choose a new password. A later explicit password
 change affects only that restored live copy. A backup is not the same
 as an HTML export.
 
-Notes from the old MetaList (the Node app before this one): a vault with no notes
-and no password, whose data folder holds the old MetaList's file, offers them in a
-dialog when it opens. Protected old notes ask for the old password (a wrong one
-says Incorrect password under the field); bringing them in replaces the empty vault,
-MetaList restarts, and the old password then opens it. An old password too weak
-for the password rules asks for a new one. Not Now is remembered; Bring In Notes
-from Old MetaList… in the palette stays while the vault has no notes and no
-password. The old file is only read, never changed; once the notes are in, the
-user can delete it and old exports, as the old encryption is weak. At a
-terminal, convert-from-legacy.py does the same from an export or the old file.
-
 Export View as HTML… exports the current view for viewing/sharing, not a full restorable
 database backup. It and Print (note menu, view menu, palette `Print View…`) show
 the view as it is shown (search, sort, Untagged; notes a search leaves out are
@@ -52,7 +41,7 @@ When @password or @username notes would show, an Include Unredacted Passwords
 (Usernames, or Usernames and Passwords) checkbox appears (unchecked: shown as
 ••••••••; checked: readable, and the file or print is not encrypted).
 Exported files copy usernames, included passwords and copyable values on click.
-Attach File… stores an attachment in the vault's sibling files database. Default upload limit is 100 MiB and is server-configurable.
+Attach File… stores an attachment in the vault's files folder, one file per attachment. Default upload limit is 100 MiB and is server-configurable.
 Trim Unused Files… removes unused attachments and is not an opening action.
 The agent can explain these operations but cannot execute them through help.
 
@@ -62,5 +51,9 @@ installer. Opening Version info does not install an update. The user controls
 installation/restart; do not claim a particular installed/latest version unless
 it was supplied. Local help references cannot establish current release data.
 Updates validate a candidate before stopping live vaults and create fresh
-backups; old backup archives remain unchanged. Do not advise editing or deleting
-recovery archives to work around a startup failure.
+backups; old backup archives remain unchanged. Each vault keeps its newest 3
+safety backups (made before an update or a database upgrade, in the vault's own
+backups folder), and older ones are removed automatically once the update or
+upgrade has succeeded; backups in a folder the user chose follow that folder's
+own setting. Do not advise editing or deleting recovery archives to work around
+a startup failure.

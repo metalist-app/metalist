@@ -13,6 +13,7 @@ import {createServer} from 'node:net';
 import {setTimeout as delay} from 'node:timers/promises';
 import puppeteer from 'puppeteer';
 import {closeBrowser, installedBrowserExecutable} from './installed-browser.mjs';
+import {assertNoLoopStalls} from './browser-loop-stalls.mjs';
 import {stopChildrenOnExitSignals} from './stop-children-on-exit.mjs';
 import {checkPastedHeadingFormatting} from './browser-formatting-regressions.mjs';
 import {checkAdditionalStateTransitions, checkEditingShortcutSequences} from './browser-state-regressions.mjs';
@@ -50,13 +51,14 @@ import {checkEditableEmbeds} from './browser-editable-embed-regressions.mjs';
 import {checkCollapseOutlines} from './browser-collapse-outline-regressions.mjs';
 import {checkTabSwitching} from './browser-tab-switch-regressions.mjs';
 import {checkFolderNoteDrag} from './browser-folder-note-drag-regressions.mjs';
+import {checkFolderContext} from './browser-folder-context-regressions.mjs';
 import {checkFolderDrops} from './browser-folder-drop-regressions.mjs';
+import {checkFileDropNotes} from './browser-file-drop-note-regressions.mjs';
 import {checkBackgroundWork} from './browser-background-work-regressions.mjs';
 import {checkImageSizes} from './browser-image-size-regressions.mjs';
 import {checkAiChatRefusal} from './browser-ai-chat-refusal-regressions.mjs';
 import {checkAiChatSummary} from './browser-ai-chat-summary-regressions.mjs';
 import {checkRestoreSession} from './browser-restore-session-regressions.mjs';
-import {checkLegacyImport} from './browser-legacy-import-regressions.mjs';
 import {checkSearchSuggestions} from './browser-search-suggestion-regressions.mjs';
 import {checkTagBarSuggestions} from './browser-tag-bar-suggestion-regressions.mjs';
 import {checkInputTarget} from './browser-input-target-regressions.mjs';
@@ -72,7 +74,8 @@ import {checkBackupReminder} from './browser-backup-reminder-regressions.mjs';
 import {checkReminderCardsBehindDialogs, checkReminderSurfaceWhileEditing} from './browser-reminder-surface-regressions.mjs';
 import {checkFloatingControlsWhileEditing} from './browser-floating-control-regressions.mjs';
 import {checkDeleteWarning} from './browser-delete-warning-regressions.mjs';
-import {FOCUSED_SUITES} from './browser-suite-names.mjs';
+import {FOCUSED_SUITES, SCALE_SUITE} from './browser-suite-names.mjs';
+import {SCALE_IMPORT_FILE_COUNT, SCALE_NOTE_COUNT, checkScale, prepareScaleVault} from './browser-scale-regressions.mjs';
 import {checkPaletteActivation} from './browser-palette-activation-regressions.mjs';
 import {checkSearchHighlight} from './browser-search-highlight-regressions.mjs';
 import {checkReferenceViews} from './browser-reference-view-regressions.mjs';
@@ -111,6 +114,11 @@ const REQUESTS_QUIET_MS = 100;
 // is the machine, not MetaList.
 const BROWSER_LAUNCH_TIMEOUT_MS = 120_000;
 const BEFORE_MOUSE_CHECKS_QUIET_MS = 500;
+// How long the server may take to answer its first request, in 100 ms tries: 30 s, and
+// 2 minutes for the scale suite's server, which loads a vault of 100,000 notes as it starts.
+const READINESS_TRIES = 300;
+const SCALE_READINESS_TRIES = 1200;
+const READINESS_TRY_MS = 100;
 
 const directory = await mkdtemp(join(tmpdir(), 'metalist-browser-'));
 // Free ports for HTTP and HTTPS: the user's own MetaList keeps its usual ports (HTTPS 8443).
@@ -135,7 +143,17 @@ env.METALIST_PORT = String(port);
 env.METALIST_HTTPS_PORT = String(httpsPort);
 env.API_PREFIX = '/api2';
 env.V1_API_PREFIX = '/api';
+// Every stall of the server's event loop (a second or longer) fails the run at its end.
+const loopStallLog = join(directory, 'loop-stalls.jsonl');
+env.METALIST_LOOP_STALL_LOG = loopStallLog;
 const python = process.platform === 'win32' ? '.venv/Scripts/python.exe' : '.venv/bin/python';
+const isScaleSuite = process.env.BROWSER_TEST_SUITE === SCALE_SUITE;
+// The scale suite's server starts on a generated vault, with the scripted AI and the folder
+// dialog answered (browser-scale-regressions.mjs); every other suite's on an empty one.
+let scaleRootCount = 0;
+if (isScaleSuite) {
+  scaleRootCount = prepareScaleVault({python: resolve(python), directory, env, noteCount: SCALE_NOTE_COUNT, fileCount: SCALE_IMPORT_FILE_COUNT});
+}
 let logs = '';  // shockharness: ignore[STATE001] reason="single-threaded Node: the server output callbacks and the run share one event loop"
 const server = spawn(resolve(python), ['serve_namespace.py','--namespace','default','--port',String(port)], {env, stdio:['ignore','pipe','pipe']});
 // Ctrl-C or a kill skips the `finally` below: the server still stops.
@@ -146,7 +164,7 @@ let browser;
 const browserDiagnostics = [];  // shockharness: ignore[STATE001] reason="single-threaded Node: the page event callbacks and the run share one event loop"
 try {
   let ready = false;
-  for (let count=0; count<300; count++) {
+  for (let count=0; count<(isScaleSuite ? SCALE_READINESS_TRIES : READINESS_TRIES); count++) {
     if (server.exitCode !== null) throw new Error(`Server exited: ${logs}`);
     let response = null;
     try { response = await fetch(`${origin}/api2/auth/status`, {headers:{"X-Metalist-Tab-Id":"smoke-readiness"}}); }
@@ -155,7 +173,7 @@ try {
       if (response.ok) {ready=true; break;}
       throw new Error(`Readiness failed: ${response.status} ${await response.text()}`);
     }
-    await delay(100);
+    await delay(READINESS_TRY_MS);
   }
   assert(ready, 'Server did not become ready');
   const browserName = process.env.BROWSER_TEST_BROWSER;
@@ -181,7 +199,7 @@ try {
   browser.on('targetdestroyed', target => lifecycle(`target destroyed ${target.type()} ${target.url()}`));
   browser.on('targetcreated', target => lifecycle(`target created ${target.type()} ${target.url()}`));
   const updateFixture = await prepareUpdateFixture(page);
-  if (FOCUSED_SUITES.includes(process.env.BROWSER_TEST_SUITE)) {
+  if (FOCUSED_SUITES.includes(process.env.BROWSER_TEST_SUITE) || isScaleSuite) {
     // The focused suite does not run checkAppUpdates, which normally releases
     // this intentionally held request. Avoid an unrelated update notice too.
     updateFixture.outage = true;
@@ -203,6 +221,10 @@ try {
     await checkAiSelectedNote(page);
     assert.deepEqual(errors, []);
     console.log(`PASS selected-note chat regressions in ${await browser.version()}`);
+  } else if (isScaleSuite) {
+    await checkScale(page, {rootCount: scaleRootCount});
+    assert.deepEqual(errors, []);
+    console.log(`PASS scale regressions (${SCALE_NOTE_COUNT.toLocaleString('en-US')} notes) in ${await browser.version()}`);
   } else if (process.env.BROWSER_TEST_SUITE === 'ai-response-menu') {
     await checkAiResponseMenu(page);
     assert.deepEqual(errors, []);
@@ -340,10 +362,6 @@ try {
     await checkAiChatSummary(page);
     assert.deepEqual(errors, []);
     console.log(`PASS AI chat summary regressions in ${await browser.version()}`);
-  } else if (process.env.BROWSER_TEST_SUITE === 'legacy-import') {
-    await checkLegacyImport(page, {python: resolve(python), directory});
-    assert.deepEqual(errors, []);
-    console.log(`PASS legacy import regressions in ${await browser.version()}`);
   } else if (process.env.BROWSER_TEST_SUITE === 'restore-session') {
     await checkRestoreSession(page);
     assert.deepEqual(errors, []);
@@ -441,10 +459,18 @@ try {
     await checkFolderDrops(page);
     assert.deepEqual(errors, []);
     console.log(`PASS folder drop regressions in ${await browser.version()}`);
+  } else if (process.env.BROWSER_TEST_SUITE === 'file-drop-notes') {
+    await checkFileDropNotes(page);
+    assert.deepEqual(errors, []);
+    console.log(`PASS file drop note regressions in ${await browser.version()}`);
   } else if (process.env.BROWSER_TEST_SUITE === 'folder-note-drag') {
     await checkFolderNoteDrag(page);
     assert.deepEqual(errors, []);
     console.log(`PASS folder note drag regressions in ${await browser.version()}`);
+  } else if (process.env.BROWSER_TEST_SUITE === 'folder-context') {
+    await checkFolderContext(page);
+    assert.deepEqual(errors, []);
+    console.log(`PASS folder context regressions in ${await browser.version()}`);
   } else if (process.env.BROWSER_TEST_SUITE === 'edge-tabs') {
     await checkEdgeTabs(page);
     assert.deepEqual(errors, []);
@@ -987,6 +1013,7 @@ try {
   await writeFile(join(directory,'result.json'), JSON.stringify({passed:true,noteId,fileId}));
   console.log(`Browser smoke passed; disposable artifacts: ${directory}`);
   }
+  await assertNoLoopStalls(loopStallLog);
 } catch (error) { // shockharness: ignore[EXC001] reason="the server and browser logs of the failed run are written, then the error is rethrown unchanged"
   await writeFile(join(directory,'server.log'), logs);
   await writeFile(join(directory,'browser.log'), browserDiagnostics.join('\n'));

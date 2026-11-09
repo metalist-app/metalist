@@ -105,7 +105,7 @@ function buildHarness() {
         async persistCurrentTabState() {}, async persistTabStateSnapshot() {},
         cacheNotesDomForTab(tabId) { events.push(`cache:${tabId}`); },
         restoreNotesDomForTab(tabId) { events.push(`restore:${tabId}`); return { restored: true, moved: 1 }; },
-        syncSearchInputField() {}, updateSearchContextsList() {}, closeOpenSearchQuote() {},
+        syncSearchInputField() {}, showFolderOfActiveContext() {}, isReferenceViewTransitionPending: () => false, updateSearchContextsList() {}, closeOpenSearchQuote() {},
     };
     const switchToTabContext = new Function(
         ...Object.keys(switchDependencies), `${switchSource}\nreturn switchToTabContext;`,

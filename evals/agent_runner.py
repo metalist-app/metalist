@@ -22,7 +22,6 @@ from datetime import datetime, timezone
 from types import MappingProxyType
 
 from app.services.agent import agent_loop as agent_loop_module
-from app.services.agent import runtime as runtime_module
 from app.services.agent import web_actions as web_actions_module
 from app.services.agent.agent_tools import agent_loop_tools
 from app.services.agent.context import AgentContextBuilder
@@ -63,7 +62,6 @@ _TRIAL_SESSION: contextvars.ContextVar[str] = contextvars.ContextVar("eval_trial
 # The positive and negative answer for each kind of question the app can ask.
 _ANSWERS = {
     "change_confirmation": {"yes": "yes", "no": "no"},
-    "summary_confirmation": {"yes": "summarize_all", "no": "cancel"},
     "tag_scope_confirmation": {"yes": "focus_existing", "no": "cancel"},
 }
 
@@ -212,16 +210,13 @@ class _RecordingTagging:
 @contextmanager
 def fixture_environment():
     """Install the fixture web and per-trial guards for the duration of a run."""
-    saved = (web_actions_module.fetch_web_pages, agent_loop_module.bulk_operation_guard,
-             runtime_module.bulk_operation_guard)
+    saved = (web_actions_module.fetch_web_pages, agent_loop_module.bulk_operation_guard)
     web_actions_module.fetch_web_pages = _fixture_fetch_web_pages
     agent_loop_module.bulk_operation_guard = _TrialGuard()
-    runtime_module.bulk_operation_guard = _TrialGuard()
     try:
         yield
     finally:
-        (web_actions_module.fetch_web_pages, agent_loop_module.bulk_operation_guard,
-         runtime_module.bulk_operation_guard) = saved
+        (web_actions_module.fetch_web_pages, agent_loop_module.bulk_operation_guard) = saved
 
 
 def tool_calls_from_trace(traces: AgentTraceStore, session_key: str,

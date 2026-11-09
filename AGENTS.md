@@ -67,6 +67,7 @@ Work only in the repository's main checkout (`/Users/thomaslahore/Desktop/MetaLi
 Existing backup files are immutable recovery artifacts.
 
 - MetaList and agents may create a new backup, read/validate a backup, restore from a backup, or delete backups only through the explicitly authorized retention/delete or namespace-deletion workflow.
+- Safety backups have one retention path of their own (approved 2026-11-08): `backup_service.trim_safety_backups_for_database` keeps a vault's newest 3 in its internal `backups` folder, after the newest backup passes the same check as a restore, and only once the upgrade at unlock has succeeded or the updated MetaList has restarted. It deletes only through `delete_oldest_backups_in_directory`, and nothing else may trim that folder.
 - **NEVER rewrite, replace, rename, repackage, migrate, chmod, touch, or otherwise modify an existing backup file.** This applies to internal namespace backups and user-configured folders such as Downloads.
 - Database migrations operate only on the live database. Login/startup migrations must never enumerate or transform historical backups.
 - Restore must leave every source archive and legacy sidecar byte-for-byte unchanged. Old database versions migrate only after installation as the live database: immediately for plaintext databases or after unlock for encrypted databases.

@@ -3,11 +3,15 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+import sys
+import time
 from dataclasses import replace
 from types import MappingProxyType
 
 import pytest
 
+from app.services.agent.investigation import InvestigationState
+from app.services.agent.staged_summary import ModelTiming
 from app.services.ai_catalog import AI_CATALOG
 from app.services.agent.context import AgentContextBuilder
 from app.services.agent.inference import InferenceAttempt
@@ -18,6 +22,7 @@ from app.services.agent.inference import StructuredInferenceProgress
 from app.services.agent.model_policy import SingleModelPolicy
 from app.services.agent.prompt_settings import DEFAULT_AGENT_PROMPTS
 from app.services.agent.retrieval_settings import AgentRetrievalSettings
+from app.services.agent import provider_limits
 from app.services.agent import runtime as runtime_module
 from app.services.agent.runtime import AgentExecutionError
 from app.services.agent.runtime import AgentRuntime
@@ -35,6 +40,7 @@ from app.services.agent.web_evidence import web_evidence_store
 from app.services.agent.summary_batch_store import summary_batch_store
 from app.services.agent.web_fetch import WebPageFetchResult
 from app.services.agent.trace import AgentTraceStore
+from app.services.agent.note_aliases import ALIAS_RE, NoteAliases
 from app.services.bulk_operation import bulk_operation_guard
 
 def _descriptor() -> AgentScopeDescriptor:
@@ -127,6 +133,16 @@ class _FakeInference:
         self.failed_summary_root_id = ""
         self.omit_summary_coverage = False
         self.summary_batch_citation_note_id = ""
+        # A note ID cited beside the real one in every round, as a model that garbles an ID does;
+        # in the batch of summary_ghost_only_root_id it is the only one cited.
+        self.summary_batch_extra_citation_note_id = ""
+        # Each batch request as the model saw it, and the run's note ids by the short IDs it saw
+        # (set by _collect_summary_events), so the recorded root ids stay the snapshot's.
+        self.summary_batch_payloads: list[dict[str, object]] = []
+        self.note_ids_by_alias: dict[str, str] = {}
+        # The final answer cites the first note of its reference catalog, as a model does.
+        self.final_cites_first_reference = False
+        self.summary_ghost_only_root_id = ""
         self.summary_delay_seconds_by_root_id: dict[str, float] = {}
         self.summary_citation_corrections = 0
         self.summary_instructions: list[str] = []
@@ -138,6 +154,7 @@ class _FakeInference:
         self.agent_messages: list[dict[str, object]] = []
         self.summary_batch_calls: list[tuple[str, ...]] = []
         self.active_summary_calls = 0
+        self.summary_completion_order: list[str] = []
         self.maximum_parallel_summary_calls = 0
         self.summary_reduction_calls = 0
 
@@ -185,14 +202,19 @@ class _FakeInference:
             is_reduction = "reduction" in request
             if is_reduction:
                 expected_root_ids = tuple(
-                    request["reduction"]["expected_root_ids"]
+                    self.note_ids_by_alias.get(root_id, root_id)
+                    for root_id in request["reduction"]["expected_root_ids"]
                 )
                 supporting_note_id = request["reduction"][
                     "verified_findings"
                 ][0]["findings"][0]["supporting_note_ids"][0]
                 self.summary_reduction_calls += 1
             else:
-                expected_root_ids = tuple(request["batch"]["expected_root_ids"])
+                # The model sees short note IDs; the fixture keys its behaviour by the snapshot's ids.
+                expected_root_ids = tuple(
+                    self.note_ids_by_alias.get(root_id, root_id) for root_id in request["batch"]["expected_root_ids"]
+                )
+                self.summary_batch_payloads.append(request["batch"])
                 first_tree = request["batch"]["result_trees"][0]
                 # Deliberately naive: cite the first tree node, which may be a
                 # structural placeholder, until asked to correct the citation.
@@ -200,7 +222,10 @@ class _FakeInference:
                 if is_correction and not self.ignore_summary_citation_corrections:
                     supporting_note_id = _first_evidence_note_id(first_tree)
                 if self.summary_batch_citation_note_id != "":
-                    supporting_note_id = self.summary_batch_citation_note_id
+                    # Cited as the model sees it: by its short ID when it was sent one.
+                    alias_by_note_id = {note_id: alias for alias, note_id in self.note_ids_by_alias.items()}
+                    supporting_note_id = alias_by_note_id.get(
+                        self.summary_batch_citation_note_id, self.summary_batch_citation_note_id)
             self.summary_batch_calls.append(expected_root_ids)
             self.active_summary_calls += 1
             self.maximum_parallel_summary_calls = max(
@@ -216,6 +241,7 @@ class _FakeInference:
                 )
             finally:
                 self.active_summary_calls -= 1
+            self.summary_completion_order.append(expected_root_ids[0])
             if self.failed_summary_root_id in expected_root_ids and self.failed_summary_as_agent_error:
                 raise AgentExecutionError(f"Fixture summary failure for {self.failed_summary_root_id}")
             if self.failed_summary_root_id in expected_root_ids:
@@ -225,10 +251,15 @@ class _FakeInference:
             finding_text = f"Finding for {expected_root_ids[0]}"
             if self.large_summary_results and not is_reduction:
                 finding_text = (finding_text + " detail") * 60
+            supporting_note_ids = [supporting_note_id]
+            if self.summary_batch_extra_citation_note_id != "" and not is_reduction:
+                supporting_note_ids.append(self.summary_batch_extra_citation_note_id)
+                if self.summary_ghost_only_root_id in expected_root_ids:
+                    supporting_note_ids = [self.summary_batch_extra_citation_note_id]
             payload = {
                 "findings": [{
                     "text": finding_text,
-                    "supporting_note_ids": [supporting_note_id],
+                    "supporting_note_ids": supporting_note_ids,
                 }],
             }
             if response_model.__name__ == "SummaryBatchResult" and not self.omit_summary_coverage:
@@ -278,7 +309,17 @@ class _FakeInference:
                 "messages": arguments["messages"],
             },
         })
-        yield {"type": "content_delta", "text": "Answer [[child-a]]"}
+        text = "Answer [[child-a]]"
+        final_request = arguments["messages"][-1]["content"]
+        if self.final_cites_first_reference and final_request.startswith("FINAL_RESPONSE_REQUEST\n"):
+            catalog = json.loads(final_request.split("\n", 1)[1])["reference_catalog"]
+            # Split inside the token, as a stream does.
+            token = catalog[0]["citation_token"]
+            yield {"type": "content_delta", "text": "Answer " + token[:3]}
+            yield {"type": "content_delta", "text": token[3:]}
+            yield {"type": "done"}
+            return
+        yield {"type": "content_delta", "text": text}
         yield {"type": "done"}
 
 
@@ -303,24 +344,18 @@ def _first_evidence_note_id(tree: dict[str, object]) -> str:
     raise AssertionError("Fixture tree has no evidence note")
 
 
-def _events_with_summary_answer(
+def _summary_events(
     *,
     inference: _FakeInference,
     snapshot: ScopedSearchSnapshot,
     message: str,
     token_limit: int,
-    answer: str,
-) -> tuple[list[dict[str, object]], int]:
+) -> list[dict[str, object]]:
     events: list[dict[str, object]] = []
-    calls_at_question = _collect_summary_events(
-        inference=inference,
-        snapshot=snapshot,
-        message=message,
-        token_limit=token_limit,
-        answer=answer,
-        events=events,
+    _collect_summary_events(
+        inference=inference, snapshot=snapshot, message=message, token_limit=token_limit, events=events,
     )
-    return events, calls_at_question
+    return events
 
 
 def _collect_summary_events(
@@ -329,13 +364,12 @@ def _collect_summary_events(
     snapshot: ScopedSearchSnapshot,
     message: str,
     token_limit: int,
-    answer: str,
     events: list[dict[str, object]],
-) -> int:
+) -> None:
     """Append streamed events to ``events`` so callers can inspect them after a failure."""
+    inference.note_ids_by_alias = NoteAliases.from_snapshot(snapshot).id_by_alias()
 
-    async def collect() -> int:
-        calls_at_question = -1
+    async def collect() -> None:
         async for event in _runtime(inference).stream_agent(earlier_actions=[], 
             tagging_run=None,
             session_key="session-1",
@@ -352,23 +386,20 @@ def _collect_summary_events(
             frozen_scope=snapshot,
         ):
             events.append(event)
-            if event["type"] == "bulk_question":
-                calls_at_question = len(inference.summary_batch_calls)
-                bulk_operation_guard.answer(
-                    "session-1",
-                    event["question_id"],
-                    answer,
-                )
-        return calls_at_question
 
-    return asyncio.run(collect())
+    asyncio.run(collect())
 
 
-def _summary_previews(events: list[dict[str, object]]) -> list[dict[str, object]]:
-    return [
-        event["summary_batch_preview"]
-        for event in events if "summary_batch_preview" in event
-    ]
+def _final_payload(inference: _FakeInference) -> dict[str, object]:
+    """The final request's payload with the short note IDs the model saw translated back."""
+    payload = json.loads(inference.final_messages[-1]["content"].split("\n", 1)[1])
+    aliases = NoteAliases(tuple(inference.note_ids_by_alias.values()))
+    assert aliases.id_by_alias() == inference.note_ids_by_alias
+    return aliases.unaliased(payload)
+
+
+def _summary_progress(events: list[dict[str, object]]) -> list[dict[str, object]]:
+    return [event for event in events if "operation" in event and event["operation"] == "summary"]
 
 
 def _summary_snapshot(root_count: int) -> ScopedSearchSnapshot:
@@ -413,38 +444,23 @@ def _multi_batch_summary_snapshot() -> ScopedSearchSnapshot:
     return _summary_snapshot(5)
 
 
-def test_complete_scope_summary_asks_before_any_batch_and_then_runs_in_parallel() -> None:
+# The summary goes straight to its batches (the maintainer, 2026-11-08: "skip this intermediate
+# part and simply do the summary"): no question about scope, whatever it costs.
+def test_a_many_batch_summary_goes_straight_to_its_batches_in_parallel() -> None:
     inference = _FakeInference()
 
-    events, calls_at_question = _events_with_summary_answer(
+    events = _summary_events(
         inference=inference,
         snapshot=_multi_batch_summary_snapshot(),
         message="Summarize all of these notes.",
         token_limit=900,
-        answer="summarize_all",
     )
 
-    question = next(event for event in events if event["type"] == "bulk_question")
-    assert question["kind"] == "summary_confirmation"
-    assert calls_at_question == 0
-    assert re.match(
-        r"This scope uses approximately \d+\.\d\d× the evidence budget: its 5 root "
-        r"notes need 5 evidence batches plus a final synthesis",
-        question["label"],
-    )
-    assert question["batch_count"] == len(inference.summary_batch_calls)
+    assert not any(event["type"] == "bulk_question" for event in events)
+    assert len(inference.summary_batch_calls) == 5
     assert inference.summary_batch_calls[0] == ("root-0",)
     assert inference.maximum_parallel_summary_calls >= 2
-    previews = _summary_previews(events)
-    assert {preview["batch_number"] for preview in previews} == set(range(1, 6))
-    assert all(preview["batch_count"] == 5 for preview in previews)
-    assert all(
-        preview["finding_count"] == 1
-        for preview in previews if preview["status"] == "complete"
-    )
-    final_payload = json.loads(
-        inference.final_messages[-1]["content"].split("\n", 1)[1]
-    )
+    final_payload = _final_payload(inference)
     assert final_payload["evidence_coverage"]["omitted_result_tree_count"] == 0
     assert tuple(
         root_id
@@ -459,124 +475,184 @@ def test_complete_scope_summary_asks_before_any_batch_and_then_runs_in_parallel(
 def test_a_summary_reaches_its_final_answer_with_every_provider(provider_label: str) -> None:
     inference = _FakeInference()
     inference.provider_label = provider_label
-    events, _ = _events_with_summary_answer(
+    events = _summary_events(
         inference=inference,
         snapshot=_multi_batch_summary_snapshot(),
         message="Summarize all of these notes.",
         token_limit=900,
-        answer="summarize_all",
     )
     assert [event for event in events if event["type"] == "error"] == []
     assert inference.final_messages, "the final answer was asked for"
 
 
-def test_staged_summary_previews_show_writing_before_each_completion() -> None:
+def test_summary_progress_is_a_percentage_starting_above_zero() -> None:
     inference = _FakeInference()
-    snapshot = _summary_snapshot(11)
 
-    events, _calls_at_question = _events_with_summary_answer(
+    events = _summary_events(
         inference=inference,
-        snapshot=snapshot,
+        snapshot=_summary_snapshot(11),
         message="Summarize every note in this scope.",
         token_limit=900,
-        answer="summarize_all",
     )
 
-    previews = [
-        preview for preview in _summary_previews(events)
-        if preview["status"] != "streaming"
-    ]
-    transitions = [
-        (preview["batch_number"], preview["status"]) for preview in previews
-    ]
-    assert transitions[:2] == [(1, "writing"), (1, "complete")]
-    assert sorted(transitions) == sorted(
-        [(number, "writing") for number in range(1, 12)]
-        + [(number, "complete") for number in range(1, 12)]
+    summarizing = [event for event in _summary_progress(events) if event["label"].startswith("Summarizing")]
+    percents = [event["percent"] for event in summarizing]
+    assert percents[0] == 5
+    assert percents == sorted(percents)
+    assert percents[-1] == 100
+    assert [event["label"] for event in summarizing] == [f"Summarizing · {int(percent)}%" for percent in percents]
+    # Started, first response, finished: the fixture streams twice, and counts once.
+    assert len(summarizing) == 33
+    assert inference.maximum_parallel_summary_calls == 4
+    for event in _summary_progress(events):
+        assert "batch" not in event["label"].replace("batch summaries for final", "")
+        assert "summary_batch_preview" not in event
+
+
+_SUMMARY_MODEL_KEY = ("https://api.openai.com/v1", "gpt-5.6-sol")
+
+
+def _timing_plan(root_count: int, limit: int, *, with_timing_probes: bool):
+    state = InvestigationState.start(
+        snapshot=_summary_snapshot(root_count),
+        settings=AgentRetrievalSettings(max_page_approximate_tokens=limit),
     )
-    writing_batches: set[int] = set()
-    maximum_visible_writing = 0
-    for preview in previews:
-        assert preview["batch_count"] == 11
-        if preview["status"] == "writing":
-            assert preview["finding_count"] == 0
-            assert preview["latest_text"] == ""
-            assert preview["batch_number"] not in writing_batches
-            writing_batches.add(preview["batch_number"])
-        else:
-            assert preview["status"] == "complete"
-            assert preview["finding_count"] == 1
-            writing_batches.remove(preview["batch_number"])
-        maximum_visible_writing = max(maximum_visible_writing, len(writing_batches))
-    assert writing_batches == set()
-    assert maximum_visible_writing == 4
-    labels = [
-        event["label"]
-        for event in events
-        if event["type"] == "bulk_progress" and "summary_batch_preview" in event
-    ]
-    assert all("11 batches" in label for label in labels)
-    assert any("queued" in label for label in labels)
+    return state.plan_complete_root_batches(reserved_approximate_tokens=0, with_timing_probes=with_timing_probes)
 
 
-def test_staged_summary_streams_compact_previews_between_start_and_completion(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(runtime_module, "_SUMMARY_STREAM_INTERVAL_SECONDS", 0.0)
+def test_timing_probes_are_a_tenth_and_a_fifth_of_a_batch_and_every_root_stays_in_order() -> None:
+    plain = _timing_plan(120, 40_000, with_timing_probes=False)
+    plan = _timing_plan(120, 40_000, with_timing_probes=True)
+
+    sizes = [batch.returned_approximate_token_count for batch in plan.batches]
+    assert 0 < sizes[0] <= 4_000
+    assert 4_000 < sizes[1] <= 8_000
+    assert sizes[1] > sizes[0] * 1.5
+    assert all(size <= 40_000 for size in sizes[2:])
+    assert max(sizes[2:]) > 8_000
+    assert len(plan.batches) > len(plain.batches)
+    assert tuple(root for batch in plan.batches for root in batch.result_tree_ids) == tuple(
+        root for batch in plain.batches for root in batch.result_tree_ids)
+
+
+def test_a_view_that_fits_one_batch_gets_no_timing_probes() -> None:
+    assert len(_timing_plan(3, 40_000, with_timing_probes=True).batches) == 1
+
+
+def test_a_root_larger_than_a_timing_probe_stands_alone_instead_of_failing() -> None:
+    plan = _timing_plan(5, 900, with_timing_probes=True)
+    assert [batch.result_tree_ids for batch in plan.batches] == [(f"root-{index}",) for index in range(5)]
+
+
+def test_a_model_with_no_saved_timing_starts_with_two_small_real_batches(saved_model_timings) -> None:
     inference = _FakeInference()
-    inference.large_summary_results = True
 
-    events, _calls_at_question = _events_with_summary_answer(
+    _summary_events(
         inference=inference,
+        snapshot=_summary_snapshot(120),
+        message="Summarize every note in this scope.",
+        token_limit=40_000,
+    )
+
+    assert len(saved_model_timings.saves) == 1
+    final_payload = _final_payload(inference)
+    roots = [len(summary["covered_root_ids"]) for summary in final_payload["authoritative_batch_findings"]]
+    assert roots[0] < roots[1] < roots[2]
+    assert sum(roots) == 120
+
+
+def test_a_model_with_saved_timing_splits_normally_and_saves_the_new_timing(saved_model_timings) -> None:
+    earlier = ModelTiming(startup_seconds=1.0, seconds_per_million_tokens=1.0)
+    saved_model_timings.saved[_SUMMARY_MODEL_KEY] = earlier
+    inference = _FakeInference()
+
+    _summary_events(
+        inference=inference,
+        snapshot=_summary_snapshot(120),
+        message="Summarize every note in this scope.",
+        token_limit=40_000,
+    )
+
+    final_payload = _final_payload(inference)
+    roots = [len(summary["covered_root_ids"]) for summary in final_payload["authoritative_batch_findings"]]
+    assert roots[0] == roots[1]
+    assert saved_model_timings.saved[_SUMMARY_MODEL_KEY] != earlier
+
+
+def test_a_failed_summary_saves_no_timing(saved_model_timings) -> None:
+    inference = _FakeInference()
+    inference.failed_summary_root_id = "root-0"
+
+    with pytest.raises(RuntimeError, match="Fixture summary failure for root-0"):
+        _collect_summary_events(
+            inference=inference,
+            snapshot=_multi_batch_summary_snapshot(),
+            message="Summarize all of these notes.",
+            token_limit=900,
+            events=[],
+        )
+
+    assert saved_model_timings.saves == []
+
+
+def test_with_saved_timing_the_bar_moves_while_batches_are_still_reading(saved_model_timings, monkeypatch) -> None:
+    monkeypatch.setattr(runtime_module, "_SUMMARY_PROGRESS_TICK_SECONDS", 0.005)
+    saved_model_timings.saved[_SUMMARY_MODEL_KEY] = ModelTiming(startup_seconds=0.1, seconds_per_million_tokens=1.0)
+    inference = _FakeInference()
+    inference.summary_delay_seconds_by_root_id = {f"root-{index}": 0.06 for index in range(11)}
+
+    events = _summary_events(
+        inference=inference,
+        snapshot=_summary_snapshot(11),
+        message="Summarize every note in this scope.",
+        token_limit=900,
+    )
+
+    summarizing = [event for event in _summary_progress(events) if event["label"].startswith("Summarizing")]
+    percents = [event["percent"] for event in summarizing]
+    # Three events per batch are the batch's own; the rest are the clock moving the bar.
+    assert len(summarizing) > 33
+    assert percents == sorted(percents)
+    assert percents[-1] == 100
+
+
+def test_with_no_timing_at_all_the_bar_still_moves_before_any_batch_answers(monkeypatch) -> None:
+    monkeypatch.setattr(runtime_module, "_SUMMARY_PROGRESS_TICK_SECONDS", 0.005)
+    inference = _FakeInference()
+    inference.summary_delay_seconds_by_root_id = {f"root-{index}": 0.06 for index in range(5)}
+
+    events = _summary_events(
+        inference=inference,
+        snapshot=_multi_batch_summary_snapshot(),
+        message="Summarize every note in this scope.",
+        token_limit=900,
+    )
+
+    summarizing = [event for event in _summary_progress(events) if event["label"].startswith("Summarizing")]
+    # Three events per batch are the batch's own; the rest are the bar creeping.
+    assert len(summarizing) > 15
+
+
+def test_a_streamed_answer_does_not_recount_its_whole_request(monkeypatch) -> None:
+    # The maintainer, 2026-11-08: the bar froze for 20 seconds. Counting a 500,000-token request
+    # for every few words streamed held the event loop, and with it every progress event.
+    counted: list[object] = []
+    monkeypatch.setattr(
+        runtime_module.AgentRuntime, "_wire_request_input_tokens",
+        staticmethod(lambda wire_request: counted.append(wire_request) or 1),
+    )
+
+    _summary_events(
+        inference=_FakeInference(),
         snapshot=_multi_batch_summary_snapshot(),
         message="Summarize all of these notes.",
         token_limit=900,
-        answer="summarize_all",
     )
 
-    batch_one = [
-        preview for preview in _summary_previews(events)
-        if preview["batch_number"] == 1
-    ]
-    assert [preview["status"] for preview in batch_one] == [
-        "writing", "streaming", "streaming", "complete",
-    ]
-    first_stream, second_stream = batch_one[1], batch_one[2]
-    assert first_stream["finding_count"] == 1
-    assert 0 < first_stream["output_tokens"] < second_stream["output_tokens"]
-    # Only the newest tail is sent so the card stays compact.
-    full_text = ("Finding for root-0 detail") * 60
-    assert len(full_text) > 240
-    assert first_stream["latest_text"] == full_text[: len(full_text) // 2][-240:]
-    assert second_stream["latest_text"] == full_text[-240:]
-    completed = batch_one[3]
-    assert completed["finding_count"] == 1
-    assert completed["latest_text"] == full_text[:240]
-    assert completed["output_tokens"] == second_stream["output_tokens"]
+    assert counted == []
 
 
-def test_staged_summary_stream_previews_are_throttled_per_batch() -> None:
-    inference = _FakeInference()
-
-    events, _calls_at_question = _events_with_summary_answer(
-        inference=inference,
-        snapshot=_multi_batch_summary_snapshot(),
-        message="Summarize all of these notes.",
-        token_limit=900,
-        answer="summarize_all",
-    )
-
-    for batch_number in range(1, 6):
-        streaming = [
-            preview for preview in _summary_previews(events)
-            if preview["batch_number"] == batch_number
-            and preview["status"] == "streaming"
-        ]
-        # The fixture streams twice within far less than the throttle interval.
-        assert len(streaming) == 1
-
-
-def test_staged_summary_previews_arrive_out_of_order_but_synthesis_is_canonical() -> None:
+def test_batches_finishing_out_of_order_are_synthesized_in_canonical_order() -> None:
     inference = _FakeInference()
     snapshot = _multi_batch_summary_snapshot()
     inference.summary_delay_seconds_by_root_id = {
@@ -586,23 +662,15 @@ def test_staged_summary_previews_arrive_out_of_order_but_synthesis_is_canonical(
         "root-4": 0.01,
     }
 
-    events, _calls_at_question = _events_with_summary_answer(
+    events = _summary_events(
         inference=inference,
         snapshot=snapshot,
         message="Summarize every note in this scope.",
         token_limit=900,
-        answer="summarize_all",
     )
 
-    completion_order = [
-        preview["batch_number"]
-        for preview in _summary_previews(events)
-        if preview["status"] == "complete"
-    ]
-    assert completion_order == [1, 5, 4, 3, 2]
-    final_payload = json.loads(
-        inference.final_messages[-1]["content"].split("\n", 1)[1]
-    )
+    assert inference.summary_completion_order == ["root-0", "root-4", "root-3", "root-2", "root-1"]
+    final_payload = _final_payload(inference)
     assert tuple(
         root_id
         for summary in final_payload["authoritative_batch_findings"]
@@ -630,15 +698,10 @@ def test_closing_staged_summary_stream_cancels_running_batch_workers() -> None:
             web_settings=DEFAULT_AGENT_WEB_SETTINGS,
             frozen_scope=_multi_batch_summary_snapshot(),
         )
+        progress_events = 0
         async for event in stream:
-            if event["type"] == "bulk_question":
-                bulk_operation_guard.answer(
-                    "session-1", event["question_id"], "summarize_all"
-                )
-            if (
-                "summary_batch_preview" in event
-                and event["summary_batch_preview"]["batch_number"] > 1
-            ):
+            progress_events += "operation" in event and event["operation"] == "summary"
+            if progress_events == 2:
                 break
         await stream.aclose()
         await asyncio.sleep(0)
@@ -648,7 +711,7 @@ def test_closing_staged_summary_stream_cancels_running_batch_workers() -> None:
     assert inference.final_messages == []
 
 
-def test_staged_summary_shows_first_batch_writing_before_it_fails() -> None:
+def test_when_a_summary_batch_fails_later_batches_do_not_start() -> None:
     inference = _FakeInference()
     inference.failed_summary_root_id = "root-0"
     events: list[dict[str, object]] = []
@@ -659,37 +722,51 @@ def test_staged_summary_shows_first_batch_writing_before_it_fails() -> None:
             snapshot=_multi_batch_summary_snapshot(),
             message="Summarize all of these notes.",
             token_limit=900,
-            answer="summarize_all",
             events=events,
         )
 
-    assert [
-        (preview["batch_number"], preview["status"])
-        for preview in _summary_previews(events)
-    ] == [(1, "writing")]
-    assert inference.summary_batch_calls == [("root-0",)]
+    # Batches 1-4 started together; batch 1 failed, the others finished, batch 5 never started.
+    assert sorted(inference.summary_batch_calls) == [(f"root-{index}",) for index in range(4)]
     assert inference.final_messages == []
 
 
-def test_complete_scope_summary_has_no_total_batch_cap_but_runs_only_four_at_once() -> None:
+def test_with_room_in_the_provider_limits_every_later_summary_batch_goes_at_once(monkeypatch) -> None:
+    # Until 2026-11-07 a summary sent at most four batches at a time, whatever the account allowed.
+    monkeypatch.setattr(provider_limits, "_GATES", {})
+    provider_limits.gate_for(base_url="https://api.openai.com/v1", model="gpt-5.6-sol").record(
+        provider_limits.ProviderLimits(
+            request_limit=30_000, remaining_requests=30_000, requests_reset_at=time.monotonic() + 60,
+            token_limit=180_000_000, remaining_tokens=180_000_000, tokens_reset_at=time.monotonic() + 60))
+    inference = _FakeInference()
+
+    _summary_events(
+        inference=inference,
+        snapshot=_summary_snapshot(11),
+        message="Summarize every note in this scope.",
+        token_limit=900,
+    )
+
+    assert len(inference.summary_batch_calls) == 11
+    # Every batch together from the start. Until 2026-11-08 batch 1 ran alone first, to seed the
+    # provider's prompt cache: the shared prefix is a small share of each batch, and the wait was
+    # a whole batch (the maintainer: "why are we not simply doing all of the batches in parallel").
+    assert inference.maximum_parallel_summary_calls == 11
+
+
+def test_complete_scope_summary_has_no_total_batch_cap_and_runs_four_at_once_until_the_limits_are_known() -> None:
     inference = _FakeInference()
     snapshot = _summary_snapshot(11)
 
-    events, _calls_at_question = _events_with_summary_answer(
+    events = _summary_events(
         inference=inference,
         snapshot=snapshot,
         message="Summarize every note in this scope.",
         token_limit=900,
-        answer="summarize_all",
     )
 
-    question = next(event for event in events if event["type"] == "bulk_question")
-    assert question["batch_count"] == 11
     assert len(inference.summary_batch_calls) == 11
     assert inference.maximum_parallel_summary_calls == 4
-    final_payload = json.loads(
-        inference.final_messages[-1]["content"].split("\n", 1)[1]
-    )
+    final_payload = _final_payload(inference)
     assert tuple(
         root_id
         for summary in final_payload["authoritative_batch_findings"]
@@ -702,17 +779,14 @@ def test_summary_coverage_is_attached_by_application_instead_of_echoed_by_model(
     inference.omit_summary_coverage = True
     snapshot = _multi_batch_summary_snapshot()
 
-    _events_with_summary_answer(
+    _summary_events(
         inference=inference,
         snapshot=snapshot,
         message="Summarize every note in this scope.",
         token_limit=900,
-        answer="summarize_all",
     )
 
-    final_payload = json.loads(
-        inference.final_messages[-1]["content"].split("\n", 1)[1]
-    )
+    final_payload = _final_payload(inference)
     assert tuple(
         root_id
         for summary in final_payload["authoritative_batch_findings"]
@@ -724,12 +798,11 @@ def test_summary_batches_and_consolidation_keep_note_ids_out_of_the_finding_text
     # The system prompt asks for [[note_id]] citations in answers; a batch
     # finding once followed that and left out its required supporting_note_ids.
     inference = _FakeInference()
-    _events_with_summary_answer(
+    _summary_events(
         inference=inference,
         snapshot=_multi_batch_summary_snapshot(),
         message="Summarize every note in this scope.",
         token_limit=900,
-        answer="summarize_all",
     )
     assert inference.summary_instructions != []
     for instruction in inference.summary_instructions:
@@ -737,62 +810,18 @@ def test_summary_batches_and_consolidation_keep_note_ids_out_of_the_finding_text
         assert "must not contain [[note_id]] citations" in instruction
 
 
-def test_complete_scope_summary_can_keep_the_single_payload_prefix() -> None:
-    inference = _FakeInference()
-
-    events, calls_at_question = _events_with_summary_answer(
-        inference=inference,
-        snapshot=_multi_batch_summary_snapshot(),
-        message="Summarize all of these notes.",
-        token_limit=900,
-        answer="use_prefix",
-    )
-
-    assert calls_at_question == 0
-    assert inference.summary_batch_calls == []
-    final_payload = json.loads(
-        inference.final_messages[-1]["content"].split("\n", 1)[1]
-    )
-    assert final_payload["evidence_coverage"]["omitted_result_tree_count"] > 0
-    assert any(
-        event["label"].startswith("Only using ")
-        for event in events if "label" in event
-    )
-
-
-def test_complete_scope_summary_cancel_starts_no_batch_calls() -> None:
-    inference = _FakeInference()
-
-    events, calls_at_question = _events_with_summary_answer(
-        inference=inference,
-        snapshot=_multi_batch_summary_snapshot(),
-        message="Summarize all of these notes.",
-        token_limit=900,
-        answer="cancel",
-    )
-
-    assert calls_at_question == 0
-    assert inference.summary_batch_calls == []
-    assert any(
-        event["text"] == "Summary cancelled."
-        for event in events if "text" in event
-    )
-
-
 def test_single_payload_scope_summary_starts_without_a_question() -> None:
     # One payload is one ordinary model call: nothing to choose, so no dialog.
     inference = _FakeInference()
 
-    events, calls_at_question = _events_with_summary_answer(
+    events = _summary_events(
         inference=inference,
         snapshot=_snapshot(large_tail=False),
         message="Summarize all of these notes.",
         token_limit=24_000,
-        answer="summarize_all",
     )
 
     assert not any(event["type"] in {"bulk_question", "bulk_complete"} for event in events)
-    assert calls_at_question == -1
     assert inference.summary_batch_calls == []
     assert inference.final_messages
     assert any(event["type"] == "done" for event in events)
@@ -802,12 +831,11 @@ def test_staged_summary_recursively_reduces_large_intermediate_findings() -> Non
     inference = _FakeInference()
     inference.large_summary_results = True
 
-    events, _calls_at_question = _events_with_summary_answer(
+    events = _summary_events(
         inference=inference,
         snapshot=_multi_batch_summary_snapshot(),
         message="Summarize all of these notes.",
         token_limit=900,
-        answer="summarize_all",
     )
 
     assert inference.summary_reduction_calls > 0
@@ -815,9 +843,7 @@ def test_staged_summary_recursively_reduces_large_intermediate_findings() -> Non
         event["label"] == "Condensing batch summaries for final synthesis"
         for event in events if "label" in event
     )
-    final_payload = json.loads(
-        inference.final_messages[-1]["content"].split("\n", 1)[1]
-    )
+    final_payload = _final_payload(inference)
     assert final_payload["evidence_coverage"]["omitted_result_tree_count"] == 0
 
 
@@ -826,12 +852,11 @@ def test_staged_summary_failure_cancels_remaining_work_and_never_synthesizes() -
     inference.failed_summary_root_id = "root-1"
 
     with pytest.raises(RuntimeError, match="Fixture summary failure for root-1"):
-        _events_with_summary_answer(
+        _summary_events(
             inference=inference,
             snapshot=_multi_batch_summary_snapshot(),
             message="Summarize all of these notes.",
             token_limit=900,
-            answer="summarize_all",
         )
 
     assert inference.active_summary_calls == 0
@@ -864,20 +889,15 @@ def test_staged_summary_batch_may_cite_permitted_selected_note_context() -> None
     )
     assert "selected-child" not in snapshot.ordered_note_ids
 
-    events, _calls_at_question = _events_with_summary_answer(
+    events = _summary_events(
         inference=inference,
         snapshot=snapshot,
         message="Summarize all of these notes.",
         token_limit=900,
-        answer="summarize_all",
     )
 
-    question = next(event for event in events if event["type"] == "bulk_question")
-    assert question["batch_count"] > 1
-    assert len(inference.summary_batch_calls) == question["batch_count"]
-    final_payload = json.loads(
-        inference.final_messages[-1]["content"].split("\n", 1)[1]
-    )
+    assert len(inference.summary_batch_calls) > 1
+    final_payload = _final_payload(inference)
     assert "selected-child" in [
         entry["note_id"] for entry in final_payload["reference_catalog"]
     ]
@@ -891,17 +911,14 @@ def test_staged_summary_final_catalog_includes_permitted_selected_note_tree() ->
         selected_note=_selected_note_outside_summary_scope(),
     )
 
-    _events_with_summary_answer(
+    _summary_events(
         inference=inference,
         snapshot=snapshot,
         message="Summarize all of these notes.",
         token_limit=900,
-        answer="summarize_all",
     )
 
-    final_payload = json.loads(
-        inference.final_messages[-1]["content"].split("\n", 1)[1]
-    )
+    final_payload = _final_payload(inference)
     catalog_ids = [entry["note_id"] for entry in final_payload["reference_catalog"]]
     assert {"selected-root", "selected-child"} <= set(catalog_ids)
     assert catalog_ids.index("root-0") < catalog_ids.index("selected-root")
@@ -950,20 +967,17 @@ def test_staged_summary_asks_once_to_correct_structural_placeholder_citations() 
     inference = _FakeInference()
     snapshot = _structural_root_summary_snapshot(5)
 
-    events, _calls_at_question = _events_with_summary_answer(
+    events = _summary_events(
         inference=inference,
         snapshot=snapshot,
         message="Summarize all of these notes.",
         token_limit=900,
-        answer="summarize_all",
     )
 
-    question = next(event for event in events if event["type"] == "bulk_question")
-    assert question["batch_count"] > 1
-    assert inference.summary_citation_corrections == question["batch_count"]
-    final_payload = json.loads(
-        inference.final_messages[-1]["content"].split("\n", 1)[1]
-    )
+    batch_count = len(set(inference.summary_batch_calls))
+    assert batch_count > 1
+    assert inference.summary_citation_corrections == batch_count
+    final_payload = _final_payload(inference)
     catalog_ids = {entry["note_id"] for entry in final_payload["reference_catalog"]}
     assert catalog_ids == set(snapshot.ordered_note_ids)
     assert not catalog_ids & set(snapshot.ordered_root_ids)
@@ -981,25 +995,40 @@ def test_staged_summary_reports_structural_citation_after_failed_correction() ->
             "request: heading-0 \\(structural placeholder without disclosed content\\)"
         ),
     ):
-        _events_with_summary_answer(
+        _summary_events(
             inference=inference,
             snapshot=_structural_root_summary_snapshot(5),
             message="Summarize all of these notes.",
             token_limit=900,
-            answer="summarize_all",
         )
 
-    assert inference.summary_citation_corrections == 1
+    # One correction each for the four batches started together; the fifth never started.
+    assert inference.summary_citation_corrections == 4
     assert inference.final_messages == []
 
 
+class _RecordedTraceStore(AgentTraceStore):
+    """The trace the diagnostics show, with every event kept for the test to read."""
+
+    events: list[dict[str, object]] = []
+
+    def append_event(self, **event: object) -> None:
+        _RecordedTraceStore.events.append(event)
+        super().append_event(**event)
+
+
+# A private or unavailable selected note is never sent, so a citation to it is a citation to a
+# note the batch never saw: dropped after the correction (2026-11-08; until then it stopped the
+# summary, because the correction request quoted the ID back). Either way it is never cited.
 @pytest.mark.parametrize(
     "unavailable_reason",
     ["blacklisted", "search_redacted", "password_protected", "username_protected", "not_whitelisted"],
 )
-def test_staged_summary_rejects_citations_to_unavailable_selected_notes(
-    unavailable_reason: str,
+def test_staged_summary_never_cites_unavailable_selected_notes(
+    unavailable_reason: str, monkeypatch,
 ) -> None:
+    _RecordedTraceStore.events = []
+    monkeypatch.setattr(sys.modules[__name__], "AgentTraceStore", _RecordedTraceStore)
     inference = _FakeInference()
     inference.summary_batch_citation_note_id = "selected-child"
     snapshot = replace(
@@ -1012,20 +1041,18 @@ def test_staged_summary_rejects_citations_to_unavailable_selected_notes(
         ),
     )
 
-    with pytest.raises(
-        AgentExecutionError,
-        match="Summary batch 1 returned invalid findings: .*selected-child",
-    ):
-        _events_with_summary_answer(
-            inference=inference,
-            snapshot=snapshot,
-            message="Summarize all of these notes.",
-            token_limit=900,
-            answer="summarize_all",
-        )
+    events = _summary_events(
+        inference=inference,
+        snapshot=snapshot,
+        message="Summarize all of these notes.",
+        token_limit=900,
+    )
 
     assert "SELECTED_CHILD_CONTEXT" not in json.dumps(inference.agent_messages)
-    assert inference.final_messages == []
+    assert events[-1]["type"] == "done"
+    assert "selected-child" not in json.dumps(inference.final_messages)
+    dropped = [event for event in _RecordedTraceStore.events if event["event_type"] == "SUMMARY_CITATIONS_DROPPED"]
+    assert dropped and all(event["detail"]["dropped_note_ids"] == ["selected-child"] for event in dropped)
 
 
 def _active_skill_ids(messages: list[dict[str, str]]) -> list[str]:
@@ -1036,36 +1063,23 @@ def _active_skill_ids(messages: list[dict[str, str]]) -> list[str]:
     ]
 
 
-@pytest.mark.parametrize(
-    ("snapshot_factory", "token_limit", "answer"),
-    [
-        (lambda: _snapshot(large_tail=False), 24_000, "summarize_all"),
-        (_multi_batch_summary_snapshot, 900, "use_prefix"),
-    ],
-)
-def test_single_payload_summaries_send_the_summary_skill(
-    snapshot_factory,
-    token_limit: int,
-    answer: str,
-) -> None:
+def test_a_single_payload_summary_sends_the_summary_skill() -> None:
     inference = _FakeInference()
 
-    _events_with_summary_answer(
+    _summary_events(
         inference=inference,
-        snapshot=snapshot_factory(),
+        snapshot=_snapshot(large_tail=False),
         message="Summarize all of these notes.",
-        token_limit=token_limit,
-        answer=answer,
+        token_limit=24_000,
     )
 
     assert inference.summary_batch_calls == []
     assert _active_skill_ids(inference.final_messages) == ["staged_summary_v1"]
 
 
-
 def test_a_summary_never_blocks_other_changes() -> None:
-    # A summary only reads notes: while its question waits and while its
-    # batches run, editing notes (or anything else) stays allowed.
+    # A summary only reads notes: while its batches run, editing notes (or
+    # anything else) stays allowed.
     inference = _FakeInference()
     blocked_while_running: list[str] = []
 
@@ -1085,8 +1099,6 @@ def test_a_summary_never_blocks_other_changes() -> None:
         ):
             if bulk_operation_guard.operation_id:
                 blocked_while_running.append(str(event["type"]))
-            if event["type"] == "bulk_question":
-                bulk_operation_guard.answer("session-1", event["question_id"], "summarize_all")
 
     asyncio.run(collect())
     assert blocked_while_running == []
@@ -1111,6 +1123,8 @@ def _summary_run(
     *, inference: _FakeInference, snapshot: ScopedSearchSnapshot, message: str, selected_model: str,
     events: list[dict[str, object]],
 ) -> None:
+    inference.note_ids_by_alias = NoteAliases.from_snapshot(snapshot).id_by_alias()
+
     async def collect() -> None:
         async for event in _runtime(inference).stream_agent(
             earlier_actions=[], tagging_run=None, session_key="session-1",
@@ -1121,18 +1135,16 @@ def _summary_run(
             web_settings=DEFAULT_AGENT_WEB_SETTINGS, frozen_scope=snapshot,
         ):
             events.append(event)
-            if event["type"] == "bulk_question":
-                bulk_operation_guard.answer("session-1", event["question_id"], "summarize_all")
 
     asyncio.run(collect())
 
 
 def _failed_summary_of_seven_roots() -> _FakeInference:
-    """Batch 1 alone, then roots 1-4 at once: root-2 fails first while 1, 3 and 4 finish."""
+    """Roots 0-3 at once (four until the limits are known): root-2 fails first while 0, 1 and 3 finish."""
     inference = _FakeInference()
     inference.failed_summary_root_id = "root-2"
     inference.failed_summary_as_agent_error = True
-    inference.summary_delay_seconds_by_root_id = {"root-1": 0.2, "root-3": 0.2, "root-4": 0.2}
+    inference.summary_delay_seconds_by_root_id = {"root-0": 0.2, "root-1": 0.2, "root-3": 0.2}
     events: list[dict[str, object]] = []
     with pytest.raises(AgentExecutionError) as failure:
         _summary_run(inference=inference, snapshot=_summary_snapshot(7), message=_ORIGINAL_SUMMARY_REQUEST,
@@ -1154,12 +1166,12 @@ def test_a_failed_batch_keeps_the_finished_ones_and_starts_no_more() -> None:
     inference = _failed_summary_of_seven_roots()
 
     # The batches already running finished; the two still queued never started.
-    assert sorted(inference.summary_batch_calls) == [("root-0",), ("root-1",), ("root-2",), ("root-3",), ("root-4",)]
+    assert sorted(inference.summary_batch_calls) == [("root-0",), ("root-1",), ("root-2",), ("root-3",)]
     kept = summary_batch_store.kept(session_key="session-1")
     assert kept is not None
     assert kept.request == _ORIGINAL_SUMMARY_REQUEST
-    assert len(kept.results) == 4
-    assert "4 of 7 batches finished and were kept" in inference.failure_message
+    assert len(kept.results) == 3
+    assert "3 of 7 batches finished and were kept" in inference.failure_message
 
 
 def test_continuing_reuses_the_kept_batches_and_runs_only_the_rest_with_the_original_question() -> None:
@@ -1167,12 +1179,11 @@ def test_continuing_reuses_the_kept_batches_and_runs_only_the_rest_with_the_orig
 
     inference, events = _continuing(_summary_snapshot(7), "gpt-5.6-sol", True)
 
-    assert sorted(inference.summary_batch_calls) == [("root-2",), ("root-5",), ("root-6",)]
+    assert sorted(inference.summary_batch_calls) == [("root-2",), ("root-4",), ("root-5",), ("root-6",)]
     assert set(inference.summary_requests) == {_ORIGINAL_SUMMARY_REQUEST}
-    # You already chose to summarize everything: no scope question this time.
     assert not any(event["type"] == "bulk_question" for event in events)
-    assert any("label" in event and "Reused 4 of 7 batches from your earlier attempt" in str(event["label"]) for event in events)
-    final_payload = json.loads(inference.final_messages[-1]["content"].split("\n", 1)[1])
+    assert any("label" in event and event["label"] == "Reusing your earlier attempt" for event in events)
+    final_payload = _final_payload(inference)
     assert [root for summary in final_payload["authoritative_batch_findings"] for root in summary["covered_root_ids"]] == [
         f"root-{index}" for index in range(7)
     ]
@@ -1184,9 +1195,8 @@ def test_continuing_reuses_the_kept_batches_and_runs_only_the_rest_with_the_orig
 def test_a_new_summary_question_does_not_reuse_kept_batches() -> None:
     _failed_summary_of_seven_roots()
 
-    inference, events = _continuing(_summary_snapshot(7), "gpt-5.6-sol", False)
+    inference, _events = _continuing(_summary_snapshot(7), "gpt-5.6-sol", False)
 
-    assert any(event["type"] == "bulk_question" for event in events)
     assert sorted(inference.summary_batch_calls) == [(f"root-{index}",) for index in range(7)]
     assert set(inference.summary_requests) == {"try that again"}
 
@@ -1199,14 +1209,85 @@ def test_an_edited_note_reruns_its_batch_when_continuing() -> None:
 
     inference, _events = _continuing(snapshot, "gpt-5.6-sol", True)
 
-    assert sorted(inference.summary_batch_calls) == [("root-2",), ("root-3",), ("root-5",), ("root-6",)]
+    assert sorted(inference.summary_batch_calls) == [("root-2",), ("root-3",), ("root-4",), ("root-5",), ("root-6",)]
 
 
 def test_a_different_model_reruns_every_batch_when_continuing() -> None:
     _failed_summary_of_seven_roots()
 
-    inference, events = _continuing(_summary_snapshot(7), "gpt-5.6-luna", True)
+    inference, _events = _continuing(_summary_snapshot(7), "gpt-5.6-luna", True)
 
-    # Nothing matches, so it is an ordinary summary: the scope question comes back.
-    assert any(event["type"] == "bulk_question" for event in events)
     assert sorted(inference.summary_batch_calls) == [(f"root-{index}",) for index in range(7)]
+
+
+# BUG (2026-11-08): a summary of 10,087 notes failed at batch 3 of 17 because the model cited a
+# note ID it was never sent ("does not appear anywhere in the request"), and again after the
+# correction. Such a citation can link to nothing: it is dropped, with the finding if it was its
+# only one, listed in the diagnostics, and the summary goes on.
+def test_citations_to_notes_a_batch_was_never_sent_are_dropped_after_the_correction(monkeypatch) -> None:
+    _RecordedTraceStore.events = []
+    monkeypatch.setattr(sys.modules[__name__], "AgentTraceStore", _RecordedTraceStore)
+    inference = _FakeInference()
+    inference.summary_batch_extra_citation_note_id = "ghost-note"
+    inference.summary_ghost_only_root_id = "root-1"
+    snapshot = _multi_batch_summary_snapshot()
+
+    events = _summary_events(
+        inference=inference, snapshot=snapshot, message="Summarize all of these notes.",
+        token_limit=900,
+    )
+
+    assert [event for event in events if event["type"] == "error"] == []
+    assert events[-1]["type"] == "done"
+    batch_count = len(snapshot.ordered_root_ids)
+    # The correction was still asked for first, once per batch.
+    assert inference.summary_citation_corrections == batch_count
+    final_payload = _final_payload(inference)
+    batches = final_payload["authoritative_batch_findings"]
+    cited = [note_id for batch in batches for finding in batch["findings"] for note_id in finding["supporting_note_ids"]]
+    assert "ghost-note" not in cited
+    findings_by_root = {batch["covered_root_ids"][0]: batch["findings"] for batch in batches}
+    assert findings_by_root["root-1"] == [], "a finding that cited only the unknown note is dropped"
+    assert all(len(findings) == 1 for root_id, findings in findings_by_root.items() if root_id != "root-1")
+    dropped = [event for event in _RecordedTraceStore.events if event["event_type"] == "SUMMARY_CITATIONS_DROPPED"]
+    assert len(dropped) == batch_count
+    assert all(event["detail"]["dropped_note_ids"] == ["ghost-note"] for event in dropped)
+    assert sorted(event["detail"]["dropped_finding_count"] for event in dropped) == [0] * (batch_count - 1) + [1]
+
+
+# The model miscopies 36-character note ids now and then (a summary of 10,087 notes failed on
+# one, 2026-11-08): summary batches, reductions and the final answer see the chat's short note
+# IDs (n1, n2…), and the answer the user gets cites the real notes.
+def test_summary_requests_carry_short_note_ids_and_the_answer_cites_real_notes() -> None:
+    inference = _FakeInference()
+    inference.final_cites_first_reference = True
+    snapshot = _multi_batch_summary_snapshot()
+    aliases = NoteAliases.from_snapshot(snapshot)
+
+    events = _summary_events(
+        inference=inference, snapshot=snapshot, message="Summarize all of these notes.",
+        token_limit=900,
+    )
+
+    assert events[-1]["type"] == "done"
+    assert len(inference.summary_batch_payloads) == len(snapshot.ordered_root_ids)
+    for batch in inference.summary_batch_payloads:
+        assert all(ALIAS_RE.match(root_id) for root_id in batch["expected_root_ids"])
+        tree_ids = [node["note_id"] for tree in batch["result_trees"] for node in _tree_nodes(tree)]
+        assert tree_ids and all(ALIAS_RE.match(note_id) for note_id in tree_ids)
+    final_payload = json.loads(inference.final_messages[-1]["content"].split("\n", 1)[1])
+    catalog = final_payload["reference_catalog"]
+    assert all(ALIAS_RE.match(entry["note_id"]) and entry["citation_token"] == f"[[{entry['note_id']}]]" for entry in catalog)
+    assert all(ALIAS_RE.match(note_id) for batch in final_payload["authoritative_batch_findings"]
+               for finding in batch["findings"] for note_id in finding["supporting_note_ids"])
+    first_note_id = aliases.note_id(catalog[0]["note_id"])
+    answer = "".join(event["text"] for event in events if event["type"] == "content_delta")
+    assert f"[[{first_note_id}]]" in answer
+    assert "[[n" not in answer
+
+
+def _tree_nodes(tree: dict[str, object]) -> list[dict[str, object]]:
+    nodes = [tree]
+    for child in tree.get("children", []):
+        nodes.extend(_tree_nodes(child))
+    return nodes

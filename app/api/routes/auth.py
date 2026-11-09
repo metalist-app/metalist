@@ -166,7 +166,7 @@ class HydrationStatusResponse(BaseModel):
 
 class PasswordCreateRequest(BaseModel):
     password: SecretStr
-    # The new vault wizard sets the password and goes on in the same window (PLAN.md,
+    # The new vault wizard sets the password and goes on in the same window (docs/future-plans/scale-testing.md,
     # phase 2): the server logs that window in with it, as a login would, and every other
     # session ends. Add Password reloads into the login instead.
     keeps_window_logged_in: bool
@@ -559,7 +559,10 @@ def login(
         raise HTTPException(status_code=HTTPStatus.UNAUTHORIZED, detail="Invalid password")
 
     dek = auth.unwrap_dek_for_password(submitted_password)
-    auth.run_authenticated_database_migrations(dek=dek)
+    migration = auth.run_authenticated_database_migrations(dek=dek)
+    # An upgrade may have moved the vault's files into the catalog this process listed as empty.
+    if migration.applied_versions:
+        bootstrap_file_registry()
     _open_password_session(request=request, response=response, db=db, dek=dek, tab_id=tab_id)
     login_rate_limiter.record_success(rate_limit_key)
     return LoginResponse(
@@ -1075,6 +1078,14 @@ def hydrate_cache(
     )
 
     return _build_hydration_status()
+
+
+@router.get("/workspace-ready")
+def workspace_ready(token: Annotated[str, Depends(_require_auth)]) -> dict[str, str]:
+    """The page has finished starting: caches built ahead of use may start."""
+    del token
+    auth_cache_state.page_is_ready()
+    return {"status": "success"}
 
 
 @router.get("/hydration-status", response_model=HydrationStatusResponse)

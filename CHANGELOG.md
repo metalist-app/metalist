@@ -2,6 +2,18 @@
 
 What changed in each MetaList release, newest first.
 
+## Changes in 0.27.0
+
+- **Each file is now its own file on disk,** in a `files` folder beside the notes, instead of all of them in one large database. In a vault with a password each one is encrypted with its own key and padded so its size doesn't reveal it. Downloads no longer load the whole file into memory.
+- **Safety backups no longer pile up.** Each vault keeps its newest 3, removed only after a new backup checks out and the upgrade or update has succeeded.
+- **The tag bar offers a note's own words as new tags** once nothing you've typed matches an existing tag, in the case you typed.
+- **AI summaries are faster:** batches go out as fast as your provider's limits allow, the limits are remembered, and one progress bar follows each model's timing.
+- **Folder contexts:** the folders tab switches between folders and plain searches, and each search context keeps its folder across restarts. Enter over the search contexts makes a new one.
+- AI Agent Settings has four tabs: Keys, Privacy, Reading and Tagging. AI handles large vaults with less waiting.
+- Imports add their notes at the bottom, and files not aimed at a note get a note each. The search box suggests `@datetime`. Unlocking a vault is faster.
+- The import from the old MetaList is gone.
+- Vaults are upgraded (database version 17) when first unlocked, or at startup without a password, after a backup: an older MetaList cannot open them afterwards.
+
 ## Changes in 0.26.1
 
 - **Large vaults no longer freeze.** An AI question with an empty search box took minutes on a vault of tens of thousands of notes, holding the server so the search box and Stop got no answer and a "command stuck" error appeared; the step that names each note for the AI is now linear, and reading the notes runs beside the server's other work. An import of more than a few hundred files showed the same error at 15 seconds while it was still running fine; an import now takes as long as its files take, with its progress bar.

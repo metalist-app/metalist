@@ -280,6 +280,12 @@ def folder_fingerprint(folder: Path) -> list[tuple[str, str, int]]:
     )
 
 
+def imported_roots(store: NoteStore) -> list[str]:
+    """The import's root notes in their order: every root note but the vault's own "mine",
+    after it."""
+    return [note_id for note_id in store.get_children(None) if note_id != "mine"]
+
+
 def first_line(store: NoteStore, note_id: str) -> str:
     """A note's first line as its title: a heading's marks left out (a whole file's name is a
     heading over its text)."""
@@ -287,21 +293,24 @@ def first_line(store: NoteStore, note_id: str) -> str:
     return re.sub(r"^#{1,6}\s+", "", line)
 
 
-# No import report (the maintainer, 2026-11-01): the files alone, at the top, folders first.
-def test_a_vault_comes_in_as_root_notes_at_the_top_folders_first(note_store: NoteStore) -> None:
+# No import report (the maintainer, 2026-11-01): the files alone, folders first. After the notes
+# already there (the maintainer, 2026-11-07): at the top they looked as if they had replaced
+# everything to someone who works without a search.
+def test_a_vault_comes_in_as_root_notes_after_the_last_one_folders_first(note_store: NoteStore) -> None:
     before = folder_fingerprint(FIXTURE_VAULT)
     result = CmdImportObsidianVault(source="obsidian", folder_path=str(FIXTURE_VAULT), split_mode=SPLIT_NONE, content_format=CONTENT_MARKDOWN, folder_prefix="", add_to_existing=False, images=KEEP_ORIGINALS, token=TOKEN, imported_at=IMPORTED_AT, context_tags="").execute()
     roots = note_store.get_children(None)
-    assert len(roots) == 12 + 1
-    assert roots[-1] == "mine"
+    assert len(roots) == 1 + 12
+    assert roots[0] == "mine"
     # Daily/, Home/, Projects/Client A/ ... then the files at the top: 1. First steps, ...
-    assert [first_line(note_store, note_id) for note_id in roots[0:3]] == ["2026-10-30", "Index", "Plan"]
-    assert first_line(note_store, roots[6]) == "1\\. First steps"
-    plan = note_store.get_note(roots[2])
+    assert [first_line(note_store, note_id) for note_id in roots[1:4]] == ["2026-10-30", "Index", "Plan"]
+    assert first_line(note_store, roots[7]) == "1\\. First steps"
+    plan = note_store.get_note(roots[3])
     assert plan.created_at.date().isoformat() in ("2024-02-29", "2024-03-01")
-    assert result == {"status": "success", "noteCount": 12, "sourceTag": SOURCE_TAG}
+    # firstRootId: a drop's view brings the import's first note into sight.
+    assert result == {"status": "success", "noteCount": 12, "sourceTag": SOURCE_TAG, "firstRootId": roots[1], "prefixFolder": ""}
     # The tag the wizard's new search context searches: on every file's note.
-    assert all(SOURCE_TAG in note_store.get_note(note_id).tags for note_id in roots[:-1])
+    assert all(SOURCE_TAG in note_store.get_note(note_id).tags for note_id in roots[1:])
     assert folder_fingerprint(FIXTURE_VAULT) == before
 
 
@@ -315,8 +324,18 @@ def test_files_come_in_folders_first_each_a_to_z(tmp_path: Path, note_store: Not
         source="obsidian", folder_path=str(tmp_path), split_mode=SPLIT_NONE, content_format=CONTENT_MARKDOWN,
         folder_prefix="", add_to_existing=False, images=KEEP_ORIGINALS, token=TOKEN, imported_at=IMPORTED_AT, context_tags="",
     ).execute()
-    roots = note_store.get_children(None)[:-1]
-    assert [first_line(note_store, note_id) for note_id in roots] == ["y", "z", "x", "a", "b"]
+    roots = note_store.get_children(None)
+    assert roots[0] == "mine"
+    assert [first_line(note_store, note_id) for note_id in roots[1:]] == ["y", "z", "x", "a", "b"]
+
+
+# Anything imported goes to the bottom, a single note too: one rule to reason about (the
+# maintainer, 2026-11-08).
+def test_an_import_of_one_note_comes_in_after_the_last_one(tmp_path: Path, note_store: NoteStore) -> None:
+    (tmp_path / "only.md").write_text("only")
+    _import_folder(str(tmp_path))
+    roots = note_store.get_children(None)
+    assert [roots[0], first_line(note_store, roots[1])] == ["mine", "only"]
 
 
 def _import_folder(folder: str) -> None:
@@ -474,7 +493,7 @@ def test_a_split_import_writes_each_files_notes_under_it(note_store: NoteStore) 
         imported_at=IMPORTED_AT, context_tags="",
     ).execute()
     roots = note_store.get_children(None)
-    welcome = roots[11]
+    welcome = roots[12]
     assert first_line(note_store, welcome) == "Welcome"
     intro = note_store.get_children(welcome)[0]
     assert len(note_store.get_children(intro)) == 3
@@ -610,7 +629,7 @@ def test_a_canvas_comes_in_as_a_file_in_a_note_of_its_own(tmp_path: Path, note_s
     ).execute()
     roots = note_store.get_children(None)
     names = {file_id: file_registry.title_of(file_id) for file_id in file_registry.list_ids()}
-    contents = [note_store.get_note(note_id).content for note_id in roots[:-1]]
+    contents = [note_store.get_note(note_id).content for note_id in imported_roots(note_store)]
     assert len(contents) == 3
     assert contents[0] == f"![[{next(i for i, n in names.items() if n == 'Board.canvas')}]]"
     assert "Text" in contents[1]
@@ -624,7 +643,7 @@ def test_a_file_too_large_is_left_out_and_its_links_stay_as_written(tmp_path: Pa
     CmdImportObsidianVault(
         source="obsidian", folder_path=str(tmp_path), split_mode=SPLIT_NONE, content_format=CONTENT_RICH, folder_prefix="", add_to_existing=False, images=KEEP_ORIGINALS, token=TOKEN, imported_at=IMPORTED_AT, context_tags="",
     ).execute()
-    assert "See ![[big.png]]" in extract_plain_text_from_note_html(note_store.get_note(note_store.get_children(None)[0]).content)
+    assert "See ![[big.png]]" in extract_plain_text_from_note_html(note_store.get_note(imported_roots(note_store)[0]).content)
     assert file_registry.list_ids() == set()
 
 
@@ -640,8 +659,7 @@ def test_a_markdown_folder_comes_in_with_its_own_source(tmp_path: Path, note_sto
         source="markdown", folder_path=str(tmp_path), split_mode=SPLIT_NONE, content_format=CONTENT_MARKDOWN,
         folder_prefix="", add_to_existing=False, images=KEEP_ORIGINALS, token=TOKEN, imported_at=IMPORTED_AT, context_tags="",
     ).execute()
-    roots = note_store.get_children(None)
-    trip = note_store.get_note(roots[0])
+    trip = note_store.get_note(imported_roots(note_store)[0])
     assert extract_plain_text_from_note_html(trip.content) == "# Trip\n\nFirst line\nsecond line\n\n- [x] booked"
     assert source_tag_for(IMPORTED_AT, "markdown") in trip.tags
     assert "imported:source=markdown" in source_tag_for(IMPORTED_AT, "markdown")
@@ -816,7 +834,7 @@ def test_a_folder_of_files_comes_in_every_file_a_note_the_unticked_left_out(tmp_
         content_format=CONTENT_MARKDOWN, folder_prefix="Stuff", add_to_existing=False, images=KEEP_ORIGINALS, token=TOKEN, imported_at=IMPORTED_AT, context_tags="",
     ).execute()
     assert result["noteCount"] == 4
-    roots = note_store.get_children(None)[:-1]
+    roots = imported_roots(note_store)
     lines = {_shown_as(note_store, note_id): note_store.get_note(note_id) for note_id in roots}
     assert set(lines) == {"Notes", "plain", "photo.png", "report.pdf"}
     # A file's note: the file alone, no line with its name over it (its card shows the name).
@@ -849,7 +867,7 @@ def test_single_files_can_be_ticked_against_their_kind(tmp_path: Path, note_stor
         split_mode=SPLIT_NONE, content_format=CONTENT_MARKDOWN, folder_prefix="", add_to_existing=False, images=KEEP_ORIGINALS, token=TOKEN,
         imported_at=IMPORTED_AT, context_tags="",
     ).execute()
-    lines = {_shown_as(note_store, note_id) for note_id in note_store.get_children(None)[:-1]}
+    lines = {_shown_as(note_store, note_id) for note_id in imported_roots(note_store)}
     assert lines == {"keep.png", "wanted"}
 
 
@@ -872,7 +890,7 @@ def test_markdown_files_can_be_kept_as_files(tmp_path: Path, note_store: NoteSto
         folder_path=str(tmp_path), selection=selection, split_mode=SPLIT_NONE, content_format=CONTENT_MARKDOWN,
         folder_prefix="", add_to_existing=False, images=KEEP_ORIGINALS, token=TOKEN, imported_at=IMPORTED_AT, context_tags="",
     ).execute()
-    roots = note_store.get_children(None)[:-1]
+    roots = imported_roots(note_store)
     assert {_shown_as(note_store, note_id) for note_id in roots} == {"README.md", "notes"}
     readme = next(note_id for note_id in roots if _shown_as(note_store, note_id) == "README.md")
     assert re.fullmatch(r"!\[\[[0-9a-f-]{36}\]\]", strip_html(note_store.get_note(readme).content).strip())
@@ -922,7 +940,7 @@ def test_a_folder_of_files_images_come_in_compressed_only_when_asked(
         content_format=CONTENT_MARKDOWN, folder_prefix="", add_to_existing=False, images=ImageChoice(compresses=compresses_images, longest_side_px=2560),
         token=TOKEN, imported_at=IMPORTED_AT, context_tags="",
     ).execute()
-    photo_note = next(note_id for note_id in note_store.get_children(None)[:-1] if _shown_as(note_store, note_id) == "photo.jpg")
+    photo_note = next(note_id for note_id in imported_roots(note_store) if _shown_as(note_store, note_id) == "photo.jpg")
     stored = _stored_file(note_store, photo_note)
     if not compresses_images:
         assert stored == photo
@@ -937,7 +955,7 @@ def test_a_vaults_linked_image_comes_in_compressed(tmp_path: Path, note_store: N
         source="obsidian", folder_path=str(tmp_path), split_mode=SPLIT_NONE, content_format=CONTENT_MARKDOWN,
         folder_prefix="", add_to_existing=False, images=ImageChoice(compresses=True, longest_side_px=2560), token=TOKEN, imported_at=IMPORTED_AT, context_tags="",
     ).execute()
-    trip = note_store.get_children(None)[0]
+    trip = imported_roots(note_store)[0]
     assert Image.open(BytesIO(_stored_file(note_store, trip))).size == (2560, 1920)
 
 
@@ -983,7 +1001,7 @@ def test_an_imported_file_is_its_card_alone_with_no_preview_note(tmp_path: Path,
         folder_path=str(tmp_path), selection=_selection([], excluded_files=(), included_files=()), split_mode=SPLIT_NONE, content_format=CONTENT_MARKDOWN,
         folder_prefix="", add_to_existing=False, images=KEEP_ORIGINALS, token=TOKEN, imported_at=IMPORTED_AT, context_tags="",
     ).execute()
-    roots = note_store.get_children(None)[:-1]
+    roots = imported_roots(note_store)
     assert len(roots) == 4
     assert all(note_store.get_children(note_id) == [] for note_id in roots)
 
@@ -998,7 +1016,7 @@ def test_a_drop_imports_notes_with_the_search_context_tags(tmp_path: Path, note_
         content_format=CONTENT_MARKDOWN, folder_prefix="", add_to_existing=False, images=KEEP_ORIGINALS, token=TOKEN,
         imported_at=IMPORTED_AT, context_tags="work /*two words*/ WORK",
     ).execute()
-    roots = note_store.get_children(None)[:-1]
+    roots = imported_roots(note_store)
     assert len(roots) == 2
     for note_id in roots:
         tags = note_store.get_note(note_id).tags

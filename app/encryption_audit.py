@@ -12,6 +12,7 @@ import re
 import sqlite3
 import sys
 
+from app.db.blob_store import blob_store_for_database, resolve_file_catalog_path
 from app.db.version import CURRENT_DATABASE_VERSION
 
 
@@ -251,6 +252,28 @@ _AI_PROVIDER_CREDENTIAL_COLUMNS = frozenset(
     }
 )
 
+# Migration 14→15 added each model's saved rate limits beside the API keys, encrypted like the
+# AI settings (app/services/agent/saved_rate_limits.py).
+_PROVIDER_RATE_LIMIT_COLUMNS = frozenset(
+    {
+        "provider_rate_limits_json",
+        "provider_rate_limits_encryption_nonce",
+        "provider_rate_limits_encryption_tag",
+    }
+)
+_PROVIDER_RATE_LIMITS_DATABASE_VERSION = 15
+
+# Migration 15→16 added each model's saved timing beside its rate limits, encrypted like them
+# (app/services/agent/saved_rate_limits.py).
+_MODEL_TIMING_COLUMNS = frozenset(
+    {
+        "model_timings_json",
+        "model_timings_encryption_nonce",
+        "model_timings_encryption_tag",
+    }
+)
+_MODEL_TIMINGS_DATABASE_VERSION = 16
+
 # Migration 11→12 added the link_icons table. Before version 12 it may be missing, or
 # already present because opening a database creates it ahead of the migration.
 _LINK_ICONS_TABLE = "link_icons"
@@ -288,6 +311,8 @@ _MAIN_SCHEMA_BEFORE_CONTENT_MIGRATIONS = {
             "tag_prefix_settings_encryption_nonce", "tag_prefix_settings_encryption_tag",
             *_OPENAI_CREDENTIAL_COLUMNS,
             *_AI_PROVIDER_CREDENTIAL_COLUMNS,
+            *_PROVIDER_RATE_LIMIT_COLUMNS,
+            *_MODEL_TIMING_COLUMNS,
             "session_timeout_minutes", "created_at", "updated_at",
         }
     ),
@@ -425,6 +450,14 @@ _MAIN_PAYLOADS_WITHOUT_SEARCH_HISTORY = (
         "backup_settings_encryption_tag", "text", is_nullable=True,
     ),
     _PayloadSpec(
+        "app_settings", "provider_rate_limits_json", "provider_rate_limits_encryption_nonce",
+        "provider_rate_limits_encryption_tag", "text", is_nullable=True,
+    ),
+    _PayloadSpec(
+        "app_settings", "model_timings_json", "model_timings_encryption_nonce",
+        "model_timings_encryption_tag", "text", is_nullable=True,
+    ),
+    _PayloadSpec(
         "app_settings", "client_preferences_json", "client_preferences_encryption_nonce",
         "client_preferences_encryption_tag", "text", is_nullable=True,
     ),
@@ -503,6 +536,36 @@ _OPAQUE_SEARCH_HISTORY_PAYLOADS = (
     ),
 )
 
+_FILES_IN_BLOBS_DATABASE_VERSION = 17
+_BLOB_SEAL_COLUMNS = frozenset({"blob_id", "blob_seal", "blob_seal_encryption_nonce", "blob_seal_encryption_tag"})
+# From version 17 a vault's files are blobs named by this catalog (app/db/file_schema.py). The plaintext
+# columns are its structure: IDs, variant, MIME type of a preview, flags, revisions and times.
+_CATALOG_SCHEMA = {
+    "files": _BLOB_SEAL_COLUMNS | frozenset(
+        {
+            "id", "title", "title_encryption_nonce", "title_encryption_tag", "metadata_json", "metadata_encryption_nonce",
+            "metadata_encryption_tag", "created_at", "updated_at", _FILE_REVISION_COLUMN,
+        }
+    ),
+    _FILE_PREVIEWS_TABLE: _BLOB_SEAL_COLUMNS | frozenset({"file_id", "variant", "mime_type", "content_revision", "updated_at"}),
+    _FILE_TEXTS_TABLE: _BLOB_SEAL_COLUMNS | frozenset(
+        {
+            "file_id", "filter_data", "filter_encryption_nonce", "filter_encryption_tag", "is_cut", "content_revision",
+            "updated_at",
+        }
+    ) | _FILE_TEXT_VERSION_COLUMNS,
+}
+_CATALOG_PAYLOADS = (
+    _PayloadSpec("files", "title", "title_encryption_nonce", "title_encryption_tag", "text", is_nullable=False),
+    _PayloadSpec("files", "metadata_json", "metadata_encryption_nonce", "metadata_encryption_tag", "text", is_nullable=False),
+    *(
+        _PayloadSpec(table, "blob_seal", "blob_seal_encryption_nonce", "blob_seal_encryption_tag", "bytes", is_nullable=False)
+        for table in ("files", _FILE_PREVIEWS_TABLE, _FILE_TEXTS_TABLE)
+    ),
+    _PayloadSpec(_FILE_TEXTS_TABLE, "filter_data", "filter_encryption_nonce", "filter_encryption_tag", "bytes", is_nullable=False),
+)
+_ENCRYPTED_BLOB_HEADER = b"ML\x01\x01"
+
 _FILE_PAYLOADS = tuple(
     _PayloadSpec(table, value, f"{prefix}_encryption_nonce", f"{prefix}_encryption_tag", kind, is_nullable=False)
     for table in ("files", "sounds")
@@ -557,6 +620,12 @@ _MIGRATION_DEFERRED_PLAINTEXT_FIELDS_BY_DATABASE_VERSION = dict(enumerate((
     # version 12
     frozenset(),
     # version 13
+    frozenset(),
+    # version 14
+    frozenset(),
+    # version 15
+    frozenset(),
+    # version 16
     frozenset(),
 )))
 
@@ -613,6 +682,27 @@ def _main_schema_for_database_version(
         resolved_schema = {
             **resolved_schema,
             "app_settings": resolved_schema["app_settings"] - _AI_PROVIDER_CREDENTIAL_COLUMNS,
+        }
+    # Before version 15 the saved rate limits may be absent, or already added by the on-open
+    # schema helper.
+    if database_version < _PROVIDER_RATE_LIMITS_DATABASE_VERSION and _PROVIDER_RATE_LIMIT_COLUMNS.isdisjoint(
+        actual_app_settings_columns
+    ):
+        if not _PROVIDER_RATE_LIMIT_COLUMNS.issubset(resolved_schema["app_settings"]):
+            raise RuntimeError("Current audit schema is missing the saved rate limit columns")
+        resolved_schema = {
+            **resolved_schema,
+            "app_settings": resolved_schema["app_settings"] - _PROVIDER_RATE_LIMIT_COLUMNS,
+        }
+    # Before version 16 the saved timings may be absent, or already added by the on-open schema helper.
+    if database_version < _MODEL_TIMINGS_DATABASE_VERSION and _MODEL_TIMING_COLUMNS.isdisjoint(
+        actual_app_settings_columns
+    ):
+        if not _MODEL_TIMING_COLUMNS.issubset(resolved_schema["app_settings"]):
+            raise RuntimeError("Current audit schema is missing the saved model timing columns")
+        resolved_schema = {
+            **resolved_schema,
+            "app_settings": resolved_schema["app_settings"] - _MODEL_TIMING_COLUMNS,
         }
     if database_version < _LINK_ICONS_DATABASE_VERSION and _LINK_ICONS_TABLE not in actual_tables:
         resolved_schema = {table: columns for table, columns in resolved_schema.items() if table != _LINK_ICONS_TABLE}
@@ -1130,7 +1220,9 @@ def _audit_namespace(*, namespace: str, database_path: Path) -> NamespaceAuditRe
         ),
     )
     file_database_path = _resolve_file_database_path(database_path)
-    if file_database_path.exists():
+    if database_version >= _FILES_IN_BLOBS_DATABASE_VERSION:
+        _audit_catalog(database_path=database_path, state=state)
+    elif file_database_path.exists():
         _audit_database(
             database_path=file_database_path,
             expected_schema=_file_schema_for_database_version(
@@ -1153,6 +1245,35 @@ def _audit_namespace(*, namespace: str, database_path: Path) -> NamespaceAuditRe
         checked_payload_count=state.checked_payload_count,
         findings=state.findings(),
     )
+
+
+def _audit_catalog(*, database_path: Path, state: _AuditState) -> None:
+    """The catalog's encrypted fields, and that every blob it names is there and encrypted."""
+    catalog_path = resolve_file_catalog_path(database_path)
+    if not catalog_path.exists():
+        return
+    _audit_database(
+        database_path=catalog_path,
+        expected_schema=_CATALOG_SCHEMA,
+        payload_specs=_CATALOG_PAYLOADS,
+        state=state,
+        is_main_database=False,
+        migration_deferred_plaintext_fields=frozenset(),
+    )
+    store = blob_store_for_database(database_path)
+    connection = _connect_read_only(catalog_path)
+    try:
+        for table in _CATALOG_SCHEMA:
+            for blob_id, in connection.execute(f"SELECT blob_id FROM {table}").fetchall():
+                path = store.path_of(blob_id)
+                if not path.exists():
+                    state.add_finding(database_path=catalog_path, table=table, field="blob_id", message="names a blob that is missing")
+                    continue
+                with path.open("rb") as blob:
+                    if blob.read(len(_ENCRYPTED_BLOB_HEADER)) != _ENCRYPTED_BLOB_HEADER:
+                        state.add_finding(database_path=catalog_path, table=table, field="blob_id", message="names a blob that is not encrypted")
+    finally:
+        connection.close()
 
 
 def _scan_finding(*, namespaces_directory: Path, message: str) -> AuditFinding:

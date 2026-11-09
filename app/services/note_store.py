@@ -1158,6 +1158,13 @@ class NoteStore:
                 raise KeyError(f"Note {note_id} not present in NoteStore")
             return self._note_map[note_id]
 
+    def kept_text(self, note_id: str) -> str:
+        """The note's visible text as the vault keeps it, current on every edit (content_cache)."""
+        with self._lock:
+            if note_id not in self._note_map:
+                raise KeyError(f"Note {note_id} not present in NoteStore")
+        return get_cached_text(note_id)
+
     def draft_effective_tag_terms(self, *, note_id: str, tags: str, plaintext: str) -> FrozenSet[str]:
         """The note's searchable tags if its own tags and text were the unsaved draft.
 

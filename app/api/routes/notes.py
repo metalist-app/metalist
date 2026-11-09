@@ -88,7 +88,7 @@ from app.services.tag_properties import is_property_term, is_stats_term, is_tagl
 from app.services.root_date_filter import RootDateFilter
 from app.services.root_date_filter import make_root_date_filter
 from app.services.snapshot import build_view_state
-from app.services.virtual_folders import NO_FOLDER, search_for_new_note, search_in_folder, virtual_folder_state
+from app.services.virtual_folders import NO_FOLDER, search_for_new_note, search_in_folder
 from app.services.snapshot import find_in_view
 from app.services.snapshot import resolve_search_scope
 from app.services.snapshot import ResolvedViewScope, resolve_view_scope_membership
@@ -291,17 +291,17 @@ def _resolve_tab_sort_mode(tab_id: object) -> str:
 
 
 def _in_tab_folder(search: str, tab_id: str) -> str:
-    """The view's search narrowed to the tab's virtual folder, when one is chosen (an
-    experiment, app/services/virtual_folders.py; exports and the AI read the search alone)."""
+    """The view's search narrowed to the tab's virtual folder, when one is chosen (only the
+    folder context has one, tab_state.py; exports and the AI read the search alone)."""
     if not isinstance(search, str):
         raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail="search must be a string")
-    return search_in_folder(search, virtual_folder_state.filter_of(tab_id))
+    return search_in_folder(search, tab_state_store.get_folder_filter(tab_id=tab_id))
 
 
 def _new_note_search(search: str | None, tab_id: str) -> str | None:
     """The search a new note takes its tags from: in a tab narrowed to a virtual folder (an
     experiment), the note is filed in that folder, so the view shows it."""
-    return search_for_new_note(search, virtual_folder_state.filter_of(tab_id))
+    return search_for_new_note(search, tab_state_store.get_folder_filter(tab_id=tab_id))
 
 
 def _resolve_tab_file_filter(tab_id: str) -> str | None:
@@ -364,11 +364,11 @@ def view_diff(payload: ViewDiffRequest):
     visible_search = search
     # A virtual folder or note chosen in the tree narrows the roots the view lists, as a Files
     # filter does: the browser pages through the narrowed count, and gets its own search back.
-    is_narrowed_by_tree = virtual_folder_state.filter_of(tab_id) != NO_FOLDER
+    is_narrowed_by_tree = tab_state_store.get_folder_filter(tab_id=tab_id) != NO_FOLDER
     # No search (null or "") with a virtual folder chosen is that folder alone.
     if isinstance(search, str):
         search = _in_tab_folder(search, tab_id)
-    elif search is None and virtual_folder_state.filter_of(tab_id) != NO_FOLDER:
+    elif search is None and is_narrowed_by_tree:
         search = _in_tab_folder("", tab_id)
     undo_context = payload["undoContext"]
     tab_view_empty = payload["tabViewEmpty"]
@@ -600,8 +600,6 @@ def create_new_tab(payload: CreateNewTabRequest) -> Dict[str, object]:
     view_cache.copy_tab(
         client_id=payload["clientId"], source_tab_id=copy_from_tab_id, target_tab_id=new_tab_id,
     )
-    if payload["copiesView"]:
-        virtual_folder_state.copy_filter(copy_from_tab_id, new_tab_id)
     return response
 
 

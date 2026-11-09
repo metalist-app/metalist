@@ -31,7 +31,9 @@ available through `GITHUB_TOKEN` or the configured git credential helper. It:
    independently checks the exact main run's 25 conclusions and downloads its
    tested distribution artifact, without repeating the matrix;
 5. downloads the same main-run wheel and source distribution and compares their
-   SHA-256 hashes with the public PyPI files; and
+   SHA-256 hashes with the public PyPI files, once PyPI lists both (it lists
+   each file as its upload lands; 0.26.0's first answer held the wheel alone).
+   A file that is not one of the two stops the release at once; and
 6. waits for PyPI's install index to show the version, read exactly as pip
    reads it (the JSON simple index, requested with pip's own `Accept` header;
    PyPI caches the HTML and JSON indexes separately, and waiting on the HTML page

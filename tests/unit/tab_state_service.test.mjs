@@ -36,13 +36,15 @@ async function harness() {
     };
     const dependencies = {
         ApplicationState, ModeContext: context, window, document: { hidden: false },
-        CONFIG: { API: { NOTES: { TAB_STATE: '/tabs' } } },
+        CONFIG: { API: { NOTES: { TAB_STATE: '/tabs' }, VIRTUAL_FOLDERS: { FOLDER_CONTEXT: '/folder-context' } } },
         CommandGate: { isBusy: () => false }, buildSessionHeaders: () => ({}),
         computeScrollAnchor: () => null, areScrollAnchorsEqual: (a, b) => a === b,
         restoreReferenceNavigation: (state) => restoredReferenceTabs.push(state.tabs),
         getReferenceViewsPayload: () => ({}),
         recordDateFiltersFromServer: () => {},
         recordFileFiltersFromServer: () => {},
+        recordFolderContextsFromServer: () => {},
+        recordRecentTabsFromServer: () => {},
         ErrorHandler: { handleApiError(_error, response) { apiErrors.push(response.status); } },
         HttpRequestError, AuthenticationRequiredError,
         fetch: async (_endpoint, options) => {

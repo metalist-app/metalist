@@ -35,6 +35,9 @@ const LOGIN_SLIDE_GRACE_MS = 100;
 const LOGIN_FADE_MS = 300;
 // Matches the progress bar's 0.2 s width transition in main.css (.login-progress-bar).
 const LOGIN_PROGRESS_FILL_MS = 200;
+// Only for a tab whose animations don't run. A busy page starts the fade late, and a timer as
+// long as the fade then took the screen away part of the way through (2026-11-08).
+const LOGIN_FADE_FALLBACK_MS = 3000;
 const LOGIN_PAGE_LEAVING_CLASS = 'login-page-leaving';
 const LOGIN_PAGE_COVERING_CLASS = 'login-page-covering';
 const HYDRATION_POLL_INTERVAL_MS = 200;
@@ -467,15 +470,15 @@ export const Auth = {
             hasStarted = true;
             this._startLoginPageFade(loginPage, fadeCount);
         };
-        if (barFill.length === 0) {
-            start();
-            return;
-        }
+        // The notes are painted under the screen before it starts to go.
+        requestAnimationFrame(() => requestAnimationFrame(() => {
+            if (barFill.length === 0) start();
+        }));
         for (const animation of barFill) {
             animation.addEventListener('finish', start, { once: true });
             animation.addEventListener('cancel', start, { once: true });
         }
-        // Background tabs may not run the transition; the fade still starts.
+        // Background tabs run neither the frames nor the transition; the fade still starts.
         window.setTimeout(start, LOGIN_PROGRESS_FILL_MS + LOGIN_SLIDE_GRACE_MS);
     },
 
@@ -497,9 +500,31 @@ export const Auth = {
             }
         };
         loginPage.addEventListener('animationend', onAnimationEnd);
-        loginPage.classList.add(LOGIN_PAGE_LEAVING_CLASS);
-        // Background tabs may not run the animation; the screen still goes.
-        window.setTimeout(finish, LOGIN_FADE_MS + LOGIN_SLIDE_GRACE_MS);
+        // On a frame, so the browser starts the fade there and then. Added between frames, a busy
+        // page used up the fade's 300 ms before showing any of it, and the screen went at once
+        // in Firefox (2026-11-08).
+        let hasBegun = false;
+        const begin = () => {
+            if (hasBegun || fadeCount !== this._loginFadeCount) return;
+            hasBegun = true;
+            loginPage.classList.add(LOGIN_PAGE_LEAVING_CLASS);
+        };
+        requestAnimationFrame(begin);
+        // Background tabs run neither frames nor animations; the screen still goes.
+        window.setTimeout(() => {
+            begin();
+            finish();
+        }, LOGIN_FADE_FALLBACK_MS);
+    },
+
+    /** The server's caches built ahead of use wait for this, so they don't slow the page's start. */
+    async announceWorkspaceReady() {
+        const response = await fetch(CONFIG.API.AUTH.WORKSPACE_READY, { headers: { 'X-Metalist-Tab-Id': getRequiredTabId() } });
+        // Read to the end: a browser counts a request as open until its reply is read.
+        await response.text();
+        if (!response.ok) {
+            throw new Error(`Workspace ready failed (${response.status})`);
+        }
     },
 
     _hideLoginPage(loginPage) {
@@ -781,7 +806,7 @@ export const Auth = {
                     getComposerHeight: () => CommandPalette.getAiChatComposerHeight(),
                     saveComposerHeight: (height) => CommandPalette.saveAiChatComposerHeight(height),
                     setVisible: (isVisible) => CommandPalette.applyPreference('pref.show_ai_chat', isVisible),
-                    openSettings: () => CommandPalette.openAiAgentSettings(false),
+                    openSettings: () => CommandPalette.openAiAgentSettings('keys'),
                     openMenu: (menuId, scope, signal) => CommandPalette.openAgentMenu(menuId, scope, signal),
                 });
                 startupPhase = enterStartupStage('revealing the workspace');
@@ -792,9 +817,9 @@ export const Auth = {
                 await CommandPalette.startBackupReminder();
                 document.body.dataset.appReady = 'true';
                 finishStartupTiming();
+                await this.announceWorkspaceReady();
                 CommandPalette.startUpdateNotice();
                 await CommandPalette.runSetupRequestedByAddress();
-                await CommandPalette.offerLegacyImport();
             } else {
                 startupPhase = enterStartupStage('reloading the workspace');
                 window.location.reload();

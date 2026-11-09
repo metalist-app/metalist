@@ -20,7 +20,7 @@
   {
     "id": "form.tagging_vocabulary",
     "label": "AI Tagging Vocabulary…",
-    "selector": "#ai-tagging-vocabulary-modal",
+    "selector": "#ai-agent-settings-modal",
     "presentation": "dialog"
   },
   {
@@ -93,12 +93,6 @@
     "id": "form.restore_backup",
     "label": "Restore from Backup…",
     "selector": "#backup-restore-modal",
-    "presentation": "dialog"
-  },
-  {
-    "id": "form.bring_in_old_metalist",
-    "label": "Bring In Notes from Old MetaList…",
-    "selector": "#legacy-import-modal",
     "presentation": "dialog"
   },
   {

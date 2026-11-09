@@ -11,6 +11,7 @@ from app.db.version import CURRENT_DATABASE_VERSION
 from app.db.editable_files_migration import add_editable_file_schema
 from app.db.file_texts_migration import add_file_texts_table
 from app.db.file_versions_migration import add_text_versions
+from app.db.move_files_to_blobs import move_files_to_blobs
 from app.db.retire_sounds import retire_sounds
 from app.db.schema import LINK_ICONS_COLUMNS, LINK_ICONS_TABLE, create_link_icons_table, create_namespace_content_migrations_table
 from app.services.encryption import EncryptionService
@@ -422,6 +423,64 @@ def add_link_icons_table(
     return 0
 
 
+PROVIDER_RATE_LIMIT_COLUMNS: tuple[tuple[str, str], ...] = (
+    ("provider_rate_limits_json", "TEXT"),
+    ("provider_rate_limits_encryption_nonce", "BLOB"),
+    ("provider_rate_limits_encryption_tag", "BLOB"),
+)
+
+
+def add_provider_rate_limit_columns(
+    *,
+    connection: sqlite3.Connection,
+    encryption_enabled: bool,  # noqa: ARG001
+    encryption_service: EncryptionService | None,  # noqa: ARG001
+) -> int:
+    """Version 14→15: each model's rate limits, saved beside the API keys and encrypted like
+    them (app/services/agent/saved_rate_limits.py), so a restart starts with them. The on-open
+    schema helper may have added some or all of the columns already; the missing ones are
+    added, then the shape is checked. Nothing is saved until a model's first answer."""
+    columns = _table_columns(connection, table="app_settings")
+    for column, sql_type in PROVIDER_RATE_LIMIT_COLUMNS:
+        if column not in columns:
+            connection.execute(f"ALTER TABLE app_settings ADD COLUMN {column} {sql_type}")
+    missing = {column for column, _sql_type in PROVIDER_RATE_LIMIT_COLUMNS} - _table_columns(
+        connection, table="app_settings",
+    )
+    if missing:
+        raise RuntimeError(f"Database migration 14→15 left saved rate limit columns missing: {sorted(missing)}")
+    return 0
+
+
+MODEL_TIMING_COLUMNS: tuple[tuple[str, str], ...] = (
+    ("model_timings_json", "TEXT"),
+    ("model_timings_encryption_nonce", "BLOB"),
+    ("model_timings_encryption_tag", "BLOB"),
+)
+
+
+def add_model_timing_columns(
+    *,
+    connection: sqlite3.Connection,
+    encryption_enabled: bool,  # noqa: ARG001
+    encryption_service: EncryptionService | None,  # noqa: ARG001
+) -> int:
+    """Version 15→16: each model's timing, saved beside its rate limits and encrypted like them
+    (app/services/agent/saved_rate_limits.py), so a summary's bar moves from its first second. The
+    on-open schema helper may have added some or all of the columns already; the missing ones are
+    added, then the shape is checked. Nothing is saved until a model's first finished summary."""
+    columns = _table_columns(connection, table="app_settings")
+    for column, sql_type in MODEL_TIMING_COLUMNS:
+        if column not in columns:
+            connection.execute(f"ALTER TABLE app_settings ADD COLUMN {column} {sql_type}")
+    missing = {column for column, _sql_type in MODEL_TIMING_COLUMNS} - _table_columns(
+        connection, table="app_settings",
+    )
+    if missing:
+        raise RuntimeError(f"Database migration 15→16 left saved model timing columns missing: {sorted(missing)}")
+    return 0
+
+
 # One step per database version, in order: the step at position N upgrades version N to N + 1.
 _MIGRATION_STEPS: tuple[Callable[..., int], ...] = (
     _migration_0_to_1,
@@ -438,6 +497,9 @@ _MIGRATION_STEPS: tuple[Callable[..., int], ...] = (
     add_link_icons_table,
     add_file_texts_table,
     add_text_versions,
+    add_provider_rate_limit_columns,
+    add_model_timing_columns,
+    move_files_to_blobs,
 )
 _MIGRATIONS: dict[int, Callable[..., int]] = dict(enumerate(_MIGRATION_STEPS))
 assert len(_MIGRATION_STEPS) == CURRENT_DATABASE_VERSION, "every database version below the current one needs a step"

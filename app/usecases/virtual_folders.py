@@ -15,8 +15,9 @@ from app.services.search_query import SearchClause
 from app.services.sync import generate_new_uuid
 from app.services.undo_state import record_update, reset_undo_stack
 from app.services.virtual_folders import (
-    FOLDER_MARK, NO_FOLDER, all_folder_tags, folder_tags_of, is_folder_tag, refile_tag_bar, virtual_folder_state,
+    FOLDER_MARK, NO_FOLDER, all_folder_tags, folder_tags_of, is_folder_tag, refile_tag_bar,
 )
+from app.services.tab_state import tab_state_store
 from app.usecases.delete_notes_in_view import NotesToDelete, topmost_with_subtrees
 from app.usecases.delete_subtree import apply_delete_subtree
 from app.usecases.delete_tag import apply_delete_tag_everywhere
@@ -41,7 +42,7 @@ def rename_folder(*, folder: str, new_path: str, token: str) -> Dict[str, object
     tags = folder_tags_under(folder)
     for tag in tags:
         apply_rename_tag_everywhere(old=tag, new=new_path + tag[len(folder):], token=token)
-    virtual_folder_state.move_filters(folder, new_path)
+    tab_state_store.move_folder_filters(folder=folder, new_path=new_path)
     return {"renamedTagCount": len(tags)}
 
 
@@ -108,7 +109,7 @@ def delete_folder(*, folder: str, token: str) -> Dict[str, object]:
     tags = folder_tags_under(folder)
     for tag in tags:
         apply_delete_tag_everywhere(tag=tag, token=token)
-    virtual_folder_state.drop_filters_under(folder)
+    tab_state_store.drop_folder_filters_under(folder=folder)
     return {"deletedTagCount": len(tags)}
 
 

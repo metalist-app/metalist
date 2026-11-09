@@ -55,7 +55,8 @@ from app.services.agent.structured_inference import _attach_trace_capture
 from app.services.agent.structured_inference import _create_structured_completion
 from app.services.agent.structured_inference import _extract_reasoning
 from app.services.agent.structured_inference import _json_object
-from app.services.agent.structured_inference import _structured_max_output_tokens
+from app.services.agent.structured_inference import structured_max_output_tokens
+from app.services.agent.provider_limits import provider_transport
 from app.services.agent.tool_calling import AgentTool
 from app.services.agent.tool_calling import validate_tool_conversation
 from app.services.ai_catalog import catalog_entry
@@ -79,6 +80,17 @@ GEMINI = OpenAICompatibleProvider(
 )
 
 _PROVIDER_ERROR_DETAIL_CHARS = 500
+# Google's model information is on its native API, beside the OpenAI-compatible path.
+_OPENAI_COMPATIBLE_PATH = "openai/"
+_INPUT_TOKEN_LIMIT_FIELD = "inputTokenLimit"
+_MODEL_INFO_TIMEOUT_SECONDS = 20.0
+# Each model's context window once the provider has reported it, for as long as MetaList runs.
+_CONTEXT_TOKENS_BY_MODEL: dict[str, int] = {}
+
+
+def _model_info_client() -> httpx.AsyncClient:
+    return httpx.AsyncClient(timeout=_MODEL_INFO_TIMEOUT_SECONDS)
+
 # The fields every streamed tool call has; any other field is the provider's own.
 _STANDARD_TOOL_CALL_FIELDS = frozenset({"index", "id", "type", "function"})
 
@@ -157,9 +169,11 @@ def _compatible_tool(tool: AgentTool) -> dict[str, object]:
     }}
 
 
-def http_client(on_wire_request: Callable[[httpx.Request], object]) -> httpx.AsyncClient:
-    """The provider's own HTTP client: no redirects, no proxy settings from the environment."""
-    return httpx.AsyncClient(event_hooks={"request": [on_wire_request]}, follow_redirects=False, trust_env=False)
+def http_client(on_wire_request: Callable[[httpx.Request], object], *, base_url: str, model: str) -> httpx.AsyncClient:
+    """The provider's own HTTP client: no redirects, no proxy settings from the environment, and
+    its rate limits respected (provider_limits)."""
+    return httpx.AsyncClient(transport=provider_transport(base_url=base_url, model=model),
+                             event_hooks={"request": [on_wire_request]}, follow_redirects=False, trust_env=False)
 
 
 class _StreamedToolCall:
@@ -237,8 +251,9 @@ class OpenAICompatibleInferenceAdapter:
             f"{self._provider.label} API request failed: {detail[:_PROVIDER_ERROR_DETAIL_CHARS]}"
         )
 
-    def _client(self, on_wire_request: Callable[[httpx.Request], object]) -> AsyncOpenAI:
-        return AsyncOpenAI(api_key=self._api_key, base_url=self._base_url, http_client=http_client(on_wire_request), max_retries=0)
+    def _client(self, on_wire_request: Callable[[httpx.Request], object], *, model: str) -> AsyncOpenAI:
+        return AsyncOpenAI(api_key=self._api_key, base_url=self._base_url, max_retries=0,
+                           http_client=http_client(on_wire_request, base_url=self._base_url, model=model))
 
     def _capture_requests(self, on_request: Callable[[dict[str, object]], None]) -> Callable[[httpx.Request], object]:
         async def capture_wire_request(request: httpx.Request) -> None:
@@ -252,13 +267,36 @@ class OpenAICompatibleInferenceAdapter:
 
     async def inspect_context_window(self, *, base_url: str, model: str) -> InferenceContextWindow:
         self._validate_base_url(base_url)
-        context_tokens = catalog_entry(self._provider.provider).context_tokens
+        normalized_model = validate_model_name(model)
+        context_tokens = await self._context_tokens(normalized_model)
         return InferenceContextWindow(
-            model=validate_model_name(model),
+            model=normalized_model,
             maximum_tokens=context_tokens,
             loaded_tokens=context_tokens,
             required_tokens=TARGET_AGENT_CONTEXT_TOKENS,
         )
+
+    async def _context_tokens(self, model: str) -> int:
+        """The model's window, as Google's models.get reports it (inputTokenLimit), on its native
+        endpoint: the OpenAI-compatible one does not say. Asked once per model."""
+        if model in _CONTEXT_TOKENS_BY_MODEL:
+            return _CONTEXT_TOKENS_BY_MODEL[model]
+        url = f"{self._base_url.removesuffix(_OPENAI_COMPATIBLE_PATH)}models/{model}"
+        label = self._provider.label
+        async with _model_info_client() as client:
+            # lint: allow-PY001 rationale="an expected provider API failure becomes the provider error the chat shows"
+            try:
+                response = await client.get(url, headers={"x-goog-api-key": self._api_key})
+            # lint: allow-PY001 rationale="an expected provider API failure becomes the provider error the chat shows"
+            except httpx.TransportError as exc:
+                raise OpenAICompatibleProviderError(connection_lost_message(label)) from exc
+        if response.status_code != HTTPStatus.OK:
+            raise OpenAICompatibleProviderError(f"{label} would not say how much {model} can read (HTTP {response.status_code})")
+        info = response.json()
+        if _INPUT_TOKEN_LIMIT_FIELD not in info:
+            raise OpenAICompatibleProviderError(f"{label} did not say how much {model} can read")
+        _CONTEXT_TOKENS_BY_MODEL[model] = info[_INPUT_TOKEN_LIMIT_FIELD]
+        return info[_INPUT_TOKEN_LIMIT_FIELD]
 
     @record_structured_call
     async def infer_structured(
@@ -275,11 +313,11 @@ class OpenAICompatibleInferenceAdapter:
         normalized_model = validate_model_name(model)
         capture = _InstructorTraceCapture(on_progress=on_progress)
         client = cast(AsyncInstructor, instructor.from_openai(
-            self._client(capture.record_wire_request), model=normalized_model, mode=instructor.Mode.JSON_SCHEMA,
+            self._client(capture.record_wire_request, model=model), model=normalized_model, mode=instructor.Mode.JSON_SCHEMA,
         ))
         _attach_trace_capture(client=client, capture=capture)
         request_options = {
-            "max_completion_tokens": _structured_max_output_tokens(response_model),
+            "max_completion_tokens": structured_max_output_tokens(response_model),
             "timeout": compatible_silence_limit_seconds(thinking_level),
             "reasoning_effort": self._reasoning_effort(thinking_level),
             "stream_options": {"include_usage": True},
@@ -382,7 +420,7 @@ class OpenAICompatibleInferenceAdapter:
         if tools:
             request["tools"] = [_compatible_tool(tool) for tool in tools]
             request["tool_choice"] = "auto"
-        client = self._client(self._capture_requests(on_request))
+        client = self._client(self._capture_requests(on_request), model=model)
         streamed_calls: dict[int, _StreamedToolCall] = {}
         finish_reason = ""
         usage: dict[str, int] = {}

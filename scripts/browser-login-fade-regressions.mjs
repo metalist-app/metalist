@@ -75,6 +75,7 @@ async function startSampling(page) {
 async function logIn(page) {
   await page.waitForSelector('#login-panel[data-revealed="true"] #login-password', {visible: true});
   await page.type('#login-password', PASSWORD);
+  await watchWhereFadeBegins(page);
   await startSampling(page);
   await page.click('#login-form button[type="submit"]');
   await page.waitForSelector('[data-app-ready="true"]', {timeout: LOGIN_TIMEOUT_MS});
@@ -129,19 +130,45 @@ function assertNoFade(samples) {
   assert.equal(samples.some(sample => sample.isAppShown && sample.isLoginShown), false, 'the screen stayed over the notes');
 }
 
+// The fade must begin on a frame: begun between frames, a busy page used up its 300 ms before
+// any of it showed, and the screen went at once (the maintainer, 2026-11-08: "it starts to fade
+// and then it goes completely black and then completely white").
+async function watchWhereFadeBegins(page) {
+  await page.evaluate(() => {
+    const requestFrame = window.requestAnimationFrame.bind(window);
+    window.requestAnimationFrame = callback => requestFrame(time => {
+      window.__isInFrame = true;
+      callback(time);
+      window.__isInFrame = false;
+    });
+    const add = DOMTokenList.prototype.add;
+    DOMTokenList.prototype.add = function addWatching(...names) {
+      add.apply(this, names);
+      if (names.includes('login-page-leaving')) window.__fadeBeganInFrame = window.__isInFrame === true;
+    };
+  });
+}
+
 async function fadeCases(page) {
   const failures = [];
   const cases = [
     ['fades out over the notes', true, assertFade],
     ['goes at once with Animated transitions off', false, assertNoFade],
   ];
+  let animatedTransitions = null;
   for (const [label, isAnimated, check] of cases) {
-    await setAnimatedTransitions(page, isAnimated);
+    if (isAnimated !== animatedTransitions) await setAnimatedTransitions(page, isAnimated);
+    animatedTransitions = isAnimated;
     await logOut(page);
     const samples = await logIn(page);
+    const fadeBeganInFrame = await page.evaluate(() => window.__fadeBeganInFrame);
+    const checkThisCase = () => {
+      check(samples);
+      if (isAnimated) assert.equal(fadeBeganInFrame, true, 'the fade began between frames');
+    };
     // A suite runs every case and reports all their failures at once.
     try {
-      check(samples);
+      checkThisCase();
     } catch (error) {
       if (!(error instanceof assert.AssertionError)) throw error;
       failures.push(`${label}: ${error.message}`);

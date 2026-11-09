@@ -7,8 +7,8 @@ from dataclasses import replace
 import pytest
 
 from app.api.transactions import transactional_route
-from app.db.file_schema import initialize_file_schema
-from app.db.file_session import resolve_file_database_path
+from app.db.legacy_file_schema import initialize_file_schema
+from app.db.blob_store import blob_store_for_database, resolve_file_catalog_path, resolve_legacy_file_database_path as resolve_file_database_path
 from app.db.schema import initialize_schema
 from app.db.session import begin_request_transaction, get_request_session
 from app.models.database import SafeSession
@@ -68,10 +68,11 @@ def test_password_creation_failure_restores_sidecar_and_key_metadata(live_databa
         with begin_request_transaction():
             auth_service.AuthService(live_database).set_password('aQ7!mZ2#vL9@xR4', 1)
     settings = live_database.connection().execute('SELECT encryption_enabled, encrypted_dek FROM app_settings').fetchone()
-    with sqlite3.connect(resolve_file_database_path(SafeSession._db_path)) as connection:
-        row = connection.execute('SELECT blob_data, blob_encryption_nonce FROM files WHERE id=?', (record.id,)).fetchone()
+    with sqlite3.connect(resolve_file_catalog_path(SafeSession._db_path)) as connection:
+        row = connection.execute('SELECT blob_id, blob_seal_encryption_nonce FROM files WHERE id=?', (record.id,)).fetchone()
     assert settings[0] == 0 and settings[1] is None
-    assert row == (b'fixture', None)
+    assert row[1] is None
+    assert blob_store_for_database(SafeSession._db_path).path_of(row[0]).read_bytes() == b'fixture'
 
 
 def test_logout_clears_sensitive_function_caches(monkeypatch):
@@ -141,8 +142,9 @@ def test_password_removal_failure_keeps_files_encrypted_and_key_recoverable(live
     password = 'aQ7!mZ2#vL9@xR4'
     assert auth.set_password(password, 1)[0]
     before = live_database.connection().execute('SELECT encrypted_dek FROM app_settings').fetchone()[0]
-    with sqlite3.connect(resolve_file_database_path(SafeSession._db_path)) as connection:
-        original_file = connection.execute('SELECT blob_data, blob_encryption_nonce FROM files WHERE id=?', (record.id,)).fetchone()
+    with sqlite3.connect(resolve_file_catalog_path(SafeSession._db_path)) as connection:
+        original_file = connection.execute('SELECT blob_id, blob_seal, blob_seal_encryption_nonce FROM files WHERE id=?', (record.id,)).fetchone()
+    original_blob = blob_store_for_database(SafeSession._db_path).path_of(original_file[0]).read_bytes()
     def fail(*args, **kwargs):
         raise OSError('injected transition failure')
     with pytest.raises(OSError, match='injected transition'):
@@ -154,8 +156,9 @@ def test_password_removal_failure_keeps_files_encrypted_and_key_recoverable(live
             auth.remove_password(password)
     settings = live_database.connection().execute('SELECT encryption_enabled, encrypted_dek FROM app_settings').fetchone()
     assert settings[0] == 1 and settings[1] == before
-    with sqlite3.connect(resolve_file_database_path(SafeSession._db_path)) as connection:
-        assert connection.execute('SELECT blob_data, blob_encryption_nonce FROM files WHERE id=?', (record.id,)).fetchone() == original_file
+    with sqlite3.connect(resolve_file_catalog_path(SafeSession._db_path)) as connection:
+        assert connection.execute('SELECT blob_id, blob_seal, blob_seal_encryption_nonce FROM files WHERE id=?', (record.id,)).fetchone() == original_file
+    assert blob_store_for_database(SafeSession._db_path).path_of(original_file[0]).read_bytes() == original_blob
     assert len(auth.unwrap_dek_for_password(password)) == 32
 
 

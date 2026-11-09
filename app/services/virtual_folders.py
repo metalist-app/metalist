@@ -34,53 +34,8 @@ FOLDER_MARK = "/"
 NO_FOLDER = ""
 
 
-class VirtualFolderState:
-    """Each tab's folder filter: this process's memory only."""
-
-    def __init__(self) -> None:
-        self._lock = Lock()
-        self._filters: Dict[str, str] = {}
-
-    def filter_of(self, tab_id: str) -> str:
-        """The tab's folder, '' for none."""
-        with self._lock:
-            if tab_id not in self._filters:  # shockharness: ignore[DEF002] reason="set_filter keeps no entry for a tab with no folder filter: its absence is NO_FOLDER"
-                return NO_FOLDER
-            return self._filters[tab_id]
-
-    def set_filter(self, tab_id: str, folder: str) -> None:
-        if not isinstance(tab_id, str) or tab_id == "":
-            raise ValueError("set_filter requires a tab id")
-        if folder != NO_FOLDER and not is_folder_tag(folder):
-            raise InputRejected(f"{folder} is not a folder")
-        with self._lock:
-            if folder != NO_FOLDER:
-                self._filters[tab_id] = folder
-            elif tab_id in self._filters:
-                del self._filters[tab_id]
-
-    def copy_filter(self, source_tab_id: str, target_tab_id: str) -> None:
-        """A duplicated tab shows its source's folder."""
-        with self._lock:
-            if source_tab_id in self._filters:
-                self._filters[target_tab_id] = self._filters[source_tab_id]
-
-    def move_filters(self, folder: str, new_path: str) -> None:
-        """A renamed or moved folder: a tab filtered to it, or below it, follows it."""
-        with self._lock:
-            for tab_id, filtered in list(self._filters.items()):
-                if filtered.casefold().startswith(folder.casefold()):
-                    self._filters[tab_id] = new_path + filtered[len(folder):]
-
-    def drop_filters_under(self, folder: str) -> None:
-        """A deleted folder: a tab filtered to it, or below it, shows every folder again."""
-        with self._lock:
-            for tab_id, filtered in list(self._filters.items()):
-                if filtered.casefold().startswith(folder.casefold()):
-                    del self._filters[tab_id]
-
-
-virtual_folder_state = VirtualFolderState()
+# Each tab's folder filter is kept with its other filters in tab state (tab_state.py), so a
+# server restart keeps it (2026-11-07; before, this process's memory only).
 
 
 def is_folder_tag(tag: str) -> bool:

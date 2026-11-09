@@ -5,6 +5,18 @@ What changed in each MetaList version, newest first, from its changelog
 Compare with installed_version from the help lookup to tell the user whether
 they already have a release. Version info offers updates (see the data topic).
 
+## 0.27.0
+
+- **Each file is now its own file on disk,** in a `files` folder beside the notes, instead of all of them in one large database. In a vault with a password each one is encrypted with its own key and padded so its size doesn't reveal it. Downloads no longer load the whole file into memory.
+- **Safety backups no longer pile up.** Each vault keeps its newest 3, removed only after a new backup checks out and the upgrade or update has succeeded.
+- **The tag bar offers a note's own words as new tags** once nothing you've typed matches an existing tag, in the case you typed.
+- **AI summaries are faster:** batches go out as fast as your provider's limits allow, the limits are remembered, and one progress bar follows each model's timing.
+- **Folder contexts:** the folders tab switches between folders and plain searches, and each search context keeps its folder across restarts. Enter over the search contexts makes a new one.
+- AI Agent Settings has four tabs: Keys, Privacy, Reading and Tagging. AI handles large vaults with less waiting.
+- Imports add their notes at the bottom, and files not aimed at a note get a note each. The search box suggests `@datetime`. Unlocking a vault is faster.
+- The import from the old MetaList is gone.
+- Vaults are upgraded (database version 17) when first unlocked, or at startup without a password, after a backup: an older MetaList cannot open them afterwards.
+
 ## 0.26.1
 
 - **Large vaults no longer freeze.** An AI question with an empty search box took minutes on a vault of tens of thousands of notes, holding the server so the search box and Stop got no answer and a "command stuck" error appeared; the step that names each note for the AI is now linear, and reading the notes runs beside the server's other work. An import of more than a few hundred files showed the same error at 15 seconds while it was still running fine; an import now takes as long as its files take, with its progress bar.
@@ -188,23 +200,4 @@ they already have a release. Version info offers updates (see the data topic).
 - Fixed undo of deleting a note whose children have several children, and "accept all" failing on tag bars with leading or trailing spaces.
 - Fixed crashes in the status check after returning to a tab and in scroll-position saving.
 
-## 0.10.0
-
-- Excalidraw diagrams: add one from the note's right-click menu or the command palette, and double-click a diagram to edit it full screen. Diagrams autosave, show light and dark previews, resize like images, and each editing session is one undo step. The editor is bundled locally and needs no Node server.
-- The dark theme uses neutral greys with a brighter accent, the light theme header is darker, and Note Layout & Appearance adds note corner and tag style settings.
-- References to a note that starts with an image or diagram show its thumbnail. Collapsed notes, reference titles, and backlink previews show only the first line.
-- Fixed a command palette crash on queries with no matches.
-- The database schema moves to version 10. Password-protected namespaces migrate after unlock, with the usual automatic backup first.
-
-## 0.9.0
-
-- AI chat can browse the web in disabled, contextual, or unrestricted mode, fetch multiple pages concurrently, and cite the specific pages used as evidence.
-- Complete-scope summaries and tag suggestions can process every permitted note in bounded parallel batches after user approval, with visible per-batch progress and final synthesis.
-- AI chat retains selected-note and tree context while enforcing redaction boundaries, and reference navigation uses temporary result collections without polluting search history.
-
-## 0.8.0
-
-- Error diagnostics now record safe request IDs, exception types, and source locations through Loguru; full tracebacks are available only in authenticated encrypted logs.
-- Releases run the full cross-platform matrix once on the `main` push. The tag publishes those exact tested distributions without rerunning the matrix.
-
-Versions before 0.8.0 are left out; the changelog (CHANGELOG.md) lists them.
+Versions before 0.11.0 are left out; the changelog (CHANGELOG.md) lists them.

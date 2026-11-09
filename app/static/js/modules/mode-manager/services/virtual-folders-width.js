@@ -3,7 +3,7 @@ import { ApplicationState } from '../../application-state.js';
 // The virtual folders tree's width (the maintainer, 2026-11-02): dragged at the panel's right
 // edge, as the AI chat's at its left (.ai-chat-resizer); ← and → by 24px, Home the least, End
 // the most. At least 160px; at most what leaves the notes 480px, beside the chat too. Kept in
-// this browser, as whether the tree shows is (virtual-folders-service.js). The width also moves
+// this browser (virtual-folders-service.js). The width also moves
 // the line where the tree, the notes and the chat stop fitting: there the tree hides
 // (virtual-folders-crowded, main.css).
 

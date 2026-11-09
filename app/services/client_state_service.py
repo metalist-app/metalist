@@ -13,6 +13,8 @@ from app.db.settings_sql import (
     insert_default_settings,
     update_client_preferences_json,
     update_command_palette_usage_json,
+    update_model_timings_json,
+    update_provider_rate_limits_json,
     update_tag_prefix_settings_json,
 )
 from app.models.database import SafeSession
@@ -27,6 +29,8 @@ from app.services.agent.cloud_privacy import validate_cloud_privacy_policy_prefe
 from app.services.agent.privacy_guard import cloud_privacy_revision
 from app.services.preference_values import preference_or_default
 from app.services.agent.retrieval_settings import OPENAI_MAX_PAGE_APPROXIMATE_TOKENS_PREFERENCE_KEY
+from app.services.agent.retrieval_settings import AGENT_WINDOW_PERCENT_PREFERENCE_KEY
+from app.services.agent.retrieval_settings import validate_agent_window_percent_preference
 from app.services.agent.retrieval_settings import validate_openai_max_page_approximate_tokens_preference
 from app.services.agent.web_settings import WEB_ACCESS_MODE_PREFERENCE_KEY
 from app.services.agent.web_settings import WEB_ACCESS_MODES
@@ -77,8 +81,6 @@ _ALLOWED_CLIENT_PREFERENCES = {
     "pref.trim_reminder": {"on", "off"},
     # How many bytes of unused files there were when its card was last dismissed.
     "pref.trim_reminder_dismissed_bytes": "byte_count",
-    # The old MetaList's notes were offered and declined (legacy-import-modal.js): not offered again.
-    "pref.legacy_import_declined": {"true"},
     "pref.note_layout.top_level_note_size": {"same", "larger", "largest"},
     "pref.note_layout.child_indentation": {"compact", "standard", "wide"},
     "pref.note_layout.vertical_spacing": {"compact", "comfortable", "spacious"},
@@ -101,6 +103,7 @@ _ALLOWED_CLIENT_PREFERENCES = {
     "pref.ai.show_spend": {"true", "false"},
     WEB_ACCESS_MODE_PREFERENCE_KEY: WEB_ACCESS_MODES,
     CLOUD_PRIVACY_POLICY_PREFERENCE_KEY: "cloud_privacy_policy",
+    AGENT_WINDOW_PERCENT_PREFERENCE_KEY: "agent_window_percent",
     OPENAI_MAX_PAGE_APPROXIMATE_TOKENS_PREFERENCE_KEY: (
         "openai_agent_max_page_approximate_tokens"
     ),
@@ -121,6 +124,8 @@ _preferences_write_lock = threading.Lock()
 
 _OBSOLETE_CLIENT_PREFERENCES = frozenset(
     {
+        # The offer of the old MetaList's notes, declined; the offer was removed (2026-11-08).
+        "pref.legacy_import_declined",
         # Tagging batches now read as much as an answer does: one limit (2026-10-23).
         "pref.ai.openai.tagging.batch_tokens",
         # Models a vault typed in (2026-10-23, removed the same day): MetaList offers
@@ -322,6 +327,8 @@ def _validate_client_preferences(preferences: dict[str, object]) -> dict[str, st
             _validate_ai_chat_width_preference(key=key, value=value)
         elif allowed_values == "ai_chat_composer_height":
             _validate_ai_chat_composer_height_preference(key=key, value=value)
+        elif allowed_values == "agent_window_percent":
+            value = validate_agent_window_percent_preference(value)
         elif allowed_values == "openai_agent_max_page_approximate_tokens":
             value = validate_openai_max_page_approximate_tokens_preference(value)
         elif allowed_values == "cloud_privacy_policy":
@@ -590,6 +597,18 @@ def rewrite_client_state_storage(
             "tag_prefix_settings_encryption_nonce",
             "tag_prefix_settings_encryption_tag",
         ),
+        # Each model's saved rate limits (saved_rate_limits.py): which models you use.
+        (
+            "provider_rate_limits_json",
+            "provider_rate_limits_encryption_nonce",
+            "provider_rate_limits_encryption_tag",
+        ),
+        # Each model's saved timing (saved_rate_limits.py): which models you use.
+        (
+            "model_timings_json",
+            "model_timings_encryption_nonce",
+            "model_timings_encryption_tag",
+        ),
     )
     settings = fetch_settings(connection)
     if settings is None:
@@ -629,6 +648,20 @@ def rewrite_client_state_storage(
                 command_palette_usage_json=stored_value,
                 command_palette_usage_encryption_nonce=next_nonce,
                 command_palette_usage_encryption_tag=next_tag,
+            )
+        elif value_column == "provider_rate_limits_json":
+            update_provider_rate_limits_json(
+                connection,
+                provider_rate_limits_json=stored_value,
+                provider_rate_limits_encryption_nonce=next_nonce,
+                provider_rate_limits_encryption_tag=next_tag,
+            )
+        elif value_column == "model_timings_json":
+            update_model_timings_json(
+                connection,
+                model_timings_json=stored_value,
+                model_timings_encryption_nonce=next_nonce,
+                model_timings_encryption_tag=next_tag,
             )
         else:
             if value_column != "tag_prefix_settings_json":

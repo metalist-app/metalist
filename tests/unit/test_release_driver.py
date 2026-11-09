@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 from io import BytesIO, StringIO
 import importlib.util
+from itertools import chain, repeat
 from pathlib import Path
 from types import SimpleNamespace
 import zipfile
@@ -303,6 +304,61 @@ def test_pypi_hashes_reject_duplicate_filenames() -> None:
 def test_distribution_artifact_rejects_missing_or_extra_files(files: dict[str, bytes]) -> None:
     with pytest.raises(release.ReleaseError, match="unexpected files"):
         release.artifact_hashes(distribution_zip("1.2.3", files), version="1.2.3")
+
+
+def pypi_release_page(version: str, filenames: list[str]) -> dict[str, object]:
+    return {
+        "info": {"version": version},
+        "urls": [{"filename": name, "digests": {"sha256": name}} for name in filenames],
+    }
+
+
+def answer_pypi_with(monkeypatch: pytest.MonkeyPatch, pages: list[dict[str, object]]) -> list[str]:
+    answers = iter(pages)
+    requests = []
+
+    def get_release(url: str, *, timeout: int) -> SimpleNamespace:
+        requests.append(url)
+        payload = next(answers)
+        return SimpleNamespace(status_code=release.HTTPStatus.OK, json=lambda: payload)
+
+    monkeypatch.setattr(release.requests, "get", get_release)
+    monkeypatch.setattr(release.time, "sleep", lambda seconds: None)
+    return requests
+
+
+def test_the_pypi_wait_goes_on_until_both_files_are_listed(monkeypatch: pytest.MonkeyPatch) -> None:
+    # PyPI lists a release's files as each upload lands: during 0.26.0 it answered with
+    # the wheel alone, and the driver stopped on "unexpected files" before the source
+    # distribution appeared a moment later.
+    wheel, source = "metalist-1.2.3-py3-none-any.whl", "metalist-1.2.3.tar.gz"
+    requests = answer_pypi_with(monkeypatch, [
+        pypi_release_page("1.2.3", [wheel]),
+        pypi_release_page("1.2.3", [wheel]),
+        pypi_release_page("1.2.3", [wheel, source]),
+    ])
+    console = release.Console(file=StringIO(), force_terminal=False)
+    payload = release.wait_for_pypi(version="1.2.3", console=console)
+    assert release.pypi_hashes(payload, version="1.2.3") == {wheel: wheel, source: source}
+    assert requests == ["https://pypi.org/pypi/metalist/1.2.3/json"] * 3
+
+
+def test_the_pypi_wait_stops_at_once_on_a_file_that_is_not_ours(monkeypatch: pytest.MonkeyPatch) -> None:
+    answer_pypi_with(monkeypatch, [
+        pypi_release_page("1.2.3", ["metalist-1.2.3-py3-none-any.whl", "metalist-1.2.3-cp314-win_amd64.whl"]),
+    ])
+    console = release.Console(file=StringIO(), force_terminal=False)
+    with pytest.raises(release.ReleaseError, match="unexpected files.*cp314-win_amd64"):
+        release.wait_for_pypi(version="1.2.3", console=console)
+
+
+def test_the_pypi_wait_names_the_files_still_missing_when_it_times_out(monkeypatch: pytest.MonkeyPatch) -> None:
+    answer_pypi_with(monkeypatch, [pypi_release_page("1.2.3", ["metalist-1.2.3-py3-none-any.whl"])] * 2)
+    clock = chain((0, 0), repeat(release.PYPI_TIMEOUT_SECONDS + 1))
+    monkeypatch.setattr(release.time, "monotonic", lambda: next(clock))
+    console = release.Console(file=StringIO(), force_terminal=False)
+    with pytest.raises(release.ReleaseError, match=r"Timed out.*metalist-1\.2\.3\.tar\.gz"):
+        release.wait_for_pypi(version="1.2.3", console=console)
 
 
 def test_clean_install_waits_for_the_index_pip_reads(monkeypatch: pytest.MonkeyPatch) -> None:

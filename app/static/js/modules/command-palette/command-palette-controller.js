@@ -17,6 +17,7 @@ import {
 } from '../ai-chat/proposal-menu.js';
 import { ModeContextInstance as ModeContext } from '../mode-manager/mode-context.js';
 import { actionRefreshAndMaybeSelect } from '../mode-manager/actions/ui-actions.js';
+import { scrollNoteIntoView } from '../mode-manager/services/scroll-restoration-service.js';
 import { actionUndo } from '../mode-manager/actions/history-actions.js';
 import {
     actionDeselectNote,
@@ -40,7 +41,6 @@ import {
 import { SessionTimeoutModal } from '../modals/session-timeout-modal.js';
 import { BackupResultModal } from '../modals/backup-result-modal.js';
 import { BackupRestoreModal } from '../modals/backup-restore-modal.js';
-import { LEGACY_IMPORT_DECLINED_PREFERENCE, LegacyImportModal } from '../modals/legacy-import-modal.js';
 import { BackupSettingsModal } from '../modals/backup-settings-modal.js';
 import { OntologyModal } from '../modals/ontology-modal.js';
 import { RandomPasswordModal } from '../modals/random-password-modal.js';
@@ -63,7 +63,7 @@ import { exportNotes } from '../mode-manager/services/export-service.js';
 import { VersionInfoModal } from '../modals/version-info-modal.js';
 import { ImportWizard, NewVaultWizard } from '../wizard/setup-wizards.js';
 import { bookmarksFileChoices } from '../wizard/bookmarks-file.js';
-import { MARKDOWN_STEP, droppedFolderChoices, droppedTextFilesChoices } from '../wizard/import-wizard-steps.js';
+import { droppedFilesChoices, droppedFilesStartStep, droppedFolderChoices } from '../wizard/import-wizard-steps.js';
 import { holdDroppedFolder } from '../mode-manager/services/dropped-folders.js';
 import { MemoryUsageModal } from '../modals/memory-usage-modal.js';
 import { showErrorDialogFor } from '../modals/error-dialog.js';
@@ -84,14 +84,14 @@ import {
 import { receiveDictationPhrases } from '../mode-manager/services/dictation-paste-service.js';
 import { SearchSuggestionStatisticsModal } from '../modals/search-suggestion-statistics-modal.js';
 import { ConfirmationModal } from '../modals/confirmation-modal.js';
-import { AiAgentSettingsModal } from '../modals/ai-agent-settings-modal.js';
+import { AiAgentSettingsModal, TAGGING_VOCABULARIES } from '../modals/ai-agent-settings-modal.js';
 import {
     AI_THINKING_LEVEL_OPTIONS,
     DEFAULT_AI_THINKING_LEVEL,
     validateAiThinkingLevel,
 } from '../ai-chat/ai-thinking-level-service.js';
 import {
-    OPENAI_AGENT_RETRIEVAL_PREFERENCE_KEYS,
+    AGENT_RETRIEVAL_PREFERENCE_KEYS,
     readAgentRetrievalSettings,
     validateAgentRetrievalSettings,
 } from '../ai-chat/agent-retrieval-settings.js';
@@ -138,11 +138,13 @@ import { settleResult } from '../async-result.js';
 import { buildSessionHeaders } from '../session-auth.js';
 import { isValidTagToken } from '../tag-token.js';
 import { updateSearchContextsOverlayPlacement } from '../mode-manager/services/search-contexts-overlay-service.js';
-import { navigateToReferenceOrigin, openSearchInNewSearchContext } from '../mode-manager/events/keyboard-events.js';
+import {
+    chooseFolder, closeFoldersTab, navigateToReferenceOrigin, openFoldersTab, openSearchInNewSearchContext,
+} from '../mode-manager/events/keyboard-events.js';
 import { FolderNameModal } from '../modals/folder-name-modal.js';
 import { DeleteFolderModal } from '../modals/delete-folder-modal.js';
 import {
-    activeVirtualFolder, isVirtualFoldersShown, setVirtualFoldersShown, wireVirtualFolders,
+    activeVirtualFolder, toggleFolderContextFromTab, wireVirtualFolders,
 } from '../mode-manager/services/virtual-folders-service.js';
 import {
     DEFAULT_SEARCH_SUGGESTION_WINDOWS_VALUE,
@@ -191,6 +193,9 @@ const ERROR_BANNER_SECONDS = 10;
 const LONG_COMMAND_TIMEOUT_SECONDS = 120;
 
 
+const COPYING_DROPPED_FILES_KEY = 'copyingDroppedFiles';
+const COPYING_DROPPED_FILES_TEXT = 'Copying your files…';
+
 // A theme change cross-fades the whole page from the old colours to the new (main.css,
 // ::view-transition(root)). Opening in the saved theme, a background tab, reduced motion and
 // Animated transitions off switch at once, as does a browser without view transitions.
@@ -238,6 +243,8 @@ function trimToken(token) {
 const BACKUP_COMMAND_AVAILABILITY_TIMEOUT_MS = 30000;
 const BACKUP_COMMAND_AVAILABILITY_POLL_INTERVAL_MS = 50;
 const MAX_SUGGESTED_TAGS = 10;
+// Which tags the AI may propose (app/services/agent/tagging.py, TAGGING_POLICY_KEY).
+const TAGGING_VOCABULARY_PREFERENCE_KEY = 'pref.ai.tagging.vocabulary';
 
 function tokenizeQuery(rawQuery) {
     if (typeof rawQuery !== 'string') {
@@ -427,10 +434,6 @@ class CommandPaletteController {
         this._backupSettingsModal = null;
         this._backupResultModal = null;
         this._backupRestoreModal = null;
-        this._legacyImportModal = null;
-        // The old MetaList's notes, when this namespace is offered them (legacy_import.py's
-        // status): { offered, encrypted }; offered false until the status is read.
-        this._legacyImport = Object.freeze({ offered: false, encrypted: false });
         this._addPasswordModal = null;
         this._changePasswordModal = null;
         this._removePasswordModal = null;
@@ -480,7 +483,9 @@ class CommandPaletteController {
         wireVirtualFolders({
             // In the command gate, waiting for a command still running (a click while editing:
             // the note's save), so one click leaves the note and shows the folder.
-            setFilter: async (folder) => CommandGate.runWhenFree('virtualFolders.filter', async () => this.setVirtualFolder(folder)),
+            setFilter: async (folder) => CommandGate.runWhenFree('virtualFolders.chooseFolder', async () => chooseFolder(folder)),
+            openFoldersTab: async () => CommandGate.runWhenFree('virtualFolders.openFoldersTab', async () => openFoldersTab()),
+            closeFoldersTab: async () => CommandGate.runWhenFree('virtualFolders.closeFoldersTab', async () => closeFoldersTab()),
             confirm: async (context) => this._confirmAction('virtualFolders.confirm', context),
             askName: async (form) => this._askFolderName(form),
             askDeleteFolder: async (form) => this._askDeleteFolder(form),
@@ -516,7 +521,6 @@ class CommandPaletteController {
                 summarizeAiChat: () => document.dispatchEvent(new CustomEvent('metalist:ai-chat-summarize-requested')),
                 createBackup: this.createBackup.bind(this),
                 openBackupRestore: this.openBackupRestore.bind(this),
-                openLegacyImport: this.openLegacyImport.bind(this),
                 logout: this.logout.bind(this),
                 openRandomPasswordGenerator: this.openRandomPasswordGenerator.bind(this),
                 collapseAll: this.collapseAll.bind(this),
@@ -571,7 +575,7 @@ class CommandPaletteController {
                 openAiAgentSettings: this.openAiAgentSettings.bind(this),
                 openCloudPrivacySettings: this.openCloudPrivacySettings.bind(this),
                 openProposalManager: async () => {
-                    if (await this._prepareForModalOpen('proposalManager')) await openProposalMenu(this._preferences, false);
+                    if (await this._prepareForModalOpen('proposalManager')) await openProposalMenu();
                 },
                 removeAllTagSuggestionsFromCurrentContext: async () => {
                     const confirmed = await this._confirmAction(
@@ -588,9 +592,7 @@ class CommandPaletteController {
                         await removeAllTagSuggestionsFromCurrentContext();
                     }
                 },
-                openTaggingVocabulary: async () => {
-                    if (await this._prepareForModalOpen('taggingVocabulary')) await openProposalMenu(this._preferences, true);
-                },
+                openTaggingVocabulary: async () => this.openAiAgentSettings('tagging'),
             },
         });
 
@@ -881,6 +883,7 @@ class CommandPaletteController {
                 (key) => this._preferences.getRaw(key),
             ),
             openAiRetrievalSettings,
+            taggingVocabulary: this._taggingVocabulary(),
             cloudPrivacyPolicy: readCloudPrivacyPolicy(
                 (key) => this._preferences.getRaw(key),
             ),
@@ -989,9 +992,27 @@ class CommandPaletteController {
         await this._saveAiSettings(settings);
     }
 
+    // Which tags the AI may propose: '' until chosen, in AI Agent Settings or when a tagging run asks.
+    _taggingVocabulary() {
+        const saved = this._preferences.getRaw(TAGGING_VOCABULARY_PREFERENCE_KEY);
+        if (saved === null) return '';
+        if (!TAGGING_VOCABULARIES.includes(saved)) {
+            throw new Error(`Unsupported tagging vocabulary preference: ${saved}`);
+        }
+        return saved;
+    }
+
     async _saveAiAgentSettings(settings) {
         if (!settings || typeof settings !== 'object') {
             throw new Error('_saveAiAgentSettings requires settings object');
+        }
+        if (!TAGGING_VOCABULARIES.includes(settings.taggingVocabulary)) {
+            throw new Error(`Unsupported tagging vocabulary: ${settings.taggingVocabulary}`);
+        }
+        // Not chosen yet stays not chosen; a choice is saved only when it changed (_saveChangedPreferences).
+        const vocabularyUpdate = {};
+        if (settings.taggingVocabulary !== '') {
+            vocabularyUpdate[TAGGING_VOCABULARY_PREFERENCE_KEY] = settings.taggingVocabulary;
         }
         const openAiRetrievalSettings = validateAgentRetrievalSettings(
             settings.openAiRetrievalSettings,
@@ -1003,13 +1024,12 @@ class CommandPaletteController {
         const webAccessMode = validateAgentWebAccessMode(settings.webAccessMode);
         // The model in use is picked in the chat (saveAiSettings).
         const didChange = await this._saveChangedPreferences({
-            [OPENAI_AGENT_RETRIEVAL_PREFERENCE_KEYS.maxPageApproximateTokens]: String(
-                openAiRetrievalSettings.maxPageApproximateTokens,
-            ),
+            [AGENT_RETRIEVAL_PREFERENCE_KEYS.windowPercent]: String(openAiRetrievalSettings.windowPercent),
             [CLOUD_PRIVACY_POLICY_PREFERENCE_KEY]: serializeCloudPrivacyPolicy(
                 cloudPrivacyPolicy,
             ),
             [AGENT_WEB_ACCESS_MODE_PREFERENCE_KEY]: webAccessMode,
+            ...vocabularyUpdate,
         });
         if (!didChange) return;
         document.dispatchEvent(new CustomEvent(
@@ -1305,7 +1325,6 @@ class CommandPaletteController {
         const state = {
             hasPassword: Auth.hasPassword,
             isRootReorderLocked: isRootReorderLocked(this.getSortMode()),
-            legacyImportOffered: this._legacyImport.offered,
         };
         return this._endpoints.filter((endpoint) => isCommandAvailable(endpoint.id, state));
     }
@@ -1664,7 +1683,7 @@ class CommandPaletteController {
 
     // Virtual folders, an experiment (virtual-folders-service.js): the toggle.
     async toggleVirtualFolders() {
-        setVirtualFoldersShown(!isVirtualFoldersShown());
+        toggleFolderContextFromTab();
     }
 
     // A virtual folder's name (FolderNameModal), or null when nothing changes.
@@ -1691,9 +1710,10 @@ class CommandPaletteController {
         return this._deleteFolderModal.openFor(form);
     }
 
-    /** Narrow the view to a virtual folder and the folders below it ('' for every folder
-     * again), as a Files filter; from a reference view, back to the view the reference views
-     * started from first. */
+    /** Narrow the folder context shown to a virtual folder and the folders below it ('' for
+     * every folder again: the chip's ×), as a Files filter, its search kept; from a reference
+     * view, back to the view the reference views started from first. A folder clicked in the
+     * tree also empties the search (chooseFolder). */
     async setVirtualFolder(folder) {
         if (typeof folder !== 'string') {
             throw new Error('setVirtualFolder requires a folder tag or ""');
@@ -2639,34 +2659,6 @@ class CommandPaletteController {
         await this._backupRestoreModal.open();
     }
 
-    async openLegacyImport() {
-        const isReady = await this._prepareForModalOpen('commandPalette.openLegacyImport');
-        if (!isReady) {
-            return;
-        }
-        if (this._legacyImportModal === null) {
-            this._legacyImportModal = new LegacyImportModal({
-                request: (url, method, body) => this._authRequest(url, method, body),
-                preferences: this._preferences,
-            });
-        }
-        await this._legacyImportModal.openFor({ encrypted: this._legacyImport.encrypted });
-    }
-
-    // Once the app has opened: a namespace with no notes and no password, in a data folder
-    // that holds the old MetaList's notes, offers them, unless they were declined here
-    // (docs/ui/legacy-import.md).
-    async offerLegacyImport() {
-        const status = await this._authRequest(CONFIG.API.LEGACY_IMPORT.STATUS, 'GET', null);
-        if (typeof status.offered !== 'boolean' || typeof status.encrypted !== 'boolean') {
-            throw new Error('The legacy import status needs offered and encrypted');
-        }
-        const legacyImport = Object.freeze({ offered: status.offered, encrypted: status.encrypted });
-        if (!stateValuesEqual(this._legacyImport, legacyImport)) this._legacyImport = legacyImport;
-        if (!status.offered || this._preferences.getRaw(LEGACY_IMPORT_DECLINED_PREFERENCE) !== null) return;
-        await this.openLegacyImport();
-    }
-
     // Over the new vault wizard: its "Use This Password" fills the wizard's fields (onUse).
     async _openPasswordGeneratorToUse(onUse) {
         if (this._randomPasswordModal === null) {
@@ -2963,9 +2955,13 @@ class CommandPaletteController {
         await this._openImportWizardWith({ ...droppedFolderChoices(holdDroppedFolder(folder), folder, intoFolder), ...droppedHere() }, null);
     }
 
-    /** Text files dropped on the page, a Markdown file among them: at the Markdown screen. */
-    async openImportWizardWithDroppedTextFiles(files, intoFolder) {
-        await this._openImportWizardWith({ ...await droppedTextFilesChoices(files, intoFolder), ...droppedHere() }, MARKDOWN_STEP);
+    /** Files dropped on the page that go through the walkthrough from partway: text files with
+     * Markdown among them, or images on a folder in the tree. Copying them can take a while. */
+    async openImportWizardWithDroppedFiles(files, intoFolder) {
+        FloatingMessages.showProgress(COPYING_DROPPED_FILES_KEY, COPYING_DROPPED_FILES_TEXT);
+        const choices = await droppedFilesChoices(files, intoFolder)
+            .finally(() => FloatingMessages.end(COPYING_DROPPED_FILES_KEY));
+        await this._openImportWizardWith({ ...choices, ...droppedHere() }, droppedFilesStartStep(files));
     }
 
     async _openImportWizardWith(presetChoices, startStep) {
@@ -2992,17 +2988,28 @@ class CommandPaletteController {
             setPassword: async (password, onProgress) => Auth.setPasswordKeepingThisWindow(password, onProgress),
             openPasswordGenerator: async (onUse) => this._openPasswordGeneratorToUse(onUse),
             afterImport: async (sourceTag) => {
-                // An import shows its folders at once (Virtual Folders, an experiment).
-                setVirtualFoldersShown(true);
+                // Its own plain search, with no tree: the tree shows only in folder contexts
+                // (docs/ready-to-build/virtual-folders.md, "Folder contexts").
                 const newTabId = await openSearchInNewSearchContext(sourceTag, 'importWizard.showImported');
                 if (newTabId === null) {
                     await actionRefreshAndMaybeSelect({ startedAt: performance.now(), context: 'importWizard' });
                 }
             },
-            // Files dropped on the page: their notes at the top of the search context they were
-            // dropped in, which stays as it is (the maintainer, 2026-11-03).
-            showDroppedImport: async () => {
-                await actionRefreshAndMaybeSelect({ startedAt: performance.now(), context: 'importWizard.showDropped' });
+            announceImport: (text) => {
+                FloatingMessages.show({ text, type: 'success', detail: '', isClosable: false, isLasting: false, key: null, action: null });
+            },
+            // Files dropped on the page: their notes in the search context they were dropped in,
+            // which stays as it is (the maintainer, 2026-11-03), after its last note (2026-11-07).
+            // The view brings the import's first note into sight, moving the
+            // least distance (docs/ui/interaction-principles.md, principle 3).
+            showDroppedImport: async (firstRootId) => {
+                if (typeof firstRootId !== 'string' || firstRootId === '') {
+                    throw new Error('showDroppedImport requires the import\'s first note');
+                }
+                await actionRefreshAndMaybeSelect({
+                    startedAt: performance.now(), context: 'importWizard.showDropped', visibleRootAnchorId: firstRootId,
+                });
+                scrollNoteIntoView(firstRootId, { align: 'nearest', jump: true });
             },
         };
     }
@@ -3096,9 +3103,10 @@ class CommandPaletteController {
         await this._dictationSettingsModal.open();
     }
 
-    async openAiAgentSettings(focusCloudPrivacy) {
-        if (typeof focusCloudPrivacy !== 'boolean') {
-            throw new Error('openAiAgentSettings requires boolean focusCloudPrivacy');
+    // section: the tab it opens on (AI_SETTINGS_SECTIONS: keys, privacy, reading, tagging).
+    async openAiAgentSettings(section) {
+        if (typeof section !== 'string') {
+            throw new Error('openAiAgentSettings requires the tab to open on');
         }
         const isReady = await this._prepareForModalOpen('commandPalette.openAiAgentSettings');
         if (!isReady) {
@@ -3110,14 +3118,11 @@ class CommandPaletteController {
                 this._saveAiAgentSettings.bind(this),
             );
         }
-        await this._aiAgentSettingsModal.open();
-        if (focusCloudPrivacy) {
-            this._aiAgentSettingsModal.focusCloudPrivacySettings();
-        }
+        await this._aiAgentSettingsModal.openOn(section);
     }
 
     async openCloudPrivacySettings() {
-        await this.openAiAgentSettings(true);
+        await this.openAiAgentSettings('privacy');
     }
 
     async openSearchSuggestionStatistics() {

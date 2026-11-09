@@ -144,13 +144,13 @@ def test_search_suggestion_selection_credits_the_selected_known_tag(
     ]
 
 
-@pytest.mark.parametrize("query", ["@c", "@code", "@code=", "rec", ""])
+@pytest.mark.parametrize("query", ["@c", "@code", "@code=", "rec", "", "@dat"])
 def test_every_offered_search_suggestion_can_be_selected(monkeypatch: pytest.MonkeyPatch, query: str) -> None:
     # Picking @code=python from the list failed as "not a known tag" (2026-10-19): the
     # suggestions offered @ tags in use, the selection checked a narrower vocabulary.
     records = [
         SearchRecord(note_id=note_id, content_text="text", tags=tags, tag_terms=extract_tags_for_search(tags))
-        for note_id, tags in (("python", "@code=python"), ("javascript", "@code=javascript"), ("recipes", "recipes"))
+        for note_id, tags in (("python", "@code=python"), ("javascript", "@code=javascript"), ("recipes", "recipes"), ("dated", "@datetime=2026-10-24"))
     ]
     index = _build_index(records, raw_tag_terms_by_id={record.note_id: record.tag_terms for record in records})
     recorded: list[tuple[str, ...]] = []

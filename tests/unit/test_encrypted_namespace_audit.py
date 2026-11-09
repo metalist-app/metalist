@@ -7,10 +7,14 @@ import sys
 
 import pytest
 
-from app.db.file_schema import initialize_file_schema
-from app.db.file_session import resolve_file_database_path
+from app.db.blob_store import blob_store_for_database, resolve_file_catalog_path
+from app.db.file_schema import initialize_file_schema as initialize_catalog_schema
+from app.db.legacy_file_schema import initialize_file_schema
+from app.db.move_files_to_blobs import move_files_to_blobs
+from app.db.blob_store import resolve_legacy_file_database_path as resolve_file_database_path
 from app.db.schema import LINK_ICONS_TABLE, initialize_schema
 from app.encryption_audit import audit_all_namespaces, main
+from app.services.encryption import EncryptionService
 
 
 _NOW = "2026-08-01T00:00:00+00:00"
@@ -877,3 +881,191 @@ def test_version_14_requires_text_versions(tmp_path: Path, version: int, has_add
         assert {(finding.table, finding.field) for finding in report.fatal_findings} == {
             ("file_texts", "reader_version"), ("file_texts", "filter_version"),
         }
+
+
+_PROVIDER_RATE_LIMIT_COLUMNS = (
+    "provider_rate_limits_json", "provider_rate_limits_encryption_nonce", "provider_rate_limits_encryption_tag",
+)
+
+
+# Before version 15 the saved rate limits may be absent, or already added by the on-open schema helper.
+@pytest.mark.parametrize(("version", "has_columns", "allowed"), [(14, False, True), (14, True, True), (15, True, True), (15, False, False)])
+def test_version_15_requires_the_saved_rate_limits(tmp_path: Path, version: int, has_columns: bool, allowed: bool) -> None:
+    namespaces_directory = tmp_path / "namespaces"
+    database_path = _create_namespace_database(namespaces_directory, namespace="private", encryption_enabled=True)
+    with sqlite3.connect(database_path) as connection:
+        if not has_columns:
+            for column in _PROVIDER_RATE_LIMIT_COLUMNS:
+                connection.execute(f"ALTER TABLE app_settings DROP COLUMN {column}")
+        connection.execute(f"PRAGMA user_version = {version}")
+
+    report = audit_all_namespaces(namespaces_directory=namespaces_directory)
+
+    assert report.startup_allowed is allowed, report.render_text()
+    if not allowed:
+        assert {(finding.table, finding.field) for finding in report.fatal_findings} == {
+            ("app_settings", column) for column in _PROVIDER_RATE_LIMIT_COLUMNS
+        }
+
+
+_MODEL_TIMING_COLUMNS = (
+    "model_timings_json", "model_timings_encryption_nonce", "model_timings_encryption_tag",
+)
+
+
+# Before version 16 the saved timings may be absent, or already added by the on-open schema helper.
+@pytest.mark.parametrize(("version", "has_columns", "allowed"), [(15, False, True), (15, True, True), (16, True, True), (16, False, False)])
+def test_version_16_requires_the_saved_model_timings(tmp_path: Path, version: int, has_columns: bool, allowed: bool) -> None:
+    namespaces_directory = tmp_path / "namespaces"
+    database_path = _create_namespace_database(namespaces_directory, namespace="private", encryption_enabled=True)
+    with sqlite3.connect(database_path) as connection:
+        if not has_columns:
+            for column in _MODEL_TIMING_COLUMNS:
+                connection.execute(f"ALTER TABLE app_settings DROP COLUMN {column}")
+        connection.execute(f"PRAGMA user_version = {version}")
+
+    report = audit_all_namespaces(namespaces_directory=namespaces_directory)
+
+    assert report.startup_allowed is allowed, report.render_text()
+    if not allowed:
+        assert {(finding.table, finding.field) for finding in report.fatal_findings} == {
+            ("app_settings", column) for column in _MODEL_TIMING_COLUMNS
+        }
+
+
+def test_plaintext_saved_model_timings_in_an_encrypted_namespace_are_reported(tmp_path: Path) -> None:
+    namespaces_directory = tmp_path / "namespaces"
+    database_path = _create_namespace_database(namespaces_directory, namespace="private", encryption_enabled=True)
+    with sqlite3.connect(database_path) as connection:
+        connection.execute(
+            "UPDATE app_settings SET model_timings_json = "
+            "'[{\"baseUrl\": \"https://api.openai.com/v1\", \"model\": \"gpt-5.6-sol\"}]'"
+        )
+
+    report = audit_all_namespaces(namespaces_directory=namespaces_directory)
+
+    assert report.startup_allowed is False
+    assert ("app_settings", "model_timings_json") in {
+        (finding.table, finding.field) for finding in report.fatal_findings
+    }
+
+
+def test_plaintext_saved_rate_limits_in_an_encrypted_namespace_are_reported(tmp_path: Path) -> None:
+    namespaces_directory = tmp_path / "namespaces"
+    database_path = _create_namespace_database(namespaces_directory, namespace="private", encryption_enabled=True)
+    with sqlite3.connect(database_path) as connection:
+        connection.execute(
+            "UPDATE app_settings SET provider_rate_limits_json = "
+            "'[{\"baseUrl\": \"https://api.openai.com/v1\", \"model\": \"gpt-5.6-sol\"}]'"
+        )
+
+    report = audit_all_namespaces(namespaces_directory=namespaces_directory)
+
+    assert report.startup_allowed is False
+    assert ("app_settings", "provider_rate_limits_json") in {
+        (finding.table, finding.field) for finding in report.fatal_findings
+    }
+
+
+def _vault_with_moved_files(namespaces_directory: Path) -> Path:
+    """An encrypted vault whose file really went through migration 16→17."""
+    database_path = _create_namespace_database(namespaces_directory, namespace="private", encryption_enabled=True)
+    service = EncryptionService()
+    service.dek = bytes(range(32))
+    with sqlite3.connect(resolve_file_database_path(database_path)) as connection:
+        initialize_file_schema(connection)
+        title = service.encrypt_for_storage("report.pdf")
+        metadata = service.encrypt_for_storage("{}")
+        content = service.encrypt_bytes_for_storage(b"secret content")
+        connection.execute(
+            "INSERT INTO files (id, title, title_encryption_nonce, title_encryption_tag, metadata_json, metadata_encryption_nonce, "
+            "metadata_encryption_tag, blob_data, blob_encryption_nonce, blob_encryption_tag, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            ("report", *title, *metadata, *content, _NOW, _NOW),
+        )
+    with sqlite3.connect(database_path) as connection:
+        move_files_to_blobs(connection=connection, encryption_enabled=True, encryption_service=service)
+        connection.execute("PRAGMA user_version = 17")
+    return database_path
+
+
+def _catalog_blob_path(database_path: Path) -> Path:
+    with sqlite3.connect(resolve_file_catalog_path(database_path)) as connection:
+        blob_id = connection.execute("SELECT blob_id FROM files").fetchone()[0]
+    return blob_store_for_database(database_path).path_of(blob_id)
+
+
+def test_audit_accepts_a_vault_before_and_after_its_files_moved(tmp_path: Path) -> None:
+    before = tmp_path / "before"
+    database_path = _create_namespace_database(before, namespace="private", encryption_enabled=True)
+    with sqlite3.connect(database_path) as connection:
+        connection.execute("PRAGMA user_version = 16")
+    with sqlite3.connect(resolve_file_database_path(database_path)) as connection:
+        initialize_file_schema(connection)
+    assert audit_all_namespaces(namespaces_directory=before).fatal_findings == ()
+
+    after = tmp_path / "after"
+    _vault_with_moved_files(after)
+    report = audit_all_namespaces(namespaces_directory=after)
+    assert report.fatal_findings == (), report.render_text()
+    assert report.startup_allowed is True
+
+
+def test_audit_ignores_the_empty_catalog_of_a_vault_not_yet_unlocked(tmp_path: Path) -> None:
+    """Opening the vault creates the catalog; its files stay in the old database until unlock."""
+    namespaces_directory = tmp_path / "namespaces"
+    database_path = _create_namespace_database(namespaces_directory, namespace="private", encryption_enabled=True)
+    with sqlite3.connect(database_path) as connection:
+        connection.execute("PRAGMA user_version = 16")
+    with sqlite3.connect(resolve_file_database_path(database_path)) as connection:
+        initialize_file_schema(connection)
+    catalog_path = resolve_file_catalog_path(database_path)
+    catalog_path.parent.mkdir()
+    with sqlite3.connect(catalog_path) as connection:
+        initialize_catalog_schema(connection)
+
+    assert audit_all_namespaces(namespaces_directory=namespaces_directory).fatal_findings == ()
+
+
+def test_audit_requires_the_catalog_schema_from_version_17(tmp_path: Path) -> None:
+    namespaces_directory = tmp_path / "namespaces"
+    database_path = _vault_with_moved_files(namespaces_directory)
+    with sqlite3.connect(resolve_file_catalog_path(database_path)) as connection:
+        connection.execute("ALTER TABLE files ADD COLUMN surprise TEXT")
+
+    report = audit_all_namespaces(namespaces_directory=namespaces_directory)
+
+    assert ("files", "surprise") in {(finding.table, finding.field) for finding in report.fatal_findings}
+
+
+def test_audit_reports_a_seal_stored_in_plaintext(tmp_path: Path) -> None:
+    namespaces_directory = tmp_path / "namespaces"
+    database_path = _vault_with_moved_files(namespaces_directory)
+    with sqlite3.connect(resolve_file_catalog_path(database_path)) as connection:
+        connection.execute("UPDATE files SET blob_seal = ?, blob_seal_encryption_nonce = NULL, blob_seal_encryption_tag = NULL", (b'{"key":"secret"}',))
+
+    report = audit_all_namespaces(namespaces_directory=namespaces_directory)
+
+    assert ("files", "blob_seal") in {(finding.table, finding.field) for finding in report.fatal_findings}
+    assert "secret" not in report.render_text()
+
+
+def test_audit_reports_a_missing_blob(tmp_path: Path) -> None:
+    namespaces_directory = tmp_path / "namespaces"
+    database_path = _vault_with_moved_files(namespaces_directory)
+    _catalog_blob_path(database_path).unlink()
+
+    report = audit_all_namespaces(namespaces_directory=namespaces_directory)
+
+    assert [finding.message for finding in report.fatal_findings] == ["names a blob that is missing"]
+
+
+def test_audit_reports_a_blob_that_is_not_encrypted(tmp_path: Path) -> None:
+    namespaces_directory = tmp_path / "namespaces"
+    database_path = _vault_with_moved_files(namespaces_directory)
+    _catalog_blob_path(database_path).write_bytes(b"plain secret content")
+
+    report = audit_all_namespaces(namespaces_directory=namespaces_directory)
+
+    assert [finding.message for finding in report.fatal_findings] == ["names a blob that is not encrypted"]
+    assert "plain secret content" not in report.render_text()

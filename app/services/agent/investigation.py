@@ -3,15 +3,22 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import cached_property
 
 from app.services.agent.evidence_serialization import EvidenceNoteTokenSource
 from app.services.agent.evidence_serialization import EvidenceTreeTokenSource
 from app.services.agent.evidence_serialization import estimate_cached_root_tree_tokens
 from app.services.agent.evidence_serialization import serialize_evidence_note_payload
 from app.services.agent.evidence_serialization import serialize_evidence_result_trees
+from app.services.agent.note_aliases import NoteAliases
 from app.services.agent.retrieval_settings import AgentRetrievalSettings
 from app.services.agent.scope import ScopedSearchSnapshot
 from app.services.agent.token_estimation import estimate_input_tokens
+
+# The first two batches for a model with no saved timing, as shares of a batch: a tenth, a fifth.
+_FIRST_TIMING_PROBE_DIVISOR = 10
+_SECOND_TIMING_PROBE_DIVISOR = 5
+_TIMING_PROBE_DIVISORS = (_FIRST_TIMING_PROBE_DIVISOR, _SECOND_TIMING_PROBE_DIVISOR)
 
 
 @dataclass(frozen=True, slots=True)
@@ -98,6 +105,12 @@ class InvestigationState:
     @property
     def snapshot(self) -> ScopedSearchSnapshot:
         return self._snapshot
+
+    @cached_property
+    def note_aliases(self) -> NoteAliases:
+        """The short note IDs (n1, n2…) a summary's requests carry: the chat's, from the same
+        snapshot, so its answer's citations translate as the chat's do (note_aliases.py)."""
+        return NoteAliases.from_snapshot(self._snapshot)
 
     @property
     def max_page_approximate_tokens(self) -> int:
@@ -225,8 +238,11 @@ class InvestigationState:
         self,
         *,
         reserved_approximate_tokens: int,
+        with_timing_probes: bool,
     ) -> CompleteRootBatchPlan:
-        """Partition the entire frozen scope without splitting a root tree."""
+        """Partition the entire frozen scope without splitting a root tree. For a model whose
+        timing is not known yet, the first two batches are small and of different sizes: real
+        batches whose times separate its startup cost from its time per token."""
         assert 0 <= reserved_approximate_tokens <= (
             self._settings.max_page_approximate_tokens
         )
@@ -235,9 +251,7 @@ class InvestigationState:
             - reserved_approximate_tokens
         )
         note_ids_by_root_id = self._note_ids_by_root_id()
-        batches: list[InvestigationEvidencePayload] = []
-        batch_root_ids: list[str] = []
-        batch_token_count = 0
+        root_costs: list[tuple[str, int]] = []
         for root_id in self._snapshot.ordered_root_ids:
             root_token_count = self._full_root_token_cost(
                 root_id=root_id,
@@ -249,7 +263,19 @@ class InvestigationState:
                     f"{root_token_count:,} tokens, exceeding the configured "
                     f"per-batch evidence limit of {batch_limit:,} tokens"
                 )
-            if batch_root_ids and batch_token_count + root_token_count > batch_limit:
+            root_costs.append((root_id, root_token_count))
+        needs_probes = with_timing_probes and sum(cost for _root_id, cost in root_costs) > batch_limit
+
+        def limit_of_batch(batch_index: int) -> int:
+            if needs_probes and batch_index < len(_TIMING_PROBE_DIVISORS):
+                return batch_limit // _TIMING_PROBE_DIVISORS[batch_index]
+            return batch_limit
+
+        batches: list[InvestigationEvidencePayload] = []
+        batch_root_ids: list[str] = []
+        batch_token_count = 0
+        for root_id, root_token_count in root_costs:
+            if batch_root_ids and batch_token_count + root_token_count > limit_of_batch(len(batches)):
                 batches.append(self._payload_for_roots(tuple(batch_root_ids)))
                 batch_root_ids = []
                 batch_token_count = 0

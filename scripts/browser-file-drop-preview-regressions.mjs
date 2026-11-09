@@ -113,7 +113,8 @@ export async function checkFileDropPreviews(page) {
     for (const note of await filesView(page)) if (!createdIds.includes(note.id)) createdIds.push(note.id);
   };
   try {
-    // A CSV and a JSON file dropped together: one note, their cards in drop order, no preview notes.
+    // A CSV and a JSON file dropped together, aimed at no note: a note each (docs/ui/references.md),
+    // each with its card, no preview notes.
     await drop(page, '#notes-container', [
       {name: 'data.csv', type: 'text/csv', text: 'name,count\napples,3'},
       {name: 'config.json', type: 'application/json', text: '{"name": "apples", "count": 3}'},
@@ -121,10 +122,13 @@ export async function checkFileDropPreviews(page) {
     await settle(page);
     await leaveEditing(page);
     await waitForNote(page, 'config.json');
-    const both = byFirstPill(await filesView(page), 'data.csv');
+    await waitForNote(page, 'data.csv');
+    const csvNote = byFirstPill(await filesView(page), 'data.csv');
+    const jsonNote = byFirstPill(await filesView(page), 'config.json');
     await track();
-    assert.deepEqual(both.pills, [['.CSV', 'data.csv'], ['.JSON', 'config.json']], 'csv and json: cards by extension, in drop order');
-    assert.equal(both.children.length, 0, 'csv and json: no preview notes');
+    assert.deepEqual([csvNote.pills, jsonNote.pills], [[['.CSV', 'data.csv']], [['.JSON', 'config.json']]], 'csv and json: a note each, with its card');
+    assert.notEqual(csvNote.id, jsonNote.id, 'csv and json: two notes');
+    assert.deepEqual([csvNote.children.length, jsonNote.children.length], [0, 0], 'csv and json: no preview notes');
 
     // A .txt file alone asks Note or File, Note focused; Cancel makes nothing.
     const before = await noteTexts(page);
@@ -164,7 +168,7 @@ export async function checkFileDropPreviews(page) {
 
     // Dropped into the note being edited: the card goes into it, editing continues, and the
     // note does not move; no preview note.
-    const contentSelector = `.note[data-note-id="${both.id}"] .note-content`;
+    const contentSelector = `.note[data-note-id="${csvNote.id}"] .note-content`;
     // In the middle of the window: a drop that keeps everything in sight moves nothing.
     // (At the window's bottom edge the inserted file would be out of sight, and Firefox
     // scrolls it back in view.)
@@ -179,16 +183,16 @@ export async function checkFileDropPreviews(page) {
       {timeout: 5000}, contentSelector);
     // A drop while entering edit mode is still running is refused ("another command is still running").
     await settle(page);
-    const topBefore = byId(await filesView(page), both.id).top;
+    const topBefore = byId(await filesView(page), csvNote.id).top;
     await drop(page, contentSelector, [{name: 'extra.csv', type: 'text/csv', text: 'x,y\n1,2'}], 'end');
     await settle(page);
-    const edited = byId(await filesView(page), both.id);
+    const edited = byId(await filesView(page), csvNote.id);
     assert.equal(edited.editing, true, 'drop while editing: the note is still being edited');
     assert.equal(edited.top, topBefore, 'drop while editing: the note stays where it was');
     assert.equal(edited.children.length, 0, 'drop while editing: no preview note');
     await leaveEditing(page);
     assert.deepEqual(byFirstPill(await filesView(page), 'data.csv').pills,
-      [['.CSV', 'data.csv'], ['.JSON', 'config.json'], ['.CSV', 'extra.csv']], 'drop while editing: the card is in the note');
+      [['.CSV', 'data.csv'], ['.CSV', 'extra.csv']], 'drop while editing: the card is in the note');
   } finally {
     await page.evaluate(async ids => {
       const {NotesAPI} = await import('/static/js/modules/api-client.js');

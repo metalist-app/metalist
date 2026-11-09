@@ -313,14 +313,14 @@ test('agent debugger retains the latest trace and toggles exact detail visibilit
 });
 
 
-test('AI agent settings expose one token window, folded away', () => {
+test('AI agent settings expose one share of the model\'s window, explained by its ?', () => {
     const settingsModal = readFileSync(SETTINGS_MODAL_URL, 'utf8');
     const commandController = readFileSync(COMMAND_CONTROLLER_URL, 'utf8');
 
-    assert.match(settingsModal, /id="ai-agent-max-page-approximate-tokens"/);
-    assert.match(settingsModal, /max="500000"/);
-    assert.match(settingsModal, /<label for="ai-agent-max-page-approximate-tokens">Max token window<\/label>/);
-    assert.match(settingsModal, /class="ai-settings-help" tabindex="0"[^>]*title="\$\{escapeHtml\(TOKEN_WINDOW_TOOLTIP\)\}">\?<\/span>/);
+    assert.match(settingsModal, /id="ai-agent-window-percent"/);
+    assert.match(settingsModal, /min="1" max="100"/);
+    assert.match(settingsModal, /<label for="ai-agent-window-percent">Model window used<\/label>/);
+    assert.match(settingsModal, /class="ai-settings-help" tabindex="0"[^>]*title="\$\{escapeHtml\(WINDOW_PERCENT_TOOLTIP\)\}">\?<\/span>/);
     assert.doesNotMatch(settingsModal, /<details/);
     assert.doesNotMatch(settingsModal, />tokens</);
     assert.match(settingsModal, /A note is never split from its children/);
@@ -334,7 +334,7 @@ test('AI agent settings expose one token window, folded away', () => {
     assert.match(commandController, /openAiRetrievalSettings/);
     assert.doesNotMatch(commandController, /ollamaRetrievalSettings/);
     assert.match(commandController, /readAgentRetrievalSettings/);
-    assert.match(commandController, /maxPageApproximateTokens/);
+    assert.match(commandController, /windowPercent/);
 });
 
 
@@ -404,21 +404,23 @@ test('complete-scope summaries require an explicit choice and expose batch progr
     assert.match(bulkUi, /answer\('cancel'\)/);
     assert.match(bulkUi, /classList\.add\('summary-cancel-btn'\)/);
     assert.match(bulkUi, /querySelector\('\.form-actions'\)\.append\(cleanCancel\)/);
-    // Batch-card transitions and ordering are covered behaviorally in
-    // ai_chat_summary_progress.test.mjs; this only pins the wiring.
-    assert.match(bulkUi, /import \{ renderSummaryBatchPreview \} from '\.\/summary-batch-preview\.js'/);
-    assert.match(bulkUi, /renderSummaryBatchPreview\(stack, event\.summary_batch_preview\)/);
-    assert.match(bulkUi, /if \(wasFollowingNewest\) stack\.scrollTop = stack\.scrollHeight/);
-    assert.match(css, /\.summary-batch-ticker \{[^}]*height: 2\.7em;[^}]*overflow: hidden;/);
-    assert.match(css, /\.summary-batch-line \{[^}]*text-overflow: ellipsis;/);
+    // A summary shows one bar and a percentage, not a card per batch.
+    assert.match(bulkUi, /if \('percent' in event\)/);
+    assert.doesNotMatch(bulkUi, /summary_batch_preview|data-summary-batches/);
+    assert.doesNotMatch(css, /summary-batch-/);
+    // The status and the time share one row, the time at its right end.
+    assert.match(bulkUi, /<div class="bulk-status-row"><p data-status role="status"><\/p><p data-elapsed title="Processing time" hidden><\/p><\/div>/);
+    assert.match(bulkUi, /\.textContent = formatBulkElapsed\(clock\.seconds\(\)\);/);
+    assert.match(css, /\.bulk-status-row \{[^}]*display: flex;/);
     assert.match(controller, /placeChatMessageElements\(\{/);
     assert.match(controller, /this\._ensureOperationPanel\(assistantMessage\.id\)/);
     assert.match(controller, /bulk_complete' && bulkProgressEndsAtCompletion\(\)/);
     assert.doesNotMatch(controller, /insertBefore\(article, this\._bulkPanel\)/);
     assert.match(css, /\.ai-chat-summary-operation \.summary-cancel-btn/);
-    assert.match(css, /\.ai-chat-summary-operation \.summary-batch-stack/);
-    assert.match(bulkUi, /moduleState\.active\.operation !== 'summary'/);
-    assert.match(routes, /"summarize_all"/);
+    assert.match(bulkUi, /return moduleState\.active\.operation === 'summary';/);
+    // A summary asks nothing first, so its progress events say what is running.
+    assert.match(bulkUi, /const isSummary = initialEvent\.operation === 'summary';/);
+    assert.doesNotMatch(routes, /"summarize_all"/);
     assert.match(routes, /"use_prefix"/);
 });
 

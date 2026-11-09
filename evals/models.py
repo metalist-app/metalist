@@ -171,6 +171,9 @@ class PreparedStep(StrictModel):
     response_model: str
     response_schema: dict
     expectation: ActionExpectation | OutputExpectation
+    # The short note IDs (n1, n2…) the production request named notes by: the output is graded
+    # with them translated back to the case's note ids.
+    note_ids_by_alias: dict[str, str]
 
 
 class PreparedCase(StrictModel):

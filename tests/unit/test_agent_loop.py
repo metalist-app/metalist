@@ -522,7 +522,8 @@ def _html_backed_snapshot():
     meter = TextExtractionMeter.start()
     notes = {
         note_id: replace(note, note_text=NoteText.from_html(
-            content_html=f"<p>{note.content_text}</p>", tags_text=note.explicit_tags_text, meter=meter))
+            content_html=f"<p>{note.content_text}</p>", kept_text=note.content_text,
+            tags_text=note.explicit_tags_text, meter=meter))
         for note_id, note in base.notes_by_id.items()
     }
     return replace(base, notes_by_id=MappingProxyType(notes), text_extraction=meter)

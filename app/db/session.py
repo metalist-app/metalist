@@ -60,6 +60,7 @@ class _RequestTransactionState:
     session: Optional[SafeSession]
     guard: Optional[GuardedConnection]
     rollback_callbacks: list[Callable[[], None]]
+    commit_callbacks: list[Callable[[], None]]
     recoveries: dict[Path, LiveDatabaseRecovery | MemoryDatabaseRecovery]
     did_write: bool
 
@@ -110,6 +111,16 @@ def after_request_rollback(callback: Callable[[], None]) -> None:
         state.rollback_callbacks.append(callback)
 
 
+def after_recoverable_commit(callback: Callable[[], None]) -> None:
+    """Run callback once any recoverable change in progress is committed, at once when none is:
+    deleting what a rollback would still need waits for this."""
+    state = _request_transaction_state.get()
+    if state is None or not state.recoveries:
+        callback()
+        return
+    state.commit_callbacks.append(callback)
+
+
 def current_request_state():
     return _request_transaction_state.get()
 
@@ -151,7 +162,7 @@ def recoverable_database_change(database_path: Path):
 def begin_request_transaction() -> Iterator[None]:
     if _request_transaction_state.get() is not None:
         raise RuntimeError("Request transaction already active")
-    state = _RequestTransactionState(session=None, guard=None, rollback_callbacks=[], recoveries={}, did_write=False)
+    state = _RequestTransactionState(session=None, guard=None, rollback_callbacks=[], commit_callbacks=[], recoveries={}, did_write=False)
     token = _request_transaction_state.set(state)
     succeeded = False
     try:
@@ -175,6 +186,8 @@ def begin_request_transaction() -> Iterator[None]:
             _request_transaction_state.reset(token)
             if not succeeded:
                 _run_rollback_callbacks(state.rollback_callbacks)
+    for callback in state.commit_callbacks:
+        callback()
 
 
 @contextmanager

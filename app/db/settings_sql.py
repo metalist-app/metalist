@@ -26,7 +26,7 @@ def _serialize_datetime(value: Optional[datetime]) -> str:
     return value.isoformat()
 
 
-def fetch_settings(connection: GuardedConnection | sqlite3.Connection) -> Optional[dict]:
+def fetch_settings(connection: GuardedConnection | SessionGuardedConnection | sqlite3.Connection) -> Optional[dict]:
     conn = _conn(connection)
     row = conn.execute(
         f"SELECT * FROM {APP_SETTINGS_TABLE} WHERE id = 1",
@@ -78,6 +78,12 @@ def fetch_settings(connection: GuardedConnection | sqlite3.Connection) -> Option
         "gemini_api_key_ciphertext": row["gemini_api_key_ciphertext"],
         "gemini_api_key_encryption_nonce": row["gemini_api_key_encryption_nonce"],
         "gemini_api_key_encryption_tag": row["gemini_api_key_encryption_tag"],
+        "provider_rate_limits_json": row["provider_rate_limits_json"],
+        "provider_rate_limits_encryption_nonce": row["provider_rate_limits_encryption_nonce"],
+        "provider_rate_limits_encryption_tag": row["provider_rate_limits_encryption_tag"],
+        "model_timings_json": row["model_timings_json"],
+        "model_timings_encryption_nonce": row["model_timings_encryption_nonce"],
+        "model_timings_encryption_tag": row["model_timings_encryption_tag"],
         "session_timeout_minutes": row["session_timeout_minutes"],
         "created_at": datetime.fromisoformat(row["created_at"]),
         "updated_at": datetime.fromisoformat(row["updated_at"]),
@@ -347,6 +353,66 @@ def update_tag_prefix_settings_json(
             tag_prefix_settings_json,
             tag_prefix_settings_encryption_nonce,
             tag_prefix_settings_encryption_tag,
+            _serialize_datetime(datetime.now(timezone.utc)),
+        ),
+    )
+
+
+def update_provider_rate_limits_json(
+    connection: GuardedConnection | SessionGuardedConnection | sqlite3.Connection,
+    *,
+    provider_rate_limits_json: str,
+    provider_rate_limits_encryption_nonce: bytes | None,
+    provider_rate_limits_encryption_tag: bytes | None,
+) -> None:
+    """Each model's saved rate limits (app/services/agent/saved_rate_limits.py)."""
+    if not isinstance(provider_rate_limits_json, str):
+        raise TypeError("provider_rate_limits_json must be a string")
+
+    conn = _conn(connection)
+    conn.execute(
+        f"""
+        UPDATE {APP_SETTINGS_TABLE}
+        SET provider_rate_limits_json = ?,
+            provider_rate_limits_encryption_nonce = ?,
+            provider_rate_limits_encryption_tag = ?,
+            updated_at = ?
+        WHERE id = 1
+        """,
+        (
+            provider_rate_limits_json,
+            provider_rate_limits_encryption_nonce,
+            provider_rate_limits_encryption_tag,
+            _serialize_datetime(datetime.now(timezone.utc)),
+        ),
+    )
+
+
+def update_model_timings_json(
+    connection: GuardedConnection | SessionGuardedConnection | sqlite3.Connection,
+    *,
+    model_timings_json: str,
+    model_timings_encryption_nonce: bytes | None,
+    model_timings_encryption_tag: bytes | None,
+) -> None:
+    """Each model's saved timing (app/services/agent/saved_rate_limits.py)."""
+    if not isinstance(model_timings_json, str):
+        raise TypeError("model_timings_json must be a string")
+
+    conn = _conn(connection)
+    conn.execute(
+        f"""
+        UPDATE {APP_SETTINGS_TABLE}
+        SET model_timings_json = ?,
+            model_timings_encryption_nonce = ?,
+            model_timings_encryption_tag = ?,
+            updated_at = ?
+        WHERE id = 1
+        """,
+        (
+            model_timings_json,
+            model_timings_encryption_nonce,
+            model_timings_encryption_tag,
             _serialize_datetime(datetime.now(timezone.utc)),
         ),
     )

@@ -7,7 +7,6 @@ from contextlib import aclosing
 import json
 import math
 import time
-from collections import deque
 from collections.abc import AsyncIterator
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -32,17 +31,25 @@ from app.services.agent.investigation import InvestigationState
 from app.services.agent.investigation import CompleteRootBatchPlan
 from app.services.agent.model_policy import InferencePurpose
 from app.services.agent.model_policy import SingleModelPolicy
+from app.services.agent.note_aliases import NoteAliases
 from app.services.agent.staged_summary import SummaryBatchResult
 from app.services.agent.staged_summary import SummaryFindingsResult
 from app.services.agent.summary_batch_store import summary_batch_key
 from app.services.agent.summary_batch_store import summary_batch_store
 from app.services.agent.staged_summary import attach_summary_coverage
+from app.services.agent.staged_summary import UNCITABLE_ABSENT_FROM_REQUEST
 from app.services.agent.staged_summary import classify_uncitable_note_ids
+from app.services.agent.staged_summary import drop_citations
 from app.services.agent.staged_summary import estimate_summary_results_tokens
 from app.services.agent.staged_summary import partition_summary_results
 from app.services.agent.staged_summary import structural_placeholder_note_ids
 from app.services.agent.staged_summary import summary_reference_note_ids
-from app.services.agent.staged_summary import summarize_partial_findings
+from app.services.agent.saved_rate_limits import DatabaseSavedTimings
+from app.services.agent.staged_summary import ModelTiming
+from app.services.agent.staged_summary import advanced_progress_percent
+from app.services.agent.staged_summary import SUMMARY_PROGRESS_COMPLETE_PERCENT
+from app.services.agent.staged_summary import fit_model_timing
+from app.services.agent.staged_summary import summary_progress_percent
 from app.services.agent.prompt_settings import AgentPromptSet
 from app.services.agent.retrieval_settings import AgentRetrievalSettings
 from app.services.agent.skill_settings import AgentSkill
@@ -50,6 +57,8 @@ from app.services.agent.skill_settings import AgentSkillSet
 from app.services.agent.scope import ScopedSearchSnapshot
 from app.services.agent.scope import describe_text_extraction
 from app.services.agent.scope import read_notes_off_request_loop
+from app.services.agent.provider_limits import gate_for
+from app.services.agent.structured_inference import structured_max_output_tokens
 from app.services.agent.token_estimation import estimate_input_tokens
 from app.services.agent.token_estimation import estimate_message_tokens
 from app.services.agent.token_estimation import estimate_text_tokens
@@ -59,14 +68,12 @@ from app.services.agent.web_capabilities import build_web_url_capabilities
 from app.services.agent.web_evidence import WebPageEvidence
 from app.services.agent.web_evidence import citation_references_for_pages
 from app.services.agent.web_evidence import web_evidence_store
-from app.services.bulk_operation import bulk_operation_guard
 from app.services.agent.history import record_history
 from app.services.agent.ai_send import send_structured
 from app.services.agent.ai_send import send_text_stream
 from app.utils.time_units import MS_PER_SECOND
 
 
-_STAGED_SUMMARY_CONCURRENCY = 4
 _MAX_STAGED_SUMMARY_REDUCTION_LEVELS = 8
 # One batch is a plain summary; staging starts at two.
 _MIN_STAGED_SUMMARY_BATCHES = 2
@@ -75,40 +82,39 @@ _FINAL_RESPONSE_MAX_ATTEMPTS = 2
 # One corrective request when a summary cites IDs that were not disclosed as evidence.
 _SUMMARY_CITATION_CORRECTIONS = 1
 # Streamed batch previews are throttled per batch and trimmed to a compact tail.
-_SUMMARY_STREAM_INTERVAL_SECONDS = 0.3
-_SUMMARY_PREVIEW_TAIL_CHARACTERS = 240
 # While the final response streams, its output-token count is reported again
 # after at least this many more tokens.
 _OUTPUT_PROGRESS_REPORT_TOKENS = 8
 
 
 
+# How often a running summary's bar is moved by the clock.
+_SUMMARY_PROGRESS_TICK_SECONDS = 0.5
+# The bar's value is sent to a tenth of a percent: it moves in small steps.
+_SUMMARY_PROGRESS_DECIMALS = 1
+_SAVED_TIMINGS = DatabaseSavedTimings()
+
+
 @dataclass(frozen=True, slots=True)
 class _SummaryBatchStarted:
     batch_index: int
+    started_at: float
 
 
 @dataclass(frozen=True, slots=True)
-class _SummaryBatchStreaming:
+class _SummaryBatchResponding:
     batch_index: int
-    finding_count: int
-    latest_text: str
-    output_tokens: int
-
-    def __post_init__(self) -> None:
-        assert self.finding_count >= 0
-        assert self.output_tokens >= 0
-        assert len(self.latest_text) <= _SUMMARY_PREVIEW_TAIL_CHARACTERS
 
 
 @dataclass(frozen=True, slots=True)
 class _SummaryBatchCompleted:
     batch_index: int
     summary: SummaryBatchResult
+    finished_at: float
 
 
 _SummaryBatchTransition = (
-    _SummaryBatchStarted | _SummaryBatchStreaming | _SummaryBatchCompleted
+    _SummaryBatchStarted | _SummaryBatchResponding | _SummaryBatchCompleted
 )
 
 
@@ -212,7 +218,7 @@ class AgentRuntime(AgentLoopMixin):
         route_tokens: int,
         continues_failed_summary: bool,
     ) -> AsyncIterator[dict[str, object]]:
-        """Summarize the whole frozen view after the user confirms (the agent's summarize_view).
+        """Summarize the whole frozen view (the agent's summarize_view).
 
         When the agent says this continues a failed summary, batches kept from it
         (summary_batch_store.py) that match exactly are reused, the rest run with the
@@ -229,7 +235,11 @@ class AgentRuntime(AgentLoopMixin):
             approx_input_tokens=route_tokens,
         )
         extraction_before = snapshot.text_extraction.reading()
-        plan_batches = partial(state.plan_complete_root_batches, reserved_approximate_tokens=selected_note_tokens)
+        saved_timing = await asyncio.to_thread(_SAVED_TIMINGS.load, base_url=run.base_url, model=run.selected_model)
+        plan_batches = partial(
+            state.plan_complete_root_batches, reserved_approximate_tokens=selected_note_tokens,
+            with_timing_probes=saved_timing is None,
+        )
         # lint: allow-PY001 rationale="translate a user-configured evidence budget overflow into a concise operation failure"
         try:
             batch_plan = await read_notes_off_request_loop(snapshot=snapshot, read_notes=plan_batches)
@@ -244,8 +254,8 @@ class AgentRuntime(AgentLoopMixin):
             + describe_text_extraction(before=extraction_before, after=snapshot.text_extraction.reading()),
             approx_input_tokens=route_tokens,
         )
-        # One evidence payload means one ordinary model call: no batches to pay
-        # for or choose between, so the summary starts without a question.
+        # A summary covers the whole view, in as many batches as it takes, with no question about
+        # scope (the maintainer, 2026-11-08). One evidence payload is one ordinary model call.
         if len(batch_plan.batches) > 1:
             batch_keys = self._summary_batch_keys(run=run, skill=skill, snapshot=snapshot, plan=batch_plan)
             kept = None
@@ -265,78 +275,25 @@ class AgentRuntime(AgentLoopMixin):
                         plan=batch_plan,
                         batch_keys=batch_keys,
                         reused=reused,
+                        saved_timing=saved_timing,
                     )) as staged_events:
                         async for event in staged_events:
                             yield event
                     return
-            prefix_root_count = InvestigationState.start(
-                snapshot=snapshot,
-                settings=run.retrieval_settings,
-            ).retain_root_prefix_within_token_budget(
-                reserved_approximate_tokens=selected_note_tokens,
-            ).retained_result_tree_count
-            # A summary only reads notes: its question blocks no other change.
-            with bulk_operation_guard.ask(
-                run.session_key, ("summarize_all", "use_prefix", "cancel"),
-            ) as (question_id, answer):
-                # Report scope size against the evidence budget, as tag proposals do.
-                budget_ratio = (
-                    (batch_plan.approximate_token_count + selected_note_tokens)
-                    / run.retrieval_settings.max_page_approximate_tokens
-                )
-                minimum_model_calls = len(batch_plan.batches) + 1
-                yield {
-                    "type": "bulk_question",
-                    "question_id": question_id,
-                    "kind": "summary_confirmation",
-                    "label": (
-                        f"This scope uses approximately {budget_ratio:.2f}× the "
-                        f"evidence budget: its {batch_plan.result_tree_count} root "
-                        f"notes need {len(batch_plan.batches)} evidence batches "
-                        "plus a final synthesis "
-                        f"(at least {minimum_model_calls} model calls). "
-                        f"MetaList runs at most {_STAGED_SUMMARY_CONCURRENCY} "
-                        "batch requests at once."
-                    ),
-                    "root_count": batch_plan.result_tree_count,
-                    "batch_count": len(batch_plan.batches),
-                    "prefix_root_count": prefix_root_count,
-                }
-                choice = await answer
-                if choice == "cancel":
-                    self._trace_store.complete_run(
-                        session_key=run.session_key,
-                        run_id=run.run_id,
-                    )
-                    yield {"type": "bulk_complete", "changed": False}
-                    yield {
-                        "type": "content_delta",
-                        "text": "Summary cancelled.",
-                        "reference_note_ids": [],
-                        "reference_web_ids": [],
-                    }
-                    yield {
-                        "type": "done",
-                        "reference_note_ids": [],
-                        "reference_web_ids": [],
-                    }
-                    return
-                if choice == "summarize_all":
-                    async with aclosing(self._stream_staged_scope_summary(
-                        run=run,
-                        canonical_messages=canonical_messages,
-                        summary_request=canonical_messages[-1]["content"],
-                        state=state,
-                        skill=skill,
-                        plan=batch_plan,
-                        batch_keys=batch_keys,
-                        reused={},
-                    )) as staged_events:
-                        async for event in staged_events:
-                            yield event
-                    return
-                assert choice == "use_prefix"
-                yield {"type": "bulk_complete", "changed": False}
+            async with aclosing(self._stream_staged_scope_summary(
+                run=run,
+                canonical_messages=canonical_messages,
+                summary_request=canonical_messages[-1]["content"],
+                state=state,
+                skill=skill,
+                plan=batch_plan,
+                batch_keys=batch_keys,
+                reused={},
+                saved_timing=saved_timing,
+            )) as staged_events:
+                async for event in staged_events:
+                    yield event
+            return
         retention = await read_notes_off_request_loop(snapshot=snapshot, read_notes=partial(
             state.retain_root_prefix_within_token_budget,
             reserved_approximate_tokens=selected_note_tokens,
@@ -473,6 +430,7 @@ class AgentRuntime(AgentLoopMixin):
         plan: CompleteRootBatchPlan,
         batch_keys: tuple[str, ...],
         reused: dict[int, SummaryBatchResult],
+        saved_timing: ModelTiming | None,
     ) -> AsyncIterator[dict[str, object]]:
         """Batches, condensing and the final answer. If anything fails or the run
         stops, the finished batches are kept (summary_batch_store.py) so the summary
@@ -495,6 +453,7 @@ class AgentRuntime(AgentLoopMixin):
                 skill=skill,
                 plan=plan,
                 summaries=summaries,
+                saved_timing=saved_timing,
             )) as batch_events:
                 async for event in batch_events:
                     yield event
@@ -520,8 +479,7 @@ class AgentRuntime(AgentLoopMixin):
                     "operation": "summary",
                     "committing": False,
                     "label": "Condensing batch summaries for final synthesis",
-                    "completed_tokens": plan.approximate_token_count,
-                    "total_tokens": plan.approximate_token_count,
+                    "percent": SUMMARY_PROGRESS_COMPLETE_PERCENT,
                 }
                 ordered_summaries = await self._reduce_staged_summaries(
                     run=run,
@@ -535,11 +493,8 @@ class AgentRuntime(AgentLoopMixin):
                 "type": "bulk_progress",
                 "operation": "summary",
                 "committing": False,
-                "label": (
-                    f"Writing final answer from {len(plan.batches)} batch summaries"
-                ),
-                "completed_tokens": plan.approximate_token_count,
-                "total_tokens": plan.approximate_token_count,
+                "label": "Writing the final answer",
+                "percent": SUMMARY_PROGRESS_COMPLETE_PERCENT,
             }
             final_messages, reference_note_ids = (
                 self._context_builder.build_staged_summary_final_messages(
@@ -549,6 +504,7 @@ class AgentRuntime(AgentLoopMixin):
                     skill=skill,
                     snapshot=state.snapshot,
                     summaries=ordered_summaries,
+                    note_aliases=state.note_aliases,
                 )
             )
             yield {"type": "bulk_complete", "changed": False}
@@ -589,40 +545,76 @@ class AgentRuntime(AgentLoopMixin):
         skill: AgentSkill,
         plan: CompleteRootBatchPlan,
         summaries: list[SummaryBatchResult | None],
+        saved_timing: ModelTiming | None,
     ) -> AsyncIterator[dict[str, object]]:
-        """Seed the prompt cache with the first batch to run, then drain the rest through a bounded worker pool.
+        """Run every batch through a worker pool the provider's limits bound (provider_limits.py).
 
         ``summaries`` arrives with any batches reused from a failed attempt already
         filled in; the others are filled in canonical batch order, with one progress
-        event for every batch transition, including throttled previews of streamed
-        findings. When a batch fails, batches not started yet do not start, the ones
+        event each time a batch starts, starts responding and finishes, and the clock moves the
+        bar between them against the model's timing. When a batch fails, batches not started yet do not start, the ones
         running finish (their results stay in ``summaries`` to be kept), and the first
         failure then propagates, so no final synthesis runs on partial results.
         """
         batch_count = len(plan.batches)
         assert batch_count >= _MIN_STAGED_SUMMARY_BATCHES
         assert len(summaries) == batch_count
-        batch_states = ["queued"] * batch_count
-        batch_output_tokens = [0] * batch_count
-        completed_tokens = 0
-        for index, summary in enumerate(summaries):
-            if summary is not None:
-                batch_states[index] = "complete"
-                completed_tokens += plan.batches[index].returned_approximate_token_count
-        reused_count = batch_states.count("complete")
-        if reused_count:
+        batch_states = ["complete" if summary is not None else "queued" for summary in summaries]
+        batch_sizes = tuple(batch.returned_approximate_token_count for batch in plan.batches)
+
+        batch_started_at = [0.0] * batch_count
+        timed_batches: list[tuple[int, float]] = []
+        def timing_in_use() -> ModelTiming | None:
+            """This run's own batches once two have finished; until then what was saved, if anything."""
+            fitted = fit_model_timing(tuple(timed_batches))
+            if fitted is not None:
+                return fitted
+            return saved_timing
+
+        def estimated_percent() -> int:
+            now = time.monotonic()
+            return summary_progress_percent(
+                batch_tokens=batch_sizes,
+                batch_states=tuple(batch_states),
+                batch_elapsed_seconds=tuple(
+                    now - started_at if state in ("writing", "responding") else 0.0
+                    for state, started_at in zip(batch_states, batch_started_at)
+                ),
+                timing=timing_in_use(),
+            )
+
+        shown_percent = float(estimated_percent())
+        shown_at = time.monotonic()
+
+        def percent_done() -> float:
+            nonlocal shown_percent, shown_at
+            now = time.monotonic()
+            shown_percent = advanced_progress_percent(
+                shown=shown_percent, target=estimated_percent(), seconds=now - shown_at,
+            )
+            shown_at = now
+            return round(shown_percent, _SUMMARY_PROGRESS_DECIMALS)
+
+        def summarizing_event(percent: float) -> dict[str, object]:
+            return {
+                "type": "bulk_progress",
+                "operation": "summary",
+                "committing": False,
+                "label": f"Summarizing · {int(percent)}%",
+                "percent": percent,
+            }
+
+        if "complete" in batch_states:
             yield {
                 "type": "bulk_progress",
                 "operation": "summary",
                 "committing": False,
-                "label": f"Reused {reused_count} of {batch_count} batches from your earlier attempt",
-                "completed_tokens": completed_tokens,
-                "total_tokens": plan.approximate_token_count,
+                "label": "Reusing your earlier attempt",
+                "percent": percent_done(),
             }
         transitions: asyncio.Queue[_SummaryBatchTransition] = asyncio.Queue()
 
         def apply_transition(transition: _SummaryBatchTransition) -> dict[str, object]:
-            nonlocal completed_tokens
             index = transition.batch_index
             if not 0 <= index < batch_count:
                 raise RuntimeError(f"Summary batch index {index} is outside the plan")
@@ -631,84 +623,36 @@ class AgentRuntime(AgentLoopMixin):
                 if batch_state != "queued":
                     raise RuntimeError(f"Summary batch {index + 1} started more than once")
                 batch_states[index] = "writing"
-                status, finding_count, latest_text = "writing", 0, ""
-            elif isinstance(transition, _SummaryBatchStreaming):
+                batch_started_at[index] = transition.started_at
+            elif isinstance(transition, _SummaryBatchResponding):
                 if batch_state != "writing":
-                    raise RuntimeError(
-                        f"Summary batch {index + 1} streamed outside its request"
-                    )
-                batch_output_tokens[index] = transition.output_tokens
-                status = "streaming"
-                finding_count = transition.finding_count
-                latest_text = transition.latest_text
+                    raise RuntimeError(f"Summary batch {index + 1} responded outside its request")
+                batch_states[index] = "responding"
             else:
                 assert isinstance(transition, _SummaryBatchCompleted)
                 if batch_state == "complete":
-                    raise RuntimeError(
-                        f"Summary batch {index + 1} completed more than once"
-                    )
-                if batch_state != "writing":
-                    raise RuntimeError(
-                        f"Summary batch {index + 1} completed before it started"
-                    )
+                    raise RuntimeError(f"Summary batch {index + 1} completed more than once")
+                if batch_state not in ("writing", "responding"):
+                    raise RuntimeError(f"Summary batch {index + 1} completed before it started")
                 batch_states[index] = "complete"
                 summaries[index] = transition.summary
-                completed_tokens += plan.batches[index].returned_approximate_token_count
-                findings = transition.summary.findings
-                status, finding_count = "complete", len(findings)
-                latest_text = ""
-                if findings:
-                    latest_text = findings[0].text[:_SUMMARY_PREVIEW_TAIL_CHARACTERS]
-            complete_count = batch_states.count("complete")
-            writing_count = batch_states.count("writing")
-            queued_count = batch_states.count("queued")
-            assert complete_count + writing_count + queued_count == batch_count
-            return {
-                "type": "bulk_progress",
-                "operation": "summary",
-                "committing": False,
-                "label": (
-                    f"Summarizing {batch_count} batches · {complete_count} complete · "
-                    f"{writing_count} writing · {queued_count} queued"
-                ),
-                "completed_tokens": completed_tokens,
-                "total_tokens": plan.approximate_token_count,
-                "summary_batch_preview": {
-                    "batch_number": index + 1,
-                    "batch_count": batch_count,
-                    "status": status,
-                    "finding_count": finding_count,
-                    "latest_text": latest_text,
-                    "output_tokens": batch_output_tokens[index],
-                },
-            }
+                timed_batches.append((batch_sizes[index], transition.finished_at - batch_started_at[index]))
+            return summarizing_event(percent_done())
 
-        def stream_reporter(index: int) -> Callable[[StructuredInferenceProgress], None]:
-            last_reported_at = -math.inf
+        def first_response_reporter(index: int) -> Callable[[StructuredInferenceProgress], None]:
+            has_reported = False
 
             def report(progress: StructuredInferenceProgress) -> None:
-                nonlocal last_reported_at
-                if progress.phase != "output_progress":
+                nonlocal has_reported
+                if progress.phase != "output_progress" or has_reported:
                     return
-                reported_at = time.monotonic()
-                if reported_at - last_reported_at < _SUMMARY_STREAM_INTERVAL_SECONDS:
-                    return
-                last_reported_at = reported_at
-                finding_count, latest_text = summarize_partial_findings(
-                    partial_output=progress.partial_output,
-                    tail_characters=_SUMMARY_PREVIEW_TAIL_CHARACTERS,
-                )
-                transitions.put_nowait(_SummaryBatchStreaming(
-                    batch_index=index,
-                    finding_count=finding_count,
-                    latest_text=latest_text,
-                    output_tokens=progress.output_tokens_received,
-                ))
+                has_reported = True
+                transitions.put_nowait(_SummaryBatchResponding(batch_index=index))
 
             return report
 
         async def summarize_batch(index: int) -> None:
-            transitions.put_nowait(_SummaryBatchStarted(batch_index=index))
+            transitions.put_nowait(_SummaryBatchStarted(batch_index=index, started_at=time.monotonic()))
             summary = await self._infer_staged_summary_batch(
                 run=run,
                 canonical_messages=canonical_messages,
@@ -718,51 +662,73 @@ class AgentRuntime(AgentLoopMixin):
                 evidence_payload=plan.batches[index],
                 batch_index=index,
                 batch_count=batch_count,
-                on_stream=stream_reporter(index),
+                on_stream=first_response_reporter(index),
             )
             transitions.put_nowait(
-                _SummaryBatchCompleted(batch_index=index, summary=summary)
+                _SummaryBatchCompleted(batch_index=index, summary=summary, finished_at=time.monotonic())
             )
 
-        async def drain(
-            indexes: tuple[int, ...],
-            worker_count: int,
-        ) -> AsyncIterator[dict[str, object]]:
-            assert indexes and 1 <= worker_count <= _STAGED_SUMMARY_CONCURRENCY
-            pending_indexes = deque(indexes)
+        gate = gate_for(base_url=run.base_url, model=run.selected_model)
 
-            async def summarize_pending_batches() -> None:
-                while pending_indexes:
-                    await summarize_batch(pending_indexes.popleft())
+        def batch_tokens(index: int) -> int:
+            return (plan.batches[index].returned_approximate_token_count
+                    + structured_max_output_tokens(SummaryBatchResult))
 
-            workers = [
-                asyncio.create_task(summarize_pending_batches())
-                for _ in range(min(worker_count, len(indexes)))
-            ]
+        async def drain(indexes: tuple[int, ...]) -> AsyncIterator[dict[str, object]]:
+            """Every batch waits for room in the provider's limits (provider_limits), then
+            starts, unless one has failed meanwhile: batches not started yet never start."""
+            assert indexes
+            has_failed = False
+
+            async def summarize_when_admitted(index: int) -> None:
+                nonlocal has_failed
+                async with gate.slot(batch_tokens(index)):
+                    if has_failed:
+                        return
+                    is_finished = False
+                    try:
+                        await summarize_batch(index)
+                        is_finished = True
+                    finally:
+                        # Said before this batch's room is given to a waiting one, so that one
+                        # sees it and does not start.
+                        if not is_finished:
+                            has_failed = True
+
+            workers = [asyncio.create_task(summarize_when_admitted(index)) for index in indexes]
+            index_of_worker = dict(zip(workers, indexes))
             running_workers = set(workers)
-            first_failure: BaseException | None = None
+            # By batch: with every batch at once, several can fail together; the lowest-numbered
+            # is the one reported, whichever finished first.
+            failures: dict[int, BaseException] = {}
             try:
                 while running_workers or not transitions.empty():
                     next_transition = asyncio.create_task(transitions.get())
                     try:
                         done, _pending = await asyncio.wait(
                             {next_transition, *running_workers},
+                            timeout=_SUMMARY_PROGRESS_TICK_SECONDS,
                             return_when=asyncio.FIRST_COMPLETED,
                         )
                     finally:
                         if not next_transition.done():
                             next_transition.cancel()
-                    for worker in done - {next_transition}:
+                    for worker in running_workers.intersection(done):
                         running_workers.remove(worker)
                         failure = worker.exception()
-                        if failure is not None and first_failure is None:
+                        if failure is not None:
                             # Batches not started yet do not start; running ones finish and are kept.
-                            first_failure = failure
-                            pending_indexes.clear()
+                            failures[index_of_worker[worker]] = failure
+                            has_failed = True
                     if next_transition in done:
                         yield apply_transition(next_transition.result())
-                if first_failure is not None:
-                    raise first_failure
+                    else:
+                        percent_before_tick = round(shown_percent, _SUMMARY_PROGRESS_DECIMALS)
+                        percent = percent_done()
+                        if percent > percent_before_tick:
+                            yield summarizing_event(percent)
+                if failures:
+                    raise failures[min(failures)]
             finally:
                 for worker in workers:
                     if not worker.done():
@@ -771,19 +737,17 @@ class AgentRuntime(AgentLoopMixin):
 
         to_run = tuple(index for index in range(batch_count) if batch_states[index] == "queued")
         if to_run:
-            # The first batch runs alone so later requests can reuse the provider-side prompt cache.
-            async with aclosing(drain(to_run[:1], 1)) as first_batch_events:
-                async for event in first_batch_events:
-                    yield event
-        if len(to_run) > 1:
-            async with aclosing(drain(
-                to_run[1:],
-                _STAGED_SUMMARY_CONCURRENCY,
-            )) as later_batch_events:
-                async for event in later_batch_events:
+            # Every batch at once, as many as the provider's limits allow (the gate: four until a
+            # first answer's headers tell them). Until 2026-11-08 batch 1 ran alone first to seed
+            # the provider's prompt cache, a whole batch's wait for a small share of each batch.
+            async with aclosing(drain(to_run)) as batch_events:
+                async for event in batch_events:
                     yield event
         if batch_states != ["complete"] * batch_count:
             raise RuntimeError("Staged summary workers stopped before every batch completed")
+        timing = fit_model_timing(tuple(timed_batches))
+        if timing is not None:
+            await asyncio.to_thread(_SAVED_TIMINGS.save, base_url=run.base_url, model=run.selected_model, timing=timing)
 
     async def _infer_staged_summary_batch(
         self,
@@ -807,10 +771,12 @@ class AgentRuntime(AgentLoopMixin):
             evidence_payload=evidence_payload,
             batch_index=batch_index,
             batch_count=batch_count,
+            note_aliases=state.note_aliases,
         )
         return await self._infer_cited_summary_findings(
             run=run,
             messages=messages,
+            note_aliases=state.note_aliases,
             expected_root_ids=evidence_payload.result_tree_ids,
             allowed_note_ids=frozenset((
                 *evidence_payload.evidence_note_ids,
@@ -828,13 +794,18 @@ class AgentRuntime(AgentLoopMixin):
         *,
         run: _RunContext,
         messages: list[dict[str, str]],
+        note_aliases: NoteAliases,
         expected_root_ids: tuple[str, ...],
         allowed_note_ids: frozenset[str],
         structural_note_ids: frozenset[str],
         stage_label: str,
         on_stream: Callable[[StructuredInferenceProgress], None],
     ) -> SummaryBatchResult:
-        """Request summary findings, asking once for a correction of uncitable IDs."""
+        """Request summary findings, asking once for a correction of uncitable IDs. The model sees
+        and cites short note IDs (n1, n2…): citations are checked as it wrote them, and the
+        findings kept carry note ids."""
+        allowed_aliases = frozenset(note_aliases.alias(note_id) for note_id in allowed_note_ids)
+        structural_aliases = frozenset(note_aliases.alias(note_id) for note_id in structural_note_ids)
 
         def on_progress(progress: StructuredInferenceProgress) -> None:
             self._record_inference_progress(
@@ -858,15 +829,21 @@ class AgentRuntime(AgentLoopMixin):
                 on_progress=on_progress,
             )
             findings = SummaryFindingsResult.model_validate_json(response.content)
+            # Against what the batch was sent: the correction request quotes the rejected IDs.
             rejected_note_ids = classify_uncitable_note_ids(
                 result=findings,
-                allowed_note_ids=allowed_note_ids,
-                structural_note_ids=structural_note_ids,
-                request_text=json.dumps(attempt_messages),
+                allowed_note_ids=allowed_aliases,
+                structural_note_ids=structural_aliases,
+                request_text=json.dumps(messages),
             )
+            if rejected_note_ids and correction_round == _SUMMARY_CITATION_CORRECTIONS:
+                findings, rejected_note_ids = self._drop_citations_never_sent(
+                    run=run, stage_label=stage_label, findings=findings, rejected_note_ids=rejected_note_ids,
+                    note_aliases=note_aliases,
+                )
             if not rejected_note_ids:
                 result = attach_summary_coverage(
-                    result=findings,
+                    result=SummaryFindingsResult.model_validate(note_aliases.unaliased(findings.model_dump(mode="json"))),
                     expected_root_ids=expected_root_ids,
                     allowed_note_ids=allowed_note_ids,
                 )
@@ -883,8 +860,9 @@ class AgentRuntime(AgentLoopMixin):
                 parsed=findings.model_dump(mode="json"),
                 purpose=InferencePurpose.SUMMARY_BATCH,
             )
+            # Named by note id where the short ID is one, as written otherwise.
             rejected_detail = "; ".join(
-                f"{note_id} ({reason})" for note_id, reason in rejected_note_ids
+                f"{note_aliases.note_id(note_id)} ({reason})" for note_id, reason in rejected_note_ids
             )
             self._trace_store.append_event(
                 session_key=run.session_key,
@@ -894,7 +872,7 @@ class AgentRuntime(AgentLoopMixin):
                 detail={
                     "correction_round": correction_round,
                     "rejected_note_ids": [
-                        {"note_id": note_id, "reason": reason}
+                        {"note_id": note_aliases.note_id(note_id), "reason": reason}
                         for note_id, reason in rejected_note_ids
                     ],
                 },
@@ -914,6 +892,37 @@ class AgentRuntime(AgentLoopMixin):
                 )
             )
         raise RuntimeError("Summary citation correction loop exited without a result")
+
+    def _drop_citations_never_sent(
+        self,
+        *,
+        run: _RunContext,
+        stage_label: str,
+        findings: SummaryFindingsResult,
+        rejected_note_ids: tuple[tuple[str, str], ...],
+        note_aliases: NoteAliases,
+    ) -> tuple[SummaryFindingsResult, tuple[tuple[str, str], ...]]:
+        """After the correction, citations to notes the batch was never sent (a garbled ID, the
+        maintainer's 10,087-note summary on 2026-11-08) link to nothing: dropped, with any finding
+        left citing nothing, and listed in the diagnostics, so the summary goes on. The others (a
+        heading without content, a note sent but not citable, such as a private one) still stop it."""
+        never_sent = frozenset(note_id for note_id, reason in rejected_note_ids if reason == UNCITABLE_ABSENT_FROM_REQUEST)
+        still_rejected = tuple((note_id, reason) for note_id, reason in rejected_note_ids if note_id not in never_sent)
+        if not never_sent or still_rejected:
+            return findings, rejected_note_ids
+        kept, dropped_finding_count = drop_citations(result=findings, note_ids=never_sent)
+        self._trace_store.append_event(
+            session_key=run.session_key,
+            run_id=run.run_id,
+            event_type="SUMMARY_CITATIONS_DROPPED",
+            label=f"{stage_label}: dropped citations to notes it was never sent",
+            detail={
+                "dropped_note_ids": sorted(note_aliases.note_id(note_id) for note_id in never_sent),
+                "dropped_finding_count": dropped_finding_count,
+            },
+            duration_ms=0.0,
+        )
+        return kept, ()
 
     async def _reduce_staged_summaries(
         self,
@@ -964,10 +973,13 @@ class AgentRuntime(AgentLoopMixin):
                 group_index=0,
                 group_count=len(groups),
             )
-            semaphore = asyncio.Semaphore(_STAGED_SUMMARY_CONCURRENCY)
+            gate = gate_for(base_url=run.base_url, model=run.selected_model)
 
             async def reduce_group(index: int) -> tuple[int, SummaryBatchResult]:
-                async with semaphore:
+                # As many groups go at once as the provider's limits allow (provider_limits).
+                group_tokens = (estimate_summary_results_tokens(groups[index])
+                                + structured_max_output_tokens(SummaryBatchResult))
+                async with gate.slot(group_tokens):
                     result = await self._infer_summary_reduction_group(
                         run=run,
                         canonical_messages=canonical_messages,
@@ -1043,10 +1055,12 @@ class AgentRuntime(AgentLoopMixin):
             stage_index=stage_index,
             group_index=group_index,
             group_count=group_count,
+            note_aliases=state.note_aliases,
         )
         return await self._infer_cited_summary_findings(
             run=run,
             messages=messages,
+            note_aliases=state.note_aliases,
             expected_root_ids=expected_root_ids,
             allowed_note_ids=allowed_note_ids,
             structural_note_ids=frozenset(),
@@ -1164,13 +1178,15 @@ class AgentRuntime(AgentLoopMixin):
         progress: StructuredInferenceProgress,
         purpose: InferencePurpose,
     ) -> None:
+        # Before anything else: building the event counts the whole request's tokens, and this
+        # runs for every few words streamed, on the loop every progress event waits for.
+        if progress.phase == "output_progress":
+            return
         event = self._progress_status_event(
             progress,
             purpose=purpose,
             provider_label=self._provider_label,
         )
-        if progress.phase == "output_progress":
-            return
         if progress.phase == "attempt_started":
             self._record_wire_request(
                 run=run,

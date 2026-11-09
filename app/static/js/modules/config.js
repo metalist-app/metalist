@@ -111,6 +111,7 @@ export const CONFIG = {
             SESSIONS: `${API_AUTH_BASE}/sessions`,
             HYDRATE: `${API_AUTH_BASE}/hydrate`,
             HYDRATION_STATUS: `${API_AUTH_BASE}/hydration-status`,
+            WORKSPACE_READY: `${API_AUTH_BASE}/workspace-ready`,
             CLIENT_STATE: `${API_AUTH_BASE}/client-state`,
             CLIENT_PREFERENCES: `${API_AUTH_BASE}/client-state/preferences`,
             COMMAND_PALETTE_USAGE: `${API_AUTH_BASE}/client-state/command-palette-usage`,
@@ -149,13 +150,6 @@ export const CONFIG = {
             RESTORE_IMPORT: `${API_BASE}/backup/restore/import`,
             FOLDER_PICK: `${API_BASE}/backup/folder/pick`,
         },
-        // The old MetaList's notes, offered to an empty namespace (legacy_import.py).
-        LEGACY_IMPORT: {
-            STATUS: `${API_BASE}/legacy-import/status`,
-            CHECK_PASSWORD: `${API_BASE}/legacy-import/check-password`,
-            CONVERT: `${API_BASE}/legacy-import/convert`,
-            CONVERT_PROTECTED: `${API_BASE}/legacy-import/convert-protected`,
-        },
         // The Obsidian import's developer version (PLAN.md): development only.
         IMPORT: {
             FOLDER: `${API_BASE}/import/folder`,
@@ -178,6 +172,8 @@ export const CONFIG = {
         VIRTUAL_FOLDERS: {
             LIST: `${API_BASE}/virtual-folders`,
             FILTER: `${API_BASE}/virtual-folders/filter`,
+            FOLDER_CONTEXT: `${API_BASE}/virtual-folders/folder-context`,
+            FOLDER_CONTEXT_NEW: `${API_BASE}/virtual-folders/folder-context/new`,
             RENAME: `${API_BASE}/virtual-folders/rename`,
             MOVE: `${API_BASE}/virtual-folders/move`,
             FILE_NOTE: `${API_BASE}/virtual-folders/file-note`,

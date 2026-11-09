@@ -19,7 +19,7 @@ test('the import wizard starts with no source chosen, and asks for one', async (
     });
     const { ImportWizard } = await import('../../app/static/js/modules/wizard/setup-wizards.js');
     const services = {
-        getAiSettings: () => ({ provider: 'openai' }), saveAiSettings: async () => {}, afterImport: async () => {}, showDroppedImport: async () => {},
+        getAiSettings: () => ({ provider: 'openai' }), saveAiSettings: async () => {}, announceImport: () => {}, afterImport: async () => {}, showDroppedImport: async () => {},
         setPassword: async () => {}, openPasswordGenerator: async () => {},
     };
     const wizard = new ImportWizard(services);

@@ -58,7 +58,8 @@ from app.services.agent.inference import TARGET_AGENT_CONTEXT_TOKENS
 from app.services.agent.inference import UNMEASURED_SILENCE_LIMIT_SECONDS
 from app.services.agent.inference import connection_lost_message
 from app.services.agent.structured_inference import _broken_rules
-from app.services.agent.structured_inference import _structured_max_output_tokens
+from app.services.agent.structured_inference import structured_max_output_tokens
+from app.services.agent.provider_limits import anthropic_transport
 from app.services.agent.structured_inference import structured_retry_messages
 from app.services.agent.token_estimation import estimate_text_tokens
 from app.services.agent.tool_calling import AgentTool
@@ -91,6 +92,10 @@ _LARGEST_ENFORCED_MIN_ITEMS = 1
 _OUTPUT_PROGRESS_STEP_TOKENS = 8
 _STRUCTURED_MAX_ATTEMPTS = 2
 _PROVIDER_ERROR_DETAIL_CHARS = 500
+
+
+# Each model's context window once Anthropic has reported it, for as long as MetaList runs.
+_CONTEXT_TOKENS_BY_MODEL: dict[str, int] = {}
 
 
 class AnthropicProviderError(InferenceProviderError):
@@ -286,7 +291,7 @@ class AnthropicInferenceAdapter:
         if base_url != self._base_url:
             raise ValueError("Claude inference requires the official API base URL")
 
-    def _client(self, on_wire_request: Callable[[dict[str, object]], None]) -> AsyncAnthropic:
+    def _client(self, on_wire_request: Callable[[dict[str, object]], None], *, model: str) -> AsyncAnthropic:
         async def capture_wire_request(request: httpx2.Request) -> None:
             body = json.loads(await request.aread())
             if not isinstance(body, dict):
@@ -296,6 +301,7 @@ class AnthropicInferenceAdapter:
             on_wire_request(wire_request)
 
         http_client = DefaultAsyncHttpxClient(
+            transport=anthropic_transport(base_url=self._base_url, model=model),
             event_hooks={"request": [capture_wire_request]},
             follow_redirects=False,
             trust_env=False,
@@ -304,13 +310,31 @@ class AnthropicInferenceAdapter:
 
     async def inspect_context_window(self, *, base_url: str, model: str) -> InferenceContextWindow:
         self._validate_base_url(base_url)
-        context_tokens = catalog_entry(_PROVIDER).context_tokens
+        normalized_model = validate_model_name(model)
+        context_tokens = await self._context_tokens(normalized_model)
         return InferenceContextWindow(
-            model=validate_model_name(model),
+            model=normalized_model,
             maximum_tokens=context_tokens,
             loaded_tokens=context_tokens,
             required_tokens=TARGET_AGENT_CONTEXT_TOKENS,
         )
+
+    async def _context_tokens(self, model: str) -> int:
+        """The model's window, as Anthropic's Models API reports it: asked once per model."""
+        if model in _CONTEXT_TOKENS_BY_MODEL:
+            return _CONTEXT_TOKENS_BY_MODEL[model]
+        client = self._client(lambda request: None, model=model)
+        # lint: allow-PY001 rationale="an expected Anthropic API failure becomes the provider error the chat shows"
+        try:
+            info = await client.models.retrieve(model)
+        # lint: allow-PY001 rationale="an expected Anthropic API failure becomes the provider error the chat shows"
+        except APIError as exc:
+            raise AnthropicProviderError(_provider_error_message(exc)) from exc
+        context_tokens = info.max_input_tokens
+        if context_tokens is None:
+            raise AnthropicProviderError(f"Anthropic did not say how much {model} can read")
+        _CONTEXT_TOKENS_BY_MODEL[model] = context_tokens
+        return context_tokens
 
     @record_structured_call
     async def infer_structured(
@@ -360,7 +384,7 @@ class AnthropicInferenceAdapter:
         system, request_messages = claude_request_messages(messages)
         request: dict[str, Any] = {
             "model": model,
-            "max_tokens": _structured_max_output_tokens(response_model),
+            "max_tokens": structured_max_output_tokens(response_model),
             "system": system,
             "messages": request_messages,
             "thinking": _ADAPTIVE_THINKING,
@@ -371,7 +395,7 @@ class AnthropicInferenceAdapter:
             "cache_control": _CACHE_PREFIX,
         }
         attempts.start(request)
-        client = self._client(attempts.record_wire_request)
+        client = self._client(attempts.record_wire_request, model=model)
         # lint: allow-PY001 rationale="Claude API and transport failures are external provider failures"
         try:
             async with client.messages.stream(**request, timeout=claude_silence_limit_seconds(thinking_level)) as stream:  # shockharness: ignore[EXC003] reason="opening Claude's stream is the external operation; its body reads that stream"
@@ -475,7 +499,7 @@ class AnthropicInferenceAdapter:
         if tools:
             request["tools"] = [_claude_tool(tool) for tool in tools]
             request["tool_choice"] = {"type": "auto"}
-        client = self._client(on_request)
+        client = self._client(on_request, model=model)
         has_provider_started = False
         # lint: allow-PY001 rationale="Claude streaming and transport failures are external provider failures"
         try:

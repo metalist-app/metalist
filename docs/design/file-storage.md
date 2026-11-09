@@ -1,6 +1,6 @@
 # File storage: one encrypted file per attachment, with a catalog
 
-**Status:** Future plan. **Direction agreed with the maintainer 2026-10-23; don't build yet.** It's sent now so nothing new leans further on the single files database. The open points are in §10.
+**Status:** Built 2026-11-08 and released in 0.27.0, as §13 records, including where the code differs from the sections below. Streaming uploads and removing the 100 MiB limit are `docs/ready-to-build/streaming-no-file-cap.md`.
 
 Written without looking at the code, apart from a few references noted below. Check every reference before relying on it.
 
@@ -41,16 +41,17 @@ One row per item.
 - **Plaintext:** `item_id` (what notes reference; stable), `blob_id` (the current blob; changes on each revision), `kind` (`original`, `thumbnail`, `preview-light`, `preview-dark`, `text`), `parent_item_id`, `padded_size`, `content_revision`, `backed_up_at`.
 - **Encrypted per field:** timestamps, title, original name, MIME type, real size, origin, metadata, `content_hash` (SHA-256 of the plaintext), and `file_key_wrapped`.
 - **The plaintext columns are the minimum** that backup and crash-leftover cleanup need without the key.
-- **Metadata only, about 1 KB per item.** Thumbnails, previews and text never go in the catalog.
-- Where file tags and extracted-text search live today stays as it is. *Check how they're stored now.*
+- **Metadata only, about 1 KB per item.** Thumbnails, previews and text never go in the catalog. The search filters below are the one addition: about 5 to 8 KB per file that has text.
+- **Search (decided 2026-11-08):** today's `file_texts` table splits. Each file's extracted text becomes a `text` blob, because it can reach 5 MiB per file and the catalog must not grow with what is inside files. A search already reads text one file at a time, only when the filter says the term may be there; benchmark that read when building. The bloom filters stay in the catalog, encrypted: login loads them all at once, and opening thousands of files for that would slow unlock.
 
 ## 4. Blob format, encryption and padding
 
-- **Header:** magic `ML`, a suite byte (AES-256-GCM) and a version, followed by segments.
+- **Header:** magic `ML`, a suite byte (AES-256-GCM), a version and a 7-byte random nonce prefix, followed by segments. Built: §13.
 - **A per-item file key:** a fresh random 256-bit key per item, stored wrapped by the vault key in the catalog. This keeps bulk file encryption off the vault key's nonce budget, and lets one item be re-encrypted alone.
 - **Streaming segments in one file:** fixed plaintext segments (64 KiB proposed), each sealed with a counter-derived nonce, the last marked final. This is the standard streaming-AEAD construction, as used by `age` and libsodium's secretstream. Large files stream, never sit wholly in memory, and are never plaintext on disk. Truncation, reordering and segment swapping are detected.
-- **Padding:** the plaintext is padded with Padmé (at most about 12% overhead), plus a small random amount, so stored sizes don't identify known documents. The padding is removed on read using the real size from the catalog.
-- **No plaintext ever touches disk.** Temporary files hold ciphertext only.
+- **Padding:** the plaintext is padded with Padmé (at most about 12% overhead), plus a random amount up to 1% of the file's size, so stored sizes don't identify known documents. The padding is removed on read using the real size from the catalog.
+- **No plaintext ever touches disk** in a vault with a password. Temporary files hold ciphertext only.
+- **A vault with no password (decided 2026-11-08)** uses the same folder and catalog, with its files unencrypted and unpadded: there is no password behind a key, so encrypting would only pretend to protect them. Setting or removing a password rewrites every file, as it does today, and must survive a crash partway through.
 
 ## 5. Writing and editing (crash-safe order)
 
@@ -91,16 +92,18 @@ One row per item.
 Migrate on open, after a snapshot:
 1. For each `files` row, write the original's blob and a catalog row. Write the previews as `preview-light` and `preview-dark` blobs with their own rows.
 2. Check that every item decrypts and its hash matches.
-3. Keep the old `.files.db` until the next confirmed backup, then delete it.
+3. Delete the old `.files.db` once every item has checked out (decided 2026-11-08). The backup taken before the migration is the way back; waiting for a person's backup would keep two copies forever for anyone who never makes one.
+
+A backup made before this change holds a `.files.db` and is never altered: restoring one installs it and then migrates it like this.
 
 Test it like every migration.
 
 ## 10. Still open
 
-1. ~~Padmé alone, or plus a small random amount~~ **Decided 2026-10-27:** Padmé plus a small random amount (§4). How much is still to set.
+1. ~~Padmé alone, or plus a small random amount~~ **Decided 2026-10-27:** Padmé plus a small random amount (§4). **Decided 2026-11-08:** up to 1% of the file's size.
 2. ~~Hosted retention of deleted files~~ **Decided 2026-10-27, for now:** keep them while any retained snapshot references them, disclosed in the privacy policy (§6). A cap such as 2 years may be revisited.
-3. Segment size (64 KiB proposed); tune on real files.
-4. The crash-leftover grace period and the sweep schedule.
+3. ~~Segment size~~ **Decided 2026-11-08:** 64 KiB (§13).
+4. ~~The crash-leftover grace period~~ **Decided 2026-11-08:** 1 hour. The sweep schedule is left to whoever builds it.
 5. Hosted storage classes: how many days before a blob moves to infrequent access, and how that tier treats small files.
 
 ## 11. Invariants
@@ -110,10 +113,29 @@ Test it like every migration.
 3. A blob is written and synced before the catalog references it.
 4. A backup a person handles is a whole archive. Uploading each blob once is only for backups MetaList runs itself (hosted, or a future cloud integration).
 5. Only a person deletes files nothing references. Machines delete only crash leftovers and expired backup copies.
-6. Stored sizes are padded and names are random. Plaintext never touches disk.
+6. Names are random. In a vault with a password, stored sizes are padded and plaintext never touches disk.
 
 ## 12. Checked 2026-10-27 (filed from the inbox)
 
 - Filed as a future plan, as its status asks. Confirmed: today's `files` and `file_previews` tables (`app/db/file_schema.py`) in `<vault>.metalist.files.db`; `docs/future-plans/hosted-own-copy.md` notes its layout depends on this.
 - **When built:** this changes the files database's schema, so AGENTS.md's "Database Schema Changes Require a Version Bump" applies: a `CURRENT_DATABASE_VERSION` step in `app/db/migrations.py`, the encryption audit (`app/encryption_audit.py`) keyed on the version, every new plaintext column documented in `docs/security/README.md`, and AGENTS.md's backup immutability rules (§9's migration runs on the live vault only, never on a backup).
 - The trim reminder it mentions was built 2026-10-29 (`Trim Reminder` in `docs/ui/command-palette.md`).
+
+## 13. Built so far (2026-11-08)
+
+**Built:** blobs and the catalog (`app/db/blob_store.py`, `app/db/file_schema.py`), streaming encryption (`app/security/streaming_blob.py`), migration 16→17 (`app/db/move_files_to_blobs.py`), backups and restore, crash recovery, the encryption audit, the crash-leftover sweep at startup, and downloads that stream and answer `Range` requests (`app/api/byte_ranges.py`).
+
+**Not built yet (`docs/ready-to-build/streaming-no-file-cap.md`):** uploads still pass through memory and Starlette's temporary file, the 100 MiB limit stays, and in-note audio and video still load the whole file first.
+
+Where this differs from the sections above, the code is right:
+
+- **§3, three tables, not one.** The catalog keeps today's `files`, `file_previews` and `file_texts`, each row naming one blob. It stores the same things with far less change. `kind`, `parent_item_id` and `backed_up_at` wait for hosted backups; a blob's padded size is its size on disk.
+- **§3 and §4, one seal per blob.** `file_key_wrapped`, real size and `content_hash` are one payload, `blob_seal`, encrypted with the vault key like the row's other fields. Each blob, including a revision of an item, has its own key.
+- **§4, header.** Each blob has its own random nonce prefix, and the whole header is each segment's associated data.
+- **§5, deletion.** A blob in use is pinned and goes when its last reader finishes: Windows refuses to delete an open file, and a backup must find every blob its catalog snapshot names. During a password change or a restore nothing is deleted until the change commits, so a rollback finds every blob. Catalog connections use `synchronous=FULL`, so a blob already deleted cannot come back into the catalog after a power cut.
+- **§6, archive format 2.** A backup holds `files/catalog.db` and one member per blob. A vault not yet moved is backed up in the old format, and older archives still restore: the old files database goes back, the catalog is emptied, and the next migration moves it.
+- **§9.** A vault with no password has no unlock to take its safety backup, so startup takes one first (`back_up_before_passwordless_upgrade`).
+- **Segment size (§10.3):** free to change only by a new format version now that real files use it.
+- **Padding:** sits above the encryption. The real size in the seal cuts every read.
+
+**Open (maintainer):** a browser's audio and video players send their own requests, without the tab's session header every file request needs. Letting them jump inside a file means a new way to authorize those requests; see `streaming-no-file-cap.md`, section 9.
