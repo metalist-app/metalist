@@ -440,11 +440,8 @@ function handleKeyDown(event) {
     if (event.key === 'Enter') {
         const searchInput = document.getElementById('search-input');
         const suggestions = document.getElementById('search-suggestions');
-        // Open suggestions take Enter, unless the pointer is over the open list of search contexts:
-        // then Enter makes a new one (handleEnterKey), and the suggestions never see it (the
-        // maintainer, 2026-11-08: with suggestions open it did nothing).
-        if (searchInput && suggestions && !suggestions.hidden && document.activeElement === searchInput
-            && !isSearchContextsKeyboardCreateActive()) {
+        // Open suggestions take Enter, wherever the pointer is.
+        if (searchInput && suggestions && !suggestions.hidden && document.activeElement === searchInput) {
             Logger.logNoop('Ignoring Enter for global shortcuts while search suggestions are open');
             return;
         }
@@ -948,7 +945,9 @@ function handleEnterKey(event) {
     event.preventDefault();
     event.stopPropagation();
 
-    if (isSearchContextsKeyboardCreateActive()) {
+    // The pointer can drift over the open list while the user types in the search box: with the
+    // cursor there, Enter does what it always does there (the maintainer, 2026-11-09).
+    if (document.activeElement !== document.getElementById('search-input') && isSearchContextsKeyboardCreateActive()) {
         void CommandGate.run('keyboard.enter.blank_search_context', async () => {
             await createBlankSearchContextFromHover();
         });
