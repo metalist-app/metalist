@@ -281,3 +281,10 @@ that does not match the namespace's current password state.
 - Modal templates for common patterns
 
 All future enhancements must maintain compatibility with this base architecture.
+
+## Fields that take a tag
+
+Every field that asks for a tag offers the tags in use as you type (agreed 2026-11-10), drawn like the tag bar's list under the field, floating over the dialog (above the field when there is no room below): the tags the search bar matches, by how many notes have them (none of the search bar's recent-activity slots: what you searched for lately says nothing about these fields), those whose name starts with the letters first, then those where a later part does (`q`: `question` before `security-questions`), at most eight, never a built-in `@` tag or one already chosen. Arrow keys move through it, Enter or a click picks one, Escape closes only the list. Nothing is offered for `"a phrase"` in quotes or text with a space, which are no tag.
+
+- Where: the tag bar, the search bar, phone capture, Prioritize and the tag relationship dialogs (each its own list); AI Agent Settings' Privacy fields, where picking a tag adds it as Add does, and AI-Proposed Tags' "Only this tag", where it fills the field (`app/static/js/modules/tag-input-suggestions.js`, rules in `tag-input-offer.js`; tests: `tests/unit/tag_input_suggestions.test.mjs`).
+

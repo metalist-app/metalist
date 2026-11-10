@@ -75,3 +75,4 @@ Chat-requested LLM generation and menu/chat bulk acceptance or rejection use a s
 - Successful application clears the existing undo and redo stacks using the search-context boundary mechanism. Failure, cancellation, or decline preserves the stacks. A result with no changes preserves history.
 - Bulk acceptance/removal is an explicit scoped operation, not reversal of a particular generation pass. It can affect older pending proposals as well.
 - Individual proposal controls retain their existing undo behavior. See [undo/redo scope](state-handling.md#undoredo-with-context-boundaries).
+- Every field that asks for a tag offers the tags in use as you type, also AI Agent Settings' Privacy fields (picking one adds it) and the AI-Proposed Tags dialog's "Only this tag"; nothing is offered for "a phrase" in quotes.

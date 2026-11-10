@@ -6376,6 +6376,41 @@ body.pref-animated-transitions .note-tag-bar:focus-within::after {
     border-color: var(--modal-border-strong);
 }
 
+/* The tags a field that asks for a tag offers (tag-input-suggestions.js), drawn like the tag bar's. */
+.tag-input-suggestions {
+    position: fixed;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 8px;
+    border-radius: 10px;
+    border: 1px solid var(--modal-border);
+    background: var(--modal-surface);
+    box-shadow: var(--modal-menu-shadow);
+    max-height: 240px;
+    overflow-y: auto;
+    /* Above the dialog that holds the field (.modal, 15000). */
+    z-index: 16000;
+}
+
+.tag-input-suggestion {
+    padding: 6px 8px;
+    border-radius: 6px;
+    border: 1px solid transparent;
+    background: var(--modal-quiet-button);
+    color: var(--modal-text);
+    cursor: var(--skin-cursor-pointer, pointer);
+    font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    font-size: 0.9rem;
+}
+
+.tag-input-suggestion:hover,
+.tag-input-suggestion.is-selected {
+    background: var(--modal-selected);
+    border-color: var(--modal-border-strong);
+}
+
 .rich-text-toolbar {
     position: fixed;
     left: 50%;

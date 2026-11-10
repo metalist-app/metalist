@@ -18,6 +18,7 @@ import {
 } from '../ai-chat/cloud-privacy-policy.js';
 import { validateAgentWebAccessMode } from '../ai-chat/agent-web-settings.js';
 import { escapeHtml } from '../html-escape.js';
+import { attachTagSuggestions } from '../tag-input-suggestions.js';
 import { actionRowHtml } from './action-row.js';
 import { showErrorDialog, showErrorDialogFor } from './error-dialog.js';
 import { AI_KEY_WARNINGS, AI_PROVIDERS, aiProvider } from '../ai-chat/ai-providers.js';
@@ -388,6 +389,14 @@ export class AiAgentSettingsModal extends BaseModal {
             this._element(`ai-agent-${side}-add`, HTMLButtonElement).onclick = () => {
                 void this._addRules(side, [input.value], `ai-agent-${side}-input`);
             };
+            // Picking a suggested tag adds it at once, as Add does.
+            if (input.dataset.offersTags !== 'true') {
+                input.dataset.offersTags = 'true';
+                attachTagSuggestions(input, {
+                    chosenTags: () => nonEmptyLines(this.getModalState()[`${side}TagsText`]),
+                    onPick: (tag) => void this._addRules(side, [tag], `ai-agent-${side}-input`),
+                });
+            }
             // A pasted list (one rule per line, or comma-separated) adds every rule.
             input.onpaste = (event) => {
                 const text = event.clipboardData.getData('text/plain');
