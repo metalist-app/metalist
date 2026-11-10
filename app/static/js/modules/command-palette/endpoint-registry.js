@@ -61,23 +61,6 @@ export const COMMAND_SHORTCUTS = Object.freeze({
     'action.open_keyboard_shortcuts_help': Object.freeze({ mod: false, shift: false, key: '?' }),
 });
 
-// Commands that lose what cannot be brought back are red (rule 3). The palette orders
-// commands by use and search, so they keep their place.
-export const DESTRUCTIVE_COMMAND_IDS = Object.freeze(new Set([
-    'action.alphabetize_root_notes_asc',
-    'action.alphabetize_root_notes_desc',
-    'action.delete_notes_in_view',
-    'action.prioritize_tag_back',
-    'action.prioritize_tag_front',
-    'action.remove_all_tag_suggestions_current_context',
-    'action.reset_all_preferences',
-    'action.reset_updated_at_to_created_at',
-    'action.trim_unused_files',
-    'form.delete_current_namespace',
-    'form.remove_password',
-    'form.restore_backup',
-]));
-
 const PASSWORD_COMMANDS_WITHOUT_ONE = new Set(['form.add_password']);
 const PASSWORD_COMMANDS_WITH_ONE = new Set(['form.change_password', 'form.remove_password']);
 const ROOT_REORDER_COMMANDS = new Set([

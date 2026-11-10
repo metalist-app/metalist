@@ -6779,16 +6779,6 @@ body.pref-show-tab-ui .controls .tab-hover-zone:hover .tab-ui-icon {
     background: rgba(0, 0, 0, 0.06);
 }
 
-/* A destructive item (Delete Note): red, last in its own group. */
-.context-menu-item.is-danger {
-    color: #e5484d;
-}
-
-.context-menu-item.is-danger:hover:not(:disabled),
-.context-menu-item.is-danger:focus-visible {
-    color: #ff6369;
-}
-
 .context-menu-item.is-separated {
     margin-top: 6px;
     border-top: 1px solid var(--border-color);
@@ -9693,6 +9683,7 @@ html[data-theme="light"] {
     --modal-surface: #ffffff;
     --modal-surface-raised: #f4f6f9;
     --modal-surface-inset: #ffffff;
+    --modal-surface-grey: #e8eaed;
     --modal-panel-background: #ffffff;
     --modal-border: rgba(15, 23, 42, 0.14);
     --modal-border-strong: rgba(29, 95, 184, 0.55);
@@ -9732,6 +9723,7 @@ html[data-theme="dark"] {
     --modal-surface: #10151d;
     --modal-surface-raised: #171e29;
     --modal-surface-inset: #0a0e14;
+    --modal-surface-grey: #262d38;
     --modal-panel-background: linear-gradient(145deg, rgba(23, 30, 41, 0.98), rgba(12, 17, 24, 0.99));
     --modal-border: rgba(205, 220, 241, 0.16);
     --modal-border-strong: rgba(138, 180, 255, 0.42);
@@ -10285,7 +10277,6 @@ html[data-theme="dark"] body.loading::after {
 }
 
 .command-palette-panel {
-    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
     background: var(--modal-surface);
     color: var(--modal-text);
     border: 1px solid var(--modal-border);
@@ -10312,6 +10303,7 @@ html[data-theme="dark"] body.loading::after {
     border: 1px solid var(--modal-border);
     border-radius: 8px;
     color: var(--modal-text);
+    font-family: inherit;
     font-size: 15px;
 }
 
@@ -10322,6 +10314,7 @@ html[data-theme="dark"] body.loading::after {
 
 .command-palette-suggestions {
     padding: 10px 14px;
+    background: var(--modal-surface-grey);
     border-bottom: 1px solid var(--modal-border);
     color: var(--modal-text-muted);
     font-size: 13px;
@@ -10339,9 +10332,11 @@ html[data-theme="dark"] body.loading::after {
     color: var(--modal-text);
 }
 
+/* The same size as the right-click menus' items. */
 .command-palette-results {
     max-height: calc(min(78vh, 720px) - 130px);
     overflow: auto;
+    font-size: 13px;
 }
 
 .command-palette-row {
@@ -10350,6 +10345,8 @@ html[data-theme="dark"] body.loading::after {
     gap: 16px;
     padding: 10px 14px;
     border-bottom: 1px solid var(--modal-border);
+    cursor: pointer;
+    user-select: none;
 }
 
 .command-palette-row:last-child {
@@ -10370,11 +10367,6 @@ html[data-theme="dark"] body.loading::after {
     color: var(--modal-text-subtle);
     font-size: 12px;
     white-space: nowrap;
-}
-
-/* A destructive command (endpoint-registry.js, DESTRUCTIVE_COMMAND_IDS). */
-.command-palette-row.is-danger .command-palette-row-label {
-    color: var(--modal-danger);
 }
 
 .command-palette-row-value {

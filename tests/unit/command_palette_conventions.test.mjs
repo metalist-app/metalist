@@ -3,14 +3,13 @@ import test from 'node:test';
 
 import {
     COMMAND_SHORTCUTS,
-    DESTRUCTIVE_COMMAND_IDS,
     buildCommandPaletteEndpoints,
     isCommandAvailable,
 } from '../../app/static/js/modules/command-palette/endpoint-registry.js';
 
 // Command palette labels follow the menu rules (docs/ui/modals.md, "Dialog and menu conventions",
 // rules 1-6; agreed 2026-10-24): Title Case, "…" exactly when a dialog asks for more first,
-// shortcuts shown, destructive commands red, commands that cannot apply hidden.
+// shortcuts shown, commands that cannot apply hidden.
 
 function noop() {}
 
@@ -125,27 +124,6 @@ test('commands with a key show it', () => {
         'action.find_in_list': { mod: true, shift: false, key: 'F' },
         'action.open_keyboard_shortcuts_help': { mod: false, shift: false, key: '?' },
     });
-});
-
-test('destructive commands are the ones that lose what cannot be brought back', () => {
-    assert.deepEqual([...DESTRUCTIVE_COMMAND_IDS].sort(), [
-        'action.alphabetize_root_notes_asc',
-        'action.alphabetize_root_notes_desc',
-        'action.delete_notes_in_view',
-        'action.prioritize_tag_back',
-        'action.prioritize_tag_front',
-        'action.remove_all_tag_suggestions_current_context',
-        'action.reset_all_preferences',
-        'action.reset_updated_at_to_created_at',
-        'action.trim_unused_files',
-        'form.delete_current_namespace',
-        'form.remove_password',
-        'form.restore_backup',
-    ]);
-    const ids = new Set(endpoints().map((endpoint) => endpoint.id));
-    for (const id of DESTRUCTIVE_COMMAND_IDS) {
-        assert.equal(ids.has(id), true, `${id} is not a command`);
-    }
 });
 
 test('commands that cannot apply are hidden', () => {

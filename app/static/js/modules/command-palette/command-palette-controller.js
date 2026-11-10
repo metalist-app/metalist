@@ -157,7 +157,6 @@ import { persistUsageBeforeActivation } from './activation-auth-policy.js';
 import { waitForCommandAvailability } from './backup-command-availability.js';
 import {
     COMMAND_SHORTCUTS,
-    DESTRUCTIVE_COMMAND_IDS,
     buildCommandPaletteEndpoints,
     isCommandAvailable,
 } from './endpoint-registry.js';
@@ -1259,10 +1258,6 @@ class CommandPaletteController {
             const endpoint = matches[idx];
             const row = document.createElement('div');
             row.className = 'command-palette-row' + (idx === normalizedIndex ? ' selected' : '');
-            // A destructive command is red; it keeps its place in the list (endpoint-registry.js).
-            if (DESTRUCTIVE_COMMAND_IDS.has(endpoint.id)) {
-                row.classList.add('is-danger');
-            }
             row.dataset.endpointId = endpoint.id;
 
             const label = document.createElement('div');

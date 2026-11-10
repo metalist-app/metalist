@@ -14,8 +14,8 @@ import {
 import { FILE_FILTER_CHOICES, FILE_FILTER_KINDS } from '../mode-manager/services/file-filter-kinds.js';
 
 // Menu rules (docs/ui/modals.md, "Dialog and menu conventions", rule 8): a trailing "…"
-// means a dialog asks for more before anything happens; destructive items come last, red
-// (danger); items that cannot apply are left out; labels are in Title Case.
+// means a dialog asks for more before anything happens; destructive items come last;
+// items that cannot apply are left out; labels are in Title Case.
 
 // The current choice in a submenu is ticked and can be picked like any other; picking it
 // changes nothing (it is already in effect).
@@ -533,7 +533,6 @@ function buildNoteContextItems(context, handlers) {
         icon: 'trash',
         enabled: true,
         separated: true,
-        danger: true,
         shortcut: commandKey('Backspace'),
         onSelect: () => onDeleteNote(noteId),
     });

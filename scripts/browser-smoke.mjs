@@ -87,6 +87,7 @@ import {checkLoginLoadingLine} from './browser-login-loading-line-regressions.mj
 import {checkLoginFade} from './browser-login-fade-regressions.mjs';
 import {checkThemeFade} from './browser-theme-fade-regressions.mjs';
 import {checkPaletteOrder} from './browser-palette-order-regressions.mjs';
+import {checkMenuLook} from './browser-menu-look-regressions.mjs';
 import {checkStatsTags} from './browser-stats-tag-regressions.mjs';
 import {checkDialogKeys} from './browser-dialog-key-regressions.mjs';
 import {checkDialogButtons} from './browser-dialog-button-regressions.mjs';
@@ -532,6 +533,7 @@ try {
     console.log(`PASS stats tag regressions in ${await browser.version()}`);
   } else if (process.env.BROWSER_TEST_SUITE === 'palette-order') {
     await checkPaletteOrder(page);
+    await checkMenuLook(page);
     assert.deepEqual(errors, []);
     console.log(`PASS palette order regressions in ${await browser.version()}`);
   } else if (process.env.BROWSER_TEST_SUITE === 'theme-fade') {
