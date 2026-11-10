@@ -79,6 +79,7 @@ Opening or dismissing the command palette does not clear undo/redo. Global actio
 - Search `LLM` or `OpenAI` to find `AI Agent Settings` for API key and model configuration.
 - Endpoint definitions (behavior/labels) live in code.
 - Palette preferences (`pref.*`) and command usage history are persisted per vault in the main SQLite DB via `/api2/auth/client-state*`, not in browser `localStorage`.
+- `Theme`: `System` (default), `Light`, `Dark` or `Illuminated` (a painted manuscript look, always light); Enter cycles it.
 - `Stats Style`: `Strip` (default), `Tiles` or `Ledger`, how `@stats` and `@sum=…` look; Enter cycles it.
 - The palette keeps its order while open: using a command never moves its row; uses count from the next opening.
 - `Animated transitions` is on by default and controls UI motion such as tag-bar edit transitions, note expand/collapse transitions, the login screen fading out over the notes, and the page cross-fading (300 ms) when `Theme` changes.

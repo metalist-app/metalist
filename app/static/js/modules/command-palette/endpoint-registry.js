@@ -1,4 +1,5 @@
 import { isVirtualFoldersShown } from '../mode-manager/services/virtual-folders-state.js';
+import { THEME_CHOICES } from '../theme-choices.js';
 import {
     baseRootSortMode,
     isRootSortModeReversed,
@@ -388,11 +389,7 @@ export function buildCommandPaletteEndpoints(deps) {
             label: 'Theme',
             persistenceKey: 'pref.theme',
             defaultValue: defaults.theme,
-            options: [
-                { value: 'system', label: 'System' },
-                { value: 'light', label: 'Light' },
-                { value: 'dark', label: 'Dark' },
-            ],
+            options: THEME_CHOICES.map(([value, label]) => ({ value, label })),
             apply: (next) => applyPreference('pref.theme', next),
         },
         {

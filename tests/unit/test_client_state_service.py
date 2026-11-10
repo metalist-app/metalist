@@ -66,6 +66,14 @@ def test_load_client_state_returns_empty_objects_when_settings_row_is_missing(
     }
 
 
+def test_a_skin_is_saved_as_the_theme(memory_settings_db) -> None:
+    del memory_settings_db
+
+    saved = save_client_preferences(preferences={"pref.theme": "illuminated"}, token="")
+
+    assert saved == {"pref.theme": "illuminated"}
+
+
 def test_save_client_preferences_round_trips_through_app_settings(
     memory_settings_db,
 ) -> None:

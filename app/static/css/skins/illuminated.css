@@ -1,0 +1,656 @@
+/* The Illuminated skin (docs/ui/skins.md). Sits on the light theme; every rule starts with
+   html[data-skin="illuminated"]. The art is AI-painted. */
+
+html[data-skin="illuminated"] {
+    /* The average colour of parchment.webp, for the few places that need a flat page colour. */
+    --skin-vellum: #f4d598;
+    --skin-vellum-light: #fbf7e8;
+    --skin-ink: #33230f;
+    --skin-vermilion: #a8321c;
+    --skin-lapis: #2c4a9a;
+    --skin-gold: #b98f2f;
+    --skin-art: /static/img/skins/illuminated;
+    /* The frame: the notes column and this much on each side. */
+    --skin-frame-width: 1050px;
+    --skin-corner-width: 112px;
+    --skin-corner-height: 118px;
+    --skin-vine-width: 62px;
+    /* The frame's box reaches this far past the corners, so the art beside them is not cut off. */
+    --skin-frame-overhang: 38px;
+    /* From the box's edge: the vine's leaves line up with the corner's outer edge. */
+    --skin-vine-inset: 33.5px;
+    /* The bare stem at the top of a vine tile, left out of the first tile so the leaves start at the corner. */
+    --skin-vine-bare-top: 15px;
+    --skin-picture-width: 84px;
+    /* One vine tile is 62 x 357px; the pictures sit on the joins between tiles, a set distance down, where the vine is bare stem. */
+    --skin-vine-tile: calc(var(--skin-vine-width) * 2000 / 347);
+    --skin-vine-join-1: calc(var(--skin-corner-height) + var(--skin-vine-tile) - var(--skin-vine-bare-top));
+    --skin-vine-join-2: calc(var(--skin-corner-height) + 2 * var(--skin-vine-tile) - var(--skin-vine-bare-top));
+    --skin-torn-width: 42px;
+    --skin-desk: #2b1a0e;
+
+    --bg-color: var(--skin-vellum);
+    --text-color: var(--skin-ink);
+    --search-shell-surface: #2a2f63;
+    --search-shell-ink: #f7efd2;
+    /* The parchment stays put with the frame while the notes scroll over it. */
+    background: var(--skin-vellum) url("/static/img/skins/illuminated/parchment.webp") center / cover no-repeat fixed;
+}
+
+/* The page sits on <html>, so the frame can lie between it and the notes. */
+html[data-skin="illuminated"] body {
+    background: transparent;
+}
+
+/* --- The frame: stays put while the notes scroll --- */
+
+html[data-skin="illuminated"]::before,
+html[data-skin="illuminated"]::after {
+    content: '';
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: calc(50% - var(--skin-frame-width) / 2 - var(--skin-frame-overhang));
+    width: calc(var(--skin-frame-width) + 2 * var(--skin-frame-overhang));
+    z-index: -1;
+    pointer-events: none;
+    display: none;
+}
+
+/* Vines down both sides, from under the top corners to the window's bottom. The picture tiles, so
+   nothing fades. */
+html[data-skin="illuminated"]::before {
+    top: var(--skin-corner-height);
+    background:
+        url("/static/img/skins/illuminated/vine.webp") var(--skin-vine-inset) calc(-1 * var(--skin-vine-bare-top)) / var(--skin-vine-width) auto repeat-y,
+        url("/static/img/skins/illuminated/vine-right.webp") right var(--skin-vine-inset) top calc(-1 * var(--skin-vine-bare-top)) / var(--skin-vine-width) auto repeat-y;
+}
+
+/* Corners, then the margin pictures. */
+html[data-skin="illuminated"]::after {
+    background:
+        url("/static/img/skins/illuminated/corner.webp") left var(--skin-frame-overhang) top 0 / var(--skin-corner-width) auto no-repeat,
+        url("/static/img/skins/illuminated/corner-tr.webp") right var(--skin-frame-overhang) top 0 / var(--skin-corner-width) auto no-repeat,
+        url("/static/img/skins/illuminated/lilies.webp") left 22px top calc(var(--skin-vine-join-1) - 47px) / var(--skin-picture-width) auto no-repeat,
+        url("/static/img/skins/illuminated/grapes.webp") right 22px top calc(var(--skin-vine-join-1) - 40px) / var(--skin-picture-width) auto no-repeat,
+        url("/static/img/skins/illuminated/birds.webp") right 16px top calc(var(--skin-vine-join-2) - 38px) / 92px auto no-repeat;
+}
+
+@media (min-width: 1180px) {
+    html[data-skin="illuminated"]::before,
+    html[data-skin="illuminated"]::after {
+        display: block;
+    }
+}
+
+/* The frame assumes the notes column is centred: not so beside the AI chat. */
+html[data-skin="illuminated"]:has(body.pref-show-ai-chat)::before,
+html[data-skin="illuminated"]:has(body.pref-show-ai-chat)::after {
+    display: none;
+}
+
+/* The lamb closes the list, on the page itself, under the last note. */
+html[data-skin="illuminated"] #notes-container::after {
+    content: '';
+    display: block;
+    height: 96px;
+    margin: 28px 0 12px;
+    background: url("/static/img/skins/illuminated/lamb.webp") center / auto 100% no-repeat;
+    pointer-events: none;
+}
+
+/* --- Notes: lines on the page, not cards --- */
+
+html[data-skin="illuminated"] .note {
+    background-color: transparent;
+    border-color: transparent;
+}
+
+html[data-skin="illuminated"] .note.editing {
+    background-color: var(--skin-vellum-light);
+    border-color: var(--skin-gold);
+    box-shadow: 0 4px 14px rgba(70, 45, 10, 0.28);
+}
+
+html[data-skin="illuminated"] .note-content {
+    font-family: "Apple Chancery", "Luminari", "URW Chancery L", cursive;
+    font-size: 1.15rem;
+    color: var(--skin-ink);
+}
+
+html[data-skin="illuminated"] #notes-container > .note > .note-content {
+    display: flow-root;
+}
+
+html[data-skin="illuminated"] .note-content h1,
+html[data-skin="illuminated"] .note-content h2,
+html[data-skin="illuminated"] .note-content h3 {
+    font-family: "Luminari", "Apple Chancery", fantasy;
+    color: var(--skin-vermilion);
+    font-weight: normal;
+}
+
+html[data-skin="illuminated"] .note-content strong,
+html[data-skin="illuminated"] .note-content b {
+    color: var(--skin-lapis);
+}
+
+/* The decorated initial: the first letter of the list's first note and of each note after an ornament, in the painted box. */
+/* Firefox gives ::first-letter only to the block that holds the text itself, so the rules name those blocks too. */
+html[data-skin="illuminated"] #notes-container > .note:nth-child(4n + 1):not([data-note-tags*="@code"]):not([data-note-tags*="@json"]):not([data-note-tags*="@csv"]):not([data-note-tags*="@mermaid"]):not([data-note-tags*="@LaTeX"]) :is(.note-content, .note-content > div:first-child:not([class]), .note-content > .note-with-backlinks > div:first-of-type:not([class]), .note-content > .note-with-backlinks > .meta-markdown > :first-child, .note-content > .meta-markdown > :first-child):not(.note .note *)::first-letter {
+    float: left;
+    font-family: "Luminari", "Apple Chancery", fantasy;
+    font-size: 1.9em;
+    line-height: 1;
+    font-weight: normal;
+    color: var(--skin-vermilion);
+    margin: 2px 8px 0 0;
+    padding: 1px 5px 0;
+    border: 8px solid transparent;
+    border-image: url("/static/img/skins/illuminated/initial-box.webp") 56 / 8px round;
+    background: var(--skin-vellum-light);
+    background-clip: padding-box;
+}
+
+/* Tags as rubrics: red small capitals, no pill. */
+html[data-skin="illuminated"] body[data-tag-style] {
+    --note-tag-border-width: 0;
+    --note-tag-padding: 0 4px;
+    --note-tag-color: var(--skin-vermilion);
+    --note-tag-muted-color: #8a5a4a;
+}
+
+html[data-skin="illuminated"] .note-tag {
+    font-family: "Apple Chancery", "Luminari", cursive;
+    font-variant: small-caps;
+    letter-spacing: 0.04em;
+}
+
+/* --- Fold marks: an ivy leaf in the rubricator's ink, red and blue by turns down the
+   page. It points down over an open note and to the right at a folded one, and keeps its
+   colour under the pointer. --- */
+
+html[data-skin="illuminated"] :is(.note-collapse-toggle, .note-embed-collapse-toggle),
+html[data-skin="illuminated"] :is(.note-collapse-toggle, .note-embed-collapse-toggle):hover {
+    color: var(--skin-vermilion);
+}
+
+html[data-skin="illuminated"] .note:nth-child(even of .note) > .note-collapse-toggle {
+    color: var(--skin-lapis);
+}
+
+html[data-skin="illuminated"] .note-collapse-toggle::before,
+html[data-skin="illuminated"] .note.collapsed > .note-collapse-toggle::before,
+html[data-skin="illuminated"] .note-embed-collapse-toggle::before,
+html[data-skin="illuminated"] .note-embed-collapse-toggle[aria-expanded="false"]::before {
+    content: "";
+    display: block;
+    width: 100%;
+    height: 100%;
+    background-color: currentColor;
+    -webkit-mask: url("/static/img/skins/illuminated/fold-leaf.svg") center / 24px 24px no-repeat;
+    mask: url("/static/img/skins/illuminated/fold-leaf.svg") center / 24px 24px no-repeat;
+    transform: rotate(90deg);
+}
+
+html[data-skin="illuminated"] .note.collapsed > .note-collapse-toggle::before,
+html[data-skin="illuminated"] .note-embed-collapse-toggle[aria-expanded="false"]::before {
+    transform: none;
+}
+
+/* --- Tables, code, diagrams and embeds: leaves of the same page --- */
+
+html[data-skin="illuminated"] {
+    --skin-rule: rgba(110, 78, 25, 0.38);
+    --skin-vellum-shade: #ece2c2;
+}
+
+html[data-skin="illuminated"] .note-content table,
+html[data-skin="illuminated"] .note-content .meta-mermaid-diagram {
+    background: var(--skin-vellum-light);
+    border-color: var(--skin-rule);
+}
+
+html[data-skin="illuminated"] .note-content th,
+html[data-skin="illuminated"] .note-content td {
+    background: transparent;
+    border-color: var(--skin-rule);
+}
+
+html[data-skin="illuminated"] .note-content th {
+    color: var(--skin-vermilion);
+    font-weight: normal;
+}
+
+html[data-skin="illuminated"] .note-content pre,
+html[data-skin="illuminated"] .note-reference-block {
+    background: var(--skin-vellum-shade);
+    border-color: var(--skin-rule);
+}
+
+html[data-skin="illuminated"] .note-content a {
+    color: var(--skin-lapis);
+}
+
+html[data-skin="illuminated"] .note-backlinks-badge {
+    background: rgba(168, 50, 28, 0.12);
+    color: var(--skin-vermilion);
+}
+
+/* A folded note keeps room for its initial: one line of text beside the box. */
+html[data-skin="illuminated"] #notes-container > .note:nth-child(4n + 1).collapsed:not(.editing):not([data-note-tags*="@code"]):not([data-note-tags*="@json"]):not([data-note-tags*="@csv"]):not([data-note-tags*="@mermaid"]):not([data-note-tags*="@LaTeX"]) > .note-content {
+    max-height: none;
+    min-height: 54px;
+}
+
+html[data-skin="illuminated"] .note-tags {
+    font-size: 14px;
+}
+
+/* --- Painted initials: one tile per letter. The letter stays real text (it can be
+   selected and copied); it is made transparent and its tile is painted behind it.
+   A monospace font and 1ch make every tile the same square. --- */
+
+/* initials.webp: 6 tiles a row, A to Z, each 160px in a 168px cell (4px of its own edge
+   around it). One file, so a letter typed for the first time is painted at once. */
+html[data-skin="illuminated"] {
+    --skin-initial-size: 104px;
+    --skin-initial-unit: calc(var(--skin-initial-size) / 160);
+}
+
+html[data-skin="illuminated"] .note[data-initial="A"] { --skin-initial-column: 0; --skin-initial-row: 0; }
+html[data-skin="illuminated"] .note[data-initial="B"] { --skin-initial-column: 1; --skin-initial-row: 0; }
+html[data-skin="illuminated"] .note[data-initial="C"] { --skin-initial-column: 2; --skin-initial-row: 0; }
+html[data-skin="illuminated"] .note[data-initial="D"] { --skin-initial-column: 3; --skin-initial-row: 0; }
+html[data-skin="illuminated"] .note[data-initial="E"] { --skin-initial-column: 4; --skin-initial-row: 0; }
+html[data-skin="illuminated"] .note[data-initial="F"] { --skin-initial-column: 5; --skin-initial-row: 0; }
+html[data-skin="illuminated"] .note[data-initial="G"] { --skin-initial-column: 0; --skin-initial-row: 1; }
+html[data-skin="illuminated"] .note[data-initial="H"] { --skin-initial-column: 1; --skin-initial-row: 1; }
+html[data-skin="illuminated"] .note[data-initial="I"] { --skin-initial-column: 2; --skin-initial-row: 1; }
+html[data-skin="illuminated"] .note[data-initial="J"] { --skin-initial-column: 3; --skin-initial-row: 1; }
+html[data-skin="illuminated"] .note[data-initial="K"] { --skin-initial-column: 4; --skin-initial-row: 1; }
+html[data-skin="illuminated"] .note[data-initial="L"] { --skin-initial-column: 5; --skin-initial-row: 1; }
+html[data-skin="illuminated"] .note[data-initial="M"] { --skin-initial-column: 0; --skin-initial-row: 2; }
+html[data-skin="illuminated"] .note[data-initial="N"] { --skin-initial-column: 1; --skin-initial-row: 2; }
+html[data-skin="illuminated"] .note[data-initial="O"] { --skin-initial-column: 2; --skin-initial-row: 2; }
+html[data-skin="illuminated"] .note[data-initial="P"] { --skin-initial-column: 3; --skin-initial-row: 2; }
+html[data-skin="illuminated"] .note[data-initial="Q"] { --skin-initial-column: 4; --skin-initial-row: 2; }
+html[data-skin="illuminated"] .note[data-initial="R"] { --skin-initial-column: 5; --skin-initial-row: 2; }
+html[data-skin="illuminated"] .note[data-initial="S"] { --skin-initial-column: 0; --skin-initial-row: 3; }
+html[data-skin="illuminated"] .note[data-initial="T"] { --skin-initial-column: 1; --skin-initial-row: 3; }
+html[data-skin="illuminated"] .note[data-initial="U"] { --skin-initial-column: 2; --skin-initial-row: 3; }
+html[data-skin="illuminated"] .note[data-initial="V"] { --skin-initial-column: 3; --skin-initial-row: 3; }
+html[data-skin="illuminated"] .note[data-initial="W"] { --skin-initial-column: 4; --skin-initial-row: 3; }
+html[data-skin="illuminated"] .note[data-initial="X"] { --skin-initial-column: 5; --skin-initial-row: 3; }
+html[data-skin="illuminated"] .note[data-initial="Y"] { --skin-initial-column: 0; --skin-initial-row: 4; }
+html[data-skin="illuminated"] .note[data-initial="Z"] { --skin-initial-column: 1; --skin-initial-row: 4; }
+
+html[data-skin="illuminated"] #notes-container > .note:nth-child(4n + 1)[data-initial]:not([data-note-tags*="@code"]):not([data-note-tags*="@json"]):not([data-note-tags*="@csv"]):not([data-note-tags*="@mermaid"]):not([data-note-tags*="@LaTeX"]) :is(.note-content, .note-content > div:first-child:not([class]), .note-content > .note-with-backlinks > div:first-of-type:not([class]), .note-content > .note-with-backlinks > .meta-markdown > :first-child, .note-content > .meta-markdown > :first-child):not(.note .note *)::first-letter {
+    font-family: ui-monospace, Menlo, Consolas, monospace;
+    /* Firefox ignores line-height on a floated first letter, so the square comes from padding around a letter too small to count. */
+    font-size: 1px;
+    line-height: 1px;
+    color: transparent;
+    margin: 2px 3px 0 0;
+    padding: calc((var(--skin-initial-size) - 1px) / 2) calc((var(--skin-initial-size) - 1ch) / 2);
+    border: 0;
+    border-image: none;
+    background-image: url("/static/img/skins/illuminated/initials.webp");
+    background-repeat: no-repeat;
+    background-size: calc(1008 * var(--skin-initial-unit)) calc(840 * var(--skin-initial-unit));
+    background-position:
+        calc(-1 * (var(--skin-initial-column) * 168 + 4) * var(--skin-initial-unit))
+        calc(-1 * (var(--skin-initial-row) * 168 + 4) * var(--skin-initial-unit));
+}
+
+html[data-skin="illuminated"] #notes-container > .note:nth-child(4n + 1)[data-initial]:not([data-note-tags*="@code"]):not([data-note-tags*="@json"]):not([data-note-tags*="@csv"]):not([data-note-tags*="@mermaid"]):not([data-note-tags*="@LaTeX"]) > .note-content {
+    min-height: calc(var(--skin-initial-size) + 2px);
+}
+
+html[data-skin="illuminated"] .note-content {
+    caret-color: var(--skin-ink);
+}
+
+/* --- The mouse is a painted quill: its nib (bottom left) is the point that clicks. Over
+   anything that can be clicked it is a pointing hand, whose fingertip (top left) clicks.
+   MetaList's own styles ask for var(--skin-cursor-pointer, pointer). --- */
+
+html[data-skin="illuminated"] {
+    --skin-cursor-quill: url("/static/img/skins/illuminated/cursor-quill.png") 0 31;
+    --skin-cursor-pointer: url("/static/img/skins/illuminated/cursor-hand.png") 1 1, pointer;
+}
+
+/* Sharp on a high-density screen, where the browser knows how to choose. */
+@supports (cursor: image-set(url("x.png") 1x, url("y.png") 2x) 1 1, auto) {
+    html[data-skin="illuminated"] {
+        --skin-cursor-quill: image-set(
+            url("/static/img/skins/illuminated/cursor-quill.png") 1x,
+            url("/static/img/skins/illuminated/cursor-quill@2x.png") 2x) 0 31;
+        --skin-cursor-pointer: image-set(
+            url("/static/img/skins/illuminated/cursor-hand.png") 1x,
+            url("/static/img/skins/illuminated/cursor-hand@2x.png") 2x) 1 1, pointer;
+    }
+}
+
+html[data-skin="illuminated"] {
+    --skin-cursor-default: var(--skin-cursor-quill), default;
+    --skin-cursor-text: var(--skin-cursor-quill), text;
+    cursor: var(--skin-cursor-default);
+}
+
+html[data-skin="illuminated"] .note:not(.editing) .note-content {
+    cursor: var(--skin-cursor-default);
+}
+
+html[data-skin="illuminated"] :is(input, textarea, [contenteditable="true"]),
+html[data-skin="illuminated"] .note.editing .note-content {
+    cursor: var(--skin-cursor-text);
+}
+
+html[data-skin="illuminated"] :is(a[href], button, select, summary, input:is([type="checkbox"], [type="radio"], [type="button"], [type="submit"])) {
+    cursor: var(--skin-cursor-pointer);
+}
+
+/* --- The search bar: a painted lapis band edged in gold. search-bar.webp is 1201 x 244: the
+   band is rows 70 to 187, an ivy knot fills the first and last 188 columns, and the band
+   itself starts 64 columns in. The plain middle stretches; the knots keep their shape. The
+   painting stays inside the bar, so the knots' leaves stop short of the page's corner art. --- */
+
+html[data-skin="illuminated"] .controls {
+    /* One column or row of the painting, at the bar's height (the 30px field and its padding). */
+    --skin-bar-unit: calc((30px + 0.7rem) / 118);
+    --skin-bar-knot-width: 0px;
+    background: none;
+    border-radius: 0;
+}
+
+html[data-skin="illuminated"] .controls::before {
+    content: "";
+    position: absolute;
+    top: calc(-70 / 118 * 100%);
+    bottom: calc(-56 / 118 * 100%);
+    left: 0;
+    right: 0;
+    z-index: -1;
+    border: 0 solid transparent;
+    border-width: 0 var(--skin-bar-knot-width);
+    border-image: url("/static/img/skins/illuminated/search-bar.webp") 0 188 fill / 0 var(--skin-bar-knot-width) stretch;
+    pointer-events: none;
+}
+
+/* The knots need room beside the search field: a narrow bar is the plain band. With them,
+   the search-contexts picture and the count move in to clear them, by the same distance. */
+@container search-shell (min-width: 720px) {
+    html[data-skin="illuminated"] .controls::before {
+        --skin-bar-knot-width: calc(188 * var(--skin-bar-unit));
+    }
+
+    html[data-skin="illuminated"] .controls .tab-hover-zone {
+        --skin-bar-inset: 58px;
+    }
+
+    html[data-skin="illuminated"] .controls .search-results-count {
+        right: 58px;
+        width: 80px;
+    }
+}
+
+/* Search contexts: a reading lens over two leaves of vellum. */
+html[data-skin="illuminated"] .controls .tab-ui-icon {
+    display: none;
+}
+
+html[data-skin="illuminated"] .controls .tab-hover-zone {
+    background: url("/static/img/skins/illuminated/icon-contexts.webp") var(--skin-bar-inset, 4px) center / auto 28px no-repeat;
+}
+
+html[data-skin="illuminated"] .controls .search-input {
+    background-color: var(--skin-vellum-light);
+    border-color: var(--skin-gold);
+    border-radius: 2px;
+    color: var(--skin-ink);
+    font-family: "Apple Chancery", "Luminari", "URW Chancery L", cursive;
+    font-size: 16px;
+}
+
+html[data-skin="illuminated"] .controls .search-input:focus {
+    border-color: var(--skin-gold);
+    box-shadow: 0 0 0 2px rgba(185, 143, 47, 0.55);
+}
+
+html[data-skin="illuminated"] .search-input-empty-icon {
+    stroke: rgba(51, 35, 15, 0.5);
+}
+
+/* --- The list of search contexts: a framed leaf of vellum. panel.webp is 474 x 599, its
+   corner ornaments 125 wide and tall; the plain edges between them stretch. Rows keep clear
+   of the corners. --- */
+
+html[data-skin="illuminated"] #search-contexts-list {
+    background: none;
+    border: 8px solid transparent;
+    border-image: url("/static/img/skins/illuminated/panel.webp") 125 fill / 36px stretch;
+    border-radius: 0;
+    padding: 22px 8px;
+    color: var(--skin-ink);
+    font-family: "Apple Chancery", "Luminari", "URW Chancery L", cursive;
+    font-size: 15px;
+    box-shadow: 0 6px 18px rgba(51, 35, 15, 0.35);
+}
+
+/* The current context has a gold bezant before its number; the row under the pointer lies on
+   a stroke of gold leaf, thin enough that the red number still reads. */
+html[data-skin="illuminated"] .tab-context-item {
+    position: relative;
+    isolation: isolate;
+    border: 0;
+    border-radius: 0;
+    padding: 4px 6px 4px 20px;
+    color: var(--skin-ink);
+    background: none;
+}
+
+html[data-skin="illuminated"] .tab-context-item:is(:hover, .is-drop-target)::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    background: url("/static/img/skins/illuminated/gold-stroke.webp") center / 100% 100% no-repeat;
+    opacity: 0.55;
+    pointer-events: none;
+}
+
+html[data-skin="illuminated"] .tab-context-index {
+    position: relative;
+    color: var(--skin-vermilion);
+}
+
+html[data-skin="illuminated"] .tab-context-item.is-active > .tab-context-index::before {
+    content: "";
+    position: absolute;
+    left: -15px;
+    top: 50%;
+    width: 10px;
+    height: 10px;
+    transform: translateY(-50%);
+    background: url("/static/img/skins/illuminated/bezant.webp") center / contain no-repeat;
+}
+
+/* Between two rows: a red pen line with a leaf at each tip and a gold quatrefoil. */
+html[data-skin="illuminated"] .tab-context-item + .tab-context-item {
+    margin-top: 9px;
+}
+
+html[data-skin="illuminated"] .tab-context-item + .tab-context-item::before {
+    content: "";
+    position: absolute;
+    left: 6px;
+    right: 6px;
+    top: -9px;
+    height: 9px;
+    background:
+        url("/static/img/skins/illuminated/divider-center.webp") center / auto 100% no-repeat,
+        url("/static/img/skins/illuminated/divider-left.webp") left center / auto 100% no-repeat,
+        url("/static/img/skins/illuminated/divider-right.webp") right center / auto 100% no-repeat,
+        linear-gradient(#b9310a, #b9310a) center / calc(100% - 8px) 1px no-repeat;
+    pointer-events: none;
+}
+
+/* A folder context's row starts with a clasped book. */
+html[data-skin="illuminated"] .virtual-folder-icon.tab-context-folder-icon {
+    width: 13px;
+    height: 16px;
+    border: 0;
+    border-radius: 0;
+    opacity: 1;
+    vertical-align: -3px;
+    background: url("/static/img/skins/illuminated/icon-book.webp") center / contain no-repeat;
+}
+
+html[data-skin="illuminated"] .virtual-folder-icon.tab-context-folder-icon::before {
+    display: none;
+}
+
+/* A row's two actions are one painted cross, used as a mask: upright and blue it duplicates,
+   turned and red it deletes. Neither changes colour under the pointer. */
+html[data-skin="illuminated"] .tab-context-action,
+html[data-skin="illuminated"] .tab-context-action:hover {
+    width: 13px;
+    height: 14px;
+    vertical-align: middle;
+    color: transparent;
+    background-color: var(--skin-lapis);
+    -webkit-mask: url("/static/img/skins/illuminated/cross.webp") center / contain no-repeat;
+    mask: url("/static/img/skins/illuminated/cross.webp") center / contain no-repeat;
+}
+
+html[data-skin="illuminated"] .tab-context-action--danger,
+html[data-skin="illuminated"] .tab-context-action--danger:hover {
+    background-color: var(--skin-vermilion);
+    transform: rotate(45deg);
+}
+
+html[data-skin="illuminated"] .tab-context-action.is-disabled {
+    opacity: 0.35;
+}
+
+/* --- The torn edges: the page's left and right sides are ripped, with the dark desk behind them.
+   Each strip stretches over the window's height (one picture, so no seam), and its straight side
+   fades into the parchment. They show with the frame. --- */
+@media (min-width: 1180px) {
+    html[data-skin="illuminated"] body::before,
+    html[data-skin="illuminated"] body::after {
+        content: "";
+        position: fixed;
+        top: 0;
+        bottom: 0;
+        width: var(--skin-torn-width);
+        z-index: -2;
+        pointer-events: none;
+    }
+    html[data-skin="illuminated"] body::before {
+        left: 0;
+        background:
+            url("/static/img/skins/illuminated/torn-left.webp") center / 100% 100% no-repeat,
+            linear-gradient(var(--skin-desk), var(--skin-desk)) left / 58% 100% no-repeat;
+    }
+    html[data-skin="illuminated"] body::after {
+        right: 0;
+        background:
+            url("/static/img/skins/illuminated/torn-right.webp") center / 100% 100% no-repeat,
+            linear-gradient(var(--skin-desk), var(--skin-desk)) right / 58% 100% no-repeat;
+    }
+}
+
+/* --- The search suggestions: the same painted panel and ruled rows as the contexts list. --- */
+html[data-skin="illuminated"] .controls .search-suggestions {
+    background: none;
+    /* A thick top and bottom border: rows scroll out of sight before they reach the painted corners. */
+    border: 8px solid transparent;
+    border-width: 26px 8px;
+    border-image: url("/static/img/skins/illuminated/panel.webp") 125 fill / 36px stretch;
+    border-radius: 0;
+    padding: 0 8px;
+    gap: 0;
+    max-height: 300px;
+    box-shadow: 0 6px 18px rgba(51, 35, 15, 0.35);
+    scrollbar-width: thin;
+    scrollbar-color: var(--skin-gold) transparent;
+}
+html[data-skin="illuminated"] .controls .search-suggestion {
+    position: relative;
+    isolation: isolate;
+    flex: 0 0 auto;
+    border: 0;
+    border-radius: 0;
+    padding: 4px 8px;
+    background: none;
+    color: var(--skin-ink);
+    font-family: "Apple Chancery", "Luminari", "URW Chancery L", cursive;
+    font-size: 16px;
+}
+/* The row under the pointer or the arrow keys carries a stroke of gold. */
+html[data-skin="illuminated"] .controls .search-suggestion:is(:hover, .is-selected)::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    background: url("/static/img/skins/illuminated/gold-stroke.webp") center / 100% 100% no-repeat;
+    opacity: 0.55;
+    pointer-events: none;
+}
+html[data-skin="illuminated"] .controls .search-suggestion + .search-suggestion {
+    margin-top: 9px;
+}
+html[data-skin="illuminated"] .controls .search-suggestion + .search-suggestion::before {
+    content: "";
+    position: absolute;
+    left: 8px;
+    right: 8px;
+    top: -9px;
+    height: 9px;
+    background:
+        url("/static/img/skins/illuminated/divider-center.webp") center / auto 100% no-repeat,
+        url("/static/img/skins/illuminated/divider-left.webp") left center / auto 100% no-repeat,
+        url("/static/img/skins/illuminated/divider-right.webp") right center / auto 100% no-repeat,
+        linear-gradient(#b9310a, #b9310a) center / calc(100% - 8px) 1px no-repeat;
+    pointer-events: none;
+}
+html[data-skin="illuminated"] .controls .search-suggestion-window-label {
+    color: var(--skin-vermilion);
+    font-size: 14px;
+}
+
+/* --- Ornaments: one in the space after every fourth top-level note. Twelve, in an order that keeps
+   the busy scenes apart, so one comes back only after 48 notes. Chosen by place in the list. The
+   ornament hangs below the note, outside its outline; a drag's drop line takes its place. --- */
+html[data-skin="illuminated"] {
+    --skin-ornament-width: 250px;
+    --skin-ornament-height: 78px;
+    --skin-ornament-gap: 10px;
+}
+html[data-skin="illuminated"] #notes-container > .note:nth-child(4n):not(:last-child) {
+    margin-bottom: calc(var(--skin-ornament-height) + 2 * var(--skin-ornament-gap));
+}
+html[data-skin="illuminated"] #notes-container > .note:nth-child(4n):not(:last-child):not(.drag-after)::after {
+    content: "";
+    position: absolute;
+    top: calc(100% + var(--skin-ornament-gap));
+    left: calc(50% - var(--skin-ornament-width) / 2);
+    width: var(--skin-ornament-width);
+    height: var(--skin-ornament-height);
+    background: var(--skin-ornament) center / contain no-repeat;
+    pointer-events: none;
+}
+html[data-skin="illuminated"] #notes-container > .note:nth-child(48n + 4) { --skin-ornament: url("/static/img/skins/illuminated/ornament-01.webp"); }
+html[data-skin="illuminated"] #notes-container > .note:nth-child(48n + 8) { --skin-ornament: url("/static/img/skins/illuminated/ornament-05.webp"); }
+html[data-skin="illuminated"] #notes-container > .note:nth-child(48n + 12) { --skin-ornament: url("/static/img/skins/illuminated/ornament-03.webp"); }
+html[data-skin="illuminated"] #notes-container > .note:nth-child(48n + 16) { --skin-ornament: url("/static/img/skins/illuminated/ornament-07.webp"); }
+html[data-skin="illuminated"] #notes-container > .note:nth-child(48n + 20) { --skin-ornament: url("/static/img/skins/illuminated/ornament-08.webp"); }
+html[data-skin="illuminated"] #notes-container > .note:nth-child(48n + 24) { --skin-ornament: url("/static/img/skins/illuminated/ornament-06.webp"); }
+html[data-skin="illuminated"] #notes-container > .note:nth-child(48n + 28) { --skin-ornament: url("/static/img/skins/illuminated/ornament-12.webp"); }
+html[data-skin="illuminated"] #notes-container > .note:nth-child(48n + 32) { --skin-ornament: url("/static/img/skins/illuminated/ornament-10.webp"); }
+html[data-skin="illuminated"] #notes-container > .note:nth-child(48n + 36) { --skin-ornament: url("/static/img/skins/illuminated/ornament-02.webp"); }
+html[data-skin="illuminated"] #notes-container > .note:nth-child(48n + 40) { --skin-ornament: url("/static/img/skins/illuminated/ornament-11.webp"); }
+html[data-skin="illuminated"] #notes-container > .note:nth-child(48n + 44) { --skin-ornament: url("/static/img/skins/illuminated/ornament-04.webp"); }
+html[data-skin="illuminated"] #notes-container > .note:nth-child(48n + 0) { --skin-ornament: url("/static/img/skins/illuminated/ornament-09.webp"); }

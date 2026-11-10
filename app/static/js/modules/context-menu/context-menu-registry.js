@@ -11,6 +11,7 @@ import {
     DATE_RANGE_KINDS,
     DATE_RANGE_PRESETS,
 } from '../mode-manager/services/date-range-kinds.js';
+import { THEME_CHOICES } from '../theme-choices.js';
 import { FILE_FILTER_KINDS, fileFilterMenuLabel, isFileFilterKind } from '../mode-manager/services/file-filter-kinds.js';
 
 // Menu rules (docs/ui/modals.md, "Dialog and menu conventions", rule 8): a trailing "…"
@@ -925,7 +926,7 @@ function buildViewContextItems(context, handlers) {
     const canGoToTop = requireViewFlag(context, 'canGoToTop');
     const canGoToBottom = requireViewFlag(context, 'canGoToBottom');
     const isUntaggedView = requireViewFlag(context, 'isUntaggedView');
-    if (!['system', 'light', 'dark'].includes(context.theme)) {
+    if (!THEME_CHOICES.some(([value]) => value === context.theme)) {
         throw new Error('View context theme must be system, light or dark');
     }
     // A menu item's shortcut: the key alone, with ⌘ (Ctrl), or with ⌘⇧ (Ctrl+Shift).
@@ -998,7 +999,6 @@ function buildViewContextItems(context, handlers) {
 
     const onSetUntaggedView = requireViewHandler(handlers, 'onSetUntaggedView');
     const onSetTheme = requireViewHandler(handlers, 'onSetTheme');
-    const themeChoices = [['system', 'System'], ['light', 'Light'], ['dark', 'Dark']];
     items.push(
         { ...buildViewModeItem(isUntaggedView, onSetUntaggedView), separated: true },
         buildSortModeItem(context.sortMode, context.fileFilterKind, handlers.onSetSortMode),
@@ -1008,7 +1008,7 @@ function buildViewContextItems(context, handlers) {
         // screen, the chat's and the virtual folders' tabs; Tags in List stays in the palette).
         {
             id: 'themes', label: 'Themes', icon: 'theme', enabled: true,
-            submenu: themeChoices.map(([value, label]) => choiceItem({
+            submenu: THEME_CHOICES.map(([value, label]) => choiceItem({
                 id: `theme-${value}`, label, icon: null, isCurrent: context.theme === value, separated: false,
                 onChoose: () => onSetTheme(value),
             })),

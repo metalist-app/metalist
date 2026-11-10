@@ -86,7 +86,7 @@ _ALLOWED_CLIENT_PREFERENCES = {
     "pref.note_layout.vertical_spacing": {"compact", "comfortable", "spacious"},
     "pref.note_layout.note_corners": {"subtle", "rounded", "round"},
     "pref.note_layout.tag_style": {"pills", "text"},
-    "pref.theme": {"system", "light", "dark"},
+    "pref.theme": {"system", "light", "dark", "illuminated"},
     # How @stats and @sum=… totals look (subtree_stats.STATS_STYLES).
     "pref.stats_style": {"strip", "tiles", "ledger"},
     "pref.search_suggestion_windows": "tag_activity_windows",

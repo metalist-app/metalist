@@ -86,6 +86,7 @@ import {checkLoginLogo} from './browser-login-logo-regressions.mjs';
 import {checkLoginLoadingLine} from './browser-login-loading-line-regressions.mjs';
 import {checkLoginFade} from './browser-login-fade-regressions.mjs';
 import {checkThemeFade} from './browser-theme-fade-regressions.mjs';
+import {checkSkin} from './browser-skin-regressions.mjs';
 import {checkPaletteOrder} from './browser-palette-order-regressions.mjs';
 import {checkMenuLook} from './browser-menu-look-regressions.mjs';
 import {checkStatsTags} from './browser-stats-tag-regressions.mjs';
@@ -540,6 +541,10 @@ try {
     await checkThemeFade(page);
     assert.deepEqual(errors, []);
     console.log(`PASS theme fade regressions in ${await browser.version()}`);
+  } else if (process.env.BROWSER_TEST_SUITE === 'skin') {
+    await checkSkin(page);
+    assert.deepEqual(errors, []);
+    console.log(`PASS skin regressions in ${await browser.version()}`);
   } else if (process.env.BROWSER_TEST_SUITE === 'login-fade') {
     await checkLoginFade(page);
     assert.deepEqual(errors, []);

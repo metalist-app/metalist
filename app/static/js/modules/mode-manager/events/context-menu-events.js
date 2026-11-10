@@ -1,3 +1,4 @@
+import { currentThemeChoice } from '../../theme-choices.js';
 import { showVirtualFoldersMenu } from '../services/virtual-folders-service.js';
 import { MS_PER_SECOND } from '../../time-units.js';
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
@@ -1416,7 +1417,6 @@ async function showViewContextMenu(event) {
     if (!(scrollToTopButton instanceof HTMLButtonElement) || !(scrollToBottomButton instanceof HTMLButtonElement)) {
         throw new Error('scroll-to-top or scroll-to-bottom button missing');
     }
-    const themeAttribute = document.documentElement.getAttribute('data-theme');
     const context = {
         kind: 'view',
         isMac: isMacPlatform(),
@@ -1426,7 +1426,7 @@ async function showViewContextMenu(event) {
         canGoToTop: !scrollToTopButton.disabled,
         canGoToBottom: !scrollToBottomButton.disabled,
         isUntaggedView: ModeContext.isUntaggedView === true,
-        theme: themeAttribute === 'light' || themeAttribute === 'dark' ? themeAttribute : 'system',
+        theme: currentThemeChoice(document.documentElement),
         sortMode: ModeContext.activeTabSortMode,
         searchAllowsNewNotes: findUnfillableSearchTerm(ModeContext.searchQuery) === null,
         ...menuContext,

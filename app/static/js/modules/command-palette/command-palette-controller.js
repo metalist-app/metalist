@@ -58,6 +58,8 @@ import { AlphabetizeRootNotesModal } from '../modals/alphabetize-root-notes-moda
 import { ResetUpdatedAtModal } from '../modals/reset-updated-at-modal.js';
 import { ReminderModal } from '../modals/reminder-modal.js';
 import { printNotes } from '../mode-manager/services/print-service.js';
+import { SKIN_BASE_THEME, THEME_CHOICES, isSkinTheme } from '../theme-choices.js';
+import { setSkinInitialsActive } from '../skin-initials.js';
 import { exportNotes } from '../mode-manager/services/export-service.js';
 
 import { VersionInfoModal } from '../modals/version-info-modal.js';
@@ -205,18 +207,32 @@ function droppedHere() {
     return { isDrop: true, dropSearch: ModeContext.searchQuery };
 }
 
+function setOrRemoveAttribute(element, name, value) {
+    if (value === null) {
+        element.removeAttribute(name);
+    } else {
+        element.setAttribute(name, value);
+    }
+}
+
+function themeAttributeOf(theme) {
+    if (isSkinTheme(theme)) {
+        return SKIN_BASE_THEME;
+    }
+    return theme === 'system' ? null : theme;
+}
+
 function applyTheme(theme) {
     const root = document.documentElement;
-    const nextTheme = theme === 'system' ? null : theme;
-    if (root.getAttribute('data-theme') === nextTheme) {
+    const nextTheme = themeAttributeOf(theme);
+    const nextSkin = isSkinTheme(theme) ? theme : null;
+    setSkinInitialsActive(nextSkin !== null);
+    if (root.getAttribute('data-theme') === nextTheme && root.getAttribute('data-skin') === nextSkin) {
         return;
     }
     const setTheme = () => {
-        if (nextTheme === null) {
-            root.removeAttribute('data-theme');
-        } else {
-            root.setAttribute('data-theme', nextTheme);
-        }
+        setOrRemoveAttribute(root, 'data-theme', nextTheme);
+        setOrRemoveAttribute(root, 'data-skin', nextSkin);
     };
     const isFaded = document.body.dataset.appReady === 'true'
         && !document.hidden
@@ -726,7 +742,7 @@ class CommandPaletteController {
         void BackupReminder.preferencesChanged();
         void TrimReminder.preferencesChanged();
 
-        applyTheme(this._getSelect('pref.theme', ['system', 'light', 'dark'], 'system'));
+        applyTheme(this._getSelect('pref.theme', THEME_CHOICES.map(([value]) => value), 'system'));
         // How @stats and @sum=… totals look; exports and prints take it from the page too.
         document.documentElement.dataset.statsStyle = this._getSelect('pref.stats_style', ['strip', 'tiles', 'ledger'], 'strip');
 
