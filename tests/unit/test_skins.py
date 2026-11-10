@@ -97,6 +97,7 @@ def test_skin_ships_its_fonts(skin: str) -> None:
 
 @pytest.mark.parametrize("skin", SKIN_NAMES)
 def test_cursors_fit_the_browsers_limit(skin: str) -> None:
+    # Real cursors only: the quill and hand are drawn on the page (skin-pointer.js).
     cursors = sorted((SKIN_ART_DIRECTORY / skin).glob("cursor-*.png"))
     assert cursors
     for cursor in cursors:

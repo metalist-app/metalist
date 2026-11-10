@@ -325,24 +325,10 @@ html[data-skin="illuminated"] .note-content {
    anything that can be clicked it is a pointing hand, whose fingertip (top left) clicks.
    MetaList's own styles ask for var(--skin-cursor-pointer, pointer). --- */
 
+/* The real cursors are blank; which blank one tells skin-pointer.js what to draw. */
 html[data-skin="illuminated"] {
-    --skin-cursor-quill: url("/static/img/skins/illuminated/cursor-quill.png") 0 31;
-    --skin-cursor-pointer: url("/static/img/skins/illuminated/cursor-hand.png") 1 1, pointer;
-}
-
-/* Sharp on a high-density screen, where the browser knows how to choose. */
-@supports (cursor: image-set(url("x.png") 1x, url("y.png") 2x) 1 1, auto) {
-    html[data-skin="illuminated"] {
-        --skin-cursor-quill: image-set(
-            url("/static/img/skins/illuminated/cursor-quill.png") 1x,
-            url("/static/img/skins/illuminated/cursor-quill@2x.png") 2x) 0 31;
-        --skin-cursor-pointer: image-set(
-            url("/static/img/skins/illuminated/cursor-hand.png") 1x,
-            url("/static/img/skins/illuminated/cursor-hand@2x.png") 2x) 1 1, pointer;
-    }
-}
-
-html[data-skin="illuminated"] {
+    --skin-cursor-quill: url("/static/img/skins/illuminated/cursor-blank-quill.png") 0 0;
+    --skin-cursor-pointer: url("/static/img/skins/illuminated/cursor-blank-hand.png") 0 0, pointer;
     --skin-cursor-default: var(--skin-cursor-quill), default;
     --skin-cursor-text: var(--skin-cursor-quill), text;
     cursor: var(--skin-cursor-default);
@@ -746,4 +732,27 @@ html[data-skin="illuminated"] .note[data-arrow-card] > .note-collapse-toggle::be
 }
 html[data-skin="illuminated"] .note.collapsed[data-arrow-card] > .note-collapse-toggle::before {
     background-image: var(--skin-arrow-closed);
+}
+
+/* The quill and the hand, drawn on the page where the mouse is (skin-pointer.js). */
+html[data-skin="illuminated"] .skin-pointer {
+    position: fixed;
+    top: 0;
+    left: 0;
+    z-index: 2147483647;
+    display: none;
+    pointer-events: none;
+    background: left top / contain no-repeat;
+}
+html[data-skin="illuminated"] .skin-pointer[data-kind="quill"] {
+    display: block;
+    width: 48px;
+    height: 48px;
+    background-image: url("/static/img/skins/illuminated/pointer-quill.png");
+}
+html[data-skin="illuminated"] .skin-pointer[data-kind="hand"] {
+    display: block;
+    width: 42px;
+    height: 48px;
+    background-image: url("/static/img/skins/illuminated/pointer-hand.png");
 }

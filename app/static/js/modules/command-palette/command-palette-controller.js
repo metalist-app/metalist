@@ -61,6 +61,7 @@ import { printNotes } from '../mode-manager/services/print-service.js';
 import { SKIN_BASE_THEME, THEME_CHOICES, isSkinTheme } from '../theme-choices.js';
 import { setSkinInitialsActive } from '../skin-initials.js';
 import { setOldeWordsActive } from '../skin-olde-words.js';
+import { setSkinPointerActive } from '../skin-pointer.js';
 import { exportNotes } from '../mode-manager/services/export-service.js';
 
 import { VersionInfoModal } from '../modals/version-info-modal.js';
@@ -236,6 +237,7 @@ function applyTheme(theme) {
         // After the attribute: the marks measure against the skin's own sizes.
         setSkinInitialsActive(nextSkin !== null);
         setOldeWordsActive(nextSkin !== null);
+        setSkinPointerActive(nextSkin !== null);
     };
     const isFaded = document.body.dataset.appReady === 'true'
         && !document.hidden

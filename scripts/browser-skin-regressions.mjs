@@ -6,6 +6,7 @@ import { runThenCleanUp } from './suite-outcome.mjs';
 // without a trace. Run in Chrome and Firefox: Firefox draws ::first-letter differently.
 
 const REQUESTS_QUIET_MS = 300;
+const POINTER_SETTLE_MS = 120;
 const LONG_TAIL = '<div>Another line</div><div>Another line</div><div>Another line</div>';
 const longNote = firstLine => `<div>${firstLine}</div>${LONG_TAIL}`;
 const NOTE_TEXTS = ['Apple', 'The birch waits for you', 'Bay gypsy', 'Dahlia', 'Elm', 'Fern', 'Gorse', 'Holly', 'Ivy'];
@@ -103,8 +104,8 @@ function assertSkinned(shown) {
   assert.equal(shown.skin, 'illuminated');
   assert.equal(shown.theme, 'light');
   assert.equal(shown.hasErrorOverlay, false);
-  assert.match(shown.pageCursor, /cursor-quill/);
-  assert.match(shown.buttonCursor, /cursor-hand/);
+  assert.match(shown.pageCursor, /cursor-blank-quill/);
+  assert.match(shown.buttonCursor, /cursor-blank-hand/);
   shown.texts.forEach((text, index) => {
     const isOpening = index % NOTES_PER_ORNAMENT === 0;
     assert.equal(shown.initials[index], isOpening ? text[0] : null, `the letter of ${text}`);
@@ -128,8 +129,8 @@ function assertPlain(shown) {
   assert.equal(shown.skin, null);
   assert.equal(shown.theme, null);
   assert.equal(shown.hasErrorOverlay, false);
-  assert.doesNotMatch(shown.pageCursor, /cursor-quill/);
-  assert.doesNotMatch(shown.buttonCursor, /cursor-hand/);
+  assert.doesNotMatch(shown.pageCursor, /cursor-blank/);
+  assert.doesNotMatch(shown.buttonCursor, /cursor-blank/);
   assert.deepEqual(shown.initials, shown.texts.map(() => null));
   assert.deepEqual(shown.ornaments.map(ornament => ornament.image), shown.texts.map(() => 'none'));
 }
@@ -520,6 +521,49 @@ async function writtenOnPageCase(page) {
   assert.deepEqual(coloured, []);
 }
 
+// The quill and hand are drawn where the mouse is, with the point that clicks exactly on it, and
+// even at the very top of the window; a resize arrow stays the browser's own.
+async function drawnPointerCase(page) {
+  const read = () => page.evaluate(() => {
+    const element = document.querySelector('.skin-pointer');
+    const {left, top, width, height} = element.getBoundingClientRect();
+    return {kind: element.dataset.kind || null, left, top, width, height};
+  });
+  const moveTo = async (x, y) => {
+    await page.mouse.move(x, y);
+    await new Promise(resolve => setTimeout(resolve, POINTER_SETTLE_MS));
+  };
+  await moveTo(40, 300);
+  const quill = await read();
+  assert.equal(quill.kind, 'quill');
+  assert.deepEqual([quill.left, quill.top, quill.width, quill.height], [40, 300 - 47, 48, 48]);
+  await moveTo(40, 1);
+  const atTheTop = await read();
+  assert.equal(atTheTop.kind, 'quill', 'still the quill at the top of the window');
+  const buttonPoint = await page.evaluate(() => {
+    const {left, top, width, height} = document.getElementById('scroll-to-bottom-button').getBoundingClientRect();
+    return {x: Math.round(left + width / 2), y: Math.round(top + height / 2)};
+  });
+  await moveTo(buttonPoint.x, buttonPoint.y);
+  const hand = await read();
+  assert.equal(hand.kind, 'hand');
+  assert.deepEqual([hand.left, hand.top, hand.width, hand.height], [buttonPoint.x - 1, buttonPoint.y, 42, 48]);
+  const resizerPoint = await page.evaluate(() => {
+    const resizer = document.createElement('div');
+    resizer.id = 'pointer-test-resizer';
+    resizer.style.cssText = 'position:fixed;left:200px;top:200px;width:40px;height:40px;z-index:99999;cursor:col-resize';
+    document.body.append(resizer);
+    return {x: 220, y: 220};
+  });
+  // Firefox reports the first move over a just-added element against what was under it before.
+  await moveTo(resizerPoint.x - 1, resizerPoint.y);
+  await moveTo(resizerPoint.x, resizerPoint.y);
+  const overResizer = await read();
+  await page.evaluate(() => document.getElementById('pointer-test-resizer').remove());
+  await moveTo(40, 300);
+  assert.equal(overResizer.kind, null);
+}
+
 async function skinCases(page) {
   await reloadApp(page);
   const before = await readPage(page);
@@ -534,6 +578,7 @@ async function skinCases(page) {
   await page.waitForFunction(() => document.querySelector('#notes-container > .note[data-initial]') !== null);
   assertSkinned(await readPage(page));
 
+  await drawnPointerCase(page);
   await writtenOnPageCase(page);
   await rootSizeCase(page);
   await scriptFontCase(page);
