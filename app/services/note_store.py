@@ -522,7 +522,7 @@ class NoteStore:
         if hydration_state.is_running():
             hydration_state.set_phase(
                 phase="matcher_inference",
-                message="Applying ontology matcher rules",
+                message="Matching tag rules",
                 total=len(candidate_note_ids),
             )
         processed_candidates = 0
@@ -642,7 +642,7 @@ class NoteStore:
         if hydration_state.is_running():
             hydration_state.set_phase(
                 phase="tag_inference",
-                message="Applying ontology implications",
+                message="Applying tag rules",
                 total=len(note_map),
             )
         for record in note_map.values():

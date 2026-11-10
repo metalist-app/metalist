@@ -228,7 +228,7 @@ def _populate_from_rows(
     if hydration_state.is_running():
         hydration_state.set_phase(
             phase="decrypt",
-            message="Decrypting notes into memory",
+            message="Decrypting notes",
             total=note_count,
         )
 

@@ -308,7 +308,7 @@ export const Auth = {
             throw new Error('The loading time has not started');
         }
         const elapsed = window.performance.now() - this._loadingStartedAt;
-        this._requireElement('login-loading-elapsed').textContent = ` · ${formatElapsedDuration(elapsed)}`;
+        this._requireElement('login-loading-elapsed').textContent = formatElapsedDuration(elapsed);
     },
 
     _startLoadingElapsed() {

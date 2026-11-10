@@ -83,6 +83,7 @@ import {checkSearchHighlight} from './browser-search-highlight-regressions.mjs';
 import {checkReferenceViews} from './browser-reference-view-regressions.mjs';
 import {installRequestMonitor, waitForAppQuiet} from './browser-app-idle.mjs';
 import {checkLoginLogo} from './browser-login-logo-regressions.mjs';
+import {checkLoginLoadingLine} from './browser-login-loading-line-regressions.mjs';
 import {checkLoginFade} from './browser-login-fade-regressions.mjs';
 import {checkThemeFade} from './browser-theme-fade-regressions.mjs';
 import {checkPaletteOrder} from './browser-palette-order-regressions.mjs';
@@ -522,6 +523,7 @@ try {
     console.log(`PASS phone regressions in ${await browser.version()}`);
   } else if (process.env.BROWSER_TEST_SUITE === 'login-logo') {
     await checkLoginLogo(browser, page, origin);
+    await checkLoginLoadingLine(browser, origin);
     assert.deepEqual(errors, []);
     console.log(`PASS login logo regressions in ${await browser.version()}`);
   } else if (process.env.BROWSER_TEST_SUITE === 'stats-tags') {

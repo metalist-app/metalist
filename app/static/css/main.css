@@ -376,16 +376,29 @@ html:has(> body > .login-page[style*="display: flex"]:not(.login-page-covering):
     transition: width 0.2s ease;
 }
 
+/* The step on the left, its time on the right: the edges of the progress bar above. */
 .login-loading-line {
+    display: flex;
+    align-items: baseline;
+    column-gap: 8px;
     margin-top: 12px;
     min-height: 1.4em;
     font-size: 14px;
     font-style: italic;
-    text-align: center;
+    text-align: left;
     color: rgba(255, 255, 255, 0.5);
 }
 
+.login-loading-message {
+    flex: 1 1 0;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
 .login-loading-elapsed {
+    flex: none;
     font-variant-numeric: tabular-nums;
 }
 
@@ -410,6 +423,7 @@ html:has(> body > .login-page[style*="display: flex"]:not(.login-page-covering):
 
 .login-loading-message[data-state="error"] {
     font-style: normal;
+    white-space: normal;
     color: #ff8a9a;
 }
 

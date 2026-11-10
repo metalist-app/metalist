@@ -351,7 +351,7 @@ def _start_hydration(*, first_load: bool, rebuild_required: bool) -> None:
             return
         hydration_state.begin(
             first_load=first_load,
-            message="Preparing encrypted data",
+            message="Preparing data",
         )
         _hydration_generation = generation
         _hydration_future = _hydration_executor.submit(
