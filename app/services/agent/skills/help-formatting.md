@@ -188,7 +188,7 @@ Other (non-meta) tags may also appear inside wrapper tokens (e.g. `{{foo bar}}`)
 - The transport is cross-platform (Windows/macOS/Linux), but the script itself still runs inside the server host's shell, so command syntax must match that host environment.
 
 ## JSON meta tags
-- `@json`: parses the note content as JSON and pretty-prints it in view mode.
+- `@json`: parses the note content as JSON and pretty-prints it in view mode, with the label `JSON` above it, as `@code=<language>` shows its language.
 - Scoped JSON rendering applies only to the matching wrapped region.
 - Invalid JSON shows a red "Invalid JSON" badge and the raw content.
 

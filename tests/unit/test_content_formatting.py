@@ -996,6 +996,25 @@ def test_format_note_content_for_view_scoped_markdown_meta_renders_selection() -
     assert "{{" not in rendered
 
 
+JSON_LABEL = '<span class="meta-code-language">JSON</span>'
+
+
+def test_json_note_is_labelled_above_the_value() -> None:
+    rendered = format_note_content_for_view(content_html='<div>{"name": "MetaList"}</div>', tags="@json")
+    assert rendered.index(JSON_LABEL) < rendered.index('class="meta-json-pre"')
+
+
+def test_scoped_json_region_is_labelled() -> None:
+    rendered = format_note_content_for_view(content_html='<div>[{"name":"scarlet"}]</div>', tags="[@json]")
+    assert JSON_LABEL in rendered
+
+
+def test_invalid_json_keeps_only_its_error_badge() -> None:
+    rendered = format_note_content_for_view(content_html="<div>{not json</div>", tags="@json")
+    assert "Invalid JSON" in rendered
+    assert JSON_LABEL not in rendered
+
+
 def test_format_note_content_for_view_scoped_json_meta_renders_selection() -> None:
     html = '<div>[{"name":"scarlet"}]</div>'
     rendered = format_note_content_for_view(content_html=html, tags="[@json]")

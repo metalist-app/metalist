@@ -34,6 +34,9 @@ _JSON_ESCAPE_LENGTH = 2
 _JSON_TOOL_INDENT_SPACES = 4
 
 
+JSON_LABEL_HTML = '<span class="meta-code-language">JSON</span>'
+
+
 def _render_json_meta(*, content_html: str, formatting_tags: FrozenSet[str], extra_classes: str, size_style_attr: str) -> str:
     raw_text = _extract_plain_text(content_html)
     ok, pretty, error_message = _pretty_print_json(raw_text)
@@ -54,6 +57,7 @@ def _render_json_meta(*, content_html: str, formatting_tags: FrozenSet[str], ext
 
     return (
         f'<div class="meta-json"{copy_attr}>'
+        f"{JSON_LABEL_HTML}"
         f'<pre class="meta-json-pre"><code class="{code_class}"{size_style_attr}>{highlighted}</code></pre>'
         "</div>"
     )
