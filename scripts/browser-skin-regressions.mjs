@@ -562,6 +562,52 @@ async function drawnPointerCase(page) {
   await page.evaluate(() => document.getElementById('pointer-test-resizer').remove());
   await moveTo(40, 300);
   assert.equal(overResizer.kind, null);
+
+  // While a note is edited or a menu is open, the page has the browser's own cursor everywhere,
+  // and the quill is back the moment that ends, without the mouse moving.
+  const isShown = () => page.evaluate(() => getComputedStyle(document.querySelector('.skin-pointer')).display !== 'none');
+  const pageCursor = () => page.evaluate(() => getComputedStyle(document.elementFromPoint(40, 300)).cursor);
+  const failures = [];
+  const expect = (label, actual, expected) => {
+    if (JSON.stringify(actual) !== JSON.stringify(expected)) failures.push(`${label}: ${JSON.stringify(actual)}, not ${JSON.stringify(expected)}`);
+  };
+  await page.evaluate(async () => {
+    const {DOMUtils} = await import('/static/js/modules/dom-utils.js');
+    DOMUtils.setNoteEditable(document.querySelectorAll('#notes-container > .note')[1], true);
+  });
+  await new Promise(resolve => setTimeout(resolve, POINTER_SETTLE_MS));
+  expect('the moment a note is edited', await isShown(), false);
+  expect('the page while a note is edited', (await pageCursor()).includes('cursor-blank'), false);
+  await page.evaluate(async () => {
+    const {DOMUtils} = await import('/static/js/modules/dom-utils.js');
+    DOMUtils.setNoteEditable(document.querySelectorAll('#notes-container > .note')[1], false);
+  });
+  await new Promise(resolve => setTimeout(resolve, POINTER_SETTLE_MS));
+  expect('the moment editing ends, without moving', [await isShown(), (await read()).kind], [true, 'quill']);
+
+  const notePoint = await page.evaluate(() => {
+    const {left, top, width} = document.querySelectorAll('#notes-container > .note > .note-content')[1].getBoundingClientRect();
+    return {x: Math.round(left + width / 2), y: Math.round(top + 12)};
+  });
+  await page.mouse.click(notePoint.x, notePoint.y, {button: 'right'});
+  await page.waitForSelector('.context-menu.is-visible');
+  expect('the moment a right-click menu opens', await isShown(), false);
+  expect('the page with a right-click menu open', (await pageCursor()).includes('cursor-blank'), false);
+  await page.keyboard.press('Escape');
+  await new Promise(resolve => setTimeout(resolve, POINTER_SETTLE_MS));
+  expect('the moment the right-click menu closes, without moving', await isShown(), true);
+
+  await page.evaluate(async () => {
+    const {CommandPalette} = await import('/static/js/modules/command-palette/command-palette-controller.js');
+    await CommandPalette.open();
+  });
+  await page.waitForSelector('#command-palette-input', {visible: true});
+  expect('the moment the main menu opens', await isShown(), false);
+  await page.keyboard.press('Escape');
+  await new Promise(resolve => setTimeout(resolve, POINTER_SETTLE_MS));
+  expect('the moment the main menu closes, without moving', await isShown(), true);
+  await moveTo(40, 300);
+  assert.deepEqual(failures, []);
 }
 
 async function skinCases(page) {

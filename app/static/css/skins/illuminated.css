@@ -756,3 +756,15 @@ html[data-skin="illuminated"] .skin-pointer[data-kind="hand"] {
     height: 48px;
     background-image: url("/static/img/skins/illuminated/pointer-hand.png");
 }
+
+/* While a note is being edited, or a right-click menu or the main menu is open, the cursor is the
+   browser's own everywhere on the page, wherever the mouse is. */
+html[data-skin="illuminated"]:has(.note.editing, .context-menu.is-visible, #command-palette-modal[style*="display: block"]) {
+    --skin-cursor-default: default;
+    --skin-cursor-text: text;
+    --skin-cursor-pointer: pointer;
+    cursor: default;
+}
+html[data-skin="illuminated"]:has(.note.editing, .context-menu.is-visible, #command-palette-modal[style*="display: block"]) .skin-pointer {
+    display: none;
+}

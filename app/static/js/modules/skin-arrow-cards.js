@@ -1,6 +1,7 @@
 // Ye Olde Scrypte's fold arrows are pictures dealt from a deck: every picture once, in no
 // particular order, then a reshuffle (docs/ui/skins.md).
 export const ARROW_CARD_COUNT = 16;
+const MIN_DECK_SIZE = 2;
 
 function shuffled(cardCount, randomNumber) {
     const cards = Array.from({ length: cardCount }, (unused, card) => card);
@@ -13,7 +14,7 @@ function shuffled(cardCount, randomNumber) {
 
 // A new deck never starts with the card the last one ended on, so no two in a row match.
 export function createCardDeck(cardCount, randomNumber) {
-    if (!Number.isInteger(cardCount) || cardCount < 2) {
+    if (!Number.isInteger(cardCount) || cardCount < MIN_DECK_SIZE) {
         throw new Error('A deck needs at least two cards');
     }
     let cards = [];
