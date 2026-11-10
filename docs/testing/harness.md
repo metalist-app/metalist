@@ -159,7 +159,7 @@ The browser smoke waits for `data-app-ready`, verifies rendered edit/undo result
 
 `scripts/browser-file-drop-note-regressions.mjs` (`BROWSER_TEST_SUITE=file-drop-notes`) checks each agreed case of where dropped files go: one note per file unless aimed at a note, and images on a tree folder through Import's Images screen.
 
-`scripts/browser-file-size-sort-regressions.mjs` (`BROWSER_TEST_SUITE=file-size-sort`) checks the File size order: offered only while Notes with Files is on, biggest total first and reversed, only the filter's files counted, each note's total in the margin to the pixel or inside the note when the margin is gone, the sizes kept out of the note's text, and ending the filter ending the order.
+`scripts/browser-file-size-sort-regressions.mjs` (`BROWSER_TEST_SUITE=file-size-sort`) checks the Notes with Files menu's kinds (most files first, a type picked from it) and the File size order: offered only while Notes with Files is on, biggest total first and reversed, only the filter's files counted, each note's total in the margin to the pixel or inside the note when the margin is gone, the sizes kept out of the note's text, and ending the filter ending the order.
 
 `scripts/browser-view-change-top-regressions.mjs` (`BROWSER_TEST_SUITE=view-change-top`) narrows the list by a date range, Untagged and a folder (its chip and the tree) to a note the full list has far down, widens it again, and checks the page is at its top.
 

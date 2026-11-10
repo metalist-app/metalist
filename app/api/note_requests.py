@@ -147,8 +147,8 @@ class UpdateTabDateFilterRequest(TypedDict):
 @with_config(ConfigDict(strict=True))
 class UpdateTabFileFilterRequest(TypedDict):
     tabId: Identifier
-    # "none" shows every note again; "any" every note with an attached file.
-    kind: Literal["none", "any", "image", "pdf", "markdown"]
+    # "none" shows every note again; else a kind checked by make_file_filter.
+    kind: str
     clientId: Identifier
     undoContext: UndoContext
 

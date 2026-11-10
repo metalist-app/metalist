@@ -8,10 +8,11 @@ from typing import Dict, List, Optional, Set
 
 import pytest
 
+import app.services.file_filter_types as file_filter_types
 import app.services.snapshot as snapshot
 from app.models.database import SafeSession
 from app.security.encryption import set_encryption_required
-from app.services.file_kinds import FILE_KIND_MARKDOWN, FILE_KIND_OTHER, FILE_KIND_PDF, FILE_KIND_IMAGE, file_kind_of
+from app.services.file_kinds import FILE_KIND_MARKDOWN, FILE_KIND_NO_EXTENSION, FILE_KIND_PDF, FILE_KIND_IMAGE, file_kind_of, make_file_filter
 from app.services.file_registry import FileDetails, FileRegistry
 from app.services.input_errors import InputRejected
 from app.services.snapshot import SearchScope
@@ -29,8 +30,15 @@ ZIP_ID = "44444444-aaaa-4aaa-8aaa-444444444444"
     ("pdf", "report.pdf", FILE_KIND_PDF),
     ("text", "README.MD", FILE_KIND_MARKDOWN),
     ("other", "notes.markdown", FILE_KIND_MARKDOWN),
-    ("text", "notes.txt", FILE_KIND_OTHER),
-    ("excalidraw", "plan.excalidraw", FILE_KIND_OTHER),
+    ("text", "notes.txt", ".txt"),
+    ("excalidraw", "plan.excalidraw", ".excalidraw"),
+    ("other", "script.JS", ".js"),
+    ("other", "archive.tar.gz", ".gz"),
+    ("other", "LICENSE", FILE_KIND_NO_EXTENSION),
+    ("other", ".bashrc", FILE_KIND_NO_EXTENSION),
+    # What follows the last dot is no extension: a space in it, or too long for one.
+    ("other", "v1.final draft", FILE_KIND_NO_EXTENSION),
+    ("other", "a.thisisnoextensionatall", FILE_KIND_NO_EXTENSION),
 ])
 def test_a_file_kind_comes_from_its_thumbnail_kind_or_its_name(thumbnail_kind: str, file_name: str, kind: str) -> None:
     assert file_kind_of(thumbnail_kind=thumbnail_kind, file_name=file_name) == kind
@@ -54,6 +62,8 @@ def _registry() -> FileRegistry:
     ("image", {IMAGE_ID}),
     ("pdf", {PDF_ID}),
     ("markdown", {MARKDOWN_ID}),
+    (".zip", {ZIP_ID}),
+    (".rar", set()),
 ])
 def test_the_registry_lists_the_files_of_a_kind(kind: str, file_ids: Set[str]) -> None:
     assert _registry().file_ids_of_kind(kind) == file_ids
@@ -155,6 +165,7 @@ def _shown(file_filter: Optional[str], *, editing_note_id: Optional[str]) -> Dic
     ("image", {None: ["trip", "sketch"], "trip": ["photo-note"]}),
     ("pdf", {None: ["report"]}),
     ("markdown", {None: ["readme"]}),
+    (".zip", {None: ["backup"]}),
 ])
 def test_the_view_shows_the_notes_with_a_file_of_the_kind(
     notes_with_files, file_filter: Optional[str], shown: Dict[Optional[str], List[str]],
@@ -229,10 +240,59 @@ def test_a_tab_keeps_its_files_filter_across_a_reload_and_a_closed_tab_drops_it(
     assert cleared["fileFilters"] == {}
 
 
-def test_an_unknown_file_kind_is_rejected(memory_db) -> None:
+@pytest.mark.parametrize("kind", ["video", ".", ".a b", ".UPPER", ".thisisnoextensionatall", "<b>"])
+def test_an_unknown_file_kind_is_rejected(memory_db, kind: str) -> None:
     store = TabStateStore()
     with pytest.raises(InputRejected):
-        store.set_file_filter(tab_id=store.snapshot()["activeTabId"], file_filter="video")
+        store.set_file_filter(tab_id=store.snapshot()["activeTabId"], file_filter=kind)
+
+
+@pytest.mark.parametrize("kind", ["any", "image", "pdf", "markdown", "no-extension", ".zip", ".c++", ".tar-gz"])
+def test_a_known_file_kind_is_accepted(kind: str) -> None:
+    assert make_file_filter(kind) == kind
+
+
+def _thumbnail_kind_of(name: str) -> str:
+    if name.endswith(".png"):
+        return "image"
+    return "other"
+
+
+def _kinds_listed(monkeypatch: pytest.MonkeyPatch, *, names_by_id: Dict[str, str], used_ids: Set[str]) -> List[str]:
+    registry = FileRegistry()
+    registry.replace_all_with_thumbnail_kinds({file_id: _thumbnail_kind_of(name) for file_id, name in names_by_id.items()})
+    registry.install_details_loader(lambda: {
+        file_id: FileDetails(title=name, thumbnail_kind=_thumbnail_kind_of(name), size_bytes=1)
+        for file_id, name in names_by_id.items()
+    })
+    store = _FakeNoteStore(
+        notes={"holder": _note("holder", None)}, children_by_parent={None: ["holder"]},
+        references={"holder": used_ids}, inline_image_note_ids=set(),
+    )
+    monkeypatch.setattr(file_filter_types, "file_registry", registry)
+    monkeypatch.setattr(file_filter_types, "note_store", store)
+    return file_filter_types.list_file_filter_kinds()
+
+
+def test_the_menu_lists_the_kinds_most_files_first_and_the_standard_ones_always(monkeypatch: pytest.MonkeyPatch) -> None:
+    names = {"a": "a.js", "b": "b.js", "c": "c.js", "d": "d.zip", "e": "e.zip", "f": "f.png"}
+    assert _kinds_listed(monkeypatch, names_by_id=names, used_ids=set(names)) == [".js", ".zip", "image", "pdf", "markdown"]
+
+
+def test_with_no_files_the_menu_lists_the_standard_kinds(monkeypatch: pytest.MonkeyPatch) -> None:
+    assert _kinds_listed(monkeypatch, names_by_id={}, used_ids=set()) == ["image", "pdf", "markdown"]
+
+
+def test_a_file_no_note_uses_does_not_count(monkeypatch: pytest.MonkeyPatch) -> None:
+    names = {"used": "kept.zip", "unused": "image.iso"}
+    assert _kinds_listed(monkeypatch, names_by_id=names, used_ids={"used"}) == [".zip", "image", "pdf", "markdown"]
+
+
+def test_kinds_with_equally_many_files_keep_a_fixed_order(monkeypatch: pytest.MonkeyPatch) -> None:
+    names = {"a": "a.zip", "b": "b.c", "c": "LICENSE", "d": "d.png"}
+    assert _kinds_listed(monkeypatch, names_by_id=names, used_ids=set(names)) == [
+        "image", ".c", ".zip", "no-extension", "pdf", "markdown",
+    ]
 
 
 

@@ -37,6 +37,7 @@ export const CONFIG = {
             TOGGLE_MARKDOWN_TASK: (noteId) => `${API_NOTES_BASE}/${noteId}/toggle-markdown-task`,
             TOGGLE_MARKDOWN_CALLOUT: (noteId) => `${API_NOTES_BASE}/${noteId}/toggle-markdown-callout`,
             TOGGLE_MARKDOWN_FOLD: (noteId) => `${API_NOTES_BASE}/${noteId}/toggle-markdown-fold`,
+            FILE_FILTER_KINDS: `${API_NOTES_BASE}/file-filter-kinds`,
             // Delete Notes (Current View)…: count for the confirmation, then delete.
             DELETE_IN_VIEW_COUNT: `${API_NOTES_BASE}/view/delete-count`,
             DELETE_IN_VIEW: `${API_NOTES_BASE}/view/delete`,

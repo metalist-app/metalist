@@ -18,7 +18,7 @@ import {
     rootSortModeWithDirection,
 } from '../mode-manager/services/root-sort-service.js';
 import { DATE_RANGE_KINDS, DATE_RANGE_PRESETS } from '../mode-manager/services/date-range-kinds.js';
-import { FILE_FILTER_CHOICES, FILE_FILTER_KINDS } from '../mode-manager/services/file-filter-kinds.js';
+import { FILE_FILTER_CHOICES, FILE_FILTER_KINDS, fileFilterMenuLabel } from '../mode-manager/services/file-filter-kinds.js';
 import { searchTermsOf, withSearchTerm, withoutSearchTerm } from './phone-search-terms.js';
 import { actionRowHtml } from '../modals/action-row.js';
 
@@ -56,7 +56,6 @@ const DATE_VALUE_LABELS = new Map([
     [DATE_RANGE_KINDS.CUSTOM, 'Custom'],
     ...DATE_RANGE_PRESETS,
 ]);
-const FILE_VALUE_LABELS = new Map([[FILE_FILTER_KINDS.NONE, 'All Notes'], ...FILE_FILTER_CHOICES]);
 
 function valueLabel(labels, value) {
     if (!labels.has(value)) {
@@ -313,7 +312,7 @@ function sheetHtml() {
             ${choiceHtml(`date:${DATE_RANGE_KINDS.NONE}`, 'Any Date', dateKind === DATE_RANGE_KINDS.NONE)}
             ${DATE_RANGE_PRESETS.map(([kind, label]) => choiceHtml(`date:${kind}`, label, kind === dateKind)).join('')}
         </div>
-        ${disclosureHtml('files', 'Notes with Files', valueLabel(FILE_VALUE_LABELS, fileKind))}
+        ${disclosureHtml('files', 'Notes with Files', (fileKind === FILE_FILTER_KINDS.NONE ? 'All Notes' : fileFilterMenuLabel(fileKind)))}
         <div class="phone-sheet-group" data-phone-group-items="files" hidden>
             ${choiceHtml(`files:${FILE_FILTER_KINDS.NONE}`, 'All Notes', fileKind === FILE_FILTER_KINDS.NONE)}
             ${FILE_FILTER_CHOICES.map(([kind, label]) => choiceHtml(`files:${kind}`, label, kind === fileKind)).join('')}

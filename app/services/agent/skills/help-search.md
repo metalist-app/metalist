@@ -142,7 +142,7 @@ Ontology rules also add **inferred tags** before search matching:
 - Changing the search input keeps the active search context's sort order and date range; each ends with its chip's ×.
 
 ### Notes With Files
-- **Notes with Files** in the right-click menus and the palette (`Notes with Files: Images`, …) keeps a search to the matches whose own text links to or embeds an attached file, or a file of one kind (images, PDFs, Markdown files; Images also counts a picture pasted into the note), with the notes above them. Without a search it alone picks the notes. It is not a search term: a chip in the search box shows it, and a new search keeps it (`docs/ui/command-palette.md`, Notes With Files).
+- **Notes with Files** in the right-click menus and the palette (`Notes with Files: Images`, …) keeps a search to the matches whose own text links to or embeds an attached file, or a file of one kind (images, PDFs, Markdown files, or in the right-click menus any other type the notes use; Images also counts a picture pasted into the note), with the notes above them. Without a search it alone picks the notes. It is not a search term: a chip in the search box shows it, and a new search keeps it (`docs/ui/command-palette.md`, Notes With Files).
 
 ### Creating Notes From Search
 - New notes created while a positive tag search is active are initialized from

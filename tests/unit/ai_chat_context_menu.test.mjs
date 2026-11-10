@@ -16,7 +16,7 @@ function backgroundMenu() {
     return buildContextMenuItems(
         {
             kind: 'view', searchAllowsNewNotes: true, isMac: true, isEditing: false, canPasteNoteAtTop: false, canGoToTop: false, canGoToBottom: false,
-            isUntaggedView: false, theme: 'system', sortMode: 'normal', dateRangeKind: 'none', dateRangeField: 'updated', fileFilterKind: 'none',
+            isUntaggedView: false, theme: 'system', sortMode: 'normal', dateRangeKind: 'none', dateRangeField: 'updated', fileFilterKind: 'none', fileFilterKinds: ['image', 'pdf', 'markdown'],
         },
         {
             onAddNoteAtTop: noop, onUndo: noop, onRedo: noop, onExpandAll: noop, onCollapseAll: noop, onFullyExpandAll: noop, onFullyCollapseAll: noop,

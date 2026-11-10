@@ -24,7 +24,7 @@ function viewMenu(overrides, calls) {
     return buildContextMenuItems({
         kind: 'view', searchAllowsNewNotes: true, isMac: true, isEditing: false, canPasteNoteAtTop: true, canGoToTop: true, canGoToBottom: true,
         isUntaggedView: false, theme: 'system', sortMode: 'normal', dateRangeKind: 'none', dateRangeField: 'updated',
-        fileFilterKind: 'none',
+        fileFilterKind: 'none', fileFilterKinds: ['image', 'pdf', 'markdown'],
         ...overrides,
     }, viewHandlers(calls));
 }

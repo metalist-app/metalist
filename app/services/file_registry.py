@@ -7,7 +7,7 @@ from dataclasses import dataclass
 import re
 from threading import RLock
 
-from app.services.file_kinds import FILE_FILTER_ANY, FILE_FILTER_KINDS, file_kind_of
+from app.services.file_kinds import FILE_FILTER_ANY, file_kind_of, is_file_filter_kind
 
 # A reference written in a note's text: [[id]] links, ![[id]] embeds.
 # A link may carry text after a | ([[id|shown text]], docs/ui/references.md, "Link text").
@@ -240,19 +240,23 @@ class FileRegistry:
 
     def file_ids_of_kind(self, kind: str) -> set[str]:
         """The files a Files filter keeps (file_kinds.py): every file for "any"."""
-        if kind not in FILE_FILTER_KINDS:
+        if not is_file_filter_kind(kind):
             raise ValueError(f"Unknown file filter kind {kind!r}")
         with self._lock:
             if kind == FILE_FILTER_ANY:
                 return set(self._ids)
-            kept: set[str] = set()
+            return {file_id for file_id, file_kind in self.kinds_by_id().items() if file_kind == kind}
+
+    def kinds_by_id(self) -> dict[str, str]:
+        """Each file's kind (file_kinds.file_kind_of)."""
+        with self._lock:
+            kinds: dict[str, str] = {}
             for file_id in self._ids:
                 thumbnail_kind = self._thumbnail_kind_locked(file_id)
                 file_name = self.title_of(file_id)
                 assert thumbnail_kind is not None and file_name is not None
-                if file_kind_of(thumbnail_kind=thumbnail_kind, file_name=file_name) == kind:
-                    kept.add(file_id)
-            return kept
+                kinds[file_id] = file_kind_of(thumbnail_kind=thumbnail_kind, file_name=file_name)
+            return kinds
 
     def sizes_of_kind(self, kind: str) -> dict[str, int]:
         """The real size in bytes of each file a Files filter keeps, by id (the File size order)."""

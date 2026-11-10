@@ -126,6 +126,7 @@ import {
     setTabDateFilterOnServer, setTabFileFilterOnServer, setTabSortModeOnServer, setTabUntaggedViewOnServer,
 } from '../mode-manager/services/tab-state-service.js';
 import { FILE_FILTER_KINDS, getActiveFileFilterKind } from '../mode-manager/services/file-filter-service.js';
+import { isFileFilterKind } from '../mode-manager/services/file-filter-kinds.js';
 import {
     DATE_RANGE_KINDS,
     OPEN_DATE,
@@ -1730,7 +1731,7 @@ class CommandPaletteController {
 
     /** Any note ('none'), every note with an attached file ('any'), or one kind of file. */
     async setFileFilter(kind) {
-        if (!Object.values(FILE_FILTER_KINDS).includes(kind)) {
+        if (!isFileFilterKind(kind)) {
             throw new Error(`setFileFilter requires a Files filter kind, not ${kind}`);
         }
         const activeTabId = ModeContext.activeTabId;

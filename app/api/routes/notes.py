@@ -76,6 +76,7 @@ from app.api.note_requests import (
 from app.api.transactions import serialized_read_route, transactional_route
 from app.services.sync import touch_client
 from app.services.edit_previews import edit_preview_at_caret, format_preview_html
+from app.services.file_filter_types import list_file_filter_kinds
 from app.services.file_kinds import FILE_FILTER_NONE
 from app.services.root_date_filter import DATE_RANGE_NONE
 from app.services.tag_properties import PROPERTY_SUGGESTIONS_IN_SEARCH
@@ -809,6 +810,13 @@ def tab_search_interaction(request: Request, payload: TabSearchInteractionReques
 def get_tag_interactions(request: Request) -> Dict[str, object]:
     token = _require_bearer_token(request)
     return list_search_suggestion_statistics(token=token)
+
+
+@router.get("/notes/file-filter-kinds")
+@transactional_route
+def file_filter_kinds() -> Dict[str, object]:
+    """The kinds the Notes with Files menu lists, asked each time the menu opens."""
+    return {"kinds": list_file_filter_kinds()}
 
 
 @router.get("/notes/memory-usage")

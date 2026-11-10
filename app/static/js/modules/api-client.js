@@ -468,6 +468,11 @@ export const NotesAPI = {
         });
     },
 
+    // The kinds of file the Notes with Files menu lists, most files first.
+    async getFileFilterKinds() {
+        return this._apiCall(CONFIG.API.NOTES.FILE_FILTER_KINDS, { method: 'GET' });
+    },
+
     // A click on the title of <details> fold foldIndex in a Markdown note; isOpen is the state asked for.
     async toggleMarkdownFold(noteId, foldIndex, isOpen) {
         if (typeof noteId !== 'string' || noteId.length === 0 || !Number.isInteger(foldIndex) || typeof isOpen !== 'boolean') {

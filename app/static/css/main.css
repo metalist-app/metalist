@@ -6703,7 +6703,8 @@ body.pref-show-tab-ui .controls .tab-hover-zone:hover .tab-ui-icon {
 
 .context-menu-submenu {
     z-index: 13001;
-    max-height: calc(100vh - 16px);
+    /* 16px of margin, then its own 6px padding and 1px border at top and bottom. */
+    max-height: calc(100vh - 30px);
     overflow-y: auto;
 }
 

@@ -11,7 +11,7 @@ import {
     DATE_RANGE_KINDS,
     DATE_RANGE_PRESETS,
 } from '../mode-manager/services/date-range-kinds.js';
-import { FILE_FILTER_CHOICES, FILE_FILTER_KINDS } from '../mode-manager/services/file-filter-kinds.js';
+import { FILE_FILTER_KINDS, fileFilterMenuLabel, isFileFilterKind } from '../mode-manager/services/file-filter-kinds.js';
 
 // Menu rules (docs/ui/modals.md, "Dialog and menu conventions", rule 8): a trailing "…"
 // means a dialog asks for more before anything happens; destructive items come last;
@@ -734,7 +734,7 @@ function buildLinkContextItems(context, handlers) {
 }
 
 function buildSortModeItem(sortMode, fileFilterKind, onSetSortMode) {
-    if (!Object.values(FILE_FILTER_KINDS).includes(fileFilterKind)) {
+    if (!isFileFilterKind(fileFilterKind)) {
         throw new Error('Sort by needs the view\'s fileFilterKind');
     }
     // An order and its direction are chosen apart: picking an order keeps Reverse Order.
@@ -818,14 +818,21 @@ function buildDateRangeItem(context, handlers) {
 }
 
 // Notes with files: the notes with an attached file, or one kind of file, the
-// current choice ticked (file-filter-service.js). All notes shows every note again.
+// current choice ticked (file-filter-service.js). All notes shows every note again. The
+// kinds are the ones the server lists when the menu opens: most files first.
 function buildFileFilterItem(context, handlers) {
     const kind = context.fileFilterKind;
-    if (!Object.values(FILE_FILTER_KINDS).includes(kind)) {
+    if (!isFileFilterKind(kind)) {
         throw new Error('View context missing fileFilterKind');
     }
+    if (!Array.isArray(context.fileFilterKinds)) {
+        throw new Error('View context missing fileFilterKinds');
+    }
     const onSetFileFilter = requireViewHandler(handlers, 'onSetFileFilter');
-    const choices = [[FILE_FILTER_KINDS.NONE, 'All Notes'], ...FILE_FILTER_CHOICES];
+    const choices = [
+        [FILE_FILTER_KINDS.NONE, 'All Notes'],
+        ...[FILE_FILTER_KINDS.ANY, ...context.fileFilterKinds].map((value) => [value, fileFilterMenuLabel(value)]),
+    ];
     return {
         id: 'file-filter',
         label: 'Notes with Files',

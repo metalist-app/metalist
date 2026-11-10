@@ -100,6 +100,36 @@ async function pickFromSortMenu(page, label) {
   await idle(page);
 }
 
+// Every type the notes hold, most files first (4 PDFs, 2 pictures, a zip), the standard ones even with none.
+async function openFileTypeMenu(page) {
+  const width = await page.evaluate(() => document.documentElement.clientWidth);
+  await page.mouse.click(width - 2, 180, {button: 'right'});
+  await page.waitForSelector('#context-menu.is-visible');
+  const buttons = await page.$$('#context-menu .context-menu-item');
+  const labels = await Promise.all(buttons.map(button => button.evaluate(node => node.textContent)));
+  await buttons[labels.findIndex(label => label.startsWith('Notes with Files'))].click();
+  await page.waitForSelector('#context-submenu.is-visible');
+  return page.$$('#context-submenu .context-menu-item');
+}
+
+async function checkFileTypeMenu(page) {
+  const items = await openFileTypeMenu(page);
+  const labels = await Promise.all(items.map(item => item.evaluate(node => node.textContent.trim())));
+  assert.deepEqual(labels, ['✓All Notes', 'Any File', 'PDFs', 'Images', 'ZIP Files', 'Markdown Files']);
+  await items[labels.indexOf('ZIP Files')].click();
+  await idle(page);
+  assert.equal(await chipText(page, 'file-filter-indicator'), 'With ZIP files');
+  assert.deepEqual((await shownNotes(page)).map(([name]) => name), ['Huge zip'], 'only the note with the zip');
+  await pickFromSortMenu(page, 'File Size');
+  assert.deepEqual((await cardSizes(page)).map(([name]) => name), ['huge.zip'], 'the File size order counts the zip alone');
+  await pickFromSortMenu(page, 'Normal');
+  const again = await openFileTypeMenu(page);
+  const ticked = await Promise.all(again.map(item => item.evaluate(node => node.textContent.trim())));
+  assert.equal(ticked[labels.indexOf('ZIP Files')], '✓ZIP Files');
+  await closeMenu(page);
+  await setFilter(page, 'none');
+}
+
 async function checkOffered(page) {
   assert.equal((await sortMenuLabels(page)).some(label => label.endsWith('File Size')), false, 'no filter: no File Size');
   await closeMenu(page);
@@ -240,6 +270,7 @@ export async function checkFileSizeSort(page) {
   await page.waitForSelector('[data-app-ready="true"]');
   await idle(page);
   await runThenCleanUp('file size sort', async () => {
+    await checkFileTypeMenu(page);
     await checkOffered(page);
     await checkOrderAndPills(page);
     await checkOnlyTheFiltersFilesCount(page);
