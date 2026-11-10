@@ -412,6 +412,17 @@ def _has_markdown_footnotes(*, content_html: str, tags: str) -> bool:
     return is_markdown_note(tags) and any(mark in content_html for mark in _MARKDOWN_FOOTNOTE_MARKS)
 
 
+# The drawing of a note that starts with a diagram: @mermaid, a ((@mermaid)) region or a fence.
+_STARTS_WITH_MERMAID_RE = re.compile(r'^\s*(?:<div>\s*)?(?:<div class="meta-mermaid"|<div class="meta-markdown"[^>]*>\s*<pre class="meta-mermaid-source")')
+_MERMAID_WORD = "mermaid"
+
+
+def _opens_with_mermaid_diagram(*, content_html: str, first_line_html: str, tags: str, credentials: CredentialDisplay) -> bool:
+    if _MERMAID_WORD not in tags.casefold() and _MERMAID_WORD not in first_line_html.casefold():
+        return False
+    return _STARTS_WITH_MERMAID_RE.match(format_note_content_for_view(content_html=content_html, tags=tags, credentials=credentials)) is not None
+
+
 def render_collapsed_note_content_with_embeds(
     *,
     note_id: str,
@@ -424,6 +435,9 @@ def render_collapsed_note_content_with_embeds(
     preview_source_html = _first_shown_line(extract_collapsed_preview_source_html(content_html), context=context)
     if has_scoped_footnotes(tags) or _has_markdown_footnotes(content_html=content_html, tags=tags):
         # Footnotes on later source lines can attach markers to the first line.
+        preview_source_html = content_html
+    if _opens_with_mermaid_diagram(content_html=content_html, first_line_html=preview_source_html, tags=tags, credentials=credentials):
+        # Drawn from its first line alone, a diagram is empty. main.css folds what follows it away.
         preview_source_html = content_html
     return _render_note_content_with_embeds(
         note_id=note_id,

@@ -251,6 +251,7 @@ Built 2026-10-27 (`app/services/subtree_stats.py`; design: `docs/design/tag-prop
 ## Mermaid meta tags
 - `@mermaid`: the note content is one Mermaid diagram (no Markdown fence needed), drawn in view mode like a fenced `mermaid` block under `@markdown`, in its own block. Until it is drawn, and when it is invalid (with an `Invalid Mermaid diagram` badge), the source shows as a code block.
 - Scoped wrappers (e.g. `((@mermaid))`) draw only the wrapped region.
+- Folded, a note whose first line is a diagram (`@mermaid`, a `((@mermaid))` region or a ```` ```mermaid ```` fence) shows the whole diagram small, 7.5em by 4.5em at the left, the size of a folded Excalidraw drawing (agreed 2026-11-09). A diagram further down leaves the note's first line of text, and an invalid diagram shows its first line of source.
 
 ## Paste format detection
 - Pasting text in an unambiguous format tags the note for it at the moment of the paste (the tag appears in the tag bar; the text renders when the note leaves editing):

@@ -87,6 +87,7 @@ import {checkLoginLoadingLine} from './browser-login-loading-line-regressions.mj
 import {checkLoginFade} from './browser-login-fade-regressions.mjs';
 import {checkThemeFade} from './browser-theme-fade-regressions.mjs';
 import {checkSkin} from './browser-skin-regressions.mjs';
+import {checkMermaidFold} from './browser-mermaid-fold-regressions.mjs';
 import {checkPaletteOrder} from './browser-palette-order-regressions.mjs';
 import {checkMenuLook} from './browser-menu-look-regressions.mjs';
 import {checkStatsTags} from './browser-stats-tag-regressions.mjs';
@@ -545,6 +546,10 @@ try {
     await checkSkin(page);
     assert.deepEqual(errors, []);
     console.log(`PASS skin regressions in ${await browser.version()}`);
+  } else if (process.env.BROWSER_TEST_SUITE === 'mermaid-fold') {
+    await checkMermaidFold(page);
+    assert.deepEqual(errors, []);
+    console.log(`PASS mermaid fold regressions in ${await browser.version()}`);
   } else if (process.env.BROWSER_TEST_SUITE === 'login-fade') {
     await checkLoginFade(page);
     assert.deepEqual(errors, []);

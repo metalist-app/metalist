@@ -4372,9 +4372,56 @@ html[data-theme="dark"] .ai-chat-header-actions #ai-chat-spend-toggle[aria-press
 
 /* A folded note's first line is drawn as one line of text; an embed on it is an
    embed, drawn as everywhere (docs/ui/references.md), so these leave it alone. */
-.note.collapsed:not(.editing) .note-content :not(img):not(:where(.note-reference-note.note-embed-block, .note-reference-note.note-embed-block *, .note-reference-file, .note-reference-file *)) {
+.note.collapsed:not(.editing) .note-content :not(img):not(:where(.note-reference-note.note-embed-block, .note-reference-note.note-embed-block *, .note-reference-file, .note-reference-file *, .meta-mermaid-diagram *)) {
     font-size: inherit !important;
     line-height: inherit !important;
+}
+
+/* A folded note whose first line is a Mermaid diagram shows the whole diagram small, the size of
+   a folded Excalidraw drawing (docs/ui/content-formatting.md). The server sends the whole note
+   for it (embedded_references.render_collapsed_note_content_with_embeds); what follows is hidden. */
+.note.collapsed:not(.editing) .note-content:has(> .meta-mermaid:first-of-type > .meta-mermaid-diagram,
+    > div:first-of-type > .meta-mermaid:first-child > .meta-mermaid-diagram,
+    > .meta-markdown > .meta-mermaid-diagram:first-child,
+    > .note-with-backlinks > .meta-mermaid:first-of-type > .meta-mermaid-diagram,
+    > .note-with-backlinks > div:first-of-type > .meta-mermaid:first-child > .meta-mermaid-diagram,
+    > .note-with-backlinks > .meta-markdown > .meta-mermaid-diagram:first-child) {
+    max-height: none;
+    display: block;
+}
+
+.note.collapsed:not(.editing) .note-content :is(
+    :is(.note-content, .note-with-backlinks) > .meta-mermaid:first-of-type,
+    :is(.note-content, .note-with-backlinks) > div:first-of-type > .meta-mermaid:first-child
+) > .meta-mermaid-diagram,
+.note.collapsed:not(.editing) :is(.note-content, .note-with-backlinks) > .meta-markdown > .meta-mermaid-diagram:first-child {
+    box-sizing: border-box;
+    width: 7.5em;
+    height: 4.5em;
+    padding: 2px;
+    overflow: hidden;
+    border-radius: 4px;
+}
+
+.note.collapsed:not(.editing) .note-content :is(
+    :is(.note-content, .note-with-backlinks) > .meta-mermaid:first-of-type,
+    :is(.note-content, .note-with-backlinks) > div:first-of-type > .meta-mermaid:first-child
+) > .meta-mermaid-diagram svg,
+.note.collapsed:not(.editing) :is(.note-content, .note-with-backlinks) > .meta-markdown > .meta-mermaid-diagram:first-child svg {
+    width: 100%;
+    height: 100%;
+    max-width: none !important;
+    margin: 0;
+}
+
+.note.collapsed:not(.editing) :is(.note-content, .note-with-backlinks) > div:first-of-type:has(> .meta-mermaid:first-child > .meta-mermaid-diagram) ~ *,
+.note.collapsed:not(.editing) :is(.note-content, .note-with-backlinks) > .meta-markdown > .meta-mermaid-diagram:first-child ~ * {
+    display: none;
+}
+
+/* Folded, an invalid diagram shows its first line of source, not its badge. */
+.note.collapsed:not(.editing) .note-content .meta-mermaid-error-badge {
+    display: none;
 }
 
 .note.collapsed:not(.editing) .note-content .meta-heading:not(:where(.note-reference-note.note-embed-block, .note-reference-note.note-embed-block *)) {
@@ -4407,7 +4454,7 @@ html[data-theme="dark"] .ai-chat-header-actions #ai-chat-spend-toggle[aria-press
     tr,
     th,
     td
-):not(:where(.note-reference-note.note-embed-block, .note-reference-note.note-embed-block *, .note-reference-file, .note-reference-file *)) {
+):not(:where(.note-reference-note.note-embed-block, .note-reference-note.note-embed-block *, .note-reference-file, .note-reference-file *, .meta-mermaid-diagram *)) {
     display: block;
     margin: 0 !important;
     padding: 0;
