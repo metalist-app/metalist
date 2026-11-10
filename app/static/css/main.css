@@ -4464,7 +4464,7 @@ html[data-theme="dark"] .ai-chat-header-actions #ai-chat-spend-toggle[aria-press
     display: inline;
 }
 
-.note.collapsed:not(.editing) .note-content img:not(:where(.note-reference-note.note-embed-block, .note-reference-note.note-embed-block *)) {
+.note.collapsed:not(.editing) .note-content img:not(:where(.note-reference-note.note-embed-block, .note-reference-note.note-embed-block *, .meta-gallery *)) {
     height: 4.5em !important;
     width: 7.5em !important;
     max-height: 4.5em !important;
@@ -4927,7 +4927,82 @@ html[data-theme="dark"] .note-file-text-snippet {
 /* @gallery: the pictures of the note and every note under it, as a grid under its text
    (app/services/note_gallery.py; docs/future-plans/gallery.md). The children it draws from
    are hidden while it shows; a gallery with no picture draws nothing and hides nothing. */
-.note[data-note-tags*="@gallery"]:not(.editing):has(> .note-content .meta-gallery) > .note-children {
+.note[data-note-tags*="@gallery"]:not(.editing):not(.is-gallery-outline):has(> .note-content .meta-gallery) > .note-children {
+    display: none;
+}
+
+/* Switched to an outline (gallery-view-service.js): its children, no grid. Folded, a gallery
+   shows the same row of pictures either way, and no switch: the switch is for an open gallery. */
+.note.is-gallery-outline:not(.collapsed) > .note-content .meta-gallery > .meta-gallery-grid {
+    display: none;
+}
+
+.note.collapsed:not(.editing) > .note-content .meta-gallery-switch {
+    display: none;
+}
+
+/* The switch, in the margin below the fold arrow: four squares for the grid, lines for the outline. */
+.meta-gallery-switch {
+    position: absolute;
+    top: 32px;
+    left: -29px;
+    width: 27px;
+    height: 27px;
+    padding: 0;
+    border: none;
+    background: transparent;
+    color: rgba(0, 0, 0, 0.35);
+    cursor: var(--skin-cursor-pointer, pointer);
+    font-size: 17px;
+    line-height: 27px;
+    text-align: center;
+}
+
+/* The outline: a line with two lines indented under it, a parent and its children (unlike the
+   menu's three even lines). */
+.meta-gallery-switch::before {
+    content: "";
+    display: inline-block;
+    width: 15px;
+    height: 12px;
+    vertical-align: middle;
+    background:
+        linear-gradient(currentColor, currentColor) 0 0 / 100% 2px no-repeat,
+        linear-gradient(currentColor, currentColor) 5px 5px / 10px 2px no-repeat,
+        linear-gradient(currentColor, currentColor) 5px 10px / 10px 2px no-repeat;
+}
+
+.note.is-gallery-outline > .note-content .meta-gallery-switch::before {
+    content: "▦";
+    display: inline;
+    width: auto;
+    height: auto;
+    background: none;
+    vertical-align: baseline;
+}
+
+html[data-theme="dark"] .meta-gallery-switch {
+    color: rgba(255, 255, 255, 0.4);
+}
+
+/* Folded, one row of small pictures under the first line, without captions. */
+.note.collapsed:not(.editing) > .note-content:has(.meta-gallery) {
+    max-height: none;
+    display: block;
+}
+
+.note.collapsed:not(.editing) > .note-content .meta-gallery-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(64px, 1fr));
+    grid-template-rows: auto;
+    grid-auto-rows: 0;
+    row-gap: 0;
+    gap: 0 6px;
+    overflow: hidden;
+    margin-top: 6px;
+}
+
+.note.collapsed:not(.editing) > .note-content .meta-gallery-caption {
     display: none;
 }
 
@@ -4966,7 +5041,9 @@ html[data-theme="dark"] .note-file-text-snippet {
     border-radius: 0;
 }
 
-.meta-gallery-picture :is(.note-file-image-preview, .note-file-excalidraw-preview, .meta-gallery-written-image) {
+/* Every picture fills its square, cropped about its middle, tall or wide; strong enough to beat a
+   loaded picture keeping its own width. */
+.note-file-reference-link.meta-gallery-tile .meta-gallery-picture :is(.note-file-image-preview, .note-file-excalidraw-preview, .meta-gallery-written-image) {
     display: block;
     width: 100%;
     height: 100%;
@@ -5414,6 +5491,48 @@ audio.note-file-media-player {
     font: 28px/1 Arial, sans-serif;
 }
 
+/* A gallery's pictures full screen: ‹ › at the sides, dimmed at the ends, and Go to note below. */
+.image-zoom-step,
+.image-zoom-go-to-note {
+    position: fixed;
+    border: 1px solid rgba(255, 255, 255, 0.34);
+    background: rgba(15, 23, 42, 0.72);
+    color: #ffffff;
+    cursor: var(--skin-cursor-pointer, pointer);
+}
+
+.image-zoom-step {
+    top: calc(50% - 24px);
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    font: 32px/1 Arial, sans-serif;
+}
+
+.image-zoom-previous {
+    left: 18px;
+}
+
+.image-zoom-next {
+    right: 18px;
+}
+
+.image-zoom-step:disabled {
+    opacity: 0.3;
+    cursor: default;
+}
+
+.image-zoom-go-to-note {
+    bottom: 18px;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 8px 16px;
+    border-radius: 999px;
+    font: 15px/1.2 system-ui, -apple-system, sans-serif;
+}
+
+.image-zoom-step:not(:disabled):hover,
+.image-zoom-go-to-note:hover,
 .image-zoom-close:hover,
 .image-zoom-close:focus-visible {
     background: rgba(30, 41, 59, 0.96);

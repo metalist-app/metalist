@@ -1,6 +1,6 @@
 # Galleries (`@gallery`)
 
-**Status:** brainstormed with the maintainer 2026-11-10 and being built. The first slice is built (2026-11-10, `app/services/note_gallery.py`, `docs/ui/content-formatting.md`): decisions 1, 2, 3 (without PDFs) and 6, children hidden, a tile's picture full screen through Zoom Image. Still to build: folded (one row), the grid/outline switch (5), previous/next and Go to note (7), value suggestions (4), search narrowing (8), PDF first pages.
+**Status:** brainstormed with the maintainer 2026-11-10 and being built. The first slice is built (2026-11-10, `app/services/note_gallery.py`, `docs/ui/content-formatting.md`): decisions 1, 2, 3 (without PDFs) and 6, children hidden, a tile's picture full screen through Zoom Image. The second slice is built (2026-11-10, `app/static/js/modules/mode-manager/services/gallery-view-service.js`): folded (one row), the grid/outline switch (5), previous/next and Go to note (7); full screen is Zoom Image with ‹ › and Go to note added, not the file viewer, which cannot show pictures. Still to build: value suggestions (4), search narrowing (8), PDF first pages.
 
 A note tagged `@gallery` shows the pictures in it and in every note below it as a grid of thumbnails, opening full screen on a click.
 

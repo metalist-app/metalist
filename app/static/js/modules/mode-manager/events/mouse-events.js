@@ -33,7 +33,8 @@ import { NotesAPI } from '../../api-client.js';
 import { isContextMenuInteractionTarget } from '../../context-menu/context-menu-target-service.js';
 import { downloadEmailAttachment, downloadFileReference } from '../services/file-reference-service.js';
 import { openFileViewer, opensInViewer } from '../services/file-viewer-service.js';
-import { zoomPicture } from '../services/image-context-menu-action-service.js';
+import { zoomGallery } from '../services/image-context-menu-action-service.js';
+import { goToGalleryItem, toggleGalleryOutline } from '../services/gallery-view-service.js';
 import { playMediaFile } from '../services/media-player-service.js';
 import { parseDecimalInteger } from '../../decimal-integer.js';
 import { revealRedactedNoteWithScrollPreservation } from '../services/search-redaction-reveal-service.js';
@@ -344,6 +345,7 @@ function isMouseDownOutsideEditExclusion(target) {
             // embedded file's card edits the note (files-shown-not-copied.md §3).
             'button.note-file-reference-link',
             '.note-file-action',
+            '.meta-gallery-switch',
             '.note-file-media-embed',
             // A click on a copyable value copies it; a password's eye shows it.
             CREDENTIAL_VALUE_SELECTOR,
@@ -1518,6 +1520,10 @@ function handleClick(event) {
         return;
     }
 
+    if (handleGallerySwitchClick(event)) {
+        return;
+    }
+
     if (handleFileReferenceClick(event)) {
         return;
     }
@@ -2156,6 +2162,66 @@ function handleReferenceLinkClick(event) {
     return true;
 }
 
+// The picture a gallery tile shows, once loaded: the theme's one, for a drawing.
+function shownPictureOf(tile) {
+    const picture = Array.from(tile.querySelectorAll('img')).find((image) => (
+        image.currentSrc !== '' && !image.hidden && getComputedStyle(image).display !== 'none'
+    ));
+    return picture === undefined ? null : picture;
+}
+
+function showGalleryFullScreen(clickedTile) {
+    const galleryNote = clickedTile.closest('.note[data-note-id]');
+    if (galleryNote === null) {
+        throw new Error('A gallery tile must be in a note');
+    }
+    const pictures = [];
+    let index = -1;
+    for (const tile of clickedTile.closest('.meta-gallery-grid').querySelectorAll('.meta-gallery-tile')) {
+        const picture = shownPictureOf(tile);
+        if (picture === null) {
+            continue;
+        }
+        if (tile === clickedTile) {
+            index = pictures.length;
+        }
+        pictures.push({ src: picture.currentSrc, alt: picture.alt, noteId: tile.dataset.galleryNoteId });
+    }
+    if (index === -1) {
+        return;
+    }
+    zoomGallery({
+        pictures,
+        index,
+        onGoToNote: (noteId) => {
+            void CommandGate.run('mouse.gallery_go_to_note', async () => {
+                await goToGalleryItem(galleryNote.dataset.noteId, noteId);
+            });
+        },
+    });
+}
+
+// The switch beside a gallery's fold arrow: its grid or its children (gallery-view-service.js).
+function handleGallerySwitchClick(event) {
+    const toggle = event.target instanceof Element ? event.target.closest('.meta-gallery-switch') : null;
+    if (toggle === null) {
+        return false;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    if (ModeContext.isEditing) {
+        return true;
+    }
+    const note = toggle.closest('.note[data-note-id]');
+    if (note === null) {
+        throw new Error('A gallery switch must be in a note');
+    }
+    void CommandGate.run('mouse.gallery_switch', async () => {
+        await toggleGalleryOutline(note.dataset.noteId);
+    });
+    return true;
+}
+
 function handleFileReferenceClick(event) {
     if (!event.target) {
         throw new Error('File reference click missing target element');
@@ -2179,15 +2245,10 @@ function handleFileReferenceClick(event) {
         return true;
     }
 
-    // A gallery's tile shows its picture full screen, once it has loaded (note_gallery.py); a
-    // picture written in a note's text has no file id.
+    // A gallery's tile shows its picture full screen among the gallery's others, once it has
+    // loaded (note_gallery.py); a picture written in a note's text has no file id.
     if (button.classList.contains('meta-gallery-tile')) {
-        const picture = Array.from(button.querySelectorAll('img')).find((image) => (
-            image.currentSrc !== '' && !image.hidden && getComputedStyle(image).display !== 'none'
-        ));
-        if (picture !== undefined) {
-            zoomPicture(picture.currentSrc, picture.alt);
-        }
+        showGalleryFullScreen(button);
         return true;
     }
 

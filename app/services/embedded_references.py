@@ -469,7 +469,7 @@ def render_collapsed_note_content_with_embeds(
     if _opens_with_mermaid_diagram(content_html=content_html, first_line_html=preview_source_html, tags=tags, credentials=credentials):
         # Drawn from its first line alone, a diagram is empty. main.css folds what follows it away.
         preview_source_html = content_html
-    return _render_note_content_with_embeds(
+    rendered_first_line = _render_note_content_with_embeds(
         note_id=note_id,
         content_html=preview_source_html,
         tags=tags,
@@ -480,6 +480,8 @@ def render_collapsed_note_content_with_embeds(
         # Whether the note is only its embed, not whether its first line is.
         is_held=sole_embed_token(content_html) is not None,
     )
+    # A folded gallery shows one row of its pictures under its first line (main.css).
+    return rendered_first_line + _render_note_gallery(note_id=note_id, tags=tags, context=context, static_export=static_export)
 
 
 def _shown_note_embeds(preview_source_html: str, context: EmbedRenderContext) -> List[ReferenceToken]:

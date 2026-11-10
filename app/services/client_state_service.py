@@ -89,6 +89,8 @@ _ALLOWED_CLIENT_PREFERENCES = {
     "pref.theme": {"system", "light", "dark", "illuminated"},
     # How @stats and @sum=… totals look (subtree_stats.STATS_STYLES).
     "pref.stats_style": {"strip", "tiles", "ledger"},
+    # The @gallery notes shown as an outline instead of their grid (gallery-view-service.js).
+    "pref.gallery_outline_notes": "note_id_list",
     "pref.search_suggestion_windows": "tag_activity_windows",
     "pref.show_search_suggestion_window_labels": {"true", "false"},
     "pref.limit_note_credits_per_search_context": {"true", "false"},
@@ -318,6 +320,8 @@ def _validate_client_preferences(preferences: dict[str, object]) -> dict[str, st
                     "Dictation phrases must be words of letters, "
                     f"{_DICTATION_PHRASE_MIN_CHARS} to {_DICTATION_PHRASE_MAX_CHARS} characters"
                 )
+        elif allowed_values == "note_id_list":
+            _validate_note_id_list_preference(key=key, value=value)
         elif allowed_values == "note_id":
             if _NOTE_ID_RE.fullmatch(value) is None:
                 raise ClientStateValidationError(f"Client preference {key} must be a note id")
@@ -338,6 +342,25 @@ def _validate_client_preferences(preferences: dict[str, object]) -> dict[str, st
         normalized[key] = value
     return normalized
 
+
+
+# More gallery notes than this shown as an outline is not a choice anyone makes.
+_MAX_NOTE_ID_LIST_LENGTH = 5000
+
+
+def _validate_note_id_list_preference(*, key: str, value: str) -> None:
+    """A JSON list of distinct note ids."""
+    try:
+        note_ids = json.loads(value)
+    except json.JSONDecodeError as error:
+        raise ClientStateValidationError(f"Client preference {key} must be a list of note ids") from error
+    if not isinstance(note_ids, list) or len(note_ids) > _MAX_NOTE_ID_LIST_LENGTH:
+        raise ClientStateValidationError(f"Client preference {key} must be a list of note ids")
+    for note_id in note_ids:
+        if not isinstance(note_id, str) or _NOTE_ID_RE.fullmatch(note_id) is None:
+            raise ClientStateValidationError(f"Client preference {key} must be a list of note ids")
+    if len(set(note_ids)) != len(note_ids):
+        raise ClientStateValidationError(f"Client preference {key} must not repeat a note id")
 
 
 def _validate_ai_chat_width_preference(*, key: str, value: str) -> None:

@@ -8,6 +8,7 @@ import { BackupReminder } from '../backup-reminder-service.js';
 import { TrimReminder } from '../trim-reminder-service.js';
 import { trimConfirmationText } from '../trim-reminder-schedule.js';
 import { receiveSearchSuggestionPreferences } from '../mode-manager/services/search-suggestion-windows-service.js';
+import { receiveGalleryOutlineNotes } from '../mode-manager/services/gallery-view-service.js';
 import { ApplicationState, stateValuesEqual } from '../application-state.js';
 import { HttpRequestError, rethrowUnexpectedError } from '../expected-errors.js';
 import { showFatalError } from '../error-overlay.js';
@@ -735,6 +736,8 @@ class CommandPaletteController {
         document.body.classList.toggle('pref-drag-direction-icon', dragDirectionIcon);
 
         receiveDictationPhrases(this._dictationPhrases());
+
+        receiveGalleryOutlineNotes(this._getText('pref.gallery_outline_notes', '[]'));
 
         receiveSearchSuggestionPreferences({
             windows: this._getText('pref.search_suggestion_windows', DEFAULT_SEARCH_SUGGESTION_WINDOWS_VALUE),

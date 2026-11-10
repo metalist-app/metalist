@@ -165,4 +165,6 @@ def render_gallery(
             f'data-file-view="{html.escape(view_kind(item.file_id), quote=True)}" {note}>'
             f'<span class="meta-gallery-picture">{tile_body(item.file_id)}</span>{caption}</button>'
         )
-    return f'<section class="meta-gallery" aria-label="Gallery"><div class="meta-gallery-grid">{"".join(tiles)}</div></section>'
+    # The switch between the grid and the children (gallery-view-service.js) sits in the margin.
+    switch = '<button type="button" class="meta-gallery-switch" aria-label="Show as outline" title="Show as outline"></button>'
+    return f'<section class="meta-gallery" aria-label="Gallery">{switch}<div class="meta-gallery-grid">{"".join(tiles)}</div></section>'

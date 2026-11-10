@@ -563,3 +563,20 @@ def test_the_copied_note_is_remembered_and_only_the_server_sets_it(memory_settin
     clear_sensitive_caches()  # as after a restart: read from storage
     assert copied_note_ids(token="") == frozenset({LATER_COPIED_ID})
     assert load_client_preferences(token="")["pref.theme"] == "light"
+
+
+_GALLERY_NOTE_ID = "0b6e8f8e-2c1d-4f6a-9d3e-5a7b8c9d0e1f"
+
+
+def test_gallery_outline_notes_accept_a_list_of_distinct_note_ids() -> None:
+    value = json.dumps([_GALLERY_NOTE_ID])
+    assert _validate_client_preferences({"pref.gallery_outline_notes": value}) == {"pref.gallery_outline_notes": value}
+
+
+@pytest.mark.parametrize(
+    "value",
+    ["not json", json.dumps({"id": _GALLERY_NOTE_ID}), json.dumps(["x"]), json.dumps([{"id": 1}]), json.dumps([_GALLERY_NOTE_ID, _GALLERY_NOTE_ID])],
+)
+def test_gallery_outline_notes_reject_anything_but_distinct_note_ids(value: str) -> None:
+    with pytest.raises(ClientStateValidationError):
+        _validate_client_preferences({"pref.gallery_outline_notes": value})

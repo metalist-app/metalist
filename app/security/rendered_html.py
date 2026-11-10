@@ -36,6 +36,8 @@ RENDERER_ATTRIBUTES: dict[str, frozenset[str]] = {
         "data-footnote-number", "data-referrer-count", "data-source-note-id", "title", "type",
         # A file card's Open and its link: how the viewer shows the file (file_view.view_kind_of).
         "data-file-view",
+        # A gallery's tile: the note its picture is in, for Go to note (note_gallery.py).
+        "data-gallery-note-id",
     }),
     "div": frozenset({
         "aria-hidden", "aria-live", "class", "contenteditable", "data-copy-value", "data-embed-note-id",

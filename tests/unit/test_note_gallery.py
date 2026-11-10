@@ -9,7 +9,8 @@ import pytest
 
 from app.services.content_formatting import is_known_meta_tag_term, list_known_meta_tag_terms
 from app.services.embedded_references import collect_active_reference_tokens, extract_collapsed_preview_source_html
-from app.services.note_gallery import collect_gallery_items, gallery_kinds
+from app.security.rendered_html import sanitize_rendered_html
+from app.services.note_gallery import GalleryItem, collect_gallery_items, gallery_kinds, render_gallery
 
 PHOTO_A, PHOTO_B, DRAWING, MANUAL = (f"{index:08d}-0000-4000-8000-000000000000" for index in range(1, 5))
 
@@ -148,3 +149,12 @@ def test_a_gallery_with_nothing_to_show_draws_nothing() -> None:
     tree = _Tree(notes={"album": _Note("<div>Album</div>", "@gallery"), "text": _Note("<div>Just words</div>", "")},
                  children={"album": ["text"]}, files={})
     assert _pictures(tree, "album", "@gallery") == []
+
+
+def test_the_note_of_each_picture_survives_sanitizing() -> None:
+    """Go to note reads it from the tile (2026-11-10: the sanitizer dropped it)."""
+    drawn = render_gallery(
+        items=[GalleryItem(file_id="", image_source="data:image/png;base64,AAAA", note_id="day-1", caption="Beach")],
+        tile_body=lambda file_id: "", view_kind=lambda file_id: "", written_picture=lambda source: f'<img src="{source}">',
+    )
+    assert 'data-gallery-note-id="day-1"' in sanitize_rendered_html(drawn)
