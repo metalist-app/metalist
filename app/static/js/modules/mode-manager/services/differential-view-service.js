@@ -1,3 +1,4 @@
+import { restoreOldeWords } from '../../skin-olde-words.js';
 import { parseDecimalInteger } from '../../decimal-integer.js';
 import { ApplicationState } from '../../application-state.js';
 import { CONFIG } from '../../config.js';
@@ -968,6 +969,7 @@ export function applyDifferentialView(payload, options) {
 
         const wasBeingEdited = contentElement.isContentEditable;
         const shouldBeEditable = isEditing && !lockedByOther;
+        if (shouldBeEditable) restoreOldeWords(contentElement);
         const contentEditable = shouldBeEditable ? 'true' : 'false';
         contentElement.setAttribute('contenteditable', contentEditable);
         contentElement.contentEditable = contentEditable;
@@ -1217,6 +1219,7 @@ function applyNoteDataFromPayload(noteElement, noteId, noteData, noteLocks, curr
     const contentElement = getContentElement(noteElement);
     const wasBeingEdited = contentElement.isContentEditable;
     const shouldBeEditable = isEditing && !lockedByOther;
+    if (shouldBeEditable) restoreOldeWords(contentElement);
     const contentEditable = shouldBeEditable ? 'true' : 'false';
     contentElement.setAttribute('contenteditable', contentEditable);
     contentElement.contentEditable = contentEditable;

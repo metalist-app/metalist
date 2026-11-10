@@ -7,6 +7,7 @@ import {
 } from './mode-manager/services/html-paste-sanitizer-service.js';
 import { restoreRemoteImageElementsForStorage } from './mode-manager/services/remote-image-proxy-service.js';
 import { produces } from '../shockharness/contracts.js';
+import { restoreOldeWordsInHtml } from './skin-olde-words.js';
 
 
 const POLICY_URL = '/static/note-html-policy.json';
@@ -290,13 +291,14 @@ export async function initializeNoteHtmlSanitizer(options) {
     moduleState.sanitizeWithPolicy = buildSanitizer(options.policy, options.purifier);
 }
 
-export function sanitizeNoteHtmlForStorage(content) {
-    if (typeof content !== 'string') {
+export function sanitizeNoteHtmlForStorage(drawnContent) {
+    if (typeof drawnContent !== 'string') {
         throw new Error('sanitizeNoteHtmlForStorage requires string content');
     }
     if (moduleState.sanitizeWithPolicy === null) {
         throw new Error('Note HTML sanitizer has not been initialized');
     }
+    const content = restoreOldeWordsInHtml(drawnContent);
     let storageContent = content;
     if (content.includes('data-remote-image-source-url')) {
         if (typeof DOMParser !== 'function') {

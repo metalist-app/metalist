@@ -550,7 +550,7 @@ test('the background menu groups adding, going, the outline, the view, opening a
     assert.deepEqual(submenu('go-to'), ['Top', 'Bottom']);
     assert.deepEqual(submenu('outline'), ['Expand All Root Notes', 'Collapse All Root Notes', '— Fully Expand All', 'Fully Collapse All']);
     // Themes alone (the maintainer, 2026-11-02: the chat and the folders have their tabs on screen).
-    assert.deepEqual(submenu('themes'), ['System', 'Light', 'Dark', 'Illuminated']);
+    assert.deepEqual(submenu('themes'), ['System', 'Light', 'Dark', 'Ye Olde Scrypte']);
     assert.deepEqual(submenu('open'), ['New Search Context', 'Vault…', 'Reminders']);
     assert.deepEqual(submenu('export-print'), ['View as HTML…', 'Print View…']);
 });
@@ -626,7 +626,7 @@ test('View and Themes tick the current state', () => {
 
     // The current choice is ticked but not greyed: picking it changes nothing.
     assert.deepEqual(ticks('view'), [['All Notes', false, true], ['Untagged Notes', true, true]]);
-    assert.deepEqual(ticks('themes'), [['System', false, true], ['Light', false, true], ['Dark', true, true], ['Illuminated', false, true]]);
+    assert.deepEqual(ticks('themes'), [['System', false, true], ['Light', false, true], ['Dark', true, true], ['Ye Olde Scrypte', false, true]]);
 
     submenu('view')[0].onSelect();
     submenu('themes')[1].onSelect();

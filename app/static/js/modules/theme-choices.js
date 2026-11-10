@@ -1,7 +1,7 @@
 // The choices of Theme, in the palette and the right-click menu. A skin (docs/ui/skins.md) is a
 // theme whose look comes from app/static/css/skins/<value>.css, drawn over the light theme.
 export const SKIN_BASE_THEME = 'light';
-const SKIN_CHOICES = [['illuminated', 'Illuminated']];
+const SKIN_CHOICES = [['illuminated', 'Ye Olde Scrypte']];
 export const THEME_CHOICES = [['system', 'System'], ['light', 'Light'], ['dark', 'Dark'], ...SKIN_CHOICES];
 const SKIN_VALUES = new Set(SKIN_CHOICES.map(([value]) => value));
 

@@ -60,6 +60,7 @@ import { ReminderModal } from '../modals/reminder-modal.js';
 import { printNotes } from '../mode-manager/services/print-service.js';
 import { SKIN_BASE_THEME, THEME_CHOICES, isSkinTheme } from '../theme-choices.js';
 import { setSkinInitialsActive } from '../skin-initials.js';
+import { setOldeWordsActive } from '../skin-olde-words.js';
 import { exportNotes } from '../mode-manager/services/export-service.js';
 
 import { VersionInfoModal } from '../modals/version-info-modal.js';
@@ -226,13 +227,15 @@ function applyTheme(theme) {
     const root = document.documentElement;
     const nextTheme = themeAttributeOf(theme);
     const nextSkin = isSkinTheme(theme) ? theme : null;
-    setSkinInitialsActive(nextSkin !== null);
     if (root.getAttribute('data-theme') === nextTheme && root.getAttribute('data-skin') === nextSkin) {
         return;
     }
     const setTheme = () => {
         setOrRemoveAttribute(root, 'data-theme', nextTheme);
         setOrRemoveAttribute(root, 'data-skin', nextSkin);
+        // After the attribute: the marks measure against the skin's own sizes.
+        setSkinInitialsActive(nextSkin !== null);
+        setOldeWordsActive(nextSkin !== null);
     };
     const isFaded = document.body.dataset.appReady === 'true'
         && !document.hidden

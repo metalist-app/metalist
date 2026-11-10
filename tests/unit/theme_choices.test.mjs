@@ -8,7 +8,7 @@ function rootWith(attributes) {
 }
 
 test('Theme offers the three themes and then the skins', () => {
-    assert.deepEqual(THEME_CHOICES, [['system', 'System'], ['light', 'Light'], ['dark', 'Dark'], ['illuminated', 'Illuminated']]);
+    assert.deepEqual(THEME_CHOICES, [['system', 'System'], ['light', 'Light'], ['dark', 'Dark'], ['illuminated', 'Ye Olde Scrypte']]);
 });
 
 test('only a skin counts as a skin', () => {

@@ -136,8 +136,8 @@ html[data-skin="illuminated"] .note-content b {
 }
 
 /* The decorated initial: the first letter of the list's first note and of each note after an ornament, in the painted box. */
-/* Firefox gives ::first-letter only to the block that holds the text itself, so the rules name those blocks too. */
-html[data-skin="illuminated"] #notes-container > .note:nth-child(4n + 1):not([data-note-tags*="@code"]):not([data-note-tags*="@json"]):not([data-note-tags*="@csv"]):not([data-note-tags*="@mermaid"]):not([data-note-tags*="@LaTeX"]) :is(.note-content, .note-content > div:first-child:not([class]), .note-content > .note-with-backlinks > div:first-of-type:not([class]), .note-content > .note-with-backlinks > .meta-markdown > :first-child, .note-content > .meta-markdown > :first-child):not(.note .note *)::first-letter {
+/* Firefox gives ::first-letter only to the block that holds the text itself: skin-initials.js marks it. */
+html[data-skin="illuminated"] #notes-container > .note[data-opening]:not(.editing):not([data-note-tags*="@code"]):not([data-note-tags*="@json"]):not([data-note-tags*="@csv"]):not([data-note-tags*="@mermaid"]):not([data-note-tags*="@LaTeX"]) [data-initial-host]::first-letter {
     float: left;
     font-family: "Luminari", "Apple Chancery", fantasy;
     font-size: 1.9em;
@@ -175,7 +175,8 @@ html[data-skin="illuminated"] :is(.note-collapse-toggle, .note-embed-collapse-to
     color: var(--skin-vermilion);
 }
 
-html[data-skin="illuminated"] .note:nth-child(even of .note) > .note-collapse-toggle {
+html[data-skin="illuminated"] #notes-container > .note[data-arrow-colour="blue"] > .note-collapse-toggle,
+html[data-skin="illuminated"] .note .note:nth-child(even of .note) > .note-collapse-toggle {
     color: var(--skin-lapis);
 }
 
@@ -237,12 +238,6 @@ html[data-skin="illuminated"] .note-backlinks-badge {
     color: var(--skin-vermilion);
 }
 
-/* A folded note keeps room for its initial: one line of text beside the box. */
-html[data-skin="illuminated"] #notes-container > .note:nth-child(4n + 1).collapsed:not(.editing):not([data-note-tags*="@code"]):not([data-note-tags*="@json"]):not([data-note-tags*="@csv"]):not([data-note-tags*="@mermaid"]):not([data-note-tags*="@LaTeX"]) > .note-content {
-    max-height: none;
-    min-height: 54px;
-}
-
 html[data-skin="illuminated"] .note-tags {
     font-size: 14px;
 }
@@ -254,8 +249,14 @@ html[data-skin="illuminated"] .note-tags {
 /* initials.webp: 6 tiles a row, A to Z, each 160px in a 168px cell (4px of its own edge
    around it). One file, so a letter typed for the first time is painted at once. */
 html[data-skin="illuminated"] {
-    --skin-initial-size: 104px;
+    --skin-initial-size: 40px;
     --skin-initial-unit: calc(var(--skin-initial-size) / 160);
+}
+
+/* A line that holds the letter is taller than the one line a folded note allows. */
+html[data-skin="illuminated"] .note.collapsed:not(.editing) > .note-content:has([data-initial-host]),
+html[data-skin="illuminated"] .note.collapsed:not(.editing) > .note-content[data-initial-host] {
+    max-height: calc(var(--skin-initial-size) + 0.5em);
 }
 
 html[data-skin="illuminated"] .note[data-initial="A"] { --skin-initial-column: 0; --skin-initial-row: 0; }
@@ -285,13 +286,17 @@ html[data-skin="illuminated"] .note[data-initial="X"] { --skin-initial-column: 5
 html[data-skin="illuminated"] .note[data-initial="Y"] { --skin-initial-column: 0; --skin-initial-row: 4; }
 html[data-skin="illuminated"] .note[data-initial="Z"] { --skin-initial-column: 1; --skin-initial-row: 4; }
 
-html[data-skin="illuminated"] #notes-container > .note:nth-child(4n + 1)[data-initial]:not([data-note-tags*="@code"]):not([data-note-tags*="@json"]):not([data-note-tags*="@csv"]):not([data-note-tags*="@mermaid"]):not([data-note-tags*="@LaTeX"]) :is(.note-content, .note-content > div:first-child:not([class]), .note-content > .note-with-backlinks > div:first-of-type:not([class]), .note-content > .note-with-backlinks > .meta-markdown > :first-child, .note-content > .meta-markdown > :first-child):not(.note .note *)::first-letter {
+html[data-skin="illuminated"] #notes-container > .note[data-opening]:not(.editing)[data-initial]:not([data-note-tags*="@code"]):not([data-note-tags*="@json"]):not([data-note-tags*="@csv"]):not([data-note-tags*="@mermaid"]):not([data-note-tags*="@LaTeX"]) [data-initial-host]::first-letter {
     font-family: ui-monospace, Menlo, Consolas, monospace;
-    /* Firefox ignores line-height on a floated first letter, so the square comes from padding around a letter too small to count. */
+    /* On the line, not floated, and raised so the painted letter stands on the line's baseline: the
+       letter ends a fifth of the way up its tile, above the frame (every tile within a pixel or two
+       of that). The square comes from padding around a letter too small to count. */
+    float: none;
     font-size: 1px;
-    line-height: 1px;
+    line-height: var(--skin-initial-size);
+    vertical-align: calc((var(--skin-initial-size) - 1px) / 2 - var(--skin-initial-size) * 0.2);
     color: transparent;
-    margin: 2px 3px 0 0;
+    margin: 0 3px 0 0;
     padding: calc((var(--skin-initial-size) - 1px) / 2) calc((var(--skin-initial-size) - 1ch) / 2);
     border: 0;
     border-image: none;
@@ -301,10 +306,6 @@ html[data-skin="illuminated"] #notes-container > .note:nth-child(4n + 1)[data-in
     background-position:
         calc(-1 * (var(--skin-initial-column) * 168 + 4) * var(--skin-initial-unit))
         calc(-1 * (var(--skin-initial-row) * 168 + 4) * var(--skin-initial-unit));
-}
-
-html[data-skin="illuminated"] #notes-container > .note:nth-child(4n + 1)[data-initial]:not([data-note-tags*="@code"]):not([data-note-tags*="@json"]):not([data-note-tags*="@csv"]):not([data-note-tags*="@mermaid"]):not([data-note-tags*="@LaTeX"]) > .note-content {
-    min-height: calc(var(--skin-initial-size) + 2px);
 }
 
 html[data-skin="illuminated"] .note-content {
@@ -622,17 +623,17 @@ html[data-skin="illuminated"] .controls .search-suggestion-window-label {
 }
 
 /* --- Ornaments: one in the space after every fourth top-level note. Twelve, in an order that keeps
-   the busy scenes apart, so one comes back only after 48 notes. Chosen by place in the list. The
+   the busy scenes apart, so one comes back only after 48 notes. Chosen by place in the whole list (skin-initials.js). The
    ornament hangs below the note, outside its outline; a drag's drop line takes its place. --- */
 html[data-skin="illuminated"] {
     --skin-ornament-width: 250px;
     --skin-ornament-height: 78px;
     --skin-ornament-gap: 10px;
 }
-html[data-skin="illuminated"] #notes-container > .note:nth-child(4n):not(:last-child) {
+html[data-skin="illuminated"] #notes-container > .note[data-ornament]:not(:last-child) {
     margin-bottom: calc(var(--skin-ornament-height) + 2 * var(--skin-ornament-gap));
 }
-html[data-skin="illuminated"] #notes-container > .note:nth-child(4n):not(:last-child):not(.drag-after)::after {
+html[data-skin="illuminated"] #notes-container > .note[data-ornament]:not(:last-child):not(.drag-after)::after {
     content: "";
     position: absolute;
     top: calc(100% + var(--skin-ornament-gap));
@@ -642,15 +643,51 @@ html[data-skin="illuminated"] #notes-container > .note:nth-child(4n):not(:last-c
     background: var(--skin-ornament) center / contain no-repeat;
     pointer-events: none;
 }
-html[data-skin="illuminated"] #notes-container > .note:nth-child(48n + 4) { --skin-ornament: url("/static/img/skins/illuminated/ornament-01.webp"); }
-html[data-skin="illuminated"] #notes-container > .note:nth-child(48n + 8) { --skin-ornament: url("/static/img/skins/illuminated/ornament-05.webp"); }
-html[data-skin="illuminated"] #notes-container > .note:nth-child(48n + 12) { --skin-ornament: url("/static/img/skins/illuminated/ornament-03.webp"); }
-html[data-skin="illuminated"] #notes-container > .note:nth-child(48n + 16) { --skin-ornament: url("/static/img/skins/illuminated/ornament-07.webp"); }
-html[data-skin="illuminated"] #notes-container > .note:nth-child(48n + 20) { --skin-ornament: url("/static/img/skins/illuminated/ornament-08.webp"); }
-html[data-skin="illuminated"] #notes-container > .note:nth-child(48n + 24) { --skin-ornament: url("/static/img/skins/illuminated/ornament-06.webp"); }
-html[data-skin="illuminated"] #notes-container > .note:nth-child(48n + 28) { --skin-ornament: url("/static/img/skins/illuminated/ornament-12.webp"); }
-html[data-skin="illuminated"] #notes-container > .note:nth-child(48n + 32) { --skin-ornament: url("/static/img/skins/illuminated/ornament-10.webp"); }
-html[data-skin="illuminated"] #notes-container > .note:nth-child(48n + 36) { --skin-ornament: url("/static/img/skins/illuminated/ornament-02.webp"); }
-html[data-skin="illuminated"] #notes-container > .note:nth-child(48n + 40) { --skin-ornament: url("/static/img/skins/illuminated/ornament-11.webp"); }
-html[data-skin="illuminated"] #notes-container > .note:nth-child(48n + 44) { --skin-ornament: url("/static/img/skins/illuminated/ornament-04.webp"); }
-html[data-skin="illuminated"] #notes-container > .note:nth-child(48n + 0) { --skin-ornament: url("/static/img/skins/illuminated/ornament-09.webp"); }
+html[data-skin="illuminated"] #notes-container > .note[data-ornament="0"] { --skin-ornament: url("/static/img/skins/illuminated/ornament-01.webp"); }
+html[data-skin="illuminated"] #notes-container > .note[data-ornament="1"] { --skin-ornament: url("/static/img/skins/illuminated/ornament-05.webp"); }
+html[data-skin="illuminated"] #notes-container > .note[data-ornament="2"] { --skin-ornament: url("/static/img/skins/illuminated/ornament-03.webp"); }
+html[data-skin="illuminated"] #notes-container > .note[data-ornament="3"] { --skin-ornament: url("/static/img/skins/illuminated/ornament-07.webp"); }
+html[data-skin="illuminated"] #notes-container > .note[data-ornament="4"] { --skin-ornament: url("/static/img/skins/illuminated/ornament-08.webp"); }
+html[data-skin="illuminated"] #notes-container > .note[data-ornament="5"] { --skin-ornament: url("/static/img/skins/illuminated/ornament-06.webp"); }
+html[data-skin="illuminated"] #notes-container > .note[data-ornament="6"] { --skin-ornament: url("/static/img/skins/illuminated/ornament-12.webp"); }
+html[data-skin="illuminated"] #notes-container > .note[data-ornament="7"] { --skin-ornament: url("/static/img/skins/illuminated/ornament-10.webp"); }
+html[data-skin="illuminated"] #notes-container > .note[data-ornament="8"] { --skin-ornament: url("/static/img/skins/illuminated/ornament-02.webp"); }
+html[data-skin="illuminated"] #notes-container > .note[data-ornament="9"] { --skin-ornament: url("/static/img/skins/illuminated/ornament-11.webp"); }
+html[data-skin="illuminated"] #notes-container > .note[data-ornament="10"] { --skin-ornament: url("/static/img/skins/illuminated/ornament-04.webp"); }
+html[data-skin="illuminated"] #notes-container > .note[data-ornament="11"] { --skin-ornament: url("/static/img/skins/illuminated/ornament-09.webp"); }
+
+/* The script's letters hang below a folded note's one line (y, g), past where it is cut off. The
+   room for them is padding taken back by the margin, so a folded note is no taller. */
+html[data-skin="illuminated"] .note.collapsed:not(.editing) > .note-content:not(:has(.meta-mermaid-diagram)) {
+    padding-bottom: 0.15em;
+    margin-bottom: -0.15em;
+}
+
+/* While a note is edited it is plain writing in MetaList's regular font: the script is for reading. */
+html[data-skin="illuminated"] .note.editing > .note-content,
+html[data-skin="illuminated"] .note.editing > .note-content * {
+    font-family: system-ui, -apple-system, sans-serif;
+}
+html[data-skin="illuminated"] .note.editing > .note-content {
+    font-size: var(--note-plain-font-size);
+}
+
+/* Struck-out words are scribbled over in ink, as far as the text goes on every line it wraps to.
+   A note tagged @strikethrough has its lines as blocks: drawn inline here, each still on its own line.
+   While editing, a plain line. */
+html[data-skin="illuminated"] .note:not(.editing) > .note-content :is(s, strike, del, span.meta-strikethrough, .meta-strikethrough.meta-box-block > :is(div, p)) {
+    text-decoration: none;
+    background: url("/static/img/skins/illuminated/scribble.svg") left center / auto 1em repeat-x;
+    -webkit-box-decoration-break: clone;
+    box-decoration-break: clone;
+}
+html[data-skin="illuminated"] .note:not(.editing) > .note-content .meta-strikethrough.meta-box-block {
+    text-decoration: none;
+}
+html[data-skin="illuminated"] .note:not(.editing) > .note-content .meta-strikethrough.meta-box-block > :is(div, p) {
+    display: inline;
+}
+html[data-skin="illuminated"] .note:not(.editing) > .note-content .meta-strikethrough.meta-box-block > :is(div, p)::after {
+    content: "\A";
+    white-space: pre;
+}

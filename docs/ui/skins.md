@@ -1,6 +1,6 @@
 # Skins
 
-A skin changes how MetaList looks from top to bottom: painted art, fonts, cursors. It is chosen under `Theme`, in the command palette and the right-click `Themes` menu, next to `System`, `Light` and `Dark`. MetaList has one, `Illuminated`, a late-medieval manuscript.
+A skin changes how MetaList looks from top to bottom: painted art, fonts, cursors. It is chosen under `Theme`, in the command palette and the right-click `Themes` menu, next to `System`, `Light` and `Dark`. MetaList has one, `Ye Olde Scrypte`, a late-medieval manuscript (internally `illuminated`: the saved value and file names).
 
 Skins are reviewed and ship with MetaList; nobody installs one. A contributed skin comes in as a change to this repo, so its art is served by MetaList (the page's content security policy allows nothing else) and a skin that breaks something is caught in review.
 
@@ -23,13 +23,16 @@ Printing and exported HTML are their own documents and never carry a skin.
 ## What the browsers require
 
 - **A cursor image is at most 32x32 CSS pixels.** Chrome and Firefox swap a larger one for the regular cursor wherever it would stick out of the page, so it reverts near the window's edges.
-- **Firefox gives `::first-letter` only to the block that holds the text itself,** not to an ancestor, and ignores `line-height` on a floated first letter. Name the inner blocks in the selector, and make the letter's box from padding around a 1px letter.
+- **Firefox gives `::first-letter` only to the block that holds the text itself,** not to an ancestor, and ignores `line-height` on a floated first letter. `skin-initials.js` finds and marks that block (`data-initial-host`), however the note's text is wrapped; the letter's box is padding around a 1px letter. The mark, like old-English words, is removed before a note is edited or saved.
 - **An `@container` or hover rule in `main.css` can outrank a skin's base rule.** State `:hover` explicitly where a skin wants no change.
 
-## Illuminated
+## Ye Olde Scrypte
 
 - From a window 1180px wide: parchment, torn left and right edges over a dark desk, vines tiled down both sides, knotwork corners at the top, and lilies, grapes and birds on the joins between vine tiles.
-- The first letter of the list's first note, and of the note after each ornament, is a 104px painted capital. A note whose first letter is followed by punctuation gets a boxed letter instead, and code, JSON, CSV, Mermaid and LaTeX notes get none.
-- After every fourth top-level note, a painted ornament, from twelve in a fixed order (`:nth-child(48n + ...)`), so one comes back only after 48 notes.
+- The first letter of the list's first note, and of the note after each ornament, is a 40px painted capital, open or folded. A note being edited has none. A note whose first letter is followed by punctuation gets a boxed letter instead, and code, JSON, CSV, Mermaid and LaTeX notes get none.
+- After every fourth top-level note, a painted ornament, from twelve in a fixed order, so one comes back only after 48 notes. Position is counted from the top of the whole list (`ModeContext.getRootWindowStart`), because on a long list the page holds only a window of it.
 - The quill is the pointer, and the painted hand points at what can be clicked.
+- While a note is edited it is in MetaList's regular font and size; the script is for reading.
+- Struck-out words are scribbled over in ink; while editing they keep a plain line.
+- A note's words are drawn as old English (`app/static/js/modules/skin-olde-words.js`, its tables in `skin-olde-vocabulary.js`): you as thou or thee, the as ye, has as hath, she walks as she walketh, and old spellings by a word's ending (mutation as mutacioun, walked as walk'd). A capitalised word inside a sentence is taken for a name and keeps its spelling. Only the drawing changes. Code, links, tables of data and references keep their exact text. Each swapped word is a span holding the real word: editing and saving restore it (`dom-utils.setNoteEditable`, the differential view, and `sanitizeNoteHtmlForStorage` as the last guard). Copying gets the real words without any handling: a note's text can be selected only while editing, and Copy on a note is built by the server from the saved note. Find and search highlights see the drawn words.
 - Not skinned yet: the command palette, dialogs, the `[[` and tag suggestions, dark colours, the phone layout.
