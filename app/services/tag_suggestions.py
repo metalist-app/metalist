@@ -1310,8 +1310,10 @@ def _suggest_while_typing(
     it, going with its tags, similar notes), filtered by what is typed; then
     matching tags that already apply through inheritance or the rules (the
     empty bar hides those), by raw usage; then every other matching tag by raw
-    usage. Each further letter only removes tags. Measured against ranking each
-    prefix afresh in docs/design/tag-suggestion-learnings.md.
+    usage. Tags whose name starts with what is typed, and tags the note's text
+    names, come before tags where only a later part matches (`q`: `question`
+    before `security-questions`), each in that order. Measured against ranking each prefix afresh in
+    docs/design/tag-suggestion-learnings.md.
     """
     assert prefix != "" and not prefix.startswith("@"), prefix
     # What is typed is the last token the tag bar sends; the empty bar has no such token.
@@ -1330,28 +1332,50 @@ def _suggest_while_typing(
         base_tags=frozenset({tag for tag in anchors if not tag.startswith("@")} | inherited_non_meta),
         ontology=basis.ontology, prefix=prefix, content_html=content_html,
     )
-    # Each candidate with how to explain it: the empty-bar ranking's evidence, or none.
-    ordered: Iterable[Tuple[str, Callable[[str], Tuple[str, ...]]]] = (
-        *((term, basis.evidence.explain) for term in basis.evidence.tags),
-        *((term, writer.without_evidence) for term in basis.already_applying_by_use),
-        *((term, writer.without_evidence) for term in basis.all_terms_by_use),
+    # Each candidate with how to explain it (the empty-bar ranking's evidence, or none) and
+    # whether it has that evidence.
+    ordered: Iterable[Tuple[str, Callable[[str], Tuple[str, ...]], bool]] = (
+        *((term, basis.evidence.explain, True) for term in basis.evidence.tags),
+        *((term, writer.without_evidence, False) for term in basis.already_applying_by_use),
+        *((term, writer.without_evidence, False) for term in basis.all_terms_by_use),
     )
     # The tag being typed is not written yet: its synonyms are still offered (`avocado` → `avocados`).
     left_out = {tag.casefold() for tag in explicit_tags if not tag.startswith("@")} | _synonyms_of_written_tags(
         tags=empty_bar_explicit, ontology=basis.ontology,
     )
-    shown: List[str] = []
+    starting: List[str] = []
+    later_part: List[str] = []
     explain_by_term: Dict[str, Callable[[str], Tuple[str, ...]]] = {}
-    for term, explain in ordered:
+    for term, explain, has_evidence in ordered:
         if term.casefold() in explain_by_term or term.casefold() in left_out:
             continue
         if not _typed_leads_to(term=term, prefix=prefix):
             continue
-        shown.append(term)
+        if _keeps_its_place(term=term, prefix=prefix, has_evidence=has_evidence, content_html=content_html, ontology=basis.ontology):
+            starting.append(term)
+        else:
+            later_part.append(term)
         explain_by_term[term.casefold()] = explain
-        if len(shown) == limit:
+        if len(starting) == limit:
             break
+    shown = (starting + later_part)[:limit]
     return _RankedSuggestions(tags=shown, explain=lambda term: explain_by_term[term.casefold()](term))
+
+
+def _keeps_its_place(*, term: str, prefix: str, has_evidence: bool, content_html: str, ontology) -> bool:
+    """Whether typing leaves the tag where the empty bar ranked it: its name starts with what is
+    typed, or the note's text names it (the strongest evidence there is)."""
+    if _name_starts_with(term=term, prefix=prefix):
+        return True
+    if not has_evidence:
+        return False
+    return match_tag_in_note_text(term=term, content_html=content_html, ontology=ontology) is not None
+
+
+def _name_starts_with(*, term: str, prefix: str) -> bool:
+    """Whether the tag's whole name starts with what is typed, not only a later part of it;
+    a built-in tag's name is the part after its @."""
+    return term.removeprefix("@").casefold().startswith(prefix.casefold())
 
 
 def _typed_leads_to(*, term: str, prefix: str) -> bool:
