@@ -69,7 +69,7 @@ suggestions of `@` tags are in the tag-suggestions topic.
   - Completed/error/timeout shell feedback can be dismissed with the inline `Close` button in the output header.
   - The transport is cross-platform, but note scripts still need to match the connected server host's shell and OS conventions.
 - JSON meta tags:
-  - `@json` pretty-prints note content as JSON; invalid JSON shows an error badge and raw text.
+  - `@json` pretty-prints note content as JSON under a `JSON` label; invalid JSON shows an error badge and raw text.
 - CSV meta tags:
   - `@csv` renders note content as a CSV table; invalid CSV shows an error badge and raw text.
   - `((@csv))` renders only the wrapped content as a CSV table.

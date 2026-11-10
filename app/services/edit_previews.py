@@ -33,6 +33,7 @@ from app.services.latex_rendering import finding_formulas
 from app.services.latex_rendering import render_latex_math_to_html
 from app.services.mermaid_note_rendering import FoundDiagram
 from app.services.mermaid_note_rendering import finding_diagrams
+from app.services.structured_note_renderers import JSON_LABEL_HTML
 from app.services.structured_note_renderers import region_error_message
 from app.services.structured_note_renderers import extract_plain_text_from_note_html
 from app.utils.not_found import NOT_FOUND
@@ -198,7 +199,7 @@ def _json_preview(value: FoundRegion) -> EditPreview:
             has_unknown_command=False, caret_row=NOT_FOUND, diagram_source="",
         )
     typed = extract_plain_text_from_note_html(value.source_html).strip()
-    if html.unescape(_TAG_RE.sub("", rendered)).strip() == typed:
+    if html.unescape(_TAG_RE.sub("", rendered.replace(JSON_LABEL_HTML, ""))).strip() == typed:
         return _NO_PREVIEW
     return EditPreview(
         kind=PREVIEW_JSON, html=sanitize_rendered_html(rendered), error="",
