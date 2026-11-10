@@ -42,11 +42,29 @@ function hydrateRemoteImagesForCurrentMode(notesContainer) {
 }
 const LOCK_ICON_CACHE = ApplicationState.createWeakCollection('LOCK_ICON_CACHE', 'map');
 const TAGS_ELEMENT_CACHE = ApplicationState.createWeakCollection('TAGS_ELEMENT_CACHE', 'map');
+// A copied AI answer's References: its open state lives only on the page, not in the note.
+const UNSAVED_FOLD_SELECTOR = 'details.ai-chat-references-disclosure';
 
 function logVDOM(action, details) {
     // Per-operation logging costs time and keeps logged objects alive.
     if (!CONFIG.DEBUG.LOG_VDOM_OPS) return;
     console.log(` [VDOM] ${action}`, details);
+}
+
+// Each link title or icon that arrives redraws the note, which must not fold what the user opened.
+// A note with a different number of folds is a changed note: its folds draw as saved.
+function drawNoteContent(contentElement, content, options) {
+    const wasOpen = options.keepsUnsavedFolds
+        ? Array.from(contentElement.querySelectorAll(UNSAVED_FOLD_SELECTOR), (fold) => fold.open)
+        : [];
+    contentElement.innerHTML = serverRenderedHtml(content);
+    const folds = contentElement.querySelectorAll(UNSAVED_FOLD_SELECTOR);
+    if (folds.length !== wasOpen.length) {
+        return;
+    }
+    folds.forEach((fold, index) => {
+        fold.open = wasOpen[index];
+    });
 }
 
 function captureCollapseAnimationsFromNotePayload(notePayload) {
@@ -948,6 +966,7 @@ export function applyDifferentialView(payload, options) {
 
         const contentElement = getContentElement(noteElement);
 
+        const wasBeingEdited = contentElement.isContentEditable;
         const shouldBeEditable = isEditing && !lockedByOther;
         const contentEditable = shouldBeEditable ? 'true' : 'false';
         contentElement.setAttribute('contenteditable', contentEditable);
@@ -969,7 +988,7 @@ export function applyDifferentialView(payload, options) {
             );
 
         if (shouldRenderContent) {
-            contentElement.innerHTML = serverRenderedHtml(noteData.content);
+            drawNoteContent(contentElement, noteData.content, { keepsUnsavedFolds: !editingByCurrentClient && !wasBeingEdited });
             ensureAnchorsOpenInNewTabs(contentElement);
             // The edited note's images show at their size from the first frame.
             if (Array.isArray(noteData.flags.editingImageSizes)) {
@@ -1196,6 +1215,7 @@ function applyNoteDataFromPayload(noteElement, noteId, noteData, noteLocks, curr
     updateLockIcon(noteElement, lockedByOther);
 
     const contentElement = getContentElement(noteElement);
+    const wasBeingEdited = contentElement.isContentEditable;
     const shouldBeEditable = isEditing && !lockedByOther;
     const contentEditable = shouldBeEditable ? 'true' : 'false';
     contentElement.setAttribute('contenteditable', contentEditable);
@@ -1209,7 +1229,7 @@ function applyNoteDataFromPayload(noteElement, noteId, noteData, noteLocks, curr
 
     let contentChanged = false;
     if ((forceContentUpdate || !editingByCurrentClient || canReplaceWhileEditing) && typeof noteData.content === 'string') {
-        contentElement.innerHTML = serverRenderedHtml(noteData.content);
+        drawNoteContent(contentElement, noteData.content, { keepsUnsavedFolds: !editingByCurrentClient && !wasBeingEdited });
         ensureAnchorsOpenInNewTabs(contentElement);
         noteElement.dataset.contentHash = snapshotHash;
         contentChanged = true;

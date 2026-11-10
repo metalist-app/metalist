@@ -411,6 +411,7 @@ preferences are saved (`RETIRED_PROMPT_PREFERENCE_KEYS` and
   search history, and provides the dismissible X to return to the prior search context.
 - Common UUID dash substitutions are normalized programmatically. UUIDs in fenced
   code/existing links remain literal.
+- In a note holding a copied answer, `References` stays open or closed as left while the note redraws (each link title or icon that arrives redraws it, 2026-11-09). A reload, or editing the note and leaving it, draws it closed: the state is not saved in the note.
 - Right-click a completed answer and choose `Copy Response` to copy Markdown tagged
   `@markdown @ai` into the MetaList note clipboard and rich/plain content onto the
   system clipboard. After pasting that response as a note, its References disclosure
