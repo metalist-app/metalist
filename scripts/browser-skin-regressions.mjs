@@ -49,6 +49,8 @@ async function createNotes(page) {
 }
 
 async function reloadApp(page) {
+  // A reload that interrupts the font's download is reported as a page error by Firefox.
+  await page.evaluate(() => document.fonts.ready);
   await page.reload();
   await page.waitForSelector('[data-app-ready="true"]');
   await waitForAppQuiet(page, REQUESTS_QUIET_MS);
@@ -443,6 +445,50 @@ async function scribbleCase(page) {
   assert.match(shown.image, /scribble\.svg/);
 }
 
+// The script is MetaList's own font, loaded from MetaList, whatever the system has installed.
+async function scriptFontCase(page) {
+  const font = await page.evaluate(async () => {
+    await document.fonts.ready;
+    return {
+      family: getComputedStyle(document.querySelector('#notes-container > .note > .note-content')).fontFamily,
+      isLoaded: [...document.fonts].some(face => face.family.replaceAll('"', '') === 'Eagle Lake' && face.status === 'loaded'),
+    };
+  });
+  assert.match(font.family, /^"?Eagle Lake"?,/);
+  assert.equal(font.isLoaded, true);
+}
+
+// A root note's text is never smaller than its children's: the skin scales the size the
+// Note Layout setting chose, and doesn't replace it for the children alone.
+async function rootSizeCase(page) {
+  const parentId = await page.evaluate(() => document.querySelector('#notes-container > .note').dataset.noteId);
+  const childId = await page.evaluate(async parentId => {
+    const {NotesAPI} = await import('/static/js/modules/api-client.js');
+    const child = await NotesAPI.createChild(parentId, '');
+    await NotesAPI.saveNote(child.id, '<div>A child</div>', '');
+    return child.id;
+  }, parentId);
+  await reloadApp(page);
+  const sizes = await page.evaluate(({parentId, childId}) => {
+    const sizeOf = id => parseFloat(getComputedStyle(document.querySelector(`.note[data-note-id="${id}"] > .note-content`)).fontSize);
+    const original = document.body.dataset.topLevelNoteSize;
+    const read = setting => {
+      document.body.dataset.topLevelNoteSize = setting;
+      return {root: sizeOf(parentId), child: sizeOf(childId)};
+    };
+    const result = {same: read('same'), larger: read('larger')};
+    document.body.dataset.topLevelNoteSize = original;
+    return result;
+  }, {parentId, childId});
+  await page.evaluate(async childId => {
+    const {NotesAPI} = await import('/static/js/modules/api-client.js');
+    await NotesAPI.deleteNote(childId);
+  }, childId);
+  await reloadApp(page);
+  assert.equal(sizes.same.root, sizes.same.child, `same size: root ${sizes.same.root}, child ${sizes.same.child}`);
+  assert.ok(sizes.larger.root > sizes.larger.child, `larger: root ${sizes.larger.root}, child ${sizes.larger.child}`);
+}
+
 async function skinCases(page) {
   await reloadApp(page);
   const before = await readPage(page);
@@ -457,6 +503,8 @@ async function skinCases(page) {
   await page.waitForFunction(() => document.querySelector('#notes-container > .note[data-initial]') !== null);
   assertSkinned(await readPage(page));
 
+  await rootSizeCase(page);
+  await scriptFontCase(page);
   await scribbleCase(page);
   await arrowColourCase(page);
   await shiftedWindowCase(page);

@@ -79,6 +79,22 @@ def test_art_and_css_match(skin: str) -> None:
     assert sorted(path.name for path in art - used) == []
 
 
+# Fonts that exist on one system only: on the others a skin would silently look different.
+SYSTEM_ONLY_FONTS = ("Apple Chancery", "Luminari", "Zapfino", "Papyrus", "Segoe Script")
+FONT_FILE = re.compile(r'url\("/static/(fonts/[^"]+)"\)')
+
+
+@pytest.mark.parametrize("skin", SKIN_NAMES)
+def test_skin_ships_its_fonts(skin: str) -> None:
+    css = _css_of(skin)
+    assert [font for font in SYSTEM_ONLY_FONTS if font in css] == []
+    files = FONT_FILE.findall(css)
+    assert files
+    for relative in files:
+        assert (STATIC_ROOT / relative).is_file(), relative
+        assert (STATIC_ROOT / relative).with_name("OFL.txt").is_file(), f"{relative} ships without its licence"
+
+
 @pytest.mark.parametrize("skin", SKIN_NAMES)
 def test_cursors_fit_the_browsers_limit(skin: str) -> None:
     cursors = sorted((SKIN_ART_DIRECTORY / skin).glob("cursor-*.png"))

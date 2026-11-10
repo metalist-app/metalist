@@ -8,6 +8,7 @@ Skins are reviewed and ship with MetaList; nobody installs one. A contributed sk
 
 - `app/static/css/skins/<name>.css`, linked from `app/templates/base.html`. Every rule starts with `html[data-skin="<name>"]`, so with another theme chosen the file does nothing and its art is never downloaded.
 - `app/static/img/skins/<name>/`, its art.
+- Any font it uses, in `app/static/fonts/<font>/` with its licence beside it: a skin never names a font that only some systems have.
 - One entry in `app/static/js/modules/theme-choices.js` and in the allowed values of `pref.theme` (`app/services/client_state_service.py`).
 
 A skin is drawn over the light theme: choosing one sets `data-theme="light"` as well as `data-skin`. Everything that asks for the theme (exports, diagrams, Excalidraw) sees light.
@@ -32,6 +33,7 @@ Printing and exported HTML are their own documents and never carry a skin.
 - The first letter of the list's first note, and of the note after each ornament, is a 40px painted capital, open or folded. A note being edited has none. A note whose first letter is followed by punctuation gets a boxed letter instead, and code, JSON, CSV, Mermaid and LaTeX notes get none.
 - After every fourth top-level note, a painted ornament, from twelve in a fixed order, so one comes back only after 48 notes. Position is counted from the top of the whole list (`ModeContext.getRootWindowStart`), because on a long list the page holds only a window of it.
 - The quill is the pointer, and the painted hand points at what can be clicked.
+- The script is Eagle Lake (SIL Open Font License, shipped unaltered with its licence in `app/static/fonts/eagle-lake/`), so Windows, macOS and Linux draw the same letters.
 - While a note is edited it is in MetaList's regular font and size; the script is for reading.
 - Struck-out words are scribbled over in ink; while editing they keep a plain line.
 - A note's words are drawn as old English (`app/static/js/modules/skin-olde-words.js`, its tables in `skin-olde-vocabulary.js`): you as thou or thee, the as ye, has as hath, she walks as she walketh, and old spellings by a word's ending (mutation as mutacioun, walked as walk'd). A capitalised word inside a sentence is taken for a name and keeps its spelling. Only the drawing changes. Code, links, tables of data and references keep their exact text. Each swapped word is a span holding the real word: editing and saving restore it (`dom-utils.setNoteEditable`, the differential view, and `sanitizeNoteHtmlForStorage` as the last guard). Copying gets the real words without any handling: a note's text can be selected only while editing, and Copy on a note is built by the server from the saved note. Find and search highlights see the drawn words.
