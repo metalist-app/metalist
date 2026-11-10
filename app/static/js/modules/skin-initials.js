@@ -1,6 +1,7 @@
 import { ApplicationState } from './application-state.js';
 import { ModeContextInstance as ModeContext } from './mode-manager/mode-context.js';
 import { INITIAL_HOST_ATTRIBUTE } from './skin-olde-words.js';
+import { ARROW_CARD_COUNT, createCardDeck, createNoteCardDealer } from './skin-arrow-cards.js';
 
 // A skin paints the first letter of the list's first note, and of the note after each ornament
 // (every fourth note has one below it), from a sheet of letter tiles, so CSS has to know which
@@ -8,8 +9,11 @@ import { INITIAL_HOST_ATTRIBUTE } from './skin-olde-words.js';
 // punctuation is left unmarked: CSS puts both in ::first-letter, and the tile would hide it.
 const PAINTED_INITIAL = /^[A-Za-z](?!\p{P})/u;
 const ROOT_NOTES = ':scope > .note';
-const MARK_NAMES = ['opening', 'initial', 'ornament', 'arrowColour'];
-const ARROW_COLOURS = ['red', 'blue'];
+const MARK_NAMES = ['opening', 'initial', 'ornament'];
+const NOTES_WITH_ARROWS = '.note[data-can-collapse="true"]';
+const NOTES_THAT_LOST_THEIR_ARROW = '.note[data-arrow-card]:not([data-can-collapse="true"])';
+const MARKED_ARROWS = '.note[data-arrow-card]';
+const arrowCardOf = createNoteCardDealer(createCardDeck(ARROW_CARD_COUNT, Math.random));
 const MARK_ON = 'true';
 const NOTES_PER_ORNAMENT = 4;
 const ORNAMENT_COUNT = 12;
@@ -114,6 +118,9 @@ function redrawLetterForNewText(host, text) {
 }
 
 function clearMarks(container) {
+    for (const note of container.querySelectorAll(MARKED_ARROWS)) {
+        setMark(note, 'arrowCard', null);
+    }
     for (const note of container.querySelectorAll(ROOT_NOTES)) {
         markInitialHost(note, false);
         for (const name of MARK_NAMES) {
@@ -122,25 +129,14 @@ function clearMarks(container) {
     }
 }
 
-// Arrows take turns among the notes that have one. A note keeps its colour as the page's window
-// moves: the first note already coloured sets the turn for the rest.
-function markArrowColours(notes) {
-    const withArrows = notes.filter((note) => note.dataset.canCollapse === 'true');
-    for (const note of notes) {
-        if (!withArrows.includes(note)) {
-            setMark(note, 'arrowColour', null);
-        }
+// Every note with a fold arrow shows the card it was dealt.
+function markArrowCards(container) {
+    for (const note of container.querySelectorAll(NOTES_WITH_ARROWS)) {
+        setMark(note, 'arrowCard', String(arrowCardOf(note.dataset.noteId)));
     }
-    const anchorIndex = Math.max(withArrows.findIndex((note) => note.dataset.arrowColour !== undefined), 0);
-    const anchor = withArrows[anchorIndex];
-    if (anchor === undefined) {
-        return;
+    for (const note of container.querySelectorAll(NOTES_THAT_LOST_THEIR_ARROW)) {
+        setMark(note, 'arrowCard', null);
     }
-    const anchorTurn = anchor.dataset.arrowColour === undefined ? 0 : ARROW_COLOURS.indexOf(anchor.dataset.arrowColour);
-    withArrows.forEach((note, index) => {
-        const turn = (((anchorTurn + index - anchorIndex) % ARROW_COLOURS.length) + ARROW_COLOURS.length) % ARROW_COLOURS.length;
-        setMark(note, 'arrowColour', ARROW_COLOURS[turn]);
-    });
 }
 
 // Counted from the top of the list, not of the page: on a long list the page holds only a window
@@ -156,7 +152,7 @@ function markRootNotes() {
         setMark(note, 'initial', markInitialHost(note, isOpening) ? paintedInitialOf(note) : null);
         setMark(note, 'ornament', hasOrnament ? String((((position + 1) / NOTES_PER_ORNAMENT) - 1) % ORNAMENT_COUNT) : null);
     });
-    markArrowColours(Array.from(container.querySelectorAll(ROOT_NOTES)));
+    markArrowCards(container);
 }
 
 // A note entering or leaving edit mode, gaining or losing its arrow, or any change to what the list holds.

@@ -374,16 +374,30 @@ async function shiftedWindowCase(page) {
   assert.deepEqual(marks.ornaments, [null, null, '0', null, null, null, '1', null, null]);
 }
 
-// Arrows take turns red and blue among the notes that have one: a note with no arrow takes no turn.
-async function arrowColourCase(page) {
-  const noteId = await page.evaluate(() => document.querySelectorAll('#notes-container > .note')[1].dataset.noteId);
-  await saveOneLine(page, noteId, `<div>${NOTE_TEXTS[SECOND_ROOT]}</div>`);
-  const colours = await page.evaluate(() => [...document.querySelectorAll('#notes-container > .note')]
-    .filter(note => note.dataset.canCollapse === 'true')
-    .map(note => getComputedStyle(note.querySelector(':scope > .note-collapse-toggle')).color));
-  await saveOneLine(page, noteId, longNote(`<b>${NOTE_TEXTS[SECOND_ROOT]}</b>`));
-  assert.ok(colours.length > 2, `there are arrows to compare: ${colours.length}`);
-  colours.slice(1).forEach((colour, index) => assert.notEqual(colour, colours[index], `arrows ${index} and ${index + 1} are the same colour`));
+// Fold arrows are pictures dealt like cards: none repeats until all have been dealt, each note keeps
+// its card, and folding swaps the closed picture for the open one.
+async function arrowCardCase(page) {
+  const shown = await page.evaluate(async settleMs => {
+    const notes = [...document.querySelectorAll('#notes-container > .note')];
+    const arrows = notes.filter(note => note.dataset.canCollapse === 'true');
+    const cards = arrows.map(note => note.dataset.arrowCard);
+    const note = arrows[0];
+    const toggle = note.querySelector(':scope > .note-collapse-toggle');
+    const picture = () => getComputedStyle(toggle, '::before').backgroundImage;
+    const open = picture();
+    toggle.click();
+    await new Promise(resolve => setTimeout(resolve, settleMs));
+    const closed = picture();
+    const cardWhileFolded = note.dataset.arrowCard;
+    toggle.click();
+    await new Promise(resolve => setTimeout(resolve, settleMs));
+    return {cards, open, closed, card: cards[0], cardWhileFolded};
+  }, FOLD_SETTLE_MS);
+  assert.ok(shown.cards.length >= 2, `there are arrows to compare: ${shown.cards.length}`);
+  assert.equal(new Set(shown.cards).size, shown.cards.length, `no card repeats: ${shown.cards}`);
+  assert.equal(shown.cardWhileFolded, shown.card);
+  assert.match(shown.open, /arrow-\d\d-open\.webp/);
+  assert.match(shown.closed, /arrow-\d\d-closed\.webp/);
 }
 
 async function saveOneLine(page, noteId, html) {
@@ -489,6 +503,23 @@ async function rootSizeCase(page) {
   assert.ok(sizes.larger.root > sizes.larger.child, `larger: root ${sizes.larger.root}, child ${sizes.larger.child}`);
 }
 
+// Code, tables and diagrams are written on the page: no panel of another colour behind them.
+async function writtenOnPageCase(page) {
+  const coloured = await page.evaluate(() => {
+    const content = document.querySelector('#notes-container > .note > .note-content');
+    const holder = document.createElement('div');
+    holder.innerHTML = '<pre class="meta-code-pre">a</pre><pre class="meta-json-pre">b</pre><table><tr><th>c</th><td>d</td></tr></table>'
+      + '<div class="meta-mermaid-diagram">e</div><div class="meta-markdown"><pre>f</pre><code>g</code></div>';
+    content.append(holder);
+    const found = [...holder.querySelectorAll('*')]
+      .filter(element => getComputedStyle(element).backgroundColor !== 'rgba(0, 0, 0, 0)')
+      .map(element => `${element.tagName}.${element.className}: ${getComputedStyle(element).backgroundColor}`);
+    holder.remove();
+    return found;
+  });
+  assert.deepEqual(coloured, []);
+}
+
 async function skinCases(page) {
   await reloadApp(page);
   const before = await readPage(page);
@@ -503,10 +534,11 @@ async function skinCases(page) {
   await page.waitForFunction(() => document.querySelector('#notes-container > .note[data-initial]') !== null);
   assertSkinned(await readPage(page));
 
+  await writtenOnPageCase(page);
   await rootSizeCase(page);
   await scriptFontCase(page);
   await scribbleCase(page);
-  await arrowColourCase(page);
+  await arrowCardCase(page);
   await shiftedWindowCase(page);
   await openingShapeCases(page);
   await letterBaselineCase(page);

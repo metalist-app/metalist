@@ -189,11 +189,6 @@ html[data-skin="illuminated"] :is(.note-collapse-toggle, .note-embed-collapse-to
     color: var(--skin-vermilion);
 }
 
-html[data-skin="illuminated"] #notes-container > .note[data-arrow-colour="blue"] > .note-collapse-toggle,
-html[data-skin="illuminated"] .note .note:nth-child(even of .note) > .note-collapse-toggle {
-    color: var(--skin-lapis);
-}
-
 html[data-skin="illuminated"] .note-collapse-toggle::before,
 html[data-skin="illuminated"] .note.collapsed > .note-collapse-toggle::before,
 html[data-skin="illuminated"] .note-embed-collapse-toggle::before,
@@ -704,4 +699,51 @@ html[data-skin="illuminated"] .note:not(.editing) > .note-content .meta-striketh
 html[data-skin="illuminated"] .note:not(.editing) > .note-content .meta-strikethrough.meta-box-block > :is(div, p)::after {
     content: "\A";
     white-space: pre;
+}
+
+/* Written on the page: code, tables, diagrams and totals have no panel of another colour behind
+   them, only the parchment. Colours that mean something (a highlight, a diff, a chess board) stay. */
+html[data-skin="illuminated"] {
+    --embed-tint-1: transparent;
+    --embed-tint-2: transparent;
+    --embed-tint-3: transparent;
+}
+html[data-skin="illuminated"] .note:not(.editing) > .note-content :is(
+    table, tr, th, td,
+    .meta-code-pre, .meta-json-pre, .meta-csv-pre, .meta-csv-table, .meta-csv-table td,
+    .meta-mermaid-diagram, .meta-mermaid-source,
+    .meta-markdown pre, .meta-markdown code,
+    .note-reference-block
+) {
+    background: transparent;
+}
+html[data-skin="illuminated"] .note:not(.editing) > .note-content .meta-stats {
+    --stats-tint: transparent;
+}
+
+/* The fold arrows: a pair of pictures per note, closed and open, dealt like cards (skin-initials.js). */
+html[data-skin="illuminated"] .note[data-arrow-card="0"] { --skin-arrow-closed: url("/static/img/skins/illuminated/arrow-00-closed.webp"); --skin-arrow-open: url("/static/img/skins/illuminated/arrow-00-open.webp"); }
+html[data-skin="illuminated"] .note[data-arrow-card="1"] { --skin-arrow-closed: url("/static/img/skins/illuminated/arrow-01-closed.webp"); --skin-arrow-open: url("/static/img/skins/illuminated/arrow-01-open.webp"); }
+html[data-skin="illuminated"] .note[data-arrow-card="2"] { --skin-arrow-closed: url("/static/img/skins/illuminated/arrow-02-closed.webp"); --skin-arrow-open: url("/static/img/skins/illuminated/arrow-02-open.webp"); }
+html[data-skin="illuminated"] .note[data-arrow-card="3"] { --skin-arrow-closed: url("/static/img/skins/illuminated/arrow-03-closed.webp"); --skin-arrow-open: url("/static/img/skins/illuminated/arrow-03-open.webp"); }
+html[data-skin="illuminated"] .note[data-arrow-card="4"] { --skin-arrow-closed: url("/static/img/skins/illuminated/arrow-04-closed.webp"); --skin-arrow-open: url("/static/img/skins/illuminated/arrow-04-open.webp"); }
+html[data-skin="illuminated"] .note[data-arrow-card="5"] { --skin-arrow-closed: url("/static/img/skins/illuminated/arrow-05-closed.webp"); --skin-arrow-open: url("/static/img/skins/illuminated/arrow-05-open.webp"); }
+html[data-skin="illuminated"] .note[data-arrow-card="6"] { --skin-arrow-closed: url("/static/img/skins/illuminated/arrow-06-closed.webp"); --skin-arrow-open: url("/static/img/skins/illuminated/arrow-06-open.webp"); }
+html[data-skin="illuminated"] .note[data-arrow-card="7"] { --skin-arrow-closed: url("/static/img/skins/illuminated/arrow-07-closed.webp"); --skin-arrow-open: url("/static/img/skins/illuminated/arrow-07-open.webp"); }
+html[data-skin="illuminated"] .note[data-arrow-card="8"] { --skin-arrow-closed: url("/static/img/skins/illuminated/arrow-08-closed.webp"); --skin-arrow-open: url("/static/img/skins/illuminated/arrow-08-open.webp"); }
+html[data-skin="illuminated"] .note[data-arrow-card="9"] { --skin-arrow-closed: url("/static/img/skins/illuminated/arrow-09-closed.webp"); --skin-arrow-open: url("/static/img/skins/illuminated/arrow-09-open.webp"); }
+html[data-skin="illuminated"] .note[data-arrow-card="10"] { --skin-arrow-closed: url("/static/img/skins/illuminated/arrow-10-closed.webp"); --skin-arrow-open: url("/static/img/skins/illuminated/arrow-10-open.webp"); }
+html[data-skin="illuminated"] .note[data-arrow-card="11"] { --skin-arrow-closed: url("/static/img/skins/illuminated/arrow-11-closed.webp"); --skin-arrow-open: url("/static/img/skins/illuminated/arrow-11-open.webp"); }
+html[data-skin="illuminated"] .note[data-arrow-card="12"] { --skin-arrow-closed: url("/static/img/skins/illuminated/arrow-12-closed.webp"); --skin-arrow-open: url("/static/img/skins/illuminated/arrow-12-open.webp"); }
+html[data-skin="illuminated"] .note[data-arrow-card="13"] { --skin-arrow-closed: url("/static/img/skins/illuminated/arrow-13-closed.webp"); --skin-arrow-open: url("/static/img/skins/illuminated/arrow-13-open.webp"); }
+html[data-skin="illuminated"] .note[data-arrow-card="14"] { --skin-arrow-closed: url("/static/img/skins/illuminated/arrow-14-closed.webp"); --skin-arrow-open: url("/static/img/skins/illuminated/arrow-14-open.webp"); }
+html[data-skin="illuminated"] .note[data-arrow-card="15"] { --skin-arrow-closed: url("/static/img/skins/illuminated/arrow-15-closed.webp"); --skin-arrow-open: url("/static/img/skins/illuminated/arrow-15-open.webp"); }
+html[data-skin="illuminated"] .note[data-arrow-card] > .note-collapse-toggle::before {
+    background: var(--skin-arrow-open) center / contain no-repeat;
+    -webkit-mask: none;
+    mask: none;
+    transform: none;
+}
+html[data-skin="illuminated"] .note.collapsed[data-arrow-card] > .note-collapse-toggle::before {
+    background-image: var(--skin-arrow-closed);
 }
