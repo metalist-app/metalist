@@ -436,6 +436,17 @@ function buildZoomOverlay(src, alt) {
     return overlay;
 }
 
+// A picture shown full screen by itself, as Zoom Image shows one: a gallery's tile.
+export function zoomPicture(src, alt) {
+    if (typeof src !== 'string' || src === '' || typeof alt !== 'string') {
+        throw new Error('zoomPicture requires the picture and its description');
+    }
+    closeActiveZoomOverlay();
+    moduleState.activeZoomOverlay = buildZoomOverlay(src, alt);
+    document.body.appendChild(moduleState.activeZoomOverlay);
+    document.addEventListener('keydown', handleZoomKeyDown, { capture: true });
+}
+
 export async function zoomImageFromContext(imageContext) {
     requireImageContext(imageContext);
     closeActiveZoomOverlay();

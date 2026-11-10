@@ -48,6 +48,7 @@
 - Refactor notes: `docs/REFACTORS.md`
 - TODO list: `docs/TODO.md`
 - Future plan (jumping inside audio and video, left for later): `docs/future-plans/media-jump-playback.md`
+- Future plan (galleries: `@gallery` shows a note's and its descendants' pictures as a grid, PDF first pages): `docs/future-plans/gallery.md`
 - Future plan (scale testing, parts 4 to 7): `docs/future-plans/scale-testing.md`
 - Future UI plan (toolbar): `docs/future-plans/PLAN.toolbar.md`
 - Future plan (hosted MetaList: downloading your own copy, the backup reminder): `docs/future-plans/hosted-own-copy.md`

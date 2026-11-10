@@ -33,6 +33,7 @@ import { NotesAPI } from '../../api-client.js';
 import { isContextMenuInteractionTarget } from '../../context-menu/context-menu-target-service.js';
 import { downloadEmailAttachment, downloadFileReference } from '../services/file-reference-service.js';
 import { openFileViewer, opensInViewer } from '../services/file-viewer-service.js';
+import { zoomPicture } from '../services/image-context-menu-action-service.js';
 import { playMediaFile } from '../services/media-player-service.js';
 import { parseDecimalInteger } from '../../decimal-integer.js';
 import { revealRedactedNoteWithScrollPreservation } from '../services/search-redaction-reveal-service.js';
@@ -2175,6 +2176,18 @@ function handleFileReferenceClick(event) {
         Logger.logNoop('File reference click ignored while disconnected', {
             isConnected: false,
         });
+        return true;
+    }
+
+    // A gallery's tile shows its picture full screen, once it has loaded (note_gallery.py); a
+    // picture written in a note's text has no file id.
+    if (button.classList.contains('meta-gallery-tile')) {
+        const picture = Array.from(button.querySelectorAll('img')).find((image) => (
+            image.currentSrc !== '' && !image.hidden && getComputedStyle(image).display !== 'none'
+        ));
+        if (picture !== undefined) {
+            zoomPicture(picture.currentSrc, picture.alt);
+        }
         return true;
     }
 

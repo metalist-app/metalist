@@ -26,6 +26,7 @@ from app.services.email_cards import email_card_name
 from app.services.email_files import email_badge, is_email_file
 from app.services.inline_image_occurrences import annotate_inline_image_occurrences
 from app.services.subtree_stats import render_subtree_stats_footer
+from app.services.note_gallery import collect_gallery_items, gallery_kinds, render_gallery
 from app.services.remote_image_proxy import (
     remote_image_proxy_registry,
     rewrite_remote_image_sources_for_proxy,
@@ -345,9 +346,38 @@ def render_note_content_with_embeds(
         folds_embeds=False,
         is_held=sole_embed_token(content_html) is not None,
     )
-    # Totals of the subtree (@stats, @sum=…) under the note's own text; a folded note
-    # renders without them (render_collapsed_note_content_with_embeds).
-    return rendered_content + render_subtree_stats_footer(note_id=note_id, tags=tags, context=context)
+    # Totals of the subtree (@stats, @sum=…) and the gallery (@gallery) under the note's own
+    # text; a folded note renders without them (render_collapsed_note_content_with_embeds).
+    return (
+        rendered_content
+        + render_subtree_stats_footer(note_id=note_id, tags=tags, context=context)
+        + _render_note_gallery(note_id=note_id, tags=tags, context=context, static_export=static_export)
+    )
+
+
+def _render_note_gallery(*, note_id: str, tags: str, context: EmbedRenderContext, static_export: bool) -> str:
+    kinds = gallery_kinds(tags)
+    if kinds is None:
+        return ""
+    items = collect_gallery_items(
+        note_id=note_id, kinds=kinds, context=context,
+        file_ids_in=lambda content_html: [(token.start, token.note_id) for token in collect_active_reference_tokens(content_html)],
+        first_line_of=extract_collapsed_preview_source_html,
+    )
+
+    def tile_body(file_id: str) -> str:
+        return _render_file_embed_body(record=context.get_file(file_id), reference_note_id=file_id, static_export=static_export)
+
+    def view_kind(file_id: str) -> str:
+        return view_kind_of(getattr(context.get_file(file_id), "original_filename"))
+
+    def written_picture(source: str) -> str:
+        image = f'<img class="meta-gallery-written-image" src="{html.escape(source, quote=True)}" alt="" loading="lazy" decoding="async" />'
+        if static_export:
+            return image
+        return rewrite_remote_image_sources_for_proxy(content_html=image, registry=remote_image_proxy_registry)
+
+    return render_gallery(items=items, tile_body=tile_body, view_kind=view_kind, written_picture=written_picture)
 
 
 def _render_note_content_with_embeds(
