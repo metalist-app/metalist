@@ -2,15 +2,13 @@ from __future__ import annotations
 
 from typing import Optional, Sequence
 
-from app.services.search_query import parse_search_query
+from app.services.search_query import is_comment_term, parse_search_query
 from app.services.content_formatting import list_known_meta_tag_terms
 from app.services.search_index import extract_tags_for_search, search_index
-from app.services.search_text import build_searchable_text_casefold
-from app.services.text_terms import text_term_matches
 from app.services.store import store
 from app.services.tag_characters import is_text_character
 from app.services.tag_properties import PropertyCondition
-from app.usecases.search_context_tags import compute_inherited_non_meta_tag_terms, property_tag_tokens
+from app.usecases.search_context_tags import compute_inherited_non_meta_tag_terms, note_has_text_term, property_tag_tokens
 from app.services.tag_case import (
     build_preferred_tag_case_map,
     dedupe_tag_terms_by_casefold,
@@ -39,6 +37,10 @@ def _build_comment_tokens(required_text_terms: Sequence[str]) -> str:
     for term in _dedupe_preserve_order(required_text_terms):
         if not isinstance(term, str):
             raise TypeError(f"search term must be a string, got {type(term)}")
+        # A comment term is the comment itself (`/*help*/`).
+        if is_comment_term(term):
+            tokens.append(term)
+            continue
         if not _is_comment_text(term):
             continue
         if "/*" in term or "*/" in term:
@@ -145,8 +147,7 @@ def compute_initial_tags_for_new_note(
     current_id = parent_id
     while current_id is not None:
         ancestor = store.get(current_id)
-        ancestor_text = build_searchable_text_casefold(ancestor.content, ancestor.tags)
-        if all(text_term_matches(term, ancestor_text) for term in required_text_terms):
+        if all(note_has_text_term(term, content=ancestor.content, tags=ancestor.tags) for term in required_text_terms):
             return " ".join(tags_tokens)
         current_id = ancestor.parent_id
 

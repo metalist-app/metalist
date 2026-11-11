@@ -19,6 +19,11 @@ def _normalize_whitespace(text: str) -> str:
 
 
 def extract_tag_bar_comment_text(tags: str) -> str:
+    return " ".join(tag_bar_comments(tags))
+
+
+def tag_bar_comments(tags: str) -> tuple[str, ...]:
+    """Each `/* ... */` comment in a tag bar, its words with runs of whitespace as one space."""
     if not isinstance(tags, str):
         raise TypeError(f"tags must be a string, got {type(tags)}")
 
@@ -40,7 +45,7 @@ def extract_tag_bar_comment_text(tags: str) -> str:
 
         index = end + len(COMMENT_CLOSE)
 
-    return " ".join(comments)
+    return tuple(comments)
 
 
 def _find_comment_open(tags: str, start: int) -> int:

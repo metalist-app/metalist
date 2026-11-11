@@ -17,8 +17,9 @@ from app.services.content_formatting import (
     _tokenize_tag_bar, _unwrap_tag_token, is_known_meta_tag_term, list_known_meta_tag_terms,
 )
 from app.services.shared_sets import SharedSetColumn, SharedSets
-from app.services.search_query import SearchClause, parse_search_query
+from app.services.search_query import SearchClause, comment_term_words, is_comment_term, parse_search_query
 from app.services.tag_term_matching import tag_term_matches_prefix
+from app.services.tag_characters import normalize_text
 from app.services.tag_properties import (
     ANY_TAG,
     IMPLICIT_PROPERTY,
@@ -57,10 +58,11 @@ from app.services.search_text import (
     append_link_titles_casefold,
     build_searchable_base_text_casefold,
     list_link_title_urls,
+    tag_bar_comments,
 )
 from app.services.file_registry import file_registry
 from app.services.file_text_search import file_texts, is_searchable_file_name
-from app.services.text_terms import text_term_matches
+from app.services.text_terms import comment_term_matches, text_term_matches
 from app.utils.time_units import MS_PER_SECOND
 
 
@@ -525,6 +527,8 @@ class SearchIndex:
         # The files whose text a note is also searched by (file_text_search.py: PDFs it shows),
         # for the notes showing some.
         self._note_text_file_ids: Dict[int, Tuple[str, ...]] = {}
+        # Each tag-bar comment of the notes with some, casefolded: what a comment term reads.
+        self._note_comments_casefold: Dict[int, Tuple[str, ...]] = {}
         # Notes are also searchable by the cached titles of URLs written in them.
         # A title can arrive or disappear later, so keep each note's URLs (and,
         # for notes with URLs, its text without titles) to recompose its text.
@@ -593,6 +597,7 @@ class SearchIndex:
             self._id_to_uuid.clear()
             self._alive.clear()
             self._note_text_casefold.clear()
+            self._note_comments_casefold.clear()
             self._note_link_title_urls.clear()
             self._link_title_url_notes.clear()
             self._note_base_text_casefold.clear()
@@ -1613,6 +1618,8 @@ class SearchIndex:
         self._note_text_casefold[note_int_id] = ""
         if note_int_id in self._note_text_file_ids:
             del self._note_text_file_ids[note_int_id]
+        if note_int_id in self._note_comments_casefold:
+            del self._note_comments_casefold[note_int_id]
         self._set_note_properties_locked(note_int_id, "")
         self._set_link_title_urls_locked(note_int_id, frozenset())
         if note_int_id in self._note_base_text_casefold:
@@ -2112,6 +2119,11 @@ class SearchIndex:
         elif note_int_id in self._note_base_text_casefold:
             del self._note_base_text_casefold[note_int_id]
         self._note_text_casefold[note_int_id] = append_link_titles_casefold(base_text_casefold, link_title_urls)
+        comments_casefold = tuple(normalize_text(comment).casefold() for comment in tag_bar_comments(tags))
+        if comments_casefold:
+            self._note_comments_casefold[note_int_id] = comments_casefold
+        elif note_int_id in self._note_comments_casefold:
+            del self._note_comments_casefold[note_int_id]
         text_file_ids = tuple(
             file_id for file_id, _name in file_registry.referenced_file_names(content_text)
             if is_searchable_file_name(_name)
@@ -2129,7 +2141,12 @@ class SearchIndex:
             self._result_cache.clear()
 
     def _text_term_matches_locked(self, note_int_id: int, term: str) -> bool:
-        """Whether the quoted term is in the note's searchable text or the text of a file it shows."""
+        """Whether the quoted term is in the note's searchable text or the text of a file it shows;
+        a comment term (`/*help*/`), whether it is in one of the note's own tag-bar comments."""
+        if is_comment_term(term):
+            if note_int_id not in self._note_comments_casefold:
+                return False
+            return comment_term_matches(comment_term_words(term), self._note_comments_casefold[note_int_id])
         if text_term_matches(term, self._note_text_casefold[note_int_id]):
             return True
         if note_int_id not in self._note_text_file_ids:

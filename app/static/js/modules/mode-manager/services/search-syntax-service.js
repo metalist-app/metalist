@@ -26,6 +26,34 @@ const TAG_VALUE_SEPARATOR = '=';
 const SPACED_PREFIX_WARNING = 'In a search, + or - must be directly followed by the tag or quoted text, with no space (for example -tag)';
 
 const QUOTE_CHARS = new Set(['"', "'" ]);
+// `/*help*/`: a tag bar's comment (app/services/search_query.py, comment terms). No tag starts with /.
+const COMMENT_OPEN = '/*';
+const COMMENT_CLOSE = '*/';
+const NOT_FOUND = -1;
+const EMPTY_COMMENT_WARNING = 'Put the comment\'s words between /* and */ (for example /*help*/)';
+
+/**
+ * A comment term from index (at its `/*`): to the next `*` + `/`, spaces kept; one not yet
+ * closed reaches the end of the query. Its text as typed, its words, where the next term starts,
+ * and whether it is closed.
+ */
+function readCommentTerm(rawInput, startIndex) {
+    const innerStart = startIndex + COMMENT_OPEN.length;
+    const closeAt = rawInput.indexOf(COMMENT_CLOSE, innerStart);
+    const isClosed = closeAt !== NOT_FOUND;
+    let innerEnd = rawInput.length;
+    let nextIndex = rawInput.length;
+    if (isClosed) {
+        innerEnd = closeAt;
+        nextIndex = closeAt + COMMENT_CLOSE.length;
+    }
+    return {
+        typed: rawInput.slice(startIndex, nextIndex),
+        words: rawInput.slice(innerStart, innerEnd).replace(/\s+/g, ' ').trim(),
+        nextIndex,
+        isClosed,
+    };
+}
 const OR_OPERATOR = 'OR';
 // jogging:miles=MAX: the notes with the largest value, no value to give a new one.
 const EXTREME_VALUES = new Set(['MAX', 'MIN']);
@@ -457,6 +485,36 @@ export function analyzeSearchQueryInput(typedInput) {
             continue;
         }
 
+        // A `/` last of all may become a comment (`/*`): kept as typed, nothing searched yet.
+        if (rawInput.slice(index) === COMMENT_OPEN[0]) {
+            normalizedTerms.push(`${prefix}${COMMENT_OPEN[0]}`);
+            closedTerms.push(`${prefix}${COMMENT_OPEN[0]}`);
+            isComplete = false;
+            index = rawInput.length;
+            continue;
+        }
+        if (rawInput.startsWith(COMMENT_OPEN, index)) {
+            // `+` is a tag-term modifier only. Drop it for a comment.
+            if (prefix === '+') prefix = '';
+            const comment = readCommentTerm(rawInput, index);
+            index = comment.nextIndex;
+            normalizedTerms.push(`${prefix}${comment.typed}`);
+            if (!comment.isClosed) endsInOpenQuote = true;
+            if (comment.words === '') {
+                isComplete = false;
+                if (comment.isClosed) closedTerms.push(`${prefix}${comment.typed}`);
+                if (comment.isClosed && !warningMessage) warningMessage = EMPTY_COMMENT_WARNING;
+                continue;
+            }
+            // Searched as if closed while still being typed, as an open quote is.
+            const closedComment = `${prefix}${COMMENT_OPEN}${comment.words}${COMMENT_CLOSE}`;
+            closedTerms.push(closedComment);
+            sanitizedTerms.push(closedComment);
+            currentClauseTermCount += 1;
+            endsWithOrOperator = false;
+            continue;
+        }
+
         const nextChar = rawInput[index];
         const isQuoteStart = QUOTE_CHARS.has(nextChar);
         if (isQuoteStart && prefix === '+') {
@@ -779,6 +837,12 @@ export function findSearchTagAtIndex(rawInput, cursorIndex) {
             if (index >= rawInput.length || isWhitespace(rawInput[index])) {
                 continue;
             }
+        }
+
+        // A comment is no tag.
+        if (rawInput.startsWith(COMMENT_OPEN, index)) {
+            index = readCommentTerm(rawInput, index).nextIndex;
+            continue;
         }
 
         const nextChar = rawInput[index];
