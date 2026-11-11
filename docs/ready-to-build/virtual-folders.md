@@ -18,7 +18,7 @@ search alone. Not built yet: §4's other drags, §5 renames, §6 New Folder, the
 
 ## Folder contexts (built 2026-11-07)
 
-(Changed 2026-11-11: the folder chosen in the tree is the context's search, `Projects/`, not a separate folder with a chip; the context is named by its search, and the chip, `folderFilters` and the `/virtual-folders/filter` route are gone: `docs/ready-to-build/folder-tags-in-search.md`.)
+(Changed 2026-11-11: the folder chosen in the tree is the context's search, `Projects/`, not a separate folder with a chip; the context is named by its search, and the chip, `folderFilters` and the `/virtual-folders/filter` route are gone: `docs/ready-to-build/folder-tags-in-search.md`. Agreed 2026-11-11, ready to build: folder contexts stop being a kind, the folders tab only shows or hides the tree, several folders in a search add results, and a folder tag implies its parent folders, rules included, replacing "no rules are added" in §1: `docs/ready-to-build/folders-tab-and-multiple-folders.md`.)
 
 Agreed with the maintainer 2026-11-07, cases 1-8, replacing §2's toggle and §3's "clicking a folder
 narrows the current search context". **A search context is a folder context or a plain search.**

@@ -38,6 +38,8 @@ Changes: the 2026-10-30 ruling that search never matches by prefix (`docs/ready-
 
 ## 3. What the tree reads from the search
 
+(To change, agreed 2026-11-11: every positive folder term is marked, and several folders add results instead of narrowing: `docs/ready-to-build/folders-tab-and-multiple-folders.md` §3, §5.)
+
 - **The chosen folder comes from the search:** one positive folder term marks that folder; none marks `/`. Two (`A/ B/`, notes in both), or folders joined by `OR`, mark none.
 - **Counts and dimming ignore the search's folder terms** and read the rest. Otherwise searching `Projects/` would dim every other folder to `(0/17)`. This matches today, where the chip isn't part of the search.
 - **The tree lists the same folders as today.**

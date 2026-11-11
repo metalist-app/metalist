@@ -115,6 +115,8 @@ Super tag atom notes:
 
 ## Semantics
 
+Ready to build (agreed 2026-11-11): a folder tag implies its parent folders, so a rule on `Projects/` reaches notes in `Projects/Client-A/`; today it fires only for notes tagged exactly `Projects/`: `docs/ready-to-build/folders-tab-and-multiple-folders.md` §6.
+
 Rules are applied per note as a monotone fixed point:
 - Start with a set of tags.
 - Repeatedly apply rules, only adding tags.
