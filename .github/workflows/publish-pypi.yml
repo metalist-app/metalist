@@ -90,7 +90,16 @@ jobs:
         env:
           PYTHONUTF8: "1"
           PYTHONFAULTHANDLER: "1"
-        run: python -m pytest -q -rfE --tb=short tests/unit
+        run: python -m pytest -q -rfE --tb=short --junitxml=pytest-report.xml tests/unit
+
+      # The whole report as a file: the console's can be cut short (on Windows, 2026-11-11).
+      - name: Keep the test report of a failed run
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: pytest-report-${{ matrix.os }}-${{ matrix.python-version }}
+          path: pytest-report.xml
+          if-no-files-found: error
 
   platform-checks:
     if: ${{ github.ref == 'refs/heads/main' }}

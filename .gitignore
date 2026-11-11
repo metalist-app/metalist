@@ -57,3 +57,4 @@ certs/
 
 # mypy (scripts/check_types.py)
 .mypy-cache/
+pytest-report.xml
