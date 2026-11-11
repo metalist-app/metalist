@@ -85,6 +85,17 @@ Ontology rules also add **inferred tags** before search matching:
 - A note's own text moves with it, so a move never adds `/* ... */` comments. Undo restores both the place and the tags.
 - Reordering among siblings and indenting cannot drop a note from the results, so they add nothing.
 
+### Comment Terms
+
+Built 2026-11-11 (the maintainer: "so I can find everything that got /*help*/ added").
+
+- `/*help*/` finds the notes whose own tag-bar `/* ... */` comments contain `help`: in any case, anywhere in a comment, also inside words. `/*help*/` finds `/*help*/`, `/*Help me*/` and `/*helpful links*/`, never a note that only says "help" in its text or in a tag's value (`title="help"`). A note's comments are its own: nothing inherits them.
+- `-/*help*/` leaves those notes out; `+` is dropped, as for quoted text. Spaces inside are kept (`/*help me*/`), runs of them read as one.
+- No tag starts with `/` or holds `*`, so `/*…*/` in a search is always a comment. One not yet closed searches as if closed while typing (`/*hel`), as an open quote does; `/* */` asks for the words.
+- Not highlighted in notes: the match is in the tag bar.
+- A note made, pasted or outdented under the search gets the comment itself (`/*help*/`) unless one of its comments already contains it, as a quoted phrase gives `/*phrase*/`.
+- Implementation: `parse_search_query` (`app/services/search_query.py`, comment terms kept with the quoted phrases as `/*words*/`), `SearchIndex._text_term_matches_locked` and `comment_term_matches` (`app/services/text_terms.py`), the search box's `readCommentTerm` (`search-syntax-service.js`). Tests: `tests/unit/test_comment_search_terms.py`, `tests/unit/search_comment_terms.test.mjs`.
+
 ### Text Terms (quoted)
 - Required text: `"some text"` or `'some text'`
 - Forbidden text: `-"some text"` or `-'some text'`
