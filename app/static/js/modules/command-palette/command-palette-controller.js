@@ -9,6 +9,7 @@ import { TrimReminder } from '../trim-reminder-service.js';
 import { trimConfirmationText } from '../trim-reminder-schedule.js';
 import { receiveSearchSuggestionPreferences } from '../mode-manager/services/search-suggestion-windows-service.js';
 import { receiveGalleryOutlineNotes } from '../mode-manager/services/gallery-view-service.js';
+import { receiveFoldedSearchEmbeds } from '../mode-manager/services/search-embed-service.js';
 import { ApplicationState, stateValuesEqual } from '../application-state.js';
 import { HttpRequestError, rethrowUnexpectedError } from '../expected-errors.js';
 import { showFatalError } from '../error-overlay.js';
@@ -738,6 +739,7 @@ class CommandPaletteController {
         receiveDictationPhrases(this._dictationPhrases());
 
         receiveGalleryOutlineNotes(this._getText('pref.gallery_outline_notes', '[]'));
+        receiveFoldedSearchEmbeds(this._getText('pref.folded_search_embeds', '[]'));
 
         receiveSearchSuggestionPreferences({
             windows: this._getText('pref.search_suggestion_windows', DEFAULT_SEARCH_SUGGESTION_WINDOWS_VALUE),

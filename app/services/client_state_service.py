@@ -91,6 +91,8 @@ _ALLOWED_CLIENT_PREFERENCES = {
     "pref.stats_style": {"strip", "tiles", "ledger"},
     # The @gallery notes shown as an outline instead of their grid (gallery-view-service.js).
     "pref.gallery_outline_notes": "note_id_list",
+    # The embedded searches folded to their heading, by note and search (search-embed-service.js).
+    "pref.folded_search_embeds": "search_embed_fold_list",
     "pref.search_suggestion_windows": "tag_activity_windows",
     "pref.show_search_suggestion_window_labels": {"true", "false"},
     "pref.limit_note_credits_per_search_context": {"true", "false"},
@@ -322,6 +324,8 @@ def _validate_client_preferences(preferences: dict[str, object]) -> dict[str, st
                 )
         elif allowed_values == "note_id_list":
             _validate_note_id_list_preference(key=key, value=value)
+        elif allowed_values == "search_embed_fold_list":
+            _validate_search_embed_fold_list_preference(key=key, value=value)
         elif allowed_values == "note_id":
             if _NOTE_ID_RE.fullmatch(value) is None:
                 raise ClientStateValidationError(f"Client preference {key} must be a note id")
@@ -361,6 +365,29 @@ def _validate_note_id_list_preference(*, key: str, value: str) -> None:
             raise ClientStateValidationError(f"Client preference {key} must be a list of note ids")
     if len(set(note_ids)) != len(note_ids):
         raise ClientStateValidationError(f"Client preference {key} must not repeat a note id")
+
+
+# A fold is the note's id, |, then the embedded search, which a search link keeps under this length.
+_MAX_SEARCH_EMBED_FOLD_LENGTH = 1000
+_SEARCH_EMBED_FOLD_SEPARATOR = "|"
+
+
+def _validate_search_embed_fold_list_preference(*, key: str, value: str) -> None:
+    """A JSON list of distinct folds, each `<note id>|<search>`."""
+    try:
+        folds = json.loads(value)
+    except json.JSONDecodeError as error:
+        raise ClientStateValidationError(f"Client preference {key} must be a list of folds") from error
+    if not isinstance(folds, list) or len(folds) > _MAX_NOTE_ID_LIST_LENGTH:
+        raise ClientStateValidationError(f"Client preference {key} must be a list of folds")
+    for fold in folds:
+        if not isinstance(fold, str) or len(fold) > _MAX_SEARCH_EMBED_FOLD_LENGTH:
+            raise ClientStateValidationError(f"Client preference {key} must be a list of folds")
+        note_id, separator, search = fold.partition(_SEARCH_EMBED_FOLD_SEPARATOR)
+        if separator == "" or search.strip() == "" or _NOTE_ID_RE.fullmatch(note_id) is None:
+            raise ClientStateValidationError(f"Client preference {key} must be a list of folds")
+    if len(set(folds)) != len(folds):
+        raise ClientStateValidationError(f"Client preference {key} must not repeat a fold")
 
 
 def _validate_ai_chat_width_preference(*, key: str, value: str) -> None:

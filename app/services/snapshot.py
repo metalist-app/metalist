@@ -32,6 +32,8 @@ from app.services.ontology_rules_store import get_ontology_if_ready
 from app.services.reference_presentation import decorate_note_references
 from app.services.inline_image_dimensions import add_inline_image_dimensions
 from app.services.root_sorting import build_root_sort_buckets
+from app.services.root_sorting import SORT_MODE_NORMAL
+from app.services.search_embeds import SHOWN_RESULTS, SearchResults, search_runner
 from app.services.root_sorting import build_file_size_labels
 from app.services.root_sorting import get_root_ids_for_sort_mode
 from app.services.root_sorting import get_root_sort_timestamps
@@ -307,7 +309,7 @@ def resolve_search_scope(
         )
 
     if ordered_root_ids is None:
-        ordered_root_ids = _ordered_view_root_ids(normalized_sort_mode, date_filter)
+        ordered_root_ids = _ordered_view_root_ids(normalized_sort_mode, date_filter, None)
     search_allowed_note_ids: Set[str] = set()
     positively_matched_note_ids: Set[str] = set()
     for clause in parsed.clauses:
@@ -827,6 +829,9 @@ _LINKED_SITES_MEMO = SensitiveMemo(maxsize=_LINKED_SITES_MEMO_ENTRIES, max_bytes
 
 
 def _is_render_cacheable(content_html: str) -> bool:
+    # An embedded search's results change with any note (search_embeds.py): drawn afresh each time.
+    if "![[search:" in content_html:
+        return False
     return not ("://" in content_html and "<img" in content_html.lower())
 
 
@@ -1565,3 +1570,31 @@ def find_in_view(
     return FindWindow(
         matches=matches, first_root_index=first_root_index, end_root_index=end_root_index, root_count=len(roots),
     )
+
+
+def _embedded_search_results(search: str) -> SearchResults:
+    """What an embedded search shows (search_embeds.py): the notes the search finds, in the order a new
+    search context lists them (Normal order: the roots in order, each one's notes in outline order),
+    each branch's top match only: a note under a match is that match's detail, as the list shows the
+    match folded (agreed 2026-11-11). The count is of those top matches."""
+    scope = resolve_search_scope(
+        search=search, editing_note_id=None, sort_mode=SORT_MODE_NORMAL, date_filter=None,
+        ordered_root_ids=_ordered_view_root_ids(SORT_MODE_NORMAL, None, None),
+    )
+    if not scope.search_active:
+        return SearchResults(count=0, first_note_ids=())
+    assert scope.allowed_note_ids is not None and scope.matched_note_ids is not None and scope.search_root_ids_ordered is not None
+    allowed = scope.allowed_note_ids
+    found: List[str] = []
+    pending = list(reversed(scope.search_root_ids_ordered))
+    while pending:
+        note_id = pending.pop()
+        if note_id in scope.matched_note_ids:
+            found.append(note_id)
+            continue
+        pending.extend(reversed([child_id for child_id in note_store.get_children(note_id) if child_id in allowed]))
+    return SearchResults(count=len(found), first_note_ids=tuple(found[:SHOWN_RESULTS]))
+
+
+search_runner.install(_embedded_search_results)
+

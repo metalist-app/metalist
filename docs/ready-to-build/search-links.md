@@ -31,7 +31,7 @@ A link inside a note that, when clicked, opens a search context with its search 
 - **The search is everything between `search:` and the `|` or `]]`,** as it would be typed in the search box.
 - **A search holding `[` or `]` can't be written this way.** It's rare; such a search context isn't offered (§4). No escaping for now.
 - **`[[search:]]`** with nothing after the colon is text as typed.
-- **`![[search:…]]` is reserved** for live results inside the note, later (§8). Until then it is text as typed, and `![[` suggestions don't offer searches.
+- **`![[search:…]]` embeds the search's results** in the note (§11, built 2026-11-11); `![[` suggestions offer searches as `[[` does.
 
 ## 3. Clicking one
 
@@ -73,7 +73,7 @@ A link inside a note that, when clicked, opens a search context with its search 
 
 ## 8. Not now
 
-- **Live results inside a note** (`![[search:…]]`, like Obsidian's query blocks): later, and much bigger.
+- **Checking a to-do from an embedded search's results** (§11): later.
 - **Obsidian `query` blocks** stay as text unless mapping them to search links turns out simple; the syntax differs a lot.
 
 ## 9. Checked against the code (2026-11-11, when filed)
@@ -90,4 +90,43 @@ A link inside a note that, when clicked, opens a search context with its search 
 - **No Markdown export exists yet** (`import-export-launch.md` plans it); §6's rule waits for it.
 - **The one-time built-in tag rename** (`meta_tag_renames.py`) ran before search links existed, so no link holds an old built-in name; it is not extended.
 - **The browser keeps its own copy of the search contexts** and posts it back; a copy read before a rename would bring the old name back. The server keeps a renamed search over such a copy, as it keeps the sort order, and the browser reloads its search contexts right after a rename.
+
+## 11. Embedded searches, `![[search:…]]` (agreed 2026-11-11, built 2026-11-11)
+
+An embedded search shows its results in the note, live: a dashboard of searches.
+
+```
+Dashboard
+![[search:@todo -@done|Open to-dos]]
+![[search:Projects/ -archive|Active projects]]
+```
+
+shows, when the note isn't being edited:
+
+```
+Dashboard
+🔍 Open to-dos · 7
+   ☐ Call the plumber
+   ☐ Renew passport
+   ☐ Send the invoice to Client-A
+   … and 4 more
+🔍 Active projects · 3
+   Kitchen remodel
+   Client-A website
+   Garden
+```
+
+- **The heading:** a magnifier, the link text (or the search when it has none) and how many notes the search finds. Clicking it opens the search as a search link does (§3).
+- **Each result is its note's folded first line,** exactly as the list shows that note folded: a to-do's checkbox, a picture's thumbnail and formatting come with it. Clicking one goes to that note, as a note link does.
+- **How it reads as a preview** (agreed 2026-11-11, option B of a tinted panel, a panel with arrows, or a left rule): a tinted panel as a note embed's, the note-link arrow before each result (in a column, so ragged lines don't matter), and every result at the text's size.
+- **Each branch's top match only** (agreed 2026-11-11): a note under a match, which often matches through the match's inherited tags, is its detail, so it is neither listed nor counted, as the list shows the match folded; a note whose parent doesn't match is listed.
+- **The first ten,** in the order the search shows in the list, then `… and 4 more`, which opens the search like the heading.
+- **Foldable like a note embed:** its ▾/▸ folds it to the heading line (`🔍 Open to-dos · 7`).
+- **Live:** a note changed anywhere (a to-do marked done) changes the results the next time the note is drawn.
+- **Checkboxes show their status only,** as inside note embeds today; pressing one does nothing. Checking a to-do from here comes later (§8).
+- **Never a reference** (§6, invariant 3), like a search link.
+
+Settled when building (2026-11-11): the fold is kept in the vault's preferences by note and search (`pref.folded_search_embeds`, `search-embed-service.js`), so it survives a reload and shows on every device; the HTML export keeps the markup, as for a search link; a search finding nothing shows its heading with `· 0`; a search that doesn't parse stays text as typed. Cost: a note holding an embedded search is never taken from the render cache (`snapshot._is_render_cacheable`), so each draw runs its searches; fine for a dashboard, worth measuring with dozens. Built in `app/services/search_embeds.py` (the results), `snapshot._embedded_search_results` (their order) and `embedded_references._render_search_embed` (the drawing); tests `tests/unit/test_search_embeds.py`.
+
+Found while building: `resolve_search_scope` crashed (TypeError) when called without a root order, as Alphabetize Root Notes, Move to Top and a notes route do, once a search was active: its fallback had not been given the file filter argument added later. Fixed, with a test.
 

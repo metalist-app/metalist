@@ -4883,6 +4883,144 @@ html[data-theme="dark"] .note-search-link {
     color: #8fbcf0;
 }
 
+/* An embedded search (search_links.py, search-links.md §11): its heading (the search link and how many
+   notes it finds), then its first results, each its note's folded first line, then how many more. Its
+   ▾/▸ copies a note embed's and folds it to the heading (search-embed-service.js). A tinted panel, as a
+   note embed's, says it is shown from elsewhere; an arrow before each result says it is a link
+   (agreed 2026-11-11, option B). */
+.note-search-embed {
+    position: relative;
+    display: block;
+    margin: 2px 0;
+    padding: 4px 12px 4px 29px;
+    border: 1px solid var(--embed-edge);
+    border-radius: 10px;
+    background-color: var(--embed-tint-1);
+}
+
+.note-search-embed-toggle {
+    position: absolute;
+    top: 4px;
+    left: 2px;
+    display: block;
+    width: 27px;
+    height: 27px;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: rgba(0, 0, 0, 0.35);
+    font-size: 23px;
+    line-height: 27px;
+    text-align: center;
+    cursor: var(--skin-cursor-pointer, pointer);
+    user-select: none;
+}
+
+.note-search-embed-toggle::before {
+    content: '\25BE';
+}
+
+.note-search-embed-folded > .note-search-embed-toggle::before {
+    content: '\25B8';
+}
+
+html[data-theme="dark"] .note-search-embed-toggle {
+    color: rgba(255, 255, 255, 0.4);
+}
+
+.note-search-embed-count {
+    margin-left: 0.4em;
+    color: #6b7280;
+}
+
+html[data-theme="dark"] .note-search-embed-count {
+    color: rgba(229, 231, 235, 0.6);
+}
+
+/* A result: the note-link arrow, then its note's first line, on one line, as a folded note shows
+   it. The arrows stand in a column, whatever each line's length. */
+.note-search-embed-result {
+    display: flex;
+    align-items: baseline;
+    gap: 0.45em;
+    min-width: 0;
+    cursor: var(--skin-cursor-pointer, pointer);
+}
+
+.note-search-embed-result::before {
+    content: '';
+    flex: none;
+    width: 0.95em;
+    height: 0.95em;
+    align-self: center;
+    background-color: rgba(0, 0, 0, 0.4);
+    -webkit-mask: var(--note-reference-icon) center / contain no-repeat;
+    mask: var(--note-reference-icon) center / contain no-repeat;
+}
+
+html[data-theme="dark"] .note-search-embed-result::before {
+    background-color: rgba(255, 255, 255, 0.45);
+}
+
+/* One line, cut with "…" at the panel's edge: the blocks a first line comes in (a colour, a
+   heading, its own lines) flow inline in it, so the cut applies to the whole line. */
+.note-search-embed-line {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.note-search-embed-line :is(div, p, h1, h2, h3, h4, h5, h6, section, article, header, footer, blockquote, pre, ul, ol, li) {
+    display: inline;
+    white-space: nowrap;
+}
+
+/* A to-do's box keeps the 8px a to-do line gives it (.meta-status), sits on the text's middle, and is
+   inert, as inside a note embed: pressing it does nothing yet. */
+.note-search-embed-line .meta-status-toggle {
+    margin-right: 8px;
+    vertical-align: -2px;
+    cursor: var(--skin-cursor-default, default);
+}
+
+.note-search-embed-line .meta-status-toggle:hover,
+html[data-theme="dark"] .note-search-embed-line .meta-status-toggle:hover {
+    background-color: transparent;
+}
+
+/* Every result at the text's own size: a heading note keeps its colour and weight, not its size. */
+.note-search-embed-result * {
+    font-size: inherit !important;
+    line-height: inherit !important;
+    margin-top: 0 !important;
+    margin-bottom: 0 !important;
+}
+
+.note-search-embed-more {
+    margin-left: 1.4em;
+    color: #6b7280;
+}
+
+/* Folded by its arrow, or inside a folded note, or a search inside a result: the heading alone. */
+.note-search-embed-folded > .note-search-embed-results,
+.note.collapsed:not(.editing) .note-search-embed-results {
+    display: none;
+}
+
+.note.collapsed:not(.editing) .note-search-embed-toggle {
+    display: none;
+}
+
+.note-search-embed-nested {
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+}
+
 .note-file-reference-link {
     display: flex;
     flex-direction: column;

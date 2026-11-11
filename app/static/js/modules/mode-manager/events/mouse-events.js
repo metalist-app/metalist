@@ -35,6 +35,7 @@ import { downloadEmailAttachment, downloadFileReference } from '../services/file
 import { openFileViewer, opensInViewer } from '../services/file-viewer-service.js';
 import { zoomGallery } from '../services/image-context-menu-action-service.js';
 import { goToGalleryItem, toggleGalleryOutline } from '../services/gallery-view-service.js';
+import { toggleSearchEmbedFold } from '../services/search-embed-service.js';
 import { playMediaFile } from '../services/media-player-service.js';
 import { parseDecimalInteger } from '../../decimal-integer.js';
 import { revealRedactedNoteWithScrollPreservation } from '../services/search-redaction-reveal-service.js';
@@ -341,8 +342,10 @@ function isMouseDownOutsideEditExclusion(target) {
             EMBED_COLLAPSE_TOGGLE_SELECTOR,
             COLLAPSED_CHILDREN_INDICATOR_SELECTOR,
             '.note-reference-link',
-            // A search link opens its search, saving and leaving the note being edited first.
+            // A search link opens its search, saving and leaving the note being edited first;
+            // an embedded search's results open their notes, and its arrow folds it.
             '.note-search-link',
+            '.note-search-embed',
             '.note-backlinks-link',
             '.ai-chat-open-all-references',
             // A file linked in text, a card's Open and Download, a player: a click elsewhere on an
@@ -1532,6 +1535,10 @@ function handleClick(event) {
         return;
     }
 
+    if (handleSearchEmbedClick(event)) {
+        return;
+    }
+
     if (handleFileReferenceClick(event)) {
         return;
     }
@@ -2148,6 +2155,35 @@ function handleSearchLinkClick(event) {
     return true;
 }
 
+// An embedded search (search_links.py, search-links.md §11): its arrow folds it; a result goes to its
+// note as a note link does. The heading and "… and N more" are search links (handleSearchLinkClick).
+function handleSearchEmbedClick(event) {
+    const embed = event.target instanceof Element ? event.target.closest('.note-search-embed') : null;
+    if (embed === null) {
+        return false;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    const toggle = event.target.closest('.note-search-embed-toggle');
+    if (toggle !== null) {
+        void CommandGate.run('mouse.fold_search_embed', async () => {
+            await toggleSearchEmbedFold(toggle);
+        });
+        return true;
+    }
+    const result = event.target.closest('.note-search-embed-result[data-result-note-id]');
+    if (result === null || !ModeContext.isConnected) {
+        return true;
+    }
+    void CommandGate.run('mouse.open_search_embed_result', async () => {
+        if (ModeContext.isEditing) {
+            await actionDeselectNote();
+        }
+        await openReferenceInNewTab(result.dataset.resultNoteId);
+    });
+    return true;
+}
+
 function handleReferenceLinkClick(event) {
     if (!event.target) {
         throw new Error('Reference interaction missing target element');
@@ -2459,7 +2495,7 @@ function handleTodoToggleClick(event) {
     // An embed shows its source but never changes it: its checkboxes show the
     // status and a press on one does nothing (no toggle, no edit mode, and a
     // note being edited keeps its focus).
-    if (toggleElement.closest('.note-embed-node') !== null) {
+    if (toggleElement.closest('.note-embed-node, .note-search-embed') !== null) {
         event.preventDefault();
         event.stopPropagation();
         return true;
@@ -2495,7 +2531,7 @@ function handleMarkdownTaskToggleClick(event, toggleElement) {
     }
     event.preventDefault();
     event.stopPropagation();
-    if (toggleElement.closest('.note-embed-node') !== null) {
+    if (toggleElement.closest('.note-embed-node, .note-search-embed') !== null) {
         return true;
     }
     const noteId = noteElement.dataset.noteId;

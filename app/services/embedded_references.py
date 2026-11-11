@@ -3,6 +3,7 @@ from __future__ import annotations
 from app.services.credential_display import CredentialDisplay
 from app.utils.byte_sizes import MIB
 import html
+from contextvars import ContextVar
 import re
 from pathlib import PurePath
 from dataclasses import dataclass
@@ -27,7 +28,9 @@ from app.services.email_files import email_badge, is_email_file
 from app.services.inline_image_occurrences import annotate_inline_image_occurrences
 from app.services.subtree_stats import render_subtree_stats_footer
 from app.services.note_gallery import collect_gallery_items, gallery_kinds, render_gallery
-from app.services.search_links import parse_search_link, render_search_link
+from app.services.search_links import SearchLink, parse_search_link, render_search_link
+from app.services.search_embeds import search_runner
+from app.services.input_errors import InputRejected
 from app.services.remote_image_proxy import (
     remote_image_proxy_registry,
     rewrite_remote_image_sources_for_proxy,
@@ -811,6 +814,19 @@ def _replace_reference_tokens_in_text(
             output.append(search_html)
             index = end + len(_REFERENCE_CLOSE)
             continue
+        if target is None and search_link is not None:
+            try:
+                search_html = _render_search_embed(link=search_link, context=context, static_export=static_export, credentials=credentials)
+            except InputRejected:
+                # A search that doesn't parse stays text as typed, as a broken link does.
+                output.append(text[token_start : end + len(_REFERENCE_CLOSE)])
+                index = end + len(_REFERENCE_CLOSE)
+                continue
+            if keeps_from_markdown and not static_export:
+                search_html = kept_from_markdown(search_html, is_block=True)
+            output.append(search_html)
+            index = end + len(_REFERENCE_CLOSE)
+            continue
 
         if target is None:
             # Not a note id (a formatting wrapper or plain brackets): keep the opener
@@ -842,6 +858,57 @@ def _replace_reference_tokens_in_text(
         index = end + len(_REFERENCE_CLOSE)
 
     return "".join(output), occurrence_index
+
+
+# Set while an embedded search draws its results: a result's own embedded search draws its heading
+# only, so a search never draws inside a search (search-links.md §11).
+_drawing_search_results: ContextVar[bool] = ContextVar("drawing_search_results", default=False)
+
+
+def _render_search_embed(
+    *, link: SearchLink, context: EmbedRenderContext, static_export: bool, credentials: CredentialDisplay,
+) -> str:
+    """An embedded search (search_embeds.py): its heading (the search link and how many notes it
+    finds), then the first results, each its note's folded first line, then how many more. An export
+    keeps the markup, as for a search link."""
+    if static_export:
+        return _EMBED_OPEN[:1] + render_search_link(link, static_export=True)
+    results = search_runner.results(link.search)
+    search_attribute = html.escape(html.unescape(link.search), quote=True)
+    heading = (
+        '<div class="note-search-embed-heading">'
+        f'{render_search_link(link, static_export=False)}'
+        f'<span class="note-search-embed-count">· {results.count}</span></div>'
+    )
+    if _drawing_search_results.get():
+        return f'<div class="note-search-embed note-search-embed-nested" data-search-query="{search_attribute}">{heading}</div>'
+    rows: List[str] = []
+    drawing = _drawing_search_results.set(True)
+    try:
+        for note_id in results.first_note_ids:
+            record = context.get_note(note_id)
+            first_line = render_collapsed_note_content_with_embeds(
+                note_id=note_id, content_html=getattr(record, "content"), tags=getattr(record, "tags"),
+                context=context, static_export=False, credentials=credentials,
+            )
+            rows.append(
+                f'<div class="note-search-embed-result" data-result-note-id="{html.escape(note_id, quote=True)}">'
+                f'<div class="note-search-embed-line">{first_line}</div></div>'
+            )
+    finally:
+        _drawing_search_results.reset(drawing)
+    more = ""
+    if results.count > len(rows):
+        more = (
+            f'<a class="note-search-link note-search-embed-more" data-search-query="{search_attribute}">'
+            f'… and {results.count - len(rows)} more</a>'
+        )
+    # Its ▾/▸ folds it to the heading (search-embed-service.js keeps the fold).
+    toggle = '<button type="button" class="note-search-embed-toggle" aria-label="Fold search results"></button>'
+    return (
+        f'<div class="note-search-embed" data-search-query="{search_attribute}">{toggle}{heading}'
+        f'<div class="note-search-embed-results">{"".join(rows)}{more}</div></div>'
+    )
 
 
 def _collect_reference_tokens_in_text(
@@ -1933,6 +2000,9 @@ def _strip_reference_token_if_uuid(match: re.Match[str]) -> str:
     there in its place), else a space. Anything else in brackets stays."""
     token = match.group(0)
     if token.startswith(_EMBED_OPEN):
+        embedded_search = parse_search_link(token[len(_EMBED_OPEN) : -len(_REFERENCE_CLOSE)])
+        if embedded_search is not None:
+            return f" {embedded_search.shown_text} "
         target = parse_reference_inner(token[len(_EMBED_OPEN) : -len(_REFERENCE_CLOSE)])
         if target is None:
             return token

@@ -48,6 +48,8 @@ RENDERER_ATTRIBUTES: dict[str, frozenset[str]] = {
         "data-media-kind", "data-media-state",
         # A PDF's first page shown as its picture (embedded_references._render_first_page_picture).
         "data-picture-source",
+        # An embedded search and each of its results (embedded_references._render_search_embed).
+        "data-search-query", "data-result-note-id",
     }),
     "img": frozenset({
         "class", "data-file-kind", "data-file-ref-id", "data-inline-image-occurrence", "data-preview-variant",

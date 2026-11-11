@@ -27,8 +27,8 @@ test('nothing typed offers the current search context alone', () => {
     }
 });
 
-test('an embed offers no search: ![[search:…]] is kept for later', () => {
-    assert.deepEqual(searchesToOffer({ query: 'wo', contexts, activeTabId: 'work', isEmbed: true }), []);
+test('after ![[ the same searches are offered: an embedded search shows the results', () => {
+    assert.deepEqual(searchesToOffer({ query: 'wo', contexts, activeTabId: 'work', isEmbed: true }), ['work -archive', 'Workout']);
 });
 
 test('choosing a search writes its link, its closing brackets once', () => {

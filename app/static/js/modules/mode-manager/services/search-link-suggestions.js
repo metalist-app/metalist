@@ -2,7 +2,7 @@
 // §4): those whose search holds what is typed after `[[`, the current one first; with nothing
 // typed, the current one alone. Only plain search contexts with a search are offered: never a
 // folder context or a reference view (isSearch false), a blank search, or one holding [ or ],
-// which a link can't hold. An embed (`![[`) offers none: `![[search:…]]` is kept for later.
+// which a link can't hold. After `![[` the same are offered: `![[search:…]]` embeds the results.
 
 const SEARCH_LINK_PREFIX = 'search:';
 const BRACKETS_RE = /[[\]]/;
@@ -20,7 +20,6 @@ export function searchesToOffer({ query, contexts, activeTabId, isEmbed }) {
     if (typeof query !== 'string' || !Array.isArray(contexts) || typeof activeTabId !== 'string' || typeof isEmbed !== 'boolean') {
         throw new Error('searchesToOffer requires the query, the contexts, the current one and whether it is an embed');
     }
-    if (isEmbed) return [];
     let typed = query.trim();
     if (typed.startsWith(SEARCH_LINK_PREFIX)) typed = typed.slice(SEARCH_LINK_PREFIX.length).trim();
     const current = contexts.filter((context) => context.tabId === activeTabId && offerable(context));
