@@ -85,7 +85,12 @@ jobs:
         run: python -m pip install --require-hashes -r requirements/ci.txt
 
       - name: Run Python unit suite
-        run: python -m pytest -q tests/unit
+        # UTF-8 output, so a failure's report prints on Windows' console too (on 2026-11-11 the
+        # report stopped after its header there); a crash dumps where it happened.
+        env:
+          PYTHONUTF8: "1"
+          PYTHONFAULTHANDLER: "1"
+        run: python -m pytest -q -rfE --tb=short tests/unit
 
   platform-checks:
     if: ${{ github.ref == 'refs/heads/main' }}
