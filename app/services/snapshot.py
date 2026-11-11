@@ -40,7 +40,8 @@ from app.services.root_sorting import get_root_sort_timestamps
 from app.services.root_sorting import normalize_sort_mode
 from app.services.root_date_filter import RootDateFilter, filter_root_ids_by_date, local_today
 from app.services.quoted_values import split_tokens
-from app.services.search_index import search_index
+from app.services.search_index import extract_tags_for_search, search_index, tag_family_of
+from app.services.search_links import rewrite_search_terms
 from app.services.file_text_search import file_texts, is_searchable_file_name
 from app.services.file_text_snippets import with_file_text_snippets
 from app.services.search_query import ParsedSearchQuery, SearchClause, parse_search_query, search_highlight_phrases
@@ -863,8 +864,8 @@ class _RenderDependencies:
     file_records: Tuple[Tuple[str, object], ...]
     # Whether a property is used anywhere in the vault (a stats figure's 0 or dash).
     property_use: Tuple[Tuple[str, bool], ...]
-    # Whether a note shows in the view (a gallery under a search).
-    note_shown: Tuple[Tuple[str, bool], ...]
+    # Whether a gallery (its note first) shows a note under it (a gallery under a search).
+    note_shown: Tuple[Tuple[Tuple[str, str], bool], ...]
 
 
 class _DependencyRecorder:
@@ -878,13 +879,13 @@ class _DependencyRecorder:
         self._file_presence: Dict[str, bool] = {}
         self._file_records: Dict[str, object] = {}
         self._property_use: Dict[str, bool] = {}
-        self._note_shown: Dict[str, bool] = {}
+        self._note_shown: Dict[Tuple[str, str], bool] = {}
 
     def context(self) -> EmbedRenderContext:
         return EmbedRenderContext(
             has_note=self._has_note, get_note=self._get_note, get_children=self._get_children,
             has_file=self._has_file, get_file=self._get_file, is_property_used=self._is_property_used,
-            is_note_shown=self._is_note_shown, static_collapse_arrows=False,
+            is_shown_in_gallery=self._is_shown_in_gallery, static_collapse_arrows=False,
         )
 
     def _has_note(self, note_id: str) -> bool:
@@ -917,9 +918,9 @@ class _DependencyRecorder:
         self._property_use[property_name] = used
         return used
 
-    def _is_note_shown(self, note_id: str) -> bool:
-        shown = self._live.is_note_shown(note_id)
-        self._note_shown[note_id] = shown
+    def _is_shown_in_gallery(self, gallery_note_id: str, note_id: str) -> bool:
+        shown = self._live.is_shown_in_gallery(gallery_note_id, note_id)
+        self._note_shown[(gallery_note_id, note_id)] = shown
         return shown
 
     def freeze(self) -> _RenderDependencies:
@@ -955,8 +956,8 @@ def _dependencies_hold(dependencies: _RenderDependencies, live: EmbedRenderConte
     for property_name, used in dependencies.property_use:
         if live.is_property_used(property_name) != used:
             return False
-    for note_id, shown in dependencies.note_shown:
-        if live.is_note_shown(note_id) != shown:
+    for (gallery_note_id, note_id), shown in dependencies.note_shown:
+        if live.is_shown_in_gallery(gallery_note_id, note_id) != shown:
             return False
     return True
 
@@ -1182,18 +1183,57 @@ def _render_view_note(
     return rendered_content, flags
 
 
-def _shown_in_scope(*, filter_active: bool, allowed_note_ids: Optional[Set[str] | frozenset[str]]) -> Callable[[str], bool]:
-    """Whether a note shows in a view: under a search, its matches and their ancestors (the rest
-    are grey bars); otherwise every note."""
-    if not filter_active:
+def search_for_gallery_pictures(search: str, gallery_tags: str) -> str:
+    """The search a gallery's pictures are chosen by: the view's, without the meta tags the
+    gallery's note carries (`test @gallery` gives `test`). Meta tags pass to no note under it, so
+    they would leave it empty (the maintainer, 2026-11-11). Quoted text is left as typed."""
+    own_meta = set()
+    for tag in extract_tags_for_search(gallery_tags):
+        if tag.startswith("@"):
+            own_meta.add(tag.casefold())
+            own_meta.add(tag_family_of(tag).casefold())
+    return rewrite_search_terms(search, lambda term: "" if term.casefold() in own_meta else term)
+
+
+def _shown_by_search(search: str) -> Callable[[str], bool]:
+    """Whether a search shows a note: its matches and their ancestors; every note when it is empty."""
+    scope = resolve_search_scope(
+        search=search, editing_note_id=None, sort_mode=SORT_MODE_NORMAL, date_filter=None, ordered_root_ids=None,
+    )
+    if not scope.search_active:
         return lambda note_id: True
+    if scope.allowed_note_ids is None:
+        raise RuntimeError("an active search scope must list the notes it shows")
+    return scope.allowed_note_ids.__contains__
+
+
+def _shown_in_galleries(
+    *, search: Optional[str], filter_active: bool, allowed_note_ids: Optional[Set[str] | frozenset[str]],
+) -> Callable[[str, str], bool]:
+    """Whether a gallery shows a note under it: under a search, the notes the search shows (its
+    matches and their ancestors; the rest are grey bars), the gallery's own meta tags left out of
+    it (search_for_gallery_pictures); otherwise every note."""
+    if not filter_active:
+        return lambda gallery_note_id, note_id: True
     if allowed_note_ids is None:
         raise RuntimeError("an active search scope must list the notes it shows")
-    return lambda note_id: note_id in allowed_note_ids
+    # Narrowed with no search (a Files filter): the notes the view shows.
+    if search is None:
+        return lambda gallery_note_id, note_id: note_id in allowed_note_ids
+    # Each search the galleries' pictures are chosen by, once: whether it shows a note.
+    shown_by_search: Dict[str, Callable[[str], bool]] = {search: allowed_note_ids.__contains__}
+
+    def is_shown(gallery_note_id: str, note_id: str) -> bool:
+        pictures_search = search_for_gallery_pictures(search, note_store.get_note(gallery_note_id).tags)
+        if pictures_search not in shown_by_search:
+            shown_by_search[pictures_search] = _shown_by_search(pictures_search)
+        return shown_by_search[pictures_search](note_id)
+
+    return is_shown
 
 
 def _new_embed_render_context(
-    traversal_cache: _SnapshotTraversalCache, *, is_note_shown: Callable[[str], bool],
+    traversal_cache: _SnapshotTraversalCache, *, is_shown_in_gallery: Callable[[str, str], bool],
 ) -> EmbedRenderContext:
     file_record_cache: Dict[str, object] = {}
 
@@ -1209,7 +1249,7 @@ def _new_embed_render_context(
         has_file=file_registry.has_file,
         get_file=_get_file_record,
         is_property_used=search_index.is_property_name_used,
-        is_note_shown=is_note_shown,
+        is_shown_in_gallery=is_shown_in_gallery,
         static_collapse_arrows=False,
     )
 
@@ -1250,7 +1290,8 @@ def build_view_state(
     filter_active = selection.scope.search_active
     allowed_note_ids = selection.scope.allowed_note_ids
     embed_render_context = _new_embed_render_context(
-        traversal_cache, is_note_shown=_shown_in_scope(filter_active=filter_active, allowed_note_ids=allowed_note_ids),
+        traversal_cache,
+        is_shown_in_gallery=_shown_in_galleries(search=search, filter_active=filter_active, allowed_note_ids=allowed_note_ids),
     )
     visible_root_ids_ordered = selection.visible_roots
     # The search's quoted phrases: a file whose text holds one shows a snippet under its card.
@@ -1539,7 +1580,10 @@ def find_in_view(
     from_root_index = min(from_root_index, len(roots))
     traversal_cache = _SnapshotTraversalCache()
     context = _new_embed_render_context(
-        traversal_cache, is_note_shown=_shown_in_scope(filter_active=scope.filter_active, allowed_note_ids=scope.allowed_note_ids),
+        traversal_cache,
+        is_shown_in_gallery=_shown_in_galleries(
+            search=search, filter_active=scope.filter_active, allowed_note_ids=scope.allowed_note_ids,
+        ),
     )
     candidates = _find_candidates(find_text, traversal_cache)
     windows: List[List[FindMatch]] = []

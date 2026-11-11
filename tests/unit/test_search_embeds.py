@@ -53,7 +53,7 @@ def _note(note_id: str, previous_id: str | None, *, content: str, tags: str) -> 
 
 def _drawn(note_id: str) -> str:
     record = store.get_note(note_id)
-    context = _new_embed_render_context(_SnapshotTraversalCache(), is_note_shown=lambda shown_id: True)
+    context = _new_embed_render_context(_SnapshotTraversalCache(), is_shown_in_gallery=lambda gallery_note_id, note_id: True)
     return sanitize_rendered_html(render_note_content_with_embeds(
         note_id=note_id, content_html=record.content, tags=record.tags, context=context,
         static_export=False, credentials=CredentialDisplay.DOTS,

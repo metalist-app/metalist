@@ -1253,7 +1253,7 @@ class _SavedNotesTree:
     get_file: Callable[[str], object]
     get_note: Callable[[str], object]
     get_children: Callable[[Optional[str]], List[str]]
-    is_note_shown: Callable[[str], bool]
+    is_shown_in_gallery: Callable[[str, str], bool]
 
 
 def _gallery_values(*, note_id: str, prefix: str) -> List[str] | None:
@@ -1272,7 +1272,7 @@ def _gallery_values(*, note_id: str, prefix: str) -> List[str] | None:
         get_note=note_store.get_note,
         get_children=note_store.get_children,
         # The kinds under the note, whatever a search shows.
-        is_note_shown=lambda note_id: True,
+        is_shown_in_gallery=lambda gallery_note_id, note_id: True,
     )
     kinds = gallery_kinds_found(
         note_id=note_id, context=tree,

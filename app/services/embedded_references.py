@@ -118,10 +118,11 @@ class EmbedRenderContext:
     # Whether some note in the vault gives a property (casefolded) a value: a stats
     # figure for a property used nowhere shows a dash (subtree_stats.py).
     is_property_used: Callable[[str], bool]
-    # Whether a note shows in this view: a search shows its matches and their ancestors, the rest
-    # as grey bars (snapshot.py). A gallery takes its pictures only from notes shown
-    # (docs/future-plans/gallery.md, decision 8). Every note shows outside a search.
-    is_note_shown: Callable[[str], bool]
+    # Whether a gallery (its note first) shows a note under it: under a search, the notes the
+    # search shows, its matches and their ancestors (docs/future-plans/gallery.md, decision 8), the
+    # gallery's own meta tags left out of it (snapshot.search_for_gallery_pictures). Every note
+    # shows outside a search.
+    is_shown_in_gallery: Callable[[str, str], bool]
     # A downloaded export: the notes in an embed get MetaList's arrows and start
     # as saved, and carry their first line and their full content, so the file
     # can fold them. False for the live view (it folds through the server) and

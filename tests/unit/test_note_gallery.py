@@ -49,7 +49,7 @@ class _Tree:
     def get_children(self, note_id: Optional[str]) -> List[str]:
         return self.children.get(note_id, [])
 
-    def is_note_shown(self, note_id: str) -> bool:
+    def is_shown_in_gallery(self, gallery_note_id: str, note_id: str) -> bool:
         return note_id not in self.hidden
 
 

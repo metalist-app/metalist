@@ -15,7 +15,7 @@ def _folded(lines: list[str], tags: str) -> str:
     context = EmbedRenderContext(
         has_note=lambda note_id: False, get_note=lambda note_id: None, get_children=lambda parent_id: [],
         has_file=lambda file_id: False, get_file=lambda file_id: None,
-        is_property_used=lambda property_name: False, is_note_shown=lambda note_id: True, static_collapse_arrows=False,
+        is_property_used=lambda property_name: False, is_shown_in_gallery=lambda gallery_note_id, note_id: True, static_collapse_arrows=False,
     )
     return render_collapsed_note_content_with_embeds(
         note_id=NOTE_ID, content_html="".join(f"<div>{line}</div>" for line in lines), tags=tags,

@@ -619,7 +619,7 @@ def _render_exported_notes_markup(
         get_file=_get_file_record,
         is_property_used=search_index.is_property_name_used,
         # Not a searched list: every note shows.
-        is_note_shown=lambda note_id: True,
+        is_shown_in_gallery=lambda gallery_note_id, note_id: True,
         static_collapse_arrows=collapsible,
     )
 

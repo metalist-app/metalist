@@ -149,7 +149,7 @@ class _LiveWorld:
             has_file=lambda file_id: file_id in self.files,
             get_file=lambda file_id: self.files[file_id],
             is_property_used=lambda property_name: property_name in self.used_properties,
-            is_note_shown=lambda note_id: True,
+            is_shown_in_gallery=lambda gallery_note_id, note_id: True,
             static_collapse_arrows=False,
         )
 

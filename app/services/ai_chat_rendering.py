@@ -110,7 +110,7 @@ def render_ai_chat_markdown_to_html(
         get_file=_reject_file_reference,
         is_property_used=search_index.is_property_name_used,
         # Not a searched list: every note shows.
-        is_note_shown=lambda note_id: True,
+        is_shown_in_gallery=lambda gallery_note_id, note_id: True,
         static_collapse_arrows=False,
     )
     body_html, cited_note_ids = _replace_note_citations(

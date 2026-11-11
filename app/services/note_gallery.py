@@ -41,8 +41,10 @@ class GalleryTree(Protocol):
     get_note: Callable[[str], object]
     get_children: Callable[[Optional[str]], List[str]]
     # Under a search, only the notes it shows (its matches and their ancestors): the grid
-    # matches the list (decision 8). A note not shown has none shown under it.
-    is_note_shown: Callable[[str], bool]
+    # matches the list (decision 8), but for the gallery's own meta tags, which pass to no
+    # note under it (`test @gallery` shows what `test` finds under it). A note not shown has
+    # none shown under it. Asked with the gallery's note first.
+    is_shown_in_gallery: Callable[[str, str], bool]
 
 
 @dataclass(frozen=True, slots=True)
@@ -132,7 +134,7 @@ def collect_gallery_items(
     pending = [note_id]
     while pending:
         current_id = pending.pop()
-        if not context.is_note_shown(current_id):
+        if not context.is_shown_in_gallery(note_id, current_id):
             continue
         caption: Optional[str] = None
         for _start, file_id, image_source in _note_pictures(note_id=current_id, kinds=kinds, context=context, file_ids_in=file_ids_in):

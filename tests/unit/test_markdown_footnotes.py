@@ -101,7 +101,7 @@ def test_a_folded_note_shows_the_numbers_of_its_first_line() -> None:
     context = EmbedRenderContext(
         has_note=lambda note_id: False, get_note=lambda note_id: None, get_children=lambda parent_id: [],
         has_file=lambda file_id: False, get_file=lambda file_id: None,
-        is_property_used=lambda property_name: False, is_note_shown=lambda note_id: True, static_collapse_arrows=False,
+        is_property_used=lambda property_name: False, is_shown_in_gallery=lambda gallery_note_id, note_id: True, static_collapse_arrows=False,
     )
     rendered = render_collapsed_note_content_with_embeds(
         note_id=NOTE_ID, content_html="".join(f"<div>{line}</div>" for line in LISBON), tags="@markdown",
