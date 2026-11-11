@@ -102,6 +102,7 @@ const LABELS = {
     'action.insert_latex': 'Insert LaTeX',
     'action.insert_csv': 'Insert CSV',
     'action.insert_mermaid': 'Insert Mermaid Diagram',
+    'action.insert_password': 'Insert Password',
     'action.add_excalidraw_diagram': 'Add Excalidraw Diagram',
     'action.trim_unused_files': 'Trim Unused Files…',
     'action.retry_failed_link_titles': 'Retry Failed Link Titles…',

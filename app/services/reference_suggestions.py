@@ -25,7 +25,7 @@ from typing import Callable, Dict, FrozenSet, Hashable, Iterable, List, Set, Tup
 
 from app.security.sensitive_cache import register_sensitive_cache, sensitive_caches_enabled
 from app.services.auth_cache_state import after_page_ready
-from app.services.content_formatting import CREDENTIAL_MASK, find_global_credential_tag
+from app.services.content_formatting import CREDENTIAL_MASK, find_global_credential_tag, text_shown_without_passwords
 from app.services.embedded_references import EMPTY_NOTE_PREVIEW, first_line_preview, sole_reference_token
 from app.services.note_store import NoteRecord, store
 from app.utils.text_utils import strip_sanitized_html
@@ -98,9 +98,10 @@ def _edited_at(record: NoteRecord) -> datetime:
 
 
 def _entry(record: NoteRecord) -> _Entry:
-    first_line = first_line_preview(record.content)
+    # Passwords in its text as MetaList draws them: never shown, matched or quoted around.
+    first_line = text_shown_without_passwords(first_line_preview(record.content), record.tags)
     first_line_casefold = _normalized(first_line).casefold()
-    text = strip_sanitized_html(record.content)
+    text = text_shown_without_passwords(strip_sanitized_html(record.content), record.tags)
     return _Entry(
         record=record, first_line=first_line, first_line_casefold=first_line_casefold,
         first_line_words=frozenset(_WORD_RE.findall(first_line_casefold)), text=text,

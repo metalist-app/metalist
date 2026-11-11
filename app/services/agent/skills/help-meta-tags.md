@@ -37,6 +37,7 @@ suggestions of `@` tags are in the tag-suggestions topic.
 - Credential meta tags:
   - `@username` renders a view-only user-icon row with its value; clicking it copies it.
   - `@password` renders a view-only lock-icon row: `••••••••` and an eye that shows the value until the next click or key; clicking the dots copies it.
+  - `((@password))` (any wrapper) makes each `((…))` region of the text a password, inline among other text: the lock, `••••••••`, the eye, click to copy. Like `@password`, the AI never sees that note or the notes under it; exports and prints hide it unless passwords are included. `Insert ▸ Password` types one.
 - Email meta tags:
   - `@email` renders a view-only envelope row with a mailto link.
 - Status meta tags:

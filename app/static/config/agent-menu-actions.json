@@ -449,6 +449,12 @@
     "presentation": "palette"
   },
   {
+    "id": "action.insert_password",
+    "label": "Insert Password",
+    "selector": "#command-palette-modal",
+    "presentation": "palette"
+  },
+  {
     "id": "action.add_excalidraw_diagram",
     "label": "Add Excalidraw Diagram",
     "selector": "#command-palette-modal",

@@ -630,10 +630,11 @@ function buildOutlineEntries(context, handlers, { commandKey }) {
     return [...expandEntries, ...levelEntries];
 }
 
-// Insert ▸ LaTeX / CSV / Mermaid Diagram: the region's delimiters where it was right-clicked
-// (insert-format-service.js). Only the kinds the note is not already.
-const INSERT_ITEM_LABELS = Object.freeze({ latex: 'LaTeX', csv: 'CSV', mermaid: 'Mermaid Diagram' });
-const INSERT_ITEM_ICONS = Object.freeze({ latex: 'style', csv: 'view', mermaid: 'diagram' });
+// Insert ▸ LaTeX / CSV / Mermaid Diagram / Password: the region's delimiters (or a new
+// password) where it was right-clicked (insert-format-service.js). Only the kinds the note is
+// not already.
+const INSERT_ITEM_LABELS = Object.freeze({ latex: 'LaTeX', csv: 'CSV', mermaid: 'Mermaid Diagram', password: 'Password' });
+const INSERT_ITEM_ICONS = Object.freeze({ latex: 'style', csv: 'view', mermaid: 'diagram', password: 'lock' });
 
 function buildInsertItem(insertKinds, noteId, onInsertFormat) {
     const submenu = insertKinds.map((kind) => {

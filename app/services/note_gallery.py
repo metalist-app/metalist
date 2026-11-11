@@ -15,7 +15,7 @@ from collections import Counter
 from dataclasses import dataclass
 from typing import Callable, Iterable, List, Optional, Protocol, Tuple
 
-from app.services.content_formatting import is_markdown_note
+from app.services.content_formatting import is_markdown_note, text_shown_without_passwords
 from app.services.file_kinds import FILE_KIND_IMAGE, FILE_KIND_PDF, file_kind_of
 from app.services.inline_image_occurrences import INLINE_IMAGE_TAG_RE
 from app.services.structured_note_renderers import extract_plain_text_from_note_html
@@ -93,10 +93,14 @@ def _is_shown(record: object, kinds: Tuple[str, ...]) -> bool:
     return file_kind_of(thumbnail_kind=thumbnail_kind, file_name=_attribute(record, "original_filename")) in kinds
 
 
-def _caption(content_html: str, first_line_of: Callable[[str], str]) -> str:
-    """The note's first line when it is text; a note that is only its picture has none."""
-    first_line = _REFERENCE_RE.sub(" ", first_line_of(content_html))
-    return " ".join(extract_plain_text_from_note_html(first_line).split())
+def _caption(note: object, first_line_of: Callable[[str], str]) -> str:
+    """The note's first line when it is text; a note that is only its picture has none. A
+    password shows as MetaList draws it (text_shown_without_passwords)."""
+    first_line = _REFERENCE_RE.sub(" ", first_line_of(_attribute(note, "content")))
+    caption = " ".join(extract_plain_text_from_note_html(first_line).split())
+    if caption == "":
+        return caption
+    return text_shown_without_passwords(caption, _attribute(note, "tags"))
 
 
 def _written_pictures(content_html: str, tags: str) -> List[Tuple[int, str]]:
@@ -153,7 +157,7 @@ def collect_gallery_items(
                 continue
             seen.add((file_id, image_source))
             if caption is None:
-                caption = _caption(_attribute(context.get_note(current_id), "content"), first_line_of)
+                caption = _caption(context.get_note(current_id), first_line_of)
             items.append(GalleryItem(file_id=file_id, image_source=image_source, note_id=current_id, caption=caption))
         pending.extend(reversed(context.get_children(current_id)))
     return items

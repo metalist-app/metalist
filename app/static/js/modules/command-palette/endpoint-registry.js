@@ -680,10 +680,10 @@ export function buildCommandPaletteEndpoints(deps) {
             closeOnExecute: true,
             execute: async () => embed(),
         },
-        ...['latex', 'csv', 'mermaid'].map((kind) => ({
+        ...['latex', 'csv', 'mermaid', 'password'].map((kind) => ({
             id: `action.insert_${kind}`,
             kind: 'action',
-            label: { latex: 'Insert LaTeX', csv: 'Insert CSV', mermaid: 'Insert Mermaid Diagram' }[kind],
+            label: { latex: 'Insert LaTeX', csv: 'Insert CSV', mermaid: 'Insert Mermaid Diagram', password: 'Insert Password' }[kind],
             closeOnExecute: true,
             execute: async () => insertFormat(kind),
         })),

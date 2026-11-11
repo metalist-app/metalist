@@ -293,6 +293,10 @@
       "tags": ["mermaid", "diagram", "flowchart", "chart", "graph", "insert", "add", "new"]
     },
     {
+      "id": "action.insert_password",
+      "tags": ["password", "generate", "random", "secret", "credential", "insert", "add", "new"]
+    },
+    {
       "id": "action.add_excalidraw_diagram",
       "tags": ["excalidraw", "diagram", "drawing", "draw", "sketch", "whiteboard", "insert", "add", "new"]
     },

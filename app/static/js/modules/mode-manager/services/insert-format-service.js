@@ -1,7 +1,7 @@
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import { getTagBarValue, setTagBarValue } from './tag-bar-service.js';
 import { appendStyleTagToken } from './add-style-service.js';
-import { insertPlan } from './insert-format-plan.js';
+import { insertPasswordPlan, insertPlan, PASSWORD_KIND } from './insert-format-plan.js';
 import { actionSaveNote } from '../actions/content-actions.js';
 
 const LINE_BREAK = '\n';
@@ -60,6 +60,10 @@ async function insertInto(noteId, range, kind) {
         throw new Error('Insert goes in the text of the note being edited');
     }
     const tagBarText = getTagBarValue(noteElement);
+    if (kind === PASSWORD_KIND) {
+        await insertPassword(noteId, noteElement, content, range, tagBarText);
+        return;
+    }
     const selected = range.toString();
     const plan = insertPlan({ kind, tagBarText, contentText: content.textContent, hasSelection: selected !== '' });
     let open = plan.open;
@@ -74,6 +78,28 @@ async function insertInto(noteId, range, kind) {
     typeText(`${open}${plan.start}${selected}${close}`);
     // Back over the closing delimiter: the caret sits where the region's text goes on.
     for (let index = 0; index < close.length; index += 1) selection.modify('move', 'backward', 'character');
+    if (plan.tagToken === null) return;
+    const caret = selection.getRangeAt(0).cloneRange();
+    setTagBarValue(noteElement, appendStyleTagToken(tagBarText, plan.tagToken));
+    await actionSaveNote(noteId);
+    content.focus({ preventScroll: true });
+    selection.removeAllRanges();
+    selection.addRange(caret);
+}
+
+// Whether the note being edited has nothing in it yet: no text and no picture.
+function isBlankContent(content) {
+    return content.textContent.trim() === '' && content.querySelector('img') === null;
+}
+
+// Insert Password (insertPasswordPlan): typed in place of `range`, the caret after it.
+async function insertPassword(noteId, noteElement, content, range, tagBarText) {
+    const plan = insertPasswordPlan({ tagBarText, contentText: content.textContent, isBlank: isBlankContent(content), fillRandomValues: null });
+    content.focus({ preventScroll: true });
+    const selection = window.getSelection();
+    selection.removeAllRanges();
+    selection.addRange(range);
+    typeText(plan.text);
     if (plan.tagToken === null) return;
     const caret = selection.getRangeAt(0).cloneRange();
     setTagBarValue(noteElement, appendStyleTagToken(tagBarText, plan.tagToken));

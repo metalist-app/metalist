@@ -58,6 +58,8 @@ _MIN_NUMBERED_TERM_SEGMENT_COUNT = 3
 # A suggestion reason quotes at most this many sets of shared tags (ContextOverlap).
 _MAX_SHARED_TAG_SETS = 2
 
+_PASSWORD_TAG_CASEFOLD = "@password"
+
 
 def _preferred_display_term_sort_key(
     *,
@@ -1063,10 +1065,12 @@ def _new_tags_from_note_words(*, written: List[str], prefix: str, content_html: 
     """What is typed matches no tag: words of the note's text it can complete to, as a new
     tag (tag_words_in_note.py). Its own text first, then the titles of its links."""
     left_out = {tag.casefold() for tag in written} | _synonyms_of_written_tags(tags=written, ontology=get_ontology())
-    places = (
-        ("this note", note_text_with_site_names(content_html)),
-        ("the title of a link in this note", "\n".join(link_titles_in_html(content_html))),
-    )
+    link_titles = ("the title of a link in this note", "\n".join(link_titles_in_html(content_html)))
+    places: Tuple[Tuple[str, str], ...] = (("this note", note_text_with_site_names(content_html)), link_titles)
+    # A note with a password, whole (@password) or in its text (((@password)), which reaches
+    # here unwrapped), offers no word of its text: a tag taken from it would show the password.
+    if _PASSWORD_TAG_CASEFOLD in left_out:
+        places = (link_titles,)
     shown: Dict[str, str] = {}
     reasons: Dict[str, Tuple[str, ...]] = {}
     for where, text in places:

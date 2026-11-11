@@ -158,7 +158,8 @@ that shows it until the next click or key; clicking it copies it. @username is a
 field; clicking it copies it. Both are AI exclusion boundaries: such a note and its
 whole subtree are never sent to any AI, and a cloud whitelist cannot bypass that.
 Exports and prints hide both unless the user checks Include Unredacted ... in
-their dialog. Hiding it on screen is not a substitute for vault encryption. @shell execution is separately opt-in on the server
+their dialog. A note with a password inside its text (a ((@password)) region) is
+kept from the AI the same way, with the notes under it. Hiding it on screen is not a substitute for vault encryption. @shell execution is separately opt-in on the server
 (--enable-shell); AI help has no shell execution tool. Explain only what this
 reference establishes; do not assert the user's current encryption, disclosure
 policy, or session settings without explicit supplied evidence.

@@ -111,6 +111,7 @@ const CONTEXT_MENU_ICONS = {
         'M17 13v4',
     ],
     // A paperclip: attached files.
+    lock: ['M5 11h14v10H5z', 'M8 11V7a4 4 0 0 1 8 0v4'],
     rename: ['M4 20h4L19 9l-4-4L4 16z', 'M13.5 6.5l4 4'],
     attachment: ['M20 11.5 12 19.5a5 5 0 0 1-7-7L13.5 4a3.5 3.5 0 0 1 5 5L10 17.5a2 2 0 0 1-3-3L14.5 7'],
     clock: [

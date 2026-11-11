@@ -13,6 +13,7 @@ from typing import Callable, FrozenSet, Iterator, List, Optional, Tuple
 
 from app.services.content_formatting import CREDENTIAL_MASK
 from app.services.content_formatting import find_global_credential_tag
+from app.services.content_formatting import text_shown_without_passwords
 from app.services.content_formatting import render_credential_link_row
 from app.services.content_formatting import format_note_content_for_view
 from app.services.content_formatting import has_scoped_footnotes
@@ -1287,7 +1288,8 @@ def _render_link_preview_thumbnail(
     if not candidates:
         return "", ""
     first_thumbnail = min(candidates, key=lambda candidate: candidate[0])[1]
-    return first_thumbnail, _strip_reference_tokens(strip_html(fragment))
+    caption = text_shown_without_passwords(_strip_reference_tokens(strip_html(fragment)), getattr(record, "tags"))
+    return first_thumbnail, caption
 
 
 def _render_file_link_thumbnail(*, record: object, file_id: str, thumbnail_kind: str, static_export: bool) -> str:
@@ -1379,7 +1381,7 @@ def _resolve_note_reference_preview(
         if held is None or not context.has_note(held.note_id) or held.note_id in visited:
             break
         note_id = held.note_id
-    preview = _extract_first_line_preview(record_content)
+    preview = text_shown_without_passwords(_extract_first_line_preview(record_content), record_tags)
     if preview == "":
         preview = EMPTY_NOTE_PREVIEW
     return preview, ""
