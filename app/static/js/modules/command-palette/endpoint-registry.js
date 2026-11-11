@@ -1,4 +1,5 @@
 import { isVirtualFoldersShown } from '../mode-manager/services/virtual-folders-state.js';
+import { THEME_CHOICES } from '../theme-choices.js';
 import {
     baseRootSortMode,
     isRootSortModeReversed,
@@ -61,23 +62,6 @@ export const COMMAND_SHORTCUTS = Object.freeze({
     'action.open_keyboard_shortcuts_help': Object.freeze({ mod: false, shift: false, key: '?' }),
 });
 
-// Commands that lose what cannot be brought back are red (rule 3). The palette orders
-// commands by use and search, so they keep their place.
-export const DESTRUCTIVE_COMMAND_IDS = Object.freeze(new Set([
-    'action.alphabetize_root_notes_asc',
-    'action.alphabetize_root_notes_desc',
-    'action.delete_notes_in_view',
-    'action.prioritize_tag_back',
-    'action.prioritize_tag_front',
-    'action.remove_all_tag_suggestions_current_context',
-    'action.reset_all_preferences',
-    'action.reset_updated_at_to_created_at',
-    'action.trim_unused_files',
-    'form.delete_current_namespace',
-    'form.remove_password',
-    'form.restore_backup',
-]));
-
 const PASSWORD_COMMANDS_WITHOUT_ONE = new Set(['form.add_password']);
 const PASSWORD_COMMANDS_WITH_ONE = new Set(['form.change_password', 'form.remove_password']);
 const ROOT_REORDER_COMMANDS = new Set([
@@ -89,15 +73,16 @@ const ROOT_REORDER_COMMANDS = new Set([
 
 /**
  * Whether a command can apply now; one that cannot is left out of the palette (rule 5).
- * `state` is { hasPassword, isRootReorderLocked } (a sorted tab orders its root notes
- * itself).
+ * `state` is { hasPassword, isRootReorderLocked, hasFileFilter } (a sorted tab orders
+ * its root notes itself; the File size order needs a Files filter on).
  */
 export function isCommandAvailable(commandId, state) {
     if (typeof commandId !== 'string' || commandId === '') {
         throw new Error('isCommandAvailable requires a command id');
     }
-    if (typeof state.hasPassword !== 'boolean' || typeof state.isRootReorderLocked !== 'boolean') {
-        throw new Error('isCommandAvailable requires boolean hasPassword and isRootReorderLocked');
+    if (typeof state.hasPassword !== 'boolean' || typeof state.isRootReorderLocked !== 'boolean'
+        || typeof state.hasFileFilter !== 'boolean') {
+        throw new Error('isCommandAvailable requires boolean hasPassword, isRootReorderLocked and hasFileFilter');
     }
     if (PASSWORD_COMMANDS_WITHOUT_ONE.has(commandId)) {
         return !state.hasPassword;
@@ -107,6 +92,9 @@ export function isCommandAvailable(commandId, state) {
     }
     if (ROOT_REORDER_COMMANDS.has(commandId)) {
         return !state.isRootReorderLocked;
+    }
+    if (commandId === 'view.sort_mode.file_size') {
+        return state.hasFileFilter;
     }
     return true;
 }
@@ -316,6 +304,14 @@ export function buildCommandPaletteEndpoints(deps) {
             execute: async () => setSortOrderKeepingDirection('content-volume'),
         },
         {
+            id: 'view.sort_mode.file_size',
+            kind: 'action',
+            label: 'Sort Order: File Size',
+            getValue: () => sortModeActionValue('file-size'),
+            closeOnExecute: true,
+            execute: async () => setSortOrderKeepingDirection('file-size'),
+        },
+        {
             id: 'view.sort_mode.reverse',
             kind: 'action',
             label: 'Sort Order: Reverse',
@@ -393,11 +389,7 @@ export function buildCommandPaletteEndpoints(deps) {
             label: 'Theme',
             persistenceKey: 'pref.theme',
             defaultValue: defaults.theme,
-            options: [
-                { value: 'system', label: 'System' },
-                { value: 'light', label: 'Light' },
-                { value: 'dark', label: 'Dark' },
-            ],
+            options: THEME_CHOICES.map(([value, label]) => ({ value, label })),
             apply: (next) => applyPreference('pref.theme', next),
         },
         {

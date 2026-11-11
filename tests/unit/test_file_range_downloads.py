@@ -1,5 +1,5 @@
 """A download sends a segment at a time and answers Range requests, so a jump into a long file
-reads only that part (docs/ready-to-build/streaming-no-file-cap.md, section 2)."""
+reads only that part (docs/design/file-storage.md, section 14)."""
 
 from __future__ import annotations
 

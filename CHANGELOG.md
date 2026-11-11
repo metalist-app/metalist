@@ -4,15 +4,18 @@ What changed in each MetaList release, newest first.
 
 ## Changes in 0.27.0
 
-- **Each file is now its own file on disk,** in a `files` folder beside the notes, instead of all of them in one large database. In a vault with a password each one is encrypted with its own key and padded so its size doesn't reveal it. Downloads no longer load the whole file into memory.
+- **Files of any size.** Uploads stream into storage and the 100 MB limit is gone. Each file is its own file on disk, in a `files` folder beside the notes; in a vault with a password each one is encrypted with its own key and padded so its size doesn't reveal it.
+- **Galleries.** `@gallery` shows the pictures in a note and every note under it as a grid, PDFs by their first page and drawings that open their editor. It switches between grid and outline, folds to one row and steps through its pictures full screen. With a search on, it shows the pictures of the notes the search finds; its own meta tags don't count, so `test @gallery` shows what `test` finds under it.
+- **Search links.** `[[search:…]]` opens a search; `![[search:…]]` shows its results in the note, folded to its first line. Rename Tag renames them too.
+- **Folders in the search.** `Projects/` finds that folder and every folder below it, and several folders add results: `Projects/ Archive/ @todo` finds to-dos in either. A folder implies the folders above it, rules included. The folders tab only shows or hides the tree, and a reload keeps it. Clicking a folder makes it the search; ⌘-click (Ctrl-click on Windows and Linux) adds or removes one.
+- **`/*help*/` in the search** finds the notes whose tag-bar comments contain "help".
+- **Two new looks under Theme:** Illuminated, a painted manuscript, and Ye Olde Scrypte, notes in old English on parchment.
+- **Tags as you type:** every field that asks for a tag offers the tags in use, tags starting with what you typed first. The tag bar offers a note's own words as new tags once nothing matches.
+- A folded note that starts with a Mermaid diagram shows a thumbnail of it. File size order shows each file's size. Notes with Files lists every file type in use. A dropped folder's import ends on what it brought in.
 - **Safety backups no longer pile up.** Each vault keeps its newest 3, removed only after a new backup checks out and the upgrade or update has succeeded.
-- **The tag bar offers a note's own words as new tags** once nothing you've typed matches an existing tag, in the case you typed.
-- **AI summaries are faster:** batches go out as fast as your provider's limits allow, the limits are remembered, and one progress bar follows each model's timing.
-- **Folder contexts:** the folders tab switches between folders and plain searches, and each search context keeps its folder across restarts. Enter over the search contexts makes a new one.
-- AI Agent Settings has four tabs: Keys, Privacy, Reading and Tagging. AI handles large vaults with less waiting.
-- Imports add their notes at the bottom, and files not aimed at a note get a note each. The search box suggests `@datetime`. Unlocking a vault is faster.
-- The import from the old MetaList is gone.
-- Vaults are upgraded (database version 17) when first unlocked, or at startup without a password, after a backup: an older MetaList cannot open them afterwards.
+- **AI summaries are faster:** batches go out as fast as your provider's limits allow, the limits are remembered, and one progress bar follows each model's timing. AI Agent Settings has four tabs: Keys, Privacy, Reading and Tagging.
+- Imports add their notes at the bottom, and files not aimed at a note get a note each. Unlocking a vault is faster. The import from the old MetaList is gone.
+- Vaults are upgraded (database version 18) when first unlocked, or at startup without a password, after a backup: an older MetaList cannot open them afterwards.
 
 ## Changes in 0.26.1
 

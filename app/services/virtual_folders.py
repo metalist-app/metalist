@@ -1,14 +1,8 @@
-"""Virtual folders, an experiment (docs/ready-to-build/virtual-folders.md): a tag ending in
-`/` is a folder (`Projects/Client-A/`), shown as a tree of folders beside the notes column
-(only folders: the maintainer, 2026-11-01: a folder's notes show in the column).
-
-Nothing of it is stored (the maintainer, 2026-11-01: the experiment may be dropped in a few
-hours, so it must not change the database): each tab's folder filter lives in this
-process's memory, as long as the server runs, and whether the tree shows in the browser
-(virtual-folders-state.js). A folder filter narrows a view to the notes in that folder and
-the folders below it, by repeating every clause of the view's search once per folder tag
-(`Projects/`, `Projects/Client-A/`, …); the notes under a filed note inherit its tag, so
-they come with it."""
+"""Virtual folders (docs/ready-to-build/virtual-folders.md): a tag ending in `/` is a folder
+(`Projects/Client-A/`), shown as a tree of folders beside the notes column. A folder chosen in the
+tree is a term in the search (docs/ready-to-build/folder-tags-in-search.md); several folders in a
+clause add results, and a folder tag implies the folders above it
+(docs/ready-to-build/folders-tab-and-multiple-folders.md)."""
 
 from __future__ import annotations
 
@@ -18,7 +12,8 @@ from typing import Dict, List, Optional, Set, Tuple
 
 from app.services.input_errors import InputRejected
 from app.services.note_store import store as note_store
-from app.services.search_index import extract_ordered_tags_for_search, search_index
+from app.services.search_index import FOLDER_TAG_END, extract_ordered_tags_for_search, search_index
+from app.services.search_links import rewrite_search_terms
 from app.services.search_query import SearchClause, format_search_query, parse_search_query
 from app.services.snapshot import (
     clause_excluded_note_ids,
@@ -29,18 +24,110 @@ from app.services.snapshot import (
 from app.services.tag_ontology import _is_valid_tag_token
 from app.services.tag_rename import delete_tag_from_tag_bar
 
-FOLDER_MARK = "/"
+FOLDER_MARK = FOLDER_TAG_END
 # A tab with no folder filter.
 NO_FOLDER = ""
-
-
-# Each tab's folder filter is kept with its other filters in tab state (tab_state.py), so a
-# server restart keeps it (2026-11-07; before, this process's memory only).
 
 
 def is_folder_tag(tag: str) -> bool:
     """A tag ending in `/` is a folder; `a/b` stays an ordinary tag."""
     return tag.endswith(FOLDER_MARK) and _is_valid_tag_token(tag)
+
+
+# What the tree marks as chosen, read from a search (folders-tab-and-multiple-folders.md §5).
+CHOSEN_FOLDERS = "folders"
+CHOSEN_TOP = "top"
+CHOSEN_NONE = "none"
+
+
+@dataclass(frozen=True, slots=True)
+class ChosenFolders:
+    """kind CHOSEN_FOLDERS: folders are the positive folder terms, as typed, of every OR clause;
+    CHOSEN_TOP: none (`/`); CHOSEN_NONE: a search not finished, nothing marked."""
+
+    kind: str
+    folders: Tuple[str, ...]
+
+
+def chosen_folders_of(search: str) -> ChosenFolders:
+    """The folders a search chooses: every positive folder term, in every clause, as typed and
+    once each by case, A to Z; the top when it has none."""
+    if not isinstance(search, str):
+        raise TypeError(f"search must be a string, got {type(search)}")
+    if search.strip() == "":
+        return ChosenFolders(kind=CHOSEN_TOP, folders=())
+    try:
+        parsed = parse_search_query(search)
+    except InputRejected:
+        return ChosenFolders(kind=CHOSEN_NONE, folders=())
+    folders: Dict[str, str] = {}
+    for clause in parsed.clauses:
+        for tag in sorted(clause.required_tags):
+            if is_folder_tag(tag) and tag.casefold() not in folders:
+                folders[tag.casefold()] = tag
+    if not folders:
+        return ChosenFolders(kind=CHOSEN_TOP, folders=())
+    return ChosenFolders(kind=CHOSEN_FOLDERS, folders=tuple(folders[key] for key in sorted(folders)))
+
+
+def without_folder_terms(search: str) -> str:
+    """The search with its folder terms dropped, +/- included: what the tree's counts read, so
+    choosing Projects/ doesn't dim every other folder (folder-tags-in-search.md §3)."""
+    rewritten = rewrite_search_terms(search, lambda term: "" if is_folder_tag(term) else term)
+    return " ".join(rewritten.split())
+
+
+def toggle_folder_in_search(search: str, folder: str) -> str:
+    """⌘-click in the tree (folders-tab-and-multiple-folders.md §2): the search with folder taken
+    out when it is one of its terms (by case), else added after its last folder term (at its front
+    with none: `Projects/ @todo` and Archive/ give `Projects/ Archive/ @todo`); NO_FOLDER, the top,
+    takes every folder term out. Every other term stays as typed."""
+    if folder == NO_FOLDER:
+        return without_folder_terms(search)
+    if not is_folder_tag(folder):
+        raise ValueError(f"{folder} is not a folder")
+    is_present = folder.casefold() in {chosen.casefold() for chosen in chosen_folders_of(search).folders}
+    if is_present:
+        removed = rewrite_search_terms(search, lambda term: "" if term.casefold() == folder.casefold() else term)
+        return " ".join(removed.split())
+    folder_terms: List[str] = []
+    rewrite_search_terms(search, lambda term: _noted_if_folder(term, folder_terms))
+    folder_term_count = len(folder_terms)
+    if folder_term_count == 0:
+        return f"{folder} {search}".strip()
+    seen = [0]
+
+    def after_last_folder(term: str) -> str:
+        if not is_folder_tag(term):
+            return term
+        seen[0] += 1
+        if seen[0] == folder_term_count:
+            return f"{term} {folder}"
+        return term
+
+    return rewrite_search_terms(search, after_last_folder)
+
+
+def _noted_if_folder(term: str, folder_terms: List[str]) -> str:
+    """For toggle_folder_in_search: a folder term (+/- included) noted; the term unchanged."""
+    if is_folder_tag(term):
+        folder_terms.append(term)
+    return term
+
+
+def rename_folder_in_search(search: str, *, old: str, new: str) -> str:
+    """The search with a renamed or moved folder renamed in its folder terms, the folders below it
+    included (Projects/Client-A/ under Projects/ moved to Archive/ is Archive/Client-A/); a term for a
+    folder above it, or quoted text, is left as typed (folder-tags-in-search.md §4)."""
+    if not is_folder_tag(old) or not is_folder_tag(new):
+        raise ValueError("a folder is renamed to a folder")
+
+    def renamed(term: str) -> str:
+        if is_folder_tag(term) and term.casefold().startswith(old.casefold()):
+            return new + term[len(old):]
+        return term
+
+    return rewrite_search_terms(search, renamed)
 
 
 def folder_tags_of(tags: str) -> List[str]:
@@ -66,33 +153,12 @@ def refile_tag_bar(tags: str, folder: str) -> str:
 
 
 def search_in_folder(search: str, folder: str) -> str:
-    """The view's search ('' for none) narrowed to folder and the folders below it (the
-    maintainer, 2026-11-01: Projects/ shows Client-A's and Client-B's notes too), '' for no
-    filter. Each clause of the search is kept once per folder tag (OR between them)."""
+    """The search ('' for none) narrowed to folder and the folders below it, as clicking it in the
+    tree shows (a folder term takes in the folders below it, folder-tags-in-search.md §1): what a
+    folder's count reads. NO_FOLDER, the top, is the search itself."""
     if folder == NO_FOLDER:
         return search
     assert is_folder_tag(folder), folder
-    parsed = parse_search_query(search)
-    # The folder itself comes first even when no note carries it yet (just made): it narrows to nothing.
-    tags = [folder] + [
-        tag for tag in all_folder_tags()
-        if tag.casefold().startswith(folder.casefold()) and tag.casefold() != folder.casefold()
-    ]
-    clauses = tuple(
-        replace(clause, required_tags=clause.required_tags | {tag}) for clause in parsed.clauses for tag in tags
-    )
-    return format_search_query(replace(parsed, clauses=clauses))
-
-
-def search_for_new_note(search: Optional[str], folder: str) -> Optional[str]:
-    """The search a note made in the view takes its tags from (None for no search): in a
-    folder, each clause also requires the folder itself (not the folders below it), so the
-    note is filed in the folder chosen and shows in its view."""
-    if folder == NO_FOLDER:
-        return search
-    assert is_folder_tag(folder), folder
-    if search is None:
-        return folder
     parsed = parse_search_query(search)
     clauses = tuple(replace(clause, required_tags=clause.required_tags | {folder}) for clause in parsed.clauses)
     return format_search_query(replace(parsed, clauses=clauses))

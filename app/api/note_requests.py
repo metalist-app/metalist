@@ -58,8 +58,9 @@ class Viewport(TypedDict):
 
 # A root sort order, and the same order reversed (app/services/root_sorting.py).
 SortMode = Literal[
-    'normal', 'created', 'updated', 'alphabetical', 'content-volume',
+    'normal', 'created', 'updated', 'alphabetical', 'content-volume', 'file-size',
     'normal-reversed', 'created-reversed', 'updated-reversed', 'alphabetical-reversed', 'content-volume-reversed',
+    'file-size-reversed',
 ]
 
 @with_config(ConfigDict(strict=True))
@@ -146,10 +147,16 @@ class UpdateTabDateFilterRequest(TypedDict):
 @with_config(ConfigDict(strict=True))
 class UpdateTabFileFilterRequest(TypedDict):
     tabId: Identifier
-    # "none" shows every note again; "any" every note with an attached file.
-    kind: Literal["none", "any", "image", "pdf", "markdown"]
+    # "none" shows every note again; else a kind checked by make_file_filter.
+    kind: str
     clientId: Identifier
     undoContext: UndoContext
+
+@with_config(ConfigDict(strict=True))
+class SearchContextForSearchRequest(TypedDict):
+    # A search link's search (docs/ready-to-build/search-links.md).
+    search: str
+
 
 @with_config(ConfigDict(strict=True))
 class CreateNewTabRequest(TypedDict):

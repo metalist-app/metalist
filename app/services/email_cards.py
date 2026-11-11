@@ -23,6 +23,9 @@ def email_card_name(file_id: str) -> str:
     if not isinstance(file_id, str) or file_id == "":
         raise TypeError("file_id must be a non-empty string")
     stored = file_registry.read_stored_file(file_id)
+    # Too large to hold in memory: found and shown by its file name alone.
+    if stored is None:
+        return ""
     record = getattr(stored, "record")
     email = read_email(getattr(stored, "content_bytes"))
     parts = [email.subject]

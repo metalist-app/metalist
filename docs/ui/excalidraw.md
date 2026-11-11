@@ -29,6 +29,7 @@ Future plan (2026-10-27): charts of super-tag values work exactly like these dia
 - Double-click a rendered diagram, or right-click it and choose **Edit Diagram**.
 - To add one, choose **Add Excalidraw Diagram** from the right-click menu while editing a note, or `Add Excalidraw diagram` in the command palette. An empty diagram is attached to the note being edited (or a new note when none is) and the editor opens immediately.
 - The editor covers the window. Its bar shows the save status, **Discard Changes**, and **Done**.
+- The editor opens where you left it (agreed 2026-11-11: a deliberate choice persists, `docs/ui/interaction-principles.md`). Each save keeps the view beside the scene, as the scene point in the middle of the editor and the zoom (`metalistView` in the file, `excalidraw-scene.js`), so a window of another size shows the same middle at the same zoom. A diagram with no view kept opens with the whole drawing fitted, at 100% at most. Panning or zooming alone counts as a change at **Done**; moving less than a scene unit or 1% of zoom does not. **Discard Changes** puts the view back with the drawing. A diagram opened from a note or from a gallery behaves the same. (`tests/unit/excalidraw_view.test.mjs`)
 
 ## Saving and Closing
 - Changes autosave 2 seconds after drawing stops, one save at a time. The bar shows `Unsaved changes`, `Saving…` or `All changes saved` (`excalidraw-status-shown.js`). A failed save says `Unsaved changes` there and `Could not save the diagram. Retrying…` in a lasting corner card (failed saves retry after the same delay); still failing after 30 seconds, it opens a dialog over the editor, which closes once a save succeeds (`docs/ui/floating-messages.md`).
@@ -51,6 +52,7 @@ Future plan (2026-10-27): charts of super-tag values work exactly like these dia
 - Text inside diagrams is not searchable, not used for tags, and not sent to AI.
 - Only the English Excalidraw UI is bundled, and the Liberation Sans and Xiaolai (CJK) fonts are left out.
 - Excalidraw's AI features, Mermaid-to-diagram import, and collaboration are disabled.
+- The first diagram opened in a page session waits half a second to a second (noticed 2026-11-11): the editor loads only then (`excalidraw-loader.js`), so pages without diagrams never pay for it. The browser fetches and compiles the 1.4 MB bundle (Excalidraw and React), its stylesheet and its fonts (about 550 KB); later opens reuse it until the page reloads. The maintainer is not worried about it; if it is ever addressed, the choice is between starting the load when the pointer rests on a diagram (the hover usually covers it, and nothing loads for anyone who never goes near one) and loading it in the background once the page is ready (always instant, at a download, compile and memory cost on every page load).
 
 ## Related Docs
 - `docs/ui/references.md`

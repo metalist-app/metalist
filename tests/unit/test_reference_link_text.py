@@ -50,6 +50,7 @@ def _context(*, kyoto_first_line: str) -> EmbedRenderContext:
         has_file=lambda file_id: file_id in files,
         get_file=lambda file_id: files[file_id],
         is_property_used=lambda property_name: False,
+        is_shown_in_gallery=lambda gallery_note_id, note_id: True,
         static_collapse_arrows=False,
     )
 

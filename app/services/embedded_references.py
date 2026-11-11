@@ -3,6 +3,7 @@ from __future__ import annotations
 from app.services.credential_display import CredentialDisplay
 from app.utils.byte_sizes import MIB
 import html
+from contextvars import ContextVar
 import re
 from pathlib import PurePath
 from dataclasses import dataclass
@@ -26,6 +27,10 @@ from app.services.email_cards import email_card_name
 from app.services.email_files import email_badge, is_email_file
 from app.services.inline_image_occurrences import annotate_inline_image_occurrences
 from app.services.subtree_stats import render_subtree_stats_footer
+from app.services.note_gallery import collect_gallery_items, gallery_kinds, render_gallery
+from app.services.search_links import SearchLink, parse_search_link, render_search_link
+from app.services.search_embeds import search_runner
+from app.services.input_errors import InputRejected
 from app.services.remote_image_proxy import (
     remote_image_proxy_registry,
     rewrite_remote_image_sources_for_proxy,
@@ -113,6 +118,11 @@ class EmbedRenderContext:
     # Whether some note in the vault gives a property (casefolded) a value: a stats
     # figure for a property used nowhere shows a dash (subtree_stats.py).
     is_property_used: Callable[[str], bool]
+    # Whether a gallery (its note first) shows a note under it: under a search, the notes the
+    # search shows, its matches and their ancestors (docs/future-plans/gallery.md, decision 8), the
+    # gallery's own meta tags left out of it (snapshot.search_for_gallery_pictures). Every note
+    # shows outside a search.
+    is_shown_in_gallery: Callable[[str, str], bool]
     # A downloaded export: the notes in an embed get MetaList's arrows and start
     # as saved, and carry their first line and their full content, so the file
     # can fold them. False for the live view (it folds through the server) and
@@ -345,9 +355,71 @@ def render_note_content_with_embeds(
         folds_embeds=False,
         is_held=sole_embed_token(content_html) is not None,
     )
-    # Totals of the subtree (@stats, @sum=…) under the note's own text; a folded note
-    # renders without them (render_collapsed_note_content_with_embeds).
-    return rendered_content + render_subtree_stats_footer(note_id=note_id, tags=tags, context=context)
+    # Totals of the subtree (@stats, @sum=…) and the gallery (@gallery) under the note's own
+    # text; a folded note renders without them (render_collapsed_note_content_with_embeds).
+    return (
+        rendered_content
+        + render_subtree_stats_footer(note_id=note_id, tags=tags, context=context)
+        + _render_note_gallery(note_id=note_id, tags=tags, context=context, static_export=static_export)
+    )
+
+
+_PDF_THUMBNAIL_KIND = "pdf"
+# The picture a PDF tile loads (file-image-preview-service.js): its first page, not the PDF.
+FIRST_PAGE_PICTURE_SOURCE = "first-page"
+
+
+def _render_pdf_tile(*, record: object, file_id: str, static_export: bool) -> str:
+    """A PDF in a gallery: its first page once drawn (pdf_first_pages.py), else its badge and name.
+    An export has no first pages: it shows the badge."""
+    first_page_revision = getattr(record, "first_page_revision")
+    assert isinstance(first_page_revision, int) and first_page_revision >= 0
+    escaped_file_id = html.escape(file_id, quote=True)
+    escaped_title = html.escape(getattr(record, "title"), quote=True)
+    if first_page_revision > 0 and not static_export:
+        return (
+            f'<div class="note-file-image-embed" data-file-ref-id="{escaped_file_id}" '
+            f'data-picture-source="{FIRST_PAGE_PICTURE_SOURCE}" data-preview-state="idle">'
+            '<div class="note-file-image-preview-frame">'
+            f'<img class="note-file-image-preview" data-file-ref-id="{escaped_file_id}" alt="{escaped_title}" loading="lazy" decoding="async" hidden />'
+            '<div class="note-file-image-preview-placeholder note-loading-placeholder"></div>'
+            "</div>"
+            "</div>"
+        )
+    return (
+        '<span class="meta-gallery-file">'
+        f'<span class="note-file-reference-badge">{html.escape(_format_thumbnail_badge(_PDF_THUMBNAIL_KIND))}</span>'
+        f'<span class="meta-gallery-file-name">{escaped_title}</span>'
+        "</span>"
+    )
+
+
+def _render_note_gallery(*, note_id: str, tags: str, context: EmbedRenderContext, static_export: bool) -> str:
+    kinds = gallery_kinds(tags)
+    if kinds is None:
+        return ""
+    items = collect_gallery_items(
+        note_id=note_id, kinds=kinds, context=context,
+        file_ids_in=lambda content_html: [(token.start, token.note_id) for token in collect_active_reference_tokens(content_html)],
+        first_line_of=extract_collapsed_preview_source_html,
+    )
+
+    def tile_body(file_id: str) -> str:
+        record = context.get_file(file_id)
+        if getattr(record, "thumbnail_kind") == _PDF_THUMBNAIL_KIND:
+            return _render_pdf_tile(record=record, file_id=file_id, static_export=static_export)
+        return _render_file_embed_body(record=record, reference_note_id=file_id, static_export=static_export)
+
+    def view_kind(file_id: str) -> str:
+        return view_kind_of(getattr(context.get_file(file_id), "original_filename"))
+
+    def written_picture(source: str) -> str:
+        image = f'<img class="meta-gallery-written-image" src="{html.escape(source, quote=True)}" alt="" loading="lazy" decoding="async" />'
+        if static_export:
+            return image
+        return rewrite_remote_image_sources_for_proxy(content_html=image, registry=remote_image_proxy_registry)
+
+    return render_gallery(items=items, tile_body=tile_body, view_kind=view_kind, written_picture=written_picture)
 
 
 def _render_note_content_with_embeds(
@@ -412,6 +484,17 @@ def _has_markdown_footnotes(*, content_html: str, tags: str) -> bool:
     return is_markdown_note(tags) and any(mark in content_html for mark in _MARKDOWN_FOOTNOTE_MARKS)
 
 
+# The drawing of a note that starts with a diagram: @mermaid, a ((@mermaid)) region or a fence.
+_STARTS_WITH_MERMAID_RE = re.compile(r'^\s*(?:<div>\s*)?(?:<div class="meta-mermaid"|<div class="meta-markdown"[^>]*>\s*<pre class="meta-mermaid-source")')
+_MERMAID_WORD = "mermaid"
+
+
+def _opens_with_mermaid_diagram(*, content_html: str, first_line_html: str, tags: str, credentials: CredentialDisplay) -> bool:
+    if _MERMAID_WORD not in tags.casefold() and _MERMAID_WORD not in first_line_html.casefold():
+        return False
+    return _STARTS_WITH_MERMAID_RE.match(format_note_content_for_view(content_html=content_html, tags=tags, credentials=credentials)) is not None
+
+
 def render_collapsed_note_content_with_embeds(
     *,
     note_id: str,
@@ -425,7 +508,10 @@ def render_collapsed_note_content_with_embeds(
     if has_scoped_footnotes(tags) or _has_markdown_footnotes(content_html=content_html, tags=tags):
         # Footnotes on later source lines can attach markers to the first line.
         preview_source_html = content_html
-    return _render_note_content_with_embeds(
+    if _opens_with_mermaid_diagram(content_html=content_html, first_line_html=preview_source_html, tags=tags, credentials=credentials):
+        # Drawn from its first line alone, a diagram is empty. main.css folds what follows it away.
+        preview_source_html = content_html
+    rendered_first_line = _render_note_content_with_embeds(
         note_id=note_id,
         content_html=preview_source_html,
         tags=tags,
@@ -436,6 +522,8 @@ def render_collapsed_note_content_with_embeds(
         # Whether the note is only its embed, not whether its first line is.
         is_held=sole_embed_token(content_html) is not None,
     )
+    # A folded gallery shows one row of its pictures under its first line (main.css).
+    return rendered_first_line + _render_note_gallery(note_id=note_id, tags=tags, context=context, static_export=static_export)
 
 
 def _shown_note_embeds(preview_source_html: str, context: EmbedRenderContext) -> List[ReferenceToken]:
@@ -717,6 +805,30 @@ def _replace_reference_tokens_in_text(
 
         target = parse_reference_inner(text[token_start + token_open_length : end])
 
+        # A link that opens a search (search_links.py): drawn here, before any wrapper formats
+        # the note's text, so a scoped wrapper leaves it a link as it leaves a note link.
+        search_link = parse_search_link(text[token_start + token_open_length : end])
+        if target is None and search_link is not None and not is_embed:
+            search_html = render_search_link(search_link, static_export=static_export)
+            if keeps_from_markdown and not static_export:
+                search_html = kept_from_markdown(search_html, is_block=False)
+            output.append(search_html)
+            index = end + len(_REFERENCE_CLOSE)
+            continue
+        if target is None and search_link is not None:
+            try:
+                search_html = _render_search_embed(link=search_link, context=context, static_export=static_export, credentials=credentials)
+            except InputRejected:
+                # A search that doesn't parse stays text as typed, as a broken link does.
+                output.append(text[token_start : end + len(_REFERENCE_CLOSE)])
+                index = end + len(_REFERENCE_CLOSE)
+                continue
+            if keeps_from_markdown and not static_export:
+                search_html = kept_from_markdown(search_html, is_block=True)
+            output.append(search_html)
+            index = end + len(_REFERENCE_CLOSE)
+            continue
+
         if target is None:
             # Not a note id (a formatting wrapper or plain brackets): keep the opener
             # and scan on, so a link nested inside, as in [[see [[id]] here]], still counts.
@@ -747,6 +859,57 @@ def _replace_reference_tokens_in_text(
         index = end + len(_REFERENCE_CLOSE)
 
     return "".join(output), occurrence_index
+
+
+# Set while an embedded search draws its results: a result's own embedded search draws its heading
+# only, so a search never draws inside a search (search-links.md §11).
+_drawing_search_results: ContextVar[bool] = ContextVar("drawing_search_results", default=False)
+
+
+def _render_search_embed(
+    *, link: SearchLink, context: EmbedRenderContext, static_export: bool, credentials: CredentialDisplay,
+) -> str:
+    """An embedded search (search_embeds.py): its heading (the search link and how many notes it
+    finds), then the first results, each its note's folded first line, then how many more. An export
+    keeps the markup, as for a search link."""
+    if static_export:
+        return _EMBED_OPEN[:1] + render_search_link(link, static_export=True)
+    results = search_runner.results(link.search)
+    search_attribute = html.escape(html.unescape(link.search), quote=True)
+    heading = (
+        '<div class="note-search-embed-heading">'
+        f'{render_search_link(link, static_export=False)}'
+        f'<span class="note-search-embed-count">· {results.count}</span></div>'
+    )
+    if _drawing_search_results.get():
+        return f'<div class="note-search-embed note-search-embed-nested" data-search-query="{search_attribute}">{heading}</div>'
+    rows: List[str] = []
+    drawing = _drawing_search_results.set(True)
+    try:
+        for note_id in results.first_note_ids:
+            record = context.get_note(note_id)
+            first_line = render_collapsed_note_content_with_embeds(
+                note_id=note_id, content_html=getattr(record, "content"), tags=getattr(record, "tags"),
+                context=context, static_export=False, credentials=credentials,
+            )
+            rows.append(
+                f'<div class="note-search-embed-result" data-result-note-id="{html.escape(note_id, quote=True)}">'
+                f'<div class="note-search-embed-line">{first_line}</div></div>'
+            )
+    finally:
+        _drawing_search_results.reset(drawing)
+    more = ""
+    if results.count > len(rows):
+        more = (
+            f'<a class="note-search-link note-search-embed-more" data-search-query="{search_attribute}">'
+            f'… and {results.count - len(rows)} more</a>'
+        )
+    # Its ▾/▸ folds it to the heading (search-embed-service.js keeps the fold).
+    toggle = '<button type="button" class="note-search-embed-toggle" aria-label="Fold search results"></button>'
+    return (
+        f'<div class="note-search-embed" data-search-query="{search_attribute}">{toggle}{heading}'
+        f'<div class="note-search-embed-results">{"".join(rows)}{more}</div></div>'
+    )
 
 
 def _collect_reference_tokens_in_text(
@@ -1823,7 +1986,11 @@ def _link_text_or_space(match: re.Match[str]) -> str:
     token = match.group(0)
     if token.startswith(_EMBED_OPEN):
         return " "
-    target = parse_reference_inner(token[len(_LINK_OPEN) : -len(_REFERENCE_CLOSE)])
+    inner = token[len(_LINK_OPEN) : -len(_REFERENCE_CLOSE)]
+    search_link = parse_search_link(inner)
+    if search_link is not None:
+        return f" {search_link.shown_text} "
+    target = parse_reference_inner(inner)
     if target is None or target.link_text is None:
         return " "
     return f" {target.link_text} "
@@ -1834,11 +2001,19 @@ def _strip_reference_token_if_uuid(match: re.Match[str]) -> str:
     there in its place), else a space. Anything else in brackets stays."""
     token = match.group(0)
     if token.startswith(_EMBED_OPEN):
+        embedded_search = parse_search_link(token[len(_EMBED_OPEN) : -len(_REFERENCE_CLOSE)])
+        if embedded_search is not None:
+            return f" {embedded_search.shown_text} "
         target = parse_reference_inner(token[len(_EMBED_OPEN) : -len(_REFERENCE_CLOSE)])
         if target is None:
             return token
         return " "
-    target = parse_reference_inner(token[len(_LINK_OPEN) : -len(_REFERENCE_CLOSE)])
+    inner = token[len(_LINK_OPEN) : -len(_REFERENCE_CLOSE)]
+    # A search link reads its text, or its search (search_links.py).
+    search_link = parse_search_link(inner)
+    if search_link is not None:
+        return f" {search_link.shown_text} "
+    target = parse_reference_inner(inner)
     if target is None:
         return token
     if target.link_text is not None:

@@ -6,7 +6,6 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import logging
 from threading import BoundedSemaphore
 import time
-from app.upload_limits import MAX_UPLOAD_REQUEST_BYTES
 
 CHUNK_BYTES = 64 * 1024
 MAX_CONNECTIONS = 32
@@ -152,9 +151,6 @@ def make_proxy_handler(*, backend_host: str, backend_port: int, forward_headers)
                     self.send_error(HTTPStatus.BAD_REQUEST, 'Invalid Content-Length')
                     return
                 remaining = int(lengths[0])
-            if self.path.split('?', 1)[0].endswith('/files/upload') and remaining > MAX_UPLOAD_REQUEST_BYTES:
-                self.send_error(HTTPStatus.REQUEST_ENTITY_TOO_LARGE, 'Upload exceeds the configured size limit')
-                return
             if not self.path.startswith('/') or self.path.startswith('//'):
                 self.send_error(HTTPStatus.BAD_REQUEST, 'Expected an origin-form request target')
                 return

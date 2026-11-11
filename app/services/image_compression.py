@@ -9,7 +9,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from io import BytesIO
 from pathlib import Path, PurePosixPath
-from typing import Dict, List, Tuple
+from typing import Callable, Dict, List, Tuple
 
 from PIL import Image, ImageOps, UnidentifiedImageError
 
@@ -113,7 +113,9 @@ def compressed_image(content: bytes, filename: str, *, longest_side_px: int) -> 
     return CompressedImage(content=shrunk.content, filename=name.name, mime_type=_MIME_OF_FORMAT[shrunk.image_format])
 
 
-def estimated_compressed_bytes(files: List[Tuple[Path, int]]) -> Dict[int, int]:
+def estimated_compressed_bytes(
+    files: List[Tuple[PurePosixPath, int]], read_bytes: Callable[[PurePosixPath], bytes],
+) -> Dict[int, int]:
     """About how many bytes the images at files ((path, size) pairs) take compressed, at each
     of IMAGE_LONGEST_SIDES: a few of them compressed, from the smallest to the largest, and
     the rest taken to shrink alike. Exact when there are no more than ESTIMATE_SAMPLE_COUNT."""
@@ -124,8 +126,12 @@ def estimated_compressed_bytes(files: List[Tuple[Path, int]]) -> Dict[int, int]:
     before = sum(size for _path, size in sample)
     total = sum(size for _path, size in by_size)
     jobs = [(path, size, side) for side in IMAGE_LONGEST_SIDES for path, size in sample]
+    def compressed_size_of(job: tuple[PurePosixPath, int, int]) -> int:
+        path, size, side = job
+        return _compressed_size(path, size, side, read_bytes)
+
     with ThreadPoolExecutor(max_workers=_ESTIMATE_THREADS) as executor:
-        sizes = list(executor.map(lambda job: _compressed_size(*job), jobs))
+        sizes = list(executor.map(compressed_size_of, jobs))
     after_by_side = {side: 0 for side in IMAGE_LONGEST_SIDES}
     for (_path, _size, side), compressed_size in zip(jobs, sizes):
         after_by_side[side] += compressed_size
@@ -134,8 +140,8 @@ def estimated_compressed_bytes(files: List[Tuple[Path, int]]) -> Dict[int, int]:
     return {side: round(total * after / before) for side, after in after_by_side.items()}
 
 
-def _compressed_size(path: Path, size: int, longest_side_px: int) -> int:
-    compressed = compressed_image(path.read_bytes(), path.name, longest_side_px=longest_side_px)
+def _compressed_size(path: PurePosixPath, size: int, longest_side_px: int, read_bytes: Callable[[PurePosixPath], bytes]) -> int:
+    compressed = compressed_image(read_bytes(path), path.name, longest_side_px=longest_side_px)
     if compressed is None:
         return size
     return len(compressed.content)

@@ -4,11 +4,12 @@ Images compressed): the acceptance checks agreed before the code, (4) to (8)."""
 from __future__ import annotations
 
 from io import BytesIO
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 import pytest
 from PIL import ExifTags, Image
 
+from app.services.obsidian_import.import_folder import DiskFolder
 from app.services.image_compression import IMAGE_LONGEST_SIDES, compressed_image, estimated_compressed_bytes
 
 # A photo larger than compression keeps: 4000 by 3000, as a 12-megapixel camera takes.
@@ -118,13 +119,13 @@ def test_the_estimate_is_exact_for_a_few_images(tmp_path: Path) -> None:
     (tmp_path / "small.jpg").write_bytes(tiny)
     compressed = compressed_image(photo, "photo.jpg", longest_side_px=LONGEST_SIDE_PX)
     assert compressed is not None
-    files = [(tmp_path / "photo.jpg", len(photo)), (tmp_path / "small.jpg", len(tiny))]
-    estimate = estimated_compressed_bytes(files)
+    files = [(PurePosixPath("photo.jpg"), len(photo)), (PurePosixPath("small.jpg"), len(tiny))]
+    estimate = estimated_compressed_bytes(files, DiskFolder(tmp_path).read_bytes)
     assert sorted(estimate) == list(IMAGE_LONGEST_SIDES)
     assert estimate[LONGEST_SIDE_PX] == len(compressed.content) + len(tiny)
     # A smaller longest side comes to less.
     assert estimate[1280] < estimate[1920] < estimate[2560]
-    assert estimated_compressed_bytes([]) == {side: 0 for side in IMAGE_LONGEST_SIDES}
+    assert estimated_compressed_bytes([], DiskFolder(Path.cwd()).read_bytes) == {side: 0 for side in IMAGE_LONGEST_SIDES}
 
 
 # The size is chosen (the maintainer, 2026-11-01): each longest side the screen offers.

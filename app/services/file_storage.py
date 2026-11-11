@@ -3,15 +3,16 @@ A blob is written and synced before the catalog names it, and retired only after
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import json
 from pathlib import Path
 import uuid
-from typing import Callable, Iterator, Optional
+from typing import Callable, Iterable, Iterator, Optional
 
-from app.upload_limits import MAX_ATTACHMENT_BYTES
-from app.db.blob_store import BlobSeal, StoredBlob
+from app.upload_limits import MAX_IN_MEMORY_FILE_BYTES
+from app.db.blob_store import BlobSeal, BlobWriter, StoredBlob
 from app.db.file_schema import FILE_PREVIEW_VARIANTS
 from app.db.file_session import begin_file_writer, connect_file_reader, live_blob_store
 from app.db.session import after_recoverable_commit
@@ -29,7 +30,10 @@ from app.db.files_sql import (
     fetch_content_revisions,
     fetch_every_blob_id_of_files,
     fetch_file_text,
+    fetch_file_first_page,
     fetch_file_metadata,
+    fetch_all_file_first_pages,
+    fetch_first_page_versions,
     fetch_file_preview,
     fetch_file,
     insert_file,
@@ -40,6 +44,8 @@ from app.db.files_sql import (
     upsert_file_preview,
     upsert_file_text,
     update_file_text_storage_fields,
+    update_file_first_page_storage_fields,
+    upsert_file_first_page,
 )
 from app.security.encryption import (
     get_encryption_service,
@@ -57,10 +63,12 @@ from app.services.file_text_search import (
     file_texts,
 )
 from app.services.input_errors import InputRejected
+from app.services.pdf_first_pages import DrawnPage, FirstPageStorage, NO_PICTURE_MIME_TYPE, pdf_first_pages
 from app.services.note_store import store as note_store
 from app.utils.file_names import MAX_FILE_NAME_CHARACTERS, replace_unsafe_filename_characters, split_extension
 
 _ALLOWED_THUMBNAIL_KINDS = {"pdf", "image", "audio", "video", "text", "archive", "excalidraw", "other"}
+_PDF_THUMBNAIL_KIND = "pdf"
 
 EXCALIDRAW_MIME_TYPE = "application/vnd.excalidraw+json"
 EXCALIDRAW_FILE_EXTENSION = ".excalidraw"
@@ -110,6 +118,15 @@ class FileReferenceRecord:
     created_at: datetime
     updated_at: datetime
     content_revision: int
+    # The revision a PDF's first page was drawn from (pdf_first_pages.py), shown in galleries; 0
+    # with none drawn, none possible, or one drawn from an older revision.
+    first_page_revision: int
+
+
+@dataclass(frozen=True)
+class FileFirstPage:
+    mime_type: str
+    content_bytes: bytes
 
 
 @dataclass(frozen=True)
@@ -221,7 +238,7 @@ def sweep_blob_leftovers() -> int:
 
 
 def _load_file_details() -> dict[str, FileDetails]:
-    """Every file's name and kind by id, decrypted (the file registry asks once, when
+    """Every file's name, kind and size by id, decrypted (the file registry asks once, when
     notes are read, searched or filtered, which is only once the vault is unlocked)."""
     with connect_file_reader() as connection:
         rows = fetch_all_file_metadata(connection)
@@ -245,9 +262,12 @@ def _load_file_details() -> dict[str, FileDetails]:
             field_name="metadata_json",
             file_id=file_id,
         )
-        thumbnail_kind = _parse_file_metadata(metadata_json, file_id=file_id)["thumbnail_kind"]
+        metadata = _parse_file_metadata(metadata_json, file_id=file_id)
+        thumbnail_kind = metadata["thumbnail_kind"]
         assert isinstance(thumbnail_kind, str)
-        details[file_id] = FileDetails(title=title, thumbnail_kind=thumbnail_kind)
+        size_bytes = metadata["size_bytes"]
+        assert isinstance(size_bytes, int), "a stored file's metadata holds its size"
+        details[file_id] = FileDetails(title=title, thumbnail_kind=thumbnail_kind, size_bytes=size_bytes)
     return details
 
 
@@ -261,41 +281,77 @@ def create_file(
     content_bytes: bytes,
     token: str,
 ) -> FileReferenceRecord:
-    if not isinstance(original_filename, str) or original_filename == "":
-        raise TypeError("original_filename must be a non-empty string")
-    if not isinstance(mime_type, str) or mime_type == "":
-        raise TypeError("mime_type must be a non-empty string")
     if not isinstance(content_bytes, bytes):
         raise TypeError(f"content_bytes must be bytes, got {type(content_bytes)}")
+    with open_file_upload(token=token) as upload:
+        upload.write(content_bytes)
+        return upload.finish(original_filename=original_filename, mime_type=mime_type)
+
+
+def create_file_from_pieces(*, pieces: Iterable[bytes], original_filename: str, mime_type: str, token: str) -> FileReferenceRecord:
+    """A file stored a piece at a time as it is read: its size doesn't matter."""
+    with open_file_upload(token=token) as upload:
+        for piece in pieces:
+            upload.write(piece)
+        return upload.finish(original_filename=original_filename, mime_type=mime_type)
+
+
+class FileUpload:
+    """A new file arriving a piece at a time: encrypted as it comes, listed once it is whole."""
+
+    def __init__(self, *, writer: BlobWriter, encryption_service: object, token: str) -> None:
+        self._writer = writer
+        self._encryption_service = encryption_service
+        self._token = token
+        self._size_bytes = 0
+
+    def write(self, content: bytes) -> None:
+        self._writer.write(content)
+        self._size_bytes += len(content)
+
+    def finish(self, *, original_filename: str, mime_type: str) -> FileReferenceRecord:
+        if not isinstance(original_filename, str) or original_filename == "":
+            raise TypeError("original_filename must be a non-empty string")
+        if not isinstance(mime_type, str) or mime_type == "":
+            raise TypeError("mime_type must be a non-empty string")
+        title = Path(original_filename).name
+        if title == "":
+            raise ValueError("original_filename must resolve to a non-empty basename")
+        sealed = _sealed_for_catalog(stored=self._writer.finish(), encryption_service=self._encryption_service)
+        return _list_new_file(
+            title=title, mime_type=mime_type, size_bytes=self._size_bytes, sealed=sealed, encryption_service=self._encryption_service,
+        )
+
+
+@contextmanager
+def open_file_upload(*, token: str) -> Iterator[FileUpload]:
+    """A new file to write to. Left without finish(), nothing of it remains."""
     if not isinstance(token, str) or token == "":
         raise TypeError("token must be a non-empty string")
+    encryption_service = _resolve_encryption_service(token)
+    is_encrypted = _coerce_encryption_service(encryption_service) is not None
+    if not is_encrypted and is_encryption_required():
+        raise RuntimeError("Encryption is required but no DEK is available")
+    with live_blob_store().writer(is_encrypted=is_encrypted) as writer:
+        yield FileUpload(writer=writer, encryption_service=encryption_service, token=token)
 
-    if len(content_bytes) > MAX_ATTACHMENT_BYTES:
-        raise ValueError("Attachment exceeds the configured size limit")
 
+def _list_new_file(
+    *, title: str, mime_type: str, size_bytes: int, sealed: _SealedBlob, encryption_service: object,
+) -> FileReferenceRecord:
+    """The catalog row and the registry entry of a blob already written and synced."""
     file_id = _generate_unique_file_id()
-    title = Path(original_filename).name
-    if title == "":
-        raise ValueError("original_filename must resolve to a non-empty basename")
-
     metadata = {
         "original_filename": title,
         "mime_type": mime_type,
-        "size_bytes": len(content_bytes),
+        "size_bytes": size_bytes,
         "thumbnail_kind": _derive_thumbnail_kind(mime_type=mime_type, original_filename=title),
     }
     metadata_json = json.dumps(metadata, separators=(",", ":"), ensure_ascii=False)
-
-    encryption_service = _resolve_encryption_service(token)
-    encrypted_title, title_nonce, title_tag = _encrypt_text_for_storage(
-        encryption_service=encryption_service,
-        plaintext=title,
-    )
+    encrypted_title, title_nonce, title_tag = _encrypt_text_for_storage(encryption_service=encryption_service, plaintext=title)
     encrypted_metadata, metadata_nonce, metadata_tag = _encrypt_text_for_storage(
-        encryption_service=encryption_service,
-        plaintext=metadata_json,
+        encryption_service=encryption_service, plaintext=metadata_json,
     )
-    sealed = _write_blob(content_bytes=content_bytes, encryption_service=encryption_service)
 
     now = datetime.now(timezone.utc)
     with begin_file_writer() as connection:
@@ -316,10 +372,17 @@ def create_file(
             updated_at=now,
         )
 
-    file_registry.add_with_thumbnail_kind(file_id, thumbnail_kind=metadata["thumbnail_kind"], title=title)
+    stored_size = metadata["size_bytes"]
+    assert isinstance(stored_size, int), "a stored file's metadata holds its size"
+    file_registry.add_with_thumbnail_kind(
+        file_id, thumbnail_kind=metadata["thumbnail_kind"], title=title, size_bytes=stored_size,
+    )
     if is_searchable_file_name(title):
         # Its text, for search, beside the request (folder-import-and-file-previews.md).
         file_texts.refresh_in_background()
+    if metadata["thumbnail_kind"] == _PDF_THUMBNAIL_KIND:
+        # Its first page, for galleries, beside the request (pdf_first_pages.py).
+        pdf_first_pages.refresh_in_background()
     return FileReferenceRecord(
         id=file_id,
         title=title,
@@ -330,6 +393,7 @@ def create_file(
         created_at=now,
         updated_at=now,
         content_revision=1,
+        first_page_revision=0,
     )
 
 
@@ -340,6 +404,7 @@ def get_file_reference_record(file_id: str, token: Optional[str]) -> FileReferen
     encryption_service = _resolve_encryption_service(token)
     with connect_file_reader() as connection:
         row = fetch_file_metadata(connection, file_id)
+        first_page = fetch_file_first_page(connection, file_id)
     if row is None:
         raise KeyError(f"File {file_id} not present")
 
@@ -379,7 +444,37 @@ def get_file_reference_record(file_id: str, token: Optional[str]) -> FileReferen
         created_at=created_at,
         updated_at=updated_at,
         content_revision=content_revision,
+        first_page_revision=_shown_first_page_revision(first_page, content_revision=content_revision),
     )
+
+
+def _shown_first_page_revision(first_page: Optional[dict[str, object]], *, content_revision: int) -> int:
+    """The revision of the first page to show: the file's own, when one was drawn from it."""
+    if first_page is None or first_page["mime_type"] == NO_PICTURE_MIME_TYPE:
+        return 0
+    drawn_revision = first_page["content_revision"]
+    assert isinstance(drawn_revision, int) and drawn_revision >= 1
+    if drawn_revision != content_revision:
+        return 0
+    return drawn_revision
+
+
+def get_file_first_page(*, file_id: str, token: str) -> FileFirstPage:
+    """A PDF's first page as a picture (pdf_first_pages.py); FilePreviewMissing while it has none to show."""
+    if not isinstance(file_id, str) or file_id == "":
+        raise TypeError("file_id must be a non-empty string")
+    if not isinstance(token, str) or token == "":
+        raise TypeError("token must be a non-empty string")
+    encryption_service = _resolve_encryption_service(token)
+    row = _find_and_pin(lambda connection: fetch_file_first_page(connection, file_id))
+    if row is None:
+        raise FilePreviewMissing(f"No first page stored for file {file_id}")
+    content_bytes = _read_pinned_blob(encryption_service=encryption_service, row=row, file_id=file_id)
+    mime_type = row["mime_type"]
+    assert isinstance(mime_type, str)
+    if mime_type == NO_PICTURE_MIME_TYPE:
+        raise FilePreviewMissing(f"No first page stored for file {file_id}")
+    return FileFirstPage(mime_type=mime_type, content_bytes=content_bytes)
 
 
 def download_file(file_id: str, token: str) -> DownloadedFile:
@@ -388,9 +483,12 @@ def download_file(file_id: str, token: str) -> DownloadedFile:
     return _read_stored_file(file_id, token)
 
 
-def read_stored_file(file_id: str) -> DownloadedFile:
-    """A file read with the session's key, as drawing a note reads files' details:
-    for work no request asks for (an email's words in the search index)."""
+def read_stored_file(file_id: str) -> DownloadedFile | None:
+    """A file read with the session's key, as drawing a note reads files' details: for work no
+    request asks for (an email's words in the search index). None when it is too large to hold
+    in memory: it is found by its name alone."""
+    if get_file_reference_record(file_id, None).size_bytes > MAX_IN_MEMORY_FILE_BYTES:
+        return None
     return _read_stored_file(file_id, None)
 
 
@@ -404,8 +502,8 @@ def _read_stored_file(file_id: str, token: Optional[str]) -> DownloadedFile:
         raise KeyError(f"File {file_id} not present")
     try:
         seal = _open_seal(encryption_service=encryption_service, row=row, file_id=file_id)
-        if seal.real_size > MAX_ATTACHMENT_BYTES:
-            raise AttachmentSizeExceeded('Attachment exceeds the configured size limit')
+        if seal.real_size > MAX_IN_MEMORY_FILE_BYTES:
+            raise AttachmentSizeExceeded('This file is too large to open here. Download it instead.')
         record = get_file_reference_record(file_id, token)
         content_bytes = live_blob_store().read_all(str(row["blob_id"]), seal)
     finally:
@@ -445,8 +543,8 @@ def replace_file_content(
         raise TypeError(f"expected_revision must be a positive integer, got {expected_revision!r}")
     if not isinstance(token, str) or token == "":
         raise TypeError("token must be a non-empty string")
-    if len(content_bytes) > MAX_ATTACHMENT_BYTES:
-        raise ValueError("Attachment exceeds the configured size limit")
+    if len(content_bytes) > MAX_IN_MEMORY_FILE_BYTES:
+        raise ValueError("This file is too large to open here. Download it instead.")
 
     record = get_file_reference_record(file_id, token)
     _require_editable(record)
@@ -484,6 +582,7 @@ def replace_file_content(
     updated = get_file_reference_record(file_id, token)
     assert updated.content_revision == expected_revision + 1
     assert updated.size_bytes == len(content_bytes)
+    file_registry.set_size(file_id, size_bytes=updated.size_bytes)
     return updated
 
 
@@ -656,6 +755,7 @@ def restore_file_snapshot(*, snapshot: FileSnapshot, token: str) -> FileReferenc
     updated = get_file_reference_record(snapshot.file_id, token)
     assert updated.content_revision == next_revision
     assert updated.size_bytes == len(snapshot.content_bytes)
+    file_registry.set_size(snapshot.file_id, size_bytes=updated.size_bytes)
     return updated
 
 
@@ -815,6 +915,11 @@ def encrypt_all_files_for_active_dek(*, encryption_service: object) -> int:
             decrypt_encryption_service=service,
             encrypt_encryption_service=service,
         )
+        replaced_blob_ids += _rewrite_file_first_pages(
+            connection=connection,
+            decrypt_encryption_service=service,
+            encrypt_encryption_service=service,
+        )
     _retire_blobs(replaced_blob_ids)
     return rewritten_count
 
@@ -846,6 +951,11 @@ def decrypt_all_files_for_plaintext(*, encryption_service: object) -> int:
             encrypt_encryption_service=None,
         )
         replaced_blob_ids += _rewrite_file_texts(
+            connection=connection,
+            decrypt_encryption_service=service,
+            encrypt_encryption_service=None,
+        )
+        replaced_blob_ids += _rewrite_file_first_pages(
             connection=connection,
             decrypt_encryption_service=service,
             encrypt_encryption_service=None,
@@ -1010,8 +1120,8 @@ def _validate_editable_content(*, thumbnail_kind: str, content_bytes: bytes) -> 
 def _validate_svg_preview(*, svg_bytes: bytes, variant: str) -> None:
     if not isinstance(svg_bytes, bytes):
         raise TypeError(f"{variant} preview must be bytes, got {type(svg_bytes)}")
-    if len(svg_bytes) > MAX_ATTACHMENT_BYTES:
-        raise ValueError("Attachment exceeds the configured size limit")
+    if len(svg_bytes) > MAX_IN_MEMORY_FILE_BYTES:
+        raise ValueError("This file is too large to open here. Download it instead.")
     text = _decode_utf8_strict(svg_bytes, description=f"{variant} preview").strip()
     if text.startswith("<?xml"):
         if _XML_DECLARATION_END not in text:
@@ -1406,11 +1516,22 @@ def _file_bytes_if_present(file_id: str) -> bytes | None:
     return _read_pinned_blob(encryption_service=encryption_service, row=row, file_id=file_id)
 
 
+def _is_too_large_to_read_for_text(file_id: str) -> bool:
+    """Too large to hold in memory to read: it keeps no text, and is found by its name."""
+    with connect_file_reader() as connection:
+        row = fetch_file(connection, file_id)
+    # Deleted meanwhile: reading it says so.
+    if row is None:
+        return False
+    return _open_seal(encryption_service=_resolve_encryption_service(None), row=row, file_id=file_id).real_size > MAX_IN_MEMORY_FILE_BYTES
+
+
 file_texts.install_storage(FileTextStorage(
     read_text=_read_file_text,
     read_filters=_read_file_text_filters,
     searchable_files=_searchable_files,
     read_file_bytes=_file_bytes_if_present,
+    is_too_large_to_read=_is_too_large_to_read_for_text,
     file_name=file_registry.title_of,
     store_text=_store_file_text,
 ))
@@ -1452,3 +1573,70 @@ def _rewritten_payload(
     if encrypt_encryption_service is None:
         return plaintext, None, None
     return _encrypt_bytes_for_storage(encryption_service=encrypt_encryption_service, plaintext=plaintext)
+
+
+# --- A PDF's first page as a picture (pdf_first_pages.py; docs/future-plans/gallery.md) ------
+
+
+def _pdf_files() -> dict[str, int]:
+    file_ids = sorted(
+        file_id for file_id in file_registry.file_ids_of_kind(FILE_FILTER_ANY)
+        if file_registry.thumbnail_kind_of(file_id) == _PDF_THUMBNAIL_KIND
+    )
+    with connect_file_reader() as connection:
+        return fetch_content_revisions(connection, file_ids)
+
+
+def _drawn_first_page_versions() -> dict[str, tuple[int, int]]:
+    with connect_file_reader() as connection:
+        return fetch_first_page_versions(connection)
+
+
+def _store_first_page(file_id: str, page: DrawnPage) -> None:
+    sealed = _write_blob(content_bytes=page.picture, encryption_service=_resolve_encryption_service(None))
+    with begin_file_writer() as connection:
+        file_is_present = fetch_file(connection, file_id) is not None
+        replaced_page = fetch_file_first_page(connection, file_id)
+        if file_is_present:
+            upsert_file_first_page(
+                connection, file_id=file_id, mime_type=page.mime_type, blob_id=sealed.blob_id, blob_seal=sealed.seal,
+                blob_seal_encryption_nonce=sealed.seal_nonce, blob_seal_encryption_tag=sealed.seal_tag,
+                content_revision=page.content_revision, drawer_version=page.drawer_version,
+                updated_at=datetime.now(timezone.utc),
+            )
+    # Deleted meanwhile: nothing to keep.
+    if not file_is_present:
+        _retire_blobs([sealed.blob_id])
+    elif replaced_page is not None:
+        _retire_blobs([str(replaced_page["blob_id"])])
+
+
+pdf_first_pages.install_storage(FirstPageStorage(
+    pdf_files=_pdf_files,
+    drawn_versions=_drawn_first_page_versions,
+    read_file_bytes=_file_bytes_if_present,
+    is_too_large_to_draw=_is_too_large_to_read_for_text,
+    store_page=_store_first_page,
+))
+
+
+def _rewrite_file_first_pages(
+    *,
+    connection,
+    decrypt_encryption_service: object,
+    encrypt_encryption_service: object | None,
+) -> list[str]:
+    """Rewrite every first page's blob; returns the old blobs, to retire once all is committed."""
+    replaced_blob_ids: list[str] = []
+    for row in fetch_all_file_first_pages(connection):
+        file_id = str(row["file_id"])
+        next_blob = _rewritten_blob(
+            row=row, file_id=file_id,
+            decrypt_encryption_service=decrypt_encryption_service, encrypt_encryption_service=encrypt_encryption_service,
+        )
+        update_file_first_page_storage_fields(
+            connection, file_id=file_id, blob_id=next_blob.blob_id, blob_seal=next_blob.seal,
+            blob_seal_encryption_nonce=next_blob.seal_nonce, blob_seal_encryption_tag=next_blob.seal_tag,
+        )
+        replaced_blob_ids.append(str(row["blob_id"]))
+    return replaced_blob_ids

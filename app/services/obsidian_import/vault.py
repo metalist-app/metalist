@@ -5,15 +5,15 @@ left out and why. Only reads: the vault is never written to."""
 from __future__ import annotations
 
 import json
-import os
 import unicodedata
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path, PurePosixPath
 from typing import List
 
 from app.services.exception_capture import CapturedExceptionContext
 from app.services.image_compression import COMPRESSIBLE_SUFFIXES
+from app.services.obsidian_import.import_folder import ROOT, ImportFolder
 
 # Obsidian's own settings, and its trash: never notes.
 _SETTINGS_FOLDER = ".obsidian"
@@ -61,38 +61,32 @@ class VaultContents:
     settings_problem: str
 
 
-def read_vault(folder: Path, *, reads_line_break_setting: bool) -> VaultContents:
+def read_vault(folder: ImportFolder, *, reads_line_break_setting: bool) -> VaultContents:
     """The vault at folder: every .md file outside hidden folders, sorted by path as
     Obsidian sorts names (case ignored); hidden folders and other files are skipped."""
-    if not folder.is_dir():
-        raise ValueError(f"vault folder must be a folder: {folder}")
     markdown_files: List[VaultFile] = []
     other_files: List[PurePosixPath] = []
     skipped: List[SkippedEntry] = []
-    for directory, folder_names, file_names in os.walk(folder):
-        here = Path(directory)
+    for here, folder_names, file_names in folder.walk():
         for hidden in sorted(name for name in folder_names if name.startswith(_HIDDEN_PREFIX)):
-            skipped.append(SkippedEntry(path=_vault_path(folder, here / hidden) + "/", reason="hidden folder"))
+            skipped.append(SkippedEntry(path=_vault_path(here / hidden) + "/", reason="hidden folder"))
         folder_names[:] = sorted(name for name in folder_names if not name.startswith(_HIDDEN_PREFIX))
         for file_name in sorted(file_names):
             file_path = here / file_name
-            relative = _vault_path(folder, file_path)
+            relative = _vault_path(file_path)
             if file_name.startswith(_HIDDEN_PREFIX):
                 skipped.append(SkippedEntry(path=relative, reason="hidden file"))
                 continue
             if not file_name.lower().endswith(_MARKDOWN_SUFFIX) or file_name.lower().endswith(_DRAWING_SUFFIX):
                 other_files.append(PurePosixPath(relative))
                 continue
-            text = _utf8_text(file_path.read_bytes())
+            text = _utf8_text(folder.read_bytes(file_path))
             if text is None:
                 skipped.append(SkippedEntry(path=relative, reason=NOT_UTF8_REASON))
                 continue
-            stat = file_path.stat()
+            created_at, modified_at = folder.file_times(file_path)
             markdown_files.append(VaultFile(
-                path=PurePosixPath(relative),
-                text=text,
-                created_at=_file_created_at(stat),
-                modified_at=datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc),
+                path=PurePosixPath(relative), text=text, created_at=created_at, modified_at=modified_at,
             ))
     markdown_files.sort(key=lambda vault_file: _sort_key(str(vault_file.path)))
     other_files.sort(key=lambda path: _sort_key(str(path)))
@@ -111,24 +105,20 @@ def read_vault(folder: Path, *, reads_line_break_setting: bool) -> VaultContents
     )
 
 
-def read_text_file(folder: Path, relative: PurePosixPath) -> VaultFile | None:
+def read_text_file(folder: ImportFolder, relative: PurePosixPath) -> VaultFile | None:
     """The text file at relative in folder as a vault's Markdown file is read (a folder of
     files: folder-import-and-file-previews.md §2), or None when it isn't UTF-8 text."""
-    file_path = folder / Path(relative)
-    text = _utf8_text(file_path.read_bytes())
+    text = _utf8_text(folder.read_bytes(relative))
     if text is None:
         return None
-    stat = file_path.stat()
-    return VaultFile(
-        path=relative, text=text, created_at=_file_created_at(stat),
-        modified_at=datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc),
-    )
+    created_at, modified_at = folder.file_times(relative)
+    return VaultFile(path=relative, text=text, created_at=created_at, modified_at=modified_at)
 
 
-def count_markdown_files(folder: Path) -> int:
+def count_markdown_files(folder: ImportFolder) -> int:
     """How many Markdown files read_vault would read in folder (before reading any)."""
     count = 0
-    for _directory, folder_names, file_names in os.walk(folder):
+    for _here, folder_names, file_names in folder.walk():
         folder_names[:] = [name for name in folder_names if not name.startswith(_HIDDEN_PREFIX)]
         count += sum(
             1 for name in file_names
@@ -138,11 +128,11 @@ def count_markdown_files(folder: Path) -> int:
     return count
 
 
-def count_compressible_images(folder: Path) -> int:
+def count_compressible_images(folder: ImportFolder) -> int:
     """How many images compression would shrink in folder, outside hidden folders: whether
     the import's Images screen shows (an estimate then counts only the ones notes show)."""
     count = 0
-    for _directory, folder_names, file_names in os.walk(folder):
+    for _here, folder_names, file_names in folder.walk():
         folder_names[:] = [name for name in folder_names if not name.startswith(_HIDDEN_PREFIX)]
         count += sum(
             1 for name in file_names
@@ -161,32 +151,21 @@ def _utf8_text(content: bytes) -> str | None:
     return text
 
 
-def _vault_path(folder: Path, path: Path) -> str:
-    return unicodedata.normalize("NFC", path.relative_to(folder).as_posix())
+def _vault_path(path: PurePosixPath) -> str:
+    return unicodedata.normalize("NFC", path.as_posix())
 
 
 def _sort_key(path: str) -> str:
     return path.casefold()
 
 
-def _file_created_at(stat: os.stat_result) -> datetime:
-    # macOS and Windows know when a file was made; elsewhere its last change stands in.
-    if hasattr(stat, "st_birthtime"):
-        # Read by name: typeshed declares st_birthtime only off Linux, and mypy checks the
-        # code as Linux ([tool.mypy] in pyproject.toml), where this branch never runs.
-        birthtime = getattr(stat, "st_birthtime")
-        assert isinstance(birthtime, float), "st_birthtime is a timestamp in seconds"
-        return datetime.fromtimestamp(birthtime, tz=timezone.utc)
-    return datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc)
-
-
-def _read_line_break_setting(folder: Path) -> tuple[bool, str]:
+def _read_line_break_setting(folder: ImportFolder) -> tuple[bool, str]:
     """Whether the vault turns on Obsidian's "Strict line breaks", and why its settings
     file could not be read ("" when it could, or there is none: Obsidian's default, off)."""
-    settings_path = folder / _SETTINGS_FOLDER / _APP_SETTINGS_FILE
-    if not settings_path.is_file():
+    settings_path = ROOT / _SETTINGS_FOLDER / _APP_SETTINGS_FILE
+    if not folder.is_plain_file(settings_path):
         return False, ""
-    text = _utf8_text(settings_path.read_bytes())
+    text = _utf8_text(folder.read_bytes(settings_path))
     if text is None:
         return False, f"{_SETTINGS_FOLDER}/{_APP_SETTINGS_FILE} is not UTF-8 text"
     settings_capture = CapturedExceptionContext(

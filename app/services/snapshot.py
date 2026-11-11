@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from datetime import datetime
 import re
 import time
-from typing import Dict, FrozenSet, List, Optional, Tuple, Set
+from typing import Callable, Dict, FrozenSet, List, Optional, Tuple, Set
 
 from loguru import logger
 
@@ -32,12 +32,16 @@ from app.services.ontology_rules_store import get_ontology_if_ready
 from app.services.reference_presentation import decorate_note_references
 from app.services.inline_image_dimensions import add_inline_image_dimensions
 from app.services.root_sorting import build_root_sort_buckets
+from app.services.root_sorting import SORT_MODE_NORMAL
+from app.services.search_embeds import SHOWN_RESULTS, SearchResults, search_runner
+from app.services.root_sorting import build_file_size_labels
 from app.services.root_sorting import get_root_ids_for_sort_mode
 from app.services.root_sorting import get_root_sort_timestamps
 from app.services.root_sorting import normalize_sort_mode
 from app.services.root_date_filter import RootDateFilter, filter_root_ids_by_date, local_today
 from app.services.quoted_values import split_tokens
-from app.services.search_index import search_index
+from app.services.search_index import extract_tags_for_search, search_index, tag_family_of
+from app.services.search_links import rewrite_search_terms
 from app.services.file_text_search import file_texts, is_searchable_file_name
 from app.services.file_text_snippets import with_file_text_snippets
 from app.services.search_query import ParsedSearchQuery, SearchClause, parse_search_query, search_highlight_phrases
@@ -306,7 +310,7 @@ def resolve_search_scope(
         )
 
     if ordered_root_ids is None:
-        ordered_root_ids = _ordered_view_root_ids(normalized_sort_mode, date_filter)
+        ordered_root_ids = _ordered_view_root_ids(normalized_sort_mode, date_filter, None)
     search_allowed_note_ids: Set[str] = set()
     positively_matched_note_ids: Set[str] = set()
     for clause in parsed.clauses:
@@ -354,7 +358,7 @@ def _apply_untagged_view(
     )
 
 
-def _ordered_view_root_ids(normalized_sort_mode: str, date_filter: RootDateFilter | None) -> List[str]:
+def _ordered_view_root_ids(normalized_sort_mode: str, date_filter: RootDateFilter | None, file_filter: str | None) -> List[str]:
     """The roots a view lists, in its order, kept to the date range when it has one."""
     if normalized_sort_mode == "normal":
         ordered_root_ids = note_store.get_children(None)
@@ -362,6 +366,7 @@ def _ordered_view_root_ids(normalized_sort_mode: str, date_filter: RootDateFilte
         ordered_root_ids = get_root_ids_for_sort_mode(
             normalized_sort_mode,
             root_timestamps=get_root_sort_timestamps(normalized_sort_mode),
+            file_filter=file_filter,
         )
     if date_filter is None:
         return ordered_root_ids
@@ -436,7 +441,7 @@ def resolve_view_scope_membership(
     if not isinstance(is_untagged_view, bool):
         raise TypeError("is_untagged_view must be a bool")
     normalized_sort_mode = normalize_sort_mode(sort_mode)
-    ordered_root_ids = _ordered_view_root_ids(normalized_sort_mode, date_filter)
+    ordered_root_ids = _ordered_view_root_ids(normalized_sort_mode, date_filter, file_filter)
     if is_untagged_view:
         search_scope = _apply_untagged_view(ordered_root_ids=ordered_root_ids)
     else:
@@ -735,6 +740,7 @@ def _select_view(
         ordered_root_ids = get_root_ids_for_sort_mode(
             normalized_sort_mode,
             root_timestamps=root_sort_timestamps,
+            file_filter=file_filter,
         )
     ordered_root_ids = _roots_in_date_range(
         ordered_root_ids, date_filter, editing_note_id=editing_note_id, traversal_cache=traversal_cache,
@@ -824,6 +830,9 @@ _LINKED_SITES_MEMO = SensitiveMemo(maxsize=_LINKED_SITES_MEMO_ENTRIES, max_bytes
 
 
 def _is_render_cacheable(content_html: str) -> bool:
+    # An embedded search's results change with any note (search_embeds.py): drawn afresh each time.
+    if "![[search:" in content_html:
+        return False
     return not ("://" in content_html and "<img" in content_html.lower())
 
 
@@ -855,6 +864,8 @@ class _RenderDependencies:
     file_records: Tuple[Tuple[str, object], ...]
     # Whether a property is used anywhere in the vault (a stats figure's 0 or dash).
     property_use: Tuple[Tuple[str, bool], ...]
+    # Whether a gallery (its note first) shows a note under it (a gallery under a search).
+    note_shown: Tuple[Tuple[Tuple[str, str], bool], ...]
 
 
 class _DependencyRecorder:
@@ -868,12 +879,13 @@ class _DependencyRecorder:
         self._file_presence: Dict[str, bool] = {}
         self._file_records: Dict[str, object] = {}
         self._property_use: Dict[str, bool] = {}
+        self._note_shown: Dict[Tuple[str, str], bool] = {}
 
     def context(self) -> EmbedRenderContext:
         return EmbedRenderContext(
             has_note=self._has_note, get_note=self._get_note, get_children=self._get_children,
             has_file=self._has_file, get_file=self._get_file, is_property_used=self._is_property_used,
-            static_collapse_arrows=False,
+            is_shown_in_gallery=self._is_shown_in_gallery, static_collapse_arrows=False,
         )
 
     def _has_note(self, note_id: str) -> bool:
@@ -906,6 +918,11 @@ class _DependencyRecorder:
         self._property_use[property_name] = used
         return used
 
+    def _is_shown_in_gallery(self, gallery_note_id: str, note_id: str) -> bool:
+        shown = self._live.is_shown_in_gallery(gallery_note_id, note_id)
+        self._note_shown[(gallery_note_id, note_id)] = shown
+        return shown
+
     def freeze(self) -> _RenderDependencies:
         return _RenderDependencies(
             note_presence=tuple(self._note_presence.items()),
@@ -914,6 +931,7 @@ class _DependencyRecorder:
             file_presence=tuple(self._file_presence.items()),
             file_records=tuple(self._file_records.items()),
             property_use=tuple(self._property_use.items()),
+            note_shown=tuple(self._note_shown.items()),
         )
 
 
@@ -937,6 +955,9 @@ def _dependencies_hold(dependencies: _RenderDependencies, live: EmbedRenderConte
             return False
     for property_name, used in dependencies.property_use:
         if live.is_property_used(property_name) != used:
+            return False
+    for (gallery_note_id, note_id), shown in dependencies.note_shown:
+        if live.is_shown_in_gallery(gallery_note_id, note_id) != shown:
             return False
     return True
 
@@ -1162,7 +1183,58 @@ def _render_view_note(
     return rendered_content, flags
 
 
-def _new_embed_render_context(traversal_cache: _SnapshotTraversalCache) -> EmbedRenderContext:
+def search_for_gallery_pictures(search: str, gallery_tags: str) -> str:
+    """The search a gallery's pictures are chosen by: the view's, without the meta tags the
+    gallery's note carries (`test @gallery` gives `test`). Meta tags pass to no note under it, so
+    they would leave it empty (the maintainer, 2026-11-11). Quoted text is left as typed."""
+    own_meta = set()
+    for tag in extract_tags_for_search(gallery_tags):
+        if tag.startswith("@"):
+            own_meta.add(tag.casefold())
+            own_meta.add(tag_family_of(tag).casefold())
+    return rewrite_search_terms(search, lambda term: "" if term.casefold() in own_meta else term)
+
+
+def _shown_by_search(search: str) -> Callable[[str], bool]:
+    """Whether a search shows a note: its matches and their ancestors; every note when it is empty."""
+    scope = resolve_search_scope(
+        search=search, editing_note_id=None, sort_mode=SORT_MODE_NORMAL, date_filter=None, ordered_root_ids=None,
+    )
+    if not scope.search_active:
+        return lambda note_id: True
+    if scope.allowed_note_ids is None:
+        raise RuntimeError("an active search scope must list the notes it shows")
+    return scope.allowed_note_ids.__contains__
+
+
+def _shown_in_galleries(
+    *, search: Optional[str], filter_active: bool, allowed_note_ids: Optional[Set[str] | frozenset[str]],
+) -> Callable[[str, str], bool]:
+    """Whether a gallery shows a note under it: under a search, the notes the search shows (its
+    matches and their ancestors; the rest are grey bars), the gallery's own meta tags left out of
+    it (search_for_gallery_pictures); otherwise every note."""
+    if not filter_active:
+        return lambda gallery_note_id, note_id: True
+    if allowed_note_ids is None:
+        raise RuntimeError("an active search scope must list the notes it shows")
+    # Narrowed with no search (a Files filter): the notes the view shows.
+    if search is None:
+        return lambda gallery_note_id, note_id: note_id in allowed_note_ids
+    # Each search the galleries' pictures are chosen by, once: whether it shows a note.
+    shown_by_search: Dict[str, Callable[[str], bool]] = {search: allowed_note_ids.__contains__}
+
+    def is_shown(gallery_note_id: str, note_id: str) -> bool:
+        pictures_search = search_for_gallery_pictures(search, note_store.get_note(gallery_note_id).tags)
+        if pictures_search not in shown_by_search:
+            shown_by_search[pictures_search] = _shown_by_search(pictures_search)
+        return shown_by_search[pictures_search](note_id)
+
+    return is_shown
+
+
+def _new_embed_render_context(
+    traversal_cache: _SnapshotTraversalCache, *, is_shown_in_gallery: Callable[[str, str], bool],
+) -> EmbedRenderContext:
     file_record_cache: Dict[str, object] = {}
 
     def _get_file_record(file_id: str) -> object:
@@ -1177,6 +1249,7 @@ def _new_embed_render_context(traversal_cache: _SnapshotTraversalCache) -> Embed
         has_file=file_registry.has_file,
         get_file=_get_file_record,
         is_property_used=search_index.is_property_name_used,
+        is_shown_in_gallery=is_shown_in_gallery,
         static_collapse_arrows=False,
     )
 
@@ -1205,7 +1278,6 @@ def build_view_state(
     hash_by_id: Dict[str, str] = {}
 
     traversal_cache = _SnapshotTraversalCache()
-    embed_render_context = _new_embed_render_context(traversal_cache)
 
     selection = _select_view(
         editing_note_id=editing_note_id, find_reveal_note_id=find_reveal_note_id, search=search, sort_mode=sort_mode,
@@ -1217,6 +1289,10 @@ def build_view_state(
     )
     filter_active = selection.scope.search_active
     allowed_note_ids = selection.scope.allowed_note_ids
+    embed_render_context = _new_embed_render_context(
+        traversal_cache,
+        is_shown_in_gallery=_shown_in_galleries(search=search, filter_active=filter_active, allowed_note_ids=allowed_note_ids),
+    )
     visible_root_ids_ordered = selection.visible_roots
     # The search's quoted phrases: a file whose text holds one shows a snippet under its card.
     snippet_phrases = tuple(view_search_highlight_phrases(search))
@@ -1314,6 +1390,7 @@ def build_view_state(
             selection.sort_mode,
             root_timestamps=selection.root_timestamps,
         ),
+        "fileSizes": build_file_size_labels(visible_root_ids, selection.sort_mode, file_filter=file_filter),
         # Index of the first windowed root among all roots in this view, and
         # the date bucket just above the window, so the browser knows what lies
         # beyond each edge and only starts a date header where the day changes.
@@ -1502,7 +1579,12 @@ def find_in_view(
     # again whenever the list changes (docs/ui/find.md).
     from_root_index = min(from_root_index, len(roots))
     traversal_cache = _SnapshotTraversalCache()
-    context = _new_embed_render_context(traversal_cache)
+    context = _new_embed_render_context(
+        traversal_cache,
+        is_shown_in_gallery=_shown_in_galleries(
+            search=search, filter_active=scope.filter_active, allowed_note_ids=scope.allowed_note_ids,
+        ),
+    )
     candidates = _find_candidates(find_text, traversal_cache)
     windows: List[List[FindMatch]] = []
     matched_notes = 0
@@ -1532,3 +1614,31 @@ def find_in_view(
     return FindWindow(
         matches=matches, first_root_index=first_root_index, end_root_index=end_root_index, root_count=len(roots),
     )
+
+
+def _embedded_search_results(search: str) -> SearchResults:
+    """What an embedded search shows (search_embeds.py): the notes the search finds, in the order a new
+    search context lists them (Normal order: the roots in order, each one's notes in outline order),
+    each branch's top match only: a note under a match is that match's detail, as the list shows the
+    match folded (agreed 2026-11-11). The count is of those top matches."""
+    scope = resolve_search_scope(
+        search=search, editing_note_id=None, sort_mode=SORT_MODE_NORMAL, date_filter=None,
+        ordered_root_ids=_ordered_view_root_ids(SORT_MODE_NORMAL, None, None),
+    )
+    if not scope.search_active:
+        return SearchResults(count=0, first_note_ids=())
+    assert scope.allowed_note_ids is not None and scope.matched_note_ids is not None and scope.search_root_ids_ordered is not None
+    allowed = scope.allowed_note_ids
+    found: List[str] = []
+    pending = list(reversed(scope.search_root_ids_ordered))
+    while pending:
+        note_id = pending.pop()
+        if note_id in scope.matched_note_ids:
+            found.append(note_id)
+            continue
+        pending.extend(reversed([child_id for child_id in note_store.get_children(note_id) if child_id in allowed]))
+    return SearchResults(count=len(found), first_note_ids=tuple(found[:SHOWN_RESULTS]))
+
+
+search_runner.install(_embedded_search_results)
+

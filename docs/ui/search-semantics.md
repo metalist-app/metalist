@@ -13,6 +13,8 @@ For input grammar, normalization rules, and completeness gating, see:
 Search queries are a whitespace-separated list of terms.
 
 ### Tag Terms (unquoted)
+- A term ending in `/` is a folder (built 2026-11-11, `docs/ready-to-build/folder-tags-in-search.md`): `Projects/` finds notes in `Projects/` and in every folder below it (`Projects/Client-A/`), `-Projects/` leaves them all out, whether or not the folder tree is shown. A folder tag implies the folders above it (`tag_ontology.parent_folder_tags`), for rules as for search, so the match is exact: `Projects/` doesn't find the plain tag `Projects/notes`, and `work` still doesn't find `work-archive`.
+- Folder terms in one clause add results; every other term still narrows (built 2026-11-11, `docs/ready-to-build/folders-tab-and-multiple-folders.md`): `A/ B/ @todo` finds to-dos in A or B, or below either (`SearchIndex._candidate_note_ids_locked`). A new note under it gets every folder of the clause; a note moved there keeps its folder when it is in one of them.
 - `foo` and `+foo` are equivalent (required tag).
 - `-foo` excludes notes that have tag `foo`.
 - A tag with a value, `name=value` (`@code=python`, `@size=2`), can be searched whole
@@ -83,6 +85,17 @@ Ontology rules also add **inferred tags** before search matching:
 - A note shown only as context above a match (it did not match itself) keeps its tags.
 - A note's own text moves with it, so a move never adds `/* ... */` comments. Undo restores both the place and the tags.
 - Reordering among siblings and indenting cannot drop a note from the results, so they add nothing.
+
+### Comment Terms
+
+Built 2026-11-11 (the maintainer: "so I can find everything that got /*help*/ added").
+
+- `/*help*/` finds the notes whose own tag-bar `/* ... */` comments contain `help`: in any case, anywhere in a comment, also inside words. `/*help*/` finds `/*help*/`, `/*Help me*/` and `/*helpful links*/`, never a note that only says "help" in its text or in a tag's value (`title="help"`). A note's comments are its own: nothing inherits them.
+- `-/*help*/` leaves those notes out; `+` is dropped, as for quoted text. Spaces inside are kept (`/*help me*/`), runs of them read as one.
+- No tag starts with `/` or holds `*`, so `/*…*/` in a search is always a comment. One not yet closed searches as if closed while typing (`/*hel`), as an open quote does; `/* */` asks for the words.
+- Not highlighted in notes: the match is in the tag bar.
+- A note made, pasted or outdented under the search gets the comment itself (`/*help*/`) unless one of its comments already contains it, as a quoted phrase gives `/*phrase*/`.
+- Implementation: `parse_search_query` (`app/services/search_query.py`, comment terms kept with the quoted phrases as `/*words*/`), `SearchIndex._text_term_matches_locked` and `comment_term_matches` (`app/services/text_terms.py`), the search box's `readCommentTerm` (`search-syntax-service.js`). Tests: `tests/unit/test_comment_search_terms.py`, `tests/unit/search_comment_terms.test.mjs`.
 
 ### Text Terms (quoted)
 - Required text: `"some text"` or `'some text'`

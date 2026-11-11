@@ -33,7 +33,7 @@ html.file-viewer-document .note .note-content,
 html.file-viewer-document .note .note-content * {
     -webkit-user-select: text;
     user-select: text;
-    cursor: text;
+    cursor: var(--skin-cursor-text, text);
 }
 
 /* A document's tables get the lines a Markdown table has; an email's or a saved web page's are
@@ -201,7 +201,7 @@ html.file-viewer-document .file-viewer-email-attachment {
     color: inherit;
     font: inherit;
     font-size: 0.85em;
-    cursor: pointer;
+    cursor: var(--skin-cursor-pointer, pointer);
 }
 
 html.file-viewer-document .file-viewer-email-attachment-size {

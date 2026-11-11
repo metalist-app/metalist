@@ -9,6 +9,7 @@ import { clearTagBar, syncTagBar } from '../services/tag-bar-service.js';
 import { initializeEditSessionCollapseStateFromNoteElement } from '../services/edit-session-collapse-service.js';
 import { clearEditingStateForHiddenFilteredNote } from '../services/filtered-refresh-selection-service.js';
 import { attachEditorSurface, detachEditorSurface } from '../../editor-toolbar.js';
+import { rebuildFileSizePills } from '../services/file-size-pill-service.js';
 import { rebuildRootDateSeparators } from '../services/root-date-separator-service.js';
 import { updateRootSortIndicator } from '../services/root-sort-indicator-service.js';
 import { updateDateRangeIndicator } from '../services/date-range-filter-service.js';
@@ -253,6 +254,7 @@ export async function actionRefreshAndMaybeSelect(options) {
         // A source view's chip shows its note's first line, read from the render.
         updateReferenceSourceIndicator();
         rebuildRootDateSeparators(snapshot);
+        rebuildFileSizePills(snapshot);
         holdViewportRoot(viewportRoot);
 
         // Removal animations retain DOM nodes after the diff removes their view membership.

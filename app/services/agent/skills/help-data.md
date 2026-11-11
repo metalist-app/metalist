@@ -41,7 +41,7 @@ When @password or @username notes would show, an Include Unredacted Passwords
 (Usernames, or Usernames and Passwords) checkbox appears (unchecked: shown as
 ••••••••; checked: readable, and the file or print is not encrypted).
 Exported files copy usernames, included passwords and copyable values on click.
-Attach File… stores an attachment in the vault's files folder, one file per attachment. Default upload limit is 100 MiB and is server-configurable.
+Attach File… stores an attachment in the vault's files folder, one file per attachment. A file can be any size, as long as it fits on the disk with some room to spare. Over 100 MiB a file can't be previewed, read for search or inlined in an export; it is still kept, downloaded and found by its name.
 Trim Unused Files… removes unused attachments and is not an opening action.
 The agent can explain these operations but cannot execute them through help.
 

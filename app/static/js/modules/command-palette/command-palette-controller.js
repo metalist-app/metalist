@@ -8,6 +8,8 @@ import { BackupReminder } from '../backup-reminder-service.js';
 import { TrimReminder } from '../trim-reminder-service.js';
 import { trimConfirmationText } from '../trim-reminder-schedule.js';
 import { receiveSearchSuggestionPreferences } from '../mode-manager/services/search-suggestion-windows-service.js';
+import { receiveGalleryOutlineNotes } from '../mode-manager/services/gallery-view-service.js';
+import { receiveFoldedSearchEmbeds } from '../mode-manager/services/search-embed-service.js';
 import { ApplicationState, stateValuesEqual } from '../application-state.js';
 import { HttpRequestError, rethrowUnexpectedError } from '../expected-errors.js';
 import { showFatalError } from '../error-overlay.js';
@@ -58,6 +60,10 @@ import { AlphabetizeRootNotesModal } from '../modals/alphabetize-root-notes-moda
 import { ResetUpdatedAtModal } from '../modals/reset-updated-at-modal.js';
 import { ReminderModal } from '../modals/reminder-modal.js';
 import { printNotes } from '../mode-manager/services/print-service.js';
+import { SKIN_BASE_THEME, THEME_CHOICES, isSkinTheme } from '../theme-choices.js';
+import { setSkinInitialsActive } from '../skin-initials.js';
+import { setOldeWordsActive } from '../skin-olde-words.js';
+import { setSkinPointerActive } from '../skin-pointer.js';
 import { exportNotes } from '../mode-manager/services/export-service.js';
 
 import { VersionInfoModal } from '../modals/version-info-modal.js';
@@ -126,6 +132,7 @@ import {
     setTabDateFilterOnServer, setTabFileFilterOnServer, setTabSortModeOnServer, setTabUntaggedViewOnServer,
 } from '../mode-manager/services/tab-state-service.js';
 import { FILE_FILTER_KINDS, getActiveFileFilterKind } from '../mode-manager/services/file-filter-service.js';
+import { isFileFilterKind } from '../mode-manager/services/file-filter-kinds.js';
 import {
     DATE_RANGE_KINDS,
     OPEN_DATE,
@@ -139,12 +146,12 @@ import { buildSessionHeaders } from '../session-auth.js';
 import { isValidTagToken } from '../tag-token.js';
 import { updateSearchContextsOverlayPlacement } from '../mode-manager/services/search-contexts-overlay-service.js';
 import {
-    chooseFolder, closeFoldersTab, navigateToReferenceOrigin, openFoldersTab, openSearchInNewSearchContext,
+    adoptRenamedSearches, chooseFolder, navigateToReferenceOrigin, openSearchInNewSearchContext, setFoldersTreeShown,
 } from '../mode-manager/events/keyboard-events.js';
 import { FolderNameModal } from '../modals/folder-name-modal.js';
 import { DeleteFolderModal } from '../modals/delete-folder-modal.js';
 import {
-    activeVirtualFolder, toggleFolderContextFromTab, wireVirtualFolders,
+    openTo, toggleVirtualFoldersTree, wireVirtualFolders,
 } from '../mode-manager/services/virtual-folders-service.js';
 import {
     DEFAULT_SEARCH_SUGGESTION_WINDOWS_VALUE,
@@ -157,7 +164,6 @@ import { persistUsageBeforeActivation } from './activation-auth-policy.js';
 import { waitForCommandAvailability } from './backup-command-availability.js';
 import {
     COMMAND_SHORTCUTS,
-    DESTRUCTIVE_COMMAND_IDS,
     buildCommandPaletteEndpoints,
     isCommandAvailable,
 } from './endpoint-registry.js';
@@ -200,23 +206,40 @@ const COPYING_DROPPED_FILES_TEXT = 'Copying your files…';
 // ::view-transition(root)). Opening in the saved theme, a background tab, reduced motion and
 // Animated transitions off switch at once, as does a browser without view transitions.
 // An import of files dropped on the page: its notes take the tags of the search context they
-// were dropped in, as a note made there does, and show at its top (the maintainer, 2026-11-03).
+// were dropped in, as a note made there does (the maintainer, 2026-11-03).
 function droppedHere() {
     return { isDrop: true, dropSearch: ModeContext.searchQuery };
 }
 
+function setOrRemoveAttribute(element, name, value) {
+    if (value === null) {
+        element.removeAttribute(name);
+    } else {
+        element.setAttribute(name, value);
+    }
+}
+
+function themeAttributeOf(theme) {
+    if (isSkinTheme(theme)) {
+        return SKIN_BASE_THEME;
+    }
+    return theme === 'system' ? null : theme;
+}
+
 function applyTheme(theme) {
     const root = document.documentElement;
-    const nextTheme = theme === 'system' ? null : theme;
-    if (root.getAttribute('data-theme') === nextTheme) {
+    const nextTheme = themeAttributeOf(theme);
+    const nextSkin = isSkinTheme(theme) ? theme : null;
+    if (root.getAttribute('data-theme') === nextTheme && root.getAttribute('data-skin') === nextSkin) {
         return;
     }
     const setTheme = () => {
-        if (nextTheme === null) {
-            root.removeAttribute('data-theme');
-        } else {
-            root.setAttribute('data-theme', nextTheme);
-        }
+        setOrRemoveAttribute(root, 'data-theme', nextTheme);
+        setOrRemoveAttribute(root, 'data-skin', nextSkin);
+        // After the attribute: the marks measure against the skin's own sizes.
+        setSkinInitialsActive(nextSkin !== null);
+        setOldeWordsActive(nextSkin !== null);
+        setSkinPointerActive(nextSkin !== null);
     };
     const isFaded = document.body.dataset.appReady === 'true'
         && !document.hidden
@@ -483,13 +506,14 @@ class CommandPaletteController {
         wireVirtualFolders({
             // In the command gate, waiting for a command still running (a click while editing:
             // the note's save), so one click leaves the note and shows the folder.
-            setFilter: async (folder) => CommandGate.runWhenFree('virtualFolders.chooseFolder', async () => chooseFolder(folder)),
-            openFoldersTab: async () => CommandGate.runWhenFree('virtualFolders.openFoldersTab', async () => openFoldersTab()),
-            closeFoldersTab: async () => CommandGate.runWhenFree('virtualFolders.closeFoldersTab', async () => closeFoldersTab()),
+            setFilter: async (folder, adds) => CommandGate.runWhenFree('virtualFolders.chooseFolder', async () => chooseFolder(folder, adds)),
+            setTreeShown: async (isShown) => CommandGate.runWhenFree('virtualFolders.setTreeShown', async () => setFoldersTreeShown(isShown)),
             confirm: async (context) => this._confirmAction('virtualFolders.confirm', context),
             askName: async (form) => this._askFolderName(form),
             askDeleteFolder: async (form) => this._askDeleteFolder(form),
             afterChange: async () => actionRefreshAndMaybeSelect({ startedAt: performance.now(), context: 'virtualFolders.change' }),
+            // The server renamed the folder in every search context's search: the page takes them up.
+            afterRename: async () => adoptRenamedSearches(),
             undo: async () => CommandGate.run('virtualFolders.undoMove', async () => actionUndo()),
         });
         const clientState = await migrateLegacyClientState({
@@ -715,6 +739,9 @@ class CommandPaletteController {
 
         receiveDictationPhrases(this._dictationPhrases());
 
+        receiveGalleryOutlineNotes(this._getText('pref.gallery_outline_notes', '[]'));
+        receiveFoldedSearchEmbeds(this._getText('pref.folded_search_embeds', '[]'));
+
         receiveSearchSuggestionPreferences({
             windows: this._getText('pref.search_suggestion_windows', DEFAULT_SEARCH_SUGGESTION_WINDOWS_VALUE),
             showLabels: this._getBoolean('pref.show_search_suggestion_window_labels', true),
@@ -726,7 +753,7 @@ class CommandPaletteController {
         void BackupReminder.preferencesChanged();
         void TrimReminder.preferencesChanged();
 
-        applyTheme(this._getSelect('pref.theme', ['system', 'light', 'dark'], 'system'));
+        applyTheme(this._getSelect('pref.theme', THEME_CHOICES.map(([value]) => value), 'system'));
         // How @stats and @sum=… totals look; exports and prints take it from the page too.
         document.documentElement.dataset.statsStyle = this._getSelect('pref.stats_style', ['strip', 'tiles', 'ledger'], 'strip');
 
@@ -1259,10 +1286,6 @@ class CommandPaletteController {
             const endpoint = matches[idx];
             const row = document.createElement('div');
             row.className = 'command-palette-row' + (idx === normalizedIndex ? ' selected' : '');
-            // A destructive command is red; it keeps its place in the list (endpoint-registry.js).
-            if (DESTRUCTIVE_COMMAND_IDS.has(endpoint.id)) {
-                row.classList.add('is-danger');
-            }
             row.dataset.endpointId = endpoint.id;
 
             const label = document.createElement('div');
@@ -1325,6 +1348,7 @@ class CommandPaletteController {
         const state = {
             hasPassword: Auth.hasPassword,
             isRootReorderLocked: isRootReorderLocked(this.getSortMode()),
+            hasFileFilter: this.getFileFilterKind() !== FILE_FILTER_KINDS.NONE,
         };
         return this._endpoints.filter((endpoint) => isCommandAvailable(endpoint.id, state));
     }
@@ -1616,13 +1640,7 @@ class CommandPaletteController {
         // tick while waiting left: their roots on screen and the view they cached belong
         // to the old order or its window, and asking with them opened the sorted list
         // partway down (2026-10-27). The cache is cleared again once it is this one's turn.
-        await actionRefreshAndMaybeSelect({
-            startedAt: performance.now(),
-            context: `sortMode.${normalizedSortMode}`,
-            animateNoteChanges: false,
-            startAtListTop: true,
-            resetViewCacheBeforeFetch: true,
-        });
+        await this._refreshChangedViewFromTop(`sortMode.${normalizedSortMode}`);
     }
 
     // The active tab's date range (date-range-filter-service.js): 'none' when it shows every date.
@@ -1674,16 +1692,12 @@ class CommandPaletteController {
         ModeContext.hydrateTabState(response, { emitUpdate: false });
         this._showChangedViewFromTop(activeTabId);
         // As for a sort order: a view request in flight shows the old range.
-        await actionRefreshAndMaybeSelect({
-            startedAt: performance.now(),
-            context: `dateFilter.${filter.rangeKind}`,
-            animateNoteChanges: false,
-        });
+        await this._refreshChangedViewFromTop(`dateFilter.${filter.rangeKind}`);
     }
 
     // Virtual folders, an experiment (virtual-folders-service.js): the toggle.
     async toggleVirtualFolders() {
-        toggleFolderContextFromTab();
+        toggleVirtualFoldersTree();
     }
 
     // A virtual folder's name (FolderNameModal), or null when nothing changes.
@@ -1710,37 +1724,6 @@ class CommandPaletteController {
         return this._deleteFolderModal.openFor(form);
     }
 
-    /** Narrow the folder context shown to a virtual folder and the folders below it ('' for
-     * every folder again: the chip's ×), as a Files filter, its search kept; from a reference
-     * view, back to the view the reference views started from first. A folder clicked in the
-     * tree also empties the search (chooseFolder). */
-    async setVirtualFolder(folder) {
-        if (typeof folder !== 'string') {
-            throw new Error('setVirtualFolder requires a folder tag or ""');
-        }
-        if (isViewingReferenceSource()) {
-            await navigateToReferenceOrigin();
-        }
-        const activeTabId = ModeContext.activeTabId;
-        if (typeof activeTabId !== 'string' || activeTabId.length === 0) {
-            throw new Error('ModeContext.activeTabId must be a non-empty string');
-        }
-        if (activeVirtualFolder() === folder) {
-            return;
-        }
-        if (ModeContext.isEditing) {
-            await actionSaveAndExitEditingWithoutRefreshing();
-        }
-        ModeContext.bumpUndoContextEpoch('virtualFolder');
-        await NotesAPI.setVirtualFolderFilter(activeTabId, folder);
-        this._showChangedViewFromTop(activeTabId);
-        await actionRefreshAndMaybeSelect({
-            startedAt: performance.now(),
-            context: 'virtualFolder',
-            animateNoteChanges: false,
-        });
-    }
-
     // The active tab's Files filter (file-filter-service.js): 'none' when it shows every note.
     getFileFilterKind() {
         return getActiveFileFilterKind();
@@ -1748,7 +1731,7 @@ class CommandPaletteController {
 
     /** Any note ('none'), every note with an attached file ('any'), or one kind of file. */
     async setFileFilter(kind) {
-        if (!Object.values(FILE_FILTER_KINDS).includes(kind)) {
+        if (!isFileFilterKind(kind)) {
             throw new Error(`setFileFilter requires a Files filter kind, not ${kind}`);
         }
         const activeTabId = ModeContext.activeTabId;
@@ -1766,10 +1749,19 @@ class CommandPaletteController {
         ModeContext.hydrateTabState(response, { emitUpdate: false });
         this._showChangedViewFromTop(activeTabId);
         // As for a sort order: a view request in flight shows the old filter.
+        await this._refreshChangedViewFromTop(`fileFilter.${kind}`);
+    }
+
+    // Not held to the note that was on top: the new view can list it far down, and the page
+    // followed it there (2026-11-09).
+    async _refreshChangedViewFromTop(context) {
         await actionRefreshAndMaybeSelect({
             startedAt: performance.now(),
-            context: `fileFilter.${kind}`,
+            context,
             animateNoteChanges: false,
+            startAtListTop: true,
+            scrollToTopAfterRender: true,
+            resetViewCacheBeforeFetch: true,
         });
     }
 
@@ -1856,11 +1848,7 @@ class CommandPaletteController {
         this._showChangedViewFromTop(activeTabId);
 
         // As for a sort order: a view request in flight shows the old view.
-        await actionRefreshAndMaybeSelect({
-            startedAt: performance.now(),
-            context: `untaggedView.${isUntaggedView ? 'on' : 'off'}`,
-            animateNoteChanges: false,
-        });
+        await this._refreshChangedViewFromTop(`untaggedView.${isUntaggedView ? 'on' : 'off'}`);
     }
 
     // Print the view as shown (print-service.js): the palette closes first.
@@ -2988,8 +2976,8 @@ class CommandPaletteController {
             setPassword: async (password, onProgress) => Auth.setPasswordKeepingThisWindow(password, onProgress),
             openPasswordGenerator: async (onUse) => this._openPasswordGeneratorToUse(onUse),
             afterImport: async (sourceTag) => {
-                // Its own plain search, with no tree: the tree shows only in folder contexts
-                // (docs/ready-to-build/virtual-folders.md, "Folder contexts").
+                // Its own search context; the tree stays shown or hidden as it was
+                // (docs/ready-to-build/folders-tab-and-multiple-folders.md §1).
                 const newTabId = await openSearchInNewSearchContext(sourceTag, 'importWizard.showImported');
                 if (newTabId === null) {
                     await actionRefreshAndMaybeSelect({ startedAt: performance.now(), context: 'importWizard' });
@@ -2998,7 +2986,13 @@ class CommandPaletteController {
             announceImport: (text) => {
                 FloatingMessages.show({ text, type: 'success', detail: '', isClosable: false, isLasting: false, key: null, action: null });
             },
-            // Files dropped on the page: their notes in the search context they were dropped in,
+            // A dropped folder that made a new folder, with the tree showing: that folder, in
+            // sight in the tree, chosen as a click on it chooses it (the maintainer, 2026-11-09).
+            showImportedFolder: async (folder) => {
+                openTo(folder);
+                await chooseFolder(folder, false);
+            },
+            // Loose files dropped on the page: their notes in the search context they were dropped in,
             // which stays as it is (the maintainer, 2026-11-03), after its last note (2026-11-07).
             // The view brings the import's first note into sight, moving the
             // least distance (docs/ui/interaction-principles.md, principle 3).

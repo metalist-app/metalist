@@ -7,7 +7,7 @@ from dataclasses import dataclass
 import re
 from threading import RLock
 
-from app.services.file_kinds import FILE_FILTER_ANY, FILE_FILTER_KINDS, file_kind_of
+from app.services.file_kinds import FILE_FILTER_ANY, file_kind_of, is_file_filter_kind
 
 # A reference written in a note's text: [[id]] links, ![[id]] embeds.
 # A link may carry text after a | ([[id|shown text]], docs/ui/references.md, "Link text").
@@ -33,6 +33,7 @@ class FileDetails:
 
     title: str
     thumbnail_kind: str
+    size_bytes: int
 
 
 class FileRegistry:
@@ -46,6 +47,8 @@ class FileRegistry:
         # read once it is unlocked, and notes are read, searched and filtered only
         # then. None: not read yet.
         self._titles_by_id: dict[str, str] | None = None
+        # Real sizes by id, read with the names and known exactly when they are.
+        self._sizes_by_id: dict[str, int] | None = None
         self._details_loader: Callable[[], dict[str, FileDetails]] | None = None
         # How to read one file's stored bytes with the session's key (file_storage.read_stored_file).
         self._content_reader: Callable[[str], object] | None = None
@@ -84,6 +87,7 @@ class FileRegistry:
             raise RuntimeError("File details are read before file storage installed their loader")
         details_by_id = self._details_loader()
         self._titles_by_id = {file_id: details.title for file_id, details in details_by_id.items()}
+        self._sizes_by_id = {file_id: details.size_bytes for file_id, details in details_by_id.items()}
         for file_id, details in details_by_id.items():
             self._thumbnail_kinds_by_id[file_id] = details.thumbnail_kind
 
@@ -97,11 +101,15 @@ class FileRegistry:
             raise RuntimeError(f"File {file_id} is registered but has no stored kind")
         return self._thumbnail_kinds_by_id[file_id]
 
+    def _forget_details_locked(self) -> None:
+        self._titles_by_id = None
+        self._sizes_by_id = None
+
     def reset(self) -> None:
         with self._lock:
             self._ids.clear()
             self._thumbnail_kinds_by_id.clear()
-            self._titles_by_id = None
+            self._forget_details_locked()
 
     def replace_all(self, file_ids: set[str]) -> None:
         if not isinstance(file_ids, set):
@@ -112,7 +120,7 @@ class FileRegistry:
         with self._lock:
             self._ids = set(file_ids)
             self._thumbnail_kinds_by_id = {}
-            self._titles_by_id = None
+            self._forget_details_locked()
 
     def replace_all_with_thumbnail_kinds(self, thumbnail_kinds_by_id: dict[str, str]) -> None:
         if not isinstance(thumbnail_kinds_by_id, dict):
@@ -127,7 +135,7 @@ class FileRegistry:
         with self._lock:
             self._ids = set(thumbnail_kinds_by_id.keys())
             self._thumbnail_kinds_by_id = dict(thumbnail_kinds_by_id)
-            self._titles_by_id = None
+            self._forget_details_locked()
 
     def add(self, file_id: str) -> None:
         if not isinstance(file_id, str) or file_id == "":
@@ -135,18 +143,22 @@ class FileRegistry:
         with self._lock:
             self._ids.add(file_id)
 
-    def add_with_thumbnail_kind(self, file_id: str, *, thumbnail_kind: str, title: str) -> None:
+    def add_with_thumbnail_kind(self, file_id: str, *, thumbnail_kind: str, title: str, size_bytes: int) -> None:
         if not isinstance(file_id, str) or file_id == "":
             raise TypeError("file_id must be a non-empty string")
         if not isinstance(thumbnail_kind, str) or thumbnail_kind == "":
             raise TypeError("thumbnail_kind must be a non-empty string")
         if not isinstance(title, str) or title == "":
             raise TypeError("title must be a non-empty string")
+        if not isinstance(size_bytes, int) or size_bytes < 0:
+            raise TypeError("size_bytes must be a non-negative integer")
         with self._lock:
             self._ids.add(file_id)
             self._thumbnail_kinds_by_id[file_id] = thumbnail_kind
             if self._titles_by_id is not None:
+                assert self._sizes_by_id is not None
                 self._titles_by_id[file_id] = title
+                self._sizes_by_id[file_id] = size_bytes
 
     def rename(self, file_id: str, *, title: str) -> None:
         if not isinstance(file_id, str) or file_id == "":
@@ -159,6 +171,16 @@ class FileRegistry:
             if self._titles_by_id is not None:
                 self._titles_by_id[file_id] = title
             self._names_generation += 1
+
+    def set_size(self, file_id: str, *, size_bytes: int) -> None:
+        """A file's content was replaced."""
+        if not isinstance(size_bytes, int) or size_bytes < 0:
+            raise TypeError("size_bytes must be a non-negative integer")
+        with self._lock:
+            if file_id not in self._ids:
+                raise KeyError(f"File {file_id} is not registered")
+            if self._sizes_by_id is not None:
+                self._sizes_by_id[file_id] = size_bytes
 
     def names_generation(self) -> int:
         """Changes whenever a file is renamed."""
@@ -175,7 +197,9 @@ class FileRegistry:
                 if file_id in self._thumbnail_kinds_by_id:
                     del self._thumbnail_kinds_by_id[file_id]
                 if self._titles_by_id is not None and file_id in self._titles_by_id:
+                    assert self._sizes_by_id is not None
                     del self._titles_by_id[file_id]
+                    del self._sizes_by_id[file_id]
 
     def has_file(self, file_id: str) -> bool:
         if not isinstance(file_id, str) or file_id == "":
@@ -216,19 +240,31 @@ class FileRegistry:
 
     def file_ids_of_kind(self, kind: str) -> set[str]:
         """The files a Files filter keeps (file_kinds.py): every file for "any"."""
-        if kind not in FILE_FILTER_KINDS:
+        if not is_file_filter_kind(kind):
             raise ValueError(f"Unknown file filter kind {kind!r}")
         with self._lock:
             if kind == FILE_FILTER_ANY:
                 return set(self._ids)
-            kept: set[str] = set()
+            return {file_id for file_id, file_kind in self.kinds_by_id().items() if file_kind == kind}
+
+    def kinds_by_id(self) -> dict[str, str]:
+        """Each file's kind (file_kinds.file_kind_of)."""
+        with self._lock:
+            kinds: dict[str, str] = {}
             for file_id in self._ids:
                 thumbnail_kind = self._thumbnail_kind_locked(file_id)
                 file_name = self.title_of(file_id)
                 assert thumbnail_kind is not None and file_name is not None
-                if file_kind_of(thumbnail_kind=thumbnail_kind, file_name=file_name) == kind:
-                    kept.add(file_id)
-            return kept
+                kinds[file_id] = file_kind_of(thumbnail_kind=thumbnail_kind, file_name=file_name)
+            return kinds
+
+    def sizes_of_kind(self, kind: str) -> dict[str, int]:
+        """The real size in bytes of each file a Files filter keeps, by id (the File size order)."""
+        with self._lock:
+            kept = self.file_ids_of_kind(kind)
+            self._ensure_details_locked()
+            assert self._sizes_by_id is not None
+            return {file_id: self._sizes_by_id[file_id] for file_id in kept}
 
     def list_ids(self) -> set[str]:
         with self._lock:

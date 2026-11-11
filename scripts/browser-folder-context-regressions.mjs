@@ -3,14 +3,13 @@ import { runThenCleanUp } from './suite-outcome.mjs';
 import { waitForAppQuiet } from './browser-app-idle.mjs';
 import { clickAndSelectAll } from './browser-select-field.mjs';
 
-// Folder contexts (docs/ready-to-build/virtual-folders.md, "Folder contexts", cases 1-8 agreed with the maintainer
-// 2026-11-07): a search context is a folder context, with the tree and its own folder, or a plain
-// search, with no tree. Open folders tab goes to the folder context used last (a new one on `/`
-// when there is none); close folders tab goes to the plain search used last (a new blank one when
-// there is none); nothing is deleted but by -. A new view shows from the top
-// (docs/ui/interaction-principles.md, principle 2); a context gone back to is as it was left.
-// Positions exact. Server-only: the limit of search contexts, older saved states, a deleted folder
-// (tests/unit/test_folder_context.py). Not here: an import opens a plain search (afterImport).
+// The folders tab only shows or hides the tree (docs/ready-to-build/folders-tab-and-multiple-folders.md
+// §1, agreed with the maintainer 2026-11-11): the search context shown, its search, its notes and
+// its scroll stay as they are; switching contexts leaves the tree as it is, so the column never moves
+// on a switch; a reload keeps it. A folder clicked is the search of the context shown, from the top
+// (docs/ui/interaction-principles.md, principle 2); ⌘-click adds or takes out one folder, keeping the
+// rest of the search; every folder the search names is marked (§2, §5). Positions exact.
+// Server-only: older saved states with folder contexts (tests/unit/test_folders_tab.py).
 
 const REQUESTS_QUIET_MS = 300;
 const SETTLE_MS = 300;
@@ -30,7 +29,7 @@ const IN_B = 1;
 const TODO_EVERY = 2;
 // Far enough down the column that a jump to the top would show.
 const SCROLLED_Y = 600;
-const TOP_LABEL = '/';
+const EMPTY_LABEL = '(empty)';
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 async function idle(page) {
@@ -79,6 +78,16 @@ async function clickFolder(page, folder) {
   await pause(SETTLE_MS);
 }
 
+// ⌘-click (the tree takes Ctrl-click too, off the Mac).
+async function cmdClickFolder(page, folder) {
+  await page.keyboard.down('Meta');
+  try {
+    await clickFolder(page, folder);
+  } finally {
+    await page.keyboard.up('Meta');
+  }
+}
+
 async function state(page) {
   return page.evaluate(async () => {
     const {ModeContextInstance: mode} = await import('/static/js/modules/mode-manager/mode-context.js');
@@ -86,7 +95,6 @@ async function state(page) {
     const response = await fetch('/api2/notes/tab-state', {headers: buildSessionHeaders(false), cache: 'no-store'});
     if (!response.ok) throw new Error(`tab-state read failed with status ${response.status}`);
     const server = await response.json();
-    const indicator = document.getElementById('virtual-folder-indicator');
     const labels = {};
     const folderIcons = [];
     for (const item of document.querySelectorAll('#search-contexts-list .tab-context-item')) {
@@ -96,8 +104,10 @@ async function state(page) {
     return {
       treeShown: document.getElementById('virtual-folders-button').getAttribute('aria-pressed') === 'true'
         && document.body.classList.contains('virtual-folders-on') && !document.getElementById('virtual-folders').hidden,
-      chipShown: indicator.classList.contains('is-shown'),
-      chip: document.getElementById('virtual-folder-indicator-label').textContent,
+      chosen: [...document.querySelectorAll('#virtual-folders .virtual-folder.is-filtered > .virtual-folder-row')]
+        .map(row => ('virtualFolderRoot' in row.dataset ? '/' : row.dataset.virtualFolder)).sort(),
+      columnLeft: Math.round(document.getElementById('notes-container').getBoundingClientRect().left),
+      treeRight: Math.round(document.getElementById('virtual-folders').getBoundingClientRect().right),
       rootIds: [...document.querySelectorAll('#notes-container > .note')].map(note => note.dataset.noteId),
       scrollY: Math.round(window.scrollY),
       isEditing: mode.isEditing,
@@ -105,8 +115,7 @@ async function state(page) {
       tabOrder: [...mode.tabOrder],
       searchInput: document.getElementById('search-input').value,
       labels,
-      folderContexts: server.folderContexts,
-      recentTabs: server.recentTabs,
+      serverTreeShown: server.treeShown,
       folderIcons: folderIcons.sort(),
       serverSearches: Object.fromEntries(Object.entries(server.tabs).map(([tabId, tab]) => [tabId, tab.searchQuery])),
     };
@@ -123,9 +132,7 @@ async function scrollTo(page, y) {
   await pause(SETTLE_MS);
 }
 
-// Every frame while an action runs: what the search box and the folder chip show together, so a
-// context's search is never seen beside another context's folder (the chip waited for the
-// tree's next refresh until 2026-11-07).
+// Every frame while an action runs: whether the tree shows, the search box, and where the column is.
 async function watchFrames(page) {
   await page.evaluate(() => {
     window.__folderFrames = [];
@@ -134,8 +141,7 @@ async function watchFrames(page) {
       window.__folderFrames.push({
         tree: document.body.classList.contains('virtual-folders-on'),
         search: document.getElementById('search-input').value,
-        chip: document.getElementById('virtual-folder-indicator').classList.contains('is-shown')
-          ? document.getElementById('virtual-folder-indicator-label').textContent : '',
+        columnLeft: Math.round(document.getElementById('notes-container').getBoundingClientRect().left),
       });
       requestAnimationFrame(sample);
     };
@@ -189,6 +195,10 @@ async function reload(page) {
 
 
 
+async function deleteFromList(page, tabId) {
+  await clickInList(page, `#search-contexts-list .delete-context[data-delete-tab-id="${tabId}"]`);
+}
+
 // The folders tab, open or closed.
 async function clickFoldersTab(page) {
   await page.click('#virtual-folders-button');
@@ -196,147 +206,90 @@ async function clickFoldersTab(page) {
   await pause(SETTLE_MS);
 }
 
-async function deleteFromList(page, tabId) {
-  await clickInList(page, `#search-contexts-list .delete-context[data-delete-tab-id="${tabId}"]`);
-}
-
-// 1: open folders tab with no folder context: a new one at the end on `/`, with the tree and its icon.
-async function checkOpeningMakesTheFirst(page, ids, todoTab) {
-  await scrollTo(page, SCROLLED_Y);
-  assert.equal((await state(page)).treeShown, false, '7: no tree in a plain search');
-  await clickFoldersTab(page);
-  const after = await state(page);
-  const folderTab = after.activeTabId;
-  assert.notEqual(folderTab, todoTab, '1: a folder context is shown');
-  assert.deepEqual(after.folderContexts, [folderTab], '1: one folder context');
-  assert.equal(after.tabOrder.at(-1), folderTab, '1: at the end of the list');
-  assert.deepEqual([after.treeShown, after.searchInput, after.chipShown], [true, '', false], '1: the tree, every note');
-  assert.deepEqual(shown(after, ids), ids, '1: every note');
-  assert.equal(after.scrollY, 0, '1: from the top');
-  assert.deepEqual([after.labels[folderTab], after.folderIcons], [TOP_LABEL, [folderTab]], '1: named /, with the folder icon');
-  assert.equal(after.serverSearches[todoTab], SEARCH, '1: the plain search unchanged');
-  return folderTab;
-}
-
-// 6: a folder clicked narrows the folder context, its search emptied, from the top; typing
-// narrows the folder; the chosen folder again or `/` show every note; x keeps what is typed.
-async function checkChoosingFolders(page, ids, folderTab) {
-  await clickFolder(page, FOLDER_A);
-  let after = await state(page);
-  assert.deepEqual([after.activeTabId, after.chip, shown(after, ids), after.scrollY], [folderTab, FOLDER_A, inA(ids), 0], '6: the folder');
-  assert.equal(after.labels[folderTab], FOLDER_A, '6: named by its folder');
-  await searchFor(page, TODO);
-  after = await state(page);
-  assert.deepEqual([shown(after, ids), after.labels[folderTab]], [inA(todos(ids)), `${FOLDER_A} ${TODO}`], '6: typing narrows the folder');
-  await scrollTo(page, SCROLLED_Y);
-  await clickFolder(page, FOLDER_B);
-  after = await state(page);
-  assert.deepEqual([after.searchInput, after.chip, shown(after, ids), after.scrollY], ['', FOLDER_B, inB(ids), 0], '6: another folder, its search emptied');
-  await clickFolder(page, FOLDER_B);
-  after = await state(page);
-  assert.deepEqual([after.chipShown, shown(after, ids), after.labels[folderTab]], [false, ids, TOP_LABEL], '6: chosen again: every note');
-  await clickFolder(page, FOLDER_A);
-  await clickFolder(page, '');
-  assert.deepEqual(shown(await state(page), ids), ids, '6: / shows every note');
-  await clickFolder(page, FOLDER_A);
-  await searchFor(page, TODO);
-  await page.click('#virtual-folder-indicator-clear');
-  await idle(page);
-  await pause(SETTLE_MS);
-  after = await state(page);
-  assert.deepEqual([after.chipShown, after.searchInput], [false, TODO], '6: x clears the folder, not the search');
-  await clickFolder(page, FOLDER_A);
-  await searchFor(page, TODO);
-  await scrollTo(page, SCROLLED_Y);
-}
-
-// 2: close folders tab: the plain search used last, as left, with no tree; nothing deleted.
-async function checkClosingGoesToThePlainSearch(page, ids, folderTab, todoTab, todoScrollY) {
-  const folderScrollY = (await state(page)).scrollY;
-  await watchFrames(page);
-  await clickFoldersTab(page);
-  const frames = await watchedFrames(page);
-  const after = await state(page);
-  assert.equal(after.activeTabId, todoTab, '2: the plain search used last');
-  assert.deepEqual([after.treeShown, after.chipShown, after.searchInput], [false, false, SEARCH], '2: as left, with no tree');
-  assert.equal(after.scrollY, todoScrollY, '2: its scroll as left');
-  assert.ok(after.tabOrder.includes(folderTab), '2: the folder context stays in the list');
-  assert.deepEqual(frames.filter(frame => frame.search === SEARCH && (frame.chip !== '' || frame.tree)), [], '2: the search never beside the tree or a chip');
-  return folderScrollY;
-}
-
-// 1: open folders tab with a folder context: the one used last, as left; no new one.
-async function checkOpeningGoesBack(page, ids, folderTab, folderScrollY) {
+// §1: the folders tab shows the tree and changes nothing else; again, it hides it.
+async function checkTheTabOnlyShowsTheTree(page, ids, todoTab) {
   const before = await state(page);
+  assert.deepEqual([before.treeShown, before.serverTreeShown], [false, false], 'the tree hidden at first');
+  await watchFrames(page);
   await clickFoldersTab(page);
-  const after = await state(page);
-  assert.equal(after.activeTabId, folderTab, '1: the folder context used last');
-  assert.deepEqual(after.tabOrder, before.tabOrder, '1: no new context');
-  assert.deepEqual([after.treeShown, after.chip, after.searchInput, shown(after, ids)], [true, FOLDER_A, TODO, inA(todos(ids))], '1: as left');
-  assert.equal(after.scrollY, folderScrollY, '1: its scroll as left');
+  let frames = await watchedFrames(page);
+  let after = await state(page);
+  assert.deepEqual([after.treeShown, after.serverTreeShown], [true, true], 'tab 1: the tree shown');
+  assert.deepEqual([after.activeTabId, after.tabOrder, after.searchInput, after.rootIds, after.scrollY],
+    [todoTab, before.tabOrder, SEARCH, before.rootIds, before.scrollY], 'tab 1: same context, search, notes and scroll');
+  assert.ok(after.columnLeft >= after.treeRight, 'tab 1: the column clear of the tree');
+  assert.deepEqual(frames.filter(frame => frame.search !== SEARCH), [], 'tab 1: the search never changes');
+  await watchFrames(page);
+  await clickFoldersTab(page);
+  frames = await watchedFrames(page);
+  after = await state(page);
+  assert.deepEqual([after.treeShown, after.serverTreeShown, after.activeTabId, after.searchInput, after.rootIds, after.scrollY, after.columnLeft],
+    [false, false, todoTab, SEARCH, before.rootIds, before.scrollY, before.columnLeft], 'tab 2: hidden again, nothing else changed');
+  assert.deepEqual(frames.filter(frame => frame.search !== SEARCH), [], 'tab 2: the search never changes');
+  await clickFoldersTab(page);
 }
 
-// 4: + on a folder context makes another, same folder and search, with the tree and the icon.
-// 7: each folder context keeps its own folder; a plain search has no tree.
-async function checkCopiesAndTheirOwnFolders(page, ids, folderTab, todoTab) {
-  await clickInList(page, `#search-contexts-list .duplicate-context[data-source-tab-id="${folderTab}"]`);
-  let after = await state(page);
-  const copyTab = after.activeTabId;
-  assert.notEqual(copyTab, folderTab, '4: the copy shows');
-  assert.deepEqual(after.folderContexts, [folderTab, copyTab].sort(), '4: another folder context');
-  assert.deepEqual([after.treeShown, after.chip, after.searchInput, shown(after, ids)], [true, FOLDER_A, TODO, inA(todos(ids))], '4: same folder and search');
-  assert.deepEqual(after.folderIcons, [folderTab, copyTab].sort(), '4: both with the folder icon');
-  await clickFolder(page, FOLDER_B);
-  await clickTab(page, folderTab);
-  after = await state(page);
-  assert.deepEqual([after.activeTabId, after.treeShown, after.chip], [folderTab, true, FOLDER_A], '7: its own folder');
-  await clickTab(page, copyTab);
-  after = await state(page);
-  assert.deepEqual([after.treeShown, after.chip, shown(after, ids)], [true, FOLDER_B, inB(ids)], '7: the copy\'s own folder');
+// §1: switching search contexts leaves the tree shown, the column where it is in every frame.
+async function checkSwitchingKeepsTheTree(page, ids, todoTab) {
+  const shownLeft = (await state(page)).columnLeft;
   await watchFrames(page);
+  const otherTab = await newContextSearching(page, FOLDER_B);
+  let after = await state(page);
+  assert.deepEqual([after.treeShown, after.chosen, shown(after, ids)], [true, [FOLDER_B], inB(ids)], 'tab 3: a new context, the tree still shown');
   await clickTab(page, todoTab);
   const frames = await watchedFrames(page);
   after = await state(page);
-  assert.deepEqual([after.treeShown, after.chipShown], [false, false], '7: no tree in a plain search');
-  assert.deepEqual(frames.filter(frame => frame.search === SEARCH && (frame.chip !== '' || frame.tree)), [], '7: the search never beside the tree or a chip');
-  return copyTab;
+  assert.deepEqual([after.activeTabId, after.treeShown, after.chosen, after.columnLeft], [todoTab, true, ['/'], shownLeft], 'tab 3: back, the tree shown');
+  assert.deepEqual(frames.filter(frame => !frame.tree || frame.columnLeft !== shownLeft), [], 'tab 3: the tree and the column still in every frame');
+  assert.deepEqual([after.folderIcons, after.labels[otherTab]], [[otherTab], FOLDER_B], 'a context searching a folder has the folder icon');
+  return otherTab;
 }
 
-// 3: the one used last deleted: the most recently used one of that kind still there.
-async function checkTheOneUsedLastDeleted(page, ids, folderTab, copyTab, todoTab) {
-  const journalTab = await newContextSearching(page, SEARCH);
-  await clickTab(page, folderTab);
-  await deleteFromList(page, journalTab);
-  await clickFoldersTab(page);
+// §2: a click makes the folder the search, from the top; the only chosen folder again, or `/`, empties it.
+async function checkClickingFolders(page, ids, todoTab) {
+  await scrollTo(page, SCROLLED_Y);
+  await clickFolder(page, FOLDER_A);
   let after = await state(page);
-  assert.equal(after.activeTabId, todoTab, '3: the plain search used last still there');
-  await deleteFromList(page, folderTab);
+  assert.deepEqual([after.activeTabId, after.searchInput, after.chosen, shown(after, ids), after.scrollY],
+    [todoTab, FOLDER_A, [FOLDER_A], inA(ids), 0], 'click 1: the folder is the search, from the top');
+  assert.equal(after.labels[todoTab], FOLDER_A, 'click 1: named by its search');
+  await searchFor(page, `${FOLDER_A} ${TODO}`);
   after = await state(page);
-  assert.deepEqual(after.folderContexts, [copyTab], '5: - deletes it');
-  await clickFoldersTab(page);
+  assert.deepEqual([shown(after, ids), after.chosen], [inA(todos(ids)), [FOLDER_A]], 'typing narrows the folder');
+  await clickFolder(page, FOLDER_A);
   after = await state(page);
-  assert.deepEqual([after.activeTabId, after.treeShown, after.chip], [copyTab, true, FOLDER_B], '3: the folder context used last still there');
+  assert.deepEqual([after.searchInput, after.chosen, shown(after, ids), after.labels[todoTab]], ['', ['/'], ids, EMPTY_LABEL], 'click 2: the only chosen folder again empties the search');
+  await clickFolder(page, FOLDER_B);
+  await clickFolder(page, '');
+  after = await state(page);
+  assert.deepEqual([after.searchInput, after.chosen], ['', ['/']], 'click 2: / empties the search');
 }
 
-// 2: close folders tab with no plain search: a new blank one at the end, with no tree.
-async function checkClosingMakesAPlainSearch(page, ids, copyTab, todoTab) {
-  await deleteFromList(page, todoTab);
-  const before = await state(page);
-  assert.deepEqual(before.tabOrder, [copyTab], 'only the folder context left');
-  await clickFoldersTab(page);
-  const after = await state(page);
-  const plainTab = after.activeTabId;
-  assert.notEqual(plainTab, copyTab, '2: a new plain search');
-  assert.deepEqual(after.tabOrder, [copyTab, plainTab], '2: at the end of the list');
-  assert.deepEqual([after.treeShown, after.searchInput, after.chipShown, after.folderContexts], [false, '', false, [copyTab]], '2: blank, with no tree');
-  return plainTab;
+// §2, §3, §5: ⌘-click adds a folder or takes it out, keeping the rest; several folders add results;
+// ⌘-click on `/` takes every folder out; an OR search marks every folder it names.
+async function checkCmdClickingFolders(page, ids) {
+  await searchFor(page, `${FOLDER_A} ${TODO}`);
+  await scrollTo(page, SCROLLED_Y);
+  await cmdClickFolder(page, FOLDER_B);
+  let after = await state(page);
+  const inEither = ids.filter(id => inA(ids).includes(id) || inB(ids).includes(id));
+  assert.deepEqual([after.searchInput, after.chosen, shown(after, ids), after.scrollY],
+    [`${FOLDER_A} ${FOLDER_B} ${TODO}`, [FOLDER_A, FOLDER_B], inEither.filter(id => todos(ids).includes(id)), 0], 'click 3: ⌘-click adds a folder');
+  await cmdClickFolder(page, FOLDER_B);
+  after = await state(page);
+  assert.deepEqual([after.searchInput, after.chosen], [`${FOLDER_A} ${TODO}`, [FOLDER_A]], 'click 4: ⌘-click again takes it out');
+  await cmdClickFolder(page, '');
+  after = await state(page);
+  assert.deepEqual([after.searchInput, after.chosen, shown(after, ids)], [TODO, ['/'], todos(ids)], 'click 5: ⌘-click on / keeps the rest');
+  await searchFor(page, `${FOLDER_A} OR ${FOLDER_B} ${TODO}`);
+  after = await state(page);
+  assert.deepEqual([after.chosen, shown(after, ids)], [[FOLDER_A, FOLDER_B], ids.filter(id => inA(ids).includes(id) || (inB(ids).includes(id) && todos(ids).includes(id)))], 'click 6: OR marks both');
+  await searchFor(page, SEARCH);
 }
 
-// A reference view opened from a folder context keeps the tree in every frame; a folder clicked
-// there goes back to that folder context.
-async function checkAReferenceViewKeepsTheTree(page, ids, copyTab) {
-  await clickFoldersTab(page);
-  assert.equal((await state(page)).activeTabId, copyTab);
+// A reference view keeps the tree in every frame; a folder clicked there goes back to the context
+// it was opened from, its search that folder.
+async function checkAReferenceViewKeepsTheTree(page, ids, todoTab) {
   await watchFrames(page);
   await page.evaluate(async noteId => {
     const {CommandGate} = await import('/static/js/modules/mode-manager/services/command-gate-service.js');
@@ -348,37 +301,39 @@ async function checkAReferenceViewKeepsTheTree(page, ids, copyTab) {
   const frames = await watchedFrames(page);
   let after = await state(page);
   const referenceTab = after.activeTabId;
-  assert.notEqual(referenceTab, copyTab, 'a reference view shows');
+  assert.notEqual(referenceTab, todoTab, 'a reference view shows');
   assert.equal(after.treeShown, true, 'with the tree');
   assert.deepEqual(frames.filter(frame => !frame.tree), [], 'the tree in every frame');
   await clickFolder(page, FOLDER_A);
   after = await state(page);
   assert.ok(!after.tabOrder.includes(referenceTab), 'the reference view closed');
-  assert.deepEqual([after.activeTabId, after.chip, shown(after, ids)], [copyTab, FOLDER_A, inA(ids)], 'back in the folder context');
+  assert.deepEqual([after.activeTabId, after.searchInput, shown(after, ids)], [todoTab, FOLDER_A, inA(ids)], 'back in its context, the folder its search');
 }
 
-// 8: a reload keeps which is which and which was used last; a renamed folder renames its contexts.
-async function checkReloadAndRename(page, ids, copyTab, plainTab) {
+// §1: a reload keeps the tree shown or hidden; a renamed folder renames the searches naming it.
+async function checkReloadAndRename(page, todoTab) {
   await reload(page);
   let after = await state(page);
-  assert.deepEqual([after.activeTabId, after.treeShown, after.chip], [copyTab, true, FOLDER_A], '8: the folder context, with the tree');
+  assert.deepEqual([after.activeTabId, after.treeShown, after.chosen], [todoTab, true, [FOLDER_A]], 'tab 4: a reload keeps the tree shown');
   await clickFoldersTab(page);
   await reload(page);
   after = await state(page);
-  assert.deepEqual([after.activeTabId, after.treeShown], [plainTab, false], '8: the plain search, no tree');
+  assert.deepEqual([after.activeTabId, after.treeShown], [todoTab, false], 'tab 4: a reload keeps it hidden');
   await clickFoldersTab(page);
-  after = await state(page);
-  assert.equal(after.activeTabId, copyTab, '8: the folder context used last, after a reload');
-  await page.evaluate(async ({from, to}) => {
-    const {NotesAPI} = await import('/static/js/modules/api-client.js');
-    await NotesAPI.renameVirtualFolder(from, to);
-    const {actionRefreshAndMaybeSelect} = await import('/static/js/modules/mode-manager/actions/ui-actions.js');
-    await actionRefreshAndMaybeSelect({startedAt: performance.now(), context: 'test.rename'});
-  }, {from: FOLDER_A, to: RENAMED_B});
+  // Rename Folder… in the tree's menu, its new name typed.
+  await page.click(`#virtual-folders [data-virtual-folder="${FOLDER_A}"]`, {button: 'right'});
+  await page.waitForSelector('#context-menu.is-visible', {visible: true});
+  const item = await page.evaluateHandle(() => [...document.querySelectorAll('#context-menu.is-visible .context-menu-item')]
+    .find(node => node.querySelector('.context-menu-item-label').textContent.trim() === 'Rename Folder…'));
+  await item.click();
+  await page.waitForSelector('#folder-name-input', {visible: true});
+  await clickAndSelectAll(page, '#folder-name-input');
+  await page.keyboard.type(RENAMED_B.slice(0, -1));
+  await page.keyboard.press('Enter');
   await idle(page);
   await pause(SETTLE_MS);
   after = await state(page);
-  assert.deepEqual([after.chip, after.labels[copyTab]], [RENAMED_B, RENAMED_B], 'the name follows the folder');
+  assert.deepEqual([after.searchInput, after.labels[todoTab], after.chosen], [RENAMED_B, RENAMED_B, [RENAMED_B]], 'the search follows the folder');
 }
 
 export async function checkFolderContext(page) {
@@ -386,34 +341,26 @@ export async function checkFolderContext(page) {
   await page.setViewport(WINDOW);
   await reload(page);
   const todoTab = (await state(page)).activeTabId;
-  await runThenCleanUp('folder contexts', async () => {
+  await runThenCleanUp('folders tab', async () => {
     await searchFor(page, SEARCH);
     await scrollTo(page, SCROLLED_Y);
-    const todoScrollY = (await state(page)).scrollY;
-    const folderTab = await checkOpeningMakesTheFirst(page, ids, todoTab);
-    await checkChoosingFolders(page, ids, folderTab);
-    const folderScrollY = await checkClosingGoesToThePlainSearch(page, ids, folderTab, todoTab, todoScrollY);
-    await checkOpeningGoesBack(page, ids, folderTab, folderScrollY);
-    const copyTab = await checkCopiesAndTheirOwnFolders(page, ids, folderTab, todoTab);
-    await checkTheOneUsedLastDeleted(page, ids, folderTab, copyTab, todoTab);
-    const plainTab = await checkClosingMakesAPlainSearch(page, ids, copyTab, todoTab);
-    await checkAReferenceViewKeepsTheTree(page, ids, copyTab);
-    await checkReloadAndRename(page, ids, copyTab, plainTab);
-    console.log('PASS folder contexts: open and close folders tab go to the context used last of the other kind');
+    await checkTheTabOnlyShowsTheTree(page, ids, todoTab);
+    await checkSwitchingKeepsTheTree(page, ids, todoTab);
+    await checkClickingFolders(page, ids, todoTab);
+    await checkCmdClickingFolders(page, ids);
+    await checkAReferenceViewKeepsTheTree(page, ids, todoTab);
+    await checkReloadAndRename(page, todoTab);
+    console.log('PASS folders tab: it only shows or hides the tree; folders clicked and ⌘-clicked are the search');
   }, async () => {
-    // Leave one plain search, as the suite found the vault.
+    // Leave one search context and the tree hidden, as the suite found the vault; contexts go with
+    // their −, as a person deletes them (deleted behind the page's back, its next save is refused).
+    for (const tabId of (await state(page)).tabOrder) {
+      if (tabId !== todoTab) await deleteFromList(page, tabId);
+    }
+    if ((await state(page)).treeShown) await clickFoldersTab(page);
     await page.evaluate(async noteIds => {
       const {NotesAPI} = await import('/static/js/modules/api-client.js');
       for (const id of noteIds) await NotesAPI.deleteNote(id);
-      const {deleteTabOnServer} = await import('/static/js/modules/mode-manager/services/tab-state-service.js');
-      const {buildSessionHeaders} = await import('/static/js/modules/session-auth.js');
-      const response = await fetch('/api2/notes/tab-state', {headers: buildSessionHeaders(false), cache: 'no-store'});
-      const server = await response.json();
-      const keep = server.tabOrder.find(tabId => !server.folderContexts.includes(tabId));
-      if (keep === undefined) throw new Error('No plain search left to keep');
-      for (const tabId of server.tabOrder) {
-        if (tabId !== keep) await deleteTabOnServer(tabId);
-      }
     }, ids);
   });
 }

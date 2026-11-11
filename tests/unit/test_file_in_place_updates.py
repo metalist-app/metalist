@@ -11,7 +11,7 @@ import sys
 
 import pytest
 
-from app.api.upload_limits import _is_upload_request
+from app.api.upload_limits import _is_in_memory_upload
 from app.db.legacy_file_schema import FILE_PREVIEWS_TABLE, initialize_file_schema
 from app.db.file_session import begin_file_writer, connect_file_reader, live_blob_store
 from app.db.files_sql import fetch_file, fetch_file_preview
@@ -113,6 +113,17 @@ def test_replace_file_content_bumps_revision_and_stays_encrypted(encrypted_files
     assert row is not None
     assert row["blob_seal_encryption_nonce"] is not None
     assert SCENE_V2 not in live_blob_store().path_of(row["blob_id"]).read_bytes()
+
+
+def test_the_registry_knows_a_files_size_when_it_is_stored_and_when_it_is_replaced(encrypted_files) -> None:
+    file_id = _create_diagram()
+    assert file_registry.sizes_of_kind("any") == {file_id: len(SCENE_V1)}
+
+    replace_file_content(file_id=file_id, content_bytes=SCENE_V2, expected_revision=1, token="token")
+    assert file_registry.sizes_of_kind("any") == {file_id: len(SCENE_V2)}
+
+    later_id = _create_diagram()
+    assert file_registry.sizes_of_kind("any") == {file_id: len(SCENE_V2), later_id: len(SCENE_V1)}
 
 
 def test_replace_file_content_rejects_stale_revision(encrypted_files) -> None:
@@ -344,7 +355,7 @@ print("ROUTES OK")
 @pytest.mark.parametrize(
     ("method", "path", "expected"),
     [
-        ("POST", "/api2/files/upload", True),
+        ("POST", "/api2/files/upload", False),
         ("PUT", "/api2/files/abc/content", True),
         ("PUT", "/api2/files/abc/previews", True),
         ("GET", "/api2/files/abc/previews/light", False),
@@ -353,7 +364,7 @@ print("ROUTES OK")
     ],
 )
 def test_in_place_file_updates_share_the_upload_size_limits(method: str, path: str, expected: bool) -> None:
-    assert _is_upload_request({"method": method, "path": path}) is expected
+    assert _is_in_memory_upload({"method": method, "path": path}) is expected
 
 
 def test_diagrams_can_be_resized_like_images_but_other_files_cannot() -> None:

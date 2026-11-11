@@ -1,3 +1,4 @@
+import { restoreOldeWords } from './skin-olde-words.js';
 import { CONFIG } from './config.js';
 
 export const DOMUtils = {
@@ -20,6 +21,9 @@ export const DOMUtils = {
         const content = this.getNoteContent(noteElement);
         if (!content) {
             throw new Error('Note missing content element');
+        }
+        if (isEditable) {
+            restoreOldeWords(content);
         }
         const editableValue = isEditable ? 'true' : 'false';
         content.setAttribute('contenteditable', editableValue);

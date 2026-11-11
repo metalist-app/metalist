@@ -132,7 +132,7 @@ MetaList has **tag values** (`name=value`, which may repeat) and **super tags** 
 | E10 | `<iframe>` web pages, YouTube `![](https://youtube…)` | The sanitizer drops iframes. ★ Keep the URL as a link and the original HTML in the record | As written | **Lossy in MetaList:** a link, not a player |
 | E11 | Canvas `![[x.canvas]]`, the `.canvas` file | ★ Stored as a file (JSON), embed shows a card | The file as it was | **Kept as file**. Its paths to notes still work if notes keep their file paths (B9) |
 | E12 | Base `![[x.base]]`, `.base` files, `base` code blocks | ★ Stored as a file / kept as a code block (`@code=yaml`) | As it was | **Kept as file**. No views in MetaList |
-| E13 | `query` code blocks (embedded search) | Options: (a) ★ kept as code text, reported; (b) translate to a MetaList search link (syntax differs a lot) | As it was | **Kept as text**. Inert |
+| E13 | `query` code blocks (embedded search; search links planned in `docs/ready-to-build/search-links.md`) | Options: (a) ★ kept as code text, reported; (b) translate to a MetaList search link (syntax differs a lot) | As it was | **Kept as text**. Inert |
 
 ---
 

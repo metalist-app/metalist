@@ -1,3 +1,4 @@
+import { currentThemeChoice } from '../../theme-choices.js';
 import { showVirtualFoldersMenu } from '../services/virtual-folders-service.js';
 import { MS_PER_SECOND } from '../../time-units.js';
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
@@ -72,6 +73,7 @@ import { buildContextMenuItems } from '../../context-menu/context-menu-registry.
 import { initContextMenuService, showContextMenu } from '../../context-menu/context-menu-service.js';
 import { CommandPalette } from '../../command-palette/command-palette-controller.js';
 import { NotesAPI } from '../../api-client.js';
+import { STANDARD_FILE_KINDS } from '../services/file-filter-kinds.js';
 import { normalizeSelectedTextForTagAction } from '../services/selected-text-tag-service.js';
 import {
     ADD_STYLE_OPTIONS,
@@ -429,11 +431,11 @@ function openTagContextMenu(position, tag, source, explanation) {
 }
 
 function showViewRailContextMenu(event) {
-    showViewContextMenu(event);
+    void showViewContextMenu(event);
 }
 
 function showTabsRailContextMenu(event) {
-    showViewContextMenu(event);
+    void showViewContextMenu(event);
 }
 
 function readCssPixelVariable(name) {
@@ -1368,25 +1370,31 @@ function buildViewAndOrderHandlers() {
     };
 }
 
-// The date range and Files filter as their menus tick them.
-function dateRangeMenuContext() {
+// The date range and Files filter as their menus tick them. Asked of the server each time, so
+// the menu lists the files notes hold now; with no server, the kinds always listed.
+async function dateRangeMenuContext() {
+    const fileFilterKinds = ModeContext.isConnected
+        ? (await NotesAPI.getFileFilterKinds()).kinds
+        : [...STANDARD_FILE_KINDS];
     return {
         dateRangeKind: CommandPalette.getDateRangeKind(),
         dateRangeField: getDateRangeField(),
         fileFilterKind: CommandPalette.getFileFilterKind(),
+        fileFilterKinds,
     };
 }
 
 // Right-clicking the search box past what is typed (or an empty box): View and Sort by.
-function showSearchBarContextMenu(event) {
+async function showSearchBarContextMenu(event) {
     if (typeof event.clientX !== 'number' || typeof event.clientY !== 'number') {
         throw new Error('Context menu event missing coordinates');
     }
+    const menuContext = await dateRangeMenuContext();
     const items = buildContextMenuItems({
         kind: 'search-bar',
         isUntaggedView: ModeContext.isUntaggedView === true,
         sortMode: ModeContext.activeTabSortMode,
-        ...dateRangeMenuContext(),
+        ...menuContext,
     }, buildViewAndOrderHandlers());
     showContextMenu({
         items,
@@ -1395,20 +1403,20 @@ function showSearchBarContextMenu(event) {
     });
 }
 
-function showViewContextMenu(event) {
+async function showViewContextMenu(event) {
     if (!event) {
         throw new Error('showViewContextMenu called without event');
     }
     if (typeof event.clientX !== 'number' || typeof event.clientY !== 'number') {
         throw new Error('Context menu event missing coordinates');
     }
+    const menuContext = await dateRangeMenuContext();
 
     const scrollToTopButton = document.getElementById('scroll-to-top-button');
     const scrollToBottomButton = document.getElementById('scroll-to-bottom-button');
     if (!(scrollToTopButton instanceof HTMLButtonElement) || !(scrollToBottomButton instanceof HTMLButtonElement)) {
         throw new Error('scroll-to-top or scroll-to-bottom button missing');
     }
-    const themeAttribute = document.documentElement.getAttribute('data-theme');
     const context = {
         kind: 'view',
         isMac: isMacPlatform(),
@@ -1418,10 +1426,10 @@ function showViewContextMenu(event) {
         canGoToTop: !scrollToTopButton.disabled,
         canGoToBottom: !scrollToBottomButton.disabled,
         isUntaggedView: ModeContext.isUntaggedView === true,
-        theme: themeAttribute === 'light' || themeAttribute === 'dark' ? themeAttribute : 'system',
+        theme: currentThemeChoice(document.documentElement),
         sortMode: ModeContext.activeTabSortMode,
         searchAllowsNewNotes: findUnfillableSearchTerm(ModeContext.searchQuery) === null,
-        ...dateRangeMenuContext(),
+        ...menuContext,
     };
     const items = buildContextMenuItems(context, {
         onPasteNoteAtTop: () => {
@@ -1575,7 +1583,7 @@ function handleContextMenu(event) {
         const input = priorityTarget.element;
         // Past what is typed (or an empty box), with nothing selected: View and Sort by.
         if (input.selectionStart === input.selectionEnd && isInputPointPastText(input, event.clientX)) {
-            showSearchBarContextMenu(event);
+            void showSearchBarContextMenu(event);
             return;
         }
         const tagInfo = resolveTagFromInput(
@@ -1637,9 +1645,13 @@ function handleContextMenu(event) {
         return;
     }
 
-    const notesContainer = element.closest('#notes-container');
-    if (notesContainer) {
-        showViewContextMenu(event);
+    // On the list between notes, or on nothing but the page: the empty space below a short list.
+    const notesContainer = document.getElementById('notes-container');
+    if (notesContainer === null) {
+        throw new Error('notes-container element missing');
+    }
+    if (notesContainer.contains(element) || element.contains(notesContainer)) {
+        void showViewContextMenu(event);
     }
 }
 

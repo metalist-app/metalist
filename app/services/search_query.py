@@ -152,6 +152,28 @@ def parse_search_query(normalized_text: str) -> ParsedSearchQuery:
                     "with no space (for example -tag)"
                 )
 
+        # `/*help*/`: a tag bar's comment (no tag starts with /), its spaces kept; one not yet
+        # closed searches as typed, closed (docs/ui/search-semantics.md, Comment Terms).
+        if text.startswith(COMMENT_TERM_OPEN, index):
+            if prefix == "+":
+                prefix = None
+            inner_start = index + len(COMMENT_TERM_OPEN)
+            inner_end = text.find(COMMENT_TERM_CLOSE, inner_start)
+            comment_end = inner_end + len(COMMENT_TERM_CLOSE)
+            if inner_end == NOT_FOUND:
+                inner_end = len(text)
+                comment_end = len(text)
+            words = _WHITESPACE_RE.sub(" ", text[inner_start:inner_end]).strip()
+            if words == "":
+                raise InputRejected("Put the comment's words between /* and */ (for example /*help*/)")
+            if prefix == "-":
+                forbidden_text.append(comment_term(words))
+            else:
+                required_text.append(comment_term(words))
+            clause_term_count += 1
+            index = comment_end
+            continue
+
         if text[index] in ('"', "'"):
             quote_char = text[index]
             if prefix == "+":
@@ -250,6 +272,9 @@ def search_highlight_phrases(parsed: ParsedSearchQuery) -> Tuple[str, ...]:
     phrases: List[str] = []
     for clause in parsed.clauses:
         for phrase in clause.required_text:
+            # A comment term is found in the tag bar, never in the note's text.
+            if is_comment_term(phrase):
+                continue
             if phrase not in phrases:
                 phrases.append(phrase)
     return tuple(phrases)
@@ -275,7 +300,7 @@ def format_search_term(term: str, *, is_phrase: bool, is_excluded: bool) -> str:
     """One search term as typed: a tag as is, a phrase in double quotes with the
     backslash escapes the parser reads, and a leading - when it is excluded."""
     text = term
-    if is_phrase:
+    if is_phrase and not is_comment_term(term):
         escaped = term.replace("\\", "\\\\").replace('"', '\\"')
         text = f'"{escaped}"'
     if is_excluded:
@@ -284,6 +309,30 @@ def format_search_term(term: str, *, is_phrase: bool, is_excluded: bool) -> str:
 
 
 _WHITESPACE_RE = re.compile(r"\s+")
+NOT_FOUND = -1
+# A comment term, `/*help*/`: kept with the quoted phrases, matched only against the tag-bar
+# comments of each note (search_index.SearchIndex._text_term_matches_locked).
+COMMENT_TERM_OPEN = "/*"
+COMMENT_TERM_CLOSE = "*/"
+
+
+def comment_term(words: str) -> str:
+    """The comment term for a comment's words (`help` gives `/*help*/`)."""
+    assert words != "" and words == words.strip(), words
+    return f"{COMMENT_TERM_OPEN}{words}{COMMENT_TERM_CLOSE}"
+
+
+def is_comment_term(phrase: str) -> bool:
+    """Whether a clause's text term is a comment term rather than quoted text."""
+    return phrase.startswith(COMMENT_TERM_OPEN) and phrase.endswith(COMMENT_TERM_CLOSE)
+
+
+def comment_term_words(phrase: str) -> str:
+    """A comment term's words (`/*help me*/` gives `help me`)."""
+    assert is_comment_term(phrase), phrase
+    return phrase[len(COMMENT_TERM_OPEN):-len(COMMENT_TERM_CLOSE)]
+
+
 # A backslash and the character it escapes.
 _ESCAPE_SEQUENCE_LENGTH = 2
 

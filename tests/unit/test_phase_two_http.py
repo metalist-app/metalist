@@ -1,7 +1,6 @@
 import asyncio
 from email.message import Message
 from types import SimpleNamespace
-from threading import BoundedSemaphore
 import sqlite3
 from app.api.note_requests import SearchSuggestionsRequest, MoveNoteEndpointRequest
 import os
@@ -86,7 +85,7 @@ def test_https_delivers_first_chunk_before_backend_finishes(tmp_path):
 
 @pytest.mark.parametrize('limit_delta', [0, 1])
 def test_upload_checks_limit_and_closes_file(monkeypatch, limit_delta):
-    monkeypatch.setattr(upload_limits, 'MAX_ATTACHMENT_BYTES', 64)
+    monkeypatch.setattr(upload_limits, 'MAX_IN_MEMORY_FILE_BYTES', 64)
     stream = BytesIO(b'a' * (64 + limit_delta))
     upload = UploadFile(stream, filename='fixture')
     if limit_delta:
@@ -96,12 +95,6 @@ def test_upload_checks_limit_and_closes_file(monkeypatch, limit_delta):
     else:
         assert asyncio.run(upload_limits.read_attachment(upload)) == b'a'*64
     assert stream.closed
-
-
-def test_non_http_upload_cannot_bypass_limit(monkeypatch):
-    monkeypatch.setattr(file_storage, 'MAX_ATTACHMENT_BYTES', 64)
-    with pytest.raises(ValueError, match='size limit'):
-        file_storage.create_file(original_filename='fixture', mime_type='text/plain', content_bytes=b'a'*65, token='fixture')
 
 
 @pytest.mark.parametrize('header,value', [('Host','[broken'),('Origin','http://[broken')])
@@ -319,10 +312,10 @@ def test_multipart_limit_without_content_length_closes_spooled_files(monkeypatch
         created.append(stream)
         return stream
     monkeypatch.setattr(formparsers, 'SpooledTemporaryFile', spool)
-    monkeypatch.setattr(upload_limits, 'MAX_UPLOAD_REQUEST_BYTES', 200)
+    monkeypatch.setattr(upload_limits, 'MAX_IN_MEMORY_REQUEST_BYTES', 200)
     app = FastAPI()
     app.add_middleware(upload_limits.UploadLimitMiddleware)
-    @app.post('/files/upload')
+    @app.put('/files/id/content')
     @transactional_route
     async def upload(file: UploadFile):
         raise AssertionError('Oversized file reached endpoint')
@@ -333,7 +326,7 @@ def test_multipart_limit_without_content_length_closes_spooled_files(monkeypatch
             return {'type': 'http.request', 'body': next(parts), 'more_body': True}
         async def send(message):
             messages.append(message)
-        await app({'type':'http','asgi':{'version':'3.0'},'http_version':'1.1','method':'POST','scheme':'http','path':'/files/upload','query_string':b'', 'headers':[(b'content-type',b'multipart/form-data; boundary=boundary')], 'client':('127.0.0.1',1),'server':('127.0.0.1',80)}, receive, send)
+        await app({'type':'http','asgi':{'version':'3.0'},'http_version':'1.1','method':'PUT','scheme':'http','path':'/files/id/content','query_string':b'', 'headers':[(b'content-type',b'multipart/form-data; boundary=boundary')], 'client':('127.0.0.1',1),'server':('127.0.0.1',80)}, receive, send)
         assert messages[0]['status'] == 413
     asyncio.run(scenario())
     assert created and all(stream.closed for stream in created)
@@ -434,29 +427,3 @@ def test_proxy_closes_upstream_when_transfer_disconnects(monkeypatch, disconnect
     handler._proxy()
     assert closed.is_set()
     assert handler.close_connection
-
-
-def test_attachment_transfer_slots_are_released_on_cancellation():
-    async def scenario():
-        entered, release = asyncio.Event(), asyncio.Event()
-        async def app(scope, receive, send):
-            entered.set()
-            await release.wait()
-        middleware = upload_limits.UploadLimitMiddleware(app)
-        middleware._slots = BoundedSemaphore(1)
-        scope = {'type':'http','path':'/files/id/download'}
-        async def receive():
-            raise AssertionError('Download should not read a request body')
-        messages = []
-        async def send(message):
-            messages.append(message)
-        first = asyncio.create_task(middleware(scope, receive, send))
-        await entered.wait()
-        await middleware(scope, receive, send)
-        assert messages[0]['status'] == 429
-        first.cancel()
-        with pytest.raises(asyncio.CancelledError):
-            await first
-        assert middleware._slots.acquire(blocking=False)
-        middleware._slots.release()
-    asyncio.run(scenario())

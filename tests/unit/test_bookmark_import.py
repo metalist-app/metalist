@@ -162,6 +162,17 @@ def test_an_existing_folder_is_added_to_only_when_ticked(live_database) -> None:
         ).execute()
 
 
+def test_bookmarks_say_whether_they_made_a_new_folder(live_database) -> None:  # noqa: F811
+    results = [
+        CmdImportBookmarks(
+            file_text=_FIREFOX_LIKE, folder_prefix="Bookmarks", add_to_existing=True, token="", imported_at=_IMPORTED_AT, context_tags="",
+        ).execute()
+        for _ in range(2)
+    ]
+
+    assert [result["isNewFolder"] for result in results] == [True, False]
+
+
 def test_importing_again_only_adds(live_database) -> None:  # noqa: F811
     for _ in range(2):
         CmdImportBookmarks(

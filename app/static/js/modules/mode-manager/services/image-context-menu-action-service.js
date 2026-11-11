@@ -3,6 +3,8 @@ import { ApplicationState } from '../../application-state.js';
 import { HttpRequestError } from '../../expected-errors.js';
 const moduleState = ApplicationState.createFields('image-context-menu-action-service', {
     activeZoomOverlay: null,
+    // A gallery's arrows, while one of its pictures is shown (zoomGallery).
+    galleryKeys: null,
 });
 
 function handleZoomKeyDown(event) {
@@ -392,6 +394,10 @@ function closeActiveZoomOverlay() {
     moduleState.activeZoomOverlay.remove();
     moduleState.activeZoomOverlay = null;
     document.removeEventListener('keydown', handleZoomKeyDown, { capture: true });
+    if (moduleState.galleryKeys !== null) {
+        document.removeEventListener('keydown', moduleState.galleryKeys, { capture: true });
+        moduleState.galleryKeys = null;
+    }
 }
 
 function buildZoomOverlay(src, alt) {
@@ -434,6 +440,84 @@ function buildZoomOverlay(src, alt) {
     });
 
     return overlay;
+}
+
+function overlayButton(className, label, text) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = className;
+    button.setAttribute('aria-label', label);
+    button.title = label;
+    button.textContent = text;
+    return button;
+}
+
+// A gallery's pictures full screen, as Zoom Image shows one (docs/future-plans/gallery.md): ‹ ›
+// and the arrow keys move through them, stopping at the ends; Go to note shows the picture's note.
+// pictures: [{ src, alt, noteId }].
+export function zoomGallery({ pictures, index, onGoToNote, onOpen }) {
+    if (!Array.isArray(pictures) || !Number.isInteger(index) || index < 0 || index >= pictures.length) {
+        throw new Error('zoomGallery requires the pictures and which one to show');
+    }
+    if (typeof onGoToNote !== 'function' || typeof onOpen !== 'function') {
+        throw new Error('zoomGallery requires onGoToNote and onOpen');
+    }
+    closeActiveZoomOverlay();
+    const overlay = buildZoomOverlay(pictures[index].src, pictures[index].alt);
+    overlay.classList.add('is-gallery');
+    const image = overlay.querySelector('.image-zoom-image');
+    const previous = overlayButton('image-zoom-step image-zoom-previous', 'Previous picture', '‹');
+    const next = overlayButton('image-zoom-step image-zoom-next', 'Next picture', '›');
+    const goToNote = overlayButton('image-zoom-go-to-note', 'Go to note', 'Go to note');
+    // A PDF shows its first page; Open shows the whole PDF in the file viewer.
+    const open = overlayButton('image-zoom-open', 'Open', 'Open');
+    const actions = document.createElement('div');
+    actions.className = 'image-zoom-actions';
+    actions.append(open, goToNote);
+    const shown = { index };
+    const show = (pictureIndex) => {
+        shown.index = pictureIndex;
+        image.src = pictures[pictureIndex].src;
+        image.alt = pictures[pictureIndex].alt;
+        previous.disabled = pictureIndex === 0;
+        next.disabled = pictureIndex === pictures.length - 1;
+        const opensFile = pictures[pictureIndex].openFileId !== '';
+        if (open.hidden === opensFile) open.hidden = !opensFile;
+        // A drawing's preview has no ground of its own: it gets the page's.
+        image.classList.toggle('is-drawing', pictures[pictureIndex].isDrawing === true);
+    };
+    const step = (direction) => {
+        const target = shown.index + direction;
+        if (target >= 0 && target < pictures.length) {
+            show(target);
+        }
+    };
+    previous.addEventListener('click', () => step(-1));
+    next.addEventListener('click', () => step(1));
+    goToNote.addEventListener('click', () => {
+        const noteId = pictures[shown.index].noteId;
+        closeActiveZoomOverlay();
+        onGoToNote(noteId);
+    });
+    open.addEventListener('click', () => {
+        const picture = pictures[shown.index];
+        closeActiveZoomOverlay();
+        onOpen(picture);
+    });
+    overlay.append(previous, next, actions);
+    show(index);
+    moduleState.activeZoomOverlay = overlay;
+    document.body.appendChild(overlay);
+    document.addEventListener('keydown', handleZoomKeyDown, { capture: true });
+    moduleState.galleryKeys = (event) => {
+        if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') {
+            return;
+        }
+        event.preventDefault();
+        event.stopPropagation();
+        step(event.key === 'ArrowLeft' ? -1 : 1);
+    };
+    document.addEventListener('keydown', moduleState.galleryKeys, { capture: true });
 }
 
 export async function zoomImageFromContext(imageContext) {

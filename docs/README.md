@@ -17,6 +17,7 @@
 - UUID note/file references (`![[UUID]]`, `[[UUID]]`): `docs/ui/references.md`
 - External HTML paste sanitization: `docs/ui/paste-sanitization.md`
 - Note content meta-tag formatting: `docs/ui/content-formatting.md`
+- Skins (the Ye Olde Scrypte theme, and how to contribute one): `docs/ui/skins.md`
 - Search query syntax (verifier): `docs/ui/search-syntax.md`
 - Search semantics (server behavior): `docs/ui/search-semantics.md`
 - Tag bar grammar (tags/comments/wrappers): `docs/ui/tag-bar.md`
@@ -46,6 +47,8 @@
 - Known bugs: `docs/BUGS.md`
 - Refactor notes: `docs/REFACTORS.md`
 - TODO list: `docs/TODO.md`
+- Future plan (jumping inside audio and video, left for later): `docs/future-plans/media-jump-playback.md`
+- Future plan (galleries: `@gallery` shows a note's and its descendants' pictures as a grid, PDF first pages): `docs/future-plans/gallery.md`
 - Future plan (scale testing, parts 4 to 7): `docs/future-plans/scale-testing.md`
 - Future UI plan (toolbar): `docs/future-plans/PLAN.toolbar.md`
 - Future plan (hosted MetaList: downloading your own copy, the backup reminder): `docs/future-plans/hosted-own-copy.md`
@@ -54,6 +57,8 @@
 - Future plan (Obsidian import and export, aliases and image widths mapped both ways): `docs/future-plans/obsidian-import-export.md`; scheduled for launch in `docs/ready-to-build/import-export-launch.md`, with every Obsidian feature mapped into MetaList in `docs/ready-to-build/obsidian-mapping.md`
 - Planned, not scheduled (the same tag more than once in a note): `docs/future-plans/same-tag-twice.md`
 - Ready to build, an experiment behind a setting (virtual folders: a tag ending in `/` is a folder, shown as a tree in the left margin, in folder contexts only since 2026-11-07; the import's folder tags get the slash): `docs/ready-to-build/virtual-folders.md`; files and folders dropped from the desktop (built 2026-11-02, resuming an interrupted upload not yet): `docs/ready-to-build/desktop-drops-into-folders.md`
+- Built 2026-11-11 but for the Markdown export (links that open a search, `[[search:…]]`; Rename tag renames saved searches too): `docs/ready-to-build/search-links.md`, described in `docs/ui/references.md`; built 2026-11-11: a folder tag in the search includes the folders below it, and the folder is search text, not a chip: `docs/ready-to-build/folder-tags-in-search.md`
+- Built 2026-11-11, with the virtual folders experiment it changes (the folders tab only shows or hides the tree, no folder contexts as a kind; several folders in a search add results; a folder implies its parent folders, rules included): `docs/ready-to-build/folders-tab-and-multiple-folders.md`
 - Ready to build (the AI reads the whole view, files included, in batches when it must; a warning before very large requests): `docs/ready-to-build/ai-reads-whole-view.md`
 - Ready to build (how much text a conversation has sent, under the chat header): `docs/ready-to-build/ai-chat-size-line.md`
 - Ready to build (AI conversations survive a restart or an upgrade): `docs/ready-to-build/ai-chat-survives-restart.md`
@@ -64,7 +69,7 @@
 - Built 2026-11-02, Chrome's and Safari's exports still to check (browser bookmarks as an import source: one note per website address, its title linked, folders as folder tags, dated when bookmarked; a dropped export asks Import or Keep as File): `docs/ready-to-build/bookmark-import.md`
 - Future plan (charts of super-tag values, embedded like diagrams): `docs/future-plans/charts.md`
 - Being designed, nothing built (a decision model, such as OpenAI's Decisions API, for choosing tags and for choosing which notes the AI reads, with speed estimates): `docs/future-plans/decision-model.md`
-- File storage (one encrypted file per stored item, with a catalog): `docs/design/file-storage.md`; what is left, streaming uploads and removing the 100 MiB limit: `docs/ready-to-build/streaming-no-file-cap.md`
+- File storage (one encrypted file per stored item, with a catalog; files of any size): `docs/design/file-storage.md`
 - Future plan, after streaming (uploads in pieces that resume after a dropped connection): `docs/future-plans/resumable-uploads.md`
 - Future plan, with the hosted control plane (free hosted accounts granted by the operator): `docs/future-plans/free-accounts.md`
 - Future plan (hosted account states: trial, active, cancelled, lapsed and read-only, closed, deleted): `docs/future-plans/hosted-account-states.md`

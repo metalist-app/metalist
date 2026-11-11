@@ -799,7 +799,7 @@ test('completion reveals the collapsed References header without scrolling throu
     );
     assert.match(controller, /details\.ai-chat-references-disclosure/);
     assert.match(controller, /this\._expandedReferenceMessageIds\.has\(message\.id\)/);
-    assert.match(css, /\.ai-chat-references-heading\s*\{[\s\S]*?cursor:\s*pointer;/);
+    assert.match(css, /\.ai-chat-references-heading\s*\{[\s\S]*?cursor:\s*var\(--skin-cursor-pointer, pointer\);/);
     assert.doesNotMatch(
         controller,
         /_render\(\)[\s\S]*?messages\.scrollTop = this\._elements\.messages\.scrollHeight/,

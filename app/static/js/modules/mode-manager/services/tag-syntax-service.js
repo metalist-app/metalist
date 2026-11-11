@@ -53,8 +53,10 @@ const KNOWN_META_TAGS = new Set([
     '@highlight', '@bold', '@italic', '@strikethrough', '@serif', '@copyable',
     '@bullets', '@numbered', '@username', '@password', '@email',
     '@todo', '@done', '@markdown', '@ai', '@latex', '@shell', '@json', '@csv', '@chess', '@diff', '@mermaid',
-    '@stats',
+    '@stats', '@gallery',
 ]);
+// A gallery narrowed to file kinds (@gallery=image,pdf; app/services/note_gallery.py).
+const GALLERY_KINDS_TAG_RE = /^@gallery=[a-z0-9_.+,-]+$/;
 // @sum=, @avg=, @min=, @max=, @count= and a property name (app/services/subtree_stats.py);
 // bare (`@sum`: every number property) or with = while being typed.
 const SUMMARY_TAG_RE = /^@(?:sum|avg|min|max|count)(?:=(?:\p{L}[^\s=:]*)?)?$/u;
@@ -106,7 +108,7 @@ function isSupportedMetaTag(term) {
     if (CODE_RENDERER_TAG_RE.test(folded)) {
         return true;
     }
-    if (SUMMARY_TAG_RE.test(folded)) {
+    if (SUMMARY_TAG_RE.test(folded) || GALLERY_KINDS_TAG_RE.test(folded)) {
         return true;
     }
     return /^@size=(?:\d+(?:\.\d*)?|\.\d+)$/.test(folded)

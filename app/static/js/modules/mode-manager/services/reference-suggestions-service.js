@@ -7,7 +7,9 @@ import { restoreSelection } from '../../editor-selection.js';
 // Placed as the paste format card is: below its anchor, or above it near the window's bottom.
 import { contentMaxHeight, placePasteFormatOffer } from './floating-card-placement.js';
 import { PREVIEW_OWNERS, hideReferencePreview, placeReferencePreview, showReferencePreview } from './reference-preview-card-service.js';
-import { chosenReferenceText } from './reference-text.js';
+import { chosenReferenceText, chosenSearchLinkText } from './reference-text.js';
+import { getReferenceViewKindForTab } from './reference-source-navigation-service.js';
+import { searchesToOffer } from './search-link-suggestions.js';
 
 // Typing `[[` in a note opens a list of notes to reference (docs/ui/references.md,
 // "Suggestions"); what is typed after it narrows the list, and choosing a note
@@ -177,9 +179,49 @@ function placePreview(preview) {
     preview.style.top = `${top}px`;
 }
 
-// The highlighted note's card: the top of the note as the list draws it.
+// The highlighted note's card: the top of the note as the list draws it. A search has none.
 function showPreview() {
-    showReferencePreview(moduleState.suggestions[moduleState.selectedIndex].noteId, placePreview, PREVIEW_OWNERS.suggestions);
+    const suggestion = moduleState.suggestions[moduleState.selectedIndex];
+    if (suggestion.kind === SEARCH_KIND) {
+        hidePreview();
+        return;
+    }
+    showReferencePreview(suggestion.noteId, placePreview, PREVIEW_OWNERS.suggestions);
+}
+
+// A search context offered as a search link (search-link-suggestions.js), above the notes.
+const SEARCH_KIND = 'search';
+const NOTE_KIND = 'note';
+
+function offeredSearches(query) {
+    const node = moduleState.triggerNode;
+    const isEmbed = node !== null && moduleState.triggerStart > 0 && node.data[moduleState.triggerStart - 1] === '!';
+    const contexts = ModeContext.tabOrder.map((tabId) => ({
+        tabId,
+        search: ModeContext.tabs[tabId].searchQuery,
+        // A folder context's search is offered too (folder-tags-in-search.md §5).
+        isSearch: getReferenceViewKindForTab(tabId) === '',
+    }));
+    return searchesToOffer({ query, contexts, activeTabId: ModeContext.activeTabId, isEmbed })
+        .map((search) => ({ kind: SEARCH_KIND, search }));
+}
+
+function buildSearchItem(suggestion, index) {
+    const item = document.createElement('div');
+    item.className = 'reference-suggestion reference-suggestion-search';
+    item.setAttribute('role', 'option');
+    item.dataset.index = String(index);
+    const title = document.createElement('div');
+    title.className = 'reference-suggestion-title';
+    const icon = document.createElement('span');
+    icon.className = 'reference-suggestion-search-icon';
+    icon.setAttribute('aria-hidden', 'true');
+    const text = document.createElement('span');
+    text.className = 'reference-suggestion-text';
+    text.textContent = `Search: ${suggestion.search}`;
+    title.append(icon, text);
+    item.appendChild(title);
+    return item;
 }
 
 function credentialIcon(credential) {
@@ -278,8 +320,10 @@ function renderList(query, suggestions) {
     const list = document.createElement('div');
     list.className = 'reference-suggestions';
     list.setAttribute('role', 'listbox');
-    list.setAttribute('aria-label', 'Notes to reference');
-    suggestions.forEach((suggestion, index) => list.appendChild(buildItem(suggestion, index)));
+    list.setAttribute('aria-label', 'Notes and searches to link');
+    suggestions.forEach((suggestion, index) => list.appendChild(
+        suggestion.kind === SEARCH_KIND ? buildSearchItem(suggestion, index) : buildItem(suggestion, index),
+    ));
     list.style.left = '0px';
     list.style.top = '0px';
     list.addEventListener('mousemove', highlightPointed);
@@ -306,7 +350,8 @@ async function requestSuggestions(query, noteId) {
     if (!response || !Array.isArray(response.suggestions)) {
         throw new Error('Reference suggestions response requires suggestions');
     }
-    renderList(query, response.suggestions.map(requireSuggestion));
+    const notes = response.suggestions.map(requireSuggestion).map((suggestion) => ({ ...suggestion, kind: NOTE_KIND }));
+    renderList(query, [...offeredSearches(query), ...notes]);
 }
 
 function checkStillEditing() {
@@ -367,7 +412,10 @@ function choose(index) {
     if (trigger === null || trigger.node !== moduleState.triggerNode || trigger.start !== moduleState.triggerStart) {
         throw new Error('The `[[` a reference suggestion was chosen for is gone');
     }
-    const reference = chosenReferenceText(suggestion.noteId, trigger.node.data.slice(trigger.end));
+    const textAfterCaret = trigger.node.data.slice(trigger.end);
+    const reference = suggestion.kind === SEARCH_KIND
+        ? chosenSearchLinkText(suggestion.search, textAfterCaret)
+        : chosenReferenceText(suggestion.noteId, textAfterCaret);
     closeReferenceSuggestions();
     const range = document.createRange();
     range.setStart(trigger.node, trigger.start);

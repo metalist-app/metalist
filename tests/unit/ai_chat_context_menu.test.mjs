@@ -16,7 +16,7 @@ function backgroundMenu() {
     return buildContextMenuItems(
         {
             kind: 'view', searchAllowsNewNotes: true, isMac: true, isEditing: false, canPasteNoteAtTop: false, canGoToTop: false, canGoToBottom: false,
-            isUntaggedView: false, theme: 'system', sortMode: 'normal', dateRangeKind: 'none', dateRangeField: 'updated', fileFilterKind: 'none',
+            isUntaggedView: false, theme: 'system', sortMode: 'normal', dateRangeKind: 'none', dateRangeField: 'updated', fileFilterKind: 'none', fileFilterKinds: ['image', 'pdf', 'markdown'],
         },
         {
             onAddNoteAtTop: noop, onUndo: noop, onRedo: noop, onExpandAll: noop, onCollapseAll: noop, onFullyExpandAll: noop, onFullyCollapseAll: noop,
@@ -36,7 +36,7 @@ test('the background menu has no chat or folders switch: Themes lists the themes
     assert.equal(items.find((item) => item.id === 'show'), undefined);
     const themes = items.find((item) => item.id === 'themes');
     assert.equal(themes.label, 'Themes');
-    assert.deepEqual(themes.submenu.map((item) => item.label), ['System', 'Light', 'Dark']);
+    assert.deepEqual(themes.submenu.map((item) => item.label), ['System', 'Light', 'Dark', 'Ye Olde Scrypte']);
 });
 
 

@@ -151,7 +151,7 @@ One set of rules for every dialog's buttons and for menus (agreed 2026-10-23, bu
 5. **Destructive actions** sit in the same rightmost place, in red; moving them around to be "safe" breaks the habit everywhere else. **Enter never presses one:** such a dialog opens with focus on Cancel (or in the field the user must type in), and Enter beside a red button does only what the dialog allows (picking a suggestion). Irreversible whole-vault actions keep two steps or type-to-confirm; undoable actions get no confirmation.
 6. **Multi-step flows:** Back left, Next or the last step's verb right; Cancel or `×` leaves from any step.
 7. **Narrow screens:** a stacked row puts the main action on top, then Cancel, then any alternative.
-8. **Menus** (right-click menus, the app menu, the palette): `…` means a dialog asks for more first, no `…` acts at once; separators group related items, most-used first, and a menu never opens with a separator above its first item; destructive items go last, in red; shortcuts show on the right; the current choice is ticked, not greyed, and picking it changes nothing; items that cannot apply are hidden. Related actions sit in submenus so a menu fits the window (`docs/ui/controls.md`).
+8. **Menus** (right-click menus, the app menu, the palette): `…` means a dialog asks for more first, no `…` acts at once; separators group related items, most-used first, and a menu never opens with a separator above its first item; destructive items go last, and no menu item is red (2026-11-09); shortcuts show on the right; the current choice is ticked, not greyed, and picking it changes nothing; items that cannot apply are hidden. Related actions sit in submenus so a menu fits the window (`docs/ui/controls.md`).
 
 ## Errors and status
 **Nothing that reports an error or a status changes the layout** (agreed 2026-10-24, built 2026-10-25). Every error or status shows above the layout, in one of two forms below. Why (`docs/ui/interaction-principles.md`): an inserted message moves things under the point of attention (principle 1); only the user's action changes the screen (2); an error below the fold is out of sight (3); errors may be emphasized (5). The complaint that started it: inline errors shifted dialogs and landed low enough to miss ("Google API key must start with AIza" pushed Save/Cancel down).
@@ -281,3 +281,10 @@ that does not match the namespace's current password state.
 - Modal templates for common patterns
 
 All future enhancements must maintain compatibility with this base architecture.
+
+## Fields that take a tag
+
+Every field that asks for a tag offers the tags in use as you type (agreed 2026-11-10), drawn like the tag bar's list under the field, floating over the dialog (above the field when there is no room below): the tags the search bar matches, by how many notes have them (none of the search bar's recent-activity slots: what you searched for lately says nothing about these fields), those whose name starts with the letters first, then those where a later part does (`q`: `question` before `security-questions`), at most eight, never a built-in `@` tag or one already chosen. Arrow keys move through it, Enter or a click picks one, Escape closes only the list. Nothing is offered for `"a phrase"` in quotes or text with a space, which are no tag.
+
+- Where: the tag bar, the search bar, phone capture, Prioritize and the tag relationship dialogs (each its own list); AI Agent Settings' Privacy fields, where picking a tag adds it as Add does, and AI-Proposed Tags' "Only this tag", where it fills the field (`app/static/js/modules/tag-input-suggestions.js`, rules in `tag-input-offer.js`; tests: `tests/unit/tag_input_suggestions.test.mjs`).
+

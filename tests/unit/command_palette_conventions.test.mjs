@@ -3,14 +3,13 @@ import test from 'node:test';
 
 import {
     COMMAND_SHORTCUTS,
-    DESTRUCTIVE_COMMAND_IDS,
     buildCommandPaletteEndpoints,
     isCommandAvailable,
 } from '../../app/static/js/modules/command-palette/endpoint-registry.js';
 
 // Command palette labels follow the menu rules (docs/ui/modals.md, "Dialog and menu conventions",
 // rules 1-6; agreed 2026-10-24): Title Case, "…" exactly when a dialog asks for more first,
-// shortcuts shown, destructive commands red, commands that cannot apply hidden.
+// shortcuts shown, commands that cannot apply hidden.
 
 function noop() {}
 
@@ -38,6 +37,7 @@ const LABELS = {
     'view.sort_mode.updated': 'Sort Order: Datetime Last Updated',
     'view.sort_mode.alphabetical': 'Sort Order: Alphabetical',
     'view.sort_mode.content_volume': 'Sort Order: Content Volume',
+    'view.sort_mode.file_size': 'Sort Order: File Size',
     'view.sort_mode.reverse': 'Sort Order: Reverse',
     'view.all_notes': 'View: All Notes',
     'view.untagged_notes': 'View: Untagged Notes',
@@ -126,31 +126,10 @@ test('commands with a key show it', () => {
     });
 });
 
-test('destructive commands are the ones that lose what cannot be brought back', () => {
-    assert.deepEqual([...DESTRUCTIVE_COMMAND_IDS].sort(), [
-        'action.alphabetize_root_notes_asc',
-        'action.alphabetize_root_notes_desc',
-        'action.delete_notes_in_view',
-        'action.prioritize_tag_back',
-        'action.prioritize_tag_front',
-        'action.remove_all_tag_suggestions_current_context',
-        'action.reset_all_preferences',
-        'action.reset_updated_at_to_created_at',
-        'action.trim_unused_files',
-        'form.delete_current_namespace',
-        'form.remove_password',
-        'form.restore_backup',
-    ]);
-    const ids = new Set(endpoints().map((endpoint) => endpoint.id));
-    for (const id of DESTRUCTIVE_COMMAND_IDS) {
-        assert.equal(ids.has(id), true, `${id} is not a command`);
-    }
-});
-
 test('commands that cannot apply are hidden', () => {
-    const withPassword = { hasPassword: true, isRootReorderLocked: false };
-    const withoutPassword = { hasPassword: false, isRootReorderLocked: false };
-    const sorted = { hasPassword: false, isRootReorderLocked: true };
+    const withPassword = { hasPassword: true, isRootReorderLocked: false, hasFileFilter: false };
+    const withoutPassword = { hasPassword: false, isRootReorderLocked: false, hasFileFilter: false };
+    const sorted = { hasPassword: false, isRootReorderLocked: true, hasFileFilter: false };
     assert.equal(isCommandAvailable('form.add_password', withPassword), false);
     assert.equal(isCommandAvailable('form.add_password', withoutPassword), true);
     for (const id of ['form.change_password', 'form.remove_password']) {
@@ -163,6 +142,8 @@ test('commands that cannot apply are hidden', () => {
         assert.equal(isCommandAvailable(id, sorted), false);
     }
     assert.equal(isCommandAvailable('action.logout', sorted), true);
+    assert.equal(isCommandAvailable('view.sort_mode.file_size', withoutPassword), false);
+    assert.equal(isCommandAvailable('view.sort_mode.file_size', { ...withoutPassword, hasFileFilter: true }), true);
     // The Obsidian import exists in production too (the maintainer, 2026-10-31).
     assert.equal(isCommandAvailable('form.import_wizard', withPassword), true);
 });

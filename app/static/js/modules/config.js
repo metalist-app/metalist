@@ -37,6 +37,7 @@ export const CONFIG = {
             TOGGLE_MARKDOWN_TASK: (noteId) => `${API_NOTES_BASE}/${noteId}/toggle-markdown-task`,
             TOGGLE_MARKDOWN_CALLOUT: (noteId) => `${API_NOTES_BASE}/${noteId}/toggle-markdown-callout`,
             TOGGLE_MARKDOWN_FOLD: (noteId) => `${API_NOTES_BASE}/${noteId}/toggle-markdown-fold`,
+            FILE_FILTER_KINDS: `${API_NOTES_BASE}/file-filter-kinds`,
             // Delete Notes (Current View)…: count for the confirmation, then delete.
             DELETE_IN_VIEW_COUNT: `${API_NOTES_BASE}/view/delete-count`,
             DELETE_IN_VIEW: `${API_NOTES_BASE}/view/delete`,
@@ -73,6 +74,7 @@ export const CONFIG = {
             FIND_FILE_SNIPPET: `${API_NOTES_BASE}/find/file-snippet`,
             TAB_STATE: `${API_NOTES_BASE}/tab-state`,
             TAB_STATE_NEW_TAB: `${API_NOTES_BASE}/tab-state/new-tab`,
+            SEARCH_CONTEXT_FOR_SEARCH: `${API_NOTES_BASE}/tab-state/search-context-for-search`,
             TAB_STATE_DELETE_TAB: `${API_NOTES_BASE}/tab-state/delete-tab`,
             TAB_STATE_SORT_MODE: `${API_NOTES_BASE}/tab-state/sort-mode`,
             TAB_STATE_DATE_FILTER: `${API_NOTES_BASE}/tab-state/date-filter`,
@@ -171,9 +173,8 @@ export const CONFIG = {
         // Virtual folders, an experiment (app/api/routes/virtual_folders.py).
         VIRTUAL_FOLDERS: {
             LIST: `${API_BASE}/virtual-folders`,
-            FILTER: `${API_BASE}/virtual-folders/filter`,
             FOLDER_CONTEXT: `${API_BASE}/virtual-folders/folder-context`,
-            FOLDER_CONTEXT_NEW: `${API_BASE}/virtual-folders/folder-context/new`,
+            TREE_SHOWN: `${API_BASE}/virtual-folders/tree-shown`,
             RENAME: `${API_BASE}/virtual-folders/rename`,
             MOVE: `${API_BASE}/virtual-folders/move`,
             FILE_NOTE: `${API_BASE}/virtual-folders/file-note`,
@@ -189,6 +190,7 @@ export const CONFIG = {
             CONTENT: (fileId) => `${API_FILES_BASE}/${fileId}/content`,
             PREVIEWS: (fileId) => `${API_FILES_BASE}/${fileId}/previews`,
             PREVIEW: (fileId, variant) => `${API_FILES_BASE}/${fileId}/previews/${variant}`,
+            FIRST_PAGE: (fileId) => `${API_FILES_BASE}/${fileId}/first-page`,
             EDIT_SESSIONS: (fileId) => `${API_FILES_BASE}/${fileId}/edit-sessions`,
             EDIT_SESSION_FINISH: (fileId, sessionId) => `${API_FILES_BASE}/${fileId}/edit-sessions/${sessionId}/finish`,
             EDIT_SESSION_DISCARD: (fileId, sessionId) => `${API_FILES_BASE}/${fileId}/edit-sessions/${sessionId}/discard`,

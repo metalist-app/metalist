@@ -13,6 +13,7 @@ const moduleState = ApplicationState.createFields('polling-service', {
     pollingInterval: null,
     lastTokenRefreshAt: 0,
     lastLinkTitleRevision: 0,
+    lastFirstPageRevision: 0,
     linkTitleRefreshTimer: null,
     visibilityListener: null,
     connectivityCheck: null,
@@ -140,6 +141,7 @@ async function pingAuthStatus() {
     if (response.ok) {
         const status = await response.json();
         handleLinkTitleRevision(status);
+        handleFirstPageRevision(status);
         ErrorHandler.handleConnectionRestored();
         // The server's work beside the user's, shown as it goes (background-work-cards.js).
         if (status.authenticated === true) await checkBackgroundWork();
@@ -171,6 +173,24 @@ function handleLinkTitleRevision(status) {
         return;
     }
     moduleState.lastLinkTitleRevision = revision;
+    scheduleLinkTitleRefresh();
+}
+
+// A PDF's first page drawn in the background (pdf_first_pages.py): the notes showing it are drawn
+// again, as for a link's title.
+function handleFirstPageRevision(status) {
+    if (status.authenticated !== true) {
+        if (moduleState.lastFirstPageRevision !== 0) moduleState.lastFirstPageRevision = 0;
+        return;
+    }
+    const revision = status.first_page_revision;
+    if (!Number.isInteger(revision) || revision < 0) {
+        throw new Error('auth status first_page_revision must be a non-negative integer');
+    }
+    if (revision === moduleState.lastFirstPageRevision) {
+        return;
+    }
+    moduleState.lastFirstPageRevision = revision;
     scheduleLinkTitleRefresh();
 }
 

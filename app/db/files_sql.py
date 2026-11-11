@@ -8,6 +8,7 @@ from typing import Iterable, Optional
 
 from app.db.file_schema import (
     BLOB_TABLES,
+    FILE_FIRST_PAGES_TABLE,
     FILE_PREVIEW_VARIANTS,
     FILE_PREVIEWS_TABLE,
     FILE_TEXTS_TABLE,
@@ -128,22 +129,26 @@ def fetch_blob_ids_of_files(connection: sqlite3.Connection, file_ids: list[str])
 
 
 def fetch_every_blob_id_of_files(connection: sqlite3.Connection, file_ids: list[str]) -> list[str]:
-    """The content, preview and text blobs of these files: everything deleting them leaves behind."""
+    """The content, preview, text and first-page blobs of these files: everything deleting them leaves behind."""
     if not file_ids:
         return []
     placeholders = ",".join("?" for _ in file_ids)
     parameters = tuple(file_ids)
     blob_ids = fetch_blob_ids_of_files(connection, file_ids)
-    for table in (FILE_PREVIEWS_TABLE, FILE_TEXTS_TABLE):
+    for table in (FILE_PREVIEWS_TABLE, FILE_TEXTS_TABLE, FILE_FIRST_PAGES_TABLE):
         rows = connection.execute(f"SELECT blob_id FROM {table} WHERE file_id IN ({placeholders})", parameters).fetchall()
         blob_ids.extend(str(row["blob_id"]) for row in rows)
     return blob_ids
 
 
 def fetch_all_blob_ids(connection: sqlite3.Connection) -> set[str]:
-    """Every blob the catalog names. Plaintext columns only: needs no key."""
+    """Every blob the catalog names. Plaintext columns only: needs no key. A catalog from before
+    version 18 (a safety backup taken before the upgrade, a restored backup) has no first pages."""
     blob_ids: set[str] = set()
+    present = {str(row[0]) for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'").fetchall()}
     for table in BLOB_TABLES:
+        if table == FILE_FIRST_PAGES_TABLE and table not in present:
+            continue
         blob_ids.update(str(row[0]) for row in connection.execute(f"SELECT blob_id FROM {table}").fetchall())
     return blob_ids
 
@@ -540,6 +545,96 @@ def update_file_text_storage_fields(
     if cursor.rowcount != 1:
         raise RuntimeError(f"file text rewrite expected one row | file_id={file_id}")
 
+
+
+# --- A PDF's first page as a picture (file_schema's FILE_FIRST_PAGES_TABLE) ---------------------
+
+
+def upsert_file_first_page(
+    connection: sqlite3.Connection,
+    *,
+    file_id: str,
+    mime_type: str,
+    blob_id: str,
+    blob_seal: bytes,
+    blob_seal_encryption_nonce: Optional[bytes],
+    blob_seal_encryption_tag: Optional[bytes],
+    content_revision: int,
+    drawer_version: int,
+    updated_at: datetime,
+) -> None:
+    """mime_type is "" for a PDF that could not be drawn (its blob is empty)."""
+    if not isinstance(mime_type, str):
+        raise TypeError(f"file_first_pages.mime_type must be a string | file_id={file_id}")
+    for name, value in (("content_revision", content_revision), ("drawer_version", drawer_version)):
+        if not isinstance(value, int) or value < 1:
+            raise TypeError(f"file_first_pages.{name} must be a positive integer | file_id={file_id}")
+    connection.execute(
+        f"""
+        INSERT INTO {FILE_FIRST_PAGES_TABLE} (
+            file_id, mime_type, blob_id, blob_seal, blob_seal_encryption_nonce, blob_seal_encryption_tag,
+            content_revision, drawer_version, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(file_id) DO UPDATE SET
+            mime_type = excluded.mime_type,
+            blob_id = excluded.blob_id,
+            blob_seal = excluded.blob_seal,
+            blob_seal_encryption_nonce = excluded.blob_seal_encryption_nonce,
+            blob_seal_encryption_tag = excluded.blob_seal_encryption_tag,
+            content_revision = excluded.content_revision,
+            drawer_version = excluded.drawer_version,
+            updated_at = excluded.updated_at
+        """,
+        (
+            file_id, mime_type, blob_id, blob_seal, blob_seal_encryption_nonce, blob_seal_encryption_tag,
+            content_revision, drawer_version, _serialize_datetime(updated_at),
+        ),
+    )
+
+
+def fetch_file_first_page(connection: sqlite3.Connection, file_id: str) -> Optional[dict[str, object]]:
+    """A PDF's stored first page (its seal still encrypted), or None when it has none yet."""
+    row = connection.execute(
+        f"SELECT file_id, mime_type, blob_id, blob_seal, blob_seal_encryption_nonce, blob_seal_encryption_tag, "
+        f"content_revision, drawer_version FROM {FILE_FIRST_PAGES_TABLE} WHERE file_id = ?",
+        (file_id,),
+    ).fetchone()
+    if row is None:
+        return None
+    return dict(row)
+
+
+def fetch_first_page_versions(connection: sqlite3.Connection) -> dict[str, tuple[int, int]]:
+    """(content revision, drawer version) of every stored first page, by file: plaintext, no key needed."""
+    rows = connection.execute(f"SELECT file_id, content_revision, drawer_version FROM {FILE_FIRST_PAGES_TABLE}").fetchall()
+    return {str(row["file_id"]): (int(row["content_revision"]), int(row["drawer_version"])) for row in rows}
+
+
+def fetch_all_file_first_pages(connection: sqlite3.Connection) -> list[dict[str, object]]:
+    rows = connection.execute(f"SELECT * FROM {FILE_FIRST_PAGES_TABLE} ORDER BY file_id ASC").fetchall()
+    return [dict(row) for row in rows]
+
+
+def update_file_first_page_storage_fields(
+    connection: sqlite3.Connection,
+    *,
+    file_id: str,
+    blob_id: str,
+    blob_seal: bytes,
+    blob_seal_encryption_nonce: Optional[bytes],
+    blob_seal_encryption_tag: Optional[bytes],
+) -> None:
+    """Rewrite a first page's blob and seal during encryption migrations, nothing else."""
+    cursor = connection.execute(
+        f"""
+        UPDATE {FILE_FIRST_PAGES_TABLE}
+        SET blob_id = ?, blob_seal = ?, blob_seal_encryption_nonce = ?, blob_seal_encryption_tag = ?
+        WHERE file_id = ?
+        """,
+        (blob_id, blob_seal, blob_seal_encryption_nonce, blob_seal_encryption_tag, file_id),
+    )
+    if cursor.rowcount != 1:
+        raise RuntimeError(f"first page rewrite expected one row | file_id={file_id}")
 
 
 def fetch_content_revisions(connection: sqlite3.Connection, file_ids: list[str]) -> dict[str, int]:

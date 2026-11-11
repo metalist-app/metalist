@@ -38,10 +38,11 @@ say which models you use), and from database version 16 each model's saved timin
 (`app_settings.model_timings_json`: endpoint, model, its startup cost and time per token). The authoritative payload/schema inventory is
 in `app/encryption_audit.py`.
 
-A folder dropped on the page for import is not covered until it is imported:
-its ticked files wait, as sent and unencrypted, in a holding folder in the data
+A folder dropped on the page for import is encrypted while it waits, with or
+without a vault password: its ticked files are kept under random names, with
+their keys and real paths only in the server's memory, in a holding folder in the data
 directory (`import-uploads/`, `app/services/import_uploads.py`) until the
-import walkthrough closes (cancelled or imported) or the server restarts.
+import walkthrough closes (cancelled or imported), the vault locks or the server restarts.
 
 Structural and operational metadata remain readable: note IDs, hierarchy/order,
 collapse flags, timestamps, namespace names/ports, schema/vault versions and
@@ -59,6 +60,12 @@ a file's text is decrypted only when a search's filter check says it may match, 
 bounded cache; both are dropped when the vault locks (`app/services/file_text_search.py`).
 From database version 14 the versions of the reader and of the filter that made a file's text
 (`file_texts.reader_version`, `filter_version`) are readable structural metadata too.
+A PDF's first page drawn as a picture for galleries (`file_first_pages`, database version 18) is a
+blob, encrypted like the PDF itself; its file ID, the picture's MIME type (empty for a PDF that
+could not be drawn), the file content revision it was drawn from, the drawing's version
+(`drawer_version`) and its time are readable structural metadata. It is drawn by a process of its
+own (`app/services/pdf_first_page_worker.py`) that gets the PDF on stdin and answers the JPEG on
+stdout: the PDF's bytes and the picture are never written to disk unencrypted.
 Site icons beside link titles (`link_icons`, database version 12) encrypt the site
 (`origin`) and the icon (`icon_png`) like link titles; their lookup status, last
 error kind, failure count and check timestamps are readable structural metadata.
@@ -780,11 +787,13 @@ The HTTPS transport retains separate listeners and sends response headers and bo
 
 Strict required note request contracts and client preference/usage validation run before route mutations. Invalid external bodies return sanitized 422 without their input values; stale note IDs return 404. Host/Origin validation precedes URL parsing by other middleware. Internal invariant failures still propagate. The obsolete v1 API returns 410 instead of terminating the server.
 
-Attachment uploads default to 100 MiB per file, configurable with positive-byte `METALIST_MAX_ATTACHMENT_BYTES`. The multipart envelope limit is that value plus 1 MiB, enforced on actual received bytes as well as declared length. Four concurrent attachment transfers (uploads and downloads) are admitted; excess requests return 429. Over-limit files return 413 before storage/registry changes. Readers close their temporary file in `finally`; multipart overflow uses the parser's cleanup path. Downloads preflight stored blob length and reject oversized legacy attachments before reading the blob; increase the configured limit when retrieving one. Startup and metadata lookups omit blobs. Encryption/decryption still require complete per-file buffers; password transitions process one file at a time. No aggregate namespace quota is imposed. Planned: streaming encryption and no per-file limit (`docs/ready-to-build/streaming-no-file-cap.md`), then resumable uploads (`docs/future-plans/resumable-uploads.md`).
+A file of any size can be stored. Uploads are parsed as they arrive (`app/api/streaming_upload.py`) and encrypted straight into their blob: never whole in memory and never plaintext in a temporary file. A folder dropped on the page waits in its holding folder encrypted, each file under a random name, with its key and real path only in the server's memory, so it ends with a restart or a lock (`app/services/import_uploads.py`). Before a file is stored its size is checked against the free disk space less a reserve of 1 GiB or 5% of the disk, whichever is smaller, and a disk that fills mid-write removes the partial file; both refuse with a plain message (`app/services/disk_space.py`). One limit stays, 100 MiB (`app/upload_limits.py`), because these have to hold a whole file in memory: an edited diagram's content and previews, an email read for its card or search words, the viewer's previews, the text read from a file for search, an image inlined in an export and an image compressed on import. Over it the file is still stored, downloaded and found by name. Downloads, backups, restores and password changes process one segment at a time. No aggregate namespace quota is imposed.
 
 Lock ownership: synchronous route transactions and background hydration/link publication use `bulk_operation_guard.lock`; its separate short admission mutex protects mutation counts and bulk operation/question state. No admission mutex is held across an await. Bulk answers/cancellation are queued with `call_soon_threadsafe`. Tokens and sync/clipboard operations each have their own RLock and return copied snapshots; clipboard snapshots copy nested values. NoteStore, search index, tab/reminder/link stores and sensitive caches retain their existing private locks. Hydration/link work checks the runtime generation before publishing. Acquire the outer bulk lock before admission/service locks; do not acquire the outer bulk lock from inside a service lock. These guards protect existing mutation paths, not a general serializable snapshot API spanning every independent GET.
 
 Temporary DB read permission is a ContextVar layered over startup's global read state, so one thread/task cannot enable another's reads or restore a stale global value.
+
+Database version 18 adds the `file_first_pages` table (a PDF's first page as an encrypted blob, for galleries) to the files catalog. The step is additive and idempotent, so it also accepts a catalog the app already upgraded on open; the encryption audit accepts the table missing or present before version 18 and requires it from version 18. A catalog from before version 18, in a backup, is read without it.
 
 Database version 17 moves each vault's files out of `<vault>.metalist.files.db` into `files/catalog.db` and one file per stored item under `files/blobs/`. In a vault with a password each blob is encrypted with its own random 256-bit key by `app/security/streaming_blob.py` (64 KiB AES-256-GCM segments, a nonce of per-blob random prefix, segment index and final flag, the header as associated data) and padded (Padmé, plus a random amount up to 1% of the file's size), and is never on disk in plaintext, including while being written. A vault with no password stores its files as they are, unpadded. Each blob's key, real size and SHA-256 are its seal, encrypted in the catalog like the row's other fields. The catalog's readable structural metadata is: file ID, blob ID (random, unrelated to the content), preview variant and SVG MIME type, the search text's cut flag and reader/filter versions, content revisions and timestamps. The file count and each blob's padded size are visible on disk. The step runs after unlock for a vault with a password and at startup for one without, after a safety backup; every blob is read back against its seal before the old database is deleted. Blobs nothing names any more are unlinked, which unlike SQLite's `secure_delete` cannot promise the bytes are gone from the disk, so plaintext blobs replaced when a password is set may remain recoverable by disk forensics; full-disk encryption covers that.
 

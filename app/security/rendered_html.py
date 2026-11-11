@@ -26,7 +26,8 @@ from app.services.document_highlights import HIGHLIGHT_CLASSES
 # fails any unit test whose rendering this pass would change, so the lists stay complete.
 RENDERER_TAGS = frozenset({"article", "button", "path", "rect", "svg"})
 RENDERER_ATTRIBUTES: dict[str, frozenset[str]] = {
-    "a": frozenset({"aria-label", "class", "rel", "target"}),
+    # A link that opens a search (search_links.render_search_link) carries its search.
+    "a": frozenset({"aria-label", "class", "rel", "target", "data-search-query"}),
     "article": frozenset({"class"}),
     # A callout (markdown_rendering._render_callout); a folding one's index and state.
     "blockquote": frozenset({"class"}),
@@ -36,6 +37,8 @@ RENDERER_ATTRIBUTES: dict[str, frozenset[str]] = {
         "data-footnote-number", "data-referrer-count", "data-source-note-id", "title", "type",
         # A file card's Open and its link: how the viewer shows the file (file_view.view_kind_of).
         "data-file-view",
+        # A gallery's tile: the note its picture is in, for Go to note (note_gallery.py).
+        "data-gallery-note-id",
     }),
     "div": frozenset({
         "aria-hidden", "aria-live", "class", "contenteditable", "data-copy-value", "data-embed-note-id",
@@ -43,6 +46,10 @@ RENDERER_ATTRIBUTES: dict[str, frozenset[str]] = {
         "data-ref-host-note-id", "data-ref-mode", "data-ref-note-id", "data-ref-occurrence", "title",
         # An audio or video file's player (embedded_references._render_media_embed).
         "data-media-kind", "data-media-state",
+        # A PDF's first page shown as its picture (embedded_references._render_first_page_picture).
+        "data-picture-source",
+        # An embedded search and each of its results (embedded_references._render_search_embed).
+        "data-search-query", "data-result-note-id",
     }),
     "img": frozenset({
         "class", "data-file-kind", "data-file-ref-id", "data-inline-image-occurrence", "data-preview-variant",
@@ -73,6 +80,7 @@ _FIXED_VALUES: dict[tuple[str, str], frozenset[str]] = {
     ("div", "aria-hidden"): frozenset({"true"}),
     ("div", "aria-live"): frozenset({"polite"}),
     ("div", "contenteditable"): frozenset({"false"}),
+    ("div", "data-picture-source"): frozenset({"first-page"}),
     ("img", "decoding"): frozenset({"async"}),
     ("img", "draggable"): frozenset({"true", "false"}),
     ("details", "open"): frozenset({"", "open"}),

@@ -12,6 +12,11 @@ const NOTE_COUNT = 40;
 // Past the notes: right of the list, left of the floating buttons.
 const BESIDE_LIST_X = 1150;
 const BESIDE_LIST_Y = 400;
+// One note's words, so the list is short; the click is well below it, under the list's column.
+const SHORT_LIST_QUERY = '"note 7"';
+const SHORT_LIST_MOST_NOTES = 5;
+const BELOW_LIST_X = 640;
+const BELOW_LIST_Y = 700;
 const REQUESTS_QUIET_MS = 300;
 const FRAMES_TO_SETTLE = 3;
 const EXPECTED_ROWS = [
@@ -96,13 +101,40 @@ async function fitCase(page) {
   await idle(page);
 }
 
+// The empty page below a short list is past the notes too (the maintainer, 2026-11-09).
+async function belowTheListCase(page) {
+  await page.click('#search-input');
+  await page.keyboard.type(SHORT_LIST_QUERY);
+  await page.waitForFunction(limit => {
+    const shown = document.querySelectorAll('#notes-container .note').length;
+    return shown > 0 && shown <= limit;
+  }, {}, SHORT_LIST_MOST_NOTES);
+  await idle(page);
+  const below = await page.evaluate(({x, y}) => {
+    const lastNote = [...document.querySelectorAll('#notes-container .note')].at(-1).getBoundingClientRect();
+    const element = document.elementFromPoint(x, y);
+    return {lastNoteBottom: lastNote.bottom, isOnNotesContainer: element.closest('#notes-container') !== null};
+  }, {x: BELOW_LIST_X, y: BELOW_LIST_Y});
+  assert.ok(below.lastNoteBottom < BELOW_LIST_Y, `the list ends above the click (at ${below.lastNoteBottom})`);
+  assert.equal(below.isOnNotesContainer, false, 'the click lands on the empty page, not the list');
+  await page.mouse.click(BELOW_LIST_X, BELOW_LIST_Y, {button: 'right'});
+  await page.waitForSelector('#context-menu.is-visible');
+  const offered = await page.$$eval('#context-menu.is-visible .context-menu-item-label', labels => labels.map(label => label.textContent.trim()));
+  assert.ok(offered.includes('Notes with Files'), `the view menu opens below the list (it offers ${JSON.stringify(offered)})`);
+  await page.keyboard.press('Escape');
+  await idle(page);
+}
+
 export async function checkViewMenu(page) {
   await page.setViewport(WINDOW);
   const noteIds = await seedNotes(page);
   await page.reload();
   await page.waitForSelector('[data-app-ready="true"]');
   await idle(page);
-  await runThenCleanUp('view menu', () => fitCase(page), async () => {
+  await runThenCleanUp('view menu', async () => {
+    await fitCase(page);
+    await belowTheListCase(page);
+  }, async () => {
     await page.evaluate(async ids => {
       const {NotesAPI} = await import('/static/js/modules/api-client.js');
       for (const id of ids) await NotesAPI.deleteNote(id);

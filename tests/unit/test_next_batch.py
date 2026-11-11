@@ -112,13 +112,13 @@ def test_root_metrics_reuse_work_and_invalidate_after_change(monkeypatch):
     store = Store()
     monkeypatch.setattr(root_sorting, 'note_store', store)
     root_sorting.clear_root_sort_cache()
-    assert root_sorting.get_root_ids_for_sort_mode('content-volume', root_timestamps={}) == ['b','a']
-    assert root_sorting.get_root_ids_for_sort_mode('content-volume', root_timestamps={}) == ['b','a']
+    assert root_sorting.get_root_ids_for_sort_mode('content-volume', root_timestamps={}, file_filter=None) == ['b','a']
+    assert root_sorting.get_root_ids_for_sort_mode('content-volume', root_timestamps={}, file_filter=None) == ['b','a']
     assert store.snapshots == 1
     # Store records are immutable; an edit replaces the record.
     records['a'] = SimpleNamespace(content='x'*20,parent_id=None,created_at=now,updated_at=now)
     store.revision += 1
-    assert root_sorting.get_root_ids_for_sort_mode('content-volume', root_timestamps={}) == ['a','b']
+    assert root_sorting.get_root_ids_for_sort_mode('content-volume', root_timestamps={}, file_filter=None) == ['a','b']
     assert store.snapshots == 2
     root_sorting.clear_root_sort_cache()
 
@@ -286,7 +286,7 @@ def test_sort_aggregates_follow_edits_moves_deletes_and_hydration(monkeypatch, d
     assert root_sorting._get_root_subtree_content_volume('255') == 100
     assert root_sorting._get_root_subtree_content_volume('0') == initial - len('level-255')
     store.remove_note('255')
-    assert root_sorting.get_root_ids_for_sort_mode('content-volume', root_timestamps={}) == ['0']
+    assert root_sorting.get_root_ids_for_sort_mode('content-volume', root_timestamps={}, file_filter=None) == ['0']
     store.load_from_db(None, prefetched_rows=rows)
     assert root_sorting._get_root_subtree_content_volume('0') == initial
     root_sorting.clear_root_sort_cache()

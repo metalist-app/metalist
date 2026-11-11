@@ -4,7 +4,7 @@ from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from app.services.tag_ontology import TagOntology
-from typing import Callable, Dict, FrozenSet, Iterable, List, Tuple
+from typing import Callable, Dict, FrozenSet, Iterable, List, Optional, Tuple
 
 from app.config import TAG_SUGGESTION_CONNECTORS
 from app.config import TAG_SUGGESTION_SUPPRESS_REDUNDANT_CONTENT_VARIANTS
@@ -12,6 +12,10 @@ from app.services.note_datetime import DATETIME_TAG, datetime_tag_in_text, is_da
 from app.services.note_datetime import suggested_datetime_tag
 from app.utils.text_utils import strip_html
 from app.services.note_store import store as note_store
+from app.services.embedded_references import collect_active_reference_tokens
+from app.services.file_registry import file_registry
+from app.services.file_storage import get_file_reference_record
+from app.services.note_gallery import GALLERY_TAG, gallery_kinds_found
 from app.services.ontology_rules_store import extract_ontology_tags
 from app.services.ontology_rules_store import get_ontology
 from app.security.sensitive_cache import SensitiveMemo
@@ -1213,17 +1217,80 @@ def _synonyms_of_written_tags(*, tags: Iterable[str], ontology: TagOntology) -> 
 
 def _suggest_meta_tags(*, note_id: str, prefix: str, content_html: str, limit: int) -> _RankedSuggestions:
     """Built-in tags starting with what is typed (`@foot`), most used first; `@datetime`
-    with the first date the note's text names, or now."""
+    with the first date the note's text names, or now; `@gallery=` with the kinds of picture
+    under the note, right after `@gallery`."""
     assert prefix.startswith("@"), prefix
     datetime_term: str | None = None
     if may_be_datetime_tag(prefix):
         datetime_term = suggested_datetime_tag(
             text=strip_html(content_html), now=datetime.now(), year_if_missing=_year_last_updated(note_id),
         )
-    return _RankedSuggestions(
-        tags=search_index.suggest_meta_tag_completions(prefix=prefix, limit=limit, datetime_term=datetime_term),
-        explain=lambda term: meta_tag_reasons(index=search_index, term=term, prefix=prefix),
+    tags = search_index.suggest_meta_tag_completions(prefix=prefix, limit=limit, datetime_term=datetime_term)
+    gallery_values = _gallery_values(note_id=note_id, prefix=prefix)
+    offered_values: FrozenSet[str] = frozenset()
+    if gallery_values is not None:
+        tags = _with_gallery_values(tags, gallery_values=gallery_values, limit=limit)
+        offered_values = frozenset(gallery_values)
+
+    def explain(term: str) -> Tuple[str, ...]:
+        if term in offered_values:
+            return ("Pictures of this kind are in this note or under it",)
+        return meta_tag_reasons(index=search_index, term=term, prefix=prefix)
+
+    return _RankedSuggestions(tags=tags, explain=explain)
+
+
+_GALLERY_VALUE_PREFIX = f"{GALLERY_TAG}="
+# Typed this far, an @ tag may become a gallery: its values are offered from here on.
+_GALLERY_VALUES_FROM = "@gal"
+
+
+@dataclass(frozen=True)
+class _SavedNotesTree:
+    """The saved notes and files, as a gallery reads them (note_gallery.GalleryTree)."""
+
+    has_file: Callable[[str], bool]
+    get_file: Callable[[str], object]
+    get_note: Callable[[str], object]
+    get_children: Callable[[Optional[str]], List[str]]
+    is_shown_in_gallery: Callable[[str, str], bool]
+
+
+def _gallery_values(*, note_id: str, prefix: str) -> List[str] | None:
+    """`@gallery=` with each kind of picture in the note and under it, the most first and without
+    counts (docs/future-plans/gallery.md, decision 4); None while what is typed cannot lead there."""
+    typed = prefix.casefold()
+    if not typed.startswith(_GALLERY_VALUES_FROM):
+        return None
+    if not (_GALLERY_VALUE_PREFIX.startswith(typed) or typed.startswith(_GALLERY_VALUE_PREFIX)):
+        return None
+    if not note_store.has_note(note_id):
+        return []
+    tree = _SavedNotesTree(
+        has_file=file_registry.has_file,
+        get_file=lambda file_id: get_file_reference_record(file_id, token=None),
+        get_note=note_store.get_note,
+        get_children=note_store.get_children,
+        # The kinds under the note, whatever a search shows.
+        is_shown_in_gallery=lambda gallery_note_id, note_id: True,
     )
+    kinds = gallery_kinds_found(
+        note_id=note_id, context=tree,
+        file_ids_in=lambda content_html: [(token.start, token.note_id) for token in collect_active_reference_tokens(content_html)],
+    )
+    values = [f"{_GALLERY_VALUE_PREFIX}{kind}" for kind in kinds]
+    return [value for value in values if value.casefold().startswith(typed) and value.casefold() != typed]
+
+
+def _with_gallery_values(tags: List[str], *, gallery_values: List[str], limit: int) -> List[str]:
+    """The gallery's own kinds right after `@gallery`, in place of kinds other notes use."""
+    others = [tag for tag in tags if not tag.casefold().startswith(_GALLERY_VALUE_PREFIX)]
+    after = 0
+    for index, tag in enumerate(others):
+        if tag.casefold() == GALLERY_TAG:
+            after = index + 1
+            break
+    return [*others[:after], *gallery_values, *others[after:]][:limit]
 
 
 @dataclass(frozen=True)
@@ -1310,8 +1377,10 @@ def _suggest_while_typing(
     it, going with its tags, similar notes), filtered by what is typed; then
     matching tags that already apply through inheritance or the rules (the
     empty bar hides those), by raw usage; then every other matching tag by raw
-    usage. Each further letter only removes tags. Measured against ranking each
-    prefix afresh in docs/design/tag-suggestion-learnings.md.
+    usage. Tags whose name starts with what is typed, and tags the note's text
+    names, come before tags where only a later part matches (`q`: `question`
+    before `security-questions`), each in that order. Measured against ranking each prefix afresh in
+    docs/design/tag-suggestion-learnings.md.
     """
     assert prefix != "" and not prefix.startswith("@"), prefix
     # What is typed is the last token the tag bar sends; the empty bar has no such token.
@@ -1330,28 +1399,50 @@ def _suggest_while_typing(
         base_tags=frozenset({tag for tag in anchors if not tag.startswith("@")} | inherited_non_meta),
         ontology=basis.ontology, prefix=prefix, content_html=content_html,
     )
-    # Each candidate with how to explain it: the empty-bar ranking's evidence, or none.
-    ordered: Iterable[Tuple[str, Callable[[str], Tuple[str, ...]]]] = (
-        *((term, basis.evidence.explain) for term in basis.evidence.tags),
-        *((term, writer.without_evidence) for term in basis.already_applying_by_use),
-        *((term, writer.without_evidence) for term in basis.all_terms_by_use),
+    # Each candidate with how to explain it (the empty-bar ranking's evidence, or none) and
+    # whether it has that evidence.
+    ordered: Iterable[Tuple[str, Callable[[str], Tuple[str, ...]], bool]] = (
+        *((term, basis.evidence.explain, True) for term in basis.evidence.tags),
+        *((term, writer.without_evidence, False) for term in basis.already_applying_by_use),
+        *((term, writer.without_evidence, False) for term in basis.all_terms_by_use),
     )
     # The tag being typed is not written yet: its synonyms are still offered (`avocado` → `avocados`).
     left_out = {tag.casefold() for tag in explicit_tags if not tag.startswith("@")} | _synonyms_of_written_tags(
         tags=empty_bar_explicit, ontology=basis.ontology,
     )
-    shown: List[str] = []
+    starting: List[str] = []
+    later_part: List[str] = []
     explain_by_term: Dict[str, Callable[[str], Tuple[str, ...]]] = {}
-    for term, explain in ordered:
+    for term, explain, has_evidence in ordered:
         if term.casefold() in explain_by_term or term.casefold() in left_out:
             continue
         if not _typed_leads_to(term=term, prefix=prefix):
             continue
-        shown.append(term)
+        if _keeps_its_place(term=term, prefix=prefix, has_evidence=has_evidence, content_html=content_html, ontology=basis.ontology):
+            starting.append(term)
+        else:
+            later_part.append(term)
         explain_by_term[term.casefold()] = explain
-        if len(shown) == limit:
+        if len(starting) == limit:
             break
+    shown = (starting + later_part)[:limit]
     return _RankedSuggestions(tags=shown, explain=lambda term: explain_by_term[term.casefold()](term))
+
+
+def _keeps_its_place(*, term: str, prefix: str, has_evidence: bool, content_html: str, ontology) -> bool:
+    """Whether typing leaves the tag where the empty bar ranked it: its name starts with what is
+    typed, or the note's text names it (the strongest evidence there is)."""
+    if _name_starts_with(term=term, prefix=prefix):
+        return True
+    if not has_evidence:
+        return False
+    return match_tag_in_note_text(term=term, content_html=content_html, ontology=ontology) is not None
+
+
+def _name_starts_with(*, term: str, prefix: str) -> bool:
+    """Whether the tag's whole name starts with what is typed, not only a later part of it;
+    a built-in tag's name is the part after its @."""
+    return term.removeprefix("@").casefold().startswith(prefix.casefold())
 
 
 def _typed_leads_to(*, term: str, prefix: str) -> bool:
@@ -1450,10 +1541,8 @@ def _inherited_or_implied_tags(*, note_id: str, anchors: List[str], explicit_cas
     """Non-meta tags that already apply to the note without being written in its bar."""
     anchor_set = {tag for tag in anchors if not tag.startswith("@")}
     base_tags = frozenset(anchor_set | note_store.get_inherited_non_meta_tag_terms(note_id))
-    ontology = get_ontology()
-    context_tags = base_tags
-    if not ontology.is_empty:
-        context_tags = ontology.infer_implication_only(base_tags=base_tags)
+    # With no rules too: a folder tag implies the folders above it (tag_ontology.parent_folder_tags).
+    context_tags = get_ontology().infer_implication_only(base_tags=base_tags)
     return {tag for tag in context_tags if not tag.startswith("@") and tag.casefold() not in explicit_casefold}
 
 
@@ -1483,10 +1572,8 @@ def _suggest_tags(
     base_tags = frozenset(anchor_set | inherited_non_meta)
 
     ontology = get_ontology()
-    if ontology.is_empty:
-        context_tags = base_tags
-    else:
-        context_tags = ontology.infer_implication_only(base_tags=base_tags)
+    # With no rules too: a folder tag implies the folders above it (tag_ontology.parent_folder_tags).
+    context_tags = ontology.infer_implication_only(base_tags=base_tags)
     inherited_or_implied_tags = {
         tag for tag in context_tags
         if not tag.startswith("@") and tag.casefold() not in explicit_tag_casefold_set

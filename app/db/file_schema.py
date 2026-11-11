@@ -11,8 +11,14 @@ FILES_TABLE = "files"
 FILE_PREVIEWS_TABLE = "file_previews"
 FILE_PREVIEW_VARIANTS = ("light", "dark")
 FILE_TEXTS_TABLE = "file_texts"
+FILE_FIRST_PAGES_TABLE = "file_first_pages"
+# The columns of a PDF's first page as a picture (migration 17→18).
+FILE_FIRST_PAGES_COLUMNS = (
+    "file_id", "mime_type", "blob_id", "blob_seal", "blob_seal_encryption_nonce", "blob_seal_encryption_tag",
+    "content_revision", "drawer_version", "updated_at",
+)
 # Every table holds one blob per row under these columns.
-BLOB_TABLES = (FILES_TABLE, FILE_PREVIEWS_TABLE, FILE_TEXTS_TABLE)
+BLOB_TABLES = (FILES_TABLE, FILE_PREVIEWS_TABLE, FILE_TEXTS_TABLE, FILE_FIRST_PAGES_TABLE)
 
 _CREATE_FILES_TABLE = f"""
 CREATE TABLE IF NOT EXISTS {FILES_TABLE} (
@@ -74,7 +80,30 @@ CREATE TABLE IF NOT EXISTS {FILE_TEXTS_TABLE} (
 """
 
 
+# A PDF's first page drawn as a picture, shown in a gallery (docs/future-plans/gallery.md, "PDF
+# first pages"). A PDF that can't be drawn (locked, damaged) has a row with an empty blob, so it is
+# not tried again. content_revision: the file revision drawn; drawer_version: the drawing's.
+_CREATE_FILE_FIRST_PAGES_TABLE = f"""
+CREATE TABLE IF NOT EXISTS {FILE_FIRST_PAGES_TABLE} (
+    file_id TEXT PRIMARY KEY REFERENCES {FILES_TABLE}(id) ON DELETE CASCADE,
+    mime_type TEXT NOT NULL,
+    blob_id TEXT NOT NULL UNIQUE,
+    blob_seal BLOB NOT NULL,
+    blob_seal_encryption_nonce BLOB,
+    blob_seal_encryption_tag BLOB,
+    content_revision INTEGER NOT NULL,
+    drawer_version INTEGER NOT NULL,
+    updated_at TEXT NOT NULL
+);
+"""
+
+
+def create_file_first_pages_table(connection: Connection) -> None:
+    connection.execute(_CREATE_FILE_FIRST_PAGES_TABLE)
+
+
 def initialize_file_schema(connection: Connection) -> None:
     connection.execute(_CREATE_FILES_TABLE)
     connection.execute(_CREATE_FILE_PREVIEWS_TABLE)
     connection.execute(_CREATE_FILE_TEXTS_TABLE)
+    create_file_first_pages_table(connection)

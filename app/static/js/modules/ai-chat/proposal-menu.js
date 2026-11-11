@@ -7,6 +7,7 @@ import { ErrorHandler } from '../error-handler.js';
 import { MS_PER_SECOND } from '../time-units.js';
 import { captureActiveAgentScope } from './ai-chat-panel-controller.js';
 import { runMenuProposalOperation } from './bulk-proposal-ui.js';
+import { attachTagSuggestions } from '../tag-input-suggestions.js';
 import { handleDictationPasteEvent } from '../mode-manager/services/dictation-paste-service.js';
 
 export async function removeAllTagSuggestionsFromCurrentContext() {
@@ -77,7 +78,10 @@ class AiProposalsModal extends BaseModal {
         modalElement.innerHTML = `<div class="modal-content ai-tagging-modal-content">${proposalsFormHtml()}</div>`;
         modalElement.querySelector('#ai-proposals-cancel').addEventListener('click', () => this.requestClose());
         // Dictated text pasted into the tag filter becomes one tag.
-        modalElement.querySelector('input[name="tag"]').addEventListener('paste', (event) => handleDictationPasteEvent(event, 'tag'));
+        const tagInput = modalElement.querySelector('input[name="tag"]');
+        tagInput.addEventListener('paste', (event) => handleDictationPasteEvent(event, 'tag'));
+        tagInput.setAttribute('autocomplete', 'off');
+        attachTagSuggestions(tagInput, { chosenTags: () => [], onPick: (tag) => { tagInput.value = tag; } });
         modalElement.querySelector('#ai-proposals-apply').addEventListener('click', () => void this._apply());
     }
 

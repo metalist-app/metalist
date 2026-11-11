@@ -11,11 +11,12 @@ import {
     DATE_RANGE_KINDS,
     DATE_RANGE_PRESETS,
 } from '../mode-manager/services/date-range-kinds.js';
-import { FILE_FILTER_CHOICES, FILE_FILTER_KINDS } from '../mode-manager/services/file-filter-kinds.js';
+import { THEME_CHOICES } from '../theme-choices.js';
+import { FILE_FILTER_KINDS, fileFilterMenuLabel, isFileFilterKind } from '../mode-manager/services/file-filter-kinds.js';
 
 // Menu rules (docs/ui/modals.md, "Dialog and menu conventions", rule 8): a trailing "…"
-// means a dialog asks for more before anything happens; destructive items come last, red
-// (danger); items that cannot apply are left out; labels are in Title Case.
+// means a dialog asks for more before anything happens; destructive items come last;
+// items that cannot apply are left out; labels are in Title Case.
 
 // The current choice in a submenu is ticked and can be picked like any other; picking it
 // changes nothing (it is already in effect).
@@ -533,7 +534,6 @@ function buildNoteContextItems(context, handlers) {
         icon: 'trash',
         enabled: true,
         separated: true,
-        danger: true,
         shortcut: commandKey('Backspace'),
         onSelect: () => onDeleteNote(noteId),
     });
@@ -734,7 +734,10 @@ function buildLinkContextItems(context, handlers) {
     return items;
 }
 
-function buildSortModeItem(sortMode, onSetSortMode) {
+function buildSortModeItem(sortMode, fileFilterKind, onSetSortMode) {
+    if (!isFileFilterKind(fileFilterKind)) {
+        throw new Error('Sort by needs the view\'s fileFilterKind');
+    }
     // An order and its direction are chosen apart: picking an order keeps Reverse Order.
     const currentMode = baseRootSortMode(normalizeRootSortMode(sortMode));
     const isReversed = isRootSortModeReversed(sortMode);
@@ -748,6 +751,9 @@ function buildSortModeItem(sortMode, onSetSortMode) {
         [ROOT_SORT_MODES.ALPHABETICAL, 'Alphabetical', 'alphabetical'],
         [ROOT_SORT_MODES.CONTENT_VOLUME, 'Content Volume', 'volume'],
     ];
+    if (fileFilterKind !== FILE_FILTER_KINDS.NONE) {
+        options.push([ROOT_SORT_MODES.FILE_SIZE, 'File Size', 'attachment']);
+    }
     return {
         id: 'sort-by',
         label: 'Sort by',
@@ -813,14 +819,21 @@ function buildDateRangeItem(context, handlers) {
 }
 
 // Notes with files: the notes with an attached file, or one kind of file, the
-// current choice ticked (file-filter-service.js). All notes shows every note again.
+// current choice ticked (file-filter-service.js). All notes shows every note again. The
+// kinds are the ones the server lists when the menu opens: most files first.
 function buildFileFilterItem(context, handlers) {
     const kind = context.fileFilterKind;
-    if (!Object.values(FILE_FILTER_KINDS).includes(kind)) {
+    if (!isFileFilterKind(kind)) {
         throw new Error('View context missing fileFilterKind');
     }
+    if (!Array.isArray(context.fileFilterKinds)) {
+        throw new Error('View context missing fileFilterKinds');
+    }
     const onSetFileFilter = requireViewHandler(handlers, 'onSetFileFilter');
-    const choices = [[FILE_FILTER_KINDS.NONE, 'All Notes'], ...FILE_FILTER_CHOICES];
+    const choices = [
+        [FILE_FILTER_KINDS.NONE, 'All Notes'],
+        ...[FILE_FILTER_KINDS.ANY, ...context.fileFilterKinds].map((value) => [value, fileFilterMenuLabel(value)]),
+    ];
     return {
         id: 'file-filter',
         label: 'Notes with Files',
@@ -894,7 +907,7 @@ function buildViewModeItem(isUntaggedView, onSetUntaggedView) {
 function buildSearchBarContextItems(context, handlers) {
     return [
         buildViewModeItem(requireViewFlag(context, 'isUntaggedView'), requireViewHandler(handlers, 'onSetUntaggedView')),
-        buildSortModeItem(context.sortMode, requireViewHandler(handlers, 'onSetSortMode')),
+        buildSortModeItem(context.sortMode, context.fileFilterKind, requireViewHandler(handlers, 'onSetSortMode')),
         buildDateRangeItem(context, handlers),
         buildFileFilterItem(context, handlers),
     ];
@@ -913,7 +926,7 @@ function buildViewContextItems(context, handlers) {
     const canGoToTop = requireViewFlag(context, 'canGoToTop');
     const canGoToBottom = requireViewFlag(context, 'canGoToBottom');
     const isUntaggedView = requireViewFlag(context, 'isUntaggedView');
-    if (!['system', 'light', 'dark'].includes(context.theme)) {
+    if (!THEME_CHOICES.some(([value]) => value === context.theme)) {
         throw new Error('View context theme must be system, light or dark');
     }
     // A menu item's shortcut: the key alone, with ⌘ (Ctrl), or with ⌘⇧ (Ctrl+Shift).
@@ -986,17 +999,16 @@ function buildViewContextItems(context, handlers) {
 
     const onSetUntaggedView = requireViewHandler(handlers, 'onSetUntaggedView');
     const onSetTheme = requireViewHandler(handlers, 'onSetTheme');
-    const themeChoices = [['system', 'System'], ['light', 'Light'], ['dark', 'Dark']];
     items.push(
         { ...buildViewModeItem(isUntaggedView, onSetUntaggedView), separated: true },
-        buildSortModeItem(context.sortMode, handlers.onSetSortMode),
+        buildSortModeItem(context.sortMode, context.fileFilterKind, handlers.onSetSortMode),
         buildDateRangeItem(context, handlers),
         buildFileFilterItem(context, handlers),
         // Themes alone (the maintainer, 2026-11-02: Show's other switches have buttons always on
         // screen, the chat's and the virtual folders' tabs; Tags in List stays in the palette).
         {
             id: 'themes', label: 'Themes', icon: 'theme', enabled: true,
-            submenu: themeChoices.map(([value, label]) => choiceItem({
+            submenu: THEME_CHOICES.map(([value, label]) => choiceItem({
                 id: `theme-${value}`, label, icon: null, isCurrent: context.theme === value, separated: false,
                 onChoose: () => onSetTheme(value),
             })),

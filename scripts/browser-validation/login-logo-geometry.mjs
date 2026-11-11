@@ -18,7 +18,7 @@ const MARK_HEIGHT_UNITS = 223;
 // Against the ideal values, a size rounded twice drifts past one step (Chrome 155, 2026-10-25).
 const LAYOUT_STEP_PX = 1 / 60;
 
-function assertWithinLayoutStep(actual, expected, message) {
+export function assertWithinLayoutStep(actual, expected, message) {
   assert(Math.abs(actual - expected) <= LAYOUT_STEP_PX, `${message}: ${actual} instead of ${expected}`);
 }
 

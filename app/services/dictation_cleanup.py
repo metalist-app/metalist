@@ -55,7 +55,7 @@ KNOWN_META_TAGS = (
     "@highlight", "@bold", "@italic", "@strikethrough", "@serif", "@copyable",
     "@bullets", "@numbered", "@username", "@password", "@email",
     "@todo", "@done", "@markdown", "@ai", "@latex", "@shell", "@json", "@csv", "@chess", "@diff", "@mermaid",
-    "@stats",
+    "@stats", "@gallery",
 )
 _META_AT_WORDS = frozenset({"at", "@"})
 # Meta tag names are at most this many words when spoken ("list bulleted").

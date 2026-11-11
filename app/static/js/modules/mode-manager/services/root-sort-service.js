@@ -4,6 +4,8 @@ export const ROOT_SORT_MODES = Object.freeze({
     UPDATED: 'updated',
     ALPHABETICAL: 'alphabetical',
     CONTENT_VOLUME: 'content-volume',
+    // Offered only with a Files filter on; ending the filter ends it (app/services/tab_state.py).
+    FILE_SIZE: 'file-size',
 });
 
 // Reverse Order: any order, the manual one too, read bottom to top
@@ -81,7 +83,8 @@ const ROOT_SORT_CHIP_TEXT = Object.freeze({
     [ROOT_SORT_MODES.CREATED]: ['Created', 'Sorted by datetime created'],
     [ROOT_SORT_MODES.UPDATED]: ['Updated', 'Sorted by datetime last updated'],
     [ROOT_SORT_MODES.ALPHABETICAL]: ['A\u2013Z', 'Sorted alphabetically'],
-    [ROOT_SORT_MODES.CONTENT_VOLUME]: ['Size', 'Sorted by content volume'],
+    [ROOT_SORT_MODES.CONTENT_VOLUME]: ['Length', 'Sorted by content volume'],
+    [ROOT_SORT_MODES.FILE_SIZE]: ['File size', 'Sorted by file size, largest first'],
     [`${ROOT_SORT_MODES.NORMAL}${ROOT_SORT_REVERSED_SUFFIX}`]: ['Reversed', 'Normal order, reversed'],
     [`${ROOT_SORT_MODES.CREATED}${ROOT_SORT_REVERSED_SUFFIX}`]:
         ['Created \u2191', 'Sorted by datetime created, oldest first'],
@@ -90,7 +93,9 @@ const ROOT_SORT_CHIP_TEXT = Object.freeze({
     [`${ROOT_SORT_MODES.ALPHABETICAL}${ROOT_SORT_REVERSED_SUFFIX}`]:
         ['Z\u2013A', 'Sorted alphabetically, Z to A'],
     [`${ROOT_SORT_MODES.CONTENT_VOLUME}${ROOT_SORT_REVERSED_SUFFIX}`]:
-        ['Size \u2191', 'Sorted by content volume, smallest first'],
+        ['Length \u2191', 'Sorted by content volume, smallest first'],
+    [`${ROOT_SORT_MODES.FILE_SIZE}${ROOT_SORT_REVERSED_SUFFIX}`]:
+        ['File size \u2191', 'Sorted by file size, smallest first'],
 });
 
 const CHIP_LABEL_INDEX = 0;

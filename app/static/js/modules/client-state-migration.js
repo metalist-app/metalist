@@ -1,3 +1,5 @@
+import { SKIN_BASE_THEME, isSkinTheme } from './theme-choices.js';
+
 const LEGACY_AUTH_TOKEN_KEY = 'auth_token';
 const LEGACY_AUTH_OWNER_KEY = 'auth_owner';
 const LEGACY_COMMAND_PALETTE_USAGE_KEY = 'metalist.command_palette.usage.v1';
@@ -270,6 +272,9 @@ export function resolveStoredThemePreference(clientPreferences) {
 
     if (rawTheme === 'dark' || rawTheme === 'light') {
         return rawTheme;
+    }
+    if (rawTheme !== null && isSkinTheme(rawTheme)) {
+        return SKIN_BASE_THEME;
     }
     return null;
 }

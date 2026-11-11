@@ -45,6 +45,10 @@
       "tags": ["sort", "order", "content", "volume", "length", "character", "characters", "count", "text", "largest", "longest", "view"]
     },
     {
+      "id": "view.sort_mode.file_size",
+      "tags": ["sort", "order", "file", "files", "size", "bytes", "largest", "biggest", "smallest", "view"]
+    },
+    {
       "id": "view.sort_mode.reverse",
       "tags": ["sort", "order", "reverse", "reversed", "descending", "ascending", "oldest", "smallest", "z", "a", "flip", "view"]
     },

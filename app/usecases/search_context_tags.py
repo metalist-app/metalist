@@ -1,16 +1,24 @@
 from __future__ import annotations
 
-from app.services.search_index import extract_tags_for_search, search_index
-from app.services.search_query import SearchClause, parse_search_query
+from app.services.search_index import FOLDER_TAG_END, extract_tags_for_search, search_index
+from app.services.search_query import SearchClause, comment_term_words, is_comment_term, parse_search_query
 from app.services.tag_properties import ANY_TAG, IMPLICIT_PROPERTY, PROPERTY_SEPARATOR, PropertyCondition
-from app.services.search_text import build_searchable_text_casefold
-from app.services.text_terms import text_term_matches
+from app.services.search_text import build_searchable_text_casefold, tag_bar_comments
+from app.services.text_terms import comment_term_matches, text_term_matches
 from app.services.store import store
 from app.services.tag_case import (
     build_preferred_tag_case_map,
     dedupe_tag_terms_by_casefold,
     prefer_existing_tag_case,
 )
+
+
+def note_has_text_term(term: str, *, content: str, tags: str) -> bool:
+    """Whether a note's text, or for a comment term (`/*help*/`) its tag-bar comments, has the term."""
+    if is_comment_term(term):
+        comments_casefold = tuple(comment.casefold() for comment in tag_bar_comments(tags))
+        return comment_term_matches(comment_term_words(term), comments_casefold)
+    return text_term_matches(term, build_searchable_text_casefold(content, tags))
 
 
 def compute_inherited_non_meta_tag_terms(parent_id: str | None) -> set[str]:
@@ -93,7 +101,17 @@ def _tags_matching_clause(clause: SearchClause, *, parent_id: str | None, conten
             for term in sorted(clause.required_tags)
         ]
     )
+    # Folder terms add results (docs/ready-to-build/folders-tab-and-multiple-folders.md §4): a
+    # note in one of them, or a folder below one, misses none; a note in none gets them all.
+    carried_casefold = inherited_non_meta_casefold | explicit_terms_casefold
+    folder_terms_casefold = [term.casefold() for term in required_tag_terms if term.endswith(FOLDER_TAG_END)]
+    is_in_a_folder = any(
+        carried.endswith(FOLDER_TAG_END) and carried.startswith(folder)
+        for carried in carried_casefold for folder in folder_terms_casefold
+    )
     for term in required_tag_terms:
+        if is_in_a_folder and term.endswith(FOLDER_TAG_END):
+            continue
         if term.startswith("@"):
             if term.casefold() in explicit_terms_casefold:
                 continue
@@ -120,10 +138,9 @@ def _tags_matching_clause(clause: SearchClause, *, parent_id: str | None, conten
     if not clause.required_text:
         return next_tags
 
-    searchable = build_searchable_text_casefold(content, next_tags)
     missing_phrases: list[str] = []
     for phrase in clause.required_text:
-        if text_term_matches(phrase, searchable):
+        if note_has_text_term(phrase, content=content, tags=next_tags):
             continue
         missing_phrases.append(phrase)
 
@@ -134,6 +151,10 @@ def _tags_matching_clause(clause: SearchClause, *, parent_id: str | None, conten
     for phrase in missing_phrases:
         if not isinstance(phrase, str):
             raise TypeError(f"search phrase must be a string, got {type(phrase)}")
+        # A comment term is the comment itself (`/*help*/`).
+        if is_comment_term(phrase):
+            comment_tokens.append(phrase)
+            continue
         if "/*" in phrase or "*/" in phrase:
             continue
         # The words only: a comment matches the term's word boundaries by itself.

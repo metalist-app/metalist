@@ -1,7 +1,7 @@
 import { ApplicationState } from '../../application-state.js';
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import { showSearchInputChip } from './search-input-chip-service.js';
-import { FILE_FILTER_KINDS } from './file-filter-kinds.js';
+import { FILE_FILTER_KINDS, FILE_KIND_NO_EXTENSION, extensionName, isFileFilterKind } from './file-filter-kinds.js';
 
 export { FILE_FILTER_CHOICES, FILE_FILTER_KINDS } from './file-filter-kinds.js';
 
@@ -15,12 +15,14 @@ const CHIP_LABELS = Object.freeze({
     [FILE_FILTER_KINDS.IMAGE]: 'With images',
     [FILE_FILTER_KINDS.PDF]: 'With PDFs',
     [FILE_FILTER_KINDS.MARKDOWN]: 'With Markdown files',
+    [FILE_KIND_NO_EXTENSION]: 'With no extension',
 });
 const CHIP_TOOLTIPS = Object.freeze({
     [FILE_FILTER_KINDS.ANY]: 'Notes with an attached file',
     [FILE_FILTER_KINDS.IMAGE]: 'Notes with an image',
     [FILE_FILTER_KINDS.PDF]: 'Notes with a PDF',
     [FILE_FILTER_KINDS.MARKDOWN]: 'Notes with a Markdown file',
+    [FILE_KIND_NO_EXTENSION]: 'Notes with a file that has no extension',
 });
 
 const moduleState = ApplicationState.createFields('file-filter-service', {
@@ -29,7 +31,7 @@ const moduleState = ApplicationState.createFields('file-filter-service', {
 });
 
 function requireKind(kind) {
-    if (!Object.hasOwn(CHIP_LABELS, kind)) {
+    if (!isFileFilterKind(kind) || kind === FILE_FILTER_KINDS.NONE) {
         throw new Error(`Unknown Files filter: ${kind}`);
     }
     return kind;
@@ -81,7 +83,14 @@ export function updateFileFilterIndicator() {
         showSearchInputChip(indicator, { isShown: false });
         return;
     }
-    label.textContent = CHIP_LABELS[kind];
-    label.title = CHIP_TOOLTIPS[kind];
+    if (Object.hasOwn(CHIP_LABELS, kind)) {
+        // A kind with its own words (Any file, Images, PDFs...).
+        label.textContent = CHIP_LABELS[kind];
+        label.title = CHIP_TOOLTIPS[kind];
+    } else {
+        // A file type in use (.zip): named by its extension.
+        label.textContent = `With ${extensionName(kind)} files`;
+        label.title = `Notes with ${kind} files`;
+    }
     showSearchInputChip(indicator, { isShown: true });
 }

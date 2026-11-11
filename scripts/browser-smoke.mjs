@@ -53,6 +53,8 @@ import {checkTabSwitching} from './browser-tab-switch-regressions.mjs';
 import {checkFolderNoteDrag} from './browser-folder-note-drag-regressions.mjs';
 import {checkFolderContext} from './browser-folder-context-regressions.mjs';
 import {checkFolderDrops} from './browser-folder-drop-regressions.mjs';
+import {checkFileSizeSort} from './browser-file-size-sort-regressions.mjs';
+import {checkViewChangeTop} from './browser-view-change-top-regressions.mjs';
 import {checkFileDropNotes} from './browser-file-drop-note-regressions.mjs';
 import {checkBackgroundWork} from './browser-background-work-regressions.mjs';
 import {checkImageSizes} from './browser-image-size-regressions.mjs';
@@ -81,9 +83,13 @@ import {checkSearchHighlight} from './browser-search-highlight-regressions.mjs';
 import {checkReferenceViews} from './browser-reference-view-regressions.mjs';
 import {installRequestMonitor, waitForAppQuiet} from './browser-app-idle.mjs';
 import {checkLoginLogo} from './browser-login-logo-regressions.mjs';
+import {checkLoginLoadingLine} from './browser-login-loading-line-regressions.mjs';
 import {checkLoginFade} from './browser-login-fade-regressions.mjs';
 import {checkThemeFade} from './browser-theme-fade-regressions.mjs';
+import {checkSkin} from './browser-skin-regressions.mjs';
+import {checkMermaidFold} from './browser-mermaid-fold-regressions.mjs';
 import {checkPaletteOrder} from './browser-palette-order-regressions.mjs';
+import {checkMenuLook} from './browser-menu-look-regressions.mjs';
 import {checkStatsTags} from './browser-stats-tag-regressions.mjs';
 import {checkDialogKeys} from './browser-dialog-key-regressions.mjs';
 import {checkDialogButtons} from './browser-dialog-button-regressions.mjs';
@@ -455,6 +461,14 @@ try {
     await checkBackgroundWork(page);
     assert.deepEqual(errors, []);
     console.log(`PASS background work regressions in ${await browser.version()}`);
+  } else if (process.env.BROWSER_TEST_SUITE === 'view-change-top') {
+    await checkViewChangeTop(page);
+    assert.deepEqual(errors, []);
+    console.log(`PASS view change top regressions in ${await browser.version()}`);
+  } else if (process.env.BROWSER_TEST_SUITE === 'file-size-sort') {
+    await checkFileSizeSort(page);
+    assert.deepEqual(errors, []);
+    console.log(`PASS file size sort regressions in ${await browser.version()}`);
   } else if (process.env.BROWSER_TEST_SUITE === 'folder-drops') {
     await checkFolderDrops(page);
     assert.deepEqual(errors, []);
@@ -512,6 +526,7 @@ try {
     console.log(`PASS phone regressions in ${await browser.version()}`);
   } else if (process.env.BROWSER_TEST_SUITE === 'login-logo') {
     await checkLoginLogo(browser, page, origin);
+    await checkLoginLoadingLine(browser, origin);
     assert.deepEqual(errors, []);
     console.log(`PASS login logo regressions in ${await browser.version()}`);
   } else if (process.env.BROWSER_TEST_SUITE === 'stats-tags') {
@@ -520,12 +535,21 @@ try {
     console.log(`PASS stats tag regressions in ${await browser.version()}`);
   } else if (process.env.BROWSER_TEST_SUITE === 'palette-order') {
     await checkPaletteOrder(page);
+    await checkMenuLook(page);
     assert.deepEqual(errors, []);
     console.log(`PASS palette order regressions in ${await browser.version()}`);
   } else if (process.env.BROWSER_TEST_SUITE === 'theme-fade') {
     await checkThemeFade(page);
     assert.deepEqual(errors, []);
     console.log(`PASS theme fade regressions in ${await browser.version()}`);
+  } else if (process.env.BROWSER_TEST_SUITE === 'skin') {
+    await checkSkin(page);
+    assert.deepEqual(errors, []);
+    console.log(`PASS skin regressions in ${await browser.version()}`);
+  } else if (process.env.BROWSER_TEST_SUITE === 'mermaid-fold') {
+    await checkMermaidFold(page);
+    assert.deepEqual(errors, []);
+    console.log(`PASS mermaid fold regressions in ${await browser.version()}`);
   } else if (process.env.BROWSER_TEST_SUITE === 'login-fade') {
     await checkLoginFade(page);
     assert.deepEqual(errors, []);

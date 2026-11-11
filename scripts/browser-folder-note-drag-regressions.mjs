@@ -138,12 +138,10 @@ async function chooseFolder(page, folder) {
 
 async function showEveryFolder(page) {
   await page.evaluate(async () => {
-    const {NotesAPI} = await import('/static/js/modules/api-client.js');
-    const {ModeContextInstance: mode} = await import('/static/js/modules/mode-manager/mode-context.js');
-    const {actionRefreshAndMaybeSelect} = await import('/static/js/modules/mode-manager/actions/ui-actions.js');
+    // `/`: the search emptied, every note (folder-tags-in-search.md §2).
+    const {chooseFolder} = await import('/static/js/modules/mode-manager/events/keyboard-events.js');
     const {updateVirtualFolders} = await import('/static/js/modules/mode-manager/services/virtual-folders-service.js');
-    await NotesAPI.setVirtualFolderFilter(mode.activeTabId, '');
-    await actionRefreshAndMaybeSelect({context: 'test.every_folder'});
+    await chooseFolder('', false);
     await updateVirtualFolders();
   });
   await idle(page);
@@ -198,7 +196,7 @@ async function checkDropWithEveryFolderShown(page, ids) {
   assert.deepEqual(await folderTags(page, ids.plain), [FOLDER_A], 'a note in no folder goes into the target');
 }
 
-// Case 9, and case 11 with ⌘Z: under a folder filter the moved note leaves the column.
+// Case 9, and case 11 with ⌘Z: with a folder chosen the moved note leaves the column.
 async function checkDropLeavingTheFolderView(page, ids) {
   await chooseFolder(page, FOLDER_A);
   const tops = {above: await noteTop(page, ids.above), mover: await noteTop(page, ids.mover), below: await noteTop(page, ids.below)};
@@ -272,7 +270,7 @@ export async function checkFolderNoteDrag(page) {
   await page.reload();
   await page.waitForSelector('[data-app-ready="true"]');
   await idle(page);
-  // The tree shows in folder contexts (docs/ready-to-build/virtual-folders.md, "Folder contexts"): the folders tab opens it.
+  // The folders tab shows the tree (docs/ready-to-build/folders-tab-and-multiple-folders.md §1).
   await page.click('#virtual-folders-button');
   await idle(page);
   await runThenCleanUp('dragging notes into folders', async () => {
@@ -284,7 +282,7 @@ export async function checkFolderNoteDrag(page) {
     await checkTopAndChild(page, ids);
   }, async () => {
     await page.evaluate(async ({ids}) => {
-      // Closes the folder context, and the tree with it.
+      // Hides the tree again.
       if (document.body.classList.contains('virtual-folders-on')) document.getElementById('virtual-folders-button').click();
       const {NotesAPI} = await import('/static/js/modules/api-client.js');
       for (const id of [ids.above, ids.mover, ids.below, ids.plain, ids.two]) await NotesAPI.deleteNote(id);

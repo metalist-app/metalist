@@ -144,3 +144,24 @@ def test_typing_ranks_the_empty_bar_once_per_tag(live_database, monkeypatch) -> 
     _note("quiche-0", None, content="other", tags="quiche")
     _typed("qu")
     assert rankings == ["ask", "ask"]
+
+
+def test_tags_starting_with_what_is_typed_come_before_tags_with_a_later_part_that_does(live_database) -> None:
+    """`q` with ML3: `question`, used with ML3 on 31 notes but on 1,455 in all, came after
+    `security-questions`, on few notes nearly all with ML3 (2026-11-10)."""
+    for index in range(10):
+        _note(f"question-alone-{index}", None, content="other", tags="question")
+    for index in range(3):
+        _note(f"question-ml3-{index}", None, content="other", tags="question ML3")
+    for index in range(2):
+        _note(f"security-ml3-{index}", None, content="other", tags="security-questions ML3")
+    _note("ask", None, content="foo bar", tags="ML3")
+
+    typed = suggest_tags_for_note(
+        note_id="ask", anchors=["ML3"], explicit_tags=["ML3", "q"], prefix="q",
+        content_html=store.get_note("ask").content, limit=_LIMIT,
+    )
+
+    # Built-in tags come after the tags the letters match, as before.
+    tags = [tag for tag in typed if not tag.startswith("@")]
+    assert tags == ["question", "security-questions"]

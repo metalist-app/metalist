@@ -280,12 +280,16 @@ def list_known_meta_tag_terms() -> FrozenSet[str]:
     # Totals of a note's subtree (subtree_stats.py); the summary tags name a property.
     terms.add("@stats")
     terms.update(("@sum=", "@avg=", "@min=", "@max=", "@count="))
+    # The pictures of a note's subtree as a grid (note_gallery.py).
+    terms.add("@gallery")
     return frozenset(terms)
 
 
 _KNOWN_META_TAG_CASEFOLDS = frozenset(known.casefold() for known in list_known_meta_tag_terms())
 # A summary tag naming a property (@sum=calories; subtree_stats.py).
 _SUMMARY_PROPERTY_TAG_RE = re.compile(r"@(?:sum|avg|min|max|count)=[a-z][^\s=:]*", re.IGNORECASE)
+# A gallery narrowed to file kinds (@gallery=image,pdf; note_gallery.py).
+_GALLERY_KINDS_TAG_RE = re.compile(r"@gallery=[a-z0-9_.+,-]+", re.IGNORECASE)
 
 
 def is_known_meta_tag_term(term: str) -> bool:
@@ -300,6 +304,8 @@ def is_known_meta_tag_term(term: str) -> bool:
     if name == "":
         return False
     if parse_code_tag_language(name) is not None or _parse_size_factor(name) is not None:
+        return True
+    if _GALLERY_KINDS_TAG_RE.fullmatch(term) is not None:
         return True
     return _SUMMARY_PROPERTY_TAG_RE.fullmatch(term) is not None
 

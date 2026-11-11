@@ -15,13 +15,12 @@ from app.services.search_query import SearchClause
 from app.services.sync import generate_new_uuid
 from app.services.undo_state import record_update, reset_undo_stack
 from app.services.virtual_folders import (
-    FOLDER_MARK, NO_FOLDER, all_folder_tags, folder_tags_of, is_folder_tag, refile_tag_bar,
+    FOLDER_MARK, NO_FOLDER, all_folder_tags, folder_tags_of, is_folder_tag, refile_tag_bar, rename_folder_in_search,
 )
-from app.services.tab_state import tab_state_store
 from app.usecases.delete_notes_in_view import NotesToDelete, topmost_with_subtrees
 from app.usecases.delete_subtree import apply_delete_subtree
 from app.usecases.delete_tag import apply_delete_tag_everywhere
-from app.usecases.rename_tag import apply_rename_tag_everywhere
+from app.usecases.rename_tag import apply_rename_tag_everywhere, rewrite_searches_everywhere
 from app.usecases.update_content import apply_update_content
 
 
@@ -42,7 +41,11 @@ def rename_folder(*, folder: str, new_path: str, token: str) -> Dict[str, object
     tags = folder_tags_under(folder)
     for tag in tags:
         apply_rename_tag_everywhere(old=tag, new=new_path + tag[len(folder):], token=token)
-    tab_state_store.move_folder_filters(folder=folder, new_path=new_path)
+    # A search names the folder, or one below it, that no note carries too (`Projects/` with only
+    # `Projects/Client-A/` filed): searches and search links follow the move (folder-tags-in-search.md §4).
+    rewrite_searches_everywhere(
+        rewrite=lambda search: rename_folder_in_search(search, old=folder, new=new_path), token=token,
+    )
     return {"renamedTagCount": len(tags)}
 
 
@@ -109,7 +112,8 @@ def delete_folder(*, folder: str, token: str) -> Dict[str, object]:
     tags = folder_tags_under(folder)
     for tag in tags:
         apply_delete_tag_everywhere(tag=tag, token=token)
-    tab_state_store.drop_folder_filters_under(folder=folder)
+    # Searches naming it are left as typed, as for a deleted tag: they find nothing rather than
+    # widen (folder-tags-in-search.md §4, decided 2026-11-11).
     return {"deletedTagCount": len(tags)}
 
 

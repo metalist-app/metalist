@@ -18,6 +18,8 @@ search alone. Not built yet: §4's other drags, §5 renames, §6 New Folder, the
 
 ## Folder contexts (built 2026-11-07)
 
+(Changed 2026-11-11: the folder chosen in the tree is the context's search, `Projects/`, not a separate folder with a chip; the context is named by its search, and the chip, `folderFilters` and the `/virtual-folders/filter` route are gone: `docs/ready-to-build/folder-tags-in-search.md`. Agreed 2026-11-11, ready to build: folder contexts stop being a kind, the folders tab only shows or hides the tree, several folders in a search add results, and a folder tag implies its parent folders, rules included, replacing "no rules are added" in §1: `docs/ready-to-build/folders-tab-and-multiple-folders.md`.)
+
 Agreed with the maintainer 2026-11-07, cases 1-8, replacing §2's toggle and §3's "clicking a folder
 narrows the current search context". **A search context is a folder context or a plain search.**
 
@@ -65,7 +67,7 @@ narrows the current search context". **A search context is a folder context or a
 
 - Tags may contain `/` and end with one; only a leading `/` is refused, since it opens a regex in rules (`tag-token.js` `isValidTagToken`; `app/services/tag_ontology.py` `_is_valid_tag_token`). *Check* that a trailing `/` survives the tag bar, search and suggestions.
 - The Obsidian import gives each file its folder as a tag, `Projects/Client-A`, with no trailing slash (`app/services/obsidian_import/notes.py`, `folder_tag_for`). Obsidian's nested tags (`#a/b`) come in as `a/b`, so the two look identical.
-- Search matches tags exactly, never by prefix (`docs/ui/search-semantics.md`, Tag Terms; `docs/ready-to-build/import-export-launch.md` §9 item 9). This stays.
+- Search matches tags exactly, never by prefix (`docs/ui/search-semantics.md`, Tag Terms; `docs/ready-to-build/import-export-launch.md` §9 item 9). This stays. (Changed 2026-11-10 for folder tags: `docs/ready-to-build/folder-tags-in-search.md` makes a term ending in `/` include the folders below it, and puts the folder in the search text instead of a chip.)
 - Tag rename exists in Edit Tag Relationships and updates rules mentioning the tag (`docs/design/ontology-rules-v1.md`).
 - View-indicator chips (date range, Notes with files, Untagged, sort) sit in the search box with an `×` (`docs/ui/controls.md`).
 - Clicking a link opens its note in the temporary reference-source context (`docs/ui/references.md`).
@@ -91,6 +93,8 @@ narrows the current search context". **A search context is a folder context or a
 - An ordinary folder icon. The search-context trigger's stacked-folder icon changes, so the two don't read as one thing: **two stacked cards with a small magnifying glass on the front one** (saved searches you flip between; decided 2026-11-01 as a first try, to change later if it doesn't read). **Built 2026-11-02:** the search contexts have the cards and magnifier; the stacked folders are the virtual folders' (Show → Virtual Folders, and the pull tab that shows and hides the tree, a full-height panel whose width drags: `docs/ui/controls.md`, Pull tabs). The tree's heading reads Virtual Folders. **Folder counts under a search** (built 2026-11-02; the maintainer: a `(0)` read as an empty folder): a folder the search narrows shows the notes clicking it would show out of all it holds with no search, `(3/17)`, folders below it included; one whose notes all match shows plain `(17)`, as every folder does with no search. The top, `/`, does the same (`(54/1,240)`). A folder holding notes none of which match is dimmed (as a new folder is, without its italics) but stays in the tree, still clickable and a drop target: the search never adds or removes a folder. The count's tooltip says it in words ("3 of 17 notes match this search", "17 notes"). The server sends each folder's total beside its count (`noteTotals`, `folder_note_totals` in `app/services/virtual_folders.py`, cached apart from the search's counts so neither evicts the other); `countHtml` and `.is-unmatched` in `virtual-folders-service.js` and `main.css`. Tests: `tests/unit/test_virtual_folders.py` (the totals).
 
 ## 3. Clicking a folder filters
+
+(Replaced: since 2026-11-11 a folder clicked becomes the folder context's search, `Projects/`, with no chip: `docs/ready-to-build/folder-tags-in-search.md`. What follows is history.)
 
 - **It narrows the current results to notes in exactly that folder,** shown as a view-indicator chip in the search box (`Projects/ ×`). The search text and the search context don't change; `×` removes the filter. In the list of search contexts the context is named by its search, then its folder (`journal Projects/`), or by the folder alone with no search (`Projects/`, never `(empty)`; built 2026-11-07: the server lists every tab's folder, `tabFolders`, and `search-context-label.js` names it).
 - **Exact folder only:** `Projects/` shows notes filed directly in it, not those in `Projects/Client-A/`. Subfolders are a click away in the tree.

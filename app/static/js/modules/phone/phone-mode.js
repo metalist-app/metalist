@@ -18,7 +18,7 @@ import {
     rootSortModeWithDirection,
 } from '../mode-manager/services/root-sort-service.js';
 import { DATE_RANGE_KINDS, DATE_RANGE_PRESETS } from '../mode-manager/services/date-range-kinds.js';
-import { FILE_FILTER_CHOICES, FILE_FILTER_KINDS } from '../mode-manager/services/file-filter-kinds.js';
+import { FILE_FILTER_CHOICES, FILE_FILTER_KINDS, fileFilterMenuLabel } from '../mode-manager/services/file-filter-kinds.js';
 import { searchTermsOf, withSearchTerm, withoutSearchTerm } from './phone-search-terms.js';
 import { actionRowHtml } from '../modals/action-row.js';
 
@@ -46,8 +46,9 @@ const SORT_ROWS = [[ROOT_SORT_MODES.NORMAL, 'Normal'], [ROOT_SORT_MODES.CREATED,
 const MORE_SORT_ROWS = [
     [ROOT_SORT_MODES.UPDATED, 'Updated'],
     [ROOT_SORT_MODES.ALPHABETICAL, 'A–Z'],
-    [ROOT_SORT_MODES.CONTENT_VOLUME, 'Size'],
+    [ROOT_SORT_MODES.CONTENT_VOLUME, 'Length'],
 ];
+const FILE_SIZE_SORT_ROW = [ROOT_SORT_MODES.FILE_SIZE, 'File size'];
 
 // Under the date and file menus: what each current choice is called.
 const DATE_VALUE_LABELS = new Map([
@@ -55,7 +56,6 @@ const DATE_VALUE_LABELS = new Map([
     [DATE_RANGE_KINDS.CUSTOM, 'Custom'],
     ...DATE_RANGE_PRESETS,
 ]);
-const FILE_VALUE_LABELS = new Map([[FILE_FILTER_KINDS.NONE, 'All Notes'], ...FILE_FILTER_CHOICES]);
 
 function valueLabel(labels, value) {
     if (!labels.has(value)) {
@@ -296,14 +296,15 @@ function sheetHtml() {
     const isReversed = isRootSortModeReversed(sortMode);
     const dateKind = CommandPalette.getDateRangeKind();
     const fileKind = CommandPalette.getFileFilterKind();
-    const moreLabels = MORE_SORT_ROWS.map(([, label]) => label).join(' · ');
+    const moreRows = fileKind === FILE_FILTER_KINDS.NONE ? MORE_SORT_ROWS : [...MORE_SORT_ROWS, FILE_SIZE_SORT_ROW];
+    const moreLabels = moreRows.map(([, label]) => label).join(' · ');
     return `
         <div class="phone-sheet-handle" aria-hidden="true"></div>
         <p class="phone-sheet-heading">Sort order</p>
         ${SORT_ROWS.map(([mode, label]) => choiceHtml(`sort:${mode}`, label, mode === currentSort)).join('')}
         ${disclosureHtml('sort-more', moreLabels, '')}
         <div class="phone-sheet-group" data-phone-group-items="sort-more" hidden>
-            ${MORE_SORT_ROWS.map(([mode, label]) => choiceHtml(`sort:${mode}`, label, mode === currentSort)).join('')}
+            ${moreRows.map(([mode, label]) => choiceHtml(`sort:${mode}`, label, mode === currentSort)).join('')}
         </div>
         ${choiceHtml('sort:reverse', 'Reverse', isReversed)}
         ${disclosureHtml('date', 'Date Range', valueLabel(DATE_VALUE_LABELS, dateKind))}
@@ -311,7 +312,7 @@ function sheetHtml() {
             ${choiceHtml(`date:${DATE_RANGE_KINDS.NONE}`, 'Any Date', dateKind === DATE_RANGE_KINDS.NONE)}
             ${DATE_RANGE_PRESETS.map(([kind, label]) => choiceHtml(`date:${kind}`, label, kind === dateKind)).join('')}
         </div>
-        ${disclosureHtml('files', 'Notes with Files', valueLabel(FILE_VALUE_LABELS, fileKind))}
+        ${disclosureHtml('files', 'Notes with Files', (fileKind === FILE_FILTER_KINDS.NONE ? 'All Notes' : fileFilterMenuLabel(fileKind)))}
         <div class="phone-sheet-group" data-phone-group-items="files" hidden>
             ${choiceHtml(`files:${FILE_FILTER_KINDS.NONE}`, 'All Notes', fileKind === FILE_FILTER_KINDS.NONE)}
             ${FILE_FILTER_CHOICES.map(([kind, label]) => choiceHtml(`files:${kind}`, label, kind === fileKind)).join('')}

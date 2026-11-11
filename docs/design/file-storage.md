@@ -1,6 +1,6 @@
 # File storage: one encrypted file per attachment, with a catalog
 
-**Status:** Built 2026-11-08 and released in 0.27.0, as §13 records, including where the code differs from the sections below. Streaming uploads and removing the 100 MiB limit are `docs/ready-to-build/streaming-no-file-cap.md`.
+**Status:** Built 2026-11-08 and released in 0.27.0, as §13 records, including where the code differs from the sections below. Streaming uploads and no per-file limit came next (§14).
 
 Written without looking at the code, apart from a few references noted below. Check every reference before relying on it.
 
@@ -125,11 +125,11 @@ Test it like every migration.
 
 **Built:** blobs and the catalog (`app/db/blob_store.py`, `app/db/file_schema.py`), streaming encryption (`app/security/streaming_blob.py`), migration 16→17 (`app/db/move_files_to_blobs.py`), backups and restore, crash recovery, the encryption audit, the crash-leftover sweep at startup, and downloads that stream and answer `Range` requests (`app/api/byte_ranges.py`).
 
-**Not built yet (`docs/ready-to-build/streaming-no-file-cap.md`):** uploads still pass through memory and Starlette's temporary file, the 100 MiB limit stays, and in-note audio and video still load the whole file first.
+**Built after it:** §14.
 
 Where this differs from the sections above, the code is right:
 
-- **§3, three tables, not one.** The catalog keeps today's `files`, `file_previews` and `file_texts`, each row naming one blob. It stores the same things with far less change. `kind`, `parent_item_id` and `backed_up_at` wait for hosted backups; a blob's padded size is its size on disk.
+- **§3, three tables, not one.** The catalog keeps today's `files`, `file_previews` and `file_texts`, each row naming one blob. (Database version 18 adds a fourth, `file_first_pages`: a PDF's first page for galleries, `docs/future-plans/gallery.md`.) It stores the same things with far less change. `kind`, `parent_item_id` and `backed_up_at` wait for hosted backups; a blob's padded size is its size on disk.
 - **§3 and §4, one seal per blob.** `file_key_wrapped`, real size and `content_hash` are one payload, `blob_seal`, encrypted with the vault key like the row's other fields. Each blob, including a revision of an item, has its own key.
 - **§4, header.** Each blob has its own random nonce prefix, and the whole header is each segment's associated data.
 - **§5, deletion.** A blob in use is pinned and goes when its last reader finishes: Windows refuses to delete an open file, and a backup must find every blob its catalog snapshot names. During a password change or a restore nothing is deleted until the change commits, so a rollback finds every blob. Catalog connections use `synchronous=FULL`, so a blob already deleted cannot come back into the catalog after a power cut.
@@ -138,4 +138,16 @@ Where this differs from the sections above, the code is right:
 - **Segment size (§10.3):** free to change only by a new format version now that real files use it.
 - **Padding:** sits above the encryption. The real size in the seal cuts every read.
 
-**Open (maintainer):** a browser's audio and video players send their own requests, without the tab's session header every file request needs. Letting them jump inside a file means a new way to authorize those requests; see `streaming-no-file-cap.md`, section 9.
+**Open (maintainer):** a browser's audio and video players send their own requests, without the tab's session header every file request needs. Letting them jump inside a file means a new way to authorize those requests; it is `docs/future-plans/media-jump-playback.md`.
+
+## 14. Files of any size (built 2026-11-08)
+
+Agreed with the maintainer 2026-11-03 and 2026-11-06, because streaming a segment at a time keeps memory small whatever a file's size. Before this each file was limited to 100 MiB, and folder imports skipped larger ones.
+
+- **Uploads stream into their blob** as they arrive (`app/api/streaming_upload.py`, `FileUpload` in `file_storage.py`): a parsed form would hold them in a plaintext temporary file. The body is read in a context of its own: reading can resume the connection's reader, the event loop keeps the context it was resumed in for that connection, and the open transaction then broke the next request.
+- **No per-file limit** in any deployment: not in the HTTP limits, the HTTPS proxy, imports or the checklist. `METALIST_MAX_ATTACHMENT_BYTES` and the server's four-transfer limit are gone; the browser still sends a few at a time so progress stays steady (`file-transfer-slots.js`).
+- **One limit stays, and why:** 100 MiB, `MAX_IN_MEMORY_FILE_BYTES`, for what must hold a whole file in memory: an edited diagram, an email, the viewer's previews, a file's text for search, an image inlined in an export or compressed on import. Over it the file is stored, downloaded and found by name; a text file that size imports as a file.
+- **Free space is checked first** against the free disk space less a reserve of 1 GiB or 5% of the disk, whichever is smaller. A disk that fills mid-write removes the partial file and says so (`app/services/disk_space.py`). Hosted will check the plan's remaining storage instead.
+- **A folder dropped on the page is held encrypted** (`app/services/import_uploads.py`): each file under a random name, its key and real path only in the server's memory, so nothing about it is readable on disk and a restart or a lock ends the upload. Every vault's uploads are encrypted this way, with or without a password. Imports read through `ImportFolder` (`app/services/obsidian_import/import_folder.py`), which is either a folder on disk or this held one.
+- **Multi-gigabyte uploads over HTTPS** can pass the proxy's 30-minute deadline (`app/https_proxy.py`, `MAX_REQUEST_SECONDS`) and then fail with a plain message. Resumable uploads are `docs/future-plans/resumable-uploads.md`.
+- **Invariants:** no file is held wholly in memory to store, read, back up or restore, apart from the uses above; no per-file size limit in any deployment; a file too large to read for text is still kept and found by name.

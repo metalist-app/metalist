@@ -37,6 +37,8 @@
     /* Several notes (an AI answer's references, all of them): two pages, one behind the other. */
     --note-references-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M9 6V4a1 1 0 0 1 1-1h5l4 4v11a1 1 0 0 1-1 1h-2'/%3E%3Cpath d='M5 7a1 1 0 0 1 1-1h5l4 4v10a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1z'/%3E%3Cpath d='M11 6v4h4'/%3E%3C/svg%3E");
     --note-reference-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M14 3H7a2 2 0 0 0-2 2v6'/%3E%3Cpath d='M14 3v4a1 1 0 0 0 1 1h4'/%3E%3Cpath d='M19 8v11a2 2 0 0 1-2 2h-6'/%3E%3Cpath d='M4 21v-3a3 3 0 0 1 3-3h5'/%3E%3Cpath d='M10 12l3 3-3 3'/%3E%3C/svg%3E");
+    /* A link that opens a search: the search box's magnifier (search_links.py). */
+    --note-search-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='m16 16 5 5'/%3E%3C/svg%3E");
     /* The light theme's header bar (search, tabs icon, result count): black,
        with white on it, as it long was. */
     --search-shell-surface: #000000;
@@ -274,7 +276,7 @@ html:has(> body > .login-page[style*="display: flex"]:not(.login-page-covering):
     color: #0b0b0b;
     font-size: 16px;
     font-weight: 600;
-    cursor: pointer;
+    cursor: var(--skin-cursor-pointer, pointer);
 }
 
 .locked-panel button:hover {
@@ -326,7 +328,7 @@ html:has(> body > .login-page[style*="display: flex"]:not(.login-page-covering):
     color: #0b0b0b;
     font-size: 16px;
     font-weight: 600;
-    cursor: pointer;
+    cursor: var(--skin-cursor-pointer, pointer);
 }
 
 .login-form button:hover {
@@ -376,16 +378,29 @@ html:has(> body > .login-page[style*="display: flex"]:not(.login-page-covering):
     transition: width 0.2s ease;
 }
 
+/* The step on the left, its time on the right: the edges of the progress bar above. */
 .login-loading-line {
+    display: flex;
+    align-items: baseline;
+    column-gap: 8px;
     margin-top: 12px;
     min-height: 1.4em;
     font-size: 14px;
     font-style: italic;
-    text-align: center;
+    text-align: left;
     color: rgba(255, 255, 255, 0.5);
 }
 
+.login-loading-message {
+    flex: 1 1 0;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
 .login-loading-elapsed {
+    flex: none;
     font-variant-numeric: tabular-nums;
 }
 
@@ -410,6 +425,7 @@ html:has(> body > .login-page[style*="display: flex"]:not(.login-page-covering):
 
 .login-loading-message[data-state="error"] {
     font-style: normal;
+    white-space: normal;
     color: #ff8a9a;
 }
 
@@ -446,7 +462,7 @@ html:has(> body > .login-page[style*="display: flex"]:not(.login-page-covering):
     color: rgba(255, 255, 255, 0.85);
     font-size: 0.94rem;
     appearance: none;
-    cursor: pointer;
+    cursor: var(--skin-cursor-pointer, pointer);
 }
 
 .login-namespace-select:focus {
@@ -538,7 +554,7 @@ html:has(> body > .login-page[style*="display: flex"]:not(.login-page-covering):
     border: none;
     border-radius: 8px;
     font-size: 16px;
-    cursor: pointer;
+    cursor: var(--skin-cursor-pointer, pointer);
 }
 
 .modal-content button:hover {
@@ -674,7 +690,7 @@ html:has(> body > .login-page[style*="display: flex"]:not(.login-page-covering):
     align-items: flex-start;
     gap: 10px;
     margin: 16px 0 0;
-    cursor: pointer;
+    cursor: var(--skin-cursor-pointer, pointer);
 }
 
 .modal-content .visual-cues-toggle input {
@@ -854,7 +870,7 @@ html[data-theme="dark"] .visual-cues-description {
     align-items: center;
     gap: 9px;
     margin: 16px 0 4px;
-    cursor: pointer;
+    cursor: var(--skin-cursor-pointer, pointer);
 }
 
 .modal-content .search-window-label-toggle input {
@@ -888,7 +904,7 @@ html[data-theme="dark"] .visual-cues-description {
     grid-template-columns: auto minmax(0, 1fr) auto;
     gap: 16px;
     padding: 11px 13px;
-    cursor: pointer;
+    cursor: var(--skin-cursor-pointer, pointer);
     font-weight: 600;
     background: var(--bg-color);
     list-style: none;
@@ -1009,7 +1025,7 @@ html[data-theme="dark"] .search-suggestion-statistics-day summary {
     border: 1px solid var(--border-color);
     border-radius: 8px;
     background: var(--bg-color);
-    cursor: pointer;
+    cursor: var(--skin-cursor-pointer, pointer);
 }
 
 .namespace-modal-radio-row input {
@@ -1112,7 +1128,7 @@ html[data-theme="dark"] .search-suggestion-statistics-day summary {
     color: var(--text-color);
     box-shadow: 0 6px 18px rgba(15, 23, 42, 0.16);
     font: 28px/1 Arial, sans-serif;
-    cursor: pointer;
+    cursor: var(--skin-cursor-pointer, pointer);
 }
 
 .modal-content .modal-close-button:hover,
@@ -1302,7 +1318,7 @@ body.ontology-modal-open #ontology-modal {
     border: 1px solid rgba(var(--modal-ink-rgb), 0.10);
     background: rgba(var(--modal-ink-rgb), 0.06);
     color: rgba(var(--modal-ink-rgb), 0.9);
-    cursor: pointer;
+    cursor: var(--skin-cursor-pointer, pointer);
     font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
     font-size: 0.95rem;
 }
@@ -1423,7 +1439,7 @@ body.ontology-modal-open #ontology-modal {
 
 .ontology-atom-tag {
     color: rgba(var(--modal-ink-rgb), 0.92);
-    cursor: pointer;
+    cursor: var(--skin-cursor-pointer, pointer);
 }
 
 .ontology-atom-tag:hover {
@@ -1466,7 +1482,7 @@ body.ontology-modal-open #ontology-modal {
     color: rgba(var(--modal-ink-rgb), 0.9);
     font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
     font-size: 0.95rem;
-    cursor: pointer;
+    cursor: var(--skin-cursor-pointer, pointer);
 }
 
 .ontology-rule-left .ontology-tag {
@@ -1499,7 +1515,7 @@ body.ontology-modal-open #ontology-modal {
     border: 1px solid rgba(var(--modal-ink-rgb), 0.12);
     background: rgba(var(--modal-ink-rgb), 0.02);
     color: rgba(var(--modal-ink-rgb), 0.7);
-    cursor: pointer;
+    cursor: var(--skin-cursor-pointer, pointer);
 }
 
 .ontology-remove:hover {
@@ -1518,7 +1534,7 @@ body.ontology-modal-open #ontology-modal {
     border: 1px solid rgba(var(--modal-ink-rgb), 0.12);
     background: rgba(var(--modal-ink-rgb), 0.02);
     color: rgba(var(--modal-ink-rgb), 0.65);
-    cursor: pointer;
+    cursor: var(--skin-cursor-pointer, pointer);
     font-size: 0.85rem;
 }
 
@@ -1553,7 +1569,7 @@ body.ontology-modal-open #ontology-modal {
     border: 1px dashed rgba(var(--modal-ink-rgb), 0.2);
     background: rgba(var(--modal-ink-rgb), 0.04);
     color: rgba(var(--modal-ink-rgb), 0.6);
-    cursor: pointer;
+    cursor: var(--skin-cursor-pointer, pointer);
     font-size: 0.9rem;
 }
 
@@ -1565,7 +1581,7 @@ body.ontology-modal-open #ontology-modal {
 /* Without a focus tag the column buttons cannot act (ontology-modal.js renderFocusView). */
 .ontology-add:disabled {
     opacity: 0.4;
-    cursor: default;
+    cursor: var(--skin-cursor-default, default);
 }
 
 .ontology-divider {
@@ -1642,7 +1658,7 @@ body.ontology-modal-open #ontology-modal {
     border: 1px solid rgba(var(--modal-ink-rgb), 0.18);
     background: rgba(var(--modal-ink-rgb), 0.06);
     color: rgba(var(--modal-ink-rgb), 0.75);
-    cursor: pointer;
+    cursor: var(--skin-cursor-pointer, pointer);
     font-size: 18px;
     display: grid;
     place-items: center;
@@ -1726,7 +1742,7 @@ body.ontology-modal-open #ontology-modal {
     border: 1px solid rgba(var(--modal-ink-rgb), 0.1);
     background: rgba(var(--modal-ink-rgb), 0.08);
     color: rgba(var(--modal-ink-rgb), 0.92);
-    cursor: pointer;
+    cursor: var(--skin-cursor-pointer, pointer);
     font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
     font-size: 0.9rem;
 }
@@ -1766,7 +1782,7 @@ body.ontology-modal-open #ontology-modal {
     border: 1px solid rgba(var(--modal-ink-rgb), 0.18);
     background: rgba(var(--modal-ink-rgb), 0.08);
     color: rgba(var(--modal-ink-rgb), 0.9);
-    cursor: pointer;
+    cursor: var(--skin-cursor-pointer, pointer);
     font-size: 0.9rem;
 }
 
@@ -1971,7 +1987,7 @@ body.ontology-modal-open #ontology-modal {
    holding the chosen folder path is pressed. */
 /* The folder path only shows the folder; clicking it opens the folder picker. */
 #backup-settings-folder-path {
-    cursor: pointer;
+    cursor: var(--skin-cursor-pointer, pointer);
 }
 
 .backup-settings-synced-folder-list {
@@ -1991,7 +2007,7 @@ body.ontology-modal-open #ontology-modal {
 /* The vault in use: always backed up, so its box is locked (checked, not grey). */
 .backup-settings-namespace-row[data-backup-current],
 .backup-settings-namespace-row[data-backup-current] input {
-    cursor: default;
+    cursor: var(--skin-cursor-default, default);
 }
 
 .backup-settings-single-namespace {
@@ -2171,7 +2187,7 @@ body.ontology-modal-open #ontology-modal {
 .random-password-modal-content #password-result-output {
     white-space: nowrap;
     overflow-x: auto;
-    cursor: text;
+    cursor: var(--skin-cursor-text, text);
     margin: 0;
 }
 
@@ -2458,7 +2474,7 @@ body.ontology-modal-open #ontology-modal {
     border: 1px solid transparent;
     background: var(--modal-quiet-button);
     color: var(--modal-text);
-    cursor: pointer;
+    cursor: var(--skin-cursor-pointer, pointer);
     font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
     font-size: 0.9rem;
     font-weight: 400;
@@ -2482,7 +2498,7 @@ body.ontology-modal-open #ontology-modal {
 }
 
 .prioritize-modal-suggestion-status {
-    cursor: default;
+    cursor: var(--skin-cursor-default, default);
     pointer-events: none;
     opacity: 0.78;
 }
@@ -2707,7 +2723,7 @@ body.ai-chat-resizing * {
     border-radius: 5px;
     background: transparent;
     color: #475569;
-    cursor: pointer;
+    cursor: var(--skin-cursor-pointer, pointer);
     font-size: 16px;
 }
 
@@ -2722,7 +2738,7 @@ body.ai-chat-resizing * {
 }
 
 .ai-chat-header-actions button:disabled {
-    cursor: default;
+    cursor: var(--skin-cursor-default, default);
     opacity: 0.35;
 }
 
@@ -2789,7 +2805,7 @@ body.ai-chat-resizing * {
     border-radius: 5px;
     background: #ffffff;
     color: #075985;
-    cursor: pointer;
+    cursor: var(--skin-cursor-pointer, pointer);
     font-size: 11px;
     font-weight: 650;
 }
@@ -2799,7 +2815,7 @@ body.ai-chat-resizing * {
 }
 
 .ai-chat-openai-cost-heading button:disabled {
-    cursor: default;
+    cursor: var(--skin-cursor-default, default);
     opacity: 0.5;
 }
 
@@ -2953,7 +2969,7 @@ body.ai-chat-resizing * {
 
 .ai-agent-debug-event summary {
     padding: 9px 11px;
-    cursor: pointer;
+    cursor: var(--skin-cursor-pointer, pointer);
     font-size: 13px;
     font-weight: 600;
 }
@@ -3071,7 +3087,7 @@ body.ai-chat-resizing * {
     font-weight: 500;
     letter-spacing: 0.04em;
     text-transform: uppercase;
-    cursor: pointer;
+    cursor: var(--skin-cursor-pointer, pointer);
     user-select: none;
 }
 
@@ -3295,7 +3311,7 @@ body.ai-chat-resizing * {
 }
 
 .ai-chat-summary-heading {
-    cursor: pointer;
+    cursor: var(--skin-cursor-pointer, pointer);
     font-weight: 600;
 }
 
@@ -3331,7 +3347,7 @@ body.ai-chat-resizing * {
 }
 
 details.ai-chat-thinking > .ai-chat-thinking-heading {
-    cursor: pointer;
+    cursor: var(--skin-cursor-pointer, pointer);
 }
 
 .ai-chat-thinking-dots {
@@ -3543,7 +3559,7 @@ details.ai-chat-thinking > .ai-chat-thinking-heading {
     border-radius: 7px;
     background-color: transparent;
     color: #475569;
-    cursor: pointer;
+    cursor: var(--skin-cursor-pointer, pointer);
     font: inherit;
     font-size: 12px;
 }
@@ -3569,7 +3585,7 @@ details.ai-chat-thinking > .ai-chat-thinking-heading {
 }
 
 .ai-chat-composer-actions select:disabled {
-    cursor: default;
+    cursor: var(--skin-cursor-default, default);
     opacity: 0.5;
 }
 
@@ -3580,12 +3596,12 @@ details.ai-chat-thinking > .ai-chat-thinking-heading {
     border-radius: 7px;
     background: var(--primary-color);
     color: #ffffff;
-    cursor: pointer;
+    cursor: var(--skin-cursor-pointer, pointer);
     font-weight: 600;
 }
 
 .ai-chat-composer-footer button:disabled {
-    cursor: default;
+    cursor: var(--skin-cursor-default, default);
     opacity: 0.45;
 }
 
@@ -4210,7 +4226,7 @@ html[data-theme="dark"] .ai-chat-header-actions #ai-chat-spend-toggle[aria-press
     display: flex;
     align-items: center;
     justify-content: center;
-    cursor: pointer;
+    cursor: var(--skin-cursor-pointer, pointer);
     background: white;
     font-size: 1.2rem;
     transition: background-color 0.2s;
@@ -4278,7 +4294,7 @@ html[data-theme="dark"] .ai-chat-header-actions #ai-chat-spend-toggle[aria-press
     padding: 0;
     border: none;
     background: transparent;
-    cursor: pointer;
+    cursor: var(--skin-cursor-pointer, pointer);
     font-size: 23px;
     line-height: 27px;
     text-align: center;
@@ -4358,9 +4374,56 @@ html[data-theme="dark"] .ai-chat-header-actions #ai-chat-spend-toggle[aria-press
 
 /* A folded note's first line is drawn as one line of text; an embed on it is an
    embed, drawn as everywhere (docs/ui/references.md), so these leave it alone. */
-.note.collapsed:not(.editing) .note-content :not(img):not(:where(.note-reference-note.note-embed-block, .note-reference-note.note-embed-block *, .note-reference-file, .note-reference-file *)) {
+.note.collapsed:not(.editing) .note-content :not(img):not(:where(.note-reference-note.note-embed-block, .note-reference-note.note-embed-block *, .note-reference-file, .note-reference-file *, .meta-mermaid-diagram *, .meta-gallery-grid *)) {
     font-size: inherit !important;
     line-height: inherit !important;
+}
+
+/* A folded note whose first line is a Mermaid diagram shows the whole diagram small, the size of
+   a folded Excalidraw drawing (docs/ui/content-formatting.md). The server sends the whole note
+   for it (embedded_references.render_collapsed_note_content_with_embeds); what follows is hidden. */
+.note.collapsed:not(.editing) .note-content:has(> .meta-mermaid:first-of-type > .meta-mermaid-diagram,
+    > div:first-of-type > .meta-mermaid:first-child > .meta-mermaid-diagram,
+    > .meta-markdown > .meta-mermaid-diagram:first-child,
+    > .note-with-backlinks > .meta-mermaid:first-of-type > .meta-mermaid-diagram,
+    > .note-with-backlinks > div:first-of-type > .meta-mermaid:first-child > .meta-mermaid-diagram,
+    > .note-with-backlinks > .meta-markdown > .meta-mermaid-diagram:first-child) {
+    max-height: none;
+    display: block;
+}
+
+.note.collapsed:not(.editing) .note-content :is(
+    :is(.note-content, .note-with-backlinks) > .meta-mermaid:first-of-type,
+    :is(.note-content, .note-with-backlinks) > div:first-of-type > .meta-mermaid:first-child
+) > .meta-mermaid-diagram,
+.note.collapsed:not(.editing) :is(.note-content, .note-with-backlinks) > .meta-markdown > .meta-mermaid-diagram:first-child {
+    box-sizing: border-box;
+    width: 7.5em;
+    height: 4.5em;
+    padding: 2px;
+    overflow: hidden;
+    border-radius: 4px;
+}
+
+.note.collapsed:not(.editing) .note-content :is(
+    :is(.note-content, .note-with-backlinks) > .meta-mermaid:first-of-type,
+    :is(.note-content, .note-with-backlinks) > div:first-of-type > .meta-mermaid:first-child
+) > .meta-mermaid-diagram svg,
+.note.collapsed:not(.editing) :is(.note-content, .note-with-backlinks) > .meta-markdown > .meta-mermaid-diagram:first-child svg {
+    width: 100%;
+    height: 100%;
+    max-width: none !important;
+    margin: 0;
+}
+
+.note.collapsed:not(.editing) :is(.note-content, .note-with-backlinks) > div:first-of-type:has(> .meta-mermaid:first-child > .meta-mermaid-diagram) ~ *,
+.note.collapsed:not(.editing) :is(.note-content, .note-with-backlinks) > .meta-markdown > .meta-mermaid-diagram:first-child ~ * {
+    display: none;
+}
+
+/* Folded, an invalid diagram shows its first line of source, not its badge. */
+.note.collapsed:not(.editing) .note-content .meta-mermaid-error-badge {
+    display: none;
 }
 
 .note.collapsed:not(.editing) .note-content .meta-heading:not(:where(.note-reference-note.note-embed-block, .note-reference-note.note-embed-block *)) {
@@ -4393,7 +4456,7 @@ html[data-theme="dark"] .ai-chat-header-actions #ai-chat-spend-toggle[aria-press
     tr,
     th,
     td
-):not(:where(.note-reference-note.note-embed-block, .note-reference-note.note-embed-block *, .note-reference-file, .note-reference-file *)) {
+):not(:where(.note-reference-note.note-embed-block, .note-reference-note.note-embed-block *, .note-reference-file, .note-reference-file *, .meta-mermaid-diagram *)) {
     display: block;
     margin: 0 !important;
     padding: 0;
@@ -4403,7 +4466,7 @@ html[data-theme="dark"] .ai-chat-header-actions #ai-chat-spend-toggle[aria-press
     display: inline;
 }
 
-.note.collapsed:not(.editing) .note-content img:not(:where(.note-reference-note.note-embed-block, .note-reference-note.note-embed-block *)) {
+.note.collapsed:not(.editing) .note-content img:not(:where(.note-reference-note.note-embed-block, .note-reference-note.note-embed-block *, .meta-gallery *)) {
     height: 4.5em !important;
     width: 7.5em !important;
     max-height: 4.5em !important;
@@ -4664,7 +4727,7 @@ body[data-tag-style="text"],
 }
 
 .note:not(.editing) .note-content {
-    cursor: default;
+    cursor: var(--skin-cursor-default, default);
 }
 
 .note:not(.editing) .note-content,
@@ -4674,7 +4737,7 @@ body[data-tag-style="text"],
 }
 
 .note.editing .note-content {
-    cursor: text;
+    cursor: var(--skin-cursor-text, text);
 }
 
 .link-title {
@@ -4777,6 +4840,187 @@ img.link-title-icon,
     text-decoration-thickness: 2px;
 }
 
+/* A link that opens a search (search_links.py): drawn as a note link is, its colour and its icon
+   after the text, with a magnifier in place of the reference icon, so it never reads as a link to a
+   note (docs/ready-to-build/search-links.md §5). */
+.note-search-link {
+    display: inline-flex;
+    align-items: baseline;
+    flex-wrap: nowrap;
+    min-width: 0;
+    max-width: 100%;
+    color: #1d5fb8;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    cursor: var(--skin-cursor-pointer, pointer);
+}
+
+.note-search-link:hover {
+    text-decoration-thickness: 2px;
+}
+
+.note-search-link-icon {
+    flex: none;
+    order: 2;
+    display: inline-block;
+    width: 1em;
+    height: 1em;
+    margin: 0 0 0 0.2em;
+    vertical-align: -0.15em;
+    background-color: currentColor;
+    -webkit-mask: var(--note-search-icon) center / contain no-repeat;
+    mask: var(--note-search-icon) center / contain no-repeat;
+}
+
+.note-search-link-title {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+html[data-theme="dark"] .note-search-link {
+    color: #8fbcf0;
+}
+
+/* An embedded search (search_links.py, search-links.md §11): its heading (the search link and how many
+   notes it finds), then its first results, each its note's folded first line, then how many more. Its
+   ▾/▸ copies a note embed's and folds it to the heading (search-embed-service.js). A tinted panel, as a
+   note embed's, says it is shown from elsewhere; an arrow before each result says it is a link
+   (agreed 2026-11-11, option B). */
+.note-search-embed {
+    position: relative;
+    display: block;
+    margin: 2px 0;
+    padding: 4px 12px 4px 29px;
+    border: 1px solid var(--embed-edge);
+    border-radius: 10px;
+    background-color: var(--embed-tint-1);
+}
+
+.note-search-embed-toggle {
+    position: absolute;
+    top: 4px;
+    left: 2px;
+    display: block;
+    width: 27px;
+    height: 27px;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: rgba(0, 0, 0, 0.35);
+    font-size: 23px;
+    line-height: 27px;
+    text-align: center;
+    cursor: var(--skin-cursor-pointer, pointer);
+    user-select: none;
+}
+
+.note-search-embed-toggle::before {
+    content: '\25BE';
+}
+
+.note-search-embed-folded > .note-search-embed-toggle::before {
+    content: '\25B8';
+}
+
+html[data-theme="dark"] .note-search-embed-toggle {
+    color: rgba(255, 255, 255, 0.4);
+}
+
+.note-search-embed-count {
+    margin-left: 0.4em;
+    color: #6b7280;
+}
+
+html[data-theme="dark"] .note-search-embed-count {
+    color: rgba(229, 231, 235, 0.6);
+}
+
+/* A result: the note-link arrow, then its note's first line, on one line, as a folded note shows
+   it. The arrows stand in a column, whatever each line's length. */
+.note-search-embed-result {
+    display: flex;
+    align-items: baseline;
+    gap: 0.45em;
+    min-width: 0;
+    cursor: var(--skin-cursor-pointer, pointer);
+}
+
+.note-search-embed-result::before {
+    content: '';
+    flex: none;
+    width: 0.95em;
+    height: 0.95em;
+    align-self: center;
+    background-color: rgba(0, 0, 0, 0.4);
+    -webkit-mask: var(--note-reference-icon) center / contain no-repeat;
+    mask: var(--note-reference-icon) center / contain no-repeat;
+}
+
+html[data-theme="dark"] .note-search-embed-result::before {
+    background-color: rgba(255, 255, 255, 0.45);
+}
+
+/* One line, cut with "…" at the panel's edge: the blocks a first line comes in (a colour, a
+   heading, its own lines) flow inline in it, so the cut applies to the whole line. */
+.note-search-embed-line {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.note-search-embed-line :is(div, p, h1, h2, h3, h4, h5, h6, section, article, header, footer, blockquote, pre, ul, ol, li) {
+    display: inline;
+    white-space: nowrap;
+}
+
+/* A to-do's box keeps the 8px a to-do line gives it (.meta-status), sits on the text's middle, and is
+   inert, as inside a note embed: pressing it does nothing yet. */
+.note-search-embed-line .meta-status-toggle {
+    margin-right: 8px;
+    vertical-align: -2px;
+    cursor: var(--skin-cursor-default, default);
+}
+
+.note-search-embed-line .meta-status-toggle:hover,
+html[data-theme="dark"] .note-search-embed-line .meta-status-toggle:hover {
+    background-color: transparent;
+}
+
+/* Every result at the text's own size: a heading note keeps its colour and weight, not its size. */
+.note-search-embed-result * {
+    font-size: inherit !important;
+    line-height: inherit !important;
+    margin-top: 0 !important;
+    margin-bottom: 0 !important;
+}
+
+.note-search-embed-more {
+    margin-left: 1.4em;
+    color: #6b7280;
+}
+
+/* Folded by its arrow, or inside a folded note, or a search inside a result: the heading alone. */
+.note-search-embed-folded > .note-search-embed-results,
+.note.collapsed:not(.editing) .note-search-embed-results {
+    display: none;
+}
+
+.note.collapsed:not(.editing) .note-search-embed-toggle {
+    display: none;
+}
+
+.note-search-embed-nested {
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+}
+
 .note-file-reference-link {
     display: flex;
     flex-direction: column;
@@ -4796,7 +5040,7 @@ img.link-title-icon,
 .note-file-reference-badge,
 .note-file-reference-name {
     pointer-events: auto;
-    cursor: pointer;
+    cursor: var(--skin-cursor-pointer, pointer);
 }
 
 .note-file-reference-link-embed {
@@ -4863,6 +5107,213 @@ html[data-theme="dark"] .note-file-text-snippet {
     min-height: 0;
 }
 
+/* @gallery: the pictures of the note and every note under it, as a grid under its text
+   (app/services/note_gallery.py; docs/future-plans/gallery.md). The children it draws from
+   are hidden while it shows; a gallery with no picture draws nothing and hides nothing. */
+.note[data-note-tags*="@gallery"]:not(.editing):not(.is-gallery-outline):has(> .note-content .meta-gallery) > .note-children {
+    display: none;
+}
+
+/* Switched to an outline (gallery-view-service.js): its children, no grid. Folded, a gallery
+   shows the same row of pictures either way, and no switch: the switch is for an open gallery. */
+.note.is-gallery-outline:not(.collapsed) > .note-content .meta-gallery > .meta-gallery-grid {
+    display: none;
+}
+
+.note.collapsed:not(.editing) > .note-content .meta-gallery-switch {
+    display: none;
+}
+
+/* The switch, in the margin below the fold arrow: four squares for the grid, lines for the outline. */
+.meta-gallery-switch {
+    position: absolute;
+    top: 32px;
+    left: -29px;
+    width: 27px;
+    height: 27px;
+    padding: 0;
+    border: none;
+    background: transparent;
+    color: rgba(0, 0, 0, 0.35);
+    cursor: var(--skin-cursor-pointer, pointer);
+    font-size: 17px;
+    line-height: 27px;
+    text-align: center;
+}
+
+/* The outline: a line with two lines indented under it, a parent and its children (unlike the
+   menu's three even lines). */
+.meta-gallery-switch::before {
+    content: "";
+    display: inline-block;
+    width: 15px;
+    height: 12px;
+    vertical-align: middle;
+    background:
+        linear-gradient(currentColor, currentColor) 0 0 / 100% 2px no-repeat,
+        linear-gradient(currentColor, currentColor) 5px 5px / 10px 2px no-repeat,
+        linear-gradient(currentColor, currentColor) 5px 10px / 10px 2px no-repeat;
+}
+
+.note.is-gallery-outline > .note-content .meta-gallery-switch::before {
+    content: "▦";
+    display: inline;
+    width: auto;
+    height: auto;
+    background: none;
+    vertical-align: baseline;
+}
+
+html[data-theme="dark"] .meta-gallery-switch {
+    color: rgba(255, 255, 255, 0.4);
+}
+
+/* Folded, one row of small pictures under the first line, without captions. */
+.note.collapsed:not(.editing) > .note-content:has(.meta-gallery) {
+    max-height: none;
+    display: block;
+}
+
+.note.collapsed:not(.editing) > .note-content .meta-gallery-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(64px, 1fr));
+    grid-template-rows: auto;
+    grid-auto-rows: 0;
+    row-gap: 0;
+    gap: 0 6px;
+    overflow: hidden;
+    margin-top: 6px;
+}
+
+.note.collapsed:not(.editing) > .note-content .meta-gallery-caption {
+    display: none;
+}
+
+.meta-gallery-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 10px;
+    margin-top: 8px;
+}
+
+/* A whole tile opens its picture in the viewer, unlike a file card, whose name alone does. */
+.note-file-reference-link.meta-gallery-tile {
+    gap: 4px;
+    pointer-events: auto;
+    cursor: var(--skin-cursor-pointer, pointer);
+}
+
+.meta-gallery-picture {
+    display: block;
+    width: 100%;
+    aspect-ratio: 1;
+    overflow: hidden;
+    border-radius: 8px;
+    background: #f1f3f5;
+}
+
+.meta-gallery-picture .note-file-image-embed,
+.meta-gallery-picture .note-file-image-embed[data-preview-state="loaded"] .note-file-image-preview-frame,
+.meta-gallery-picture .note-file-image-preview-frame,
+.meta-gallery-picture .note-file-excalidraw-embed,
+.meta-gallery-picture .note-file-excalidraw-frame {
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    border: 0;
+    border-radius: 0;
+}
+
+/* Every picture fills its square, cropped about its middle, tall or wide; strong enough to beat a
+   loaded picture keeping its own width. */
+.note-file-reference-link.meta-gallery-tile .meta-gallery-picture :is(.note-file-image-preview, .note-file-excalidraw-preview, .meta-gallery-written-image) {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.meta-gallery-caption {
+    font-size: 13px;
+    line-height: 1.35;
+    color: #4b5563;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* A drawing in a tile: the current theme's preview only (the tile's fill rule above would show
+   both), whole, as cropping a diagram loses its point, and with no hover ring: the tile opens it. */
+.note-file-reference-link.meta-gallery-tile .meta-gallery-picture .note-file-excalidraw-preview {
+    object-fit: contain;
+    box-shadow: none;
+}
+
+.note-file-reference-link.meta-gallery-tile .meta-gallery-picture .note-file-excalidraw-preview:is([hidden], .note-file-excalidraw-preview-dark) {
+    display: none;
+}
+
+html[data-theme="dark"] .note-file-reference-link.meta-gallery-tile .meta-gallery-picture .note-file-excalidraw-preview-light {
+    display: none;
+}
+
+html[data-theme="dark"] .note-file-reference-link.meta-gallery-tile .meta-gallery-picture .note-file-excalidraw-preview-dark:not([hidden]) {
+    display: block;
+}
+
+/* Folded, a PDF without a picture shows its badge alone: its name has no room in the row. */
+.note.collapsed:not(.editing) .meta-gallery-file-name {
+    display: none;
+}
+
+/* A PDF's first page shows its top, where a document's title is, and a thin edge, as a white page
+   would vanish into a white note. */
+.note-file-reference-link.meta-gallery-tile .meta-gallery-picture [data-picture-source="first-page"] .note-file-image-preview {
+    object-position: top;
+}
+
+.meta-gallery-picture:has([data-picture-source="first-page"]) {
+    outline: 1px solid #d8dde6;
+    outline-offset: -1px;
+}
+
+html[data-theme="dark"] .meta-gallery-picture:has([data-picture-source="first-page"]) {
+    outline-color: rgba(255, 255, 255, 0.16);
+}
+
+/* A PDF without its first page drawn (yet): its badge and name in the middle of the square. */
+.meta-gallery-file {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    height: 100%;
+    padding: 8px;
+    box-sizing: border-box;
+}
+
+.meta-gallery-file-name {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 12px;
+    color: #4b5563;
+}
+
+html[data-theme="dark"] .meta-gallery-file-name {
+    color: rgba(229, 231, 235, 0.75);
+}
+
+html[data-theme="dark"] .meta-gallery-picture {
+    background: rgba(255, 255, 255, 0.06);
+}
+
+html[data-theme="dark"] .meta-gallery-caption {
+    color: rgba(229, 231, 235, 0.75);
+}
+
 .note-file-image-embed[data-preview-state="loaded"] .note-file-image-preview {
     width: auto;
 }
@@ -4890,7 +5341,7 @@ html[data-theme="dark"] .note-reference-block.note-reference-file-excalidraw {
     display: block;
     width: min(720px, 100%);
     max-width: 100%;
-    cursor: pointer;
+    cursor: var(--skin-cursor-pointer, pointer);
 }
 
 .note-file-excalidraw-frame {
@@ -4964,7 +5415,7 @@ html[data-theme="dark"] .note-reference-block.note-reference-file-excalidraw {
     gap: 0;
     overflow: hidden;
     border-radius: 4px;
-    cursor: pointer;
+    cursor: var(--skin-cursor-pointer, pointer);
 }
 
 .note-reference-link .note-reference-link-thumbnail .note-file-excalidraw-frame,
@@ -5038,7 +5489,7 @@ html[data-theme="dark"] .note-reference-block.note-reference-file-excalidraw {
     background: transparent;
     color: inherit;
     font: inherit;
-    cursor: pointer;
+    cursor: var(--skin-cursor-pointer, pointer);
 }
 
 .excalidraw-editor-bar .excalidraw-editor-done {
@@ -5049,7 +5500,7 @@ html[data-theme="dark"] .note-reference-block.note-reference-file-excalidraw {
 
 .excalidraw-editor-bar button:disabled {
     opacity: 0.55;
-    cursor: default;
+    cursor: var(--skin-cursor-default, default);
 }
 
 .excalidraw-editor-canvas {
@@ -5093,7 +5544,7 @@ html[data-theme="dark"] .note-reference-block.note-reference-file-excalidraw {
     font: inherit;
     font-size: 13px;
     line-height: 22px;
-    cursor: pointer;
+    cursor: var(--skin-cursor-pointer, pointer);
 }
 
 .note-file-action:hover,
@@ -5123,7 +5574,7 @@ html[data-theme="dark"] .note-reference-block.note-reference-file-excalidraw {
     background: #ffffff;
     color: #1f2937;
     font: inherit;
-    cursor: pointer;
+    cursor: var(--skin-cursor-pointer, pointer);
 }
 
 .note-file-media-play:hover,
@@ -5206,7 +5657,7 @@ audio.note-file-media-player {
     border-radius: 50%;
     background: transparent;
     color: inherit;
-    cursor: pointer;
+    cursor: var(--skin-cursor-pointer, pointer);
     font: 24px/1 Arial, sans-serif;
 }
 
@@ -5283,10 +5734,75 @@ audio.note-file-media-player {
     border-radius: 50%;
     background: rgba(15, 23, 42, 0.72);
     color: #ffffff;
-    cursor: pointer;
+    cursor: var(--skin-cursor-pointer, pointer);
     font: 28px/1 Arial, sans-serif;
 }
 
+/* A gallery's pictures full screen: ‹ › at the sides, dimmed at the ends, and below them Open
+   (a PDF's whole file) and Go to note. */
+.image-zoom-step,
+.image-zoom-open,
+.image-zoom-go-to-note {
+    border: 1px solid rgba(255, 255, 255, 0.34);
+    background: rgba(15, 23, 42, 0.72);
+    color: #ffffff;
+    cursor: var(--skin-cursor-pointer, pointer);
+}
+
+.image-zoom-step {
+    position: fixed;
+    top: calc(50% - 24px);
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    font: 32px/1 Arial, sans-serif;
+}
+
+.image-zoom-previous {
+    left: 18px;
+}
+
+.image-zoom-next {
+    right: 18px;
+}
+
+.image-zoom-step:disabled {
+    opacity: 0.3;
+    cursor: default;
+}
+
+.image-zoom-actions {
+    position: fixed;
+    bottom: 18px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 10px;
+}
+
+.image-zoom-open,
+.image-zoom-go-to-note {
+    padding: 8px 16px;
+    border-radius: 999px;
+    font: 15px/1.2 system-ui, -apple-system, sans-serif;
+}
+
+.image-zoom-open[hidden] {
+    display: none;
+}
+
+/* A drawing's preview is see-through: full screen it lies on the page's own ground. */
+.image-zoom-image.is-drawing {
+    background: #ffffff;
+}
+
+html[data-theme="dark"] .image-zoom-image.is-drawing {
+    background: #121212;
+}
+
+.image-zoom-step:not(:disabled):hover,
+.image-zoom-open:hover,
+.image-zoom-go-to-note:hover,
 .image-zoom-close:hover,
 .image-zoom-close:focus-visible {
     background: rgba(30, 41, 59, 0.96);
@@ -5366,7 +5882,7 @@ body.note-fullscreen-open .edge-tab {
     border-radius: 50%;
     background: var(--bg-color);
     color: var(--text-color);
-    cursor: pointer;
+    cursor: var(--skin-cursor-pointer, pointer);
     font: 30px/1 Arial, sans-serif;
     box-shadow: 0 8px 24px rgba(15, 23, 42, 0.18);
 }
@@ -5412,6 +5928,48 @@ html[data-theme="dark"] .note-fullscreen-close {
     font-size: 10px;
     font-weight: 700;
     letter-spacing: 0.08em;
+}
+
+/* The File size order: a file's size, right after its name (file-size-pill-service.js). */
+.note-file-reference-header[data-file-size]::after {
+    content: attr(data-file-size);
+    flex-shrink: 0;
+    padding: 1px 6px;
+    border-radius: 999px;
+    background: #d8dde6;
+    color: #334155;
+    font-size: 10px;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+/* A note's total, in the margin to its right. */
+.note-file-total {
+    position: absolute;
+    top: 4px;
+    /* From the padding box: 1px is the note's border, so the visible gap is 8px. */
+    left: calc(100% + 1px + 8px);
+}
+
+.note-file-total > span {
+    display: inline-block;
+    padding: 1px 8px;
+    border-radius: 999px;
+    background: #d8dde6;
+    color: #334155;
+    font-size: 11px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    user-select: none;
+}
+
+/* No room in that margin: on its own row at the top right of its note (file-size-pill-service.js). */
+.file-totals-in-note .note-file-total {
+    position: static;
+    order: -1;
+    flex: 0 0 100%;
+    text-align: right;
 }
 
 .note-file-reference-title {
@@ -5575,6 +6133,11 @@ html[data-theme="dark"] .note.collapsed:not(.editing) .note-content img.note-fil
     text-overflow: ellipsis;
 }
 
+/* The File size order keeps a file's size right after its name here too. */
+.note.collapsed:not(.editing) .note-reference-block.note-reference-file:not(.note-reference-file-image) .note-file-reference-header[data-file-size] .note-file-reference-title {
+    flex: 0 1 auto;
+}
+
 .note-embed-node {
     display: block;
 }
@@ -5665,7 +6228,7 @@ html[data-theme="dark"] .note.collapsed:not(.editing) .note-content img.note-fil
     border: 0;
     background: transparent;
     color: rgba(0, 0, 0, 0.35);
-    cursor: pointer;
+    cursor: var(--skin-cursor-pointer, pointer);
     user-select: none;
 }
 
@@ -5809,7 +6372,7 @@ html[data-theme="dark"] .note-reference-block.note-embed-held {
     text-align: center;
     text-decoration: none;
     white-space: nowrap;
-    cursor: pointer;
+    cursor: var(--skin-cursor-pointer, pointer);
 }
 
 /* A collapsed note sets every element to its own text size; the badge keeps its smaller one. */
@@ -5851,7 +6414,7 @@ html[data-theme="dark"] .note-reference-block.note-embed-held {
     line-height: inherit;
     text-align: right;
     text-decoration: none;
-    cursor: pointer;
+    cursor: var(--skin-cursor-pointer, pointer);
 }
 
 .note-source-arrow:hover {
@@ -6118,7 +6681,7 @@ body.pref-animated-transitions .note-tag-bar:focus-within::after {
     background: #4f46e5;
     color: #ffffff;
     font: 600 0.62rem/1.45 system-ui, sans-serif;
-    cursor: default;
+    cursor: var(--skin-cursor-default, default);
 }
 
 /* Suggest Tags with AI: "Asking the AI…" / "No new tags to suggest" float
@@ -6150,7 +6713,7 @@ body.pref-animated-transitions .note-tag-bar:focus-within::after {
     border-radius: 50%;
     background: rgba(255, 255, 255, 0.72);
     color: inherit;
-    cursor: pointer;
+    cursor: var(--skin-cursor-pointer, pointer);
     font: 700 0.72rem/1 system-ui, sans-serif;
 }
 
@@ -6177,7 +6740,7 @@ body.pref-animated-transitions .note-tag-bar:focus-within::after {
     background-color: inherit;
     background-image: linear-gradient(var(--robot-tint), var(--robot-tint));
     color: #4338ca;
-    cursor: pointer;
+    cursor: var(--skin-cursor-pointer, pointer);
     font: 0.68rem/1.2 system-ui, sans-serif;
 }
 
@@ -6199,7 +6762,7 @@ body.pref-animated-transitions .note-tag-bar:focus-within::after {
     border: none;
     background: transparent;
     color: rgba(0, 0, 0, 0.58);
-    cursor: pointer;
+    cursor: var(--skin-cursor-pointer, pointer);
     font-size: 1.7rem;
     font-weight: 600;
     font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
@@ -6253,7 +6816,7 @@ body.pref-animated-transitions .note-tag-bar:focus-within::after {
     border: 1px solid transparent;
     background: var(--modal-quiet-button);
     color: var(--modal-text);
-    cursor: pointer;
+    cursor: var(--skin-cursor-pointer, pointer);
     font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
     font-size: 0.9rem;
 }
@@ -6264,6 +6827,41 @@ body.pref-animated-transitions .note-tag-bar:focus-within::after {
 }
 
 .note-tag-suggestion.is-selected {
+    background: var(--modal-selected);
+    border-color: var(--modal-border-strong);
+}
+
+/* The tags a field that asks for a tag offers (tag-input-suggestions.js), drawn like the tag bar's. */
+.tag-input-suggestions {
+    position: fixed;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 8px;
+    border-radius: 10px;
+    border: 1px solid var(--modal-border);
+    background: var(--modal-surface);
+    box-shadow: var(--modal-menu-shadow);
+    max-height: 240px;
+    overflow-y: auto;
+    /* Above the dialog that holds the field (.modal, 15000). */
+    z-index: 16000;
+}
+
+.tag-input-suggestion {
+    padding: 6px 8px;
+    border-radius: 6px;
+    border: 1px solid transparent;
+    background: var(--modal-quiet-button);
+    color: var(--modal-text);
+    cursor: var(--skin-cursor-pointer, pointer);
+    font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    font-size: 0.9rem;
+}
+
+.tag-input-suggestion:hover,
+.tag-input-suggestion.is-selected {
     background: var(--modal-selected);
     border-color: var(--modal-border-strong);
 }
@@ -6309,7 +6907,7 @@ body.pref-animated-transitions .note-tag-bar:focus-within::after {
     font-weight: 600;
     padding: 6px 10px;
     border-radius: 999px;
-    cursor: pointer;
+    cursor: var(--skin-cursor-pointer, pointer);
     min-width: 40px;
     line-height: 1;
 }
@@ -6442,7 +7040,7 @@ body.pref-animated-transitions .note-tag-bar:focus-within::after {
     border: none;
     padding: 0.5rem 1rem;
     border-radius: 4px;
-    cursor: pointer;
+    cursor: var(--skin-cursor-pointer, pointer);
 }
 
 .trash-can {
@@ -6513,7 +7111,7 @@ body.pref-animated-transitions .note-tag-bar:focus-within::after {
     bottom: 0;
     width: max(0px, calc(50% - var(--search-input-half-width) - 40px));
     overflow: hidden;
-    cursor: default;
+    cursor: var(--skin-cursor-default, default);
 }
 
 .controls .tab-ui-icon {
@@ -6588,7 +7186,7 @@ body.pref-show-tab-ui .controls .tab-hover-zone:hover .tab-ui-icon {
     border: 1px solid transparent;
     background: rgba(0, 0, 0, 0.04);
     color: var(--text-color);
-    cursor: pointer;
+    cursor: var(--skin-cursor-pointer, pointer);
     font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
     font-size: 13px;
 }
@@ -6642,7 +7240,8 @@ body.pref-show-tab-ui .controls .tab-hover-zone:hover .tab-ui-icon {
 
 .context-menu-submenu {
     z-index: 13001;
-    max-height: calc(100vh - 16px);
+    /* 16px of margin, then its own 6px padding and 1px border at top and bottom. */
+    max-height: calc(100vh - 30px);
     overflow-y: auto;
 }
 
@@ -6659,7 +7258,7 @@ body.pref-show-tab-ui .controls .tab-hover-zone:hover .tab-ui-icon {
     border-radius: 6px;
     font-size: 13px;
     font-family: inherit;
-    cursor: pointer;
+    cursor: var(--skin-cursor-pointer, pointer);
     white-space: nowrap;
 }
 
@@ -6718,16 +7317,6 @@ body.pref-show-tab-ui .controls .tab-hover-zone:hover .tab-ui-icon {
     background: rgba(0, 0, 0, 0.06);
 }
 
-/* A destructive item (Delete Note): red, last in its own group. */
-.context-menu-item.is-danger {
-    color: #e5484d;
-}
-
-.context-menu-item.is-danger:hover:not(:disabled),
-.context-menu-item.is-danger:focus-visible {
-    color: #ff6369;
-}
-
 .context-menu-item.is-separated {
     margin-top: 6px;
     border-top: 1px solid var(--border-color);
@@ -6742,7 +7331,7 @@ html[data-theme="dark"] .context-menu-item.is-submenu-open {
 .context-menu-item.is-disabled,
 .context-menu-item:disabled {
     opacity: 0.5;
-    cursor: default;
+    cursor: var(--skin-cursor-default, default);
 }
 
 .context-menu-explanation {
@@ -6809,7 +7398,7 @@ html[data-theme="dark"] .context-menu-item.is-submenu-open {
     background: transparent;
     color: inherit;
     font: inherit;
-    cursor: pointer;
+    cursor: var(--skin-cursor-pointer, pointer);
 }
 
 .paste-format-offer button:hover {
@@ -6880,7 +7469,7 @@ html[data-theme="dark"] .context-menu-item.is-submenu-open {
 .reference-suggestion {
     padding: 5px 8px;
     border-radius: 6px;
-    cursor: pointer;
+    cursor: var(--skin-cursor-pointer, pointer);
 }
 
 .reference-suggestion.is-selected {
@@ -6912,6 +7501,17 @@ html[data-theme="dark"] .context-menu-item.is-submenu-open {
 .reference-suggestion-icon svg {
     width: 100%;
     height: 100%;
+}
+
+/* A search offered as a search link: the magnifier its link shows (search_links.py). */
+.reference-suggestion-search-icon {
+    display: inline-block;
+    flex: none;
+    width: 14px;
+    height: 14px;
+    background-color: currentColor;
+    -webkit-mask: var(--note-search-icon) center / contain no-repeat;
+    mask: var(--note-search-icon) center / contain no-repeat;
 }
 
 .reference-suggestion-context,
@@ -6973,7 +7573,7 @@ html[data-theme="dark"] .context-menu-item.is-submenu-open {
     font-size: 11px;
     line-height: 1.35;
     font-variant-numeric: tabular-nums;
-    cursor: default;
+    cursor: var(--skin-cursor-default, default);
     user-select: text;
 }
 
@@ -7185,7 +7785,7 @@ body:not(.pref-show-search-results-count) .controls .search-results-count {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    cursor: pointer;
+    cursor: var(--skin-cursor-pointer, pointer);
 }
 
 .controls .search-input-chip-clear:hover,
@@ -7249,7 +7849,7 @@ body:not(.pref-show-search-results-count) .controls .search-results-count {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    cursor: pointer;
+    cursor: var(--skin-cursor-pointer, pointer);
 }
 
 .controls .reference-view-chip-button[hidden],
@@ -7298,7 +7898,7 @@ body:not(.pref-show-search-results-count) .controls .search-results-count {
     display: flex;
     align-items: center;
     justify-content: center;
-    cursor: pointer;
+    cursor: var(--skin-cursor-pointer, pointer);
     transform: translateY(-50%);
     opacity: 0;
     visibility: hidden;
@@ -7390,7 +7990,7 @@ html.reference-sliding body {
     border-radius: 4px;
     background: rgba(255, 255, 255, 0.95);
     color: var(--text-color);
-    cursor: pointer;
+    cursor: var(--skin-cursor-pointer, pointer);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -7412,7 +8012,7 @@ html.reference-sliding body {
 
 .scroll-to-top-button:disabled {
     opacity: 0.35;
-    cursor: default;
+    cursor: var(--skin-cursor-default, default);
 }
 
 .scroll-to-top-button:hover {
@@ -7434,7 +8034,7 @@ html.reference-sliding body {
     display: flex;
     align-items: center;
     justify-content: center;
-    cursor: pointer;
+    cursor: var(--skin-cursor-pointer, pointer);
     background: white;
     font-size: 1.2rem;
     transition: background-color 0.2s;
@@ -7479,7 +8079,7 @@ body.pref-show-ai-chat {
     border: 1px solid var(--border-color);
     background: rgba(255, 255, 255, 0.95);
     color: var(--text-color);
-    cursor: pointer;
+    cursor: var(--skin-cursor-pointer, pointer);
     transition: background-color 0.2s;
 }
 
@@ -7797,7 +8397,7 @@ body.loading::after {
     padding: 4px 6px;
     border: 1px solid transparent;
     border-radius: 4px;
-    cursor: pointer;
+    cursor: var(--skin-cursor-pointer, pointer);
     color: var(--modal-text-muted);
 }
 
@@ -8022,7 +8622,7 @@ html[data-theme="dark"] .meta-mermaid-source.is-find-current {
     background: transparent;
     color: inherit;
     font: inherit;
-    cursor: pointer;
+    cursor: var(--skin-cursor-pointer, pointer);
 }
 
 .find-in-list-button:hover:not(:disabled) {
@@ -8031,7 +8631,7 @@ html[data-theme="dark"] .meta-mermaid-source.is-find-current {
 
 .find-in-list-button:disabled {
     opacity: 0.4;
-    cursor: default;
+    cursor: var(--skin-cursor-default, default);
 }
 
 /* Meta tag formatting */
@@ -8086,7 +8686,7 @@ html[data-theme="dark"] .meta-mermaid-source.is-find-current {
 
 /* A click copies it, in MetaList (mouse-events.js) and in an export (html_export.py). */
 .meta-copyable {
-    cursor: pointer;
+    cursor: var(--skin-cursor-pointer, pointer);
 }
 
 .meta-copyable:hover {
@@ -8232,7 +8832,7 @@ html[data-theme="dark"] .meta-quote {
 }
 
 .meta-credential-value {
-    cursor: pointer;
+    cursor: var(--skin-cursor-pointer, pointer);
     user-select: text;
     border-radius: 6px;
     position: relative;
@@ -8293,7 +8893,7 @@ html[data-theme="dark"] .meta-quote {
     background: transparent;
     color: inherit;
     opacity: 0.35;
-    cursor: pointer;
+    cursor: var(--skin-cursor-pointer, pointer);
 }
 
 .meta-value-button:hover,
@@ -8355,7 +8955,7 @@ html[data-theme="dark"] .meta-value-button:focus-visible {
     width: 20px;
     height: 20px;
     color: #444444;
-    cursor: pointer;
+    cursor: var(--skin-cursor-pointer, pointer);
     border-radius: 4px;
     transition: background-color 0.15s ease;
 }
@@ -8367,7 +8967,7 @@ html[data-theme="dark"] .meta-value-button:focus-visible {
 /* An embed shows its source's status but never changes it: an embedded
    checkbox is not a control. A press on it does nothing (mouse-events.js). */
 .note-embed-node .meta-status-toggle {
-    cursor: default;
+    cursor: var(--skin-cursor-default, default);
 }
 
 .note-embed-node .meta-status-toggle:hover,
@@ -8786,7 +9386,7 @@ html[data-theme="dark"] .meta-code-code .tok-cpf { color: #8b949e; }
     margin-right: 6px;
     vertical-align: -4px;
     color: #444444;
-    cursor: pointer;
+    cursor: var(--skin-cursor-pointer, pointer);
     border-radius: 4px;
     transition: background-color 0.15s ease;
 }
@@ -8805,7 +9405,7 @@ html[data-theme="dark"] .meta-code-code .tok-cpf { color: #8b949e; }
    arrow, and the title on its line. */
 .meta-markdown-callout-fold > summary,
 .meta-markdown-html-fold > summary {
-    cursor: pointer;
+    cursor: var(--skin-cursor-pointer, pointer);
 }
 
 .meta-markdown-callout-fold[open] > summary {
@@ -8819,7 +9419,7 @@ html[data-theme="dark"] .meta-code-code .tok-cpf { color: #8b949e; }
 
 /* In an embed a task's box shows its source's state but is not a control. */
 .note-embed-node .meta-markdown-task-toggle {
-    cursor: default;
+    cursor: var(--skin-cursor-default, default);
 }
 
 .note-embed-node .meta-markdown-task-toggle:hover,
@@ -9155,7 +9755,7 @@ html[data-theme="dark"] .note-embed-node .meta-markdown-task-toggle:hover {
     line-height: 1.45;
     white-space: pre;
     overflow-x: auto;
-    cursor: pointer;
+    cursor: var(--skin-cursor-pointer, pointer);
 }
 
 .meta-shell-script:hover {
@@ -9230,12 +9830,12 @@ html[data-theme="dark"] .note-embed-node .meta-markdown-task-toggle:hover {
     color: #374151;
     font-size: 0.74rem;
     font-weight: 600;
-    cursor: pointer;
+    cursor: var(--skin-cursor-pointer, pointer);
 }
 
 .meta-shell-output-close:disabled {
     opacity: 0.6;
-    cursor: default;
+    cursor: var(--skin-cursor-default, default);
 }
 
 .meta-shell-output-message {
@@ -9351,7 +9951,7 @@ html[data-theme="dark"] .note-embed-node .meta-markdown-task-toggle:hover {
     font-size: 18px;
     font-weight: bold;
     line-height: 1;
-    cursor: pointer;
+    cursor: var(--skin-cursor-pointer, pointer);
     opacity: 0.8;
 }
 
@@ -9437,7 +10037,7 @@ html[data-theme="dark"] .note-embed-node .meta-markdown-task-toggle:hover {
     color: inherit;
     font: inherit;
     font-weight: 600;
-    cursor: pointer;
+    cursor: var(--skin-cursor-pointer, pointer);
 }
 
 .floating-message-action:hover {
@@ -9539,7 +10139,7 @@ ul.error-dialog-text li + li {
     background: none;
     border: none;
     color: var(--primary-color);
-    cursor: pointer;
+    cursor: var(--skin-cursor-pointer, pointer);
     text-decoration: underline;
     font-size: 14px;
     padding: 5px 0;
@@ -9576,7 +10176,7 @@ ul.error-dialog-text li + li {
     border: 1px solid #dee2e6;
     background: white;
     border-radius: 4px;
-    cursor: pointer;
+    cursor: var(--skin-cursor-pointer, pointer);
     font-size: 12px;
     transition: all 0.2s;
 }
@@ -9632,6 +10232,7 @@ html[data-theme="light"] {
     --modal-surface: #ffffff;
     --modal-surface-raised: #f4f6f9;
     --modal-surface-inset: #ffffff;
+    --modal-surface-grey: #e8eaed;
     --modal-panel-background: #ffffff;
     --modal-border: rgba(15, 23, 42, 0.14);
     --modal-border-strong: rgba(29, 95, 184, 0.55);
@@ -9671,6 +10272,7 @@ html[data-theme="dark"] {
     --modal-surface: #10151d;
     --modal-surface-raised: #171e29;
     --modal-surface-inset: #0a0e14;
+    --modal-surface-grey: #262d38;
     --modal-panel-background: linear-gradient(145deg, rgba(23, 30, 41, 0.98), rgba(12, 17, 24, 0.99));
     --modal-border: rgba(205, 220, 241, 0.16);
     --modal-border-strong: rgba(138, 180, 255, 0.42);
@@ -9876,7 +10478,9 @@ html[data-theme="dark"] .file-viewer-message {
     color: var(--app-text-muted);
 }
 
-html[data-theme="dark"] .note-file-reference-badge {
+html[data-theme="dark"] .note-file-reference-badge,
+html[data-theme="dark"] .note-file-reference-header[data-file-size]::after,
+html[data-theme="dark"] .note-file-total > span {
     background: rgba(90, 169, 255, 0.14);
     color: #cfe0ff;
 }
@@ -10222,7 +10826,6 @@ html[data-theme="dark"] body.loading::after {
 }
 
 .command-palette-panel {
-    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
     background: var(--modal-surface);
     color: var(--modal-text);
     border: 1px solid var(--modal-border);
@@ -10249,6 +10852,7 @@ html[data-theme="dark"] body.loading::after {
     border: 1px solid var(--modal-border);
     border-radius: 8px;
     color: var(--modal-text);
+    font-family: inherit;
     font-size: 15px;
 }
 
@@ -10259,6 +10863,7 @@ html[data-theme="dark"] body.loading::after {
 
 .command-palette-suggestions {
     padding: 10px 14px;
+    background: var(--modal-surface-grey);
     border-bottom: 1px solid var(--modal-border);
     color: var(--modal-text-muted);
     font-size: 13px;
@@ -10268,7 +10873,7 @@ html[data-theme="dark"] body.loading::after {
 }
 
 .command-palette-suggestion {
-    cursor: pointer;
+    cursor: var(--skin-cursor-pointer, pointer);
     user-select: none;
 }
 
@@ -10276,9 +10881,11 @@ html[data-theme="dark"] body.loading::after {
     color: var(--modal-text);
 }
 
+/* The same size as the right-click menus' items. */
 .command-palette-results {
     max-height: calc(min(78vh, 720px) - 130px);
     overflow: auto;
+    font-size: 13px;
 }
 
 .command-palette-row {
@@ -10287,6 +10894,8 @@ html[data-theme="dark"] body.loading::after {
     gap: 16px;
     padding: 10px 14px;
     border-bottom: 1px solid var(--modal-border);
+    cursor: var(--skin-cursor-pointer, pointer);
+    user-select: none;
 }
 
 .command-palette-row:last-child {
@@ -10307,11 +10916,6 @@ html[data-theme="dark"] body.loading::after {
     color: var(--modal-text-subtle);
     font-size: 12px;
     white-space: nowrap;
-}
-
-/* A destructive command (endpoint-registry.js, DESTRUCTIVE_COMMAND_IDS). */
-.command-palette-row.is-danger .command-palette-row-label {
-    color: var(--modal-danger);
 }
 
 .command-palette-row-value {
@@ -10568,7 +11172,7 @@ html[data-theme="dark"] body.loading::after {
     display: flex;
     align-items: center;
     gap: 8px;
-    cursor: pointer;
+    cursor: var(--skin-cursor-pointer, pointer);
 }
 
 .reminder-check-label input {
@@ -10755,7 +11359,7 @@ html[data-theme="dark"] body.loading::after {
     border: 0;
     background: transparent;
     color: var(--modal-text);
-    cursor: pointer;
+    cursor: var(--skin-cursor-pointer, pointer);
     font: inherit;
     font-size: 15px;
     font-weight: 700;
@@ -11324,7 +11928,7 @@ html[data-theme="dark"] body.loading::after {
     font: inherit;
     font-size: 12px;
     line-height: 18px;
-    cursor: pointer;
+    cursor: var(--skin-cursor-pointer, pointer);
 }
 #ai-chat-panel .ai-chat-tag-controls button:hover:enabled { background: var(--modal-quiet-button-hover); }
 #ai-chat-panel .ai-chat-tag-operation .summary-cancel-btn,
@@ -11350,7 +11954,7 @@ html[data-theme="dark"] body.loading::after {
     font-size: 22px;
     line-height: 26px;
 }
-.ai-chat-tag-controls button:disabled { opacity: .5; cursor: default; }
+.ai-chat-tag-controls button:disabled { opacity: .5; cursor: var(--skin-cursor-default, default); }
 .ai-chat-tag-controls .bulk-status-row { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 12px; }
 .ai-chat-tag-controls [data-elapsed] { margin-left: auto; color: var(--modal-text-subtle); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .ai-chat-tag-controls [data-error] { color: var(--modal-danger); }
@@ -11361,7 +11965,7 @@ body.ai-tagging-locked * { cursor: not-allowed !important; }
 body.ai-tagging-locked .ai-chat-tag-operation,
 body.ai-tagging-locked .ai-chat-tag-operation * { cursor: auto !important; }
 body.ai-tagging-locked .ai-chat-tag-operation button:enabled,
-body.ai-tagging-locked .ai-chat-tag-operation select:enabled { cursor: pointer !important; }
+body.ai-tagging-locked .ai-chat-tag-operation select:enabled { cursor: var(--skin-cursor-pointer, pointer) !important; }
 .ai-tagging-locked-region {
     filter: grayscale(1) blur(1px);
     opacity: 0.5;
@@ -11377,7 +11981,7 @@ body.ai-tagging-locked .ai-chat-tag-operation select:enabled { cursor: pointer !
     background: transparent;
     color: inherit;
     font: inherit;
-    cursor: pointer;
+    cursor: var(--skin-cursor-pointer, pointer);
 }
 
 .meta-footnote-link:hover {
@@ -11556,7 +12160,7 @@ body.ai-tagging-locked .ai-chat-tag-operation select:enabled { cursor: pointer !
 }
 
 .meta-footnote-references .ai-chat-references-heading {
-    cursor: default;
+    cursor: var(--skin-cursor-default, default);
     user-select: text;
 }
 
@@ -11627,7 +12231,7 @@ iframe.print-frame {
     display: flex;
     gap: 8px;
     align-items: center;
-    cursor: pointer;
+    cursor: var(--skin-cursor-pointer, pointer);
 }
 
 /* Not the dialog's full-width text input: a box beside its words (stronger
@@ -11717,7 +12321,7 @@ iframe.print-frame {
 
 .export-title-ai-btn:disabled {
     opacity: 0.45;
-    cursor: default;
+    cursor: var(--skin-cursor-default, default);
 }
 
 .export-title-ai-note {
@@ -12390,7 +12994,7 @@ suggestions as pills. */
     position: relative;
     padding-right: 52px;
     box-shadow: none;
-    cursor: pointer;
+    cursor: var(--skin-cursor-pointer, pointer);
     transition: border-color 150ms ease, box-shadow 150ms ease, transform 150ms ease, background-color 150ms ease;
 }
 
@@ -12480,7 +13084,7 @@ suggestions as pills. */
 
 /* The card opens the folder dialog, as Choose Folder… does. */
 .wizard-folder-chosen[role="button"] {
-    cursor: pointer;
+    cursor: var(--skin-cursor-pointer, pointer);
 }
 
 .wizard-folder-chosen.is-empty:hover {
@@ -12763,7 +13367,7 @@ body.pref-animated-transitions .wizard-toggled {
     gap: 10px;
     padding: 6px 8px;
     border-radius: 6px;
-    cursor: pointer;
+    cursor: var(--skin-cursor-pointer, pointer);
 }
 
 .wizard-kind:hover {
@@ -12778,7 +13382,7 @@ body.pref-animated-transitions .wizard-toggled {
 
 .wizard-kind-label {
     min-width: 0;
-    cursor: pointer;
+    cursor: var(--skin-cursor-pointer, pointer);
 }
 
 /* A kind's arrow: opens the list of its files. The same arrow as a note's
@@ -12799,7 +13403,7 @@ body.pref-animated-transitions .wizard-toggled {
     font-size: 23px;
     line-height: 27px;
     text-align: center;
-    cursor: pointer;
+    cursor: var(--skin-cursor-pointer, pointer);
 }
 
 .modal.wizard-modal .modal-content .wizard-kind button.wizard-kind-arrow:hover {
@@ -12827,7 +13431,7 @@ html[data-theme="dark"] .modal.wizard-modal .modal-content .wizard-kind button.w
     display: flex;
     align-items: center;
     list-style: none;
-    cursor: pointer;
+    cursor: var(--skin-cursor-pointer, pointer);
 }
 
 .wizard-left-out summary::-webkit-details-marker {
@@ -12900,7 +13504,7 @@ html[data-theme="dark"] .wizard-left-out summary:hover .wizard-kind-arrow {
     align-items: center;
     gap: 8px;
     min-width: 0;
-    cursor: pointer;
+    cursor: var(--skin-cursor-pointer, pointer);
 }
 
 .modal-content .wizard-kind-file-path input[type="checkbox"] {
@@ -12919,17 +13523,6 @@ html[data-theme="dark"] .wizard-left-out summary:hover .wizard-kind-arrow {
 
 .wizard-kind-file-folder {
     color: var(--modal-text-subtle);
-}
-
-.wizard-kind-file .wizard-kind-over {
-    display: inline;
-    margin-left: 8px;
-}
-
-.wizard-kind-over {
-    display: block;
-    font-size: 12px;
-    color: var(--modal-danger);
 }
 
 .wizard-kind-count,
@@ -13129,7 +13722,7 @@ html[data-theme="dark"] .wizard-left-out summary:hover .wizard-kind-arrow {
     opacity: 0.4;
     filter: none;
     box-shadow: none;
-    cursor: default;
+    cursor: var(--skin-cursor-default, default);
 }
 
 @media (max-width: 640px) {
@@ -13344,7 +13937,7 @@ body.pref-animated-transitions .wizard-write-tag {
     color: inherit;
     font: inherit;
     text-align: left;
-    cursor: pointer;
+    cursor: var(--skin-cursor-pointer, pointer);
 }
 
 .virtual-folder-row:hover {
@@ -13417,7 +14010,7 @@ html[data-theme="dark"] .virtual-folder-row:hover .virtual-folder-arrow {
     gap: 8px;
     align-items: center;
     margin-top: 10px;
-    cursor: pointer;
+    cursor: var(--skin-cursor-pointer, pointer);
 }
 
 .modal-content .delete-folder-notes-toggle input[type="checkbox"] {

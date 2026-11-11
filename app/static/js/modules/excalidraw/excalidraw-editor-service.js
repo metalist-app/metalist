@@ -20,11 +20,17 @@ import {
     EXCALIDRAW_AUTOSAVE_DELAY_MS,
     EXCALIDRAW_MIME_TYPE,
     EXCALIDRAW_PREVIEW_VARIANTS,
+    appStateForView,
     computeSceneVersion,
     currentPreviewVariant,
+    fittedView,
     parseSceneJson,
     previewExportAppState,
+    savedViewOf,
     sceneFingerprint,
+    viewOfAppState,
+    viewsDiffer,
+    withSavedView,
 } from './excalidraw-scene.js';
 
 const SAVE_CARD_KEY = 'diagram-save';
@@ -115,9 +121,11 @@ function toSaveResult(settled) {
 // One open editor. Resource handles (the Excalidraw API and React root) stay in this closure;
 // the session's own progress lives in ApplicationState.
 function startEditorSession(setup) {
-    const { bundle, fileId, hostNoteId, sessionId, isNewDiagram, filename, restoredScene, onClosed } = setup;
+    const { bundle, fileId, hostNoteId, sessionId, isNewDiagram, filename, restoredScene, savedView, onClosed } = setup;
     const session = ApplicationState.createFields('excalidraw-editor-session', {
         revision: setup.revision,
+        // The view the file keeps (or the first open's fit): Done saves a view moved from it.
+        keptView: null,
         lastFingerprint: null,
         discardArmed: false,
         discardTimer: null,
@@ -145,6 +153,16 @@ function startEditorSession(setup) {
         files: handles.api.getFiles(),
     });
 
+    // The scene with the view it is seen in, so the next open shows the same (cases agreed 2026-11-11).
+    async function writeScene(scene) {
+        const view = viewOfAppState(scene.appState);
+        const saved = await writeSceneText(withSavedView(bundle.serializeAsJSON(scene.elements, scene.appState, scene.files, 'local'), view));
+        if (saved.ok) {
+            session.keptView = view;
+        }
+        return saved;
+    }
+
     async function writeSceneText(text) {
         const blob = new Blob([text], { type: EXCALIDRAW_MIME_TYPE });
         const settled = await settleResult(() => FilesAPI.replaceFileContent(fileId, blob, filename, session.revision));
@@ -165,10 +183,7 @@ function startEditorSession(setup) {
 
     const controller = createAutosaveController({
         delayMs: EXCALIDRAW_AUTOSAVE_DELAY_MS,
-        save: () => {
-            const scene = currentScene();
-            return writeSceneText(bundle.serializeAsJSON(scene.elements, scene.appState, scene.files, 'local'));
-        },
+        save: () => writeScene(currentScene()),
         schedule: (callback, delayMs) => window.setTimeout(callback, delayMs),
         cancel: (timer) => window.clearTimeout(timer),
         onStatus: (status) => {
@@ -245,6 +260,10 @@ function startEditorSession(setup) {
         }
         session.finishing = true;
         setButtonsDisabled(true);
+        // Panned or zoomed with no edit: the view is a choice, kept like one.
+        if (session.keptView !== null && viewsDiffer(session.keptView, viewOfAppState(handles.api.getAppState()))) {
+            controller.noteChange();
+        }
         const status = await controller.flush();
         if (status === AUTOSAVE_STATUS.CONFLICT) {
             ErrorHandler.showErrorBanner('The diagram was changed in another window, so your latest edits were not saved.', 'error', DIAGRAM_SAVE_PROBLEM_BANNER_SECONDS * MS_PER_SECOND, { closable: true });
@@ -318,13 +337,25 @@ function startEditorSession(setup) {
     window.addEventListener('beforeunload', handleBeforeUnload);
     document.body.appendChild(overlay);
 
-    handles.root = bundle.createRoot(overlayPart(overlay, '.excalidraw-editor-canvas'));
+    // The view the file keeps, else the whole drawing fitted; an empty drawing opens as Excalidraw opens one.
+    const canvas = overlayPart(overlay, '.excalidraw-editor-canvas');
+    const canvasBox = canvas.getBoundingClientRect();
+    let startView = savedView;
+    if (startView === null) {
+        startView = fittedView(restoredScene.elements, canvasBox.width, canvasBox.height);
+    }
+    let startAppState = { ...restoredScene.appState, zenModeEnabled: false };
+    if (startView !== null) {
+        session.keptView = startView;
+        startAppState = { ...startAppState, ...appStateForView(startView, canvasBox.width, canvasBox.height) };
+    }
+    handles.root = bundle.createRoot(canvas);
     handles.root.render(bundle.createElement(bundle.Excalidraw, {
         initialData: {
             elements: restoredScene.elements,
-            appState: { ...restoredScene.appState, zenModeEnabled: false },
+            appState: startAppState,
             files: restoredScene.files,
-            scrollToContent: true,
+            scrollToContent: startView === null,
         },
         excalidrawAPI: (api) => {
             if (handles.api === null && api !== null) {
@@ -388,7 +419,8 @@ export async function openExcalidrawEditor(options) {
     }
 
     const [bundle, downloaded] = await Promise.all([loadExcalidraw(), FilesAPI.downloadFile(fileId)]);
-    const restoredScene = bundle.restore(parseSceneJson(await downloaded.blob.text()), null, null);
+    const parsedScene = parseSceneJson(await downloaded.blob.text());
+    const restoredScene = bundle.restore(parsedScene, null, null);
     if (typeof downloaded.filename !== 'string' || downloaded.filename.length === 0) {
         throw new Error('Diagram download is missing its filename');
     }
@@ -409,6 +441,7 @@ export async function openExcalidrawEditor(options) {
         filename: downloaded.filename,
         revision: downloaded.revision,
         restoredScene,
+        savedView: savedViewOf(parsedScene),
         onClosed,
     });
 }

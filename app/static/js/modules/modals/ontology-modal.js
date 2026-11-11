@@ -2494,6 +2494,11 @@ export class OntologyModal extends BaseModal {
         if (payload === null) {
             return;
         }
+        // The tag was renamed in search contexts' searches too (rename_tag.py): the tabs take them.
+        if (payload.renamedSearchCount > 0) {
+            const { adoptRenamedSearches } = await import('../mode-manager/events/keyboard-events.js');
+            await adoptRenamedSearches();
+        }
         await this.setFocusTag(trimmed);
     }
 

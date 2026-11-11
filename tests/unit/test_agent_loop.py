@@ -109,10 +109,10 @@ def _tool_results(conversation: list[dict[str, object]]) -> list[dict[str, objec
 def test_a_help_question_looks_up_help_then_answers_from_it() -> None:
     model = _ScriptedModel([
         _turn("", [("lookup_metalist_help", {"topics": ["releases"]})]),
-        _turn("0.11.0 made |large namespaces faster.", []),
+        _turn("0.26.1 made |large vaults faster.", []),
     ])
-    events = _run_agent(model, web_mode="none", message="What's new in 0.11.0?", tagging=None, on_event=_ignore)
-    assert _answer(events) == "0.11.0 made large namespaces faster."
+    events = _run_agent(model, web_mode="none", message="What's new in 0.26.1?", tagging=None, on_event=_ignore)
+    assert _answer(events) == "0.26.1 made large vaults faster."
     request_tokens = events[-1]["request_tokens"]
     assert {key: value for key, value in events[-1].items() if key != "request_tokens"} == {
         "type": "done", "reference_note_ids": [], "reference_web_ids": [],
@@ -123,11 +123,11 @@ def test_a_help_question_looks_up_help_then_answers_from_it() -> None:
     assert request_tokens["this_turn"] > 0 and request_tokens["instructions"] > 0
     assert request_tokens["instructions"] + request_tokens["this_turn"] == 10_000
     help_result = _tool_results(model.conversations[1])[0]
-    assert "## 0.11.0" in help_result["topics"][0]["help"]
+    assert "## 0.26.1" in help_result["topics"][0]["help"]
     # Web pages are not offered while web access is off; the instructions come first.
     assert "open_web_pages" not in model.tool_names[0]
     assert model.conversations[0][0]["content"].startswith("You are MetaList's assistant")
-    assert model.conversations[0][-1] == {"role": "user", "content": "What's new in 0.11.0?"}
+    assert model.conversations[0][-1] == {"role": "user", "content": "What's new in 0.26.1?"}
 
 
 def test_notes_found_by_tools_become_citable_and_references_only_grow() -> None:

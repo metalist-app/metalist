@@ -218,4 +218,5 @@ Other (non-meta) tags may also appear inside wrapper tokens (e.g. `{{foo bar}}`)
 
 ## Mermaid meta tags
 - `@mermaid`: the note content is one Mermaid diagram (no Markdown fence needed), drawn in view mode like a fenced `mermaid` block under `@markdown`, in its own block. Until it is drawn, and when it is invalid (with an `Invalid Mermaid diagram` badge), the source shows as a code block.
+- Folded, a note whose first line is a diagram shows the whole diagram as a small thumbnail.
 - Scoped wrappers (e.g. `((@mermaid))`) draw only the wrapped region.

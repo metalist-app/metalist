@@ -24,7 +24,7 @@ function viewMenu(overrides, calls) {
     return buildContextMenuItems({
         kind: 'view', searchAllowsNewNotes: true, isMac: true, isEditing: false, canPasteNoteAtTop: true, canGoToTop: true, canGoToBottom: true,
         isUntaggedView: false, theme: 'system', sortMode: 'normal', dateRangeKind: 'none', dateRangeField: 'updated',
-        fileFilterKind: 'none',
+        fileFilterKind: 'none', fileFilterKinds: ['image', 'pdf', 'markdown'],
         ...overrides,
     }, viewHandlers(calls));
 }
@@ -67,16 +67,12 @@ test('export and print in the note menu say they ask first', () => {
     assert.deepEqual(labels(find(items, 'print').submenu), ['Note…', 'View…']);
 });
 
-test('Delete Note is red, last among the note menu actions', () => {
+test('Delete Note is last among the note menu actions', () => {
     const items = noteMenu();
     const actions = items.filter((item) => item.kind === undefined);
     const deleteNote = actions[actions.length - 1];
     assert.equal(deleteNote.id, 'delete-note');
-    assert.equal(deleteNote.danger, true);
     assert.equal(deleteNote.separated, true);
-    for (const item of actions.slice(0, -1)) {
-        assert.notEqual(item.danger, true, `${item.label} must not be red`);
-    }
 });
 
 test('the view menu names what each item does', () => {
@@ -88,7 +84,6 @@ test('the view menu names what each item does', () => {
     assert.equal(find(all, 'print-view').label, 'Print View…');
     assert.equal(find(all, 'reminders').label, 'Reminders');
     assert.equal(find(all, 'open-namespace').label, 'Vault…');
-    assert.equal(find(items, 'log-out').danger, undefined, 'logging out loses nothing: not red');
 });
 
 test('the tag menu says the tag editor asks first', () => {

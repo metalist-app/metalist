@@ -115,6 +115,8 @@ Super tag atom notes:
 
 ## Semantics
 
+A folder tag implies its parent folders (built 2026-11-11, `TagOntology.infer_effective_tags` and `infer_implication_only` with `parent_folder_tags`; `docs/ready-to-build/folders-tab-and-multiple-folders.md` §6), with no rule written: a rule on `Projects/` reaches notes in `Projects/Client-A/`, and a rule giving `Archive/2026/` files the note in `Archive/` too. The tag bar still shows only the folder written in it.
+
 Rules are applied per note as a monotone fixed point:
 - Start with a set of tags.
 - Repeatedly apply rules, only adding tags.

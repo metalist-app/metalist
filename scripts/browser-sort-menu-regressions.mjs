@@ -4,11 +4,12 @@ import {waitForAppQuiet, waitForPageSettled} from './browser-app-idle.mjs';
 // Requests count as quiet after this long without one starting or ending.
 const REQUESTS_QUIET_MS = 100;
 
-async function openSortMenu(page) {
+export async function openSortMenu(page) {
   // A menu click while a command runs is dropped (CommandGate), and the check before
   // this one leaves a search that runs 300 ms after its typing stopped.
   await waitForPageSettled(page);
-  const {width} = page.viewport();
+  // Left of any scrollbar: a right-click on one opens no menu.
+  const width = await page.evaluate(() => document.documentElement.clientWidth);
   await page.mouse.click(width - 2, 180, {button: 'right'});
   await page.waitForSelector('#context-menu.is-visible');
   const buttons = await page.$$('#context-menu .context-menu-item');

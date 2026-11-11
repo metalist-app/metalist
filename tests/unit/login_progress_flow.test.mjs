@@ -135,7 +135,7 @@ test('the loading time counts from the loading view and stops when the app opens
         const body = source.slice(source.indexOf(stopper));
         assert.match(body.slice(0, body.indexOf('\n    },')), /this\._stopLoadingElapsed\(\);/, stopper);
     }
-    assert.match(source, /textContent = ` · \$\{formatElapsedDuration\(elapsed\)\}`/);
+    assert.match(source, /textContent = formatElapsedDuration\(elapsed\);/);
 });
 
 

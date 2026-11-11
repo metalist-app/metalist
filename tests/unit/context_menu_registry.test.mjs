@@ -499,7 +499,7 @@ function buildViewContext(overrides) {
     return {
         kind: 'view', searchAllowsNewNotes: true, isMac: true, isEditing: false, canPasteNoteAtTop: false, canGoToTop: false, canGoToBottom: false,
         isUntaggedView: false, theme: 'system', sortMode: 'normal', dateRangeKind: 'none', dateRangeField: 'updated',
-        fileFilterKind: 'none',
+        fileFilterKind: 'none', fileFilterKinds: ['image', 'pdf', 'markdown'],
         ...overrides,
     };
 }
@@ -550,7 +550,7 @@ test('the background menu groups adding, going, the outline, the view, opening a
     assert.deepEqual(submenu('go-to'), ['Top', 'Bottom']);
     assert.deepEqual(submenu('outline'), ['Expand All Root Notes', 'Collapse All Root Notes', '— Fully Expand All', 'Fully Collapse All']);
     // Themes alone (the maintainer, 2026-11-02: the chat and the folders have their tabs on screen).
-    assert.deepEqual(submenu('themes'), ['System', 'Light', 'Dark']);
+    assert.deepEqual(submenu('themes'), ['System', 'Light', 'Dark', 'Ye Olde Scrypte']);
     assert.deepEqual(submenu('open'), ['New Search Context', 'Vault…', 'Reminders']);
     assert.deepEqual(submenu('export-print'), ['View as HTML…', 'Print View…']);
 });
@@ -626,7 +626,7 @@ test('View and Themes tick the current state', () => {
 
     // The current choice is ticked but not greyed: picking it changes nothing.
     assert.deepEqual(ticks('view'), [['All Notes', false, true], ['Untagged Notes', true, true]]);
-    assert.deepEqual(ticks('themes'), [['System', false, true], ['Light', false, true], ['Dark', true, true]]);
+    assert.deepEqual(ticks('themes'), [['System', false, true], ['Light', false, true], ['Dark', true, true], ['Ye Olde Scrypte', false, true]]);
 
     submenu('view')[0].onSelect();
     submenu('themes')[1].onSelect();
@@ -656,6 +656,31 @@ test('view context menu no longer exposes the note timestamp visibility preferen
         viewMenuSource,
         /onToggleNoteTimestamps|pref\.show_note_timestamps/,
     );
+});
+
+test('background sorting offers File Size only while a Files filter is on', () => {
+    const sortIds = (context) => buildContextMenuItems(buildViewContext(context), buildViewHandlers([]))
+        .find((item) => item.id === 'sort-by').submenu.map((item) => item.id);
+    assert.equal(sortIds({ fileFilterKind: 'none', fileFilterKinds: ['image', 'pdf', 'markdown'] }).includes('sort-by-file-size'), false);
+    for (const fileFilterKind of ['any', 'image', 'pdf', 'markdown']) {
+        const ids = sortIds({ fileFilterKind });
+        assert.equal(ids[ids.indexOf('sort-by-content-volume') + 1], 'sort-by-file-size');
+    }
+});
+
+test('picking File Size keeps Reverse Order and ticks it', () => {
+    const calls = [];
+    const submenu = buildContextMenuItems(
+        buildViewContext({ fileFilterKind: 'any', sortMode: 'alphabetical-reversed' }),
+        buildViewHandlers(calls),
+    ).find((item) => item.id === 'sort-by').submenu;
+    submenu.find((item) => item.id === 'sort-by-file-size').onSelect();
+    assert.deepEqual(calls.map((call) => call[1]), ['file-size-reversed']);
+    const inFileSize = buildContextMenuItems(
+        buildViewContext({ fileFilterKind: 'any', sortMode: 'file-size' }),
+        buildViewHandlers([]),
+    ).find((item) => item.id === 'sort-by').submenu;
+    assert.deepEqual(inFileSize.filter((item) => item.checked).map((item) => item.id), ['sort-by-file-size']);
 });
 
 test('background sorting offers all modes and ticks only the current mode', () => {
@@ -924,6 +949,34 @@ test('the Notes with Files menu ticks its kind and calls its handler', () => {
     files.submenu.find((item) => item.id === 'file-filter-image').onSelect();
     files.submenu.find((item) => item.id === 'file-filter-none').onSelect();
     assert.deepEqual(calls, [['onSetFileFilter', 'image'], ['onSetFileFilter', 'none']]);
+});
+
+test('the Notes with Files menu lists the kinds it is given, in their order', () => {
+    const calls = [];
+    const items = buildContextMenuItems(
+        buildViewContext({ fileFilterKind: '.zip', fileFilterKinds: ['.js', '.zip', 'image', 'no-extension', 'pdf', 'markdown'] }),
+        buildViewHandlers(calls),
+    );
+    const files = items.find((item) => item.id === 'file-filter');
+    assert.deepEqual(files.submenu.map((item) => [item.label, item.checked]), [
+        ['All Notes', false],
+        ['Any File', false],
+        ['JS Files', false],
+        ['ZIP Files', true],
+        ['Images', false],
+        ['No Extension', false],
+        ['PDFs', false],
+        ['Markdown Files', false],
+    ]);
+    files.submenu.find((item) => item.label === 'JS Files').onSelect();
+    assert.deepEqual(calls, [['onSetFileFilter', '.js']]);
+});
+
+test('the Notes with Files menu fails loudly without its kinds', () => {
+    assert.throws(
+        () => buildContextMenuItems(buildViewContext({ fileFilterKinds: undefined }), buildViewHandlers([])),
+        /fileFilterKinds/,
+    );
 });
 
 // Date range: which date, then its range; the current ones ticked (picking them changes nothing).

@@ -21,7 +21,20 @@
   - a note
   - a file attachment
 
+## Search Links
+
+Built 2026-11-11 (`docs/ready-to-build/search-links.md`; `app/services/search_links.py`). A search link is never a reference: it adds no Referenced by badge, no embed and nothing to Trim Unused Files.
+
+- **`[[search:work -archive]]`** reads its search; **`[[search:work -archive|Current work]]`** reads its text. Either shows as a note link does, blue and underlined, with a magnifier where a note link has its arrow. Resting on one with text shows its search in a tooltip; it has no preview card. Editing shows the markup.
+- **A click** switches to the search context with the same terms (spaces, the order of terms and capitals don't count: `work -archive` is `-archive Work`), else opens a new one with the search; the context you were in is left as it was, and a second click never makes a second one. Folder contexts and reference views are never a search link's. Clicked while another note is edited, it saves and leaves that note first.
+- **`[[search:]]`**, a blank text after `|`, and **`![[search:…]]`** (kept for results shown in the note, later) stay text as typed. A scoped wrapper tag never formats a search link.
+- **In a first line** (a link's title, the `[[` list) a search link reads its text, or its search.
+- **Rename tag** renames the tag in every search link's search and in every search context's search, where it is a term (`work`, `-work`, `work=high`, `work:hours>2`); quoted text and the links' own text stay. Notes keep their updated times; like the rest of Rename tag, it can't be undone. A browser's copy of the search contexts read before the rename doesn't bring the old name back (`tab_state.py`, `_search_renamed_at_version`).
+- **Exports:** the HTML export keeps the markup. The Markdown export (not built yet) will write `Current work (search: work -archive)`.
+- **Embedded searches, `![[search:@todo -@done|Open to-dos]]`,** show the results in the note: a heading (the search link and how many notes it finds, `Open to-dos · 7`), then the first ten results in the order the search lists them, each branch's top match only (a note under a match, often matching through its tags, is that match's detail and isn't listed or counted, as the list shows the match folded; agreed 2026-11-11), each its note's folded first line (a to-do's checkbox, a thumbnail and formatting come with it), then `… and 4 more`, all in a tinted panel like a note embed's, with the note-link arrow before each result, the arrows in one column, and every result at the text's own size on one line, cut with "…" at the panel's edge (a heading or coloured note keeps its colour and weight; agreed 2026-11-11, option B of three). The heading and `… and N more` open the search as a search link does; a result goes to its note as a note link does; checkboxes show their status only. Its ▾/▸ folds it to the heading, kept by note and search in the vault's preferences; a folded note shows the heading only, and a result's own embedded search shows only its heading. Live: notes holding one are drawn afresh, not from the cache. Built 2026-11-11 (`search-links.md` §11).
+
 ## Suggestions
+- Search contexts are offered too (Search Links, above): those whose search holds what is typed after `[[` (`search:` typed first is skipped), above the notes, the current one first; with nothing typed, the current one alone. Each shows a magnifier and `Search: work -archive`; choosing one writes `[[search:work -archive]]`. Not after `![[`, and never a folder context, a reference view, a blank search or one holding `[` or `]`.
 
 Typing `[[` in the note being edited opens a list of notes to reference (agreed 2026-10-26); what is typed after it narrows the list. Choosing a note replaces `[[` and the typed text with `[[UUID]]`, as typing it would. `![[` works the same way and gives `![[UUID]]`, an embed.
 
@@ -103,6 +116,7 @@ Typing `[[` in the note being edited opens a list of notes to reference (agreed 
   - Anywhere else: the note being edited is saved and closed, and each file gets a note at the top, the first file dropped on top. With several, none is left open and the first is brought into sight, moving the list as little as it can; one file stays open to edit. A file that fails stops the drop: the notes already made stay, and the error names the file.
   - On a folder in the folder tree (it highlights while dragging over it): a note each, filed in that folder, not left open. On the tree's top `/`, in no folder.
   - Images compression can shrink (JPEG, PNG, WebP, TIFF, BMP) dropped on a folder in the tree come in through Import instead of the image question below: it opens at "Should images be compressed?", then Summary and Import, with everything else in the same drop. As with any import each file is its own note, filed in that folder, after the list's last note. Closing it brings nothing in. GIFs and other images it can't shrink have nothing to ask, and come in as files.
+  - A dropped folder, or a bookmarks file brought in through Import, ends on what it brought in (agreed 2026-11-09): if it made a brand-new folder and the folder tree is showing, that folder is chosen, opened in the tree, with any typed search cleared; otherwise a new search context opens on the import's `imported:` tag, listing just those notes. At the search-context limit the usual message shows and you stay put. `dropped-import-view.js`, `docs/ready-to-build/desktop-drops-into-folders.md` (decision E), `BROWSER_TEST_SUITE=folder-drops npm run test:browser`.
 - Dropped text files (to be replaced 2026-11-03: no preview notes, files shown in a viewer and found by their kept text, `docs/ready-to-build/files-shown-not-copied.md`): a dropped `.txt`, `.md`/`.markdown`, `.csv` or `.json` file, code file (`.py`, `.js`, `.sh`, `.sql`, `.yaml` and the rest of `_CODE_LANGUAGES_BY_EXTENSION`) or web page (`.html`/`.htm`) also gets its text as a new child note of the note holding its pill: note data beside the file data (2026-11-01; an Any-folder import gives the same child to the kinds its Previews screen ticks).
   - The child is the note's last child (after any existing children), in drop order when several files are dropped together.
   - Markdown children get `@markdown`, CSV children `@csv`, JSON children `@json`, code children `@code=<language>` (by the file's ending), text and web page children no render tag; a child also gets the tags a new child gets from the current search.
@@ -172,6 +186,7 @@ Typing `[[` in the note being edited opens a list of notes to reference (agreed 
   - Non-matching sibling branches in visible context are redacted via normal search rules.
 
 ## Related Docs
+- Search links (`[[search:…]]`, Search Links above): `docs/ready-to-build/search-links.md`
 - `docs/ui/excalidraw.md`
 - `docs/ui/content-formatting.md`
 - `docs/ui/command-palette.md`

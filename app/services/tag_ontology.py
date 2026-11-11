@@ -531,6 +531,22 @@ def _compile_regex(pattern: str, flags: str) -> re.Pattern[str]:
     return re.compile(pattern, re_flags)
 
 
+# A tag ending in / is a folder (virtual_folders.FOLDER_MARK). A folder tag implies the folders
+# above it: Projects/Client-A/ is in Projects/ too, for search and rules alike, so whatever
+# applies to a folder applies to every folder below it
+# (docs/ready-to-build/folders-tab-and-multiple-folders.md §6).
+FOLDER_TAG_END = "/"
+
+
+def parent_folder_tags(tag: str) -> Tuple[str, ...]:
+    """The folders above a folder tag, outermost first (Projects/ for Projects/Client-A/); none
+    for a top-level folder or a tag that is no folder."""
+    if not tag.endswith(FOLDER_TAG_END):
+        return ()
+    parts = tag[:-len(FOLDER_TAG_END)].split(FOLDER_TAG_END)
+    return tuple(FOLDER_TAG_END.join(parts[:depth]) + FOLDER_TAG_END for depth in range(1, len(parts)))
+
+
 @dataclass(frozen=True, slots=True)
 class TagOntology:
     implication_out_edges: Mapping[str, FrozenSet[str]]
@@ -590,45 +606,33 @@ class TagOntology:
             frozenset(t for t in right if t not in equals),
         )
 
-    def infer_effective_tags(self, *, base_tags: FrozenSet[str], plaintext: str) -> FrozenSet[str]:
-        if self.is_empty:
-            return base_tags
-
-        tags: Set[str] = set(base_tags)
-
-        pending: List[str] = list(tags)
+    def _add_implied(self, tags: Set[str], pending: List[str]) -> None:
+        """Every tag the pending tags imply, through rules and parent folders, into tags."""
         while pending:
             current = pending.pop()
-            implied = self.implication_closure.get(current)
-            if not implied:
-                continue
+            implied = list(parent_folder_tags(current))
+            if current in self.implication_closure:
+                implied.extend(self.implication_closure[current])
             for implied_tag in implied:
                 if implied_tag in tags:
                     continue
                 tags.add(implied_tag)
                 pending.append(implied_tag)
 
-        while True:
-            before = len(tags)
+    def infer_effective_tags(self, *, base_tags: FrozenSet[str], plaintext: str) -> FrozenSet[str]:
+        tags: Set[str] = set(base_tags)
+        self._add_implied(tags, list(tags))
 
+        while self.matcher_rules:
+            before = len(tags)
+            pending: List[str] = []
             for rule in self.matcher_rules:
                 if rule.rhs in tags:
                     continue
                 if rule.satisfied(plaintext=plaintext, tags=tags):
                     tags.add(rule.rhs)
                     pending.append(rule.rhs)
-
-            while pending:
-                current = pending.pop()
-                implied = self.implication_closure.get(current)
-                if not implied:
-                    continue
-                for implied_tag in implied:
-                    if implied_tag in tags:
-                        continue
-                    tags.add(implied_tag)
-                    pending.append(implied_tag)
-
+            self._add_implied(tags, pending)
             if len(tags) == before:
                 break
 
@@ -682,14 +686,8 @@ class TagOntology:
         return any(rule.required_text_patterns or rule.required_regexes for rule in self.value_rules)
 
     def infer_implication_only(self, *, base_tags: FrozenSet[str]) -> FrozenSet[str]:
-        if self.is_empty:
-            return base_tags
-
         tags: Set[str] = set(base_tags)
-        for tag in base_tags:
-            implied = self.implication_closure.get(tag)
-            if implied:
-                tags.update(implied)
+        self._add_implied(tags, list(tags))
         return frozenset(tags)
 
 

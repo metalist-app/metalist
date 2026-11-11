@@ -5,6 +5,16 @@ Kept apart so tag_properties can use it without importing the note renderer."""
 from __future__ import annotations
 
 
+def comment_term_matches(words: str, comments_casefold: tuple[str, ...]) -> bool:
+    """Whether a comment term's words (`/*help*/` reads `help`) are in one of a tag bar's
+    comments, casefolded: anywhere in it, also inside words (`/*Help me*/`, `/*helpful links*/`;
+    docs/ui/search-semantics.md, Comment Terms)."""
+    if not isinstance(words, str) or words.strip() == "":
+        raise ValueError("A comment term's words must not be blank")
+    core = words.casefold()
+    return any(core in comment for comment in comments_casefold)
+
+
 def text_term_matches(term: str, text_casefold: str) -> bool:
     """Whether a quoted search term occurs in casefolded note text.
 

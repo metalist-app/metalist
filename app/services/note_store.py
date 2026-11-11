@@ -150,10 +150,7 @@ def _collect_matcher_generated_tags(ontology) -> FrozenSet[str]:
 
     generated: Set[str] = set()
     for rule in ontology.matcher_rules:
-        generated.add(rule.rhs)
-        implied = ontology.implication_closure.get(rule.rhs)
-        if implied:
-            generated.update(implied)
+        generated.update(ontology.infer_implication_only(base_tags=frozenset({rule.rhs})))
     return frozenset(generated)
 
 
@@ -522,7 +519,7 @@ class NoteStore:
         if hydration_state.is_running():
             hydration_state.set_phase(
                 phase="matcher_inference",
-                message="Applying ontology matcher rules",
+                message="Matching tag rules",
                 total=len(candidate_note_ids),
             )
         processed_candidates = 0
@@ -642,7 +639,7 @@ class NoteStore:
         if hydration_state.is_running():
             hydration_state.set_phase(
                 phase="tag_inference",
-                message="Applying ontology implications",
+                message="Applying tag rules",
                 total=len(note_map),
             )
         for record in note_map.values():

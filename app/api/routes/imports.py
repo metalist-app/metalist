@@ -8,29 +8,32 @@ import os
 import shutil
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
+from collections.abc import Mapping
 from typing import Annotated, List, Literal
 
 from typing_extensions import TypedDict
 
-from fastapi import APIRouter, File, Form, Request, UploadFile
+from fastapi import APIRouter, Request
 from pydantic import ConfigDict, Field, with_config
 
 from app.api.note_requests import Identifier, Text
 from app.api.request_auth import require_request_auth_token
 from app.api.transactions import transactional_route
-from app.api.upload_limits import read_attachment
+from app.api.streaming_upload import FilePart, declared_body_bytes, receive_upload
 from app.services import import_uploads
 from app.data_directory import resolve_data_directory
 from app.services.input_errors import InputRejected
 from app.services.native_folder_picker import pick_folder
-from app.services.obsidian_import.file_groups import FolderFile, file_groups, folder_files, is_over_limit
+from app.services.obsidian_import.file_groups import FolderFile, file_groups, folder_files
+from app.services.obsidian_import.import_folder import DiskFolder
 from app.services.obsidian_import.notes import import_folder_prefix
 from app.services.obsidian_import.sources import FILES, IMPORT_SOURCES
 from app.services.image_compression import COMPRESSIBLE_SUFFIXES, IMAGE_LONGEST_SIDES, ImageChoice
 from app.services.obsidian_import.vault import count_compressible_images, count_markdown_files
 from app.services.reference_suggestions import build_catalog_in_background
 from app.services.tab_state import tab_state_store
-from app.upload_limits import MAX_ATTACHMENT_BYTES
+from app.services.disk_space import full_disk_is_rejected, require_room_for_files
+from app.upload_limits import MAX_IN_MEMORY_FILE_BYTES
 from app.usecases.import_bookmarks import CmdImportBookmarks, CmdPreviewBookmarkImport
 from app.usecases.import_obsidian_vault import (
     CmdEstimateImportImages,
@@ -121,13 +124,13 @@ class ScanImportListingRequest(TypedDict):
 class BookmarksPreviewRequest(TypedDict):
     # The bookmarks export's text, as the browser read the chosen or dropped file
     # (docs/ready-to-build/bookmark-import.md §4: uploaded, so it works on every deployment).
-    fileText: Annotated[str, Field(min_length=1, max_length=MAX_ATTACHMENT_BYTES)]
+    fileText: Annotated[str, Field(min_length=1, max_length=MAX_IN_MEMORY_FILE_BYTES)]
     prefixFolder: Annotated[str, Field(max_length=_MAX_FOLDER_PATH_LENGTH)]
 
 
 @with_config(ConfigDict(strict=True))
 class BookmarksImportRequest(TypedDict):
-    fileText: Annotated[str, Field(min_length=1, max_length=MAX_ATTACHMENT_BYTES)]
+    fileText: Annotated[str, Field(min_length=1, max_length=MAX_IN_MEMORY_FILE_BYTES)]
     prefixFolder: Annotated[str, Field(max_length=_MAX_FOLDER_PATH_LENGTH)]
     addToExisting: bool
     dropContext: ImportDropContext
@@ -149,13 +152,13 @@ def pick_import_folder(request: Request, body: PickImportFolderRequest) -> dict[
         return {"selected": False, "folderPath": "", "fileCount": 0, "imageCount": 0}
     folder = Path(folder_path)
     if body["source"] == FILES.key:
-        found = folder_files(folder)
+        found = folder_files(DiskFolder(folder))
         image_count = sum(1 for folder_file in found if folder_file.path.suffix.casefold() in COMPRESSIBLE_SUFFIXES)
         return {"selected": True, "folderPath": folder_path, "fileCount": len(found), "imageCount": image_count}
     return {
-        "selected": True, "folderPath": folder_path, "fileCount": count_markdown_files(folder),
+        "selected": True, "folderPath": folder_path, "fileCount": count_markdown_files(DiskFolder(folder)),
         # Images compression shrinks: the wizard asks about them only when there are some.
-        "imageCount": count_compressible_images(folder),
+        "imageCount": count_compressible_images(DiskFolder(folder)),
     }
 
 
@@ -169,7 +172,7 @@ def scan_import_folder(request: Request, body: ScanImportFolderRequest) -> dict[
     folder = Path(body["folderPath"])
     if not folder.is_absolute() or not folder.is_dir():
         raise InputRejected(f"There is no folder at {folder}. Choose the folder again.")
-    return _checklist(folder_files(folder))
+    return _checklist(folder_files(import_uploads.open_import_folder(folder)))
 
 
 @router.post("/scan-listing")
@@ -193,16 +196,22 @@ def start_import_upload(request: Request) -> dict[str, object]:
 
 @router.post("/uploads/{upload_id}/file")
 @transactional_route
-async def upload_import_file(
-    request: Request, upload_id: str,
-    path: Annotated[str, Form(min_length=1, max_length=_MAX_FOLDER_PATH_LENGTH)],
-    file: Annotated[UploadFile, File()],
-) -> dict[str, object]:
-    """One ticked file of a dropped folder, at its path in the folder (the size limit of any
-    attachment applies)."""
+async def upload_import_file(request: Request, upload_id: str) -> dict[str, object]:
+    """One ticked file of a dropped folder, at its path in the folder, written as it arrives.
+    The form's `path` comes before its file."""
     require_request_auth_token(request)
-    import_uploads.store_file(upload_id, path, await read_attachment(file))
-    return {"stored": path}
+    declared_bytes = declared_body_bytes(request)
+    if declared_bytes is not None:
+        require_room_for_files([declared_bytes])
+
+    def open_at_its_path(_part: FilePart, fields: Mapping[str, str]) -> import_uploads.IncomingFile:
+        if "path" not in fields or not 0 < len(fields["path"]) <= _MAX_FOLDER_PATH_LENGTH:
+            raise InputRejected("That file came without its path in the folder.")
+        return incoming.open(fields["path"])
+
+    with full_disk_is_rejected(), import_uploads.receive_file(upload_id) as incoming:
+        _file_part, fields = await receive_upload(request, open_sink=open_at_its_path)
+    return {"stored": fields["path"]}
 
 
 @router.post("/uploads/{upload_id}/discard")
@@ -220,18 +229,13 @@ def _checklist(found: List[FolderFile]) -> dict[str, object]:
         "groups": [
             {
                 "key": group.kind.key, "label": group.kind.label, "isSkippedByDefault": group.kind.is_skipped_by_default,
-                "fileCount": group.file_count, "bytes": group.total_bytes, "importableBytes": group.importable_bytes,
-                "overLimitCount": group.over_limit_count,
-                # Its files, the largest first: [path in the folder, size, over the limit].
-                "files": [
-                    [str(folder_file.path), folder_file.size, is_over_limit(folder_file)]
-                    for folder_file in group.files
-                ],
+                "fileCount": group.file_count, "bytes": group.total_bytes,
+                # Its files, the largest first: [path in the folder, size].
+                "files": [[str(folder_file.path), folder_file.size] for folder_file in group.files],
             }
             for group in groups
         ],
         "freeBytes": shutil.disk_usage(resolve_data_directory(environ=os.environ)).free,
-        "maxFileBytes": MAX_ATTACHMENT_BYTES,
     }
 
 
@@ -304,10 +308,7 @@ def _context_tags(context: ImportDropContext, prefix_folder: str) -> str:
     """The tags a drop's import gives its top notes (drop_context_tags); none from the menu."""
     if not context["isDrop"]:
         return ""
-    return drop_context_tags(
-        search=context["search"], folder_filter=tab_state_store.get_folder_filter(tab_id=context["tabId"]),
-        folder_prefix=prefix_folder,
-    )
+    return drop_context_tags(search=context["search"], folder_prefix=prefix_folder)
 
 
 @router.post("/folder")

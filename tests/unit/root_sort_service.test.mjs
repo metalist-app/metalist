@@ -5,6 +5,7 @@ import {
     ROOT_SORT_MODES,
     buildRootDateSeparatorPlan,
     getRootSortModeIndicatorLabel,
+    getRootSortModeChipLabel,
     isRootReorderLocked,
     rootNoteCreationBlockMessage,
 } from '../../app/static/js/modules/mode-manager/services/root-sort-service.js';
@@ -42,6 +43,16 @@ test('getRootSortModeIndicatorLabel returns dismissible pill text for sorted mod
     assert.equal(getRootSortModeIndicatorLabel(ROOT_SORT_MODES.UPDATED), 'Sorted by datetime last updated');
     assert.equal(getRootSortModeIndicatorLabel(ROOT_SORT_MODES.ALPHABETICAL), 'Sorted alphabetically');
     assert.equal(getRootSortModeIndicatorLabel(ROOT_SORT_MODES.CONTENT_VOLUME), 'Sorted by content volume');
+});
+
+test('the text order and the File size order have chips of their own', () => {
+    assert.equal(getRootSortModeChipLabel(ROOT_SORT_MODES.CONTENT_VOLUME), 'Length');
+    assert.equal(getRootSortModeChipLabel(`${ROOT_SORT_MODES.CONTENT_VOLUME}-reversed`), 'Length \u2191');
+    assert.equal(getRootSortModeChipLabel(ROOT_SORT_MODES.FILE_SIZE), 'File size');
+    assert.equal(getRootSortModeChipLabel(`${ROOT_SORT_MODES.FILE_SIZE}-reversed`), 'File size \u2191');
+    assert.equal(getRootSortModeIndicatorLabel(ROOT_SORT_MODES.FILE_SIZE), 'Sorted by file size, largest first');
+    assert.equal(isRootReorderLocked(ROOT_SORT_MODES.FILE_SIZE), true);
+    assert.match(rootNoteCreationBlockMessage(ROOT_SORT_MODES.FILE_SIZE, 'top'), /sort order/);
 });
 
 test('buildRootDateSeparatorPlan continues the day bucket from above the loaded band', () => {

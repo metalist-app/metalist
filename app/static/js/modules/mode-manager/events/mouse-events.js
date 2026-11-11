@@ -33,6 +33,9 @@ import { NotesAPI } from '../../api-client.js';
 import { isContextMenuInteractionTarget } from '../../context-menu/context-menu-target-service.js';
 import { downloadEmailAttachment, downloadFileReference } from '../services/file-reference-service.js';
 import { openFileViewer, opensInViewer } from '../services/file-viewer-service.js';
+import { zoomGallery } from '../services/image-context-menu-action-service.js';
+import { goToGalleryItem, toggleGalleryOutline } from '../services/gallery-view-service.js';
+import { toggleSearchEmbedFold } from '../services/search-embed-service.js';
 import { playMediaFile } from '../services/media-player-service.js';
 import { parseDecimalInteger } from '../../decimal-integer.js';
 import { revealRedactedNoteWithScrollPreservation } from '../services/search-redaction-reveal-service.js';
@@ -62,6 +65,8 @@ import {
     openReferenceInNewTab,
     openReferenceQueryInNewTab,
     openBacklinksInNewTab,
+    openSearchInNewSearchContext,
+    switchToTabContext,
 } from './keyboard-events.js';
 import {
     isViewingReferenceSource,
@@ -307,7 +312,6 @@ function isMouseDownOutsideEditExclusion(target) {
             '#reference-view-new-search',
             '#root-sort-indicator',
             '#date-range-indicator',
-            '#virtual-folder-indicator',
             // A folder clicked saves and leaves the note itself, then shows the folder: one click.
             '#virtual-folders',
             // The tab opening and closing the tree: when a folder context shows, the view
@@ -337,12 +341,17 @@ function isMouseDownOutsideEditExclusion(target) {
             EMBED_COLLAPSE_TOGGLE_SELECTOR,
             COLLAPSED_CHILDREN_INDICATOR_SELECTOR,
             '.note-reference-link',
+            // A search link opens its search, saving and leaving the note being edited first;
+            // an embedded search's results open their notes, and its arrow folds it.
+            '.note-search-link',
+            '.note-search-embed',
             '.note-backlinks-link',
             '.ai-chat-open-all-references',
             // A file linked in text, a card's Open and Download, a player: a click elsewhere on an
             // embedded file's card edits the note (files-shown-not-copied.md §3).
             'button.note-file-reference-link',
             '.note-file-action',
+            '.meta-gallery-switch',
             '.note-file-media-embed',
             // A click on a copyable value copies it; a password's eye shows it.
             CREDENTIAL_VALUE_SELECTOR,
@@ -1517,6 +1526,18 @@ function handleClick(event) {
         return;
     }
 
+    if (handleGallerySwitchClick(event)) {
+        return;
+    }
+
+    if (handleSearchLinkClick(event)) {
+        return;
+    }
+
+    if (handleSearchEmbedClick(event)) {
+        return;
+    }
+
     if (handleFileReferenceClick(event)) {
         return;
     }
@@ -1580,18 +1601,6 @@ function handleClick(event) {
         if (event.target.closest('#date-range-indicator-clear')) {
             void CommandGate.run('dateRangeIndicator.clear', async () => {
                 await CommandPalette.setDateRangePreset('none');
-            });
-        }
-        return;
-    }
-
-    const virtualFolderIndicator = event.target.closest('#virtual-folder-indicator');
-    if (virtualFolderIndicator) {
-        event.preventDefault();
-        event.stopPropagation();
-        if (event.target.closest('#virtual-folder-indicator-clear')) {
-            void CommandGate.run('virtualFolderIndicator.clear', async () => {
-                await CommandPalette.setVirtualFolder('');
             });
         }
         return;
@@ -2100,6 +2109,68 @@ function handleBacklinksLinkClick(event) {
     return true;
 }
 
+// A link that opens a search (search_links.py): the search context with the same terms, or a new
+// one; the context you were in is left as it was (docs/ready-to-build/search-links.md §3).
+function handleSearchLinkClick(event) {
+    const link = event.target instanceof Element ? event.target.closest('.note-search-link') : null;
+    if (link === null) {
+        return false;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    if (!ModeContext.isConnected) {
+        Logger.logNoop('Search link click ignored while disconnected', { isConnected: false });
+        return true;
+    }
+    const search = link.dataset.searchQuery;
+    if (typeof search !== 'string' || search.trim() === '') {
+        throw new Error('A search link must carry its search');
+    }
+    void CommandGate.run('mouse.open_search_link', async () => {
+        if (ModeContext.isEditing) {
+            await actionDeselectNote();
+        }
+        const answer = await NotesAPI.searchContextForSearch(search);
+        if (answer.found !== true) {
+            await openSearchInNewSearchContext(search, 'search-link');
+            return;
+        }
+        if (answer.tabId !== ModeContext.activeTabId) {
+            await switchToTabContext(answer.tabId, {});
+        }
+    });
+    return true;
+}
+
+// An embedded search (search_links.py, search-links.md §11): its arrow folds it; a result goes to its
+// note as a note link does. The heading and "… and N more" are search links (handleSearchLinkClick).
+function handleSearchEmbedClick(event) {
+    const embed = event.target instanceof Element ? event.target.closest('.note-search-embed') : null;
+    if (embed === null) {
+        return false;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    const toggle = event.target.closest('.note-search-embed-toggle');
+    if (toggle !== null) {
+        void CommandGate.run('mouse.fold_search_embed', async () => {
+            await toggleSearchEmbedFold(toggle);
+        });
+        return true;
+    }
+    const result = event.target.closest('.note-search-embed-result[data-result-note-id]');
+    if (result === null || !ModeContext.isConnected) {
+        return true;
+    }
+    void CommandGate.run('mouse.open_search_embed_result', async () => {
+        if (ModeContext.isEditing) {
+            await actionDeselectNote();
+        }
+        await openReferenceInNewTab(result.dataset.resultNoteId);
+    });
+    return true;
+}
+
 function handleReferenceLinkClick(event) {
     if (!event.target) {
         throw new Error('Reference interaction missing target element');
@@ -2155,6 +2226,100 @@ function handleReferenceLinkClick(event) {
     return true;
 }
 
+// The picture a gallery tile shows, once loaded: the theme's one, for a drawing.
+function shownPictureOf(tile) {
+    const picture = Array.from(tile.querySelectorAll('img')).find((image) => (
+        image.currentSrc !== '' && !image.hidden && getComputedStyle(image).display !== 'none'
+    ));
+    return picture === undefined ? null : picture;
+}
+
+function isGalleryDrawing(tile) {
+    return tile.querySelector('.note-file-excalidraw-embed') !== null;
+}
+
+function showGalleryFullScreen(clickedTile) {
+    const galleryNote = clickedTile.closest('.note[data-note-id]');
+    if (galleryNote === null) {
+        throw new Error('A gallery tile must be in a note');
+    }
+    const pictures = [];
+    let index = -1;
+    for (const tile of clickedTile.closest('.meta-gallery-grid').querySelectorAll('.meta-gallery-tile')) {
+        const picture = shownPictureOf(tile);
+        if (picture === null) {
+            continue;
+        }
+        if (tile === clickedTile) {
+            index = pictures.length;
+        }
+        // A PDF's picture is its first page (note_gallery.py): Open shows the whole PDF. A
+        // drawing's Open is its editor.
+        const isFirstPage = tile.querySelector('[data-picture-source="first-page"]') !== null;
+        const isDrawing = isGalleryDrawing(tile);
+        pictures.push({
+            src: picture.currentSrc, alt: picture.alt, noteId: tile.dataset.galleryNoteId,
+            openFileId: isFirstPage || isDrawing ? tile.dataset.fileRefId : '',
+            isDrawing,
+        });
+    }
+    // A drawing opens in its editor, as a double-click on a drawing in a note does (the maintainer,
+    // 2026-11-11): full screen showed a drawing faint on the dimmed list.
+    if (isGalleryDrawing(clickedTile)) {
+        void openDiagramEditor(clickedTile.dataset.fileRefId, clickedTile.dataset.galleryNoteId);
+        return;
+    }
+    // A PDF whose first page isn't drawn (or can't be) shows its badge: a click opens it.
+    if (index === -1 && clickedTile.querySelector('.meta-gallery-file') !== null) {
+        void CommandGate.run('mouse.open_file_viewer', async () => {
+            await openFileViewer(clickedTile.dataset.fileRefId);
+        });
+        return;
+    }
+    if (index === -1) {
+        return;
+    }
+    zoomGallery({
+        pictures,
+        index,
+        onGoToNote: (noteId) => {
+            void CommandGate.run('mouse.gallery_go_to_note', async () => {
+                await goToGalleryItem(galleryNote.dataset.noteId, noteId);
+            });
+        },
+        onOpen: (picture) => {
+            if (picture.isDrawing) {
+                void openDiagramEditor(picture.openFileId, picture.noteId);
+                return;
+            }
+            void CommandGate.run('mouse.open_file_viewer', async () => {
+                await openFileViewer(picture.openFileId);
+            });
+        },
+    });
+}
+
+// The switch beside a gallery's fold arrow: its grid or its children (gallery-view-service.js).
+function handleGallerySwitchClick(event) {
+    const toggle = event.target instanceof Element ? event.target.closest('.meta-gallery-switch') : null;
+    if (toggle === null) {
+        return false;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    if (ModeContext.isEditing) {
+        return true;
+    }
+    const note = toggle.closest('.note[data-note-id]');
+    if (note === null) {
+        throw new Error('A gallery switch must be in a note');
+    }
+    void CommandGate.run('mouse.gallery_switch', async () => {
+        await toggleGalleryOutline(note.dataset.noteId);
+    });
+    return true;
+}
+
 function handleFileReferenceClick(event) {
     if (!event.target) {
         throw new Error('File reference click missing target element');
@@ -2175,6 +2340,13 @@ function handleFileReferenceClick(event) {
         Logger.logNoop('File reference click ignored while disconnected', {
             isConnected: false,
         });
+        return true;
+    }
+
+    // A gallery's tile shows its picture full screen among the gallery's others, once it has
+    // loaded (note_gallery.py); a picture written in a note's text has no file id.
+    if (button.classList.contains('meta-gallery-tile')) {
+        showGalleryFullScreen(button);
         return true;
     }
 
@@ -2310,7 +2482,7 @@ function handleTodoToggleClick(event) {
     // An embed shows its source but never changes it: its checkboxes show the
     // status and a press on one does nothing (no toggle, no edit mode, and a
     // note being edited keeps its focus).
-    if (toggleElement.closest('.note-embed-node') !== null) {
+    if (toggleElement.closest('.note-embed-node, .note-search-embed') !== null) {
         event.preventDefault();
         event.stopPropagation();
         return true;
@@ -2346,7 +2518,7 @@ function handleMarkdownTaskToggleClick(event, toggleElement) {
     }
     event.preventDefault();
     event.stopPropagation();
-    if (toggleElement.closest('.note-embed-node') !== null) {
+    if (toggleElement.closest('.note-embed-node, .note-search-embed') !== null) {
         return true;
     }
     const noteId = noteElement.dataset.noteId;

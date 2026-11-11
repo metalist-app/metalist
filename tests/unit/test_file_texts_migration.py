@@ -64,7 +64,7 @@ def test_migration_adds_file_texts_and_keeps_attachments(tmp_path: Path) -> None
     notes = _version_12_namespace(tmp_path)
     files = _version_12_files(tmp_path)
 
-    assert _migrate(notes) == (13, 14, 15, 16, 17)
+    assert _migrate(notes) == (13, 14, 15, 16, 17, 18)
 
     assert _file_texts_columns(files) == set(FILE_TEXTS_COLUMNS)
     with closing(sqlite3.connect(files)) as connection:
@@ -79,7 +79,7 @@ def test_migration_accepts_a_files_database_the_app_already_upgraded(tmp_path: P
         initialize_file_schema(connection)
         connection.commit()
 
-    assert _migrate(notes) == (13, 14, 15, 16, 17)
+    assert _migrate(notes) == (13, 14, 15, 16, 17, 18)
     assert _migrate(notes) == ()
     assert _file_texts_columns(files) == set(FILE_TEXTS_COLUMNS)
 
@@ -87,5 +87,5 @@ def test_migration_accepts_a_files_database_the_app_already_upgraded(tmp_path: P
 def test_migration_does_not_create_a_missing_files_database(tmp_path: Path) -> None:
     notes = _version_12_namespace(tmp_path)
 
-    assert _migrate(notes) == (13, 14, 15, 16, 17)
+    assert _migrate(notes) == (13, 14, 15, 16, 17, 18)
     assert not (tmp_path / "fixture.metalist.files.db").exists()

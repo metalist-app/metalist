@@ -468,6 +468,11 @@ export const NotesAPI = {
         });
     },
 
+    // The kinds of file the Notes with Files menu lists, most files first.
+    async getFileFilterKinds() {
+        return this._apiCall(CONFIG.API.NOTES.FILE_FILTER_KINDS, { method: 'GET' });
+    },
+
     // A click on the title of <details> fold foldIndex in a Markdown note; isOpen is the state asked for.
     async toggleMarkdownFold(noteId, foldIndex, isOpen) {
         if (typeof noteId !== 'string' || noteId.length === 0 || !Number.isInteger(foldIndex) || typeof isOpen !== 'boolean') {
@@ -531,17 +536,6 @@ export const NotesAPI = {
         });
     },
 
-    // folder: the folder tag ('Projects/'), or '' for every folder again.
-    async setVirtualFolderFilter(tabId, folder) {
-        if (typeof tabId !== 'string' || tabId === '' || typeof folder !== 'string') {
-            throw new Error('NotesAPI.setVirtualFolderFilter requires the tab and the folder');
-        }
-        return this._apiCall(CONFIG.API.VIRTUAL_FOLDERS.FILTER, {
-            method: 'POST',
-            body: JSON.stringify({ tabId, folder, clientId: ModeContext.clientId, undoContext: captureUndoContext() }),
-        });
-    },
-
     // What importing would do (the import wizard's summary), before anything is written.
     // An import's choices: { source, folderPath, splitMode, contentFormat, prefixFolder (the
     // folder everything goes under, as typed; '' for none), addToExisting, and a folder of
@@ -593,8 +587,7 @@ export const NotesAPI = {
         if (typeof uploadId !== 'string' || typeof path !== 'string' || !(file instanceof Blob)) {
             throw new Error('NotesAPI.uploadImportFile requires the upload, the path and the file');
         }
-        // In one of the server's few transfer slots, as previews loading meanwhile are
-        // (file-transfer-slots.js); one answered 429 is sent again.
+        // A few at a time, as previews loading meanwhile are (file-transfer-slots.js).
         const { response, answer } = await inTransferSlot(async () => {
             const formData = new FormData();
             formData.append('path', path);
@@ -1113,6 +1106,17 @@ export const NotesAPI = {
     },
 
     // Notes to reference for what was typed after `[[` (docs/ui/references.md, "Suggestions").
+    // The search context a search link switches to, by its terms (search_links.py): { tabId, found }.
+    async searchContextForSearch(search) {
+        if (typeof search !== 'string' || search.trim() === '') {
+            throw new Error('NotesAPI.searchContextForSearch requires a search');
+        }
+        return this._apiCall(CONFIG.API.NOTES.SEARCH_CONTEXT_FOR_SEARCH, {
+            method: 'POST',
+            body: JSON.stringify({ search }),
+        });
+    },
+
     async fetchReferenceSuggestions(query, editingNoteId, signal) {
         if (typeof query !== 'string') {
             throw new Error('NotesAPI.fetchReferenceSuggestions requires query string');
@@ -1535,8 +1539,7 @@ export const FilesAPI = {
             throw new Error('FilesAPI.uploadFile requires File');
         }
 
-        // In one of the server's few transfer slots (file-transfer-slots.js): previews loading
-        // meanwhile could otherwise have it answered 429 (2026-11-02).
+        // A few at a time (file-transfer-slots.js).
         const { response, answer } = await inTransferSlot(async () => {
             const formData = new FormData();
             formData.append('file', file);
@@ -1561,7 +1564,7 @@ export const FilesAPI = {
             throw new Error('FilesAPI.downloadFile requires fileId string');
         }
 
-        // In one of the server's few transfer slots (file-transfer-slots.js), the body read too.
+        // A few at a time (file-transfer-slots.js), the body read too.
         const { response, blob } = await inTransferSlot(async () => {
             const answered = await fetch(CONFIG.API.FILES.DOWNLOAD(fileId), {
                 method: 'GET',
@@ -1582,6 +1585,26 @@ export const FilesAPI = {
             ),
             revision: readFileRevision(response),
         };
+    },
+
+    // A PDF's first page as a picture, for galleries (pdf_first_pages.py): { blob }.
+    async downloadFirstPage(fileId) {
+        if (typeof fileId !== 'string' || fileId.length === 0) {
+            throw new Error('FilesAPI.downloadFirstPage requires fileId string');
+        }
+        const { response, blob } = await inTransferSlot(async () => {
+            const answered = await fetch(CONFIG.API.FILES.FIRST_PAGE(fileId), {
+                method: 'GET',
+                headers: buildAuthHeaders(false),
+            });
+            if (!answered.ok) return { response: answered, blob: null };
+            return { response: answered, blob: await answered.blob() };
+        });
+        if (!response.ok) {
+            ErrorHandler.handleApiError(null, response);
+            throw new HttpRequestError(`First page download failed: ${response.status} ${response.statusText}`);
+        }
+        return { blob };
     },
 
     // An email file as its card shows it: { isReadable, from, to, cc, date, subject, html, text, attachments, revision }.

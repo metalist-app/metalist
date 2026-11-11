@@ -236,8 +236,8 @@ def test_an_import_lists_its_progress_a_part_per_file(
     imported_vault: NoteStore, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     seen: list[tuple[int, int]] = []
-    real_create = import_module.create_file
-    monkeypatch.setattr(import_module, "create_file", lambda **kwargs: (real_create(**kwargs), seen.append(
+    real_store = import_module._store_one_file
+    monkeypatch.setattr(import_module, "_store_one_file", lambda *args, **kwargs: (real_store(*args, **kwargs), seen.append(
         tuple((entry["done"], entry["total"]) for entry in background_work.snapshot() if entry["key"] == "import")[0]))[0])
     folder = tmp_path / "progress"
     folder.mkdir()

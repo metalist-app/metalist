@@ -118,6 +118,10 @@ Search queries are a whitespace-separated list of terms.
 
 ### Tag Terms (unquoted)
 - `foo` and `+foo` are equivalent (required tag).
+- A term ending in `/` is a folder: `Projects/` finds that folder's notes and every folder's below it (`Projects/Client-A/`); `-Projects/` leaves them all out. Every other tag term matches exactly.
+- `/*help*/` finds notes whose own tag-bar comments contain "help", in any case (`/*help*/`, `/*Help me*/`, `/*helpful links*/`), never notes that only say it in their text; `-/*help*/` leaves them out, and `/*help me*/` keeps its space. MetaList writes such a comment when a note is made, pasted, outdented or imported under a search for quoted text, so this finds every note that got one.
+- Folders add, tags narrow: `Projects/ Archive/ @todo` finds to-dos in Projects or in Archive. A new note made in that search goes in both folders; a note moved there keeps its folder when it is in one of them.
+- A note in a folder is in every folder above it too, for rules as for search: a rule `Projects/ => work` gives `work` to notes in `Projects/Client-A/`. The tag bar still shows only the folder written in it.
 - `-foo` excludes notes that have tag `foo`.
 
 Tag matching uses the note’s tag-bar string (`notes.tags`) tokenized with the same
@@ -142,7 +146,7 @@ Ontology rules also add **inferred tags** before search matching:
 - Changing the search input keeps the active search context's sort order and date range; each ends with its chip's ×.
 
 ### Notes With Files
-- **Notes with Files** in the right-click menus and the palette (`Notes with Files: Images`, …) keeps a search to the matches whose own text links to or embeds an attached file, or a file of one kind (images, PDFs, Markdown files; Images also counts a picture pasted into the note), with the notes above them. Without a search it alone picks the notes. It is not a search term: a chip in the search box shows it, and a new search keeps it (`docs/ui/command-palette.md`, Notes With Files).
+- **Notes with Files** in the right-click menus and the palette (`Notes with Files: Images`, …) keeps a search to the matches whose own text links to or embeds an attached file, or a file of one kind (images, PDFs, Markdown files, or in the right-click menus any other type the notes use; Images also counts a picture pasted into the note), with the notes above them. Without a search it alone picks the notes. It is not a search term: a chip in the search box shows it, and a new search keeps it (`docs/ui/command-palette.md`, Notes With Files).
 
 ### Creating Notes From Search
 - New notes created while a positive tag search is active are initialized from

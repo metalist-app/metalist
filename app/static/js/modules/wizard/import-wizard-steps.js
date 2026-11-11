@@ -8,6 +8,8 @@ import { heldDroppedFolder } from '../mode-manager/services/dropped-folders.js';
 import { checkBackgroundWork, setShownElsewhere } from '../mode-manager/services/background-work-cards.js';
 import { workProgressText } from '../mode-manager/services/background-work-text.js';
 import { importFinishedMessage } from './import-finished-message.js';
+import { DROPPED_IMPORT_VIEWS, droppedImportView } from './dropped-import-view.js';
+import { isVirtualFoldersShown } from '../mode-manager/services/virtual-folders-state.js';
 import { COMPRESSIBLE_IMAGE_RE } from './compressible-images.js';
 
 // The import wizard's steps (PLAN.md, phase 2), shared by the import wizard and the new
@@ -102,9 +104,6 @@ export function importPreviewHtml(preview, choices) {
         [preview.unreadableFileCount, 'files', 'isn\'t UTF-8 text and will be left out.', 'aren\'t UTF-8 text and will be left out.'],
         [preview.unusedAttachmentCount, 'attachments', 'isn\'t linked from any note and will be left out.',
             'aren\'t linked from any note and will be left out.'],
-        // A folder of files: files over the per-file limit (folder-import-and-file-previews.md §3).
-        [preview.overLimitCount, 'files', 'is over the size limit for a file and will be left out.',
-            'are over the size limit for a file and will be left out.'],
     ].filter(([count]) => count > 0);
     let differencesHtml = '';
     if (differences.length > 0) {
@@ -202,17 +201,32 @@ export async function runImport(wizard, progress) {
         }
         if (!Number.isInteger(result.noteCount) || typeof result.sourceTag !== 'string'
             || typeof result.firstRootId !== 'string' || result.firstRootId === ''
-            || typeof result.prefixFolder !== 'string') {
+            || typeof result.prefixFolder !== 'string' || typeof result.isNewFolder !== 'boolean') {
             throw new Error('The import answered without its notes');
         }
         wizard.services.announceImport(importFinishedMessage(result.noteCount, result.prefixFolder));
-        if (wizard.choices.isDrop) {
-            await wizard.services.showDroppedImport(result.firstRootId);
-            return;
-        }
-        // Behind the wizard, a new search context of the imported notes: there when it closes.
-        await wizard.services.afterImport(result.sourceTag);
+        await showFinishedImport(wizard, result, isBookmarks);
     }, { disableWatchdog: true });
+}
+
+// Behind the wizard, what came in: there when it closes.
+async function showFinishedImport(wizard, result, isBookmarks) {
+    if (!wizard.choices.isDrop) {
+        await wizard.services.afterImport(result.sourceTag);
+        return;
+    }
+    const view = droppedImportView({
+        isDroppedFiles: !isBookmarks && wizard.choices.droppedFolderId === '',
+        isNewFolder: result.isNewFolder,
+        isTreeShown: isVirtualFoldersShown(),
+    });
+    if (view === DROPPED_IMPORT_VIEWS.IN_ITS_CONTEXT) {
+        await wizard.services.showDroppedImport(result.firstRootId);
+    } else if (view === DROPPED_IMPORT_VIEWS.ITS_NEW_FOLDER) {
+        await wizard.services.showImportedFolder(result.prefixFolder);
+    } else {
+        await wizard.services.afterImport(result.sourceTag);
+    }
 }
 
 // Where the files were dropped, as the import takes it: their notes get that search context's
@@ -671,7 +685,7 @@ async function scanFolder(wizard) {
         ? await NotesAPI.scanImportFolder(wizard.choices.folderPath)
         : await NotesAPI.scanImportListing(heldDroppedFolder(wizard.choices.droppedFolderId).files.map(({ path, size }) => ({ path, size })));
     if (!wizard.isCurrentOpen(run)) return;
-    if (!Array.isArray(scan.groups) || !Number.isInteger(scan.freeBytes) || !Number.isInteger(scan.maxFileBytes)) {
+    if (!Array.isArray(scan.groups) || !Number.isInteger(scan.freeBytes)) {
         throw new Error('Import folder scan answered malformed');
     }
     // The smart defaults: the junk kinds start unticked; the user decides.
@@ -723,7 +737,7 @@ export async function droppedFilesChoices(files, intoFolder) {
     // As the server writes paths (macOS gives names decomposed).
     for (const file of files) await NotesAPI.uploadImportFile(started.uploadId, file.name.normalize('NFC'), file);
     const scan = await NotesAPI.scanImportFolder(started.folderPath);
-    if (!Array.isArray(scan.groups) || !Number.isInteger(scan.freeBytes) || !Number.isInteger(scan.maxFileBytes)) {
+    if (!Array.isArray(scan.groups) || !Number.isInteger(scan.freeBytes)) {
         throw new Error('Import folder scan answered malformed');
     }
     let prefix = { prefixCheckedFor: null, prefixFolder: '', prefixExists: false, prefixProblem: '' };
@@ -811,8 +825,7 @@ function isTicked(choices, key) {
 
 // A file is ticked as its kind is, unless it was ticked against it (fileExceptions); one over
 // the size limit never comes in.
-function isFileTicked(choices, flipped, groupKey, path, isOverLimit) {
-    if (isOverLimit) return false;
+function isFileTicked(choices, flipped, groupKey, path) {
     return isTicked(choices, groupKey) !== flipped.has(path);
 }
 
@@ -820,7 +833,7 @@ function isFileTicked(choices, flipped, groupKey, path, isOverLimit) {
 function tickedFiles(choices) {
     const flipped = new Set(choices.fileExceptions);
     return choices.scan.groups.flatMap((group) => group.files
-        .filter(([path, , isOverLimit]) => isFileTicked(choices, flipped, group.key, path, isOverLimit))
+        .filter(([path]) => isFileTicked(choices, flipped, group.key, path))
         .map(([path, size]) => [group.key, path, size]));
 }
 
@@ -851,14 +864,9 @@ const MIN_BAR_PERCENT = 1;
 
 function checklistHtml(choices) {
     if (choices.scan === null) return '<p class="wizard-note">Reading the folder…</p>';
-    const { groups, freeBytes, maxFileBytes } = choices.scan;
+    const { groups, freeBytes } = choices.scan;
     const largest = largestKindBytes(choices);
     const rows = groups.map((group) => {
-        let over = '';
-        if (group.overLimitCount > NONE) {
-            // Red only for going over a limit, never for being large (§3).
-            over = `<span class="wizard-kind-over">${group.overLimitCount} ${filesWord(group.overLimitCount)} over ${escapeHtml(formatByteSize(maxFileBytes))}, left out</span>`;
-        }
         const isOpen = choices.openKinds.includes(group.key);
         const boxId = `wizard-kind-${group.key}`;
         const mixed = isKindMixed(choices, group) ? ' data-wizard-mixed' : '';
@@ -868,7 +876,7 @@ function checklistHtml(choices) {
                     <button type="button" class="wizard-kind-arrow" data-wizard-kind-open="${escapeHtml(group.key)}"
                         aria-expanded="${isOpen}" title="Show its files">${isOpen ? '▾' : '▸'}</button>
                     <input type="checkbox" id="${boxId}" data-wizard-kind="${escapeHtml(group.key)}"${isTicked(choices, group.key) ? ' checked' : ''}${mixed}>
-                    <label class="wizard-kind-label" for="${boxId}">${escapeHtml(group.label)}${over}</label>
+                    <label class="wizard-kind-label" for="${boxId}">${escapeHtml(group.label)}</label>
                     <span class="wizard-kind-count">${group.fileCount.toLocaleString()} ${filesWord(group.fileCount)}</span>
                     <span class="wizard-kind-size">${escapeHtml(formatByteSize(group.bytes))}</span>
                     ${kindBarHtml(choices, group, largest)}
@@ -886,7 +894,7 @@ function checklistHtml(choices) {
 function kindBarHtml(choices, group, largest) {
     const flipped = new Set(choices.fileExceptions);
     const importedBytes = group.files
-        .filter(([path, , isOverLimit]) => isFileTicked(choices, flipped, group.key, path, isOverLimit))
+        .filter(([path]) => isFileTicked(choices, flipped, group.key, path))
         .reduce((total, [, size]) => total + size, NONE);
     const whole = barPercent(group.bytes, largest);
     let imported = NONE;
@@ -941,21 +949,18 @@ function tickFile(screen, wizard, box) {
 // out, by name): each file's folder and name, its size, the largest first; one over the
 // limit says so in red. Built only when opened: a kind can hold thousands.
 function kindFilesHtml(group, choices) {
-    const { maxFileBytes } = choices.scan;
     const flipped = new Set(choices.fileExceptions);
-    const items = group.files.map(([path, size, isOverLimit]) => {
+    const items = group.files.map(([path, size]) => {
         const cut = path.lastIndexOf('/');
         const folder = cut === -1 ? '' : path.slice(0, cut + 1);
         const name = path.slice(cut + 1);
-        let over = '';
-        if (isOverLimit) over = `<span class="wizard-kind-over">over ${escapeHtml(formatByteSize(maxFileBytes))}, left out</span>`;
         // Each file ticked as its kind is unless ticked against it (the maintainer, 2026-11-01).
-        const isChecked = isFileTicked(choices, flipped, group.key, path, isOverLimit);
+        const isChecked = isFileTicked(choices, flipped, group.key, path);
         return `
             <li class="wizard-kind-file" title="${escapeHtml(path)}">
                 <label class="wizard-kind-file-path">
                     <input type="checkbox" data-wizard-file="${escapeHtml(path)}" data-wizard-file-kind="${escapeHtml(group.key)}"${isChecked ? ' checked' : ''}${isOverLimit ? ' disabled' : ''}>
-                    <span class="wizard-kind-file-name"><span class="wizard-kind-file-folder">${escapeHtml(folder)}</span>${escapeHtml(name)}${over}</span>
+                    <span class="wizard-kind-file-name"><span class="wizard-kind-file-folder">${escapeHtml(folder)}</span>${escapeHtml(name)}</span>
                 </label>
                 <span class="wizard-kind-size">${escapeHtml(formatByteSize(size))}</span>
             </li>`;
@@ -1268,7 +1273,7 @@ export function importSteps({ withSourceStep, withSummaryAndRun }) {
 export function importChoices() {
     return {
         source: '', folderPath: '', folderName: '', fileCount: 0, split: 'paragraphs', content: 'rich',
-        // A folder of files: what the server read of it ({ groups, freeBytes, maxFileBytes }, null
+        // A folder of files: what the server read of it ({ groups, freeBytes }, null
         // until read) and the kinds unticked in its checklist.
         scan: null, excludedGroups: [],
         // The kinds opened to show their files, and the files ticked against their kind.

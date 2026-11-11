@@ -28,7 +28,7 @@ from threading import RLock
 import time
 from typing import IO, BinaryIO
 
-from app.security.crypto_sizes import AES_256_KEY_BYTES
+from app.security.crypto_sizes import AES_256_KEY_BYTES, GCM_TAG_BYTES
 from app.security.streaming_blob import StreamingBlobReader, StreamingBlobWriter
 from app.utils.byte_sizes import MIB
 
@@ -43,6 +43,9 @@ _READ_CHUNK_BYTES = MIB
 _RANDOM_PADDING_DIVISOR = 100
 _SMALLEST_SIZE_WITH_PADDING = 2
 _ZERO_CHUNK = bytes(_READ_CHUNK_BYTES)
+_ENCRYPTION_HEADER_ROOM = 16
+# Encrypted segments hold at most this much (streaming_blob.py); smaller is only more cautious.
+_SEGMENT_ROOM_BYTES = 64 * 1024
 
 
 FILES_DIRECTORY_NAME = "files"
@@ -114,6 +117,12 @@ def padded_size(real_size: int) -> int:
     rounded_bits = exponent - exponent.bit_length()
     mask = (1 << rounded_bits) - 1
     return (real_size + mask) & ~mask
+
+
+def most_stored_bytes(real_size: int) -> int:
+    """The most a file of real_size can take on disk: padded fully, with every segment's tag."""
+    padded = padded_size(real_size) + real_size // _RANDOM_PADDING_DIVISOR
+    return padded + _ENCRYPTION_HEADER_ROOM + (padded // _SEGMENT_ROOM_BYTES + 1) * GCM_TAG_BYTES
 
 
 def _random_padding(real_size: int) -> int:
@@ -255,8 +264,11 @@ class BlobStore:
                 yield writer
             finally:
                 if not writer.is_finished:
-                    handle.close()
-                    temporary_path.unlink()
+                    # Closing can fail on a full disk, flushing what it holds; the file goes anyway.
+                    try:
+                        handle.close()
+                    finally:
+                        temporary_path.unlink()
 
     def write(self, content: bytes, *, is_encrypted: bool) -> StoredBlob:
         with self.writer(is_encrypted=is_encrypted) as writer:

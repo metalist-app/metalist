@@ -21,6 +21,7 @@ from app.services import link_titles
 from app.services.agent import provider_limits
 from app.services.agent import runtime as agent_runtime_module
 from app.services.file_text_search import file_texts
+from app.services.pdf_first_pages import pdf_first_pages
 
 
 # Elements that never have an end tag in HTML.
@@ -202,6 +203,13 @@ def _no_background_file_texts(monkeypatch):
     file_texts.clear()
     yield
     file_texts.clear()
+
+
+@pytest.fixture(autouse=True)
+def _no_background_first_pages(monkeypatch):
+    """A PDF stored in a unit test draws no first page in the background (pdf_first_pages.py), for
+    the same reason as file texts: a test that wants first pages calls pdf_first_pages.refresh()."""
+    monkeypatch.setattr(pdf_first_pages, "refresh_in_background", lambda: None)
 
 
 @pytest.fixture

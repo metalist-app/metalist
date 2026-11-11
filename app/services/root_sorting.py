@@ -6,6 +6,8 @@ from threading import RLock
 from datetime import datetime
 from typing import Dict, List, Optional
 
+from app.services.file_kinds import FILE_FILTER_ANY
+from app.services.file_registry import file_registry
 from app.services.note_store import store as note_store
 from app.utils.text_utils import strip_html
 from app.security.sensitive_cache import sensitive_lru_cache
@@ -16,6 +18,8 @@ SORT_MODE_CREATED = "created"
 SORT_MODE_UPDATED = "updated"
 SORT_MODE_ALPHABETICAL = "alphabetical"
 SORT_MODE_CONTENT_VOLUME = "content-volume"
+# Offered only with a Files filter on (docs/ui/command-palette.md, Sort Order).
+SORT_MODE_FILE_SIZE = "file-size"
 BASE_SORT_MODES = frozenset(
     {
         SORT_MODE_NORMAL,
@@ -23,6 +27,7 @@ BASE_SORT_MODES = frozenset(
         SORT_MODE_UPDATED,
         SORT_MODE_ALPHABETICAL,
         SORT_MODE_CONTENT_VOLUME,
+        SORT_MODE_FILE_SIZE,
     }
 )
 # Reverse Order: any order, the manual one too, read bottom to top ("alphabetical-reversed"
@@ -269,6 +274,39 @@ def _content_volume_sort_key(item: tuple[str, int, int]) -> tuple[int, int]:
     return -character_count, canonical_index
 
 
+def _root_id_of(note_id: str) -> str:
+    current = note_store.get_note(note_id)
+    while current.parent_id is not None:
+        current = note_store.get_note(current.parent_id)
+    return current.id
+
+
+def _sizes_and_root_files(file_filter: str | None) -> tuple[Dict[str, int], Dict[str, set[str]]]:
+    """The size of each file the Files filter keeps, and which of them each root that has
+    any holds in its subtree, so a file counts once however often the root uses it.
+    Without a filter (the AI checking a search alone) every file counts."""
+    kind = FILE_FILTER_ANY
+    if file_filter is not None:
+        kind = file_filter
+    sizes = file_registry.sizes_of_kind(kind)
+    files_by_root: Dict[str, set[str]] = {}
+    for file_id in sizes:
+        for root_id in {_root_id_of(note_id) for note_id in note_store.note_ids_referencing({file_id})}:
+            if root_id not in files_by_root:
+                files_by_root[root_id] = set()
+            files_by_root[root_id].add(file_id)
+    return sizes, files_by_root
+
+
+def _total_size(sizes: Dict[str, int], file_ids: set[str]) -> int:
+    return sum(sizes[file_id] for file_id in file_ids)
+
+
+def _root_file_totals(file_filter: str | None) -> Dict[str, int]:
+    sizes, files_by_root = _sizes_and_root_files(file_filter)
+    return {root_id: _total_size(sizes, file_ids) for root_id, file_ids in files_by_root.items()}
+
+
 def _newest_first_sort_key(item: tuple[str, datetime, int]) -> tuple[float, int]:
     _root_id, timestamp, canonical_index = item
     return -timestamp.timestamp(), canonical_index
@@ -278,8 +316,9 @@ def get_root_ids_for_sort_mode(
     sort_mode: object,
     *,
     root_timestamps: Dict[str, datetime],
+    file_filter: str | None,
 ) -> List[str]:
-    ordered = _root_ids_in_base_order(base_sort_mode(sort_mode), root_timestamps=root_timestamps)
+    ordered = _root_ids_in_base_order(base_sort_mode(sort_mode), root_timestamps=root_timestamps, file_filter=file_filter)
     if is_sort_mode_reversed(sort_mode):
         return ordered[::-1]
     return ordered
@@ -289,6 +328,7 @@ def _root_ids_in_base_order(
     normalized: str,
     *,
     root_timestamps: Dict[str, datetime],
+    file_filter: str | None,
 ) -> List[str]:
     canonical_root_ids = note_store.get_children(None)
     if normalized == SORT_MODE_NORMAL:
@@ -307,6 +347,14 @@ def _root_ids_in_base_order(
             decorated_volume.append((root_id, character_count, canonical_index))
         decorated_volume.sort(key=_content_volume_sort_key)
         return [root_id for root_id, _, _ in decorated_volume]
+    if normalized == SORT_MODE_FILE_SIZE:
+        totals = _root_file_totals(file_filter)
+        return [
+            root_id for _, root_id in sorted(
+                enumerate(canonical_root_ids),
+                key=lambda item: (-(totals[item[1]] if item[1] in totals else 0), item[0]),  # shockharness: ignore[DEF002] reason="a root with no file has no entry: its files total 0 bytes, which is the order's meaning"
+            )
+        ]
 
     decorated = []
     for canonical_index, root_id in enumerate(canonical_root_ids):
@@ -317,6 +365,21 @@ def _root_ids_in_base_order(
 
     decorated.sort(key=_newest_first_sort_key)
     return [root_id for root_id, _, _ in decorated]
+
+
+def build_file_size_labels(root_ids: List[str], sort_mode: object, *, file_filter: str | None) -> Dict[str, Dict[str, int]]:
+    """In the File size order, what the browser shows beside the listed roots: each root's
+    total and the size of each file it counts. Nothing in any other order."""
+    labels: Dict[str, Dict[str, int]] = {"rootTotals": {}, "files": {}}
+    if base_sort_mode(sort_mode) != SORT_MODE_FILE_SIZE:
+        return labels
+    sizes, files_by_root = _sizes_and_root_files(file_filter)
+    for root_id in root_ids:
+        if root_id in files_by_root:
+            file_ids = files_by_root[root_id]
+            labels["rootTotals"][root_id] = _total_size(sizes, file_ids)
+            labels["files"].update({file_id: sizes[file_id] for file_id in file_ids})
+    return labels
 
 
 def build_root_sort_buckets(
