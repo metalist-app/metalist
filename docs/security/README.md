@@ -665,10 +665,14 @@ swap, or filesystem snapshots.
   - `LOGIN_RATE_LIMIT_MAX_ATTEMPTS=5`
   - `LOGIN_RATE_LIMIT_WINDOW_SECONDS=300`
   - `LOGIN_RATE_LIMIT_BLOCK_SECONDS=300`
-- Keying strategy:
-  - first `x-forwarded-for` hop when present
-  - fallback to direct client IP
-  - fallback to user-agent prefix when IP is unavailable.
+- Keyed by the client address Uvicorn resolved (`auth._login_rate_limit_key`): the application never
+  parses `X-Forwarded-For` itself, and a request without a client address is refused. Every login
+  from one machine (localhost) shares one count.
+- A blocked attempt is refused before its password is checked, so it costs no Argon2id hash.
+  Change Password and Remove Password check the current password with no limit: they need a
+  logged-in session. The counts live in memory; a restart clears them.
+- Tests: `tests/unit/test_login_rate_limit.py` (the limiter), `test_auth_login_runtime.py` (the
+  login page locks an address out, and only that address).
 
 ### Password Requirements
 - New and changed passwords must contain 12-72 characters.

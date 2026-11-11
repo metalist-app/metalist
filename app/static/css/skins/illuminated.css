@@ -132,7 +132,10 @@ html[data-skin="illuminated"] .note[data-parent-id=""] > .note-content {
     font-size: calc(var(--note-plain-font-size) * 0.92);
 }
 
-html[data-skin="illuminated"] #notes-container > .note > .note-content {
+/* A folded note keeps the one-line clamp every folded note has (main.css, -webkit-line-clamp):
+   flow-root there cut it by height alone, and a first line that wraps showed the next one's top
+   (2026-11-11). */
+html[data-skin="illuminated"] #notes-container > .note:not(.collapsed:not(.editing)) > .note-content {
     display: flow-root;
 }
 
