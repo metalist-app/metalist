@@ -60,7 +60,7 @@ import { AlphabetizeRootNotesModal } from '../modals/alphabetize-root-notes-moda
 import { ResetUpdatedAtModal } from '../modals/reset-updated-at-modal.js';
 import { ReminderModal } from '../modals/reminder-modal.js';
 import { printNotes } from '../mode-manager/services/print-service.js';
-import { SKIN_BASE_THEME, THEME_CHOICES, isSkinTheme } from '../theme-choices.js';
+import { THEME_CHOICES, isManuscriptSkin, isSkinTheme, skinBaseTheme } from '../theme-choices.js';
 import { setSkinInitialsActive } from '../skin-initials.js';
 import { setOldeWordsActive } from '../skin-olde-words.js';
 import { setSkinPointerActive } from '../skin-pointer.js';
@@ -221,7 +221,7 @@ function setOrRemoveAttribute(element, name, value) {
 
 function themeAttributeOf(theme) {
     if (isSkinTheme(theme)) {
-        return SKIN_BASE_THEME;
+        return skinBaseTheme(theme);
     }
     return theme === 'system' ? null : theme;
 }
@@ -237,9 +237,10 @@ function applyTheme(theme) {
         setOrRemoveAttribute(root, 'data-theme', nextTheme);
         setOrRemoveAttribute(root, 'data-skin', nextSkin);
         // After the attribute: the marks measure against the skin's own sizes.
-        setSkinInitialsActive(nextSkin !== null);
-        setOldeWordsActive(nextSkin !== null);
-        setSkinPointerActive(nextSkin !== null);
+        const isManuscript = nextSkin !== null && isManuscriptSkin(nextSkin);
+        setSkinInitialsActive(isManuscript);
+        setOldeWordsActive(isManuscript);
+        setSkinPointerActive(isManuscript);
     };
     const isFaded = document.body.dataset.appReady === 'true'
         && !document.hidden

@@ -79,7 +79,7 @@ Opening or dismissing the command palette does not clear undo/redo. Global actio
 - Search `LLM` or `OpenAI` to find `AI Agent Settings` for API key and model configuration.
 - Endpoint definitions (behavior/labels) live in code.
 - Palette preferences (`pref.*`) and command usage history are persisted per vault in the main SQLite DB via `/api2/auth/client-state*`, not in browser `localStorage`.
-- `Theme`: `System` (default), `Light`, `Dark` or `Ye Olde Scrypte` (a painted manuscript look, always light); Enter cycles it.
+- `Theme`: `System` (default), `Light`, `Dark`, `Fathom` (code editor, monospace, dark) or `Ye Olde Scrypte` (painted manuscript, light); Enter cycles it.
 - `Stats Style`: `Strip` (default), `Tiles` or `Ledger`, how `@stats` and `@sum=…` look; Enter cycles it.
 - The palette keeps its order while open: using a command never moves its row; uses count from the next opening.
 - `Animated transitions` is on by default and controls UI motion such as tag-bar edit transitions, note expand/collapse transitions, the login screen fading out over the notes, and the page cross-fading (300 ms) when `Theme` changes.
@@ -124,7 +124,7 @@ Opening or dismissing the command palette does not clear undo/redo. Global actio
 - `Attach File…`: opens the native file picker, uploads the selected file, and inserts an embedded file reference token into the current note. If no note is active, it creates a new note first.
 - `Link to…` / `Embed…`: type `[[` or `![[` at the caret of the note being edited (or in a new note at the top when none is) and open the note suggestions, the note copied last first.
 - `Insert LaTeX` / `Insert CSV` / `Insert Mermaid Diagram` (also `Insert ▸` in the note's right-click menu while editing): type the region's delimiters at the caret with the caret inside, so its preview shows as you type: in a Markdown note `$$…$$` or a mermaid fence; otherwise a wrapper the note doesn't use yet, its tag added to the tag bar (as Add Style). Selected text goes inside. Not offered where the whole note is already that format.
-- `Insert Password` (also `Insert ▸ Password` while editing): types a new random password (generator defaults). An empty note becomes it, tagged `@password`; otherwise it goes in its own `{…}` region with `{@password}` added, so only it shows as dots.
+- `Insert Password` (also `Insert ▸ Password` while editing): a new random password. An empty note becomes it, tagged `@password`; otherwise it goes in a `{…}` region, `{@password}` added, so only it shows as dots.
 - `Add Excalidraw Diagram`: attaches a new, empty Excalidraw diagram to the current note (or a new note when none is active) and opens the full-screen diagram editor.
 - `Trim Unused Files…`: deletes files no note's content references, after a confirmation naming how many and how big. It keeps files that ⌘Z or pasting a copied note could bring back. It is the only cleanup for unused files, and a manual one.
 - `Trim Reminder`: `On` (default) or `Off`, per vault. Once unused files add up to 10 MB, a card offers `Trim Unused Files…`; `×` hides it until another 10 MB piles up.

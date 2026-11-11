@@ -55,8 +55,8 @@ def _pixel_limit_of(cursor: Path) -> int:
     return MAX_CURSOR_CSS_PIXELS
 
 
-def test_there_is_a_skin() -> None:
-    assert SKIN_NAMES == ["illuminated"]
+def test_the_skins() -> None:
+    assert SKIN_NAMES == ["fathom", "illuminated"]
 
 
 @pytest.mark.parametrize("skin", SKIN_NAMES)
@@ -74,7 +74,11 @@ def test_art_and_css_match(skin: str) -> None:
     used = {STATIC_ROOT / relative for relative in ART_URL.findall(_css_of(skin))}
     missing = sorted(str(path) for path in used if not path.is_file())
     assert missing == []
-    art = {path for path in (SKIN_ART_DIRECTORY / skin).iterdir() if path.name != ".DS_Store"}
+    # A skin of colours and fonts alone (Fathom) has no art.
+    art_directory = SKIN_ART_DIRECTORY / skin
+    art: set[Path] = set()
+    if art_directory.is_dir():
+        art = {path for path in art_directory.iterdir() if path.name != ".DS_Store"}
     # A cursor's 2x picture is named by the image-set beside its 1x.
     assert sorted(path.name for path in art - used) == []
 
@@ -84,7 +88,22 @@ SYSTEM_ONLY_FONTS = ("Apple Chancery", "Luminari", "Zapfino", "Papyrus", "Segoe 
 FONT_FILE = re.compile(r'url\("/static/(fonts/[^"]+)"\)')
 
 
-@pytest.mark.parametrize("skin", SKIN_NAMES)
+# Fathom writes in each system's own monospace, as the editor it follows does (the maintainer,
+# 2026-11-11): the one skin that ships no font, and it ends on the generic family every system has.
+SYSTEM_MONOSPACE_SKINS = ("fathom",)
+SHIPPED_FONT_SKINS = [skin for skin in SKIN_NAMES if skin not in SYSTEM_MONOSPACE_SKINS]
+# Skins with cursors of their own; Fathom keeps the system's.
+CURSOR_SKINS = ["illuminated"]
+
+
+@pytest.mark.parametrize("skin", SYSTEM_MONOSPACE_SKINS)
+def test_a_system_monospace_skin_falls_back_on_every_system(skin: str) -> None:
+    css = _css_of(skin)
+    assert FONT_FILE.findall(css) == []
+    assert re.search(r"ui-monospace, Menlo, Consolas, \"DejaVu Sans Mono\", monospace;", css)
+
+
+@pytest.mark.parametrize("skin", SHIPPED_FONT_SKINS)
 def test_skin_ships_its_fonts(skin: str) -> None:
     css = _css_of(skin)
     assert [font for font in SYSTEM_ONLY_FONTS if font in css] == []
@@ -95,7 +114,11 @@ def test_skin_ships_its_fonts(skin: str) -> None:
         assert (STATIC_ROOT / relative).with_name("OFL.txt").is_file(), f"{relative} ships without its licence"
 
 
-@pytest.mark.parametrize("skin", SKIN_NAMES)
+def test_the_skins_with_cursors() -> None:
+    assert [skin for skin in SKIN_NAMES if any((SKIN_ART_DIRECTORY / skin).glob("cursor-*.png"))] == CURSOR_SKINS
+
+
+@pytest.mark.parametrize("skin", CURSOR_SKINS)
 def test_cursors_fit_the_browsers_limit(skin: str) -> None:
     # Real cursors only: the quill and hand are drawn on the page (skin-pointer.js).
     cursors = sorted((SKIN_ART_DIRECTORY / skin).glob("cursor-*.png"))
