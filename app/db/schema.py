@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from sqlite3 import Connection
 
+from app.db.version import require_connection_not_newer
+
 NOTES_TABLE = "notes"
 APP_SETTINGS_TABLE = "app_settings"
 ONTOLOGY_RULES_TABLE = "ontology_rules"
@@ -243,8 +245,10 @@ def _ensure_columns(connection: Connection, table: str, columns: dict[str, str])
 
 
 def initialize_schema(connection: Connection) -> None:
-    """Create tables and indexes if they do not already exist."""
+    """Create tables and indexes if they do not already exist; never in a vault saved by a newer
+    MetaList, which is refused first."""
 
+    require_connection_not_newer(connection)
     connection.execute(_CREATE_NOTES_TABLE)
     connection.execute(_CREATE_APP_SETTINGS_TABLE)
     connection.execute(_CREATE_ONTOLOGY_RULES_TABLE)

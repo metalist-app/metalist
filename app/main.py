@@ -23,6 +23,7 @@ from app.config import ACTIVE_NAMESPACE, VERSION
 from .db.session import begin_writer, enable_read_guard
 from .db.schema import initialize_schema
 from .db.migrations import CURRENT_DATABASE_VERSION
+from .db.version import require_database_not_newer
 from .db.migrations import read_database_version
 from .db.migrations import run_database_migrations
 from .db.notes_sql import clear_encryption_metadata_for_empty_notes
@@ -288,6 +289,8 @@ _log_startup_step("runtime hardening checks", time.perf_counter() - hardening_st
 
 schema_start = time.perf_counter()
 if not SafeSession._use_memory:
+    # Before anything writes to it: an older MetaList would set up its own tables in a newer vault.
+    require_database_not_newer(SafeSession._db_path)
     back_up_before_passwordless_upgrade(SafeSession._db_path)
 with begin_writer() as connection:
     initialize_schema(connection.raw_connection)

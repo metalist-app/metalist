@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from app.db.version import require_database_not_newer
 from app.utils.tcp_ports import PORT_RANGE_TEXT, is_tcp_port
 import argparse
 from collections.abc import Mapping, MutableMapping, Sequence
@@ -199,6 +200,8 @@ def _connect_namespace_database(
     create_if_missing: bool,
 ) -> sqlite3.Connection | None:
     database_path = resolve_namespaced_database_path(namespace=namespace)
+    # Before anything writes to it: an older MetaList would set up its own tables in a newer vault.
+    require_database_not_newer(database_path)
     recover_pending_change(database_path)
     database_was_missing = not database_path.exists()
     if database_was_missing:

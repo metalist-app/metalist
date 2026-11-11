@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from app.db.version import EXIT_VAULT_NEEDS_NEWER_METALIST, VaultNeedsNewerMetaList
 from app.utils.tcp_ports import PORT_RANGE_TEXT, is_tcp_port
 from http import HTTPStatus
 from collections.abc import Mapping, Sequence
@@ -1810,6 +1811,14 @@ def _restart_running_namespace_process(
     )
 
 
+def child_exit_error(*, namespace: str, exit_code: int, log_path: Path, log_tail: str) -> Exception:
+    """Why a vault's server stopped while starting: a vault saved by a newer MetaList is said plainly
+    (its server printed why, last); anything else is a crash, with its log."""
+    if exit_code == EXIT_VAULT_NEEDS_NEWER_METALIST:
+        return VaultNeedsNewerMetaList(log_tail.strip().splitlines()[-1])
+    return RuntimeError(f"Vault {namespace} process exited with code {exit_code}. Child log: {log_path}\n{log_tail}")
+
+
 def _read_namespace_launch_log_tail(*, log_path: Path, log_start_offset: int) -> str:
     if log_start_offset < 0:
         raise ValueError("log_start_offset must not be negative")
@@ -1897,9 +1906,8 @@ def _poll_namespace_readiness(
                 log_path=launched_process.log_path,
                 log_start_offset=launched_process.log_start_offset,
             )
-            raise RuntimeError(
-                f"Vault {namespace} process exited with code {exit_code}. "
-                f"Child log: {launched_process.log_path}\n{log_tail}"
+            raise child_exit_error(
+                namespace=namespace, exit_code=exit_code, log_path=launched_process.log_path, log_tail=log_tail,
             )
         status_payload = _probe_namespace_status(
             host=connect_host,
