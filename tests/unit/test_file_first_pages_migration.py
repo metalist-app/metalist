@@ -53,15 +53,11 @@ def _first_page_columns(catalog: Path) -> set[str]:
         return {row[1] for row in connection.execute("PRAGMA table_info(file_first_pages)")}
 
 
-def test_this_is_the_current_version() -> None:
-    assert CURRENT_DATABASE_VERSION == _PREVIOUS_VERSION + 1
-
-
 def test_migration_adds_first_pages_and_keeps_the_files(tmp_path: Path) -> None:
     notes = _version_17_vault(tmp_path)
     catalog = _catalog(notes, has_first_pages=False)
 
-    assert _migrate(notes) == (18,)
+    assert _migrate(notes) == (18, 19)
 
     assert _first_page_columns(catalog) == set(FILE_FIRST_PAGES_COLUMNS)
     with closing(sqlite3.connect(catalog)) as connection:
@@ -73,7 +69,7 @@ def test_migration_accepts_a_catalog_the_app_already_upgraded(tmp_path: Path) ->
     notes = _version_17_vault(tmp_path)
     catalog = _catalog(notes, has_first_pages=True)
 
-    assert _migrate(notes) == (18,)
+    assert _migrate(notes) == (18, 19)
     assert _migrate(notes) == ()
     assert _first_page_columns(catalog) == set(FILE_FIRST_PAGES_COLUMNS)
 
@@ -81,5 +77,5 @@ def test_migration_accepts_a_catalog_the_app_already_upgraded(tmp_path: Path) ->
 def test_migration_does_not_create_a_missing_catalog(tmp_path: Path) -> None:
     notes = _version_17_vault(tmp_path)
 
-    assert _migrate(notes) == (18,)
+    assert _migrate(notes) == (18, 19)
     assert not resolve_file_catalog_path(notes).exists()

@@ -16,7 +16,7 @@ def _delta(text: str, note_ids: list[str]) -> dict[str, object]:
 
 def _stream_lines(events: list[dict[str, object]]) -> list[dict[str, object]]:
     store = AiChatSessionStore()
-    turn_id = store.start_turn(session_key="refs", user_content="question", provider="openai", model="test")
+    turn_id = store.start_turn(user_content="question", provider="openai", model="test")
     stream = ChatTurnStream(store=store, notes=NoteStore(), session_key="refs", turn_id=turn_id,
                             initial_input_tokens=1, web_evidence_store=WebEvidenceStore())
 

@@ -66,6 +66,10 @@ could not be drawn), the file content revision it was drawn from, the drawing's 
 (`drawer_version`) and its time are readable structural metadata. It is drawn by a process of its
 own (`app/services/pdf_first_page_worker.py`) that gets the PDF on stdin and answers the JPEG on
 stdout: the PDF's bytes and the picture are never written to disk unencrypted.
+The AI conversation (`ai_chat`, database version 19: one row, the vault's chat as saved by
+`app/services/ai_chat.py`) encrypts its whole payload (`state_json`): messages, summaries, the
+agent's records and the IDs of the notes the AI could see. Its row ID and save timestamps are
+readable structural metadata. Clear Chat deletes the row.
 Site icons beside link titles (`link_icons`, database version 12) encrypt the site
 (`origin`) and the icon (`icon_png`) like link titles; their lookup status, last
 error kind, failure count and check timestamps are readable structural metadata.

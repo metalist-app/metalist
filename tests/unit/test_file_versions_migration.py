@@ -69,7 +69,7 @@ def test_kept_text_was_read_by_the_first_reader_and_filter(tmp_path: Path) -> No
     notes = _version_13_namespace(tmp_path)
     files = _version_13_files(tmp_path)
 
-    assert _migrate(notes) == (14, 15, 16, 17, 18)
+    assert _migrate(notes) == (14, 15, 16, 17, 18, 19)
 
     assert _columns(files, "file_texts") == set(FILE_TEXTS_COLUMNS)
     with closing(sqlite3.connect(files)) as connection:
@@ -85,7 +85,7 @@ def test_migration_accepts_a_files_database_the_app_already_upgraded(tmp_path: P
         initialize_file_schema(connection)
         connection.commit()
 
-    assert _migrate(notes) == (14, 15, 16, 17, 18)
+    assert _migrate(notes) == (14, 15, 16, 17, 18, 19)
     assert _migrate(notes) == ()
     assert _columns(files, "file_texts") == set(FILE_TEXTS_COLUMNS)
 
@@ -93,5 +93,5 @@ def test_migration_accepts_a_files_database_the_app_already_upgraded(tmp_path: P
 def test_migration_does_not_create_a_missing_files_database(tmp_path: Path) -> None:
     notes = _version_13_namespace(tmp_path)
 
-    assert _migrate(notes) == (14, 15, 16, 17, 18)
+    assert _migrate(notes) == (14, 15, 16, 17, 18, 19)
     assert not (tmp_path / "fixture.metalist.files.db").exists()

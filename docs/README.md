@@ -61,7 +61,6 @@
 - Built 2026-11-11, with the virtual folders experiment it changes (the folders tab only shows or hides the tree, no folder contexts as a kind; several folders in a search add results; a folder implies its parent folders, rules included): `docs/ready-to-build/folders-tab-and-multiple-folders.md`
 - Ready to build (the AI reads the whole view, files included, in batches when it must; a warning before very large requests): `docs/ready-to-build/ai-reads-whole-view.md`
 - Ready to build (how much text a conversation has sent, under the chat header): `docs/ready-to-build/ai-chat-size-line.md`
-- Ready to build (AI conversations survive a restart or an upgrade): `docs/ready-to-build/ai-chat-survives-restart.md`
 - Ready to build (a prefix folder for every import, so a whole import is one folder): `docs/ready-to-build/import-prefix-folder.md`
 - Ready to build (importing a folder of any files, with a size check and file-type checklist; previews for code, PDF, RTF/.docx, HTML, audio and video): `docs/ready-to-build/folder-import-and-file-previews.md`
 - Ready to build, replacing that note's preview notes (files shown, not copied: kept text for every file with text, a viewer with Open and Download, audio and video players, dropped `.md`/`.txt` asked about, Convert to Note): `docs/ready-to-build/files-shown-not-copied.md`

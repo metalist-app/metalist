@@ -45,7 +45,7 @@ def test_password_note_rewrite_rejects_partial_encryption_metadata(encrypted):
 ])
 def test_internal_stream_failure_closes_source_and_fails_turn(events):
     store = AiChatSessionStore()
-    turn_id = store.start_turn(session_key='test', user_content='question', provider='openai', model='test')
+    turn_id = store.start_turn(user_content='question', provider='openai', model='test')
     stream = ChatTurnStream(store=store, notes=NoteStore(), session_key='test', turn_id=turn_id,
                             initial_input_tokens=1, web_evidence_store=WebEvidenceStore())
     closed = []
@@ -65,7 +65,7 @@ def test_internal_stream_failure_closes_source_and_fails_turn(events):
         assert closed == [True]
 
     asyncio.run(consume())
-    message = store.snapshot(session_key='test')['messages'][-1]
+    message = store.snapshot()['messages'][-1]
     assert message['status'] == 'error'
     assert re.fullmatch(
         r'Internal agent error \(RuntimeError at app/services/ai_chat_stream\.py:\d+\)\nWhere it stopped: .+\.',

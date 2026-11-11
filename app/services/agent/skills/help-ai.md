@@ -156,9 +156,10 @@ notes and pages. When the privacy settings change or a note the AI could see bec
 private, earlier turns and the summary stop being sent together, under the divider "Earlier messages are not sent to the AI (privacy
 settings changed)".
 
-Chat history and its debug traces are session-only. Clear Chat/logout removes
-them; a server restart removes them. A page reload in the same authenticated
-session retains them. Export LLM history (download arrow in the chat header)
+The chat is saved in the vault (encrypted when it has a password) and shared by every
+login to it: a restart, an upgrade, logging out and locking keep it; only Clear Chat ends
+it. An answer MetaList stopped during comes back marked as stopped: ask again. Its debug
+traces are session-only: Clear Chat, logout or a restart removes them. Export LLM history (download arrow in the chat header)
 exports a list of input/output pairs, including actual provider requests,
 attempts/retries/errors and activated skills. It makes no additional model call.
 Agent Debug shows the latest run. When an AI step fails, the red message in the

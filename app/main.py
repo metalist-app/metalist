@@ -39,6 +39,7 @@ from app.services import auth_cache_state
 from app.services.integrity import assert_linked_list_integrity
 from app.services.tag_ontology import OntologyParseError
 from app.services.ontology_rules_store import bootstrap_ontology_rules_store
+from app.services.ai_chat import ai_chat_store
 from app.services.tab_state import tab_state_store
 from app.services.link_titles import link_title_store
 from app.services.reminders import reminder_store
@@ -317,10 +318,13 @@ with begin_writer() as connection:
     tab_state_store.bootstrap(connection=connection)
     link_title_store.bootstrap(connection=connection)
     reminder_store.bootstrap(connection=connection)
+    # A vault with a password upgrades at unlock: until then its tables may be older.
     if not bool(settings["encryption_enabled"]) or database_version >= CURRENT_DATABASE_VERSION:
         search_history_store.bootstrap(connection=connection)
+        ai_chat_store.bootstrap(connection=connection)
     else:
         search_history_store.reset()
+        ai_chat_store.reset()
 _log_startup_step("schema + settings bootstrap", time.perf_counter() - schema_start)
 
 startup_has_password = False

@@ -15,6 +15,7 @@ from app.services.ontology_rules_store import bootstrap_ontology_rules_store, en
 from app.services.reminders import reminder_store
 from app.services.search_history import search_history_store
 from app.services.session_timeout_service import reset_session_timeout_cache
+from app.services.ai_chat import ai_chat_store
 from app.services.tab_state import tab_state_store
 from app.services.view_cache import view_cache
 from app.services.sync import capture_sync_state, restore_sync_state
@@ -84,6 +85,7 @@ def reload_runtime_from_database(*, was_loaded: bool, dek: bytes | None) -> None
                 set_session_dek(dek)
             bootstrap_ontology_rules_store(connection=connection)
             tab_state_store.bootstrap(connection=connection)
+            ai_chat_store.bootstrap(connection=connection)
             link_title_store.reset()
             link_title_store.bootstrap(connection=connection)
             reminder_store.bootstrap(connection=connection)
@@ -92,6 +94,7 @@ def reload_runtime_from_database(*, was_loaded: bool, dek: bytes | None) -> None
             if was_loaded and (not encrypted or dek is not None):
                 ensure_rules_decrypted_and_compiled(token='')
                 tab_state_store.ensure_decrypted(token='')
+                ai_chat_store.ensure_decrypted(token='')
                 link_title_store.ensure_decrypted(token='')
                 reminder_store.ensure_decrypted(token='')
                 search_history_store.ensure_decrypted(token='')

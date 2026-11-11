@@ -51,25 +51,25 @@ class FakeInference:
 
 def _store_with_turns(*answers: str) -> AiChatSessionStore:
     store = AiChatSessionStore()
-    store.synchronize_disclosure_boundary(session_key=SESSION, disclosure=HistoryDisclosure(policy_key="boundary", permitted_note_ids=frozenset(), hidden_note_ids=frozenset()))
+    store.synchronize_disclosure_boundary(disclosure=HistoryDisclosure(policy_key="boundary", permitted_note_ids=frozenset(), hidden_note_ids=frozenset()))
     for number, answer in enumerate(answers, start=1):
-        turn = store.start_turn(session_key=SESSION, user_content=f"Question {number}", provider="openai", model="m")
-        store.complete_turn(session_key=SESSION, turn_id=turn, final_content=answer, actions=[], request_tokens=NO_REQUEST)
+        turn = store.start_turn(user_content=f"Question {number}", provider="openai", model="m")
+        store.complete_turn(turn_id=turn, final_content=answer, actions=[], request_tokens=NO_REQUEST)
     return store
 
 
 def _summarize_now(store: AiChatSessionStore, inference: FakeInference) -> bool:
-    return asyncio.run(summarize_on_request(store=store, session_key=SESSION, inference=inference, base_url="x",
+    return asyncio.run(summarize_on_request(store=store, inference=inference, base_url="x",
                                             model="m", thinking_level="low"))
 
 
 def _send(store: AiChatSessionStore, inference: FakeInference, message: str) -> list[str]:
     """Start a turn as Send does and run the summary step; the step's labels."""
-    store.start_turn(session_key=SESSION, user_content=message, provider="openai", model="m")
+    store.start_turn(user_content=message, provider="openai", model="m")
 
     async def labels() -> list[str]:
         return [event["label"] async for event in summarize_before_turn(
-            store=store, session_key=SESSION, inference=inference, base_url="x", model="m",
+            store=store, inference=inference, base_url="x", model="m",
             thinking_level="low", current_message=message,
         ) if event["status"] == "completed"]
 
@@ -102,24 +102,24 @@ def test_a_long_chat_sends_the_summary_and_never_the_turns_it_replaced() -> None
 
     assert _send(store, inference, "Question 4") == ["Earlier conversation summarized"]
 
-    sent = str(store.provider_messages(session_key=SESSION))
+    sent = str(store.provider_messages())
     assert "The first answers, in short." in sent
     assert "FIRST_ANSWER" not in sent
-    assert store.provider_messages(session_key=SESSION)[0]["content"].startswith("EARLIER_CONVERSATION_SUMMARY")
-    assert store.provider_messages(session_key=SESSION)[-1] == {"role": "user", "content": "Question 4"}
+    assert store.provider_messages()[0]["content"].startswith("EARLIER_CONVERSATION_SUMMARY")
+    assert store.provider_messages()[-1] == {"role": "user", "content": "Question 4"}
 
 
 def test_a_later_summary_folds_in_the_earlier_one() -> None:
     store = _store_with_turns("one", "two")
     assert _summarize_now(store, FakeInference("FIRST_SUMMARY"))
-    turn = store.start_turn(session_key=SESSION, user_content="Question 3", provider="openai", model="m")
-    store.complete_turn(session_key=SESSION, turn_id=turn, final_content="three", actions=[], request_tokens=NO_REQUEST)
+    turn = store.start_turn(user_content="Question 3", provider="openai", model="m")
+    store.complete_turn(turn_id=turn, final_content="three", actions=[], request_tokens=NO_REQUEST)
     inference = FakeInference("SECOND_SUMMARY")
 
     assert _summarize_now(store, inference)
 
     assert "PREVIOUS_SUMMARY\nFIRST_SUMMARY" in inference.requests[0][1]["content"]
-    sent = str(store.provider_messages(session_key=SESSION))
+    sent = str(store.provider_messages())
     assert "SECOND_SUMMARY" in sent and "FIRST_SUMMARY" not in sent
 
 
@@ -131,11 +131,11 @@ def test_summarize_now_summarizes_every_turn() -> None:
 
     request = inference.requests[0][1]["content"]
     assert "FIRST_ANSWER" in request and "SECOND_ANSWER" in request
-    assert store.provider_messages(session_key=SESSION) == [
+    assert store.provider_messages() == [
         {"role": "user", "content": "EARLIER_CONVERSATION_SUMMARY\n"
-         + store.provider_messages(session_key=SESSION)[0]["content"].split("\n", 1)[1]},
+         + store.provider_messages()[0]["content"].split("\n", 1)[1]},
     ]
-    snapshot = store.snapshot(session_key=SESSION)
+    snapshot = store.snapshot()
     # The summary sits after the latest turn, where Summarize Now was chosen.
     assert snapshot["summaries"][0]["after_message_id"] == snapshot["messages"][-1]["id"]
     assert [message["visibility"] for message in snapshot["messages"]] == ["summarized"] * 4
@@ -170,53 +170,53 @@ def test_the_summary_is_asked_for_and_held_to_a_third_of_what_it_replaces() -> N
     with pytest.raises(UnusableSummary, match="longer than allowed"):
         _summarize_now(store, FakeInference("word " * (LONG_MESSAGE_WORDS // 2)))
     # Nothing was summarized.
-    assert store.snapshot(session_key=SESSION)["summaries"] == []
+    assert store.snapshot()["summaries"] == []
 
 
 def test_a_summary_finished_after_clear_chat_is_dropped() -> None:
     store = _store_with_turns("one", "two")
-    source = store.summary_source(session_key=SESSION)
-    store.clear_session(session_key=SESSION)
+    source = store.summary_source()
+    store.clear()
 
-    assert not store.apply_summary(session_key=SESSION, content="Too late.", turn_count=2,
+    assert not store.apply_summary(content="Too late.", turn_count=2,
                                    history_start=source.history_start, session_id=source.session_id)
-    assert store.snapshot(session_key=SESSION) == {"messages": [], "summaries": []}
+    assert store.snapshot() == {"messages": [], "summaries": []}
 
 
 def test_a_privacy_change_stops_sending_the_summary() -> None:
     store = _store_with_turns("PRIVATE_ANSWER")
     assert _summarize_now(store, FakeInference("PRIVATE_SUMMARY"))
 
-    store.synchronize_disclosure_boundary(session_key=SESSION, disclosure=HistoryDisclosure(policy_key="changed", permitted_note_ids=frozenset(), hidden_note_ids=frozenset()))
-    store.start_turn(session_key=SESSION, user_content="Hello", provider="openai", model="m")
+    store.synchronize_disclosure_boundary(disclosure=HistoryDisclosure(policy_key="changed", permitted_note_ids=frozenset(), hidden_note_ids=frozenset()))
+    store.start_turn(user_content="Hello", provider="openai", model="m")
 
-    assert store.provider_messages(session_key=SESSION) == [{"role": "user", "content": "Hello"}]
-    snapshot = store.snapshot(session_key=SESSION)
+    assert store.provider_messages() == [{"role": "user", "content": "Hello"}]
+    snapshot = store.snapshot()
     assert [summary["visibility"] for summary in snapshot["summaries"]] == ["held_back"]
     assert [message["visibility"] for message in snapshot["messages"]] == ["held_back", "held_back", "sent", "sent"]
 
 
 def test_no_turn_starts_while_a_summary_is_made() -> None:
     store = _store_with_turns("one")
-    assert store.begin_summary(session_key=SESSION)
-    assert store.is_summarizing(session_key=SESSION)
-    assert not store.begin_summary(session_key=SESSION)
+    assert store.begin_summary()
+    assert store.is_summarizing()
+    assert not store.begin_summary()
     with pytest.raises(RuntimeError, match="summarizing"):
-        store.start_turn(session_key=SESSION, user_content="Too soon", provider="openai", model="m")
-    store.end_summary(session_key=SESSION)
-    assert not store.is_summarizing(session_key=SESSION)
+        store.start_turn(user_content="Too soon", provider="openai", model="m")
+    store.end_summary()
+    assert not store.is_summarizing()
 
 
 def test_the_history_meter_counts_what_the_automatic_summary_counts() -> None:
     store = _store_with_turns("one", "two")
 
-    meter = history_meter(store=store, session_key=SESSION, context_tokens=CONTEXT_TOKENS)
+    meter = history_meter(store=store, context_tokens=CONTEXT_TOKENS)
 
     assert meter["turn_count"] == 2 and meter["summary_tokens"] == 0 and meter["turn_tokens"] > 0
     assert meter["budget_tokens"] == history_budget(CONTEXT_TOKENS)
     assert meter["context_tokens"] == CONTEXT_TOKENS
     assert _summarize_now(store, FakeInference("Both, in short."))
-    after = history_meter(store=store, session_key=SESSION, context_tokens=CONTEXT_TOKENS)
+    after = history_meter(store=store, context_tokens=CONTEXT_TOKENS)
     assert after["turn_count"] == 0 and after["turn_tokens"] == 0
     assert after["summary_tokens"] == estimate_text_tokens("Both, in short.")
 
@@ -249,11 +249,11 @@ def test_an_estimate_over_the_providers_count_shrinks_to_fit_it() -> None:
 
 def test_the_store_keeps_the_latest_answers_request() -> None:
     store = _store_with_turns("one")
-    assert store.last_request(session_key=SESSION) == NO_REQUEST
+    assert store.last_request() == NO_REQUEST
     request = {"total": 900, "instructions": 500, "history": 100, "this_turn": 300}
-    turn = store.start_turn(session_key=SESSION, user_content="Question 2", provider="openai", model="m")
-    store.complete_turn(session_key=SESSION, turn_id=turn, final_content="two", actions=[], request_tokens=request)
+    turn = store.start_turn(user_content="Question 2", provider="openai", model="m")
+    store.complete_turn(turn_id=turn, final_content="two", actions=[], request_tokens=request)
 
-    assert store.last_request(session_key=SESSION) == request
-    store.clear_session(session_key=SESSION)
-    assert store.last_request(session_key=SESSION) == NO_REQUEST
+    assert store.last_request() == request
+    store.clear()
+    assert store.last_request() == NO_REQUEST

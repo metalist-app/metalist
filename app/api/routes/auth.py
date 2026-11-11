@@ -427,8 +427,10 @@ def _reset_runtime_state_after_restore() -> bool:
             reminder_store.bootstrap(connection=connection)
             if not password_required or database_version == CURRENT_DATABASE_VERSION:
                 search_history_store.bootstrap(connection=connection)
+                ai_chat_store.bootstrap(connection=connection)
             else:
                 search_history_store.reset()
+                ai_chat_store.reset()
 
         if password_required:
             return True
@@ -579,19 +581,21 @@ def _open_password_session(*, request: Request, response: Response, db: SafeSess
     set_session_dek(dek)
     with SafeSession.allow_reads("auth:search_history_post_migration"):
         search_history_store.bootstrap(connection=db.connection())
+        # Read once the vault is upgraded (a restore or startup left it unread before).
+        ai_chat_store.bootstrap_if_reset(connection=db.connection())
     activate_authenticated_logging(
         namespace=_active_diagnostics_namespace(),
         dek=dek,
     )
     ensure_rules_decrypted_and_compiled(token="")
     tab_state_store.ensure_decrypted(token="")
+    ai_chat_store.ensure_decrypted(token="")
     link_title_store.ensure_decrypted(token="")
     reminder_store.ensure_decrypted(token="")
     search_history_store.ensure_decrypted(token="")
 
     invalidate_runtime_work()
     clear_sensitive_caches()
-    ai_chat_store.reset()
     web_evidence_store.reset()
     summary_batch_store.reset()
     agent_trace_store.reset()
@@ -612,7 +616,6 @@ def logout(
     token: Annotated[str, Depends(_require_auth)],
 ):
     session_key = token_service.get_session_key(token)
-    ai_chat_store.clear_session(session_key=session_key)
     web_evidence_store.clear_session(session_key=session_key)
     summary_batch_store.clear_session(session_key=session_key)
     agent_trace_store.clear_session(session_key=session_key)
@@ -681,7 +684,6 @@ def create_passwordless_session(
 
     invalidate_runtime_work()
     clear_sensitive_caches()
-    ai_chat_store.reset()
     web_evidence_store.reset()
     summary_batch_store.reset()
     agent_trace_store.reset()
@@ -1115,7 +1117,6 @@ def create_password(
     token_service.revoke_all_tokens()
     invalidate_runtime_work()
     clear_sensitive_caches()
-    ai_chat_store.reset()
     web_evidence_store.reset()
     summary_batch_store.reset()
     agent_trace_store.reset()
@@ -1148,7 +1149,6 @@ def change_password(
     token_service.revoke_all_tokens()
     invalidate_runtime_work()
     clear_sensitive_caches()
-    ai_chat_store.reset()
     web_evidence_store.reset()
     summary_batch_store.reset()
     agent_trace_store.reset()
@@ -1171,7 +1171,6 @@ def remove_password(
     token_service.revoke_all_tokens()
     invalidate_runtime_work()
     clear_sensitive_caches()
-    ai_chat_store.reset()
     web_evidence_store.reset()
     summary_batch_store.reset()
     agent_trace_store.reset()

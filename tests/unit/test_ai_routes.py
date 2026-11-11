@@ -113,15 +113,11 @@ def use_fake_chat_dependencies(monkeypatch):
 
 def test_ai_session_snapshot_uses_authenticated_session_key(monkeypatch) -> None:
     store = AiChatSessionStore()
-    turn_id = store.start_turn(
-        session_key="session-key",
-        user_content="Hello",
+    turn_id = store.start_turn(user_content="Hello",
         provider="openai",
         model="gpt-5.6-sol",
     )
-    store.append_activity(
-        session_key="session-key",
-        turn_id=turn_id,
+    store.append_activity(turn_id=turn_id,
         action="model_request",
         status="started",
         label="Waiting for OpenAI",
@@ -348,20 +344,16 @@ def test_openai_chat_requires_a_configured_api_key_before_starting_turn(
         )
 
     assert error.value.status_code == 409
-    assert store.snapshot(session_key="session-key") == {"messages": [], "summaries": []}
+    assert store.snapshot() == {"messages": [], "summaries": []}
 
 
 def test_ai_session_renders_assistant_markdown_latex_and_mermaid(monkeypatch) -> None:
     store = AiChatSessionStore()
-    turn_id = store.start_turn(
-        session_key="session-key",
-        user_content="Explain it",
+    turn_id = store.start_turn(user_content="Explain it",
         provider="openai",
         model="gpt-5.6-sol",
     )
-    store.append_delta(
-        session_key="session-key",
-        turn_id=turn_id,
+    store.append_delta(turn_id=turn_id,
         delta_kind="content",
         text=(
             "# Result\n\n"
@@ -369,15 +361,11 @@ def test_ai_session_renders_assistant_markdown_latex_and_mermaid(monkeypatch) ->
             "```mermaid\nflowchart LR\nA-->B\n```"
         ),
     )
-    store.append_delta(
-        session_key="session-key",
-        turn_id=turn_id,
+    store.append_delta(turn_id=turn_id,
         delta_kind="thinking",
         text="## Reasoning\n\nUse $x^2$.",
     )
-    store.complete_turn(
-        session_key="session-key",
-        turn_id=turn_id,
+    store.complete_turn(turn_id=turn_id,
         final_content=(
             "# Result\n\n"
             "Inline math: $x^2$.\n\n"
@@ -419,21 +407,15 @@ def test_ai_session_renders_note_uuid_as_navigable_content_preview(monkeypatch) 
                 )
 
     store = AiChatSessionStore()
-    turn_id = store.start_turn(
-        session_key="session-key",
-        user_content="Summarize it",
+    turn_id = store.start_turn(user_content="Summarize it",
         provider="openai",
         model="gpt-5.6-sol",
     )
-    store.append_delta(
-        session_key="session-key",
-        turn_id=turn_id,
+    store.append_delta(turn_id=turn_id,
         delta_kind="content",
         text=f"Source: [[{note_id}]]",
     )
-    store.complete_turn(
-        session_key="session-key",
-        turn_id=turn_id,
+    store.complete_turn(turn_id=turn_id,
         final_content=f"Source: [[{note_id}]]", actions=[], request_tokens=NO_REQUEST)
     monkeypatch.setattr(ai_routes, "ai_chat_store", store)
     monkeypatch.setattr(ai_routes, "note_store", FakeNotes())
@@ -456,22 +438,16 @@ def test_ai_session_renders_note_uuid_as_navigable_content_preview(monkeypatch) 
 def test_ai_session_omits_stale_web_citation_after_evidence_clear(monkeypatch) -> None:
     evidence_id = "75193dae-9e05-4a4e-94bf-417ffde18957"
     store = AiChatSessionStore()
-    turn_id = store.start_turn(
-        session_key="session-key",
-        user_content="Summarize it",
+    turn_id = store.start_turn(user_content="Summarize it",
         provider="openai",
         model="gpt-5.6-sol",
     )
     content = f"Previously supported claim. [[web:{evidence_id}]]"
-    store.append_delta(
-        session_key="session-key",
-        turn_id=turn_id,
+    store.append_delta(turn_id=turn_id,
         delta_kind="content",
         text=content,
     )
-    store.complete_turn(
-        session_key="session-key",
-        turn_id=turn_id,
+    store.complete_turn(turn_id=turn_id,
         final_content=content, actions=[], request_tokens=NO_REQUEST)
     monkeypatch.setattr(ai_routes, "ai_chat_store", store)
     monkeypatch.setattr(ai_routes, "web_evidence_store", WebEvidenceStore())
@@ -491,21 +467,15 @@ def test_ai_session_omits_stale_web_citation_after_evidence_clear(monkeypatch) -
 
 def test_ai_session_rendered_markdown_rejects_executable_links(monkeypatch) -> None:
     store = AiChatSessionStore()
-    turn_id = store.start_turn(
-        session_key="session-key",
-        user_content="Give me a link",
+    turn_id = store.start_turn(user_content="Give me a link",
         provider="openai",
         model="gpt-5.6-sol",
     )
-    store.append_delta(
-        session_key="session-key",
-        turn_id=turn_id,
+    store.append_delta(turn_id=turn_id,
         delta_kind="content",
         text="[unsafe](javascript:alert(1)) <script>alert(2)</script>",
     )
-    store.complete_turn(
-        session_key="session-key",
-        turn_id=turn_id,
+    store.complete_turn(turn_id=turn_id,
         final_content="[unsafe](javascript:alert(1)) <script>alert(2)</script>",
         actions=[], request_tokens=NO_REQUEST)
     monkeypatch.setattr(ai_routes, "ai_chat_store", store)
@@ -526,22 +496,16 @@ def test_ai_session_rendered_markdown_rejects_executable_links(monkeypatch) -> N
 
 def test_copy_ai_response_writes_completed_chat_html_to_llm_note_clipboard(monkeypatch) -> None:
     store = AiChatSessionStore()
-    turn_id = store.start_turn(
-        session_key="session-key",
-        user_content="Explain it",
+    turn_id = store.start_turn(user_content="Explain it",
         provider="openai",
         model="gpt-5.6-sol",
     )
     raw_markdown = "# Result\n\nInline math: $x^2$."
-    store.append_delta(
-        session_key="session-key",
-        turn_id=turn_id,
+    store.append_delta(turn_id=turn_id,
         delta_kind="content",
         text=raw_markdown,
     )
-    store.complete_turn(
-        session_key="session-key",
-        turn_id=turn_id,
+    store.complete_turn(turn_id=turn_id,
         final_content=raw_markdown, actions=[], request_tokens=NO_REQUEST)
     copied_payloads = []
     monkeypatch.setattr(ai_routes, "ai_chat_store", store)
@@ -593,13 +557,11 @@ def test_copy_ai_response_writes_completed_chat_html_to_llm_note_clipboard(monke
 
 def test_copy_ai_response_rejects_user_message(monkeypatch) -> None:
     store = AiChatSessionStore()
-    store.start_turn(
-        session_key="session-key",
-        user_content="Do not copy me",
+    store.start_turn(user_content="Do not copy me",
         provider="openai",
         model="gpt-5.6-sol",
     )
-    user_message_id = store.snapshot(session_key="session-key")["messages"][0]["id"]
+    user_message_id = store.snapshot()["messages"][0]["id"]
     monkeypatch.setattr(ai_routes, "ai_chat_store", store)
     monkeypatch.setattr(ai_routes.token_service, "get_session_key", lambda token: "session-key")
 
@@ -615,9 +577,7 @@ def test_copy_ai_response_rejects_user_message(monkeypatch) -> None:
 
 def test_copy_ai_response_rejects_streaming_message(monkeypatch) -> None:
     store = AiChatSessionStore()
-    turn_id = store.start_turn(
-        session_key="session-key",
-        user_content="Wait for it",
+    turn_id = store.start_turn(user_content="Wait for it",
         provider="openai",
         model="gpt-5.6-sol",
     )
@@ -634,18 +594,12 @@ def test_copy_ai_response_rejects_streaming_message(monkeypatch) -> None:
     assert exc_info.value.status_code == 409
 
 
-def test_clear_ai_session_removes_only_current_session(monkeypatch) -> None:
+def test_clear_ai_session_ends_the_conversation(monkeypatch) -> None:
+    # The conversation is the vault's (docs/ui/ai-chat.md, "Saved with the vault"): Clear Chat
+    # ends it for every login; the trace stays each login's own.
     store = AiChatSessionStore()
     traces = AgentTraceStore()
-    store.start_turn(
-        session_key="session-a",
-        user_content="A",
-        provider="openai",
-        model="gpt-5.6-sol",
-    )
-    store.start_turn(
-        session_key="session-b",
-        user_content="B",
+    store.start_turn(user_content="A",
         provider="openai",
         model="gpt-5.6-sol",
     )
@@ -660,8 +614,7 @@ def test_clear_ai_session_removes_only_current_session(monkeypatch) -> None:
 
     assert response.message == "Chat cleared"
     assert http_response.headers["Cache-Control"] == "no-store"
-    assert store.snapshot(session_key="session-a") == {"messages": [], "summaries": []}
-    assert len(store.snapshot(session_key="session-b")["messages"]) == 2
+    assert store.snapshot() == {"messages": [], "summaries": []}
     assert traces.snapshot(session_key="session-a") == {
         "enabled": True,
         "has_trace": False,
@@ -791,7 +744,7 @@ def test_stream_chat_updates_server_history_and_emits_typed_events(monkeypatch) 
         return [json.loads(chunk) for chunk in raw_chunks]
 
     events = asyncio.run(read_events())
-    snapshot = store.snapshot(session_key="session-key")
+    snapshot = store.snapshot()
 
     _assert_positive_activity_token_counts(events)
     assert _without_activity_token_counts(events) == [
@@ -861,9 +814,9 @@ def test_stream_chat_uses_openai_provider_with_cloud_boundary(
     monkeypatch,
 ) -> None:
     store = AiChatSessionStore()
-    store.synchronize_disclosure_boundary(session_key="session-key", disclosure=HistoryDisclosure(policy_key="previous-disclosure-boundary", permitted_note_ids=frozenset(), hidden_note_ids=frozenset()))
-    previous_turn = store.start_turn(session_key="session-key", user_content="Read private notes", provider="openai", model="old-model")
-    store.complete_turn(session_key="session-key", turn_id=previous_turn, final_content="PRIVATE_HISTORY_CANARY", actions=[], request_tokens=NO_REQUEST)
+    store.synchronize_disclosure_boundary(disclosure=HistoryDisclosure(policy_key="previous-disclosure-boundary", permitted_note_ids=frozenset(), hidden_note_ids=frozenset()))
+    previous_turn = store.start_turn(user_content="Read private notes", provider="openai", model="old-model")
+    store.complete_turn(turn_id=previous_turn, final_content="PRIVATE_HISTORY_CANARY", actions=[], request_tokens=NO_REQUEST)
     api_key = "sk-test-0123456789abcdefghijklmnop"
 
     class ContextOnlyInference:
@@ -969,7 +922,7 @@ def test_stream_chat_uses_openai_provider_with_cloud_boundary(
     ]
     assert events[2]["text"] == "Hi from OpenAI"
     assert events[3]["content"] == "Hi from OpenAI"
-    snapshot = store.snapshot(session_key="session-key")
+    snapshot = store.snapshot()
     assert snapshot["messages"][-2]["provider"] == "openai"
     assert snapshot["messages"][-1]["provider"] == "openai"
     assert "PRIVATE_HISTORY_CANARY" in str(snapshot)
@@ -1007,7 +960,7 @@ def test_stream_chat_rejects_scope_from_a_non_active_tab_before_starting_turn(
         )
 
     assert error.value.status_code == 409
-    assert store.snapshot(session_key="session-key")["messages"] == []
+    assert store.snapshot()["messages"] == []
 
 
 def test_stream_chat_freezes_originating_scope_while_reference_tab_is_active(
@@ -1205,7 +1158,7 @@ def test_stream_chat_records_client_cancellation_in_the_turn(monkeypatch) -> Non
             await pending_event
 
     asyncio.run(cancel_after_first_event())
-    assistant_message = store.snapshot(session_key="session-key")["messages"][1]
+    assistant_message = store.snapshot()["messages"][1]
 
     assert assistant_message["status"] == "error"
     assert assistant_message["error"] == "Cancelled by user"
@@ -1274,23 +1227,17 @@ def test_stream_chat_blocks_references_from_an_earlier_turn(monkeypatch) -> None
     store = AiChatSessionStore()
     fixture_boundary = HistoryDisclosure(policy_key='fixture-boundary', permitted_note_ids=frozenset(), hidden_note_ids=frozenset())
     monkeypatch.setattr(ai_routes.cloud_privacy_evaluator, 'history_disclosure', lambda **kwargs: fixture_boundary)
-    store.synchronize_disclosure_boundary(session_key='session-key', disclosure=fixture_boundary)
-    prior_turn_id = store.start_turn(
-        session_key="session-key",
-        user_content="Summarize testosterone notes",
+    store.synchronize_disclosure_boundary(disclosure=fixture_boundary)
+    prior_turn_id = store.start_turn(user_content="Summarize testosterone notes",
         provider="openai",
         model="gpt-5.6-sol",
     )
     prior_content = f"Sleep affects testosterone. [[{stale_note_id}]]"
-    store.append_delta(
-        session_key="session-key",
-        turn_id=prior_turn_id,
+    store.append_delta(turn_id=prior_turn_id,
         delta_kind="content",
         text=prior_content,
     )
-    store.complete_turn(
-        session_key="session-key",
-        turn_id=prior_turn_id,
+    store.complete_turn(turn_id=prior_turn_id,
         final_content=prior_content, actions=PRIOR_ACTIONS, request_tokens=NO_REQUEST)
     monkeypatch.setattr(ai_routes, "ai_chat_store", store)
     monkeypatch.setattr(ai_routes, "_agent_runtime", lambda **kwargs: FakeRuntime())
@@ -1331,7 +1278,7 @@ def test_stream_chat_blocks_references_from_an_earlier_turn(monkeypatch) -> None
         "content": "Bayes updates a prior.",
         "rendered_content": "<p>Bayes updates a prior.</p>",
     }
-    snapshot = store.snapshot(session_key="session-key")
+    snapshot = store.snapshot()
     assert snapshot["messages"][-1]["content"] == "Bayes updates a prior."
 
 
@@ -1384,7 +1331,7 @@ def test_stream_chat_persists_and_emits_provider_failure(monkeypatch) -> None:
         return [json.loads(chunk) for chunk in raw_chunks]
 
     events = asyncio.run(read_events())
-    snapshot = store.snapshot(session_key="session-key")
+    snapshot = store.snapshot()
 
     _assert_positive_activity_token_counts(events)
     assert _without_activity_token_counts(events) == [
@@ -1457,7 +1404,7 @@ def test_stream_chat_persists_data_free_diagnostic_for_internal_failure(
 
     with pytest.raises(AttributeError, match="PRIVATE_SEARCH_RESPONSE"):
         asyncio.run(read_events())
-    snapshot = store.snapshot(session_key="session-key")
+    snapshot = store.snapshot()
     assert snapshot["messages"][1]["status"] == "error"
     assert snapshot["messages"][1]["error"].startswith(
         "Internal agent error (AttributeError at "
