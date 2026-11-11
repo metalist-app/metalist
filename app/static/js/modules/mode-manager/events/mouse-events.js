@@ -2170,6 +2170,10 @@ function shownPictureOf(tile) {
     return picture === undefined ? null : picture;
 }
 
+function isGalleryDrawing(tile) {
+    return tile.querySelector('.note-file-excalidraw-embed') !== null;
+}
+
 function showGalleryFullScreen(clickedTile) {
     const galleryNote = clickedTile.closest('.note[data-note-id]');
     if (galleryNote === null) {
@@ -2185,12 +2189,21 @@ function showGalleryFullScreen(clickedTile) {
         if (tile === clickedTile) {
             index = pictures.length;
         }
-        // A PDF's picture is its first page (note_gallery.py): Open shows the whole PDF.
+        // A PDF's picture is its first page (note_gallery.py): Open shows the whole PDF. A
+        // drawing's Open is its editor.
         const isFirstPage = tile.querySelector('[data-picture-source="first-page"]') !== null;
+        const isDrawing = isGalleryDrawing(tile);
         pictures.push({
             src: picture.currentSrc, alt: picture.alt, noteId: tile.dataset.galleryNoteId,
-            openFileId: isFirstPage ? tile.dataset.fileRefId : '',
+            openFileId: isFirstPage || isDrawing ? tile.dataset.fileRefId : '',
+            isDrawing,
         });
+    }
+    // A drawing opens in its editor, as a double-click on a drawing in a note does (the maintainer,
+    // 2026-11-11): full screen showed a drawing faint on the dimmed list.
+    if (isGalleryDrawing(clickedTile)) {
+        void openDiagramEditor(clickedTile.dataset.fileRefId, clickedTile.dataset.galleryNoteId);
+        return;
     }
     // A PDF whose first page isn't drawn (or can't be) shows its badge: a click opens it.
     if (index === -1 && clickedTile.querySelector('.meta-gallery-file') !== null) {
@@ -2210,9 +2223,13 @@ function showGalleryFullScreen(clickedTile) {
                 await goToGalleryItem(galleryNote.dataset.noteId, noteId);
             });
         },
-        onOpen: (fileId) => {
+        onOpen: (picture) => {
+            if (picture.isDrawing) {
+                void openDiagramEditor(picture.openFileId, picture.noteId);
+                return;
+            }
             void CommandGate.run('mouse.open_file_viewer', async () => {
-                await openFileViewer(fileId);
+                await openFileViewer(picture.openFileId);
             });
         },
     });

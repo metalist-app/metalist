@@ -5059,6 +5059,25 @@ html[data-theme="dark"] .meta-gallery-switch {
     white-space: nowrap;
 }
 
+/* A drawing in a tile: the current theme's preview only (the tile's fill rule above would show
+   both), whole, as cropping a diagram loses its point, and with no hover ring: the tile opens it. */
+.note-file-reference-link.meta-gallery-tile .meta-gallery-picture .note-file-excalidraw-preview {
+    object-fit: contain;
+    box-shadow: none;
+}
+
+.note-file-reference-link.meta-gallery-tile .meta-gallery-picture .note-file-excalidraw-preview:is([hidden], .note-file-excalidraw-preview-dark) {
+    display: none;
+}
+
+html[data-theme="dark"] .note-file-reference-link.meta-gallery-tile .meta-gallery-picture .note-file-excalidraw-preview-light {
+    display: none;
+}
+
+html[data-theme="dark"] .note-file-reference-link.meta-gallery-tile .meta-gallery-picture .note-file-excalidraw-preview-dark:not([hidden]) {
+    display: block;
+}
+
 /* Folded, a PDF without a picture shows its badge alone: its name has no room in the row. */
 .note.collapsed:not(.editing) .meta-gallery-file-name {
     display: none;
@@ -5587,6 +5606,15 @@ audio.note-file-media-player {
 
 .image-zoom-open[hidden] {
     display: none;
+}
+
+/* A drawing's preview is see-through: full screen it lies on the page's own ground. */
+.image-zoom-image.is-drawing {
+    background: #ffffff;
+}
+
+html[data-theme="dark"] .image-zoom-image.is-drawing {
+    background: #121212;
 }
 
 .image-zoom-step:not(:disabled):hover,

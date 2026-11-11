@@ -89,6 +89,10 @@ export function resolveDiagramTarget(eventTarget) {
     if (embed.classList.contains('note-reference-link-thumbnail')) {
         return null;
     }
+    // A drawing in a gallery's tile belongs to the tile, which shows it full screen (note_gallery.py).
+    if (embed.closest('.meta-gallery-tile') !== null) {
+        return null;
+    }
     const referenceBlock = embed.closest('.note-reference-block[data-ref-host-note-id]');
     if (!(referenceBlock instanceof HTMLElement)) {
         throw new Error('Rendered diagram is missing its reference block');

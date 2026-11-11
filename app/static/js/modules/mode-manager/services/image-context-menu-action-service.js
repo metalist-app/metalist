@@ -483,6 +483,8 @@ export function zoomGallery({ pictures, index, onGoToNote, onOpen }) {
         next.disabled = pictureIndex === pictures.length - 1;
         const opensFile = pictures[pictureIndex].openFileId !== '';
         if (open.hidden === opensFile) open.hidden = !opensFile;
+        // A drawing's preview has no ground of its own: it gets the page's.
+        image.classList.toggle('is-drawing', pictures[pictureIndex].isDrawing === true);
     };
     const step = (direction) => {
         const target = shown.index + direction;
@@ -498,9 +500,9 @@ export function zoomGallery({ pictures, index, onGoToNote, onOpen }) {
         onGoToNote(noteId);
     });
     open.addEventListener('click', () => {
-        const fileId = pictures[shown.index].openFileId;
+        const picture = pictures[shown.index];
         closeActiveZoomOverlay();
-        onOpen(fileId);
+        onOpen(picture);
     });
     overlay.append(previous, next, actions);
     show(index);
