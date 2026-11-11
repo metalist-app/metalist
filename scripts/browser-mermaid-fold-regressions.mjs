@@ -14,7 +14,8 @@ const ONE_LINE_EM = 1.6;
 // The frame's 2 px padding and 1 px border, on each side.
 const FRAME_INSET_PX = 3;
 const PIXEL_ROUNDING = 0.5;
-const THEME_BACKGROUNDS = [['system', 'rgb(255, 255, 255)'], ['dark', 'rgb(14, 14, 14)'], ['illuminated', 'rgb(251, 247, 232)']];
+// Illuminated has no panel behind a diagram: it sits on the bare parchment (2a518557, skins/illuminated.css).
+const THEME_BACKGROUNDS = [['system', 'rgb(255, 255, 255)'], ['dark', 'rgb(14, 14, 14)'], ['illuminated', 'rgba(0, 0, 0, 0)']];
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 const lines = (...texts) => texts.map(text => `<div>${text}</div>`).join('');
 const DIAGRAM = ['graph TD', 'A --&gt; B'];
