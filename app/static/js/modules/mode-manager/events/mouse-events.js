@@ -2185,7 +2185,19 @@ function showGalleryFullScreen(clickedTile) {
         if (tile === clickedTile) {
             index = pictures.length;
         }
-        pictures.push({ src: picture.currentSrc, alt: picture.alt, noteId: tile.dataset.galleryNoteId });
+        // A PDF's picture is its first page (note_gallery.py): Open shows the whole PDF.
+        const isFirstPage = tile.querySelector('[data-picture-source="first-page"]') !== null;
+        pictures.push({
+            src: picture.currentSrc, alt: picture.alt, noteId: tile.dataset.galleryNoteId,
+            openFileId: isFirstPage ? tile.dataset.fileRefId : '',
+        });
+    }
+    // A PDF whose first page isn't drawn (or can't be) shows its badge: a click opens it.
+    if (index === -1 && clickedTile.querySelector('.meta-gallery-file') !== null) {
+        void CommandGate.run('mouse.open_file_viewer', async () => {
+            await openFileViewer(clickedTile.dataset.fileRefId);
+        });
+        return;
     }
     if (index === -1) {
         return;
@@ -2196,6 +2208,11 @@ function showGalleryFullScreen(clickedTile) {
         onGoToNote: (noteId) => {
             void CommandGate.run('mouse.gallery_go_to_note', async () => {
                 await goToGalleryItem(galleryNote.dataset.noteId, noteId);
+            });
+        },
+        onOpen: (fileId) => {
+            void CommandGate.run('mouse.open_file_viewer', async () => {
+                await openFileViewer(fileId);
             });
         },
     });

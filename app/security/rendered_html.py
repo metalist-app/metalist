@@ -45,6 +45,8 @@ RENDERER_ATTRIBUTES: dict[str, frozenset[str]] = {
         "data-ref-host-note-id", "data-ref-mode", "data-ref-note-id", "data-ref-occurrence", "title",
         # An audio or video file's player (embedded_references._render_media_embed).
         "data-media-kind", "data-media-state",
+        # A PDF's first page shown as its picture (embedded_references._render_first_page_picture).
+        "data-picture-source",
     }),
     "img": frozenset({
         "class", "data-file-kind", "data-file-ref-id", "data-inline-image-occurrence", "data-preview-variant",
@@ -75,6 +77,7 @@ _FIXED_VALUES: dict[tuple[str, str], frozenset[str]] = {
     ("div", "aria-hidden"): frozenset({"true"}),
     ("div", "aria-live"): frozenset({"polite"}),
     ("div", "contenteditable"): frozenset({"false"}),
+    ("div", "data-picture-source"): frozenset({"first-page"}),
     ("img", "decoding"): frozenset({"async"}),
     ("img", "draggable"): frozenset({"true", "false"}),
     ("details", "open"): frozenset({"", "open"}),

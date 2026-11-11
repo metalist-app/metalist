@@ -1038,6 +1038,41 @@ def test_audit_requires_the_catalog_schema_from_version_17(tmp_path: Path) -> No
     assert ("files", "surprise") in {(finding.table, finding.field) for finding in report.fatal_findings}
 
 
+def _set_version(database_path: Path, version: int) -> None:
+    with sqlite3.connect(database_path) as connection:
+        connection.execute(f"PRAGMA user_version = {version}")
+
+
+def _drop_first_pages(database_path: Path) -> None:
+    with sqlite3.connect(resolve_file_catalog_path(database_path)) as connection:
+        connection.execute("DROP TABLE file_first_pages")
+
+
+@pytest.mark.parametrize("has_first_pages", [False, True], ids=["before-open", "added-on-open"])
+def test_audit_accepts_a_version_17_catalog_with_or_without_first_pages(tmp_path: Path, has_first_pages: bool) -> None:
+    """Migration 17→18 adds file_first_pages; opening the catalog may have added it already."""
+    namespaces_directory = tmp_path / "namespaces"
+    database_path = _vault_with_moved_files(namespaces_directory)
+    if not has_first_pages:
+        _drop_first_pages(database_path)
+
+    report = audit_all_namespaces(namespaces_directory=namespaces_directory)
+
+    assert report.fatal_findings == (), report.render_text()
+
+
+def test_audit_accepts_version_18_with_first_pages_and_requires_them(tmp_path: Path) -> None:
+    namespaces_directory = tmp_path / "namespaces"
+    database_path = _vault_with_moved_files(namespaces_directory)
+    _set_version(database_path, 18)
+    assert audit_all_namespaces(namespaces_directory=namespaces_directory).fatal_findings == ()
+
+    _drop_first_pages(database_path)
+    report = audit_all_namespaces(namespaces_directory=namespaces_directory)
+
+    assert "file_first_pages" in {finding.table for finding in report.fatal_findings}, report.render_text()
+
+
 def test_audit_reports_a_seal_stored_in_plaintext(tmp_path: Path) -> None:
     namespaces_directory = tmp_path / "namespaces"
     database_path = _vault_with_moved_files(namespaces_directory)

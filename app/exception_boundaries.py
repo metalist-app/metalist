@@ -12,6 +12,8 @@ CAPTURE_BOUNDARIES = {
     # A PDF that can't be read keeps no searchable text; it matches by name only.
     'app/services/file_text_worker.py:read_pages:pdf_capture': ('PdfiumError', 'ValueError'),
     'app/services/file_text_worker.py:read_document:document_capture': ('UnreadableDocument',),
+    # A PDF that can't be drawn (locked, damaged) keeps its card in a gallery.
+    'app/services/pdf_first_page_worker.py:draw_first_page:pdf_capture': ('PdfiumError', 'ValueError'),
     # A Word document is the user's file: a damaged zip or text keeps its card, by name only.
     'app/services/document_text.py:_docx_xml:zip_capture': ('BadZipFile',),
     'app/services/document_text.py:_docx_root:xml_capture': ('ParseError',),

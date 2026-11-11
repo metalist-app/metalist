@@ -190,6 +190,7 @@ export const CONFIG = {
             CONTENT: (fileId) => `${API_FILES_BASE}/${fileId}/content`,
             PREVIEWS: (fileId) => `${API_FILES_BASE}/${fileId}/previews`,
             PREVIEW: (fileId, variant) => `${API_FILES_BASE}/${fileId}/previews/${variant}`,
+            FIRST_PAGE: (fileId) => `${API_FILES_BASE}/${fileId}/first-page`,
             EDIT_SESSIONS: (fileId) => `${API_FILES_BASE}/${fileId}/edit-sessions`,
             EDIT_SESSION_FINISH: (fileId, sessionId) => `${API_FILES_BASE}/${fileId}/edit-sessions/${sessionId}/finish`,
             EDIT_SESSION_DISCARD: (fileId, sessionId) => `${API_FILES_BASE}/${fileId}/edit-sessions/${sessionId}/discard`,

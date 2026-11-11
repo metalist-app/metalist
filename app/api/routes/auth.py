@@ -61,6 +61,7 @@ from app.services.view_cache import view_cache
 from app.services import auth_cache_state
 from app.services.ontology_rules_store import ensure_rules_decrypted_and_compiled
 from app.services.link_titles import link_title_store
+from app.services.pdf_first_pages import pdf_first_pages
 from app.services.reminders import reminder_store
 from app.services.search_history import search_history_store
 from app.services.runtime_lock import purge_decrypted_runtime_state
@@ -730,6 +731,8 @@ def auth_status(
         "cache_ready": not auth_cache_state.cache_refresh_needed(),
         "namespace": ACTIVE_NAMESPACE,
         "link_title_revision": link_title_store.get_revision(),
+        # A PDF's first page drawn in the background: its galleries are drawn again.
+        "first_page_revision": pdf_first_pages.revision(),
         "client_preferences": client_preferences,
     }
 

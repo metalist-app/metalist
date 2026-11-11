@@ -4372,7 +4372,7 @@ html[data-theme="dark"] .ai-chat-header-actions #ai-chat-spend-toggle[aria-press
 
 /* A folded note's first line is drawn as one line of text; an embed on it is an
    embed, drawn as everywhere (docs/ui/references.md), so these leave it alone. */
-.note.collapsed:not(.editing) .note-content :not(img):not(:where(.note-reference-note.note-embed-block, .note-reference-note.note-embed-block *, .note-reference-file, .note-reference-file *, .meta-mermaid-diagram *)) {
+.note.collapsed:not(.editing) .note-content :not(img):not(:where(.note-reference-note.note-embed-block, .note-reference-note.note-embed-block *, .note-reference-file, .note-reference-file *, .meta-mermaid-diagram *, .meta-gallery-grid *)) {
     font-size: inherit !important;
     line-height: inherit !important;
 }
@@ -5059,6 +5059,51 @@ html[data-theme="dark"] .meta-gallery-switch {
     white-space: nowrap;
 }
 
+/* Folded, a PDF without a picture shows its badge alone: its name has no room in the row. */
+.note.collapsed:not(.editing) .meta-gallery-file-name {
+    display: none;
+}
+
+/* A PDF's first page shows its top, where a document's title is, and a thin edge, as a white page
+   would vanish into a white note. */
+.note-file-reference-link.meta-gallery-tile .meta-gallery-picture [data-picture-source="first-page"] .note-file-image-preview {
+    object-position: top;
+}
+
+.meta-gallery-picture:has([data-picture-source="first-page"]) {
+    outline: 1px solid #d8dde6;
+    outline-offset: -1px;
+}
+
+html[data-theme="dark"] .meta-gallery-picture:has([data-picture-source="first-page"]) {
+    outline-color: rgba(255, 255, 255, 0.16);
+}
+
+/* A PDF without its first page drawn (yet): its badge and name in the middle of the square. */
+.meta-gallery-file {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    height: 100%;
+    padding: 8px;
+    box-sizing: border-box;
+}
+
+.meta-gallery-file-name {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 12px;
+    color: #4b5563;
+}
+
+html[data-theme="dark"] .meta-gallery-file-name {
+    color: rgba(229, 231, 235, 0.75);
+}
+
 html[data-theme="dark"] .meta-gallery-picture {
     background: rgba(255, 255, 255, 0.06);
 }
@@ -5491,10 +5536,11 @@ audio.note-file-media-player {
     font: 28px/1 Arial, sans-serif;
 }
 
-/* A gallery's pictures full screen: ‹ › at the sides, dimmed at the ends, and Go to note below. */
+/* A gallery's pictures full screen: ‹ › at the sides, dimmed at the ends, and below them Open
+   (a PDF's whole file) and Go to note. */
 .image-zoom-step,
+.image-zoom-open,
 .image-zoom-go-to-note {
-    position: fixed;
     border: 1px solid rgba(255, 255, 255, 0.34);
     background: rgba(15, 23, 42, 0.72);
     color: #ffffff;
@@ -5502,6 +5548,7 @@ audio.note-file-media-player {
 }
 
 .image-zoom-step {
+    position: fixed;
     top: calc(50% - 24px);
     width: 48px;
     height: 48px;
@@ -5522,16 +5569,28 @@ audio.note-file-media-player {
     cursor: default;
 }
 
-.image-zoom-go-to-note {
+.image-zoom-actions {
+    position: fixed;
     bottom: 18px;
     left: 50%;
     transform: translateX(-50%);
+    display: flex;
+    gap: 10px;
+}
+
+.image-zoom-open,
+.image-zoom-go-to-note {
     padding: 8px 16px;
     border-radius: 999px;
     font: 15px/1.2 system-ui, -apple-system, sans-serif;
 }
 
+.image-zoom-open[hidden] {
+    display: none;
+}
+
 .image-zoom-step:not(:disabled):hover,
+.image-zoom-open:hover,
 .image-zoom-go-to-note:hover,
 .image-zoom-close:hover,
 .image-zoom-close:focus-visible {

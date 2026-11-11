@@ -4,7 +4,7 @@ from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from app.services.tag_ontology import TagOntology
-from typing import Callable, Dict, FrozenSet, Iterable, List, Tuple
+from typing import Callable, Dict, FrozenSet, Iterable, List, Optional, Tuple
 
 from app.config import TAG_SUGGESTION_CONNECTORS
 from app.config import TAG_SUGGESTION_SUPPRESS_REDUNDANT_CONTENT_VARIANTS
@@ -12,6 +12,10 @@ from app.services.note_datetime import DATETIME_TAG, datetime_tag_in_text, is_da
 from app.services.note_datetime import suggested_datetime_tag
 from app.utils.text_utils import strip_html
 from app.services.note_store import store as note_store
+from app.services.embedded_references import collect_active_reference_tokens
+from app.services.file_registry import file_registry
+from app.services.file_storage import get_file_reference_record
+from app.services.note_gallery import GALLERY_TAG, gallery_kinds_found
 from app.services.ontology_rules_store import extract_ontology_tags
 from app.services.ontology_rules_store import get_ontology
 from app.security.sensitive_cache import SensitiveMemo
@@ -1213,17 +1217,77 @@ def _synonyms_of_written_tags(*, tags: Iterable[str], ontology: TagOntology) -> 
 
 def _suggest_meta_tags(*, note_id: str, prefix: str, content_html: str, limit: int) -> _RankedSuggestions:
     """Built-in tags starting with what is typed (`@foot`), most used first; `@datetime`
-    with the first date the note's text names, or now."""
+    with the first date the note's text names, or now; `@gallery=` with the kinds of picture
+    under the note, right after `@gallery`."""
     assert prefix.startswith("@"), prefix
     datetime_term: str | None = None
     if may_be_datetime_tag(prefix):
         datetime_term = suggested_datetime_tag(
             text=strip_html(content_html), now=datetime.now(), year_if_missing=_year_last_updated(note_id),
         )
-    return _RankedSuggestions(
-        tags=search_index.suggest_meta_tag_completions(prefix=prefix, limit=limit, datetime_term=datetime_term),
-        explain=lambda term: meta_tag_reasons(index=search_index, term=term, prefix=prefix),
+    tags = search_index.suggest_meta_tag_completions(prefix=prefix, limit=limit, datetime_term=datetime_term)
+    gallery_values = _gallery_values(note_id=note_id, prefix=prefix)
+    offered_values: FrozenSet[str] = frozenset()
+    if gallery_values is not None:
+        tags = _with_gallery_values(tags, gallery_values=gallery_values, limit=limit)
+        offered_values = frozenset(gallery_values)
+
+    def explain(term: str) -> Tuple[str, ...]:
+        if term in offered_values:
+            return ("Pictures of this kind are in this note or under it",)
+        return meta_tag_reasons(index=search_index, term=term, prefix=prefix)
+
+    return _RankedSuggestions(tags=tags, explain=explain)
+
+
+_GALLERY_VALUE_PREFIX = f"{GALLERY_TAG}="
+# Typed this far, an @ tag may become a gallery: its values are offered from here on.
+_GALLERY_VALUES_FROM = "@gal"
+
+
+@dataclass(frozen=True)
+class _SavedNotesTree:
+    """The saved notes and files, as a gallery reads them (note_gallery.GalleryTree)."""
+
+    has_file: Callable[[str], bool]
+    get_file: Callable[[str], object]
+    get_note: Callable[[str], object]
+    get_children: Callable[[Optional[str]], List[str]]
+
+
+def _gallery_values(*, note_id: str, prefix: str) -> List[str] | None:
+    """`@gallery=` with each kind of picture in the note and under it, the most first and without
+    counts (docs/future-plans/gallery.md, decision 4); None while what is typed cannot lead there."""
+    typed = prefix.casefold()
+    if not typed.startswith(_GALLERY_VALUES_FROM):
+        return None
+    if not (_GALLERY_VALUE_PREFIX.startswith(typed) or typed.startswith(_GALLERY_VALUE_PREFIX)):
+        return None
+    if not note_store.has_note(note_id):
+        return []
+    tree = _SavedNotesTree(
+        has_file=file_registry.has_file,
+        get_file=lambda file_id: get_file_reference_record(file_id, token=None),
+        get_note=note_store.get_note,
+        get_children=note_store.get_children,
     )
+    kinds = gallery_kinds_found(
+        note_id=note_id, context=tree,
+        file_ids_in=lambda content_html: [(token.start, token.note_id) for token in collect_active_reference_tokens(content_html)],
+    )
+    values = [f"{_GALLERY_VALUE_PREFIX}{kind}" for kind in kinds]
+    return [value for value in values if value.casefold().startswith(typed) and value.casefold() != typed]
+
+
+def _with_gallery_values(tags: List[str], *, gallery_values: List[str], limit: int) -> List[str]:
+    """The gallery's own kinds right after `@gallery`, in place of kinds other notes use."""
+    others = [tag for tag in tags if not tag.casefold().startswith(_GALLERY_VALUE_PREFIX)]
+    after = 0
+    for index, tag in enumerate(others):
+        if tag.casefold() == GALLERY_TAG:
+            after = index + 1
+            break
+    return [*others[:after], *gallery_values, *others[after:]][:limit]
 
 
 @dataclass(frozen=True)

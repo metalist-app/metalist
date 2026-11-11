@@ -10,9 +10,10 @@ import pytest
 from app.services.content_formatting import is_known_meta_tag_term, list_known_meta_tag_terms
 from app.services.embedded_references import collect_active_reference_tokens, extract_collapsed_preview_source_html
 from app.security.rendered_html import sanitize_rendered_html
-from app.services.note_gallery import GalleryItem, collect_gallery_items, gallery_kinds, render_gallery
+from app.services.note_gallery import GalleryItem, collect_gallery_items, gallery_kinds, gallery_kinds_found, render_gallery
+from app.services.tag_suggestions import _with_gallery_values
 
-PHOTO_A, PHOTO_B, DRAWING, MANUAL = (f"{index:08d}-0000-4000-8000-000000000000" for index in range(1, 5))
+PHOTO_A, PHOTO_B, DRAWING, MANUAL, SKETCH = (f"{index:08d}-0000-4000-8000-000000000000" for index in range(1, 6))
 
 
 @dataclass(frozen=True)
@@ -92,10 +93,12 @@ def test_the_tag_names_the_kinds(tags: str, kinds) -> None:
 
 
 def test_pictures_come_in_outline_order_each_once_with_their_note_first_line() -> None:
+    # Plain @gallery shows images, drawings and PDFs alike (decision 3).
     assert _items(_trip(), "trip", "@gallery") == [
         (PHOTO_A, "day-1", "Beach at dusk"),
         (DRAWING, "day-1-more", "and"),
         (PHOTO_B, "day-2", ""),
+        (MANUAL, "manual", "Tram manual"),
     ]
 
 
@@ -158,3 +161,38 @@ def test_the_note_of_each_picture_survives_sanitizing() -> None:
         tile_body=lambda file_id: "", view_kind=lambda file_id: "", written_picture=lambda source: f'<img src="{source}">',
     )
     assert 'data-gallery-note-id="day-1"' in sanitize_rendered_html(drawn)
+
+
+def _kinds_found(tree: _Tree, note_id: str) -> List[str]:
+    return gallery_kinds_found(
+        note_id=note_id, context=tree,
+        file_ids_in=lambda content_html: [(token.start, token.note_id) for token in collect_active_reference_tokens(content_html)],
+    )
+
+
+def test_the_kinds_found_come_most_files_first_each_file_once() -> None:
+    # Two photos (one written twice), one PDF, one drawing: equally many keep image, pdf, drawing.
+    assert _kinds_found(_trip(), "trip") == ["image", "pdf", ".excalidraw"]
+    tree = _trip()
+    tree.notes["day-2"] = _Note(f"<div>![[{DRAWING}]]</div>", "")
+    tree.files[SKETCH] = _File("sketch.excalidraw", "excalidraw")
+    tree.notes["manual"] = _Note(f"<div>![[{SKETCH}]]</div>", "")
+    assert _kinds_found(tree, "trip") == [".excalidraw", "image"]
+
+
+def test_a_picture_written_in_the_text_is_an_image_and_other_files_are_not_kinds() -> None:
+    tree = _Tree(
+        notes={"album": _Note(f'<div><img src="https://example.com/a.png"></div><div>![[{SKETCH}]]</div>', "")},
+        children={}, files={SKETCH: _File("notes.md", "text")},
+    )
+    assert _kinds_found(tree, "album") == ["image"]
+    assert _kinds_found(_Tree(notes={"empty": _Note("<div>Nothing</div>", "")}, children={}, files={}), "empty") == []
+
+
+def test_the_gallery_kinds_follow_plain_gallery_in_place_of_kinds_other_notes_use() -> None:
+    offered = ["@gallery=image", "@gallery=pdf"]
+    assert _with_gallery_values(["@gallery", "@gallery=.png", "@gantt"], gallery_values=offered, limit=10) == [
+        "@gallery", "@gallery=image", "@gallery=pdf", "@gantt",
+    ]
+    assert _with_gallery_values(["@gallery=.png"], gallery_values=offered, limit=10) == offered
+    assert _with_gallery_values(["@gallery", "@gantt"], gallery_values=offered, limit=2) == ["@gallery", "@gallery=image"]

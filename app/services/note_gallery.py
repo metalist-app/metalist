@@ -11,21 +11,23 @@ from __future__ import annotations
 
 import html
 import re
+from collections import Counter
 from dataclasses import dataclass
 from typing import Callable, Iterable, List, Optional, Protocol, Tuple
 
 from app.services.content_formatting import is_markdown_note
-from app.services.file_kinds import FILE_KIND_IMAGE, file_kind_of
+from app.services.file_kinds import FILE_KIND_IMAGE, FILE_KIND_PDF, file_kind_of
 from app.services.inline_image_occurrences import INLINE_IMAGE_TAG_RE
 from app.services.structured_note_renderers import extract_plain_text_from_note_html
 
 GALLERY_TAG = "@gallery"
 # A whole token on the note's own tag line: @gallery or @gallery=image,pdf.
 _GALLERY_TAG_RE = re.compile(r"(?<!\S)@gallery(?:=(?P<kinds>[^\s=:]+))?(?!\S)", re.IGNORECASE)
-# What plain @gallery shows: what can be drawn as a picture. PDFs join once they have a
-# first-page preview (docs/future-plans/gallery.md, "PDF first pages").
-_PICTURE_THUMBNAIL_KINDS = frozenset({"image", "excalidraw"})
+# What plain @gallery shows: images, drawings and PDFs (docs/future-plans/gallery.md, decision 3).
+_PICTURE_THUMBNAIL_KINDS = frozenset({"image", "excalidraw", "pdf"})
 _KIND_SEPARATOR = ","
+# The kinds a gallery can be narrowed to and draw, in the order offered when equally many.
+_OFFERED_KINDS = (FILE_KIND_IMAGE, FILE_KIND_PDF, ".excalidraw")
 # A file written in a note: ![[id]] or [[id]].
 _REFERENCE_RE = re.compile(r"!?\[\[[^\]]*\]\]")
 # A picture written in a note's text: an <img>'s address, or ![...](address) in a Markdown note.
@@ -168,3 +170,23 @@ def render_gallery(
     # The switch between the grid and the children (gallery-view-service.js) sits in the margin.
     switch = '<button type="button" class="meta-gallery-switch" aria-label="Show as outline" title="Show as outline"></button>'
     return f'<section class="meta-gallery" aria-label="Gallery">{switch}<div class="meta-gallery-grid">{"".join(tiles)}</div></section>'
+
+
+def gallery_kinds_found(
+    *, note_id: str, context: GalleryTree, file_ids_in: Callable[[str], Iterable[Tuple[int, str]]],
+) -> List[str]:
+    """The kinds of picture in a note and under it, the kind with the most first: what a tag
+    bar offers after `@gallery=` (docs/future-plans/gallery.md, decision 4)."""
+    items = collect_gallery_items(
+        note_id=note_id, kinds=_OFFERED_KINDS, context=context, file_ids_in=file_ids_in,
+        first_line_of=lambda content_html: "",
+    )
+    counts: Counter[str] = Counter()
+    for item in items:
+        if item.file_id == "":
+            counts[FILE_KIND_IMAGE] += 1
+            continue
+        record = context.get_file(item.file_id)
+        counts[file_kind_of(thumbnail_kind=_attribute(record, "thumbnail_kind"), file_name=_attribute(record, "original_filename"))] += 1
+    assert all(kind in _OFFERED_KINDS for kind in counts), counts
+    return sorted(counts, key=lambda kind: (-counts[kind], _OFFERED_KINDS.index(kind)))

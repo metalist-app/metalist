@@ -108,6 +108,9 @@ def test_failed_request_restores_note_memory_and_database(live_database):
 
 
 def test_restore_failure_preserves_complete_live_database_set(tmp_path, monkeypatch):
+    # Databases on disk roll back as files (session.LiveDatabaseRecovery): an earlier test that left
+    # the in-memory database on made this restore roll back as memory, and leave 'old' behind.
+    monkeypatch.setattr(SafeSession, '_use_memory', False)
     notes = tmp_path / 'fixture.metalist.db'
     files = resolve_file_database_path(notes)
     for path, initialize in ((notes, initialize_schema), (files, initialize_file_schema)):

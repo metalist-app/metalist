@@ -92,21 +92,36 @@ function applyPreviewFailure(target) {
     setPreviewState(target, 'failed');
 }
 
-async function fetchPreviewObjectUrl(fileId) {
+// A PDF's tile in a gallery shows its first page (embedded_references._render_pdf_tile), loaded
+// apart from the PDF itself.
+const FIRST_PAGE_SOURCE = 'first-page';
+
+function isFirstPage(target) {
+    return target.dataset.pictureSource === FIRST_PAGE_SOURCE;
+}
+
+// The cache's key: a file's own picture, or a PDF's first page.
+function pictureKey(target) {
+    if (isFirstPage(target)) return `${FIRST_PAGE_SOURCE}:${target.dataset.fileRefId}`;
+    return target.dataset.fileRefId;
+}
+
+async function fetchPreviewObjectUrl(fileId, key, isFirstPagePicture) {
     if (typeof fileId !== 'string' || fileId.length === 0) {
         throw new Error('fetchPreviewObjectUrl expects fileId');
     }
 
-    if (moduleState.previewCache.has(fileId)) {
-        return moduleState.previewCache.get(fileId).objectUrl;
+    if (moduleState.previewCache.has(key)) {
+        return moduleState.previewCache.get(key).objectUrl;
     }
-    if (moduleState.pendingPreviewRequests.has(fileId)) {
-        return await moduleState.pendingPreviewRequests.get(fileId);
+    if (moduleState.pendingPreviewRequests.has(key)) {
+        return await moduleState.pendingPreviewRequests.get(key);
     }
 
     ensureCleanupHandlerRegistered();
 
-    const request = FilesAPI.downloadFile(fileId)
+    const download = isFirstPagePicture ? FilesAPI.downloadFirstPage(fileId) : FilesAPI.downloadFile(fileId);
+    const request = download
         .then((payload) => {
             if (!payload || typeof payload !== 'object') {
                 throw new Error('Image file preview response missing payload');
@@ -118,20 +133,20 @@ async function fetchPreviewObjectUrl(fileId) {
             if (!mimeType.startsWith('image/')) {
                 throw new Error(`Image file preview requires image blob, received: ${mimeType}`);
             }
-            if (moduleState.pendingPreviewRequests.get(fileId) !== request) {
+            if (moduleState.pendingPreviewRequests.get(key) !== request) {
                 throw new DOMException('Image preview canceled by page cleanup', 'AbortError');
             }
             const objectUrl = URL.createObjectURL(payload.blob);
-            moduleState.previewCache.set(fileId, { objectUrl });
+            moduleState.previewCache.set(key, { objectUrl });
             return objectUrl;
         })
         .finally(() => {
-            if (moduleState.pendingPreviewRequests.get(fileId) === request) {
-                moduleState.pendingPreviewRequests.delete(fileId);
+            if (moduleState.pendingPreviewRequests.get(key) === request) {
+                moduleState.pendingPreviewRequests.delete(key);
             }
         });
 
-    moduleState.pendingPreviewRequests.set(fileId, request);
+    moduleState.pendingPreviewRequests.set(key, request);
     return await request;
 }
 
@@ -154,9 +169,9 @@ export function hydrateImageFilePreviews(rootNode) {
         return;
     }
 
-    // The targets under `rootNode` by file: the document cannot find those in a shadow
+    // The targets under `rootNode` by picture: the document cannot find those in a shadow
     // root (a reference's preview card), so they are filled as well as the document's.
-    const targetsByFile = new Map();
+    const targetsByKey = new Map();
     for (const target of targets) {
         if (!(target instanceof HTMLElement)) {
             throw new Error('hydrateImageFilePreviews target must be HTMLElement');
@@ -170,19 +185,21 @@ export function hydrateImageFilePreviews(rootNode) {
         }
         setPreviewState(target, 'loading');
         reservePreviewSpace(target, fileId);
-        if (!targetsByFile.has(fileId)) targetsByFile.set(fileId, []);
-        targetsByFile.get(fileId).push(target);
+        const key = pictureKey(target);
+        if (!targetsByKey.has(key)) targetsByKey.set(key, []);
+        targetsByKey.get(key).push(target);
     }
 
-    const targetsOf = (fileId) => new Set([
-        ...targetsByFile.get(fileId),
-        ...document.querySelectorAll(`.note-file-image-embed[data-file-ref-id="${fileId}"]`),
+    const targetsOf = (key) => new Set([
+        ...targetsByKey.get(key),
+        ...[...document.querySelectorAll('.note-file-image-embed[data-file-ref-id]')].filter((target) => pictureKey(target) === key),
     ]);
     const requests = [];
-    for (const fileId of targetsByFile.keys()) {
-        requests.push(fetchPreviewObjectUrl(fileId)
+    for (const [key, keyTargets] of targetsByKey) {
+        const first = keyTargets[0];
+        requests.push(fetchPreviewObjectUrl(first.dataset.fileRefId, key, isFirstPage(first))
             .then((objectUrl) => {
-                targetsOf(fileId).forEach((target) => {
+                targetsOf(key).forEach((target) => {
                     if (!(target instanceof HTMLElement)) {
                         throw new Error('Image file preview target must remain HTMLElement');
                     }
@@ -191,7 +208,7 @@ export function hydrateImageFilePreviews(rootNode) {
             })
             .catch((error) => {
             rethrowUnexpectedError(error);
-                targetsOf(fileId).forEach((target) => {
+                targetsOf(key).forEach((target) => {
                     if (!(target instanceof HTMLElement)) {
                         throw new Error('Image file preview target must remain HTMLElement');
                     }

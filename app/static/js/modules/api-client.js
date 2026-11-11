@@ -1587,6 +1587,26 @@ export const FilesAPI = {
         };
     },
 
+    // A PDF's first page as a picture, for galleries (pdf_first_pages.py): { blob }.
+    async downloadFirstPage(fileId) {
+        if (typeof fileId !== 'string' || fileId.length === 0) {
+            throw new Error('FilesAPI.downloadFirstPage requires fileId string');
+        }
+        const { response, blob } = await inTransferSlot(async () => {
+            const answered = await fetch(CONFIG.API.FILES.FIRST_PAGE(fileId), {
+                method: 'GET',
+                headers: buildAuthHeaders(false),
+            });
+            if (!answered.ok) return { response: answered, blob: null };
+            return { response: answered, blob: await answered.blob() };
+        });
+        if (!response.ok) {
+            ErrorHandler.handleApiError(null, response);
+            throw new HttpRequestError(`First page download failed: ${response.status} ${response.statusText}`);
+        }
+        return { blob };
+    },
+
     // An email file as its card shows it: { isReadable, from, to, cc, date, subject, html, text, attachments, revision }.
     async getEmail(fileId) {
         requireFileId(fileId, 'getEmail');

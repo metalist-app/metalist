@@ -29,6 +29,7 @@ from app.services.unused_files import trim as trim_unused_and_unrestorable_files
 from app.db.file_schema import FILE_PREVIEW_VARIANTS
 from app.services.file_storage import (
     download_file,
+    get_file_first_page,
     get_file_preview,
     get_file_reference_record,
     open_file_range,
@@ -308,6 +309,15 @@ def download_file_preview_endpoint(request: Request, file_id: str, variant: str)
         media_type=preview.mime_type,
         headers={FILE_REVISION_HEADER: str(preview.content_revision)},
     )
+
+
+# A PDF's first page as a picture, for galleries (pdf_first_pages.py): 404 until it is drawn.
+@router.get("/{file_id}/first-page")
+def download_file_first_page_endpoint(request: Request, file_id: str):
+    token = _require_bearer_token(request)
+    _require_known_file(file_id)
+    first_page = get_file_first_page(file_id=file_id, token=token)
+    return Response(content=first_page.content_bytes, media_type=first_page.mime_type)
 
 
 # A diagram editing session: opened with the editor, finished by Done (one undo step), or discarded.

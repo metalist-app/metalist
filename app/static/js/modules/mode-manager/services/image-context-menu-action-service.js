@@ -455,12 +455,12 @@ function overlayButton(className, label, text) {
 // A gallery's pictures full screen, as Zoom Image shows one (docs/future-plans/gallery.md): ‹ ›
 // and the arrow keys move through them, stopping at the ends; Go to note shows the picture's note.
 // pictures: [{ src, alt, noteId }].
-export function zoomGallery({ pictures, index, onGoToNote }) {
+export function zoomGallery({ pictures, index, onGoToNote, onOpen }) {
     if (!Array.isArray(pictures) || !Number.isInteger(index) || index < 0 || index >= pictures.length) {
         throw new Error('zoomGallery requires the pictures and which one to show');
     }
-    if (typeof onGoToNote !== 'function') {
-        throw new Error('zoomGallery requires onGoToNote');
+    if (typeof onGoToNote !== 'function' || typeof onOpen !== 'function') {
+        throw new Error('zoomGallery requires onGoToNote and onOpen');
     }
     closeActiveZoomOverlay();
     const overlay = buildZoomOverlay(pictures[index].src, pictures[index].alt);
@@ -469,6 +469,11 @@ export function zoomGallery({ pictures, index, onGoToNote }) {
     const previous = overlayButton('image-zoom-step image-zoom-previous', 'Previous picture', '‹');
     const next = overlayButton('image-zoom-step image-zoom-next', 'Next picture', '›');
     const goToNote = overlayButton('image-zoom-go-to-note', 'Go to note', 'Go to note');
+    // A PDF shows its first page; Open shows the whole PDF in the file viewer.
+    const open = overlayButton('image-zoom-open', 'Open', 'Open');
+    const actions = document.createElement('div');
+    actions.className = 'image-zoom-actions';
+    actions.append(open, goToNote);
     const shown = { index };
     const show = (pictureIndex) => {
         shown.index = pictureIndex;
@@ -476,6 +481,8 @@ export function zoomGallery({ pictures, index, onGoToNote }) {
         image.alt = pictures[pictureIndex].alt;
         previous.disabled = pictureIndex === 0;
         next.disabled = pictureIndex === pictures.length - 1;
+        const opensFile = pictures[pictureIndex].openFileId !== '';
+        if (open.hidden === opensFile) open.hidden = !opensFile;
     };
     const step = (direction) => {
         const target = shown.index + direction;
@@ -490,7 +497,12 @@ export function zoomGallery({ pictures, index, onGoToNote }) {
         closeActiveZoomOverlay();
         onGoToNote(noteId);
     });
-    overlay.append(previous, next, goToNote);
+    open.addEventListener('click', () => {
+        const fileId = pictures[shown.index].openFileId;
+        closeActiveZoomOverlay();
+        onOpen(fileId);
+    });
+    overlay.append(previous, next, actions);
     show(index);
     moduleState.activeZoomOverlay = overlay;
     document.body.appendChild(overlay);

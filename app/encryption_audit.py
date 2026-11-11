@@ -555,12 +555,21 @@ _CATALOG_SCHEMA = {
         }
     ) | _FILE_TEXT_VERSION_COLUMNS,
 }
+# Migration 17→18 added file_first_pages (a PDF's first page as a picture, for galleries). Before
+# version 18 it may be missing, or already present because opening a catalog adds it ahead of the
+# authenticated migration. Its plaintext columns are structure: the file's ID, the picture's MIME
+# type ("" when the PDF can't be drawn), revisions and time.
+_FILE_FIRST_PAGES_TABLE = "file_first_pages"
+_FIRST_PAGES_DATABASE_VERSION = 18
+_CATALOG_SCHEMA[_FILE_FIRST_PAGES_TABLE] = _BLOB_SEAL_COLUMNS | frozenset(
+    {"file_id", "mime_type", "content_revision", "drawer_version", "updated_at"}
+)
 _CATALOG_PAYLOADS = (
     _PayloadSpec("files", "title", "title_encryption_nonce", "title_encryption_tag", "text", is_nullable=False),
     _PayloadSpec("files", "metadata_json", "metadata_encryption_nonce", "metadata_encryption_tag", "text", is_nullable=False),
     *(
         _PayloadSpec(table, "blob_seal", "blob_seal_encryption_nonce", "blob_seal_encryption_tag", "bytes", is_nullable=False)
-        for table in ("files", _FILE_PREVIEWS_TABLE, _FILE_TEXTS_TABLE)
+        for table in ("files", _FILE_PREVIEWS_TABLE, _FILE_TEXTS_TABLE, _FILE_FIRST_PAGES_TABLE)
     ),
     _PayloadSpec(_FILE_TEXTS_TABLE, "filter_data", "filter_encryption_nonce", "filter_encryption_tag", "bytes", is_nullable=False),
 )
@@ -626,6 +635,8 @@ _MIGRATION_DEFERRED_PLAINTEXT_FIELDS_BY_DATABASE_VERSION = dict(enumerate((
     # version 15
     frozenset(),
     # version 16
+    frozenset(),
+    # version 17
     frozenset(),
 )))
 
@@ -1221,7 +1232,7 @@ def _audit_namespace(*, namespace: str, database_path: Path) -> NamespaceAuditRe
     )
     file_database_path = _resolve_file_database_path(database_path)
     if database_version >= _FILES_IN_BLOBS_DATABASE_VERSION:
-        _audit_catalog(database_path=database_path, state=state)
+        _audit_catalog(database_path=database_path, database_version=database_version, state=state)
     elif file_database_path.exists():
         _audit_database(
             database_path=file_database_path,
@@ -1247,15 +1258,28 @@ def _audit_namespace(*, namespace: str, database_path: Path) -> NamespaceAuditRe
     )
 
 
-def _audit_catalog(*, database_path: Path, state: _AuditState) -> None:
+def _catalog_schema_for_database_version(*, catalog_path: Path, database_version: int) -> dict[str, frozenset[str]]:
+    """From version 18 the catalog has file_first_pages; before, it may lack it or have it already."""
+    if database_version >= _FIRST_PAGES_DATABASE_VERSION:
+        return dict(_CATALOG_SCHEMA)
+    connection = _connect_read_only(catalog_path)
+    try:
+        actual_tables = _table_names(connection)
+    finally:
+        connection.close()
+    return {table: columns for table, columns in _CATALOG_SCHEMA.items() if table != _FILE_FIRST_PAGES_TABLE or table in actual_tables}
+
+
+def _audit_catalog(*, database_path: Path, database_version: int, state: _AuditState) -> None:
     """The catalog's encrypted fields, and that every blob it names is there and encrypted."""
     catalog_path = resolve_file_catalog_path(database_path)
     if not catalog_path.exists():
         return
+    expected_schema = _catalog_schema_for_database_version(catalog_path=catalog_path, database_version=database_version)
     _audit_database(
         database_path=catalog_path,
-        expected_schema=_CATALOG_SCHEMA,
-        payload_specs=_CATALOG_PAYLOADS,
+        expected_schema=expected_schema,
+        payload_specs=tuple(spec for spec in _CATALOG_PAYLOADS if spec.table in expected_schema),
         state=state,
         is_main_database=False,
         migration_deferred_plaintext_fields=frozenset(),
@@ -1263,7 +1287,8 @@ def _audit_catalog(*, database_path: Path, state: _AuditState) -> None:
     store = blob_store_for_database(database_path)
     connection = _connect_read_only(catalog_path)
     try:
-        for table in _CATALOG_SCHEMA:
+        # A missing table is a finding of _audit_database already: there are no blobs to check in it.
+        for table in sorted(expected_schema.keys() & _table_names(connection)):
             for blob_id, in connection.execute(f"SELECT blob_id FROM {table}").fetchall():
                 path = store.path_of(blob_id)
                 if not path.exists():

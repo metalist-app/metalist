@@ -355,6 +355,36 @@ def render_note_content_with_embeds(
     )
 
 
+_PDF_THUMBNAIL_KIND = "pdf"
+# The picture a PDF tile loads (file-image-preview-service.js): its first page, not the PDF.
+FIRST_PAGE_PICTURE_SOURCE = "first-page"
+
+
+def _render_pdf_tile(*, record: object, file_id: str, static_export: bool) -> str:
+    """A PDF in a gallery: its first page once drawn (pdf_first_pages.py), else its badge and name.
+    An export has no first pages: it shows the badge."""
+    first_page_revision = getattr(record, "first_page_revision")
+    assert isinstance(first_page_revision, int) and first_page_revision >= 0
+    escaped_file_id = html.escape(file_id, quote=True)
+    escaped_title = html.escape(getattr(record, "title"), quote=True)
+    if first_page_revision > 0 and not static_export:
+        return (
+            f'<div class="note-file-image-embed" data-file-ref-id="{escaped_file_id}" '
+            f'data-picture-source="{FIRST_PAGE_PICTURE_SOURCE}" data-preview-state="idle">'
+            '<div class="note-file-image-preview-frame">'
+            f'<img class="note-file-image-preview" data-file-ref-id="{escaped_file_id}" alt="{escaped_title}" loading="lazy" decoding="async" hidden />'
+            '<div class="note-file-image-preview-placeholder note-loading-placeholder"></div>'
+            "</div>"
+            "</div>"
+        )
+    return (
+        '<span class="meta-gallery-file">'
+        f'<span class="note-file-reference-badge">{html.escape(_format_thumbnail_badge(_PDF_THUMBNAIL_KIND))}</span>'
+        f'<span class="meta-gallery-file-name">{escaped_title}</span>'
+        "</span>"
+    )
+
+
 def _render_note_gallery(*, note_id: str, tags: str, context: EmbedRenderContext, static_export: bool) -> str:
     kinds = gallery_kinds(tags)
     if kinds is None:
@@ -366,7 +396,10 @@ def _render_note_gallery(*, note_id: str, tags: str, context: EmbedRenderContext
     )
 
     def tile_body(file_id: str) -> str:
-        return _render_file_embed_body(record=context.get_file(file_id), reference_note_id=file_id, static_export=static_export)
+        record = context.get_file(file_id)
+        if getattr(record, "thumbnail_kind") == _PDF_THUMBNAIL_KIND:
+            return _render_pdf_tile(record=record, file_id=file_id, static_export=static_export)
+        return _render_file_embed_body(record=record, reference_note_id=file_id, static_export=static_export)
 
     def view_kind(file_id: str) -> str:
         return view_kind_of(getattr(context.get_file(file_id), "original_filename"))

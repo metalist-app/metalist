@@ -29,6 +29,8 @@ from app.services.encryption import EncryptionService
 
 _NOW = "2026-11-08T00:00:00+00:00"
 _PREVIOUS_VERSION = 16
+# This step and every one after it.
+_STEPS_FROM_HERE = tuple(range(_PREVIOUS_VERSION + 1, CURRENT_DATABASE_VERSION + 1))
 _PDF_BYTES = b"%PDF the report" + bytes(range(256)) * 400
 _SCENE_BYTES = b'{"type":"excalidraw","elements":[]}'
 _LIGHT_SVG = b"<svg>light</svg>"
@@ -136,14 +138,14 @@ def service(request) -> EncryptionService | None:
 
 
 def test_this_is_the_current_version() -> None:
-    assert CURRENT_DATABASE_VERSION == _PREVIOUS_VERSION + 1
+    assert CURRENT_DATABASE_VERSION >= _PREVIOUS_VERSION + 1
 
 
 def test_every_item_moves_and_keeps_what_it_was(tmp_path: Path, service) -> None:
     notes = _vault_at_previous_version(tmp_path)
     _legacy_files(notes, service)
 
-    assert _migrate(notes, service) == (_PREVIOUS_VERSION + 1,)
+    assert _migrate(notes, service) == _STEPS_FROM_HERE
 
     store = blob_store_for_database(notes)
     with closing(_catalog(notes)) as catalog:
@@ -215,7 +217,7 @@ def test_a_vault_with_no_password_keeps_its_files_as_they_are(tmp_path: Path) ->
 def test_a_vault_that_never_stored_a_file_gets_nothing_created(tmp_path: Path, service) -> None:
     notes = _vault_at_previous_version(tmp_path)
 
-    assert _migrate(notes, service) == (_PREVIOUS_VERSION + 1,)
+    assert _migrate(notes, service) == _STEPS_FROM_HERE
 
     assert not resolve_file_catalog_path(notes).parent.exists()
 
@@ -229,7 +231,7 @@ def test_running_after_it_finished_changes_nothing(tmp_path: Path, service) -> N
         connection.commit()
     before = sorted(path.name for path in blob_store_for_database(notes).directory.glob("*/*.mlb"))
 
-    assert _migrate(notes, service) == (_PREVIOUS_VERSION + 1,)
+    assert _migrate(notes, service) == _STEPS_FROM_HERE
 
     assert sorted(path.name for path in blob_store_for_database(notes).directory.glob("*/*.mlb")) == before
 
@@ -261,7 +263,7 @@ def test_a_crash_part_way_keeps_the_old_database_and_the_next_run_finishes(tmp_p
         assert connection.execute("PRAGMA user_version").fetchone()[0] == _PREVIOUS_VERSION
 
     monkeypatch.setattr(BlobStore, "write", real_write)
-    assert _migrate(notes, service) == (_PREVIOUS_VERSION + 1,)
+    assert _migrate(notes, service) == _STEPS_FROM_HERE
 
     assert not legacy.exists()
     store = blob_store_for_database(notes)
@@ -324,7 +326,7 @@ def test_a_crash_just_before_deleting_the_old_database_finishes_without_writing_
     _migrate_to_catalog_only(notes, service)
     before = sorted(path.name for path in blob_store_for_database(notes).directory.glob("*/*.mlb"))
 
-    assert _migrate(notes, service) == (_PREVIOUS_VERSION + 1,)
+    assert _migrate(notes, service) == _STEPS_FROM_HERE
 
     assert not legacy.exists()
     assert sorted(path.name for path in blob_store_for_database(notes).directory.glob("*/*.mlb")) == before

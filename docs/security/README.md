@@ -60,6 +60,12 @@ a file's text is decrypted only when a search's filter check says it may match, 
 bounded cache; both are dropped when the vault locks (`app/services/file_text_search.py`).
 From database version 14 the versions of the reader and of the filter that made a file's text
 (`file_texts.reader_version`, `filter_version`) are readable structural metadata too.
+A PDF's first page drawn as a picture for galleries (`file_first_pages`, database version 18) is a
+blob, encrypted like the PDF itself; its file ID, the picture's MIME type (empty for a PDF that
+could not be drawn), the file content revision it was drawn from, the drawing's version
+(`drawer_version`) and its time are readable structural metadata. It is drawn by a process of its
+own (`app/services/pdf_first_page_worker.py`) that gets the PDF on stdin and answers the JPEG on
+stdout: the PDF's bytes and the picture are never written to disk unencrypted.
 Site icons beside link titles (`link_icons`, database version 12) encrypt the site
 (`origin`) and the icon (`icon_png`) like link titles; their lookup status, last
 error kind, failure count and check timestamps are readable structural metadata.
@@ -786,6 +792,8 @@ A file of any size can be stored. Uploads are parsed as they arrive (`app/api/st
 Lock ownership: synchronous route transactions and background hydration/link publication use `bulk_operation_guard.lock`; its separate short admission mutex protects mutation counts and bulk operation/question state. No admission mutex is held across an await. Bulk answers/cancellation are queued with `call_soon_threadsafe`. Tokens and sync/clipboard operations each have their own RLock and return copied snapshots; clipboard snapshots copy nested values. NoteStore, search index, tab/reminder/link stores and sensitive caches retain their existing private locks. Hydration/link work checks the runtime generation before publishing. Acquire the outer bulk lock before admission/service locks; do not acquire the outer bulk lock from inside a service lock. These guards protect existing mutation paths, not a general serializable snapshot API spanning every independent GET.
 
 Temporary DB read permission is a ContextVar layered over startup's global read state, so one thread/task cannot enable another's reads or restore a stale global value.
+
+Database version 18 adds the `file_first_pages` table (a PDF's first page as an encrypted blob, for galleries) to the files catalog. The step is additive and idempotent, so it also accepts a catalog the app already upgraded on open; the encryption audit accepts the table missing or present before version 18 and requires it from version 18. A catalog from before version 18, in a backup, is read without it.
 
 Database version 17 moves each vault's files out of `<vault>.metalist.files.db` into `files/catalog.db` and one file per stored item under `files/blobs/`. In a vault with a password each blob is encrypted with its own random 256-bit key by `app/security/streaming_blob.py` (64 KiB AES-256-GCM segments, a nonce of per-blob random prefix, segment index and final flag, the header as associated data) and padded (Padmé, plus a random amount up to 1% of the file's size), and is never on disk in plaintext, including while being written. A vault with no password stores its files as they are, unpadded. Each blob's key, real size and SHA-256 are its seal, encrypted in the catalog like the row's other fields. The catalog's readable structural metadata is: file ID, blob ID (random, unrelated to the content), preview variant and SVG MIME type, the search text's cut flag and reader/filter versions, content revisions and timestamps. The file count and each blob's padded size are visible on disk. The step runs after unlock for a vault with a password and at startup for one without, after a safety backup; every blob is read back against its seal before the old database is deleted. Blobs nothing names any more are unlinked, which unlike SQLite's `secure_delete` cannot promise the bytes are gone from the disk, so plaintext blobs replaced when a password is set may remain recoverable by disk forensics; full-disk encryption covers that.
 

@@ -129,7 +129,7 @@ Test it like every migration.
 
 Where this differs from the sections above, the code is right:
 
-- **§3, three tables, not one.** The catalog keeps today's `files`, `file_previews` and `file_texts`, each row naming one blob. It stores the same things with far less change. `kind`, `parent_item_id` and `backed_up_at` wait for hosted backups; a blob's padded size is its size on disk.
+- **§3, three tables, not one.** The catalog keeps today's `files`, `file_previews` and `file_texts`, each row naming one blob. (Database version 18 adds a fourth, `file_first_pages`: a PDF's first page for galleries, `docs/future-plans/gallery.md`.) It stores the same things with far less change. `kind`, `parent_item_id` and `backed_up_at` wait for hosted backups; a blob's padded size is its size on disk.
 - **§3 and §4, one seal per blob.** `file_key_wrapped`, real size and `content_hash` are one payload, `blob_seal`, encrypted with the vault key like the row's other fields. Each blob, including a revision of an item, has its own key.
 - **§4, header.** Each blob has its own random nonce prefix, and the whole header is each segment's associated data.
 - **§5, deletion.** A blob in use is pinned and goes when its last reader finishes: Windows refuses to delete an open file, and a backup must find every blob its catalog snapshot names. During a password change or a restore nothing is deleted until the change commits, so a rollback finds every blob. Catalog connections use `synchronous=FULL`, so a blob already deleted cannot come back into the catalog after a power cut.

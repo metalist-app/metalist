@@ -13,6 +13,7 @@ from typing import Dict, Iterator, List, TypedDict
 # The work there is.
 IMPORT_KEY = "import"
 READING_PDF_TEXT_KEY = "file-texts"
+DRAWING_PDF_PAGES_KEY = "pdf-first-pages"
 
 
 class _RunningWork(TypedDict):

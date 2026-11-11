@@ -10,6 +10,7 @@ import re
 from app.db.version import CURRENT_DATABASE_VERSION
 from app.db.editable_files_migration import add_editable_file_schema
 from app.db.file_texts_migration import add_file_texts_table
+from app.db.file_first_pages_migration import add_file_first_pages_table
 from app.db.file_versions_migration import add_text_versions
 from app.db.move_files_to_blobs import move_files_to_blobs
 from app.db.retire_sounds import retire_sounds
@@ -500,6 +501,7 @@ _MIGRATION_STEPS: tuple[Callable[..., int], ...] = (
     add_provider_rate_limit_columns,
     add_model_timing_columns,
     move_files_to_blobs,
+    add_file_first_pages_table,
 )
 _MIGRATIONS: dict[int, Callable[..., int]] = dict(enumerate(_MIGRATION_STEPS))
 assert len(_MIGRATION_STEPS) == CURRENT_DATABASE_VERSION, "every database version below the current one needs a step"
