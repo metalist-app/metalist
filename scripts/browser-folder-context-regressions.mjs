@@ -105,7 +105,7 @@ async function state(page) {
       treeShown: document.getElementById('virtual-folders-button').getAttribute('aria-pressed') === 'true'
         && document.body.classList.contains('virtual-folders-on') && !document.getElementById('virtual-folders').hidden,
       chosen: [...document.querySelectorAll('#virtual-folders .virtual-folder.is-filtered > .virtual-folder-row')]
-        .map(row => row.dataset.virtualFolder ?? '/').sort(),
+        .map(row => ('virtualFolderRoot' in row.dataset ? '/' : row.dataset.virtualFolder)).sort(),
       columnLeft: Math.round(document.getElementById('notes-container').getBoundingClientRect().left),
       treeRight: Math.round(document.getElementById('virtual-folders').getBoundingClientRect().right),
       rootIds: [...document.querySelectorAll('#notes-container > .note')].map(note => note.dataset.noteId),

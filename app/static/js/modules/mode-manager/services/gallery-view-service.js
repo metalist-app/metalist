@@ -105,7 +105,10 @@ function shownNoteContent(noteId) {
 // Into view by the least scrolling, below the search controls; nothing moves when it is in view.
 function scrollIntoViewMinimally(element) {
     const controls = document.querySelector('.controls');
-    const topLimit = controls === null ? 0 : controls.getBoundingClientRect().bottom;
+    if (!(controls instanceof HTMLElement)) {
+        throw new Error('The search controls are missing');
+    }
+    const topLimit = controls.getBoundingClientRect().bottom;
     const rect = element.getBoundingClientRect();
     if (rect.top < topLimit) {
         scrollWindowToYFastAnimated(window.scrollY + rect.top - topLimit);

@@ -49,19 +49,25 @@ export const THEE_AFTER = new Set([
 export const VERB_SUBJECTS = new Set(['he', 'she', 'it']);
 export const NOT_VERBS = new Set(['is', 'was', 'has', 'does', 'this', 'his', 'its', 'us', 'as', 'less', 'always', 'perhaps', 'thus', 'yes', 'across', 'besides']);
 
+// The shortest word an ending respells, in letters: shorter words are too often other words
+// ('bed', 'king', 'own').
+const SHORT_WORD_LETTERS = 4;
+const MIDDLING_WORD_LETTERS = 5;
+const LONG_WORD_LETTERS = 6;
+
 // Old spellings, by a word's ending: the first that fits.
 export const SPELLING_ENDINGS = [
-    { pattern: /([^s])tion$/, replacement: '$1cioun', minLetters: 5 },
-    { pattern: /ing$/, replacement: 'ynge', minLetters: 6 },
-    { pattern: /([^aeiouytd])ed$/, replacement: "$1'd", minLetters: 5 },
-    { pattern: /ness$/, replacement: 'nesse', minLetters: 5 },
-    { pattern: /less$/, replacement: 'lesse', minLetters: 5 },
-    { pattern: /ful$/, replacement: 'full', minLetters: 5 },
-    { pattern: /ic$/, replacement: 'ick', minLetters: 5 },
-    { pattern: /own$/, replacement: 'owne', minLetters: 4 },
-    { pattern: /(oo[a-z])$/, replacement: '$1e', minLetters: 4 },
-    { pattern: /([aeiou]ll)$/, replacement: '$1e', minLetters: 4 },
-    { pattern: /([^aeiouy])y$/, replacement: '$1ie', minLetters: 4 },
+    { pattern: /([^s])tion$/, replacement: '$1cioun', minLetters: MIDDLING_WORD_LETTERS },
+    { pattern: /ing$/, replacement: 'ynge', minLetters: LONG_WORD_LETTERS },
+    { pattern: /([^aeiouytd])ed$/, replacement: "$1'd", minLetters: MIDDLING_WORD_LETTERS },
+    { pattern: /ness$/, replacement: 'nesse', minLetters: MIDDLING_WORD_LETTERS },
+    { pattern: /less$/, replacement: 'lesse', minLetters: MIDDLING_WORD_LETTERS },
+    { pattern: /ful$/, replacement: 'full', minLetters: MIDDLING_WORD_LETTERS },
+    { pattern: /ic$/, replacement: 'ick', minLetters: MIDDLING_WORD_LETTERS },
+    { pattern: /own$/, replacement: 'owne', minLetters: SHORT_WORD_LETTERS },
+    { pattern: /(oo[a-z])$/, replacement: '$1e', minLetters: SHORT_WORD_LETTERS },
+    { pattern: /([aeiou]ll)$/, replacement: '$1e', minLetters: SHORT_WORD_LETTERS },
+    { pattern: /([^aeiouy])y$/, replacement: '$1ie', minLetters: SHORT_WORD_LETTERS },
 ];
 
 // Words those endings would get wrong.

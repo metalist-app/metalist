@@ -159,10 +159,10 @@ def parse_search_query(normalized_text: str) -> ParsedSearchQuery:
                 prefix = None
             inner_start = index + len(COMMENT_TERM_OPEN)
             inner_end = text.find(COMMENT_TERM_CLOSE, inner_start)
-            next_index = inner_end + len(COMMENT_TERM_CLOSE)
+            comment_end = inner_end + len(COMMENT_TERM_CLOSE)
             if inner_end == NOT_FOUND:
                 inner_end = len(text)
-                next_index = len(text)
+                comment_end = len(text)
             words = _WHITESPACE_RE.sub(" ", text[inner_start:inner_end]).strip()
             if words == "":
                 raise InputRejected("Put the comment's words between /* and */ (for example /*help*/)")
@@ -171,7 +171,7 @@ def parse_search_query(normalized_text: str) -> ParsedSearchQuery:
             else:
                 required_text.append(comment_term(words))
             clause_term_count += 1
-            index = next_index
+            index = comment_end
             continue
 
         if text[index] in ('"', "'"):

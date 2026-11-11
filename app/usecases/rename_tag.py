@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import Callable
 
 from app.db.raw_connection import raw_sqlite_connection
-from app.db.session import begin_writer
+from app.db.session import GuardedConnection, begin_writer
 from app.db.notes_sql import update_note_fields_preserving_updated_at as db_update_note_fields_preserving_updated_at
 from app.db.settings_sql import fetch_settings
 from app.security.encryption import is_encryption_available, encrypt
@@ -18,6 +18,20 @@ from app.services.search_links import has_search_links, rename_tag_in_search, re
 from app.services.tab_state import tab_state_store
 from app.services.tag_rename import rename_tag_in_tag_bar
 from app.utils.text_utils import strip_html
+
+
+def _write_note_fields(connection: GuardedConnection, note_id: str, **fields: object) -> None:
+    """One note's fields written, keeping its updated time (a rename is not an edit)."""
+    db_update_note_fields_preserving_updated_at(connection, note_id, **fields)
+
+
+def _write_contents(connection: GuardedConnection, content_updates: list[tuple[str, str]], token: str) -> None:
+    """Each note's new content, encrypted when the vault is."""
+    for note_id, content in content_updates:
+        ciphertext, nonce, tag = encrypt(content, token)
+        if (nonce is None) != (tag is None):
+            raise RuntimeError('Encrypted content must include both nonce and tag')
+        _write_note_fields(connection, note_id, content=ciphertext, encryption_nonce=nonce, encryption_tag=tag)
 
 
 def apply_rename_tag_everywhere(*, old: str, new: str, token: str) -> dict:
@@ -74,7 +88,7 @@ def apply_rename_tag_everywhere(*, old: str, new: str, token: str) -> dict:
             if (tags_nonce is None) != (tags_tag is None):
                 raise RuntimeError('Encrypted tags must include both nonce and tag')
 
-            db_update_note_fields_preserving_updated_at(
+            _write_note_fields(
                 connection,
                 note_id,
                 tags=tags_ciphertext,
@@ -82,13 +96,7 @@ def apply_rename_tag_everywhere(*, old: str, new: str, token: str) -> dict:
                 tags_encryption_tag=tags_tag,
             )
 
-        for note_id, content in content_updates:
-            ciphertext, nonce, tag = encrypt(content, token)
-            if (nonce is None) != (tag is None):
-                raise RuntimeError('Encrypted content must include both nonce and tag')
-            db_update_note_fields_preserving_updated_at(
-                connection, note_id, content=ciphertext, encryption_nonce=nonce, encryption_tag=tag,
-            )
+        _write_contents(connection, content_updates, token)
         # And every search context's search: a saved search never names a tag gone.
         renamed_search_count = tab_state_store.rename_search_terms(
             rename=lambda search: rename_tag_in_search(search, old=old_tag, new=new_tag),
@@ -135,13 +143,7 @@ def rewrite_searches_everywhere(*, rewrite: Callable[[str], str], token: str) ->
         if rewritten != content:
             content_updates.append((note_id, rewritten))
     with begin_writer() as connection:
-        for note_id, content in content_updates:
-            ciphertext, nonce, tag = encrypt(content, token)
-            if (nonce is None) != (tag is None):
-                raise RuntimeError('Encrypted content must include both nonce and tag')
-            db_update_note_fields_preserving_updated_at(
-                connection, note_id, content=ciphertext, encryption_nonce=nonce, encryption_tag=tag,
-            )
+        _write_contents(connection, content_updates, token)
         rewritten_search_count = tab_state_store.rename_search_terms(rename=rewrite, connection=raw_sqlite_connection(connection))
     for note_id, content in content_updates:
         record = store.get(note_id)

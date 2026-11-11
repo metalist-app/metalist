@@ -193,6 +193,30 @@ exceptions = ["FileNotFoundError", "app.services.input_errors.NamespaceInputReje
 reason = "Translate explicitly validated domain input/resource rejection."
 
 [[tool.shockharness.rules.exceptions.boundaries]]
+path = "app/services/search_links.py"
+language = "python"
+exception = "app.services.input_errors.InputRejected"
+reason = "A search a person wrote in a search link that doesn't parse is compared as text, not matched as a search."
+
+[[tool.shockharness.rules.exceptions.boundaries]]
+path = "app/services/embedded_references.py"
+language = "python"
+exception = "app.services.input_errors.InputRejected"
+reason = "An embedded search a person wrote that doesn't parse stays text as typed, as a broken link does."
+
+[[tool.shockharness.rules.exceptions.boundaries]]
+path = "app/services/virtual_folders.py"
+language = "python"
+exception = "app.services.input_errors.InputRejected"
+reason = "A search still being typed that doesn't parse yet marks no folder in the tree."
+
+[[tool.shockharness.rules.exceptions.boundaries]]
+path = "app/services/pdf_first_page_worker.py"
+language = "python"
+exceptions = ["pypdfium2.PdfiumError", "ValueError"]
+reason = "A stored PDF is the user's file: one behind a password or that PDFium can't read keeps its badge instead of a first page."
+
+[[tool.shockharness.rules.exceptions.boundaries]]
 path = "app/api/routes/imports.py"
 language = "python"
 exception = "app.services.input_errors.InputRejected"

@@ -95,7 +95,7 @@ def test_help_lookup_returns_the_topics_skills_and_installed_version() -> None:
     assert not result.is_error
     assert payload["installed_version"] == __version__
     assert [topic["topic"] for topic in payload["topics"]] == ["releases", "ai"]
-    assert "## 0.11.0" in payload["topics"][0]["help"]
+    assert "## 0.26.1" in payload["topics"][0]["help"]
     assert payload["topics"][1]["help"] == DEFAULT_AGENT_SKILLS.for_action("help_ai").content
     assert [skill.skill_id for skill in result.activated_skills] == ["help_releases_v1", "help_ai_v1"]
     assert "ROOT_ALPHA" not in result.content

@@ -265,7 +265,9 @@ def _load_file_details() -> dict[str, FileDetails]:
         metadata = _parse_file_metadata(metadata_json, file_id=file_id)
         thumbnail_kind = metadata["thumbnail_kind"]
         assert isinstance(thumbnail_kind, str)
-        details[file_id] = FileDetails(title=title, thumbnail_kind=thumbnail_kind, size_bytes=metadata["size_bytes"])
+        size_bytes = metadata["size_bytes"]
+        assert isinstance(size_bytes, int), "a stored file's metadata holds its size"
+        details[file_id] = FileDetails(title=title, thumbnail_kind=thumbnail_kind, size_bytes=size_bytes)
     return details
 
 
@@ -370,8 +372,10 @@ def _list_new_file(
             updated_at=now,
         )
 
+    stored_size = metadata["size_bytes"]
+    assert isinstance(stored_size, int), "a stored file's metadata holds its size"
     file_registry.add_with_thumbnail_kind(
-        file_id, thumbnail_kind=metadata["thumbnail_kind"], title=title, size_bytes=metadata["size_bytes"],
+        file_id, thumbnail_kind=metadata["thumbnail_kind"], title=title, size_bytes=stored_size,
     )
     if is_searchable_file_name(title):
         # Its text, for search, beside the request (folder-import-and-file-previews.md).

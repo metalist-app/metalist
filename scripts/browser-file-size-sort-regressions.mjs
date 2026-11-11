@@ -34,7 +34,9 @@ async function seed(page) {
     };
     const ids = [];
     const note = async (parentId, text) => {
-      const created = parentId === null ? await NotesAPI.createNote(null, '') : await NotesAPI.createChild(parentId, '');
+      let created;
+      if (parentId === null) created = await NotesAPI.createNote(null, '');
+      else created = await NotesAPI.createChild(parentId, '');
       await NotesAPI.saveNote(created.id, `<div>${text}</div>`, '');
       if (parentId === null) ids.push(created.id);
       return created.id;

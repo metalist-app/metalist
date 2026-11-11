@@ -354,10 +354,8 @@ _MAX_NOTE_ID_LIST_LENGTH = 5000
 
 def _validate_note_id_list_preference(*, key: str, value: str) -> None:
     """A JSON list of distinct note ids."""
-    try:
-        note_ids = json.loads(value)
-    except json.JSONDecodeError as error:
-        raise ClientStateValidationError(f"Client preference {key} must be a list of note ids") from error
+    # The browser writes it: JSON that doesn't parse is a bug and fails as one.
+    note_ids = json.loads(value)
     if not isinstance(note_ids, list) or len(note_ids) > _MAX_NOTE_ID_LIST_LENGTH:
         raise ClientStateValidationError(f"Client preference {key} must be a list of note ids")
     for note_id in note_ids:
@@ -374,10 +372,8 @@ _SEARCH_EMBED_FOLD_SEPARATOR = "|"
 
 def _validate_search_embed_fold_list_preference(*, key: str, value: str) -> None:
     """A JSON list of distinct folds, each `<note id>|<search>`."""
-    try:
-        folds = json.loads(value)
-    except json.JSONDecodeError as error:
-        raise ClientStateValidationError(f"Client preference {key} must be a list of folds") from error
+    # The browser writes it: JSON that doesn't parse is a bug and fails as one.
+    folds = json.loads(value)
     if not isinstance(folds, list) or len(folds) > _MAX_NOTE_ID_LIST_LENGTH:
         raise ClientStateValidationError(f"Client preference {key} must be a list of folds")
     for fold in folds:

@@ -11,6 +11,7 @@ import re
 from dataclasses import dataclass
 from typing import Callable, FrozenSet, List, Optional, Tuple
 
+from app.services.exception_capture import CapturedExceptionContext
 from app.services.input_errors import InputRejected
 from app.services.search_query import SearchClause, parse_search_query
 
@@ -18,7 +19,7 @@ SEARCH_LINK_PREFIX = "search:"
 _LINK_TEXT_SEPARATOR = "|"
 # A search link or an embedded search in a note's stored HTML (the ! of an embed, then the text
 # between [[ and ]]; brackets can't be in it).
-_ANY_SEARCH_LINK_TOKEN_RE = re.compile(r"(!?)\[\[search:([^\[\]\n]*)\]\]")
+_ANY_SEARCH_LINK_TOKEN_RE = re.compile(r"(?P<embed>!?)\[\[search:(?P<body>[^\[\]\n]*)\]\]")
 _OR_KEYWORD = "OR"
 # A search's pieces: quoted text (kept as typed, even unclosed), a term, or space
 # (as meta_tag_renames.rename_meta_tags_in_search reads one).
@@ -123,9 +124,9 @@ def rewrite_searches_in_search_links(content_html: str, rewrite: Callable[[str],
         raise TypeError(f"content_html must be a string, got {type(content_html)}")
 
     def rewritten(match: re.Match[str]) -> str:
-        search, separator, link_text = match.group(2).partition(_LINK_TEXT_SEPARATOR)
+        search, separator, link_text = match.group("body").partition(_LINK_TEXT_SEPARATOR)
         written = html.escape(rewrite(html.unescape(search)), quote=False)
-        return f"{match.group(1)}[[{SEARCH_LINK_PREFIX}{written}{separator}{link_text}]]"
+        return f"{match.group('embed')}[[{SEARCH_LINK_PREFIX}{written}{separator}{link_text}]]"
 
     return _ANY_SEARCH_LINK_TOKEN_RE.sub(rewritten, content_html)
 
@@ -188,9 +189,11 @@ def _clause_terms(clause: SearchClause) -> Tuple[FrozenSet[object], ...]:
 def search_terms(search: str) -> Optional[FrozenSet[Tuple[FrozenSet[object], ...]]]:
     """A search's terms, the same for searches that find the same notes by them (spaces, order and
     capitals aside, search-links.md §3); None for one that doesn't parse."""
-    try:
+    # A search link's search is written by a person: one that doesn't parse is compared as text.
+    capture = CapturedExceptionContext(InputRejected, boundary='app/services/search_links.py:search_terms:capture')
+    with capture:
         parsed = parse_search_query(search)
-    except InputRejected:
+    if capture.captured_exception is not None:
         return None
     return frozenset(_clause_terms(clause) for clause in parsed.clauses)
 

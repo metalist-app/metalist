@@ -181,10 +181,11 @@ export function fittedView(elements, width, height) {
         return null;
     }
     const bounds = shown.map(elementBounds);
-    const minX = Math.min(...bounds.map((box) => box[0]));
-    const minY = Math.min(...bounds.map((box) => box[1]));
-    const maxX = Math.max(...bounds.map((box) => box[2]));
-    const maxY = Math.max(...bounds.map((box) => box[3]));
+    // Each box is [left, top, right, bottom].
+    const minX = Math.min(...bounds.map(([left]) => left));
+    const minY = Math.min(...bounds.map(([, top]) => top));
+    const maxX = Math.max(...bounds.map(([, , right]) => right));
+    const maxY = Math.max(...bounds.map(([, , , bottom]) => bottom));
     const fit = Math.min(
         (width - FIT_MARGIN_PX * MIDDLE_DIVISOR) / Math.max(maxX - minX, SAME_VIEW_SCENE_UNITS),
         (height - FIT_MARGIN_PX * MIDDLE_DIVISOR) / Math.max(maxY - minY, SAME_VIEW_SCENE_UNITS),

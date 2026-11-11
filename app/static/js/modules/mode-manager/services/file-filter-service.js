@@ -83,7 +83,14 @@ export function updateFileFilterIndicator() {
         showSearchInputChip(indicator, { isShown: false });
         return;
     }
-    label.textContent = Object.hasOwn(CHIP_LABELS, kind) ? CHIP_LABELS[kind] : `With ${extensionName(kind)} files`;
-    label.title = Object.hasOwn(CHIP_TOOLTIPS, kind) ? CHIP_TOOLTIPS[kind] : `Notes with ${kind} files`;
+    if (Object.hasOwn(CHIP_LABELS, kind)) {
+        // A kind with its own words (Any file, Images, PDFs...).
+        label.textContent = CHIP_LABELS[kind];
+        label.title = CHIP_TOOLTIPS[kind];
+    } else {
+        // A file type in use (.zip): named by its extension.
+        label.textContent = `With ${extensionName(kind)} files`;
+        label.title = `Notes with ${kind} files`;
+    }
     showSearchInputChip(indicator, { isShown: true });
 }

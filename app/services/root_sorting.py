@@ -352,7 +352,7 @@ def _root_ids_in_base_order(
         return [
             root_id for _, root_id in sorted(
                 enumerate(canonical_root_ids),
-                key=lambda item: (-(totals[item[1]] if item[1] in totals else 0), item[0]),
+                key=lambda item: (-(totals[item[1]] if item[1] in totals else 0), item[0]),  # shockharness: ignore[DEF002] reason="a root with no file has no entry: its files total 0 bytes, which is the order's meaning"
             )
         ]
 

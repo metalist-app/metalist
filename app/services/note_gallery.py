@@ -36,15 +36,26 @@ _MARKDOWN_IMAGE_RE = re.compile(r"!\[[^\]]*\]\(\s*<?(?P<source>[^)\s>]+)>?(?:\s+
 
 
 class GalleryTree(Protocol):
-    has_file: Callable[[str], bool]
-    get_file: Callable[[str], object]
-    get_note: Callable[[str], object]
-    get_children: Callable[[Optional[str]], List[str]]
+    """What a gallery reads; read-only, as the render contexts (frozen dataclasses) give it."""
+
+    @property
+    def has_file(self) -> Callable[[str], bool]: ...
+
+    @property
+    def get_file(self) -> Callable[[str], object]: ...
+
+    @property
+    def get_note(self) -> Callable[[str], object]: ...
+
+    @property
+    def get_children(self) -> Callable[[Optional[str]], List[str]]: ...
+
     # Under a search, only the notes it shows (its matches and their ancestors): the grid
     # matches the list (decision 8), but for the gallery's own meta tags, which pass to no
     # note under it (`test @gallery` shows what `test` finds under it). A note not shown has
     # none shown under it. Asked with the gallery's note first.
-    is_shown_in_gallery: Callable[[str, str], bool]
+    @property
+    def is_shown_in_gallery(self) -> Callable[[str, str], bool]: ...
 
 
 @dataclass(frozen=True, slots=True)

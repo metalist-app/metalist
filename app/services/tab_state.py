@@ -800,7 +800,9 @@ class TabStateStore:
         # one with the same search (folders-tab-and-multiple-folders.md §1), once, as the stored
         # state no longer names them once saved.
         folder_contexts = _normalize_folder_contexts(snapshot["folderContexts"], normalized_tabs)
-        self._tree_shown = snapshot["treeShown"]
+        tree_shown = snapshot["treeShown"]
+        assert isinstance(tree_shown, bool), "read as a bool from storage"
+        self._tree_shown = tree_shown
         # A folder kept apart from the search (before 2026-11-11) goes in front of its folder
         # context's search, once (folder-tags-in-search.md §2). One saved on a plain search
         # (before 2026-11-07) is dropped.

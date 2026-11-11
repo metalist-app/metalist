@@ -4,8 +4,10 @@ import { ApplicationState } from './application-state.js';
 // real cursor bigger than 32 px for the regular one near the window's edges. The skin's cursors
 // are blank pictures, and which one the browser reports says what to draw; any other cursor (a
 // resize arrow, "wait") is the browser's own and nothing is drawn. x and y: the point that clicks.
+// The quill's tip, at the bottom left of its 48 px picture.
+const QUILL_TIP_Y = 47;
 const POINTER_KINDS = [
-    { name: 'quill', marker: 'cursor-blank-quill', x: 0, y: 47 },
+    { name: 'quill', marker: 'cursor-blank-quill', x: 0, y: QUILL_TIP_Y },
     { name: 'hand', marker: 'cursor-blank-hand', x: 1, y: 0 },
 ];
 const POINTER_CLASS = 'skin-pointer';

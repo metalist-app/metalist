@@ -87,7 +87,8 @@ function readNote(page, noteId) {
     };
     return {
       isFolded: note.classList.contains('collapsed'),
-      em: parseFloat(getComputedStyle(diagram === null ? content : diagram).fontSize),
+      // Read only where there is a diagram (its frame's size).
+      em: diagram === null ? null : parseFloat(getComputedStyle(diagram).fontSize),
       contentEm: parseFloat(getComputedStyle(content).fontSize),
       content: box(content),
       diagram: box(diagram),
@@ -130,7 +131,9 @@ async function foldCases(page, ids) {
   const attempt = async (name, run) => {
     try {
       await run();
-    } catch (error) { // shockharness: ignore[EXC002] reason="a suite reports every failing case together, then fails below"
+    } catch (error) {
+      // A suite reports every failing case together, then fails below; anything else ends it.
+      if (!(error instanceof assert.AssertionError)) throw error;
       failures.push(`${name}: ${error.message}`);
     }
   };

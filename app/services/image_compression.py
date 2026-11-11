@@ -126,8 +126,12 @@ def estimated_compressed_bytes(
     before = sum(size for _path, size in sample)
     total = sum(size for _path, size in by_size)
     jobs = [(path, size, side) for side in IMAGE_LONGEST_SIDES for path, size in sample]
+    def compressed_size_of(job: tuple[PurePosixPath, int, int]) -> int:
+        path, size, side = job
+        return _compressed_size(path, size, side, read_bytes)
+
     with ThreadPoolExecutor(max_workers=_ESTIMATE_THREADS) as executor:
-        sizes = list(executor.map(lambda job: _compressed_size(job[0], job[1], job[2], read_bytes), jobs))
+        sizes = list(executor.map(compressed_size_of, jobs))
     after_by_side = {side: 0 for side in IMAGE_LONGEST_SIDES}
     for (_path, _size, side), compressed_size in zip(jobs, sizes):
         after_by_side[side] += compressed_size

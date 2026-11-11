@@ -160,7 +160,8 @@ function changesTheMarks(mutation) {
     if (mutation.type !== 'attributes' || mutation.attributeName !== 'class') {
         return true;
     }
-    const wasEditing = (mutation.oldValue === null ? '' : mutation.oldValue).split(' ').includes(EDITING_CLASS);
+    // No class before (oldValue null): it was not being edited.
+    const wasEditing = mutation.oldValue !== null && mutation.oldValue.split(' ').includes(EDITING_CLASS);
     return wasEditing !== mutation.target.classList.contains(EDITING_CLASS);
 }
 
