@@ -183,6 +183,9 @@ def test_two_sizes_separate_startup_cost_from_time_per_token() -> None:
 def test_timing_needs_two_finished_batches() -> None:
     assert fit_model_timing(()) is None
     assert fit_model_timing(((100_000, 20.0),)) is None
+    # Batches no clock could time (Windows' monotonic clock moves in steps of about 15 ms) say
+    # nothing about the model: no fit, not an error.
+    assert fit_model_timing(((100_000, 0.0), (200_000, 0.0))) is None
 
 
 def test_batches_of_about_one_size_can_only_give_time_per_token() -> None:

@@ -562,6 +562,7 @@ class AgentRuntime(AgentLoopMixin):
         batch_states = ["complete" if summary is not None else "queued" for summary in summaries]
         batch_sizes = tuple(batch.returned_approximate_token_count for batch in plan.batches)
 
+        # perf_counter: Windows' monotonic clock moves in steps of about 15 ms, too coarse for a batch.
         batch_started_at = [0.0] * batch_count
         timed_batches: list[tuple[int, float]] = []
         def timing_in_use() -> ModelTiming | None:
@@ -572,7 +573,7 @@ class AgentRuntime(AgentLoopMixin):
             return saved_timing
 
         def estimated_percent() -> int:
-            now = time.monotonic()
+            now = time.perf_counter()
             return summary_progress_percent(
                 batch_tokens=batch_sizes,
                 batch_states=tuple(batch_states),
@@ -584,11 +585,11 @@ class AgentRuntime(AgentLoopMixin):
             )
 
         shown_percent = float(estimated_percent())
-        shown_at = time.monotonic()
+        shown_at = time.perf_counter()
 
         def percent_done() -> float:
             nonlocal shown_percent, shown_at
-            now = time.monotonic()
+            now = time.perf_counter()
             shown_percent = advanced_progress_percent(
                 shown=shown_percent, target=estimated_percent(), seconds=now - shown_at,
             )
@@ -652,7 +653,7 @@ class AgentRuntime(AgentLoopMixin):
             return report
 
         async def summarize_batch(index: int) -> None:
-            transitions.put_nowait(_SummaryBatchStarted(batch_index=index, started_at=time.monotonic()))
+            transitions.put_nowait(_SummaryBatchStarted(batch_index=index, started_at=time.perf_counter()))
             summary = await self._infer_staged_summary_batch(
                 run=run,
                 canonical_messages=canonical_messages,
@@ -665,7 +666,7 @@ class AgentRuntime(AgentLoopMixin):
                 on_stream=first_response_reporter(index),
             )
             transitions.put_nowait(
-                _SummaryBatchCompleted(batch_index=index, summary=summary, finished_at=time.monotonic())
+                _SummaryBatchCompleted(batch_index=index, summary=summary, finished_at=time.perf_counter())
             )
 
         gate = gate_for(base_url=run.base_url, model=run.selected_model)

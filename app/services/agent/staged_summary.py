@@ -193,11 +193,14 @@ class ModelTiming:
 def fit_model_timing(timed_batches: tuple[tuple[int, float], ...]) -> ModelTiming | None:
     """The line through finished batches (tokens, seconds): two sizes separate startup cost from
     time per token (the maintainer, 2026-11-08). Batches of about one size, or jitter that gives a
-    line no model could follow, leave only time per token. None until two batches have finished."""
+    line no model could follow, leave only time per token. None until two batches have finished,
+    and while the finished ones took no time a clock can measure (they say nothing about the model)."""
     if len(timed_batches) < _FEWEST_TIMED_BATCHES:
         return None
     sizes = [tokens for tokens, _seconds in timed_batches]
     seconds = [taken for _tokens, taken in timed_batches]
+    if sum(seconds) <= 0:
+        return None
     time_per_token_only = ModelTiming(
         startup_seconds=0.0, seconds_per_million_tokens=sum(seconds) / sum(sizes) * _TOKENS_PER_MILLION,
     )
