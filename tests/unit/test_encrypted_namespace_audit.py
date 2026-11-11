@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from contextlib import closing
+
 import sqlite3
 from pathlib import Path
 import subprocess
@@ -972,7 +974,9 @@ def _vault_with_moved_files(namespaces_directory: Path) -> Path:
     database_path = _create_namespace_database(namespaces_directory, namespace="private", encryption_enabled=True)
     service = EncryptionService()
     service.dek = bytes(range(32))
-    with sqlite3.connect(resolve_file_database_path(database_path)) as connection:
+    # closing(): a connection's own `with` commits but leaves the file open, and Windows can't
+    # delete an open file (the migration deletes this one).
+    with closing(sqlite3.connect(resolve_file_database_path(database_path))) as connection:
         initialize_file_schema(connection)
         title = service.encrypt_for_storage("report.pdf")
         metadata = service.encrypt_for_storage("{}")
@@ -983,9 +987,11 @@ def _vault_with_moved_files(namespaces_directory: Path) -> Path:
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             ("report", *title, *metadata, *content, _NOW, _NOW),
         )
-    with sqlite3.connect(database_path) as connection:
+        connection.commit()
+    with closing(sqlite3.connect(database_path)) as connection:
         move_files_to_blobs(connection=connection, encryption_enabled=True, encryption_service=service)
         connection.execute("PRAGMA user_version = 17")
+        connection.commit()
     return database_path
 
 

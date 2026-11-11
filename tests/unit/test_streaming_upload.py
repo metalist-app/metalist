@@ -154,6 +154,9 @@ def test_a_name_outside_ascii_survives() -> None:
         (_form(_file_part("a.txt", b"x"), _file_part("b.txt", b"y")), 400, "one file"),
         (_form(_text_part("path", "x" * 70_000), _file_part("a.txt", b"x")), 400, "read"),
     ],
+    # Named by case: pytest keeps the running test's name in an environment variable, which
+    # Windows caps at 32,767 characters.
+    ids=["no-file", "no-filename", "no-type", "two-files", "long-text-field"],
 )
 def test_a_form_that_cannot_be_used_says_why(body: bytes, status: int, detail: str) -> None:
     client, _collected_pieces = _echo_client()

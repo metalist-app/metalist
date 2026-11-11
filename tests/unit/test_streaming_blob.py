@@ -189,7 +189,9 @@ def test_a_blob_never_finished_is_refused() -> None:
         StreamingBlobReader(io.BytesIO(destination.getvalue()), file_key=_KEY)
 
 
-@pytest.mark.parametrize("extra", [b"x", b"x" * _TAG_BYTES, b"x" * _SEALED_BYTES])
+# Named by size: pytest keeps the running test's name in an environment variable, which Windows
+# caps at 32,767 characters.
+@pytest.mark.parametrize("extra", [b"x", b"x" * _TAG_BYTES, b"x" * _SEALED_BYTES], ids=["a-byte", "a-tag", "a-segment"])
 def test_bytes_added_to_the_end_are_refused(extra: bytes) -> None:
     with pytest.raises(_DAMAGED):
         StreamingBlobReader(io.BytesIO(_three_segments(_KEY) + extra), file_key=_KEY)
