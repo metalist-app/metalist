@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from datetime import datetime
 import re
 import time
-from typing import Dict, FrozenSet, List, Optional, Tuple, Set
+from typing import Callable, Dict, FrozenSet, List, Optional, Tuple, Set
 
 from loguru import logger
 
@@ -858,6 +858,8 @@ class _RenderDependencies:
     file_records: Tuple[Tuple[str, object], ...]
     # Whether a property is used anywhere in the vault (a stats figure's 0 or dash).
     property_use: Tuple[Tuple[str, bool], ...]
+    # Whether a note shows in the view (a gallery under a search).
+    note_shown: Tuple[Tuple[str, bool], ...]
 
 
 class _DependencyRecorder:
@@ -871,12 +873,13 @@ class _DependencyRecorder:
         self._file_presence: Dict[str, bool] = {}
         self._file_records: Dict[str, object] = {}
         self._property_use: Dict[str, bool] = {}
+        self._note_shown: Dict[str, bool] = {}
 
     def context(self) -> EmbedRenderContext:
         return EmbedRenderContext(
             has_note=self._has_note, get_note=self._get_note, get_children=self._get_children,
             has_file=self._has_file, get_file=self._get_file, is_property_used=self._is_property_used,
-            static_collapse_arrows=False,
+            is_note_shown=self._is_note_shown, static_collapse_arrows=False,
         )
 
     def _has_note(self, note_id: str) -> bool:
@@ -909,6 +912,11 @@ class _DependencyRecorder:
         self._property_use[property_name] = used
         return used
 
+    def _is_note_shown(self, note_id: str) -> bool:
+        shown = self._live.is_note_shown(note_id)
+        self._note_shown[note_id] = shown
+        return shown
+
     def freeze(self) -> _RenderDependencies:
         return _RenderDependencies(
             note_presence=tuple(self._note_presence.items()),
@@ -917,6 +925,7 @@ class _DependencyRecorder:
             file_presence=tuple(self._file_presence.items()),
             file_records=tuple(self._file_records.items()),
             property_use=tuple(self._property_use.items()),
+            note_shown=tuple(self._note_shown.items()),
         )
 
 
@@ -940,6 +949,9 @@ def _dependencies_hold(dependencies: _RenderDependencies, live: EmbedRenderConte
             return False
     for property_name, used in dependencies.property_use:
         if live.is_property_used(property_name) != used:
+            return False
+    for note_id, shown in dependencies.note_shown:
+        if live.is_note_shown(note_id) != shown:
             return False
     return True
 
@@ -1165,7 +1177,19 @@ def _render_view_note(
     return rendered_content, flags
 
 
-def _new_embed_render_context(traversal_cache: _SnapshotTraversalCache) -> EmbedRenderContext:
+def _shown_in_scope(*, filter_active: bool, allowed_note_ids: Optional[Set[str] | frozenset[str]]) -> Callable[[str], bool]:
+    """Whether a note shows in a view: under a search, its matches and their ancestors (the rest
+    are grey bars); otherwise every note."""
+    if not filter_active:
+        return lambda note_id: True
+    if allowed_note_ids is None:
+        raise RuntimeError("an active search scope must list the notes it shows")
+    return lambda note_id: note_id in allowed_note_ids
+
+
+def _new_embed_render_context(
+    traversal_cache: _SnapshotTraversalCache, *, is_note_shown: Callable[[str], bool],
+) -> EmbedRenderContext:
     file_record_cache: Dict[str, object] = {}
 
     def _get_file_record(file_id: str) -> object:
@@ -1180,6 +1204,7 @@ def _new_embed_render_context(traversal_cache: _SnapshotTraversalCache) -> Embed
         has_file=file_registry.has_file,
         get_file=_get_file_record,
         is_property_used=search_index.is_property_name_used,
+        is_note_shown=is_note_shown,
         static_collapse_arrows=False,
     )
 
@@ -1208,7 +1233,6 @@ def build_view_state(
     hash_by_id: Dict[str, str] = {}
 
     traversal_cache = _SnapshotTraversalCache()
-    embed_render_context = _new_embed_render_context(traversal_cache)
 
     selection = _select_view(
         editing_note_id=editing_note_id, find_reveal_note_id=find_reveal_note_id, search=search, sort_mode=sort_mode,
@@ -1220,6 +1244,9 @@ def build_view_state(
     )
     filter_active = selection.scope.search_active
     allowed_note_ids = selection.scope.allowed_note_ids
+    embed_render_context = _new_embed_render_context(
+        traversal_cache, is_note_shown=_shown_in_scope(filter_active=filter_active, allowed_note_ids=allowed_note_ids),
+    )
     visible_root_ids_ordered = selection.visible_roots
     # The search's quoted phrases: a file whose text holds one shows a snippet under its card.
     snippet_phrases = tuple(view_search_highlight_phrases(search))
@@ -1506,7 +1533,9 @@ def find_in_view(
     # again whenever the list changes (docs/ui/find.md).
     from_root_index = min(from_root_index, len(roots))
     traversal_cache = _SnapshotTraversalCache()
-    context = _new_embed_render_context(traversal_cache)
+    context = _new_embed_render_context(
+        traversal_cache, is_note_shown=_shown_in_scope(filter_active=scope.filter_active, allowed_note_ids=scope.allowed_note_ids),
+    )
     candidates = _find_candidates(find_text, traversal_cache)
     windows: List[List[FindMatch]] = []
     matched_notes = 0

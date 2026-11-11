@@ -40,6 +40,9 @@ class GalleryTree(Protocol):
     get_file: Callable[[str], object]
     get_note: Callable[[str], object]
     get_children: Callable[[Optional[str]], List[str]]
+    # Under a search, only the notes it shows (its matches and their ancestors): the grid
+    # matches the list (decision 8). A note not shown has none shown under it.
+    is_note_shown: Callable[[str], bool]
 
 
 @dataclass(frozen=True, slots=True)
@@ -123,12 +126,14 @@ def collect_gallery_items(
     first_line_of: Callable[[str], str],
 ) -> List[GalleryItem]:
     """The pictures the gallery shows, in outline order (the note, then each child's subtree in
-    turn), each once, where it first appears."""
+    turn), each once, where it first appears; under a search, of the notes it shows."""
     items: List[GalleryItem] = []
     seen: set[Tuple[str, str]] = set()
     pending = [note_id]
     while pending:
         current_id = pending.pop()
+        if not context.is_note_shown(current_id):
+            continue
         caption: Optional[str] = None
         for _start, file_id, image_source in _note_pictures(note_id=current_id, kinds=kinds, context=context, file_ids_in=file_ids_in):
             if (file_id, image_source) in seen:

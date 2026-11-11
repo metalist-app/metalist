@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 from dataclasses import dataclass
 from typing import Dict, List, Optional
 
@@ -33,6 +34,8 @@ class _Tree:
     notes: Dict[str, _Note]
     children: Dict[Optional[str], List[str]]
     files: Dict[str, _File]
+    # Notes a search shows as grey bars.
+    hidden: frozenset[str]
 
     def has_file(self, file_id: str) -> bool:
         return file_id in self.files
@@ -45,6 +48,9 @@ class _Tree:
 
     def get_children(self, note_id: Optional[str]) -> List[str]:
         return self.children.get(note_id, [])
+
+    def is_note_shown(self, note_id: str) -> bool:
+        return note_id not in self.hidden
 
 
 def _items(tree: _Tree, note_id: str, tags: str) -> list[tuple[str, str, str]]:
@@ -62,6 +68,7 @@ def _trip() -> _Tree:
     """trip (@gallery) → day-1 (Beach at dusk, a photo) → day-1-more (the photo again, a drawing);
     trip → day-2 (only a photo); trip → manual (a PDF)."""
     return _Tree(
+        hidden=frozenset(),
         notes={
             "trip": _Note("<div>Lisbon trip</div>", "@gallery"),
             "day-1": _Note(f"<div>Beach at dusk</div><div>![[{PHOTO_A}]]</div>", ""),
@@ -131,6 +138,7 @@ def test_pictures_written_in_the_text_count_too_in_the_order_written() -> None:
     """Pictures pasted into a note live in its text: an <img>, or ![...](...) in a Markdown note
     (2026-11-10: a gallery over such notes showed nothing)."""
     tree = _Tree(
+        hidden=frozenset(),
         notes={
             "album": _Note("<div>Album</div>", "@gallery"),
             "pasted": _Note('<div>Dinner</div><div><img src="https://example.com/a.jpg"></div>'
@@ -149,7 +157,7 @@ def test_pictures_written_in_the_text_count_too_in_the_order_written() -> None:
 
 
 def test_a_gallery_with_nothing_to_show_draws_nothing() -> None:
-    tree = _Tree(notes={"album": _Note("<div>Album</div>", "@gallery"), "text": _Note("<div>Just words</div>", "")},
+    tree = _Tree(hidden=frozenset(), notes={"album": _Note("<div>Album</div>", "@gallery"), "text": _Note("<div>Just words</div>", "")},
                  children={"album": ["text"]}, files={})
     assert _pictures(tree, "album", "@gallery") == []
 
@@ -182,11 +190,12 @@ def test_the_kinds_found_come_most_files_first_each_file_once() -> None:
 
 def test_a_picture_written_in_the_text_is_an_image_and_other_files_are_not_kinds() -> None:
     tree = _Tree(
+        hidden=frozenset(),
         notes={"album": _Note(f'<div><img src="https://example.com/a.png"></div><div>![[{SKETCH}]]</div>', "")},
         children={}, files={SKETCH: _File("notes.md", "text")},
     )
     assert _kinds_found(tree, "album") == ["image"]
-    assert _kinds_found(_Tree(notes={"empty": _Note("<div>Nothing</div>", "")}, children={}, files={}), "empty") == []
+    assert _kinds_found(_Tree(hidden=frozenset(), notes={"empty": _Note("<div>Nothing</div>", "")}, children={}, files={}), "empty") == []
 
 
 def test_the_gallery_kinds_follow_plain_gallery_in_place_of_kinds_other_notes_use() -> None:
@@ -196,3 +205,14 @@ def test_the_gallery_kinds_follow_plain_gallery_in_place_of_kinds_other_notes_us
     ]
     assert _with_gallery_values(["@gallery=.png"], gallery_values=offered, limit=10) == offered
     assert _with_gallery_values(["@gallery", "@gantt"], gallery_values=offered, limit=2) == ["@gallery", "@gallery=image"]
+
+
+def test_under_a_search_the_grid_holds_only_the_notes_it_shows() -> None:
+    # Searching "beach": day-1 matches, the trip shows as its ancestor; day-1-more, day-2 and the
+    # manual are grey bars, and so is everything under them.
+    searched = dataclasses.replace(_trip(), hidden=frozenset({"day-1-more", "day-2", "manual"}))
+    assert _items(searched, "trip", "@gallery") == [(PHOTO_A, "day-1", "Beach at dusk")]
+    # A gallery the search shows nothing under holds only its own pictures: here none.
+    assert _items(dataclasses.replace(_trip(), hidden=frozenset({"day-1", "day-2", "manual"})), "trip", "@gallery") == []
+    # A gallery shown as a grey bar itself holds none.
+    assert _items(dataclasses.replace(_trip(), hidden=frozenset({"trip"})), "trip", "@gallery") == []

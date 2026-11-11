@@ -111,6 +111,8 @@ def _render_context() -> EmbedRenderContext:
         has_file=file_registry.has_file,
         get_file=_get_file_record,
         is_property_used=search_index.is_property_name_used,
+        # Not a searched list: every note shows.
+        is_note_shown=lambda note_id: True,
         static_collapse_arrows=False,
     )
 
