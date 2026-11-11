@@ -1117,6 +1117,17 @@ export const NotesAPI = {
     },
 
     // Notes to reference for what was typed after `[[` (docs/ui/references.md, "Suggestions").
+    // The search context a search link switches to, by its terms (search_links.py): { tabId, found }.
+    async searchContextForSearch(search) {
+        if (typeof search !== 'string' || search.trim() === '') {
+            throw new Error('NotesAPI.searchContextForSearch requires a search');
+        }
+        return this._apiCall(CONFIG.API.NOTES.SEARCH_CONTEXT_FOR_SEARCH, {
+            method: 'POST',
+            body: JSON.stringify({ search }),
+        });
+    },
+
     async fetchReferenceSuggestions(query, editingNoteId, signal) {
         if (typeof query !== 'string') {
             throw new Error('NotesAPI.fetchReferenceSuggestions requires query string');

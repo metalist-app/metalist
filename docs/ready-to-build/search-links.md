@@ -1,6 +1,6 @@
 # Links that open a search
 
-**Status:** Agreed with the maintainer 2026-11-10. Ready to build.
+**Status:** Agreed with the maintainer 2026-11-10. **Built 2026-11-11** (`app/services/search_links.py`; `docs/ui/references.md`, "Search Links"), but for the Markdown export, which doesn't exist yet: when it is built it writes search links as §6 says. Once it is, this note's content is in the permanent docs and it can go.
 
 Written from a read-only look at the repo; filed from `docs/inbox/` on 2026-11-11, with the references checked (§9). `docs/ready-to-build/folder-tags-in-search.md` changes §4: folder contexts' searches are offered too.
 
@@ -83,4 +83,11 @@ A link inside a note that, when clicked, opens a search context with its search 
 - `embedded_references.py` also has `_BRACKETED_SPAN_RE` (`!?\[\[[^\]]+\]\]`), used to keep bracketed spans whole; check it when `search:` is added.
 
 **Decided 2026-11-11** (once marked "proposed"): matching a search context by its terms (§3), matching search contexts above notes in `[[` suggestions (§4), a tooltip with the search (§5), the Markdown export writing the text and the search (§6). Nothing is open.
+
+## 10. Found while building (2026-11-11)
+
+- **Rename tag has no undo step at all** (its confirmation says it can't be undone), so §6's "in the rename's single undo step" can't hold: search links and saved searches are renamed the same way as tag bars, for good.
+- **No Markdown export exists yet** (`import-export-launch.md` plans it); §6's rule waits for it.
+- **The one-time built-in tag rename** (`meta_tag_renames.py`) ran before search links existed, so no link holds an old built-in name; it is not extended.
+- **The browser keeps its own copy of the search contexts** and posts it back; a copy read before a rename would bring the old name back. The server keeps a renamed search over such a copy, as it keeps the sort order, and the browser reloads its search contexts right after a rename.
 

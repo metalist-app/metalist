@@ -27,6 +27,7 @@ from app.services.email_files import email_badge, is_email_file
 from app.services.inline_image_occurrences import annotate_inline_image_occurrences
 from app.services.subtree_stats import render_subtree_stats_footer
 from app.services.note_gallery import collect_gallery_items, gallery_kinds, render_gallery
+from app.services.search_links import parse_search_link, render_search_link
 from app.services.remote_image_proxy import (
     remote_image_proxy_registry,
     rewrite_remote_image_sources_for_proxy,
@@ -799,6 +800,17 @@ def _replace_reference_tokens_in_text(
             break
 
         target = parse_reference_inner(text[token_start + token_open_length : end])
+
+        # A link that opens a search (search_links.py): drawn here, before any wrapper formats
+        # the note's text, so a scoped wrapper leaves it a link as it leaves a note link.
+        search_link = parse_search_link(text[token_start + token_open_length : end])
+        if target is None and search_link is not None and not is_embed:
+            search_html = render_search_link(search_link, static_export=static_export)
+            if keeps_from_markdown and not static_export:
+                search_html = kept_from_markdown(search_html, is_block=False)
+            output.append(search_html)
+            index = end + len(_REFERENCE_CLOSE)
+            continue
 
         if target is None:
             # Not a note id (a formatting wrapper or plain brackets): keep the opener
@@ -1906,7 +1918,11 @@ def _link_text_or_space(match: re.Match[str]) -> str:
     token = match.group(0)
     if token.startswith(_EMBED_OPEN):
         return " "
-    target = parse_reference_inner(token[len(_LINK_OPEN) : -len(_REFERENCE_CLOSE)])
+    inner = token[len(_LINK_OPEN) : -len(_REFERENCE_CLOSE)]
+    search_link = parse_search_link(inner)
+    if search_link is not None:
+        return f" {search_link.shown_text} "
+    target = parse_reference_inner(inner)
     if target is None or target.link_text is None:
         return " "
     return f" {target.link_text} "
@@ -1921,7 +1937,12 @@ def _strip_reference_token_if_uuid(match: re.Match[str]) -> str:
         if target is None:
             return token
         return " "
-    target = parse_reference_inner(token[len(_LINK_OPEN) : -len(_REFERENCE_CLOSE)])
+    inner = token[len(_LINK_OPEN) : -len(_REFERENCE_CLOSE)]
+    # A search link reads its text, or its search (search_links.py).
+    search_link = parse_search_link(inner)
+    if search_link is not None:
+        return f" {search_link.shown_text} "
+    target = parse_reference_inner(inner)
     if target is None:
         return token
     if target.link_text is not None:

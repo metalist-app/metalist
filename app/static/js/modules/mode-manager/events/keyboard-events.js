@@ -63,6 +63,7 @@ import { checkBackgroundWork } from '../services/background-work-cards.js';
 import { isCopyOfDialogSelection } from '../services/dialog-copy-service.js';
 import {
     persistTabStateSnapshot, createTabOnServer, deleteTabOnServer, chooseFolderOnServer, createFolderContextOnServer,
+    reloadTabStateFromServer,
 } from '../services/tab-state-service.js';
 import { cacheNotesDomForTab, restoreNotesDomForTab, cloneNotesDomForTab, clearCachedNotesDomForTab, clearActiveNotesDom } from '../services/tab-dom-cache-service.js';
 import { finalizeDuplicatedTabClone, getDuplicateTabCloneOptions } from '../services/tab-duplication-service.js';
@@ -4513,6 +4514,18 @@ async function leaveActiveReferenceLevel() {
 
     updateReferenceSourceIndicator();
     return true;
+}
+
+// After Rename tag renamed a tag in search contexts' searches (rename_tag.py): the tabs, the search box
+// and the list of search contexts show the new name, and the view runs the renamed search.
+export async function adoptRenamedSearches() {
+    await settleViewRequestsBeforeTabChange();
+    await reloadTabStateFromServer();
+    ModeContext.clearActiveTabDiffCacheForSearchExecution(ModeContext.searchQuery, { forceClear: true });
+    syncSearchInputField();
+    updateSearchContextsList();
+    const { actionRefreshAndMaybeSelect } = await import('../actions/ui-actions.js');
+    await actionRefreshAndMaybeSelect({ context: 'rename-tag', animateNoteChanges: false });
 }
 
 function syncSearchInputField() {

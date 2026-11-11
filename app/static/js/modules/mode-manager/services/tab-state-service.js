@@ -140,6 +140,16 @@ function recordServerSignature(state) {
     }
 }
 
+// The server changed searches itself (Rename tag renamed a tag in them, rename_tag.py): the tabs take
+// its state, and later snapshots are read at its version.
+export async function reloadTabStateFromServer() {
+    const serverState = await fetchTabState();
+    ModeContext.hydrateTabState(serverState, { preserveActiveRootTracking: true });
+    setTabStateVersionFromServer(serverState.version);
+    recordServerSignature(serverState);
+    return serverState;
+}
+
 async function fetchTabState() {
     return await callTabStateApi('GET', null);
 }

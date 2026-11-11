@@ -23,6 +23,7 @@ from app.api.note_requests import (
     UpdateTabUntaggedViewRequest,
     UpdateTabSortModeRequest,
     CreateNewTabRequest,
+    SearchContextForSearchRequest,
     DeleteTabRequest,
     SearchSuggestionsRequest,
     PrioritizeTagSuggestionsRequest,
@@ -582,6 +583,15 @@ def update_tab_untagged_view(payload: UpdateTabUntaggedViewRequest) -> Dict[str,
     if response["changed"] is True:
         reset_undo_stack(payload["clientId"], payload["undoContext"])
     return response
+
+
+@router.post("/notes/tab-state/search-context-for-search")
+@transactional_route
+def search_context_for_search(payload: SearchContextForSearchRequest) -> Dict[str, object]:
+    """The search context a search link switches to: the one with the same terms, else none
+    (found false), and the browser opens a new one (docs/ready-to-build/search-links.md §3)."""
+    tab_id = tab_state_store.search_context_with_search(search=payload["search"])
+    return {"tabId": tab_id, "found": tab_id != ""}
 
 
 @router.post("/notes/tab-state/new-tab")

@@ -153,6 +153,12 @@ class UpdateTabFileFilterRequest(TypedDict):
     undoContext: UndoContext
 
 @with_config(ConfigDict(strict=True))
+class SearchContextForSearchRequest(TypedDict):
+    # A search link's search (docs/ready-to-build/search-links.md).
+    search: str
+
+
+@with_config(ConfigDict(strict=True))
 class CreateNewTabRequest(TypedDict):
     copyFromTabId: Identifier
     # True duplicates the tab, everything it shows included; False opens a blank one.

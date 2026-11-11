@@ -21,7 +21,19 @@
   - a note
   - a file attachment
 
+## Search Links
+
+Built 2026-11-11 (`docs/ready-to-build/search-links.md`; `app/services/search_links.py`). A search link is never a reference: it adds no Referenced by badge, no embed and nothing to Trim Unused Files.
+
+- **`[[search:work -archive]]`** reads its search; **`[[search:work -archive|Current work]]`** reads its text. Either shows as a note link does, blue and underlined, with a magnifier where a note link has its arrow. Resting on one with text shows its search in a tooltip; it has no preview card. Editing shows the markup.
+- **A click** switches to the search context with the same terms (spaces, the order of terms and capitals don't count: `work -archive` is `-archive Work`), else opens a new one with the search; the context you were in is left as it was, and a second click never makes a second one. Folder contexts and reference views are never a search link's. Clicked while another note is edited, it saves and leaves that note first.
+- **`[[search:]]`**, a blank text after `|`, and **`![[search:…]]`** (kept for results shown in the note, later) stay text as typed. A scoped wrapper tag never formats a search link.
+- **In a first line** (a link's title, the `[[` list) a search link reads its text, or its search.
+- **Rename tag** renames the tag in every search link's search and in every search context's search, where it is a term (`work`, `-work`, `work=high`, `work:hours>2`); quoted text and the links' own text stay. Notes keep their updated times; like the rest of Rename tag, it can't be undone. A browser's copy of the search contexts read before the rename doesn't bring the old name back (`tab_state.py`, `_search_renamed_at_version`).
+- **Exports:** the HTML export keeps the markup. The Markdown export (not built yet) will write `Current work (search: work -archive)`.
+
 ## Suggestions
+- Search contexts are offered too (Search Links, above): those whose search holds what is typed after `[[` (`search:` typed first is skipped), above the notes, the current one first; with nothing typed, the current one alone. Each shows a magnifier and `Search: work -archive`; choosing one writes `[[search:work -archive]]`. Not after `![[`, and never a folder context, a reference view, a blank search or one holding `[` or `]`.
 
 Typing `[[` in the note being edited opens a list of notes to reference (agreed 2026-10-26); what is typed after it narrows the list. Choosing a note replaces `[[` and the typed text with `[[UUID]]`, as typing it would. `![[` works the same way and gives `![[UUID]]`, an embed.
 
@@ -173,7 +185,7 @@ Typing `[[` in the note being edited opens a list of notes to reference (agreed 
   - Non-matching sibling branches in visible context are redacted via normal search rules.
 
 ## Related Docs
-- Planned: links that open a search (`[[search:…]]`), skipped by every reference scanner: `docs/ready-to-build/search-links.md`
+- Search links (`[[search:…]]`, Search Links above): `docs/ready-to-build/search-links.md`
 - `docs/ui/excalidraw.md`
 - `docs/ui/content-formatting.md`
 - `docs/ui/command-palette.md`

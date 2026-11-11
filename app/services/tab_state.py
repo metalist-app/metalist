@@ -17,6 +17,7 @@ from app.security.encryption import (
 )
 from app.services.root_sorting import SORT_MODE_FILE_SIZE, SORT_MODE_NORMAL, SORT_MODES, base_sort_mode, normalize_sort_mode
 from app.services.input_errors import InputRejected
+from app.services.search_links import same_search
 from app.services.file_kinds import make_file_filter
 from app.services.virtual_folders import NO_FOLDER, is_folder_tag
 from app.services.root_date_filter import RootDateFilter, root_date_filter_from_payload, root_date_filter_payload
@@ -251,6 +252,8 @@ class TabStateStore:
         self._untagged_views: Set[str] = set()
         # The version at which each tab's scroll last started again at the top.
         self._scroll_restarted_at_version: Dict[str, int] = {}
+        # The version at which Rename tag renamed each tab's search (rename_search_terms).
+        self._search_renamed_at_version: Dict[str, int] = {}
         self._install_default_state_locked(version=0)
 
     def bootstrap(self, *, connection) -> None:
@@ -396,6 +399,8 @@ class TabStateStore:
             self._untagged_views.discard(tab_id)
             if tab_id in self._scroll_restarted_at_version:
                 del self._scroll_restarted_at_version[tab_id]
+            if tab_id in self._search_renamed_at_version:
+                del self._search_renamed_at_version[tab_id]
             self._version += 1
             self._persist_locked(connection=None, encryption_service=None, force_plaintext=False)
             return self._snapshot_locked()
@@ -464,6 +469,9 @@ class TabStateStore:
         ):
             for key in _TAB_SCROLL_KEYS:
                 merged[key] = current[key]
+        # A search Rename tag renamed after the snapshot was read keeps its new name.
+        if tab_id in self._search_renamed_at_version and read_at_version < self._search_renamed_at_version[tab_id]:
+            merged["searchQuery"] = current["searchQuery"]
         assert merged.keys() == entry.keys(), "a snapshot tab keeps its own keys"
         return merged
 
@@ -720,6 +728,24 @@ class TabStateStore:
                 raise RuntimeError("Active tab id is missing from tab state")
             return self._active_tab_id
 
+    def search_context_with_search(self, *, search: str) -> str:
+        """The search context, in list order, whose search has the same terms as this one, or ""
+        for none: what a search link opens (docs/ready-to-build/search-links.md §3). Folder contexts
+        and reference views are other kinds of view, never a search link's."""
+        if not isinstance(search, str) or search.strip() == "":
+            raise InputRejected("A search link needs a search.")
+        with self._lock:
+            self._try_decrypt_locked(token="", require_success=True)
+            for tab_id in self._tab_order:
+                if tab_id in self._reference_views or tab_id in self._folder_contexts:
+                    continue
+                tab_search = self._tabs[tab_id]["searchQuery"]
+                if not isinstance(tab_search, str):
+                    raise RuntimeError("Tab searchQuery must be a string")
+                if same_search(tab_search, search):
+                    return tab_id
+            return ""
+
     def get_search_query(self, *, tab_id: Optional[str]) -> str:
         with self._lock:
             self._try_decrypt_locked(token="", require_success=True)
@@ -789,6 +815,7 @@ class TabStateStore:
         self._recent_tabs = [default_tab_id]
         self._untagged_views = set()
         self._scroll_restarted_at_version = {}
+        self._search_renamed_at_version = {}
         self._version = version
 
     def _snapshot_locked(self) -> Dict[str, object]:
@@ -903,6 +930,7 @@ class TabStateStore:
         }
         self._untagged_views = _normalize_untagged_views(snapshot["untaggedViews"], normalized_tabs)
         self._scroll_restarted_at_version = {}
+        self._search_renamed_at_version = {}
         self._active_tab_id = active_tab_id
         self._version = version
 
@@ -929,19 +957,21 @@ class TabStateStore:
 
     def rename_search_terms(self, *, rename: Callable[[str], str], connection) -> int:
         """Each search context's search, and a reference view's queries, as `rename` returns
-        them (meta_tag_renames.py, a one-time pass), saved with `connection` when any
-        changed. Returns how many searches changed."""
+        them (meta_tag_renames.py, a one-time pass; Rename tag, rename_tag.py), saved with
+        `connection` when any changed. Returns how many searches changed."""
         if not callable(rename):
             raise TypeError("rename must be callable")
         with self._lock:
             self._try_decrypt_locked(token="", require_success=True)
             changed = 0
-            for tab in self._tabs.values():
+            renamed_tab_ids: List[str] = []
+            for tab_id, tab in self._tabs.items():
                 search_query = tab["searchQuery"]
                 assert isinstance(search_query, str), "a tab's search is text"
                 renamed = rename(search_query)
                 if renamed != search_query:
                     tab["searchQuery"] = renamed
+                    renamed_tab_ids.append(tab_id)
                     changed += 1
             for view in self._reference_views.values():
                 reference_query = view["referenceQuery"]
@@ -958,6 +988,8 @@ class TabStateStore:
             if changed == 0:
                 return 0
             self._version += 1
+            for tab_id in renamed_tab_ids:
+                self._search_renamed_at_version[tab_id] = self._version
             self._persist_locked(connection=connection, encryption_service=None, force_plaintext=False)
             return changed
 

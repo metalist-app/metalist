@@ -26,7 +26,8 @@ from app.services.document_highlights import HIGHLIGHT_CLASSES
 # fails any unit test whose rendering this pass would change, so the lists stay complete.
 RENDERER_TAGS = frozenset({"article", "button", "path", "rect", "svg"})
 RENDERER_ATTRIBUTES: dict[str, frozenset[str]] = {
-    "a": frozenset({"aria-label", "class", "rel", "target"}),
+    # A link that opens a search (search_links.render_search_link) carries its search.
+    "a": frozenset({"aria-label", "class", "rel", "target", "data-search-query"}),
     "article": frozenset({"class"}),
     # A callout (markdown_rendering._render_callout); a folding one's index and state.
     "blockquote": frozenset({"class"}),

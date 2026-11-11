@@ -64,6 +64,8 @@ import {
     openReferenceInNewTab,
     openReferenceQueryInNewTab,
     openBacklinksInNewTab,
+    openSearchInNewSearchContext,
+    switchToTabContext,
 } from './keyboard-events.js';
 import {
     isViewingReferenceSource,
@@ -339,6 +341,8 @@ function isMouseDownOutsideEditExclusion(target) {
             EMBED_COLLAPSE_TOGGLE_SELECTOR,
             COLLAPSED_CHILDREN_INDICATOR_SELECTOR,
             '.note-reference-link',
+            // A search link opens its search, saving and leaving the note being edited first.
+            '.note-search-link',
             '.note-backlinks-link',
             '.ai-chat-open-all-references',
             // A file linked in text, a card's Open and Download, a player: a click elsewhere on an
@@ -1524,6 +1528,10 @@ function handleClick(event) {
         return;
     }
 
+    if (handleSearchLinkClick(event)) {
+        return;
+    }
+
     if (handleFileReferenceClick(event)) {
         return;
     }
@@ -2103,6 +2111,39 @@ function handleBacklinksLinkClick(event) {
             await actionDeselectNote();
         }
         await openBacklinksInNewTab(sourceNoteId);
+    });
+    return true;
+}
+
+// A link that opens a search (search_links.py): the search context with the same terms, or a new
+// one; the context you were in is left as it was (docs/ready-to-build/search-links.md §3).
+function handleSearchLinkClick(event) {
+    const link = event.target instanceof Element ? event.target.closest('.note-search-link') : null;
+    if (link === null) {
+        return false;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    if (!ModeContext.isConnected) {
+        Logger.logNoop('Search link click ignored while disconnected', { isConnected: false });
+        return true;
+    }
+    const search = link.dataset.searchQuery;
+    if (typeof search !== 'string' || search.trim() === '') {
+        throw new Error('A search link must carry its search');
+    }
+    void CommandGate.run('mouse.open_search_link', async () => {
+        if (ModeContext.isEditing) {
+            await actionDeselectNote();
+        }
+        const answer = await NotesAPI.searchContextForSearch(search);
+        if (answer.found !== true) {
+            await openSearchInNewSearchContext(search, 'search-link');
+            return;
+        }
+        if (answer.tabId !== ModeContext.activeTabId) {
+            await switchToTabContext(answer.tabId, {});
+        }
     });
     return true;
 }

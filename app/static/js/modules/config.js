@@ -74,6 +74,7 @@ export const CONFIG = {
             FIND_FILE_SNIPPET: `${API_NOTES_BASE}/find/file-snippet`,
             TAB_STATE: `${API_NOTES_BASE}/tab-state`,
             TAB_STATE_NEW_TAB: `${API_NOTES_BASE}/tab-state/new-tab`,
+            SEARCH_CONTEXT_FOR_SEARCH: `${API_NOTES_BASE}/tab-state/search-context-for-search`,
             TAB_STATE_DELETE_TAB: `${API_NOTES_BASE}/tab-state/delete-tab`,
             TAB_STATE_SORT_MODE: `${API_NOTES_BASE}/tab-state/sort-mode`,
             TAB_STATE_DATE_FILTER: `${API_NOTES_BASE}/tab-state/date-filter`,

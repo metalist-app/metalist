@@ -18,3 +18,17 @@ export function chosenReferenceText(noteId, textAfterCaret) {
     }
     return `${REFERENCE_OPEN}${noteId}${REFERENCE_CLOSE}`;
 }
+
+const SEARCH_LINK_PREFIX = 'search:';
+
+/** What choosing a search in the `[[` list writes: its search link (docs/ready-to-build/search-links.md). */
+export function chosenSearchLinkText(search, textAfterCaret) {
+    if (typeof search !== 'string' || search.trim() === '' || typeof textAfterCaret !== 'string') {
+        throw new Error('chosenSearchLinkText requires a search and the text after the caret');
+    }
+    if (REFERENCE_REST_RE.test(textAfterCaret)) {
+        return `${REFERENCE_OPEN}${SEARCH_LINK_PREFIX}${search}`;
+    }
+    return `${REFERENCE_OPEN}${SEARCH_LINK_PREFIX}${search}${REFERENCE_CLOSE}`;
+}
+
