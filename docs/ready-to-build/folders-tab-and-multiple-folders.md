@@ -1,6 +1,6 @@
 # The folders tab only shows the tree, and several folders add results
 
-**Status:** Agreed with the maintainer 2026-11-11. Built 2026-11-11: tests `tests/unit/test_folders_tab.py`, `test_multiple_folders.py`, `scripts/browser-folder-context-regressions.mjs`. The permanent docs (§8) are folded in when the feature is finished.
+**Status:** Agreed with the maintainer 2026-11-11. Built 2026-11-11: tests `tests/unit/test_folders_tab.py`, `test_multiple_folders.py`, `scripts/browser-folder-context-regressions.mjs`. Folded into `docs/ui/search-semantics.md` (folder terms), `docs/ui/state-handling.md` (the tree belongs to the view), `docs/design/ontology-rules-v1.md` (parent folders) and the search and notes help; it stays here beside `virtual-folders.md`, the experiment it changes.
 
 Written from a read-only look at the repo. Check the code references before relying on them.
 
