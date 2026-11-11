@@ -193,6 +193,12 @@ exceptions = ["FileNotFoundError", "app.services.input_errors.NamespaceInputReje
 reason = "Translate explicitly validated domain input/resource rejection."
 
 [[tool.shockharness.rules.exceptions.boundaries]]
+path = "app/services/client_state_service.py"
+language = "python"
+exception = "json.JSONDecodeError"
+reason = "A list preference the browser sends that is not JSON is rejected as a validation error, as any other wrong value is."
+
+[[tool.shockharness.rules.exceptions.boundaries]]
 path = "app/services/search_links.py"
 language = "python"
 exception = "app.services.input_errors.InputRejected"

@@ -25,8 +25,9 @@ _KNOWN_WRITERS = {
         "password_note_fields.prepare_note_rewrite cleans each note it re-encrypts",
     ("app/services/content_cache.py", "_store_cleaned_notes"): "stores the cleaning's output",
     ("app/usecases/bulk_tag_proposals.py", "apply_bulk_proposals"): "writes proposed tags only",
-    ("app/usecases/rename_tag.py", "apply_rename_tag_everywhere"): "cleans each note whose search links it renames",
-    ("app/usecases/rename_tag.py", "rewrite_searches_everywhere"): "cleans each note whose search links it rewrites",
+    # Writes what apply_rename_tag_everywhere and rewrite_searches_everywhere cleaned with
+    # sanitize_note_html (each note whose search links they rename or rewrite).
+    ("app/usecases/rename_tag.py", "_write_note_fields"): "writes only content its two callers cleaned",
     # Stores uncleaned content, into databases without the record (a version below 8),
     # so their first unlock cleans them.
     ("app/db/migrations.py", "_remove_retired_document_references"): "runs on databases below version 8",
