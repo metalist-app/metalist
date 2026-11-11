@@ -10,13 +10,16 @@ import {prepareScaleVault} from '../../scripts/browser-scale-regressions.mjs';
 // A small vault: the preparation is checked, not the scale.
 const NOTE_COUNT = 60;
 const FILE_COUNT = 3;
-const python = process.platform === 'win32' ? '.venv/Scripts/python.exe' : '.venv/bin/python';
+// The checkout's .venv where there is one (here); GitHub's JavaScript job has the Python on its path,
+// with the test dependencies installed.
+const VENV_PYTHON = process.platform === 'win32' ? '.venv/Scripts/python.exe' : '.venv/bin/python';
+const python = existsSync(VENV_PYTHON) ? resolve(VENV_PYTHON) : 'python';
 
 test('the scale server gets a generated vault, its import folder, the scripted AI and the answered folder dialog', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'scale-prepare-'));
   try {
     const env = {...process.env, METALIST_DATA_DIRECTORY: directory};
-    const rootCount = prepareScaleVault({python: resolve(python), directory, env, noteCount: NOTE_COUNT, fileCount: FILE_COUNT});
+    const rootCount = prepareScaleVault({python, directory, env, noteCount: NOTE_COUNT, fileCount: FILE_COUNT});
     assert(Number.isInteger(rootCount) && rootCount > 0 && rootCount <= NOTE_COUNT, `the root count comes from the generator: ${rootCount}`);
     assert(existsSync(join(directory, 'namespaces', 'default')), 'the vault is written in the default namespace');
     const importFolder = join(directory, 'import-files');

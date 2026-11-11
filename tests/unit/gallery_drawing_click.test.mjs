@@ -3,7 +3,9 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
 // resolveDiagramTarget alone: the module it lives in needs the whole app.
-const source = readFileSync(new URL('../../app/static/js/modules/excalidraw/excalidraw-actions.js', import.meta.url), 'utf8');
+// Windows checks the file out with \r\n line endings: read with \n, as here.
+const source = readFileSync(new URL('../../app/static/js/modules/excalidraw/excalidraw-actions.js', import.meta.url), 'utf8')
+    .replaceAll('\r\n', '\n');
 const start = source.indexOf('export function resolveDiagramTarget');
 const end = source.indexOf('\n}\n', start) + '\n}\n'.length;
 
