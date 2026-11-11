@@ -536,17 +536,6 @@ export const NotesAPI = {
         });
     },
 
-    // folder: the folder tag ('Projects/'), or '' for every folder again.
-    async setVirtualFolderFilter(tabId, folder) {
-        if (typeof tabId !== 'string' || tabId === '' || typeof folder !== 'string') {
-            throw new Error('NotesAPI.setVirtualFolderFilter requires the tab and the folder');
-        }
-        return this._apiCall(CONFIG.API.VIRTUAL_FOLDERS.FILTER, {
-            method: 'POST',
-            body: JSON.stringify({ tabId, folder, clientId: ModeContext.clientId, undoContext: captureUndoContext() }),
-        });
-    },
-
     // What importing would do (the import wizard's summary), before anything is written.
     // An import's choices: { source, folderPath, splitMode, contentFormat, prefixFolder (the
     // folder everything goes under, as typed; '' for none), addToExisting, and a folder of

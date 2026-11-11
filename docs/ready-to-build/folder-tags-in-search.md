@@ -1,6 +1,6 @@
 # A folder tag in the search includes the folders below it, and the folder is search text
 
-**Status:** Agreed with the maintainer 2026-11-10. Ready to build.
+**Status:** Agreed with the maintainer 2026-11-10. **Built 2026-11-11:** search (§1, `search_index._search_term_posting_locked`), the folder as search text with no chip (§2, `tab_state.choose_folder`; stored folders converted in `_apply_snapshot_locked`), the tree reading it (§3, `virtual_folders.chosen_folder_of` and `without_folder_terms`; `folder-search-terms.js` in the browser), renames and moves (§4, `rename_folder_in_search` through `rename_tag.rewrite_searches_everywhere`, which rewrites search links too), and folder contexts in `[[` suggestions and as search links' targets (§5). The browser suites written for the chip (`browser-folder-context-regressions.mjs`, `browser-view-change-top-regressions.mjs`, `browser-folder-note-drag-regressions.mjs`, `browser-tab-switch-regressions.mjs`, `browser-folder-drop-regressions.mjs`) still need updating to it.
 
 Written from a read-only look at the repo; filed from `docs/inbox/` on 2026-11-11, with the references checked (§8).
 

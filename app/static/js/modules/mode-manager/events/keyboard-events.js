@@ -55,7 +55,7 @@ import { NotesAPI } from '../../api-client.js';
 import { ErrorHandler } from '../../error-handler.js';
 import { describeDroppedItems, loneDroppedFolderEntry, readDroppedFolder } from '../services/dropped-folders.js';
 import {
-    fileNewNoteInFolder, virtualFoldersUpToDate, folderOfTab, recordFolderContextFolder, showFolderOfActiveContext, virtualFolderAt,
+    fileNewNoteInFolder, virtualFoldersUpToDate, showFolderOfActiveContext, virtualFolderAt,
 } from '../services/virtual-folders-service.js';
 import { isFolderContext, usedLastAmong } from '../services/folder-context-state.js';
 import { searchContextLabel } from '../services/search-context-label.js';
@@ -258,7 +258,6 @@ export function initKeyboardEvents() {
     document.addEventListener('click', handleTabDragClick, { capture: true });
     window.addEventListener('blur', handleWindowBlur, { capture: false });
     window.addEventListener('resize', handleSearchContextsViewportChange, { passive: true });
-    document.addEventListener('metalist:tab-folders-changed', () => updateSearchContextsList());
     initializeSearchContextsHover();
         
     Logger.logInit('Keyboard events handler');
@@ -3608,12 +3607,12 @@ export function updateSearchContextsList() {
             originalQuery = '';
         }
         const referenceNavigationLabel = getReferenceNavigationLabelForTab(tabId);
-        // A context narrowed to a folder is named by its search and its folder, as its search
-        // box shows them: one with only a folder is that folder, never "(empty)". The name uses
-        // the row's whole width and ends in an ellipsis only where it runs out (main.css).
+        // A context is named by its search, as its search box shows it, a folder chosen in the tree
+        // included (`Projects/ @todo`); a folder context with none is `/`, never "(empty)". The name
+        // uses the row's whole width and ends in an ellipsis only where it runs out (main.css).
         const displayQuery = referenceNavigationLabel !== ''
             ? referenceNavigationLabel
-            : searchContextLabel({ search: originalQuery, folder: folderOfTab(tabId), isFolderContext: isFolderContext(tabId) });
+            : searchContextLabel({ search: originalQuery, isFolderContext: isFolderContext(tabId) });
         
         const isActive = tabId === activeTabId;
 
@@ -4014,9 +4013,9 @@ export async function chooseFolder(folder) {
     await persistTabStateSnapshot();
     const response = await chooseFolderOnServer(folderTabId, folder);
     ModeContext.bumpUndoContextEpoch('virtualFolder');
-    recordFolderContextFolder(folderTabId, folder);
     await settleViewRequestsBeforeTabChange();
-    // Its emptied search and top scroll come with the answer; it is the search the view now runs.
+    // Its search, now the folder (`Projects/`, '' for `/`), and top scroll come with the answer; it is
+    // the search the view now runs (folder-tags-in-search.md §2).
     ModeContext.hydrateTabState(response, { preserveActiveRootTracking: true });
     ModeContext.clearTabRevealedRedactions(folderTabId);
     ModeContext.clearActiveTabDiffCacheForSearchExecution(ModeContext.searchQuery, { forceClear: true });

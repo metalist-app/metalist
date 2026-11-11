@@ -90,7 +90,6 @@ from app.services.tag_properties import is_property_term, is_stats_term, is_tagl
 from app.services.root_date_filter import RootDateFilter
 from app.services.root_date_filter import make_root_date_filter
 from app.services.snapshot import build_view_state
-from app.services.virtual_folders import NO_FOLDER, search_for_new_note, search_in_folder
 from app.services.snapshot import find_in_view
 from app.services.snapshot import resolve_search_scope
 from app.services.snapshot import ResolvedViewScope, resolve_view_scope_membership
@@ -292,18 +291,6 @@ def _resolve_tab_sort_mode(tab_id: object) -> str:
     return sort_mode
 
 
-def _in_tab_folder(search: str, tab_id: str) -> str:
-    """The view's search narrowed to the tab's virtual folder, when one is chosen (only the
-    folder context has one, tab_state.py; exports and the AI read the search alone)."""
-    if not isinstance(search, str):
-        raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail="search must be a string")
-    return search_in_folder(search, tab_state_store.get_folder_filter(tab_id=tab_id))
-
-
-def _new_note_search(search: str | None, tab_id: str) -> str | None:
-    """The search a new note takes its tags from: in a tab narrowed to a virtual folder (an
-    experiment), the note is filed in that folder, so the view shows it."""
-    return search_for_new_note(search, tab_state_store.get_folder_filter(tab_id=tab_id))
 
 
 def _resolve_tab_file_filter(tab_id: str) -> str | None:
@@ -363,15 +350,8 @@ def view_diff(payload: ViewDiffRequest):
     find_reveal_note_id = payload["findRevealNoteId"]
     tab_id = payload["tabId"]
     search = payload["search"]
+    # A folder chosen in the tree is in the search itself (`Projects/`, folder-tags-in-search.md §2).
     visible_search = search
-    # A virtual folder or note chosen in the tree narrows the roots the view lists, as a Files
-    # filter does: the browser pages through the narrowed count, and gets its own search back.
-    is_narrowed_by_tree = tab_state_store.get_folder_filter(tab_id=tab_id) != NO_FOLDER
-    # No search (null or "") with a virtual folder chosen is that folder alone.
-    if isinstance(search, str):
-        search = _in_tab_folder(search, tab_id)
-    elif search is None and is_narrowed_by_tree:
-        search = _in_tab_folder("", tab_id)
     undo_context = payload["undoContext"]
     tab_view_empty = payload["tabViewEmpty"]
     visible_top_root_id = payload["visibleTopRootId"]
@@ -460,7 +440,7 @@ def view_diff(payload: ViewDiffRequest):
         "searchHighlightPhrases": state.metadata["searchHighlightPhrases"],
         "sortMode": sort_mode,
         "isUntaggedView": is_untagged_view,
-        "rootCountTotal": state.metadata["searchRootCountTotal"] if is_narrowed_by_tree else state.metadata["rootCountTotal"],
+        "rootCountTotal": state.metadata["rootCountTotal"],
         "searchRootCountTotal": state.metadata["searchRootCountTotal"],
         "rootSortBuckets": state.metadata["rootSortBuckets"],
         "fileSizes": state.metadata["fileSizes"],
@@ -847,7 +827,6 @@ def find_in_list(payload: FindInListRequest) -> Dict[str, object]:
     else:
         # A search that does not parse is answered as rejected input, as the view does.
         parse_search_query(search)
-    search = _in_tab_folder(search, payload["tabId"])
     if payload["text"].strip() == "":
         raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail="text must hold more than spaces")
     window = find_in_view(
@@ -1253,7 +1232,7 @@ def create_note_top(request: Request, body: CreateNoteTopRequest):
     viewport = _require_viewport(body)
     cmd = CmdCreateNote(
         first_visible_note_id=body["first_visible_note_id"],
-        search_query=_new_note_search(body["search_query"], body["tabId"]),
+        search_query=body["search_query"],
         token=token,
         client_id=body["clientId"],
         undo_context=body["undoContext"],
@@ -1270,7 +1249,7 @@ def create_sibling(request: Request, note_id: str, body: CreateSiblingRequest):
     _require_note_present(note_id, context="notes.new-sibling")
     cmd = CmdCreateSibling(
         reference_note_id=note_id,
-        search_query=_new_note_search(body["search_query"], body["tabId"]),
+        search_query=body["search_query"],
         token=token,
         client_id=body["clientId"],
         undo_context=body["undoContext"],
@@ -1287,7 +1266,7 @@ def create_child(request: Request, note_id: str, body: CreateChildRequest):
     _require_note_present(note_id, context="notes.new-child")
     cmd = CmdCreateChild(
         parent_note_id=note_id,
-        search_query=_new_note_search(body["search_query"], body["tabId"]),
+        search_query=body["search_query"],
         token=token,
         client_id=body["clientId"],
         undo_context=body["undoContext"],
@@ -1398,7 +1377,7 @@ def _view_note_ids(body: ViewScope) -> frozenset[str]:
 
 def _resolved_view(body: ViewScope) -> ResolvedViewScope:
     return resolve_view_scope_membership(
-        search=_in_tab_folder(body["search"], body["tabId"]),
+        search=body["search"],
         sort_mode=_resolve_tab_sort_mode(body["tabId"]),
         date_filter=_resolve_tab_date_filter(body["tabId"]),
         file_filter=_resolve_tab_file_filter(body["tabId"]),

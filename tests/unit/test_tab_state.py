@@ -339,14 +339,13 @@ def test_unchanged_update_keeps_version_and_skips_persistence(monkeypatch: pytes
     assert writes == [True]
 
 
-# A search context's folder is kept with its other filters, so a server restart keeps it (the
-# maintainer, 2026-11-07); since the same day only the folder context has one. Its restart,
-# duplicate, rename and delete cases are in test_folder_context.py.
-def test_a_folder_filter_must_be_a_folder() -> None:
+# A folder clicked in the tree is a folder (since 2026-11-11 it becomes the folder context's search:
+# test_folder_context.py).
+def test_a_folder_clicked_must_be_a_folder() -> None:
     store = TabStateStore()
-    tab_id = store.snapshot()["activeTabId"]
+    folder_tab = store.create_folder_context()["newTabId"]
     with pytest.raises(InputRejected, match="not a folder"):
-        store.set_folder_filter(tab_id=tab_id, folder="journal")
+        store.choose_folder(tab_id=folder_tab, folder="journal")
 
 
 def test_tab_state_saved_before_folders_were_kept_has_none() -> None:

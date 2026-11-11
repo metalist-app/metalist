@@ -13,7 +13,7 @@ For input grammar, normalization rules, and completeness gating, see:
 Search queries are a whitespace-separated list of terms.
 
 ### Tag Terms (unquoted)
-- Planned (agreed 2026-11-10): a term ending in `/` will match that folder and every folder below it, the one exception to exact matching (`docs/ready-to-build/folder-tags-in-search.md`).
+- A term ending in `/` is a folder (built 2026-11-11, `docs/ready-to-build/folder-tags-in-search.md`): `Projects/` finds notes in `Projects/` and in every folder below it (`Projects/Client-A/`), `-Projects/` leaves them all out, whether or not the folder tree is shown. It is the one exception to exact matching: `Projects/` doesn't find the plain tag `Projects/notes`, and `work` still doesn't find `work-archive` (`SearchIndex._search_term_posting_locked`).
 - `foo` and `+foo` are equivalent (required tag).
 - `-foo` excludes notes that have tag `foo`.
 - A tag with a value, `name=value` (`@code=python`, `@size=2`), can be searched whole

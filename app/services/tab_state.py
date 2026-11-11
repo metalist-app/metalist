@@ -150,7 +150,8 @@ def _normalize_file_filters(filters: object, tabs: Dict[str, Dict[str, object]])
 
 
 def _normalize_folder_filters(filters: object, tabs: Dict[str, Dict[str, object]]) -> Dict[str, str]:
-    """Folder filters by tab (the folder tree, virtual_folders.py); a tab that is gone has none."""
+    """The folders tabs were narrowed to before the folder became search text (2026-11-11,
+    folder-tags-in-search.md §2), kept only to be converted once; a tab that is gone has none."""
     if not isinstance(filters, dict):
         raise InputRejected("folderFilters must be an object")
     for folder in filters.values():
@@ -242,7 +243,6 @@ class TabStateStore:
         self._file_filters: Dict[str, str] = {}
         # Each tab's folder (the folder tree's filter), kept with its other filters so a server
         # restart keeps it (the maintainer, 2026-11-07); a tab in no folder is absent.
-        self._folder_filters: Dict[str, str] = {}
         # The search contexts that are folder contexts, with the tree; only they have a folder
         # (docs/ready-to-build/virtual-folders.md, "Folder contexts", 2026-11-07). The others are plain searches.
         self._folder_contexts: Set[str] = set()
@@ -339,11 +339,9 @@ class TabStateStore:
                     self._date_filters[new_tab_id] = deepcopy(self._date_filters[copy_from_tab_id])
                 if copy_from_tab_id in self._file_filters:
                     self._file_filters[new_tab_id] = self._file_filters[copy_from_tab_id]
-                # A copy of a folder context is another, with its folder (virtual-folders.md, "Folder contexts").
+                # A copy of a folder context is another; its folder is in its search.
                 if copy_from_tab_id in self._folder_contexts:
                     self._folder_contexts.add(new_tab_id)
-                    if copy_from_tab_id in self._folder_filters:
-                        self._folder_filters[new_tab_id] = self._folder_filters[copy_from_tab_id]
                 if copy_from_tab_id in self._untagged_views:
                     self._untagged_views.add(new_tab_id)
             else:
@@ -390,8 +388,6 @@ class TabStateStore:
                 del self._date_filters[tab_id]
             if tab_id in self._file_filters:
                 del self._file_filters[tab_id]
-            if tab_id in self._folder_filters:
-                del self._folder_filters[tab_id]
             self._folder_contexts.discard(tab_id)
             self._recent_tabs.remove(tab_id)
             if was_active:
@@ -533,55 +529,11 @@ class TabStateStore:
             snapshot["changed"] = changed
             return snapshot
 
-    def folder_filters(self) -> Dict[str, str]:
-        """Every tab in a folder, with its folder (the list of search contexts names them)."""
-        with self._lock:
-            self._try_decrypt_locked(token="", require_success=True)
-            return dict(self._folder_filters)
-
     def folder_contexts(self) -> List[str]:
         """The tabs that are folder contexts."""
         with self._lock:
             self._try_decrypt_locked(token="", require_success=True)
             return sorted(self._folder_contexts)
-
-    def get_folder_filter(self, *, tab_id: str) -> str:
-        """The tab's folder, NO_FOLDER ('') for none."""
-        if not isinstance(tab_id, str) or not tab_id:
-            raise InputRejected("tabId must be a non-empty string")
-        with self._lock:
-            self._try_decrypt_locked(token="", require_success=True)
-            if tab_id not in self._folder_filters:  # shockharness: ignore[DEF002] reason="a tab in no folder keeps no entry: its absence is NO_FOLDER, as a missing Files filter is every note"
-                return NO_FOLDER
-            return self._folder_filters[tab_id]
-
-    def set_folder_filter(self, *, tab_id: str, folder: str) -> Dict[str, object]:
-        """Narrow a tab to exactly one folder, or with NO_FOLDER to every folder again. The tab
-        keeps its scroll, as before folders were kept here (the browser shows the new view)."""
-        if not isinstance(tab_id, str) or not tab_id:
-            raise InputRejected("tabId must be a non-empty string")
-        if folder != NO_FOLDER and not is_folder_tag(folder):
-            raise InputRejected(f"{folder} is not a folder")
-        with self._lock:
-            self._try_decrypt_locked(token="", require_success=True)
-            if tab_id not in self._tabs:
-                raise InputRejected("tabId must reference an existing tab")
-            if folder != NO_FOLDER and not self._is_folder_context_locked(tab_id):
-                raise InputRejected("Only a folder context has a folder: open the folders tab to choose one.")
-            current = NO_FOLDER
-            if tab_id in self._folder_filters:
-                current = self._folder_filters[tab_id]
-            changed = current != folder
-            if changed:
-                if folder == NO_FOLDER:
-                    del self._folder_filters[tab_id]
-                else:
-                    self._folder_filters[tab_id] = folder
-                self._version += 1
-                self._persist_locked(connection=None, encryption_service=None, force_plaintext=False)
-            snapshot = self._snapshot_locked()
-            snapshot["changed"] = changed
-            return snapshot
 
     def create_folder_context(self) -> Dict[str, object]:
         """Open folders tab with no folder context in the list: a new one at its end, on every
@@ -606,7 +558,8 @@ class TabStateStore:
 
     def choose_folder(self, *, tab_id: str, folder: str) -> Dict[str, object]:
         """A folder clicked in the tree (NO_FOLDER for the top, `/`): the folder context it was
-        clicked in narrowed to it, its search emptied, shown from the top."""
+        clicked in searches that folder, its search before replaced, shown from the top; the top
+        empties it (folder-tags-in-search.md §2)."""
         if not isinstance(tab_id, str) or not _is_uuid_string(tab_id):
             raise InputRejected("tabId must be a UUID string")
         if folder != NO_FOLDER and not is_folder_tag(folder):
@@ -617,12 +570,7 @@ class TabStateStore:
                 raise InputRejected("tabId must reference an existing tab")
             if tab_id not in self._folder_contexts:
                 raise InputRejected("Only a folder context has a folder: open the folders tab to choose one.")
-            self._tabs[tab_id]["searchQuery"] = ""
-            if folder == NO_FOLDER:
-                if tab_id in self._folder_filters:
-                    del self._folder_filters[tab_id]
-            else:
-                self._folder_filters[tab_id] = folder
+            self._tabs[tab_id]["searchQuery"] = folder
             # Persists, with the new version.
             self._restart_tab_scroll_locked(tab_id)
             return self._snapshot_locked()
@@ -634,34 +582,6 @@ class TabStateStore:
         """tab_id is shown now: the most recently used."""
         self._recent_tabs.remove(tab_id)
         self._recent_tabs.insert(0, tab_id)
-
-    def move_folder_filters(self, *, folder: str, new_path: str) -> None:
-        """A renamed or moved folder: a tab in it, or below it, follows it."""
-        with self._lock:
-            self._try_decrypt_locked(token="", require_success=True)
-            moved = {
-                tab_id: new_path + filtered[len(folder):]
-                for tab_id, filtered in self._folder_filters.items()
-                if filtered.casefold().startswith(folder.casefold())
-            }
-            if not moved:
-                return
-            self._folder_filters.update(moved)
-            self._version += 1
-            self._persist_locked(connection=None, encryption_service=None, force_plaintext=False)
-
-    def drop_folder_filters_under(self, *, folder: str) -> None:
-        """A deleted folder: a tab in it, or below it, shows every folder again."""
-        with self._lock:
-            self._try_decrypt_locked(token="", require_success=True)
-            dropped = [tab_id for tab_id, filtered in self._folder_filters.items()
-                       if filtered.casefold().startswith(folder.casefold())]
-            if not dropped:
-                return
-            for tab_id in dropped:
-                del self._folder_filters[tab_id]
-            self._version += 1
-            self._persist_locked(connection=None, encryption_service=None, force_plaintext=False)
 
     def set_untagged_view(self, *, tab_id: str, is_untagged_view: bool) -> Dict[str, object]:
         """Show the tab's untagged notes, or (False) its search again. Like a Files filter
@@ -731,13 +651,13 @@ class TabStateStore:
     def search_context_with_search(self, *, search: str) -> str:
         """The search context, in list order, whose search has the same terms as this one, or ""
         for none: what a search link opens (docs/ready-to-build/search-links.md §3). Folder contexts
-        and reference views are other kinds of view, never a search link's."""
+        are search contexts too (folder-tags-in-search.md §5); reference views are never a search link's."""
         if not isinstance(search, str) or search.strip() == "":
             raise InputRejected("A search link needs a search.")
         with self._lock:
             self._try_decrypt_locked(token="", require_success=True)
             for tab_id in self._tab_order:
-                if tab_id in self._reference_views or tab_id in self._folder_contexts:
+                if tab_id in self._reference_views:
                     continue
                 tab_search = self._tabs[tab_id]["searchQuery"]
                 if not isinstance(tab_search, str):
@@ -810,7 +730,6 @@ class TabStateStore:
         self._reference_views = {}
         self._date_filters = {}
         self._file_filters = {}
-        self._folder_filters = {}
         self._folder_contexts = set()
         self._recent_tabs = [default_tab_id]
         self._untagged_views = set()
@@ -826,7 +745,6 @@ class TabStateStore:
             "referenceViews": deepcopy(self._reference_views),
             "dateFilters": deepcopy(self._date_filters),
             "fileFilters": dict(self._file_filters),
-            "folderFilters": dict(self._folder_filters),
             "folderContexts": sorted(self._folder_contexts),
             "recentTabs": list(self._recent_tabs),
             "untaggedViews": sorted(self._untagged_views),
@@ -921,13 +839,14 @@ class TabStateStore:
         self._file_filters = _normalize_file_filters(snapshot["fileFilters"], normalized_tabs)
         self._folder_contexts = _normalize_folder_contexts(snapshot["folderContexts"], normalized_tabs)
         self._recent_tabs = _normalize_recent_tabs(snapshot["recentTabs"], normalized_tabs, normalized_order, active_tab_id)
-        # Only a folder context has a folder: one saved on a plain search (before 2026-11-07) is
-        # dropped, and that search shows alone.
-        self._folder_filters = {
-            tab_id: folder
-            for tab_id, folder in _normalize_folder_filters(snapshot["folderFilters"], normalized_tabs).items()
-            if self._is_folder_context_locked(tab_id)
-        }
+        # A folder kept apart from the search (before 2026-11-11) goes in front of its folder
+        # context's search, once (folder-tags-in-search.md §2): the stored state no longer names
+        # it once saved. One saved on a plain search (before 2026-11-07) is dropped.
+        for tab_id, folder in _normalize_folder_filters(snapshot["folderFilters"], normalized_tabs).items():
+            if self._is_folder_context_locked(tab_id):
+                search = self._tabs[tab_id]["searchQuery"]
+                assert isinstance(search, str), "a tab's search is text"
+                self._tabs[tab_id]["searchQuery"] = f"{folder} {search}".strip()
         self._untagged_views = _normalize_untagged_views(snapshot["untaggedViews"], normalized_tabs)
         self._scroll_restarted_at_version = {}
         self._search_renamed_at_version = {}

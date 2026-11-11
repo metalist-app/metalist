@@ -791,8 +791,8 @@ def test_a_folder_of_files_says_whether_it_made_a_new_folder(tmp_path: Path, not
 # viewing that import's search) has two values for the property, and is found by neither.
 def test_a_drop_in_an_earlier_imports_search_does_not_take_its_tag(note_store: NoteStore) -> None:
     earlier = "imported:source=files:at=2020-01-02T03:04"
-    assert drop_context_tags(search=earlier, folder_filter="", folder_prefix="Big Files") == ""
-    assert drop_context_tags(search=f"{earlier} @todo", folder_filter="", folder_prefix="Big Files") == "@todo"
+    assert drop_context_tags(search=earlier, folder_prefix="Big Files") == ""
+    assert drop_context_tags(search=f"{earlier} @todo", folder_prefix="Big Files") == "@todo"
 
 
 # --- A folder of any files (docs/ready-to-build/folder-import-and-file-previews.md) ---------
@@ -1055,9 +1055,9 @@ def test_a_drop_imports_notes_with_the_search_context_tags(tmp_path: Path, note_
 
 
 def test_the_drop_context_gives_the_tags_a_note_made_there_gets() -> None:
-    assert drop_context_tags(search="work", folder_filter="", folder_prefix="") == "work"
-    assert drop_context_tags(search="", folder_filter="", folder_prefix="") == ""
-    # Narrowed to a folder: filed in it, as a new note is, unless it goes into a folder of its own.
-    assert drop_context_tags(search="work", folder_filter="Projects/", folder_prefix="").split() == ["Projects/", "work"]
-    assert drop_context_tags(search="", folder_filter="Projects/", folder_prefix="") == "Projects/"
-    assert drop_context_tags(search="work", folder_filter="Projects/", folder_prefix="Notes") == "work"
+    assert drop_context_tags(search="work", folder_prefix="") == "work"
+    assert drop_context_tags(search="", folder_prefix="") == ""
+    # A folder in the search: filed in it, as a new note is, unless it goes into a folder of its own.
+    assert drop_context_tags(search="Projects/ work", folder_prefix="").split() == ["Projects/", "work"]
+    assert drop_context_tags(search="Projects/", folder_prefix="") == "Projects/"
+    assert drop_context_tags(search="Projects/ work", folder_prefix="Notes") == "work"

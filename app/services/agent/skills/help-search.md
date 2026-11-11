@@ -118,6 +118,7 @@ Search queries are a whitespace-separated list of terms.
 
 ### Tag Terms (unquoted)
 - `foo` and `+foo` are equivalent (required tag).
+- A term ending in `/` is a folder: `Projects/` finds that folder's notes and every folder's below it (`Projects/Client-A/`); `-Projects/` leaves them all out. Every other tag term matches exactly.
 - `-foo` excludes notes that have tag `foo`.
 
 Tag matching uses the note’s tag-bar string (`notes.tags`) tokenized with the same

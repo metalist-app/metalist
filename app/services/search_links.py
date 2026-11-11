@@ -9,15 +9,17 @@ from __future__ import annotations
 import html
 import re
 from dataclasses import dataclass
-from typing import FrozenSet, Optional, Tuple
+from typing import Callable, FrozenSet, List, Optional, Tuple
 
 from app.services.input_errors import InputRejected
 from app.services.search_query import SearchClause, parse_search_query
 
 SEARCH_LINK_PREFIX = "search:"
 _LINK_TEXT_SEPARATOR = "|"
-# A search link in a note's stored HTML (the text between [[ and ]]; brackets can't be in it).
-_SEARCH_LINK_TOKEN_RE = re.compile(r"(?<!!)\[\[search:([^\[\]\n]*)\]\]")
+# A search link or an embedded search in a note's stored HTML (the ! of an embed, then the text
+# between [[ and ]]; brackets can't be in it).
+_ANY_SEARCH_LINK_TOKEN_RE = re.compile(r"(!?)\[\[search:([^\[\]\n]*)\]\]")
+_OR_KEYWORD = "OR"
 # A search's pieces: quoted text (kept as typed, even unclosed), a term, or space
 # (as meta_tag_renames.rename_meta_tags_in_search reads one).
 _SEARCH_PIECE_RE = re.compile(r"\"(?:[^\"\\]|\\.)*\"?|'(?:[^'\\]|\\.)*'?|[^\s\"']+|\s+")
@@ -75,6 +77,44 @@ def render_search_link(link: SearchLink, *, static_export: bool) -> str:
     )
 
 
+def rewrite_search_terms(search: str, rewrite: Callable[[str], str]) -> str:
+    """A search with each term (`work`, `-work`, `+work`, `work=high`) rewritten by `rewrite`, given
+    the term without its sign: "" drops the term, sign and all. Quoted text, `OR` and spacing are left
+    as typed."""
+    if not isinstance(search, str):
+        raise TypeError(f"search must be a string, got {type(search)}")
+    pieces = [match.group(0) for match in _SEARCH_PIECE_RE.finditer(search)]
+    assert "".join(pieces) == search, "the pieces cover the whole search"
+    rewritten: List[str] = []
+    for piece in pieces:
+        if piece.isspace() or piece[:1] in "\"'" or piece == _OR_KEYWORD:
+            rewritten.append(piece)
+            continue
+        sign = ""
+        term = piece
+        if term[:1] in _SEARCH_TERM_PREFIXES:
+            sign = term[:1]
+            term = term[1:]
+        new_term = rewrite(term)
+        if new_term != "":
+            rewritten.append(sign + new_term)
+    return "".join(rewritten)
+
+
+def rewrite_searches_in_search_links(content_html: str, rewrite: Callable[[str], str]) -> str:
+    """A note's stored HTML with the search of each search link (and embedded search) rewritten by
+    `rewrite`; the links' text and the rest of the note are left as written."""
+    if not isinstance(content_html, str):
+        raise TypeError(f"content_html must be a string, got {type(content_html)}")
+
+    def rewritten(match: re.Match[str]) -> str:
+        search, separator, link_text = match.group(2).partition(_LINK_TEXT_SEPARATOR)
+        written = html.escape(rewrite(html.unescape(search)), quote=False)
+        return f"{match.group(1)}[[{SEARCH_LINK_PREFIX}{written}{separator}{link_text}]]"
+
+    return _ANY_SEARCH_LINK_TOKEN_RE.sub(rewritten, content_html)
+
+
 def _renamed_term(piece: str, *, old: str, new: str) -> str:
     prefix = ""
     term = piece
@@ -108,21 +148,13 @@ def rename_tag_in_search(search: str, *, old: str, new: str) -> str:
 
 
 def rename_tag_in_search_links(content_html: str, *, old: str, new: str) -> str:
-    """A note's stored HTML with the tag renamed in the search of each of its search links; its
-    text and the rest of the note are left as written."""
-    if not isinstance(content_html, str):
-        raise TypeError(f"content_html must be a string, got {type(content_html)}")
-
-    def renamed(match: re.Match[str]) -> str:
-        search, separator, link_text = match.group(1).partition(_LINK_TEXT_SEPARATOR)
-        written = html.escape(rename_tag_in_search(html.unescape(search), old=old, new=new), quote=False)
-        return f"[[{SEARCH_LINK_PREFIX}{written}{separator}{link_text}]]"
-
-    return _SEARCH_LINK_TOKEN_RE.sub(renamed, content_html)
+    """A note's stored HTML with the tag renamed in the search of each of its search links and
+    embedded searches; their text and the rest of the note are left as written."""
+    return rewrite_searches_in_search_links(content_html, lambda search: rename_tag_in_search(search, old=old, new=new))
 
 
 def has_search_links(content_html: str) -> bool:
-    return _SEARCH_LINK_TOKEN_RE.search(content_html) is not None
+    return _ANY_SEARCH_LINK_TOKEN_RE.search(content_html) is not None
 
 
 def _clause_terms(clause: SearchClause) -> Tuple[FrozenSet[object], ...]:

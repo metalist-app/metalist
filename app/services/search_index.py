@@ -129,6 +129,8 @@ class _NoteCounts:
 
 # A tag's name and its value: @code=python is the tag @code with the value python.
 TAG_VALUE_SEPARATOR = "="
+# A tag ending in / is a folder (virtual_folders.FOLDER_MARK, which imports this module).
+FOLDER_TAG_END = "/"
 
 
 def tag_family_of(term: str) -> str:
@@ -1263,7 +1265,7 @@ class SearchIndex:
                 return []
             completions: List[str] = []
             for term in suggestions:
-                posting = self._tag_family_posting_locked(term.casefold())
+                posting = self._search_term_posting_locked(term.casefold())
                 if context.is_exclusion:
                     has_matches = not matching_ids.issubset(posting)
                 else:
@@ -2231,7 +2233,7 @@ class SearchIndex:
         constraints: List[Set[int]] = []
 
         for tag in clause.required_tags:
-            posting = self._tag_family_posting_locked(tag.casefold())
+            posting = self._search_term_posting_locked(tag.casefold())
             if not posting:
                 return set()
             constraints.append(posting)
@@ -2250,7 +2252,7 @@ class SearchIndex:
 
         if clause.forbidden_tags:
             for tag in clause.forbidden_tags:
-                candidate_ids.difference_update(self._tag_family_posting_locked(tag.casefold()))
+                candidate_ids.difference_update(self._search_term_posting_locked(tag.casefold()))
 
         # A property term needs its property (or, missing it, its tag) on the note, on
         # the term's tag or a tag implying it.
@@ -2312,6 +2314,18 @@ class SearchIndex:
                 else:
                     self._tag_family_members[family] = [term_casefold]
         self._tag_notes_casefold[term_casefold].add(note_int_id)
+
+    def _search_term_posting_locked(self, tag_casefold: str) -> Set[int]:
+        """The notes a search's tag term finds: a folder term (ending in /) its folder and every
+        folder below it (docs/ready-to-build/folder-tags-in-search.md §1), whether or not the tree
+        is shown; any other term its tag's family, exactly."""
+        if not tag_casefold.endswith(FOLDER_TAG_END):
+            return self._tag_family_posting_locked(tag_casefold)
+        folders = [
+            posting for term, posting in self._tag_notes_casefold.items()
+            if term.startswith(tag_casefold) and term.endswith(FOLDER_TAG_END)
+        ]
+        return set().union(*folders)
 
     def _tag_family_posting_locked(self, tag_casefold: str) -> Set[int]:
         """The notes carrying a tag; for a tag without a value (@code), also those

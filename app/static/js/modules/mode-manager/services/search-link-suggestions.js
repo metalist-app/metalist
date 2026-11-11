@@ -1,7 +1,7 @@
 // Which search contexts the `[[` list offers as search links (docs/ready-to-build/search-links.md
 // §4): those whose search holds what is typed after `[[`, the current one first; with nothing
-// typed, the current one alone. Only plain search contexts with a search are offered: never a
-// folder context or a reference view (isSearch false), a blank search, or one holding [ or ],
+// typed, the current one alone. Only search contexts with a search are offered, folder contexts
+// included (folder-tags-in-search.md §5): never a reference view (isSearch false), a blank search, or one holding [ or ],
 // which a link can't hold. After `![[` the same are offered: `![[search:…]]` embeds the results.
 
 const SEARCH_LINK_PREFIX = 'search:';

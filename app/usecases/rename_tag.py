@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Callable
 
 from app.db.raw_connection import raw_sqlite_connection
 from app.db.session import begin_writer
@@ -13,7 +14,7 @@ from app.services.ontology_rules_store import rename_tag_everywhere
 from app.services.store import store
 from app.services.sync import generate_new_uuid
 from app.security.note_html import sanitize_note_html
-from app.services.search_links import has_search_links, rename_tag_in_search, rename_tag_in_search_links
+from app.services.search_links import has_search_links, rename_tag_in_search, rename_tag_in_search_links, rewrite_searches_in_search_links
 from app.services.tab_state import tab_state_store
 from app.services.tag_rename import rename_tag_in_tag_bar
 from app.utils.text_utils import strip_html
@@ -119,3 +120,35 @@ def apply_rename_tag_everywhere(*, old: str, new: str, token: str) -> dict:
         'renamedSearchCount': renamed_search_count,
         'updateUUID': update_uuid,
     }
+
+
+def rewrite_searches_everywhere(*, rewrite: Callable[[str], str], token: str) -> tuple[int, int]:
+    """Every search link's (and embedded search's) search and every search context's search,
+    rewritten by `rewrite` (a renamed or moved folder, virtual_folders.py), keeping notes' updated
+    times and cleaning what is written, as Rename tag does. Returns (notes changed, searches changed)."""
+    content_updates: list[tuple[str, str]] = []
+    for note_id in note_store.list_note_ids():
+        content = store.get(note_id).content
+        if not has_search_links(content):
+            continue
+        rewritten = sanitize_note_html(rewrite_searches_in_search_links(content, rewrite))
+        if rewritten != content:
+            content_updates.append((note_id, rewritten))
+    with begin_writer() as connection:
+        for note_id, content in content_updates:
+            ciphertext, nonce, tag = encrypt(content, token)
+            if (nonce is None) != (tag is None):
+                raise RuntimeError('Encrypted content must include both nonce and tag')
+            db_update_note_fields_preserving_updated_at(
+                connection, note_id, content=ciphertext, encryption_nonce=nonce, encryption_tag=tag,
+            )
+        rewritten_search_count = tab_state_store.rename_search_terms(rename=rewrite, connection=raw_sqlite_connection(connection))
+    for note_id, content in content_updates:
+        record = store.get(note_id)
+        if record.updated_at is None:
+            raise RuntimeError(f"Cannot preserve missing updated_at while rewriting search links: {note_id}")
+        cache_note(note_id, content)
+        cache_note_text(note_id, strip_html(content))
+        store.update_note_sources(note_id, content, record.tags, record.proposed_tags, updated_at=record.updated_at)
+    return len(content_updates), rewritten_search_count
+

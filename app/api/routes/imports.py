@@ -308,10 +308,7 @@ def _context_tags(context: ImportDropContext, prefix_folder: str) -> str:
     """The tags a drop's import gives its top notes (drop_context_tags); none from the menu."""
     if not context["isDrop"]:
         return ""
-    return drop_context_tags(
-        search=context["search"], folder_filter=tab_state_store.get_folder_filter(tab_id=context["tabId"]),
-        folder_prefix=prefix_folder,
-    )
+    return drop_context_tags(search=context["search"], folder_prefix=prefix_folder)
 
 
 @router.post("/folder")

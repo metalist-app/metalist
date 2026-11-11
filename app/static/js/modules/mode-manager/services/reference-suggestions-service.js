@@ -8,7 +8,6 @@ import { restoreSelection } from '../../editor-selection.js';
 import { contentMaxHeight, placePasteFormatOffer } from './floating-card-placement.js';
 import { PREVIEW_OWNERS, hideReferencePreview, placeReferencePreview, showReferencePreview } from './reference-preview-card-service.js';
 import { chosenReferenceText, chosenSearchLinkText } from './reference-text.js';
-import { isFolderContext } from './folder-context-state.js';
 import { getReferenceViewKindForTab } from './reference-source-navigation-service.js';
 import { searchesToOffer } from './search-link-suggestions.js';
 
@@ -200,7 +199,8 @@ function offeredSearches(query) {
     const contexts = ModeContext.tabOrder.map((tabId) => ({
         tabId,
         search: ModeContext.tabs[tabId].searchQuery,
-        isSearch: !isFolderContext(tabId) && getReferenceViewKindForTab(tabId) === '',
+        // A folder context's search is offered too (folder-tags-in-search.md §5).
+        isSearch: getReferenceViewKindForTab(tabId) === '',
     }));
     return searchesToOffer({ query, contexts, activeTabId: ModeContext.activeTabId, isEmbed })
         .map((search) => ({ kind: SEARCH_KIND, search }));

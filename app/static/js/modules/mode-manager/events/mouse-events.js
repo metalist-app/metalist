@@ -312,7 +312,6 @@ function isMouseDownOutsideEditExclusion(target) {
             '#reference-view-new-search',
             '#root-sort-indicator',
             '#date-range-indicator',
-            '#virtual-folder-indicator',
             // A folder clicked saves and leaves the note itself, then shows the folder: one click.
             '#virtual-folders',
             // The tab opening and closing the tree: when a folder context shows, the view
@@ -1602,18 +1601,6 @@ function handleClick(event) {
         if (event.target.closest('#date-range-indicator-clear')) {
             void CommandGate.run('dateRangeIndicator.clear', async () => {
                 await CommandPalette.setDateRangePreset('none');
-            });
-        }
-        return;
-    }
-
-    const virtualFolderIndicator = event.target.closest('#virtual-folder-indicator');
-    if (virtualFolderIndicator) {
-        event.preventDefault();
-        event.stopPropagation();
-        if (event.target.closest('#virtual-folder-indicator-clear')) {
-            void CommandGate.run('virtualFolderIndicator.clear', async () => {
-                await CommandPalette.setVirtualFolder('');
             });
         }
         return;

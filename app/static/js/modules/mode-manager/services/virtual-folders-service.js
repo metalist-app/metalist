@@ -1,7 +1,7 @@
 import { ApplicationState } from '../../application-state.js';
 import { NotesAPI } from '../../api-client.js';
 import { escapeHtml } from '../../html-escape.js';
-import { showSearchInputChip } from './search-input-chip-service.js';
+import { CHOSEN_FOLDER, CHOSEN_NONE, CHOSEN_TOP, chosenFolderOfSearch } from './folder-search-terms.js';
 import { getActiveReferenceChain, isViewingReferenceSource } from './reference-source-navigation-service.js';
 import { showContextMenu } from '../../context-menu/context-menu-service.js';
 import { showErrorDialog } from '../../modals/error-dialog.js';
@@ -18,8 +18,9 @@ export { isVirtualFoldersShown } from './virtual-folders-state.js';
 // folder in the vault, each with its subfolders, and no notes (the maintainer, 2026-11-01:
 // the column shows them). The tree belongs to folder contexts (docs/ready-to-build/virtual-folders.md, "Folder contexts"):
 // open folders tab goes to the folder context used last, close folders tab to the plain search
-// used last, and the tree shows in folder contexts only; clicking a folder narrows the one shown
-// to that folder and the folders below it (a chip in the search input). The notes column moves right to make room.
+// used last, and the tree shows in folder contexts only; clicking a folder makes it the search of the
+// one shown (`Projects/`, folder-tags-in-search.md), which finds the folders below it too. The notes
+// column moves right to make room.
 // Right-click: New Folder, Rename Folder, Delete Folder; a folder dragged onto another moves
 // into it. A renamed, moved or deleted folder changes the tags on the notes.
 
@@ -31,16 +32,15 @@ const DRAG_TYPE = 'application/x-metalist-folder';
 const DROP_CLASS = 'is-drop-target';
 // Dropped on the tree's empty space: to the top.
 const TOP = '';
+// No folder marked: the search names two, or folders joined by OR (never a folder path, which ends in /).
+const NO_CHOICE = 'none';
 // A New Folder no note carries yet.
 const NO_NOTES = 0;
 const ONE_NOTE = 1;
 
 const moduleState = ApplicationState.createFields('virtual-folders-service', {
-    // The active tab's filter, as the server last sent it: a folder, or '' for none.
+    // The folder the active tab's search chooses: a folder as typed, TOP for `/`, NO_CHOICE for none.
     folder: '',
-    // Every tab's folder, as the server last sent it (a tab in none is absent): the list of
-    // search contexts names a tab narrowed to a folder by it.
-    tabFolders: Object.freeze({}),
     // The folders the server last sent, by path.
     folders: Object.freeze([]),
     // How many notes clicking each folder shows, with the folders below it, in the view's
@@ -97,29 +97,28 @@ export function activeVirtualFolder() {
     return moduleState.folder;
 }
 
-/** The folder a tab is narrowed to, '' for none (the server lists only tabs in a folder). */
+function folderOfChoice(choice) {
+    if (choice.kind === CHOSEN_FOLDER) return choice.folder;
+    if (choice.kind === CHOSEN_TOP) return TOP;
+    if (choice.kind === CHOSEN_NONE) return NO_CHOICE;
+    throw new Error(`Unknown chosen folder: ${choice.kind}`);
+}
+
+/** The folder a tab's search chooses (folder-search-terms.js): TOP for `/`, NO_CHOICE for none. */
 export function folderOfTab(tabId) {
     if (typeof tabId !== 'string' || tabId === '') {
         throw new Error('folderOfTab requires a tab id');
     }
-    if (!Object.prototype.hasOwnProperty.call(moduleState.tabFolders, tabId)) return '';
-    return moduleState.tabFolders[tabId];
+    return folderOfChoice(chosenFolderOfSearch(ModeContext.tabs[tabId].searchQuery));
 }
 
-/** A folder context was just narrowed to folder ('' for none), before the view's refresh reads
- * every tab's folder again (chooseFolder). */
-export function recordFolderContextFolder(tabId, folder) {
-    if (typeof tabId !== 'string' || tabId === '' || typeof folder !== 'string') {
-        throw new Error('recordFolderContextFolder requires the tab and its folder');
-    }
-    const tabFolders = { ...moduleState.tabFolders };
-    if (folder === TOP) delete tabFolders[tabId];
-    else tabFolders[tabId] = folder;
-    remember('tabFolders', Object.freeze(tabFolders));
+// A tree folder is the one chosen when the search names it, in any case (search reads tags so).
+function isChosen(path) {
+    return moduleState.folder !== NO_CHOICE && moduleState.folder.toLowerCase() === path.toLowerCase();
 }
 
-/** The context shown changed: the tree shows only in folder contexts, and the folder of
- * the one shown in the tree and the chip at once, not one refresh later beside a plain search. */
+/** The context shown changed: the tree shows only in folder contexts, and the folder its search
+ * chooses at once, not one refresh later. */
 export function showFolderOfActiveContext() {
     const treeTabId = treeContextTabId();
     rememberVirtualFoldersShown(treeTabId !== '');
@@ -154,18 +153,15 @@ async function readAndDrawVirtualFolders() {
     }
     const answer = await NotesAPI.listVirtualFolders();
     recordFolderContextsFromServer(answer);
-    if (typeof answer.folder !== 'string' || !Array.isArray(answer.folders)
-        || answer.tabFolders === null || typeof answer.tabFolders !== 'object'
-        || Object.values(answer.tabFolders).some((folder) => typeof folder !== 'string')
+    if (typeof answer.folder !== 'string' || typeof answer.chosenKind !== 'string' || !Array.isArray(answer.folders)
         || answer.noteCounts === null || typeof answer.noteCounts !== 'object'
         || answer.noteTotals === null || typeof answer.noteTotals !== 'object') {
         throw new Error('Virtual folders answer malformed');
     }
     // A folder newly chosen shows in the tree; a refresh leaves what the person closed closed.
-    const isNewlyChosen = answer.folder !== moduleState.folder;
-    remember('folder', answer.folder);
-    const haveTabFoldersChanged = JSON.stringify(answer.tabFolders) !== JSON.stringify(moduleState.tabFolders);
-    remember('tabFolders', Object.freeze({ ...answer.tabFolders }));
+    const chosen = folderOfChoice({ kind: answer.chosenKind, folder: answer.folder });
+    const isNewlyChosen = chosen !== moduleState.folder;
+    remember('folder', chosen);
     remember('folders', Object.freeze(answer.folders));
     remember('noteCounts', Object.freeze({ ...answer.noteCounts }));
     remember('noteTotals', Object.freeze({ ...answer.noteTotals }));
@@ -173,11 +169,9 @@ async function readAndDrawVirtualFolders() {
     // A new folder stays new until something is in it: a note carrying its tag, or a folder below it.
     const known = answer.folders;
     remember('newPaths', Object.freeze(moduleState.newPaths.filter((path) => !known.some((knownPath) => knownPath.startsWith(path)))));
-    if (isNewlyChosen && answer.folder.endsWith(FOLDER_MARK)) openTo(answer.folder);
+    if (isNewlyChosen && chosen.endsWith(FOLDER_MARK)) openTo(chosen);
     rememberVirtualFoldersShown(treeContextTabId() !== '');
     render();
-    // The list of search contexts names each tab by its folder too (keyboard-events.js listens).
-    if (haveTabFoldersChanged) document.dispatchEvent(new CustomEvent('metalist:tab-folders-changed'));
 }
 
 /** The folders tab, or Show/Hide Virtual Folders: close folders tab in a folder context (the
@@ -264,7 +258,7 @@ function sortedByName(paths, nodes) {
 function folderHtml(path, tree, depth) {
     const node = tree.nodes.get(path);
     const isOpen = moduleState.openPaths.includes(path);
-    const isFiltered = moduleState.folder === path;
+    const isFiltered = isChosen(path);
     const isNew = moduleState.newPaths.includes(path);
     const children = sortedByName(node.children, tree.nodes);
     // An innermost folder has nothing to open.
@@ -382,7 +376,7 @@ function onTreeClick(event) {
         return;
     }
     // The chosen folder clicked again: no folder, as `/` (the maintainer, 2026-11-01).
-    if (moduleState.folder === path && !isViewingReferenceSource()) {
+    if (isChosen(path) && !isViewingReferenceSource()) {
         void handlers.setFilter(TOP);
         return;
     }
@@ -678,7 +672,6 @@ function render() {
     } else {
         tree.innerHTML = '';
     }
-    updateVirtualFolderIndicator();
 }
 
 // The button at the top left (the maintainer, 2026-11-02): a click shows or hides the tree, as
@@ -698,18 +691,3 @@ function renderToggleButton() {
     button.onclick = () => toggleFolderContextFromTab();
 }
 
-/** The chip in the search input: shown while the active tab is narrowed to a folder. */
-export function updateVirtualFolderIndicator() {
-    const indicator = document.getElementById('virtual-folder-indicator');
-    const label = document.getElementById('virtual-folder-indicator-label');
-    if (!(indicator instanceof HTMLElement) || !(label instanceof HTMLElement)) {
-        throw new Error('virtual-folder-indicator element missing');
-    }
-    if (moduleState.folder === '') {
-        showSearchInputChip(indicator, { isShown: false });
-        return;
-    }
-    label.textContent = moduleState.folder;
-    label.title = `Notes in ${moduleState.folder}`;
-    showSearchInputChip(indicator, { isShown: true });
-}

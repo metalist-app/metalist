@@ -151,7 +151,7 @@ import {
 import { FolderNameModal } from '../modals/folder-name-modal.js';
 import { DeleteFolderModal } from '../modals/delete-folder-modal.js';
 import {
-    activeVirtualFolder, openTo, toggleFolderContextFromTab, wireVirtualFolders,
+    openTo, toggleFolderContextFromTab, wireVirtualFolders,
 } from '../mode-manager/services/virtual-folders-service.js';
 import {
     DEFAULT_SEARCH_SUGGESTION_WINDOWS_VALUE,
@@ -1721,33 +1721,6 @@ class CommandPaletteController {
             this._deleteFolderModal = new DeleteFolderModal();
         }
         return this._deleteFolderModal.openFor(form);
-    }
-
-    /** Narrow the folder context shown to a virtual folder and the folders below it ('' for
-     * every folder again: the chip's ×), as a Files filter, its search kept; from a reference
-     * view, back to the view the reference views started from first. A folder clicked in the
-     * tree also empties the search (chooseFolder). */
-    async setVirtualFolder(folder) {
-        if (typeof folder !== 'string') {
-            throw new Error('setVirtualFolder requires a folder tag or ""');
-        }
-        if (isViewingReferenceSource()) {
-            await navigateToReferenceOrigin();
-        }
-        const activeTabId = ModeContext.activeTabId;
-        if (typeof activeTabId !== 'string' || activeTabId.length === 0) {
-            throw new Error('ModeContext.activeTabId must be a non-empty string');
-        }
-        if (activeVirtualFolder() === folder) {
-            return;
-        }
-        if (ModeContext.isEditing) {
-            await actionSaveAndExitEditingWithoutRefreshing();
-        }
-        ModeContext.bumpUndoContextEpoch('virtualFolder');
-        await NotesAPI.setVirtualFolderFilter(activeTabId, folder);
-        this._showChangedViewFromTop(activeTabId);
-        await this._refreshChangedViewFromTop('virtualFolder');
     }
 
     // The active tab's Files filter (file-filter-service.js): 'none' when it shows every note.

@@ -1,6 +1,6 @@
 """Virtual folders, an experiment (docs/ready-to-build/virtual-folders.md;
-app/services/virtual_folders.py): the folders in a view and a tab's
-folder filter (only folder contexts have one, kept in tab state)."""
+app/services/virtual_folders.py): the folders in a view and the folder its search chooses
+(docs/ready-to-build/folder-tags-in-search.md)."""
 
 from __future__ import annotations
 
@@ -15,7 +15,10 @@ from app.api.transactions import transactional_route
 from app.services.undo_state import reset_undo_stack
 from app.services.input_errors import InputRejected
 from app.services.tab_state import tab_state_store
-from app.services.virtual_folders import NO_FOLDER, all_folder_tags, folder_note_counts, folder_note_totals, folder_paths, is_folder_tag
+from app.services.virtual_folders import (
+    NO_FOLDER, all_folder_tags, chosen_folder_of, folder_note_counts, folder_note_totals, folder_paths, is_folder_tag,
+    without_folder_terms,
+)
 from app.usecases.virtual_folders import (
     delete_folder, delete_folder_and_notes, file_note_in_folder, move_folder, notes_in_folder, rename_folder,
 )
@@ -49,14 +52,6 @@ class FolderNotesRequest(TypedDict):
     folder: Text
 
 
-class VirtualFolderFilterRequest(TypedDict):
-    tabId: Identifier
-    # The folder tag ('Projects/Client-A/'), or '' for every folder again.
-    folder: Text
-    clientId: Identifier
-    undoContext: UndoContext
-
-
 class ChooseFolderRequest(TypedDict):
     # The folder context the folder was clicked in.
     tabId: Identifier
@@ -69,19 +64,22 @@ class ChooseFolderRequest(TypedDict):
 @router.post("")
 @transactional_route
 def list_virtual_folders(request: Request, body: ViewScope) -> Dict[str, object]:
-    """The tab's folder filter, and every folder in the vault: the whole tree whatever the
+    """The folder the search chooses, and every folder in the vault: the whole tree whatever the
     view shows (the maintainer, 2026-11-01: a tree following the search was confusing), each
-    with how many notes clicking it would show (the top's under '')."""
+    with how many notes clicking it would show (the top's under ''). The chosen folder is read
+    from the search (`Projects/`), and the counts read the search without its folders, so choosing
+    one doesn't dim the others (folder-tags-in-search.md §3)."""
     require_request_auth_token(request)
     if body["isUntaggedView"]:
         # Untagged notes are in no folder.
         counts = {path: 0 for path in [NO_FOLDER, *folder_paths()]}
     else:
-        counts = folder_note_counts(body["search"])
+        counts = folder_note_counts(without_folder_terms(body["search"]))
+    chosen = chosen_folder_of(body["search"])
     return {
-        "folder": tab_state_store.get_folder_filter(tab_id=body["tabId"]),
-        # Every tab's folder, for the list of search contexts (a tab in none is absent).
-        "tabFolders": tab_state_store.folder_filters(),
+        # "folder": its one folder term; "top": none (`/`); "none": two, or folders joined by OR.
+        "chosenKind": chosen.kind,
+        "folder": chosen.folder,
         # The search contexts that are folder contexts, with the tree.
         "folderContexts": tab_state_store.folder_contexts(),
         "folders": all_folder_tags(),
@@ -104,27 +102,12 @@ def create_folder_context(request: Request) -> Dict[str, object]:
 @router.post("/folder-context")
 @transactional_route
 def choose_folder(request: Request, body: ChooseFolderRequest) -> Dict[str, object]:
-    """A folder clicked in the tree: the folder context it was clicked in narrowed to it, its
-    search emptied. A new view, so its undo history starts again. The tab state answered."""
+    """A folder clicked in the tree: the folder context it was clicked in searches it, its search
+    before replaced. A new view, so its undo history starts again. The tab state answered."""
     require_request_auth_token(request)
     snapshot = tab_state_store.choose_folder(tab_id=body["tabId"], folder=body["folder"])
     reset_undo_stack(body["clientId"], body["undoContext"])
     return snapshot
-
-
-@router.post("/filter")
-@transactional_route
-def set_virtual_folder_filter(request: Request, body: VirtualFolderFilterRequest) -> Dict[str, object]:
-    """Narrow a folder context to exactly one folder ('' for every folder again, the chip's ×),
-    its search kept: a new view, so its undo history starts again, as for a Files filter."""
-    require_request_auth_token(request)
-    tab_id = body["tabId"]
-    # Kept with the tab's other filters, so a server restart keeps it (tab_state.py).
-    result = tab_state_store.set_folder_filter(tab_id=tab_id, folder=body["folder"])
-    changed = result["changed"]
-    if changed:
-        reset_undo_stack(body["clientId"], body["undoContext"])
-    return {"folder": tab_state_store.get_folder_filter(tab_id=tab_id), "changed": changed}
 
 
 class FileNoteInFolderRequest(TypedDict):

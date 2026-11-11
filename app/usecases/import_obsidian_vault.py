@@ -47,7 +47,7 @@ from app.services.obsidian_import.sources import FILES, IMPORT_SOURCES, ImportSo
 from app.services.obsidian_import.tree import CONTENT_FORMATS, SPLIT_MODES, NoteNode, count_notes
 from app.services.obsidian_import.vault import NOT_UTF8_REASON, VaultContents, VaultFile, read_text_file, read_vault
 from app.services.store import store
-from app.services.virtual_folders import all_folder_tags, search_for_new_note
+from app.services.virtual_folders import all_folder_tags, without_folder_terms
 from app.services.disk_space import full_disk_is_rejected, require_room_for_files
 from app.upload_limits import MAX_IN_MEMORY_FILE_BYTES
 from app.usecases.base import QueryCommand
@@ -470,17 +470,18 @@ def with_context_tags(tags: Tuple[str, ...], context_tags: str) -> Tuple[str, ..
     return (*tags, *added)
 
 
-def drop_context_tags(*, search: str, folder_filter: str, folder_prefix: str) -> str:
+def drop_context_tags(*, search: str, folder_prefix: str) -> str:
     """The tags an import of files dropped in a search context gives its top notes, so they
     show in it (the maintainer, 2026-11-03): those a note made there would get (search: the
-    context's search, '' for none). In a context narrowed to a virtual folder they are filed
-    in it, as a new note is, unless they go into a folder of their own (folder_prefix, as typed).
-    Never another import's tag: a note with two is found by neither import's search."""
+    context's search, '' for none). A folder in the search (`Projects/`) files them in it, as a
+    new note is, unless they go into a folder of their own (folder_prefix, as typed), when the
+    search's folders are left out. Never another import's tag: a note with two is found by
+    neither import's search."""
+    if import_folder_prefix(folder_prefix) != "":
+        search = without_folder_terms(search)
     context_search = None
     if search.strip() != "":
         context_search = search
-    if import_folder_prefix(folder_prefix) == "":
-        context_search = search_for_new_note(context_search, folder_filter)
     tags = compute_initial_tags_for_new_note(parent_id=None, search_query=context_search)
     return " ".join(token for token in _TAG_TOKEN_RE.findall(tags) if not is_source_tag(token))
 

@@ -18,6 +18,8 @@ search alone. Not built yet: §4's other drags, §5 renames, §6 New Folder, the
 
 ## Folder contexts (built 2026-11-07)
 
+(Changed 2026-11-11: the folder chosen in the tree is the context's search, `Projects/`, not a separate folder with a chip; the context is named by its search, and the chip, `folderFilters` and the `/virtual-folders/filter` route are gone: `docs/ready-to-build/folder-tags-in-search.md`.)
+
 Agreed with the maintainer 2026-11-07, cases 1-8, replacing §2's toggle and §3's "clicking a folder
 narrows the current search context". **A search context is a folder context or a plain search.**
 
@@ -92,7 +94,7 @@ narrows the current search context". **A search context is a folder context or a
 
 ## 3. Clicking a folder filters
 
-(Replaced in part by "Folder contexts" above; the chip goes with `docs/ready-to-build/folder-tags-in-search.md`, which makes the folder search text.)
+(Replaced: since 2026-11-11 a folder clicked becomes the folder context's search, `Projects/`, with no chip: `docs/ready-to-build/folder-tags-in-search.md`. What follows is history.)
 
 - **It narrows the current results to notes in exactly that folder,** shown as a view-indicator chip in the search box (`Projects/ ×`). The search text and the search context don't change; `×` removes the filter. In the list of search contexts the context is named by its search, then its folder (`journal Projects/`), or by the folder alone with no search (`Projects/`, never `(empty)`; built 2026-11-07: the server lists every tab's folder, `tabFolders`, and `search-context-label.js` names it).
 - **Exact folder only:** `Projects/` shows notes filed directly in it, not those in `Projects/Client-A/`. Subfolders are a click away in the tree.
