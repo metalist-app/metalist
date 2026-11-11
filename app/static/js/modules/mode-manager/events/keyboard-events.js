@@ -55,14 +55,14 @@ import { NotesAPI } from '../../api-client.js';
 import { ErrorHandler } from '../../error-handler.js';
 import { describeDroppedItems, loneDroppedFolderEntry, readDroppedFolder } from '../services/dropped-folders.js';
 import {
-    fileNewNoteInFolder, virtualFoldersUpToDate, showFolderOfActiveContext, virtualFolderAt,
+    fileNewNoteInFolder, virtualFoldersUpToDate, showFolderOfActiveContext, updateVirtualFolders, virtualFolderAt,
 } from '../services/virtual-folders-service.js';
-import { isFolderContext, usedLastAmong } from '../services/folder-context-state.js';
+import { CHOSEN_FOLDERS, chosenFoldersOfSearch } from '../services/folder-search-terms.js';
 import { searchContextLabel } from '../services/search-context-label.js';
 import { checkBackgroundWork } from '../services/background-work-cards.js';
 import { isCopyOfDialogSelection } from '../services/dialog-copy-service.js';
 import {
-    persistTabStateSnapshot, createTabOnServer, deleteTabOnServer, chooseFolderOnServer, createFolderContextOnServer,
+    persistTabStateSnapshot, createTabOnServer, deleteTabOnServer, chooseFolderOnServer, setTreeShownOnServer,
     reloadTabStateFromServer,
 } from '../services/tab-state-service.js';
 import { cacheNotesDomForTab, restoreNotesDomForTab, cloneNotesDomForTab, clearCachedNotesDomForTab, clearActiveNotesDom } from '../services/tab-dom-cache-service.js';
@@ -3571,10 +3571,10 @@ function buildTabReferenceIconHtml(tabId) {
     return `<span class="${iconClasses.join(' ')} tab-context-reference-icon" aria-hidden="true"></span>`;
 }
 
-// A folder context's row starts with the tree's folder icon, beside its folder's name (the
-// maintainer, 2026-11-07).
+// A search context whose search chooses a folder starts with the tree's folder icon, beside its
+// name (the maintainer, 2026-11-07, for folder contexts, which became ordinary ones 2026-11-11).
 function buildTabFolderIconHtml(tabId) {
-    if (!isFolderContext(tabId)) return '';
+    if (chosenFoldersOfSearch(ModeContext.tabs[tabId].searchQuery).kind !== CHOSEN_FOLDERS) return '';
     return '<span class="virtual-folder-icon tab-context-folder-icon" aria-hidden="true"></span>';
 }
 
@@ -3608,11 +3608,11 @@ export function updateSearchContextsList() {
         }
         const referenceNavigationLabel = getReferenceNavigationLabelForTab(tabId);
         // A context is named by its search, as its search box shows it, a folder chosen in the tree
-        // included (`Projects/ @todo`); a folder context with none is `/`, never "(empty)". The name
-        // uses the row's whole width and ends in an ellipsis only where it runs out (main.css).
+        // included (`Projects/ @todo`). The name uses the row's whole width and ends in an ellipsis
+        // only where it runs out (main.css).
         const displayQuery = referenceNavigationLabel !== ''
             ? referenceNavigationLabel
-            : searchContextLabel({ search: originalQuery, isFolderContext: isFolderContext(tabId) });
+            : searchContextLabel({ search: originalQuery });
         
         const isActive = tabId === activeTabId;
 
@@ -3991,27 +3991,25 @@ async function openBlankSearchContext() {
 }
 
 /**
- * A folder clicked in the tree ('' for `/`): the folder context it was clicked in, narrowed to it,
- * its search emptied, shown from the top (docs/ready-to-build/virtual-folders.md, "Folder contexts"). From a
- * reference view opened from it, back there first.
+ * A folder clicked in the tree ('' for `/`): the search of the context shown, the one before
+ * replaced; with adds (⌘-click), added or taken out, the rest of the search kept
+ * (docs/ready-to-build/folders-tab-and-multiple-folders.md §2). Shown from the top. From a reference
+ * view, back to the context it was opened from first.
  */
-export async function chooseFolder(folder) {
-    if (typeof folder !== 'string') {
-        throw new Error('chooseFolder requires a folder or \'\'');
+export async function chooseFolder(folder, adds) {
+    if (typeof folder !== 'string' || typeof adds !== 'boolean') {
+        throw new Error('chooseFolder requires a folder or \'\', and whether it adds');
     }
     if (isViewingReferenceSource()) {
         await navigateToReferenceOrigin();
     }
     const folderTabId = ModeContext.activeTabId;
-    if (!isFolderContext(folderTabId)) {
-        throw new Error('A folder is chosen only in a folder context: the tree shows nowhere else');
-    }
     closeOpenSearchQuote();
     if (ModeContext.isEditing) {
         await actionSaveAndExitEditingWithoutRefreshing();
     }
     await persistTabStateSnapshot();
-    const response = await chooseFolderOnServer(folderTabId, folder);
+    const response = await chooseFolderOnServer(folderTabId, folder, adds);
     ModeContext.bumpUndoContextEpoch('virtualFolder');
     await settleViewRequestsBeforeTabChange();
     // Its search, now the folder (`Projects/`, '' for `/`), and top scroll come with the answer; it is
@@ -4032,54 +4030,15 @@ export async function chooseFolder(folder) {
     await actionRefreshAndMaybeSelect({ startedAt: performance.now(), context: 'folderContext.choose', animateNoteChanges: false, startAtListTop: true, scrollToTopAfterRender: true });
 }
 
-/** Open folders tab: the folder context used last, as left; with none, a new one at the end of
- * the list on every note (`/`), the tree with it (docs/ready-to-build/virtual-folders.md, "Folder contexts"). */
-export async function openFoldersTab() {
-    if (isViewingReferenceSource()) {
-        await navigateToReferenceOrigin();
+/** The folders tab: the tree shown or hidden. No search context changes, nor the note being
+ * edited or the list's scroll; the column moves to make room (folders-tab-and-multiple-folders.md §1). */
+export async function setFoldersTreeShown(isShown) {
+    if (typeof isShown !== 'boolean') {
+        throw new Error('setFoldersTreeShown requires whether the tree shows');
     }
-    const usedLast = usedLastAmong(ModeContext.tabOrder.filter((tabId) => isFolderContext(tabId)));
-    if (usedLast !== '') {
-        await switchToTabContext(usedLast, { animateNoteChanges: false });
-        return;
-    }
-    if (ModeContext.tabOrder.length >= CONFIG.TABS.MAX_TABS) {
-        ErrorHandler.showInfoBanner(
-            `Search context limit reached (${CONFIG.TABS.MAX_TABS}). Close one before adding another.`,
-            TAB_LIMIT_BANNER_SECONDS * MS_PER_SECOND,
-        );
-        return;
-    }
-    closeOpenSearchQuote();
-    snapshotActiveTabScrollState();
-    await persistTabStateSnapshot();
-    const response = await createFolderContextOnServer();
-    const folderTabId = response.newTabId;
-    if (typeof folderTabId !== 'string' || !response.tabs[folderTabId] || !isFolderContext(folderTabId)) {
-        throw new Error('The server made no folder context');
-    }
-    await settleViewRequestsBeforeTabChange();
-    ModeContext.hydrateTabState(response, { preserveActiveRootTracking: true });
-    ModeContext.resetTabDiffCache(folderTabId, { preserveRootAnchor: false });
-    await switchToTabContext(folderTabId, { animateNoteChanges: false });
-}
-
-/** Close folders tab: the plain search used last, as left, with no tree; with none, a new blank
- * one at the end of the list. Nothing is deleted. */
-export async function closeFoldersTab() {
-    if (isViewingReferenceSource()) {
-        await navigateToReferenceOrigin();
-    }
-    // A reference view is a passing look, not a search to go back to.
-    const plainSearches = ModeContext.tabOrder.filter(
-        (tabId) => !isFolderContext(tabId) && getReferenceViewKindForTab(tabId) === '',
-    );
-    const usedLast = usedLastAmong(plainSearches);
-    if (usedLast !== '') {
-        await switchToTabContext(usedLast, { animateNoteChanges: false });
-        return;
-    }
-    await openBlankSearchContext();
+    await setTreeShownOnServer(isShown);
+    showFolderOfActiveContext();
+    if (isShown) await updateVirtualFolders();
 }
 
 export async function openReferenceInNewTab(referenceNoteId) {

@@ -1,6 +1,6 @@
 # The folders tab only shows the tree, and several folders add results
 
-**Status:** Agreed with the maintainer 2026-11-11. Ready to build.
+**Status:** Agreed with the maintainer 2026-11-11. Built 2026-11-11: tests `tests/unit/test_folders_tab.py`, `test_multiple_folders.py`, `scripts/browser-folder-context-regressions.mjs`. The permanent docs (§8) are folded in when the feature is finished.
 
 Written from a read-only look at the repo. Check the code references before relying on them.
 

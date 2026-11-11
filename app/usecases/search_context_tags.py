@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from app.services.search_index import extract_tags_for_search, search_index
+from app.services.search_index import FOLDER_TAG_END, extract_tags_for_search, search_index
 from app.services.search_query import SearchClause, parse_search_query
 from app.services.tag_properties import ANY_TAG, IMPLICIT_PROPERTY, PROPERTY_SEPARATOR, PropertyCondition
 from app.services.search_text import build_searchable_text_casefold
@@ -93,7 +93,17 @@ def _tags_matching_clause(clause: SearchClause, *, parent_id: str | None, conten
             for term in sorted(clause.required_tags)
         ]
     )
+    # Folder terms add results (docs/ready-to-build/folders-tab-and-multiple-folders.md §4): a
+    # note in one of them, or a folder below one, misses none; a note in none gets them all.
+    carried_casefold = inherited_non_meta_casefold | explicit_terms_casefold
+    folder_terms_casefold = [term.casefold() for term in required_tag_terms if term.endswith(FOLDER_TAG_END)]
+    is_in_a_folder = any(
+        carried.endswith(FOLDER_TAG_END) and carried.startswith(folder)
+        for carried in carried_casefold for folder in folder_terms_casefold
+    )
     for term in required_tag_terms:
+        if is_in_a_folder and term.endswith(FOLDER_TAG_END):
+            continue
         if term.startswith("@"):
             if term.casefold() in explicit_terms_casefold:
                 continue

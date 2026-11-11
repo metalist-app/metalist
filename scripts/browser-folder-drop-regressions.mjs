@@ -120,16 +120,15 @@ async function importDroppedFolder(page, {name, into, prefixText, files}) {
   return uploadId;
 }
 
-// What the window shows: the context, its folder and search, and the notes listed.
+// What the window shows: the context, whether the tree shows, the folders chosen, the search, and the notes listed.
 async function shownNow(page) {
   return page.evaluate(async () => {
     const {ModeContextInstance: mode} = await import('/static/js/modules/mode-manager/mode-context.js');
-    const {activeVirtualFolder} = await import('/static/js/modules/mode-manager/services/virtual-folders-service.js');
-    const {isFolderContext} = await import('/static/js/modules/mode-manager/services/folder-context-state.js');
+    const {chosenVirtualFolders, isVirtualFoldersShown} = await import('/static/js/modules/mode-manager/services/virtual-folders-service.js');
     const notes = [...document.querySelectorAll('#notes-container > .note')];
     return {
-      tabId: mode.activeTabId, contextCount: mode.tabOrder.length, isFolderContext: isFolderContext(mode.activeTabId),
-      folder: activeVirtualFolder(), search: mode.searchQuery, scrollY: window.scrollY,
+      tabId: mode.activeTabId, contextCount: mode.tabOrder.length, treeShown: isVirtualFoldersShown(),
+      folders: [...chosenVirtualFolders()], search: mode.searchQuery, scrollY: window.scrollY,
       noteIds: notes.map(note => note.dataset.noteId), noteTexts: notes.map(note => note.textContent),
     };
   });
@@ -138,7 +137,7 @@ async function shownNow(page) {
 async function chooseTreeFolder(page, folder) {
   await page.evaluate(async folder => {
     const {chooseFolder} = await import('/static/js/modules/mode-manager/events/keyboard-events.js');
-    await chooseFolder(folder);
+    await chooseFolder(folder, false);
   }, folder);
   await idle(page);
 }
@@ -176,10 +175,10 @@ function assertOnlyItsNotes(shown, imported, label) {
   assert.ok(shown.noteTexts.every(text => text.includes(`of ${imported}`)), `${label}: the notes listed are ${imported}'s: ${JSON.stringify(shown.noteTexts)}`);
 }
 
-// Cases 1, 2, 3 and 6: a new folder with the tree showing is chosen, and shows from its top.
+// Cases 1, 2, 3 and 6: a new folder with the tree showing is chosen, its search, and shows from its top.
 function assertItsNewFolder(page, shown, before, folder, imported, label) {
-  assert.deepEqual({folder: shown.folder, search: shown.search, tabId: shown.tabId, contextCount: shown.contextCount, scrollY: shown.scrollY},
-    {folder, search: '', tabId: before.tabId, contextCount: before.contextCount, scrollY: 0}, `${label}: its new folder is chosen in the same context`);
+  assert.deepEqual({folders: shown.folders, search: shown.search, tabId: shown.tabId, contextCount: shown.contextCount, scrollY: shown.scrollY},
+    {folders: [folder], search: folder, tabId: before.tabId, contextCount: before.contextCount, scrollY: 0}, `${label}: its new folder is chosen in the same context`);
   assertOnlyItsNotes(shown, imported, label);
   return page.$eval(`#virtual-folders .virtual-folder.is-filtered > [data-virtual-folder="${folder}"]`, row => row.getBoundingClientRect().height > 0);
 }
@@ -188,7 +187,7 @@ function assertItsNewFolder(page, shown, before, folder, imported, label) {
 function assertItsOwnSearch(shown, before, imported, label) {
   assert.equal(shown.contextCount, before.contextCount + 1, `${label}: one new search context`);
   assert.notEqual(shown.tabId, before.tabId, `${label}: the new context is the one shown`);
-  assert.equal(shown.isFolderContext, false, `${label}: a plain search`);
+  assert.equal(shown.treeShown, before.treeShown, `${label}: the tree as it was`);
   assert.match(shown.search, /^imported:source=files/, `${label}: it searches the import's tag`);
   assertOnlyItsNotes(shown, imported, label);
 }
@@ -232,7 +231,7 @@ async function checkWhereEachDropEnds(page, created, contexts) {
   created.push(...shown.noteIds);
   assert.ok(await assertItsNewFolder(page, shown, before, 'Droppedcolumn/', 'Droppedcolumn', 'dropped on the column in a folder'), 'shown in the tree');
 
-  // 6: a search typed in the folder context: cleared, as clicking the folder clears it.
+  // 6: a search typed: replaced by the new folder, as clicking the folder replaces it.
   await chooseTreeFolder(page, '');
   await typeSearch(page, 'drop');
   before = await shownNow(page);
@@ -256,26 +255,26 @@ async function checkWhereEachDropEnds(page, created, contexts) {
   await deleteEarlierImports(page, created);
   created.push(await page.evaluate(async () => {
     const {NotesAPI} = await import('/static/js/modules/api-client.js');
-    const {openFoldersTab} = await import('/static/js/modules/mode-manager/events/keyboard-events.js');
     const note = await NotesAPI.createNote(null, '');
     await NotesAPI.saveNote(note.id, '<p>Already in the folder</p>', 'Droppedexisting/');
-    await openFoldersTab();
     return note.id;
   }));
   await idle(page);
   before = await shownNow(page);
-  assert.equal(before.isFolderContext, true, 'back in the folder context');
+  assert.equal(before.treeShown, true, 'the tree shown');
   await importDroppedFolder(page, {name: 'Droppedagain', into: '', prefixText: 'Droppedexisting', files: filesOf('Droppedagain')});
   shown = await shownNow(page);
   created.push(...shown.noteIds);
   contexts.push(shown.tabId);
   assertItsOwnSearch(shown, before, 'Droppedagain', 'added to an existing folder');
 
-  // 7: a plain search, whose words the imported notes don't match.
+  // 7: the tree hidden, a search whose words the imported notes don't match.
   await deleteEarlierImports(page, created);
+  await page.click('#virtual-folders-button');
+  await idle(page);
   await typeSearch(page, 'zzznothing');
   before = await shownNow(page);
-  assert.equal(before.isFolderContext, false, 'a plain search');
+  assert.equal(before.treeShown, false, 'the tree hidden');
   await importDroppedFolder(page, {name: 'Droppedplain', into: '', prefixText: null, files: filesOf('Droppedplain')});
   shown = await shownNow(page);
   created.push(...shown.noteIds);
@@ -311,7 +310,7 @@ export async function checkFolderDrops(page) {
   await page.reload();
   await page.waitForSelector('[data-app-ready="true"]');
   await idle(page);
-  // The tree shows in folder contexts (docs/ready-to-build/virtual-folders.md, "Folder contexts"): the folders tab opens it.
+  // The folders tab shows the tree (docs/ready-to-build/folders-tab-and-multiple-folders.md §1).
   await page.click('#virtual-folders-button');
   await idle(page);
   const created = [folderNoteId];
@@ -322,13 +321,25 @@ export async function checkFolderDrops(page) {
     created.push(...await checkFolderOnAFolder(page));
     await checkWhereEachDropEnds(page, created, contexts);
   }, async () => {
-    await page.evaluate(async ({ids, contexts}) => {
-      const {deleteTabOnServer} = await import('/static/js/modules/mode-manager/services/tab-state-service.js');
-      for (const id of contexts) await deleteTabOnServer(id);
-      // Closes the folder context, and the tree with it.
+    // The search contexts the drops opened go with their −, as a person deletes them: deleted behind
+    // the page's back, its next save of the scroll would name them and be refused.
+    for (const tabId of contexts) await deleteFromList(page, tabId);
+    await page.evaluate(async ids => {
+      // Hides the tree again.
       if (document.body.classList.contains('virtual-folders-on')) document.getElementById('virtual-folders-button').click();
       const {NotesAPI} = await import('/static/js/modules/api-client.js');
       for (const id of ids) await NotesAPI.deleteNote(id);
-    }, {ids: created, contexts});
+    }, created);
   });
+}
+
+async function deleteFromList(page, tabId) {
+  const zone = await (await page.$('#tab-hover-zone')).boundingBox();
+  await page.mouse.move(zone.x + zone.width / 2, zone.y + zone.height / 2);
+  const minus = `#search-contexts-list .delete-context[data-delete-tab-id="${tabId}"]`;
+  await page.waitForSelector(minus, {visible: true});
+  await pause(SETTLE_MS);
+  await page.click(minus);
+  await idle(page);
+  await pause(SETTLE_MS);
 }

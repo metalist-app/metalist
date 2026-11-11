@@ -1,12 +1,11 @@
 import { ApplicationState } from '../../application-state.js';
 import { NotesAPI } from '../../api-client.js';
 import { escapeHtml } from '../../html-escape.js';
-import { CHOSEN_FOLDER, CHOSEN_NONE, CHOSEN_TOP, chosenFolderOfSearch } from './folder-search-terms.js';
+import { CHOSEN_FOLDERS, CHOSEN_NONE, CHOSEN_TOP, chosenFoldersOfSearch } from './folder-search-terms.js';
 import { getActiveReferenceChain, isViewingReferenceSource } from './reference-source-navigation-service.js';
 import { showContextMenu } from '../../context-menu/context-menu-service.js';
 import { showErrorDialog } from '../../modals/error-dialog.js';
-import { isVirtualFoldersShown, rememberVirtualFoldersShown } from './virtual-folders-state.js';
-import { isFolderContext, recordFolderContextsFromServer } from './folder-context-state.js';
+import { isVirtualFoldersShown } from './virtual-folders-state.js';
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import { initVirtualFoldersWidth } from './virtual-folders-width.js';
 import { FloatingMessages } from '../../floating-messages.js';
@@ -16,11 +15,12 @@ export { isVirtualFoldersShown } from './virtual-folders-state.js';
 // Virtual folders, an experiment (docs/ready-to-build/virtual-folders.md): a tag ending in
 // `/` is a folder. With the Virtual Folders toggle on, a tree in the left margin lists every
 // folder in the vault, each with its subfolders, and no notes (the maintainer, 2026-11-01:
-// the column shows them). The tree belongs to folder contexts (docs/ready-to-build/virtual-folders.md, "Folder contexts"):
-// open folders tab goes to the folder context used last, close folders tab to the plain search
-// used last, and the tree shows in folder contexts only; clicking a folder makes it the search of the
-// one shown (`Projects/`, folder-tags-in-search.md), which finds the folders below it too. The notes
-// column moves right to make room.
+// the column shows them). The tree belongs to the view: the folders tab shows or hides it and
+// changes nothing else, and switching search contexts leaves it as it is
+// (docs/ready-to-build/folders-tab-and-multiple-folders.md §1). Clicking a folder makes it the search
+// of the context shown (`Projects/`, folder-tags-in-search.md), which finds the folders below it
+// too; ⌘-click (Ctrl-click off the Mac) adds or takes out one folder, keeping the rest of the
+// search, and several folders add results (§2, §3). The notes column moves right to make room.
 // Right-click: New Folder, Rename Folder, Delete Folder; a folder dragged onto another moves
 // into it. A renamed, moved or deleted folder changes the tags on the notes.
 
@@ -32,15 +32,16 @@ const DRAG_TYPE = 'application/x-metalist-folder';
 const DROP_CLASS = 'is-drop-target';
 // Dropped on the tree's empty space: to the top.
 const TOP = '';
-// No folder marked: the search names two, or folders joined by OR (never a folder path, which ends in /).
-const NO_CHOICE = 'none';
 // A New Folder no note carries yet.
 const NO_NOTES = 0;
 const ONE_NOTE = 1;
+const ONE_FOLDER = 1;
 
 const moduleState = ApplicationState.createFields('virtual-folders-service', {
-    // The folder the active tab's search chooses: a folder as typed, TOP for `/`, NO_CHOICE for none.
-    folder: '',
+    // What the shown context's search chooses (folder-search-terms.js): CHOSEN_FOLDERS with its
+    // folders as typed, CHOSEN_TOP for `/`, CHOSEN_NONE (a search not finished) for nothing marked.
+    chosenKind: CHOSEN_TOP,
+    chosenFolders: Object.freeze([]),
     // The folders the server last sent, by path.
     folders: Object.freeze([]),
     // How many notes clicking each folder shows, with the folders below it, in the view's
@@ -63,67 +64,66 @@ const moduleState = ApplicationState.createFields('virtual-folders-service', {
     draggedPath: '',
 });
 
-// Wired by the command palette: setFilter(folder) narrows the folder context shown to it ('' for
-// `/`); openFoldersTab() and closeFoldersTab() go to the folder context or plain search used last;
+// Wired by the command palette: setFilter(folder, adds) makes the folder the search of the context
+// shown ('' for `/`), or with adds (⌘-click) adds or takes it out; setTreeShown(isShown) shows or
+// hides the tree;
 // confirm(context) asks (ConfirmationModal); askName(form) asks a name (FolderNameModal);
 // askDeleteFolder(form) asks whether to delete a folder, and its notes (DeleteFolderModal);
-// afterChange() shows the view again once tags changed; undo() is ⌘Z.
+// afterChange() shows the view again once tags changed; afterRename() too, once a folder renamed or
+// moved was renamed in the searches naming it (the search box among them); undo() is ⌘Z.
 const handlers = ApplicationState.createFields('virtual-folders-handlers', {
     setFilter: null,
-    openFoldersTab: null,
-    closeFoldersTab: null,
+    setTreeShown: null,
     confirm: null,
     askName: null,
     askDeleteFolder: null,
     afterChange: null,
+    afterRename: null,
     undo: null,
 });
 
 /** The palette's ways to filter, open, ask and refresh (set once at startup). */
 export function wireVirtualFolders(wiring) {
-    for (const name of ['setFilter', 'openFoldersTab', 'closeFoldersTab', 'confirm', 'askName', 'askDeleteFolder', 'afterChange', 'undo']) {
+    for (const name of ['setFilter', 'setTreeShown', 'confirm', 'askName', 'askDeleteFolder', 'afterChange', 'afterRename', 'undo']) {
         if (typeof wiring[name] !== 'function') {
             throw new Error(`wireVirtualFolders requires ${name}`);
         }
         handlers[name] = wiring[name];
     }
     initVirtualFoldersWidth();
-    // The search contexts are loaded by now: the tree shows from the first view when the folder
-    // context does, its button saying so, without waiting for the folders to be read.
+    // The search contexts are loaded by now: the tree shows from the first view when it was
+    // shown, its button saying so, without waiting for the folders to be read.
     showFolderOfActiveContext();
 }
 
-export function activeVirtualFolder() {
-    return moduleState.folder;
+/** The folders the shown context's search chooses, as typed ([] for `/` or nothing marked). */
+export function chosenVirtualFolders() {
+    return moduleState.chosenFolders;
 }
 
-function folderOfChoice(choice) {
-    if (choice.kind === CHOSEN_FOLDER) return choice.folder;
-    if (choice.kind === CHOSEN_TOP) return TOP;
-    if (choice.kind === CHOSEN_NONE) return NO_CHOICE;
-    throw new Error(`Unknown chosen folder: ${choice.kind}`);
-}
+const CHOSEN_KINDS = Object.freeze([CHOSEN_FOLDERS, CHOSEN_TOP, CHOSEN_NONE]);
 
-/** The folder a tab's search chooses (folder-search-terms.js): TOP for `/`, NO_CHOICE for none. */
-export function folderOfTab(tabId) {
-    if (typeof tabId !== 'string' || tabId === '') {
-        throw new Error('folderOfTab requires a tab id');
+function rememberChoice(choice) {
+    if (!CHOSEN_KINDS.includes(choice.kind) || !Array.isArray(choice.folders)) {
+        throw new Error(`Unknown chosen folders: ${choice.kind}`);
     }
-    return folderOfChoice(chosenFolderOfSearch(ModeContext.tabs[tabId].searchQuery));
+    remember('chosenKind', choice.kind);
+    remember('chosenFolders', Object.freeze([...choice.folders]));
 }
 
-// A tree folder is the one chosen when the search names it, in any case (search reads tags so).
+// A tree folder is chosen when the search names it, in any case (search reads tags so).
 function isChosen(path) {
-    return moduleState.folder !== NO_CHOICE && moduleState.folder.toLowerCase() === path.toLowerCase();
+    return moduleState.chosenFolders.some((folder) => folder.toLowerCase() === path.toLowerCase());
 }
 
-/** The context shown changed: the tree shows only in folder contexts, and the folder its search
- * chooses at once, not one refresh later. */
+// The top, `/`, is chosen when the search names no folder, outside a reference view.
+function isTopChosen() {
+    return moduleState.chosenKind === CHOSEN_TOP && !isViewingReferenceSource();
+}
+
+/** The context shown changed: the folders its search chooses, marked at once, not one refresh later. */
 export function showFolderOfActiveContext() {
-    const treeTabId = treeContextTabId();
-    rememberVirtualFoldersShown(treeTabId !== '');
-    if (treeTabId === '') remember('folder', TOP);
-    else remember('folder', folderOfTab(treeTabId));
+    rememberChoice(chosenFoldersOfSearch(ModeContext.tabs[treeContextTabId()].searchQuery));
     render();
 }
 
@@ -152,16 +152,14 @@ async function readAndDrawVirtualFolders() {
         return;
     }
     const answer = await NotesAPI.listVirtualFolders();
-    recordFolderContextsFromServer(answer);
-    if (typeof answer.folder !== 'string' || typeof answer.chosenKind !== 'string' || !Array.isArray(answer.folders)
+    if (!Array.isArray(answer.chosenFolders) || typeof answer.chosenKind !== 'string' || !Array.isArray(answer.folders)
         || answer.noteCounts === null || typeof answer.noteCounts !== 'object'
         || answer.noteTotals === null || typeof answer.noteTotals !== 'object') {
         throw new Error('Virtual folders answer malformed');
     }
     // A folder newly chosen shows in the tree; a refresh leaves what the person closed closed.
-    const chosen = folderOfChoice({ kind: answer.chosenKind, folder: answer.folder });
-    const isNewlyChosen = chosen !== moduleState.folder;
-    remember('folder', chosen);
+    const newlyChosen = answer.chosenFolders.filter((folder) => !isChosen(folder));
+    rememberChoice({ kind: answer.chosenKind, folders: answer.chosenFolders });
     remember('folders', Object.freeze(answer.folders));
     remember('noteCounts', Object.freeze({ ...answer.noteCounts }));
     remember('noteTotals', Object.freeze({ ...answer.noteTotals }));
@@ -169,30 +167,21 @@ async function readAndDrawVirtualFolders() {
     // A new folder stays new until something is in it: a note carrying its tag, or a folder below it.
     const known = answer.folders;
     remember('newPaths', Object.freeze(moduleState.newPaths.filter((path) => !known.some((knownPath) => knownPath.startsWith(path)))));
-    if (isNewlyChosen && chosen.endsWith(FOLDER_MARK)) openTo(chosen);
-    rememberVirtualFoldersShown(treeContextTabId() !== '');
+    for (const folder of newlyChosen) openTo(folder);
     render();
 }
 
-/** The folders tab, or Show/Hide Virtual Folders: close folders tab in a folder context (the
- * tree shown), open folders tab in a plain search (docs/ready-to-build/virtual-folders.md, "Folder contexts"). */
-export function toggleFolderContextFromTab() {
-    if (isVirtualFoldersShown()) {
-        void handlers.closeFoldersTab();
-        return;
-    }
-    void handlers.openFoldersTab();
+/** The folders tab, or Show/Hide Virtual Folders: the tree shown or hidden, nothing else
+ * (docs/ready-to-build/folders-tab-and-multiple-folders.md §1). */
+export function toggleVirtualFoldersTree() {
+    void handlers.setTreeShown(!isVirtualFoldersShown());
 }
 
-// The context whose folder the tree shows: the folder context shown, or the one a reference view
-// shown was opened from; '' in a plain search, and the tree hidden with it.
+// The context whose folders the tree marks: the one shown, or the one a reference view shown was
+// opened from.
 function treeContextTabId() {
-    const activeTabId = ModeContext.activeTabId;
-    if (isFolderContext(activeTabId)) return activeTabId;
-    if (!isViewingReferenceSource()) return '';
-    const originTabId = getActiveReferenceChain()[0].fromTabId;
-    if (isFolderContext(originTabId)) return originTabId;
-    return '';
+    if (!isViewingReferenceSource()) return ModeContext.activeTabId;
+    return getActiveReferenceChain()[0].fromTabId;
 }
 
 /** A folder and every folder above it open, so a filtered folder shows in the tree. */
@@ -317,10 +306,10 @@ function countHtml(count, total) {
     return `<span class="virtual-folder-count" title="${escapeHtml(words)}">(${count.toLocaleString()}/${total.toLocaleString()})</span>`;
 }
 
-// The top, `/`, over every folder (the maintainer, 2026-11-01): clicking it opens the folder
-// context with no folder, every note. It looks chosen while that shows.
+// The top, `/`, over every folder (the maintainer, 2026-11-01): clicking it takes every folder out
+// of the search, every note. It looks chosen while the search names no folder.
 function rootHtml(built) {
-    const isChosen = isFolderContext(ModeContext.activeTabId) && moduleState.folder === TOP && !isViewingReferenceSource();
+    const isChosen = isTopChosen();
     const isOpen = moduleState.isRootOpen;
     return `
         <div class="virtual-folder${isChosen ? ' is-filtered' : ''}${isUnmatched(TOP) ? ' is-unmatched' : ''}">
@@ -362,9 +351,10 @@ function onTreeClick(event) {
             render();
             return;
         }
-        // The folder context with no folder, every note; shown already, nothing changes.
-        if (isFolderContext(ModeContext.activeTabId) && moduleState.folder === TOP && !isViewingReferenceSource()) return;
-        void handlers.setFilter(TOP);
+        // No folder in the search already: nothing changes.
+        if (isTopChosen()) return;
+        // A click empties the search; ⌘-click takes only the folders out.
+        void handlers.setFilter(TOP, isAddingClick(event));
         return;
     }
     const row = event.target.closest('[data-virtual-folder]');
@@ -375,14 +365,26 @@ function onTreeClick(event) {
         toggleOpen(path);
         return;
     }
-    // The chosen folder clicked again: no folder, as `/` (the maintainer, 2026-11-01).
-    if (isChosen(path) && !isViewingReferenceSource()) {
-        void handlers.setFilter(TOP);
+    // ⌘-click: that folder added to the search, or taken out, the rest of it kept.
+    if (isAddingClick(event)) {
+        if (!isChosen(path) && !moduleState.openPaths.includes(path)) toggleOpen(path);
+        void handlers.setFilter(path, true);
+        return;
+    }
+    // The only chosen folder clicked again: no folder, as `/` (the maintainer, 2026-11-01).
+    const isOnlyChosen = moduleState.chosenFolders.length === ONE_FOLDER && isChosen(path);
+    if (isOnlyChosen && !isViewingReferenceSource()) {
+        void handlers.setFilter(TOP, false);
         return;
     }
     if (!moduleState.openPaths.includes(path)) toggleOpen(path);
-    // Clicked from a reference view: it closes first, and the folder context comes from where it came from.
-    void handlers.setFilter(path);
+    // Clicked from a reference view: it closes first, and the folder is chosen in the context it came from.
+    void handlers.setFilter(path, false);
+}
+
+// ⌘-click, or Ctrl-click off the Mac (on the Mac, Ctrl-click is a right-click and never gets here).
+function isAddingClick(event) {
+    return [event.metaKey, event.ctrlKey].includes(true);
 }
 
 // --- Dragging a folder onto another --------------------------------------------------------
@@ -569,7 +571,7 @@ async function moveFolder(folder, into) {
     if (knownPaths().has(newPath) && !(await confirmMerge(folder, newPath))) return;
     await NotesAPI.moveVirtualFolder(folder, into);
     openTo(newPath);
-    await handlers.afterChange();
+    await handlers.afterRename();
 }
 
 async function confirmMerge(folder, newPath) {
@@ -616,7 +618,7 @@ async function renameFolder(path) {
     if (knownPaths().has(newPath) && !(await confirmMerge(path, newPath))) return;
     await NotesAPI.renameVirtualFolder(path, newPath);
     openTo(newPath);
-    await handlers.afterChange();
+    await handlers.afterRename();
 }
 
 async function deleteFolder(path) {
@@ -686,8 +688,8 @@ function renderToggleButton() {
     button.title = label;
     button.setAttribute('aria-label', label);
     button.setAttribute('aria-pressed', String(isVirtualFoldersShown()));
-    // A press keeps the caret in the note being edited: with no folder context shown, editing goes on.
+    // A press keeps the caret in the note being edited: showing the tree changes no view, so editing goes on.
     button.onmousedown = (event) => event.preventDefault();
-    button.onclick = () => toggleFolderContextFromTab();
+    button.onclick = () => toggleVirtualFoldersTree();
 }
 

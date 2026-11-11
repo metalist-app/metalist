@@ -150,10 +150,7 @@ def _collect_matcher_generated_tags(ontology) -> FrozenSet[str]:
 
     generated: Set[str] = set()
     for rule in ontology.matcher_rules:
-        generated.add(rule.rhs)
-        implied = ontology.implication_closure.get(rule.rhs)
-        if implied:
-            generated.update(implied)
+        generated.update(ontology.infer_implication_only(base_tags=frozenset({rule.rhs})))
     return frozenset(generated)
 
 

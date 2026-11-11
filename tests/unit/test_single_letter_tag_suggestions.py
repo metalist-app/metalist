@@ -14,14 +14,12 @@ import app.services.tag_suggestions as tag_suggestions_module
 from app.services.search_index import SearchIndex
 from app.services.search_index import SearchRecord
 from app.services.search_index import extract_tags_for_search
+from app.services.tag_ontology import TagOntology
 
 
-class _EmptyOntology:
-    is_empty = True
-    implication_out_edges = {}
-    implication_closure = {}
-    implied_by_closure = {}
-    scc_members_by_tag = {}
+def _EmptyOntology() -> TagOntology:
+    """No rules: the real empty rule set, which still implies a folder tag's parent folders."""
+    return TagOntology.empty()
 
 
 class _IndexOnlyNoteStore:

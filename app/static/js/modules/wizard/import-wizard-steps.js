@@ -9,7 +9,7 @@ import { checkBackgroundWork, setShownElsewhere } from '../mode-manager/services
 import { workProgressText } from '../mode-manager/services/background-work-text.js';
 import { importFinishedMessage } from './import-finished-message.js';
 import { DROPPED_IMPORT_VIEWS, droppedImportView } from './dropped-import-view.js';
-import { isFolderContext } from '../mode-manager/services/folder-context-state.js';
+import { isVirtualFoldersShown } from '../mode-manager/services/virtual-folders-state.js';
 import { COMPRESSIBLE_IMAGE_RE } from './compressible-images.js';
 
 // The import wizard's steps (PLAN.md, phase 2), shared by the import wizard and the new
@@ -218,7 +218,7 @@ async function showFinishedImport(wizard, result, isBookmarks) {
     const view = droppedImportView({
         isDroppedFiles: !isBookmarks && wizard.choices.droppedFolderId === '',
         isNewFolder: result.isNewFolder,
-        isInFolderContext: isFolderContext(ModeContext.activeTabId),
+        isTreeShown: isVirtualFoldersShown(),
     });
     if (view === DROPPED_IMPORT_VIEWS.IN_ITS_CONTEXT) {
         await wizard.services.showDroppedImport(result.firstRootId);

@@ -10,7 +10,7 @@ import { AuthenticationRequiredError } from '../../client-state-api.js';
 import { getReferenceViewsPayload, restoreReferenceNavigation } from './reference-source-navigation-service.js';
 import { recordDateFiltersFromServer } from './date-range-filter-service.js';
 import { recordFileFiltersFromServer } from './file-filter-service.js';
-import { recordFolderContextsFromServer, recordRecentTabsFromServer } from './folder-context-state.js';
+import { recordTreeShownFromServer } from './virtual-folders-state.js';
 
 const HTTP_UNAUTHORIZED = 401;
 const TAB_STATE_ENDPOINT = CONFIG.API.NOTES.TAB_STATE;
@@ -21,7 +21,7 @@ const TAB_STATE_DATE_FILTER_ENDPOINT = CONFIG.API.NOTES.TAB_STATE_DATE_FILTER;
 const TAB_STATE_FILE_FILTER_ENDPOINT = CONFIG.API.NOTES.TAB_STATE_FILE_FILTER;
 const TAB_STATE_UNTAGGED_VIEW_ENDPOINT = CONFIG.API.NOTES.TAB_STATE_UNTAGGED_VIEW;
 const FOLDER_CONTEXT_ENDPOINT = CONFIG.API.VIRTUAL_FOLDERS.FOLDER_CONTEXT;
-const FOLDER_CONTEXT_NEW_ENDPOINT = CONFIG.API.VIRTUAL_FOLDERS.FOLDER_CONTEXT_NEW;
+const TREE_SHOWN_ENDPOINT = CONFIG.API.VIRTUAL_FOLDERS.TREE_SHOWN;
 const SCROLL_POLL_INTERVAL_MS = 1000;
 const TAB_STATE_PERSIST_DEBOUNCE_MS = 300;
 
@@ -126,13 +126,12 @@ function captureServerSignature(state) {
 // The server answers a post that changes nothing (e.g. one differing only in
 // what it normalises away) with the state and version it already had, so its
 // signature can equal the recorded one. Every answer also carries the tabs' date
-// range and Files filters, Untagged views, folder contexts and the order the tabs were used in,
+// range and Files filters, Untagged views and whether the folder tree shows,
 // which only the server changes.
 function recordServerSignature(state) {
     recordDateFiltersFromServer(state);
     recordFileFiltersFromServer(state);
-    recordFolderContextsFromServer(state);
-    recordRecentTabsFromServer(state);
+    recordTreeShownFromServer(state);
     ModeContext.recordUntaggedViewsFromServer(state);
     const signature = serializeState(canonicalizeState(state));
     if (moduleState.lastSignature !== signature) {
@@ -213,15 +212,17 @@ export async function deleteTabOnServer(tabId) {
     return response;
 }
 
-/** A folder clicked in the tree ('' for `/`) of the folder context tabId: narrowed to it, its
- * search emptied (docs/ready-to-build/virtual-folders.md, "Folder contexts"). The tab state answered. */
-export async function chooseFolderOnServer(tabId, folder) {
-    if (typeof tabId !== 'string' || tabId.length === 0 || typeof folder !== 'string') {
-        throw new Error('chooseFolderOnServer requires the folder context and the folder');
+/** A folder clicked in the tree ('' for `/`) in the search context tabId: its search, the one
+ * before replaced; with adds (⌘-click), added or taken out, the rest of the search kept
+ * (docs/ready-to-build/folders-tab-and-multiple-folders.md §2). The tab state answered. */
+export async function chooseFolderOnServer(tabId, folder, adds) {
+    if (typeof tabId !== 'string' || tabId.length === 0 || typeof folder !== 'string' || typeof adds !== 'boolean') {
+        throw new Error('chooseFolderOnServer requires the search context, the folder and whether it adds');
     }
     const response = await callTabStateApiAt(FOLDER_CONTEXT_ENDPOINT, 'POST', {
         tabId,
         folder,
+        adds,
         clientId: ModeContext.clientId,
         undoContext: captureUndoContext(),
     });
@@ -229,10 +230,12 @@ export async function chooseFolderOnServer(tabId, folder) {
     return response;
 }
 
-/** Open folders tab with no folder context: a new one at the end of the list (newTabId). The
- * caller switches to it. */
-export async function createFolderContextOnServer() {
-    const response = await callTabStateApiAt(FOLDER_CONTEXT_NEW_ENDPOINT, 'POST', null);
+/** The folders tab: the tree shown or hidden, no search context changed. The tab state answered. */
+export async function setTreeShownOnServer(isShown) {
+    if (typeof isShown !== 'boolean') {
+        throw new Error('setTreeShownOnServer requires whether the tree shows');
+    }
+    const response = await callTabStateApiAt(TREE_SHOWN_ENDPOINT, 'POST', { isShown });
     captureServerSignature(response);
     return response;
 }

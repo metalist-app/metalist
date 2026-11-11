@@ -52,7 +52,7 @@ function runOnPalette(page, method, argument) {
 function chooseTreeFolder(page, folder) {
   return page.evaluate(async folder => {
     const {chooseFolder} = await import('/static/js/modules/mode-manager/events/keyboard-events.js');
-    await chooseFolder(folder);
+    await chooseFolder(folder, false);
   }, folder);
 }
 
@@ -77,12 +77,6 @@ async function untaggedCase(page) {
   return scrollAfterWidening(page, () => page.click('#untagged-view-indicator-clear'));
 }
 
-async function folderChipCase(page) {
-  await runOnPalette(page, 'setVirtualFolder', FOLDER);
-  await idle(page);
-  return scrollAfterWidening(page, () => page.click('#virtual-folder-indicator-clear'));
-}
-
 async function folderInTreeCase(page) {
   await chooseTreeFolder(page, FOLDER);
   await idle(page);
@@ -100,12 +94,11 @@ export async function checkViewChangeTop(page) {
   await idle(page);
   await runThenCleanUp('view change top', async () => {
     const landed = {dateRange: await dateRangeCase(page), untagged: await untaggedCase(page)};
-    // The tree and its folders show in a folder context.
+    // The folders tab shows the tree in the context shown.
     await page.click('#virtual-folders-button');
     await idle(page);
-    landed.folderChip = await folderChipCase(page);
     landed.folderInTree = await folderInTreeCase(page);
-    assert.deepEqual(landed, {dateRange: 0, untagged: 0, folderChip: 0, folderInTree: 0});
+    assert.deepEqual(landed, {dateRange: 0, untagged: 0, folderInTree: 0});
   }, async () => {
     await page.evaluate(async ids => {
       if (document.body.classList.contains('virtual-folders-on')) document.getElementById('virtual-folders-button').click();

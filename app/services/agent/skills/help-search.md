@@ -119,6 +119,8 @@ Search queries are a whitespace-separated list of terms.
 ### Tag Terms (unquoted)
 - `foo` and `+foo` are equivalent (required tag).
 - A term ending in `/` is a folder: `Projects/` finds that folder's notes and every folder's below it (`Projects/Client-A/`); `-Projects/` leaves them all out. Every other tag term matches exactly.
+- Folders add, tags narrow: `Projects/ Archive/ @todo` finds to-dos in Projects or in Archive. A new note made in that search goes in both folders; a note moved there keeps its folder when it is in one of them.
+- A note in a folder is in every folder above it too, for rules as for search: a rule `Projects/ => work` gives `work` to notes in `Projects/Client-A/`. The tag bar still shows only the folder written in it.
 - `-foo` excludes notes that have tag `foo`.
 
 Tag matching uses the note’s tag-bar string (`notes.tags`) tokenized with the same

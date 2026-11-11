@@ -339,13 +339,12 @@ def test_unchanged_update_keeps_version_and_skips_persistence(monkeypatch: pytes
     assert writes == [True]
 
 
-# A folder clicked in the tree is a folder (since 2026-11-11 it becomes the folder context's search:
-# test_folder_context.py).
+# A folder clicked in the tree is a folder (it becomes the search: test_folders_tab.py).
 def test_a_folder_clicked_must_be_a_folder() -> None:
     store = TabStateStore()
-    folder_tab = store.create_folder_context()["newTabId"]
+    tab_id = store.snapshot()["activeTabId"]
     with pytest.raises(InputRejected, match="not a folder"):
-        store.choose_folder(tab_id=folder_tab, folder="journal")
+        store.choose_folder(tab_id=tab_id, folder="journal", adds=False)
 
 
 def test_tab_state_saved_before_folders_were_kept_has_none() -> None:
@@ -353,3 +352,4 @@ def test_tab_state_saved_before_folders_were_kept_has_none() -> None:
     snapshot = store.snapshot()
     stored = json.dumps({key: snapshot[key] for key in ("activeTabId", "tabs", "tabOrder", "version")})
     assert store._deserialize_snapshot_json(stored)["folderFilters"] == {}
+    assert store._deserialize_snapshot_json(stored)["treeShown"] is False

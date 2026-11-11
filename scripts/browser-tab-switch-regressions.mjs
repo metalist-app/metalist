@@ -172,25 +172,20 @@ async function checkDuplicateCopiesEverything(page, firstTabId) {
     await CommandPalette.setSortMode('created');
     await CommandPalette.setDateRangePreset('last-30-days');
     await CommandPalette.setFileFilter('any');
-    // Only a folder context has a folder (docs/ready-to-build/virtual-folders.md, "Folder contexts"): its
-    // duplicate is checked in browser-folder-context-regressions.mjs.
+    // A folder chosen in the tree is in the search (folder-tags-in-search.md), which the duplicate copies.
     await CommandPalette.setIsUntaggedView(true);
   });
   await idle(page);
   const everything = async () => {
     const state = await viewState(page);
-    const folder = await page.evaluate(async () => {
-      const {NotesAPI} = await import('/static/js/modules/api-client.js');
-      return (await NotesAPI.listVirtualFolders()).folder;
-    });
     return {
       search: state.searchQuery, sort: [state.sortMode, state.serverSortMode],
-      dateRange: [state.hasDateRange, state.serverHasDateRange], fileFilter: state.fileFilter, folder,
+      dateRange: [state.hasDateRange, state.serverHasDateRange], fileFilter: state.fileFilter,
       untagged: [state.isUntagged, state.serverIsUntagged],
     };
   };
   const narrowed = {
-    search: TAB_QUERIES[0], sort: ['created', 'created'], dateRange: [true, true], fileFilter: 'any', folder: '',
+    search: TAB_QUERIES[0], sort: ['created', 'created'], dateRange: [true, true], fileFilter: 'any',
     untagged: [true, true],
   };
   assert.deepEqual(await everything(), narrowed, 'the first tab is narrowed every way');
@@ -214,7 +209,7 @@ async function checkDuplicateCopiesEverything(page, firstTabId) {
   await idle(page);
   const blankTabId = (await viewState(page)).activeTabId;
   assert.deepEqual(await everything(), {
-    search: '', sort: ['normal', 'normal'], dateRange: [false, false], fileFilter: 'none', folder: '', untagged: [false, false],
+    search: '', sort: ['normal', 'normal'], dateRange: [false, false], fileFilter: 'none', untagged: [false, false],
   }, 'a new tab starts with nothing');
 
   for (const tabId of [blankTabId, duplicateTabId]) {
@@ -227,10 +222,7 @@ async function checkDuplicateCopiesEverything(page, firstTabId) {
   await clickTab(page, firstTabId);
   await page.evaluate(async () => {
     const {CommandPalette} = await import('/static/js/modules/command-palette/command-palette-controller.js');
-    const {NotesAPI} = await import('/static/js/modules/api-client.js');
-    const {ModeContextInstance: mode} = await import('/static/js/modules/mode-manager/mode-context.js');
     await CommandPalette.setIsUntaggedView(false);
-    await NotesAPI.setVirtualFolderFilter(mode.activeTabId, '');
     await CommandPalette.setFileFilter('none');
     await CommandPalette.setDateRangePreset('none');
     await CommandPalette.setSortMode('normal');
@@ -394,7 +386,7 @@ export async function checkTabSwitching(page) {
     await pause(SETTLE_MS);
     assert.equal(await page.$eval('#search-suggestions', list => !list.hidden), true, 'search suggestions are open');
     await checkEnterInTheSearchBoxMakesNoContext(page, label, 'search suggestions open');
-    // but in a folder context it does,
+    // with the tree shown it does,
     await page.setViewport({width: 1440, height: 900});
     await page.click('#virtual-folders-button');
     await idle(page);
@@ -416,6 +408,8 @@ export async function checkTabSwitching(page) {
     await checkEnterOverTheListMakesANewContext(page, `#search-contexts-list .tab-context-item[data-tab-id="${folderTabRow}"] .tab-context-query`);
   }, async () => {
     await page.evaluate(async ids => {
+      // Hides the tree again, as the suite found it.
+      if (document.body.classList.contains('virtual-folders-on')) document.getElementById('virtual-folders-button').click();
       const {NotesAPI} = await import('/static/js/modules/api-client.js');
       for (const id of ids) await NotesAPI.deleteNote(id);
     }, ids);

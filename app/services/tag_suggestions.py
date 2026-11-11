@@ -1541,10 +1541,8 @@ def _inherited_or_implied_tags(*, note_id: str, anchors: List[str], explicit_cas
     """Non-meta tags that already apply to the note without being written in its bar."""
     anchor_set = {tag for tag in anchors if not tag.startswith("@")}
     base_tags = frozenset(anchor_set | note_store.get_inherited_non_meta_tag_terms(note_id))
-    ontology = get_ontology()
-    context_tags = base_tags
-    if not ontology.is_empty:
-        context_tags = ontology.infer_implication_only(base_tags=base_tags)
+    # With no rules too: a folder tag implies the folders above it (tag_ontology.parent_folder_tags).
+    context_tags = get_ontology().infer_implication_only(base_tags=base_tags)
     return {tag for tag in context_tags if not tag.startswith("@") and tag.casefold() not in explicit_casefold}
 
 
@@ -1574,10 +1572,8 @@ def _suggest_tags(
     base_tags = frozenset(anchor_set | inherited_non_meta)
 
     ontology = get_ontology()
-    if ontology.is_empty:
-        context_tags = base_tags
-    else:
-        context_tags = ontology.infer_implication_only(base_tags=base_tags)
+    # With no rules too: a folder tag implies the folders above it (tag_ontology.parent_folder_tags).
+    context_tags = ontology.infer_implication_only(base_tags=base_tags)
     inherited_or_implied_tags = {
         tag for tag in context_tags
         if not tag.startswith("@") and tag.casefold() not in explicit_tag_casefold_set

@@ -1,14 +1,8 @@
-"""Virtual folders, an experiment (docs/ready-to-build/virtual-folders.md): a tag ending in
-`/` is a folder (`Projects/Client-A/`), shown as a tree of folders beside the notes column
-(only folders: the maintainer, 2026-11-01: a folder's notes show in the column).
-
-Nothing of it is stored (the maintainer, 2026-11-01: the experiment may be dropped in a few
-hours, so it must not change the database): each tab's folder filter lives in this
-process's memory, as long as the server runs, and whether the tree shows in the browser
-(virtual-folders-state.js). A folder filter narrows a view to the notes in that folder and
-the folders below it, by repeating every clause of the view's search once per folder tag
-(`Projects/`, `Projects/Client-A/`, …); the notes under a filed note inherit its tag, so
-they come with it."""
+"""Virtual folders (docs/ready-to-build/virtual-folders.md): a tag ending in `/` is a folder
+(`Projects/Client-A/`), shown as a tree of folders beside the notes column. A folder chosen in the
+tree is a term in the search (docs/ready-to-build/folder-tags-in-search.md); several folders in a
+clause add results, and a folder tag implies the folders above it
+(docs/ready-to-build/folders-tab-and-multiple-folders.md)."""
 
 from __future__ import annotations
 
@@ -35,47 +29,45 @@ FOLDER_MARK = FOLDER_TAG_END
 NO_FOLDER = ""
 
 
-# Each tab's folder filter is kept with its other filters in tab state (tab_state.py), so a
-# server restart keeps it (2026-11-07; before, this process's memory only).
-
-
 def is_folder_tag(tag: str) -> bool:
     """A tag ending in `/` is a folder; `a/b` stays an ordinary tag."""
     return tag.endswith(FOLDER_MARK) and _is_valid_tag_token(tag)
 
 
-# What the tree marks as chosen, read from a folder context's search (folder-tags-in-search.md §3).
-CHOSEN_FOLDER = "folder"
+# What the tree marks as chosen, read from a search (folders-tab-and-multiple-folders.md §5).
+CHOSEN_FOLDERS = "folders"
 CHOSEN_TOP = "top"
 CHOSEN_NONE = "none"
 
 
 @dataclass(frozen=True, slots=True)
-class ChosenFolder:
-    """kind CHOSEN_FOLDER: folder is the one positive folder term, as typed; CHOSEN_TOP: none (`/`);
-    CHOSEN_NONE: two folder terms, or folders joined by OR, or a search not finished: nothing marked."""
+class ChosenFolders:
+    """kind CHOSEN_FOLDERS: folders are the positive folder terms, as typed, of every OR clause;
+    CHOSEN_TOP: none (`/`); CHOSEN_NONE: a search not finished, nothing marked."""
 
     kind: str
-    folder: str
+    folders: Tuple[str, ...]
 
 
-def chosen_folder_of(search: str) -> ChosenFolder:
-    """The folder a search chooses: its one positive folder term, else the top; nothing when it has
-    two, or folders joined by OR, as no one folder holds what it finds."""
+def chosen_folders_of(search: str) -> ChosenFolders:
+    """The folders a search chooses: every positive folder term, in every clause, as typed and
+    once each by case, A to Z; the top when it has none."""
     if not isinstance(search, str):
         raise TypeError(f"search must be a string, got {type(search)}")
     if search.strip() == "":
-        return ChosenFolder(kind=CHOSEN_TOP, folder=NO_FOLDER)
+        return ChosenFolders(kind=CHOSEN_TOP, folders=())
     try:
         parsed = parse_search_query(search)
     except InputRejected:
-        return ChosenFolder(kind=CHOSEN_NONE, folder=NO_FOLDER)
-    folder_terms = [tag for clause in parsed.clauses for tag in sorted(clause.required_tags) if is_folder_tag(tag)]
-    if not folder_terms:
-        return ChosenFolder(kind=CHOSEN_TOP, folder=NO_FOLDER)
-    if len(parsed.clauses) > 1 or len(folder_terms) > 1:
-        return ChosenFolder(kind=CHOSEN_NONE, folder=NO_FOLDER)
-    return ChosenFolder(kind=CHOSEN_FOLDER, folder=folder_terms[0])
+        return ChosenFolders(kind=CHOSEN_NONE, folders=())
+    folders: Dict[str, str] = {}
+    for clause in parsed.clauses:
+        for tag in sorted(clause.required_tags):
+            if is_folder_tag(tag) and tag.casefold() not in folders:
+                folders[tag.casefold()] = tag
+    if not folders:
+        return ChosenFolders(kind=CHOSEN_TOP, folders=())
+    return ChosenFolders(kind=CHOSEN_FOLDERS, folders=tuple(folders[key] for key in sorted(folders)))
 
 
 def without_folder_terms(search: str) -> str:
@@ -83,6 +75,44 @@ def without_folder_terms(search: str) -> str:
     choosing Projects/ doesn't dim every other folder (folder-tags-in-search.md §3)."""
     rewritten = rewrite_search_terms(search, lambda term: "" if is_folder_tag(term) else term)
     return " ".join(rewritten.split())
+
+
+def toggle_folder_in_search(search: str, folder: str) -> str:
+    """⌘-click in the tree (folders-tab-and-multiple-folders.md §2): the search with folder taken
+    out when it is one of its terms (by case), else added after its last folder term (at its front
+    with none: `Projects/ @todo` and Archive/ give `Projects/ Archive/ @todo`); NO_FOLDER, the top,
+    takes every folder term out. Every other term stays as typed."""
+    if folder == NO_FOLDER:
+        return without_folder_terms(search)
+    if not is_folder_tag(folder):
+        raise ValueError(f"{folder} is not a folder")
+    is_present = folder.casefold() in {chosen.casefold() for chosen in chosen_folders_of(search).folders}
+    if is_present:
+        removed = rewrite_search_terms(search, lambda term: "" if term.casefold() == folder.casefold() else term)
+        return " ".join(removed.split())
+    folder_terms: List[str] = []
+    rewrite_search_terms(search, lambda term: _noted_if_folder(term, folder_terms))
+    folder_term_count = len(folder_terms)
+    if folder_term_count == 0:
+        return f"{folder} {search}".strip()
+    seen = [0]
+
+    def after_last_folder(term: str) -> str:
+        if not is_folder_tag(term):
+            return term
+        seen[0] += 1
+        if seen[0] == folder_term_count:
+            return f"{term} {folder}"
+        return term
+
+    return rewrite_search_terms(search, after_last_folder)
+
+
+def _noted_if_folder(term: str, folder_terms: List[str]) -> str:
+    """For toggle_folder_in_search: a folder term (+/- included) noted; the term unchanged."""
+    if is_folder_tag(term):
+        folder_terms.append(term)
+    return term
 
 
 def rename_folder_in_search(search: str, *, old: str, new: str) -> str:

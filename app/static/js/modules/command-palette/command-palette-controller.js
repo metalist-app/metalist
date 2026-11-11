@@ -146,12 +146,12 @@ import { buildSessionHeaders } from '../session-auth.js';
 import { isValidTagToken } from '../tag-token.js';
 import { updateSearchContextsOverlayPlacement } from '../mode-manager/services/search-contexts-overlay-service.js';
 import {
-    chooseFolder, closeFoldersTab, navigateToReferenceOrigin, openFoldersTab, openSearchInNewSearchContext,
+    adoptRenamedSearches, chooseFolder, navigateToReferenceOrigin, openSearchInNewSearchContext, setFoldersTreeShown,
 } from '../mode-manager/events/keyboard-events.js';
 import { FolderNameModal } from '../modals/folder-name-modal.js';
 import { DeleteFolderModal } from '../modals/delete-folder-modal.js';
 import {
-    openTo, toggleFolderContextFromTab, wireVirtualFolders,
+    openTo, toggleVirtualFoldersTree, wireVirtualFolders,
 } from '../mode-manager/services/virtual-folders-service.js';
 import {
     DEFAULT_SEARCH_SUGGESTION_WINDOWS_VALUE,
@@ -506,13 +506,14 @@ class CommandPaletteController {
         wireVirtualFolders({
             // In the command gate, waiting for a command still running (a click while editing:
             // the note's save), so one click leaves the note and shows the folder.
-            setFilter: async (folder) => CommandGate.runWhenFree('virtualFolders.chooseFolder', async () => chooseFolder(folder)),
-            openFoldersTab: async () => CommandGate.runWhenFree('virtualFolders.openFoldersTab', async () => openFoldersTab()),
-            closeFoldersTab: async () => CommandGate.runWhenFree('virtualFolders.closeFoldersTab', async () => closeFoldersTab()),
+            setFilter: async (folder, adds) => CommandGate.runWhenFree('virtualFolders.chooseFolder', async () => chooseFolder(folder, adds)),
+            setTreeShown: async (isShown) => CommandGate.runWhenFree('virtualFolders.setTreeShown', async () => setFoldersTreeShown(isShown)),
             confirm: async (context) => this._confirmAction('virtualFolders.confirm', context),
             askName: async (form) => this._askFolderName(form),
             askDeleteFolder: async (form) => this._askDeleteFolder(form),
             afterChange: async () => actionRefreshAndMaybeSelect({ startedAt: performance.now(), context: 'virtualFolders.change' }),
+            // The server renamed the folder in every search context's search: the page takes them up.
+            afterRename: async () => adoptRenamedSearches(),
             undo: async () => CommandGate.run('virtualFolders.undoMove', async () => actionUndo()),
         });
         const clientState = await migrateLegacyClientState({
@@ -1696,7 +1697,7 @@ class CommandPaletteController {
 
     // Virtual folders, an experiment (virtual-folders-service.js): the toggle.
     async toggleVirtualFolders() {
-        toggleFolderContextFromTab();
+        toggleVirtualFoldersTree();
     }
 
     // A virtual folder's name (FolderNameModal), or null when nothing changes.
@@ -2975,8 +2976,8 @@ class CommandPaletteController {
             setPassword: async (password, onProgress) => Auth.setPasswordKeepingThisWindow(password, onProgress),
             openPasswordGenerator: async (onUse) => this._openPasswordGeneratorToUse(onUse),
             afterImport: async (sourceTag) => {
-                // Its own plain search, with no tree: the tree shows only in folder contexts
-                // (docs/ready-to-build/virtual-folders.md, "Folder contexts").
+                // Its own search context; the tree stays shown or hidden as it was
+                // (docs/ready-to-build/folders-tab-and-multiple-folders.md §1).
                 const newTabId = await openSearchInNewSearchContext(sourceTag, 'importWizard.showImported');
                 if (newTabId === null) {
                     await actionRefreshAndMaybeSelect({ startedAt: performance.now(), context: 'importWizard' });
@@ -2989,7 +2990,7 @@ class CommandPaletteController {
             // sight in the tree, chosen as a click on it chooses it (the maintainer, 2026-11-09).
             showImportedFolder: async (folder) => {
                 openTo(folder);
-                await chooseFolder(folder);
+                await chooseFolder(folder, false);
             },
             // Loose files dropped on the page: their notes in the search context they were dropped in,
             // which stays as it is (the maintainer, 2026-11-03), after its last note (2026-11-07).

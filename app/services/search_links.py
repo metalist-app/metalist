@@ -79,8 +79,9 @@ def render_search_link(link: SearchLink, *, static_export: bool) -> str:
 
 def rewrite_search_terms(search: str, rewrite: Callable[[str], str]) -> str:
     """A search with each term (`work`, `-work`, `+work`, `work=high`) rewritten by `rewrite`, given
-    the term without its sign: "" drops the term, sign and all. Quoted text, `OR` and spacing are left
-    as typed."""
+    the term without its sign: "" drops the term, sign and all, and an `OR` part left with nothing
+    goes with its `OR` (`Projects/ OR Archive/ @todo` without its folders is `@todo`). Quoted text,
+    `OR` and spacing are otherwise left as typed."""
     if not isinstance(search, str):
         raise TypeError(f"search must be a string, got {type(search)}")
     pieces = [match.group(0) for match in _SEARCH_PIECE_RE.finditer(search)]
@@ -98,7 +99,21 @@ def rewrite_search_terms(search: str, rewrite: Callable[[str], str]) -> str:
         new_term = rewrite(term)
         if new_term != "":
             rewritten.append(sign + new_term)
-    return "".join(rewritten)
+    if len(rewritten) == len(pieces):
+        return "".join(rewritten)
+    return _without_empty_clauses(rewritten)
+
+
+def _without_empty_clauses(pieces: List[str]) -> str:
+    """The pieces joined, each `OR` part with nothing left in it dropped with its `OR`."""
+    clauses: List[List[str]] = [[]]
+    for piece in pieces:
+        if piece == _OR_KEYWORD:
+            clauses.append([])
+            continue
+        clauses[-1].append(piece)
+    kept = ["".join(clause).strip() for clause in clauses if "".join(clause).strip() != ""]
+    return f" {_OR_KEYWORD} ".join(kept)
 
 
 def rewrite_searches_in_search_links(content_html: str, rewrite: Callable[[str], str]) -> str:

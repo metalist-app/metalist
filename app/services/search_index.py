@@ -52,7 +52,7 @@ from app.services.tag_properties import (
 from app.services.link_titles import link_title_store
 from app.services.note_datetime import DATETIME_TAG, is_datetime_tag_term
 from app.services.ontology_rules_store import get_ontology_if_ready
-from app.services.tag_ontology import TagOntology
+from app.services.tag_ontology import FOLDER_TAG_END, TagOntology
 from app.services.search_text import (
     append_link_titles_casefold,
     build_searchable_base_text_casefold,
@@ -129,8 +129,6 @@ class _NoteCounts:
 
 # A tag's name and its value: @code=python is the tag @code with the value python.
 TAG_VALUE_SEPARATOR = "="
-# A tag ending in / is a folder (virtual_folders.FOLDER_MARK, which imports this module).
-FOLDER_TAG_END = "/"
 
 
 def tag_family_of(term: str) -> str:
@@ -962,22 +960,35 @@ class SearchIndex:
 
     # Suggestions read a search's completed clause without its stats terms (no subtree walks
     # for them); one about values reads what notes inherit, from the tree, before the lock.
+    # A folder suggested is read against the clause without its folder terms, as folders add
+    # results (folders-tab-and-multiple-folders.md §3): after `Projects/ `, `Archive/` is offered
+    # when Archive has notes the rest of the clause finds.
     @staticmethod
-    def _suggestion_clause(completed_clause: str) -> SearchClause:
+    def _suggestion_clause(completed_clause: str, *, without_folders: bool) -> SearchClause:
         assert completed_clause.strip() != "", "a completed clause"
-        return parse_search_query(completed_clause).first_clause.without_stats_terms()
+        clause = parse_search_query(completed_clause).first_clause.without_stats_terms()
+        if not without_folders:
+            return clause
+        return dataclasses.replace(
+            clause, required_tags=frozenset(tag for tag in clause.required_tags if not tag.endswith(FOLDER_TAG_END)),
+        )
 
-    def _tree_matches_for_suggestions(self, completed_clause: str) -> FrozenSet[str]:
+    def _tree_matches_for_suggestions(self, completed_clause: str, *, without_folders: bool) -> FrozenSet[str]:
         """The notes the completed clause finds when it reads values (outside the lock); none
         to read otherwise, the index answering it alone (_suggestion_matching_ids_locked)."""
-        if completed_clause.strip() == "" or not self._suggestion_clause(completed_clause).has_value_terms:
+        if completed_clause.strip() == "":
             return frozenset()
-        return frozenset(self._tree_clause_note_ids(self._suggestion_clause(completed_clause)))
+        clause = self._suggestion_clause(completed_clause, without_folders=without_folders)
+        if not clause.has_value_terms:
+            return frozenset()
+        return frozenset(self._tree_clause_note_ids(clause))
 
-    def _suggestion_matching_ids_locked(self, completed_clause: str, tree_matches: FrozenSet[str]) -> Set[int]:
+    def _suggestion_matching_ids_locked(
+        self, completed_clause: str, tree_matches: FrozenSet[str], *, without_folders: bool,
+    ) -> Set[int]:
         if completed_clause.strip() == "":
             return self._alive
-        clause = self._suggestion_clause(completed_clause)
+        clause = self._suggestion_clause(completed_clause, without_folders=without_folders)
         if clause.has_value_terms:
             return {self._uuid_to_id[note_id] for note_id in tree_matches if note_id in self._uuid_to_id}
         return self._matching_note_int_ids_for_clause_locked(clause)
@@ -989,10 +1000,14 @@ class SearchIndex:
         if context.partial_prefix is not None:
             partial_prefix = context.partial_prefix
         shown = list(terms)
-        tree_matches = self._tree_matches_for_suggestions(context.completed_clause)
+        tree_matches = self._tree_matches_for_suggestions(context.completed_clause, without_folders=False)
+        folderless_tree_matches = self._tree_matches_for_suggestions(context.completed_clause, without_folders=True)
         with self._lock:
             has_completed_clause = context.completed_clause.strip() != ""
-            matching_ids = self._suggestion_matching_ids_locked(context.completed_clause, tree_matches)
+            matching_ids = self._suggestion_matching_ids_locked(context.completed_clause, tree_matches, without_folders=False)
+            folderless_matching_ids = self._suggestion_matching_ids_locked(
+                context.completed_clause, folderless_tree_matches, without_folders=True,
+            )
             note_counts: Dict[str, int] = {}
             matching_counts: Dict[str, int] = {}
             for term in shown:
@@ -1002,7 +1017,10 @@ class SearchIndex:
                     continue
                 posting = self._tag_notes_casefold[term.casefold()]
                 note_counts[term] = len(posting)
-                matching_counts[term] = len(posting & matching_ids)
+                if term.endswith(FOLDER_TAG_END) and not context.is_exclusion:
+                    matching_counts[term] = len(posting & folderless_matching_ids)
+                else:
+                    matching_counts[term] = len(posting & matching_ids)
             cooccurrences = self.describe_tag_cooccurrence(
                 anchors=context.anchors, terms=shown, excluded_note_ids=frozenset(), by_family=False,
             )
@@ -1254,20 +1272,24 @@ class SearchIndex:
         suggest_tag_completions; search completions must satisfy the whole clause.
         """
         context = _parse_search_suggestion_context(query)
-        tree_matches = self._tree_matches_for_suggestions(context.completed_clause)
+        tree_matches = self._tree_matches_for_suggestions(context.completed_clause, without_folders=False)
+        folderless_tree_matches = self._tree_matches_for_suggestions(context.completed_clause, without_folders=True)
         with self._lock:
             candidate_capacity = len(self._tag_notes) + len(list_known_meta_tag_terms()) + 1
             suggestions = self.suggest_tag_completions(query=query, limit=candidate_capacity, by_family=False)
             if not suggestions:
                 return []
-            matching_ids = self._suggestion_matching_ids_locked(context.completed_clause, tree_matches)
-            if not matching_ids:
-                return []
+            matching_ids = self._suggestion_matching_ids_locked(context.completed_clause, tree_matches, without_folders=False)
+            folderless_matching_ids = self._suggestion_matching_ids_locked(
+                context.completed_clause, folderless_tree_matches, without_folders=True,
+            )
             completions: List[str] = []
             for term in suggestions:
                 posting = self._search_term_posting_locked(term.casefold())
                 if context.is_exclusion:
                     has_matches = not matching_ids.issubset(posting)
+                elif term.endswith(FOLDER_TAG_END):
+                    has_matches = not folderless_matching_ids.isdisjoint(posting)
                 else:
                     has_matches = not matching_ids.isdisjoint(posting)
                 if has_matches:
@@ -2232,7 +2254,17 @@ class SearchIndex:
     def _candidate_note_ids_locked(self, clause: SearchClause) -> Set[int]:
         constraints: List[Set[int]] = []
 
+        # Folder terms in a clause add results, every other term narrows: `A/ B/ @todo` finds
+        # to-dos in A or B (docs/ready-to-build/folders-tab-and-multiple-folders.md §3).
+        folder_terms = [tag for tag in clause.required_tags if tag.endswith(FOLDER_TAG_END)]
+        if folder_terms:
+            in_any_folder = set().union(*(self._search_term_posting_locked(tag.casefold()) for tag in folder_terms))
+            if not in_any_folder:
+                return set()
+            constraints.append(in_any_folder)
         for tag in clause.required_tags:
+            if tag.endswith(FOLDER_TAG_END):
+                continue
             posting = self._search_term_posting_locked(tag.casefold())
             if not posting:
                 return set()
@@ -2316,16 +2348,10 @@ class SearchIndex:
         self._tag_notes_casefold[term_casefold].add(note_int_id)
 
     def _search_term_posting_locked(self, tag_casefold: str) -> Set[int]:
-        """The notes a search's tag term finds: a folder term (ending in /) its folder and every
-        folder below it (docs/ready-to-build/folder-tags-in-search.md §1), whether or not the tree
-        is shown; any other term its tag's family, exactly."""
-        if not tag_casefold.endswith(FOLDER_TAG_END):
-            return self._tag_family_posting_locked(tag_casefold)
-        folders = [
-            posting for term, posting in self._tag_notes_casefold.items()
-            if term.startswith(tag_casefold) and term.endswith(FOLDER_TAG_END)
-        ]
-        return set().union(*folders)
+        """The notes a search's tag term finds: its tag's family, exactly. A folder term finds the
+        folders below it too, as a folder tag implies the folders above it
+        (tag_ontology.parent_folder_tags; docs/ready-to-build/folders-tab-and-multiple-folders.md §6)."""
+        return self._tag_family_posting_locked(tag_casefold)
 
     def _tag_family_posting_locked(self, tag_casefold: str) -> Set[int]:
         """The notes carrying a tag; for a tag without a value (@code), also those

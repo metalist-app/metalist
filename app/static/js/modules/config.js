@@ -174,7 +174,7 @@ export const CONFIG = {
         VIRTUAL_FOLDERS: {
             LIST: `${API_BASE}/virtual-folders`,
             FOLDER_CONTEXT: `${API_BASE}/virtual-folders/folder-context`,
-            FOLDER_CONTEXT_NEW: `${API_BASE}/virtual-folders/folder-context/new`,
+            TREE_SHOWN: `${API_BASE}/virtual-folders/tree-shown`,
             RENAME: `${API_BASE}/virtual-folders/rename`,
             MOVE: `${API_BASE}/virtual-folders/move`,
             FILE_NOTE: `${API_BASE}/virtual-folders/file-note`,

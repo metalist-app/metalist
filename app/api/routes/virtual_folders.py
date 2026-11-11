@@ -1,6 +1,6 @@
 """Virtual folders, an experiment (docs/ready-to-build/virtual-folders.md;
-app/services/virtual_folders.py): the folders in a view and the folder its search chooses
-(docs/ready-to-build/folder-tags-in-search.md)."""
+app/services/virtual_folders.py): the folders in a view and the folders its search chooses
+(docs/ready-to-build/folder-tags-in-search.md, folders-tab-and-multiple-folders.md)."""
 
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ from app.services.undo_state import reset_undo_stack
 from app.services.input_errors import InputRejected
 from app.services.tab_state import tab_state_store
 from app.services.virtual_folders import (
-    NO_FOLDER, all_folder_tags, chosen_folder_of, folder_note_counts, folder_note_totals, folder_paths, is_folder_tag,
+    NO_FOLDER, all_folder_tags, chosen_folders_of, folder_note_counts, folder_note_totals, folder_paths, is_folder_tag,
     without_folder_terms,
 )
 from app.usecases.virtual_folders import (
@@ -53,10 +53,12 @@ class FolderNotesRequest(TypedDict):
 
 
 class ChooseFolderRequest(TypedDict):
-    # The folder context the folder was clicked in.
+    # The search context the folder was clicked in.
     tabId: Identifier
     # The folder tag ('Projects/Client-A/'), or '' for the top, `/`: every note.
     folder: Text
+    # ⌘-click (Ctrl-click off the Mac): add or take out that folder, keeping the rest of the search.
+    adds: bool
     clientId: Identifier
     undoContext: UndoContext
 
@@ -64,7 +66,7 @@ class ChooseFolderRequest(TypedDict):
 @router.post("")
 @transactional_route
 def list_virtual_folders(request: Request, body: ViewScope) -> Dict[str, object]:
-    """The folder the search chooses, and every folder in the vault: the whole tree whatever the
+    """The folders the search chooses, and every folder in the vault: the whole tree whatever the
     view shows (the maintainer, 2026-11-01: a tree following the search was confusing), each
     with how many notes clicking it would show (the top's under ''). The chosen folder is read
     from the search (`Projects/`), and the counts read the search without its folders, so choosing
@@ -75,13 +77,12 @@ def list_virtual_folders(request: Request, body: ViewScope) -> Dict[str, object]
         counts = {path: 0 for path in [NO_FOLDER, *folder_paths()]}
     else:
         counts = folder_note_counts(without_folder_terms(body["search"]))
-    chosen = chosen_folder_of(body["search"])
+    chosen = chosen_folders_of(body["search"])
     return {
-        # "folder": its one folder term; "top": none (`/`); "none": two, or folders joined by OR.
+        # "folders": its folder terms, in every OR clause; "top": none (`/`); "none": a search
+        # not finished, nothing marked.
         "chosenKind": chosen.kind,
-        "folder": chosen.folder,
-        # The search contexts that are folder contexts, with the tree.
-        "folderContexts": tab_state_store.folder_contexts(),
+        "chosenFolders": list(chosen.folders),
         "folders": all_folder_tags(),
         "noteCounts": counts,
         # Each folder's count with no search: a count the search narrows reads out of it
@@ -90,22 +91,27 @@ def list_virtual_folders(request: Request, body: ViewScope) -> Dict[str, object]
     }
 
 
-@router.post("/folder-context/new")
+class TreeShownRequest(TypedDict):
+    isShown: bool
+
+
+@router.post("/tree-shown")
 @transactional_route
-def create_folder_context(request: Request) -> Dict[str, object]:
-    """Open folders tab with no folder context: a new one at the end of the list, on every note
-    (docs/ready-to-build/virtual-folders.md, "Folder contexts"). The tab state answered; the browser switches to it."""
+def set_tree_shown(request: Request, body: TreeShownRequest) -> Dict[str, object]:
+    """The folders tab: the tree shown or hidden, kept for the view over a reload; no search
+    context changes (folders-tab-and-multiple-folders.md §1). The tab state answered."""
     require_request_auth_token(request)
-    return tab_state_store.create_folder_context()
+    return tab_state_store.set_tree_shown(is_shown=body["isShown"])
 
 
 @router.post("/folder-context")
 @transactional_route
 def choose_folder(request: Request, body: ChooseFolderRequest) -> Dict[str, object]:
-    """A folder clicked in the tree: the folder context it was clicked in searches it, its search
-    before replaced. A new view, so its undo history starts again. The tab state answered."""
+    """A folder clicked in the tree: the search context it was clicked in searches it, its search
+    before replaced; ⌘-clicked, added or taken out. A new view, so its undo history starts again.
+    The tab state answered."""
     require_request_auth_token(request)
-    snapshot = tab_state_store.choose_folder(tab_id=body["tabId"], folder=body["folder"])
+    snapshot = tab_state_store.choose_folder(tab_id=body["tabId"], folder=body["folder"], adds=body["adds"])
     reset_undo_stack(body["clientId"], body["undoContext"])
     return snapshot
 

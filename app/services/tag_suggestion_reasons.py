@@ -150,11 +150,10 @@ class AppliesThrough:
         cls, *, inherited_non_meta: FrozenSet[str], base_tags: FrozenSet[str], ontology: TagOntology,
     ) -> AppliesThrough:
         base_casefold = frozenset(tag.casefold() for tag in base_tags)
-        implied_casefold: FrozenSet[str] = frozenset()
-        if not ontology.is_empty:
-            implied_casefold = frozenset(
-                tag.casefold() for tag in ontology.infer_implication_only(base_tags=base_tags)
-            ) - base_casefold
+        # With no rules too: a folder tag implies the folders above it (tag_ontology.parent_folder_tags).
+        implied_casefold = frozenset(
+            tag.casefold() for tag in ontology.infer_implication_only(base_tags=base_tags)
+        ) - base_casefold
         return cls(
             inherited_casefold=frozenset(tag.casefold() for tag in inherited_non_meta),
             implied_casefold=implied_casefold, base_tags=base_tags, ontology=ontology,

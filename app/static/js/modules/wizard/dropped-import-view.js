@@ -8,11 +8,11 @@ export const DROPPED_IMPORT_VIEWS = Object.freeze({
     ITS_OWN_SEARCH: 'its-own-search',
 });
 
-export function droppedImportView({ isDroppedFiles, isNewFolder, isInFolderContext }) {
-    if (typeof isDroppedFiles !== 'boolean' || typeof isNewFolder !== 'boolean' || typeof isInFolderContext !== 'boolean') {
+export function droppedImportView({ isDroppedFiles, isNewFolder, isTreeShown }) {
+    if (typeof isDroppedFiles !== 'boolean' || typeof isNewFolder !== 'boolean' || typeof isTreeShown !== 'boolean') {
         throw new Error('droppedImportView requires what was dropped and where');
     }
     if (isDroppedFiles) return DROPPED_IMPORT_VIEWS.IN_ITS_CONTEXT;
-    if (isNewFolder && isInFolderContext) return DROPPED_IMPORT_VIEWS.ITS_NEW_FOLDER;
+    if (isNewFolder && isTreeShown) return DROPPED_IMPORT_VIEWS.ITS_NEW_FOLDER;
     return DROPPED_IMPORT_VIEWS.ITS_OWN_SEARCH;
 }

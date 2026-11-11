@@ -1,14 +1,13 @@
-// A search context's name in the list of search contexts: what its search box shows, the search.
-// A folder context (docs/ready-to-build/virtual-folders.md, "Folder contexts") with none is `/`, every
-// note; a plain search with none is '(empty)'. A folder chosen in the tree is in the search
-// ('Projects/ @todo', docs/ready-to-build/folder-tags-in-search.md).
+// A search context's name in the list of search contexts: what its search box shows, the search,
+// a folder chosen in the tree included ('Projects/ @todo', docs/ready-to-build/folder-tags-in-search.md);
+// with none, '(empty)'. Folder contexts, which read `/` with none, became ordinary search contexts on
+// 2026-11-11 (docs/ready-to-build/folders-tab-and-multiple-folders.md §1).
 export const EMPTY_CONTEXT_LABEL = '(empty)';
-export const NO_FOLDER_LABEL = '/';
 
-export function searchContextLabel({ search, isFolderContext }) {
-    if (typeof search !== 'string' || typeof isFolderContext !== 'boolean') {
-        throw new Error('searchContextLabel requires the search and whether it is a folder context');
+export function searchContextLabel({ search }) {
+    if (typeof search !== 'string') {
+        throw new Error('searchContextLabel requires the search');
     }
     if (search !== '') return search;
-    return isFolderContext ? NO_FOLDER_LABEL : EMPTY_CONTEXT_LABEL;
+    return EMPTY_CONTEXT_LABEL;
 }
