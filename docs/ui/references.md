@@ -173,6 +173,7 @@ Typing `[[` in the note being edited opens a list of notes to reference (agreed 
   - Non-matching sibling branches in visible context are redacted via normal search rules.
 
 ## Related Docs
+- Planned: links that open a search (`[[search:…]]`), skipped by every reference scanner: `docs/ready-to-build/search-links.md`
 - `docs/ui/excalidraw.md`
 - `docs/ui/content-formatting.md`
 - `docs/ui/command-palette.md`

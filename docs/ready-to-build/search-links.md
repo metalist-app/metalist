@@ -2,7 +2,7 @@
 
 **Status:** Agreed with the maintainer 2026-11-10. Ready to build.
 
-Written from a read-only look at the repo. Check the code references before relying on them.
+Written from a read-only look at the repo; filed from `docs/inbox/` on 2026-11-11, with the references checked (§9). `docs/ready-to-build/folder-tags-in-search.md` changes §4: folder contexts' searches are offered too.
 
 ---
 
@@ -36,7 +36,7 @@ A link inside a note that, when clicked, opens a search context with its search 
 ## 3. Clicking one
 
 - **Reuse a matching search context.** If one already has exactly this search, switch to it. Otherwise create a new one with the search filled in.
-- **"Exactly this search"** ignores runs of spaces and leading or trailing space (proposed). Sort, date range and other view options don't count: the link carries only the search.
+- **"Exactly this search"** means the same terms (decided 2026-11-11): runs of spaces, leading or trailing space, the order of the terms (and of `OR` clauses) and capitals don't count, as such searches find exactly the same notes (`work -archive`, `-archive  work` and `Work -archive` are one search). Compare the parsed searches, not the text; the words inside a quoted phrase keep their order. Sort, date range and other view options don't count: the link carries only the search.
 - **A new one is an ordinary search context,** kept in the list like any other, not a temporary view like Source note or the folder context, and named by its search as every search context is.
 - **The context you were in is untouched.**
 - Phone: a tap does the same.
@@ -45,13 +45,13 @@ A link inside a note that, when clicked, opens a search context with its search 
 
 - **Typing `[[` offers search contexts too,** beside notes, each as a magnifier and "Search: work -journal". Choosing one writes `[[search:…]]`.
 - **Which:** only search contexts with a typed search. Not the folder context (its folder is a chip, not search text), not reference views (note IDs), not a search holding `[` or `]`.
-- **Where in the list:** search contexts whose search matches what's typed after `[[`, above the notes (proposed: there are few, and a matching one is likely what's wanted). With nothing typed, the current search context first.
+- **Where in the list:** search contexts whose search matches what's typed after `[[`, above the notes (decided 2026-11-11: there are few, and a matching one is likely what's wanted; below the notes it could be pushed off screen). With nothing typed, the current search context first, then the notes as today (linking the view you're looking at).
 - **Typing the markup by hand works too.**
 
 ## 5. How it looks
 
 - **A link reading its text, or its search if it has none,** with a small magnifier in place of the reference icon, so it doesn't read as a link to a note.
-- **Hovering shows the search** when the link has text (proposed): a tooltip, not the note preview card.
+- **Hovering shows the search** when the link has text (decided 2026-11-11): a tooltip (`Current work` shows `work -archive -journal`), not the note preview card and not a card of results. A link without text already reads its search, so it has none.
 - **Editing shows the markup,** as for note links.
 
 ## 6. What must keep working
@@ -60,7 +60,7 @@ A link inside a note that, when clicked, opens a search context with its search 
 - **Scoped wrapper tags don't format it,** as with a UUID link.
 - **Renaming a tag rewrites the tag inside search links,** in the rename's single undo step, without changing notes' updated times (as Rename tag treats notes now). Only the search's tags change, never quoted text.
 - **The same for search contexts' own searches.** If Rename tag leaves them alone today (§0), fix both together. The one-time built-in tag rename covers search links too.
-- **Exports:** the HTML export keeps the markup. Markdown writes the link's text (or its search) as plain text (proposed).
+- **Exports:** the HTML export keeps the markup. Markdown writes the link's text, then its search (decided 2026-11-11): `Current work (search: `work -archive -journal`)`, and `recipes (search: `recipes`)` for a link with no text. Other apps have no MetaList searches; the markup would read as a link to a note named `search:…` (Obsidian makes an empty one on click), and the text alone loses what was searched.
 - **Search** finds a note by the words in its search links, as for any text.
 - **The AI** reads the markup as written; it is note text.
 
@@ -75,3 +75,12 @@ A link inside a note that, when clicked, opens a search context with its search 
 
 - **Live results inside a note** (`![[search:…]]`, like Obsidian's query blocks): later, and much bigger.
 - **Obsidian `query` blocks** stay as text unless mapping them to search links turns out simple; the syntax differs a lot.
+
+## 9. Checked against the code (2026-11-11, when filed)
+
+- Every reference in §0 holds: `obsidian-mapping.md` E13; `[[web:N]]` in `citation_tokens.py` and `ai_chat_rendering.py`; the same any-`[[…]]` pattern in `backlinks.py` and `embedded_references.py` (`_REFERENCE_TOKEN_RE`); `parse_reference_inner` in `embedded_references.py`.
+- **Rename tag does not rewrite saved searches (confirmed).** `apply_rename_tag_everywhere` (`app/usecases/rename_tag.py`) touches no search context; `TabState.rename_search_terms` (`app/services/tab_state.py`) is called only by the one-time built-in tag rename (`content_cache.py`). Fixing it is part of this note (§6) and of `folder-tags-in-search.md` §4, which depends on it: build the shared rewrite once.
+- `embedded_references.py` also has `_BRACKETED_SPAN_RE` (`!?\[\[[^\]]+\]\]`), used to keep bracketed spans whole; check it when `search:` is added.
+
+**Decided 2026-11-11** (once marked "proposed"): matching a search context by its terms (§3), matching search contexts above notes in `[[` suggestions (§4), a tooltip with the search (§5), the Markdown export writing the text and the search (§6). Nothing is open.
+

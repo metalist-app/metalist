@@ -323,7 +323,7 @@ It offers the same scope, the one-file-per-root-note option (§6.2) and the two 
 6. **Image sizes:** Obsidian sets a width per image; MetaList sets a size factor on the note. How close counts as close enough on import, and what does export write? (Already open in `docs/future-plans/obsidian-import-export.md`.)
 7. ~~Children that aren't a list~~ **Decided 2026-10-31** (§6.3.1): a walkthrough choice of Outline (the default), Document or Plain paragraphs, the complete set; indentation, markers and escaping as written there. (Replaces the two-folder-tags question, dropped with folders.)
 8. ~~Logseq's label at launch~~ **Decided 2026-10-30:** one-way, like Obsidian (§4); the exact wording is still to write.
-9. ~~Finding a folder's notes~~ **Decided 2026-10-30: nothing new.** The main search matches tags exactly, but typing `Projects` in the search suggests every subfolder tag (`Projects/Client-A`, ...), so it is easy to find what to type. No prefix search and no added rules.
+9. ~~Finding a folder's notes~~ **Decided 2026-10-30: nothing new** (changed 2026-11-10 for folder tags: `docs/ready-to-build/folder-tags-in-search.md`). The main search matches tags exactly, but typing `Projects` in the search suggests every subfolder tag (`Projects/Client-A`, ...), so it is easy to find what to type. No prefix search and no added rules.
 10. **Visible `#tags` that common apps don't read as tags** (§6.4): how to write tags with `=`, `:`, `.`, `@` or a leading digit; list the cases found. (Replaces super tags as frontmatter properties, dropped 2026-10-30: there is no per-note frontmatter; values go in the hidden metadata.)
 11. ~~Embeds in the export~~ **Decided 2026-10-30:** a walkthrough choice, default a link (§6.3).
 

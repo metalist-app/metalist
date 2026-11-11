@@ -13,6 +13,7 @@ For input grammar, normalization rules, and completeness gating, see:
 Search queries are a whitespace-separated list of terms.
 
 ### Tag Terms (unquoted)
+- Planned (agreed 2026-11-10): a term ending in `/` will match that folder and every folder below it, the one exception to exact matching (`docs/ready-to-build/folder-tags-in-search.md`).
 - `foo` and `+foo` are equivalent (required tag).
 - `-foo` excludes notes that have tag `foo`.
 - A tag with a value, `name=value` (`@code=python`, `@size=2`), can be searched whole
