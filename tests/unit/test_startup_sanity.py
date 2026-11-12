@@ -67,6 +67,29 @@ def move():
     )
 
 
+def test_startup_sanity_accepts_a_post_marked_read_only(tmp_path: Path) -> None:
+    _write_file(
+        tmp_path / "routes.py",
+        """
+from fastapi import APIRouter
+
+from app.api.transactions import read_only_route
+
+router = APIRouter(prefix="/notes")
+
+@router.post("/edit-preview")
+@read_only_route
+def edit_preview():
+    return {"ok": True}
+""".strip()
+        + "\n",
+    )
+
+    _, violations = collect_startup_sanity_violations(tmp_path)
+
+    assert not any(violation.rule_id in {"TXN001", "TXN002"} for violation in violations)
+
+
 def test_startup_sanity_rejects_misordered_transactional_route(tmp_path: Path) -> None:
     _write_file(
         tmp_path / "routes.py",

@@ -582,7 +582,7 @@ swap, or filesystem snapshots.
 - Server restart requires re-authentication
 
 ### Mutation Transaction Enforcement
-- Mutating FastAPI routes are expected to use `@transactional_route`.
+- Mutating FastAPI routes are expected to use `@transactional_route`. A POST that changes nothing (the edit preview) uses `@read_only_route`; startup sanity (TXN001) accepts either.
 - Startup sanity rejects mutation endpoints that omit the decorator or place it in the wrong order.
 - Request-scoped writer sessions are reused across the wrapped route path so the commit happens once at the end of the request, not in intermediate steps.
 

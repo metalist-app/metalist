@@ -74,7 +74,7 @@ from app.api.note_requests import (
     PasteSiblingEndpointRequest,
     PasteChildEndpointRequest,
 )
-from app.api.transactions import serialized_read_route, transactional_route
+from app.api.transactions import read_only_route, serialized_read_route, transactional_route
 from app.services.sync import touch_client
 from app.services.edit_previews import edit_preview_at_caret, format_preview_html
 from app.services.file_filter_types import list_file_filter_kinds
@@ -1003,7 +1003,7 @@ def tag_details(payload: TagDetailsRequest) -> Dict[str, object]:
 
 
 @router.post("/notes/edit-preview")
-@transactional_route
+@read_only_route
 def edit_preview(payload: EditPreviewRequest) -> Dict[str, object]:
     """Read-only: the formula, CSV table or Mermaid diagram under the caret while editing (docs/ui/content-formatting.md, "Previews while editing")."""
     preview = edit_preview_at_caret(marked_content_html=payload["marked_content_html"], tags=payload["tags_text"])

@@ -45,22 +45,83 @@ def test_read_permissions_are_isolated_across_overlapping_threads():
         SafeSession.disable_read_guard()
 
 
-def test_async_mutations_cannot_overlap_each_others_transaction():
+# A change that arrives while another runs waits for it, never overlapping it: refused with 409,
+# a note save failed (2026-10-24) and so did the edit preview, shown as a fatal error (the
+# maintainer, 2026-11-11). A while for a waiting change to show it is not let in.
+_STILL_WAITING_SECONDS = 0.2
+
+
+def test_async_changes_wait_for_each_other_without_overlapping():
     async def scenario():
         entered, release = asyncio.Event(), asyncio.Event()
+        events = []
         @transactional_route
-        async def mutation():
+        async def first():
             entered.set()
             await release.wait()
-        task = asyncio.create_task(mutation())
+            events.append('first done')
+        @transactional_route
+        async def second():
+            events.append('second ran')
+        running = asyncio.create_task(first())
         await entered.wait()
-        try:
-            with pytest.raises(HTTPException) as exc:
-                await asyncio.wait_for(mutation(), timeout=.2)
-            assert exc.value.status_code == 409
-        finally:
-            release.set()
-            await task
+        waiting = asyncio.create_task(second())
+        await asyncio.sleep(_STILL_WAITING_SECONDS)
+        assert not waiting.done()
+        release.set()
+        await running
+        await waiting
+        assert events == ['first done', 'second ran']
+    asyncio.run(scenario())
+
+
+def test_a_sync_change_waits_for_an_async_one_instead_of_being_refused():
+    # An image uploading (an async route) while the note is saved (a sync one).
+    async def scenario():
+        entered, release = asyncio.Event(), asyncio.Event()
+        events = []
+        @transactional_route
+        async def upload():
+            entered.set()
+            await release.wait()
+            events.append('upload done')
+        @transactional_route
+        def save():
+            events.append('save ran')
+            return 'saved'
+        running = asyncio.create_task(upload())
+        await entered.wait()
+        saving = asyncio.create_task(asyncio.to_thread(save))
+        await asyncio.sleep(_STILL_WAITING_SECONDS)
+        assert not saving.done()
+        release.set()
+        await running
+        assert await saving == 'saved'
+        assert events == ['upload done', 'save ran']
+    asyncio.run(scenario())
+
+
+def test_an_async_change_waits_for_a_sync_one_instead_of_being_refused():
+    async def scenario():
+        entered, release = Event(), Event()
+        events = []
+        @transactional_route
+        def save():
+            entered.set()
+            assert release.wait(_STILL_WAITING_SECONDS * 10)
+            events.append('save done')
+        @transactional_route
+        async def upload():
+            events.append('upload ran')
+        saving = asyncio.create_task(asyncio.to_thread(save))
+        await asyncio.to_thread(entered.wait)
+        uploading = asyncio.create_task(upload())
+        await asyncio.sleep(_STILL_WAITING_SECONDS)
+        assert not uploading.done()
+        release.set()
+        await saving
+        await uploading
+        assert events == ['save done', 'upload ran']
     asyncio.run(scenario())
 
 

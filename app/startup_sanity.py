@@ -268,6 +268,14 @@ def _transactional_decorator(node: ast.AST) -> bool:
     return isinstance(name, str) and name.endswith(".transactional_route")
 
 
+def _read_only_decorator(node: ast.AST) -> bool:
+    """@read_only_route: a POST that changes nothing (app/api/transactions.py)."""
+    name = _dotted_name(node)
+    if name == "read_only_route":
+        return True
+    return isinstance(name, str) and name.endswith(".read_only_route")
+
+
 def _route_decorator(node: ast.AST, prefixes: dict[str, str]) -> _RouteDecorator | None:
     if not isinstance(node, ast.Call):
         return None
@@ -602,7 +610,9 @@ class _StartupSanityChecker(ast.NodeVisitor):
                 )
                 continue
 
-            if index + 1 < len(decorators) and _transactional_decorator(decorators[index + 1]):
+            if index + 1 < len(decorators) and (
+                _transactional_decorator(decorators[index + 1]) or _read_only_decorator(decorators[index + 1])
+            ):
                 continue
 
             any_transactional = any(_transactional_decorator(candidate) for candidate in decorators)

@@ -8,7 +8,7 @@ from fastapi import FastAPI
 import pytest
 
 from app.api.transactions import assert_mutation_routes_wrapped
-from app.api.transactions import transactional_route
+from app.api.transactions import read_only_route, transactional_route
 
 
 def test_transaction_audit_accepts_decorated_mutation_routes() -> None:
@@ -66,3 +66,14 @@ def test_every_data_changing_route_of_the_real_app_runs_in_a_transaction(tmp_pat
         timeout=_REAL_APP_TIMEOUT_SECONDS,
     )
     assert result.returncode == 0, result.stderr[-3000:]
+
+
+def test_transaction_audit_accepts_a_post_marked_read_only() -> None:
+    app = FastAPI()
+
+    @app.post("/preview")
+    @read_only_route
+    def preview() -> dict[str, bool]:
+        return {"ok": True}
+
+    assert_mutation_routes_wrapped(app)

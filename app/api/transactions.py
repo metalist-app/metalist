@@ -2,12 +2,13 @@ from __future__ import annotations
 
 from http import HTTPStatus
 from functools import wraps
-from contextlib import ExitStack, nullcontext, contextmanager
+from contextlib import asynccontextmanager, nullcontext, contextmanager
 import inspect
 from typing import Any, Awaitable, Callable, ParamSpec, TypeVar, cast, get_type_hints, overload
 
+import anyio.to_thread
 from fastapi import FastAPI, HTTPException
-from app.services.bulk_operation import bulk_operation_guard, BulkOperationBusy
+from app.services.bulk_operation import bulk_operation_guard
 from fastapi.routing import APIRoute
 
 from app.db.session import begin_request_transaction
@@ -18,21 +19,28 @@ from app.services.maintenance_mode import maintenance_service
 P = ParamSpec("P")
 R = TypeVar("R")
 _TRANSACTIONAL_ROUTE_MARKER = "__transactional_route__"
+_READ_ONLY_ROUTE_MARKER = "__read_only_route__"
 _MUTATION_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 _STORAGE_TRANSITIONS = frozenset({"create_password", "remove_password", "restore_from_backup", "restore_backup", "import_backup"})
 
 
 @contextmanager
 def _mutation_slot():
-    with ExitStack() as slot:
-        mutation = bulk_operation_guard.track_mutation()
-        # lint: allow-PY001 rationale="translate expected request-admission contention to HTTP 409"
-        try:
-            slot.enter_context(mutation)
-        # lint: allow-PY001 rationale="translate expected request-admission contention to HTTP 409"
-        except BulkOperationBusy as exc:
-            raise HTTPException(status_code=HTTPStatus.CONFLICT, detail=str(exc)) from exc
+    """A sync request's turn to change the vault: it waits for the change running, if any."""
+    with bulk_operation_guard.track_mutation():
         yield
+
+
+@asynccontextmanager
+async def _async_mutation_slot():
+    """An async request's turn, waited for in a worker thread. The wait is shielded from
+    cancellation (anyio's default), so a request cancelled while waiting still gets its turn
+    and gives it back: the slot is never left held."""
+    await anyio.to_thread.run_sync(bulk_operation_guard.claim_mutation_slot)
+    try:
+        yield
+    finally:
+        bulk_operation_guard.release_mutation_slot()
 
 
 def _resolved_signature(func: Callable[..., Any]) -> inspect.Signature:
@@ -77,7 +85,7 @@ def transactional_route(func: Callable[..., Any]) -> Callable[..., Any]:
 
         @wraps(async_func)
         async def async_wrapper(*args: Any, **kwargs: Any) -> Any:
-            with _mutation_slot():
+            async with _async_mutation_slot():
                 _check_bulk_guard(func.__name__)
                 with begin_request_transaction():
                     register_runtime_recovery()
@@ -91,8 +99,10 @@ def transactional_route(func: Callable[..., Any]) -> Callable[..., Any]:
 
     @wraps(sync_func)
     def sync_wrapper(*args: Any, **kwargs: Any) -> Any:
-        with bulk_operation_guard.lock:
-            with _mutation_slot():
+        # The slot first, holding nothing while it waits: an async change holding it may need
+        # the lock (a bulk operation starting on the event loop takes it).
+        with _mutation_slot():
+            with bulk_operation_guard.lock:
                 _check_bulk_guard(func.__name__)
                 maintenance = nullcontext()
                 if func.__name__ in _STORAGE_TRANSITIONS:
@@ -124,6 +134,22 @@ def serialized_read_route(func: Callable[P, R]) -> Callable[P, R]:
     return serialized_wrapper
 
 
+def read_only_route(func: Callable[P, R]) -> Callable[P, R]:
+    """A POST that changes nothing: it works only from what it is sent (a body too large or too
+    private for a URL), so it never waits for a change or is refused while one runs. The edit
+    preview was refused with a fatal "409 Conflict" while another request changed the vault (the
+    maintainer, 2026-11-11). A route that reads the note tree in several steps takes
+    serialized_read_route instead."""
+    if inspect.iscoroutinefunction(func):
+        raise TypeError(f"read_only_route needs a synchronous route: {func.__name__}")
+    setattr(func, _READ_ONLY_ROUTE_MARKER, True)
+    return func
+
+
+def _is_marked(endpoint: Callable[..., Any], marker: str) -> bool:
+    return marker in vars(endpoint) and vars(endpoint)[marker] is True
+
+
 def assert_mutation_routes_wrapped(app: FastAPI) -> None:
     violations: list[str] = []
 
@@ -138,8 +164,9 @@ def assert_mutation_routes_wrapped(app: FastAPI) -> None:
             continue
 
         endpoint = route.endpoint
-        # The transactional wrapper marks the routes it wraps; unwrapped ones have no mark.
-        if _TRANSACTIONAL_ROUTE_MARKER in vars(endpoint) and vars(endpoint)[_TRANSACTIONAL_ROUTE_MARKER] is True:
+        # The transactional wrapper marks the routes it wraps, read_only_route those that change
+        # nothing; unwrapped ones have no mark.
+        if _is_marked(endpoint, _TRANSACTIONAL_ROUTE_MARKER) or _is_marked(endpoint, _READ_ONLY_ROUTE_MARKER):
             continue
 
         violations.append(
@@ -156,8 +183,9 @@ def assert_mutation_routes_wrapped(app: FastAPI) -> None:
 
 
 def _check_bulk_guard(endpoint_name: str) -> None:
-    if endpoint_name in _STORAGE_TRANSITIONS and bulk_operation_guard.active_mutations > 1:
-        raise HTTPException(status_code=HTTPStatus.CONFLICT, detail="Wait for the current request to finish before changing vault storage.")
+    # Changes run one at a time: a storage change never runs beside another request's.
+    if endpoint_name in _STORAGE_TRANSITIONS:
+        assert bulk_operation_guard.active_mutations == 1, bulk_operation_guard.active_mutations
     # Preferences never touch notes, and every operation reads them once when it
     # starts, so saving them (e.g. the chat panel width) cannot disturb it.
     permitted = {"answer_bulk_question", "preview_cloud_privacy", "put_ai_debug_details", "put_client_preferences"}
