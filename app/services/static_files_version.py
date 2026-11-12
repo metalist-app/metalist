@@ -43,6 +43,8 @@ _NEVER_KEPT = "no-store"
 _ASKED_AGAIN = "no-cache"
 # v, the version, then the file's own path.
 _VERSIONED_PATH_LEAST_PARTS = 3
+# Where the file's own path starts, after v and the version.
+_VERSIONED_FILE_PATH_START = 2
 _KEPT_STATUSES = frozenset({HTTPStatus.OK, HTTPStatus.NOT_MODIFIED})
 
 
@@ -96,7 +98,7 @@ class MetaListStaticFiles(StaticFiles):
         # Starlette passes the path with the system's separators, '..' already resolved.
         parts = path.split(os.sep)
         if len(parts) >= _VERSIONED_PATH_LEAST_PARTS and parts[0] == VERSIONED_FOLDER:
-            response = await super().get_response(os.path.join(*parts[2:]), scope)
+            response = await super().get_response(os.path.join(*parts[_VERSIONED_FILE_PATH_START:]), scope)
             cache_control = _NEVER_KEPT
             if self._version.is_current(parts[1]):
                 cache_control = _KEPT_FOR_GOOD
