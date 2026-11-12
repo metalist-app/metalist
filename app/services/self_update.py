@@ -26,8 +26,11 @@ _PYPI_REQUEST_TIMEOUT_SECONDS = 10.0
 _RELEASE_VERSION_PATTERN = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+")
 # The updater's last step, run by the version just installed and restarted.
 TRIM_SAFETY_BACKUPS_COMMAND = "trim-safety-backups"
-# Then the updater's own uv drops cache entries nothing uses any more (no --ci, no --force:
-# those also clear built wheels or ignore other uv processes still using the cache).
+# Right after the install, the updater's own uv drops cache entries nothing uses any more (no
+# --ci, no --force: those also clear built wheels or ignore other uv processes still using the
+# cache). Before the restart, so uv has exited by the time the updated MetaList answers (on
+# Windows a running uv.exe cannot be removed); a failed prune still restarts MetaList and is
+# reported last.
 PRUNE_UV_CACHE_ARGUMENTS = ("cache", "prune")
 
 
@@ -237,6 +240,7 @@ def _build_windows_updater_command(
         "if ($LASTEXITCODE -ne 0) { "
         "Write-Host 'MetaList update failed. Review the uv output above.' -ForegroundColor Red; "
         "Start-Sleep -Seconds 10; exit $LASTEXITCODE }; "
+        f"& {quoted_prune}; $pruneExitCode = $LASTEXITCODE; "
         f"& {quoted_metalist}; "
         "if ($LASTEXITCODE -ne 0) { "
         f"Write-Host 'MetaList updated to v{target_version}, but restart failed.' "
@@ -247,11 +251,10 @@ def _build_windows_updater_command(
         f"Write-Host 'MetaList updated to v{target_version}, but older safety backups were not removed.' "
         "-ForegroundColor Red; "
         "Start-Sleep -Seconds 10; exit $LASTEXITCODE }; "
-        f"& {quoted_prune}; "
-        "if ($LASTEXITCODE -ne 0) { "
+        "if ($pruneExitCode -ne 0) { "
         f"Write-Host 'MetaList updated to v{target_version}, but uv''s download cache was not pruned.' "
         "-ForegroundColor Red; "
-        "Start-Sleep -Seconds 10; exit $LASTEXITCODE }; "
+        "Start-Sleep -Seconds 10; exit $pruneExitCode }; "
         f"Write-Host 'MetaList updated to v{target_version}.' -ForegroundColor Green; "
         "Start-Sleep -Seconds 3"
     )
@@ -283,6 +286,10 @@ def _build_posix_updater_command(
         "  echo 'MetaList update failed. Review the uv output above.' >&2\n"
         "  exit 1\n"
         "fi\n"
+        "is_cache_pruned=1\n"
+        f"if ! {prune_command}; then\n"
+        "  is_cache_pruned=0\n"
+        "fi\n"
         f"if ! {metalist_command}; then\n"
         f"  echo 'MetaList updated to v{target_version}, but restart failed.' >&2\n"
         "  exit 1\n"
@@ -291,7 +298,7 @@ def _build_posix_updater_command(
         f"  echo 'MetaList updated to v{target_version}, but older safety backups were not removed.' >&2\n"
         "  exit 1\n"
         "fi\n"
-        f"if ! {prune_command}; then\n"
+        "if [ \"$is_cache_pruned\" -ne 1 ]; then\n"
         f"  echo \"MetaList updated to v{target_version}, but uv's download cache was not pruned.\" >&2\n"
         "  exit 1\n"
         "fi\n"

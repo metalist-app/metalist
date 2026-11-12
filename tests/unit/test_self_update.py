@@ -495,25 +495,36 @@ def test_windows_updater_trims_safety_backups_last_and_only_after_a_restart() ->
     assert script.index("older safety backups") < script.index("-ForegroundColor Green")
 
 
-def test_posix_updater_prunes_uv_cache_with_the_updater_uv_after_the_trim() -> None:
+# The prune runs once the install is done and before the restart: when the updated MetaList
+# answers, uv is no longer running (on Windows a running uv.exe cannot be removed; the
+# Windows update smoke failed cleaning up after it on 2026-11-12). A failed prune still
+# restarts MetaList and is reported last, as loudly as before.
+def test_posix_updater_prunes_uv_cache_with_the_updater_uv_before_the_restart() -> None:
     [_shell, _flag, script] = self_update._build_posix_updater_command(
         shell_executable="/bin/sh", install_command=["/managed/uv", "tool", "install"],
         metalist_executable="/bin/metalist", current_pid=4242, target_version="0.3.13",
     )
-    prune = "if ! /managed/uv cache prune; then"
-    _steps_in_order(script, "if ! /bin/metalist trim-safety-backups; then", "older safety backups", prune,
+    prune = "if ! /managed/uv cache prune; then\n  is_cache_pruned=0\nfi\n"
+    _steps_in_order(script, "if ! /managed/uv tool install; then", prune, "if ! /bin/metalist; then",
+                    "if ! /bin/metalist trim-safety-backups; then", "older safety backups",
                     "but uv's download cache was not pruned", "MetaList updated to v0.3.13.'\n")
+    between = script[script.index(prune):script.index("if ! /bin/metalist; then")]
+    assert "exit" not in between, between
     assert script.count("cache prune") == 1
     assert "--ci" not in script and "--force" not in script.replace("tool install", "")
 
 
-def test_windows_updater_prunes_uv_cache_with_the_updater_uv_after_the_trim() -> None:
+def test_windows_updater_prunes_uv_cache_with_the_updater_uv_before_the_restart() -> None:
     command = self_update._build_windows_updater_command(
         powershell_executable="powershell.exe", install_command=["/managed/uv", "tool", "install"],
         metalist_executable="C:/metalist.exe", current_pid=4242, target_version="0.3.13",
     )
     script = command[5]
-    prune = "& '/managed/uv' 'cache' 'prune'; if ($LASTEXITCODE -ne 0)"
-    _steps_in_order(script, "'trim-safety-backups'", "older safety backups", prune,
+    prune = "& '/managed/uv' 'cache' 'prune'; $pruneExitCode = $LASTEXITCODE; "
+    restart = "& 'C:/metalist.exe'; if ($LASTEXITCODE -ne 0)"
+    _steps_in_order(script, "& '/managed/uv' 'tool' 'install'", prune, restart, "'trim-safety-backups'",
+                    "older safety backups", "if ($pruneExitCode -ne 0)",
                     "but uv''s download cache was not pruned", "-ForegroundColor Green")
+    between = script[script.index(prune):script.index(restart)]
+    assert "exit" not in between, between
     assert script.count("'cache' 'prune'") == 1

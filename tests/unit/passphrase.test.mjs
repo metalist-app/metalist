@@ -23,7 +23,7 @@ const fillRandomValues = (buffer) => webcrypto.getRandomValues(buffer);
 // 10,000 all scored 4 when measured (2026-10-29, both zxcvbns); 1,000 keeps the suite quick.
 const SUGGESTIONS = 1000;
 const VERY_STRONG = 4;
-// Draws for the evenness check, and how far above its expected count (about 32) a word may
+// Draws for the evenness check, and how far above its expected count (about 6.4) a word may
 // come up: about seven standard deviations, so a fair draw never trips it.
 const EVENNESS_DRAWS = 50000;
 const EVENNESS_SLACK = 7;
@@ -49,11 +49,18 @@ test('1,000 suggestions are list words that score 4', () => {
     }
 });
 
+// A passphrase is read back word by word by splitting at hyphens, so a hyphenated list word
+// (drop-down, felt-tip, t-shirt, yo-yo) comes back as its halves: down and shirt are list
+// words too, and yo-yo gives yo twice, so they came up about twice as often and tripped the
+// check now and then (macOS CI, 2026-11-12). Their halves are left out of the count.
+const HYPHENATED_WORD_HALVES = new Set(WORDS.filter((word) => word.includes('-')).flatMap((word) => word.split('-')));
+
 test('every word comes up about equally often', () => {
     const counts = new Map();
     const draws = EVENNESS_DRAWS / DEFAULT_PASSPHRASE_WORD_COUNT;
     for (let index = 0; index < draws; index += 1) {
         for (const word of generatePassphrase(WORDS, DEFAULT_PASSPHRASE_WORD_COUNT, fillRandomValues).split('-')) {
+            if (HYPHENATED_WORD_HALVES.has(word)) continue;
             counts.set(word, (counts.get(word) ?? 0) + 1);
         }
     }
