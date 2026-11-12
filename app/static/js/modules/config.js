@@ -41,6 +41,9 @@ export const CONFIG = {
             // Delete Notes (Current View)…: count for the confirmation, then delete.
             DELETE_IN_VIEW_COUNT: `${API_NOTES_BASE}/view/delete-count`,
             DELETE_IN_VIEW: `${API_NOTES_BASE}/view/delete`,
+            TAG_IN_VIEW_SUGGESTIONS: `${API_NOTES_BASE}/view/tag-suggestions`,
+            TAG_IN_VIEW_COUNT: `${API_NOTES_BASE}/view/tag-count`,
+            TAG_IN_VIEW: `${API_NOTES_BASE}/view/tag`,
             UNFORMAT: (noteId) => `${API_NOTES_BASE}/${noteId}/unformat`,
             RESIZE_IMAGE: (noteId) => `${API_NOTES_BASE}/${noteId}/resize-image`,
             EDITING_IMAGE_SIZES: (noteId) => `${API_NOTES_BASE}/${noteId}/editing-image-sizes`,
@@ -171,6 +174,13 @@ export const CONFIG = {
             BOOKMARKS: `${API_BASE}/import/bookmarks`,
         },
         // Virtual folders, an experiment (app/api/routes/virtual_folders.py).
+        // Problem reports (app/api/routes/problem_reports.py; docs/ready-to-build/error-reports.md).
+        PROBLEM_REPORTS: {
+            MAKE: `${API_BASE}/problem-reports`,
+            MAKE_UNSAVED: `${API_BASE}/problem-reports/unsaved`,
+            LIST: `${API_BASE}/problem-reports`,
+            EXPORT: `${API_BASE}/problem-reports/export`,
+        },
         VIRTUAL_FOLDERS: {
             LIST: `${API_BASE}/virtual-folders`,
             FOLDER_CONTEXT: `${API_BASE}/virtual-folders/folder-context`,

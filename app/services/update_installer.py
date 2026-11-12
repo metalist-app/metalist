@@ -14,8 +14,11 @@ import subprocess
 import sys
 import tarfile
 from tempfile import NamedTemporaryFile
+import time
 from urllib.request import urlopen
 import zipfile
+
+from app.utils.time_units import SECONDS_PER_HOUR
 
 
 # Official immutable uv 0.12.17 release archives. These values match the
@@ -25,6 +28,10 @@ _INSTALLER_VERSION_CHECK_TIMEOUT_SECONDS = 30
 _INSTALLER_DOWNLOAD_TIMEOUT_SECONDS = 120
 _ARCHIVE_FILE_MODE = stat.S_IRUSR | stat.S_IWUSR
 _EXECUTABLE_FILE_MODE = stat.S_IRWXU
+# Each uv version and target has its own folder in the cache root: uv-<version>-<target>.
+_INSTALLER_FOLDER_PREFIX = "uv-"
+# A staged file younger than this may belong to another update writing it right now.
+_STALE_STAGED_FILE_AGE_SECONDS = SECONDS_PER_HOUR
 INSTALLER_ARCHIVE_SHA256 = {
     "aarch64-apple-darwin": "85f00cbdc6dd3e97eba4c31b4d014375a9fdfe8f570023b84e5102fc3456896b",
     "aarch64-pc-windows-msvc": "3e1aa6849d77f0e00dc865e4afab5c5b32de053e21fe35bf5ad5cec3734ec976",
@@ -244,7 +251,29 @@ def resolve_update_installer(*, platform_name: str, environ: Mapping[str, str]) 
         raise RuntimeError(
             "Verified update installer reported the wrong version; MetaList was not stopped"
         )
+    _remove_superseded_installer_files(
+        executable=Path(executable), platform_name=platform_name, environ=environ,
+    )
     return executable
+
+
+# Once the current uv is in place and verified: other uv versions and targets, and staged
+# files a failed publish left behind (_publish_bytes stages next to its destination).
+def _remove_superseded_installer_files(
+    *, executable: Path, platform_name: str, environ: Mapping[str, str],
+) -> None:
+    current_directory = executable.parent
+    cache_root = _installer_cache_root(platform_name=platform_name, environ=environ)
+    if current_directory.parent != cache_root:
+        raise AssertionError(f"The update installer {executable} is not in its cache {cache_root}")
+    for folder in cache_root.iterdir():
+        if folder != current_directory and folder.is_dir() and folder.name.startswith(_INSTALLER_FOLDER_PREFIX):
+            shutil.rmtree(folder)
+    oldest_kept = time.time() - _STALE_STAGED_FILE_AGE_SECONDS
+    for staged in current_directory.glob("*.tmp"):
+        if staged.stat().st_mtime < oldest_kept:
+            # Another update finishing at the same moment may remove it first.
+            staged.unlink(missing_ok=True)
 
 
 def repair_windows_update() -> None:

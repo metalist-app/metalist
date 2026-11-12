@@ -11,6 +11,7 @@ import {
     createNoteAtTop,
     deleteNote,
     createChildNote,
+    createNoteAfterParent,
     moveNoteUp,
     moveNoteDown,
     moveNoteToBottom,
@@ -618,7 +619,9 @@ function handleKeyDown(event) {
             handleEscapeKey();
             break;
         case 'Enter':
-            if ((event.metaKey || event.ctrlKey) && event.shiftKey) {
+            if ((event.metaKey || event.ctrlKey) && event.altKey && !event.shiftKey) {
+                handleCreateNoteAfterParentShortcut(event);
+            } else if ((event.metaKey || event.ctrlKey) && event.shiftKey) {
                 handleCreateChildNoteShortcut(event);
             } else if (event.metaKey || event.ctrlKey) {
                 handleCreateNoteShortcut(event);
@@ -1002,6 +1005,27 @@ function handleCreateChildNoteShortcut(event) {
 
 	void CommandGate.run('keyboard.create_child', async () => {
 		await createChildNote();
+	});
+}
+
+function handleCreateNoteAfterParentShortcut(event) {
+    if (!event) {
+        throw new Error('handleCreateNoteAfterParentShortcut called without an event object');
+    }
+
+    Logger.logDebug('Create note after parent shortcut triggered', {
+        isEditing: ModeContext.isEditing,
+        currentNoteId: ModeContext.currentNoteId
+    }, Logger.LogCategory.EVENT);
+
+    event.preventDefault();
+
+	if (ModeContext.isSearching) {
+		actionExitSearchMode();
+	}
+
+	void CommandGate.run('keyboard.create_after_parent', async () => {
+		await createNoteAfterParent();
 	});
 }
 

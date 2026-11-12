@@ -2,7 +2,9 @@
 // data folder, always at http://127.0.0.1:8600 (a free HTTPS port beside it; never the
 // user's vault or 8443), filled with
 // made-up notes that exercise rendering. It prints its address and runs until Ctrl-C, which
-// stops it and deletes its data. Start it with `npm run throwaway`; `--keep` keeps the data
+// stops it and deletes its data. Every way it ends (Ctrl-C, a kill or the terminal closing at
+// any point, the vault generation, start or seeding failing) stops its processes, waits for
+// them to exit, then deletes the data folder (run-folders.mjs). Start it with `npm run throwaway`; `--keep` keeps the data
 // folder, `--empty` starts with no sample notes, `--development` runs it in development (its
 // developer tools shown, such as the Obsidian import, PLAN.md). For a look at scale (docs/future-plans/scale-testing.md,
 // scale testing): `--notes N` fills it with N generated notes instead of the samples
@@ -11,20 +13,20 @@
 // provider (app/services/agent/scripted_inference.py):
 //   npm run throwaway -- --notes 100000 --files 1200 --scripted-ai tests/fixtures/scripted-ai/search-view.json
 
-import {spawn, spawnSync} from 'node:child_process';
-import {mkdtemp, rm} from 'node:fs/promises';
-import {tmpdir} from 'node:os';
+import {spawn} from 'node:child_process';
 import {join, resolve} from 'node:path';
 import {createServer} from 'node:net';
 import puppeteer from 'puppeteer';
 import {closeBrowser, installedBrowserExecutable} from './installed-browser.mjs';
 import {parseThrowawayOptions} from './throwaway-options.mjs';
+import {makeRunFolder, removeRunFolder, stopAndWait, waitForExit} from './run-folders.mjs';
 
 // The same address every time, so a bookmark or an open page keeps working (2026-10-29).
 const THROWAWAY_PORT = 8600;
 const SERVER_START_TIMEOUT_MS = 30_000;
-// What the server logs once it answers requests (uvicorn).
-const SERVER_READY_LINE = 'Uvicorn running on';
+// What the server logs once it answers requests (uvicorn's lifecycle, as the safe log writes it:
+// app/services/safe_log.py).
+const SERVER_READY_LINE = 'server stage=listening';
 const APP_READY_TIMEOUT_MS = 30_000;
 // process.argv holds node and the script before the options.
 const FIRST_OPTION_INDEX = 2;
@@ -32,6 +34,12 @@ const LONG_NOTE_LINES = 40;
 const TREE_DEPTH = 5;
 // The generated vault is the same every time, so a look can be repeated.
 const GENERATED_VAULT_SEED = 1;
+const RUN_FOLDER_PREFIX = 'metalist-throwaway-';
+// How long a process may take to stop after SIGTERM before it is killed.
+const STOP_GRACE_MS = 10_000;
+// Ctrl-C, a kill or the terminal closing is how a throwaway is meant to end.
+const EXIT_SIGNALS = ['SIGINT', 'SIGTERM', 'SIGHUP'];
+const EXIT_STOPPED = 0;
 const OPTIONS = parseThrowawayOptions(process.argv.slice(FIRST_OPTION_INDEX));
 
 // Stops with a clear message when the port is taken: never a quiet move to another port.
@@ -108,12 +116,12 @@ async function seed(page) {
   }, sampleNotes());
 }
 
-const directory = await mkdtemp(join(tmpdir(), 'metalist-throwaway-'));
 const port = THROWAWAY_PORT;
 await requirePortFree(port);
 let httpsPort = await freePort();
 while (httpsPort === port) httpsPort = await freePort();
 const origin = `http://127.0.0.1:${port}`;
+const directory = await makeRunFolder(RUN_FOLDER_PREFIX);
 const env = {...process.env};
 for (const key of Object.keys(env)) {
   if (key.startsWith('METALIST_') || key === 'TEST_MODE') delete env[key];
@@ -129,20 +137,9 @@ if (OPTIONS.scriptedAi !== null) env.METALIST_SCRIPTED_AI = resolve(OPTIONS.scri
 const loopStallLog = join(directory, 'loop-stalls.jsonl');
 env.METALIST_LOOP_STALL_LOG = loopStallLog;
 const python = process.platform === 'win32' ? '.venv/Scripts/python.exe' : '.venv/bin/python';
-if (OPTIONS.notes !== null) {
-  // Written before the server starts, which loads the vault as it starts.
-  const generatorArguments = ['scripts/generate_large_vault.py', '--notes', String(OPTIONS.notes), '--data-dir', directory, '--seed', String(GENERATED_VAULT_SEED)];
-  if (OPTIONS.files !== null) generatorArguments.push('--files', String(OPTIONS.files));
-  const generated = spawnSync(resolve(python), generatorArguments, {env, stdio: 'inherit'});
-  if (generated.status !== 0) {
-    await rm(directory, {recursive: true, force: true});
-    throw new Error(`Generating the vault failed (${generated.status})`);
-  }
-}
-const server = spawn(resolve(python), ['serve_namespace.py', '--namespace', 'default', '--port', String(port)], {env, stdio: ['ignore', 'pipe', 'pipe']});
 
 // Ready once the server says it is listening; its output is kept for an error.
-function serverReady() {
+function serverReady(server) {
   let output = '';
   return new Promise((ready, failed) => {
     const timer = setTimeout(() => failed(new Error(`The throwaway server did not start:\n${output}`)), SERVER_START_TIMEOUT_MS);
@@ -158,28 +155,75 @@ function serverReady() {
     };
     server.stdout.on('data', listen);
     server.stderr.on('data', listen);
-    server.on('exit', code => failed(new Error(`The throwaway server exited (${code}):\n${output}`)));
+    server.on('exit', code => {
+      clearTimeout(timer);
+      failed(new Error(`The throwaway server exited (${code}):\n${output}`));
+    });
   });
 }
 
-async function stop() {
-  server.kill();
-  if (!OPTIONS.keep) await rm(directory, {recursive: true, force: true});
-  process.exit(0);
-}
-process.on('SIGINT', stop);
-process.on('SIGTERM', stop);
-// The terminal closing stops it too (stop-children-on-exit.mjs).
-process.on('SIGHUP', stop);
+// Starts the throwaway; whatever it started is stopped by the one shutDown, on every exit path.
+async function run() {
+  // The vault generator, then the server: stopped in reverse order.
+  const children = [];
+  let browser = null;
+  let stopping = null;
+  // Stops the browser and every process, waits for each to exit (a server still stopping
+  // could write into the folder again), then deletes the folder unless --keep.
+  const shutDown = () => {
+    if (stopping === null) {
+      stopping = (async () => {
+        if (browser !== null) await closeBrowser(browser);
+        for (const child of [...children].reverse()) await stopAndWait(child, STOP_GRACE_MS);
+        if (!OPTIONS.keep) await removeRunFolder(directory, RUN_FOLDER_PREFIX);
+      })();
+    }
+    return stopping;
+  };
+  for (const signal of EXIT_SIGNALS) {
+    process.once(signal, async () => {
+      await shutDown();
+      process.exit(EXIT_STOPPED);
+    });
+  }
 
-await serverReady();
-
-if (!OPTIONS.empty && OPTIONS.notes === null) {
-  const browser = await puppeteer.launch({headless: true, browser: 'chrome', executablePath: installedBrowserExecutable('chrome', process.env)});
-  const page = await browser.newPage();
-  await page.goto(origin, {waitUntil: 'networkidle0'});
-  await page.waitForSelector('[data-app-ready="true"]', {timeout: APP_READY_TIMEOUT_MS});
-  await seed(page);
-  await closeBrowser(browser);
+  const start = async () => {
+    if (OPTIONS.notes !== null) {
+      // Written before the server starts, which loads the vault as it starts. Run without
+      // blocking, so a Ctrl-C meanwhile still stops it and deletes the folder.
+      const generatorArguments = ['scripts/generate_large_vault.py', '--notes', String(OPTIONS.notes), '--data-dir', directory, '--seed', String(GENERATED_VAULT_SEED)];
+      if (OPTIONS.files !== null) generatorArguments.push('--files', String(OPTIONS.files));
+      const generator = spawn(resolve(python), generatorArguments, {env, stdio: 'inherit'});
+      children.push(generator);
+      await waitForExit(generator);
+      if (generator.exitCode !== 0) {
+        throw new Error(`Generating the vault failed (exit code ${generator.exitCode}, signal ${generator.signalCode})`);
+      }
+    }
+    const server = spawn(resolve(python), ['serve_namespace.py', '--namespace', 'default', '--port', String(port)], {env, stdio: ['ignore', 'pipe', 'pipe']});
+    children.push(server);
+    await serverReady(server);
+    if (!OPTIONS.empty && OPTIONS.notes === null) {
+      // Signals are handled by shutDown, which closes this browser: Puppeteer's own handler
+      // would exit at once, before the server is stopped and the folder deleted.
+      browser = await puppeteer.launch({headless: true, browser: 'chrome', executablePath: installedBrowserExecutable('chrome', process.env),
+        handleSIGINT: false, handleSIGTERM: false, handleSIGHUP: false});
+      const page = await browser.newPage();
+      await page.goto(origin, {waitUntil: 'networkidle0'});
+      await page.waitForSelector('[data-app-ready="true"]', {timeout: APP_READY_TIMEOUT_MS});
+      await seed(page);
+      // Handed over first, so a Ctrl-C while it closes does not close it a second time.
+      const seeded = browser;
+      browser = null;
+      await closeBrowser(seeded);
+    }
+  };
+  const [started] = await Promise.allSettled([start()]);
+  if (started.status === 'rejected') {
+    await shutDown();
+    throw started.reason;
+  }
 }
+
+await run();
 console.log(`Throwaway MetaList at ${origin} (data: ${directory}; stalls of the server's loop, a second or longer: ${loopStallLog}). Ctrl-C stops it${OPTIONS.keep ? '' : ' and deletes its data'}.`);

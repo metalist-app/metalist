@@ -5,7 +5,6 @@ import pytest
 from loguru import logger
 
 from app.security.authenticated_logging import decrypt_log_record
-from app.security.authenticated_logging import decrypt_log_records
 from app.services import diagnostics
 
 
@@ -16,16 +15,32 @@ def test_unexpected_error_keeps_exception_text_out_of_plaintext_log() -> None:
         with pytest.raises(TypeError) as captured:
             raise TypeError("PRIVATE_NOTE_CONTENT")
         diagnostics.log_unexpected_exception(
-            context="HTTP request", exception=captured.value,
-            request_id="a1b2c3d4", level="ERROR",
+            context="HTTP request", exception=captured.value, level="ERROR",
         )
     finally:
         logger.remove(sink_id)
     assert len(records) == 1
     assert records[0].record["exception"] is None
     assert "PRIVATE_NOTE_CONTENT" not in str(records[0])
+    assert "exception context=HTTP request error_type=TypeError errno=- frames=[tests/unit/test_diagnostics.py:" in str(records[0])
+
+
+def test_a_failed_request_is_logged_with_its_id_and_route_never_its_message() -> None:
+    records = []
+    sink_id = logger.add(records.append, level="ERROR")
+    try:
+        with pytest.raises(TypeError) as captured:
+            with diagnostics.track_request(
+                request_id="a1b2c3d4", method="PUT", scope={"path": "/api2/notes/PRIVATE_NOTE_CONTENT/save"},
+                has_query=False, started_at=1.0,
+            ):
+                raise TypeError("PRIVATE_NOTE_CONTENT")
+    finally:
+        logger.remove(sink_id)
+    assert len(records) == 1
+    assert "request.exception request_id=a1b2c3d4 method=PUT route=(no route) duration_ms=" in str(records[0])
     assert "error_type=TypeError" in str(records[0])
-    assert records[0].record["extra"]["request_id"] == "a1b2c3d4"
+    assert "PRIVATE_NOTE_CONTENT" not in str(records[0])
 
 
 def test_an_os_error_logs_its_number_but_never_its_message() -> None:
@@ -37,7 +52,7 @@ def test_an_os_error_logs_its_number_but_never_its_message() -> None:
         with pytest.raises(OSError) as captured:
             raise OSError(errno.EADDRINUSE, "Address already in use", "PRIVATE_PATH")
         diagnostics.log_unexpected_exception(
-            context="process", exception=captured.value, request_id="", level="CRITICAL",
+            context="process", exception=captured.value, level="CRITICAL",
         )
     finally:
         logger.remove(sink_id)
@@ -91,58 +106,24 @@ def test_recycle_direct_append_log_file_leaves_small_log_unchanged(
     assert log_path.read_bytes() == b"small log"
 
 
-def test_assert_log_disk_usage_within_bounds_fails_when_total_exceeds_cap(
-    tmp_path,
-    monkeypatch,
-) -> None:
-    logs_directory = tmp_path / "logs"
-    logs_directory.mkdir()
-    (logs_directory / "namespace-work.log").write_bytes(b"1234567890")
-    (logs_directory / "work-server.log").write_bytes(b"abcdefghij")
-    monkeypatch.setattr(diagnostics, "resolve_runtime_logs_directory", lambda: logs_directory)
-    monkeypatch.setattr(diagnostics, "_LOG_DIRECTORY_MAX_BYTES", 15)
-    monkeypatch.setattr(diagnostics, "_DIRECT_APPEND_LOG_MAX_BYTES", 100)
-
-    with pytest.raises(RuntimeError, match="Log directory exceeds disk bound"):
-        diagnostics.assert_log_disk_usage_within_bounds()
-
-
-def test_assert_log_disk_usage_within_bounds_fails_when_direct_append_file_stays_large(
-    tmp_path,
-    monkeypatch,
-) -> None:
-    logs_directory = tmp_path / "logs"
-    logs_directory.mkdir()
-    log_path = logs_directory / "namespace-work.log"
-    log_path.write_bytes(b"1234567890")
-    monkeypatch.setattr(diagnostics, "resolve_runtime_logs_directory", lambda: logs_directory)
-    monkeypatch.setattr(diagnostics, "_DIRECT_APPEND_LOG_MAX_BYTES", 5)
-    monkeypatch.setattr(diagnostics, "_DIRECT_APPEND_LOG_TAIL_BYTES", 8)
-    monkeypatch.setattr(diagnostics, "_LOG_DIRECTORY_MAX_BYTES", 100)
-
-    with pytest.raises(RuntimeError, match="Log file exceeds direct append cap"):
-        diagnostics.assert_log_disk_usage_within_bounds()
-
-
 def test_request_tracking_records_and_removes_active_request() -> None:
     diagnostics.begin_request(
         request_id="abc123",
         method="POST",
-        path="/api2/notes/view",
+        scope={"path": "/api2/notes/view"},
         has_query=False,
-        client="127.0.0.1",
-        user_agent="pytest",
         started_at=100.0,
     )
 
     snapshot = diagnostics.snapshot_active_requests()
     assert "abc123" in snapshot
-    assert snapshot["abc123"].path == "/api2/notes/view"
+    assert snapshot["abc123"].route == "(no route)"
     assert snapshot["abc123"].has_query is False
     assert not hasattr(snapshot["abc123"], "query")
 
-    duration_ms = diagnostics.finish_request(request_id="abc123", ended_at=100.25)
+    request, duration_ms = diagnostics.finish_request(request_id="abc123", ended_at=100.25)
 
+    assert request.request_id == "abc123"
     assert duration_ms == 250.0
     assert "abc123" not in diagnostics.snapshot_active_requests()
 
@@ -151,10 +132,8 @@ def test_collect_slow_request_logs_rate_limits_repeated_reports() -> None:
     diagnostics.begin_request(
         request_id="slow1",
         method="PUT",
-        path="/api2/notes/root/save",
+        scope={"path": "/api2/notes/root/save"},
         has_query=True,
-        client="127.0.0.1",
-        user_agent="pytest",
         started_at=10.0,
     )
 
@@ -181,10 +160,15 @@ def test_collect_slow_request_logs_rate_limits_repeated_reports() -> None:
     assert len(later_logs) == 1
 
 
-def test_authenticated_logging_encrypts_process_streams_and_diagnostic_sink(
+def test_an_unlocked_vault_keeps_no_encrypted_log_file_and_encrypts_process_streams(
     tmp_path,
     monkeypatch,
 ) -> None:
+    """While a vault is unlocked no encrypted log file is written (docs/ready-to-build/
+    error-reports.md, section 6, 2026-11-11): a file per login was never read, never removed,
+    and once the folder passed 512 MB MetaList refused to start. The plain log keeps going with
+    safe records only (test_safe_log.py). Anything printed reaches the process streams only
+    encrypted."""
     dek = b"a" * 32
     secret = "decrypted note content must never persist as plaintext"
     plaintext_stdout = StringIO()
@@ -195,34 +179,26 @@ def test_authenticated_logging_encrypts_process_streams_and_diagnostic_sink(
     monkeypatch.setattr(diagnostics.sys, "stdout", plaintext_stdout)
     monkeypatch.setattr(diagnostics.sys, "stderr", plaintext_stderr)
 
-    encrypted_path = diagnostics.activate_authenticated_logging(namespace="work", dek=dek)
+    diagnostics.activate_authenticated_logging(namespace="work", dek=dek)
     try:
         print(secret)
         with pytest.raises(TypeError) as captured:
             raise TypeError(secret)
         diagnostics.log_unexpected_exception(
-            context="HTTP request", exception=captured.value,
-            request_id="", level="ERROR",
+            context="HTTP request", exception=captured.value, level="ERROR",
         )
-        assert diagnostics._authenticated_log_sink is not None
-        diagnostics._authenticated_log_sink.write(secret)
     finally:
         diagnostics.deactivate_authenticated_logging()
 
+    assert sorted(path.name for path in tmp_path.iterdir()) == []
     stdout_bytes = plaintext_stdout.getvalue().encode("ascii")
     assert secret.encode("utf-8") not in stdout_bytes
     assert secret.encode("utf-8") not in plaintext_stderr.getvalue().encode("ascii")
-    assert secret.encode("utf-8") not in encrypted_path.read_bytes()
     stdout_records = [
         decrypt_log_record(envelope=line, dek=dek)
         for line in stdout_bytes.splitlines()
     ]
     assert secret in stdout_records
-    assert secret in decrypt_log_records(path=encrypted_path, dek=dek)
-    assert any(
-        "TypeError: " + secret in record
-        for record in decrypt_log_records(path=encrypted_path, dek=dek)
-    )
     assert diagnostics.sys.stdout is plaintext_stdout
     assert diagnostics.sys.stderr is plaintext_stderr
 
@@ -230,8 +206,7 @@ def test_authenticated_logging_encrypts_process_streams_and_diagnostic_sink(
 def test_a_second_request_with_an_id_already_in_flight_fails_loudly() -> None:
     """Two requests in flight under one id would share one tracking entry, and
     the second to finish would find none: starting the second one fails at once."""
-    request = {"method": "GET", "path": "/api2/auth/status", "has_query": False,
-               "client": "127.0.0.1", "user_agent": "pytest", "started_at": 1.0}
+    request = {"method": "GET", "scope": {"path": "/api2/auth/status"}, "has_query": False, "started_at": 1.0}
     diagnostics.begin_request(request_id="same-id", **request)
     try:
         with pytest.raises(RuntimeError, match="already in flight"):

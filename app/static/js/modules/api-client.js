@@ -81,11 +81,6 @@ async function postFileEditSession(url, body, description) {
     return data;
 }
 
-// Where an import's files were dropped: { isDrop, tabId, search } (isDrop false from the menu).
-function isDropContext(dropContext) {
-    return dropContext !== null && typeof dropContext === 'object' && typeof dropContext.isDrop === 'boolean'
-        && typeof dropContext.tabId === 'string' && dropContext.tabId !== '' && typeof dropContext.search === 'string';
-}
 
 function extractFilenameFromContentDisposition(disposition) {
     if (typeof disposition !== 'string' || disposition.length === 0) {
@@ -370,6 +365,37 @@ export const NotesAPI = {
         });
     },
 
+    // Add or Remove Tag (Current View)…: the tags to suggest as one is typed ('add' or 'remove'),
+    // how many notes the change makes, then the change, which the server refuses if that
+    // count no longer holds.
+    async tagInViewSuggestions(action, prefix) {
+        if ((action !== 'add' && action !== 'remove') || typeof prefix !== 'string') {
+            throw new Error('NotesAPI.tagInViewSuggestions requires the action and what is typed');
+        }
+        return this._apiCall(CONFIG.API.NOTES.TAG_IN_VIEW_SUGGESTIONS, {
+            method: 'POST', body: JSON.stringify({ action, prefix, ...this.viewScope() }),
+        });
+    },
+
+    async countTagInView(action, tag) {
+        if ((action !== 'add' && action !== 'remove') || typeof tag !== 'string' || tag === '') {
+            throw new Error('NotesAPI.countTagInView requires the action and the tag');
+        }
+        return this._apiCall(CONFIG.API.NOTES.TAG_IN_VIEW_COUNT, {
+            method: 'POST', body: JSON.stringify({ action, tag, ...this.viewScope() }),
+        });
+    },
+
+    async tagNotesInView(action, tag, expectedNoteCount) {
+        if ((action !== 'add' && action !== 'remove') || typeof tag !== 'string' || tag === ''
+            || !Number.isInteger(expectedNoteCount) || expectedNoteCount < 1) {
+            throw new Error('NotesAPI.tagNotesInView requires the action, the tag and the confirmed count');
+        }
+        return this._apiCall(CONFIG.API.NOTES.TAG_IN_VIEW, {
+            method: 'POST', claimSession: true, body: JSON.stringify({ action, tag, expectedNoteCount, ...this.viewScope() }),
+        });
+    },
+
     // Click on a collapsed note's robot: open the way to every proposal it counts.
     async openToTagProposals(noteId) {
         if (typeof noteId !== 'string' || noteId.length === 0) {
@@ -544,19 +570,18 @@ export const NotesAPI = {
     _importBody(choices, caller) {
         const {
             source, folderPath, splitMode, contentFormat, prefixFolder, addToExisting, excludedGroups, excludedFiles, includedFiles,
-            keepsMarkdownAsFiles, compressesImages, imageLongestSide, dropContext,
+            keepsMarkdownAsFiles, compressesImages, imageLongestSide,
         } = choices;
         if (typeof source !== 'string' || typeof folderPath !== 'string' || folderPath.length === 0
             || typeof splitMode !== 'string' || typeof contentFormat !== 'string'
             || typeof prefixFolder !== 'string' || typeof addToExisting !== 'boolean'
             || !Array.isArray(excludedGroups) || !Array.isArray(excludedFiles) || !Array.isArray(includedFiles)
-            || typeof keepsMarkdownAsFiles !== 'boolean' || typeof compressesImages !== 'boolean' || !Number.isInteger(imageLongestSide)
-            || !isDropContext(dropContext)) {
+            || typeof keepsMarkdownAsFiles !== 'boolean' || typeof compressesImages !== 'boolean' || !Number.isInteger(imageLongestSide)) {
             throw new Error(`NotesAPI.${caller} requires every import choice`);
         }
         return JSON.stringify({
             source, folderPath, splitMode, contentFormat, prefixFolder, addToExisting, excludedGroups, excludedFiles, includedFiles,
-            keepsMarkdownAsFiles, compressesImages, imageLongestSide, dropContext,
+            keepsMarkdownAsFiles, compressesImages, imageLongestSide,
         });
     },
 
@@ -637,14 +662,12 @@ export const NotesAPI = {
         return this._apiCall(CONFIG.API.IMPORT.BOOKMARKS_PREVIEW, { method: 'POST', body: JSON.stringify({ fileText, prefixFolder }) });
     },
 
-    // dropContext: where it was dropped ({ isDrop, tabId, search }), as _importBody takes it.
-    async importBookmarks({ fileText, prefixFolder, addToExisting, dropContext }) {
-        if (typeof fileText !== 'string' || fileText.length === 0 || typeof prefixFolder !== 'string' || typeof addToExisting !== 'boolean'
-            || !isDropContext(dropContext)) {
+    async importBookmarks({ fileText, prefixFolder, addToExisting }) {
+        if (typeof fileText !== 'string' || fileText.length === 0 || typeof prefixFolder !== 'string' || typeof addToExisting !== 'boolean') {
             throw new Error('NotesAPI.importBookmarks requires the file\'s text, the folder and whether to add to it');
         }
         return this._apiCall(CONFIG.API.IMPORT.BOOKMARKS, {
-            method: 'POST', body: JSON.stringify({ fileText, prefixFolder, addToExisting, dropContext }),
+            method: 'POST', body: JSON.stringify({ fileText, prefixFolder, addToExisting }),
         });
     },
 

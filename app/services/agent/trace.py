@@ -11,13 +11,24 @@ from app.version import __version__
 
 # Event durations are kept to the microsecond.
 _DURATION_MS_DECIMALS = 3
+# A session keeps its newest runs for the debug view and the history export; older ones go.
+RUNS_PER_SESSION = 50
+# A run keeps its newest events. Streaming records one event per provider chunk, so a
+# long tool-using answer has a few thousand; this is far above any real run and only
+# stops a runaway one from growing without end.
+EVENTS_PER_RUN = 100_000
+# Ids of dropped runs, kept so a late event for one (the cancellation of an old call)
+# is discarded instead of refused. Late events arrive within a run's lifetime, long
+# before this many later runs have been dropped.
+DISCARDED_RUN_IDS_KEPT = 10_000
 
 
 class AgentTraceStore:
     def __init__(self) -> None:
         self._exact_detail_hidden_sessions: set[str] = set()
         self._histories: dict[str, list[dict[str, object]]] = {}
-        self._discarded_run_ids: set[str] = set()
+        # Insertion-ordered, so the oldest ids leave first (_discard_run_ids_locked).
+        self._discarded_run_ids: dict[str, None] = {}
         self._latest_runs: dict[str, dict[str, object]] = {}
         self._lock = Lock()
 
@@ -46,9 +57,16 @@ class AgentTraceStore:
         if session_key not in self._histories:
             assert session_key not in self._latest_runs
             return
-        self._discarded_run_ids.update(run["run_id"] for run in self._histories[session_key])
+        self._discard_run_ids_locked([run["run_id"] for run in self._histories[session_key]])
         del self._latest_runs[session_key]
         del self._histories[session_key]
+
+    def _discard_run_ids_locked(self, run_ids: list) -> None:
+        """Remember dropped runs, so late events for them are discarded; keep the newest ids."""
+        for run_id in run_ids:
+            self._discarded_run_ids[run_id] = None
+        while len(self._discarded_run_ids) > DISCARDED_RUN_IDS_KEPT:
+            del self._discarded_run_ids[next(iter(self._discarded_run_ids))]
 
     def set_exact_details_enabled(self, *, session_key: str, enabled: bool) -> None:
         self._validate_session_key(session_key)
@@ -77,10 +95,17 @@ class AgentTraceStore:
                 "finished_at": "",
                 "error": "",
                 "events": [],
+                "dropped_events": 0,
             }
             if session_key not in self._histories:
                 self._histories[session_key] = []
-            self._histories[session_key].append(self._latest_runs[session_key])
+            history = self._histories[session_key]
+            history.append(self._latest_runs[session_key])
+            if len(history) > RUNS_PER_SESSION:
+                dropped = history[:len(history) - RUNS_PER_SESSION]
+                del history[:len(history) - RUNS_PER_SESSION]
+                self._discard_run_ids_locked([run["run_id"] for run in dropped])
+            assert len(history) <= RUNS_PER_SESSION and history[-1] is self._latest_runs[session_key]
         return run_id
 
     def append_event(
@@ -106,10 +131,11 @@ class AgentTraceStore:
             if run is None:
                 return
             events = run["events"]
-            assert isinstance(events, list)
+            dropped_events = run["dropped_events"]
+            assert isinstance(events, list) and isinstance(dropped_events, int)
             events.append(
                 {
-                    "sequence": len(events) + 1,
+                    "sequence": dropped_events + len(events) + 1,
                     "type": event_type,
                     "label": label,
                     "timestamp": self._now_iso(),
@@ -117,6 +143,10 @@ class AgentTraceStore:
                     "detail": deepcopy(detail),
                 }
             )
+            if len(events) > EVENTS_PER_RUN:
+                excess = len(events) - EVENTS_PER_RUN
+                del events[:excess]
+                run["dropped_events"] = dropped_events + excess
 
     def complete_run(self, *, session_key: str, run_id: str) -> None:
         self._finish_run(session_key=session_key, run_id=run_id, status="complete", error="")
@@ -145,7 +175,7 @@ class AgentTraceStore:
         for run in runs:
             calls = {}
             run_pair_start = len(pairs)
-            for event in run["events"]:
+            for event in _events_of_whole_calls(run):
                 detail = event["detail"]
                 kind = event["type"]
                 if kind == "LLM_CALL_STARTED":
@@ -251,6 +281,26 @@ class AgentTraceStore:
     @staticmethod
     def _now_iso() -> str:
         return datetime.now(timezone.utc).isoformat()
+
+
+def _events_of_whole_calls(run: dict) -> list:
+    """The run's events, without those of calls whose start EVENTS_PER_RUN dropped.
+
+    Every provider event names the call LLM_CALL_STARTED opened; a run that kept all
+    its events has every start, so its events come back as they are.
+    """
+    events = run["events"]
+    if run["dropped_events"] == 0:
+        return events
+    started_call_ids = set()
+    kept = []
+    for event in events:
+        detail = event["detail"]
+        if event["type"] == "LLM_CALL_STARTED":
+            started_call_ids.add(detail["call_id"])
+        if "call_id" not in detail or detail["call_id"] in started_call_ids:
+            kept.append(event)
+    return kept
 
 
 agent_trace_store = AgentTraceStore()

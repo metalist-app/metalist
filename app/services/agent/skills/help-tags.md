@@ -22,6 +22,12 @@ meta-tags topic; what the tag bar suggests, and why, is in the tag-suggestions t
 - Pasting (never typing) dictated text into the tag bar turns it into tags ("neural network at to do" gives `neural-network @todo`). The full rules are in the dictation help topic.
 - When tags are shown in the note list, one line of tags shares the note's existing row height; the row grows only when its tags wrap onto additional lines.
 
+## Many Notes at Once
+- `Add or Remove Tag (Current View)…` in the menu, also `Add or Remove Tag…` on the right-click menu of the space around the notes, adds one tag to the notes the current search finds, or removes one from them. Choose Add or Remove, type the tag (it suggests tags as you type: adding, the vault's; removing, those the notes carry), and the button says how many notes change ("Add to 12 Notes").
+- Adding puts the tag in the tag bar of each note the search finds, not of the notes under them, which carry it through them as they carry the rest of their parent's tags. With no search, every top-level note gets it.
+- Removing takes it, whatever its case, from the found notes and every note shown under them. A note that gets the tag from a note above the view keeps it.
+- One Cmd+Z undoes it all.
+
 ## Whitespace + Tokens
 - Outside of `/* ... */` comments, tags are separated by whitespace.
 - Double-click selects an entire tag, including `@`, connectors such as `-`, `_`, `.`, `/`, and assignment values such as `@size=2.0`. Inside a scoped wrapper, it selects the individual tag without the wrapper. Comments retain ordinary word selection. The search input uses the same interaction with its own query grammar.

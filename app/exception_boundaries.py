@@ -120,6 +120,10 @@ CAPTURE_BOUNDARIES = {
     'app/security/request_boundary.py:_parse_host_header:parse_capture': ('ValueError',),
     # Parse external host, URL, IP or date input at the named boundary.
     'app/security/request_boundary.py:_parse_origin:parse_capture': ('ValueError',),
+    # MetaList's own certificate or key that does not parse is replaced with a new pair.
+    'app/server_runtime.py:_default_tls_pair_replace_reason:certificate_capture': ('ValueError',),
+    # MetaList's own certificate or key that does not parse is replaced with a new pair.
+    'app/server_runtime.py:_default_tls_pair_replace_reason:key_capture': ('ValueError',),
     # Parse external host, URL, IP or date input at the named boundary.
     'app/server_runtime.py:_detect_lan_ip:configured_ip_capture': ('ValueError',),
     # Parse external host, URL, IP or date input at the named boundary.
@@ -199,6 +203,8 @@ CAPTURE_BOUNDARIES = {
     # Handle expected external I/O, provider, image or LaTeX parsing failure.
     'app/startup_shockharness.py:shockharness_report_lines:analysis_capture': ('ShockHarnessError',),
     'main.py:_bind_https_proxy_server:bind_capture': ('OSError',),
+    # A vault saved by a newer MetaList: its message for the person, not a traceback.
+    'main.py:run_refusing_newer_vaults_plainly:needs_newer_capture': ('VaultNeedsNewerMetaList',),
     'main.py:_is_process_running:kill_capture': ('ProcessLookupError', 'PermissionError'),
     # Handle expected external I/O, provider, image or LaTeX parsing failure.
     'main.py:_send_signal_if_running:signal_capture': ('ProcessLookupError',),

@@ -51,7 +51,7 @@ def test_stray_markup_characters_are_removed() -> None:
 
 def _streamed(deltas: list[str]) -> list[dict[str, object]]:
     store = AiChatSessionStore()
-    turn_id = store.start_turn(session_key="markup", user_content="question", provider="openai", model="test")
+    turn_id = store.start_turn(user_content="question", provider="openai", model="test")
     stream = ChatTurnStream(store=store, notes=NoteStore(), session_key="markup", turn_id=turn_id,
                             initial_input_tokens=1, web_evidence_store=WebEvidenceStore())
 

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from http import HTTPStatus
-import logging
 from functools import partial
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
 from pydantic import BaseModel, Field, SecretStr, field_validator
@@ -47,7 +46,7 @@ from app.server_runtime import load_all_namespace_launch_profiles
 from app.server_runtime import resolve_namespace_directory
 from app.server_runtime import resolve_namespaced_database_path
 from app.server_runtime import validate_namespace
-from app.security.sensitive_logging import traceback_frame_summary
+from app.services import safe_log
 from app.services.encryption import EncryptionService
 from app.services.tokens import token_service
 from app.services.ai_chat import ai_chat_store
@@ -102,7 +101,6 @@ from app.services.link_title_retry import stop_link_title_retry
 
 
 router = APIRouter(prefix="/auth", tags=["auth2"])
-logger = logging.getLogger(__name__)
 
 _PERCENT_COMPLETE = 100
 # The sessions list shows at most this much of a browser's User-Agent.
@@ -336,10 +334,10 @@ def _on_hydration_done(future: Future) -> None:
     error = future.exception()
     if error is not None:
         error_message = type(error).__name__
-        logger.error(
-            "Hydration worker failed: %s frames=%s",
-            error_message,
-            traceback_frame_summary(error.__traceback__),
+        safe_log.log_event(
+            "ERROR", "hydration.failed",
+            error_type=error_message,
+            frames=safe_log.safe_code_frames(error.__traceback__),
         )
         hydration_state.fail(error_message)
 
@@ -427,8 +425,10 @@ def _reset_runtime_state_after_restore() -> bool:
             reminder_store.bootstrap(connection=connection)
             if not password_required or database_version == CURRENT_DATABASE_VERSION:
                 search_history_store.bootstrap(connection=connection)
+                ai_chat_store.bootstrap(connection=connection)
             else:
                 search_history_store.reset()
+                ai_chat_store.reset()
 
         if password_required:
             return True
@@ -579,19 +579,21 @@ def _open_password_session(*, request: Request, response: Response, db: SafeSess
     set_session_dek(dek)
     with SafeSession.allow_reads("auth:search_history_post_migration"):
         search_history_store.bootstrap(connection=db.connection())
+        # Read once the vault is upgraded (a restore or startup left it unread before).
+        ai_chat_store.bootstrap_if_reset(connection=db.connection())
     activate_authenticated_logging(
         namespace=_active_diagnostics_namespace(),
         dek=dek,
     )
     ensure_rules_decrypted_and_compiled(token="")
     tab_state_store.ensure_decrypted(token="")
+    ai_chat_store.ensure_decrypted(token="")
     link_title_store.ensure_decrypted(token="")
     reminder_store.ensure_decrypted(token="")
     search_history_store.ensure_decrypted(token="")
 
     invalidate_runtime_work()
     clear_sensitive_caches()
-    ai_chat_store.reset()
     web_evidence_store.reset()
     summary_batch_store.reset()
     agent_trace_store.reset()
@@ -612,7 +614,6 @@ def logout(
     token: Annotated[str, Depends(_require_auth)],
 ):
     session_key = token_service.get_session_key(token)
-    ai_chat_store.clear_session(session_key=session_key)
     web_evidence_store.clear_session(session_key=session_key)
     summary_batch_store.clear_session(session_key=session_key)
     agent_trace_store.clear_session(session_key=session_key)
@@ -681,7 +682,6 @@ def create_passwordless_session(
 
     invalidate_runtime_work()
     clear_sensitive_caches()
-    ai_chat_store.reset()
     web_evidence_store.reset()
     summary_batch_store.reset()
     agent_trace_store.reset()
@@ -1115,7 +1115,6 @@ def create_password(
     token_service.revoke_all_tokens()
     invalidate_runtime_work()
     clear_sensitive_caches()
-    ai_chat_store.reset()
     web_evidence_store.reset()
     summary_batch_store.reset()
     agent_trace_store.reset()
@@ -1148,7 +1147,6 @@ def change_password(
     token_service.revoke_all_tokens()
     invalidate_runtime_work()
     clear_sensitive_caches()
-    ai_chat_store.reset()
     web_evidence_store.reset()
     summary_batch_store.reset()
     agent_trace_store.reset()
@@ -1171,7 +1169,6 @@ def remove_password(
     token_service.revoke_all_tokens()
     invalidate_runtime_work()
     clear_sensitive_caches()
-    ai_chat_store.reset()
     web_evidence_store.reset()
     summary_batch_store.reset()
     agent_trace_store.reset()

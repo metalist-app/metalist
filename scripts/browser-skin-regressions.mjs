@@ -20,6 +20,8 @@ const INITIAL_SIZE_PX = 40;
 const FOLDED_INITIAL_SIZE_PX = INITIAL_SIZE_PX;
 const INITIAL_GAP_PX = 3;
 const PIXEL_ROUNDING = 0.5;
+// Enough words that a first line wraps at any window width the suites use.
+const WRAPPING_WORDS = 60;
 const ORNAMENT_WIDTH_PX = 250;
 const ORNAMENT_HEIGHT_PX = 78;
 const ORNAMENT_GAP_PX = 10;
@@ -328,6 +330,27 @@ async function openingShapeCases(page) {
     const {offset} = await readOpening(page);
     const expected = (step === 'fold' ? FOLDED_INITIAL_SIZE_PX : INITIAL_SIZE_PX) + INITIAL_GAP_PX;
     if (Math.abs(offset - expected) > PIXEL_ROUNDING) failures.push(`one line with a child, ${step}: the second letter is at ${offset}, not ${expected}`);
+  }
+  // A first line that wraps, folded: that line alone, the letter's, and nothing of the next, so
+  // as tall as a first line that does not wrap (2026-11-11: the next line's top showed).
+  const foldedHeightOf = async html => {
+    await saveOpening(page, noteId, html);
+    return page.evaluate(async ({index, settleMs}) => {
+      const note = document.querySelectorAll('#notes-container > .note')[index];
+      const toggle = () => note.querySelector(':scope > .note-collapse-toggle').click();
+      toggle();
+      await new Promise(resolve => setTimeout(resolve, settleMs));
+      const shown = {isFolded: note.classList.contains('collapsed'), height: note.querySelector(':scope > .note-content').getBoundingClientRect().height};
+      toggle();
+      await new Promise(resolve => setTimeout(resolve, settleMs));
+      return shown;
+    }, {index: OPENING_NOTE, settleMs: FOLD_SETTLE_MS});
+  };
+  const shortFirstLine = await foldedHeightOf(longNote('Elm tree'));
+  const wrapping = await foldedHeightOf(longNote(`Elm ${'tree '.repeat(WRAPPING_WORDS)}`));
+  if (!shortFirstLine.isFolded || !wrapping.isFolded) failures.push('the note did not fold');
+  if (Math.abs(wrapping.height - shortFirstLine.height) > PIXEL_ROUNDING) {
+    failures.push(`a folded first line that wraps is ${wrapping.height}px tall, one that does not ${shortFirstLine.height}px`);
   }
   await page.evaluate(async childId => {
     const {NotesAPI} = await import('/static/js/modules/api-client.js');

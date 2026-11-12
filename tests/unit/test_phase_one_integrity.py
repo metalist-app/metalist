@@ -193,14 +193,14 @@ def test_switching_provider_under_the_same_rules_keeps_the_conversation(live_dat
     evaluator = CloudPrivacyEvaluator(notes=store, effective_tags_provider=lambda note_id: store.get_note(note_id).tag_terms, accepted_tags_provider=lambda note_id: store.get_note(note_id).tag_terms)
     chat = AiChatSessionStore()
     first = evaluator.history_disclosure(boundary=resolve_cloud_privacy_boundary(preferences={}, provider='openai'))
-    chat.synchronize_disclosure_boundary(session_key='fixture', disclosure=first)
-    turn = chat.start_turn(session_key='fixture', user_content='Summarize the papers', provider='openai', model='gpt-5.6-luna')
-    chat.complete_turn(session_key='fixture', turn_id=turn, final_content='Here is the summary', actions=[], request_tokens=NO_REQUEST)
+    chat.synchronize_disclosure_boundary(disclosure=first)
+    turn = chat.start_turn(user_content='Summarize the papers', provider='openai', model='gpt-5.6-luna')
+    chat.complete_turn(turn_id=turn, final_content='Here is the summary', actions=[], request_tokens=NO_REQUEST)
     after = evaluator.history_disclosure(boundary=resolve_cloud_privacy_boundary(preferences={}, provider=next_provider))
     assert after == first
-    assert chat.synchronize_disclosure_boundary(session_key='fixture', disclosure=after) is False
-    chat.start_turn(session_key='fixture', user_content='Can we try that again?', provider=next_provider, model='next')
-    assert chat.provider_messages(session_key='fixture') == [
+    assert chat.synchronize_disclosure_boundary(disclosure=after) is False
+    chat.start_turn(user_content='Can we try that again?', provider=next_provider, model='next')
+    assert chat.provider_messages() == [
         {'role': 'user', 'content': 'Summarize the papers'},
         {'role': 'assistant', 'content': 'Here is the summary'},
         {'role': 'user', 'content': 'Can we try that again?'},
@@ -215,12 +215,11 @@ def _evaluator() -> CloudPrivacyEvaluator:
 def _chat_that_answered(evaluator, boundary, answer):
     """A chat whose one answer the AI will be sent on the next turn."""
     chat = AiChatSessionStore()
-    chat.synchronize_disclosure_boundary(session_key='fixture', disclosure=evaluator.history_disclosure(boundary=boundary))
-    turn = chat.start_turn(session_key='fixture', user_content='Read notes', provider='openai', model='cloud')
-    chat.complete_turn(session_key='fixture', turn_id=turn, final_content=answer, actions=[], request_tokens=NO_REQUEST)
-    assert chat.synchronize_disclosure_boundary(
-        session_key='fixture', disclosure=evaluator.history_disclosure(boundary=boundary)) is False
-    assert answer in str(chat.provider_messages(session_key='fixture'))
+    chat.synchronize_disclosure_boundary(disclosure=evaluator.history_disclosure(boundary=boundary))
+    turn = chat.start_turn(user_content='Read notes', provider='openai', model='cloud')
+    chat.complete_turn(turn_id=turn, final_content=answer, actions=[], request_tokens=NO_REQUEST)
+    assert chat.synchronize_disclosure_boundary(disclosure=evaluator.history_disclosure(boundary=boundary)) is False
+    assert answer in str(chat.provider_messages())
     return chat
 
 
@@ -242,11 +241,10 @@ def test_privacy_change_excludes_prior_answer_even_with_empty_followup_scope(liv
         apply_update_content('fixture', 'PRIVATE_CANARY', 'health', '')
     else:
         apply_update_content('fixture', 'PRIVATE_CANARY SECRET_WORD', '', '')
-    assert chat.synchronize_disclosure_boundary(
-        session_key='fixture', disclosure=evaluator.history_disclosure(boundary=boundary)) is True
-    chat.start_turn(session_key='fixture', user_content='Hello', provider='openai', model='cloud')
-    assert chat.provider_messages(session_key='fixture') == [{'role': 'user', 'content': 'Hello'}]
-    assert 'PRIVATE_CANARY' in str(chat.snapshot(session_key='fixture'))
+    assert chat.synchronize_disclosure_boundary(disclosure=evaluator.history_disclosure(boundary=boundary)) is True
+    chat.start_turn(user_content='Hello', provider='openai', model='cloud')
+    assert chat.provider_messages() == [{'role': 'user', 'content': 'Hello'}]
+    assert 'PRIVATE_CANARY' in str(chat.snapshot())
 
 
 # Nothing the AI could see became private, so the conversation goes on. A deleted note is
@@ -269,10 +267,9 @@ def test_a_change_that_hides_nothing_the_ai_saw_keeps_the_conversation(live_data
         apply_delete_subtree('fixture')
     else:
         apply_update_content('fixture', 'Permitted note, edited', '', '')
-    assert chat.synchronize_disclosure_boundary(
-        session_key='fixture', disclosure=evaluator.history_disclosure(boundary=boundary)) is False
-    chat.start_turn(session_key='fixture', user_content='And then?', provider='openai', model='cloud')
-    assert chat.provider_messages(session_key='fixture') == [
+    assert chat.synchronize_disclosure_boundary(disclosure=evaluator.history_disclosure(boundary=boundary)) is False
+    chat.start_turn(user_content='And then?', provider='openai', model='cloud')
+    assert chat.provider_messages() == [
         {'role': 'user', 'content': 'Read notes'},
         {'role': 'assistant', 'content': 'Earlier answer'},
         {'role': 'user', 'content': 'And then?'},
@@ -287,11 +284,9 @@ def test_a_note_added_during_the_chat_resets_it_once_made_private(live_database)
     boundary = resolve_cloud_privacy_boundary(preferences={}, provider='openai')
     chat = _chat_that_answered(evaluator, boundary, 'Earlier answer')
     apply_insert_note('later', None, None, None, '', content='LATER_CANARY', tags='', proposed_tags='')
-    assert chat.synchronize_disclosure_boundary(
-        session_key='fixture', disclosure=evaluator.history_disclosure(boundary=boundary)) is False
+    assert chat.synchronize_disclosure_boundary(disclosure=evaluator.history_disclosure(boundary=boundary)) is False
     apply_update_content('later', 'LATER_CANARY', '@password', '')
-    assert chat.synchronize_disclosure_boundary(
-        session_key='fixture', disclosure=evaluator.history_disclosure(boundary=boundary)) is True
+    assert chat.synchronize_disclosure_boundary(disclosure=evaluator.history_disclosure(boundary=boundary)) is True
 
 
 def test_old_link_title_work_cannot_publish_after_runtime_replacement(monkeypatch):

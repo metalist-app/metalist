@@ -27,6 +27,7 @@ from app.db.schema import NAMESPACE_LAUNCH_PROFILE_TABLE
 from app.db.schema import initialize_schema
 from app.models.database import SafeSession
 from app.services import backup_service as backup_service_module
+from app.services.input_errors import InputRejected
 from app.services.search_history_storage import serialize_search_history_payload
 from app.services.backup_service import (
     create_timestamped_backup_for_paths,
@@ -919,3 +920,77 @@ def test_a_current_or_brand_new_vault_needs_no_backup(tmp_path: Path) -> None:
         backup_service_module.back_up_before_passwordless_upgrade(database_path)
 
     assert not (database_path.parent / "backups").exists()
+
+
+def _attach_to_vault(database_path: Path, *, file_id: str, content: bytes) -> StoredBlob:
+    catalog_path = resolve_file_catalog_path(database_path)
+    catalog_path.parent.mkdir(exist_ok=True)
+    stored = blob_store_for_database(database_path).write(content, is_encrypted=False)
+    with closing(sqlite3.connect(catalog_path)) as connection:
+        initialize_catalog_schema(connection)
+        _insert_catalog_file(connection, file_id=file_id, stored=stored)
+        connection.commit()
+    return stored
+
+
+def test_a_backup_without_files_is_refused_over_a_vault_with_files(tmp_path: Path) -> None:
+    """Pre-update backups made by MetaList 0.27.0 and earlier hold no files: restoring one
+    would delete every file of the vault."""
+    database_path = tmp_path / "fixture" / "fixture.metalist.db"
+    _write_counter(database_path, 1)
+    archive = _archive_of(database_path, tmp_path)
+    archive_hash = hashlib.sha256(archive.read_bytes()).digest()
+    stored = _attach_to_vault(database_path, file_id="report", content=b"report bytes")
+    _write_counter(database_path, 99)
+
+    with pytest.raises(InputRejected, match="no attached files"):
+        restore_backup_to_paths(archive, database_path)
+
+    assert _read_counter(database_path) == 99
+    assert _catalog_ids(database_path) == {"report"}
+    assert blob_store_for_database(database_path).read_all(stored.blob_id, stored.seal) == b"report bytes"
+    assert hashlib.sha256(archive.read_bytes()).digest() == archive_hash
+
+
+def test_a_legacy_backup_without_files_is_refused_over_a_vault_with_files(tmp_path: Path) -> None:
+    database_path = tmp_path / "live.db"
+    _write_counter(database_path, 7)
+    backup_path = tmp_path / "backups" / "20260101-000000-000001.live.db.bak"
+    backup_path.parent.mkdir()
+    _copy_database_for_fixture(database_path, backup_path)
+    stored = _attach_to_vault(database_path, file_id="report", content=b"report bytes")
+    _write_counter(database_path, 99)
+
+    with pytest.raises(InputRejected, match="no attached files"):
+        restore_backup_to_paths(backup_path, database_path)
+
+    assert _read_counter(database_path) == 99
+    assert blob_store_for_database(database_path).read_all(stored.blob_id, stored.seal) == b"report bytes"
+
+
+def test_a_backup_without_files_restores_into_a_vault_without_files(tmp_path: Path) -> None:
+    database_path = tmp_path / "fixture" / "fixture.metalist.db"
+    _write_counter(database_path, 1)
+    archive = _archive_of(database_path, tmp_path)
+    _write_counter(database_path, 99)
+
+    restore_backup_to_paths(archive, database_path)
+
+    assert _read_counter(database_path) == 1
+    assert _catalog_ids(database_path) == set()
+
+
+def test_a_backup_without_files_restores_over_a_vault_whose_catalog_is_empty(tmp_path: Path) -> None:
+    database_path = tmp_path / "fixture" / "fixture.metalist.db"
+    _write_counter(database_path, 1)
+    archive = _archive_of(database_path, tmp_path)
+    catalog_path = resolve_file_catalog_path(database_path)
+    catalog_path.parent.mkdir()
+    with closing(sqlite3.connect(catalog_path)) as connection:
+        initialize_catalog_schema(connection)
+        connection.commit()
+    _write_counter(database_path, 99)
+
+    restore_backup_to_paths(archive, database_path)
+
+    assert _read_counter(database_path) == 1

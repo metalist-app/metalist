@@ -102,9 +102,18 @@ def test_update_always_selects_managed_verified_installer(monkeypatch, platform_
             int(part) for part in update_installer.INSTALLER_VERSION.split(".")
         ),
     )
+    cleanups = []
+    monkeypatch.setattr(
+        update_installer, "_remove_superseded_installer_files",
+        lambda **kwargs: cleanups.append(kwargs),
+    )
     assert update_installer.resolve_update_installer(
         platform_name=platform_name, environ={"PATH": "user-tools"},
     ) == f"managed-{platform_name}-uv"
+    assert cleanups == [{
+        "executable": Path(f"managed-{platform_name}-uv"), "platform_name": platform_name,
+        "environ": {"PATH": "user-tools"},
+    }]
 
 
 def test_managed_installer_downloads_once_and_revalidates_cached_bytes(

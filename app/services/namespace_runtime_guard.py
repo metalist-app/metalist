@@ -11,7 +11,7 @@ import sqlite3
 import threading
 import time
 
-from loguru import logger
+from app.services import safe_log
 
 from app.db.schema import NAMESPACE_LAUNCH_PROFILE_TABLE
 from app.server_runtime import resolve_namespaced_database_path
@@ -105,12 +105,8 @@ def _run_namespace_runtime_guard(
         legitimacy = inspect_namespace_runtime_legitimacy(namespace=namespace)
         if legitimacy.is_legitimate:
             continue
-        logger.critical(
-            "[namespace-guard] vault legitimacy check failed; terminating "
-            "namespace={namespace} reason={reason}",
-            namespace=namespace,
-            reason=legitimacy.failure_reason,
-        )
+        # The reason names the vault: the log says only that the check failed.
+        safe_log.log_event("CRITICAL", "namespace_guard.failed")
         _terminate_current_process()
         return
 

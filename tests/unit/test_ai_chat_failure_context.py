@@ -22,7 +22,7 @@ def _status(action: str, status: str, label: str) -> dict[str, object]:
 
 def _failed_stream(events: list[dict[str, object]], pause_before_failure: float) -> tuple[str, str]:
     store = AiChatSessionStore()
-    turn_id = store.start_turn(session_key="where", user_content="What's new in MetaList?", provider="openai", model="test")
+    turn_id = store.start_turn(user_content="What's new in MetaList?", provider="openai", model="test")
     stream = ChatTurnStream(store=store, notes=NoteStore(), session_key="where", turn_id=turn_id,
                             initial_input_tokens=1, web_evidence_store=WebEvidenceStore())
 
@@ -37,7 +37,7 @@ def _failed_stream(events: list[dict[str, object]], pause_before_failure: float)
 
     lines = asyncio.run(consume())
     assert lines[-1]["type"] == "error"
-    stored = store.snapshot(session_key="where")
+    stored = store.snapshot()
     return str(lines[-1]["message"]), json.dumps(stored)
 
 

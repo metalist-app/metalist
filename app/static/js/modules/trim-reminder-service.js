@@ -2,7 +2,8 @@
 // a card in the notice stack, beside the backup reminder, once they add up to 10 MB. It
 // only asks; its button opens Trim Unused Files' confirmation. It is checked when the app
 // opens, when the tab comes back, when a dialog or the menu closes, and on the first click
-// or key after a while, as the backup reminder is; it never polls.
+// or key after a while, as the backup reminder is, and right after Delete Folder and Delete
+// Notes (Current View) (the deleted notes' files may now be unused); it never polls.
 
 import { ApplicationState } from './application-state.js';
 import { appNoticeStack } from './app-notice-stack.js';
@@ -31,6 +32,9 @@ class TrimReminderService {
         // The unused bytes the card shows, for a dismiss to remember.
         this._shownBytes = null;
         this._lastInteractionCheckAt = 0;
+        // Counts the checks that asked the server: only the latest one's answer shows, so a
+        // check begun before a deletion can't hide the card one begun after it showed.
+        this._checksAsked = 0;
         this._handleInteraction = this._handleInteraction.bind(this);
         this._handleVisibilityChange = this._handleVisibilityChange.bind(this);
         this._handleModeChange = this._handleModeChange.bind(this);
@@ -78,7 +82,12 @@ class TrimReminderService {
         if (ModeContext.modalStack.length > 0) {
             return;
         }
+        this._checksAsked += 1;
+        const thisCheck = this._checksAsked;
         const unused = await this._fetchUnusedFiles();
+        if (thisCheck !== this._checksAsked) {
+            return;
+        }
         const unusedBytes = unused.size_bytes;
         const dismissedBytes = dismissedBytesAfter({ unusedBytes, dismissedBytes: this._dismissedBytes() });
         if (dismissedBytes !== this._dismissedBytes()) {

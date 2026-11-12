@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from http import HTTPStatus
-import logging
 import urllib.parse
 from collections.abc import Mapping
 from typing import Dict
@@ -12,6 +11,9 @@ from pydantic import BaseModel
 
 from app.api.note_requests import (
     CountNotesInViewRequest,
+    CountTagNotesInViewRequest,
+    TagNotesInViewRequest,
+    TagNotesInViewSuggestionsRequest,
     DeleteNotesInViewRequest,
     ViewScope,
     ViewDiffRequest,
@@ -74,7 +76,7 @@ from app.api.note_requests import (
     PasteSiblingEndpointRequest,
     PasteChildEndpointRequest,
 )
-from app.api.transactions import serialized_read_route, transactional_route
+from app.api.transactions import read_only_route, serialized_read_route, transactional_route
 from app.services.sync import touch_client
 from app.services.edit_previews import edit_preview_at_caret, format_preview_html
 from app.services.file_filter_types import list_file_filter_kinds
@@ -94,6 +96,7 @@ from app.services.snapshot import find_in_view
 from app.services.snapshot import resolve_search_scope
 from app.services.snapshot import ResolvedViewScope, resolve_view_scope_membership
 from app.usecases.delete_notes_in_view import CmdDeleteNotesInView, notes_to_delete
+from app.usecases.tag_notes_in_view import ADD, CmdTagNotesInView, require_plain_tag, tag_changes_in_view, tags_to_remove_in_view
 from app.services.note_store import store as note_store
 from app.services.exception_capture import CapturedExceptionContext
 from app.usecases.create_note import CmdCreateNote
@@ -195,7 +198,6 @@ from app.services.memory_breakdown import measure_memory_breakdown
 from app.services.memory_usage import describe_memory_usage
 
 
-logger = logging.getLogger(__name__)
 
 
 router = APIRouter()
@@ -1003,7 +1005,7 @@ def tag_details(payload: TagDetailsRequest) -> Dict[str, object]:
 
 
 @router.post("/notes/edit-preview")
-@transactional_route
+@read_only_route
 def edit_preview(payload: EditPreviewRequest) -> Dict[str, object]:
     """Read-only: the formula, CSV table or Mermaid diagram under the caret while editing (docs/ui/content-formatting.md, "Previews while editing")."""
     preview = edit_preview_at_caret(marked_content_html=payload["marked_content_html"], tags=payload["tags_text"])
@@ -1401,6 +1403,34 @@ def delete_notes_in_view(body: DeleteNotesInViewRequest) -> dict[str, object]:
         expected_note_count=body["expectedNoteCount"],
         client_id=body["clientId"],
         undo_context=body["undoContext"],
+    ).execute()
+
+
+# Tag Notes in View… (app/usecases/tag_notes_in_view.py). Adding suggests the vault's tags, as
+# the tag bar does; removing, the tags the notes it would touch carry.
+@router.post("/notes/view/tag-suggestions")
+@read_only_route
+def tag_notes_in_view_suggestions(body: TagNotesInViewSuggestionsRequest) -> dict[str, object]:
+    if body["action"] == ADD:
+        suggestions = search_index.suggest_tag_completions(query=body["prefix"], limit=MAX_TAG_SUGGESTIONS, by_family=True)
+        return {"suggestions": suggestions}
+    return {"suggestions": tags_to_remove_in_view(_resolved_view(body), prefix=body["prefix"], limit=MAX_TAG_SUGGESTIONS)}
+
+
+@router.post("/notes/view/tag-count")
+@read_only_route
+def count_tag_notes_in_view(body: CountTagNotesInViewRequest) -> dict[str, object]:
+    require_plain_tag(body["tag"])
+    return {"noteCount": len(tag_changes_in_view(_resolved_view(body), action=body["action"], tag=body["tag"]))}
+
+
+@router.post("/notes/view/tag")
+@transactional_route
+def tag_notes_in_view(request: Request, body: TagNotesInViewRequest) -> dict[str, object]:
+    return CmdTagNotesInView(
+        scope=_resolved_view(body), action=body["action"], tag=body["tag"],
+        expected_note_count=body["expectedNoteCount"], token=_require_bearer_token(request),
+        client_id=body["clientId"], undo_context=body["undoContext"], viewport=_require_viewport(body),
     ).execute()
 
 

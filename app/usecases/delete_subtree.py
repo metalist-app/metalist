@@ -17,7 +17,7 @@ from app.db.notes_sql import (
 )
 from app.security.encryption import encrypt
 from app.security.note_html import sanitize_note_html
-from app.services.content_cache import cache_note, cache_note_proposed_tags, cache_note_tags, cache_note_text
+from app.services.content_cache import cache_note, cache_note_proposed_tags, cache_note_tags, cache_note_text, forget_notes
 from app.utils.text_utils import strip_html
 
 
@@ -78,6 +78,8 @@ def apply_delete_subtree(note_id: str) -> None:
 
     # Update in-memory store after commit
     store.delete_subtree(note_id)
+    # The deleted notes' decrypted text leaves memory; undo caches it again (apply_restore_records).
+    forget_notes(ids_to_delete)
 
 
 def apply_restore_records(records: Sequence[NodeRecord | SimpleNamespace], token: str) -> None:

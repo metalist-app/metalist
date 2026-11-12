@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+from app.db.version import require_database_not_newer
 from app.utils.tcp_ports import PORT_RANGE_TEXT, is_tcp_port
 import argparse
-from collections.abc import Mapping, MutableMapping, Sequence
+from collections.abc import Iterator, Mapping, MutableMapping, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 import ipaddress
 import os
+import sys
 from pathlib import Path
 import re
 import socket
@@ -17,7 +20,8 @@ from urllib.parse import urlsplit
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
-from cryptography.x509.oid import NameOID
+from cryptography.hazmat.primitives.asymmetric.types import CertificatePublicKeyTypes, PrivateKeyTypes, PublicKeyTypes
+from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID
 from app.data_directory import resolve_data_directory
 from app.db.schema import NAMESPACE_LAUNCH_PROFILE_TABLE
 from app.db.schema import initialize_schema
@@ -27,6 +31,11 @@ from app.services.exception_capture import CapturedExceptionContext
 from app.security.shell_execution import enable_shell_execution_for_launch
 from app.security.shell_execution import SHELL_EXECUTION_ENV_NAME
 from app.services.input_errors import NamespaceInputRejected
+
+if sys.platform == "win32":
+    import msvcrt
+else:
+    import fcntl
 
 
 _LOOPBACK_BIND_HOSTS = frozenset({"127.0.0.1", "localhost", "0.0.0.0", "::1"})
@@ -51,7 +60,13 @@ _LAN_PROBE_HOST = "8.8.8.8"
 _LAN_PROBE_PORT = 80
 _TLS_RSA_PUBLIC_EXPONENT = 65537
 _TLS_RSA_KEY_SIZE_BITS = 2048
-_TLS_CERT_VALID_DAYS = 365
+# Apple refuses TLS server certificates valid longer than 825 days (support.apple.com/103769).
+_TLS_CERT_VALID_DAYS = 825
+# A vault reads the certificate only when it starts, so renew well before the end.
+_TLS_CERT_RENEW_DAYS_BEFORE_EXPIRY = 30
+_TLS_RENEW_LOCK_FILE_NAME = "renew.lock"
+# The byte msvcrt locks: a lock file needs one to lock.
+_TLS_RENEW_LOCK_WINDOWS_BYTES = 1
 _TLS_CERT_FILE_MODE = 0o644
 _TLS_KEY_FILE_MODE = 0o600
 _DEFAULT_TEST_DATABASE_URL = "sqlite:///./test.db"
@@ -199,6 +214,8 @@ def _connect_namespace_database(
     create_if_missing: bool,
 ) -> sqlite3.Connection | None:
     database_path = resolve_namespaced_database_path(namespace=namespace)
+    # Before anything writes to it: an older MetaList would set up its own tables in a newer vault.
+    require_database_not_newer(database_path)
     recover_pending_change(database_path)
     database_was_missing = not database_path.exists()
     if database_was_missing:
@@ -898,12 +915,72 @@ def ensure_default_tls_pair(*, environ: Mapping[str, str]) -> tuple[str, str] | 
     if not _read_flag(environ=environ, name="METALIST_AUTO_GENERATE_TLS", fallback=True):
         return None
 
-    if _DEFAULT_CERT_PATH.is_file() and _DEFAULT_KEY_PATH.is_file():
-        return (str(_DEFAULT_CERT_PATH), str(_DEFAULT_KEY_PATH))
-
     _DEFAULT_CERT_PATH.parent.mkdir(parents=True, exist_ok=True)
     _DEFAULT_KEY_PATH.parent.mkdir(parents=True, exist_ok=True)
+    # Vaults start as separate processes: one checks and replaces the pair at a time,
+    # so none reads a new certificate with the old key.
+    with _default_tls_pair_lock():
+        replace_reason = _default_tls_pair_replace_reason(now=datetime.now(timezone.utc))
+        if replace_reason is not None:
+            _write_default_tls_pair(environ=environ, reason=replace_reason)
+    return (str(_DEFAULT_CERT_PATH), str(_DEFAULT_KEY_PATH))
 
+
+@contextmanager
+def _default_tls_pair_lock() -> Iterator[None]:
+    with (_DEFAULT_CERT_PATH.parent / _TLS_RENEW_LOCK_FILE_NAME).open("a+b") as handle:
+        if sys.platform == "win32":
+            handle.seek(0)
+            msvcrt.locking(handle.fileno(), msvcrt.LK_LOCK, _TLS_RENEW_LOCK_WINDOWS_BYTES)
+        else:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            if sys.platform == "win32":
+                handle.seek(0)
+                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, _TLS_RENEW_LOCK_WINDOWS_BYTES)
+            else:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+
+def _default_tls_pair_replace_reason(*, now: datetime) -> str | None:
+    """Why MetaList's own pair must be made anew, or None while it still serves."""
+    if not _DEFAULT_CERT_PATH.is_file() or not _DEFAULT_KEY_PATH.is_file():
+        return "none yet"
+    # MetaList made these files and nothing else uses them: an unreadable one is replaced.
+    certificate_capture = CapturedExceptionContext(ValueError, boundary="app/server_runtime.py:_default_tls_pair_replace_reason:certificate_capture")
+    certificate_bytes = _DEFAULT_CERT_PATH.read_bytes()
+    certificate: x509.Certificate | None = None
+    with certificate_capture:
+        certificate = x509.load_pem_x509_certificate(certificate_bytes)
+    if certificate_capture.captured_exception is not None:
+        return "certificate unreadable"
+    key_capture = CapturedExceptionContext(ValueError, boundary="app/server_runtime.py:_default_tls_pair_replace_reason:key_capture")
+    key_bytes = _DEFAULT_KEY_PATH.read_bytes()
+    private_key: PrivateKeyTypes | None = None
+    with key_capture:
+        private_key = serialization.load_pem_private_key(key_bytes, password=None)
+    if key_capture.captured_exception is not None:
+        return "key unreadable"
+    assert certificate is not None
+    assert private_key is not None
+    if _public_key_der(certificate.public_key()) != _public_key_der(private_key.public_key()):
+        return "key does not match the certificate"
+    renew_from = certificate.not_valid_after_utc - timedelta(days=_TLS_CERT_RENEW_DAYS_BEFORE_EXPIRY)
+    if now >= renew_from:
+        return f"certificate expires {certificate.not_valid_after_utc:%Y-%m-%d}"
+    return None
+
+
+def _public_key_der(public_key: CertificatePublicKeyTypes | PublicKeyTypes) -> bytes:
+    return public_key.public_bytes(
+        encoding=serialization.Encoding.DER,
+        format=serialization.PublicFormat.SubjectPublicKeyInfo,
+    )
+
+
+def _write_default_tls_pair(*, environ: Mapping[str, str], reason: str) -> None:
     hostname = _resolve_tls_hostname()
     lan_ip = _detect_lan_ip(environ=environ)
     common_name = hostname
@@ -921,20 +998,22 @@ def ensure_default_tls_pair(*, environ: Mapping[str, str]) -> tuple[str, str] | 
     subject = issuer = x509.Name(
         [x509.NameAttribute(NameOID.COMMON_NAME, common_name)]
     )
-    now = datetime.now(timezone.utc)
+    # Starts a minute early for clocks slightly behind; Apple counts the days from this start.
+    not_valid_before = datetime.now(timezone.utc) - timedelta(minutes=1)
     certificate = (
         x509.CertificateBuilder()
         .subject_name(subject)
         .issuer_name(issuer)
         .public_key(private_key.public_key())
         .serial_number(x509.random_serial_number())
-        .not_valid_before(now - timedelta(minutes=1))
-        .not_valid_after(now + timedelta(days=_TLS_CERT_VALID_DAYS))
+        .not_valid_before(not_valid_before)
+        .not_valid_after(not_valid_before + timedelta(days=_TLS_CERT_VALID_DAYS))
         .add_extension(x509.SubjectAlternativeName(san_entries), critical=False)
+        # Apple requires serverAuth on every TLS server certificate (support.apple.com/103769).
+        .add_extension(x509.ExtendedKeyUsage([ExtendedKeyUsageOID.SERVER_AUTH]), critical=False)
         .sign(private_key=private_key, algorithm=hashes.SHA256())
     )
 
-    _DEFAULT_CERT_PATH.write_bytes(certificate.public_bytes(serialization.Encoding.PEM))
     _DEFAULT_KEY_PATH.write_bytes(
         private_key.private_bytes(
             encoding=serialization.Encoding.PEM,
@@ -942,14 +1021,14 @@ def ensure_default_tls_pair(*, environ: Mapping[str, str]) -> tuple[str, str] | 
             encryption_algorithm=serialization.NoEncryption(),
         )
     )
-    os.chmod(_DEFAULT_CERT_PATH, _TLS_CERT_FILE_MODE)
     os.chmod(_DEFAULT_KEY_PATH, _TLS_KEY_FILE_MODE)
+    _DEFAULT_CERT_PATH.write_bytes(certificate.public_bytes(serialization.Encoding.PEM))
+    os.chmod(_DEFAULT_CERT_PATH, _TLS_CERT_FILE_MODE)
     print(
-        "Generated default TLS certificate: "
+        f"Generated default TLS certificate ({reason}), valid until {certificate.not_valid_after_utc:%Y-%m-%d}: "
         f"cert={_DEFAULT_CERT_PATH.expanduser()} "
         f"key={_DEFAULT_KEY_PATH.expanduser()}"
     )
-    return (str(_DEFAULT_CERT_PATH), str(_DEFAULT_KEY_PATH))
 
 
 def _resolve_tls_pair(*, environ: Mapping[str, str]) -> tuple[str | None, str | None]:

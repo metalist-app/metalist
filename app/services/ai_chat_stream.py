@@ -61,10 +61,10 @@ class ChatTurnStream:
         self.latest_progress_label = ''
 
     def is_streaming(self) -> bool:
-        return self.store.is_streaming(session_key=self.session_key, turn_id=self.turn_id)
+        return self.store.is_streaming(turn_id=self.turn_id)
 
     def append_activity(self, event: dict[str, object]) -> None:
-        self.store.append_activity(session_key=self.session_key, turn_id=self.turn_id,
+        self.store.append_activity(turn_id=self.turn_id,
             action=event['action'], status=event['status'], label=event['label'],
             approx_input_tokens=event['approx_input_tokens'], output_tokens_received=event['output_tokens_received'],
             duration_ms=event['duration_ms'])
@@ -90,7 +90,7 @@ class ChatTurnStream:
         return text + '.'
 
     def fail(self, message: str) -> None:
-        self.store.fail_turn(session_key=self.session_key, turn_id=self.turn_id, error=message)
+        self.store.fail_turn(turn_id=self.turn_id, error=message)
 
     def action_status(self, event: dict[str, object]) -> dict[str, object]:
         event = self.activity_timer.stamp(event=event, observed_at=time.perf_counter())
@@ -126,7 +126,7 @@ class ChatTurnStream:
             raise RuntimeError('Shown AI response text must only grow while streaming')
         new_text = shown[len(self.content):]
         if new_text != '':
-            self.store.append_delta(session_key=self.session_key, turn_id=self.turn_id, delta_kind='content', text=new_text)
+            self.store.append_delta(turn_id=self.turn_id, delta_kind='content', text=new_text)
         self.content = shown
         return {**event, 'text': new_text, 'rendered_text': render_ai_chat_streaming_markdown_to_html(
             self.content,
@@ -156,7 +156,7 @@ class ChatTurnStream:
         request_tokens = event['request_tokens']
         if not isinstance(request_tokens, dict):
             raise RuntimeError('Agent completion must report what its last request was made of')
-        self.store.complete_turn(session_key=self.session_key, turn_id=self.turn_id, final_content=content,
+        self.store.complete_turn(turn_id=self.turn_id, final_content=content,
                                  actions=actions, request_tokens=request_tokens)
         event = {key: value for key, value in event.items() if key not in {'actions', 'request_tokens'}}
         return {**event, 'content': content, 'rendered_content': render_ai_chat_markdown_to_html(
@@ -188,7 +188,7 @@ class ChatTurnStream:
         if event_type == 'action_status':
             return self.action_status(event)
         if event_type == 'thinking_delta':
-            self.store.append_delta(session_key=self.session_key, turn_id=self.turn_id, delta_kind='thinking', text=event['text'])
+            self.store.append_delta(turn_id=self.turn_id, delta_kind='thinking', text=event['text'])
             self.thinking += event['text']
             return {**event, 'rendered_text': render_ai_chat_thinking_to_html(self.thinking)}
         if event_type == 'content_delta':

@@ -265,6 +265,14 @@
       "tags": ["export", "html", "download", "share", "notes", "current", "view"]
     },
     {
+      "id": "action.report_problem",
+      "tags": ["report", "problem", "bug", "slow", "error", "support", "help", "feedback"]
+    },
+    {
+      "id": "action.export_problem_reports",
+      "tags": ["export", "report", "problem", "bug", "error", "support", "download"]
+    },
+    {
       "id": "action.print_view",
       "tags": ["print", "pdf", "paper", "save as pdf", "printer", "view", "notes"]
     },
@@ -293,6 +301,10 @@
       "tags": ["mermaid", "diagram", "flowchart", "chart", "graph", "insert", "add", "new"]
     },
     {
+      "id": "action.insert_password",
+      "tags": ["password", "generate", "random", "secret", "credential", "insert", "add", "new"]
+    },
+    {
       "id": "action.add_excalidraw_diagram",
       "tags": ["excalidraw", "diagram", "drawing", "draw", "sketch", "whiteboard", "insert", "add", "new"]
     },
@@ -319,6 +331,10 @@
     {
       "id": "action.alphabetize_root_notes_desc",
       "tags": ["alphabetize", "alphabetical", "alpha", "sort", "content", "root", "notes", "current", "view", "search", "desc", "descending", "z", "a", "journal", "order", "reorder"]
+    },
+    {
+      "id": "action.tag_notes_in_view",
+      "tags": ["add", "remove", "tag", "tags", "untag", "retag", "label", "notes", "all", "current", "view", "search", "results", "bulk"]
     },
     {
       "id": "action.delete_notes_in_view",

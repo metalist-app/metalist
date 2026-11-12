@@ -10,7 +10,7 @@ from threading import RLock
 import time
 from typing import Callable, Dict, FrozenSet, Iterable, List, Mapping, Optional, Set, Tuple, TypeVar
 
-from loguru import logger
+from app.services import safe_log
 
 from app.services.quoted_values import canonical_valued_token, quote_value, token_end, unquote_value
 from app.services.content_formatting import (
@@ -653,14 +653,10 @@ class SearchIndex:
                 progress_update(processed)
 
         elapsed_ms = (time.perf_counter() - t0) * MS_PER_SECOND
-        logger.bind(
-            metrics={
-                "elapsed_ms": elapsed_ms,
-                "note_count": len(materialized),
-                "unique_tag_terms": len(self._tag_notes),
-                "revision": self._revision,
-            }
-        ).info("search.index.rebuild.finish")
+        safe_log.log_event(
+            "INFO", "search.index.rebuild",
+            elapsed_ms=elapsed_ms, notes=len(materialized), unique_tag_terms=len(self._tag_notes), revision=self._revision,
+        )
         return {"search index: note text": text_seconds, "search index: tags": tag_seconds}
 
     def upsert(
@@ -702,9 +698,10 @@ class SearchIndex:
             self._result_cache.clear()
 
         elapsed_ms = (time.perf_counter() - t0) * MS_PER_SECOND
-        logger.bind(
-            metrics={"elapsed_ms": elapsed_ms, "note_id": note_id, "revision": self._revision}
-        ).info("search.index.upsert.finish")
+        safe_log.log_event(
+            "INFO", "search.index.upsert",
+            elapsed_ms=elapsed_ms, revision=self._revision,
+        )
 
     def refresh_link_titles(self, urls: FrozenSet[str]) -> None:
         """Recompose the text of notes containing these URLs after their cached titles changed."""
@@ -781,14 +778,10 @@ class SearchIndex:
                 self._result_cache.clear()
 
         elapsed_ms = (time.perf_counter() - t0) * MS_PER_SECOND
-        logger.bind(
-            metrics={
-                "elapsed_ms": elapsed_ms,
-                "revision": self._revision,
-                "touched": touched,
-                "update_count": len(updates),
-            }
-        ).info("search.index.bulk_update_tag_terms.finish")
+        safe_log.log_event(
+            "INFO", "search.index.bulk_update_tag_terms",
+            elapsed_ms=elapsed_ms, revision=self._revision, touched=touched, updates=len(updates),
+        )
 
     def bulk_update_raw_tag_terms(self, updates: Dict[str, FrozenSet[str]]) -> None:
         if not updates:
@@ -836,9 +829,10 @@ class SearchIndex:
             self._result_cache.clear()
 
         elapsed_ms = (time.perf_counter() - t0) * MS_PER_SECOND
-        logger.bind(
-            metrics={"elapsed_ms": elapsed_ms, "count": len(note_ids), "revision": self._revision}
-        ).info("search.index.remove_many.finish")
+        safe_log.log_event(
+            "INFO", "search.index.remove_many",
+            elapsed_ms=elapsed_ms, notes=len(note_ids), revision=self._revision,
+        )
 
     def list_tag_suggestion_terms(self) -> FrozenSet[str]:
         """Every term a suggestion can offer: the tag vocabulary and the meta tags the
@@ -1332,14 +1326,10 @@ class SearchIndex:
                 cached_revision, cached_results = self._result_cache[search]
                 if cached_revision == self._revision:
                     total_ms = (time.perf_counter() - t0) * MS_PER_SECOND
-                    logger.bind(
-                        metrics={
-                            "cache_hit": True,
-                            "total_ms": total_ms,
-                            "revision": self._revision,
-                            "matched_count": len(cached_results),
-                        },
-                    ).info("search.query.finish")
+                    safe_log.log_event(
+                        "INFO", "search.query.cached",
+                        total_ms=total_ms, revision=self._revision, matched=len(cached_results),
+                    )
                     return set(cached_results)
 
         parsed = parse_search_query(search)
@@ -1376,24 +1366,11 @@ class SearchIndex:
             if not candidate_ids:
                 candidate_ms = (time.perf_counter() - t1) * MS_PER_SECOND
                 total_ms = (time.perf_counter() - t0) * MS_PER_SECOND
-                logger.bind(
-                    metrics={
-                        "cache_hit": False,
-                        "parse_ms": parse_ms,
-                        "candidate_ms": candidate_ms,
-                        "verify_ms": 0.0,
-                        "total_ms": total_ms,
-                        "candidate_count": 0,
-                        "verified_count": 0,
-                        "matched_count": 0,
-                        "required_tag_count": required_tag_count,
-                        "forbidden_tag_count": forbidden_tag_count,
-                        "required_text_count": required_text_count,
-                        "forbidden_text_count": forbidden_text_count,
-                        "or_clause_count": len(parsed.clauses),
-                        "revision": self._revision,
-                    },
-                ).info("search.query.finish")
+                safe_log.log_event(
+                    "INFO", "search.query",
+                    parse_ms=parse_ms, candidate_ms=candidate_ms, verify_ms=0.0, total_ms=total_ms,
+                    candidates=0, verified=0, matched=0, required_tags=required_tag_count, forbidden_tags=forbidden_tag_count, required_texts=required_text_count, forbidden_texts=forbidden_text_count, or_clauses=len(parsed.clauses), revision=self._revision,
+                )
                 return set()
 
             t2 = time.perf_counter()
@@ -1420,24 +1397,11 @@ class SearchIndex:
             if not any(clause.has_property_terms for clause in parsed.clauses):
                 self._result_cache[search] = (self._revision, frozen)
 
-        logger.bind(
-            metrics={
-                "cache_hit": False,
-                "parse_ms": parse_ms,
-                "candidate_ms": candidate_ms,
-                "verify_ms": verify_ms,
-                "total_ms": total_ms,
-                "candidate_count": candidate_count,
-                "verified_count": verified,
-                "matched_count": len(matched_note_ids),
-                "required_tag_count": required_tag_count,
-                "forbidden_tag_count": forbidden_tag_count,
-                "required_text_count": required_text_count,
-                "forbidden_text_count": forbidden_text_count,
-                "or_clause_count": len(parsed.clauses),
-                "revision": self._revision,
-            },
-        ).info("search.query.finish")
+        safe_log.log_event(
+            "INFO", "search.query",
+            parse_ms=parse_ms, candidate_ms=candidate_ms, verify_ms=verify_ms, total_ms=total_ms,
+            candidates=candidate_count, verified=verified, matched=len(matched_note_ids), required_tags=required_tag_count, forbidden_tags=forbidden_tag_count, required_texts=required_text_count, forbidden_texts=forbidden_text_count, or_clauses=len(parsed.clauses), revision=self._revision,
+        )
         return matched_note_ids
 
     def attach_stats_reader(self, reader: StatsFigureReader) -> None:

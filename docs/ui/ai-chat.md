@@ -1,6 +1,6 @@
 # AI Chat, Product Help and Scoped Investigation
 
-**Agreed, not built (2026-11-08):** the AI will read the whole view in batches rather than part of it (`docs/ready-to-build/ai-reads-whole-view.md`), a line will show how much text a conversation has sent (`docs/ready-to-build/ai-chat-size-line.md`), and conversations will survive a restart (`docs/ready-to-build/ai-chat-survives-restart.md`).
+**Agreed, not built (2026-11-08):** the AI will read the whole view in batches rather than part of it (`docs/ready-to-build/ai-reads-whole-view.md`) and a line will show how much text a conversation has sent (`docs/ready-to-build/ai-chat-size-line.md`).
 
 ## Scope
 
@@ -459,9 +459,8 @@ the AI knows about them (built 2026-10-30, `app/services/agent/chat_compaction.p
   together. Adding, deleting or unhiding a note keeps them. Held-back turns keep their look,
   with a divider after the last of them: "Earlier messages are not sent to the AI
   (privacy settings changed)". A summary made while privacy changed, or while the chat
-  was cleared, is discarded. The summary lives with the conversation in server memory;
-  if conversations are ever kept on disk, it is kept with them, encrypted the same way,
-  and Clear removes it.
+  was cleared, is discarded. The summary is saved with the conversation, encrypted the same way, and Clear removes it
+  (see "Saved with the vault").
 - **History meter.** A thin grey bar above the message box with "History N%", the share
   of the budget the history takes, counted as the automatic summary counts it
   (`GET /api2/ai/history-meter`). It reaches 100% when the next Send would summarize.
@@ -481,11 +480,28 @@ the AI knows about them (built 2026-10-30, `app/services/agent/chat_compaction.p
   from what actually happened. Only the model sees it; it is cleared with the chat
   history (`docs/design/agent-harness.md`).
 
-- Transcript/activity state lives only in server memory keyed by authenticated
-  session token hash. Refresh rehydrates it; logout, auth reset, runtime lock, or
-  restart clears it. With several views (`docs/ready-to-build/multi-view-editing.md` §5,
-  decided 2026-10-28), each view will have its own conversation: a new browser tab starts
-  blank, a reload keeps it, closing the tab ends it.
+- **Saved with the vault** (agreed 2026-11-08, built 2026-11-11; the maintainer: customers would
+  be furious to lose a conversation to an upgrade). The conversation is the vault's, one shared
+  by every login to it, saved in it after each change (`ai_chat` table, database version 19;
+  `app/services/ai_chat.py`): its messages with their progress, the agent's records, the
+  summaries, what the model still sees of each, the notes the AI could see at the last turn,
+  and the latest request for the history meter. A restart, an upgrade, logging out and locking
+  keep it; **only Clear Chat ends it**, on disk too. In a vault with a password it is encrypted
+  like the notes, never on disk unencrypted; setting or removing the password rewrites it, it
+  goes into backups and a restore brings back the backup's. A streamed answer is saved when it
+  ends: one MetaList stopped during (a restart, an upgrade, a crash) comes back as failed,
+  "MetaList stopped before this answer finished. Ask again to get one.", and the question with
+  it. A note made private while MetaList was stopped holds back the earlier turns at the next
+  question, as it would have then. Not saved: the text of web pages opened for follow-up
+  questions (after a restart the AI opens a page again if it needs it, as Web access allows),
+  the debug traces and the LLM history export. A vault with a password upgraded at unlock reads
+  its conversation then. A restore brings back the conversation the backup holds, in place of the current one
+  (none for a backup made before 2026-11-11). Tests: `tests/unit/test_ai_chat_saved.py`,
+  `test_ai_chat_restore.py`, `test_ai_chat_migration.py`.
+- With several views (`docs/ready-to-build/multi-view-editing.md` §5, decided 2026-10-28),
+  each view will have its own conversation: a new browser tab starts blank, a reload keeps
+  it, closing the tab ends it. That decision predates saving the conversation with the vault
+  (2026-11-08), which keys it to the vault and will key it to a view then.
 - The OpenAI usage/cost aggregate is separate process-wide server memory. Browser
   refresh and chat clearing retain it; its Reset button or server restart clears it.
 - Canonical future context includes only user text and completed assistant prose.
@@ -515,7 +531,7 @@ request and original application invocation; outputs include responses or stream
 chunks and completed/running/error/cancelled status. Agent turns and tool
 results, tagging, retries, and final answers are included. Exporting makes no model call.
 
-Page reloads retain server-session history. Clear Chat, logout, and server restart
-clear it. The existing Agent Debug dialog and Copy all still concern the latest
+The exported LLM history is the login session's: Clear Chat, logout and a server restart
+clear it, though the conversation itself is kept (see "Saved with the vault"). The existing Agent Debug dialog and Copy all still concern the latest
 run. See [prompt regression authoring](../../evals/README.md) to turn an exported
 failure into an agent case.

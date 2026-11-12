@@ -67,6 +67,29 @@ def move():
     )
 
 
+def test_startup_sanity_accepts_a_post_marked_read_only(tmp_path: Path) -> None:
+    _write_file(
+        tmp_path / "routes.py",
+        """
+from fastapi import APIRouter
+
+from app.api.transactions import read_only_route
+
+router = APIRouter(prefix="/notes")
+
+@router.post("/edit-preview")
+@read_only_route
+def edit_preview():
+    return {"ok": True}
+""".strip()
+        + "\n",
+    )
+
+    _, violations = collect_startup_sanity_violations(tmp_path)
+
+    assert not any(violation.rule_id in {"TXN001", "TXN002"} for violation in violations)
+
+
 def test_startup_sanity_rejects_misordered_transactional_route(tmp_path: Path) -> None:
     _write_file(
         tmp_path / "routes.py",
@@ -410,3 +433,26 @@ def describe_search(text):
     _paths, violations = collect_startup_sanity_violations(tmp_path)
 
     assert any(violation.rule_id == "PY001" for violation in violations)
+
+
+def test_startup_may_back_up_before_a_passwordless_upgrade_and_trim_after_it(tmp_path: Path) -> None:
+    """Approved by the maintainer 2026-11-11 (docs/ready-to-build/unbounded-growth-audit.md, B2)."""
+    _write_file(
+        tmp_path / "app" / "main.py",
+        "from .services.backup_service import back_up_before_passwordless_upgrade\n"
+        "from .services.backup_service import trim_safety_backups_once_vault_is_current\n",
+    )
+
+    _, violations = collect_startup_sanity_violations(tmp_path)
+
+    assert not any(violation.rule_id == "BKP001" for violation in violations)
+
+
+@pytest.mark.parametrize("module", ["app.services.backup_service", ".services.backup_service"])
+@pytest.mark.parametrize("name", ["delete_oldest_backups_in_directory", "trim_safety_backups_for_database", "restore_backup"])
+def test_startup_still_may_not_import_any_other_backup_operation(tmp_path: Path, module: str, name: str) -> None:
+    _write_file(tmp_path / "app" / "main.py", f"from {module} import {name}\n")
+
+    _, violations = collect_startup_sanity_violations(tmp_path)
+
+    assert any(violation.rule_id == "BKP001" for violation in violations)

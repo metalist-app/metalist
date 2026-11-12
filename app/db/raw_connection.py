@@ -3,8 +3,17 @@
 from __future__ import annotations
 
 import sqlite3
+from typing import Protocol
 
 _RAW_CONNECTION_ATTRIBUTE = "raw_connection"
+
+
+class ConnectionWrapper(Protocol):
+    """Either GuardedConnection (app.db.engine's or app.db.session's), as a type: the sqlite3
+    connection it wraps is its raw_connection."""
+
+    @property
+    def raw_connection(self) -> sqlite3.Connection: ...
 
 
 def raw_sqlite_connection(connection: object) -> sqlite3.Connection:

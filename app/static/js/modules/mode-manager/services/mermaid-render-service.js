@@ -1,5 +1,6 @@
 import { ApplicationState } from '../../application-state.js';
 import { produces } from '../../../shockharness/contracts.js';
+import { rememberSize } from '../../object-url-cache.js';
 // Fenced mermaid blocks under @markdown, and @mermaid notes (their own block).
 const MERMAID_CODE_SELECTOR = (
     '.meta-markdown .meta-mermaid-source > code.language-mermaid:not([data-mermaid-state]), '
@@ -24,7 +25,8 @@ const moduleState = ApplicationState.createFields('mermaid-render-service', {
     mermaidRenderSequence: 0,
     // Rendered diagram height by (source hash, available width), for this page
     // session: a diagram rendered again (e.g. after its note leaves edit mode)
-    // reserves its space before rendering, so text below it does not move.
+    // reserves its space before rendering, so text below it does not move. The
+    // most recent ones only, oldest first (object-url-cache.js).
     renderedHeights: new Map(),
 });
 
@@ -248,8 +250,8 @@ export async function renderMermaidCodeElement(codeElement, mermaidApi) {
     const key = sizeKey(source, sourceBlock);
     sourceBlock.replaceWith(diagram);
     const renderedHeight = Math.round(diagram.getBoundingClientRect().height);
-    if (renderedHeight > 0 && moduleState.renderedHeights.get(key) !== renderedHeight) {
-        moduleState.renderedHeights.set(key, renderedHeight);
+    if (renderedHeight > 0) {
+        rememberSize(moduleState.renderedHeights, key, renderedHeight);
     }
     if (typeof renderResult.bindFunctions === 'function') {
         renderResult.bindFunctions(diagram);

@@ -4,10 +4,14 @@ from __future__ import annotations
 
 from sqlite3 import Connection
 
+from app.db.version import require_connection_not_newer
+
 NOTES_TABLE = "notes"
 APP_SETTINGS_TABLE = "app_settings"
 ONTOLOGY_RULES_TABLE = "ontology_rules"
 TAB_STATE_TABLE = "tab_state"
+# The vault's AI conversation, one row (docs/ui/ai-chat.md, "Saved with the vault").
+AI_CHAT_TABLE = "ai_chat"
 LINK_TITLES_TABLE = "link_titles"
 LINK_ICONS_TABLE = "link_icons"
 REMINDERS_TABLE = "reminders"
@@ -122,6 +126,26 @@ CREATE TABLE IF NOT EXISTS {TAB_STATE_TABLE} (
     updated_at TEXT NOT NULL
 );
 """
+
+AI_CHAT_COLUMNS: tuple[str, ...] = (
+    "id", "state_json", "state_encryption_nonce", "state_encryption_tag", "created_at", "updated_at",
+)
+
+_CREATE_AI_CHAT_TABLE = f"""
+CREATE TABLE IF NOT EXISTS {AI_CHAT_TABLE} (
+    id INTEGER PRIMARY KEY,
+    state_json TEXT NOT NULL,
+    state_encryption_nonce BLOB,
+    state_encryption_tag BLOB,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+"""
+
+
+def create_ai_chat_table(connection: Connection) -> None:
+    connection.execute(_CREATE_AI_CHAT_TABLE)
+
 
 _CREATE_LINK_TITLES_TABLE = f"""
 CREATE TABLE IF NOT EXISTS {LINK_TITLES_TABLE} (
@@ -243,12 +267,15 @@ def _ensure_columns(connection: Connection, table: str, columns: dict[str, str])
 
 
 def initialize_schema(connection: Connection) -> None:
-    """Create tables and indexes if they do not already exist."""
+    """Create tables and indexes if they do not already exist; never in a vault saved by a newer
+    MetaList, which is refused first."""
 
+    require_connection_not_newer(connection)
     connection.execute(_CREATE_NOTES_TABLE)
     connection.execute(_CREATE_APP_SETTINGS_TABLE)
     connection.execute(_CREATE_ONTOLOGY_RULES_TABLE)
     connection.execute(_CREATE_TAB_STATE_TABLE)
+    create_ai_chat_table(connection)
     connection.execute(_CREATE_LINK_TITLES_TABLE)
     create_link_icons_table(connection)
     connection.execute(_CREATE_REMINDERS_TABLE)

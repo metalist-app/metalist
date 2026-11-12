@@ -34,9 +34,14 @@ from app.db.blob_store import (
 from app.db.files_sql import fetch_all_blob_ids
 from app.db.schema import NAMESPACE_LAUNCH_PROFILE_TABLE
 from app.models.database import SafeSession
+from app.services.input_errors import InputRejected
+from app.services.vault_former_names import read_former_vault_names
 
 
 _BACKUP_LOCK = Lock()
+_BACKUP_WITHOUT_FILES_MESSAGE = (
+    "This backup has no attached files; restoring it would delete this vault's files. Choose another backup."
+)
 # 2: the files are a catalog and one member per blob. Older archives hold one files database.
 _ARCHIVE_BACKUP_FORMAT_VERSION = 2
 _SINGLE_FILES_DATABASE_FORMAT_VERSION = 1
@@ -195,8 +200,10 @@ def _validate_archive_backup_filename(*, filename: str, database_path: Path) -> 
         raise ValueError("filename must not contain path separators")
 
     match = _match_archive_backup_filename(filename)
-    expected_namespace = _derive_namespace_name(database_path)
-    if match is None or match.group("namespace") != expected_namespace:
+    vault_archive_names = _archive_names_of_vault(
+        backup_directory=resolve_backup_directory_for_database(database_path), database_path=database_path,
+    )
+    if match is None or match.group("namespace") not in vault_archive_names:
         raise ValueError("filename must match the active database archive backup naming convention")
     return filename
 
@@ -1075,6 +1082,17 @@ def resolve_backup_directory_for_database(database_path: Path) -> Path:
     return database_path.parent / "backups"
 
 
+def _archive_names_of_vault(*, backup_directory: Path, database_path: Path) -> frozenset[str]:
+    """The names this vault's archives carry in this folder: its own, and in its own backups
+    folder also every name it had before a rename (approved 2026-11-11; archives keep the
+    name they were made under). In any other folder only its own: another vault may have
+    taken an old name since."""
+    current_name = _derive_namespace_name(database_path)
+    if backup_directory.resolve() != resolve_backup_directory_for_database(database_path).resolve():
+        return frozenset({current_name})
+    return frozenset({current_name}) | read_former_vault_names(database_path.parent)
+
+
 def list_backups_in_directory(
     backup_directory: Path,
     *,
@@ -1087,10 +1105,10 @@ def list_backups_in_directory(
     if not backup_directory.is_dir():
         raise ValueError(f"backup_directory is not a directory: {backup_directory}")
 
-    expected_namespace = None
+    vault_archive_names: frozenset[str] | None = None
     expected_database_name = None
     if database_path is not None:
-        expected_namespace = _derive_namespace_name(database_path)
+        vault_archive_names = _archive_names_of_vault(backup_directory=backup_directory, database_path=database_path)
         expected_database_name = database_path.name
 
     candidates = list(backup_directory.iterdir())
@@ -1103,7 +1121,7 @@ def list_backups_in_directory(
 
         archive_match = _match_archive_backup_filename(candidate.name)
         if archive_match is not None:
-            if expected_namespace is not None and archive_match.group("namespace") != expected_namespace:
+            if vault_archive_names is not None and archive_match.group("namespace") not in vault_archive_names:
                 continue
             entries.append(_stat_to_backup_info(candidate))
             continue
@@ -1123,6 +1141,34 @@ def create_timestamped_backup_for_paths(
     backup_directory: Path,
 ) -> BackupFileInfo:
     return _create_archive_backup_for_paths(database_path, backup_directory)
+
+
+def create_verified_backup_for_update(database_path: Path) -> Path:
+    """The backup the in-app updater makes of each stopped vault before it installs: the same
+    archive as any other backup, in the vault's own backups folder, then read back as a restore
+    reads it, so the update goes ahead only with a backup that would restore."""
+    backup_directory = resolve_backup_directory_for_database(database_path)
+    backup_path = backup_directory / create_timestamped_backup_for_paths(database_path, backup_directory).filename
+    _check_archive_would_restore(backup_path, namespace=_derive_namespace_name(database_path))
+    return backup_path
+
+
+def _check_archive_would_restore(backup_path: Path, *, namespace: str) -> None:
+    """Every member's size and checksum against the manifest, and each database's integrity."""
+    validated_manifest = _validate_archive_contents(backup_path, expected_namespace=namespace)
+    files = validated_manifest["files"]
+    assert isinstance(files, list)
+    with tempfile.TemporaryDirectory(prefix="metalist-backup-check-") as temp_directory:
+        with tarfile.open(backup_path, mode="r:gz") as archive_handle:
+            for entry in files:
+                assert isinstance(entry, dict)
+                if entry["database_role"] == _DATABASE_ROLE_BLOB:
+                    continue
+                archive_name = entry["archive_name"]
+                assert isinstance(archive_name, str)
+                staged_path = Path(temp_directory) / f"check-{entry['database_role']}.sqlite"
+                _copy_file_from_archive(archive_handle, archive_name=archive_name, target_path=staged_path)
+                _validate_staged_database(staged_path)
 
 
 def _restore_source_paths(*, backup_path: Path, database_path: Path) -> tuple[Path, ...]:
@@ -1169,6 +1215,8 @@ def _restore_backup_to_paths(
         backup_path=backup_path,
         database_path=database_path,
     )
+    if _vault_holds_files(database_path) and not _backup_holds_files(backup_path, database_path=database_path):
+        raise InputRejected(_BACKUP_WITHOUT_FILES_MESSAGE)
     source_hashes = [
         (source_path, _sha256_for_file(source_path))
         for source_path in immutable_source_paths
@@ -1194,6 +1242,25 @@ def _restore_backup_to_paths(
                 actual_hash = _sha256_for_file(source_path)
                 if actual_hash != expected_hash:
                     raise RuntimeError(f"Restore source was modified during restore: {source_path}")
+
+
+def _backup_holds_files(backup_path: Path, *, database_path: Path) -> bool:
+    """Whether a backup holds a file catalog or an old-format files database. Pre-update backups
+    made by MetaList 0.27.0 and earlier hold neither, though their vault had files."""
+    if _is_archive_backup_filename(backup_path.name):
+        manifest = _validate_archive_manifest(_read_archive_manifest(backup_path), expected_namespace=None)
+        files = manifest["files"]
+        assert isinstance(files, list)
+        return any(entry["database_role"] in (_DATABASE_ROLE_CATALOG, _DATABASE_ROLE_FILES) for entry in files)
+    return _resolve_related_file_backup_path(backup_path.parent, backup_path.name, database_path=database_path).exists()
+
+
+def _vault_holds_files(database_path: Path) -> bool:
+    """Whether restoring a backup without files would delete some: the catalog names a blob, or an
+    old-format files database is still there."""
+    if _resolve_related_file_database_path(database_path).exists():
+        return True
+    return len(_catalog_blob_ids(resolve_file_catalog_path(database_path))) > 0
 
 
 def restore_backup_to_paths(backup_path: Path, database_path: Path) -> None:
@@ -1239,22 +1306,46 @@ def trim_safety_backups_for_database(database_path: Path) -> list[BackupFileInfo
         return []
     _validate_archive_contents(
         backup_directory / newest_first[0].filename,
-        expected_namespace=_derive_namespace_name(database_path),
+        # A renamed vault's newest may carry a name it had before (_archive_names_of_vault).
+        expected_namespace=parse_backup_namespace_from_filename(newest_first[0].filename),
     )
     return delete_oldest_backups_in_directory(backup_directory, excess_count, database_path=database_path)
 
 
-def back_up_before_passwordless_upgrade(database_path: Path) -> None:
-    """A vault with no password upgrades at startup, with no unlock to make its safety backup
-    first. Vaults with a password back up in AuthService when they unlock."""
-    if not database_path.exists() or _detect_encryption_enabled(database_path):
-        return
+def _saved_database_version(database_path: Path) -> int:
     with closing(sqlite3.connect(f"{database_path.resolve().as_uri()}?mode=ro", uri=True)) as connection:
         database_version = connection.execute("PRAGMA user_version").fetchone()[0]
-    if 0 < database_version < CURRENT_DATABASE_VERSION:
-        create_timestamped_backup_for_paths(
-            database_path=database_path, backup_directory=resolve_backup_directory_for_database(database_path),
+    if not isinstance(database_version, int):
+        raise RuntimeError(f"Unreadable database version in {database_path}")
+    return database_version
+
+
+def back_up_before_passwordless_upgrade(database_path: Path) -> bool:
+    """A vault with no password upgrades at startup, with no unlock to make its safety backup
+    first. Vaults with a password back up in AuthService when they unlock. True when it made
+    one: startup then trims once the upgrade has succeeded."""
+    if not database_path.exists() or _detect_encryption_enabled(database_path):
+        return False
+    database_version = _saved_database_version(database_path)
+    if not 0 < database_version < CURRENT_DATABASE_VERSION:
+        return False
+    create_timestamped_backup_for_paths(
+        database_path=database_path, backup_directory=resolve_backup_directory_for_database(database_path),
+    )
+    return True
+
+
+def trim_safety_backups_once_vault_is_current(database_path: Path) -> list[BackupFileInfo]:
+    """The newest SAFETY_BACKUPS_KEPT, as after an upgrade at unlock, once the upgrade that
+    back_up_before_passwordless_upgrade protected has succeeded (approved by the maintainer
+    2026-11-11). Without this, every upgrade by uv, pip or a git pull added a full copy."""
+    database_version = _saved_database_version(database_path)
+    if database_version != CURRENT_DATABASE_VERSION:
+        raise RuntimeError(
+            f"Vault {database_path} has not upgraded (version {database_version}, "
+            f"expected {CURRENT_DATABASE_VERSION}): its safety backups stay"
         )
+    return trim_safety_backups_for_database(database_path)
 
 
 def trim_safety_backups() -> list[BackupFileInfo]:
@@ -1330,7 +1421,10 @@ def delete_oldest_backups_in_directory(
 
 
 def resolve_backup_path_by_filename(filename: str) -> Path:
-    database_path = resolve_live_database_path()
+    return _resolve_own_backup_path(filename=filename, database_path=resolve_live_database_path())
+
+
+def _resolve_own_backup_path(*, filename: str, database_path: Path) -> Path:
     backup_directory = resolve_backup_directory_for_database(database_path)
 
     if _is_archive_backup_filename(filename):
@@ -1347,8 +1441,17 @@ def resolve_backup_path_by_filename(filename: str) -> Path:
 
 
 def restore_backup(filename: str) -> BackupFileInfo:
+    return restore_own_backup(filename=filename, database_path=resolve_live_database_path())
+
+
+def restore_own_backup(*, filename: str, database_path: Path) -> BackupFileInfo:
+    """Restore one of this vault's backups from its own backups folder. One made before the
+    vault was renamed carries the old name; its launch profile then moves to the current one."""
     SafeSession.invalidate_schema_bootstrap()
-    backup_path = resolve_backup_path_by_filename(filename)
-    database_path = resolve_live_database_path()
-    restore_backup_to_paths(backup_path, database_path)
+    backup_path = _resolve_own_backup_path(filename=filename, database_path=database_path)
+    archive_name = parse_backup_namespace_from_filename(filename)
+    if _is_archive_backup_filename(filename) and archive_name != _derive_namespace_name(database_path):
+        restore_backup_to_paths_from_namespace(backup_path, database_path, source_namespace=archive_name)
+    else:
+        restore_backup_to_paths(backup_path, database_path)
     return _stat_to_backup_info(backup_path)

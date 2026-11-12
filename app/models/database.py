@@ -7,14 +7,12 @@ import os
 from pathlib import Path
 import sys
 from threading import RLock
-import traceback
 from typing import Iterator, Optional
 
 from app.config import DATABASE_URL, SQL_TRACE_ENABLED
 from app.db.live_recovery import recover_pending_change
 from app.db.schema import initialize_schema
-from app.utils.time_units import MS_PER_SECOND
-from loguru import logger
+from app.services import safe_log
 
 _MEMORY_URI = "file:metalist_memory?mode=memory&cache=shared"
 _MODE_BANNER_RULE_WIDTH = 50
@@ -37,20 +35,13 @@ def _is_select(statement: str) -> bool:
 
 
 def _configure_sql_logging(conn: sqlite3.Connection) -> None:
-    def tracer(statement: str, _cursor, _time, _data):
-        logger.info(
-            "sqlite.query",
-            extra={
-                "sql": statement,
-                "duration_ms": _time * MS_PER_SECOND,
-            },
-        )
-
     if not SQL_TRACE_ENABLED:
         return
-    # Raw trace callback logs *every* statement; keep it DEBUG-only to avoid
-    # drowning the logs in polling traffic.
-    conn.set_trace_callback(lambda statement: logger.debug("sqlite.raw", extra={"sql": statement}))
+    # Every statement, by its first keyword only (its text holds note data); DEBUG, below the
+    # log's level, so polling traffic does not drown the log.
+    conn.set_trace_callback(
+        lambda statement: safe_log.log_event("DEBUG", "sqlite.statement", statement=safe_log.sql_verb(statement)),
+    )
 
 class SafeSession:
     _db_path = _resolve_db_path(DATABASE_URL)
@@ -192,18 +183,14 @@ class SafeSession:
 
     def rollback(self) -> None:
         self._connection.rollback()
-        stack = "".join(traceback.format_stack(limit=_ROLLBACK_STACK_FRAME_LIMIT))
         exc_type, _, _ = sys.exc_info()
-        if exc_type is None:
-            logger.error(
-                "FATAL: DB rollback executed; crashing process",
-                extra={"stack": stack},
-            )
-        else:
-            logger.error(
-                "FATAL: DB rollback executed; crashing process",
-                extra={"stack": stack, "error_type": exc_type.__name__},
-            )
+        error_type = safe_log.NONE_VALUE
+        if exc_type is not None:
+            error_type = exc_type.__name__
+        safe_log.log_event(
+            "ERROR", "database.rollback_fatal", database="notes", error_type=error_type,
+            frames=safe_log.safe_stack_frames(sys._getframe())[-_ROLLBACK_STACK_FRAME_LIMIT:],
+        )
         sys.stderr.write("FATAL: DB rollback executed; crashing process\n")
         sys.stderr.flush()
         os._exit(1)

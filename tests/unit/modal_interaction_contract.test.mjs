@@ -147,7 +147,8 @@ test('all app modals share one visual system that follows the theme', () => {
         'password-strength',
         'reminder-row',
         'backup-result-table thead th',
-        'prioritize-modal-tag-bar',
+        // The tag field's box paints nothing since 2026-11-11 (its border showed at the field's
+        // ends): the field itself is a modal input, covered above.
         'command-palette-panel',
     ];
     for (const className of specializedSurfaces) {

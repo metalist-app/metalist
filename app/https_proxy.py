@@ -3,9 +3,10 @@
 from http import HTTPStatus
 import http.client
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-import logging
 from threading import BoundedSemaphore
 import time
+
+from app.services import safe_log
 
 CHUNK_BYTES = 64 * 1024
 MAX_CONNECTIONS = 32
@@ -16,7 +17,6 @@ HOP_HEADERS = frozenset({'connection', 'keep-alive', 'proxy-authenticate', 'prox
 RETRYABLE_METHODS = frozenset({'GET', 'HEAD', 'OPTIONS'})
 # A bodyless safe request is tried once more after a transient upstream failure.
 RETRYABLE_REQUEST_ATTEMPTS = 2
-LOGGER = logging.getLogger(__name__)
 
 
 class BoundedProxyServer(ThreadingHTTPServer):
@@ -95,9 +95,9 @@ def make_proxy_handler(*, backend_host: str, backend_port: int, forward_headers)
             raise AssertionError('Upstream request attempts were not exhausted')
 
         def _log_response_transport_failure(self, error) -> None:
-            LOGGER.error(
-                'HTTPS proxy response transport failed method=%s backend=%s:%s error=%s',
-                self.command, backend_host, backend_port, type(error).__name__,
+            safe_log.log_event(
+                'ERROR', 'proxy.transport_failed',
+                stage='response', method=safe_log.method_for_log(self.command), error_type=type(error).__name__,
             )
 
         # The status line and headers, flushed; whether a body follows.
@@ -170,9 +170,9 @@ def make_proxy_handler(*, backend_host: str, backend_port: int, forward_headers)
             # lint: allow-PY001 rationale="return a sanitized gateway error after retrying an expected upstream transport failure"
             except (OSError, http.client.HTTPException) as error:
                 self.close_connection = True
-                LOGGER.error(
-                    'HTTPS proxy upstream transport failed method=%s backend=%s:%s error=%s',
-                    self.command, backend_host, backend_port, type(error).__name__,
+                safe_log.log_event(
+                    'ERROR', 'proxy.transport_failed',
+                    stage='upstream', method=safe_log.method_for_log(self.command), error_type=type(error).__name__,
                 )
                 self.send_error(HTTPStatus.BAD_GATEWAY, 'Upstream transport failed')
                 return

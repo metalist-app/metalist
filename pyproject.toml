@@ -24,6 +24,7 @@ dependencies = [
     "olefile==0.47",
     "openai==2.54.0",
     "pillow==13.0.0",
+    "psutil==7.2.2",
     "pydantic==2.13.4",
     "pygments==2.20.0",
     "pypdf==6.21.4",
@@ -77,7 +78,7 @@ cache_dir = ".mypy-cache"
 # are Any rather than an import-untyped error. Listed one by one, so a new untyped import
 # elsewhere is still reported.
 [[tool.mypy.overrides]]
-module = ["olefile", "mammoth", "pypdfium2", "pypdfium2.raw", "yaml"]
+module = ["olefile", "mammoth", "psutil", "pypdfium2", "pypdfium2.raw", "yaml"]
 ignore_missing_imports = true
 
 [tool.setuptools]

@@ -44,9 +44,25 @@ class LoginRateLimiter:
         while bucket.attempts and bucket.attempts[0] < cutoff:
             bucket.attempts.popleft()
 
+    def _drop_expired_buckets(self, now: float) -> None:
+        """Forget every key that is not blocked and has no failure inside the window.
+
+        Runs on each check and failure, so buckets of addresses that never come
+        back do not pile up: only keys with recent failures or a running block
+        stay.
+        """
+        for key in tuple(self._buckets):
+            bucket = self._buckets[key]
+            if bucket.blocked_until > now:
+                continue
+            self._prune_attempts(bucket, now)
+            if not bucket.attempts:
+                del self._buckets[key]
+
     def check_allowed(self, key: str) -> tuple[bool, int]:
         now = time.monotonic()
         with self._lock:
+            self._drop_expired_buckets(now)
             # A key without failures has no bucket.
             if key not in self._buckets:
                 return True, 0
@@ -62,6 +78,7 @@ class LoginRateLimiter:
     def record_failure(self, key: str) -> None:
         now = time.monotonic()
         with self._lock:
+            self._drop_expired_buckets(now)
             if key not in self._buckets:
                 self._buckets[key] = _AttemptBucket()
             bucket = self._buckets[key]

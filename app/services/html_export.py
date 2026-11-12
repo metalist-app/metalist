@@ -15,7 +15,7 @@ from app.services.content_formatting import find_list_style
 from app.services.content_formatting import showing_sites_above
 from app.services.content_formatting import sites_linked_in
 from app.services.subtree_stats import STATS_STYLES
-from app.services.content_formatting import is_password_note
+from app.services.content_formatting import holds_password
 from app.services.content_formatting import is_username_note
 from app.services.embedded_references import EmbedRenderContext
 from app.services.embedded_references import collect_active_reference_tokens
@@ -35,7 +35,7 @@ from app.services.root_date_filter import RootDateFilter
 from app.services.snapshot import is_content_collapsible
 from app.services.snapshot import resolve_view_scope_membership
 from app.utils.file_names import replace_unsafe_filename_characters
-from app.services.content_formatting import extract_note_text_for_agent
+from app.services.content_formatting import CREDENTIAL_MASK, SCOPED_PASSWORD_REDACTION, extract_note_text_for_agent
 from app.services.search_index import search_index
 
 
@@ -416,6 +416,8 @@ def _first_line_title(note_id: str) -> str:
         text, redacted = extract_note_text_for_agent(content_html=content_html, tags=record.tags)
         if redacted:
             return ""
+        # A password in its text is dots, as MetaList shows it, not the AI's redaction.
+        text = text.replace(SCOPED_PASSWORD_REDACTION, CREDENTIAL_MASK)
         words = " ".join(text_with_references_as_words(text.split("\n")[0]).split())
         if words != "":
             return words[:_MAX_TITLE_CHARACTERS]
@@ -521,7 +523,7 @@ def exported_credential_counts(
         visited.add(visit)
         note_id, in_scope = visit
         record = note_store.get_note(note_id)
-        if is_password_note(record.tags):
+        if holds_password(record.tags):
             passwords.add(note_id)
         if is_username_note(record.tags):
             usernames.add(note_id)
@@ -537,7 +539,7 @@ def exported_credential_counts(
                 pending.append((reference.note_id, False))
                 continue
             linked_tags = note_store.get_note(reference.note_id).tags
-            if is_password_note(linked_tags):
+            if holds_password(linked_tags):
                 passwords.add(reference.note_id)
             if is_username_note(linked_tags):
                 usernames.add(reference.note_id)

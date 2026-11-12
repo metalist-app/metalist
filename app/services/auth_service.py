@@ -59,6 +59,7 @@ from app.utils.text_utils import strip_html
 from app.services.encryption import EncryptionService
 from app.services.maintenance_mode import maintenance_service
 from app.services.note_store import store as note_store
+from app.services.ai_chat import ai_chat_store
 from app.services.tab_state import tab_state_store
 from app.services.backup_service import create_timestamped_backup
 from app.services.backup_service import trim_safety_backups
@@ -366,6 +367,11 @@ class AuthService:
                     encryption_service=self.encryption,
                     force_plaintext=False,
                 )
+                ai_chat_store.rewrite_persisted_state(
+                    connection=connection,
+                    encryption_service=self.encryption,
+                    force_plaintext=False,
+                )
                 encrypted_reminder_count = reminder_store.rewrite_persisted_reminders(
                     connection=connection,
                     encryption_service=self.encryption,
@@ -518,6 +524,11 @@ class AuthService:
                         force_plaintext=True,
                     )
                 tab_state_store.rewrite_persisted_state(
+                    connection=connection,
+                    encryption_service=None,
+                    force_plaintext=True,
+                )
+                ai_chat_store.rewrite_persisted_state(
                     connection=connection,
                     encryption_service=None,
                     force_plaintext=True,

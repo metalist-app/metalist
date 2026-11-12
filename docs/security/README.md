@@ -66,6 +66,10 @@ could not be drawn), the file content revision it was drawn from, the drawing's 
 (`drawer_version`) and its time are readable structural metadata. It is drawn by a process of its
 own (`app/services/pdf_first_page_worker.py`) that gets the PDF on stdin and answers the JPEG on
 stdout: the PDF's bytes and the picture are never written to disk unencrypted.
+The AI conversation (`ai_chat`, database version 19: one row, the vault's chat as saved by
+`app/services/ai_chat.py`) encrypts its whole payload (`state_json`): messages, summaries, the
+agent's records and the IDs of the notes the AI could see. Its row ID and save timestamps are
+readable structural metadata. Clear Chat deletes the row.
 Site icons beside link titles (`link_icons`, database version 12) encrypt the site
 (`origin`) and the icon (`icon_png`) like link titles; their lookup status, last
 error kind, failure count and check timestamps are readable structural metadata.
@@ -337,43 +341,66 @@ the browser (`link_icons._svg_icon_png()`).
 
 ### Sensitive Telemetry
 
-Plaintext runtime logs and browser diagnostics describe application structure
-without recording decrypted user data. Authenticated encrypted logs may contain
-full exception messages and tracebacks to diagnose failures:
+MetaList writes one plain log (`<namespace>-server.log` in the logs folder, and the same lines on
+the console), before and after login alike. Its content is guaranteed safe by an allow-list
+that throws, not by care at each call site (`app/services/safe_log.py`, built 2026-11-11 from
+`docs/ready-to-build/error-reports.md` section 6):
 
-- Before an encrypted namespace is unlocked, persistent startup diagnostics are
-  plaintext because no DEK exists in memory and decrypted vault data is not
-  hydrated. Successful DEK unwrap switches the process to authenticated logging
-  before any note, rule, tab, reminder, or tag-activity decryption begins.
-- While unlocked, every Loguru file record and every direct `stdout`/`stderr`
-  write is stored as an independent `MLLOG1` AES-256-GCM envelope under the
-  namespace DEK using a domain-separated HKDF logging key and a fresh random
-  nonce. Plaintext Loguru sinks are filtered out and plaintext fault logging is
-  disabled for the unlocked interval.
-- Unexpected errors always record safe exception types and source frames through
-  Loguru. Full exception text and traceback are written directly to the encrypted
-  sink only while unlocked; they may contain note content and must be handled as
-  private data. A short request ID in HTTP 500 responses identifies the matching
-  server record without exposing the exception message to the browser.
-- Logout returns to plaintext startup diagnostics only after decrypted runtime
-  stores and the session key have been purged. Password removal and backup
-  restore close the encrypted diagnostic session after their sensitive work.
+- Every record is one of MetaList's own events from the allow-list (`EVENTS`), each with typed
+  fields: route templates as the app declares them (`/api2/notes/{note_id}/save`, never the path
+  or query the browser sent), HTTP methods and statuses, request ids, timings, counts, flags,
+  values from MetaList's own closed lists (start-up steps, undo op types), error class names
+  and code frames. A loguru patcher checks each record before any sink sees it: free text, an
+  unknown event, a missing or undeclared field, or a value outside its field's type raises
+  `UnsafeLogRecord` where it was logged, and nothing is written. The error names the event and
+  field, never the value. A route the app did not declare (`allow_route_templates`) throws too.
+- Code frames are written relative to MetaList, its libraries (`site-packages/...`) or Python
+  (`lib/...`); a frame anywhere else is `external`, so no folder outside the code (a home
+  folder's name) appears. Exception messages and local values are never written: they may hold
+  note content.
+- Libraries never log as they are. `httpx` logs every URL it fetches (after login, links in
+  notes), uvicorn's errors carry exception text: records from the logging module below WARNING
+  are dropped, and a warning or error keeps only its package (from a closed list, else
+  `other`), error type and code frames (`forward_standard_log_record`). uvicorn runs without its
+  own handlers (`log_config=None`) and with its access log off. MetaList's own modules never
+  log through the logging module: such a record throws.
+- Every request is one line when answered: status, method, route template, handler, duration,
+  size and request id. Successful static-file loads are not logged (21,110 of 21,990 lines of
+  one log were); a failed or slow one (1 s or more) is. Polls and edit locks are not logged.
+  A slow request also logs how busy the computer and MetaList were, numbers only (CPU %,
+  memory, swap), never a program's name; a problem report carries the same numbers for its
+  slow requests and one reading taken as it is made (`docs/ready-to-build/error-reports.md`
+  section 6a).
+  A failed request is logged with its route, error type and code frames.
+- Every answer carries its request id in an `X-Request-Id` header (not only a 500's
+  diagnostic), so a failure the browser shows (`API call failed: 409 Conflict (request
+  3fa2c1d0)`) matches its server line. Answers refused before the request log runs (an
+  unknown host) have none.
+- A canary test (`tests/unit/test_safe_log.py`) unlocks the logging state, saves a note with
+  marker words in its text, tags and a link, searches for them, requests missing paths and
+  query strings with them, fails a request with them in its message and fetches a URL with
+  them through httpx: none appears in the console or the log file.
+- Nothing else reaches a log file while a vault is unlocked. Plaintext fault logging is off,
+  and every direct `stdout`/`stderr` write (`print`) becomes an independent `MLLOG1`
+  AES-256-GCM envelope under the namespace DEK, using a domain-separated HKDF logging key and a
+  fresh random nonce (whether those streams can go is open question 6 of
+  `docs/ready-to-build/error-reports.md`). Until 2026-11-11 records also went to a
+  `<namespace>-server.auth-*.log.enc` file per login; nothing could read those, they were
+  never removed, and the logs folder's 512 MB start-up cap would have stopped MetaList from
+  starting, so they are no longer written. Existing ones are left in place.
+- Logout returns the process streams to plaintext only after decrypted runtime stores and the
+  session key have been purged. Password removal and backup restore close the encrypted
+  stream session after their sensitive work.
 - Password-bearing request models use Pydantic `SecretStr`, so model rendering
   and JSON serialization cannot expose submitted login, creation, current,
   replacement, or removal passwords. Canary tests cover rejected login and
   password-change paths, and an AST regression test rejects direct password
   values passed to logging or `print` from the authentication modules.
-- Server request telemetry records method, route path, timing, client address,
-  and whether a query string exists; it never retains the query-string value or
-  request body.
 - Search telemetry records counts and timings without search expressions, tags,
   or note text.
 - Validation failures retain only the error type and field location. Rejected
   input, validation messages, and validation context are discarded before logging
   or returning a 422 response.
-- Persistent exception diagnostics retain the exception type and traceback frame
-  locations, not the exception message or local values. Uvicorn's raw access log
-  is disabled because request targets can contain searches.
 - Unexpected API 500 responses show the exception class and last application
   source line in the browser. They omit exception messages, local values, note
   content, and absolute filesystem paths; responses are marked no-store.
@@ -410,7 +437,7 @@ Database migration `2 → 3` removes the legacy search-history schema that expos
 
 ### Backup Immutability
 
-Existing backup archives are immutable. MetaList can create a new archive using exclusive creation, validate/read one, restore from one, or delete one through the explicit retention/delete or namespace-deletion workflow. Safety backups, the full copies in a vault's internal `backups` folder made by an upgrade at unlock and before an update, have one retention path of their own (approved 2026-11-08): nothing else would ever remove them, and one vault had reached 3.7 GB. `backup_service.trim_safety_backups_for_database` keeps the newest 3, after the newest passes the same size and checksum check as a restore and only once the upgrade has succeeded (`AuthService.run_authenticated_database_migrations`) or the updated MetaList has restarted (`metalist trim-safety-backups`, the updater's last step). Backups in a folder the user chose keep their own retention setting. The `BKP001` gate allows the upgrade path this import and no other backup operation. It never rewrites, replaces, renames, repackages, migrates, touches, or changes permissions on an existing archive. A new archive is published by hard link (approved 2026-10-29): it is written to `<name>.partial` (opened with exclusive create), fsynced, and `os.link`ed to its name, which fails if that name exists, so a sync app never uploads a half-written archive and a crash never leaves a truncated one under a backup's name. Only `backup_service.delete_partial_archives` removes `.partial` files, and it asserts each is one; the `BKP001` gate allows it and exclusive-create opens (`app/startup_sanity.py`), and still forbids writing to or deleting anything else. Login and database migrations do not enumerate user-configured backup folders.
+Existing backup archives are immutable. MetaList can create a new archive using exclusive creation, validate/read one, restore from one, or delete one through the explicit retention/delete or namespace-deletion workflow. Safety backups, the full copies in a vault's internal `backups` folder made by an upgrade at unlock and before an update, have one retention path of their own (approved 2026-11-08): nothing else would ever remove them, and one vault had reached 3.7 GB. `backup_service.trim_safety_backups_for_database` keeps the newest 3, after the newest passes the same size and checksum check as a restore and only once the upgrade has succeeded (`AuthService.run_authenticated_database_migrations`; for a vault with no password, its upgrade at start, `trim_safety_backups_once_vault_is_current` from `app/main.py`, approved 2026-11-11) or the updated MetaList has restarted (`metalist trim-safety-backups`, the updater's last step). Backups in a folder the user chose keep their own retention setting. The `BKP001` gate allows the upgrade path this import and no other backup operation; startup (`app/main.py`) may import only the passwordless backup and this trim, relative imports included. A renamed vault's archives keep the name they were made under; the rename records its former names (`former-names.json` in the vault folder, approved 2026-11-11), and in the vault's own backups folder, and only there, listing, restore and this trim match those names too (`_archive_names_of_vault`). It never rewrites, replaces, renames, repackages, migrates, touches, or changes permissions on an existing archive. A new archive is published by hard link (approved 2026-10-29): it is written to `<name>.partial` (opened with exclusive create), fsynced, and `os.link`ed to its name, which fails if that name exists, so a sync app never uploads a half-written archive and a crash never leaves a truncated one under a backup's name. Pre-update backups go through the same writer (`backup_service.create_verified_backup_for_update`), so they hold the same members as any backup (notes, `files/catalog.db` and every blob it names) and are then read back with a restore's size, checksum and integrity checks before the update installs. Pre-update backups made by MetaList 0.27.0 and earlier hold no files; restore refuses any backup without a catalog or files database over a vault that has files, since installing its empty catalog would delete them all. Only `backup_service.delete_partial_archives` removes `.partial` files, and it asserts each is one; the `BKP001` gate allows it and exclusive-create opens (`app/startup_sanity.py`), and still forbids writing to or deleting anything else. Login and database migrations do not enumerate user-configured backup folders.
 
 Restore hashes the selected archive and every legacy sidecar before reading it, installs the database into the live destination, and hashes the sources again. Any byte change fails loudly. A restored passwordless database is migrated after installation; an encrypted older version stays locked and migrates after its own password unwraps its DEK. The source backup remains unchanged in either case. `BKP001` startup sanity rejects overwrite-capable archive modes, historical-backup transformation functions, backup-service imports from database migrations, archive replacement/move APIs, and deletion outside the explicit retention path. The gate cannot be suppressed.
 
@@ -578,7 +605,7 @@ swap, or filesystem snapshots.
 - Server restart requires re-authentication
 
 ### Mutation Transaction Enforcement
-- Mutating FastAPI routes are expected to use `@transactional_route`.
+- Mutating FastAPI routes are expected to use `@transactional_route`. A POST that changes nothing (the edit preview) uses `@read_only_route`; startup sanity (TXN001) accepts either.
 - Startup sanity rejects mutation endpoints that omit the decorator or place it in the wrong order.
 - Request-scoped writer sessions are reused across the wrapped route path so the commit happens once at the end of the request, not in intermediate steps.
 
@@ -608,6 +635,7 @@ swap, or filesystem snapshots.
 - With no explicit namespace on a single-namespace launch, the default namespace DB is `~/MetaList/namespaces/default/default.metalist.db`.
 - Deleting a namespace removes its namespace directory on disk, including the namespace SQLite databases, launch-profile metadata, and backups under `~/MetaList/namespaces/<namespace>/`.
 - HTTPS is opt-in via existing PEM files at `certs/metalist-cert.pem` and `certs/metalist-key.pem`, or explicit `METALIST_TLS_CERT` and `METALIST_TLS_KEY`.
+- MetaList's own pair is self-signed, valid 825 days with EKU serverAuth (Apple's requirements for TLS server certificates). A start replaces it, with a new key, when fewer than 30 days remain or the certificate or key is unreadable or mismatched; `certs/renew.lock` keeps vaults starting together from reading a new certificate with the old key. Explicit `METALIST_TLS_CERT`/`METALIST_TLS_KEY` files are never touched. A changed LAN address does not renew it (decided 2026-11-11): a laptop moves between networks, and each new address would make phones warn again back home; `generate-lan-cert.sh` makes one for a new address by hand.
 - The default listener is loopback-only (`127.0.0.1`). When PEMs exist, MetaList starts HTTPS on the same bind host at port `8443` and redirects non-loopback HTTP hostnames to HTTPS.
 - For direct HTTPS from an explicit single-namespace `python main.py ...` run, set both:
   - `METALIST_TLS_CERT=/path/to/fullchain.pem`
@@ -661,10 +689,14 @@ swap, or filesystem snapshots.
   - `LOGIN_RATE_LIMIT_MAX_ATTEMPTS=5`
   - `LOGIN_RATE_LIMIT_WINDOW_SECONDS=300`
   - `LOGIN_RATE_LIMIT_BLOCK_SECONDS=300`
-- Keying strategy:
-  - first `x-forwarded-for` hop when present
-  - fallback to direct client IP
-  - fallback to user-agent prefix when IP is unavailable.
+- Keyed by the client address Uvicorn resolved (`auth._login_rate_limit_key`): the application never
+  parses `X-Forwarded-For` itself, and a request without a client address is refused. Every login
+  from one machine (localhost) shares one count.
+- A blocked attempt is refused before its password is checked, so it costs no Argon2id hash.
+  Change Password and Remove Password check the current password with no limit: they need a
+  logged-in session. The counts live in memory; a restart clears them.
+- Tests: `tests/unit/test_login_rate_limit.py` (the limiter), `test_auth_login_runtime.py` (the
+  login page locks an address out, and only that address).
 
 ### Password Requirements
 - New and changed passwords must contain 12-72 characters.

@@ -14,6 +14,7 @@ from app.db.file_first_pages_migration import add_file_first_pages_table
 from app.db.file_versions_migration import add_text_versions
 from app.db.move_files_to_blobs import move_files_to_blobs
 from app.db.retire_sounds import retire_sounds
+from app.db.schema import AI_CHAT_COLUMNS, AI_CHAT_TABLE, create_ai_chat_table
 from app.db.schema import LINK_ICONS_COLUMNS, LINK_ICONS_TABLE, create_link_icons_table, create_namespace_content_migrations_table
 from app.services.encryption import EncryptionService
 
@@ -482,6 +483,24 @@ def add_model_timing_columns(
     return 0
 
 
+def add_ai_chat_table(
+    *,
+    connection: sqlite3.Connection,
+    encryption_enabled: bool,  # noqa: ARG001
+    encryption_service: EncryptionService | None,  # noqa: ARG001
+) -> int:
+    """Version 18→19: the vault's AI conversation, saved so a restart or an upgrade keeps it
+    (app/services/ai_chat.py; docs/ui/ai-chat.md). The on-open schema helper may have created
+    the table already; then its shape is checked. Nothing is saved until the first question."""
+    create_ai_chat_table(connection)
+    columns = _table_columns(connection, table=AI_CHAT_TABLE)
+    if columns != set(AI_CHAT_COLUMNS):
+        raise RuntimeError(
+            f"Database migration 18→19 found an {AI_CHAT_TABLE} table with other columns: {sorted(columns)}"
+        )
+    return 0
+
+
 # One step per database version, in order: the step at position N upgrades version N to N + 1.
 _MIGRATION_STEPS: tuple[Callable[..., int], ...] = (
     _migration_0_to_1,
@@ -502,6 +521,7 @@ _MIGRATION_STEPS: tuple[Callable[..., int], ...] = (
     add_model_timing_columns,
     move_files_to_blobs,
     add_file_first_pages_table,
+    add_ai_chat_table,
 )
 _MIGRATIONS: dict[int, Callable[..., int]] = dict(enumerate(_MIGRATION_STEPS))
 assert len(_MIGRATION_STEPS) == CURRENT_DATABASE_VERSION, "every database version below the current one needs a step"

@@ -12,14 +12,18 @@
 //
 // Every output line is prefixed with the seconds since its run started, so slow steps show.
 // Exits non-zero when any run failed, after all runs have finished, and prints each failed
-// run's log path and last lines.
+// run's log path and last lines. The logs' folder is removed when every run passed and kept
+// when one failed (run-folders.mjs); earlier runners' folders a day old are removed at start.
+// Stopped by a signal, it stops its runs first (each stops its own MetaList server), so
+// none is left running.
 import {spawn} from 'node:child_process';
-import {mkdtemp, writeFile} from 'node:fs/promises';
+import {writeFile} from 'node:fs/promises';
 import {createWriteStream} from 'node:fs';
-import {tmpdir} from 'node:os';
+import {constants} from 'node:os';
 import {join} from 'node:path';
 import {parseArgs} from 'node:util';
 import {FOCUSED_SUITES} from './browser-suite-names.mjs';
+import {makeRunFolder, removeRunFolder, stopAndWait, sweepStaleRunFolders} from './run-folders.mjs';
 
 const CORE = 'core';
 // The longest runs (from timed runs, 2026-10-18) start first, so no worker is left
@@ -43,6 +47,11 @@ const FAILURE_TAIL_LINES = 25;
 const BROWSERS = ['chrome', 'firefox'];
 // Wide enough for the seconds prefix up to 9999.9s, so log lines stay aligned.
 const SECONDS_COLUMN_WIDTH = 6;
+const RUN_FOLDER_PREFIX = 'metalist-browser-suites-';
+// The signals that end the runner (stop-children-on-exit.mjs); it then exits as the signal
+// would have ended it, with 128 plus the signal's number.
+const EXIT_SIGNALS = ['SIGINT', 'SIGTERM', 'SIGHUP'];
+const SIGNAL_EXIT_BASE = 128;
 
 const {values: options} = parseArgs({options: {browser: {type: 'string'}, workers: {type: 'string'}, shard: {type: 'string'}}});
 if (!BROWSERS.includes(options.browser)) throw new Error(`--browser must be one of ${BROWSERS.join(', ')}`);
@@ -59,20 +68,34 @@ if (options.shard !== undefined) {
   if (shard.index > shard.count) throw new Error('--shard i/n needs i no larger than n');
 }
 
-const directory = await mkdtemp(join(tmpdir(), 'metalist-browser-suites-'));
+await sweepStaleRunFolders(RUN_FOLDER_PREFIX, Date.now());
+const directory = await makeRunFolder(RUN_FOLDER_PREFIX);
 const startedAt = performance.now();
+
+// On a signal, the runs going now (`running`) are stopped and waited for, so each stops its
+// own server, before the runner exits.
+function stopRunsOnExitSignals(running) {
+  for (const signal of EXIT_SIGNALS) {
+    process.once(signal, async () => {
+      await Promise.all([...running].map(child => stopAndWait(child, STOP_GRACE_MS)));
+      process.exit(SIGNAL_EXIT_BASE + constants.signals[signal]);
+    });
+  }
+}
 
 function seconds(fromMs) {
   return ((performance.now() - fromMs) / MS_PER_SECOND).toFixed(1);
 }
 
-// Runs one suite to the end; resolves with its outcome, never rejects.
-function runSuite(suite) {
+// Runs one suite to the end, in `running` while it goes; resolves with its outcome, never rejects.
+function runSuite(suite, running) {
   const logPath = join(directory, `${suite}.log`);
   const log = createWriteStream(logPath);
   const runStartedAt = performance.now();
   const env = {...process.env, BROWSER_TEST_BROWSER: options.browser, BROWSER_TEST_SUITE: suite};
   const child = spawn(process.execPath, ['scripts/browser-smoke.mjs'], {env, stdio: ['ignore', 'pipe', 'pipe']});
+  running.add(child);
+  child.once('exit', () => running.delete(child));
   const tail = [];
   let pending = '';
   const write = chunk => {
@@ -94,21 +117,23 @@ function runSuite(suite) {
       if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
     }, STOP_GRACE_MS).unref();
   }, RUN_TIMEOUT_MS);
+  // Resolves once the log file is closed too: Windows cannot remove an open file.
   return new Promise(resolve => child.on('close', (code, signal) => {
     clearTimeout(timer);
     if (pending !== '') write('\n');
+    const outcome = {suite, passed: code === 0, code, signal, seconds: seconds(runStartedAt), logPath, tail};
+    log.once('close', () => resolve(outcome));
     log.end();
-    resolve({suite, passed: code === 0, code, signal, seconds: seconds(runStartedAt), logPath, tail});
   }));
 }
 
 // Runs the suites `workers` at a time, each worker taking the next waiting suite.
-async function runAll(suites, workers) {
+async function runAll(suites, workers, running) {
   const waiting = [...suites];
   const finished = [];
   const worker = async () => {
     while (waiting.length > 0) {
-      const result = await runSuite(waiting.shift());
+      const result = await runSuite(waiting.shift(), running);
       finished.push(result);
       console.log(`${result.passed ? 'PASS' : 'FAIL'} ${result.suite} in ${result.seconds}s (${finished.length}/${suites.length})`);
     }
@@ -131,7 +156,9 @@ let aloneNote = '';
 if (aloneSuites.length > 0) aloneNote = ` and then ${aloneSuites.join(', ')} alone`;
 console.log(`Running ${shardSuites.length} of ${allSuites.length} browser runs (slice ${shard.index}/${shard.count}) `
   + `in ${options.browser}, ${workerCount} at a time${aloneNote}; logs in ${directory}`);
-const results = [...await runAll(parallelSuites, workerCount), ...await runAll(aloneSuites, 1)];
+const runningSuites = new Set();
+stopRunsOnExitSignals(runningSuites);
+const results = [...await runAll(parallelSuites, workerCount, runningSuites), ...await runAll(aloneSuites, 1, runningSuites)];
 
 const failed = results.filter(result => !result.passed);
 const summary = results
@@ -144,6 +171,8 @@ for (const result of failed) {
   console.log(`\nFAILED ${result.suite} (exit code ${result.code}, signal ${result.signal}), log: ${result.logPath}\n${result.tail.join('\n')}`);
 }
 if (failed.length > 0) {
-  console.log(`\n${failed.length} of ${results.length} runs failed.`);
+  console.log(`\n${failed.length} of ${results.length} runs failed; logs kept in ${directory}`);
   process.exitCode = 1;
+} else {
+  await removeRunFolder(directory, RUN_FOLDER_PREFIX);
 }

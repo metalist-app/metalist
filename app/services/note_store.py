@@ -13,7 +13,6 @@ from threading import RLock
 from typing import Dict, FrozenSet, Iterable, List, Optional, Sequence, Mapping, Set, Tuple
 from types import SimpleNamespace
 import time
-import logging
 
 from app.db.session import connect_reader
 from app.db.notes_sql import fetch_all_for_cache
@@ -211,7 +210,6 @@ class NoteStore:
     """Thread-safe, read-optimized cache of note metadata."""
 
     def __init__(self) -> None:
-        self._logger = logging.getLogger(__name__)
         self._lock = RLock()
         self._note_map: Dict[str, NoteRecord] = {}
         self._backlink_index = BacklinkIndex()

@@ -58,8 +58,14 @@ function visibilityLabel(preferencesStore, key, defaultValue, subject) {
 // Commands with a key of their own show it at the right of their row (rule 4): the
 // key alone, or with Cmd (Ctrl).
 export const COMMAND_SHORTCUTS = Object.freeze({
-    'action.find_in_list': Object.freeze({ mod: true, shift: false, key: 'F' }),
-    'action.open_keyboard_shortcuts_help': Object.freeze({ mod: false, shift: false, key: '?' }),
+    'action.find_in_list': Object.freeze({ mod: true, alt: false, shift: false, key: 'F' }),
+    'action.open_keyboard_shortcuts_help': Object.freeze({ mod: false, alt: false, shift: false, key: '?' }),
+});
+
+// A palette entry's icon, drawn from the right-click menu's icons (context-menu-service.js) so
+// it matches them: Report a Problem… has a warning (the maintainer, 2026-11-12).
+export const COMMAND_ICONS = Object.freeze({
+    'action.report_problem': 'warning',
 });
 
 const PASSWORD_COMMANDS_WITHOUT_ONE = new Set(['form.add_password']);
@@ -73,16 +79,20 @@ const ROOT_REORDER_COMMANDS = new Set([
 
 /**
  * Whether a command can apply now; one that cannot is left out of the palette (rule 5).
- * `state` is { hasPassword, isRootReorderLocked, hasFileFilter } (a sorted tab orders
- * its root notes itself; the File size order needs a Files filter on).
+ * `state` is { hasPassword, isRootReorderLocked, hasFileFilter, hasProblemReports } (a sorted
+ * tab orders its root notes itself; the File size order needs a Files filter on; Export Problem
+ * Reports… needs a kept report).
  */
 export function isCommandAvailable(commandId, state) {
     if (typeof commandId !== 'string' || commandId === '') {
         throw new Error('isCommandAvailable requires a command id');
     }
     if (typeof state.hasPassword !== 'boolean' || typeof state.isRootReorderLocked !== 'boolean'
-        || typeof state.hasFileFilter !== 'boolean') {
-        throw new Error('isCommandAvailable requires boolean hasPassword, isRootReorderLocked and hasFileFilter');
+        || typeof state.hasFileFilter !== 'boolean' || typeof state.hasProblemReports !== 'boolean') {
+        throw new Error('isCommandAvailable requires boolean hasPassword, isRootReorderLocked, hasFileFilter and hasProblemReports');
+    }
+    if (commandId === 'action.export_problem_reports') {
+        return state.hasProblemReports;
     }
     if (PASSWORD_COMMANDS_WITHOUT_ONE.has(commandId)) {
         return !state.hasPassword;
@@ -138,6 +148,8 @@ export function buildCommandPaletteEndpoints(deps) {
     const trimUnusedFiles = requireAction(actions, 'trimUnusedFiles');
     const retryFailedLinkTitles = requireAction(actions, 'retryFailedLinkTitles');
     const exportCurrentViewAsHtml = requireAction(actions, 'exportCurrentViewAsHtml');
+    const reportProblem = requireAction(actions, 'reportProblem');
+    const exportProblemReports = requireAction(actions, 'exportProblemReports');
     const printView = requireAction(actions, 'printView');
     const openOpenNamespace = requireAction(actions, 'openOpenNamespace');
     const openCreateNamespace = requireAction(actions, 'openCreateNamespace');
@@ -150,6 +162,7 @@ export function buildCommandPaletteEndpoints(deps) {
     const alphabetizeRootNotesDesc = requireAction(actions, 'alphabetizeRootNotesDesc');
     const resetUpdatedAtToCreatedAt = requireAction(actions, 'resetUpdatedAtToCreatedAt');
     const deleteNotesInView = requireAction(actions, 'deleteNotesInView');
+    const tagNotesInView = requireAction(actions, 'tagNotesInView');
     const openReminders = requireAction(actions, 'openReminders');
 
     const openVersionInfo = requireAction(actions, 'openVersionInfo');
@@ -653,6 +666,20 @@ export function buildCommandPaletteEndpoints(deps) {
             label: 'Export View as HTML…',
             execute: async () => exportCurrentViewAsHtml(),
         },
+        // Problem reports (docs/ready-to-build/error-reports.md): one made on demand, with a
+        // sentence about what went wrong, and the kept ones saved as one file.
+        {
+            id: 'action.report_problem',
+            kind: 'action',
+            label: 'Report a Problem…',
+            execute: async () => reportProblem(),
+        },
+        {
+            id: 'action.export_problem_reports',
+            kind: 'action',
+            label: 'Export Problem Reports…',
+            execute: async () => exportProblemReports(),
+        },
         {
             id: 'action.print_view',
             kind: 'action',
@@ -680,10 +707,10 @@ export function buildCommandPaletteEndpoints(deps) {
             closeOnExecute: true,
             execute: async () => embed(),
         },
-        ...['latex', 'csv', 'mermaid'].map((kind) => ({
+        ...['latex', 'csv', 'mermaid', 'password'].map((kind) => ({
             id: `action.insert_${kind}`,
             kind: 'action',
-            label: { latex: 'Insert LaTeX', csv: 'Insert CSV', mermaid: 'Insert Mermaid Diagram' }[kind],
+            label: { latex: 'Insert LaTeX', csv: 'Insert CSV', mermaid: 'Insert Mermaid Diagram', password: 'Insert Password' }[kind],
             closeOnExecute: true,
             execute: async () => insertFormat(kind),
         })),
@@ -742,6 +769,13 @@ export function buildCommandPaletteEndpoints(deps) {
             label: 'Repair: Reset Updated Time to Created Time (Current View)…',
             closeOnExecute: true,
             execute: async () => resetUpdatedAtToCreatedAt(),
+        },
+        {
+            id: 'action.tag_notes_in_view',
+            kind: 'action',
+            label: 'Add or Remove Tag (Current View)…',
+            closeOnExecute: true,
+            execute: async () => tagNotesInView(),
         },
         {
             id: 'action.delete_notes_in_view',

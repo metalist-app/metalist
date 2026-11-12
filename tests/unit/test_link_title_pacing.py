@@ -144,3 +144,37 @@ def test_a_rate_limited_link_is_retried_more_slowly_than_other_failures() -> Non
 def test_the_pacing_site_ignores_www_and_case() -> None:
     assert _pacing_host("https://WWW.YouTube.com/watch?v=x") == "youtube.com"
     assert _pacing_host("https://m.youtube.com/watch?v=x") == "m.youtube.com"
+
+
+def test_sites_whose_spacing_and_cooldown_are_over_are_forgotten(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Every site ever asked stayed in memory (docs/ready-to-build/unbounded-growth-audit.md, M5)."""
+    clock = [1000.0]
+    monkeypatch.setattr(link_titles.time, "monotonic", lambda: clock[0])
+    pacer = _HostPacer()
+    for index in range(1000):
+        host = f"site{index}.example"
+        assert pacer.acquire(host)
+        pacer.release(host)
+        pacer.cool_down(host, 60)
+
+    clock[0] += 3600
+    assert pacer.acquire("now.example")
+    pacer.release("now.example")
+
+    assert set(pacer._next_allowed_at) == {"now.example"}
+    assert pacer._cooldown_until == {}
+
+
+def test_a_site_still_spaced_or_cooling_down_is_remembered(monkeypatch: pytest.MonkeyPatch) -> None:
+    clock = [1000.0]
+    monkeypatch.setattr(link_titles.time, "monotonic", lambda: clock[0])
+    pacer = _HostPacer()
+    assert pacer.acquire("busy.example")
+    pacer.release("busy.example")
+    pacer.cool_down("slow.example", 600)
+
+    assert pacer.acquire("other.example")
+    pacer.release("other.example")
+
+    assert not pacer.acquire("slow.example")
+    assert "busy.example" in pacer._next_allowed_at

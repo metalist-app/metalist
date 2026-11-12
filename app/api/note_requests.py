@@ -339,6 +339,36 @@ class DeleteNotesInViewRequest(TypedDict):
     undoContext: UndoContext
     viewport: Viewport
 
+# Tag Notes in View… (app/usecases/tag_notes_in_view.py): the tags it suggests as one is typed,
+# how many notes adding or removing one changes, then the change, made only if that count holds.
+@with_config(ConfigDict(strict=True))
+class TagNotesInViewSuggestionsRequest(TypedDict):
+    search: Text
+    tabId: Identifier
+    isUntaggedView: bool
+    action: Literal['add', 'remove']
+    prefix: Text
+
+@with_config(ConfigDict(strict=True))
+class CountTagNotesInViewRequest(TypedDict):
+    search: Text
+    tabId: Identifier
+    isUntaggedView: bool
+    action: Literal['add', 'remove']
+    tag: Identifier
+
+@with_config(ConfigDict(strict=True))
+class TagNotesInViewRequest(TypedDict):
+    search: Text
+    tabId: Identifier
+    isUntaggedView: bool
+    action: Literal['add', 'remove']
+    tag: Identifier
+    expectedNoteCount: Nonnegative
+    clientId: Identifier
+    undoContext: UndoContext
+    viewport: Viewport
+
 # The view a robot count (🤖 N) was shown in: its tab, search ('' for none) and kind.
 @with_config(ConfigDict(strict=True))
 class OpenToTagProposalsRequest(TypedDict):

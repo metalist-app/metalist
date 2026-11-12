@@ -106,8 +106,8 @@ def test_failure_stack_dump_signals_only_owned_processes_with_registered_handler
     logs_directory.mkdir()
     namespace = "unique-smoke"
     (logs_directory / f"{namespace}-server.log").write_text(
-        "INFO | pid=111 thread=MainThread | [diagnostics] process diagnostics enabled log_path=example\n"
-        "INFO | pid=333 thread=MainThread | [diagnostics] process diagnostics enabled log_path=example\n",
+        "2026-11-11 10:00:00.000 | INFO     | pid=111 | diagnostics.enabled\n"
+        "2026-11-11 10:00:00.000 | INFO     | pid=333 | diagnostics.enabled\n",
         encoding="utf-8",
     )
     fault_path = logs_directory / f"{namespace}-server.fault.log"

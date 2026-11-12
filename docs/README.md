@@ -61,7 +61,6 @@
 - Built 2026-11-11, with the virtual folders experiment it changes (the folders tab only shows or hides the tree, no folder contexts as a kind; several folders in a search add results; a folder implies its parent folders, rules included): `docs/ready-to-build/folders-tab-and-multiple-folders.md`
 - Ready to build (the AI reads the whole view, files included, in batches when it must; a warning before very large requests): `docs/ready-to-build/ai-reads-whole-view.md`
 - Ready to build (how much text a conversation has sent, under the chat header): `docs/ready-to-build/ai-chat-size-line.md`
-- Ready to build (AI conversations survive a restart or an upgrade): `docs/ready-to-build/ai-chat-survives-restart.md`
 - Ready to build (a prefix folder for every import, so a whole import is one folder): `docs/ready-to-build/import-prefix-folder.md`
 - Ready to build (importing a folder of any files, with a size check and file-type checklist; previews for code, PDF, RTF/.docx, HTML, audio and video): `docs/ready-to-build/folder-import-and-file-previews.md`
 - Ready to build, replacing that note's preview notes (files shown, not copied: kept text for every file with text, a viewer with Open and Download, audio and video players, dropped `.md`/`.txt` asked about, Convert to Note): `docs/ready-to-build/files-shown-not-copied.md`
@@ -75,6 +74,8 @@
 - Future plan (hosted account states: trial, active, cancelled, lapsed and read-only, closed, deleted): `docs/future-plans/hosted-account-states.md`
 - Future plan (backups to S3-compatible storage, uploaded by MetaList itself; manual or automatic): `docs/future-plans/backups-s3.md`
 - Ready to build (nothing shown as Saved is ever lost: autosave, retries with change IDs, the graceful stop): `docs/ready-to-build/commit-and-shutdown-protocol.md`
+- Ready to build (error reports: on a red overlay or on demand (Report a Problem…), a redacted record of the inputs that led to it, detailed enough to replay as a failing browser test; one plain log of safe records after login too; on each slow request, how busy the computer was (§6a, not built); the unreadable encrypted log files, which would have hit the 512 MB start-up wall around 2026-12-01, were dropped 2026-11-11): `docs/ready-to-build/error-reports.md`
+- Ready to do (an audit of everything that only grows, on disk and in the databases: each gets a bound, an owner that enforces it, and a test): `docs/ready-to-build/unbounded-growth-audit.md`
 - Future plan (model-checking the save, backup, lock and linked-list protocols with TLA+, with Hypothesis stateful tests on the real code): `docs/future-plans/model-checking-protocols.md`
 - Future plan (user-named styles, `@style=name`, a safe subset of CSS): `docs/future-plans/user-styles.md`
 - Being worked out, don't build yet (a bookmarklet that copies a page's title, address and selection for pasting into MetaList): `docs/future-plans/web-clipper.md`

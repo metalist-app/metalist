@@ -9,6 +9,8 @@ import sys
 
 import pytest
 
+import app.api.routes.notes as notes_routes
+from app.services.bulk_operation import bulk_operation_guard
 from app.services.credential_display import CredentialDisplay
 import app.services.content_formatting as content_formatting_module
 from app.security.rendered_html import sanitize_rendered_html
@@ -315,3 +317,15 @@ def test_a_paste_shows_as_the_format_it_is_offered_draws_it(text: str, tags: str
     html_text = format_preview_html(text=text, tags=tags)
     assert drawn in html_text, html_text
     assert html_text == sanitize_rendered_html(html_text)
+
+
+# The preview was refused while another request was changing the vault (an image uploading
+# from another laptop, say), and the page showed "409 Conflict" as a fatal error (the
+# maintainer, 2026-11-11). It only reads the note it is sent: it never waits for a change.
+def test_a_preview_is_answered_while_another_request_changes_the_vault() -> None:
+    with bulk_operation_guard.track_mutation():
+        preview = notes_routes.edit_preview(payload={
+            "marked_content_html": f"<div>$x^{CARET_MARK}2$</div>", "tags_text": MARKDOWN,
+        })
+
+    assert preview["kind"] == PREVIEW_LATEX

@@ -4,7 +4,6 @@ This module provides backward compatibility for the old encryption interface.
 It now uses the token-based DEK system for encryption operations.
 """
 
-import logging
 from threading import RLock
 from types import SimpleNamespace
 from typing import Optional, Tuple
@@ -25,7 +24,6 @@ _encryption_required: bool = False  # shockharness: ignore[STATE001] reason="set
 # only once its key is set.
 _service_lock = RLock()
 
-logger = logging.getLogger(__name__)
 
 
 def get_encryption_service_with_token(token: str) -> Optional[EncryptionService]:

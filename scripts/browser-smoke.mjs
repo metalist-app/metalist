@@ -6,8 +6,7 @@ import {checkAiResponseMenu} from './browser-ai-response-menu-regressions.mjs';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {spawn} from 'node:child_process';
-import {mkdtemp, writeFile, readFile} from 'node:fs/promises';
-import {tmpdir} from 'node:os';
+import {writeFile, readFile} from 'node:fs/promises';
 import {join, resolve} from 'node:path';
 import {createServer} from 'node:net';
 import {setTimeout as delay} from 'node:timers/promises';
@@ -15,6 +14,7 @@ import puppeteer from 'puppeteer';
 import {closeBrowser, installedBrowserExecutable} from './installed-browser.mjs';
 import {assertNoLoopStalls} from './browser-loop-stalls.mjs';
 import {stopChildrenOnExitSignals} from './stop-children-on-exit.mjs';
+import {makeRunFolder, removeRunFolder, stopAndWait, sweepStaleRunFolders} from './run-folders.mjs';
 import {checkPastedHeadingFormatting} from './browser-formatting-regressions.mjs';
 import {checkAdditionalStateTransitions, checkEditingShortcutSequences} from './browser-state-regressions.mjs';
 import {checkTagDoubleClickSelection} from './browser-tag-selection-regressions.mjs';
@@ -52,6 +52,7 @@ import {checkCollapseOutlines} from './browser-collapse-outline-regressions.mjs'
 import {checkTabSwitching} from './browser-tab-switch-regressions.mjs';
 import {checkFolderNoteDrag} from './browser-folder-note-drag-regressions.mjs';
 import {checkFolderContext} from './browser-folder-context-regressions.mjs';
+import {checkDeleteTrim} from './browser-delete-trim-regressions.mjs';
 import {checkFolderDrops} from './browser-folder-drop-regressions.mjs';
 import {checkFileSizeSort} from './browser-file-size-sort-regressions.mjs';
 import {checkViewChangeTop} from './browser-view-change-top-regressions.mjs';
@@ -93,6 +94,7 @@ import {checkMenuLook} from './browser-menu-look-regressions.mjs';
 import {checkStatsTags} from './browser-stats-tag-regressions.mjs';
 import {checkDialogKeys} from './browser-dialog-key-regressions.mjs';
 import {checkDialogButtons} from './browser-dialog-button-regressions.mjs';
+import {checkTagDialogLists} from './browser-tag-dialog-list-regressions.mjs';
 import {checkPhone} from './browser-phone-regressions.mjs';
 import {checkFloatingMessages} from './browser-floating-message-regressions.mjs';
 import {checkViewMenu} from './browser-view-menu-regressions.mjs';
@@ -125,8 +127,14 @@ const BEFORE_MOUSE_CHECKS_QUIET_MS = 500;
 const READINESS_TRIES = 300;
 const SCALE_READINESS_TRIES = 1200;
 const READINESS_TRY_MS = 100;
+// How long the server may take to stop after SIGTERM before it is killed.
+const SERVER_STOP_GRACE_MS = 5000;
 
-const directory = await mkdtemp(join(tmpdir(), 'metalist-browser-'));
+// The run's vault, certificates, backups and logs (run-folders.mjs): removed after a
+// passing run, kept and named after a failed one. Earlier runs' folders a day old go first.
+const RUN_FOLDER_PREFIX = 'metalist-browser-';
+await sweepStaleRunFolders(RUN_FOLDER_PREFIX, Date.now());
+const directory = await makeRunFolder(RUN_FOLDER_PREFIX);
 // Free ports for HTTP and HTTPS: the user's own MetaList keeps its usual ports (HTTPS 8443).
 async function freePort() {
   const probe = createServer();
@@ -393,6 +401,10 @@ try {
     await checkDialogButtons(page);
     assert.deepEqual(errors, []);
     console.log(`PASS dialog button regressions in ${await browser.version()}`);
+  } else if (process.env.BROWSER_TEST_SUITE === 'tag-dialog-lists') {
+    await checkTagDialogLists(page);
+    assert.deepEqual(errors, []);
+    console.log(`PASS tag dialog list regressions in ${await browser.version()}`);
   } else if (process.env.BROWSER_TEST_SUITE === 'dialog-keys') {
     await checkDialogKeys(page);
     assert.deepEqual(errors, []);
@@ -485,6 +497,10 @@ try {
     await checkFolderContext(page);
     assert.deepEqual(errors, []);
     console.log(`PASS folder context regressions in ${await browser.version()}`);
+  } else if (process.env.BROWSER_TEST_SUITE === 'delete-trim') {
+    await checkDeleteTrim(page);
+    assert.deepEqual(errors, []);
+    console.log(`PASS delete trim regressions in ${await browser.version()}`);
   } else if (process.env.BROWSER_TEST_SUITE === 'edge-tabs') {
     await checkEdgeTabs(page);
     assert.deepEqual(errors, []);
@@ -967,7 +983,7 @@ try {
   assert(storedProbe.includes(remoteImage), `the remote image keeps its original source: ${storedProbe}`);
   console.log('PASS sanitizing a note for storage loads none of its images');
 
-  const fileId = await page.evaluate(async () => {
+  await page.evaluate(async () => {
     const {buildSessionHeaders} = await import('/static/js/modules/session-auth.js');
     const form = new FormData();
     form.append('file', new File(['browser fixture'], 'fixture.txt', {type:'text/plain'}));
@@ -976,7 +992,6 @@ try {
     const record = await uploaded.json();
     const downloaded = await fetch(`/api2/files/${record.file_id}/download`, {headers:buildSessionHeaders(false)});
     if (await downloaded.text() !== 'browser fixture') throw new Error('Attachment content mismatch');
-    return record.file_id;
   });
   console.log('PASS browser attachment round-trip');
 
@@ -1015,8 +1030,8 @@ try {
     if (!response.ok) throw new Error(`Restore failed: ${response.status}`);
   }, {restoreHeaders, backupFilename});
   // Restore re-execs the same owned server process; observe its second startup.
-  for (let attempt=0; attempt<300 && logs.split('Application startup complete.').length<3; attempt++) await delay(100);
-  assert(logs.split('Application startup complete.').length>=3, 'Restored server did not restart');
+  for (let attempt=0; attempt<300 && logs.split('server stage=startup_complete').length<3; attempt++) await delay(100);
+  assert(logs.split('server stage=startup_complete').length>=3, 'Restored server did not restart');
   await page.goto(origin);
   await page.waitForSelector('#login-panel[data-revealed="true"] #login-password', {visible:true});
   await page.type('#login-password', password);
@@ -1034,19 +1049,18 @@ try {
   await assertLoginLogoGeometry(page, 'login screen after logout');
   console.log('PASS password setup, login, hydration, and logout');
   assert.deepEqual(errors, []);
-  await writeFile(join(directory,'result.json'), JSON.stringify({passed:true,noteId,fileId}));
-  console.log(`Browser smoke passed; disposable artifacts: ${directory}`);
+  console.log('Browser smoke passed');
   }
   await assertNoLoopStalls(loopStallLog);
 } catch (error) { // shockharness: ignore[EXC001] reason="the server and browser logs of the failed run are written, then the error is rethrown unchanged"
   await writeFile(join(directory,'server.log'), logs);
   await writeFile(join(directory,'browser.log'), browserDiagnostics.join('\n'));
-  console.error(`Browser smoke failed; disposable logs: ${directory}`);
+  console.error(`Browser smoke failed; its folder is kept: ${directory}`);
   throw error;
 } finally {
   if (browser) await closeBrowser(browser);
-  server.kill('SIGTERM');
-  const stopped = new Promise(resolve => server.once('exit', resolve));
-  await Promise.race([stopped, delay(5000)]);
-  if (server.exitCode === null && server.signalCode === null) server.kill('SIGKILL');
+  // Fully exited before its folder goes: a server still stopping could write there again.
+  await stopAndWait(server, SERVER_STOP_GRACE_MS);
 }
+// Only a passing run gets here: a failure was rethrown above.
+await removeRunFolder(directory, RUN_FOLDER_PREFIX);

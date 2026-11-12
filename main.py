@@ -1,7 +1,7 @@
 # First: the launch clock starts before every other import (app/launch_clock.py).
 from app.launch_clock import seconds_since_launch
 import uvicorn
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 import logging
 import errno
@@ -55,6 +55,9 @@ from app.services.exception_capture import CapturedExceptionContext
 from app.services.namespace_switcher import build_namespace_catalog
 from app.services.namespace_switcher import NamespaceOpenResult
 from app.services.namespace_switcher import ORCHESTRATED_CHILD_ENV_NAME
+from app.db.version import (
+    EXIT_VAULT_NEEDS_NEWER_METALIST, VaultNeedsNewerMetaList,
+)
 from app.services.namespace_switcher import open_or_launch_all_namespaces
 from app.services.self_update import TRIM_SAFETY_BACKUPS_COMMAND
 from app.services.self_update import schedule_self_update
@@ -607,6 +610,8 @@ def _run_main_listener(
         ssl_certfile=ssl_certfile,
         ssl_keyfile=ssl_keyfile,
         access_log=False,
+        # uvicorn's own handlers would print its records as they are: they reach the safe log instead.
+        log_config=None,
     )
 
 
@@ -719,8 +724,24 @@ def main(argv: list[str]) -> None:
     _run_namespace_server_for_current_env(argv=argv)
 
 
+def run_refusing_newer_vaults_plainly(run: Callable[[], None]) -> None:
+    """Run an entry point (the `metalist` command, `python main.py`, a vault's server). A vault saved
+    by a newer MetaList is an expected refusal: its message and its own exit status, which the
+    launcher reports for a vault's server, not a traceback."""
+    needs_newer_capture = CapturedExceptionContext(VaultNeedsNewerMetaList, boundary='main.py:run_refusing_newer_vaults_plainly:needs_newer_capture')
+    with needs_newer_capture:
+        run()
+    if needs_newer_capture.captured_exception is not None:
+        print(needs_newer_capture.captured_exception, file=sys.stderr, flush=True)
+        raise SystemExit(EXIT_VAULT_NEEDS_NEWER_METALIST)
+
+
 def cli() -> None:
-    argv = sys.argv[1:]
+    """The `metalist` command."""
+    run_refusing_newer_vaults_plainly(lambda: _run_command(sys.argv[1:]))
+
+
+def _run_command(argv: list[str]) -> None:
     if ORCHESTRATED_CHILD_ENV_NAME in os.environ:
         orchestrated_child = os.environ[ORCHESTRATED_CHILD_ENV_NAME]
         if orchestrated_child != "1":
@@ -822,4 +843,4 @@ def _run_namespace_server_for_current_env(*, argv: list[str]) -> None:
 
 
 if __name__ == "__main__":
-    main(sys.argv[1:])
+    run_refusing_newer_vaults_plainly(lambda: main(sys.argv[1:]))

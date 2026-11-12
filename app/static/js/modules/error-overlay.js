@@ -4,6 +4,10 @@ import { ServerInputRejectedError } from './expected-errors.js';
 import { CONFIG } from './config.js';
 import { HTTP_STATUS } from './http-status.js';
 
+// The red overlay is drawn above every dialog (.modal, 15000), floating card (20000) and the
+// login cover (21000): under a dialog, an error there looked like a click doing nothing
+// (2026-11-12). Tests: tests/unit/fatal_overlay_layering.test.mjs.
+const FATAL_OVERLAY_Z_INDEX = 22000;
 
 const moduleState = ApplicationState.createFields('error-overlay', {
     installed: false,
@@ -11,7 +15,12 @@ const moduleState = ApplicationState.createFields('error-overlay', {
     serverCodeCheck: null,
     // The first fatal error waits for that answer; later ones show at once.
     hasExplainedFatal: false,
+    // The error the overlay shows, for Export Report… (docs/ready-to-build/error-reports.md §4).
+    shownError: null,
 });
+
+const OVERLAY_TEXT_ID = 'fatal-error-text';
+const EXPORT_REPORT_ID = 'fatal-error-export-report';
 
 // A page newer than its server (the server's Python is read when it starts, the page's
 // files on every load: app/services/server_code.py) fails on answers in the old shape.
@@ -72,36 +81,74 @@ function ensureOverlay() {
       padding: '10px 14px',
       fontFamily: 'monospace',
       fontSize: '13px',
-      zIndex: '10000',
+      zIndex: String(FATAL_OVERLAY_Z_INDEX),
       whiteSpace: 'pre-wrap',
       borderBottom: '2px solid #550000',
       maxHeight: '40vh',
       overflowY: 'auto',
     });
+    const text = document.createElement('div');
+    text.id = OVERLAY_TEXT_ID;
+    const exportButton = document.createElement('button');
+    exportButton.id = EXPORT_REPORT_ID;
+    exportButton.type = 'button';
+    exportButton.textContent = 'Export Report…';
+    Object.assign(exportButton.style, {
+      marginTop: '8px',
+      font: 'inherit',
+      color: '#fff',
+      background: 'transparent',
+      border: '1px solid rgba(255, 255, 255, 0.7)',
+      borderRadius: '4px',
+      padding: '3px 10px',
+      cursor: 'pointer',
+    });
+    // A report of what led up to the error, redacted, saved as a file to send.
+    // Loaded when pressed: the overlay stands alone, before the app it reports on has loaded.
+    exportButton.addEventListener('click', () => {
+      if (moduleState.shownError === null) throw new Error('Export Report… pressed with no error shown');
+      const shownError = moduleState.shownError;
+      void import('./problem-reports/report-maker.js').then(({ exportOverlayReport }) => exportOverlayReport(shownError));
+    });
+    overlay.append(text, exportButton);
     document.body.appendChild(overlay);
   }
   return overlay;
 }
 
-export function showFatalError(message, details) {
-  const overlay = ensureOverlay();
+function overlayText() {
+  const text = ensureOverlay().querySelector(`#${OVERLAY_TEXT_ID}`);
+  if (!(text instanceof HTMLElement)) throw new Error('The fatal overlay has no text');
+  return text;
+}
+
+export function showFatalError(message, details, className) {
+  if (typeof className !== 'string') throw new Error('showFatalError requires the error class name');
+  moduleState.shownError = Object.freeze({
+    className, message: String(message), stack: details ? String(details) : '',
+  });
   const time = new Date().toISOString();
   const lines = [
     `[${time}] FATAL: ${String(message)}`,
     details ? String(details) : '',
   ].filter(Boolean);
-  overlay.textContent = lines.join('\n');
+  overlayText().textContent = lines.join('\n');
   // Only the first error waits for the answer: a check that fails itself reaches this
   // overlay once, not again.
   if (!moduleState.hasExplainedFatal) {
     moduleState.hasExplainedFatal = true;
     void checkServerCodeIsStale().then((isStale) => {
       if (isStale) {
-        const shown = ensureOverlay();
+        const shown = overlayText();
         shown.textContent = `${STALE_SERVER_MESSAGE}\n${shown.textContent}`;
       }
     });
   }
+}
+
+// The error's class for a report: its name if it is an Error, else nothing.
+function errorClassName(error) {
+  return error instanceof Error ? error.name : '';
 }
 
 // `showWarning(message)` shows a polite, non-fatal banner (ErrorHandler.showInfoBanner).
@@ -132,7 +179,7 @@ export function installGlobalErrorOverlay(showWarning) {
     if (event && event.error && typeof event.error.stack === 'string') {
       stack = event.error.stack;
     }
-    showFatalError(msg, stack);
+    showFatalError(msg, stack, errorClassName(event ? event.error : null));
   });
 
   window.addEventListener('unhandledrejection', (event) => {
@@ -157,6 +204,6 @@ export function installGlobalErrorOverlay(showWarning) {
       msg = 'Unhandled promise rejection';
     }
     const stack = reason && reason.stack ? reason.stack : '';
-    showFatalError(msg, stack);
+    showFatalError(msg, stack, errorClassName(reason));
   });
 }

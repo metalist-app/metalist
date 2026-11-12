@@ -5,7 +5,6 @@ encrypted-at-rest storage. Cache is populated on startup and maintained
 manually by the sqlite helper layer and service hooks.
 """
 
-import logging
 import time
 from typing import Callable, Dict, Iterator, Mapping, Protocol, Sequence
 
@@ -28,7 +27,7 @@ from app.services.meta_tag_renames import (
 from app.utils.text_utils import strip_sanitized_html
 from app.security.note_html import sanitize_note_html, sanitizer_fingerprint
 
-logger = logging.getLogger(__name__)
+from app.services import safe_log
 
 # Global in-memory caches: {note_id: decrypted_string}
 _search_cache: Dict[str, str] = {}  # shockharness: ignore[STATE001] reason="touched only by write requests, which run one at a time, and by the bulk apply, which holds bulk_operation_guard.lock like the requests let through beside it; filled at startup before serving and by the hydration worker under bulk_operation_guard.lock"
@@ -39,8 +38,6 @@ _text_cache: Dict[str, str] = {}  # shockharness: ignore[STATE001] reason="touch
 _CACHE_TIMING_ENABLED = True
 # Startup timing is reported once per this many decrypted notes.
 _CACHE_TIMING_BATCH_NOTES = 1000
-# Debug logs show only the start of a note id.
-_LOGGED_NOTE_ID_PREFIX_LENGTH = 8
 
 
 def get_cached_content(note_id: str) -> str:
@@ -75,24 +72,33 @@ def cache_note(note_id: str, decrypted_content: str) -> None:
         decrypted_content: Plain text content to store in cache
     """
     _search_cache[note_id] = sanitize_note_html(decrypted_content)
-    logger.debug(f"Cached content for note {note_id[:_LOGGED_NOTE_ID_PREFIX_LENGTH]}...")
 
 
 def cache_note_tags(note_id: str, tags: str) -> None:
     _tag_cache[note_id] = tags
-    logger.debug(f"Cached tags for note {note_id[:_LOGGED_NOTE_ID_PREFIX_LENGTH]}...")
 
 
 def cache_note_proposed_tags(note_id: str, proposed_tags: str) -> None:
     if not isinstance(proposed_tags, str):
         raise TypeError("proposed_tags must be a string")
     _proposed_tag_cache[note_id] = proposed_tags
-    logger.debug(f"Cached proposed tags for note {note_id[:_LOGGED_NOTE_ID_PREFIX_LENGTH]}...")
 
 
 def cache_note_text(note_id: str, raw_text: str) -> None:
     _text_cache[note_id] = raw_text
-    logger.debug(f"Cached raw text for note {note_id[:_LOGGED_NOTE_ID_PREFIX_LENGTH]}...")
+
+
+def forget_notes(note_ids: Sequence[str]) -> None:
+    """Drop deleted notes' decrypted text, tags and proposed tags.
+
+    Undoing the delete restores the notes through apply_restore_records, which caches
+    them again as a new note is cached.
+    """
+    for note_id in note_ids:
+        for cache in (_search_cache, _tag_cache, _proposed_tag_cache, _text_cache):
+            if note_id not in cache:
+                raise RuntimeError(f"Cache missing deleted note {note_id}")
+            del cache[note_id]
 
 
 def clear_cache() -> None:
@@ -102,7 +108,7 @@ def clear_cache() -> None:
     _tag_cache = {}
     _proposed_tag_cache = {}
     _text_cache = {}
-    logger.info("Cache cleared")
+    safe_log.log_event("INFO", "cache.cleared")
 
 
 # What the note store reads from a row once the cache holds its decrypted text and tags.
@@ -141,7 +147,7 @@ def populate_cache_from_db(db: SafeSession, *, saved_searches: SavedSearches) ->
     kept, so no more than one row's ciphertext is ever held: holding them all until the
     note store had loaded made unlocking peak hundreds of MB above what it keeps.
     """
-    logger.info("Populating content cache from database...")
+    safe_log.log_event("INFO", "cache.populate_start")
     with SafeSession.allow_reads("cache:populate"):
         raw = raw_sqlite_connection(db.connection())
         migration_id = stored_html_cleaned_migration_id()
@@ -177,7 +183,7 @@ def _store_cleaned_notes(cleaned_notes: Mapping[str, str], *, migration_id: str)
             connection, migration_id=migration_id, converted_count=len(cleaned_notes),
             superseded_prefix=STORED_HTML_CLEANED_PREFIX,
         )
-    logger.info("Cleaned stored note HTML once: %d notes changed", len(cleaned_notes))
+    safe_log.log_event("INFO", "cache.html_cleaned", notes=len(cleaned_notes))
 
 
 def _store_renamed_meta_tags(renamed_tags: Mapping[str, tuple[str, str]], *, saved_searches: SavedSearches) -> None:
@@ -200,9 +206,7 @@ def _store_renamed_meta_tags(renamed_tags: Mapping[str, tuple[str, str]], *, sav
             connection, migration_id=META_TAG_RENAMES_MIGRATION_ID,
             converted_count=len(renamed_tags) + renamed_searches, superseded_prefix=META_TAG_RENAMES_PREFIX,
         )
-    logger.info(
-        "Renamed built-in tags once: %d notes and %d searches changed", len(renamed_tags), renamed_searches,
-    )
+    safe_log.log_event("INFO", "tags.builtin_renamed", notes=len(renamed_tags), searches=renamed_searches)
 
 
 def _populate_from_rows(
@@ -215,7 +219,7 @@ def _populate_from_rows(
 
     if _CACHE_TIMING_ENABLED:
         print(f"[startup] cache populating {note_count} notes")
-        logger.info("[startup] cache populating %d notes", note_count)
+        safe_log.log_event("INFO", "cache.populating", notes=note_count)
 
     clear_cache()
     structures: list[Mapping[str, object]] = []
@@ -381,12 +385,10 @@ def _populate_from_rows(
             print(
                 f"[startup] cache decrypted {processed} notes | last {_CACHE_TIMING_BATCH_NOTES} in {batch_elapsed:.2f}s | total {total_elapsed:.2f}s"
             )
-            logger.info(
-                "[startup] cache decrypted %d notes | last %d in %.2fs | total %.2fs",
-                processed,
-                _CACHE_TIMING_BATCH_NOTES,
-                batch_elapsed,
-                total_elapsed,
+            safe_log.log_event(
+                "INFO", "cache.decrypt_progress",
+                notes=processed, batch_notes=_CACHE_TIMING_BATCH_NOTES,
+                batch_seconds=batch_elapsed, total_seconds=total_elapsed,
             )
             last_checkpoint = now
             if hydration_state.is_running():
@@ -414,12 +416,8 @@ def _populate_from_rows(
         print(
             f"[startup] cache decrypt loop processed {processed} notes in {total_loop:.2f}s"
         )
-        logger.info(
-            "[startup] cache decrypt loop processed %d notes in %.2fs",
-            processed,
-            total_loop,
-        )
+        safe_log.log_event("INFO", "cache.decrypt_loop", notes=processed, seconds=total_loop)
 
-    logger.info(f"Content cache populated with {processed} notes")
+    safe_log.log_event("INFO", "cache.populated", notes=processed)
 
     return structures, cleaned_notes, renamed_tags

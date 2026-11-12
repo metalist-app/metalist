@@ -9,6 +9,7 @@ import { isVirtualFoldersShown } from './virtual-folders-state.js';
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import { initVirtualFoldersWidth } from './virtual-folders-width.js';
 import { FloatingMessages } from '../../floating-messages.js';
+import { TrimReminder } from '../../trim-reminder-service.js';
 
 export { isVirtualFoldersShown } from './virtual-folders-state.js';
 
@@ -636,6 +637,9 @@ async function deleteFolder(path) {
     const expectedNoteCount = choice.deleteNotes ? counted.noteCount : NO_NOTES;
     await NotesAPI.deleteVirtualFolder(path, choice.deleteNotes, expectedNoteCount);
     await handlers.afterChange();
+    // The deleted notes' files may now be unused (deleting them cleared undo): the trim
+    // reminder checks at once instead of at the next click (the maintainer, 2026-11-12).
+    await TrimReminder.check();
 }
 
 /** Right-click in the tree: on a folder, New Folder Inside, Rename and Delete; elsewhere, New Folder. */

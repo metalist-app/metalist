@@ -407,6 +407,18 @@
     "presentation": "palette"
   },
   {
+    "id": "action.report_problem",
+    "label": "Report a Problem…",
+    "selector": "#command-palette-modal",
+    "presentation": "palette"
+  },
+  {
+    "id": "action.export_problem_reports",
+    "label": "Export Problem Reports…",
+    "selector": "#command-palette-modal",
+    "presentation": "palette"
+  },
+  {
     "id": "action.print_view",
     "label": "Print View…",
     "selector": "#command-palette-modal",
@@ -449,6 +461,12 @@
     "presentation": "palette"
   },
   {
+    "id": "action.insert_password",
+    "label": "Insert Password",
+    "selector": "#command-palette-modal",
+    "presentation": "palette"
+  },
+  {
     "id": "action.add_excalidraw_diagram",
     "label": "Add Excalidraw Diagram",
     "selector": "#command-palette-modal",
@@ -487,6 +505,12 @@
   {
     "id": "action.alphabetize_root_notes_desc",
     "label": "Alphabetize Root Notes Z-A (Current View)…",
+    "selector": "#command-palette-modal",
+    "presentation": "palette"
+  },
+  {
+    "id": "action.tag_notes_in_view",
+    "label": "Add or Remove Tag (Current View)…",
     "selector": "#command-palette-modal",
     "presentation": "palette"
   },

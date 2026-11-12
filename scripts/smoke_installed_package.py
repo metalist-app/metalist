@@ -183,7 +183,7 @@ def _dump_failed_namespace_stacks(*, executable: Path, profiles: list[tuple[str,
         # registered SIGUSR1. Sending it before registration would kill a child.
         registered_pids = set()
         for line in log_path.read_text(encoding="utf-8", errors="replace").splitlines():
-            if "[diagnostics] process diagnostics enabled " not in line:
+            if not line.rstrip().endswith("| diagnostics.enabled"):
                 continue
             match = re.search(r"\bpid=(\d+)\b", line)
             if match is not None:

@@ -13,7 +13,7 @@ const VIEW_HANDLER_NAMES = [
     'onAddNoteAtTop', 'onPasteNoteAtTop', 'onUndo', 'onRedo', 'onGoToTop', 'onGoToBottom', 'onExpandAll', 'onCollapseAll', 'onFullyExpandAll',
     'onFullyCollapseAll', 'onSetUntaggedView', 'onSetSortMode', 'onSetDateRangeField', 'onSetDateRangePreset',
     'onOpenCustomDateRange', 'onSetFileFilter', 'onSetTheme', 'onNewTab', 'onOpenNamespace', 'onOpenReminders',
-    'onExportViewHtml', 'onPrintView', 'onLogOut',
+    'onExportViewHtml', 'onPrintView', 'onLogOut', 'onTagNotesInView',
 ];
 
 function viewHandlers(calls) {
@@ -34,7 +34,7 @@ const NOTE_HANDLER_NAMES = [
     'onPasteNoteChild', 'onLinkTo', 'onEmbed', 'onOpenReferenceSource',
     'onMakeImageBigger', 'onMakeImageSmaller', 'onResetImageSize', 'onExportNoteHtml', 'onExportViewHtml',
     'onPrintNote', 'onPrintView', 'onViewNoteFullscreen', 'onFullyExpandNote', 'onFullyCollapseNote', 'onAddNoteAtTop',
-    'onAddSiblingNote', 'onAddChildNote', 'onDeleteNote', 'onMoveNoteToTop', 'onMoveNoteToBottom', 'onMoveNoteUp',
+    'onAddSiblingNote', 'onAddChildNote', 'onAddNoteOneLevelOut', 'onDeleteNote', 'onMoveNoteToTop', 'onMoveNoteToBottom', 'onMoveNoteUp',
     'onMoveNoteDown', 'onIndentNote', 'onOutdentNote', 'onDownloadFile',
 ];
 
@@ -42,7 +42,7 @@ function noteMenu() {
     return buildContextMenuItems({
         kind: 'note', noteId: 'note-1', noteTimestamps: { created: 'Oct 24, 2026', updated: 'Oct 24, 2026' }, isMac: true,
         hasChildren: true, canMoveToTop: true, canMoveToBottom: true, canMoveUp: true, canMoveDown: true,
-        canIndent: true, canOutdent: true, fileCardFileId: null, filePlayerFileId: null,
+        canIndent: true, canOutdent: true, canAddNoteOneLevelOut: true, isBlankNote: false, fileCardFileId: null, filePlayerFileId: null,
     }, Object.fromEntries(NOTE_HANDLER_NAMES.map((name) => [name, () => {}])));
 }
 

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import logging
 from collections import OrderedDict
 from time import monotonic
 from app.services.resource_limits import UNDO_BYTES, UNDO_OPERATIONS, CLIENT_ENTRIES, CLIENT_IDLE_SECONDS, retained_bytes
@@ -17,10 +16,7 @@ from app.services.file_edit_sessions import reset_all_file_edit_sessions
 from app.services.file_storage import FileSnapshot, restore_file_snapshot
 
 
-logger = logging.getLogger(__name__)
-
-# Undo/redo stack logs show at most this many of the newest operations.
-_LOGGED_STACK_TAIL_OPS = 12
+from app.services import safe_log
 
 
 def _summarize_op(op: dict) -> str:
@@ -72,13 +68,6 @@ def _summarize_op(op: dict) -> str:
         return f"{op_type}({root_id})"
 
     return op_type
-
-
-def _summarize_stack(ops: List[dict], max_items: int) -> str:
-    if not isinstance(max_items, int) or max_items <= 0:
-        raise ValueError("max_items must be a positive integer")
-    start = max(0, len(ops) - max_items)
-    return "[" + ", ".join(_summarize_op(op) for op in ops[start:]) + "]"
 
 
 def _normalize_viewport_snapshot(viewport: Dict[str, object]) -> Dict[str, object]:
@@ -236,11 +225,6 @@ def _compute_focus_note_id(op: dict, *, direction: str) -> str:
         if isinstance(prev_id, str) and prev_id:
             return prev_id
         if isinstance(parent_id, str) and parent_id:
-            logger.info(
-                "undo.create_note focus parent: created_id=%s parent_id=%s",
-                created_id,
-                parent_id,
-            )
             return parent_id
         return ""
 
@@ -828,10 +812,7 @@ def maybe_reset_on_context(client_id: str, undo_context: str) -> None:
         raise ValueError("undo_context must be a non-empty string")
 
     if ctx.last_undo_context != undo_context:
-        logger.info(
-            "undo.stack reset client=%s",
-            client_id,
-        )
+        safe_log.log_event("INFO", "undo.reset")
         ctx.history.clear()
         ctx.redo.clear()
         ctx.last_undo_context = undo_context
@@ -855,23 +836,12 @@ def undo(client_id: str, token: str) -> Optional[Dict[str, object]]:
     if not ctx.history:
         return None
 
-    logger.info(
-        "undo.stack undo_start client=%s history_len=%s redo_len=%s history_tail=%s redo_tail=%s",
-        client_id,
-        len(ctx.history),
-        len(ctx.redo),
-        _summarize_stack(ctx.history, _LOGGED_STACK_TAIL_OPS),
-        _summarize_stack(ctx.redo, _LOGGED_STACK_TAIL_OPS),
-    )
+    safe_log.log_event("INFO", "undo.start", direction="undo", history=len(ctx.history), redo=len(ctx.redo))
 
     op = ctx.history.pop()
 
-    logger.info(
-        "undo.stack undo_pop client=%s op=%s history_len=%s redo_len=%s",
-        client_id,
-        _summarize_op(op),
-        len(ctx.history),
-        len(ctx.redo),
+    safe_log.log_event(
+        "INFO", "undo.pop", direction="undo", op_type=op["type"], history=len(ctx.history), redo=len(ctx.redo),
     )
 
     if "type" not in op:
@@ -1015,22 +985,9 @@ def undo(client_id: str, token: str) -> Optional[Dict[str, object]]:
         "viewAnchorRootId": view_anchor_root_id,
         "focusNoteId": focus_note_id,
     }
-    logger.info(
-        "undo.finish opType=%s focusNoteId=%s viewAnchorRootId=%s",
-        op_type,
-        focus_note_id,
-        view_anchor_root_id,
-    )
 
-    logger.info(
-        "undo.stack undo_finish client=%s opType=%s focusNoteId=%s history_len=%s redo_len=%s history_tail=%s redo_tail=%s",
-        client_id,
-        op_type,
-        focus_note_id,
-        len(ctx.history),
-        len(ctx.redo),
-        _summarize_stack(ctx.history, _LOGGED_STACK_TAIL_OPS),
-        _summarize_stack(ctx.redo, _LOGGED_STACK_TAIL_OPS),
+    safe_log.log_event(
+        "INFO", "undo.finish", direction="undo", op_type=op_type, history=len(ctx.history), redo=len(ctx.redo),
     )
     # The op moved between stacks; re-check the budget before returning.
     _enforce_undo_limits()
@@ -1042,23 +999,12 @@ def redo(client_id: str, token: str) -> Optional[Dict[str, object]]:
     if not ctx.redo:
         return None
 
-    logger.info(
-        "undo.stack redo_start client=%s history_len=%s redo_len=%s history_tail=%s redo_tail=%s",
-        client_id,
-        len(ctx.history),
-        len(ctx.redo),
-        _summarize_stack(ctx.history, _LOGGED_STACK_TAIL_OPS),
-        _summarize_stack(ctx.redo, _LOGGED_STACK_TAIL_OPS),
-    )
+    safe_log.log_event("INFO", "undo.start", direction="redo", history=len(ctx.history), redo=len(ctx.redo))
 
     op = ctx.redo.pop()
 
-    logger.info(
-        "undo.stack redo_pop client=%s op=%s history_len=%s redo_len=%s",
-        client_id,
-        _summarize_op(op),
-        len(ctx.history),
-        len(ctx.redo),
+    safe_log.log_event(
+        "INFO", "undo.pop", direction="redo", op_type=op["type"], history=len(ctx.history), redo=len(ctx.redo),
     )
     redo_viewport = op["viewport"]
 
@@ -1183,22 +1129,9 @@ def redo(client_id: str, token: str) -> Optional[Dict[str, object]]:
         "viewAnchorRootId": view_anchor_root_id,
         "focusNoteId": focus_note_id,
     }
-    logger.info(
-        "redo.finish opType=%s focusNoteId=%s viewAnchorRootId=%s",
-        op_type,
-        focus_note_id,
-        view_anchor_root_id,
-    )
 
-    logger.info(
-        "undo.stack redo_finish client=%s opType=%s focusNoteId=%s history_len=%s redo_len=%s history_tail=%s redo_tail=%s",
-        client_id,
-        op_type,
-        focus_note_id,
-        len(ctx.history),
-        len(ctx.redo),
-        _summarize_stack(ctx.history, _LOGGED_STACK_TAIL_OPS),
-        _summarize_stack(ctx.redo, _LOGGED_STACK_TAIL_OPS),
+    safe_log.log_event(
+        "INFO", "undo.finish", direction="redo", op_type=op_type, history=len(ctx.history), redo=len(ctx.redo),
     )
     # The op moved between stacks; re-check the budget before returning.
     _enforce_undo_limits()

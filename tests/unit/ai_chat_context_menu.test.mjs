@@ -23,7 +23,7 @@ function backgroundMenu() {
             onSetUntaggedView: noop, onSetSortMode: noop,
             onSetDateRangeField: noop, onSetDateRangePreset: noop, onOpenCustomDateRange: noop, onSetFileFilter: noop,
             onSetTheme: noop, onNewTab: noop, onOpenNamespace: noop, onOpenReminders: noop,
-            onExportViewHtml: noop, onPrintView: noop, onLogOut: noop,
+            onExportViewHtml: noop, onPrintView: noop, onLogOut: noop, onTagNotesInView: noop,
         },
     );
 }
@@ -36,7 +36,7 @@ test('the background menu has no chat or folders switch: Themes lists the themes
     assert.equal(items.find((item) => item.id === 'show'), undefined);
     const themes = items.find((item) => item.id === 'themes');
     assert.equal(themes.label, 'Themes');
-    assert.deepEqual(themes.submenu.map((item) => item.label), ['System', 'Light', 'Dark', 'Ye Olde Scrypte']);
+    assert.deepEqual(themes.submenu.map((item) => item.label), ['System', 'Light', 'Dark', 'Fathom', 'Ye Olde Scrypte']);
 });
 
 

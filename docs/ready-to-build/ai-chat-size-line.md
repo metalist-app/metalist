@@ -50,4 +50,4 @@ A monthly total would imply a record of past months and a way to view it. MetaLi
 - **Confirmed:** no dollar figure for users (`docs/design/ai-providers.md` §5); the development-only tracker directly below the chat header, with nothing persisted (`docs/ui/ai-chat.md`); each provider's `billing_url` (`app/services/ai_catalog.py`), already linked from the AI settings.
 - **"Each view has its own" (§2)** is not true yet: several views are `docs/ready-to-build/multi-view-editing.md`. Today the rule is simply one number per conversation.
 
-**Decided 2026-11-08:** the number survives a restart, and so does the conversation: losing a conversation to an upgrade is not acceptable. That is its own work, `docs/ready-to-build/ai-chat-survives-restart.md`, and it comes first: this line is saved with the conversation.
+**Decided 2026-11-08:** the number survives a restart, and so does the conversation: losing a conversation to an upgrade is not acceptable. That work is built (2026-11-11: `docs/ui/ai-chat.md`, "Saved with the vault"): this line's count is saved with the conversation, in `app/services/ai_chat.py`'s saved shape (`_saved_session`, raising `SAVED_FORMAT`).

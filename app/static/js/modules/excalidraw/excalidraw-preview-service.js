@@ -3,6 +3,15 @@
 import { ApplicationState } from '../application-state.js';
 import { FilesAPI } from '../api-client.js';
 import { rethrowUnexpectedError } from '../expected-errors.js';
+import {
+    RECENT_PICTURES_CAPACITY,
+    evictOldest,
+    noteObjectUrlShown,
+    releaseObjectUrls,
+    rememberSize,
+    revokeObjectUrl,
+    useNewest,
+} from '../object-url-cache.js';
 import { EXCALIDRAW_PREVIEW_VARIANTS } from './excalidraw-scene.js';
 
 const EMBED_SELECTOR = '.note-file-excalidraw-embed[data-file-ref-id]';
@@ -12,12 +21,16 @@ const EMPTY_PREVIEW_MAX_PX = 40;
 const FRAME_WIDTH_BUCKET_PX = 10;
 
 const previewState = ApplicationState.createFields('excalidraw-preview-service', {
-    // `${fileId}:${revision}:${variant}` -> Promise<{ status: 'ready', objectUrl } | { status: 'missing' }>
+    // `${fileId}:${revision}:${variant}` -> Promise<{ status: 'ready', objectUrl }>, loading or
+    // loaded; the most recent ones, oldest first (object-url-cache.js). A missing preview is
+    // not kept: the diagram may be rendered by the time it shows again.
     previews: new Map(),
-    // Object URLs of resolved previews, revoked when their revision is superseded.
+    // Object URLs of loaded previews, revoked when their revision is superseded or released
+    // when their preview leaves the cache.
     objectUrls: new Map(),
     // Rendered frame height by file, revision and frame width, for this page
-    // session: a diagram rendered again holds that height while it loads.
+    // session: a diagram rendered again holds that height while it loads. The
+    // most recent ones only, oldest first.
     frameHeights: new Map(),
 });
 
@@ -52,13 +65,35 @@ function readEmbed(target) {
     return { fileId, revision };
 }
 
+function isLoading(key) {
+    return previewState.previews.has(key) && !previewState.objectUrls.has(key);
+}
+
+// A loaded preview leaves the cache only once its diagram's other previews have loaded too:
+// its frame takes them all at once, in the same run of promise callbacks.
+function isDroppable(key) {
+    if (!previewState.objectUrls.has(key)) return false;
+    const diagramKey = key.slice(0, key.lastIndexOf(':'));
+    return EXCALIDRAW_PREVIEW_VARIANTS.every((variant) => !isLoading(`${diagramKey}:${variant}`));
+}
+
+function dropOldestPreviews() {
+    const dropped = evictOldest(previewState.previews, RECENT_PICTURES_CAPACITY, isDroppable);
+    const droppedUrls = dropped.map(([key]) => previewState.objectUrls.get(key));
+    for (const [key] of dropped) {
+        previewState.objectUrls.delete(key);
+    }
+    releaseObjectUrls(droppedUrls);
+}
+
 function fetchPreview(fileId, revision, variant) {
     const key = previewKey(fileId, revision, variant);
     if (previewState.previews.has(key)) {
-        return previewState.previews.get(key);
+        return useNewest(previewState.previews, key);
     }
     const request = FilesAPI.downloadFilePreview(fileId, variant).then((result) => { // shockharness: ignore[EXC001] reason="the handler only resets state, then rethrows the error unchanged"
         if (result.status === 'missing') {
+            if (previewState.previews.get(key) === request) previewState.previews.delete(key);
             return { status: 'missing' };
         }
         if (!(result.blob instanceof Blob)) {
@@ -70,6 +105,7 @@ function fetchPreview(fileId, revision, variant) {
             throw new DOMException('Excalidraw preview superseded by a newer revision', 'AbortError');
         }
         previewState.objectUrls.set(key, objectUrl);
+        dropOldestPreviews();
         return { status: 'ready', objectUrl };
     }, (error) => {
         previewState.previews.delete(key);
@@ -105,6 +141,7 @@ async function showPreviews(target, results) {
     const images = EXCALIDRAW_PREVIEW_VARIANTS.map((variant, index) => {
         const image = imageOf(target, variant);
         image.src = results[index].objectUrl;
+        noteObjectUrlShown(image, results[index].objectUrl);
         return image;
     });
     await Promise.all(images.map((image) => image.decode()));
@@ -126,8 +163,8 @@ async function showPreviews(target, results) {
     const { fileId, revision } = readEmbed(target);
     const key = frameHeightKey(target, fileId, revision);
     const height = Math.round(frame.getBoundingClientRect().height);
-    if (height > 0 && previewState.frameHeights.get(key) !== height) {
-        previewState.frameHeights.set(key, height);
+    if (height > 0) {
+        rememberSize(previewState.frameHeights, key, height);
     }
 }
 
@@ -179,7 +216,7 @@ export function refreshExcalidrawEmbeds(fileId, revision) {
         previewState.previews.delete(key);
     }
     for (const key of Array.from(previewState.objectUrls.keys()).filter(isSuperseded)) {
-        URL.revokeObjectURL(previewState.objectUrls.get(key));
+        revokeObjectUrl(previewState.objectUrls.get(key));
         previewState.objectUrls.delete(key);
     }
     for (const target of document.querySelectorAll(`${EMBED_SELECTOR}[data-file-ref-id="${fileId}"]`)) {

@@ -1,11 +1,18 @@
-"""Session-scoped, in-memory AI chat state."""
+"""The vault's AI conversation, kept in memory and saved in the vault (ai_chat table)."""
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+import json
 import math
 from dataclasses import dataclass
 from threading import Lock
 from uuid import uuid4
+
+from app.db.ai_chat_sql import delete_ai_chat_row, fetch_ai_chat_row, upsert_ai_chat_row
+from app.db.session import begin_writer
+from app.services.encryption import EncryptionService
+from app.security.encryption import get_encryption_service, get_encryption_service_with_token, is_encryption_required
 
 from app.services.agent.cloud_privacy import HistoryDisclosure
 from app.services.ai_chat_rendering import strip_note_citations_for_history
@@ -224,37 +231,154 @@ def _visibility(index: int, *, held_back_until: int, history_start: int) -> str:
 
 
 class AiChatSessionStore:
-    """Keep AI conversations isolated by opaque authenticated-session key."""
+    """The vault's AI conversation (docs/ui/ai-chat.md, "Saved with the vault"): one, shared by
+    every login to the vault, saved in it after each change (encrypted like the notes while the
+    vault has a password), so a restart, an upgrade, logging out or locking keeps it. Only Clear
+    Chat ends it. A streamed answer is saved when it ends; one the server stopped during comes
+    back as interrupted."""
 
     def __init__(self) -> None:
-        self._sessions: dict[str, _ChatSession] = {}
+        self._session: _ChatSession | None = None
+        # The saved conversation as read, while it cannot be decrypted yet (a locked vault).
+        self._encrypted: tuple[str, bytes, bytes] | None = None
+        # False after reset() until bootstrap(): then what is saved is unknown, and starting a
+        # conversation would write over it, so any use fails loudly.
+        self._is_loaded = True
         self._lock = Lock()
 
+    # --- Saving and loading -----------------------------------------------------------------
+
+    def bootstrap(self, *, connection) -> None:
+        """Read the saved conversation (at startup, on unlock, after a restore)."""
+        row = fetch_ai_chat_row(connection)
+        with self._lock:
+            self._session = None
+            self._encrypted = None
+            self._is_loaded = True
+            if row is None:
+                return
+            state_json = row["state_json"]
+            nonce = row["state_encryption_nonce"]
+            tag = row["state_encryption_tag"]
+            if not isinstance(state_json, str):
+                raise TypeError("ai_chat.state_json must be a string")
+            if (nonce is None) != (tag is None):
+                raise RuntimeError(
+                    f"ai_chat row has incomplete encryption metadata: nonce={nonce is not None} tag={tag is not None}")
+            if nonce is None:
+                self._session = _session_from_saved(json.loads(state_json))
+                return
+            if not isinstance(nonce, bytes) or not isinstance(tag, bytes):
+                raise TypeError("ai_chat encryption nonce and tag must be bytes")
+            self._encrypted = (state_json, nonce, tag)
+            self._try_decrypt_locked(token="", require_success=False)
+
+    def bootstrap_if_reset(self, *, connection) -> None:
+        """bootstrap(), when reset() left the conversation unread; a conversation in memory
+        (one being answered, perhaps) is kept as it is."""
+        with self._lock:
+            is_loaded = self._is_loaded
+        if not is_loaded:
+            self.bootstrap(connection=connection)
+
+    def ensure_decrypted(self, *, token: str) -> None:
+        if not isinstance(token, str):
+            raise TypeError("token must be a string")
+        with self._lock:
+            self._try_decrypt_locked(token=token, require_success=True)
+
     def reset(self) -> None:
+        """Forget the conversation in memory (locking, a restore), never on disk: bootstrap()
+        reads it again."""
         with self._lock:
-            self._sessions.clear()
+            self._session = None
+            self._encrypted = None
+            self._is_loaded = False
 
-    def clear_session(self, *, session_key: str) -> None:
-        self._validate_session_key(session_key)
+    def rewrite_persisted_state(self, *, encryption_service: EncryptionService | None, force_plaintext: bool, connection) -> None:
+        """Save the conversation again with the vault's new encryption (a password set or removed)."""
+        if not isinstance(force_plaintext, bool):
+            raise TypeError("force_plaintext must be a bool")
         with self._lock:
-            # A session that never chatted has nothing to clear.
-            if session_key in self._sessions:
-                del self._sessions[session_key]
+            self._try_decrypt_locked(token="", require_success=True)
+            if self._session is None:
+                return
+            self._persist_locked(connection=connection, encryption_service=encryption_service,
+                                 force_plaintext=force_plaintext)
 
-    def _session_locked(self, session_key: str) -> _ChatSession:
-        """The session's conversation, started empty on its first use."""
-        if session_key not in self._sessions:
-            self._sessions[session_key] = _new_chat_session()
-        return self._sessions[session_key]
+    def clear(self) -> None:
+        """Clear Chat: the conversation ends, in memory and on disk."""
+        with self._lock:
+            self._require_loaded_locked()
+            self._session = None
+            self._encrypted = None
+            with begin_writer() as connection:
+                delete_ai_chat_row(connection)
 
-    def snapshot(self, *, session_key: str) -> dict[str, list[dict[str, object]]]:
+    def _require_loaded_locked(self) -> None:
+        if not self._is_loaded:
+            raise RuntimeError("The AI conversation was not read from the vault (bootstrap) since it was reset")
+
+    def _try_decrypt_locked(self, *, token: str, require_success: bool) -> None:
+        self._require_loaded_locked()
+        if self._encrypted is None:
+            return
+        service = _encryption_service(token=token, explicit_service=None)
+        if service is None:
+            if require_success:
+                raise RuntimeError("The AI conversation is encrypted and the vault is locked")
+            return
+        state_json, nonce, tag = self._encrypted
+        plaintext = service.decrypt_from_storage(state_json, nonce, tag)
+        if not isinstance(plaintext, str):
+            raise TypeError("decrypted AI conversation must be a string")
+        self._session = _session_from_saved(json.loads(plaintext))
+        self._encrypted = None
+
+    def _persist_locked(self, *, connection, encryption_service: EncryptionService | None, force_plaintext: bool) -> None:
+        assert self._session is not None, "only a conversation is saved"
+        saved_json = json.dumps(_saved_session(self._session), separators=(",", ":"))
+        stored_json = saved_json
+        nonce: bytes | None = None
+        tag: bytes | None = None
+        if not force_plaintext:
+            service = _encryption_service(token="", explicit_service=encryption_service)
+            if service is not None:
+                stored_json, nonce, tag = service.encrypt_for_storage(saved_json)
+            elif is_encryption_required():
+                raise RuntimeError("Saving the AI conversation requires the vault's key")
+        now = datetime.now(timezone.utc)
+        if connection is not None:
+            upsert_ai_chat_row(connection, state_json=stored_json, state_encryption_nonce=nonce,
+                               state_encryption_tag=tag, updated_at=now)
+            return
+        with begin_writer() as writer_connection:
+            upsert_ai_chat_row(writer_connection, state_json=stored_json, state_encryption_nonce=nonce,
+                               state_encryption_tag=tag, updated_at=now)
+
+    def _save_locked(self) -> None:
+        self._persist_locked(connection=None, encryption_service=None, force_plaintext=False)
+
+    def _session_locked(self) -> _ChatSession:
+        """The conversation, started empty on its first use."""
+        self._try_decrypt_locked(token="", require_success=True)
+        if self._session is None:
+            self._session = _new_chat_session()
+        return self._session
+
+    def _existing_session_locked(self) -> _ChatSession | None:
+        self._try_decrypt_locked(token="", require_success=True)
+        return self._session
+
+    # --- The conversation ---------------------------------------------------------------------
+
+    def snapshot(self) -> dict[str, list[dict[str, object]]]:
         """The chat as shown: every message and every summary, each with what the model
         still sees of it (a summary sits after the last message it replaced)."""
-        self._validate_session_key(session_key)
         with self._lock:
-            if session_key not in self._sessions:
+            session = self._existing_session_locked()
+            if session is None:
                 return {"messages": [], "summaries": []}
-            session = self._sessions[session_key]
             boundaries = {"held_back_until": session.held_back_until, "history_start": session.history_start}
             summaries: list[dict[str, object]] = []
             for summary in session.summaries:
@@ -284,20 +408,12 @@ class AiChatSessionStore:
                 "summaries": summaries,
             }
 
-    def start_turn(
-        self,
-        *,
-        session_key: str,
-        user_content: str,
-        provider: str,
-        model: str,
-    ) -> str:
-        self._validate_session_key(session_key)
+    def start_turn(self, *, user_content: str, provider: str, model: str) -> str:
         self._validate_message_text(user_content, label="user_content")
         self._validate_message_text(provider, label="provider")
         self._validate_message_text(model, label="model")
         with self._lock:
-            session = self._session_locked(session_key)
+            session = self._session_locked()
             messages = session.messages
             session_activities = session.activities
             if any(message["status"] == "streaming" for message in messages):
@@ -336,12 +452,13 @@ class AiChatSessionStore:
             )
             session_activities[user_message_id] = []
             session_activities[assistant_message_id] = []
+            # Saved now: a restart before the answer ends keeps the question (interrupted).
+            self._save_locked()
             return assistant_message_id
 
     def append_activity(
         self,
         *,
-        session_key: str,
         turn_id: str,
         action: str,
         status: str,
@@ -350,7 +467,6 @@ class AiChatSessionStore:
         output_tokens_received: int,
         duration_ms: float,
     ) -> None:
-        self._validate_session_key(session_key)
         self._validate_message_text(turn_id, label="turn_id")
         self._validate_message_text(action, label="action")
         if status not in {"started", "completed"}:
@@ -376,11 +492,12 @@ class AiChatSessionStore:
         ):
             raise ValueError("AI activity duration must be non-negative and finite")
         with self._lock:
-            self._require_streaming_turn(session_key=session_key, turn_id=turn_id)
-            session_activities = self._sessions[session_key].activities
-            if turn_id not in session_activities:
+            session = self._require_session_locked()
+            self._require_streaming_turn_locked(session, turn_id)
+            if turn_id not in session.activities:
                 raise RuntimeError("AI activity list missing for streaming turn")
-            session_activities[turn_id].append(
+            # Saved with the answer when it ends (complete_turn, fail_turn).
+            session.activities[turn_id].append(
                 {
                     "action": action,
                     "status": status,
@@ -391,40 +508,28 @@ class AiChatSessionStore:
                 }
             )
 
-    def append_delta(
-        self,
-        *,
-        session_key: str,
-        turn_id: str,
-        delta_kind: str,
-        text: str,
-    ) -> None:
-        self._validate_session_key(session_key)
+    def append_delta(self, *, turn_id: str, delta_kind: str, text: str) -> None:
         self._validate_message_text(turn_id, label="turn_id")
         if delta_kind not in {"thinking", "content"}:
             raise ValueError(f"Unsupported AI delta kind: {delta_kind}")
         if not isinstance(text, str) or text == "":
             raise ValueError("AI delta text must be a non-empty string")
         with self._lock:
-            message = self._require_streaming_turn(
-                session_key=session_key,
-                turn_id=turn_id,
-            )
+            message = self._require_streaming_turn_locked(self._require_session_locked(), turn_id)
             updated_text = message[delta_kind] + text
             if len(updated_text) > _MAX_MESSAGE_CHARACTERS:
                 raise RuntimeError(f"AI {delta_kind} exceeded {_MAX_MESSAGE_CHARACTERS} characters")
+            # Saved when the answer ends: not every few words.
             message[delta_kind] = updated_text
 
     def complete_turn(
         self,
         *,
-        session_key: str,
         turn_id: str,
         final_content: str,
         actions: list[dict[str, object]],
         request_tokens: dict[str, int],
     ) -> None:
-        self._validate_session_key(session_key)
         self._validate_message_text(turn_id, label="turn_id")
         self._validate_message_text(final_content, label="final_content")
         if not isinstance(actions, list) or not all(isinstance(action, dict) for action in actions):
@@ -432,52 +537,49 @@ class AiChatSessionStore:
         if not isinstance(request_tokens, dict) or set(request_tokens) != set(NO_REQUEST):
             raise ValueError(f"request_tokens must have {sorted(NO_REQUEST)}")
         with self._lock:
-            message = self._require_streaming_turn(
-                session_key=session_key,
-                turn_id=turn_id,
-            )
+            session = self._require_session_locked()
+            message = self._require_streaming_turn_locked(session, turn_id)
             message["content"] = final_content
             message["status"] = "complete"
-            self._sessions[session_key].action_logs[turn_id] = [dict(action) for action in actions]
-            self._sessions[session_key].last_request = dict(request_tokens)
+            session.action_logs[turn_id] = [dict(action) for action in actions]
+            session.last_request = dict(request_tokens)
+            self._save_locked()
 
-    def last_request(self, *, session_key: str) -> dict[str, int]:
+    def last_request(self) -> dict[str, int]:
         """The make-up of the latest answer's last request; NO_REQUEST before any answer."""
-        self._validate_session_key(session_key)
         with self._lock:
-            if session_key not in self._sessions:
+            session = self._existing_session_locked()
+            if session is None:
                 return dict(NO_REQUEST)
-            return dict(self._sessions[session_key].last_request)
+            return dict(session.last_request)
 
-    def is_streaming(self, *, session_key: str, turn_id: str) -> bool:
+    def is_streaming(self, *, turn_id: str) -> bool:
         with self._lock:
-            if session_key not in self._sessions:
+            session = self._existing_session_locked()
+            if session is None:
                 return False
             return any(message['id'] == turn_id and message['status'] == 'streaming'
-                       for message in self._sessions[session_key].messages)
+                       for message in session.messages)
 
-    def fail_turn(self, *, session_key: str, turn_id: str, error: str) -> None:
-        self._validate_session_key(session_key)
+    def fail_turn(self, *, turn_id: str, error: str) -> None:
         self._validate_message_text(turn_id, label="turn_id")
         self._validate_message_text(error, label="error")
         with self._lock:
-            message = self._require_streaming_turn(
-                session_key=session_key,
-                turn_id=turn_id,
-            )
+            message = self._require_streaming_turn_locked(self._require_session_locked(), turn_id)
             message["status"] = "error"
             message["error"] = error
+            self._save_locked()
 
-    def synchronize_disclosure_boundary(self, *, session_key: str, disclosure: HistoryDisclosure) -> bool:
+    def synchronize_disclosure_boundary(self, *, disclosure: HistoryDisclosure) -> bool:
         """Retain the display transcript, but never replay a previous disclosure context:
         the history resets when the privacy rules change or a note the AI could see has
-        become private. A new note, a deleted one or one made visible changes nothing the
-        AI saw (the maintainer, 2026-10-30). True when it reset."""
-        self._validate_session_key(session_key)
+        become private (also while MetaList was stopped: the notes it could see are saved).
+        A new note, a deleted one or one made visible changes nothing the AI saw (the
+        maintainer, 2026-10-30). True when it reset."""
         if not isinstance(disclosure, HistoryDisclosure) or disclosure.policy_key == "":
             raise ValueError("A disclosure boundary is required")
         with self._lock:
-            session = self._session_locked(session_key)
+            session = self._session_locked()
             is_reset = session.disclosure_policy_key != disclosure.policy_key
             if not session.permitted_note_ids.isdisjoint(disclosure.hidden_note_ids):
                 # A note the AI could see at the last turn is private now.
@@ -488,15 +590,17 @@ class AiChatSessionStore:
                 session.held_back_until = len(session.messages)
                 session.active_summary = None
                 session.disclosure_policy_key = disclosure.policy_key
+            is_changed = any((is_reset, session.permitted_note_ids != disclosure.permitted_note_ids))
             session.permitted_note_ids = disclosure.permitted_note_ids
+            if is_changed and session.messages:
+                self._save_locked()
             return is_reset
 
-    def provider_messages(self, *, session_key: str) -> list[dict[str, str]]:
-        self._validate_session_key(session_key)
+    def provider_messages(self) -> list[dict[str, str]]:
         with self._lock:
-            if session_key not in self._sessions:
+            session = self._existing_session_locked()
+            if session is None:
                 return []
-            session = self._sessions[session_key]
             messages = session.messages
             assert len(messages) % _MESSAGES_PER_TURN == 0, "AI chat history must contain complete turn pairs"
             provider_messages: list[dict[str, str]] = []
@@ -507,12 +611,11 @@ class AiChatSessionStore:
                 provider_messages.extend(_turn_as_sent(messages, index))
             return provider_messages
 
-    def summary_source(self, *, session_key: str) -> SummarySource:
+    def summary_source(self) -> SummarySource:
         """The summary and the turns the model sees directly, for making a new summary.
         A turn being answered is left out: it is never summarized."""
-        self._validate_session_key(session_key)
         with self._lock:
-            session = self._session_locked(session_key)
+            session = self._session_locked()
             messages = session.messages
             end = len(messages)
             if end > 0 and messages[-1]["status"] == "streaming":
@@ -528,21 +631,18 @@ class AiChatSessionStore:
             return SummarySource(summary=summary, turns=turns, history_start=session.history_start,
                                  session_id=session.id)
 
-    def apply_summary(
-        self, *, session_key: str, content: str, turn_count: int, history_start: int, session_id: str,
-    ) -> bool:
+    def apply_summary(self, *, content: str, turn_count: int, history_start: int, session_id: str) -> bool:
         """Replace the summary and the first turn_count turns the model sees with a new
         summary. False, changing nothing, when the chat was cleared or its history moved
         since summary_source() (a privacy change held it all back): that summary must not
         be sent."""
-        self._validate_session_key(session_key)
         self._validate_message_text(content, label="summary")
         if not isinstance(turn_count, int) or isinstance(turn_count, bool) or turn_count < 1:
             raise ValueError("A summary replaces at least one turn")
         with self._lock:
-            if session_key not in self._sessions:
+            session = self._existing_session_locked()
+            if session is None:
                 return False
-            session = self._sessions[session_key]
             if session.id != session_id or session.history_start != history_start:
                 return False
             position = history_start + turn_count * _MESSAGES_PER_TURN
@@ -552,55 +652,53 @@ class AiChatSessionStore:
             session.summaries.append(summary)
             session.active_summary = summary
             session.history_start = position
+            self._save_locked()
             return True
 
-    def begin_summary(self, *, session_key: str) -> bool:
+    def begin_summary(self) -> bool:
         """Start making a summary on request; False when a turn is being answered or
         a summary is already being made."""
-        self._validate_session_key(session_key)
         with self._lock:
-            session = self._session_locked(session_key)
+            session = self._session_locked()
             if session.is_summarizing or any(message["status"] == "streaming" for message in session.messages):
                 return False
             session.is_summarizing = True
             return True
 
-    def is_summarizing(self, *, session_key: str) -> bool:
-        self._validate_session_key(session_key)
+    def is_summarizing(self) -> bool:
         with self._lock:
-            return session_key in self._sessions and self._sessions[session_key].is_summarizing
+            session = self._existing_session_locked()
+            return session is not None and session.is_summarizing
 
-    def end_summary(self, *, session_key: str) -> None:
-        self._validate_session_key(session_key)
+    def end_summary(self) -> None:
         with self._lock:
-            # Clear Chat may have removed the session meanwhile.
-            if session_key not in self._sessions:
+            session = self._existing_session_locked()
+            # Clear Chat may have removed the conversation meanwhile.
+            if session is None:
                 return
-            session = self._sessions[session_key]
             if not session.is_summarizing:
                 raise RuntimeError("No summary is being made")
             session.is_summarizing = False
 
-    def summary_content(self, *, session_key: str, summary_id: str) -> str | None:
+    def summary_content(self, *, summary_id: str) -> str | None:
         """A summary's text for Copy Response; None when the chat has no such summary."""
-        self._validate_session_key(session_key)
         with self._lock:
-            if session_key not in self._sessions:
+            session = self._existing_session_locked()
+            if session is None:
                 return None
-            for summary in self._sessions[session_key].summaries:
+            for summary in session.summaries:
                 if summary.id == summary_id:
                     return summary.content
             return None
 
-    def earlier_actions(self, *, session_key: str) -> list[dict[str, object]]:
+    def earlier_actions(self) -> list[dict[str, object]]:
         """What the agent did for each completed answer the model still sees, in the
         order of provider_messages(): {answer, question, actions}. Failed requests
         appear in provider_messages() with their explanation but have no record here."""
-        self._validate_session_key(session_key)
         with self._lock:
-            if session_key not in self._sessions:
+            session = self._existing_session_locked()
+            if session is None:
                 return []
-            session = self._sessions[session_key]
             messages = session.messages
             session_action_logs = session.action_logs
             earlier: list[dict[str, object]] = []
@@ -617,15 +715,15 @@ class AiChatSessionStore:
                 })
             return earlier
 
-    def _require_streaming_turn(
-        self,
-        *,
-        session_key: str,
-        turn_id: str,
-    ) -> dict[str, str]:
-        if session_key not in self._sessions:
+    def _require_session_locked(self) -> _ChatSession:
+        session = self._existing_session_locked()
+        if session is None:
             raise RuntimeError("AI chat session missing")
-        for message in self._sessions[session_key].messages:
+        return session
+
+    @staticmethod
+    def _require_streaming_turn_locked(session: _ChatSession, turn_id: str) -> dict[str, str]:
+        for message in session.messages:
             if message["id"] != turn_id:
                 continue
             if message["role"] != "assistant":
@@ -636,11 +734,6 @@ class AiChatSessionStore:
         raise RuntimeError("AI streaming turn missing")
 
     @staticmethod
-    def _validate_session_key(session_key: str) -> None:
-        if not isinstance(session_key, str) or session_key == "":
-            raise ValueError("session_key must be a non-empty string")
-
-    @staticmethod
     def _validate_message_text(value: str, *, label: str) -> None:
         if not isinstance(label, str) or label == "":
             raise ValueError("label must be a non-empty string")
@@ -648,6 +741,77 @@ class AiChatSessionStore:
             raise ValueError(f"{label} must be a non-empty string")
         if len(value) > _MAX_MESSAGE_CHARACTERS:
             raise ValueError(f"{label} exceeds {_MAX_MESSAGE_CHARACTERS} characters")
+
+
+def _encryption_service(*, token: str, explicit_service: EncryptionService | None):
+    if explicit_service is not None:
+        if explicit_service.dek is None:
+            raise RuntimeError("explicit encryption service must have an active DEK")
+        return explicit_service
+    if token:
+        return get_encryption_service_with_token(token)
+    return get_encryption_service()
+
+
+# --- The conversation as saved -------------------------------------------------------------
+# A JSON object; SAVED_FORMAT names its shape, for a later change to it to read.
+SAVED_FORMAT = 1
+_SAVED_KEYS = frozenset({
+    "format", "id", "messages", "activities", "action_logs", "history_start", "disclosure_policy_key",
+    "permitted_note_ids", "summaries", "active_summary_id", "held_back_until", "last_request",
+})
+# What an answer the server stopped during says (a restart, an upgrade, a crash).
+INTERRUPTED_ERROR = "MetaList stopped before this answer finished. Ask again to get one."
+
+
+def _saved_session(session: _ChatSession) -> dict[str, object]:
+    active_summary_id = None
+    if session.active_summary is not None:
+        active_summary_id = session.active_summary.id
+    return {
+        "format": SAVED_FORMAT,
+        "id": session.id,
+        "messages": session.messages,
+        "activities": session.activities,
+        "action_logs": session.action_logs,
+        "history_start": session.history_start,
+        "disclosure_policy_key": session.disclosure_policy_key,
+        "permitted_note_ids": sorted(session.permitted_note_ids),
+        "summaries": [{"id": summary.id, "content": summary.content, "position": summary.position}
+                      for summary in session.summaries],
+        "active_summary_id": active_summary_id,
+        "held_back_until": session.held_back_until,
+        "last_request": session.last_request,
+    }
+
+
+def _session_from_saved(saved: object) -> _ChatSession:
+    """The saved conversation, an answer still streaming when it was saved as interrupted, and
+    no summary being made (that work ended with the server)."""
+    if not isinstance(saved, dict) or set(saved) != _SAVED_KEYS:
+        raise RuntimeError("The saved AI conversation does not have the expected shape")
+    if saved["format"] != SAVED_FORMAT:
+        raise RuntimeError(f"The saved AI conversation has format {saved['format']}, not {SAVED_FORMAT}")
+    messages = saved["messages"]
+    assert isinstance(messages, list) and len(messages) % _MESSAGES_PER_TURN == 0, "saved turns come in pairs"
+    for message in messages:
+        if message["status"] == "streaming":
+            message["status"] = "error"
+            message["error"] = INTERRUPTED_ERROR
+    summaries = [ChatSummary(id=summary["id"], content=summary["content"], position=summary["position"])
+                 for summary in saved["summaries"]]
+    active = [summary for summary in summaries if summary.id == saved["active_summary_id"]]
+    assert len(active) == int(saved["active_summary_id"] is not None), "the active summary is one of the summaries"
+    active_summary = None
+    if active:
+        active_summary = active[0]
+    return _ChatSession(
+        id=saved["id"], messages=messages, activities=saved["activities"], action_logs=saved["action_logs"],
+        history_start=saved["history_start"], disclosure_policy_key=saved["disclosure_policy_key"],
+        permitted_note_ids=frozenset(saved["permitted_note_ids"]), summaries=summaries,
+        active_summary=active_summary, held_back_until=saved["held_back_until"], is_summarizing=False,
+        last_request=saved["last_request"],
+    )
 
 
 ai_chat_store = AiChatSessionStore()

@@ -118,7 +118,7 @@ routes remain restricted to loopback clients using a loopback request host,
 even when the rest of MetaList is intentionally exposed to a LAN.
 
 `metalist` and explicit single-namespace source runs bind to loopback at `127.0.0.1:8000` by default. This keeps a normal laptop launch off LAN and public interfaces unless remote access is explicitly configured.
-On first startup, MetaList also auto-generates a self-signed TLS pair at `~/MetaList/certs/metalist-cert.pem` and `~/MetaList/certs/metalist-key.pem`, then enables HTTPS on the same bind host at port `8443`. If you already have real PEM files, point `METALIST_TLS_CERT` and `METALIST_TLS_KEY` at them instead. Set `METALIST_AUTO_GENERATE_TLS=0` only if you explicitly want HTTP-only startup.
+On first startup, MetaList also auto-generates a self-signed TLS pair at `~/MetaList/certs/metalist-cert.pem` and `~/MetaList/certs/metalist-key.pem`, then enables HTTPS on the same bind host at port `8443`. The certificate is valid 825 days (Apple's limit); a start within 30 days of its end, or one that finds the pair unreadable, replaces it with a new pair, after which devices that trusted the old one warn once or need the new one installed. If you already have real PEM files, point `METALIST_TLS_CERT` and `METALIST_TLS_KEY` at them instead. Set `METALIST_AUTO_GENERATE_TLS=0` only if you explicitly want HTTP-only startup.
 
 Database selection:
 - No explicit namespace on a single-namespace launch: `~/MetaList/namespaces/default/default.metalist.db`

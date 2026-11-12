@@ -159,14 +159,14 @@ def _status_event(status: str, label: str, *, input_tokens: int, started_at: flo
 
 
 async def summarize_before_turn(
-    *, store: AiChatSessionStore, session_key: str, inference: InferenceAdapter, base_url: str, model: str,
+    *, store: AiChatSessionStore, inference: InferenceAdapter, base_url: str, model: str,
     thinking_level: str, current_message: str,
 ) -> AsyncIterator[dict[str, object]]:
     """Before a turn is answered: summarize the oldest turns when the conversation would
     not fit its share of the model's context. Yields the step's status, if it runs."""
     context = await inference.inspect_context_window(base_url=base_url, model=model)
     history_tokens = history_budget(context.loaded_tokens)
-    source = store.summary_source(session_key=session_key)
+    source = store.summary_source()
     summary_tokens = 0
     if source.summary != "":
         summary_tokens = estimate_text_tokens(source.summary)
@@ -182,7 +182,7 @@ async def summarize_before_turn(
     yield _status_event("started", _STARTED_LABEL, input_tokens=input_tokens, started_at=started_at)
     content = await _make_summary(inference=inference, base_url=base_url, model=model,
                                   thinking_level=thinking_level, request=request)
-    is_applied = store.apply_summary(session_key=session_key, content=content, turn_count=turn_count,
+    is_applied = store.apply_summary(content=content, turn_count=turn_count,
                                      history_start=source.history_start, session_id=source.session_id)
     label = _COMPLETED_LABEL
     if not is_applied:
@@ -191,13 +191,13 @@ async def summarize_before_turn(
 
 
 async def summarize_on_request(
-    *, store: AiChatSessionStore, session_key: str, inference: InferenceAdapter, base_url: str, model: str,
+    *, store: AiChatSessionStore, inference: InferenceAdapter, base_url: str, model: str,
     thinking_level: str,
 ) -> bool:
     """"Summarize now": summarize every turn the model sees directly, so the summary
     sits where it was asked for. False when there is nothing to summarize, or the chat
     was cleared meanwhile."""
-    source = store.summary_source(session_key=session_key)
+    source = store.summary_source()
     turn_count = len(source.turns)
     if turn_count == 0:
         return False
@@ -206,14 +206,14 @@ async def summarize_on_request(
                               history_tokens=history_budget(context.loaded_tokens))
     content = await _make_summary(inference=inference, base_url=base_url, model=model,
                                   thinking_level=thinking_level, request=request)
-    return store.apply_summary(session_key=session_key, content=content, turn_count=turn_count,
+    return store.apply_summary(content=content, turn_count=turn_count,
                                history_start=source.history_start, session_id=source.session_id)
 
 
-def history_meter(*, store: AiChatSessionStore, session_key: str, context_tokens: int) -> dict[str, int]:
+def history_meter(*, store: AiChatSessionStore, context_tokens: int) -> dict[str, int]:
     """What the chat's history takes of its budget, as the automatic summary counts it: the
     summary, the turns the model still sees directly and the agent's records of them."""
-    source = store.summary_source(session_key=session_key)
+    source = store.summary_source()
     summary_tokens = 0
     if source.summary != "":
         summary_tokens = estimate_text_tokens(source.summary)

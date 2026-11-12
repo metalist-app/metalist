@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from typing import Dict, List, Optional, Set
 
+from app.services.content_formatting import text_shown_without_passwords
 from app.services.embedded_references import parse_reference_inner
 from app.services.note_store import store as note_store
 from app.utils.text_utils import strip_html
@@ -40,7 +41,7 @@ def list_backlinks_for_note(target_note_id: str, source_note_ids: Optional[Set[s
         record = note_store.get_note(note_id)
         match_count = counts[note_id]
 
-        preview = _extract_preview(record.content)
+        preview = text_shown_without_passwords(_extract_preview(record.content), record.tags)
         for _ in range(match_count):
             backlinks.append({
                 "id": note_id,

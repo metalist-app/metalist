@@ -55,6 +55,7 @@ export class HelpModal extends BaseModal {
         const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
         const modKey = isMac ? 'Cmd' : 'Ctrl';
         const shiftKey = 'Shift';
+        const altKey = isMac ? 'Option' : 'Alt';
         const enterKey = 'Enter';
         const upArrowKey = 'Up';
         const downArrowKey = 'Down';
@@ -86,6 +87,7 @@ export class HelpModal extends BaseModal {
                     { keys: 'Tab', description: 'Toggle focus between note content and tag bar' },
                     { keys: `${modKey}+${enterKey}`, description: 'Create sibling note' },
                     { keys: `${modKey}+${shiftKey}+${enterKey}`, description: 'Create child note' },
+                    { keys: `${modKey}+${altKey}+${enterKey}`, description: 'Create note one level out, after the parent' },
                     { keys: `${modKey}+${leftArrowKey}`, description: 'Outdent note' },
                     { keys: `${modKey}+${rightArrowKey}`, description: 'Indent note' },
                     { keys: `${modKey}+${upArrowKey}`, description: 'Move current note up' },

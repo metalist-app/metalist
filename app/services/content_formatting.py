@@ -121,6 +121,12 @@ CREDENTIAL_MASK = "\u2022" * _CREDENTIAL_MASK_LENGTH
 # What a screen reader says for a password's dots, instead of eight bullets; its copy and
 # show buttons are added in the page (value-buttons-service.js).
 _HIDDEN_PASSWORD_LABEL = "Hidden password"
+# A password in a note's text: the region a wrapped @password names (`((@password))`), drawn
+# and kept from the AI as a password note's value is (docs/ui/content-formatting.md,
+# "A password in a note's text"; the maintainer, 2026-11-11).
+_SCOPED_PASSWORD = "password"
+# What the AI reads in place of such a region, as it reads a password note.
+SCOPED_PASSWORD_REDACTION = f"[REDACTED: @{_SCOPED_PASSWORD}]"
 _EMAIL_TAGS = frozenset({"email"})
 
 _CREDENTIAL_META = {
@@ -181,7 +187,7 @@ _BLOCK_PLACEHOLDER_SUFFIX = "]@@"
 _BLOCK_PLACEHOLDER_RE = re.compile(r"@@MLBLOCK\[([A-Za-z0-9+/=]+)\]@@")
 _BLOCK_PARAGRAPH_RE = re.compile(r"<p>@@MLBLOCK\[([A-Za-z0-9+/=]+)\]@@</p>")
 _BLOCK_SEPARATOR = "\n\n"
-_INLINE_SCOPED_RENDERERS = frozenset({"latex", "chess"})
+_INLINE_SCOPED_RENDERERS = frozenset({"latex", "chess", _SCOPED_PASSWORD})
 _PLAIN_URL_RE = re.compile(r"https?://[^\s<]+", re.IGNORECASE)
 _HTML_TAG_SPLIT_RE = re.compile(r"(<[^>]+>)")
 _ANCHOR_START_TAG_RE = re.compile(r"<\s*a\b", re.IGNORECASE)
@@ -475,8 +481,9 @@ def extract_agent_note_text(
         return f"[REDACTED: @{credential_tag}]", True
     parser = _AgentNoteText()
     parser.feed(content_html)
-    text = re.sub(r"\s+", " ", parser.get_data()).strip()
-    return _with_agent_metadata(text, parser.anchor_urls, title_lookup), False
+    text, anchor_urls = _without_scoped_passwords(parser.get_data(), parser.anchor_urls, tags)
+    text = re.sub(r"\s+", " ", text).strip()
+    return _with_agent_metadata(text, anchor_urls, title_lookup), False
 
 
 def note_text_for_agent_from_kept_text(*, content_html: str, kept_text: str, tags: str) -> tuple[str, bool]:
@@ -506,9 +513,20 @@ def agent_note_text_from_kept_text(
     if credential_tag is not None:
         return f"[REDACTED: @{credential_tag}]", True
     if "href" not in content_html:
-        return _with_agent_metadata(kept_text, [], title_lookup), False
-    text = strip_sanitized_html_keeping_link_urls(content_html)
-    return _with_agent_metadata(text, sanitized_anchor_hrefs(content_html), title_lookup), False
+        text, _ = _without_scoped_passwords(kept_text, [], tags)
+        return _with_agent_metadata(text, [], title_lookup), False
+    text, anchor_urls = _without_scoped_passwords(
+        strip_sanitized_html_keeping_link_urls(content_html), sanitized_anchor_hrefs(content_html), tags)
+    return _with_agent_metadata(text, anchor_urls, title_lookup), False
+
+
+def _without_scoped_passwords(text: str, anchor_urls: list[str], tags: str) -> tuple[str, list[str]]:
+    """The AI's text with the note's password regions redacted, and the links whose
+    addresses are still in it: a link inside a password region is not looked up either."""
+    redacted = redact_scoped_passwords(text, tags)
+    if redacted == text:
+        return text, anchor_urls
+    return redacted, [url for url in anchor_urls if url in redacted]
 
 
 def _with_agent_metadata(text: str, anchor_urls: list[str], title_lookup: Callable[[str], str | None]) -> str:
@@ -531,13 +549,17 @@ def format_note_content_for_view(*, content_html: str, tags: str, credentials: C
     if not isinstance(credentials, CredentialDisplay):
         raise TypeError(f"credentials must be a CredentialDisplay, got {type(credentials)}")
 
-    if _LINK_FETCHES_IN_RENDER.get() is not None:
-        return _format_note_content_with_footnotes(content_html=content_html, tags=tags, credentials=credentials)
-    reset_token = _LINK_FETCHES_IN_RENDER.set(set())
+    credentials_token = _CREDENTIALS_IN_RENDER.set(credentials)
     try:
-        return _format_note_content_with_footnotes(content_html=content_html, tags=tags, credentials=credentials)
+        if _LINK_FETCHES_IN_RENDER.get() is not None:
+            return _format_note_content_with_footnotes(content_html=content_html, tags=tags, credentials=credentials)
+        reset_token = _LINK_FETCHES_IN_RENDER.set(set())
+        try:
+            return _format_note_content_with_footnotes(content_html=content_html, tags=tags, credentials=credentials)
+        finally:
+            _LINK_FETCHES_IN_RENDER.reset(reset_token)
     finally:
-        _LINK_FETCHES_IN_RENDER.reset(reset_token)
+        _CREDENTIALS_IN_RENDER.reset(credentials_token)
 
 
 def _format_note_content_with_footnotes(*, content_html: str, tags: str, credentials: CredentialDisplay) -> str:
@@ -625,13 +647,15 @@ def _format_note_content_for_view(
                 formatting_tags=config.global_tags,
             )
         if renderer_tag == "csv":
+            # A CSV note's regions are its cells' own, except a password: its cells draw it.
+            password_wrappers = _scoped_password_wrappers(tags)
             return _render_csv_meta(
                 content_html=output,
                 formatting_tags=config.global_tags,
                 inline=False,
-                cell_wrappers=frozenset(),
-                cell_scoped_tags={},
-                cell_scoped_renderers={},
+                cell_wrappers=password_wrappers,
+                cell_scoped_tags={key: value for key, value in config.scoped_tags.items() if key in password_wrappers},
+                cell_scoped_renderers={key: _SCOPED_PASSWORD for key in password_wrappers},
             )
         if renderer_tag == "chess":
             return _render_chess_meta(
@@ -911,6 +935,11 @@ _LINK_FETCHES_IN_RENDER: ContextVar[Set[Tuple[str, str]] | None] = ContextVar(
 )
 
 
+# How the note being rendered shows passwords, for the password regions in its text. No
+# default: a password region drawn outside format_note_content_for_view fails loudly.
+_CREDENTIALS_IN_RENDER: ContextVar[CredentialDisplay] = ContextVar("credentials_in_render")
+
+
 REGION_CSV = "csv"
 REGION_JSON = "json"
 
@@ -1070,13 +1099,18 @@ def sites_shown_above() -> FrozenSet[str]:
     return _SITES_SHOWN_ABOVE.get()
 
 
-def sites_linked_in(content_html: str) -> FrozenSet[str]:
-    """The sites a note's text links to, anywhere in it: its links and its bare addresses."""
+def urls_linked_in(content_html: str) -> FrozenSet[str]:
+    """The web addresses a note's text links to, anywhere in it: its links and its bare addresses."""
     if not isinstance(content_html, str):
         raise TypeError(f"content_html must be a string, got {type(content_html)}")
     urls = [html.unescape(match.group("url")) for match in _WEB_LINK_HREF_RE.finditer(content_html)]
     urls.extend(find_plain_text_urls(strip_html(content_html)))
-    return frozenset(site_of_url(url) for url in urls if urllib.parse.urlsplit(url).hostname)
+    return frozenset(urls)
+
+
+def sites_linked_in(content_html: str) -> FrozenSet[str]:
+    """The sites a note's text links to, anywhere in it: its links and its bare addresses."""
+    return frozenset(site_of_url(url) for url in urls_linked_in(content_html) if urllib.parse.urlsplit(url).hostname)
 
 
 def _is_site_shown_above(url: str) -> bool:
@@ -1406,6 +1440,96 @@ def render_credential_link_row(*, content_html: str, credential_tag: str, creden
     )
 
 
+def _render_scoped_password(*, content_html: str, formatting_tags: FrozenSet[str]) -> str:
+    """A password region in a note's text: the password note's icon and click-to-copy value
+    (dots in MetaList, the mask where credentials are hidden), in a span to sit in its line."""
+    credentials = _CREDENTIALS_IN_RENDER.get()
+    credential_meta = _CREDENTIAL_META[_SCOPED_PASSWORD]
+    label_text = credential_meta["label"]
+    value_class = "meta-credential-value"
+    if formatting_tags:
+        value_class = f"{value_class} {_meta_classes_for_tag_names(formatting_tags)}"
+    value_html = _credential_value_html(
+        value_text=strip_html(content_html), credential_tag=_SCOPED_PASSWORD, credentials=credentials,
+        value_class=value_class, style_attr=_meta_size_style_attr(formatting_tags),
+    )
+    return (
+        f'<span class="meta-credential meta-credential-{_SCOPED_PASSWORD} meta-credential-scoped">'
+        f'<span class="meta-credential-icon" role="img" title="{label_text}" aria-label="{label_text}">{credential_meta["icon"]}</span>'
+        f"{value_html}"
+        "</span>"
+    )
+
+
+def holds_password(tags: str) -> bool:
+    """A note that is a password (@password) or has one in its text (`((@password))`)."""
+    if is_password_note(tags):
+        return True
+    return len(_scoped_password_wrappers(tags)) > 0
+
+
+def _scoped_password_wrappers(tags: str) -> FrozenSet[Tuple[str, int]]:
+    """The wrappers whose regions are passwords in a note with these tags (`((@password))`)."""
+    renderers = _parse_meta_tags(tags).scoped_renderers
+    return frozenset(key for key, render_tag in renderers.items() if render_tag == _SCOPED_PASSWORD)
+
+
+def _delimiter_run_re(char: str, depth: int) -> re.Pattern[str]:
+    """A run of exactly `depth` of `char`, as the renderer counts one (_count_run)."""
+    escaped = re.escape(char)
+    return re.compile(f"(?<!{escaped}){escaped}{{{depth}}}(?!{escaped})")
+
+
+def redact_scoped_passwords(text: str, tags: str) -> str:
+    """`text` (a note's plain text) for the AI: each password region, delimiters and all, as
+    SCOPED_PASSWORD_REDACTION."""
+    return _replace_scoped_passwords(text, tags, SCOPED_PASSWORD_REDACTION)
+
+
+def text_shown_without_passwords(text: str, tags: str) -> str:
+    """Text taken from a note to show elsewhere (its first line in a link, a caption, a
+    suggestion, a snippet): a password note's as CREDENTIAL_MASK, and in any other note each
+    password region as CREDENTIAL_MASK, as MetaList draws it."""
+    if is_password_note(tags):
+        return CREDENTIAL_MASK
+    return _replace_scoped_passwords(text, tags, CREDENTIAL_MASK)
+
+
+def _replace_scoped_passwords(text: str, tags: str, replacement: str) -> str:
+    """`text` (a note's plain text) with each password region, delimiters and all, as
+    `replacement`. A region the note never closes runs to the end: the text after an
+    unclosed opener may be a password (the renderer draws it so too). A region the renderer
+    would leave as text (inside another renderer's region) is replaced too: more hidden
+    than shown is the safe side."""
+    if not isinstance(text, str):
+        raise TypeError(f"text must be a string, got {type(text)}")
+    if not isinstance(tags, str):
+        raise TypeError(f"tags must be a string, got {type(tags)}")
+    # Every note the AI reads passes here: most have no wrapped tag at all.
+    if _WRAPPER_OPENER_RE.search(tags) is None or _SCOPED_PASSWORD not in tags.casefold():
+        return text
+    wrappers = _scoped_password_wrappers(tags)
+    if not wrappers:
+        return text
+    openers = {key: _delimiter_run_re(key[0], key[1]) for key in wrappers}
+    closers = {key: _delimiter_run_re(_OPEN_TO_CLOSE[key[0]], key[1]) for key in wrappers}
+    kept: List[str] = []
+    index = 0
+    while True:
+        found = [(match.start(), key, match) for key, opener in openers.items()
+                 if (match := opener.search(text, index)) is not None]
+        if not found:
+            kept.append(text[index:])
+            return "".join(kept)
+        start, key, opened = min(found, key=lambda entry: entry[0])
+        kept.append(text[index:start])
+        kept.append(replacement)
+        closed = closers[key].search(text, opened.end())
+        if closed is None:
+            return "".join(kept)
+        index = closed.end()
+
+
 def _render_email_meta(
     *,
     content_html: str,
@@ -1590,6 +1714,8 @@ def _draw_scoped_region(
     scoped_renderers: Mapping[Tuple[str, int], str],
     render_key: Tuple[str, int] | None,
 ) -> str:
+    if render_tag == _SCOPED_PASSWORD:
+        return _render_scoped_password(content_html=content_html, formatting_tags=formatting_tags)
     if render_tag == "latex":
         raw_text = _extract_plain_text(content_html)
         return _render_latex_container(
@@ -1783,7 +1909,14 @@ def _parse_meta_tags(tags: str) -> MetaTagConfig:
             if not inner.startswith("@") or inner == "@":
                 continue
             tag_name = _canonical_meta_tag_name(inner[1:].casefold())
+            # A password region is one whatever else its wrapper names: no other renderer
+            # may draw its text.
+            if tag_name == _SCOPED_PASSWORD:
+                scoped_renderers[key] = _SCOPED_PASSWORD
+                continue
             if not _is_formatting_meta_tag_name(tag_name):
+                if key in scoped_renderers and scoped_renderers[key] == _SCOPED_PASSWORD:
+                    continue
                 if _is_renderer_tag_name(tag_name):
                     existing = None
                     if key in scoped_renderers:
@@ -2012,6 +2145,7 @@ def _apply_scoped_meta_tags(
             protect_from_markdown=protect_from_markdown,
         )
 
+    _mask_open_password_region(output=output, stack=stack, protect_from_markdown=protect_from_markdown)
     for frame in stack:
         output[frame.placeholder_index] = frame.opener_text
 
@@ -2071,9 +2205,34 @@ def _apply_scoped_meta_tags_to_plain_text(
         escape_text=True,
         protect_from_markdown=protect_from_markdown,
     )
+    _mask_open_password_region(output=output, stack=stack, protect_from_markdown=protect_from_markdown)
     for frame in stack:
         output[frame.placeholder_index] = frame.opener_text
     return "".join(output)
+
+
+def _mask_open_password_region(*, output: List[str], stack: List[_OpenFrame], protect_from_markdown: bool) -> None:
+    """A password region the text never closes (half typed, or a first line drawn alone while
+    it closes on a later line) is a password to the end, as the AI's redaction takes it: its
+    text drawn as the password, the HTML tags in it kept so the page stays whole. Inside a
+    renderer's region nothing else opens, so an open password region is the innermost."""
+    if not stack or stack[-1].render_tag != _SCOPED_PASSWORD:
+        return
+    frame = stack.pop()
+    inner_parts = output[frame.placeholder_index + 1 :]
+    kept_tags = [part for part in inner_parts if part.startswith("<")]
+    formatting_tags: FrozenSet[str] = frozenset()
+    if frame.formatting_tags is not None:
+        formatting_tags = frame.formatting_tags
+    rendered = _render_scoped_renderer(
+        render_tag=_SCOPED_PASSWORD,
+        content_html="".join(part for part in inner_parts if not part.startswith("<")),
+        formatting_tags=formatting_tags, wrappers_to_consume=frozenset(), scoped_tags={}, scoped_renderers={},
+        render_key=frame.render_key, protect_from_markdown=protect_from_markdown,
+    )
+    del output[frame.placeholder_index :]
+    output.append(rendered)
+    output.extend(kept_tags)
 
 
 def _process_text_segment(

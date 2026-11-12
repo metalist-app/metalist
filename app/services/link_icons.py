@@ -33,7 +33,8 @@ import resvg_py
 
 import app.services.link_titles as link_titles
 from app.config import TEST_MODE
-from app.db.link_icons_sql import StoredLinkIconRow, fetch_all_link_icon_rows, insert_link_icon_row, update_link_icon_row
+from app.db.link_icons_sql import StoredLinkIconRow, delete_link_icon_rows, fetch_all_link_icon_rows
+from app.db.link_icons_sql import insert_link_icon_row, update_link_icon_row
 from app.db.session import begin_writer
 from app.services.bulk_operation import bulk_operation_guard
 from app.services.exception_capture import CapturedExceptionContext
@@ -276,6 +277,34 @@ class LinkIconStore:
             )
             self._in_flight.discard(result.origin)
         link_title_store.note_companion_change()
+
+    def forget_origins_not_in(self, linked_origins: frozenset[str]) -> int:
+        """Drop the icons of sites no note links to (as icon_origin_for_url names them), but not
+        one being looked up now; none while locked. Returns how many went."""
+        if not isinstance(linked_origins, frozenset):
+            raise TypeError("linked_origins must be a frozenset")
+        with self._lock:
+            state = self._state
+            if state is None or not state.is_decrypted:
+                return 0
+            unlinked = {
+                origin: record for origin, record in state.records_by_origin.items()
+                if origin not in linked_origins and origin not in self._in_flight
+            }
+            if len(unlinked) == 0:
+                return 0
+            unlinked_ids = frozenset(record.id for record in unlinked.values())
+            with begin_writer() as connection:
+                delete_link_icon_rows(connection, tuple(sorted(unlinked_ids)))
+            self._state = _LinkIconState(
+                stored_rows=tuple(row for row in state.stored_rows if row.id not in unlinked_ids),
+                records_by_origin={
+                    origin: record for origin, record in state.records_by_origin.items() if origin not in unlinked
+                },
+                is_decrypted=True,
+            )
+        link_title_store.note_companion_change()
+        return len(unlinked)
 
     def _is_fetch_eligible_locked(self, *, origin: str) -> bool:
         state = self._state

@@ -10,10 +10,9 @@ from pathlib import Path
 import tempfile
 from threading import RLock
 import os
-import traceback
 from typing import Iterator, Optional
 
-from loguru import logger
+from app.services import safe_log
 
 from app.db.blob_store import BlobStore, blob_store_for_database, resolve_file_catalog_path
 from app.db.file_schema import initialize_file_schema
@@ -109,18 +108,14 @@ class FileSession:
 
     def rollback(self) -> None:
         self._connection.rollback()
-        stack = "".join(traceback.format_stack(limit=_ROLLBACK_STACK_FRAME_LIMIT))
         exc_type, _, _ = sys.exc_info()
-        if exc_type is None:
-            logger.error(
-                "FATAL: file DB rollback executed; crashing process",
-                extra={"stack": stack},
-            )
-        else:
-            logger.error(
-                "FATAL: file DB rollback executed; crashing process",
-                extra={"stack": stack, "error_type": exc_type.__name__},
-            )
+        error_type = safe_log.NONE_VALUE
+        if exc_type is not None:
+            error_type = exc_type.__name__
+        safe_log.log_event(
+            "ERROR", "database.rollback_fatal", database="files", error_type=error_type,
+            frames=safe_log.safe_stack_frames(sys._getframe())[-_ROLLBACK_STACK_FRAME_LIMIT:],
+        )
         sys.stderr.write("FATAL: file DB rollback executed; crashing process\n")
         sys.stderr.flush()
         os._exit(1)

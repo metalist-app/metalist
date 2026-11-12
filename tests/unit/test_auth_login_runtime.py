@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+from http import HTTPStatus
 from types import SimpleNamespace
 
+from fastapi import HTTPException
 from starlette.requests import Request
 from starlette.responses import Response
 import pytest
 
 import app.api.routes.auth as auth_route
+from app.config import LOGIN_RATE_LIMIT_BLOCK_SECONDS, LOGIN_RATE_LIMIT_MAX_ATTEMPTS, LOGIN_RATE_LIMIT_WINDOW_SECONDS
+from app.services.login_rate_limit import LoginRateLimiter
 
 
 def test_login_rate_limit_key_ignores_untrusted_forwarded_for_header() -> None:
@@ -134,11 +138,6 @@ def test_logout_keeps_encrypted_logging_active_until_plaintext_state_is_purged(m
     monkeypatch.setattr(auth_route.token_service, "get_session_key", lambda token: "session-key")
     monkeypatch.setattr(auth_route.token_service, "revoke_token", lambda token: events.append("token-revoked"))
     monkeypatch.setattr(
-        auth_route.ai_chat_store,
-        "clear_session",
-        lambda *, session_key: events.append(f"chat-cleared:{session_key}"),
-    )
-    monkeypatch.setattr(
         auth_route,
         "purge_decrypted_runtime_state",
         lambda: events.append("plaintext-purged") or True,
@@ -155,10 +154,66 @@ def test_logout_keeps_encrypted_logging_active_until_plaintext_state_is_purged(m
     result = logout_impl(response=Response(), token="token")
 
     assert result == {"message": "Logout successful"}
+    # Logging out keeps the AI conversation (docs/ui/ai-chat.md, "Saved with the vault").
     assert events == [
-        "chat-cleared:session-key",
         "token-revoked",
         "plaintext-purged",
         "logging-deactivated",
         "cookie-cleared",
     ]
+
+
+def _login_request(client_host: str) -> Request:
+    return Request(
+        {
+            "type": "http",
+            "method": "POST",
+            "scheme": "http",
+            "path": "/api2/auth/login",
+            "raw_path": b"/api2/auth/login",
+            "query_string": b"",
+            "headers": [],
+            "client": (client_host, 1234),
+            "server": ("127.0.0.1", 8000),
+        }
+    )
+
+
+def test_the_login_page_locks_an_address_out_after_too_many_wrong_passwords(monkeypatch) -> None:
+    """LOGIN_RATE_LIMIT_MAX_ATTEMPTS wrong passwords from one address block its logins, even with
+    the right password, without checking it (each check is an Argon2id hash); another address
+    is not blocked (docs/security/README.md)."""
+    checked: list[str] = []
+
+    class _AuthService:
+        def has_password(self) -> bool:
+            return True
+
+        def verify_password(self, password: str) -> bool:
+            checked.append(password)
+            return password == "right"
+
+    monkeypatch.setattr(auth_route, "AuthService", lambda db: _AuthService())
+    monkeypatch.setattr(auth_route, "login_rate_limiter", LoginRateLimiter(
+        max_attempts=LOGIN_RATE_LIMIT_MAX_ATTEMPTS, window_seconds=LOGIN_RATE_LIMIT_WINDOW_SECONDS,
+        block_seconds=LOGIN_RATE_LIMIT_BLOCK_SECONDS))
+
+    def attempt(password: str, client_host: str) -> HTTPException:
+        with pytest.raises(HTTPException) as refused:
+            auth_route.login.__wrapped__(
+                request=_login_request(client_host), response=Response(),
+                payload=auth_route.LoginRequest(password=password), tab_id="tab-id", db=object(),
+            )
+        return refused.value
+
+    for _ in range(LOGIN_RATE_LIMIT_MAX_ATTEMPTS):
+        assert attempt("wrong", "198.51.100.20").status_code == HTTPStatus.UNAUTHORIZED
+    checked.clear()
+
+    locked_out = attempt("right", "198.51.100.20")
+
+    assert locked_out.status_code == HTTPStatus.TOO_MANY_REQUESTS
+    assert locked_out.detail == f"Too many login attempts. Try again in {LOGIN_RATE_LIMIT_BLOCK_SECONDS} seconds."
+    assert checked == []
+    assert attempt("wrong", "203.0.113.45").status_code == HTTPStatus.UNAUTHORIZED
+    assert checked == ["wrong"]

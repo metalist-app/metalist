@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import contextmanager
-from threading import RLock, Lock
+from threading import Condition, Lock, RLock
 from uuid import uuid4
 from app.services.agent.inference import InferenceProviderError
 
@@ -19,7 +19,8 @@ class BulkOperationGuard:
         self.operation_id = ""
         self.session_key = ""
         self.active_mutations = 0
-        self._mutation_lock = Lock()
+        # Guards the fields here; a change waiting for the slot waits on it.
+        self._mutation_lock = Condition(Lock())
         # question id -> (answer, choices, asking session, owning operation id;
         # "" for a question that blocks nothing, see ask()).
         self.questions: dict[str, tuple[asyncio.Future, frozenset[str], str, str]] = {}
@@ -45,16 +46,27 @@ class BulkOperationGuard:
 
     @contextmanager
     def track_mutation(self):
-        with self._mutation_lock:
-            if self.active_mutations:
-                raise BulkOperationBusy("Another request is changing the vault; retry after it finishes")
-            self.active_mutations += 1
+        """One change at a time: a change that finds another running waits for it, never
+        refused (a refusal showed as a fatal 409: a note save on 2026-10-24, the edit preview on
+        2026-11-11)."""
+        self.claim_mutation_slot()
         try:
             yield
         finally:
-            with self._mutation_lock:
-                self.active_mutations -= 1
-                assert self.active_mutations >= 0
+            self.release_mutation_slot()
+
+    def claim_mutation_slot(self) -> None:
+        """Blocks until no other change runs, then holds the slot: in a worker thread for an
+        async request, so the event loop runs on."""
+        with self._mutation_lock:
+            self._mutation_lock.wait_for(lambda: self.active_mutations == 0)
+            self.active_mutations += 1
+
+    def release_mutation_slot(self) -> None:
+        with self._mutation_lock:
+            self.active_mutations -= 1
+            assert self.active_mutations == 0, self.active_mutations
+            self._mutation_lock.notify_all()
 
     def question(self, choices: tuple[str, ...]) -> tuple[str, asyncio.Future]:
         """A question inside the running operation, which blocks other changes."""

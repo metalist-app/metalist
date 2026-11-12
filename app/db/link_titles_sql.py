@@ -6,11 +6,11 @@ from datetime import datetime
 import sqlite3
 
 from app.db.engine import GuardedConnection
-from .raw_connection import raw_sqlite_connection
+from .raw_connection import ConnectionWrapper, raw_sqlite_connection
 from app.db.schema import LINK_TITLES_TABLE
 
 
-def _conn(connection: GuardedConnection | sqlite3.Connection) -> GuardedConnection | sqlite3.Connection:
+def _conn(connection: GuardedConnection | sqlite3.Connection | ConnectionWrapper) -> GuardedConnection | sqlite3.Connection:
     if isinstance(connection, GuardedConnection):
         return connection
     return raw_sqlite_connection(connection)
@@ -220,3 +220,12 @@ def update_link_title_row(
             row_id,
         ),
     )
+
+
+def delete_link_title_rows(connection: GuardedConnection | sqlite3.Connection | ConnectionWrapper, row_ids: tuple[int, ...]) -> None:
+    """The cached titles of addresses no note links to any more (link_row_pruning.py)."""
+    conn = _conn(connection)
+    for row_id in row_ids:
+        deleted = conn.execute(f"DELETE FROM {LINK_TITLES_TABLE} WHERE id = ?", (row_id,)).rowcount
+        if deleted != 1:
+            raise RuntimeError(f"link_titles row {row_id} was not there to delete")

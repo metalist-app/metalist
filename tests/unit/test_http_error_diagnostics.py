@@ -45,6 +45,7 @@ from app.main import app
 from app.config import API_PREFIX
 from app.services.tokens import token_service
 from app.api.routes import notes as notes_module
+from app.services import safe_log
 
 logging.getLogger("diagnostic-fixture").error(
     "Safe logging bridge fixture",
@@ -54,6 +55,7 @@ logging.getLogger("diagnostic-fixture").error(
 exec(compile('def broken_view():\\n    raise ValueError("PRIVATE_NOTE_CONTENT")', notes_module.__file__, 'exec'))
 
 app.add_api_route(API_PREFIX + "/diagnostic-fixture", broken_view)
+safe_log.allow_route_templates(app.routes)
 token = token_service.create_token(client_info="fixture", owner_tab_id="tab", dek=None)
 headers = {"Authorization": "Bearer " + token, "X-Metalist-Tab-Id": "tab", "Origin": "http://localhost"}
 with TestClient(app, base_url="http://localhost", raise_server_exceptions=False) as client:
@@ -76,7 +78,9 @@ assert "PRIVATE_NOTE_CONTENT" not in response.text
         timeout=30,
     )
     assert result.returncode == 0, result.stderr[-3000:]
-    assert "Safe logging bridge fixture error_type=ValueError frames=[]" in result.stdout
+    # A library's error keeps its package (not on the list: "other") and error type, never its message.
+    assert "| library logger=other error_type=ValueError frames=[]" in result.stdout
+    assert "Safe logging bridge fixture" not in result.stdout
     assert "PRIVATE_NOTE_CONTENT" not in result.stdout + result.stderr
 
 
@@ -90,6 +94,7 @@ from app.main import app
 from app.config import API_PREFIX
 from app.services.input_errors import InputRejected
 from app.services.tokens import token_service
+from app.services import safe_log
 
 
 def rejecting_view():
@@ -97,6 +102,7 @@ def rejecting_view():
 
 
 app.add_api_route(API_PREFIX + "/rejected-input-fixture", rejecting_view)
+safe_log.allow_route_templates(app.routes)
 token = token_service.create_token(client_info="fixture", owner_tab_id="tab", dek=None)
 headers = {"Authorization": "Bearer " + token, "X-Metalist-Tab-Id": "tab", "Origin": "http://localhost"}
 with TestClient(app, base_url="http://localhost", raise_server_exceptions=False) as client:
@@ -126,18 +132,20 @@ from fastapi.testclient import TestClient
 from app.main import app
 from app.config import API_PREFIX
 from app.services.tokens import token_service
+from app.services import safe_log
 
 def request_log_fixture_view():
     return {"ok": True}
 
 app.add_api_route(API_PREFIX + "/request-log-fixture", request_log_fixture_view)
+safe_log.allow_route_templates(app.routes)
 token = token_service.create_token(client_info="fixture", owner_tab_id="tab", dek=None)
 headers = {"Authorization": "Bearer " + token, "X-Metalist-Tab-Id": "tab", "Origin": "http://localhost"}
 with TestClient(app, base_url="http://localhost", raise_server_exceptions=False) as client:
     assert client.get(API_PREFIX + "/request-log-fixture", headers=headers).status_code == 200
     assert client.get(API_PREFIX + "/request-log-missing", headers=headers).status_code == 404
-    # A mounted app (the static files) answers too: the page's stylesheet must load.
-    assert client.get("/static/css/main.css").status_code == 200
+    # A mounted app (the static files) answers too: a missing file is logged (a found one is not).
+    assert client.get("/static/css/missing-fixture.css").status_code == 404
 '''
     # Windows writes a pipe or a file in its code page (cp1252), which has no ⇒ or ⇐:
     # every line of the request log failed to write there (2026-10-21). The server
@@ -152,10 +160,12 @@ with TestClient(app, base_url="http://localhost", raise_server_exceptions=False)
     output = result.stdout.decode("utf-8") + result.stderr.decode("utf-8")
     assert result.returncode == 0, output[-3000:]
     assert "Logging error" not in output, output[-3000:]
-    answered = [line for line in output.splitlines() if "⇐ 200 GET" in line and "/request-log-fixture" in line]
+    answered = [line for line in output.splitlines() if "request status=200 method=GET route=/api2/request-log-fixture " in line]
     assert len(answered) == 1 and "handler=request_log_fixture_view " in answered[0], output[-3000:]
-    missing = [line for line in output.splitlines() if "⇐ 404 GET" in line and "/request-log-missing" in line]
+    # A path no route matches is written as no route, never as the path that was asked for.
+    missing = [line for line in output.splitlines() if "request status=404 method=GET route=(no route) " in line]
     assert len(missing) == 1 and "handler=(no route) " in missing[0], output[-3000:]
-    static = [line for line in output.splitlines() if "⇐ 200 GET" in line and "/static/css/main.css" in line]
+    assert "request-log-missing" not in output
+    static = [line for line in output.splitlines() if "request status=404 method=GET route=/static/{path} " in line]
     assert len(static) == 1 and "handler=NoCacheStaticFiles " in static[0], output[-3000:]
     assert "handler=unknown" not in output

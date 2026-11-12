@@ -1,14 +1,24 @@
 import { ApplicationState } from '../../application-state.js';
 import { rethrowUnexpectedError } from '../../expected-errors.js';
 import { FilesAPI } from '../../api-client.js';
+import {
+    RECENT_PICTURES_CAPACITY,
+    evictOldest,
+    noteObjectUrlShown,
+    releaseObjectUrls,
+    rememberSize,
+    useNewest,
+} from '../../object-url-cache.js';
 
 
 const moduleState = ApplicationState.createFields('file-image-preview-service', {
+    // The most recent pictures by key, oldest first (object-url-cache.js).
     previewCache: new Map(),
     pendingPreviewRequests: new Map(),
     // Natural size of each loaded image file, for this page session: when the
     // same image renders again (e.g. after its note leaves edit mode) its frame
-    // is sized up front, so text below it does not move while it loads.
+    // is sized up front, so text below it does not move while it loads. The most
+    // recent ones only, oldest first.
     previewSizes: new Map(),
 
     cleanupRegistered: false,
@@ -68,11 +78,12 @@ function applyPreviewObjectUrl(target, objectUrl) {
     const fileId = target.dataset.fileRefId;
     imageElement.addEventListener('load', () => {
         const size = `${imageElement.naturalWidth}/${imageElement.naturalHeight}`;
-        if (imageElement.naturalWidth > 0 && imageElement.naturalHeight > 0 && moduleState.previewSizes.get(fileId) !== size) {
-            moduleState.previewSizes.set(fileId, size);
+        if (imageElement.naturalWidth > 0 && imageElement.naturalHeight > 0) {
+            rememberSize(moduleState.previewSizes, fileId, size);
         }
     }, { once: true });
     imageElement.src = objectUrl;
+    noteObjectUrlShown(imageElement, objectUrl);
     imageElement.hidden = false;
     placeholderElement.textContent = '';
     setPreviewState(target, 'loaded');
@@ -106,13 +117,15 @@ function pictureKey(target) {
     return target.dataset.fileRefId;
 }
 
+const everyPicture = () => true;
+
 async function fetchPreviewObjectUrl(fileId, key, isFirstPagePicture) {
     if (typeof fileId !== 'string' || fileId.length === 0) {
         throw new Error('fetchPreviewObjectUrl expects fileId');
     }
 
     if (moduleState.previewCache.has(key)) {
-        return moduleState.previewCache.get(key).objectUrl;
+        return useNewest(moduleState.previewCache, key).objectUrl;
     }
     if (moduleState.pendingPreviewRequests.has(key)) {
         return await moduleState.pendingPreviewRequests.get(key);
@@ -138,6 +151,9 @@ async function fetchPreviewObjectUrl(fileId, key, isFirstPagePicture) {
             }
             const objectUrl = URL.createObjectURL(payload.blob);
             moduleState.previewCache.set(key, { objectUrl });
+            // The newest stays: its targets take it in this same run of promise callbacks.
+            const dropped = evictOldest(moduleState.previewCache, RECENT_PICTURES_CAPACITY, everyPicture);
+            releaseObjectUrls(dropped.map(([, cachedPreview]) => cachedPreview.objectUrl));
             return objectUrl;
         })
         .finally(() => {

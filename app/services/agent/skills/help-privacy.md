@@ -107,12 +107,19 @@ deleting recovery artifacts to bypass a failed transition.
 
 ## Diagnostics, memory and verification
 
-For a protected vault, startup diagnostics before unlock are plaintext and
-do not contain decrypted vault data. After successful key unwrap, persistent
-Loguru records and direct stdout/stderr writes use individual `MLLOG1` AES-GCM
-envelopes with a DEK-derived logging key. Plaintext fault logging is disabled
-during the unlocked interval. Do not claim logs are all always plaintext or all
-always encrypted.
+MetaList keeps one plain server log, before and after unlock alike, that holds
+only safe records: which part of MetaList answered a request (its route as
+MetaList names it, never the address or search the browser sent), status,
+timing, request id, counts, error types and code locations. Every record is
+checked against a fixed list of MetaList's own events before it is written;
+anything else (note text, tags, searches, link addresses, error messages) is
+refused, not written. Successful loads of MetaList's own files are not logged.
+While unlocked, fault logging is off and direct stdout/stderr writes use
+individual `MLLOG1` AES-GCM envelopes with a DEK-derived logging key. Each
+server answer carries its request id, and an error MetaList shows names it, so
+the matching log line can be found. Do not claim the log is encrypted, or that
+it holds note content. Logs are kept per vault, under about 125 MB each, and a
+deleted or renamed vault's logs are removed a day later.
 
 Keep the two memory boundaries distinct: the browser holds decrypted displayed
 content, while the unlocked server holds decrypted data and encryption keys.
@@ -158,7 +165,8 @@ that shows it until the next click or key; clicking it copies it. @username is a
 field; clicking it copies it. Both are AI exclusion boundaries: such a note and its
 whole subtree are never sent to any AI, and a cloud whitelist cannot bypass that.
 Exports and prints hide both unless the user checks Include Unredacted ... in
-their dialog. Hiding it on screen is not a substitute for vault encryption. @shell execution is separately opt-in on the server
+their dialog. A note with a password inside its text (a ((@password)) region) is
+kept from the AI the same way, with the notes under it. Hiding it on screen is not a substitute for vault encryption. @shell execution is separately opt-in on the server
 (--enable-shell); AI help has no shell execution tool. Explain only what this
 reference establishes; do not assert the user's current encryption, disclosure
 policy, or session settings without explicit supplied evidence.

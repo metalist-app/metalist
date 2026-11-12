@@ -38,6 +38,7 @@ def _rebootstrap_encrypted_store_metadata() -> None:
         with SafeSession.allow_reads("runtime_lock:encrypted_store_metadata"):
             connection = session.connection()
             tab_state_store.bootstrap(connection=connection)
+            ai_chat_store.bootstrap(connection=connection)
             link_title_store.bootstrap(connection=connection)
             reminder_store.bootstrap(connection=connection)
             search_history_store.bootstrap(connection=connection)

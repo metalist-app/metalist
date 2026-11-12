@@ -51,7 +51,8 @@ the top with the text and the tags; with no tags it is tagged **`@inbox`**, a re
   its own port). The certificate is MetaList's own: Safari warns once; after accepting, refresh.
   To skip the warning, install the **public** certificate (`certs/metalist-cert.pem`, never the
   key) on the iPhone as a profile and turn on full trust under Settings → General → About →
-  Certificate Trust Settings.
+  Certificate Trust Settings. The certificate lasts 825 days; MetaList replaces it at a start in
+  its last 30 days, and the phone then warns once more (or needs the new one installed).
 - The login form carries the vault's name as a hidden username, so iOS saves one password per
   vault and fills it in.
 - The manifest (`app/static/manifest.json`) is `display: standalone`, so Add to Home Screen opens

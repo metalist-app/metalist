@@ -278,6 +278,11 @@ _MODEL_TIMINGS_DATABASE_VERSION = 16
 # already present because opening a database creates it ahead of the migration.
 _LINK_ICONS_TABLE = "link_icons"
 _LINK_ICONS_DATABASE_VERSION = 12
+# Migration 18→19 added the ai_chat table (the vault's AI conversation, its one payload
+# encrypted). Before version 19 it may be missing, or already present because opening a
+# database creates it ahead of the migration.
+_AI_CHAT_TABLE = "ai_chat"
+_AI_CHAT_DATABASE_VERSION = 19
 
 _PROPOSED_TAG_COLUMNS = frozenset(
     {
@@ -323,6 +328,13 @@ _MAIN_SCHEMA_BEFORE_CONTENT_MIGRATIONS = {
         }
     ),
     "tab_state": frozenset(
+        {
+            "id", "state_json", "state_encryption_nonce", "state_encryption_tag",
+            "created_at", "updated_at",
+        }
+    ),
+    # The AI conversation, from database version 19.
+    _AI_CHAT_TABLE: frozenset(
         {
             "id", "state_json", "state_encryption_nonce", "state_encryption_tag",
             "created_at", "updated_at",
@@ -491,6 +503,7 @@ _MAIN_PAYLOADS_WITHOUT_SEARCH_HISTORY = (
     ),
     _PayloadSpec("embedded_documents", "payload", "nonce", "tag", "text", is_nullable=False),
     _PayloadSpec("tab_state", "state_json", "state_encryption_nonce", "state_encryption_tag", "text", is_nullable=False),
+    _PayloadSpec(_AI_CHAT_TABLE, "state_json", "state_encryption_nonce", "state_encryption_tag", "text", is_nullable=False),
     _PayloadSpec("link_titles", "url", "url_encryption_nonce", "url_encryption_tag", "text", is_nullable=False),
     _PayloadSpec(
         "link_titles", "title", "title_encryption_nonce", "title_encryption_tag", "text",
@@ -638,6 +651,8 @@ _MIGRATION_DEFERRED_PLAINTEXT_FIELDS_BY_DATABASE_VERSION = dict(enumerate((
     frozenset(),
     # version 17
     frozenset(),
+    # version 18
+    frozenset(),
 )))
 
 
@@ -717,6 +732,8 @@ def _main_schema_for_database_version(
         }
     if database_version < _LINK_ICONS_DATABASE_VERSION and _LINK_ICONS_TABLE not in actual_tables:
         resolved_schema = {table: columns for table, columns in resolved_schema.items() if table != _LINK_ICONS_TABLE}
+    if database_version < _AI_CHAT_DATABASE_VERSION and _AI_CHAT_TABLE not in actual_tables:
+        resolved_schema = {table: columns for table, columns in resolved_schema.items() if table != _AI_CHAT_TABLE}
     if database_version >= _OPENAI_CREDENTIALS_DATABASE_VERSION or not _OPENAI_CREDENTIAL_COLUMNS.isdisjoint(
         actual_app_settings_columns
     ):

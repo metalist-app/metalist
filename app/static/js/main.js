@@ -1,3 +1,4 @@
+import { installInputRecorder } from './modules/problem-reports/input-recorder.js';
 import { checkReleaseOnPageLoad } from './modules/app-update-service.js';
 import { ModeManager } from './modules/mode-manager/mode-manager-controller.js';
 import { CONFIG } from './modules/config.js';
@@ -15,6 +16,10 @@ import { watchFoldability } from './modules/mode-manager/services/collapse-affor
 import {
     queueMermaidDiagramRendering,
 } from './modules/mode-manager/services/mermaid-render-service.js';
+// Before anything else listens or fetches: the trail a problem report is made from
+// (docs/ready-to-build/error-reports.md §1), in memory only.
+installInputRecorder();
+
 document.addEventListener('DOMContentLoaded', async () => {
     console.log('DOMContentLoaded fired');
     document.body.dataset.appReady = 'false';

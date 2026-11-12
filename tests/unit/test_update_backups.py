@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from contextlib import closing
 from datetime import datetime, timezone
 import hashlib
 import json
+import os
 from pathlib import Path
 import sqlite3
 import subprocess
@@ -11,7 +13,9 @@ import tarfile
 
 import pytest
 
-from app.services import update_backups
+from app.db.blob_store import StoredBlob, blob_store_for_database, resolve_file_catalog_path
+from app.db.file_schema import initialize_file_schema
+from app.services import backup_service, update_backups
 from app.services.backup_service import restore_backup_to_paths
 
 
@@ -28,6 +32,69 @@ def _create_namespace(root: Path, namespace: str, *, encrypted: bool) -> sqlite3
     connection.execute("PRAGMA user_version=7")
     connection.commit()
     return connection
+
+
+def _attach_file(database: Path, *, file_id: str, content: bytes) -> StoredBlob:
+    """A file in today's layout: a row in files/catalog.db naming one blob."""
+    catalog = resolve_file_catalog_path(database)
+    catalog.parent.mkdir(exist_ok=True)
+    stored = blob_store_for_database(database).write(content, is_encrypted=False)
+    with closing(sqlite3.connect(catalog)) as connection:
+        initialize_file_schema(connection)
+        connection.execute(
+            "INSERT INTO files (id, title, metadata_json, blob_id, blob_seal, created_at, updated_at) VALUES (?, 't', '{}', ?, ?, 'now', 'now')",
+            (file_id, stored.blob_id, stored.seal.to_bytes()),
+        )
+        connection.commit()
+    return stored
+
+
+def test_restoring_a_pre_update_backup_brings_back_the_vaults_attachments(tmp_path: Path) -> None:
+    _create_namespace(tmp_path, "work", encrypted=False).close()
+    database = tmp_path / "work" / "work.metalist.db"
+    stored = _attach_file(database, file_id="report", content=b"attachment bytes")
+
+    [archive] = update_backups.backup_all_namespaces_for_update(namespaces_directory=tmp_path)
+    restore_backup_to_paths(archive, database)
+
+    assert blob_store_for_database(database).contains(stored.blob_id)
+    assert blob_store_for_database(database).read_all(stored.blob_id, stored.seal) == b"attachment bytes"
+    with closing(sqlite3.connect(resolve_file_catalog_path(database))) as catalog:
+        assert [row[0] for row in catalog.execute("SELECT id FROM files")] == ["report"]
+
+
+def test_a_pre_update_backup_holds_the_same_members_as_an_ordinary_backup(tmp_path: Path) -> None:
+    namespaces = tmp_path / "namespaces"
+    _create_namespace(namespaces, "work", encrypted=False).close()
+    database = namespaces / "work" / "work.metalist.db"
+    stored = _attach_file(database, file_id="report", content=b"attachment bytes")
+    ordinary = backup_service.create_timestamped_backup_for_paths(database, tmp_path / "ordinary")
+
+    [archive] = update_backups.backup_all_namespaces_for_update(namespaces_directory=namespaces)
+
+    with tarfile.open(archive, "r:gz") as handle:
+        update_names = set(handle.getnames())
+    with tarfile.open(tmp_path / "ordinary" / ordinary.filename, "r:gz") as handle:
+        ordinary_names = set(handle.getnames())
+    assert update_names == ordinary_names
+    assert f"files/blobs/{stored.blob_id[:2]}/{stored.blob_id}.mlb" in update_names
+
+
+def test_a_pre_update_backup_is_published_by_hard_link_from_its_partial_file(tmp_path: Path, monkeypatch) -> None:
+    _create_namespace(tmp_path, "work", encrypted=False).close()
+    links: list[tuple[str, str]] = []
+    real_link = os.link
+
+    def _recording_link(source, target) -> None:
+        links.append((Path(source).name, Path(target).name))
+        real_link(source, target)
+
+    monkeypatch.setattr(os, "link", _recording_link)
+
+    [archive] = update_backups.backup_all_namespaces_for_update(namespaces_directory=tmp_path)
+
+    assert links == [(f"{archive.name}.partial", archive.name)]
+    assert sorted(path.name for path in archive.parent.iterdir()) == [archive.name]
 
 
 def test_update_imports_do_not_initialize_namespace_runtime() -> None:
@@ -59,21 +126,27 @@ def test_all_namespaces_include_wal_data_settings_files_sounds_and_legacy_sideca
         old_backup.parent.mkdir()
         with old_backup.open("xb") as handle:
             handle.write(b"immutable historical backup")
-        before = {path: path.read_bytes() for path in (old_backup, directory / "locked.metalist.db")}
+        old_backup_bytes = old_backup.read_bytes()
+        history_bytes = (directory / "locked.metalist.search-history.db").read_bytes()
 
         archives = update_backups.backup_all_namespaces_for_update(namespaces_directory=namespaces)
 
         assert len(archives) == 2
         assert {archive.parent.parent.name for archive in archives} == {"default", "locked"}
         assert all(archive.is_absolute() and archive.parent.name == "backups" for archive in archives)
-        assert all(path.read_bytes() == contents for path, contents in before.items())
+        assert old_backup.read_bytes() == old_backup_bytes
+        assert (directory / "locked.metalist.search-history.db").read_bytes() == history_bytes
+        # The WAL is folded into the live database before the copy (as for every backup): same data.
+        with closing(sqlite3.connect(directory / "locked.metalist.db")) as live:
+            assert live.execute("SELECT content FROM notes").fetchall() == [(b"opaque encrypted content from WAL",)]
         archive_path = next(path for path in archives if path.parent.parent.name == "locked")
         with tarfile.open(archive_path, "r:gz") as archive:
             manifest_stream = archive.extractfile("manifest.json")
             assert manifest_stream is not None
             manifest = json.load(manifest_stream)
             assert manifest["encryption_enabled"] is True
-            assert {entry["database_role"] for entry in manifest["files"]} == {"notes", "files", "search_history"}
+            # A leftover search-history database is ignored, as by every backup since 2 → 3.
+            assert {entry["database_role"] for entry in manifest["files"]} == {"notes", "files"}
             for entry in manifest["files"]:
                 stream = archive.extractfile(entry["archive_name"])
                 assert stream is not None
@@ -106,7 +179,7 @@ def test_backup_collision_leaves_existing_archive_untouched(tmp_path: Path, monk
             assert tz is timezone.utc
             return datetime(2026, 9, 11, tzinfo=timezone.utc)
 
-    monkeypatch.setattr(update_backups, "datetime", FixedDatetime)
+    monkeypatch.setattr(backup_service, "datetime", FixedDatetime)
     archive = tmp_path / "default" / "backups" / "default-20260911-000000-000000.metalist-backup.tar.gz"
     archive.parent.mkdir()
     with archive.open("xb") as handle:
@@ -138,8 +211,8 @@ def test_legacy_settings_are_backed_up_without_schema_changes(tmp_path: Path) ->
 def test_checksum_verification_failure_is_fatal(tmp_path: Path, monkeypatch) -> None:
     connection = _create_namespace(tmp_path, "default", encrypted=False)
     connection.close()
-    monkeypatch.setattr(update_backups, "_sha256", lambda _path: "0" * 64)
-    with pytest.raises(RuntimeError, match="checksum verification failed"):
+    monkeypatch.setattr(backup_service, "_sha256_for_file", lambda _path: "0" * 64)
+    with pytest.raises(RuntimeError, match="checksum mismatch"):
         update_backups.backup_all_namespaces_for_update(namespaces_directory=tmp_path)
 
 

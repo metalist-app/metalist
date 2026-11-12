@@ -2,7 +2,6 @@ import { escapeHtml } from '../html-escape.js';
 import { formatByteSize } from '../byte-sizes.js';
 import { NotesAPI } from '../api-client.js';
 import { CommandGate } from '../mode-manager/services/command-gate-service.js';
-import { ModeContextInstance as ModeContext } from '../mode-manager/mode-context.js';
 import { bookmarksFileChoices } from './bookmarks-file.js';
 import { heldDroppedFolder } from '../mode-manager/services/dropped-folders.js';
 import { checkBackgroundWork, setShownElsewhere } from '../mode-manager/services/background-work-cards.js';
@@ -188,7 +187,7 @@ export async function runImport(wizard, progress) {
     await CommandGate.run('importWizard.import', async () => {
         if (isBookmarks) {
             result = await NotesAPI.importBookmarks({
-                ...bookmarksRequest(wizard.choices), addToExisting: wizard.choices.addToExisting, dropContext: dropContext(wizard.choices),
+                ...bookmarksRequest(wizard.choices), addToExisting: wizard.choices.addToExisting,
             });
         } else {
             // The bar follows the files stored, as the server counts them (the maintainer,
@@ -229,12 +228,6 @@ async function showFinishedImport(wizard, result, isBookmarks) {
     }
 }
 
-// Where the files were dropped, as the import takes it: their notes get that search context's
-// tags; none from the menu.
-function dropContext(choices) {
-    return { isDrop: choices.isDrop, tabId: ModeContext.activeTabId, search: choices.dropSearch };
-}
-
 // The folder import, its bar filled by the files stored as the server counts them.
 async function importShowingProgress(choices, progress) {
     const imported = NotesAPI.importFolder(importRequest(choices));
@@ -263,7 +256,6 @@ function importRequest(choices) {
         prefixFolder: choices.prefixText, addToExisting: choices.addToExisting,
         compressesImages: bringsInImages(choices) && choices.imagesAs === IMAGES_COMPRESSED,
         imageLongestSide: Number(choices.imageLongestSide),
-        dropContext: dropContext(choices),
         ...fileSelection(choices),
     };
 }
@@ -946,8 +938,8 @@ function tickFile(screen, wizard, box) {
 }
 
 // A kind opened to show its files (the maintainer, 2026-11-01: to see which file is left
-// out, by name): each file's folder and name, its size, the largest first; one over the
-// limit says so in red. Built only when opened: a kind can hold thousands.
+// out, by name): each file's folder and name, its size, the largest first. Built only when
+// opened: a kind can hold thousands.
 function kindFilesHtml(group, choices) {
     const flipped = new Set(choices.fileExceptions);
     const items = group.files.map(([path, size]) => {
@@ -959,7 +951,7 @@ function kindFilesHtml(group, choices) {
         return `
             <li class="wizard-kind-file" title="${escapeHtml(path)}">
                 <label class="wizard-kind-file-path">
-                    <input type="checkbox" data-wizard-file="${escapeHtml(path)}" data-wizard-file-kind="${escapeHtml(group.key)}"${isChecked ? ' checked' : ''}${isOverLimit ? ' disabled' : ''}>
+                    <input type="checkbox" data-wizard-file="${escapeHtml(path)}" data-wizard-file-kind="${escapeHtml(group.key)}"${isChecked ? ' checked' : ''}>
                     <span class="wizard-kind-file-name"><span class="wizard-kind-file-folder">${escapeHtml(folder)}</span>${escapeHtml(name)}</span>
                 </label>
                 <span class="wizard-kind-size">${escapeHtml(formatByteSize(size))}</span>
@@ -1296,6 +1288,6 @@ export function importChoices() {
         droppedFolderId: '', uploadId: '', uploadedSelection: '',
         // Files dropped on the page: the search of the context they were dropped in ('' for
         // none), which their notes take the tags of and stay in.
-        isDrop: false, dropSearch: '',
+        isDrop: false,
     };
 }

@@ -675,6 +675,12 @@ reason = "Handle expected external I/O, provider, image or LaTeX parsing failure
 [[tool.shockharness.rules.exceptions.boundaries]]
 path = "main.py"
 language = "python"
+exception = "app.db.version.VaultNeedsNewerMetaList"
+reason = "A vault saved by a newer MetaList is an expected refusal: the command prints its message and stops with its own status, without a traceback."
+
+[[tool.shockharness.rules.exceptions.boundaries]]
+path = "main.py"
+language = "python"
 exception = "ProcessLookupError"
 reason = "Handle expected external I/O, provider, image or LaTeX parsing failure."
 

@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 
 import pytest
 
+import app.api.routes.imports as imports_routes
 from app.services.bookmark_import import (
     BOOKMARKLET,
     BROWSER_PAGE,
@@ -132,7 +133,7 @@ def test_the_summary_counts_what_comes_in_and_what_is_left_out(live_database) ->
 
 def test_each_bookmark_is_one_note_at_the_top_its_title_linked(live_database) -> None:  # noqa: F811
     result = CmdImportBookmarks(
-        file_text=_FIREFOX_LIKE, folder_prefix="Bookmarks", add_to_existing=True, token="", imported_at=_IMPORTED_AT, context_tags="",
+        file_text=_FIREFOX_LIKE, folder_prefix="Bookmarks", add_to_existing=True, token="", imported_at=_IMPORTED_AT,
     ).execute()
 
     assert result["noteCount"] == 6
@@ -153,19 +154,19 @@ def test_each_bookmark_is_one_note_at_the_top_its_title_linked(live_database) ->
 
 def test_an_existing_folder_is_added_to_only_when_ticked(live_database) -> None:  # noqa: F811
     CmdImportBookmarks(
-        file_text=_FIREFOX_LIKE, folder_prefix="Bookmarks", add_to_existing=True, token="", imported_at=_IMPORTED_AT, context_tags="",
+        file_text=_FIREFOX_LIKE, folder_prefix="Bookmarks", add_to_existing=True, token="", imported_at=_IMPORTED_AT,
     ).execute()
 
     with pytest.raises(InputRejected, match="already exists"):
         CmdImportBookmarks(
-            file_text=_FIREFOX_LIKE, folder_prefix="Bookmarks", add_to_existing=False, token="", imported_at=_IMPORTED_AT, context_tags="",
+            file_text=_FIREFOX_LIKE, folder_prefix="Bookmarks", add_to_existing=False, token="", imported_at=_IMPORTED_AT,
         ).execute()
 
 
 def test_bookmarks_say_whether_they_made_a_new_folder(live_database) -> None:  # noqa: F811
     results = [
         CmdImportBookmarks(
-            file_text=_FIREFOX_LIKE, folder_prefix="Bookmarks", add_to_existing=True, token="", imported_at=_IMPORTED_AT, context_tags="",
+            file_text=_FIREFOX_LIKE, folder_prefix="Bookmarks", add_to_existing=True, token="", imported_at=_IMPORTED_AT,
         ).execute()
         for _ in range(2)
     ]
@@ -176,7 +177,22 @@ def test_bookmarks_say_whether_they_made_a_new_folder(live_database) -> None:  #
 def test_importing_again_only_adds(live_database) -> None:  # noqa: F811
     for _ in range(2):
         CmdImportBookmarks(
-            file_text=_FIREFOX_LIKE, folder_prefix="Bookmarks", add_to_existing=True, token="", imported_at=_IMPORTED_AT, context_tags="",
+            file_text=_FIREFOX_LIKE, folder_prefix="Bookmarks", add_to_existing=True, token="", imported_at=_IMPORTED_AT,
         ).execute()
 
     assert len(tree.children(None)) == 12
+
+
+# Bookmarks dropped while the `journal` search was showing came in tagged `journal`, among the
+# journal entries (the maintainer, 2026-11-11): the request carries no search, and the notes get
+# the import's own tags alone.
+def test_a_dropped_import_takes_none_of_the_searchs_tags(live_database, monkeypatch) -> None:  # noqa: F811
+    monkeypatch.setattr(imports_routes, "require_request_auth_token", lambda request: "")
+    monkeypatch.setattr(imports_routes, "build_catalog_in_background", lambda: None)
+
+    result = imports_routes.import_bookmarks.__wrapped__(request=None, body={
+        "fileText": _FIREFOX_LIKE, "prefixFolder": "Bookmarks", "addToExisting": True,
+    })
+
+    menu_top = store.get_note(tree.children(None)[2])
+    assert menu_top.tags.split() == ["Bookmarks/", result["sourceTag"]]

@@ -493,3 +493,27 @@ def test_windows_updater_trims_safety_backups_last_and_only_after_a_restart() ->
     trim = "& 'C:/metalist.exe' 'trim-safety-backups'; if ($LASTEXITCODE -ne 0)"
     _steps_in_order(script, "& 'uv' 'install'", restart, trim, "older safety backups")
     assert script.index("older safety backups") < script.index("-ForegroundColor Green")
+
+
+def test_posix_updater_prunes_uv_cache_with_the_updater_uv_after_the_trim() -> None:
+    [_shell, _flag, script] = self_update._build_posix_updater_command(
+        shell_executable="/bin/sh", install_command=["/managed/uv", "tool", "install"],
+        metalist_executable="/bin/metalist", current_pid=4242, target_version="0.3.13",
+    )
+    prune = "if ! /managed/uv cache prune; then"
+    _steps_in_order(script, "if ! /bin/metalist trim-safety-backups; then", "older safety backups", prune,
+                    "but uv's download cache was not pruned", "MetaList updated to v0.3.13.'\n")
+    assert script.count("cache prune") == 1
+    assert "--ci" not in script and "--force" not in script.replace("tool install", "")
+
+
+def test_windows_updater_prunes_uv_cache_with_the_updater_uv_after_the_trim() -> None:
+    command = self_update._build_windows_updater_command(
+        powershell_executable="powershell.exe", install_command=["/managed/uv", "tool", "install"],
+        metalist_executable="C:/metalist.exe", current_pid=4242, target_version="0.3.13",
+    )
+    script = command[5]
+    prune = "& '/managed/uv' 'cache' 'prune'; if ($LASTEXITCODE -ne 0)"
+    _steps_in_order(script, "'trim-safety-backups'", "older safety backups", prune,
+                    "but uv''s download cache was not pruned", "-ForegroundColor Green")
+    assert script.count("'cache' 'prune'") == 1

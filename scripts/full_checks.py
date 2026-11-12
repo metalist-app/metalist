@@ -10,6 +10,7 @@ check at once. COMMIT FEATURE runs them without the browser suite; GitHub runs i
 The ShockHarness gate and the Windows-style clone read commits, so the working tree must be
 clean: commit first. Each check writes its whole output to logs/checks/<time>/<check>.log;
 the summary gives each one's result, time and last line. Exit status 1 when any check fails.
+Only the newest runs' log folders are kept (KEPT_RUN_LOGS); a run removes older ones as it starts.
 
 Python versions: the local .venv, plus one environment per supported version in
 .venv-py<version> (created with uv on first use, then kept in sync with requirements/ci.txt).
@@ -18,6 +19,8 @@ Python versions: the local .venv, plus one environment per supported version in
 from __future__ import annotations
 
 import argparse
+import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -44,6 +47,12 @@ PARALLEL_CHECKS = 8
 # reach a check: they do not count as uncommitted work (as in release.py).
 INBOX_PATHSPEC = ":(exclude)docs/inbox"
 SUMMARY_NAME_WIDTH = 24
+CHECK_LOGS = ROOT / "logs" / "checks"
+# A run's log folder is named after the time it started; the names sort as the times do.
+RUN_LOG_NAME_FORMAT = "%Y%m%dT%H%M%S"
+RUN_LOG_NAME = re.compile(r"\d{8}T\d{6}")
+# How many runs' log folders are kept, the new run's included (docs/ready-to-build/unbounded-growth-audit.md, T3).
+KEPT_RUN_LOGS = 10
 RESULT_WORDS = {True: "PASS", False: "FAIL"}
 
 
@@ -158,6 +167,21 @@ def _print_summary(outcomes: list[Outcome]) -> None:
             print(f"      {outcome.name}: {outcome.log}")
 
 
+def remove_old_run_logs(check_logs: Path, keep: int) -> list[Path]:
+    """Delete all but the newest `keep` run log folders in `check_logs`; return the deleted ones.
+
+    Only folders named as a run's are touched; anything else there is not a run's and stays.
+    """
+    if keep < 1:
+        raise ValueError(f"keep must be at least 1 (the run that is starting), not {keep}")
+    runs = sorted(entry for entry in check_logs.iterdir() if entry.is_dir() and RUN_LOG_NAME.fullmatch(entry.name))
+    old = runs[:-keep]
+    for run in old:
+        assert run.parent == check_logs and not run.is_symlink(), f"not a run log folder of {check_logs}: {run}"
+        shutil.rmtree(run)
+    return old
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--base", default="main", help="revision the ShockHarness gate compares against")
@@ -170,8 +194,9 @@ def main() -> int:
         return 1
     branch = _git("branch", "--show-current")
     assert branch, "a branch must be checked out (not a detached HEAD)"
-    log_directory = ROOT / "logs" / "checks" / datetime.now().strftime("%Y%m%dT%H%M%S")
+    log_directory = CHECK_LOGS / datetime.now().strftime(RUN_LOG_NAME_FORMAT)
     log_directory.mkdir(parents=True, exist_ok=False)
+    remove_old_run_logs(CHECK_LOGS, KEPT_RUN_LOGS)
     print(f"Checking {branch} at {_git('rev-parse', '--short', 'HEAD')} against {options.base}; logs in {log_directory}")
 
     started = time.monotonic()
