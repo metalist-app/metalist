@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 import ipaddress
 import os
+import sys
 from pathlib import Path
 import re
 import socket
@@ -31,7 +32,7 @@ from app.security.shell_execution import enable_shell_execution_for_launch
 from app.security.shell_execution import SHELL_EXECUTION_ENV_NAME
 from app.services.input_errors import NamespaceInputRejected
 
-if os.name == "nt":
+if sys.platform == "win32":
     import msvcrt
 else:
     import fcntl
@@ -928,7 +929,7 @@ def ensure_default_tls_pair(*, environ: Mapping[str, str]) -> tuple[str, str] | 
 @contextmanager
 def _default_tls_pair_lock() -> Iterator[None]:
     with (_DEFAULT_CERT_PATH.parent / _TLS_RENEW_LOCK_FILE_NAME).open("a+b") as handle:
-        if os.name == "nt":
+        if sys.platform == "win32":
             handle.seek(0)
             msvcrt.locking(handle.fileno(), msvcrt.LK_LOCK, _TLS_RENEW_LOCK_WINDOWS_BYTES)
         else:
@@ -936,7 +937,7 @@ def _default_tls_pair_lock() -> Iterator[None]:
         try:
             yield
         finally:
-            if os.name == "nt":
+            if sys.platform == "win32":
                 handle.seek(0)
                 msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, _TLS_RENEW_LOCK_WINDOWS_BYTES)
             else:

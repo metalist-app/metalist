@@ -24,10 +24,15 @@ import sysconfig
 import threading
 import traceback
 from types import FrameType, TracebackType
+from typing import TYPE_CHECKING
 
 from fastapi.routing import iter_route_contexts
 from loguru import logger
 from starlette.routing import BaseRoute, Mount
+
+if TYPE_CHECKING:
+    # Loguru's record type exists for type checkers only.
+    from loguru import Record
 
 
 class UnsafeLogRecord(RuntimeError):
@@ -403,7 +408,7 @@ def log_event(level: str, event: str, **fields: object) -> None:
     logger.bind(**{_EVENT_KEY: event, _FIELDS_KEY: dict(fields)}).opt(depth=1).log(level, line)
 
 
-def _require_safe_record(record: dict) -> None:
+def _require_safe_record(record: Record) -> None:
     """Loguru's patcher: runs in the logging thread before any sink, outside the sinks' error
     handling, so a record that fails the check raises where it was logged. The message every
     sink writes is the checked line, rebuilt from the typed fields."""

@@ -15,13 +15,14 @@ from __future__ import annotations
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 import os
+import sys
 from pathlib import Path
 import re
 
 from app.utils.time_units import SECONDS_PER_DAY
 
 # OS-specific locking modules are selected at import time.
-if os.name == "nt":
+if sys.platform == "win32":
     import msvcrt
 else:
     import fcntl
@@ -76,9 +77,16 @@ def _rotation_order(name: str) -> tuple[str, int]:
     return match.group("stamp"), int(counter)
 
 
+def _rotated_log_vault(name: str) -> str:
+    """The vault a rotated log file belongs to; only rotated logs are passed here."""
+    match = _ROTATED_SERVER_LOG.fullmatch(name)
+    assert match is not None, name
+    return match.group("vault")
+
+
 def _rotated_beyond_kept(paths: Sequence[Path]) -> tuple[Path, ...]:
     """The rotated files of one vault, all but its newest ROTATED_SERVER_LOGS_KEPT."""
-    vaults = {_ROTATED_SERVER_LOG.fullmatch(path.name).group("vault") for path in paths}
+    vaults = {_rotated_log_vault(path.name) for path in paths}
     if len(vaults) > 1:
         raise ValueError(f"Rotated logs of more than one vault: {sorted(vaults)}")
     newest_first = sorted(paths, key=lambda path: _rotation_order(path.name), reverse=True)
@@ -131,7 +139,7 @@ def _existing_vaults(*, namespaces_directory: Path, own_vault: str) -> frozenset
 def _folder_lock(logs_directory: Path) -> Iterator[None]:
     path = logs_directory / LOCK_FILE_NAME
     with path.open("a+b") as handle:
-        if os.name == "nt":
+        if sys.platform == "win32":
             if handle.tell() == 0:
                 handle.write(b"0")
                 handle.flush()
@@ -142,7 +150,7 @@ def _folder_lock(logs_directory: Path) -> Iterator[None]:
         try:
             yield
         finally:
-            if os.name == "nt":
+            if sys.platform == "win32":
                 handle.seek(0)
                 msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, _WINDOWS_LOCK_BYTES)
             else:

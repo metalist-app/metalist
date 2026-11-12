@@ -78,7 +78,7 @@ cache_dir = ".mypy-cache"
 # are Any rather than an import-untyped error. Listed one by one, so a new untyped import
 # elsewhere is still reported.
 [[tool.mypy.overrides]]
-module = ["olefile", "mammoth", "pypdfium2", "pypdfium2.raw", "yaml"]
+module = ["olefile", "mammoth", "psutil", "pypdfium2", "pypdfium2.raw", "yaml"]
 ignore_missing_imports = true
 
 [tool.setuptools]

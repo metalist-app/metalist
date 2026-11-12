@@ -11,6 +11,7 @@ from uuid import uuid4
 
 from app.db.ai_chat_sql import delete_ai_chat_row, fetch_ai_chat_row, upsert_ai_chat_row
 from app.db.session import begin_writer
+from app.services.encryption import EncryptionService
 from app.security.encryption import get_encryption_service, get_encryption_service_with_token, is_encryption_required
 
 from app.services.agent.cloud_privacy import HistoryDisclosure
@@ -267,6 +268,8 @@ class AiChatSessionStore:
             if nonce is None:
                 self._session = _session_from_saved(json.loads(state_json))
                 return
+            if not isinstance(nonce, bytes) or not isinstance(tag, bytes):
+                raise TypeError("ai_chat encryption nonce and tag must be bytes")
             self._encrypted = (state_json, nonce, tag)
             self._try_decrypt_locked(token="", require_success=False)
 
@@ -292,7 +295,7 @@ class AiChatSessionStore:
             self._encrypted = None
             self._is_loaded = False
 
-    def rewrite_persisted_state(self, *, encryption_service: object | None, force_plaintext: bool, connection) -> None:
+    def rewrite_persisted_state(self, *, encryption_service: EncryptionService | None, force_plaintext: bool, connection) -> None:
         """Save the conversation again with the vault's new encryption (a password set or removed)."""
         if not isinstance(force_plaintext, bool):
             raise TypeError("force_plaintext must be a bool")
@@ -332,7 +335,7 @@ class AiChatSessionStore:
         self._session = _session_from_saved(json.loads(plaintext))
         self._encrypted = None
 
-    def _persist_locked(self, *, connection, encryption_service: object | None, force_plaintext: bool) -> None:
+    def _persist_locked(self, *, connection, encryption_service: EncryptionService | None, force_plaintext: bool) -> None:
         assert self._session is not None, "only a conversation is saved"
         saved_json = json.dumps(_saved_session(self._session), separators=(",", ":"))
         stored_json = saved_json
@@ -740,7 +743,7 @@ class AiChatSessionStore:
             raise ValueError(f"{label} exceeds {_MAX_MESSAGE_CHARACTERS} characters")
 
 
-def _encryption_service(*, token: str, explicit_service: object | None):
+def _encryption_service(*, token: str, explicit_service: EncryptionService | None):
     if explicit_service is not None:
         if explicit_service.dek is None:
             raise RuntimeError("explicit encryption service must have an active DEK")

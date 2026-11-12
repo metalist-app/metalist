@@ -129,8 +129,6 @@ app/services/agent/tool_calling.py: "object" has no attribute "__iter__"; maybe 
 app/services/agent/tool_calling.py: Argument 1 to "estimate_text_tokens" has incompatible type "object"; expected "str"  [arg-type]
 app/services/agent/tool_calling.py: Argument 1 to "estimate_text_tokens" has incompatible type "object"; expected "str"  [arg-type]
 app/services/agent/tool_calling.py: Argument 1 to "estimate_text_tokens" has incompatible type "object"; expected "str"  [arg-type]
-app/services/agent/trace.py: "object" has no attribute "__iter__"; maybe "__dir__" or "__str__"? (not iterable)  [attr-defined]
-app/services/agent/trace.py: Generator has incompatible item type "object"; expected "str"  [misc]
 app/services/agent/trace.py: Need type annotation for "pairs" (hint: "pairs: list[<type>] = ...")  [var-annotated]
 app/services/agent/web_actions.py: Argument "evidence" to "_model_page_payload" has incompatible type "WebPageEvidence | None"; expected "WebPageEvidence"  [arg-type]
 app/services/agent/web_actions.py: Argument 1 to "append" of "list" has incompatible type "WebPageEvidence | None"; expected "WebPageEvidence"  [arg-type]

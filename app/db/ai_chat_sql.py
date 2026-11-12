@@ -7,11 +7,11 @@ from datetime import datetime
 from typing import Optional
 
 from app.db.engine import GuardedConnection
-from .raw_connection import raw_sqlite_connection
+from .raw_connection import ConnectionWrapper, raw_sqlite_connection
 from app.db.schema import AI_CHAT_TABLE
 
 
-def _conn(connection: GuardedConnection | sqlite3.Connection) -> GuardedConnection | sqlite3.Connection:
+def _conn(connection: GuardedConnection | sqlite3.Connection | ConnectionWrapper) -> GuardedConnection | sqlite3.Connection:
     if isinstance(connection, GuardedConnection):
         return connection
     return raw_sqlite_connection(connection)
@@ -53,7 +53,7 @@ def fetch_ai_chat_row(
 
 
 def upsert_ai_chat_row(
-    connection: GuardedConnection | sqlite3.Connection,
+    connection: GuardedConnection | sqlite3.Connection | ConnectionWrapper,
     *,
     state_json: str,
     state_encryption_nonce: Optional[bytes],
@@ -89,6 +89,6 @@ def upsert_ai_chat_row(
     )
 
 
-def delete_ai_chat_row(connection: GuardedConnection | sqlite3.Connection) -> None:
+def delete_ai_chat_row(connection: GuardedConnection | sqlite3.Connection | ConnectionWrapper) -> None:
     conn = _conn(connection)
     conn.execute(f"DELETE FROM {AI_CHAT_TABLE} WHERE id = 1")

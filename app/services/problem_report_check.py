@@ -15,6 +15,7 @@ A refused report raises ReportRefused naming where, never the value it found the
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
+from typing import NoReturn
 import math
 import re
 
@@ -54,7 +55,7 @@ class ReportRefused(InputRejected):
     server answers it as rejected input: the page shows it in the calm banner."""
 
 
-def _refuse(where: str, why: str) -> None:
+def _refuse(where: str, why: str) -> NoReturn:
     raise ReportRefused(f"Report not made: {why} at {where}")
 
 
@@ -178,8 +179,10 @@ def _check_search_and_collect_tags(value: object, *, real_tags: frozenset[str]) 
             _refuse(where, "a stand-in that is a real tag")
         stand_ins.add(item)
 
-    _check_list(search["standIns"], "search.standIns", collect)
-    if len(stand_ins) != len(search["standIns"]):
+    listed = search["standIns"]
+    _check_list(listed, "search.standIns", collect)
+    assert isinstance(listed, Sequence), "checked as a list just above"
+    if len(stand_ins) != len(listed):
         _refuse("search.standIns", "a stand-in listed twice")
     # A search names tags: their stand-ins and MetaList's own tags are its only words.
     check_redacted_text_with(search["text"], "search.text", stand_ins=frozenset(stand_ins) | SPEC.meta_tags)

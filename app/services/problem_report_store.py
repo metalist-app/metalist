@@ -50,6 +50,7 @@ class KeptReport:
 
 
 def reports_directory() -> Path:
+    assert ACTIVE_NAMESPACE is not None, "reports are kept per vault: no vault is active"
     return resolve_namespace_directory(namespace=ACTIVE_NAMESPACE) / REPORTS_DIRECTORY_NAME
 
 

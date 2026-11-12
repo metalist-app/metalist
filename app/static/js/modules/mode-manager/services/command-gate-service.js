@@ -105,16 +105,16 @@ export const CommandGate = {
         Logger.logAction('command_gate.start', { name });
 
         const startedAt = performance.now();
+        // Failed unless the command finishes: the outcome is recorded without catching anything.
+        let outcome = 'failed';
         return Promise.resolve()
             .then(() => asyncFn())
             .then((value) => {
-                recordCommand(name, performance.now() - startedAt, 'ok');
+                outcome = 'ok';
                 return value;
-            }, (error) => {
-                recordCommand(name, performance.now() - startedAt, 'failed');
-                throw error;
             })
             .finally(() => {
+                recordCommand(name, performance.now() - startedAt, outcome);
                 Logger.logAction('command_gate.finish', { name });
                 moduleState.busy = false;
                 moduleState.busyName = null;
