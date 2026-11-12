@@ -938,8 +938,8 @@ function tickFile(screen, wizard, box) {
 }
 
 // A kind opened to show its files (the maintainer, 2026-11-01: to see which file is left
-// out, by name): each file's folder and name, its size, the largest first; one over the
-// limit says so in red. Built only when opened: a kind can hold thousands.
+// out, by name): each file's folder and name, its size, the largest first. Built only when
+// opened: a kind can hold thousands.
 function kindFilesHtml(group, choices) {
     const flipped = new Set(choices.fileExceptions);
     const items = group.files.map(([path, size]) => {
@@ -951,7 +951,7 @@ function kindFilesHtml(group, choices) {
         return `
             <li class="wizard-kind-file" title="${escapeHtml(path)}">
                 <label class="wizard-kind-file-path">
-                    <input type="checkbox" data-wizard-file="${escapeHtml(path)}" data-wizard-file-kind="${escapeHtml(group.key)}"${isChecked ? ' checked' : ''}${isOverLimit ? ' disabled' : ''}>
+                    <input type="checkbox" data-wizard-file="${escapeHtml(path)}" data-wizard-file-kind="${escapeHtml(group.key)}"${isChecked ? ' checked' : ''}>
                     <span class="wizard-kind-file-name"><span class="wizard-kind-file-folder">${escapeHtml(folder)}</span>${escapeHtml(name)}</span>
                 </label>
                 <span class="wizard-kind-size">${escapeHtml(formatByteSize(size))}</span>

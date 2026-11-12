@@ -4,6 +4,10 @@ import { ServerInputRejectedError } from './expected-errors.js';
 import { CONFIG } from './config.js';
 import { HTTP_STATUS } from './http-status.js';
 
+// The red overlay is drawn above every dialog (.modal, 15000), floating card (20000) and the
+// login cover (21000): under a dialog, an error there looked like a click doing nothing
+// (2026-11-12). Tests: tests/unit/fatal_overlay_layering.test.mjs.
+const FATAL_OVERLAY_Z_INDEX = 22000;
 
 const moduleState = ApplicationState.createFields('error-overlay', {
     installed: false,
@@ -72,7 +76,7 @@ function ensureOverlay() {
       padding: '10px 14px',
       fontFamily: 'monospace',
       fontSize: '13px',
-      zIndex: '10000',
+      zIndex: String(FATAL_OVERLAY_Z_INDEX),
       whiteSpace: 'pre-wrap',
       borderBottom: '2px solid #550000',
       maxHeight: '40vh',
