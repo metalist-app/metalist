@@ -101,9 +101,11 @@ def build_report(
     read_note: Callable[[str], DraftNote | None],
     real_tags: frozenset[str],
     now: float,
+    machine: request_history.BusyNumbers,
 ) -> dict:
     """The report, redacted and checked; ReportRefused if any value is not one MetaList vouches
-    for. read_note gives a note the server holds, or None for one no longer there."""
+    for. read_note gives a note the server holds, or None for one no longer there; machine is
+    how busy the computer and MetaList were as the report was made."""
     notes = [note for note in (read_note(note_id) for note_id in draft.note_ids) if note is not None]
     report_tags = {tag for note in notes for tag in note.tags} | _search_tags(draft.search, real_tags=real_tags)
     stand_ins = make_stand_ins(report_tags)
@@ -130,6 +132,7 @@ def build_report(
         "commands": [_command(item) for item in draft.commands],
         "requests": [_request(item, answered) for item in draft.requests],
         "slow": [_slow(item, now=now) for item in request_history.REQUEST_HISTORY.slow_requests(now=now)],
+        "machine": _busy(machine),
         "error": None if draft.made_by == MADE_BY_USER else {
             "class": draft.error_class,
             "message": {"redacted": shape(draft.error_message)},
@@ -203,10 +206,16 @@ def _slow(item: request_history.SlowRequest, *, now: float) -> dict:
     return {
         "secondsAgo": max(now - item.answered_at, 0.0), "method": item.method, "route": item.route,
         "status": item.status, "ms": item.duration_ms, "waitedMs": item.waited_ms, "requestId": item.request_id,
-        "machineCpuPercent": item.busy.machine_cpu_percent,
-        "machineAvailableBytes": item.busy.machine_available_bytes,
-        "swapUsedBytes": item.busy.swap_used_bytes,
-        "metalistCpuPercent": item.busy.metalist_cpu_percent,
-        "metalistMemoryBytes": item.busy.metalist_memory_bytes,
+        **_busy(item.busy),
+    }
+
+
+def _busy(numbers: request_history.BusyNumbers) -> dict:
+    return {
+        "machineCpuPercent": numbers.machine_cpu_percent,
+        "machineAvailableBytes": numbers.machine_available_bytes,
+        "swapUsedBytes": numbers.swap_used_bytes,
+        "metalistCpuPercent": numbers.metalist_cpu_percent,
+        "metalistMemoryBytes": numbers.metalist_memory_bytes,
     }
 

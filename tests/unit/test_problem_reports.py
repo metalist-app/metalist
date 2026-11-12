@@ -11,6 +11,10 @@ from app.services.problem_report_builder import Draft, DraftInput, DraftNote, bu
 from app.services.problem_report_check import ReportRefused, check_report
 
 NOW = 2_000_000_000.0
+MACHINE = request_history.BusyNumbers(
+    machine_cpu_percent=73.5, machine_available_bytes=1_200_000_000, swap_used_bytes=3_400_000_000,
+    metalist_cpu_percent=12.5, metalist_memory_bytes=310_000_000,
+)
 MARKERS = ("Zebrafinch", "quokka", "Marmoset", "tapir", "Narwhal", "okapi", "Axolotl", "1450")
 VAULT_TAGS = frozenset({"quokka", "marmoset/tapir", "marmoset", "@todo", "@code=python", "2026"})
 
@@ -45,7 +49,7 @@ def _build(search: str) -> dict:
         _draft(search=search, note_ids=("n1", "n2", "n3", "gone"), typed="Axolotl Quokka 42",
                error_message="Unexpected Narwhal in tapir"),
         read_note=lambda note_id: notes[note_id] if note_id in notes else None,
-        real_tags=VAULT_TAGS, now=NOW,
+        real_tags=VAULT_TAGS, now=NOW, machine=MACHINE,
     )
 
 
@@ -109,6 +113,36 @@ def test_a_report_says_how_big_the_view_was() -> None:
     report = _build("")
 
     assert report["view"] == {"notesInList": 240, "notesOnScreen": 18, "scrollY": 1350.0}
+
+
+def test_every_report_says_how_busy_the_computer_was_when_it_was_made() -> None:
+    report = _build("")
+
+    assert report["machine"] == {
+        "machineCpuPercent": 73.5, "machineAvailableBytes": 1_200_000_000, "swapUsedBytes": 3_400_000_000,
+        "metalistCpuPercent": 12.5, "metalistMemoryBytes": 310_000_000,
+    }
+
+
+def test_the_check_refuses_anything_but_a_number_in_the_busy_snapshot() -> None:
+    report = _build("")
+    with_name = {**report, "machine": {**report["machine"], "machineCpuPercent": "Safari"}}
+
+    with pytest.raises(ReportRefused) as named:
+        check_report(with_name, real_tags=VAULT_TAGS)
+
+    assert "machine.machineCpuPercent" in str(named.value) and "Safari" not in str(named.value)
+
+
+def test_a_busy_snapshot_reads_the_computer_now_without_waiting_long() -> None:
+    started = request_history.now()
+    numbers = request_history.BUSY_READER.snapshot()
+    took = request_history.now() - started
+
+    assert 0.0 <= numbers.machine_cpu_percent <= 100.0
+    assert 0.0 <= numbers.metalist_cpu_percent <= 100.0
+    assert numbers.machine_available_bytes > 0 and numbers.metalist_memory_bytes > 0
+    assert request_history.SNAPSHOT_SECONDS <= took < request_history.SNAPSHOT_SECONDS + 0.5
 
 
 def test_two_reports_draw_different_stand_ins() -> None:

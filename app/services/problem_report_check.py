@@ -128,7 +128,7 @@ def check_report(report: Mapping[str, object], *, real_tags: frozenset[str]) -> 
     real_tags is every tag in the vault (casefolded): no stand-in may be one of them."""
     fields = _check_keys(report, frozenset({
         "metalist", "madeAt", "madeBy", "description", "window", "view", "theme", "skin", "preferences",
-        "editingNote", "search", "notes", "inputs", "commands", "requests", "slow", "error",
+        "editingNote", "search", "notes", "inputs", "commands", "requests", "slow", "machine", "error",
     }), "report")
     _check_pattern(fields["metalist"], _VERSION, "metalist")
     _check_number(fields["madeAt"], "madeAt")
@@ -150,6 +150,9 @@ def check_report(report: Mapping[str, object], *, real_tags: frozenset[str]) -> 
     _check_list(fields["commands"], "commands", _check_command)
     _check_list(fields["requests"], "requests", _check_request)
     _check_list(fields["slow"], "slow", _check_slow)
+    machine = _check_keys(fields["machine"], _BUSY_FIELDS, "machine")
+    for name, number in machine.items():
+        _check_number(number, f"machine.{name}")
     _check_error(fields["error"], made_by=fields["madeBy"])
 
 
@@ -242,16 +245,20 @@ def _check_request(value: object, where: str) -> None:
     _check_pattern(server["codeLocation"], _CODE_LOCATION, f"{where}.server.codeLocation")
 
 
+# How busy the computer and MetaList were (section 6a): numbers only.
+_BUSY_FIELDS = frozenset({
+    "machineCpuPercent", "machineAvailableBytes", "swapUsedBytes", "metalistCpuPercent", "metalistMemoryBytes",
+})
+
+
 def _check_slow(value: object, where: str) -> None:
     item = _check_keys(value, frozenset({
         "secondsAgo", "method", "route", "status", "ms", "waitedMs", "requestId",
-        "machineCpuPercent", "machineAvailableBytes", "swapUsedBytes", "metalistCpuPercent", "metalistMemoryBytes",
-    }), where)
+    }) | _BUSY_FIELDS, where)
     _check_route(item["route"], f"{where}.route")
     _check_pattern(item["requestId"], _REQUEST_ID, f"{where}.requestId")
     _check_choice(item["method"], frozenset({"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"}), f"{where}.method")
-    for name in ("secondsAgo", "status", "ms", "waitedMs", "machineCpuPercent", "machineAvailableBytes",
-                 "swapUsedBytes", "metalistCpuPercent", "metalistMemoryBytes"):
+    for name in ("secondsAgo", "status", "ms", "waitedMs", *sorted(_BUSY_FIELDS)):
         _check_number(item[name], f"{where}.{name}")
 
 

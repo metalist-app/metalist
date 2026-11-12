@@ -195,6 +195,7 @@ def make_problem_report(request: Request, body: DraftBody) -> dict[str, object]:
     # A report the final check refuses raises ReportRefused, rejected input: the calm banner.
     report = build_report(
         _draft(request, body), read_note=_read_note, real_tags=_vault_tags(), now=request_history.now(),
+        machine=request_history.BUSY_READER.snapshot(),
     )
     report_id = problem_report_store.keep_report(report)
     return {"reportId": report_id, "report": report}
@@ -209,6 +210,7 @@ def make_unsaved_problem_report(request: Request, body: DraftBody) -> dict[str, 
         raise HTTPException(status_code=HTTPStatus.UNPROCESSABLE_ENTITY, detail="A report from the login page holds no notes or search")
     report = build_report(
         _draft(request, body), read_note=_read_note, real_tags=frozenset(), now=request_history.now(),
+        machine=request_history.BUSY_READER.snapshot(),
     )
     return {"report": report}
 

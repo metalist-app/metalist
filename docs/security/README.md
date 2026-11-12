@@ -367,8 +367,10 @@ that throws, not by care at each call site (`app/services/safe_log.py`, built 20
 - Every request is one line when answered: status, method, route template, handler, duration,
   size and request id. Successful static-file loads are not logged (21,110 of 21,990 lines of
   one log were); a failed or slow one (1 s or more) is. Polls and edit locks are not logged.
-  Agreed, not built: on each slow request, numbers on how busy the computer and MetaList were
-  (`docs/ready-to-build/error-reports.md` section 6a).
+  A slow request also logs how busy the computer and MetaList were, numbers only (CPU %,
+  memory, swap), never a program's name; a problem report carries the same numbers for its
+  slow requests and one reading taken as it is made (`docs/ready-to-build/error-reports.md`
+  section 6a).
   A failed request is logged with its route, error type and code frames.
 - Every answer carries its request id in an `X-Request-Id` header (not only a 500's
   diagnostic), so a failure the browser shows (`API call failed: 409 Conflict (request

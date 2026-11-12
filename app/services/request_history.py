@@ -7,6 +7,7 @@
 - Every slow request (1 s or more), for 15 minutes (at most 200), with how busy the computer
   and MetaList were at that moment: numbers only, never a program's name (decided
   2026-11-12).
+- When a report is made, one more such reading of how busy they are now (snapshot).
 
 Nothing here is written to disk; the safe log writes its own line for a slow request.
 """
@@ -30,6 +31,9 @@ SLOW_MAX_RECORDS = 200
 # The safe log's threshold for a slow static load, now for every request (section 6a).
 SLOW_REQUEST_MS = 1000.0
 PERCENT_OF_ALL = 100.0
+# A report's own reading of how busy the computer is: long enough for a CPU percentage that
+# means something, short enough that saving the report does not feel stuck (section 6a).
+SNAPSHOT_SECONDS = 0.3
 NO_ERROR = ""
 
 
@@ -116,9 +120,7 @@ class _BusyReader:
         with self._lock:
             if self._process is None:
                 raise RuntimeError("busy numbers read before prime_busy_numbers ran at start-up")
-            cpu_count = psutil.cpu_count(logical=True)
-            if cpu_count is None or cpu_count < 1:
-                raise RuntimeError(f"psutil reported no CPUs: {cpu_count}")
+            cpu_count = _cpu_count()
             memory = psutil.virtual_memory()
             # A process's percentage counts each core as 100; as a share of the whole computer
             # it is divided by the cores, so it compares with the computer's own.
@@ -130,9 +132,40 @@ class _BusyReader:
                 metalist_cpu_percent=min(metalist_cpu, PERCENT_OF_ALL),
                 metalist_memory_bytes=self._process.memory_info().rss,
             )
-        if not 0.0 <= numbers.machine_cpu_percent <= PERCENT_OF_ALL:
-            raise RuntimeError(f"computer CPU outside 0-100%: {numbers.machine_cpu_percent}")
-        return numbers
+        return _checked(numbers)
+
+    def snapshot(self) -> BusyNumbers:
+        """How busy the computer and MetaList are now, measured over SNAPSHOT_SECONDS: for every
+        problem report, so one that says MetaList feels slow says what the computer was doing.
+        Its own baselines (this thread's for the computer, a fresh process handle for MetaList),
+        and no lock, so a slow request's reading is neither moved nor kept waiting."""
+        process = psutil.Process()
+        cpu_count = _cpu_count()
+        psutil.cpu_percent(interval=None)
+        process.cpu_percent(interval=None)
+        time.sleep(SNAPSHOT_SECONDS)
+        machine_cpu = psutil.cpu_percent(interval=None)
+        metalist_cpu = process.cpu_percent(interval=None) / cpu_count
+        return _checked(BusyNumbers(
+            machine_cpu_percent=machine_cpu,
+            machine_available_bytes=psutil.virtual_memory().available,
+            swap_used_bytes=psutil.swap_memory().used,
+            metalist_cpu_percent=min(metalist_cpu, PERCENT_OF_ALL),
+            metalist_memory_bytes=process.memory_info().rss,
+        ))
+
+
+def _cpu_count() -> int:
+    cpu_count = psutil.cpu_count(logical=True)
+    if cpu_count is None or cpu_count < 1:
+        raise RuntimeError(f"psutil reported no CPUs: {cpu_count}")
+    return cpu_count
+
+
+def _checked(numbers: BusyNumbers) -> BusyNumbers:
+    if not 0.0 <= numbers.machine_cpu_percent <= PERCENT_OF_ALL:
+        raise RuntimeError(f"computer CPU outside 0-100%: {numbers.machine_cpu_percent}")
+    return numbers
 
 
 class RequestHistory:

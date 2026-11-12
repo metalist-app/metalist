@@ -53,6 +53,7 @@ The goal: when a red fatal overlay shows, MetaList keeps a report detailed enoug
 - **Error:** class, redacted message (a parser's message can quote the formula), stack frames (code only). Empty (`null`) in a report the user made, whose `madeBy` is `"user"` instead of `"overlay"`.
 - **Description** (`"description"`): only in a report the user made, the text typed into Report a Problem…, exactly as typed, at most 300 characters; absent from overlay reports.
 - **Slow requests** (`"slow"`): the server's §6a records from the last 15 minutes, numbers and route templates only, the same allow-listed fields as the safe log.
+- **How busy the computer is now** (`"machine"`): every report, made by Report a Problem… or on the red error, carries one §6a reading taken as it is made, the same numeric fields as a slow request (computer CPU % and available memory, swap in use, MetaList's own CPU % and memory). Added 2026-11-12 (the maintainer: "Yes, add it"), because a "MetaList feels slow" report with no request over 1 s said nothing about the computer.
 
 ## 3. Redaction
 
@@ -107,6 +108,7 @@ Agreed with the maintainer 2026-11-12, not built. Why: the maintainer's dad (Win
   - the whole computer's CPU % and available memory, and swap in use if cheap to read;
   - MetaList's own process CPU % and memory;
   - the request's duration, and how long it waited for its turn to change the vault (the mutation slot, `_mutation_slot` / `_async_mutation_slot` in `app/api/transactions.py`, `bulk_operation_guard`).
+- **And when a report is made** (added 2026-11-12): one more reading of the same numbers, measured over 0.3 s (`SNAPSHOT_SECONDS`, `app/services/request_history.py`), short enough that saving the report does not feel stuck. It is the report's `machine` field (§2); it is not written to the safe log.
 - **How to read it:** the computer at 95% with MetaList at 3% means something else is the cause; MetaList at 80% means MetaList is. A long wait for its turn with both low means one change queued behind another.
 - **Needs `psutil`,** a new dependency: `os.getloadavg()` does not exist on Windows, and memory and per-process CPU have no standard-library reading on every platform. Adding it goes through the supply-chain check and the dependency audit (`scripts/full_checks.py`), with wheels on Windows, macOS and Linux at Python 3.11 and 3.14.
 - **Not part of the design, a possible later addition:** the browser's own long-task measure (`PerformanceObserver` with `longtask`), to tell a slow tab from a slow server.
@@ -137,5 +139,6 @@ What the maintainer should see; each is checked in a throwaway before the early 
 5. A report holds the inputs of the last 10 minutes (clicks by note id and part, keys by code), the commands with their outcomes, and the requests with status and request id, in order.
 6. **Export Problem Reports…** is in the palette only once a report is kept. It lists the kept reports newest first with their time and kind (the error's class, or "Reported"), lets the user pick, and saves one file. After a 21st report it lists 20.
 7. A request that takes 1 s or more writes one line to the plain log with how busy the computer and MetaList were (CPU %, memory) and how long it waited for its turn; a report carries those of the last 15 minutes.
+7a. Every report, with or without a slow request, carries `machine`: the computer's and MetaList's CPU % and memory as it was made, numbers only (added 2026-11-12).
 8. An error on the login page shows Export Report… on its overlay; nothing is kept after a reload.
 9. After MetaList starts with this version, no `*-server.auth-*.log.enc` file is left in the logs folder.
