@@ -13,7 +13,7 @@ const VIEW_HANDLER_NAMES = [
     'onAddNoteAtTop', 'onPasteNoteAtTop', 'onUndo', 'onRedo', 'onGoToTop', 'onGoToBottom', 'onExpandAll', 'onCollapseAll', 'onFullyExpandAll',
     'onFullyCollapseAll', 'onSetUntaggedView', 'onSetSortMode', 'onSetDateRangeField', 'onSetDateRangePreset',
     'onOpenCustomDateRange', 'onSetFileFilter', 'onSetTheme', 'onNewTab', 'onOpenNamespace', 'onOpenReminders',
-    'onExportViewHtml', 'onPrintView', 'onLogOut',
+    'onExportViewHtml', 'onPrintView', 'onLogOut', 'onTagNotesInView',
 ];
 
 function viewHandlers(calls) {

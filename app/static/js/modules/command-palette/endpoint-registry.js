@@ -150,6 +150,7 @@ export function buildCommandPaletteEndpoints(deps) {
     const alphabetizeRootNotesDesc = requireAction(actions, 'alphabetizeRootNotesDesc');
     const resetUpdatedAtToCreatedAt = requireAction(actions, 'resetUpdatedAtToCreatedAt');
     const deleteNotesInView = requireAction(actions, 'deleteNotesInView');
+    const tagNotesInView = requireAction(actions, 'tagNotesInView');
     const openReminders = requireAction(actions, 'openReminders');
 
     const openVersionInfo = requireAction(actions, 'openVersionInfo');
@@ -742,6 +743,13 @@ export function buildCommandPaletteEndpoints(deps) {
             label: 'Repair: Reset Updated Time to Created Time (Current View)…',
             closeOnExecute: true,
             execute: async () => resetUpdatedAtToCreatedAt(),
+        },
+        {
+            id: 'action.tag_notes_in_view',
+            kind: 'action',
+            label: 'Add or Remove Tag (Current View)…',
+            closeOnExecute: true,
+            execute: async () => tagNotesInView(),
         },
         {
             id: 'action.delete_notes_in_view',

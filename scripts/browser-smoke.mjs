@@ -93,6 +93,7 @@ import {checkMenuLook} from './browser-menu-look-regressions.mjs';
 import {checkStatsTags} from './browser-stats-tag-regressions.mjs';
 import {checkDialogKeys} from './browser-dialog-key-regressions.mjs';
 import {checkDialogButtons} from './browser-dialog-button-regressions.mjs';
+import {checkTagDialogLists} from './browser-tag-dialog-list-regressions.mjs';
 import {checkPhone} from './browser-phone-regressions.mjs';
 import {checkFloatingMessages} from './browser-floating-message-regressions.mjs';
 import {checkViewMenu} from './browser-view-menu-regressions.mjs';
@@ -393,6 +394,10 @@ try {
     await checkDialogButtons(page);
     assert.deepEqual(errors, []);
     console.log(`PASS dialog button regressions in ${await browser.version()}`);
+  } else if (process.env.BROWSER_TEST_SUITE === 'tag-dialog-lists') {
+    await checkTagDialogLists(page);
+    assert.deepEqual(errors, []);
+    console.log(`PASS tag dialog list regressions in ${await browser.version()}`);
   } else if (process.env.BROWSER_TEST_SUITE === 'dialog-keys') {
     await checkDialogKeys(page);
     assert.deepEqual(errors, []);

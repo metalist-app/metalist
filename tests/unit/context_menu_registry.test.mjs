@@ -508,7 +508,7 @@ const VIEW_HANDLER_NAMES = [
     'onAddNoteAtTop', 'onPasteNoteAtTop', 'onUndo', 'onRedo', 'onGoToTop', 'onGoToBottom', 'onExpandAll', 'onCollapseAll', 'onFullyExpandAll',
     'onFullyCollapseAll', 'onSetUntaggedView', 'onSetSortMode', 'onSetDateRangeField', 'onSetDateRangePreset',
     'onOpenCustomDateRange', 'onSetFileFilter', 'onSetTheme', 'onNewTab', 'onOpenNamespace', 'onOpenReminders',
-    'onExportViewHtml', 'onPrintView', 'onLogOut',
+    'onExportViewHtml', 'onPrintView', 'onLogOut', 'onTagNotesInView',
 ];
 
 function buildViewHandlers(calls) {
@@ -536,6 +536,7 @@ test('the background menu groups adding, going, the outline, the view, opening a
         'Redo ⇧⌘Z',
         '— Go to',
         'Outline',
+        'Add or Remove Tag…',
         '— View',
         'Sort by',
         'Date Range',
@@ -614,7 +615,7 @@ test('background actions call their handlers', () => {
     }
     assert.deepEqual(calls.map((call) => call[0]), [
         'onAddNoteAtTop', 'onPasteNoteAtTop', 'onUndo', 'onRedo', 'onGoToTop', 'onGoToBottom',
-        'onExpandAll', 'onCollapseAll', 'onFullyExpandAll', 'onFullyCollapseAll', 'onNewTab', 'onOpenNamespace', 'onOpenReminders', 'onExportViewHtml', 'onPrintView', 'onLogOut',
+        'onExpandAll', 'onCollapseAll', 'onFullyExpandAll', 'onFullyCollapseAll', 'onTagNotesInView', 'onNewTab', 'onOpenNamespace', 'onOpenReminders', 'onExportViewHtml', 'onPrintView', 'onLogOut',
     ]);
 });
 

@@ -1493,6 +1493,9 @@ async function showViewContextMenu(event) {
         onPrintView: () => {
             void printNotes(null, CommandPalette.getAiSettings());
         },
+        onTagNotesInView: () => {
+            void CommandPalette.tagNotesInView();
+        },
     });
 
     if (!Array.isArray(items) || items.length === 0) {

@@ -12,6 +12,9 @@ from pydantic import BaseModel
 
 from app.api.note_requests import (
     CountNotesInViewRequest,
+    CountTagNotesInViewRequest,
+    TagNotesInViewRequest,
+    TagNotesInViewSuggestionsRequest,
     DeleteNotesInViewRequest,
     ViewScope,
     ViewDiffRequest,
@@ -94,6 +97,7 @@ from app.services.snapshot import find_in_view
 from app.services.snapshot import resolve_search_scope
 from app.services.snapshot import ResolvedViewScope, resolve_view_scope_membership
 from app.usecases.delete_notes_in_view import CmdDeleteNotesInView, notes_to_delete
+from app.usecases.tag_notes_in_view import ADD, CmdTagNotesInView, require_plain_tag, tag_changes_in_view, tags_to_remove_in_view
 from app.services.note_store import store as note_store
 from app.services.exception_capture import CapturedExceptionContext
 from app.usecases.create_note import CmdCreateNote
@@ -1401,6 +1405,34 @@ def delete_notes_in_view(body: DeleteNotesInViewRequest) -> dict[str, object]:
         expected_note_count=body["expectedNoteCount"],
         client_id=body["clientId"],
         undo_context=body["undoContext"],
+    ).execute()
+
+
+# Tag Notes in View… (app/usecases/tag_notes_in_view.py). Adding suggests the vault's tags, as
+# the tag bar does; removing, the tags the notes it would touch carry.
+@router.post("/notes/view/tag-suggestions")
+@read_only_route
+def tag_notes_in_view_suggestions(body: TagNotesInViewSuggestionsRequest) -> dict[str, object]:
+    if body["action"] == ADD:
+        suggestions = search_index.suggest_tag_completions(query=body["prefix"], limit=MAX_TAG_SUGGESTIONS, by_family=True)
+        return {"suggestions": suggestions}
+    return {"suggestions": tags_to_remove_in_view(_resolved_view(body), prefix=body["prefix"], limit=MAX_TAG_SUGGESTIONS)}
+
+
+@router.post("/notes/view/tag-count")
+@read_only_route
+def count_tag_notes_in_view(body: CountTagNotesInViewRequest) -> dict[str, object]:
+    require_plain_tag(body["tag"])
+    return {"noteCount": len(tag_changes_in_view(_resolved_view(body), action=body["action"], tag=body["tag"]))}
+
+
+@router.post("/notes/view/tag")
+@transactional_route
+def tag_notes_in_view(request: Request, body: TagNotesInViewRequest) -> dict[str, object]:
+    return CmdTagNotesInView(
+        scope=_resolved_view(body), action=body["action"], tag=body["tag"],
+        expected_note_count=body["expectedNoteCount"], token=_require_bearer_token(request),
+        client_id=body["clientId"], undo_context=body["undoContext"], viewport=_require_viewport(body),
     ).execute()
 
 

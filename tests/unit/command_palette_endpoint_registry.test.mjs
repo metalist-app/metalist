@@ -24,6 +24,7 @@ test('buildCommandPaletteEndpoints includes utility action endpoints', async () 
             openImportWizard: noop,
             toggleVirtualFolders: noop,
             deleteNotesInView: noop,
+            tagNotesInView: noop,
             openMemoryUsage: noop,
             openRecentMessages: noop,
             openNoteLayoutAppearance: noop,

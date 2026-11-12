@@ -365,6 +365,37 @@ export const NotesAPI = {
         });
     },
 
+    // Add or Remove Tag (Current View)…: the tags to suggest as one is typed ('add' or 'remove'),
+    // how many notes the change makes, then the change, which the server refuses if that
+    // count no longer holds.
+    async tagInViewSuggestions(action, prefix) {
+        if ((action !== 'add' && action !== 'remove') || typeof prefix !== 'string') {
+            throw new Error('NotesAPI.tagInViewSuggestions requires the action and what is typed');
+        }
+        return this._apiCall(CONFIG.API.NOTES.TAG_IN_VIEW_SUGGESTIONS, {
+            method: 'POST', body: JSON.stringify({ action, prefix, ...this.viewScope() }),
+        });
+    },
+
+    async countTagInView(action, tag) {
+        if ((action !== 'add' && action !== 'remove') || typeof tag !== 'string' || tag === '') {
+            throw new Error('NotesAPI.countTagInView requires the action and the tag');
+        }
+        return this._apiCall(CONFIG.API.NOTES.TAG_IN_VIEW_COUNT, {
+            method: 'POST', body: JSON.stringify({ action, tag, ...this.viewScope() }),
+        });
+    },
+
+    async tagNotesInView(action, tag, expectedNoteCount) {
+        if ((action !== 'add' && action !== 'remove') || typeof tag !== 'string' || tag === ''
+            || !Number.isInteger(expectedNoteCount) || expectedNoteCount < 1) {
+            throw new Error('NotesAPI.tagNotesInView requires the action, the tag and the confirmed count');
+        }
+        return this._apiCall(CONFIG.API.NOTES.TAG_IN_VIEW, {
+            method: 'POST', claimSession: true, body: JSON.stringify({ action, tag, expectedNoteCount, ...this.viewScope() }),
+        });
+    },
+
     // Click on a collapsed note's robot: open the way to every proposal it counts.
     async openToTagProposals(noteId) {
         if (typeof noteId !== 'string' || noteId.length === 0) {

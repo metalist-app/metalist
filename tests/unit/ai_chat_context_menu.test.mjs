@@ -23,7 +23,7 @@ function backgroundMenu() {
             onSetUntaggedView: noop, onSetSortMode: noop,
             onSetDateRangeField: noop, onSetDateRangePreset: noop, onOpenCustomDateRange: noop, onSetFileFilter: noop,
             onSetTheme: noop, onNewTab: noop, onOpenNamespace: noop, onOpenReminders: noop,
-            onExportViewHtml: noop, onPrintView: noop, onLogOut: noop,
+            onExportViewHtml: noop, onPrintView: noop, onLogOut: noop, onTagNotesInView: noop,
         },
     );
 }

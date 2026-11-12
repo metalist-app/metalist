@@ -497,6 +497,12 @@
     "presentation": "palette"
   },
   {
+    "id": "action.tag_notes_in_view",
+    "label": "Add or Remove Tag (Current View)…",
+    "selector": "#command-palette-modal",
+    "presentation": "palette"
+  },
+  {
     "id": "action.reset_updated_at_to_created_at",
     "label": "Repair: Reset Updated Time to Created Time (Current View)…",
     "selector": "#command-palette-modal",

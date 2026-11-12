@@ -41,6 +41,9 @@ export const CONFIG = {
             // Delete Notes (Current View)…: count for the confirmation, then delete.
             DELETE_IN_VIEW_COUNT: `${API_NOTES_BASE}/view/delete-count`,
             DELETE_IN_VIEW: `${API_NOTES_BASE}/view/delete`,
+            TAG_IN_VIEW_SUGGESTIONS: `${API_NOTES_BASE}/view/tag-suggestions`,
+            TAG_IN_VIEW_COUNT: `${API_NOTES_BASE}/view/tag-count`,
+            TAG_IN_VIEW: `${API_NOTES_BASE}/view/tag`,
             UNFORMAT: (noteId) => `${API_NOTES_BASE}/${noteId}/unformat`,
             RESIZE_IMAGE: (noteId) => `${API_NOTES_BASE}/${noteId}/resize-image`,
             EDITING_IMAGE_SIZES: (noteId) => `${API_NOTES_BASE}/${noteId}/editing-image-sizes`,

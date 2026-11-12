@@ -503,6 +503,9 @@ html:has(> body > .login-page[style*="display: flex"]:not(.login-page-covering):
     height: 100%;
     box-sizing: border-box;
     overflow: auto;
+    /* A scrollbar's room on both sides, whatever the dialog holds: a dialog layer that started
+       or stopped scrolling moved the centred dialog half a scrollbar (2026-11-11). */
+    scrollbar-gutter: stable both-edges;
     padding: clamp(12px, 3vh, 32px);
     background: var(--modal-backdrop);
     color: var(--modal-text);
@@ -2405,14 +2408,12 @@ body.ontology-modal-open #ontology-modal {
     margin-bottom: 18px;
 }
 
+/* The field and its suggestions, positioned together. The field is the dialogs' own (the general
+   modal input style outranks the class rules below); the box once drawn around it showed as a
+   second border at its ends (the maintainer, 2026-11-11). */
 .prioritize-modal-tag-bar {
     width: 100%;
     margin: 0;
-    padding: 1px 8px;
-    border: 1px solid rgba(0, 0, 0, 0.12);
-    border-radius: 10px;
-    background: rgba(245, 245, 245, 0.95);
-    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.12);
     position: relative;
     z-index: 80;
 }
@@ -2440,6 +2441,10 @@ body.ontology-modal-open #ontology-modal {
 }
 
 .prioritize-modal-suggestions {
+    /* Its height, border and padding included, is fitted to the window (suggestion-list-fit.js);
+       past it, it scrolls. */
+    box-sizing: border-box;
+    overflow-y: auto;
     position: absolute;
     left: 10px;
     right: 10px;
@@ -2461,7 +2466,9 @@ body.ontology-modal-open #ontology-modal {
     display: none;
 }
 
-.prioritize-modal-content button.prioritize-modal-suggestion {
+/* By the dialogs' ids: the general modal button style (.modal-content button:not(…)) outranks a
+   class, and made every row a blue button. */
+:is(#prioritize-modal, #tag-in-view-modal) button.prioritize-modal-suggestion {
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -2483,16 +2490,16 @@ body.ontology-modal-open #ontology-modal {
     outline: none;
 }
 
-.prioritize-modal-content button.prioritize-modal-suggestion:hover,
-.prioritize-modal-content button.prioritize-modal-suggestion:focus,
-.prioritize-modal-content button.prioritize-modal-suggestion:focus-visible {
+:is(#prioritize-modal, #tag-in-view-modal) button.prioritize-modal-suggestion:hover,
+:is(#prioritize-modal, #tag-in-view-modal) button.prioritize-modal-suggestion:focus,
+:is(#prioritize-modal, #tag-in-view-modal) button.prioritize-modal-suggestion:focus-visible {
     background: var(--modal-quiet-button-hover);
     border-color: var(--modal-border);
     box-shadow: none;
     outline: none;
 }
 
-.prioritize-modal-content button.prioritize-modal-suggestion.is-selected {
+:is(#prioritize-modal, #tag-in-view-modal) button.prioritize-modal-suggestion.is-selected {
     background: var(--modal-selected);
     border-color: var(--modal-border-strong);
 }
@@ -2503,14 +2510,13 @@ body.ontology-modal-open #ontology-modal {
     opacity: 0.78;
 }
 
-.prioritize-modal-actions {
-    margin-top: 18px;
+/* Add or Remove Tag (Current View)…: Add or Remove above the tag field. */
+.tag-in-view-actions {
+    margin-bottom: 14px;
 }
 
-html[data-theme="dark"] .prioritize-modal-tag-bar {
-    border-color: var(--app-border-soft);
-    background: rgba(10, 10, 10, 0.94);
-    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.36);
+.prioritize-modal-actions {
+    margin-top: 18px;
 }
 
 html[data-theme="dark"] .prioritize-modal-content input.prioritize-modal-tag-input {
@@ -3812,6 +3818,7 @@ details.ai-chat-thinking > .ai-chat-thinking-heading {
     border-radius: 8px;
 }
 
+#tag-in-view-modal button.ai-settings-segment,
 #ai-agent-settings-modal button.ai-settings-segment {
     flex: 1;
     padding: 8px 6px;
@@ -3823,10 +3830,12 @@ details.ai-chat-thinking > .ai-chat-thinking-heading {
     font-size: 13px;
 }
 
+#tag-in-view-modal button.ai-settings-segment + button.ai-settings-segment,
 #ai-agent-settings-modal button.ai-settings-segment + button.ai-settings-segment {
     border-left: 1px solid var(--modal-border);
 }
 
+#tag-in-view-modal button.ai-settings-segment[aria-checked="true"],
 #ai-agent-settings-modal button.ai-settings-segment[aria-checked="true"] {
     background: rgba(138, 180, 255, 0.28);
     color: var(--modal-text);
@@ -3834,6 +3843,7 @@ details.ai-chat-thinking > .ai-chat-thinking-heading {
 }
 
 #ai-agent-settings-modal button.ai-settings-tab[aria-selected="false"]:hover,
+#tag-in-view-modal button.ai-settings-segment[aria-checked="false"]:hover,
 #ai-agent-settings-modal button.ai-settings-segment[aria-checked="false"]:hover {
     background: rgba(255, 255, 255, 0.06);
     color: var(--modal-text);
@@ -11748,12 +11758,6 @@ html[data-theme="dark"] body.loading::after {
 
 .modal-content .namespace-delete-namespace {
     color: var(--modal-danger);
-}
-
-.modal-content .prioritize-modal-tag-bar {
-    border-color: var(--modal-border);
-    background: var(--modal-surface-inset);
-    box-shadow: var(--modal-menu-shadow);
 }
 
 .modal-content input.prioritize-modal-tag-input {

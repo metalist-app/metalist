@@ -11,6 +11,7 @@ import { escapeHtml } from '../html-escape.js';
 import { showErrorDialog } from './error-dialog.js';
 import { ErrorHandler } from '../error-handler.js';
 import { MS_PER_SECOND } from '../time-units.js';
+import { fitSuggestionList } from './suggestion-list-fit.js';
 
 const SUGGESTION_LIMIT = 20;
 // How long a failed tag lookup is shown (floating-messages.js decides; any passing value).
@@ -160,6 +161,7 @@ export class PrioritizeModal extends BaseModal {
             loadingSuggestions,
         });
 
+        fitSuggestionList(suggestions);
         const suggestionButtons = suggestions.querySelectorAll('.prioritize-modal-suggestion');
         suggestionButtons.forEach((button) => {
             if (!(button instanceof HTMLButtonElement)) {

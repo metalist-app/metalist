@@ -56,6 +56,7 @@ import {
 } from '../modals/namespace-modals.js';
 import { DeleteNamespaceModal } from '../modals/delete-namespace-modal.js';
 import { PrioritizeModal } from '../modals/prioritize-modal.js';
+import { TAG_ADD, TagInViewModal } from '../modals/tag-in-view-modal.js';
 import { AlphabetizeRootNotesModal } from '../modals/alphabetize-root-notes-modal.js';
 import { ResetUpdatedAtModal } from '../modals/reset-updated-at-modal.js';
 import { ReminderModal } from '../modals/reminder-modal.js';
@@ -470,6 +471,7 @@ class CommandPaletteController {
         this._renameNamespaceModal = null;
         this._deleteNamespaceModal = null;
         this._prioritizeModal = null;
+        this._tagInViewModal = null;
         this._alphabetizeRootNotesModal = null;
         this._dateRangeModal = null;
         this._resetUpdatedAtModal = null;
@@ -577,6 +579,7 @@ class CommandPaletteController {
                 alphabetizeRootNotesDesc: this.alphabetizeRootNotesDesc.bind(this),
                 resetUpdatedAtToCreatedAt: this.resetUpdatedAtToCreatedAt.bind(this),
                 deleteNotesInView: this.deleteNotesInView.bind(this),
+                tagNotesInView: this.tagNotesInView.bind(this),
                 openReminders: this.openReminders.bind(this),
 
                 openVersionInfo: this.openVersionInfo.bind(this),
@@ -2247,6 +2250,34 @@ class CommandPaletteController {
             await actionRefreshAndMaybeSelect({ startedAt: performance.now(), context: 'deleteNotesInView' });
             FloatingMessages.show({
                 text: `Deleted ${result.deletedCount} notes.`, type: 'success', detail: '', isClosable: false, isLasting: false, key: null, action: null,
+            });
+        });
+    }
+
+    // Add or Remove Tag (Current View)… (docs/ui/command-palette.md): a tag added to the notes
+    // the view finds, or removed from every note it shows from them down; one ⌘Z undoes it.
+    async tagNotesInView() {
+        const isReady = await this._prepareForModalOpen('commandPalette.tagNotesInView');
+        if (!isReady) {
+            return;
+        }
+        if (this._tagInViewModal === null) {
+            this._tagInViewModal = new TagInViewModal();
+        }
+        const choice = await this._tagInViewModal.openForView();
+        if (choice === null) {
+            return;
+        }
+        await CommandGate.run('commandPalette.tagNotesInView', async () => {
+            const result = await NotesAPI.tagNotesInView(choice.action, choice.tag, choice.noteCount);
+            if (!Number.isInteger(result.changedCount)) {
+                throw new Error('Tag in view response malformed');
+            }
+            await actionRefreshAndMaybeSelect({ startedAt: performance.now(), context: 'tagNotesInView' });
+            const notes = result.changedCount === 1 ? '1 note' : `${result.changedCount} notes`;
+            const text = choice.action === TAG_ADD ? `Added ${choice.tag} to ${notes}.` : `Removed ${choice.tag} from ${notes}.`;
+            FloatingMessages.show({
+                text, type: 'success', detail: '', isClosable: false, isLasting: false, key: null, action: null,
             });
         });
     }

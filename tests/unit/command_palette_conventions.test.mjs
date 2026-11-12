@@ -111,6 +111,7 @@ const LABELS = {
     'action.alphabetize_root_notes_asc': 'Alphabetize Root Notes A-Z (Current View)…',
     'action.alphabetize_root_notes_desc': 'Alphabetize Root Notes Z-A (Current View)…',
     'action.reset_updated_at_to_created_at': 'Repair: Reset Updated Time to Created Time (Current View)…',
+    'action.tag_notes_in_view': 'Add or Remove Tag (Current View)…',
     'action.delete_notes_in_view': 'Delete Notes (Current View)…',
     'action.open_keyboard_shortcuts_help': 'Keyboard Shortcuts',
 };

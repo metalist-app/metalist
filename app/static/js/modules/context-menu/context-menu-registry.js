@@ -997,6 +997,13 @@ function buildViewContextItems(context, handlers) {
         { id: 'fully-expand-all', label: 'Fully Expand All', icon: 'expand_all', enabled: true, separated: true, onSelect: () => onFullyExpandAll() },
         { id: 'fully-collapse-all', label: 'Fully Collapse All', icon: 'collapse_all', enabled: true, onSelect: () => onFullyCollapseAll() },
     ]);
+    // The notes the view shows, as the palette's Add or Remove Tag (Current View)… (command-palette.md);
+    // this menu is the view's own, so its label leaves the view out and fits the menu.
+    const onTagNotesInView = requireViewHandler(handlers, 'onTagNotesInView');
+    items.push({
+        id: 'tag-notes-in-view', label: 'Add or Remove Tag…', icon: 'tag', enabled: true,
+        onSelect: () => onTagNotesInView(),
+    });
 
     const onSetUntaggedView = requireViewHandler(handlers, 'onSetUntaggedView');
     const onSetTheme = requireViewHandler(handlers, 'onSetTheme');

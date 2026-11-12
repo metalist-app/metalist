@@ -325,6 +325,10 @@
       "tags": ["alphabetize", "alphabetical", "alpha", "sort", "content", "root", "notes", "current", "view", "search", "desc", "descending", "z", "a", "journal", "order", "reorder"]
     },
     {
+      "id": "action.tag_notes_in_view",
+      "tags": ["add", "remove", "tag", "tags", "untag", "retag", "label", "notes", "all", "current", "view", "search", "results", "bulk"]
+    },
+    {
       "id": "action.delete_notes_in_view",
       "tags": ["delete", "remove", "clear", "erase", "wipe", "notes", "all", "everything", "current", "view", "search", "results", "bulk"]
     },
