@@ -205,10 +205,10 @@ const COPYING_DROPPED_FILES_TEXT = 'Copying your files…';
 // A theme change cross-fades the whole page from the old colours to the new (main.css,
 // ::view-transition(root)). Opening in the saved theme, a background tab, reduced motion and
 // Animated transitions off switch at once, as does a browser without view transitions.
-// An import of files dropped on the page: its notes take the tags of the search context they
-// were dropped in, as a note made there does (the maintainer, 2026-11-03).
+// An import of files dropped on the page. Its notes take none of the search's tags (the
+// maintainer, 2026-11-11: bookmarks dropped in the journal search came in as journal entries).
 function droppedHere() {
-    return { isDrop: true, dropSearch: ModeContext.searchQuery };
+    return { isDrop: true };
 }
 
 function setOrRemoveAttribute(element, name, value) {

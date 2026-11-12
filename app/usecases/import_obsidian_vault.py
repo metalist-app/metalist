@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import html
 import mimetypes
-import re
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, replace
@@ -39,7 +38,6 @@ from app.services.obsidian_import.notes import (
     folder_tag_for,
     import_folder_prefix,
     plan_file_note,
-    is_source_tag,
     source_tag_for,
 )
 from app.services.obsidian_import.resolve import VaultIndex
@@ -47,12 +45,11 @@ from app.services.obsidian_import.sources import FILES, IMPORT_SOURCES, ImportSo
 from app.services.obsidian_import.tree import CONTENT_FORMATS, SPLIT_MODES, NoteNode, count_notes
 from app.services.obsidian_import.vault import NOT_UTF8_REASON, VaultContents, VaultFile, read_text_file, read_vault
 from app.services.store import store
-from app.services.virtual_folders import all_folder_tags, without_folder_terms
+from app.services.virtual_folders import all_folder_tags
 from app.services.disk_space import full_disk_is_rejected, require_room_for_files
 from app.upload_limits import MAX_IN_MEMORY_FILE_BYTES
 from app.usecases.base import QueryCommand
 from app.usecases.delete_subtree import apply_restore_records
-from app.usecases.search_comment_autofill import compute_initial_tags_for_new_note
 
 # The root notes' parent: the top of the list.
 _TOP_LEVEL = None
@@ -102,9 +99,6 @@ class CmdImportObsidianVault(QueryCommand):
     images: ImageChoice
     token: str
     imported_at: datetime
-    # The tags of the search context the files were dropped in (drop_context_tags), on each
-    # top note; '' for an import from the menu.
-    context_tags: str
 
     def execute(self) -> Dict[str, object]:
         # Shown as it goes: the walkthrough's bar (the maintainer, 2026-11-02).
@@ -134,7 +128,7 @@ class CmdImportObsidianVault(QueryCommand):
         # The files after the list's last note, as Obsidian's file list
         # orders them (no import report: the maintainer, 2026-11-01).
         written_roots = [written for _path, written in roots]
-        records = root_records(written_roots, context_tags=self.context_tags)
+        records = root_records(written_roots)
         apply_restore_records(records, self.token)
         return {
             "status": "success", "noteCount": note_count,
@@ -431,59 +425,25 @@ def first_root_id(roots: List[WrittenRoot]) -> str:
     return roots[0].node.note_id
 
 
-def root_records(roots: List[WrittenRoot], *, context_tags: str) -> List[SimpleNamespace]:
+def root_records(roots: List[WrittenRoot]) -> List[SimpleNamespace]:
     """The notes as records for apply_restore_records: the root notes, in this order, each
     followed by its subtree. Anything imported, a single note too, goes after the list's last
     root note (the maintainer, 2026-11-08: one rule to reason about): imported at the top, notes
     looked as if they had replaced everything to someone who works without a search. Each root is
     linked to the note before it, already in place, and children are appended under their parent,
-    so a note's neighbours are always next to each other when it is inserted. Each root note also gets context_tags (drop_context_tags), its notes below
-    inheriting them."""
+    so a note's neighbours are always next to each other when it is inserted. An import's notes
+    take none of the tags of the search showing when it began, a drop's either (the maintainer,
+    2026-11-11: bookmarks dropped in the journal search came in as journal entries)."""
     existing_roots = store.children(_TOP_LEVEL)
-    tagged = [
-        replace(written, node=replace(written.node, tags=with_context_tags(written.node.tags, context_tags)))
-        for written in roots
-    ]
     records: List[SimpleNamespace] = []
     prev_id = None
     if len(existing_roots) > 0:
         prev_id = existing_roots[-1]
-    for written in tagged:
+    for written in roots:
         records.append(_record(written.node, written, parent_id=_TOP_LEVEL, prev_id=prev_id, next_id=None))
         _append_children(records, written.node, written, parent_id=written.node.note_id)
         prev_id = written.node.note_id
     return records
-
-
-# A tag string's tokens: a comment (/*two words*/) is one.
-_TAG_TOKEN_RE = re.compile(r"/\*.*?\*/|\S+")
-
-
-def with_context_tags(tags: Tuple[str, ...], context_tags: str) -> Tuple[str, ...]:
-    """tags with context_tags' tokens after them, those it has already (whatever the case) left out."""
-    present = {tag.casefold() for tag in tags}
-    added: List[str] = []
-    for token in _TAG_TOKEN_RE.findall(context_tags):
-        if token.casefold() not in present:
-            present.add(token.casefold())
-            added.append(token)
-    return (*tags, *added)
-
-
-def drop_context_tags(*, search: str, folder_prefix: str) -> str:
-    """The tags an import of files dropped in a search context gives its top notes, so they
-    show in it (the maintainer, 2026-11-03): those a note made there would get (search: the
-    context's search, '' for none). A folder in the search (`Projects/`) files them in it, as a
-    new note is, unless they go into a folder of their own (folder_prefix, as typed), when the
-    search's folders are left out. Never another import's tag: a note with two is found by
-    neither import's search."""
-    if import_folder_prefix(folder_prefix) != "":
-        search = without_folder_terms(search)
-    context_search = None
-    if search.strip() != "":
-        context_search = search
-    tags = compute_initial_tags_for_new_note(parent_id=None, search_query=context_search)
-    return " ".join(token for token in _TAG_TOKEN_RE.findall(tags) if not is_source_tag(token))
 
 
 def _append_children(records: List[SimpleNamespace], node: NoteNode, written: WrittenRoot, *, parent_id: str) -> None:
@@ -659,8 +619,6 @@ class CmdImportFolderOfFiles(QueryCommand):
     images: ImageChoice
     token: str
     imported_at: datetime
-    # As CmdImportObsidianVault's.
-    context_tags: str
 
     def execute(self) -> Dict[str, object]:
         # Shown as it goes: the walkthrough's bar (the maintainer, 2026-11-02).
@@ -695,7 +653,7 @@ class CmdImportFolderOfFiles(QueryCommand):
         ]
         roots.sort(key=lambda pair: _file_list_key(PurePosixPath(pair[0])))
         written_roots = [written for _path, written in roots]
-        apply_restore_records(root_records(written_roots, context_tags=self.context_tags), self.token)
+        apply_restore_records(root_records(written_roots), self.token)
         note_count = sum(count_notes(note.root) for note in planned) + sum(count_notes(written.node) for _path, written in attached)
         return {"status": "success", "noteCount": note_count, "sourceTag": plan.source_tag,
                 "firstRootId": first_root_id(written_roots), "prefixFolder": plan.folder_prefix, "isNewFolder": is_new_folder}

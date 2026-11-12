@@ -16,7 +16,6 @@ from typing_extensions import TypedDict
 from fastapi import APIRouter, Request
 from pydantic import ConfigDict, Field, with_config
 
-from app.api.note_requests import Identifier, Text
 from app.api.request_auth import require_request_auth_token
 from app.api.transactions import transactional_route
 from app.api.streaming_upload import FilePart, declared_body_bytes, receive_upload
@@ -42,7 +41,6 @@ from app.usecases.import_obsidian_vault import (
     CmdPreviewFolderOfFiles,
     CmdPreviewImport,
     FileSelection,
-    drop_context_tags,
     import_folder_exists,
 )
 
@@ -57,18 +55,6 @@ FileGroupKey = Literal[
     "hidden", "dependencies", "build", "text", "images", "pdf", "documents", "spreadsheets", "presentations",
     "audio", "video", "archives", "code", "other",
 ]
-
-
-@with_config(ConfigDict(strict=True))
-class ImportDropContext(TypedDict):
-    """Where files dropped on the page were dropped (the maintainer, 2026-11-03): their notes take
-    that search context's tags and show in it. isDrop false for an import from the menu, whose
-    notes take none."""
-
-    isDrop: bool
-    tabId: Identifier
-    # The context's search, '' for none.
-    search: Text
 
 
 @with_config(ConfigDict(strict=True))
@@ -99,7 +85,6 @@ class ImportFolderRequest(TypedDict):
     # IMAGE_LONGEST_SIDES; folder-import-and-file-previews.md, Images compressed).
     compressesImages: bool
     imageLongestSide: int
-    dropContext: ImportDropContext
 
 
 @with_config(ConfigDict(strict=True))
@@ -133,7 +118,6 @@ class BookmarksImportRequest(TypedDict):
     fileText: Annotated[str, Field(min_length=1, max_length=MAX_IN_MEMORY_FILE_BYTES)]
     prefixFolder: Annotated[str, Field(max_length=_MAX_FOLDER_PATH_LENGTH)]
     addToExisting: bool
-    dropContext: ImportDropContext
 
 
 @with_config(ConfigDict(strict=True))
@@ -304,13 +288,6 @@ def check_import_prefix_folder(request: Request, body: ImportPrefixFolderRequest
     return {"folder": folder, "exists": import_folder_exists(folder), "problem": ""}
 
 
-def _context_tags(context: ImportDropContext, prefix_folder: str) -> str:
-    """The tags a drop's import gives its top notes (drop_context_tags); none from the menu."""
-    if not context["isDrop"]:
-        return ""
-    return drop_context_tags(search=context["search"], folder_prefix=prefix_folder)
-
-
 @router.post("/folder")
 @transactional_route
 def import_folder(request: Request, body: ImportFolderRequest) -> dict[str, object]:
@@ -320,7 +297,6 @@ def import_folder(request: Request, body: ImportFolderRequest) -> dict[str, obje
             folder_path=body["folderPath"], selection=_file_selection(body), split_mode=body["splitMode"],
             content_format=body["contentFormat"], folder_prefix=body["prefixFolder"], add_to_existing=body["addToExisting"],
             images=_image_choice(body), token=token, imported_at=datetime.now(timezone.utc),
-            context_tags=_context_tags(body["dropContext"], body["prefixFolder"]),
         ).execute()
     else:
         _require_no_excluded_groups(body)
@@ -328,7 +304,6 @@ def import_folder(request: Request, body: ImportFolderRequest) -> dict[str, obje
             source=body["source"], folder_path=body["folderPath"], split_mode=body["splitMode"],
             content_format=body["contentFormat"], folder_prefix=body["prefixFolder"], add_to_existing=body["addToExisting"],
             images=_image_choice(body), token=token, imported_at=datetime.now(timezone.utc),
-            context_tags=_context_tags(body["dropContext"], body["prefixFolder"]),
         ).execute()
     # The imported notes join the `[[` catalog now, not at the first `[[`.
     build_catalog_in_background()
@@ -353,7 +328,6 @@ def import_bookmarks(request: Request, body: BookmarksImportRequest) -> dict[str
     result = CmdImportBookmarks(
         file_text=body["fileText"], folder_prefix=body["prefixFolder"], add_to_existing=body["addToExisting"],
         token=token, imported_at=datetime.now(timezone.utc),
-        context_tags=_context_tags(body["dropContext"], body["prefixFolder"]),
     ).execute()
     build_catalog_in_background()
     return result
