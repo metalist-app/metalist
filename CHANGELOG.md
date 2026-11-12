@@ -2,6 +2,12 @@
 
 What changed in each MetaList release, newest first.
 
+## Changes in 0.28.1
+
+- **The login page is quicker,** most of all on another computer over Wi-Fi: it loads only its own few files, and the rest of MetaList downloads while you pick a vault and type your password. Once a browser trusts MetaList's certificate it also keeps MetaList's files between visits, until an update changes them.
+- A red error on the login page offers Export Report… too; that report is kept nowhere.
+- A problem report's reading of how busy the computer was no longer shows 0% CPU on a Mac.
+
 ## Changes in 0.28.0
 
 - **Report a Problem.** In the command palette, Report a Problem… saves a report of the last 10 minutes, with a sentence or two of your own, so you can send it to whoever helps you. The red error offers Export Report… too, and Export Problem Reports… saves the last 20. A report holds what you clicked and typed and how busy the computer was, never your words: note text becomes `xxxx`, each tag a made-up name, and MetaList refuses to save a report with anything else in it.
