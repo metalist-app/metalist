@@ -34,6 +34,12 @@ PERCENT_OF_ALL = 100.0
 # A report's own reading of how busy the computer is: long enough for a CPU percentage that
 # means something, short enough that saving the report does not feel stuck (section 6a).
 SNAPSHOT_SECONDS = 0.3
+# macOS updates the whole computer's CPU counters in bursts, frozen for up to about 0.95 s
+# (measured 2026-11-12): a snapshot whose window saw them frozen waits, checking this often,
+# until they move, so it never reads 0% for a computer that was busy. Past the limit the
+# counters are broken, not slow.
+CPU_COUNTER_POLL_SECONDS = 0.02
+CPU_COUNTER_WAIT_LIMIT_SECONDS = 2.0
 NO_ERROR = ""
 
 
@@ -143,7 +149,9 @@ class _BusyReader:
         cpu_count = _cpu_count()
         psutil.cpu_percent(interval=None)
         process.cpu_percent(interval=None)
+        started = sum(psutil.cpu_times())
         time.sleep(SNAPSHOT_SECONDS)
+        _wait_for_cpu_counters_to_move(since=started)
         machine_cpu = psutil.cpu_percent(interval=None)
         metalist_cpu = process.cpu_percent(interval=None) / cpu_count
         return _checked(BusyNumbers(
@@ -153,6 +161,15 @@ class _BusyReader:
             metalist_cpu_percent=min(metalist_cpu, PERCENT_OF_ALL),
             metalist_memory_bytes=process.memory_info().rss,
         ))
+
+
+def _wait_for_cpu_counters_to_move(*, since: float) -> None:
+    """Returns once the computer's CPU counters total more than `since`."""
+    deadline = time.monotonic() + CPU_COUNTER_WAIT_LIMIT_SECONDS
+    while sum(psutil.cpu_times()) == since:
+        if time.monotonic() > deadline:
+            raise RuntimeError(f"the computer's CPU counters did not move in {CPU_COUNTER_WAIT_LIMIT_SECONDS} s")
+        time.sleep(CPU_COUNTER_POLL_SECONDS)
 
 
 def _cpu_count() -> int:

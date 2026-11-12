@@ -3,8 +3,9 @@ import { runThenCleanUp } from './suite-outcome.mjs';
 import { waitForAppQuiet } from './browser-app-idle.mjs';
 
 // Problem reports (docs/ready-to-build/error-reports.md, section 8): Report a Problem… with a
-// typed sentence, Export Report… on the red error, Export Problem Reports…, and a report made
-// with no vault open (the login page's). Every saved file is read back: no word of a note, tag
+// typed sentence, Export Report… on the red error, Export Problem Reports…, a report made
+// with no vault open, and the login page's red error with its Export Report…, kept nowhere
+// (check 8; the suite sets a password, so it runs last). Every saved file is read back: no word of a note, tag
 // or typing may be in it, and it carries how busy the computer was. Downloads are caught in
 // the page, not saved (as browser-export-print-regressions.mjs does), so Chrome and Firefox
 // run the same checks.
@@ -28,6 +29,12 @@ const SHAPED_TYPING = ' Xxxxx 00';
 const FRAC_KEPT = '$\\frac{x}{x}$';
 const ERROR_MESSAGE = 'Cannot read Zebrafinch of okapi';
 const SHAPED_ERROR = 'Xxxxxx xxxx Xxxxxxxxxx xx xxxxx';
+// A test-only password for this suite's own disposable vault, and the marker typed into the
+// password field before the error.
+const PASSWORD = 'Problem-reports-only-password!2026';
+const TYPED_AT_LOGIN = 'Zebrafinch-okapi';
+const LOGIN_PAGE_ERROR = 'RangeError';
+const AFTER_LOGIN_ERROR = 'EvalError';
 const BUSY_FIELDS = Object.freeze([
   'machineAvailableBytes', 'machineCpuPercent', 'metalistCpuPercent', 'metalistMemoryBytes', 'swapUsedBytes',
 ]);
@@ -218,18 +225,32 @@ async function checkUserReport(page, ids) {
   assertNoWord(second, 'second report');
 }
 
-async function checkRedErrorReport(page) {
-  const count = await downloadCount(page);
-  await page.evaluate(async message => {
-    const {showFatalError} = await import('/static/js/modules/error-overlay.js');
-    const error = new TypeError(message);
-    showFatalError(error.message, error.stack, error.name);
-  }, ERROR_MESSAGE);
+// An unhandled rejection reaches the page's listener as the browser hands it one. The event
+// is sent, not caused: a real one would fail the smoke's no-page-error check (a real failed
+// call from the page's code reaches the same listener; checked in a throwaway 2026-11-12).
+async function failUnhandled(page, className) {
+  await page.evaluate(({name, message}) => {
+    const error = new globalThis[name](message);
+    // The listener reads only the reason; a promise that never settles leaves no rejection.
+    const promise = new Promise(() => {});
+    window.dispatchEvent(new PromiseRejectionEvent('unhandledrejection', {promise, reason: error, cancelable: true}));
+  }, {name: className, message: ERROR_MESSAGE});
   await page.waitForSelector('#fatal-error-export-report', {visible: true});
-  assert.equal(await page.$eval('#fatal-error-export-report', button => button.textContent.trim()), 'Export Report…');
+}
+
+async function exportShownError(page) {
+  const count = await downloadCount(page);
   await page.click('#fatal-error-export-report');
   const report = JSON.parse(await nextDownload(page, count));
+  assert.equal(await page.$$eval('#fatal-error-overlay', overlays => overlays.length), 1, 'one red error');
   await page.evaluate(() => document.getElementById('fatal-error-overlay').remove());
+  return report;
+}
+
+async function checkRedErrorReport(page) {
+  await failUnhandled(page, 'TypeError');
+  assert.equal(await page.$eval('#fatal-error-export-report', button => button.textContent.trim()), 'Export Report…');
+  const report = await exportShownError(page);
   assert.equal(report.madeBy, 'overlay');
   assert.equal(report.description, '');
   assert.equal(report.error.class, 'TypeError');
@@ -282,6 +303,71 @@ async function checkReportWithNoVault(page) {
   assert.equal(answers.refused, HTTP_UNPROCESSABLE, 'a login-page report naming notes is refused');
 }
 
+async function keptErrorClasses(page) {
+  return page.evaluate(async () => {
+    const {keptReports} = await import('/static/js/modules/problem-reports/report-maker.js');
+    return (await keptReports()).map(report => report.errorClass);
+  });
+}
+
+async function setPassword(page) {
+  await page.evaluate(async password => {
+    const {buildSessionHeaders} = await import('/static/js/modules/session-auth.js');
+    const response = await fetch('/api2/auth/settings/password/create', {
+      method: 'POST', headers: buildSessionHeaders(true), body: JSON.stringify({password, keeps_window_logged_in: false}),
+    });
+    if (!response.ok) throw new Error(`Password setup failed: ${response.status}`);
+  }, PASSWORD);
+}
+
+async function typePassword(page, password) {
+  await page.click('#login-password', {clickCount: 3});
+  await page.keyboard.press('Backspace');
+  await page.type('#login-password', password);
+}
+
+// Check 8: a red error on the login page offers Export Report…, made in memory only; logging
+// in after it, wrong password first, raises none; after login it is kept as before.
+async function checkLoginPageReport(page) {
+  await setPassword(page);
+  await page.reload();
+  await page.waitForSelector('#login-panel[data-revealed="true"] #login-password', {visible: true});
+  await catchDownloads(page);
+  await typePassword(page, TYPED_AT_LOGIN);
+  await failUnhandled(page, LOGIN_PAGE_ERROR);
+  const isOnTop = await page.$eval('#fatal-error-export-report', button => {
+    const box = button.getBoundingClientRect();
+    return document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2) === button;
+  });
+  assert.equal(isOnTop, true, 'the red error is above the login screen');
+  const report = await exportShownError(page);
+  assert.equal(report.madeBy, 'overlay');
+  assert.equal(report.error.class, LOGIN_PAGE_ERROR);
+  assert.equal(report.error.message.redacted, SHAPED_ERROR);
+  assert.deepEqual(report.notes, []);
+  assert.equal(report.search.text.redacted, '');
+  assertNoWord(report, 'login-page report');
+  assert.deepEqual(report.inputs.filter(input => input.kind === 'type' || input.kind === 'paste'), [],
+    'nothing typed into the password field is in the trail');
+  assertBusyNumbers(report, 'login-page report');
+
+  await typePassword(page, 'not-the-password');
+  await page.click('#login-submit');
+  await page.waitForSelector('#login-error', {visible: true});
+  assert.equal(await page.$('#fatal-error-overlay'), null, 'a wrong password raises no red error');
+  await typePassword(page, PASSWORD);
+  await page.click('#login-submit');
+  await page.waitForSelector('[data-app-ready="true"]');
+  await idle(page);
+  assert.equal(await page.$('#fatal-error-overlay'), null, 'logging in raises no red error');
+  assert.ok(!(await keptErrorClasses(page)).includes(LOGIN_PAGE_ERROR), 'the login-page report is kept nowhere');
+
+  await failUnhandled(page, AFTER_LOGIN_ERROR);
+  const after = await exportShownError(page);
+  assert.equal(after.error.class, AFTER_LOGIN_ERROR);
+  assert.equal((await keptErrorClasses(page))[0], AFTER_LOGIN_ERROR, 'after login the report is kept');
+}
+
 export async function checkProblemReports(page) {
   const ids = await makeNotes(page);
   await catchDownloads(page);
@@ -290,6 +376,7 @@ export async function checkProblemReports(page) {
     await checkRedErrorReport(page);
     await checkExportList(page);
     await checkReportWithNoVault(page);
+    await checkLoginPageReport(page);
   }, async () => {
     await releaseDownloads(page);
     await deleteNotes(page, ids);

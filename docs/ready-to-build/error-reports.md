@@ -108,7 +108,7 @@ Agreed with the maintainer 2026-11-12, not built. Why: the maintainer's dad (Win
   - the whole computer's CPU % and available memory, and swap in use if cheap to read;
   - MetaList's own process CPU % and memory;
   - the request's duration, and how long it waited for its turn to change the vault (the mutation slot, `_mutation_slot` / `_async_mutation_slot` in `app/api/transactions.py`, `bulk_operation_guard`).
-- **And when a report is made** (added 2026-11-12): one more reading of the same numbers, measured over 0.3 s (`SNAPSHOT_SECONDS`, `app/services/request_history.py`), short enough that saving the report does not feel stuck. It is the report's `machine` field (§2); it is not written to the safe log.
+- **And when a report is made** (added 2026-11-12): one more reading of the same numbers, measured over 0.3 s (`SNAPSHOT_SECONDS`, `app/services/request_history.py`), short enough that saving the report does not feel stuck. macOS updates the computer's CPU counters in bursts, frozen for up to about 0.95 s (measured 2026-11-12): a window that saw them frozen read 0%, so the snapshot then waits until they move (at most 2 s, then it fails loudly); a report usually takes 0.3 s, at worst about 1.3 s. It is the report's `machine` field (§2); it is not written to the safe log.
 - **How to read it:** the computer at 95% with MetaList at 3% means something else is the cause; MetaList at 80% means MetaList is. A long wait for its turn with both low means one change queued behind another.
 - **Needs `psutil`,** a new dependency: `os.getloadavg()` does not exist on Windows, and memory and per-process CPU have no standard-library reading on every platform. Adding it goes through the supply-chain check and the dependency audit (`scripts/full_checks.py`), with wheels on Windows, macOS and Linux at Python 3.11 and 3.14.
 - **Not part of the design, a possible later addition:** the browser's own long-task measure (`PerformanceObserver` with `longtask`), to tell a slow tab from a slow server.
@@ -142,5 +142,10 @@ The `problem-reports` browser suite (`scripts/browser-problem-report-regressions
 6. **Export Problem Reports…** is in the palette only once a report is kept. It lists the kept reports newest first with their time and kind (the error's class, or "Reported"), lets the user pick, and saves one file. After a 21st report it lists 20.
 7. A request that takes 1 s or more writes one line to the plain log with how busy the computer and MetaList were (CPU %, memory) and how long it waited for its turn; a report carries those of the last 15 minutes.
 7a. Every report, with or without a slow request, carries `machine`: the computer's and MetaList's CPU % and memory as it was made, numbers only (added 2026-11-12).
-8. An error on the login page shows Export Report… on its overlay; nothing is kept after a reload.
+8. An error on the login page shows Export Report… on its overlay; nothing is kept after a reload. In detail (written 2026-11-12 before building it, the maintainer: "Yes, build it"):
+   - 8a. With the login screen up, an uncaught error shows the red error above the login screen, with Export Report….
+   - 8b. Export Report… saves one `.json` file: `madeBy` `"overlay"`, the error's class and shaped message, no notes, no search, the machine numbers. The password typed before the error is not in it; the trail holds no typing from the password field.
+   - 8c. It is kept nowhere: after logging in, Export Problem Reports… does not list it.
+   - 8d. A wrong password, then the right one, shows no red error.
+   - 8e. After logging in, a red error still shows once, with Export Report…, and its report is kept as before.
 9. After MetaList starts with this version, no `*-server.auth-*.log.enc` file is left in the logs folder.

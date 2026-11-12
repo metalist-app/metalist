@@ -142,7 +142,31 @@ def test_a_busy_snapshot_reads_the_computer_now_without_waiting_long() -> None:
     assert 0.0 <= numbers.machine_cpu_percent <= 100.0
     assert 0.0 <= numbers.metalist_cpu_percent <= 100.0
     assert numbers.machine_available_bytes > 0 and numbers.metalist_memory_bytes > 0
-    assert request_history.SNAPSHOT_SECONDS <= took < request_history.SNAPSHOT_SECONDS + 0.5
+    assert request_history.SNAPSHOT_SECONDS <= took
+    assert took < request_history.SNAPSHOT_SECONDS + request_history.CPU_COUNTER_WAIT_LIMIT_SECONDS
+
+
+def test_a_busy_snapshot_waits_for_the_computer_s_cpu_counters_to_move(monkeypatch) -> None:
+    """macOS updates the whole computer's CPU counters in bursts, frozen for up to about a
+    second (measured 2026-11-12): a window that sees none of them move must not read 0%."""
+    real_cpu_times = request_history.psutil.cpu_times
+    frozen = real_cpu_times()
+    reads = {"count": 0}
+    frozen_reads = 6
+
+    def bursty_cpu_times(*args, **kwargs):
+        reads["count"] += 1
+        if reads["count"] <= frozen_reads:
+            return frozen
+        busy = frozen._replace(user=frozen.user + 1.0, idle=frozen.idle + 1.0)
+        return busy
+
+    monkeypatch.setattr(request_history.psutil, "cpu_times", bursty_cpu_times)
+
+    numbers = request_history.BUSY_READER.snapshot()
+
+    assert numbers.machine_cpu_percent == 50.0
+    assert reads["count"] > frozen_reads
 
 
 def test_two_reports_draw_different_stand_ins() -> None:

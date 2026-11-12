@@ -1,4 +1,6 @@
 import { installInputRecorder } from './modules/problem-reports/input-recorder.js';
+import { installGlobalErrorOverlay } from './modules/error-overlay.js';
+import { MS_PER_SECOND } from './modules/time-units.js';
 import { checkReleaseOnPageLoad } from './modules/app-update-service.js';
 import { ModeManager } from './modules/mode-manager/mode-manager-controller.js';
 import { CONFIG } from './modules/config.js';
@@ -16,9 +18,15 @@ import { watchFoldability } from './modules/mode-manager/services/collapse-affor
 import {
     queueMermaidDiagramRendering,
 } from './modules/mode-manager/services/mermaid-render-service.js';
+
+// How long a non-fatal warning from the red error's listener stays on screen.
+const GLOBAL_WARNING_BANNER_SECONDS = 8;
 // Before anything else listens or fetches: the trail a problem report is made from
 // (docs/ready-to-build/error-reports.md §1), in memory only.
 installInputRecorder();
+// The red error, from the login page on (error-reports.md §8): an error before login shows
+// it too, with Export Report…, made in memory only.
+installGlobalErrorOverlay((message) => ErrorHandler.showInfoBanner(message, GLOBAL_WARNING_BANNER_SECONDS * MS_PER_SECOND));
 
 document.addEventListener('DOMContentLoaded', async () => {
     console.log('DOMContentLoaded fired');

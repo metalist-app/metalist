@@ -17,13 +17,8 @@ import { startPolling } from './services/polling-service.js';
 import { hasRootsBelowLoadedWindow, startInfiniteScrollMonitor, resetInfiniteScrollState } from './services/infinite-scroll-service.js';
 import { initializeScrollToBottomButton, initializeScrollToTopButton } from './services/scroll-to-top-service.js';
 import { initEditorToolbar, setToolbarVisible } from '../editor-toolbar.js';
-import { installGlobalErrorOverlay } from '../error-overlay.js';
-import { ErrorHandler } from '../error-handler.js';
-import { MS_PER_SECOND } from '../time-units.js';
 
 const DEFAULT_CONFIG = {};
-// How long a non-fatal warning from the global error overlay stays on screen.
-const GLOBAL_WARNING_BANNER_SECONDS = 8;
 
 const ModeManager = {
 	    
@@ -34,9 +29,6 @@ const ModeManager = {
 	                
 	        console.log('+++ ModeManager: init() called');
                 
-        // Global error overlay
-        installGlobalErrorOverlay((message) => ErrorHandler.showInfoBanner(message, GLOBAL_WARNING_BANNER_SECONDS * MS_PER_SECOND));
-
         Logger.logInit('Controller');
 
             const mergedConfig = {
