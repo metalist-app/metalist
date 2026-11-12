@@ -61,7 +61,7 @@ class _ScriptedModel:
         finish_reason = "stop"
         if turn["calls"]:
             finish_reason = "tool_calls"
-        yield {"type": "done", "finish_reason": finish_reason, "usage": {"prompt_tokens": 10_000, "input_tokens": 10, "output_tokens": 5}}
+        yield {"type": "done", "finish_reason": finish_reason, "usage": {"prompt_tokens": 40_000, "input_tokens": 10, "output_tokens": 5}}
 
 
 class _StubTagging:
@@ -119,9 +119,9 @@ def test_a_help_question_looks_up_help_then_answers_from_it() -> None:
         "actions": [{"tool": "lookup_metalist_help", "topics": ["releases"]}]}
     # The last request's make-up: the provider's count, no history yet, the help it read
     # in this turn, and the rest instructions.
-    assert request_tokens["total"] == 10_000 and request_tokens["history"] == 0
+    assert request_tokens["total"] == 40_000 and request_tokens["history"] == 0
     assert request_tokens["this_turn"] > 0 and request_tokens["instructions"] > 0
-    assert request_tokens["instructions"] + request_tokens["this_turn"] == 10_000
+    assert request_tokens["instructions"] + request_tokens["this_turn"] == 40_000
     help_result = _tool_results(model.conversations[1])[0]
     assert "## 0.26.1" in help_result["topics"][0]["help"]
     # Web pages are not offered while web access is off; the instructions come first.

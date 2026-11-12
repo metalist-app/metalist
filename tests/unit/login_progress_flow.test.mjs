@@ -145,7 +145,7 @@ test('post-login startup failures do not return to the password form', async () 
     const loginEnd = source.indexOf('async logout()', loginStart);
     const loginSource = source.slice(loginStart, loginEnd);
     const failedResponseBranch = loginSource.indexOf('if (!response.ok)');
-    const modeManagerInitialization = loginSource.indexOf('await window.ModeManager.init({});');
+    const modeManagerInitialization = loginSource.indexOf('await app.startWorkspace({');
     const loginFailureCatch = loginSource.indexOf('catch (error)');
 
     assert.ok(failedResponseBranch >= 0);
@@ -166,7 +166,11 @@ test('post-login startup failures expose the underlying browser error', async ()
 
     assert.match(loginSource, /let startupPhase = enterStartupStage\('reading the login response'\)/);
     assert.match(loginSource, /startupPhase = enterStartupStage\('hydrating the workspace'\)/);
-    assert.match(loginSource, /startupPhase = enterStartupStage\('initializing the workspace UI'\)/);
+    assert.match(loginSource, /startupPhase = enterStartupStage\('loading the workspace code'\)/);
+    // Each of the workspace's own steps (app-start.js) becomes the phase a failure names.
+    assert.match(loginSource, /onStage: \(stage\) => \{\s*startupPhase = enterStartupStage\(stage\);/);
+    const appStart = await readFile(new URL('../../app/static/js/modules/app-start.js', import.meta.url), 'utf8');
+    assert.match(appStart, /onStage\('initializing the workspace UI'\)/);
     assert.match(loginSource, /const errorMessage = error instanceof Error/);
     assert.match(loginSource, /loadingMessage\.textContent =[\s\S]*\$\{startupPhase\}: \$\{errorMessage\}/);
     assert.doesNotMatch(loginSource, /window\.alert\(/);

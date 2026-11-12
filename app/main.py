@@ -99,7 +99,7 @@ import types
 import uuid
 from app.utils.sent_fields import sent_or_none
 from app.utils.time_units import MS_PER_SECOND
-from starlette.staticfiles import StaticFiles as StarletteStaticFiles
+from app.services.static_files_version import STATIC_DIRECTORY, STATIC_URL_PREFIX, MetaListStaticFiles, static_files_version
 from fastapi.middleware.gzip import GZipMiddleware
 import os
 from urllib.parse import parse_qsl
@@ -404,16 +404,6 @@ else:
 
     _log_startup_step("total startup", time.perf_counter() - overall_start)
 
-# Custom StaticFiles class that disables caching
-class NoCacheStaticFiles(StarletteStaticFiles):
-    async def get_response(self, path, scope):
-        response = await super().get_response(path, scope)
-        if response.status_code == HTTPStatus.OK:
-            # Set no-cache headers for all static files
-            response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
-            response.headers['Pragma'] = 'no-cache'
-            response.headers['Expires'] = '0'
-        return response
 
 # Add GZip compression
 app.add_middleware(GZipMiddleware, minimum_size=_GZIP_MINIMUM_RESPONSE_BYTES)
@@ -421,14 +411,11 @@ app.add_middleware(GZipMiddleware, minimum_size=_GZIP_MINIMUM_RESPONSE_BYTES)
 # Add authentication middleware
 app.add_middleware(AuthMiddleware)
 
-# Mount static files with no-cache headers
 app.mount(
     "/static",
-    NoCacheStaticFiles(directory=str(Path(__file__).resolve().parent / "static")),
+    MetaListStaticFiles(directory=str(STATIC_DIRECTORY), version=static_files_version),
     name="static",
 )
-
-ASSET_VERSION = str(int(time.time()))
 
 templates = get_templates(
     template_directory=Path(__file__).resolve().parent / "templates",
@@ -582,7 +569,8 @@ async def add_security_headers(request: Request, call_next):
         raise RuntimeError("Generated CSP nonce has unexpected length")
     request.state.csp_nonce = nonce
     response = await call_next(request)
-    apply_security_headers(response=response, nonce=nonce)
+    apply_security_headers(response=response, nonce=nonce,
+                           is_static_file=request.url.path.startswith(STATIC_URL_PREFIX))
     return response
 
 @app.get("/", response_class=HTMLResponse)
@@ -596,7 +584,7 @@ async def home(request: Request, db: Annotated[SafeSession, Depends(get_db)]):
         return template.render(
             request=request,
             version=VERSION,
-            asset_version=ASSET_VERSION,
+            asset_version=static_files_version.for_page(),
             page_title=_resolve_page_title(base_title="MetaList"),
             needs_auth=True,
             shows_login_at_once=login_is_certainly_needed(request),
@@ -607,7 +595,7 @@ async def home(request: Request, db: Annotated[SafeSession, Depends(get_db)]):
         request=request,
         notes=[],
         version=VERSION,
-        asset_version=ASSET_VERSION,
+        asset_version=static_files_version.for_page(),
         page_title=_resolve_page_title(base_title="MetaList"),
         needs_auth=False,
         shows_login_at_once=False,
@@ -624,7 +612,7 @@ async def maintenance_page(request: Request):
     return template.render(
         request=request,
         version=VERSION,
-        asset_version=ASSET_VERSION,
+        asset_version=static_files_version.for_page(),
         page_title=_resolve_page_title(base_title="MetaList - Processing"),
     )
 
@@ -724,7 +712,7 @@ async def namespace_deleted_page(request: Request):
     return template.render(
         request=request,
         version=VERSION,
-        asset_version=ASSET_VERSION,
+        asset_version=static_files_version.for_page(),
         page_title="MetaList - Vault Deleted",
         deleted_namespace=job_record["deleted_namespace"],
         namespace_links=namespace_links,
@@ -811,7 +799,7 @@ async def namespace_renamed_page(request: Request):
     return template.render(
         request=request,
         version=VERSION,
-        asset_version=ASSET_VERSION,
+        asset_version=static_files_version.for_page(),
         page_title="MetaList - Vault Renamed",
         source_namespace=job_record["source_namespace"],
         target_namespace=job_record["target_namespace"],
@@ -851,7 +839,7 @@ async def locked_page(request: Request, db: Annotated[SafeSession, Depends(get_d
     return template.render(
         request=request,
         version=VERSION,
-        asset_version=ASSET_VERSION,
+        asset_version=static_files_version.for_page(),
         page_title=_resolve_page_title(base_title="MetaList – Locked"),
         has_password=has_password,
     )

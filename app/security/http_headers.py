@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+from http import HTTPStatus
 import re
 
 from starlette.responses import Response
 
 
 _CSP_NONCE_PATTERN = re.compile(r"^[A-Za-z0-9_-]{32}$")
+# A static file's own answers, which set their own caching: the file, or "not modified". A
+# missing file is answered by the error handler and is never stored.
+_STATIC_FILE_ANSWERS = frozenset({HTTPStatus.OK, HTTPStatus.NOT_MODIFIED})
 
 
 def build_content_security_policy(*, nonce: str) -> str:
@@ -30,7 +34,10 @@ def build_content_security_policy(*, nonce: str) -> str:
     return "; ".join(directives)
 
 
-def apply_security_headers(*, response: Response, nonce: str) -> None:
+# is_static_file: one of MetaList's own files (/static/), which sets its own caching
+# (app/services/static_files_version.py): a versioned script is kept for good, so a later visit
+# downloads none of them. Every other answer is never stored.
+def apply_security_headers(*, response: Response, nonce: str, is_static_file: bool) -> None:
     if not isinstance(response, Response):
         raise TypeError("response must be a Starlette Response")
     response.headers["Content-Security-Policy"] = build_content_security_policy(nonce=nonce)
@@ -40,6 +47,10 @@ def apply_security_headers(*, response: Response, nonce: str) -> None:
     response.headers["Permissions-Policy"] = (
         "camera=(), geolocation=(), microphone=(), payment=(), usb=()"
     )
+    if is_static_file and response.status_code in _STATIC_FILE_ANSWERS:
+        if "cache-control" not in response.headers:
+            raise RuntimeError("A static file's answer must set its own caching")
+        return
     response.headers["Cache-Control"] = "no-store, private"
     response.headers["Pragma"] = "no-cache"
     response.headers["Expires"] = "0"

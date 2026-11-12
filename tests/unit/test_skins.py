@@ -130,4 +130,4 @@ def test_cursors_fit_the_browsers_limit(skin: str) -> None:
 
 @pytest.mark.parametrize("skin", SKIN_NAMES)
 def test_skin_is_linked(skin: str) -> None:
-    assert f"/static/css/skins/{skin}.css" in BASE_TEMPLATE.read_text(encoding="utf-8")
+    assert f"/static/v/${{asset_version}}/css/skins/{skin}.css" in BASE_TEMPLATE.read_text(encoding="utf-8")

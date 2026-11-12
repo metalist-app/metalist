@@ -420,6 +420,18 @@ that throws, not by care at each call site (`app/services/safe_log.py`, built 20
   and an expired `Expires` value. Browsers therefore must not retain decrypted
   API responses, file downloads, exports, pages, redirects, or error bodies in
   their HTTP caches.
+- The one exception is MetaList's own program files under `/static/` (scripts,
+  stylesheets, fonts, pictures shipped with MetaList), which hold no user data.
+  The page loads them from `/static/v/<version>/…`, kept by the browser for good
+  (`public, max-age=31536000, immutable`); an import map in the page sends
+  `/static/js/` there too. The version is a fingerprint of every file's path,
+  size and change time, worked out for each page, so a changed file gives a new
+  version and the browser never runs a stale script. Files under an older
+  version, and plain `/static/` paths, are answered `no-store` and `no-cache`
+  (asked about again on each use). A missing file is never stored.
+  `app/services/static_files_version.py`; the maintainer, 2026-11-12: over Wi-Fi
+  the vault list came a second or more late, the page downloading its 318
+  scripts again on every visit.
 
 ### Application, Database, and Vault Versions
 

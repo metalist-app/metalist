@@ -49,7 +49,7 @@ def test_content_security_policy_blocks_direct_remote_connections() -> None:
 def test_apply_security_headers_sets_browser_defenses() -> None:
     response = HTMLResponse("<html></html>")
 
-    apply_security_headers(response=response, nonce=NONCE)
+    apply_security_headers(response=response, nonce=NONCE, is_static_file=False)
 
     assert response.headers["content-security-policy"] == build_content_security_policy(nonce=NONCE)
     assert response.headers["x-content-type-options"] == "nosniff"
@@ -59,6 +59,35 @@ def test_apply_security_headers_sets_browser_defenses() -> None:
     assert response.headers["cache-control"] == "no-store, private"
     assert response.headers["pragma"] == "no-cache"
     assert response.headers["expires"] == "0"
+
+
+# MetaList's own files say how long the browser keeps them (app/services/static_files_version.py):
+# a versioned script for good, so a later visit downloads none of them. The browser defenses
+# still apply; only their caching is theirs (the maintainer, 2026-11-12).
+def test_a_static_file_keeps_its_own_caching_and_gets_the_defenses() -> None:
+    response = HTMLResponse("export const A = 1;")
+    response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+
+    apply_security_headers(response=response, nonce=NONCE, is_static_file=True)
+
+    assert response.headers["cache-control"] == "public, max-age=31536000, immutable"
+    assert "pragma" not in response.headers and "expires" not in response.headers
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["content-security-policy"] == build_content_security_policy(nonce=NONCE)
+
+
+def test_a_static_file_without_its_own_caching_is_refused() -> None:
+    with pytest.raises(RuntimeError, match="caching"):
+        apply_security_headers(response=HTMLResponse(""), nonce=NONCE, is_static_file=True)
+
+
+def test_a_missing_static_file_is_never_stored() -> None:
+    # Starlette answers a missing file through its error handler, which sets no caching.
+    response = HTMLResponse("Not Found", status_code=404)
+
+    apply_security_headers(response=response, nonce=NONCE, is_static_file=True)
+
+    assert response.headers["cache-control"] == "no-store, private"
 
 
 @pytest.mark.parametrize("nonce", ["", "too-short", "!" * 32])
