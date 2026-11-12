@@ -74,6 +74,8 @@
 - Future plan (hosted account states: trial, active, cancelled, lapsed and read-only, closed, deleted): `docs/future-plans/hosted-account-states.md`
 - Future plan (backups to S3-compatible storage, uploaded by MetaList itself; manual or automatic): `docs/future-plans/backups-s3.md`
 - Ready to build (nothing shown as Saved is ever lost: autosave, retries with change IDs, the graceful stop): `docs/ready-to-build/commit-and-shutdown-protocol.md`
+- Ready to build (error reports: on a red overlay, a redacted record of the inputs that led to it, detailed enough to replay as a failing browser test; one plain log of safe records after login too; the unreadable encrypted log files, which would have hit the 512 MB start-up wall around 2026-12-01, were dropped 2026-11-11): `docs/ready-to-build/error-reports.md`
+- Ready to do (an audit of everything that only grows, on disk and in the databases: each gets a bound, an owner that enforces it, and a test): `docs/ready-to-build/unbounded-growth-audit.md`
 - Future plan (model-checking the save, backup, lock and linked-list protocols with TLA+, with Hypothesis stateful tests on the real code): `docs/future-plans/model-checking-protocols.md`
 - Future plan (user-named styles, `@style=name`, a safe subset of CSS): `docs/future-plans/user-styles.md`
 - Being worked out, don't build yet (a bookmarklet that copies a page's title, address and selection for pasting into MetaList): `docs/future-plans/web-clipper.md`

@@ -66,7 +66,6 @@ from app.services.diagnostics import allow_plaintext_diagnostics
 from app.services.diagnostics import log_unexpected_exception
 from app.services.diagnostics import start_asyncio_diagnostics
 from app.services.diagnostics import track_request
-from app.services.diagnostics import write_encrypted_exception_trace
 from app.security.sensitive_logging import traceback_frame_summary
 from app.api.request_auth import clear_auth_cookie
 from app.presentation.login_page import login_is_certainly_needed
@@ -156,10 +155,6 @@ class InterceptHandler(logging.Handler):
             level,
             f"{record.getMessage()}{error_detail}",
         )
-        if record.exc_info is not None and record.exc_info[1] is not None:
-            write_encrypted_exception_trace(
-                context="standard logging", exception=record.exc_info[1], request_id="",
-            )
 
 
 logging.basicConfig(handlers=[InterceptHandler()], level=0, force=True)

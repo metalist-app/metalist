@@ -108,11 +108,12 @@ deleting recovery artifacts to bypass a failed transition.
 ## Diagnostics, memory and verification
 
 For a protected vault, startup diagnostics before unlock are plaintext and
-do not contain decrypted vault data. After successful key unwrap, persistent
-Loguru records and direct stdout/stderr writes use individual `MLLOG1` AES-GCM
-envelopes with a DEK-derived logging key. Plaintext fault logging is disabled
-during the unlocked interval. Do not claim logs are all always plaintext or all
-always encrypted.
+do not contain decrypted vault data. After successful key unwrap, MetaList
+writes no log file until logout: the plaintext log and fault logging are turned
+off, and direct stdout/stderr writes use individual `MLLOG1` AES-GCM envelopes
+with a DEK-derived logging key. Exception messages and tracebacks are never
+written to disk. Do not claim logs are all always plaintext or all always
+encrypted.
 
 Keep the two memory boundaries distinct: the browser holds decrypted displayed
 content, while the unlocked server holds decrypted data and encryption keys.

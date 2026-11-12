@@ -9,7 +9,6 @@ from datetime import datetime, timezone
 import faulthandler
 import json
 import os
-import secrets
 import signal
 import sys
 import threading
@@ -19,7 +18,6 @@ from pathlib import Path
 
 from loguru import logger
 
-from app.security.authenticated_logging import EncryptedLogSink
 from app.security.authenticated_logging import EncryptedTextStream
 from app.security.sensitive_logging import traceback_frame_summary
 from app.server_runtime import resolve_runtime_logs_directory
@@ -51,8 +49,6 @@ _EVENT_LOOP_STALL_LOG_INTERVAL_SECONDS = 5.0
 _SLOW_REQUEST_SECONDS = 10.0
 _SLOW_REQUEST_LOG_INTERVAL_SECONDS = 10.0
 _REQUEST_WATCH_INTERVAL_SECONDS = 2.0
-# Random bytes in the session id that names each authenticated log file.
-_LOG_SESSION_ID_RANDOM_BYTES = 8
 _diagnostic_file_handle = None  # shockharness: ignore[STATE001] reason="set once while the app is imported, before any server thread runs"
 _process_diagnostics_configured = False  # shockharness: ignore[STATE001] reason="checked and set only by configure_process_diagnostics, run once while the app is imported"
 _request_watchdog_started = False  # shockharness: ignore[STATE001] reason="started once, from configure_process_diagnostics while the app is imported"
@@ -60,9 +56,6 @@ _event_loop_watchdog_started = False  # shockharness: ignore[STATE001] reason="s
 _direct_append_log_recycler_started = False  # shockharness: ignore[STATE001] reason="started once, from configure_process_diagnostics while the app is imported"
 _authenticated_logging_active = False  # shockharness: ignore[STATE001] reason="written only under _authenticated_logging_lock; readers see one bool"
 _authenticated_logging_lock = threading.Lock()
-_authenticated_log_sink: EncryptedLogSink | None = None  # shockharness: ignore[STATE001] reason="every access holds _authenticated_logging_lock"
-_authenticated_log_sink_id: int | None = None  # shockharness: ignore[STATE001] reason="every access holds _authenticated_logging_lock"
-_authenticated_log_path: Path | None = None  # shockharness: ignore[STATE001] reason="every access holds _authenticated_logging_lock"
 _authenticated_stdout: EncryptedTextStream | None = None  # shockharness: ignore[STATE001] reason="every access holds _authenticated_logging_lock; the stream serializes its own writes and close"
 _authenticated_stderr: EncryptedTextStream | None = None  # shockharness: ignore[STATE001] reason="every access holds _authenticated_logging_lock; the stream serializes its own writes and close"
 _plaintext_stdout = None  # shockharness: ignore[STATE001] reason="every access holds _authenticated_logging_lock"
@@ -174,16 +167,6 @@ def _diagnostic_log_path(*, namespace: str) -> Path:
     return logs_directory / f"{namespace}-server.log"
 
 
-def _new_authenticated_log_path(*, namespace: str) -> Path:
-    if namespace.strip() == "":
-        raise ValueError("namespace must not be empty")
-    logs_directory = resolve_runtime_logs_directory()
-    logs_directory.mkdir(parents=True, exist_ok=True)
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ")
-    session_id = secrets.token_hex(_LOG_SESSION_ID_RANDOM_BYTES)
-    return logs_directory / f"{namespace}-server.auth-{timestamp}-{session_id}.log.enc"
-
-
 def allow_plaintext_diagnostics(record: Mapping[str, object]) -> bool:
     del record
     return not _authenticated_logging_active
@@ -192,7 +175,7 @@ def allow_plaintext_diagnostics(record: Mapping[str, object]) -> bool:
 def log_unexpected_exception(
     *, context: str, exception: BaseException, request_id: str, level: str,
 ) -> None:
-    """Keep plaintext diagnostics data-free; retain full traces in encrypted logs."""
+    """Record the exception's type and code locations only, never its message."""
     if context == "":
         raise ValueError("Exception context must not be empty")
     if level not in {"ERROR", "CRITICAL"}:
@@ -211,24 +194,6 @@ def log_unexpected_exception(
         errno_detail=errno_detail,
         frames=traceback_frame_summary(exception.__traceback__),
     )
-    write_encrypted_exception_trace(
-        context=context, exception=exception, request_id=request_id,
-    )
-
-
-def write_encrypted_exception_trace(
-    *, context: str, exception: BaseException, request_id: str,
-) -> None:
-    """Write exception messages only to the authenticated encrypted sink."""
-    with _authenticated_logging_lock:
-        if not _authenticated_logging_active:
-            return
-        if _authenticated_log_sink is None:
-            raise RuntimeError("Authenticated logging is active without an encrypted sink")
-        formatted = "".join(traceback.format_exception(exception))
-        _authenticated_log_sink.write(
-            f"[diagnostics] {context} request_id={request_id}\n{formatted}"
-        )
 
 
 def _disable_plaintext_fault_logging() -> None:
@@ -251,11 +216,13 @@ def _enable_plaintext_fault_logging() -> None:
         )
 
 
-def activate_authenticated_logging(*, namespace: str, dek: bytes) -> Path:
+def activate_authenticated_logging(*, namespace: str, dek: bytes) -> None:
+    """While a vault is unlocked nothing reaches a log file: plaintext sinks and fault
+    logging are off, and anything printed reaches the process streams only encrypted.
+    No encrypted log file is kept either (agreed 2026-11-11, docs/ready-to-build/
+    error-reports.md section 6): nothing could read one, a new one was written at every
+    login and never removed, and the logs folder's size cap then refused to start MetaList."""
     global _authenticated_logging_active
-    global _authenticated_log_sink
-    global _authenticated_log_sink_id
-    global _authenticated_log_path
     global _authenticated_stdout
     global _authenticated_stderr
     global _plaintext_stdout
@@ -268,23 +235,7 @@ def activate_authenticated_logging(*, namespace: str, dek: bytes) -> Path:
 
     with _authenticated_logging_lock:
         if _authenticated_logging_active:
-            if _authenticated_log_path is None:
-                raise RuntimeError("Authenticated logging is active without a log path")
-            return _authenticated_log_path
-
-        _authenticated_log_path = _new_authenticated_log_path(namespace=namespace)
-        _authenticated_log_sink = EncryptedLogSink(path=_authenticated_log_path, dek=dek)
-        _authenticated_log_sink_id = logger.add(
-            _authenticated_log_sink,
-            level="INFO",
-            backtrace=False,
-            diagnose=False,
-            enqueue=False,
-            format=(
-                "{time:YYYY-MM-DD HH:mm:ss.SSS} | {level:<8} | "
-                "pid={process} thread={thread.name} | {message} | {extra}"
-            ),
-        )
+            return
         _disable_plaintext_fault_logging()
         _plaintext_stdout = sys.stdout
         _plaintext_stderr = sys.stderr
@@ -293,14 +244,10 @@ def activate_authenticated_logging(*, namespace: str, dek: bytes) -> Path:
         sys.stdout = _authenticated_stdout
         sys.stderr = _authenticated_stderr
         _authenticated_logging_active = True
-        return _authenticated_log_path
 
 
 def deactivate_authenticated_logging() -> bool:
     global _authenticated_logging_active
-    global _authenticated_log_sink
-    global _authenticated_log_sink_id
-    global _authenticated_log_path
     global _authenticated_stdout
     global _authenticated_stderr
     global _plaintext_stdout
@@ -309,23 +256,16 @@ def deactivate_authenticated_logging() -> bool:
     with _authenticated_logging_lock:
         if not _authenticated_logging_active:
             return False
-        if _authenticated_log_sink is None or _authenticated_log_sink_id is None:
-            raise RuntimeError("Authenticated logging is active without an encrypted sink")
         if _authenticated_stdout is None or _authenticated_stderr is None:
             raise RuntimeError("Authenticated logging is active without encrypted process streams")
         if _plaintext_stdout is None or _plaintext_stderr is None:
             raise RuntimeError("Authenticated logging is active without original process streams")
 
-        logger.remove(_authenticated_log_sink_id)
-        _authenticated_log_sink.close()
         sys.stdout = _plaintext_stdout
         sys.stderr = _plaintext_stderr
         _authenticated_stdout.close()
         _authenticated_stderr.close()
 
-        _authenticated_log_sink = None
-        _authenticated_log_sink_id = None
-        _authenticated_log_path = None
         _authenticated_stdout = None
         _authenticated_stderr = None
         _plaintext_stdout = None

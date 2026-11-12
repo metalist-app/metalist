@@ -341,24 +341,30 @@ the browser (`link_icons._svg_icon_png()`).
 
 ### Sensitive Telemetry
 
+Encrypted log files were dropped on 2026-11-11 (below). Agreed, not built: one plain log of safe records before and after login, and red-overlay error reports with a guaranteed redaction (`docs/ready-to-build/error-reports.md`).
+
 Plaintext runtime logs and browser diagnostics describe application structure
-without recording decrypted user data. Authenticated encrypted logs may contain
-full exception messages and tracebacks to diagnose failures:
+without recording decrypted user data. Nothing is written to a log file while a
+vault is unlocked:
 
 - Before an encrypted namespace is unlocked, persistent startup diagnostics are
   plaintext because no DEK exists in memory and decrypted vault data is not
   hydrated. Successful DEK unwrap switches the process to authenticated logging
   before any note, rule, tab, reminder, or tag-activity decryption begins.
-- While unlocked, every Loguru file record and every direct `stdout`/`stderr`
-  write is stored as an independent `MLLOG1` AES-256-GCM envelope under the
-  namespace DEK using a domain-separated HKDF logging key and a fresh random
-  nonce. Plaintext Loguru sinks are filtered out and plaintext fault logging is
-  disabled for the unlocked interval.
-- Unexpected errors always record safe exception types and source frames through
-  Loguru. Full exception text and traceback are written directly to the encrypted
-  sink only while unlocked; they may contain note content and must be handled as
-  private data. A short request ID in HTTP 500 responses identifies the matching
-  server record without exposing the exception message to the browser.
+- While unlocked, plaintext Loguru sinks are filtered out, plaintext fault
+  logging is disabled, and no other log file is written. Every direct
+  `stdout`/`stderr` write becomes an independent `MLLOG1` AES-256-GCM envelope
+  under the namespace DEK, using a domain-separated HKDF logging key and a fresh
+  random nonce. Until 2026-11-11 Loguru records also went to a
+  `<namespace>-server.auth-*.log.enc` file per login; nothing could read those,
+  they were never removed, and the logs folder's 512 MB start-up cap would have
+  stopped MetaList from starting, so they are no longer written. Existing ones
+  are left in place.
+- Unexpected errors record safe exception types and source frames through
+  Loguru (in the plaintext log while locked). Full exception text and
+  traceback are never written: they may contain note content. A short request ID
+  in HTTP 500 responses names the request; while unlocked no server record of it
+  is kept yet (`docs/ready-to-build/error-reports.md`).
 - Logout returns to plaintext startup diagnostics only after decrypted runtime
   stores and the session key have been purged. Password removal and backup
   restore close the encrypted diagnostic session after their sensitive work.

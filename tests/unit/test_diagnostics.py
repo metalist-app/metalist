@@ -5,7 +5,6 @@ import pytest
 from loguru import logger
 
 from app.security.authenticated_logging import decrypt_log_record
-from app.security.authenticated_logging import decrypt_log_records
 from app.services import diagnostics
 
 
@@ -181,10 +180,14 @@ def test_collect_slow_request_logs_rate_limits_repeated_reports() -> None:
     assert len(later_logs) == 1
 
 
-def test_authenticated_logging_encrypts_process_streams_and_diagnostic_sink(
+def test_an_unlocked_vault_writes_no_log_file_and_encrypts_process_streams(
     tmp_path,
     monkeypatch,
 ) -> None:
+    """While a vault is unlocked nothing is written to the logs folder (docs/ready-to-build/
+    error-reports.md, section 6, agreed 2026-11-11). A file per login was never read, never
+    removed, and once the folder passed 512 MB MetaList refused to start. Anything printed
+    still reaches the process streams only encrypted."""
     dek = b"a" * 32
     secret = "decrypted note content must never persist as plaintext"
     plaintext_stdout = StringIO()
@@ -195,34 +198,28 @@ def test_authenticated_logging_encrypts_process_streams_and_diagnostic_sink(
     monkeypatch.setattr(diagnostics.sys, "stdout", plaintext_stdout)
     monkeypatch.setattr(diagnostics.sys, "stderr", plaintext_stderr)
 
-    encrypted_path = diagnostics.activate_authenticated_logging(namespace="work", dek=dek)
+    diagnostics.activate_authenticated_logging(namespace="work", dek=dek)
     try:
         print(secret)
+        logger.info("a record while unlocked: {secret}", secret=secret)
         with pytest.raises(TypeError) as captured:
             raise TypeError(secret)
         diagnostics.log_unexpected_exception(
             context="HTTP request", exception=captured.value,
             request_id="", level="ERROR",
         )
-        assert diagnostics._authenticated_log_sink is not None
-        diagnostics._authenticated_log_sink.write(secret)
     finally:
         diagnostics.deactivate_authenticated_logging()
 
+    assert sorted(path.name for path in tmp_path.iterdir()) == []
     stdout_bytes = plaintext_stdout.getvalue().encode("ascii")
     assert secret.encode("utf-8") not in stdout_bytes
     assert secret.encode("utf-8") not in plaintext_stderr.getvalue().encode("ascii")
-    assert secret.encode("utf-8") not in encrypted_path.read_bytes()
     stdout_records = [
         decrypt_log_record(envelope=line, dek=dek)
         for line in stdout_bytes.splitlines()
     ]
     assert secret in stdout_records
-    assert secret in decrypt_log_records(path=encrypted_path, dek=dek)
-    assert any(
-        "TypeError: " + secret in record
-        for record in decrypt_log_records(path=encrypted_path, dek=dek)
-    )
     assert diagnostics.sys.stdout is plaintext_stdout
     assert diagnostics.sys.stderr is plaintext_stderr
 
