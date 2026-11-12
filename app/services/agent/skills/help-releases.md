@@ -5,6 +5,21 @@ What changed in each MetaList version, newest first, from its changelog
 Compare with installed_version from the help lookup to tell the user whether
 they already have a release. Version info offers updates (see the data topic).
 
+## 0.28.0
+
+- **Report a Problem.** In the command palette, Report a Problem… saves a report of the last 10 minutes, with a sentence or two of your own, so you can send it to whoever helps you. The red error offers Export Report… too, and Export Problem Reports… saves the last 20. A report holds what you clicked and typed and how busy the computer was, never your words: note text becomes `xxxx`, each tag a made-up name, and MetaList refuses to save a report with anything else in it.
+- **The AI conversation is kept.** A restart, an update, logging out or locking keeps it; only Clear Chat ends it. In a vault with a password it is encrypted like the notes.
+- **Add or Remove Tag (Current View)…** in the command palette and the view's right-click menu adds a tag to the notes the search finds, or removes one from every note shown, as one undo step.
+- **Insert ▸ Password** types a new password into a note, drawn as dots with an eye and click to copy; exports, prints and the AI never see it.
+- **Fathom,** a new look under Theme: a code editor's deep blue-grey, in your system's monospace font.
+- **⌥⌘Enter** (Ctrl+Alt+Enter on Windows and Linux) adds a note one level out, below the current note's whole branch.
+- Changes made while another is still saving wait their turn instead of failing. Deleting a folder's notes, or a view's, shows the trim reminder at once.
+- Imports no longer take the search's tags, and a folder import's kinds open again to list their files. A red error now shows above any open dialog.
+- MetaList renews its own HTTPS certificate before it expires, so phones and other computers keep connecting.
+- Logs hold no note text, tags or searches, and stay small; the old encrypted log files are deleted. Backups made before an update include attachments.
+- A vault saved by a newer MetaList is refused before anything is written to it.
+- Vaults are upgraded (database version 19) when first unlocked, or at startup without a password, after a backup: an older MetaList cannot open them afterwards.
+
 ## 0.27.0
 
 - **Files of any size.** Uploads stream into storage and the 100 MB limit is gone. Each file is its own file on disk, in a `files` folder beside the notes; in a vault with a password each one is encrypted with its own key and padded so its size doesn't reveal it.
@@ -176,22 +191,4 @@ they already have a release. Version info offers updates (see the data topic).
 - The startup output in the terminal is easier to read: the version, a check mark per check, and each namespace's URLs lined up.
 - Fixed: clicking the AI chat's $ or eye button twice quickly crashed with "Redundant state change".
 
-## 0.13.0
-
-- Dictation: text from speech-to-text tools such as Superwhisper, pasted into the search bar or any tag field, becomes your existing tags ("neural network" gives `neural-network`). Say "quote … end quote" for text, "minus" to exclude, "at" before meta tags such as `@todo`. In a note, the words after "start tags" go to its tag bar. The phrases are set in Dictation Settings, and one undo restores what was pasted.
-- A quoted search with a space at its edge matches whole words: `" fat"` no longer finds "father".
-- The AI keeps a record of what it did for each answer (notes read, searches, web pages opened), so questions like "did you search the web for that?" are answered from what actually happened.
-- Dropping a `.txt`, `.md`, `.csv` or `.json` file stores it as before and adds its text as a child note, shown as Markdown, a table or formatted JSON. File pills show the extension (`.MD`, `.CSV`, …), and hovering a pill says that clicking downloads the file.
-- Typing one letter in the tag bar now narrows the suggestions you were already shown instead of reordering them, so the tag you want is in the top five far more often.
-
-## 0.12.0
-
-- AI chat is now a tool-using agent: in one answer it can look up MetaList help, read and search the notes in your view, open web pages, and open menus, instead of picking a single route up front. Answers cite notes and web pages with clickable references, including each item listed from a web page.
-- Nothing changes without your Yes: tag operations ask first with the exact change, and web addresses that carry words from your notes ask before opening. Summaries that fit in one pass start without a dialog, and summaries never block other edits while they run.
-- "How do I change…" questions open the menu that holds the setting; release notes are part of the help. AI prompts and skills are no longer editable, and a $ button shows or hides the spend estimate.
-- The AI is told only that a note is private, never which privacy setting hides it, and failed AI steps are explained in the chat.
-- Leaving edit mode keeps your place, with no highlight; a collapsed note you changed stays expanded. Clicking into a note keeps the clicked spot under the pointer, including in diagrams and formulas.
-- Dragging a note shows a ghost, a drop line and a direction cursor; the note lands where you dropped it without the page scrolling.
-- Searches that cannot be parsed are explained politely instead of failing.
-
-Versions before 0.12.0 are left out; the changelog (CHANGELOG.md) lists them.
+Versions before 0.14.0 are left out; the changelog (CHANGELOG.md) lists them.
