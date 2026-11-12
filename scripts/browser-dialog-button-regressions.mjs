@@ -145,7 +145,7 @@ function restoreCase(label, preflight, labels, mainClass) {
 }
 
 const CASES = [
-  simpleCase({label: 'AI Agent Settings', open: page => openPalette(page, 'openAiAgentSettings', false),
+  simpleCase({label: 'AI Agent Settings', open: page => openPalette(page, 'openAiAgentSettings', 'keys'),
     mainSelector: '#ai-agent-save', labels: ['Cancel', 'Save'], mainClass: 'primary-btn', hasAlternative: false,
     checksNarrow: true}),
   simpleCase({label: 'Session Timeout', open: page => openModal(page, '/static/js/modules/modals/session-timeout-modal.js',

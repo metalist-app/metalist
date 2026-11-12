@@ -191,7 +191,7 @@ async function portsCase(page) {
 }
 
 async function aiKeyCase(page) {
-  await openFromPalette(page, 'openAiAgentSettings', [false]);
+  await openFromPalette(page, 'openAiAgentSettings', ['keys']);
   const before = await layout(page, '#ai-agent-settings-modal');
   await page.click('#ai-agent-key-save');
   await idle(page);
