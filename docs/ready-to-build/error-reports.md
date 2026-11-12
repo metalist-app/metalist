@@ -132,6 +132,8 @@ Agreed with the maintainer 2026-11-12, not built. Why: the maintainer's dad (Win
 
 What the maintainer should see; each is checked in a throwaway before the early look.
 
+The `problem-reports` browser suite (`scripts/browser-problem-report-regressions.mjs`, added 2026-11-12) keeps checks 1–6 and 7a, in Chrome and Firefox. It covers check 8 only on the server side: a report made with no vault open has no notes, is kept nowhere, and is refused if it names notes. The overlay on the login page is not built: the red error is installed after login (`installGlobalErrorOverlay`, `mode-manager-controller.js`). The theme and phone-width part of check 2, the 20-report limit (a unit test) and check 7 (a slow request, unit tests) are not in the suite.
+
 1. A red error ends with an **Export Report…** button; it saves one `.json` file, readable as text.
 2. **Report a Problem…** in the command palette leaves edit mode (saving) and opens a small dialog: one text box and **Export…**, following the theme (Light, Dark, Fathom) and fitting a phone-width window.
 3. Typing "it froze when I added a tag" and Export… saves a file whose `description` is exactly that sentence, and whose `madeBy` is `"user"` and `error` is `null`. The box takes at most 300 characters.

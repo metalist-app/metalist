@@ -53,6 +53,7 @@ import {checkTabSwitching} from './browser-tab-switch-regressions.mjs';
 import {checkFolderNoteDrag} from './browser-folder-note-drag-regressions.mjs';
 import {checkFolderContext} from './browser-folder-context-regressions.mjs';
 import {checkDeleteTrim} from './browser-delete-trim-regressions.mjs';
+import {checkProblemReports} from './browser-problem-report-regressions.mjs';
 import {checkFolderDrops} from './browser-folder-drop-regressions.mjs';
 import {checkFileSizeSort} from './browser-file-size-sort-regressions.mjs';
 import {checkViewChangeTop} from './browser-view-change-top-regressions.mjs';
@@ -501,6 +502,10 @@ try {
     await checkDeleteTrim(page);
     assert.deepEqual(errors, []);
     console.log(`PASS delete trim regressions in ${await browser.version()}`);
+  } else if (process.env.BROWSER_TEST_SUITE === 'problem-reports') {
+    await checkProblemReports(page);
+    assert.deepEqual(errors, []);
+    console.log(`PASS problem report regressions in ${await browser.version()}`);
   } else if (process.env.BROWSER_TEST_SUITE === 'edge-tabs') {
     await checkEdgeTabs(page);
     assert.deepEqual(errors, []);
