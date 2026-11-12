@@ -86,6 +86,7 @@ CN = ${LAN_IP}
 
 [v3_req]
 subjectAltName = @alt_names
+extendedKeyUsage = serverAuth
 
 [alt_names]
 DNS.1 = localhost
@@ -99,7 +100,7 @@ openssl req \
   -nodes \
   -newkey rsa:2048 \
   -sha256 \
-  -days 365 \
+  -days 825 \
   -keyout "${KEY_PATH}" \
   -out "${CERT_PATH}" \
   -config "${CONF_PATH}" \

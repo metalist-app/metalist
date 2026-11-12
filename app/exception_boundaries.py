@@ -120,6 +120,10 @@ CAPTURE_BOUNDARIES = {
     'app/security/request_boundary.py:_parse_host_header:parse_capture': ('ValueError',),
     # Parse external host, URL, IP or date input at the named boundary.
     'app/security/request_boundary.py:_parse_origin:parse_capture': ('ValueError',),
+    # MetaList's own certificate or key that does not parse is replaced with a new pair.
+    'app/server_runtime.py:_default_tls_pair_replace_reason:certificate_capture': ('ValueError',),
+    # MetaList's own certificate or key that does not parse is replaced with a new pair.
+    'app/server_runtime.py:_default_tls_pair_replace_reason:key_capture': ('ValueError',),
     # Parse external host, URL, IP or date input at the named boundary.
     'app/server_runtime.py:_detect_lan_ip:configured_ip_capture': ('ValueError',),
     # Parse external host, URL, IP or date input at the named boundary.

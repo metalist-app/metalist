@@ -1,7 +1,13 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 import sqlite3
+import ssl
 
+from cryptography import x509
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID
 import pytest
 
 import app.server_runtime as server_runtime
@@ -189,6 +195,11 @@ def test_ensure_default_tls_pair_generates_cert_and_key(tmp_path, monkeypatch) -
     assert key_path.is_file() is True
     assert b"BEGIN CERTIFICATE" in cert_path.read_bytes()
     assert b"BEGIN RSA PRIVATE KEY" in key_path.read_bytes()
+    certificate = x509.load_pem_x509_certificate(cert_path.read_bytes())
+    assert certificate.not_valid_after_utc - certificate.not_valid_before_utc <= timedelta(days=825)
+    assert certificate.not_valid_after_utc - certificate.not_valid_before_utc > timedelta(days=824)
+    extended_key_usage = certificate.extensions.get_extension_for_class(x509.ExtendedKeyUsage).value
+    assert list(extended_key_usage) == [ExtendedKeyUsageOID.SERVER_AUTH]
 
 
 def test_ensure_default_tls_pair_respects_auto_generate_disable_flag(tmp_path, monkeypatch) -> None:
@@ -204,20 +215,33 @@ def test_ensure_default_tls_pair_respects_auto_generate_disable_flag(tmp_path, m
     assert key_path.exists() is False
 
 
-def test_ensure_default_tls_pair_reuses_existing_default_paths(tmp_path, monkeypatch) -> None:
+@pytest.mark.parametrize("damage", ["certificate", "key", "other key"])
+def test_ensure_default_tls_pair_replaces_unreadable_or_mismatched_default_pair(
+    tmp_path,
+    monkeypatch,
+    damage,
+) -> None:
     cert_path = tmp_path / "certs" / "metalist-cert.pem"
     key_path = tmp_path / "certs" / "metalist-key.pem"
-    cert_path.parent.mkdir(parents=True, exist_ok=True)
-    cert_path.write_text("existing-cert", encoding="utf-8")
-    key_path.write_text("existing-key", encoding="utf-8")
+    now = datetime.now(timezone.utc)
+    _write_self_signed_pair(cert_path=cert_path, key_path=key_path, not_valid_after=now + timedelta(days=300))
+    if damage == "certificate":
+        cert_path.write_text("existing-cert", encoding="utf-8")
+    elif damage == "key":
+        key_path.write_text("existing-key", encoding="utf-8")
+    else:
+        other_cert_path = tmp_path / "other" / "cert.pem"
+        other_key_path = tmp_path / "other" / "key.pem"
+        _write_self_signed_pair(cert_path=other_cert_path, key_path=other_key_path, not_valid_after=now + timedelta(days=300))
+        key_path.write_bytes(other_key_path.read_bytes())
     monkeypatch.setattr(server_runtime, "_DEFAULT_CERT_PATH", cert_path)
     monkeypatch.setattr(server_runtime, "_DEFAULT_KEY_PATH", key_path)
 
-    pair = ensure_default_tls_pair(environ={})
+    pair = ensure_default_tls_pair(environ={"METALIST_LAN_IP": "10.0.0.31"})
 
     assert pair == (str(cert_path), str(key_path))
-    assert cert_path.read_text(encoding="utf-8") == "existing-cert"
-    assert key_path.read_text(encoding="utf-8") == "existing-key"
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    context.load_cert_chain(certfile=str(cert_path), keyfile=str(key_path))
 
 
 def test_ensure_default_tls_pair_skips_generation_when_explicit_tls_paths_are_set(
@@ -671,3 +695,94 @@ def test_resolve_https_redirect_url_does_not_redirect_localhost_http_requests() 
     )
 
     assert redirect_url is None
+
+
+def _write_self_signed_pair(*, cert_path, key_path, not_valid_after) -> None:
+    private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "localhost")])
+    certificate = (
+        x509.CertificateBuilder()
+        .subject_name(name)
+        .issuer_name(name)
+        .public_key(private_key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(not_valid_after - timedelta(days=365))
+        .not_valid_after(not_valid_after)
+        .add_extension(x509.SubjectAlternativeName([x509.DNSName("localhost")]), critical=False)
+        .sign(private_key=private_key, algorithm=hashes.SHA256())
+    )
+    cert_path.parent.mkdir(parents=True, exist_ok=True)
+    cert_path.write_bytes(certificate.public_bytes(serialization.Encoding.PEM))
+    key_path.write_bytes(
+        private_key.private_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PrivateFormat.TraditionalOpenSSL,
+            encryption_algorithm=serialization.NoEncryption(),
+        )
+    )
+
+
+def _not_valid_after(cert_path) -> datetime:
+    return x509.load_pem_x509_certificate(cert_path.read_bytes()).not_valid_after_utc
+
+
+@pytest.mark.parametrize("days_left", [-1, 10])
+def test_ensure_default_tls_pair_replaces_expired_or_expiring_default_certificate(
+    tmp_path,
+    monkeypatch,
+    days_left,
+) -> None:
+    cert_path = tmp_path / "certs" / "metalist-cert.pem"
+    key_path = tmp_path / "certs" / "metalist-key.pem"
+    now = datetime.now(timezone.utc)
+    _write_self_signed_pair(cert_path=cert_path, key_path=key_path, not_valid_after=now + timedelta(days=days_left))
+    old_cert_bytes = cert_path.read_bytes()
+    monkeypatch.setattr(server_runtime, "_DEFAULT_CERT_PATH", cert_path)
+    monkeypatch.setattr(server_runtime, "_DEFAULT_KEY_PATH", key_path)
+
+    pair = ensure_default_tls_pair(environ={"METALIST_LAN_IP": "10.0.0.31"})
+
+    assert pair == (str(cert_path), str(key_path))
+    assert cert_path.read_bytes() != old_cert_bytes
+    assert _not_valid_after(cert_path) > now + timedelta(days=300)
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    context.load_cert_chain(certfile=str(cert_path), keyfile=str(key_path))
+
+
+def test_ensure_default_tls_pair_keeps_default_certificate_with_time_left(tmp_path, monkeypatch) -> None:
+    cert_path = tmp_path / "certs" / "metalist-cert.pem"
+    key_path = tmp_path / "certs" / "metalist-key.pem"
+    now = datetime.now(timezone.utc)
+    _write_self_signed_pair(cert_path=cert_path, key_path=key_path, not_valid_after=now + timedelta(days=300))
+    old_cert_bytes = cert_path.read_bytes()
+    old_key_bytes = key_path.read_bytes()
+    monkeypatch.setattr(server_runtime, "_DEFAULT_CERT_PATH", cert_path)
+    monkeypatch.setattr(server_runtime, "_DEFAULT_KEY_PATH", key_path)
+
+    pair = ensure_default_tls_pair(environ={})
+
+    assert pair == (str(cert_path), str(key_path))
+    assert cert_path.read_bytes() == old_cert_bytes
+    assert key_path.read_bytes() == old_key_bytes
+
+
+def test_ensure_default_tls_pair_never_touches_explicit_expired_certificate(tmp_path, monkeypatch) -> None:
+    default_cert_path = tmp_path / "certs" / "metalist-cert.pem"
+    default_key_path = tmp_path / "certs" / "metalist-key.pem"
+    explicit_cert_path = tmp_path / "own" / "cert.pem"
+    explicit_key_path = tmp_path / "own" / "key.pem"
+    expired = datetime.now(timezone.utc) - timedelta(days=1)
+    _write_self_signed_pair(cert_path=explicit_cert_path, key_path=explicit_key_path, not_valid_after=expired)
+    old_cert_bytes = explicit_cert_path.read_bytes()
+    old_key_bytes = explicit_key_path.read_bytes()
+    monkeypatch.setattr(server_runtime, "_DEFAULT_CERT_PATH", default_cert_path)
+    monkeypatch.setattr(server_runtime, "_DEFAULT_KEY_PATH", default_key_path)
+
+    pair = ensure_default_tls_pair(
+        environ={"METALIST_TLS_CERT": str(explicit_cert_path), "METALIST_TLS_KEY": str(explicit_key_path)},
+    )
+
+    assert pair is None
+    assert explicit_cert_path.read_bytes() == old_cert_bytes
+    assert explicit_key_path.read_bytes() == old_key_bytes
+    assert default_cert_path.exists() is False

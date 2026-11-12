@@ -618,6 +618,7 @@ swap, or filesystem snapshots.
 - With no explicit namespace on a single-namespace launch, the default namespace DB is `~/MetaList/namespaces/default/default.metalist.db`.
 - Deleting a namespace removes its namespace directory on disk, including the namespace SQLite databases, launch-profile metadata, and backups under `~/MetaList/namespaces/<namespace>/`.
 - HTTPS is opt-in via existing PEM files at `certs/metalist-cert.pem` and `certs/metalist-key.pem`, or explicit `METALIST_TLS_CERT` and `METALIST_TLS_KEY`.
+- MetaList's own pair is self-signed, valid 825 days with EKU serverAuth (Apple's requirements for TLS server certificates). A start replaces it, with a new key, when fewer than 30 days remain or the certificate or key is unreadable or mismatched; `certs/renew.lock` keeps vaults starting together from reading a new certificate with the old key. Explicit `METALIST_TLS_CERT`/`METALIST_TLS_KEY` files are never touched. A changed LAN address does not renew it (decided 2026-11-11): a laptop moves between networks, and each new address would make phones warn again back home; `generate-lan-cert.sh` makes one for a new address by hand.
 - The default listener is loopback-only (`127.0.0.1`). When PEMs exist, MetaList starts HTTPS on the same bind host at port `8443` and redirects non-loopback HTTP hostnames to HTTPS.
 - For direct HTTPS from an explicit single-namespace `python main.py ...` run, set both:
   - `METALIST_TLS_CERT=/path/to/fullchain.pem`
