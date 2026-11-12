@@ -85,7 +85,7 @@ function imageResizeShortcut(context, key) {
     if (typeof context.isMac !== 'boolean') {
         throw new Error('Image menu context missing isMac boolean');
     }
-    return formatMenuShortcut({ isMac: context.isMac, mod: true, shift: false, key });
+    return formatMenuShortcut({ isMac: context.isMac, mod: true, alt: false, shift: false, key });
 }
 
 // Right-clicking a rendered Excalidraw diagram: edit it, resize it, zoom it, or save the .excalidraw file.
@@ -384,9 +384,10 @@ function buildNoteContextItems(context, handlers) {
     const canInsertReference = context.canInsertReference === true;
     const isMac = requireNoteFlag(context, 'isMac');
     // A menu item's shortcut: the key alone, with ⌘ (Ctrl), or with ⌘⇧ (Ctrl+Shift).
-    const plainKey = (key) => formatMenuShortcut({ isMac, mod: false, shift: false, key });
-    const commandKey = (key) => formatMenuShortcut({ isMac, mod: true, shift: false, key });
-    const commandShiftKey = (key) => formatMenuShortcut({ isMac, mod: true, shift: true, key });
+    const plainKey = (key) => formatMenuShortcut({ isMac, mod: false, alt: false, shift: false, key });
+    const commandKey = (key) => formatMenuShortcut({ isMac, mod: true, alt: false, shift: false, key });
+    const commandShiftKey = (key) => formatMenuShortcut({ isMac, mod: true, alt: false, shift: true, key });
+    const commandAltKey = (key) => formatMenuShortcut({ isMac, mod: true, alt: true, shift: false, key });
 
     // What you clicked: the selection or the note.
     const copyItem = {
@@ -426,7 +427,14 @@ function buildNoteContextItems(context, handlers) {
     }
 
     const pasteEntries = [];
-    if (hasNoteClipboard) {
+    // ⌘V onto a blank note (no text, no children) fills it rather than adding a
+    // sibling (paste_sibling.py), so there the menu says so, first.
+    if (hasNoteClipboard && requireNoteFlag(context, 'isBlankNote')) {
+        pasteEntries.push(
+            { id: 'paste-into-note', label: 'Paste Into Note', icon: 'paste', enabled: true, shortcut: commandKey('V'), onSelect: () => onPasteNote(noteId) },
+            { id: 'paste-note-child', label: 'Paste Child Note', icon: 'paste_child', enabled: true, shortcut: commandShiftKey('V'), onSelect: () => onPasteNoteChild(noteId) },
+        );
+    } else if (hasNoteClipboard) {
         pasteEntries.push(
             { id: 'paste-note', label: 'Paste Sibling Note', icon: 'paste', enabled: true, shortcut: commandKey('V'), onSelect: () => onPasteNote(noteId) },
             { id: 'paste-note-child', label: 'Paste Child Note', icon: 'paste_child', enabled: true, shortcut: commandShiftKey('V'), onSelect: () => onPasteNoteChild(noteId) },
@@ -438,6 +446,11 @@ function buildNoteContextItems(context, handlers) {
         { id: 'add-sibling-note', label: 'Add Sibling Note', icon: 'add_sibling', enabled: true, shortcut: commandKey('Enter'), onSelect: () => onAddSiblingNote(noteId) },
         { id: 'add-child-note', label: 'Add Child Note', icon: 'add_child', enabled: true, shortcut: commandShiftKey('Enter'), onSelect: () => onAddChildNote(noteId) },
     ];
+    // After the note's parent, one level out: a root note has no level out, so it is hidden there.
+    if (requireNoteFlag(context, 'canAddNoteOneLevelOut')) {
+        const onAddNoteOneLevelOut = requireNoteHandler(handlers, 'onAddNoteOneLevelOut');
+        addEntries.push({ id: 'add-note-one-level-out', label: 'Add Note One Level Out', icon: 'outdent', enabled: true, shortcut: commandAltKey('Enter'), onSelect: () => onAddNoteOneLevelOut(noteId) });
+    }
     if (context.canAddNoteAtTop === true) {
         if (typeof onAddNoteAtTop !== 'function') {
             throw new Error('Non-editing note context missing onAddNoteAtTop handler');
@@ -849,10 +862,11 @@ function buildFileFilterItem(context, handlers) {
 
 const MAC_KEY_SYMBOLS = Object.freeze({ Enter: '↩', Backspace: '⌫' });
 
-// A keyboard shortcut as the platform writes it: ⇧⌘Z on a Mac, Ctrl+Shift+Z elsewhere.
-export function formatMenuShortcut({ isMac, mod, shift, key }) {
-    if (typeof isMac !== 'boolean' || typeof mod !== 'boolean' || typeof shift !== 'boolean') {
-        throw new Error('formatMenuShortcut requires isMac, mod and shift booleans');
+// A keyboard shortcut as the platform writes it: ⇧⌘Z on a Mac, Ctrl+Shift+Z elsewhere
+// (Apple's modifier order ⌥⇧⌘; Ctrl+Alt+Shift elsewhere).
+export function formatMenuShortcut({ isMac, mod, alt, shift, key }) {
+    if (typeof isMac !== 'boolean' || typeof mod !== 'boolean' || typeof alt !== 'boolean' || typeof shift !== 'boolean') {
+        throw new Error('formatMenuShortcut requires isMac, mod, alt and shift booleans');
     }
     if (typeof key !== 'string' || key.length === 0) {
         throw new Error('formatMenuShortcut requires key');
@@ -861,9 +875,9 @@ export function formatMenuShortcut({ isMac, mod, shift, key }) {
         // Keys with a Mac symbol (Enter ↩, arrows) show it; letters show themselves.
         let macKey = key;
         if (Object.hasOwn(MAC_KEY_SYMBOLS, key)) macKey = MAC_KEY_SYMBOLS[key];
-        return `${shift ? '⇧' : ''}${mod ? '⌘' : ''}${macKey}`;
+        return `${alt ? '⌥' : ''}${shift ? '⇧' : ''}${mod ? '⌘' : ''}${macKey}`;
     }
-    return [mod ? 'Ctrl' : '', shift ? 'Shift' : '', key].filter((part) => part !== '').join('+');
+    return [mod ? 'Ctrl' : '', alt ? 'Alt' : '', shift ? 'Shift' : '', key].filter((part) => part !== '').join('+');
 }
 
 function requireViewHandler(handlers, name) {
@@ -931,9 +945,9 @@ function buildViewContextItems(context, handlers) {
         throw new Error('View context theme must be system, light or dark');
     }
     // A menu item's shortcut: the key alone, with ⌘ (Ctrl), or with ⌘⇧ (Ctrl+Shift).
-    const plainKey = (key) => formatMenuShortcut({ isMac, mod: false, shift: false, key });
-    const commandKey = (key) => formatMenuShortcut({ isMac, mod: true, shift: false, key });
-    const commandShiftKey = (key) => formatMenuShortcut({ isMac, mod: true, shift: true, key });
+    const plainKey = (key) => formatMenuShortcut({ isMac, mod: false, alt: false, shift: false, key });
+    const commandKey = (key) => formatMenuShortcut({ isMac, mod: true, alt: false, shift: false, key });
+    const commandShiftKey = (key) => formatMenuShortcut({ isMac, mod: true, alt: false, shift: true, key });
 
     // Related actions sit in submenus so the menu fits a window 800 px tall; a group with
     // one action that applies shows that action in place (pushGroup).

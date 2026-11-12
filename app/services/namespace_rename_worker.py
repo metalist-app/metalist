@@ -16,6 +16,7 @@ from app.services.namespace_deletion_worker import _stop_process
 from app.services.namespace_rename_jobs import mark_namespace_rename_job_failed
 from app.services.namespace_rename_jobs import mark_namespace_rename_job_succeeded
 from app.services.namespace_switcher import open_or_launch_namespace
+from app.services.vault_former_names import record_former_vault_name
 
 
 def _parse_args() -> argparse.Namespace:
@@ -115,6 +116,10 @@ def _rename_namespace_storage(*, source_namespace: str, target_namespace: str) -
     target_database = target_directory / f"{normalized_target}.metalist.db"
     if not target_database.is_file():
         raise RuntimeError(f"Renamed namespace database is missing: {target_database}")
+    # Its backups keep the name they were made under: the vault lists, restores and trims them by it.
+    record_former_vault_name(
+        vault_directory=target_directory, former_name=normalized_source, current_name=normalized_target,
+    )
     _rewrite_launch_profile_namespace(
         database_path=target_database,
         source_namespace=normalized_source,

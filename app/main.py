@@ -32,6 +32,7 @@ from .api.deps import get_db
 from .services.content_cache import populate_cache_from_db
 from .process_memory import release_freed_memory
 from .services.backup_service import back_up_before_passwordless_upgrade
+from .services.backup_service import trim_safety_backups_once_vault_is_current
 from .services.file_storage import bootstrap_file_registry, sweep_blob_leftovers
 from .services.auth import AuthService
 from .services.note_store import store as note_store
@@ -42,6 +43,7 @@ from app.services.ontology_rules_store import bootstrap_ontology_rules_store
 from app.services.ai_chat import ai_chat_store
 from app.services.tab_state import tab_state_store
 from app.services.link_titles import link_title_store
+from app.services.link_row_pruning import start_link_row_pruning
 from app.services.reminders import reminder_store
 from app.services.search_history import search_history_store
 from app.services.runtime_hardening import apply_runtime_hardening
@@ -62,11 +64,11 @@ from app.services.namespace_switcher import NamespaceOpenResult
 from app.services.namespace_switcher import open_or_launch_namespace
 from app.services.namespace_runtime_guard import start_namespace_runtime_guard
 from app.services.diagnostics import configure_process_diagnostics
-from app.services.diagnostics import allow_plaintext_diagnostics
 from app.services.diagnostics import log_unexpected_exception
 from app.services.diagnostics import start_asyncio_diagnostics
 from app.services.diagnostics import track_request
-from app.security.sensitive_logging import traceback_frame_summary
+from app.services import safe_log
+from app.services import request_history
 from app.api.request_auth import clear_auth_cookie
 from app.presentation.login_page import login_is_certainly_needed
 from app.api.routes.notes import router as api2_router
@@ -80,6 +82,7 @@ from app.api.routes.remote_images import router as api2_remote_images_router
 from app.api.routes.imports import router as api2_imports_router
 from app.api.routes.virtual_folders import router as api2_virtual_folders_router
 from app.api.routes.background_work import router as api2_background_work_router
+from app.api.routes.problem_reports import router as api2_problem_reports_router
 from app.api.routes.ai import router as api2_ai_router
 from app.api.routes.test import router as api2_test_router  # shockharness: ignore[STUB002] reason="mounted only when TEST_MODE is on, and the endpoint asserts it too"
 from app.api.transactions import transactional_route
@@ -105,13 +108,16 @@ from urllib.parse import urlsplit
 from urllib.parse import urlunsplit
 from app.services.input_errors import InputRejected, NamespaceInputRejected
 
-# Loguru's standard-logging intercept: the caller sits at least this many
-# frames above the handler, plus one per logging-module frame.
-_INTERCEPT_BASE_DEPTH = 2
 # Responses smaller than this go out uncompressed.
 _GZIP_MINIMUM_RESPONSE_BYTES = 1000
 # Hex digits of a random UUID kept as the short id that ties a request's log lines together.
 _REQUEST_ID_HEX_LENGTH = 8
+# Every answer names its request id in this header, so a failure the browser sees (a 409, a 500)
+# matches its line in the server log.
+REQUEST_ID_HEADER = "X-Request-Id"
+# A static file answered successfully is not logged unless it took this long (21,110 of 21,990
+# lines of one log were static loads); a failed one always is.
+_SLOW_STATIC_LOAD_MS = request_history.SLOW_REQUEST_MS
 _CSP_NONCE_RANDOM_BYTES = 24
 # URL-safe base64 of the random bytes, without padding.
 _CSP_NONCE_TEXT_LENGTH = 32
@@ -124,37 +130,25 @@ for _console_stream in (sys.stdout, sys.stderr):
     if not isinstance(_console_stream, io.TextIOWrapper):
         raise RuntimeError(f"MetaList logs to text streams, not {type(_console_stream).__name__}")
     _console_stream.reconfigure(encoding="utf-8", errors="backslashreplace")
+# One plain log, before and after login, of allow-listed events only (app/services/safe_log.py):
+# every record is checked before any sink writes it, and anything else throws.
+safe_log.install_safe_log_guard()
 logger.remove()
 logger.add(
     sys.stdout,
     level="INFO",
     backtrace=False,
     diagnose=False,
-    filter=allow_plaintext_diagnostics,
-    format="{time:YYYY-MM-DD HH:mm:ss.SSS} | {level:<8} | {message} | {extra}"
+    format=safe_log.SAFE_LOG_FORMAT,
 )
 
 
 class InterceptHandler(logging.Handler):
+    """Libraries' records from the logging module: never written as they are
+    (safe_log.forward_standard_log_record)."""
+
     def emit(self, record):
-        level = record.levelno
-
-        frame, depth = logging.currentframe(), _INTERCEPT_BASE_DEPTH
-        while frame and frame.f_code.co_filename == logging.__file__:
-            frame = frame.f_back
-            depth += 1
-
-        error_detail = ""
-        if record.exc_info is not None and record.exc_info[0] is not None:
-            error_type, _, error_traceback = record.exc_info
-            error_detail = (
-                f" error_type={error_type.__name__} "
-                f"frames={traceback_frame_summary(error_traceback)}"
-            )
-        logger.opt(depth=depth).log(
-            level,
-            f"{record.getMessage()}{error_detail}",
-        )
+        safe_log.forward_standard_log_record(record)
 
 
 logging.basicConfig(handlers=[InterceptHandler()], level=0, force=True)
@@ -172,6 +166,9 @@ def _resolve_diagnostics_namespace(*, namespace: str | None) -> str:
 # (native_folder_picker.py) are refused outside a test server before anything starts.
 scripted_ai_script_path(environ=os.environ)
 answered_folder_pick(environ=os.environ)
+
+# Link titles and icons no note links to go, each time the notes have been loaded.
+auth_cache_state.after_page_ready(start_link_row_pruning)
 
 configure_process_diagnostics(
     namespace=_resolve_diagnostics_namespace(namespace=ACTIVE_NAMESPACE),
@@ -191,6 +188,8 @@ async def discard_left_import_uploads():
 @app.on_event("startup")
 async def start_diagnostics_watchdogs():
     start_asyncio_diagnostics(enabled=not TEST_MODE)
+    # The first CPU reading only starts the measure; slow requests read the ones after it.
+    request_history.prime_busy_numbers()
     start_namespace_runtime_guard(
         namespace=ACTIVE_NAMESPACE,
         enabled=not TEST_MODE,
@@ -252,19 +251,27 @@ def _page_param(request: Request, name: str) -> str | None:
 @app.exception_handler(Exception)
 async def handle_unexpected_server_error(request: Request, exc: Exception):
     request_id = _diagnostic_request_id(request)
-    log_unexpected_exception(
-        context="HTTP request", exception=exc, request_id=request_id, level="ERROR",
-    )
+    headers = {"Cache-Control": "no-store, private", "X-Content-Type-Options": "nosniff"}
     diagnostic = describe_server_exception(exc)
     if request_id:
+        _remember_answered_request(
+            request=request, route=safe_log.route_template(request.scope),
+            status=HTTPStatus.INTERNAL_SERVER_ERROR,
+            duration_ms=(time.perf_counter() - request.state.diagnostic_started_at) * MS_PER_SECOND,
+            error_type=diagnostic["errorType"], code_location=diagnostic["codeLocation"],
+        )
+        # log_requests' tracking has logged the failure with its request and route.
         diagnostic["requestId"] = request_id
+        headers[REQUEST_ID_HEADER] = request_id
+    else:
+        log_unexpected_exception(context="HTTP request", exception=exc, level="ERROR")
     return JSONResponse(
         status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
         content={
             "detail": "Internal server error",
             "diagnostic": diagnostic,
         },
-        headers={"Cache-Control": "no-store, private", "X-Content-Type-Options": "nosniff"},
+        headers=headers,
     )
 
 _startup_timing_enabled = True
@@ -273,8 +280,7 @@ _startup_timing_enabled = True
 def _log_startup_step(step: str, elapsed: float) -> None:
     if not _startup_timing_enabled:
         return
-    message = f"[startup] {step} took {elapsed:.2f}s"
-    logger.info(message)
+    safe_log.log_event("INFO", "startup.step", step=step, seconds=elapsed)
 
 
 overall_start = time.perf_counter()
@@ -284,10 +290,11 @@ apply_runtime_hardening()
 _log_startup_step("runtime hardening checks", time.perf_counter() - hardening_start)
 
 schema_start = time.perf_counter()
+passwordless_upgrade_backed_up = False
 if not SafeSession._use_memory:
     # Before anything writes to it: an older MetaList would set up its own tables in a newer vault.
     require_database_not_newer(SafeSession._db_path)
-    back_up_before_passwordless_upgrade(SafeSession._db_path)
+    passwordless_upgrade_backed_up = back_up_before_passwordless_upgrade(SafeSession._db_path)
 with begin_writer() as connection:
     initialize_schema(connection.raw_connection)
     settings = fetch_settings(connection)
@@ -320,6 +327,9 @@ with begin_writer() as connection:
     else:
         search_history_store.reset()
         ai_chat_store.reset()
+if passwordless_upgrade_backed_up:
+    # The upgrade above has committed: keep the newest safety backups, as after an unlock's.
+    trim_safety_backups_once_vault_is_current(SafeSession._db_path)
 _log_startup_step("schema + settings bootstrap", time.perf_counter() - schema_start)
 
 startup_has_password = False
@@ -351,7 +361,7 @@ finally:
 _log_startup_step("linked list integrity check", time.perf_counter() - integrity_start)
 
 if startup_has_password:
-    logger.info("[startup] password set; skipping cache + store hydration until login")
+    safe_log.log_event("INFO", "startup.waiting_for_login")
     auth_cache_state.reset_cache_state()
     guard_start = time.perf_counter()
     enable_read_guard()
@@ -363,9 +373,7 @@ else:
     with begin_writer() as connection:
         repaired = clear_encryption_metadata_for_empty_notes(connection)
     if repaired:
-        logger.info(
-            f"[startup] repaired {repaired} empty encrypted notes (cleared nonce/tag)"
-        )
+        safe_log.log_event("INFO", "startup.repaired_empty_notes", notes=repaired)
     _log_startup_step(
         "empty-note encryption metadata repair",
         time.perf_counter() - repair_start,
@@ -405,11 +413,6 @@ class NoCacheStaticFiles(StarletteStaticFiles):
             response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
             response.headers['Pragma'] = 'no-cache'
             response.headers['Expires'] = '0'
-            
-            # Log when JavaScript files are served
-            if path.endswith('.js'):
-                logger.debug(f"JS file served with no-cache headers: {path}")
-                
         return response
 
 # Add GZip compression
@@ -444,6 +447,7 @@ app.include_router(api2_remote_images_router, prefix=API_PREFIX)
 app.include_router(api2_imports_router, prefix=API_PREFIX)
 app.include_router(api2_virtual_folders_router, prefix=API_PREFIX)
 app.include_router(api2_background_work_router, prefix=API_PREFIX)
+app.include_router(api2_problem_reports_router, prefix=API_PREFIX)
 app.include_router(api2_ai_router, prefix=API_PREFIX)
 if TEST_MODE:
     app.include_router(dev.router, prefix="/dev", tags=["dev"])
@@ -482,6 +486,9 @@ async def redirect_remote_http_to_https(request: Request, call_next):
 
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
+    """One line per answered request: its route as the app declares it (never the path or query
+    the browser sent), status, handler, time and size. Every answer names its request id in a
+    header. Polls, locks and successful static loads are not logged."""
     request_id = uuid.uuid4().hex[:_REQUEST_ID_HEX_LENGTH]
     request.state.diagnostic_request_id = request_id
 
@@ -491,43 +498,78 @@ async def log_requests(request: Request, call_next):
         f"{API_PREFIX}/notes/acquire-lock",
         f"{API_PREFIX}/notes/release-lock",
     }
-    if not (is_noisy_poll or is_noisy_lock):
-        logger.bind(request_id=request_id).info(
-            "⇒ {method} {path}",
-            method=request.method,
-            path=path,
-        )
 
     start = time.perf_counter()
-    if request.client is None:
-        raise RuntimeError("Request is missing client metadata")
-    client_host = request.client.host
+    # How long it waits for its turn to change the vault (app/api/transactions.py), and when it
+    # started, for the 500 handler too.
+    request.state.diagnostic_wait = request_history.begin_request_wait()
+    request.state.diagnostic_started_at = start
     request_tracker = track_request(
         request_id=request_id,
-        method=request.method,
-        path=path,
+        method=safe_log.method_for_log(request.method),
+        scope=request.scope,
         has_query=request.url.query != "",
-        client=client_host,
-        user_agent=_header_for_log(request.headers, "user-agent"),
         started_at=start,
     )
     with request_tracker:
         response = await call_next(request)
+    response.headers[REQUEST_ID_HEADER] = request_id
 
     duration_ms = (time.perf_counter() - start) * MS_PER_SECOND
-    size = _header_for_log(response.headers, "content-length")
-    handler_name = _handler_name(request)
-    if not (is_noisy_poll or is_noisy_lock):
-        logger.bind(request_id=request_id).info(
-            "⇐ {status} {method} {path} handler={handler} duration={duration:.2f} ms size={size}",
+    route = safe_log.route_template(request.scope)
+    is_quiet_static_load = (
+        route == safe_log.STATIC_ROUTE
+        and response.status_code < HTTPStatus.BAD_REQUEST
+        and duration_ms < _SLOW_STATIC_LOAD_MS
+    )
+    if not (is_noisy_poll or is_noisy_lock or is_quiet_static_load):
+        safe_log.log_event(
+            "INFO", "request",
             status=response.status_code,
-            method=request.method,
-            path=path,
-            handler=handler_name,
-            duration=duration_ms,
-            size=size,
+            method=safe_log.method_for_log(request.method),
+            route=route,
+            handler=_handler_name(request),
+            duration_ms=duration_ms,
+            size=_header_for_log(response.headers, "content-length"),
+            request_id=request_id,
         )
+    _remember_answered_request(
+        request=request, route=route, status=response.status_code, duration_ms=duration_ms,
+        error_type=request_history.NO_ERROR, code_location=request_history.NO_ERROR,
+    )
     return response
+
+
+def _remember_answered_request(
+    *, request: Request, route: str, status: int, duration_ms: float, error_type: str, code_location: str,
+) -> None:
+    """Keeps the answered request in memory for problem reports, and for a slow one (1 s or
+    more) logs and keeps how busy the computer and MetaList were (app/services/request_history.py)."""
+    request_id = request.state.diagnostic_request_id
+    method = safe_log.method_for_log(request.method)
+    waited_ms = request.state.diagnostic_wait.waited_seconds * MS_PER_SECOND
+    answered_at = request_history.now()
+    request_history.REQUEST_HISTORY.record_answered(request_history.AnsweredRequest(
+        request_id=request_id, method=method, route=route, status=status, duration_ms=duration_ms,
+        waited_ms=waited_ms, error_type=error_type, code_location=code_location, answered_at=answered_at,
+    ))
+    if duration_ms < request_history.SLOW_REQUEST_MS:
+        return
+    busy = request_history.BUSY_READER.read()
+    safe_log.log_event(
+        "WARNING", "request.busy",
+        request_id=request_id, method=method, route=route, status=status,
+        duration_ms=duration_ms, waited_ms=waited_ms,
+        machine_cpu_percent=busy.machine_cpu_percent,
+        machine_available_bytes=busy.machine_available_bytes,
+        swap_used_bytes=busy.swap_used_bytes,
+        metalist_cpu_percent=busy.metalist_cpu_percent,
+        metalist_memory_bytes=busy.metalist_memory_bytes,
+    )
+    request_history.REQUEST_HISTORY.record_slow(request_history.SlowRequest(
+        request_id=request_id, method=method, route=route, status=status, duration_ms=duration_ms,
+        waited_ms=waited_ms, busy=busy, answered_at=answered_at,
+    ))
 
 
 app.add_middleware(RequestBoundaryMiddleware, allowed_hosts=allowed_request_hosts)
@@ -868,3 +910,7 @@ async def clipboard_capacity_error(request: Request, exc: ClipboardCapacityError
 @app.exception_handler(ShellRunNotFound)
 async def shell_run_not_found(request: Request, exc: ShellRunNotFound):
     return JSONResponse(status_code=HTTPStatus.NOT_FOUND, content={"detail": str(exc)})
+
+
+# The log writes a request's route and handler only as the app declares them: every route is in place now.
+safe_log.allow_route_templates(app.routes)

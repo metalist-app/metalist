@@ -5,6 +5,7 @@ from contextlib import contextmanager
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
@@ -30,6 +31,10 @@ class AppUpdateRejected(ValueError):
 
 
 _JOB_THREAD_LOCK = threading.Lock()
+# Update jobs kept on disk (record and log); older ones go when a new job starts.
+_KEPT_UPDATE_JOB_COUNT = 10
+# A job's record is named after str(uuid4()); active.json and temporary files are not.
+_JOB_RECORD_NAME_PATTERN = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
 
 
 def update_executable() -> Path:
@@ -129,7 +134,26 @@ def _create_update_job_locked(target_version: str) -> dict[str, object]:
     write_job(record)
     with active_path.open('x', encoding='utf-8') as stream:
         json.dump({'job_id': job_id}, stream)
+    _trim_update_jobs_locked(directory=directory, created_job_id=job_id)
     return record
+
+
+# Called under _job_lock. "Newest" is the record's modification time: write_job
+# replaces the whole file on every status change, so it is the job's last activity.
+# The job just created and the one active.json names stay even if the clock went back.
+def _trim_update_jobs_locked(*, directory: Path, created_job_id: str) -> None:
+    protected = {created_job_id}
+    active_path = directory / 'active.json'
+    if active_path.is_file():
+        protected.add(json.loads(active_path.read_text(encoding='utf-8'))['job_id'])
+    records = sorted((path for path in directory.glob('*.json') if _JOB_RECORD_NAME_PATTERN.fullmatch(path.stem)),
+                     key=lambda path: (path.stat().st_mtime_ns, path.name), reverse=True)
+    for record_path in records[_KEPT_UPDATE_JOB_COUNT:]:
+        if record_path.stem in protected:
+            continue
+        # The log first: a record left behind by an interruption is trimmed next time.
+        (directory / f'{record_path.stem}.log').unlink(missing_ok=True)
+        record_path.unlink()
 
 
 # The worker, detached, with its output in the job's log (created here: it must not exist yet).

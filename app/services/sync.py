@@ -3,6 +3,7 @@ from __future__ import annotations
 import uuid
 from time import monotonic
 from app.services.resource_limits import CLIENT_ENTRIES, CLIENT_IDLE_SECONDS, UNDO_BYTES, retained_bytes
+from app.services.view_cache import view_cache
 from copy import deepcopy
 from functools import wraps
 from threading import RLock
@@ -29,7 +30,9 @@ class ClipboardCapacityError(ValueError):
 
 
 def _forget_client(client_id):
+    """Drop an idle or surplus browser window: its clipboard, locks and warm views."""
     _clients_seen.pop(client_id)
+    view_cache.discard_client(client_id)
     if client_id in _clipboards:
         del _clipboards[client_id]
     for note_id in tuple(_locks):

@@ -11,6 +11,10 @@ from app.services.input_errors import NamespaceInputRejected
 
 _JOB_ID_PATTERN = re.compile(r"^[a-f0-9-]{36}$")
 _JOB_RECORD_JSON_INDENT = 2
+# Finished vault deletion jobs kept for their pages to read; older ones go when a new job starts.
+_KEPT_JOB_COUNT = 10
+# A job's status until its worker records the outcome.
+_PENDING_STATUS = "pending"
 
 
 def create_namespace_deletion_job(
@@ -26,12 +30,13 @@ def create_namespace_deletion_job(
     job_id = str(uuid.uuid4())
     job_record = {
         "job_id": job_id,
-        "status": "pending",
+        "status": _PENDING_STATUS,
         "deleted_namespace": deleted_namespace,
         "redirect_namespace": redirect_namespace,
         "error": "",
     }
     _write_job_record(job_id=job_id, job_record=job_record)
+    _trim_finished_jobs(created_job_id=job_id)
     return job_record
 
 
@@ -119,3 +124,20 @@ def _write_job_record(*, job_id: str, job_record: dict[str, str]) -> None:
     serialized = json.dumps(job_record, indent=_JOB_RECORD_JSON_INDENT, sort_keys=True)
     job_path = _resolve_job_path(job_id=normalized_job_id)
     job_path.write_text(serialized, encoding="utf-8")
+
+
+# "Newest" is the file's modification time, which every status change rewrites. A job still
+# pending may be running, so it stays however old it is.
+def _trim_finished_jobs(*, created_job_id: str) -> None:
+    jobs_directory = _resolve_job_path(job_id=created_job_id).parent
+    job_paths = sorted(
+        (path for path in jobs_directory.glob("*.json") if _JOB_ID_PATTERN.fullmatch(path.stem)),
+        key=lambda path: (path.stat().st_mtime_ns, path.name), reverse=True,
+    )
+    for job_path in job_paths[_KEPT_JOB_COUNT:]:
+        if job_path.stem == created_job_id:
+            continue
+        job_record = load_namespace_deletion_job(job_id=job_path.stem)
+        # Another vault creating a job at the same moment may have removed it already.
+        if job_record is not None and job_record["status"] != _PENDING_STATUS:
+            job_path.unlink(missing_ok=True)

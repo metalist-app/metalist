@@ -1,8 +1,6 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { runThenCleanUp } from './suite-outcome.mjs';
+import { makeRunFolder, removeRunFolder, sweepStaleRunFolders } from './run-folders.mjs';
 import { waitForAppQuiet } from './browser-app-idle.mjs';
 
 // The backup reminder (docs/ui/controls.md, "Backup reminder"), one check per agreed
@@ -28,6 +26,9 @@ const LAYOUT_UNIT_PX = 1 / 60;
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const DAYS_SINCE_OLD_BACKUP = 9;
 const FIXTURE_KEY = 'backup-reminder-test-times';
+// The backup folder case 5 backs up to (run-folders.mjs): removed when the suite passes,
+// kept and named when it fails. Earlier runs' folders a day old go first.
+const BACKUP_FOLDER_PREFIX = 'metalist-backup-reminder-';
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 async function idle(page) {
@@ -172,17 +173,27 @@ function assertAtStackCorner(position, label) {
 
 export async function checkBackupReminder(page) {
   await installBackupTimesFixture(page);
+  await sweepStaleRunFolders(BACKUP_FOLDER_PREFIX, Date.now());
+  const backupFolder = await makeRunFolder(BACKUP_FOLDER_PREFIX);
   const noteId = await createNote(page, '<p>A note to read and edit while the reminder comes and goes</p>');
-  await runThenCleanUp('backup reminder', () => checkReminderCases(page, noteId), async () => {
-    await setBackupTimes(page, null);
-    await page.evaluate(async id => {
-      const {NotesAPI} = await import('/static/js/modules/api-client.js');
-      await NotesAPI.deleteNote(id);
-    }, noteId);
-  });
+  const [outcome] = await Promise.allSettled([
+    runThenCleanUp('backup reminder', () => checkReminderCases(page, noteId, backupFolder), async () => {
+      await setBackupTimes(page, null);
+      await page.evaluate(async id => {
+        const {NotesAPI} = await import('/static/js/modules/api-client.js');
+        await NotesAPI.deleteNote(id);
+      }, noteId);
+    }),
+  ]);
+  if (outcome.status === 'rejected') {
+    console.error(`backup reminder failed; its backup folder is kept: ${backupFolder}`);
+    throw outcome.reason;
+  }
+  // Only the explicit Back Up Now of case 5 writes there; nothing backs up on its own.
+  await removeRunFolder(backupFolder, BACKUP_FOLDER_PREFIX);
 }
 
-async function checkReminderCases(page, noteId) {
+async function checkReminderCases(page, noteId, backupFolder) {
   await setBackupTimes(page, []);
   // The harness starts every run with the reminder Off (browser-smoke.mjs).
   await reloadApp(page);
@@ -290,7 +301,7 @@ async function checkReminderCases(page, noteId) {
   assert.ok(stacked.rightEdgeGap < LAYOUT_UNIT_PX, `stacked notices share a right edge (off by ${stacked.rightEdgeGap}px)`);
 
   // 5. A successful backup removes the card and restarts the clock.
-  await useBackupFolder(page, mkdtempSync(join(tmpdir(), 'metalist-backup-reminder-')));
+  await useBackupFolder(page, backupFolder);
   await setBackupTimes(page, null);
   await page.click('#backup-reminder-notice button:not([aria-label])');
   await page.waitForSelector('#backup-settings-modal', {visible: true});

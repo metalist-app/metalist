@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import logging
+from loguru import logger
 from pathlib import Path
 
 from app.security.validation_errors import summarize_validation_errors
@@ -10,14 +10,18 @@ from app.services import undo_state
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 
-def test_search_context_logging_never_contains_search_text(caplog) -> None:
+def test_search_context_logging_never_contains_search_text() -> None:
     undo_state.reset_all_undo_state()
     undo_state.maybe_reset_on_context('fixture', 'previous private search')
-    with caplog.at_level(logging.DEBUG):
+    records: list[str] = []
+    sink_id = logger.add(lambda message: records.append(str(message)), level="DEBUG")
+    try:
         undo_state.maybe_reset_on_context('fixture', 'current private search')
-    assert 'previous private search' not in caplog.text
-    assert 'current private search' not in caplog.text
-    assert 'undo.stack reset' in caplog.text
+    finally:
+        logger.remove(sink_id)
+    assert 'previous private search' not in "".join(records)
+    assert 'current private search' not in "".join(records)
+    assert any('undo.reset' in record for record in records)
     undo_state.reset_all_undo_state()
 
 

@@ -43,7 +43,7 @@ Printing and exported HTML are their own documents and never carry a skin.
 
 ## Fathom
 
-Built 2026-11-11 (named by the maintainer: plain, beside System, Light and Dark). A code editor's look, in the style of Sublime Text's default dark colours; the colours are chosen in `app/static/css/skins/fathom.css`, not taken from another app's colour-scheme file. Drawn over the dark theme.
+Built 2026-11-11 (named by the maintainer: plain, beside System, Light and Dark). A code editor's look, in the style of Sublime Text's default dark colours. The accent and text colours are Oceanic Next's (Dmitri Voronianski, MIT), as Sublime Text's Mariana adjusted them; Mariana itself ships only inside Sublime Text, with no licence for reuse, so the credit and the MIT licence are Oceanic Next's, in `app/static/css/skins/fathom.LICENSE.txt` (checked 2026-11-12). The orange and the background greys are not Oceanic Next's. Drawn over the dark theme.
 
 - The page is the editor's side panel (`#2b323a`); notes are the editor (`#303841`), squarer (4px corners), without shadows; the note being edited is the highlighted line (`#3a434d`), with an orange caret.
 - Notes are written in the system's own monospace (Menlo on a Mac, Consolas on Windows, DejaVu Sans Mono on Linux), a tenth smaller, as are the search box's words. The rest of MetaList (menus, the palette, dialogs) keeps its own font, as an editor's own panels do.

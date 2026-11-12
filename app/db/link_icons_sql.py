@@ -173,3 +173,12 @@ def update_link_icon_row(connection: object, row: StoredLinkIconRow) -> None:
             row.id,
         ),
     )
+
+
+def delete_link_icon_rows(connection: object, row_ids: tuple[int, ...]) -> None:
+    """The icons of sites no note links to any more (link_row_pruning.py)."""
+    conn = _conn(connection)
+    for row_id in row_ids:
+        deleted = conn.execute(f"DELETE FROM {LINK_ICONS_TABLE} WHERE id = ?", (row_id,)).rowcount
+        if deleted != 1:
+            raise RuntimeError(f"link_icons row {row_id} was not there to delete")

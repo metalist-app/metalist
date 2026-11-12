@@ -220,3 +220,12 @@ def update_link_title_row(
             row_id,
         ),
     )
+
+
+def delete_link_title_rows(connection: GuardedConnection | sqlite3.Connection, row_ids: tuple[int, ...]) -> None:
+    """The cached titles of addresses no note links to any more (link_row_pruning.py)."""
+    conn = _conn(connection)
+    for row_id in row_ids:
+        deleted = conn.execute(f"DELETE FROM {LINK_TITLES_TABLE} WHERE id = ?", (row_id,)).rowcount
+        if deleted != 1:
+            raise RuntimeError(f"link_titles row {row_id} was not there to delete")

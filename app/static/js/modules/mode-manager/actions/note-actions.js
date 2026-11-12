@@ -571,6 +571,42 @@ async function createNoteWithPlacement(placeAtTop) {
     return newNoteId;
 }
 
+// ⌘⌥Enter: a new note one level out, right after the edited note's parent (so below
+// the parent's whole branch). On a root note, or outside edit mode, there is no level
+// out: it is ⌘Enter's note.
+export async function createNoteAfterParent() {
+    Logger.logAction('createNoteAfterParent', {
+        currentNoteId: ModeContext.currentNoteId,
+        isEditing: ModeContext.isEditing,
+        isDirty: ModeContext.isDirty,
+    });
+
+    const currentNoteId = ModeContext.isEditing ? ModeContext.currentNoteId : null;
+    if (currentNoteId === null || isRootNoteId(currentNoteId)) {
+        return await createNote();
+    }
+
+    const parentNoteId = DOMUtils.getNoteById(currentNoteId).dataset.parentId;
+    // A sibling of a root parent is itself a root, which a sort may forbid here.
+    if (isRootNoteId(parentNoteId) && blockRootNoteCreation('below', 'createNoteAfterParent')) {
+        return null;
+    }
+
+    if (ModeContext.editSessionHasEdits) {
+        await actionSaveNote(currentNoteId);
+    }
+
+    Logger.logDebug('Creating new note after parent', {
+        currentNoteId,
+        parentNoteId,
+        searchQuery: ModeContext.searchQuery,
+    }, Logger.LogCategory.DEBUG);
+    const data = await NotesAPI.createSibling(parentNoteId, ModeContext.searchQuery);
+    const newNoteId = data.id;
+    await actionSwitchNotes(newNoteId, { initialCaretVisibility: 'visible' });
+    return newNoteId;
+}
+
 export async function createChildNote() {
     let startedAt = performance.now();
 

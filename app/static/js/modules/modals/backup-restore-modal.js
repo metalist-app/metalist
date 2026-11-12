@@ -30,6 +30,10 @@ const BACKUP_LIST_MAX_VISIBLE_ROWS = 8;
 
 function parseResponseError(responseBody, statusCode) {
     if (responseBody && typeof responseBody === 'object') {
+        // Refused input (InputRejected) is written for the user: shown as it is.
+        if (responseBody.inputRejected === true && typeof responseBody.detail === 'string' && responseBody.detail.length > 0) {
+            return responseBody.detail;
+        }
         if (typeof responseBody.detail === 'string' && responseBody.detail.length > 0) {
             return `Request failed (${statusCode}): ${responseBody.detail}`;
         }

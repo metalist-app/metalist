@@ -1099,13 +1099,18 @@ def sites_shown_above() -> FrozenSet[str]:
     return _SITES_SHOWN_ABOVE.get()
 
 
-def sites_linked_in(content_html: str) -> FrozenSet[str]:
-    """The sites a note's text links to, anywhere in it: its links and its bare addresses."""
+def urls_linked_in(content_html: str) -> FrozenSet[str]:
+    """The web addresses a note's text links to, anywhere in it: its links and its bare addresses."""
     if not isinstance(content_html, str):
         raise TypeError(f"content_html must be a string, got {type(content_html)}")
     urls = [html.unescape(match.group("url")) for match in _WEB_LINK_HREF_RE.finditer(content_html)]
     urls.extend(find_plain_text_urls(strip_html(content_html)))
-    return frozenset(site_of_url(url) for url in urls if urllib.parse.urlsplit(url).hostname)
+    return frozenset(urls)
+
+
+def sites_linked_in(content_html: str) -> FrozenSet[str]:
+    """The sites a note's text links to, anywhere in it: its links and its bare addresses."""
+    return frozenset(site_of_url(url) for url in urls_linked_in(content_html) if urllib.parse.urlsplit(url).hostname)
 
 
 def _is_site_shown_above(url: str) -> bool:

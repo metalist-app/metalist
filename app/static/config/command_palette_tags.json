@@ -265,6 +265,14 @@
       "tags": ["export", "html", "download", "share", "notes", "current", "view"]
     },
     {
+      "id": "action.report_problem",
+      "tags": ["report", "problem", "bug", "slow", "error", "support", "help", "feedback"]
+    },
+    {
+      "id": "action.export_problem_reports",
+      "tags": ["export", "report", "problem", "bug", "error", "support", "download"]
+    },
+    {
       "id": "action.print_view",
       "tags": ["print", "pdf", "paper", "save as pdf", "printer", "view", "notes"]
     },

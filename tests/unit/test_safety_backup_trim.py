@@ -4,15 +4,20 @@ go only once a new backup checks out and the upgrade or update has succeeded."""
 
 from __future__ import annotations
 
+from contextlib import closing
 import os
 from pathlib import Path
+import sqlite3
 import sys
 
 import pytest
 
 import main as main_entrypoint
 from app.services import update_backups
+from app.db.version import CURRENT_DATABASE_VERSION
 from app.services.backup_service import SAFETY_BACKUPS_KEPT, trim_safety_backups_for_database
+from app.services.backup_service import back_up_before_passwordless_upgrade
+from app.services.backup_service import trim_safety_backups_once_vault_is_current
 from tests.unit.test_update_backups import _create_namespace
 
 _OLDEST_TIME = 1_700_000_000
@@ -119,3 +124,42 @@ def test_the_trim_command_takes_no_arguments(monkeypatch: pytest.MonkeyPatch) ->
     monkeypatch.setattr(sys, "argv", ["metalist", "trim-safety-backups", "work"])
     with pytest.raises(RuntimeError, match="Usage: metalist trim-safety-backups"):
         main_entrypoint.cli()
+
+
+def _upgrade_to_current(database: Path) -> None:
+    with closing(sqlite3.connect(database)) as connection:
+        connection.execute(f"PRAGMA user_version = {CURRENT_DATABASE_VERSION}")
+        connection.commit()
+
+
+def test_a_passwordless_vault_keeps_three_once_its_startup_upgrade_succeeded(tmp_path: Path) -> None:
+    """Approved 2026-11-11 (docs/ready-to-build/unbounded-growth-audit.md, B2): an upgrade at
+    start, by uv, pip or a git pull, added a full copy each time and nothing removed one."""
+    database = _vault(tmp_path, "work")
+    older = _older_backups(database, 4)
+
+    assert back_up_before_passwordless_upgrade(database) is True
+    [new] = _file_names(database) - {path.name for path in older}
+    _upgrade_to_current(database)
+    deleted = trim_safety_backups_once_vault_is_current(database)
+
+    assert {backup.filename for backup in deleted} == {older[0].name, older[1].name}
+    assert _file_names(database) == {new, older[2].name, older[3].name}
+
+
+def test_a_passwordless_vault_not_yet_upgraded_keeps_every_backup(tmp_path: Path) -> None:
+    database = _vault(tmp_path, "work")
+    older = _older_backups(database, 4)
+    assert back_up_before_passwordless_upgrade(database) is True
+
+    with pytest.raises(RuntimeError, match="has not upgraded"):
+        trim_safety_backups_once_vault_is_current(database)
+
+    assert len(_file_names(database)) == len(older) + 1
+
+
+def test_a_current_passwordless_vault_makes_no_backup_so_start_trims_nothing(tmp_path: Path) -> None:
+    database = _vault(tmp_path, "work")
+    _upgrade_to_current(database)
+
+    assert back_up_before_passwordless_upgrade(database) is False

@@ -41,6 +41,12 @@ _PARTIAL_ARCHIVE_DELETE_FUNCTION = "delete_partial_archives"
 # What the upgrade at unlock may do to backups: make its safety backup and, once the upgrade has
 # succeeded, keep only the newest few (approved by the maintainer 2026-11-08).
 _AUTH_SERVICE_BACKUP_IMPORTS = frozenset({"create_timestamped_backup", "trim_safety_backups"})
+# The same for a vault with no password, which upgrades at start (approved by the maintainer
+# 2026-11-11, docs/ready-to-build/unbounded-growth-audit.md, B2): startup imports nothing else
+# from the backup service.
+_MAIN_BACKUP_IMPORTS = frozenset(
+    {"back_up_before_passwordless_upgrade", "trim_safety_backups_once_vault_is_current"}
+)
 # Open modes that write to an existing file. Exclusive create ("x") is allowed, as
 # tarfile's "x" mode is: it fails if the name exists, so no backup is ever touched.
 _EXISTING_FILE_WRITE_MODE_MARKERS = ("w", "a", "+")
@@ -129,6 +135,20 @@ def _codeframe(lines: list[str], lineno: int, col: int, context_lines: int) -> s
             out.append(marker)
         current += 1
     return "\n".join(out)
+
+
+def _absolute_import_module(*, relative_path: str, node: ast.ImportFrom) -> str | None:
+    """The module a `from … import` names, with a relative one (`from .services.x`) resolved
+    against the importing file's package, so it cannot slip past a rule on module names."""
+    if node.level == 0:
+        return node.module
+    package_parts = relative_path.removesuffix(".py").split("/")[:-1]
+    if node.level - 1 > len(package_parts):
+        raise ValueError(f"Relative import above the repository root in {relative_path}")
+    base_parts = package_parts[: len(package_parts) - (node.level - 1)]
+    if node.module is None:
+        return ".".join(base_parts)
+    return ".".join([*base_parts, node.module])
 
 
 def _dotted_name(node: ast.AST) -> str | None:
@@ -527,24 +547,31 @@ class _StartupSanityChecker(ast.NodeVisitor):
             )
 
     def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
-        if (
-            self._relative_path in {_DATABASE_MIGRATIONS_PATH, _MAIN_PATH}
-            and node.module == _BACKUP_SERVICE_MODULE
-        ):
+        module = _absolute_import_module(relative_path=self._relative_path, node=node)
+        if self._relative_path == _DATABASE_MIGRATIONS_PATH and module == _BACKUP_SERVICE_MODULE:
             self._add(
                 node=node,
                 rule_id="BKP001",
-                message="startup and database migrations must not import the backup service",
+                message="database migrations must not import the backup service",
             )
-        if self._relative_path == _AUTH_SERVICE_PATH and node.module == _BACKUP_SERVICE_MODULE:
-            for alias in node.names:
-                if alias.name not in _AUTH_SERVICE_BACKUP_IMPORTS:
-                    self._add(
-                        node=node,
-                        rule_id="BKP001",
-                        message="authenticated migration may only create a new backup and trim safety backups",
-                    )
+        if module == _BACKUP_SERVICE_MODULE and self._relative_path == _MAIN_PATH:
+            self._check_backup_imports(
+                node=node,
+                allowed=_MAIN_BACKUP_IMPORTS,
+                message="startup may only back up before a passwordless upgrade and trim after it",
+            )
+        if module == _BACKUP_SERVICE_MODULE and self._relative_path == _AUTH_SERVICE_PATH:
+            self._check_backup_imports(
+                node=node,
+                allowed=_AUTH_SERVICE_BACKUP_IMPORTS,
+                message="authenticated migration may only create a new backup and trim safety backups",
+            )
         self.generic_visit(node)
+
+    def _check_backup_imports(self, *, node: ast.ImportFrom, allowed: frozenset[str], message: str) -> None:
+        for alias in node.names:
+            if alias.name not in allowed:
+                self._add(node=node, rule_id="BKP001", message=message)
 
     def _check_defaults(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> None:
         args = node.args

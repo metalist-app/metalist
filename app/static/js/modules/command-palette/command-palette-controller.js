@@ -66,6 +66,9 @@ import { setSkinInitialsActive } from '../skin-initials.js';
 import { setOldeWordsActive } from '../skin-olde-words.js';
 import { setSkinPointerActive } from '../skin-pointer.js';
 import { exportNotes } from '../mode-manager/services/export-service.js';
+import { ProblemReportModal } from '../modals/problem-report-modal.js';
+import { ProblemReportsExportModal } from '../modals/problem-reports-export-modal.js';
+import { exportKeptReports, exportUserReport, exportedReportsFileName, keptReports, saveAsFile } from '../problem-reports/report-maker.js';
 
 import { VersionInfoModal } from '../modals/version-info-modal.js';
 import { ImportWizard, NewVaultWizard } from '../wizard/setup-wizards.js';
@@ -164,11 +167,12 @@ import { shouldActivateCommandPaletteRowClick } from './click-activation-service
 import { persistUsageBeforeActivation } from './activation-auth-policy.js';
 import { waitForCommandAvailability } from './backup-command-availability.js';
 import {
-    COMMAND_SHORTCUTS,
+    COMMAND_ICONS, COMMAND_SHORTCUTS,
     buildCommandPaletteEndpoints,
     isCommandAvailable,
 } from './endpoint-registry.js';
 import { formatMenuShortcut } from '../context-menu/context-menu-registry.js';
+import { contextMenuIconMarkup } from '../context-menu/context-menu-service.js';
 import { Auth } from '../auth.js';
 import { PreferencesStore } from './preferences-store.js';
 import {
@@ -483,6 +487,11 @@ class CommandPaletteController {
         this._folderNameModal = null;
         this._deleteFolderModal = null;
         this._memoryUsageModal = null;
+        this._problemReportModal = null;
+        this._problemReportsExportModal = null;
+        // Whether a problem report is kept, for Export Problem Reports… (asked at start, then
+        // set by each report made here).
+        this._hasProblemReports = false;
         this._recentMessagesModal = null;
         this._noteLayoutAppearanceModal = null;
         this._visualCuesModal = null;
@@ -525,6 +534,9 @@ class CommandPaletteController {
             persistCommandPaletteUsageFn: persistCommandPaletteUsage,
         });
         this._tagMap = await loadCommandPaletteTagMap();
+        if ((await keptReports()).length > 0) {
+            this._hasProblemReports = true;
+        }
         this._preferences.replaceAll(clientState.preferences);
         document.addEventListener('metalist:bulk-preferences', (event) => {
             this._preferences.replaceAll(event.detail);
@@ -559,6 +571,8 @@ class CommandPaletteController {
                 openSearchSuggestionStatistics: this.openSearchSuggestionStatistics.bind(this),
                 openKeyboardShortcutsHelp: this.openKeyboardShortcutsHelp.bind(this),
                 exportCurrentViewAsHtml: this.exportCurrentViewAsHtml.bind(this),
+                reportProblem: this.reportProblem.bind(this),
+                exportProblemReports: this.exportProblemReports.bind(this),
                 printView: this.printView.bind(this),
                 attachFileToCurrentNote: this.attachFileToCurrentNote.bind(this),
                 addExcalidrawDiagram: this.addExcalidrawDiagram.bind(this),
@@ -1295,6 +1309,10 @@ class CommandPaletteController {
             const label = document.createElement('div');
             label.className = 'command-palette-row-label';
             label.textContent = endpoint.label;
+            if (Object.hasOwn(COMMAND_ICONS, endpoint.id)) {
+                label.classList.add('command-palette-row-label-with-icon');
+                label.insertAdjacentHTML('afterbegin', contextMenuIconMarkup(COMMAND_ICONS[endpoint.id], 'command-palette-row-icon'));
+            }
             row.appendChild(label);
 
             if (Object.hasOwn(COMMAND_SHORTCUTS, endpoint.id)) {
@@ -1353,6 +1371,7 @@ class CommandPaletteController {
             hasPassword: Auth.hasPassword,
             isRootReorderLocked: isRootReorderLocked(this.getSortMode()),
             hasFileFilter: this.getFileFilterKind() !== FILE_FILTER_KINDS.NONE,
+            hasProblemReports: this._hasProblemReports,
         };
         return this._endpoints.filter((endpoint) => isCommandAvailable(endpoint.id, state));
     }
@@ -1871,6 +1890,48 @@ class CommandPaletteController {
         await exportNotes(null, this.getAiSettings());
     }
 
+    // Report a Problem… (docs/ready-to-build/error-reports.md §1): the sentence typed goes into
+    // the report as typed; the report is kept and saved as a file to send.
+    async reportProblem() {
+        const isReady = await this._prepareForModalOpen('commandPalette.reportProblem');
+        if (!isReady) {
+            return;
+        }
+        if (this._problemReportModal === null) {
+            this._problemReportModal = new ProblemReportModal();
+        }
+        const description = await this._problemReportModal.ask();
+        if (description === null) {
+            return;
+        }
+        await CommandGate.run('commandPalette.reportProblem.export', async () => exportUserReport(description));
+        if (!this._hasProblemReports) {
+            this._hasProblemReports = true;
+        }
+    }
+
+    // Export Problem Reports… (§4): the kept reports, picked, saved as one file.
+    async exportProblemReports() {
+        const isReady = await this._prepareForModalOpen('commandPalette.exportProblemReports');
+        if (!isReady) {
+            return;
+        }
+        const summaries = await keptReports();
+        if (summaries.length === 0) {
+            throw new Error('Export Problem Reports… offered with no kept report');
+        }
+        if (this._problemReportsExportModal === null) {
+            this._problemReportsExportModal = new ProblemReportsExportModal();
+        }
+        const reportIds = await this._problemReportsExportModal.askFor(summaries);
+        if (reportIds === null) {
+            return;
+        }
+        await CommandGate.run('commandPalette.exportProblemReports.export', async () => {
+            saveAsFile(await exportKeptReports(reportIds), exportedReportsFileName());
+        });
+    }
+
     async attachFileToCurrentNote() {
         if (this.isOpen()) {
             this.close();
@@ -2252,6 +2313,9 @@ class CommandPaletteController {
                 text: `Deleted ${result.deletedCount} notes.`, type: 'success', detail: '', isClosable: false, isLasting: false, key: null, action: null,
             });
         });
+        // The deleted notes' files may now be unused (deleting them cleared undo): the trim
+        // reminder checks at once instead of at the next click (the maintainer, 2026-11-12).
+        await TrimReminder.check();
     }
 
     // Add or Remove Tag (Current View)… (docs/ui/command-palette.md): a tag added to the notes
@@ -2893,7 +2957,7 @@ class CommandPaletteController {
     startUpdateNotice() {
         void this.notifyAppUpdate().catch((error) => {
             rethrowUnexpectedError(error);
-            showFatalError('The update notice could not be shown', error.message);
+            showFatalError('The update notice could not be shown', error.stack, error.name);
         });
     }
 

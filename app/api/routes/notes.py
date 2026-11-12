@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from http import HTTPStatus
-import logging
 import urllib.parse
 from collections.abc import Mapping
 from typing import Dict
@@ -199,7 +198,6 @@ from app.services.memory_breakdown import measure_memory_breakdown
 from app.services.memory_usage import describe_memory_usage
 
 
-logger = logging.getLogger(__name__)
 
 
 router = APIRouter()

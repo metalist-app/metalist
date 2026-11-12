@@ -10,7 +10,7 @@ import re
 import time
 from typing import Callable, Dict, FrozenSet, List, Optional, Tuple, Set
 
-from loguru import logger
+from app.services import safe_log
 
 from app.services.content_formatting import COMMENT_CLOSE, COMMENT_OPEN, find_list_style
 from app.services.content_formatting import recording_link_title_fetches
@@ -1401,14 +1401,13 @@ def build_view_state(
 
     if filter_active:
         elapsed_ms = (time.perf_counter() - t0) * MS_PER_SECOND
-        logger.bind(
-            metrics={
-                "elapsed_ms": elapsed_ms,
-                "structure_count": len(structure),
-                "payload_count": len(payloads),
-                "root_count": len(children_by_parent[None]) if None in children_by_parent else 0,
-            },
-        ).info("notes.view_state.finish")
+        root_count = 0
+        if None in children_by_parent:
+            root_count = len(children_by_parent[None])
+        safe_log.log_event(
+            "INFO", "notes.view_state",
+            elapsed_ms=elapsed_ms, structure=len(structure), payloads=len(payloads), roots=root_count,
+        )
 
     return ViewState(
         structure=structure,

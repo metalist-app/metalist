@@ -1,9 +1,17 @@
 import { ApplicationState } from '../../application-state.js';
 import { HttpRequestError, rethrowUnexpectedError } from '../../expected-errors.js';
 import { buildSessionHeaders } from '../../session-auth.js';
+import {
+    RECENT_PICTURES_CAPACITY,
+    evictOldest,
+    noteObjectUrlShown,
+    releaseObjectUrls,
+    useNewest,
+} from '../../object-url-cache.js';
 
 
 const moduleState = ApplicationState.createFields('remote-image-proxy-service', {
+    // The most recent pictures by proxy path, oldest first (object-url-cache.js).
     objectUrlCache: new Map(),
     pendingRequests: new Map(),
 
@@ -128,6 +136,7 @@ function applyObjectUrl(target, objectUrl) {
         throw new Error('Remote image proxy object URL must be non-empty');
     }
     target.src = objectUrl;
+    noteObjectUrlShown(target, objectUrl);
     target.dataset.remoteImageProxyState = 'loaded';
 }
 
@@ -139,12 +148,14 @@ function applyFailure(target) {
     target.dataset.remoteImageProxyState = 'failed';
 }
 
+const everyPicture = () => true;
+
 async function fetchObjectUrl(proxyPath) {
     if (typeof proxyPath !== 'string' || !proxyPath.startsWith('/api2/remote-images/')) {
         throw new Error('Remote image proxy path is invalid');
     }
     if (moduleState.objectUrlCache.has(proxyPath)) {
-        return moduleState.objectUrlCache.get(proxyPath);
+        return useNewest(moduleState.objectUrlCache, proxyPath);
     }
     if (moduleState.pendingRequests.has(proxyPath)) {
         return await moduleState.pendingRequests.get(proxyPath);
@@ -174,6 +185,9 @@ async function fetchObjectUrl(proxyPath) {
             }
             const objectUrl = URL.createObjectURL(blob);
             moduleState.objectUrlCache.set(proxyPath, objectUrl);
+            // The newest stays: its targets take it in this same run of promise callbacks.
+            const dropped = evictOldest(moduleState.objectUrlCache, RECENT_PICTURES_CAPACITY, everyPicture);
+            releaseObjectUrls(dropped.map(([, droppedUrl]) => droppedUrl));
             return objectUrl;
         })
         .finally(() => {

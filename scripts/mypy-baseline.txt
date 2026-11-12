@@ -319,8 +319,6 @@ app/services/tag_ontology.py: Incompatible types in assignment (expression has t
 app/services/tag_ontology.py: Value of type "frozenset[str]" is not indexable  [index]
 app/services/tag_term_matching.py: Item "None" of "Match[str] | None" has no attribute "group"  [union-attr]
 app/services/undo_state.py: "dict[str, _ClientUndo]" has no attribute "move_to_end"  [attr-defined]
-app/services/update_backups.py: Argument "arcname" to "add" of "TarFile" has incompatible type "object"; expected "str | PathLike[str] | None"  [arg-type]
-app/services/update_backups.py: Unsupported operand types for / ("Path" and "object")  [operator]
 app/services/update_installer.py: Incompatible return value type (got "tuple[int, ...]", expected "tuple[int, int, int]")  [return-value]
 app/services/update_preflight.py: Module has no attribute "_base_executable"  [attr-defined]
 app/services/windows_process_control.py: Module has no attribute "WinDLL"  [attr-defined]

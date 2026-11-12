@@ -33,9 +33,11 @@ class ViewCache:
 
     Every notes.view response is diffed against the tab's warm view and then
     becomes the new one, so the browser never sends its state. Entries are
-    removed only when their tab is deleted or the session ends (login,
-    passwordless claim, logout, lock, restore); a tab with no warm view gets
-    its initial window (structure plus every windowed note).
+    removed when their tab is deleted, when sync forgets their browser window
+    as an idle client (sync.touch_client, so a closed window's views go with
+    it), or when the session ends (login, passwordless claim, logout, lock,
+    restore); a tab with no warm view gets its initial window (structure plus
+    every windowed note).
     """
 
     def __init__(self) -> None:
@@ -75,6 +77,15 @@ class ViewCache:
         with self._lock:
             for key in tuple(self._views):
                 if key[1] == tab_id:
+                    del self._views[key]
+
+    def discard_client(self, client_id: str) -> None:
+        """Forget every tab of a browser window that sync no longer tracks."""
+        if not isinstance(client_id, str) or client_id == "":
+            raise TypeError("client_id must be a non-empty string")
+        with self._lock:
+            for key in tuple(self._views):
+                if key[0] == client_id:
                     del self._views[key]
 
     def capture(self) -> Dict[Tuple[str, str], WarmView]:

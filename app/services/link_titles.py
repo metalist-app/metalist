@@ -19,6 +19,7 @@ from app.config import TEST_MODE
 from app.services.runtime_generation import current_generation
 from app.services.bulk_operation import bulk_operation_guard
 from app.db.link_titles_sql import (
+    delete_link_title_rows,
     fetch_all_link_title_rows,
     insert_link_title_row,
     update_link_title_row,
@@ -506,6 +507,37 @@ class LinkTitleStore:
             self._render_generation += 1
             after = _ok_titles_by_url(self._state)
         self._notify_titles_changed(before, after)
+
+    def forget_urls_not_in(self, linked_urls: frozenset[str]) -> int:
+        """Drop the titles of addresses no note links to (normalized as get_ok_title reads them),
+        but not one being looked up now. None while the titles cannot be read (locked): which
+        address a row holds is unknown then. Returns how many went."""
+        if not isinstance(linked_urls, frozenset):
+            raise TypeError("linked_urls must be a frozenset")
+        with self._lock:
+            state = self._state
+            if state is None or not state.is_decrypted:
+                return 0
+            unlinked = {
+                url: record for url, record in state.records_by_url.items()
+                if url not in linked_urls and url not in self._in_flight
+            }
+            if len(unlinked) == 0:
+                return 0
+            before = _ok_titles_by_url(state)
+            unlinked_ids = frozenset(record.id for record in unlinked.values())
+            with begin_writer() as connection:
+                delete_link_title_rows(connection, tuple(sorted(unlinked_ids)))
+            self._state = _LinkTitleState(
+                stored_rows=tuple(row for row in state.stored_rows if row.id not in unlinked_ids),
+                records_by_url={url: record for url, record in state.records_by_url.items() if url not in unlinked},
+                is_decrypted=True,
+            )
+            self._revision += 1
+            self._render_generation += 1
+            after = _ok_titles_by_url(self._state)
+        self._notify_titles_changed(before, after)
+        return len(unlinked)
 
     def list_manual_retry_urls(self) -> tuple[str, ...]:
         """Failed or title-less lookups a manual retry may ask again now (whatever
@@ -1078,13 +1110,25 @@ class _HostPacer:
         with self._lock:
             assert host in self._busy, f"released a site that was not taken: {host}"
             self._busy.discard(host)
-            self._next_allowed_at[host] = time.monotonic() + _HOST_REQUEST_SPACING_SECONDS
+            now = time.monotonic()
+            self._forget_past_locked(now=now)
+            self._next_allowed_at[host] = now + _HOST_REQUEST_SPACING_SECONDS
+
+    def _forget_past_locked(self, *, now: float) -> None:
+        """A site whose spacing and cooldown are over is as if never asked: forget it, or every
+        site ever asked stays (docs/ready-to-build/unbounded-growth-audit.md, M5)."""
+        for host in [host for host, moment in self._next_allowed_at.items() if moment <= now]:
+            del self._next_allowed_at[host]
+        for host in [host for host, moment in self._cooldown_until.items() if moment <= now]:
+            del self._cooldown_until[host]
 
     def cool_down(self, host: str, seconds: int) -> None:
         if not isinstance(seconds, int) or seconds <= 0:
             raise ValueError("cool_down requires a positive number of seconds")
         with self._lock:
-            until = time.monotonic() + seconds
+            now = time.monotonic()
+            self._forget_past_locked(now=now)
+            until = now + seconds
             if host not in self._cooldown_until or self._cooldown_until[host] < until:
                 self._cooldown_until[host] = until
 

@@ -95,6 +95,8 @@ const LABELS = {
     'action.find_in_list': 'Find in List',
     'action.edit_tag_relationships': 'Edit Tag Relationships…',
     'action.export_html': 'Export View as HTML…',
+    'action.report_problem': 'Report a Problem…',
+    'action.export_problem_reports': 'Export Problem Reports…',
     'action.print_view': 'Print View…',
     'action.attach_file_to_current_note': 'Attach File…',
     'action.link_to': 'Link to…',
@@ -123,15 +125,15 @@ test('every command palette label is as agreed', () => {
 
 test('commands with a key show it', () => {
     assert.deepEqual(COMMAND_SHORTCUTS, {
-        'action.find_in_list': { mod: true, shift: false, key: 'F' },
-        'action.open_keyboard_shortcuts_help': { mod: false, shift: false, key: '?' },
+        'action.find_in_list': { mod: true, alt: false, shift: false, key: 'F' },
+        'action.open_keyboard_shortcuts_help': { mod: false, alt: false, shift: false, key: '?' },
     });
 });
 
 test('commands that cannot apply are hidden', () => {
-    const withPassword = { hasPassword: true, isRootReorderLocked: false, hasFileFilter: false };
-    const withoutPassword = { hasPassword: false, isRootReorderLocked: false, hasFileFilter: false };
-    const sorted = { hasPassword: false, isRootReorderLocked: true, hasFileFilter: false };
+    const withPassword = { hasPassword: true, isRootReorderLocked: false, hasFileFilter: false, hasProblemReports: false };
+    const withoutPassword = { hasPassword: false, isRootReorderLocked: false, hasFileFilter: false, hasProblemReports: false };
+    const sorted = { hasPassword: false, isRootReorderLocked: true, hasFileFilter: false, hasProblemReports: false };
     assert.equal(isCommandAvailable('form.add_password', withPassword), false);
     assert.equal(isCommandAvailable('form.add_password', withoutPassword), true);
     for (const id of ['form.change_password', 'form.remove_password']) {
@@ -146,6 +148,10 @@ test('commands that cannot apply are hidden', () => {
     assert.equal(isCommandAvailable('action.logout', sorted), true);
     assert.equal(isCommandAvailable('view.sort_mode.file_size', withoutPassword), false);
     assert.equal(isCommandAvailable('view.sort_mode.file_size', { ...withoutPassword, hasFileFilter: true }), true);
+    // Export Problem Reports… only once a report is kept (docs/ready-to-build/error-reports.md §4).
+    assert.equal(isCommandAvailable('action.export_problem_reports', withoutPassword), false);
+    assert.equal(isCommandAvailable('action.export_problem_reports', { ...withoutPassword, hasProblemReports: true }), true);
+    assert.equal(isCommandAvailable('action.report_problem', withoutPassword), true);
     // The Obsidian import exists in production too (the maintainer, 2026-10-31).
     assert.equal(isCommandAvailable('form.import_wizard', withPassword), true);
 });

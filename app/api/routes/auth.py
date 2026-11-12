@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from http import HTTPStatus
-import logging
 from functools import partial
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
 from pydantic import BaseModel, Field, SecretStr, field_validator
@@ -47,7 +46,7 @@ from app.server_runtime import load_all_namespace_launch_profiles
 from app.server_runtime import resolve_namespace_directory
 from app.server_runtime import resolve_namespaced_database_path
 from app.server_runtime import validate_namespace
-from app.security.sensitive_logging import traceback_frame_summary
+from app.services import safe_log
 from app.services.encryption import EncryptionService
 from app.services.tokens import token_service
 from app.services.ai_chat import ai_chat_store
@@ -102,7 +101,6 @@ from app.services.link_title_retry import stop_link_title_retry
 
 
 router = APIRouter(prefix="/auth", tags=["auth2"])
-logger = logging.getLogger(__name__)
 
 _PERCENT_COMPLETE = 100
 # The sessions list shows at most this much of a browser's User-Agent.
@@ -336,10 +334,10 @@ def _on_hydration_done(future: Future) -> None:
     error = future.exception()
     if error is not None:
         error_message = type(error).__name__
-        logger.error(
-            "Hydration worker failed: %s frames=%s",
-            error_message,
-            traceback_frame_summary(error.__traceback__),
+        safe_log.log_event(
+            "ERROR", "hydration.failed",
+            error_type=error_message,
+            frames=safe_log.safe_code_frames(error.__traceback__),
         )
         hydration_state.fail(error_message)
 

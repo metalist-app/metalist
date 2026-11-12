@@ -42,6 +42,9 @@ class AuthMiddleware(BaseHTTPMiddleware):
         # Whether the server runs older code than its files (server_code.py): a yes or no.
         f"{API_PREFIX}/auth/app-update/server-code",
         f"{API_PREFIX}/auth/session",
+        # A problem report from the login page: redacted and checked, kept nowhere, no vault read
+        # (app/api/routes/problem_reports.py).
+        f"{API_PREFIX}/problem-reports/unsaved",
         "/favicon.ico",
         "/locked",
         "/namespace-deleted",

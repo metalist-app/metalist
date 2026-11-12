@@ -73,6 +73,8 @@ const CONTEXT_MENU_ICONS = {
         'M33 19a6 6 0 1 1-12 0a6 6 0 1 1 12 0z',
         'M31.5 23.5l4 4',
     ],
+    // A warning: a triangle with an exclamation mark (Report a Problem…, the maintainer 2026-11-12).
+    warning: ['M12 4 2.5 20h19z', 'M12 10v4', 'M12 17h.01'],
     // One folder (virtual folders, an experiment).
     folder: [
         'M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z',

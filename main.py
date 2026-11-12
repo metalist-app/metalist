@@ -610,6 +610,8 @@ def _run_main_listener(
         ssl_certfile=ssl_certfile,
         ssl_keyfile=ssl_keyfile,
         access_log=False,
+        # uvicorn's own handlers would print its records as they are: they reach the safe log instead.
+        log_config=None,
     )
 
 

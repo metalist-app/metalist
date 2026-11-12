@@ -21,6 +21,7 @@ import {
     actionPasteNoteChild,
     actionPasteNoteSibling,
     createChildNote,
+    createNoteAfterParent,
     createNote,
     createNoteAtTop,
     deleteNote,
@@ -770,6 +771,7 @@ function describeOutlinePosition(noteElement) {
         canMoveDown,
         canIndent: hasPrevious,
         canOutdent: !isRoot,
+        canAddNoteOneLevelOut: !isRoot,
     };
 }
 
@@ -1007,6 +1009,9 @@ function showNoteContextMenu(event, noteId, imageContext, selectedTextRange, ref
         ? normalizeSelectedTextForTagAction(selectedTextRange.toString())
         : null;
     const hasNoteClipboard = ModeContext.clipboardMode === 'note';
+    // A paste fills a note with no text and no children (the server's rule, paste_sibling.py).
+    const isBlankNote = DOMUtils.getNoteContent(noteElement).textContent.trim() === ''
+        && noteElement.dataset.hasChildren === 'false';
     // Where Link to… and Embed… type: in the edited note's text, at the right-click
     // (or around the text selected before it).
     const referenceRange = referenceInsertRange(noteElement, event.target, event.clientX, event.clientY);
@@ -1025,6 +1030,7 @@ function showNoteContextMenu(event, noteId, imageContext, selectedTextRange, ref
         filePlayerFileId: filePlayerFileIdAt(event.target),
         hasSelectedText,
         hasNoteClipboard,
+        isBlankNote,
         canInsertReference: referenceRange !== null,
         // Insert ▸ offers only where Link to… can type, in the note being edited.
         insertKinds: insertKindsAt(noteElement, referenceRange),
@@ -1213,6 +1219,12 @@ function showNoteContextMenu(event, noteId, imageContext, selectedTextRange, ref
                 void CommandGate.run('contextMenu.note.add_child', async () => {
                     await focusNoteForContextAction(targetNoteId);
                     await createChildNote();
+                });
+            },
+            onAddNoteOneLevelOut: (targetNoteId) => {
+                void CommandGate.run('contextMenu.note.add_one_level_out', async () => {
+                    await focusNoteForContextAction(targetNoteId);
+                    await createNoteAfterParent();
                 });
             },
             onAddNoteAtTop: () => {

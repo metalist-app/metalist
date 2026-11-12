@@ -35,6 +35,7 @@ function buildNoteHandlers(calls) {
         onAddNoteAtTop: () => calls.push(['addNoteAtTop']),
         onAddSiblingNote: (noteId) => calls.push(['addSibling', noteId]),
         onAddChildNote: (noteId) => calls.push(['addChild', noteId]),
+        onAddNoteOneLevelOut: (noteId) => calls.push(['addOneLevelOut', noteId]),
         onDeleteNote: (noteId) => calls.push(['delete', noteId]),
         onMoveNoteToTop: (noteId) => calls.push(['moveToTop', noteId]),
         onMoveNoteToBottom: (noteId) => calls.push(['moveToBottom', noteId]),
@@ -63,6 +64,8 @@ function buildNoteContext(overrides = {}) {
         canMoveDown: true,
         canIndent: true,
         canOutdent: true,
+        canAddNoteOneLevelOut: true,
+        isBlankNote: false,
         fileCardFileId: null,
         filePlayerFileId: null,
         ...overrides,
@@ -123,7 +126,7 @@ test('the note menu groups copy, add, move, outline, focus, export, and delete l
     const items = buildContextMenuItems(buildNoteContext({ canOpenFloatingNote: true, canViewFullscreen: true }), { ...buildNoteHandlers(calls), onOpenFloatingNote: (noteId) => calls.push(['floating', noteId]) });
     assert.deepEqual(menuOutline(items), [
         'Copy Note ⌘C',
-        ['— Add', ['Add Sibling Note ⌘↩', 'Add Child Note ⇧⌘↩']],
+        ['— Add', ['Add Sibling Note ⌘↩', 'Add Child Note ⇧⌘↩', 'Add Note One Level Out ⌥⌘↩']],
         ['Move', ['Move to Top ⇧⌘↑', 'Move Up ⌘↑', 'Move Down ⌘↓', 'Move to Bottom ⇧⌘↓']],
         ['Outline', ['Fully Expand', 'Fully Collapse', '— Indent ⌘→', 'Outdent ⌘←']],
         ['Focus', ['Full Screen', 'Floating Window']],
@@ -144,6 +147,7 @@ test('note menu actions call their handlers with the clicked note', () => {
         ['copyNote', 'note-123'],
         ['addSibling', 'note-123'],
         ['addChild', 'note-123'],
+        ['addOneLevelOut', 'note-123'],
         ['moveToTop', 'note-123'],
         ['moveUp', 'note-123'],
         ['moveDown', 'note-123'],
@@ -462,6 +466,27 @@ test('Paste groups the sibling and child pastes once a note is copied, and paste
     assert.equal(findMenuItem(nothingCopied, 'paste-note'), null);
 });
 
+// A paste onto a blank note fills it (paste_sibling.py): Paste Into Note comes first, and
+// Paste Sibling Note, which cannot happen there, is hidden.
+test('a blank note offers Paste Into Note first, then Paste Child Note', () => {
+    const calls = [];
+    const items = buildContextMenuItems(
+        buildNoteContext({ hasNoteClipboard: true, isBlankNote: true }),
+        buildNoteHandlers(calls),
+    );
+    assert.deepEqual(menuOutline(items).slice(0, 2), [
+        'Copy Note ⌘C',
+        ['Paste', ['Paste Into Note ⌘V', 'Paste Child Note ⇧⌘V']],
+    ]);
+    for (const item of items[1].submenu) item.onSelect();
+    assert.deepEqual(calls, [
+        ['pasteNote', 'note-123'],
+        ['pasteNoteChild', 'note-123'],
+    ]);
+    const nothingCopied = buildContextMenuItems(buildNoteContext({ isBlankNote: true }), buildNoteHandlers([]));
+    assert.equal(findMenuItem(nothingCopied, 'paste-into-note'), null);
+});
+
 test('Link to… and Embed… lead the editing items for a right-click in the edited text', () => {
     const calls = [];
     const items = buildContextMenuItems(
@@ -479,10 +504,21 @@ test('Link to… and Embed… lead the editing items for a right-click in the ed
     assert.equal(findMenuItem(elsewhere, 'embed'), null);
 });
 
+// A root note has no level out: the item is hidden there, never greyed.
+test('Add Note One Level Out shows on a child note and is hidden on a root note', () => {
+    const addIds = (context) => buildContextMenuItems(buildNoteContext(context), buildNoteHandlers([]))
+        .find((item) => item.id === 'add').submenu.map((item) => item.id);
+    assert.deepEqual(addIds({ canAddNoteOneLevelOut: true }), ['add-sibling-note', 'add-child-note', 'add-note-one-level-out']);
+    assert.deepEqual(addIds({ canAddNoteOneLevelOut: false }), ['add-sibling-note', 'add-child-note']);
+    const windowsItem = buildContextMenuItems(buildNoteContext({ isMac: false }), buildNoteHandlers([]))
+        .find((item) => item.id === 'add').submenu.find((item) => item.id === 'add-note-one-level-out');
+    assert.equal(windowsItem.shortcut, 'Ctrl+Alt+Enter');
+});
+
 test('buildContextMenuItems adds a top note action to non-editing note context', () => {
     const calls = [];
     const items = buildContextMenuItems(
-        buildNoteContext({ canAddNoteAtTop: true }),
+        buildNoteContext({ canAddNoteAtTop: true, canAddNoteOneLevelOut: false }),
         buildNoteHandlers(calls),
     );
     const add = items.find((item) => item.id === 'add');
@@ -599,10 +635,13 @@ test('background shortcuts are written the Windows and Linux way off a Mac', () 
 });
 
 test('formatMenuShortcut writes modifiers in platform order', () => {
-    assert.equal(formatMenuShortcut({ isMac: true, mod: true, shift: true, key: 'Z' }), '⇧⌘Z');
-    assert.equal(formatMenuShortcut({ isMac: true, mod: false, shift: false, key: 'Enter' }), '↩');
-    assert.equal(formatMenuShortcut({ isMac: false, mod: true, shift: true, key: 'Z' }), 'Ctrl+Shift+Z');
-    assert.throws(() => formatMenuShortcut({ isMac: true, mod: true, shift: false, key: '' }));
+    assert.equal(formatMenuShortcut({ isMac: true, mod: true, alt: false, shift: true, key: 'Z' }), '⇧⌘Z');
+    assert.equal(formatMenuShortcut({ isMac: true, mod: false, alt: false, shift: false, key: 'Enter' }), '↩');
+    assert.equal(formatMenuShortcut({ isMac: false, mod: true, alt: false, shift: true, key: 'Z' }), 'Ctrl+Shift+Z');
+    assert.equal(formatMenuShortcut({ isMac: true, mod: true, alt: true, shift: false, key: 'Enter' }), '⌥⌘↩');
+    assert.equal(formatMenuShortcut({ isMac: false, mod: true, alt: true, shift: false, key: 'Enter' }), 'Ctrl+Alt+Enter');
+    assert.throws(() => formatMenuShortcut({ isMac: true, mod: true, alt: false, shift: false, key: '' }));
+    assert.throws(() => formatMenuShortcut({ isMac: true, mod: true, shift: false, key: 'Z' }));
 });
 
 test('background actions call their handlers', () => {

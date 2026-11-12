@@ -51,7 +51,10 @@ installer. Opening Version info does not install an update. The user controls
 installation/restart; do not claim a particular installed/latest version unless
 it was supplied. Local help references cannot establish current release data.
 Updates validate a candidate before stopping live vaults and create fresh
-backups; old backup archives remain unchanged. Each vault keeps its newest 3
+backups of each vault's notes and attached files; old backup archives remain
+unchanged. Restore refuses a backup with no attached files over a vault that
+has some (backups made before an update by MetaList 0.27.0 and earlier have
+none): choose another backup. Each vault keeps its newest 3
 safety backups (made before an update or a database upgrade, in the vault's own
 backups folder), and older ones are removed automatically once the update or
 upgrade has succeeded; backups in a folder the user chose follow that folder's

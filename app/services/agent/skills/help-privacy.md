@@ -107,13 +107,19 @@ deleting recovery artifacts to bypass a failed transition.
 
 ## Diagnostics, memory and verification
 
-For a protected vault, startup diagnostics before unlock are plaintext and
-do not contain decrypted vault data. After successful key unwrap, MetaList
-writes no log file until logout: the plaintext log and fault logging are turned
-off, and direct stdout/stderr writes use individual `MLLOG1` AES-GCM envelopes
-with a DEK-derived logging key. Exception messages and tracebacks are never
-written to disk. Do not claim logs are all always plaintext or all always
-encrypted.
+MetaList keeps one plain server log, before and after unlock alike, that holds
+only safe records: which part of MetaList answered a request (its route as
+MetaList names it, never the address or search the browser sent), status,
+timing, request id, counts, error types and code locations. Every record is
+checked against a fixed list of MetaList's own events before it is written;
+anything else (note text, tags, searches, link addresses, error messages) is
+refused, not written. Successful loads of MetaList's own files are not logged.
+While unlocked, fault logging is off and direct stdout/stderr writes use
+individual `MLLOG1` AES-GCM envelopes with a DEK-derived logging key. Each
+server answer carries its request id, and an error MetaList shows names it, so
+the matching log line can be found. Do not claim the log is encrypted, or that
+it holds note content. Logs are kept per vault, under about 125 MB each, and a
+deleted or renamed vault's logs are removed a day later.
 
 Keep the two memory boundaries distinct: the browser holds decrypted displayed
 content, while the unlocked server holds decrypted data and encryption keys.

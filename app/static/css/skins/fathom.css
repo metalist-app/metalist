@@ -1,8 +1,9 @@
 /* Fathom (docs/ui/skins.md): a code editor's deep blue-grey, in the style of Sublime Text's
    default colours, over the dark theme; notes in the system's own monospace font, as an editor
-   writes code (the maintainer, 2026-11-11). The colours are chosen here, not taken from another
-   app's colour-scheme file. Every rule starts with html[data-skin="fathom"]: with another theme
-   chosen this file does nothing. */
+   writes code (the maintainer, 2026-11-11). The accent and text colours are Oceanic Next's, by
+   Dmitri Voronianski, as Sublime Text's Mariana adjusted them; MIT licence and details in
+   fathom.LICENSE.txt beside this file. Every rule starts with html[data-skin="fathom"]: with
+   another theme chosen this file does nothing. */
 
 /* --- The palette, and the theme's colours drawn from it --- */
 html[data-skin="fathom"] {

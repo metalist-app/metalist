@@ -58,3 +58,45 @@ def test_rate_limiter_success_clears_state(monkeypatch) -> None:
     limiter.record_failure(key)
     limiter.record_success(key)
     assert limiter.check_allowed(key) == (True, 0)
+
+
+def test_rate_limiter_drops_buckets_of_other_ips_past_the_window(monkeypatch) -> None:
+    clock = {"now": 100.0}
+
+    def fake_now() -> float:
+        return clock["now"]
+
+    monkeypatch.setattr("app.services.login_rate_limit.time.monotonic", fake_now)
+
+    limiter = LoginRateLimiter(max_attempts=3, window_seconds=60, block_seconds=120)
+    for index in range(1000):
+        limiter.record_failure(f"ip:10.0.{index // 256}.{index % 256}")
+    clock["now"] = 150.0
+    limiter.record_failure("ip:192.168.1.1")
+    clock["now"] = 161.0
+
+    limiter.check_allowed("ip:192.168.1.2")
+
+    assert set(limiter._buckets) == {"ip:192.168.1.1"}
+
+
+def test_rate_limiter_keeps_a_blocked_bucket_past_the_window(monkeypatch) -> None:
+    clock = {"now": 100.0}
+
+    def fake_now() -> float:
+        return clock["now"]
+
+    monkeypatch.setattr("app.services.login_rate_limit.time.monotonic", fake_now)
+
+    limiter = LoginRateLimiter(max_attempts=2, window_seconds=60, block_seconds=120)
+    blocked = "ip:10.0.0.1"
+    limiter.record_failure(blocked)
+    limiter.record_failure(blocked)
+    clock["now"] = 200.0
+
+    limiter.record_failure("ip:10.0.0.2")
+
+    assert limiter.check_allowed(blocked) == (False, 20)
+    clock["now"] = 221.0
+    limiter.record_failure("ip:10.0.0.3")
+    assert blocked not in limiter._buckets

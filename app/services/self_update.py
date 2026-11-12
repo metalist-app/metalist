@@ -26,6 +26,9 @@ _PYPI_REQUEST_TIMEOUT_SECONDS = 10.0
 _RELEASE_VERSION_PATTERN = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+")
 # The updater's last step, run by the version just installed and restarted.
 TRIM_SAFETY_BACKUPS_COMMAND = "trim-safety-backups"
+# Then the updater's own uv drops cache entries nothing uses any more (no --ci, no --force:
+# those also clear built wheels or ignore other uv processes still using the cache).
+PRUNE_UV_CACHE_ARGUMENTS = ("cache", "prune")
 
 
 @dataclass(frozen=True)
@@ -224,6 +227,9 @@ def _build_windows_updater_command(
 ) -> list[str]:
     quoted_install = " ".join(_quote_powershell_literal(part) for part in install_command)
     quoted_metalist = _quote_powershell_literal(metalist_executable)
+    quoted_prune = " ".join(
+        _quote_powershell_literal(part) for part in (install_command[0], *PRUNE_UV_CACHE_ARGUMENTS)
+    )
     script = (
         f"while (Get-Process -Id {current_pid} -ErrorAction SilentlyContinue) "
         "{ Start-Sleep -Milliseconds 100 }; "
@@ -239,6 +245,11 @@ def _build_windows_updater_command(
         f"& {quoted_metalist} {_quote_powershell_literal(TRIM_SAFETY_BACKUPS_COMMAND)}; "
         "if ($LASTEXITCODE -ne 0) { "
         f"Write-Host 'MetaList updated to v{target_version}, but older safety backups were not removed.' "
+        "-ForegroundColor Red; "
+        "Start-Sleep -Seconds 10; exit $LASTEXITCODE }; "
+        f"& {quoted_prune}; "
+        "if ($LASTEXITCODE -ne 0) { "
+        f"Write-Host 'MetaList updated to v{target_version}, but uv''s download cache was not pruned.' "
         "-ForegroundColor Red; "
         "Start-Sleep -Seconds 10; exit $LASTEXITCODE }; "
         f"Write-Host 'MetaList updated to v{target_version}.' -ForegroundColor Green; "
@@ -265,6 +276,7 @@ def _build_posix_updater_command(
     uv_command = shlex.join(install_command)
     metalist_command = shlex.join([metalist_executable])
     trim_command = shlex.join([metalist_executable, TRIM_SAFETY_BACKUPS_COMMAND])
+    prune_command = shlex.join([install_command[0], *PRUNE_UV_CACHE_ARGUMENTS])
     script = (
         f"while kill -0 {current_pid} 2>/dev/null; do sleep 0.1; done\n"
         f"if ! {uv_command}; then\n"
@@ -277,6 +289,10 @@ def _build_posix_updater_command(
         "fi\n"
         f"if ! {trim_command}; then\n"
         f"  echo 'MetaList updated to v{target_version}, but older safety backups were not removed.' >&2\n"
+        "  exit 1\n"
+        "fi\n"
+        f"if ! {prune_command}; then\n"
+        f"  echo \"MetaList updated to v{target_version}, but uv's download cache was not pruned.\" >&2\n"
         "  exit 1\n"
         "fi\n"
         f"echo 'MetaList updated to v{target_version}.'\n"

@@ -2,6 +2,7 @@ import { ApplicationState } from '../../application-state.js';
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import * as Logger from '../mode-logger.js';
 import { CONFIG } from '../../config.js';
+import { recordCommand } from '../../problem-reports/input-recorder.js';
 
 const WATCHDOG_TIMEOUT_MS = 15000;
 
@@ -79,6 +80,7 @@ export const CommandGate = {
                 requested: name,
                 busyName: moduleState.busyName,
             });
+            recordCommand(name, 0, 'dropped');
             return Promise.resolve(null);
         }
         if (ModeContext.isLoading) {
@@ -102,8 +104,16 @@ export const CommandGate = {
 
         Logger.logAction('command_gate.start', { name });
 
+        const startedAt = performance.now();
         return Promise.resolve()
             .then(() => asyncFn())
+            .then((value) => {
+                recordCommand(name, performance.now() - startedAt, 'ok');
+                return value;
+            }, (error) => {
+                recordCommand(name, performance.now() - startedAt, 'failed');
+                throw error;
+            })
             .finally(() => {
                 Logger.logAction('command_gate.finish', { name });
                 moduleState.busy = false;

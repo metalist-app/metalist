@@ -11,6 +11,7 @@ import pytest
 from app.db.notes_sql import insert_note
 from app.models.database import SafeSession
 from app.security import encryption
+from app.services import content_cache
 from app.services import note_store as note_store_module
 from app.services import store as store_module
 from app.services.input_errors import InputRejected
@@ -51,9 +52,20 @@ def note_store(monkeypatch: pytest.MonkeyPatch) -> NoteStore:
             parent_id=parent_id, prev_id=prev_id, next_id=next_id, is_collapsed=False, created_at=NOW, updated_at=NOW,
         )
     session.commit()
+    # The real cache as loading fills it: a delete evicts its notes from it (content_cache.forget_notes).
+    for note_id, _parent_id, _prev_id, _next_id in TREE:
+        _fill_content_cache(note_id)
     store.load_from_db(session, prefetched_rows=None)
     yield store
     session.close()
+    content_cache.clear_cache()
+
+
+def _fill_content_cache(note_id: str) -> None:
+    content_cache.cache_note(note_id, "")
+    content_cache.cache_note_tags(note_id, "")
+    content_cache.cache_note_proposed_tags(note_id, "")
+    content_cache.cache_note_text(note_id, "")
 
 
 def view(matched: set[str], *, is_filtered: bool) -> ResolvedViewScope:

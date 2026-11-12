@@ -9,6 +9,7 @@ from app.usecases.move import CmdMove, apply_move
 
 import pytest
 
+from app.services import content_cache
 from app.services import note_store as module
 from app.services.note_store import NotePosition
 from app.services.note_store import NoteStore
@@ -99,9 +100,16 @@ def database_store(store, monkeypatch):
             created_at=timestamp, updated_at=timestamp,
         )
     session.commit()
+    # The real cache as loading fills it: a delete evicts its notes from it (content_cache.forget_notes).
+    for note_id in ('head', 'middle', 'tail'):
+        content_cache.cache_note(note_id, '')
+        content_cache.cache_note_tags(note_id, '')
+        content_cache.cache_note_proposed_tags(note_id, '')
+        content_cache.cache_note_text(note_id, '')
     store.load_from_db(session, prefetched_rows=None)
     yield store, session
     session.close()
+    content_cache.clear_cache()
 
 
 def test_database_cross_parent_move_and_undo_delete_restore(database_store):

@@ -15,6 +15,7 @@ import ssl
 from threading import Event, Thread
 
 import pytest
+from loguru import logger
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
@@ -254,7 +255,7 @@ def test_proxy_retries_one_bodyless_get_after_upstream_reset(monkeypatch):
     assert all(connection.is_closed for connection in connections)
 
 
-def test_proxy_does_not_replay_post_and_logs_sanitized_failure(monkeypatch, caplog):
+def test_proxy_does_not_replay_post_and_logs_sanitized_failure(monkeypatch):
     connections = []
     statuses = []
 
@@ -294,14 +295,18 @@ def test_proxy_does_not_replay_post_and_logs_sanitized_failure(monkeypatch, capl
     handler.close_connection = False
     handler.send_error = lambda status, reason: statuses.append((status, reason))
 
-    with caplog.at_level("ERROR", logger="app.https_proxy"):
+    records = []
+    sink_id = logger.add(lambda message: records.append(str(message)), level="ERROR")
+    try:
         handler._proxy()
+    finally:
+        logger.remove(sink_id)
 
     assert statuses == [(502, "Upstream transport failed")]
     assert len(connections) == 1
     assert connections[0].is_closed
-    assert "ConnectionResetError" in caplog.text
-    assert "private transport details" not in caplog.text
+    assert any("proxy.transport_failed stage=upstream method=POST error_type=ConnectionResetError" in record for record in records)
+    assert "private transport details" not in "".join(records)
 
 
 def test_multipart_limit_without_content_length_closes_spooled_files(monkeypatch):

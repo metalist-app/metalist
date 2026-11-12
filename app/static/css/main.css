@@ -647,6 +647,34 @@ html:has(> body > .login-page[style*="display: flex"]:not(.login-page-covering):
     width: min(520px, 92vw);
 }
 
+/* Report a Problem… and Export Problem Reports… (docs/ready-to-build/error-reports.md §4). */
+.problem-report-modal-content,
+.problem-reports-export-modal-content {
+    width: min(480px, 92vw);
+}
+
+.problem-report-modal-content textarea {
+    resize: vertical;
+}
+
+.problem-reports-list {
+    max-height: 50vh;
+    overflow-y: auto;
+    margin-bottom: 12px;
+}
+
+.problem-reports-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 4px 0;
+}
+
+.problem-reports-kind {
+    margin-left: auto;
+    opacity: 0.7;
+}
+
 /* Rename File…: the name is edited, its extension stays fixed beside it. */
 .file-rename-modal-content {
     width: min(480px, 92vw);
@@ -10906,6 +10934,26 @@ html[data-theme="dark"] body.loading::after {
     border-bottom: 1px solid var(--modal-border);
     cursor: var(--skin-cursor-pointer, pointer);
     user-select: none;
+}
+
+/* A palette entry with an icon (endpoint-registry.js, COMMAND_ICONS): the right-click menu's
+   own icon, drawn as the menu draws it. */
+.command-palette-row-label-with-icon {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.command-palette-row-icon {
+    flex: 0 0 auto;
+    width: 16px;
+    height: 16px;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    fill: none;
+    opacity: 0.72;
 }
 
 .command-palette-row:last-child {
