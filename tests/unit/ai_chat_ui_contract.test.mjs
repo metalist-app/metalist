@@ -37,7 +37,7 @@ const PROPOSAL_MENU_URL = new URL(
     import.meta.url,
 );
 
-for (const entrypoint of ['main.js', 'modules/auth.js']) {
+for (const entrypoint of ['modules/app-start.js']) {
     test(`${entrypoint} initializes chat with a working menu callback`, () => {
         const source = readFileSync(new URL(`../../app/static/js/${entrypoint}`, import.meta.url), 'utf8');
         const start = source.indexOf('await AiChatPanel.init({');
@@ -553,11 +553,11 @@ test('chat layout defaults to one third and narrows the notes shell', () => {
 test('chat width persists after resizing and restores through client preferences', () => {
     const controller = readFileSync(CONTROLLER_URL, 'utf8');
     const main = readFileSync(
-        new URL('../../app/static/js/main.js', import.meta.url),
+        new URL('../../app/static/js/modules/app-start.js', import.meta.url),
         'utf8',
     );
     const auth = readFileSync(
-        new URL('../../app/static/js/modules/auth.js', import.meta.url),
+        new URL('../../app/static/js/modules/app-start.js', import.meta.url),
         'utf8',
     );
     const commandController = readFileSync(COMMAND_CONTROLLER_URL, 'utf8');
@@ -577,11 +577,11 @@ test('chat width persists after resizing and restores through client preferences
 test('developer diagnostic panel visibility defaults hidden and persists by namespace', () => {
     const controller = readFileSync(CONTROLLER_URL, 'utf8');
     const main = readFileSync(
-        new URL('../../app/static/js/main.js', import.meta.url),
+        new URL('../../app/static/js/modules/app-start.js', import.meta.url),
         'utf8',
     );
     const auth = readFileSync(
-        new URL('../../app/static/js/modules/auth.js', import.meta.url),
+        new URL('../../app/static/js/modules/app-start.js', import.meta.url),
         'utf8',
     );
     const commandController = readFileSync(COMMAND_CONTROLLER_URL, 'utf8');
@@ -601,11 +601,11 @@ test('developer diagnostic panel visibility defaults hidden and persists by name
 test('resized chat composer height persists through client preferences', () => {
     const controller = readFileSync(CONTROLLER_URL, 'utf8');
     const main = readFileSync(
-        new URL('../../app/static/js/main.js', import.meta.url),
+        new URL('../../app/static/js/modules/app-start.js', import.meta.url),
         'utf8',
     );
     const auth = readFileSync(
-        new URL('../../app/static/js/modules/auth.js', import.meta.url),
+        new URL('../../app/static/js/modules/app-start.js', import.meta.url),
         'utf8',
     );
     const commandController = readFileSync(COMMAND_CONTROLLER_URL, 'utf8');

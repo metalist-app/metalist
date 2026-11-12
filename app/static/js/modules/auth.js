@@ -1,7 +1,6 @@
 import { isServerErrorStatus } from './http-status.js';
 import { ApplicationState } from './application-state.js';
 import { HttpRequestError, rethrowUnexpectedError } from './expected-errors.js';
-import { closeAllFloatingNotes } from './mode-manager/services/floating-note-service.js';
 import { FloatingMessages } from './floating-messages.js';
 /**
  * Authentication module for handling login/logout and password management
@@ -9,10 +8,6 @@ import { FloatingMessages } from './floating-messages.js';
 import { CONFIG } from './config.js';
 import { buildSessionHeaders, initializeSessionIdentity, getRequiredTabId } from './session-auth.js';
 import { readPasswordOperationResponse } from './password-operation-response.js';
-import { CommandPalette } from './command-palette/command-palette-controller.js';
-import { PhoneMode } from './phone/phone-mode.js';
-import { ReminderSurface } from './reminder-surface-service.js';
-import { AiChatPanel } from './ai-chat/ai-chat-panel-controller.js';
 import { clearLegacyAuthStorage, resolveStoredThemePreference } from './client-state-migration.js';
 import { consumeBooleanQueryFlag } from './location-flags.js';
 import { isRestoringOpenVault } from './restore-session-end.js';
@@ -47,6 +42,9 @@ const MIN_NAMESPACES_FOR_SWITCHER = 2;
 
 export const Auth = {
     hasPassword: null,
+    // The workspace's code (app-start.js), loaded once by loadApp; the module once it has.
+    _appLoading: null,
+    _app: null,
     _forcingLogout: false,
     // A password change is running: it ends every session itself (see runPasswordChange).
     _isPasswordChanging: false,
@@ -62,6 +60,26 @@ export const Auth = {
     // Counts login-screen fades, so a fade's late finish never hides a login screen shown since.
     _loginFadeCount: 0,
     
+    // The workspace's code: app-start.js and the ~290 modules under it, loaded once. The login
+    // page asks for it only after showing its vaults, so the vault list waits for none of it
+    // (the maintainer, 2026-11-12); with no login needed, main.js asks at once.
+    loadApp() {
+        if (this._appLoading === null) {
+            this._appLoading = import('./app-start.js').then((app) => {
+                this._app = app;
+                return app;
+            });
+        }
+        return this._appLoading;
+    },
+
+    // Floating notes exist only once the workspace's code has loaded and opened one.
+    _closeFloatingNotes() {
+        if (this._app !== null) {
+            this._app.closeAllFloatingNotes();
+        }
+    },
+
     /**
      * Initialize authentication on page load
      * Returns true if OK to proceed with app initialization
@@ -398,7 +416,7 @@ export const Auth = {
      * Show the login page and hide main app
      */
     showLoginModal() {
-        closeAllFloatingNotes();
+        this._closeFloatingNotes();
         const loginPage = this._requireElement('login-page');
         const mainApp = this._requireElement('main-app');
         const passwordInput = this._requireElement('login-password');
@@ -420,7 +438,8 @@ export const Auth = {
                 // Shown anyway, with the error, so the login is never stuck hidden.
                 this._revealLoginPanel(passwordInput);
             },
-        );
+        // The vaults are shown: the workspace's code downloads while the password is typed.
+        ).then(() => this.loadApp());
     },
 
     // Everything under the logo appears together, fading in, once the namespace
@@ -785,45 +804,17 @@ export const Auth = {
             startupPhase = enterStartupStage('hydrating the workspace');
             await this._runHydrationFlow();
 
-            console.log('[Auth] Login successful, initializing ModeManager');
-            if (window.ModeManager) {
-                startupPhase = enterStartupStage('initializing the workspace UI');
-                await window.ModeManager.init({});
-                startupPhase = enterStartupStage('initializing the command palette');
-                await CommandPalette.init();
-                // Under 640 px: the phone's read-only view and capture, as main.js starts it.
-                PhoneMode.init();
-                startupPhase = enterStartupStage('initializing AI chat');
-                await AiChatPanel.init({
-                    getSettings: () => CommandPalette.getAiSettings(),
-                    saveSettings: (settings) => CommandPalette.saveAiSettings(settings),
-                    getPanelWidth: () => CommandPalette.getAiChatPanelWidth(),
-                    savePanelWidth: (width) => CommandPalette.saveAiChatPanelWidth(width),
-                    getDiagnosticsVisible: () => CommandPalette.getAiChatDiagnosticsVisible(),
-                    saveDiagnosticsVisible: (isVisible) => CommandPalette.saveAiChatDiagnosticsVisible(isVisible),
-                    getSpendVisible: () => CommandPalette.getAiChatSpendVisible(),
-                    saveSpendVisible: (isVisible) => CommandPalette.saveAiChatSpendVisible(isVisible),
-                    getComposerHeight: () => CommandPalette.getAiChatComposerHeight(),
-                    saveComposerHeight: (height) => CommandPalette.saveAiChatComposerHeight(height),
-                    setVisible: (isVisible) => CommandPalette.applyPreference('pref.show_ai_chat', isVisible),
-                    openSettings: () => CommandPalette.openAiAgentSettings('keys'),
-                    openMenu: (menuId, scope, signal) => CommandPalette.openAgentMenu(menuId, scope, signal),
-                });
-                startupPhase = enterStartupStage('revealing the workspace');
-                this.revealMainApp();
-                startupPhase = enterStartupStage('starting reminders');
-                await ReminderSurface.start();
-                startupPhase = enterStartupStage('starting the backup reminder');
-                await CommandPalette.startBackupReminder();
-                document.body.dataset.appReady = 'true';
-                finishStartupTiming();
-                await this.announceWorkspaceReady();
-                CommandPalette.startUpdateNotice();
-                await CommandPalette.runSetupRequestedByAddress();
-            } else {
-                startupPhase = enterStartupStage('reloading the workspace');
-                window.location.reload();
-            }
+            console.log('[Auth] Login successful, starting the workspace');
+            startupPhase = enterStartupStage('loading the workspace code');
+            const app = await this.loadApp();
+            await app.startWorkspace({
+                auth: this,
+                onStage: (stage) => {
+                    startupPhase = enterStartupStage(stage);
+                },
+            });
+            finishStartupTiming();
+            await app.afterWorkspaceReady({ auth: this });
         } catch (error) {
             rethrowUnexpectedError(error);
             this._stopLoadingElapsed();
@@ -867,7 +858,7 @@ export const Auth = {
     },
 
     clearSessionState() {
-        closeAllFloatingNotes();
+        this._closeFloatingNotes();
         FloatingMessages.forgetRecent();
         clearLegacyAuthStorage();
         sessionStorage.removeItem('metalist_client_id');

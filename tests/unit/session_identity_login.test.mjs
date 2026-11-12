@@ -22,10 +22,6 @@ test('login and workspace requests retain the authenticated tab identity when br
     });
     const {Auth} = await import('../../app/static/js/modules/auth.js');
     const {buildSessionHeaders} = await import('../../app/static/js/modules/session-auth.js');
-    const {CommandPalette} = await import('../../app/static/js/modules/command-palette/command-palette-controller.js');
-    const {AiChatPanel} = await import('../../app/static/js/modules/ai-chat/ai-chat-panel-controller.js');
-    const {ReminderSurface} = await import('../../app/static/js/modules/reminder-surface-service.js');
-    const {PhoneMode} = await import('../../app/static/js/modules/phone/phone-mode.js');
     t.mock.method(Auth, 'setupEventListeners', () => {});
     t.mock.method(Auth, 'checkAuthStatus', async () => false);
     await Auth.init();
@@ -41,15 +37,16 @@ test('login and workspace requests retain the authenticated tab identity when br
     t.mock.method(Auth, '_runHydrationFlow', async () => {
         stored.delete('metalist_tab_id');
     });
-    window.ModeManager = {init: async () => { headers.push(buildSessionHeaders(true)); }};
-    t.mock.method(CommandPalette, 'init', async () => {});
-    t.mock.method(CommandPalette, 'startUpdateNotice', () => {});
-    t.mock.method(CommandPalette, 'startBackupReminder', async () => {});
-    t.mock.method(CommandPalette, 'runSetupRequestedByAddress', async () => {});
-    t.mock.method(AiChatPanel, 'init', async () => {});
-    t.mock.method(PhoneMode, 'init', () => {});
-    t.mock.method(Auth, 'revealMainApp', () => {});
-    t.mock.method(ReminderSurface, 'start', async () => {});
+    // The workspace's code (app-start.js) needs a browser; a stand-in makes its one request and
+    // says the page is ready the way it does, through Auth.
+    t.mock.method(Auth, 'loadApp', async () => ({
+        startWorkspace: async ({onStage}) => {
+            onStage('initializing the workspace UI');
+            headers.push(buildSessionHeaders(true));
+            document.body.dataset.appReady = 'true';
+        },
+        afterWorkspaceReady: async ({auth}) => auth.announceWorkspaceReady(),
+    }));
     await Auth.handleLogin({preventDefault() {}});
     assert.equal(document.body.dataset.appReady, 'true');
     // The login, the workspace's start, and saying the page has finished starting.
