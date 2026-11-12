@@ -167,5 +167,5 @@ with TestClient(app, base_url="http://localhost", raise_server_exceptions=False)
     assert len(missing) == 1 and "handler=(no route) " in missing[0], output[-3000:]
     assert "request-log-missing" not in output
     static = [line for line in output.splitlines() if "request status=404 method=GET route=/static/{path} " in line]
-    assert len(static) == 1 and "handler=NoCacheStaticFiles " in static[0], output[-3000:]
+    assert len(static) == 1 and "handler=MetaListStaticFiles " in static[0], output[-3000:]
     assert "handler=unknown" not in output

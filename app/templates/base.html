@@ -12,14 +12,18 @@
     <link rel="icon" type="image/svg+xml" href="/static/img/favicon.svg?v=${asset_version}">
     <link rel="apple-touch-icon" href="/static/img/apple-touch-icon.png?v=${asset_version}">
     <link rel="manifest" href="/static/manifest.json?v=${asset_version}">
-    <link rel="stylesheet" href="/static/css/main.css?v=${asset_version}">
-    <link rel="stylesheet" href="/static/css/forms.css?v=${asset_version}">
-    <link rel="stylesheet" href="/static/css/skins/illuminated.css?v=${asset_version}">
-    <link rel="stylesheet" href="/static/css/skins/fathom.css?v=${asset_version}">
+    <%doc>Scripts and stylesheets come from this version's folder, which the browser keeps until
+    the version changes (app/services/static_files_version.py). The import map sends code that
+    names /static/js/ to the same folder, so each module loads once, from one address.</%doc>
+    <script type="importmap" nonce="${request.state.csp_nonce}">{"imports": {"/static/js/": "/static/v/${asset_version}/js/"}}</script>
+    <link rel="stylesheet" href="/static/v/${asset_version}/css/main.css">
+    <link rel="stylesheet" href="/static/v/${asset_version}/css/forms.css">
+    <link rel="stylesheet" href="/static/v/${asset_version}/css/skins/illuminated.css">
+    <link rel="stylesheet" href="/static/v/${asset_version}/css/skins/fathom.css">
 </head>
 <body>
     ${self.body()}
-    <script src="/static/js/vendor/dompurify-3.4.17.min.js?v=${asset_version}"></script>
-    <script type="module" src="/static/js/main.js?v=${asset_version}"></script>
+    <script src="/static/v/${asset_version}/js/vendor/dompurify-3.4.17.min.js"></script>
+    <script type="module" src="/static/v/${asset_version}/js/main.js"></script>
 </body>
 </html>
