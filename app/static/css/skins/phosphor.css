@@ -1,0 +1,177 @@
+/* Phosphor (docs/ui/skins.md): a green terminal screen over the dark theme, notes in the
+   system's own monospace font, as a terminal writes (the maintainer, 2026-11-12). One hue carries everything, so nothing
+   depends on colour alone: text, tags and headings in brighter and dimmer greens, links
+   underlined, a selection inverse. Nothing animates, ever. Its own colours, after no other
+   theme. Every rule starts with html[data-skin="phosphor"]: with another theme chosen this
+   file does nothing. */
+
+/* --- The palette, and the theme's colours drawn from it --- */
+html[data-skin="phosphor"] {
+    --phosphor-glass: #050805;
+    --phosphor-screen: #0a110b;
+    --phosphor-raised: #0f1a11;
+    --phosphor-line: #15261a;
+    --phosphor-edge: #1e3a25;
+    --phosphor-ink: #4dee74;
+    --phosphor-bright: #a6ffbc;
+    --phosphor-dim: #3cb85c;
+    --phosphor-faint: #2f9a4b;
+    --phosphor-glow: rgba(77, 238, 116, 0.35);
+    --phosphor-red: #ff6e6e;
+    --phosphor-green: #c8ff5a;
+    --phosphor-blue: #6cb8ff;
+    --phosphor-amber: #ffc24d;
+    /* The system's own monospace font (Menlo, Consolas, DejaVu Sans Mono), as a terminal's. */
+    --phosphor-font: ui-monospace, Menlo, Consolas, "DejaVu Sans Mono", monospace;
+}
+
+/* [data-theme] as well: as specific as the dark theme's own colours, and after them. */
+html[data-skin="phosphor"][data-theme] {
+    color-scheme: dark;
+    --primary-color: var(--phosphor-ink);
+    --bg-color: var(--phosphor-glass);
+    --text-color: var(--phosphor-ink);
+    --border-color: var(--phosphor-edge);
+    --app-surface-0: var(--phosphor-glass);
+    --app-surface-1: var(--phosphor-screen);
+    --app-surface-2: var(--phosphor-line);
+    --app-surface-3: var(--phosphor-edge);
+    --app-border-strong: var(--phosphor-edge);
+    --app-border-soft: rgba(77, 238, 116, 0.14);
+    --app-text-muted: var(--phosphor-dim);
+    --app-text-subtle: var(--phosphor-faint);
+    --app-accent: var(--phosphor-bright);
+    --app-control-surface: var(--phosphor-line);
+    --search-shell-surface: var(--phosphor-glass);
+    --search-shell-ink: var(--phosphor-ink);
+    --search-shell-warning: var(--phosphor-red);
+    --note-tag-border: rgba(166, 255, 188, 0.45);
+    --note-tag-text: var(--phosphor-bright);
+    --note-tag-muted: var(--phosphor-dim);
+    --embed-tint-1: var(--phosphor-raised);
+    --embed-tint-2: var(--phosphor-line);
+    --embed-tint-3: var(--phosphor-edge);
+    --embed-edge: rgba(77, 238, 116, 0.18);
+
+    /* Dialogs, menus, the palette and suggestion lists: the same screen. */
+    --modal-surface: var(--phosphor-screen);
+    --modal-surface-raised: var(--phosphor-raised);
+    --modal-surface-inset: var(--phosphor-glass);
+    --modal-surface-grey: var(--phosphor-line);
+    --modal-panel-background: var(--phosphor-screen);
+    --modal-border: rgba(77, 238, 116, 0.22);
+    --modal-border-strong: rgba(166, 255, 188, 0.6);
+    --modal-text: var(--phosphor-ink);
+    --modal-text-muted: var(--phosphor-dim);
+    --modal-text-subtle: var(--phosphor-faint);
+    --modal-accent: var(--phosphor-bright);
+    --modal-danger: var(--phosphor-red);
+    --modal-success: var(--phosphor-green);
+    --modal-warning: var(--phosphor-amber);
+    --modal-hover: rgba(77, 238, 116, 0.08);
+    --modal-selected: rgba(77, 238, 116, 0.22);
+    --modal-heading-tint: rgba(77, 238, 116, 0.10);
+    --modal-heading-text: var(--phosphor-bright);
+    --modal-focus-ring: rgba(166, 255, 188, 0.45);
+}
+
+/* The glass around the notes: near black. */
+html[data-skin="phosphor"][data-theme] body {
+    background: var(--phosphor-glass);
+}
+
+/* Nothing on the screen moves of its own accord, with or without prefers-reduced-motion
+   (the maintainer, 2026-11-12: no flicker or other animation, ever). Each animation and
+   transition still runs, once, in a hundredth of a millisecond: the code that waits for one to
+   end (a fade, a fold) hears it end at once, where removing it would leave that code waiting. */
+html[data-skin="phosphor"] *,
+html[data-skin="phosphor"] *::before,
+html[data-skin="phosphor"] *::after {
+    animation-duration: 0.01ms !important;
+    animation-delay: 0s !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    transition-delay: 0s !important;
+    scroll-behavior: auto !important;
+}
+
+/* A selection anywhere is inverse: black on green. */
+html[data-skin="phosphor"] ::selection {
+    background: var(--phosphor-ink);
+    color: var(--phosphor-glass);
+}
+
+/* --- Notes: the screen --- */
+html[data-skin="phosphor"] .note {
+    background-color: var(--phosphor-screen) !important;
+    border-color: var(--phosphor-edge);
+    border-radius: 2px;
+    box-shadow: none;
+}
+
+/* On the note's text, which its parts inherit: a diagram keeps its own font, which it was
+   measured in, and a style that names a font (@serif) keeps it. A faint glow on the letters. */
+html[data-skin="phosphor"] .note-content {
+    font-family: var(--phosphor-font);
+    font-size: calc(var(--note-plain-font-size) * 0.9);
+    text-shadow: 0 0 2px var(--phosphor-glow);
+    caret-color: var(--phosphor-bright);
+    /* A block caret where the browser draws one; elsewhere the bright one. */
+    caret-shape: block;
+}
+
+/* The note being edited: a brighter line on the screen. */
+html[data-skin="phosphor"] .note.editing {
+    background-color: var(--phosphor-line) !important;
+    border-color: var(--phosphor-dim);
+}
+
+/* Links underlined, so they are links without their colour. */
+html[data-skin="phosphor"] .note-content a {
+    color: var(--phosphor-bright);
+    text-decoration: underline;
+}
+
+/* Headings and bold: the brighter green, and bold, so they stand out by weight as well. */
+html[data-skin="phosphor"] .note-content h1,
+html[data-skin="phosphor"] .note-content h2,
+html[data-skin="phosphor"] .note-content h3,
+html[data-skin="phosphor"] .note-content .meta-heading,
+html[data-skin="phosphor"] .note-content strong,
+html[data-skin="phosphor"] .note-content b {
+    color: var(--phosphor-bright);
+    font-weight: bold;
+}
+
+/* Inline code: a box of its own, as on a terminal's highlighted cell. */
+html[data-skin="phosphor"] .note-content code:not(pre code) {
+    background: var(--phosphor-line);
+    border: 1px solid var(--phosphor-edge);
+    border-radius: 2px;
+    padding: 0 0.3em;
+}
+
+html[data-skin="phosphor"] .note-content blockquote {
+    color: var(--phosphor-dim);
+}
+
+/* @red, @green and @blue keep their meaning, each tuned to read on the screen, at least
+   4.5 to 1 (tests/unit/test_skins.py); @green is a yellow-green, apart from the text's green. */
+html[data-skin="phosphor"] .meta-red {
+    color: #ff6e6e;
+}
+
+html[data-skin="phosphor"] .meta-green {
+    color: #c8ff5a;
+}
+
+html[data-skin="phosphor"] .meta-blue {
+    color: #6cb8ff;
+}
+
+/* The search box, in the same monospace, on the screen's colour. */
+html[data-skin="phosphor"] #search-input {
+    font-family: var(--phosphor-font);
+    background: var(--phosphor-screen);
+    color: var(--phosphor-ink);
+}
