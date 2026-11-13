@@ -123,6 +123,9 @@ def _snapshot(*, large_tail: bool) -> ScopedSearchSnapshot:
     )
 
 
+# How long a batch waits for the one it finishes after; longer means it never will.
+SUMMARY_ORDER_WAIT_SECONDS = 5.0
+
 class _FakeInference:
     """Plays an agent that asks to summarize the view, then the summary model calls."""
 
@@ -144,6 +147,10 @@ class _FakeInference:
         self.final_cites_first_reference = False
         self.summary_ghost_only_root_id = ""
         self.summary_delay_seconds_by_root_id: dict[str, float] = {}
+        # A batch that finishes only once another has: an order that holds however busy the
+        # machine is (sleeps alone let a batch that started late finish late, macOS CI 2026-11-12).
+        self.summary_finishes_after_root_id: dict[str, str] = {}
+        self._summary_finished: dict[str, asyncio.Event] = {}
         self.summary_citation_corrections = 0
         self.summary_instructions: list[str] = []
         self.summary_requests: list[str] = []
@@ -157,6 +164,11 @@ class _FakeInference:
         self.summary_completion_order: list[str] = []
         self.maximum_parallel_summary_calls = 0
         self.summary_reduction_calls = 0
+
+    def _summary_finished_event(self, root_id: str) -> asyncio.Event:
+        if root_id not in self._summary_finished:
+            self._summary_finished[root_id] = asyncio.Event()
+        return self._summary_finished[root_id]
 
     async def inspect_context_window(
         self,
@@ -239,9 +251,13 @@ class _FakeInference:
                         0.01,
                     )
                 )
+                if expected_root_ids[0] in self.summary_finishes_after_root_id:
+                    earlier = self.summary_finishes_after_root_id[expected_root_ids[0]]
+                    await asyncio.wait_for(self._summary_finished_event(earlier).wait(), SUMMARY_ORDER_WAIT_SECONDS)
             finally:
                 self.active_summary_calls -= 1
             self.summary_completion_order.append(expected_root_ids[0])
+            self._summary_finished_event(expected_root_ids[0]).set()
             if self.failed_summary_root_id in expected_root_ids and self.failed_summary_as_agent_error:
                 raise AgentExecutionError(f"Fixture summary failure for {self.failed_summary_root_id}")
             if self.failed_summary_root_id in expected_root_ids:
@@ -655,12 +671,7 @@ def test_a_streamed_answer_does_not_recount_its_whole_request(monkeypatch) -> No
 def test_batches_finishing_out_of_order_are_synthesized_in_canonical_order() -> None:
     inference = _FakeInference()
     snapshot = _multi_batch_summary_snapshot()
-    inference.summary_delay_seconds_by_root_id = {
-        "root-1": 0.08,
-        "root-2": 0.06,
-        "root-3": 0.04,
-        "root-4": 0.01,
-    }
+    inference.summary_finishes_after_root_id = {"root-3": "root-4", "root-2": "root-3", "root-1": "root-2"}
 
     events = _summary_events(
         inference=inference,
