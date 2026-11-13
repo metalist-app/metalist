@@ -333,6 +333,8 @@ function isMouseDownOutsideEditExclusion(target) {
             '#reminder-surface',
             // So do the floating messages (their ×) and the image zoom (its × and backdrop).
             '#floating-messages',
+            // And the Password Audit panel: its Go to and Replace… act through their own commands.
+            '#password-audit-panel',
             '.image-zoom-overlay',
             '#ai-chat-panel',
             '.add-note',
@@ -1391,8 +1393,9 @@ function handleClick(event) {
     if (isWritingAssistantInteraction(event)) return;
     // The card offering a format for a paste handles its own clicks (paste-format-offer-service.js).
     if (event.target instanceof Element && event.target.closest('.paste-format-offer')) return;
-    // App notices (a new release, the backup reminder) and the Reminders popup handle their own clicks too.
-    if (event.target instanceof Element && event.target.closest('.app-notice-stack, #reminder-surface, #floating-messages, .image-zoom-overlay')) return;
+    // App notices (a new release, the backup reminder), the Reminders popup and the Password Audit
+    // panel handle their own clicks too: the list taking one swallowed a second Go to (2026-11-12).
+    if (event.target instanceof Element && event.target.closest('.app-notice-stack, #reminder-surface, #floating-messages, .image-zoom-overlay, #password-audit-panel')) return;
 
     if (isViewModeNoteDisclosureToggle(event.target)) {
         handleMarkdownCalloutTitleClick(event);

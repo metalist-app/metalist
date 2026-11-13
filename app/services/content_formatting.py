@@ -1495,6 +1495,45 @@ def text_shown_without_passwords(text: str, tags: str) -> str:
     return _replace_scoped_passwords(text, tags, CREDENTIAL_MASK)
 
 
+@dataclass(frozen=True)
+class ScopedPasswordRegion:
+    """One password region of a note's plain text: its delimiters and the password between them.
+    closer is "" for a region the note never closes, which runs to the end as the renderer
+    draws it."""
+
+    opener: str
+    value: str
+    closer: str
+
+
+def scoped_password_regions(text: str, tags: str) -> List[ScopedPasswordRegion]:
+    """Each password region of `text` (a note's plain text), in order, found as
+    _replace_scoped_passwords finds them (Password Audit, docs/ui/password-audit.md)."""
+    if not isinstance(text, str):
+        raise TypeError(f"text must be a string, got {type(text)}")
+    if not isinstance(tags, str):
+        raise TypeError(f"tags must be a string, got {type(tags)}")
+    if _WRAPPER_OPENER_RE.search(tags) is None or _SCOPED_PASSWORD not in tags.casefold():
+        return []
+    wrappers = _scoped_password_wrappers(tags)
+    openers = {key: _delimiter_run_re(key[0], key[1]) for key in wrappers}
+    closers = {key: _delimiter_run_re(_OPEN_TO_CLOSE[key[0]], key[1]) for key in wrappers}
+    regions: List[ScopedPasswordRegion] = []
+    index = 0
+    while True:
+        found = [(match.start(), key, match) for key, opener in openers.items()
+                 if (match := opener.search(text, index)) is not None]
+        if not found:
+            return regions
+        _start, key, opened = min(found, key=lambda entry: entry[0])
+        closed = closers[key].search(text, opened.end())
+        if closed is None:
+            regions.append(ScopedPasswordRegion(opener=opened.group(0), value=text[opened.end():], closer=""))
+            return regions
+        regions.append(ScopedPasswordRegion(opener=opened.group(0), value=text[opened.end():closed.start()], closer=closed.group(0)))
+        index = closed.end()
+
+
 def _replace_scoped_passwords(text: str, tags: str, replacement: str) -> str:
     """`text` (a note's plain text) with each password region, delimiters and all, as
     `replacement`. A region the note never closes runs to the end: the text after an

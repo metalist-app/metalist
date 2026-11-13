@@ -608,3 +608,26 @@ class PasteChildEndpointRequest(TypedDict):
     undoContext: UndoContext
     viewport: Viewport
 
+
+# Password Audit (app/usecases/password_audit.py): the threshold and whether to ask about leaks.
+@with_config(ConfigDict(strict=True))
+class PasswordAuditRequest(TypedDict):
+    # Below 3 or below 4: audit_passwords refuses any other, as WEAK_THRESHOLDS says.
+    weakBelow: int
+    checkLeaks: bool
+    # True when the panel opens: everything checked again. False for an update while it is open.
+    fresh: bool
+
+
+# One password replaced, as the audit found it: the note's fingerprint then, and the new one.
+@with_config(ConfigDict(strict=True))
+class ReplacePasswordRequest(TypedDict):
+    kind: Literal['note', 'region']
+    regionIndex: Nonnegative
+    fingerprint: Identifier
+    passwordId: Identifier
+    newPassword: Annotated[str, Field(min_length=1, max_length=KIB)]
+    clientId: Identifier
+    undoContext: UndoContext
+    viewport: Viewport
+

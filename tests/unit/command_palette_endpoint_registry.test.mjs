@@ -42,6 +42,7 @@ test('buildCommandPaletteEndpoints includes utility action endpoints', async () 
             openBackupRestore: noop,
             logout: noop,
             openRandomPasswordGenerator: noop,
+            openPasswordAudit: noop,
             collapseAll: noop,
             expandAll: noop,
             fullyCollapseAll: noop,
@@ -163,6 +164,7 @@ test('buildCommandPaletteEndpoints includes utility action endpoints', async () 
         'Fully Collapse All Notes (Current View)',
     );
     assert.equal(endpointIds.has('form.random_password_generator'), true);
+    assert.equal(endpointIds.has('form.password_audit'), true);
     assert.equal(endpointIds.has('pref.auto_collapse_long_notes'), false);
     assert.equal(endpointIds.has('action.export_html'), true);
     assert.equal(endpointIds.has('action.attach_file_to_current_note'), true);

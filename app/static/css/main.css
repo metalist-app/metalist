@@ -14198,3 +14198,198 @@ body.virtual-folders-crowded .virtual-folders-resizer {
         );
     }
 }
+
+/* Password Audit (password-audit-panel.js; docs/ui/password-audit.md): a movable panel,
+   not a dialog. Just below the floating notes (2500), so a note opened from it comes up above it,
+   and above the list, which stays usable behind it. Dialog colours, so it follows every theme. */
+.password-audit-panel {
+    position: fixed;
+    top: 72px;
+    /* Left of the floating buttons at the right edge, as the floating messages are. */
+    right: calc(var(--global-controls-right) + var(--floating-button-size) + 8px);
+    z-index: 2400;
+    width: min(460px, calc(100vw - 32px));
+    max-height: calc(100vh - 96px);
+    display: flex;
+    flex-direction: column;
+    background: var(--modal-surface);
+    color: var(--modal-text);
+    border: 1px solid var(--modal-border);
+    border-radius: 10px;
+    box-shadow: 0 10px 32px rgba(0, 0, 0, 0.22);
+    font-size: 14px;
+    outline: none;
+}
+
+.password-audit-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 12px 6px 16px;
+    cursor: move;
+    user-select: none;
+}
+
+.password-audit-header h3 {
+    margin: 0;
+    font-size: 15px;
+}
+
+.password-audit-panel button.password-audit-close {
+    border: 0;
+    background: transparent;
+    color: var(--modal-text-muted);
+    font-size: 20px;
+    line-height: 1;
+    padding: 2px 6px;
+    cursor: pointer;
+}
+
+.password-audit-controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 16px;
+    color: var(--modal-text-muted);
+    font-size: 13px;
+}
+
+.password-audit-threshold {
+    display: inline-flex;
+    border: 1px solid var(--modal-border-strong);
+    border-radius: 6px;
+    overflow: hidden;
+}
+
+.password-audit-panel button.password-audit-segment {
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    color: var(--modal-text-muted);
+    padding: 3px 10px;
+    font-size: 13px;
+    cursor: pointer;
+}
+
+.password-audit-panel button.password-audit-segment + button.password-audit-segment {
+    border-left: 1px solid var(--modal-border);
+}
+
+.password-audit-panel button.password-audit-segment.is-chosen {
+    background: var(--modal-selected);
+    color: var(--modal-text);
+    font-weight: 600;
+}
+
+.password-audit-leaks {
+    margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    cursor: pointer;
+}
+
+.password-audit-summary {
+    margin: 10px 16px 6px;
+    font-weight: 600;
+}
+
+.password-audit-groups {
+    overflow-y: auto;
+    padding: 0 8px 12px;
+}
+
+.password-audit-group h4 {
+    margin: 10px 8px 4px;
+    font-size: 13px;
+    color: var(--modal-text-muted);
+    text-transform: none;
+}
+
+.password-audit-count {
+    font-weight: normal;
+}
+
+.password-audit-group ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.password-audit-row {
+    padding: 6px 8px;
+    border-radius: 6px;
+}
+
+.password-audit-row:hover {
+    background: var(--modal-hover);
+}
+
+.password-audit-row-line {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+}
+
+.password-audit-label {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.password-audit-tags {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--modal-text-subtle);
+    font-size: 12px;
+}
+
+.password-audit-actions {
+    margin-left: auto;
+    display: inline-flex;
+    gap: 4px;
+    flex: none;
+}
+
+.password-audit-panel button.password-audit-button {
+    padding: 2px 8px;
+    font-size: 12px;
+    border: 1px solid var(--modal-border);
+    border-radius: 5px;
+    background: var(--modal-surface-raised);
+    color: var(--modal-text);
+    cursor: pointer;
+}
+
+.password-audit-panel button.password-audit-button.is-primary {
+    border-color: var(--modal-accent);
+    color: var(--modal-accent);
+    font-weight: 600;
+}
+
+.password-audit-replacing {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    margin-top: 6px;
+}
+
+.password-audit-new {
+    padding: 2px 6px;
+    border-radius: 4px;
+    background: var(--modal-surface-inset);
+    font-size: 13px;
+    user-select: all;
+}
+
+.password-audit-hint {
+    color: var(--modal-text-muted);
+    font-size: 12px;
+}

@@ -5,6 +5,11 @@ syntax suppressions and is consumed by runtime capture and the startup gate.
 """
 
 CAPTURE_BOUNDARIES = {
+    # Password Audit (docs/ui/password-audit.md): Have I Been Pwned is an outside
+    # service; when it can't be reached or answers oddly, the audit says the leak check is
+    # unavailable and still checks everything else.
+    'app/usecases/password_audit.py:_hibp_suffix_counts:capture': ('HTTPError',),
+    'app/usecases/password_audit.py:audit_passwords:leak_capture': ('LeakCheckUnavailable',),
     # An Obsidian vault being imported is the user's files: unreadable settings or frontmatter
     # are reported, and the rest of the vault still comes in (PLAN.md).
     'app/services/obsidian_import/vault.py:_read_line_break_setting:settings_capture': ('JSONDecodeError',),

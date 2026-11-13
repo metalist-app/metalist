@@ -30,14 +30,14 @@ def _string_constant(script: str, name: str) -> str:
 
 
 def test_notes_dropped_in_the_inbox_do_not_count_as_uncommitted(tmp_path: Path) -> None:
-    # The maintainer drops design notes into docs/inbox at any time; they stopped the full
+    # The maintainer drops design notes into inbox/ at any time; they stopped the full
     # checks and the 0.25.0 release (2026-10-28). Anything else uncommitted still counts.
     pathspec = _string_constant("full_checks.py", "INBOX_PATHSPEC")
     assert pathspec == _string_constant("release.py", "INBOX_PATHSPEC")
     run = lambda *arguments: subprocess.run(("git", *arguments), cwd=tmp_path, capture_output=True, encoding="utf-8", check=True).stdout  # noqa: E731
     run("init", "-q")
-    (tmp_path / "docs" / "inbox").mkdir(parents=True)
-    (tmp_path / "docs" / "inbox" / "2026-10-28-note.md").write_text("# A note\n", encoding="utf-8")
+    (tmp_path / "inbox").mkdir(parents=True)
+    (tmp_path / "inbox" / "2026-10-28-note.md").write_text("# A note\n", encoding="utf-8")
     assert run("status", "--porcelain", "--", ".", pathspec) == ""
     (tmp_path / "stray.py").write_text("x = 1\n", encoding="utf-8")
     assert run("status", "--porcelain", "--", ".", pathspec) == "?? stray.py\n"

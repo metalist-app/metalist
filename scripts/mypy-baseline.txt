@@ -155,7 +155,6 @@ app/services/auth_service.py: Argument 2 to "update_password_settings" has incom
 app/services/auth_service.py: Argument 2 to "update_password_settings" has incompatible type "**dict[str, object]"; expected "int"  [arg-type]
 app/services/auth_service.py: Argument 2 to "update_password_settings" has incompatible type "**dict[str, object]"; expected "str"  [arg-type]
 app/services/auth_service.py: Argument 3 to "decrypt_from_storage" of "EncryptionService" has incompatible type "object"; expected "bytes | None"  [arg-type]
-app/services/auth_service.py: Library stubs not installed for "zxcvbn"  [import-untyped]
 app/services/backup_service.py: No overload variant of "int" matches argument type "object"  [call-overload]
 app/services/backup_settings_service.py: Incompatible types in assignment (expression has type "object", variable has type "str")  [assignment]
 app/services/client_state_service.py: "object" has no attribute "decrypt_from_storage"  [attr-defined]

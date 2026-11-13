@@ -43,9 +43,9 @@ SANITY_CODE = (
 )
 # The checks after the browser suite run at once: about one process each, on 8 cores.
 PARALLEL_CHECKS = 8
-# Notes the maintainer drops into docs/inbox at any time (AGENTS.md, "Design Inbox") never
+# Notes the maintainer drops into inbox/ at any time (AGENTS.md, "Design Inbox") never
 # reach a check: they do not count as uncommitted work (as in release.py).
-INBOX_PATHSPEC = ":(exclude)docs/inbox"
+INBOX_PATHSPEC = ":(exclude)inbox"
 SUMMARY_NAME_WIDTH = 24
 CHECK_LOGS = ROOT / "logs" / "checks"
 # A run's log folder is named after the time it started; the names sort as the times do.

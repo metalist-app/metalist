@@ -6,6 +6,7 @@ import { captureActiveAgentScope } from '../ai-chat/ai-chat-panel-controller.js'
 import { showUpdateNotice } from '../app-update-service.js';
 import { BackupReminder } from '../backup-reminder-service.js';
 import { TrimReminder } from '../trim-reminder-service.js';
+import { PasswordAuditReminder } from '../password-audit/password-audit-reminder.js';
 import { trimConfirmationText } from '../trim-reminder-schedule.js';
 import { receiveSearchSuggestionPreferences } from '../mode-manager/services/search-suggestion-windows-service.js';
 import { receiveGalleryOutlineNotes } from '../mode-manager/services/gallery-view-service.js';
@@ -45,6 +46,7 @@ import { BackupResultModal } from '../modals/backup-result-modal.js';
 import { BackupRestoreModal } from '../modals/backup-restore-modal.js';
 import { BackupSettingsModal } from '../modals/backup-settings-modal.js';
 import { OntologyModal } from '../modals/ontology-modal.js';
+import { openPasswordAudit } from '../password-audit/password-audit-panel.js';
 import { RandomPasswordModal } from '../modals/random-password-modal.js';
 import { HelpModal } from '../modals/help-modal.js';
 import { LinkTitleRetryModal } from '../modals/link-title-retry-modal.js';
@@ -562,6 +564,7 @@ class CommandPaletteController {
                 openBackupRestore: this.openBackupRestore.bind(this),
                 logout: this.logout.bind(this),
                 openRandomPasswordGenerator: this.openRandomPasswordGenerator.bind(this),
+                openPasswordAudit: this.openPasswordAudit.bind(this),
                 collapseAll: this.collapseAll.bind(this),
                 expandAll: this.expandAll.bind(this),
                 fullyCollapseAll: this.fullyCollapseAll.bind(this),
@@ -770,6 +773,7 @@ class CommandPaletteController {
 
         void BackupReminder.preferencesChanged();
         void TrimReminder.preferencesChanged();
+        void PasswordAuditReminder.preferencesChanged();
 
         applyTheme(this._getSelect('pref.theme', THEME_CHOICES.map(([value]) => value), 'system'));
         // How @stats and @sum=… totals look; exports and prints take it from the page too.
@@ -2763,6 +2767,29 @@ class CommandPaletteController {
         await this._randomPasswordModal.open();
     }
 
+    // Password Audit (docs/ui/password-audit.md): a movable panel; its threshold and
+    // leak check are remembered per vault.
+    async openPasswordAudit() {
+        const isReady = await this._prepareForModalOpen('commandPalette.openPasswordAudit');
+        if (!isReady) {
+            return;
+        }
+        await openPasswordAudit({
+            weakBelow: Number(this._getText('pref.password_audit.weak_below', '3')),
+            checkLeaks: this._getBoolean('pref.password_audit.check_leaks', false),
+            // Each audit that runs restarts the reminder's clock.
+            onAudited: (openIssues) => PasswordAuditReminder.audited(openIssues),
+            savePreferences: async ({ weakBelow, checkLeaks }) => {
+                if (String(weakBelow) !== this._getText('pref.password_audit.weak_below', '3')) {
+                    await this.applyPreference('pref.password_audit.weak_below', String(weakBelow));
+                }
+                if (checkLeaks !== this._getBoolean('pref.password_audit.check_leaks', false)) {
+                    await this.applyPreference('pref.password_audit.check_leaks', checkLeaks);
+                }
+            },
+        });
+    }
+
     async openOntologyEditor() {
         const isReady = await this._prepareForModalOpen('commandPalette.openOntologyEditor');
         if (!isReady) {
@@ -2944,6 +2971,11 @@ class CommandPaletteController {
             preferences: this._preferences,
             fetchUnusedFiles: () => FilesAPI.fetchUnusedFiles(),
             openTrim: () => this.trimUnusedFiles(),
+        });
+        await PasswordAuditReminder.start({
+            preferences: this._preferences,
+            fetchPasswordCount: () => NotesAPI.passwordCount(),
+            openAudit: () => this.openPasswordAudit(),
         });
     }
 

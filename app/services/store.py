@@ -27,6 +27,10 @@ class _AdapterStore:
     def contains(self, note_id: str) -> bool:
         return _note_store.has_note(note_id)
 
+    def snapshot(self) -> Mapping[str, NodeRecord]:
+        """Every note, by id, as one consistent read."""
+        return _note_store.snapshot()
+
     def children(self, parent_id: Optional[str]) -> List[str]:
         return _note_store.get_children(parent_id)
 

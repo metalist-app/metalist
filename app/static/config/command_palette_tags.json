@@ -241,6 +241,10 @@
       "tags": ["trim", "unused", "files", "reminder", "remind", "cleanup", "clean", "storage", "space", "size"]
     },
     {
+      "id": "pref.password_audit_reminder",
+      "tags": ["password", "audit", "reminder", "remind", "security", "weak", "leaked", "schedule", "monthly", "yearly"]
+    },
+    {
       "id": "form.restore_backup",
       "tags": ["backup", "restore", "recover", "database", "sqlite", "snapshot"]
     },
@@ -251,6 +255,10 @@
     {
       "id": "form.random_password_generator",
       "tags": ["password", "random", "generator", "security", "credential", "utility"]
+    },
+    {
+      "id": "form.password_audit",
+      "tags": ["password", "audit", "weak", "strength", "reused", "leaked", "breach", "security", "credential"]
     },
     {
       "id": "action.find_in_list",

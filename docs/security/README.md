@@ -339,6 +339,26 @@ it refers to nothing outside itself: no `DOCTYPE` or entities, no `image`,
 resolve in an empty temporary folder. The SVG itself is never stored or sent to
 the browser (`link_icons._svg_icon_png()`).
 
+### Outbound Leak Checks (Password Audit)
+
+The Password Audit (`docs/ui/password-audit.md`) asks Have I Been Pwned whether a password has
+leaked only when `Check leaks` is ticked in its panel: off by default, remembered per vault
+(`pref.password_audit.check_leaks`). It uses the range API's k-anonymity model
+(`app/usecases/password_audit.py`): for each distinct password the server hashes it with SHA-1 and
+sends only the first 5 hex characters to `https://api.pwnedpasswords.com/range/<prefix>`, once per
+distinct prefix, with `Add-Padding: true` (so the answer's size does not tell how many real matches
+there are), a fixed `User-Agent` and a 10-second timeout. The service answers with every hash suffix
+under that prefix; the comparison happens on this computer. No password and no whole hash leaves
+the computer. An unreachable service or an answer MetaList cannot read marks the audit `leak check
+unavailable` and checks the rest; it never retries elsewhere. While the panel stays open, the
+answers (by whole SHA-1, in memory only) and the strength scores are remembered so updates ask only
+about new passwords; they are forgotten when the panel opens again and, as every sensitive cache,
+when the vault locks. Rows carry a `passwordId`, an HMAC of the password under a random key made
+when the server starts and never sent anywhere, so the browser can follow a password across edits
+without learning anything about it. Switching the weak threshold regroups
+the results already held and asks nothing. The audit's results name notes by their first line and
+tags, never a password, and no password reaches logs, problem reports or the AI.
+
 ### Sensitive Telemetry
 
 MetaList writes one plain log (`<namespace>-server.log` in the logs folder, and the same lines on
