@@ -719,41 +719,22 @@ def save_namespace_port_profiles(
     )
 
 
-def build_login_namespace_catalog(
-    *,
-    environ: Mapping[str, str],
-    current_namespace: str | None,
-) -> dict[str, object]:
-    catalog = build_namespace_catalog(
-        environ=environ,
-        current_namespace=current_namespace,
-    )
-    raw_current_namespace = catalog["current_namespace"]
-    if not isinstance(raw_current_namespace, str) or raw_current_namespace == "":
+def build_login_namespace_catalog(*, current_namespace: str | None) -> dict[str, object]:
+    """The vaults' names for the login page, in the catalog's order. Names alone: the full
+    catalog suggests a port for each vault, and on Windows each port check starts PowerShell,
+    which made the vault list take 2.7 s (the maintainer's dad's problem report, 2026-11-12)."""
+    if not isinstance(current_namespace, str) or current_namespace == "":
         raise RuntimeError("Namespace catalog missing current_namespace")
-
-    raw_namespaces = catalog["namespaces"]
-    if not isinstance(raw_namespaces, list):
-        raise RuntimeError("Namespace catalog missing namespaces")
-
-    namespaces: list[str] = []
-    seen_namespaces: set[str] = set()
-    for entry in raw_namespaces:
-        if not isinstance(entry, dict):
-            raise RuntimeError("Namespace catalog entry must be an object")
-        namespace = _catalog_field(entry, "namespace", owner="Vault catalog entry")
-        if not isinstance(namespace, str) or namespace == "":
-            raise RuntimeError("Namespace catalog entry missing namespace")
-        if namespace in seen_namespaces:
-            raise RuntimeError(f"Namespace catalog contains duplicate namespace {namespace}")
-        seen_namespaces.add(namespace)
-        namespaces.append(namespace)
-
-    if raw_current_namespace not in seen_namespaces:
-        raise RuntimeError(f"Current namespace {raw_current_namespace} missing from namespace catalog")
-
+    namespaces = list(_discover_namespaces(
+        saved_profiles=_load_saved_profiles_by_namespace(),
+        current_namespace=current_namespace,
+    ))
+    if len(set(namespaces)) != len(namespaces):
+        raise RuntimeError(f"Namespace catalog contains a duplicate namespace: {namespaces}")
+    if current_namespace not in namespaces:
+        raise RuntimeError(f"Current namespace {current_namespace} missing from namespace catalog")
     return {
-        "current_namespace": raw_current_namespace,
+        "current_namespace": current_namespace,
         "namespaces": namespaces,
     }
 

@@ -289,15 +289,35 @@ def test_build_login_namespace_catalog_returns_plain_namespace_names(
         mcp_port=8766,
     )
 
-    catalog = build_login_namespace_catalog(
-        environ={},
-        current_namespace="default",
-    )
+    catalog = build_login_namespace_catalog(current_namespace="default")
 
     assert catalog == {
         "current_namespace": "default",
         "namespaces": ["default", "cla"],
     }
+
+
+def test_the_login_vault_list_checks_no_ports(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The login page needs the vaults' names alone. Building the whole catalog suggested a port
+    for each vault, and on Windows each port check starts PowerShell: the vault list took 2.7 s
+    on the maintainer's dad's computer (his problem report, 2026-11-12)."""
+    monkeypatch.setattr(server_runtime, "_DEFAULT_DATABASE_DIRECTORY", tmp_path)
+    _disable_default_tls(monkeypatch, tmp_path)
+    save_namespace_launch_profile(namespace="default", port=8000, https_port=None, mcp_port=8765)
+    save_namespace_launch_profile(namespace="cla", port=8001, https_port=None, mcp_port=8766)
+
+    def no_port_check(*, port: int) -> list[int]:
+        raise AssertionError(f"the login vault list checked port {port}")
+
+    monkeypatch.setattr(namespace_switcher, "_find_listening_pids_for_port", no_port_check)
+    monkeypatch.setattr(namespace_switcher, "_is_tcp_port_open", lambda **_: pytest.fail("probed a port"))
+
+    catalog = build_login_namespace_catalog(current_namespace="default")
+
+    assert catalog == {"current_namespace": "default", "namespaces": ["default", "cla"]}
 
 
 def test_open_or_launch_namespace_rejects_reserved_current_port(
