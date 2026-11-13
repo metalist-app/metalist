@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { runThenCleanUp } from './suite-outcome.mjs';
 import { waitForAppQuiet } from './browser-app-idle.mjs';
 
-// Password Audit's Go to (docs/ready-to-build/password-audit.md; the maintainer, 2026-11-12: "the
+// Password Audit's Go to (docs/ui/password-audit.md; the maintainer, 2026-11-12: "the
 // go-to should take you directly to the root note that the password is in instead of bringing up
 // that floating thing"). It opens the password's top-level note as following a link to it does: a
 // Source note view; the panel stays where it is; back returns to the view before, and the first
@@ -182,6 +182,98 @@ async function auditCases(page, ids) {
   console.log('PASS password audit: Go to opens the password\'s top-level note as a link does, and back returns to the list as it was');
 }
 
+// While the panel is open it updates itself as notes change, checking only what is new (the
+// maintainer, 2026-11-13; cases agreed the same day): in place, no Checking…, the panel where it
+// was; Replace… follows its password while the note around it changes, and keeps the new password
+// to copy when the password leaves its note.
+async function editNote(page, noteId, content, tags) {
+  await page.evaluate(async ({noteId, content, tags}) => {
+    const {NotesAPI} = await import('/static/js/modules/api-client.js');
+    await NotesAPI.saveNote(noteId, content, tags);
+  }, {noteId, content, tags});
+}
+
+// Waits for the panel's next update after a change and says what it showed on the way.
+async function nextUpdate(page, change) {
+  await page.evaluate(() => {
+    const summary = document.querySelector('#password-audit-panel .password-audit-summary');
+    window.__auditSummaries = [];
+    window.__auditObserver = new MutationObserver(() => window.__auditSummaries.push(summary.textContent));
+    window.__auditObserver.observe(summary, {childList: true, characterData: true, subtree: true});
+  });
+  const asked = [];
+  const countAudits = request => { if (request.url().endsWith('/notes/password-audit')) asked.push(JSON.parse(request.postData()).fresh); };
+  page.on('request', countAudits);
+  const answered = page.waitForResponse(response => response.url().endsWith('/notes/password-audit'));
+  await change();
+  await answered;
+  await settle(page);
+  page.off('request', countAudits);
+  const shown = await page.evaluate(() => {
+    window.__auditObserver.disconnect();
+    return window.__auditSummaries;
+  });
+  return {asked, shown};
+}
+
+async function groupLabels(page) {
+  return page.evaluate(() => Object.fromEntries([...document.querySelectorAll('#password-audit-panel .password-audit-group')]
+    .map(group => [group.dataset.auditGroup, [...group.querySelectorAll('.password-audit-label')].map(label => label.textContent)])));
+}
+
+async function liveUpdateCases(page, ids) {
+  const panelBefore = (await read(page)).panel;
+  // Email's password, reused with the bank's, made strong: neither is reused now, one fewer weak.
+  const strong = await nextUpdate(page, () => editNote(page, ids.mail, 'Email login ((Rk7$qPz!w2Lm#9vT))', '((@password)) audit-check'));
+  assert.deepEqual(strong.asked, [false], 'one update, which checks only what changed');
+  assert.ok(strong.shown.every(text => text.includes('passwords:')), `no Checking… on the way (${JSON.stringify(strong.shown)})`);
+  const afterStrong = await groupLabels(page);
+  assert.equal(afterStrong.reused, undefined, 'nothing is reused any more');
+  assert.deepEqual(afterStrong.weak, ['Bank of Lisbon'], 'only the bank is weak');
+  assert.deepEqual((await read(page)).panel, panelBefore, 'the panel does not move');
+
+  // A new password note appears in its groups.
+  const shopId = await page.evaluate(async () => {
+    const {NotesAPI} = await import('/static/js/modules/api-client.js');
+    return (await NotesAPI.createNote(null, '')).id;
+  });
+  await nextUpdate(page, () => editNote(page, shopId, 'Shop login ((qwerty))', '((@password)) audit-check'));
+  assert.deepEqual((await groupLabels(page)).weak, ['Bank of Lisbon', 'Shop login ••••••••']);
+
+  // Replace… stays with its password while the note around it changes, and Save would put the
+  // new one where it is now.
+  await page.click(`#password-audit-panel [data-audit-replace="${shopId}:region:0"]`);
+  const generated = await page.$eval('#password-audit-panel .password-audit-new', element => element.textContent);
+  await nextUpdate(page, () => editNote(page, shopId, 'Shop login, renamed ((qwerty))', '((@password)) audit-check'));
+  const followed = await page.evaluate(id => {
+    const row = document.querySelector(`#password-audit-panel [data-audit-row="${id}:region:0"]`);
+    return {
+      label: row.querySelector('.password-audit-label').textContent,
+      password: row.querySelector('.password-audit-new').textContent,
+      canSave: row.querySelector('[data-audit-save]') !== null,
+    };
+  }, shopId);
+  assert.deepEqual(followed, {label: 'Shop login, renamed ••••••••', password: generated, canSave: true});
+
+  // Its note deleted: the new password stays to copy, as it may be in use on the site; no Save.
+  await nextUpdate(page, () => page.evaluate(async id => {
+    const {NotesAPI} = await import('/static/js/modules/api-client.js');
+    await NotesAPI.deleteNote(id);
+  }, shopId));
+  const gone = await page.evaluate(() => {
+    const form = document.querySelector('#password-audit-panel .password-audit-replacing');
+    return {
+      password: form.querySelector('.password-audit-new').textContent,
+      hint: form.querySelector('.password-audit-hint').textContent,
+      canSave: form.querySelector('[data-audit-save]') !== null,
+    };
+  });
+  assert.deepEqual(gone, {password: generated, hint: 'This password is no longer in its note.', canSave: false});
+  await page.click('#password-audit-panel [data-audit-cancel]');
+  assert.equal(await page.$('#password-audit-panel .password-audit-replacing'), null, 'Cancel puts it away');
+  console.log('PASS password audit while open: updates in place as passwords change, checking only what changed; Replace… follows its password');
+}
+
 const REMINDER = '#password-audit-reminder-notice';
 const DAY_MS = 24 * 60 * 60 * 1000;
 const HALF_A_YEAR_DAYS = 200;
@@ -224,7 +316,9 @@ async function reminderCases(page) {
     return Number(CommandPalette._preferences.getRaw('pref.password_audit.open_issues'));
   });
   assert.ok(issues > 0, 'the audit counted passwords still to fix');
-  assert.equal(await checkReminder(page), `Time to check your passwords: ${issues} still need attention.`);
+  // The live updates left the bank's alone to fix, so it says so in the singular.
+  assert.equal(issues, 1, 'the updates while open kept the count of passwords to fix');
+  assert.equal(await checkReminder(page), 'Time to check your passwords: 1 still needs attention.');
   await page.click(`${REMINDER} button[title="Hide for a week"]`);
   await settle(page);
   assert.equal(await reminderText(page), null, '× hides it');
@@ -250,6 +344,7 @@ export async function checkPasswordAudit(page) {
   assert.equal(await reminderText(page), 'Time to check your passwords: they have never been audited.');
   await runThenCleanUp('password audit', async () => {
     await auditCases(page, ids);
+    await liveUpdateCases(page, ids);
     await reminderCases(page);
   }, async () => {
     for (let press = 0; press < ESCAPES_AFTER_A_FAILURE; press += 1) await page.keyboard.press('Escape');

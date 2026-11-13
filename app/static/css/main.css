@@ -14199,7 +14199,7 @@ body.virtual-folders-crowded .virtual-folders-resizer {
     }
 }
 
-/* Password Audit (password-audit-panel.js; docs/ready-to-build/password-audit.md): a movable panel,
+/* Password Audit (password-audit-panel.js; docs/ui/password-audit.md): a movable panel,
    not a dialog. Just below the floating notes (2500), so a note opened from it comes up above it,
    and above the list, which stays usable behind it. Dialog colours, so it follows every theme. */
 .password-audit-panel {

@@ -5,7 +5,7 @@ syntax suppressions and is consumed by runtime capture and the startup gate.
 """
 
 CAPTURE_BOUNDARIES = {
-    # Password Audit (docs/ready-to-build/password-audit.md): Have I Been Pwned is an outside
+    # Password Audit (docs/ui/password-audit.md): Have I Been Pwned is an outside
     # service; when it can't be reached or answers oddly, the audit says the leak check is
     # unavailable and still checks everything else.
     'app/usecases/password_audit.py:_hibp_suffix_counts:capture': ('HTTPError',),

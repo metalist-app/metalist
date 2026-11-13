@@ -11,6 +11,7 @@ import { buildSessionHeaders } from './session-auth.js';
 import { sanitizeNoteHtmlForStorage } from './note-html-sanitizer.js';
 import { describeApiFailure } from './api-error-diagnostics.js';
 import { inTransferSlot } from './file-transfer-slots.js';
+import { notesMayHaveChanged } from './notes-change-signal.js';
 
 function buildAuthHeaders(includeContentType) {
     return buildSessionHeaders(includeContentType);
@@ -77,6 +78,7 @@ async function postFileEditSession(url, body, description) {
     }
     if (ModeContext.lastUpdateUUID !== data.updateUUID) {
         ModeContext.setLastUpdateUUID(data.updateUUID);
+        notesMayHaveChanged();
     }
     return data;
 }
@@ -219,6 +221,7 @@ export const NotesAPI = {
                 // Polling can return the same update UUID when nothing changed server-side.
                 if (ModeContext.lastUpdateUUID !== data.updateUUID) {
                     ModeContext.setLastUpdateUUID(data.updateUUID);
+                    notesMayHaveChanged();
                 }
                 if (CONFIG.DEBUG.LOG_API_CALLS) {
                     console.log(' [API] Updated sync UUID:', data.updateUUID);
@@ -396,14 +399,16 @@ export const NotesAPI = {
         });
     },
 
-    // Password Audit (docs/ready-to-build/password-audit.md): every password checked; the answer
+    // Password Audit (docs/ui/password-audit.md): every password checked; the answer
     // names notes, never a password.
-    async passwordAudit(weakBelow, checkLeaks) {
-        if ((weakBelow !== 3 && weakBelow !== 4) || typeof checkLeaks !== 'boolean') {
-            throw new Error('NotesAPI.passwordAudit requires the weak threshold and whether to check leaks');
+    // fresh: the panel opening, everything checked again; else an update while it is open, which
+    // checks only passwords that are new or changed.
+    async passwordAudit(weakBelow, checkLeaks, fresh) {
+        if ((weakBelow !== 3 && weakBelow !== 4) || typeof checkLeaks !== 'boolean' || typeof fresh !== 'boolean') {
+            throw new Error('NotesAPI.passwordAudit requires the weak threshold, whether to check leaks and whether to start afresh');
         }
         return this._apiCall(CONFIG.API.NOTES.PASSWORD_AUDIT, {
-            method: 'POST', body: JSON.stringify({ weakBelow, checkLeaks }),
+            method: 'POST', body: JSON.stringify({ weakBelow, checkLeaks, fresh }),
         });
     },
 
@@ -414,13 +419,13 @@ export const NotesAPI = {
 
     // One password replaced as the audit found it; the old one goes into a note under it.
     async replacePassword(row, newPassword) {
-        if (row === null || typeof row !== 'object' || typeof row.noteId !== 'string'
+        if (row === null || typeof row !== 'object' || typeof row.noteId !== 'string' || typeof row.passwordId !== 'string'
             || typeof newPassword !== 'string' || newPassword === '') {
             throw new Error('NotesAPI.replacePassword requires the audit row and the new password');
         }
         return this._apiCall(CONFIG.API.NOTES.PASSWORD_REPLACE(row.noteId), {
             method: 'POST', claimSession: true,
-            body: JSON.stringify({ kind: row.kind, regionIndex: row.regionIndex, fingerprint: row.fingerprint, newPassword }),
+            body: JSON.stringify({ kind: row.kind, regionIndex: row.regionIndex, fingerprint: row.fingerprint, passwordId: row.passwordId, newPassword }),
         });
     },
 

@@ -1,4 +1,4 @@
-"""Password Audit (docs/ready-to-build/password-audit.md; the maintainer, 2026-11-12).
+"""Password Audit (docs/ui/password-audit.md; the maintainer, 2026-11-12).
 
 Every password in the vault (a note tagged @password, and each region a wrapped @password
 names) is checked for being weak (zxcvbn, below the threshold the panel chose), reused (the
@@ -7,6 +7,13 @@ asked, leaked (Have I Been Pwned's range API: only the first 5 hex characters of
 password's SHA-1 leave the computer). A row names its note by a first line with passwords
 hidden and its tags, never the password. Replacing one is one password at a time: the new one
 goes in, and the old one into a new password note under it, as one undo step.
+
+While the panel is open it is updated as notes change (the maintainer, 2026-11-13: "keep track
+of its state when it opened and then just check differences"): each password's score and each
+leak answer are remembered from the audit that opened it, so an update scores only passwords that
+are new or changed and asks Have I Been Pwned only about new ones. Reused and old are worked out
+again over every password, since one edit can make another note's password reused. Opening the
+panel forgets them all and checks everything again; so does locking the vault.
 """
 
 from __future__ import annotations
@@ -15,14 +22,17 @@ from collections import Counter
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 import hashlib
+import hmac
 import html
 import re
+import secrets
 from typing import Dict, List, Mapping, Sequence
 import uuid
 
 import httpx
 from zxcvbn import zxcvbn
 
+from app.security.sensitive_cache import SensitiveMemo
 from app.services.content_formatting import (
     ScopedPasswordRegion,
     is_password_note,
@@ -76,6 +86,18 @@ _HIBP_TIMEOUT_SECONDS = 10.0
 _HIBP_HEADERS = {"Add-Padding": "true", "User-Agent": "MetaList password audit"}
 # A row's note as the audit saw it: Replace refuses when the note changed since.
 _FINGERPRINT_HEX_DIGITS = 16
+# Which password a row is, kept across updates while the note around it changes, so an open
+# Replace… follows it and never replaces another one. Keyed with a secret that never leaves the
+# server, so the browser can tell equal passwords apart from others but learns nothing of them.
+_PASSWORD_ID_KEY = secrets.token_bytes(32)
+_PASSWORD_ID_HEX_DIGITS = 16
+# What the audit remembers while its panel is open: each password's score (by the password and the
+# words it is judged against) and each leak answer (by the password's SHA-1). Forgotten when the
+# panel opens again and, as every sensitive cache, when the vault locks. Bounds well beyond any vault.
+_REMEMBERED_PASSWORDS = 50_000
+_REMEMBERED_BYTES = 32 * 1024 * 1024
+_remembered_scores = SensitiveMemo(maxsize=_REMEMBERED_PASSWORDS, max_bytes=_REMEMBERED_BYTES)
+_remembered_leaks = SensitiveMemo(maxsize=_REMEMBERED_PASSWORDS, max_bytes=_REMEMBERED_BYTES)
 
 
 @dataclass(frozen=True)
@@ -141,8 +163,24 @@ def _context_words(record: NoteRecord, label: str) -> List[str]:
     return [word for word in words if word.casefold() != "password"][:_MAX_CONTEXT_WORDS]
 
 
+def password_id(value: str) -> str:
+    return hmac.new(_PASSWORD_ID_KEY, value.encode("utf-8"), hashlib.sha256).hexdigest()[:_PASSWORD_ID_HEX_DIGITS]
+
+
+def forget_audit() -> None:
+    """The panel opened: everything is checked again."""
+    _remembered_scores.clear()
+    _remembered_leaks.clear()
+
+
 def _score(value: str, context_words: Sequence[str]) -> int:
-    return int(zxcvbn(value[:_ZXCVBN_MAX_CHARACTERS], user_inputs=list(context_words))["score"])
+    key = (value[:_ZXCVBN_MAX_CHARACTERS], tuple(context_words))
+    is_known, known = _remembered_scores.lookup(key)
+    if is_known:
+        return int(known)
+    score = int(zxcvbn(key[0], user_inputs=list(context_words))["score"])
+    _remembered_scores.store(key, score)
+    return score
 
 
 def _sha1(value: str) -> str:
@@ -172,23 +210,31 @@ def _hibp_suffix_counts(prefix: str, client: httpx.Client) -> Dict[str, int]:
 
 
 def leaked_counts(values: Sequence[str], client: httpx.Client) -> Dict[str, int]:
-    """How often each password appears in Have I Been Pwned's leaks, by value. Each distinct hash
-    prefix is asked once; only the prefix is sent."""
+    """How often each password appears in Have I Been Pwned's leaks, by value. Only passwords not
+    already answered while the panel is open are asked about; each distinct hash prefix of those is
+    asked once, and only the prefix is sent."""
     hashes = {value: _sha1(value) for value in values}
-    by_prefix: Dict[str, Dict[str, int]] = {}
+    known: Dict[str, int] = {}
+    unknown: List[str] = []
     for full_hash in sorted(set(hashes.values())):
+        is_known, count = _remembered_leaks.lookup(full_hash)
+        if is_known:
+            known[full_hash] = int(count)
+        else:
+            unknown.append(full_hash)
+    by_prefix: Dict[str, Dict[str, int]] = {}
+    for full_hash in unknown:
         prefix = full_hash[:_HIBP_PREFIX_LENGTH]
         if prefix not in by_prefix:
             by_prefix[prefix] = _hibp_suffix_counts(prefix, client)
-    counts: Dict[str, int] = {}
-    for value, full_hash in hashes.items():
-        suffixes = by_prefix[full_hash[:_HIBP_PREFIX_LENGTH]]
+        suffixes = by_prefix[prefix]
         suffix = full_hash[_HIBP_PREFIX_LENGTH:]
         # A hash Have I Been Pwned does not list has not leaked.
-        counts[value] = 0
+        known[full_hash] = 0
         if suffix in suffixes:
-            counts[value] = suffixes[suffix]
-    return counts
+            known[full_hash] = suffixes[suffix]
+        _remembered_leaks.store(full_hash, known[full_hash])
+    return {value: known[full_hash] for value, full_hash in hashes.items()}
 
 
 def _is_old(record: NoteRecord, now: datetime) -> bool:
@@ -207,10 +253,14 @@ def count_passwords() -> int:
                if not password.is_kept_after_replacing)
 
 
-def audit_passwords(*, weak_below: int, check_leaks: bool, now: datetime, client: httpx.Client) -> Dict[str, object]:
-    """Every password in the vault, checked, as the panel shows it: a summary and a row each."""
+def audit_passwords(*, weak_below: int, check_leaks: bool, fresh: bool, now: datetime, client: httpx.Client) -> Dict[str, object]:
+    """Every password in the vault, checked, as the panel shows it: a summary and a row each.
+    fresh (the panel opening) forgets what earlier audits remembered; an update while it is open
+    reuses it."""
     if weak_below not in WEAK_THRESHOLDS:
         raise InputRejected(f"Weak means a score below {' or '.join(str(value) for value in WEAK_THRESHOLDS)}.")
+    if fresh:
+        forget_audit()
     found = [password for record in store.snapshot().values() for password in passwords_in(record)]
     counted = [password for password in found if not password.is_kept_after_replacing]
     uses = Counter(password.value for password in counted)
@@ -251,6 +301,7 @@ def _row(password: FoundPassword, *, weak_below: int, uses: Mapping[str, int], l
             groups.append(OLD)
     return {
         "noteId": password.note_id, "rootNoteId": _root_note_id(record), "kind": password.kind, "regionIndex": password.region_index,
+        "passwordId": password_id(password.value),
         "label": label, "tags": record.tags, "groups": groups, "score": score,
         "canReplace": password.can_replace and not password.is_kept_after_replacing,
         "fingerprint": note_fingerprint(record),
@@ -298,6 +349,7 @@ class CmdReplacePassword(QueryCommand):
     kind: str
     region_index: int
     fingerprint: str
+    password_id: str
     new_password: str
     on: date
     token: str
@@ -312,7 +364,7 @@ class CmdReplacePassword(QueryCommand):
             raise InputRejected("This note changed since the audit ran. Run the audit again.")
         matching = [password for password in passwords_in(record)
                     if password.kind == self.kind and password.region_index == self.region_index]
-        if len(matching) != 1 or not matching[0].can_replace:
+        if len(matching) != 1 or not matching[0].can_replace or password_id(matching[0].value) != self.password_id:
             raise InputRejected("This password is no longer where the audit found it. Run the audit again.")
         if self.new_password == "" or self.new_password != self.new_password.strip():
             raise InputRejected("The new password can't be empty or start or end with a space.")

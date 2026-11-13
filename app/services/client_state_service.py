@@ -77,7 +77,7 @@ _ALLOWED_CLIENT_PREFERENCES = {
     "pref.backup_reminder": {"off", "daily", "weekly", "every_2_weeks", "monthly"},
     # Until when the dismissed backup reminder stays hidden.
     "pref.backup_reminder_hidden_until": "utc_timestamp",
-    # Password Audit (docs/ready-to-build/password-audit.md): below which zxcvbn score a password
+    # Password Audit (docs/ui/password-audit.md): below which zxcvbn score a password
     # is weak, and whether it asks Have I Been Pwned about leaks (off unless turned on).
     "pref.password_audit.weak_below": {"3", "4"},
     "pref.password_audit.check_leaks": {"true", "false"},

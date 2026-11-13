@@ -733,6 +733,8 @@ def auth_status(
         "link_title_revision": link_title_store.get_revision(),
         # A PDF's first page drawn in the background: its galleries are drawn again.
         "first_page_revision": pdf_first_pages.revision(),
+        # Any change to the notes, from any tab or computer: an open Password Audit updates.
+        "notes_revision": note_store.revision,
         "client_preferences": client_preferences,
     }
 

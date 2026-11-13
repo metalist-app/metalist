@@ -614,6 +614,8 @@ class PasteChildEndpointRequest(TypedDict):
 class PasswordAuditRequest(TypedDict):
     weakBelow: Literal[3, 4]
     checkLeaks: bool
+    # True when the panel opens: everything checked again. False for an update while it is open.
+    fresh: bool
 
 
 # One password replaced, as the audit found it: the note's fingerprint then, and the new one.
@@ -622,6 +624,7 @@ class ReplacePasswordRequest(TypedDict):
     kind: Literal['note', 'region']
     regionIndex: Nonnegative
     fingerprint: Identifier
+    passwordId: Identifier
     newPassword: Annotated[str, Field(min_length=1, max_length=KIB)]
     clientId: Identifier
     undoContext: UndoContext

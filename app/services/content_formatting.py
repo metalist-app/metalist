@@ -1508,7 +1508,7 @@ class ScopedPasswordRegion:
 
 def scoped_password_regions(text: str, tags: str) -> List[ScopedPasswordRegion]:
     """Each password region of `text` (a note's plain text), in order, found as
-    _replace_scoped_passwords finds them (Password Audit, docs/ready-to-build/password-audit.md)."""
+    _replace_scoped_passwords finds them (Password Audit, docs/ui/password-audit.md)."""
     if not isinstance(text, str):
         raise TypeError(f"text must be a string, got {type(text)}")
     if not isinstance(tags, str):

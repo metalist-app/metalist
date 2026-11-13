@@ -8,12 +8,14 @@ import { CONFIG } from '../../config.js';
 import { buildSessionHeaders } from '../../session-auth.js';
 import { CommandGate } from './command-gate-service.js';
 import { checkBackgroundWork } from './background-work-cards.js';
+import { notesMayHaveChanged } from '../../notes-change-signal.js';
 
 const moduleState = ApplicationState.createFields('polling-service', {
     pollingInterval: null,
     lastTokenRefreshAt: 0,
     lastLinkTitleRevision: 0,
     lastFirstPageRevision: 0,
+    lastNotesRevision: 0,
     linkTitleRefreshTimer: null,
     visibilityListener: null,
     connectivityCheck: null,
@@ -142,6 +144,7 @@ async function pingAuthStatus() {
         const status = await response.json();
         handleLinkTitleRevision(status);
         handleFirstPageRevision(status);
+        handleNotesRevision(status);
         ErrorHandler.handleConnectionRestored();
         // The server's work beside the user's, shown as it goes (background-work-cards.js).
         if (status.authenticated === true) await checkBackgroundWork();
@@ -192,6 +195,24 @@ function handleFirstPageRevision(status) {
     }
     moduleState.lastFirstPageRevision = revision;
     scheduleLinkTitleRefresh();
+}
+
+// The notes changed, here or anywhere else (another tab, another computer): whoever listens is
+// told (notes-change-signal.js).
+function handleNotesRevision(status) {
+    if (status.authenticated !== true) {
+        if (moduleState.lastNotesRevision !== 0) moduleState.lastNotesRevision = 0;
+        return;
+    }
+    const revision = status.notes_revision;
+    if (!Number.isInteger(revision) || revision < 0) {
+        throw new Error('auth status notes_revision must be a non-negative integer');
+    }
+    if (revision === moduleState.lastNotesRevision) {
+        return;
+    }
+    moduleState.lastNotesRevision = revision;
+    notesMayHaveChanged();
 }
 
 function scheduleLinkTitleRefresh() {

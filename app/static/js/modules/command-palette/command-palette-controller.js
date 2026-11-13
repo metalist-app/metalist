@@ -2767,7 +2767,7 @@ class CommandPaletteController {
         await this._randomPasswordModal.open();
     }
 
-    // Password Audit (docs/ready-to-build/password-audit.md): a movable panel; its threshold and
+    // Password Audit (docs/ui/password-audit.md): a movable panel; its threshold and
     // leak check are remembered per vault.
     async openPasswordAudit() {
         const isReady = await this._prepareForModalOpen('commandPalette.openPasswordAudit');

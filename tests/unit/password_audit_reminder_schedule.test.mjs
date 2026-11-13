@@ -9,7 +9,7 @@ import {
     passwordAuditReminderMessage,
 } from '../../app/static/js/modules/password-audit/password-audit-reminder-schedule.js';
 
-// The Password Audit reminder (docs/ready-to-build/password-audit.md; the maintainer, 2026-11-12):
+// The Password Audit reminder (docs/ui/password-audit.md; the maintainer, 2026-11-12):
 // every 3 months unless set otherwise; only when the vault holds a password; at once when no audit
 // has ever run; × hides it for a week.
 const NOW = new Date('2026-11-12T12:00:00Z');

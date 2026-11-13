@@ -1,6 +1,6 @@
 import { DAYS_PER_WEEK, MS_PER_DAY } from '../time-units.js';
 
-// When the Password Audit reminder is due (docs/ready-to-build/password-audit.md; the
+// When the Password Audit reminder is due (docs/ui/password-audit.md; the
 // maintainer, 2026-11-12): the vault holds a password, the last audit is older than the chosen
 // period (or there never was one: due at once), and × has not hidden it for now (a week). Opening
 // the audit counts as one; while it left passwords leaked, reused or weak, the period is a month

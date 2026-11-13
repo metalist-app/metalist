@@ -1440,14 +1440,14 @@ def tag_notes_in_view(request: Request, body: TagNotesInViewRequest) -> dict[str
     ).execute()
 
 
-# Password Audit (docs/ready-to-build/password-audit.md): every password checked; what it answers
+# Password Audit (docs/ui/password-audit.md): every password checked; what it answers
 # names notes, never a password. The leak check asks Have I Been Pwned with hash prefixes only.
 @router.post("/notes/password-audit")
 @read_only_route
 def password_audit(body: PasswordAuditRequest) -> dict[str, object]:
     with httpx.Client() as client:
         return audit_passwords(weak_below=body["weakBelow"], check_leaks=body["checkLeaks"],
-                               now=datetime.now(timezone.utc), client=client)
+                               fresh=body["fresh"], now=datetime.now(timezone.utc), client=client)
 
 
 # The audit reminder shows only when the vault holds a password.
@@ -1462,7 +1462,7 @@ def replace_password(note_id: str, request: Request, body: ReplacePasswordReques
     _require_note_present(note_id, context="notes.password-replace")
     return CmdReplacePassword(
         note_id=note_id, kind=body["kind"], region_index=body["regionIndex"], fingerprint=body["fingerprint"],
-        new_password=body["newPassword"], on=date.today(), token=_require_bearer_token(request),
+        password_id=body["passwordId"], new_password=body["newPassword"], on=date.today(), token=_require_bearer_token(request),
         client_id=body["clientId"], undo_context=body["undoContext"], viewport=_require_viewport(body),
     ).execute()
 

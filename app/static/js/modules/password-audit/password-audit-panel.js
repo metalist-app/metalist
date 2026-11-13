@@ -1,15 +1,17 @@
-// Password Audit (docs/ready-to-build/password-audit.md; the maintainer, 2026-11-12): a movable
+// Password Audit (docs/ui/password-audit.md; the maintainer, 2026-11-12): a movable
 // panel, not a dialog, so the list stays usable behind it. It checks every password when it
 // opens and lists them by group, each by its note's first line and tags, never the password.
 // Go to opens the top-level note the password is in, as following a link to it does; Replace…
 // makes a strong password to change on the site, then saves it, the old one kept in a note under
-// it (one undo step, app/usecases/password_audit.py).
+// it (one undo step, app/usecases/password_audit.py). While it is open it updates itself as notes
+// change, here or anywhere else, once the changes settle; the server checks only what is new.
 import { NotesAPI } from '../api-client.js';
 import { ApplicationState, stateValuesEqual } from '../application-state.js';
 import { escapeHtml } from '../html-escape.js';
 import { DEFAULT_PASSWORD_CHARSET, DEFAULT_PASSWORD_LENGTH, generateRandomPassword, normalizePasswordCharset } from '../password-generator.js';
 import { openReferenceInNewTab } from '../mode-manager/events/keyboard-events.js';
 import { CommandGate } from '../mode-manager/services/command-gate-service.js';
+import { onNotesChanged } from '../notes-change-signal.js';
 
 const PANEL_ID = 'password-audit-panel';
 const GROUPS = [
@@ -24,6 +26,9 @@ const WEAK_THRESHOLDS = [3, 4];
 const WRAPPER_CHARACTERS = new Set(['(', ')', '[', ']', '{', '}', '<', '>']);
 const COPIED_SECONDS = 2;
 const MS_PER_SECOND = 1000;
+// After the notes change, the panel waits this long for more changes before it updates, so a
+// password is checked once typing pauses, not at every save.
+const UPDATE_AFTER_CHANGES_MS = 2 * MS_PER_SECOND;
 
 const state = ApplicationState.createFields('password-audit-panel', {
     element: null,
@@ -32,9 +37,16 @@ const state = ApplicationState.createFields('password-audit-panel', {
     savePreferences: null,
     onAudited: null,
     result: null,
+    // The password being replaced, as { noteId, kind, passwordId }: it is followed while its note
+    // changes, and never confused with another password in the same note.
     replacing: null,
     newPassword: '',
     isChecking: false,
+    // An update while open: one at a time, and one more when the notes changed meanwhile.
+    isUpdating: false,
+    updatesAgain: false,
+    updateTimer: null,
+    stopListening: null,
     drag: null,
 });
 
@@ -58,6 +70,33 @@ function rowKey(row) {
     return `${row.noteId}:${row.kind}:${row.regionIndex}`;
 }
 
+function isReplacing(row) {
+    const replacing = state.replacing;
+    return replacing !== null && row.noteId === replacing.noteId && row.kind === replacing.kind && row.passwordId === replacing.passwordId;
+}
+
+// The row of the password being replaced, where it is now; null once it is gone from its note.
+function replacingRow() {
+    const rows = state.result === null ? [] : state.result.rows;
+    const found = rows.find(isReplacing);
+    return found === undefined ? null : found;
+}
+
+function replacingHtml(key) {
+    let save = '<span class="password-audit-hint">This password is no longer in its note.</span>';
+    if (key !== null) {
+        save = `
+                <span class="password-audit-hint">Change it on the site, then Save.</span>
+                <button type="button" class="password-audit-button is-primary" data-audit-save="${escapeHtml(key)}" title="Put it in the note; the old one is kept in a note under it">Save</button>`;
+    }
+    return `
+            <div class="password-audit-replacing">
+                <code class="password-audit-new">${escapeHtml(state.newPassword)}</code>
+                <button type="button" class="password-audit-button" data-audit-copy>Copy</button>${save}
+                <button type="button" class="password-audit-button" data-audit-cancel>Cancel</button>
+            </div>`;
+}
+
 function summaryText(result) {
     if (result === null) return 'Checking…';
     const parts = GROUPS.filter(([group]) => group !== 'replaced').map(([group, label]) => `${result.summary[group]} ${label.toLowerCase()}`);
@@ -75,16 +114,9 @@ function rowHtml(row, shownReplacing) {
         replace = `<button type="button" class="password-audit-button" data-audit-replace="${escapeHtml(key)}" title="Make a strong password to change on the site">Replace…</button>`;
     }
     let replacing = '';
-    if (state.replacing === key && !shownReplacing.has(key)) {
+    if (isReplacing(row) && !shownReplacing.has(key)) {
         shownReplacing.add(key);
-        replacing = `
-            <div class="password-audit-replacing">
-                <code class="password-audit-new">${escapeHtml(state.newPassword)}</code>
-                <button type="button" class="password-audit-button" data-audit-copy>Copy</button>
-                <span class="password-audit-hint">Change it on the site, then Save.</span>
-                <button type="button" class="password-audit-button is-primary" data-audit-save="${escapeHtml(key)}" title="Put it in the note; the old one is kept in a note under it">Save</button>
-                <button type="button" class="password-audit-button" data-audit-cancel>Cancel</button>
-            </div>`;
+        replacing = replacingHtml(key);
     }
     return `
         <li class="password-audit-row" data-audit-row="${escapeHtml(key)}">
@@ -103,11 +135,17 @@ function rowHtml(row, shownReplacing) {
 function groupsHtml(result) {
     if (result === null) return '';
     const shownReplacing = new Set();
-    return GROUPS.map(([group, label]) => {
+    // A password being replaced that left its note (edited or deleted meanwhile): the new one
+    // stays to copy, since it may already be in use on the site.
+    let gone = '';
+    if (state.replacing !== null && replacingRow() === null) {
+        gone = replacingHtml(null);
+    }
+    return gone + GROUPS.map(([group, label]) => {
         const rows = result.rows.filter((row) => row.groups.includes(group));
         if (rows.length === 0) return '';
         return `
-            <section class="password-audit-group">
+            <section class="password-audit-group" data-audit-group="${group}">
                 <h4>${escapeHtml(label)} <span class="password-audit-count">${rows.length}</span></h4>
                 <ul>${rows.map((row) => rowHtml(row, shownReplacing)).join('')}</ul>
             </section>`;
@@ -118,12 +156,34 @@ function thresholdHtml() {
     return WEAK_THRESHOLDS.map((value) => `<button type="button" class="password-audit-segment${state.weakBelow === value ? ' is-chosen' : ''}" data-audit-weak="${value}" aria-pressed="${state.weakBelow === value}">${value}</button>`).join('');
 }
 
+const CONTROL_ATTRIBUTES = ['data-audit-go', 'data-audit-replace', 'data-audit-copy', 'data-audit-save', 'data-audit-cancel'];
+
+// Where focus is among the rows' buttons, so drawing them again (an update) leaves it there.
+function focusedControlSelector(groups) {
+    const focused = document.activeElement;
+    if (!(focused instanceof HTMLElement) || !groups.contains(focused)) return null;
+    const attribute = CONTROL_ATTRIBUTES.find((name) => focused.hasAttribute(name));
+    if (attribute === undefined) return null;
+    const section = focused.closest('[data-audit-group]');
+    const row = focused.closest('[data-audit-row]');
+    const sectionPart = section === null ? '' : `[data-audit-group="${CSS.escape(section.dataset.auditGroup)}"] `;
+    const rowPart = row === null ? '' : `[data-audit-row="${CSS.escape(row.dataset.auditRow)}"] `;
+    return `${sectionPart}${rowPart}[${attribute}]`;
+}
+
 function render() {
     const panel = state.element;
     panel.querySelector('.password-audit-summary').textContent = summaryText(state.result);
     panel.querySelector('.password-audit-threshold').innerHTML = thresholdHtml();
     panel.querySelector('.password-audit-leaks input').checked = state.checkLeaks;
-    panel.querySelector('.password-audit-groups').innerHTML = groupsHtml(state.result);
+    const groups = panel.querySelector('.password-audit-groups');
+    const focusedSelector = focusedControlSelector(groups);
+    groups.innerHTML = groupsHtml(state.result);
+    if (focusedSelector === null) return;
+    const control = groups.querySelector(focusedSelector);
+    // Gone with its row: focus stays in the panel, so Escape still closes it.
+    const target = control === null ? panel : control;
+    target.focus({ preventScroll: true });
 }
 
 const GROUP_ORDER = GROUPS.map(([group]) => group);
@@ -164,17 +224,59 @@ function findRow(key) {
     return state.result.rows.find((row) => rowKey(row) === key);
 }
 
-async function check() {
+// An answer as the panel shows it now: the threshold or the leak check may have changed while it
+// was asked for.
+function asShownNow(result) {
+    const regrouped = regroupedByWeakness(result, state.weakBelow);
+    return state.checkLeaks ? regrouped : withoutLeaks(regrouped);
+}
+
+// fresh: the panel opening, everything checked again. Turning the leak check on asks again
+// without forgetting the scores. Either way the panel says Checking… meanwhile.
+async function check({ fresh }) {
     if (state.isChecking) return;
     setField('isChecking', true);
     setField('result', null);
-    setField('replacing', null);
+    if (fresh) setField('replacing', null);
     render();
     // A failed check is a red error (fail loud); the panel says Checking… until it is closed.
-    setField('result', await NotesAPI.passwordAudit(state.weakBelow, state.checkLeaks));
+    const answer = await NotesAPI.passwordAudit(state.weakBelow, state.checkLeaks, fresh);
     setField('isChecking', false);
+    if (state.element === null) return;
+    setField('result', asShownNow(answer));
     await state.onAudited(openIssues(state.result));
     render();
+    // The notes may have changed while it was asked.
+    if (state.updatesAgain) await update();
+}
+
+// The notes changed while the panel is open: the answer is asked for again, the server checking
+// only what is new, and the panel drawn again in place, no Checking…, nothing highlighted.
+async function update() {
+    if (state.element === null || state.result === null) return;
+    if (state.isChecking || state.isUpdating) {
+        setField('updatesAgain', true);
+        return;
+    }
+    setField('updatesAgain', false);
+    setField('isUpdating', true);
+    const answer = await NotesAPI.passwordAudit(state.weakBelow, state.checkLeaks, false);
+    setField('isUpdating', false);
+    if (state.element === null) return;
+    const before = openIssues(state.result);
+    setField('result', asShownNow(answer));
+    render();
+    const after = openIssues(state.result);
+    if (after !== before) await state.onAudited(after);
+    if (state.updatesAgain) await update();
+}
+
+function updateSoon() {
+    if (state.updateTimer !== null) window.clearTimeout(state.updateTimer);
+    setField('updateTimer', window.setTimeout(() => {
+        setField('updateTimer', null);
+        void update();
+    }, UPDATE_AFTER_CHANGES_MS));
 }
 
 async function onClick(event) {
@@ -207,8 +309,9 @@ async function onClick(event) {
         return;
     }
     if (target.matches('[data-audit-replace]')) {
-        setField('replacing', target.dataset.auditReplace);
-        setField('newPassword', newPasswordFor(findRow(state.replacing)));
+        const row = findRow(target.dataset.auditReplace);
+        setField('replacing', { noteId: row.noteId, kind: row.kind, passwordId: row.passwordId });
+        setField('newPassword', newPasswordFor(row));
         render();
         return;
     }
@@ -226,9 +329,14 @@ async function onClick(event) {
     }
     if (target.matches('[data-audit-save]')) {
         target.disabled = true;
-        await NotesAPI.replacePassword(findRow(target.dataset.auditSave), state.newPassword);
+        // Where the password is now: the note may have changed since the last update.
+        await update();
+        const row = replacingRow();
+        if (row === null) return;  // Gone from its note: the panel says so, the new one stays to copy.
+        await NotesAPI.replacePassword(row, state.newPassword);
+        setField('replacing', null);
         setField('newPassword', '');
-        await check();
+        await update();
     }
 }
 
@@ -242,7 +350,7 @@ async function onChange(event) {
         render();
         return;
     }
-    await check();
+    await check({ fresh: false });
 }
 
 // Dragged by its title bar; it stays where it is put while open.
@@ -321,12 +429,22 @@ export async function openPasswordAudit({ weakBelow, checkLeaks, savePreferences
         setField('element', build());
         document.body.appendChild(state.element);
     }
+    if (state.stopListening === null) {
+        setField('stopListening', onNotesChanged(updateSoon));
+    }
     state.element.focus({ preventScroll: true });
-    await check();
+    await check({ fresh: true });
 }
 
 export function closePasswordAudit() {
     if (state.element === null) return;
+    state.stopListening();
+    setField('stopListening', null);
+    if (state.updateTimer !== null) {
+        window.clearTimeout(state.updateTimer);
+        setField('updateTimer', null);
+    }
+    setField('updatesAgain', false);
     state.element.remove();
     setField('element', null);
     setField('result', null);

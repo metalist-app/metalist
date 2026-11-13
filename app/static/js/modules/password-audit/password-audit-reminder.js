@@ -1,4 +1,4 @@
-// The reminder to run the Password Audit (docs/ready-to-build/password-audit.md; the maintainer,
+// The reminder to run the Password Audit (docs/ui/password-audit.md; the maintainer,
 // 2026-11-12), made as the backup reminder is (backup-reminder-service.js): a card in the notice
 // stack that takes no space and never takes focus, shown only when the vault holds a password.
 // It is checked when the app opens, when the tab comes back, when a dialog or the menu closes, and

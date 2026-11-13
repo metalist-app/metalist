@@ -22,6 +22,7 @@
 - Search semantics (server behavior): `docs/ui/search-semantics.md`
 - Tag bar grammar (tags/comments/wrappers): `docs/ui/tag-bar.md`
 - Reminders: `docs/ui/reminders.md`
+- Password Audit (weak, reused, old and, opt-in, leaked passwords; each replaced one at a time; its reminder): `docs/ui/password-audit.md`; its leak check: `docs/security/README.md`, Outbound Leak Checks
 - AI chat: `docs/ui/ai-chat.md` (long chats: summaries of earlier turns and the history meter, its Long chats section); AI providers (OpenAI, Anthropic, Google): `docs/design/ai-providers.md`
 - Modal architecture pattern, dialog and menu conventions, errors and status (error dialogs, messages under a field, the check): `docs/ui/modals.md`
 - Floating messages (news, errors, the connection card) and Recent Messages: `docs/ui/floating-messages.md`
@@ -60,7 +61,6 @@
 - Built 2026-11-11 but for the Markdown export (links that open a search, `[[search:…]]`; Rename tag renames saved searches too): `docs/ready-to-build/search-links.md`, described in `docs/ui/references.md`; built 2026-11-11: a folder tag in the search includes the folders below it, and the folder is search text, not a chip: `docs/ready-to-build/folder-tags-in-search.md`
 - Built 2026-11-11, with the virtual folders experiment it changes (the folders tab only shows or hides the tree, no folder contexts as a kind; several folders in a search add results; a folder implies its parent folders, rules included): `docs/ready-to-build/folders-tab-and-multiple-folders.md`
 - Ready to build (the AI reads the whole view, files included, in batches when it must; a warning before very large requests): `docs/ready-to-build/ai-reads-whole-view.md`
-- Ready to build (Password Audit: weak, reused, old and, opt-in, leaked passwords, each one replaced one at a time): `docs/ready-to-build/password-audit.md`
 - Ready to build (how much text a conversation has sent, under the chat header): `docs/ready-to-build/ai-chat-size-line.md`
 - Ready to build (a prefix folder for every import, so a whole import is one folder): `docs/ready-to-build/import-prefix-folder.md`
 - Ready to build (importing a folder of any files, with a size check and file-type checklist; previews for code, PDF, RTF/.docx, HTML, audio and video): `docs/ready-to-build/folder-import-and-file-previews.md`
@@ -84,7 +84,7 @@
 - Future plan (a hover card on the Referenced by badge listing the referring notes): `docs/future-plans/referenced-by-hover-card.md`
 - Future plan (an embedded email drawn as its card in exports and prints, not as its file card): `docs/future-plans/email-in-exports.md`
 - Agreed designs ready to build, not started: `docs/ready-to-build/` (several views on one vault with editing locked per root note: `multi-view-editing.md`; the phone as the desktop app on a smaller screen, editing, with search contexts and the AI chat: `phone-same-app.md`; deployment profiles (personal, self-hosted, hosted) and hardening self-hosted for the internet: `deployment-profiles.md`; a short community-only self-hosting page, no packaging: `self-hosting-page.md`; Obsidian and Logseq imports with an import report, and the export as one ordered document in standard Markdown or HTML, for launch: `import-export-launch.md`; every Obsidian feature mapped into MetaList: `obsidian-mapping.md`)
-- Incoming design notes, processed into the folders above as soon as they are seen: `docs/inbox/` (see AGENTS.md, "Design Inbox")
+- Incoming design notes, processed into the folders above as soon as they are seen: `inbox/` at the top of the repo, never committed (see AGENTS.md, "Design Inbox")
 
 ## Clients
 - Electron packaging notes (planning doc): `docs/clients/electron.md`

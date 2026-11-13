@@ -1,6 +1,7 @@
-"""Password Audit (docs/ready-to-build/password-audit.md; app/usecases/password_audit.py): every
+"""Password Audit (docs/ui/password-audit.md; app/usecases/password_audit.py): every
 password checked for weak, reused, old and, when asked, leaked; no password in what it answers;
-one password replaced at a time, the old one kept in a note under it, as one undo step."""
+one password replaced at a time, the old one kept in a note under it, as one undo step. While
+the panel is open, an update checks only what is new or changed."""
 
 from __future__ import annotations
 
@@ -14,6 +15,7 @@ import pytest
 from app.db.notes_sql import insert_note
 from app.models.database import SafeSession
 from app.security import encryption
+from app.security.sensitive_cache import clear_sensitive_caches
 from app.services import note_store as note_store_module
 from app.services import store as store_module
 from app.services import undo_state
@@ -23,6 +25,7 @@ from app.services.note_store import NoteStore
 from app.services.search_index import SearchIndex
 from app.services.tag_ontology import TagOntology
 from app.services.undo_state import reset_all_undo_state
+from app.usecases import password_audit
 from app.usecases.password_audit import (
     LEAKED, OLD, REGION, REPLACED, REUSED, WEAK, WHOLE_NOTE, CmdReplacePassword, audit_passwords, count_passwords,
 )
@@ -83,7 +86,7 @@ def _no_network() -> httpx.Client:
 
 
 def _audit(weak_below: int) -> dict[str, object]:
-    return audit_passwords(weak_below=weak_below, check_leaks=False, now=NOW, client=_no_network())
+    return audit_passwords(weak_below=weak_below, check_leaks=False, fresh=True, now=NOW, client=_no_network())
 
 
 def _groups(result: dict[str, object]) -> dict[tuple[str, int], list[str]]:
@@ -132,7 +135,7 @@ def _pwned_client(leaked: dict[str, int], asked: list[str]) -> httpx.Client:
 def test_a_leaked_password_is_found_and_only_hash_prefixes_are_sent(note_store: NoteStore) -> None:
     lisbon_hash = hashlib.sha1(b"lisbon2024").hexdigest().upper()
     asked: list[str] = []
-    result = audit_passwords(weak_below=3, check_leaks=True, now=NOW, client=_pwned_client({lisbon_hash: 7}, asked))
+    result = audit_passwords(weak_below=3, check_leaks=True, fresh=True, now=NOW, client=_pwned_client({lisbon_hash: 7}, asked))
 
     assert result["leakCheck"] == "done"
     assert [key for key, groups in _groups(result).items() if LEAKED in groups] == [("bank-pw", 0), ("email", 1)]
@@ -146,16 +149,16 @@ def test_a_leaked_password_is_found_and_only_hash_prefixes_are_sent(note_store: 
 def test_an_unreachable_leak_check_says_so_and_checks_the_rest(note_store: NoteStore) -> None:
     def fail(request: httpx.Request) -> httpx.Response:
         raise httpx.ConnectError("offline", request=request)
-    result = audit_passwords(weak_below=3, check_leaks=True, now=NOW, client=httpx.Client(transport=httpx.MockTransport(fail)))
+    result = audit_passwords(weak_below=3, check_leaks=True, fresh=True, now=NOW, client=httpx.Client(transport=httpx.MockTransport(fail)))
     assert result["leakCheck"] == "unavailable"
     assert result["summary"][WEAK] == 2
 
 
 def _replace(note_store: NoteStore, *, note_id: str, kind: str, region_index: int, new_password: str) -> dict[str, object]:
-    fingerprint = next(row["fingerprint"] for row in _audit(weak_below=3)["rows"]
-                       if row["noteId"] == note_id and row["regionIndex"] == region_index)
+    row = next(row for row in _audit(weak_below=3)["rows"] if row["noteId"] == note_id and row["regionIndex"] == region_index)
     return CmdReplacePassword(
-        note_id=note_id, kind=kind, region_index=region_index, fingerprint=fingerprint, new_password=new_password,
+        note_id=note_id, kind=kind, region_index=region_index, fingerprint=row["fingerprint"], password_id=row["passwordId"],
+        new_password=new_password,
         on=TODAY, token="", client_id="client", undo_context="context", viewport=VIEWPORT,
     ).execute()
 
@@ -189,7 +192,7 @@ def test_replacing_a_password_note_and_one_undo_takes_it_all_back(note_store: No
 def test_nothing_is_replaced_if_the_note_changed_since_the_audit(note_store: NoteStore) -> None:
     with pytest.raises(InputRejected, match="changed since the audit"):
         CmdReplacePassword(
-            note_id="email", kind=REGION, region_index=1, fingerprint="0" * 16, new_password="N3w!Strong-Pass-42",
+            note_id="email", kind=REGION, region_index=1, fingerprint="0" * 16, password_id="0" * 16, new_password="N3w!Strong-Pass-42",
             on=TODAY, token="", client_id="client", undo_context="context", viewport=VIEWPORT,
         ).execute()
     assert note_store.get_note("email").content == TREE[2][4]
@@ -199,3 +202,93 @@ def test_the_reminder_counts_the_passwords_but_not_ones_kept_after_replacing(not
     assert count_passwords() == 4
     _replace(note_store, note_id="bank-pw", kind=WHOLE_NOTE, region_index=0, new_password="N3w!Strong-Pass-42")
     assert count_passwords() == 4
+
+
+# While the panel is open (the maintainer, 2026-11-13: "keep track of its state when it opened and
+# then just check differences").
+
+def _counting_zxcvbn(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    scored: list[str] = []
+    real = password_audit.zxcvbn
+
+    def counting(value: str, user_inputs: list[str]) -> dict[str, object]:
+        scored.append(value)
+        return real(value, user_inputs=user_inputs)
+    monkeypatch.setattr(password_audit, "zxcvbn", counting)
+    return scored
+
+
+def _update(*, check_leaks: bool, client: httpx.Client) -> dict[str, object]:
+    return audit_passwords(weak_below=3, check_leaks=check_leaks, fresh=False, now=NOW, client=client)
+
+
+def _edit(note_store: NoteStore, note_id: str, content: str, tags: str) -> None:
+    note_store.update_note_content(note_id=note_id, plaintext=content, tags=tags, proposed_tags="", updated_at=NOW)
+
+
+def test_an_update_scores_only_passwords_that_are_new_or_changed(note_store: NoteStore, monkeypatch: pytest.MonkeyPatch) -> None:
+    scored = _counting_zxcvbn(monkeypatch)
+    first = _audit(weak_below=3)
+    assert len(scored) == 4
+    scored.clear()
+
+    assert _update(check_leaks=False, client=_no_network()) == first
+    assert scored == []
+
+    # The forum's password changed to the bank's: only it is scored, and both are now reused.
+    _edit(note_store, "forum", "Old forum ((lisbon2024))", "((@password)) web")
+    result = _update(check_leaks=False, client=_no_network())
+    assert scored == ["lisbon2024"]
+    assert _groups(result)[("forum", 0)] == [REUSED, WEAK]
+    assert result["summary"][REUSED] == 3
+
+
+def test_an_update_asks_have_i_been_pwned_only_about_new_passwords(note_store: NoteStore) -> None:
+    asked: list[str] = []
+    audit_passwords(weak_below=3, check_leaks=True, fresh=True, now=NOW, client=_pwned_client({}, asked))
+    asked.clear()
+
+    _update(check_leaks=True, client=_pwned_client({}, asked))
+    assert asked == []
+
+    new_password = "Brand-new-Pass-77!"
+    _edit(note_store, "forum", f"Old forum (({new_password}))", "((@password)) web")
+    _update(check_leaks=True, client=_pwned_client({}, asked))
+    new_prefix = hashlib.sha1(new_password.encode()).hexdigest().upper()[:5]
+    assert [url.rsplit("/", 1)[-1] for url in asked] == [new_prefix]
+
+
+def test_opening_the_panel_or_locking_the_vault_checks_everything_again(note_store: NoteStore, monkeypatch: pytest.MonkeyPatch) -> None:
+    scored = _counting_zxcvbn(monkeypatch)
+    _audit(weak_below=3)
+    scored.clear()
+    _audit(weak_below=3)
+    assert len(scored) == 4
+    scored.clear()
+    clear_sensitive_caches()
+    _update(check_leaks=False, client=_no_network())
+    assert len(scored) == 4
+
+
+def test_a_row_keeps_its_password_id_while_its_note_changes_and_never_shows_the_password(note_store: NoteStore) -> None:
+    ids = {(row["noteId"], row["regionIndex"]): row["passwordId"] for row in _audit(weak_below=3)["rows"]}
+    # Equal passwords share an id, others don't; the id is not the password nor its hash.
+    assert ids[("bank-pw", 0)] == ids[("email", 1)]
+    assert len(set(ids.values())) == 3
+    for password in ("lisbon2024", STRONG, STRONG_TOO):
+        assert password not in ids.values()
+        assert all(value not in hashlib.sha1(password.encode()).hexdigest() for value in ids.values())
+    # The email's first password removed: its backup moves to region 0 and keeps its id.
+    _edit(note_store, "email", "Email backup ((lisbon2024))", "((@password))")
+    rows = _update(check_leaks=False, client=_no_network())["rows"]
+    assert next(row["passwordId"] for row in rows if row["noteId"] == "email") == ids[("email", 1)]
+
+
+def test_replace_refuses_a_password_that_is_not_the_one_it_was_asked_for(note_store: NoteStore) -> None:
+    row = next(row for row in _audit(weak_below=3)["rows"] if row["noteId"] == "email" and row["regionIndex"] == 0)
+    with pytest.raises(InputRejected, match="no longer where the audit found it"):
+        CmdReplacePassword(
+            note_id="email", kind=REGION, region_index=0, fingerprint=row["fingerprint"], password_id="0" * 16,
+            new_password="N3w!Strong-Pass-42", on=TODAY, token="", client_id="client", undo_context="context", viewport=VIEWPORT,
+        ).execute()
+    assert note_store.get_note("email").content == TREE[2][4]
