@@ -7,6 +7,8 @@ What changed in each MetaList release, newest first.
 - **The login page is quicker,** most of all on another computer over Wi-Fi: it loads only its own few files, and the rest of MetaList downloads while you pick a vault and type your password. Once a browser trusts MetaList's certificate it also keeps MetaList's files between visits, until an update changes them.
 - A red error on the login page offers Export Report… too; that report is kept nowhere.
 - A problem report's reading of how busy the computer was no longer shows 0% CPU on a Mac.
+- The AI chat knows what changed in every release, the oldest included.
+- After too many wrong passwords, the login page on Windows no longer says to wait 301 seconds instead of 300.
 
 ## Changes in 0.28.0
 

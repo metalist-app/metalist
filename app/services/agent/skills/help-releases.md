@@ -10,6 +10,8 @@ they already have a release. Version info offers updates (see the data topic).
 - **The login page is quicker,** most of all on another computer over Wi-Fi: it loads only its own few files, and the rest of MetaList downloads while you pick a vault and type your password. Once a browser trusts MetaList's certificate it also keeps MetaList's files between visits, until an update changes them.
 - A red error on the login page offers Export Report… too; that report is kept nowhere.
 - A problem report's reading of how busy the computer was no longer shows 0% CPU on a Mac.
+- The AI chat knows what changed in every release, the oldest included.
+- After too many wrong passwords, the login page on Windows no longer says to wait 301 seconds instead of 300.
 
 ## 0.28.0
 
@@ -188,13 +190,4 @@ they already have a release. Version info offers updates (see the data topic).
 - Change password with no password opens Add password, and Open/Switch namespace with only one namespace opens Create namespace. The AI tag-proposal menu items now say they are about AI-proposed tags.
 - Fixed: Add reminder did nothing (a missing title now says so); a password change could end on Session locked; right-clicking math or a Mermaid diagram showed the browser's menu; the Untagged notes × needed two clicks while editing a note; indented JSON and pie charts pasted into a note showed as invalid; a tiny scrollbar beside tall math; a white stripe and logo shift on the login screen with always-visible scrollbars.
 
-## 0.14.0
-
-- A new login screen: one dark screen with the MetaList logo. The namespace, password and OK fade in together; once the password is accepted, the loading progress slides in with the current step and the seconds elapsed. When the first login after an update backs up and upgrades the namespace, a note under OK says so. The Session locked page has the same look, and there is no white flash between them.
-- Web link titles: links to Reddit (including share links), YouTube, Vimeo, TikTok, Spotify and SoundCloud get their real titles. Lookups are paced per site, so a note full of links no longer trips a site's rate limit. Login, consent and site-name-only titles ("Sign in", "Reddit") show the link instead. The new command palette action Retry failed link titles asks every failed link again, with a progress dialog.
-- Quoted search also matches link titles and the URLs hidden behind link labels, and the AI sees those URLs too. Pasting into a quoted search inserts the text as copied.
-- `[[note id]]` is always a link, even in a note with a `[[ ]]` formatting tag.
-- The startup output in the terminal is easier to read: the version, a check mark per check, and each namespace's URLs lined up.
-- Fixed: clicking the AI chat's $ or eye button twice quickly crashed with "Redundant state change".
-
-Versions before 0.14.0 are left out; the changelog (CHANGELOG.md) lists them.
+Older versions are in the releases-2 help topic.

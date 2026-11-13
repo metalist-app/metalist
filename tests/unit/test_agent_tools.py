@@ -15,7 +15,7 @@ from app.services.agent.agent_tools import run_agent_tool
 from app.services.agent.help_catalog import HELP_TOPICS
 from app.services.agent.investigation import InvestigationState
 from app.services.agent.prompt_settings import MAX_AGENT_PROMPT_CHARACTERS
-from app.services.agent.release_notes import release_notes_skill_from_changelog
+from app.services.agent.release_notes import release_notes_pages_from_changelog
 from app.services.agent.retrieval_settings import AgentRetrievalSettings
 from app.services.agent.skill_settings import DEFAULT_AGENT_SKILLS
 from app.services.agent.skills import load_skill
@@ -58,19 +58,52 @@ def _small_view() -> ToolContext:
 
 def test_the_release_notes_help_matches_the_changelog() -> None:
     changelog = (REPOSITORY_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+    pages = release_notes_pages_from_changelog(changelog)
     # Regenerate with: .venv/bin/python scripts/sync_release_notes_help.py
-    assert load_skill("help-releases.md") == release_notes_skill_from_changelog(changelog)
+    for page in pages:
+        assert load_skill(f"help-{page.topic}.md") == page.text, page.topic
+    packaged = sorted(path.name for path in (REPOSITORY_ROOT / "app/services/agent/skills").glob("help-releases*.md"))
+    assert packaged == sorted(f"help-{page.topic}.md" for page in pages), "no page left over from a longer changelog"
+    # Every page is a help topic, named by its versions.
+    assert [topic for topic in HELP_TOPICS if topic.startswith("releases")] == [page.topic for page in pages]
 
 
-def test_release_notes_fit_a_skill_by_leaving_out_the_oldest_releases() -> None:
-    # A skill holds at most MAX_AGENT_PROMPT_CHARACTERS; the changelog keeps every release, the
-    # skill the newest that fit (0.25.0's notes took it past the limit, 2026-10-28).
+def _headings(text: str) -> list[str]:
+    return [line for line in text.splitlines() if line.startswith("## ")]
+
+
+def test_release_notes_too_long_for_one_skill_go_on_to_more_pages_and_none_is_left_out() -> None:
+    # A skill holds at most MAX_AGENT_PROMPT_CHARACTERS; the oldest releases used to be left out
+    # once they no longer fit (0.25.0, 2026-10-28). Now each goes on the next page (the
+    # maintainer, 2026-11-12: "so we don't have to eventually have everything fade off").
     body = "- " + "x" * 9_000
-    readme = "".join(f"## Changes in 1.{minor}.0\n\n{body}\n\n" for minor in range(5, 0, -1))
-    skill = release_notes_skill_from_changelog(readme)
-    assert len(skill) <= MAX_AGENT_PROMPT_CHARACTERS
-    assert [line for line in skill.splitlines() if line.startswith("## ")] == ["## 1.5.0", "## 1.4.0", "## 1.3.0"]
-    assert "Versions before 1.3.0 are left out" in skill
+    readme = "".join(f"## Changes in 1.{minor}.0\n\n{body}\n\n" for minor in range(7, 0, -1))
+    pages = release_notes_pages_from_changelog(readme)
+    assert [page.topic for page in pages] == ["releases", "releases-2", "releases-3"]
+    assert all(len(page.text) <= MAX_AGENT_PROMPT_CHARACTERS for page in pages)
+    assert [_headings(page.text) for page in pages] == [
+        ["## 1.7.0", "## 1.6.0", "## 1.5.0"], ["## 1.4.0", "## 1.3.0", "## 1.2.0"], ["## 1.1.0"]]
+    assert pages[0].text.endswith("Older versions are in the releases-2 help topic.")
+    assert pages[1].text.endswith("Older versions are in the releases-3 help topic.")
+    assert "help topic" not in pages[2].text
+    assert pages[1].text.startswith("# MetaList release notes, continued")
+
+
+def test_an_older_release_page_can_be_looked_up_and_names_its_versions() -> None:
+    title, description = HELP_TOPICS["releases-2"]
+    versions = [line.removeprefix("## ") for line in _headings(load_skill("help-releases-2.md"))]
+    assert f"{versions[0]} to {versions[-1]}" in title and f"{versions[0]} back to {versions[-1]}" in description
+    assert "older versions are in the topics after it" in HELP_TOPICS["releases"][1]
+    result = _run(_small_view(), "lookup_metalist_help", {"topics": ["releases-2"]})
+    assert not result.is_error
+    payload = json.loads(result.content)
+    assert [topic["topic"] for topic in payload["topics"]] == ["releases-2"]
+    assert [skill.skill_id for skill in result.activated_skills] == ["help_releases-2_v1"]
+
+
+def test_a_release_longer_than_a_skill_is_refused() -> None:
+    with pytest.raises(ValueError, match="alone exceed"):
+        release_notes_pages_from_changelog(f"## Changes in 1.0.0\n\n- {'x' * MAX_AGENT_PROMPT_CHARACTERS}\n")
 
 
 def test_release_notes_keep_every_changelog_release_newest_first_without_links() -> None:
@@ -78,14 +111,15 @@ def test_release_notes_keep_every_changelog_release_newest_first_without_links()
         "# App\n\n## Changes in 1.1.0\n\n- New [thing](docs/thing.md).\n\n"
         "## Changes in 1.0.0\n\n- First.\n\n## Technology Stack\n\n- Python\n"
     )
-    skill = release_notes_skill_from_changelog(readme)
-    assert skill.index("## 1.1.0") < skill.index("## 1.0.0")
-    assert "- New thing." in skill
-    assert "Python" not in skill
+    [page] = release_notes_pages_from_changelog(readme)
+    assert page.topic == "releases"
+    assert page.text.index("## 1.1.0") < page.text.index("## 1.0.0")
+    assert "- New thing." in page.text
+    assert "Python" not in page.text
     with pytest.raises(ValueError, match="no"):
-        release_notes_skill_from_changelog("# App\n")
+        release_notes_pages_from_changelog("# App\n")
     with pytest.raises(ValueError, match="empty"):
-        release_notes_skill_from_changelog("## Changes in 1.0.0\n\n## Changes in 0.9.0\n- x\n")
+        release_notes_pages_from_changelog("## Changes in 1.0.0\n\n## Changes in 0.9.0\n- x\n")
 
 
 def test_help_lookup_returns_the_topics_skills_and_installed_version() -> None:
