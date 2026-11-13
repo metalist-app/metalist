@@ -2,6 +2,11 @@
 
 What changed in each MetaList release, newest first.
 
+## Changes in 0.29.0
+
+- **Two new looks under Theme:** Phosphor, a green terminal screen in your system's monospace font where nothing ever animates, and Vellum, warm cream paper with notes in a book serif (Source Serif 4) for long reading.
+- Problem report files are named by your own date and time, one way for all of them: `metalist-problem-report-2026-11-12 18-52-09.json`, and `metalist-problem-reports-…` for several exported together.
+
 ## Changes in 0.28.3
 
 - The vault list on the login page comes up at once on Windows: it no longer checks every vault's ports, each check a PowerShell start, which took about 3 seconds.
