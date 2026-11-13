@@ -54,6 +54,7 @@ import {checkFolderNoteDrag} from './browser-folder-note-drag-regressions.mjs';
 import {checkFolderContext} from './browser-folder-context-regressions.mjs';
 import {checkDeleteTrim} from './browser-delete-trim-regressions.mjs';
 import {checkProblemReports} from './browser-problem-report-regressions.mjs';
+import {checkPasswordAudit} from './browser-password-audit-regressions.mjs';
 import {checkFolderDrops} from './browser-folder-drop-regressions.mjs';
 import {checkFileSizeSort} from './browser-file-size-sort-regressions.mjs';
 import {checkViewChangeTop} from './browser-view-change-top-regressions.mjs';
@@ -227,10 +228,12 @@ try {
   await Promise.race([page.waitForSelector('[data-app-ready="true"]', {timeout:30000}), pageFailure]);
   // The backup reminder is on by default and a fresh test namespace has no backup, so its
   // card would float over whatever a check clicks near the bottom right, as the update
-  // notice would. Only its own suite (backup-reminder) wants it, and turns it on itself.
+  // notice would. Only its own suite (backup-reminder) wants it, and turns it on itself. So
+  // with the password audit reminder, once a check makes a password (password-audit has it).
   await page.evaluate(async () => {
     const {CommandPalette} = await import('/static/js/modules/command-palette/command-palette-controller.js');
     await CommandPalette.applyPreference('pref.backup_reminder', 'off');
+    await CommandPalette.applyPreference('pref.password_audit_reminder', 'off');
   });
   if (process.env.BROWSER_TEST_SUITE === 'ai-selected-note') {
     await checkAiSelectedNote(page);
@@ -506,6 +509,10 @@ try {
     await checkProblemReports(page);
     assert.deepEqual(errors, []);
     console.log(`PASS problem report regressions in ${await browser.version()}`);
+  } else if (process.env.BROWSER_TEST_SUITE === 'password-audit') {
+    await checkPasswordAudit(page);
+    assert.deepEqual(errors, []);
+    console.log(`PASS password audit regressions in ${await browser.version()}`);
   } else if (process.env.BROWSER_TEST_SUITE === 'edge-tabs') {
     await checkEdgeTabs(page);
     assert.deepEqual(errors, []);

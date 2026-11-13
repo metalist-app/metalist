@@ -3,7 +3,10 @@ from __future__ import annotations
 from http import HTTPStatus
 import urllib.parse
 from collections.abc import Mapping
+from datetime import date, datetime, timezone
 from typing import Dict
+
+import httpx
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import Response
@@ -12,6 +15,8 @@ from pydantic import BaseModel
 from app.api.note_requests import (
     CountNotesInViewRequest,
     CountTagNotesInViewRequest,
+    PasswordAuditRequest,
+    ReplacePasswordRequest,
     TagNotesInViewRequest,
     TagNotesInViewSuggestionsRequest,
     DeleteNotesInViewRequest,
@@ -97,6 +102,7 @@ from app.services.snapshot import resolve_search_scope
 from app.services.snapshot import ResolvedViewScope, resolve_view_scope_membership
 from app.usecases.delete_notes_in_view import CmdDeleteNotesInView, notes_to_delete
 from app.usecases.tag_notes_in_view import ADD, CmdTagNotesInView, require_plain_tag, tag_changes_in_view, tags_to_remove_in_view
+from app.usecases.password_audit import CmdReplacePassword, audit_passwords, count_passwords
 from app.services.note_store import store as note_store
 from app.services.exception_capture import CapturedExceptionContext
 from app.usecases.create_note import CmdCreateNote
@@ -1430,6 +1436,33 @@ def tag_notes_in_view(request: Request, body: TagNotesInViewRequest) -> dict[str
     return CmdTagNotesInView(
         scope=_resolved_view(body), action=body["action"], tag=body["tag"],
         expected_note_count=body["expectedNoteCount"], token=_require_bearer_token(request),
+        client_id=body["clientId"], undo_context=body["undoContext"], viewport=_require_viewport(body),
+    ).execute()
+
+
+# Password Audit (docs/ready-to-build/password-audit.md): every password checked; what it answers
+# names notes, never a password. The leak check asks Have I Been Pwned with hash prefixes only.
+@router.post("/notes/password-audit")
+@read_only_route
+def password_audit(body: PasswordAuditRequest) -> dict[str, object]:
+    with httpx.Client() as client:
+        return audit_passwords(weak_below=body["weakBelow"], check_leaks=body["checkLeaks"],
+                               now=datetime.now(timezone.utc), client=client)
+
+
+# The audit reminder shows only when the vault holds a password.
+@router.get("/notes/password-count")
+def password_count() -> dict[str, object]:
+    return {"passwordCount": count_passwords()}
+
+
+@router.post("/notes/{note_id}/password-replace")
+@transactional_route
+def replace_password(note_id: str, request: Request, body: ReplacePasswordRequest) -> dict[str, object]:
+    _require_note_present(note_id, context="notes.password-replace")
+    return CmdReplacePassword(
+        note_id=note_id, kind=body["kind"], region_index=body["regionIndex"], fingerprint=body["fingerprint"],
+        new_password=body["newPassword"], on=date.today(), token=_require_bearer_token(request),
         client_id=body["clientId"], undo_context=body["undoContext"], viewport=_require_viewport(body),
     ).execute()
 

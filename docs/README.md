@@ -60,6 +60,7 @@
 - Built 2026-11-11 but for the Markdown export (links that open a search, `[[search:…]]`; Rename tag renames saved searches too): `docs/ready-to-build/search-links.md`, described in `docs/ui/references.md`; built 2026-11-11: a folder tag in the search includes the folders below it, and the folder is search text, not a chip: `docs/ready-to-build/folder-tags-in-search.md`
 - Built 2026-11-11, with the virtual folders experiment it changes (the folders tab only shows or hides the tree, no folder contexts as a kind; several folders in a search add results; a folder implies its parent folders, rules included): `docs/ready-to-build/folders-tab-and-multiple-folders.md`
 - Ready to build (the AI reads the whole view, files included, in batches when it must; a warning before very large requests): `docs/ready-to-build/ai-reads-whole-view.md`
+- Ready to build (Password Audit: weak, reused, old and, opt-in, leaked passwords, each one replaced one at a time): `docs/ready-to-build/password-audit.md`
 - Ready to build (how much text a conversation has sent, under the chat header): `docs/ready-to-build/ai-chat-size-line.md`
 - Ready to build (a prefix folder for every import, so a whole import is one folder): `docs/ready-to-build/import-prefix-folder.md`
 - Ready to build (importing a folder of any files, with a size check and file-type checklist; previews for code, PDF, RTF/.docx, HTML, audio and video): `docs/ready-to-build/folder-import-and-file-previews.md`

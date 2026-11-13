@@ -77,6 +77,18 @@ _ALLOWED_CLIENT_PREFERENCES = {
     "pref.backup_reminder": {"off", "daily", "weekly", "every_2_weeks", "monthly"},
     # Until when the dismissed backup reminder stays hidden.
     "pref.backup_reminder_hidden_until": "utc_timestamp",
+    # Password Audit (docs/ready-to-build/password-audit.md): below which zxcvbn score a password
+    # is weak, and whether it asks Have I Been Pwned about leaks (off unless turned on).
+    "pref.password_audit.weak_below": {"3", "4"},
+    "pref.password_audit.check_leaks": {"true", "false"},
+    # How often a card reminds you to run the audit, when the vault has a password; when it last
+    # ran; until when × hides the card (a week).
+    "pref.password_audit_reminder": {"off", "monthly", "every_3_months", "every_6_months", "yearly"},
+    "pref.password_audit.last_audited_at": "utc_timestamp",
+    # How many passwords the last audit left leaked, reused or weak: while any are, the reminder
+    # comes back after a month at most.
+    "pref.password_audit.open_issues": "whole_number",
+    "pref.password_audit_reminder_hidden_until": "utc_timestamp",
     # Whether a card offers to trim files no note uses (trim-reminder-service.js).
     "pref.trim_reminder": {"on", "off"},
     # How many bytes of unused files there were when its card was last dismissed.
@@ -310,6 +322,9 @@ def _validate_client_preferences(preferences: dict[str, object]) -> dict[str, st
         elif allowed_values == "byte_count":
             if re.fullmatch(r"0|[1-9][0-9]*", value) is None:
                 raise ClientStateValidationError(f"Client preference {key} must be a whole number of bytes")
+        elif allowed_values == "whole_number":
+            if re.fullmatch(r"0|[1-9][0-9]*", value) is None:
+                raise ClientStateValidationError(f"Client preference {key} must be a whole number")
         elif allowed_values == "tag_activity_windows":
             _validate_tag_activity_windows_preference(key=key, value=value)
         elif allowed_values == "dictation_phrase":

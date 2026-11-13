@@ -15,6 +15,11 @@ import {
     TRIM_REMINDER_OPTIONS,
     TRIM_REMINDER_PREFERENCE,
 } from '../trim-reminder-schedule.js';
+import {
+    PASSWORD_AUDIT_REMINDER_DEFAULT,
+    PASSWORD_AUDIT_REMINDER_OPTIONS,
+    PASSWORD_AUDIT_REMINDER_PREFERENCE,
+} from '../password-audit/password-audit-reminder-schedule.js';
 
 function requireAction(actions, key) {
     if (!actions || typeof actions !== 'object') {
@@ -129,6 +134,7 @@ export function buildCommandPaletteEndpoints(deps) {
     const openBackupRestore = requireAction(actions, 'openBackupRestore');
     const logout = requireAction(actions, 'logout');
     const openRandomPasswordGenerator = requireAction(actions, 'openRandomPasswordGenerator');
+    const openPasswordAudit = requireAction(actions, 'openPasswordAudit');
     const collapseAll = requireAction(actions, 'collapseAll');
     const expandAll = requireAction(actions, 'expandAll');
     const fullyCollapseAll = requireAction(actions, 'fullyCollapseAll');
@@ -631,6 +637,15 @@ export function buildCommandPaletteEndpoints(deps) {
             apply: (next) => applyPreference(TRIM_REMINDER_PREFERENCE, next),
         },
         {
+            id: 'pref.password_audit_reminder',
+            kind: 'select',
+            label: 'Password Audit Reminder',
+            persistenceKey: PASSWORD_AUDIT_REMINDER_PREFERENCE,
+            defaultValue: PASSWORD_AUDIT_REMINDER_DEFAULT,
+            options: PASSWORD_AUDIT_REMINDER_OPTIONS,
+            apply: (next) => applyPreference(PASSWORD_AUDIT_REMINDER_PREFERENCE, next),
+        },
+        {
             id: 'form.restore_backup',
             kind: 'form',
             label: 'Restore from Backup…',
@@ -647,6 +662,12 @@ export function buildCommandPaletteEndpoints(deps) {
             kind: 'form',
             label: 'Generate Random Password…',
             execute: async () => openRandomPasswordGenerator(),
+        },
+        {
+            id: 'form.password_audit',
+            kind: 'form',
+            label: 'Password Audit…',
+            execute: async () => openPasswordAudit(),
         },
         {
             id: 'action.find_in_list',

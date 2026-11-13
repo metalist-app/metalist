@@ -396,6 +396,34 @@ export const NotesAPI = {
         });
     },
 
+    // Password Audit (docs/ready-to-build/password-audit.md): every password checked; the answer
+    // names notes, never a password.
+    async passwordAudit(weakBelow, checkLeaks) {
+        if ((weakBelow !== 3 && weakBelow !== 4) || typeof checkLeaks !== 'boolean') {
+            throw new Error('NotesAPI.passwordAudit requires the weak threshold and whether to check leaks');
+        }
+        return this._apiCall(CONFIG.API.NOTES.PASSWORD_AUDIT, {
+            method: 'POST', body: JSON.stringify({ weakBelow, checkLeaks }),
+        });
+    },
+
+    // How many passwords the vault holds: the audit reminder shows only when there is one.
+    async passwordCount() {
+        return this._apiCall(CONFIG.API.NOTES.PASSWORD_COUNT, { method: 'GET' });
+    },
+
+    // One password replaced as the audit found it; the old one goes into a note under it.
+    async replacePassword(row, newPassword) {
+        if (row === null || typeof row !== 'object' || typeof row.noteId !== 'string'
+            || typeof newPassword !== 'string' || newPassword === '') {
+            throw new Error('NotesAPI.replacePassword requires the audit row and the new password');
+        }
+        return this._apiCall(CONFIG.API.NOTES.PASSWORD_REPLACE(row.noteId), {
+            method: 'POST', claimSession: true,
+            body: JSON.stringify({ kind: row.kind, regionIndex: row.regionIndex, fingerprint: row.fingerprint, newPassword }),
+        });
+    },
+
     // Click on a collapsed note's robot: open the way to every proposal it counts.
     async openToTagProposals(noteId) {
         if (typeof noteId !== 'string' || noteId.length === 0) {

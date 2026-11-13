@@ -108,6 +108,12 @@
     "presentation": "dialog"
   },
   {
+    "id": "form.password_audit",
+    "label": "Password Audit…",
+    "selector": "#password-audit-panel",
+    "presentation": "dialog"
+  },
+  {
     "id": "form.open_namespace",
     "label": "Open/Switch Vault…",
     "selector": "#open-namespace-modal",
@@ -391,6 +397,12 @@
   {
     "id": "pref.trim_reminder",
     "label": "Trim Reminder",
+    "selector": "#command-palette-modal",
+    "presentation": "palette"
+  },
+  {
+    "id": "pref.password_audit_reminder",
+    "label": "Password Audit Reminder",
     "selector": "#command-palette-modal",
     "presentation": "palette"
   },
