@@ -4,6 +4,7 @@ import { ServerInputRejectedError } from '../expected-errors.js';
 import { buildSessionHeaders } from '../session-auth.js';
 import { ModeContextInstance as ModeContext } from '../mode-manager/mode-context.js';
 import { recordedTrail } from './input-recorder.js';
+import { problemReportFileName } from './report-file-names.js';
 
 // Makes a problem report (docs/ready-to-build/error-reports.md): the page sends its draft (the
 // trail, where it is, the error), and MetaList's server, which holds the notes, fills them in,
@@ -14,8 +15,6 @@ const MAX_FRAMES = 50;
 const MADE_BY_OVERLAY = 'overlay';
 const MADE_BY_USER = 'user';
 const PREFERENCE_CLASS_PREFIX = 'pref-';
-// 2026-11-12T10:31:05.123: to the millisecond, so two files never share a name.
-const FILE_STAMP_LENGTH = 23;
 const JSON_INDENT = 2;
 const SAFE_FILE = /^[A-Za-z0-9_./-]+\.js$/;
 const SAFE_FUNCTION = /^[A-Za-z0-9_$.<>]{1,80}$/;
@@ -116,9 +115,7 @@ export async function makeReport(draft) {
     const headers = loggedIn ? buildSessionHeaders(true) : { 'Content-Type': 'application/json' };
     const response = await fetch(url, { method: 'POST', headers, body: JSON.stringify(draft) });
     const answer = await answerOf(response);
-    // A kept report is named by its id; one from the login page, kept nowhere, by the time.
-    const name = loggedIn ? answer.reportId : fileStamp();
-    return { report: answer.report, name };
+    return answer.report;
 }
 
 export async function keptReports() {
@@ -131,10 +128,6 @@ export async function exportKeptReports(reportIds) {
         method: 'POST', headers: buildSessionHeaders(true), body: JSON.stringify({ reportIds }),
     });
     return (await answerOf(response)).reports;
-}
-
-function fileStamp() {
-    return new Date().toISOString().slice(0, FILE_STAMP_LENGTH).replace(/[:.T]/g, '-');
 }
 
 // Saves as the browser saves a download (export-service.js does the same).
@@ -151,15 +144,15 @@ export function saveAsFile(content, fileName) {
 }
 
 export async function exportOverlayReport(error) {
-    const { report, name } = await makeReport(pageDraft({ madeBy: MADE_BY_OVERLAY, description: '', error }));
-    saveAsFile(report, `metalist-problem-report-${name}`);
+    const report = await makeReport(pageDraft({ madeBy: MADE_BY_OVERLAY, description: '', error }));
+    saveAsFile(report, problemReportFileName({ isBundle: false, savedAt: new Date() }));
 }
 
 export async function exportUserReport(description) {
-    const { report, name } = await makeReport(pageDraft({ madeBy: MADE_BY_USER, description, error: NO_ERROR }));
-    saveAsFile(report, `metalist-problem-report-${name}`);
+    const report = await makeReport(pageDraft({ madeBy: MADE_BY_USER, description, error: NO_ERROR }));
+    saveAsFile(report, problemReportFileName({ isBundle: false, savedAt: new Date() }));
 }
 
 export function exportedReportsFileName() {
-    return `metalist-problem-reports-${fileStamp()}`;
+    return problemReportFileName({ isBundle: true, savedAt: new Date() });
 }

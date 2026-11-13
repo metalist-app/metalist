@@ -193,7 +193,7 @@ async function checkUserReport(page, ids) {
   await page.waitForSelector('#problem-report-description', {hidden: true});
   await idle(page);
   const name = await page.evaluate(() => window.caughtReportNames.at(-1));
-  assert.match(name, /^metalist-problem-report-.+\.json$/, 'the file is named as a problem report');
+  assert.match(name, /^metalist-problem-report-\d{4}-\d{2}-\d{2} \d{2}-\d{2}-\d{2}\.json$/, 'the file is named by the local date and time');
 
   assert.equal(report.description, DESCRIPTION, 'the sentence exactly as typed');
   assert.equal(report.madeBy, 'user');
@@ -274,7 +274,7 @@ async function checkExportList(page) {
   assert.equal(reports[0].error.class, 'TypeError');
   assertNoWord(reports, 'Export Problem Reports…');
   const name = await page.evaluate(() => window.caughtReportNames.at(-1));
-  assert.match(name, /^metalist-problem-reports-.+\.json$/);
+  assert.match(name, /^metalist-problem-reports-\d{4}-\d{2}-\d{2} \d{2}-\d{2}-\d{2}\.json$/);
 }
 
 // A report made with no vault open, as the login page makes it: no session, no notes, kept
