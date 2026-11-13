@@ -21,6 +21,7 @@ import app.server_runtime as server_runtime
 from app.server_runtime import NamespaceLaunchProfile
 from app.server_runtime import load_all_namespace_launch_profiles
 from app.server_runtime import load_all_namespace_launch_profiles_read_only
+from app.server_runtime import load_namespace_network_sharing
 from app.server_runtime import resolve_api_prefix
 from app.server_runtime import resolve_backend_connect_host
 from app.server_runtime import resolve_local_browser_host
@@ -30,6 +31,7 @@ from app.server_runtime import resolve_namespaces_directory
 from app.server_runtime import resolve_namespace_launch_defaults
 from app.server_runtime import resolve_runtime_logs_directory
 from app.server_runtime import save_namespace_launch_profile
+from app.server_runtime import save_namespace_network_sharing
 from app.server_runtime import validate_namespace
 from app.security.shell_execution import is_shell_execution_enabled_for_environ
 from app.services.diagnostics import recycle_direct_append_log_file
@@ -80,6 +82,8 @@ class NamespaceCatalogEntry:
     has_launch_profile: bool
     saved_profile: NamespaceLaunchProfile | None
     default_profile: NamespaceLaunchProfile
+    # Shared on the network (Manage Vault Ports); a vault never launched is not.
+    shared_on_network: bool
 
 
 @dataclass(frozen=True)
@@ -131,6 +135,14 @@ class NamespaceRenameResult:
 class NamespacePortsSaveResult:
     saved_profiles: list[NamespaceLaunchProfile]
     message: str
+
+
+@dataclass(frozen=True)
+class VaultListeningChange:
+    """Vaults whose ports or sharing changed in a save, which listen anew at once: other vaults
+    restarted here, and whether this vault's own server must restart (after its answer is sent)."""
+    restarted_namespaces: list[str]
+    restarts_current: bool
 
 
 def _resolve_main_launch_command(*, environ: Mapping[str, str]) -> list[str]:
@@ -202,6 +214,7 @@ def build_namespace_catalog(
             has_launch_profile=saved_profile is not None,
             saved_profile=saved_profile,
             default_profile=default_profile,
+            shared_on_network=saved_profile is not None and load_namespace_network_sharing(namespace=namespace),
         )
         entries.append(_serialize_catalog_entry(entry=entry))
     current_profile_port = None
@@ -719,6 +732,20 @@ def save_namespace_port_profiles(
     )
 
 
+def namespaces_shown_to_other_computers(*, current_namespace: str) -> frozenset[str]:
+    """The vaults another computer may see and open: the one it is in, and each vault shared on
+    the network. A vault not shared leaves no trace there, in a list or an answer (the
+    maintainer, 2026-11-13)."""
+    if not isinstance(current_namespace, str) or current_namespace == "":
+        raise RuntimeError("Shown vaults need the current namespace")
+    saved_profiles = _load_saved_profiles_by_namespace()
+    shown = {current_namespace}
+    for namespace in _discover_namespaces(saved_profiles=saved_profiles, current_namespace=current_namespace):
+        if namespace in saved_profiles and load_namespace_network_sharing(namespace=namespace):
+            shown.add(namespace)
+    return frozenset(shown)
+
+
 def build_login_namespace_catalog(*, current_namespace: str | None) -> dict[str, object]:
     """The vaults' names for the login page, in the catalog's order. Names alone: the full
     catalog suggests a port for each vault, and on Windows each port check starts PowerShell,
@@ -1008,7 +1035,80 @@ def _serialize_catalog_entry(*, entry: NamespaceCatalogEntry) -> dict[str, objec
         "has_launch_profile": entry.has_launch_profile,
         "saved_profile": None if entry.saved_profile is None else _serialize_profile(profile=entry.saved_profile),
         "default_profile": _serialize_profile(profile=entry.default_profile),
+        "shared_on_network": entry.shared_on_network,
     }
+
+
+def save_network_sharing_and_restart_changed_vaults(
+    *,
+    environ: Mapping[str, str],
+    current_namespace: str | None,
+    requested_sharing: Mapping[str, bool],
+    profiles_before_save: Mapping[str, NamespaceLaunchProfile],
+    saved_profiles: Sequence[NamespaceLaunchProfile],
+) -> VaultListeningChange:
+    """Saves each vault's sharing after its ports are saved. A vault whose ports or sharing changed
+    listens anew at once (agreed 2026-11-13): other running vaults are restarted here, this one by
+    the caller once its answer is sent. A vault not running picks the change up when it starts."""
+    changed: set[str] = set()
+    for profile in saved_profiles:
+        if profile.namespace not in profiles_before_save:
+            continue
+        before = profiles_before_save[profile.namespace]
+        if (before.port, before.https_port) != (profile.port, profile.https_port):
+            changed.add(profile.namespace)
+    for namespace, shared in requested_sharing.items():
+        if not isinstance(shared, bool):
+            raise TypeError(f"Sharing for vault {namespace} must be a bool")
+        if load_namespace_network_sharing(namespace=namespace) == shared:
+            continue
+        save_namespace_network_sharing(namespace=namespace, shared=shared)
+        changed.add(namespace)
+    others = sorted(changed - {current_namespace})
+    restarted = _restart_running_vaults(environ=environ, namespaces=others, profiles_before_save=profiles_before_save)
+    return VaultListeningChange(restarted_namespaces=restarted, restarts_current=current_namespace in changed)
+
+
+def _restart_running_vaults(
+    *,
+    environ: Mapping[str, str],
+    namespaces: Sequence[str],
+    profiles_before_save: Mapping[str, NamespaceLaunchProfile],
+) -> list[str]:
+    """Stops every one of these vaults that is running, then starts each on its saved profile:
+    stopped together, two vaults may trade ports in one save."""
+    running: list[tuple[NamespaceLaunchProfile, int]] = []
+    for namespace in namespaces:
+        saved_profile = server_runtime.load_namespace_launch_profile(namespace=namespace)
+        if saved_profile is None:
+            raise RuntimeError(f"Vault {namespace} has no launch profile")
+        # The server runs on the ports from before the save.
+        profile_before = None
+        if namespace in profiles_before_save:
+            profile_before = profiles_before_save[namespace]
+        running_port = _find_running_namespace_port(
+            environ=environ, namespace=namespace, chosen_profile=saved_profile,
+            saved_profile=profile_before, current_profile=None,
+        )
+        if running_port is not None:
+            running.append((saved_profile, running_port))
+    running_ports = [running_port for _, running_port in running]
+    restarting_pids = frozenset(pid for port in running_ports for pid in _find_listening_pids_for_port(port=port))
+    for saved_profile, _ in running:
+        _assert_ports_are_available_for_launch(
+            environ=environ, namespace=saved_profile.namespace, chosen_profile=saved_profile,
+            allowed_listener_pids=restarting_pids,
+        )
+    _stop_processes_listening_on_ports(ports=running_ports)
+    for saved_profile, _ in running:
+        if saved_profile.port is None:
+            raise RuntimeError(f"Vault {saved_profile.namespace} has no HTTP port")
+        launched_process = _launch_namespace_process(environ=environ, chosen_profile=saved_profile)
+        _wait_for_namespace_ready(
+            environ=environ, namespace=saved_profile.namespace, port=saved_profile.port,
+            launched_process=launched_process,
+        )
+    return [saved_profile.namespace for saved_profile, _ in running]
 
 
 def _serialize_reservation(*, reservation: NamespacePortReservation) -> dict[str, object]:

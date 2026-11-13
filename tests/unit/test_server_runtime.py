@@ -366,7 +366,7 @@ def test_apply_main_cli_args_to_environ_sets_namespace_and_ports(
     assert environ["METALIST_HTTPS_PORT"] == "8444"
 
 
-def test_apply_main_cli_args_to_environ_enables_shell_and_defaults_to_loopback(
+def test_apply_main_cli_args_to_environ_enables_shell_and_a_vault_not_shared_stays_on_loopback(
     tmp_path,
     monkeypatch,
 ) -> None:
@@ -382,7 +382,34 @@ def test_apply_main_cli_args_to_environ_enables_shell_and_defaults_to_loopback(
 
     assert parsed.shell_enabled is True
     assert environ["METALIST_SHELL_ENABLED"] == "1"
-    assert environ["METALIST_HOST"] == "127.0.0.1"
+    # The shell no longer chooses where the server listens: the vault does, and a new vault is
+    # not shared.
+    assert "METALIST_HOST" not in environ
+    assert server_runtime.resolve_vault_bind_host(environ=environ, namespace="default") == "127.0.0.1"
+
+
+def test_a_vault_listens_on_the_network_only_while_it_is_shared(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(server_runtime, "_DEFAULT_DATABASE_DIRECTORY", tmp_path)
+    save_namespace_launch_profile(namespace="work", port=9100, https_port=None, mcp_port=None)
+    assert server_runtime.load_namespace_network_sharing(namespace="work") is False
+    assert server_runtime.resolve_vault_bind_host(environ={}, namespace="work") == "127.0.0.1"
+
+    server_runtime.save_namespace_network_sharing(namespace="work", shared=True)
+    assert server_runtime.resolve_vault_bind_host(environ={}, namespace="work") == "0.0.0.0"
+    # Saving its ports again keeps it shared.
+    save_namespace_launch_profile(namespace="work", port=9200, https_port=None, mcp_port=None)
+    assert server_runtime.load_namespace_network_sharing(namespace="work") is True
+    # An explicit METALIST_HOST (a proxy in front) wins either way.
+    assert server_runtime.resolve_vault_bind_host(environ={"METALIST_HOST": "127.0.0.1"}, namespace="work") == "127.0.0.1"
+
+    server_runtime.save_namespace_network_sharing(namespace="work", shared=False)
+    assert server_runtime.resolve_vault_bind_host(environ={}, namespace="work") == "127.0.0.1"
+
+
+def test_sharing_a_vault_with_no_launch_profile_is_a_bug(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(server_runtime, "_DEFAULT_DATABASE_DIRECTORY", tmp_path)
+    with pytest.raises(RuntimeError, match="has no database"):
+        server_runtime.save_namespace_network_sharing(namespace="ghost", shared=True)
 
 
 def test_apply_main_cli_args_to_environ_allows_shell_on_explicit_lan_bind(

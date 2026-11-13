@@ -18,7 +18,9 @@
             <div class="login-views">
                 <div id="login-form-view" class="login-form-view">
                     <div id="login-namespace-switcher" class="login-namespace-switcher" hidden>
-                        <div class="login-namespace-select-wrap">
+                        <!-- The one vault this device can open, named where the list would be. -->
+                        <p id="login-namespace-name" class="login-namespace-name" hidden></p>
+                        <div id="login-namespace-select-wrap" class="login-namespace-select-wrap">
                             <select id="login-namespace-select" class="login-namespace-select" aria-label="Switch vault">
                                 <option value="">Loading vaults…</option>
                             </select>

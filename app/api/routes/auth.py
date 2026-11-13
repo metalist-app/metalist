@@ -33,7 +33,9 @@ from app.services.exception_capture import CapturedExceptionContext
 from app.services.login_rate_limit import login_rate_limiter
 from app.services.maintenance_mode import maintenance_service
 from app.services.namespace_switcher import build_namespace_catalog
+from app.services.namespace_switcher import save_network_sharing_and_restart_changed_vaults
 from app.services.namespace_switcher import build_login_namespace_catalog
+from app.services.namespace_switcher import namespaces_shown_to_other_computers
 from app.services.namespace_switcher import delete_namespace
 from app.services.namespace_switcher import open_login_namespace
 from app.services.namespace_switcher import open_or_launch_namespace
@@ -43,6 +45,10 @@ from app.services.namespace_deletion_jobs import load_namespace_deletion_job
 from app.services.namespace_rename_jobs import load_namespace_rename_job
 from app.server_runtime import NamespaceLaunchProfile
 from app.server_runtime import load_all_namespace_launch_profiles
+from app.server_runtime import load_namespace_network_sharing
+from app.server_runtime import save_namespace_network_sharing
+from app.security.own_addresses import is_from_this_computer
+from app.server_runtime import resolve_main_server_config
 from app.server_runtime import resolve_namespace_directory
 from app.server_runtime import resolve_namespaced_database_path
 from app.server_runtime import validate_namespace
@@ -248,12 +254,25 @@ def _active_diagnostics_namespace() -> str:
     return ACTIVE_NAMESPACE
 
 
-def _reexec_server_process() -> None:
-    argv = [sys.executable, *sys.argv]
+def _reexec_server_process(*, extra_arguments: list[str]) -> None:
+    argv = [sys.executable, *sys.argv, *extra_arguments]
     os.execv(sys.executable, argv)
 
 
+def _restart_arguments_for_ports(*, profile: NamespaceLaunchProfile) -> list[str]:
+    """This vault's saved ports, given after its own launch arguments: argparse keeps the last
+    --port it reads, so the vault comes back on them however it was started."""
+    arguments = ["--port", str(profile.port)]
+    if profile.https_port is not None:
+        arguments.extend(["--https-port", str(profile.https_port)])
+    return arguments
+
+
 def _schedule_server_restart_after_restore(delay_seconds: float) -> None:
+    _schedule_server_restart(delay_seconds=delay_seconds, extra_arguments=[])
+
+
+def _schedule_server_restart(*, delay_seconds: float, extra_arguments: list[str]) -> None:
     if not isinstance(delay_seconds, float):
         raise TypeError(f"delay_seconds must be a float, got {type(delay_seconds)}")
     if delay_seconds < 0.0:
@@ -267,7 +286,7 @@ def _schedule_server_restart_after_restore(delay_seconds: float) -> None:
 
     def _restart_worker() -> None:
         time.sleep(delay_seconds)
-        _reexec_server_process()
+        _reexec_server_process(extra_arguments=extra_arguments)
 
     restart_thread = threading.Thread(
         target=_restart_worker,
@@ -514,6 +533,15 @@ def _require_int_field(payload: dict[str, object], field_name: str) -> int:
     return value
 
 
+def _require_bool_field(payload: dict[str, object], field_name: str) -> bool:
+    if field_name not in payload:
+        raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail=f"{field_name} is required")
+    value = payload[field_name]
+    if not isinstance(value, bool):
+        raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail=f"{field_name} must be true or false")
+    return value
+
+
 def _optional_int_field(payload: dict[str, object], field_name: str) -> int | None:
     if field_name not in payload:
         return None
@@ -650,9 +678,17 @@ def restore_from_backup(
     payload: BackupRestoreRequest,
     token: Annotated[str, Depends(_require_auth)],
 ):
+    # A restore keeps whether the vault is shared on the network, as a restore from a folder
+    # does (backups.py): this computer's choice, not the backup's. A test run has no vault.
+    shared_on_network = None
+    if ACTIVE_NAMESPACE is not None:
+        shared_on_network = load_namespace_network_sharing(namespace=ACTIVE_NAMESPACE)
     maintenance_service.enter_maintenance("Restoring backup")
     try:
         backup_file = restore_backup(payload.filename)
+        if ACTIVE_NAMESPACE is not None:
+            assert shared_on_network is not None
+            save_namespace_network_sharing(namespace=ACTIVE_NAMESPACE, shared=shared_on_network)
         password_required = _reset_runtime_state_after_restore()
         deactivate_authenticated_logging()
     finally:
@@ -768,15 +804,69 @@ def put_command_palette_usage(
     return CommandPaletteUsageResponse(command_palette_usage=normalized)
 
 
+def _is_from_this_computer(request: Request) -> bool:
+    client_host = None
+    if request.client is not None:
+        client_host = request.client.host
+    return is_from_this_computer(client_host=client_host)
+
+
+def require_vaults_shown_to_requester(*, request: Request, namespaces: list[str]) -> None:
+    """Another computer may name only the vault it is in and the vaults shared on the network
+    (namespaces_shown_to_other_computers); the refusal reads the same whether the vault is not
+    shared or does not exist, so it leaves no trace of a vault that is not shared."""
+    if _is_from_this_computer(request):
+        return
+    shown = _namespaces_shown_to_other_computers_here()
+    for namespace in namespaces:
+        if namespace not in shown:
+            raise HTTPException(
+                status_code=HTTPStatus.BAD_REQUEST,
+                detail=f"{namespace} is not a vault shared on the network. Open it on the computer MetaList runs on.",
+            )
+
+
+def namespaces_shown_to_requester(request: Request) -> frozenset[str] | None:
+    """None when the request came from this computer, which sees every vault."""
+    if _is_from_this_computer(request):
+        return None
+    return _namespaces_shown_to_other_computers_here()
+
+
+def _namespaces_shown_to_other_computers_here() -> frozenset[str]:
+    if ACTIVE_NAMESPACE is None:
+        raise RuntimeError("Only a vault's server answers another computer")
+    return namespaces_shown_to_other_computers(current_namespace=ACTIVE_NAMESPACE)
+
+
+def _entries_named(entries: object, shown: frozenset[str]) -> list[dict[str, object]]:
+    if not isinstance(entries, list):
+        raise RuntimeError("Namespace catalog entries must be a list")
+    kept: list[dict[str, object]] = []
+    for entry in entries:
+        if not isinstance(entry, dict):
+            raise RuntimeError("Namespace catalog entry must be an object")
+        if entry["namespace"] in shown:
+            kept.append(entry)
+    return kept
+
+
 @router.get("/login-namespaces", response_model=LoginNamespaceCatalogResponse)
-def login_namespace_catalog():
+def login_namespace_catalog(request: Request):
     payload = build_login_namespace_catalog(current_namespace=ACTIVE_NAMESPACE)
+    shown = namespaces_shown_to_requester(request)
+    if shown is not None:
+        names = payload["namespaces"]
+        if not isinstance(names, list):
+            raise RuntimeError("Login namespace catalog must list names")
+        payload["namespaces"] = [namespace for namespace in names if namespace in shown]
     return LoginNamespaceCatalogResponse(**payload)
 
 
 @router.post("/login-namespaces/open", response_model=LoginNamespaceOpenResponse)
 @transactional_route
-def open_login_namespace_route(payload: LoginNamespaceOpenRequest):
+def open_login_namespace_route(payload: LoginNamespaceOpenRequest, request: Request):
+    require_vaults_shown_to_requester(request=request, namespaces=[payload.namespace])
     launch_capture = CapturedExceptionContext(NamespaceInputRejected, FileNotFoundError, boundary='app/api/routes/auth.py:open_login_namespace_route:launch_capture')
     result = None
     with launch_capture:
@@ -799,21 +889,28 @@ def open_login_namespace_route(payload: LoginNamespaceOpenRequest):
 
 
 @router.get("/namespaces")
-def namespace_catalog(token: Annotated[str, Depends(_require_auth)]):
-    return build_namespace_catalog(
+def namespace_catalog(request: Request, token: Annotated[str, Depends(_require_auth)]):
+    catalog = build_namespace_catalog(
         environ=os.environ,
         current_namespace=ACTIVE_NAMESPACE,
     )
+    shown = namespaces_shown_to_requester(request)
+    if shown is not None:
+        catalog["namespaces"] = _entries_named(catalog["namespaces"], shown)
+        catalog["reserved_ports"] = _entries_named(catalog["reserved_ports"], shown)
+    return catalog
 
 
 @router.post("/namespaces/open")
 @transactional_route
 def open_namespace(
     payload: dict[str, object],
+    request: Request,
     token: Annotated[str, Depends(_require_auth)],
 ):
     body = _require_body_object(payload)
     namespace = _require_string_field(body, "namespace")
+    require_vaults_shown_to_requester(request=request, namespaces=[namespace])
     port = _require_int_field(body, "port")
     https_port = _optional_int_field(body, "https_port")
     launch_capture = CapturedExceptionContext(NamespaceInputRejected, FileNotFoundError, boundary='app/api/routes/auth.py:open_namespace:launch_capture')
@@ -849,6 +946,7 @@ def open_namespace(
 @transactional_route
 def save_namespace_ports(
     payload: dict[str, object],
+    request: Request,
     token: Annotated[str, Depends(_require_auth)],
 ):
     body = _require_body_object(payload)
@@ -858,12 +956,17 @@ def save_namespace_ports(
         for profile in load_all_namespace_launch_profiles()
     }
     requested_profiles: list[NamespaceLaunchProfile] = []
+    requested_sharing: dict[str, bool] = {}
+    require_vaults_shown_to_requester(request=request, namespaces=[
+        _require_string_field(raw_profile, "namespace") for raw_profile in raw_profiles if isinstance(raw_profile, dict)
+    ])
     for raw_profile in raw_profiles:
         if not isinstance(raw_profile, dict):
             raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail="profiles entries must be objects")
         namespace = _require_string_field(raw_profile, "namespace")
         port = _require_int_field(raw_profile, "port")
         https_port = _optional_int_field(raw_profile, "https_port")
+        requested_sharing[namespace] = _require_bool_field(raw_profile, "shared_on_network")
         # A namespace never launched or configured has no saved profile.
         legacy_mcp_port = None
         if namespace in saved_profiles:
@@ -890,15 +993,37 @@ def save_namespace_ports(
         raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail=str(exc)) from exc
     if result is None:
         raise RuntimeError("Namespace ports save did not return a result")
+    # Where this server listens now: the page moves to the new address once it is back.
+    running_config = resolve_main_server_config(environ=os.environ)
+    listening_change = save_network_sharing_and_restart_changed_vaults(
+        environ=os.environ,
+        current_namespace=ACTIVE_NAMESPACE,
+        requested_sharing=requested_sharing,
+        profiles_before_save=saved_profiles,
+        saved_profiles=result.saved_profiles,
+    )
+    if listening_change.restarts_current:
+        current_profiles = [profile for profile in result.saved_profiles if profile.namespace == ACTIVE_NAMESPACE]
+        if len(current_profiles) != 1:
+            raise RuntimeError(f"The saved ports must include this vault, {ACTIVE_NAMESPACE}, once")
+        # After this answer is sent; the page moves once the server is back (namespace-modals.js).
+        _schedule_server_restart(
+            delay_seconds=_RESTART_AFTER_RESTORE_DELAY_SECONDS,
+            extra_arguments=_restart_arguments_for_ports(profile=current_profiles[0]),
+        )
     return {
         "profiles": [
             {
                 "namespace": profile.namespace,
                 "port": profile.port,
                 "https_port": profile.https_port,
+                "shared_on_network": requested_sharing[profile.namespace],
             }
             for profile in result.saved_profiles
         ],
+        "restarted_namespaces": listening_change.restarted_namespaces,
+        "restarts_current": listening_change.restarts_current,
+        "running_ports": {"port": running_config.port, "https_port": running_config.https_port},
         "message": result.message,
     }
 
@@ -937,12 +1062,15 @@ def _delete_namespace_from_body(*, body: dict[str, object], target_namespace: st
 @transactional_route
 def namespace_delete_preflight(
     payload: dict[str, object],
+    request: Request,
     token: Annotated[str, Depends(_require_auth)],
 ):
     body = _require_body_object(payload)
     target_namespace = validate_namespace(
         namespace=_require_string_field(body, "target_namespace"),
     )
+    require_vaults_shown_to_requester(request=request, namespaces=[target_namespace])
+    shown = namespaces_shown_to_requester(request)
     target_exists = _namespace_target_exists(namespace=target_namespace)
     catalog = build_namespace_catalog(
         environ=os.environ,
@@ -958,7 +1086,7 @@ def namespace_delete_preflight(
         namespace = raw_entry["namespace"]
         if not isinstance(namespace, str) or namespace == "":
             raise RuntimeError("Namespace catalog entry missing namespace")
-        if namespace != target_namespace:
+        if namespace != target_namespace and (shown is None or namespace in shown):
             redirect_namespaces.append(namespace)
     redirect_namespaces.sort()
     recreates_default = target_namespace == ACTIVE_NAMESPACE and len(redirect_namespaces) == 0
@@ -977,10 +1105,14 @@ def namespace_delete_preflight(
 @transactional_route
 def delete_named_namespace(
     payload: dict[str, object],
+    request: Request,
     token: Annotated[str, Depends(_require_auth)],
 ):
     body = _require_body_object(payload)
     target_namespace = _require_string_field(body, "target_namespace")
+    require_vaults_shown_to_requester(
+        request=request, namespaces=[target_namespace, _require_string_field(body, "redirect_namespace")],
+    )
     return _delete_namespace_from_body(
         body=body,
         target_namespace=target_namespace,
@@ -991,9 +1123,11 @@ def delete_named_namespace(
 @transactional_route
 def delete_active_namespace(
     payload: dict[str, object],
+    request: Request,
     token: Annotated[str, Depends(_require_auth)],
 ):
     body = _require_body_object(payload)
+    require_vaults_shown_to_requester(request=request, namespaces=[_require_string_field(body, "redirect_namespace")])
     return _delete_namespace_from_body(
         body=body,
         target_namespace=ACTIVE_NAMESPACE,

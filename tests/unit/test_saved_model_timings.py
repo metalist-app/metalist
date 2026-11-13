@@ -126,8 +126,8 @@ def test_version_15_gains_the_saved_model_timings(tmp_path: Path, encrypted: boo
             assert NEW_COLUMNS <= {row[1] for row in connection.execute("PRAGMA table_info(app_settings)")}
             return result.applied_versions
 
-    assert CURRENT_DATABASE_VERSION == 19
-    assert migrate() == (16, 17, 18, 19)
+    assert CURRENT_DATABASE_VERSION == 20
+    assert migrate() == (16, 17, 18, 19, 20)
     assert migrate() == ()
     with closing(sqlite3.connect(notes)) as connection:
         row = connection.execute("SELECT model_timings_json FROM app_settings").fetchone()

@@ -210,7 +210,8 @@ export const Auth = {
         const loginPage = this._requireElement('login-page');
         const status = this._requireElement('login-namespace-status');
         const hasChoices = switcher.dataset.hasChoices === 'true';
-        const shouldShow = (hasChoices || status.hidden === false)
+        const namesOnlyVault = !this._requireElement('login-namespace-name').hidden;
+        const shouldShow = (hasChoices || namesOnlyVault || status.hidden === false)
             && loginPage.style.display !== 'none'
             && !this._requireElement('login-form-view').hidden;
         switcher.hidden = !shouldShow;
@@ -243,7 +244,18 @@ export const Auth = {
         select.innerHTML = optionsHtml;
         select.value = catalog.currentNamespace;
         select.disabled = disabled;
-        switcher.dataset.hasChoices = catalog.namespaces.length >= MIN_NAMESPACES_FOR_SWITCHER ? 'true' : 'false';
+        const hasChoices = catalog.namespaces.length >= MIN_NAMESPACES_FOR_SWITCHER;
+        switcher.dataset.hasChoices = hasChoices ? 'true' : 'false';
+        // With nothing to choose, the vault is still named, as the list named it (the
+        // maintainer, 2026-11-13); the default vault goes unnamed, as in the page title.
+        const name = this._requireElement('login-namespace-name');
+        name.textContent = catalog.currentNamespace;
+        if (hasChoices) {
+            name.hidden = true;
+        } else {
+            name.hidden = buildLoginTitle(catalog.currentNamespace) === buildLoginTitle('');
+        }
+        this._requireElement('login-namespace-select-wrap').hidden = !hasChoices;
         this._syncLoginNamespaceVisibility();
     },
 

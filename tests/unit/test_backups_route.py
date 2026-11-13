@@ -5,6 +5,7 @@ import sqlite3
 from pathlib import Path
 
 import pytest
+from starlette.requests import Request
 
 import app.api.routes.backups as backups_route
 from app.services.synced_folders import SuggestedFolder
@@ -13,6 +14,25 @@ from app.db.settings_sql import insert_default_settings
 from app.db.settings_sql import update_password_settings
 from app.services.backup_service import BackupFileInfo
 from app.services.encryption import EncryptionService
+
+
+# Each existing vault in these tests is shared on the network; a restore must keep that, and a vault
+# new from a backup is not shared (docs/security/README.md, "Sharing on the Network").
+_SHARED_BEFORE_RESTORE = True
+
+
+# A request from this computer, which sees every vault (namespaces_shown_to_other_computers).
+THIS_COMPUTER = Request({"type": "http", "client": ("127.0.0.1", 50000), "headers": []})
+
+
+@pytest.fixture(autouse=True)
+def network_sharing(monkeypatch: pytest.MonkeyPatch) -> dict[str, bool]:
+    saved: dict[str, bool] = {}
+    monkeypatch.setattr(backups_route, "load_namespace_network_sharing", lambda *, namespace: _SHARED_BEFORE_RESTORE)
+    monkeypatch.setattr(
+        backups_route, "save_namespace_network_sharing", lambda *, namespace, shared: saved.__setitem__(namespace, shared)
+    )
+    return saved
 
 
 def _write_password_protected_target_database(*, database_path: Path, password: str) -> None:
@@ -422,7 +442,7 @@ def test_restore_preflight_reports_existing_different_target(
     )
     monkeypatch.setattr(backups_route, "load_all_namespace_launch_profiles", lambda: [])
 
-    response = backups_route.restore_backup_preflight(payload=payload, token="token")
+    response = backups_route.restore_backup_preflight(payload=payload, request=THIS_COMPUTER, token="token")
 
     assert response.target_namespace == "target"
     assert response.target_exists is True
@@ -500,7 +520,7 @@ def test_same_name_restore_into_new_namespace_assigns_conflict_free_ports(
             backup_namespace="henry",
             target_namespace="henry",
         ),
-        token="token",
+        request=THIS_COMPUTER, token="token",
     )
 
     assert response.target_namespace == "henry"
@@ -517,6 +537,7 @@ def test_same_name_restore_into_new_namespace_assigns_conflict_free_ports(
 def test_same_name_restore_into_existing_namespace_retains_target_ports(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    network_sharing: dict[str, bool],
 ) -> None:
     folder_directory = tmp_path / "backups"
     folder_directory.mkdir()
@@ -565,7 +586,7 @@ def test_same_name_restore_into_existing_namespace_retains_target_ports(
             backup_namespace="henry",
             target_namespace="henry",
         ),
-        token="token",
+        request=THIS_COMPUTER, token="token",
     )
 
     assert saved_profiles == [
@@ -576,6 +597,7 @@ def test_same_name_restore_into_existing_namespace_retains_target_ports(
             "mcp_port": 8767,
         }
     ]
+    assert network_sharing == {"henry": True}
 
 
 def test_restore_import_rejects_existing_target_without_overwrite_confirmation(
@@ -616,7 +638,7 @@ def test_restore_import_rejects_existing_target_without_overwrite_confirmation(
     )
 
     with pytest.raises(backups_route.HTTPException) as excinfo:
-        backups_route.import_backup(payload=payload, token="token")
+        backups_route.import_backup(payload=payload, request=THIS_COMPUTER, token="token")
 
     assert excinfo.value.status_code == 409
     assert excinfo.value.detail == "Target vault already exists: target"
@@ -679,7 +701,7 @@ def test_restore_import_rejects_restored_profile_port_conflict(
     )
 
     with pytest.raises(backups_route.HTTPException) as excinfo:
-        backups_route.import_backup(payload=payload, token="token")
+        backups_route.import_backup(payload=payload, request=THIS_COMPUTER, token="token")
 
     assert excinfo.value.status_code == 409
     assert excinfo.value.detail == "HTTP port 8001 from backup conflicts with HTTP port reserved for vault source"
@@ -688,6 +710,7 @@ def test_restore_import_rejects_restored_profile_port_conflict(
 def test_restore_import_passes_source_namespace_for_new_target(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    network_sharing: dict[str, bool],
 ) -> None:
     folder_directory = tmp_path / "backups"
     folder_directory.mkdir()
@@ -748,7 +771,7 @@ def test_restore_import_passes_source_namespace_for_new_target(
         ),
     )
 
-    response = backups_route.import_backup(payload=payload, token="token")
+    response = backups_route.import_backup(payload=payload, request=THIS_COMPUTER, token="token")
 
     assert response.target_namespace == "target"
     assert response.open_namespace_suggested is True
@@ -761,6 +784,8 @@ def test_restore_import_passes_source_namespace_for_new_target(
         "https_port": None,
         "mcp_port": None,
     }
+    # A vault new from a backup is not shared, whatever the backup said.
+    assert network_sharing == {"target": False}
 
 
 def test_restore_import_restarts_when_overwriting_active_namespace(
@@ -847,7 +872,7 @@ def test_restore_import_restarts_when_overwriting_active_namespace(
         ),
     )
 
-    response = backups_route.import_backup(payload=payload, token="token")
+    response = backups_route.import_backup(payload=payload, request=THIS_COMPUTER, token="token")
 
     assert response.active_namespace_restarted is True
     assert response.open_namespace_suggested is False
@@ -902,7 +927,7 @@ def test_restore_import_rejects_missing_password_for_existing_protected_target(
     )
 
     with pytest.raises(backups_route.HTTPException) as excinfo:
-        backups_route.import_backup(payload=payload, token="token")
+        backups_route.import_backup(payload=payload, request=THIS_COMPUTER, token="token")
 
     assert excinfo.value.status_code == 400
     assert excinfo.value.detail == "Target vault password is required"
@@ -949,7 +974,7 @@ def test_restore_import_rejects_wrong_password_for_existing_protected_target(
     )
 
     with pytest.raises(backups_route.HTTPException) as excinfo:
-        backups_route.import_backup(payload=payload, token="token")
+        backups_route.import_backup(payload=payload, request=THIS_COMPUTER, token="token")
 
     assert excinfo.value.status_code == 403
     assert excinfo.value.detail == "Target vault password is incorrect"
@@ -1029,7 +1054,7 @@ def test_restore_import_accepts_correct_password_for_existing_protected_target(
         ),
     )
 
-    response = backups_route.import_backup(payload=payload, token="token")
+    response = backups_route.import_backup(payload=payload, request=THIS_COMPUTER, token="token")
 
     assert response.target_namespace == "target"
     assert response.open_namespace_suggested is True
@@ -1094,3 +1119,20 @@ def test_run_backup_keeps_the_newest_backups_and_deletes_only_the_oldest_beyond_
     assert all(path.exists() for path in other_namespace), "another vault's backups are not counted or deleted"
     assert unrelated.exists(), "files that are not backups are never deleted"
     assert (response.results[0].deleted_count, response.results[0].remaining_count) == (3, 3)
+
+
+# The backup reminder asks for this vault's backup times; they come from the same folder listing
+# as the backup list, without its filter for another computer (a TypeError once, 2026-11-13).
+def test_backup_times_list_this_vaults_backups(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(backups_route, "ACTIVE_NAMESPACE", "henry")
+    monkeypatch.setattr(backups_route, "load_backup_settings", lambda *, token: {"folder_path": str(tmp_path)})
+    monkeypatch.setattr(backups_route, "_normalize_folder_backup_path", lambda *, folder_path: tmp_path)
+    monkeypatch.setattr(backups_route, "list_backups_in_directory", lambda directory, *, database_path: [
+        BackupFileInfo(filename="henry-20261113-100000.metalist-backup.tar.gz", created_at="2026-11-13T10:00:00", size_bytes=1),
+        BackupFileInfo(filename="ruth-20261113-110000.metalist-backup.tar.gz", created_at="2026-11-13T11:00:00", size_bytes=1),
+    ])
+    monkeypatch.setattr(backups_route, "parse_backup_namespace_from_filename", lambda filename: filename.split("-")[0])
+
+    response = backups_route.list_backup_times(token="token")
+
+    assert response.backup_times == ["2026-11-13T10:00:00"]

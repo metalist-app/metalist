@@ -9,7 +9,7 @@ from pathlib import Path
 
 from app.version import __version__
 
-CURRENT_DATABASE_VERSION = 19
+CURRENT_DATABASE_VERSION = 20
 # A vault has no version before its database exists.
 NO_DATABASE_VERSION = 0
 # The exit status of a vault's server that found its vault saved by a newer MetaList: the

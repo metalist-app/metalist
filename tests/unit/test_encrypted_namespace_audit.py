@@ -1130,6 +1130,29 @@ def test_version_19_requires_the_ai_chat_table(tmp_path: Path, version: int, has
         assert {(finding.table, finding.field) for finding in report.fatal_findings} == {(AI_CHAT_TABLE, "*")}
 
 
+# Version 20 adds shared_on_network to the launch profile: readable structural metadata, read
+# before unlock to choose where the vault's server listens. Before 20 it may be missing or already
+# added on open; from 20 it is required.
+@pytest.mark.parametrize(("version", "has_column", "allowed"), [(19, False, True), (19, True, True), (20, True, True), (20, False, False)])
+def test_version_20_requires_the_network_sharing_choice(tmp_path: Path, version: int, has_column: bool, allowed: bool) -> None:
+    namespaces_directory = tmp_path / "namespaces"
+    database_path = _create_namespace_database(namespaces_directory, namespace="private", encryption_enabled=True)
+    with sqlite3.connect(database_path) as connection:
+        if has_column:
+            connection.execute("UPDATE namespace_launch_profile SET shared_on_network = 1")
+        else:
+            connection.execute("ALTER TABLE namespace_launch_profile DROP COLUMN shared_on_network")
+        connection.execute(f"PRAGMA user_version = {version}")
+
+    report = audit_all_namespaces(namespaces_directory=namespaces_directory)
+
+    assert report.startup_allowed is allowed, report.render_text()
+    if not allowed:
+        assert {(finding.table, finding.field) for finding in report.fatal_findings} == {
+            ("namespace_launch_profile", "shared_on_network"),
+        }
+
+
 _ENCRYPTED_CONVERSATION = ("Y2lwaGVydGV4dA==", b"n" * 12, b"t" * 16)
 _PLAINTEXT_CONVERSATION = ('{"messages": ["secret question"]}', None, None)
 

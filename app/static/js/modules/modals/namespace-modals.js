@@ -20,11 +20,13 @@ import { selectNamespacePortsEditorProfile } from './namespace-ports-profile.js'
 import { buildNamespaceRenamePayload } from './namespace-rename-validation.js';
 import { showErrorDialog, showErrorDialogFor, showOpenFailure } from './error-dialog.js';
 import { escapeHtml } from '../html-escape.js';
+import { addressAfterRestart, waitForServerRestart } from '../server-restart.js';
 import { actionRowHtml } from './action-row.js';
 import { requires } from '../../shockharness/contracts.js';
 
 
 const STATUS_BANNER_SECONDS = 5;
+const SHARED_ON_NETWORK_TOOLTIP = 'Open from other devices on your network';
 const PROGRESS_CARD_KEY = 'vault-dialog-progress';
 
 
@@ -779,7 +781,6 @@ export class ManageNamespacePortsModal extends NamespaceModalBase {
         const supportsHttps = Boolean(catalog.supports_https);
         const rowsHtml = rows.map((row) => {
             const currentBadge = row.is_current === true ? '<span class="namespace-modal-badge">Current</span>' : '';
-            const note = row.is_current === true ? 'Next launch' : '';
             return `
                 <tr>
                     <th scope="row">
@@ -790,7 +791,7 @@ export class ManageNamespacePortsModal extends NamespaceModalBase {
                     </th>
                     <td><input id="${escapeHtml(portFieldId(row.namespace, 'port'))}" class="namespace-ports-input" data-namespace="${escapeHtml(row.namespace)}" data-field="port" type="number" min="${LOWEST_PORT}" max="${HIGHEST_PORT}" value="${escapeHtml(row.port)}" ${saving ? 'disabled' : ''}></td>
                     ${supportsHttps ? `<td><input id="${escapeHtml(portFieldId(row.namespace, 'httpsPort'))}" class="namespace-ports-input" data-namespace="${escapeHtml(row.namespace)}" data-field="httpsPort" type="number" min="${LOWEST_PORT}" max="${HIGHEST_PORT}" value="${escapeHtml(row.httpsPort)}" ${saving ? 'disabled' : ''}></td>` : ''}
-                    <td>${escapeHtml(note)}</td>
+                    <td><input class="namespace-ports-shared" data-namespace="${escapeHtml(row.namespace)}" type="checkbox" title="${escapeHtml(SHARED_ON_NETWORK_TOOLTIP)}" aria-label="${escapeHtml(`Share ${row.namespace} on the network`)}" ${row.sharedOnNetwork ? 'checked' : ''} ${saving ? 'disabled' : ''}></td>
                 </tr>
             `;
         }).join('');
@@ -805,7 +806,7 @@ export class ManageNamespacePortsModal extends NamespaceModalBase {
                                 <th scope="col">Vault</th>
                                 <th scope="col">HTTP</th>
                                 ${supportsHttps ? '<th scope="col">HTTPS</th>' : ''}
-                                <th scope="col">Applies</th>
+                                <th scope="col" title="${escapeHtml(SHARED_ON_NETWORK_TOOLTIP)}">Shared</th>
                             </tr>
                         </thead>
                         <tbody>${rowsHtml}</tbody>
@@ -836,6 +837,15 @@ export class ManageNamespacePortsModal extends NamespaceModalBase {
             };
         });
 
+        document.querySelectorAll('.namespace-ports-shared').forEach((checkbox) => {
+            if (!(checkbox instanceof HTMLInputElement)) {
+                return;
+            }
+            checkbox.onchange = () => {
+                this._updateRowSharing(checkbox);
+            };
+        });
+
         const saveButton = document.getElementById('manage-namespace-ports-save-btn');
         if (saveButton instanceof HTMLButtonElement) {
             saveButton.onclick = async () => {
@@ -843,6 +853,36 @@ export class ManageNamespacePortsModal extends NamespaceModalBase {
             };
         }
         this._wireCancelButton('manage-namespace-ports-cancel-btn');
+    }
+
+    // The page's address once this vault is back on its saved ports.
+    _addressAfterRestart(response) {
+        const currentRows = this.getModalState().rows.filter((row) => row.is_current === true);
+        if (currentRows.length !== 1) {
+            throw new Error('Vault ports dialog must have exactly one current vault');
+        }
+        const saved = response.profiles.filter((profile) => profile.namespace === currentRows[0].namespace);
+        if (saved.length !== 1) {
+            throw new Error('Namespace ports response missing the current vault');
+        }
+        const running = response.running_ports;
+        if (!running || typeof running !== 'object') {
+            throw new Error('Namespace ports response missing running_ports');
+        }
+        const portField = window.location.protocol === 'https:' ? 'https_port' : 'port';
+        return addressAfterRestart({
+            location: window.location, portBefore: running[portField], newPort: saved[0][portField],
+        });
+    }
+
+    _updateRowSharing(checkbox) {
+        const namespace = checkbox.dataset.namespace;
+        if (typeof namespace !== 'string' || namespace.length === 0) {
+            throw new Error('Sharing checkbox missing namespace');
+        }
+        const state = this.getModalState();
+        const rows = state.rows.map((row) => (row.namespace === namespace ? { ...row, sharedOnNetwork: checkbox.checked } : row));
+        this.updateModalState({ rows, status: '' });
     }
 
     _updateRowDraft(input) {
@@ -907,11 +947,15 @@ export class ManageNamespacePortsModal extends NamespaceModalBase {
             }
             const profile = selectNamespacePortsEditorProfile(entry);
             assertProfileShape(profile);
+            if (typeof entry.shared_on_network !== 'boolean') {
+                throw new Error(`Vault ${namespace} catalog entry missing shared_on_network`);
+            }
             return {
                 namespace,
                 is_current: entry.is_current === true,
                 port: stringifyPort(profile.port),
                 httpsPort: stringifyPort(profile.https_port),
+                sharedOnNetwork: entry.shared_on_network,
             };
         });
     }
@@ -952,10 +996,14 @@ export class ManageNamespacePortsModal extends NamespaceModalBase {
             if (typeof row.namespace !== 'string' || row.namespace.length === 0) {
                 throw new Error('Namespace row missing name');
             }
+            if (typeof row.sharedOnNetwork !== 'boolean') {
+                throw new Error(`Vault ${row.namespace} row missing sharedOnNetwork`);
+            }
             return {
                 namespace: row.namespace,
                 port: parsePort(row.port),
                 https_port: supportsHttps ? parsePort(row.httpsPort) : null,
+                shared_on_network: row.sharedOnNetwork,
             };
         });
     }
@@ -996,6 +1044,18 @@ export class ManageNamespacePortsModal extends NamespaceModalBase {
         }
 
         const response = saveResult.value;
+        if (typeof response.restarts_current !== 'boolean') {
+            throw new Error('Namespace ports response missing restarts_current');
+        }
+        if (response.restarts_current) {
+            // This vault's server restarts to listen anew: go to it once the new one answers.
+            const address = this._addressAfterRestart(response);
+            this._endProgress();
+            this._startProgress('Restarting this vault…');
+            await waitForServerRestart({ newOrigin: new URL(address).origin });
+            window.location.assign(address);
+            return;
+        }
         const statusMessage = typeof response.message === 'string' && response.message.length > 0
             ? response.message
             : 'Saved vault ports.';

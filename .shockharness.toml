@@ -319,6 +319,12 @@ exception = "ValueError"
 reason = "Parse external host, URL, IP or date input at the named boundary."
 
 [[tool.shockharness.rules.exceptions.boundaries]]
+path = "app/network_settings.py"
+language = "python"
+exception = "ValueError"
+reason = "Tell an IP address from a host name in the retired network-settings.json the user wrote."
+
+[[tool.shockharness.rules.exceptions.boundaries]]
 path = "app/server_runtime.py"
 language = "python"
 exception = "app.services.input_errors.NamespaceInputRejected"

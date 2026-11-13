@@ -380,6 +380,9 @@ def test_startup_encryption_audit_prints_pass_without_warning(
 
 
 def test_main_generates_default_tls_pair_on_explicit_namespace_startup(tmp_path, monkeypatch) -> None:
+    # Where the vault listens is read from its own launch profile; these tests have none.
+    monkeypatch.setattr(main_entrypoint, "resolve_vault_bind_host", lambda *, environ, namespace: "127.0.0.1")
+    monkeypatch.setenv(main_entrypoint.CHOSEN_BIND_HOST_ENV_NAME, "unset-by-teardown")
     calls: list[str] = []
     fake_app_module = ModuleType("app.main")
     fake_app_object = object()
@@ -552,6 +555,9 @@ def test_run_namespace_server_prints_resolved_config(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    # Where the vault listens is read from its own launch profile; these tests have none.
+    monkeypatch.setattr(main_entrypoint, "resolve_vault_bind_host", lambda *, environ, namespace: "127.0.0.1")
+    monkeypatch.setenv(main_entrypoint.CHOSEN_BIND_HOST_ENV_NAME, "unset-by-teardown")
     fake_app_module = ModuleType("app.main")
     fake_app_module.app = object()
     monkeypatch.setitem(sys.modules, "app.main", fake_app_module)

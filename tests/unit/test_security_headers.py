@@ -8,13 +8,14 @@ from starlette.responses import HTMLResponse
 
 from app.security.http_headers import apply_security_headers
 from app.security.http_headers import build_content_security_policy
+from app.security.http_headers import own_host_on_any_port
 
 
 NONCE = "A" * 32
 
 
 def test_content_security_policy_allows_only_nonce_or_self_scripts() -> None:
-    policy = build_content_security_policy(nonce=NONCE)
+    policy = build_content_security_policy(nonce=NONCE, extra_connect_sources=())
 
     assert f"script-src 'self' 'nonce-{NONCE}'" in policy
     assert "script-src 'self' 'unsafe-inline'" not in policy
@@ -26,32 +27,49 @@ def test_content_security_policy_allows_only_nonce_or_self_scripts() -> None:
 # A PDF opens in the file viewer through the browser's own viewer, from a blob: MetaList makes of
 # the decrypted file (docs/ready-to-build/files-shown-not-copied.md §4): frames of blob: only.
 def test_content_security_policy_frames_only_blob_addresses() -> None:
-    policy = build_content_security_policy(nonce=NONCE)
+    policy = build_content_security_policy(nonce=NONCE, extra_connect_sources=())
 
     frame_sources = [directive for directive in policy.split("; ") if directive.startswith("frame-src")]
     assert frame_sources == ["frame-src blob:"]
 
 
 def test_content_security_policy_blocks_direct_remote_images() -> None:
-    policy = build_content_security_policy(nonce=NONCE)
+    policy = build_content_security_policy(nonce=NONCE, extra_connect_sources=())
 
     assert "img-src 'self' data: blob:" in policy
     assert "img-src 'self' data: blob: https: http:" not in policy
 
 
 def test_content_security_policy_blocks_direct_remote_connections() -> None:
-    policy = build_content_security_policy(nonce=NONCE)
+    policy = build_content_security_policy(nonce=NONCE, extra_connect_sources=())
 
     assert "connect-src 'self' data: blob:" in policy
     assert "connect-src 'self' data: blob: https: http:" not in policy
 
 
+# After its vault moves to new ports (Manage Vault Ports), the page asks the new address whether
+# the vault is back before it goes there: its own host, on any port, and nothing else.
+def test_the_page_may_reach_its_own_host_on_any_port() -> None:
+    sources = own_host_on_any_port(scheme="https", hostname="Studio-Mac.local")
+    policy = build_content_security_policy(nonce=NONCE, extra_connect_sources=sources)
+
+    assert sources == ("https://studio-mac.local:*",)
+    assert "connect-src 'self' data: blob: https://studio-mac.local:*;" in policy
+
+
+@pytest.mark.parametrize(("scheme", "hostname"), [
+    ("https", "::1"), ("https", "evil.example; script-src *"), ("https", None), ("ws", "studio-mac.local"),
+])
+def test_no_other_host_or_scheme_is_named(scheme: str, hostname: str | None) -> None:
+    assert own_host_on_any_port(scheme=scheme, hostname=hostname) == ()
+
+
 def test_apply_security_headers_sets_browser_defenses() -> None:
     response = HTMLResponse("<html></html>")
 
-    apply_security_headers(response=response, nonce=NONCE, is_static_file=False)
+    apply_security_headers(response=response, nonce=NONCE, is_static_file=False, extra_connect_sources=())
 
-    assert response.headers["content-security-policy"] == build_content_security_policy(nonce=NONCE)
+    assert response.headers["content-security-policy"] == build_content_security_policy(nonce=NONCE, extra_connect_sources=())
     assert response.headers["x-content-type-options"] == "nosniff"
     assert response.headers["x-frame-options"] == "DENY"
     assert response.headers["referrer-policy"] == "no-referrer"
@@ -68,24 +86,24 @@ def test_a_static_file_keeps_its_own_caching_and_gets_the_defenses() -> None:
     response = HTMLResponse("export const A = 1;")
     response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
 
-    apply_security_headers(response=response, nonce=NONCE, is_static_file=True)
+    apply_security_headers(response=response, nonce=NONCE, is_static_file=True, extra_connect_sources=())
 
     assert response.headers["cache-control"] == "public, max-age=31536000, immutable"
     assert "pragma" not in response.headers and "expires" not in response.headers
     assert response.headers["x-content-type-options"] == "nosniff"
-    assert response.headers["content-security-policy"] == build_content_security_policy(nonce=NONCE)
+    assert response.headers["content-security-policy"] == build_content_security_policy(nonce=NONCE, extra_connect_sources=())
 
 
 def test_a_static_file_without_its_own_caching_is_refused() -> None:
     with pytest.raises(RuntimeError, match="caching"):
-        apply_security_headers(response=HTMLResponse(""), nonce=NONCE, is_static_file=True)
+        apply_security_headers(response=HTMLResponse(""), nonce=NONCE, is_static_file=True, extra_connect_sources=())
 
 
 def test_a_missing_static_file_is_never_stored() -> None:
     # Starlette answers a missing file through its error handler, which sets no caching.
     response = HTMLResponse("Not Found", status_code=404)
 
-    apply_security_headers(response=response, nonce=NONCE, is_static_file=True)
+    apply_security_headers(response=response, nonce=NONCE, is_static_file=True, extra_connect_sources=())
 
     assert response.headers["cache-control"] == "no-store, private"
 
@@ -93,7 +111,7 @@ def test_a_missing_static_file_is_never_stored() -> None:
 @pytest.mark.parametrize("nonce", ["", "too-short", "!" * 32])
 def test_content_security_policy_rejects_invalid_nonces(nonce: str) -> None:
     with pytest.raises(ValueError, match="CSP nonce"):
-        build_content_security_policy(nonce=nonce)
+        build_content_security_policy(nonce=nonce, extra_connect_sources=())
 
 
 def test_inline_template_scripts_carry_the_response_nonce() -> None:

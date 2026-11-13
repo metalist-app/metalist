@@ -11,7 +11,6 @@ from app.utils.sent_fields import sent_or_none
 
 _LOOPBACK_REQUEST_HOSTS = frozenset({"127.0.0.1", "::1", "localhost"})
 _WILDCARD_BIND_HOSTS = frozenset({"0.0.0.0", "::"})
-_DEFAULT_BIND_HOST = "127.0.0.1"
 _DNS_HOSTNAME_PATTERN = re.compile(
     r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$"
 )
@@ -65,14 +64,18 @@ def _normalize_configured_hostname(*, raw_value: str) -> str:
     return normalized_hostname
 
 
-def resolve_allowed_request_hosts(*, environ: Mapping[str, str]) -> frozenset[str]:
+def binds_to_every_interface(*, bind_host: str) -> bool:
+    """A server listening on every interface is reached at the computer's own addresses, so it
+    accepts them (app/security/own_addresses.py)."""
+    return _normalize_configured_hostname(raw_value=bind_host) in _WILDCARD_BIND_HOSTS
+
+
+def resolve_allowed_request_hosts(*, environ: Mapping[str, str], bind_host: str) -> frozenset[str]:
+    """The Host names accepted besides the computer's own addresses: loopback, a specific bind
+    address, and METALIST_ALLOWED_HOSTS (a domain behind a proxy)."""
     allowed_hosts = set(_LOOPBACK_REQUEST_HOSTS)
-    # Unset, MetaList binds to loopback only (server_runtime does the same).
-    bind_host = _DEFAULT_BIND_HOST
-    if "METALIST_HOST" in environ:
-        bind_host = environ["METALIST_HOST"].strip()
-    if bind_host == "":
-        raise RuntimeError("METALIST_HOST must not be empty")
+    if bind_host.strip() == "":
+        raise RuntimeError("The bind host must not be empty")
     normalized_bind_host = _normalize_configured_hostname(raw_value=bind_host)
     if normalized_bind_host not in _WILDCARD_BIND_HOSTS:
         allowed_hosts.add(normalized_bind_host)
@@ -84,5 +87,3 @@ def resolve_allowed_request_hosts(*, environ: Mapping[str, str]) -> frozenset[st
         for raw_host in configured_hosts.split(","):
             allowed_hosts.add(_normalize_configured_hostname(raw_value=raw_host))
     return frozenset(allowed_hosts)
-
-

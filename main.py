@@ -2,7 +2,7 @@
 from app.launch_clock import seconds_since_launch
 import uvicorn
 from collections.abc import Callable, Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import logging
 import errno
 import os
@@ -20,6 +20,7 @@ from socketserver import TCPServer
 
 from app.https_proxy import BoundedProxyServer, make_proxy_handler
 from app.server_runtime import apply_main_cli_args_to_environ
+from app.server_runtime import CHOSEN_BIND_HOST_ENV_NAME
 from app.server_runtime import ensure_default_tls_pair
 from app.server_runtime import MainCliArgs
 from app.server_runtime import prepare_database_runtime_path
@@ -28,6 +29,7 @@ from app.server_runtime import resolve_database_runtime_config
 from app.server_runtime import resolve_local_browser_host
 from app.server_runtime import resolve_main_server_config
 from app.server_runtime import resolve_namespaces_directory
+from app.server_runtime import resolve_vault_bind_host
 from app.server_runtime import resolve_test_mode
 from app.server_runtime import save_namespace_launch_profile
 from app.db.live_recovery import recover_pending_namespaces
@@ -63,7 +65,7 @@ from app.services.self_update import TRIM_SAFETY_BACKUPS_COMMAND
 from app.services.self_update import schedule_self_update
 from app.services.update_backups import namespace_database_paths
 from app.version import __version__
-from app.network_settings import apply_network_settings
+from app.network_settings import retire_network_settings_file
 from app.security.shell_execution import enable_shell_execution_for_launch
 from app.security.shell_execution import is_shell_execution_enabled
 from app.services.windows_process_control import find_listening_pids_for_port as find_windows_listening_pids_for_port
@@ -691,7 +693,7 @@ def main(argv: list[str]) -> None:
     # Configure logging to filter noisy polling endpoints
     logging.getLogger("uvicorn.access").addFilter(FilterCheckUpdates())
     if not resolve_test_mode(environ=os.environ, argv=argv):
-        apply_network_settings(environ=os.environ, persist=True)
+        retire_network_settings_file(environ=os.environ)
     _record_self_executable_for_namespace_launch()
     _run_startup_sanity_gates(repo_root=Path(__file__).resolve().parent)
     _prepare_namespaces_for_startup(
@@ -757,7 +759,6 @@ def _run_command(argv: list[str]) -> None:
     if len(argv) != 0 and argv[0] == "update":
         if argv != ["update"]:
             raise RuntimeError("Usage: metalist update")
-        apply_network_settings(environ=os.environ, persist=True)
         metalist_executable = _resolve_current_entrypoint()
         if metalist_executable is None:
             raise RuntimeError("Could not resolve the installed MetaList executable")
@@ -785,8 +786,6 @@ def _trim_safety_backups_after_update(*, namespaces_directory: Path) -> None:
 
 def run_orchestrated_namespace_server(argv: list[str]) -> None:
     logging.getLogger("uvicorn.access").addFilter(FilterCheckUpdates())
-    if not resolve_test_mode(environ=os.environ, argv=argv):
-        apply_network_settings(environ=os.environ, persist=False)
     apply_main_cli_args_to_environ(argv=argv, environ=os.environ)
     _run_namespace_server_for_current_env(argv=argv)
 
@@ -800,7 +799,11 @@ def _run_namespace_server_for_current_env(*, argv: list[str]) -> None:
         prepare_database_runtime_path(database_path=database_runtime_config.database_path)
         ensure_default_tls_pair(environ=os.environ)
 
-    main_server_config = resolve_main_server_config(environ=os.environ)
+    # Chosen at every start from the vault's own sharing choice, so a restart after it changed
+    # listens anew; app.main reads it for its Host check.
+    bind_host = resolve_vault_bind_host(environ=os.environ, namespace=database_runtime_config.namespace)
+    os.environ[CHOSEN_BIND_HOST_ENV_NAME] = bind_host
+    main_server_config = replace(resolve_main_server_config(environ=os.environ), host=bind_host)
     from app.main import app as metalist_app
     print(
         "MetaList resolved config: "

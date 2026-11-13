@@ -17,10 +17,8 @@ def is_loopback_host(*, host: str) -> bool:
 
 
 def enable_shell_execution_for_launch(*, environ: MutableMapping[str, str]) -> None:
-    if "METALIST_HOST" not in environ:
-        environ["METALIST_HOST"] = "127.0.0.1"
-    elif not isinstance(environ["METALIST_HOST"], str) or environ["METALIST_HOST"].strip() == "":
-        raise TypeError("METALIST_HOST must be a non-empty string")
+    # Where each vault listens is its own choice (app/server_runtime.resolve_vault_bind_host);
+    # shell routes answer only loopback clients asking a loopback host either way.
     environ[SHELL_EXECUTION_ENV_NAME] = "1"
 
 

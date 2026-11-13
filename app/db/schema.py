@@ -17,6 +17,10 @@ LINK_ICONS_TABLE = "link_icons"
 REMINDERS_TABLE = "reminders"
 SEARCH_HISTORY_TABLE = "search_interaction_history"
 NAMESPACE_LAUNCH_PROFILE_TABLE = "namespace_launch_profile"
+# Whether the vault's server listens on the network as well as on this computer, chosen per vault
+# in Manage Vault Ports (docs/security/README.md, "Sharing on the Network"). Read before unlock.
+SHARED_ON_NETWORK_COLUMN = "shared_on_network"
+SHARED_ON_NETWORK_COLUMN_SQL = "INTEGER NOT NULL DEFAULT 0 CHECK (shared_on_network IN (0, 1))"
 NAMESPACE_CONTENT_MIGRATIONS_TABLE = "namespace_content_migrations"
 
 _CREATE_NOTES_TABLE = f"""
@@ -227,7 +231,8 @@ CREATE TABLE IF NOT EXISTS {NAMESPACE_LAUNCH_PROFILE_TABLE} (
     https_port INTEGER,
     mcp_port INTEGER,
     created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL
+    updated_at TEXT NOT NULL,
+    {SHARED_ON_NETWORK_COLUMN} {SHARED_ON_NETWORK_COLUMN_SQL}
 );
 """
 
@@ -251,6 +256,20 @@ CREATE TABLE IF NOT EXISTS {NAMESPACE_CONTENT_MIGRATIONS_TABLE} (
 def create_namespace_content_migrations_table(connection: Connection) -> None:
     """Create the v2 content-migration ledger inside the active namespace DB."""
     connection.execute(_CREATE_NAMESPACE_CONTENT_MIGRATIONS_TABLE)
+
+
+def create_namespace_launch_profile_table(connection: Connection) -> None:
+    connection.execute(_CREATE_NAMESPACE_LAUNCH_PROFILE_TABLE)
+
+
+def add_shared_on_network_column(connection: Connection) -> None:
+    """Adds the vault's network-sharing choice to its launch profile when missing: a vault never
+    shared before is not shared."""
+    _ensure_columns(
+        connection,
+        NAMESPACE_LAUNCH_PROFILE_TABLE,
+        {SHARED_ON_NETWORK_COLUMN: SHARED_ON_NETWORK_COLUMN_SQL},
+    )
 
 
 def _ensure_columns(connection: Connection, table: str, columns: dict[str, str]) -> None:
@@ -281,6 +300,7 @@ def initialize_schema(connection: Connection) -> None:
     connection.execute(_CREATE_REMINDERS_TABLE)
     connection.execute(_CREATE_SEARCH_HISTORY_TABLE)
     connection.execute(_CREATE_NAMESPACE_LAUNCH_PROFILE_TABLE)
+    add_shared_on_network_column(connection)
     connection.execute(_CREATE_NAMESPACE_CONTENT_MIGRATIONS_TABLE)
     _ensure_columns(
         connection,

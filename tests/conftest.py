@@ -15,6 +15,8 @@ for _key in tuple(os.environ):
 
 _test_data = TemporaryDirectory(prefix='metalist-pytest-')
 os.environ['METALIST_DATA_DIRECTORY'] = _test_data.name
+# A vault's server tells the app where it listens (main.py); the tests' app listens on this computer.
+os.environ['METALIST_CHOSEN_BIND_HOST'] = '127.0.0.1'
 
 # The scripts that start a MetaList server. A test may start one only through a stand-in.
 _METALIST_SERVER_SCRIPTS = frozenset({'main.py', 'serve_namespace.py'})

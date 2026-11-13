@@ -10,6 +10,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.api.request_auth import AUTH_COOKIE_NAME
 from app.services.exception_capture import CapturedExceptionContext
+from app.security.own_addresses import is_own_address
 from app.security.request_hosts import _normalize_hostname, resolve_allowed_request_hosts
 from app.utils.sent_fields import sent_or_none
 
@@ -117,6 +118,7 @@ def evaluate_request_boundary(
     authorization_header: str | None,
     has_auth_cookie: bool,
     allowed_hosts: frozenset[str],
+    accepts_own_addresses: bool,
 ) -> RequestBoundaryRejection | None:
     if not isinstance(method, str) or method == "":
         raise TypeError("method must be a non-empty string")
@@ -126,6 +128,8 @@ def evaluate_request_boundary(
         raise TypeError("has_auth_cookie must be a bool")
     if not isinstance(allowed_hosts, frozenset) or len(allowed_hosts) == 0:
         raise TypeError("allowed_hosts must be a non-empty frozenset")
+    if not isinstance(accepts_own_addresses, bool):
+        raise TypeError("accepts_own_addresses must be a bool")
 
     if host_header is None:
         return RequestBoundaryRejection(HTTPStatus.BAD_REQUEST, "Host header required")
@@ -136,7 +140,14 @@ def evaluate_request_boundary(
     if request_authority is None:
         return RequestBoundaryRejection(HTTPStatus.BAD_REQUEST, "Malformed Host header")
     _, request_hostname, _ = request_authority
-    if request_hostname not in allowed_hosts:
+    # The computer's own addresses are looked up only for a Host not already listed.
+    if request_hostname in allowed_hosts:
+        is_accepted_host = True
+    elif accepts_own_addresses:
+        is_accepted_host = is_own_address(request_hostname)
+    else:
+        is_accepted_host = False
+    if not is_accepted_host:
         return RequestBoundaryRejection(HTTPStatus.BAD_REQUEST, "Unrecognized Host header")
 
     if method.upper() in _SAFE_METHODS:
@@ -157,11 +168,14 @@ def evaluate_request_boundary(
 
 
 class RequestBoundaryMiddleware(BaseHTTPMiddleware):
-    def __init__(self, app, *, allowed_hosts: frozenset[str]) -> None:
+    def __init__(self, app, *, allowed_hosts: frozenset[str], accepts_own_addresses: bool) -> None:
         super().__init__(app)
         if not isinstance(allowed_hosts, frozenset) or len(allowed_hosts) == 0:
             raise TypeError("allowed_hosts must be a non-empty frozenset")
+        if not isinstance(accepts_own_addresses, bool):
+            raise TypeError("accepts_own_addresses must be a bool")
         self._allowed_hosts = allowed_hosts
+        self._accepts_own_addresses = accepts_own_addresses
 
     async def dispatch(self, request: Request, call_next):
         host_headers = request.headers.getlist("host")
@@ -181,6 +195,7 @@ class RequestBoundaryMiddleware(BaseHTTPMiddleware):
             authorization_header=sent_or_none(request.headers, "authorization"),
             has_auth_cookie=AUTH_COOKIE_NAME in request.cookies,
             allowed_hosts=self._allowed_hosts,
+            accepts_own_addresses=self._accepts_own_addresses,
         )
         if rejection is not None:
             return JSONResponse(

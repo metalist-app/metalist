@@ -49,9 +49,12 @@ from app.services.search_history import search_history_store
 from app.services.runtime_hardening import apply_runtime_hardening
 from app.security.encryption import set_encryption_required
 from app.security.http_headers import apply_security_headers
+from app.security.http_headers import own_host_on_any_port
 from app.security.http_error_diagnostics import describe_server_exception
 from app.security.request_boundary import RequestBoundaryMiddleware
 from app.security.request_boundary import resolve_allowed_request_hosts
+from app.security.request_hosts import binds_to_every_interface
+from app.server_runtime import chosen_bind_host
 from app.security.validation_errors import summarize_validation_errors
 from app.server_runtime import resolve_https_redirect_url
 from app.server_runtime import resolve_request_host_for_https_redirect
@@ -420,7 +423,8 @@ app.mount(
 templates = get_templates(
     template_directory=Path(__file__).resolve().parent / "templates",
 )
-allowed_request_hosts = resolve_allowed_request_hosts(environ=os.environ)
+_bind_host = chosen_bind_host(environ=os.environ)
+allowed_request_hosts = resolve_allowed_request_hosts(environ=os.environ, bind_host=_bind_host)
 
 # v2 routers mounted under configured API_PREFIX
 app.include_router(api2_router, prefix=API_PREFIX, tags=["api2"]) 
@@ -559,7 +563,11 @@ def _remember_answered_request(
     ))
 
 
-app.add_middleware(RequestBoundaryMiddleware, allowed_hosts=allowed_request_hosts)
+app.add_middleware(
+    RequestBoundaryMiddleware,
+    allowed_hosts=allowed_request_hosts,
+    accepts_own_addresses=binds_to_every_interface(bind_host=_bind_host),
+)
 
 
 @app.middleware("http")
@@ -569,8 +577,10 @@ async def add_security_headers(request: Request, call_next):
         raise RuntimeError("Generated CSP nonce has unexpected length")
     request.state.csp_nonce = nonce
     response = await call_next(request)
-    apply_security_headers(response=response, nonce=nonce,
-                           is_static_file=request.url.path.startswith(STATIC_URL_PREFIX))
+    apply_security_headers(
+        response=response, nonce=nonce, is_static_file=request.url.path.startswith(STATIC_URL_PREFIX),
+        extra_connect_sources=own_host_on_any_port(scheme=request.url.scheme, hostname=request.url.hostname),
+    )
     return response
 
 @app.get("/", response_class=HTMLResponse)

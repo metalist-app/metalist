@@ -1,56 +1,69 @@
+"""network-settings.json is retired (docs/security/README.md, "Sharing on the Network"): each
+vault says for itself whether it is shared, and a shared vault accepts the computer's own names
+and addresses as they are now. The first start that finds the old file keeps every vault it
+shared shared, and removes it."""
 import json
 
 import pytest
 
-from app.network_settings import apply_network_settings
+import app.server_runtime as server_runtime
+from app import network_settings
+from app.network_settings import retire_network_settings_file
+from app.server_runtime import load_namespace_network_sharing, save_namespace_launch_profile
+
+VAULTS = ('thomas', 'cla')
 
 
-def test_lan_launch_is_remembered_by_plain_cli_and_children(tmp_path):
-    configured = {
-        'METALIST_DATA_DIRECTORY': str(tmp_path), 'METALIST_HOST': '0.0.0.0',
-        'METALIST_ALLOWED_HOSTS': '10.0.0.31', 'METALIST_SHELL_ENABLED': '1',
-    }
-    apply_network_settings(environ=configured, persist=True)
-    path = tmp_path / 'network-settings.json'
-    original = path.read_bytes()
-    for persist in (True, False):
-        fresh = {'METALIST_DATA_DIRECTORY': str(tmp_path)}
-        apply_network_settings(environ=fresh, persist=persist)
-        assert fresh['METALIST_HOST'] == '0.0.0.0'
-        assert fresh['METALIST_ALLOWED_HOSTS'] == '10.0.0.31'
-        assert 'METALIST_SHELL_ENABLED' not in fresh
-        assert path.read_bytes() == original
+@pytest.fixture
+def data_root(tmp_path, monkeypatch):
+    """A data root with two vaults, neither shared yet, on a computer called Studio-Mac."""
+    monkeypatch.setattr(server_runtime, '_DEFAULT_DATABASE_DIRECTORY', tmp_path)
+    monkeypatch.setattr(network_settings, 'own_host_names', lambda: frozenset({'studio-mac.local'}))
+    for index, vault in enumerate(VAULTS):
+        save_namespace_launch_profile(namespace=vault, port=9000 + index, https_port=None, mcp_port=None)
+    return tmp_path
 
 
-def test_fresh_install_keeps_loopback_defaults_without_creating_settings(tmp_path):
-    environ = {'METALIST_DATA_DIRECTORY': str(tmp_path)}
-    apply_network_settings(environ=environ, persist=True)
-    assert 'METALIST_HOST' not in environ
-    assert not (tmp_path / 'network-settings.json').exists()
+def _write_settings(data_root, environment):
+    path = data_root / 'network-settings.json'
+    path.write_text(json.dumps({'version': 1, 'environment': environment}))
+    return path
 
 
-def test_explicit_loopback_override_is_saved_and_does_not_affect_another_data_root(tmp_path):
-    environ = {'METALIST_DATA_DIRECTORY': str(tmp_path / 'first'), 'METALIST_HOST': '0.0.0.0'}
-    apply_network_settings(environ=environ, persist=True)
-    environ['METALIST_HOST'] = '127.0.0.1'
-    apply_network_settings(environ=environ, persist=True)
-    fresh = {'METALIST_DATA_DIRECTORY': str(tmp_path / 'first')}
-    apply_network_settings(environ=fresh, persist=False)
-    assert fresh['METALIST_HOST'] == '127.0.0.1'
-    other = {'METALIST_DATA_DIRECTORY': str(tmp_path / 'second')}
-    apply_network_settings(environ=other, persist=False)
-    assert 'METALIST_HOST' not in other
+def test_every_vault_the_old_file_shared_stays_shared_and_the_file_is_removed(data_root):
+    path = _write_settings(data_root, {'METALIST_HOST': '0.0.0.0', 'METALIST_ALLOWED_HOSTS': '10.0.0.31'})
+    retire_network_settings_file(environ={'METALIST_DATA_DIRECTORY': str(data_root)})
+    assert [load_namespace_network_sharing(namespace=vault) for vault in VAULTS] == [True, True]
+    assert not path.exists()
 
 
-@pytest.mark.parametrize('key,value', [('METALIST_HOST', ''), ('METALIST_ALLOWED_HOSTS', '*')])
-def test_invalid_override_does_not_replace_saved_settings(tmp_path, key, value):
-    environ = {'METALIST_DATA_DIRECTORY': str(tmp_path), 'METALIST_HOST': '10.0.0.31'}
-    apply_network_settings(environ=environ, persist=True)
-    original = (tmp_path / 'network-settings.json').read_bytes()
-    environ[key] = value
-    with pytest.raises(RuntimeError):
-        apply_network_settings(environ=environ, persist=True)
-    assert (tmp_path / 'network-settings.json').read_bytes() == original
+def test_a_file_that_kept_metalist_on_this_computer_shares_nothing(data_root):
+    path = _write_settings(data_root, {'METALIST_HOST': '127.0.0.1'})
+    retire_network_settings_file(environ={'METALIST_DATA_DIRECTORY': str(data_root)})
+    assert [load_namespace_network_sharing(namespace=vault) for vault in VAULTS] == [False, False]
+    assert not path.exists()
+
+
+def test_without_the_file_nothing_changes(data_root):
+    retire_network_settings_file(environ={'METALIST_DATA_DIRECTORY': str(data_root)})
+    assert [load_namespace_network_sharing(namespace=vault) for vault in VAULTS] == [False, False]
+
+
+def test_addresses_and_the_computers_own_name_need_no_list_any_more(data_root):
+    path = _write_settings(data_root, {
+        'METALIST_HOST': '0.0.0.0', 'METALIST_ALLOWED_HOSTS': '10.0.0.31,Studio-Mac.local,fe80::1',
+    })
+    retire_network_settings_file(environ={'METALIST_DATA_DIRECTORY': str(data_root)})
+    assert not path.exists()
+
+
+def test_a_name_kept_by_hand_stops_the_start_and_keeps_the_file(data_root):
+    original = {'METALIST_HOST': '0.0.0.0', 'METALIST_ALLOWED_HOSTS': '10.0.0.31,notes.example.com'}
+    path = _write_settings(data_root, original)
+    with pytest.raises(RuntimeError, match='METALIST_ALLOWED_HOSTS=notes.example.com'):
+        retire_network_settings_file(environ={'METALIST_DATA_DIRECTORY': str(data_root)})
+    assert json.loads(path.read_text())['environment'] == original
+    assert [load_namespace_network_sharing(namespace=vault) for vault in VAULTS] == [False, False]
 
 
 @pytest.mark.parametrize('payload', [
@@ -58,9 +71,9 @@ def test_invalid_override_does_not_replace_saved_settings(tmp_path, key, value):
     json.dumps({'version': 1, 'environment': {'METALIST_SHELL_ENABLED': '1'}}),
     json.dumps({'version': 1, 'environment': {'METALIST_HOST': None}}),
 ])
-def test_corrupt_or_unknown_settings_fail_instead_of_silently_changing_binding(tmp_path, payload):
-    path = tmp_path / 'network-settings.json'
+def test_a_corrupt_file_fails_instead_of_silently_changing_where_vaults_listen(data_root, payload):
+    path = data_root / 'network-settings.json'
     path.write_text(payload)
     with pytest.raises((ValueError, RuntimeError)):
-        apply_network_settings(environ={'METALIST_DATA_DIRECTORY': str(tmp_path)}, persist=True)
+        retire_network_settings_file(environ={'METALIST_DATA_DIRECTORY': str(data_root)})
     assert path.read_text() == payload

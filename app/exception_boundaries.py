@@ -139,6 +139,7 @@ CAPTURE_BOUNDARIES = {
     'app/server_runtime.py:_detect_lan_ip:resolve_capture': ('OSError',),
     # Parse external host, URL, IP or date input at the named boundary.
     'app/server_runtime.py:_is_loopback_host:parse_capture': ('ValueError',),
+    'app/network_settings.py:_is_ip_address:ip_capture': ('ValueError',),
     # Translate explicitly validated domain input/resource rejection.
     'app/server_runtime.py:_load_all_namespace_launch_profiles:validate_capture': ('NamespaceInputRejected',),
     # Translate explicitly validated domain input/resource rejection.

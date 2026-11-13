@@ -440,6 +440,21 @@ html:has(> body > .login-page[style*="display: flex"]:not(.login-page-covering):
     position: relative;
 }
 
+.login-namespace-select-wrap[hidden] {
+    display: none;
+}
+
+/* The one vault, where the list would be: its name alone, centred under the logo. */
+.login-namespace-name {
+    margin: 0;
+    padding: 10px 14px;
+    border: 1px solid transparent;
+    text-align: center;
+    color: rgba(255, 255, 255, 0.85);
+    font-size: 0.94rem;
+    overflow-wrap: anywhere;
+}
+
 .login-namespace-select-wrap::after {
     content: "";
     position: absolute;
@@ -1126,6 +1141,11 @@ html[data-theme="dark"] .search-suggestion-statistics-day summary {
 .namespace-ports-table input {
     width: 110px;
     min-width: 96px;
+}
+
+.namespace-ports-table input[type="checkbox"] {
+    width: auto;
+    min-width: 0;
 }
 
 .namespace-ports-name-cell {
