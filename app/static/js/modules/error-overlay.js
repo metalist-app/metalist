@@ -62,6 +62,20 @@ export function rejectedInputWarning(reason) {
   return null;
 }
 
+// The browser's note that a ResizeObserver's callback changed the layout again, so it holds the
+// rest of its notifications for the next frame (the spec's wording in Chrome and Firefox, and
+// Safari's older one). It is not a failure in MetaList, and no error object comes with it: an
+// Error MetaList throws with the same words still shows (the maintainer's dad, 2026-11-12:
+// 0.28.1 listened from the login page on and showed it on every load).
+const RESIZE_OBSERVER_LOOP_NOTES = new Set([
+  'ResizeObserver loop completed with undelivered notifications.',
+  'ResizeObserver loop limit exceeded',
+]);
+
+export function isBrowserResizeObserverNote(event) {
+  return (event.error === null || event.error === undefined) && RESIZE_OBSERVER_LOOP_NOTES.has(event.message);
+}
+
 export function shouldSuppressFatalOverlay(reason) {
   return isNetworkTransportError(reason);
 }
@@ -166,6 +180,7 @@ export function installGlobalErrorOverlay(showWarning) {
   });
 
   window.addEventListener('error', (event) => {
+    if (isBrowserResizeObserverNote(event)) return;
     let msg = null;
     if (event && event.error && typeof event.error.message === 'string') {
       msg = event.error.message;
