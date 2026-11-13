@@ -1,6 +1,6 @@
 # Skins
 
-A skin changes how MetaList looks from top to bottom: painted art, fonts, cursors. It is chosen under `Theme`, in the command palette and the right-click `Themes` menu, next to `System`, `Light` and `Dark`. MetaList has two, offered in this order: `Fathom`, a code editor's deep blue-grey (`fathom`), and `Ye Olde Scrypte`, a late-medieval manuscript (internally `illuminated`: the saved value and file names).
+A skin changes how MetaList looks from top to bottom: painted art, fonts, cursors. It is chosen under `Theme`, in the command palette and the right-click `Themes` menu, next to `System`, `Light` and `Dark`. MetaList has two, offered in this order: `Fathom`, a code editor's deep blue-grey (`fathom`), and `Ye Olde Scrypte`, a late-medieval manuscript (internally `illuminated`: the saved value and file names). Two more are agreed, not yet built: `Phosphor`, a green terminal, and `Vellum`, warm paper (`docs/ready-to-build/phosphor-and-vellum-skins.md`).
 
 Skins are reviewed and ship with MetaList; nobody installs one. A contributed skin comes in as a change to this repo, so its art is served by MetaList (the page's content security policy allows nothing else) and a skin that breaks something is caught in review.
 
@@ -8,7 +8,7 @@ Skins are reviewed and ship with MetaList; nobody installs one. A contributed sk
 
 - `app/static/css/skins/<name>.css`, linked from `app/templates/base.html`. Every rule starts with `html[data-skin="<name>"]`, so with another theme chosen the file does nothing and its art is never downloaded.
 - `app/static/img/skins/<name>/`, its art.
-- Any font it uses, in `app/static/fonts/<font>/` with its licence beside it: a skin never names a font that only some systems have. One exception, agreed 2026-11-11: Fathom writes in each system's own monospace, as the editor it follows does, ending on the generic `monospace` every system has (`tests/unit/test_skins.py`).
+- Any font it uses, in `app/static/fonts/<font>/` with its licence beside it: a skin never names a font that only some systems have. One exception, agreed 2026-11-11: Fathom writes in each system's own monospace, as the editor it follows does, ending on the generic `monospace` every system has (`tests/unit/test_skins.py`). Phosphor, once built, takes the same exception (agreed 2026-11-12).
 - One entry in `app/static/js/modules/theme-choices.js` (its label, its base theme, and whether it is the manuscript) and in the allowed values of `pref.theme` (`app/services/client_state_service.py`).
 
 A skin is drawn over its base theme, light or dark: choosing one sets `data-theme` to that as well as `data-skin`. Everything that asks for the theme (exports, diagrams, Excalidraw) sees the base theme: light for Ye Olde Scrypte, dark for Fathom. The painted initials, old-English words and drawn pointer are the manuscript's alone.
