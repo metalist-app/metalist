@@ -1,0 +1,198 @@
+/* Vellum (docs/ui/skins.md): warm paper over the light theme, for long reading and writing
+   (the maintainer, 2026-11-12). Cream
+   paper, dark brown ink, soft muted colours; notes in a book serif, Source Serif 4 (Adobe,
+   SIL Open Font License, app/static/fonts/source-serif-4/OFL.txt). Not the manuscript: no art,
+   torn edges, ornaments, initials, drawn cursors or old-English words. Its own colours, after no
+   other theme. Every rule starts with html[data-skin="vellum"]: with another theme chosen
+   this file does nothing, and its font is never downloaded. */
+
+@font-face {
+    font-family: "Source Serif 4";
+    src: url("/static/fonts/source-serif-4/SourceSerif4-Regular.woff2") format("woff2");
+    font-weight: 400;
+    font-style: normal;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: "Source Serif 4";
+    src: url("/static/fonts/source-serif-4/SourceSerif4-It.woff2") format("woff2");
+    font-weight: 400;
+    font-style: italic;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: "Source Serif 4";
+    src: url("/static/fonts/source-serif-4/SourceSerif4-Bold.woff2") format("woff2");
+    font-weight: 700;
+    font-style: normal;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: "Source Serif 4";
+    src: url("/static/fonts/source-serif-4/SourceSerif4-BoldIt.woff2") format("woff2");
+    font-weight: 700;
+    font-style: italic;
+    font-display: swap;
+}
+
+/* --- The palette, and the theme's colours drawn from it --- */
+html[data-skin="vellum"] {
+    --vellum-desk: #e9dfc8;
+    --vellum-page: #f5eedd;
+    --vellum-sheet: #fbf7ec;
+    --vellum-rule: #ddd0b4;
+    --vellum-edge: #cdbd9c;
+    --vellum-ink: #3b2a1d;
+    --vellum-muted: #6b5643;
+    --vellum-subtle: #705a46;
+    --vellum-link: #2e5a73;
+    --vellum-tag: #6a4a75;
+    --vellum-accent: #8a4f24;
+    --vellum-red: #a3302a;
+    --vellum-green: #3b6a2c;
+    --vellum-blue: #2a5688;
+    --vellum-selection: rgba(138, 79, 36, 0.22);
+    --vellum-font: "Source Serif 4", Georgia, serif;
+}
+
+/* [data-theme] as well: as specific as the light theme's own colours, and after them. */
+html[data-skin="vellum"][data-theme] {
+    color-scheme: light;
+    --primary-color: var(--vellum-accent);
+    --bg-color: var(--vellum-desk);
+    --text-color: var(--vellum-ink);
+    --border-color: var(--vellum-edge);
+    --app-surface-0: var(--vellum-desk);
+    --app-surface-1: var(--vellum-page);
+    --app-surface-2: var(--vellum-rule);
+    --app-surface-3: var(--vellum-edge);
+    --app-border-strong: var(--vellum-edge);
+    --app-border-soft: rgba(59, 42, 29, 0.12);
+    --app-text-muted: var(--vellum-muted);
+    --app-text-subtle: var(--vellum-subtle);
+    --app-accent: var(--vellum-accent);
+    --app-control-surface: var(--vellum-sheet);
+    --search-shell-surface: var(--vellum-page);
+    --search-shell-ink: var(--vellum-ink);
+    --search-shell-warning: var(--vellum-red);
+    --note-tag-border: rgba(106, 74, 117, 0.35);
+    --note-tag-text: var(--vellum-tag);
+    --note-tag-muted: var(--vellum-muted);
+    --embed-tint-1: var(--vellum-sheet);
+    --embed-tint-2: var(--vellum-page);
+    --embed-tint-3: var(--vellum-rule);
+    --embed-edge: rgba(59, 42, 29, 0.14);
+
+    /* Dialogs, menus, the palette and suggestion lists: the same paper. */
+    --modal-surface: var(--vellum-page);
+    --modal-surface-raised: var(--vellum-sheet);
+    --modal-surface-inset: var(--vellum-desk);
+    --modal-surface-grey: var(--vellum-rule);
+    --modal-panel-background: var(--vellum-page);
+    --modal-border: rgba(59, 42, 29, 0.16);
+    --modal-border-strong: rgba(138, 79, 36, 0.55);
+    --modal-text: var(--vellum-ink);
+    --modal-text-muted: var(--vellum-muted);
+    --modal-text-subtle: var(--vellum-subtle);
+    --modal-accent: var(--vellum-accent);
+    --modal-danger: var(--vellum-red);
+    --modal-success: var(--vellum-green);
+    --modal-warning: var(--vellum-accent);
+    --modal-hover: rgba(59, 42, 29, 0.06);
+    --modal-selected: rgba(138, 79, 36, 0.16);
+    --modal-heading-tint: rgba(138, 79, 36, 0.08);
+    --modal-heading-text: var(--vellum-ink);
+    --modal-focus-ring: rgba(138, 79, 36, 0.32);
+}
+
+/* The desk around the notes: a shade darker than the paper, as Fathom's panel sits behind its
+   editor. */
+html[data-skin="vellum"][data-theme] body {
+    background: var(--vellum-desk);
+}
+
+/* --- Notes: the paper --- */
+html[data-skin="vellum"] .note {
+    background-color: var(--vellum-page) !important;
+    border-color: var(--vellum-rule);
+    border-radius: 3px;
+    box-shadow: 0 1px 2px rgba(59, 42, 29, 0.08);
+}
+
+/* On the note's text, which its parts inherit: a diagram keeps its own font, which it was
+   measured in, and a style that names a font (@serif) keeps it. */
+html[data-skin="vellum"] .note-content {
+    font-family: var(--vellum-font);
+    caret-color: var(--vellum-accent);
+}
+
+html[data-skin="vellum"] .note-content ::selection,
+html[data-skin="vellum"] .note-content::selection {
+    background: var(--vellum-selection);
+}
+
+/* The note being edited: a fresh, lighter sheet. */
+html[data-skin="vellum"] .note.editing {
+    background-color: var(--vellum-sheet) !important;
+    border-color: var(--vellum-edge);
+}
+
+html[data-skin="vellum"] .note-content a {
+    color: var(--vellum-link);
+}
+
+html[data-skin="vellum"] .note-content h1,
+html[data-skin="vellum"] .note-content h2,
+html[data-skin="vellum"] .note-content h3,
+html[data-skin="vellum"] .note-content .meta-heading {
+    color: var(--vellum-ink);
+}
+
+html[data-skin="vellum"] .note-content blockquote {
+    color: var(--vellum-muted);
+}
+
+/* Tables and diagrams on the same paper, not the light theme's white and blue-grey: the sheet,
+   every other row faintly ruled. */
+html[data-skin="vellum"] .meta-markdown table,
+html[data-skin="vellum"] .meta-csv-table {
+    background: var(--vellum-sheet);
+}
+
+html[data-skin="vellum"] .meta-markdown th,
+html[data-skin="vellum"] .meta-markdown td,
+html[data-skin="vellum"] .meta-csv-table td {
+    border-color: var(--vellum-rule);
+}
+
+html[data-skin="vellum"] .meta-markdown tr:nth-child(even) td,
+html[data-skin="vellum"] .meta-csv-table tr:nth-child(even) td {
+    background: var(--vellum-page);
+}
+
+html[data-skin="vellum"] .meta-mermaid-diagram {
+    background: var(--vellum-sheet);
+    border-color: var(--vellum-rule);
+}
+
+/* @red, @green and @blue: muted to sit on cream, each still at least 4.5 to 1
+   (tests/unit/test_skins.py). */
+html[data-skin="vellum"] .meta-red {
+    color: #a3302a;
+}
+
+html[data-skin="vellum"] .meta-green {
+    color: #3b6a2c;
+}
+
+html[data-skin="vellum"] .meta-blue {
+    color: #2a5688;
+}
+
+html[data-skin="vellum"] #search-input {
+    background: var(--vellum-page);
+    color: var(--vellum-ink);
+}

@@ -8,7 +8,7 @@ function rootWith(attributes) {
 }
 
 test('Theme offers the three themes and then the skins', () => {
-    assert.deepEqual(THEME_CHOICES, [['system', 'System'], ['light', 'Light'], ['dark', 'Dark'], ['fathom', 'Fathom'], ['illuminated', 'Ye Olde Scrypte']]);
+    assert.deepEqual(THEME_CHOICES, [['system', 'System'], ['light', 'Light'], ['dark', 'Dark'], ['fathom', 'Fathom'], ['phosphor', 'Phosphor'], ['vellum', 'Vellum'], ['illuminated', 'Ye Olde Scrypte']]);
 });
 
 test('only a skin counts as a skin', () => {
@@ -23,6 +23,10 @@ test('each skin is drawn over its own base theme; only the manuscript paints ini
     assert.equal(skinBaseTheme('fathom'), 'dark');
     assert.equal(isManuscriptSkin('illuminated'), true);
     assert.equal(isManuscriptSkin('fathom'), false);
+    assert.equal(skinBaseTheme('phosphor'), 'dark');
+    assert.equal(skinBaseTheme('vellum'), 'light');
+    assert.equal(isManuscriptSkin('phosphor'), false);
+    assert.equal(isManuscriptSkin('vellum'), false);
     assert.throws(() => skinBaseTheme('dark'), /Not a skin: dark/);
 });
 
@@ -37,6 +41,8 @@ test('the current choice is the skin when there is one, under its base theme', (
 test('a skin opens on its base theme, at the login screen too', () => {
     assert.equal(resolveStoredThemePreference({ 'pref.theme': 'illuminated' }), 'light');
     assert.equal(resolveStoredThemePreference({ 'pref.theme': 'fathom' }), 'dark');
+    assert.equal(resolveStoredThemePreference({ 'pref.theme': 'phosphor' }), 'dark');
+    assert.equal(resolveStoredThemePreference({ 'pref.theme': 'vellum' }), 'light');
     assert.equal(resolveStoredThemePreference({ 'pref.theme': 'dark' }), 'dark');
     assert.equal(resolveStoredThemePreference({ 'pref.theme': 'system' }), null);
 });
