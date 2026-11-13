@@ -17,7 +17,7 @@
 - UUID note/file references (`![[UUID]]`, `[[UUID]]`): `docs/ui/references.md`
 - External HTML paste sanitization: `docs/ui/paste-sanitization.md`
 - Note content meta-tag formatting: `docs/ui/content-formatting.md`
-- Skins (the Ye Olde Scrypte theme, and how to contribute one): `docs/ui/skins.md`; Phosphor and Vellum, agreed: `docs/ready-to-build/phosphor-and-vellum-skins.md`
+- Skins (the Ye Olde Scrypte theme, and how to contribute one): `docs/ui/skins.md`
 - Search query syntax (verifier): `docs/ui/search-syntax.md`
 - Search semantics (server behavior): `docs/ui/search-semantics.md`
 - Tag bar grammar (tags/comments/wrappers): `docs/ui/tag-bar.md`

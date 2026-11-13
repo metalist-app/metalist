@@ -135,7 +135,7 @@ def test_skin_is_linked(skin: str) -> None:
 
 
 # Every text colour reads at 4.5 to 1 or better on the background it sits on (WCAG AA; the
-# maintainer, 2026-11-12, docs/ready-to-build/phosphor-and-vellum-skins.md). Each pair names a
+# maintainer, 2026-11-12, docs/ui/skins.md). Each pair names a
 # text colour and a background from the skin's palette, or a meta colour (.meta-red) by its rule.
 MIN_TEXT_CONTRAST = 4.5
 CONTRAST_PAIRS = {

@@ -1,6 +1,5 @@
 /* Phosphor (docs/ui/skins.md): a green terminal screen over the dark theme, notes in the
-   system's own monospace font, as a terminal writes (the maintainer, 2026-11-12;
-   docs/ready-to-build/phosphor-and-vellum-skins.md). One hue carries everything, so nothing
+   system's own monospace font, as a terminal writes (the maintainer, 2026-11-12). One hue carries everything, so nothing
    depends on colour alone: text, tags and headings in brighter and dimmer greens, links
    underlined, a selection inverse. Nothing animates, ever. Its own colours, after no other
    theme. Every rule starts with html[data-skin="phosphor"]: with another theme chosen this

@@ -53,7 +53,7 @@ Built 2026-11-11 (named by the maintainer: plain, beside System, Light and Dark)
 
 ## Phosphor
 
-A green terminal screen over the dark theme (the maintainer, 2026-11-12; `docs/ready-to-build/phosphor-and-vellum-skins.md`). Its own colours, after no other theme.
+A green terminal screen over the dark theme (the maintainer, 2026-11-12). Its own colours, after no other theme.
 
 - A near-black screen (`#0a110b`, the glass around it `#050805`), text in one green (`#4dee74`) with a faint glow on the letters.
 - One hue carries everything, so nothing depends on colour alone: tags, headings and bold in a brighter green (`#a6ffbc`), and bold; muted text dimmer (`#3cb85c`, `#2f9a4b`); links underlined; a selection inverse, black on green; a block caret where the browser draws one (`caret-shape`), elsewhere a bright one.
@@ -61,6 +61,7 @@ A green terminal screen over the dark theme (the maintainer, 2026-11-12; `docs/r
 - Notes in the system's own monospace, a tenth smaller, as Fathom's; the rest of MetaList keeps its own font.
 - Nothing animates, ever, with or without `prefers-reduced-motion`: every animation and transition runs once in a hundredth of a millisecond, so code waiting for one to end still hears it end.
 - Dialogs, menus, the palette and suggestion lists are the same green on black.
+- Not done: scanlines and a vignette (agreed as optional and barely visible if used), and an amber Phosphor, as a second skin or a choice inside it (later, if wanted).
 
 ## Vellum
 
