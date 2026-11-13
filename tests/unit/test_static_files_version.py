@@ -29,8 +29,9 @@ LATER_NS = 10**18
 def _static_folder(tmp_path: Path) -> Path:
     folder = tmp_path / "static"
     (folder / "js" / "modules").mkdir(parents=True)
-    (folder / "js" / "main.js").write_text("import './modules/config.js';\n", encoding="utf-8")
-    (folder / "js" / "modules" / "config.js").write_text("export const A = 1;\n", encoding="utf-8")
+    # Bytes, so Windows writes \n as it is rather than \r\n (Windows CI, 2026-11-12).
+    (folder / "js" / "main.js").write_bytes(b"import './modules/config.js';\n")
+    (folder / "js" / "modules" / "config.js").write_bytes(b"export const A = 1;\n")
     return folder
 
 

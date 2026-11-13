@@ -13,10 +13,11 @@ from app.config import (
 
 
 class _AttemptBucket:
-    __slots__ = ("attempts", "blocked_until")
+    __slots__ = ("attempts", "blocked_at", "blocked_until")
 
     def __init__(self) -> None:
         self.attempts: deque[float] = deque()
+        self.blocked_at = 0.0
         self.blocked_until = 0.0
 
 
@@ -68,7 +69,10 @@ class LoginRateLimiter:
                 return True, 0
             bucket = self._buckets[key]
             if bucket.blocked_until > now:
-                remaining = math.ceil(bucket.blocked_until - now)
+                # Counted from when the block began: blocked_until - now can come out a hair over
+                # the block's length in floating point and round up a whole second (a coarse
+                # clock reads the same tick, Windows CI 2026-11-12).
+                remaining = math.ceil(self._block_seconds - (now - bucket.blocked_at))
                 return False, remaining
             self._prune_attempts(bucket, now)
             if not bucket.attempts:
@@ -87,6 +91,7 @@ class LoginRateLimiter:
             self._prune_attempts(bucket, now)
             bucket.attempts.append(now)
             if len(bucket.attempts) >= self._max_attempts:
+                bucket.blocked_at = now
                 bucket.blocked_until = now + self._block_seconds
                 bucket.attempts.clear()
 

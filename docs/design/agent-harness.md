@@ -541,8 +541,11 @@ operations are recorded, never applied. See [the suite guide](../../evals/README
 
 `lookup_metalist_help` returns the selected help skills (`skills/help-*.md`) and the
 installed version; help text is transient and never becomes conversation history.
-The `releases` topic is generated from the README "Changes in" sections by
-`scripts/sync_release_notes_help.py`; a unit test fails when they drift.
+The release-notes topics are generated from CHANGELOG.md's "Changes in" sections by
+`scripts/sync_release_notes_help.py`: newest first, as many pages as the releases need
+(`releases`, `releases-2`, …; `release_notes.py`), each topic described by its version range,
+so every release stays one lookup away (2026-11-12; before, the oldest were left out once
+they no longer fit one skill). A unit test fails when they drift.
 
 `open_menu` accepts only ids from the shared JSON menu catalog, the
 application-owned destination allowlist. `dialog` invokes an existing form-opening

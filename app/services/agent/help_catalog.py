@@ -4,6 +4,8 @@ import json
 from importlib.resources import files
 from typing import Literal
 
+from app.services.agent.release_notes import FIRST_PAGE_NUMBER, RELEASE_HEADING_RE, RELEASES_TOPIC, release_notes_topic
+
 
 HELP_TOPICS = {
     'notes': ('Notes and editing', 'Hierarchy, editing, moving, copying and pasting, undo, keyboard shortcuts, tag bar typing and tag suggestions, and command palette utilities. Mouse actions belong to mouse.'),
@@ -23,8 +25,32 @@ HELP_TOPICS = {
     'privacy': ('Privacy and security', 'Cloud disclosure, gray notes when hovering chat, password exclusion, encryption and credentials.'),
     'data': ('Vaults and backups', 'Vaults, backup/restore, HTML export, ports and updates.'),
     'dictation': ('Dictation (speech to text)', 'Pasting dictated text from speech-to-text tools such as Superwhisper into the search bar, tag bar or a note: how words become tags, spoken dash/quote/or/not, "at to do" meta tags, the "start tags" phrase in notes, undo, and Dictation Settings.'),
-    'releases': ('Release notes', 'What changed in each MetaList version (what is new, when a feature or fix arrived).'),
 }
+
+
+def _release_notes_topics() -> dict[str, tuple[str, str]]:
+    """One topic per packaged release-notes page (release_notes.py), named by its versions, so
+    the model looks up the page that holds the release it is asked about."""
+    skills = files('app.services.agent.skills')
+    pages = []
+    page_number = FIRST_PAGE_NUMBER
+    while skills.joinpath(f'help-{release_notes_topic(page_number)}.md').is_file():
+        topic = release_notes_topic(page_number)
+        versions = RELEASE_HEADING_RE.findall(skills.joinpath(f'help-{topic}.md').read_text(encoding='utf-8'))
+        assert versions, f'help-{topic}.md lists no release'
+        pages.append((topic, versions[0], versions[-1]))
+        page_number += 1
+    assert pages and pages[0][0] == RELEASES_TOPIC, 'help-releases.md is packaged'
+    topics = {}
+    for topic, newest, oldest in pages:
+        if topic == RELEASES_TOPIC:
+            topics[topic] = ('Release notes', f'What changed in MetaList {newest} back to {oldest} (what is new, when a feature or fix arrived); older versions are in the topics after it.')
+        else:
+            topics[topic] = (f'Release notes {newest} to {oldest}', f'What changed in MetaList {newest} back to {oldest}.')
+    return topics
+
+
+HELP_TOPICS.update(_release_notes_topics())
 HelpTopic = Literal[tuple(HELP_TOPICS)]
 MENU_ACTIONS = json.loads(files('app').joinpath('static/config/agent-menu-actions.json').read_text(encoding='utf-8'))
 assert len({entry['id'] for entry in MENU_ACTIONS}) == len(MENU_ACTIONS)
