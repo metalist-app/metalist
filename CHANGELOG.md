@@ -2,6 +2,10 @@
 
 What changed in each MetaList release, newest first.
 
+## Changes in 0.28.2
+
+- Fixed: 0.28.1 showed a red error on every load, "ResizeObserver loop completed with undelivered notifications." That is the browser noting a layout it finished on the next frame, not an error; it no longer shows.
+
 ## Changes in 0.28.1
 
 - **The login page is quicker,** most of all on another computer over Wi-Fi: it loads only its own few files, and the rest of MetaList downloads while you pick a vault and type your password. Once a browser trusts MetaList's certificate it also keeps MetaList's files between visits, until an update changes them.
