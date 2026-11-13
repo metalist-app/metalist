@@ -32,6 +32,7 @@ import uuid
 import httpx
 from zxcvbn import zxcvbn
 
+from app.config import PASSWORD_MIN_ZXCVBN_SCORE
 from app.security.sensitive_cache import SensitiveMemo
 from app.services.content_formatting import (
     ScopedPasswordRegion,
@@ -49,6 +50,7 @@ from app.services.undo_state import record_split_note
 from app.usecases.base import QueryCommand
 from app.usecases.create_note import apply_insert_note
 from app.usecases.update_content import apply_update_note_sources
+from app.utils.byte_sizes import MIB
 from app.utils.text_utils import strip_html
 
 # A note tagged @password is one password; a region is one of a note's ((…)) regions.
@@ -63,8 +65,14 @@ OLD = "old"
 REPLACED = "replaced"
 GROUPS = (LEAKED, REUSED, WEAK, OLD, REPLACED)
 # zxcvbn scores 0 (very weak) through 4 (very strong); the panel counts below 3 or below 4 as weak.
-WEAK_THRESHOLDS = (3, 4)
-OLD_AFTER = timedelta(days=365)
+# Below 3 is the usual line for site passwords (zxcvbn's "safely unguessable" starts at 3); below 4
+# is the vault's own line (PASSWORD_MIN_ZXCVBN_SCORE).
+WEAK_BELOW_USUAL = 3
+WEAK_BELOW_STRICT = PASSWORD_MIN_ZXCVBN_SCORE
+WEAK_THRESHOLDS = (WEAK_BELOW_USUAL, WEAK_BELOW_STRICT)
+# A password is old when its note has not changed for a year.
+DAYS_IN_A_YEAR = 365
+OLD_AFTER = timedelta(days=DAYS_IN_A_YEAR)
 # zxcvbn grows slow on long input and judges a password by its start anyway.
 _ZXCVBN_MAX_CHARACTERS = 100
 # The words of the note's label and tags that zxcvbn counts against a password; enough for a site
@@ -89,13 +97,16 @@ _FINGERPRINT_HEX_DIGITS = 16
 # Which password a row is, kept across updates while the note around it changes, so an open
 # Replace… follows it and never replaces another one. Keyed with a secret that never leaves the
 # server, so the browser can tell equal passwords apart from others but learns nothing of them.
-_PASSWORD_ID_KEY = secrets.token_bytes(32)
+# As long as the HMAC-SHA256 output: a shorter key would be the weaker part.
+_PASSWORD_ID_KEY_BYTES = 32
+_PASSWORD_ID_KEY = secrets.token_bytes(_PASSWORD_ID_KEY_BYTES)
 _PASSWORD_ID_HEX_DIGITS = 16
 # What the audit remembers while its panel is open: each password's score (by the password and the
 # words it is judged against) and each leak answer (by the password's SHA-1). Forgotten when the
 # panel opens again and, as every sensitive cache, when the vault locks. Bounds well beyond any vault.
 _REMEMBERED_PASSWORDS = 50_000
-_REMEMBERED_BYTES = 32 * 1024 * 1024
+_REMEMBERED_MEBIBYTES = 32
+_REMEMBERED_BYTES = _REMEMBERED_MEBIBYTES * MIB
 _remembered_scores = SensitiveMemo(maxsize=_REMEMBERED_PASSWORDS, max_bytes=_REMEMBERED_BYTES)
 _remembered_leaks = SensitiveMemo(maxsize=_REMEMBERED_PASSWORDS, max_bytes=_REMEMBERED_BYTES)
 
@@ -196,10 +207,11 @@ def _hibp_suffix_counts(prefix: str, client: httpx.Client) -> Dict[str, int]:
     capture = CapturedExceptionContext(httpx.HTTPError, boundary="app/usecases/password_audit.py:_hibp_suffix_counts:capture")
     with capture:
         response = client.get(f"{HIBP_RANGE_URL}{prefix}", headers=_HIBP_HEADERS, timeout=_HIBP_TIMEOUT_SECONDS)
-        response.raise_for_status()
     if capture.captured_exception is not None:
         raise LeakCheckUnavailable(f"Have I Been Pwned could not be reached ({type(capture.captured_exception).__name__})") from capture.captured_exception
     assert response is not None
+    if response.status_code != httpx.codes.OK:
+        raise LeakCheckUnavailable(f"Have I Been Pwned answered {response.status_code}")
     counts: Dict[str, int] = {}
     for line in response.text.splitlines():
         suffix, separator, count = line.strip().partition(":")
@@ -268,9 +280,10 @@ def audit_passwords(*, weak_below: int, check_leaks: bool, fresh: bool, now: dat
     leak_check = "off"
     if check_leaks and counted:
         leak_check = "done"
+        values = [password.value for password in counted]
         leak_capture = CapturedExceptionContext(LeakCheckUnavailable, boundary="app/usecases/password_audit.py:audit_passwords:leak_capture")
         with leak_capture:
-            leak_counts = leaked_counts([password.value for password in counted], client)
+            leak_counts = leaked_counts(values, client)
         if leak_capture.captured_exception is not None:
             leak_check = "unavailable"
     rows: List[Dict[str, object]] = []

@@ -613,6 +613,12 @@ exceptions = ["OSError", "sqlite3.Error"]
 reason = "Handle expected external I/O, provider, image or LaTeX parsing failure."
 
 [[tool.shockharness.rules.exceptions.boundaries]]
+path = "app/usecases/password_audit.py"
+language = "python"
+exceptions = ["httpx.HTTPError", "app.usecases.password_audit.LeakCheckUnavailable"]
+reason = "Have I Been Pwned is an outside service (the Password Audit's opt-in leak check): when it can't be reached or answers in a form MetaList does not read, the audit says the leak check is unavailable and checks everything else (app/exception_boundaries.py)."
+
+[[tool.shockharness.rules.exceptions.boundaries]]
 path = "app/services/obsidian_import/vault.py"
 language = "python"
 exception = "json.JSONDecodeError"

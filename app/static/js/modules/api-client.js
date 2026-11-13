@@ -12,6 +12,7 @@ import { sanitizeNoteHtmlForStorage } from './note-html-sanitizer.js';
 import { describeApiFailure } from './api-error-diagnostics.js';
 import { inTransferSlot } from './file-transfer-slots.js';
 import { notesMayHaveChanged } from './notes-change-signal.js';
+import { WEAK_THRESHOLDS } from './password-audit/weak-thresholds.js';
 
 function buildAuthHeaders(includeContentType) {
     return buildSessionHeaders(includeContentType);
@@ -404,7 +405,7 @@ export const NotesAPI = {
     // fresh: the panel opening, everything checked again; else an update while it is open, which
     // checks only passwords that are new or changed.
     async passwordAudit(weakBelow, checkLeaks, fresh) {
-        if ((weakBelow !== 3 && weakBelow !== 4) || typeof checkLeaks !== 'boolean' || typeof fresh !== 'boolean') {
+        if (!WEAK_THRESHOLDS.includes(weakBelow) || typeof checkLeaks !== 'boolean' || typeof fresh !== 'boolean') {
             throw new Error('NotesAPI.passwordAudit requires the weak threshold, whether to check leaks and whether to start afresh');
         }
         return this._apiCall(CONFIG.API.NOTES.PASSWORD_AUDIT, {

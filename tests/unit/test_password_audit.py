@@ -292,3 +292,11 @@ def test_replace_refuses_a_password_that_is_not_the_one_it_was_asked_for(note_st
             new_password="N3w!Strong-Pass-42", on=TODAY, token="", client_id="client", undo_context="context", viewport=VIEWPORT,
         ).execute()
     assert note_store.get_note("email").content == TREE[2][4]
+
+
+def test_a_leak_check_that_answers_with_an_error_says_so_and_checks_the_rest(note_store: NoteStore) -> None:
+    def busy(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(503, text="busy")
+    result = audit_passwords(weak_below=3, check_leaks=True, fresh=True, now=NOW, client=httpx.Client(transport=httpx.MockTransport(busy)))
+    assert result["leakCheck"] == "unavailable"
+    assert result["summary"][WEAK] == 2

@@ -12,6 +12,7 @@ import { DEFAULT_PASSWORD_CHARSET, DEFAULT_PASSWORD_LENGTH, generateRandomPasswo
 import { openReferenceInNewTab } from '../mode-manager/events/keyboard-events.js';
 import { CommandGate } from '../mode-manager/services/command-gate-service.js';
 import { onNotesChanged } from '../notes-change-signal.js';
+import { WEAK_BELOW_USUAL, WEAK_THRESHOLDS } from './weak-thresholds.js';
 
 const PANEL_ID = 'password-audit-panel';
 const GROUPS = [
@@ -21,18 +22,18 @@ const GROUPS = [
     ['old', 'Old'],
     ['replaced', 'Replaced, to delete'],
 ];
-const WEAK_THRESHOLDS = [3, 4];
 // A password in a ((…)) region never holds a bracket of any wrapper, so it can't close its region.
 const WRAPPER_CHARACTERS = new Set(['(', ')', '[', ']', '{', '}', '<', '>']);
 const COPIED_SECONDS = 2;
 const MS_PER_SECOND = 1000;
 // After the notes change, the panel waits this long for more changes before it updates, so a
 // password is checked once typing pauses, not at every save.
-const UPDATE_AFTER_CHANGES_MS = 2 * MS_PER_SECOND;
+const UPDATE_AFTER_CHANGES_SECONDS = 2;
+const UPDATE_AFTER_CHANGES_MS = UPDATE_AFTER_CHANGES_SECONDS * MS_PER_SECOND;
 
 const state = ApplicationState.createFields('password-audit-panel', {
     element: null,
-    weakBelow: 3,
+    weakBelow: WEAK_BELOW_USUAL,
     checkLeaks: false,
     savePreferences: null,
     onAudited: null,
@@ -77,8 +78,8 @@ function isReplacing(row) {
 
 // The row of the password being replaced, where it is now; null once it is gone from its note.
 function replacingRow() {
-    const rows = state.result === null ? [] : state.result.rows;
-    const found = rows.find(isReplacing);
+    if (state.result === null) return null;
+    const found = state.result.rows.find(isReplacing);
     return found === undefined ? null : found;
 }
 
@@ -164,11 +165,14 @@ function focusedControlSelector(groups) {
     if (!(focused instanceof HTMLElement) || !groups.contains(focused)) return null;
     const attribute = CONTROL_ATTRIBUTES.find((name) => focused.hasAttribute(name));
     if (attribute === undefined) return null;
+    // The form for a password gone from its note sits outside every group and row.
+    const parts = [];
     const section = focused.closest('[data-audit-group]');
+    if (section !== null) parts.push(`[data-audit-group="${CSS.escape(section.dataset.auditGroup)}"]`);
     const row = focused.closest('[data-audit-row]');
-    const sectionPart = section === null ? '' : `[data-audit-group="${CSS.escape(section.dataset.auditGroup)}"] `;
-    const rowPart = row === null ? '' : `[data-audit-row="${CSS.escape(row.dataset.auditRow)}"] `;
-    return `${sectionPart}${rowPart}[${attribute}]`;
+    if (row !== null) parts.push(`[data-audit-row="${CSS.escape(row.dataset.auditRow)}"]`);
+    parts.push(`[${attribute}]`);
+    return parts.join(' ');
 }
 
 function render() {
@@ -181,9 +185,12 @@ function render() {
     groups.innerHTML = groupsHtml(state.result);
     if (focusedSelector === null) return;
     const control = groups.querySelector(focusedSelector);
-    // Gone with its row: focus stays in the panel, so Escape still closes it.
-    const target = control === null ? panel : control;
-    target.focus({ preventScroll: true });
+    if (control === null) {
+        // Gone with its row: focus stays in the panel, so Escape still closes it.
+        panel.focus({ preventScroll: true });
+        return;
+    }
+    control.focus({ preventScroll: true });
 }
 
 const GROUP_ORDER = GROUPS.map(([group]) => group);

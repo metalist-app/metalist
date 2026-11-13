@@ -612,7 +612,8 @@ class PasteChildEndpointRequest(TypedDict):
 # Password Audit (app/usecases/password_audit.py): the threshold and whether to ask about leaks.
 @with_config(ConfigDict(strict=True))
 class PasswordAuditRequest(TypedDict):
-    weakBelow: Literal[3, 4]
+    # Below 3 or below 4: audit_passwords refuses any other, as WEAK_THRESHOLDS says.
+    weakBelow: int
     checkLeaks: bool
     # True when the panel opens: everything checked again. False for an update while it is open.
     fresh: bool
