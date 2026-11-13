@@ -5,6 +5,10 @@ What changed in each MetaList version, newest first, from its changelog
 Compare with installed_version from the help lookup to tell the user whether
 they already have a release. Version info offers updates (see the data topic).
 
+## 0.28.3
+
+- The vault list on the login page comes up at once on Windows: it no longer checks every vault's ports, each check a PowerShell start, which took about 3 seconds.
+
 ## 0.28.2
 
 - Fixed: 0.28.1 showed a red error on every load, "ResizeObserver loop completed with undelivered notifications." That is the browser noting a layout it finished on the next frame, not an error; it no longer shows.

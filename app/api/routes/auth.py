@@ -768,10 +768,7 @@ def put_command_palette_usage(
 
 @router.get("/login-namespaces", response_model=LoginNamespaceCatalogResponse)
 def login_namespace_catalog():
-    payload = build_login_namespace_catalog(
-        environ=os.environ,
-        current_namespace=ACTIVE_NAMESPACE,
-    )
+    payload = build_login_namespace_catalog(current_namespace=ACTIVE_NAMESPACE)
     return LoginNamespaceCatalogResponse(**payload)
 
 
