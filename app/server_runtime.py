@@ -57,8 +57,9 @@ _DEFAULT_NAMESPACE = "default"
 _DEFAULT_HTTP_PORT = 8000
 _DEFAULT_HTTPS_PORT = 8443
 # A vault's server listens on this computer only, or on the network too when the vault is shared
-# (Manage Vault Ports); an explicit METALIST_HOST overrides both, as behind a proxy.
+# (Manage Vault Ports). Nothing overrides that choice: METALIST_HOST, which once did, is retired.
 LOOPBACK_BIND_HOST = "127.0.0.1"
+RETIRED_HOST_ENV_NAME = "METALIST_HOST"
 NETWORK_BIND_HOST = "0.0.0.0"
 # The address a vault's server chose when it started, told to the app it imports (app/main.py).
 # Every start chooses again, so a restart after the vault's sharing changed listens anew.
@@ -382,14 +383,22 @@ def save_namespace_network_sharing(*, namespace: str, shared: bool) -> None:
         connection.close()
 
 
+def refuse_retired_host_setting(*, environ: Mapping[str, str]) -> None:
+    """METALIST_HOST once said where every vault listened, overriding each vault's own choice
+    unseen (it shared a vault the user had just unshared, 2026-11-13). It is retired: a start
+    that finds it stops and says to remove it, rather than ignore a setting someone relies on."""
+    if RETIRED_HOST_ENV_NAME in environ:
+        raise RuntimeError(
+            f"{RETIRED_HOST_ENV_NAME} is no longer read: each vault says whether it is shared on the "
+            f"network (Manage Vault Ports). Remove {RETIRED_HOST_ENV_NAME} from the environment that "
+            f"starts MetaList."
+        )
+
+
 def resolve_vault_bind_host(*, environ: Mapping[str, str], namespace: str | None) -> str:
-    """Where a vault's server listens: an explicit METALIST_HOST, else the network when the vault
-    is shared and this computer only when it is not (or when no vault is chosen, as in tests)."""
-    if "METALIST_HOST" in environ:
-        explicit_host = environ["METALIST_HOST"].strip()
-        if explicit_host == "":
-            raise RuntimeError("METALIST_HOST must not be empty")
-        return explicit_host
+    """Where a vault's server listens: the network when the vault is shared, this computer only
+    when it is not (or when no vault is chosen, as in tests)."""
+    refuse_retired_host_setting(environ=environ)
     if namespace is None:
         return LOOPBACK_BIND_HOST
     if load_namespace_network_sharing(namespace=namespace):
@@ -1152,7 +1161,9 @@ def _resolve_https_port(*, environ: Mapping[str, str], ssl_certfile: str | None)
 def resolve_main_server_config(*, environ: Mapping[str, str]) -> MainServerConfig:
     ssl_certfile, ssl_keyfile = _resolve_tls_pair(environ=environ)
 
-    host = _read_text(environ=environ, name="METALIST_HOST", fallback="127.0.0.1")
+    # The address that reaches a vault on this computer, whether or not it is shared; a vault's
+    # server listens where resolve_vault_bind_host chose (main.py).
+    host = LOOPBACK_BIND_HOST
     port = _read_int(environ=environ, name="METALIST_PORT", fallback=_DEFAULT_HTTP_PORT)
     https_port = _resolve_https_port(environ=environ, ssl_certfile=ssl_certfile)
     proxy_headers = _read_flag(environ=environ, name="METALIST_PROXY_HEADERS", fallback=True)

@@ -88,7 +88,7 @@ def test_resolve_main_server_config_defaults_to_loopback_http_without_tls(tmp_pa
     assert config.ssl_keyfile is None
 
 
-def test_resolve_main_server_config_accepts_remote_bind_and_tls_files(tmp_path) -> None:
+def test_resolve_main_server_config_accepts_tls_files(tmp_path) -> None:
     cert_path = tmp_path / "cert.pem"
     key_path = tmp_path / "key.pem"
     cert_path.write_text("cert", encoding="utf-8")
@@ -96,7 +96,6 @@ def test_resolve_main_server_config_accepts_remote_bind_and_tls_files(tmp_path) 
 
     config = resolve_main_server_config(
         environ={
-            "METALIST_HOST": "0.0.0.0",
             "METALIST_PORT": "8443",
             "METALIST_HTTPS_PORT": "9443",
             "METALIST_PROXY_HEADERS": "0",
@@ -106,7 +105,8 @@ def test_resolve_main_server_config_accepts_remote_bind_and_tls_files(tmp_path) 
         }
     )
 
-    assert config.host == "0.0.0.0"
+    # The address that reaches the vault on this computer; where it listens is its own choice.
+    assert config.host == "127.0.0.1"
     assert config.port == 8443
     assert config.https_port == 9443
     assert config.proxy_headers is False
@@ -160,7 +160,7 @@ def test_resolve_main_server_config_uses_default_cert_paths(tmp_path, monkeypatc
     assert config.ssl_keyfile == str(key_path)
 
 
-def test_resolve_main_server_config_enables_https_for_remote_bind_when_default_certs_exist(
+def test_resolve_main_server_config_enables_https_when_default_certs_exist(
     tmp_path,
     monkeypatch,
 ) -> None:
@@ -171,11 +171,8 @@ def test_resolve_main_server_config_enables_https_for_remote_bind_when_default_c
     monkeypatch.setattr(server_runtime, "_DEFAULT_CERT_PATH", cert_path)
     monkeypatch.setattr(server_runtime, "_DEFAULT_KEY_PATH", key_path)
 
-    config = resolve_main_server_config(
-        environ={"METALIST_HOST": "0.0.0.0"},
-    )
+    config = resolve_main_server_config(environ={})
 
-    assert config.host == "0.0.0.0"
     assert config.port == 8000
     assert config.https_port == 8443
     assert config.ssl_certfile == str(cert_path)
@@ -399,8 +396,9 @@ def test_a_vault_listens_on_the_network_only_while_it_is_shared(tmp_path, monkey
     # Saving its ports again keeps it shared.
     save_namespace_launch_profile(namespace="work", port=9200, https_port=None, mcp_port=None)
     assert server_runtime.load_namespace_network_sharing(namespace="work") is True
-    # An explicit METALIST_HOST (a proxy in front) wins either way.
-    assert server_runtime.resolve_vault_bind_host(environ={"METALIST_HOST": "127.0.0.1"}, namespace="work") == "127.0.0.1"
+    # Nothing overrides the vault's choice: the retired METALIST_HOST stops the start instead.
+    with pytest.raises(RuntimeError, match="METALIST_HOST is no longer read"):
+        server_runtime.resolve_vault_bind_host(environ={"METALIST_HOST": "127.0.0.1"}, namespace="work")
 
     server_runtime.save_namespace_network_sharing(namespace="work", shared=False)
     assert server_runtime.resolve_vault_bind_host(environ={}, namespace="work") == "127.0.0.1"
@@ -412,7 +410,7 @@ def test_sharing_a_vault_with_no_launch_profile_is_a_bug(tmp_path, monkeypatch) 
         server_runtime.save_namespace_network_sharing(namespace="ghost", shared=True)
 
 
-def test_apply_main_cli_args_to_environ_allows_shell_on_explicit_lan_bind(
+def test_apply_main_cli_args_to_environ_keeps_allowed_hosts_with_shell(
     tmp_path,
     monkeypatch,
 ) -> None:
@@ -420,8 +418,7 @@ def test_apply_main_cli_args_to_environ_allows_shell_on_explicit_lan_bind(
     monkeypatch.setattr(server_runtime, "_DEFAULT_CERT_PATH", tmp_path / "missing-cert.pem")
     monkeypatch.setattr(server_runtime, "_DEFAULT_KEY_PATH", tmp_path / "missing-key.pem")
     environ = {
-        "METALIST_HOST": "0.0.0.0",
-        "METALIST_ALLOWED_HOSTS": "10.0.0.31",
+        "METALIST_ALLOWED_HOSTS": "notes.example.com",
     }
 
     parsed = apply_main_cli_args_to_environ(
@@ -431,8 +428,7 @@ def test_apply_main_cli_args_to_environ_allows_shell_on_explicit_lan_bind(
 
     assert parsed.shell_enabled is True
     assert environ["METALIST_SHELL_ENABLED"] == "1"
-    assert environ["METALIST_HOST"] == "0.0.0.0"
-    assert environ["METALIST_ALLOWED_HOSTS"] == "10.0.0.31"
+    assert environ["METALIST_ALLOWED_HOSTS"] == "notes.example.com"
 
 
 def test_apply_main_cli_args_to_environ_clears_unbacked_shell_capability() -> None:
@@ -669,7 +665,7 @@ def test_resolve_https_redirect_url_does_not_redirect_localhost_host_header_when
     )
 
     redirect_url = resolve_https_redirect_url(
-        environ={"METALIST_HTTPS_PORT": "3443", "METALIST_HOST": "0.0.0.0"},
+        environ={"METALIST_HTTPS_PORT": "3443"},
         request_scheme="http",
         request_host=request_host,
         request_path="/",
@@ -702,7 +698,7 @@ def test_resolve_https_redirect_url_uses_default_https_port_when_default_certs_e
     monkeypatch.setattr(server_runtime, "_DEFAULT_KEY_PATH", key_path)
 
     redirect_url = resolve_https_redirect_url(
-        environ={"METALIST_HOST": "0.0.0.0"},
+        environ={},
         request_scheme="http",
         request_host="10.0.0.31",
         request_path="/notes",

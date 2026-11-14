@@ -116,7 +116,7 @@ def test_preflight_failure_records_failure_and_does_not_swallow_bug(installation
 
 
 def test_detached_worker_preserves_lan_settings_and_clears_child_identity(installation, monkeypatch):
-    for key, value in {'METALIST_HOST': '0.0.0.0', 'METALIST_ALLOWED_HOSTS': '10.0.0.31',
+    for key, value in {'METALIST_ALLOWED_HOSTS': '10.0.0.31',
                        'METALIST_NAMESPACE': 'work', 'METALIST_PORT': '9000',
                        'METALIST_HTTPS_PORT': '9443', 'METALIST_ORCHESTRATED_CHILD': '1'}.items():
         monkeypatch.setenv(key, value)
@@ -128,7 +128,6 @@ def test_detached_worker_preserves_lan_settings_and_clears_child_identity(instal
     arguments = popen.call_args
     assert arguments.args[0][1:] == ['-m', 'app.services.app_update_worker', record['job_id']]
     environment = arguments.kwargs['env']
-    assert environment['METALIST_HOST'] == '0.0.0.0'
     assert environment['METALIST_ALLOWED_HOSTS'] == '10.0.0.31'
     assert 'METALIST_NAMESPACE' not in environment
     assert 'METALIST_HTTPS_PORT' not in environment

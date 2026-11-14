@@ -689,12 +689,10 @@ def test_main_enable_shell_launches_all_namespaces_with_shared_capability(
     calls: list[str] = []
 
     def fake_enable_shell_execution_for_launch(*, environ) -> None:
-        environ["METALIST_HOST"] = "127.0.0.1"
         environ["METALIST_SHELL_ENABLED"] = "1"
         calls.append("enable_shell_execution_for_launch")
 
     def fake_open_or_launch_all_namespaces(*, environ):
-        assert environ["METALIST_HOST"] == "127.0.0.1"
         assert environ["METALIST_SHELL_ENABLED"] == "1"
         calls.append("open_or_launch_all_namespaces")
         return []
@@ -799,6 +797,17 @@ def test_prompt_for_missing_namespace_launch_profiles_auto_saves_default_ports(m
             "mcp_port": None,
         },
     ]
+
+
+# METALIST_HOST once overrode every vault's sharing unseen; a start that finds it stops first.
+def test_main_refuses_to_start_while_the_retired_host_setting_is_set(monkeypatch) -> None:
+    monkeypatch.setenv("METALIST_HOST", "0.0.0.0")
+    monkeypatch.setattr(
+        main_entrypoint, "open_or_launch_all_namespaces",
+        lambda **kwargs: (_ for _ in ()).throw(AssertionError("no vault may start")),
+    )
+    with pytest.raises(RuntimeError, match="METALIST_HOST is no longer read"):
+        main_entrypoint.main(argv=[])
 
 
 def test_main_aborts_before_namespace_bootstrap_when_sanity_fails(monkeypatch) -> None:

@@ -24,6 +24,7 @@ from app.server_runtime import CHOSEN_BIND_HOST_ENV_NAME
 from app.server_runtime import ensure_default_tls_pair
 from app.server_runtime import MainCliArgs
 from app.server_runtime import prepare_database_runtime_path
+from app.server_runtime import refuse_retired_host_setting
 from app.server_runtime import resolve_backend_connect_host
 from app.server_runtime import resolve_database_runtime_config
 from app.server_runtime import resolve_local_browser_host
@@ -692,6 +693,7 @@ def _start_https_proxy_server(
 def main(argv: list[str]) -> None:
     # Configure logging to filter noisy polling endpoints
     logging.getLogger("uvicorn.access").addFilter(FilterCheckUpdates())
+    refuse_retired_host_setting(environ=os.environ)
     if not resolve_test_mode(environ=os.environ, argv=argv):
         retire_network_settings_file(environ=os.environ)
     _record_self_executable_for_namespace_launch()
