@@ -13,9 +13,7 @@ import { initializeSearchSuggestions, updateSearchSuggestions } from '../service
 import { clearActiveNotesDom, clearCachedNotesDomForTab } from '../services/tab-dom-cache-service.js';
 import {
     dismissReferenceSourceModeForActiveTab,
-    isShowingNewSearchInReferenceView,
     isViewingReferenceSource,
-    restoreReferenceChipAfterEmptySearch,
 } from '../services/reference-source-navigation-service.js';
 import { handleDictationPasteEvent, isDictationRawInsertInProgress } from '../services/dictation-paste-service.js';
 import { MS_PER_SECOND } from '../../time-units.js';
@@ -182,20 +180,11 @@ export function closeOpenSearchQuote() {
     updateSearchContextsList();
 }
 
-// The magnifier brought the empty input out over a reference view; leaving it
-// without typing brings the chip back.
-function handleSearchInputBlur(event) {
+function handleSearchInputBlur() {
     // Leaving the page (another app or window) is not moving on: typing resumes there.
     if (document.hasFocus()) {
         closeOpenSearchQuote();
     }
-    if (!isShowingNewSearchInReferenceView()) {
-        return;
-    }
-    if (event.target.value !== '') {
-        return;
-    }
-    restoreReferenceChipAfterEmptySearch();
 }
 
 export async function initializeSearchEvents() {

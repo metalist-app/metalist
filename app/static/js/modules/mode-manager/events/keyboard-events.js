@@ -91,7 +91,6 @@ import {
     getActiveReferenceSourceQuery,
     getActiveReferenceViewKind,
     getReferenceNavigationLabelForTab,
-    getReferenceViewIconClasses,
     getReferenceViewKindForTab,
     isViewingReferenceSource,
     popActiveReferenceChain,
@@ -443,7 +442,7 @@ function handleKeyDown(event) {
 
     if ((event.key === 'Enter' || event.key === ' ')
         && event.target instanceof HTMLElement
-        && event.target.closest('.note-source-arrow, .note-backlinks-badge, #reference-source-indicator-clear, #reference-view-chip-back, #reference-view-new-search, .meta-value-button')) {
+        && event.target.closest('.note-source-arrow, .note-backlinks-badge, #reference-source-indicator-clear, #reference-view-chip-back, #reference-view-chip-forward, .meta-value-button')) {
         return;
     }
 
@@ -3604,14 +3603,6 @@ function handleTabDragClick(event) {
     event.stopImmediatePropagation();
 }
 
-function buildTabReferenceIconHtml(tabId) {
-    const viewKind = getReferenceViewKindForTab(tabId);
-    if (viewKind === '') return '';
-    const iconClasses = getReferenceViewIconClasses(viewKind);
-    if (iconClasses.length === 0) return '';
-    return `<span class="${iconClasses.join(' ')} tab-context-reference-icon" aria-hidden="true"></span>`;
-}
-
 // A search context whose search chooses a folder starts with the tree's folder icon, beside its
 // name (the maintainer, 2026-11-07, for folder contexts, which became ordinary ones 2026-11-11).
 function buildTabFolderIconHtml(tabId) {
@@ -3666,7 +3657,9 @@ export function updateSearchContextsList() {
         const actions = tabContextActionsHtml({
             tabId,
             isAtTabLimit: tabOrder.length >= CONFIG.TABS.MAX_TABS,
-            canDelete: tabOrder.length > 1,
+            // Pages' hidden tabs are not search contexts: the only context listed is never closed,
+            // as when it shows its search (it offered − while on a page, 2026-11-14).
+            canDelete: listedTabIds.length > 1,
         });
 
         const activeClass = isActive ? 'is-active' : '';
@@ -3674,8 +3667,7 @@ export function updateSearchContextsList() {
             `<div data-tab-id="${escapeHtml(tabId)}" class="tab-context-item ${activeClass}" draggable="true">`
             + `<span class="tab-context-index">${i + 1}:</span>`
             // The search is the user's text: shown as text, never as markup.
-            // A reference view's tab starts with its chip's icon.
-            + `<span class="tab-context-query">${buildTabFolderIconHtml(tabId)}${buildTabReferenceIconHtml(tabId)}${escapeHtml(displayQuery)}</span>`
+            + `<span class="tab-context-query">${buildTabFolderIconHtml(tabId)}${escapeHtml(displayQuery)}</span>`
             + `<span class="tab-context-actions">${actions}</span>`
             + `</div>`
         );

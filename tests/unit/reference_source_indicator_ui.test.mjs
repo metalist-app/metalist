@@ -30,8 +30,10 @@ test('a reference page shows in the search bar: ⏮ back to the search, ◀ back
     assert.match(row, /id="reference-view-chip-forward"[^>]*title="Forward"/);
     assert.match(mouseEvents, /await navigateForwardReference\(\)/);
     assert.match(row, /id="reference-source-indicator-clear"[^>]*title="Back to your search"/);
-    assert.match(row, /id="reference-view-new-search"/);
-    assert.doesNotMatch(row, /id="reference-view-new-search"[^>]*title=/, 'the magnifier has no tooltip');
+    // The chip's magnifier, which brought the search box back over a reference view, is gone:
+    // a page has nothing to type (reference-cards.md §2 rule 8).
+    assert.doesNotMatch(row, /reference-view-new-search/);
+    assert.doesNotMatch(row, /reference-view-chip-icon/);
     assert.match(css, /\.controls \.reference-view-chip\.is-shown/);
     assert.match(
         mouseEvents,

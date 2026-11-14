@@ -62,7 +62,6 @@ test('reference tabs keep their hidden query and label across a page reload', as
     const elements = {
         'reference-source-indicator': indicator,
         'reference-source-indicator-label': label,
-        'reference-view-chip-icon': new FakeHTMLElement(),
         'reference-view-chip-back': new FakeHTMLElement(),
         'reference-view-chip-forward': new FakeHTMLElement(),
         'reference-source-indicator-clear': new FakeHTMLElement(),

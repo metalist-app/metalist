@@ -108,8 +108,8 @@ def _normalize_reference_views(
     from_storage: bool,
 ) -> Dict[str, Dict[str, object]]:
     """Reference views by the tab showing them. A view has ended, and is dropped,
-    when its tab or the tab it was opened from is gone, or its tab now runs
-    another search; a saved view of a kind this version does not know is dropped too."""
+    when its tab, the tab it was opened from or its search context is gone, or its tab now
+    runs another search; a saved view of a kind this version does not know is dropped too."""
     if not isinstance(views, dict):
         raise InputRejected("referenceViews must be an object")
     normalized: Dict[str, Dict[str, object]] = {}
@@ -134,6 +134,10 @@ def _normalize_reference_views(
             raise InputRejected("referenceViews viewKind is not a known kind of view")
         origin_scope = _normalize_origin_scope(view["originScope"], from_storage=from_storage)
         if tab_id not in tabs or from_tab_id not in tabs or from_tab_id == tab_id:
+            continue
+        # 0.29.0 left a view open when the search context it came from was closed: it is a tab of
+        # note IDs no view claims, which the browser gives back to a search context that is there.
+        if origin_scope["scopeTabId"] not in tabs:
             continue
         if tabs[tab_id]["searchQuery"] != reference_query:
             continue

@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import re
-from typing import Dict, List, Optional, Set
+from typing import Dict, List, Optional, Set, Tuple
 
 from app.services.content_formatting import text_shown_without_passwords
 from app.services.embedded_references import parse_reference_inner
-from app.services.note_store import store as note_store
+from app.services.note_store import NoteRecord, store as note_store
 from app.utils.text_utils import strip_html
 
 
@@ -32,22 +32,28 @@ def list_backlinks_for_note(target_note_id: str, source_note_ids: Optional[Set[s
     counts = note_store.get_backlink_counts(target_note_id)
     if not counts:
         return []
+    referrers = [
+        note_store.get_note(note_id) for note_id in _iterate_note_ids_depth_first()
+        if note_id in counts and (source_note_ids is None or note_id in source_note_ids)
+    ]
     backlinks: List[Dict[str, str]] = []
-    for note_id in _iterate_note_ids_depth_first():
-        if source_note_ids is not None and note_id not in source_note_ids:
-            continue
-        if note_id not in counts:
-            continue
-        record = note_store.get_note(note_id)
-        match_count = counts[note_id]
-
+    for record in sorted(referrers, key=_most_recently_edited_first):
         preview = text_shown_without_passwords(_extract_preview(record.content), record.tags)
-        for _ in range(match_count):
+        for _ in range(counts[record.id]):
             backlinks.append({
-                "id": note_id,
+                "id": record.id,
                 "preview": preview,
             })
     return backlinks
+
+
+def _most_recently_edited_first(record: NoteRecord) -> Tuple[bool, float]:
+    """The Backlinks page lists the notes most recently edited first (decided with the maintainer
+    2026-11-13; docs/ready-to-build/reference-cards.md §3). A note never edited since edit times
+    were kept comes after them; the sort is stable, so ties keep the notes' order in the tree."""
+    if record.updated_at is None:
+        return (True, 0.0)
+    return (False, -record.updated_at.timestamp())
 
 
 def _iterate_note_ids_depth_first() -> List[str]:

@@ -467,20 +467,38 @@ class NoteStore:
         search_index.attach_inherited_values_reader(self._read_inherited_values)
 
     def _read_stats_figure(self, note_id: str, condition: PropertyCondition) -> Optional[Tuple[PropertyValue, ...]]:
-        return stats_figure_values(note_id=note_id, condition=condition, context=_StoreStatsContext(store=self))
+        """The note's stats figure for a search, read in one turn of the store; None (no figure,
+        so no match) for a note deleted since the search index found it. Search suggestions run
+        beside changes (2026-11-14), so one can land between the two readings."""
+        with self._lock:
+            if note_id not in self._note_map:
+                return None
+            return stats_figure_values(note_id=note_id, condition=condition, context=_StoreStatsContext(store=self))
 
     def _read_inherited_values(self, note_ids: FrozenSet[str]) -> Dict[str, InheritedValues]:
         """The values each note inherits for a search: values follow tags (agreed 2026-11-01;
         docs/ui/search-semantics.md, Super Tag Searches), through parents only, never embeds
         or links (2026-11-03). Its ancestors' values, the nearest ancestor's where several
-        give one."""
+        give one. A note deleted since the search index found it, or under a note deleted
+        meanwhile, is left out: it is no longer found (search suggestions run beside changes,
+        2026-11-14)."""
+        inherited: Dict[str, InheritedValues] = {}
         with self._lock:
-            return {note_id: self._inherited_values_locked(note_id) for note_id in note_ids}
+            for note_id in note_ids:
+                values = self._inherited_values_locked(note_id)
+                if values is not None:
+                    inherited[note_id] = values
+        return inherited
 
-    def _inherited_values_locked(self, note_id: str) -> InheritedValues:
+    def _inherited_values_locked(self, note_id: str) -> Optional[InheritedValues]:
+        """None when the note, or a note above it, is gone."""
+        if note_id not in self._note_map:
+            return None
         from_ancestors: Dict[Tuple[str, str], PropertyValue] = {}
         current = self._note_map[note_id].parent_id
         while current is not None:
+            if current not in self._note_map:
+                return None
             # Walking up: a nearer ancestor's value is kept over a farther one's.
             for key, value in _own_values(self._note_map[current]).items():
                 if key not in from_ancestors:

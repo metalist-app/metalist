@@ -60,7 +60,6 @@ test('nested reference source entries expose and dismiss one temporary context a
     const elements = {
         'reference-source-indicator': indicator,
         'reference-source-indicator-label': label,
-        'reference-view-chip-icon': new FakeHTMLElement(),
         'reference-view-chip-back': backButton,
         'reference-view-chip-forward': forwardButton,
         'reference-source-indicator-clear': searchButton,
@@ -134,7 +133,7 @@ test('nested reference source entries expose and dismiss one temporary context a
     assert.equal(label.textContent, 'Backlinks');
     assert.deepEqual(getActiveReferenceOriginScope(), originScope);
     assert.equal(indicator.classList.contains('is-shown'), true);
-    assert.equal(backButton.hidden, false, 'the first level goes back to the search with ◀');
+    assert.equal(backButton.classList.contains('is-unavailable'), false, 'the first level goes back to the search with ◀');
     // Only the arrows that can act show, as undo and redo do; the others keep their place.
     assert.equal(searchButton.classList.contains('is-unavailable'), true, 'one page: ◀ already goes to the search, no ⏮');
     assert.equal(forwardButton.classList.contains('is-unavailable'), true, 'not gone back yet: no ▶');
@@ -152,7 +151,7 @@ test('nested reference source entries expose and dismiss one temporary context a
     assert.equal(getReferenceNavigationLabelForTab('source-2'), 'Source note');
     assert.deepEqual(getActiveReferenceOriginScope(), originScope);
     assert.deepEqual(getActiveReferenceChain().map((entry) => entry.toTabId), ['source-1', 'source-2']);
-    assert.equal(backButton.hidden, false, 'a second level goes back with ◀');
+    assert.equal(backButton.classList.contains('is-unavailable'), false, 'a second level goes back with ◀');
     assert.equal(searchButton.classList.contains('is-unavailable'), false, 'two pages: ⏮ goes all the way back');
     pushForwardReferencePages('original', [{ referenceQuery: 'uuid-4', viewKind: 'source', scrollY: 0 }]);
     assert.equal(forwardButton.classList.contains('is-unavailable'), false, 'after going back: ▶');

@@ -33,7 +33,7 @@ Every way of showing a non-search in the search bar misleads:
 - **The header, left to right:**
   - `⏮` (double back): straight back to the search the reference was followed from, in one step. Shown only from the second page on: on the first, `◀` already goes there.
   - `◀` (back): back one page.
-  - **The page's kind,** large, bold and grey, much larger than the notes' text: `Source note`, `Backlinks` (the maintainer, 2026-11-13: more commonly understood than Referenced by), `Reference` or `All references`. Not the note's first line: two kinds hold several notes.
+  - **The page's kind,** large, bold and grey, much larger than the notes' text (being tried without it since 2026-11-14, at the maintainer's request: only the arrows show, the kind is kept for screen readers and named in the search context's row; the maintainer's verdict is open, `main.css` says how to show it again): `Source note`, `Backlinks` (the maintainer, 2026-11-13: more commonly understood than Referenced by), `Reference` or `All references`. Not the note's first line: two kinds hold several notes.
   - `▶` (forward): forward again along the way just come back, one page at a time. Shown only after going back, as Redo is only there after an Undo.
   - **The number of notes on the page,** where the search's count sits.
 - **Only the arrows that can act show** (the maintainer, 2026-11-13: like an undo and redo stack). One page: `◀`. Two or more: `⏮ ◀`. After going back: `▶` too. A hidden arrow keeps its place, so the others never move under the pointer (`is-unavailable`, `reference-source-navigation-service.js`).
@@ -50,7 +50,7 @@ Every way of showing a non-search in the search bar misleads:
 5. **A later AI reference replaces an AI page shown** instead of adding a page, as today.
 6. **The browser's Back button does not touch reference pages** (decided 2026-11-13): Back means going to another page, and MetaList is one page.
 7. **The path survives a reload, per view** (decided 2026-11-13): each device or browser tab keeps its own; another one opening the vault shows its own search. What was forward is not kept.
-8. The chip, its `←` and `×`, and the magnifier go.
+8. The chip, its `←` and `×`, and the magnifier go (built; their last code, the magnifier, the hidden kind icon and the source note's first line as a tooltip, removed 2026-11-14). The only search context listed offers no − (close), on a page as at its search: the pages' hidden tabs don't count (2026-11-14; it closed the page instead).
 9. **Each search context keeps the page it is on** (the maintainer, 2026-11-14; built). Its row in the list of search contexts reads `miscellaneous > Source note` (the page's kind: `Source note`, `Backlinks`, `Reference`, `All references`). Choosing another context and coming back returns to the page as it was left, its arrows and its way forward included (forward kept per context while MetaList is open, not across a reload). A restart or reload brings each context back on its page. ◀ or ⏮ back to the search makes the row plain again. A search link whose search is a context on a page opens the search in a new context beside it, leaving that one on its page (`search_context_with_search` skips it); one showing its search takes the link as before. **+** copies the search, not the page; **×** closes the context and its pages (`getReferencePageTabsForContext`; before, a left-over page was adopted by the context above it). Tests: `reference_source_navigation_service.test.mjs`, `test_search_links_rename.py`.
 10. **A page whose notes are all deleted closes** (the maintainer, 2026-11-14; built): `foo > bar`, bar deleted (or a note above it), reads `foo`. The pages opened from it close too. Shown on it: the search it was opened from, where it was left. A page of several notes (Backlinks, All references) closes only once all are gone. ⌘Z brings the note back, not the page. The server closes them as the note is deleted (`tab_state.close_pages_whose_notes_are_gone`, from `apply_delete_subtree`), so a restart or another device sees it too; each view of the list carries `pagesClosedAtVersion`, and the browser takes its tabs again when it rises (`adoptClosedReferencePages`). A view asked for a page closed meanwhile is answered empty, and a save still naming it is taken without it. Tests: `test_reference_pages_close_with_their_notes.py`.
 
@@ -63,8 +63,10 @@ Dropped the same day: greyed, read-only ancestors and grey bars for siblings, wi
 **The AI cites the note that makes sense on its own** (§5), since that note is all the page shows.
 
 **No sort or filter controls on a page.** A page is a fixed set of notes, not a query. Pages with several notes use a fixed order:
-- **All references:** citation order in the answer (decided 2026-11-13).
-- **Backlinks:** most recently edited first (decided 2026-11-13).
+- **All references:** citation order in the answer (decided 2026-11-13; built: the answer's Open all references lists the cited notes by reference number, `ai_chat_rendering.py`, and a page lists its notes in its search's order).
+- **Backlinks:** most recently edited first (decided 2026-11-13; built 2026-11-14: `backlinks.list_backlinks_for_note`, tree order among notes edited at the same moment, a note with no edit time last; `tests/unit/test_backlinks.py`).
+
+Both orders are taken when the page opens and kept in its search, so editing a note on the page never moves it (interaction principle: only the user's action changes the screen); following the reference again takes the order anew.
 
 ## 4. Editing on a page
 
@@ -94,6 +96,21 @@ No conversion (decided 2026-11-13): nobody has added notes inside a reference vi
 are no note-ID tags to remove, and leftover reference-view search contexts are few. Building
 reference pages needs no clean-up step.
 
+**Tabs saved by 0.29.0 load as pages** (checked 2026-11-14 by running 0.29.0 in a throwaway,
+opening its reference views as a user would, then starting this version on the same data):
+several ways from one search context, pages two deep, and a page whose search context was closed
+all load, and the leftover ways close at the search. Two shapes 0.29.0 left needed a fix:
+- A view whose search context was closed was kept as a tab of note IDs that nothing claims; it
+  was adopted by the tab beside it even when that tab is itself a page, which then counted as a
+  search context. It now goes on that page's way, in that page's search context; it never adopts
+  another unclaimed page (`adoptOrphanReferenceTabs`).
+- A view two deep still named the closed context as its origin. Its record is dropped, by the
+  server and the browser alike, and the browser adopts it as above (`_normalize_reference_views`,
+  `restoreReferenceNavigation`).
+
+Tests: `tests/fixtures/upgrade/tab-state-v0.29.0.json` (that throwaway's saved tabs),
+`tests/unit/test_upgrade_from_saved_tab_state.py`, `upgrade_from_saved_reference_views*.test.mjs`.
+
 ## 7. Invariants
 
 1. Following a reference never adds a search context.
@@ -104,9 +121,14 @@ reference pages needs no clean-up step.
 6. A page shows only the linked notes and what is under them, each as a root.
 7. A key does the same thing on a page as anywhere else, or nothing with a message.
 
-## 8. Still open
+## 8. The phone
 
-- **The phone:** the header has to fit a phone's width.
+Comes with the phone becoming the full app (`docs/ready-to-build/phone-same-app.md` §2, which
+already leaves what a tap on a link or the backlinks icon does to that redesign). Today's phone
+layout is an incomplete prototype that will be rewritten, so reference pages are not fitted to it
+(the maintainer, 2026-11-14). Found there on 2026-11-14, for that build: a tap inside a note never
+reaches a link or reference icon (`phone-mode.js` `onNoteInteraction`), and a page's white arrows
+would sit on the phone search row's white box, off centre (its `max-width` squeezes the header).
 
 ## 9. Checked when filed (2026-11-13)
 
@@ -140,7 +162,7 @@ gets a browser test that checks exact positions.
 | 9 | Leave a page while editing a note on it | The note is saved first (6). |
 | 10 | Reload | The same page and path come back, in this device or tab; forward is gone. |
 | 11 | The list of search contexts | Never lists a reference page; with a page shown, the search it came from is the one marked in use. |
-| 12 | Narrow window and phone | Open (§8). |
+| 12 | Narrow window and phone | With the phone redesign (§8). |
 
 ## 11. Tried and dropped: stacked cards (2026-11-13)
 

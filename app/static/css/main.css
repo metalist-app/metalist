@@ -6424,10 +6424,6 @@ html[data-theme="dark"] .note-reference-block.note-embed-held {
     outline-offset: 1px;
 }
 
-.note .note-content.is-reading-reference-title .note-backlinks-badge {
-    display: none;
-}
-
 .note-source-arrow {
     position: absolute;
     top: 0;
@@ -6453,11 +6449,6 @@ html[data-theme="dark"] .note-reference-block.note-embed-held {
 /* Above the embedded note drawn after it, so it takes the pointer. */
 .note-embed-with-source > .note-source-arrow {
     z-index: 1;
-}
-
-/* A reference view's chip reads its source note's first line without the arrows. */
-.note .note-content.is-reading-reference-title .note-source-arrow {
-    display: none;
 }
 
 .note-source-arrow:focus-visible {
@@ -7823,11 +7814,10 @@ body:not(.pref-show-search-results-count) .controls .search-results-count {
     outline: none;
 }
 
-/* Reference views (docs/ui/references.md): a chip, centered in the bar, takes the
-   search input's place, with a magnifier where the input began to start a new
-   search. The change animates only while a reference navigation plays it
-   (.is-chip-animating, reference-view-transition-service.js): never on a reload or
-   a tab switch. */
+/* A reference page (docs/ready-to-build/reference-cards.md): its arrows, centred in the bar,
+   take the search input's place. The change animates only while a reference navigation plays
+   it (.is-chip-animating, reference-view-transition-service.js): never on a reload or a tab
+   switch. */
 .controls .reference-view-chip {
     position: absolute;
     left: 50%;
@@ -7916,22 +7906,13 @@ body:not(.pref-show-search-results-count) .controls .search-results-count {
 .controls .reference-view-chip-button:hover,
 .controls .reference-view-chip-button:focus-visible {
     background: color-mix(in srgb, var(--search-shell-ink) 18%, transparent);
+    outline: none;
 }
 
 /* An arrow with nowhere to go (⏮ on the first page, ▶ before going back) is hidden in its place,
    so the others never move. */
 .controls .reference-view-chip-button.is-unavailable {
     visibility: hidden;
-}
-
-.controls .reference-view-chip-button[hidden],
-.controls .reference-view-chip-icon[hidden] {
-    display: none;
-}
-
-/* A reference view's tab in the tab list starts with its chip's icon. */
-.tab-context-reference-icon {
-    margin-right: 0.35em;
 }
 
 /* The folder context's row: the tree's folder icon (.virtual-folder-icon), a little smaller for
@@ -7946,57 +7927,10 @@ body:not(.pref-show-search-results-count) .controls .search-results-count {
     margin-right: 0.45em;
 }
 
-/* A reference view's chip starts with its icon: one note, or several. */
-.controls .reference-view-chip-icon {
-    flex: none;
-    font-size: 15px;
-}
-
-.controls .reference-view-chip-button:hover,
-.controls .reference-view-chip-button:focus-visible {
-    background: rgba(0, 0, 0, 0.22);
-    outline: none;
-}
-
-.controls .reference-view-new-search {
-    position: absolute;
-    top: 50%;
-    left: calc(50% - var(--search-input-half-width) + 4px);
-    width: 32px;
-    height: 30px;
-    padding: 0;
-    border: none;
-    background: none;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: var(--skin-cursor-pointer, pointer);
-    transform: translateY(-50%);
-    opacity: 0;
-    visibility: hidden;
-}
-
-.controls .reference-view-new-search svg {
-    width: 16px;
-    height: 16px;
-    fill: none;
-    stroke: var(--search-shell-ink);
-    stroke-width: 1.8;
-    stroke-linecap: round;
-    stroke-linejoin: round;
-}
-
 .controls .reference-view-chip.is-shown {
     transform: translate(-50%, -50%);
     opacity: 1;
     visibility: visible;
-}
-
-/* A reference page has nothing to type: the magnifier that once brought the search box back
-   stays hidden (docs/ready-to-build/reference-cards.md). */
-.controls .search-input-row:has(> .reference-view-chip.is-shown) .reference-view-new-search {
-    opacity: 0;
-    visibility: hidden;
 }
 
 .controls .search-input-row:has(> .reference-view-chip.is-shown) .search-input,
@@ -8009,7 +7943,6 @@ body:not(.pref-show-search-results-count) .controls .search-results-count {
 /* What disappears fades first and then stops taking clicks; what appears takes
    them at once. */
 .controls .search-input-row.is-chip-animating .reference-view-chip,
-.controls .search-input-row.is-chip-animating .reference-view-new-search,
 .controls .search-input-row.is-chip-animating .search-input,
 .controls .search-input-row.is-chip-animating .search-input-empty-icon,
 .controls .search-input-row.is-chip-animating .search-input-chips {
@@ -8017,7 +7950,6 @@ body:not(.pref-show-search-results-count) .controls .search-results-count {
 }
 
 .controls .search-input-row.is-chip-animating:has(> .reference-view-chip.is-shown) .reference-view-chip,
-.controls .search-input-row.is-chip-animating:has(> .reference-view-chip.is-shown) .reference-view-new-search,
 .controls .search-input-row.is-chip-animating:not(:has(> .reference-view-chip.is-shown)) .search-input,
 .controls .search-input-row.is-chip-animating:not(:has(> .reference-view-chip.is-shown)) .search-input-empty-icon,
 .controls .search-input-row.is-chip-animating:not(:has(> .reference-view-chip.is-shown)) .search-input-chips {

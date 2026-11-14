@@ -22,7 +22,7 @@ From `docs/ui/phone.md`: read-only; a tap on a note shows its own tags as blue p
 - **Not on the phone:** editing tag relationships (the ontology editor), creating rules, creating or switching vaults, creating reminders, AI settings. The **server refuses these from phone clients** (by client type, not a different protocol; a guard against the phone app's own mistakes, not a security boundary, §10); today's client-only read-only rule goes.
 - **The menu always also shows the desktop's view options,** nothing new: sort (Normal, Created, Updated, A–Z, Size, Reverse), date range, notes with files, untagged notes; and Lock, Sign Out. They behave as on the desktop.
 - **No long-press menu.** The ☰ button is the menu.
-- **References on the phone:** today a tap on a note link or on the Referenced by badge (a note's count of the notes referencing it, `docs/ui/references.md`) only shows the note's tags; neither opens anything (decided 2026-10-28: the badge stays inert there until this redesign). Decide here what a tap on a link and on the badge does once a tap edits the note.
+- **References on the phone:** today a tap on a note link or on the Referenced by badge (a note's count of the notes referencing it, `docs/ui/references.md`) only shows the note's tags; neither opens anything (decided 2026-10-28: the badge stays inert there until this redesign). Decide here what a tap on a link and on the badge does once a tap edits the note. Links now open reference pages, whose header replaces the search box with arrows (`docs/ready-to-build/reference-cards.md` §8 lists what the phone layout needs for them).
 
 ## 3. Adding a note: no "capture"
 

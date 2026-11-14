@@ -159,10 +159,11 @@ def one_step_read_route(func: Callable[P, R]) -> Callable[P, R]:
 
 def read_only_route(func: Callable[P, R]) -> Callable[P, R]:
     """A POST that changes nothing: it works only from what it is sent (a body too large or too
-    private for a URL), so it never waits for a change or is refused while one runs. The edit
-    preview was refused with a fatal "409 Conflict" while another request changed the vault (the
-    maintainer, 2026-11-11). A route that reads the note tree in several steps takes
-    serialized_read_route instead."""
+    private for a URL), or from what stays consistent beside a change (search suggestions read the
+    search index and history under their own locks, 2026-11-14), so it never waits for a change or
+    is refused while one runs. The edit preview was refused with a fatal "409 Conflict" while
+    another request changed the vault (the maintainer, 2026-11-11). A route that reads the note
+    tree in several steps takes serialized_read_route instead."""
     if inspect.iscoroutinefunction(func):
         raise TypeError(f"read_only_route needs a synchronous route: {func.__name__}")
     setattr(func, _READ_ONLY_ROUTE_MARKER, True)

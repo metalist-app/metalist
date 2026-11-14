@@ -635,8 +635,13 @@ def delete_tab(payload: DeleteTabRequest) -> Dict[str, object]:
     return response
 
 
+# Read beside changes, never in the write turn: they changed nothing, yet each keystroke's
+# suggestions queued behind the last, and the list's view behind them all (a problem report,
+# 2026-11-14: a page waited a minute for its notes). They read the search index and the search
+# history, each consistent under its own lock; the tree, for terms about values, in one turn of
+# the note store, leaving out a note deleted meanwhile.
 @router.post("/notes/search-suggestions")
-@transactional_route
+@read_only_route
 def search_suggestions(request: Request, payload: SearchSuggestionsRequest) -> Dict[str, object]:
     query = payload["query"]
     raw_window_days = payload["windowDays"]

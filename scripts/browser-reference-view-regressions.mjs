@@ -397,6 +397,14 @@ async function contextRows(page) {
   });
 }
 
+// Whether the context's row offers − (close): the only context listed never does (it offered it
+// while on a page, counting the pages' hidden tabs, and closed the page instead; 2026-11-14).
+async function rowOffersClose(page, tabId) {
+  await contextRows(page);
+  return page.$eval(`#search-contexts-list .tab-context-item[data-tab-id="${tabId}"] .delete-context`,
+    button => !button.classList.contains('is-hidden'));
+}
+
 async function clickContextRow(page, tabId) {
   const zone = await (await page.$('#tab-hover-zone')).boundingBox();
   await page.mouse.move(zone.x + zone.width * HALF, zone.y + zone.height * HALF);
@@ -610,6 +618,7 @@ async function checkContextsKeepTheirPage(page, ids) {
   assert.deepEqual(rows, [{tabId: searchTabId, label: `${SEARCH} > ${SOURCE_LABEL}`, isActive: true}],
     'the context\'s row names its page; the page has no row of its own');
   assert.ok(rows.every(row => !/[0-9a-f]{8}-[0-9a-f]{4}/i.test(row.label)), 'no row is named by a note ID');
+  assert.equal(await rowOffersClose(page, searchTabId), false, 'the only context, on a page, offers no −');
 
   // Another context, and back: the page as it was left, ▶ kept.
   await page.evaluate(async () => {

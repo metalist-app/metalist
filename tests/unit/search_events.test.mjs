@@ -50,7 +50,6 @@ function installSearchEventsDom(t) {
     const referenceSourceIndicator = new FakeHTMLElement();
     const referenceSourceLabel = new FakeHTMLElement();
     const referenceChipBack = new FakeHTMLElement();
-    const referenceChipIcon = new FakeHTMLElement();
     const referenceChipForward = new FakeHTMLElement();
     const referenceChipSearch = new FakeHTMLElement();
     const searchSuggestions = {
@@ -109,9 +108,6 @@ function installSearchEventsDom(t) {
             }
             if (id === 'reference-view-chip-back') {
                 return referenceChipBack;
-            }
-            if (id === 'reference-view-chip-icon') {
-                return referenceChipIcon;
             }
             if (id === 'reference-view-chip-forward') {
                 return referenceChipForward;
