@@ -740,6 +740,9 @@ function handleViewModeSearchFocusShortcut(event) {
     }
 
     const modalStack = Array.isArray(ModeContext.modalStack) ? ModeContext.modalStack : [];
+    // A reference page has no search box to be in: following a link from the search leaves the
+    // search mode set, and Tab did nothing there (the reference-views browser suite, 2026-11-14).
+    const isInSearchBox = ModeContext.isSearching && !isViewingReferenceSource();
     const shouldFocusSearch = shouldFocusSearchInputForViewModeTab({
         key: event.key,
         shiftKey: event.shiftKey,
@@ -747,7 +750,7 @@ function handleViewModeSearchFocusShortcut(event) {
         metaKey: event.metaKey,
         ctrlKey: event.ctrlKey,
         isEditing: ModeContext.isEditing,
-        isSearching: ModeContext.isSearching,
+        isSearching: isInSearchBox,
         isLoading: ModeContext.isLoading,
         modalStack,
     });
@@ -4602,21 +4605,21 @@ export async function adoptClosedReferencePages() {
     // scroll watcher would take that for where the search was left.
     const searchLeftAtY = ModeContext.getTabScrollPosition(ModeContext.activeTabId);
     if (isShowingAnotherTab) {
-        // The page shown closed: the search it was opened from, where it was left.
+        // The page shown closed: the search it was opened from, where it was left. Placed before
+        // the refresh, as a switch of contexts does: the refresh holds what is on screen in place,
+        // and a restore after it was undone by that hold (the reference-views browser suite).
         clearActiveNotesDom();
         restoreNotesDomForTab(ModeContext.activeTabId);
+        if (ModeContext.getTabScrollPosition(ModeContext.activeTabId) !== searchLeftAtY) {
+            ModeContext.updateActiveTabScroll(searchLeftAtY);
+        }
+        ModeContext.restoreScrollForActiveTabNow();
     }
     syncSearchInputField();
     updateSearchContextsList();
     updateReferenceSourceIndicator();
     const { actionRefreshAndMaybeSelect } = await import('../actions/ui-actions.js');
     await actionRefreshAndMaybeSelect({ context: 'reference-pages-closed', animateNoteChanges: false });
-    if (isShowingAnotherTab) {
-        if (ModeContext.getTabScrollPosition(ModeContext.activeTabId) !== searchLeftAtY) {
-            ModeContext.updateActiveTabScroll(searchLeftAtY);
-        }
-        ModeContext.restoreScrollForActiveTab();
-    }
 }
 
 // After Rename tag renamed a tag in search contexts' searches (rename_tag.py): the tabs, the search box

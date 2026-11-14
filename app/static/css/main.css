@@ -6393,7 +6393,8 @@ html[data-theme="dark"] .note-reference-block.note-embed-held {
    embed's ↗. */
 .note-backlinks-badge {
     position: absolute;
-    top: 0.05em;
+    /* Centred on the first line, whatever the note's line height (1lh). */
+    top: calc((1lh - 1.2em) / 2);
     right: 0;
     box-sizing: border-box;
     width: 1.2em;

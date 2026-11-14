@@ -120,7 +120,9 @@ Filed from the inbox; the `×` addendum is folded into §2 rule 8.
 - **Decided with the maintainer 2026-11-13:** Back leaves cards alone (§2 rule 7); the stack survives a reload, per view (rule 9); citation order for All references and most recently edited first for Backlinks (§3); the refusal wording (§4); no conversion (§6); the `×` tooltip `Close` (rule 8).
 - **Still open:** how a deep stack looks (§8); not needed to start.
 
-## 10. Cases on screen (proposed 2026-11-13, for agreement before code)
+## 10. Cases on screen (agreed 2026-11-13)
+
+Tested by the reference-views browser suite (`scripts/browser-reference-view-regressions.mjs`, rewritten 2026-11-14), positions compared exactly: each case below, a linked child shown as a root, the arrows shown at each depth and kept in their places, Tab to the search, each context keeping its page (rule 9) and a deleted note closing its page (rule 10). The backlinks icon has its own suite (`browser-referenced-by-badge-regressions.mjs`).
 
 Each case names the interaction principle it follows (`docs/ui/interaction-principles.md`) and
 gets a browser test that checks exact positions.
