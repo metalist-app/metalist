@@ -76,3 +76,12 @@ def test_the_streamed_answer_never_shows_the_markup_even_when_split_across_chunk
     done = lines[-1]
     assert done["type"] == "done"
     assert done["content"] == "Useful.  Next."
+
+
+def test_a_chunk_held_back_whole_sends_the_browser_nothing() -> None:
+    # The browser refuses a content_delta with no text (ai-chat-panel-service.js): a summary of
+    # every note failed with "content_delta requires non-empty text" (2026-11-14). A chunk that
+    # is all unfinished markup shows nothing yet, so nothing is sent for it.
+    lines = _streamed(["Useful. ", f"{OPEN}ci", f"te{SEPARATOR}turn0", f"search0{CLOSE} Next."])
+    deltas = [line for line in lines if line["type"] == "content_delta"]
+    assert [line["text"] for line in deltas] == ["Useful. ", " Next."]

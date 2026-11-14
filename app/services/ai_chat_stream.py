@@ -39,6 +39,13 @@ def event_reference_web_ids(event: dict[str, object]) -> tuple[str, ...]:
     return tuple(raw_ids)
 
 
+def _shows_nothing_new(event: dict[str, object]) -> bool:
+    """A chunk of the answer held back whole (provider citation markup not closed yet) adds no text:
+    the browser is sent nothing for it, as it refuses an empty one (a summary of every note failed
+    so, 2026-11-14). Its references are kept; the next chunk shown brings them."""
+    return event['type'] == 'content_delta' and event['text'] == ''
+
+
 class ChatTurnStream:
     def __init__(self, *, store: AiChatSessionStore, notes: NoteStore,
                  session_key: str, turn_id: str, initial_input_tokens: int,
@@ -214,7 +221,10 @@ class ChatTurnStream:
         # lint: allow-PY001 rationale="stream transport failures are delivered after headers; internal errors are re-raised"
         try:
             async for event in source:  # shockharness: ignore[EXC003] reason="each pull from the agent's stream is the external operation; the body forwards the event"
-                yield json.dumps(self.transform(event), separators=(',', ':')) + '\n'
+                shown_event = self.transform(event)
+                if _shows_nothing_new(shown_event):
+                    continue
+                yield json.dumps(shown_event, separators=(',', ':')) + '\n'
         # lint: allow-PY001 rationale="expected provider/network failures must be delivered after response headers"
         except (AgentExecutionError, InferenceProviderError) as exc:
             if not self.is_streaming():
