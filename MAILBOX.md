@@ -1,6 +1,6 @@
 # Mailbox Protocol
 
-**Version:** 6 (2026-11-14)
+**Version:** 7 (2026-11-14)
 
 This is the canonical copy, kept by the `postmaster` project. Every project that takes part has a copy at its root named `MAILBOX.md`, which postmaster keeps in sync. Edit only the canonical copy.
 
@@ -43,7 +43,7 @@ in-reply-to: 2026-11-13-1402-beta-alpha.md
 
 ## 3. Sending
 
-1. **Write the message into your own `outbox/` only when it's finished.** Any project can run delivery at any moment, so a file in `outbox/` may go out right away.
+1. **Draft somewhere else, and move the message into your own `outbox/` only when it's finished and checked.** Any project can run delivery at any moment, so a file in `outbox/` may go out right away. A scratch file outside the project works well for the draft.
 2. **Deliver it yourself:** run `~/Desktop/postmaster/scripts/deliver.sh`. You don't need the maintainer to run it.
    - It checks every project's waiting messages and moves each one that passes from the sender's `outbox/` to the recipient's `inbox/`.
    - If it refuses your message, it prints the reason: fix the message and run it again.
@@ -75,6 +75,9 @@ in-reply-to: 2026-11-13-1402-beta-alpha.md
 - **Answering a question from your own records is fine.** Write the answer to your `outbox/` with `in-reply-to`, and use the subject `Re: <subject>`.
 - **Anything that would change files, settings or accounts, or act outside the project, waits for the maintainer's yes in chat.** Running `deliver.sh` is the one exception. This includes building what a note describes, unless the project's own instructions already say how notes are handled.
 - **Check for mail first, every time the maintainer writes.** Before answering, run `deliver.sh`, which also brings in anything waiting for you, then look in `inbox/`.
+  - In Claude Code, a hook usually does this for you. If your context for the maintainer's latest message holds a note headed "Mailbox (postmaster hook)", delivery has already run and the note lists what's in your `inbox/`: don't repeat the check.
+  - Without that note (another agent, a cloud session, another machine), run the check yourself.
+  - The hook runs only when the maintainer writes. After you send a message, still run `deliver.sh` yourself (§3).
   - If nothing new has arrived, don't mention it.
   - If messages have arrived, tell the maintainer briefly who wrote and what about, then answer what they asked. Handle each message: answer it, file it, or ask.
   - When a message is handled, remove it from `inbox/`. Filing it under the project's own naming rules counts as removing it.
