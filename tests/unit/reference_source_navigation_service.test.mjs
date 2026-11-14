@@ -43,6 +43,10 @@ test('nested reference source entries expose and dismiss one temporary context a
             delete this[name];
         }
 
+        setAttribute(name, value) {
+            this[name] = String(value);
+        }
+
         querySelectorAll() {
             return [];
         }
@@ -51,11 +55,15 @@ test('nested reference source entries expose and dismiss one temporary context a
     const indicator = new FakeHTMLElement();
     const label = new FakeHTMLElement();
     const backButton = new FakeHTMLElement();
+    const forwardButton = new FakeHTMLElement();
+    const searchButton = new FakeHTMLElement();
     const elements = {
         'reference-source-indicator': indicator,
         'reference-source-indicator-label': label,
         'reference-view-chip-icon': new FakeHTMLElement(),
         'reference-view-chip-back': backButton,
+        'reference-view-chip-forward': forwardButton,
+        'reference-source-indicator-clear': searchButton,
         'notes-container': new FakeHTMLElement(),
     };
     globalThis.HTMLElement = FakeHTMLElement;
@@ -89,6 +97,8 @@ test('nested reference source entries expose and dismiss one temporary context a
         getActiveReferenceSourceQuery,
         popReferenceNavigationEntryForActiveTab,
         pushReferenceNavigationEntry,
+        pushForwardReferencePages,
+        clearForwardReferencePages,
         replaceActiveReferenceNavigationQuery,
         updateReferenceSourceIndicator,
     } = await import(
@@ -114,12 +124,15 @@ test('nested reference source entries expose and dismiss one temporary context a
     pushReferenceNavigationEntry('original', 'source-1', 'uuid-1', originScope, 'backlinks');
     assert.equal(isViewingReferenceSource(), true);
     assert.equal(getReferenceNavigationLabelForTab('original'), '');
-    assert.equal(getReferenceNavigationLabelForTab('source-1'), 'Referenced by');
+    assert.equal(getReferenceNavigationLabelForTab('source-1'), 'Backlinks');
     assert.equal(getActiveReferenceSourceQuery(), 'uuid-1');
-    assert.equal(label.textContent, 'Referenced by');
+    assert.equal(label.textContent, 'Backlinks');
     assert.deepEqual(getActiveReferenceOriginScope(), originScope);
     assert.equal(indicator.classList.contains('is-shown'), true);
-    assert.equal(backButton.hidden, true, 'the first level has no back arrow');
+    assert.equal(backButton.hidden, false, 'the first level goes back to the search with ◀');
+    // Only the arrows that can act show, as undo and redo do; the others keep their place.
+    assert.equal(searchButton.classList.contains('is-unavailable'), true, 'one page: ◀ already goes to the search, no ⏮');
+    assert.equal(forwardButton.classList.contains('is-unavailable'), true, 'not gone back yet: no ▶');
 
     ModeContext.hydrateTabState({
         activeTabId: 'source-2',
@@ -134,7 +147,12 @@ test('nested reference source entries expose and dismiss one temporary context a
     assert.equal(getReferenceNavigationLabelForTab('source-2'), 'Source note');
     assert.deepEqual(getActiveReferenceOriginScope(), originScope);
     assert.deepEqual(getActiveReferenceChain().map((entry) => entry.toTabId), ['source-1', 'source-2']);
-    assert.equal(backButton.hidden, false, 'a second level shows the back arrow');
+    assert.equal(backButton.hidden, false, 'a second level goes back with ◀');
+    assert.equal(searchButton.classList.contains('is-unavailable'), false, 'two pages: ⏮ goes all the way back');
+    pushForwardReferencePages([{ referenceQuery: 'uuid-4', viewKind: 'source', scrollY: 0 }]);
+    assert.equal(forwardButton.classList.contains('is-unavailable'), false, 'after going back: ▶');
+    clearForwardReferencePages();
+    assert.equal(forwardButton.classList.contains('is-unavailable'), true, 'following a new link drops what was forward');
     replaceActiveReferenceNavigationQuery('uuid-3', 'source');
     assert.equal(getActiveReferenceSourceQuery(), 'uuid-3');
     // A source view's chip says Source note; its first line is the tooltip.
@@ -158,7 +176,7 @@ test('nested reference source entries expose and dismiss one temporary context a
     }, { emitUpdate: false });
     updateReferenceSourceIndicator();
     assert.equal(indicator.classList.contains('is-shown'), true);
-    assert.equal(label.textContent, 'Referenced by');
+    assert.equal(label.textContent, 'Backlinks');
     assert.deepEqual(popReferenceNavigationEntryForActiveTab(), {
         fromTabId: 'original',
         toTabId: 'source-1',

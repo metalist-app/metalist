@@ -10,7 +10,7 @@ looked up again, as a new one is.
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
 import re
 from threading import Thread
 
@@ -19,13 +19,16 @@ from app.services.bulk_operation import bulk_operation_guard
 from app.services.content_formatting import urls_linked_in
 from app.services.link_icons import icon_origin_for_url, link_icon_store
 from app.services.link_titles import link_title_store, normalize_url_for_link_title
-from app.services.note_store import store
+from app.services.note_store import NoteRecord, store
+from app.services.requests_in_flight import requests_in_flight
 from app.services.runtime_generation import current_generation
 
 
 # Most notes link nowhere: only text with a web address in it is read in full (1.3 s for
 # 109,000 notes otherwise, beside the page's first requests). A miss only costs a lookup again.
 _MAY_LINK_RE = re.compile(r"https?://", re.IGNORECASE)
+# The scan gives way to the requests this often.
+_NOTES_BETWEEN_GIVING_WAY = 1000
 
 
 def _linked_urls_and_sites(note_contents: Iterable[str]) -> tuple[frozenset[str], frozenset[str]]:
@@ -56,10 +59,18 @@ def forget_link_rows_no_note_uses(*, note_contents: Iterable[str]) -> int:
     return _forget_unlinked(linked_urls=linked_urls, linked_sites=linked_sites)
 
 
+def _contents_giving_way(records: Iterable[NoteRecord]) -> Iterator[str]:
+    """The notes' text, giving way to the requests every few notes (requests_in_flight.py)."""
+    for index, record in enumerate(records):
+        if index % _NOTES_BETWEEN_GIVING_WAY == 0:
+            requests_in_flight.give_way()
+        yield record.content
+
+
 def _forget_once_notes_are_loaded() -> None:
     generation = current_generation()
     # Read outside the lock, from a snapshot: a whole vault's text takes a while.
-    linked_urls, linked_sites = _linked_urls_and_sites(record.content for record in store.snapshot().values())
+    linked_urls, linked_sites = _linked_urls_and_sites(_contents_giving_way(store.snapshot().values()))
     with bulk_operation_guard.lock:
         # A lock or login since the snapshot: its notes are not the vault's now.
         if generation != current_generation() or not sensitive_caches_enabled():

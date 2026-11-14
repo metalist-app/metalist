@@ -81,7 +81,9 @@ import { buildBacklinksQuery } from '../services/backlinks-navigation-service.js
 import {
     AI_REFERENCE_VIEW_KINDS,
     captureReferenceOriginScopeForActiveTab,
+    clearForwardReferencePages,
     findReferenceLevelOnActivePath,
+    getActiveReferenceOriginScope,
     getActiveReferenceSourceQuery,
     getActiveReferenceViewKind,
     getReferenceNavigationLabelForTab,
@@ -90,10 +92,11 @@ import {
     isViewingReferenceSource,
     popActiveReferenceChain,
     popReferenceLevelsAbove,
+    popForwardReferencePage,
     popReferenceNavigationEntryForActiveTab,
+    pushForwardReferencePages,
     pushReferenceNavigationEntry,
     replaceActiveReferenceNavigationQuery,
-    showNewSearchInReferenceView,
     updateReferenceSourceIndicator,
 } from '../services/reference-source-navigation-service.js';
 import {
@@ -750,9 +753,14 @@ function handleViewModeSearchFocusShortcut(event) {
     event.preventDefault();
     event.stopPropagation();
 
-    // In a reference view the input is behind the chip: bring it out, as the magnifier does.
+    // A reference page has no search box: going to the search goes back to it first.
     if (isViewingReferenceSource()) {
-        showNewSearchInReferenceView();
+        void CommandGate.run('keyboard.reference_page_to_search', async () => {
+            await navigateToReferenceOrigin();
+            void actionEnterSearchMode();
+            focusSearchInputAndSelectAllText();
+        });
+        return;
     }
     void actionEnterSearchMode();
     const didFocus = focusSearchInputAndSelectAllText();
@@ -3619,8 +3627,12 @@ export function updateSearchContextsList() {
     if (!Array.isArray(tabOrder) || tabOrder.length === 0) {
         throw new Error('ModeContext.tabOrder must be a non-empty array');
     }
-    for (let i = 0; i < tabOrder.length; i++) {
-        const tabId = tabOrder[i];
+    // A reference page is not a search context (reference-cards.md): its hidden tab is not listed,
+    // and with a page shown, the search it came from is the one in use.
+    const listedTabIds = tabOrder.filter((tabId) => getReferenceNavigationLabelForTab(tabId) === '');
+    const listedActiveTabId = isViewingReferenceSource() ? getActiveReferenceOriginScope().scopeTabId : activeTabId;
+    for (let i = 0; i < listedTabIds.length; i++) {
+        const tabId = listedTabIds[i];
         const tabEntry = tabs[tabId];
         if (!tabEntry || typeof tabEntry !== 'object') {
             throw new Error(`ModeContext.tabs missing entry for tab ${tabId}`);
@@ -3638,7 +3650,7 @@ export function updateSearchContextsList() {
             ? referenceNavigationLabel
             : searchContextLabel({ search: originalQuery });
         
-        const isActive = tabId === activeTabId;
+        const isActive = tabId === listedActiveTabId;
 
         const actions = tabContextActionsHtml({
             tabId,
@@ -3661,7 +3673,7 @@ export function updateSearchContextsList() {
     if (contextsList.length > 0) {
         // The number column is as wide as the longest number and its colon, in the list's
         // monospace font: no gap left of "5:" when there are fewer than ten (main.css).
-        searchContextsList.style.setProperty('--tab-context-index-width', `${String(tabOrder.length).length + 1}ch`);
+        searchContextsList.style.setProperty('--tab-context-index-width', `${String(listedTabIds.length).length + 1}ch`);
         searchContextsList.innerHTML = contextsList.join('');
         updateSearchContextsOverlayPlacement();
         
@@ -4139,6 +4151,8 @@ async function openReferenceQueryInNewTabWithContext(
             return levelTabId;
         }
     }
+    // Following another reference drops the pages that were forward, as a browser does.
+    clearForwardReferencePages();
     let resultTabId = '';
     await navigateWithReferenceSlide('forward', async () => {
         resultTabId = await openReferenceQueryBehindTransition(
@@ -4399,6 +4413,28 @@ async function deleteTabContext(deleteTabId) {
 	    }
 }
 
+/** ▶ on a reference page: forward again to the page last gone back from, as it was left. */
+export async function navigateForwardReference() {
+    if (!isViewingReferenceSource()) {
+        return false;
+    }
+    const page = popForwardReferencePage();
+    if (page === null) {
+        return false;
+    }
+    return navigateWithReferenceSlide('forward', async () => {
+        await openReferenceQueryBehindTransition(page.referenceQuery, 'reference.forward', false, page.viewKind);
+        // Where the page was left: a new hidden tab shows it, scrolled back to the same place.
+        window.scrollTo(0, page.scrollY);
+        const scrollY = Math.max(0, Math.round(window.scrollY));
+        if (ModeContext.getTabScrollPosition(ModeContext.activeTabId) !== scrollY) {
+            ModeContext.updateActiveTabScroll(scrollY);
+        }
+        await persistTabStateSnapshot();
+        return true;
+    });
+}
+
 /** ← on the chip, or Escape: back one level, to where the user left it. */
 export async function navigateBackFromReferenceContext() {
     if (!isViewingReferenceSource()) {
@@ -4426,6 +4462,7 @@ function requireCloseReferenceTabOnBack() {
 }
 
 async function leaveActiveReferenceChain() {
+    clearForwardReferencePages();
     const chain = popActiveReferenceChain();
     const originTabId = chain[0].fromTabId;
     if (typeof originTabId !== 'string' || originTabId.length === 0) {
@@ -4450,7 +4487,16 @@ async function leaveActiveReferenceChain() {
 
 /** Back to a level further up the active reference path, closing the levels after it. */
 async function returnToReferenceLevel(levelTabId) {
+    const shownScrollY = Math.max(0, Math.round(window.scrollY));
+    const activeTabId = ModeContext.activeTabId;
     const left = popReferenceLevelsAbove(levelTabId);
+    // The pages left become forward, the furthest first: popReferenceLevelsAbove gives the page
+    // shown now first.
+    pushForwardReferencePages(left.map((entry) => ({
+        referenceQuery: entry.referenceQuery,
+        viewKind: entry.viewKind,
+        scrollY: entry.toTabId === activeTabId ? shownScrollY : ModeContext.getTabScrollPosition(entry.toTabId),
+    })));
     if (!ModeContext.tabs[levelTabId]) {
         return false;
     }
@@ -4469,9 +4515,18 @@ async function returnToReferenceLevel(levelTabId) {
 }
 
 async function leaveActiveReferenceLevel() {
+    const shownScrollY = Math.max(0, Math.round(window.scrollY));
     const entry = popReferenceNavigationEntryForActiveTab();
     if (entry === null) {
         return false;
+    }
+    if (getReferenceViewKindForTab(entry.fromTabId) === '') {
+        // Back at the search: the path ends there, with nothing forward.
+        clearForwardReferencePages();
+    } else {
+        pushForwardReferencePages([{
+            referenceQuery: entry.referenceQuery, viewKind: entry.viewKind, scrollY: shownScrollY,
+        }]);
     }
 
     const fromTabId = entry.fromTabId;

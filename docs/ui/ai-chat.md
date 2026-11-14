@@ -492,8 +492,12 @@ the AI knows about them (built 2026-10-30, `app/services/agent/chat_compaction.p
   ends: one MetaList stopped during (a restart, an upgrade, a crash) comes back as failed,
   "MetaList stopped before this answer finished. Ask again to get one.", and the question with
   it. A note made private while MetaList was stopped holds back the earlier turns at the next
-  question, as it would have then. Not saved: the text of web pages opened for follow-up
-  questions (after a restart the AI opens a page again if it needs it, as Web access allows),
+  question, as it would have then. Each answer keeps the web pages it cites (title and
+  address, `AiChatSessionStore.web_references`; saved-chat format 2, 2026-11-13), so its links
+  and References show after a restart or in another login, and in a note made with Copy; an
+  answer saved before then shows its text without them. Not saved: the text of web pages opened
+  for follow-up questions (after a restart the AI opens a page again if it needs it, as Web
+  access allows),
   the debug traces and the LLM history export. A vault with a password upgraded at unlock reads
   its conversation then. A restore brings back the conversation the backup holds, in place of the current one
   (none for a backup made before 2026-11-11). Tests: `tests/unit/test_ai_chat_saved.py`,

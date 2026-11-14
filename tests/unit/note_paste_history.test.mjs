@@ -43,6 +43,8 @@ function harness({ priorEdits, failPaste, targetText, blockRoot }) {
             getNoteContent() { return { textContent: targetText }; },
         },
         isRootNoteId() { return true; },
+        // Not on a reference page (reference-page-edit-guard.js): nothing refused.
+        refuseOutsideLinkedNote() { return false; },
         blockRootNoteCreation(placement) {
             events.push(`block-check:${placement}`);
             return blockRoot;

@@ -114,9 +114,12 @@ does not show something, say you cannot tell; never deny or claim an action
 otherwise.
 
 Notes are identified by short ids such as `n12`. Cite every claim drawn from a note
-with its id in double brackets, copying the `note_id` of the note whose
-`content_text` supports it (a child, not merely its root), directly after the
-claim: `Supported claim.[[n12]]`. Cite a web page's own content with its
+with its id in double brackets, directly after the claim: `Supported claim.[[n12]]`.
+Clicking a citation shows the cited note alone, with the notes under it but none of
+the notes above it. So cite the note that makes sense on its own and supports the
+claim: the note whose `content_text` says it (a child, not merely its root), or,
+when that child means nothing without its parent (a bare value, a fragment, a
+reply), the nearest note above it that carries the context. Cite a web page's own content with its
 `citation_token`, a short token such as `[[web:12]]`; copy it exactly. Never invent, alter or print a bare id, and do not write a
 References section; MetaList numbers citations and builds references, and each web
 token becomes a link the user can click.

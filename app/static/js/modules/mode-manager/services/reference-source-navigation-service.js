@@ -11,14 +11,14 @@ export const AI_REFERENCE_VIEW_KINDS = new Set(['reference', 'references']);
 // What the tab list calls each kind of view.
 const TAB_LABEL_BY_VIEW_KIND = Object.freeze({
     source: 'Source note',
-    backlinks: 'Referenced by',
+    backlinks: 'Backlinks',
     reference: 'Reference',
     references: 'All references',
 });
 // What the chip in the search bar says; a source note's first line is its tooltip.
 const CHIP_LABEL_BY_VIEW_KIND = Object.freeze({
     source: 'Source note',
-    backlinks: 'Referenced by',
+    backlinks: 'Backlinks',
     reference: 'Reference',
     references: 'All references',
 });
@@ -41,8 +41,12 @@ export function getReferenceViewIconClasses(viewKind) {
 const CHIP_SHOWN_CLASS = 'is-shown';
 // On a note's content while its first line is read (main.css).
 const READING_TITLE_CLASS = 'is-reading-reference-title';
-// Reference views can stack: the one opened directly from a search is the first level.
-const FIRST_REFERENCE_LEVEL = 1;
+// On ▶ when there is nowhere forward (main.css).
+// An arrow with nowhere to go is hidden in its place, so the others never move (the maintainer,
+// 2026-11-13: only the arrows that can act show, as undo and redo do).
+const ARROW_UNAVAILABLE_CLASS = 'is-unavailable';
+// ⏮ shows from the second page on; on the first, ◀ already goes back to the search.
+const FIRST_PAGE_DEPTH = 1;
 
 // Reference tabs are ordinary server tabs whose search is a hidden note-ID query.
 // Which tabs are reference views, and where each was opened from, is kept with
@@ -63,7 +67,60 @@ const moduleState = ApplicationState.createFields('reference-source-navigation-s
     // The reference tab whose chip gave way to an empty search input (the magnifier),
     // or '' when the chip shows.
     newSearchTabId: '',
+    // Reference pages gone back from, to go forward to again (docs/ready-to-build/reference-cards.md,
+    // "Reference pages", §2): { referenceQuery, viewKind, scrollY }, the next one forward last.
+    // Kept in memory only: a reload, or following another reference, drops them.
+    forwardPages: [],
 });
+
+function requireForwardPage(page) {
+    if (!page || typeof page !== 'object') {
+        throw new Error('A forward reference page must be an object');
+    }
+    if (typeof page.referenceQuery !== 'string' || page.referenceQuery === '') {
+        throw new Error('A forward reference page needs its referenceQuery');
+    }
+    requireReferenceViewKind(page.viewKind);
+    if (!Number.isFinite(page.scrollY) || page.scrollY < 0) {
+        throw new Error('A forward reference page needs where it was scrolled');
+    }
+}
+
+/** Remember pages gone back from, the nearest (the next one forward) last. */
+export function pushForwardReferencePages(pages) {
+    if (!Array.isArray(pages)) {
+        throw new Error('pushForwardReferencePages requires a list');
+    }
+    pages.forEach(requireForwardPage);
+    if (pages.length === 0) {
+        return;
+    }
+    moduleState.forwardPages.push(...pages.map((page) => ({ ...page })));
+    updateReferenceSourceIndicator();
+}
+
+/** The next page forward, taken off the forward path, or null when there is none. */
+export function popForwardReferencePage() {
+    if (moduleState.forwardPages.length === 0) {
+        return null;
+    }
+    const page = moduleState.forwardPages.pop();
+    updateReferenceSourceIndicator();
+    return page;
+}
+
+/** Following another reference, or leaving for the search, drops the way forward. */
+export function clearForwardReferencePages() {
+    if (moduleState.forwardPages.length === 0) {
+        return;
+    }
+    moduleState.forwardPages.length = 0;
+    updateReferenceSourceIndicator();
+}
+
+export function hasForwardReferencePage() {
+    return moduleState.forwardPages.length > 0;
+}
 
 function requireReferenceViewKind(viewKind) {
     if (!REFERENCE_VIEW_KINDS.has(viewKind)) {
@@ -440,10 +497,18 @@ function resolveSourceTitle(entry) {
     return '';
 }
 
+function showArrowWhenAvailable(button, isAvailable) {
+    button.classList.toggle(ARROW_UNAVAILABLE_CLASS, !isAvailable);
+    button.setAttribute('aria-hidden', isAvailable ? 'false' : 'true');
+    button.tabIndex = isAvailable ? 0 : -1;
+}
+
 function renderReferenceViewChip() {
     const chip = requireChipElement('reference-source-indicator');
     const label = requireChipElement('reference-source-indicator-label');
     const backButton = requireChipElement('reference-view-chip-back');
+    const forwardButton = requireChipElement('reference-view-chip-forward');
+    const searchButton = requireChipElement('reference-source-indicator-clear');
     const viewIcon = requireChipElement('reference-view-chip-icon');
     const isReferenceView = isViewingReferenceSource();
     // The empty input shown for a new search belongs to one reference view; any
@@ -459,15 +524,19 @@ function renderReferenceViewChip() {
     const chain = getActiveReferenceChain();
     const entry = chain[chain.length - 1];
     label.textContent = CHIP_LABEL_BY_VIEW_KIND[entry.viewKind];
-    const iconClasses = getReferenceViewIconClasses(entry.viewKind);
-    viewIcon.hidden = iconClasses.length === 0;
-    viewIcon.classList.toggle('is-several-notes', iconClasses.includes('is-several-notes'));
+    // The bar names the page in words; the kind's icon stays in the tab list only.
+    if (!viewIcon.hidden) viewIcon.hidden = true;
     if (entry.viewKind === 'source') {
         label.title = resolveSourceTitle(entry);
     } else {
         label.removeAttribute('title');
     }
-    backButton.hidden = chain.length === FIRST_REFERENCE_LEVEL;
+    // ◀ at every level: from the first page it goes back to the search.
+    if (backButton.hidden) backButton.hidden = false;
+    // ⏮ only when it goes further than ◀ would.
+    showArrowWhenAvailable(searchButton, chain.length > FIRST_PAGE_DEPTH);
+    // ▶ only after going back: forward along the way just come back.
+    showArrowWhenAvailable(forwardButton, moduleState.forwardPages.length > 0);
     chip.classList.toggle(CHIP_SHOWN_CLASS, moduleState.newSearchTabId === '');
 }
 

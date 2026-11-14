@@ -5,7 +5,6 @@ app/api/routes/ai.py: "AsyncIterator[dict[str, object]]" has no attribute "aclos
 app/api/routes/ai.py: Argument "markdown_text" to "_render_ai_response_note_content" has incompatible type "object"; expected "str"  [arg-type]
 app/api/routes/ai.py: Argument 1 to "events" of "ChatTurnStream" has incompatible type "AsyncIterator[dict[str, object]]"; expected "AsyncGenerator[dict[str, object], None]"  [arg-type]
 app/api/routes/ai.py: Argument 1 to "find_note_citation_ids" has incompatible type "object"; expected "str"  [arg-type]
-app/api/routes/ai.py: Argument 1 to "find_web_citation_ids" has incompatible type "object"; expected "str"  [arg-type]
 app/api/routes/ai.py: Argument 1 to "render_ai_chat_markdown_to_html" has incompatible type "object"; expected "str"  [arg-type]
 app/api/routes/app_updates.py: Argument 2 to "BackgroundTask" has incompatible type "object"; expected "str"  [arg-type]
 app/api/routes/auth.py: Argument "preferences" to "save_client_preferences" has incompatible type "dict[str, str]"; expected "dict[str, object]"  [arg-type]

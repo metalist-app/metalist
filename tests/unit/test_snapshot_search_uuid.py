@@ -40,7 +40,7 @@ class _FakeSearchIndex:
         return False
 
 
-def test_search_with_uuid_target_includes_direct_note_and_descendants(
+def test_search_with_uuid_target_shows_the_note_as_a_root_with_its_descendants(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     target_id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
@@ -76,10 +76,13 @@ def test_search_with_uuid_target_includes_direct_note_and_descendants(
         start_at_list_end=False,
     )
 
-    assert state.payloads["root"]["flags"]["searchRedacted"] is False
+    # A search of only note ids is a reference page: the note as a root, as an embed shows it,
+    # with no parent and no grey bar for its sibling (2026-11-13; before, both showed).
+    assert [(entry["id"], entry["parentId"]) for entry in state.structure] == [
+        (target_id, None), ("target-child", target_id),
+    ]
     assert state.payloads[target_id]["flags"]["searchRedacted"] is False
     assert state.payloads["target-child"]["flags"]["searchRedacted"] is False
-    assert state.payloads["sibling"]["flags"]["searchRedacted"] is True
 
 
 class _StatsSearchIndex(_FakeSearchIndex):

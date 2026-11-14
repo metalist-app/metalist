@@ -28,13 +28,17 @@ function installFakeDocument(t) {
             delete this[name];
         }
 
+        setAttribute(name, value) {
+            this[name] = String(value);
+        }
+
         querySelectorAll() {
             return [];
         }
     }
     const elements = Object.fromEntries([
         'reference-source-indicator', 'reference-source-indicator-label', 'reference-view-chip-icon',
-        'reference-view-chip-back', 'notes-container',
+        'reference-view-chip-back', 'reference-view-chip-forward', 'reference-source-indicator-clear', 'notes-container',
     ].map((id) => [id, new FakeHTMLElement()]));
     const entries = new Map();
     globalThis.HTMLElement = FakeHTMLElement;

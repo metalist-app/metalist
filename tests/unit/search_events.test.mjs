@@ -41,12 +41,18 @@ function installSearchEventsDom(t) {
         removeAttribute(name) {
             delete this[name];
         }
+
+        setAttribute(name, value) {
+            this[name] = String(value);
+        }
     }
 
     const referenceSourceIndicator = new FakeHTMLElement();
     const referenceSourceLabel = new FakeHTMLElement();
     const referenceChipBack = new FakeHTMLElement();
     const referenceChipIcon = new FakeHTMLElement();
+    const referenceChipForward = new FakeHTMLElement();
+    const referenceChipSearch = new FakeHTMLElement();
     const searchSuggestions = {
         hidden: true,
         style: {},
@@ -106,6 +112,12 @@ function installSearchEventsDom(t) {
             }
             if (id === 'reference-view-chip-icon') {
                 return referenceChipIcon;
+            }
+            if (id === 'reference-view-chip-forward') {
+                return referenceChipForward;
+            }
+            if (id === 'reference-source-indicator-clear') {
+                return referenceChipSearch;
             }
             return null;
         },

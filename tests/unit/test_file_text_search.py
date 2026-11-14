@@ -451,7 +451,9 @@ def test_reading_pdfs_waits_for_an_import_to_finish(files) -> None:
     _pdf_note("Lease.pdf", LEASE)
     order: list[str] = []
     with background_work.track("import", "Importing files", total=1) as progress:
-        worker = Thread(target=lambda: (file_texts.refresh_waiting_for_imports(), order.append("read")))
+        # Named as MetaList names it: background work gives way to the requests (requests_in_flight.py).
+        worker = Thread(target=lambda: (file_texts.refresh_waiting_for_imports(), order.append("read")),
+                        name="metalist-file-texts")
         worker.start()
         worker.join(timeout=0.3)
         order.append("import done")

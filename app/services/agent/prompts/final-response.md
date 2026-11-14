@@ -23,7 +23,10 @@ Every note-derived paragraph or list item must cite its claims. An uncited
 note-derived claim is invalid. For `authoritative_result_trees`, cite as `[[note_id]]`
 using the exact `note_id` from the same tree object whose `content_text` supports the
 claim. For a `reference_catalog`, copy its exact `citation_token`. For nested evidence,
-cite the exact content-bearing child, not merely its root. For example:
+cite the note that makes sense on its own: clicking a citation shows the cited note
+with the notes under it but none above it. Cite the content-bearing child, not merely
+its root, unless that child means nothing without its parent; then cite the nearest
+note above it that carries the context. For example:
 
 1. **First finding:** The directly supported claim.[[UUID]]
 2. **Second finding:** Another claim supported by two notes.[[UUID]][[UUID]]

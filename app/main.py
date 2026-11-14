@@ -15,6 +15,7 @@ from typing import Annotated
 import json
 import secrets
 from app.api.upload_limits import UploadLimitMiddleware
+from app.services.requests_in_flight import RequestsInFlightMiddleware
 from app.presentation.templates import get_templates
 from .startup_environment import is_development_environment
 from .api import dev
@@ -172,6 +173,13 @@ answered_folder_pick(environ=os.environ)
 
 # Link titles and icons no note links to go, each time the notes have been loaded.
 auth_cache_state.after_page_ready(start_link_row_pruning)
+
+# How long a request waits for Python's interpreter lock each time it comes back from the
+# database or a file while a background job computes (the [[ catalog, file texts, PDF pages,
+# link pruning, all started when the page is ready). Python's 5 ms made a link clicked just
+# after startup take a second instead of a tenth (2026-11-13): a request comes back many times.
+INTERPRETER_SWITCH_SECONDS = 0.0005
+sys.setswitchinterval(INTERPRETER_SWITCH_SECONDS)
 
 configure_process_diagnostics(
     namespace=_resolve_diagnostics_namespace(namespace=ACTIVE_NAMESPACE),
@@ -909,6 +917,10 @@ async def clipboard_capacity_error(request: Request, exc: ClipboardCapacityError
 async def shell_run_not_found(request: Request, exc: ShellRunNotFound):
     return JSONResponse(status_code=HTTPStatus.NOT_FOUND, content={"detail": str(exc)})
 
+
+# Outermost, added last: the work beside the requests waits while one is answered, from its
+# arrival until its response starts (app/services/requests_in_flight.py).
+app.add_middleware(RequestsInFlightMiddleware)
 
 # The log writes a request's route and handler only as the app declares them: every route is in place now.
 safe_log.allow_route_templates(app.routes)

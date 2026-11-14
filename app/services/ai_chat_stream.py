@@ -9,7 +9,7 @@ from collections.abc import AsyncGenerator
 from app.security.http_error_diagnostics import describe_server_exception
 from app.services.ai_chat import AiChatActivityTimer, AiChatSessionStore
 from app.services.note_store import NoteStore
-from app.services.ai_chat_rendering import render_ai_chat_streaming_markdown_to_html, render_ai_chat_markdown_to_html, render_ai_chat_thinking_to_html, sanitize_ai_chat_markdown_citations, strip_provider_citation_markup
+from app.services.ai_chat_rendering import find_web_citation_ids, render_ai_chat_streaming_markdown_to_html, render_ai_chat_markdown_to_html, render_ai_chat_thinking_to_html, sanitize_ai_chat_markdown_citations, strip_provider_citation_markup
 from app.services.runtime_generation import register_current_task, unregister_task
 from app.services.agent.runtime import AgentExecutionError
 from app.services.agent.inference import InferenceProviderError
@@ -127,6 +127,7 @@ class ChatTurnStream:
         new_text = shown[len(self.content):]
         if new_text != '':
             self.store.append_delta(turn_id=self.turn_id, delta_kind='content', text=new_text)
+            self._record_cited_web_pages(shown, web_evidence)
         self.content = shown
         return {**event, 'text': new_text, 'rendered_text': render_ai_chat_streaming_markdown_to_html(
             self.content,
@@ -156,6 +157,7 @@ class ChatTurnStream:
         request_tokens = event['request_tokens']
         if not isinstance(request_tokens, dict):
             raise RuntimeError('Agent completion must report what its last request was made of')
+        self._record_cited_web_pages(content, web_evidence)
         self.store.complete_turn(turn_id=self.turn_id, final_content=content,
                                  actions=actions, request_tokens=request_tokens)
         event = {key: value for key, value in event.items() if key not in {'actions', 'request_tokens'}}
@@ -165,6 +167,13 @@ class ChatTurnStream:
             allowed_note_ids=self.reference_note_ids,
             allowed_web_evidence=web_evidence,
         )}
+
+    def _record_cited_web_pages(self, content: str, web_evidence: tuple[WebCitationReference, ...]) -> None:
+        """Keeps with the answer the web pages its text cites, so its links show after the
+        pages the AI opened are gone (a restart, another login)."""
+        cited_ids = frozenset(find_web_citation_ids(content))
+        self.store.record_web_references(turn_id=self.turn_id, references=tuple(
+            reference for reference in web_evidence if reference.evidence_id in cited_ids))
 
     def _reference_web_evidence(self) -> tuple[WebCitationReference, ...]:
         return tuple(

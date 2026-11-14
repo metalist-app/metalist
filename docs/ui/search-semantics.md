@@ -311,6 +311,7 @@ The UI renders a tree, so search returns context:
   - Its ancestors are included.
   - Its descendants are included and not redacted.
   - Non-matching sibling branches remain redacted according to normal search behavior.
+- A search made only of note IDs (each clause one ID, bare or as `[[ID]]`, as every reference page's is) is the exception: it shows just those notes, each as a root with its descendants, in the search's order, with no ancestors and no grey bars (2026-11-13; `docs/ui/references.md`).
 
 ## Windowing / Infinite Scroll
 

@@ -61,6 +61,7 @@ import {
 } from '../services/shell-output-service.js';
 import {
     navigateBackFromReferenceContext,
+    navigateForwardReference,
     navigateToReferenceOrigin,
     openReferenceInNewTab,
     openReferenceQueryInNewTab,
@@ -2409,7 +2410,13 @@ function handleReferenceSourceIndicatorClick(event) {
 
     const clearButton = event.target.closest('#reference-source-indicator-clear');
     const backButton = event.target.closest('#reference-view-chip-back');
-    if (!clearButton && !backButton) {
+    const forwardButton = event.target.closest('#reference-view-chip-forward');
+    if (!clearButton && !backButton && !forwardButton) {
+        return true;
+    }
+    // An arrow with nowhere to go is hidden and does nothing.
+    const clickedArrow = [clearButton, backButton, forwardButton].find((button) => button !== null);
+    if (clickedArrow.classList.contains('is-unavailable')) {
         return true;
     }
 
@@ -2423,6 +2430,12 @@ function handleReferenceSourceIndicatorClick(event) {
     if (backButton) {
         void CommandGate.run('mouse.reference_view_back', async () => {
             await navigateBackFromReferenceContext();
+        });
+        return true;
+    }
+    if (forwardButton) {
+        void CommandGate.run('mouse.reference_view_forward', async () => {
+            await navigateForwardReference();
         });
         return true;
     }
