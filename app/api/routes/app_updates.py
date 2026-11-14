@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 from starlette.background import BackgroundTask
 from starlette.responses import JSONResponse
 
-from app.api.transactions import transactional_route
+from app.api.transactions import one_step_read_route, transactional_route
 from app.services import app_updates
 from app.services.exception_capture import CapturedExceptionContext
 from app.services.app_updates import AppUpdateRejected
@@ -25,11 +25,13 @@ class AppUpdateRequest(BaseModel):
 # Whether this server runs older code than is on disk (server_code.py): the page says to
 # restart MetaList rather than show an unexplained error.
 @router.get('/server-code')
+@one_step_read_route
 def check_server_code():
     return {'stale': is_server_code_stale()}
 
 
 @router.get('/check')
+@one_step_read_route
 def check_update():
     release = CapturedExceptionContext(httpx.HTTPError,
         boundary='app/api/routes/app_updates.py:check_update:release')
@@ -54,6 +56,7 @@ def start_update(body: AppUpdateRequest):
 
 
 @router.get('/jobs/{job_id}')
+@one_step_read_route
 def update_status(job_id: str):
     lookup = CapturedExceptionContext(AppUpdateRejected, FileNotFoundError,
         boundary='app/api/routes/app_updates.py:update_status:lookup')

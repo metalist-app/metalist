@@ -380,6 +380,9 @@ def test_startup_encryption_audit_prints_pass_without_warning(
 
 
 def test_main_generates_default_tls_pair_on_explicit_namespace_startup(tmp_path, monkeypatch) -> None:
+    # Where the vault listens is read from its own launch profile; these tests have none.
+    monkeypatch.setattr(main_entrypoint, "resolve_vault_bind_host", lambda *, environ, namespace: "127.0.0.1")
+    monkeypatch.setenv(main_entrypoint.CHOSEN_BIND_HOST_ENV_NAME, "unset-by-teardown")
     calls: list[str] = []
     fake_app_module = ModuleType("app.main")
     fake_app_object = object()
@@ -552,6 +555,9 @@ def test_run_namespace_server_prints_resolved_config(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    # Where the vault listens is read from its own launch profile; these tests have none.
+    monkeypatch.setattr(main_entrypoint, "resolve_vault_bind_host", lambda *, environ, namespace: "127.0.0.1")
+    monkeypatch.setenv(main_entrypoint.CHOSEN_BIND_HOST_ENV_NAME, "unset-by-teardown")
     fake_app_module = ModuleType("app.main")
     fake_app_module.app = object()
     monkeypatch.setitem(sys.modules, "app.main", fake_app_module)
@@ -683,12 +689,10 @@ def test_main_enable_shell_launches_all_namespaces_with_shared_capability(
     calls: list[str] = []
 
     def fake_enable_shell_execution_for_launch(*, environ) -> None:
-        environ["METALIST_HOST"] = "127.0.0.1"
         environ["METALIST_SHELL_ENABLED"] = "1"
         calls.append("enable_shell_execution_for_launch")
 
     def fake_open_or_launch_all_namespaces(*, environ):
-        assert environ["METALIST_HOST"] == "127.0.0.1"
         assert environ["METALIST_SHELL_ENABLED"] == "1"
         calls.append("open_or_launch_all_namespaces")
         return []
@@ -793,6 +797,17 @@ def test_prompt_for_missing_namespace_launch_profiles_auto_saves_default_ports(m
             "mcp_port": None,
         },
     ]
+
+
+# METALIST_HOST once overrode every vault's sharing unseen; a start that finds it stops first.
+def test_main_refuses_to_start_while_the_retired_host_setting_is_set(monkeypatch) -> None:
+    monkeypatch.setenv("METALIST_HOST", "0.0.0.0")
+    monkeypatch.setattr(
+        main_entrypoint, "open_or_launch_all_namespaces",
+        lambda **kwargs: (_ for _ in ()).throw(AssertionError("no vault may start")),
+    )
+    with pytest.raises(RuntimeError, match="METALIST_HOST is no longer read"):
+        main_entrypoint.main(argv=[])
 
 
 def test_main_aborts_before_namespace_bootstrap_when_sanity_fails(monkeypatch) -> None:

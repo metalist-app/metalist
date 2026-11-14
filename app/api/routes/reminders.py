@@ -6,7 +6,7 @@ from datetime import date, datetime
 from fastapi import APIRouter, HTTPException, Request
 
 from app.api.request_auth import get_request_auth_token
-from app.api.transactions import transactional_route
+from app.api.transactions import one_step_read_route, transactional_route
 from app.services.exception_capture import CapturedExceptionContext
 from app.services.reminders import reminder_store
 from app.services.input_errors import InputRejected, ResourceNotFound
@@ -94,6 +94,7 @@ def _captured_result(capture: CapturedExceptionContext, result: object) -> objec
 
 
 @router.get("")
+@one_step_read_route
 def list_reminders() -> dict[str, object]:
     capture = CapturedExceptionContext(ResourceNotFound, InputRejected, boundary='app/api/routes/reminders.py:list_reminders:capture')
     reminders: list[dict[str, object]] = []

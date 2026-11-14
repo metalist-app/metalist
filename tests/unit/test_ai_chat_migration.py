@@ -41,15 +41,11 @@ def _columns(notes: Path) -> set[str]:
         return {row[1] for row in connection.execute(f"PRAGMA table_info({AI_CHAT_TABLE})")}
 
 
-def test_this_is_the_current_version() -> None:
-    assert CURRENT_DATABASE_VERSION == _PREVIOUS_VERSION + 1
-
-
 @pytest.mark.parametrize("has_table", [False, True], ids=["before-open", "added-on-open"])
 def test_migration_adds_the_conversation_table(tmp_path: Path, has_table: bool) -> None:
     notes = _version_18_vault(tmp_path, has_table=has_table)
 
-    assert _migrate(notes) == (19,)
+    assert _migrate(notes) == (19, 20)
     assert _migrate(notes) == ()
 
     assert _columns(notes) == set(AI_CHAT_COLUMNS)

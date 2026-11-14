@@ -28,6 +28,7 @@ from app.services.auth_cache_state import after_page_ready
 from app.services.content_formatting import CREDENTIAL_MASK, find_global_credential_tag, text_shown_without_passwords
 from app.services.embedded_references import EMPTY_NOTE_PREVIEW, first_line_preview, sole_reference_token
 from app.services.note_store import NoteRecord, store
+from app.services.requests_in_flight import requests_in_flight
 from app.utils.text_utils import strip_sanitized_html
 
 # How many suggestions the list shows: enough to choose from, short enough to read at a glance.
@@ -43,6 +44,9 @@ _ELLIPSIS = "…"
 _PASSWORD = "password"
 # The catalog's revision before it first reads the note store.
 _NEVER_REFRESHED = -1
+# The background build works this many notes at a time, giving way to the requests between
+# (requests_in_flight.py): about 60 ms of work each in a 100,000-note vault.
+_NOTES_PER_BACKGROUND_STEP = 5000
 _NEVER_EDITED = datetime.min.replace(tzinfo=timezone.utc)
 _WORD_RE = re.compile(r"\w+")
 
@@ -195,9 +199,12 @@ class _Catalog:
 
     def __init__(self) -> None:
         self._lock = Lock()
+        self._emptied = 0
         self._empty()
 
     def _empty(self) -> None:
+        # Counts the emptyings (a lock, a logout): a background build begun before one stops.
+        self._emptied += 1
         self._revision = _NEVER_REFRESHED
         self._entries: Dict[str, _Entry] = {}
         self._by_recency: List[str] = []
@@ -235,6 +242,40 @@ class _Catalog:
             return {}, []
         return entries, by_recency
 
+    def refresh_giving_way(self) -> None:
+        """Bring the catalog up to date beside the requests: a step of notes at a time, giving way
+        to the requests before each (requests_in_flight.py). A request needing the catalog meanwhile
+        brings the rest up to date itself (refreshed); then, or after a lock, this stops."""
+        with self._lock:
+            started_revision = self._revision
+            started_emptied = self._emptied
+        if store.revision == started_revision:
+            return
+        records = list(store.snapshot().items())
+        for first in range(0, len(records), _NOTES_PER_BACKGROUND_STEP):
+            requests_in_flight.give_way()
+            with self._lock:
+                if self._revision != started_revision or self._emptied != started_emptied:
+                    return
+                if not sensitive_caches_enabled():
+                    return
+                # Replaced, not changed: refreshed() hands its entries out.
+                entries = dict(self._entries)
+                for note_id, record in records[first:first + _NOTES_PER_BACKGROUND_STEP]:
+                    self._update_entry_locked(entries, note_id, record)
+                self._entries = entries
+        requests_in_flight.give_way()
+        # The notes deleted meanwhile, the order and the revision: quick now every note is done.
+        self.refreshed()
+
+    def _update_entry_locked(self, entries: Dict[str, _Entry], note_id: str, record: NoteRecord) -> None:
+        if note_id in entries and entries[note_id].record is record:
+            return
+        if note_id in entries:
+            self._unindex(note_id, entries[note_id])
+        entries[note_id] = _entry(record)
+        self._index(note_id, entries[note_id])
+
     def _refreshed_locked(self) -> Tuple[Dict[str, _Entry], List[str]]:
         revision = store.revision
         if revision == self._revision:
@@ -244,12 +285,7 @@ class _Catalog:
         for note_id in [note_id for note_id in entries if note_id not in records]:
             self._unindex(note_id, entries.pop(note_id))
         for note_id, record in records.items():
-            if note_id in entries and entries[note_id].record is record:
-                continue
-            if note_id in entries:
-                self._unindex(note_id, entries[note_id])
-            entries[note_id] = _entry(record)
-            self._index(note_id, entries[note_id])
+            self._update_entry_locked(entries, note_id, record)
         self._entries = entries
         self._by_recency = sorted(entries, key=lambda note_id: entries[note_id].edited_at, reverse=True)
         self._revision = revision
@@ -293,7 +329,7 @@ def build_catalog_in_background() -> Thread:
     """Bring the catalog up to date beside the requests, as soon as many notes arrived (loaded,
     imported): built by the first request needing it, a whole vault's worth (half a second for
     40,000 notes) held up whatever the user did next, a save or opening a note (2026-11-01)."""
-    thread = Thread(target=_catalog.refreshed, name="metalist-reference-catalog", daemon=True)
+    thread = Thread(target=_catalog.refresh_giving_way, name="metalist-reference-catalog", daemon=True)
     thread.start()
     return thread
 

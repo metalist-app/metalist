@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pytest
+from starlette.requests import Request
 
 import app.api.routes.auth as auth_route
 from app.services.namespace_switcher import NamespaceDeleteResult
@@ -63,6 +64,7 @@ def test_namespace_delete_preflight_does_not_report_password_requirement(
 
     response = auth_route.namespace_delete_preflight.__wrapped__(
         payload={"target_namespace": "locked"},
+        request=Request({"type": "http", "client": ("127.0.0.1", 50000), "headers": []}),
         token="token",
     )
 

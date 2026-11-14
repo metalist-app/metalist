@@ -18,7 +18,9 @@
             <div class="login-views">
                 <div id="login-form-view" class="login-form-view">
                     <div id="login-namespace-switcher" class="login-namespace-switcher" hidden>
-                        <div class="login-namespace-select-wrap">
+                        <!-- The one vault this device can open, named where the list would be. -->
+                        <p id="login-namespace-name" class="login-namespace-name" hidden></p>
+                        <div id="login-namespace-select-wrap" class="login-namespace-select-wrap">
                             <select id="login-namespace-select" class="login-namespace-select" aria-label="Switch vault">
                                 <option value="">Loading vaults…</option>
                             </select>
@@ -252,17 +254,6 @@
                             <circle cx="11" cy="11" r="7" />
                             <path d="m16 16 5 5" />
                         </svg>
-                        <button
-                            id="reference-view-new-search"
-                            class="reference-view-new-search interactive"
-                            type="button"
-                            aria-label="New search"
-                        >
-                            <svg viewBox="0 0 24 24" focusable="false" aria-hidden="true">
-                                <circle cx="11" cy="11" r="7" />
-                                <path d="m16 16 5 5" />
-                            </svg>
-                        </button>
                         <div class="search-input-chips">
                             <div id="untagged-view-indicator" class="search-input-chip untagged-view-indicator">
                                 <span class="search-input-chip-label" title="Untagged notes">Untagged</span>
@@ -305,24 +296,32 @@
                                 >×</button>
                             </div>
                         </div>
+                        <!-- A reference page in the middle of the bar, in place of the search box
+                             (docs/ready-to-build/reference-cards.md): back to the search, back, the
+                             page's kind, forward. Outlined like the search contexts' icon. -->
                         <div id="reference-source-indicator" class="reference-view-chip">
-                            <button
-                                id="reference-view-chip-back"
-                                class="reference-view-chip-button interactive"
-                                type="button"
-                                aria-label="Back"
-                                title="Back"
-                                hidden
-                            >←</button>
-                            <span id="reference-view-chip-icon" class="reference-view-chip-icon note-reference-icon" aria-hidden="true" hidden></span>
-                            <span id="reference-source-indicator-label" class="reference-view-chip-label"></span>
                             <button
                                 id="reference-source-indicator-clear"
                                 class="reference-view-chip-button interactive"
                                 type="button"
                                 aria-label="Back to your search"
                                 title="Back to your search"
-                            >×</button>
+                            ><svg viewBox="0 0 24 24" focusable="false" aria-hidden="true"><path d="M12 6v12L4 12z" /><path d="M20 6v12l-8-6z" /></svg></button>
+                            <button
+                                id="reference-view-chip-back"
+                                class="reference-view-chip-button interactive"
+                                type="button"
+                                aria-label="Back"
+                                title="Back"
+                            ><svg viewBox="0 0 24 24" focusable="false" aria-hidden="true"><path d="M16 6v12L7 12z" /></svg></button>
+                            <span id="reference-source-indicator-label" class="reference-view-chip-label"></span>
+                            <button
+                                id="reference-view-chip-forward"
+                                class="reference-view-chip-button interactive"
+                                type="button"
+                                aria-label="Forward"
+                                title="Forward"
+                            ><svg viewBox="0 0 24 24" focusable="false" aria-hidden="true"><path d="M8 6v12l9-6z" /></svg></button>
                         </div>
                         <div id="search-results-count" class="search-results-count">0</div>
                         <div id="search-suggestions" class="search-suggestions" hidden></div>

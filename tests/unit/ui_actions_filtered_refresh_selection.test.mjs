@@ -18,7 +18,7 @@ function refreshHarness({ isRemoved, isAnimated, isFullSnapshot }) {
     const noteElement = { id: 'edited-note' };
     const hashes = new Set(['edited-note']);
     let isElementPresent = true;
-    const snapshot = { notes: {}, rootCountTotal: 1, searchRootCountTotal: 1, rootWindowStart: 0, rootBandMargin: 75 };
+    const snapshot = { notes: {}, rootCountTotal: 1, searchRootCountTotal: 1, rootWindowStart: 0, rootBandMargin: 75, pagesClosedAtVersion: 0 };
     if (isFullSnapshot) {
         snapshot.structure = isRemoved ? [] : [{ id: 'edited-note', hash: 'new' }];
     } else {
@@ -46,6 +46,8 @@ function refreshHarness({ isRemoved, isAnimated, isFullSnapshot }) {
     const dependencies = {
         ModeContext,
         setSearchHighlightPhrases() {},
+        // No reference pages closed with their notes in these views.
+        noticeClosedReferencePages() {},
         moduleState: ApplicationState.createFields("test.refresh", { viewRequestInFlight: false }),
         Logger: { logAction() {}, logDebug() {} },
         NotesAPI: { async fetchView() { return { snapshot }; } },

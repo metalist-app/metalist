@@ -5,7 +5,7 @@ from fastapi import APIRouter, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 
 from app.api.request_auth import require_request_auth_token
-from app.api.transactions import transactional_route
+from app.api.transactions import one_step_read_route, transactional_route
 from app.services.exception_capture import CapturedExceptionContext
 from app.services.remote_image_proxy import (
     RemoteImageFetchError,
@@ -63,6 +63,7 @@ def register_remote_images(
 
 
 @router.get("/{proxy_token}")
+@one_step_read_route
 def proxy_remote_image(request: Request, proxy_token: str) -> Response:
     require_request_auth_token(request)
     resolve_capture = CapturedExceptionContext(ResourceNotFound, boundary='app/api/routes/remote_images.py:proxy_remote_image:resolve_capture')

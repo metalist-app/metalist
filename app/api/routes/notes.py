@@ -81,7 +81,7 @@ from app.api.note_requests import (
     PasteSiblingEndpointRequest,
     PasteChildEndpointRequest,
 )
-from app.api.transactions import read_only_route, serialized_read_route, transactional_route
+from app.api.transactions import one_step_read_route, read_only_route, serialized_read_route, transactional_route
 from app.services.sync import touch_client
 from app.services.edit_previews import edit_preview_at_caret, format_preview_html
 from app.services.file_filter_types import list_file_filter_kinds
@@ -178,7 +178,7 @@ from app.services.search_history import (
     validate_tag_activity_windows,
 )
 from app.services.root_sorting import is_root_reorder_locked
-from app.services.root_sorting import normalize_sort_mode
+from app.services.root_sorting import SORT_MODE_NORMAL, normalize_sort_mode
 from app.services.search_query import parse_search_query
 from app.services.html_export import EXPORT_PURPOSES
 from app.services.html_export import build_notes_export_document
@@ -222,6 +222,7 @@ def prefetch_link_titles(request: Request, draft: LinkTitlePrefetchRequest) -> d
 
 
 @router.get("/notes/link-titles/retry")
+@one_step_read_route
 def link_title_retry_progress(request: Request) -> dict[str, object]:
     require_request_auth_token(request)
     return link_title_retry_snapshot()
@@ -374,7 +375,15 @@ def view_diff(payload: ViewDiffRequest):
     if not isinstance(tab_view_empty, bool):
         raise TypeError("tabViewEmpty must be a boolean")
 
-    sort_mode = _resolve_tab_sort_mode(tab_id)
+    # A reference page the server closed with its deleted notes, asked for before the browser heard
+    # so: its view is empty, as its notes are gone, and carries pagesClosedAtVersion, on which the
+    # browser takes its tabs again and shows the search the page was opened from.
+    is_closed_page = tab_state_store.was_closed_with_its_notes(tab_id=tab_id)
+    # Its notes are gone: no order or filter is left to apply.
+    if is_closed_page:
+        sort_mode = SORT_MODE_NORMAL
+    else:
+        sort_mode = _resolve_tab_sort_mode(tab_id)
     normalized_search = search
     if isinstance(normalized_search, str) and normalized_search == "":
         normalized_search = None
@@ -417,13 +426,18 @@ def view_diff(payload: ViewDiffRequest):
         if None in warm_view.children_by_parent:
             previous_root_ids = warm_view.children_by_parent[None]
 
+    date_filter: RootDateFilter | None = None
+    file_filter: str | None = None
+    if not is_closed_page:
+        date_filter = _resolve_tab_date_filter(tab_id)
+        file_filter = _resolve_tab_file_filter(tab_id)
     state = build_view_state(
         editing_note_id=normalized_editing_note_id,
         find_reveal_note_id=find_reveal_note_id,
         search=normalized_search,
         sort_mode=sort_mode,
-        date_filter=_resolve_tab_date_filter(tab_id),
-        file_filter=_resolve_tab_file_filter(tab_id),
+        date_filter=date_filter,
+        file_filter=file_filter,
         client_known_note_ids=client_known_note_ids,
         previous_root_ids=previous_root_ids,
         visible_top_root_id=visible_top_root_id,
@@ -456,6 +470,8 @@ def view_diff(payload: ViewDiffRequest):
         "rootBandMargin": state.metadata["rootBandMargin"],
         "rootSortKeyBeforeWindow": state.metadata["rootSortKeyBeforeWindow"],
         "editingNoteId": normalized_editing_note_id,
+        # Reference pages closed with their deleted notes: the browser takes the tabs again.
+        "pagesClosedAtVersion": tab_state_store.pages_closed_at_version(),
     }
     if warm_view is None:
         response_snapshot["structure"] = state.structure
@@ -473,6 +489,7 @@ def view_diff(payload: ViewDiffRequest):
 
 
 @router.get("/notes/tab-state")
+@one_step_read_route
 def get_tab_state() -> Dict[str, object]:
     return tab_state_store.snapshot()
 
@@ -618,8 +635,13 @@ def delete_tab(payload: DeleteTabRequest) -> Dict[str, object]:
     return response
 
 
+# Read beside changes, never in the write turn: they changed nothing, yet each keystroke's
+# suggestions queued behind the last, and the list's view behind them all (a problem report,
+# 2026-11-14: a page waited a minute for its notes). They read the search index and the search
+# history, each consistent under its own lock; the tree, for terms about values, in one turn of
+# the note store, leaving out a note deleted meanwhile.
 @router.post("/notes/search-suggestions")
-@transactional_route
+@read_only_route
 def search_suggestions(request: Request, payload: SearchSuggestionsRequest) -> Dict[str, object]:
     query = payload["query"]
     raw_window_days = payload["windowDays"]
@@ -805,6 +827,7 @@ def tab_search_interaction(request: Request, payload: TabSearchInteractionReques
 
 
 @router.get("/notes/tag-interactions")
+@one_step_read_route
 def get_tag_interactions(request: Request) -> Dict[str, object]:
     token = _require_bearer_token(request)
     return list_search_suggestion_statistics(token=token)
@@ -818,6 +841,7 @@ def file_filter_kinds() -> Dict[str, object]:
 
 
 @router.get("/notes/memory-usage")
+@one_step_read_route
 def get_memory_usage(request: Request) -> Dict[str, object]:
     """The Memory Usage dialog: this namespace server process's memory and the notes it holds."""
     _require_bearer_token(request)
@@ -1151,13 +1175,17 @@ def export_notes_html(request: Request) -> Response:
     )
 
 
+# These read a note after checking it is there: one at a time with the writes, so a delete cannot
+# land in between (2026-11-14; tests/unit/test_reads_beside_writes.py).
 @router.get("/notes/{note_id}/fullscreen")
+@serialized_read_route
 def note_fullscreen(note_id: str) -> Dict[str, str]:
     _require_note_present(note_id, context="notes.fullscreen")
     return {"html": build_note_fullscreen_markup(note_id)}
 
 
 @router.get("/notes/{note_id}/floating")
+@serialized_read_route
 def note_floating_window(note_id: str, revision: str) -> dict[str, str]:
     current_revision = f"{get_current_sync_uuid()}:{link_title_store.get_revision()}"
     if not note_store.has_note(note_id):
@@ -1172,6 +1200,7 @@ def note_floating_window(note_id: str, revision: str) -> dict[str, str]:
 
 
 @router.get("/notes/{note_id}/preview")
+@serialized_read_route
 def note_preview(note_id: str) -> dict[str, str]:
     """A reference's preview card: the top of the note as the list draws it, a file as
     an embed of it draws it, or nothing for a reference to neither (deleted)."""
@@ -1215,6 +1244,7 @@ def backlinks(request: Request, note_id: str) -> Dict[str, object]:
 
 
 @router.get("/notes/{note_id}/outside-referrers")
+@serialized_read_route
 def outside_referrers(note_id: str) -> Dict[str, object]:
     """How many notes outside this note's subtree reference it or a note in it:
     the references deleting (or cutting) the subtree would break."""
@@ -1414,8 +1444,10 @@ def delete_notes_in_view(body: DeleteNotesInViewRequest) -> dict[str, object]:
 
 # Tag Notes in View… (app/usecases/tag_notes_in_view.py). Adding suggests the vault's tags, as
 # the tag bar does; removing, the tags the notes it would touch carry.
+# Both work out the view and then read its notes' tags: one at a time with the writes.
 @router.post("/notes/view/tag-suggestions")
 @read_only_route
+@serialized_read_route
 def tag_notes_in_view_suggestions(body: TagNotesInViewSuggestionsRequest) -> dict[str, object]:
     if body["action"] == ADD:
         suggestions = search_index.suggest_tag_completions(query=body["prefix"], limit=MAX_TAG_SUGGESTIONS, by_family=True)
@@ -1425,6 +1457,7 @@ def tag_notes_in_view_suggestions(body: TagNotesInViewSuggestionsRequest) -> dic
 
 @router.post("/notes/view/tag-count")
 @read_only_route
+@serialized_read_route
 def count_tag_notes_in_view(body: CountTagNotesInViewRequest) -> dict[str, object]:
     require_plain_tag(body["tag"])
     return {"noteCount": len(tag_changes_in_view(_resolved_view(body), action=body["action"], tag=body["tag"]))}
@@ -1452,6 +1485,7 @@ def password_audit(body: PasswordAuditRequest) -> dict[str, object]:
 
 # The audit reminder shows only when the vault holds a password.
 @router.get("/notes/password-count")
+@one_step_read_route
 def password_count() -> dict[str, object]:
     return {"passwordCount": count_passwords()}
 
@@ -1678,6 +1712,7 @@ def run_shell_endpoint(request: Request, note_id: str, body: RunShellEndpointReq
 
 
 @router.get("/notes/{note_id}/run-shell/{run_id}")
+@one_step_read_route
 def run_shell_status_endpoint(request: Request, note_id: str, run_id: str) -> Dict[str, object]:
     _require_loopback_shell_request(request)
     cmd = CmdRunShellStatus(note_id=note_id, run_id=run_id)

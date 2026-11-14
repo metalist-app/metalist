@@ -15,7 +15,7 @@ from pydantic import BaseModel, ConfigDict, Field
 import re
 
 from app.api.request_auth import require_request_auth_token
-from app.api.transactions import read_only_route
+from app.api.transactions import one_step_read_route, read_only_route
 from app.services import problem_report_store, request_history, safe_log
 from app.services.note_store import store as note_store
 from app.services.problem_report_builder import (
@@ -216,6 +216,7 @@ def make_unsaved_problem_report(request: Request, body: DraftBody) -> dict[str, 
 
 
 @router.get("")
+@one_step_read_route
 def list_problem_reports(request: Request) -> dict[str, object]:
     """The kept reports, newest first: id, when made, and what made it."""
     require_request_auth_token(request)

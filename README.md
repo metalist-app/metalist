@@ -117,14 +117,14 @@ Use `python main.py work --enable-shell` for one foreground namespace. Shell
 routes remain restricted to loopback clients using a loopback request host,
 even when the rest of MetaList is intentionally exposed to a LAN.
 
-`metalist` and explicit single-namespace source runs bind to loopback at `127.0.0.1:8000` by default. This keeps a normal laptop launch off LAN and public interfaces unless remote access is explicitly configured.
+A vault listens on loopback (`127.0.0.1`) until you share it: tick its Shared box in Manage Vault Ports. This keeps a normal laptop launch off LAN and public interfaces until you choose otherwise, vault by vault.
 On first startup, MetaList also auto-generates a self-signed TLS pair at `~/MetaList/certs/metalist-cert.pem` and `~/MetaList/certs/metalist-key.pem`, then enables HTTPS on the same bind host at port `8443`. The certificate is valid 825 days (Apple's limit); a start within 30 days of its end, or one that finds the pair unreadable, replaces it with a new pair, after which devices that trusted the old one warn once or need the new one installed. If you already have real PEM files, point `METALIST_TLS_CERT` and `METALIST_TLS_KEY` at them instead. Set `METALIST_AUTO_GENERATE_TLS=0` only if you explicitly want HTTP-only startup.
 
 Database selection:
 - No explicit namespace on a single-namespace launch: `~/MetaList/namespaces/default/default.metalist.db`
 - `--namespace work` or `METALIST_NAMESPACE=work`: `~/MetaList/namespaces/work/work.metalist.db`
 - Files sit beside the notes database: `namespaces/work/files/catalog.db` names them and `namespaces/work/files/blobs/` holds one file per stored item
-- Remembered launch ports are stored as plaintext metadata inside each namespace's main `*.metalist.db`
+- Remembered launch ports, and whether the vault is shared on the network, are stored as plaintext metadata inside each namespace's main `*.metalist.db`
 - Launch precedence is: explicit CLI flags > env vars > saved namespace profile; if a namespace has no saved profile, launch it once with explicit ports or configure ports from the UI
 - Backups stay beside the namespace data under `~/MetaList/namespaces/work/backups/` and use one archive per snapshot with filenames like `work-<timestamp>.metalist-backup.tar.gz`
 - The Backup Settings modal targets one user-selected backup folder and can include multiple namespaces in a single run
@@ -134,8 +134,7 @@ Useful env flags:
 - `CRASH_SERVER_ON_FAIL=1` (default): fail-fast on validation errors
 - `API_PREFIX=/api2`: override API prefix (client assumes `/api2` by default)
 - `METALIST_NAMESPACE=work`: select `~/MetaList/namespaces/work/work.metalist.db`
-- `METALIST_HOST=127.0.0.1` (default): bind the main app to a specific interface; use a LAN IP or `0.0.0.0` only for intentional remote access
-- `METALIST_ALLOWED_HOSTS=notes.example.com,192.168.1.20`: comma-separated public/LAN hostnames accepted in HTTP `Host` headers; loopback aliases and a specific non-wildcard `METALIST_HOST` are accepted automatically
+- `METALIST_ALLOWED_HOSTS=notes.example.com`: comma-separated names reached through a proxy, accepted in HTTP `Host` headers; loopback names are always accepted, and a shared vault also accepts this computer's own names and addresses
 - `METALIST_PORT=8000` (default): bind the main app to a different port
 - `METALIST_HTTPS_PORT=8443`: override the HTTPS port when TLS is enabled
 - `METALIST_TLS_CERT=/path/to/fullchain.pem` + `METALIST_TLS_KEY=/path/to/privkey.pem`: override TLS paths
@@ -145,37 +144,13 @@ Useful env flags:
 - `--enable-shell`: opt in to local `@shell` execution for this launch; shell routes require a loopback client and loopback request host, and the capability is never persisted in namespace data
 
 ### Remote Access / HTTPS
-LAN or VPN access must be enabled explicitly. Prefer binding the machine's specific LAN address, which also adds that address to the accepted-host set:
-```bash
-METALIST_HOST=192.168.1.20 metalist
-```
-On a fresh machine, that first launch also creates the default TLS cert pair automatically. Then open either `http://192.168.1.20:8000` or `https://192.168.1.20:8443` from the other machine.
+Open Manage Vault Ports (`Cmd/Ctrl+/`, then "Manage Vault Ports…"), tick Shared for each vault other computers may open, and save. The vault restarts at once and listens on the network; untick it to take it back. Other computers open `https://<this computer's name>.local:<the vault's HTTPS port>` or `https://<its address>:<port>`. A shared vault accepts this computer's own names and addresses as they are now, so nothing needs changing when the router gives it a new address.
 
-Starting with 0.7.1, an explicit `METALIST_HOST` or `METALIST_ALLOWED_HOSTS`
-configuration is saved in `~/MetaList/network-settings.json` (under
-`METALIST_DATA_DIRECTORY` when overridden). Subsequent source launches, plain
-`metalist` launches, and updates reuse it. Environment values override and update
-the corresponding saved settings. This file stores only the bind address and
-allowed hosts; namespace ports remain in their launch profiles, and shell access
-still requires `--enable-shell` on each launch. Invalid settings stop startup
-with an error. Fresh installations continue to bind to localhost by default.
-To switch back to local-only access, run `METALIST_HOST=127.0.0.1 metalist` once.
-Older installed versions do not read this file; keep supplying their LAN settings
-until upgrading to 0.7.1 or later.
+Another computer sees only the vault it is in and the shared ones: a vault not shared does not appear on its login page or in its lists, and it cannot open one.
 
-To keep `@shell` available on the host laptop while allowing another laptop to
-use normal MetaList features, bind both interfaces and explicitly allow the LAN
-address:
+`METALIST_HOST` is retired: MetaList refuses to start while it is set. The first start after updating converts a `~/MetaList/network-settings.json` left by an older MetaList: if it shared MetaList on the network, every vault becomes shared, and the file is removed.
 
-```bash
-METALIST_HOST=0.0.0.0 \
-METALIST_ALLOWED_HOSTS=10.0.0.31 \
-metalist --enable-shell
-```
-
-Use `http://127.0.0.1:<namespace-http-port>` on the host laptop when running
-`@shell`. Other devices may use `https://10.0.0.31:<namespace-https-port>`, but
-their shell start/status requests receive `403`.
+`@shell` still runs only from the host laptop. With `--enable-shell`, use `http://127.0.0.1:<namespace-http-port>` there for shell notes; other devices opening a shared vault get the rest of MetaList, and their shell requests receive `403`.
 
 Namespaced launch example:
 ```bash
@@ -190,22 +165,8 @@ metalist work
 ```
 and MetaList will reuse the saved HTTP / HTTPS ports for `work`. The same applies to the default namespace: `metalist` will reuse the saved default-namespace profile.
 
-Equivalent explicit launch, if you want it:
+If you already have a real certificate and key, point MetaList at them:
 ```bash
-METALIST_HOST=0.0.0.0 \
-METALIST_ALLOWED_HOSTS=192.168.1.20 \
-METALIST_PORT=8000 \
-METALIST_HTTPS_PORT=8443 \
-metalist
-```
-From the other machine, open `https://<laptop-ip>:8443`.
-
-If you already have a real certificate and key, use the same dual-listener flow:
-```bash
-METALIST_HOST=0.0.0.0 \
-METALIST_ALLOWED_HOSTS=192.168.1.20 \
-METALIST_PORT=8000 \
-METALIST_HTTPS_PORT=8443 \
 METALIST_TLS_CERT=/path/to/fullchain.pem \
 METALIST_TLS_KEY=/path/to/privkey.pem \
 metalist
@@ -220,9 +181,8 @@ When HTTPS is enabled:
 - remote HTTP requests to `http://<laptop-ip>:8000` are redirected to HTTPS
 - localhost HTTP requests still stay on plain `http://127.0.0.1:8000` so the laptop can keep using the non-TLS port
 
-If TLS is terminated by a reverse proxy on the same machine instead, keep MetaList on loopback and let the proxy forward to it:
+If TLS is terminated by a reverse proxy on the same machine instead, leave the vault not shared (it listens on loopback) and let the proxy forward to it:
 ```bash
-METALIST_HOST=127.0.0.1 \
 METALIST_ALLOWED_HOSTS=notes.example.com \
 METALIST_PORT=8000 \
 METALIST_FORWARDED_ALLOW_IPS=127.0.0.1,::1 \

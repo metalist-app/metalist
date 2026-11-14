@@ -2,6 +2,7 @@
 background_work.py): the page shows each piece as it goes (background-work-cards.js)."""
 
 from __future__ import annotations
+from app.api.transactions import one_step_read_route
 
 from typing import Dict
 
@@ -14,6 +15,7 @@ router = APIRouter(prefix="/background-work", tags=["background-work"])
 
 
 @router.get("")
+@one_step_read_route
 def list_background_work(request: Request) -> Dict[str, object]:
     """[{key, label, done, total}] of the work running now; total 0 while not yet known."""
     require_request_auth_token(request)

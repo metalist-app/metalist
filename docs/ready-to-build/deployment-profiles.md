@@ -77,13 +77,14 @@ In rough priority order:
    - Trust a configured proxy.
    - Take one public base URL setting and use it for redirects, vault links and the startup message.
 9. **Login rate limits are per IP**, and behind a proxy everyone shares one. Use the forwarded client address from trusted proxies.
-10. **Network settings persist in `network-settings.json`** and reapply silently on later starts (`app/network_settings.py`). Document it, and print the values in effect at startup.
+10. ~~**Network settings persist in `network-settings.json`**~~ Done differently (2026-11-13): the file and `METALIST_HOST` are retired; each vault says whether it is shared, in its launch profile (`docs/security/README.md`, "Sharing on the Network"). **Open for self-hosting:** a container must listen beyond its own loopback before anyone can reach Manage Vault Ports to share a vault, so a server deployment needs a way to share its first vault without the UI.
 
 ## 4. Hosted (direction only; with the hosted build)
 
 With one container per user, a signed-in user controlling "the server" controls only their own container, so managing their own vaults is fine. What the operator must own:
 - **No self-update from the browser.** `POST /auth/app-update` stops every vault, downloads `uv` and reinstalls. Turn that off, and stop the public `/auth/app-update/check` calling PyPI on page load. Images are shipped; updates follow the hosted update plan.
 - **No port picking, process launching or killing by port.** No `/namespaces/ports`, no `lsof`/`ps`-based eviction (`_evict_processes_listening_on_port`), no `os.execv` restart after a restore. The container supervisor restarts. (On `self-hosted`, fail with a message rather than kill a foreign process.)
+- **Every vault is shared, and users cannot change it** (the maintainer, 2026-11-13). The operator's proxy is the only way in, so each vault listens beyond the container's loopback from its first start. The `hosted` profile decides that, not the vault's `shared_on_network` (`resolve_vault_bind_host`, `docs/security/README.md` "Sharing on the Network"), and the Shared box goes with the rest of Manage Vault Ports. Every visitor reaches MetaList through the proxy, so the "another computer sees only shared vaults" filter shows every vault there. A server or container on `self-hosted` has the same first-vault problem (§3 item 10), so a setting the profile reads may serve both.
 - **Sizing:**
   - `PRAGMA cache_size=500000` ✓ (`app/models/database.py`) is roughly 2 GB per connection.
   - Every JSON block render spawns `python -m json.tool` (`structured_note_renderers.py`); parse in process, in every profile.

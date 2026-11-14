@@ -61,6 +61,7 @@ import {
 } from '../services/shell-output-service.js';
 import {
     navigateBackFromReferenceContext,
+    navigateForwardReference,
     navigateToReferenceOrigin,
     openReferenceInNewTab,
     openReferenceQueryInNewTab,
@@ -68,11 +69,6 @@ import {
     openSearchInNewSearchContext,
     switchToTabContext,
 } from './keyboard-events.js';
-import {
-    isViewingReferenceSource,
-    showNewSearchInReferenceView,
-} from '../services/reference-source-navigation-service.js';
-import { focusSearchInputAndSelectAllText } from '../services/search-input-service.js';
 
 
 const moduleState = ApplicationState.createFields('mouse-events', {
@@ -308,8 +304,6 @@ function isMouseDownOutsideEditExclusion(target) {
             '.note-tag-bar',
             '#search-contexts-list',
             '#reference-source-indicator',
-            // The magnifier leaves edit mode itself, then opens the empty search input.
-            '#reference-view-new-search',
             '#root-sort-indicator',
             '#date-range-indicator',
             // A folder clicked saves and leaves the note itself, then shows the folder: one click.
@@ -2383,22 +2377,6 @@ function handleReferenceSourceIndicatorClick(event) {
         throw new Error('Reference source indicator click missing target element');
     }
 
-    const newSearchButton = event.target.closest('#reference-view-new-search');
-    if (newSearchButton) {
-        event.preventDefault();
-        event.stopPropagation();
-        void CommandGate.run('mouse.reference_view_new_search', async () => {
-            if (ModeContext.isEditing) {
-                await actionDeselectNote();
-            }
-            if (isViewingReferenceSource()) {
-                showNewSearchInReferenceView();
-                focusSearchInputAndSelectAllText();
-            }
-        });
-        return true;
-    }
-
     const indicator = event.target.closest('#reference-source-indicator');
     if (!indicator) {
         return false;
@@ -2409,7 +2387,13 @@ function handleReferenceSourceIndicatorClick(event) {
 
     const clearButton = event.target.closest('#reference-source-indicator-clear');
     const backButton = event.target.closest('#reference-view-chip-back');
-    if (!clearButton && !backButton) {
+    const forwardButton = event.target.closest('#reference-view-chip-forward');
+    if (!clearButton && !backButton && !forwardButton) {
+        return true;
+    }
+    // An arrow with nowhere to go is hidden and does nothing.
+    const clickedArrow = [clearButton, backButton, forwardButton].find((button) => button !== null);
+    if (clickedArrow.classList.contains('is-unavailable')) {
         return true;
     }
 
@@ -2423,6 +2407,12 @@ function handleReferenceSourceIndicatorClick(event) {
     if (backButton) {
         void CommandGate.run('mouse.reference_view_back', async () => {
             await navigateBackFromReferenceContext();
+        });
+        return true;
+    }
+    if (forwardButton) {
+        void CommandGate.run('mouse.reference_view_forward', async () => {
+            await navigateForwardReference();
         });
         return true;
     }

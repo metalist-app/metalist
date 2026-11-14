@@ -368,9 +368,7 @@ def _verify_browser_startup(*, certificate: Path, host: str,
             (output_directory / 'setup-results.json').write_text(json.dumps(diagnostics, indent=JSON_INDENT), encoding='utf-8')
 
 
-def _verify_remembered_network_settings(*, executable: Path, environment: dict[str, str],
-                                      directory: Path, profiles: list[tuple[str, int, int]],
-                                      version: str, tls_context: ssl.SSLContext, log) -> str:
+def _lan_address(environment: dict[str, str]) -> str:
     if 'METALIST_LAN_IP' in environment:
         host = environment['METALIST_LAN_IP']
     else:
@@ -378,18 +376,45 @@ def _verify_remembered_network_settings(*, executable: Path, environment: dict[s
             # Match automatic certificate interface detection; no datagram is sent.
             probe.connect(('8.8.8.8', ROUTE_PROBE_PORT))
             host = probe.getsockname()[0]
-    assert not host.startswith('127.'), 'LAN persistence check requires a non-loopback interface'
-    configured = dict(environment, METALIST_HOST='0.0.0.0', METALIST_ALLOWED_HOSTS=host)
-    subprocess.run([str(executable)], cwd=directory, env=configured,
-                   stdout=log, stderr=subprocess.STDOUT, check=True, timeout=CLI_RUN_TIMEOUT_SECONDS)
-    fresh = {key: value for key, value in environment.items()
-             if key not in {'METALIST_HOST', 'METALIST_ALLOWED_HOSTS'}}
-    subprocess.run([str(executable)], cwd=directory, env=fresh,
+    assert not host.startswith('127.'), 'The network check requires a non-loopback interface'
+    return host
+
+
+def _answers_on(*, host: str, port: int) -> bool:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as connection:
+        connection.settimeout(REQUEST_TIMEOUT_SECONDS)
+        return connection.connect_ex((host, port)) == 0
+
+
+def _verify_shared_vaults_on_network(*, executable: Path, python: Path, environment: dict[str, str],
+                                     directory: Path, profiles: list[tuple[str, int, int]],
+                                     version: str, tls_context: ssl.SSLContext, log,
+                                     shares_the_old_way: bool) -> str:
+    """A vault not shared is not on the network; once shared it is, after a plain restart
+    (docs/security/README.md, "Sharing on the Network"). A MetaList from before per-vault sharing shares
+    through METALIST_HOST, which it remembers in network-settings.json; the update converts that."""
+    host = _lan_address(environment)
+    for _, http_port, https_port in profiles:
+        assert not _answers_on(host=host, port=https_port), f'A vault not shared answers on {host}:{https_port}'
+        assert not _answers_on(host=host, port=http_port), f'A vault not shared answers on {host}:{http_port}'
+    if shares_the_old_way:
+        configured = dict(environment, METALIST_HOST='0.0.0.0', METALIST_ALLOWED_HOSTS=host)
+        subprocess.run([str(executable)], cwd=directory, env=configured,
+                       stdout=log, stderr=subprocess.STDOUT, check=True, timeout=CLI_RUN_TIMEOUT_SECONDS)
+    else:
+        namespaces = [namespace for namespace, _, _ in profiles]
+        share = ("import sys\n"
+                 "from app.server_runtime import save_namespace_network_sharing\n"
+                 "for namespace in sys.argv[1:]:\n"
+                 "    save_namespace_network_sharing(namespace=namespace, shared=True)\n")
+        subprocess.run([str(python), '-I', '-c', share, *namespaces], cwd=directory, env=environment,
+                       stdout=log, stderr=subprocess.STDOUT, check=True, timeout=CLI_RUN_TIMEOUT_SECONDS)
+    subprocess.run([str(executable)], cwd=directory, env=environment,
                    stdout=log, stderr=subprocess.STDOUT, check=True, timeout=CLI_RUN_TIMEOUT_SECONDS)
     for namespace, http_port, https_port in profiles:
         _verify_namespace(host=host, namespace=namespace, http_port=http_port, https_port=https_port,
                           version=version, tls_context=tls_context)
-    print('PASS LAN HTTP/HTTPS after plain CLI restart without network environment overrides')
+    print('PASS shared vaults answer on the network after a plain restart; not shared, they did not')
     return host
 
 
@@ -456,9 +481,10 @@ def smoke_installed_package(*, browsers: list[str], https_browsers: list[str],
                                       version=distribution.version, tls_context=tls_context)
                     _verify_installed_assets(static_directory=installed_app.parent / 'static', http_port=http_port,
                                              https_port=https_port, tls_context=tls_context)
-                browser_host = _verify_remembered_network_settings(
-                    executable=executable, environment=environment, directory=launch_directory,
-                    profiles=profiles, version=distribution.version, tls_context=tls_context, log=log)
+                browser_host = _verify_shared_vaults_on_network(
+                    executable=executable, python=Path(sys.executable), environment=environment,
+                    directory=launch_directory, profiles=profiles, version=distribution.version,
+                    tls_context=tls_context, log=log, shares_the_old_way=False)
                 for browser_name in browsers:
                     _verify_browser_startup(
                         certificate=certificate, host='127.0.0.1', profiles=profiles,

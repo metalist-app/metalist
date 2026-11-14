@@ -11,6 +11,7 @@ import { FileRevisionConflictError, UserInputRejected } from '../expected-errors
 import { AUTOSAVE_STATUS, createAutosaveController } from './excalidraw-autosave.js';
 import { diagramStatusShown } from './excalidraw-status-shown.js';
 import { isExcalidrawEditorOpen, setExcalidrawEditorOpen } from './excalidraw-editor-state.js';
+import { keepSavedView } from './excalidraw-kept-view.js';
 import { loadExcalidraw } from './excalidraw-loader.js';
 import { refreshExcalidrawEmbeds } from './excalidraw-preview-service.js';
 import { MS_PER_SECOND } from '../time-units.js';
@@ -158,7 +159,7 @@ function startEditorSession(setup) {
         const view = viewOfAppState(scene.appState);
         const saved = await writeSceneText(withSavedView(bundle.serializeAsJSON(scene.elements, scene.appState, scene.files, 'local'), view));
         if (saved.ok) {
-            session.keptView = view;
+            keepSavedView(session, view);
         }
         return saved;
     }

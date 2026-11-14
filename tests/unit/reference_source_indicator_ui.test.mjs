@@ -13,7 +13,7 @@ const KEYBOARD_EVENTS_URL = new URL(
     import.meta.url,
 );
 
-test('a reference view shows a chip in the search bar: × back to the search, ← back one level', async () => {
+test('a reference page shows in the search bar: ⏮ back to the search, ◀ back, ▶ forward', async () => {
     const [template, css, mouseEvents] = await Promise.all([
         readFile(TEMPLATE_URL, 'utf8'),
         readFile(CSS_URL, 'utf8'),
@@ -25,10 +25,15 @@ test('a reference view shows a chip in the search bar: × back to the search, �
         template.indexOf('id="search-validation-message"'),
     );
     assert.match(row, /id="reference-source-indicator" class="reference-view-chip"/);
-    assert.match(row, /id="reference-view-chip-back"[^>]*title="Back"[^>]*hidden/);
+    // A reference page in the bar (reference-cards.md): ⏮ back to the search, ◀ back, ▶ forward.
+    assert.match(row, /id="reference-view-chip-back"[^>]*title="Back"/);
+    assert.match(row, /id="reference-view-chip-forward"[^>]*title="Forward"/);
+    assert.match(mouseEvents, /await navigateForwardReference\(\)/);
     assert.match(row, /id="reference-source-indicator-clear"[^>]*title="Back to your search"/);
-    assert.match(row, /id="reference-view-new-search"/);
-    assert.doesNotMatch(row, /id="reference-view-new-search"[^>]*title=/, 'the magnifier has no tooltip');
+    // The chip's magnifier, which brought the search box back over a reference view, is gone:
+    // a page has nothing to type (reference-cards.md §2 rule 8).
+    assert.doesNotMatch(row, /reference-view-new-search/);
+    assert.doesNotMatch(row, /reference-view-chip-icon/);
     assert.match(css, /\.controls \.reference-view-chip\.is-shown/);
     assert.match(
         mouseEvents,
@@ -60,9 +65,11 @@ test('AI reference collections use a temporary labeled view without entering sea
         keyboardEvents,
         /getReferenceNavigationLabelForTab\(tabId\)/,
     );
+    // A reference page's hidden tab is never a row, so its note-ID query never enters search
+    // history: a row records its own search, and goes to the page it was last on (2026-11-14).
     assert.match(
         keyboardEvents,
-        /referenceNavigationLabel !== ''[\s\S]*?NotesAPI\.recordTabSearchSelection/,
+        /const listedTabIds = tabOrder\.filter\(\(tabId\) => getReferenceNavigationLabelForTab\(tabId\) === ''\)/,
     );
 
     const mouseDownExclusion = mouseEvents.match(

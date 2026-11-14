@@ -3,16 +3,26 @@ restart keeps it, only Clear Chat ends it, and in a vault with a password it is 
 unencrypted."""
 from __future__ import annotations
 
+import asyncio
+import json
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
+from fastapi import Response
 
-from app.db.ai_chat_sql import fetch_ai_chat_row
+import app.api.routes.ai as ai_routes
+
+from app.db.ai_chat_sql import fetch_ai_chat_row, upsert_ai_chat_row
 from app.db.session import begin_writer
 from app.models.database import SafeSession
 from app.security.encryption import clear_encryption_key, get_encryption_service, set_encryption_required, set_session_dek
 from app.services.agent.cloud_privacy import HistoryDisclosure
 from app.services.ai_chat import INTERRUPTED_ERROR, NO_REQUEST, AiChatSessionStore
+from app.services.ai_chat_stream import ChatTurnStream
+from app.services.agent.web_evidence import WebEvidenceStore
+from app.services.agent.web_fetch import WebPageFetchResult
+from app.services.note_store import NoteStore
 
 QUESTION = "Which notes mention the lighthouse?"
 ANSWER = "Two notes mention the lighthouse."
@@ -20,6 +30,9 @@ REQUEST = {"total": 900, "instructions": 500, "history": 100, "this_turn": 300}
 ACTIONS = [{"action": "search", "query": "lighthouse"}]
 NOTE_SEEN = "note-seen"
 DEK = b"d" * 32
+WEB_SESSION = "web-session"
+PAGE_URL = "https://example.com/lighthouses"
+PAGE_TITLE = "Lighthouses of the North Sea"
 
 
 @pytest.fixture
@@ -192,3 +205,65 @@ def test_a_note_made_private_while_metalist_was_stopped_holds_the_history_back(v
     assert {message["visibility"] for message in after.snapshot()["messages"]} == {"held_back"}
     # Saved so: another restart does not send it again.
     assert _restarted().provider_messages() == []
+
+
+def _answered_citing_a_web_page() -> None:
+    """An answer streamed as the chat streams it, citing a page the AI opened."""
+    web_pages = WebEvidenceStore()
+    page = web_pages.retain_success(session_key=WEB_SESSION, result=WebPageFetchResult(
+        requested_url=PAGE_URL, final_url=PAGE_URL, status="ok", title=PAGE_TITLE,
+        content_text="Six lighthouses still stand.", outgoing_links=(),
+        fetched_at="2026-11-13T00:00:00+00:00", truncated=False, error_kind=""))
+    store = AiChatSessionStore()
+    turn = store.start_turn(user_content=QUESTION, provider="openai", model="gpt-5.6-sol")
+    stream = ChatTurnStream(store=store, notes=NoteStore(), session_key=WEB_SESSION, turn_id=turn,
+                            initial_input_tokens=1, web_evidence_store=web_pages)
+    references = {"reference_note_ids": [], "reference_web_ids": [page.evidence_id]}
+
+    async def events():
+        yield {"type": "content_delta", "text": f"Six still stand. [[web:{page.evidence_id}]]", **references}
+        yield {"type": "done", **references, "actions": ACTIONS, "request_tokens": REQUEST}
+
+    async def consume() -> None:
+        async for _line in stream.events(events()):
+            pass
+
+    asyncio.run(consume())
+
+
+def test_a_restart_keeps_the_web_pages_an_answer_cites(vault, monkeypatch: pytest.MonkeyPatch) -> None:
+    _answered_citing_a_web_page()
+    # After a restart the pages the AI opened are gone (they are kept only for the login).
+    monkeypatch.setattr(ai_routes, "ai_chat_store", _restarted())
+    monkeypatch.setattr(ai_routes, "web_evidence_store", WebEvidenceStore())
+    monkeypatch.setattr(ai_routes.token_service, "get_session_key", lambda token: "a-new-login")
+
+    shown = ai_routes.get_ai_session(response=Response(), token="auth-token").messages[1]
+    monkeypatch.setattr(ai_routes, "set_clipboard", lambda client_id, records: None)
+    copied = ai_routes.copy_ai_message(message_id=shown.id, token="auth-token",
+                                       payload=ai_routes.AiCopyMessageRequest(client_id="client-1"))
+
+    # In the chat, and in a note made from the answer with Copy.
+    for answer in (shown.rendered_content, copied.html):
+        assert "Six still stand." in answer
+        assert f'href="{PAGE_URL}"' in answer
+        assert PAGE_TITLE in answer
+
+
+def test_a_chat_saved_before_answers_kept_their_web_pages_still_opens(vault) -> None:
+    """Format 1 (before 2026-11-13) kept no web pages: its answers show without their links."""
+    _answered_citing_a_web_page()
+    saved = json.loads(str(_saved_row()["state_json"]))
+    del saved["web_references"]
+    saved["format"] = 1
+    with begin_writer() as connection:
+        upsert_ai_chat_row(connection, state_json=json.dumps(saved), state_encryption_nonce=None,
+                           state_encryption_tag=None, updated_at=datetime.now(timezone.utc))
+
+    store = _restarted()
+
+    answer_id = store.snapshot()["messages"][1]["id"]
+    assert store.web_references(message_id=answer_id) == ()
+    # The next answer keeps its pages.
+    _answered(store, "Again?", "Yes.")
+    assert _restarted().web_references(message_id=store.snapshot()["messages"][3]["id"]) == ()

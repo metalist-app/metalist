@@ -17,6 +17,7 @@ from typing import Callable, Dict, List, Optional, Tuple
 
 from app.services.auth_cache_state import after_page_ready
 from app.services.background_work import DRAWING_PDF_PAGES_KEY, IMPORT_KEY, background_work
+from app.services.requests_in_flight import requests_in_flight
 
 # Raise it when the drawing changes (its size, its quality): every first page is drawn again.
 DRAWER_VERSION = 1
@@ -28,6 +29,10 @@ DRAWING_PAGES_LABEL = "Drawing PDF first pages"
 # The worker process's creation flags: none (subprocess's own default) but on Windows, where it
 # runs at below-normal priority.
 _NO_CREATION_FLAGS = 0
+
+
+def _draw_on() -> None:
+    """Between PDFs when the pages are wanted now (a test): nothing to wait for."""
 
 
 @dataclass(frozen=True)
@@ -105,6 +110,9 @@ class PdfFirstPages:
     def refresh(self) -> None:
         """Draw every PDF still without its first page, each stored as soon as it is drawn: a stop
         part way (a restart) goes on with the PDFs not drawn yet."""
+        self._refresh(between_files=_draw_on)
+
+    def _refresh(self, *, between_files: Callable[[], None]) -> None:
         pending = self.pending()
         if not pending:
             return
@@ -112,6 +120,7 @@ class PdfFirstPages:
         with background_work.track(DRAWING_PDF_PAGES_KEY, DRAWING_PAGES_LABEL, total=len(pending)) as progress:
             handled: set[str] = set()
             while pending:
+                between_files()
                 file_id, content_revision = pending[0]
                 self.draw_and_store(file_id, content_revision)
                 progress.advance()
@@ -159,7 +168,8 @@ class PdfFirstPages:
         while True:
             # What an import shows comes first, as for PDF text (file_text_search.py).
             background_work.wait_until_finished(IMPORT_KEY)
-            self.refresh()
+            # One PDF at a time, each after the requests being answered (requests_in_flight.py).
+            self._refresh(between_files=requests_in_flight.give_way)
             with self._lock:
                 if not self._needs_another_pass:
                     return

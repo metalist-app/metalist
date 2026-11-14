@@ -15,6 +15,7 @@ from typing import Annotated
 import json
 import secrets
 from app.api.upload_limits import UploadLimitMiddleware
+from app.services.requests_in_flight import RequestsInFlightMiddleware
 from app.presentation.templates import get_templates
 from .startup_environment import is_development_environment
 from .api import dev
@@ -49,9 +50,12 @@ from app.services.search_history import search_history_store
 from app.services.runtime_hardening import apply_runtime_hardening
 from app.security.encryption import set_encryption_required
 from app.security.http_headers import apply_security_headers
+from app.security.http_headers import own_host_on_any_port
 from app.security.http_error_diagnostics import describe_server_exception
 from app.security.request_boundary import RequestBoundaryMiddleware
 from app.security.request_boundary import resolve_allowed_request_hosts
+from app.security.request_hosts import binds_to_every_interface
+from app.server_runtime import chosen_bind_host
 from app.security.validation_errors import summarize_validation_errors
 from app.server_runtime import resolve_https_redirect_url
 from app.server_runtime import resolve_request_host_for_https_redirect
@@ -85,7 +89,7 @@ from app.api.routes.background_work import router as api2_background_work_router
 from app.api.routes.problem_reports import router as api2_problem_reports_router
 from app.api.routes.ai import router as api2_ai_router
 from app.api.routes.test import router as api2_test_router  # shockharness: ignore[STUB002] reason="mounted only when TEST_MODE is on, and the endpoint asserts it too"
-from app.api.transactions import transactional_route
+from app.api.transactions import one_step_read_route, transactional_route
 from app.config import API_PREFIX, TEST_MODE, V1_API_PREFIX
 from app.services.agent.scripted_inference import scripted_ai_script_path
 from app.services.native_folder_picker import answered_folder_pick
@@ -169,6 +173,13 @@ answered_folder_pick(environ=os.environ)
 
 # Link titles and icons no note links to go, each time the notes have been loaded.
 auth_cache_state.after_page_ready(start_link_row_pruning)
+
+# How long a request waits for Python's interpreter lock each time it comes back from the
+# database or a file while a background job computes (the [[ catalog, file texts, PDF pages,
+# link pruning, all started when the page is ready). Python's 5 ms made a link clicked just
+# after startup take a second instead of a tenth (2026-11-13): a request comes back many times.
+INTERPRETER_SWITCH_SECONDS = 0.0005
+sys.setswitchinterval(INTERPRETER_SWITCH_SECONDS)
 
 configure_process_diagnostics(
     namespace=_resolve_diagnostics_namespace(namespace=ACTIVE_NAMESPACE),
@@ -420,7 +431,8 @@ app.mount(
 templates = get_templates(
     template_directory=Path(__file__).resolve().parent / "templates",
 )
-allowed_request_hosts = resolve_allowed_request_hosts(environ=os.environ)
+_bind_host = chosen_bind_host(environ=os.environ)
+allowed_request_hosts = resolve_allowed_request_hosts(environ=os.environ, bind_host=_bind_host)
 
 # v2 routers mounted under configured API_PREFIX
 app.include_router(api2_router, prefix=API_PREFIX, tags=["api2"]) 
@@ -559,7 +571,11 @@ def _remember_answered_request(
     ))
 
 
-app.add_middleware(RequestBoundaryMiddleware, allowed_hosts=allowed_request_hosts)
+app.add_middleware(
+    RequestBoundaryMiddleware,
+    allowed_hosts=allowed_request_hosts,
+    accepts_own_addresses=binds_to_every_interface(bind_host=_bind_host),
+)
 
 
 @app.middleware("http")
@@ -569,11 +585,14 @@ async def add_security_headers(request: Request, call_next):
         raise RuntimeError("Generated CSP nonce has unexpected length")
     request.state.csp_nonce = nonce
     response = await call_next(request)
-    apply_security_headers(response=response, nonce=nonce,
-                           is_static_file=request.url.path.startswith(STATIC_URL_PREFIX))
+    apply_security_headers(
+        response=response, nonce=nonce, is_static_file=request.url.path.startswith(STATIC_URL_PREFIX),
+        extra_connect_sources=own_host_on_any_port(scheme=request.url.scheme, hostname=request.url.hostname),
+    )
     return response
 
 @app.get("/", response_class=HTMLResponse)
+@one_step_read_route
 async def home(request: Request, db: Annotated[SafeSession, Depends(get_db)]):
     template = templates.get_template("index.html")
 
@@ -606,6 +625,7 @@ async def home(request: Request, db: Annotated[SafeSession, Depends(get_db)]):
 
 
 @app.get("/maintenance", response_class=HTMLResponse)
+@one_step_read_route
 async def maintenance_page(request: Request):
     """Maintenance mode page shown during bulk operations."""
     template = templates.get_template("maintenance.html")
@@ -681,6 +701,7 @@ def _build_force_reauth_url(*, url: str) -> str:
 
 
 @app.get("/namespace-deleted", response_class=HTMLResponse)
+@one_step_read_route
 async def namespace_deleted_page(request: Request):
     job_id = _page_param(request, "job")
     if job_id is None:
@@ -733,6 +754,7 @@ def _open_catalog_namespace(*, namespace: str) -> NamespaceOpenResult:
 
 
 @app.get("/namespace-deleted/open")
+@one_step_read_route
 async def namespace_deleted_open_page(request: Request):
     job_id = _page_param(request, "job")
     if job_id is None:
@@ -772,6 +794,7 @@ async def namespace_deleted_open_page(request: Request):
 
 
 @app.get("/namespace-renamed", response_class=HTMLResponse)
+@one_step_read_route
 async def namespace_renamed_page(request: Request):
     job_id = _page_param(request, "job")
     if job_id is None:
@@ -808,6 +831,7 @@ async def namespace_renamed_page(request: Request):
 
 
 @app.get("/namespace-renamed/open")
+@one_step_read_route
 async def namespace_renamed_open_page(request: Request):
     job_id = _page_param(request, "job")
     if job_id is None:
@@ -831,6 +855,7 @@ async def namespace_renamed_open_page(request: Request):
 
 
 @app.get("/locked", response_class=HTMLResponse)
+@one_step_read_route
 async def locked_page(request: Request, db: Annotated[SafeSession, Depends(get_db)]):
     """Render a dedicated locked screen when a session is invalidated."""
     template = templates.get_template("locked.html")
@@ -899,6 +924,10 @@ async def clipboard_capacity_error(request: Request, exc: ClipboardCapacityError
 async def shell_run_not_found(request: Request, exc: ShellRunNotFound):
     return JSONResponse(status_code=HTTPStatus.NOT_FOUND, content={"detail": str(exc)})
 
+
+# Outermost, added last: the work beside the requests waits while one is answered, from its
+# arrival until its response starts (app/services/requests_in_flight.py).
+app.add_middleware(RequestsInFlightMiddleware)
 
 # The log writes a request's route and handler only as the app declares them: every route is in place now.
 safe_log.allow_route_templates(app.routes)

@@ -7,6 +7,7 @@ import json
 import math
 from dataclasses import dataclass
 from threading import Lock
+from typing import Literal
 from uuid import uuid4
 
 from app.db.ai_chat_sql import delete_ai_chat_row, fetch_ai_chat_row, upsert_ai_chat_row
@@ -15,6 +16,7 @@ from app.services.encryption import EncryptionService
 from app.security.encryption import get_encryption_service, get_encryption_service_with_token, is_encryption_required
 
 from app.services.agent.cloud_privacy import HistoryDisclosure
+from app.services.agent.web_evidence import WebCitationReference
 from app.services.ai_chat_rendering import strip_note_citations_for_history
 from app.utils.time_units import MS_PER_SECOND
 
@@ -212,13 +214,16 @@ class _ChatSession:
     # The make-up of the latest answer's last request to the model (request_tokens.py):
     # all zeros until an answer completes.
     last_request: dict[str, int]
+    # The web pages each answer cites, by assistant message id, as saved (_web_reference_saved):
+    # the pages the AI opened are kept only for the login, the answer's links to them for good.
+    web_references: dict[str, list[dict[str, str]]]
 
 
 def _new_chat_session() -> _ChatSession:
     return _ChatSession(id=str(uuid4()), messages=[], activities={}, action_logs={}, history_start=0,
                         disclosure_policy_key=None, permitted_note_ids=frozenset(),
                         summaries=[], active_summary=None, held_back_until=0, is_summarizing=False,
-                        last_request=dict(NO_REQUEST))
+                        last_request=dict(NO_REQUEST), web_references={})
 
 
 def _visibility(index: int, *, held_back_until: int, history_start: int) -> str:
@@ -452,6 +457,7 @@ class AiChatSessionStore:
             )
             session_activities[user_message_id] = []
             session_activities[assistant_message_id] = []
+            session.web_references[assistant_message_id] = []
             # Saved now: a restart before the answer ends keeps the question (interrupted).
             self._save_locked()
             return assistant_message_id
@@ -507,6 +513,27 @@ class AiChatSessionStore:
                     "duration_ms": float(duration_ms),
                 }
             )
+
+    def record_web_references(self, *, turn_id: str, references: tuple[WebCitationReference, ...]) -> None:
+        """The web pages the streaming answer cites so far; saved when the answer ends
+        (complete_turn, fail_turn), as its activities are."""
+        self._validate_message_text(turn_id, label="turn_id")
+        if not isinstance(references, tuple) or not all(isinstance(reference, WebCitationReference)
+                                                        for reference in references):
+            raise TypeError("references must be a tuple of WebCitationReference")
+        if len({reference.evidence_id for reference in references}) != len(references):
+            raise ValueError("an answer cites each web page once")
+        with self._lock:
+            session = self._require_session_locked()
+            self._require_streaming_turn_locked(session, turn_id)
+            session.web_references[turn_id] = [_web_reference_saved(reference) for reference in references]
+
+    def web_references(self, *, message_id: str) -> tuple[WebCitationReference, ...]:
+        """The web pages an answer cites, to show its links whenever it is shown again."""
+        self._validate_message_text(message_id, label="message_id")
+        with self._lock:
+            saved = self._require_session_locked().web_references[message_id]
+            return tuple(_web_reference_from_saved(reference) for reference in saved)
 
     def append_delta(self, *, turn_id: str, delta_kind: str, text: str) -> None:
         self._validate_message_text(turn_id, label="turn_id")
@@ -754,12 +781,19 @@ def _encryption_service(*, token: str, explicit_service: EncryptionService | Non
 
 
 # --- The conversation as saved -------------------------------------------------------------
-# A JSON object; SAVED_FORMAT names its shape, for a later change to it to read.
-SAVED_FORMAT = 1
-_SAVED_KEYS = frozenset({
+# A JSON object; SAVED_FORMAT names its shape, for a later change to it to read. Format 2
+# (2026-11-13) adds each answer's web pages; format 1 saved none, so its answers have none.
+SAVED_FORMAT = 2
+_FORMAT_WITHOUT_WEB_REFERENCES = 1
+_SAVED_KEYS_FORMAT_1 = frozenset({
     "format", "id", "messages", "activities", "action_logs", "history_start", "disclosure_policy_key",
     "permitted_note_ids", "summaries", "active_summary_id", "held_back_until", "last_request",
 })
+_SAVED_KEYS = _SAVED_KEYS_FORMAT_1 | {"web_references"}
+_WEB_REFERENCE_FIELDS = ("evidence_id", "final_url", "title", "source_kind", "source_page_evidence_id")
+_WEB_SOURCE_KINDS: dict[str, Literal["opened_page", "page_link"]] = {
+    "opened_page": "opened_page", "page_link": "page_link",
+}
 # What an answer the server stopped during says (a restart, an upgrade, a crash).
 INTERRUPTED_ERROR = "MetaList stopped before this answer finished. Ask again to get one."
 
@@ -782,16 +816,47 @@ def _saved_session(session: _ChatSession) -> dict[str, object]:
         "active_summary_id": active_summary_id,
         "held_back_until": session.held_back_until,
         "last_request": session.last_request,
+        "web_references": session.web_references,
     }
+
+
+def _web_reference_saved(reference: WebCitationReference) -> dict[str, str]:
+    return {field: getattr(reference, field) for field in _WEB_REFERENCE_FIELDS}
+
+
+def _web_reference_from_saved(saved: dict[str, str]) -> WebCitationReference:
+    assert set(saved) == set(_WEB_REFERENCE_FIELDS), "a saved web reference has every field"
+    if saved["source_kind"] not in _WEB_SOURCE_KINDS:
+        raise RuntimeError(f"A saved web reference has an unknown kind: {saved['source_kind']}")
+    return WebCitationReference(evidence_id=saved["evidence_id"], final_url=saved["final_url"],
+                                title=saved["title"], source_kind=_WEB_SOURCE_KINDS[saved["source_kind"]],
+                                source_page_evidence_id=saved["source_page_evidence_id"])
+
+
+def _saved_web_references(saved: dict[str, object], messages: list[dict[str, str]]) -> dict[str, list[dict[str, str]]]:
+    """Each answer's web pages; none for an answer saved in format 1, which kept none."""
+    if saved["format"] == _FORMAT_WITHOUT_WEB_REFERENCES:
+        return {message["id"]: [] for message in messages if message["role"] == "assistant"}
+    web_references = saved["web_references"]
+    assert isinstance(web_references, dict), "saved web references are by message id"
+    for references in web_references.values():
+        for reference in references:
+            _web_reference_from_saved(reference)
+    return web_references
 
 
 def _session_from_saved(saved: object) -> _ChatSession:
     """The saved conversation, an answer still streaming when it was saved as interrupted, and
     no summary being made (that work ended with the server)."""
-    if not isinstance(saved, dict) or set(saved) != _SAVED_KEYS:
+    if not isinstance(saved, dict):
         raise RuntimeError("The saved AI conversation does not have the expected shape")
-    if saved["format"] != SAVED_FORMAT:
+    if saved["format"] not in {_FORMAT_WITHOUT_WEB_REFERENCES, SAVED_FORMAT}:
         raise RuntimeError(f"The saved AI conversation has format {saved['format']}, not {SAVED_FORMAT}")
+    expected_keys = _SAVED_KEYS
+    if saved["format"] == _FORMAT_WITHOUT_WEB_REFERENCES:
+        expected_keys = _SAVED_KEYS_FORMAT_1
+    if set(saved) != expected_keys:
+        raise RuntimeError("The saved AI conversation does not have the expected shape")
     messages = saved["messages"]
     assert isinstance(messages, list) and len(messages) % _MESSAGES_PER_TURN == 0, "saved turns come in pairs"
     for message in messages:
@@ -810,7 +875,7 @@ def _session_from_saved(saved: object) -> _ChatSession:
         history_start=saved["history_start"], disclosure_policy_key=saved["disclosure_policy_key"],
         permitted_note_ids=frozenset(saved["permitted_note_ids"]), summaries=summaries,
         active_summary=active_summary, held_back_until=saved["held_back_until"], is_summarizing=False,
-        last_request=saved["last_request"],
+        last_request=saved["last_request"], web_references=_saved_web_references(saved, messages),
     )
 
 

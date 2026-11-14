@@ -9,7 +9,7 @@ Written from a read-only look at the repo. Adds to `docs/ready-to-build/deployme
 Filed from `docs/inbox/2026-10-27-self-hosting-community-only.md`.
 
 - **Not there yet:** `METALIST_DEPLOYMENT` (proposed in `deployment-profiles` §1) and the public base URL setting (§3 item 8). Leave both off the page until they exist.
-- **There:** `METALIST_DATA_DIRECTORY`, `METALIST_HOST` and `METALIST_ALLOWED_HOSTS` (both can also be saved in the data root's `network-settings.json`, `app/network_settings.py`), `METALIST_FORWARDED_ALLOW_IPS` and `METALIST_AUTO_GENERATE_TLS` (`app/server_runtime.py`).
+- **There:** `METALIST_DATA_DIRECTORY`, `METALIST_ALLOWED_HOSTS`, `METALIST_FORWARDED_ALLOW_IPS` and `METALIST_AUTO_GENERATE_TLS` (`app/server_runtime.py`). `METALIST_HOST` and `network-settings.json` are retired (2026-11-13): each vault's Shared box decides where it listens; behind a proxy on the same machine, leave it not shared. A container is open: see `deployment-profiles` §3 item 10.
 - **`@shell` is already off by default:** it runs only when MetaList is started with `--enable-shell` (which sets `METALIST_SHELL_ENABLED=1`, `app/security/shell_execution.py`). The page can say "don't start it with `--enable-shell`."
 - **No Docker or installer files exist,** and the README doesn't mention self-hosting.
 - **`Back Up Now…`** is the palette's name for it. S3 is `docs/future-plans/backups-s3.md`.
@@ -43,7 +43,7 @@ If any of these already exist, leave them, but don't advertise them as supported
 3. **Settings that matter,** each with one line:
    - `METALIST_DEPLOYMENT=self-hosted`
    - `METALIST_DATA_DIRECTORY`
-   - `METALIST_HOST`
+   - each vault's Shared box (off behind a proxy on the same machine)
    - `METALIST_ALLOWED_HOSTS`
    - `METALIST_FORWARDED_ALLOW_IPS` (the proxy)
    - `METALIST_AUTO_GENERATE_TLS=0`

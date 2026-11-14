@@ -5,6 +5,19 @@ What changed in each MetaList version, newest first, from its changelog
 Compare with installed_version from the help lookup to tell the user whether
 they already have a release. Version info offers updates (see the data topic).
 
+## 0.30.0
+
+- **Password Audit.** In the command palette, Password Audit… checks every password in the vault and lists the leaked (if you turn that check on), reused, weak and old ones, each a click from its note. It keeps up while open as you change passwords, and a reminder offers it now and then in a vault with passwords.
+- **Following a link turns to a page,** no longer opening a search context. The page shows the linked note alone, as if it were a root, with the notes under it; ◀ goes back, ⏮ straight back to your search, ▶ forward again. Each search context keeps the page it is on (its row reads `miscellaneous > Source note`), and deleting the note a page shows closes the page.
+- **Backlinks** (once "Referenced by"): a note other notes reference shows the link icon mirrored instead of a number; its page lists the notes most recently edited first.
+- **Each vault says whether it is shared on the network,** in Manage Vault Ports. A shared vault accepts this computer's own names and addresses as they are now, so a new address from the router needs no change. Vaults shared before stay shared. `METALIST_HOST` is no longer read: MetaList refuses to start while it is set.
+- **No pause after logging in:** work MetaList does in the background waits while you are using it.
+- **Typing a search no longer stalls MetaList on a slow computer:** suggestions are asked for one at a time and never hold up your notes. Before, a page could wait minutes for them.
+- AI answers keep the web pages they cite, and the AI cites the note that makes sense on its own.
+- Fixed: a red error after saving an Excalidraw drawing; a red error when an AI answer sent an empty piece; the Password Audit, a preview or full screen failing when a note was deleted at the same moment.
+- Search contexts and reference views saved by 0.29.0 open as reference pages.
+- Vaults are upgraded (database version 20) when first unlocked, or at startup without a password, after a backup: an older MetaList cannot open them afterwards.
+
 ## 0.29.0
 
 - **Two new looks under Theme:** Phosphor, a green terminal screen in your system's monospace font where nothing ever animates, and Vellum, warm cream paper with notes in a book serif (Source Serif 4) for long reading.
@@ -193,14 +206,5 @@ they already have a release. Version info offers updates (see the data topic).
 - Move to Bottom (in Move, or ⇧⌘↓) puts a note after its last sibling, or after the view's last note (the last match in a search). The view stays put: the notes above keep their place and the ones below close the gap.
 - A down arrow under the up arrow goes to the bottom of the list, even when the end is not loaded yet; each arrow is dimmed when you are already at its end. Both arrows, and Focus ▸ Full Screen (now also offered while editing), save the note and leave edit mode first.
 - The right-click menu closes when the pointer moves well away from it, and keys pressed in full-screen view no longer reach the list behind it.
-
-## 0.15.0
-
-- Pasting JSON, a chess position (FEN), a diff, a Mermaid diagram or a LaTeX block tags the note for it as you paste: the plain tag into an empty note, `((…))` around the paste in a note that already has text. ⌘Z right after the paste removes the tag with it; ⇧⌘V pastes without detection.
-- New formats: `@code=python` (or any language) highlights code, `@diff` colours diffs, `@mermaid` draws a diagram without a Markdown fence, and `@chess` draws a FEN position as a board. JSON, code and diff blocks are more compact.
-- Switching namespace stays in one tab: on the login screen the panel clears as you pick and the other namespace's login screen fades in under the same logo, with no white flash. In the app, Open/Switch namespace offers Open in This Tab or Open in New Tab.
-- Tag suggestions: tags used elsewhere in the tree, or named in nearby notes, no longer get a boost; only the note's own text does. A new Tag Suggestions setting can also suggest tags that a parent or the rules already apply.
-- Change password with no password opens Add password, and Open/Switch namespace with only one namespace opens Create namespace. The AI tag-proposal menu items now say they are about AI-proposed tags.
-- Fixed: Add reminder did nothing (a missing title now says so); a password change could end on Session locked; right-clicking math or a Mermaid diagram showed the browser's menu; the Untagged notes × needed two clicks while editing a note; indented JSON and pie charts pasted into a note showed as invalid; a tiny scrollbar beside tall math; a white stripe and logo shift on the login screen with always-visible scrollbars.
 
 Older versions are in the releases-2 help topic.

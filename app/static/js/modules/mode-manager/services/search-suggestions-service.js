@@ -21,6 +21,11 @@ const ESCAPE_SEQUENCE_LENGTH = 2;
 const moduleState = ApplicationState.createFields('search-suggestions-service', {
     pendingTimer: null,
     requestSerial: 0,
+    // One request for suggestions at a time (a problem report, 2026-11-14: each keystroke asked
+    // while the last was out, the server answered every one in turn, and a page waited a minute
+    // for its notes). Typed meanwhile: asked for, with the text then in the box, once it answers.
+    isRequestOut: false,
+    isAskWaiting: false,
     selectedIndex: NO_SELECTION,
     suppressSuggestionsUntilInputInteraction: false,
     // The search text the list on screen was built for. Once the text changes,
@@ -512,41 +517,62 @@ export function updateSearchSuggestions(searchInput, options) {
     const requestId = ++moduleState.requestSerial;
     moduleState.pendingTimer = setTimeout(async () => {
         moduleState.pendingTimer = null;
-        const response = await NotesAPI.fetchSearchSuggestions(
-            rawValue,
-            getSearchSuggestionWindowDays(),
-        );
-        if (!response || typeof response !== 'object') {
-            throw new Error('Search suggestions response missing');
-        }
-        if (!Array.isArray(response.suggestions)) {
-            throw new Error('Search suggestions response requires suggestions array');
-        }
-        if (!Array.isArray(response.personalizedSuggestions)) {
-            throw new Error('Search suggestions response requires personalizedSuggestions array');
-        }
-        if (!response.reasons || typeof response.reasons !== 'object') {
-            throw new Error('Search suggestions response requires reasons');
-        }
-        if (!response.labels || typeof response.labels !== 'object') {
-            throw new Error('Search suggestions response requires labels');
-        }
-        if (requestId !== moduleState.requestSerial) {
+        if (moduleState.isRequestOut) {
+            if (!moduleState.isAskWaiting) moduleState.isAskWaiting = true;
             return;
         }
-        if (moduleState.suppressSuggestionsUntilInputInteraction) {
-            return;
-        }
-        renderSuggestions(
-            searchInput,
-            rawValue,
-            response.suggestions,
-            response.personalizedSuggestions,
-            getShowSearchSuggestionWindowLabels(),
-            response.reasons,
-            response.labels,
-        );
+        await askForSuggestions(searchInput, rawValue, requestId);
     }, SUGGESTION_DEBOUNCE_MS);
+}
+
+async function askForSuggestions(searchInput, rawValue, requestId) {
+    moduleState.isRequestOut = true;
+    // Answered or failed (a failure still reaches the error overlay), the next may be asked.
+    await showSuggestionsFor(searchInput, rawValue, requestId).finally(() => {
+        moduleState.isRequestOut = false;
+    });
+    if (moduleState.isAskWaiting) {
+        moduleState.isAskWaiting = false;
+        // The text in the box now: what was typed while the answer was out.
+        updateSearchSuggestions(searchInput, { source: 'programmatic' });
+    }
+}
+
+async function showSuggestionsFor(searchInput, rawValue, requestId) {
+    const response = await NotesAPI.fetchSearchSuggestions(
+        rawValue,
+        getSearchSuggestionWindowDays(),
+    );
+    if (!response || typeof response !== 'object') {
+        throw new Error('Search suggestions response missing');
+    }
+    if (!Array.isArray(response.suggestions)) {
+        throw new Error('Search suggestions response requires suggestions array');
+    }
+    if (!Array.isArray(response.personalizedSuggestions)) {
+        throw new Error('Search suggestions response requires personalizedSuggestions array');
+    }
+    if (!response.reasons || typeof response.reasons !== 'object') {
+        throw new Error('Search suggestions response requires reasons');
+    }
+    if (!response.labels || typeof response.labels !== 'object') {
+        throw new Error('Search suggestions response requires labels');
+    }
+    if (requestId !== moduleState.requestSerial) {
+        return;
+    }
+    if (moduleState.suppressSuggestionsUntilInputInteraction) {
+        return;
+    }
+    renderSuggestions(
+        searchInput,
+        rawValue,
+        response.suggestions,
+        response.personalizedSuggestions,
+        getShowSearchSuggestionWindowLabels(),
+        response.reasons,
+        response.labels,
+    );
 }
 
 export function initializeSearchSuggestions() {

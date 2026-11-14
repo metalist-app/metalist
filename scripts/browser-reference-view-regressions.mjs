@@ -3,15 +3,16 @@ import { runThenCleanUp } from './suite-outcome.mjs';
 import { waitForAppQuiet } from './browser-app-idle.mjs';
 import {clickAndSelectAll} from './browser-select-field.mjs';
 
-// Reference views and the search bar's chips (docs/ui/references.md,
-// docs/ui/controls.md). Following a reference, an embed's reference icon or an AI
-// answer's references: the search input fades out and a chip grows in, centered in
-// the bar; the column slides as one piece, left when going deeper and right when
-// coming back; ← (or Escape) goes back one level and × all the way to the search,
-// each to the exact place the user left. Reference views are kept with the tabs on
-// the server, so a reload (or another window) shows them too. Sort orders (Reverse Order too) and
-// Untagged show as chips inside the input. One check per agreed case, positions
-// compared exactly. Notes are put in place with the mouse wheel, as a person scrolls.
+// Reference pages (docs/ready-to-build/reference-cards.md, §1, §2 and §10). Following a reference,
+// an embed's reference icon or an AI answer's references turns to a page: the column slides as one
+// piece, left going deeper and right coming back; the search box fades out and the black bar shows
+// arrows in its middle, only those that can act (◀ always, ⏮ from the second page, ▶ after going
+// back), each kept in its place. ◀ or Escape goes back a page, ⏮ to the search, ▶ forward again,
+// each to the exact place left. A page shows its linked notes as roots. Each search context keeps
+// its page: its row reads `refview > Source note`, choosing it returns there, and a reload brings it
+// back. Deleting the linked note closes the page. Sort orders and Untagged show as chips inside the
+// input. One check per agreed case, positions compared exactly. Notes are put in place with the
+// mouse wheel, as a person scrolls.
 
 const SETTLE_MS = 300;
 // Requests count as quiet after this long without one starting or ending.
@@ -30,6 +31,11 @@ const THIRD_TITLE = 'Third reference target';
 // The target's child that links to the target itself.
 const SELF_LINKING_CHILD_INDEX = 2;
 const SOURCE_LABEL = 'Source note';
+// The target's child linking to the third target: a link on the target's page other than the first.
+const THIRD_LINKING_CHILD_INDEX = 18;
+// The target's child a link elsewhere points at: a page of a note that has a parent.
+const LINKED_CHILD_INDEX = 6;
+const DOOMED_TITLE = 'Reference target deleted while its page is open';
 const SLIDE_MS = 250;
 const REDUCED_MOTION_FADE_MS = 120;
 // Firefox lays out at 1/60 px (Chrome at 1/64); centers computed from two boxes can
@@ -49,7 +55,7 @@ async function idle(page) {
 
 async function createNotes(page) {
   return page.evaluate(async ({search, fillersAbove, fillersBelow, targetChildren, linkingChildIndex, selfLinkingChildIndex,
-    targetTitle, secondTitle, thirdTitle}) => {
+    thirdLinkingChildIndex, linkedChildIndex, targetTitle, secondTitle, thirdTitle, doomedTitle}) => {
     const {NotesAPI} = await import('/static/js/modules/api-client.js');
     const ids = {fillers: [], children: []};
     const make = async (html, tags) => {
@@ -76,14 +82,21 @@ async function createNotes(page) {
     // The second note links back to the target and on to a third, which links back too.
     ids.third = await make(`<p>${thirdTitle}</p><p>back to [[${ids.target}]]</p>`, 'refother');
     await NotesAPI.saveNote(ids.second, `<p>${secondTitle}</p><p>back to [[${ids.target}]], on to [[${ids.third}]]</p>`, 'refother');
+    ids.thirdLinkingChild = ids.children[thirdLinkingChildIndex - 1];
+    await NotesAPI.saveNote(ids.thirdLinkingChild, `<p>Target child ${thirdLinkingChildIndex} links to [[${ids.third}]]</p>`, '');
+    ids.linkedChild = ids.children[linkedChildIndex - 1];
+    ids.doomed = await make(`<p>${doomedTitle}</p><p>its second line</p>`, 'refother');
+    ids.doomHolder = await make(`<p>Links to [[${ids.doomed}]], which gets deleted</p>`, search);
+    ids.childHolder = await make(`<p>Links to [[${ids.linkedChild}]], a child</p>`, search);
     ids.holder = await make(`<p>Holder links to [[${ids.target}]] in its text</p><p>second line</p>`, search);
     for (let index = fillersAbove; index >= 1; index -= 1) {
       ids.fillers.push(await make(`<p>Reference view filler above ${index}</p><p>second line</p><p>third line</p>`, search));
     }
     return ids;
   }, {search: SEARCH, fillersAbove: FILLERS_ABOVE, fillersBelow: FILLERS_BELOW, targetChildren: TARGET_CHILDREN,
-    linkingChildIndex: LINKING_CHILD_INDEX, selfLinkingChildIndex: SELF_LINKING_CHILD_INDEX, targetTitle: TARGET_TITLE,
-    secondTitle: SECOND_TITLE, thirdTitle: THIRD_TITLE});
+    linkingChildIndex: LINKING_CHILD_INDEX, selfLinkingChildIndex: SELF_LINKING_CHILD_INDEX,
+    thirdLinkingChildIndex: THIRD_LINKING_CHILD_INDEX, linkedChildIndex: LINKED_CHILD_INDEX, targetTitle: TARGET_TITLE,
+    secondTitle: SECOND_TITLE, thirdTitle: THIRD_TITLE, doomedTitle: DOOMED_TITLE});
 }
 
 // Records, in the page, every reference transition the moment it plays: the column
@@ -232,13 +245,19 @@ async function barState(page) {
       return {left: rect.left, top: rect.top, right: rect.right, width: rect.width, height: rect.height,
         centerX: rect.left + rect.width / 2, centerY: rect.top + rect.height / 2};
     };
+    // An arrow shows when it can act; one that can't keeps its place, hidden.
+    const arrow = id => {
+      const element = document.getElementById(id);
+      return {
+        shown: !element.classList.contains('is-unavailable') && getComputedStyle(element).visibility === 'visible'
+          && getComputedStyle(element).display !== 'none',
+        title: element.getAttribute('title'),
+        box: box(element),
+      };
+    };
     const chip = document.getElementById('reference-source-indicator');
     const label = document.getElementById('reference-source-indicator-label');
-    const icon = document.getElementById('reference-view-chip-icon');
     const input = document.getElementById('search-input');
-    const back = document.getElementById('reference-view-chip-back');
-    const clear = document.getElementById('reference-source-indicator-clear');
-    const newSearch = document.getElementById('reference-view-new-search');
     const row = document.querySelector('.controls .search-input-row');
     const column = document.getElementById('notes-container');
     const roots = [...column.children].filter(node => node.matches('.note[data-note-id]'))
@@ -251,18 +270,12 @@ async function barState(page) {
       chipShown: chip.classList.contains('is-shown'),
       chipVisibility: getComputedStyle(chip).visibility,
       chipOpacity: getComputedStyle(chip).opacity,
-      chip: box(chip),
-      chipChildren: [...chip.children].map(child => child.id),
+      // The page's kind, read by screen readers; not drawn (a fixed-width slot keeps the arrows' places).
       label: label.textContent,
-      labelTitle: label.getAttribute('title'),
-      icon: icon.hidden ? 'none' : (icon.classList.contains('is-several-notes') ? 'several' : 'one'),
-      backShown: !back.hidden && getComputedStyle(back).display !== 'none',
-      backTitle: back.getAttribute('title'),
-      clearTitle: clear.getAttribute('title'),
-      newSearchTitle: newSearch.getAttribute('title'),
-      newSearchVisible: getComputedStyle(newSearch).visibility === 'visible',
-      newSearch: box(newSearch),
-      emptyIcon: box(document.querySelector('.search-input-empty-icon')),
+      labelWidth: label.getBoundingClientRect().width,
+      toSearch: arrow('reference-source-indicator-clear'),
+      back: arrow('reference-view-chip-back'),
+      forward: arrow('reference-view-chip-forward'),
       inputValue: input.value,
       inputOpacity: getComputedStyle(input).opacity,
       inputVisibility: getComputedStyle(input).visibility,
@@ -276,44 +289,10 @@ async function barState(page) {
       ghosts: document.querySelectorAll('.reference-slide-ghost').length,
       isSliding: document.documentElement.classList.contains('reference-sliding'),
       roots,
+      greyBars: column.querySelectorAll('.note.search-redacted, .note[data-search-redacted="true"]').length,
       scrollY: window.scrollY,
     };
   });
-}
-
-function expectChipCentered(state, label) {
-  expectSameSpot(state.chip.centerX, state.row.centerX, `${label}: the chip is centered in the bar`);
-  expectSameSpot(state.chip.centerY, state.input.centerY, `${label}: the chip sits on the input's line`);
-}
-
-function expectReferenceBar(state, expected, label) {
-  assert.equal(state.isReferenceView, true, `${label}: a reference view`);
-  assert.equal(state.chipShown, true, `${label}: the chip shows`);
-  assert.equal(state.chipVisibility, 'visible', `${label}: the chip is visible`);
-  assert.equal(state.chipOpacity, '1', `${label}: the chip is fully grown in`);
-  assert.equal(state.label, expected.label, `${label}: the chip's label`);
-  assert.equal(state.icon, expected.icon, `${label}: the chip's icon`);
-  assert.equal(state.backShown, expected.hasBack, `${label}: the chip ${expected.hasBack ? 'has' : 'has no'} ←`);
-  assert.equal(state.inputOpacity, '0', `${label}: the search input is faded out`);
-  assert.equal(state.inputVisibility, 'hidden', `${label}: the search input takes no clicks`);
-  assert.equal(state.inputValue, '', `${label}: the hidden input is empty, never a note ID`);
-  assert.equal(state.newSearchVisible, true, `${label}: the magnifier shows`);
-  expectChipCentered(state, label);
-  expectSettled(state, label);
-}
-
-const SOURCE_BAR = {label: SOURCE_LABEL, icon: 'one', hasBack: false};
-
-function expectSearchBar(state, query, label) {
-  assert.equal(state.isReferenceView, false, `${label}: back at the search`);
-  assert.equal(state.searchQuery, query, `${label}: the search is the one the user typed`);
-  assert.equal(state.chipShown, false, `${label}: no chip`);
-  assert.equal(state.chipVisibility, 'hidden', `${label}: the chip is gone`);
-  assert.equal(state.inputValue, query, `${label}: the input shows the search`);
-  assert.equal(state.inputOpacity, '1', `${label}: the input has faded back in`);
-  assert.equal(state.inputVisibility, 'visible', `${label}: the input is visible`);
-  assert.equal(state.newSearchVisible, false, `${label}: no magnifier button`);
-  expectSettled(state, label);
 }
 
 function expectSettled(state, label) {
@@ -322,6 +301,50 @@ function expectSettled(state, label) {
   assert.equal(state.columnTransform, 'none', `${label}: the column is back in place`);
   assert.equal(state.columnVisibility, 'visible', `${label}: the column is visible`);
   assert.equal(state.rowAnimating, false, `${label}: the bar is no longer animating`);
+}
+
+// Where the arrows sit on the first page: every later page has them at exactly these places.
+let arrowPlaces = null;
+
+// A reference page's bar: only the arrows that can act (⏮ from the second page, ▶ after going
+// back), each in its place, the gap between ◀ and ▶ on the bar's middle; no search shown.
+function expectReferenceBar(state, expected, label) {
+  assert.equal(state.isReferenceView, true, `${label}: a reference page`);
+  assert.equal(state.chipShown, true, `${label}: the arrows show`);
+  assert.equal(state.chipVisibility, 'visible', `${label}: the arrows are visible`);
+  assert.equal(state.chipOpacity, '1', `${label}: the arrows have faded in`);
+  assert.equal(state.label, expected.kind, `${label}: the page's kind, for screen readers`);
+  assert.ok(state.labelWidth <= 1, `${label}: no words between the arrows`);
+  assert.equal(state.back.shown, true, `${label}: ◀ shows on every page`);
+  assert.equal(state.toSearch.shown, expected.depth > 1, `${label}: ⏮ ${expected.depth > 1 ? 'shows' : 'hides'} on page ${expected.depth}`);
+  assert.equal(state.forward.shown, expected.hasForward, `${label}: ▶ ${expected.hasForward ? 'shows after going back' : 'hides'}`);
+  assert.deepEqual([state.toSearch.title, state.back.title, state.forward.title], ['Back to your search', 'Back', 'Forward'],
+    `${label}: each arrow says where it goes`);
+  expectSameSpot((state.back.box.right + state.forward.box.left) / 2, state.row.centerX,
+    `${label}: the gap between ◀ and ▶ is on the bar's middle`);
+  const places = {toSearch: state.toSearch.box.left, back: state.back.box.left, forward: state.forward.box.left};
+  if (arrowPlaces === null) arrowPlaces = places;
+  for (const name of Object.keys(places)) {
+    expectSameSpot(places[name], arrowPlaces[name], `${label}: the ${name} arrow keeps its place`);
+  }
+  assert.equal(state.inputOpacity, '0', `${label}: the search input is faded out`);
+  assert.equal(state.inputVisibility, 'hidden', `${label}: the search input takes no clicks`);
+  assert.equal(state.inputValue, '', `${label}: the hidden input is empty, never a note ID`);
+  assert.equal(state.greyBars, 0, `${label}: no grey bars for notes beside the linked ones`);
+  expectSettled(state, label);
+}
+
+const SOURCE_PAGE = {kind: SOURCE_LABEL, depth: 1, hasForward: false};
+
+function expectSearchBar(state, query, label) {
+  assert.equal(state.isReferenceView, false, `${label}: back at the search`);
+  assert.equal(state.searchQuery, query, `${label}: the search is the one the user typed`);
+  assert.equal(state.chipShown, false, `${label}: no arrows`);
+  assert.equal(state.chipVisibility, 'hidden', `${label}: the arrows are gone`);
+  assert.equal(state.inputValue, query, `${label}: the input shows the search`);
+  assert.equal(state.inputOpacity, '1', `${label}: the input has faded back in`);
+  assert.equal(state.inputVisibility, 'visible', `${label}: the input is visible`);
+  expectSettled(state, label);
 }
 
 async function setAnimatedTransitions(page, isOn) {
@@ -361,25 +384,28 @@ async function addAiReference(page, id, html) {
   }, {id, html});
 }
 
-async function tabLabels(page) {
+// The list of search contexts, as it lists them: a context on a page names the page's kind.
+async function contextRows(page) {
   return page.evaluate(async () => {
-    const {ModeContextInstance: mode} = await import('/static/js/modules/mode-manager/mode-context.js');
-    // An ordinary search's tab has no icon; a reference view's has one note's or several.
-    const iconOf = item => {
-      const icon = item.querySelector('.tab-context-reference-icon');
-      if (icon === null) return 'none';
-      return icon.classList.contains('is-several-notes') ? 'several' : 'one';
-    };
+    const {updateSearchContextsList} = await import('/static/js/modules/mode-manager/events/keyboard-events.js');
+    updateSearchContextsList();
     return [...document.querySelectorAll('#search-contexts-list .tab-context-item')].map(item => ({
       tabId: item.dataset.tabId,
       label: item.querySelector('.tab-context-query').textContent,
-      icon: iconOf(item),
-      isActive: item.dataset.tabId === mode.activeTabId,
+      isActive: item.classList.contains('is-active'),
     }));
   });
 }
 
-async function clickTab(page, tabId) {
+// Whether the context's row offers − (close): the only context listed never does (it offered it
+// while on a page, counting the pages' hidden tabs, and closed the page instead; 2026-11-14).
+async function rowOffersClose(page, tabId) {
+  await contextRows(page);
+  return page.$eval(`#search-contexts-list .tab-context-item[data-tab-id="${tabId}"] .delete-context`,
+    button => !button.classList.contains('is-hidden'));
+}
+
+async function clickContextRow(page, tabId) {
   const zone = await (await page.$('#tab-hover-zone')).boundingBox();
   await page.mouse.move(zone.x + zone.width * HALF, zone.y + zone.height * HALF);
   const item = `#search-contexts-list .tab-context-item[data-tab-id="${tabId}"] .tab-context-query`;
@@ -389,48 +415,39 @@ async function clickTab(page, tabId) {
   await idle(page);
 }
 
-// Case 1 (and "where the target lands is unchanged"): a reference followed from the search.
+// §10 case 1: a reference followed from the search, landing where it always has, the linked
+// note the page's one root.
 async function checkFollowFromSearch(page, ids) {
-  // Where the target lands with no motion, the way it has always landed.
   await setAnimatedTransitions(page, false);
   const stillLeft = await wheelNoteTo(page, ids.holder, NOTE_TOP_BEFORE_FOLLOWING_PX);
   await clickReferenceLink(page, ids.holder, ids.target);
   await page.waitForFunction(() => document.getElementById('reference-source-indicator').classList.contains('is-shown'));
   await idle(page);
   const stillLanding = await notePlace(page, ids.target);
-  await page.click('#reference-source-indicator-clear');
+  await page.click('#reference-view-chip-back');
   await page.waitForFunction(() => !document.getElementById('reference-source-indicator').classList.contains('is-shown'));
   await idle(page);
-  assert.deepEqual(await notePlace(page, ids.holder), stillLeft, 'with no motion, × returns to the exact place');
+  assert.deepEqual(await notePlace(page, ids.holder), stillLeft, 'with no motion, ◀ returns to the exact place');
   await setAnimatedTransitions(page, true);
 
   const left = await wheelNoteTo(page, ids.holder, NOTE_TOP_BEFORE_FOLLOWING_PX);
   const before = await barState(page);
   const played = await navigate(page, () => clickReferenceLink(page, ids.holder, ids.target));
   expectSlide(played, 'forward', 'follow from the search');
-  assert.equal(played.isChipAnimating, true, 'follow from the search: the chip grows in as the column slides');
-  assert.equal(played.isChipShown, true, 'follow from the search: the chip appears with the slide');
+  assert.equal(played.isChipShown, true, 'follow from the search: the arrows appear with the slide');
   assert.equal(played.inputValue, SEARCH, 'follow from the search: the input fades out with its text');
   const after = await barState(page);
-  expectReferenceBar(after, SOURCE_BAR, 'follow from the search');
+  expectReferenceBar(after, SOURCE_PAGE, 'follow from the search');
+  assert.deepEqual(after.roots, [ids.target], 'the page shows the linked note as its root');
   assert.deepEqual(await notePlace(page, ids.target), stillLanding, 'the target lands where it always has');
   assert.equal(after.column.left, before.column.left, 'the column ends where it was, side to side');
-  // The note's first line is the label's tooltip.
-  assert.equal(after.labelTitle, TARGET_TITLE, 'the source note\'s first line is the tooltip');
-  // Tooltips only, and no other text.
-  assert.deepEqual(after.chipChildren, ['reference-view-chip-back', 'reference-view-chip-icon',
-    'reference-source-indicator-label', 'reference-source-indicator-clear'], 'the chip holds ←, its icon, its label and ×');
-  assert.equal(after.clearTitle, 'Back to your search', '× says where it goes');
-  assert.equal(after.backTitle, 'Back', '← says Back');
-  assert.equal(after.newSearchTitle, null, 'the magnifier has no tooltip');
   return left;
 }
 
-// Case 5 at the first level: × back to the search, where the user left it.
-async function checkCloseToSearch(page, ids, left, label) {
-  const played = await navigate(page, () => page.click('#reference-source-indicator-clear'));
+// ◀ from the first page: back to the search, where the user left it.
+async function checkBackToSearch(page, ids, left, label) {
+  const played = await navigate(page, () => page.click('#reference-view-chip-back'));
   expectSlide(played, 'back', label);
-  assert.equal(played.isChipAnimating, true, `${label}: the chip leaves as the column slides`);
   assert.equal(played.inputValue, SEARCH, `${label}: the input fades in with its text`);
   const after = await barState(page);
   expectSearchBar(after, SEARCH, label);
@@ -438,42 +455,70 @@ async function checkCloseToSearch(page, ids, left, label) {
   return after;
 }
 
-// Cases 3, 4 and 5: deeper, back one level (← and Escape), and × from two levels down.
-async function checkStack(page, ids) {
+// A link to a note that has a parent: the page shows that note as a root, with nothing above it.
+async function checkLinkedChildIsARoot(page, ids) {
+  const left = await wheelNoteTo(page, ids.childHolder, NOTE_TOP_BEFORE_FOLLOWING_PX);
+  await navigate(page, () => clickReferenceLink(page, ids.childHolder, ids.linkedChild));
+  const shown = await barState(page);
+  expectReferenceBar(shown, SOURCE_PAGE, 'a link to a child');
+  assert.deepEqual(shown.roots, [ids.linkedChild], 'a linked child is the page\'s root, without its parent');
+  await navigate(page, () => page.click('#reference-view-chip-back'));
+  assert.deepEqual(await notePlace(page, ids.childHolder), left, 'back where the link was followed');
+}
+
+// §10 cases 2–6: deeper, back (◀ and Escape), forward (▶), a new link drops the way forward,
+// and ⏮ from two pages down.
+async function checkPath(page, ids) {
   const left = await wheelNoteTo(page, ids.holder, NOTE_TOP_BEFORE_FOLLOWING_PX);
   const searchTabs = (await barState(page)).tabCount;
   await navigate(page, () => clickReferenceLink(page, ids.holder, ids.target));
   const atLink = await wheelNoteTo(page, ids.linkingChild, NOTE_TOP_BEFORE_FOLLOWING_PX);
   assert.ok(atLink.scrollY > 0, 'the linking child is far enough down to need a scroll');
 
-  // Case 3: following again slides left once more; the chip shows the new target and a ←.
+  // Case 2: following again slides left once more; ⏮ appears.
   const deeper = await navigate(page, () => clickReferenceLink(page, ids.linkingChild, ids.second));
   expectSlide(deeper, 'forward', 'follow again');
-  const deeperBar = await barState(page);
-  expectReferenceBar(deeperBar, {...SOURCE_BAR, hasBack: true}, 'follow again');
-  assert.equal(deeperBar.labelTitle, SECOND_TITLE, 'follow again: the new source note is the tooltip');
+  const second = await barState(page);
+  expectReferenceBar(second, {...SOURCE_PAGE, depth: 2}, 'follow again');
+  assert.deepEqual(second.roots, [ids.second], 'the second page shows the second target');
+  const secondLeft = await wheelNoteTo(page, ids.second, NOTE_TOP_BEFORE_FOLLOWING_PX);
 
-  // Case 4: ← goes back one level, to the exact scroll position.
+  // Case 3: ◀ goes back one page, to the exact place; ▶ appears.
   const backed = await navigate(page, () => page.click('#reference-view-chip-back'));
-  expectSlide(backed, 'back', '←');
-  expectReferenceBar(await barState(page), SOURCE_BAR, '←');
-  assert.deepEqual(await notePlace(page, ids.linkingChild), atLink, '←: exactly where the user left the first level');
+  expectSlide(backed, 'back', '◀');
+  expectReferenceBar(await barState(page), {...SOURCE_PAGE, hasForward: true}, '◀');
+  assert.deepEqual(await notePlace(page, ids.linkingChild), atLink, '◀: exactly where the user left the first page');
 
-  // Case 4: Escape (not editing, no dialog) does the same.
-  await navigate(page, () => clickReferenceLink(page, ids.linkingChild, ids.second));
+  // Case 5: ▶ goes forward to the page come back from, as it was left; then nothing is forward.
+  const forward = await navigate(page, () => page.click('#reference-view-chip-forward'));
+  expectSlide(forward, 'forward', '▶');
+  expectReferenceBar(await barState(page), {...SOURCE_PAGE, depth: 2}, '▶');
+  assert.deepEqual(await notePlace(page, ids.second), secondLeft, '▶: exactly where the user left the second page');
+
+  // Case 3: Escape (not editing, no dialog) goes back too.
   const escaped = await navigate(page, () => page.keyboard.press('Escape'));
   expectSlide(escaped, 'back', 'Escape');
-  expectReferenceBar(await barState(page), SOURCE_BAR, 'Escape');
-  assert.deepEqual(await notePlace(page, ids.linkingChild), atLink, 'Escape: exactly where the user left the first level');
+  expectReferenceBar(await barState(page), {...SOURCE_PAGE, hasForward: true}, 'Escape');
+  assert.deepEqual(await notePlace(page, ids.linkingChild), atLink, 'Escape: exactly where the user left the first page');
 
-  // Case 5: × from two levels down goes straight back to the search, in one slide.
-  await navigate(page, () => clickReferenceLink(page, ids.linkingChild, ids.second));
-  const after = await checkCloseToSearch(page, ids, left, '× from two levels down');
-  assert.equal(after.tabCount, searchTabs, '× closes every reference view it leaves');
+  // Case 6: following another reference drops what was forward.
+  await wheelNoteTo(page, ids.thirdLinkingChild, NOTE_TOP_BEFORE_FOLLOWING_PX);
+  await navigate(page, () => clickReferenceLink(page, ids.thirdLinkingChild, ids.third));
+  const third = await barState(page);
+  expectReferenceBar(third, {...SOURCE_PAGE, depth: 2}, 'a new link after going back');
+  assert.deepEqual(third.roots, [ids.third], 'the new link\'s page');
+
+  // Case 4: ⏮ from two pages down goes straight back to the search, in one slide.
+  const played = await navigate(page, () => page.click('#reference-source-indicator-clear'));
+  expectSlide(played, 'back', '⏮');
+  const after = await barState(page);
+  expectSearchBar(after, SEARCH, '⏮ from two pages down');
+  assert.deepEqual(await notePlace(page, ids.holder), left, '⏮: the search is at the exact place the user left it');
+  assert.equal(after.tabCount, searchTabs, '⏮ closes every page it leaves');
 }
 
-// Following a reference already open on the path goes back to its level: no new tab
-// (agreed 2026-10-29). Case 1: one level back; case 2: two; case 3: the view shown now.
+// Case 7: following a reference already on the path goes back to its page, and the pages after
+// it become forward; a reference to the page shown does nothing.
 async function checkReturnAlongPath(page, ids) {
   const searchTabs = (await barState(page)).tabCount;
   await navigate(page, () => clickReferenceLink(page, ids.holder, ids.target));
@@ -481,96 +526,165 @@ async function checkReturnAlongPath(page, ids) {
   const expectBackAtTarget = async (played, label) => {
     expectSlide(played, 'back', label);
     const bar = await barState(page);
-    expectReferenceBar(bar, SOURCE_BAR, label);
-    assert.equal(bar.labelTitle, TARGET_TITLE, `${label}: the target's view`);
-    assert.equal(bar.tabCount, searchTabs + 1, `${label}: no new tab, the levels after the target's closed`);
-    assert.deepEqual(await notePlace(page, ids.linkingChild), atLink, `${label}: exactly where the user left the target's view`);
+    expectReferenceBar(bar, {...SOURCE_PAGE, hasForward: true}, label);
+    assert.deepEqual(bar.roots, [ids.target], `${label}: the target's page`);
+    assert.equal(bar.tabCount, searchTabs + 1, `${label}: no new tab, the pages after the target's closed`);
+    assert.deepEqual(await notePlace(page, ids.linkingChild), atLink, `${label}: exactly where the user left the target's page`);
   };
 
   await navigate(page, () => clickReferenceLink(page, ids.linkingChild, ids.second));
-  await expectBackAtTarget(await navigate(page, () => clickReferenceLink(page, ids.second, ids.target)), 'a link back one level');
+  await expectBackAtTarget(await navigate(page, () => clickReferenceLink(page, ids.second, ids.target)), 'a link back one page');
+  const forward = await navigate(page, () => page.click('#reference-view-chip-forward'));
+  expectSlide(forward, 'forward', '▶ after a link back');
+  assert.deepEqual((await barState(page)).roots, [ids.second], '▶ returns to the page the link back left');
 
-  await navigate(page, () => clickReferenceLink(page, ids.linkingChild, ids.second));
   await navigate(page, () => clickReferenceLink(page, ids.second, ids.third));
-  assert.equal((await barState(page)).tabCount, searchTabs + 3, 'a note not on the path opens a level');
-  await expectBackAtTarget(await navigate(page, () => clickReferenceLink(page, ids.third, ids.target)), 'a link back two levels');
+  assert.equal((await barState(page)).tabCount, searchTabs + 3, 'a note not on the path opens a page');
+  await expectBackAtTarget(await navigate(page, () => clickReferenceLink(page, ids.third, ids.target)), 'a link back two pages');
 
   const before = await transitionCount(page);
   await clickReferenceLink(page, ids.selfLinkingChild, ids.target);
   await idle(page);
-  assert.equal(await transitionCount(page), before, 'a link to the view shown does nothing');
-  const shown = await barState(page);
-  expectReferenceBar(shown, SOURCE_BAR, 'a link to the view shown');
-  assert.equal(shown.tabCount, searchTabs + 1, 'a link to the view shown opens no tab');
+  assert.equal(await transitionCount(page), before, 'a link to the page shown does nothing');
+  assert.equal((await barState(page)).tabCount, searchTabs + 1, 'a link to the page shown opens no tab');
 
-  await navigate(page, () => page.click('#reference-source-indicator-clear'));
-  assert.equal((await barState(page)).tabCount, searchTabs, '× closes the path');
+  await navigate(page, () => page.click('#reference-view-chip-back'));
+  assert.equal((await barState(page)).tabCount, searchTabs, '◀ from the first page closes the path');
 }
 
-// Cases 2 and 6: an AI answer's references, then one of them; the same again does nothing.
+// Case 8: an AI answer's references, then one of them; the same again does nothing.
 async function checkAiReferences(page, ids) {
   const left = await wheelNoteTo(page, ids.holder, NOTE_TOP_BEFORE_FOLLOWING_PX);
   await addAiReference(page, 'test-ai-open-all',
     `<a href="#" class="ai-chat-open-all-references" data-ref-query="${ids.target} OR ${ids.second}">Open all references</a>`);
   const opened = await navigate(page, () => page.click('#test-ai-open-all .ai-chat-open-all-references'));
   expectSlide(opened, 'forward', 'Show all references');
-  assert.equal(opened.isChipAnimating, true, 'Show all references: the chip grows in');
   const references = await barState(page);
-  expectReferenceBar(references, {label: 'All references', icon: 'several', hasBack: false}, 'Show all references');
-  assert.equal(references.labelTitle, null, 'All references has no tooltip');
-  assert.deepEqual(references.roots.toSorted(), [ids.target, ids.second].toSorted(), 'both cited notes are shown');
+  expectReferenceBar(references, {...SOURCE_PAGE, kind: 'All references'}, 'Show all references');
+  assert.deepEqual(references.roots.toSorted(), [ids.target, ids.second].toSorted(), 'both cited notes are shown, as roots');
 
-  // The same references again, while they are shown: nothing happens.
   const transitionsBefore = await transitionCount(page);
   await page.click('#test-ai-open-all .ai-chat-open-all-references');
   await idle(page);
   const again = await barState(page);
   assert.equal(await transitionCount(page), transitionsBefore, 'the references already shown: no transition');
-  assert.deepEqual({tab: again.activeTabId, tabs: again.tabCount, label: again.label, roots: again.roots},
-    {tab: references.activeTabId, tabs: references.tabCount, label: 'All references', roots: references.roots},
-    'the references already shown: nothing changes');
+  assert.deepEqual({tab: again.activeTabId, tabs: again.tabCount, roots: again.roots},
+    {tab: references.activeTabId, tabs: references.tabCount, roots: references.roots}, 'the references already shown: nothing changes');
 
-  // Case 6: one AI reference replaces the view, sliding in from the right, with no new level.
   await addAiReference(page, 'test-ai-reference',
     `<ul><li data-ref-query="${ids.second}"><a href="#" class="note-reference-link"><span>AI reference</span></a></li></ul>`);
   const replaced = await navigate(page, () => page.click('#test-ai-reference .note-reference-link'));
   expectSlide(replaced, 'forward', 'one AI reference');
-  assert.equal(replaced.isChipShown, true, 'one AI reference: the chip stays');
   const after = await barState(page);
-  expectReferenceBar(after, {label: 'Reference', icon: 'one', hasBack: false}, 'one AI reference');
-  assert.equal(after.tabCount, references.tabCount, 'one AI reference adds no level');
-  assert.deepEqual(after.roots, [ids.second], 'the reference replaced the view');
+  expectReferenceBar(after, {...SOURCE_PAGE, kind: 'Reference'}, 'one AI reference');
+  assert.equal(after.tabCount, references.tabCount, 'one AI reference adds no page');
+  assert.deepEqual(after.roots, [ids.second], 'the reference replaced the page');
   await page.evaluate(() => {
     document.getElementById('test-ai-open-all').remove();
     document.getElementById('test-ai-reference').remove();
   });
-  await checkCloseToSearch(page, ids, left, '× from AI references');
+  await checkBackToSearch(page, ids, left, '◀ from AI references');
 }
 
-// Case 7: the magnifier starts a new search; typing works as it always has.
-async function checkNewSearch(page, ids) {
+// With Reduce Motion, a quick fade instead of the slide.
+async function checkReducedMotion(page, ids) {
+  const left = await wheelNoteTo(page, ids.holder, NOTE_TOP_BEFORE_FOLLOWING_PX);
+  await setReducedMotion(page, true);
+  const played = await navigate(page, () => clickReferenceLink(page, ids.holder, ids.target));
+  const fade = [{keyframes: [{opacity: 1}, {opacity: 0}], duration: REDUCED_MOTION_FADE_MS}];
+  assert.deepEqual(played.ghost, fade, 'reduce motion: the old column fades out');
+  assert.deepEqual(played.column, [{keyframes: [{opacity: 0}, {opacity: 1}], duration: REDUCED_MOTION_FADE_MS}],
+    'reduce motion: the new column fades in, without moving');
+  expectReferenceBar(await barState(page), SOURCE_PAGE, 'reduce motion');
+  const closed = await navigate(page, () => page.click('#reference-view-chip-back'));
+  assert.deepEqual(closed.ghost, fade, 'reduce motion: ◀ fades too');
+  expectSearchBar(await barState(page), SEARCH, 'reduce motion: back at the search');
+  assert.deepEqual(await notePlace(page, ids.holder), left, 'reduce motion: the search is where the user left it');
+  await setReducedMotion(page, false);
+}
+
+// Cases 10 and 11, and each search context keeping its page (rule 9): a reload brings the page
+// and its path back (not what was forward); the context's row names the page; choosing another
+// context and coming back returns to the page, ▶ kept; no transition plays for any of it.
+async function checkContextsKeepTheirPage(page, ids) {
+  const searchTabId = (await barState(page)).activeTabId;
   await navigate(page, () => clickReferenceLink(page, ids.holder, ids.target));
-  const inView = await barState(page);
-  expectSameSpot(inView.newSearch.centerX, inView.emptyIcon.centerX, 'the magnifier sits where the input\'s begins');
-  expectSameSpot(inView.newSearch.centerY, inView.emptyIcon.centerY, 'the magnifier is on the input\'s line');
-  await page.click('#reference-view-new-search');
-  const opened = await barState(page);
-  assert.equal(opened.chipShown, false, 'magnifier: the chip gives way');
-  assert.equal(opened.inputVisibility, 'visible', 'magnifier: the input is back');
-  assert.equal(opened.inputOpacity, '1', 'magnifier: the input is back');
-  assert.equal(opened.inputValue, '', 'magnifier: the input is empty');
-  assert.equal(opened.inputFocused, true, 'magnifier: the input is focused');
-  assert.equal(opened.isReferenceView, true, 'magnifier: the view stays until the user types');
-  // Leaving the empty input brings the chip back.
-  await page.evaluate(() => document.getElementById('search-input').blur());
-  expectReferenceBar(await barState(page), SOURCE_BAR, 'leaving the empty input');
-  await page.click('#reference-view-new-search');
-  await page.keyboard.type(SEARCH);
+  await wheelNoteTo(page, ids.linkingChild, NOTE_TOP_BEFORE_FOLLOWING_PX);
+  await navigate(page, () => clickReferenceLink(page, ids.linkingChild, ids.second));
+  await navigate(page, () => page.click('#reference-view-chip-back'));
+  const onPage = await barState(page);
+  const pagePlace = await notePlace(page, ids.linkingChild);
+  let rows = await contextRows(page);
+  assert.deepEqual(rows, [{tabId: searchTabId, label: `${SEARCH} > ${SOURCE_LABEL}`, isActive: true}],
+    'the context\'s row names its page; the page has no row of its own');
+  assert.ok(rows.every(row => !/[0-9a-f]{8}-[0-9a-f]{4}/i.test(row.label)), 'no row is named by a note ID');
+  assert.equal(await rowOffersClose(page, searchTabId), false, 'the only context, on a page, offers no −');
+
+  // Another context, and back: the page as it was left, ▶ kept.
+  await page.evaluate(async () => {
+    const {openSearchInNewSearchContext} = await import('/static/js/modules/mode-manager/events/keyboard-events.js');
+    await openSearchInNewSearchContext('refother', 'test');
+  });
   await idle(page);
-  const typed = await barState(page);
-  expectSearchBar(typed, SEARCH, 'typing a new search');
-  assert.equal(typed.inputFocused, true, 'typing a new search: the input keeps the focus');
-  assert.equal(typed.roots.includes(ids.holder), true, 'the new search shows its notes');
+  rows = await contextRows(page);
+  assert.deepEqual(rows.map(row => [row.label, row.isActive]), [[`${SEARCH} > ${SOURCE_LABEL}`, false], ['refother', true]],
+    'the other context is in use; the first keeps its page');
+  const otherTabId = rows[1].tabId;
+  await clickContextRow(page, searchTabId);
+  const back = await barState(page);
+  expectReferenceBar(back, {...SOURCE_PAGE, hasForward: true}, 'choosing the context again');
+  assert.equal(back.activeTabId, onPage.activeTabId, 'the same page');
+  assert.deepEqual(await notePlace(page, ids.linkingChild), pagePlace, 'the page as it was left');
+
+  // A reload: the page and its path come back; what was forward does not.
+  await page.reload();
+  await page.waitForSelector('[data-app-ready="true"]');
+  await idle(page);
+  assert.deepEqual(await page.evaluate(() => window.__referenceTransitions), [], 'a reload plays no transition');
+  expectReferenceBar(await barState(page), SOURCE_PAGE, 'after a reload');
+  assert.equal(await page.evaluate(() => sessionStorage.getItem('metalist_reference_navigation_stack')), null,
+    'no page is kept in the window: the server keeps them with the tabs');
+  await clickContextRow(page, otherTabId);
+  await clickContextRow(page, searchTabId);
+  assert.deepEqual(await page.evaluate(() => window.__referenceTransitions), [], 'choosing contexts plays no transition');
+  expectReferenceBar(await barState(page), SOURCE_PAGE, 'chosen again after a reload');
+
+  // Done with the other context; ◀ back to the search, whose row is plain again.
+  await page.hover('#tab-hover-zone');
+  await page.waitForSelector(`#search-contexts-list .tab-context-item[data-tab-id="${otherTabId}"] .delete-context`, {visible: true});
+  await page.click(`#search-contexts-list .tab-context-item[data-tab-id="${otherTabId}"] .delete-context`);
+  await idle(page);
+  await navigate(page, () => page.click('#reference-view-chip-back'));
+  assert.deepEqual(await contextRows(page), [{tabId: searchTabId, label: SEARCH, isActive: true}], 'back at the search, the row is plain');
+}
+
+// Tab on a page goes back to the search, ready to type.
+async function checkTabToTheSearch(page, ids) {
+  await navigate(page, () => clickReferenceLink(page, ids.holder, ids.target));
+  await navigate(page, () => page.keyboard.press('Tab'));
+  const after = await barState(page);
+  expectSearchBar(after, SEARCH, 'Tab');
+  assert.equal(after.inputFocused, true, 'Tab: the search input has the focus');
+  await page.evaluate(() => document.getElementById('search-input').blur());
+  await idle(page);
+}
+
+// Rule 10: deleting the note a page shows closes the page: its context shows its search, where
+// the user left it, and its row is plain.
+async function checkDeletingTheLinkedNote(page, ids) {
+  const left = await wheelNoteTo(page, ids.doomHolder, NOTE_TOP_BEFORE_FOLLOWING_PX);
+  await navigate(page, () => clickReferenceLink(page, ids.doomHolder, ids.doomed));
+  expectReferenceBar(await barState(page), SOURCE_PAGE, 'the page of the note to delete');
+  await page.evaluate(async doomed => {
+    const {deleteNoteOutsideEdit} = await import('/static/js/modules/mode-manager/actions/note-actions.js');
+    await deleteNoteOutsideEdit(doomed);
+  }, ids.doomed);
+  await page.waitForFunction(() => !document.getElementById('reference-source-indicator').classList.contains('is-shown'));
+  await idle(page);
+  expectSearchBar(await barState(page), SEARCH, 'the linked note deleted');
+  assert.deepEqual(await notePlace(page, ids.doomHolder), left, 'the search is where the user left it');
+  const rows = await contextRows(page);
+  assert.deepEqual(rows.map(row => row.label), [SEARCH], 'the context\'s row is plain again');
 }
 
 // Reduce Motion on or off. Chrome emulates the media feature. Puppeteer cannot in
@@ -590,60 +704,6 @@ async function setReducedMotion(page, reduce) {
       return Object.defineProperties(Object.create(answer), {matches: {value: reduce}, media: {value: query}});
     };
   }, reduce);
-}
-
-// Case 10: with Reduce Motion, a quick fade instead of the slide.
-async function checkReducedMotion(page, ids) {
-  const left = await wheelNoteTo(page, ids.holder, NOTE_TOP_BEFORE_FOLLOWING_PX);
-  await setReducedMotion(page, true);
-  const played = await navigate(page, () => clickReferenceLink(page, ids.holder, ids.target));
-  const fade = [{keyframes: [{opacity: 1}, {opacity: 0}], duration: REDUCED_MOTION_FADE_MS}];
-  assert.deepEqual(played.ghost, fade, 'reduce motion: the old column fades out');
-  assert.deepEqual(played.column, [{keyframes: [{opacity: 0}, {opacity: 1}], duration: REDUCED_MOTION_FADE_MS}],
-    'reduce motion: the new column fades in, without moving');
-  expectReferenceBar(await barState(page), SOURCE_BAR, 'reduce motion');
-  const closed = await navigate(page, () => page.click('#reference-source-indicator-clear'));
-  assert.deepEqual(closed.ghost, fade, 'reduce motion: × fades too');
-  expectSearchBar(await barState(page), SEARCH, 'reduce motion: back at the search');
-  assert.deepEqual(await notePlace(page, ids.holder), left, 'reduce motion: the search is where the user left it');
-  await setReducedMotion(page, false);
-}
-
-// Case 11, and reference views kept with the tabs: no animation on a reload, a tab
-// switch, or opening a tab already in a reference view; another window labels them too.
-async function checkNoAnimationWithoutNavigation(page, ids) {
-  const searchTabId = (await barState(page)).activeTabId;
-  await navigate(page, () => clickReferenceLink(page, ids.holder, ids.target));
-  const shown = await barState(page);
-  const referenceTabId = shown.activeTabId;
-  const expectedTabs = await tabLabels(page);
-  assert.deepEqual(expectedTabs.find(tab => tab.tabId === referenceTabId),
-    {tabId: referenceTabId, label: SOURCE_LABEL, icon: 'one', isActive: true}, 'the reference view\'s tab says Source note, with its icon');
-  assert.ok(expectedTabs.every(tab => !/[0-9a-f]{8}-[0-9a-f]{4}/i.test(tab.label)), 'no tab is named by a note ID');
-
-  await page.reload();
-  await page.waitForSelector('[data-app-ready="true"]');
-  await idle(page);
-  assert.deepEqual(await page.evaluate(() => window.__referenceTransitions), [], 'a reload plays no transition');
-  const reloaded = await barState(page);
-  expectReferenceBar(reloaded, SOURCE_BAR, 'after a reload');
-  assert.deepEqual(reloaded.chip, shown.chip, 'after a reload the chip is exactly where it was');
-
-  await clickTab(page, searchTabId);
-  expectSearchBar(await barState(page), SEARCH, 'switched to the search tab');
-  await clickTab(page, referenceTabId);
-  const reopened = await barState(page);
-  expectReferenceBar(reopened, SOURCE_BAR, 'opening a tab already in a reference view');
-  assert.deepEqual(reopened.chip, shown.chip, 'the reopened tab\'s chip is exactly where it was');
-  assert.deepEqual(await page.evaluate(() => window.__referenceTransitions), [], 'tab switches play no transition');
-
-  // The view came back from the server's tab state, not from this window: nothing
-  // about it is kept in the window's session storage, so another window shows it too.
-  assert.equal(await page.evaluate(() => sessionStorage.getItem('metalist_reference_navigation_stack')), null,
-    'no reference view is kept in the window');
-  assert.deepEqual(await tabLabels(page), expectedTabs, 'after a reload the tabs are labeled the same way');
-
-  await navigate(page, () => page.click('#reference-source-indicator-clear'));
 }
 
 async function inputChipsState(page) {
@@ -731,21 +791,24 @@ export async function checkReferenceViews(page) {
   await page.waitForSelector('[data-app-ready="true"]');
   await idle(page);
   await installTransitionRecorder(page);
-  await runThenCleanUp('reference views', async () => {
+  await runThenCleanUp('reference pages', async () => {
     await searchFor(page, SEARCH);
     const left = await checkFollowFromSearch(page, ids);
-    await checkCloseToSearch(page, ids, left, '× from the first level');
-    await checkStack(page, ids);
+    await checkBackToSearch(page, ids, left, '◀ from the first page');
+    await checkLinkedChildIsARoot(page, ids);
+    await checkPath(page, ids);
     await checkReturnAlongPath(page, ids);
     await checkAiReferences(page, ids);
     await checkReducedMotion(page, ids);
-    await checkNoAnimationWithoutNavigation(page, ids);
-    await checkNewSearch(page, ids);
+    await checkContextsKeepTheirPage(page, ids);
+    await checkTabToTheSearch(page, ids);
+    await checkDeletingTheLinkedNote(page, ids);
     await checkInputChips(page);
   }, async () => {
     await page.evaluate(async ids => {
       const {NotesAPI} = await import('/static/js/modules/api-client.js');
-      for (const id of [ids.holder, ids.target, ids.second, ids.third, ...ids.fillers]) await NotesAPI.deleteNote(id);
+      const present = [ids.holder, ids.childHolder, ids.doomHolder, ids.target, ids.second, ids.third, ...ids.fillers];
+      for (const id of present) await NotesAPI.deleteNote(id);
     }, ids);
   });
 }

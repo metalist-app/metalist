@@ -82,3 +82,25 @@ def test_the_search_context_a_link_opens_has_the_same_terms(live_database) -> No
     tab_id = _search_in_active_context("work  -archive")
     assert tab_state_store.search_context_with_search(search="-archive Work") == tab_id
     assert tab_state_store.search_context_with_search(search="work") == ""
+
+
+def test_a_search_context_on_a_reference_page_does_not_take_a_search_link(live_database) -> None:
+    # It is showing a page, not its search, and stays there: the link's search opens in a new
+    # context beside it (the maintainer, 2026-11-14).
+    _note("10000000-0000-4000-8000-000000000001", None, content="<div>Trip plan</div>", tags="")
+    misc = _search_in_active_context("miscellaneous")
+    page = tab_state_store.create_tab(copy_from_tab_id=misc, copies_view=False)["newTabId"]
+    state = tab_state_store.snapshot()
+    tabs = state["tabs"]
+    tabs[page]["searchQuery"] = "10000000-0000-4000-8000-000000000001"
+    tab_state_store.update(
+        active_tab_id=page, tabs=tabs, tab_order=state["tabOrder"], read_at_version=state["version"],
+        reference_views={page: {
+            "fromTabId": misc, "referenceQuery": "10000000-0000-4000-8000-000000000001", "viewKind": "source",
+            "originScope": {"scopeTabId": misc, "searchQuery": "miscellaneous", "sortMode": "normal",
+                            "isUntaggedView": False},
+        }},
+    )
+    assert tab_state_store.snapshot()["referenceViews"] != {}, "the page is a reference view"
+
+    assert tab_state_store.search_context_with_search(search="miscellaneous") == ""

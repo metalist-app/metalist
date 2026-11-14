@@ -29,6 +29,7 @@ from app.services.document_text import DOC_EXTENSION, DOCX_EXTENSION, RTF_EXTENS
 from app.services.file_view import PLAIN_TEXT_ENDINGS, WEB_PAGE_ENDINGS
 from app.services.plain_text import file_text, web_page_text
 from app.services.background_work import IMPORT_KEY, READING_PDF_TEXT_KEY, background_work
+from app.services.requests_in_flight import requests_in_flight
 from app.services.text_terms import text_term_matches
 from app.utils.byte_sizes import MIB
 
@@ -94,6 +95,10 @@ _TEXT_CACHE_MIB = 64
 # The worker process's creation flags: none (subprocess's own default) but on Windows, where it
 # runs at below-normal priority.
 _NO_CREATION_FLAGS = 0
+
+
+def _read_on() -> None:
+    """Between files when the text is wanted now (a test): nothing to wait for."""
 
 
 @dataclass(frozen=True)
@@ -354,6 +359,9 @@ class FileTexts:
     def refresh(self) -> None:
         """Load the stored filters, then extract the text of every searchable file without it (or
         with an older revision's): once after login, and after a file arrives or changes."""
+        self._refresh(between_files=_read_on)
+
+    def _refresh(self, *, between_files: Callable[[], None]) -> None:
         storage = self._require_storage()
         if self._load_stored_filters(replaces_loaded=True):
             self._notify_changed()
@@ -368,6 +376,7 @@ class FileTexts:
             # files handled already would look unread (15 files counted to 25, 2026-11-03).
             handled: set[str] = set()
             while pending:
+                between_files()
                 file_id, content_revision, need = pending[0]
                 if need == _READ:
                     self.extract_and_store(file_id, content_revision)
@@ -429,7 +438,8 @@ class FileTexts:
         """refresh() once no import runs: what the page shows (the imported notes, their images)
         comes before the PDFs' text, which changes nothing on it (the maintainer, 2026-11-02)."""
         background_work.wait_until_finished(IMPORT_KEY)
-        self.refresh()
+        # One file at a time, each after the requests being answered (requests_in_flight.py).
+        self._refresh(between_files=requests_in_flight.give_way)
 
     def extract_and_store(self, file_id: str, content_revision: int) -> None:
         storage = self._require_storage()

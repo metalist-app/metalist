@@ -82,6 +82,25 @@ def _normalize_origin_scope(origin_scope: object, *, from_storage: bool) -> Dict
     }
 
 
+# A note id in a reference view's search (one, or several joined by OR).
+_NOTE_ID_RE = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", re.IGNORECASE)
+
+
+def _reference_note_ids(view: Dict[str, object]) -> List[str]:
+    reference_query = view["referenceQuery"]
+    assert isinstance(reference_query, str), "a reference view runs a search"
+    return [note_id.lower() for note_id in _NOTE_ID_RE.findall(reference_query)]
+
+
+def _origin_tab_id(view: Dict[str, object]) -> str:
+    """The search context a reference view was opened from."""
+    origin_scope = view["originScope"]
+    assert isinstance(origin_scope, dict), "a reference view keeps its origin scope"
+    scope_tab_id = origin_scope["scopeTabId"]
+    assert isinstance(scope_tab_id, str), "an origin scope names its tab"
+    return scope_tab_id
+
+
 def _normalize_reference_views(
     views: object,
     tabs: Dict[str, Dict[str, object]],
@@ -89,8 +108,8 @@ def _normalize_reference_views(
     from_storage: bool,
 ) -> Dict[str, Dict[str, object]]:
     """Reference views by the tab showing them. A view has ended, and is dropped,
-    when its tab or the tab it was opened from is gone, or its tab now runs
-    another search; a saved view of a kind this version does not know is dropped too."""
+    when its tab, the tab it was opened from or its search context is gone, or its tab now
+    runs another search; a saved view of a kind this version does not know is dropped too."""
     if not isinstance(views, dict):
         raise InputRejected("referenceViews must be an object")
     normalized: Dict[str, Dict[str, object]] = {}
@@ -115,6 +134,10 @@ def _normalize_reference_views(
             raise InputRejected("referenceViews viewKind is not a known kind of view")
         origin_scope = _normalize_origin_scope(view["originScope"], from_storage=from_storage)
         if tab_id not in tabs or from_tab_id not in tabs or from_tab_id == tab_id:
+            continue
+        # 0.29.0 left a view open when the search context it came from was closed: it is a tab of
+        # note IDs no view claims, which the browser gives back to a search context that is there.
+        if origin_scope["scopeTabId"] not in tabs:
             continue
         if tabs[tab_id]["searchQuery"] != reference_query:
             continue
@@ -237,6 +260,12 @@ class TabStateStore:
         self._scroll_restarted_at_version: Dict[str, int] = {}
         # The version at which Rename tag renamed each tab's search (rename_search_terms).
         self._search_renamed_at_version: Dict[str, int] = {}
+        # Reference pages closed because their notes were deleted: a browser's save made before
+        # it heard so may still name them, and is taken without them (update).
+        self._closed_page_tab_ids: Set[str] = set()
+        # The version at which pages last closed so: each view of the list carries it, and the
+        # browser takes the server's tabs again when it has risen (adoptClosedReferencePages).
+        self._pages_closed_at_version = 0
         self._install_default_state_locked(version=0)
 
     def bootstrap(self, *, connection) -> None:
@@ -363,18 +392,78 @@ class TabStateStore:
             self._reference_views = _normalize_reference_views(
                 self._reference_views, self._tabs, from_storage=False,
             )
-            if tab_id in self._date_filters:
-                del self._date_filters[tab_id]
-            if tab_id in self._file_filters:
-                del self._file_filters[tab_id]
-            self._untagged_views.discard(tab_id)
-            if tab_id in self._scroll_restarted_at_version:
-                del self._scroll_restarted_at_version[tab_id]
-            if tab_id in self._search_renamed_at_version:
-                del self._search_renamed_at_version[tab_id]
+            self._forget_tab_settings_locked(tab_id)
             self._version += 1
             self._persist_locked(connection=None, encryption_service=None, force_plaintext=False)
             return self._snapshot_locked()
+
+    def _forget_tab_settings_locked(self, tab_id: str) -> None:
+        """What is kept beside a tab that is gone."""
+        if tab_id in self._date_filters:
+            del self._date_filters[tab_id]
+        if tab_id in self._file_filters:
+            del self._file_filters[tab_id]
+        self._untagged_views.discard(tab_id)
+        if tab_id in self._scroll_restarted_at_version:
+            del self._scroll_restarted_at_version[tab_id]
+        if tab_id in self._search_renamed_at_version:
+            del self._search_renamed_at_version[tab_id]
+
+    def close_pages_whose_notes_are_gone(self, *, note_exists: Callable[[str], bool]) -> bool:
+        """Close each reference page none of whose notes exist any more, with the pages opened
+        from it: its search context goes back to its search (`foo > bar`, bar deleted, reads `foo`;
+        the maintainer, 2026-11-14). Shown on one of them: the search it was opened from. Returns
+        whether any closed."""
+        if not callable(note_exists):
+            raise TypeError("note_exists must be callable")
+        with self._lock:
+            self._try_decrypt_locked(token="", require_success=True)
+            closing = {
+                tab_id for tab_id, view in self._reference_views.items()
+                if not any(note_exists(note_id) for note_id in _reference_note_ids(view))
+            }
+            if not closing:
+                return False
+            is_growing = True
+            while is_growing:
+                opened_from_closing = {
+                    tab_id for tab_id, view in self._reference_views.items()
+                    if tab_id not in closing and view["fromTabId"] in closing
+                }
+                closing |= opened_from_closing
+                is_growing = len(opened_from_closing) > 0
+            if self._active_tab_id in closing:
+                self._active_tab_id = self._search_shown_after_closing_locked(self._active_tab_id, closing)
+            self._tab_order = [tab_id for tab_id in self._tab_order if tab_id not in closing]
+            for tab_id in closing:
+                del self._tabs[tab_id]
+                del self._reference_views[tab_id]
+                self._forget_tab_settings_locked(tab_id)
+            self._closed_page_tab_ids |= closing
+            self._version += 1
+            self._pages_closed_at_version = self._version
+            self._persist_locked(connection=None, encryption_service=None, force_plaintext=False)
+            return True
+
+    def was_closed_with_its_notes(self, *, tab_id: str) -> bool:
+        """A reference page closed because its notes were deleted: the browser may still ask for
+        its view once, before it hears so."""
+        with self._lock:
+            return tab_id in self._closed_page_tab_ids
+
+    def pages_closed_at_version(self) -> int:
+        with self._lock:
+            return self._pages_closed_at_version
+
+    def _search_shown_after_closing_locked(self, page_tab_id: str, closing: Set[str]) -> str:
+        """The search a closed page was opened from; that context's first other tab when the
+        search is gone as well."""
+        origin_tab_id = _origin_tab_id(self._reference_views[page_tab_id])
+        if origin_tab_id in self._tabs and origin_tab_id not in closing:
+            return origin_tab_id
+        remaining = [tab_id for tab_id in self._tab_order if tab_id not in closing]
+        assert remaining, "closing pages leaves the search contexts they were opened from"
+        return remaining[0]
 
     def update(
         self,
@@ -400,6 +489,17 @@ class TabStateStore:
             self._try_decrypt_locked(token="", require_success=True)
             existing_ids = set(self._tabs.keys())
             incoming_ids = set(normalized_tabs.keys())
+            # Saved before the browser heard that pages closed with their notes: taken without them.
+            closed_meanwhile = incoming_ids & self._closed_page_tab_ids
+            if closed_meanwhile:
+                normalized_tabs = {tab_id: entry for tab_id, entry in normalized_tabs.items() if tab_id not in closed_meanwhile}
+                normalized_order = [tab_id for tab_id in normalized_order if tab_id not in closed_meanwhile]
+                normalized_reference_views = _normalize_reference_views(
+                    normalized_reference_views, normalized_tabs, from_storage=False,
+                )
+                incoming_ids -= closed_meanwhile
+                if active_tab_id in closed_meanwhile:
+                    active_tab_id = self._active_tab_id
             if incoming_ids != existing_ids:
                 raise InputRejected("tab ids mismatch; use tab-state new/delete endpoints")
             normalized_tabs = {
@@ -609,13 +709,16 @@ class TabStateStore:
     def search_context_with_search(self, *, search: str) -> str:
         """The search context, in list order, whose search has the same terms as this one, or ""
         for none: what a search link opens (docs/ready-to-build/search-links.md §3). Folder contexts
-        are search contexts too (folder-tags-in-search.md §5); reference views are never a search link's."""
+        are search contexts too (folder-tags-in-search.md §5); reference views are never a search link's,
+        nor is a context on a reference page: it shows the page, not its search, and stays there while
+        the link opens the search in a new context (the maintainer, 2026-11-14)."""
         if not isinstance(search, str) or search.strip() == "":
             raise InputRejected("A search link needs a search.")
         with self._lock:
             self._try_decrypt_locked(token="", require_success=True)
+            on_a_page = {_origin_tab_id(view) for view in self._reference_views.values()}
             for tab_id in self._tab_order:
-                if tab_id in self._reference_views:
+                if tab_id in self._reference_views or tab_id in on_a_page:
                     continue
                 tab_search = self._tabs[tab_id]["searchQuery"]
                 if not isinstance(tab_search, str):
@@ -692,6 +795,7 @@ class TabStateStore:
         self._untagged_views = set()
         self._scroll_restarted_at_version = {}
         self._search_renamed_at_version = {}
+        self._closed_page_tab_ids = set()
         self._version = version
 
     def _snapshot_locked(self) -> Dict[str, object]:

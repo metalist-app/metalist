@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 from typing import Annotated
 from pathlib import Path
 
-from app.api.transactions import transactional_route
+from app.api.transactions import one_step_read_route, transactional_route
 from app.config import ACTIVE_NAMESPACE
 from app.config import KDF_ALGORITHM
 from app.config import KDF_MAX_MEMORY_COST_KIB
@@ -35,9 +35,11 @@ from app.server_runtime import NamespaceLaunchProfile
 from app.server_runtime import _DEFAULT_HTTP_PORT
 from app.server_runtime import load_all_namespace_launch_profiles
 from app.server_runtime import load_namespace_launch_profile
+from app.server_runtime import load_namespace_network_sharing
 from app.server_runtime import resolve_namespace_directory
 from app.server_runtime import resolve_namespaced_database_path
 from app.server_runtime import save_namespace_launch_profile
+from app.server_runtime import save_namespace_network_sharing
 from app.server_runtime import validate_namespace
 from app.services.native_folder_picker import pick_folder
 from app.services.synced_folders import provider_syncing, suggested_backup_folders
@@ -53,6 +55,7 @@ from app.services.tokens import token_service
 from app.services.maintenance_mode import maintenance_service
 from app.services.namespace_switcher import stop_namespace_for_restore
 from app.api.routes.auth import _reset_runtime_state_after_restore, _schedule_server_restart_after_restore
+from app.api.routes.auth import namespaces_shown_to_requester, require_vaults_shown_to_requester
 from app.services.encryption import EncryptionService
 
 
@@ -730,6 +733,14 @@ def _assert_import_profile_has_no_internal_overlap(*, profile: BackupLaunchProfi
         )
 
 
+def _network_sharing_to_keep(*, target_namespace: str, target_exists: bool) -> bool:
+    """A restore keeps whether the vault is shared on the network, as it keeps its ports: that is
+    this computer's choice, not the backup's. A vault new from a backup is not shared."""
+    if not target_exists:
+        return False
+    return load_namespace_network_sharing(namespace=target_namespace)
+
+
 def _restore_import_to_target(
     *,
     backup_path: Path,
@@ -737,6 +748,7 @@ def _restore_import_to_target(
     backup_namespace: str,
     target_namespace: str,
     launch_profile: BackupLaunchProfile,
+    shared_on_network: bool,
 ) -> None:
     restore_backup_to_paths_from_namespace(
         backup_path,
@@ -749,9 +761,11 @@ def _restore_import_to_target(
         https_port=launch_profile.https_port,
         mcp_port=launch_profile.mcp_port,
     )
+    save_namespace_network_sharing(namespace=target_namespace, shared=shared_on_network)
 
 
 @router.get("/settings", response_model=BackupSettingsResponse)
+@one_step_read_route
 def get_backup_settings(token: Annotated[str, Depends(_require_auth)]):
     settings = load_backup_settings(token=token)
     return _serialize_settings_response(settings)
@@ -808,8 +822,8 @@ def pick_backup_folder(token: Annotated[str, Depends(_require_auth)]):
     )
 
 
-@router.get("/list", response_model=BackupListResponse)
-def list_backups(token: Annotated[str, Depends(_require_auth)]):
+def _backups_in_folder(*, token: str) -> list[BackupListEntryResponse]:
+    """Every backup in the backup folder, newest first."""
     backups: list[BackupListEntryResponse] = []
     settings = load_backup_settings(token=token)
     folder_path = settings["folder_path"]
@@ -817,8 +831,7 @@ def list_backups(token: Annotated[str, Depends(_require_auth)]):
         raise RuntimeError("backup settings folder_path must be a string")
     if folder_path != "":
         folder_directory = _normalize_folder_backup_path(folder_path=folder_path)
-        folder_backups = list_backups_in_directory(folder_directory, database_path=None)
-        for backup in folder_backups:
+        for backup in list_backups_in_directory(folder_directory, database_path=None):
             backup_namespace = parse_backup_namespace_from_filename(backup.filename)
             backups.append(
                 _serialize_backup_entry(
@@ -831,16 +844,29 @@ def list_backups(token: Annotated[str, Depends(_require_auth)]):
                 )
             )
     backups.sort(key=lambda entry: entry.created_at, reverse=True)
+    return backups
+
+
+@router.get("/list", response_model=BackupListResponse)
+@one_step_read_route
+def list_backups(request: Request, token: Annotated[str, Depends(_require_auth)]):
+    backups = _backups_in_folder(token=token)
+    # Another computer sees no backup of a vault it may not see (namespaces_shown_to_other_computers).
+    shown = namespaces_shown_to_requester(request)
+    if shown is not None:
+        backups = [backup for backup in backups if backup.namespace in shown]
     return BackupListResponse(backups=backups)
 
 
 @router.get("/times", response_model=BackupTimesResponse)
+@one_step_read_route
 def list_backup_times(token: Annotated[str, Depends(_require_auth)]):
     """When this namespace was backed up into the backup folder (the backup reminder's clock)."""
     if ACTIVE_NAMESPACE is None:
         raise RuntimeError("Backup times need an active namespace")
-    folder_backups = list_backups(token=token).backups
-    backup_times = [backup.created_at for backup in folder_backups if backup.namespace == ACTIVE_NAMESPACE]
+    backup_times = [
+        backup.created_at for backup in _backups_in_folder(token=token) if backup.namespace == ACTIVE_NAMESPACE
+    ]
     return BackupTimesResponse(backup_times=backup_times)
 
 
@@ -909,12 +935,14 @@ def run_backup(
 @transactional_route
 def restore_backup_preflight(
     payload: BackupRestoreRequest,
+    request: Request,
     token: Annotated[str, Depends(_require_auth)],
 ):
     if payload.source != "folder":
         raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail="source must be folder")
     backup_namespace = validate_namespace(namespace=payload.backup_namespace)
     target_namespace = validate_namespace(namespace=payload.target_namespace)
+    require_vaults_shown_to_requester(request=request, namespaces=[backup_namespace, target_namespace])
 
     folder_namespace, folder_filename = _parse_folder_backup_id(payload.backup_id)
     if folder_namespace != backup_namespace:
@@ -971,12 +999,14 @@ def restore_backup_preflight(
 @transactional_route
 def restore_backup(
     payload: BackupRestoreRequest,
+    request: Request,
     token: Annotated[str, Depends(_require_auth)],
 ):
     if payload.source != "folder":
         raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail="source must be folder")
     backup_namespace = validate_namespace(namespace=payload.backup_namespace)
     target_namespace = validate_namespace(namespace=payload.target_namespace)
+    require_vaults_shown_to_requester(request=request, namespaces=[backup_namespace, target_namespace])
     if target_namespace != backup_namespace:
         raise HTTPException(
             status_code=HTTPStatus.BAD_REQUEST,
@@ -1006,6 +1036,7 @@ def restore_backup(
         target_namespace=target_namespace,
         target_exists=target_exists,
     )
+    shared_on_network = _network_sharing_to_keep(target_namespace=target_namespace, target_exists=target_exists)
     if target_namespace == ACTIVE_NAMESPACE:
         maintenance_service.enter_maintenance("Restoring backup")
         try:
@@ -1016,6 +1047,7 @@ def restore_backup(
                 https_port=launch_profile.https_port,
                 mcp_port=launch_profile.mcp_port,
             )
+            save_namespace_network_sharing(namespace=target_namespace, shared=shared_on_network)
             _reset_runtime_state_after_restore()
         finally:
             maintenance_service.exit_maintenance()
@@ -1031,6 +1063,7 @@ def restore_backup(
             https_port=launch_profile.https_port,
             mcp_port=launch_profile.mcp_port,
         )
+        save_namespace_network_sharing(namespace=target_namespace, shared=shared_on_network)
     return BackupRestoreResponse(
         backup_id=payload.backup_id,
         source=payload.source,
@@ -1047,12 +1080,14 @@ def restore_backup(
 @transactional_route
 def import_backup(
     payload: BackupRestoreImportRequest,
+    request: Request,
     token: Annotated[str, Depends(_require_auth)],
 ):
     if payload.source != "folder":
         raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail="source must be folder")
     backup_namespace = validate_namespace(namespace=payload.backup_namespace)
     target_namespace = validate_namespace(namespace=payload.target_namespace)
+    require_vaults_shown_to_requester(request=request, namespaces=[backup_namespace, target_namespace])
     if target_namespace == backup_namespace:
         raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail="Same-name restore must use /api2/backup/restore")
 
@@ -1098,6 +1133,7 @@ def import_backup(
             launch_profile=launch_profile,
         )
 
+    shared_on_network = _network_sharing_to_keep(target_namespace=target_namespace, target_exists=target_exists)
     target_is_active = target_namespace == ACTIVE_NAMESPACE
     if target_is_active:
         maintenance_service.enter_maintenance("Importing backup")
@@ -1108,6 +1144,7 @@ def import_backup(
                 backup_namespace=backup_namespace,
                 target_namespace=target_namespace,
                 launch_profile=launch_profile,
+                shared_on_network=shared_on_network,
             )
             _reset_runtime_state_after_restore()
         finally:
@@ -1121,6 +1158,7 @@ def import_backup(
             backup_namespace=backup_namespace,
             target_namespace=target_namespace,
             launch_profile=launch_profile,
+            shared_on_network=shared_on_network,
         )
 
     return BackupRestoreResponse(

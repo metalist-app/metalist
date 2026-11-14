@@ -10,7 +10,7 @@ from typing import Any, Awaitable, Callable, ParamSpec, TypeVar, cast, get_type_
 import anyio.to_thread
 from fastapi import FastAPI, HTTPException
 from app.services.bulk_operation import bulk_operation_guard
-from fastapi.routing import APIRoute
+from fastapi.routing import APIRoute, iter_route_contexts
 
 from app.db.session import begin_request_transaction
 from app.services.request_recovery import register_runtime_recovery
@@ -22,6 +22,9 @@ P = ParamSpec("P")
 R = TypeVar("R")
 _TRANSACTIONAL_ROUTE_MARKER = "__transactional_route__"
 _READ_ONLY_ROUTE_MARKER = "__read_only_route__"
+_SERIALIZED_READ_ROUTE_MARKER = "__serialized_read_route__"
+_ONE_STEP_READ_ROUTE_MARKER = "__one_step_read_route__"
+_READ_METHODS = frozenset({"GET", "HEAD"})
 _MUTATION_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 _STORAGE_TRANSITIONS = frozenset({"create_password", "remove_password", "restore_from_backup", "restore_backup", "import_backup"})
 
@@ -140,15 +143,27 @@ def serialized_read_route(func: Callable[P, R]) -> Callable[P, R]:
 
     # FastAPI reads the route's parameters from its signature.
     setattr(serialized_wrapper, "__signature__", resolved_signature)
+    setattr(serialized_wrapper, _SERIALIZED_READ_ROUTE_MARKER, True)
     return serialized_wrapper
+
+
+def one_step_read_route(func: Callable[P, R]) -> Callable[P, R]:
+    """A read that reads the notes at most once: not at all, or in one consistent reading (one
+    snapshot, one count, one store call). A change landing beside it cannot catch it between two
+    steps, so it runs beside the changes. One that checks a note is there and then reads it, or
+    walks the tree in several steps, takes serialized_read_route (2026-11-14: the Password Audit,
+    the preview card and full screen failed when a note was deleted between their steps)."""
+    setattr(func, _ONE_STEP_READ_ROUTE_MARKER, True)
+    return func
 
 
 def read_only_route(func: Callable[P, R]) -> Callable[P, R]:
     """A POST that changes nothing: it works only from what it is sent (a body too large or too
-    private for a URL), so it never waits for a change or is refused while one runs. The edit
-    preview was refused with a fatal "409 Conflict" while another request changed the vault (the
-    maintainer, 2026-11-11). A route that reads the note tree in several steps takes
-    serialized_read_route instead."""
+    private for a URL), or from what stays consistent beside a change (search suggestions read the
+    search index and history under their own locks, 2026-11-14), so it never waits for a change or
+    is refused while one runs. The edit preview was refused with a fatal "409 Conflict" while
+    another request changed the vault (the maintainer, 2026-11-11). A route that reads the note
+    tree in several steps takes serialized_read_route instead."""
     if inspect.iscoroutinefunction(func):
         raise TypeError(f"read_only_route needs a synchronous route: {func.__name__}")
     setattr(func, _READ_ONLY_ROUTE_MARKER, True)
@@ -159,12 +174,24 @@ def _is_marked(endpoint: Callable[..., Any], marker: str) -> bool:
     return marker in vars(endpoint) and vars(endpoint)[marker] is True
 
 
+def _api_routes(app: FastAPI) -> list[tuple[str, APIRoute]]:
+    """Every API route with the path it answers at, inside included routers too: FastAPI 0.141
+    keeps an included router as one entry, and the audits saw none of MetaList's API (2026-11-14)."""
+    found: list[tuple[str, APIRoute]] = []
+    for context in iter_route_contexts(app.routes):
+        route = context.original_route
+        if not isinstance(route, APIRoute):
+            continue
+        path = context.path
+        assert isinstance(path, str), "an API route answers at a path"
+        found.append((path, route))
+    return found
+
+
 def assert_mutation_routes_wrapped(app: FastAPI) -> None:
     violations: list[str] = []
 
-    for route in app.routes:
-        if not isinstance(route, APIRoute):
-            continue
+    for path, route in _api_routes(app):
         if route.methods is None:
             continue
 
@@ -179,13 +206,38 @@ def assert_mutation_routes_wrapped(app: FastAPI) -> None:
             continue
 
         violations.append(
-            f"{','.join(mutation_methods)} {route.path} -> {endpoint.__module__}.{endpoint.__qualname__}",
+            f"{','.join(mutation_methods)} {path} -> {endpoint.__module__}.{endpoint.__qualname__}",
         )
 
     if len(violations) == 0:
         return
 
     message_lines = ["Mutation routes missing @transactional_route:"]
+    for violation in violations:
+        message_lines.append(f"- {violation}")
+    raise RuntimeError("\n".join(message_lines))
+
+
+def assert_read_routes_declared(app: FastAPI) -> None:
+    """Every read says how it reads the notes, so none reads them in several steps beside the
+    changes unnoticed: transactional_route, serialized_read_route, read_only_route (from what it is
+    sent) or one_step_read_route. A new route that says nothing fails this."""
+    violations: list[str] = []
+    for path, route in _api_routes(app):
+        if route.methods is None:
+            continue
+        read_methods = sorted(method for method in route.methods if method in _READ_METHODS)
+        if len(read_methods) == 0:
+            continue
+        endpoint = route.endpoint
+        if any(_is_marked(endpoint, marker) for marker in (
+            _TRANSACTIONAL_ROUTE_MARKER, _SERIALIZED_READ_ROUTE_MARKER, _READ_ONLY_ROUTE_MARKER, _ONE_STEP_READ_ROUTE_MARKER,
+        )):
+            continue
+        violations.append(f"{','.join(read_methods)} {path} -> {endpoint.__module__}.{endpoint.__qualname__}")
+    if len(violations) == 0:
+        return
+    message_lines = ["Read routes that don't say how they read the notes (serialized_read_route or one_step_read_route):"]
     for violation in violations:
         message_lines.append(f"- {violation}")
     raise RuntimeError("\n".join(message_lines))

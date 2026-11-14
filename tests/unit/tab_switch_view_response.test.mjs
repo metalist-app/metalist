@@ -34,7 +34,7 @@ function buildHarness() {
     const events = [];
     const heldFetch = deferred();
     let fetchCount = 0;
-    const snapshot = () => ({ diffOps: [], notes: {}, rootIds: [], rootCountTotal: 1, searchRootCountTotal: 1, rootWindowStart: 0, rootBandMargin: 75 });
+    const snapshot = () => ({ diffOps: [], notes: {}, rootIds: [], rootCountTotal: 1, searchRootCountTotal: 1, rootWindowStart: 0, rootBandMargin: 75, pagesClosedAtVersion: 0 });
     const ModeContext = {
         activeTabId: 'A', tabOrder: ['A', 'B'], isEditing: false, isUntaggedView: false,
         activeTabSortMode: 'normal', currentNoteId: null, isInitialPageLoad: false,
@@ -53,6 +53,8 @@ function buildHarness() {
     const uiDependencies = {
         MS_PER_SECOND,
         setSearchHighlightPhrases() {},
+        // No reference pages closed with their notes in these views.
+        noticeClosedReferencePages() {},
         ModeContext,
         moduleState: ApplicationState.createFields(`test.tab-switch.${Math.random()}`, { viewRequestInFlight: false }),
         Logger: { logAction() {}, logDebug() {}, logNoop() {} },

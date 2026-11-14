@@ -1991,6 +1991,9 @@ class SearchIndex:
                          for condition in conditions if condition.reads_values}
         values = _NoteValues(own_values=own_values, inherited=self._read_inherited_values(clause, frozenset(own_values)))
         matched = set(own_values)
+        if clause.has_value_terms:
+            # A note the tree no longer has (deleted since the index found it) is not found.
+            matched &= set(values.inherited)
         for condition in clause.required_properties:
             if not condition.is_extreme:
                 matched = {note_id for note_id in matched if self._meets(note_id, condition, values, tag_names)}
@@ -2025,7 +2028,8 @@ class SearchIndex:
         if reader is None:
             raise RuntimeError("Terms about values need the note store's reader (attach_inherited_values_reader)")
         inherited = reader(note_ids)
-        assert inherited.keys() == note_ids, "the reader answers for every note asked about"
+        # A note deleted since the index found it is left out (search suggestions run beside changes).
+        assert inherited.keys() <= note_ids, "the reader answers only about the notes asked about"
         return inherited
 
     def _meets(

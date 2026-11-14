@@ -68,6 +68,10 @@ _MIN_ROOTS_WITH_NEIGHBOUR = 2
 _UUID_IN_TEXT_RE = re.compile(
     r"(?i)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
 )
+# A search term that is a note's id and nothing else, bare or as a link ([[id]]).
+_NOTE_ID_TERM_RE = re.compile(
+    r"(?i)(?:\[\[)?(?P<note_id>[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:\]\])?"
+)
 
 
 @dataclass(frozen=True)
@@ -338,6 +342,63 @@ def resolve_search_scope(
     )
 
 
+def _clause_note_id(clause: SearchClause) -> Optional[str]:
+    """The note id a clause consists of, when it is that one term and nothing else."""
+    terms = (*clause.required_tags, *clause.required_text)
+    if (len(terms) != 1 or clause.forbidden_tags or clause.forbidden_text
+            or clause.required_properties or clause.forbidden_properties):
+        return None
+    match = _NOTE_ID_TERM_RE.fullmatch(terms[0])
+    if match is None:
+        return None
+    return match.group("note_id").lower()
+
+
+def note_page_root_ids(search: Optional[str]) -> Optional[List[str]]:
+    """A search made only of note ids (every reference page's: a link's note, a note's
+    backlinks, an AI answer's references) lists just those notes, each as a root with the
+    notes under it, in the search's order, as an embed of the note shows it: no notes above
+    it and no grey bars beside it (the maintainer, 2026-11-13). A note under another listed
+    note shows inside it, once; a deleted note is left out. None for any other search."""
+    if search is None or search.strip() == "":
+        return None
+    parsed = parse_search_query(search)
+    note_ids: List[str] = []
+    for clause in parsed.clauses:
+        note_id = _clause_note_id(clause)
+        if note_id is None:
+            return None
+        if note_id not in note_ids:
+            note_ids.append(note_id)
+    present = [note_id for note_id in note_ids if note_store.has_note(note_id)]
+    listed = set(present)
+    return [note_id for note_id in present if not (_ancestors_in_store(note_id) & listed)]
+
+
+def _ancestors_in_store(note_id: str) -> Set[str]:
+    ancestor_ids: Set[str] = set()
+    current = note_store.get_note(note_id)
+    while current.parent_id is not None:
+        if current.parent_id in ancestor_ids:
+            raise RuntimeError(f"Cycle in note ancestry for {note_id}")
+        ancestor_ids.add(current.parent_id)
+        current = note_store.get_note(current.parent_id)
+    return ancestor_ids
+
+
+def _note_page_scope(page_root_ids: List[str]) -> SearchScope:
+    """The listed notes and every note under them; nothing above or beside them."""
+    shown_note_ids = set(page_root_ids)
+    _include_descendants(shown_note_ids, starting_ids=set(page_root_ids))
+    return SearchScope(
+        search_active=True,
+        allowed_note_ids=set(shown_note_ids),
+        matched_note_ids=set(shown_note_ids),
+        search_root_ids_ordered=list(page_root_ids),
+        search_root_count_total=len(page_root_ids),
+    )
+
+
 def _apply_untagged_view(
     *,
     ordered_root_ids: List[str],
@@ -441,6 +502,20 @@ def resolve_view_scope_membership(
     if not isinstance(is_untagged_view, bool):
         raise TypeError("is_untagged_view must be a bool")
     normalized_sort_mode = normalize_sort_mode(sort_mode)
+    page_root_ids = None
+    if not is_untagged_view:
+        page_root_ids = note_page_root_ids(search)
+    if page_root_ids is not None:
+        # A reference page: the notes it shows, whatever the tab's order and filters.
+        page_scope = _note_page_scope(page_root_ids)
+        assert page_scope.allowed_note_ids is not None
+        return ResolvedViewScope(
+            filter_active=True,
+            allowed_note_ids=frozenset(page_scope.allowed_note_ids),
+            matched_note_ids=frozenset(page_scope.allowed_note_ids),
+            ordered_root_ids=tuple(page_root_ids),
+            total_root_count=len(page_root_ids),
+        )
     ordered_root_ids = _ordered_view_root_ids(normalized_sort_mode, date_filter, file_filter)
     if is_untagged_view:
         search_scope = _apply_untagged_view(ordered_root_ids=ordered_root_ids)
@@ -527,10 +602,21 @@ def _root_id_of_note(note_id: str, traversal_cache: "_SnapshotTraversalCache") -
 def _root_index_of_note(
     note_id: str, root_index_map: Dict[str, int], traversal_cache: "_SnapshotTraversalCache",
 ) -> Optional[int]:
-    root_id = _root_id_of_note(note_id, traversal_cache)
-    if root_id is None or root_id not in root_index_map:
+    """The place of the listed root the note shows under: the nearest of the note and the
+    notes above it that the list shows as a root (a reference page lists notes that have
+    parents as roots)."""
+    if not note_store.has_note(note_id):
         return None
-    return root_index_map[root_id]
+    current = traversal_cache.get_note(note_id)
+    visited: Set[str] = set()
+    while current.id not in root_index_map:
+        if current.parent_id is None:
+            return None
+        if current.id in visited:
+            raise RuntimeError(f"Cycle in note ancestry for {note_id}")
+        visited.add(current.id)
+        current = traversal_cache.get_note(current.parent_id)
+    return root_index_map[current.id]
 
 
 def keep_edited_root_in_place(
@@ -732,6 +818,15 @@ def _select_view(
     traversal_cache: _SnapshotTraversalCache,
 ) -> _ViewSelection:
     normalized_sort_mode = normalize_sort_mode(sort_mode)
+    page_root_ids = None
+    if not is_untagged_view:
+        page_root_ids = note_page_root_ids(search)
+    if page_root_ids is not None:
+        # A reference page lists its notes in the search's order, whatever the tab's order
+        # and filters (it has no sort or filter controls).
+        normalized_sort_mode = "normal"
+        date_filter = None
+        file_filter = None
     if normalized_sort_mode == "normal":
         ordered_root_ids = traversal_cache.get_children(None)
         root_sort_timestamps: Dict[str, datetime] = {}
@@ -746,7 +841,10 @@ def _select_view(
         ordered_root_ids, date_filter, editing_note_id=editing_note_id, traversal_cache=traversal_cache,
     )
     root_count_total = len(ordered_root_ids)
-    if is_untagged_view:
+    if page_root_ids is not None:
+        search_scope = _note_page_scope(page_root_ids)
+        root_count_total = len(page_root_ids)
+    elif is_untagged_view:
         search_scope = _apply_untagged_view(
             ordered_root_ids=ordered_root_ids,
         )

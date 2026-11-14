@@ -141,3 +141,39 @@ def test_an_imports_search_finds_every_note_of_its_files(index: SearchIndex) -> 
 
 def test_suggestions_after_a_value_read_inherited_values_too(index: SearchIndex) -> None:
     assert "knee" in index.suggest_all_tag_completions(query="jogging:miles>2 kn")
+
+
+# Search suggestions run beside changes (2026-11-14), so a note can be deleted between the index's
+# reading and the tree's: it is no longer found, and nothing fails. A search answering a view runs
+# in the vault's write turn and never meets it.
+def _deleted_before_the_tree_is_read(index: SearchIndex, monkeypatch, reader_name: str, *deleted: str) -> None:
+    store = note_store_module.store
+    reader = getattr(index, reader_name)
+
+    def deleting_first(*args):
+        with store._lock:
+            for note_id in deleted:
+                if note_id in store._note_map:
+                    del store._note_map[note_id]
+        return reader(*args)
+
+    monkeypatch.setattr(index, reader_name, deleting_first)
+
+
+def test_a_note_deleted_while_its_inherited_values_are_read_is_not_found(index: SearchIndex, monkeypatch) -> None:
+    _deleted_before_the_tree_is_read(index, monkeypatch, "_inherited_values_reader", RUN_NOTE)
+    found = index.query_note_ids("jogging:miles>2")
+    assert RUN_NOTE not in found
+    assert {RUN, KNEE, LONG_RUN} <= found
+
+
+def test_notes_under_a_parent_deleted_meanwhile_are_not_found(index: SearchIndex, monkeypatch) -> None:
+    _deleted_before_the_tree_is_read(index, monkeypatch, "_inherited_values_reader", RUN)
+    found = index.query_note_ids("jogging:miles>2")
+    assert not {RUN, RUN_NOTE, KNEE} & found
+    assert {LONG_RUN, LONG_RUN_NOTE} <= found
+
+
+def test_a_note_deleted_while_its_stats_figure_is_read_is_not_found(index: SearchIndex, monkeypatch) -> None:
+    _deleted_before_the_tree_is_read(index, monkeypatch, "_stats_reader", MEAL_TOTAL)
+    assert MEAL_TOTAL not in index.query_note_ids("@sum:calories")

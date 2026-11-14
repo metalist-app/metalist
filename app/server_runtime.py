@@ -24,6 +24,7 @@ from cryptography.hazmat.primitives.asymmetric.types import CertificatePublicKey
 from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID
 from app.data_directory import resolve_data_directory
 from app.db.schema import NAMESPACE_LAUNCH_PROFILE_TABLE
+from app.db.schema import SHARED_ON_NETWORK_COLUMN
 from app.db.schema import initialize_schema
 from app.db.live_recovery import recover_pending_change
 from app.db.settings_sql import insert_default_settings
@@ -31,6 +32,7 @@ from app.services.exception_capture import CapturedExceptionContext
 from app.security.shell_execution import enable_shell_execution_for_launch
 from app.security.shell_execution import SHELL_EXECUTION_ENV_NAME
 from app.services.input_errors import NamespaceInputRejected
+from app.security.own_addresses import own_host_names
 
 if sys.platform == "win32":
     import msvcrt
@@ -54,6 +56,14 @@ _DEFAULT_LOGS_DIRECTORY_NAME = "logs"
 _DEFAULT_NAMESPACE = "default"
 _DEFAULT_HTTP_PORT = 8000
 _DEFAULT_HTTPS_PORT = 8443
+# A vault's server listens on this computer only, or on the network too when the vault is shared
+# (Manage Vault Ports). Nothing overrides that choice: METALIST_HOST, which once did, is retired.
+LOOPBACK_BIND_HOST = "127.0.0.1"
+RETIRED_HOST_ENV_NAME = "METALIST_HOST"
+NETWORK_BIND_HOST = "0.0.0.0"
+# The address a vault's server chose when it started, told to the app it imports (app/main.py).
+# Every start chooses again, so a restart after the vault's sharing changed listens anew.
+CHOSEN_BIND_HOST_ENV_NAME = "METALIST_CHOSEN_BIND_HOST"
 # Ports are 16-bit, so valid ones run from 1 to one below this.
 # Connecting a UDP socket here sends nothing; it only makes the OS pick the outgoing address.
 _LAN_PROBE_HOST = "8.8.8.8"
@@ -332,6 +342,78 @@ def load_namespace_launch_profile(*, namespace: str) -> NamespaceLaunchProfile |
     finally:
         connection.close()
     return profile
+
+
+def load_namespace_network_sharing(*, namespace: str) -> bool:
+    """Whether the vault is shared on the network. Readable while the vault is locked."""
+    normalized_namespace = validate_namespace(namespace=namespace)
+    connection = _connect_namespace_database(namespace=normalized_namespace, create_if_missing=False)
+    if connection is None:
+        raise RuntimeError(f"Vault {normalized_namespace} has no database")
+    try:
+        row = connection.execute(
+            f"SELECT {SHARED_ON_NETWORK_COLUMN} FROM {NAMESPACE_LAUNCH_PROFILE_TABLE} WHERE namespace = ?",
+            (normalized_namespace,),
+        ).fetchone()
+    finally:
+        connection.close()
+    if row is None:
+        raise RuntimeError(_missing_launch_profile_message(namespace=normalized_namespace))
+    if row[0] not in (0, 1):
+        raise RuntimeError(f"Vault {normalized_namespace} has an invalid {SHARED_ON_NETWORK_COLUMN}: {row[0]!r}")
+    return row[0] == 1
+
+
+def save_namespace_network_sharing(*, namespace: str, shared: bool) -> None:
+    if not isinstance(shared, bool):
+        raise TypeError(f"shared must be a bool, got {type(shared)}")
+    normalized_namespace = validate_namespace(namespace=namespace)
+    connection = _connect_namespace_database(namespace=normalized_namespace, create_if_missing=False)
+    if connection is None:
+        raise RuntimeError(f"Vault {normalized_namespace} has no database")
+    try:
+        cursor = connection.execute(
+            f"UPDATE {NAMESPACE_LAUNCH_PROFILE_TABLE} SET {SHARED_ON_NETWORK_COLUMN} = ?, updated_at = ? WHERE namespace = ?",
+            (int(shared), _utc_timestamp(), normalized_namespace),
+        )
+        if cursor.rowcount != 1:
+            raise RuntimeError(_missing_launch_profile_message(namespace=normalized_namespace))
+        connection.commit()
+    finally:
+        connection.close()
+
+
+def refuse_retired_host_setting(*, environ: Mapping[str, str]) -> None:
+    """METALIST_HOST once said where every vault listened, overriding each vault's own choice
+    unseen (it shared a vault the user had just unshared, 2026-11-13). It is retired: a start
+    that finds it stops and says to remove it, rather than ignore a setting someone relies on."""
+    if RETIRED_HOST_ENV_NAME in environ:
+        raise RuntimeError(
+            f"{RETIRED_HOST_ENV_NAME} is no longer read: each vault says whether it is shared on the "
+            f"network (Manage Vault Ports). Remove {RETIRED_HOST_ENV_NAME} from the environment that "
+            f"starts MetaList."
+        )
+
+
+def resolve_vault_bind_host(*, environ: Mapping[str, str], namespace: str | None) -> str:
+    """Where a vault's server listens: the network when the vault is shared, this computer only
+    when it is not (or when no vault is chosen, as in tests)."""
+    refuse_retired_host_setting(environ=environ)
+    if namespace is None:
+        return LOOPBACK_BIND_HOST
+    if load_namespace_network_sharing(namespace=namespace):
+        return NETWORK_BIND_HOST
+    return LOOPBACK_BIND_HOST
+
+
+def chosen_bind_host(*, environ: Mapping[str, str]) -> str:
+    """The address this vault's server chose when it started (main.py); tests set it themselves."""
+    if CHOSEN_BIND_HOST_ENV_NAME not in environ:
+        raise RuntimeError(f"{CHOSEN_BIND_HOST_ENV_NAME} is set by the vault's server before it imports the app")
+    chosen_host = environ[CHOSEN_BIND_HOST_ENV_NAME]
+    if chosen_host.strip() == "":
+        raise RuntimeError(f"{CHOSEN_BIND_HOST_ENV_NAME} must not be empty")
+    return chosen_host
 
 
 def _read_namespace_launch_profile(
@@ -991,6 +1073,11 @@ def _write_default_tls_pair(*, environ: Mapping[str, str], reason: str) -> None:
         x509.DNSName(hostname),
         x509.IPAddress(ipaddress.ip_address("127.0.0.1")),
     ]
+    # The computer's .local name too, the one a shared vault is best opened at from another
+    # device: it stays the same when the router gives the computer a new address.
+    for own_name in sorted(own_host_names()):
+        if own_name != hostname.casefold():
+            san_entries.append(x509.DNSName(own_name))
     if lan_ip is not None and lan_ip != "127.0.0.1":
         san_entries.append(x509.IPAddress(ipaddress.ip_address(lan_ip)))
 
@@ -1074,7 +1161,9 @@ def _resolve_https_port(*, environ: Mapping[str, str], ssl_certfile: str | None)
 def resolve_main_server_config(*, environ: Mapping[str, str]) -> MainServerConfig:
     ssl_certfile, ssl_keyfile = _resolve_tls_pair(environ=environ)
 
-    host = _read_text(environ=environ, name="METALIST_HOST", fallback="127.0.0.1")
+    # The address that reaches a vault on this computer, whether or not it is shared; a vault's
+    # server listens where resolve_vault_bind_host chose (main.py).
+    host = LOOPBACK_BIND_HOST
     port = _read_int(environ=environ, name="METALIST_PORT", fallback=_DEFAULT_HTTP_PORT)
     https_port = _resolve_https_port(environ=environ, ssl_certfile=ssl_certfile)
     proxy_headers = _read_flag(environ=environ, name="METALIST_PROXY_HEADERS", fallback=True)

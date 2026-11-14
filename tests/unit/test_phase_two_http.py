@@ -101,7 +101,7 @@ def test_upload_checks_limit_and_closes_file(monkeypatch, limit_delta):
 @pytest.mark.parametrize('header,value', [('Host','[broken'),('Origin','http://[broken')])
 def test_malformed_authority_returns_4xx_through_middleware(header, value):
     app = FastAPI()
-    app.add_middleware(RequestBoundaryMiddleware, allowed_hosts=frozenset({'localhost'}))
+    app.add_middleware(RequestBoundaryMiddleware, allowed_hosts=frozenset({'localhost'}), accepts_own_addresses=False)
     @app.post('/fixture')
     @transactional_route
     def endpoint():

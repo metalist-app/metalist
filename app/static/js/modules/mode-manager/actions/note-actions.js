@@ -29,6 +29,7 @@ import { actionSaveNote } from './content-actions.js';
 import { actionDeselectNote, actionSaveAndExitEditingWithoutRefreshing, actionSwitchNotes, actionSelectNote } from './selection-actions.js';
 import { actionRefreshAndMaybeSelect } from './ui-actions.js';
 import { MS_PER_SECOND } from '../../time-units.js';
+import { refuseOutsideLinkedNote, searchQueryForNewNotes } from '../services/reference-page-edit-guard.js';
 
 const ROOT_REORDER_BLOCKED_BANNER_SECONDS = 5;
 const COPIED_NOTE_MISSING_BANNER_SECONDS = 6;
@@ -519,10 +520,13 @@ async function createNoteWithPlacement(placeAtTop) {
 
     // A sibling of a child note is not a root note, so the sort does not limit it.
     if (!placeAtTop && currentNoteId) {
+        if (refuseOutsideLinkedNote('sibling', currentNoteId, '')) {
+            return null;
+        }
         if (isRootNoteId(currentNoteId) && blockRootNoteCreation('below', 'createNote')) {
             return null;
         }
-    } else if (blockRootNoteCreation('top', 'createNote')) {
+    } else if (refuseOutsideLinkedNote('root', '', '') || blockRootNoteCreation('top', 'createNote')) {
         return null;
     }
 
@@ -536,7 +540,7 @@ async function createNoteWithPlacement(placeAtTop) {
             currentNoteId,
             searchQuery: ModeContext.searchQuery,
         }, Logger.LogCategory.DEBUG);
-        data = await NotesAPI.createSibling(currentNoteId, ModeContext.searchQuery);
+        data = await NotesAPI.createSibling(currentNoteId, searchQueryForNewNotes());
     } else {
         // The first loaded note is the list's first root only when the band of
         // loaded roots starts there; otherwise ask the server for the true top.
@@ -550,7 +554,7 @@ async function createNoteWithPlacement(placeAtTop) {
             firstVisibleNoteId,
             searchQuery: ModeContext.searchQuery,
         }, Logger.LogCategory.DEBUG);
-        data = await NotesAPI.createNote(firstVisibleNoteId, ModeContext.searchQuery);
+        data = await NotesAPI.createNote(firstVisibleNoteId, searchQueryForNewNotes());
     }
 
     const newNoteId = data.id;
@@ -586,6 +590,9 @@ export async function createNoteAfterParent() {
         return await createNote();
     }
 
+    if (refuseOutsideLinkedNote('afterParent', currentNoteId, '')) {
+        return null;
+    }
     const parentNoteId = DOMUtils.getNoteById(currentNoteId).dataset.parentId;
     // A sibling of a root parent is itself a root, which a sort may forbid here.
     if (isRootNoteId(parentNoteId) && blockRootNoteCreation('below', 'createNoteAfterParent')) {
@@ -601,7 +608,7 @@ export async function createNoteAfterParent() {
         parentNoteId,
         searchQuery: ModeContext.searchQuery,
     }, Logger.LogCategory.DEBUG);
-    const data = await NotesAPI.createSibling(parentNoteId, ModeContext.searchQuery);
+    const data = await NotesAPI.createSibling(parentNoteId, searchQueryForNewNotes());
     const newNoteId = data.id;
     await actionSwitchNotes(newNoteId, { initialCaretVisibility: 'visible' });
     return newNoteId;
@@ -622,6 +629,9 @@ export async function createChildNote() {
         Logger.logDebug('Cannot create child note: no parent note selected', {}, Logger.LogCategory.DEBUG);
         return await createNote();
     }
+    if (refuseOutsideLinkedNote('child', currentNoteId, '')) {
+        return null;
+    }
 
     if (ModeContext.isEditing && ModeContext.editSessionHasEdits && currentNoteId) {
         await actionSaveNote(currentNoteId);
@@ -631,7 +641,7 @@ export async function createChildNote() {
         parentNoteId: currentNoteId 
     }, Logger.LogCategory.DEBUG);
     
-    const data = await NotesAPI.createChild(currentNoteId, ModeContext.searchQuery);
+    const data = await NotesAPI.createChild(currentNoteId, searchQueryForNewNotes());
     const newNoteId = data.id;
 
 	    const caretOptions = { initialCaretVisibility: 'visible' };
@@ -657,6 +667,9 @@ export async function moveNoteUp(noteId) {
 
     if (!noteId) {
         throw new Error('Cannot move note: noteId is required');
+    }
+    if (refuseOutsideLinkedNote('move', noteId, '')) {
+        return;
     }
     if (shouldBlockRootReorder(noteId, 'moveNoteUp')) {
         return;
@@ -694,6 +707,9 @@ export async function moveNoteDown(noteId) {
 
     if (!noteId) {
         throw new Error('Cannot move note: noteId is required');
+    }
+    if (refuseOutsideLinkedNote('move', noteId, '')) {
+        return;
     }
     if (shouldBlockRootReorder(noteId, 'moveNoteDown')) {
         return;
@@ -741,7 +757,7 @@ export async function moveNoteToTop(noteId) {
         await actionSaveNote(noteId);
     }
 
-    const moveResponse = await NotesAPI.moveNoteToTop(noteId, ModeContext.searchQuery);
+    const moveResponse = await NotesAPI.moveNoteToTop(noteId, searchQueryForNewNotes());
     await recordStructuralNoteInteractionIfMoved(noteId, 'move', moveResponse);
 
     if (ModeContext.isEditing) {
@@ -816,7 +832,7 @@ export async function moveNoteToBottom(noteId) {
     }
 
     const hold = moveToBottomHold(noteId);
-    const moveResponse = await NotesAPI.moveNoteToBottom(noteId, ModeContext.searchQuery);
+    const moveResponse = await NotesAPI.moveNoteToBottom(noteId, searchQueryForNewNotes());
     await recordStructuralNoteInteractionIfMoved(noteId, 'move', moveResponse);
 
     const refreshOptions = { startedAt, context: 'moveNoteToBottom' };
@@ -868,6 +884,9 @@ export async function moveNoteToSiblingPosition(noteId, siblingId, position, new
     if (!noteId) {
         throw new Error('Cannot move note: noteId is required');
     }
+    if (refuseOutsideLinkedNote('move', noteId, '')) {
+        return;
+    }
     if (!siblingId) {
         throw new Error('Cannot move note: siblingId is required');
     }
@@ -882,6 +901,9 @@ export async function moveNoteToSiblingPosition(noteId, siblingId, position, new
     }
     if (dragDirection !== 'up' && dragDirection !== 'down') {
         throw new Error('Cannot move note: dragDirection must be up or down');
+    }
+    if (refuseOutsideLinkedNote('drop', noteId, siblingId)) {
+        return;
     }
     if ((newParentId === null || typeof newParentId === 'undefined') && shouldBlockRootReorder(noteId, 'moveNoteToSiblingPosition')) {
         return;
@@ -929,6 +951,9 @@ export async function indentNote(noteId) {
 
     if (!noteId) {
         throw new Error('Cannot indent note: noteId is required');
+    }
+    if (refuseOutsideLinkedNote('indent', noteId, '')) {
+        return;
     }
 
     const noteElement = DOMUtils.getNoteById(noteId);
@@ -979,12 +1004,15 @@ export async function outdentNote(noteId) {
     if (!noteId) {
         throw new Error('Cannot outdent note: noteId is required');
     }
+    if (refuseOutsideLinkedNote('outdent', noteId, '')) {
+        return;
+    }
 
     if (ModeContext.editSessionHasEdits && noteId === ModeContext.currentNoteId) {
         await actionSaveNote(noteId);
     }
 
-    const outdentResponse = await NotesAPI.outdentNote(noteId, ModeContext.searchQuery);
+    const outdentResponse = await NotesAPI.outdentNote(noteId, searchQueryForNewNotes());
     await recordStructuralNoteInteractionIfMoved(noteId, 'outdent', outdentResponse);
 
     if (ModeContext.isEditing) {
@@ -1155,6 +1183,9 @@ export async function splitCurrentNoteFromSelection() {
         });
         return false;
     }
+    if (refuseOutsideLinkedNote('sibling', currentNoteId, '')) {
+        return false;
+    }
     if (isRootNoteId(currentNoteId) && blockRootNoteCreation('below', 'splitNote')) {
         return false;
     }
@@ -1295,6 +1326,9 @@ async function pasteAsSibling(actionName, requestPaste) {
     const targetElement = DOMUtils.getNoteById(currentNoteId);
     const targetIsEmpty = DOMUtils.getNoteContent(targetElement).textContent.trim() === ''
         && targetElement.querySelector('.note') === null;
+    if (!targetIsEmpty && refuseOutsideLinkedNote('sibling', currentNoteId, '')) {
+        return false;
+    }
     if (!targetIsEmpty && isRootNoteId(currentNoteId) && blockRootNoteCreation('below', 'pasteNoteSibling')) {
         return false;
     }
@@ -1349,6 +1383,9 @@ async function pasteAsChild(actionName, requestPaste) {
 
     if (!ModeContext.isEditing || !currentNoteId) {
         throw new Error('Cannot paste child: no note selected');
+    }
+    if (refuseOutsideLinkedNote('child', currentNoteId, '')) {
+        return false;
     }
 
     if (ModeContext.editSessionHasEdits) {

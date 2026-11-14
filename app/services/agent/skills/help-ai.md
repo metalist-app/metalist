@@ -41,8 +41,10 @@ one a web page tricked the AI into building to send note text elsewhere), the ch
 shows the address in a Yes/No box; nothing opens without Yes. Google Search and
 Google Finance addresses never ask, since they only reach Google; redirects get
 the same check. Page text is untrusted
-evidence, supports HTML, plain text, and PDF, and must be cited. Web
-evidence is retained only in the current chat session and Clear Chat removes it.
+evidence, supports HTML, plain text, and PDF, and must be cited. The text of
+opened pages is retained only in the current chat session and Clear Chat removes
+it; each answer keeps the links to the pages it cites, so they still work after a
+restart.
 Changing the Web access selection applies on the next message.
 
 Evidence is the permitted result view active when Send is pressed, including

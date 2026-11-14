@@ -253,7 +253,7 @@ def test_standalone_reference_and_source_chrome(monkeypatch, content, standalone
     assert "note-backlinks-link" not in host
     if TARGET_ID in content:
         assert f'data-source-note-id="{TARGET_ID}"' in source
-        assert 'data-referrer-count="1"' in source
+        assert 'title="1 backlink"' in source
         assert source.index("note-backlinks-badge") < source.index("Source")
 
 
@@ -1067,14 +1067,12 @@ def _referrer_ids(count: int) -> List[str]:
     return [f"{index:08x}-5555-4555-8555-555555555555" for index in range(count)]
 
 
-@pytest.mark.parametrize(("referrer_count", "shown", "wrapper_classes", "title"), [
-    (1, "1", ["note-with-backlinks"], "Referenced by 1 note"),
-    (3, "3", ["note-with-backlinks"], "Referenced by 3 notes"),
-    (12, "12", ["note-with-backlinks", "note-with-backlinks-wide"], "Referenced by 12 notes"),
-    (99, "99", ["note-with-backlinks", "note-with-backlinks-wide"], "Referenced by 99 notes"),
-    (150, "99+", ["note-with-backlinks", "note-with-backlinks-widest"], "Referenced by 150 notes"),
+@pytest.mark.parametrize(("referrer_count", "title"), [
+    (1, "1 backlink"),
+    (3, "3 backlinks"),
+    (150, "150 backlinks"),
 ])
-def test_the_referenced_by_badge_counts_the_referring_notes(monkeypatch, referrer_count, shown, wrapper_classes, title):
+def test_the_referenced_by_badge_counts_the_referring_notes(monkeypatch, referrer_count, title):
     # docs/ui/references.md, Referenced by: one badge per referenced note, counting notes, not references.
     referrers = _referrer_ids(referrer_count)
     notes = {TARGET_ID: _Note(TARGET_ID, None, None, HOST_ID, False, "Source", "")}
@@ -1089,10 +1087,10 @@ def test_the_referenced_by_badge_counts_the_referring_notes(monkeypatch, referre
         monkeypatch=monkeypatch, notes=notes, children_by_parent={None: [TARGET_ID, HOST_ID], HOST_ID: referrers},
     )
     source = state.payloads[TARGET_ID]["content"]
-    assert f'data-referrer-count="{shown}"' in source
+    # The backlinks icon, the same for every count (2026-11-13); the count is in its tooltip.
     assert f'title="{title}" aria-label="{title}"></button>' in source
     wrapper = re.search(r'<div class="([^"]*note-with-backlinks[^"]*)">', source).group(1).split()
-    assert wrapper == wrapper_classes
+    assert wrapper == ["note-with-backlinks"]
 
 
 def test_a_note_linking_twice_counts_once(monkeypatch):
@@ -1101,7 +1099,7 @@ def test_a_note_linking_twice_counts_once(monkeypatch):
         TARGET_ID: _Note(TARGET_ID, None, HOST_ID, None, False, "Source", ""),
     }
     state = _state_for(monkeypatch=monkeypatch, notes=notes, children_by_parent={None: list(notes)})
-    assert 'data-referrer-count="1" title="Referenced by 1 note"' in state.payloads[TARGET_ID]["content"]
+    assert 'title="1 backlink"' in state.payloads[TARGET_ID]["content"]
 
 
 # The text of the one note link in a rendered host note.

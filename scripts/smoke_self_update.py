@@ -226,9 +226,12 @@ def run(wheel: Path, *, repair: bool) -> None:
                 for namespace, port, https_port in profiles:
                     smoke._verify_namespace(host="127.0.0.1", namespace=namespace, http_port=port, https_port=https_port,
                                             version=old_version, tls_context=tls_context)
-                lan_host = smoke._verify_remembered_network_settings(
-                    executable=executable, environment=environment, directory=launch_directory,
-                    profiles=profiles, version=old_version, tls_context=tls_context, log=log)
+                scripts = directory / "tools/metalist" / ("Scripts" if os.name == "nt" else "bin")
+                # The published repair baseline shares the old way; the update converts it.
+                lan_host = smoke._verify_shared_vaults_on_network(
+                    executable=executable, python=scripts / ("python.exe" if os.name == "nt" else "python"),
+                    environment=environment, directory=launch_directory, profiles=profiles,
+                    version=old_version, tls_context=tls_context, log=log, shares_the_old_way=repair)
                 subprocess.run(update_command, env=environment, cwd=launch_directory, stdout=log,
                                stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, check=True,
                                timeout=_UPDATE_TIMEOUT_SECONDS)

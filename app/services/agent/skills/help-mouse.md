@@ -27,7 +27,7 @@ Sources: docs/ui/controls.md
 | Click `×` or `←` on a reference view's chip, or press Escape | `×`: back to the search the reference views started from, closing them all; `←` and Escape: back one level; both to the exact scroll position you left |
 | Type in search while viewing a reference source | Dismiss reference-source mode and keep the current search context as a normal one |
 | Right-click anywhere inside a rendered note reference | Choose **Go to Source Note** to open the same temporary reference-source context |
-| Click a note's Referenced by badge (the blue count at its top right), or Enter on it | Open **Referenced by**, the notes referencing it; a note being edited is saved first. × or Escape goes back |
+| Click a note's backlinks icon (the reference icon mirrored, at its top right), or Enter on it | Open **Backlinks**, the notes referencing it; a note being edited is saved first. ◀ or Escape goes back |
 | Press `@todo` / `@done` checkbox | Toggle the note status on mouse down. If another note is being edited, save + exit edit mode first and do not enter edit mode for the toggled note. In an embed it only shows the status; a press does nothing. |
 | Press a Markdown task's box (`- [ ]` in an `@markdown` note) | Tick or empty that task on mouse down: its `[ ]` becomes `[x]` in the note's text, or back; ⌘Z undoes it. As the `@todo` checkbox: another note being edited is saved first, the note does not enter edit mode, and in an embed the box only shows the state. |
 | Press note shell / blank space | Select/edit that note on mouse down. Note content waits until click so drag/drop can disambiguate click vs drag. |

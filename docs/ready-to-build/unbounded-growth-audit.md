@@ -81,7 +81,7 @@ Verdicts: **stop** = can stop MetaList or a feature; **grows** = no bound; **gap
 | F4 | Vault delete and rename job files (`<tempdir>/metalist-runtime/namespace-{delete,rename}-jobs/<id>.json`, or `<data>/runtime/…` with `METALIST_DATA_DIRECTORY`; `app/server_runtime.py:39-41`) | one per delete or rename (`app/services/namespace_deletion_jobs.py:117`, `namespace_rename_jobs.py:113`) | none; the OS clears its temp folder | ok in temp; **grows** under a data folder (tiny) |
 | F5 | Import uploads (`<data>/import-uploads/<id>/`) | each import started | discarded by the browser (`app/api/routes/imports.py:206`), at start (`app/main.py:188`) and at lock | ok |
 | F6 | Python temp folders (backup, restore, pre-update, preflight venv, link icons) | each operation | removed by their context managers; left only after SIGKILL or power loss, then the OS temp clean-up | ok |
-| F7 | `.recovery.lock`, `admission.lock`, `network-settings.json`, certs | — | one each | ok |
+| F7 | `.recovery.lock`, `admission.lock`, certs (`network-settings.json` retired 2026-11-13, removed on first start) | — | one each | ok |
 
 ### Browser storage and memory
 

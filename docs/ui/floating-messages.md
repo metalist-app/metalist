@@ -26,7 +26,7 @@ News, errors and lasting conditions float above the page as cards; nothing on th
 
 ## Progress
 
-- While a dialog's action runs, a lasting card says so ("Opening vault…", "Creating vault…", "Preparing vault rename…", "Saving vault ports…", "Deleting vault…", "Restoring backup…", "Choosing a backup folder…", "Saving idle timeout…") and leaves when it ends (`FloatingMessages.showProgress` / `end`). The dialog writes no status line, its buttons stay dimmed, and it cannot be closed until the action ends. Progress cards are not kept for Recent Messages.
+- While a dialog's action runs, a lasting card says so ("Opening vault…", "Creating vault…", "Preparing vault rename…", "Saving vault ports…", "Restarting this vault…", "Deleting vault…", "Restoring backup…", "Choosing a backup folder…", "Saving idle timeout…") and leaves when it ends (`FloatingMessages.showProgress` / `end`). The dialog writes no status line, its buttons stay dimmed, and it cannot be closed until the action ends. Progress cards are not kept for Recent Messages.
 - Loading placeholders ("Loading vaults…") stay in their dialogs: they hold the place of what is loading. So do dialogs whose content is the progress (the password's "Encrypting notes…", the link-title retry, Version Info's update section) and Edit Tag Relationships' "Updating search index…" overlay.
 - Test: `scripts/browser-progress-card-regressions.mjs` (`progress-cards` suite).
 

@@ -70,6 +70,9 @@ The AI conversation (`ai_chat`, database version 19: one row, the vault's chat a
 `app/services/ai_chat.py`) encrypts its whole payload (`state_json`): messages, summaries, the
 agent's records and the IDs of the notes the AI could see. Its row ID and save timestamps are
 readable structural metadata. Clear Chat deletes the row.
+Whether a vault is shared on the network (`namespace_launch_profile.shared_on_network`,
+database version 20) is readable structural metadata, beside the vault's ports: a vault's
+server reads it before the vault is unlocked, to choose where it listens.
 Site icons beside link titles (`link_icons`, database version 12) encrypt the site
 (`origin`) and the icon (`icon_png`) like link titles; their lookup status, last
 error kind, failure count and check timestamps are readable structural metadata.
@@ -263,9 +266,9 @@ bounded process memory and is cleared with its chat/auth disclosure lifecycle.
 The server rejects `@shell` execution and shell-output polling unless the
 top-level process was explicitly launched with `--enable-shell`. The source
 or installed orchestrator propagates that capability to every namespace child without
-persisting it in namespace data. Enabling shell defaults `METALIST_HOST` to
-`127.0.0.1`, but an explicit LAN/wildcard bind may be used so other clients can
-access non-shell features.
+persisting it in namespace data. It does not change where a vault listens: a
+vault shared on the network (see [Sharing on the Network](#sharing-on-the-network))
+still serves other computers its non-shell features.
 
 Shell start and status routes independently require both a loopback client and
 a loopback request host. They also require password protection for the active
@@ -278,8 +281,8 @@ error response.
 The built-in HTTPS proxy discards incoming `Forwarded` and `X-Forwarded-*`
 headers, then writes `X-Forwarded-For` from the actual socket peer and
 `X-Forwarded-Proto=https`. This prevents a LAN client from claiming a loopback
-identity. On a combined LAN/shell launch, use loopback HTTP on the host laptop
-for shell actions and the LAN HTTPS address for remote non-shell access.
+identity. With a shared vault and `--enable-shell`, use loopback HTTP on the host
+laptop for shell actions and the LAN HTTPS address for remote non-shell access.
 
 ### Stored Note HTML
 
@@ -659,6 +662,45 @@ swap, or filesystem snapshots.
   Task Manager, a debugger, or another sufficiently privileged process from
   capturing its unlocked process memory.
 
+## Sharing on the Network
+
+Each vault says for itself whether other computers may open it: the Shared box in Manage
+Vault Ports, stored in the vault's launch profile (`shared_on_network`, database version 20).
+Nothing else decides it, and nothing overrides it.
+
+- **Where a vault listens.** A shared vault's server listens on every interface (`0.0.0.0`); a
+  vault not shared listens on `127.0.0.1` only (`app/server_runtime.resolve_vault_bind_host`).
+  A new vault, and a vault restored from a backup as a new one, is not shared. A restore into an
+  existing vault keeps that vault's choice: it belongs to this computer, not to the backup.
+- **Right away.** Saving Manage Vault Ports restarts each vault whose ports or sharing changed:
+  another running vault is stopped and started again on its saved profile; the vault the page is
+  in re-executes itself half a second after its answer, on its saved ports, and the page goes to
+  its new address once it answers there (`app/static/js/modules/server-restart.js`). To ask the
+  new address, a page's `connect-src` names its own host on any port (`own_host_on_any_port`,
+  `app/security/http_headers.py`); no other host. A page opened by an IPv6 literal cannot name
+  its host in CSP and reaches only its own port.
+- **Accepted hosts.** A shared vault accepts requests addressed to this computer's own names
+  (its host name, and `<name>.local` for multicast DNS) and to any address on its network
+  interfaces, looked up when a request needs it (`app/security/own_addresses.py`), so a new
+  address from the router needs no setting. A hostile page that rebinds its own domain to this
+  computer still sends its own domain as `Host`, which is none of these, so it is refused (400).
+  A vault not shared accepts loopback hosts only. `METALIST_ALLOWED_HOSTS` adds names reached
+  through a proxy.
+- **What another computer sees.** A request from another computer (its client address is
+  neither loopback nor one of this computer's addresses) sees only the vault it is in and the
+  shared vaults: the login page, the vault lists, Manage Vault Ports and the backup list leave
+  the others out, and a request naming one (open, switch, ports, delete, restore) is refused with
+  the same message as a vault that does not exist (`require_vaults_shown_to_requester`,
+  `app/api/routes/auth.py`). Opening a new vault from another computer is refused too: it would
+  not be shared. Port-conflict messages can still name a vault not shared, if another computer
+  picks one of its ports.
+- **Retired settings.** `METALIST_HOST` once chose where every vault listened and overrode each
+  vault's choice unseen; a start that finds it stops and says to remove it. The data root's
+  `network-settings.json`, which remembered it, is read once on the first start that finds it
+  (`app/network_settings.py`): if it shared MetaList, every vault becomes shared; addresses and
+  the computer's own names are dropped, as they are accepted anyway; any other allowed name stops
+  the start and asks for `METALIST_ALLOWED_HOSTS` in the environment; then the file is removed.
+
 ## Remote Access / HTTPS
 
 - Plain `python main.py` from a source checkout now restarts already-running namespaces from the current checkout, launches stopped namespaces with their saved profiles, prints their URLs, and exits.
@@ -668,17 +710,16 @@ swap, or filesystem snapshots.
 - Deleting a namespace removes its namespace directory on disk, including the namespace SQLite databases, launch-profile metadata, and backups under `~/MetaList/namespaces/<namespace>/`.
 - HTTPS is opt-in via existing PEM files at `certs/metalist-cert.pem` and `certs/metalist-key.pem`, or explicit `METALIST_TLS_CERT` and `METALIST_TLS_KEY`.
 - MetaList's own pair is self-signed, valid 825 days with EKU serverAuth (Apple's requirements for TLS server certificates). A start replaces it, with a new key, when fewer than 30 days remain or the certificate or key is unreadable or mismatched; `certs/renew.lock` keeps vaults starting together from reading a new certificate with the old key. Explicit `METALIST_TLS_CERT`/`METALIST_TLS_KEY` files are never touched. A changed LAN address does not renew it (decided 2026-11-11): a laptop moves between networks, and each new address would make phones warn again back home; `generate-lan-cert.sh` makes one for a new address by hand.
-- The default listener is loopback-only (`127.0.0.1`). When PEMs exist, MetaList starts HTTPS on the same bind host at port `8443` and redirects non-loopback HTTP hostnames to HTTPS.
+- A vault listens on loopback only (`127.0.0.1`) until it is shared ([Sharing on the Network](#sharing-on-the-network)). When PEMs exist, MetaList starts HTTPS on the same bind host at port `8443` and redirects non-loopback HTTP hostnames to HTTPS. MetaList's own certificate also names `<host>.local`.
 - For direct HTTPS from an explicit single-namespace `python main.py ...` run, set both:
   - `METALIST_TLS_CERT=/path/to/fullchain.pem`
   - `METALIST_TLS_KEY=/path/to/privkey.pem`
 - For a quick LAN cert, use `./scripts/generate-lan-cert.sh` and then open `https://<lan-ip>:8443` from the other machine.
-- For HTTPS terminated by a reverse proxy, keep MetaList on loopback and trust forwarded headers only from the proxy IPs:
-  - `METALIST_HOST=127.0.0.1`
+- For HTTPS terminated by a reverse proxy, leave the vault not shared (it listens on loopback) and trust forwarded headers only from the proxy IPs:
   - `METALIST_ALLOWED_HOSTS=notes.example.com`
   - `METALIST_FORWARDED_ALLOW_IPS=127.0.0.1,::1` (default)
 - An external proxy must preserve the original `Host` header and replace `X-Forwarded-For`/`X-Forwarded-Proto` with authoritative values. MetaList ignores `X-Forwarded-Host`; Uvicorn accepts forwarded scheme/client metadata only from `METALIST_FORWARDED_ALLOW_IPS`.
-- Every request must use a loopback host, the specific non-wildcard `METALIST_HOST`, or a hostname/IP explicitly listed in `METALIST_ALLOWED_HOSTS`. This blocks hostile DNS-rebinding `Host` values.
+- Every request must use a loopback host, a hostname/IP listed in `METALIST_ALLOWED_HOSTS`, or, for a shared vault, one of this computer's own names and addresses. This blocks hostile DNS-rebinding `Host` values.
 - State-changing browser requests must carry an `Origin` that exactly matches the effective request scheme, host, and port. Bearer-token clients without the auth cookie may omit `Origin`; cookie-authenticated requests may not.
 - Login rate limiting uses Uvicorn's resolved client address. A trusted proxy can supply that address through `X-Forwarded-For`; an untrusted sender's header is ignored by Uvicorn and never parsed directly by application code.
 - Namespace selection is independent of listener ports. Use `--namespace` / `METALIST_NAMESPACE` for DB selection and `--port` / `METALIST_PORT` for listener selection.

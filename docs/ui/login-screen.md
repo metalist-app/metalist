@@ -22,6 +22,12 @@ another vault (`BROWSER_TEST_SUITE=login-logo`), in a wide and a narrow window.
   fades in as a whole (about 250 ms): the namespace dropdown (when there is more
   than one namespace), the password field, then **OK**, 10 px apart and 72 px below
   the logo. If the list fails to load, the panel appears anyway with the error.
+- With only one vault to show, its name stands where the dropdown would be, centred
+  and alone (no box, no arrow, nothing after it), so the device still says which vault
+  it is opening (2026-11-13). The `default` vault goes unnamed, as in the page title.
+  Another computer is shown only the vault it is on and the shared ones
+  (`docs/security/README.md`, "Sharing on the Network"), so on a phone this is often
+  the one name.
 - The panel is transparent rather than hidden while it waits, so a browser can
   fill a saved password before it fades in; a filled field keeps the dark look
   (no yellow or blue autofill background).

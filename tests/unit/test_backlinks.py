@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
 import pytest
@@ -17,6 +18,7 @@ class _Note:
     parent_id: Optional[str]
     content: str
     tags: str = ""
+    updated_at: Optional[datetime] = None
 
 
 class _FakeStore:
@@ -65,7 +67,7 @@ def test_list_backlinks_for_note_finds_embed_and_link_tokens(monkeypatch: pytest
     assert [row["id"] for row in rows] == ["root-a", "child-b1"]
 
 
-def test_cached_backlinks_keep_current_tree_order_and_only_read_referrers(monkeypatch):
+def test_cached_backlinks_never_edited_keep_current_tree_order_and_only_read_referrers(monkeypatch):
     target_id = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
     notes = {
         "a": _Note("a", None, f"First [[{target_id}]]"),
@@ -178,3 +180,25 @@ def test_note_id_links_count_even_in_notes_with_square_formatting_wrappers(monke
         notes=notes, children_by_parent={None: list(notes)},
     ))
     assert [row["id"] for row in backlinks.list_backlinks_for_note(target_id, None)] == ["scoped", "embedded"]
+
+
+def test_backlinks_list_the_most_recently_edited_note_first(monkeypatch):
+    # The Backlinks page shows them in this order (docs/ready-to-build/reference-cards.md §3).
+    target_id = "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
+    def edited(day: int) -> datetime:
+        return datetime(2026, 11, day, tzinfo=timezone.utc)
+    notes = {
+        "old": _Note("old", None, f"[[{target_id}]]", updated_at=edited(1)),
+        "never": _Note("never", None, f"[[{target_id}]]"),
+        "new": _Note("new", None, f"[[{target_id}]] [[{target_id}]]", updated_at=edited(9)),
+        "middle-a": _Note("middle-a", None, f"[[{target_id}]]", updated_at=edited(5)),
+        "middle-b": _Note("middle-b", None, f"[[{target_id}]]", updated_at=edited(5)),
+        target_id: _Note(target_id, None, "Source"),
+    }
+    store = _FakeStore(notes=notes, children_by_parent={None: ["old", "never", "middle-b", "new", "middle-a", target_id]})
+    monkeypatch.setattr(backlinks, "note_store", store)
+
+    rows = backlinks.list_backlinks_for_note(target_id, None)
+
+    # Edited at the same time: in the tree's order. Never edited: last.
+    assert [row["id"] for row in rows] == ["new", "new", "middle-b", "middle-a", "old", "never"]

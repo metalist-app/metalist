@@ -6,7 +6,7 @@ This is a planning doc for an Electron wrapper around the existing FastAPI app s
 ## Current Web App Assumptions
 - The backend is a FastAPI server (Python) serving SSR HTML + JSON APIs.
 - The frontend is vanilla JS.
-- Plain source-checkout `python main.py` now bootstraps every known namespace and exits; explicit single-namespace runs still support `--namespace`, positional namespace shorthand (`python main.py work`), `--port`, `--https-port`, `METALIST_HOST`, `METALIST_PORT`, and optional TLS envs.
+- Plain source-checkout `python main.py` now bootstraps every known namespace and exits; explicit single-namespace runs still support `--namespace`, positional namespace shorthand (`python main.py work`), `--port`, `--https-port`, `METALIST_PORT`, and optional TLS envs (`METALIST_HOST` is retired: each vault's Shared box decides where it listens).
   - For Electron, loopback remains the intended bind target.
 
 ## Electron Wrapper Approach

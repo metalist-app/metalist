@@ -8,8 +8,11 @@ yet it opens Create Vault… instead. Create Vault… opens
 the new vault wizard: name and ports, then, in the new vault, a password, an AI
 and bringing in notes. Rename Current Vault… opens a rename form. Delete Vault…
 opens a confirmation form; do not execute deletion or imply it has happened.
-Manage Vault Ports… edits saved future launch profiles; saving does not launch,
-switch to, or restart a vault. Port changes take effect on a later launch.
+Manage Vault Ports… edits each vault's ports and whether it is shared on the
+network (the Shared box: other computers may open it). Saving restarts each
+running vault whose ports or sharing changed, at once; the current vault reopens
+at its new address and asks for its password again. A vault that is not shared
+does not appear on another computer at all.
 
 Back Up Now… is an operation, not merely opening a dialog. It can prompt for
 backup folder/settings and creates one versioned .tar.gz archive per vault

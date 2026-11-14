@@ -320,3 +320,45 @@ def test_imported_notes_join_the_catalog_in_the_background(notes) -> None:
     _note("one", ["Bank login"])
     build_catalog_in_background().join()
     assert _catalog._revision == store.revision
+
+
+# The background build gives way to the requests before each step (requests_in_flight.py,
+# 2026-11-13): a link clicked just after login paused while a whole vault was worked through.
+def test_the_background_build_gives_way_to_the_requests_between_steps(notes, monkeypatch) -> None:
+    import app.services.reference_suggestions as reference_suggestions
+
+    for index in range(5):
+        _note(f"note-{index}", [f"Bank login {index}"])
+    monkeypatch.setattr(reference_suggestions, "_NOTES_PER_BACKGROUND_STEP", 2)
+    steps: list[int] = []
+    monkeypatch.setattr(reference_suggestions.requests_in_flight, "give_way",
+                        lambda: steps.append(len(_catalog._entries)))
+
+    build_catalog_in_background().join()
+
+    # Before each step of at most two notes, and before the last check: never all at once.
+    note_count = len(store.snapshot())
+    assert len(steps) == -(-note_count // 2) + 1
+    assert all(later - earlier <= 2 for earlier, later in zip(steps, steps[1:]))
+    assert _catalog._revision == store.revision
+    assert set(_catalog._entries) == set(store.snapshot())
+    assert sorted(_ids("bank")) == [f"note-{index}" for index in range(5)]
+
+
+def test_a_lock_meanwhile_stops_the_background_build(notes, monkeypatch) -> None:
+    import app.services.reference_suggestions as reference_suggestions
+
+    for index in range(5):
+        _note(f"note-{index}", [f"Bank login {index}"])
+    monkeypatch.setattr(reference_suggestions, "_NOTES_PER_BACKGROUND_STEP", 2)
+
+    def lock_after_the_first_step() -> None:
+        if len(_catalog._entries) > 0:
+            _catalog.clear()
+
+    monkeypatch.setattr(reference_suggestions.requests_in_flight, "give_way", lock_after_the_first_step)
+
+    build_catalog_in_background().join()
+
+    # Emptied by the lock, and nothing of the notes' text written back after it.
+    assert _catalog._entries == {}

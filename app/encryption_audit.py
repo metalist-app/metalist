@@ -283,6 +283,12 @@ _LINK_ICONS_DATABASE_VERSION = 12
 # database creates it ahead of the migration.
 _AI_CHAT_TABLE = "ai_chat"
 _AI_CHAT_DATABASE_VERSION = 19
+# Migration 19→20 added shared_on_network to the launch profile: readable structural metadata,
+# read before unlock to choose the listening address. Before version 20 it may be missing, or
+# already present because opening a database adds it ahead of the migration.
+_LAUNCH_PROFILE_TABLE = "namespace_launch_profile"
+_SHARED_ON_NETWORK_COLUMNS = frozenset({"shared_on_network"})
+_SHARED_ON_NETWORK_DATABASE_VERSION = 20
 
 _PROPOSED_TAG_COLUMNS = frozenset(
     {
@@ -363,8 +369,8 @@ _MAIN_SCHEMA_BEFORE_CONTENT_MIGRATIONS = {
         }
     ),
     "search_interaction_history": _LEGACY_SEARCH_HISTORY_COLUMNS,
-    "namespace_launch_profile": frozenset(
-        {"namespace", "port", "https_port", "mcp_port", "created_at", "updated_at"}
+    _LAUNCH_PROFILE_TABLE: frozenset(
+        {"namespace", "port", "https_port", "mcp_port", "created_at", "updated_at", "shared_on_network"}
     ),
 }
 
@@ -653,6 +659,8 @@ _MIGRATION_DEFERRED_PLAINTEXT_FIELDS_BY_DATABASE_VERSION = dict(enumerate((
     frozenset(),
     # version 18
     frozenset(),
+    # version 19
+    frozenset(),
 )))
 
 
@@ -677,6 +685,7 @@ def _main_schema_for_database_version(
     database_version: int,
     actual_app_settings_columns: frozenset[str],
     actual_notes_columns: frozenset[str],
+    actual_launch_profile_columns: frozenset[str],
     actual_tables: set[str],
 ) -> dict[str, frozenset[str]]:
     if database_version < 0 or database_version > CURRENT_DATABASE_VERSION:
@@ -734,6 +743,17 @@ def _main_schema_for_database_version(
         resolved_schema = {table: columns for table, columns in resolved_schema.items() if table != _LINK_ICONS_TABLE}
     if database_version < _AI_CHAT_DATABASE_VERSION and _AI_CHAT_TABLE not in actual_tables:
         resolved_schema = {table: columns for table, columns in resolved_schema.items() if table != _AI_CHAT_TABLE}
+    # Before version 20 the network-sharing choice may be absent, or already added by the on-open
+    # schema helper.
+    if database_version < _SHARED_ON_NETWORK_DATABASE_VERSION and _SHARED_ON_NETWORK_COLUMNS.isdisjoint(
+        actual_launch_profile_columns
+    ):
+        if not _SHARED_ON_NETWORK_COLUMNS.issubset(resolved_schema[_LAUNCH_PROFILE_TABLE]):
+            raise RuntimeError("Current audit schema is missing the network-sharing column")
+        resolved_schema = {
+            **resolved_schema,
+            _LAUNCH_PROFILE_TABLE: resolved_schema[_LAUNCH_PROFILE_TABLE] - _SHARED_ON_NETWORK_COLUMNS,
+        }
     if database_version >= _OPENAI_CREDENTIALS_DATABASE_VERSION or not _OPENAI_CREDENTIAL_COLUMNS.isdisjoint(
         actual_app_settings_columns
     ):
@@ -1178,6 +1198,7 @@ def _audit_namespace(*, namespace: str, database_path: Path) -> NamespaceAuditRe
             _column_names(main_connection, table="app_settings")
         )
         notes_columns = frozenset(_column_names(main_connection, table="notes"))
+        launch_profile_columns = frozenset(_column_names(main_connection, table=_LAUNCH_PROFILE_TABLE))
         search_history_columns = frozenset()
         if "search_interaction_history" in main_table_names:
             search_history_columns = frozenset(
@@ -1235,6 +1256,7 @@ def _audit_namespace(*, namespace: str, database_path: Path) -> NamespaceAuditRe
         database_version=database_version,
         actual_app_settings_columns=app_settings_columns,
         actual_notes_columns=notes_columns,
+        actual_launch_profile_columns=launch_profile_columns,
         actual_tables=main_table_names,
     )
     _audit_database(

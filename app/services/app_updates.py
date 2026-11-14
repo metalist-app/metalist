@@ -14,6 +14,7 @@ import threading
 from uuid import UUID, uuid4
 
 from app.data_directory import resolve_data_directory
+from app.server_runtime import CHOSEN_BIND_HOST_ENV_NAME
 from app.services.exception_capture import CapturedExceptionContext
 from app.services.namespace_switcher import _is_process_running
 from app.services.self_update import _fetch_latest_pypi_version, _release_version_key
@@ -167,8 +168,10 @@ def launch_update_job(job_id: str) -> None:
     record = read_job(job_id)
     assert record['status'] == 'queued'
     environment = dict(os.environ)
-    # Restart every saved namespace, preserving LAN/TLS/data settings.
-    for name in ('METALIST_NAMESPACE', 'METALIST_PORT', 'METALIST_HTTPS_PORT', 'METALIST_ORCHESTRATED_CHILD'):
+    # Restart every saved namespace, preserving TLS/data settings; each vault chooses again where
+    # it listens.
+    for name in ('METALIST_NAMESPACE', 'METALIST_PORT', 'METALIST_HTTPS_PORT', 'METALIST_ORCHESTRATED_CHILD',
+                 CHOSEN_BIND_HOST_ENV_NAME):
         if name in environment:
             del environment[name]
     options: dict[str, object] = {'env': environment, 'stdin': subprocess.DEVNULL}

@@ -8,6 +8,8 @@ from typing import Dict, List, Sequence
 from app.usecases.base import QueryCommand
 from app.services.store import store, NodeRecord
 from app.services.sync import generate_new_uuid
+from app.services.note_store import store as note_store
+from app.services.tab_state import tab_state_store
 
 from app.db.session import begin_writer
 from app.db.notes_sql import (
@@ -80,6 +82,8 @@ def apply_delete_subtree(note_id: str) -> None:
     store.delete_subtree(note_id)
     # The deleted notes' decrypted text leaves memory; undo caches it again (apply_restore_records).
     forget_notes(ids_to_delete)
+    # A reference page left with none of its notes closes: its context shows its search again.
+    tab_state_store.close_pages_whose_notes_are_gone(note_exists=note_store.has_note)
 
 
 def apply_restore_records(records: Sequence[NodeRecord | SimpleNamespace], token: str) -> None:

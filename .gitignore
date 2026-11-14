@@ -62,4 +62,3 @@ pytest-report.xml
 # Design notes dropped in from planning outside this repo (AGENTS.md, "Design Inbox"): each is
 # filed elsewhere and removed from here, so nothing in the inbox is ever committed.
 /inbox/
-/outbox/

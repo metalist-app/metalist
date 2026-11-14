@@ -258,7 +258,7 @@ def test_search_redacts_descendants_of_matching_non_root(monkeypatch: pytest.Mon
     assert state.payloads["c2"]["flags"]["searchRedacted"]
 
 
-def test_or_query_for_two_child_uuids_redacts_unrelated_same_root_sibling(
+def test_or_query_for_two_child_uuids_shows_just_those_notes_as_roots(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     root_id = "10000000-0000-4000-8000-000000000000"
@@ -338,15 +338,14 @@ def test_or_query_for_two_child_uuids_redacts_unrelated_same_root_sibling(
         start_at_list_end=False,
     )
 
-    assert _visible_ids(state) == {
-        root_id,
-        first_match_id,
-        second_match_id,
-        unrelated_id,
-    }
+    # A search of only note ids is a reference page (an AI answer's references): just those
+    # notes, as roots in the search's order, with no parent and no grey bar for the unrelated
+    # sibling (2026-11-13; before, both showed).
+    assert [(entry["id"], entry["parentId"]) for entry in state.structure] == [
+        (first_match_id, None), (second_match_id, None),
+    ]
     assert not state.payloads[first_match_id]["flags"]["searchRedacted"]
     assert not state.payloads[second_match_id]["flags"]["searchRedacted"]
-    assert state.payloads[unrelated_id]["flags"]["searchRedacted"]
 
 
 def test_search_does_not_force_include_nonmatching_editing_root(monkeypatch: pytest.MonkeyPatch) -> None:

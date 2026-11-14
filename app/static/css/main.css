@@ -440,6 +440,21 @@ html:has(> body > .login-page[style*="display: flex"]:not(.login-page-covering):
     position: relative;
 }
 
+.login-namespace-select-wrap[hidden] {
+    display: none;
+}
+
+/* The one vault, where the list would be: its name alone, centred under the logo. */
+.login-namespace-name {
+    margin: 0;
+    padding: 10px 14px;
+    border: 1px solid transparent;
+    text-align: center;
+    color: rgba(255, 255, 255, 0.85);
+    font-size: 0.94rem;
+    overflow-wrap: anywhere;
+}
+
 .login-namespace-select-wrap::after {
     content: "";
     position: absolute;
@@ -1126,6 +1141,11 @@ html[data-theme="dark"] .search-suggestion-statistics-day summary {
 .namespace-ports-table input {
     width: 110px;
     min-width: 96px;
+}
+
+.namespace-ports-table input[type="checkbox"] {
+    width: auto;
+    min-width: 0;
 }
 
 .namespace-ports-name-cell {
@@ -6351,21 +6371,11 @@ html[data-theme="dark"] .note-reference-block.note-embed-held {
     padding-right: 1.6em;
 }
 
-/* The badge's width and half a character: wider for two digits and for 99+. A collapsed
-   note zeroes its blocks' padding (its one-line view), so it says so again. */
+/* The icon's width and half a character. A collapsed note zeroes its blocks' padding (its
+   one-line view), so it says so again. */
 .note-with-backlinks:not(.note-reference-only) > :not(.note-backlinks-link):first-of-type,
 .note.collapsed:not(.editing) > .note-content .note-with-backlinks:not(.note-reference-only) > :not(.note-backlinks-link):first-of-type {
-    padding-right: 1.8em;
-}
-
-.note-with-backlinks-wide:not(.note-reference-only) > :not(.note-backlinks-link):first-of-type,
-.note.collapsed:not(.editing) > .note-content .note-with-backlinks-wide:not(.note-reference-only) > :not(.note-backlinks-link):first-of-type {
-    padding-right: 2.4em;
-}
-
-.note-with-backlinks-widest:not(.note-reference-only) > :not(.note-backlinks-link):first-of-type,
-.note.collapsed:not(.editing) > .note-content .note-with-backlinks-widest:not(.note-reference-only) > :not(.note-backlinks-link):first-of-type {
-    padding-right: 3em;
+    padding-right: 1.7em;
 }
 
 /* An embed's holder that is referenced: the badge beside the embed's ↗. (No :has()
@@ -6374,67 +6384,44 @@ html[data-theme="dark"] .note-reference-block.note-embed-held {
     padding-right: 3.5em;
 }
 
-.note-with-backlinks-wide.note-reference-only .note-embed-root > .note-embed-body > .note-embed-content {
-    padding-right: 4.1em;
-}
-
-.note-with-backlinks-widest.note-reference-only .note-embed-root > .note-embed-body > .note-embed-content {
-    padding-right: 4.7em;
-}
-
 .note-with-backlinks.note-reference-only > .note-backlinks-badge {
     right: 1.7em;
 }
 
-/* Referenced by: how many notes reference this one, in link blue on a light tint of it.
-   A circle for one digit, a pill for more (docs/ui/references.md). */
+/* Backlinks: the notes that reference this one, as the reference icon mirrored, its arrow
+   pointing back (the maintainer, 2026-11-13); the count is in its tooltip. Coloured as the
+   embed's ↗. */
 .note-backlinks-badge {
     position: absolute;
-    top: 0.3em;
+    /* Centred on the first line, whatever the note's line height (1lh). */
+    top: calc((1lh - 1.2em) / 2);
     right: 0;
     box-sizing: border-box;
-    min-width: 1.5em;
-    height: 1.5em;
+    width: 1.2em;
+    height: 1.2em;
     margin: 0;
-    padding: 0 0.4em;
+    padding: 0;
     border: 0;
-    border-radius: 0.75em;
-    background: rgba(29, 95, 184, 0.12);
-    color: #1d5fb8;
-    font-family: inherit;
-    font-size: 0.75em;
-    font-weight: 600;
-    font-variant-numeric: tabular-nums;
-    font-style: normal;
-    line-height: 1.5em;
-    text-align: center;
-    text-decoration: none;
-    white-space: nowrap;
+    background-color: #64748b;
+    -webkit-mask: var(--note-reference-icon) center / contain no-repeat;
+    mask: var(--note-reference-icon) center / contain no-repeat;
+    transform: scaleX(-1);
+    font: inherit;
     cursor: var(--skin-cursor-pointer, pointer);
 }
 
-/* A collapsed note sets every element to its own text size; the badge keeps its smaller one. */
+/* A collapsed note sets every element to its own text size; the icon keeps the note's. */
 .note.collapsed:not(.editing) .note-content .note-backlinks-badge {
-    font-size: 0.75em !important;
-    line-height: 1.5em !important;
-}
-
-/* The number is drawn, not text: find and search marks never read it. */
-.note-backlinks-badge::after {
-    content: attr(data-referrer-count);
+    font-size: inherit !important;
 }
 
 .note-backlinks-badge:hover {
-    background: rgba(29, 95, 184, 0.24);
+    background-color: #2563eb;
 }
 
 .note-backlinks-badge:focus-visible {
     outline: 2px solid #2563eb;
     outline-offset: 1px;
-}
-
-.note .note-content.is-reading-reference-title .note-backlinks-badge {
-    display: none;
 }
 
 .note-source-arrow {
@@ -6462,11 +6449,6 @@ html[data-theme="dark"] .note-reference-block.note-embed-held {
 /* Above the embedded note drawn after it, so it takes the pointer. */
 .note-embed-with-source > .note-source-arrow {
     z-index: 1;
-}
-
-/* A reference view's chip reads its source note's first line without the arrows. */
-.note .note-content.is-reading-reference-title .note-source-arrow {
-    display: none;
 }
 
 .note-source-arrow:focus-visible {
@@ -7832,11 +7814,10 @@ body:not(.pref-show-search-results-count) .controls .search-results-count {
     outline: none;
 }
 
-/* Reference views (docs/ui/references.md): a chip, centered in the bar, takes the
-   search input's place, with a magnifier where the input began to start a new
-   search. The change animates only while a reference navigation plays it
-   (.is-chip-animating, reference-view-transition-service.js): never on a reload or
-   a tab switch. */
+/* A reference page (docs/ready-to-build/reference-cards.md): its arrows, centred in the bar,
+   take the search input's place. The change animates only while a reference navigation plays
+   it (.is-chip-animating, reference-view-transition-service.js): never on a reload or a tab
+   switch. */
 .controls .reference-view-chip {
     position: absolute;
     left: 50%;
@@ -7848,56 +7829,74 @@ body:not(.pref-show-search-results-count) .controls .search-results-count {
     box-sizing: border-box;
     max-width: calc(var(--search-input-width) - 80px);
     height: 30px;
-    padding: 0 4px 0 12px;
-    border: 1px solid rgba(0, 0, 0, 0.2);
-    border-radius: 999px;
-    background: linear-gradient(135deg, #e4e6e9, #c3c8ce);
-    color: #1d2125;
-    transform: translate(-50%, -50%) scale(0.6);
+    padding: 0;
+    /* A reference page in the black bar: white on black, where the search box was; it fades in
+       as the box fades out (the slide, reference-view-transition-service.js). */
+    color: var(--search-shell-ink);
+    transform: translate(-50%, -50%);
     opacity: 0;
     visibility: hidden;
 }
 
-.controls .reference-view-chip:has(> .reference-view-chip-button:not([hidden]):first-child) {
-    padding-left: 4px;
+/* No words in the bar, only the arrows (tried 2026-11-14, kept by the maintainer the same day:
+   "much more pleasant"). The page's kind stays for screen readers, unseen, and the search
+   context's row names it; the arrows close up around the bar's middle. */
+.controls .reference-view-chip-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
 }
 
-.controls .reference-view-chip-label {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font-size: 13px;
-    font-weight: 600;
-    line-height: 1;
+/* An empty place after ▶ as wide as ⏮, so the gap between ◀ and ▶ sits on the bar's middle. */
+.controls .reference-view-chip::after {
+    content: "";
+    flex: none;
+    width: var(--reference-arrow-button-size);
+}
+
+/* ⏮ ◀ ▶: white outlines, like the search contexts' icon at the bar's left. Larger than it (the
+   maintainer, 2026-11-13, twice). The size is shared with the empty place after ▶. */
+.controls .reference-view-chip {
+    --reference-arrow-button-size: 39px;
 }
 
 .controls .reference-view-chip-button {
     flex: none;
-    width: 22px;
-    height: 22px;
+    width: var(--reference-arrow-button-size);
+    height: var(--reference-arrow-button-size);
     border: none;
-    border-radius: 999px;
+    border-radius: 6px;
     padding: 0;
-    background: rgba(0, 0, 0, 0.1);
+    background: none;
     color: inherit;
-    font-size: 15px;
-    font-weight: 700;
-    line-height: 1;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     cursor: var(--skin-cursor-pointer, pointer);
 }
 
-.controls .reference-view-chip-button[hidden],
-.controls .reference-view-chip-icon[hidden] {
-    display: none;
+.controls .reference-view-chip-button svg {
+    width: 30px;
+    height: 30px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.8;
+    stroke-linejoin: round;
 }
 
-/* A reference view's tab in the tab list starts with its chip's icon. */
-.tab-context-reference-icon {
-    margin-right: 0.35em;
+.controls .reference-view-chip-button:hover,
+.controls .reference-view-chip-button:focus-visible {
+    background: color-mix(in srgb, var(--search-shell-ink) 18%, transparent);
+    outline: none;
+}
+
+/* An arrow with nowhere to go (⏮ on the first page, ▶ before going back) is hidden in its place,
+   so the others never move. */
+.controls .reference-view-chip-button.is-unavailable {
+    visibility: hidden;
 }
 
 /* The folder context's row: the tree's folder icon (.virtual-folder-icon), a little smaller for
@@ -7912,53 +7911,8 @@ body:not(.pref-show-search-results-count) .controls .search-results-count {
     margin-right: 0.45em;
 }
 
-/* A reference view's chip starts with its icon: one note, or several. */
-.controls .reference-view-chip-icon {
-    flex: none;
-    font-size: 15px;
-}
-
-.controls .reference-view-chip-button:hover,
-.controls .reference-view-chip-button:focus-visible {
-    background: rgba(0, 0, 0, 0.22);
-    outline: none;
-}
-
-.controls .reference-view-new-search {
-    position: absolute;
-    top: 50%;
-    left: calc(50% - var(--search-input-half-width) + 4px);
-    width: 32px;
-    height: 30px;
-    padding: 0;
-    border: none;
-    background: none;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: var(--skin-cursor-pointer, pointer);
-    transform: translateY(-50%);
-    opacity: 0;
-    visibility: hidden;
-}
-
-.controls .reference-view-new-search svg {
-    width: 16px;
-    height: 16px;
-    fill: none;
-    stroke: var(--search-shell-ink);
-    stroke-width: 1.8;
-    stroke-linecap: round;
-    stroke-linejoin: round;
-}
-
 .controls .reference-view-chip.is-shown {
     transform: translate(-50%, -50%);
-    opacity: 1;
-    visibility: visible;
-}
-
-.controls .search-input-row:has(> .reference-view-chip.is-shown) .reference-view-new-search {
     opacity: 1;
     visibility: visible;
 }
@@ -7973,7 +7927,6 @@ body:not(.pref-show-search-results-count) .controls .search-results-count {
 /* What disappears fades first and then stops taking clicks; what appears takes
    them at once. */
 .controls .search-input-row.is-chip-animating .reference-view-chip,
-.controls .search-input-row.is-chip-animating .reference-view-new-search,
 .controls .search-input-row.is-chip-animating .search-input,
 .controls .search-input-row.is-chip-animating .search-input-empty-icon,
 .controls .search-input-row.is-chip-animating .search-input-chips {
@@ -7981,7 +7934,6 @@ body:not(.pref-show-search-results-count) .controls .search-results-count {
 }
 
 .controls .search-input-row.is-chip-animating:has(> .reference-view-chip.is-shown) .reference-view-chip,
-.controls .search-input-row.is-chip-animating:has(> .reference-view-chip.is-shown) .reference-view-new-search,
 .controls .search-input-row.is-chip-animating:not(:has(> .reference-view-chip.is-shown)) .search-input,
 .controls .search-input-row.is-chip-animating:not(:has(> .reference-view-chip.is-shown)) .search-input-empty-icon,
 .controls .search-input-row.is-chip-animating:not(:has(> .reference-view-chip.is-shown)) .search-input-chips {
@@ -8413,7 +8365,10 @@ body.loading::after {
     border: 1px solid var(--modal-border);
     color: var(--modal-text-muted);
     padding: 8px 12px;
-    width: min(320px, calc(100vw - 16px));
+    /* 320px as before, wider as the names grow, so a long one isn't cut (the maintainer,
+       2026-11-14), up to the window less its margins; past that a name ends in an ellipsis. */
+    width: max-content;
+    min-width: min(320px, calc(100vw - 16px));
     box-sizing: border-box;
     border-radius: 4px;
     font-family: monospace;
@@ -10552,12 +10507,11 @@ html[data-theme="dark"] .note-source-arrow {
 }
 
 html[data-theme="dark"] .note-backlinks-badge {
-    background: rgba(143, 188, 240, 0.16);
-    color: #8fbcf0;
+    background-color: #a9bbd3;
 }
 
 html[data-theme="dark"] .note-backlinks-badge:hover {
-    background: rgba(143, 188, 240, 0.3);
+    background-color: #8fbcf0;
 }
 
 html[data-theme="dark"] .note-embed-cycle {

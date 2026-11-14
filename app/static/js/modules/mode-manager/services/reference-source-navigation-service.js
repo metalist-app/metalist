@@ -8,41 +8,22 @@ import { isReferenceViewTransitionPending } from './reference-view-transition-se
 const REFERENCE_VIEW_KINDS = new Set(['source', 'backlinks', 'reference', 'references']);
 // The views an AI answer opens; a later AI reference replaces any of them.
 export const AI_REFERENCE_VIEW_KINDS = new Set(['reference', 'references']);
-// What the tab list calls each kind of view.
-const TAB_LABEL_BY_VIEW_KIND = Object.freeze({
+// Each kind of page, as its search context's row names it (`miscellaneous > Source note`) and the
+// header tells screen readers.
+const LABEL_BY_VIEW_KIND = Object.freeze({
     source: 'Source note',
-    backlinks: 'Referenced by',
+    backlinks: 'Backlinks',
     reference: 'Reference',
     references: 'All references',
 });
-// What the chip in the search bar says; a source note's first line is its tooltip.
-const CHIP_LABEL_BY_VIEW_KIND = Object.freeze({
-    source: 'Source note',
-    backlinks: 'Referenced by',
-    reference: 'Reference',
-    references: 'All references',
-});
-// The icon each kind of view starts its chip and tab with (main.css): one note
-// (a source note, one AI reference) or several (all of an AI answer's references).
-const VIEW_ICON_CLASSES_BY_KIND = Object.freeze({
-    source: ['note-reference-icon'],
-    reference: ['note-reference-icon'],
-    references: ['note-reference-icon', 'is-several-notes'],
-});
 
-/** The icon classes for a view's chip and tab, or [] for a view without one. */
-export function getReferenceViewIconClasses(viewKind) {
-    requireReferenceViewKind(viewKind);
-    if (!Object.hasOwn(VIEW_ICON_CLASSES_BY_KIND, viewKind)) return [];
-    return VIEW_ICON_CLASSES_BY_KIND[viewKind];
-}
-
-// On the chip, it shows in place of the search input (main.css).
+// On the header's arrows, shown in place of the search input (main.css).
 const CHIP_SHOWN_CLASS = 'is-shown';
-// On a note's content while its first line is read (main.css).
-const READING_TITLE_CLASS = 'is-reading-reference-title';
-// Reference views can stack: the one opened directly from a search is the first level.
-const FIRST_REFERENCE_LEVEL = 1;
+// An arrow with nowhere to go is hidden in its place, so the others never move (the maintainer,
+// 2026-11-13: only the arrows that can act show, as undo and redo do).
+const ARROW_UNAVAILABLE_CLASS = 'is-unavailable';
+// ⏮ shows from the second page on; on the first, ◀ already goes back to the search.
+const FIRST_PAGE_DEPTH = 1;
 
 // Reference tabs are ordinary server tabs whose search is a hidden note-ID query.
 // Which tabs are reference views, and where each was opened from, is kept with
@@ -57,13 +38,129 @@ const NOTE_ID_SEPARATOR = /\s+OR\s+/;
 const moduleState = ApplicationState.createFields('reference-source-navigation-service', {
     referenceNavigationStack: [],
     hasRestoredFromSession: false,
-    // Each source view's note title, read from its rendered note, by reference tab id.
-    // Kept in memory only: sessionStorage holds opaque ids, never note text.
-    sourceTitlesByTabId: new Map(),
-    // The reference tab whose chip gave way to an empty search input (the magnifier),
-    // or '' when the chip shows.
-    newSearchTabId: '',
+    // Reference pages gone back from, to go forward to again (docs/ready-to-build/reference-cards.md,
+    // "Reference pages", §2), by search context: { referenceQuery, viewKind, scrollY }, the next
+    // one forward last. Each context keeps its own while MetaList is open (2026-11-14); a reload, or
+    // following another reference, drops them.
+    forwardPagesByContext: new Map(),
 });
+
+function requireForwardPage(page) {
+    if (!page || typeof page !== 'object') {
+        throw new Error('A forward reference page must be an object');
+    }
+    if (typeof page.referenceQuery !== 'string' || page.referenceQuery === '') {
+        throw new Error('A forward reference page needs its referenceQuery');
+    }
+    requireReferenceViewKind(page.viewKind);
+    if (!Number.isFinite(page.scrollY) || page.scrollY < 0) {
+        throw new Error('A forward reference page needs where it was scrolled');
+    }
+}
+
+function requireContextTabId(contextTabId) {
+    if (typeof contextTabId !== 'string' || contextTabId === '') {
+        throw new Error('The way forward belongs to a search context: its tab id is required');
+    }
+}
+
+function forwardPagesOf(contextTabId) {
+    requireContextTabId(contextTabId);
+    if (!moduleState.forwardPagesByContext.has(contextTabId)) {
+        return [];
+    }
+    return moduleState.forwardPagesByContext.get(contextTabId);
+}
+
+/** Remember pages gone back from in a search context, the nearest (the next one forward) last. */
+export function pushForwardReferencePages(contextTabId, pages) {
+    requireContextTabId(contextTabId);
+    if (!Array.isArray(pages)) {
+        throw new Error('pushForwardReferencePages requires a list');
+    }
+    pages.forEach(requireForwardPage);
+    if (pages.length === 0) {
+        return;
+    }
+    const kept = forwardPagesOf(contextTabId);
+    moduleState.forwardPagesByContext.set(contextTabId, [...kept, ...pages.map((page) => ({ ...page }))]);
+    updateReferenceSourceIndicator();
+}
+
+/** The context's next page forward, taken off its way forward, or null when there is none. */
+export function popForwardReferencePage(contextTabId) {
+    const kept = forwardPagesOf(contextTabId);
+    if (kept.length === 0) {
+        return null;
+    }
+    const page = kept[kept.length - 1];
+    if (kept.length === 1) {
+        moduleState.forwardPagesByContext.delete(contextTabId);
+    } else {
+        moduleState.forwardPagesByContext.set(contextTabId, kept.slice(0, -1));
+    }
+    updateReferenceSourceIndicator();
+    return page;
+}
+
+/** Following another reference, or leaving for the search, drops the context's way forward. */
+export function clearForwardReferencePages(contextTabId) {
+    if (forwardPagesOf(contextTabId).length === 0) {
+        return;
+    }
+    moduleState.forwardPagesByContext.delete(contextTabId);
+    updateReferenceSourceIndicator();
+}
+
+export function hasForwardReferencePage(contextTabId) {
+    return forwardPagesOf(contextTabId).length > 0;
+}
+
+/** The search context the user is in: the one a shown reference page was opened from, or the tab. */
+export function getActiveSearchContextTabId() {
+    if (isViewingReferenceSource()) {
+        return getActiveReferenceOriginScope().scopeTabId;
+    }
+    return ModeContext.activeTabId;
+}
+
+/** The stack's entries opened from a search context, in the order they were opened. */
+function entriesFromContext(contextTabId) {
+    requireContextTabId(contextTabId);
+    pruneReferenceNavigationStackToExistingTabs();
+    return moduleState.referenceNavigationStack.filter((entry) => entry.originScope.scopeTabId === contextTabId);
+}
+
+/**
+ * The reference page a search context was last on: the deepest page of the newest way from it, or
+ * '' when it shows its search. Choosing the context goes back there (2026-11-14). Tabs saved before
+ * then can hold older ways from the same context too; they close when it goes back to its search.
+ */
+export function getReferencePageTabForContext(contextTabId) {
+    const fromContext = entriesFromContext(contextTabId);
+    const deepest = fromContext.filter(
+        (entry) => !fromContext.some((other) => other.fromTabId === entry.toTabId),
+    );
+    if (deepest.length === 0) {
+        return '';
+    }
+    // The stack keeps the order pages were opened in: the last deepest page is the newest way's.
+    return deepest[deepest.length - 1].toTabId;
+}
+
+/** Every reference page opened from a search context, the newest first: closing it closes them. */
+export function getReferencePageTabsForContext(contextTabId) {
+    return entriesFromContext(contextTabId).map((entry) => entry.toTabId).reverse();
+}
+
+/** "Source note", "Backlinks"…: the kind of page a search context is on, or '' on its search. */
+export function getReferencePageLabelForContext(contextTabId) {
+    const pageTabId = getReferencePageTabForContext(contextTabId);
+    if (pageTabId === '') {
+        return '';
+    }
+    return getReferenceNavigationLabelForTab(pageTabId);
+}
 
 function requireReferenceViewKind(viewKind) {
     if (!REFERENCE_VIEW_KINDS.has(viewKind)) {
@@ -145,36 +242,58 @@ function hasReferenceNavigationEntryForTab(tabId) {
     return moduleState.referenceNavigationStack.some((entry) => entry.toTabId === tabId);
 }
 
+function isUnclaimedReferenceTab(tabId) {
+    return !hasReferenceNavigationEntryForTab(tabId)
+        && noteIdsOfReferenceQuery(ModeContext.tabs[tabId].searchQuery).length > 0;
+}
+
+/** The nearest tab to adopt an unclaimed page: before it, else after it; never another unclaimed one. */
+function findAdoptingTab(tabOrder, index) {
+    for (let before = index - 1; before >= 0; before -= 1) {
+        if (!isUnclaimedReferenceTab(tabOrder[before])) return tabOrder[before];
+    }
+    for (let after = index + 1; after < tabOrder.length; after += 1) {
+        if (!isUnclaimedReferenceTab(tabOrder[after])) return tabOrder[after];
+    }
+    return '';
+}
+
+/** A page adopted by a page goes on its way, so belongs to its search context; else to the tab. */
+function originScopeOfAdoptingTab(fromTabId) {
+    const fromIndex = findReferenceNavigationEntryIndexForTab(fromTabId);
+    if (fromIndex !== NOT_FOUND) {
+        return copyOriginScope(moduleState.referenceNavigationStack[fromIndex].originScope);
+    }
+    return copyOriginScope({
+        scopeTabId: fromTabId,
+        searchQuery: ModeContext.tabs[fromTabId].searchQuery,
+        sortMode: ModeContext.getTabSortMode(fromTabId),
+        isUntaggedView: false,
+    });
+}
+
 /**
  * A tab whose search is only note IDs but that no reference view claims (its
- * window's record was lost, or the tab it came from was closed) becomes one
- * again, opened from the tab before it, so no tab is ever named by an ID; its
- * × closes it and goes to that tab. With no other tab it stays as it is.
+ * window's record was lost, or the tab it came from was closed, as 0.29.0 left it)
+ * becomes one again, opened from the nearest tab before it, so no tab is ever named by
+ * an ID; ◀ goes there. Opened from a page, it goes on that page's way, so it belongs to
+ * that page's search context; a page is never a search context. With no other tab it
+ * stays as it is.
  */
 function adoptOrphanReferenceTabs() {
     const tabOrder = ModeContext.tabOrder;
-    // The tabs' saved searches, as the server keeps them.
-    const tabs = ModeContext.tabs;
     for (let i = 0; i < tabOrder.length; i += 1) {
         const tabId = tabOrder[i];
-        if (hasReferenceNavigationEntryForTab(tabId)) continue;
-        const searchQuery = tabs[tabId].searchQuery;
-        const noteIds = noteIdsOfReferenceQuery(searchQuery);
-        if (noteIds.length === 0) continue;
-        const neighbourIndex = i > 0 ? i - 1 : i + 1;
-        if (neighbourIndex >= tabOrder.length) continue;
-        const fromTabId = tabOrder[neighbourIndex];
+        if (!isUnclaimedReferenceTab(tabId)) continue;
+        const fromTabId = findAdoptingTab(tabOrder, i);
+        if (fromTabId === '') continue;
+        const searchQuery = ModeContext.tabs[tabId].searchQuery;
         moduleState.referenceNavigationStack.push({
             fromTabId,
             toTabId: tabId,
             referenceQuery: searchQuery,
-            originScope: copyOriginScope({
-                scopeTabId: fromTabId,
-                searchQuery: tabs[fromTabId].searchQuery,
-                sortMode: ModeContext.getTabSortMode(fromTabId),
-                isUntaggedView: false,
-            }),
-            viewKind: noteIds.length === 1 ? 'source' : 'references',
+            originScope: originScopeOfAdoptingTab(fromTabId),
+            viewKind: noteIdsOfReferenceQuery(searchQuery).length === 1 ? 'source' : 'references',
         });
     }
 }
@@ -221,6 +340,9 @@ export function restoreReferenceNavigation(serverState) {
         const toTab = serverTabs[entry.toTabId];
         if (fromTab === undefined || toTab === undefined) continue;
         if (toTab.searchQuery !== entry.referenceQuery) continue;
+        // 0.29.0 left a view open when the search context it came from was closed; it is adopted
+        // below, like a page no view claims, so it belongs to a search context that is there.
+        if (serverTabs[entry.originScope.scopeTabId] === undefined) continue;
         moduleState.referenceNavigationStack.push(entry);
     }
     adoptOrphanReferenceTabs();
@@ -305,7 +427,7 @@ export function getReferenceNavigationLabelForTab(tabId) {
     pruneReferenceNavigationStackToExistingTabs();
     const entryIndex = findReferenceNavigationEntryIndexForTab(tabId);
     if (entryIndex === NOT_FOUND) return '';
-    return TAB_LABEL_BY_VIEW_KIND[moduleState.referenceNavigationStack[entryIndex].viewKind];
+    return LABEL_BY_VIEW_KIND[moduleState.referenceNavigationStack[entryIndex].viewKind];
 }
 
 /** The kind of reference view a server tab shows, or '' for an ordinary search. */
@@ -385,12 +507,6 @@ export function captureReferenceOriginScopeForActiveTab() {
     });
 }
 
-function forgetSourceTitle(tabId) {
-    if (moduleState.sourceTitlesByTabId.has(tabId)) {
-        moduleState.sourceTitlesByTabId.delete(tabId);
-    }
-}
-
 function requireChipElement(id) {
     const element = document.getElementById(id);
     if (!(element instanceof HTMLElement)) {
@@ -399,76 +515,31 @@ function requireChipElement(id) {
     return element;
 }
 
-// The source note's first line as the view shows it (a password stays hidden), or
-// null while the note is not rendered.
-function readRenderedSourceTitle(noteId) {
-    const notesContainer = requireChipElement('notes-container');
-    const note = Array.from(notesContainer.querySelectorAll('.note[data-note-id]'))
-        .find((element) => element.dataset.noteId === noteId);
-    if (note === undefined) {
-        return null;
-    }
-    const content = note.querySelector(':scope > .note-content');
-    if (content === null) {
-        throw new Error('A rendered note is missing its content');
-    }
-    // The note's buttons (↖ backlinks, an embed's reference icon) are not its text: hidden while read.
-    content.classList.add(READING_TITLE_CLASS);
-    const text = content.innerText;
-    content.classList.remove(READING_TITLE_CLASS);
-    const lines = text.split('\n').map((line) => line.trim()).filter((line) => line !== '');
-    // A note with no text has an empty first line.
-    if (lines.length === 0) {
-        return '';
-    }
-    return lines[0];
-}
-
-function resolveSourceTitle(entry) {
-    const renderedTitle = readRenderedSourceTitle(entry.referenceQuery);
-    if (renderedTitle !== null) {
-        // Each render reads the title again; it changes only when the note's first line does.
-        if (moduleState.sourceTitlesByTabId.get(entry.toTabId) !== renderedTitle) {
-            moduleState.sourceTitlesByTabId.set(entry.toTabId, renderedTitle);
-        }
-        return renderedTitle;
-    }
-    // The view has not rendered yet (a reload): its title comes with the first render.
-    if (moduleState.sourceTitlesByTabId.has(entry.toTabId)) {
-        return moduleState.sourceTitlesByTabId.get(entry.toTabId);
-    }
-    return '';
+function showArrowWhenAvailable(button, isAvailable) {
+    button.classList.toggle(ARROW_UNAVAILABLE_CLASS, !isAvailable);
+    button.setAttribute('aria-hidden', isAvailable ? 'false' : 'true');
+    button.tabIndex = isAvailable ? 0 : -1;
 }
 
 function renderReferenceViewChip() {
     const chip = requireChipElement('reference-source-indicator');
     const label = requireChipElement('reference-source-indicator-label');
-    const backButton = requireChipElement('reference-view-chip-back');
-    const viewIcon = requireChipElement('reference-view-chip-icon');
-    const isReferenceView = isViewingReferenceSource();
-    // The empty input shown for a new search belongs to one reference view; any
-    // other view brings the chip back.
-    if (moduleState.newSearchTabId !== ''
-        && (!isReferenceView || moduleState.newSearchTabId !== ModeContext.activeTabId)) {
-        moduleState.newSearchTabId = '';
-    }
-    if (!isReferenceView) {
+    const forwardButton = requireChipElement('reference-view-chip-forward');
+    const searchButton = requireChipElement('reference-source-indicator-clear');
+    if (!isViewingReferenceSource()) {
         chip.classList.remove(CHIP_SHOWN_CLASS);
         return;
     }
     const chain = getActiveReferenceChain();
     const entry = chain[chain.length - 1];
-    label.textContent = CHIP_LABEL_BY_VIEW_KIND[entry.viewKind];
-    const iconClasses = getReferenceViewIconClasses(entry.viewKind);
-    viewIcon.hidden = iconClasses.length === 0;
-    viewIcon.classList.toggle('is-several-notes', iconClasses.includes('is-several-notes'));
-    if (entry.viewKind === 'source') {
-        label.title = resolveSourceTitle(entry);
-    } else {
-        label.removeAttribute('title');
-    }
-    backButton.hidden = chain.length === FIRST_REFERENCE_LEVEL;
-    chip.classList.toggle(CHIP_SHOWN_CLASS, moduleState.newSearchTabId === '');
+    // Unseen between the arrows (main.css), for screen readers.
+    label.textContent = LABEL_BY_VIEW_KIND[entry.viewKind];
+    // ◀ at every level: from the first page it goes back to the search. ⏮ only when it goes
+    // further than ◀ would.
+    showArrowWhenAvailable(searchButton, chain.length > FIRST_PAGE_DEPTH);
+    // ▶ only after going back: forward along the way just come back.
+    showArrowWhenAvailable(forwardButton, hasForwardReferencePage(entry.originScope.scopeTabId));
+    chip.classList.toggle(CHIP_SHOWN_CLASS, true);
 }
 
 /**
@@ -481,35 +552,6 @@ export function updateReferenceSourceIndicator() {
         return;
     }
     renderReferenceViewChip();
-}
-
-/**
- * The magnifier, or focus reaching the hidden search input: the chip gives way to
- * the empty input so a new search can be typed. The reference view stays until
- * the user types, as it always has.
- */
-export function showNewSearchInReferenceView() {
-    if (!isViewingReferenceSource()) {
-        throw new Error('A new search from the chip requires a reference view');
-    }
-    if (moduleState.newSearchTabId === ModeContext.activeTabId) {
-        return;
-    }
-    moduleState.newSearchTabId = ModeContext.activeTabId;
-    updateReferenceSourceIndicator();
-}
-
-/** The empty search input lost focus without a search: the chip comes back. */
-export function restoreReferenceChipAfterEmptySearch() {
-    if (moduleState.newSearchTabId === '') {
-        return;
-    }
-    moduleState.newSearchTabId = '';
-    updateReferenceSourceIndicator();
-}
-
-export function isShowingNewSearchInReferenceView() {
-    return moduleState.newSearchTabId !== '' && moduleState.newSearchTabId === ModeContext.activeTabId;
 }
 
 export function pushReferenceNavigationEntry(
@@ -558,7 +600,6 @@ export function replaceActiveReferenceNavigationQuery(referenceQuery, viewKind) 
         referenceQuery,
         viewKind,
     };
-    forgetSourceTitle(entry.toTabId);
     updateReferenceSourceIndicator();
 }
 
@@ -573,7 +614,6 @@ export function popReferenceNavigationEntryForActiveTab() {
     if (!entry || typeof entry !== 'object') {
         throw new Error('Reference navigation stack entry must be an object');
     }
-    forgetSourceTitle(entry.toTabId);
     updateReferenceSourceIndicator();
     return entry;
 }
@@ -594,9 +634,6 @@ export function popActiveReferenceChain() {
         writeIndex += 1;
     }
     stack.length = writeIndex;
-    for (const tabId of chainTabIds) {
-        forgetSourceTitle(tabId);
-    }
     updateReferenceSourceIndicator();
     return chain;
 }
@@ -646,9 +683,6 @@ export function popReferenceLevelsAbove(levelTabId) {
         writeIndex += 1;
     }
     stack.length = writeIndex;
-    for (const tabId of leftTabIds) {
-        forgetSourceTitle(tabId);
-    }
     updateReferenceSourceIndicator();
     return left;
 }

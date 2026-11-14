@@ -81,19 +81,25 @@ import { buildBacklinksQuery } from '../services/backlinks-navigation-service.js
 import {
     AI_REFERENCE_VIEW_KINDS,
     captureReferenceOriginScopeForActiveTab,
+    clearForwardReferencePages,
+    getActiveSearchContextTabId,
+    getReferencePageLabelForContext,
+    getReferencePageTabForContext,
+    getReferencePageTabsForContext,
     findReferenceLevelOnActivePath,
+    getActiveReferenceOriginScope,
     getActiveReferenceSourceQuery,
     getActiveReferenceViewKind,
     getReferenceNavigationLabelForTab,
-    getReferenceViewIconClasses,
     getReferenceViewKindForTab,
     isViewingReferenceSource,
     popActiveReferenceChain,
     popReferenceLevelsAbove,
+    popForwardReferencePage,
     popReferenceNavigationEntryForActiveTab,
+    pushForwardReferencePages,
     pushReferenceNavigationEntry,
     replaceActiveReferenceNavigationQuery,
-    showNewSearchInReferenceView,
     updateReferenceSourceIndicator,
 } from '../services/reference-source-navigation-service.js';
 import {
@@ -154,6 +160,8 @@ import { captureSelectionSnapshot, getActiveEditable } from '../../editor-select
 import { handleDictatedNotePaste, undoDictatedNotePasteTags } from '../services/dictation-paste-service.js';
 import { TypeAhead } from '../services/type-ahead-service.js';
 
+// Between a search context's name and the kind of reference page it is on, in the list.
+const SEARCH_CONTEXT_PAGE_SEPARATOR = ' > ';
 const helpModal = new HelpModal();
 
 const MODIFIER_KEYS = new Set(['Control', 'Alt', 'Shift', 'Meta']);
@@ -434,7 +442,7 @@ function handleKeyDown(event) {
 
     if ((event.key === 'Enter' || event.key === ' ')
         && event.target instanceof HTMLElement
-        && event.target.closest('.note-source-arrow, .note-backlinks-badge, #reference-source-indicator-clear, #reference-view-chip-back, #reference-view-new-search, .meta-value-button')) {
+        && event.target.closest('.note-source-arrow, .note-backlinks-badge, #reference-source-indicator-clear, #reference-view-chip-back, #reference-view-chip-forward, .meta-value-button')) {
         return;
     }
 
@@ -731,6 +739,9 @@ function handleViewModeSearchFocusShortcut(event) {
     }
 
     const modalStack = Array.isArray(ModeContext.modalStack) ? ModeContext.modalStack : [];
+    // A reference page has no search box to be in: following a link from the search leaves the
+    // search mode set, and Tab did nothing there (the reference-views browser suite, 2026-11-14).
+    const isInSearchBox = ModeContext.isSearching && !isViewingReferenceSource();
     const shouldFocusSearch = shouldFocusSearchInputForViewModeTab({
         key: event.key,
         shiftKey: event.shiftKey,
@@ -738,7 +749,7 @@ function handleViewModeSearchFocusShortcut(event) {
         metaKey: event.metaKey,
         ctrlKey: event.ctrlKey,
         isEditing: ModeContext.isEditing,
-        isSearching: ModeContext.isSearching,
+        isSearching: isInSearchBox,
         isLoading: ModeContext.isLoading,
         modalStack,
     });
@@ -750,9 +761,14 @@ function handleViewModeSearchFocusShortcut(event) {
     event.preventDefault();
     event.stopPropagation();
 
-    // In a reference view the input is behind the chip: bring it out, as the magnifier does.
+    // A reference page has no search box: going to the search goes back to it first.
     if (isViewingReferenceSource()) {
-        showNewSearchInReferenceView();
+        void CommandGate.run('keyboard.reference_page_to_search', async () => {
+            await navigateToReferenceOrigin();
+            void actionEnterSearchMode();
+            focusSearchInputAndSelectAllText();
+        });
+        return;
     }
     void actionEnterSearchMode();
     const didFocus = focusSearchInputAndSelectAllText();
@@ -3587,14 +3603,6 @@ function handleTabDragClick(event) {
     event.stopImmediatePropagation();
 }
 
-function buildTabReferenceIconHtml(tabId) {
-    const viewKind = getReferenceViewKindForTab(tabId);
-    if (viewKind === '') return '';
-    const iconClasses = getReferenceViewIconClasses(viewKind);
-    if (iconClasses.length === 0) return '';
-    return `<span class="${iconClasses.join(' ')} tab-context-reference-icon" aria-hidden="true"></span>`;
-}
-
 // A search context whose search chooses a folder starts with the tree's folder icon, beside its
 // name (the maintainer, 2026-11-07, for folder contexts, which became ordinary ones 2026-11-11).
 function buildTabFolderIconHtml(tabId) {
@@ -3619,8 +3627,12 @@ export function updateSearchContextsList() {
     if (!Array.isArray(tabOrder) || tabOrder.length === 0) {
         throw new Error('ModeContext.tabOrder must be a non-empty array');
     }
-    for (let i = 0; i < tabOrder.length; i++) {
-        const tabId = tabOrder[i];
+    // A reference page is not a search context (reference-cards.md): its hidden tab is not listed,
+    // and with a page shown, the search it came from is the one in use.
+    const listedTabIds = tabOrder.filter((tabId) => getReferenceNavigationLabelForTab(tabId) === '');
+    const listedActiveTabId = isViewingReferenceSource() ? getActiveReferenceOriginScope().scopeTabId : activeTabId;
+    for (let i = 0; i < listedTabIds.length; i++) {
+        const tabId = listedTabIds[i];
         const tabEntry = tabs[tabId];
         if (!tabEntry || typeof tabEntry !== 'object') {
             throw new Error(`ModeContext.tabs missing entry for tab ${tabId}`);
@@ -3630,20 +3642,24 @@ export function updateSearchContextsList() {
         if (typeof originalQuery !== 'string') {
             originalQuery = '';
         }
-        const referenceNavigationLabel = getReferenceNavigationLabelForTab(tabId);
         // A context is named by its search, as its search box shows it, a folder chosen in the tree
-        // included (`Projects/ @todo`). The name uses the row's whole width and ends in an ellipsis
-        // only where it runs out (main.css).
-        const displayQuery = referenceNavigationLabel !== ''
-            ? referenceNavigationLabel
-            : searchContextLabel({ search: originalQuery });
+        // included (`Projects/ @todo`), and the kind of reference page it is on, if any
+        // (`miscellaneous > Source note`, 2026-11-14). The name uses the row's whole width and
+        // ends in an ellipsis only where it runs out (main.css).
+        const pageLabel = getReferencePageLabelForContext(tabId);
+        let displayQuery = searchContextLabel({ search: originalQuery });
+        if (pageLabel !== '') {
+            displayQuery = `${displayQuery}${SEARCH_CONTEXT_PAGE_SEPARATOR}${pageLabel}`;
+        }
         
-        const isActive = tabId === activeTabId;
+        const isActive = tabId === listedActiveTabId;
 
         const actions = tabContextActionsHtml({
             tabId,
             isAtTabLimit: tabOrder.length >= CONFIG.TABS.MAX_TABS,
-            canDelete: tabOrder.length > 1,
+            // Pages' hidden tabs are not search contexts: the only context listed is never closed,
+            // as when it shows its search (it offered − while on a page, 2026-11-14).
+            canDelete: listedTabIds.length > 1,
         });
 
         const activeClass = isActive ? 'is-active' : '';
@@ -3651,8 +3667,7 @@ export function updateSearchContextsList() {
             `<div data-tab-id="${escapeHtml(tabId)}" class="tab-context-item ${activeClass}" draggable="true">`
             + `<span class="tab-context-index">${i + 1}:</span>`
             // The search is the user's text: shown as text, never as markup.
-            // A reference view's tab starts with its chip's icon.
-            + `<span class="tab-context-query">${buildTabFolderIconHtml(tabId)}${buildTabReferenceIconHtml(tabId)}${escapeHtml(displayQuery)}</span>`
+            + `<span class="tab-context-query">${buildTabFolderIconHtml(tabId)}${escapeHtml(displayQuery)}</span>`
             + `<span class="tab-context-actions">${actions}</span>`
             + `</div>`
         );
@@ -3661,7 +3676,7 @@ export function updateSearchContextsList() {
     if (contextsList.length > 0) {
         // The number column is as wide as the longest number and its colon, in the list's
         // monospace font: no gap left of "5:" when there are fewer than ten (main.css).
-        searchContextsList.style.setProperty('--tab-context-index-width', `${String(tabOrder.length).length + 1}ch`);
+        searchContextsList.style.setProperty('--tab-context-index-width', `${String(listedTabIds.length).length + 1}ch`);
         searchContextsList.innerHTML = contextsList.join('');
         updateSearchContextsOverlayPlacement();
         
@@ -3676,16 +3691,18 @@ export function updateSearchContextsList() {
                 if (typeof searchQuery !== 'string') {
                     throw new Error('Clicked tab executed search query must be a string');
                 }
-                const referenceNavigationLabel = getReferenceNavigationLabelForTab(tabId);
-                const activityPromise = referenceNavigationLabel !== ''
-                    ? null
-                    : NotesAPI.recordTabSearchSelection(searchQuery);
+                const activityPromise = NotesAPI.recordTabSearchSelection(searchQuery);
                 hideSearchContextsOverlay();
+                // A context on a reference page goes back to that page, as it was left (2026-11-14).
+                let shownTabId = getReferencePageTabForContext(tabId);
+                if (shownTabId === '') {
+                    shownTabId = tabId;
+                }
                 // Picking the search context already shown changes nothing: its Untagged view
                 // stays until View → All Notes or its chip's × ends it (docs/ui/state-handling.md).
                 void CommandGate.run('tab.select', async () => {
-                    if (tabId !== ModeContext.activeTabId) {
-                        await switchToTabContext(tabId, {});
+                    if (shownTabId !== ModeContext.activeTabId) {
+                        await switchToTabContext(shownTabId, {});
                     }
                 });
                 if (activityPromise !== null) await activityPromise;
@@ -3716,6 +3733,10 @@ export function updateSearchContextsList() {
                 }
                 const deleteTabId = e.currentTarget.getAttribute('data-delete-tab-id');
 	                void CommandGate.run('tab.delete', async () => {
+	                    // Its reference pages first: left behind, another context would adopt them.
+	                    for (const pageTabId of getReferencePageTabsForContext(deleteTabId)) {
+	                        await deleteTabContext(pageTabId);
+	                    }
 	                    await deleteTabContext(deleteTabId);
 	                });
 	            });
@@ -4139,6 +4160,8 @@ async function openReferenceQueryInNewTabWithContext(
             return levelTabId;
         }
     }
+    // Following another reference drops the pages that were forward, as a browser does.
+    clearForwardReferencePages(getActiveSearchContextTabId());
     let resultTabId = '';
     await navigateWithReferenceSlide('forward', async () => {
         resultTabId = await openReferenceQueryBehindTransition(
@@ -4399,6 +4422,28 @@ async function deleteTabContext(deleteTabId) {
 	    }
 }
 
+/** ▶ on a reference page: forward again to the page last gone back from, as it was left. */
+export async function navigateForwardReference() {
+    if (!isViewingReferenceSource()) {
+        return false;
+    }
+    const page = popForwardReferencePage(getActiveSearchContextTabId());
+    if (page === null) {
+        return false;
+    }
+    return navigateWithReferenceSlide('forward', async () => {
+        await openReferenceQueryBehindTransition(page.referenceQuery, 'reference.forward', false, page.viewKind);
+        // Where the page was left: a new hidden tab shows it, scrolled back to the same place.
+        window.scrollTo(0, page.scrollY);
+        const scrollY = Math.max(0, Math.round(window.scrollY));
+        if (ModeContext.getTabScrollPosition(ModeContext.activeTabId) !== scrollY) {
+            ModeContext.updateActiveTabScroll(scrollY);
+        }
+        await persistTabStateSnapshot();
+        return true;
+    });
+}
+
 /** ← on the chip, or Escape: back one level, to where the user left it. */
 export async function navigateBackFromReferenceContext() {
     if (!isViewingReferenceSource()) {
@@ -4426,6 +4471,7 @@ function requireCloseReferenceTabOnBack() {
 }
 
 async function leaveActiveReferenceChain() {
+    clearForwardReferencePages(getActiveSearchContextTabId());
     const chain = popActiveReferenceChain();
     const originTabId = chain[0].fromTabId;
     if (typeof originTabId !== 'string' || originTabId.length === 0) {
@@ -4444,13 +4490,37 @@ async function leaveActiveReferenceChain() {
             }
         }
     }
+    await closeLeftOverPagesOfContext(originTabId);
     updateReferenceSourceIndicator();
     return true;
 }
 
+/**
+ * Back at a search context's search: any reference pages still open from it close. Tabs saved
+ * before a context kept its page (2026-11-14) can hold older ways of pages from it; left open,
+ * the next ◀ or ⏮ would land on one of those instead of the search.
+ */
+async function closeLeftOverPagesOfContext(contextTabId) {
+    for (const pageTabId of getReferencePageTabsForContext(contextTabId)) {
+        if (ModeContext.tabs[pageTabId]) {
+            await deleteTabContext(pageTabId);
+        }
+    }
+}
+
 /** Back to a level further up the active reference path, closing the levels after it. */
 async function returnToReferenceLevel(levelTabId) {
+    const shownScrollY = Math.max(0, Math.round(window.scrollY));
+    const activeTabId = ModeContext.activeTabId;
+    const contextTabId = getActiveSearchContextTabId();
     const left = popReferenceLevelsAbove(levelTabId);
+    // The pages left become forward, the furthest first: popReferenceLevelsAbove gives the page
+    // shown now first.
+    pushForwardReferencePages(contextTabId, left.map((entry) => ({
+        referenceQuery: entry.referenceQuery,
+        viewKind: entry.viewKind,
+        scrollY: entry.toTabId === activeTabId ? shownScrollY : ModeContext.getTabScrollPosition(entry.toTabId),
+    })));
     if (!ModeContext.tabs[levelTabId]) {
         return false;
     }
@@ -4469,9 +4539,19 @@ async function returnToReferenceLevel(levelTabId) {
 }
 
 async function leaveActiveReferenceLevel() {
+    const shownScrollY = Math.max(0, Math.round(window.scrollY));
+    const contextTabId = getActiveSearchContextTabId();
     const entry = popReferenceNavigationEntryForActiveTab();
     if (entry === null) {
         return false;
+    }
+    if (getReferenceViewKindForTab(entry.fromTabId) === '') {
+        // Back at the search: the path ends there, with nothing forward.
+        clearForwardReferencePages(contextTabId);
+    } else {
+        pushForwardReferencePages(contextTabId, [{
+            referenceQuery: entry.referenceQuery, viewKind: entry.viewKind, scrollY: shownScrollY,
+        }]);
     }
 
     const fromTabId = entry.fromTabId;
@@ -4493,9 +4573,45 @@ async function leaveActiveReferenceLevel() {
             await deleteTabContext(toTabId);
         }
     }
+    if (fromTabId === contextTabId) {
+        await closeLeftOverPagesOfContext(contextTabId);
+    }
 
     updateReferenceSourceIndicator();
     return true;
+}
+
+// The server closed reference pages whose notes were all deleted (tab_state.py,
+// close_pages_whose_notes_are_gone): the tabs, the list and the view take its state, so `foo > bar`
+// reads `foo`, and a closed page shown gives way to the search it was opened from (2026-11-14).
+export async function adoptClosedReferencePages() {
+    await settleViewRequestsBeforeTabChange();
+    const shownBefore = ModeContext.activeTabId;
+    // Where each tab was left reaches the server first (it takes a save still naming the closed
+    // pages): scroll is saved about once a second, and the search would come back at the top.
+    snapshotActiveTabScrollState();
+    await persistTabStateSnapshot();
+    await reloadTabStateFromServer();
+    const isShowingAnotherTab = ModeContext.activeTabId !== shownBefore;
+    // Read before the notes change: emptying the page lets the window fall to the top, and the
+    // scroll watcher would take that for where the search was left.
+    const searchLeftAtY = ModeContext.getTabScrollPosition(ModeContext.activeTabId);
+    if (isShowingAnotherTab) {
+        // The page shown closed: the search it was opened from, where it was left. Placed before
+        // the refresh, as a switch of contexts does: the refresh holds what is on screen in place,
+        // and a restore after it was undone by that hold (the reference-views browser suite).
+        clearActiveNotesDom();
+        restoreNotesDomForTab(ModeContext.activeTabId);
+        if (ModeContext.getTabScrollPosition(ModeContext.activeTabId) !== searchLeftAtY) {
+            ModeContext.updateActiveTabScroll(searchLeftAtY);
+        }
+        ModeContext.restoreScrollForActiveTabNow();
+    }
+    syncSearchInputField();
+    updateSearchContextsList();
+    updateReferenceSourceIndicator();
+    const { actionRefreshAndMaybeSelect } = await import('../actions/ui-actions.js');
+    await actionRefreshAndMaybeSelect({ context: 'reference-pages-closed', animateNoteChanges: false });
 }
 
 // After Rename tag renamed a tag in search contexts' searches (rename_tag.py): the tabs, the search box

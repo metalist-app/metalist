@@ -19,7 +19,7 @@ from typing_extensions import Self
 
 from app.api.note_requests import MAX_NOTE_CONTENT_CHARS
 from app.api.request_auth import require_request_auth_token
-from app.api.transactions import transactional_route
+from app.api.transactions import one_step_read_route, serialized_read_route, transactional_route
 from app.models.utils import note_data_to_html
 from app.models.utils import render_note_data_read_only
 from app.services.ai_chat_stream import ChatTurnStream
@@ -31,7 +31,6 @@ from app.services.ai_setup import connect_to_ai
 from app.services.ai_chat import ai_chat_store
 from app.services.agent.chat_compaction import history_meter, summarize_before_turn, summarize_on_request
 from app.services.ai_chat_rendering import find_note_citation_ids
-from app.services.ai_chat_rendering import find_web_citation_ids
 from app.services.ai_chat_rendering import render_ai_chat_markdown_to_html
 from app.services.ai_chat_rendering import render_ai_chat_thinking_to_html
 from app.services.agent.context import AgentContextBuilder
@@ -67,6 +66,7 @@ from app.services.agent.tagging_run import TaggingRun, proposal_scope_ids
 from app.services.agent.retrieval_settings import resolve_tagging_batch_tokens
 from app.services.agent.web_settings import AgentWebSettings
 from app.services.agent.web_settings import resolve_agent_web_settings
+from app.services.agent.web_evidence import WebCitationReference
 from app.services.agent.web_evidence import web_evidence_store
 from app.services.agent.summary_batch_store import summary_batch_store
 from app.usecases.bulk_tag_proposals import apply_bulk_proposals, prepare_proposal_changes
@@ -397,7 +397,8 @@ class AiCopyMessageResponse(BaseModel):
     tags: str
 
 
-def _render_ai_response_note_content(*, markdown_text: str, session_key: str) -> str:
+def _render_ai_response_note_content(*, markdown_text: str,
+                                     web_references: tuple[WebCitationReference, ...]) -> str:
     if not isinstance(markdown_text, str) or markdown_text == "":
         raise ValueError("AI response Markdown must be a non-empty string")
     allowed_note_ids = find_note_citation_ids(
@@ -408,10 +409,7 @@ def _render_ai_response_note_content(*, markdown_text: str, session_key: str) ->
         markdown_text,
         notes=note_store,
         allowed_note_ids=allowed_note_ids,
-        allowed_web_evidence=web_evidence_store.available_references_for_ids(
-            session_key=session_key,
-            evidence_ids=find_web_citation_ids(markdown_text),
-        ),
+        allowed_web_evidence=web_references,
     )
     if rendered_content == "":
         raise RuntimeError("Completed AI response rendered to empty HTML")
@@ -427,6 +425,7 @@ def _render_ai_response_note_content(*, markdown_text: str, session_key: str) ->
 # no mutation slot: the chat refreshes it while the user edits notes. current_provider is
 # the provider of the model picked last; its models stay listed even without a key.
 @router.get("/model-choices", response_model=AiModelChoicesResponse)
+@one_step_read_route
 async def list_ai_model_choices(
     current_provider: AiProvider,
     token: Annotated[str, Depends(require_request_auth_token)],
@@ -451,6 +450,7 @@ async def list_ai_model_choices(
     "/{provider}/credential",
     response_model=AiCredentialStatusResponse,
 )
+@one_step_read_route
 def get_ai_credential_status(
     provider: AiProvider,
     response: Response,
@@ -756,6 +756,7 @@ def _require_cost_estimate_offered() -> None:
 
 
 @router.get("/openai/cost", response_model=OpenAICostResponse)
+@one_step_read_route
 def get_openai_cost(
     response: Response,
     token: Annotated[str, Depends(require_request_auth_token)],
@@ -814,13 +815,15 @@ def preview_cloud_privacy(
     )
 
 
+# Draws each answer with the notes it cites, after checking they are there: one at a time with the
+# writes, so a delete cannot land in between (2026-11-14).
 @router.get("/session", response_model=AiSessionResponse)
+@serialized_read_route
 def get_ai_session(
     response: Response,
     token: Annotated[str, Depends(require_request_auth_token)],
 ) -> AiSessionResponse:
     response.headers["Cache-Control"] = "no-store"
-    session_key = token_service.get_session_key(token)
     snapshot = ai_chat_store.snapshot()
     messages: list[AiChatMessage] = []
     for message in snapshot["messages"]:
@@ -829,6 +832,8 @@ def get_ai_session(
             raise TypeError("AI chat message activities must be a list")
         rendered_content = ""
         rendered_thinking = ""
+        message_id = message["id"]
+        assert isinstance(message_id, str), "a chat message's id is text"
         if message["role"] == "assistant" and message["content"] != "":
             allowed_note_ids = find_note_citation_ids(
                 message["content"],
@@ -838,10 +843,8 @@ def get_ai_session(
                 message["content"],
                 notes=note_store,
                 allowed_note_ids=allowed_note_ids,
-                allowed_web_evidence=web_evidence_store.available_references_for_ids(
-                    session_key=session_key,
-                    evidence_ids=find_web_citation_ids(message["content"]),
-                ),
+                # Saved with the answer: the pages the AI opened are kept only for the login.
+                allowed_web_evidence=ai_chat_store.web_references(message_id=message_id),
             )
         thinking = message["thinking"]
         if not isinstance(thinking, str):
@@ -893,6 +896,7 @@ def _summary_response(summary: dict[str, object]) -> AiChatSummary:
 
 
 @router.get("/history-meter", response_model=AiHistoryMeterResponse)
+@one_step_read_route
 def get_ai_history_meter(
     provider: AiProvider,
     response: Response,
@@ -972,6 +976,7 @@ def clear_ai_session(
 
 
 @router.get("/debug", response_model=AiDebugSnapshotResponse)
+@one_step_read_route
 def get_ai_debug_snapshot(
     response: Response,
     token: Annotated[str, Depends(require_request_auth_token)],
@@ -984,6 +989,7 @@ def get_ai_debug_snapshot(
 
 
 @router.get("/history")
+@one_step_read_route
 def get_ai_history(
     response: Response,
     token: Annotated[str, Depends(require_request_auth_token)],
@@ -1021,7 +1027,6 @@ def copy_ai_message(
 ) -> AiCopyMessageResponse:
     if message_id.strip() == "":
         raise HTTPException(status_code=HTTPStatus.NOT_FOUND, detail="AI response not found")
-    session_key = token_service.get_session_key(token)
     snapshot = ai_chat_store.snapshot()
     matching_messages = [
         message
@@ -1035,20 +1040,19 @@ def copy_ai_message(
         if message["status"] != "complete":
             raise HTTPException(status_code=HTTPStatus.CONFLICT, detail="AI response is not complete")
         content = message["content"]
+        web_references = ai_chat_store.web_references(message_id=message_id)
     else:
-        # A summary of earlier turns copies like an answer.
+        # A summary of earlier turns copies like an answer. It names no web pages.
         summary_content = ai_chat_store.summary_content(summary_id=message_id)
         if summary_content is None:
             raise HTTPException(status_code=HTTPStatus.NOT_FOUND, detail="AI response not found")
         content = summary_content
+        web_references = ()
     if content == "":
         raise HTTPException(status_code=HTTPStatus.CONFLICT, detail="AI response is empty")
 
     tags = "@ai"
-    note_content = _render_ai_response_note_content(
-        markdown_text=content,
-        session_key=session_key,
-    )
+    note_content = _render_ai_response_note_content(markdown_text=content, web_references=web_references)
     clipboard_record = {
         "id": f"ai-chat:{message_id}",
         "parent_id": None,
