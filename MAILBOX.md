@@ -1,6 +1,6 @@
 # Mailbox Protocol
 
-**Version:** 4 (2026-11-13)
+**Version:** 5 (2026-11-13)
 
 This is the canonical copy, kept by the `postmaster` project. Every project that takes part has a copy at its root named `MAILBOX.md`, which postmaster keeps in sync. Edit only the canonical copy.
 
@@ -52,6 +52,11 @@ in-reply-to: 2026-11-13-1402-beta-alpha.md
 
 - **Never secrets, to anyone.** That means passwords, API keys, tokens, backup or recovery codes, private keys, Social Security numbers, and full bank or card numbers. Point to where the secret is kept instead ("in the password manager under …").
 - **Write for the recipient.** Check its visibility in the registry. To a public project, write as if the message will be published: nothing personal, nothing about the business's money, accounts or legal matters, and no names of private projects or people beyond what's already public.
+- **Nobody reads a message between sending and delivery.** The maintainer's run of `deliver.sh` is the go-ahead, not a review. The sender's own checks are the review: before a message goes into `outbox/`, scan it for secrets, and for a public recipient re-read it as if it were already published.
+- **To write to a public project, keep `outbox/.private-patterns`.** It's your list of private references (paths, names, account and money words), one extended regular expression per line. `deliver.sh` refuses a message to a public project if the list is missing or if any line matches.
+  - Lines starting with `#` are comments, so a pattern for a literal `#` must start with `[#]` instead.
+  - When a pattern matches, reword the message; never loosen the list.
+  - Patterns catch words, not meaning, so the re-read still matters.
 - **To a private project,** a project's ordinary records are fine (identifiers, settings, dates, decisions).
 - **When in doubt, ask the maintainer** before sending.
 - **If a recipient warns you** that your message carried something it shouldn't have, tell the maintainer. If the message is still needed, send a clean one in its place.
