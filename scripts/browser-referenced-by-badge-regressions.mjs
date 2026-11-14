@@ -88,7 +88,8 @@ async function measureBadge(page, id) {
     return {
       drawn: getComputedStyle(badge, '::after').content,
       text: badge.textContent,
-      mask: style.maskImage === undefined ? style.webkitMaskImage : style.maskImage,
+      // Chrome and Firefox both read the unprefixed mask-image.
+      mask: style.maskImage,
       transform: style.transform,
       title: badge.title,
       isCollapsed: badge.closest('.note').classList.contains('collapsed'),
