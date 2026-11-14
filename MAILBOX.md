@@ -1,6 +1,6 @@
 # Mailbox Protocol
 
-**Version:** 5 (2026-11-13)
+**Version:** 6 (2026-11-14)
 
 This is the canonical copy, kept by the `postmaster` project. Every project that takes part has a copy at its root named `MAILBOX.md`, which postmaster keeps in sync. Edit only the canonical copy.
 
@@ -43,16 +43,19 @@ in-reply-to: 2026-11-13-1402-beta-alpha.md
 
 ## 3. Sending
 
-1. Write the message into your own `outbox/`.
-2. Never write into another project's folder, not even its `inbox/`.
-3. The maintainer delivers with postmaster's `scripts/deliver.sh`. It checks each message and moves it from the sender's `outbox/` to the recipient's `inbox/`.
-4. Tell the maintainer when something is waiting in your `outbox/`.
+1. **Write the message into your own `outbox/` only when it's finished.** Any project can run delivery at any moment, so a file in `outbox/` may go out right away.
+2. **Deliver it yourself:** run `~/Desktop/postmaster/scripts/deliver.sh`. You don't need the maintainer to run it.
+   - It checks every project's waiting messages and moves each one that passes from the sender's `outbox/` to the recipient's `inbox/`.
+   - If it refuses your message, it prints the reason: fix the message and run it again.
+   - Refusals of other projects' messages aren't yours to fix.
+3. **Never write into another project's folder yourself,** not even its `inbox/`. The script is the only thing that moves mail between projects.
+4. **Tell the maintainer** what you sent, and to whom.
 
 ## 4. What may be sent
 
 - **Never secrets, to anyone.** That means passwords, API keys, tokens, backup or recovery codes, private keys, Social Security numbers, and full bank or card numbers. Point to where the secret is kept instead ("in the password manager under …").
 - **Write for the recipient.** Check its visibility in the registry. To a public project, write as if the message will be published: nothing personal, nothing about the business's money, accounts or legal matters, and no names of private projects or people beyond what's already public.
-- **Nobody reads a message between sending and delivery.** The maintainer's run of `deliver.sh` is the go-ahead, not a review. The sender's own checks are the review: before a message goes into `outbox/`, scan it for secrets, and for a public recipient re-read it as if it were already published.
+- **Nobody reads a message between sending and delivery.** Any project's agent runs `deliver.sh`, so a finished message goes out within moments, without the maintainer seeing it. The sender's own checks are the review: before a message goes into `outbox/`, scan it for secrets, and for a public recipient re-read it as if it were already published.
 - **To write to a public project, keep `outbox/.private-patterns`.** It's your list of private references (paths, names, account and money words), one extended regular expression per line. `deliver.sh` refuses a message to a public project if the list is missing or if any line matches.
   - Lines starting with `#` are comments, so a pattern for a literal `#` must start with `[#]` instead.
   - When a pattern matches, reword the message; never loosen the list.
@@ -70,8 +73,11 @@ in-reply-to: 2026-11-13-1402-beta-alpha.md
   3. **Tell the maintainer** in chat which message it was (file name and sender) and what kind of thing it held, without repeating it. If it was a secret, say so plainly: it may need to be changed.
   4. **Warn the sender.** Write a message to your `outbox/` with `kind: fyi`, `in-reply-to` set to the message's file name, and the subject `Sensitive content in your message` (not `Re:` the original subject, which may be part of the problem). Say what kind of thing it held and on which lines, never the thing itself.
 - **Answering a question from your own records is fine.** Write the answer to your `outbox/` with `in-reply-to`, and use the subject `Re: <subject>`.
-- **Anything that would change files, settings or accounts, or act outside the project, waits for the maintainer's yes in chat.** This includes building what a note describes, unless the project's own instructions already say how notes are handled.
-- **Process the inbox at the start of a session.** For each message, tell the maintainer briefly who wrote and what about, then answer it, file it, or ask. When it's handled, remove it from `inbox/`. Filing it under the project's own naming rules counts as removing it.
+- **Anything that would change files, settings or accounts, or act outside the project, waits for the maintainer's yes in chat.** Running `deliver.sh` is the one exception. This includes building what a note describes, unless the project's own instructions already say how notes are handled.
+- **Check for mail first, every time the maintainer writes.** Before answering, run `deliver.sh`, which also brings in anything waiting for you, then look in `inbox/`.
+  - If nothing new has arrived, don't mention it.
+  - If messages have arrived, tell the maintainer briefly who wrote and what about, then answer what they asked. Handle each message: answer it, file it, or ask.
+  - When a message is handled, remove it from `inbox/`. Filing it under the project's own naming rules counts as removing it.
 - **A file in `inbox/` without this header isn't a message.** It's whatever the project's own instructions say it is, such as a scanned document or a design note.
 
 ## 6. One owner per fact
