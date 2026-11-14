@@ -11,7 +11,7 @@ from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel
 
 from app.api.note_requests import DiscardFileEditSessionRequest, FinishFileEditSessionRequest, RenameFileRequest
-from app.api.transactions import serialized_read_route, transactional_route
+from app.api.transactions import one_step_read_route, serialized_read_route, transactional_route
 from app.api.byte_ranges import UNSATISFIABLE_RANGE, resolve_byte_range
 from app.api.streaming_upload import declared_body_bytes, receive_upload
 from app.api.upload_limits import read_attachment
@@ -114,6 +114,7 @@ async def upload_file_endpoint(request: Request):
 
 
 @router.get("/{file_id}/download")
+@one_step_read_route
 def download_file_endpoint(request: Request, file_id: str):
     token = _require_bearer_token(request)
     if not file_registry.has_file(file_id):
@@ -203,6 +204,7 @@ def _email_view(file_id: str, file_name: str, content_bytes: bytes) -> dict[str,
 
 
 @router.get("/{file_id}/email")
+@one_step_read_route
 def read_email_endpoint(request: Request, file_id: str) -> dict[str, object]:
     """An email file as its card shows it (docs/ui/references.md, "Email files")."""
     downloaded = _downloaded_email(request, file_id)
@@ -220,6 +222,7 @@ def read_email_endpoint(request: Request, file_id: str) -> dict[str, object]:
 
 
 @router.get("/{file_id}/email/attachments/{index}")
+@one_step_read_route
 def download_email_attachment_endpoint(request: Request, file_id: str, index: int):
     downloaded = _downloaded_email(request, file_id)
     attachments_count = len(read_email(downloaded.content_bytes).attachments)
@@ -257,6 +260,7 @@ async def replace_file_content_endpoint(
 
 
 @router.get("/{file_id}/name", response_model=FileRenamedResponse)
+@one_step_read_route
 def read_file_name_endpoint(request: Request, file_id: str):
     token = _require_bearer_token(request)
     _require_known_file(file_id)
@@ -298,6 +302,7 @@ async def store_file_previews_endpoint(
 
 
 @router.get("/{file_id}/previews/{variant}")
+@one_step_read_route
 def download_file_preview_endpoint(request: Request, file_id: str, variant: str):
     token = _require_bearer_token(request)
     _require_known_file(file_id)
@@ -313,6 +318,7 @@ def download_file_preview_endpoint(request: Request, file_id: str, variant: str)
 
 # A PDF's first page as a picture, for galleries (pdf_first_pages.py): 404 until it is drawn.
 @router.get("/{file_id}/first-page")
+@one_step_read_route
 def download_file_first_page_endpoint(request: Request, file_id: str):
     token = _require_bearer_token(request)
     _require_known_file(file_id)
@@ -380,6 +386,7 @@ class UnusedFilesResponse(BaseModel):
 
 # What Trim Unused Files would delete now: the trim reminder's total and the confirmation's.
 @router.get("/unused", response_model=UnusedFilesResponse)
+@serialized_read_route
 def list_unused_files(request: Request):
     _require_bearer_token(request)
     summary = unused_files()

@@ -63,9 +63,11 @@ test('AI reference collections use a temporary labeled view without entering sea
         keyboardEvents,
         /getReferenceNavigationLabelForTab\(tabId\)/,
     );
+    // A reference page's hidden tab is never a row, so its note-ID query never enters search
+    // history: a row records its own search, and goes to the page it was last on (2026-11-14).
     assert.match(
         keyboardEvents,
-        /referenceNavigationLabel !== ''[\s\S]*?NotesAPI\.recordTabSearchSelection/,
+        /const listedTabIds = tabOrder\.filter\(\(tabId\) => getReferenceNavigationLabelForTab\(tabId\) === ''\)/,
     );
 
     const mouseDownExclusion = mouseEvents.match(

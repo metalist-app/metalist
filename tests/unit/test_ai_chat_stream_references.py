@@ -45,3 +45,17 @@ def test_references_shown_earlier_are_never_dropped() -> None:
             _delta("First.", ["note-1"]),
             _delta("Second.", ["note-2"]),
         ])
+
+
+def test_a_cited_note_deleted_while_the_answer_streams_loses_its_citation() -> None:
+    # The model read the note and cites it; the user deleted it before the answer ended. The
+    # answer ends, without that citation, instead of failing ("Allowed AI citation note is
+    # missing from NoteStore"; 2026-11-14). The note store here holds no notes: the cited one is gone.
+    deleted = "75193dae-9e05-4a4e-94bf-417ffde18957"
+    lines = _stream_lines([
+        _delta(f"Found it.[[{deleted}]]", [deleted]),
+        {"type": "done", "reference_note_ids": [deleted], "reference_web_ids": [], "actions": [], "request_tokens": NO_REQUEST},
+    ])
+    assert lines[-1]["type"] == "done"
+    assert lines[-1]["content"] == "Found it."
+    assert deleted not in lines[-1]["rendered_content"]

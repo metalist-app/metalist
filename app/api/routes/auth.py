@@ -12,7 +12,7 @@ import sys
 import threading
 import time
 
-from app.api.transactions import transactional_route
+from app.api.transactions import one_step_read_route, transactional_route
 from app.api.deps import get_db
 from app.config import ACTIVE_NAMESPACE
 from app.config import KDF_TIME_COST
@@ -733,6 +733,7 @@ def create_passwordless_session(
 
 
 @router.get("/status")
+@one_step_read_route
 def auth_status(
     db: Annotated[SafeSession, Depends(get_db)],
     token: Annotated[Optional[str], Depends(_verify_token)],
@@ -776,6 +777,7 @@ def auth_status(
 
 
 @router.get("/client-state", response_model=ClientStateResponse)
+@one_step_read_route
 def get_client_state(token: Annotated[str, Depends(_require_auth)]):
     payload = load_client_state(token=token)
     return ClientStateResponse(**payload)
@@ -852,6 +854,7 @@ def _entries_named(entries: object, shown: frozenset[str]) -> list[dict[str, obj
 
 
 @router.get("/login-namespaces", response_model=LoginNamespaceCatalogResponse)
+@one_step_read_route
 def login_namespace_catalog(request: Request):
     payload = build_login_namespace_catalog(current_namespace=ACTIVE_NAMESPACE)
     shown = namespaces_shown_to_requester(request)
@@ -889,6 +892,7 @@ def open_login_namespace_route(payload: LoginNamespaceOpenRequest, request: Requ
 
 
 @router.get("/namespaces")
+@one_step_read_route
 def namespace_catalog(request: Request, token: Annotated[str, Depends(_require_auth)]):
     catalog = build_namespace_catalog(
         environ=os.environ,
@@ -1165,6 +1169,7 @@ def rename_active_namespace(
 
 
 @router.get("/namespaces/delete-jobs/{job_id}")
+@one_step_read_route
 def namespace_delete_job_status(
     job_id: str,
 ):
@@ -1181,6 +1186,7 @@ def namespace_delete_job_status(
 
 
 @router.get("/namespaces/rename-jobs/{job_id}")
+@one_step_read_route
 def namespace_rename_job_status(job_id: str):
     job_record_capture = CapturedExceptionContext(NamespaceInputRejected, FileNotFoundError, boundary='app/api/routes/auth.py:namespace_rename_job_status:job_record_capture')
     job_record: dict[str, object] | None = None
@@ -1217,6 +1223,7 @@ def hydrate_cache(
 
 
 @router.get("/workspace-ready")
+@one_step_read_route
 def workspace_ready(token: Annotated[str, Depends(_require_auth)]) -> dict[str, str]:
     """The page has finished starting: caches built ahead of use may start."""
     del token
@@ -1225,6 +1232,7 @@ def workspace_ready(token: Annotated[str, Depends(_require_auth)]) -> dict[str, 
 
 
 @router.get("/hydration-status", response_model=HydrationStatusResponse)
+@one_step_read_route
 def hydration_status(token: Annotated[str, Depends(_require_auth)]):
     return _build_hydration_status()
 
@@ -1313,6 +1321,7 @@ def remove_password(
 
 
 @router.get("/settings/session-timeout", response_model=SessionTimeoutResponse)
+@one_step_read_route
 def get_session_timeout_settings(
     token: Annotated[str, Depends(_require_auth)],
 ):
@@ -1339,5 +1348,6 @@ def put_session_timeout_settings(
 
 
 @router.get("/sessions")
+@one_step_read_route
 def sessions(token: Annotated[str, Depends(_require_auth)]):
     return {"sessions": token_service.list_active_sessions()}

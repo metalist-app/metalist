@@ -12,7 +12,7 @@ from typing_extensions import TypedDict
 from pydantic import ConfigDict, Field, with_config
 
 from app.api.request_auth import get_request_auth_token
-from app.api.transactions import transactional_route
+from app.api.transactions import one_step_read_route, transactional_route
 from app.security.sensitive_cache import SensitiveMemo
 from app.services.resource_limits import SENSITIVE_MEMO_BYTES
 from app.services.search_index import search_index
@@ -190,6 +190,7 @@ def _fuzzy_match(needle: str, haystack: str) -> bool:
 
 
 @router.get("/rules")
+@one_step_read_route
 def list_rules() -> dict:
     rules = [{"id": rule_id, "text": text} for rule_id, text in list_rule_lines()]
     return {"rules": rules}
@@ -314,6 +315,7 @@ def delete_tag(request: Request, payload: DeleteTagRequest) -> dict:
 
 
 @router.get("/focus")
+@one_step_read_route
 def focus_view(tag: str) -> dict:
     ontology = get_ontology()
     left, middle, right = ontology.focus_view(tag=tag)
@@ -580,6 +582,7 @@ def _match_rank(*, needle: str, tag: str) -> int:
 
 
 @router.get("/tags")
+@one_step_read_route
 def list_tags(q: str, limit: int, focus: str, relation: str) -> dict:
     """Tags for a Tag Relationships field. With a `relation` to `focus`, tags linked to the
     focus tag come first, then tags sharing a word with it, then the rest by use; typing

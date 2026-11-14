@@ -300,3 +300,19 @@ def test_a_leak_check_that_answers_with_an_error_says_so_and_checks_the_rest(not
     result = audit_passwords(weak_below=3, check_leaks=True, fresh=True, now=NOW, client=httpx.Client(transport=httpx.MockTransport(busy)))
     assert result["leakCheck"] == "unavailable"
     assert result["summary"][WEAK] == 2
+
+
+def test_a_note_deleted_while_the_audit_runs_does_not_fail_it(note_store: NoteStore) -> None:
+    # The audit asks Have I Been Pwned before it builds its rows; a note deleted meanwhile (from
+    # its menu, with the panel open) made it fail with a KeyError (2026-11-14). It answers from
+    # the notes as they were when it began.
+    def answer_then_delete(request: httpx.Request) -> httpx.Response:
+        if note_store.has_note("bank-pw"):
+            note_store.remove_note("bank-pw")
+        return httpx.Response(200, text="0000000000000000000000000000000000A:0")
+
+    result = audit_passwords(weak_below=3, check_leaks=True, fresh=True, now=NOW,
+                             client=httpx.Client(transport=httpx.MockTransport(answer_then_delete)))
+
+    assert result["leakCheck"] == "done"
+    assert ("bank-pw", 0) in _groups(result)

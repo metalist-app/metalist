@@ -143,7 +143,10 @@ function recordServerSignature(state) {
 // its state, and later snapshots are read at its version.
 export async function reloadTabStateFromServer() {
     const serverState = await fetchTabState();
-    ModeContext.hydrateTabState(serverState, { preserveActiveRootTracking: true });
+    // The view keeps its place when the tab shown stays; a page the server closed (its notes
+    // deleted) gives way to its search, which brings its own.
+    const keepsActiveTab = serverState.activeTabId === ModeContext.activeTabId;
+    ModeContext.hydrateTabState(serverState, { preserveActiveRootTracking: keepsActiveTab });
     setTabStateVersionFromServer(serverState.version);
     recordServerSignature(serverState);
     return serverState;

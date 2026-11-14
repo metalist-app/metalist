@@ -19,7 +19,7 @@ from typing_extensions import Self
 
 from app.api.note_requests import MAX_NOTE_CONTENT_CHARS
 from app.api.request_auth import require_request_auth_token
-from app.api.transactions import transactional_route
+from app.api.transactions import one_step_read_route, serialized_read_route, transactional_route
 from app.models.utils import note_data_to_html
 from app.models.utils import render_note_data_read_only
 from app.services.ai_chat_stream import ChatTurnStream
@@ -425,6 +425,7 @@ def _render_ai_response_note_content(*, markdown_text: str,
 # no mutation slot: the chat refreshes it while the user edits notes. current_provider is
 # the provider of the model picked last; its models stay listed even without a key.
 @router.get("/model-choices", response_model=AiModelChoicesResponse)
+@one_step_read_route
 async def list_ai_model_choices(
     current_provider: AiProvider,
     token: Annotated[str, Depends(require_request_auth_token)],
@@ -449,6 +450,7 @@ async def list_ai_model_choices(
     "/{provider}/credential",
     response_model=AiCredentialStatusResponse,
 )
+@one_step_read_route
 def get_ai_credential_status(
     provider: AiProvider,
     response: Response,
@@ -754,6 +756,7 @@ def _require_cost_estimate_offered() -> None:
 
 
 @router.get("/openai/cost", response_model=OpenAICostResponse)
+@one_step_read_route
 def get_openai_cost(
     response: Response,
     token: Annotated[str, Depends(require_request_auth_token)],
@@ -812,7 +815,10 @@ def preview_cloud_privacy(
     )
 
 
+# Draws each answer with the notes it cites, after checking they are there: one at a time with the
+# writes, so a delete cannot land in between (2026-11-14).
 @router.get("/session", response_model=AiSessionResponse)
+@serialized_read_route
 def get_ai_session(
     response: Response,
     token: Annotated[str, Depends(require_request_auth_token)],
@@ -890,6 +896,7 @@ def _summary_response(summary: dict[str, object]) -> AiChatSummary:
 
 
 @router.get("/history-meter", response_model=AiHistoryMeterResponse)
+@one_step_read_route
 def get_ai_history_meter(
     provider: AiProvider,
     response: Response,
@@ -969,6 +976,7 @@ def clear_ai_session(
 
 
 @router.get("/debug", response_model=AiDebugSnapshotResponse)
+@one_step_read_route
 def get_ai_debug_snapshot(
     response: Response,
     token: Annotated[str, Depends(require_request_auth_token)],
@@ -981,6 +989,7 @@ def get_ai_debug_snapshot(
 
 
 @router.get("/history")
+@one_step_read_route
 def get_ai_history(
     response: Response,
     token: Annotated[str, Depends(require_request_auth_token)],

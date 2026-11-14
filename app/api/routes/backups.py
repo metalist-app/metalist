@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 from typing import Annotated
 from pathlib import Path
 
-from app.api.transactions import transactional_route
+from app.api.transactions import one_step_read_route, transactional_route
 from app.config import ACTIVE_NAMESPACE
 from app.config import KDF_ALGORITHM
 from app.config import KDF_MAX_MEMORY_COST_KIB
@@ -765,6 +765,7 @@ def _restore_import_to_target(
 
 
 @router.get("/settings", response_model=BackupSettingsResponse)
+@one_step_read_route
 def get_backup_settings(token: Annotated[str, Depends(_require_auth)]):
     settings = load_backup_settings(token=token)
     return _serialize_settings_response(settings)
@@ -847,6 +848,7 @@ def _backups_in_folder(*, token: str) -> list[BackupListEntryResponse]:
 
 
 @router.get("/list", response_model=BackupListResponse)
+@one_step_read_route
 def list_backups(request: Request, token: Annotated[str, Depends(_require_auth)]):
     backups = _backups_in_folder(token=token)
     # Another computer sees no backup of a vault it may not see (namespaces_shown_to_other_computers).
@@ -857,6 +859,7 @@ def list_backups(request: Request, token: Annotated[str, Depends(_require_auth)]
 
 
 @router.get("/times", response_model=BackupTimesResponse)
+@one_step_read_route
 def list_backup_times(token: Annotated[str, Depends(_require_auth)]):
     """When this namespace was backed up into the backup folder (the backup reminder's clock)."""
     if ACTIVE_NAMESPACE is None:

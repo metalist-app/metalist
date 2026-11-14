@@ -99,6 +99,11 @@ test('nested reference source entries expose and dismiss one temporary context a
         pushReferenceNavigationEntry,
         pushForwardReferencePages,
         clearForwardReferencePages,
+        hasForwardReferencePage,
+        getReferencePageTabForContext,
+        getReferencePageTabsForContext,
+        getReferencePageLabelForContext,
+        getActiveSearchContextTabId,
         replaceActiveReferenceNavigationQuery,
         updateReferenceSourceIndicator,
     } = await import(
@@ -149,10 +154,22 @@ test('nested reference source entries expose and dismiss one temporary context a
     assert.deepEqual(getActiveReferenceChain().map((entry) => entry.toTabId), ['source-1', 'source-2']);
     assert.equal(backButton.hidden, false, 'a second level goes back with ◀');
     assert.equal(searchButton.classList.contains('is-unavailable'), false, 'two pages: ⏮ goes all the way back');
-    pushForwardReferencePages([{ referenceQuery: 'uuid-4', viewKind: 'source', scrollY: 0 }]);
+    pushForwardReferencePages('original', [{ referenceQuery: 'uuid-4', viewKind: 'source', scrollY: 0 }]);
     assert.equal(forwardButton.classList.contains('is-unavailable'), false, 'after going back: ▶');
-    clearForwardReferencePages();
+    // Each search context keeps its own way forward (2026-11-14): another's shows no ▶ here.
+    clearForwardReferencePages('original');
+    pushForwardReferencePages('journal', [{ referenceQuery: 'uuid-5', viewKind: 'source', scrollY: 0 }]);
     assert.equal(forwardButton.classList.contains('is-unavailable'), true, 'following a new link drops what was forward');
+    assert.equal(hasForwardReferencePage('journal'), true, 'journal keeps its own way forward');
+    clearForwardReferencePages('journal');
+    // The search context is on its deepest page; its row names the page's kind.
+    assert.equal(getReferencePageTabForContext('original'), 'source-2');
+    assert.equal(getReferencePageLabelForContext('original'), 'Source note');
+    assert.equal(getReferencePageTabForContext('journal'), '', 'a context on its search');
+    // Closing the context closes these, the deepest first: none is left for another to adopt.
+    assert.deepEqual(getReferencePageTabsForContext('original'), ['source-2', 'source-1']);
+    assert.deepEqual(getReferencePageTabsForContext('journal'), []);
+    assert.equal(getActiveSearchContextTabId(), 'original');
     replaceActiveReferenceNavigationQuery('uuid-3', 'source');
     assert.equal(getActiveReferenceSourceQuery(), 'uuid-3');
     // A source view's chip says Source note; its first line is the tooltip.
@@ -199,4 +216,24 @@ test('nested reference source entries expose and dismiss one temporary context a
 
     await import('../../app/static/js/modules/mode-manager/services/infinite-scroll-service.js');
     await Promise.resolve();
+
+    // Tabs saved before a context kept its page (before 2026-11-14) can hold two ways of pages
+    // from one context: its row followed the search while a page stayed open, and a link from
+    // there began a second way. Loading them must not fail: the newest way is the context's page.
+    ModeContext.hydrateTabState({
+        activeTabId: 'way-a-1',
+        tabs: {
+            original: createTab('project'),
+            'way-a-1': createTab('uuid-a'),
+            'way-b-1': createTab('uuid-b'),
+            'way-b-2': createTab('uuid-c'),
+        },
+        tabOrder: ['original', 'way-a-1', 'way-b-1', 'way-b-2'],
+    }, { emitUpdate: false });
+    pushReferenceNavigationEntry('original', 'way-a-1', 'uuid-a', originScope, 'backlinks');
+    pushReferenceNavigationEntry('original', 'way-b-1', 'uuid-b', originScope, 'source');
+    pushReferenceNavigationEntry('way-b-1', 'way-b-2', 'uuid-c', originScope, 'references');
+    assert.equal(getReferencePageTabForContext('original'), 'way-b-2', 'the newest way');
+    assert.equal(getReferencePageLabelForContext('original'), 'All references');
+    assert.deepEqual(getReferencePageTabsForContext('original'), ['way-b-2', 'way-b-1', 'way-a-1']);
 });

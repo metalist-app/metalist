@@ -30,9 +30,46 @@ const VIEW_REQUEST_IDLE_TIMEOUT_SECONDS = 5;
 const VIEW_REQUEST_IDLE_TIMEOUT_MS = VIEW_REQUEST_IDLE_TIMEOUT_SECONDS * MS_PER_SECOND;
 const VIEW_REQUEST_IDLE_POLL_MS = 25;
 
+// Before the first view: nothing seen yet.
+const NOT_YET_SEEN = -1;
 const moduleState = ApplicationState.createFields('ui-actions', {
     viewRequestInFlight: false,
+    // The server's count of when reference pages last closed with their deleted notes, as this
+    // page last took its tabs; NOT_YET_SEEN until the first view.
+    pagesClosedAtVersion: NOT_YET_SEEN,
 });
+
+/**
+ * Whether the server closed reference pages whose notes were all deleted since the last view
+ * (tab_state.close_pages_whose_notes_are_gone): each view carries when it last did. If so the tabs
+ * are taken again, so `foo > bar` reads `foo` and a closed page shown gives way to its search
+ * (2026-11-14). A server that doesn't say (one older than this page's code: an upgrade under way,
+ * or MetaList not restarted yet) closes nothing that this page needs to hear about.
+ */
+function hasNewlyClosedReferencePages(snapshot) {
+    if (!('pagesClosedAtVersion' in snapshot)) {
+        return false;
+    }
+    const closedAt = snapshot.pagesClosedAtVersion;
+    if (!Number.isInteger(closedAt) || closedAt < 0) {
+        throw new Error('notes.view pagesClosedAtVersion must be a non-negative integer');
+    }
+    const seenBefore = moduleState.pagesClosedAtVersion;
+    if (seenBefore === closedAt) {
+        return false;
+    }
+    moduleState.pagesClosedAtVersion = closedAt;
+    // The first view, or a server started again: the tabs it loaded are already the server's.
+    return seenBefore !== NOT_YET_SEEN && closedAt > seenBefore;
+}
+
+function noticeClosedReferencePages(snapshot) {
+    if (!hasNewlyClosedReferencePages(snapshot)) {
+        return;
+    }
+    // After this view is applied: taking the tabs waits for view requests in flight.
+    void import('../events/keyboard-events.js').then((keyboardEvents) => keyboardEvents.adoptClosedReferencePages());
+}
 
 
 function updateSearchResultsCount(snapshot, tabId) {
@@ -182,6 +219,7 @@ export async function actionRefreshAndMaybeSelect(options) {
             );
         }
         const { snapshot } = viewResponse;
+        noticeClosedReferencePages(snapshot);
         ModeContext.setRootWindow(requestTabId, snapshot.rootWindowStart, snapshot.rootBandMargin);
         setSearchHighlightPhrases(snapshot.searchHighlightPhrases);
         const hasDiffOps = Array.isArray(snapshot.diffOps);

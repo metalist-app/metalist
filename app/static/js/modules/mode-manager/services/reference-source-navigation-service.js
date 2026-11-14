@@ -68,9 +68,10 @@ const moduleState = ApplicationState.createFields('reference-source-navigation-s
     // or '' when the chip shows.
     newSearchTabId: '',
     // Reference pages gone back from, to go forward to again (docs/ready-to-build/reference-cards.md,
-    // "Reference pages", §2): { referenceQuery, viewKind, scrollY }, the next one forward last.
-    // Kept in memory only: a reload, or following another reference, drops them.
-    forwardPages: [],
+    // "Reference pages", §2), by search context: { referenceQuery, viewKind, scrollY }, the next
+    // one forward last. Each context keeps its own while MetaList is open (2026-11-14); a reload, or
+    // following another reference, drops them.
+    forwardPagesByContext: new Map(),
 });
 
 function requireForwardPage(page) {
@@ -86,8 +87,23 @@ function requireForwardPage(page) {
     }
 }
 
-/** Remember pages gone back from, the nearest (the next one forward) last. */
-export function pushForwardReferencePages(pages) {
+function requireContextTabId(contextTabId) {
+    if (typeof contextTabId !== 'string' || contextTabId === '') {
+        throw new Error('The way forward belongs to a search context: its tab id is required');
+    }
+}
+
+function forwardPagesOf(contextTabId) {
+    requireContextTabId(contextTabId);
+    if (!moduleState.forwardPagesByContext.has(contextTabId)) {
+        return [];
+    }
+    return moduleState.forwardPagesByContext.get(contextTabId);
+}
+
+/** Remember pages gone back from in a search context, the nearest (the next one forward) last. */
+export function pushForwardReferencePages(contextTabId, pages) {
+    requireContextTabId(contextTabId);
     if (!Array.isArray(pages)) {
         throw new Error('pushForwardReferencePages requires a list');
     }
@@ -95,31 +111,84 @@ export function pushForwardReferencePages(pages) {
     if (pages.length === 0) {
         return;
     }
-    moduleState.forwardPages.push(...pages.map((page) => ({ ...page })));
+    const kept = forwardPagesOf(contextTabId);
+    moduleState.forwardPagesByContext.set(contextTabId, [...kept, ...pages.map((page) => ({ ...page }))]);
     updateReferenceSourceIndicator();
 }
 
-/** The next page forward, taken off the forward path, or null when there is none. */
-export function popForwardReferencePage() {
-    if (moduleState.forwardPages.length === 0) {
+/** The context's next page forward, taken off its way forward, or null when there is none. */
+export function popForwardReferencePage(contextTabId) {
+    const kept = forwardPagesOf(contextTabId);
+    if (kept.length === 0) {
         return null;
     }
-    const page = moduleState.forwardPages.pop();
+    const page = kept[kept.length - 1];
+    if (kept.length === 1) {
+        moduleState.forwardPagesByContext.delete(contextTabId);
+    } else {
+        moduleState.forwardPagesByContext.set(contextTabId, kept.slice(0, -1));
+    }
     updateReferenceSourceIndicator();
     return page;
 }
 
-/** Following another reference, or leaving for the search, drops the way forward. */
-export function clearForwardReferencePages() {
-    if (moduleState.forwardPages.length === 0) {
+/** Following another reference, or leaving for the search, drops the context's way forward. */
+export function clearForwardReferencePages(contextTabId) {
+    if (forwardPagesOf(contextTabId).length === 0) {
         return;
     }
-    moduleState.forwardPages.length = 0;
+    moduleState.forwardPagesByContext.delete(contextTabId);
     updateReferenceSourceIndicator();
 }
 
-export function hasForwardReferencePage() {
-    return moduleState.forwardPages.length > 0;
+export function hasForwardReferencePage(contextTabId) {
+    return forwardPagesOf(contextTabId).length > 0;
+}
+
+/** The search context the user is in: the one a shown reference page was opened from, or the tab. */
+export function getActiveSearchContextTabId() {
+    if (isViewingReferenceSource()) {
+        return getActiveReferenceOriginScope().scopeTabId;
+    }
+    return ModeContext.activeTabId;
+}
+
+/** The stack's entries opened from a search context, in the order they were opened. */
+function entriesFromContext(contextTabId) {
+    requireContextTabId(contextTabId);
+    pruneReferenceNavigationStackToExistingTabs();
+    return moduleState.referenceNavigationStack.filter((entry) => entry.originScope.scopeTabId === contextTabId);
+}
+
+/**
+ * The reference page a search context was last on: the deepest page of the newest way from it, or
+ * '' when it shows its search. Choosing the context goes back there (2026-11-14). Tabs saved before
+ * then can hold older ways from the same context too; they close when it goes back to its search.
+ */
+export function getReferencePageTabForContext(contextTabId) {
+    const fromContext = entriesFromContext(contextTabId);
+    const deepest = fromContext.filter(
+        (entry) => !fromContext.some((other) => other.fromTabId === entry.toTabId),
+    );
+    if (deepest.length === 0) {
+        return '';
+    }
+    // The stack keeps the order pages were opened in: the last deepest page is the newest way's.
+    return deepest[deepest.length - 1].toTabId;
+}
+
+/** Every reference page opened from a search context, the newest first: closing it closes them. */
+export function getReferencePageTabsForContext(contextTabId) {
+    return entriesFromContext(contextTabId).map((entry) => entry.toTabId).reverse();
+}
+
+/** "Source note", "Backlinks"…: the kind of page a search context is on, or '' on its search. */
+export function getReferencePageLabelForContext(contextTabId) {
+    const pageTabId = getReferencePageTabForContext(contextTabId);
+    if (pageTabId === '') {
+        return '';
+    }
+    return getReferenceNavigationLabelForTab(pageTabId);
 }
 
 function requireReferenceViewKind(viewKind) {
@@ -536,7 +605,7 @@ function renderReferenceViewChip() {
     // ⏮ only when it goes further than ◀ would.
     showArrowWhenAvailable(searchButton, chain.length > FIRST_PAGE_DEPTH);
     // ▶ only after going back: forward along the way just come back.
-    showArrowWhenAvailable(forwardButton, moduleState.forwardPages.length > 0);
+    showArrowWhenAvailable(forwardButton, hasForwardReferencePage(entry.originScope.scopeTabId));
     chip.classList.toggle(CHIP_SHOWN_CLASS, moduleState.newSearchTabId === '');
 }
 

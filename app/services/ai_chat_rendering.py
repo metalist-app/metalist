@@ -218,8 +218,10 @@ def sanitize_ai_chat_markdown_citations(
             note_id = raw_note_id.translate(_UUID_DASH_TRANSLATION).lower()
             if note_id not in allowed_note_id_set:
                 return ""
+            # Deleted since the model read it (an answer takes a while): the citation goes, and
+            # the answer stays (2026-11-14).
             if not notes.has_note(note_id):
-                raise RuntimeError("Allowed AI citation note is missing from NoteStore")
+                return ""
             return f"[[{note_id}]]"
 
         return _NOTE_CITATION_RE.sub(replace, text)
@@ -576,15 +578,15 @@ def _replace_citations_in_text(
         assert isinstance(note_id, str) and note_id != ""
         note_id = note_id.translate(_UUID_DASH_TRANSLATION).lower()
         handled_note_citation = True
-        if note_id not in allowed_note_ids:
+        # Not allowed, or deleted since the model read it (an answer takes a while): no citation
+        # for it, and the answer stays (2026-11-14).
+        if note_id not in allowed_note_ids or not context.has_note(note_id):
             output.append(preceding_text)
             previous_marker_output_index = None
             previous_marker_root_id = None
             previous_marker_note_ids = []
             cursor = match.end()
             continue
-        if not context.has_note(note_id):
-            raise RuntimeError("Allowed AI citation note is missing from NoteStore")
         root_note_id = _resolve_reference_root_id(
             cited_note_id=note_id,
             context=context,

@@ -89,7 +89,7 @@ from app.api.routes.background_work import router as api2_background_work_router
 from app.api.routes.problem_reports import router as api2_problem_reports_router
 from app.api.routes.ai import router as api2_ai_router
 from app.api.routes.test import router as api2_test_router  # shockharness: ignore[STUB002] reason="mounted only when TEST_MODE is on, and the endpoint asserts it too"
-from app.api.transactions import transactional_route
+from app.api.transactions import one_step_read_route, transactional_route
 from app.config import API_PREFIX, TEST_MODE, V1_API_PREFIX
 from app.services.agent.scripted_inference import scripted_ai_script_path
 from app.services.native_folder_picker import answered_folder_pick
@@ -592,6 +592,7 @@ async def add_security_headers(request: Request, call_next):
     return response
 
 @app.get("/", response_class=HTMLResponse)
+@one_step_read_route
 async def home(request: Request, db: Annotated[SafeSession, Depends(get_db)]):
     template = templates.get_template("index.html")
 
@@ -624,6 +625,7 @@ async def home(request: Request, db: Annotated[SafeSession, Depends(get_db)]):
 
 
 @app.get("/maintenance", response_class=HTMLResponse)
+@one_step_read_route
 async def maintenance_page(request: Request):
     """Maintenance mode page shown during bulk operations."""
     template = templates.get_template("maintenance.html")
@@ -699,6 +701,7 @@ def _build_force_reauth_url(*, url: str) -> str:
 
 
 @app.get("/namespace-deleted", response_class=HTMLResponse)
+@one_step_read_route
 async def namespace_deleted_page(request: Request):
     job_id = _page_param(request, "job")
     if job_id is None:
@@ -751,6 +754,7 @@ def _open_catalog_namespace(*, namespace: str) -> NamespaceOpenResult:
 
 
 @app.get("/namespace-deleted/open")
+@one_step_read_route
 async def namespace_deleted_open_page(request: Request):
     job_id = _page_param(request, "job")
     if job_id is None:
@@ -790,6 +794,7 @@ async def namespace_deleted_open_page(request: Request):
 
 
 @app.get("/namespace-renamed", response_class=HTMLResponse)
+@one_step_read_route
 async def namespace_renamed_page(request: Request):
     job_id = _page_param(request, "job")
     if job_id is None:
@@ -826,6 +831,7 @@ async def namespace_renamed_page(request: Request):
 
 
 @app.get("/namespace-renamed/open")
+@one_step_read_route
 async def namespace_renamed_open_page(request: Request):
     job_id = _page_param(request, "job")
     if job_id is None:
@@ -849,6 +855,7 @@ async def namespace_renamed_open_page(request: Request):
 
 
 @app.get("/locked", response_class=HTMLResponse)
+@one_step_read_route
 async def locked_page(request: Request, db: Annotated[SafeSession, Depends(get_db)]):
     """Render a dedicated locked screen when a session is invalidated."""
     template = templates.get_template("locked.html")

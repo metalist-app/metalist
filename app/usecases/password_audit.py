@@ -150,22 +150,22 @@ def passwords_in(record: NoteRecord) -> List[FoundPassword]:
     ]
 
 
-def _label(record: NoteRecord, kind: str) -> str:
+def _label(record: NoteRecord, kind: str, records: Mapping[str, NoteRecord]) -> str:
     """What names the password's note: its first line, passwords hidden; a password note's own
     text is the password, so its parent's first line names it."""
     if kind == WHOLE_NOTE:
         if record.parent_id is None:
             return "Password note at the top level"
-        parent = store.get(record.parent_id)
+        parent = records[record.parent_id]
         return text_shown_without_passwords(first_line_preview(parent.content), parent.tags)
     return text_shown_without_passwords(first_line_preview(record.content), record.tags)
 
 
-def _root_note_id(record: NoteRecord) -> str:
+def _root_note_id(record: NoteRecord, records: Mapping[str, NoteRecord]) -> str:
     """The top-level note the password's note is in (itself, when it is one): Go to opens it."""
     current = record
     while current.parent_id is not None:
-        current = store.get(current.parent_id)
+        current = records[current.parent_id]
     return current.id
 
 
@@ -273,7 +273,10 @@ def audit_passwords(*, weak_below: int, check_leaks: bool, fresh: bool, now: dat
         raise InputRejected(f"Weak means a score below {' or '.join(str(value) for value in WEAK_THRESHOLDS)}.")
     if fresh:
         forget_audit()
-    found = [password for record in store.snapshot().values() for password in passwords_in(record)]
+    # One reading of the notes for the whole audit: the leak check goes over the network, and a
+    # note deleted meanwhile (from its menu, with the panel open) failed the audit (2026-11-14).
+    records = store.snapshot()
+    found = [password for record in records.values() for password in passwords_in(record)]
     counted = [password for password in found if not password.is_kept_after_replacing]
     uses = Counter(password.value for password in counted)
     leak_counts: Dict[str, int] = {}
@@ -289,16 +292,17 @@ def audit_passwords(*, weak_below: int, check_leaks: bool, fresh: bool, now: dat
     rows: List[Dict[str, object]] = []
     summary = {group: 0 for group in GROUPS}
     for password in found:
-        row, groups = _row(password, weak_below=weak_below, uses=uses, leak_counts=leak_counts, now=now)
+        row, groups = _row(password, records, weak_below=weak_below, uses=uses, leak_counts=leak_counts, now=now)
         rows.append(row)
         for group in groups:
             summary[group] += 1
     return {"passwordCount": len(counted), "summary": summary, "leakCheck": leak_check, "rows": rows}
 
 
-def _row(password: FoundPassword, *, weak_below: int, uses: Mapping[str, int], leak_counts: Mapping[str, int], now: datetime) -> tuple[Dict[str, object], List[str]]:
-    record = store.get(password.note_id)
-    label = _label(record, password.kind)
+def _row(password: FoundPassword, records: Mapping[str, NoteRecord], *, weak_below: int, uses: Mapping[str, int],
+         leak_counts: Mapping[str, int], now: datetime) -> tuple[Dict[str, object], List[str]]:
+    record = records[password.note_id]
+    label = _label(record, password.kind, records)
     groups: List[str] = []
     score = _score(password.value, _context_words(record, label))
     if password.is_kept_after_replacing:
@@ -313,7 +317,7 @@ def _row(password: FoundPassword, *, weak_below: int, uses: Mapping[str, int], l
         if _is_old(record, now):
             groups.append(OLD)
     return {
-        "noteId": password.note_id, "rootNoteId": _root_note_id(record), "kind": password.kind, "regionIndex": password.region_index,
+        "noteId": password.note_id, "rootNoteId": _root_note_id(record, records), "kind": password.kind, "regionIndex": password.region_index,
         "passwordId": password_id(password.value),
         "label": label, "tags": record.tags, "groups": groups, "score": score,
         "canReplace": password.can_replace and not password.is_kept_after_replacing,

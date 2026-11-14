@@ -8448,7 +8448,10 @@ body.loading::after {
     border: 1px solid var(--modal-border);
     color: var(--modal-text-muted);
     padding: 8px 12px;
-    width: min(320px, calc(100vw - 16px));
+    /* 320px as before, wider as the names grow, so a long one isn't cut (the maintainer,
+       2026-11-14), up to the window less its margins; past that a name ends in an ellipsis. */
+    width: max-content;
+    min-width: min(320px, calc(100vw - 16px));
     box-sizing: border-box;
     border-radius: 4px;
     font-family: monospace;
