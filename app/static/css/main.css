@@ -7838,10 +7838,9 @@ body:not(.pref-show-search-results-count) .controls .search-results-count {
     visibility: hidden;
 }
 
-/* Tried 2026-11-13: no words in the bar, only the arrows. The page's kind stays for screen
-   readers, unseen, and the arrows close up around the bar's middle. Showing it again: a fixed
-   width of 7.25em (as wide as "All references"), centred, the arrows then staying on the same
-   pixels whichever page is shown. */
+/* No words in the bar, only the arrows (tried 2026-11-14, kept by the maintainer the same day:
+   "much more pleasant"). The page's kind stays for screen readers, unseen, and the search
+   context's row names it; the arrows close up around the bar's middle. */
 .controls .reference-view-chip-label {
     position: absolute;
     width: 1px;
@@ -7851,22 +7850,7 @@ body:not(.pref-show-search-results-count) .controls .search-results-count {
     white-space: nowrap;
 }
 
-.controls .reference-view-chip-label-shown {
-    flex: none;
-    width: 7.25em;
-    min-width: 0;
-    margin: 0 6px;
-    text-align: center;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font-size: 18px;
-    font-weight: 700;
-    line-height: 1;
-}
-
-/* An empty place after ▶ as wide as ⏮, so the page's kind sits in the bar's middle with ◀ and ▶
-   the same distance either side of it. */
+/* An empty place after ▶ as wide as ⏮, so the gap between ◀ and ▶ sits on the bar's middle. */
 .controls .reference-view-chip::after {
     content: "";
     flex: none;

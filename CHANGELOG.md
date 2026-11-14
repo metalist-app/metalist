@@ -2,6 +2,19 @@
 
 What changed in each MetaList release, newest first.
 
+## Changes in 0.30.0
+
+- **Password Audit.** In the command palette, Password Audit… checks every password in the vault and lists the leaked (if you turn that check on), reused, weak and old ones, each a click from its note. It keeps up while open as you change passwords, and a reminder offers it now and then in a vault with passwords.
+- **Following a link turns to a page,** no longer opening a search context. The page shows the linked note alone, as if it were a root, with the notes under it; ◀ goes back, ⏮ straight back to your search, ▶ forward again. Each search context keeps the page it is on (its row reads `miscellaneous > Source note`), and deleting the note a page shows closes the page.
+- **Backlinks** (once "Referenced by"): a note other notes reference shows the link icon mirrored instead of a number; its page lists the notes most recently edited first.
+- **Each vault says whether it is shared on the network,** in Manage Vault Ports. A shared vault accepts this computer's own names and addresses as they are now, so a new address from the router needs no change. Vaults shared before stay shared. `METALIST_HOST` is no longer read: MetaList refuses to start while it is set.
+- **No pause after logging in:** work MetaList does in the background waits while you are using it.
+- **Typing a search no longer stalls MetaList on a slow computer:** suggestions are asked for one at a time and never hold up your notes. Before, a page could wait minutes for them.
+- AI answers keep the web pages they cite, and the AI cites the note that makes sense on its own.
+- Fixed: a red error after saving an Excalidraw drawing; a red error when an AI answer sent an empty piece; the Password Audit, a preview or full screen failing when a note was deleted at the same moment.
+- Search contexts and reference views saved by 0.29.0 open as reference pages.
+- Vaults are upgraded (database version 20) when first unlocked, or at startup without a password, after a backup: an older MetaList cannot open them afterwards.
+
 ## Changes in 0.29.0
 
 - **Two new looks under Theme:** Phosphor, a green terminal screen in your system's monospace font where nothing ever animates, and Vellum, warm cream paper with notes in a book serif (Source Serif 4) for long reading.
