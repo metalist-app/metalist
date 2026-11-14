@@ -502,10 +502,12 @@ the AI knows about them (built 2026-10-30, `app/services/agent/chat_compaction.p
   its conversation then. A restore brings back the conversation the backup holds, in place of the current one
   (none for a backup made before 2026-11-11). Tests: `tests/unit/test_ai_chat_saved.py`,
   `test_ai_chat_restore.py`, `test_ai_chat_migration.py`.
-- With several views (`docs/ready-to-build/multi-view-editing.md` §5, decided 2026-10-28),
-  each view will have its own conversation: a new browser tab starts blank, a reload keeps
-  it, closing the tab ends it. That decision predates saving the conversation with the vault
-  (2026-11-08), which keys it to the vault and will key it to a view then.
+- With several views (`docs/ready-to-build/multi-view-editing.md` §5, decided 2026-11-14), the
+  vault keeps its one conversation, shown live in every browser tab and on the phone: each Send
+  uses the scope of the view that sent it, one answer is written at a time, and closing tabs
+  loses nothing. "One per view" (2026-10-28) was dropped: closing a browser would lose every
+  conversation its tabs held. A future option: several kept conversations to choose from
+  (`docs/future-plans/ai-conversations.md`).
 - The OpenAI usage/cost aggregate is separate process-wide server memory. Browser
   refresh and chat clearing retain it; its Reset button or server restart clears it.
 - Canonical future context includes only user text and completed assistant prose.

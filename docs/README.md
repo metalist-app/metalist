@@ -51,6 +51,7 @@
 - Future plan (jumping inside audio and video, left for later): `docs/future-plans/media-jump-playback.md`
 - Future plan (galleries: `@gallery` shows a note's and its descendants' pictures as a grid, PDF first pages): `docs/future-plans/gallery.md`
 - Future plan (scale testing, parts 4 to 7): `docs/future-plans/scale-testing.md`
+- Future option (several kept AI conversations to choose from, as chatbots' web versions have): `docs/future-plans/ai-conversations.md`
 - Future UI plan (toolbar): `docs/future-plans/PLAN.toolbar.md`
 - Future plan (hosted MetaList: downloading your own copy, the backup reminder): `docs/future-plans/hosted-own-copy.md`
 - Future plan (AI providers, what is left: evals for Claude and Gemini, the demo vault, hosted questions): `docs/future-plans/ai-providers-remaining.md`
