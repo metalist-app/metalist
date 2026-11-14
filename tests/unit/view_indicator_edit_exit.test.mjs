@@ -9,7 +9,10 @@ import test from 'node:test';
 // (reported on Windows Chrome for Untagged notes). Every pill is therefore on
 // the list of places a press does not end editing.
 const template = readFileSync(new URL('../../app/templates/index.html', import.meta.url), 'utf8');
-const mouseEvents = readFileSync(new URL('../../app/static/js/modules/mode-manager/events/mouse-events.js', import.meta.url), 'utf8');
+// Read with \n line ends: a Windows checkout writes \r\n, and the function is found by its closing
+// "\n}\n" (CI, 2026-11-14).
+const mouseEvents = readFileSync(new URL('../../app/static/js/modules/mode-manager/events/mouse-events.js', import.meta.url), 'utf8')
+    .replaceAll('\r\n', '\n');
 
 function viewIndicatorIds() {
     const start = template.indexOf('class="search-input-chips"');

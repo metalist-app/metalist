@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import threading
 import time
 from pathlib import Path
 
@@ -65,6 +66,49 @@ def test_a_blocked_loop_is_recorded_with_what_was_running(tmp_path: Path, monkey
     # One line: the record written while the loop was held was replaced by the finished stall's.
     recorded = [json.loads(line) for line in stall_log.read_text(encoding="utf-8").splitlines()]
     assert recorded == [{"at": stall.at, "seconds": stall.seconds, "requests": [["POST", "/api2/ai/chat"]], "stacks": stall.stacks, "is_over": True}]
+
+
+# A wait for a second can end a few milliseconds early (Windows' timer, CI 2026-11-14): the
+# watchdog then looked at 0.99 s, too soon to call it a stall, and next after the loop was free,
+# so the stall was recorded without what was running.
+EARLY_WAKE_SECONDS = 0.01
+
+
+class _WakingEarly:
+    """A stop event whose waits end a little before their time, as Windows' can."""
+
+    def __init__(self) -> None:
+        self._event = threading.Event()
+
+    def wait(self, timeout: float) -> bool:
+        return self._event.wait(timeout - EARLY_WAKE_SECONDS)
+
+    def set(self) -> None:
+        self._event.set()
+
+
+def test_a_stall_is_caught_while_held_when_the_watchdog_wakes_early(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv(diagnostics.LOOP_STALL_LOG_ENVIRONMENT_VARIABLE, str(tmp_path / "loop-stalls.jsonl"))
+    chat_route = APIRoute("/api2/ai/chat", lambda: None, methods=["POST"])
+    safe_log.allow_route_templates([chat_route])
+    diagnostics.begin_request(request_id="stalling", method="POST", scope={"path": "/api2/ai/chat", "route": chat_route},
+                              has_query=False, started_at=time.perf_counter())
+
+    async def watched() -> None:
+        watchdog = diagnostics.EventLoopWatchdog(loop=asyncio.get_running_loop())
+        watchdog._stopped = _WakingEarly()
+        watchdog.start()
+        await asyncio.sleep(0.1)
+        time.sleep(BLOCKED_SECONDS)
+        await asyncio.sleep(RECORDING_WAIT_SECONDS)
+        watchdog.stop()
+
+    asyncio.run(watched())
+    diagnostics.finish_request(request_id="stalling", ended_at=time.perf_counter())
+    stalls = diagnostics.recorded_loop_stalls()
+    assert len(stalls) == 1, stalls
+    assert stalls[0].requests == (("POST", "/api2/ai/chat"),), "caught while the loop was held"
+    assert "time.sleep(BLOCKED_SECONDS)" in stalls[0].stacks
 
 
 def test_a_stall_under_way_is_on_file_before_it_ends(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

@@ -5,7 +5,10 @@ import test from 'node:test';
 // When the browser takes its tabs again after the server closed reference pages whose notes were
 // deleted (ui-actions.js, hasNewlyClosedReferencePages; docs/ready-to-build/reference-cards.md §2
 // rule 10). Run as written, with its state given.
-const source = readFileSync(new URL('../../app/static/js/modules/mode-manager/actions/ui-actions.js', import.meta.url), 'utf8');
+// Read with \n line ends: a Windows checkout writes \r\n, and the function is found by its closing
+// "\n}\n" (CI, 2026-11-14).
+const source = readFileSync(new URL('../../app/static/js/modules/mode-manager/actions/ui-actions.js', import.meta.url), 'utf8')
+    .replaceAll('\r\n', '\n');
 const start = source.indexOf('function hasNewlyClosedReferencePages(snapshot)');
 const end = source.indexOf('\n}\n', start) + 2;
 assert.ok(start >= 0 && end > start, 'hasNewlyClosedReferencePages is in ui-actions.js');

@@ -36,7 +36,11 @@ _DIRECT_APPEND_LOG_PATTERNS = (
     "namespace-delete-*.log",
     "*-server.fault.log",
 )
-_EVENT_LOOP_PROBE_INTERVAL_SECONDS = 1.0
+# How often the watchdog looks: well inside the second that makes a stall, so it sees one while
+# it is held. Looking once a second, a wait ending a few milliseconds early (Windows' timer) looked
+# at 0.99 s and next after the loop was free: the stall was recorded without what was running (CI,
+# 2026-11-14). A probe goes out at most once per look, when none is out.
+_EVENT_LOOP_PROBE_INTERVAL_SECONDS = 0.25
 _EVENT_LOOP_STALL_SECONDS = 5.0
 # A probe the loop answers this late or later is a recorded stall (recorded_loop_stalls, and
 # the file METALIST_LOOP_STALL_LOG names): the browser suites fail on any (docs/future-plans/scale-testing.md,
