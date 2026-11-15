@@ -16,7 +16,17 @@ export async function installRequestMonitor(page) {
       requests.inFlight += delta;
       requests.lastActivityAt = Date.now();
     };
+    // MetaList's own checks, asked every second whatever the suite does (the status check, the
+    // AI chat's live state, the background work): counting them, requests were never quiet for
+    // long once they came every second (GitHub, 2026-11-15). What they set off (a view
+    // refresh) is counted.
+    const backgroundChecks = ['/api2/auth/status', '/api2/ai/chat/live', '/api2/background-work'];
+    const isBackgroundCheck = resource => {
+      const url = new URL(resource instanceof Request ? resource.url : String(resource), location.href);
+      return backgroundChecks.includes(url.pathname);
+    };
     window.fetch = (...args) => {
+      if (isBackgroundCheck(args[0])) return pageFetch.apply(window, args);
       changed(1);
       return pageFetch.apply(window, args).finally(() => changed(-1));
     };

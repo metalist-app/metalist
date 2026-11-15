@@ -102,9 +102,19 @@ export async function checkPastedHeadingFormatting(page) {
   assert.deepEqual(partial.after, originalTypography.after);
   assert.equal(partial.text, originalTypography.text);
   assert.equal(await page.$eval(`[data-note-id="${noteId}"] h1`, heading => heading.querySelectorAll('div,p,br').length), 0, 'Partial removal must not split the title into new lines');
-  const partialHtml = await page.$eval(`[data-note-id="${noteId}"] h1`, heading => heading.innerHTML);
+  // The heading's markup, without the attributes drawing gives links (a status check may redraw
+  // the saved note meanwhile, which opens its links in a new tab: Firefox, Linux, 2026-11-15).
+  const headingMarkup = () => page.$eval(`[data-note-id="${noteId}"] h1`, heading => {
+    const copy = heading.cloneNode(true);
+    for (const link of copy.querySelectorAll('a')) {
+      link.removeAttribute('target');
+      link.removeAttribute('rel');
+    }
+    return copy.innerHTML;
+  });
+  const partialHtml = await headingMarkup();
   await removeSelectedFormattingFromMenu(page);
-  assert.equal(await page.$eval(`[data-note-id="${noteId}"] h1`, heading => heading.innerHTML), partialHtml, 'Repeated removal must not add redundant wrappers');
+  assert.equal(await headingMarkup(), partialHtml, 'Repeated removal must not add redundant wrappers');
   const resized = await page.evaluate(noteId => {
     const previous = document.body.getAttribute('data-top-level-note-size');
     document.body.setAttribute('data-top-level-note-size', 'same');

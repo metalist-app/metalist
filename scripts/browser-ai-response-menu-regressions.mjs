@@ -31,6 +31,15 @@ export async function checkAiResponseMenu(page) {
     await page.evaluate(async () => {
         const {CommandPalette} = await import('/static/js/modules/command-palette/command-palette-controller.js');
         await CommandPalette.applyPreference('pref.show_ai_chat', true);
+    });
+    // The chat follows the conversation in every view (multi-view editing step 5): its first live
+    // check loads it from the server, which would drop an answer planted before (Firefox, CI,
+    // 2026-11-15). The answer goes in once that check is done.
+    await page.waitForFunction(async () => {
+        const {AiChatPanel} = await import('/static/js/modules/ai-chat/ai-chat-panel-controller.js');
+        return AiChatPanel._liveMark !== '';
+    });
+    await page.evaluate(async () => {
         const {AiChatPanel} = await import('/static/js/modules/ai-chat/ai-chat-panel-controller.js');
         AiChatPanel._messages.push({
             id: 'response-menu-fixture', role: 'assistant', status: 'complete',
