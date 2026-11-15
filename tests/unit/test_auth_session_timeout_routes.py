@@ -2,8 +2,19 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+from starlette.requests import Request
+
 import app.api.routes.auth as auth_route
 
+
+
+def _status_request() -> Request:
+    """A status check from the login page: it names no note being edited."""
+    return Request({
+        "type": "http", "method": "GET", "scheme": "http", "path": "/api2/auth/status", "raw_path": b"/api2/auth/status",
+        "query_string": b"", "headers": [(b"x-metalist-tab-id", b"10000000-0000-4000-8000-0000000000ee")],
+        "client": ("127.0.0.1", 1234), "server": ("127.0.0.1", 8000),
+    })
 
 class _FakeUserVersionCursor:
     def __init__(self, version: int) -> None:
@@ -117,7 +128,7 @@ def test_auth_status_reports_app_and_database_versions(monkeypatch) -> None:
     monkeypatch.setattr(auth_route.auth_cache_state, "cache_refresh_needed", lambda: False)
     monkeypatch.setattr(auth_route, "load_client_preferences", lambda *, token: {})
 
-    payload = auth_route.auth_status(db=_FakeDb(42), token="token")
+    payload = auth_route.auth_status(request=_status_request(), db=_FakeDb(42), token="token")
 
     assert payload["version"] == auth_route.VERSION
     assert payload["database_user_version"] == 42
@@ -131,8 +142,8 @@ def test_auth_status_says_when_the_next_login_upgrades_the_database(monkeypatch)
     monkeypatch.setattr(auth_route.auth_cache_state, "cache_refresh_needed", lambda: False)
     monkeypatch.setattr(auth_route, "load_client_preferences", lambda *, token: {})
 
-    older = auth_route.auth_status(db=_FakeDb(auth_route.CURRENT_DATABASE_VERSION - 1), token=None)
-    current = auth_route.auth_status(db=_FakeDb(auth_route.CURRENT_DATABASE_VERSION), token=None)
+    older = auth_route.auth_status(request=_status_request(), db=_FakeDb(auth_route.CURRENT_DATABASE_VERSION - 1), token=None)
+    current = auth_route.auth_status(request=_status_request(), db=_FakeDb(auth_route.CURRENT_DATABASE_VERSION), token=None)
 
     assert older["database_upgrade_pending"] is True
     assert current["database_upgrade_pending"] is False

@@ -16,6 +16,7 @@ import {
     isViewingReferenceSource,
 } from '../services/reference-source-navigation-service.js';
 import { handleDictationPasteEvent, isDictationRawInsertInProgress } from '../services/dictation-paste-service.js';
+import { noteSearchTyped, releaseTypedSearch } from '../services/edit-lock-service.js';
 import { MS_PER_SECOND } from '../../time-units.js';
 
 // A search waits for a busy CommandGate, rechecking this often, and fails loudly
@@ -197,6 +198,9 @@ export async function initializeSearchEvents() {
 
     // Add input event listener
     searchInput.addEventListener('input', handleSearchInput);
+    // Typed here, the search is this view's for a moment; left, the others may type it (multi-view step 4).
+    searchInput.addEventListener('input', noteSearchTyped);
+    searchInput.addEventListener('blur', () => { void releaseTypedSearch(); });
     searchInput.addEventListener('paste', (event) => handleDictationPasteEvent(event, 'search'));
     searchInput.addEventListener('blur', handleSearchInputBlur);
     initializeSearchSuggestions();

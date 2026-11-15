@@ -55,6 +55,10 @@ function buildHarness() {
         setSearchHighlightPhrases() {},
         // No reference pages closed with their notes in these views.
         noticeClosedReferencePages() {},
+        recordNotesShown() {},
+        recordEditedRootMovedElsewhere() {},
+        recordLockedRoots() {},
+        noticeRefusedEdit() {},
         ModeContext,
         moduleState: ApplicationState.createFields(`test.tab-switch.${Math.random()}`, { viewRequestInFlight: false }),
         Logger: { logAction() {}, logDebug() {}, logNoop() {} },

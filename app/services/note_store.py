@@ -15,6 +15,7 @@ from types import SimpleNamespace
 import time
 
 from app.db.session import connect_reader
+from app.services.edit_locks import attach_note_tree
 from app.db.notes_sql import fetch_all_for_cache
 
 from app.models.database import SafeSession
@@ -1389,6 +1390,8 @@ class NoteStore:
 
 
 store = NoteStore()
+# The edit locks read the tree to find a written note's root (edit_locks.py).
+attach_note_tree(store)
 
 
 __all__ = ["NoteStore", "NoteRecord", "store"]

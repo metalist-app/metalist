@@ -231,7 +231,9 @@ function isShellInteractiveTarget(target) {
     if (!(target instanceof Element)) {
         return false;
     }
-    return target.closest(SHELL_CLOSE_SELECTOR) !== null;
+    // The card of a root edited in another view (edit-lock-service.js) handles its own presses:
+    // a press in it is not a press in the note, which would open the card again under the pointer.
+    return target.closest(`${SHELL_CLOSE_SELECTOR}, .note-edit-lock-card`) !== null;
 }
 
 function stopImmediatePropagationIfAvailable(event) {
@@ -320,6 +322,8 @@ function isMouseDownOutsideEditExclusion(target) {
             '#scroll-to-bottom-button',
             // The card offering a format for a paste acts on the note being edited.
             '.paste-format-offer',
+            // A root edited in another view: its card's Take Over acts on its own (edit-lock-service.js).
+            '.note-edit-lock-card',
             // App notices (a new release, the backup reminder) act on their own: a button
             // that opens a dialog saves and leaves the note itself, and × leaves it be.
             '.app-notice-stack',
@@ -1385,8 +1389,9 @@ function handleClick(event) {
     }
 
     if (isWritingAssistantInteraction(event)) return;
-    // The card offering a format for a paste handles its own clicks (paste-format-offer-service.js).
-    if (event.target instanceof Element && event.target.closest('.paste-format-offer')) return;
+    // The card offering a format for a paste handles its own clicks (paste-format-offer-service.js),
+    // and so does the card of a root edited in another view (edit-lock-service.js).
+    if (event.target instanceof Element && event.target.closest('.paste-format-offer, .note-edit-lock-card')) return;
     // App notices (a new release, the backup reminder), the Reminders popup and the Password Audit
     // panel handle their own clicks too: the list taking one swallowed a second Go to (2026-11-12).
     if (event.target instanceof Element && event.target.closest('.app-notice-stack, #reminder-surface, #floating-messages, .image-zoom-overlay, #password-audit-panel')) return;
@@ -2659,6 +2664,12 @@ function handleCopyableClick(event) {
     void copyTextToClipboard(copyValue, copyableElement, COPYABLE_COPY_CLASS);
     Logger.logAction('copyable.copy', { valueLength: copyValue.length });
     return true;
+}
+
+// A note being dragged to a new place: a change from another view waits until it lands
+// (live-changes-service.js).
+export function isMovingNoteByDrag() {
+    return moduleState.moveDragContext !== null;
 }
 
 export function normalizeCopyableText(text) {

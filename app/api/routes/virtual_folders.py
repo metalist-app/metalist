@@ -98,10 +98,11 @@ class TreeShownRequest(TypedDict):
 @router.post("/tree-shown")
 @transactional_route
 def set_tree_shown(request: Request, body: TreeShownRequest) -> Dict[str, object]:
-    """The folders tab: the tree shown or hidden, kept for the view over a reload; no search
-    context changes (folders-tab-and-multiple-folders.md §1). The tab state answered."""
+    """The folders tab: the tree shown or hidden in this view (each view's own, multi-view editing),
+    kept over a reload; no search context changes (folders-tab-and-multiple-folders.md §1). The
+    tab state answered."""
     require_request_auth_token(request)
-    return tab_state_store.set_tree_shown(is_shown=body["isShown"])
+    return tab_state_store.set_tree_shown(view_id=request.headers["x-metalist-tab-id"], is_shown=body["isShown"])
 
 
 @router.post("/folder-context")
@@ -111,7 +112,9 @@ def choose_folder(request: Request, body: ChooseFolderRequest) -> Dict[str, obje
     before replaced; ⌘-clicked, added or taken out. A new view, so its undo history starts again.
     The tab state answered."""
     require_request_auth_token(request)
-    snapshot = tab_state_store.choose_folder(tab_id=body["tabId"], folder=body["folder"], adds=body["adds"])
+    snapshot = tab_state_store.choose_folder(
+        view_id=request.headers["x-metalist-tab-id"], tab_id=body["tabId"], folder=body["folder"], adds=body["adds"],
+    )
     reset_undo_stack(body["clientId"], body["undoContext"])
     return snapshot
 

@@ -295,7 +295,7 @@ scene_v1 = b'{"type":"excalidraw","version":2,"elements":[],"appState":{},"files
 scene_v2 = b'{"type":"excalidraw","version":2,"elements":[{"id":"r1"}],"appState":{},"files":{}}'
 light = b'<svg xmlns="http://www.w3.org/2000/svg"><rect/></svg>'
 dark = b'<svg xmlns="http://www.w3.org/2000/svg"><circle/></svg>'
-token = token_service.create_token(client_info="fixture", owner_tab_id="tab", dek=None)
+token = token_service.create_token(client_info="fixture", dek=None)
 headers = {"Authorization": "Bearer " + token, "X-Metalist-Tab-Id": "tab", "Origin": "http://localhost"}
 with TestClient(app, base_url="http://localhost", raise_server_exceptions=False) as client:
     created = client.post(API_PREFIX + "/files/upload", headers=headers,
@@ -613,7 +613,7 @@ scene_v2 = b'{"type":"excalidraw","version":2,"elements":[{"id":"r1"}],"appState
 scene_v3 = b'{"type":"excalidraw","version":2,"elements":[{"id":"r1"},{"id":"e1"}],"appState":{},"files":{}}'
 light = b'<svg xmlns="http://www.w3.org/2000/svg"><rect/></svg>'
 dark = b'<svg xmlns="http://www.w3.org/2000/svg"><circle/></svg>'
-token = token_service.create_token(client_info="fixture", owner_tab_id="tab", dek=None)
+token = token_service.create_token(client_info="fixture", dek=None)
 headers = {"Authorization": "Bearer " + token, "X-Metalist-Tab-Id": "tab", "Origin": "http://localhost"}
 undo_context = "tab:tab|search:|epoch:0"
 viewport = {"scrollY": 0, "scrollAnchor": None}

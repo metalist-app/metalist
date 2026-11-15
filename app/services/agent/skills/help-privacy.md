@@ -127,8 +127,9 @@ MetaList does not send its data-encryption key to the browser. A browser extensi
 may read displayed content; a privileged process may inspect unlocked server
 memory. At-rest encryption does not protect those live representations. Do not
 combine these facts into a claim that encryption keys are held in browser memory.
-Explicit logout purges application-owned key and plaintext
-store references. Idle timeout instead invalidates browser authentication while
+Logging out of the last signed-in browser or device (or ticking "Sign out every
+device") purges application-owned key and plaintext store references; while another
+device is signed in, the vault stays open for it. Idle timeout instead invalidates browser authentication while
 keeping the hydrated server cache warm for re-login. These are different, and
 neither is a guarantee of forensic zeroization of Python allocations/OS memory.
 
@@ -144,8 +145,10 @@ the password field and OK. A wrong password shows the reason under OK without
 leaving the form. After the password is accepted, a progress bar shows the
 current loading step and the seconds elapsed. When a database upgrade is due,
 "Backing up and upgrading this vault…" appears under OK while it checks, and
-that login takes longer. "Session locked" means the session moved to another tab
-or device; Go to Login opens the login screen.
+that login takes longer. Every tab of a browser shares one sign-in, and several
+browsers and devices can be signed in at once. "Signed out" means this browser was
+signed out: another device signed out every device, the password was changed on
+another device, or the session timed out; Log In opens the login screen.
 
 New and changed vault passwords need 12-72 characters and the strongest zxcvbn score (4/4);
 existing passwords still unlock. Add and Change password offer Suggest Passphrase: five

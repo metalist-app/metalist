@@ -37,6 +37,9 @@ from app.services.ontology_rules_store import bootstrap_ontology_rules_store
 from app.usecases.create_note import apply_insert_note
 import app.services.search_history as search_history_module
 
+# The view (a browser tab) the tests act in (multi-view editing step 2).
+VIEW = "10000000-0000-4000-8000-0000000000ee"
+
 
 def _reset_search_history_state() -> None:
     search_history_module.search_history_store.clear_persisted_state_for_tests()
@@ -433,13 +436,13 @@ def test_password_transitions_rewrite_tab_state_rows(
     try:
         tab_state_store.clear_persisted_state_for_tests()
         store = tab_state_store
-        initial = store.snapshot()
+        initial = store.snapshot(view_id=VIEW)
         tab_id = initial["activeTabId"]
         payload = initial["tabs"]
         payload[tab_id]["searchQuery"] = "focus-tag"
         payload[tab_id]["scrollY"] = 75
         payload[tab_id]["anchorRootId"] = "root-77"
-        store.update(reference_views={}, 
+        store.update(view_id=VIEW, reference_views={}, 
             active_tab_id=tab_id,
             tabs=payload,
             tab_order=initial["tabOrder"],
@@ -471,13 +474,13 @@ def test_password_transitions_rewrite_tab_state_rows(
             encrypted_store = TabStateStore()
             with SafeSession.allow_reads("tests:auth_vault_metadata:bootstrap_tab_state_encrypted"):
                 encrypted_store.bootstrap(connection=session.connection())
-            prelogin_snapshot = encrypted_store.snapshot()
+            prelogin_snapshot = encrypted_store.snapshot(view_id="10000000-0000-4000-8000-0000000000ee")
             assert prelogin_snapshot["tabs"][prelogin_snapshot["activeTabId"]]["searchQuery"] == ""
 
             dek = auth.unwrap_dek_for_password("aQ7!mZ2#vL9@xR4")
             set_session_dek(dek)
             encrypted_store.ensure_decrypted(token="")
-            decrypted_snapshot = encrypted_store.snapshot()
+            decrypted_snapshot = encrypted_store.snapshot(view_id="10000000-0000-4000-8000-0000000000ee")
             assert decrypted_snapshot["tabs"][tab_id]["searchQuery"] == "focus-tag"
             assert decrypted_snapshot["tabs"][tab_id]["anchorRootId"] == "root-77"
 

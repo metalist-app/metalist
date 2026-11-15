@@ -9,15 +9,18 @@ import { actionSaveNote } from '../actions/content-actions.js';
 // AI can ask, with a way to ask.
 
 // The AI's title, or why it gave none ({ title, failure }, one of them empty).
-// Stopped (signal aborted), it is neither: the dialog has moved on.
-async function askAiForTitle({ noteId, aiSettings, scope, previousTitles, signal }) {
+// Stopped (signal aborted), it is neither: the dialog has moved on. madeFrom holds what this
+// opening of the dialog's latest title was made from, sent back with the titles.
+async function askAiForTitle({ noteId, aiSettings, scope, previousTitles, madeFrom, signal }) {
     let title = '';
     let failure = '';
     try {
-        title = await requestExportTitle({
+        const answer = await requestExportTitle({
             provider: aiSettings.provider, model: aiSettings.model, thinkingLevel: aiSettings.thinkingLevel,
-            scope, noteId, previousTitles, signal,
+            scope, noteId, previousTitles, previousTitlesFrom: madeFrom.latest, signal,
         });
+        title = answer.title;
+        madeFrom.latest = answer.madeFrom;
     } catch (error) {
         // Stopped, or the AI could not answer (an AiApiError says why).
         rethrowUnexpectedError(error);
@@ -47,13 +50,16 @@ export async function prepareExportDialog(noteId, aiSettings) {
         NotesAPI.fetchExportSummary(noteId),
         loadExportTitleAvailability({ provider: aiSettings.provider, scope, noteId }),
     ]);
+    // What this opening's latest title was made from ("" before the first): earlier titles go back
+    // to the AI only while nothing has changed since (multi-view editing, 2026-11-14).
+    const madeFrom = { latest: '' };
     return {
         defaultTitle: summary.title,
         passwordCount: summary.passwordCount,
         usernameCount: summary.usernameCount,
         aiTitle: {
             availability,
-            suggest: (previousTitles, signal) => askAiForTitle({ noteId, aiSettings, scope, previousTitles, signal }),
+            suggest: (previousTitles, signal) => askAiForTitle({ noteId, aiSettings, scope, previousTitles, madeFrom, signal }),
         },
     };
 }

@@ -282,10 +282,12 @@ def test_alphabetize_route_normalizes_empty_search_query(monkeypatch: pytest.Mon
 
     monkeypatch.setattr(notes_route, "CmdAlphabetizeRootNotes", _FakeCmdAlphabetizeRootNotes)
 
+    monkeypatch.setattr(notes_route.tab_state_store, "get_sort_mode", lambda *, tab_id: "normal")
     result = notes_route.alphabetize_root_notes_endpoint(
         {
             "direction": "asc",
             "search_query": "",
+            "tab_id": "tab-1",
             "clientId": "client-1",
             "undoContext": "undo-1",
             "viewport": {"scrollY": 0},

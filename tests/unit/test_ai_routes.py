@@ -13,6 +13,7 @@ import app.services.agent.openai_inference as openai_inference_module
 import app.services.ai_setup as ai_setup_module
 from app.security.note_html import sanitize_note_html
 from app.services.ai_chat import AiChatSessionStore
+from app.services.ai_chat_live import AiChatLive
 from app.services.ai_chat import NO_REQUEST
 from app.services.agent.cloud_privacy import HistoryDisclosure
 from app.services.agent.prompt_settings import DEFAULT_AGENT_PROMPTS
@@ -85,7 +86,7 @@ def use_fake_chat_dependencies(monkeypatch):
     monkeypatch.setattr(
         ai_routes.tab_state_store,
         "get_active_tab_id",
-        lambda: "tab-1",
+        lambda *, view_id: "tab-1",
     )
     monkeypatch.setattr(
         ai_routes.tab_state_store,
@@ -331,6 +332,7 @@ def test_openai_chat_requires_a_configured_api_key_before_starting_turn(
 
     with pytest.raises(HTTPException, match="The AI is not set up") as error:
         ai_routes.stream_ai_chat(
+        view_id="10000000-0000-4000-8000-0000000000ee",
             payload=ai_routes.AiChatRequest(
                 selected_note_id="",
                 provider="openai",
@@ -724,6 +726,7 @@ def test_stream_chat_updates_server_history_and_emits_typed_events(monkeypatch) 
     )
 
     response = ai_routes.stream_ai_chat(
+        view_id="10000000-0000-4000-8000-0000000000ee",
         payload=ai_routes.AiChatRequest(
             selected_note_id="",
             provider="openai",
@@ -888,6 +891,7 @@ def test_stream_chat_uses_openai_provider_with_cloud_boundary(
     monkeypatch.setattr(ai_routes, "_agent_runtime", fake_runtime_factory)
 
     response = ai_routes.stream_ai_chat(
+        view_id="10000000-0000-4000-8000-0000000000ee",
         payload=ai_routes.AiChatRequest(
             selected_note_id="",
             provider="openai",
@@ -941,12 +945,13 @@ def test_stream_chat_rejects_scope_from_a_non_active_tab_before_starting_turn(
     monkeypatch.setattr(
         ai_routes.tab_state_store,
         "get_active_tab_id",
-        lambda: "different-tab",
+        lambda *, view_id: "different-tab",
     )
     monkeypatch.setattr(ai_routes, "load_client_preferences", lambda *, token: {})
 
     with pytest.raises(HTTPException, match="Active MetaList tab changed") as error:
         ai_routes.stream_ai_chat(
+        view_id="10000000-0000-4000-8000-0000000000ee",
             payload=ai_routes.AiChatRequest(
                 selected_note_id="",
                 provider="openai",
@@ -978,7 +983,7 @@ def test_stream_chat_freezes_originating_scope_while_reference_tab_is_active(
     monkeypatch.setattr(
         ai_routes.tab_state_store,
         "get_active_tab_id",
-        lambda: "reference-tab",
+        lambda *, view_id: "reference-tab",
     )
     queried_tab_ids: list[str] = []
 
@@ -1009,6 +1014,7 @@ def test_stream_chat_freezes_originating_scope_while_reference_tab_is_active(
     monkeypatch.setattr(ai_routes, "load_client_preferences", lambda *, token: {})
 
     ai_routes.stream_ai_chat(
+        view_id="10000000-0000-4000-8000-0000000000ee",
         payload=ai_routes.AiChatRequest(
             selected_note_id="",
             provider="openai",
@@ -1134,6 +1140,7 @@ def test_stream_chat_records_client_cancellation_in_the_turn(monkeypatch) -> Non
     )
 
     response = ai_routes.stream_ai_chat(
+        view_id="10000000-0000-4000-8000-0000000000ee",
         payload=ai_routes.AiChatRequest(
             selected_note_id="",
             provider="openai",
@@ -1250,6 +1257,7 @@ def test_stream_chat_blocks_references_from_an_earlier_turn(monkeypatch) -> None
     monkeypatch.setattr(ai_routes, "load_client_preferences", lambda *, token: {})
 
     response = ai_routes.stream_ai_chat(
+        view_id="10000000-0000-4000-8000-0000000000ee",
         payload=ai_routes.AiChatRequest(
             selected_note_id="",
             provider="openai",
@@ -1314,6 +1322,7 @@ def test_stream_chat_persists_and_emits_provider_failure(monkeypatch) -> None:
     monkeypatch.setattr(ai_routes, "load_client_preferences", lambda *, token: {})
 
     response = ai_routes.stream_ai_chat(
+        view_id="10000000-0000-4000-8000-0000000000ee",
         payload=ai_routes.AiChatRequest(
             selected_note_id="",
             provider="openai",
@@ -1386,6 +1395,7 @@ def test_stream_chat_persists_data_free_diagnostic_for_internal_failure(
     monkeypatch.setattr(ai_routes, "load_client_preferences", lambda *, token: {})
 
     response = ai_routes.stream_ai_chat(
+        view_id="10000000-0000-4000-8000-0000000000ee",
         payload=ai_routes.AiChatRequest(
             selected_note_id="",
             provider="openai",
@@ -1425,3 +1435,51 @@ def test_ai_requests_reject_retired_ollama_provider(request_type, fields):
 
 def test_model_download_endpoint_is_removed():
     assert "/ai/models/pull" not in {route.path for route in ai_routes.router.routes}
+
+
+def _send(message: str, view_id: str):
+    return ai_routes.stream_ai_chat(
+        view_id=view_id,
+        payload=ai_routes.AiChatRequest(
+            selected_note_id="", provider="openai", model="gpt-5.6-sol", thinking_level="low",
+            show_diagnostics=False, message=message, scope=_all_notes_scope(),
+        ),
+        token="auth-token",
+    )
+
+
+def test_a_second_send_waits_and_the_first_answer_is_written_whole(monkeypatch) -> None:
+    # Multi-view editing step 5, case 6: one answer at a time, in the order sent; a Send from
+    # another view while an answer is written waits its turn and never cuts that answer short.
+    store = AiChatSessionStore()
+    live = AiChatLive()
+
+    class SlowRuntime:
+        async def stream_agent(self, **kwargs):
+            question = kwargs["canonical_messages"][-1]["content"]
+            for part in ("one ", "two ", "three"):
+                yield {"type": "content_delta", "text": f"{question}: {part}", "reference_note_ids": [], "reference_web_ids": []}
+                await asyncio.sleep(0.05)
+            yield {"type": "done", "reference_note_ids": [], "reference_web_ids": [], "actions": [], "request_tokens": NO_REQUEST}
+
+    monkeypatch.setattr(ai_routes, "ai_chat_store", store)
+    monkeypatch.setattr(ai_routes, "ai_chat_live", live)
+    monkeypatch.setattr(ai_routes, "_agent_runtime", lambda **kwargs: SlowRuntime())
+    monkeypatch.setattr(ai_routes.token_service, "get_session_key", lambda token: "vault")
+    monkeypatch.setattr(ai_routes, "load_client_preferences", lambda *, token: {})
+
+    async def both() -> tuple[list[dict], list[dict]]:
+        async def read(response) -> list[dict]:
+            return [json.loads(line) async for line in response.body_iterator]
+        first = asyncio.create_task(read(_send("Mac", "10000000-0000-4000-8000-0000000000a1")))
+        await asyncio.sleep(0.02)
+        second = asyncio.create_task(read(_send("Phone", "10000000-0000-4000-8000-0000000000a2")))
+        return await first, await second
+
+    first_events, second_events = asyncio.run(both())
+
+    assert first_events[0]["type"] != "waiting"
+    assert second_events[0]["type"] == "waiting"
+    contents = [message["content"] for message in store.snapshot()["messages"]]
+    assert contents[0] == "Mac" and contents[2] == "Phone", "answered in the order sent"
+    assert [message["status"] for message in store.snapshot()["messages"]] == ["complete"] * 4

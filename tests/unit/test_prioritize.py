@@ -334,11 +334,13 @@ def test_prioritize_route_normalizes_empty_search_query(monkeypatch: pytest.Monk
 
     monkeypatch.setattr(notes_route, "CmdPrioritize", _FakeCmdPrioritize)
 
+    monkeypatch.setattr(notes_route.tab_state_store, "get_sort_mode", lambda *, tab_id: "normal")
     result = notes_route.prioritize_in_view_endpoint(
         {
             "tag": "foo",
             "direction": "front",
             "search_query": "",
+            "tab_id": "tab-1",
             "clientId": "client-1",
             "undoContext": "undo-1",
             "viewport": {"scrollY": 0},

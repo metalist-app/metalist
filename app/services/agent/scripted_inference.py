@@ -8,7 +8,10 @@ own data folder (``METALIST_DATA_DIRECTORY`` set, as every test server and throw
 on a server using the user's own vault it is a startup error, so a real MetaList can never
 answer from a script.
 
-The file holds ``{"turns": [{"text": ..., "calls": [{"name": ..., "arguments": {...}}]}]}``.
+The file holds ``{"turns": [{"text": ..., "calls": [{"name": ..., "arguments": {...}}]}]}``. A turn
+may add ``"chunk_pause_seconds"``: the pause after each chunk of its text, so an answer takes time
+to write (multi-view editing step 5: other views see it as it is written, a question waits its
+turn behind it, Stop ends it).
 Each question plays the turns from the first: turn k answers the k-th model call of that
 question (counted by the assistant messages after the user's message), so one script serves
 every question of a run. A question that needs more turns than the script has is a failure
@@ -17,6 +20,7 @@ of the script, raised as such.
 
 from __future__ import annotations
 
+import asyncio
 import json
 from collections.abc import AsyncIterator, Callable, Mapping
 from dataclasses import dataclass
@@ -71,6 +75,8 @@ class ScriptedTurn:
     # Written as the answer; a "|" splits it into the chunks streamed.
     text: str
     calls: tuple[ScriptedCall, ...]
+    # The pause after each chunk (0: none).
+    chunk_pause_seconds: float
 
 
 def load_script(path: Path) -> tuple[ScriptedTurn, ...]:
@@ -84,8 +90,13 @@ def load_script(path: Path) -> tuple[ScriptedTurn, ...]:
 
 
 def _turn_from(path: Path, index: int, turn: object) -> ScriptedTurn:
-    if not isinstance(turn, dict) or set(turn) != {"text", "calls"}:
-        raise ValueError(f"{path}: turn {index} must have exactly the keys text and calls")
+    if not isinstance(turn, dict) or set(turn) not in ({"text", "calls"}, {"text", "calls", "chunk_pause_seconds"}):
+        raise ValueError(f"{path}: turn {index} must have exactly the keys text and calls (and chunk_pause_seconds)")
+    pause = 0.0
+    if "chunk_pause_seconds" in turn:
+        pause = turn["chunk_pause_seconds"]
+        if isinstance(pause, bool) or not isinstance(pause, (int, float)) or pause < 0:
+            raise ValueError(f"{path}: turn {index}: chunk_pause_seconds is a number of seconds, 0 or more")
     if not isinstance(turn["text"], str) or not isinstance(turn["calls"], list):
         raise ValueError(f"{path}: turn {index}: text is a string and calls a list")
     calls = []
@@ -95,7 +106,7 @@ def _turn_from(path: Path, index: int, turn: object) -> ScriptedTurn:
         if not isinstance(call["name"], str) or call["name"] == "" or not isinstance(call["arguments"], dict):
             raise ValueError(f"{path}: turn {index}, call {call_index}: name is a non-empty string and arguments an object")
         calls.append(ScriptedCall(name=call["name"], arguments=dict(call["arguments"])))
-    return ScriptedTurn(text=turn["text"], calls=tuple(calls))
+    return ScriptedTurn(text=turn["text"], calls=tuple(calls), chunk_pause_seconds=float(pause))
 
 
 def _turn_index(messages: list[dict[str, object]]) -> int:
@@ -153,6 +164,7 @@ class ScriptedInferenceAdapter:
         for chunk in turn.text.split("|"):
             if chunk:
                 yield {"type": "content_delta", "text": chunk}
+                await asyncio.sleep(turn.chunk_pause_seconds)
         yield {"type": "done", "usage": self._usage(conversation, turn)}
 
     async def stream_tool_turn(
@@ -167,6 +179,7 @@ class ScriptedInferenceAdapter:
         for chunk in turn.text.split("|"):
             if chunk:
                 yield {"type": "content_delta", "text": chunk}
+                await asyncio.sleep(turn.chunk_pause_seconds)
         turn_number = _turn_index(messages) + 1
         for index, call in enumerate(turn.calls):
             if call.name not in offered:

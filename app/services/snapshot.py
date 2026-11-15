@@ -11,6 +11,7 @@ import time
 from typing import Callable, Dict, FrozenSet, List, Optional, Tuple, Set
 
 from app.services import safe_log
+from app.services.edit_locks import edit_locks
 
 from app.services.content_formatting import COMMENT_CLOSE, COMMENT_OPEN, find_list_style
 from app.services.content_formatting import recording_link_title_fetches
@@ -885,11 +886,16 @@ def _select_view(
         assert search_scope.search_root_ids_ordered is not None
         assert search_scope.allowed_note_ids is not None
         roots = search_scope.search_root_ids_ordered
-    if normalized_sort_mode != "normal" and editing_note_id is not None:
+    if editing_note_id is not None:
         edited_root_id = _root_id_of_note(editing_note_id, traversal_cache)
-        if edited_root_id is not None:
+        # A sorted tab keeps the edited root where it was; so does any tab when another view moved
+        # it while this one edits it (multi-view step 4, case 9): it takes its new place when
+        # editing ends.
+        is_sorted = normalized_sort_mode != "normal"
+        if edited_root_id is not None and (is_sorted or edit_locks.was_moved_elsewhere(root_id=edited_root_id)):
             roots = keep_edited_root_in_place(roots, edited_root_id, previous_root_ids)
-            root_sort_timestamps = _share_neighbour_timestamp(roots, edited_root_id, root_sort_timestamps)
+            if is_sorted:
+                root_sort_timestamps = _share_neighbour_timestamp(roots, edited_root_id, root_sort_timestamps)
     root_index = {root_id: index for index, root_id in enumerate(roots)}
     editing_root_index = None
     if editing_note_id is not None:

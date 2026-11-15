@@ -6,6 +6,8 @@ from http import HTTPStatus
 from fastapi import Request
 from fastapi.responses import JSONResponse, RedirectResponse
 from starlette.middleware.base import BaseHTTPMiddleware
+
+from app.services.edit_locks import edit_locks
 from app.api.request_auth import read_request_auth_token
 from app.services.tokens import token_service
 from app.services.maintenance_mode import maintenance_service
@@ -119,14 +121,9 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
         if "x-metalist-tab-id" not in request.headers or request.headers["x-metalist-tab-id"] == "":
             return JSONResponse(status_code=HTTPStatus.BAD_REQUEST, content={"detail": "X-Metalist-Tab-Id header required"})
-        tab_id = request.headers["x-metalist-tab-id"]
-
-        # A tab claims the session once, after login; other requests leave the header out.
-        claim = "x-metalist-claim" in request.headers and request.headers["x-metalist-claim"] == "1"
-        if claim:
-            token_service.claim_token_for_tab(token, tab_id)
-
-        if not token_service.verify_token_for_tab(token, tab_id):
+        # Every tab of a browser shares its sign-in; none owns it (multi-view editing, 2026-11-14:
+        # before, one tab claimed it and the others showed "Take Over Session").
+        if not token_service.verify_token(token):
             return JSONResponse(
                 status_code=HTTPStatus.UNAUTHORIZED,
                 content={"detail": "Authentication required"}
@@ -136,4 +133,14 @@ class AuthMiddleware(BaseHTTPMiddleware):
         if not any(path.startswith(p) for p in self.NO_TOKEN_REFRESH_PATHS):
             token_service.refresh_token(token)
 
-        return await call_next(request)
+        # The view is heard from (its edit locks last), and its note writes are checked as its own.
+        user_agent = ""
+        if "user-agent" in request.headers:
+            user_agent = request.headers["user-agent"]
+        view_token = edit_locks.enter_request(
+            view_id=request.headers["x-metalist-tab-id"], token=token, user_agent=user_agent,
+        )
+        try:
+            return await call_next(request)
+        finally:
+            edit_locks.leave_request(view_token)

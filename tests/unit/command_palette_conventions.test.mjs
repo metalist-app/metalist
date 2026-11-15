@@ -91,7 +91,7 @@ const LABELS = {
     'pref.trim_reminder': 'Trim Reminder',
     'pref.password_audit_reminder': 'Password Audit Reminder',
     'form.restore_backup': 'Restore from Backup…',
-    'action.logout': 'Log Out',
+    'action.logout': 'Log Out…',
     'form.random_password_generator': 'Generate Random Password…',
     'form.password_audit': 'Password Audit…',
     'action.find_in_list': 'Find in List',

@@ -109,7 +109,6 @@ def test_failed_login_never_logs_submitted_password(monkeypatch, caplog, capsys)
             request=_login_request(),
             response=Response(),
             payload=LoginRequest(password=PASSWORD_CANARY),
-            tab_id="tab-id",
             db=object(),
         )
 

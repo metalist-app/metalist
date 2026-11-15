@@ -22,6 +22,9 @@ def _synchronized(method):
     return locked
 
 
+# The AI's working state is the vault's, shared by every sign-in (get_session_key).
+VAULT_AI_SESSION_KEY = "vault"
+
 class TokenService:
     """Service for managing authentication tokens in memory."""
 
@@ -55,10 +58,11 @@ class TokenService:
     def create_token(
         self,
         client_info: str,
-        owner_tab_id: str,
         dek: Optional[bytes],
     ) -> str:
-        """Generate new authentication token for client.
+        """A new sign-in for one browser or device; every other stays signed in (multi-view
+        editing, 2026-11-14: before, signing in ended every other sign-in). Every tab of the
+        browser shares it through the vault's cookie.
 
         Args:
             client_info: Information about the client (user agent, IP, etc.)
@@ -67,10 +71,6 @@ class TokenService:
         Returns:
             New authentication token
         """
-        # Enforce single active session: wipe previous tokens before issuing a new one
-        if self.tokens:
-            self.tokens.clear()
-
         # Generate cryptographically secure token
         token = secrets.token_urlsafe(_TOKEN_RANDOM_BYTES)
         token_hash = self._hash_token(token)
@@ -79,7 +79,6 @@ class TokenService:
         # Store token info including keys for encryption
         self.tokens[token_hash] = {
             "client_info": client_info,
-            "owner_tab_id": owner_tab_id,
             "created_at": now,
             "expires_at": self._build_expiry_datetime(now=now),
             "last_activity": now,
@@ -118,34 +117,6 @@ class TokenService:
             del self.tokens[token_hash]
             return False
 
-        return True
-
-    @_synchronized
-    def verify_token_for_tab(self, token: str, owner_tab_id: str) -> bool:
-        if not owner_tab_id:
-            return False
-        if not self.verify_token(token):
-            return False
-
-        token_hash = self._hash_token(token)
-        if token_hash not in self.tokens:
-            return False
-        return self.tokens[token_hash]["owner_tab_id"] == owner_tab_id
-
-    @_synchronized
-    def claim_token_for_tab(self, token: str, owner_tab_id: str) -> bool:
-        if not owner_tab_id:
-            return False
-        if not self.verify_token(token):
-            return False
-
-        token_hash = self._hash_token(token)
-        if token_hash not in self.tokens:
-            return False
-        token_info = self.tokens[token_hash]
-
-        token_info["owner_tab_id"] = owner_tab_id
-        token_info["last_activity"] = datetime.now(timezone.utc)
         return True
 
     @_synchronized
@@ -214,6 +185,18 @@ class TokenService:
         return count
 
     @_synchronized
+    def revoke_all_tokens_except(self, token: str) -> int:
+        """End every other sign-in, keeping this one (a password change keeps the device it was
+        changed on, multi-view editing §9). Returns how many ended."""
+        keep = self._hash_token(token)
+        if keep not in self.tokens:
+            raise RuntimeError("the sign-in to keep is not signed in")
+        ended = [token_hash for token_hash in self.tokens if token_hash != keep]
+        for token_hash in ended:
+            del self.tokens[token_hash]
+        return len(ended)
+
+    @_synchronized
     def cleanup_expired_tokens(self) -> int:
         """Remove expired tokens from memory.
 
@@ -263,12 +246,13 @@ class TokenService:
 
     @_synchronized
     def get_session_key(self, token: str) -> str:
-        """Return the opaque, non-secret key for a currently valid session."""
+        """The key of the AI's working state (a key entered for the session, web pages opened,
+        summaries, debug traces), for a currently valid sign-in. The vault's, one for every sign-in
+        (multi-view editing step 5, case 10): every device shows one conversation, so it works
+        from one state; the last sign-in's end clears it."""
         if not self.verify_token(token):
             raise RuntimeError("AI session key requires a valid authentication token")
-        token_hash = self._hash_token(token)
-        assert token_hash in self.tokens
-        return token_hash
+        return VAULT_AI_SESSION_KEY
 
     @_synchronized
     def get_dek(self, token: str) -> Optional[bytes]:

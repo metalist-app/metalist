@@ -211,7 +211,7 @@ export async function checkFloatingNotes(page) {
     await CommandGate.run('smoke.floating-tabs', async () => {
       const original = state.activeTabId;
       await persistTabStateSnapshot();
-      const response = await createTabOnServer(original, false);
+      const response = await createTabOnServer(original, false, false);
       state.hydrateTabState(response);
       await switchToTabContext(response.newTabId, {animateNoteChanges: false});
       await switchToTabContext(original, {animateNoteChanges: false});

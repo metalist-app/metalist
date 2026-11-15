@@ -156,6 +156,7 @@ import {
 } from '../mode-manager/events/keyboard-events.js';
 import { FolderNameModal } from '../modals/folder-name-modal.js';
 import { DeleteFolderModal } from '../modals/delete-folder-modal.js';
+import { LogOutModal } from '../modals/log-out-modal.js';
 import {
     openTo, toggleVirtualFoldersTree, wireVirtualFolders,
 } from '../mode-manager/services/virtual-folders-service.js';
@@ -488,6 +489,7 @@ class CommandPaletteController {
         this._newVaultWizard = null;
         this._folderNameModal = null;
         this._deleteFolderModal = null;
+        this._logOutModal = null;
         this._memoryUsageModal = null;
         this._problemReportModal = null;
         this._problemReportsExportModal = null;
@@ -2693,8 +2695,29 @@ class CommandPaletteController {
         });
     }
 
+    // Log Out asks whether to sign out this device or every device (LogOutModal; multi-view
+    // editing, 2026-11-14). A note being edited is saved and left before it asks.
     async logout() {
-        const result = await CommandGate.run('commandPalette.logout', async () => {
+        const isReady = await this._prepareForModalOpen('commandPalette.logout');
+        if (!isReady) {
+            return;
+        }
+        if (this._logOutModal === null) {
+            this._logOutModal = new LogOutModal();
+        }
+        const choice = await this._logOutModal.ask();
+        if (choice === null) {
+            return;
+        }
+        await this.logOutNow({ everyDevice: choice.everyDevice });
+    }
+
+    // Signs out this device, or every device, without asking (the phone's Lock and Sign Out).
+    async logOutNow({ everyDevice }) {
+        if (typeof everyDevice !== 'boolean') {
+            throw new Error('logOutNow requires everyDevice');
+        }
+        await CommandGate.run('commandPalette.logout', async () => {
             if (ModeContext.isEditing) {
                 await actionSaveAndExitEditingWithoutRefreshing();
             }
@@ -2702,14 +2725,12 @@ class CommandPaletteController {
             await fetch(CONFIG.API.AUTH.LOGOUT, {
                 method: 'POST',
                 headers: buildSessionHeaders(true),
+                body: JSON.stringify({ every_device: everyDevice }),
             }).finally(() => {
                 this._clearSessionState();
                 window.location.reload();
             });
         });
-        if (result === null) {
-            return;
-        }
     }
 
     async showAgentMenuEntry(id) {

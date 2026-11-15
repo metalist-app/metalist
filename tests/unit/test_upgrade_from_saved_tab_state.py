@@ -18,6 +18,9 @@ from app.models.database import SafeSession
 from app.security.encryption import set_encryption_required
 from app.services.tab_state import TabStateStore
 
+# The view (a browser tab) the tests act in (multi-view editing step 2).
+VIEW = "10000000-0000-4000-8000-0000000000ee"
+
 FIXTURE = Path(__file__).parent.parent / "fixtures" / "upgrade" / "tab-state-v0.29.0.json"
 CONTEXT = "ef7b4ecf-00a2-4938-91a8-0b25ae8d5f47"
 TRIP_BACKLINKS = "baf9f2e7-3494-4036-901e-2b7d85c6eb2e"
@@ -64,7 +67,7 @@ def _loaded(saved: dict) -> TabStateStore:
 
 def test_tabs_saved_by_0_29_0_load_as_they_were() -> None:
     saved = _saved()
-    state = _loaded(saved).snapshot()
+    state = _loaded(saved).snapshot(view_id=VIEW)
 
     assert state["activeTabId"] == LEFT_OPEN
     assert state["tabOrder"] == saved["tabOrder"]
@@ -78,16 +81,16 @@ def test_the_browser_saves_them_back_as_this_version_keeps_pages() -> None:
     # The browser adopts the page left open under the page beside it, in the same search context
     # (upgrade_from_saved_reference_views.test.mjs), and saves that.
     store = _loaded(_saved())
-    state = store.snapshot()
+    state = store.snapshot(view_id=VIEW)
     views = copy.deepcopy(state["referenceViews"])
     views[LEFT_OPEN] = {
         "fromTabId": CSV_BACKLINKS, "referenceQuery": CSV_NOTE, "viewKind": "source",
         "originScope": copy.deepcopy(views[CSV_BACKLINKS]["originScope"]),
     }
-    store.update(active_tab_id=LEFT_OPEN, tabs=state["tabs"], tab_order=state["tabOrder"],
+    store.update(view_id=VIEW, active_tab_id=LEFT_OPEN, tabs=state["tabs"], tab_order=state["tabOrder"],
                  reference_views=views, read_at_version=state["version"])
 
-    assert store.snapshot()["referenceViews"] == views
+    assert store.snapshot(view_id=VIEW)["referenceViews"] == views
 
 
 def test_a_search_link_opens_beside_the_context_on_a_page() -> None:
@@ -98,7 +101,7 @@ def test_a_search_link_opens_beside_the_context_on_a_page() -> None:
 
     # "": no context takes it, so the browser opens the search in a new one; the context on its
     # pages stays there.
-    assert store.search_context_with_search(search="trip") == ""
+    assert store.search_context_with_search(view_id=VIEW, search="trip") == ""
 
 
 def test_deleting_a_note_closes_the_saved_pages_showing_it() -> None:
@@ -106,7 +109,7 @@ def test_deleting_a_note_closes_the_saved_pages_showing_it() -> None:
 
     assert store.close_pages_whose_notes_are_gone(note_exists=lambda note_id: note_id != LINKING_NOTE)
 
-    state = store.snapshot()
+    state = store.snapshot(view_id=VIEW)
     # Both Referenced by pages show the deleted note; the Source note opened from one goes with it.
     assert state["tabOrder"] == [CONTEXT, LEFT_OPEN]
     assert state["referenceViews"] == {}
@@ -124,7 +127,11 @@ def test_a_saved_view_whose_search_context_0_29_0_closed_is_left_to_the_browser(
 
     store = _loaded(saved)
 
-    state = store.snapshot()
+    state = store.snapshot(view_id=VIEW)
     assert state["referenceViews"] == {}, "the browser gives it to a search context that is there"
-    assert state["tabOrder"] == saved["tabOrder"]
+    # Every tab left is a page: an empty search context is added in front for them to belong to
+    # (multi-view editing: the list always keeps a search context).
+    fresh, *rest = state["tabOrder"]
+    assert rest == saved["tabOrder"]
+    assert state["tabs"][fresh]["searchQuery"] == ""
     assert store.close_pages_whose_notes_are_gone(note_exists=lambda note_id: False) is False

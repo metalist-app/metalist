@@ -27,6 +27,9 @@ import {checkUnchangedSettingsSaves} from './browser-unchanged-save-regressions.
 import {checkWritingAssistantCorrections} from './browser-writing-assistant-regressions.mjs';
 import {checkExitEditScroll} from './browser-scroll-regressions.mjs';
 import {checkMoveToBottom} from './browser-move-to-bottom-regressions.mjs';
+import {checkLiveChanges} from './browser-live-changes-regressions.mjs';
+import {checkEditLocks} from './browser-edit-locks-regressions.mjs';
+import {SHARED_AI_CHAT_SCRIPT, SHARED_AI_CHAT_SUITE, checkSharedAiChat} from './browser-shared-ai-chat-regressions.mjs';
 import {checkListEdges} from './browser-list-edge-regressions.mjs';
 import {checkSortedTabs} from './browser-sorted-tab-regressions.mjs';
 import {checkDateRange, checkFileFilter, checkOpenQuoteSearch, checkSearchBarMenu, checkSearchInputRejected} from './browser-search-input-regressions.mjs';
@@ -170,6 +173,11 @@ let scaleRootCount = 0;
 if (isScaleSuite) {
   scaleRootCount = prepareScaleVault({python: resolve(python), directory, env, noteCount: SCALE_NOTE_COUNT, fileCount: SCALE_IMPORT_FILE_COUNT});
 }
+// The shared AI chat suite's server answers from a slow scripted AI: each answer takes about five
+// seconds, so the other tab sees it written, a second question waits and Stop can end it.
+if (process.env.BROWSER_TEST_SUITE === SHARED_AI_CHAT_SUITE) {
+  env.METALIST_SCRIPTED_AI = resolve(SHARED_AI_CHAT_SCRIPT);
+}
 let logs = '';  // shockharness: ignore[STATE001] reason="single-threaded Node: the server output callbacks and the run share one event loop"
 const server = spawn(resolve(python), ['serve_namespace.py','--namespace','default','--port',String(port)], {env, stdio:['ignore','pipe','pipe']});
 // Ctrl-C or a kill skips the `finally` below: the server still stops.
@@ -268,6 +276,18 @@ try {
     await checkExitEditScroll(page);
     assert.deepEqual(errors, []);
     console.log(`PASS exit-edit scroll regressions in ${await browser.version()}`);
+  } else if (process.env.BROWSER_TEST_SUITE === SHARED_AI_CHAT_SUITE) {
+    await checkSharedAiChat(page, browser);
+    assert.deepEqual(errors, []);
+    console.log(`PASS one AI conversation across views regressions in ${await browser.version()}`);
+  } else if (process.env.BROWSER_TEST_SUITE === 'edit-locks') {
+    await checkEditLocks(page, browser);
+    assert.deepEqual(errors, []);
+    console.log(`PASS edit locks across views regressions in ${await browser.version()}`);
+  } else if (process.env.BROWSER_TEST_SUITE === 'live-changes') {
+    await checkLiveChanges(page, browser);
+    assert.deepEqual(errors, []);
+    console.log(`PASS live changes from other views regressions in ${await browser.version()}`);
   } else if (process.env.BROWSER_TEST_SUITE === 'move-to-bottom') {
     await checkMoveToBottom(page);
     assert.deepEqual(errors, []);
@@ -917,7 +937,7 @@ try {
     const originalTabId = state.activeTabId;
     await CommandGate.run('smoke.tabs', async () => {
       await persistTabStateSnapshot();
-      const response = await createTabOnServer(originalTabId, false);
+      const response = await createTabOnServer(originalTabId, false, false);
       state.hydrateTabState(response);
       await switchToTabContext(response.newTabId, {animateNoteChanges: false});
       if (state.activeTabId !== response.newTabId) throw new Error('New tab was not selected');

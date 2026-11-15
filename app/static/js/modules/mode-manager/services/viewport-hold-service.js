@@ -72,6 +72,55 @@ export function captureViewportRoot() {
     return null;
 }
 
+// The notes in the view, in reading order (nested notes after their parent).
+function notesInReadingOrder() {
+    return Array.from(notesContainer().querySelectorAll('.note[data-note-id]'));
+}
+
+// The notes read just before and after this one, by id ('' at an end of the list).
+function readingNeighbours(element, notes) {
+    const index = notes.indexOf(element);
+    if (index === NOT_FOUND) {
+        throw new Error(`Note ${element.dataset.noteId} is not in the view`);
+    }
+    const idAt = (at) => (at >= 0 && at < notes.length ? notes[at].dataset.noteId : '');
+    return { previousNoteId: idAt(index - 1), nextNoteId: idAt(index + 1) };
+}
+
+// What a change made in another view keeps still: the note at the window's top, the first whose
+// own text reaches below the search controls (a child, when its parent's text has scrolled away).
+// Moved away or deleted there, the note that was below it takes its place (multi-view editing
+// step 3, cases 2 to 5). Null when no note reaches the visible area.
+export function captureWindowTopNote() {
+    const inset = getViewportTopInset();
+    const notes = notesInReadingOrder();
+    for (const element of notes) {
+        const content = element.querySelector(':scope > .note-content');
+        if (!(content instanceof HTMLElement) || content.getBoundingClientRect().bottom <= inset) {
+            continue;
+        }
+        const noteId = element.dataset.noteId;
+        const top = element.getBoundingClientRect().top;
+        const neighbours = readingNeighbours(element, notes);
+        let successor = null;
+        if (neighbours.nextNoteId !== '') {
+            successor = { kind: 'top', noteId: neighbours.nextNoteId, top: Math.max(top, inset), keepVisible: false };
+        }
+        return {
+            kind: 'window-top', noteId, keepVisible: false, ...neighbours, successor,
+            primary: { kind: 'top', noteId, top, keepVisible: false },
+        };
+    }
+    return null;
+}
+
+// Moved elsewhere: neither note it was read between is still beside it. A note added or removed
+// next to it changes one side only.
+function movedAway(element, reference) {
+    const now = readingNeighbours(element, notesInReadingOrder());
+    return now.previousNoteId !== reference.previousNoteId && now.nextNoteId !== reference.nextNoteId;
+}
+
 // --- Text positions -------------------------------------------------------
 
 function textOffsetOf(content, node, offset) {
@@ -948,6 +997,27 @@ function validateReference(reference) {
         }
         return;
     }
+    if (reference.kind === 'window-top') {
+        if (typeof reference.noteId !== 'string' || reference.noteId.length === 0) {
+            throw new Error('A window-top hold needs its note id');
+        }
+        for (const field of ['previousNoteId', 'nextNoteId']) {
+            if (typeof reference[field] !== 'string') {
+                throw new Error(`A window-top hold needs ${field} as a string`);
+            }
+        }
+        validateReference(reference.primary);
+        if (reference.primary.kind !== 'top' || reference.primary.noteId !== reference.noteId) {
+            throw new Error('A window-top hold keeps its own note\'s top');
+        }
+        if (reference.successor !== null) {
+            validateReference(reference.successor);
+            if (reference.successor.kind !== 'top' || reference.successor.noteId !== reference.nextNoteId) {
+                throw new Error('A window-top hold\'s successor is the next note\'s top');
+            }
+        }
+        return;
+    }
     if (reference.kind === 'sorted') {
         if (typeof reference.rootId !== 'string') {
             throw new Error('A sorted hold needs the edited root id');
@@ -1018,6 +1088,16 @@ function validateReference(reference) {
 
 // The scroll delta that puts the reference back in place; null when its note is gone.
 function locateReference(reference) {
+    if (reference.kind === 'window-top') {
+        const element = findNoteElement(reference.noteId);
+        if (element !== null && !movedAway(element, reference)) {
+            return locateReference(reference.primary);
+        }
+        if (reference.successor === null) {
+            return null;
+        }
+        return locateReference(reference.successor);
+    }
     if (reference.kind === 'sorted') {
         if (sortedRootMoved(reference)) {
             return locateReference(reference.neighbour);

@@ -9,7 +9,7 @@ const AUTH_SOURCE_URL = new URL('../../app/static/js/modules/auth.js', import.me
 test('encrypted login checks the password before anything moves, then completes the progress flow', async () => {
     const source = await readFile(AUTH_SOURCE_URL, 'utf8');
     const loginStart = source.indexOf('async handleLogin(event)');
-    const loginEnd = source.indexOf('async logout()', loginStart);
+    const loginEnd = source.indexOf('_rejectLoginAttempt(message) {', loginStart);
     assert.notEqual(loginStart, -1);
     assert.notEqual(loginEnd, -1);
 
@@ -142,7 +142,7 @@ test('the loading time counts from the loading view and stops when the app opens
 test('post-login startup failures do not return to the password form', async () => {
     const source = await readFile(AUTH_SOURCE_URL, 'utf8');
     const loginStart = source.indexOf('async handleLogin(event)');
-    const loginEnd = source.indexOf('async logout()', loginStart);
+    const loginEnd = source.indexOf('_rejectLoginAttempt(message) {', loginStart);
     const loginSource = source.slice(loginStart, loginEnd);
     const failedResponseBranch = loginSource.indexOf('if (!response.ok)');
     const modeManagerInitialization = loginSource.indexOf('await app.startWorkspace({');
@@ -161,7 +161,7 @@ test('post-login startup failures do not return to the password form', async () 
 test('post-login startup failures expose the underlying browser error', async () => {
     const source = await readFile(AUTH_SOURCE_URL, 'utf8');
     const loginStart = source.indexOf('async handleLogin(event)');
-    const loginEnd = source.indexOf('async logout()', loginStart);
+    const loginEnd = source.indexOf('_rejectLoginAttempt(message) {', loginStart);
     const loginSource = source.slice(loginStart, loginEnd);
 
     assert.match(loginSource, /let startupPhase = enterStartupStage\('reading the login response'\)/);

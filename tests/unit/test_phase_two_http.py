@@ -357,7 +357,7 @@ from app.main import app
 from app.services.tokens import token_service
 from app.config import API_PREFIX
 client = TestClient(app, base_url="http://localhost")
-token = token_service.create_token(client_info="fixture", owner_tab_id="tab", dek=None)
+token = token_service.create_token(client_info="fixture", dek=None)
 headers = {"Authorization": "Bearer " + token, "X-Metalist-Tab-Id":"tab", "Origin":"http://localhost"}
 for path, payload in [("/notes/view", {"clientId":"PRIVATE_CANARY"}), ("/auth/client-state/preferences", {"preferences":{"unknown":"PRIVATE_CANARY"}})]:
     method = "PUT" if "preferences" in path else "POST"
@@ -370,7 +370,7 @@ for header, value in [("Host", "[broken"), ("Origin", "http://[broken")]:
 assert client.post("/api/obsolete", headers=headers).status_code == 410
 assert not any("/sounds" in path for path in app.openapi()["paths"])
 assert client.post(API_PREFIX + "/ontology/rules", headers=headers, json={}).status_code == 422
-assert client.post(API_PREFIX + "/notes/tab-state/new-tab", headers=headers, json={"copyFromTabId":"stale","copiesView":True,"clientId":"client"}).status_code == 400
+assert client.post(API_PREFIX + "/notes/tab-state/new-tab", headers=headers, json={"copyFromTabId":"stale","copiesView":True,"isPage":False,"clientId":"client"}).status_code == 400
 assert client.post(API_PREFIX + "/reminders/evaluate", headers=headers, json={"now":"bad-date","local_date":"bad-date","activity_kind":"visible"}).status_code == 400
 state = client.get(API_PREFIX + "/notes/tab-state", headers=headers).json()
 view = {"clientId":"client", "editingNoteId":None, "findRevealNoteId":None, "search":None, "tabId":state["activeTabId"], "undoContext":"client", "tabViewEmpty":True, "visibleTopRootId":None, "visibleBottomRootId":None,"isUntaggedView":False,"startAtListEnd":False}

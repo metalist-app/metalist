@@ -183,10 +183,13 @@ def test_move_to_top_route_normalizes_empty_search_query(monkeypatch: pytest.Mon
 
     monkeypatch.setattr(notes_route, "CmdMoveToTop", _FakeCmdMoveToTop)
 
+    # The view's search context, in Normal order (its tab, which every move names).
+    monkeypatch.setattr(notes_route.tab_state_store, "get_sort_mode", lambda *, tab_id: "normal")
     result = notes_route.move_note_to_top_endpoint(
         "root-a",
         {
             "search_query": "",
+            "tab_id": "tab-1",
             "clientId": "client-1",
             "undoContext": "undo-1",
             "viewport": {"scrollY": 0},
@@ -315,9 +318,10 @@ def test_move_to_bottom_route_uses_the_bottom_command(monkeypatch: pytest.Monkey
 
     monkeypatch.setattr(notes_route, "CmdMoveToBottom", _FakeCmdMoveToBottom)
 
+    monkeypatch.setattr(notes_route.tab_state_store, "get_sort_mode", lambda *, tab_id: "normal")
     result = notes_route.move_note_to_bottom_endpoint(
         "root-a",
-        {"search_query": "", "clientId": "client-1", "undoContext": "undo-1", "viewport": {"scrollY": 0}},
+        {"search_query": "", "tab_id": "tab-1", "clientId": "client-1", "undoContext": "undo-1", "viewport": {"scrollY": 0}},
     )
 
     assert captured["note_id"] == "root-a"

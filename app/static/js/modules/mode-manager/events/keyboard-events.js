@@ -66,6 +66,9 @@ import {
     persistTabStateSnapshot, createTabOnServer, deleteTabOnServer, chooseFolderOnServer, setTreeShownOnServer,
     reloadTabStateFromServer,
 } from '../services/tab-state-service.js';
+import { getActiveDateFilter } from '../services/date-range-filter-service.js';
+import { showSearchLock } from '../services/edit-lock-service.js';
+import { getActiveFileFilterKind } from '../services/file-filter-service.js';
 import { cacheNotesDomForTab, restoreNotesDomForTab, cloneNotesDomForTab, clearCachedNotesDomForTab, clearActiveNotesDom } from '../services/tab-dom-cache-service.js';
 import { finalizeDuplicatedTabClone, getDuplicateTabCloneOptions } from '../services/tab-duplication-service.js';
 import { areScrollAnchorsEqual, computeScrollAnchor } from '../services/scroll-anchor-service.js';
@@ -3718,7 +3721,7 @@ export function updateSearchContextsList() {
                 }
                 const sourceTabId = e.currentTarget.getAttribute('data-source-tab-id');
 	                void CommandGate.run('tab.duplicate', async () => {
-	                    await duplicateTabContext(sourceTabId, true, true, CONFIG.TABS.CREATE_AND_SWITCH);
+	                    await duplicateTabContext(sourceTabId, true, true, CONFIG.TABS.CREATE_AND_SWITCH, false);
 	                });
 	            });
 	        });
@@ -3845,9 +3848,10 @@ function snapshotActiveTabScrollState() {
 // date range, Files filter, folder, Untagged view); without it, a new view that starts with
 // nothing (a reference view, docs/ui/state-handling.md) though its notes are cloned from the source
 // for the slide.
-async function duplicateTabContext(sourceTabId, copiesView, animateNoteChanges, shouldSwitchImmediately) {
-    if (typeof copiesView !== 'boolean') {
-        throw new Error('duplicateTabContext requires copiesView boolean');
+// isPage: a reference page, the opening view's own; otherwise a search context every view shares.
+async function duplicateTabContext(sourceTabId, copiesView, animateNoteChanges, shouldSwitchImmediately, isPage) {
+    if (typeof copiesView !== 'boolean' || typeof isPage !== 'boolean') {
+        throw new Error('duplicateTabContext requires copiesView and isPage booleans');
     }
     if (typeof animateNoteChanges !== 'boolean') {
         throw new Error('duplicateTabContext requires animateNoteChanges boolean');
@@ -3893,7 +3897,7 @@ async function duplicateTabContext(sourceTabId, copiesView, animateNoteChanges, 
         throw new Error(`Cannot duplicate tab with missing state: ${sourceTabId}`);
     }
 
-    const response = await createTabOnServer(sourceTabId, copiesView);
+    const response = await createTabOnServer(sourceTabId, copiesView, isPage);
     const newTabId = response?.newTabId;
     if (typeof newTabId !== 'string' || newTabId.length === 0) {
         throw new Error('Server did not return newTabId');
@@ -4012,8 +4016,9 @@ async function openBlankSearchContext() {
     snapshotActiveTabScrollState();
     await persistTabStateSnapshot();
 
-    // The server starts it with nothing: no search, Normal order, no filter, all notes.
-    const response = await createTabOnServer(sourceTabId, false);
+    // The server starts it with nothing: no search, Normal order, no filter, all notes. A search
+    // context, shared by every view.
+    const response = await createTabOnServer(sourceTabId, false, false);
     const newTabId = response?.newTabId;
     if (typeof newTabId !== 'string' || newTabId.length === 0) {
         throw new Error('Server did not return newTabId');
@@ -4234,7 +4239,7 @@ async function openReferenceQueryBehindTransition(
 
     const sourceTabId = ModeContext.activeTabId;
     const originScope = captureReferenceOriginScopeForActiveTab();
-    const newTabId = await duplicateTabContext(sourceTabId, false, false, false);
+    const newTabId = await duplicateTabContext(sourceTabId, false, false, false, true);
     if (typeof newTabId !== 'string' || newTabId.length === 0) {
         throw new Error('Reference navigation expected duplicateTabContext to return a tab id');
     }
@@ -4614,6 +4619,68 @@ export async function adoptClosedReferencePages() {
     await actionRefreshAndMaybeSelect({ context: 'reference-pages-closed', animateNoteChanges: false });
 }
 
+// What the context shown decides about the notes: its search, sort and filters, shared by every view.
+function shownContextSettings() {
+    return JSON.stringify({
+        tabId: ModeContext.activeTabId,
+        search: ModeContext.searchQuery,
+        sort: ModeContext.activeTabSortMode,
+        dates: getActiveDateFilter(),
+        files: getActiveFileFilterKind(),
+        untagged: ModeContext.isUntaggedView,
+    });
+}
+
+// Another view changed the search contexts every view shares (multi-view editing step 3, cases 11
+// to 14): the tab row takes the list. When the context shown here was deleted, this view moves to
+// its neighbour (the server chose it, as a delete here does); when its search, sort or filters
+// changed, the list shows the new results from the top, as if chosen here. Typing is saved first in
+// both. A change to another context changes only its label.
+export async function adoptSharedSearchContexts() {
+    await settleViewRequestsBeforeTabChange();
+    const shownBefore = ModeContext.activeTabId;
+    const settingsBefore = shownContextSettings();
+    // Where this view was left reaches the server first; the server keeps any search another
+    // view changed (tab_state.py, update).
+    snapshotActiveTabScrollState();
+    await persistTabStateSnapshot();
+    await reloadTabStateFromServer();
+    updateSearchContextsList();
+    const isShowingAnotherTab = ModeContext.activeTabId !== shownBefore;
+    if (!isShowingAnotherTab && shownContextSettings() === settingsBefore) {
+        return;
+    }
+    // The notes shown change: the note being edited is saved and left first, as a switch does.
+    if (ModeContext.isEditing) {
+        await actionSaveAndExitEditingWithoutRefreshing();
+    }
+    if (isShowingAnotherTab) {
+        const searchLeftAtY = ModeContext.getTabScrollPosition(ModeContext.activeTabId);
+        clearActiveNotesDom();
+        restoreNotesDomForTab(ModeContext.activeTabId);
+        if (ModeContext.getTabScrollPosition(ModeContext.activeTabId) !== searchLeftAtY) {
+            ModeContext.updateActiveTabScroll(searchLeftAtY);
+        }
+        ModeContext.restoreScrollForActiveTabNow();
+        // A context this view never showed (another view made it) runs its search, from the top.
+        const isSearchNewHere = ModeContext.getExecutedSearchQuery(ModeContext.activeTabId) !== ModeContext.searchQuery;
+        ModeContext.clearActiveTabDiffCacheForSearchExecution(ModeContext.searchQuery);
+        syncSearchInputField();
+        updateReferenceSourceIndicator();
+        const { actionRefreshAndMaybeSelect } = await import('../actions/ui-actions.js');
+        await actionRefreshAndMaybeSelect({
+            context: 'context-deleted-elsewhere', animateNoteChanges: false, scrollToTopAfterRender: isSearchNewHere,
+        });
+        return;
+    }
+    ModeContext.clearActiveTabDiffCacheForSearchExecution(ModeContext.searchQuery, { forceClear: true });
+    syncSearchInputField();
+    const { actionRefreshAndMaybeSelect } = await import('../actions/ui-actions.js');
+    await actionRefreshAndMaybeSelect({
+        context: 'context-changed-elsewhere', animateNoteChanges: false, scrollToTopAfterRender: true,
+    });
+}
+
 // After Rename tag renamed a tag in search contexts' searches (rename_tag.py): the tabs, the search box
 // and the list of search contexts show the new name, and the view runs the renamed search.
 export async function adoptRenamedSearches() {
@@ -4649,6 +4716,8 @@ function syncSearchInputField() {
             isViewingReferenceSource(),
         ),
     );
+    // A search another view is typing cannot be typed here (multi-view step 4).
+    showSearchLock();
 }
 
 async function persistCurrentTabState() {

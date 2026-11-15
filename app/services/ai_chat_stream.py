@@ -4,8 +4,9 @@ import asyncio
 import json
 import math
 import time
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, AsyncIterator, Callable
 
+from app.services.ai_chat_live import AiChatLive
 from app.security.http_error_diagnostics import describe_server_exception
 from app.services.ai_chat import AiChatActivityTimer, AiChatSessionStore
 from app.services.note_store import NoteStore
@@ -250,3 +251,46 @@ class ChatTurnStream:
         finally:
             unregister_task(task)
             await source.aclose()
+
+
+def _event_line(event: dict[str, object]) -> str:
+    return json.dumps(event, separators=(',', ':')) + '\n'
+
+
+async def answer_in_turn(
+    *, live: AiChatLive, is_summarizing: Callable[[], bool], message: str, view_id: str,
+    start_answer: Callable[[], AsyncIterator[str]],
+) -> AsyncIterator[str]:
+    """A question's answer, once its turn comes (multi-view step 5): it waits behind the answer
+    being written, saying so once ({"type": "waiting"}); dropped meanwhile (Clear Chat), it ends
+    unanswered. The AI's questions while it answers show in every view (case 9). Stop from another
+    view ends it as stopped ({"type": "stopped"}), the turn saved as cancelled (case 7). The
+    question joins the queue only once its answer is streamed: a response never read (its browser
+    gone first) leaves nothing waiting in front of the others."""
+    ticket = live.enqueue(content=message, view_id=view_id)
+    try:
+        async for _ in live.wait_for_turn(ticket=ticket, is_answer_written=is_summarizing):
+            yield _event_line({"type": "waiting"})
+        if not live.take_turn(ticket=ticket):
+            yield _event_line({"type": "stopped"})
+            return
+        try:
+            async for line in start_answer():  # shockharness: ignore[EXC003] reason="each pull from the answer's stream is the external operation; the body forwards the line"
+                event = json.loads(line)
+                if event["type"] == "bulk_question":
+                    live.show_question(event)
+                elif event["type"] != "action_status" and not event["type"].endswith("_delta"):
+                    live.end_question()
+                yield line
+        # lint: allow-PY001 rationale="Stop from another view cancels this answer: it ends as stopped; any other cancel is re-raised"
+        except asyncio.CancelledError:
+            if not live.was_stop_asked():
+                raise
+            current = asyncio.current_task()
+            assert current is not None, "an answer streams in a task"
+            current.uncancel()
+            yield _event_line({"type": "stopped"})
+        finally:
+            live.end_answer()
+    finally:
+        live.drop(ticket=ticket)

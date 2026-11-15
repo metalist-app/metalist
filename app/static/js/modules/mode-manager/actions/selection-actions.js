@@ -8,7 +8,8 @@ import { actionRefreshAndMaybeSelect } from './ui-actions.js';
 import { clearTagBar } from '../services/tag-bar-service.js';
 import { persistExpandedEditSessionIfNeeded, restoreCollapsedStateLocallyIfNeeded } from '../services/edit-session-collapse-service.js';
 import { clearSelectionStateForDeselect } from '../services/deselect-selection-state-service.js';
-import { captureNoteAnchor, captureSortedExitAnchor, holdViewportRoot } from '../services/viewport-hold-service.js';
+import { captureNoteAnchor, captureSortedExitAnchor, captureWindowTopNote, holdViewportRoot } from '../services/viewport-hold-service.js';
+import { isEditedRootMovedElsewhere, openMarkerInsteadOfEditing } from '../services/edit-lock-service.js';
 import { isRootReorderLocked } from '../services/root-sort-service.js';
 import {
     recordNoteInteractionIfNew,
@@ -52,6 +53,10 @@ function clickAnchorOption(options, noteId) {
 export async function actionSelectNote(noteId, options) {
     if (options === null || typeof options !== 'object') {
         throw new Error('actionSelectNote requires options object');
+    }
+    // A root another view edits: its marker opens instead, Take Over goes on here (multi-view step 4).
+    if (openMarkerInsteadOfEditing(noteId, () => actionSelectNote(noteId, options))) {
+        return;
     }
     if (!Object.prototype.hasOwnProperty.call(options, 'initialCaretVisibility')) {
         throw new Error('actionSelectNote requires options.initialCaretVisibility');
@@ -136,10 +141,16 @@ export async function actionDeselectNote() {
         // surrounding notes stay on screen instead (docs/ui/controls.md).
         if (isRootReorderLocked(ModeContext.activeTabSortMode)) {
             viewportHold = captureSortedExitAnchor(noteElement);
+        } else if (isEditedRootMovedElsewhere()) {
+            // Another view moved it meanwhile (multi-view step 4, case 9): it goes to its new place,
+            // and the note at the window's top (the one taking its spot, if it was there) stays.
+            viewportHold = captureWindowTopNote();
         } else {
             viewportHold = captureNoteAnchor(noteElement);
         }
-        holdViewportRoot(viewportHold);
+        if (viewportHold !== null) {
+            holdViewportRoot(viewportHold);
+        }
         await actionSaveNote(noteId);
         await persistExpandedEditSessionIfNeeded(noteElement);
         restoreCollapsedStateLocallyIfNeeded(noteElement);
@@ -227,6 +238,10 @@ export async function actionSwitchNotes(newNoteId, options) {
 	if (options === null || typeof options !== 'object') {
 		throw new Error('actionSwitchNotes requires options object');
 	}
+    // A root another view edits: its marker opens instead; the note edited here stays as it is.
+    if (openMarkerInsteadOfEditing(newNoteId, () => actionSwitchNotes(newNoteId, options))) {
+        return;
+    }
 	if (!Object.prototype.hasOwnProperty.call(options, 'initialCaretVisibility')) {
 		throw new Error('actionSwitchNotes requires options.initialCaretVisibility');
 	}

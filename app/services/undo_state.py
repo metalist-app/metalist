@@ -253,7 +253,7 @@ def _compute_focus_note_id(op: dict, *, direction: str) -> str:
 
 
 class _ClientUndo:
-    __slots__ = ("history", "redo", "last_undo_context", "used_at", "limited")
+    __slots__ = ("history", "redo", "last_undo_context", "used_at", "limited", "emptied_by_another_view")
 
     def __init__(self) -> None:
         self.history: List[dict] = []
@@ -261,6 +261,8 @@ class _ClientUndo:
         self.last_undo_context: str = ""
         self.used_at = monotonic()
         self.limited = False
+        # Its history was emptied by another view's change, since its own last change.
+        self.emptied_by_another_view = False
 
 
 _clients: Dict[str, _ClientUndo] = OrderedDict()  # shockharness: ignore[STATE001] reason="touched only by write requests, which run one at a time, and by the bulk apply, which holds bulk_operation_guard.lock like the requests let through beside it"
@@ -268,19 +270,21 @@ _clients: Dict[str, _ClientUndo] = OrderedDict()  # shockharness: ignore[STATE00
 
 def capture_undo_state() -> dict:
     # Operations are immutable once recorded; only the stack lists change.
-    return {key: (list(value.history), list(value.redo), value.last_undo_context, value.used_at, value.limited)
+    return {key: (list(value.history), list(value.redo), value.last_undo_context, value.used_at, value.limited,
+                  value.emptied_by_another_view)
             for key, value in _clients.items()}
 
 
 def restore_undo_state(snapshot: dict) -> None:
     _clients.clear()
-    for key, (history, redo, context, used_at, limited) in snapshot.items():
+    for key, (history, redo, context, used_at, limited, emptied_by_another_view) in snapshot.items():
         value = _ClientUndo()
         value.history = history
         value.redo = redo
         value.last_undo_context = context
         value.used_at = used_at
         value.limited = limited
+        value.emptied_by_another_view = emptied_by_another_view
         _clients[key] = value
     _enforce_undo_limits()
 
@@ -319,6 +323,29 @@ def undo_history_limited(client_id: str) -> bool:
     return _ctx(client_id).limited
 
 
+def undo_emptied_by_another_view(client_id: str) -> bool:
+    """Whether another view's change emptied this view's undo and redo since its own last change."""
+    return _ctx(client_id).emptied_by_another_view
+
+
+def _ctx_for_change(client_id: str) -> _ClientUndo:
+    """The changing view's undo; every other view's is emptied (the maintainer, 2026-11-14;
+    docs/design/multi-view-editing.md §10). Undo puts back a step's "before" state, so
+    after another view's change it would overwrite that change, or stop on a move. Views are
+    browser tabs and devices (each its own client id); MetaList's own background work records
+    no undo, so it empties nothing."""
+    ctx = _ctx(client_id)
+    for other_id, other in _clients.items():
+        if other_id == client_id or (not other.history and not other.redo):
+            continue
+        other.history.clear()
+        other.redo.clear()
+        other.emptied_by_another_view = True
+    if ctx.emptied_by_another_view:
+        ctx.emptied_by_another_view = False
+    return ctx
+
+
 def _ctx(client_id: str) -> _ClientUndo:
     now = monotonic()
     for key in tuple(_clients):
@@ -350,7 +377,7 @@ def record_update(
     viewport: Dict[str, object],
 ) -> None:
     maybe_reset_on_context(client_id, undo_context)
-    ctx = _ctx(client_id)
+    ctx = _ctx_for_change(client_id)
     normalized_viewport = _normalize_viewport_snapshot(viewport)
     view_anchor_root_id = _anchor_root_id(normalized_viewport)
     ctx.history.append({
@@ -392,7 +419,7 @@ def record_tag_sources(
         raise ValueError("tag-source undo operation must change tags or proposals")
 
     maybe_reset_on_context(client_id, undo_context)
-    ctx = _ctx(client_id)
+    ctx = _ctx_for_change(client_id)
     normalized_viewport = _normalize_viewport_snapshot(viewport)
     view_anchor_root_id = _anchor_root_id(normalized_viewport)
     ctx.history.append({
@@ -429,7 +456,7 @@ def record_tag_sources_batch(
         if change["before_tags"] == change["after_tags"] and change["before_proposed_tags"] == change["after_proposed_tags"]:
             raise ValueError("tag-source batch change must change tags or proposals")
     maybe_reset_on_context(client_id, undo_context)
-    ctx = _ctx(client_id)
+    ctx = _ctx_for_change(client_id)
     normalized_viewport = _normalize_viewport_snapshot(viewport)
     ctx.history.append({
         "type": "tag_sources_batch",
@@ -460,7 +487,7 @@ def record_collapse_batch(
     if not isinstance(collapsed, bool):
         raise TypeError("collapsed must be a bool")
     maybe_reset_on_context(client_id, undo_context)
-    ctx = _ctx(client_id)
+    ctx = _ctx_for_change(client_id)
     normalized_viewport = _normalize_viewport_snapshot(viewport)
     ctx.history.append({
         "type": "collapse_batch",
@@ -502,7 +529,7 @@ def _apply_tag_sources_snapshot(op: dict, *, prefix: str, token: str) -> None:
 
 def record_create(client_id: str, undo_context: str, record: dict, *, viewport: Dict[str, object]) -> None:
     maybe_reset_on_context(client_id, undo_context)
-    ctx = _ctx(client_id)
+    ctx = _ctx_for_change(client_id)
     normalized_viewport = _normalize_viewport_snapshot(viewport)
     view_anchor_root_id = _anchor_root_id(normalized_viewport)
     ctx.history.append({
@@ -523,7 +550,7 @@ def record_delete(
     viewport: Dict[str, object],
 ) -> None:
     maybe_reset_on_context(client_id, undo_context)
-    ctx = _ctx(client_id)
+    ctx = _ctx_for_change(client_id)
     normalized_viewport = _normalize_viewport_snapshot(viewport)
     view_anchor_root_id = _anchor_root_id(normalized_viewport)
     ctx.history.append({
@@ -552,7 +579,7 @@ def record_move(
     viewport: Dict[str, object],
 ) -> None:
     maybe_reset_on_context(client_id, undo_context)
-    ctx = _ctx(client_id)
+    ctx = _ctx_for_change(client_id)
     if not isinstance(before_tags, str):
         raise TypeError("before_tags must be a string")
     if not isinstance(after_tags, str):
@@ -618,7 +645,7 @@ def record_collapse(
     viewport: Dict[str, object],
 ) -> None:
     maybe_reset_on_context(client_id, undo_context)
-    ctx = _ctx(client_id)
+    ctx = _ctx_for_change(client_id)
 
     normalized_viewport = _normalize_viewport_snapshot(viewport)
     view_anchor_root_id = _anchor_root_id(normalized_viewport)
@@ -642,7 +669,7 @@ def record_paste(
     viewport: Dict[str, object],
 ) -> None:
     maybe_reset_on_context(client_id, undo_context)
-    ctx = _ctx(client_id)
+    ctx = _ctx_for_change(client_id)
     normalized_viewport = _normalize_viewport_snapshot(viewport)
     view_anchor_root_id = _anchor_root_id(normalized_viewport)
     ctx.history.append({
@@ -690,7 +717,7 @@ def record_paste_into(
             raise TypeError("inserted_records entries must be NodeRecord objects")
 
     maybe_reset_on_context(client_id, undo_context)
-    ctx = _ctx(client_id)
+    ctx = _ctx_for_change(client_id)
     normalized_viewport = _normalize_viewport_snapshot(viewport)
     view_anchor_root_id = _anchor_root_id(normalized_viewport)
     ctx.history.append({
@@ -741,7 +768,7 @@ def record_split_note(
             raise TypeError("inserted_records entries must be NodeRecord objects")
 
     maybe_reset_on_context(client_id, undo_context)
-    ctx = _ctx(client_id)
+    ctx = _ctx_for_change(client_id)
     normalized_viewport = _normalize_viewport_snapshot(viewport)
     view_anchor_root_id = _anchor_root_id(normalized_viewport)
     ctx.history.append({
@@ -779,7 +806,7 @@ def record_file_content(
         raise ValueError("after snapshot must be newer than the before snapshot")
 
     maybe_reset_on_context(client_id, undo_context)
-    ctx = _ctx(client_id)
+    ctx = _ctx_for_change(client_id)
     normalized_viewport = _normalize_viewport_snapshot(viewport)
     view_anchor_root_id = _anchor_root_id(normalized_viewport)
     ctx.history.append({

@@ -159,10 +159,18 @@ class SearchContextForSearchRequest(TypedDict):
 
 
 @with_config(ConfigDict(strict=True))
+class TakeOverEditingRequest(TypedDict):
+    # The note tapped: its root, being edited in another view, is taken over (multi-view step 4).
+    noteId: str
+
+
+@with_config(ConfigDict(strict=True))
 class CreateNewTabRequest(TypedDict):
     copyFromTabId: Identifier
     # True duplicates the tab, everything it shows included; False opens a blank one.
     copiesView: bool
+    # A reference page belongs to the view that opened it alone (multi-view editing step 2).
+    isPage: bool
     clientId: Identifier
 
 @with_config(ConfigDict(strict=True))

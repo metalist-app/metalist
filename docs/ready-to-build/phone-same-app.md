@@ -1,6 +1,6 @@
 # Phone: the same app on a smaller screen
 
-**Status:** Agreed with the maintainer 2026-10-24 to 2026-10-27. Ready to build. **Replaces "read-only plus capture"** (`docs/ui/phone.md`) and most of `docs/future-plans/phone-later.md`. Build it **with or after** `docs/ready-to-build/multi-view-editing.md`: the phone edits, so it needs every view signed in and one editor per root note. Please propose a build order before starting.
+**Status:** Agreed with the maintainer 2026-10-24 to 2026-10-27. Ready to build. **Replaces "read-only plus capture"** (`docs/ui/phone.md`) and most of `docs/future-plans/phone-later.md`. Build it **with or after** `docs/design/multi-view-editing.md`: the phone edits, so it needs every view signed in and one editor per root note. Please propose a build order before starting.
 **Scope:** the phone web app (home-screen install, under 640 px) becomes the desktop app on a smaller screen: it edits, it has search contexts and the AI chat. Update `docs/ui/phone.md`, `docs/future-plans/phone-later.md`, `docs/ui/interaction-principles.md` (one exception, §5) and the tests.
 
 Written without running the code. Every reference below came from reading it and must be checked before relying on it; build only what's missing.
@@ -47,6 +47,13 @@ From `docs/ui/phone.md`: read-only; a tap on a note shows its own tags as blue p
 - **Scope:** as on the desktop, the AI sees the search context the phone is showing. The phone shows the vault's one conversation, the desktop's too, live (multi-view note §5, decided 2026-11-14: one per vault, replacing one per view); a question asked on the phone uses what the phone shows.
 - **Controls on the phone:** the conversation; the composer with Send/Stop and the model and thinking picker; Clear Chat. **Desktop only:** the developer eye toggle, Agent Debug, and AI settings (provider keys). No close button: the AI button or a swipe goes back.
 - **Tapping an answer opens a small menu at the finger:** **Copy Response** and **Save as Note** (the answer as a new note at the top, with the current search's tags and `@markdown @ai`: what copying and pasting an answer does on the desktop, in one step). It's the phone's version of the desktop's right-click on an answer. A menu, not a dialog: no dimming; it closes on a tap elsewhere or on picking an action. A tap on a link inside an answer opens the link. No selection state, no checkboxes. *Why not long-press:* nothing on screen hints that it exists.
+
+## 5a. The folders: a full screen from the left (the maintainer, 2026-11-14)
+
+- **The phone gets every major feature of the desktop, the folders included** (`docs/ready-to-build/folders-tab-and-multiple-folders.md`, `virtual-folders.md`).
+- **The folders open as a full screen, the mirror of the AI:** the notes slide off to the right and the folders slide in from the left, filling everything above the bottom bar. From the left because on the desktop the folders are the column to the left of the notes. Picking a folder, the same button again, or a horizontal swipe, slides back to the notes. Same exception to the no-added-motion rule as the AI's slide, and Reduce Motion makes it an instant switch.
+- **The phone never opens on the folders:** whether the tree shows is each view's own (multi-view note §2), and a phone view starts on the notes.
+- **Open, to decide when the phone is built:** where the button that opens them sits (the bottom bar holds ☰ · AI · ＋).
 
 ## 6. Passwords, as on the desktop
 

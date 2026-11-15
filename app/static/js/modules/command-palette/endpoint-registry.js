@@ -653,8 +653,8 @@ export function buildCommandPaletteEndpoints(deps) {
         },
         {
             id: 'action.logout',
-            kind: 'action',
-            label: 'Log Out',
+            kind: 'form',
+            label: 'Log Out…',
             execute: async () => logout(),
         },
         {

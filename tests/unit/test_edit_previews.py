@@ -162,7 +162,7 @@ from app.security.rendered_html import sanitize_rendered_html
 from app.services.latex_rendering import render_latex_math_to_html
 from app.services.tokens import token_service
 
-token = token_service.create_token(client_info="fixture", owner_tab_id="tab", dek=None)
+token = token_service.create_token(client_info="fixture", dek=None)
 headers = {"Authorization": "Bearer " + token, "X-Metalist-Tab-Id": "tab", "Origin": "http://localhost"}
 path = API_PREFIX + "/notes/edit-preview"
 with TestClient(app, base_url="http://localhost", raise_server_exceptions=False) as client:

@@ -19,6 +19,9 @@ from app.services.snapshot import SearchScope
 from app.services.tab_state import TabStateStore
 from tests.unit.snapshot_note_fixture import SnapshotTestNote as _Note
 
+# The view (a browser tab) the tests act in (multi-view editing step 2).
+VIEW = "10000000-0000-4000-8000-0000000000ee"
+
 IMAGE_ID = "11111111-aaaa-4aaa-8aaa-111111111111"
 PDF_ID = "22222222-aaaa-4aaa-8aaa-222222222222"
 MARKDOWN_ID = "33333333-aaaa-4aaa-8aaa-333333333333"
@@ -215,11 +218,11 @@ def memory_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
 
 def test_a_tab_keeps_its_files_filter_across_a_reload_and_a_closed_tab_drops_it(memory_db) -> None:
     store = TabStateStore()
-    tab_id = store.snapshot()["activeTabId"]
-    result = store.set_file_filter(tab_id=tab_id, file_filter="pdf")
+    tab_id = store.snapshot(view_id=VIEW)["activeTabId"]
+    result = store.set_file_filter(view_id=VIEW, tab_id=tab_id, file_filter="pdf")
     assert result["changed"] is True
     assert result["fileFilters"] == {tab_id: "pdf"}
-    assert store.set_file_filter(tab_id=tab_id, file_filter="pdf")["changed"] is False
+    assert store.set_file_filter(view_id=VIEW, tab_id=tab_id, file_filter="pdf")["changed"] is False
 
     reloaded = TabStateStore()
     session = SafeSession()
@@ -230,12 +233,12 @@ def test_a_tab_keeps_its_files_filter_across_a_reload_and_a_closed_tab_drops_it(
         session.close()
     assert reloaded.get_file_filter(tab_id=tab_id) == "pdf"
 
-    new_tab_id = store.create_tab(copy_from_tab_id=tab_id, copies_view=False)["newTabId"]
+    new_tab_id = store.create_tab(view_id=VIEW, is_page=False, copy_from_tab_id=tab_id, copies_view=False)["newTabId"]
     assert store.get_file_filter(tab_id=new_tab_id) is None
-    store.set_file_filter(tab_id=new_tab_id, file_filter="image")
-    assert list(store.delete_tab(tab_id=new_tab_id)["fileFilters"]) == [tab_id]
+    store.set_file_filter(view_id=VIEW, tab_id=new_tab_id, file_filter="image")
+    assert list(store.delete_tab(view_id=VIEW, tab_id=new_tab_id)["fileFilters"]) == [tab_id]
 
-    cleared = store.set_file_filter(tab_id=tab_id, file_filter=None)
+    cleared = store.set_file_filter(view_id=VIEW, tab_id=tab_id, file_filter=None)
     assert cleared["changed"] is True
     assert cleared["fileFilters"] == {}
 
@@ -244,7 +247,7 @@ def test_a_tab_keeps_its_files_filter_across_a_reload_and_a_closed_tab_drops_it(
 def test_an_unknown_file_kind_is_rejected(memory_db, kind: str) -> None:
     store = TabStateStore()
     with pytest.raises(InputRejected):
-        store.set_file_filter(tab_id=store.snapshot()["activeTabId"], file_filter=kind)
+        store.set_file_filter(view_id=VIEW, tab_id=store.snapshot(view_id=VIEW)["activeTabId"], file_filter=kind)
 
 
 @pytest.mark.parametrize("kind", ["any", "image", "pdf", "markdown", "no-extension", ".zip", ".c++", ".tar-gz"])
@@ -298,32 +301,32 @@ def test_kinds_with_equally_many_files_keep_a_fixed_order(monkeypatch: pytest.Mo
 
 def _tab_with_a_filter(*, sort_mode: str) -> tuple[TabStateStore, str]:
     store = TabStateStore()
-    tab_id = store.snapshot()["activeTabId"]
-    store.set_file_filter(tab_id=tab_id, file_filter="any")
-    store.set_sort_mode(tab_id=tab_id, sort_mode=sort_mode)
+    tab_id = store.snapshot(view_id=VIEW)["activeTabId"]
+    store.set_file_filter(view_id=VIEW, tab_id=tab_id, file_filter="any")
+    store.set_sort_mode(view_id=VIEW, tab_id=tab_id, sort_mode=sort_mode)
     return store, tab_id
 
 
 @pytest.mark.parametrize("sort_mode", ["file-size", "file-size-reversed"])
 def test_the_file_size_order_needs_the_filter_on(memory_db, sort_mode: str) -> None:
     store = TabStateStore()
-    tab_id = store.snapshot()["activeTabId"]
+    tab_id = store.snapshot(view_id=VIEW)["activeTabId"]
     with pytest.raises(InputRejected, match="Notes with Files"):
-        store.set_sort_mode(tab_id=tab_id, sort_mode=sort_mode)
+        store.set_sort_mode(view_id=VIEW, tab_id=tab_id, sort_mode=sort_mode)
     assert store.get_sort_mode(tab_id=tab_id) == "normal"
 
 
 @pytest.mark.parametrize("sort_mode", ["file-size", "file-size-reversed"])
 def test_ending_the_filter_ends_the_file_size_order(memory_db, sort_mode: str) -> None:
     store, tab_id = _tab_with_a_filter(sort_mode=sort_mode)
-    assert store.set_file_filter(tab_id=tab_id, file_filter=None)["tabs"][tab_id]["sortMode"] == "normal"
+    assert store.set_file_filter(view_id=VIEW, tab_id=tab_id, file_filter=None)["tabs"][tab_id]["sortMode"] == "normal"
 
 
 def test_ending_the_filter_keeps_any_other_order(memory_db) -> None:
     store, tab_id = _tab_with_a_filter(sort_mode="alphabetical-reversed")
-    assert store.set_file_filter(tab_id=tab_id, file_filter=None)["tabs"][tab_id]["sortMode"] == "alphabetical-reversed"
+    assert store.set_file_filter(view_id=VIEW, tab_id=tab_id, file_filter=None)["tabs"][tab_id]["sortMode"] == "alphabetical-reversed"
 
 
 def test_changing_the_kind_of_file_keeps_the_file_size_order(memory_db) -> None:
     store, tab_id = _tab_with_a_filter(sort_mode="file-size")
-    assert store.set_file_filter(tab_id=tab_id, file_filter="image")["tabs"][tab_id]["sortMode"] == "file-size"
+    assert store.set_file_filter(view_id=VIEW, tab_id=tab_id, file_filter="image")["tabs"][tab_id]["sortMode"] == "file-size"

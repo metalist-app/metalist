@@ -25,12 +25,17 @@ import {
     listAiModelChoices,
     summarizeAiChat,
     loadAiHistoryMeter,
+    loadAiChatLive,
     loadAiChatSession,
     loadOpenAiCostSnapshot,
     previewCloudPrivacy,
+    releaseAiQuestionBox,
     resetOpenAiCostSnapshot,
+    sendAiQuestionTyped,
+    stopAiChatAnswer,
     streamAiChat,
 } from './ai-chat-api.js';
+import { followAiChatLive, showScopeQuestionCard } from './ai-chat-live.js';
 import { modelChoiceValue, parseModelChoiceValue, validateModelGroups } from './ai-model-names.js';
 import { AgentDebugView } from './ai-agent-debug-view.js';
 import {
@@ -112,6 +117,36 @@ function chatItemId(element) {
         }
     }
     return '';
+}
+
+// Multi-view editing step 5: a question another view sent shows, waiting its turn, under this id.
+const WAITING_MESSAGE_ID_PREFIX = 'waiting-';
+// A question being typed is shared with the other views this long after the last keystroke.
+const QUESTION_TYPED_SHARE_MS = 300;
+// Clear Chat waits this long, asking this often, for a stopped answer to end.
+const ANSWER_END_WAIT_MS = 10000;
+const ANSWER_END_ASK_MS = 200;
+
+function renderWaitingQuestion(waiting) {
+    const article = document.createElement('article');
+    article.className = 'ai-chat-message ai-chat-message-user is-waiting';
+    article.dataset.messageId = `${WAITING_MESSAGE_ID_PREFIX}${waiting.id}`;
+    const content = article.appendChild(document.createElement('div'));
+    content.className = 'ai-chat-message-content';
+    content.textContent = waiting.content;
+    const label = article.appendChild(document.createElement('div'));
+    label.className = 'ai-chat-waiting-label';
+    label.textContent = 'Waiting';
+    return article;
+}
+
+async function waitUntilNoAnswerIsWritten() {
+    const giveUpAtMs = performance.now() + ANSWER_END_WAIT_MS;
+    while (performance.now() < giveUpAtMs) {
+        const state = await loadAiChatLive();
+        if (!state.isAnswering) return;
+        await new Promise((resolve) => window.setTimeout(resolve, ANSWER_END_ASK_MS));
+    }
 }
 
 function validateMessage(message) {
@@ -341,6 +376,22 @@ class AiChatPanelController {
         this._openSettings = null;
         this._openMenu = null;
         this._elements = null;
+        // One conversation live in every view (multi-view editing step 5, ai-chat-live.js): the
+        // chat's mark as last loaded, the questions other views sent that wait their turn, an
+        // answer another view's Send is writing, this view's own question waiting its turn.
+        this._liveMark = '';
+        this._liveWaiting = [];
+        this._isAnsweringElsewhere = false;
+        this._waitingAssistantId = '';
+        // A question another view is typing: where, and this view's own draft until it ends.
+        this._composerLockWhere = '';
+        this._draftBeforeLock = '';
+        this._hasTypedQuestion = false;
+        this._questionTypedTimer = 0;
+        // The AI's question shown here though another view's answer asked it, and the card this
+        // view's own stream opened: each goes when the question is answered anywhere.
+        this._remoteQuestion = null;
+        this._streamQuestionCard = null;
 
         this._handleVisibilityChanged = this._handleVisibilityChanged.bind(this);
         this._handleSettingsChanged = this._handleSettingsChanged.bind(this);
@@ -355,6 +406,8 @@ class AiChatPanelController {
         this._handleComposerPointerUp = this._handleComposerPointerUp.bind(this);
         this._handleWindowResize = this._handleWindowResize.bind(this);
         this._handleSummarizeRequested = this._handleSummarizeRequested.bind(this);
+        this._handleQuestionTyped = this._handleQuestionTyped.bind(this);
+        this._handleQuestionBoxLeft = this._handleQuestionBoxLeft.bind(this);
 
         ApplicationState.own(this, 'AiChatPanelController', new.target === AiChatPanelController);
     }
@@ -512,8 +565,9 @@ class AiChatPanelController {
         if (document.body.classList.contains('pref-show-ai-chat')) {
             await this._loadModels();
         }
-        await this._loadSession({ shouldScrollToBottom: true });
+        await this._loadSession({ shouldScrollToBottom: true, isForChangeElsewhere: false });
         await this._refreshOpenAiCostSnapshot();
+        followAiChatLive((state, askedAtMs) => this._applyLiveState(state, askedAtMs));
     }
 
     _bindEvents() {
@@ -527,8 +581,14 @@ class AiChatPanelController {
                 this._cancelActiveRequest();
                 return;
             }
+            if (this._isStopForAnswerElsewhere()) {
+                void stopAiChatAnswer({ dropsWaiting: false });
+                return;
+            }
             elements.form.requestSubmit();
         });
+        elements.input.addEventListener('input', this._handleQuestionTyped);
+        elements.input.addEventListener('blur', this._handleQuestionBoxLeft);
         elements.input.addEventListener('keydown', (event) => {
             if (event.key !== 'Enter' || event.shiftKey || event.isComposing) {
                 return;
@@ -633,7 +693,7 @@ class AiChatPanelController {
         if (outcome === 'nothing') {
             showChatNotice('Nothing to summarize yet', 'info');
         }
-        await this._loadSession({ shouldScrollToBottom: false });
+        await this._loadSession({ shouldScrollToBottom: false, isForChangeElsewhere: false });
         if (outcome === 'summarized' && this._summaries.length > 0) {
             this._revealChatItem(this._summaries.at(-1).id);
         }
@@ -1024,6 +1084,11 @@ class AiChatPanelController {
     }
 
     _syncResizerAria() {
+        // A tab loaded in the background has no width yet: the resize that gives it one syncs it
+        // (_handleWindowResize). It failed the start (2026-11-14, a tab reloaded behind another).
+        if (window.innerWidth <= 0) {
+            return;
+        }
         let requestedWidth = this._elements.panel.getBoundingClientRect().width;
         if (requestedWidth <= 0) {
             requestedWidth = window.innerWidth / DEFAULT_PANEL_WIDTH_DIVISOR;
@@ -1237,8 +1302,11 @@ class AiChatPanelController {
         }
         this._elements.thinkingLevel.disabled = isThinkingLevelDisabled;
 
-        this._elements.send.textContent = this._isBusy ? 'Stop' : 'Send';
-        this._elements.send.classList.toggle('is-stop', this._isBusy);
+        // Stop for this view's answer, or for one another view's Send is writing while nothing is
+        // typed here (with a question typed, Send queues it: multi-view step 5, cases 6 and 7).
+        const isStop = [this._isBusy, this._isStopForAnswerElsewhere()].includes(true);
+        this._elements.send.textContent = isStop ? 'Stop' : 'Send';
+        this._elements.send.classList.toggle('is-stop', isStop);
         let isSendDisabled = false;
         if (this._isSummarizing) {
             isSendDisabled = true;
@@ -1327,23 +1395,41 @@ class AiChatPanelController {
         this._elements.input.focus();
     }
 
-    async _loadSession({ shouldScrollToBottom }) {
-        if (typeof shouldScrollToBottom !== 'boolean') {
-            throw new Error('_loadSession requires boolean scroll behavior');
+    // isForChangeElsewhere: a load for another view's change (multi-view step 5). It keeps the
+    // Thinking and References the user opened here (principle 4), and is dropped when this view
+    // started a Send or a Clear while it loaded: that turn shown here is newer than the load.
+    async _loadSession({ shouldScrollToBottom, isForChangeElsewhere }) {
+        if (typeof shouldScrollToBottom !== 'boolean' || typeof isForChangeElsewhere !== 'boolean') {
+            throw new Error('_loadSession requires boolean scroll and change behavior');
         }
         try {
             const payload = await loadAiChatSession();
+            // This view's own question waiting its turn stays at the end, the stream writing into it.
+            const isOwnTurnWaiting = this._isBusy && this._waitingAssistantId !== '';
+            if (isForChangeElsewhere && ((this._isBusy && !isOwnTurnWaiting) || this._isClearingSession)) {
+                return;
+            }
+            const keepsOwnWaitingTurn = isForChangeElsewhere && isOwnTurnWaiting;
             if (!payload || !Array.isArray(payload.messages) || !Array.isArray(payload.summaries)) {
                 throw new Error('AI chat session response missing messages or summaries');
             }
             const summaries = payload.summaries.map(validateSummary);
             if (!stateValuesEqual(this._summaries, summaries)) this._summaries = summaries;
-            if (this._expandedThinkingMessageIds.size > 0) this._expandedThinkingMessageIds.clear();
-            if (this._expandedReferenceMessageIds.size > 0) this._expandedReferenceMessageIds.clear();
+            if (!isForChangeElsewhere && this._expandedThinkingMessageIds.size > 0) this._expandedThinkingMessageIds.clear();
+            if (!isForChangeElsewhere && this._expandedReferenceMessageIds.size > 0) this._expandedReferenceMessageIds.clear();
             const placed = placeRefusedTurns(payload.messages.map(validateMessage), this._refusedTurns);
             // Turns whose earlier message the server trimmed go with it.
             if (placed.keptTurns.length !== this._refusedTurns.length) this._refusedTurns = placed.keptTurns;
-            if (!stateValuesEqual(this._messages, placed.messages)) this._messages = placed.messages;
+            if (keepsOwnWaitingTurn) {
+                // Only the messages before it change: the stream writes into the turn's own objects,
+                // which a new list would replace with copies.
+                const earlierCount = this._messages.length - MESSAGES_PER_TURN;
+                if (!stateValuesEqual(this._messages.slice(0, earlierCount), placed.messages)) {
+                    this._messages.splice(0, earlierCount, ...placed.messages);
+                }
+            } else if (!stateValuesEqual(this._messages, placed.messages)) {
+                this._messages = placed.messages;
+            }
             this._render({ shouldScrollToBottom });
             await queueMermaidDiagramRendering(this._elements.messages);
             await this._refreshHistoryMeter();
@@ -1355,6 +1441,125 @@ class AiChatPanelController {
             this._appendLocalErrorPanel(error.message);
             throw error;
         }
+    }
+
+    // --- One conversation live in every view (multi-view editing step 5) -----------------------
+
+    _isStopForAnswerElsewhere() {
+        return !this._isBusy && this._isAnsweringElsewhere && this._elements.input.value.trim() === '';
+    }
+
+    async _applyLiveState(state, askedAtMs) {
+        if (!Number.isFinite(askedAtMs)) {
+            throw new Error('A live state says when it was asked');
+        }
+        const waiting = state.waiting.filter((each) => !each.isOwn);
+        const isWaitingChanged = !stateValuesEqual(this._liveWaiting, waiting);
+        if (isWaitingChanged) this._liveWaiting = waiting;
+        const isAnsweringElsewhere = state.isAnswering && !this._isBusy;
+        if (this._isAnsweringElsewhere !== isAnsweringElsewhere) this._isAnsweringElsewhere = isAnsweringElsewhere;
+        this._syncQuestionBoxLock(state.composer);
+        this._syncAiQuestion(state.question, askedAtMs);
+        this._syncComposerControlsDisabled();
+        const isMarkChanged = state.mark !== this._liveMark;
+        if (isMarkChanged) this._liveMark = state.mark;
+        // This view's own answer shows as it streams; a summary or a clear here loads it when done.
+        const isOwnTurnWaiting = this._isBusy && this._waitingAssistantId !== '';
+        const isFreeToShow = [!this._isBusy, isOwnTurnWaiting].includes(true);
+        const canLoad = isFreeToShow && !this._isClearingSession && this._activeSummary === null;
+        if (isMarkChanged && canLoad) {
+            await this._loadSession({ shouldScrollToBottom: false, isForChangeElsewhere: true });
+            return;
+        }
+        if (isWaitingChanged) this._render({ shouldScrollToBottom: false });
+    }
+
+    // Another view types a question (case 11): this box shows its text and cannot be typed in,
+    // its tooltip says where; when it ends, this view's own draft comes back.
+    _syncQuestionBoxLock(composer) {
+        const input = this._elements.input;
+        if (!Object.hasOwn(composer, 'where')) {
+            if (this._composerLockWhere === '') return;
+            this._composerLockWhere = '';
+            input.readOnly = false;
+            input.classList.remove('is-question-locked');
+            input.removeAttribute('title');
+            input.value = this._draftBeforeLock;
+            if (this._draftBeforeLock !== '') this._draftBeforeLock = '';
+            return;
+        }
+        if (typeof composer.where !== 'string' || typeof composer.text !== 'string') {
+            throw new Error('A question typed elsewhere says where and its text');
+        }
+        if (this._composerLockWhere === '' && this._draftBeforeLock !== input.value) {
+            this._draftBeforeLock = input.value;
+        }
+        if (this._composerLockWhere !== composer.where) this._composerLockWhere = composer.where;
+        input.readOnly = true;
+        input.classList.add('is-question-locked');
+        input.title = `Being typed ${composer.where}`;
+        if (input.value !== composer.text) input.value = composer.text;
+    }
+
+    _handleQuestionTyped() {
+        this._syncComposerControlsDisabled();
+        if (this._composerLockWhere !== '') return;
+        if (!this._hasTypedQuestion) this._hasTypedQuestion = true;
+        window.clearTimeout(this._questionTypedTimer);
+        this._questionTypedTimer = window.setTimeout(() => {
+            this._questionTypedTimer = 0;
+            // Refused: another view types a question (the box locks here at the next state).
+            void sendAiQuestionTyped(this._elements.input.value).catch((error) => {
+                rethrowUnexpectedError(error);
+                if (!(error instanceof AiApiError)) throw error;
+            });
+        }, QUESTION_TYPED_SHARE_MS);
+    }
+
+    _handleQuestionBoxLeft() {
+        void this._releaseQuestionBox();
+    }
+
+    async _releaseQuestionBox() {
+        if (this._questionTypedTimer !== 0) {
+            window.clearTimeout(this._questionTypedTimer);
+            this._questionTypedTimer = 0;
+        }
+        if (!this._hasTypedQuestion) return;
+        this._hasTypedQuestion = false;
+        await releaseAiQuestionBox().catch((error) => {
+            rethrowUnexpectedError(error);
+            if (!(error instanceof AiApiError)) throw error;
+        });
+    }
+
+    // The AI's question (case 9). A view whose Send is not the one answering shows it on its own
+    // card; any view's card goes once a state asked after it opened shows it answered.
+    _syncAiQuestion(question, askedAtMs) {
+        const streamCard = this._streamQuestionCard;
+        if (streamCard !== null && askedAtMs > streamCard.openedAtMs
+            && (question === null || question.question_id !== streamCard.questionId)) {
+            streamCard.controller.abort();
+        }
+        const shown = this._remoteQuestion;
+        if (shown !== null && askedAtMs > shown.openedAtMs
+            && (question === null || question.question_id !== shown.questionId)) {
+            shown.controller.abort();
+        }
+        if (this._isBusy || question === null) return;
+        if (this._remoteQuestion !== null && this._remoteQuestion.questionId === question.question_id) return;
+        const anchor = this._messages.findLast((message) => message.role === 'assistant');
+        if (anchor === undefined) return;
+        this._ensureOperationPanel(anchor.id);
+        const controller = new AbortController();
+        this._remoteQuestion = { questionId: question.question_id, controller, openedAtMs: performance.now() };
+        const card = question.kind === CONFIRMATION_QUESTION_KIND
+            ? showConfirmationCard({ event: question, host: this._bulkPanel, signal: controller.signal })
+            : showScopeQuestionCard({ event: question, host: this._bulkPanel, signal: controller.signal });
+        void card.then(() => {
+            if (this._remoteQuestion !== null && this._remoteQuestion.controller === controller) this._remoteQuestion = null;
+            this._removeOperationPanelIfEmpty();
+        });
     }
 
     async _clearSession() {
@@ -1376,6 +1581,10 @@ class AiChatPanelController {
                 this._cancelActiveRequest();
                 await activeRequestCompletion;
             }
+            // Any view clears it for all (multi-view step 5, case 8): the answer another view's
+            // Send is writing stops and the waiting questions go first.
+            await stopAiChatAnswer({ dropsWaiting: true });
+            await waitUntilNoAnswerIsWritten();
             await clearAiChatSession();
         } catch (error) {
             rethrowUnexpectedError(error);
@@ -1497,11 +1706,16 @@ class AiChatPanelController {
         }
         this._activeChatCompletion = activeChatCompletion;
         this._elements.input.value = '';
+        // Sent: the other views may type a question again (multi-view step 5, case 11).
+        void this._releaseQuestionBox();
         this._setBusy(true);
         this._startThinkingFeedback();
         this._render({ shouldScrollToBottom: true });
 
         let wasCancelled = false;
+        // Stop from another view ended this answer (multi-view step 5, case 7): the stream may then
+        // end abruptly, which is no failure; the saved turn is loaded as for any answer.
+        let wasStoppedElsewhere = false;
         let didStartChat = false;
         // The request failed (the server refused it, or could not be reached): the
         // server has no record of this turn, so the turn shown here, with its
@@ -1521,6 +1735,18 @@ class AiChatPanelController {
                 showDiagnostics,
                 signal: abortController.signal,
                 onEvent: async (event) => {
+                    // Waiting behind another view's answer (multi-view step 5, case 6): the
+                    // working indicator says so until the turn comes.
+                    if (event.type === 'waiting') {
+                        if (this._waitingAssistantId !== assistantMessage.id) this._waitingAssistantId = assistantMessage.id;
+                        this._render({ shouldScrollToBottom: true });
+                        return;
+                    }
+                    if (this._waitingAssistantId !== '') this._waitingAssistantId = '';
+                    if (event.type === 'stopped') {
+                        wasStoppedElsewhere = true;
+                        return;
+                    }
                     if (event.type === 'menu_open') {
                         await executeAgentMenuRequest({ event, signal: abortController.signal,
                             openMenu: this._openMenu, acknowledge: acknowledgeAgentMenu });
@@ -1528,9 +1754,18 @@ class AiChatPanelController {
                     }
                     if (event.type === 'bulk_question' && event.kind === CONFIRMATION_QUESTION_KIND) {
                         this._ensureOperationPanel(assistantMessage.id);
+                        // Its own signal: the card also goes when another view answers it (case 9).
+                        const cardController = new AbortController();
+                        abortController.signal.addEventListener('abort', () => cardController.abort(), { once: true });
+                        this._streamQuestionCard = {
+                            questionId: event.question_id, controller: cardController, openedAtMs: performance.now(),
+                        };
                         // Not awaited: the server waits for the answer, and Stop must still end the stream.
-                        void showConfirmationCard({ event, host: this._bulkPanel, signal: abortController.signal })
-                            .then(() => this._removeOperationPanelIfEmpty());
+                        void showConfirmationCard({ event, host: this._bulkPanel, signal: cardController.signal })
+                            .then(() => {
+                                if (this._streamQuestionCard !== null) this._streamQuestionCard = null;
+                                this._removeOperationPanelIfEmpty();
+                            });
                     } else if (event.type.startsWith('bulk_')) {
                         const needsBulkPanel = ['bulk_question', 'bulk_progress'].includes(event.type);
                         if (needsBulkPanel) this._ensureOperationPanel(assistantMessage.id);
@@ -1606,6 +1841,8 @@ class AiChatPanelController {
                 assistantMessage.status = 'error';
                 assistantMessage.error = 'Cancelled by user';
                 this._render({ shouldScrollToBottom: true });
+            } else if (wasStoppedElsewhere && (error instanceof HttpRequestError || isNetworkTransportError(error))) {
+                // The answer was stopped from another view; the stream's end is part of that.
             } else if (error instanceof HttpRequestError || isNetworkTransportError(error)) {
                 didRequestFail = true;
                 assistantMessage.status = 'error';
@@ -1629,6 +1866,7 @@ class AiChatPanelController {
                 throw new Error('AI chat completion promise changed during request');
             }
             this._activeChatCompletion = null;
+            if (this._waitingAssistantId !== '') this._waitingAssistantId = '';
             this._setBusy(false);
             resolveActiveChatCompletion();
             // Refresh cost only after the chat is idle again: this network call can
@@ -1639,7 +1877,7 @@ class AiChatPanelController {
             }
         }
         if (!wasCancelled && didStartChat && !didRequestFail) {
-            await this._loadSession({ shouldScrollToBottom: false });
+            await this._loadSession({ shouldScrollToBottom: false, isForChangeElsewhere: false });
         }
         this._elements.input.focus();
     }
@@ -1839,7 +2077,7 @@ class AiChatPanelController {
                 && message.content === ''
                 && this._bulkPanel === null
             ) {
-                article.appendChild(this._renderWorkingIndicator());
+                article.appendChild(this._renderWorkingIndicator(message.id === this._waitingAssistantId ? 'Waiting' : 'Working'));
             }
 
             if (message.role === 'assistant' && message.thinking !== '') {
@@ -1947,6 +2185,10 @@ class AiChatPanelController {
         }
         if (this._isSummarizing) {
             renderedMessages.push({ messageId: SUMMARY_PENDING_ID, element: this._renderSummaryPending() });
+        }
+        // Questions other views sent, waiting their turn (multi-view step 5, case 6).
+        for (const waiting of this._liveWaiting) {
+            renderedMessages.push({ messageId: `${WAITING_MESSAGE_ID_PREFIX}${waiting.id}`, element: renderWaitingQuestion(waiting) });
         }
         placeChatMessageElements({
             container: this._elements.messages,
@@ -2206,14 +2448,17 @@ class AiChatPanelController {
         return activities;
     }
 
-    _renderWorkingIndicator() {
+    _renderWorkingIndicator(labelText) {
+        if (labelText !== 'Working' && labelText !== 'Waiting') {
+            throw new Error('The working indicator says Working or Waiting');
+        }
         const indicator = document.createElement('div');
         indicator.className = 'ai-chat-working-indicator';
         indicator.setAttribute('role', 'status');
 
         const label = document.createElement('span');
         label.className = 'ai-chat-working-label';
-        label.textContent = 'Working';
+        label.textContent = labelText;
 
         const dots = document.createElement('span');
         dots.className = 'ai-chat-thinking-dots';

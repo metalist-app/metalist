@@ -161,7 +161,16 @@ settings changed)".
 The chat is saved in the vault (encrypted when it has a password) and shared by every
 login to it: a restart, an upgrade, logging out and locking keep it; only Clear Chat ends
 it. An answer MetaList stopped during comes back marked as stopped: ask again. Its debug
-traces are session-only: Clear Chat, logout or a restart removes them. Export LLM history (download arrow in the chat header)
+traces are kept until Clear Chat, the last device signing out, or a restart.
+
+With MetaList open in several browser tabs or devices, they all show this one chat, live: a
+question and its answer appear everywhere as they are written. One answer is written at a
+time: a question sent while another is being answered shows as Waiting and is answered next,
+using the search of the tab or device that sent it. Stop (the Send button while an answer is
+written) and Clear Chat work from any of them. While a question is being typed in one, the
+message box of the others shows it and cannot be typed in, until it is sent or the box is left.
+A question the AI asks while answering (confirm a change, which notes to tag) can be answered
+from any of them. Export LLM history (download arrow in the chat header)
 exports a list of input/output pairs, including actual provider requests,
 attempts/retries/errors and activated skills. It makes no additional model call.
 Agent Debug shows the latest run. When an AI step fails, the red message in the

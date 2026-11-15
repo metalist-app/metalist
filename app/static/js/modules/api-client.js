@@ -1,6 +1,6 @@
 import { localDateText, twoDigits, utcOffsetText } from './local-date-text.js';
 import { HTTP_STATUS } from './http-status.js';
-import { FileEditSessionExpiredError, FileRevisionConflictError, HttpRequestError, ServerInputRejectedError, rethrowUnexpectedError } from './expected-errors.js';
+import { FileEditSessionExpiredError, FileRevisionConflictError, HttpRequestError, NoteLockedElsewhereError, ServerInputRejectedError, rethrowUnexpectedError } from './expected-errors.js';
 import { CONFIG } from './config.js';
 import { DOMUtils } from './dom-utils.js';
 import { ModeContextInstance as ModeContext } from './mode-manager/mode-context.js';
@@ -139,9 +139,9 @@ export const NotesAPI = {
             throw new Error('NotesAPI._apiCall requires options object');
         }
         try {
-            const claimSession = Boolean(options.claimSession);
+            const isUserChange = Boolean(options.isUserChange);
             const fetchOptions = { ...options };
-            delete fetchOptions.claimSession;
+            delete fetchOptions.isUserChange;
 
             // Add sync context to request body for non-GET requests
             let requestBody = fetchOptions.body;
@@ -153,7 +153,7 @@ export const NotesAPI = {
                     undoContext: captureUndoContext(),
                 };
 
-                if (claimSession) {
+                if (isUserChange) {
                     syncContext.viewport = captureViewportSnapshot();
                 }
 
@@ -186,10 +186,6 @@ export const NotesAPI = {
                 ...fetchOptions.headers
             };
 
-            if (claimSession) {
-                headers['X-Metalist-Claim'] = '1';
-            }
-
             const response = await fetch(url, {
                 ...fetchOptions,
                 body: requestBody,
@@ -199,6 +195,12 @@ export const NotesAPI = {
             if (response.status === HTTP_STATUS.BAD_REQUEST && response.headers.get('content-type')?.includes('application/json')) {
                 const rejection = await response.clone().json();
                 if (rejection.inputRejected === true && typeof rejection.detail === 'string') {
+                    // A root another view edits: its marker opens, if it is shown (multi-view step 4).
+                    if (typeof rejection.lockedRootId === 'string') {
+                        const { openMarkerForRefusal } = await import('./mode-manager/services/edit-lock-service.js');
+                        const isMarkerShown = openMarkerForRefusal(rejection.lockedRootId, rejection.lockedWhere);
+                        throw new NoteLockedElsewhereError(rejection.detail, isMarkerShown);
+                    }
                     throw new ServerInputRejectedError(rejection.detail);
                 }
             }
@@ -256,7 +258,7 @@ export const NotesAPI = {
 
         return this._apiCall(CONFIG.API.NOTES.CREATE, {
             method: 'POST',
-            claimSession: true,
+            isUserChange: true,
             body: JSON.stringify(body)
         });
     },
@@ -269,7 +271,7 @@ export const NotesAPI = {
 
         return this._apiCall(CONFIG.API.NOTES.CREATE_SIBLING(noteId), { 
             method: 'POST',
-            claimSession: true,
+            isUserChange: true,
             body: JSON.stringify(body)
         });
     },
@@ -282,7 +284,7 @@ export const NotesAPI = {
 
         return this._apiCall(CONFIG.API.NOTES.CREATE_CHILD(noteId), { 
             method: 'POST',
-            claimSession: true,
+            isUserChange: true,
             body: JSON.stringify(body)
         });
     },
@@ -291,7 +293,7 @@ export const NotesAPI = {
         const sanitizedContent = sanitizeNoteHtmlForStorage(content);
         return this._apiCall(CONFIG.API.NOTES.SAVE(noteId), {
             method: 'PUT',
-            claimSession: true,
+            isUserChange: true,
             body: JSON.stringify({ content: sanitizedContent, tags })
         }); 
     },
@@ -305,7 +307,7 @@ export const NotesAPI = {
         }
         return this._apiCall(CONFIG.API.NOTES.ADD_SELECTED_TEXT_TAG(noteId), {
             method: 'POST',
-            claimSession: true,
+            isUserChange: true,
             body: JSON.stringify({ selectedText }),
         });
     },
@@ -319,7 +321,7 @@ export const NotesAPI = {
         }
         return this._apiCall(CONFIG.API.NOTES.ACCEPT_TAG_PROPOSAL(noteId), {
             method: 'POST',
-            claimSession: true,
+            isUserChange: true,
             body: JSON.stringify({ proposal }),
         });
     },
@@ -335,7 +337,7 @@ export const NotesAPI = {
         }
         return this._apiCall(CONFIG.API.NOTES.ADD_TAG_PROPOSALS(noteId), {
             method: 'POST',
-            claimSession: true,
+            isUserChange: true,
             body: JSON.stringify({ proposals }),
         });
     },
@@ -365,7 +367,7 @@ export const NotesAPI = {
             throw new Error('NotesAPI.deleteNotesInView requires the confirmed note count');
         }
         return this._apiCall(CONFIG.API.NOTES.DELETE_IN_VIEW, {
-            method: 'POST', claimSession: true, body: JSON.stringify({ expectedNoteCount, ...this.viewScope() }),
+            method: 'POST', isUserChange: true, body: JSON.stringify({ expectedNoteCount, ...this.viewScope() }),
         });
     },
 
@@ -396,7 +398,7 @@ export const NotesAPI = {
             throw new Error('NotesAPI.tagNotesInView requires the action, the tag and the confirmed count');
         }
         return this._apiCall(CONFIG.API.NOTES.TAG_IN_VIEW, {
-            method: 'POST', claimSession: true, body: JSON.stringify({ action, tag, expectedNoteCount, ...this.viewScope() }),
+            method: 'POST', isUserChange: true, body: JSON.stringify({ action, tag, expectedNoteCount, ...this.viewScope() }),
         });
     },
 
@@ -425,7 +427,7 @@ export const NotesAPI = {
             throw new Error('NotesAPI.replacePassword requires the audit row and the new password');
         }
         return this._apiCall(CONFIG.API.NOTES.PASSWORD_REPLACE(row.noteId), {
-            method: 'POST', claimSession: true,
+            method: 'POST', isUserChange: true,
             body: JSON.stringify({ kind: row.kind, regionIndex: row.regionIndex, fingerprint: row.fingerprint, passwordId: row.passwordId, newPassword }),
         });
     },
@@ -437,7 +439,7 @@ export const NotesAPI = {
         }
         return this._apiCall(CONFIG.API.NOTES.OPEN_TO_TAG_PROPOSALS(noteId), {
             method: 'POST',
-            claimSession: true,
+            isUserChange: true,
             body: JSON.stringify(this.viewScope()),
         });
     },
@@ -455,7 +457,7 @@ export const NotesAPI = {
         }
         return this._apiCall(CONFIG.API.NOTES.RESOLVE_ROBOT_TAG_PROPOSALS(noteId), {
             method: 'POST',
-            claimSession: true,
+            isUserChange: true,
             body: JSON.stringify({ action, includesHiddenChildren, ...this.viewScope() }),
         });
     },
@@ -469,7 +471,7 @@ export const NotesAPI = {
         }
         return this._apiCall(CONFIG.API.NOTES.REJECT_TAG_PROPOSAL(noteId), {
             method: 'POST',
-            claimSession: true,
+            isUserChange: true,
             body: JSON.stringify({ proposal }),
         });
     },
@@ -492,7 +494,7 @@ export const NotesAPI = {
         const sanitizedSegments = segments.map(segment => sanitizeNoteHtmlForStorage(segment));
         return this._apiCall(CONFIG.API.NOTES.SPLIT(noteId), {
             method: 'POST',
-            claimSession: true,
+            isUserChange: true,
             body: JSON.stringify({ segments: sanitizedSegments, tags }),
         });
     },
@@ -500,7 +502,7 @@ export const NotesAPI = {
     async toggleTodo(noteId) {
         return this._apiCall(CONFIG.API.NOTES.TOGGLE_TODO(noteId), {
             method: 'POST',
-            claimSession: true
+            isUserChange: true
         });
     },
 
@@ -511,7 +513,7 @@ export const NotesAPI = {
         }
         return this._apiCall(CONFIG.API.NOTES.TOGGLE_MARKDOWN_TASK(noteId), {
             method: 'POST',
-            claimSession: true,
+            isUserChange: true,
             body: JSON.stringify({ taskIndex, isTicked }),
         });
     },
@@ -523,7 +525,7 @@ export const NotesAPI = {
         }
         return this._apiCall(CONFIG.API.NOTES.TOGGLE_MARKDOWN_CALLOUT(noteId), {
             method: 'POST',
-            claimSession: true,
+            isUserChange: true,
             body: JSON.stringify({ calloutIndex, isOpen }),
         });
     },
@@ -540,7 +542,7 @@ export const NotesAPI = {
         }
         return this._apiCall(CONFIG.API.NOTES.TOGGLE_MARKDOWN_FOLD(noteId), {
             method: 'POST',
-            claimSession: true,
+            isUserChange: true,
             body: JSON.stringify({ foldIndex, isOpen }),
         });
     },
@@ -592,7 +594,7 @@ export const NotesAPI = {
             throw new Error('NotesAPI.fileNoteInVirtualFolder requires the note and the folder');
         }
         return this._apiCall(CONFIG.API.VIRTUAL_FOLDERS.FILE_NOTE, {
-            method: 'POST', claimSession: true, body: JSON.stringify({ noteId, folder }),
+            method: 'POST', isUserChange: true, body: JSON.stringify({ noteId, folder }),
         });
     },
 
@@ -719,7 +721,7 @@ export const NotesAPI = {
         }
         return this._apiCall(CONFIG.API.NOTES.UNFORMAT(noteId), {
             method: 'POST',
-            claimSession: true,
+            isUserChange: true,
         });
     },
 
@@ -738,7 +740,7 @@ export const NotesAPI = {
         }
         return this._apiCall(CONFIG.API.NOTES.RESIZE_IMAGE(noteId), {
             method: 'POST',
-            claimSession: true,
+            isUserChange: true,
             body: JSON.stringify({ sourceKind, occurrenceIndex, action }),
         });
     },
@@ -802,26 +804,26 @@ export const NotesAPI = {
 
         return this._apiCall(CONFIG.API.NOTES.MOVE(noteId), {
             method: 'POST',
-            claimSession: true,
+            isUserChange: true,
             body: JSON.stringify(body)
         });
     },
 
     async deleteNote(noteId) {
-        return this._apiCall(CONFIG.API.NOTES.DELETE(noteId), { method: 'DELETE', claimSession: true });
+        return this._apiCall(CONFIG.API.NOTES.DELETE(noteId), { method: 'DELETE', isUserChange: true });
     },
 
     async collapseNote(noteId) {
         return this._apiCall(CONFIG.API.NOTES.COLLAPSE(noteId), {
             method: 'POST',
-            claimSession: true,
+            isUserChange: true,
         });
     },
 
     async expandNote(noteId) {
         return this._apiCall(CONFIG.API.NOTES.EXPAND(noteId), {
             method: 'POST',
-            claimSession: true,
+            isUserChange: true,
         });
     },
 
@@ -845,7 +847,7 @@ export const NotesAPI = {
 
         return this._apiCall(CONFIG.API.NOTES.SET_COLLAPSED_BULK, {
             method: 'POST',
-            claimSession: true,
+            isUserChange: true,
             body: JSON.stringify(body),
         });
     },
@@ -869,7 +871,7 @@ export const NotesAPI = {
 
         return this._apiCall(CONFIG.API.NOTES.SET_COLLAPSED_IN_CONTEXT, {
             method: 'POST',
-            claimSession: true,
+            isUserChange: true,
             body: JSON.stringify(body),
         });
     },
@@ -883,7 +885,7 @@ export const NotesAPI = {
         }
         return this._apiCall(CONFIG.API.NOTES.SET_COLLAPSED_SUBTREE(noteId), {
             method: 'POST',
-            claimSession: true,
+            isUserChange: true,
             body: JSON.stringify({ collapsed }),
         });
     },
@@ -891,13 +893,13 @@ export const NotesAPI = {
     async undo() {
         const undoContext = captureUndoContext();
         const url = `${CONFIG.API.NOTES.UNDO}?client_id=${encodeURIComponent(ModeContext.clientId)}&undoContext=${encodeURIComponent(undoContext)}`;
-        return this._apiCall(url, { method: 'POST', claimSession: true });
+        return this._apiCall(url, { method: 'POST', isUserChange: true });
     },
 
     async redo() {
         const undoContext = captureUndoContext();
         const url = `${CONFIG.API.NOTES.REDO}?client_id=${encodeURIComponent(ModeContext.clientId)}&undoContext=${encodeURIComponent(undoContext)}`;
-        return this._apiCall(url, { method: 'POST', claimSession: true });
+        return this._apiCall(url, { method: 'POST', isUserChange: true });
     },
 
     async recordNoteInteraction(noteId, interactionType) {
@@ -1275,7 +1277,7 @@ export const NotesAPI = {
         };
         return this._apiCall(CONFIG.API.NOTES.MOVE_TO_TOP(noteId), {
             method: 'POST',
-            claimSession: true,
+            isUserChange: true,
             body: JSON.stringify(body),
         });
     },
@@ -1289,7 +1291,7 @@ export const NotesAPI = {
         }
         return this._apiCall(CONFIG.API.NOTES.MOVE_TO_BOTTOM(noteId), {
             method: 'POST',
-            claimSession: true,
+            isUserChange: true,
             body: JSON.stringify({ search_query: searchQuery, tab_id: ModeContext.activeTabId }),
         });
     },
@@ -1312,7 +1314,7 @@ export const NotesAPI = {
         };
         return this._apiCall(CONFIG.API.NOTES.PRIORITIZE, {
             method: 'POST',
-            claimSession: true,
+            isUserChange: true,
             body: JSON.stringify(body),
         });
     },
@@ -1331,7 +1333,7 @@ export const NotesAPI = {
         };
         return this._apiCall(CONFIG.API.NOTES.ALPHABETIZE_ROOT_NOTES, {
             method: 'POST',
-            claimSession: true,
+            isUserChange: true,
             body: JSON.stringify(body),
         });
     },
@@ -1346,7 +1348,7 @@ export const NotesAPI = {
         };
         return this._apiCall(CONFIG.API.NOTES.RESET_UPDATED_AT_TO_CREATED_AT, {
             method: 'POST',
-            claimSession: true,
+            isUserChange: true,
             body: JSON.stringify(body),
         });
     },
@@ -1360,7 +1362,7 @@ export const NotesAPI = {
         };
         return this._apiCall(CONFIG.API.NOTES.INDENT(noteId), {
             method: 'POST',
-            claimSession: true,
+            isUserChange: true,
             body: JSON.stringify(body)
         });
     },
@@ -1371,7 +1373,7 @@ export const NotesAPI = {
         };
         return this._apiCall(CONFIG.API.NOTES.OUTDENT(noteId), {
             method: 'POST',
-            claimSession: true,
+            isUserChange: true,
             body: JSON.stringify(body)
         });
     },
@@ -1558,7 +1560,7 @@ export const NotesAPI = {
         };
         return this._apiCall(CONFIG.API.NOTES.PASTE_SIBLING(targetNoteId), {
             method: 'POST',
-            claimSession: true,
+            isUserChange: true,
             body: JSON.stringify(body),
         });
     },
@@ -1569,7 +1571,7 @@ export const NotesAPI = {
         };
         return this._apiCall(CONFIG.API.NOTES.PASTE_CHILD(targetNoteId), {
             method: 'POST',
-            claimSession: true,
+            isUserChange: true,
             body: JSON.stringify(body),
         });
     },

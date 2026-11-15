@@ -56,7 +56,7 @@ exec(compile('def broken_view():\\n    raise ValueError("PRIVATE_NOTE_CONTENT")'
 
 app.add_api_route(API_PREFIX + "/diagnostic-fixture", broken_view)
 safe_log.allow_route_templates(app.routes)
-token = token_service.create_token(client_info="fixture", owner_tab_id="tab", dek=None)
+token = token_service.create_token(client_info="fixture", dek=None)
 headers = {"Authorization": "Bearer " + token, "X-Metalist-Tab-Id": "tab", "Origin": "http://localhost"}
 with TestClient(app, base_url="http://localhost", raise_server_exceptions=False) as client:
     response = client.get(API_PREFIX + "/diagnostic-fixture", headers=headers)
@@ -103,7 +103,7 @@ def rejecting_view():
 
 app.add_api_route(API_PREFIX + "/rejected-input-fixture", rejecting_view)
 safe_log.allow_route_templates(app.routes)
-token = token_service.create_token(client_info="fixture", owner_tab_id="tab", dek=None)
+token = token_service.create_token(client_info="fixture", dek=None)
 headers = {"Authorization": "Bearer " + token, "X-Metalist-Tab-Id": "tab", "Origin": "http://localhost"}
 with TestClient(app, base_url="http://localhost", raise_server_exceptions=False) as client:
     response = client.get(API_PREFIX + "/rejected-input-fixture", headers=headers)
@@ -139,7 +139,7 @@ def request_log_fixture_view():
 
 app.add_api_route(API_PREFIX + "/request-log-fixture", request_log_fixture_view)
 safe_log.allow_route_templates(app.routes)
-token = token_service.create_token(client_info="fixture", owner_tab_id="tab", dek=None)
+token = token_service.create_token(client_info="fixture", dek=None)
 headers = {"Authorization": "Bearer " + token, "X-Metalist-Tab-Id": "tab", "Origin": "http://localhost"}
 with TestClient(app, base_url="http://localhost", raise_server_exceptions=False) as client:
     assert client.get(API_PREFIX + "/request-log-fixture", headers=headers).status_code == 200

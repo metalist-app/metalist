@@ -239,7 +239,11 @@ export async function actionRedo() {
 
     if (result.status === 'noop') {
         Logger.logAction('redo_noop', { message: result.message });
-        return; 
+        // Another view's change emptied redo too (multi-view editing, 2026-11-14): say why.
+        if (result.changedOnAnotherDevice === true) {
+            ErrorHandler.showInfoBanner(result.message, NOTHING_TO_UNDO_BANNER_SECONDS * MS_PER_SECOND);
+        }
+        return;
     }
 
     if (result.status === 'success') {

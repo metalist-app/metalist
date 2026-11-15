@@ -3,14 +3,27 @@ import { createUuid } from './uuid.js';
 
 const sessionIdentity = ApplicationState.createFields('session-auth', {tabId: null});
 
+// A browser tab keeps its view (its id names it to the server: its place, its undo) in
+// sessionStorage, as closing a tab is deliberate; the installed phone app (added to the home
+// screen, one window) keeps it in localStorage, so the phone ending the app in the background does
+// not lose its place (multi-view editing §9). Each vault has its own address, so its own storage:
+// one view per vault.
 export function initializeSessionIdentity() {
+    initializeIdentityIn(sessionStorage);
+}
+
+export function initializeInstalledAppIdentity() {
+    initializeIdentityIn(localStorage);
+}
+
+function initializeIdentityIn(storage) {
     if (sessionIdentity.tabId !== null) {
         return;
     }
-    let tabId = sessionStorage.getItem('metalist_tab_id');
+    let tabId = storage.getItem('metalist_tab_id');
     if (tabId === null || tabId === '') {
         tabId = createUuid();
-        sessionStorage.setItem('metalist_tab_id', tabId);
+        storage.setItem('metalist_tab_id', tabId);
     }
     if (typeof tabId !== 'string' || tabId.length === 0) {
         throw new Error('Invalid browser tab identity');

@@ -8,7 +8,9 @@ const API_AUTH_BASE = `${API_BASE}/auth`;
 const API_FILES_BASE = `${API_BASE}/files`;
 const API_REMINDERS_BASE = `${API_BASE}/reminders`;
 const API_AI_BASE = `${API_BASE}/ai`;
-const SYNC_POLL_INTERVAL_SECONDS = 5;
+// A visible view checks every 2 seconds, so a change made in another view (another tab, the phone)
+// shows within about that (multi-view editing step 3, case 1; was 5).
+const SYNC_POLL_INTERVAL_SECONDS = 2;
 const LOADING_SPINNER_DELAY_SECONDS = 1;
 const SEARCH_DEBOUNCE_MS = 300;
 const INITIAL_FADE_DURATION_MS = 150;
@@ -86,6 +88,9 @@ export const CONFIG = {
             TAB_STATE_DATE_FILTER: `${API_NOTES_BASE}/tab-state/date-filter`,
             TAB_STATE_FILE_FILTER: `${API_NOTES_BASE}/tab-state/file-filter`,
             TAB_STATE_UNTAGGED_VIEW: `${API_NOTES_BASE}/tab-state/untagged-view`,
+            // Multi-view editing step 4: a search box left, a root taken over from another view.
+            TAB_STATE_SEARCH_LOCK_RELEASE: `${API_NOTES_BASE}/tab-state/search-lock/release`,
+            TAKE_OVER_EDITING: `${API_NOTES_BASE}/edit-lock/take-over`,
             TAG_INTERACTIONS: `${API_NOTES_BASE}/tag-interactions`,
             MEMORY_USAGE: `${API_NOTES_BASE}/memory-usage`,
             MEMORY_BREAKDOWN: `${API_NOTES_BASE}/memory-usage/breakdown`,
@@ -233,6 +238,11 @@ export const CONFIG = {
             OPENAI_COST: `${API_AI_BASE}/openai/cost`,
             OPENAI_COST_RESET: `${API_AI_BASE}/openai/cost/reset`,
             SESSION: `${API_AI_BASE}/session`,
+            // One conversation live in every view (multi-view editing step 5).
+            CHAT_LIVE: `${API_AI_BASE}/chat/live`,
+            CHAT_STOP: `${API_AI_BASE}/chat/stop`,
+            CHAT_COMPOSER: `${API_AI_BASE}/chat/composer`,
+            CHAT_COMPOSER_RELEASE: `${API_AI_BASE}/chat/composer/release`,
             DEBUG: `${API_AI_BASE}/debug`,
             HISTORY: `${API_AI_BASE}/history`,
             CLOUD_PRIVACY_PREVIEW: `${API_AI_BASE}/cloud-privacy/preview`,

@@ -502,10 +502,14 @@ the AI knows about them (built 2026-10-30, `app/services/agent/chat_compaction.p
   its conversation then. A restore brings back the conversation the backup holds, in place of the current one
   (none for a backup made before 2026-11-11). Tests: `tests/unit/test_ai_chat_saved.py`,
   `test_ai_chat_restore.py`, `test_ai_chat_migration.py`.
-- With several views (`docs/ready-to-build/multi-view-editing.md` §5, decided 2026-11-14), the
-  vault keeps its one conversation, shown live in every browser tab and on the phone: each Send
-  uses the scope of the view that sent it, one answer is written at a time, and closing tabs
-  loses nothing. "One per view" (2026-10-28) was dropped: closing a browser would lose every
+- With several views (`docs/design/multi-view-editing.md` §5, decided 2026-11-14, built
+  2026-11-15: "Step 5's cases"), the vault keeps its one conversation, shown live in every browser
+  tab and on the phone: each Send uses the scope of the view that sent it, one answer is written
+  at a time (a question sent meanwhile shows as Waiting), Stop and Clear Chat work from any view,
+  a question being typed in one locks the message box of the others (showing its text), and
+  closing tabs loses nothing. The AI's working state (a key entered for the session, pages
+  opened, summaries, debug traces) is the vault's, cleared when the last device signs out
+  (`app/services/ai_chat_live.py`, `ai-chat-live.js`). "One per view" (2026-10-28) was dropped: closing a browser would lose every
   conversation its tabs held. A future option: several kept conversations to choose from
   (`docs/future-plans/ai-conversations.md`).
 - The OpenAI usage/cost aggregate is separate process-wide server memory. Browser

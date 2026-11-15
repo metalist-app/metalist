@@ -1,6 +1,6 @@
 # Several views at once: one editor per root note
 
-**Status:** Agreed with the maintainer 2026-10-26. Ready to build. A large change: a build order was proposed 2026-10-28 (§10), not yet approved. **Decided 2026-11-14:** the list of search contexts is shared by every tab and device (§2, §10), and so is the AI conversation, one per vault (§5; replaces one per view).
+**Status:** Built 2026-11-14 and 2026-11-15, all five steps (§10; each step's cases and what was built under "Step N's cases"); moved from `docs/ready-to-build/` to the design docs then. Agreed with the maintainer 2026-10-26; the build order (§10) approved 2026-11-14. **Decided 2026-11-14:** the list of search contexts is shared by every tab and device (§2, §10), and so is the AI conversation, one per vault (§5; replaces one per view).
 **Scope:** let MetaList be open in several places on one vault at the same time (two browser tabs, a browser tab and the phone, later apps) instead of one session per vault. Each place has its own independent screen; editing is locked **per root note**. Update the permanent docs (`docs/ui/state-handling.md`, `docs/design/differential-view-protocol.md`, `docs/ui/ai-chat.md`, `docs/security/README.md`, `docs/ui/phone.md` and wherever "one active session" is stated) with the result.
 
 Written without running the code. Every code reference below came from reading it and must be checked before relying on it; build only what's missing.
@@ -32,6 +32,9 @@ Written without running the code. Every code reference below came from reading i
   - which search context it is showing
   - its scroll position (never synced: layouts differ)
   - the selected note and edit mode
+  - **its reference pages** (decided 2026-11-14): following a link is moving around, "almost akin to scrolling" (the maintainer). Each view has its own path of pages and its own ◀ ⏮ ▶; a search context's row reads `miscellaneous > Source note` only in the view that is on that page. Another view showing `miscellaneous` is not pulled along.
+  - **whether the folder tree shows** (decided 2026-11-14): a panel, not what the notes are; the phone never starts on it, and opens it as a screen of its own (`phone-same-app.md` §5a).
+- **Shared by every view** besides the list of search contexts: each search context's search, sort order, date range, Files filter and Untagged setting, which decide what notes it shows.
 - **A brand-new view starts on the search context used most recently.**
 - **How a view keeps its identity:** the existing per-tab ID in `sessionStorage` (separate per browser tab, survives a reload, cleared when the tab closes); the installed phone app uses its own storage the same way. **Only the random ID is stored on the client;** the view's state (search terms reveal tag names) stays on the server, encrypted like tab state today. State for views not seen again expires after a period of inactivity.
 - **Shared, live on every view:** the notes as each save lands (the server already pushes small updates), and collapse state (§4).
@@ -109,6 +112,7 @@ Removing "one active session per vault" changes assumptions recorded elsewhere. 
   - Tests: end the installed app from the app switcher and reopen it: same search context and scroll. Two desktop tabs get different IDs. A phone browser tab closed and reopened starts on the most recently used context. Switching vaults in the installed app keeps each vault's context.
 - **Lock, sign out and password change across views** (maintainer, 2026-10-27):
   - **Locking the vault locks every view.** Lock ends access to the vault's key, so each view saves its typing first (acknowledged saves, as for any shutdown), then shows the lock screen; every edit lock ends with it.
+  - **One Log Out command, with a "Sign out every device" checkbox** (decided 2026-11-14, replacing a separate Lock Vault): unticked, it signs out this device; ticked, every device, which in a vault with a password locks it (the last sign-in gone, the key goes).
   - **Signing out is per device, not per tab.** Every tab in that browser (or the installed app) signs out, since they share the sign-in; other browsers and the phone stay signed in. Typing is saved first and that device's edit locks are released. The vault stays unlocked for the other devices.
   - **Changing the password signs out every other device** and keeps the one it was changed on: a common reason to change it is suspecting someone else has it. Their typing is saved first, then they show the sign-in screen.
   - Tests: lock in tab 1, and tab 2 and the phone save their typing and show the lock screen, with no edit locks left. Sign out in tab 1, and tab 2 in the same browser signs out while another browser and the phone keep editing. Change the password in tab 1, and tab 1 stays signed in while every other browser and the phone save and sign out.
@@ -142,7 +146,80 @@ Checked against the code first: the browser's sign-in is a per-vault cookie (`ap
 
 Step 3 comes before 4 because markers and Take Over need views to see each other's changes live.
 
+### Step 2's design (2026-11-14)
+- **The view is the browser tab's ID** (`X-Metalist-Tab-Id`, kept in `sessionStorage`); the installed phone app keeps its own in `localStorage` (§9). Every tab-state call names it.
+- **One store, two parts** (`tab_state.py`): shared, the search contexts (their order, search, sort, date range, Files filter, Untagged); per view, a place: the context shown, the scroll in each context, its reference pages, whether the folder tree shows, and when it was last used. A new view starts on the context used most recently by any view. A view not seen for weeks is forgotten with its pages.
+- **Reference pages belong to the view that opened them:** created as pages (`isPage`), never listed or sent to another view.
+- **A view's save changes only what it changed:** for each shared field the store remembers what it last told that view; a value equal to that is no change (another view may have changed it since), a different one is this view's change. So a view's scroll save never puts back a search another view changed.
+- **State saved by 0.30.0** (one place, no views): its place goes to the first view that asks, so the one device used before keeps its context, scroll and pages. A tab of note ids no record claimed (an orphaned page 0.29.0 left) is that view's page too, and when every tab is a page an empty search context is added in front of them.
+- **Known limit:** a browser's Duplicate Tab copies `sessionStorage`, so the copy starts as the same view and the two share a place. Not handled yet.
+
+### Step 3's cases (agreed 2026-11-14)
+Principles 1, 2 and 5 (`docs/ui/interaction-principles.md`). Each case gets a browser test of exact positions; cases that work today are tested against the unchanged code first.
+1. Another view's save, add, delete, move, collapse or expand shows within about 2 s: the status check runs every 2 s while the view is visible (5 s before); a hidden tab catches up when shown.
+2. A change above the window (a note grows, shrinks, is added, removed or folds): nothing on screen moves; the note at the window's top keeps its height.
+3. A change to a note in view: it redraws in place, its top fixed; the notes below shift by its change in height.
+4. A change below the window: nothing visible.
+5. The note at the window's top deleted or moved elsewhere: the note below it takes its place at the same height.
+6. While editing: the edited note, caret and typing never move; everything else changes around it. Moved by another view (step 4), it keeps its height here and takes its new place when editing ends.
+7. A note that stops matching this view's search leaves and the notes below close up; one that starts matching appears in its place in the order.
+8. No highlight, flash or extra animation: it is the user on another device.
+9. While scrolling, a change waits until the scroll stops.
+10. While dragging a note, or a menu, a dialog or Find (Cmd+F) is open, a change waits and applies when it closes.
+11. Another view adds, deletes, renames or reorders a search context: the tab row updates at once; the context shown stays.
+12. Another view deletes the context shown here: this view moves to the neighbour, as a delete here does; typing is saved first.
+13. Another view changes the search, sort, date range, Files filter or Untagged of the context shown here: the search box shows it and the list shows the new results from the top, as if typed here. **Amended by the maintainer:** whichever view starts editing a context's search locks that context's search for the other views (built with step 4's locks). Why: otherwise two views typing in one search have no sensible result. Agreed 2026-11-14: taken by the first keystroke that changes the text; the other views showing that context can't type in their search boxes, see a marker naming where the search is being typed, and follow the typing live (a search runs as it is typed); released 5 seconds after the last keystroke that changed the text (the maintainer: not only when the cursor leaves the box), or at once when it leaves the box or the view stops being heard from. With a 5-second release it needs no Take Over. Sort, date range, Files and Untagged stay unlocked (one click each, shown everywhere at once).
+14. A change to a context not shown here only updates its label in the tab row.
+15. The folder tree, when shown, updates as tags change.
+16. Reference pages follow the same rules as any list.
+17. Undo after another view's change: "Nothing to undo: notes were changed on another device." (step 1).
+18. The phone follows the same rules.
+
+**Built 2026-11-14.** The status a view polls carries `notes_revision` and `search_contexts_revision` (`tab_state.py`, `shared_revision`: it rises only for what every view shares, not a view's scroll or place); each view answer carries the `notesRevision` it shows. `live-changes-service.js` refreshes the notes holding the note at the window's top (`captureWindowTopNote`, a `window-top` hold: moved away or deleted, the note below it takes its place, no higher than just under the search controls) or the edited note's caret, with no animation, and takes the contexts again (`adoptSharedSearchContexts`, `keyboard-events.js`). It waits for a command, a dialog, a menu, Find, a drag, a search being typed and 300 ms after the last scroll. Browser suite `live-changes` (Chrome and Firefox) checks cases 2, 3, 5, 6, 7, 9, 10 (a dialog), 11, 12 and 13; `tests/unit/live_changes_service.test.mjs` the revisions and waits.
+- **Not yet:** case 6's second half (the edited note moved by another view keeps its height until editing ends) comes with step 4, where moving a locked root is allowed. The search lock (case 13's amendment) comes with step 4 too.
+- **Found while building:** step 2 marked a blank search context as a page and a reference page as a search context (`duplicateTabContext` / `openBlankSearchContext` passed `isPage` the wrong way round); and the store took a save's answer as what the browser holds, so a view's second save put back a search another view had changed (`tells_searches`, `tests/unit/test_view_places.py`).
+
+### Step 4's cases (agreed 2026-11-14)
+"Mac" is the view editing, "phone" any other view (another tab alike).
+1. Clicking into any note inside root R on the Mac (R or anything under it) locks all of R for every other view; ending the edit releases it (Escape, a click elsewhere, switching contexts, opening a dialog). Switching to a note under another root moves the lock.
+2. Lease: the lock holds while the Mac keeps checking in, even with no typing; hidden tabs check in about once a minute; it lapses about 3 minutes after the Mac was last heard from.
+3. Marker: R shows a small icon at its top right; its tooltip says where it is being edited ("in another tab", "on your phone", "on another computer"). Nothing else moves.
+4. The first tap anywhere in R does not start editing: it opens the marker into "Editing on your Mac · Take Over".
+5. Take Over takes the lock and starts editing where first tapped. The Mac saves the typing, leaves edit mode with R at the same height, and shows a floating "Editing moved to your phone"; anything it could not save stays there for copying.
+6. Refused, nothing changed, the marker opened (as in 4): editing R or anything under it, a checkbox tick, collapse or expand, accepting tags, deleting, pasting, dragging a note into or out of R, indenting into R, an undo that would change R. A request that still reaches the server is refused with a calm message.
+7. Allowed: moving R itself (drag, up or down, top, bottom), adding notes next to it, moving other notes beside it, reading, scrolling, searching, copying.
+8. Changes to many notes at once that would touch R (deleting what the view shows, Rename Tag, Alphabetize, AI tagging) are refused as a whole: a message names where R is being edited and says to try again after.
+9. On the Mac: the phone moving R keeps R at the same height while the list rearranges; when editing ends R goes to its new place and the note that took its spot stays where the user looks.
+10. Search lock (case 13 of step 3): the first keystroke that changes a context's search locks it for the other views showing that context: their search boxes cannot be typed in, show a marker and follow along live; it ends 5 s after the last keystroke, or at once when the box is left.
+11. Lock Vault, Sign Out, Change Password: each view saves its typing first, then its locks end (§9).
+
+**Built 2026-11-14.** Server: `app/services/edit_locks.py` holds the locks (in memory); every note write checks them (`require_writable`, `require_links_writable`, `require_parent_writable` in `app/db/notes_sql.py`), so every route, undo included, is covered with no route of its own; a refused request is rolled back whole (`request_recovery.py`), which is case 8's "refused as a whole". A view says what it edits in each status check (`X-Metalist-Editing`; a hidden tab editing a note keeps checking) and each view request; `lockedRoots`, `editLockRefused` and `editedRootMovedElsewhere` come with every view answer; Take Over is `POST /notes/edit-lock/take-over`, asked again until the other view has saved and left (or 5 s passed). A root moved by another view while edited is kept in place by `keep_edited_root_in_place`, as in sorted tabs. The search lock is taken by a view's tab-state save that changes a search and released by `POST /notes/tab-state/search-lock/release` when the box is left; `searchLocks` comes with every tab-state answer and is part of the shared contexts' revision, so the others see it start and end. Browser suite `edit-locks` (Chrome and Firefox): cases 1, 3 to 10; `tests/unit/test_edit_locks.py` the rules, the lease, the handover and sign-out.
+- **Where:** "on another computer" covers another browser on the same computer too (the server cannot tell them apart).
+- **Not yet:** case 11's "saves its typing first" for the other views when the vault locks or the password changes is as before step 4 (they find themselves signed out); their locks end. Changes an AI answer makes while it streams are not checked (the request's view is gone by then): step 5.
+- **Found while building:** the server forgot what each view held of the searches whenever it loaded its state again (after a refused change, a restart), so a view could not change a search until it loaded its tabs; it is now saved with the place, and a view with no record takes its change (`tests/unit/test_view_places.py`).
+
+### Step 5's cases (agreed 2026-11-14)
+"Mac" sends, "phone" is any other view (another tab alike).
+1. The Mac's question and its answer appear on the phone as they are written: within about half a second while an answer is coming, otherwise at the 2-second check. The phone's chat panel never opens by itself (principle 2).
+2. The phone scrolled to the end of the chat follows the answer as it grows, as the sending view does.
+3. The phone scrolled up, reading: nothing moves; new text goes below (principle 1).
+4. The compact Working indicator (phase, time) shows in every view while an answer is written; with the eye on, the detail panels too.
+5. ~~The composer's typing stays in its own view.~~ Replaced by case 11.
+6. A Send from the phone while the Mac's answer is written: the phone's question shows at the end in every view, marked waiting, and is answered as soon as the first answer ends, in the order sent, with the phone's scope at Send.
+7. Stop, from any view, stops the answer being written; a waiting question then starts.
+8. Clear Chat, from any view, stops the answer being written, drops waiting questions and empties the chat everywhere.
+9. A question the AI asks (a confirmation card, which notes to tag) can be answered from any view; the first answer counts.
+10. The AI's working state is the vault's, not each sign-in's: a key entered for the session (vaults without a password), the web pages it opened, summaries, the debug trace. Signing out one device no longer clears them; the last sign-in's end does, as today.
+11. **Composer lock** (the maintainer, 2026-11-14, as the search lock): typing a question on the Mac locks the AI message box for the other views: they show the Mac's text as it is typed and cannot type in it. The lock holds while the Mac's cursor is in the box, however long it pauses, and ends on Send, on leaving the box, or when the Mac stops being heard from.
+
+**Step 5 built 2026-11-15.** `GET /ai/chat/live` (every half second while an answer is written, a question waits or is typed, or the AI asks one; every 2 s otherwise; not while hidden) gives each view the chat's mark (`ai_chat.live_mark`: it changes with what the chat shows), the questions waiting, whether an answer is written, the AI's question and another view's typing; a changed mark loads the chat again, keeping the Thinking and References opened here, and a view whose own question waits keeps it at the end. A Send joins the queue (`ai_chat_live.py`) once its answer is streamed (`{"type": "waiting"}` while behind another), so a response never read leaves nothing in front. `POST /ai/chat/stop` (with `drops_waiting` for Clear Chat) cancels the answer's task, which ends as `{"type": "stopped"}` and is saved as cancelled; Clear is refused while an answer runs, so the browser stops first. The AI's question is shown in every view from the live state (`showConfirmationCard`, `showScopeQuestionCard`); answered anywhere, the other cards go. The composer lock is `PUT /ai/chat/composer` and `POST /ai/chat/composer/release`, held with the edit locks (same lease and "where"). The AI's working state is the vault's (`tokens.get_session_key`, `VAULT_AI_SESSION_KEY`). The scripted AI used by tests takes `chunk_pause_seconds`, so an answer takes time to write. Tests: `tests/unit/test_ai_chat_live.py`, `test_ai_routes.py` (a second Send waits and the first is written whole), `test_edit_locks.py` (the composer), browser suite `shared-ai-chat` (Chrome and Firefox): cases 1, 6, 7, 8, 11.
+- **Not covered by a browser test:** case 9 (the AI's question in another view) is built but checked only in its parts; a browser test needs a scripted AI run that asks for a confirmation.
+- **Found while building:** a question queued at Send whose answer stream never ran would have blocked every later answer (queued when the stream starts now); a live reload landing after this view's own Send replaced that turn on screen (dropped now); the stream checker refused the new event types.
+
+### Undo across views (decided 2026-11-14)
+- **Each view's undo history builds from its own edits; any change to the notes from another view empties it,** whatever note it touched, as switching search contexts does today. Counted: edits, adding, moving, deleting, collapsing or expanding (collapse is saved on the note). Not counted: MetaList's own background work (a link's title, a file's text) and anything done in this view, its AI actions included. Undo or Redo then changes nothing and a floating message says why: "Nothing to undo: notes were changed on another device."
+- Why: undo put back a step's "before" state blindly, so after another device's change it would overwrite that change, or stop with a red error on a move. MetaList is not for collaborators; editing on two devices at once is the exception (the maintainer), so losing undo then is fine. Built with step 1, since it costs nothing there.
+
 ### Not in the note, proposed
-- **Undo across views:** an undo that would change a root another view has locked is refused, like any other change from another view.
 - **Idle timeout:** each sign-in times out on its own (as each token does today), so one idle device signs out without touching the others.
 - **Hidden tabs:** they need a light heartbeat so their edit locks don't lapse; browsers slow hidden tabs' timers to about once a minute, so the lease must outlast two or three missed beats.

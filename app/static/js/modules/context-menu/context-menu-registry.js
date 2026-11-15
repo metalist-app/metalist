@@ -1059,7 +1059,7 @@ function buildViewContextItems(context, handlers) {
                 { id: 'print-view', label: 'Print View…', icon: 'print', enabled: true, onSelect: () => onPrintView() },
             ],
         },
-        { id: 'log-out', label: 'Log Out', icon: 'log_out', enabled: true, separated: true, onSelect: () => onLogOut() },
+        { id: 'log-out', label: 'Log Out…', icon: 'log_out', enabled: true, separated: true, onSelect: () => onLogOut() },
     );
     return items;
 }
