@@ -330,7 +330,7 @@ def undo_emptied_by_another_view(client_id: str) -> bool:
 
 def _ctx_for_change(client_id: str) -> _ClientUndo:
     """The changing view's undo; every other view's is emptied (the maintainer, 2026-11-14;
-    docs/ready-to-build/multi-view-editing.md §10). Undo puts back a step's "before" state, so
+    docs/design/multi-view-editing.md §10). Undo puts back a step's "before" state, so
     after another view's change it would overwrite that change, or stop on a move. Views are
     browser tabs and devices (each its own client id); MetaList's own background work records
     no undo, so it empties nothing."""

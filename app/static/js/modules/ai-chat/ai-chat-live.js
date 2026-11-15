@@ -1,5 +1,5 @@
 // The vault's one AI conversation, live in every view (multi-view editing step 5;
-// docs/ready-to-build/multi-view-editing.md, "Step 5's cases"). Each view asks the server how the
+// docs/design/multi-view-editing.md, "Step 5's cases"). Each view asks the server how the
 // conversation stands (`GET /ai/chat/live`): every half second while an answer is being written, a
 // question waits, the AI asks one or another view types one; every two seconds otherwise; not while
 // the tab is hidden. The panel takes it (AiChatPanel._applyLiveState): it loads the chat again when

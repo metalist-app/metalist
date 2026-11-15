@@ -1,6 +1,6 @@
 # Commit and shutdown protocol: nothing shown as Saved is ever lost (decided)
 
-**Status:** Agreed with the maintainer 2026-10-24, brought up to date 2026-10-31 for multi-view editing (`docs/ready-to-build/multi-view-editing.md`) and the phone that edits (`docs/ready-to-build/phone-same-app.md`). The client parts (§3) can be built now; the server's hosted parts (§2.2, §2.3, §4) go with the hosted deployment.
+**Status:** Agreed with the maintainer 2026-10-24, brought up to date 2026-10-31 for multi-view editing (`docs/design/multi-view-editing.md`) and the phone that edits (`docs/ready-to-build/phone-same-app.md`). The client parts (§3) can be built now; the server's hosted parts (§2.2, §2.3, §4) go with the hosted deployment.
 
 Written from a read-only look at the repo; filed 2026-10-31 after checking the references (§10, Found when filed).
 

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {runThenCleanUp} from './suite-outcome.mjs';
 import {installRequestMonitor, waitForAppQuiet} from './browser-app-idle.mjs';
 
-// One editor per root note (multi-view editing step 4; docs/ready-to-build/multi-view-editing.md,
+// One editor per root note (multi-view editing step 4; docs/design/multi-view-editing.md,
 // "Step 4's cases"). Two browser tabs on one vault: "here" (the suite's page, in front) and "there"
 // (a second tab of the same browser, so a root it edits is "in another tab").
 

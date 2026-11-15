@@ -2,7 +2,7 @@ import { ApplicationState } from '../application-state.js';
 import { BaseModal } from './base-modal.js';
 import { actionRowHtml } from './action-row.js';
 
-// Log Out (multi-view editing, 2026-11-14; docs/ready-to-build/multi-view-editing.md §9): this
+// Log Out (multi-view editing, 2026-11-14; docs/design/multi-view-editing.md §9): this
 // browser or device, every tab of it; ticked, every device, which in a vault with a password
 // locks it. Unticked at first. Escape or Cancel changes nothing. Replaces a separate Lock Vault.
 

@@ -1,5 +1,5 @@
 """The vault's one AI conversation, live in every view (multi-view editing step 5;
-docs/ready-to-build/multi-view-editing.md, "Step 5's cases").
+docs/design/multi-view-editing.md, "Step 5's cases").
 
 Kept in memory, beside the saved conversation (ai_chat.py):
 - the questions waiting their turn (case 6): one answer is written at a time, in the order sent;

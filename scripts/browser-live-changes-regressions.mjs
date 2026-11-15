@@ -4,7 +4,7 @@ import {runThenCleanUp} from './suite-outcome.mjs';
 import {installRequestMonitor, waitForAppQuiet} from './browser-app-idle.mjs';
 
 // Changes made in another view show here without a reload, and what the user is looking at stays
-// still (multi-view editing step 3; docs/ready-to-build/multi-view-editing.md, "Step 3's cases";
+// still (multi-view editing step 3; docs/design/multi-view-editing.md, "Step 3's cases";
 // docs/ui/interaction-principles.md, principles 1, 2 and 5). Two browser tabs on one vault: "here"
 // (the suite's page, in front) and "there" (a second tab, its own view), which makes the changes.
 

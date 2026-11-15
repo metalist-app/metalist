@@ -1,5 +1,5 @@
 // Changes made in another view (another browser tab, the phone) shown here without a reload
-// (multi-view editing step 3; docs/ready-to-build/multi-view-editing.md, "Step 3's cases").
+// (multi-view editing step 3; docs/design/multi-view-editing.md, "Step 3's cases").
 //
 // The status the app polls (polling-service.js) carries two revisions: the notes' (any change, from
 // any view) and the shared search contexts' (their list, order, searches, sorts and filters). A

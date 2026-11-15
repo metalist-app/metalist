@@ -1,5 +1,5 @@
 """Each view's undo history builds from its own edits; any change to the notes from another view
-empties it (the maintainer, 2026-11-14; docs/ready-to-build/multi-view-editing.md §10). Undo put
+empties it (the maintainer, 2026-11-14; docs/design/multi-view-editing.md §10). Undo put
 back a step's "before" state blindly, so after another device's change it would have overwritten
 that change. Undo or Redo then changes nothing and says why."""
 

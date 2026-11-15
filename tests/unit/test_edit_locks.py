@@ -1,4 +1,4 @@
-"""One editor per root note (multi-view editing step 4; docs/ready-to-build/multi-view-editing.md,
+"""One editor per root note (multi-view editing step 4; docs/design/multi-view-editing.md,
 "Step 4's cases"): a view editing any note under a root holds that root, and every other view's
 change to it is refused at the note writes, while moving the root among the roots stays open."""
 

@@ -154,7 +154,7 @@ Allowed: a second folder tag added by hand puts the note in both folders. The tw
 - **The search-context trigger's stacked-folder icon:** `docs/ui/controls.md`; §2 asked for it to change, and it did (2026-11-02).
 - **Renaming many tags at once is new:** Edit Tag Relationships renames one tag at a time (`docs/design/ontology-rules-v1.md`, "Editing the focused tag"). §4's folder move and §5's rename rename every tag starting with a path; that's new, built on the one-tag rename.
 - **Undo:** a tag rename today is not on the ⌘Z history (nothing in the docs says it is); §4–§5 ask for one undo step each, which is new too.
-- **"Locked root note (multi-view)" (§4):** multi-view editing is in `docs/ready-to-build/multi-view-editing.md`, not built; the rule applies once it is.
+- **"Locked root note (multi-view)" (§4):** multi-view editing is in `docs/design/multi-view-editing.md`, not built; the rule applies once it is.
 - **On-screen behavior:** the tree's drags, the chip and opening a note move things on screen, so their cases are agreed before code (`AGENTS.md`, "On-screen Behavior Follows the Interaction Principles").
 
 ### Open (ask the maintainer)

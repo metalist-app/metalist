@@ -1,4 +1,4 @@
-"""Several sign-ins (multi-view editing, step 1; docs/ready-to-build/multi-view-editing.md §9):
+"""Several sign-ins (multi-view editing, step 1; docs/design/multi-view-editing.md §9):
 every browser and device stays signed in, every tab of a browser works at once, Log Out signs
 out this device or, ticked, every device, and changing the password keeps the device it was
 changed on. Before, signing in ended every other sign-in and one tab owned it."""

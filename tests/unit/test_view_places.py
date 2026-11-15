@@ -1,5 +1,5 @@
 """Each view has its own place in the shared search contexts (multi-view editing step 2,
-docs/ready-to-build/multi-view-editing.md §2 and §10): the context it shows, its scroll in each,
+docs/design/multi-view-editing.md §2 and §10): the context it shows, its scroll in each,
 its reference pages and whether the folder tree shows. The contexts themselves, their searches,
 orders and filters, are shared. A view is a browser tab or the installed phone app."""
 

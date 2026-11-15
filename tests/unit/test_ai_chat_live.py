@@ -1,5 +1,5 @@
 """The vault's one AI conversation, live in every view (multi-view editing step 5;
-docs/ready-to-build/multi-view-editing.md, "Step 5's cases"): one answer at a time in the order
+docs/design/multi-view-editing.md, "Step 5's cases"): one answer at a time in the order
 sent, Stop and Clear from any view, the AI's question shown everywhere."""
 
 from __future__ import annotations

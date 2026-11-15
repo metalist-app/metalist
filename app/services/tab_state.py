@@ -364,7 +364,7 @@ def _load_place(saved: object, tabs: Dict[str, Dict[str, object]]) -> Dict[str, 
 class TabStateStore:
     """Server-owned tab state with namespace-scoped persistence in SQLite.
 
-    Two parts (multi-view editing step 2, 2026-11-14; docs/ready-to-build/multi-view-editing.md
+    Two parts (multi-view editing step 2, 2026-11-14; docs/design/multi-view-editing.md
     §2 and §10): shared by every view, the search contexts (their order, search, sort, date range,
     Files filter, Untagged); each view's own (a browser tab, the installed phone app, named by its
     X-Metalist-Tab-Id), its place: the context it shows, its scroll in each, its reference pages

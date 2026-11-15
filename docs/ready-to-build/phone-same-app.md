@@ -1,6 +1,6 @@
 # Phone: the same app on a smaller screen
 
-**Status:** Agreed with the maintainer 2026-10-24 to 2026-10-27. Ready to build. **Replaces "read-only plus capture"** (`docs/ui/phone.md`) and most of `docs/future-plans/phone-later.md`. Build it **with or after** `docs/ready-to-build/multi-view-editing.md`: the phone edits, so it needs every view signed in and one editor per root note. Please propose a build order before starting.
+**Status:** Agreed with the maintainer 2026-10-24 to 2026-10-27. Ready to build. **Replaces "read-only plus capture"** (`docs/ui/phone.md`) and most of `docs/future-plans/phone-later.md`. Build it **with or after** `docs/design/multi-view-editing.md`: the phone edits, so it needs every view signed in and one editor per root note. Please propose a build order before starting.
 **Scope:** the phone web app (home-screen install, under 640 px) becomes the desktop app on a smaller screen: it edits, it has search contexts and the AI chat. Update `docs/ui/phone.md`, `docs/future-plans/phone-later.md`, `docs/ui/interaction-principles.md` (one exception, §5) and the tests.
 
 Written without running the code. Every reference below came from reading it and must be checked before relying on it; build only what's missing.

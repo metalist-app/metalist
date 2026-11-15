@@ -1,4 +1,4 @@
-"""One editor per root note (multi-view editing step 4; docs/ready-to-build/multi-view-editing.md §3
+"""One editor per root note (multi-view editing step 4; docs/design/multi-view-editing.md §3
 and "Step 4's cases").
 
 A view (a browser tab or the installed phone app, named by its X-Metalist-Tab-Id) editing any note

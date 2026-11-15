@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {installRequestMonitor, waitForAppQuiet} from './browser-app-idle.mjs';
 
 // The vault's one AI conversation, live in every view (multi-view editing step 5;
-// docs/ready-to-build/multi-view-editing.md, "Step 5's cases"). Two browser tabs on one vault:
+// docs/design/multi-view-editing.md, "Step 5's cases"). Two browser tabs on one vault:
 // "here" (the suite's page, in front, where what shows is checked) and "there" (a second tab, in
 // the background, which acts: a hidden tab does not follow the conversation itself). The server
 // answers from a slow scripted AI (tests/fixtures/scripted-ai/slow-answer.json: five parts, a

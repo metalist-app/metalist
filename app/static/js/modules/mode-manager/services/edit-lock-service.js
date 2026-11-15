@@ -1,4 +1,4 @@
-// One editor per root note (multi-view editing step 4; docs/ready-to-build/multi-view-editing.md,
+// One editor per root note (multi-view editing step 4; docs/design/multi-view-editing.md,
 // "Step 4's cases"). Every view answer lists the roots other views edit (lockedRoots, with where);
 // each shows a small marker at its top right whose tooltip says where (case 3). A first tap in such a
 // root opens the marker into "Editing <where> · Take Over" instead of editing (case 4); Take Over

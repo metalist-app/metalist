@@ -2,7 +2,7 @@
 
 Terminology: what this document calls "tabs" (MetaList's own: a search plus its view options) are "search contexts" in the interface, help and user docs since 2026-10-29 (`docs/ui/controls.md`). The code keeps `tab` in its identifiers (`tab_state.py`, `tabId`, `tabOrder`, `pref.show_tab_ui`), and so does this document; browser tabs are always called browser tabs.
 
-Several views on one vault at once (`docs/ready-to-build/multi-view-editing.md`): built 2026-11-14, each signed in (step 1), each with its own place in the shared search contexts (step 2, `tab_state.py`), and each showing the others' changes live (step 3, `live-changes-service.js`; `docs/design/differential-view-protocol.md`, "Changes From Other Views"). Editing is locked per root note (step 4, `edit_locks.py`), and the one AI conversation is live in every view (step 5, `ai_chat_live.py`).
+Several views on one vault at once (`docs/design/multi-view-editing.md`): built 2026-11-14, each signed in (step 1), each with its own place in the shared search contexts (step 2, `tab_state.py`), and each showing the others' changes live (step 3, `live-changes-service.js`; `docs/design/differential-view-protocol.md`, "Changes From Other Views"). Editing is locked per root note (step 4, `edit_locks.py`), and the one AI conversation is live in every view (step 5, `ai_chat_live.py`).
 
 ## Enforced client-state and exception contract
 

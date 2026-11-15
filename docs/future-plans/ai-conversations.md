@@ -2,7 +2,7 @@
 
 **Status:** A future option, noted by the maintainer 2026-11-14. Not designed, not scheduled.
 
-Today, and with several views (`docs/ready-to-build/multi-view-editing.md` §5, decided
+Today, and with several views (`docs/design/multi-view-editing.md` §5, decided
 2026-11-14), the vault has one AI conversation: saved with the vault, shown in every browser tab
 and on the phone, ended only by Clear Chat (`docs/ui/ai-chat.md`, "Saved with the vault").
 
