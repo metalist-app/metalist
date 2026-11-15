@@ -14348,15 +14348,16 @@ body.virtual-folders-crowded .virtual-folders-resizer {
     font-size: 12px;
 }
 
-/* A root note being edited in another view (multi-view editing step 4): a small pencil on its
-   top-right corner, where it moves nothing; its tooltip says where. A click in the note takes it
-   over (edit-lock-service.js). */
+/* A root note being edited in another view (multi-view editing step 4): a pencil on its top-left
+   corner, where the eye starts reading the note (the maintainer, 2026-11-15), clear of the fold
+   arrow and moving nothing; its tooltip says where. A click in the note takes it over
+   (edit-lock-service.js). */
 .note > .note-edit-lock {
     position: absolute;
-    top: -7px;
-    right: -7px;
-    width: 16px;
-    height: 16px;
+    top: -12px;
+    left: -6px;
+    width: 24px;
+    height: 24px;
     border-radius: 50%;
     background-color: #f59e0b;
     box-shadow: 0 0 0 2px #ffffff;
@@ -14367,7 +14368,7 @@ body.virtual-folders-crowded .virtual-folders-resizer {
 .note > .note-edit-lock::after {
     content: "";
     position: absolute;
-    inset: 3px;
+    inset: 5px;
     background-color: #ffffff;
     -webkit-mask: var(--note-edit-lock-icon) center / contain no-repeat;
     mask: var(--note-edit-lock-icon) center / contain no-repeat;

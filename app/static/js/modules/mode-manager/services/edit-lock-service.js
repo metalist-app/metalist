@@ -1,6 +1,6 @@
 // One editor per root note (multi-view editing step 4; docs/design/multi-view-editing.md,
 // "Step 4's cases"). Every view answer lists the roots other views edit (lockedRoots, with where);
-// each shows a small marker at its top right whose tooltip says where (case 3). A click in such a
+// each shows a pencil on its top-left corner whose tooltip says where (case 3). A click in such a
 // root takes it over at once and then does what was clicked (decided 2026-11-15): a click in its
 // text waits for the other view to save and leave, then edits there (cases 4 and 5); a change the
 // server refused for it (its fold arrow, a checkbox, a move) takes it over and is sent again, and
