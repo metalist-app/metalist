@@ -52,6 +52,7 @@ function refreshHarness({ isRemoved, isAnimated, isFullSnapshot }) {
         recordEditedRootMovedElsewhere() {},
         recordLockedRoots() {},
         noticeRefusedEdit() {},
+        tellOtherTabsWhatIsEdited() {},
         moduleState: ApplicationState.createFields("test.refresh", { viewRequestInFlight: false }),
         Logger: { logAction() {}, logDebug() {} },
         NotesAPI: { async fetchView() { return { snapshot }; } },

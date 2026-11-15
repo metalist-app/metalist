@@ -1,17 +1,19 @@
 // The vault's one AI conversation, live in every view (multi-view editing step 5;
 // docs/design/multi-view-editing.md, "Step 5's cases"). Each view asks the server how the
 // conversation stands (`GET /ai/chat/live`): every half second while an answer is being written, a
-// question waits, the AI asks one or another view types one; every two seconds otherwise; not while
+// question waits, the AI asks one or another view types one; at the status check's pace otherwise
+// (status-check-interval.js), and at once when another tab of this browser changed the chat; not while
 // the tab is hidden. The panel takes it (AiChatPanel._applyLiveState): it loads the chat again when
 // its mark changed, shows the questions waiting, the AI's question, Stop, and another view's typing.
 import { ApplicationState } from '../application-state.js';
 import { rethrowUnexpectedError } from '../expected-errors.js';
 import { AiApiError, loadAiChatLive } from './ai-chat-api.js';
+import { whenAskedToCheckNow } from '../views-in-this-browser.js';
+import { statusCheckIntervalMs } from '../status-check-interval.js';
 import { proposalRequest } from './bulk-proposal-ui.js';
 import { TAG_FOCUS_CHOICES, describeScopeQuestion, scopeAnswerValue } from './bulk-scope-question.js';
 
 const LIVELY_POLL_MS = 500;
-const QUIET_POLL_MS = 2000;
 
 const liveState = ApplicationState.createFields('ai-chat-live', {
     isFollowing: false,
@@ -48,30 +50,49 @@ export function followAiChatLive(applyLiveState) {
         throw new Error('The AI chat is followed already');
     }
     liveState.isFollowing = true;
-    let delayMs = QUIET_POLL_MS;
+    let delayMs = statusCheckIntervalMs();
+    let nextTimer = 0;
+    let isAsking = false;
+    let isAskedAgain = false;
     const askOnce = async () => {
         if (document.hidden) {
-            delayMs = QUIET_POLL_MS;
+            delayMs = statusCheckIntervalMs();
             return;
         }
         const askedAtMs = performance.now();
         const state = await loadAiChatLive();
         requireLiveState(state);
-        delayMs = isLively(state) ? LIVELY_POLL_MS : QUIET_POLL_MS;
+        delayMs = isLively(state) ? LIVELY_POLL_MS : statusCheckIntervalMs();
         await applyLiveState(state, askedAtMs);
     };
     const tick = () => {
+        window.clearTimeout(nextTimer);
+        isAsking = true;
         askOnce()
             .catch((error) => {
                 // The server out of reach (a restart): ask again later; anything else is a bug.
                 rethrowUnexpectedError(error);
                 if (!(error instanceof AiApiError)) throw error;
-                delayMs = QUIET_POLL_MS;
+                delayMs = statusCheckIntervalMs();
             })
             .finally(() => {
-                window.setTimeout(tick, delayMs);
+                isAsking = false;
+                if (isAskedAgain) {
+                    isAskedAgain = false;
+                    tick();
+                    return;
+                }
+                nextTimer = window.setTimeout(tick, delayMs);
             });
     };
+    // Another tab of this browser changed the chat (a Send, Stop, Clear, typing): ask now.
+    whenAskedToCheckNow(() => {
+        if (isAsking) {
+            isAskedAgain = true;
+            return;
+        }
+        tick();
+    });
     tick();
 }
 

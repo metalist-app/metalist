@@ -32,16 +32,12 @@ export class ServerInputRejectedError extends HttpRequestError {
     }
 }
 
-// A change to a root note another view is editing (multi-view editing step 4). isMarkerShown: its
-// marker opened on screen, which says it all; otherwise the message is shown as a warning.
+// A change to a root note another view is editing, not taken over (multi-view editing step 4): a
+// change to the whole view, or one refused again after taking the root over.
 export class NoteLockedElsewhereError extends ServerInputRejectedError {
-    constructor(message, isMarkerShown) {
+    constructor(message) {
         super(message);
         this.name = 'NoteLockedElsewhereError';
-        if (typeof isMarkerShown !== 'boolean') {
-            throw new Error('NoteLockedElsewhereError requires whether the marker is shown');
-        }
-        this.isMarkerShown = isMarkerShown;
     }
 }
 

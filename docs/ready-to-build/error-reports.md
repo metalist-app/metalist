@@ -1,6 +1,6 @@
 # Error reports, and logs that serve support
 
-**Status:** Agreed with the maintainer 2026-11-11 and 2026-11-12. Ready to build. Built already: §6 (no encrypted logs; the safe plain log). **First build:** §1–§4 and §6a. **Later, not in the first build** (the maintainer, 2026-11-12): the replay generator (§5) and the hosted service's handling (§4a). Which session builds it is not decided yet.
+**Status:** Agreed with the maintainer 2026-11-11 and 2026-11-12. **First build done** (§1–§4, §6 and §6a, built 2026-11-11 to 2026-11-13, merged in 0.28.0 and after; the login page's red error included, `b20935ec`; browser suite `problem-reports`). **Still to build, later** (the maintainer, 2026-11-12): the replay generator (§5) and the hosted service's handling (§4a). Open: questions 6 and 7 (§7).
 
 The goal: when a red fatal overlay shows, MetaList keeps a report detailed enough that a script can turn it into a **failing browser test**, with none of the user's text in it, tag names included (§3), except the sentence or two a person types into a report they file themselves (§1).
 
@@ -132,7 +132,7 @@ Agreed with the maintainer 2026-11-12, not built. Why: the maintainer's dad (Win
 
 What the maintainer should see; each is checked in a throwaway before the early look.
 
-The `problem-reports` browser suite (`scripts/browser-problem-report-regressions.mjs`, added 2026-11-12) keeps checks 1–6 and 7a, in Chrome and Firefox. It covers check 8 only on the server side: a report made with no vault open has no notes, is kept nowhere, and is refused if it names notes. The overlay on the login page is not built: the red error is installed after login (`installGlobalErrorOverlay`, `mode-manager-controller.js`). The theme and phone-width part of check 2, the 20-report limit (a unit test) and check 7 (a slow request, unit tests) are not in the suite.
+The `problem-reports` browser suite (`scripts/browser-problem-report-regressions.mjs`, added 2026-11-12) keeps checks 1–6 and 7a, in Chrome and Firefox. It also covers check 8: the login page's red error (installed as the page loads, `main.js`) with Export Report…, kept nowhere. The theme and phone-width part of check 2, the 20-report limit (a unit test) and check 7 (a slow request, unit tests) are not in the suite.
 
 1. A red error ends with an **Export Report…** button; it saves one `.json` file, readable as text.
 2. **Report a Problem…** in the command palette leaves edit mode (saving) and opens a small dialog: one text box and **Export…**, following the theme (Light, Dark, Fathom) and fitting a phone-width window.

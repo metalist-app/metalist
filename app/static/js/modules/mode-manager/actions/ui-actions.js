@@ -24,8 +24,9 @@ import {
 import { MS_PER_SECOND } from '../../time-units.js';
 import { setSearchHighlightPhrases } from '../services/search-highlight-service.js';
 import { recordNotesShown } from '../services/live-changes-service.js';
+import { askOtherTabsToCheckNow } from '../../views-in-this-browser.js';
 import { CommandGate } from '../services/command-gate-service.js';
-import { openMarkerForRefusal, recordEditedRootMovedElsewhere, recordLockedRoots } from '../services/edit-lock-service.js';
+import { recordEditedRootMovedElsewhere, recordLockedRoots, recordRefusal, takeOverRefusedEdit } from '../services/edit-lock-service.js';
 
 const PERF_LOG_MS_DECIMALS = 2;
 // waitForViewRequestIdle fails loudly once a notes.view request has blocked this long.
@@ -37,6 +38,8 @@ const VIEW_REQUEST_IDLE_POLL_MS = 25;
 const NOT_YET_SEEN = -1;
 const moduleState = ApplicationState.createFields('ui-actions', {
     viewRequestInFlight: false,
+    // The note this view last told its browser's other tabs it edits ('' for none).
+    editedNoteToldOthers: '',
     // The server's count of when reference pages last closed with their deleted notes, as this
     // page last took its tabs; NOT_YET_SEEN until the first view.
     pagesClosedAtVersion: NOT_YET_SEEN,
@@ -68,7 +71,8 @@ function hasNewlyClosedReferencePages(snapshot) {
 
 // Another view took the root this view was entering edit mode in, a moment before (multi-view
 // step 4): the server answered it for viewing; once this refresh is done, edit mode ends here
-// without saving (nothing was typed yet) and the root's marker opens.
+// without saving (nothing was typed yet), and the root is taken back and edited again, as a click
+// in a root edited elsewhere does.
 function noticeRefusedEdit(refusal) {
     if (refusal === null || typeof refusal !== 'object') {
         throw new Error('notes.view editLockRefused must be an object');
@@ -77,13 +81,27 @@ function noticeRefusedEdit(refusal) {
         return;
     }
     void CommandGate.runWhenFree('editLock.refused', async () => {
-        if (ModeContext.isEditing) {
-            const { actionExitEditingWithoutSavingOrRefreshing } = await import('./selection-actions.js');
-            await actionExitEditingWithoutSavingOrRefreshing();
-            await actionRefreshAndMaybeSelect({ context: 'edit-lock-refused' });
+        if (!ModeContext.isEditing) {
+            recordRefusal(refusal.rootId, refusal.lockedWhere);
+            return;
         }
-        openMarkerForRefusal(refusal.rootId, refusal.lockedWhere);
+        const noteId = ModeContext.currentNoteId;
+        const { actionEditTakenOverNote, actionExitEditingWithoutSavingOrRefreshing } = await import('./selection-actions.js');
+        await actionExitEditingWithoutSavingOrRefreshing();
+        await actionRefreshAndMaybeSelect({ context: 'edit-lock-refused' });
+        takeOverRefusedEdit(refusal.rootId, refusal.lockedWhere,
+            () => actionEditTakenOverNote(noteId, { initialCaretVisibility: 'visible' }));
     });
+}
+
+// The note this view edits went to the server with this view request: when it changed, this
+// browser's other tabs show its root's pencil now, not at their next status check.
+function tellOtherTabsWhatIsEdited(noteId) {
+    let editedNoteId = '';
+    if (typeof noteId === 'string') editedNoteId = noteId;
+    if (moduleState.editedNoteToldOthers === editedNoteId) return;
+    moduleState.editedNoteToldOthers = editedNoteId;
+    askOtherTabsToCheckNow();
 }
 
 function noticeClosedReferencePages(snapshot) {
@@ -321,6 +339,7 @@ export async function actionRefreshAndMaybeSelect(options) {
         // The roots other views edit show their markers (multi-view step 4).
         recordLockedRoots(snapshot.lockedRoots);
         noticeRefusedEdit(snapshot.editLockRefused);
+        tellOtherTabsWhatIsEdited(noteId);
         holdViewportRoot(viewportRoot);
 
         // Removal animations retain DOM nodes after the diff removes their view membership.

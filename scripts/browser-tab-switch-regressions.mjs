@@ -139,7 +139,8 @@ async function checkUntaggedViewStaysWithItsTab(page, firstTabId, secondTabId, u
   state = await viewState(page);
   assert.notEqual(state.activeTabId, firstTabId, 'case 6: the reference opens in its own view');
   assert.deepEqual(untagged(state), OFF, 'case 6: the reference view starts without the Untagged view');
-  await page.click('#reference-source-indicator-clear');
+  // From the first reference page ◀ goes back to the search (⏮ shows only deeper).
+  await page.click('#reference-view-chip-back');
   await idle(page);
   await pause(SETTLE_MS);
   state = await viewState(page);

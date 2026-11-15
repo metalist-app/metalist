@@ -1,36 +1,38 @@
 // One editor per root note (multi-view editing step 4; docs/design/multi-view-editing.md,
 // "Step 4's cases"). Every view answer lists the roots other views edit (lockedRoots, with where);
-// each shows a small marker at its top right whose tooltip says where (case 3). A first tap in such a
-// root opens the marker into "Editing <where> · Take Over" instead of editing (case 4); Take Over
-// asks the server until the other view has saved and left, then edits where first tapped (case 5).
-// A change the server refused for a locked root opens that root's marker instead of a banner
-// (case 6). The view a root is taken from saves its typing and leaves (leaveTakenOverEditing).
+// each shows a pencil on its top-left corner whose tooltip says where (case 3). A click in such a
+// root takes it over at once and then does what was clicked (decided 2026-11-15): a click in its
+// text waits for the other view to save and leave, then edits there (cases 4 and 5); a change the
+// server refused for it (its fold arrow, a checkbox, a move) takes it over and is sent again, and
+// neither view holds it afterwards (case 6, api-client.js). The view a root is taken from saves its
+// typing and leaves (leaveTakenOverEditing).
 import { ApplicationState } from '../../application-state.js';
 import { CONFIG } from '../../config.js';
 import { ErrorHandler } from '../../error-handler.js';
-import { HttpRequestError } from '../../expected-errors.js';
+import { HttpRequestError, rethrowUnexpectedError } from '../../expected-errors.js';
 import { FloatingMessages } from '../../floating-messages.js';
 import { buildSessionHeaders } from '../../session-auth.js';
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import { CommandGate } from './command-gate-service.js';
+import { askOtherTabsToCheckNow } from '../../views-in-this-browser.js';
 
 const MARKER_CLASS = 'note-edit-lock';
-const CARD_CLASS = 'note-edit-lock-card';
-const TAKE_OVER_CLASS = 'note-edit-lock-take-over';
-const TAKE_OVER_LABEL = 'Take Over';
-// Take Over asks this often until the other view has let go (the server answers ready within
+// A take-over asks this often until the other view has let go (the server answers ready within
 // its handover time, edit_locks.py HANDOVER_SECONDS).
-const TAKE_OVER_ASK_MS = 300;
+const TAKE_OVER_ASK_MS = 150;
+// Why a root is taken over: the view it is taken from says "Editing moved" or "Editing ended".
+const TAKEN_TO_EDIT = false;
+const TAKEN_FOR_A_CHANGE = true;
 const NOT_SAVED_KEY = 'edit-lock-not-saved';
 
 const lockState = ApplicationState.createFields('edit-lock-service', {
     // Root id → where another view edits it ("on your phone", "in another tab", …).
     lockedRoots: {},
-    // The root whose marker is open, and what a Take Over there goes on to do.
-    openRootId: '',
-    enterAfterTakeOver: null,
+    // The root a click is taking over (waiting for the other view to let go), and the root being
+    // entered once it has: a stale view answer still listing it as locked does not stop that.
+    takingOverRootId: '',
+    enteringRootId: '',
     isEditedRootMovedElsewhere: false,
-    isCloseWatched: false,
     // Search context id → where another view types its search (case 10).
     searchLocks: {},
     hasTypedSearch: false,
@@ -47,10 +49,6 @@ function requireWhereByRoot(lockedRoots) {
     }
 }
 
-function rootElement(rootId) {
-    return document.querySelector(`#notes-container > .note[data-note-id="${CSS.escape(rootId)}"]`);
-}
-
 function rootIdOfNote(noteId) {
     const note = document.querySelector(`#notes-container .note[data-note-id="${CSS.escape(noteId)}"]`);
     if (note === null) {
@@ -65,14 +63,6 @@ function rootIdOfNote(noteId) {
 
 function markerOf(root) {
     return root.querySelector(`:scope > .${MARKER_CLASS}`);
-}
-
-function closeCard() {
-    for (const card of document.querySelectorAll(`.${CARD_CLASS}`)) {
-        card.remove();
-    }
-    if (lockState.openRootId !== '') lockState.openRootId = '';
-    if (lockState.enterAfterTakeOver !== null) lockState.enterAfterTakeOver = null;
 }
 
 function renderMarkers() {
@@ -93,9 +83,6 @@ function renderMarkers() {
         added.title = tooltip;
         added.setAttribute('aria-label', tooltip);
         root.appendChild(added);
-    }
-    if (lockState.openRootId !== '' && !Object.hasOwn(lockState.lockedRoots, lockState.openRootId)) {
-        closeCard();
     }
 }
 
@@ -123,83 +110,57 @@ export function isEditedRootMovedElsewhere() {
     return lockState.isEditedRootMovedElsewhere;
 }
 
-function watchForClose() {
-    if (lockState.isCloseWatched) {
-        return;
+// Editing a note in a root another view edits: the root is taken over and enter goes on once the
+// other view has let go (cases 4 and 5). True when it was, so the caller does not edit now.
+export function takeOverInsteadOfEditing(noteId, enter) {
+    if (typeof enter !== 'function') {
+        throw new Error('takeOverInsteadOfEditing requires what to do once the root is taken over');
     }
-    lockState.isCloseWatched = true;
-    // A press anywhere but on the card closes it, as Escape does.
-    document.addEventListener('pointerdown', (event) => {
-        if (lockState.openRootId === '' || (event.target instanceof Element && event.target.closest(`.${CARD_CLASS}`))) {
-            return;
-        }
-        closeCard();
-    }, { capture: true });
-    document.addEventListener('keydown', (event) => {
-        if (event.key === 'Escape' && lockState.openRootId !== '') {
-            closeCard();
-        }
-    }, { capture: true });
-}
-
-function openCard(rootId, enterAfterTakeOver) {
-    const root = rootElement(rootId);
-    if (root === null) {
+    const rootId = rootIdOfNote(noteId);
+    if (rootId === '' || rootId === lockState.enteringRootId) {
         return false;
     }
-    closeCard();
-    watchForClose();
-    const card = document.createElement('div');
-    card.className = CARD_CLASS;
-    const text = card.appendChild(document.createElement('span'));
-    text.textContent = `Editing ${lockState.lockedRoots[rootId]}`;
-    const button = card.appendChild(document.createElement('button'));
-    button.type = 'button';
-    button.className = TAKE_OVER_CLASS;
-    button.textContent = TAKE_OVER_LABEL;
-    button.addEventListener('click', (event) => {
-        event.stopPropagation();
-        event.preventDefault();
-        void CommandGate.run('editLock.takeOver', () => takeOver(rootId));
-    });
-    root.appendChild(card);
-    // A state set again is refused: set only what changes.
-    if (lockState.openRootId !== rootId) lockState.openRootId = rootId;
-    if (lockState.enterAfterTakeOver !== enterAfterTakeOver) lockState.enterAfterTakeOver = enterAfterTakeOver;
+    // A second click while the first waits: the first goes on.
+    if (lockState.takingOverRootId !== '') {
+        return true;
+    }
+    if (!Object.hasOwn(lockState.lockedRoots, rootId)) {
+        return false;
+    }
+    startTakeOver(rootId, enter);
     return true;
 }
 
-// Entering edit mode in a root another view edits: the marker opens instead (case 4), and Take
-// Over goes on with enter. True when it did, so the caller does not edit.
-export function openMarkerInsteadOfEditing(noteId, enter) {
-    if (typeof enter !== 'function') {
-        throw new Error('openMarkerInsteadOfEditing requires what Take Over goes on to do');
+// Edit mode just entered here was refused: another view took the root a moment before (the view
+// answer said so). The marker shows; the edit goes on once the root is taken back.
+export function takeOverRefusedEdit(rootId, where, enter) {
+    if (typeof rootId !== 'string' || rootId === '' || typeof where !== 'string' || where === '' || typeof enter !== 'function') {
+        throw new Error('takeOverRefusedEdit requires the root, where it is edited and what to do then');
     }
-    const rootId = rootIdOfNote(noteId);
-    if (rootId === '' || !Object.hasOwn(lockState.lockedRoots, rootId)) {
-        return false;
+    recordRefusal(rootId, where);
+    if (lockState.takingOverRootId !== '') {
+        return;
     }
-    return openCard(rootId, enter);
+    startTakeOver(rootId, enter);
 }
 
-// A change the server refused because another view edits this root (case 6): its marker opens,
-// with nothing to go on to. False when the root is not shown here: the refusal's message says it.
-export function openMarkerForRefusal(rootId, where) {
+// A change the server refused because another view edits this root, not taken over (a change to
+// the whole view): its marker shows.
+export function recordRefusal(rootId, where) {
     if (typeof rootId !== 'string' || rootId === '' || typeof where !== 'string' || where === '') {
-        throw new Error('openMarkerForRefusal requires the root and where it is edited');
+        throw new Error('recordRefusal requires the root and where it is edited');
     }
     if (!Object.hasOwn(lockState.lockedRoots, rootId) || lockState.lockedRoots[rootId] !== where) {
         lockState.lockedRoots = { ...lockState.lockedRoots, [rootId]: where };
         renderMarkers();
     }
-    return openCard(rootId, null);
 }
 
-async function askToTakeOver(noteId) {
+async function askToTakeOver(noteId, isForChange) {
     const response = await fetch(CONFIG.API.NOTES.TAKE_OVER_EDITING, {
         method: 'POST',
         headers: buildSessionHeaders(true),
-        body: JSON.stringify({ noteId }),
+        body: JSON.stringify({ noteId, isForChange }),
     });
     if (!response.ok) {
         ErrorHandler.handleApiError(null, response);
@@ -212,23 +173,56 @@ async function askToTakeOver(noteId) {
     return answer.ready;
 }
 
-async function takeOver(rootId) {
-    const enter = lockState.enterAfterTakeOver;
-    const button = document.querySelector(`.${CARD_CLASS} .${TAKE_OVER_CLASS}`);
-    if (button !== null) button.disabled = true;
-    while (!(await askToTakeOver(rootId))) {
+async function waitUntilTakenOver(rootId, isForChange) {
+    let isReady = await askToTakeOver(rootId, isForChange);
+    if (!isReady) {
+        // A tab of this browser editing it hears at once, not at its next status check.
+        askOtherTabsToCheckNow();
+    }
+    while (!isReady) {
         await new Promise((resolve) => setTimeout(resolve, TAKE_OVER_ASK_MS));
+        isReady = await askToTakeOver(rootId, isForChange);
     }
-    const { [rootId]: taken, ...others } = lockState.lockedRoots;
-    if (typeof taken !== 'string') {
-        throw new Error(`Root ${rootId} was taken over without being locked`);
+    // A view answer may have shown it free already: the other tab tells this one at once.
+    if (Object.hasOwn(lockState.lockedRoots, rootId)) {
+        const { [rootId]: _taken, ...others } = lockState.lockedRoots;
+        lockState.lockedRoots = others;
     }
-    lockState.lockedRoots = others;
-    closeCard();
     renderMarkers();
-    if (enter !== null) {
-        await enter();
+}
+
+function endTakeOver() {
+    if (lockState.takingOverRootId !== '') lockState.takingOverRootId = '';
+    if (lockState.enteringRootId !== '') lockState.enteringRootId = '';
+}
+
+async function takeOverThenEnter(rootId, enter) {
+    lockState.takingOverRootId = rootId;
+    await waitUntilTakenOver(rootId, TAKEN_TO_EDIT);
+    lockState.enteringRootId = rootId;
+    await CommandGate.runWhenFree('editLock.takeOver', enter);
+    endTakeOver();
+}
+
+// The wait for the other view to let go is no command: the page stays usable meanwhile, and only
+// what was clicked, once the root is free, is one. A failed request ends the take-over (its
+// message is shown); anything else is a bug.
+function startTakeOver(rootId, enter) {
+    void takeOverThenEnter(rootId, enter).catch((error) => {
+        rethrowUnexpectedError(error);
+        if (!(error instanceof HttpRequestError)) throw error;
+        endTakeOver();
+    });
+}
+
+// A change refused for this root (api-client.js): taken over before it is sent again. Once sent,
+// this view's next status check lets the root go unless this view edits in it, so neither view
+// holds it (case 6).
+export async function takeOverForChange(rootId) {
+    if (typeof rootId !== 'string' || rootId === '') {
+        throw new Error('takeOverForChange requires the root');
     }
+    await waitUntilTakenOver(rootId, TAKEN_FOR_A_CHANGE);
 }
 
 function movedTo(where) {
@@ -240,11 +234,13 @@ function movedTo(where) {
 // message says where editing went. Too late to save (the handover time passed while this tab was
 // hidden): the typing is kept on a card for copying instead.
 export function leaveTakenOverEditing(lock) {
-    if (lock === null || typeof lock !== 'object' || typeof lock.takenWhere !== 'string' || typeof lock.maySave !== 'boolean') {
-        throw new Error('A taken-over lock says where editing went and whether this view may save');
+    if (lock === null || typeof lock !== 'object' || typeof lock.takenWhere !== 'string' || typeof lock.maySave !== 'boolean'
+        || typeof lock.isForChange !== 'boolean') {
+        throw new Error('A taken-over lock says where editing went, why, and whether this view may save');
     }
     void CommandGate.runWhenFree('editLock.takenOver', async () => {
-        const message = `Editing moved ${movedTo(lock.takenWhere)}`;
+        // Taken for a fold or a tick there: editing went nowhere, it ended.
+        const message = lock.isForChange ? `Editing ended: changed ${lock.takenWhere}` : `Editing moved ${movedTo(lock.takenWhere)}`;
         if (!ModeContext.isEditing) {
             FloatingMessages.show({ text: message, type: 'info', detail: '', isClosable: true, isLasting: false, key: null, action: null });
             return;
@@ -264,7 +260,8 @@ export function leaveTakenOverEditing(lock) {
         const { actionRefreshAndMaybeSelect } = await import('../actions/ui-actions.js');
         await actionRefreshAndMaybeSelect({ context: 'edit-lock-taken-over' });
         FloatingMessages.show({
-            text: `Not saved: ${message.charAt(0).toLowerCase()}${message.slice(1)}`, type: 'error', detail: '',
+            text: lock.isForChange ? `Not saved: changed ${lock.takenWhere}` : `Not saved: editing moved ${movedTo(lock.takenWhere)}`,
+            type: 'error', detail: '',
             isClosable: true, isLasting: true, key: NOT_SAVED_KEY,
             action: { label: 'Copy', onSelect: () => navigator.clipboard.writeText(unsaved) },
         });

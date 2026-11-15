@@ -1,8 +1,43 @@
 import assert from 'node:assert/strict';
 
+// Notes with Files on or off ('any' or 'none'): Sort by File size is offered only while it is on.
+async function setFileFilter(page, kind) {
+    await page.evaluate(async kind => {
+        const {CommandPalette} = await import('/static/js/modules/command-palette/command-palette-controller.js');
+        await CommandPalette.setFileFilter(kind);
+    }, kind);
+}
+
+async function hasProblemReports(page) {
+    return page.evaluate(async () => {
+        const {buildSessionHeaders} = await import('/static/js/modules/session-auth.js');
+        const response = await fetch('/api2/problem-reports', {headers: buildSessionHeaders(false)});
+        if (!response.ok) throw new Error(`Listing problem reports failed: ${response.status}`);
+        return (await response.json()).reports.length > 0;
+    });
+}
+
+// A palette row the view does not offer now is reported unavailable, not a fatal error (CI,
+// 2026-11-14: "Missing palette destination: view.sort_mode.file_size").
+async function checkRowNotOffered(page) {
+    await setFileFilter(page, 'none');
+    const result = await page.evaluate(async () => {
+        const {CommandPalette} = await import('/static/js/modules/command-palette/command-palette-controller.js');
+        const {captureActiveAgentScope} = await import('/static/js/modules/ai-chat/ai-chat-panel-controller.js');
+        return await CommandPalette.openAgentMenu('view.sort_mode.file_size', captureActiveAgentScope(), new AbortController().signal);
+    });
+    assert.deepEqual(result, {status: 'unavailable', detail: 'Sort Order: File Size is not offered in this view right now.'});
+    assert.equal(await page.evaluate(() => document.querySelector('#command-palette-modal').getClientRects().length), 0,
+        'the palette does not stay open on a row it does not show');
+}
+
 export async function checkAgentHelpMenus(page) {
     await checkPasswordLogin(page);
+    await checkRowNotOffered(page);
+    // Every destination is offered: File size sort with Notes with Files on.
+    await setFileFilter(page, 'any');
     const catalog = await page.evaluate(async () => await (await fetch('/static/config/agent-menu-actions.json')).json());
+    const exportReportsId = await page.evaluate(async () => (await import('/static/js/modules/command-palette/endpoint-registry.js')).EXPORT_PROBLEM_REPORTS_ID);
     for (const target of catalog) {
         const result = await page.evaluate(async (entry) => {
             const {CommandPalette} = await import('/static/js/modules/command-palette/command-palette-controller.js');
@@ -17,6 +52,12 @@ export async function checkAgentHelpMenus(page) {
             return {result, visible: Boolean(element?.getClientRects().length),
                 selected: document.querySelector('#command-palette-results .selected')?.textContent || ''};  // shockharness: ignore[DEF003] reason="no selected palette item reads as empty text"
         }, target);
+        if (target.id === exportReportsId && !await hasProblemReports(page)) {
+            // Offered only once a report is kept: with none, the AI hears so.
+            assert.deepEqual(result.result, {status: 'unavailable',
+                detail: `${target.label} is not offered in this view right now.`}, target.id);
+            continue;
+        }
         if (target.id === 'form.add_password') {
             // This vault has a password, so Add Password cannot open: the error dialog says
             // why, and the AI hears that reason, at once, not "opened".
@@ -40,7 +81,8 @@ export async function checkAgentHelpMenus(page) {
         return await CommandPalette.openAgentMenu('form.ai_agent_settings', scope, new AbortController().signal);
     });
     assert.equal(stale.status, 'unavailable');
-    console.log(`PASS all ${catalog.length} agent menu destinations and stale-context rejection`);
+    await setFileFilter(page, 'none');
+    console.log(`PASS all ${catalog.length} agent menu destinations, a row not offered, and stale-context rejection`);
     await checkDelayedModalResponses(page);
     await checkChatMenuAcknowledgment(page);
     await checkComposerAfterPasswordDialog(page);

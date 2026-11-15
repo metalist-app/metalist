@@ -188,7 +188,8 @@ async function callTabStateApiAt(endpoint, method, body) {
         throw new HttpRequestError(`tab-state ${method} failed with status ${response.status}`);
     }
     const state = await response.json();
-    // A change of this view's own to the shared contexts is not taken again (multi-view step 3).
+    // A change of this view's own to the shared contexts is not taken again (multi-view step 3),
+    // and this browser's other tabs take it now.
     noticeOwnContextsChange(state.searchContextsRevision);
     return state;
 }

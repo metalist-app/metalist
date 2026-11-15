@@ -8,9 +8,11 @@ const API_AUTH_BASE = `${API_BASE}/auth`;
 const API_FILES_BASE = `${API_BASE}/files`;
 const API_REMINDERS_BASE = `${API_BASE}/reminders`;
 const API_AI_BASE = `${API_BASE}/ai`;
-// A visible view checks every 2 seconds, so a change made in another view (another tab, the phone)
-// shows within about that (multi-view editing step 3, case 1; was 5).
-const SYNC_POLL_INTERVAL_SECONDS = 2;
+// A visible view checks for changes made in other views every second in a desktop browser and every
+// 2 seconds on a phone, sparing its battery and data (the maintainer, 2026-11-15; was 5, then 2).
+// Tabs of one browser tell each other at once (views-in-this-browser.js).
+const SYNC_POLL_INTERVAL_SECONDS = 1;
+const PHONE_SYNC_POLL_INTERVAL_SECONDS = 2;
 const LOADING_SPINNER_DELAY_SECONDS = 1;
 const SEARCH_DEBOUNCE_MS = 300;
 const INITIAL_FADE_DURATION_MS = 150;
@@ -268,6 +270,7 @@ export const CONFIG = {
 
     SYNC: {
         POLL_INTERVAL_MS: SYNC_POLL_INTERVAL_SECONDS * MS_PER_SECOND,
+        PHONE_POLL_INTERVAL_MS: PHONE_SYNC_POLL_INTERVAL_SECONDS * MS_PER_SECOND,
     },
 
     DEBUG: {

@@ -9,7 +9,7 @@ import { clearTagBar } from '../services/tag-bar-service.js';
 import { persistExpandedEditSessionIfNeeded, restoreCollapsedStateLocallyIfNeeded } from '../services/edit-session-collapse-service.js';
 import { clearSelectionStateForDeselect } from '../services/deselect-selection-state-service.js';
 import { captureNoteAnchor, captureSortedExitAnchor, captureWindowTopNote, holdViewportRoot } from '../services/viewport-hold-service.js';
-import { isEditedRootMovedElsewhere, openMarkerInsteadOfEditing } from '../services/edit-lock-service.js';
+import { isEditedRootMovedElsewhere, takeOverInsteadOfEditing } from '../services/edit-lock-service.js';
 import { isRootReorderLocked } from '../services/root-sort-service.js';
 import {
     recordNoteInteractionIfNew,
@@ -50,12 +50,21 @@ function clickAnchorOption(options, noteId) {
     return clickAnchor;
 }
 
+// A root taken over from another view is edited where clicked: by switching to it when this view
+// edits another note by then, by entering edit mode otherwise.
+export function actionEditTakenOverNote(noteId, options) {
+    if (ModeContext.isEditing) {
+        return actionSwitchNotes(noteId, options);
+    }
+    return actionSelectNote(noteId, options);
+}
+
 export async function actionSelectNote(noteId, options) {
     if (options === null || typeof options !== 'object') {
         throw new Error('actionSelectNote requires options object');
     }
-    // A root another view edits: its marker opens instead, Take Over goes on here (multi-view step 4).
-    if (openMarkerInsteadOfEditing(noteId, () => actionSelectNote(noteId, options))) {
+    // A root another view edits: taken over, then edited here once the other view lets go (multi-view step 4).
+    if (takeOverInsteadOfEditing(noteId, () => actionEditTakenOverNote(noteId, options))) {
         return;
     }
     if (!Object.prototype.hasOwnProperty.call(options, 'initialCaretVisibility')) {
@@ -238,8 +247,9 @@ export async function actionSwitchNotes(newNoteId, options) {
 	if (options === null || typeof options !== 'object') {
 		throw new Error('actionSwitchNotes requires options object');
 	}
-    // A root another view edits: its marker opens instead; the note edited here stays as it is.
-    if (openMarkerInsteadOfEditing(newNoteId, () => actionSwitchNotes(newNoteId, options))) {
+    // A root another view edits: taken over, then edited here once the other view lets go; the
+    // note edited here meanwhile stays as it is.
+    if (takeOverInsteadOfEditing(newNoteId, () => actionEditTakenOverNote(newNoteId, options))) {
         return;
     }
 	if (!Object.prototype.hasOwnProperty.call(options, 'initialCaretVisibility')) {

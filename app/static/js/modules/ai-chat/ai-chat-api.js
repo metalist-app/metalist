@@ -4,6 +4,7 @@ import { buildSessionHeaders } from '../session-auth.js';
 import { parseAiChatNdjsonBuffer } from './ai-chat-panel-service.js';
 import { validateAiThinkingLevel } from './ai-thinking-level-service.js';
 import { isAiProvider } from './ai-providers.js';
+import { askOtherTabsToCheckNow } from '../views-in-this-browser.js';
 
 // Each LLM history entry is an [input, output] pair.
 const HISTORY_PAIR_LENGTH = 2;
@@ -96,7 +97,9 @@ export async function clearAiChatSession() {
         method: 'DELETE',
         headers: buildSessionHeaders(false),
     });
-    return await readJsonResponse(response, 'Failed to clear AI chat session');
+    const answer = await readJsonResponse(response, 'Failed to clear AI chat session');
+    askOtherTabsToCheckNow();
+    return answer;
 }
 
 
@@ -121,7 +124,9 @@ export async function stopAiChatAnswer({ dropsWaiting }) {
         headers: buildSessionHeaders(true),
         body: JSON.stringify({ drops_waiting: dropsWaiting }),
     });
-    return await readJsonResponse(response, 'Failed to stop the answer');
+    const answer = await readJsonResponse(response, 'Failed to stop the answer');
+    askOtherTabsToCheckNow();
+    return answer;
 }
 
 // A question being typed here: the box is this view's, its text shown in the others.
@@ -134,7 +139,9 @@ export async function sendAiQuestionTyped(text) {
         headers: buildSessionHeaders(true),
         body: JSON.stringify({ text }),
     });
-    return await readJsonResponse(response, 'Failed to share the question being typed');
+    const answer = await readJsonResponse(response, 'Failed to share the question being typed');
+    askOtherTabsToCheckNow();
+    return answer;
 }
 
 export async function releaseAiQuestionBox() {
@@ -142,7 +149,9 @@ export async function releaseAiQuestionBox() {
         method: 'POST',
         headers: buildSessionHeaders(false),
     });
-    return await readJsonResponse(response, 'Failed to release the question box');
+    const answer = await readJsonResponse(response, 'Failed to release the question box');
+    askOtherTabsToCheckNow();
+    return answer;
 }
 
 export async function loadAiDebugSnapshot() {
@@ -571,6 +580,8 @@ export async function streamAiChat({
     if (!(response.body instanceof ReadableStream)) {
         throw new Error('AI chat response is missing readable stream');
     }
+    // The question shows in this browser's other tabs now (multi-view step 5), and so does the end.
+    askOtherTabsToCheckNow();
 
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
@@ -591,6 +602,7 @@ export async function streamAiChat({
             break;
         }
     }
+    askOtherTabsToCheckNow();
     if (buffer !== '') {
         throw new Error('AI chat stream ended with incomplete JSON');
     }

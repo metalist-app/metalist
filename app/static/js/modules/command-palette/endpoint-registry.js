@@ -21,6 +21,9 @@ import {
     PASSWORD_AUDIT_REMINDER_PREFERENCE,
 } from '../password-audit/password-audit-reminder-schedule.js';
 
+// Offered only once a problem report is kept (isCommandAvailable).
+export const EXPORT_PROBLEM_REPORTS_ID = 'action.export_problem_reports';
+
 function requireAction(actions, key) {
     if (!actions || typeof actions !== 'object') {
         throw new Error('Endpoint registry requires actions object');
@@ -96,7 +99,7 @@ export function isCommandAvailable(commandId, state) {
         || typeof state.hasFileFilter !== 'boolean' || typeof state.hasProblemReports !== 'boolean') {
         throw new Error('isCommandAvailable requires boolean hasPassword, isRootReorderLocked, hasFileFilter and hasProblemReports');
     }
-    if (commandId === 'action.export_problem_reports') {
+    if (commandId === EXPORT_PROBLEM_REPORTS_ID) {
         return state.hasProblemReports;
     }
     if (PASSWORD_COMMANDS_WITHOUT_ONE.has(commandId)) {
@@ -696,7 +699,7 @@ export function buildCommandPaletteEndpoints(deps) {
             execute: async () => reportProblem(),
         },
         {
-            id: 'action.export_problem_reports',
+            id: EXPORT_PROBLEM_REPORTS_ID,
             kind: 'action',
             label: 'Export Problem Reports…',
             execute: async () => exportProblemReports(),

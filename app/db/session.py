@@ -63,6 +63,10 @@ class _RequestTransactionState:
     commit_callbacks: list[Callable[[], None]]
     recoveries: dict[Path, LiveDatabaseRecovery | MemoryDatabaseRecovery]
     did_write: bool
+    # Rows the request's own transaction changed (did_write is set as soon as a writer opens).
+    changed_rows: bool
+    # A change refused because another view edits the note's root (app/services/edit_locks.py).
+    was_change_refused: bool
 
 
 _request_transaction_state: ContextVar[Optional[_RequestTransactionState]] = ContextVar(
@@ -162,7 +166,10 @@ def recoverable_database_change(database_path: Path):
 def begin_request_transaction() -> Iterator[None]:
     if _request_transaction_state.get() is not None:
         raise RuntimeError("Request transaction already active")
-    state = _RequestTransactionState(session=None, guard=None, rollback_callbacks=[], commit_callbacks=[], recoveries={}, did_write=False)
+    state = _RequestTransactionState(
+        session=None, guard=None, rollback_callbacks=[], commit_callbacks=[], recoveries={}, did_write=False,
+        changed_rows=False, was_change_refused=False,
+    )
     token = _request_transaction_state.set(state)
     succeeded = False
     try:
@@ -178,6 +185,7 @@ def begin_request_transaction() -> Iterator[None]:
                 try:
                     if state.session.connection().total_changes > 0:
                         state.did_write = True
+                        state.changed_rows = True
                     if not succeeded:
                         state.session.connection().rollback()
                 finally:
@@ -188,6 +196,14 @@ def begin_request_transaction() -> Iterator[None]:
                 _run_rollback_callbacks(state.rollback_callbacks)
     for callback in state.commit_callbacks:
         callback()
+
+
+def note_change_refused() -> None:
+    """The request's change was refused because another view edits the note's root: when it
+    changed nothing else, its failure needs no reload (request_recovery.py)."""
+    request_state = _request_transaction_state.get()
+    if request_state is not None:
+        request_state.was_change_refused = True
 
 
 @contextmanager

@@ -26,7 +26,7 @@ for (const target of catalog) {
                 assert.equal(selector, target.selector);
                 return { getClientRects: () => [1] };
             },
-            showMenuEntry: async id => selected.push(id), signal: new AbortController().signal,
+            showMenuEntry: async id => { selected.push(id); return true; }, signal: new AbortController().signal,
         });
         assert.equal(result.status, 'opened');
         assert.deepEqual(executed, target.presentation === 'dialog' ? [target.id] : []);
@@ -47,6 +47,17 @@ test('a dialog that could not open reports the error dialog\'s reason', async ()
             : { getClientRects: () => [1] }),
         showMenuEntry: async () => assert.fail(), signal: new AbortController().signal });
     assert.deepEqual(result, { status: 'unavailable', detail: reason });
+}));
+
+// A palette row the view does not offer now (Sort by: File size while Notes with Files is off):
+// the AI hears that it is not offered, not a fatal error (CI, 2026-11-14: "Missing palette
+// destination: view.sort_mode.file_size").
+test('a palette row not offered in this view is reported unavailable', async () => withCatalog(async () => {
+    const target = catalog.find(entry => entry.id === 'view.sort_mode.file_size');
+    const result = await openAgentMenu({ menuId: target.id,
+        endpoints: [], isCurrent: () => true, hasOpenModal: () => false,
+        queryElement: () => null, showMenuEntry: async () => false, signal: new AbortController().signal });
+    assert.deepEqual(result, { status: 'unavailable', detail: `${target.label} is not offered in this view right now.` });
 }));
 
 for (const blocked of ['stale', 'modal', 'cancelled', 'hidden']) {

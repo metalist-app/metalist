@@ -3,6 +3,20 @@ import { HttpRequestError, rethrowUnexpectedError } from '../expected-errors.js'
 // Dialog destinations open their forms; operation destinations only highlight a menu entry.
 const ERROR_DIALOG_TEXT = '#error-dialog .error-dialog-text';
 
+// Highlights the palette row or opens the dialog: false when the palette does not offer the row now.
+async function presentMenuEntry(target, endpoints, showMenuEntry) {
+    if (target.presentation === 'palette') {
+        const isOffered = await showMenuEntry(target.id);
+        if (isOffered !== true && isOffered !== false) throw new Error('showMenuEntry says whether the row is offered');
+        return isOffered;
+    }
+    if (target.presentation !== 'dialog') throw new Error('Invalid menu presentation');
+    const endpoint = endpoints.find((entry) => entry.id === target.id);
+    if (!endpoint || typeof endpoint.execute !== 'function') throw new Error(`Missing menu command: ${target.id}`);
+    await endpoint.execute();
+    return true;
+}
+
 export async function openAgentMenu({ menuId, endpoints, isCurrent, hasOpenModal, queryElement, showMenuEntry, signal }) {
     const response = await fetch('/static/config/agent-menu-actions.json', { signal });
     if (!response.ok) throw new HttpRequestError('Could not load menu catalog');
@@ -12,14 +26,9 @@ export async function openAgentMenu({ menuId, endpoints, isCurrent, hasOpenModal
     if (signal.aborted) return { status: 'cancelled', detail: 'Request was cancelled.' };
     if (!isCurrent()) return { status: 'unavailable', detail: 'The active context changed.' };
     if (hasOpenModal()) return { status: 'unavailable', detail: 'Another dialog is already open.' };
-    if (target.presentation === 'palette') {
-        await showMenuEntry(target.id);
-    } else {
-        if (target.presentation !== 'dialog') throw new Error('Invalid menu presentation');
-        const endpoint = endpoints.find((entry) => entry.id === target.id);
-        if (!endpoint || typeof endpoint.execute !== 'function') throw new Error(`Missing menu command: ${target.id}`);
-        await endpoint.execute();
-    }
+    const isPresented = await presentMenuEntry(target, endpoints, showMenuEntry);
+    // A row the view does not offer now (File size sort while Notes with Files is off).
+    if (!isPresented) return { status: 'unavailable', detail: `${target.label} is not offered in this view right now.` };
     const isShown = (selector) => {
         const element = queryElement(selector);
         return Boolean(element) && element.getClientRects().length > 0;

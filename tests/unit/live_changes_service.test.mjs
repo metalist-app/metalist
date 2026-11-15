@@ -32,6 +32,7 @@ function harness() {
         isMovingNoteByDrag: () => false,
         isDebouncedSearchPending: () => false,
         isReferenceViewTransitionPending: () => false,
+        askOtherTabsToCheckNow: () => {},
         captureNoteAnchor: () => null,
         captureWindowTopNote: () => null,
         keyboardEvents: { async adoptSharedSearchContexts() { applied.push('contexts'); } },

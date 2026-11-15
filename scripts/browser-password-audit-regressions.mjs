@@ -93,12 +93,10 @@ async function weakCount(page) {
   return page.evaluate(() => Number(/(\d+) weak/.exec(document.querySelector('.password-audit-summary').textContent)[1]));
 }
 
-// The first view, as one a link opened, is left with its ×: back to the search.
+// The first view, as one a link opened, is left with ◀: back to the search. (⏮ shows only
+// deeper, where it goes further than ◀ would: reference-source-navigation-service.js.)
 async function leaveView(page) {
-  await page.waitForSelector('#reference-source-indicator-clear', {visible: true});
-  await page.click('#reference-source-indicator-clear');
-  await settle(page);
-  return read(page);
+  return back(page);
 }
 
 async function back(page) {
@@ -151,7 +149,7 @@ async function auditCases(page, ids) {
   assert.equal(lone.firstNoteId, ids.lone, 'a top-level password note opens its own view');
   assert.deepEqual(lone.panel, before.panel, 'the panel does not move');
 
-  // Case 4 and 5: back returns to the first view, and its × to the list exactly as it was, as
+  // Case 4 and 5: back returns to the first view, and back again to the list exactly as it was, as
   // after following links.
   const backOnce = await back(page);
   assert.equal(backOnce.isReferenceView, true, 'back returns to the first view');
@@ -200,18 +198,25 @@ async function nextUpdate(page, change) {
     window.__auditSummaries = [];
     window.__auditObserver = new MutationObserver(() => window.__auditSummaries.push(summary.textContent));
     window.__auditObserver.observe(summary, {childList: true, characterData: true, subtree: true});
+    // Each audit request's body, read in the page as it is sent: Puppeteer reads a request's
+    // body only in Chrome (Firefox, 2026-11-15: postData() was empty).
+    window.__auditAsked = [];
+    window.__auditFetch = window.fetch;
+    window.fetch = (resource, options) => {
+      if (String(resource instanceof Request ? resource.url : resource).endsWith('/notes/password-audit')) {
+        window.__auditAsked.push(JSON.parse(options.body).fresh);
+      }
+      return window.__auditFetch(resource, options);
+    };
   });
-  const asked = [];
-  const countAudits = request => { if (request.url().endsWith('/notes/password-audit')) asked.push(JSON.parse(request.postData()).fresh); };
-  page.on('request', countAudits);
   const answered = page.waitForResponse(response => response.url().endsWith('/notes/password-audit'));
   await change();
   await answered;
   await settle(page);
-  page.off('request', countAudits);
-  const shown = await page.evaluate(() => {
+  const {asked, shown} = await page.evaluate(() => {
+    window.fetch = window.__auditFetch;
     window.__auditObserver.disconnect();
-    return window.__auditSummaries;
+    return {asked: window.__auditAsked, shown: window.__auditSummaries};
   });
   return {asked, shown};
 }

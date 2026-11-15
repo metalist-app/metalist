@@ -19,9 +19,13 @@ const FRAMES_TO_SETTLE = 3;
 const QUERY = 'appearance';
 const THEME = 'pref.theme';
 const STATS_STYLE = 'pref.stats_style';
-// Each setting's number of values: cycling that many times brings it back.
-const THEME_VALUE_COUNT = 3;
+// Stats Style's number of values: cycling a multiple of it brings it back. Theme's is read from
+// the app (theme-choices.js): a hard-coded 3 broke when skins were added (CI, 2026-11-13).
 const STATS_STYLE_VALUE_COUNT = 3;
+
+function themeValueCount(page) {
+  return page.evaluate(async () => (await import('/static/js/modules/theme-choices.js')).THEME_CHOICES.length);
+}
 
 async function settle(page) {
   await page.evaluate(frames => new Promise(resolve => {
@@ -78,9 +82,10 @@ async function press(page, times) {
 }
 
 async function orderCases(page) {
-  // Theme gets 3 uses and Stats Style none, so Theme is listed above it. One use per
-  // opening, as anyone would before this was fixed: the row moved after each use.
-  for (let use = 0; use < THEME_VALUE_COUNT; use += 1) {
+  // Theme gets one use per value and Stats Style none, so Theme is listed above it. One use
+  // per opening, as anyone would before this was fixed: the row moved after each use.
+  const themeUses = await themeValueCount(page);
+  for (let use = 0; use < themeUses; use += 1) {
     await openWith(page, QUERY);
     await highlight(page, THEME);
     await press(page, 1);
@@ -93,8 +98,9 @@ async function orderCases(page) {
   await highlight(page, STATS_STYLE);
   const before = await shown(page);
 
-  // Cases 1 and 2: three uses, each one counted, and nothing moves.
-  await press(page, STATS_STYLE_VALUE_COUNT);
+  // Cases 1 and 2: more uses than Theme had, each one counted, and nothing moves.
+  const statsStyleUses = STATS_STYLE_VALUE_COUNT * Math.ceil((themeUses + 1) / STATS_STYLE_VALUE_COUNT);
+  await press(page, statsStyleUses);
   assert.deepEqual(await shown(page), before, 'cycling Stats Style moved the rows');
 
   // Cases 3 and 4: editing the keywords sorts and suggests as at opening.

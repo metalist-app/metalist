@@ -56,9 +56,9 @@ export function checkServerCodeIsStale() {
 // failure: a polite warning, not the fatal overlay. Null for anything else,
 // which still fails fast and loud.
 export function rejectedInputWarning(reason) {
-  // Refused for a root edited in another view whose marker opened: the marker says it.
-  if (reason instanceof NoteLockedElsewhereError && reason.isMarkerShown) {
-    return '';
+  // Refused for a root edited in another view: the server's message says where, and when to retry.
+  if (reason instanceof NoteLockedElsewhereError) {
+    return reason.message;
   }
   if (reason instanceof ServerInputRejectedError) {
     return `That could not be used: ${reason.message}.`;
@@ -140,11 +140,17 @@ function overlayText() {
   return text;
 }
 
+function isShownError(error) {
+  const shown = moduleState.shownError;
+  return shown !== null && shown.className === error.className && shown.message === error.message && shown.stack === error.stack;
+}
+
 export function showFatalError(message, details, className) {
   if (typeof className !== 'string') throw new Error('showFatalError requires the error class name');
-  moduleState.shownError = Object.freeze({
-    className, message: String(message), stack: details ? String(details) : '',
-  });
+  const shownError = { className, message: String(message), stack: details ? String(details) : '' };
+  // The same error again (a repeating check that fails each time) is shown again with its new
+  // time; set as state a second time it would be refused, a fatal error of its own in its place.
+  if (!isShownError(shownError)) moduleState.shownError = Object.freeze(shownError);
   const time = new Date().toISOString();
   const lines = [
     `[${time}] FATAL: ${String(message)}`,
