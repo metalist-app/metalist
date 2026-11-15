@@ -275,7 +275,7 @@ async def answer_in_turn(
             yield _event_line({"type": "stopped"})
             return
         try:
-            async for line in start_answer():
+            async for line in start_answer():  # shockharness: ignore[EXC003] reason="each pull from the answer's stream is the external operation; the body forwards the line"
                 event = json.loads(line)
                 if event["type"] == "bulk_question":
                     live.show_question(event)
