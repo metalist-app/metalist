@@ -509,8 +509,8 @@ class FakeTwoWorkflowClient:
 
     def jobs(self, *, run_id: int) -> list[dict[str, object]]:
         if run_id == BROWSER_SUITES_RUN["id"]:
-            conclusion = "success" if self.suites_conclusion == "success" else "failure"
-            return [dict(failed_job("chrome slice 5/10"), conclusion=conclusion)]
+            # The run's one job ends as the run does ("success" or "failure").
+            return [dict(failed_job("chrome slice 5/10"), conclusion=self.suites_conclusion)]
         return jobs_with()
 
 
