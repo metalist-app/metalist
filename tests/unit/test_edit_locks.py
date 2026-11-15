@@ -205,28 +205,38 @@ def test_ending_the_edit_or_switching_roots_lets_go() -> None:
 def test_take_over_waits_for_the_editing_view_to_save_and_leave() -> None:
     _mac_edits_the_child()
 
-    assert edit_locks.take_over(view_id=PHONE, note_id=ROOT) is False
+    assert edit_locks.take_over(view_id=PHONE, note_id=ROOT, is_for_change=False) is False
     with as_mac():
         _save(CHILD)
     assert edit_locks.sync_editing(view_id=MAC, note_id=CHILD, tells_taken=True) == {
-        "rootId": ROOT, "takenWhere": ON_YOUR_PHONE, "maySave": True,
+        "rootId": ROOT, "takenWhere": ON_YOUR_PHONE, "maySave": True, "isForChange": False,
     }
-    assert edit_locks.take_over(view_id=PHONE, note_id=ROOT) is False, "the Mac is still saving"
+    assert edit_locks.take_over(view_id=PHONE, note_id=ROOT, is_for_change=False) is False, "the Mac is still saving"
     edit_locks.sync_editing(view_id=MAC, note_id="", tells_taken=True)
 
-    assert edit_locks.take_over(view_id=PHONE, note_id=ROOT) is True
+    assert edit_locks.take_over(view_id=PHONE, note_id=ROOT, is_for_change=False) is True
     assert edit_locks.locked_roots_for(view_id=MAC) == {ROOT: ON_YOUR_PHONE}
     with as_mac(), pytest.raises(NoteLockedElsewhere):
         _save(CHILD)
 
 
+def test_a_take_over_for_a_change_says_so_to_the_editing_view() -> None:
+    """A fold or a tick there, not editing: the Mac says editing ended, not that it moved."""
+    _mac_edits_the_child()
+
+    assert edit_locks.take_over(view_id=PHONE, note_id=ROOT, is_for_change=True) is False
+    assert edit_locks.sync_editing(view_id=MAC, note_id=CHILD, tells_taken=True) == {
+        "rootId": ROOT, "takenWhere": ON_YOUR_PHONE, "maySave": True, "isForChange": True,
+    }
+
+
 def test_take_over_goes_ahead_when_the_editing_view_does_not_answer() -> None:
     clock = edit_locks_module.monotonic
     _mac_edits_the_child()
-    edit_locks.take_over(view_id=PHONE, note_id=ROOT)
+    edit_locks.take_over(view_id=PHONE, note_id=ROOT, is_for_change=False)
 
     clock.now += HANDOVER_SECONDS
-    assert edit_locks.take_over(view_id=PHONE, note_id=ROOT) is True
+    assert edit_locks.take_over(view_id=PHONE, note_id=ROOT, is_for_change=False) is True
     with as_mac(), pytest.raises(NoteLockedElsewhere):
         _save(CHILD)
 

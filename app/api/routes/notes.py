@@ -571,7 +571,7 @@ def take_over_editing(payload: TakeOverEditingRequest, view_id: ViewId) -> Dict[
     note_id = payload["noteId"]
     if not note_store.has_note(note_id):
         raise InputRejected("That note is gone.")
-    return {"ready": edit_locks.take_over(view_id=view_id, note_id=note_id)}
+    return {"ready": edit_locks.take_over(view_id=view_id, note_id=note_id, is_for_change=payload["isForChange"])}
 
 
 @router.post("/notes/tab-state/sort-mode")

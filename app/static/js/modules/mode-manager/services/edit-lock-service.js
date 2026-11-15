@@ -157,11 +157,11 @@ export function recordRefusal(rootId, where) {
     }
 }
 
-async function askToTakeOver(noteId) {
+async function askToTakeOver(noteId, isForChange) {
     const response = await fetch(CONFIG.API.NOTES.TAKE_OVER_EDITING, {
         method: 'POST',
         headers: buildSessionHeaders(true),
-        body: JSON.stringify({ noteId }),
+        body: JSON.stringify({ noteId, isForChange }),
     });
     if (!response.ok) {
         ErrorHandler.handleApiError(null, response);
@@ -174,15 +174,15 @@ async function askToTakeOver(noteId) {
     return answer.ready;
 }
 
-async function waitUntilTakenOver(rootId) {
-    let isReady = await askToTakeOver(rootId);
+async function waitUntilTakenOver(rootId, isForChange) {
+    let isReady = await askToTakeOver(rootId, isForChange);
     if (!isReady) {
         // A tab of this browser editing it hears at once, not at its next status check.
         askOtherTabsToCheckNow();
     }
     while (!isReady) {
         await new Promise((resolve) => setTimeout(resolve, TAKE_OVER_ASK_MS));
-        isReady = await askToTakeOver(rootId);
+        isReady = await askToTakeOver(rootId, isForChange);
     }
     // A view answer may have shown it free already: the other tab tells this one at once.
     if (Object.hasOwn(lockState.lockedRoots, rootId)) {
@@ -199,7 +199,7 @@ function endTakeOver() {
 
 async function takeOverThenEnter(rootId, enter) {
     lockState.takingOverRootId = rootId;
-    await waitUntilTakenOver(rootId);
+    await waitUntilTakenOver(rootId, false);
     lockState.enteringRootId = rootId;
     await CommandGate.runWhenFree('editLock.takeOver', enter);
     endTakeOver();
@@ -223,7 +223,7 @@ export async function takeOverForChange(rootId) {
     if (typeof rootId !== 'string' || rootId === '') {
         throw new Error('takeOverForChange requires the root');
     }
-    await waitUntilTakenOver(rootId);
+    await waitUntilTakenOver(rootId, true);
 }
 
 function movedTo(where) {
@@ -235,11 +235,13 @@ function movedTo(where) {
 // message says where editing went. Too late to save (the handover time passed while this tab was
 // hidden): the typing is kept on a card for copying instead.
 export function leaveTakenOverEditing(lock) {
-    if (lock === null || typeof lock !== 'object' || typeof lock.takenWhere !== 'string' || typeof lock.maySave !== 'boolean') {
-        throw new Error('A taken-over lock says where editing went and whether this view may save');
+    if (lock === null || typeof lock !== 'object' || typeof lock.takenWhere !== 'string' || typeof lock.maySave !== 'boolean'
+        || typeof lock.isForChange !== 'boolean') {
+        throw new Error('A taken-over lock says where editing went, why, and whether this view may save');
     }
     void CommandGate.runWhenFree('editLock.takenOver', async () => {
-        const message = `Editing moved ${movedTo(lock.takenWhere)}`;
+        // Taken for a fold or a tick there: editing went nowhere, it ended.
+        const message = lock.isForChange ? `Editing ended: changed ${lock.takenWhere}` : `Editing moved ${movedTo(lock.takenWhere)}`;
         if (!ModeContext.isEditing) {
             FloatingMessages.show({ text: message, type: 'info', detail: '', isClosable: true, isLasting: false, key: null, action: null });
             return;
@@ -259,7 +261,8 @@ export function leaveTakenOverEditing(lock) {
         const { actionRefreshAndMaybeSelect } = await import('../actions/ui-actions.js');
         await actionRefreshAndMaybeSelect({ context: 'edit-lock-taken-over' });
         FloatingMessages.show({
-            text: `Not saved: ${message.charAt(0).toLowerCase()}${message.slice(1)}`, type: 'error', detail: '',
+            text: lock.isForChange ? `Not saved: changed ${lock.takenWhere}` : `Not saved: editing moved ${movedTo(lock.takenWhere)}`,
+            type: 'error', detail: '',
             isClosable: true, isLasting: true, key: NOT_SAVED_KEY,
             action: { label: 'Copy', onSelect: () => navigator.clipboard.writeText(unsaved) },
         });

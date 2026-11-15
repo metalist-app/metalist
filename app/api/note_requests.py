@@ -160,8 +160,10 @@ class SearchContextForSearchRequest(TypedDict):
 
 @with_config(ConfigDict(strict=True))
 class TakeOverEditingRequest(TypedDict):
-    # The note tapped: its root, being edited in another view, is taken over (multi-view step 4).
+    # The note tapped: its root, being edited in another view, is taken over (multi-view step 4),
+    # to edit it or for a change there (a fold, a tick).
     noteId: str
+    isForChange: bool
 
 
 @with_config(ConfigDict(strict=True))

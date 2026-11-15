@@ -131,6 +131,12 @@ async function markerCase(here, there, ids) {
   assert.equal(tooltip, `Being edited ${IN_ANOTHER_TAB}`);
 }
 
+// The floating message there saying why its editing ended.
+function waitForMessageThere(there, text) {
+  return there.waitForFunction(text => [...document.querySelectorAll('.floating-message-text')].some(shown => shown.textContent === text),
+    {timeout: TAKES_OVER_WITHIN_MS, polling: BACKGROUND_POLL_MS}, text);
+}
+
 function isRootCollapsed(page, rootId) {
   return page.evaluate(rootId => document.querySelector(`#notes-container > .note[data-note-id="${rootId}"]`).classList.contains('collapsed'), rootId);
 }
@@ -151,6 +157,7 @@ async function clickTakesOverCase(here, there, ids) {
   assert.equal(await here.evaluate(() => document.querySelector('.note-edit-lock-card')), null, 'click: no card should open');
   assertAt('click', '"Root 3"', await noteTop(here, ids['Root 3']), before);
   assert.equal(await isEditing(there, ids['Child of Root 3']), false, 'click: the other tab should have left the note');
+  await waitForMessageThere(there, 'Editing moved to another tab');
   const childText = await here.evaluate(childId => document.querySelector(`[data-note-id="${childId}"] > .note-content`).textContent, ids['Child of Root 3']);
   assert.ok(childText.includes(TYPED_THERE.trim()), `click: the other tab's typing should be saved, got "${childText}"`);
   assert.equal(await here.evaluate(rootId => document.querySelector(`[data-note-id="${rootId}"] > .note-edit-lock`), ids['Root 3']), null);
@@ -173,6 +180,8 @@ async function arrowTakesOverCase(here, there, ids) {
     const {ModeContextInstance} = await import('/static/js/modules/mode-manager/mode-context.js');
     return !ModeContextInstance.isEditing;
   }, {timeout: TAKES_OVER_WITHIN_MS, polling: BACKGROUND_POLL_MS});
+  // Editing did not move here: the fold ended it (found 2026-11-15: it said "Editing moved").
+  await waitForMessageThere(there, 'Editing ended: changed in another tab');
   await waitForNoMarker(here, ids['Root 3']);
   // A tab in the background shows what changed once it is shown again.
   await there.bringToFront();

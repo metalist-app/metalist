@@ -82,6 +82,14 @@ class _Lock:
     handover_until: float
 
 
+@dataclass(frozen=True)
+class _TakenFrom:
+    # Where the root went, and whether it was taken for a change there (a fold, a tick) rather
+    # than to edit it: the view it was taken from says "Editing ended" then, not "moved".
+    where: str
+    is_for_change: bool
+
+
 @dataclass
 class _SearchLock:
     view_id: str
@@ -156,7 +164,7 @@ class EditLocks:
         # The AI message box: the view typing a question, and its text, shown in the others.
         self._composer: Optional[_ComposerLock] = None
         # Views whose root was taken over, with where it went: told once, at their next check.
-        self._taken_from: Dict[str, str] = {}
+        self._taken_from: Dict[str, _TakenFrom] = {}
         # Roots another view moved while they were edited: kept in place on the editor's screen.
         self._moved_elsewhere: set[str] = set()
         self._revision = 0
@@ -225,20 +233,22 @@ class EditLocks:
     def sync_editing(self, *, view_id: str, note_id: str, tells_taken: bool) -> Dict[str, object]:
         """What the view edits now ("" for nothing): it holds that note's root, or is told why not.
         Answers {} when it holds it (or edits nothing); {"rootId", "lockedWhere"} when another view
-        holds it; with tells_taken (its status check), {"rootId", "takenWhere", "maySave"} once when
-        it was taken over from this view (maySave: its typing can still be saved)."""
+        holds it; with tells_taken (its status check), {"rootId", "takenWhere", "maySave",
+        "isForChange"} once when it was taken over from this view (maySave: its typing can still be
+        saved; isForChange: taken for a change there, not to edit)."""
         with self._lock:
             now = monotonic()
             held = [root_id for root_id, lock in self._roots.items() if lock.view_id == view_id]
             if view_id in self._taken_from and not tells_taken:
                 return {}
             if view_id in self._taken_from:
-                where = self._taken_from.pop(view_id)
+                taken_from = self._taken_from.pop(view_id)
+                told = {"takenWhere": taken_from.where, "isForChange": taken_from.is_for_change}
                 for root_id, taken in self._roots.items():
                     if taken.handing_over_from == view_id:
                         may_save = now + SAVE_MARGIN_SECONDS < taken.handover_until
-                        return {"rootId": root_id, "takenWhere": where, "maySave": may_save}
-                return {"rootId": "", "takenWhere": where, "maySave": False}
+                        return {"rootId": root_id, "maySave": may_save, **told}
+                return {"rootId": "", "maySave": False, **told}
             # Taken over from this view, which has now left that root: the handover is done.
             for root_id, handed_over in self._roots.items():
                 if handed_over.handing_over_from == view_id and (note_id == "" or root_of(note_id) != root_id):
@@ -259,9 +269,10 @@ class EditLocks:
                 self._revision += 1
             return {}
 
-    def take_over(self, *, view_id: str, note_id: str) -> bool:
-        """Take the root of note_id for this view. True once the view it was taken from has let it
-        go (saved and left, or its handover time passed): then this view edits."""
+    def take_over(self, *, view_id: str, note_id: str, is_for_change: bool) -> bool:
+        """Take the root of note_id for this view, to edit it or (is_for_change) to make a change
+        there. True once the view it was taken from has let it go (saved and left, or its handover
+        time passed)."""
         with self._lock:
             now = monotonic()
             root_id = root_of(note_id)
@@ -272,7 +283,7 @@ class EditLocks:
                 return True
             if lock.view_id != view_id:
                 where = self._where_locked(lock.view_id, view_id)
-                self._taken_from[lock.view_id] = where
+                self._taken_from[lock.view_id] = _TakenFrom(where=where, is_for_change=is_for_change)
                 self._roots[root_id] = _Lock(
                     view_id=view_id, handing_over_from=lock.view_id, handover_until=now + HANDOVER_SECONDS,
                 )
