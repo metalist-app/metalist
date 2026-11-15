@@ -140,11 +140,17 @@ function overlayText() {
   return text;
 }
 
+function isShownError(error) {
+  const shown = moduleState.shownError;
+  return shown !== null && shown.className === error.className && shown.message === error.message && shown.stack === error.stack;
+}
+
 export function showFatalError(message, details, className) {
   if (typeof className !== 'string') throw new Error('showFatalError requires the error class name');
-  moduleState.shownError = Object.freeze({
-    className, message: String(message), stack: details ? String(details) : '',
-  });
+  const shownError = { className, message: String(message), stack: details ? String(details) : '' };
+  // The same error again (a repeating check that fails each time) is shown again with its new
+  // time; set as state a second time it would be refused, a fatal error of its own in its place.
+  if (!isShownError(shownError)) moduleState.shownError = Object.freeze(shownError);
   const time = new Date().toISOString();
   const lines = [
     `[${time}] FATAL: ${String(message)}`,
