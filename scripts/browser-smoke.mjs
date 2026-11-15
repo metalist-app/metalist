@@ -11,6 +11,7 @@ import {join, resolve} from 'node:path';
 import {createServer} from 'node:net';
 import {setTimeout as delay} from 'node:timers/promises';
 import puppeteer from 'puppeteer';
+import {assertInstalledDriverIsPinned} from './browser-driver-pin.mjs';
 import {closeBrowser, installedBrowserExecutable} from './installed-browser.mjs';
 import {assertNoLoopStalls} from './browser-loop-stalls.mjs';
 import {stopChildrenOnExitSignals} from './stop-children-on-exit.mjs';
@@ -118,6 +119,8 @@ import {checkFieldMessages} from './browser-field-message-regressions.mjs';
 import {checkProgressCards} from './browser-progress-card-regressions.mjs';
 import {checkAiTaggingDialogs} from './browser-ai-tagging-dialog-regressions.mjs';
 import {assertLoginLogoGeometry} from './browser-validation/login-logo-geometry.mjs';
+
+assertInstalledDriverIsPinned();
 
 // Requests count as quiet after this long without one starting or ending: after a
 // step, and longer before the document mouse-movement checks.
@@ -1076,7 +1079,8 @@ try {
   await page.evaluate(async () => { const {actionUndo} = await import('/static/js/modules/mode-manager/actions/history-actions.js'); await actionUndo(); });
   await page.waitForFunction(() => document.body.textContent.includes('No actions to undo'));
   console.log('PASS empty undo history shows an explanatory banner');
-  await page.evaluate(async () => { const {Auth} = await import('/static/js/modules/auth.js'); await Auth.logout(); });
+  // Sign Out for this device, without its dialog (Auth.logout went with multi-view editing).
+  await page.evaluate(async () => { const {CommandPalette} = await import('/static/js/modules/command-palette/command-palette-controller.js'); await CommandPalette.logOutNow({everyDevice: false}); });
   await page.waitForSelector('#login-panel[data-revealed="true"] #login-password', {visible:true});
   await assertLoginLogoGeometry(page, 'login screen after logout');
   console.log('PASS password setup, login, hydration, and logout');

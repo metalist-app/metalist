@@ -85,8 +85,9 @@ async function logIn(page) {
 
 async function logOut(page) {
   await page.evaluate(async () => {
-    const {Auth} = await import('/static/js/modules/auth.js');
-    await Auth.logout();
+    // Sign Out for this device, without its dialog (Auth.logout went with multi-view editing).
+    const {CommandPalette} = await import('/static/js/modules/command-palette/command-palette-controller.js');
+    await CommandPalette.logOutNow({everyDevice: false});
   });
 }
 

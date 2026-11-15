@@ -390,6 +390,10 @@ async function standInForTheAi(page, availability) {
 
 const aiRequests = page => page.evaluate(() => window.aiTitle.requests.map(({body, stopped}) => ({previous: body.previous_titles, exported: body.exported, stopped})));
 
+// What the notes and privacy settings were when a title was made (ai.py _export_titles_made_from):
+// the dialog sends it back with the earlier titles.
+const STAND_IN_MADE_FROM = 'stand-in-notes:1';
+
 async function answerAi(page, line) {
   await page.evaluate(line => window.aiTitle.requests.at(-1).answer(line), line);
   await pause(SETTLE_MS);
@@ -427,7 +431,7 @@ async function aiTitleCase(page, ids) {
 
   // An answer replaces the text, selected; undo brings back what was there.
   await page.click('#export-title-ai-btn');
-  await answerAi(page, {type: 'title', title: 'Spring in Kyoto'});
+  await answerAi(page, {type: 'title', title: 'Spring in Kyoto', from: STAND_IN_MADE_FROM});
   const answered = await optionsState(page);
   assert.deepEqual([answered.title, answered.selected, answered.focused, answered.aiButton.asking],
     ['Spring in Kyoto', [0, 'Spring in Kyoto'.length], 'export-title-input', false]);
@@ -459,7 +463,7 @@ async function aiTitleCase(page, ids) {
   assert.equal((await optionsState(page)).aiButton.disabled, false);
   await page.click('#export-title-ai-btn');
   assert.equal((await aiRequests(page)).at(-1).exported, 'note');
-  await answerAi(page, {type: 'title', title: 'Spring in Kyoto'});
+  await answerAi(page, {type: 'title', title: 'Spring in Kyoto', from: STAND_IN_MADE_FROM});
   await page.keyboard.press('Enter');
   await pause(SETTLE_MS);
   await idle(page);

@@ -12,13 +12,13 @@ function readJson(path) {
     return JSON.parse(readFileSync(path, 'utf8'));
 }
 
-test('the installed browser driver is the one package.json and its lockfile pin', () => {
+// What is installed is checked where it is used, as the suites start (browser-driver-pin.mjs):
+// the JavaScript unit jobs install nothing.
+test('the lockfile locks the browser driver package.json pins', () => {
     const pinned = readJson('package.json').devDependencies.puppeteer;
     assert.match(pinned, /^\d+\.\d+\.\d+$/, 'package.json pins an exact Puppeteer version');
     const locked = readJson('package-lock.json').packages['node_modules/puppeteer'].version;
     assert.equal(locked, pinned, 'package-lock.json locks the Puppeteer that package.json pins');
-    const installed = readJson('node_modules/puppeteer/package.json').version;
-    assert.equal(installed, pinned, `node_modules holds Puppeteer ${installed}, package.json pins ${pinned}: run npm ci`);
 });
 
 test('the release checks drive the browsers with the same Puppeteer as the browser suites', () => {
