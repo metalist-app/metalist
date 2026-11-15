@@ -30,6 +30,7 @@ from threading import RLock
 from time import monotonic
 from typing import Dict, Iterator, Optional, Protocol
 
+from app.db.session import note_change_refused
 from app.services.input_errors import InputRejected
 
 NO_VIEW = ""
@@ -315,6 +316,7 @@ class EditLocks:
             return
         if lock.handing_over_from == view_id and now < lock.handover_until:
             return
+        note_change_refused()
         raise NoteLockedElsewhere(root_id=root_id, where=self._where_locked(view_id, lock.view_id))
 
     def require_writable(self, *, note_id: str) -> None:

@@ -37,6 +37,9 @@ def register_runtime_recovery() -> None:
         dek = encryption.dek
     undo = capture_undo_state()
     sync = capture_sync_state()
+    # The notes' revision before the request: a refused change that left it and the database as
+    # they were needs no reload (below).
+    notes_revision = store.revision
     # A failed request never delivered its view, so the browser still shows the
     # warm view recorded before the request.
     warm_views = view_cache.capture()
@@ -48,6 +51,12 @@ def register_runtime_recovery() -> None:
         # A failed save already cached its timeout: read it again from what was committed.
         reset_session_timeout_cache()
         if not (state.did_write or state.recoveries):
+            return
+        # Refused because another view edits the note's root, before the request changed anything
+        # (no row, no note in memory, no other database): nothing to read again. Reloading the
+        # vault took seconds and held up every view (multi-view editing, 2026-11-15).
+        is_unchanged = not state.changed_rows and not state.recoveries and store.revision == notes_revision
+        if state.was_change_refused and is_unchanged:
             return
         recovered = False
         try:
