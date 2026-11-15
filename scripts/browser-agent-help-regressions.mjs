@@ -37,6 +37,7 @@ export async function checkAgentHelpMenus(page) {
     // Every destination is offered: File size sort with Notes with Files on.
     await setFileFilter(page, 'any');
     const catalog = await page.evaluate(async () => await (await fetch('/static/config/agent-menu-actions.json')).json());
+    const exportReportsId = await page.evaluate(async () => (await import('/static/js/modules/command-palette/endpoint-registry.js')).EXPORT_PROBLEM_REPORTS_ID);
     for (const target of catalog) {
         const result = await page.evaluate(async (entry) => {
             const {CommandPalette} = await import('/static/js/modules/command-palette/command-palette-controller.js');
@@ -51,7 +52,7 @@ export async function checkAgentHelpMenus(page) {
             return {result, visible: Boolean(element?.getClientRects().length),
                 selected: document.querySelector('#command-palette-results .selected')?.textContent || ''};  // shockharness: ignore[DEF003] reason="no selected palette item reads as empty text"
         }, target);
-        if (target.id === 'action.export_problem_reports' && !await hasProblemReports(page)) {
+        if (target.id === exportReportsId && !await hasProblemReports(page)) {
             // Offered only once a report is kept: with none, the AI hears so.
             assert.deepEqual(result.result, {status: 'unavailable',
                 detail: `${target.label} is not offered in this view right now.`}, target.id);

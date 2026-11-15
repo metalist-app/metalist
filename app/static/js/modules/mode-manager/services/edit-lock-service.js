@@ -20,6 +20,9 @@ const MARKER_CLASS = 'note-edit-lock';
 // A take-over asks this often until the other view has let go (the server answers ready within
 // its handover time, edit_locks.py HANDOVER_SECONDS).
 const TAKE_OVER_ASK_MS = 150;
+// Why a root is taken over: the view it is taken from says "Editing moved" or "Editing ended".
+const TAKEN_TO_EDIT = false;
+const TAKEN_FOR_A_CHANGE = true;
 const NOT_SAVED_KEY = 'edit-lock-not-saved';
 
 const lockState = ApplicationState.createFields('edit-lock-service', {
@@ -44,10 +47,6 @@ function requireWhereByRoot(lockedRoots) {
             throw new Error('lockedRoots must map root ids to where they are edited');
         }
     }
-}
-
-function rootElement(rootId) {
-    return document.querySelector(`#notes-container > .note[data-note-id="${CSS.escape(rootId)}"]`);
 }
 
 function rootIdOfNote(noteId) {
@@ -199,7 +198,7 @@ function endTakeOver() {
 
 async function takeOverThenEnter(rootId, enter) {
     lockState.takingOverRootId = rootId;
-    await waitUntilTakenOver(rootId, false);
+    await waitUntilTakenOver(rootId, TAKEN_TO_EDIT);
     lockState.enteringRootId = rootId;
     await CommandGate.runWhenFree('editLock.takeOver', enter);
     endTakeOver();
@@ -210,9 +209,9 @@ async function takeOverThenEnter(rootId, enter) {
 // message is shown); anything else is a bug.
 function startTakeOver(rootId, enter) {
     void takeOverThenEnter(rootId, enter).catch((error) => {
-        endTakeOver();
         rethrowUnexpectedError(error);
         if (!(error instanceof HttpRequestError)) throw error;
+        endTakeOver();
     });
 }
 
@@ -223,7 +222,7 @@ export async function takeOverForChange(rootId) {
     if (typeof rootId !== 'string' || rootId === '') {
         throw new Error('takeOverForChange requires the root');
     }
-    await waitUntilTakenOver(rootId, true);
+    await waitUntilTakenOver(rootId, TAKEN_FOR_A_CHANGE);
 }
 
 function movedTo(where) {
