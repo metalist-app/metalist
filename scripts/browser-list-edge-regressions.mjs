@@ -128,6 +128,9 @@ function assertAtTop(label, state, firstRoot) {
 // it from the first note.
 async function unloadedEndsCase(page) {
   await reload(page);
+  // A reload keeps the tab's place (multi-view editing step 2), which may be near the end: the
+  // up arrow starts this case at the top of the list.
+  if (!(await pageState(page)).upDisabled) await clickArrow(page, 'up');
   const start = await pageState(page);
   assert.equal(start.downDisabled, false, 'unloaded end: the down arrow should be available at the top');
   assert.notEqual(start.lastRoot, 'Short 3', 'unloaded end: the end of the list should start unloaded');

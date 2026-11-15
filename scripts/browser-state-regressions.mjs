@@ -164,13 +164,23 @@ export async function checkAdditionalStateTransitions(page) {
     let deliverAnswer;
     const answered = new Promise((resolve) => { deliverAnswer = resolve; });
     const line = (event) => new TextEncoder().encode(JSON.stringify(event) + '\n');
+    // The server shows the AI's question to every view while it waits (multi-view editing step
+    // 5): the chat's live check says so too, or it closes the card as answered elsewhere (seen
+    // once in Firefox, 2026-11-15).
+    const question = {type:'bulk_question', question_id:'question-1', kind:'change_confirmation', label,
+      items:['https://collector.example/?d=project']};
+    let liveQuestion = null;
     window.fetch = async (url, options) => {
+      if (url === CONFIG.API.AI.CHAT_LIVE) {
+        return Response.json({revision: 1, mark: 'stand-in', isAnswering: true, waiting: [], question: liveQuestion, composer: {}});
+      }
       if (url === CONFIG.API.AI.CHAT) {
         const body = new ReadableStream({
           async start(controller) {
-            controller.enqueue(line({type:'bulk_question', question_id:'question-1', kind:'change_confirmation', label,
-              items:['https://collector.example/?d=project']}));
+            liveQuestion = question;
+            controller.enqueue(line(question));
             await answered;
+            liveQuestion = null;
             const text = 'Accepted 3 tag proposals across 2 notes.';
             controller.enqueue(line({type:'content_delta', text, rendered_text:`<p>${text}</p>`, reference_note_ids:[], reference_web_ids:[]}));
             controller.enqueue(line({type:'done', content:text, rendered_content:`<p>${text}</p>`, reference_note_ids:[], reference_web_ids:[]}));

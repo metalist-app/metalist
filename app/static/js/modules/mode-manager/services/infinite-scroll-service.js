@@ -218,7 +218,16 @@ async function maybeMoveBand(state, { needsRootsAbove, needsRootsBelow }) {
     }
     // Band shifts add and drop roots at the edges; animating those removals
     // would shrink content above the viewport over several frames.
+    const notesBefore = ModeContext.lastUpdateUUID;
     await actionRefreshAndMaybeSelect({ startedAt, context, animateNoteChanges: false });
+    // Notes changed meanwhile (deleted or added here or in another view): the band edges this
+    // measured belong to the list before, so the server's answer cannot be checked against them
+    // (found 2026-11-15: deleting many notes while scrolled down was a fatal error in Firefox).
+    // The next poll measures the new list.
+    if (ModeContext.lastUpdateUUID !== notesBefore) {
+        state.pendingFetch = false;
+        return;
+    }
     const startAfter = ModeContext.getRootWindowStart();
     const endAfter = startAfter + ModeContext.knownRootCount;
     if (needsRootsAbove && !(startAfter < startBefore) && ModeContext.hasRootsAboveWindow()) {
