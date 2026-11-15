@@ -118,8 +118,10 @@ async function clickText(page, noteId) {
   const point = await page.evaluate(noteId => {
     const content = document.querySelector(`[data-note-id="${noteId}"] > .note-content`);
     const rect = content.querySelector('p').getBoundingClientRect();
-    return {x: rect.left + 40, y: rect.top + rect.height / 2};
+    return {x: rect.left + 40, y: rect.top + rect.height / 2, height: window.innerHeight};
   }, noteId);
+  // Linux fonts wrap the notes taller than here (GitHub, 2026-11-15: a click at y=634 of 600).
+  assert.ok(point.y > 0 && point.y < point.height, `the text to click is in the window (y=${Math.round(point.y)} of ${point.height})`);
   await page.mouse.click(point.x, point.y);
 }
 
@@ -219,28 +221,29 @@ async function neighbourMovedAboveEditedCase(here, there, ids) {
   await idle(here);
 }
 
-// Cases 7 and 9: the other tab moves the root edited here to the top: allowed; here it stays at its
+// Cases 7 and 9: the other tab moves the root edited here ("Root 6", right below the window's top
+// note, so it is in view however the fonts wrap) to the top: allowed; here it stays at its
 // height while editing, and when editing ends it goes to its new place with the note at the window's
 // top staying still.
 async function movedWhileEditedCase(here, there, ids) {
   await scrollNoteTopTo(here, ids['Root 5'], 120);
-  await clickText(here, ids['Root 7']);
-  await here.waitForSelector(`.note.editing[data-note-id="${ids['Root 7']}"]`);
+  await clickText(here, ids['Root 6']);
+  await here.waitForSelector(`.note.editing[data-note-id="${ids['Root 6']}"]`);
   await idle(here);
-  const editedTop = await noteTop(here, ids['Root 7']);
+  const editedTop = await noteTop(here, ids['Root 6']);
   const windowTop = await noteTop(here, ids['Root 5']);
   await there.evaluate(async rootId => {
     const {NotesAPI} = await import('/static/js/modules/api-client.js');
     await NotesAPI.moveNoteToTop(rootId, '');
-  }, ids['Root 7']);
+  }, ids['Root 6']);
   await pause(WAITS_AT_LEAST_MS);
   await idle(here);
-  assertAt('moved while edited', 'the edited "Root 7"', await noteTop(here, ids['Root 7']), editedTop);
+  assertAt('moved while edited', 'the edited "Root 6"', await noteTop(here, ids['Root 6']), editedTop);
   await here.keyboard.press('Escape');
   await idle(here);
   await pause(SETTLE_MS);
   const firstRoot = await here.evaluate(() => document.querySelector('#notes-container > .note').dataset.noteId);
-  assert.equal(firstRoot, ids['Root 7'], 'moved while edited: "Root 7" should be at the top once editing ends');
+  assert.equal(firstRoot, ids['Root 6'], 'moved while edited: "Root 6" should be at the top once editing ends');
   assertAt('moved while edited', '"Root 5" at the window\'s top', await noteTop(here, ids['Root 5']), windowTop);
 }
 

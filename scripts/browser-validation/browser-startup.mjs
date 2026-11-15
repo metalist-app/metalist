@@ -465,9 +465,10 @@ async function checkEncryptedLogin(context, origin) {
         await page.waitForSelector('[data-app-ready="true"]', {timeout: 30000});
       } else {
         stage = `logging out (removeStoredIdentity=${removeStoredIdentity})`;
+        // Sign Out for this device, without its dialog (Auth.logout went with multi-view editing).
         await page.evaluate(async () => {
-          const {Auth} = await import('/static/js/modules/auth.js');
-          await Auth.logout();
+          const {CommandPalette} = await import('/static/js/modules/command-palette/command-palette-controller.js');
+          await CommandPalette.logOutNow({everyDevice: false});
         });
         stage = `waiting for logout form (removeStoredIdentity=${removeStoredIdentity})`;
         await page.waitForSelector('#login-panel[data-revealed="true"] #login-password', {visible: true, timeout: 30000});
