@@ -46,14 +46,7 @@ async function openChat(page) {
     const {AiChatPanel} = await import('/static/js/modules/ai-chat/ai-chat-panel-controller.js');
     return AiChatPanel._hasModels() && !AiChatPanel._isLoadingModels;
   // A background tab paints no frames: the default check (each animation frame) would never run.
-  }, {polling: BACKGROUND_POLL_MS}).catch(async error => {
-    const state = await page.evaluate(async () => {
-      const {AiChatPanel} = await import('/static/js/modules/ai-chat/ai-chat-panel-controller.js');
-      return {shown: document.body.classList.contains('pref-show-ai-chat'), hidden: document.hidden,
-        hasModels: AiChatPanel._hasModels(), loading: AiChatPanel._isLoadingModels};
-    });
-    throw new Error(`open chat: the AI models should load, saw ${JSON.stringify(state)} (${error.message})`);
-  });
+  }, {polling: BACKGROUND_POLL_MS});
 }
 
 function typeQuestion(page, text) {
@@ -74,10 +67,8 @@ async function send(page, text) {
   });
 }
 
-async function waitForChat(page, label, check, ...args) {
-  await page.waitForFunction(check, {timeout: ANSWERED_WITHIN_MS}, ...args).catch(async error => {
-    throw new Error(`${label}: the chat here showed ${JSON.stringify(await chatTexts(page))} (${error.message})`);
-  });
+async function waitForChat(page, check, ...args) {
+  await page.waitForFunction(check, {timeout: ANSWERED_WITHIN_MS}, ...args);
 }
 
 async function clearThere(there) {
@@ -87,7 +78,7 @@ async function clearThere(there) {
 // Case 1: a question sent there and its answer show here as they are written.
 async function liveAnswerCase(here, there) {
   await send(there, 'Question from the other tab');
-  await waitForChat(here, 'live answer, first part', first => {
+  await waitForChat(here, first => {
     const texts = [...document.querySelectorAll('#ai-chat-messages .ai-chat-message')].map(m => m.textContent);
     return texts.length === 2 && texts[0].includes('Question from the other tab') && texts[1].includes(first);
   }, FIRST_PART);
@@ -95,7 +86,7 @@ async function liveAnswerCase(here, there) {
   assert.ok(!partial.includes(LAST_PART), `live answer: the answer should show here before it is whole, got "${partial}"`);
   assert.equal(await here.evaluate(() => document.getElementById('ai-chat-send').textContent), 'Stop',
     'live answer: Stop shows here for the answer the other tab is writing');
-  await waitForChat(here, 'live answer, whole', last => [...document.querySelectorAll('#ai-chat-messages .ai-chat-message')]
+  await waitForChat(here, last => [...document.querySelectorAll('#ai-chat-messages .ai-chat-message')]
     .some(message => message.textContent.includes(last)), LAST_PART);
 }
 
@@ -105,7 +96,7 @@ async function questionBoxCase(here, there) {
   await here.waitForFunction(() => {
     const input = document.getElementById('ai-chat-input');
     return input.readOnly && input.value === 'Being typed over there' && input.title === 'Being typed in another tab';
-  }, {timeout: SHOWS_WITHIN_MS}).catch(error => { throw new Error(`question box: the box here should follow and be locked (${error.message})`); });
+  }, {timeout: SHOWS_WITHIN_MS});
   await there.evaluate(() => {
     const input = document.getElementById('ai-chat-input');
     input.value = '';
@@ -117,33 +108,33 @@ async function questionBoxCase(here, there) {
   await here.waitForFunction(() => {
     const input = document.getElementById('ai-chat-input');
     return !input.readOnly && input.value === '';
-  }, {timeout: SHOWS_WITHIN_MS}).catch(error => { throw new Error(`question box: the box here should open once left there (${error.message})`); });
+  }, {timeout: SHOWS_WITHIN_MS});
 }
 
 // Cases 6 and 7: a question sent here while the other tab's answer is written waits its turn, then
 // is answered; Stop here ends the answer the other tab's question is getting.
 async function waitingAndStopCase(here, there) {
   await clearThere(there);
-  await waitForChat(here, 'cleared from the other tab', () => document.querySelectorAll('#ai-chat-messages .ai-chat-message').length === 0);
+  await waitForChat(here, () => document.querySelectorAll('#ai-chat-messages .ai-chat-message').length === 0);
   await send(there, 'First, from the other tab');
-  await waitForChat(here, 'first answer begins', first => [...document.querySelectorAll('#ai-chat-messages .ai-chat-message')]
+  await waitForChat(here, first => [...document.querySelectorAll('#ai-chat-messages .ai-chat-message')]
     .some(message => message.textContent.includes(first)), FIRST_PART);
   await send(here, 'Second, from this tab');
-  await waitForChat(here, 'second waits', () => [...document.querySelectorAll('#ai-chat-messages .ai-chat-working-label')]
+  await waitForChat(here, () => [...document.querySelectorAll('#ai-chat-messages .ai-chat-working-label')]
     .some(label => label.textContent === 'Waiting'));
-  await waitForChat(here, 'second answered after the first', last => {
+  await waitForChat(here, last => {
     const texts = [...document.querySelectorAll('#ai-chat-messages .ai-chat-message')].map(m => m.textContent);
     return texts.length === 4 && texts[1].includes(last) && texts[2].includes('Second, from this tab') && texts[3].includes(last);
   }, LAST_PART);
   await idle(here);
 
   await send(there, 'Third, to be stopped');
-  await waitForChat(here, 'third answer begins', first => {
+  await waitForChat(here, first => {
     const texts = [...document.querySelectorAll('#ai-chat-messages .ai-chat-message')].map(m => m.textContent);
     return texts.length === 6 && texts[5].includes(first);
   }, FIRST_PART);
   await here.click('#ai-chat-send');
-  await waitForChat(here, 'stopped here', () => [...document.querySelectorAll('#ai-chat-messages .ai-chat-message')]
+  await waitForChat(here, () => [...document.querySelectorAll('#ai-chat-messages .ai-chat-message')]
     .at(-1).textContent.includes('Cancelled by user'));
   const stopped = (await chatTexts(here)).at(-1);
   assert.ok(!stopped.includes(LAST_PART), `stop: the answer should end before it is whole, got "${stopped}"`);
@@ -152,7 +143,7 @@ async function waitingAndStopCase(here, there) {
 // Case 8: Clear Chat there empties the chat here.
 async function clearCase(here, there) {
   await clearThere(there);
-  await waitForChat(here, 'cleared from the other tab', () => document.querySelectorAll('#ai-chat-messages .ai-chat-message').length === 0);
+  await waitForChat(here, () => document.querySelectorAll('#ai-chat-messages .ai-chat-message').length === 0);
 }
 
 export async function checkSharedAiChat(here, browser) {

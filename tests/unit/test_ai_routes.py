@@ -13,6 +13,7 @@ import app.services.agent.openai_inference as openai_inference_module
 import app.services.ai_setup as ai_setup_module
 from app.security.note_html import sanitize_note_html
 from app.services.ai_chat import AiChatSessionStore
+from app.services.ai_chat_live import AiChatLive
 from app.services.ai_chat import NO_REQUEST
 from app.services.agent.cloud_privacy import HistoryDisclosure
 from app.services.agent.prompt_settings import DEFAULT_AGENT_PROMPTS
@@ -1451,7 +1452,7 @@ def test_a_second_send_waits_and_the_first_answer_is_written_whole(monkeypatch) 
     # Multi-view editing step 5, case 6: one answer at a time, in the order sent; a Send from
     # another view while an answer is written waits its turn and never cuts that answer short.
     store = AiChatSessionStore()
-    live = ai_routes.AiChatLive()
+    live = AiChatLive()
 
     class SlowRuntime:
         async def stream_agent(self, **kwargs):

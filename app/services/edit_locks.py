@@ -109,8 +109,11 @@ def browser_of(token: str) -> str:
 
 
 class _NoteRecord(Protocol):
-    id: str
-    parent_id: Optional[str]
+    @property
+    def id(self) -> str: ...
+
+    @property
+    def parent_id(self) -> Optional[str]: ...
 
 
 class _NoteTree(Protocol):
@@ -230,15 +233,15 @@ class EditLocks:
                 return {}
             if view_id in self._taken_from:
                 where = self._taken_from.pop(view_id)
-                for root_id, lock in self._roots.items():
-                    if lock.handing_over_from == view_id:
-                        may_save = now + SAVE_MARGIN_SECONDS < lock.handover_until
+                for root_id, taken in self._roots.items():
+                    if taken.handing_over_from == view_id:
+                        may_save = now + SAVE_MARGIN_SECONDS < taken.handover_until
                         return {"rootId": root_id, "takenWhere": where, "maySave": may_save}
                 return {"rootId": "", "takenWhere": where, "maySave": False}
             # Taken over from this view, which has now left that root: the handover is done.
-            for root_id, lock in self._roots.items():
-                if lock.handing_over_from == view_id and (note_id == "" or root_of(note_id) != root_id):
-                    lock.handing_over_from = NO_VIEW
+            for root_id, handed_over in self._roots.items():
+                if handed_over.handing_over_from == view_id and (note_id == "" or root_of(note_id) != root_id):
+                    handed_over.handing_over_from = NO_VIEW
             if note_id == "" or not _tree().has_note(note_id):
                 for root_id in held:
                     self._release_root_locked(root_id)
@@ -340,7 +343,9 @@ class EditLocks:
         if is_root_staying_root and "is_collapsed" not in changes:
             with self._lock:
                 lock = self._live_lock_locked(note_id, monotonic())
-                if lock is not None and lock.view_id != view_id and "prev_id" in changes:
+                # Moved itself (its own write names its parent, app/usecases/move.py): kept in place
+                # for its editor. A neighbour's move changes only its prev or next, and shows.
+                if lock is not None and lock.view_id != view_id and "parent_id" in changes:
                     self._moved_elsewhere.add(note_id)
             return
         self.require_writable(note_id=note_id)

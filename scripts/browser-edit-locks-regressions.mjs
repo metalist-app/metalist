@@ -97,15 +97,15 @@ function isEditing(page, noteId) {
   }, noteId);
 }
 
-async function waitForMarker(here, rootId, label) {
+async function waitForMarker(here, rootId) {
   await here.waitForFunction(rootId => document.querySelector(`#notes-container > .note[data-note-id="${rootId}"] > .note-edit-lock`) !== null,
-    {timeout: SHOWS_WITHIN_MS}, rootId).catch(error => { throw new Error(`${label}: the marker should show (${error.message})`); });
+    {timeout: SHOWS_WITHIN_MS}, rootId);
   await idle(here);
 }
 
-async function waitForNoMarker(here, rootId, label) {
+async function waitForNoMarker(here, rootId) {
   await here.waitForFunction(rootId => document.querySelector(`#notes-container > .note[data-note-id="${rootId}"] > .note-edit-lock`) === null,
-    {timeout: SHOWS_WITHIN_MS}, rootId).catch(error => { throw new Error(`${label}: the marker should go (${error.message})`); });
+    {timeout: SHOWS_WITHIN_MS}, rootId);
   await idle(here);
 }
 
@@ -122,7 +122,7 @@ async function clickText(page, noteId) {
 // where; a click in that root opens "Editing in another tab · Take Over" and does not edit.
 async function markerAndFirstTapCase(here, there, ids) {
   assert.ok(await editThere(there, ids['Child of Root 3']), 'the other tab should edit the child');
-  await waitForMarker(here, ids['Root 3'], 'locked root');
+  await waitForMarker(here, ids['Root 3']);
   const tooltip = await here.evaluate(rootId => document.querySelector(`[data-note-id="${rootId}"] > .note-edit-lock`).title, ids['Root 3']);
   assert.equal(tooltip, `Being edited ${IN_ANOTHER_TAB}`);
   await scrollNoteTopTo(here, ids['Root 3'], 200);
@@ -141,7 +141,9 @@ async function markerAndFirstTapCase(here, there, ids) {
 async function refusedCase(here, ids) {
   const refused = await here.evaluate(async rootId => {
     const {NotesAPI} = await import('/static/js/modules/api-client.js');
-    return NotesAPI.collapseNote(rootId).then(() => 'done', error => error.name);
+    // Refused, as expected: its outcome is read, not caught.
+    const [outcome] = await Promise.allSettled([NotesAPI.collapseNote(rootId)]);
+    return outcome.status === 'rejected' ? outcome.reason.name : 'done';
   }, ids['Root 3']);
   assert.equal(refused, 'NoteLockedElsewhereError');
   assert.notEqual(await here.evaluate(() => document.querySelector('.note-edit-lock-card')), null, 'refused: the card should open');
@@ -165,12 +167,37 @@ async function takeOverCase(here, there, ids) {
   await here.waitForFunction(async rootId => {
     const {ModeContextInstance} = await import('/static/js/modules/mode-manager/mode-context.js');
     return ModeContextInstance.isEditing && ModeContextInstance.currentNoteId === rootId;
-  }, {timeout: TAKES_OVER_WITHIN_MS}, ids['Root 3']).catch(error => { throw new Error(`take over: the root should be edited here (${error.message})`); });
+  }, {timeout: TAKES_OVER_WITHIN_MS}, ids['Root 3']);
   await idle(here);
   assert.equal(await isEditing(there, ids['Child of Root 3']), false, 'take over: the other tab should have left the note');
   const childText = await here.evaluate(childId => document.querySelector(`[data-note-id="${childId}"] > .note-content`).textContent, ids['Child of Root 3']);
   assert.ok(childText.includes(TYPED_THERE.trim()), `take over: the other tab's typing should be saved, got "${childText}"`);
   assert.equal(await here.evaluate(rootId => document.querySelector(`[data-note-id="${rootId}"] > .note-edit-lock`), ids['Root 3']), null);
+  await here.keyboard.press('Escape');
+  await idle(here);
+}
+
+// Case 7, a neighbour: the other tab moves the note below the root edited here to just above it.
+// Only the neighbour moved, so it shows above at once; the edited root stays at its height (found
+// 2026-11-15: the list kept the old order until editing ended).
+async function neighbourMovedAboveEditedCase(here, there, ids) {
+  await scrollNoteTopTo(here, ids['Root 9'], 250);
+  await clickText(here, ids['Root 9']);
+  await here.waitForSelector(`.note.editing[data-note-id="${ids['Root 9']}"]`);
+  await idle(here);
+  const editedTop = await noteTop(here, ids['Root 9']);
+  await there.evaluate(async ({moved, before}) => {
+    const {NotesAPI} = await import('/static/js/modules/api-client.js');
+    await NotesAPI.moveNote(moved, before, 'before', null);
+  }, {moved: ids['Root 10'], before: ids['Root 9']});
+  await here.waitForFunction(({moved, edited}) => {
+    const roots = [...document.querySelectorAll('#notes-container > .note[data-note-id]')].map(note => note.dataset.noteId);
+    return roots.indexOf(moved) === roots.indexOf(edited) - 1;
+  }, {timeout: SHOWS_WITHIN_MS}, {moved: ids['Root 10'], edited: ids['Root 9']});
+  await idle(here);
+  await pause(SETTLE_MS);
+  assertAt('neighbour moved', 'the edited "Root 9"', await noteTop(here, ids['Root 9']), editedTop);
+  assert.ok(await isEditing(here, ids['Root 9']), 'neighbour moved: "Root 9" should still be edited');
   await here.keyboard.press('Escape');
   await idle(here);
 }
@@ -204,11 +231,12 @@ async function movedWhileEditedCase(here, there, ids) {
 // whole with a message saying where.
 async function bulkRefusedCase(here, there, ids) {
   assert.ok(await editThere(there, ids['Root 2']), 'the other tab should edit "Root 2"');
-  await waitForMarker(here, ids['Root 2'], 'bulk');
+  await waitForMarker(here, ids['Root 2']);
   const answer = await here.evaluate(async () => {
     const {NotesAPI} = await import('/static/js/modules/api-client.js');
     const {noteCount} = await NotesAPI.countNotesToDeleteInView();
-    return NotesAPI.deleteNotesInView(noteCount).then(() => 'deleted', error => error.message);
+    const [outcome] = await Promise.allSettled([NotesAPI.deleteNotesInView(noteCount)]);
+    return outcome.status === 'rejected' ? outcome.reason.message : 'deleted';
   });
   assert.match(answer, /being edited in another tab/, `bulk: the refusal should say where, got "${answer}"`);
   await here.reload();
@@ -217,7 +245,7 @@ async function bulkRefusedCase(here, there, ids) {
   const shown = await here.evaluate(() => document.querySelectorAll('#notes-container > .note[data-note-id]').length);
   assert.equal(shown, ROOT_COUNT, 'bulk: no note should be deleted');
   await stopEditingThere(there);
-  await waitForNoMarker(here, ids['Root 2'], 'bulk, editing ended there');
+  await waitForNoMarker(here, ids['Root 2']);
 }
 
 // Case 10: a search typed in the other tab is locked here: the box follows it and cannot be typed
@@ -233,18 +261,11 @@ async function searchLockCase(here, there) {
   await here.waitForFunction(() => {
     const input = document.getElementById('search-input');
     return input.readOnly && input.value === 'Root' && input.title === 'Being typed in another tab';
-  }, {timeout: SHOWS_WITHIN_MS}).catch(async error => {
-    const seen = await here.evaluate(() => {
-      const input = document.getElementById('search-input');
-      return {readOnly: input.readOnly, value: input.value, title: input.title};
-    });
-    throw new Error(`search lock: the box here should follow and be locked, saw ${JSON.stringify(seen)} (${error.message})`);
-  });
+  }, {timeout: SHOWS_WITHIN_MS});
   // Left there, or (Firefox: a background tab's box never had the focus to lose) 5 s after the
   // last keystroke there: the lock ends either way, seen here at its next check.
   await there.evaluate(() => document.getElementById('search-input').blur());
-  await here.waitForFunction(() => !document.getElementById('search-input').readOnly, {timeout: SEARCH_LOCK_ENDS_WITHIN_MS})
-    .catch(error => { throw new Error(`search lock: the box here should open once left there (${error.message})`); });
+  await here.waitForFunction(() => !document.getElementById('search-input').readOnly, {timeout: SEARCH_LOCK_ENDS_WITHIN_MS});
 }
 
 export async function checkEditLocks(here, browser) {
@@ -267,6 +288,7 @@ export async function checkEditLocks(here, browser) {
     await markerAndFirstTapCase(here, there, ids);
     await refusedCase(here, ids);
     await takeOverCase(here, there, ids);
+    await neighbourMovedAboveEditedCase(here, there, ids);
     await movedWhileEditedCase(here, there, ids);
     await bulkRefusedCase(here, there, ids);
     await searchLockCase(here, there);

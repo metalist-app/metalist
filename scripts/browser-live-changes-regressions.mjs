@@ -94,13 +94,11 @@ function textOf(page, id) {
   return page.evaluate(id => document.querySelector(`[data-note-id="${id}"] > .note-content`).textContent, id);
 }
 
-async function waitForText(page, id, expected, label) {
+async function waitForText(page, id, expected) {
   await page.waitForFunction((id, expected) => {
     const content = document.querySelector(`[data-note-id="${id}"] > .note-content`);
     return content !== null && content.textContent.includes(expected);
-  }, {timeout: SHOWS_WITHIN_MS}, id, expected).catch(error => {
-    throw new Error(`${label}: "${expected}" should show here within ${SHOWS_WITHIN_MS}ms (${error.message})`);
-  });
+  }, {timeout: SHOWS_WITHIN_MS}, id, expected);
   await idle(page);
   await pause(SETTLE_MS);
 }
@@ -110,7 +108,7 @@ async function changeAboveCase(here, there, ids) {
   await scrollNoteTopTo(here, 'Root 5', 200);
   const before = await noteTop(here, 'Root 5');
   await saveThere(there, ids['Root 2'], paragraphs('Root 2', 3) + paragraphs('Grown', 4), TAG);
-  await waitForText(here, ids['Root 2'], 'Grown paragraph 4', 'change above');
+  await waitForText(here, ids['Root 2'], 'Grown paragraph 4');
   assertAt('change above', '"Root 5"', await noteTop(here, 'Root 5'), before);
 }
 
@@ -119,7 +117,7 @@ async function changeInViewCase(here, there, ids) {
   const before = await noteTop(here, 'Root 6');
   const nextBefore = await noteTop(here, 'Root 7');
   await saveThere(there, ids['Root 6'], paragraphs('Root 6', 1), '');
-  await waitForText(here, ids['Root 6'], 'Root 6 paragraph 1', 'change in view');
+  await waitForText(here, ids['Root 6'], 'Root 6 paragraph 1');
   await here.waitForFunction(id => !document.querySelector(`[data-note-id="${id}"]`).textContent.includes('paragraph 2'), {timeout: SHOWS_WITHIN_MS}, ids['Root 6']);
   assertAt('change in view', '"Root 6"', await noteTop(here, 'Root 6'), before);
   const nextAfter = await noteTop(here, 'Root 7');
@@ -161,7 +159,7 @@ async function editingCase(here, there, ids) {
     };
   }, ids['Root 11']);
   await saveThere(there, ids['Root 9'], paragraphs('Root 9', 3) + paragraphs('Grown while editing', 3), '');
-  await waitForText(here, ids['Root 9'], 'Grown while editing paragraph 3', 'editing');
+  await waitForText(here, ids['Root 9'], 'Grown while editing paragraph 3');
   const after = await here.evaluate(id => {
     const selection = window.getSelection();
     const note = document.querySelector(`[data-note-id="${id}"]`);
@@ -189,7 +187,7 @@ async function waitsForDialogCase(here, there, ids) {
   await pause(WAITS_AT_LEAST_MS);
   assert.ok(!(await textOf(here, ids['Root 12'])).includes('Changed behind a dialog'), 'dialog: the change should wait while the dialog is open');
   await here.keyboard.press('Escape');
-  await waitForText(here, ids['Root 12'], 'Changed behind a dialog', 'dialog closed');
+  await waitForText(here, ids['Root 12'], 'Changed behind a dialog');
 }
 
 // Case 9: a change waits while the page is scrolling, and shows once it stops.
@@ -206,7 +204,7 @@ async function waitsForScrollingCase(here, there, ids) {
   const textWhileScrolling = await textOf(here, ids['Root 13']);
   await here.evaluate(() => window.clearInterval(window.__liveScrolling));
   assert.ok(!textWhileScrolling.includes('Changed while scrolling'), 'scrolling: the change should wait while the page scrolls');
-  await waitForText(here, ids['Root 13'], 'Changed while scrolling', 'scrolling stopped');
+  await waitForText(here, ids['Root 13'], 'Changed while scrolling');
 }
 
 function searchBox(page) {
@@ -238,8 +236,7 @@ async function searchChangedCase(here, there, ids) {
   await here.evaluate(() => window.scrollTo(0, 300));
   await pause(SETTLE_MS);
   await typeSearchThere(there, TAG);
-  await here.waitForFunction(tag => document.getElementById('search-input').value === tag, {timeout: SHOWS_WITHIN_MS}, TAG)
-    .catch(error => { throw new Error(`search changed there: the search box here should read "${TAG}" (${error.message})`); });
+  await here.waitForFunction(tag => document.getElementById('search-input').value === tag, {timeout: SHOWS_WITHIN_MS}, TAG);
   await idle(here);
   await pause(SETTLE_MS);
   assert.equal(await here.evaluate(() => window.scrollY), 0, 'search changed there: the list should show from the top');
@@ -247,8 +244,7 @@ async function searchChangedCase(here, there, ids) {
   assert.deepEqual((await shownRootIds(here)).map(id => labelOf[id]), ['Root 1', 'Root 2', 'Root 3'], 'search changed there: the tagged notes should show');
 
   await saveThere(there, ids['Root 2'], paragraphs('Root 2', 1), '');
-  await here.waitForFunction(id => document.querySelector(`[data-note-id="${id}"]`) === null, {timeout: SHOWS_WITHIN_MS}, ids['Root 2'])
-    .catch(error => { throw new Error(`stops matching: "Root 2" should leave the list here (${error.message})`); });
+  await here.waitForFunction(id => document.querySelector(`[data-note-id="${id}"]`) === null, {timeout: SHOWS_WITHIN_MS}, ids['Root 2']);
 }
 
 function contextIds(page) {
@@ -270,7 +266,7 @@ async function contextsCase(here, there) {
   await here.waitForFunction(async added => {
     const {ModeContextInstance} = await import('/static/js/modules/mode-manager/mode-context.js');
     return ModeContextInstance.tabOrder.includes(added);
-  }, {timeout: SHOWS_WITHIN_MS}, added).catch(error => { throw new Error(`context added there: it should be listed here (${error.message})`); });
+  }, {timeout: SHOWS_WITHIN_MS}, added);
   await idle(here);
   assert.equal((await contextIds(here)).active, before.active, 'context added there: this view should stay on its own context');
 
@@ -278,8 +274,7 @@ async function contextsCase(here, there) {
     const {deleteTabOnServer} = await import('/static/js/modules/mode-manager/services/tab-state-service.js');
     await deleteTabOnServer(deleted);
   }, before.active);
-  await here.waitForFunction(added => document.getElementById('search-input').value === 'livechangesnothing', {timeout: SHOWS_WITHIN_MS}, added)
-    .catch(error => { throw new Error(`context deleted there: this view should move to the context left (${error.message})`); });
+  await here.waitForFunction(added => document.getElementById('search-input').value === 'livechangesnothing', {timeout: SHOWS_WITHIN_MS}, added);
   await idle(here);
   await pause(SETTLE_MS);
   assert.deepEqual(await shownRootIds(here), [], 'context deleted there: the context left should run its own search here');

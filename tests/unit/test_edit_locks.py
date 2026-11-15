@@ -159,10 +159,24 @@ def test_moving_a_locked_root_among_the_roots_stays_open_and_is_kept_in_place_fo
 
     with as_phone():
         # Inside a transaction a write's own SQL runs after the check; the check is what is tested.
-        edit_locks.require_links_writable(note_id=ROOT, changes={"prev_id": OTHER_ROOT, "next_id": None})
+        # The moved note's own write names its parent too (app/usecases/move.py, apply_move).
+        edit_locks.require_links_writable(note_id=ROOT, changes={"parent_id": None, "prev_id": OTHER_ROOT, "next_id": None})
         edit_locks.require_links_writable(note_id=OTHER_ROOT, changes={"next_id": ROOT})
 
     assert edit_locks.was_moved_elsewhere(root_id=ROOT)
+
+
+def test_a_note_moved_next_to_the_edited_root_is_no_move_of_that_root() -> None:
+    # Found 2026-11-15 (the maintainer): another view moved a note from below the edited root to
+    # just above it; the editor's list kept the old order until editing ended, as if the edited
+    # root had been moved and were being kept in place.
+    _mac_edits_the_child()
+
+    with as_phone():
+        edit_locks.require_links_writable(note_id=OTHER_ROOT, changes={"parent_id": None, "prev_id": None, "next_id": ROOT})
+        edit_locks.require_links_writable(note_id=ROOT, changes={"prev_id": OTHER_ROOT})
+
+    assert not edit_locks.was_moved_elsewhere(root_id=ROOT)
 
 
 def test_a_lock_holds_while_its_view_is_heard_from_and_lapses_after() -> None:

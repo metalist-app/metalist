@@ -4,10 +4,9 @@ from __future__ import annotations
 
 from app.utils.byte_sizes import MIB
 from http import HTTPStatus
-import asyncio
 import json
 import math
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator
 from functools import partial
 from typing import Annotated, Any, Literal
 from uuid import uuid4
@@ -19,7 +18,8 @@ from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, m
 from typing_extensions import Self
 
 from app.api.note_requests import MAX_NOTE_CONTENT_CHARS
-from app.services.ai_chat_live import AiChatLive, ai_chat_live
+from app.services.ai_chat_live import ai_chat_live
+from app.services.ai_chat_stream import answer_in_turn
 from app.services.edit_locks import edit_locks
 from app.services.input_errors import InputRejected
 from app.api.request_auth import require_request_auth_token
@@ -1263,11 +1263,14 @@ def stream_ai_chat(
             session_key=session_key, prompts=prompts, skills=skills,
             retrieval_settings=retrieval_settings, frozen_scope=frozen_scope, tagging_run=tagging_run,
             web_settings=web_settings, initial_input_tokens=initial_approx_input_tokens)
-        async for line in turn_stream.events(events):  # shockharness: ignore[EXC003] reason="each line of the answer is forwarded as it comes"
+        async for line in turn_stream.events(events):
             yield line
 
     return StreamingResponse(
-        _answer_in_turn(message=payload.message, view_id=view_id, start_answer=start_answer),
+        answer_in_turn(
+            live=ai_chat_live, is_summarizing=ai_chat_store.is_summarizing,
+            message=payload.message, view_id=view_id, start_answer=start_answer,
+        ),
         media_type="application/x-ndjson",
         headers={
             "X-Accel-Buffering": "no",
@@ -1275,48 +1278,6 @@ def stream_ai_chat(
             "Content-Encoding": "identity",
         },
     )
-
-
-def _event_line(event: dict[str, object]) -> str:
-    return json.dumps(event, separators=(',', ':')) + '\n'
-
-
-async def _answer_in_turn(
-    *, message: str, view_id: str, start_answer: Callable[[], AsyncIterator[str]],
-) -> AsyncIterator[str]:
-    """A question's answer, once its turn comes (multi-view step 5): it waits behind the answer
-    being written, saying so once ({"type": "waiting"}); dropped meanwhile (Clear Chat), it ends
-    unanswered. The AI's questions while it answers show in every view (case 9). Stop from another
-    view ends it as stopped ({"type": "stopped"}), the turn saved as cancelled (case 7). The
-    question joins the queue only once its answer is streamed: a response never read (its browser
-    gone first) leaves nothing waiting in front of the others."""
-    ticket = ai_chat_live.enqueue(content=message, view_id=view_id)
-    try:
-        async for _ in ai_chat_live.wait_for_turn(ticket=ticket, is_answer_written=ai_chat_store.is_summarizing):
-            yield _event_line({"type": "waiting"})
-        if not ai_chat_live.take_turn(ticket=ticket):
-            yield _event_line({"type": "stopped"})
-            return
-        try:
-            async for line in start_answer():  # shockharness: ignore[EXC003] reason="each line of the answer is forwarded as it comes"
-                event = json.loads(line)
-                if event["type"] == "bulk_question":
-                    ai_chat_live.show_question(event)
-                elif event["type"] != "action_status" and not event["type"].endswith("_delta"):
-                    ai_chat_live.end_question()
-                yield line
-        # lint: allow-PY001 rationale="Stop from another view cancels this answer: it ends as stopped; any other cancel is re-raised"
-        except asyncio.CancelledError:
-            if not ai_chat_live.was_stop_asked():
-                raise
-            current = asyncio.current_task()
-            assert current is not None, "an answer streams in a task"
-            current.uncancel()
-            yield _event_line({"type": "stopped"})
-        finally:
-            ai_chat_live.end_answer()
-    finally:
-        ai_chat_live.drop(ticket=ticket)
 
 
 async def _stream_runtime_events(
