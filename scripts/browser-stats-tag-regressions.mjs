@@ -108,7 +108,12 @@ async function setTags(page, noteId, tags) {
   await page.click(`.note[data-note-id="${noteId}"] > .note-content`);
   await page.waitForSelector('.note.editing .note-tag-bar-input');
   await clickAndSelectAll(page, '.note.editing .note-tag-bar-input');
+  // The click readies the tag bar for a new tag just after (as in suggestionCase): it finishes
+  // before the typing, which once lost a digit (`=900` saved as `=90`, Chrome on Linux, 2026-11-15).
+  await idle(page);
+  await page.$eval('.note.editing .note-tag-bar-input', input => input.select());
   await page.keyboard.type(`${tags} `);
+  assert.equal(await page.$eval('.note.editing .note-tag-bar-input', input => input.value.trim()), tags);
   await leaveEditing(page);
 }
 

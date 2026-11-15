@@ -1,4 +1,8 @@
 import assert from 'node:assert/strict';
+import { waitForAppQuiet } from './browser-app-idle.mjs';
+
+const BUBBLE_INSET_PX = 8;
+const MENU_QUIET_MS = 100;
 
 function copiedResponseHtml(paragraph) {
     return '<div class="ai-chat-message-content meta-markdown" data-markdown-rendered="true">'
@@ -83,7 +87,15 @@ export async function checkAiResponseMenu(page) {
             if (message.status !== status) message.status = status;
             AiChatPanel._render({shouldScrollToBottom: true});
         }), {role, status});
-        await page.click(selector, {button: 'right'});
+        // At a point, not on the element: the chat may draw its bubbles again meanwhile (Firefox,
+        // CI, 2026-11-15: "Node is detached"). With nothing to offer no menu opens, so the check
+        // waits for the app to settle rather than for a menu.
+        const [x, y] = await page.$eval(selector, (bubble, inset) => {
+            const rect = bubble.getBoundingClientRect();
+            return [rect.left + inset, rect.top + inset];
+        }, BUBBLE_INSET_PX);
+        await page.mouse.click(x, y, {button: 'right'});
+        await waitForAppQuiet(page, MENU_QUIET_MS);
         const labels = await page.$$eval('.context-menu.is-visible button', buttons => buttons.map(button => button.textContent.trim()));
         assert(!labels.includes('Copy Response'), `${role}/${status} must not offer Copy Response`);
         await page.keyboard.press('Escape');

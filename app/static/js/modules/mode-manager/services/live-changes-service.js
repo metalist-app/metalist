@@ -162,7 +162,9 @@ function applyWhenFree() {
         return;
     }
     moduleState.isApplying = true;
-    applyChanges()
+    // As a command, at once: no command starts beside it (one that did made a tab while this posted
+    // the view's tabs, and the server refused them, 2026-11-15).
+    CommandGate.run('liveChanges.apply', applyChanges)
         .catch((error) => {
             rethrowUnexpectedError(error);
             ErrorHandler.handleApiError(error, null);
@@ -202,6 +204,6 @@ async function showNotesChangedElsewhere() {
     // What stays still is what is there when the change lands: a scroll made meanwhile stays.
     await actionRefreshAndMaybeSelect({
         context: 'changed-elsewhere', animateNoteChanges: false, keepEditingFocus: true,
-        captureViewportHold: captureWhatStaysStill,
+        leaveFocusElsewhere: true, captureViewportHold: captureWhatStaysStill,
     });
 }

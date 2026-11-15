@@ -9,6 +9,8 @@ const SETTLED_QUIET_MS = 300;
 // After a floating window opens: requests quiet this long (the window asks for its
 // note every 500 ms, so this must stay shorter).
 const REQUESTS_QUIET_MS = 100;
+// The status check runs once a second; the refresh for the lock it takes follows at once.
+const LIVE_REFRESH_WITHIN_MS = 5000;
 
 async function settled(page) {
   await waitForAppQuiet(page, SETTLED_QUIET_MS);
@@ -160,14 +162,35 @@ export async function checkFloatingNotes(page) {
   assert.equal((await page.$$('.floating-note-window')).length, 2);
   await page.screenshot({path: '/tmp/metalist-floating-windows.png'});
 
+  // A live refresh landing after a click in a floating note leaves focus there: it once put focus
+  // back in the edited note, and the typing below went there (2026-11-15). The refresh is the one
+  // the edit lock taken here brings, held until the click.
   await page.evaluate(async parent => {
     const {actionSelectNote} = await import('/static/js/modules/mode-manager/actions/selection-actions.js');
     const {CommandGate} = await import('/static/js/modules/mode-manager/services/command-gate-service.js');
     await CommandGate.run('smoke.floating-background-editor', () => actionSelectNote(parent, {initialCaretVisibility: 'visible'}));
   }, fixture.parent);
+  await page.evaluate(() => {
+    const pageFetch = window.fetch;
+    window.__heldView = {asked: false, release: null};
+    const released = new Promise(resolve => { window.__heldView.release = resolve; });
+    window.fetch = async (resource, options) => {
+      const url = String(resource instanceof Request ? resource.url : resource);
+      if (url.endsWith('/api2/notes/view') && window.__heldView !== null) {
+        window.__heldView.asked = true;
+        await released;
+      }
+      return pageFetch(resource, options);
+    };
+    window.__restoreFetch = () => { window.fetch = pageFetch; window.__heldView = null; };
+  });
+  await page.waitForFunction(() => window.__heldView.asked, {timeout: LIVE_REFRESH_WITHIN_MS});
   const beforeEditor = await page.$eval(`[data-note-id="${fixture.parent}"] > .note-content`, node => node.innerHTML);
   const firstCredential = await windowPoint(page, first, '.meta-credential-value');
   await page.mouse.click(firstCredential.x, firstCredential.y);
+  await page.evaluate(() => window.__heldView.release());
+  await waitForAppQuiet(page, REQUESTS_QUIET_MS);
+  await page.evaluate(() => window.__restoreFetch());
   await page.keyboard.type('must-not-edit-background');
   assert.equal(await page.$eval(`[data-note-id="${fixture.parent}"] > .note-content`, node => node.innerHTML), beforeEditor);
   assert.equal(await page.evaluate(async () => {

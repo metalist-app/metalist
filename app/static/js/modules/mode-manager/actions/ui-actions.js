@@ -235,6 +235,13 @@ export async function actionRefreshAndMaybeSelect(options) {
     // The edited note's focus and caret (its text's or its tag bar's) stay where
     // they are, instead of the caret going to the note's start or end.
     const keepEditingFocus = options.keepEditingFocus === true;
+    // A refresh no one here asked for (a change made in another view) moves no focus: when the
+    // edited note does not hold it (a floating note, the search box), it stays where it is. Taking
+    // it back sent the typing that followed into the edited note (2026-11-15).
+    const leaveFocusElsewhere = options.leaveFocusElsewhere === true;
+    if (leaveFocusElsewhere && !keepEditingFocus) {
+        throw new Error('actionRefreshAndMaybeSelect leaveFocusElsewhere needs keepEditingFocus');
+    }
     // What asked for this view, for logs: the caller's name for it, or a refresh.
     let requestContext = 'refresh';
     if (options.context !== undefined) {
@@ -336,10 +343,12 @@ export async function actionRefreshAndMaybeSelect(options) {
             viewportRoot = captureViewportRoot();
         }
         let editingFocus = null;
+        let isFocusElsewhere = false;
         if (keepEditingFocus && noteId !== null && ModeContext.isEditing) {
             const editedNote = document.querySelector(`.note[data-note-id="${noteId}"]`);
             if (editedNote instanceof HTMLElement) {
                 editingFocus = captureEditingFocus(editedNote);
+                isFocusElsewhere = leaveFocusElsewhere && !editedNote.contains(document.activeElement);
             }
         }
         const diffResult = applyDifferentialView(snapshot, { previousHashes, animateNoteChanges });
@@ -406,6 +415,8 @@ export async function actionRefreshAndMaybeSelect(options) {
 
                 if (clickAnchor !== null && clickAnchor.noteId === noteId) {
                     placeCaretAtClickAnchor(noteElement, clickAnchor);
+                } else if (isFocusElsewhere) {
+                    // Focus stays where the user put it (see leaveFocusElsewhere).
                 } else if (editingFocus !== null) {
                     restoreEditingFocus(noteElement, editingFocus);
                 } else if (CONFIG.EDITOR.DEFAULT_CURSOR_POSITION === 'START') {

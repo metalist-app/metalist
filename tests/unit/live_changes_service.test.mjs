@@ -16,7 +16,17 @@ let harnessCount = 0;
 function harness() {
     harnessCount += 1;
     const applied = [];
-    const busy = { dialogs: [] };
+    const busy = { dialogs: [], commandsSeen: [] };
+    // The command gate as command-gate-service.js has it: one command at a time.
+    const gate = { name: null };
+    const CommandGate = {
+        isBusy: () => gate.name !== null,
+        run(name, asyncFn) {
+            assert.equal(gate.name, null, `${name} ran while ${gate.name} was running`);
+            gate.name = name;
+            return Promise.resolve().then(asyncFn).finally(() => { gate.name = null; });
+        },
+    };
     const source = moduleSource('mode-manager/services/live-changes-service.js')
         .replace("ApplicationState.createFields('live-changes-service'", `ApplicationState.createFields('live-changes-service-test-${harnessCount}'`)
         .replaceAll("await import('../events/keyboard-events.js')", 'keyboardEvents')
@@ -26,7 +36,7 @@ function harness() {
         ErrorHandler: { handleApiError(error) { throw error; } },
         rethrowUnexpectedError(error) { throw error; },
         ModeContext: { get modalStack() { return busy.dialogs; }, isEditing: false },
-        CommandGate: { isBusy: () => false },
+        CommandGate,
         isContextMenuOpen: () => false,
         isFindBarOpen: () => false,
         isMovingNoteByDrag: () => false,
@@ -35,8 +45,10 @@ function harness() {
         askOtherTabsToCheckNow: () => {},
         captureNoteAnchor: () => null,
         captureWindowTopNote: () => null,
-        keyboardEvents: { async adoptSharedSearchContexts() { applied.push('contexts'); } },
-        uiActions: { async actionRefreshAndMaybeSelect(options) { applied.push(options.context); } },
+        keyboardEvents: { async adoptSharedSearchContexts() { applied.push('contexts'); busy.commandsSeen.push(gate.name); } },
+        uiActions: {
+            async actionRefreshAndMaybeSelect(options) { applied.push(options.context); busy.commandsSeen.push(gate.name); },
+        },
         document: { hidden: false },
         window: { addEventListener() {}, setTimeout: () => 1, clearTimeout() {} },
         performance: { now: () => 1_000_000 },
@@ -112,4 +124,17 @@ test('a change another view made before this view\'s own is still taken', async 
     noticeStatusRevisions(status(4, 9));
     await settle();
     assert.deepEqual(applied, ['contexts']);
+});
+
+test('a change is taken as a command: no command runs beside it', async () => {
+    // Found 2026-11-15: taking the contexts again outside the command gate posted this view's tabs
+    // while a new tab was being made, and the server refused them (tab ids mismatch).
+    const { recordNotesShown, noticeStatusRevisions, applied, busy } = harness();
+    recordNotesShown(4);
+    noticeStatusRevisions(status(4, 7));
+    noticeStatusRevisions(status(5, 8));
+    await settle();
+    await settle();
+    assert.deepEqual(applied, ['contexts', 'changed-elsewhere']);
+    assert.deepEqual(busy.commandsSeen, ['liveChanges.apply', 'liveChanges.apply']);
 });
