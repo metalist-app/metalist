@@ -310,7 +310,10 @@ class EditLocks:
             return root_id in self._moved_elsewhere
 
     def revision(self) -> int:
-        """Rises when a lock is taken, released or lapses: views show the markers again."""
+        """Rises when a root's lock is taken, released or lapses: views show the markers again, and
+        refresh their notes for it. A search or an AI question being typed reaches the other views
+        by their own revisions (the shared search contexts', the AI chat's live state), not this
+        one: a view alone refreshed its whole list for its own search typing (2026-11-15)."""
         with self._lock:
             now = monotonic()
             for root_id in list(self._roots):
@@ -376,7 +379,6 @@ class EditLocks:
         if now < lock.until and self._is_heard_locked(lock.view_id, now):
             return lock
         del self._searches[tab_id]
-        self._revision += 1
         return None
 
     def note_search_typed(self, *, view_id: str, tab_id: str) -> None:
@@ -387,8 +389,6 @@ class EditLocks:
             lock = self._live_search_lock_locked(tab_id, now)
             if lock is not None and lock.view_id != view_id:
                 raise SearchLockedElsewhere(f"This search is being typed {self._where_locked(view_id, lock.view_id)}.")
-            if lock is None:
-                self._revision += 1
             self._searches[tab_id] = _SearchLock(view_id=view_id, until=now + SEARCH_LOCK_SECONDS)
 
     def release_search(self, *, view_id: str) -> None:
@@ -396,7 +396,6 @@ class EditLocks:
         with self._lock:
             for tab_id in [tab_id for tab_id, lock in self._searches.items() if lock.view_id == view_id]:
                 del self._searches[tab_id]
-                self._revision += 1
 
     def searches_locked(self) -> list[str]:
         """The search contexts whose search a view is typing, by id."""
@@ -423,7 +422,6 @@ class EditLocks:
         if self._is_heard_locked(composer.view_id, now):
             return composer
         self._composer = None
-        self._revision += 1
         return None
 
     def note_composer_typed(self, *, view_id: str, text: str) -> None:
@@ -436,8 +434,6 @@ class EditLocks:
             if composer is not None and composer.view_id != view_id:
                 raise ComposerLockedElsewhere(
                     f"A question is being typed {self._where_locked(view_id, composer.view_id)}.")
-            if composer is None:
-                self._revision += 1
             self._composer = _ComposerLock(view_id=view_id, text=text)
 
     def release_composer(self, *, view_id: str) -> None:
@@ -445,7 +441,6 @@ class EditLocks:
         with self._lock:
             if self._composer is not None and self._composer.view_id == view_id:
                 self._composer = None
-                self._revision += 1
 
     def composer_for(self, *, view_id: str) -> Dict[str, str]:
         """Another view's question being typed, with where, as this view shows it; {} for none."""
@@ -480,10 +475,8 @@ class EditLocks:
             self._release_root_locked(root_id)
         for tab_id in [tab_id for tab_id, lock in self._searches.items() if lock.view_id in gone]:
             del self._searches[tab_id]
-            self._revision += 1
         if self._composer is not None and self._composer.view_id in gone:
             self._composer = None
-            self._revision += 1
         for view_id in gone:
             del self._views[view_id]
             if view_id in self._taken_from:

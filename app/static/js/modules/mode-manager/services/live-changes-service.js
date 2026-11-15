@@ -199,10 +199,9 @@ function captureWhatStaysStill() {
 
 async function showNotesChangedElsewhere() {
     const { actionRefreshAndMaybeSelect } = await import('../actions/ui-actions.js');
-    const options = { context: 'changed-elsewhere', animateNoteChanges: false, keepEditingFocus: true };
-    const stayStill = captureWhatStaysStill();
-    if (stayStill !== null) {
-        options.viewportHold = stayStill;
-    }
-    await actionRefreshAndMaybeSelect(options);
+    // What stays still is what is there when the change lands: a scroll made meanwhile stays.
+    await actionRefreshAndMaybeSelect({
+        context: 'changed-elsewhere', animateNoteChanges: false, keepEditingFocus: true,
+        captureViewportHold: captureWhatStaysStill,
+    });
 }

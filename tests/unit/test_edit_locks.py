@@ -287,3 +287,19 @@ def test_a_question_typed_for_the_ai_is_locked_for_the_others_until_left() -> No
     edit_locks.release_composer(view_id=MAC)
     assert edit_locks.composer_for(view_id=PHONE) == {}
     edit_locks.note_composer_typed(view_id=PHONE, text="Hello")
+
+
+def test_only_root_locks_move_the_revision_views_refresh_their_notes_for() -> None:
+    """A view refreshes its notes when the edit-lock revision moves (its root markers). A search or
+    an AI question being typed moves it no more: they reach the other views by their own
+    revisions, and a view alone refreshed its whole list for its own search typing (found
+    2026-11-15: every search in a 100,000-note vault queued behind such a refresh)."""
+    before = edit_locks.revision()
+    edit_locks.note_search_typed(view_id=MAC, tab_id=TAB)
+    edit_locks.release_search(view_id=MAC)
+    edit_locks.note_composer_typed(view_id=MAC, text="a question")
+    edit_locks.release_composer(view_id=MAC)
+    assert edit_locks.revision() == before
+
+    _mac_edits_the_child()
+    assert edit_locks.revision() > before

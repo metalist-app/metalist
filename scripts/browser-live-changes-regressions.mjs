@@ -207,6 +207,36 @@ async function unrecordedTypingCase(here, ids) {
   await idle(here);
 }
 
+// A scroll made while a change from another view is being fetched stays: the refresh keeps still
+// what is at the window's top when it lands, not what was there when it asked (found 2026-11-15:
+// the page jumped back, and the scale suite's scroll to the bottom was undone).
+async function scrolledWhileFetchingCase(here, there, ids) {
+  await scrollNoteTopTo(here, 'Root 4', 200);
+  await here.evaluate(() => {
+    const pageFetch = window.fetch;
+    window.__heldView = {asked: false, release: null};
+    const released = new Promise(resolve => { window.__heldView.release = resolve; });
+    window.fetch = async (resource, options) => {
+      const url = String(resource instanceof Request ? resource.url : resource);
+      if (url.endsWith('/api2/notes/view') && window.__heldView !== null) {
+        window.__heldView.asked = true;
+        await released;
+      }
+      return pageFetch(resource, options);
+    };
+    window.__restoreFetch = () => { window.fetch = pageFetch; window.__heldView = null; };
+  });
+  await saveThere(there, ids['Root 14'], paragraphs('Root 14', 3) + paragraphs('Changed below', 1), '');
+  await here.waitForFunction(() => window.__heldView.asked, {timeout: SHOWS_WITHIN_MS});
+  await here.evaluate(() => window.scrollBy(0, 300));
+  const scrolledTo = await here.evaluate(() => window.scrollY);
+  await here.evaluate(() => window.__heldView.release());
+  await waitForText(here, ids['Root 14'], 'Changed below paragraph 1');
+  await here.evaluate(() => window.__restoreFetch());
+  assert.ok(Math.abs(await here.evaluate(() => window.scrollY) - scrolledTo) <= EXACT_PX,
+    `scrolled while fetching: the page should stay at y=${scrolledTo}, got y=${await here.evaluate(() => window.scrollY)}`);
+}
+
 // Case 10: a change waits while a dialog (here the command palette) is open, and shows once it closes.
 async function waitsForDialogCase(here, there, ids) {
   await here.evaluate(async () => {
@@ -331,6 +361,7 @@ export async function checkLiveChanges(here, browser) {
     await windowTopDeletedCase(here, there, ids);
     await editingCase(here, there, ids);
     await unrecordedTypingCase(here, ids);
+    await scrolledWhileFetchingCase(here, there, ids);
     await waitsForDialogCase(here, there, ids);
     await waitsForScrollingCase(here, there, ids);
     await searchChangedCase(here, there, ids);

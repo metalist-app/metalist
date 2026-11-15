@@ -201,6 +201,19 @@ export async function actionRefreshAndMaybeSelect(options) {
     // A caller that knows which note the user is looking at (e.g. the note
     // just left in edit mode) holds that note instead of the top visible root.
     let viewportHold = null;
+    // What stays still, decided when the answer lands rather than when it is asked for: a scroll
+    // made while it was fetched is the user's and stays (live-changes-service.js; found
+    // 2026-11-15, the page jumped back to where it was when the refresh asked).
+    let captureHoldWhenApplied = null;
+    if (Object.prototype.hasOwnProperty.call(options, 'captureViewportHold')) {
+        captureHoldWhenApplied = options.captureViewportHold;
+        if (typeof captureHoldWhenApplied !== 'function' || Object.prototype.hasOwnProperty.call(options, 'viewportHold')) {
+            throw new Error('actionRefreshAndMaybeSelect captureViewportHold must be a function, given instead of viewportHold');
+        }
+        if (scrollToTopAfterRender || startAtListEnd) {
+            throw new Error('actionRefreshAndMaybeSelect cannot both hold a note and jump to an end of the list');
+        }
+    }
     if (Object.prototype.hasOwnProperty.call(options, 'viewportHold')) {
         viewportHold = options.viewportHold;
         if (viewportHold === null || typeof viewportHold !== 'object') {
@@ -317,6 +330,8 @@ export async function actionRefreshAndMaybeSelect(options) {
         let viewportRoot = null;
         if (viewportHold !== null) {
             viewportRoot = viewportHold;
+        } else if (captureHoldWhenApplied !== null) {
+            viewportRoot = captureHoldWhenApplied();
         } else if (!scrollToTopAfterRender && !startAtListEnd) {
             viewportRoot = captureViewportRoot();
         }
