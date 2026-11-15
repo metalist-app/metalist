@@ -733,7 +733,7 @@ test('streaming thinking renders honest progress and only discloses real reasoni
     assert.match(controller, /let shouldOpenThinking = isActivelyThinking[\s\S]*?this\._expandedThinkingMessageIds\.has\(message\.id\)[\s\S]*?thinking\.open = shouldOpenThinking/);
     assert.match(controller, /event\.type === 'content_delta'[\s\S]*?this\._stopThinkingFeedback\(\)/);
     assert.match(controller, /assistantMessage\.content === ''[\s\S]*?_expandedThinkingMessageIds\.delete\(assistantMessage\.id\)/);
-    assert.match(controller, /thinking\.addEventListener\('toggle'[\s\S]*?_expandedThinkingMessageIds\.add\(message\.id\)/);
+    assert.match(controller, /thinking\.addEventListener\('toggle'[\s\S]*?rememberOpenState\(this\._expandedThinkingMessageIds, message\.id, thinking\.open\)/);
     assert.match(controller, /ai-chat-thinking-content meta-markdown/);
     assert.match(controller, /thinkingText\.innerHTML = serverRenderedHtml\(message\.rendered_thinking\)/);
     assert.match(controller, /window\.setInterval/);

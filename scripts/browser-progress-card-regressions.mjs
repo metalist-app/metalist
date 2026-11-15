@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import { waitForAppQuiet } from './browser-app-idle.mjs';
-import {clickAndSelectAll} from './browser-select-field.mjs';
 
 // Progress and lasting problems (docs/ui/modals.md, "Errors and status"; agreed
 // case by case 2026-10-25, step 5c):
@@ -20,8 +19,6 @@ const ESCALATE_MS = 30000;
 // How far either side of the 30 s the checks look.
 const ESCALATE_MARGIN_MS = 2000;
 const ESCALATION_TEXT = "MetaList can't reach its server. Changes can't be saved until it's back; MetaList keeps trying.";
-// A port no vault uses, so saving it changes something.
-const FREE_PORT = '18999';
 
 async function settle(page) {
   await page.evaluate(frames => new Promise(resolve => {
@@ -114,30 +111,18 @@ async function progressCase(page, {method, modal, prepare, button, suffix, text}
   }
 }
 
-const PORT_FIELD = '.namespace-ports-input[data-field="port"]';
-
-async function typePort(page, port) {
-  await clickAndSelectAll(page, PORT_FIELD);
-  await page.type(PORT_FIELD, port);
-}
-
+// Saving the ports unchanged: changing this vault's port restarts it and takes the page to the
+// new address (0.30.0, namespace_switcher.py), which is not this case's subject; the card shows
+// for every save.
 async function portsCase(page) {
+  await progressCase(page, {
+    method: 'openManageNamespacePorts', modal: '#manage-namespace-ports-modal',
+    prepare: async () => {},
+    button: '#manage-namespace-ports-save-btn', suffix: '/namespaces/ports', text: 'Saving vault ports…',
+  });
   await openFromPalette(page, 'openManageNamespacePorts');
-  const saved = await page.$eval(PORT_FIELD, input => input.value);
-  await closeEverything(page);
-  try {
-    await progressCase(page, {
-      method: 'openManageNamespacePorts', modal: '#manage-namespace-ports-modal',
-      prepare: target => typePort(target, FREE_PORT),
-      button: '#manage-namespace-ports-save-btn', suffix: '/namespaces/ports', text: 'Saving vault ports…',
-    });
-  } finally {
-    // The port goes back as it was.
-    await openFromPalette(page, 'openManageNamespacePorts');
-    await typePort(page, saved);
-    await page.click('#manage-namespace-ports-save-btn');
-    await idle(page);
-  }
+  await page.click('#manage-namespace-ports-save-btn');
+  await idle(page);
   assert.equal(await page.$$eval('#manage-namespace-ports-modal .namespace-modal-status', nodes =>
     nodes.filter(node => node.textContent.trim() !== '').length), 0, 'Manage Vault Ports writes no status line');
   await closeEverything(page);

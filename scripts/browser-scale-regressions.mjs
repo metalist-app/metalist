@@ -131,8 +131,12 @@ async function screenTitle(page) {
   return page.$eval(WIZARD_TITLE, title => title.textContent.trim());
 }
 
+// Next greys out while a step still needs something (the folder name being checked): a press
+// then only says what is missing, so wait until it is ready, as a person would (CI, Windows,
+// 2026-11-14: pressed during the check, the wizard never moved on).
 async function clickNext(page) {
   const before = await screenTitle(page);
+  await page.waitForSelector(`${NEXT}:not(.is-incomplete)`);
   await page.click(NEXT);
   await page.waitForFunction((selector, before) => {
     const title = document.querySelector(selector);
@@ -324,7 +328,9 @@ async function checkList(page) {
   }
   // A tree collapses and expands.
   const treeId = await page.evaluate(() => {
-    const tree = document.querySelector('#notes-container > .note[data-note-id]:has(> .note-collapse-toggle)');
+    // Every note has its arrow (hidden while it has nothing to fold), and a long note folds its
+    // own text: a tree is a root with children.
+    const tree = document.querySelector('#notes-container > .note[data-note-id][data-has-children="true"]');
     return tree === null ? null : tree.dataset.noteId;
   });
   assert(treeId !== null, 'a root with children is on the page');
@@ -332,20 +338,18 @@ async function checkList(page) {
   await page.evaluate(selector => document.querySelector(selector).scrollIntoView({block: 'center'}), arrow);
   // The band of roots may follow the scroll: a click while the list loads is ignored.
   await waitForAppQuiet(page, REQUESTS_QUIET_MS);
-  const childrenShown = async () => page.$eval(`.note[data-note-id="${treeId}"]`, note => note.querySelectorAll('.note').length > 0
-    && [...note.querySelectorAll('.note')].some(child => child.offsetParent !== null));
-  const wasExpanded = await childrenShown();
-  for (const [label, expected] of [['collapsing a tree', !wasExpanded], ['expanding it again', wasExpanded]]) {
+  // Folded or not, as the note says (found 2026-11-15: the test picked a long note with no
+  // children, foldable for its text, and waited for children to show).
+  const isFolded = () => page.$eval(`.note[data-note-id="${treeId}"]`, note => note.classList.contains('collapsed'));
+  const wasFolded = await isFolded();
+  for (const [label, expected] of [['collapsing a tree', !wasFolded], ['expanding it again', wasFolded]]) {
     await waitForAppQuiet(page, REQUESTS_QUIET_MS);
     await page.click(arrow);
     const clickedAt = performance.now();
     await timed(label, COLLAPSE_BUDGET_MS, async () => {
-      await page.waitForFunction(async (selector, expected) => {
-        const note = document.querySelector(selector);
-        const shown = note.querySelectorAll('.note').length > 0 && [...note.querySelectorAll('.note')].some(child => child.offsetParent !== null);
-        return shown === expected;
-      }, {timeout: COLLAPSE_BUDGET_MS, polling: POLL_MS}, `.note[data-note-id="${treeId}"]`, expected);
-      console.log(`scale: ${label}: the children ${expected ? 'shown' : 'hidden'} after ${seconds(performance.now() - clickedAt)}`);
+      await page.waitForFunction((selector, expected) => document.querySelector(selector).classList.contains('collapsed') === expected,
+        {timeout: COLLAPSE_BUDGET_MS, polling: POLL_MS}, `.note[data-note-id="${treeId}"]`, expected);
+      console.log(`scale: ${label}: ${expected ? 'folded' : 'open'} after ${seconds(performance.now() - clickedAt)}`);
       await waitForAppIdle(page);
     });
   }

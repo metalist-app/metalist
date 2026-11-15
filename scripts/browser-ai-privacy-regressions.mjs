@@ -68,7 +68,7 @@ export async function checkPrivacyRuleEntry(page) {
     const open = async () => {
         await page.evaluate(async () => {
             const {CommandPalette} = await import('/static/js/modules/command-palette/command-palette-controller.js');
-            await CommandPalette.openAiAgentSettings(false);
+            await CommandPalette.openAiAgentSettings('privacy');
         });
         await page.waitForSelector('#ai-agent-blacklist-input');
     };

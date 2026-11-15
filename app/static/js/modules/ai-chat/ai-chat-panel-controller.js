@@ -229,6 +229,17 @@ export function captureActiveAgentScope() {
 }
 
 
+// A section drawn open fires its toggle too (the browser queues one when open is set), with
+// the id already kept: kept state changes only when it changes, or ApplicationState refuses it
+// (found 2026-11-15: a live redraw of an opened summary was a fatal error).
+function rememberOpenState(openIds, id, isOpen) {
+    if (isOpen && !openIds.has(id)) {
+        openIds.add(id);
+    } else if (!isOpen && openIds.has(id)) {
+        openIds.delete(id);
+    }
+}
+
 const AI_ACTIVITY_ACTIONS = new Set([
     'model_request',
     'validation',
@@ -2095,11 +2106,7 @@ class AiChatPanelController {
                         if (isActivelyThinking) {
                             return;
                         }
-                        if (thinking.open) {
-                            this._expandedThinkingMessageIds.add(message.id);
-                        } else {
-                            this._expandedThinkingMessageIds.delete(message.id);
-                        }
+                        rememberOpenState(this._expandedThinkingMessageIds, message.id, thinking.open);
                     });
                 }
                 const heading = document.createElement(hasThinkingText ? 'summary' : 'div');
@@ -2249,13 +2256,7 @@ class AiChatPanelController {
         details.className = `ai-chat-summary is-${summary.visibility.replace('_', '-')}`;
         details.dataset.summaryId = summary.id;
         details.open = this._expandedSummaryIds.has(summary.id);
-        details.addEventListener('toggle', () => {
-            if (details.open) {
-                this._expandedSummaryIds.add(summary.id);
-            } else {
-                this._expandedSummaryIds.delete(summary.id);
-            }
-        });
+        details.addEventListener('toggle', () => rememberOpenState(this._expandedSummaryIds, summary.id, details.open));
         const heading = document.createElement('summary');
         heading.className = 'ai-chat-summary-heading';
         heading.textContent = SUMMARY_HEADING;

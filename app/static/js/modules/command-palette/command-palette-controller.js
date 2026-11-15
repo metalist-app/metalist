@@ -2733,17 +2733,23 @@ class CommandPaletteController {
         });
     }
 
+    // True once the palette shows the row (or itself); false when the view does not offer it now.
     async showAgentMenuEntry(id) {
         await this.open();
-        if (!this._isOpen || id === 'command_palette') return;
+        if (!this._isOpen || id === 'command_palette') return true;
         const index = this._getVisibleMatches().findIndex((entry) => entry.id === id);
-        if (index < 0) throw new Error(`Missing palette destination: ${id}`);
+        if (index < 0) {
+            if (!this._endpoints.some((entry) => entry.id === id)) throw new Error(`Missing palette destination: ${id}`);
+            this.close();
+            return false;
+        }
         // Highlighting the same row as last time is not a state change.
         const selection = { query: '', selectedIndex: index };
         if (!stateValuesEqual(this._previousSelection, selection)) this._previousSelection = selection;
         this._render();
         const row = this._elements.results.querySelector('.selected');
         if (row) row.scrollIntoView({ block: 'nearest' });
+        return true;
     }
 
     async openAgentMenu(menuId, scope, signal) {

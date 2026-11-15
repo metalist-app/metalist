@@ -13,7 +13,10 @@ export async function openAgentMenu({ menuId, endpoints, isCurrent, hasOpenModal
     if (!isCurrent()) return { status: 'unavailable', detail: 'The active context changed.' };
     if (hasOpenModal()) return { status: 'unavailable', detail: 'Another dialog is already open.' };
     if (target.presentation === 'palette') {
-        await showMenuEntry(target.id);
+        // A row the view does not offer now (File size sort while Notes with Files is off).
+        const isOffered = await showMenuEntry(target.id);
+        if (typeof isOffered !== 'boolean') throw new Error('showMenuEntry says whether the row is offered');
+        if (!isOffered) return { status: 'unavailable', detail: `${target.label} is not offered in this view right now.` };
     } else {
         if (target.presentation !== 'dialog') throw new Error('Invalid menu presentation');
         const endpoint = endpoints.find((entry) => entry.id === target.id);
