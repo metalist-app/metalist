@@ -150,8 +150,10 @@ export async function checkAiSelectedNote(page) {
     }), {}, TOGGLE_SETTLED_FRAMES);
     await page.click('#chat-toggle-button');
     await checkSelected(ids[1]);
-    // Explicitly leaving the note still clears selection for a later chat turn.
+    // Explicitly leaving the note still clears selection for a later chat turn. Escape once the
+    // note is edited: before that it closes the chat instead (Firefox, CI, 2026-11-15).
     await page.click(`[data-note-id="${ids[1]}"] > .note-content`);
+    await page.waitForFunction(async () => (await import('/static/js/modules/mode-manager/mode-context.js')).ModeContextInstance.isEditing);
     await page.keyboard.press('Escape');
     await page.waitForFunction(async () => !(await import('/static/js/modules/mode-manager/mode-context.js')).ModeContextInstance.isEditing);
     // Reopening the chat reloads its models: let that finish first, then stand

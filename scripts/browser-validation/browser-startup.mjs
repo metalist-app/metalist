@@ -46,11 +46,44 @@ const version = await browser.version();
 console.log(`Release browser: ${browserName}; executable: ${executablePath}; version: ${version}`);
 const diagnostics = [];  // shockharness: ignore[STATE001] reason="single-threaded Node: the page event callbacks and the run share one event loop"
 
+// Startup assets (scripts, styles, fonts, images): every request that is not one of MetaList's
+// API calls. Their own count, not the network's: MetaList asks for its status, the AI chat's
+// live state and the background work every second, so the network is rarely quiet for long
+// (macOS, GitHub, 2026-11-15: waiting for 500 ms of silence timed out with the app up).
+const ASSETS_SETTLED_MS = 500;
+const ASSETS_POLL_MS = 50;
+
+function trackStartupAssets(page) {
+  const pending = new Set();
+  let changedAt = Date.now();
+  const isAsset = request => !new URL(request.url()).pathname.startsWith('/api2/');
+  const settle = request => {
+    if (pending.delete(request)) changedAt = Date.now();
+  };
+  page.on('request', request => {
+    if (!isAsset(request)) return;
+    pending.add(request);
+    changedAt = Date.now();
+  });
+  page.on('requestfinished', settle);
+  page.on('requestfailed', settle);
+  return async function waitForAssetsSettled(timeoutMs) {
+    const giveUpAt = Date.now() + timeoutMs;
+    while (pending.size > 0 || Date.now() - changedAt < ASSETS_SETTLED_MS) {
+      if (Date.now() > giveUpAt) {
+        throw new Error(`Startup assets still loading after ${timeoutMs} ms: ${[...pending].map(request => request.url()).join(', ')}`);
+      }
+      await new Promise(resolve => setTimeout(resolve, ASSETS_POLL_MS));
+    }
+  };
+}
+
 async function checkPage(context, origin, coldRun) {
   const page = await context.newPage();
   const errors = [];
   const scripts = new Set();
   let navigationInProgress = false;
+  const waitForAssetsSettled = trackStartupAssets(page);
   page.on('pageerror', error => errors.push(`JavaScript: ${error.message}`));
   page.on('requestfailed', request => {
     const errorText = request.failure()?.errorText;
@@ -86,11 +119,9 @@ async function checkPage(context, origin, coldRun) {
       } finally {
         navigationInProgress = false;
       }
-      // Network idle is the condition here: every startup asset (scripts, styles, fonts,
-      // images, not only fetches) has loaded, so the checks below see all of them. This
-      // page has no request interception, so puppeteer's count cannot lose an aborted
-      // request (the reason the browser suites wait with waitForAppQuiet instead).
-      await page.waitForNetworkIdle({idleTime: 500, timeout: 30000});
+      // Every startup asset (scripts, styles, fonts, images, not only fetches) has loaded, so
+      // the checks below see all of them (trackStartupAssets).
+      await waitForAssetsSettled(30000);
       assert(scripts.size > 20, `Expected a real module graph, received ${scripts.size} script URLs`);
       assert.deepEqual(errors, [], `Startup failed for ${origin}`);
       assert(await page.$eval('#main-app', element => element.getBoundingClientRect().height > 0), 'Application is blank or hidden');
@@ -265,6 +296,10 @@ async function checkEncryptedLogin(context, origin) {
       await CommandPalette.openReminders({ search: '' });
     });
     await page.waitForSelector('#reminder-title', {visible: true, timeout: 10000});
+    // The dialog draws itself again once its reminders have loaded, replacing its buttons: wait
+    // for that (Firefox, Windows, 2026-11-15: the Add button clicked was already replaced).
+    await page.waitForFunction(() => [...document.querySelectorAll('.reminder-empty')]
+      .every(line => line.textContent !== 'Loading...'), {timeout: 10000});
     // Without a title nothing is sent; the dialog says what is missing.
     const remindersBefore = await page.$$eval('[data-reminder-id]', rows => rows.length);
     await page.click('[data-reminder-save]');

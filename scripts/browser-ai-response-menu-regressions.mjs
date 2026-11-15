@@ -68,6 +68,8 @@ export async function checkAiResponseMenu(page) {
         });
         for (const [label, x, y] of points) {
             await page.mouse.click(x, y, {button: 'right'});
+            // Firefox draws the menu a moment after the click (as ai-chat-summary waits for it).
+            await page.waitForSelector('.context-menu.is-visible button', {visible: true});
             const labels = await page.$$eval('.context-menu.is-visible button', buttons => buttons
                 .filter(button => button.getClientRects().length).map(button => button.textContent.trim()));
             assert.deepEqual(labels, ['Copy Response'], `${theme}: ${label}`);
