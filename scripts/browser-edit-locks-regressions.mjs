@@ -10,11 +10,13 @@ import {installRequestMonitor, waitForAppQuiet} from './browser-app-idle.mjs';
 const REQUESTS_QUIET_MS = 300;
 // A lock shows within the 2-second status check, plus its refresh.
 const SHOWS_WITHIN_MS = 6000;
-// Take Over waits for the other tab to save and leave (its next check), at most the handover time.
+// A click in a root edited there waits for the other tab to save and leave, at most the handover time.
 const TAKES_OVER_WITHIN_MS = 10000;
 // Long enough for a moved note to have moved, had it not been kept in place.
 const WAITS_AT_LEAST_MS = 4000;
 const SETTLE_MS = 800;
+// The other tab is in the background, where animation frames (waitForFunction's default) never come.
+const BACKGROUND_POLL_MS = 100;
 // A typed search's lock (edit_locks.py SEARCH_LOCK_SECONDS, 5 s) plus a status check and its refresh.
 const SEARCH_LOCK_ENDS_WITHIN_MS = 10000;
 const EXACT_PX = 1;
@@ -70,15 +72,18 @@ function assertAt(label, what, actual, expected) {
   assert.ok(Math.abs(actual - expected) <= EXACT_PX, `${label}: ${what} should be at y=${Math.round(expected)}, got y=${Math.round(actual)}`);
 }
 
-function editThere(there, noteId) {
-  return there.evaluate(async noteId => {
+// Edits the note there; a root this tab still shows as edited here is taken over first.
+async function editThere(there, noteId) {
+  await there.evaluate(async noteId => {
     const {CommandGate} = await import('/static/js/modules/mode-manager/services/command-gate-service.js');
-    const {actionSelectNote, actionSwitchNotes} = await import('/static/js/modules/mode-manager/actions/selection-actions.js');
-    const {ModeContextInstance} = await import('/static/js/modules/mode-manager/mode-context.js');
-    const enter = ModeContextInstance.isEditing ? actionSwitchNotes : actionSelectNote;
-    await CommandGate.runWhenFree('test.edit-there', () => enter(noteId, {initialCaretVisibility: 'visible'}));
-    return ModeContextInstance.isEditing && ModeContextInstance.currentNoteId === noteId;
+    const {actionEditTakenOverNote} = await import('/static/js/modules/mode-manager/actions/selection-actions.js');
+    await CommandGate.runWhenFree('test.edit-there', () => actionEditTakenOverNote(noteId, {initialCaretVisibility: 'visible'}));
   }, noteId);
+  await there.waitForFunction(async noteId => {
+    const {ModeContextInstance} = await import('/static/js/modules/mode-manager/mode-context.js');
+    return ModeContextInstance.isEditing && ModeContextInstance.currentNoteId === noteId;
+  }, {timeout: TAKES_OVER_WITHIN_MS, polling: BACKGROUND_POLL_MS}, noteId);
+  return isEditing(there, noteId);
 }
 
 function stopEditingThere(there) {
@@ -118,62 +123,65 @@ async function clickText(page, noteId) {
   await page.mouse.click(point.x, point.y);
 }
 
-// Cases 1, 3 and 4: editing a child there locks its whole root here; the marker's tooltip says
-// where; a click in that root opens "Editing in another tab · Take Over" and does not edit.
-async function markerAndFirstTapCase(here, there, ids) {
+// Cases 1 and 3: editing a child there locks its whole root here; the marker's tooltip says where.
+async function markerCase(here, there, ids) {
   assert.ok(await editThere(there, ids['Child of Root 3']), 'the other tab should edit the child');
   await waitForMarker(here, ids['Root 3']);
   const tooltip = await here.evaluate(rootId => document.querySelector(`[data-note-id="${rootId}"] > .note-edit-lock`).title, ids['Root 3']);
   assert.equal(tooltip, `Being edited ${IN_ANOTHER_TAB}`);
+}
+
+function isRootCollapsed(page, rootId) {
+  return page.evaluate(rootId => document.querySelector(`#notes-container > .note[data-note-id="${rootId}"]`).classList.contains('collapsed'), rootId);
+}
+
+// Cases 4 and 5: a click in the text of a root edited there takes it over at once: the other tab
+// saves its typing and leaves, and the root is edited here, staying where it was. No card, no
+// second click (decided 2026-11-15).
+async function clickTakesOverCase(here, there, ids) {
+  await there.keyboard.type(TYPED_THERE);
   await scrollNoteTopTo(here, ids['Root 3'], 200);
   const before = await noteTop(here, ids['Root 3']);
   await clickText(here, ids['Root 3']);
-  await here.waitForSelector('.note-edit-lock-card');
-  await idle(here);
-  assert.equal(await here.evaluate(() => document.querySelector('.note-edit-lock-card > span').textContent), `Editing ${IN_ANOTHER_TAB}`);
-  assert.equal(await isEditing(here, ids['Root 3']), false, 'first tap: the root should not be edited here');
-  assertAt('first tap', '"Root 3"', await noteTop(here, ids['Root 3']), before);
-  await here.keyboard.press('Escape');
-  assert.equal(await here.evaluate(() => document.querySelector('.note-edit-lock-card')), null, 'Escape should close the card');
-}
-
-// Case 6: a change to the locked root here is refused, nothing changes and its card opens.
-async function refusedCase(here, ids) {
-  const refused = await here.evaluate(async rootId => {
-    const {NotesAPI} = await import('/static/js/modules/api-client.js');
-    // Refused, as expected: its outcome is read, not caught.
-    const [outcome] = await Promise.allSettled([NotesAPI.collapseNote(rootId)]);
-    return outcome.status === 'rejected' ? outcome.reason.name : 'done';
-  }, ids['Root 3']);
-  assert.equal(refused, 'NoteLockedElsewhereError');
-  assert.notEqual(await here.evaluate(() => document.querySelector('.note-edit-lock-card')), null, 'refused: the card should open');
-  await here.keyboard.press('Escape');
-  const isCollapsed = await here.evaluate(async rootId => {
-    const {NotesAPI} = await import('/static/js/modules/api-client.js');
-    const {ModeContextInstance} = await import('/static/js/modules/mode-manager/mode-context.js');
-    const view = await NotesAPI.fetchView(null, '', ModeContextInstance.activeTabId, {topRootId: null, bottomRootId: null}, false);
-    return view.snapshot.notes[rootId] !== undefined && view.snapshot.notes[rootId].flags.isCollapsed;
-  }, ids['Root 3']);
-  assert.equal(isCollapsed, false, 'refused: the root should not have collapsed');
-}
-
-// Case 5: Take Over waits for the other tab to save its typing and leave, then edits here; the other
-// tab says where editing went.
-async function takeOverCase(here, there, ids) {
-  await there.keyboard.type(TYPED_THERE);
-  await clickText(here, ids['Root 3']);
-  await here.waitForSelector('.note-edit-lock-take-over');
-  await here.click('.note-edit-lock-take-over');
   await here.waitForFunction(async rootId => {
     const {ModeContextInstance} = await import('/static/js/modules/mode-manager/mode-context.js');
     return ModeContextInstance.isEditing && ModeContextInstance.currentNoteId === rootId;
   }, {timeout: TAKES_OVER_WITHIN_MS}, ids['Root 3']);
   await idle(here);
-  assert.equal(await isEditing(there, ids['Child of Root 3']), false, 'take over: the other tab should have left the note');
+  assert.equal(await here.evaluate(() => document.querySelector('.note-edit-lock-card')), null, 'click: no card should open');
+  assertAt('click', '"Root 3"', await noteTop(here, ids['Root 3']), before);
+  assert.equal(await isEditing(there, ids['Child of Root 3']), false, 'click: the other tab should have left the note');
   const childText = await here.evaluate(childId => document.querySelector(`[data-note-id="${childId}"] > .note-content`).textContent, ids['Child of Root 3']);
-  assert.ok(childText.includes(TYPED_THERE.trim()), `take over: the other tab's typing should be saved, got "${childText}"`);
+  assert.ok(childText.includes(TYPED_THERE.trim()), `click: the other tab's typing should be saved, got "${childText}"`);
   assert.equal(await here.evaluate(rootId => document.querySelector(`[data-note-id="${rootId}"] > .note-edit-lock`), ids['Root 3']), null);
   await here.keyboard.press('Escape');
+  await idle(here);
+}
+
+// Case 6: a click on the fold arrow of a root edited there takes it over and folds it; the other
+// tab leaves editing, and neither tab holds the root afterwards: no pencil in either.
+async function arrowTakesOverCase(here, there, ids) {
+  assert.ok(await editThere(there, ids['Child of Root 3']), 'the other tab should edit the child again');
+  await waitForMarker(here, ids['Root 3']);
+  assert.equal(await isRootCollapsed(here, ids['Root 3']), false);
+  await here.click(`#notes-container > .note[data-note-id="${ids['Root 3']}"] > .note-collapse-toggle`);
+  await here.waitForFunction(rootId => document.querySelector(`#notes-container > .note[data-note-id="${rootId}"]`).classList.contains('collapsed'),
+    {timeout: TAKES_OVER_WITHIN_MS}, ids['Root 3']);
+  await idle(here);
+  assert.equal(await here.evaluate(() => document.querySelector('.note-edit-lock-card')), null, 'arrow: no card should open');
+  await there.waitForFunction(async () => {
+    const {ModeContextInstance} = await import('/static/js/modules/mode-manager/mode-context.js');
+    return !ModeContextInstance.isEditing;
+  }, {timeout: TAKES_OVER_WITHIN_MS, polling: BACKGROUND_POLL_MS});
+  await waitForNoMarker(here, ids['Root 3']);
+  // A tab in the background shows what changed once it is shown again.
+  await there.bringToFront();
+  await waitForNoMarker(there, ids['Root 3']);
+  await here.bringToFront();
+  assert.equal(await isEditing(here, ids['Root 3']), false, 'arrow: the root should not be edited here');
+  await here.click(`#notes-container > .note[data-note-id="${ids['Root 3']}"] > .note-collapse-toggle`);
+  await here.waitForFunction(rootId => !document.querySelector(`#notes-container > .note[data-note-id="${rootId}"]`).classList.contains('collapsed'),
+    {timeout: SHOWS_WITHIN_MS}, ids['Root 3']);
   await idle(here);
 }
 
@@ -285,9 +293,9 @@ export async function checkEditLocks(here, browser) {
     await there.reload();
     await there.waitForSelector('[data-app-ready="true"]');
     await here.bringToFront();
-    await markerAndFirstTapCase(here, there, ids);
-    await refusedCase(here, ids);
-    await takeOverCase(here, there, ids);
+    await markerCase(here, there, ids);
+    await clickTakesOverCase(here, there, ids);
+    await arrowTakesOverCase(here, there, ids);
     await neighbourMovedAboveEditedCase(here, there, ids);
     await movedWhileEditedCase(here, there, ids);
     await bulkRefusedCase(here, there, ids);

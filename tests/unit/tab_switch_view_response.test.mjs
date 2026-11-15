@@ -59,6 +59,7 @@ function buildHarness() {
         recordEditedRootMovedElsewhere() {},
         recordLockedRoots() {},
         noticeRefusedEdit() {},
+        tellOtherTabsWhatIsEdited() {},
         ModeContext,
         moduleState: ApplicationState.createFields(`test.tab-switch.${Math.random()}`, { viewRequestInFlight: false }),
         Logger: { logAction() {}, logDebug() {}, logNoop() {} },

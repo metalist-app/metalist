@@ -20,6 +20,7 @@ import { isMovingNoteByDrag } from '../events/mouse-events.js';
 import { isDebouncedSearchPending } from './search-debounce-service.js';
 import { isReferenceViewTransitionPending } from './reference-view-transition-service.js';
 import { captureNoteAnchor, captureWindowTopNote } from './viewport-hold-service.js';
+import { askOtherTabsToCheckNow } from '../../views-in-this-browser.js';
 
 const NOT_YET_SEEN = -1;
 // A change waits this long after the last scroll, so nothing moves while the page is moving.
@@ -75,6 +76,10 @@ export function noticeOwnContextsChange(revision) {
     requireRevision(revision.after, 'tab-state searchContextsRevision.after');
     if (moduleState.contextsSeenAt === revision.before && revision.after !== revision.before) {
         moduleState.contextsSeenAt = revision.after;
+    }
+    // This request changed the shared contexts: this browser's other tabs take them now.
+    if (revision.after !== revision.before) {
+        askOtherTabsToCheckNow();
     }
 }
 

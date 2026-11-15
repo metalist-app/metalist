@@ -11,6 +11,8 @@ import { checkBackgroundWork } from './background-work-cards.js';
 import { notesMayHaveChanged } from '../../notes-change-signal.js';
 import { noticeStatusRevisions } from './live-changes-service.js';
 import { leaveTakenOverEditing } from './edit-lock-service.js';
+import { askOtherTabsToCheckNow, whenAskedToCheckNow } from '../../views-in-this-browser.js';
+import { statusCheckIntervalMs } from '../../status-check-interval.js';
 
 const moduleState = ApplicationState.createFields('polling-service', {
     pollingInterval: null,
@@ -64,6 +66,17 @@ function handleVisibilityChange() {
     if (!document.hidden) runConnectivityCheck();
 }
 
+// A root taken over for a change (api-client.js): the server hears now that this view does not
+// edit in it and lets it go, rather than at the next check; this browser's other tabs then hear
+// that it is free.
+export function releaseRootsNotEdited() {
+    checkConnectivityAndUpdates().then(askOtherTabsToCheckNow).catch((error) => {
+        rethrowUnexpectedError(error);
+        ErrorHandler.handleApiError(error, null);
+        Logger.logError('Sync polling error', error);
+    });
+}
+
 export function startPolling() {
     // Unified polling: check connectivity and updates. Status polls do not
     // extend sessions, so pausing them in hidden tabs changes no timeouts.
@@ -72,13 +85,15 @@ export function startPolling() {
         // its lock on that root lasts (multi-view editing step 4).
         if (document.hidden && !ModeContext.isEditing) return;
         runConnectivityCheck();
-    }, CONFIG.SYNC.POLL_INTERVAL_MS);
+    }, statusCheckIntervalMs());
     // Once at once: work the server started with the page (reading files' text after a restart)
     // shows its card while it runs, not only from the first poll on (the maintainer, 2026-11-03).
     runConnectivityCheck();
     if (moduleState.visibilityListener === null) {
         moduleState.visibilityListener = handleVisibilityChange;
         document.addEventListener('visibilitychange', handleVisibilityChange);
+        // Another tab of this browser took over the note edited here: hear it now.
+        whenAskedToCheckNow(runConnectivityCheck);
     }
 
     Logger.logInit('Unified polling started (connectivity + updates)');

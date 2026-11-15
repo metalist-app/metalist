@@ -136,7 +136,7 @@ Agreed, not built (2026-10-26): several views on one vault at once, each signed 
 
 ## Changes From Other Views (built 2026-11-14)
 - Every view response carries `notesRevision`: the notes' revision read before the view was built, so the view shows that revision at least.
-- The status every visible view polls every 2 seconds (`/api2/auth/status`) carries `notes_revision` (any change, from any view) and `search_contexts_revision` (the search contexts every view shares: their list, order, searches, sorts and filters; not a view's scroll or place).
+- The status every visible view polls (`/api2/auth/status`; every second in a desktop browser, every 2 seconds on a phone, `status-check-interval.js`; a tab of the same browser that changed something tells the others to check at once, `views-in-this-browser.js`) carries `notes_revision` (any change, from any view) and `search_contexts_revision` (the search contexts every view shares: their list, order, searches, sorts and filters; not a view's scroll or place).
 - A later `notes_revision` than the view shows: the view refreshes as usual, holding the note at the window's top still (or, while editing, the caret), with no animation. A moved `search_contexts_revision`: the view loads the tab state again; the context it shows deleted, it moves to the neighbour the server chose; its search, sort or filters changed, it runs them from the top.
 - Both wait while the user is busy (a command, a dialog, a menu, Find, a drag, a search being typed, scrolling). Cases and reasons: `docs/design/multi-view-editing.md`, "Step 3's cases"; client: `live-changes-service.js`.
 

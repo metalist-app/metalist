@@ -56,9 +56,9 @@ export function checkServerCodeIsStale() {
 // failure: a polite warning, not the fatal overlay. Null for anything else,
 // which still fails fast and loud.
 export function rejectedInputWarning(reason) {
-  // Refused for a root edited in another view whose marker opened: the marker says it.
-  if (reason instanceof NoteLockedElsewhereError && reason.isMarkerShown) {
-    return '';
+  // Refused for a root edited in another view: the server's message says where, and when to retry.
+  if (reason instanceof NoteLockedElsewhereError) {
+    return reason.message;
   }
   if (reason instanceof ServerInputRejectedError) {
     return `That could not be used: ${reason.message}.`;

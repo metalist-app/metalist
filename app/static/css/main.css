@@ -14349,8 +14349,8 @@ body.virtual-folders-crowded .virtual-folders-resizer {
 }
 
 /* A root note being edited in another view (multi-view editing step 4): a small pencil on its
-   top-right corner, where it moves nothing; its tooltip says where. A first tap in the note opens
-   the card below it: "Editing on your phone · Take Over". */
+   top-right corner, where it moves nothing; its tooltip says where. A click in the note takes it
+   over (edit-lock-service.js). */
 .note > .note-edit-lock {
     position: absolute;
     top: -7px;
@@ -14377,47 +14377,8 @@ body.virtual-folders-crowded .virtual-folders-resizer {
     --note-edit-lock-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 20h4L19 9l-4-4L4 16z'/%3E%3C/svg%3E");
 }
 
-.note > .note-edit-lock-card {
-    position: absolute;
-    top: 12px;
-    right: 0;
-    z-index: 30;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 6px 8px 6px 12px;
-    border-radius: 6px;
-    background-color: #ffffff;
-    color: #1f2937;
-    font-size: 14px;
-    line-height: 1.4;
-    white-space: nowrap;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
-}
-
-.note-edit-lock-card > .note-edit-lock-take-over {
-    padding: 4px 10px;
-    border: 1px solid #2563eb;
-    border-radius: 4px;
-    background-color: #2563eb;
-    color: #ffffff;
-    font: inherit;
-    cursor: pointer;
-}
-
-.note-edit-lock-card > .note-edit-lock-take-over:disabled {
-    opacity: 0.6;
-    cursor: progress;
-}
-
 html[data-theme="dark"] .note > .note-edit-lock {
     box-shadow: 0 0 0 2px #1f2937;
-}
-
-html[data-theme="dark"] .note > .note-edit-lock-card {
-    background-color: #1f2937;
-    color: #e5e7eb;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
 }
 
 /* A search another view is typing: this view's search box follows it and cannot be typed in. */

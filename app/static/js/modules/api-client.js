@@ -12,11 +12,24 @@ import { sanitizeNoteHtmlForStorage } from './note-html-sanitizer.js';
 import { describeApiFailure } from './api-error-diagnostics.js';
 import { inTransferSlot } from './file-transfer-slots.js';
 import { notesMayHaveChanged } from './notes-change-signal.js';
+import { askOtherTabsToCheckNow } from './views-in-this-browser.js';
 import { WEAK_THRESHOLDS } from './password-audit/weak-thresholds.js';
 
 function buildAuthHeaders(includeContentType) {
     return buildSessionHeaders(includeContentType);
 }
+
+// Changes to every note a view shows: refused for a root another view edits, never taken over
+// (only acting on that root takes it over).
+const VIEW_WIDE_CHANGE_URLS = new Set([
+    CONFIG.API.NOTES.DELETE_IN_VIEW,
+    CONFIG.API.NOTES.TAG_IN_VIEW,
+    CONFIG.API.NOTES.SET_COLLAPSED_BULK,
+    CONFIG.API.NOTES.SET_COLLAPSED_IN_CONTEXT,
+    CONFIG.API.NOTES.PRIORITIZE,
+    CONFIG.API.NOTES.ALPHABETIZE_ROOT_NOTES,
+    CONFIG.API.NOTES.RESET_UPDATED_AT_TO_CREATED_AT,
+]);
 
 const FILE_REVISION_HEADER = 'X-MetaList-File-Revision';
 const FILE_PREVIEW_VARIANTS = ['light', 'dark'];
@@ -80,6 +93,8 @@ async function postFileEditSession(url, body, description) {
     if (ModeContext.lastUpdateUUID !== data.updateUUID) {
         ModeContext.setLastUpdateUUID(data.updateUUID);
         notesMayHaveChanged();
+        // This tab changed a file: its other tabs show it now (views-in-this-browser.js).
+        askOtherTabsToCheckNow();
     }
     return data;
 }
@@ -140,8 +155,10 @@ export const NotesAPI = {
         }
         try {
             const isUserChange = Boolean(options.isUserChange);
+            const hasTakenOver = options.hasTakenOver === true;
             const fetchOptions = { ...options };
             delete fetchOptions.isUserChange;
+            delete fetchOptions.hasTakenOver;
 
             // Add sync context to request body for non-GET requests
             let requestBody = fetchOptions.body;
@@ -195,11 +212,20 @@ export const NotesAPI = {
             if (response.status === HTTP_STATUS.BAD_REQUEST && response.headers.get('content-type')?.includes('application/json')) {
                 const rejection = await response.clone().json();
                 if (rejection.inputRejected === true && typeof rejection.detail === 'string') {
-                    // A root another view edits: its marker opens, if it is shown (multi-view step 4).
+                    // A root another view edits (multi-view step 4, case 6): acting on it takes it
+                    // over, and the change is sent again once the other view has let go; a change
+                    // to the whole view, or one refused again, shows the root's marker and says why.
                     if (typeof rejection.lockedRootId === 'string') {
-                        const { openMarkerForRefusal } = await import('./mode-manager/services/edit-lock-service.js');
-                        const isMarkerShown = openMarkerForRefusal(rejection.lockedRootId, rejection.lockedWhere);
-                        throw new NoteLockedElsewhereError(rejection.detail, isMarkerShown);
+                        const editLocks = await import('./mode-manager/services/edit-lock-service.js');
+                        if (!hasTakenOver && !VIEW_WIDE_CHANGE_URLS.has(url)) {
+                            await editLocks.takeOverForChange(rejection.lockedRootId);
+                            const answer = await this._apiCall(url, { ...options, hasTakenOver: true });
+                            const { releaseRootsNotEdited } = await import('./mode-manager/services/polling-service.js');
+                            releaseRootsNotEdited();
+                            return answer;
+                        }
+                        editLocks.recordRefusal(rejection.lockedRootId, rejection.lockedWhere);
+                        throw new NoteLockedElsewhereError(rejection.detail);
                     }
                     throw new ServerInputRejectedError(rejection.detail);
                 }
@@ -225,6 +251,9 @@ export const NotesAPI = {
                 if (ModeContext.lastUpdateUUID !== data.updateUUID) {
                     ModeContext.setLastUpdateUUID(data.updateUUID);
                     notesMayHaveChanged();
+                    // This tab changed the notes (a view only reads them, a change made elsewhere
+                    // included): its other tabs show it now, not at their next status check.
+                    if (url !== CONFIG.API.NOTES.VIEW) askOtherTabsToCheckNow();
                 }
                 if (CONFIG.DEBUG.LOG_API_CALLS) {
                     console.log(' [API] Updated sync UUID:', data.updateUUID);
