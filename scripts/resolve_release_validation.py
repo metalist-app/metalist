@@ -1,10 +1,12 @@
-"""Admit a release tag only after its exact main commit passed the full matrix."""
+"""Admit a release tag only after its exact main commit passed the full matrix and the browser
+suites (AGENTS.md, "Main Stays Green")."""
 
 from __future__ import annotations
 
 import argparse
 import ast
 from collections import Counter
+from typing import NamedTuple
 import json
 import os
 from pathlib import Path
@@ -32,6 +34,17 @@ GITHUB_API_TIMEOUT_SECONDS = 30
 
 class ReleaseValidationError(RuntimeError):
     """The tag cannot be safely published from an earlier validation run."""
+
+
+class Workflow(NamedTuple):
+    file: str
+    name: str
+
+
+PUBLISH = Workflow(file=WORKFLOW, name=WORKFLOW_NAME)
+# Every focused browser suite in Chrome and Firefox on Linux, and the scale suite: required too
+# since 2026-11-15, when 0.26 to 0.30 had shipped while it was red.
+BROWSER_SUITES = Workflow(file="browser-suites.yml", name="Browser suites")
 
 
 def expected_main_jobs() -> dict[str, str]:
@@ -65,25 +78,25 @@ def validate_main_jobs(jobs: list[dict[str, object]]) -> None:
 
 
 def select_main_run(
-    runs: list[dict[str, object]], *, repository: str, commit: str,
+    runs: list[dict[str, object]], *, repository: str, commit: str, workflow: Workflow,
 ) -> dict[str, object]:
     matches = [
         run for run in runs
         if run["head_sha"] == commit
         and run["head_branch"] == "main"
         and run["event"] == "push"
-        and run["name"] == WORKFLOW_NAME
-        and run["path"] == f".github/workflows/{WORKFLOW}"
+        and run["name"] == workflow.name
+        and run["path"] == f".github/workflows/{workflow.file}"
         and run["head_repository"] is not None
         and run["head_repository"]["full_name"] == repository
     ]
     if len(matches) != 1:
         raise ReleaseValidationError(
-            f"Expected one main validation run at {commit}, found {len(matches)}"
+            f"Expected one main {workflow.name} run at {commit}, found {len(matches)}"
         )
     run = matches[0]
     if run["status"] != "completed" or run["conclusion"] != "success":
-        raise ReleaseValidationError(f"Main validation run {run['id']} has not passed")
+        raise ReleaseValidationError(f"Main {workflow.name} run {run['id']} has not passed")
     return run
 
 
@@ -180,16 +193,18 @@ def github_json(*, repository: str, token: str, path: str, parameters: dict[str,
     return payload
 
 
-def resolve_main_run(*, repository: str, token: str, commit: str) -> int:
+def resolve_passed_run(*, repository: str, token: str, commit: str, workflow: Workflow) -> dict[str, object]:
+    """The exact commit's run of `workflow` on main, passed, with no job in an earlier attempt
+    that ran and failed."""
     listing = github_json(
         repository=repository, token=token,
-        path=f"actions/workflows/{WORKFLOW}/runs",
+        path=f"actions/workflows/{workflow.file}/runs",
         parameters={"branch": "main", "event": "push", "head_sha": commit, "per_page": "100"},
     )
     runs = listing["workflow_runs"]
     if listing["total_count"] != len(runs):
-        raise ReleaseValidationError("Main validation search exceeded one API page")
-    run = select_main_run(runs, repository=repository, commit=commit)
+        raise ReleaseValidationError(f"Main {workflow.name} search exceeded one API page")
+    run = select_main_run(runs, repository=repository, commit=commit, workflow=workflow)
     run_id = int(run["id"])
     earlier_jobs: dict[int, list[dict[str, object]]] = {}
     for attempt in range(1, int(run["run_attempt"])):
@@ -202,6 +217,12 @@ def resolve_main_run(*, repository: str, token: str, commit: str) -> int:
             raise ReleaseValidationError("Main validation attempt jobs exceeded one API page")
         earlier_jobs[attempt] = attempt_listing["jobs"]
     check_earlier_attempts(earlier_jobs)
+    return run
+
+
+def resolve_main_run(*, repository: str, token: str, commit: str) -> int:
+    resolve_passed_run(repository=repository, token=token, commit=commit, workflow=BROWSER_SUITES)
+    run_id = int(resolve_passed_run(repository=repository, token=token, commit=commit, workflow=PUBLISH)["id"])
     jobs_listing = github_json(
         repository=repository, token=token,
         path=f"actions/runs/{run_id}/jobs",

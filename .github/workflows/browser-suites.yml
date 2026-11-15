@@ -6,8 +6,9 @@ name: Browser suites
 # files, the server's own AI; scripts/browser-scale-regressions.mjs) as its own job on
 # Linux and Windows. The release workflow's browser jobs check only startup and login;
 # these check the workflows themselves, in both browsers, as AGENTS.md asks. Runs on
-# each push to main and by hand (Run workflow) on any branch before merging. It is a
-# check, not the release gate: publishing never waits on it.
+# each push to main and by hand (Run workflow) on any branch before merging. A release needs
+# its exact-commit run on main to have passed too (since 2026-11-15: scripts/release.py waits
+# for it, and the tag's check, scripts/resolve_release_validation.py, refuses to publish without it).
 
 on:
   push:

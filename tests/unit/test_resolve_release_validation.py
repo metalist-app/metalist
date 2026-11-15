@@ -51,17 +51,18 @@ def test_main_gate_requires_exact_commit_identity() -> None:
         "conclusion": "success",
         "run_attempt": 1,
     }
+    publish = gate.PUBLISH
     assert gate.select_main_run(
-        [valid], repository="metalist-app/metalist", commit="abc123",
+        [valid], repository="metalist-app/metalist", commit="abc123", workflow=publish,
     ) == valid
     with pytest.raises(gate.ReleaseValidationError, match="found 0"):
         gate.select_main_run(
             [dict(valid, head_sha="other")],
-            repository="metalist-app/metalist", commit="abc123",
+            repository="metalist-app/metalist", commit="abc123", workflow=publish,
         )
     # A later attempt is selected; its earlier attempts are checked separately.
     assert gate.select_main_run(
-        [dict(valid, run_attempt=2)], repository="metalist-app/metalist", commit="abc123",
+        [dict(valid, run_attempt=2)], repository="metalist-app/metalist", commit="abc123", workflow=publish,
     )["run_attempt"] == 2
 
 
@@ -115,3 +116,38 @@ def test_tag_and_downloaded_files_must_match(tmp_path: Path) -> None:
     (distributions / "extra.txt").write_text("wrong", encoding="utf-8")
     with pytest.raises(gate.ReleaseValidationError, match="do not match"):
         gate.check_distributions(directory=distributions, version="1.2.3")
+
+
+# A tag publishes only once the exact commit's "Browser suites" run passed too (AGENTS.md, "Main
+# Stays Green", 2026-11-15): 0.26 to 0.30 shipped while it was red, the gate looking only at the
+# release workflow's browser smoke.
+BROWSER_SUITES_RUN = {
+    "id": 77,
+    "head_sha": "abc123",
+    "head_branch": "main",
+    "event": "push",
+    "name": "Browser suites",
+    "path": ".github/workflows/browser-suites.yml",
+    "head_repository": {"full_name": "metalist-app/metalist"},
+    "status": "completed",
+    "conclusion": "success",
+    "run_attempt": 1,
+}
+
+
+def test_a_tag_needs_the_exact_commits_browser_suites_to_have_passed() -> None:
+    suites = gate.BROWSER_SUITES
+    assert gate.select_main_run(
+        [BROWSER_SUITES_RUN], repository="metalist-app/metalist", commit="abc123", workflow=suites,
+    ) == BROWSER_SUITES_RUN
+    for refused in (dict(BROWSER_SUITES_RUN, conclusion="failure"), dict(BROWSER_SUITES_RUN, status="in_progress")):
+        with pytest.raises(gate.ReleaseValidationError, match="has not passed"):
+            gate.select_main_run([refused], repository="metalist-app/metalist", commit="abc123", workflow=suites)
+    with pytest.raises(gate.ReleaseValidationError, match="found 0"):
+        gate.select_main_run([], repository="metalist-app/metalist", commit="abc123", workflow=suites)
+    # The release workflow's run is not the browser suites' run.
+    with pytest.raises(gate.ReleaseValidationError, match="found 0"):
+        gate.select_main_run(
+            [dict(BROWSER_SUITES_RUN, name=gate.WORKFLOW_NAME, path=f".github/workflows/{gate.WORKFLOW}")],
+            repository="metalist-app/metalist", commit="abc123", workflow=suites,
+        )

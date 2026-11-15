@@ -125,8 +125,8 @@ def test_run_selection_requires_exact_commit_branch_event_and_workflow() -> None
         dict(valid, id=16, name="Other workflow"),
         dict(valid, id=17, path=".github/workflows/other.yml"),
     ]
-    assert release.matching_runs([*wrong_runs, valid], commit="abc", branch="v1.2.3") == [valid]
-    assert release.matching_runs(wrong_runs, commit="abc", branch="v1.2.3") == []
+    assert release.matching_runs([*wrong_runs, valid], commit="abc", branch="v1.2.3", workflow=release.PUBLISH) == [valid]
+    assert release.matching_runs(wrong_runs, commit="abc", branch="v1.2.3", workflow=release.PUBLISH) == []
 
 
 MAIN_RUN = {
@@ -165,8 +165,8 @@ class FakeRunClient:
         self._attempts = attempts
         self.reruns: list[int] = []
 
-    def workflow_runs(self, *, branch: str) -> list[dict[str, object]]:
-        assert branch == "main"
+    def workflow_runs(self, *, branch: str, workflow: object) -> list[dict[str, object]]:
+        assert branch == "main" and workflow == release.PUBLISH
         state = self._states[0]
         if len(self._states) > 1:
             self._states.pop(0)
@@ -188,7 +188,7 @@ class FakeRunClient:
 def wait_for_main(client: FakeRunClient, monkeypatch: pytest.MonkeyPatch) -> dict[str, object]:
     monkeypatch.setattr(release.time, "sleep", lambda _seconds: None)
     console = release.Console(file=StringIO(), force_terminal=False)
-    return release.wait_for_workflow(client, commit="abc", branch="main", is_tag=False, console=console)
+    return release.wait_for_workflow(client, workflow=release.PUBLISH, commit="abc", branch="main", is_tag=False, console=console)
 
 
 def test_jobs_github_never_started_are_rerun_and_the_release_goes_on(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -491,3 +491,39 @@ def test_preflight_rejects_unsafe_release_state(
     console = release.Console(file=StringIO(), force_terminal=False)
     with pytest.raises(release.ReleaseError, match=message):
         release.preflight(tmp_path, version="1.2.3", console=console)
+
+
+BROWSER_SUITES_RUN = dict(MAIN_RUN, id=77, name="Browser suites", path=".github/workflows/browser-suites.yml")
+
+
+class FakeTwoWorkflowClient:
+    """GitHub with both main runs: the release workflow passed; the browser suites as given."""
+
+    def __init__(self, *, suites_conclusion: str) -> None:
+        self.suites_conclusion = suites_conclusion
+
+    def workflow_runs(self, *, branch: str, workflow: object) -> list[dict[str, object]]:
+        if workflow == release.BROWSER_SUITES:
+            return [dict(BROWSER_SUITES_RUN, status="completed", conclusion=self.suites_conclusion, run_attempt=1)]
+        return [dict(MAIN_RUN, status="completed", conclusion="success", run_attempt=1)]
+
+    def jobs(self, *, run_id: int) -> list[dict[str, object]]:
+        if run_id == BROWSER_SUITES_RUN["id"]:
+            conclusion = "success" if self.suites_conclusion == "success" else "failure"
+            return [dict(failed_job("chrome slice 5/10"), conclusion=conclusion)]
+        return jobs_with()
+
+
+# The release driver waits for the exact commit's "Browser suites" run too, and stops on a red
+# one (AGENTS.md, "Main Stays Green", 2026-11-15).
+@pytest.mark.parametrize("conclusion", ["success", "failure"])
+def test_the_release_waits_for_the_browser_suites_and_stops_on_red(monkeypatch: pytest.MonkeyPatch, conclusion: str) -> None:
+    monkeypatch.setattr(release.time, "sleep", lambda _seconds: None)
+    console = release.Console(file=StringIO(), force_terminal=False)
+    client = FakeTwoWorkflowClient(suites_conclusion=conclusion)
+    if conclusion == "success":
+        run = release.wait_for_main_validation(client, commit="abc", console=console)
+        assert run["id"] == MAIN_RUN["id"]
+        return
+    with pytest.raises(release.ReleaseError, match="Browser suites"):
+        release.wait_for_main_validation(client, commit="abc", console=console)

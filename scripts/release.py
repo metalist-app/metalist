@@ -5,6 +5,7 @@ from http import HTTPStatus
 import argparse
 import ast
 from collections import Counter
+from typing import NamedTuple
 from datetime import datetime, timezone
 import hashlib
 from io import BytesIO
@@ -61,6 +62,20 @@ FAILURE_LOG_TAIL_LINES = 60
 
 class ReleaseError(RuntimeError):
     """An external release precondition or operation failed."""
+
+
+class Workflow(NamedTuple):
+    file: str
+    name: str
+    # The release workflow's jobs are checked one by one (validate_jobs); the browser suites'
+    # run must just pass.
+    has_job_matrix: bool
+
+
+PUBLISH = Workflow(file=WORKFLOW, name=WORKFLOW_NAME, has_job_matrix=True)
+# Required too since 2026-11-15 (AGENTS.md, "Main Stays Green"), as resolve_release_validation.py
+# requires it of a tag.
+BROWSER_SUITES = Workflow(file="browser-suites.yml", name="Browser suites", has_job_matrix=False)
 
 
 def run_command(
@@ -192,15 +207,15 @@ def validate_jobs(jobs: list[dict[str, object]], *, is_tag: bool) -> None:
 
 
 def matching_runs(
-    runs: list[dict[str, object]], *, commit: str, branch: str,
+    runs: list[dict[str, object]], *, commit: str, branch: str, workflow: Workflow,
 ) -> list[dict[str, object]]:
     return [
         run for run in runs
         if run["head_sha"] == commit
         and run["head_branch"] == branch
         and run["event"] == "push"
-        and run["name"] == WORKFLOW_NAME
-        and run["path"] == f".github/workflows/{WORKFLOW}"
+        and run["name"] == workflow.name
+        and run["path"] == f".github/workflows/{workflow.file}"
     ]
 
 
@@ -304,9 +319,9 @@ class GitHubClient:
             raise ReleaseError("Release workflow attempt unexpectedly exceeded one page of jobs")
         return jobs
 
-    def workflow_runs(self, *, branch: str) -> list[dict[str, object]]:
+    def workflow_runs(self, *, branch: str, workflow: Workflow) -> list[dict[str, object]]:
         response = self._request(
-            f"actions/workflows/{WORKFLOW}/runs",
+            f"actions/workflows/{workflow.file}/runs",
             parameters={"branch": branch, "event": "push", "per_page": "100"},
         )
         payload = response.json()
@@ -485,16 +500,22 @@ def workflow_summary(jobs: list[dict[str, object]]) -> str:
     )
 
 
+def sentence_start(text: str) -> str:
+    """Text with its first letter capital and the rest as written (workflow names keep theirs)."""
+    return text[:1].upper() + text[1:]
+
+
 def wait_for_workflow(
     client: GitHubClient,
     *,
+    workflow: Workflow,
     commit: str,
     branch: str,
     is_tag: bool,
     console: Console,
 ) -> dict[str, object]:
     deadline = time.monotonic() + WORKFLOW_TIMEOUT_SECONDS
-    label = "exact main validation"
+    label = f"exact main {workflow.name}"
     if is_tag:
         label = "tag publication"
     with Progress(
@@ -506,7 +527,9 @@ def wait_for_workflow(
         # new attempt: wait for that attempt rather than asking again.
         awaited_attempt = 1
         while time.monotonic() < deadline:
-            runs = matching_runs(client.workflow_runs(branch=branch), commit=commit, branch=branch)
+            runs = matching_runs(
+                client.workflow_runs(branch=branch, workflow=workflow), commit=commit, branch=branch, workflow=workflow,
+            )
             if not runs:
                 progress.update(task, description=f"Waiting for {label} to appear")
                 time.sleep(POLL_SECONDS)
@@ -517,13 +540,13 @@ def wait_for_workflow(
                 time.sleep(POLL_SECONDS)
                 continue
             jobs = client.jobs(run_id=int(run["id"]))
-            progress.update(task, description=f"{label.capitalize()}: {workflow_summary(jobs)}")
+            progress.update(task, description=f"{sentence_start(label)}: {workflow_summary(jobs)}")
             if run["status"] == "completed":
                 if run["conclusion"] != "success":
                     unsuccessful = unsuccessful_jobs(jobs)
                     failures = [(job["name"], job["conclusion"]) for job in unsuccessful]
                     if is_tag or not all(never_started(job) for job in unsuccessful):
-                        raise ReleaseError(f"{label.capitalize()} failed: {failures}")
+                        raise ReleaseError(f"{sentence_start(label)} failed: {failures}")
                     if reruns == MAX_NEVER_STARTED_RERUNS:
                         raise ReleaseError(
                             f"GitHub never started {failures} after {reruns} reruns; try again later"
@@ -541,7 +564,8 @@ def wait_for_workflow(
                             "Main validation was rerun after a job that ran and failed; "
                             f"create a new candidate commit: {failures}"
                         )
-                validate_jobs(jobs, is_tag=is_tag)
+                if workflow.has_job_matrix:
+                    validate_jobs(jobs, is_tag=is_tag)
                 return run
             time.sleep(POLL_SECONDS)
     raise ReleaseError(f"Timed out waiting for {label}")
@@ -694,15 +718,26 @@ def verify_clean_install(root: Path, *, version: str, run_id: int, console: Cons
     return log_path
 
 
+def wait_for_main_validation(client: GitHubClient, *, commit: str, console: Console) -> dict[str, object]:
+    """The exact commit's release matrix and browser suites, both passed: the release run."""
+    main_run = wait_for_workflow(
+        client, workflow=PUBLISH, commit=commit, branch="main", is_tag=False, console=console,
+    )
+    console.print("[green]✓[/green] Exact main matrix passed")
+    wait_for_workflow(
+        client, workflow=BROWSER_SUITES, commit=commit, branch="main", is_tag=False, console=console,
+    )
+    console.print("[green]✓[/green] Exact main browser suites passed")
+    return main_run
+
+
 def release(version: str, *, console: Console) -> None:
     root = Path(__file__).resolve().parents[1]
     commit, tag, already_remote = preflight(root, version=version, console=console)
     username, password = github_credentials(root)
     client = GitHubClient(username=username, password=password)
-    main_run = wait_for_workflow(
-        client, commit=commit, branch="main", is_tag=False, console=console,
-    )
-    console.print(f"[green]✓[/green] Exact main matrix passed: {main_run['html_url']}")
+    main_run = wait_for_main_validation(client, commit=commit, console=console)
+    console.print(f"[green]✓[/green] Exact main validation: {main_run['html_url']}")
     artifact = client.artifact(run_id=int(main_run["id"]), name="pypi-distributions")
     archive = client.download_artifact(artifact_id=int(artifact["id"]))
     ci_hashes = artifact_hashes(archive, version=version)
@@ -711,7 +746,7 @@ def release(version: str, *, console: Console) -> None:
         root, tag=tag, commit=commit, already_remote=already_remote, console=console,
     )
     tag_run = wait_for_workflow(
-        client, commit=commit, branch=tag, is_tag=True, console=console,
+        client, workflow=PUBLISH, commit=commit, branch=tag, is_tag=True, console=console,
     )
     console.print(f"[green]✓[/green] Tag publication passed: {tag_run['html_url']}")
     pypi_payload = wait_for_pypi(version=version, console=console)
