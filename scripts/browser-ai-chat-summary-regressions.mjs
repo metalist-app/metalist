@@ -92,9 +92,16 @@ function menuLabels(page) {
         .filter(button => button.getClientRects().length).map(button => button.textContent.trim()));
 }
 
-// The menu is read once it shows: Firefox draws it a moment later (CI, 2026-11-04).
+// The menu is read once it shows: Firefox draws it a moment later (CI, 2026-11-04). The answer is
+// in view and still first: a click scrolls it there itself, and that scroll's event, a frame after
+// the menu opened, closes the menu as any scroll does (Linux, 2026-11-15).
 async function rightClickAnswer(page, messageId) {
-    await page.click(`[data-message-id="${messageId}"] .ai-chat-message-content`, {button: 'right'});
+    const selector = `[data-message-id="${messageId}"] .ai-chat-message-content`;
+    await page.evaluate(selector => new Promise(resolve => {
+        document.querySelector(selector).scrollIntoView({block: 'nearest'});
+        requestAnimationFrame(() => requestAnimationFrame(resolve));
+    }), selector);
+    await page.click(selector, {button: 'right'});
     await page.waitForSelector('.context-menu.is-visible button', {visible: true});
 }
 
@@ -197,6 +204,12 @@ export async function checkAiChatSummary(page) {
 
         // Nothing new since the summary: the menu has no Summarize Now.
         await rightClickAnswer(page, latest);
+        // The live check reloading an unchanged chat (this view's own summary changed its mark)
+        // leaves the open menu alone (Firefox, Linux, 2026-11-15: the menu closed under the click).
+        await page.evaluate(async () => {
+            const {AiChatPanel} = await import('/static/js/modules/ai-chat/ai-chat-panel-controller.js');
+            await AiChatPanel._loadSession({shouldScrollToBottom: false, isForChangeElsewhere: true});
+        });
         assert.deepEqual(await menuLabels(page), ['Copy Response'], 'nothing to summarize: no Summarize Now');
         await page.keyboard.press('Escape');
 

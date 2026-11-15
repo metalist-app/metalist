@@ -45,6 +45,14 @@ async function reload(page) {
   await waitForAppQuiet(page, REQUESTS_QUIET_MS);
 }
 
+async function goToTop(page) {
+  const isAtTop = await page.$eval('#scroll-to-top-button', button => button.disabled);
+  if (isAtTop) return;
+  await page.click('#scroll-to-top-button');
+  await page.waitForFunction(() => document.getElementById('scroll-to-top-button').disabled);
+  await waitForAppQuiet(page, REQUESTS_QUIET_MS);
+}
+
 async function runPaletteCommand(page, query) {
   await page.keyboard.down('Meta');
   await page.keyboard.press('/');
@@ -425,6 +433,10 @@ export async function checkSortedTabs(page) {
   };
   try {
     await reload(page);
+    // A reload keeps the tab's place (multi-view editing step 2): making the fixture can leave it
+    // down the list, where the loaded band does not start with the newest root (Linux, whose
+    // fonts wrap the notes taller, 2026-11-15). The cases start from the top.
+    await goToTop(page);
     await check('sort while a view request is in flight', () => sortWhileViewInFlightCase(page, ids));
     await check('sort while a view request reaches the server late', () => sortWhileViewReachesServerLateCase(page, ids));
     await check('stale tab-state snapshot after a sort', () => staleSnapshotAfterSortCase(page, ids));

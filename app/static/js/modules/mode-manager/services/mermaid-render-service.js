@@ -1,4 +1,5 @@
 import { ApplicationState } from '../../application-state.js';
+import { HttpRequestError, rethrowUnexpectedError } from '../../expected-errors.js';
 import { produces } from '../../../shockharness/contracts.js';
 import { rememberSize } from '../../object-url-cache.js';
 // Fenced mermaid blocks under @markdown, and @mermaid notes (their own block).
@@ -138,6 +139,16 @@ function resolveLoadedMermaidApi(rootDocument) {
     return null;
 }
 
+// The Mermaid API, or null when its download failed: the diagrams stay as their source until the
+// next draw.
+function loadMermaidApiIfAvailable(rootDocument) {
+    return loadMermaidApi(rootDocument).catch((error) => {
+        rethrowUnexpectedError(error);
+        if (!(error instanceof HttpRequestError)) throw error;
+        return null;
+    });
+}
+
 export function loadMermaidApi(rootDocument) {
     if (!rootDocument || typeof rootDocument !== 'object') {
         throw new Error('loadMermaidApi requires a document');
@@ -166,8 +177,13 @@ export function loadMermaidApi(rootDocument) {
             }
             resolve(api);
         }, { once: true });
+        // A download that failed (the page reloading cancels it, a lost connection) is no
+        // fault of MetaList's: the next diagram asks again (found 2026-11-15: a reload while
+        // it loaded was a fatal error).
         script.addEventListener('error', () => {
-            reject(new Error(`Failed to load Mermaid runtime from ${MERMAID_SCRIPT_URL}`));
+            script.remove();
+            moduleState.mermaidLoadPromise = null;
+            reject(new HttpRequestError(`Failed to load Mermaid runtime from ${MERMAID_SCRIPT_URL}`));
         }, { once: true });
         rootDocument.head.appendChild(script);
     });
@@ -281,7 +297,10 @@ export async function renderMermaidDiagrams(rootElement, options) {
     }
     const api = Object.prototype.hasOwnProperty.call(options, 'mermaidApi')
         ? requireMermaidApi(options.mermaidApi)
-        : await loadMermaidApi(rootDocument);
+        : await loadMermaidApiIfAvailable(rootDocument);
+    if (api === null) {
+        return { renderedCount: 0, invalidCount: 0 };
+    }
     api.initialize(buildMermaidConfig(resolveMermaidTheme(rootDocument)));
 
     let renderedCount = 0;
@@ -299,24 +318,25 @@ export async function renderMermaidDiagrams(rootElement, options) {
 
 // The diagram for the preview while editing (edit-preview-service.js), drawn as the note
 // draws its diagrams: the same runtime, theme and layout, in the same queue. `isValid`
-// is false when Mermaid cannot parse the source.
+// is false when Mermaid cannot parse the source; `isLoaded` false when Mermaid did not download.
 export function drawMermaidPreview(source) {
     if (typeof source !== 'string' || source.trim() === '') {
         throw new Error('drawMermaidPreview requires a diagram source');
     }
     const drawing = moduleState.mermaidRenderQueue.then(async () => {
-        const api = await loadMermaidApi(document);
+        const api = await loadMermaidApiIfAvailable(document);
+        if (api === null) return { isLoaded: false, isValid: false, svg: '' };
         api.initialize(buildMermaidConfig(resolveMermaidTheme(document)));
         // As for a note's diagram: pasted indentation is non-breaking spaces.
         const cleaned = source.replace(/\u00a0/g, ' ');
         const isValid = await api.parse(cleaned, { suppressErrors: true });
-        if (isValid === false) return { isValid: false, svg: '' };
+        if (isValid === false) return { isLoaded: true, isValid: false, svg: '' };
         moduleState.mermaidRenderSequence += 1;
         const renderResult = await api.render(`metalist-mermaid-preview-${moduleState.mermaidRenderSequence}`, cleaned);
         if (!renderResult || typeof renderResult.svg !== 'string' || renderResult.svg.length === 0) {
             throw new Error('Mermaid render result missing SVG');
         }
-        return { isValid: true, svg: renderResult.svg };
+        return { isLoaded: true, isValid: true, svg: renderResult.svg };
     });
     moduleState.mermaidRenderQueue = drawing;
     return drawing;

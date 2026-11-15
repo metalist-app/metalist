@@ -281,6 +281,8 @@ function drawDiagramLater(caret, source, serial) {
         setState('drawTimer', null);
         const drawn = await drawMermaidPreview(source);
         if (serial !== moduleState.requestSerial || isSelectingInEditedNote()) return;
+        // Mermaid did not download: no preview this time; the next pause asks again.
+        if (!drawn.isLoaded) return;
         let error = '';
         if (!drawn.isValid) error = INVALID_DIAGRAM;
         showAnswer(caret, { kind: PREVIEW_MERMAID, html: drawn.svg, error, hasUnknownCommand: false, caretRow: NO_CARET_ROW });

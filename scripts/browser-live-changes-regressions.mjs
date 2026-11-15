@@ -177,6 +177,36 @@ async function editingCase(here, there, ids) {
   await idle(here);
 }
 
+// Text in the edited note that MetaList has not recorded yet (it ignores input while a command
+// runs: typing right after Insert LaTeX, dictation) is the user's: a refresh that brings the
+// note's newer server copy keeps it. Found 2026-11-15 (Firefox, Linux): a status check right
+// after Insert LaTeX redrew the note and the typed \frac{1}{2} was gone.
+async function unrecordedTypingCase(here, ids) {
+  await scrollNoteTopTo(here, 'Root 12', 300);
+  const point = await here.evaluate(() => {
+    const paragraph = [...document.querySelectorAll('#notes-container p')].find(p => p.textContent.trim().startsWith('Root 12 paragraph 1:'));
+    const rect = paragraph.getBoundingClientRect();
+    return {x: rect.left + 40, y: rect.top + rect.height / 2};
+  });
+  await here.mouse.click(point.x, point.y);
+  await here.waitForSelector(`.note.editing[data-note-id="${ids['Root 12']}"]`);
+  await idle(here);
+  const kept = await here.evaluate(async ({id, html}) => {
+    const {NotesAPI} = await import('/static/js/modules/api-client.js');
+    const {CommandGate} = await import('/static/js/modules/mode-manager/services/command-gate-service.js');
+    const {actionRefreshAndMaybeSelect} = await import('/static/js/modules/mode-manager/actions/ui-actions.js');
+    // The note's server copy changes (as Insert LaTeX saves the note and its tag)...
+    await NotesAPI.saveNote(id, html, '');
+    // ...and text reaches the editor with no input recorded.
+    document.querySelector(`[data-note-id="${id}"] > .note-content p`).append(' UNRECORDED');
+    await CommandGate.runWhenFree('test.refresh', () => actionRefreshAndMaybeSelect({context: 'test-unrecorded-typing'}));
+    return document.querySelector(`[data-note-id="${id}"] > .note-content`).textContent;
+  }, {id: ids['Root 12'], html: paragraphs('Root 12', 3) + paragraphs('Saved meanwhile', 1)});
+  assert.ok(kept.includes('UNRECORDED'), `unrecorded typing: the text in the editor should stay, got "${kept.slice(0, 120)}"`);
+  await here.keyboard.press('Escape');
+  await idle(here);
+}
+
 // Case 10: a change waits while a dialog (here the command palette) is open, and shows once it closes.
 async function waitsForDialogCase(here, there, ids) {
   await here.evaluate(async () => {
@@ -300,6 +330,7 @@ export async function checkLiveChanges(here, browser) {
     await changeInViewCase(here, there, ids);
     await windowTopDeletedCase(here, there, ids);
     await editingCase(here, there, ids);
+    await unrecordedTypingCase(here, ids);
     await waitsForDialogCase(here, there, ids);
     await waitsForScrollingCase(here, there, ids);
     await searchChangedCase(here, there, ids);

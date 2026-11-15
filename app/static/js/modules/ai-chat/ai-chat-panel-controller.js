@@ -1425,22 +1425,35 @@ class AiChatPanelController {
                 throw new Error('AI chat session response missing messages or summaries');
             }
             const summaries = payload.summaries.map(validateSummary);
-            if (!stateValuesEqual(this._summaries, summaries)) this._summaries = summaries;
+            // A load for a change elsewhere that brings nothing new draws nothing: a redraw would
+            // close a menu open on an answer (found 2026-11-15: this view's own summary changed the
+            // chat's mark, and the next live check reloaded the chat under the user's right-click).
+            let isChanged = false;
+            if (!stateValuesEqual(this._summaries, summaries)) {
+                this._summaries = summaries;
+                isChanged = true;
+            }
             if (!isForChangeElsewhere && this._expandedThinkingMessageIds.size > 0) this._expandedThinkingMessageIds.clear();
             if (!isForChangeElsewhere && this._expandedReferenceMessageIds.size > 0) this._expandedReferenceMessageIds.clear();
             const placed = placeRefusedTurns(payload.messages.map(validateMessage), this._refusedTurns);
             // Turns whose earlier message the server trimmed go with it.
-            if (placed.keptTurns.length !== this._refusedTurns.length) this._refusedTurns = placed.keptTurns;
+            if (placed.keptTurns.length !== this._refusedTurns.length) {
+                this._refusedTurns = placed.keptTurns;
+                isChanged = true;
+            }
             if (keepsOwnWaitingTurn) {
                 // Only the messages before it change: the stream writes into the turn's own objects,
                 // which a new list would replace with copies.
                 const earlierCount = this._messages.length - MESSAGES_PER_TURN;
                 if (!stateValuesEqual(this._messages.slice(0, earlierCount), placed.messages)) {
                     this._messages.splice(0, earlierCount, ...placed.messages);
+                    isChanged = true;
                 }
             } else if (!stateValuesEqual(this._messages, placed.messages)) {
                 this._messages = placed.messages;
+                isChanged = true;
             }
+            if (isForChangeElsewhere && !isChanged) return;
             this._render({ shouldScrollToBottom });
             await queueMermaidDiagramRendering(this._elements.messages);
             await this._refreshHistoryMeter();

@@ -227,3 +227,31 @@ test('renderMermaidDiagrams initializes the current theme and reports counts', a
     assert.equal(mermaidApi.calls.initialize[0].theme, 'dark');
     assert.equal(mermaidApi.calls.initialize[0].securityLevel, 'strict');
 });
+
+// Mermaid's script failed to download (a reload cancels it, a lost connection): the diagrams stay
+// as their source, nothing fails, and the next render downloads again. Found 2026-11-15: a reload
+// while it downloaded was a fatal error.
+test('a failed Mermaid download leaves the sources and is tried again', async () => {
+    const { codeElement, ownerDocument } = createMermaidSource('flowchart LR\nA-->B');
+    const scripts = [];
+    ownerDocument.head = {
+        appendChild(script) {
+            scripts.push(script);
+            // The browser reports the failed download after the script is added.
+            setTimeout(() => script.listeners.error(), 0);
+        },
+    };
+    ownerDocument.createElement = () => ({
+        listeners: {},
+        addEventListener(type, listener) {
+            this.listeners[type] = listener;
+        },
+        remove() {},
+    });
+    const rootElement = { ownerDocument, querySelectorAll: () => [codeElement] };
+
+    assert.deepEqual(await renderMermaidDiagrams(rootElement, {}), { renderedCount: 0, invalidCount: 0 });
+    assert.equal(codeElement.replacement, null, 'the source stays');
+    assert.deepEqual(await renderMermaidDiagrams(rootElement, {}), { renderedCount: 0, invalidCount: 0 });
+    assert.equal(scripts.length, 2, 'the next render downloads again');
+});

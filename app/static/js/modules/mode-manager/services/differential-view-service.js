@@ -29,6 +29,24 @@ import { syncTagProposalPresentation } from './tag-proposal-service.js';
 import { applyEditingImageSizes } from './editing-image-size-service.js';
 import { splitTagsForDisplay } from './tag-syntax-service.js';
 import { serverRenderedHtml } from '../../server-rendered-html.js';
+import { sanitizeNoteHtmlForStorage } from '../../note-html-sanitizer.js';
+
+// The note this view edits holds typing not saved yet: the editor is dirty, or holds text that
+// reached it with no input recorded (MetaList ignores input while a command runs: typing right
+// after Insert LaTeX, dictation). That typing is the user's: a refresh never draws the server's
+// copy over it; the next save sends it (content-actions.js reconcileContentBeforeSave). Found
+// 2026-11-15: a status check's refresh right after Insert LaTeX erased the typing.
+function holdsUnsavedTyping(noteId, contentElement) {
+    if (!ModeContext.isEditing || ModeContext.currentNoteId !== noteId) return false;
+    if (ModeContext.isDirty) return true;
+    const recorded = ModeContext.currentContent;
+    // Edit mode is being entered: nothing is recorded, nor typed, yet.
+    if (recorded === null) return false;
+    if (typeof recorded !== 'string') {
+        throw new Error('The edited note\'s recorded content must be text');
+    }
+    return sanitizeNoteHtmlForStorage(contentElement.innerHTML) !== sanitizeNoteHtmlForStorage(recorded);
+}
 
 const CONTENT_ELEMENT_CACHE = ApplicationState.createWeakCollection('CONTENT_ELEMENT_CACHE', 'map');
 const CHILD_CONTAINER_CACHE = ApplicationState.createWeakCollection('CHILD_CONTAINER_CACHE', 'map');
@@ -982,6 +1000,7 @@ export function applyDifferentialView(payload, options) {
 
         const shouldRenderContent = Boolean(noteData)
             && (!editingByCurrentClient || canReplaceWhileEditing)
+            && !holdsUnsavedTyping(noteId, contentElement)
             && (
                 insertedIds.has(noteId)
                 || incomingHash === null
@@ -1231,7 +1250,8 @@ function applyNoteDataFromPayload(noteElement, noteId, noteData, noteLocks, curr
         && previousContentHash !== snapshotHash;
 
     let contentChanged = false;
-    if ((forceContentUpdate || !editingByCurrentClient || canReplaceWhileEditing) && typeof noteData.content === 'string') {
+    const mayRedraw = (!editingByCurrentClient || canReplaceWhileEditing) && !holdsUnsavedTyping(noteId, contentElement);
+    if ((forceContentUpdate || mayRedraw) && typeof noteData.content === 'string') {
         drawNoteContent(contentElement, noteData.content, { keepsUnsavedFolds: !editingByCurrentClient && !wasBeingEdited });
         ensureAnchorsOpenInNewTabs(contentElement);
         noteElement.dataset.contentHash = snapshotHash;
