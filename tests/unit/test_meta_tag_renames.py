@@ -31,6 +31,9 @@ from app.services.meta_tag_renames import (
 from app.services.tab_state import tab_state_store
 from app.utils.encryption import encrypt, get_encryption_service
 
+# The view (a browser tab) the tests act in (multi-view editing step 2).
+VIEW = "10000000-0000-4000-8000-0000000000ee"
+
 _UPDATED_AT = datetime(2026, 3, 4, 5, 6, 7, tzinfo=timezone.utc)
 _DEK_BYTES = 32
 
@@ -91,11 +94,11 @@ def _store_raw(note_id: str, *, tags: str, proposed_tags: str, prev_id: str | No
 
 
 def _search_for(query: str) -> None:
-    snapshot = tab_state_store.snapshot()
+    snapshot = tab_state_store.snapshot(view_id=VIEW)
     tab_id = snapshot["activeTabId"]
     tabs = snapshot["tabs"]
     tabs[tab_id]["searchQuery"] = query
-    tab_state_store.update(
+    tab_state_store.update(view_id=VIEW, 
         active_tab_id=tab_id, tabs=tabs, tab_order=snapshot["tabOrder"], reference_views={},
         read_at_version=snapshot["version"],
     )
@@ -148,7 +151,7 @@ def test_the_first_unlock_renames_tags_and_searches_and_records_it(namespace) ->
     # Stored renamed, its updated time kept; a note without old names is left alone.
     assert _stored("answer") == ("@ai ((@highlight))", "@numbered", _UPDATED_AT.isoformat())
     assert _stored("plain") == ("journal @grey", "", _UPDATED_AT.isoformat())
-    snapshot = tab_state_store.snapshot()
+    snapshot = tab_state_store.snapshot(view_id=VIEW)
     assert snapshot["tabs"][snapshot["activeTabId"]]["searchQuery"] == "journal @ai"
     with begin_writer() as connection:
         assert "journal @ai" in fetch_tab_state_row(connection)["state_json"]

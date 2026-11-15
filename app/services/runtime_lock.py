@@ -22,6 +22,8 @@ from app.services.reminders import reminder_store
 from app.services.remote_image_proxy import remote_image_proxy_registry
 from app.services.search_history import search_history_store
 from app.services.sync import reset_state as reset_sync_state
+from app.services.edit_locks import edit_locks
+from app.services.ai_chat_live import ai_chat_live
 from app.services.tab_state import tab_state_store
 from app.services.undo_state import reset_all_undo_state
 from app.services.view_cache import view_cache
@@ -69,6 +71,8 @@ def purge_decrypted_runtime_state() -> bool:
     remote_image_proxy_registry.reset()
     search_history_store.reset()
     reset_sync_state()
+    edit_locks.reset()
+    ai_chat_live.reset()
     reset_all_undo_state()
     lock_ontology_rules_store()
     clear_encryption_key()

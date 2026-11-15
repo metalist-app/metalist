@@ -7,7 +7,8 @@ test('login and workspace requests retain the authenticated tab identity when br
         getItem: key => stored.get(key) ?? null,
         setItem: (key, value) => stored.set(key, String(value)),
     };
-    globalThis.window = {};
+    // A browser tab, not the installed phone app: its view is kept in sessionStorage.
+    globalThis.window = {matchMedia: () => ({matches: false}), navigator: {}};
     globalThis.document = {
         body: {classList: {add() {}, remove() {}}, dataset: {}},
         getElementById: id => {

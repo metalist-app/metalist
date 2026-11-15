@@ -172,7 +172,7 @@ def test_ontology_rules_store_encrypted_bootstrap_and_decrypt(
     clear_encryption_key()
     try:
         dek = os.urandom(32)
-        token = token_service.create_token(client_info="test", owner_tab_id="tab", dek=dek)
+        token = token_service.create_token(client_info="test", dek=dek)
         ciphertext, nonce, tag = encrypt("alpha => beta", token)
         assert nonce is not None
         assert tag is not None

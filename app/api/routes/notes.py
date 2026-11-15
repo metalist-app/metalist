@@ -4,11 +4,11 @@ from http import HTTPStatus
 import urllib.parse
 from collections.abc import Mapping
 from datetime import date, datetime, timezone
-from typing import Dict
+from typing import Annotated, Dict
 
 import httpx
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Header, HTTPException, Request
 from fastapi.responses import Response
 from pydantic import BaseModel
 
@@ -31,6 +31,7 @@ from app.api.note_requests import (
     UpdateTabSortModeRequest,
     CreateNewTabRequest,
     SearchContextForSearchRequest,
+    TakeOverEditingRequest,
     DeleteTabRequest,
     SearchSuggestionsRequest,
     PrioritizeTagSuggestionsRequest,
@@ -160,6 +161,7 @@ from app.config import VERSION
 from app.services.view_cache import view_cache
 from app.services.view_diff import generate_diff_ops
 from app.services.tab_state import tab_state_store
+from app.services.edit_locks import SearchLockedElsewhere, edit_locks, root_of
 from app.services.backlinks import list_backlinks_for_note
 from app.services.reference_suggestions import suggest_references
 from app.services.client_state_service import copied_note_ids, remember_copied_note
@@ -285,7 +287,7 @@ def _require_loopback_shell_request(request: Request) -> None:
 
 
 def _resolve_tab_sort_mode(tab_id: object) -> str:
-    if tab_id is not None and (not isinstance(tab_id, str) or tab_id == ""):
+    if not isinstance(tab_id, str) or tab_id == "":
         raise TypeError("tabId must be a non-empty string")
 
     capture = CapturedExceptionContext(InputRejected, boundary='app/api/routes/notes.py:_resolve_tab_sort_mode:capture')
@@ -408,6 +410,16 @@ def view_diff(payload: ViewDiffRequest):
         if not note_store.has_note(normalized_editing_note_id):
             normalized_editing_note_id = None
 
+    # The view holds the root of the note it edits (multi-view step 4); another view holding it
+    # refuses the edit, which the browser leaves at once, opening that root's marker.
+    view_id = edit_locks.request_view_id()
+    held_note_id = ""
+    if normalized_editing_note_id is not None:
+        held_note_id = normalized_editing_note_id
+    edit_lock = edit_locks.sync_editing(view_id=view_id, note_id=held_note_id, tells_taken=False)
+    if "lockedWhere" in edit_lock:
+        normalized_editing_note_id = None
+
     # Like editingNoteId, the note find opened can be gone by now (deleted, undone).
     if find_reveal_note_id is not None and not note_store.has_note(find_reveal_note_id):
         find_reveal_note_id = None
@@ -431,6 +443,9 @@ def view_diff(payload: ViewDiffRequest):
     if not is_closed_page:
         date_filter = _resolve_tab_date_filter(tab_id)
         file_filter = _resolve_tab_file_filter(tab_id)
+    # Read before the view is built, so a change landing meanwhile is never taken as shown: the
+    # browser asks again when the status it polls reports a later one (multi-view step 3).
+    notes_revision_shown = note_store.revision
     state = build_view_state(
         editing_note_id=normalized_editing_note_id,
         find_reveal_note_id=find_reveal_note_id,
@@ -472,6 +487,15 @@ def view_diff(payload: ViewDiffRequest):
         "editingNoteId": normalized_editing_note_id,
         # Reference pages closed with their deleted notes: the browser takes the tabs again.
         "pagesClosedAtVersion": tab_state_store.pages_closed_at_version(),
+        # The notes as of this revision at least: a later one in the status means another view
+        # changed them (live-changes-service.js).
+        "notesRevision": notes_revision_shown,
+        # The roots other views edit, with where; an edit this view was refused (multi-view step 4).
+        "lockedRoots": edit_locks.locked_roots_for(view_id=view_id),
+        "editLockRefused": edit_lock,
+        "editedRootMovedElsewhere": normalized_editing_note_id is not None and edit_locks.was_moved_elsewhere(
+            root_id=root_of(normalized_editing_note_id),
+        ),
     }
     if warm_view is None:
         response_snapshot["structure"] = state.structure
@@ -488,15 +512,20 @@ def view_diff(payload: ViewDiffRequest):
     return {"snapshot": response_snapshot, "updateUUID": update_uuid}
 
 
+# The view asking (a browser tab, the installed phone app): its place in the shared search contexts
+# (multi-view editing step 2; app/services/tab_state.py).
+ViewId = Annotated[str, Header(alias="X-Metalist-Tab-Id")]
+
+
 @router.get("/notes/tab-state")
 @one_step_read_route
-def get_tab_state() -> Dict[str, object]:
-    return tab_state_store.snapshot()
+def get_tab_state(view_id: ViewId) -> Dict[str, object]:
+    return tab_state_store.snapshot(view_id=view_id)
 
 
 @router.post("/notes/tab-state")
 @transactional_route
-def update_tab_state(payload: UpdateTabStateRequest) -> Dict[str, object]:
+def update_tab_state(payload: UpdateTabStateRequest, view_id: ViewId) -> Dict[str, object]:
     if (
         "activeTabId" not in payload or "tabs" not in payload or "tabOrder" not in payload
         or "referenceViews" not in payload or "version" not in payload
@@ -515,17 +544,39 @@ def update_tab_state(payload: UpdateTabStateRequest) -> Dict[str, object]:
     capture = CapturedExceptionContext(InputRejected, boundary='app/api/routes/notes.py:update_tab_state:capture')
     with capture:
         response = tab_state_store.update(
-            active_tab_id=active_tab_id, tabs=tabs, tab_order=tab_order_list, reference_views=reference_views,
+            view_id=view_id, active_tab_id=active_tab_id, tabs=tabs, tab_order=tab_order_list, reference_views=reference_views,
             read_at_version=payload["version"],
         )
+    # Another view types this search: said calmly, as rejected input (multi-view step 4).
+    if isinstance(capture.captured_exception, SearchLockedElsewhere):
+        raise capture.captured_exception
     if capture.captured_exception is not None:
         raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail="Invalid or stale tab state") from capture.captured_exception
     return response
 
 
+@router.post("/notes/tab-state/search-lock/release")
+@read_only_route
+def release_search_lock(view_id: ViewId) -> Dict[str, object]:
+    """This view left its search box: the other views may type the search again."""
+    edit_locks.release_search(view_id=view_id)
+    return {"released": True}
+
+
+@router.post("/notes/edit-lock/take-over")
+@read_only_route
+def take_over_editing(payload: TakeOverEditingRequest, view_id: ViewId) -> Dict[str, object]:
+    """Take over the root of the note tapped from the view editing it (multi-view step 4, case 5).
+    Asked again until ready: the other view saves its typing and leaves the note first."""
+    note_id = payload["noteId"]
+    if not note_store.has_note(note_id):
+        raise InputRejected("That note is gone.")
+    return {"ready": edit_locks.take_over(view_id=view_id, note_id=note_id)}
+
+
 @router.post("/notes/tab-state/sort-mode")
 @transactional_route
-def update_tab_sort_mode(payload: UpdateTabSortModeRequest) -> Dict[str, object]:
+def update_tab_sort_mode(payload: UpdateTabSortModeRequest, view_id: ViewId) -> Dict[str, object]:
     if "tabId" not in payload:
         raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail="tabId is required")
     if "sortMode" not in payload:
@@ -539,7 +590,7 @@ def update_tab_sort_mode(payload: UpdateTabSortModeRequest) -> Dict[str, object]
     capture = CapturedExceptionContext(InputRejected, boundary='app/api/routes/notes.py:update_tab_sort_mode:capture')
     response: Dict[str, object] | None = None
     with capture:
-        response = tab_state_store.set_sort_mode(tab_id=tab_id, sort_mode=sort_mode)
+        response = tab_state_store.set_sort_mode(view_id=view_id, tab_id=tab_id, sort_mode=sort_mode)
     if capture.captured_exception is not None:
         exc = capture.captured_exception
         raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail=str(exc)) from exc
@@ -552,7 +603,7 @@ def update_tab_sort_mode(payload: UpdateTabSortModeRequest) -> Dict[str, object]
 
 @router.post("/notes/tab-state/date-filter")
 @transactional_route
-def update_tab_date_filter(payload: UpdateTabDateFilterRequest) -> Dict[str, object]:
+def update_tab_date_filter(payload: UpdateTabDateFilterRequest, view_id: ViewId) -> Dict[str, object]:
     """Set or clear a tab's date range filter (root_date_filter.py). A range that is
     not one (its start after its end, say) is answered as rejected input."""
     date_filter: RootDateFilter | None = None
@@ -561,7 +612,7 @@ def update_tab_date_filter(payload: UpdateTabDateFilterRequest) -> Dict[str, obj
             field=payload["field"], range_kind=payload["rangeKind"],
             from_date=payload["fromDate"], to_date=payload["toDate"],
         )
-    response = tab_state_store.set_date_filter(tab_id=payload["tabId"], date_filter=date_filter)
+    response = tab_state_store.set_date_filter(view_id=view_id, tab_id=payload["tabId"], date_filter=date_filter)
     if response["changed"] is True:
         reset_undo_stack(payload["clientId"], payload["undoContext"])
     return response
@@ -569,12 +620,12 @@ def update_tab_date_filter(payload: UpdateTabDateFilterRequest) -> Dict[str, obj
 
 @router.post("/notes/tab-state/file-filter")
 @transactional_route
-def update_tab_file_filter(payload: UpdateTabFileFilterRequest) -> Dict[str, object]:
+def update_tab_file_filter(payload: UpdateTabFileFilterRequest, view_id: ViewId) -> Dict[str, object]:
     """Set or clear a tab's Files filter (file_kinds.py)."""
     file_filter: str | None = None
     if payload["kind"] != FILE_FILTER_NONE:
         file_filter = payload["kind"]
-    response = tab_state_store.set_file_filter(tab_id=payload["tabId"], file_filter=file_filter)
+    response = tab_state_store.set_file_filter(view_id=view_id, tab_id=payload["tabId"], file_filter=file_filter)
     if response["changed"] is True:
         reset_undo_stack(payload["clientId"], payload["undoContext"])
     return response
@@ -582,9 +633,9 @@ def update_tab_file_filter(payload: UpdateTabFileFilterRequest) -> Dict[str, obj
 
 @router.post("/notes/tab-state/untagged-view")
 @transactional_route
-def update_tab_untagged_view(payload: UpdateTabUntaggedViewRequest) -> Dict[str, object]:
+def update_tab_untagged_view(payload: UpdateTabUntaggedViewRequest, view_id: ViewId) -> Dict[str, object]:
     """Show a tab's untagged notes, or its search again."""
-    response = tab_state_store.set_untagged_view(tab_id=payload["tabId"], is_untagged_view=payload["isUntaggedView"])
+    response = tab_state_store.set_untagged_view(view_id=view_id, tab_id=payload["tabId"], is_untagged_view=payload["isUntaggedView"])
     if response["changed"] is True:
         reset_undo_stack(payload["clientId"], payload["undoContext"])
     return response
@@ -592,22 +643,24 @@ def update_tab_untagged_view(payload: UpdateTabUntaggedViewRequest) -> Dict[str,
 
 @router.post("/notes/tab-state/search-context-for-search")
 @transactional_route
-def search_context_for_search(payload: SearchContextForSearchRequest) -> Dict[str, object]:
+def search_context_for_search(payload: SearchContextForSearchRequest, view_id: ViewId) -> Dict[str, object]:
     """The search context a search link switches to: the one with the same terms, else none
     (found false), and the browser opens a new one (docs/ready-to-build/search-links.md §3)."""
-    tab_id = tab_state_store.search_context_with_search(search=payload["search"])
+    tab_id = tab_state_store.search_context_with_search(view_id=view_id, search=payload["search"])
     return {"tabId": tab_id, "found": tab_id != ""}
 
 
 @router.post("/notes/tab-state/new-tab")
 @transactional_route
-def create_new_tab(payload: CreateNewTabRequest) -> Dict[str, object]:
+def create_new_tab(payload: CreateNewTabRequest, view_id: ViewId) -> Dict[str, object]:
     if "copyFromTabId" not in payload:
         raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail="copyFromTabId is required")
     copy_from_tab_id = payload["copyFromTabId"]
     capture = CapturedExceptionContext(InputRejected, boundary='app/api/routes/notes.py:create_new_tab:capture')
     with capture:
-        response = tab_state_store.create_tab(copy_from_tab_id=copy_from_tab_id, copies_view=payload["copiesView"])
+        response = tab_state_store.create_tab(
+            view_id=view_id, copy_from_tab_id=copy_from_tab_id, copies_view=payload["copiesView"], is_page=payload["isPage"],
+        )
     if capture.captured_exception is not None:
         raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail="Invalid or stale tab state") from capture.captured_exception
     new_tab_id = response["newTabId"]
@@ -622,13 +675,13 @@ def create_new_tab(payload: CreateNewTabRequest) -> Dict[str, object]:
 
 @router.post("/notes/tab-state/delete-tab")
 @transactional_route
-def delete_tab(payload: DeleteTabRequest) -> Dict[str, object]:
+def delete_tab(payload: DeleteTabRequest, view_id: ViewId) -> Dict[str, object]:
     if "tabId" not in payload:
         raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail="tabId is required")
     tab_id = payload["tabId"]
     capture = CapturedExceptionContext(InputRejected, boundary='app/api/routes/notes.py:delete_tab:capture')
     with capture:
-        response = tab_state_store.delete_tab(tab_id=tab_id)
+        response = tab_state_store.delete_tab(view_id=view_id, tab_id=tab_id)
     if capture.captured_exception is not None:
         raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail="Invalid or stale tab state") from capture.captured_exception
     view_cache.discard_tab(tab_id)
@@ -1724,10 +1777,7 @@ def run_shell_status_endpoint(request: Request, note_id: str, run_id: str) -> Di
 def move_note_endpoint(note_id: str, body: MoveNoteEndpointRequest):
     viewport = _require_viewport(body)
     _require_note_present(note_id, context="notes.move")
-    if "tab_id" in body:
-        tab_id = body["tab_id"]
-    else:
-        tab_id = None
+    tab_id = body["tab_id"]
     _block_root_reorder_when_sorted(
         note_id,
         tab_id=tab_id,
@@ -1772,10 +1822,7 @@ def _move_note_to_edge(note_id: str, body: MoveNoteToTopEndpointRequest, *, comm
     if normalized_search is not None and not isinstance(normalized_search, str):
         raise TypeError("search_query must be a string or null")
 
-    if "tab_id" in body:
-        tab_id = body["tab_id"]
-    else:
-        tab_id = None
+    tab_id = body["tab_id"]
     _block_root_reorder_when_sorted(
         note_id,
         tab_id=tab_id,
@@ -1928,10 +1975,7 @@ def prioritize_in_view_endpoint(body: PrioritizeInViewEndpointRequest):
     tag = body["tag"]
     direction = body["direction"]
     search_query = body["search_query"]
-    if "tab_id" in body:
-        tab_id = body["tab_id"]
-    else:
-        tab_id = None
+    tab_id = body["tab_id"]
 
     if not isinstance(tag, str):
         raise TypeError("tag must be a string")
@@ -1962,10 +2006,7 @@ def alphabetize_root_notes_endpoint(body: AlphabetizeRootNotesEndpointRequest):
     viewport = _require_viewport(body)
     direction = body["direction"]
     search_query = body["search_query"]
-    if "tab_id" in body:
-        tab_id = body["tab_id"]
-    else:
-        tab_id = None
+    tab_id = body["tab_id"]
 
     if not isinstance(direction, str):
         raise TypeError("direction must be a string")

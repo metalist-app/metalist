@@ -10,6 +10,8 @@ from app.models.database import SafeSession
 from app.services.content_cache import populate_cache_from_db
 from app.services.note_store import store as note_store
 from app.services.sync import reset_state as reset_sync_state
+from app.services.edit_locks import edit_locks
+from app.services.ai_chat_live import ai_chat_live
 from app.services.tab_state import tab_state_store
 from app.services.link_titles import link_title_store
 from app.services.reminders import reminder_store
@@ -35,6 +37,9 @@ def reset_state_for_tests() -> None:
     search_history_store.clear_persisted_state_for_tests()
 
     reset_sync_state()
+
+    edit_locks.reset()
+    ai_chat_live.reset()
     view_cache.clear()
     tab_state_store.clear_persisted_state_for_tests()
     link_title_store.reset()

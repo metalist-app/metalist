@@ -21,11 +21,14 @@
                 <%include file="_logo_mark.html"/>
             </div>
             <div id="locked-panel" class="login-panel locked-panel">
-                <h1>Session locked</h1>
+                <%doc>Shown when this browser was signed out (another device signed out every device,
+                a password change elsewhere, a timeout): every tab shares the sign-in, so none
+                takes over another's (multi-view editing, 2026-11-14).</%doc>
+                <h1>Signed out</h1>
                 % if has_password:
-                    <button id="locked-action" data-target="login">Go to Login</button>
+                    <button id="locked-action" data-target="login">Log In</button>
                 % else:
-                    <button id="locked-action" data-target="resume">Take Over Session</button>
+                    <button id="locked-action" data-target="resume">Log In</button>
                 % endif
             </div>
         </div>

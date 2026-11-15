@@ -14,6 +14,9 @@ from app.services.input_errors import InputRejected
 from app.services.root_date_filter import make_root_date_filter
 from app.services.tab_state import TabStateStore
 
+# The view (a browser tab) the tests act in (multi-view editing step 2).
+VIEW = "10000000-0000-4000-8000-0000000000ee"
+
 
 @pytest.fixture(autouse=True)
 def _isolated_memory_db(
@@ -44,16 +47,16 @@ def _bootstrapped_copy() -> TabStateStore:
 def _store_with_a_narrowed_tab() -> tuple[TabStateStore, str]:
     """A store whose tab searches, is sorted, has a date range, a Files filter and the Untagged view."""
     store = TabStateStore()
-    snapshot = store.snapshot()
+    snapshot = store.snapshot(view_id=VIEW)
     tab_id = snapshot["activeTabId"]
     snapshot["tabs"][tab_id]["searchQuery"] = "journal"
-    store.update(reference_views={}, active_tab_id=tab_id, tabs=snapshot["tabs"],
+    store.update(view_id=VIEW, reference_views={}, active_tab_id=tab_id, tabs=snapshot["tabs"],
                  tab_order=snapshot["tabOrder"], read_at_version=snapshot["version"])
-    store.set_sort_mode(tab_id=tab_id, sort_mode="created")
-    store.set_date_filter(tab_id=tab_id, date_filter=make_root_date_filter(
+    store.set_sort_mode(view_id=VIEW, tab_id=tab_id, sort_mode="created")
+    store.set_date_filter(view_id=VIEW, tab_id=tab_id, date_filter=make_root_date_filter(
         field="updated", range_kind="today", from_date="", to_date=""))
-    store.set_file_filter(tab_id=tab_id, file_filter="pdf")
-    store.set_untagged_view(tab_id=tab_id, is_untagged_view=True)
+    store.set_file_filter(view_id=VIEW, tab_id=tab_id, file_filter="pdf")
+    store.set_untagged_view(view_id=VIEW, tab_id=tab_id, is_untagged_view=True)
     return store, tab_id
 
 
@@ -62,7 +65,7 @@ def _store_with_a_narrowed_tab() -> tuple[TabStateStore, str]:
 def test_a_duplicate_copies_the_search_sort_date_range_files_filter_and_untagged_view() -> None:
     store, source_tab_id = _store_with_a_narrowed_tab()
 
-    duplicated = store.create_tab(copy_from_tab_id=source_tab_id, copies_view=True)
+    duplicated = store.create_tab(view_id=VIEW, is_page=False, copy_from_tab_id=source_tab_id, copies_view=True)
     new_tab_id = duplicated["newTabId"]
 
     assert duplicated["tabs"][new_tab_id]["searchQuery"] == "journal"
@@ -75,7 +78,7 @@ def test_a_duplicate_copies_the_search_sort_date_range_files_filter_and_untagged
 def test_a_new_tab_starts_with_nothing() -> None:
     store, source_tab_id = _store_with_a_narrowed_tab()
 
-    created = store.create_tab(copy_from_tab_id=source_tab_id, copies_view=False)
+    created = store.create_tab(view_id=VIEW, is_page=False, copy_from_tab_id=source_tab_id, copies_view=False)
     new_tab_id = created["newTabId"]
 
     assert created["tabs"][new_tab_id] == {
@@ -88,36 +91,36 @@ def test_a_new_tab_starts_with_nothing() -> None:
 
 def test_a_tab_keeps_its_untagged_view_across_a_reload_and_a_closed_tab_drops_it() -> None:
     store = TabStateStore()
-    tab_id = store.snapshot()["activeTabId"]
-    store.update(reference_views={}, active_tab_id=tab_id, tabs={tab_id: {**store.snapshot()["tabs"][tab_id], "scrollY": 120}},
-                 tab_order=[tab_id], read_at_version=store.snapshot()["version"])
+    tab_id = store.snapshot(view_id=VIEW)["activeTabId"]
+    store.update(view_id=VIEW, reference_views={}, active_tab_id=tab_id, tabs={tab_id: {**store.snapshot(view_id=VIEW)["tabs"][tab_id], "scrollY": 120}},
+                 tab_order=[tab_id], read_at_version=store.snapshot(view_id=VIEW)["version"])
 
-    result = store.set_untagged_view(tab_id=tab_id, is_untagged_view=True)
+    result = store.set_untagged_view(view_id=VIEW, tab_id=tab_id, is_untagged_view=True)
     assert result["changed"] is True
     assert result["untaggedViews"] == [tab_id]
     assert result["tabs"][tab_id]["scrollY"] == 0, "a view that shows other notes starts at its top"
-    assert store.set_untagged_view(tab_id=tab_id, is_untagged_view=True)["changed"] is False
+    assert store.set_untagged_view(view_id=VIEW, tab_id=tab_id, is_untagged_view=True)["changed"] is False
 
-    assert _bootstrapped_copy().snapshot()["untaggedViews"] == [tab_id]
+    assert _bootstrapped_copy().snapshot(view_id=VIEW)["untaggedViews"] == [tab_id]
 
-    new_tab_id = store.create_tab(copy_from_tab_id=tab_id, copies_view=True)["newTabId"]
-    assert store.delete_tab(tab_id=new_tab_id)["untaggedViews"] == [tab_id]
+    new_tab_id = store.create_tab(view_id=VIEW, is_page=False, copy_from_tab_id=tab_id, copies_view=True)["newTabId"]
+    assert store.delete_tab(view_id=VIEW, tab_id=new_tab_id)["untaggedViews"] == [tab_id]
 
-    cleared = store.set_untagged_view(tab_id=tab_id, is_untagged_view=False)
+    cleared = store.set_untagged_view(view_id=VIEW, tab_id=tab_id, is_untagged_view=False)
     assert cleared["changed"] is True
     assert cleared["untaggedViews"] == []
 
 
 def test_tab_state_saved_before_untagged_views_were_kept_has_none() -> None:
     store = TabStateStore()
-    snapshot = store.snapshot()
+    snapshot = store.snapshot(view_id=VIEW)
     stored = json.dumps({key: snapshot[key] for key in ("activeTabId", "tabs", "tabOrder", "version")})
     assert store._deserialize_snapshot_json(stored)["untaggedViews"] == []
 
 
 def test_set_sort_mode_resets_scroll_state_and_marks_change() -> None:
     store = TabStateStore()
-    snapshot = store.snapshot()
+    snapshot = store.snapshot(view_id=VIEW)
     tab_id = snapshot["activeTabId"]
     payload = snapshot["tabs"]
     payload[tab_id]["scrollY"] = 250
@@ -129,14 +132,14 @@ def test_set_sort_mode_resets_scroll_state_and_marks_change() -> None:
         "beltNext": [],
         "anchorSortKey": {"domIndex": 0},
     }
-    store.update(reference_views={}, 
+    store.update(view_id=VIEW, reference_views={}, 
         active_tab_id=tab_id,
         tabs=payload,
         tab_order=snapshot["tabOrder"],
         read_at_version=snapshot["version"],
     )
 
-    result = store.set_sort_mode(tab_id=tab_id, sort_mode="created")
+    result = store.set_sort_mode(view_id=VIEW, tab_id=tab_id, sort_mode="created")
 
     assert result["changed"] is True
     assert result["tabs"][tab_id]["sortMode"] == "created"
@@ -146,10 +149,10 @@ def test_set_sort_mode_resets_scroll_state_and_marks_change() -> None:
 
 def test_set_sort_mode_is_noop_when_value_matches() -> None:
     store = TabStateStore()
-    snapshot = store.snapshot()
+    snapshot = store.snapshot(view_id=VIEW)
     tab_id = snapshot["activeTabId"]
 
-    result = store.set_sort_mode(tab_id=tab_id, sort_mode="normal")
+    result = store.set_sort_mode(view_id=VIEW, tab_id=tab_id, sort_mode="normal")
 
     assert result["changed"] is False
     assert result["tabs"][tab_id]["sortMode"] == "normal"
@@ -157,10 +160,10 @@ def test_set_sort_mode_is_noop_when_value_matches() -> None:
 
 def test_set_sort_mode_accepts_alphabetical() -> None:
     store = TabStateStore()
-    snapshot = store.snapshot()
+    snapshot = store.snapshot(view_id=VIEW)
     tab_id = snapshot["activeTabId"]
 
-    result = store.set_sort_mode(tab_id=tab_id, sort_mode="alphabetical")
+    result = store.set_sort_mode(view_id=VIEW, tab_id=tab_id, sort_mode="alphabetical")
 
     assert result["changed"] is True
     assert result["tabs"][tab_id]["sortMode"] == "alphabetical"
@@ -168,10 +171,10 @@ def test_set_sort_mode_accepts_alphabetical() -> None:
 
 def test_set_sort_mode_accepts_content_volume() -> None:
     store = TabStateStore()
-    snapshot = store.snapshot()
+    snapshot = store.snapshot(view_id=VIEW)
     tab_id = snapshot["activeTabId"]
 
-    result = store.set_sort_mode(tab_id=tab_id, sort_mode="content-volume")
+    result = store.set_sort_mode(view_id=VIEW, tab_id=tab_id, sort_mode="content-volume")
 
     assert result["changed"] is True
     assert result["tabs"][tab_id]["sortMode"] == "content-volume"
@@ -179,7 +182,7 @@ def test_set_sort_mode_accepts_content_volume() -> None:
 
 def test_bootstrap_restores_persisted_tab_state() -> None:
     store = TabStateStore()
-    initial = store.snapshot()
+    initial = store.snapshot(view_id=VIEW)
     tab_id = initial["activeTabId"]
     payload = initial["tabs"]
     payload[tab_id]["searchQuery"] = "project-x"
@@ -193,7 +196,7 @@ def test_bootstrap_restores_persisted_tab_state() -> None:
         "beltNext": ["root-2"],
         "anchorSortKey": {"domIndex": 3},
     }
-    persisted = store.update(reference_views={}, 
+    persisted = store.update(view_id=VIEW, reference_views={}, 
         active_tab_id=tab_id,
         tabs=payload,
         tab_order=initial["tabOrder"],
@@ -208,7 +211,9 @@ def test_bootstrap_restores_persisted_tab_state() -> None:
     finally:
         session.close()
 
-    snapshot = reloaded.snapshot()
+    snapshot = reloaded.snapshot(view_id=VIEW)
+    # The shared contexts' revision counts changes this server saw, not what is saved.
+    del snapshot["searchContextsRevision"], persisted["searchContextsRevision"]
     assert snapshot == persisted
     assert snapshot["tabs"][tab_id]["searchQuery"] == "project-x"
     assert snapshot["tabs"][tab_id]["anchorRootId"] == "root-1"
@@ -216,7 +221,7 @@ def test_bootstrap_restores_persisted_tab_state() -> None:
 
 def test_legacy_tab_payload_discards_removed_calendar_state() -> None:
     store = TabStateStore()
-    legacy_snapshot = store.snapshot()
+    legacy_snapshot = store.snapshot(view_id=VIEW)
     tab_id = legacy_snapshot["activeTabId"]
     payload = legacy_snapshot["tabs"]
     payload[tab_id]["dateFilter"] = {
@@ -245,7 +250,7 @@ def test_legacy_tab_payload_discards_removed_calendar_state() -> None:
     finally:
         session.close()
 
-    normalized_tab = reloaded.snapshot()["tabs"][tab_id]
+    normalized_tab = reloaded.snapshot(view_id=VIEW)["tabs"][tab_id]
     assert "dateFilter" not in normalized_tab
     assert "calendarMetric" not in normalized_tab
     assert "calendarScrollTop" not in normalized_tab
@@ -268,11 +273,11 @@ def _scroll_of(state: dict, tab_id: str) -> dict:
 
 
 def _restart_by_sort(store: TabStateStore, tab_id: str) -> None:
-    store.set_sort_mode(tab_id=tab_id, sort_mode="alphabetical")
+    store.set_sort_mode(view_id=VIEW, tab_id=tab_id, sort_mode="alphabetical")
 
 
 def _restart_by_date_range(store: TabStateStore, tab_id: str) -> None:
-    store.set_date_filter(tab_id=tab_id, date_filter=make_root_date_filter(
+    store.set_date_filter(view_id=VIEW, tab_id=tab_id, date_filter=make_root_date_filter(
         field="created", range_kind="custom", from_date="2026-10-01", to_date="2026-10-22",
     ))
 
@@ -283,14 +288,14 @@ def test_snapshot_read_before_a_view_change_keeps_the_new_order_and_its_top(rest
     # before a new sort order or date range can reach the server after it. Its sort
     # order and its place in the old view must not replace the new view's.
     store = TabStateStore()
-    stale = store.snapshot()
+    stale = store.snapshot(view_id=VIEW)
     tab_id = stale["activeTabId"]
     stale["tabs"][tab_id].update(_OLD_VIEW_SCROLL)
     stale["tabs"][tab_id]["searchQuery"] = "typed before"
     restart_view(store, tab_id)
     sort_mode = store.get_sort_mode(tab_id=tab_id)
 
-    saved = store.update(
+    saved = store.update(view_id=VIEW, 
         reference_views={}, active_tab_id=tab_id, tabs=stale["tabs"], tab_order=stale["tabOrder"],
         read_at_version=stale["version"],
     )
@@ -300,10 +305,10 @@ def test_snapshot_read_before_a_view_change_keeps_the_new_order_and_its_top(rest
     assert saved["tabs"][tab_id]["searchQuery"] == "typed before"
 
     # A save read after the change keeps the scroll it carries, and still the sort order.
-    fresh = store.snapshot()
+    fresh = store.snapshot(view_id=VIEW)
     fresh["tabs"][tab_id].update(_OLD_VIEW_SCROLL)
     fresh["tabs"][tab_id]["sortMode"] = "normal"
-    moved = store.update(
+    moved = store.update(view_id=VIEW, 
         reference_views={}, active_tab_id=tab_id, tabs=fresh["tabs"], tab_order=fresh["tabOrder"],
         read_at_version=fresh["version"],
     )
@@ -313,17 +318,17 @@ def test_snapshot_read_before_a_view_change_keeps_the_new_order_and_its_top(rest
 
 def test_unchanged_update_keeps_version_and_skips_persistence(monkeypatch: pytest.MonkeyPatch) -> None:
     store = TabStateStore()
-    snapshot = store.snapshot()
+    snapshot = store.snapshot(view_id=VIEW)
     tab_id = snapshot["activeTabId"]
     snapshot["tabs"][tab_id]["scrollY"] = 120
-    changed = store.update(
+    changed = store.update(view_id=VIEW, 
         reference_views={}, active_tab_id=tab_id, tabs=snapshot["tabs"], tab_order=snapshot["tabOrder"],
         read_at_version=snapshot["version"],
     )
     writes: list[bool] = []
     monkeypatch.setattr(store, "_persist_locked", lambda **_kwargs: writes.append(True))
 
-    unchanged = store.update(
+    unchanged = store.update(view_id=VIEW, 
         reference_views={}, active_tab_id=tab_id, tabs=changed["tabs"], tab_order=changed["tabOrder"],
         read_at_version=changed["version"],
     )
@@ -331,7 +336,7 @@ def test_unchanged_update_keeps_version_and_skips_persistence(monkeypatch: pytes
     assert unchanged["version"] == changed["version"]
     assert writes == []
     changed["tabs"][tab_id]["scrollY"] = 240
-    moved = store.update(
+    moved = store.update(view_id=VIEW, 
         reference_views={}, active_tab_id=tab_id, tabs=changed["tabs"], tab_order=changed["tabOrder"],
         read_at_version=changed["version"],
     )
@@ -342,14 +347,14 @@ def test_unchanged_update_keeps_version_and_skips_persistence(monkeypatch: pytes
 # A folder clicked in the tree is a folder (it becomes the search: test_folders_tab.py).
 def test_a_folder_clicked_must_be_a_folder() -> None:
     store = TabStateStore()
-    tab_id = store.snapshot()["activeTabId"]
+    tab_id = store.snapshot(view_id=VIEW)["activeTabId"]
     with pytest.raises(InputRejected, match="not a folder"):
-        store.choose_folder(tab_id=tab_id, folder="journal", adds=False)
+        store.choose_folder(view_id=VIEW, tab_id=tab_id, folder="journal", adds=False)
 
 
 def test_tab_state_saved_before_folders_were_kept_has_none() -> None:
     store = TabStateStore()
-    snapshot = store.snapshot()
+    snapshot = store.snapshot(view_id=VIEW)
     stored = json.dumps({key: snapshot[key] for key in ("activeTabId", "tabs", "tabOrder", "version")})
     assert store._deserialize_snapshot_json(stored)["folderFilters"] == {}
     assert store._deserialize_snapshot_json(stored)["treeShown"] is False

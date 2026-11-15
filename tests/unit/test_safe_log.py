@@ -165,7 +165,7 @@ from app.services.tokens import token_service
 from app.services import safe_log
 
 MARKER = "ZEBRAQUARTZ"
-token = token_service.create_token(client_info="fixture", owner_tab_id="tab", dek=None)
+token = token_service.create_token(client_info="fixture", dek=None)
 headers = {"Authorization": "Bearer " + token, "X-Metalist-Tab-Id": "tab", "Origin": "http://localhost"}
 viewport = {"scrollY": 0, "scrollAnchor": None}
 '''

@@ -291,8 +291,8 @@ test('agent debugger retains the latest trace and toggles exact detail visibilit
     assert.match(controller, /const nextVisibility = !this\._showDiagnosticActivities/);
     assert.match(controller, /String\(this\._showDiagnosticActivities\)/);
     assert.match(controller, /await this\._saveDiagnosticsVisible\(nextVisibility\)/);
-    assert.match(controller, /!this\._showDiagnosticActivities[\s\S]*?_renderWorkingIndicator\(\)/);
-    assert.match(controller, /label\.textContent = 'Working'/);
+    assert.match(controller, /!this\._showDiagnosticActivities[\s\S]*?_renderWorkingIndicator\(/);
+    assert.match(controller, /_renderWorkingIndicator\(message\.id === this\._waitingAssistantId \? 'Waiting' : 'Working'\)/);
     assert.doesNotMatch(controller, /formatCompactWorkingActivityLabel/);
     assert.match(controller, /label\.textContent = activity\.label/);
     assert.match(controller, /tokenCount\.className = 'ai-chat-activity-token-count'/);
@@ -757,7 +757,9 @@ test('streaming keeps drafting available and reset cancels the active provider r
     assert.doesNotMatch(controller, /this\._elements\.input\.disabled\s*=\s*isBusy/);
     assert.match(controller, /let isModelDisabled = this\._isBusy/);
     assert.match(controller, /let isThinkingLevelDisabled = this\._isBusy/);
-    assert.match(controller, /this\._elements\.send\.textContent = this\._isBusy \? 'Stop' : 'Send'/);
+    // Stop also for an answer another view's Send is writing (multi-view step 5, case 7).
+    assert.match(controller, /const isStop = \[this\._isBusy, this\._isStopForAnswerElsewhere\(\)\]\.includes\(true\);/);
+    assert.match(controller, /this\._elements\.send\.textContent = isStop \? 'Stop' : 'Send'/);
     assert.match(controller, /this\._activeChatAbortController\.abort\(\)/);
     assert.match(controller, /new AbortController\(\)/);
     assert.match(

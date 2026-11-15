@@ -44,6 +44,8 @@ async function harness() {
         recordDateFiltersFromServer: () => {},
         recordFileFiltersFromServer: () => {},
         recordTreeShownFromServer: () => {},
+        noticeOwnContextsChange: () => {},
+        recordSearchLocks: () => {},
         ErrorHandler: { handleApiError(_error, response) { apiErrors.push(response.status); } },
         HttpRequestError, AuthenticationRequiredError,
         fetch: async (_endpoint, options) => {

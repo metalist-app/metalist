@@ -9,6 +9,7 @@ from typing import Any, Iterable, Iterator, Optional
 from .engine import GuardedConnection
 from .raw_connection import raw_sqlite_connection
 from .schema import NOTES_TABLE
+from app.services.edit_locks import edit_locks
 from app.services.hierarchy import validate_database_parent
 
 
@@ -73,6 +74,8 @@ def insert_note(
     created_at: datetime,
     updated_at: datetime,
 ) -> None:
+    # A note added under a root another view is editing changes that root (multi-view step 4).
+    edit_locks.require_parent_writable(parent_id=parent_id)
     conn = _conn(connection)
     validate_database_parent(conn, note_id, parent_id, is_new=True)
     conn.execute(
@@ -150,6 +153,7 @@ def update_links_preserving_updated_at(
 
     if len(fields) == 0:
         raise ValueError("update_links_preserving_updated_at requires at least one link field")
+    edit_locks.require_links_writable(note_id=note_id, changes=updates)
 
     values.append(note_id)
 
@@ -174,6 +178,7 @@ def reset_updated_at_to_created_at(
     for note_id in note_ids:
         if not isinstance(note_id, str) or note_id == "":
             raise ValueError("note_ids entries must be non-empty strings")
+        edit_locks.require_writable(note_id=note_id)
         cursor = conn.execute(
             f"""
             UPDATE {NOTES_TABLE}
@@ -216,6 +221,7 @@ def update_note_fields(
     for key in updates:
         if key not in allowed_fields:
             raise ValueError(f"update_note_fields received unexpected field: {key}")
+    edit_locks.require_writable(note_id=note_id)
 
     if "content" in updates:
         fields.append("content = ?")
@@ -275,6 +281,7 @@ def update_note_fields_preserving_updated_at(
     for key in updates:
         if key not in allowed_fields:
             raise ValueError(f"update_note_fields_preserving_updated_at received unexpected field: {key}")
+    edit_locks.require_writable(note_id=note_id)
 
     if "content" in updates:
         fields.append("content = ?")
@@ -321,6 +328,8 @@ def delete_notes(
     identifiers = list(note_ids)
     if not identifiers:
         return
+    for note_id in identifiers:
+        edit_locks.require_writable(note_id=note_id)
     conn = _conn(connection)
     # Chunk below SQLite's bound-variable limit (999 on older builds) so large
     # subtree deletes do not fail; the caller's transaction keeps it atomic.

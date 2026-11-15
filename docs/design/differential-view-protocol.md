@@ -36,7 +36,7 @@ Agreed, not built (2026-10-26): several views on one vault at once, each signed 
   - The response's `rootWindowStart` and `rootBandMargin` tell the client where the band starts, for scroll metrics.
 - `tabViewEmpty`: `true` when the browser holds nothing for this tab (a fresh tab, or one reset locally). The server then ignores its warm view and bootstraps.
 - `isUntaggedView`: restricts the view to notes without tags.
-- The warm view is kept for the tab's lifetime. It is dropped only when the tab is deleted or the session ends (login, passwordless claim, logout, lock, restore); a duplicated tab starts from a copy of its source's warm view.
+- The warm view is kept for the tab's lifetime. It is dropped only when the tab is deleted or the vault's runtime state starts again (the first sign-in onto a closed vault, the last sign-in's logout, Sign out every device, restore; a sign-in beside other devices keeps every warm view); a duplicated tab starts from a copy of its source's warm view.
 - `search` and `editingNoteId` are passed through for server-side rendering/flagging.
 - `undoContext`: a client-computed context boundary (currently tab+search). When this changes, the server clears the undo/redo stack for that client so `Cmd+Z` never crosses tab/search contexts.
 - `tabId`: client-maintained active tab UUID; the server keeps one warm view per `(clientId, tabId)`. Search, sort, and untagged changes simply diff against it.
@@ -133,6 +133,17 @@ Agreed, not built (2026-10-26): several views on one vault at once, each signed 
 - `lockDiffs` only lists locks that changed since the warm view. `locks` still contains the full visible lock map for reference.
 - `rootIds` keeps infinite-scroll metrics in sync without re-sending the full structure array.
 - Every response becomes the tab's new warm view, so it must be applied: the client never discards a view response, and tab switches wait for an in-flight view request.
+
+## Changes From Other Views (built 2026-11-14)
+- Every view response carries `notesRevision`: the notes' revision read before the view was built, so the view shows that revision at least.
+- The status every visible view polls every 2 seconds (`/api2/auth/status`) carries `notes_revision` (any change, from any view) and `search_contexts_revision` (the search contexts every view shares: their list, order, searches, sorts and filters; not a view's scroll or place).
+- A later `notes_revision` than the view shows: the view refreshes as usual, holding the note at the window's top still (or, while editing, the caret), with no animation. A moved `search_contexts_revision`: the view loads the tab state again; the context it shows deleted, it moves to the neighbour the server chose; its search, sort or filters changed, it runs them from the top.
+- Both wait while the user is busy (a command, a dialog, a menu, Find, a drag, a search being typed, scrolling). Cases and reasons: `docs/ready-to-build/multi-view-editing.md`, "Step 3's cases"; client: `live-changes-service.js`.
+
+## Edit Locks (built 2026-11-14)
+- Every view response also carries `lockedRoots` (root id → where another view edits it: "in another tab", "on your phone", "on another computer"), `editLockRefused` (`{}`, or `{rootId, lockedWhere}` when the edit this request asked for belongs to another view: the response is built for viewing and the browser leaves edit mode and opens the root's marker) and `editedRootMovedElsewhere` (another view moved the edited root: it is kept in place, `keep_edited_root_in_place`, until editing ends).
+- The status check sends `X-Metalist-Editing` (the note being edited, or empty) and answers `edit_locks_revision` (a lock taken, released or lapsed: views refresh their markers) and `edit_lock` (`{rootId, takenWhere, maySave}` once, when another view took this view's root over).
+- Rules and cases: `docs/ready-to-build/multi-view-editing.md`, "Step 4's cases"; server `app/services/edit_locks.py`, browser `edit-lock-service.js`.
 
 ## Reconciliation Efficiency
 - Snapshot construction uses a request-local traversal cache for note records, ordered child lists, ancestor paths, and descendant counts. A hierarchy branch is read once even though rendering and per-note metadata both need it.

@@ -9,6 +9,8 @@ import { buildSessionHeaders } from '../../session-auth.js';
 import { CommandGate } from './command-gate-service.js';
 import { checkBackgroundWork } from './background-work-cards.js';
 import { notesMayHaveChanged } from '../../notes-change-signal.js';
+import { noticeStatusRevisions } from './live-changes-service.js';
+import { leaveTakenOverEditing } from './edit-lock-service.js';
 
 const moduleState = ApplicationState.createFields('polling-service', {
     pollingInterval: null,
@@ -66,7 +68,9 @@ export function startPolling() {
     // Unified polling: check connectivity and updates. Status polls do not
     // extend sessions, so pausing them in hidden tabs changes no timeouts.
     moduleState.pollingInterval = setInterval(() => {
-        if (document.hidden) return;
+        // A hidden tab editing a note still checks in (browsers slow it to about once a minute), so
+        // its lock on that root lasts (multi-view editing step 4).
+        if (document.hidden && !ModeContext.isEditing) return;
         runConnectivityCheck();
     }, CONFIG.SYNC.POLL_INTERVAL_MS);
     // Once at once: work the server started with the page (reading files' text after a restart)
@@ -134,10 +138,22 @@ async function performConnectivityCheck() {
     await pingAuthStatus();
 }
 
+// The note this view edits ("" for none): the server keeps its root locked for this view.
+function editingHeader() {
+    if (!ModeContext.isEditing) {
+        return '';
+    }
+    const noteId = ModeContext.currentNoteId;
+    if (typeof noteId !== 'string' || noteId === '') {
+        throw new Error('Invariant violation: ModeContext.isEditing is true but currentNoteId is missing');
+    }
+    return noteId;
+}
+
 async function pingAuthStatus() {
     const response = await fetch(CONFIG.API.AUTH.STATUS, {
         method: 'GET',
-        headers: buildSessionHeaders(false),
+        headers: { ...buildSessionHeaders(false), 'X-Metalist-Editing': editingHeader() },
     });
 
     if (response.ok) {
@@ -145,6 +161,12 @@ async function pingAuthStatus() {
         handleLinkTitleRevision(status);
         handleFirstPageRevision(status);
         handleNotesRevision(status);
+        // Notes and search contexts changed in another view, shown here (multi-view step 3).
+        noticeStatusRevisions(status);
+        // Another view took over the root edited here (multi-view step 4).
+        if (status.authenticated === true && Object.hasOwn(status.edit_lock, 'takenWhere')) {
+            leaveTakenOverEditing(status.edit_lock);
+        }
         ErrorHandler.handleConnectionRestored();
         // The server's work beside the user's, shown as it goes (background-work-cards.js).
         if (status.authenticated === true) await checkBackgroundWork();

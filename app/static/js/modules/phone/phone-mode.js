@@ -356,9 +356,13 @@ function applyChoice(choice) {
     if (kind === 'untagged') {
         return () => CommandPalette.setIsUntaggedView(!CommandPalette.getIsUntaggedView());
     }
-    // Lock and Sign Out both log out; each vault has its own address, so the vault stays picked.
-    if (kind === 'lock' || kind === 'sign-out') {
-        return () => CommandPalette.logout();
+    // Lock signs out every device (locking a vault with a password); Sign Out this one (multi-view
+    // editing, 2026-11-14). Each vault has its own address, so the vault stays picked.
+    if (kind === 'lock') {
+        return () => CommandPalette.logOutNow({ everyDevice: true });
+    }
+    if (kind === 'sign-out') {
+        return () => CommandPalette.logOutNow({ everyDevice: false });
     }
     throw new Error(`Unknown phone menu choice: ${choice}`);
 }

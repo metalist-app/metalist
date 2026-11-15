@@ -208,7 +208,7 @@ def _verify_token(
     token = get_request_auth_token(request)
     if token is None:
         return None
-    if token_service.verify_token_for_tab(token, tab_id):
+    if token_service.verify_token(token):
         return token
     return None
 

@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 import json
 import re
 from threading import Lock
+from time import time
 from typing import Callable, Dict, List, Optional, Set
 from uuid import uuid4
 
@@ -17,6 +18,7 @@ from app.security.encryption import (
 )
 from app.services.root_sorting import SORT_MODE_FILE_SIZE, SORT_MODE_NORMAL, SORT_MODES, base_sort_mode, normalize_sort_mode
 from app.services.input_errors import InputRejected
+from app.services.edit_locks import edit_locks
 from app.services.search_links import same_search
 from app.services.file_kinds import make_file_filter
 from app.services.virtual_folders import NO_FOLDER, is_folder_tag, toggle_folder_in_search
@@ -240,32 +242,175 @@ def _is_uuid_string(value: str) -> bool:
     return True
 
 
+# --- Views (multi-view editing step 2, 2026-11-14) ------------------------------------------------
+
+# What each tab keeps for every view; its scroll (_TAB_SCROLL_KEYS) is each view's own.
+_SHARED_TAB_KEYS = ("searchQuery", "sortMode")
+# The saved state with views; saved before them, it had one place (_apply_snapshot_locked).
+_VIEWS_FORMAT = 2
+_VIEWS_STATE_KEYS = (
+    "format", "tabs", "tabOrder", "dateFilters", "fileFilters", "untaggedViews", "views", "pageOwners",
+    "lastUsedTabId", "unclaimedPlace", "version",
+)
+_SAVED_PLACE_KEYS = ("activeTabId", "scroll", "referenceViews", "treeShown", "usedAt", "knownSearch")
+# A place saved before knownSearch was (multi-view editing step 4, 2026-11-14) has the others only.
+_SAVED_PLACE_KEYS_BEFORE_KNOWN_SEARCH = frozenset(_SAVED_PLACE_KEYS) - {"knownSearch"}
+# The owner of the pages saved before views, until the first view to ask takes them.
+_UNCLAIMED = ""
+# A view unused this long is forgotten, with its pages (multi-view note §9: weeks, not hours).
+_DAYS_A_VIEW_IS_KEPT = 30
+_SECONDS_PER_DAY = 24 * 60 * 60
+_VIEW_FORGOTTEN_AFTER_SECONDS = _DAYS_A_VIEW_IS_KEPT * _SECONDS_PER_DAY
+
+
+def _require_view_id(view_id: object) -> None:
+    if not isinstance(view_id, str) or view_id == "" or len(view_id) > MAX_TAB_ID_LENGTH:
+        raise InputRejected("X-Metalist-Tab-Id must name the view")
+
+
+# A search of note ids alone, one or several joined by OR: a reference page's.
+_NOTE_ID_SEARCH_RE = re.compile(
+    r"^\s*[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+    r"(?:\s+OR\s+[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})*\s*$",
+    re.IGNORECASE,
+)
+
+
+def _is_note_id_search(search: object) -> bool:
+    assert isinstance(search, str), "a tab's search is text"
+    return _NOTE_ID_SEARCH_RE.match(search) is not None
+
+
+def _blank_scroll() -> Dict[str, object]:
+    return {"scrollY": 0, "anchorRootId": None, "scrollAnchor": None}
+
+
+def _blank_shared_tab() -> Dict[str, object]:
+    return {"searchQuery": "", "sortMode": SORT_MODE_NORMAL}
+
+
+def _new_place(*, active_tab_id: str) -> Dict[str, object]:
+    return {
+        "activeTabId": active_tab_id, "scroll": {}, "referenceViews": {}, "treeShown": False, "usedAt": 0.0,
+        # What the view's browser holds of each tab's search (update). Saved with the place: the
+        # store is loaded again after a refused change or a restart, and the browser keeps its tabs.
+        "knownSearch": {},
+    }
+
+
+def _used_at(place: Dict[str, object]) -> float:
+    used_at = place["usedAt"]
+    assert isinstance(used_at, (int, float)), "a place says when it was used"
+    return float(used_at)
+
+
+def _place_scroll(place: Dict[str, object]) -> Dict[str, Dict[str, object]]:
+    scroll = place["scroll"]
+    assert isinstance(scroll, dict), "a place keeps its scroll by tab"
+    return scroll
+
+
+def _place_reference_views(place: Dict[str, object]) -> Dict[str, Dict[str, object]]:
+    views = place["referenceViews"]
+    assert isinstance(views, dict), "a place keeps its reference pages"
+    return views
+
+
+def _normalize_shared_tabs(tabs: object) -> Dict[str, Dict[str, object]]:
+    if not isinstance(tabs, dict) or not tabs:
+        raise RuntimeError("tab-state JSON tabs must be a non-empty object")
+    normalized: Dict[str, Dict[str, object]] = {}
+    for tab_id, entry in tabs.items():
+        if not isinstance(tab_id, str) or not _is_uuid_string(tab_id) or not isinstance(entry, dict):
+            raise RuntimeError("tab-state JSON tabs must map tab ids to tabs")
+        search = entry["searchQuery"]
+        if not isinstance(search, str):
+            raise RuntimeError("tab-state JSON searchQuery must be text")
+        normalized[tab_id] = {
+            "searchQuery": search,
+            "sortMode": _normalize_tab_sort_mode(entry["sortMode"], from_storage=True),
+        }
+    return normalized
+
+
+def _load_place(saved: object, tabs: Dict[str, Dict[str, object]]) -> Dict[str, object]:
+    """A view's place as saved, less what refers to tabs that are gone."""
+    if not isinstance(saved, dict) or set(saved) not in (set(_SAVED_PLACE_KEYS), _SAVED_PLACE_KEYS_BEFORE_KNOWN_SEARCH):
+        raise RuntimeError(f"a saved place must have exactly {_SAVED_PLACE_KEYS}")
+    active = saved["activeTabId"]
+    tree_shown = saved["treeShown"]
+    used_at = saved["usedAt"]
+    scroll = saved["scroll"]
+    if not isinstance(active, str) or not isinstance(tree_shown, bool) or not isinstance(used_at, (int, float)):
+        raise RuntimeError("a saved place's tab, tree and time must be a tab id, true or false and a time")
+    if not isinstance(scroll, dict):
+        raise RuntimeError("a saved place's scroll must be an object")
+    place = _new_place(active_tab_id=active)
+    place["treeShown"] = tree_shown
+    place["usedAt"] = float(used_at)
+    place["scroll"] = {
+        tab_id: {key: entry[key] for key in _TAB_SCROLL_KEYS}
+        for tab_id, entry in scroll.items() if tab_id in tabs and isinstance(entry, dict)
+    }
+    place["referenceViews"] = _normalize_reference_views(saved["referenceViews"], tabs, from_storage=True)
+    if "knownSearch" in saved:
+        known = saved["knownSearch"]
+        if not isinstance(known, dict) or not all(isinstance(search, str) for search in known.values()):
+            raise RuntimeError("a saved place's known searches must map tab ids to searches")
+        place["knownSearch"] = {tab_id: search for tab_id, search in known.items() if tab_id in tabs}
+    return place
+
+
 class TabStateStore:
-    """Server-owned tab state with namespace-scoped persistence in SQLite."""
+    """Server-owned tab state with namespace-scoped persistence in SQLite.
+
+    Two parts (multi-view editing step 2, 2026-11-14; docs/ready-to-build/multi-view-editing.md
+    §2 and §10): shared by every view, the search contexts (their order, search, sort, date range,
+    Files filter, Untagged); each view's own (a browser tab, the installed phone app, named by its
+    X-Metalist-Tab-Id), its place: the context it shows, its scroll in each, its reference pages
+    and whether the folder tree shows. A reference page belongs to the view that opened it and is
+    never listed or sent to another."""
 
     def __init__(self) -> None:
         self._lock = Lock()
         self._encrypted_state_json: Optional[str] = None
         self._encrypted_state_nonce: Optional[bytes] = None
         self._encrypted_state_tag: Optional[bytes] = None
+        # Shared: each tab's search and sort order.
         self._tabs: Dict[str, Dict[str, object]] = {}
-        self._reference_views: Dict[str, Dict[str, object]] = {}
+        self._tab_order: List[str] = []
         self._date_filters: Dict[str, Dict[str, str]] = {}
         self._file_filters: Dict[str, str] = {}
-        # Whether the folder tree shows, for the view as its active tab is: switching search
-        # contexts leaves it as it is (docs/ready-to-build/folders-tab-and-multiple-folders.md §1).
-        self._tree_shown = False
         self._untagged_views: Set[str] = set()
+        # Each view's place, by view id.
+        self._views: Dict[str, Dict[str, object]] = {}
+        # The reference pages' tabs, by the view they belong to (_UNCLAIMED: saved before views).
+        self._page_owners: Dict[str, str] = {}
+        # The search context any view showed last: a new view starts on it.
+        self._last_used_tab_id = ""
+        # The place saved before views (0.30.0): the first view to ask takes it.
+        self._unclaimed_place: Optional[Dict[str, object]] = None
         # The version at which each tab's scroll last started again at the top.
         self._scroll_restarted_at_version: Dict[str, int] = {}
         # The version at which Rename tag renamed each tab's search (rename_search_terms).
         self._search_renamed_at_version: Dict[str, int] = {}
-        # Reference pages closed because their notes were deleted: a browser's save made before
-        # it heard so may still name them, and is taken without them (update).
+        # Tabs deleted or closed: a view's save made before it heard so may still name them, and
+        # is taken without them (update).
+        self._gone_tab_ids: Set[str] = set()
+        # Reference pages closed because their notes were deleted (was_closed_with_its_notes).
         self._closed_page_tab_ids: Set[str] = set()
         # The version at which pages last closed so: each view of the list carries it, and the
         # browser takes the server's tabs again when it has risen (adoptClosedReferencePages).
         self._pages_closed_at_version = 0
+        # Rises when what every view shares changes (the search contexts, their order, searches,
+        # sorts and filters), not when a view scrolls or moves: each view reads it from the status
+        # it polls and takes the contexts again (multi-view editing step 3, cases 11 to 14).
+        self._shared_revision = 0
+        self._shared_fingerprint = ""
+        # The shared revision as the request being answered found it: its answer says whether it
+        # was the only change since (searchContextsRevision), so a view takes no change of its own
+        # for another view's.
+        self._shared_revision_before = 0
         self._install_default_state_locked(version=0)
 
     def bootstrap(self, *, connection) -> None:
@@ -288,8 +433,7 @@ class TabStateStore:
                 )
 
             if nonce is None:
-                snapshot = self._deserialize_snapshot_json(state_json)
-                self._apply_snapshot_locked(snapshot)
+                self._load_state_json_locked(state_json)
                 self._clear_encrypted_state_locked()
                 return
 
@@ -305,10 +449,11 @@ class TabStateStore:
         with self._lock:
             self._try_decrypt_locked(token=token, require_success=True)
 
-    def snapshot(self) -> Dict[str, object]:
+    def snapshot(self, *, view_id: str) -> Dict[str, object]:
+        """This view's tabs: the shared search contexts with its own place in them."""
         with self._lock:
             self._try_decrypt_locked(token="", require_success=False)
-            return self._snapshot_locked()
+            return self._snapshot_locked(view_id, tells_searches=True)
 
     def reset(self) -> None:
         with self._lock:
@@ -323,12 +468,168 @@ class TabStateStore:
             self._clear_encrypted_state_locked()
             self._install_default_state_locked(version=0)
 
-    def create_tab(self, *, copy_from_tab_id: str, copies_view: bool) -> Dict[str, object]:
+    # --- Views -------------------------------------------------------------------------------
+
+    def _place_locked(self, view_id: str) -> Dict[str, object]:
+        """The view's place; a view not seen before starts on the search context used most
+        recently, or takes the place saved before views."""
+        _require_view_id(view_id)
+        now = time()
+        if view_id in self._views:
+            place = self._views[view_id]
+            place["usedAt"] = now
+            return place
+        self._forget_unused_views_locked(now)
+        if self._unclaimed_place is not None:
+            place = self._unclaimed_place
+            self._unclaimed_place = None
+            for tab_id, owner in list(self._page_owners.items()):
+                if owner == _UNCLAIMED:
+                    self._page_owners[tab_id] = view_id
+        else:
+            place = _new_place(active_tab_id=self._last_used_tab_id)
+        place["usedAt"] = now
+        self._views[view_id] = place
+        return place
+
+    def _forget_unused_views_locked(self, now: float) -> None:
+        """A view unused for weeks is forgotten, with its reference pages (multi-view note §9)."""
+        unused = [
+            view_id for view_id, place in self._views.items()
+            if now - _used_at(place) >= _VIEW_FORGOTTEN_AFTER_SECONDS
+        ]
+        for view_id in unused:
+            del self._views[view_id]
+            for tab_id in [tab_id for tab_id, owner in self._page_owners.items() if owner == view_id]:
+                self._remove_tab_locked(tab_id)
+
+    def _visible_tab_ids_locked(self, view_id: str) -> List[str]:
+        """The view's tabs, in list order: every search context, and its own reference pages."""
+        return [
+            tab_id for tab_id in self._tab_order
+            if tab_id not in self._page_owners or self._page_owners[tab_id] == view_id
+        ]
+
+    def _context_ids_locked(self) -> List[str]:
+        return [tab_id for tab_id in self._tab_order if tab_id not in self._page_owners]
+
+    def _active_tab_of_locked(self, view_id: str, place: Dict[str, object]) -> str:
+        """The tab the view shows; one gone (deleted elsewhere) gives way to the search context
+        used most recently, or the first."""
+        active = place["activeTabId"]
+        if active in self._visible_tab_ids_locked(view_id):
+            assert isinstance(active, str), "a place's tab is an id"
+            return active
+        contexts = self._context_ids_locked()
+        assert contexts, "the list always keeps a search context"
+        replacement = contexts[0]
+        if self._last_used_tab_id in contexts:
+            replacement = self._last_used_tab_id
+        place["activeTabId"] = replacement
+        return replacement
+
+    def _snapshot_locked(self, view_id: str, *, tells_searches: bool) -> Dict[str, object]:
+        """The view's tabs. With tells_searches, an answer the browser takes in full (a load, a
+        page opened, a folder chosen): what it now holds is remembered, so its next save changes
+        only what it changed (update). Other answers it reads only in part."""
+        place = self._place_locked(view_id)
+        active = self._active_tab_of_locked(view_id, place)
+        visible = self._visible_tab_ids_locked(view_id)
+        scroll = _place_scroll(place)
+        tabs: Dict[str, Dict[str, object]] = {}
+        for tab_id in visible:
+            tab_scroll = _blank_scroll()
+            if tab_id in scroll:
+                tab_scroll = deepcopy(scroll[tab_id])
+            tabs[tab_id] = {**self._tabs[tab_id], **tab_scroll}
+        if tells_searches:
+            place["knownSearch"] = {tab_id: self._tabs[tab_id]["searchQuery"] for tab_id in visible}
+        return {
+            "activeTabId": active,
+            "tabs": tabs,
+            "tabOrder": visible,
+            "referenceViews": deepcopy(place["referenceViews"]),
+            "dateFilters": {tab_id: deepcopy(value) for tab_id, value in self._date_filters.items() if tab_id in tabs},
+            "fileFilters": {tab_id: value for tab_id, value in self._file_filters.items() if tab_id in tabs},
+            "treeShown": place["treeShown"],
+            "untaggedViews": sorted(tab_id for tab_id in self._untagged_views if tab_id in tabs),
+            "version": self._version,
+            # Searches other views are typing: this view's search box waits (multi-view step 4).
+            "searchLocks": edit_locks.search_locks_for(view_id=view_id),
+            # What every view shares, before and after this request (live-changes-service.js).
+            "searchContextsRevision": {
+                "before": self._shared_revision_before, "after": self._refresh_shared_revision_locked(),
+            },
+        }
+
+    def shared_revision(self) -> int:
+        """What every view shares, as a number that rises when it changes: worked out when asked
+        (a few dozen contexts at most), so no change, loaded or made, can slip past it."""
+        with self._lock:
+            return self._refresh_shared_revision_locked()
+
+    def _refresh_shared_revision_locked(self) -> int:
+        fingerprint = self._shared_fingerprint_locked()
+        if fingerprint != self._shared_fingerprint:
+            self._shared_fingerprint = fingerprint
+            self._shared_revision += 1
+        return self._shared_revision
+
+    def _shared_fingerprint_locked(self) -> str:
+        contexts = self._context_ids_locked()
+        shared = {
+            "order": contexts,
+            "tabs": {tab_id: self._tabs[tab_id] for tab_id in contexts},
+            "dateFilters": {tab_id: self._date_filters[tab_id] for tab_id in contexts if tab_id in self._date_filters},
+            "fileFilters": {tab_id: self._file_filters[tab_id] for tab_id in contexts if tab_id in self._file_filters},
+            "untagged": sorted(tab_id for tab_id in contexts if tab_id in self._untagged_views),
+            # A search being typed in one view shows as locked in the others.
+            "searchLocks": edit_locks.searches_locked(),
+        }
+        return json.dumps(shared, separators=(",", ":"), sort_keys=True)
+
+    def _remove_tab_locked(self, tab_id: str) -> None:
+        """A tab gone from the list, and from every view's place."""
+        del self._tabs[tab_id]
+        self._tab_order.remove(tab_id)
+        if tab_id in self._page_owners:
+            del self._page_owners[tab_id]
+        for place in self._places_locked():
+            scroll = _place_scroll(place)
+            if tab_id in scroll:
+                del scroll[tab_id]
+            known = place["knownSearch"]
+            assert isinstance(known, dict), "a place keeps what it was told"
+            if tab_id in known:
+                del known[tab_id]
+        self._forget_tab_settings_locked(tab_id)
+        self._gone_tab_ids.add(tab_id)
+        if self._last_used_tab_id == tab_id:
+            self._last_used_tab_id = ""
+
+    def _places_locked(self) -> List[Dict[str, object]]:
+        """Every view's place, the one saved before views included."""
+        places = list(self._views.values())
+        if self._unclaimed_place is not None:
+            places.append(self._unclaimed_place)
+        return places
+
+    def _renormalize_reference_views_locked(self) -> None:
+        """Each view's reference pages, without those whose tab or search context is gone."""
+        for place in self._places_locked():
+            place["referenceViews"] = _normalize_reference_views(
+                place["referenceViews"], self._tabs, from_storage=False,
+            )
+
+    # --- Tabs --------------------------------------------------------------------------------
+
+    def create_tab(self, *, view_id: str, copy_from_tab_id: str, copies_view: bool, is_page: bool) -> Dict[str, object]:
         """A new tab after copy_from_tab_id. A duplicate (copies_view) copies everything that
         decides which notes the tab shows and their order; a new tab starts with nothing
-        (the maintainer, 2026-11-02, docs/ui/state-handling.md)."""
-        if not isinstance(copies_view, bool):
-            raise TypeError("copies_view must be a bool")
+        (the maintainer, 2026-11-02, docs/ui/state-handling.md). A reference page (is_page)
+        belongs to this view alone."""
+        if not isinstance(copies_view, bool) or not isinstance(is_page, bool):
+            raise TypeError("copies_view and is_page must be bools")
         if not isinstance(copy_from_tab_id, str) or not copy_from_tab_id:
             raise InputRejected("copyFromTabId must be a non-empty string")
         if not _is_uuid_string(copy_from_tab_id):
@@ -336,7 +637,8 @@ class TabStateStore:
 
         with self._lock:
             self._try_decrypt_locked(token="", require_success=True)
-            if copy_from_tab_id not in self._tabs:
+            place = self._place_locked(view_id)
+            if copy_from_tab_id not in self._visible_tab_ids_locked(view_id):
                 raise InputRejected("copyFromTabId must reference an existing tab")
             if len(self._tabs) >= _MAX_TABS:
                 raise InputRejected(f"max tabs reached ({_MAX_TABS})")
@@ -347,6 +649,9 @@ class TabStateStore:
 
             if copies_view:
                 self._tabs[new_tab_id] = deepcopy(self._tabs[copy_from_tab_id])
+                scroll = _place_scroll(place)
+                if copy_from_tab_id in scroll:
+                    scroll[new_tab_id] = deepcopy(scroll[copy_from_tab_id])
                 if copy_from_tab_id in self._date_filters:
                     self._date_filters[new_tab_id] = deepcopy(self._date_filters[copy_from_tab_id])
                 if copy_from_tab_id in self._file_filters:
@@ -354,15 +659,21 @@ class TabStateStore:
                 if copy_from_tab_id in self._untagged_views:
                     self._untagged_views.add(new_tab_id)
             else:
-                self._tabs[new_tab_id] = _blank_tab_entry()
+                self._tabs[new_tab_id] = _blank_shared_tab()
+            if is_page:
+                self._page_owners[new_tab_id] = view_id
             self._tab_order.append(new_tab_id)
             self._version += 1
             self._persist_locked(connection=None, encryption_service=None, force_plaintext=False)
-            snapshot = self._snapshot_locked()
+            # The browser holds the new tab as the server made it; the others as it had them.
+            snapshot = self._snapshot_locked(view_id, tells_searches=False)
+            known = self._place_locked(view_id)["knownSearch"]
+            assert isinstance(known, dict), "a place keeps what it was told"
+            known[new_tab_id] = self._tabs[new_tab_id]["searchQuery"]
             snapshot["newTabId"] = new_tab_id
             return snapshot
 
-    def delete_tab(self, *, tab_id: str) -> Dict[str, object]:
+    def delete_tab(self, *, view_id: str, tab_id: str) -> Dict[str, object]:
         if not isinstance(tab_id, str) or not tab_id:
             raise InputRejected("tabId must be a non-empty string")
         if not _is_uuid_string(tab_id):
@@ -370,32 +681,22 @@ class TabStateStore:
 
         with self._lock:
             self._try_decrypt_locked(token="", require_success=True)
-            if tab_id not in self._tabs:
+            place = self._place_locked(view_id)
+            visible = self._visible_tab_ids_locked(view_id)
+            if tab_id not in visible:
                 raise InputRejected("tabId must reference an existing tab")
-            if len(self._tabs) <= 1:
+            if tab_id not in self._page_owners and len(self._context_ids_locked()) <= 1:
                 raise InputRejected("cannot delete the last remaining tab")
 
-            was_active = tab_id == self._active_tab_id
-            order = list(self._tab_order)
-            idx = order.index(tab_id)
-            order.pop(idx)
-            del self._tabs[tab_id]
-
-            if was_active:
-                if idx < len(order):
-                    next_active = order[idx]
-                else:
-                    next_active = order[idx - 1]
-                self._active_tab_id = next_active
-
-            self._tab_order = order
-            self._reference_views = _normalize_reference_views(
-                self._reference_views, self._tabs, from_storage=False,
-            )
-            self._forget_tab_settings_locked(tab_id)
+            if place["activeTabId"] == tab_id:
+                index = visible.index(tab_id)
+                remaining = [other for other in visible if other != tab_id]
+                place["activeTabId"] = remaining[min(index, len(remaining) - 1)]
+            self._remove_tab_locked(tab_id)
+            self._renormalize_reference_views_locked()
             self._version += 1
             self._persist_locked(connection=None, encryption_service=None, force_plaintext=False)
-            return self._snapshot_locked()
+            return self._snapshot_locked(view_id, tells_searches=False)
 
     def _forget_tab_settings_locked(self, tab_id: str) -> None:
         """What is kept beside a tab that is gone."""
@@ -410,16 +711,17 @@ class TabStateStore:
             del self._search_renamed_at_version[tab_id]
 
     def close_pages_whose_notes_are_gone(self, *, note_exists: Callable[[str], bool]) -> bool:
-        """Close each reference page none of whose notes exist any more, with the pages opened
-        from it: its search context goes back to its search (`foo > bar`, bar deleted, reads `foo`;
-        the maintainer, 2026-11-14). Shown on one of them: the search it was opened from. Returns
-        whether any closed."""
+        """Close each reference page none of whose notes exist any more, in every view, with the
+        pages opened from it: its search context goes back to its search (`foo > bar`, bar
+        deleted, reads `foo`; the maintainer, 2026-11-14). A view shown one shows the search it
+        was opened from. Returns whether any closed."""
         if not callable(note_exists):
             raise TypeError("note_exists must be callable")
         with self._lock:
             self._try_decrypt_locked(token="", require_success=True)
+            places = self._places_locked()
             closing = {
-                tab_id for tab_id, view in self._reference_views.items()
+                tab_id for place in places for tab_id, view in _place_reference_views(place).items()
                 if not any(note_exists(note_id) for note_id in _reference_note_ids(view))
             }
             if not closing:
@@ -427,18 +729,17 @@ class TabStateStore:
             is_growing = True
             while is_growing:
                 opened_from_closing = {
-                    tab_id for tab_id, view in self._reference_views.items()
+                    tab_id for place in places for tab_id, view in _place_reference_views(place).items()
                     if tab_id not in closing and view["fromTabId"] in closing
                 }
                 closing |= opened_from_closing
                 is_growing = len(opened_from_closing) > 0
-            if self._active_tab_id in closing:
-                self._active_tab_id = self._search_shown_after_closing_locked(self._active_tab_id, closing)
-            self._tab_order = [tab_id for tab_id in self._tab_order if tab_id not in closing]
+            for place in places:
+                if place["activeTabId"] in closing:
+                    place["activeTabId"] = self._search_shown_after_closing_locked(place, closing)
             for tab_id in closing:
-                del self._tabs[tab_id]
-                del self._reference_views[tab_id]
-                self._forget_tab_settings_locked(tab_id)
+                self._remove_tab_locked(tab_id)
+            self._renormalize_reference_views_locked()
             self._closed_page_tab_ids |= closing
             self._version += 1
             self._pages_closed_at_version = self._version
@@ -455,27 +756,33 @@ class TabStateStore:
         with self._lock:
             return self._pages_closed_at_version
 
-    def _search_shown_after_closing_locked(self, page_tab_id: str, closing: Set[str]) -> str:
-        """The search a closed page was opened from; that context's first other tab when the
-        search is gone as well."""
-        origin_tab_id = _origin_tab_id(self._reference_views[page_tab_id])
-        if origin_tab_id in self._tabs and origin_tab_id not in closing:
-            return origin_tab_id
-        remaining = [tab_id for tab_id in self._tab_order if tab_id not in closing]
-        assert remaining, "closing pages leaves the search contexts they were opened from"
-        return remaining[0]
+    def _search_shown_after_closing_locked(self, place: Dict[str, object], closing: Set[str]) -> str:
+        """The search a closed page was opened from; the first search context when that is gone
+        as well."""
+        active = place["activeTabId"]
+        views = _place_reference_views(place)
+        if active in views:
+            origin_tab_id = _origin_tab_id(views[active])
+            if origin_tab_id in self._tabs and origin_tab_id not in closing:
+                return origin_tab_id
+        contexts = [tab_id for tab_id in self._context_ids_locked() if tab_id not in closing]
+        assert contexts, "closing pages leaves the search contexts they were opened from"
+        return contexts[0]
 
     def update(
         self,
         *,
+        view_id: str,
         active_tab_id: str,
         tabs: Dict[str, Dict[str, object]],
         tab_order: List[str],
         reference_views: object,
         read_at_version: int,
     ) -> Dict[str, object]:
-        """Save the browser's snapshot of its tabs, read when the browser's state was
-        at read_at_version (the last version it received)."""
+        """Save a view's snapshot of its tabs, read when its state was at read_at_version (the
+        last version it received). Only what the view changed is taken: a search equal to what the
+        store last told it is no change (another view may have changed it since), so a scroll
+        save never puts back another view's search; tabs made by another view since are kept."""
         if not isinstance(read_at_version, int) or read_at_version < 0:
             raise InputRejected("version must be a non-negative integer")
         normalized_tabs = self._normalize_tabs(tabs, from_storage=False)
@@ -487,73 +794,119 @@ class TabStateStore:
             raise InputRejected("activeTabId must reference an existing tab")
         with self._lock:
             self._try_decrypt_locked(token="", require_success=True)
-            existing_ids = set(self._tabs.keys())
-            incoming_ids = set(normalized_tabs.keys())
-            # Saved before the browser heard that pages closed with their notes: taken without them.
-            closed_meanwhile = incoming_ids & self._closed_page_tab_ids
-            if closed_meanwhile:
-                normalized_tabs = {tab_id: entry for tab_id, entry in normalized_tabs.items() if tab_id not in closed_meanwhile}
-                normalized_order = [tab_id for tab_id in normalized_order if tab_id not in closed_meanwhile]
+            place = self._place_locked(view_id)
+            # Saved before the view heard that tabs were deleted or pages closed: taken without them.
+            gone_meanwhile = set(normalized_tabs) & self._gone_tab_ids
+            if gone_meanwhile:
+                normalized_tabs = {tab_id: entry for tab_id, entry in normalized_tabs.items() if tab_id not in gone_meanwhile}
+                normalized_order = [tab_id for tab_id in normalized_order if tab_id not in gone_meanwhile]
                 normalized_reference_views = _normalize_reference_views(
                     normalized_reference_views, normalized_tabs, from_storage=False,
                 )
-                incoming_ids -= closed_meanwhile
-                if active_tab_id in closed_meanwhile:
-                    active_tab_id = self._active_tab_id
-            if incoming_ids != existing_ids:
+                if active_tab_id in gone_meanwhile:
+                    active_tab_id = self._active_tab_of_locked(view_id, place)
+            visible = set(self._visible_tab_ids_locked(view_id))
+            incoming = set(normalized_tabs)
+            known = place["knownSearch"]
+            assert isinstance(known, dict), "a place keeps what it was told"
+            if not incoming <= visible or (visible - incoming) & set(known):
                 raise InputRejected("tab ids mismatch; use tab-state new/delete endpoints")
-            normalized_tabs = {
-                tab_id: self._tab_from_snapshot_locked(tab_id, entry, read_at_version)
-                for tab_id, entry in normalized_tabs.items()
-            }
-            # Scroll persistence posts about once a second; unchanged state must
-            # not re-encrypt and rewrite the row. Clients accept the same version.
-            if (
-                self._tabs == normalized_tabs
-                and self._active_tab_id == active_tab_id
-                and self._tab_order == normalized_order
-                and self._reference_views == normalized_reference_views
-            ):
-                return self._snapshot_locked()
-            self._tabs = normalized_tabs
-            self._active_tab_id = active_tab_id
-            self._tab_order = normalized_order
-            self._reference_views = normalized_reference_views
+            for tab_id in normalized_reference_views:
+                if tab_id in self._page_owners and self._page_owners[tab_id] != view_id:
+                    raise InputRejected("a reference page belongs to another view")
+
+            was = (
+                deepcopy(self._tabs), list(self._tab_order), deepcopy(place["scroll"]),
+                deepcopy(place["referenceViews"]), place["activeTabId"], dict(self._page_owners), self._last_used_tab_id,
+                dict(known),
+            )
+            # A search typed here: refused while another view types that context's search, else
+            # this view's for a few seconds (multi-view step 4, case 10). Checked before any change.
+            for tab_id, entry in normalized_tabs.items():
+                if self._is_search_change_locked(place, tab_id, entry, read_at_version):
+                    edit_locks.note_search_typed(view_id=view_id, tab_id=tab_id)
+            for tab_id, entry in normalized_tabs.items():
+                self._take_tab_from_view_locked(place, tab_id, entry, read_at_version)
+            self._take_order_from_view_locked(normalized_order)
+            # A tab of note ids the view took as a page (adoptOrphanReferenceTabs) becomes its own.
+            for tab_id in normalized_reference_views:
+                if tab_id not in self._page_owners:
+                    self._page_owners[tab_id] = view_id
+            place["referenceViews"] = normalized_reference_views
+            place["activeTabId"] = active_tab_id
+            if active_tab_id not in self._page_owners:
+                self._last_used_tab_id = active_tab_id
+            # What the browser holds is what it sent: a search another view changed meanwhile stays
+            # unknown to it, so its next save cannot put the old one back.
+            for tab_id, entry in normalized_tabs.items():
+                known[tab_id] = entry["searchQuery"]
+            now = (
+                self._tabs, self._tab_order, place["scroll"], place["referenceViews"], place["activeTabId"],
+                self._page_owners, self._last_used_tab_id, known,
+            )
+            # Scroll persistence posts about once a second; unchanged state must not re-encrypt
+            # and rewrite the row. The view accepts the same version.
+            if was == now:
+                return self._snapshot_locked(view_id, tells_searches=False)
             self._version += 1
             self._persist_locked(connection=None, encryption_service=None, force_plaintext=False)
-            return self._snapshot_locked()
+            return self._snapshot_locked(view_id, tells_searches=False)
 
-    def _tab_from_snapshot_locked(
-        self, tab_id: str, entry: Dict[str, object], read_at_version: int,
-    ) -> Dict[str, object]:
-        """A tab as the browser's snapshot has it, less what the snapshot cannot know.
-        A snapshot (a scroll or search save) can be read before a sort order or filter
-        changes and reach the server after it. Only set_sort_mode sets the sort order,
-        and a scroll read before the tab's scroll restarted belongs to the old view."""
-        current = self._tabs[tab_id]
-        merged = {**entry, "sortMode": current["sortMode"]}
-        if (
+    def _take_tab_from_view_locked(
+        self, place: Dict[str, object], tab_id: str, entry: Dict[str, object], read_at_version: int,
+    ) -> None:
+        """A tab as the view's snapshot has it, less what the snapshot cannot know. Only
+        set_sort_mode sets the sort order. A search equal to what the view was last told is no
+        change; one Rename tag renamed after the snapshot was read keeps its new name. A scroll
+        read before the tab's scroll restarted belongs to the old view."""
+        shared = self._tabs[tab_id]
+        if self._is_search_change_locked(place, tab_id, entry, read_at_version):
+            shared["searchQuery"] = entry["searchQuery"]
+        restarted_since = (
             tab_id in self._scroll_restarted_at_version
             and read_at_version < self._scroll_restarted_at_version[tab_id]
-        ):
-            for key in _TAB_SCROLL_KEYS:
-                merged[key] = current[key]
-        # A search Rename tag renamed after the snapshot was read keeps its new name.
-        if tab_id in self._search_renamed_at_version and read_at_version < self._search_renamed_at_version[tab_id]:
-            merged["searchQuery"] = current["searchQuery"]
-        assert merged.keys() == entry.keys(), "a snapshot tab keeps its own keys"
-        return merged
+        )
+        if not restarted_since:
+            _place_scroll(place)[tab_id] = {key: entry[key] for key in _TAB_SCROLL_KEYS}
 
-    def get_sort_mode(self, *, tab_id: Optional[str]) -> str:
+    def _is_search_change_locked(
+        self, place: Dict[str, object], tab_id: str, entry: Dict[str, object], read_at_version: int,
+    ) -> bool:
+        """The view changed this tab's search: it differs from what the view was last told, and
+        Rename tag did not rename it after the view read it. A page's search is its own."""
+        known = place["knownSearch"]
+        assert isinstance(known, dict), "a place keeps what it was told"
+        renamed_since = (
+            tab_id in self._search_renamed_at_version
+            and read_at_version < self._search_renamed_at_version[tab_id]
+        )
+        if renamed_since:
+            return False
+        # A tab the store has no record of this view holding (saved before records were kept):
+        # a different search is the view's change, as before views (found 2026-11-14).
+        if tab_id not in known:
+            return entry["searchQuery"] != self._tabs[tab_id]["searchQuery"]
+        return entry["searchQuery"] != known[tab_id]
+
+    def _take_order_from_view_locked(self, view_order: List[str]) -> None:
+        """The view's order of the tabs it has: a different one is its reordering, laid over the
+        places those tabs hold, so tabs it does not have keep theirs."""
+        positions = [index for index, tab_id in enumerate(self._tab_order) if tab_id in set(view_order)]
+        if [self._tab_order[index] for index in positions] == view_order:
+            return
+        reordered = list(self._tab_order)
+        for index, tab_id in zip(positions, view_order):
+            reordered[index] = tab_id
+        self._tab_order = reordered
+
+    def get_sort_mode(self, *, tab_id: str) -> str:
+        if not isinstance(tab_id, str):
+            raise TypeError("tab_id must be a string")
         with self._lock:
             self._try_decrypt_locked(token="", require_success=True)
-            if tab_id is None:
-                target_tab_id = self._active_tab_id
-            else:
-                target_tab_id = tab_id
-            if target_tab_id not in self._tabs:
+            if tab_id not in self._tabs:
                 raise InputRejected("tab_id must reference an existing tab")
-            value = self._tabs[target_tab_id]["sortMode"]
+            value = self._tabs[tab_id]["sortMode"]
             return normalize_sort_mode(value)
 
     def get_date_filter(self, *, tab_id: str) -> RootDateFilter | None:
@@ -576,7 +929,7 @@ class TabStateStore:
                 return None
             return self._file_filters[tab_id]
 
-    def set_file_filter(self, *, tab_id: str, file_filter: str | None) -> Dict[str, object]:
+    def set_file_filter(self, *, view_id: str, tab_id: str, file_filter: str | None) -> Dict[str, object]:
         """Set (or, with None, remove) a tab's Files filter. Like a date range it changes
         what the view shows, so the tab's scroll starts again at the top. Removing it
         ends the File size order, which means nothing without it."""
@@ -598,24 +951,25 @@ class TabStateStore:
                 else:
                     self._file_filters[tab_id] = make_file_filter(file_filter)
                 self._restart_tab_scroll_locked(tab_id)
-            snapshot = self._snapshot_locked()
+            snapshot = self._snapshot_locked(view_id, tells_searches=False)
             snapshot["changed"] = changed
             return snapshot
 
-    def set_tree_shown(self, *, is_shown: bool) -> Dict[str, object]:
-        """The folders tab: the tree shown or hidden, nothing else (no search context changes;
-        folders-tab-and-multiple-folders.md §1)."""
+    def set_tree_shown(self, *, view_id: str, is_shown: bool) -> Dict[str, object]:
+        """The folders tab: the tree shown or hidden in this view, nothing else (no search context
+        changes; folders-tab-and-multiple-folders.md §1). Each view's own (multi-view note §2)."""
         if not isinstance(is_shown, bool):
             raise InputRejected("isShown must be true or false")
         with self._lock:
             self._try_decrypt_locked(token="", require_success=True)
-            if self._tree_shown != is_shown:
-                self._tree_shown = is_shown
+            place = self._place_locked(view_id)
+            if place["treeShown"] != is_shown:
+                place["treeShown"] = is_shown
                 self._version += 1
                 self._persist_locked(connection=None, encryption_service=None, force_plaintext=False)
-            return self._snapshot_locked()
+            return self._snapshot_locked(view_id, tells_searches=False)
 
-    def choose_folder(self, *, tab_id: str, folder: str, adds: bool) -> Dict[str, object]:
+    def choose_folder(self, *, view_id: str, tab_id: str, folder: str, adds: bool) -> Dict[str, object]:
         """A folder clicked in the tree (NO_FOLDER for the top, `/`). A click: the tab searches that
         folder, its search before replaced; the top empties it (folder-tags-in-search.md §2). With
         adds (⌘-click, Ctrl-click off the Mac): that folder added to the search, or taken out when
@@ -639,9 +993,10 @@ class TabStateStore:
             self._tabs[tab_id]["searchQuery"] = chosen
             # Persists, with the new version.
             self._restart_tab_scroll_locked(tab_id)
-            return self._snapshot_locked()
+            # The browser takes the whole answer (keyboard-events.js, chooseFolder).
+            return self._snapshot_locked(view_id, tells_searches=True)
 
-    def set_untagged_view(self, *, tab_id: str, is_untagged_view: bool) -> Dict[str, object]:
+    def set_untagged_view(self, *, view_id: str, tab_id: str, is_untagged_view: bool) -> Dict[str, object]:
         """Show the tab's untagged notes, or (False) its search again. Like a Files filter
         it changes what the view shows, so the tab's scroll starts again at the top."""
         if not isinstance(tab_id, str) or not tab_id:
@@ -659,20 +1014,21 @@ class TabStateStore:
                 else:
                     self._untagged_views.remove(tab_id)
                 self._restart_tab_scroll_locked(tab_id)
-            snapshot = self._snapshot_locked()
+            snapshot = self._snapshot_locked(view_id, tells_searches=False)
             snapshot["changed"] = changed
             return snapshot
 
     def _restart_tab_scroll_locked(self, tab_id: str) -> None:
-        entry = self._tabs[tab_id]
-        entry["scrollY"] = 0
-        entry["scrollAnchor"] = None
-        entry["anchorRootId"] = None
+        """The tab shows other notes now: every view's scroll in it starts again at the top."""
+        for place in self._places_locked():
+            scroll = _place_scroll(place)
+            if tab_id in scroll:
+                del scroll[tab_id]
         self._version += 1
         self._scroll_restarted_at_version[tab_id] = self._version
         self._persist_locked(connection=None, encryption_service=None, force_plaintext=False)
 
-    def set_date_filter(self, *, tab_id: str, date_filter: RootDateFilter | None) -> Dict[str, object]:
+    def set_date_filter(self, *, view_id: str, tab_id: str, date_filter: RootDateFilter | None) -> Dict[str, object]:
         """Set (or, with None, remove) a tab's date range filter. Like a sort order it
         changes what the view shows, so the tab's scroll starts again at the top."""
         if not isinstance(tab_id, str) or not tab_id:
@@ -695,30 +1051,30 @@ class TabStateStore:
                     self._date_filters[tab_id] = next_payload
             if changed:
                 self._restart_tab_scroll_locked(tab_id)
-            snapshot = self._snapshot_locked()
+            snapshot = self._snapshot_locked(view_id, tells_searches=False)
             snapshot["changed"] = changed
             return snapshot
 
-    def get_active_tab_id(self) -> str:
+    def get_active_tab_id(self, *, view_id: str) -> str:
+        """The tab this view shows."""
         with self._lock:
             self._try_decrypt_locked(token="", require_success=True)
-            if self._active_tab_id not in self._tabs:
-                raise RuntimeError("Active tab id is missing from tab state")
-            return self._active_tab_id
+            return self._active_tab_of_locked(view_id, self._place_locked(view_id))
 
-    def search_context_with_search(self, *, search: str) -> str:
+    def search_context_with_search(self, *, view_id: str, search: str) -> str:
         """The search context, in list order, whose search has the same terms as this one, or ""
         for none: what a search link opens (docs/ready-to-build/search-links.md §3). Folder contexts
-        are search contexts too (folder-tags-in-search.md §5); reference views are never a search link's,
-        nor is a context on a reference page: it shows the page, not its search, and stays there while
-        the link opens the search in a new context (the maintainer, 2026-11-14)."""
+        are search contexts too (folder-tags-in-search.md §5); reference pages are never a search
+        link's, nor is a context this view is on a page of: it shows the page, not its search, and
+        stays there while the link opens the search in a new context (the maintainer, 2026-11-14)."""
         if not isinstance(search, str) or search.strip() == "":
             raise InputRejected("A search link needs a search.")
         with self._lock:
             self._try_decrypt_locked(token="", require_success=True)
-            on_a_page = {_origin_tab_id(view) for view in self._reference_views.values()}
-            for tab_id in self._tab_order:
-                if tab_id in self._reference_views or tab_id in on_a_page:
+            place = self._place_locked(view_id)
+            on_a_page = {_origin_tab_id(view) for view in _place_reference_views(place).values()}
+            for tab_id in self._context_ids_locked():
+                if tab_id in on_a_page:
                     continue
                 tab_search = self._tabs[tab_id]["searchQuery"]
                 if not isinstance(tab_search, str):
@@ -727,21 +1083,19 @@ class TabStateStore:
                     return tab_id
             return ""
 
-    def get_search_query(self, *, tab_id: Optional[str]) -> str:
+    def get_search_query(self, *, tab_id: str) -> str:
+        if not isinstance(tab_id, str):
+            raise TypeError("tab_id must be a string")
         with self._lock:
             self._try_decrypt_locked(token="", require_success=True)
-            if tab_id is None:
-                target_tab_id = self._active_tab_id
-            else:
-                target_tab_id = tab_id
-            if target_tab_id not in self._tabs:
+            if tab_id not in self._tabs:
                 raise InputRejected("tab_id must reference an existing tab")
-            value = self._tabs[target_tab_id]["searchQuery"]
+            value = self._tabs[tab_id]["searchQuery"]
             if not isinstance(value, str):
                 raise RuntimeError("Tab searchQuery must be a string")
             return value
 
-    def set_sort_mode(self, *, tab_id: str, sort_mode: str) -> Dict[str, object]:
+    def set_sort_mode(self, *, view_id: str, tab_id: str, sort_mode: str) -> Dict[str, object]:
         if not isinstance(tab_id, str) or not tab_id:
             raise InputRejected("tabId must be a non-empty string")
         normalized_sort_mode = normalize_sort_mode(sort_mode)
@@ -760,7 +1114,7 @@ class TabStateStore:
                 entry["sortMode"] = normalized_sort_mode
                 self._restart_tab_scroll_locked(tab_id)
 
-            snapshot = self._snapshot_locked()
+            snapshot = self._snapshot_locked(view_id, tells_searches=False)
             snapshot["changed"] = changed
             return snapshot
 
@@ -785,34 +1139,237 @@ class TabStateStore:
         if not isinstance(version, int) or version < 0:
             raise TypeError("version must be a non-negative int")
         default_tab_id = self._new_tab_id()
-        self._active_tab_id = default_tab_id
-        self._tabs = {default_tab_id: _blank_tab_entry()}
+        self._tabs = {default_tab_id: _blank_shared_tab()}
         self._tab_order = [default_tab_id]
-        self._reference_views = {}
         self._date_filters = {}
         self._file_filters = {}
-        self._tree_shown = False
         self._untagged_views = set()
+        self._views = {}
+        self._page_owners = {}
+        self._last_used_tab_id = default_tab_id
+        self._unclaimed_place = None
         self._scroll_restarted_at_version = {}
         self._search_renamed_at_version = {}
+        self._gone_tab_ids = set()
         self._closed_page_tab_ids = set()
         self._version = version
 
-    def _snapshot_locked(self) -> Dict[str, object]:
-        return {
-            "activeTabId": self._active_tab_id,
-            "tabs": deepcopy(self._tabs),
-            "tabOrder": list(self._tab_order),
-            "referenceViews": deepcopy(self._reference_views),
-            "dateFilters": deepcopy(self._date_filters),
-            "fileFilters": dict(self._file_filters),
-            "treeShown": self._tree_shown,
+    # --- Saved state -------------------------------------------------------------------------
+
+    def _serialize_state_locked(self) -> str:
+        places = {
+            view_id: {key: place[key] for key in _SAVED_PLACE_KEYS}
+            for view_id, place in self._views.items()
+        }
+        unclaimed: Optional[Dict[str, object]] = None
+        if self._unclaimed_place is not None:
+            unclaimed = {key: self._unclaimed_place[key] for key in _SAVED_PLACE_KEYS}
+        state = {
+            "format": _VIEWS_FORMAT,
+            "tabs": self._tabs,
+            "tabOrder": self._tab_order,
+            "dateFilters": self._date_filters,
+            "fileFilters": self._file_filters,
             "untaggedViews": sorted(self._untagged_views),
+            "views": places,
+            "pageOwners": self._page_owners,
+            "lastUsedTabId": self._last_used_tab_id,
+            "unclaimedPlace": unclaimed,
             "version": self._version,
         }
+        return json.dumps(state, separators=(",", ":"), sort_keys=True)
 
-    def _serialize_snapshot_locked(self) -> str:
-        return json.dumps(self._snapshot_locked(), separators=(",", ":"), sort_keys=True)
+    def _load_state_json_locked(self, payload: str) -> None:
+        """Saved tabs: with views (2026-11-14 on), or as saved before them, one place, which then
+        goes to the first view that asks."""
+        if not isinstance(payload, str) or payload == "":
+            raise InputRejected("tab-state payload must be a non-empty string")
+        parsed = json.loads(payload)
+        if not isinstance(parsed, dict):
+            raise RuntimeError("tab-state JSON payload must be an object")
+        if "views" in parsed:
+            self._apply_views_state_locked(parsed)
+            return
+        self._apply_snapshot_locked(self._deserialize_snapshot_json(payload))
+
+    def _apply_views_state_locked(self, parsed: Dict[str, object]) -> None:
+        missing = [key for key in _VIEWS_STATE_KEYS if key not in parsed]
+        if missing:
+            raise RuntimeError(f"tab-state JSON payload missing required keys: {missing}")
+        if parsed["format"] != _VIEWS_FORMAT:
+            raise RuntimeError(f"tab-state format {parsed['format']!r} is not one this version reads")
+        version = parsed["version"]
+        if not isinstance(version, int) or version < 0:
+            raise RuntimeError("tab-state JSON version must be a non-negative integer")
+        tabs = _normalize_shared_tabs(parsed["tabs"])
+        order = parsed["tabOrder"]
+        if not isinstance(order, list) or sorted(order) != sorted(tabs) or len(set(order)) != len(order):
+            raise RuntimeError("tab-state JSON tabOrder must list every tab once")
+        owners = parsed["pageOwners"]
+        if not isinstance(owners, dict) or not all(isinstance(owner, str) for owner in owners.values()):
+            raise RuntimeError("tab-state JSON pageOwners must map tabs to views")
+        views = parsed["views"]
+        if not isinstance(views, dict):
+            raise RuntimeError("tab-state JSON views must be an object")
+        self._tabs = tabs
+        self._tab_order = [str(tab_id) for tab_id in order]
+        self._date_filters = _normalize_date_filters(parsed["dateFilters"], tabs)
+        self._file_filters = _normalize_file_filters(parsed["fileFilters"], tabs)
+        self._untagged_views = _normalize_untagged_views(parsed["untaggedViews"], tabs)
+        self._page_owners = {tab_id: owner for tab_id, owner in owners.items() if tab_id in tabs}
+        self._views = {view_id: _load_place(place, tabs) for view_id, place in views.items()}
+        unclaimed = parsed["unclaimedPlace"]
+        self._unclaimed_place = None
+        if unclaimed is not None:
+            self._unclaimed_place = _load_place(unclaimed, tabs)
+        last_used = parsed["lastUsedTabId"]
+        if not isinstance(last_used, str):
+            raise RuntimeError("tab-state JSON lastUsedTabId must be a tab id")
+        self._last_used_tab_id = last_used
+        if last_used not in self._context_ids_locked():
+            self._last_used_tab_id = self._context_ids_locked()[0]
+        self._scroll_restarted_at_version = {}
+        self._search_renamed_at_version = {}
+        self._version = version
+
+    def _apply_snapshot_locked(self, snapshot: Dict[str, object]) -> None:
+        """Tabs saved before views (0.30.0 and earlier): one place, which the first view to ask
+        takes, with its pages; the search contexts become the shared ones."""
+        if not isinstance(snapshot, dict):
+            raise TypeError("snapshot must be an object")
+        active_tab_id = snapshot["activeTabId"]
+        tabs = snapshot["tabs"]
+        tab_order = snapshot["tabOrder"]
+        version = snapshot["version"]
+        if not isinstance(active_tab_id, str) or active_tab_id == "":
+            raise RuntimeError("snapshot activeTabId must be a non-empty string")
+        if not isinstance(version, int) or version < 0:
+            raise RuntimeError("snapshot version must be a non-negative integer")
+        if not isinstance(tabs, dict):
+            raise RuntimeError("snapshot tabs must be an object")
+        if not isinstance(tab_order, list):
+            raise RuntimeError("snapshot tabOrder must be a list")
+        normalized_tabs = self._normalize_tabs(tabs, from_storage=True)
+        normalized_order = self._normalize_tab_order(tab_order, normalized_tabs)
+        if active_tab_id not in normalized_tabs:
+            raise RuntimeError("snapshot activeTabId must reference an existing tab")
+        self._tabs = {
+            tab_id: {key: entry[key] for key in _SHARED_TAB_KEYS} for tab_id, entry in normalized_tabs.items()
+        }
+        self._tab_order = normalized_order
+        reference_views = _normalize_reference_views(snapshot["referenceViews"], self._tabs, from_storage=True)
+        self._date_filters = _normalize_date_filters(snapshot["dateFilters"], normalized_tabs)
+        self._file_filters = _normalize_file_filters(snapshot["fileFilters"], normalized_tabs)
+        # Folder contexts were a kind of search context until 2026-11-11: each becomes an ordinary
+        # one with the same search (folders-tab-and-multiple-folders.md §1), once, as the stored
+        # state no longer names them once saved.
+        folder_contexts = _normalize_folder_contexts(snapshot["folderContexts"], normalized_tabs)
+        tree_shown = snapshot["treeShown"]
+        assert isinstance(tree_shown, bool), "read as a bool from storage"
+        # A folder kept apart from the search (before 2026-11-11) goes in front of its folder
+        # context's search, once (folder-tags-in-search.md §2). One saved on a plain search
+        # (before 2026-11-07) is dropped.
+        for tab_id, folder in _normalize_folder_filters(snapshot["folderFilters"], normalized_tabs).items():
+            if tab_id in folder_contexts:
+                search = self._tabs[tab_id]["searchQuery"]
+                assert isinstance(search, str), "a tab's search is text"
+                self._tabs[tab_id]["searchQuery"] = f"{folder} {search}".strip()
+        self._untagged_views = _normalize_untagged_views(snapshot["untaggedViews"], normalized_tabs)
+        self._views = {}
+        # Its pages, and the tabs of note ids alone no record claimed (0.29.0 left a page so when
+        # its search context closed): the first view's, never shared contexts two views adopt.
+        orphan_pages = {
+            tab_id for tab_id, entry in self._tabs.items()
+            if tab_id not in reference_views and _is_note_id_search(entry["searchQuery"])
+        }
+        self._page_owners = {tab_id: _UNCLAIMED for tab_id in [*reference_views, *orphan_pages]}
+        # Every tab a page (0.29.0 closed the search context they came from): the list keeps a
+        # search context, an empty one in front, which the pages are opened from.
+        if not self._context_ids_locked():
+            fresh_context = self._new_tab_id()
+            self._tabs[fresh_context] = _blank_shared_tab()
+            self._tab_order.insert(0, fresh_context)
+        place = _new_place(active_tab_id=active_tab_id)
+        place["scroll"] = {
+            tab_id: {key: entry[key] for key in _TAB_SCROLL_KEYS} for tab_id, entry in normalized_tabs.items()
+        }
+        place["referenceViews"] = reference_views
+        place["treeShown"] = tree_shown
+        self._unclaimed_place = place
+        self._last_used_tab_id = active_tab_id
+        if active_tab_id in reference_views:
+            self._last_used_tab_id = _origin_tab_id(reference_views[active_tab_id])
+        if self._last_used_tab_id not in self._context_ids_locked():
+            self._last_used_tab_id = self._context_ids_locked()[0]
+        self._scroll_restarted_at_version = {}
+        self._search_renamed_at_version = {}
+        self._version = version
+
+    def _try_decrypt_locked(self, *, token: str, require_success: bool) -> None:
+        """Every request's first step under the lock: the state readable, and the shared revision
+        as the request found it."""
+        self._decrypt_locked(token=token, require_success=require_success)
+        if self._encrypted_state_json is None:
+            self._shared_revision_before = self._refresh_shared_revision_locked()
+
+    def _decrypt_locked(self, *, token: str, require_success: bool) -> None:
+        if self._encrypted_state_json is None:
+            return
+        if self._encrypted_state_nonce is None or self._encrypted_state_tag is None:
+            raise RuntimeError("encrypted tab-state payload missing nonce/tag")
+        service = self._resolve_encryption_service(token=token, explicit_service=None)
+        if service is None:
+            if require_success:
+                raise RuntimeError("tab-state decryption requires an active DEK")
+            return
+        plaintext = service.decrypt_from_storage(
+            self._encrypted_state_json,
+            self._encrypted_state_nonce,
+            self._encrypted_state_tag,
+        )
+        if not isinstance(plaintext, str):
+            raise TypeError("decrypted tab-state payload must be a string")
+        self._load_state_json_locked(plaintext)
+        self._clear_encrypted_state_locked()
+
+    def rename_search_terms(self, *, rename: Callable[[str], str], connection) -> int:
+        """Each search context's search, and every view's reference pages' queries, as `rename`
+        returns them (meta_tag_renames.py, a one-time pass; Rename tag, rename_tag.py), saved with
+        `connection` when any changed. Returns how many searches changed."""
+        if not callable(rename):
+            raise TypeError("rename must be callable")
+        with self._lock:
+            self._try_decrypt_locked(token="", require_success=True)
+            changed = 0
+            renamed_tab_ids: List[str] = []
+            for tab_id, tab in self._tabs.items():
+                search_query = tab["searchQuery"]
+                assert isinstance(search_query, str), "a tab's search is text"
+                renamed = rename(search_query)
+                if renamed != search_query:
+                    tab["searchQuery"] = renamed
+                    renamed_tab_ids.append(tab_id)
+                    changed += 1
+            for place in self._places_locked():
+                for view in _place_reference_views(place).values():
+                    reference_query = view["referenceQuery"]
+                    scope = view["originScope"]
+                    assert isinstance(reference_query, str) and isinstance(scope, dict), "a reference view is normalized"
+                    # A reference view runs its tab's search, so both change together.
+                    view["referenceQuery"] = rename(reference_query)
+                    origin_query = scope["searchQuery"]
+                    assert isinstance(origin_query, str), "an origin scope's search is text"
+                    renamed = rename(origin_query)
+                    if renamed != origin_query:
+                        scope["searchQuery"] = renamed
+                        changed += 1
+            if changed == 0:
+                return 0
+            self._version += 1
+            for tab_id in renamed_tab_ids:
+                self._search_renamed_at_version[tab_id] = self._version
+            self._persist_locked(connection=connection, encryption_service=None, force_plaintext=False)
+            return changed
 
     def _deserialize_snapshot_json(self, payload: str) -> Dict[str, object]:
         if not isinstance(payload, str) or payload == "":
@@ -872,114 +1429,6 @@ class TabStateStore:
             "version": version,
         }
 
-    def _apply_snapshot_locked(self, snapshot: Dict[str, object]) -> None:
-        if not isinstance(snapshot, dict):
-            raise TypeError("snapshot must be an object")
-        active_tab_id = snapshot["activeTabId"]
-        tabs = snapshot["tabs"]
-        tab_order = snapshot["tabOrder"]
-        version = snapshot["version"]
-        if not isinstance(active_tab_id, str) or active_tab_id == "":
-            raise RuntimeError("snapshot activeTabId must be a non-empty string")
-        if not isinstance(version, int) or version < 0:
-            raise RuntimeError("snapshot version must be a non-negative integer")
-        if not isinstance(tabs, dict):
-            raise RuntimeError("snapshot tabs must be an object")
-        if not isinstance(tab_order, list):
-            raise RuntimeError("snapshot tabOrder must be a list")
-        normalized_tabs = self._normalize_tabs(tabs, from_storage=True)
-        normalized_order = self._normalize_tab_order(tab_order, normalized_tabs)
-        if active_tab_id not in normalized_tabs:
-            raise RuntimeError("snapshot activeTabId must reference an existing tab")
-        self._tabs = normalized_tabs
-        self._tab_order = normalized_order
-        self._reference_views = _normalize_reference_views(
-            snapshot["referenceViews"], normalized_tabs, from_storage=True,
-        )
-        self._date_filters = _normalize_date_filters(
-            snapshot["dateFilters"], normalized_tabs,
-        )
-        self._file_filters = _normalize_file_filters(snapshot["fileFilters"], normalized_tabs)
-        # Folder contexts were a kind of search context until 2026-11-11: each becomes an ordinary
-        # one with the same search (folders-tab-and-multiple-folders.md §1), once, as the stored
-        # state no longer names them once saved.
-        folder_contexts = _normalize_folder_contexts(snapshot["folderContexts"], normalized_tabs)
-        tree_shown = snapshot["treeShown"]
-        assert isinstance(tree_shown, bool), "read as a bool from storage"
-        self._tree_shown = tree_shown
-        # A folder kept apart from the search (before 2026-11-11) goes in front of its folder
-        # context's search, once (folder-tags-in-search.md §2). One saved on a plain search
-        # (before 2026-11-07) is dropped.
-        for tab_id, folder in _normalize_folder_filters(snapshot["folderFilters"], normalized_tabs).items():
-            if tab_id in folder_contexts:
-                search = self._tabs[tab_id]["searchQuery"]
-                assert isinstance(search, str), "a tab's search is text"
-                self._tabs[tab_id]["searchQuery"] = f"{folder} {search}".strip()
-        self._untagged_views = _normalize_untagged_views(snapshot["untaggedViews"], normalized_tabs)
-        self._scroll_restarted_at_version = {}
-        self._search_renamed_at_version = {}
-        self._active_tab_id = active_tab_id
-        self._version = version
-
-    def _try_decrypt_locked(self, *, token: str, require_success: bool) -> None:
-        if self._encrypted_state_json is None:
-            return
-        if self._encrypted_state_nonce is None or self._encrypted_state_tag is None:
-            raise RuntimeError("encrypted tab-state payload missing nonce/tag")
-        service = self._resolve_encryption_service(token=token, explicit_service=None)
-        if service is None:
-            if require_success:
-                raise RuntimeError("tab-state decryption requires an active DEK")
-            return
-        plaintext = service.decrypt_from_storage(
-            self._encrypted_state_json,
-            self._encrypted_state_nonce,
-            self._encrypted_state_tag,
-        )
-        if not isinstance(plaintext, str):
-            raise TypeError("decrypted tab-state payload must be a string")
-        snapshot = self._deserialize_snapshot_json(plaintext)
-        self._apply_snapshot_locked(snapshot)
-        self._clear_encrypted_state_locked()
-
-    def rename_search_terms(self, *, rename: Callable[[str], str], connection) -> int:
-        """Each search context's search, and a reference view's queries, as `rename` returns
-        them (meta_tag_renames.py, a one-time pass; Rename tag, rename_tag.py), saved with
-        `connection` when any changed. Returns how many searches changed."""
-        if not callable(rename):
-            raise TypeError("rename must be callable")
-        with self._lock:
-            self._try_decrypt_locked(token="", require_success=True)
-            changed = 0
-            renamed_tab_ids: List[str] = []
-            for tab_id, tab in self._tabs.items():
-                search_query = tab["searchQuery"]
-                assert isinstance(search_query, str), "a tab's search is text"
-                renamed = rename(search_query)
-                if renamed != search_query:
-                    tab["searchQuery"] = renamed
-                    renamed_tab_ids.append(tab_id)
-                    changed += 1
-            for view in self._reference_views.values():
-                reference_query = view["referenceQuery"]
-                scope = view["originScope"]
-                assert isinstance(reference_query, str) and isinstance(scope, dict), "a reference view is normalized"
-                # A reference view runs its tab's search, so both change together.
-                view["referenceQuery"] = rename(reference_query)
-                origin_query = scope["searchQuery"]
-                assert isinstance(origin_query, str), "an origin scope's search is text"
-                renamed = rename(origin_query)
-                if renamed != origin_query:
-                    scope["searchQuery"] = renamed
-                    changed += 1
-            if changed == 0:
-                return 0
-            self._version += 1
-            for tab_id in renamed_tab_ids:
-                self._search_renamed_at_version[tab_id] = self._version
-            self._persist_locked(connection=connection, encryption_service=None, force_plaintext=False)
-            return changed
-
     def _persist_locked(
         self,
         *,
@@ -989,7 +1438,7 @@ class TabStateStore:
     ) -> None:
         if not isinstance(force_plaintext, bool):
             raise TypeError("force_plaintext must be a bool")
-        snapshot_json = self._serialize_snapshot_locked()
+        snapshot_json = self._serialize_state_locked()
         stored_json = snapshot_json
         nonce: Optional[bytes] = None
         tag: Optional[bytes] = None

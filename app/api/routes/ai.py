@@ -4,22 +4,26 @@ from __future__ import annotations
 
 from app.utils.byte_sizes import MIB
 from http import HTTPStatus
+import asyncio
 import json
 import math
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from functools import partial
 from typing import Annotated, Any, Literal
 from uuid import uuid4
 
 import anyio.from_thread
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, Header, HTTPException, Response
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
 from typing_extensions import Self
 
 from app.api.note_requests import MAX_NOTE_CONTENT_CHARS
+from app.services.ai_chat_live import AiChatLive, ai_chat_live
+from app.services.edit_locks import edit_locks
+from app.services.input_errors import InputRejected
 from app.api.request_auth import require_request_auth_token
-from app.api.transactions import one_step_read_route, serialized_read_route, transactional_route
+from app.api.transactions import one_step_read_route, read_only_route, serialized_read_route, transactional_route
 from app.models.utils import note_data_to_html
 from app.models.utils import render_note_data_read_only
 from app.services.ai_chat_stream import ChatTurnStream
@@ -61,6 +65,7 @@ from app.services.note_store import store as note_store
 from app.services.ai_credentials import AiCredentialInputError
 from app.services.ai_credentials import ai_credential_store
 from app.services.ai_credentials import validate_ai_api_key
+from app.services.agent.privacy_guard import cloud_privacy_revision
 from app.services.sync import set_clipboard, get_current_sync_uuid
 from app.services.agent.tagging_run import TaggingRun, proposal_scope_ids
 from app.services.agent.retrieval_settings import resolve_tagging_batch_tokens
@@ -280,6 +285,8 @@ class ExportTitleSuggestionRequest(ExportTitleScope):
     thinking_level: Literal["off", "low", "medium", "high"]
     # Titles the AI gave in this dialog: it gives another.
     previous_titles: list[str] = Field(..., max_length=MAX_PREVIOUS_TITLES)
+    # What the latest of them was made from (each title line's "from"), "" before the first.
+    previous_titles_from: str
 
     @model_validator(mode="after")
     def validate_model_for_provider(self) -> Self:
@@ -718,7 +725,8 @@ async def _export_title_events(
     web_mode: str, session_key: str,
 ) -> AsyncIterator[str]:
     requires(request, "cloud_disclosable")
-    previous_titles = tuple(payload.previous_titles)
+    made_from = _export_titles_made_from()
+    previous_titles = _previous_titles_still_sendable(payload, made_from=made_from)
     # Its own run in the session's trace (diagnostics, AI history), as Suggest Tags has.
     run_id = agent_trace_store.start_run(
         session_key=session_key, model=payload.model, user_message="Suggest a title with AI",
@@ -736,7 +744,23 @@ async def _export_title_events(
         yield json.dumps({"type": "failed", "message": str(exc)}) + "\n"
         return
     agent_trace_store.complete_run(session_key=session_key, run_id=run_id)
-    yield json.dumps({"type": "title", "title": title}) + "\n"
+    yield json.dumps({"type": "title", "title": title, "from": made_from}) + "\n"
+
+
+def _export_titles_made_from() -> str:
+    """The notes and the cloud privacy settings as they are now, as one mark: any note change
+    (a note made private by its tags included) or privacy change makes another."""
+    return f"{get_current_sync_uuid()}:{cloud_privacy_revision.current()}"
+
+
+def _previous_titles_still_sendable(payload: ExportTitleSuggestionRequest, *, made_from: str) -> tuple[str, ...]:
+    """The dialog's earlier titles, sent back so the AI gives another, only while nothing has
+    changed since they were made: another device can make a note private while the dialog is open
+    (multi-view editing, 2026-11-14), and a title made from it must not go back to the AI
+    (docs/security/cloud-privacy-boundary.md, item 8). Otherwise none: a title may repeat."""
+    if payload.previous_titles_from != made_from:
+        return ()
+    return tuple(payload.previous_titles)
 
 
 def _openai_cost_response(snapshot: OpenAICostSnapshot) -> OpenAICostResponse:
@@ -968,11 +992,82 @@ def clear_ai_session(
 ) -> AiClearResponse:
     response.headers["Cache-Control"] = "no-store"
     session_key = token_service.get_session_key(token)
+    # Any view clears it (multi-view step 5, case 8): the browser stops the answer being written
+    # and drops the waiting questions first (POST /ai/chat/stop), then clears.
+    if ai_chat_live.is_answering():
+        raise InputRejected("An answer is still being written. Stop it, then clear the chat.")
     ai_chat_store.clear()
     web_evidence_store.clear_session(session_key=session_key)
     summary_batch_store.clear_session(session_key=session_key)
     agent_trace_store.clear_trace(session_key=session_key)
     return AiClearResponse(message="Chat cleared")
+
+
+class AiChatStopRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    # Clear Chat drops the waiting questions too; Stop leaves them to start (cases 7 and 8).
+    drops_waiting: bool
+
+
+class AiComposerRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    text: str = Field(..., max_length=MAX_NOTE_CONTENT_CHARS)
+
+
+@router.get("/chat/live")
+@one_step_read_route
+def get_ai_chat_live(
+    response: Response,
+    token: Annotated[str, Depends(require_request_auth_token)],
+    view_id: Annotated[str, Header(alias="X-Metalist-Tab-Id")],
+) -> dict[str, object]:
+    """The conversation as every view follows it (multi-view step 5): a mark that changes when
+    what the chat shows changes, the questions waiting, whether an answer is being written, the
+    AI's question, and a question another view is typing."""
+    response.headers["Cache-Control"] = "no-store"
+    token_service.get_session_key(token)
+    return {
+        **ai_chat_live.state(view_id=view_id),
+        "mark": ai_chat_store.live_mark(),
+        "composer": edit_locks.composer_for(view_id=view_id),
+    }
+
+
+@router.post("/chat/stop")
+@read_only_route
+def stop_ai_answer(
+    payload: AiChatStopRequest,
+    token: Annotated[str, Depends(require_request_auth_token)],
+) -> dict[str, object]:
+    """Stop, from any view: the answer being written ends (case 7)."""
+    token_service.get_session_key(token)
+    ai_chat_live.stop(drops_waiting=payload.drops_waiting)
+    return {"stopped": True}
+
+
+@router.put("/chat/composer")
+@read_only_route
+def type_ai_question(
+    payload: AiComposerRequest,
+    token: Annotated[str, Depends(require_request_auth_token)],
+    view_id: Annotated[str, Header(alias="X-Metalist-Tab-Id")],
+) -> dict[str, object]:
+    """A question being typed here: the message box is this view's, its text shown in the others
+    (case 11); refused while another view types one."""
+    token_service.get_session_key(token)
+    edit_locks.note_composer_typed(view_id=view_id, text=payload.text)
+    return {"typing": True}
+
+
+@router.post("/chat/composer/release")
+@read_only_route
+def leave_ai_question(
+    token: Annotated[str, Depends(require_request_auth_token)],
+    view_id: Annotated[str, Header(alias="X-Metalist-Tab-Id")],
+) -> dict[str, object]:
+    token_service.get_session_key(token)
+    edit_locks.release_composer(view_id=view_id)
+    return {"released": True}
 
 
 @router.get("/debug", response_model=AiDebugSnapshotResponse)
@@ -1081,6 +1176,7 @@ def copy_ai_message(
 def stream_ai_chat(
     payload: AiChatRequest,
     token: Annotated[str, Depends(require_request_auth_token)],
+    view_id: Annotated[str, Header(alias="X-Metalist-Tab-Id")],
 ) -> StreamingResponse:
     session_key = token_service.get_session_key(token)
     connection = _require_ai_connection(
@@ -1099,7 +1195,7 @@ def stream_ai_chat(
         preferences=preferences,
         provider=payload.provider,
     )
-    authoritative_active_tab_id = tab_state_store.get_active_tab_id()
+    authoritative_active_tab_id = tab_state_store.get_active_tab_id(view_id=view_id)
     if payload.scope.active_tab_id != authoritative_active_tab_id:
         raise HTTPException(
             status_code=HTTPStatus.CONFLICT,
@@ -1140,36 +1236,38 @@ def stream_ai_chat(
     tagging_run = TaggingRun(token=token, snapshot=frozen_scope, privacy_boundary=privacy_boundary,
         preferences=preferences, sync_uuid=get_current_sync_uuid(),
         batch_tokens=retrieval_settings.max_page_approximate_tokens)
-    disclosure_changed = ai_chat_store.synchronize_disclosure_boundary(
-        disclosure=cloud_privacy_evaluator.history_disclosure(boundary=privacy_boundary),
-    )
-    if disclosure_changed:
-        web_evidence_store.clear_session(session_key=session_key)
-        summary_batch_store.clear_session(session_key=session_key)
-    if ai_chat_store.is_summarizing():
-        raise HTTPException(status_code=HTTPStatus.CONFLICT, detail="The chat is being summarized: send when it is done")
-    turn_id = ai_chat_store.start_turn(
-        user_content=payload.message,
-        provider=payload.provider,
-        model=payload.model,
-    )
-    # Before any summary: the conversation as it stands, for the first progress panels.
-    initial_messages = agent_context_builder.build_initial_messages(
-        canonical_messages=ai_chat_store.provider_messages(),
-        prompts=prompts,
-    )
-    initial_approx_input_tokens = estimate_input_tokens(initial_messages)
-
-    turn_stream = ChatTurnStream(store=ai_chat_store, notes=note_store,
-                                 web_evidence_store=web_evidence_store, session_key=session_key,
-                                 turn_id=turn_id, initial_input_tokens=initial_approx_input_tokens)
-    events = _stream_runtime_events(payload=payload, connection=connection,
-        session_key=session_key, prompts=prompts, skills=skills,
-        retrieval_settings=retrieval_settings, frozen_scope=frozen_scope, tagging_run=tagging_run,
-        web_settings=web_settings, initial_input_tokens=initial_approx_input_tokens)
+    # The scope is this view's at Send; the answer waits its turn behind any being written
+    # (multi-view step 5, case 6), and starts from the conversation as it then stands.
+    async def start_answer() -> AsyncIterator[str]:
+        disclosure_changed = ai_chat_store.synchronize_disclosure_boundary(
+            disclosure=cloud_privacy_evaluator.history_disclosure(boundary=privacy_boundary),
+        )
+        if disclosure_changed:
+            web_evidence_store.clear_session(session_key=session_key)
+            summary_batch_store.clear_session(session_key=session_key)
+        turn_id = ai_chat_store.start_turn(
+            user_content=payload.message,
+            provider=payload.provider,
+            model=payload.model,
+        )
+        # Before any summary: the conversation as it stands, for the first progress panels.
+        initial_messages = agent_context_builder.build_initial_messages(
+            canonical_messages=ai_chat_store.provider_messages(),
+            prompts=prompts,
+        )
+        initial_approx_input_tokens = estimate_input_tokens(initial_messages)
+        turn_stream = ChatTurnStream(store=ai_chat_store, notes=note_store,
+                                     web_evidence_store=web_evidence_store, session_key=session_key,
+                                     turn_id=turn_id, initial_input_tokens=initial_approx_input_tokens)
+        events = _stream_runtime_events(payload=payload, connection=connection,
+            session_key=session_key, prompts=prompts, skills=skills,
+            retrieval_settings=retrieval_settings, frozen_scope=frozen_scope, tagging_run=tagging_run,
+            web_settings=web_settings, initial_input_tokens=initial_approx_input_tokens)
+        async for line in turn_stream.events(events):  # shockharness: ignore[EXC003] reason="each line of the answer is forwarded as it comes"
+            yield line
 
     return StreamingResponse(
-        turn_stream.events(events),
+        _answer_in_turn(message=payload.message, view_id=view_id, start_answer=start_answer),
         media_type="application/x-ndjson",
         headers={
             "X-Accel-Buffering": "no",
@@ -1177,6 +1275,48 @@ def stream_ai_chat(
             "Content-Encoding": "identity",
         },
     )
+
+
+def _event_line(event: dict[str, object]) -> str:
+    return json.dumps(event, separators=(',', ':')) + '\n'
+
+
+async def _answer_in_turn(
+    *, message: str, view_id: str, start_answer: Callable[[], AsyncIterator[str]],
+) -> AsyncIterator[str]:
+    """A question's answer, once its turn comes (multi-view step 5): it waits behind the answer
+    being written, saying so once ({"type": "waiting"}); dropped meanwhile (Clear Chat), it ends
+    unanswered. The AI's questions while it answers show in every view (case 9). Stop from another
+    view ends it as stopped ({"type": "stopped"}), the turn saved as cancelled (case 7). The
+    question joins the queue only once its answer is streamed: a response never read (its browser
+    gone first) leaves nothing waiting in front of the others."""
+    ticket = ai_chat_live.enqueue(content=message, view_id=view_id)
+    try:
+        async for _ in ai_chat_live.wait_for_turn(ticket=ticket, is_answer_written=ai_chat_store.is_summarizing):
+            yield _event_line({"type": "waiting"})
+        if not ai_chat_live.take_turn(ticket=ticket):
+            yield _event_line({"type": "stopped"})
+            return
+        try:
+            async for line in start_answer():  # shockharness: ignore[EXC003] reason="each line of the answer is forwarded as it comes"
+                event = json.loads(line)
+                if event["type"] == "bulk_question":
+                    ai_chat_live.show_question(event)
+                elif event["type"] != "action_status" and not event["type"].endswith("_delta"):
+                    ai_chat_live.end_question()
+                yield line
+        # lint: allow-PY001 rationale="Stop from another view cancels this answer: it ends as stopped; any other cancel is re-raised"
+        except asyncio.CancelledError:
+            if not ai_chat_live.was_stop_asked():
+                raise
+            current = asyncio.current_task()
+            assert current is not None, "an answer streams in a task"
+            current.uncancel()
+            yield _event_line({"type": "stopped"})
+        finally:
+            ai_chat_live.end_answer()
+    finally:
+        ai_chat_live.drop(ticket=ticket)
 
 
 async def _stream_runtime_events(
@@ -1269,8 +1409,12 @@ class BulkManageRequest(BaseModel):
 
 @router.post("/proposals/manage")
 @transactional_route
-def manage_bulk_proposals(payload: BulkManageRequest, token: Annotated[str, Depends(require_request_auth_token)]):
-    if payload.scope.active_tab_id != tab_state_store.get_active_tab_id():
+def manage_bulk_proposals(
+    payload: BulkManageRequest,
+    token: Annotated[str, Depends(require_request_auth_token)],
+    view_id: Annotated[str, Header(alias="X-Metalist-Tab-Id")],
+):
+    if payload.scope.active_tab_id != tab_state_store.get_active_tab_id(view_id=view_id):
         raise HTTPException(status_code=HTTPStatus.CONFLICT, detail="Active tab changed")
     if payload.scope.search_query != tab_state_store.get_search_query(tab_id=payload.scope.scope_tab_id):
         raise HTTPException(status_code=HTTPStatus.CONFLICT, detail="Search context changed")

@@ -62,6 +62,7 @@ from app.services.agent.trace import agent_trace_store
 from app.services.note_store import store as note_store
 from app.services.sync import clear_all_locks
 from app.services.tab_state import tab_state_store
+from app.services.edit_locks import edit_locks
 from app.services.view_cache import view_cache
 from app.services import auth_cache_state
 from app.services.ontology_rules_store import ensure_rules_decrypted_and_compiled
@@ -175,6 +176,12 @@ class PasswordCreateRequest(BaseModel):
     # phase 2): the server logs that window in with it, as a login would, and every other
     # session ends. Add Password reloads into the login instead.
     keeps_window_logged_in: bool
+
+
+class LogoutRequest(BaseModel):
+    # Log Out signs out this browser or device; ticked "Sign out every device", every one, which
+    # in a vault with a password locks it (multi-view editing, 2026-11-14).
+    every_device: bool
 
 
 class PasswordChangeRequest(BaseModel):
@@ -496,7 +503,7 @@ def _verify_token(
     token = get_request_auth_token(request)
     if token is None:
         return None
-    if token_service.verify_token_for_tab(token, tab_id):
+    if token_service.verify_token(token):
         return token
     return None
 
@@ -568,7 +575,6 @@ def login(
     request: Request,
     response: Response,
     payload: LoginRequest,
-    tab_id: Annotated[str, Depends(_require_tab_id)],
     db: Annotated[SafeSession, Depends(get_db)],
 ):
     submitted_password = payload.password.get_secret_value()
@@ -592,7 +598,7 @@ def login(
     # An upgrade may have moved the vault's files into the catalog this process listed as empty.
     if migration.applied_versions:
         bootstrap_file_registry()
-    _open_password_session(request=request, response=response, db=db, dek=dek, tab_id=tab_id)
+    _open_password_session(request=request, response=response, db=db, dek=dek)
     login_rate_limiter.record_success(rate_limit_key)
     return LoginResponse(
         message="Login successful",
@@ -600,10 +606,24 @@ def login(
     )
 
 
-def _open_password_session(*, request: Request, response: Response, db: SafeSession, dek: bytes, tab_id: str) -> None:
+def _sign_in_beside_the_others(*, request: Request, response: Response, dek: bytes | None) -> bool:
+    """Another browser or device signing in to a vault already open: it gets its own sign-in and
+    nothing else changes; the others' undo, shell, caches and work go on (multi-view editing,
+    2026-11-14). Returns whether the vault was open; the first sign-in starts the vault clean."""
+    if not token_service.has_active_tokens():
+        return False
+    token = token_service.create_token(_client_info(request), dek=dek)
+    set_auth_cookie(request=request, response=response, token=token)
+    return True
+
+
+def _open_password_session(*, request: Request, response: Response, db: SafeSession, dek: bytes) -> None:
     """Log this window in with the vault's key (dek, unlocked by its password): the runtime
     state starts clean, and the window gets a session cookie; the notes are then hydrated
-    (POST /hydrate). Login, and setting a password that keeps the window logged in."""
+    (POST /hydrate). Login, and setting a password that keeps the window logged in. A vault
+    another device has open only gains this sign-in."""
+    if _sign_in_beside_the_others(request=request, response=response, dek=dek):
+        return
     set_session_dek(dek)
     with SafeSession.allow_reads("auth:search_history_post_migration"):
         search_history_store.bootstrap(connection=db.connection())
@@ -629,8 +649,9 @@ def _open_password_session(*, request: Request, response: Response, db: SafeSess
     view_cache.clear()
     reset_all_undo_state()
     reset_sync_state()
+    edit_locks.reset()
     shell_session_service.reset()
-    token = token_service.create_token(_client_info(request), tab_id, dek=dek)
+    token = token_service.create_token(_client_info(request), dek=dek)
     set_auth_cookie(request=request, response=response, token=token)
     clear_all_locks()
 
@@ -639,14 +660,28 @@ def _open_password_session(*, request: Request, response: Response, db: SafeSess
 @transactional_route
 def logout(
     response: Response,
+    payload: LogoutRequest,
     token: Annotated[str, Depends(_require_auth)],
 ):
+    """Signs out this browser or device (every tab of it shares the sign-in), or every device.
+    The vault stays open while another device is signed in; the last sign-in's end locks it, as
+    every logout did while there was only one (multi-view editing, 2026-11-14)."""
+    # The AI's working state is the vault's (step 5): it goes when the last sign-in ends, below.
     session_key = token_service.get_session_key(token)
+    if payload.every_device:
+        token_service.revoke_all_tokens()
+        edit_locks.reset()
+    else:
+        token_service.revoke_token(token)
+        # This browser's views let go of what they edit; the other devices keep theirs.
+        edit_locks.forget_browsers(tokens=[token])
+    clear_auth_cookie(response=response)
+    if token_service.has_active_tokens():
+        return {"message": "Logout successful"}
     web_evidence_store.clear_session(session_key=session_key)
     summary_batch_store.clear_session(session_key=session_key)
     agent_trace_store.clear_session(session_key=session_key)
     clear_ai_credential_sessions(session_key=session_key)
-    token_service.revoke_token(token)
     shell_session_service.reset()
     # Lock and login end a retry through the runtime generation; a passwordless
     # logout does not change it, so stop the retry here.
@@ -654,11 +689,11 @@ def logout(
     view_cache.clear()
     reset_all_undo_state()
     reset_sync_state()
+    edit_locks.reset()
     if not purge_decrypted_runtime_state():
         clear_all_locks()
         clear_encryption_key()
     deactivate_authenticated_logging()
-    clear_auth_cookie(response=response)
     return {"message": "Logout successful"}
 
 
@@ -709,12 +744,13 @@ def restore_from_backup(
 def create_passwordless_session(
     request: Request,
     response: Response,
-    tab_id: Annotated[str, Depends(_require_tab_id)],
     db: Annotated[SafeSession, Depends(get_db)],
 ):
     auth = AuthService(db)
     if auth.has_password():
         raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail="Password is set. Use /login instead.")
+    if _sign_in_beside_the_others(request=request, response=response, dek=None):
+        return SessionResponse(message="Session established")
 
     invalidate_runtime_work()
     clear_sensitive_caches()
@@ -725,8 +761,9 @@ def create_passwordless_session(
     view_cache.clear()
     reset_all_undo_state()
     reset_sync_state()
+    edit_locks.reset()
     shell_session_service.reset()
-    token = token_service.create_token(_client_info(request), tab_id, dek=None)
+    token = token_service.create_token(_client_info(request), dek=None)
     set_auth_cookie(request=request, response=response, token=token)
     clear_all_locks()
     return SessionResponse(message="Session established")
@@ -735,9 +772,22 @@ def create_passwordless_session(
 @router.get("/status")
 @one_step_read_route
 def auth_status(
+    request: Request,
     db: Annotated[SafeSession, Depends(get_db)],
     token: Annotated[Optional[str], Depends(_verify_token)],
 ):
+    # A view's status check says what it edits (multi-view step 4): it keeps or takes that root,
+    # and hears when another view has taken it over.
+    edit_lock: dict[str, object] = {}
+    if token is not None and "x-metalist-editing" in request.headers:
+        view_id = request.headers["x-metalist-tab-id"]
+        user_agent = ""
+        if "user-agent" in request.headers:
+            user_agent = request.headers["user-agent"]
+        edit_locks.heard_from(view_id=view_id, token=token, user_agent=user_agent)
+        edit_lock = edit_locks.sync_editing(
+            view_id=view_id, note_id=request.headers["x-metalist-editing"], tells_taken=True,
+        )
     auth = AuthService(db)
     settings = auth.get_settings()
     database_user_version_row = db.connection().execute("PRAGMA user_version").fetchone()
@@ -772,6 +822,12 @@ def auth_status(
         "first_page_revision": pdf_first_pages.revision(),
         # Any change to the notes, from any tab or computer: an open Password Audit updates.
         "notes_revision": note_store.revision,
+        # The search contexts every view shares changed (another tab, the phone): each view takes
+        # them again (multi-view editing step 3).
+        "search_contexts_revision": tab_state_store.shared_revision(),
+        # Notes and searches being edited in a view: the others show markers (multi-view step 4).
+        "edit_locks_revision": edit_locks.revision(),
+        "edit_lock": edit_lock,
         "client_preferences": client_preferences,
     }
 
@@ -1243,7 +1299,6 @@ def create_password(
     request: Request,
     response: Response,
     payload: PasswordCreateRequest,
-    tab_id: Annotated[str, Depends(_require_tab_id)],
     db: Annotated[SafeSession, Depends(get_db)],
 ):
     auth = AuthService(db)
@@ -1266,7 +1321,7 @@ def create_password(
         # shows the vault as it was before).
         dek = auth.encryption.dek
         assert isinstance(dek, bytes), "setting a password leaves its key active"
-        _open_password_session(request=request, response=response, db=db, dek=dek, tab_id=tab_id)
+        _open_password_session(request=request, response=response, db=db, dek=dek)
     return {"message": message, "hydrationRequired": payload.keeps_window_logged_in}
 
 
@@ -1285,7 +1340,10 @@ def change_password(
     )
     if not success:
         raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail=message)
-    token_service.revoke_all_tokens()
+    # The device it was changed on stays signed in; every other is signed out: a common reason to
+    # change it is suspecting someone else has it (multi-view editing §9, 2026-10-27).
+    token_service.revoke_all_tokens_except(token)
+    edit_locks.forget_all_but(token=token)
     invalidate_runtime_work()
     clear_sensitive_caches()
     web_evidence_store.reset()

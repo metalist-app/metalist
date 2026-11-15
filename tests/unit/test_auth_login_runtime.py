@@ -121,7 +121,6 @@ def test_login_does_not_decrypt_file_metadata_before_hydration(monkeypatch) -> N
         request=request,
         response=Response(),
         payload=auth_route.LoginRequest(password="abcd"),
-        tab_id="tab-id",
         db=type("_Database", (), {"connection": lambda self: object()})(),
     )
 
@@ -137,6 +136,8 @@ def test_logout_keeps_encrypted_logging_active_until_plaintext_state_is_purged(m
     events: list[str] = []
     monkeypatch.setattr(auth_route.token_service, "get_session_key", lambda token: "session-key")
     monkeypatch.setattr(auth_route.token_service, "revoke_token", lambda token: events.append("token-revoked"))
+    # The last sign-in: the vault locks (multi-view editing: another device would keep it open).
+    monkeypatch.setattr(auth_route.token_service, "has_active_tokens", lambda: False)
     monkeypatch.setattr(
         auth_route,
         "purge_decrypted_runtime_state",
@@ -151,15 +152,15 @@ def test_logout_keeps_encrypted_logging_active_until_plaintext_state_is_purged(m
     monkeypatch.setattr(auth_route, "clear_auth_cookie", lambda **kwargs: events.append("cookie-cleared"))
 
     logout_impl = auth_route.logout.__wrapped__
-    result = logout_impl(response=Response(), token="token")
+    result = logout_impl(response=Response(), payload=auth_route.LogoutRequest(every_device=False), token="token")
 
     assert result == {"message": "Logout successful"}
     # Logging out keeps the AI conversation (docs/ui/ai-chat.md, "Saved with the vault").
     assert events == [
         "token-revoked",
+        "cookie-cleared",
         "plaintext-purged",
         "logging-deactivated",
-        "cookie-cleared",
     ]
 
 
@@ -202,7 +203,7 @@ def test_the_login_page_locks_an_address_out_after_too_many_wrong_passwords(monk
         with pytest.raises(HTTPException) as refused:
             auth_route.login.__wrapped__(
                 request=_login_request(client_host), response=Response(),
-                payload=auth_route.LoginRequest(password=password), tab_id="tab-id", db=object(),
+                payload=auth_route.LoginRequest(password=password), db=object(),
             )
         return refused.value
 

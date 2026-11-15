@@ -100,6 +100,51 @@ export async function clearAiChatSession() {
 }
 
 
+// The conversation as every view follows it (multi-view editing step 5): the chat's mark, the
+// questions waiting, whether an answer is being written, the AI's question, another view's typing.
+export async function loadAiChatLive() {
+    const response = await fetchAi(CONFIG.API.AI.CHAT_LIVE, {
+        headers: buildSessionHeaders(false),
+        cache: 'no-store',
+    });
+    return await readJsonResponse(response, 'Failed to follow the AI chat');
+}
+
+// Stop, from any view: the answer being written ends; with dropsWaiting (Clear Chat) the waiting
+// questions go too.
+export async function stopAiChatAnswer({ dropsWaiting }) {
+    if (typeof dropsWaiting !== 'boolean') {
+        throw new Error('stopAiChatAnswer requires dropsWaiting');
+    }
+    const response = await fetchAi(CONFIG.API.AI.CHAT_STOP, {
+        method: 'POST',
+        headers: buildSessionHeaders(true),
+        body: JSON.stringify({ drops_waiting: dropsWaiting }),
+    });
+    return await readJsonResponse(response, 'Failed to stop the answer');
+}
+
+// A question being typed here: the box is this view's, its text shown in the others.
+export async function sendAiQuestionTyped(text) {
+    if (typeof text !== 'string') {
+        throw new Error('sendAiQuestionTyped requires the text');
+    }
+    const response = await fetchAi(CONFIG.API.AI.CHAT_COMPOSER, {
+        method: 'PUT',
+        headers: buildSessionHeaders(true),
+        body: JSON.stringify({ text }),
+    });
+    return await readJsonResponse(response, 'Failed to share the question being typed');
+}
+
+export async function releaseAiQuestionBox() {
+    const response = await fetchAi(CONFIG.API.AI.CHAT_COMPOSER_RELEASE, {
+        method: 'POST',
+        headers: buildSessionHeaders(false),
+    });
+    return await readJsonResponse(response, 'Failed to release the question box');
+}
+
 export async function loadAiDebugSnapshot() {
     const response = await fetchAi(CONFIG.API.AI.DEBUG, {
         headers: buildSessionHeaders(false),
@@ -258,11 +303,17 @@ export async function loadExportTitleAvailability({ provider, scope, noteId }) {
     return payload.availability;
 }
 
-// The AI's title, unlike previousTitles; rejects with an
-// AiApiError saying why it could not answer. Aborting signal stops it.
-export async function requestExportTitle({ provider, model, thinkingLevel, scope, noteId, previousTitles, signal }) {
+// The AI's title, unlike previousTitles, and what it was made from ({ title, madeFrom }: send
+// madeFrom back with the titles; the server drops them once anything has changed since). Rejects
+// with an AiApiError saying why it could not answer. Aborting signal stops it.
+export async function requestExportTitle({
+    provider, model, thinkingLevel, scope, noteId, previousTitles, previousTitlesFrom, signal,
+}) {
     if (typeof model !== 'string' || model === '' || !Array.isArray(previousTitles) || !(signal instanceof AbortSignal)) {
         throw new Error('requestExportTitle requires model, previousTitles and signal');
+    }
+    if (typeof previousTitlesFrom !== 'string') {
+        throw new Error('requestExportTitle requires what the previous titles were made from');
     }
     validateAiThinkingLevel(thinkingLevel);
     const response = await fetchAi(CONFIG.API.AI.EXPORT_TITLE, {
@@ -271,6 +322,7 @@ export async function requestExportTitle({ provider, model, thinkingLevel, scope
         body: JSON.stringify({
             ...exportTitleScope({ provider, scope, noteId }),
             model, thinking_level: thinkingLevel, previous_titles: previousTitles,
+            previous_titles_from: previousTitlesFrom,
         }),
         signal,
     });
@@ -279,8 +331,9 @@ export async function requestExportTitle({ provider, model, thinkingLevel, scope
         throw new Error('readJsonResponse returns only for a successful response');
     }
     const event = JSON.parse((await response.text()).trim());
-    if (event.type === 'title' && typeof event.title === 'string' && event.title !== '') {
-        return event.title;
+    if (event.type === 'title' && typeof event.title === 'string' && event.title !== ''
+        && typeof event.from === 'string' && event.from !== '') {
+        return { title: event.title, madeFrom: event.from };
     }
     if (event.type === 'failed' && typeof event.message === 'string') {
         throw new AiApiError(event.message);

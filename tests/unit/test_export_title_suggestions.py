@@ -34,6 +34,7 @@ from app.services.content_cache import clear_cache
 from app.services.file_registry import file_registry
 from app.services.input_errors import InputRejected
 from app.services.note_store import store
+from app.services.sync import generate_new_uuid
 from app.services.ontology_rules_store import bootstrap_ontology_rules_store
 from app.services.ai_credentials import AiCredentialStatus
 import app.services.ai_credentials as ai_credentials_module
@@ -206,9 +207,15 @@ def _availability(exported: str, note_id: str) -> str:
 
 
 def _title_lines(note_id: str) -> list[dict[str, object]]:
+    """The first title in an opening of the dialog: no earlier ones."""
+    return _title_lines_after(note_id, previous_titles=[], previous_titles_from="")
+
+
+def _title_lines_after(note_id: str, *, previous_titles: list[str], previous_titles_from: str) -> list[dict[str, object]]:
     response = ai_routes.suggest_export_title_with_ai(
         payload=ai_routes.ExportTitleSuggestionRequest(
-            **_scope("note", note_id), model="gpt-5.6-luna", thinking_level="low", previous_titles=[],
+            **_scope("note", note_id), model="gpt-5.6-luna", thinking_level="low",
+            previous_titles=previous_titles, previous_titles_from=previous_titles_from,
         ),
         token="token",
     )
@@ -217,6 +224,11 @@ def _title_lines(note_id: str) -> list[dict[str, object]]:
         return [json.loads(line) async for line in response.body_iterator]
 
     return asyncio.run(read())
+
+
+def _without_from(lines: list[dict[str, object]]) -> list[dict[str, object]]:
+    """The title lines without what they were made from (checked on its own below)."""
+    return [{key: value for key, value in line.items() if key != "from"} for line in lines]
 
 
 def test_the_routes_say_whether_the_ai_can_ask_and_stream_its_title(live_database, monkeypatch) -> None:
@@ -239,7 +251,7 @@ def test_the_routes_say_whether_the_ai_can_ask_and_stream_its_title(live_databas
     assert _availability("view", "") == "partial"
     answers = _Answers("Kyoto in Spring")
     monkeypatch.setattr(openai_inference_module, "OpenAIInferenceAdapter", lambda **kwargs: answers)
-    assert _title_lines("trip") == [{"type": "title", "title": "Kyoto in Spring"}]
+    assert _without_from(_title_lines("trip")) == [{"type": "title", "title": "Kyoto in Spring"}]
     assert "Dear diary" not in json.dumps(answers.requests) and "hunter22" not in json.dumps(answers.requests)
     with pytest.raises(InputRejected, match="private"):
         _title_lines("diary")
@@ -268,7 +280,7 @@ def test_a_title_after_a_chat_in_the_session_is_traced_as_its_own_run(live_datab
     chat_run = agent_trace_store.start_run(session_key="session", model="gpt-5.6-luna", user_message="Hello")
     agent_trace_store.complete_run(session_key="session", run_id=chat_run)
 
-    assert _title_lines("trip") == [{"type": "title", "title": "Kyoto in Spring"}]
+    assert _without_from(_title_lines("trip")) == [{"type": "title", "title": "Kyoto in Spring"}]
     title_run = agent_trace_store.snapshot(session_key="session")["run"]
     agent_trace_store.clear_session(session_key="session")
     assert title_run["run_id"] != chat_run and title_run["status"] == "complete"
@@ -289,3 +301,27 @@ def test_the_real_openai_adapter_accepts_the_answer_format() -> None:
     schema = strict_openai_schema(ExportTitleAnswer.model_json_schema())
     assert (schema["required"], schema["additionalProperties"]) == (["title"], False)
     assert "maxLength" not in json.dumps(schema), "checked locally, not sent"
+
+
+def test_earlier_titles_go_back_only_while_nothing_has_changed_since(live_database, monkeypatch) -> None:
+    # Several devices (multi-view editing, 2026-11-14): while this dialog is open, another device
+    # can make a note private. A title the AI made from it must not go back to the AI then, so the
+    # earlier titles go back only while no note and no privacy setting has changed since
+    # (docs/security/cloud-privacy-boundary.md, item 8).
+    _trip()
+    monkeypatch.setattr(ai_routes.token_service, "get_session_key", lambda token: "session")
+    monkeypatch.setattr(ai_routes, "load_client_preferences", lambda *, token: _policy("private"))
+    monkeypatch.setattr(ai_routes.tab_state_store, "get_sort_mode", lambda *, tab_id: "normal")
+    monkeypatch.setattr(ai_routes.tab_state_store, "get_date_filter", lambda *, tab_id: None)
+    monkeypatch.setattr(ai_routes.tab_state_store, "get_file_filter", lambda *, tab_id: None)
+    _set_ai_ready(monkeypatch, is_ready=True)
+    answers = _Answers("Kyoto in Spring")
+    monkeypatch.setattr(openai_inference_module, "OpenAIInferenceAdapter", lambda **kwargs: answers)
+
+    made_from = _title_lines("trip")[0]["from"]
+    _title_lines_after("trip", previous_titles=["Kyoto in Spring"], previous_titles_from=made_from)
+    assert "titles_already_suggested" in json.dumps(answers.requests[-1]), "nothing changed: sent back"
+
+    generate_new_uuid()
+    _title_lines_after("trip", previous_titles=["Kyoto in Spring"], previous_titles_from=made_from)
+    assert "titles_already_suggested" not in json.dumps(answers.requests[-1]), "a note changed since: none"

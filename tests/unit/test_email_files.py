@@ -139,7 +139,7 @@ from app.main import app
 from app.config import API_PREFIX
 from app.services.tokens import token_service
 
-token = token_service.create_token(client_info="fixture", owner_tab_id="tab", dek=None)
+token = token_service.create_token(client_info="fixture", dek=None)
 headers = {{"Authorization": "Bearer " + token, "X-Metalist-Tab-Id": "tab", "Origin": "http://localhost"}}
 with TestClient(app, base_url="http://localhost", raise_server_exceptions=False) as client:
     with open({str(eml_path)!r}, "rb") as eml:

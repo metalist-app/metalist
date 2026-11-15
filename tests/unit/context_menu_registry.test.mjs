@@ -580,7 +580,7 @@ test('the background menu groups adding, going, the outline, the view, opening a
         'Themes',
         '— Open',
         'Export & Print',
-        '— Log Out',
+        '— Log Out…',
     ]);
     const submenu = (id) => describeMenu(items.find((item) => item.id === id).submenu);
     assert.deepEqual(submenu('add'), ['Add Note at Top ↩', 'Paste Note at Top ⌘V']);

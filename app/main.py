@@ -110,6 +110,7 @@ from urllib.parse import parse_qsl
 from urllib.parse import urlencode
 from urllib.parse import urlsplit
 from urllib.parse import urlunsplit
+from app.services.edit_locks import NoteLockedElsewhere
 from app.services.input_errors import InputRejected, NamespaceInputRejected
 
 # Responses smaller than this go out uncompressed.
@@ -217,6 +218,16 @@ async def handle_input_rejected(request: Request, exc: InputRejected):
     # Expected, validated user-input failures (e.g. a search that does not
     # parse): a polite 400 the browser shows as a warning, never a 500.
     return JSONResponse(status_code=HTTPStatus.BAD_REQUEST, content={"detail": str(exc), "inputRejected": True})
+
+
+@app.exception_handler(NoteLockedElsewhere)
+async def handle_note_locked_elsewhere(request: Request, exc: NoteLockedElsewhere):
+    # A change to a root another view is editing (multi-view step 4): rejected input that names
+    # the root, so the browser opens its marker instead of showing a banner.
+    return JSONResponse(
+        status_code=HTTPStatus.BAD_REQUEST,
+        content={"detail": str(exc), "inputRejected": True, "lockedRootId": exc.root_id, "lockedWhere": exc.where},
+    )
 
 
 @app.exception_handler(OntologyParseError)
@@ -865,7 +876,7 @@ async def locked_page(request: Request, db: Annotated[SafeSession, Depends(get_d
         request=request,
         version=VERSION,
         asset_version=static_files_version.for_page(),
-        page_title=_resolve_page_title(base_title="MetaList – Locked"),
+        page_title=_resolve_page_title(base_title="MetaList – Signed out"),
         has_password=has_password,
     )
 

@@ -580,6 +580,22 @@ class AiChatSessionStore:
                 return dict(NO_REQUEST)
             return dict(session.last_request)
 
+    def live_mark(self) -> str:
+        """Changes whenever what the chat shows changes: views load it again (step 5)."""
+        with self._lock:
+            session = self._existing_session_locked()
+            if session is None:
+                return "empty"
+            parts: list[object] = [
+                len(session.messages), len(session.summaries), session.held_back_until, session.history_start,
+                session.is_summarizing,
+            ]
+            if session.messages:
+                last = session.messages[-1]
+                parts.extend([last["id"], last["status"], len(last["content"]), len(last["thinking"]),
+                              len(session.activities[last["id"]])])
+            return ":".join(str(part) for part in parts)
+
     def is_streaming(self, *, turn_id: str) -> bool:
         with self._lock:
             session = self._existing_session_locked()

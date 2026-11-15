@@ -125,16 +125,19 @@ in shown notes), `remote_image_proxy` (remote images in shown notes).
    this costs the AI nothing it could know
    (`test_a_private_note_id_is_answered_like_an_invented_one`,
    `test_a_tag_only_private_notes_carry_is_answered_like_an_invented_one`).
-8. **Export titles accept earlier titles from the browser: checked, not a gap.**
-   "Another title" sends the titles already shown in this opening of the dialog,
-   so the AI does not repeat one. A title made from a note that became private
-   before the next click would be sent again, but nothing can make a note private
-   in between: signing in ends every other session (`tokens.py`, one active
-   session) and each session belongs to one browser tab; the export dialog is
-   modal, so no edit or settings change happens behind it; and a bulk tagging run
-   makes everything outside the chat panel inert and holds the command gate for
-   its whole length (`bulk-proposal-ui.js`), so Export cannot open while one runs.
-   The titles are dropped when the dialog closes.
+8. **Export titles accept earlier titles from the browser: a gap once several devices are
+   signed in, fixed 2026-11-14.** "Another title" sends the titles already shown in this
+   opening of the dialog, so the AI does not repeat one. A title made from a note that became
+   private before the next click would be sent again. With one sign-in nothing could make a
+   note private in between (the dialog is modal; a bulk tagging run holds the command gate,
+   `bulk-proposal-ui.js`). With several devices signed in at once (multi-view editing, step
+   1) another device can, by tagging the note or changing the privacy rules. Now each title
+   line names what it was made from (the notes' change mark and the privacy settings'
+   revision, `_export_titles_made_from`), the dialog sends it back with the titles, and the
+   server sends them to the AI only while nothing has changed since; otherwise none, so a
+   title may repeat (`_previous_titles_still_sendable`;
+   `test_earlier_titles_go_back_only_while_nothing_has_changed_since`). The titles are
+   dropped when the dialog closes.
 9. **Outside the cloud contract, considered and left as is:** MetaList fetches page
    titles and remote images for links and images in every shown note, private ones
    included. No note content goes out, the AI sees none of it, and the linked site

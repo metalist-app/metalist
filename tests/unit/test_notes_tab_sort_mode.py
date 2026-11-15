@@ -20,7 +20,7 @@ def test_update_tab_sort_mode_resets_undo_stack_when_changed(monkeypatch: pytest
     monkeypatch.setattr(
         notes_route.tab_state_store,
         "set_sort_mode",
-        lambda *, tab_id, sort_mode: {
+        lambda *, view_id, tab_id, sort_mode: {
             "activeTabId": tab_id,
             "tabs": {tab_id: {"searchQuery": "", "scrollY": 0, "scrollAnchor": None, "sortMode": sort_mode}},
             "tabOrder": [tab_id],
@@ -35,7 +35,8 @@ def test_update_tab_sort_mode_resets_undo_stack_when_changed(monkeypatch: pytest
     )
 
     result = notes_route.update_tab_sort_mode(
-        {
+        view_id="view-1",
+        payload={
             "tabId": "tab-1",
             "sortMode": "updated",
             "clientId": "client-1",
@@ -137,15 +138,15 @@ def test_update_tab_date_filter_sets_the_range_and_resets_undo_when_changed(monk
     stored: list[object] = []
     resets: list[tuple[str, str]] = []
 
-    def set_date_filter(*, tab_id: str, date_filter: object) -> dict[str, bool]:
+    def set_date_filter(*, view_id: str, tab_id: str, date_filter: object) -> dict[str, bool]:
         stored.append((tab_id, date_filter))
         return {"changed": True}
 
     monkeypatch.setattr(notes_route.tab_state_store, "set_date_filter", set_date_filter)
     monkeypatch.setattr(notes_route, "reset_undo_stack", lambda client_id, undo_context: resets.append((client_id, undo_context)))
 
-    notes_route.update_tab_date_filter(_date_filter_request())
-    notes_route.update_tab_date_filter(_date_filter_request(rangeKind="none", fromDate="", toDate=""))
+    notes_route.update_tab_date_filter(_date_filter_request(), view_id="view-1")
+    notes_route.update_tab_date_filter(_date_filter_request(rangeKind="none", fromDate="", toDate=""), view_id="view-1")
 
     assert stored == [
         ("tab-1", notes_route.make_root_date_filter(
@@ -159,5 +160,5 @@ def test_update_tab_date_filter_sets_the_range_and_resets_undo_when_changed(monk
 def test_update_tab_date_filter_rejects_a_start_after_its_end_politely(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(notes_route.tab_state_store, "set_date_filter", lambda **kwargs: pytest.fail("nothing is stored"))
     with pytest.raises(InputRejected) as exc_info:
-        notes_route.update_tab_date_filter(_date_filter_request(fromDate="2026-10-22", toDate="2026-10-01"))
+        notes_route.update_tab_date_filter(_date_filter_request(fromDate="2026-10-22", toDate="2026-10-01"), view_id="view-1")
     assert str(exc_info.value) == "The start of a date range must not be after its end"

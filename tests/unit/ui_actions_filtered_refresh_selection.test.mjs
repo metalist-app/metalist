@@ -48,6 +48,10 @@ function refreshHarness({ isRemoved, isAnimated, isFullSnapshot }) {
         setSearchHighlightPhrases() {},
         // No reference pages closed with their notes in these views.
         noticeClosedReferencePages() {},
+        recordNotesShown() {},
+        recordEditedRootMovedElsewhere() {},
+        recordLockedRoots() {},
+        noticeRefusedEdit() {},
         moduleState: ApplicationState.createFields("test.refresh", { viewRequestInFlight: false }),
         Logger: { logAction() {}, logDebug() {} },
         NotesAPI: { async fetchView() { return { snapshot }; } },

@@ -83,7 +83,7 @@ async function installFakeServer(page) {
             }
             return fake.originalFetch(url, options);
         };
-        await AiChatPanel._loadSession({shouldScrollToBottom: true});
+        await AiChatPanel._loadSession({shouldScrollToBottom: true, isForChangeElsewhere: false});
     }, {turnCount: TURN_COUNT, sentences: LONG_ANSWER_SENTENCES});
 }
 
@@ -204,7 +204,7 @@ export async function checkAiChatSummary(page) {
         await page.evaluate(number => window.chatSummaryTest.addTurn(number), TURN_COUNT + 1);
         await page.evaluate(async () => {
             const {AiChatPanel} = await import('/static/js/modules/ai-chat/ai-chat-panel-controller.js');
-            await AiChatPanel._loadSession({shouldScrollToBottom: false});
+            await AiChatPanel._loadSession({shouldScrollToBottom: false, isForChangeElsewhere: false});
             document.getElementById('ai-chat-messages').scrollTop = 0;
         });
         await chooseSummarizeNow(page, 'assistant-1');
@@ -219,7 +219,7 @@ export async function checkAiChatSummary(page) {
         await page.evaluate(number => window.chatSummaryTest.addTurn(number), TURN_COUNT + 2);
         await page.evaluate(async () => {
             const {AiChatPanel} = await import('/static/js/modules/ai-chat/ai-chat-panel-controller.js');
-            await AiChatPanel._loadSession({shouldScrollToBottom: true});
+            await AiChatPanel._loadSession({shouldScrollToBottom: true, isForChangeElsewhere: false});
         });
         await chooseSummarizeNow(page, `assistant-${TURN_COUNT + 2}`);
         await page.click('#ai-chat-clear');

@@ -7,6 +7,10 @@ const AI_STREAM_EVENT_TYPES = new Set([
     'content_delta',
     'done',
     'error',
+    // One answer at a time across views (multi-view editing step 5): this Send waits behind
+    // another view's answer; Stop from another view ended this answer.
+    'waiting',
+    'stopped',
 ]);
 // A cost shows at least whole cents, and down to a millionth of a dollar.
 const COST_MIN_FRACTION_DIGITS = 2;

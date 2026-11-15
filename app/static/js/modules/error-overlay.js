@@ -1,6 +1,6 @@
 import { ApplicationState } from './application-state.js';
 import { isNetworkTransportError } from './api-failure-classification-service.js';
-import { ServerInputRejectedError } from './expected-errors.js';
+import { NoteLockedElsewhereError, ServerInputRejectedError } from './expected-errors.js';
 import { CONFIG } from './config.js';
 import { HTTP_STATUS } from './http-status.js';
 
@@ -56,6 +56,10 @@ export function checkServerCodeIsStale() {
 // failure: a polite warning, not the fatal overlay. Null for anything else,
 // which still fails fast and loud.
 export function rejectedInputWarning(reason) {
+  // Refused for a root edited in another view whose marker opened: the marker says it.
+  if (reason instanceof NoteLockedElsewhereError && reason.isMarkerShown) {
+    return '';
+  }
   if (reason instanceof ServerInputRejectedError) {
     return `That could not be used: ${reason.message}.`;
   }
@@ -200,6 +204,10 @@ export function installGlobalErrorOverlay(showWarning) {
   window.addEventListener('unhandledrejection', (event) => {
     const reason = event?.reason;
     const warning = rejectedInputWarning(reason);
+    if (warning === '') {
+      event.preventDefault();
+      return;
+    }
     if (warning !== null) {
       event.preventDefault();
       showWarning(warning);

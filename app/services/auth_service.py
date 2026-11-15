@@ -32,6 +32,7 @@ from app.db.migrations import read_database_version
 from app.db.migrations import run_database_migrations
 from app.db.notes_sql import fetch_all_for_cache
 from app.db.notes_sql import update_note_fields_preserving_updated_at
+from app.services.edit_locks import edit_locks
 from app.db.ontology_rules_sql import fetch_all_rules as fetch_all_ontology_rules
 from app.db.ontology_rules_sql import update_rule as update_ontology_rule
 from app.db.settings_sql import (
@@ -639,7 +640,10 @@ class AuthService:
             rewrite = prepare_note_rewrite(note, self.encryption, encrypted=encrypted)
             if not rewrite.persisted:
                 continue
-            update_note_fields_preserving_updated_at(connection, note['id'], **rewrite.persisted)
+            # The same text, stored for the new key: no edit, so a note being edited elsewhere is
+            # rewritten too (multi-view step 4).
+            with edit_locks.storage_rewrite():
+                update_note_fields_preserving_updated_at(connection, note['id'], **rewrite.persisted)
             updates[note['id']] = rewrite.plaintext
         return len(updates), updates
 

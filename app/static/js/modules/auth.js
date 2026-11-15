@@ -6,7 +6,7 @@ import { FloatingMessages } from './floating-messages.js';
  * Authentication module for handling login/logout and password management
  */
 import { CONFIG } from './config.js';
-import { buildSessionHeaders, initializeSessionIdentity, getRequiredTabId } from './session-auth.js';
+import { buildSessionHeaders, initializeInstalledAppIdentity, initializeSessionIdentity, getRequiredTabId } from './session-auth.js';
 import { readPasswordOperationResponse } from './password-operation-response.js';
 import { clearLegacyAuthStorage, resolveStoredThemePreference } from './client-state-migration.js';
 import { consumeBooleanQueryFlag } from './location-flags.js';
@@ -85,7 +85,14 @@ export const Auth = {
      * Returns true if OK to proceed with app initialization
      */
     async init() {
-        initializeSessionIdentity();
+        // The installed phone app runs standalone (display-mode standalone; iOS: navigator.standalone).
+        const isStandaloneDisplay = window.matchMedia('(display-mode: standalone)').matches;
+        const isIosHomeScreenApp = window.navigator.standalone === true;
+        if (isStandaloneDisplay || isIosHomeScreenApp) {
+            initializeInstalledAppIdentity();
+        } else {
+            initializeSessionIdentity();
+        }
         clearLegacyAuthStorage();
         this.setupEventListeners();
         return await this.checkAuthStatus();
@@ -853,21 +860,6 @@ export const Auth = {
         passwordInput.focus();
     },
     
-    /**
-     * Handle logout
-     */
-    async logout() {
-        await fetch(CONFIG.API.AUTH.LOGOUT, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-Metalist-Tab-Id': getRequiredTabId(),
-            }
-        }).finally(() => {
-            this.clearSessionState();
-            window.location.reload();
-        });
-    },
 
     clearSessionState() {
         this._closeFloatingNotes();

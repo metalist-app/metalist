@@ -14,6 +14,9 @@ from app.services.tab_state import tab_state_store
 from app.usecases.create_note import apply_insert_note
 from app.usecases.rename_tag import apply_rename_tag_everywhere
 
+# The view (a browser tab) the tests act in (multi-view editing step 2).
+VIEW = "10000000-0000-4000-8000-0000000000ee"
+
 
 @pytest.fixture
 def live_database(tmp_path, monkeypatch):
@@ -44,11 +47,11 @@ def _note(note_id: str, previous_id: str | None, *, content: str, tags: str) -> 
 
 
 def _search_in_active_context(search: str) -> str:
-    state = tab_state_store.snapshot()
+    state = tab_state_store.snapshot(view_id=VIEW)
     tab_id = state["activeTabId"]
     tabs = state["tabs"]
     tabs[tab_id]["searchQuery"] = search
-    tab_state_store.update(
+    tab_state_store.update(view_id=VIEW, 
         active_tab_id=tab_id, tabs=tabs, tab_order=state["tabOrder"], reference_views=state["referenceViews"],
         read_at_version=state["version"],
     )
@@ -61,7 +64,7 @@ def test_rename_tag_renames_it_in_search_links_and_saved_searches(live_database)
     _note("task", "dash", content="<div>Ship it</div>", tags="work")
     updated_before = store.get_note("dash").updated_at
     tab_id = _search_in_active_context("work -archive")
-    browser_copy = tab_state_store.snapshot()
+    browser_copy = tab_state_store.snapshot(view_id=VIEW)
 
     result = apply_rename_tag_everywhere(old="work", new="job", token="")
 
@@ -71,7 +74,7 @@ def test_rename_tag_renames_it_in_search_links_and_saved_searches(live_database)
     assert tab_state_store.get_search_query(tab_id=tab_id) == "job -archive"
     assert (result["renamedSearchLinkNoteCount"], result["renamedSearchCount"]) == (1, 1)
     # A browser's copy read before the rename doesn't bring the old name back.
-    tab_state_store.update(
+    tab_state_store.update(view_id=VIEW, 
         active_tab_id=tab_id, tabs=browser_copy["tabs"], tab_order=browser_copy["tabOrder"],
         reference_views=browser_copy["referenceViews"], read_at_version=browser_copy["version"],
     )
@@ -80,8 +83,8 @@ def test_rename_tag_renames_it_in_search_links_and_saved_searches(live_database)
 
 def test_the_search_context_a_link_opens_has_the_same_terms(live_database) -> None:
     tab_id = _search_in_active_context("work  -archive")
-    assert tab_state_store.search_context_with_search(search="-archive Work") == tab_id
-    assert tab_state_store.search_context_with_search(search="work") == ""
+    assert tab_state_store.search_context_with_search(view_id=VIEW, search="-archive Work") == tab_id
+    assert tab_state_store.search_context_with_search(view_id=VIEW, search="work") == ""
 
 
 def test_a_search_context_on_a_reference_page_does_not_take_a_search_link(live_database) -> None:
@@ -89,11 +92,11 @@ def test_a_search_context_on_a_reference_page_does_not_take_a_search_link(live_d
     # context beside it (the maintainer, 2026-11-14).
     _note("10000000-0000-4000-8000-000000000001", None, content="<div>Trip plan</div>", tags="")
     misc = _search_in_active_context("miscellaneous")
-    page = tab_state_store.create_tab(copy_from_tab_id=misc, copies_view=False)["newTabId"]
-    state = tab_state_store.snapshot()
+    page = tab_state_store.create_tab(view_id=VIEW, is_page=False, copy_from_tab_id=misc, copies_view=False)["newTabId"]
+    state = tab_state_store.snapshot(view_id=VIEW)
     tabs = state["tabs"]
     tabs[page]["searchQuery"] = "10000000-0000-4000-8000-000000000001"
-    tab_state_store.update(
+    tab_state_store.update(view_id=VIEW, 
         active_tab_id=page, tabs=tabs, tab_order=state["tabOrder"], read_at_version=state["version"],
         reference_views={page: {
             "fromTabId": misc, "referenceQuery": "10000000-0000-4000-8000-000000000001", "viewKind": "source",
@@ -101,6 +104,6 @@ def test_a_search_context_on_a_reference_page_does_not_take_a_search_link(live_d
                             "isUntaggedView": False},
         }},
     )
-    assert tab_state_store.snapshot()["referenceViews"] != {}, "the page is a reference view"
+    assert tab_state_store.snapshot(view_id=VIEW)["referenceViews"] != {}, "the page is a reference view"
 
-    assert tab_state_store.search_context_with_search(search="miscellaneous") == ""
+    assert tab_state_store.search_context_with_search(view_id=VIEW, search="miscellaneous") == ""

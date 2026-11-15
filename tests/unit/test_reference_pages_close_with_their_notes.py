@@ -17,6 +17,9 @@ from app.services.tab_state import tab_state_store
 from app.usecases.create_note import apply_insert_note
 from app.usecases.delete_subtree import apply_delete_subtree
 
+# The view (a browser tab) the tests act in (multi-view editing step 2).
+VIEW = "10000000-0000-4000-8000-0000000000ee"
+
 PARENT = "10000000-0000-4000-8000-000000000001"
 BAR = "10000000-0000-4000-8000-000000000002"
 OTHER = "10000000-0000-4000-8000-000000000003"
@@ -54,10 +57,10 @@ def notes(tmp_path, monkeypatch):
 def _open_pages(foo_search: str, pages: list[tuple[str, str]]) -> tuple[str, list[str]]:
     """foo, searching foo_search, with a way of pages (reference query, kind) from it, the last
     one shown. Returns foo's tab and the pages' tabs."""
-    state = tab_state_store.snapshot()
+    state = tab_state_store.snapshot(view_id=VIEW)
     foo = state["activeTabId"]
-    page_tabs = [tab_state_store.create_tab(copy_from_tab_id=foo, copies_view=False)["newTabId"] for _ in pages]
-    state = tab_state_store.snapshot()
+    page_tabs = [tab_state_store.create_tab(view_id=VIEW, is_page=False, copy_from_tab_id=foo, copies_view=False)["newTabId"] for _ in pages]
+    state = tab_state_store.snapshot(view_id=VIEW)
     tabs = state["tabs"]
     tabs[foo]["searchQuery"] = foo_search
     views = {}
@@ -69,9 +72,9 @@ def _open_pages(foo_search: str, pages: list[tuple[str, str]]) -> tuple[str, lis
             "originScope": {"scopeTabId": foo, "searchQuery": foo_search, "sortMode": "normal", "isUntaggedView": False},
         }
         from_tab = page_tab
-    tab_state_store.update(active_tab_id=page_tabs[-1], tabs=tabs, tab_order=state["tabOrder"],
+    tab_state_store.update(view_id=VIEW, active_tab_id=page_tabs[-1], tabs=tabs, tab_order=state["tabOrder"],
                            reference_views=views, read_at_version=state["version"])
-    assert set(tab_state_store.snapshot()["referenceViews"]) == set(page_tabs)
+    assert set(tab_state_store.snapshot(view_id=VIEW)["referenceViews"]) == set(page_tabs)
     return foo, page_tabs
 
 
@@ -80,7 +83,7 @@ def test_deleting_the_linked_note_closes_its_page_and_shows_the_search(notes) ->
 
     apply_delete_subtree(BAR)
 
-    state = tab_state_store.snapshot()
+    state = tab_state_store.snapshot(view_id=VIEW)
     assert state["tabOrder"] == [foo]
     assert state["referenceViews"] == {}
     # Shown on the page when its note went: the search it was opened from.
@@ -95,17 +98,17 @@ def test_deleting_a_parent_of_the_linked_note_closes_its_page(notes) -> None:
 
     apply_delete_subtree(PARENT)
 
-    assert tab_state_store.snapshot()["tabOrder"] == [foo]
+    assert tab_state_store.snapshot(view_id=VIEW)["tabOrder"] == [foo]
 
 
 def test_a_page_of_several_notes_closes_only_once_all_are_gone(notes) -> None:
     foo, (page,) = _open_pages("foo", [(f"{BAR} OR {OTHER}", "backlinks")])
 
     apply_delete_subtree(BAR)
-    assert tab_state_store.snapshot()["tabOrder"] == [foo, page], "one note is left to show"
+    assert tab_state_store.snapshot(view_id=VIEW)["tabOrder"] == [foo, page], "one note is left to show"
 
     apply_delete_subtree(OTHER)
-    assert tab_state_store.snapshot()["tabOrder"] == [foo]
+    assert tab_state_store.snapshot(view_id=VIEW)["tabOrder"] == [foo]
 
 
 def test_the_pages_opened_from_a_closed_page_close_with_it(notes) -> None:
@@ -113,7 +116,7 @@ def test_the_pages_opened_from_a_closed_page_close_with_it(notes) -> None:
 
     apply_delete_subtree(BAR)
 
-    state = tab_state_store.snapshot()
+    state = tab_state_store.snapshot(view_id=VIEW)
     assert state["tabOrder"] == [foo]
     assert state["activeTabId"] == foo
 
@@ -123,21 +126,21 @@ def test_a_page_whose_notes_remain_is_left_alone(notes) -> None:
 
     apply_delete_subtree(PARENT)
 
-    assert tab_state_store.snapshot()["tabOrder"] == [foo, page]
+    assert tab_state_store.snapshot(view_id=VIEW)["tabOrder"] == [foo, page]
 
 
 def test_a_save_still_naming_a_closed_page_is_taken_without_it(notes) -> None:
     # The browser may save its tabs before it hears the page closed: that save is not refused.
     foo, (page,) = _open_pages("foo", [(BAR, "source")])
-    browser_copy = tab_state_store.snapshot()
+    browser_copy = tab_state_store.snapshot(view_id=VIEW)
 
     apply_delete_subtree(BAR)
-    tab_state_store.update(
+    tab_state_store.update(view_id=VIEW, 
         active_tab_id=page, tabs=browser_copy["tabs"], tab_order=browser_copy["tabOrder"],
         reference_views=browser_copy["referenceViews"], read_at_version=browser_copy["version"],
     )
 
-    state = tab_state_store.snapshot()
+    state = tab_state_store.snapshot(view_id=VIEW)
     assert state["tabOrder"] == [foo]
     assert state["referenceViews"] == {}
     assert state["activeTabId"] == foo

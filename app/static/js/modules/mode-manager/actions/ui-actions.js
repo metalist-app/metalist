@@ -23,6 +23,9 @@ import {
 } from '../services/viewport-hold-service.js';
 import { MS_PER_SECOND } from '../../time-units.js';
 import { setSearchHighlightPhrases } from '../services/search-highlight-service.js';
+import { recordNotesShown } from '../services/live-changes-service.js';
+import { CommandGate } from '../services/command-gate-service.js';
+import { openMarkerForRefusal, recordEditedRootMovedElsewhere, recordLockedRoots } from '../services/edit-lock-service.js';
 
 const PERF_LOG_MS_DECIMALS = 2;
 // waitForViewRequestIdle fails loudly once a notes.view request has blocked this long.
@@ -61,6 +64,26 @@ function hasNewlyClosedReferencePages(snapshot) {
     moduleState.pagesClosedAtVersion = closedAt;
     // The first view, or a server started again: the tabs it loaded are already the server's.
     return seenBefore !== NOT_YET_SEEN && closedAt > seenBefore;
+}
+
+// Another view took the root this view was entering edit mode in, a moment before (multi-view
+// step 4): the server answered it for viewing; once this refresh is done, edit mode ends here
+// without saving (nothing was typed yet) and the root's marker opens.
+function noticeRefusedEdit(refusal) {
+    if (refusal === null || typeof refusal !== 'object') {
+        throw new Error('notes.view editLockRefused must be an object');
+    }
+    if (!Object.hasOwn(refusal, 'lockedWhere')) {
+        return;
+    }
+    void CommandGate.runWhenFree('editLock.refused', async () => {
+        if (ModeContext.isEditing) {
+            const { actionExitEditingWithoutSavingOrRefreshing } = await import('./selection-actions.js');
+            await actionExitEditingWithoutSavingOrRefreshing();
+            await actionRefreshAndMaybeSelect({ context: 'edit-lock-refused' });
+        }
+        openMarkerForRefusal(refusal.rootId, refusal.lockedWhere);
+    });
 }
 
 function noticeClosedReferencePages(snapshot) {
@@ -219,6 +242,8 @@ export async function actionRefreshAndMaybeSelect(options) {
             );
         }
         const { snapshot } = viewResponse;
+        recordNotesShown(snapshot.notesRevision);
+        recordEditedRootMovedElsewhere(snapshot.editedRootMovedElsewhere);
         noticeClosedReferencePages(snapshot);
         ModeContext.setRootWindow(requestTabId, snapshot.rootWindowStart, snapshot.rootBandMargin);
         setSearchHighlightPhrases(snapshot.searchHighlightPhrases);
@@ -293,6 +318,9 @@ export async function actionRefreshAndMaybeSelect(options) {
         updateReferenceSourceIndicator();
         rebuildRootDateSeparators(snapshot);
         rebuildFileSizePills(snapshot);
+        // The roots other views edit show their markers (multi-view step 4).
+        recordLockedRoots(snapshot.lockedRoots);
+        noticeRefusedEdit(snapshot.editLockRefused);
         holdViewportRoot(viewportRoot);
 
         // Removal animations retain DOM nodes after the diff removes their view membership.

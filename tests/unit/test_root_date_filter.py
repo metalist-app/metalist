@@ -24,6 +24,9 @@ from app.services.root_date_filter import (
 )
 from app.services.tab_state import TabStateStore
 
+# The view (a browser tab) the tests act in (multi-view editing step 2).
+VIEW = "10000000-0000-4000-8000-0000000000ee"
+
 TODAY = date(2026, 10, 23)
 # Midday local time: the same local date in every time zone the test may run in.
 MIDDAY = 12
@@ -83,22 +86,22 @@ def memory_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
 
 def test_a_tab_keeps_its_range_across_a_reload_and_starts_again_at_its_top(memory_db) -> None:
     store = TabStateStore()
-    initial = store.snapshot()
+    initial = store.snapshot(view_id=VIEW)
     tab_id = initial["activeTabId"]
     initial["tabs"][tab_id]["scrollY"] = 250
-    store.update(
+    store.update(view_id=VIEW, 
         reference_views={}, active_tab_id=tab_id, tabs=initial["tabs"], tab_order=initial["tabOrder"],
         read_at_version=initial["version"],
     )
 
     chosen = _custom("2026-10-01", "2026-10-22", field="created")
-    result = store.set_date_filter(tab_id=tab_id, date_filter=chosen)
+    result = store.set_date_filter(view_id=VIEW, tab_id=tab_id, date_filter=chosen)
     assert result["changed"] is True
     assert result["tabs"][tab_id]["scrollY"] == 0
     assert result["dateFilters"] == {
         tab_id: {"field": "created", "rangeKind": "custom", "fromDate": "2026-10-01", "toDate": "2026-10-22"},
     }
-    assert store.set_date_filter(tab_id=tab_id, date_filter=chosen)["changed"] is False
+    assert store.set_date_filter(view_id=VIEW, tab_id=tab_id, date_filter=chosen)["changed"] is False
 
     reloaded = TabStateStore()
     session = SafeSession()
@@ -109,7 +112,7 @@ def test_a_tab_keeps_its_range_across_a_reload_and_starts_again_at_its_top(memor
         session.close()
     assert reloaded.get_date_filter(tab_id=tab_id) == chosen
 
-    cleared = store.set_date_filter(tab_id=tab_id, date_filter=None)
+    cleared = store.set_date_filter(view_id=VIEW, tab_id=tab_id, date_filter=None)
     assert cleared["changed"] is True
     assert cleared["dateFilters"] == {}
     assert store.get_date_filter(tab_id=tab_id) is None
@@ -117,14 +120,14 @@ def test_a_tab_keeps_its_range_across_a_reload_and_starts_again_at_its_top(memor
 
 def test_a_blank_new_tab_starts_without_its_sources_range_and_a_closed_tab_drops_its_own(memory_db) -> None:
     store = TabStateStore()
-    source_tab_id = store.snapshot()["activeTabId"]
-    store.set_date_filter(tab_id=source_tab_id, date_filter=_preset("today", field="updated"))
+    source_tab_id = store.snapshot(view_id=VIEW)["activeTabId"]
+    store.set_date_filter(view_id=VIEW, tab_id=source_tab_id, date_filter=_preset("today", field="updated"))
 
-    new_tab_id = store.create_tab(copy_from_tab_id=source_tab_id, copies_view=False)["newTabId"]
+    new_tab_id = store.create_tab(view_id=VIEW, is_page=False, copy_from_tab_id=source_tab_id, copies_view=False)["newTabId"]
     assert store.get_date_filter(tab_id=new_tab_id) is None
 
-    store.set_date_filter(tab_id=new_tab_id, date_filter=_preset("this-year", field="created"))
-    after_delete = store.delete_tab(tab_id=new_tab_id)
+    store.set_date_filter(view_id=VIEW, tab_id=new_tab_id, date_filter=_preset("this-year", field="created"))
+    after_delete = store.delete_tab(view_id=VIEW, tab_id=new_tab_id)
     assert list(after_delete["dateFilters"]) == [source_tab_id]
 
 

@@ -63,6 +63,10 @@ function chatHarness(events) {
         rethrowUnexpectedError: error => { throw error; },
         streamAiChat: async ({ onEvent }) => { for (const event of events) onEvent(event); },
         clearAiChatSession: async () => {},
+        // Clear Chat stops the answer any view's Send is writing first (multi-view step 5).
+        stopAiChatAnswer: async () => ({ stopped: true }),
+        loadAiChatLive: async () => ({ isAnswering: false }),
+        releaseAiQuestionBox: async () => ({ released: true }),
         closeBulkProgress: bulk.close, handleBulkEvent: bulk.event,
         MS_PER_SECOND,
         ...AI_CHAT_REFUSED_TURNS,
@@ -218,6 +222,7 @@ test('overlapping connectivity checks clear user activity once', async () => {
         Logger: { logDebug() {}, logError() {} },
         ErrorHandler: { handleConnectionRestored() {}, handleApiError() {} },
         buildSessionHeaders: () => ({}),
+        noticeStatusRevisions() {},
         sessionStorage: { getItem: () => null },
         window: { setTimeout: () => 1, clearTimeout() {} },
     };
@@ -259,6 +264,8 @@ test('tab-state persistence accepts a server echo of the state it already has', 
         recordDateFiltersFromServer: () => {},
         recordFileFiltersFromServer: () => {},
         recordTreeShownFromServer: () => {},
+        noticeOwnContextsChange: () => {},
+        recordSearchLocks: () => {},
         fetch: async () => ({ ok: true, json: async () => structuredClone(serverState) }),
     };
     const { captureServerSignature, persistTabStateSnapshot } = new Function(

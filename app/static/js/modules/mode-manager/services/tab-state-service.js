@@ -11,6 +11,8 @@ import { getReferenceViewsPayload, restoreReferenceNavigation } from './referenc
 import { recordDateFiltersFromServer } from './date-range-filter-service.js';
 import { recordFileFiltersFromServer } from './file-filter-service.js';
 import { recordTreeShownFromServer } from './virtual-folders-state.js';
+import { noticeOwnContextsChange } from './live-changes-service.js';
+import { recordSearchLocks } from './edit-lock-service.js';
 
 const HTTP_UNAUTHORIZED = 401;
 const TAB_STATE_ENDPOINT = CONFIG.API.NOTES.TAB_STATE;
@@ -133,6 +135,8 @@ function recordServerSignature(state) {
     recordFileFiltersFromServer(state);
     recordTreeShownFromServer(state);
     ModeContext.recordUntaggedViewsFromServer(state);
+    // Searches other views are typing (multi-view step 4).
+    recordSearchLocks(state.searchLocks);
     const signature = serializeState(canonicalizeState(state));
     if (moduleState.lastSignature !== signature) {
         moduleState.lastSignature = signature;
@@ -183,23 +187,28 @@ async function callTabStateApiAt(endpoint, method, body) {
         }
         throw new HttpRequestError(`tab-state ${method} failed with status ${response.status}`);
     }
-    return await response.json();
+    const state = await response.json();
+    // A change of this view's own to the shared contexts is not taken again (multi-view step 3).
+    noticeOwnContextsChange(state.searchContextsRevision);
+    return state;
 }
 
 /**
  * A new tab after copyFromTabId: with copiesView a duplicate of everything it shows (search,
  * sort, date range, Files filter, folder, Untagged view), without it a blank one.
  */
-export async function createTabOnServer(copyFromTabId, copiesView) {
+// isPage: a reference page, this view's own (multi-view editing step 2): no other view lists it.
+export async function createTabOnServer(copyFromTabId, copiesView, isPage) {
     if (typeof copyFromTabId !== 'string' || copyFromTabId.length === 0) {
         throw new Error('copyFromTabId must be a non-empty string');
     }
-    if (typeof copiesView !== 'boolean') {
-        throw new Error('createTabOnServer requires copiesView boolean');
+    if (typeof copiesView !== 'boolean' || typeof isPage !== 'boolean') {
+        throw new Error('createTabOnServer requires copiesView and isPage booleans');
     }
     const response = await callTabStateApiAt(TAB_STATE_NEW_TAB_ENDPOINT, 'POST', {
         copyFromTabId,
         copiesView,
+        isPage,
         clientId: ModeContext.clientId,
     });
     captureServerSignature(response);

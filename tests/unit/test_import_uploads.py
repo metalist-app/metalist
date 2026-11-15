@@ -161,7 +161,7 @@ from app.main import app
 from app.services.tokens import token_service
 from app.config import API_PREFIX
 client = TestClient(app, base_url="http://localhost")
-token = token_service.create_token(client_info="fixture", owner_tab_id="tab", dek=None)
+token = token_service.create_token(client_info="fixture", dek=None)
 headers = {"Authorization": "Bearer " + token, "X-Metalist-Tab-Id": "tab", "Origin": "http://localhost"}
 listed = client.post(API_PREFIX + "/import/scan-listing", headers=headers, json={"files": [{"path": "notes/plan.md", "size": 7}, {"path": ".DS_Store", "size": 1}]})
 assert listed.status_code == 200, listed.text

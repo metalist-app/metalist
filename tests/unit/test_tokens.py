@@ -25,7 +25,6 @@ def test_create_token_uses_configured_idle_timeout(reset_timeout_provider) -> No
 
     token = service.create_token(
         client_info="test-client",
-        owner_tab_id="tab-1",
         dek=None,
     )
 
@@ -40,7 +39,6 @@ def test_refresh_token_uses_latest_configured_idle_timeout(reset_timeout_provide
     service = TokenService()
     token = service.create_token(
         client_info="test-client",
-        owner_tab_id="tab-1",
         dek=None,
     )
 
@@ -60,7 +58,6 @@ def test_refresh_active_tokens_for_current_timeout_rebases_existing_session(
     service = TokenService()
     token = service.create_token(
         client_info="test-client",
-        owner_tab_id="tab-1",
         dek=None,
     )
 
@@ -78,7 +75,6 @@ def test_create_token_with_disabled_timeout_has_no_expiry(reset_timeout_provider
 
     token = service.create_token(
         client_info="test-client",
-        owner_tab_id="tab-1",
         dek=None,
     )
     token_info = service.get_token_info(token)
@@ -93,7 +89,6 @@ def test_list_active_sessions_marks_disabled_timeout(reset_timeout_provider) -> 
     service = TokenService()
     service.create_token(
         client_info="test-client",
-        owner_tab_id="tab-1",
         dek=None,
     )
 
@@ -108,15 +103,17 @@ def test_session_key_is_stable_and_unavailable_after_revocation(reset_timeout_pr
     service = TokenService()
     token = service.create_token(
         client_info="test-client",
-        owner_tab_id="tab-1",
         dek=None,
     )
 
+    other_device = service.create_token(client_info="phone", dek=None)
+
     session_key = service.get_session_key(token)
 
-    assert len(session_key) == 64
+    # The AI's working state is the vault's, one for every sign-in (multi-view editing step 5).
     assert session_key != token
     assert service.get_session_key(token) == session_key
+    assert service.get_session_key(other_device) == session_key
     assert service.revoke_token(token) is True
     with pytest.raises(RuntimeError, match="valid authentication token"):
         service.get_session_key(token)

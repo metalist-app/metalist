@@ -202,7 +202,7 @@ def test_windows_tree_cleanup_enumerates_descendants_before_killing(monkeypatch)
 def test_protected_middleware_does_not_open_database_connections(monkeypatch):
     monkeypatch.setattr(tokens, 'get_session_timeout_minutes', lambda: 0)
     service = tokens.TokenService()
-    token = service.create_token('fixture', 'fixture-tab', dek=None)
+    token = service.create_token('fixture', dek=None)
     monkeypatch.setattr(auth_middleware, 'token_service', service)
     monkeypatch.setattr(SafeSession, '_create_connection', lambda: pytest.fail('Ordinary auth opened SQLite'))
     app = FastAPI()

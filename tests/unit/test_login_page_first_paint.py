@@ -32,7 +32,7 @@ def test_go_to_login_from_the_locked_page_shows_the_login_screen_at_once() -> No
 def test_a_browser_with_a_session_waits_for_its_check_instead() -> None:
     # It may be logged in already (a reload), so the app is not hidden behind a dark screen.
     token_service.reset()
-    token = token_service.create_token("browser", "tab-1", None)
+    token = token_service.create_token("browser", None)
     request = _request(query="", cookie=f"{AUTH_COOKIE_NAME}={token}")
     assert login_is_certainly_needed(request) is False
     token_service.reset()
