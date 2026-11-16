@@ -74,7 +74,12 @@ async function isAppIdle(quiet) {
   if (document.fonts.status === 'loading') busyWith.push('a font is loading');
   for (const root of roots) {
     for (const image of root.querySelectorAll('img')) {
-      if (!image.complete) busyWith.push(`an image is loading: ${image.src.slice(0, SAID_ADDRESS_LENGTH)}`);
+      if (!image.complete) {
+        const holder = image.closest('[data-file-ref-id], .note-content, [class]');
+        busyWith.push(`an image is loading: ${image.src.slice(0, SAID_ADDRESS_LENGTH)} (class "${image.className}", in "${holder === null ? '' : holder.className}"`
+          + `, file ${holder !== null && holder.dataset.fileRefId !== undefined ? holder.dataset.fileRefId : 'none'}, state ${holder !== null && holder.dataset.previewState !== undefined ? holder.dataset.previewState : 'none'}`
+          + `, ${image.naturalWidth}x${image.naturalHeight}, in the page ${image.isConnected}, shown ${image.getClientRects().length > 0})`);
+      }
     }
     for (const link of root.querySelectorAll('link[rel="stylesheet"]')) {
       if (link.sheet === null) busyWith.push(`a stylesheet is loading: ${link.href}`);
