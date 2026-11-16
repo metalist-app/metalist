@@ -52,7 +52,7 @@
 - Future plan (jumping inside audio and video, left for later): `docs/future-plans/media-jump-playback.md`
 - Future plan (galleries: `@gallery` shows a note's and its descendants' pictures as a grid, PDF first pages): `docs/future-plans/gallery.md`
 - Future plan (scale testing, parts 4 to 7): `docs/future-plans/scale-testing.md`
-- Proposals, not agreed (one writer for the page's state, simulation tests, a simpler multi-view, checks before merging): `docs/future-plans/one-writer-refactoring.md`
+- Proposals, not agreed (the server as the one owner of the search contexts, simulation tests, checks before merging, a simpler multi-view): `docs/future-plans/one-writer-refactoring.md`
 - Future option (several kept AI conversations to choose from, as chatbots' web versions have): `docs/future-plans/ai-conversations.md`
 - Future UI plan (toolbar): `docs/future-plans/PLAN.toolbar.md`
 - Future plan (hosted MetaList: downloading your own copy, the backup reminder): `docs/future-plans/hosted-own-copy.md`
