@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 
 import {runThenCleanUp} from './suite-outcome.mjs';
 import {installRequestMonitor, waitForAppQuiet} from './browser-app-idle.mjs';
+import {clickAndSelectAll} from './browser-select-field.mjs';
 
 // Changes made in another view show here without a reload, and what the user is looking at stays
 // still (multi-view editing step 3; docs/design/multi-view-editing.md, "Step 3's cases";
@@ -307,6 +308,107 @@ async function searchChangedCase(here, there, ids) {
   await here.waitForFunction(id => document.querySelector(`[data-note-id="${id}"]`) === null, {timeout: SHOWS_WITHIN_MS}, ids['Root 2']);
 }
 
+// The box, the search this view holds as typed, and the search its list was run for.
+function searchState(page) {
+  return page.evaluate(async () => {
+    const {ModeContextInstance: mode} = await import('/static/js/modules/mode-manager/mode-context.js');
+    return {box: document.getElementById('search-input').value, typed: mode.searchQuery, run: mode.getExecutedSearchQuery()};
+  });
+}
+
+// Holds this view's next reading of the search contexts (the tab state it takes again when another
+// view changed them) until released, so a case can act while it is being fetched.
+async function holdContextsReading(page) {
+  await page.evaluate(() => {
+    const pageFetch = window.fetch;
+    window.__heldReading = {asked: false, release: null};
+    const released = new Promise(resolve => { window.__heldReading.release = resolve; });
+    window.fetch = async (resource, options) => {
+      const url = String(resource instanceof Request ? resource.url : resource);
+      const isReading = url.endsWith('/api2/notes/tab-state') && options !== undefined && options.method === 'GET';
+      if (isReading && window.__heldReading !== null && !window.__heldReading.asked) {
+        window.__heldReading.asked = true;
+        await released;
+      }
+      return pageFetch(resource, options);
+    };
+    window.__restoreFetch = () => { window.fetch = pageFetch; window.__heldReading = null; };
+  });
+}
+
+async function releaseContextsReading(page) {
+  await page.evaluate(() => window.__heldReading.release());
+  await idle(page);
+  await pause(SETTLE_MS);
+  await idle(page);
+  await page.evaluate(() => window.__restoreFetch());
+}
+
+function labelsShown(page, ids) {
+  const labelOf = Object.fromEntries(Object.entries(ids).map(([label, id]) => [id, label]));
+  return shownRootIds(page).then(shown => shown.map(id => labelOf[id]));
+}
+
+// A search typed while a change to the contexts from another view is being fetched stands: the
+// box, the search and the list follow the typing (principle 2: only the user's action changes
+// the screen). Found 2026-11-15, in one view: after an AI answer the view took its contexts
+// again, the search box was cleared meanwhile, and the answer put the old search back under an
+// empty box (the scale suite, Linux and Windows). Here the box is cleared while it fetches: the
+// list shows everything. Returns the context added there, for the next case and the clean-up.
+async function clearedWhileFetchingCase(here, there, ids) {
+  const tagged = await labelsShown(here, ids);
+  assert.deepEqual(await searchState(here), {box: TAG, typed: TAG, run: TAG}, 'cleared while fetching: this view starts on the tag search');
+  // The other view typed this context's search and left its box: once this view has heard so,
+  // its own box can be typed in again (the search lock, case 13).
+  await here.waitForFunction(() => !document.getElementById('search-input').readOnly, {timeout: SHOWS_WITHIN_MS});
+  await idle(here);
+  await holdContextsReading(here);
+  await there.evaluate(async () => {
+    const keyboardEvents = await import('/static/js/modules/mode-manager/events/keyboard-events.js');
+    await keyboardEvents.openSearchInNewSearchContext('livechangesother', 'live-changes-suite');
+  });
+  const added = (await contextIds(there)).active;
+  await here.waitForFunction(() => window.__heldReading.asked, {timeout: SHOWS_WITHIN_MS});
+  await clickAndSelectAll(here, '#search-input');
+  await here.keyboard.press('Backspace');
+  assert.equal(await searchBox(here), '', 'cleared while fetching: the box is cleared while the contexts are still being fetched');
+  assert.equal(await here.evaluate(() => window.__heldReading.asked && window.__heldReading !== null), true);
+  await releaseContextsReading(here);
+  assert.deepEqual(await searchState(here), {box: '', typed: '', run: ''}, 'cleared while fetching: the cleared search should stand');
+  const shown = await labelsShown(here, ids);
+  assert.ok(shown.length > tagged.length, `cleared while fetching: the list should show every note, got ${shown.join(', ')}`);
+  return {added, tagged};
+}
+
+// The same with a search typed into the box while it fetches: its notes show.
+async function typedWhileFetchingCase(here, there, ids, tagged) {
+  await holdContextsReading(here);
+  // Typed there in its own context: the contexts change, the one shown here does not.
+  await typeSearchThere(there, 'livechangesotherchanged');
+  await here.waitForFunction(() => window.__heldReading.asked, {timeout: SHOWS_WITHIN_MS});
+  await clickAndSelectAll(here, '#search-input');
+  await here.keyboard.type(TAG);
+  assert.equal(await searchBox(here), TAG, 'typed while fetching: the box holds the typed search while the contexts are still being fetched');
+  await releaseContextsReading(here);
+  assert.deepEqual(await searchState(here), {box: TAG, typed: TAG, run: TAG}, 'typed while fetching: the typed search should stand');
+  assert.deepEqual(await labelsShown(here, ids), tagged, 'typed while fetching: the typed search\'s notes should show');
+}
+
+// The context added for the two cases above goes, from the view that made it.
+async function removeAddedContext(here, there, original, added) {
+  await there.evaluate(async ({original, added}) => {
+    const keyboardEvents = await import('/static/js/modules/mode-manager/events/keyboard-events.js');
+    await keyboardEvents.switchToTabContext(original, {});
+    const {deleteTabOnServer} = await import('/static/js/modules/mode-manager/services/tab-state-service.js');
+    await deleteTabOnServer(added);
+  }, {original, added});
+  await here.waitForFunction(async added => {
+    const {ModeContextInstance} = await import('/static/js/modules/mode-manager/mode-context.js');
+    return !ModeContextInstance.tabOrder.includes(added);
+  }, {timeout: SHOWS_WITHIN_MS}, added);
+  await idle(here);
+}
+
 function contextIds(page) {
   return page.evaluate(async () => {
     const {ModeContextInstance} = await import('/static/js/modules/mode-manager/mode-context.js');
@@ -330,10 +432,17 @@ async function contextsCase(here, there) {
   await idle(here);
   assert.equal((await contextIds(here)).active, before.active, 'context added there: this view should stay on its own context');
 
+  // Typed here while the deletion is being fetched: the context typed in is gone, so the view
+  // moves on as it does without typing, and the typed text goes with its context.
+  await holdContextsReading(here);
   await there.evaluate(async deleted => {
     const {deleteTabOnServer} = await import('/static/js/modules/mode-manager/services/tab-state-service.js');
     await deleteTabOnServer(deleted);
   }, before.active);
+  await here.waitForFunction(() => window.__heldReading.asked, {timeout: SHOWS_WITHIN_MS});
+  await here.click('#search-input');
+  await here.keyboard.type('typedinagonecontext');
+  await releaseContextsReading(here);
   await here.waitForFunction(added => document.getElementById('search-input').value === 'livechangesnothing', {timeout: SHOWS_WITHIN_MS}, added);
   await idle(here);
   await pause(SETTLE_MS);
@@ -365,6 +474,10 @@ export async function checkLiveChanges(here, browser) {
     await waitsForDialogCase(here, there, ids);
     await waitsForScrollingCase(here, there, ids);
     await searchChangedCase(here, there, ids);
+    const original = (await contextIds(here)).active;
+    const {added, tagged} = await clearedWhileFetchingCase(here, there, ids);
+    await typedWhileFetchingCase(here, there, ids, tagged);
+    await removeAddedContext(here, there, original, added);
     await contextsCase(here, there);
     assert.deepEqual(errors, [], 'the other tab should raise no errors');
   }, async () => {

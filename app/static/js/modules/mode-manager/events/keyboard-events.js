@@ -4640,6 +4640,11 @@ export async function adoptSharedSearchContexts() {
     await settleViewRequestsBeforeTabChange();
     const shownBefore = ModeContext.activeTabId;
     const settingsBefore = shownContextSettings();
+    const searchInput = document.getElementById('search-input');
+    if (!(searchInput instanceof HTMLInputElement)) {
+        throw new Error('search-input missing from DOM');
+    }
+    const searchBoxBefore = searchInput.value;
     // Where this view was left reaches the server first; the server keeps any search another
     // view changed (tab_state.py, update).
     snapshotActiveTabScrollState();
@@ -4647,6 +4652,15 @@ export async function adoptSharedSearchContexts() {
     await reloadTabStateFromServer();
     updateSearchContextsList();
     const isShowingAnotherTab = ModeContext.activeTabId !== shownBefore;
+    // A search typed while this fetched stands (interaction principle 2: only the user's action
+    // changes the screen). The answer holds the search as it was before the typing, so the box is
+    // taken as typing again: the search it holds runs as any typed search does. Found 2026-11-15:
+    // the box was cleared while the contexts were fetched after an AI answer, and the list kept
+    // the old search under an empty box. A context deleted meanwhile takes its typed text with it.
+    if (!isShowingAnotherTab && searchInput.value !== searchBoxBefore) {
+        searchInput.dispatchEvent(new Event('input', { bubbles: true }));
+        return;
+    }
     if (!isShowingAnotherTab && shownContextSettings() === settingsBefore) {
         return;
     }
