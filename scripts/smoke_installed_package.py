@@ -399,7 +399,9 @@ def _port_holders(port: int) -> str:
     if listed.returncode not in (0, _LISTING_FOUND_NOTHING):
         raise RuntimeError(f'{command[0]} failed with exit code {listed.returncode}: {listed.stderr.strip()}')
     lines = [line for line in listed.stdout.splitlines() if os.name != 'nt' or f':{port} ' in line]
-    return '\n'.join(lines) if lines else '(no socket listed)'
+    if not lines:
+        return '(no socket listed)'
+    return '\n'.join(lines)
 
 
 def _verify_shared_vaults_on_network(*, executable: Path, python: Path, environment: dict[str, str],
