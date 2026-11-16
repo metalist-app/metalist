@@ -52,7 +52,12 @@ function watchScrolling() {
     }
     moduleState.isScrollWatched = true;
     window.addEventListener('scroll', () => {
-        moduleState.lastScrollAt = performance.now();
+        // Two scroll events can read the same time (Firefox rounds its clock), and a state set
+        // again is refused: the second is no news (exit-edit-scroll, Firefox, CI, 2026-11-15).
+        const now = performance.now();
+        if (moduleState.lastScrollAt !== now) {
+            moduleState.lastScrollAt = now;
+        }
     }, { passive: true });
 }
 

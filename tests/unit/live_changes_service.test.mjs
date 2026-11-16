@@ -17,6 +17,7 @@ function harness() {
     harnessCount += 1;
     const applied = [];
     const busy = { dialogs: [] };
+    const listeners = {};
     const source = moduleSource('mode-manager/services/live-changes-service.js')
         .replace("ApplicationState.createFields('live-changes-service'", `ApplicationState.createFields('live-changes-service-test-${harnessCount}'`)
         .replaceAll("await import('../events/keyboard-events.js')", 'keyboardEvents')
@@ -38,12 +39,12 @@ function harness() {
         keyboardEvents: { async adoptSharedSearchContexts() { applied.push('contexts'); } },
         uiActions: { async actionRefreshAndMaybeSelect(options) { applied.push(options.context); } },
         document: { hidden: false },
-        window: { addEventListener() {}, setTimeout: () => 1, clearTimeout() {} },
+        window: { addEventListener(type, listener) { listeners[type] = listener; }, setTimeout: () => 1, clearTimeout() {} },
         performance: { now: () => 1_000_000 },
     };
     const api = new Function(...Object.keys(dependencies),
         `${source}\nreturn { recordNotesShown, noticeStatusRevisions, noticeOwnContextsChange };`)(...Object.values(dependencies));
-    return { ...api, applied, busy };
+    return { ...api, applied, busy, listeners };
 }
 
 const settle = () => new Promise(resolve => setImmediate(resolve));
@@ -51,6 +52,15 @@ const settle = () => new Promise(resolve => setImmediate(resolve));
 function status(notes, contexts) {
     return { authenticated: true, notes_revision: notes, search_contexts_revision: contexts, edit_locks_revision: 0 };
 }
+
+test('two scrolls in one tick of the clock are no error', () => {
+    // Found 2026-11-15 (exit-edit-scroll, Firefox, CI): Firefox rounds its clock, two scroll
+    // events read the same time, and a state set again is refused: the page showed a fatal error.
+    const { noticeStatusRevisions, listeners } = harness();
+    noticeStatusRevisions(status(1, 1));
+    listeners.scroll();
+    listeners.scroll();
+});
 
 test('the same revision recorded twice is no change', () => {
     // Found 2026-11-14: most view answers repeat the revision, and a state set again is refused.
