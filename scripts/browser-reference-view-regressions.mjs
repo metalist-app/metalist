@@ -411,7 +411,14 @@ async function clickContextRow(page, tabId) {
   const item = `#search-contexts-list .tab-context-item[data-tab-id="${tabId}"] .tab-context-query`;
   await page.waitForSelector(item, {visible: true});
   await pause(SETTLE_MS);
-  await page.click(item);
+  // Clicked where the row is, as a person does: the list draws its rows again whenever the
+  // contexts are read, and a click on the row found a moment earlier met a row no longer in the
+  // page ("Node is detached from document", Firefox, CI, 2026-11-15). The new row is in its place.
+  const point = await page.$eval(item, row => {
+    const box = row.getBoundingClientRect();
+    return {x: box.left + box.width / 2, y: box.top + box.height / 2};
+  });
+  await page.mouse.click(point.x, point.y);
   await idle(page);
 }
 
