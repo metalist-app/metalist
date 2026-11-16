@@ -1665,11 +1665,18 @@ function handleClick(event) {
             const noteElement = tagBarInput.closest('.note');
             const noteId = noteElement?.dataset?.noteId;
             if (noteElement && noteId && ModeContext.isEditingNote(noteId)) {
+                const valueAtClick = tagBarInput.value;
                 window.setTimeout(() => {
                     if (!ModeContext.isEditingNote(noteId)) {
                         return;
                     }
                     if (document.activeElement !== tagBarInput) {
+                        return;
+                    }
+                    // Typed since the click: the typing stands. The tidy-up below rewrites the box,
+                    // and on a busy page it ran after the first characters (`@stats` kept as `ats`,
+                    // 2026-11-15; interaction principle 2: only the user's action changes the screen).
+                    if (tagBarInput.value !== valueAtClick) {
                         return;
                     }
 

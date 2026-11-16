@@ -231,6 +231,7 @@ Chat-requested LLM generation and menu/chat bulk acceptance or rejection use a s
 ## Focus / Tab Behavior
 - `Tab` toggles focus between the note content and the tag bar.
 - Clicking the visible tag bar while editing focuses the tag input directly instead of treating the click as a note-shell selection.
+- A click at the end of the tags readies the box for a new tag a moment later (the tags tidied, a space after them). Anything typed before that happens stays as typed: the tidy-up is skipped when the box has changed since the click (2026-11-16; on a busy page the first characters typed after a click were lost).
 - The tag bar expands into view when note editing starts and contracts out of view when editing ends, unless `Animated transitions` is off in the command palette. While it contracts, its input gives up the keyboard and is disabled (it looks unchanged), so a quick keystroke cannot reach a tag bar whose note is no longer edited; editing the same note again mid-animation re-enables it (`releaseClosingTagBarInput` in `tag-bar-service.js`; tests: `tests/unit/tag_bar_closing_input.test.mjs`).
 - When leaving the tag bar (Tab or click-away), the tag string is sanitized so only valid, fully-formed tokens/comments remain.
 - While the single-note tag bar is focused, note-level edit shortcuts still target the current note, including create sibling/child, delete, move up/down, move to top, indent/outdent, split, unformat, and note copy/cut/paste.

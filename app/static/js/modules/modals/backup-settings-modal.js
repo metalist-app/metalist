@@ -56,9 +56,12 @@ export class BackupSettingsModal extends BaseModal {
     }
 
 
+    // A backup being made or a folder being picked: leaving then would lose it. Reading the
+    // settings is not one: the dialog can be left while it loads (2026-11-16; it ignored Escape
+    // and dimmed Cancel until the settings arrived).
     _hasActiveOperation() {
         const state = this.getModalState();
-        return [state.loading, state.saving, state.pickingFolder].includes(true);
+        return [state.saving, state.pickingFolder].includes(true);
     }
 
     canRequestClose() {
@@ -221,7 +224,7 @@ export class BackupSettingsModal extends BaseModal {
                     alternative: null,
                     cancel: {
                         id: 'backup-settings-cancel-btn', label: 'Cancel',
-                        disabled: [loading, saving, pickingFolder].includes(true), attributes: [],
+                        disabled: [saving, pickingFolder].includes(true), attributes: [],
                     },
                     main: {
                         id: 'backup-settings-run-btn', label: saving ? 'Backing Up…' : 'Back Up Now',
@@ -390,6 +393,10 @@ export class BackupSettingsModal extends BaseModal {
             (payload) => ({ ok: true, payload }),
             (error) => { rethrowUnexpectedError(error); return ({ ok: false, error }); },
         );
+        // Left while the settings were read: nothing to draw them in.
+        if (!this.isOpen) {
+            return;
+        }
         if (!settled.ok) {
             // Nothing to set without the settings: the error dialog says why, and closing it
             // closes this one.

@@ -65,6 +65,7 @@ All modals extend BaseModal which provides:
 3. **Common Event Handling**
    - Every modal shows the same upper-right circular `×` close control as full-screen note view
    - `Escape` closes every modal
+   - A dialog that is only reading what it shows can be left: Escape and Cancel work while it loads. They wait only while leaving would lose something (Back Up Now while a backup is made or a folder is picked; 2026-11-16, it ignored Escape until its settings arrived)
    - Clicking outside the modal content closes every modal
    - `Enter` activates the modal's single declared primary action; modals with multi-step or input-specific behavior implement the equivalent explicitly
    - Focus management

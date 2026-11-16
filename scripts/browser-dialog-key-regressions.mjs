@@ -372,6 +372,46 @@ async function checkRemovePassword(page, password) {
 // Escape presses that close whatever a failed case left open, a dialog over a dialog at most.
 const ESCAPES_AFTER_A_FAILURE = 3;
 
+// Escape leaves Back Up Now while it is still reading its settings: nothing is under way that
+// leaving could lose. It ignored Escape and dimmed Cancel until the settings arrived (2026-11-16).
+async function checkEscapeLeavesBackUpNowWhileItLoads(page) {
+  const pageErrors = [];
+  const record = error => pageErrors.push(error.message);
+  page.on('pageerror', record);
+  await page.evaluate(() => {
+    const pageFetch = window.fetch;
+    window.__heldSettings = {asked: false, release: null};
+    const released = new Promise(resolve => { window.__heldSettings.release = resolve; });
+    window.fetch = async (resource, options) => {
+      const url = String(resource instanceof Request ? resource.url : resource);
+      if (url.endsWith('/backup/settings') && !window.__heldSettings.asked) {
+        window.__heldSettings.asked = true;
+        await released;
+      }
+      return pageFetch(resource, options);
+    };
+    window.__restoreFetch = () => { window.fetch = pageFetch; };
+  });
+  await page.evaluate(async () => {
+    const {BackupSettingsModal} = await import('/static/js/modules/modals/backup-settings-modal.js');
+    void new BackupSettingsModal().openForBackup();
+  });
+  await page.waitForFunction(() => window.__heldSettings.asked);
+  await page.waitForSelector('#backup-settings-cancel-btn', {visible: true});
+  assert.equal(await page.$eval('#backup-settings-cancel-btn', button => button.disabled), false,
+    'Back Up Now, loading: Cancel must be lit');
+  await page.keyboard.press('Escape');
+  await settle(page);
+  assert.equal(await isShown(page, '#backup-settings-cancel-btn'), false, 'Back Up Now, loading: Escape must close the dialog');
+  // The settings arrive after the dialog has gone: nothing is drawn and nothing fails.
+  await page.evaluate(() => { window.__heldSettings.release(); window.__restoreFetch(); });
+  await settle(page);
+  await settle(page);
+  assert.equal(await isShown(page, '#backup-settings-cancel-btn'), false, 'Back Up Now: late settings must not bring the dialog back');
+  page.off('pageerror', record);
+  assert.deepEqual(pageErrors, [], 'Back Up Now: late settings must raise no error');
+}
+
 export async function checkDialogKeys(page) {
   const cases = [
     ['confirmations', checkConfirmations],
@@ -382,6 +422,7 @@ export async function checkDialogKeys(page) {
     ['Enter on Cancel', checkCancelButtons],
     ['tag manager delete', checkTagManagerDelete],
     ['open vault', checkOpenVaultEnter],
+    ['Back Up Now while loading', checkEscapeLeavesBackUpNowWhileItLoads],
     // Last: it gives the test vault a password.
     ['remove password', currentPage => checkRemovePassword(currentPage, 'Dialog-key-test-password!2026')],
   ];

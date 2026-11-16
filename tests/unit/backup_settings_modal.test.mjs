@@ -152,6 +152,8 @@ test('BackupSettingsModal opens with the remembered vaults checked', async () =>
     modal.getModalState = () => state;
     modal.updateModalState = (patch) => Object.assign(state, patch);
     modal.renderModalContent = () => {};
+    // Open: settings that arrive after the dialog was left are not drawn.
+    modal.isOpen = true;
     modal._authRequest = async () => ({
         folder_path: '/tmp/metalist-backups',
         selected_namespaces: ['default', 'test'],
@@ -248,7 +250,6 @@ test('BackupSettingsModal ignores Escape and backdrop dismissal during active op
     };
 
     for (const nextState of [
-        { loading: true, saving: false, pickingFolder: false },
         { loading: false, saving: false, pickingFolder: true },
         { loading: false, saving: true, pickingFolder: false },
     ]) {
@@ -261,4 +262,32 @@ test('BackupSettingsModal ignores Escape and backdrop dismissal during active op
         assert.equal(escapeEvent.propagationStopped, true);
     }
     assert.equal(closeCount, 0);
+});
+
+test('BackupSettingsModal can be left while it reads its settings, and draws none that arrive afterwards', async () => {
+    // 2026-11-16: it ignored Escape and dimmed Cancel until the settings arrived.
+    const { BackupSettingsModal } = await import('../../app/static/js/modules/modals/backup-settings-modal.js');
+    const modal = new BackupSettingsModal();
+    const state = {};
+    let drawn = 0;
+    let arrive = null;
+    modal.getModalState = () => state;
+    modal.updateModalState = (patch) => Object.assign(state, patch);
+    modal.renderModalContent = () => { drawn += 1; };
+    modal.isOpen = true;
+    modal._authRequest = () => new Promise((resolve) => { arrive = resolve; });
+
+    const loading = modal.loadSettings();
+    assert.equal(state.loading, true);
+    assert.equal(modal.canRequestClose(), true, 'reading the settings is nothing that leaving could lose');
+    const drawnWhileLoading = drawn;
+    modal.isOpen = false;
+    arrive({
+        folder_path: '', selected_namespaces: ['default'], available_namespaces: ['default'],
+        current_namespace: 'default', suggested_folders: [], retention_count: 30,
+    });
+    await loading;
+
+    assert.equal(drawn, drawnWhileLoading, 'nothing is drawn in a dialog that was left');
+    assert.equal(state.loading, true, 'and its state is left as it was');
 });

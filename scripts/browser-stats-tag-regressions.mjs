@@ -236,9 +236,33 @@ async function foldedCase(page, ids) {
   assert.equal(await stats(page, ids.diet), null, 'a folded note shows no stats');
 }
 
+// A tag typed before the tag bar's tidy-up after a click has run stays as typed. The tidy-up
+// rewrote the box from what it held at the click, so the first characters typed straight after
+// a click were lost when the page was busy (`@stats` kept as `ats`, Chrome on GitHub, 2026-11-15).
+// Typed here in the same turn as the click, before the tidy-up can run.
+async function typedBeforeTheTidyUpCase(page, ids) {
+  await page.click(`.note[data-note-id="${ids.diet}"] > .note-content`);
+  await page.waitForSelector('.note.editing .note-tag-bar-input');
+  await idle(page);
+  const box = await page.evaluate(async () => {
+    const input = document.querySelector('.note.editing .note-tag-bar-input');
+    input.focus();
+    input.setSelectionRange(input.value.length, input.value.length);
+    input.dispatchEvent(new MouseEvent('click', {bubbles: true, detail: 1}));
+    document.execCommand('insertText', false, '@st');
+    const typed = input.value;
+    await new Promise(resolve => setTimeout(resolve, 100));
+    const after = input.value;
+    for (const _ of '@st') document.execCommand('delete');
+    return {typed, after};
+  });
+  assert.ok(box.typed.endsWith('@st'), `typed before the tidy-up: the box takes the typing, got "${box.typed}"`);
+  assert.equal(box.after, box.typed, 'typed before the tidy-up: what was typed should stay');
+}
+
 async function statsCases(page, ids) {
   const failures = [];
-  for (const run of [placeAndLiveCases, suggestionCase, styleCases, emptyFiguresCase, statsSearchCase, foldedCase]) {
+  for (const run of [placeAndLiveCases, suggestionCase, styleCases, emptyFiguresCase, statsSearchCase, foldedCase, typedBeforeTheTidyUpCase]) {
     // A suite runs every case and reports all their failures at once.
     try {
       await run(page, ids);
