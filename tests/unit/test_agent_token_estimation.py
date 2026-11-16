@@ -1,7 +1,6 @@
 import json
 import random
 import sys
-import time
 import unicodedata
 
 from app.services.agent.token_estimation import estimate_input_tokens
@@ -118,19 +117,32 @@ def _note_like_json() -> str:
     return json.dumps(notes, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
 
 
-def _seconds(estimate, text: str) -> float:
-    started = time.perf_counter()
-    estimate(text)
-    return time.perf_counter() - started
+def _lines_run(estimate, text: str) -> int:
+    """How many lines of Python `estimate` runs on `text`: the same on every machine."""
+    lines = 0
+
+    def count(frame, event, arg):  # noqa: ARG001 - the tracer's signature
+        nonlocal lines
+        if event == "line":
+            lines += 1
+        return count
+
+    sys.settrace(count)
+    try:
+        estimate(text)
+    finally:
+        sys.settrace(None)
+    return lines
 
 
-def test_estimating_a_large_result_is_far_faster_than_one_character_at_a_time() -> None:
+def test_estimating_a_large_result_does_not_work_one_character_at_a_time() -> None:
     # The AI's search estimates every matching note tree before choosing what to send: one
     # character at a time it took 4.5 of a question's 8 s on 100,000 notes (2026-11-07).
+    # Counted in lines of Python run, not in seconds: timed, it failed whenever the machine was
+    # busy (2.84 times faster where 3 was asked, macOS on GitHub, 2026-11-16).
     text = _note_like_json()
     assert estimate_text_tokens(text) == _per_character_estimate(text)
-    reference = min(_seconds(_per_character_estimate, text) for _ in range(3))
-    faster = min(_seconds(estimate_text_tokens, text) for _ in range(3))
-    # 5.6 times faster on this text, 7.4 on English notes (2026-11-07); three leaves room for
-    # slower machines and still fails on any return to a loop over characters.
-    assert faster * 3 <= reference, f"{faster:.4f} s against {reference:.4f} s one character at a time"
+    # 183 lines for these 203,799 characters, against 1,181,118 one character at a time.
+    characters_per_line_at_least = 100
+    assert _lines_run(estimate_text_tokens, text) * characters_per_line_at_least <= len(text)
+    assert _lines_run(_per_character_estimate, text) > len(text), "the reference still works a character at a time"
