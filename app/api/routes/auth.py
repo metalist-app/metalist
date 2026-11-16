@@ -776,6 +776,11 @@ def auth_status(
     db: Annotated[SafeSession, Depends(get_db)],
     token: Annotated[Optional[str], Depends(_verify_token)],
 ):
+    # The view asking: what every view shares is counted as that view sees it (its own search lock
+    # is no news to it). The login page asks before it is a view; nobody types a search for it.
+    asking_view_id = ""
+    if "x-metalist-tab-id" in request.headers:
+        asking_view_id = request.headers["x-metalist-tab-id"]
     # A view's status check says what it edits (multi-view step 4): it keeps or takes that root,
     # and hears when another view has taken it over.
     edit_lock: dict[str, object] = {}
@@ -824,7 +829,7 @@ def auth_status(
         "notes_revision": note_store.revision,
         # The search contexts every view shares changed (another tab, the phone): each view takes
         # them again (multi-view editing step 3).
-        "search_contexts_revision": tab_state_store.shared_revision(),
+        "search_contexts_revision": tab_state_store.shared_revision(view_id=asking_view_id),
         # Notes and searches being edited in a view: the others show markers (multi-view step 4).
         "edit_locks_revision": edit_locks.revision(),
         "edit_lock": edit_lock,

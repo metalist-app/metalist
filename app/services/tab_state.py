@@ -404,15 +404,18 @@ class TabStateStore:
         # The version at which pages last closed so: each view of the list carries it, and the
         # browser takes the server's tabs again when it has risen (adoptClosedReferencePages).
         self._pages_closed_at_version = 0
-        # Rises when what every view shares changes (the search contexts, their order, searches,
-        # sorts and filters), not when a view scrolls or moves: each view reads it from the status
-        # it polls and takes the contexts again (multi-view editing step 3, cases 11 to 14).
-        self._shared_revision = 0
-        self._shared_fingerprint = ""
-        # The shared revision as the request being answered found it: its answer says whether it
-        # was the only change since (searchContextsRevision), so a view takes no change of its own
-        # for another view's.
-        self._shared_revision_before = 0
+        # Rises, for a view, when what every view shares changes (the search contexts, their
+        # order, searches, sorts and filters, and the searches the other views are typing), not
+        # when a view scrolls or moves: each view reads its own from the status it polls and takes
+        # the contexts again (multi-view editing step 3, cases 11 to 14). Kept per view because a
+        # view's own search lock is no news to it: counted for every view alike, the lock a view
+        # took and released made that view take the contexts again each time (2026-11-15).
+        self._shared_revisions: Dict[str, int] = {}
+        self._shared_fingerprints: Dict[str, str] = {}
+        # Each view's shared revision as the request being answered found it: its answer says
+        # whether it was the only change since (searchContextsRevision), so a view takes no change
+        # of its own for another view's.
+        self._shared_revisions_before: Dict[str, int] = {}
         self._install_default_state_locked(version=0)
 
     def bootstrap(self, *, connection) -> None:
@@ -559,25 +562,35 @@ class TabStateStore:
             # Searches other views are typing: this view's search box waits (multi-view step 4).
             "searchLocks": edit_locks.search_locks_for(view_id=view_id),
             # What every view shares, before and after this request (live-changes-service.js).
-            "searchContextsRevision": {
-                "before": self._shared_revision_before, "after": self._refresh_shared_revision_locked(),
-            },
+            "searchContextsRevision": self._shared_revision_before_and_after_locked(view_id),
         }
 
-    def shared_revision(self) -> int:
-        """What every view shares, as a number that rises when it changes: worked out when asked
-        (a few dozen contexts at most), so no change, loaded or made, can slip past it."""
+    def shared_revision(self, *, view_id: str) -> int:
+        """What every view shares, as view_id sees it: a number that rises when it changes, worked
+        out when asked (a few dozen contexts at most), so no change, loaded or made, can slip past it."""
         with self._lock:
-            return self._refresh_shared_revision_locked()
+            return self._refresh_shared_revision_locked(view_id)
 
-    def _refresh_shared_revision_locked(self) -> int:
-        fingerprint = self._shared_fingerprint_locked()
-        if fingerprint != self._shared_fingerprint:
-            self._shared_fingerprint = fingerprint
-            self._shared_revision += 1
-        return self._shared_revision
+    def _shared_revision_before_and_after_locked(self, view_id: str) -> Dict[str, int]:
+        after = self._refresh_shared_revision_locked(view_id)
+        # A view heard from for the first time has no revision from before this request: nothing
+        # of its own changed it.
+        before = after
+        if view_id in self._shared_revisions_before:
+            before = self._shared_revisions_before[view_id]
+        return {"before": before, "after": after}
 
-    def _shared_fingerprint_locked(self) -> str:
+    def _refresh_shared_revision_locked(self, view_id: str) -> int:
+        fingerprint = self._shared_fingerprint_locked(view_id)
+        if view_id not in self._shared_fingerprints:
+            self._shared_fingerprints[view_id] = fingerprint
+            self._shared_revisions[view_id] = 0
+        elif fingerprint != self._shared_fingerprints[view_id]:
+            self._shared_fingerprints[view_id] = fingerprint
+            self._shared_revisions[view_id] += 1
+        return self._shared_revisions[view_id]
+
+    def _shared_fingerprint_locked(self, view_id: str) -> str:
         contexts = self._context_ids_locked()
         shared = {
             "order": contexts,
@@ -585,8 +598,8 @@ class TabStateStore:
             "dateFilters": {tab_id: self._date_filters[tab_id] for tab_id in contexts if tab_id in self._date_filters},
             "fileFilters": {tab_id: self._file_filters[tab_id] for tab_id in contexts if tab_id in self._file_filters},
             "untagged": sorted(tab_id for tab_id in contexts if tab_id in self._untagged_views),
-            # A search being typed in one view shows as locked in the others.
-            "searchLocks": edit_locks.searches_locked(),
+            # A search being typed in another view shows as locked in this one; its own is no news to it.
+            "searchLocks": sorted(edit_locks.search_locks_for(view_id=view_id)),
         }
         return json.dumps(shared, separators=(",", ":"), sort_keys=True)
 
@@ -1321,7 +1334,9 @@ class TabStateStore:
         as the request found it."""
         self._decrypt_locked(token=token, require_success=require_success)
         if self._encrypted_state_json is None:
-            self._shared_revision_before = self._refresh_shared_revision_locked()
+            self._shared_revisions_before = {
+                view_id: self._refresh_shared_revision_locked(view_id) for view_id in list(self._shared_fingerprints)
+            }
 
     def _decrypt_locked(self, *, token: str, require_success: bool) -> None:
         if self._encrypted_state_json is None:

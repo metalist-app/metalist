@@ -13,6 +13,7 @@ import pytest
 from app.models.database import SafeSession
 from app.security.encryption import set_encryption_required
 from app.services import tab_state as tab_state_module
+from app.services.edit_locks import edit_locks
 from app.services.input_errors import InputRejected
 from app.services.tab_state import TabStateStore
 
@@ -260,25 +261,25 @@ def test_a_tab_of_note_ids_saved_before_views_is_the_first_views_page_too() -> N
 def test_the_shared_revision_rises_when_another_view_changes_a_contexts_search() -> None:
     store = TabStateStore()
     first, _second = _two_contexts(store)
-    before = store.shared_revision()
+    before = store.shared_revision(view_id=MAC)
 
     def search(state: dict) -> None:
         state["tabs"][first]["searchQuery"] = "groceries"
     _save(store, PHONE, search)
 
-    assert store.shared_revision() > before
+    assert store.shared_revision(view_id=MAC) > before
 
 
 def test_the_shared_revision_rises_for_contexts_added_deleted_or_sorted() -> None:
     store = TabStateStore()
     first, second = _two_contexts(store)
-    revisions = [store.shared_revision()]
+    revisions = [store.shared_revision(view_id=MAC)]
     store.set_sort_mode(view_id=PHONE, tab_id=first, sort_mode="alphabetical")
-    revisions.append(store.shared_revision())
+    revisions.append(store.shared_revision(view_id=MAC))
     store.delete_tab(view_id=PHONE, tab_id=second)
-    revisions.append(store.shared_revision())
+    revisions.append(store.shared_revision(view_id=MAC))
     store.create_tab(view_id=PHONE, copy_from_tab_id=first, copies_view=False, is_page=False)
-    revisions.append(store.shared_revision())
+    revisions.append(store.shared_revision(view_id=MAC))
 
     assert revisions == sorted(set(revisions)), "each change raises it"
 
@@ -286,7 +287,7 @@ def test_the_shared_revision_rises_for_contexts_added_deleted_or_sorted() -> Non
 def test_the_shared_revision_stays_for_what_is_each_views_own() -> None:
     store = TabStateStore()
     first, second = _two_contexts(store)
-    before = store.shared_revision()
+    before = store.shared_revision(view_id=MAC)
 
     def scroll(state: dict) -> None:
         state["tabs"][first]["scrollY"] = SCROLLED
@@ -295,7 +296,7 @@ def test_the_shared_revision_stays_for_what_is_each_views_own() -> None:
     store.set_tree_shown(view_id=MAC, is_shown=True)
     _open_page(store, MAC, first)
 
-    assert store.shared_revision() == before
+    assert store.shared_revision(view_id=MAC) == before
 
 
 def test_a_view_saving_twice_never_puts_back_a_search_another_view_changed() -> None:
@@ -386,3 +387,50 @@ def test_after_the_store_loads_again_a_stale_save_still_keeps_another_views_sear
     )
 
     assert restarted.get_search_query(tab_id=first) == "groceries"
+
+
+# Found 2026-11-15: a view's own search lock (taken as its search box is typed in, released when
+# the box is left) was part of what every view shares, with nothing telling the view the change
+# was its own. Each time, the view took the contexts again a second later and drew its tab row
+# anew, under whatever was clicked next (folder-context, Firefox, CI).
+def test_a_views_own_search_lock_is_no_change_for_it() -> None:
+    store = TabStateStore()
+    first, _second = _two_contexts(store)
+    edit_locks.reset()
+    edit_locks.heard_from(view_id=MAC, token="mac-sign-in", user_agent="Macintosh")
+    before = store.shared_revision(view_id=MAC)
+
+    edit_locks.note_search_typed(view_id=MAC, tab_id=first)
+    while_typing = store.shared_revision(view_id=MAC)
+    edit_locks.release_search(view_id=MAC)
+
+    assert while_typing == before
+    assert store.shared_revision(view_id=MAC) == before
+
+
+def test_another_views_search_lock_is_a_change_taken_and_released() -> None:
+    store = TabStateStore()
+    first, _second = _two_contexts(store)
+    edit_locks.reset()
+    edit_locks.heard_from(view_id=PHONE, token="phone-sign-in", user_agent="iPhone")
+    before = store.shared_revision(view_id=MAC)
+
+    edit_locks.note_search_typed(view_id=PHONE, tab_id=first)
+    while_typed_there = store.shared_revision(view_id=MAC)
+    edit_locks.release_search(view_id=PHONE)
+
+    assert while_typed_there > before
+    assert store.shared_revision(view_id=MAC) > while_typed_there
+
+
+def test_a_save_says_whether_what_is_shared_changed_for_the_view_that_made_it() -> None:
+    store = TabStateStore()
+    first, _second = _two_contexts(store)
+    seen = store.shared_revision(view_id=MAC)
+
+    def search(state: dict) -> None:
+        state["tabs"][first]["searchQuery"] = "groceries"
+    saved = _save(store, MAC, search)
+
+    assert saved["searchContextsRevision"]["before"] == seen
+    assert saved["searchContextsRevision"]["after"] == store.shared_revision(view_id=MAC) > seen
