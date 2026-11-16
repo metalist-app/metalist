@@ -9,6 +9,7 @@
 // Only folders directly in the OS temp folder, named as mkdtemp names them for one of
 // these prefixes, are ever removed.
 
+import {spawn} from 'node:child_process';
 import {lstatSync, readdirSync} from 'node:fs';
 import {mkdtemp, rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
@@ -24,6 +25,12 @@ const STALE_RUN_FOLDER_AGE_MS = HOURS_PER_DAY * MINUTES_PER_HOUR * SECONDS_PER_M
 const MKDTEMP_SUFFIX = '[A-Za-z0-9]{6}';
 // A runner's prefix: `metalist-<what>-`.
 const RUN_FOLDER_PREFIX = /^metalist-[a-z]+(?:-[a-z]+)*-$/;
+// process.platform on Windows, 64-bit too (Node's documentation).
+const WINDOWS_PLATFORM = 'win32';
+// Windows releases the files of a process just ended a moment after it has gone, and a file
+// still open cannot be removed there (EBUSY): the removal tries again, a little longer each time.
+const REMOVAL_RETRIES = 10;
+const REMOVAL_RETRY_DELAY_MS = 100;
 
 function requirePrefix(prefix) {
   if (typeof prefix !== 'string' || !RUN_FOLDER_PREFIX.test(prefix)) {
@@ -54,7 +61,7 @@ export async function makeRunFolder(prefix) {
 // Removes the run's own folder: it must exist, as nothing else removes a recent one.
 export async function removeRunFolder(path, prefix) {
   assertRunFolder(path, prefix);
-  await rm(path, {recursive: true});
+  await rm(path, {recursive: true, maxRetries: REMOVAL_RETRIES, retryDelay: REMOVAL_RETRY_DELAY_MS});
 }
 
 // Removes this prefix's run folders last changed more than a day before `nowMs` (ms since
@@ -87,13 +94,38 @@ export function waitForExit(child) {
   return new Promise(exited => child.once('exit', () => exited()));
 }
 
+// The command that ends a process with every process it started, or null where ending the
+// child itself is enough. On Windows a virtual environment's python.exe is a launcher whose
+// child is the real interpreter: ending the launcher left the server running with its log
+// open, and removing the run folder failed (EBUSY; found 2026-11-15, the first time the scale
+// suite passed on Windows). taskkill ends the tree (/T) at once (/F): Windows has no signal
+// that asks a process to stop.
+export function processTreeStopCommand(platform, pid) {
+  if (typeof platform !== 'string' || platform === '') throw new Error('processTreeStopCommand needs process.platform');
+  if (!Number.isInteger(pid) || pid <= 0) throw new Error(`processTreeStopCommand needs the process ID, not ${JSON.stringify(pid)}`);
+  if (platform !== WINDOWS_PLATFORM) return null;
+  return {command: 'taskkill', args: ['/PID', String(pid), '/T', '/F']};
+}
+
 // Asks the child to stop (SIGTERM), forces it (SIGKILL) after `graceMs`, and resolves only
 // once it has exited, so nothing it still writes lands in a folder about to be removed.
+// On Windows it ends the child's whole process tree at once (processTreeStopCommand).
 // A child that never started (no pid: the spawn itself failed) has nothing to stop.
 export async function stopAndWait(child, graceMs) {
   if (!Number.isFinite(graceMs) || graceMs < 0) throw new Error(`graceMs must be a duration, not ${graceMs}`);
   if (child.pid === undefined || hasExited(child)) return;
   const exited = waitForExit(child);
+  const treeStop = processTreeStopCommand(process.platform, child.pid);
+  if (treeStop !== null) {
+    const stopper = spawn(treeStop.command, treeStop.args, {stdio: 'ignore'});
+    await waitForExit(stopper);
+    // taskkill fails when the process went by itself meanwhile: then there is nothing left to end.
+    if (stopper.exitCode !== 0 && !hasExited(child)) {
+      throw new Error(`${treeStop.command} ${treeStop.args.join(' ')} failed with exit code ${stopper.exitCode} and the process still runs`);
+    }
+    await exited;
+    return;
+  }
   const force = setTimeout(() => {
     if (!hasExited(child)) child.kill('SIGKILL');
   }, graceMs);

@@ -6,7 +6,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {after, test} from 'node:test';
 
-import {assertRunFolder, makeRunFolder, removeRunFolder, stopAndWait, sweepStaleRunFolders, waitForExit} from '../../scripts/run-folders.mjs';
+import {assertRunFolder, makeRunFolder, processTreeStopCommand, removeRunFolder, stopAndWait, sweepStaleRunFolders, waitForExit} from '../../scripts/run-folders.mjs';
 
 // The test and development runners' temporary folders go away (docs/ready-to-build/
 // unbounded-growth-audit.md, T1-T4): a run removes its own once its processes have exited,
@@ -134,4 +134,19 @@ test('a process that never started has nothing to stop', async () => {
   const [error] = await once(child, 'error');
   assert.equal(error.code, 'ENOENT');
   await stopAndWait(child, GRACE_MS);
+});
+
+// Found 2026-11-15, the first time the scale suite passed on Windows: a virtual environment's
+// python.exe there is a launcher whose child is the real interpreter. Ending the launcher left
+// the server running with its log open, and removing the run folder failed (EBUSY).
+test('on Windows a run stops the whole process tree; elsewhere it stops the child it started', () => {
+  assert.deepEqual(processTreeStopCommand('win32', 4321), {command: 'taskkill', args: ['/PID', '4321', '/T', '/F']});
+  assert.equal(processTreeStopCommand('linux', 4321), null);
+  assert.equal(processTreeStopCommand('darwin', 4321), null);
+});
+
+test('a process tree is named by a real process ID on a named system', () => {
+  assert.throws(() => processTreeStopCommand('', 4321), /needs process\.platform/);
+  assert.throws(() => processTreeStopCommand('win32', 0), /needs the process ID/);
+  assert.throws(() => processTreeStopCommand('win32', '4321'), /needs the process ID/);
 });
