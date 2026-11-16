@@ -95,6 +95,21 @@ async function isAppIdle(quiet) {
     // for 30 s and nothing said what kept it busy).
     if (now - quiet.startedAt >= SAY_BUSY_AFTER_MS && now - requests.lastSaidBusyAt >= SAY_BUSY_AFTER_MS) {
       requests.lastSaidBusyAt = now;
+      // A picture that never finishes: whether its address can still be read says if the address
+      // was let go under it (edit-previews, Firefox, CI, 2026-11-16: a file picture stayed 0x0).
+      for (const root of roots) {
+        for (const image of root.querySelectorAll('img')) {
+          if (image.complete) continue;
+          const embeds = [image.closest('.note-file-image-embed')].filter(embed => embed !== null);
+          const states = embeds.map(embed => `${embed.dataset.previewState}`);
+          const probe = new XMLHttpRequest();
+          probe.open('GET', image.src);
+          probe.responseType = 'blob';
+          probe.onload = () => console.log(`[WAIT]: the stuck picture's address still reads: ${probe.response.size} bytes of ${probe.response.type}; its embed's state: ${states}`);
+          probe.onerror = () => console.log(`[WAIT]: the stuck picture's address no longer reads; its embed's state: ${states}`);
+          probe.send();
+        }
+      }
       console.log(`[WAIT]: not quiet ${Math.round((now - quiet.startedAt) / MS_PER_SECOND)} s into a wait: ${busyWith.join('; ')}`);
     }
     return false;
