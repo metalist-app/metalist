@@ -325,13 +325,55 @@ _catalog = _Catalog()
 register_sensitive_cache(_catalog.clear)
 
 
+class _BackgroundBuild:
+    """The one job bringing the catalog up to date beside the requests. Asked for while it runs
+    (an import ending during the build begun at the page's start), it goes round once more when it
+    is done; a second job would work through the same notes beside it (2026-11-15: two ran at once
+    after an import into a large vault)."""
+
+    def __init__(self) -> None:
+        self._lock = Lock()
+        self._running: Thread | None = None
+        self._is_asked_again = False
+
+    def start_or_ask_again(self) -> Thread:
+        """The job that brings the catalog up to date: the one running, or a new one."""
+        with self._lock:
+            if self._running is not None:
+                self._is_asked_again = True
+                return self._running
+            thread = Thread(target=self._run, name="metalist-reference-catalog", daemon=True)
+            self._running = thread
+        thread.start()
+        return thread
+
+    def _run(self) -> None:
+        is_over = False
+        try:
+            while not is_over:
+                _catalog.refresh_giving_way()
+                with self._lock:
+                    is_over = not self._is_asked_again
+                    self._is_asked_again = False
+                    if is_over:
+                        self._running = None
+        finally:
+            # A build that failed is over too: the next one asked for starts a new job.
+            if not is_over:
+                with self._lock:
+                    self._running = None
+                    self._is_asked_again = False
+
+
+_background_build = _BackgroundBuild()
+
+
 def build_catalog_in_background() -> Thread:
     """Bring the catalog up to date beside the requests, as soon as many notes arrived (loaded,
     imported): built by the first request needing it, a whole vault's worth (half a second for
-    40,000 notes) held up whatever the user did next, a save or opening a note (2026-11-01)."""
-    thread = Thread(target=_catalog.refresh_giving_way, name="metalist-reference-catalog", daemon=True)
-    thread.start()
-    return thread
+    40,000 notes) held up whatever the user did next, a save or opening a note (2026-11-01).
+    One job at a time (_BackgroundBuild); returns the job doing it."""
+    return _background_build.start_or_ask_again()
 
 
 def _build_catalog_once_loaded() -> None:

@@ -23,6 +23,7 @@ from app.services.root_date_filter import RootDateFilter
 from app.services.note_store import NoteRecord
 from app.services.note_store import NoteStore
 from app.services.note_store import store as note_store
+from app.services.requests_in_flight import requests_in_flight
 from app.services.root_sorting import normalize_sort_mode
 from app.services.search_index import extract_ordered_tags_for_search
 from app.services.snapshot import ResolvedViewScope
@@ -140,12 +141,16 @@ async def read_notes_off_request_loop(
     """Run work that reads the snapshot's notes in a worker thread: a whole vault's text
     takes seconds to extract, and on the request loop it held every other request
     (0.26.0, 2026-11-05: the list's search passed the 15 s watchdog). When the run is
-    stopped, the awaiting task is cancelled and the thread ends at its next note."""
+    stopped, the awaiting task is cancelled and the thread ends at its next note. While it
+    reads, it counts like a request being answered, so the background jobs give way
+    (requests_in_flight.py): the answer's own request stopped counting when its stream started."""
     is_finished = False
+    requests_in_flight.started()
     try:
         notes_read = await asyncio.to_thread(read_notes)
         is_finished = True
     finally:
+        requests_in_flight.answered()
         if not is_finished:
             snapshot.text_extraction.stop()
     return notes_read

@@ -322,6 +322,42 @@ def test_imported_notes_join_the_catalog_in_the_background(notes) -> None:
     assert _catalog._revision == store.revision
 
 
+# Found 2026-11-15: an import ending while the build begun at the page's start still ran started
+# a second job, and both worked through the same notes at once.
+def test_a_build_asked_for_while_one_runs_starts_no_second_job(notes, monkeypatch) -> None:
+    import app.services.reference_suggestions as reference_suggestions
+
+    wait_seconds = 2.0
+    _note("one", ["Bank login"])
+    reached_its_first_step = threading.Event()
+    may_go_on = threading.Event()
+
+    def wait_for_the_test() -> None:
+        reached_its_first_step.set()
+        assert may_go_on.wait(wait_seconds)
+
+    monkeypatch.setattr(reference_suggestions.requests_in_flight, "give_way", wait_for_the_test)
+
+    first = build_catalog_in_background()
+    assert reached_its_first_step.wait(wait_seconds)
+    # A note arrives while the build runs (an import), and its build is asked for.
+    _note("two", ["Bank statement"])
+    second = build_catalog_in_background()
+    jobs_running = [thread for thread in threading.enumerate() if thread.name == "metalist-reference-catalog"]
+    may_go_on.set()
+    first.join()
+    second.join()
+
+    assert second is first
+    assert len(jobs_running) == 1
+    assert _catalog._revision == store.revision
+    assert sorted(_ids("bank")) == ["one", "two"]
+    # The job is over: the next one asked for is a new one.
+    third = build_catalog_in_background()
+    third.join()
+    assert third is not first
+
+
 # The background build gives way to the requests before each step (requests_in_flight.py,
 # 2026-11-13): a link clicked just after login paused while a whole vault was worked through.
 def test_the_background_build_gives_way_to_the_requests_between_steps(notes, monkeypatch) -> None:

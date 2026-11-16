@@ -12,10 +12,11 @@ import os
 import subprocess
 import sys
 
+import pytest
+
+from app.services.requests_in_flight import interpreter_switch_seconds
+
 _IMPORT_TIMEOUT_SECONDS = 60
-# What the measurement above found good enough: a click just after startup within about twice
-# a click later on.
-_LONGEST_SWITCH_SECONDS = 0.0005
 
 
 def test_the_server_hands_the_interpreter_lock_on_quickly(tmp_path) -> None:
@@ -35,4 +36,6 @@ def test_the_server_hands_the_interpreter_lock_on_quickly(tmp_path) -> None:
     )
     assert result.returncode == 0, result.stderr[-3000:]
     switch_seconds = json.loads(result.stdout.strip().splitlines()[-1])
-    assert switch_seconds <= _LONGEST_SWITCH_SECONDS
+    # Half a millisecond where the system can wait that short; a whole one on Windows
+    # (test_requests_in_flight.py checks each system's value on every machine).
+    assert switch_seconds == pytest.approx(interpreter_switch_seconds(platform=sys.platform))
