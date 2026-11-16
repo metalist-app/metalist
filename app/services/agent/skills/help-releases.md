@@ -5,6 +5,15 @@ What changed in each MetaList version, newest first, from its changelog
 Compare with installed_version from the help lookup to tell the user whether
 they already have a release. Version info offers updates (see the data topic).
 
+## 0.30.1
+
+- **MetaList on Windows is fast again when it is doing two things at once.** In 0.30.0, on Windows, MetaList slowed to a crawl whenever work overlapped: an AI question while the list searched, or anything just after unlocking or importing into a large vault. An AI answer over a large vault that took minutes takes seconds.
+- **A search you type is no longer thrown away.** Typing or clearing the search just after an AI answer, or while another tab or your phone changed the search contexts, could leave the list on the old search.
+- MetaList no longer refreshes its search contexts a second after you click into or out of the search box. A click made at that moment could land on the wrong thing.
+- The AI chat no longer loads itself a second time just after it opens.
+- Work MetaList does in the background now also waits while the AI is reading your notes for an answer.
+- Fixed: a red error while scrolling in Firefox; menus and dialogs refused for a moment while a change from another tab arrived.
+
 ## 0.30.0
 
 - **Password Audit.** In the command palette, Password Audit… checks every password in the vault and lists the leaked (if you turn that check on), reused, weak and old ones, each a click from its note. It keeps up while open as you change passwords, and a reminder offers it now and then in a vault with passwords.
@@ -198,13 +207,5 @@ they already have a release. Version info offers updates (see the data topic).
 - Questions that do not read your notes answer faster in large views: the view is no longer processed note by note up front. With diagnostic activity on, the first line shows how long preparing the view took, and each step shows how much note text it read.
 - Summaries no longer fail because the AI left out its list of supporting notes (OpenAI now enforces the answer format), and a retry tells the model what was wrong.
 - Fixed: pressing Stop ended in a fatal error; stray boxes and "cite" appeared around some citations; a step OpenAI never answered was described as "the reply was empty".
-
-## 0.16.0
-
-- Right-clicking outside any note opens a fuller menu: Add/Paste Note at Top, Undo, Redo, Go to Top, Go to Bottom, Fully Expand/Collapse All, View (All or Untagged notes), Sort by, Show (Chat, Tabs, Tags in List), Theme (System, Light, Dark), New Tab, Open/Switch Namespace, Reminders, Export View as HTML and Log Out. The current choices are ticked.
-- The note menu is grouped: Copy Note, Paste, Add, Move, Outline, Focus, Export, the editing actions, and Delete Note last. Keyboard shortcuts show on the right of both menus, and actions that cannot happen from that note are hidden.
-- Move to Bottom (in Move, or ⇧⌘↓) puts a note after its last sibling, or after the view's last note (the last match in a search). The view stays put: the notes above keep their place and the ones below close the gap.
-- A down arrow under the up arrow goes to the bottom of the list, even when the end is not loaded yet; each arrow is dimmed when you are already at its end. Both arrows, and Focus ▸ Full Screen (now also offered while editing), save the note and leave edit mode first.
-- The right-click menu closes when the pointer moves well away from it, and keys pressed in full-screen view no longer reach the list behind it.
 
 Older versions are in the releases-2 help topic.

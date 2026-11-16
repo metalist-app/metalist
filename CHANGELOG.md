@@ -2,6 +2,15 @@
 
 What changed in each MetaList release, newest first.
 
+## Changes in 0.30.1
+
+- **MetaList on Windows is fast again when it is doing two things at once.** In 0.30.0, on Windows, MetaList slowed to a crawl whenever work overlapped: an AI question while the list searched, or anything just after unlocking or importing into a large vault. An AI answer over a large vault that took minutes takes seconds.
+- **A search you type is no longer thrown away.** Typing or clearing the search just after an AI answer, or while another tab or your phone changed the search contexts, could leave the list on the old search.
+- MetaList no longer refreshes its search contexts a second after you click into or out of the search box. A click made at that moment could land on the wrong thing.
+- The AI chat no longer loads itself a second time just after it opens.
+- Work MetaList does in the background now also waits while the AI is reading your notes for an answer.
+- Fixed: a red error while scrolling in Firefox; menus and dialogs refused for a moment while a change from another tab arrived.
+
 ## Changes in 0.30.0
 
 - **Password Audit.** In the command palette, Password Audit… checks every password in the vault and lists the leaked (if you turn that check on), reused, weak and old ones, each a click from its note. It keeps up while open as you change passwords, and a reminder offers it now and then in a vault with passwords.
