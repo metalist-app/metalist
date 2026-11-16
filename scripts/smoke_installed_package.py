@@ -386,6 +386,22 @@ def _answers_on(*, host: str, port: int) -> bool:
         return connection.connect_ex((host, port)) == 0
 
 
+# lsof ends with 1 when no socket matches; any other failure is the tool's own.
+_LISTING_FOUND_NOTHING = 1
+
+
+def _port_holders(port: int) -> str:
+    """The processes with a TCP socket on `port`, as the system's own tool lists them, for a failure's message."""
+    command = ['lsof', '-nP', f'-iTCP:{port}']
+    if os.name == 'nt':
+        command = ['netstat', '-ano', '-p', 'tcp']
+    listed = subprocess.run(command, capture_output=True, encoding='utf-8', check=False, timeout=REQUEST_TIMEOUT_SECONDS)
+    if listed.returncode not in (0, _LISTING_FOUND_NOTHING):
+        raise RuntimeError(f'{command[0]} failed with exit code {listed.returncode}: {listed.stderr.strip()}')
+    lines = [line for line in listed.stdout.splitlines() if os.name != 'nt' or f':{port} ' in line]
+    return '\n'.join(lines) if lines else '(no socket listed)'
+
+
 def _verify_shared_vaults_on_network(*, executable: Path, python: Path, environment: dict[str, str],
                                      directory: Path, profiles: list[tuple[str, int, int]],
                                      version: str, tls_context: ssl.SSLContext, log,
@@ -409,8 +425,16 @@ def _verify_shared_vaults_on_network(*, executable: Path, python: Path, environm
                  "    save_namespace_network_sharing(namespace=namespace, shared=True)\n")
         subprocess.run([str(python), '-I', '-c', share, *namespaces], cwd=directory, env=environment,
                        stdout=log, stderr=subprocess.STDOUT, check=True, timeout=CLI_RUN_TIMEOUT_SECONDS)
-    subprocess.run([str(executable)], cwd=directory, env=environment,
-                   stdout=log, stderr=subprocess.STDOUT, check=True, timeout=CLI_RUN_TIMEOUT_SECONDS)
+    restarted = subprocess.run([str(executable)], cwd=directory, env=environment,
+                               stdout=log, stderr=subprocess.STDOUT, check=False, timeout=CLI_RUN_TIMEOUT_SECONDS)
+    if restarted.returncode != 0:
+        # A vault that could not take its port back says only "address in use": what holds each
+        # port is printed here (macOS on GitHub, 2026-11-15: the restarted vault waited its ten
+        # seconds for the HTTPS port and nothing said which process still had it).
+        for _, http_port, https_port in profiles:
+            for port in (http_port, https_port):
+                print(f'Port {port} after the failed restart:\n{_port_holders(port)}', flush=True)
+        raise RuntimeError(f'The plain restart exited with code {restarted.returncode}')
     for namespace, http_port, https_port in profiles:
         _verify_namespace(host=host, namespace=namespace, http_port=http_port, https_port=https_port,
                           version=version, tls_context=tls_context)
