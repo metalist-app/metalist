@@ -23,10 +23,13 @@ async function settle(page) {
 }
 
 // The visible buttons of the row holding `mainSelector`, with their boxes.
+// The row a dialog's buttons sit in, whichever kind of dialog it is.
+const ACTION_ROW = '.form-actions, .reminder-form-actions, .image-file-insert-choice-actions, .ontology-dialog-footer';
+
 async function readRow(page, mainSelector) {
-  return page.evaluate(selector => {
+  return page.evaluate((selector, rowSelector) => {
     const main = document.querySelector(selector);
-    const row = main.closest('.form-actions, .reminder-form-actions, .image-file-insert-choice-actions, .ontology-dialog-footer');
+    const row = main.closest(rowSelector);
     const rowBox = row.getBoundingClientRect();
     const buttons = [...row.querySelectorAll('button')]
       .filter(button => button.getClientRects().length > 0)
@@ -37,7 +40,7 @@ async function readRow(page, mainSelector) {
       });
     const style = getComputedStyle(row);
     return {left: rowBox.left + parseFloat(style.paddingLeft), right: rowBox.right - parseFloat(style.paddingRight), buttons};
-  }, mainSelector);
+  }, mainSelector, ACTION_ROW);
 }
 
 async function assertRow(page, {label, mainSelector, labels, mainClass, hasAlternative}) {
@@ -97,6 +100,19 @@ async function closeWithEscape(page) {
   await settle(page);
 }
 
+// A dialog still loading dims its Cancel and ignores Escape (Back Up Now, while it reads its
+// settings), so a person leaves it once Cancel is lit. Pressed before that, Escape left the
+// dialog open and the next one was refused: "Cannot open modal while backupSettingsModal is
+// open" (Chrome, CI, 2026-11-15).
+async function waitUntilCancelIsLit(page, mainSelector) {
+  await page.waitForFunction((selector, rowSelector) => {
+    const main = document.querySelector(selector);
+    if (main === null) return false;
+    const cancel = [...main.closest(rowSelector).querySelectorAll('button')].find(button => button.textContent.trim() === 'Cancel');
+    return cancel === undefined || !cancel.disabled;
+  }, {}, mainSelector, ACTION_ROW);
+}
+
 // A simple dialog: open, wait for its main button, check its row wide (and narrow when asked).
 function simpleCase({label, open, mainSelector, labels, mainClass, hasAlternative, checksNarrow}) {
   return [label, async page => {
@@ -111,7 +127,10 @@ function simpleCase({label, open, mainSelector, labels, mainClass, hasAlternativ
       await page.setViewport(WIDE_WINDOW);
       await settle(page);
     }
+    await waitUntilCancelIsLit(page, mainSelector);
     await closeWithEscape(page);
+    // Named here when it stays open, not at the next dialog it would block.
+    await page.waitForSelector(mainSelector, {hidden: true});
   }];
 }
 

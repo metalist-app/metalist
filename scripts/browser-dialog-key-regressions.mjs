@@ -216,7 +216,9 @@ async function checkImportOverwrite(page) {
 async function checkEnterOnCancelCancels(page, {label, open, cancelSelector, watched}) {
   await recordRequests(page, watched);
   await page.evaluate(open);
-  await page.waitForSelector(cancelSelector, {visible: true});
+  // Lit: a dialog still loading dims its Cancel (Back Up Now, while it reads its settings), and a
+  // dimmed button takes neither focus nor Enter (Chrome, CI, 2026-11-14).
+  await page.waitForSelector(`${cancelSelector}:not([disabled])`, {visible: true});
   await settle(page);
   await page.focus(cancelSelector);
   await page.keyboard.press('Enter');

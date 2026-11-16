@@ -147,12 +147,25 @@ async function clickNext(page) {
 // The list shows the search `text`: it has run, nothing is loading, and its roots are on
 // the page (when it has any).
 async function waitForSearchShown(page, text, budgetMs) {
-  await page.waitForFunction(async text => {
-    const {ModeContextInstance: mode} = await import('/static/js/modules/mode-manager/mode-context.js');
-    if (mode.getExecutedSearchQuery() !== text || mode.isLoading) return false;
-    const total = text === '' ? mode.rootCountTotal : mode.searchRootCountTotal;
-    return total === 0 || document.querySelector('#notes-container > .note[data-note-id]') !== null;
-  }, {timeout: budgetMs, polling: POLL_MS}, text);
+  const deadline = performance.now() + budgetMs;
+  // Asked from here, a look at a time, so a search that never shows says what the list held
+  // (Linux, CI, 2026-11-15: the cleared search after the AI's answer ran out of time, and the
+  // failure named only its budget).
+  for (;;) {
+    const list = await page.evaluate(async text => {
+      const {ModeContextInstance: mode} = await import('/static/js/modules/mode-manager/mode-context.js');
+      const total = text === '' ? mode.rootCountTotal : mode.searchRootCountTotal;
+      return {searchRun: mode.getExecutedSearchQuery(), searchTyped: mode.searchQuery,
+        searchBox: document.querySelector('#search-input').value, isLoading: mode.isLoading, total,
+        rootsOnPage: document.querySelectorAll('#notes-container > .note[data-note-id]').length,
+        activeTab: mode.activeTabId};
+    }, text);
+    if (list.searchRun === text && !list.isLoading && (list.total === 0 || list.rootsOnPage > 0)) break;
+    if (performance.now() > deadline) {
+      throw new Error(`Waiting failed: ${budgetMs}ms exceeded; the list held ${JSON.stringify(list)}`);
+    }
+    await delay(POLL_MS);
+  }
   await waitForAppIdle(page);
 }
 
