@@ -9,13 +9,16 @@ export async function installRequestMonitor(page) {
   await page.evaluateOnNewDocument(() => {
     // lastActivityAt: when a request last started or ended, or a quiet wait last
     // saw MetaList busy.
-    const requests = {inFlight: 0, lastActivityAt: Date.now()};
+    // open: the paths of the requests in flight; lastSaidBusyAt: when a quiet wait last said in
+    // the console what kept MetaList busy (isAppIdle).
+    const requests = {inFlight: 0, lastActivityAt: Date.now(), open: [], lastSaidBusyAt: 0};
     Object.defineProperty(window, '__metalistRequests', {value: requests});
     const pageFetch = window.fetch;
     const changed = delta => {
       requests.inFlight += delta;
       requests.lastActivityAt = Date.now();
     };
+    const pathOf = resource => new URL(resource instanceof Request ? resource.url : String(resource), location.href).pathname;
     // MetaList's own checks, asked every second whatever the suite does (the status check, the
     // AI chat's live state, the background work): counting them, requests were never quiet for
     // long once they came every second (GitHub, 2026-11-15). What they set off (a view
@@ -27,8 +30,13 @@ export async function installRequestMonitor(page) {
     };
     window.fetch = (...args) => {
       if (isBackgroundCheck(args[0])) return pageFetch.apply(window, args);
+      const path = pathOf(args[0]);
       changed(1);
-      return pageFetch.apply(window, args).finally(() => changed(-1));
+      requests.open.push(path);
+      return pageFetch.apply(window, args).finally(() => {
+        changed(-1);
+        requests.open.splice(requests.open.indexOf(path), 1);
+      });
     };
   });
 }
@@ -48,17 +56,40 @@ async function isAppIdle(quiet) {
   const {CommandGate} = await import('/static/js/modules/mode-manager/services/command-gate-service.js');
   const {isDebouncedSearchPending} = await import('/static/js/modules/mode-manager/services/search-debounce-service.js');
   const {isDictationCleanupInProgress} = await import('/static/js/modules/mode-manager/services/dictation-paste-service.js');
-  const idle = !mode.isLoading && !CommandGate.isBusy() && !isDebouncedSearchPending() && !isDictationCleanupInProgress();
-  if (quiet === null) return idle;
+  // Here, not at the top of the file: this function runs in the page, which has only what is in it.
+  const SAY_BUSY_AFTER_MS = 5000;
+  const SAID_ADDRESS_LENGTH = 120;
+  const MS_PER_SECOND = 1000;
+  const busyWith = [];
+  if (mode.isLoading) busyWith.push('a view is loading');
+  if (CommandGate.isBusy()) busyWith.push('a command is running');
+  if (isDebouncedSearchPending()) busyWith.push('a typed search waits to run');
+  if (isDictationCleanupInProgress()) busyWith.push('a dictation paste is being cleaned up');
+  if (quiet === null) return busyWith.length === 0;
   const requests = window.__metalistRequests;
   if (requests === undefined) throw new Error('installRequestMonitor must run before the page loads');
   // A floating note window is the one shadow root, with its own stylesheets and images.
   const roots = [document, ...[...document.querySelectorAll('.floating-note-window')].map(host => host.shadowRoot)];
-  const isLoading = requests.inFlight > 0 || document.fonts.status === 'loading'
-    || roots.some(root => [...root.querySelectorAll('img')].some(image => !image.complete)
-      || [...root.querySelectorAll('link[rel="stylesheet"]')].some(link => link.sheet === null));
-  if (!idle || isLoading) {
-    requests.lastActivityAt = Date.now();
+  if (requests.inFlight > 0) busyWith.push(`requests in flight: ${requests.open.join(', ')}`);
+  if (document.fonts.status === 'loading') busyWith.push('a font is loading');
+  for (const root of roots) {
+    for (const image of root.querySelectorAll('img')) {
+      if (!image.complete) busyWith.push(`an image is loading: ${image.src.slice(0, SAID_ADDRESS_LENGTH)}`);
+    }
+    for (const link of root.querySelectorAll('link[rel="stylesheet"]')) {
+      if (link.sheet === null) busyWith.push(`a stylesheet is loading: ${link.href}`);
+    }
+  }
+  if (busyWith.length > 0) {
+    const now = Date.now();
+    requests.lastActivityAt = now;
+    // A wait that never ends says why in the browser's log, which a failed run keeps: the wait's
+    // own failure names only its time (Firefox, CI, 2026-11-15: edit-previews was never quiet
+    // for 30 s and nothing said what kept it busy).
+    if (now - quiet.startedAt >= SAY_BUSY_AFTER_MS && now - requests.lastSaidBusyAt >= SAY_BUSY_AFTER_MS) {
+      requests.lastSaidBusyAt = now;
+      console.log(`[WAIT]: not quiet ${Math.round((now - quiet.startedAt) / MS_PER_SECOND)} s into a wait: ${busyWith.join('; ')}`);
+    }
     return false;
   }
   return Date.now() - Math.max(requests.lastActivityAt, quiet.startedAt) >= quiet.quietMs;
