@@ -200,4 +200,7 @@ def test_kept_reports_stop_at_the_last_twenty_newest_first(tmp_path, monkeypatch
 
     assert len(kept) == problem_report_store.KEPT_REPORTS
     assert [item.report_id for item in kept] == list(reversed(made[1:]))
-    assert all(b"Xxxx" not in path.read_bytes() for path in (tmp_path / "reports").iterdir())
+    # Sealed: none of the report's own text is in a file. Looked for by a key with its quotes: a
+    # sealed file is base64 text, where a quote never occurs, while four letters such as "Xxxx"
+    # turn up by chance about once in two hundred runs (Windows, CI, 2026-11-15).
+    assert all(b'"madeAt"' not in path.read_bytes() for path in (tmp_path / "reports").iterdir())

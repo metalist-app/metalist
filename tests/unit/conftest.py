@@ -17,6 +17,7 @@ import nh3
 import pytest
 
 from app.security import rendered_html
+from app.services import auth_cache_state
 from app.services import link_titles
 from app.services.agent import provider_limits
 from app.services.agent import runtime as agent_runtime_module
@@ -210,6 +211,19 @@ def _no_background_first_pages(monkeypatch):
     """A PDF stored in a unit test draws no first page in the background (pdf_first_pages.py), for
     the same reason as file texts: a test that wants first pages calls pdf_first_pages.refresh()."""
     monkeypatch.setattr(pdf_first_pages, "refresh_in_background", lambda: None)
+
+
+@pytest.fixture(autouse=True)
+def _page_ready_starts_no_file_jobs(monkeypatch):
+    """page_is_ready() in a unit test starts neither file job above. The listeners registered when
+    the modules were imported hold the real methods, which the two fixtures above do not replace:
+    a first-pages job started by a reference-suggestions test ran on into later tests and found
+    their database locked (Windows, CI, 2026-11-15)."""
+    file_jobs = (file_texts, pdf_first_pages)
+    kept = [listener for listener in auth_cache_state._ready_listeners
+            if getattr(listener, "__self__", None) not in file_jobs]
+    assert len(kept) < len(auth_cache_state._ready_listeners), "the file jobs register themselves for page ready"
+    monkeypatch.setattr(auth_cache_state, "_ready_listeners", kept)
 
 
 @pytest.fixture
