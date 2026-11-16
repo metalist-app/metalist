@@ -75,10 +75,12 @@ async function isAppIdle(quiet) {
   for (const root of roots) {
     for (const image of root.querySelectorAll('img')) {
       if (!image.complete) {
-        const holder = image.closest('[data-file-ref-id], .note-content, [class]');
-        busyWith.push(`an image is loading: ${image.src.slice(0, SAID_ADDRESS_LENGTH)} (class "${image.className}", in "${holder === null ? '' : holder.className}"`
-          + `, file ${holder !== null && holder.dataset.fileRefId !== undefined ? holder.dataset.fileRefId : 'none'}, state ${holder !== null && holder.dataset.previewState !== undefined ? holder.dataset.previewState : 'none'}`
-          + `, ${image.naturalWidth}x${image.naturalHeight}, in the page ${image.isConnected}, shown ${image.getClientRects().length > 0})`);
+        // Its parent and the file embed it may sit in say which picture this is.
+        const embeds = [image.closest('[data-file-ref-id]')].filter(embed => embed !== null);
+        const embedSays = `file embeds around it: ${JSON.stringify(embeds.map(embed => ({...embed.dataset})))}`;
+        busyWith.push(`an image is loading: ${image.src.slice(0, SAID_ADDRESS_LENGTH)} (class "${image.className}", parent "${image.parentElement.className}"`
+          + `, ${embedSays}, ${image.naturalWidth}x${image.naturalHeight}`
+          + `, in the page ${image.isConnected}, shown ${image.getClientRects().length > 0})`);
       }
     }
     for (const link of root.querySelectorAll('link[rel="stylesheet"]')) {
