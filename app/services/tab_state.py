@@ -394,6 +394,8 @@ class TabStateStore:
         self._scroll_restarted_at_version: Dict[str, int] = {}
         # The version at which Rename tag renamed each tab's search (rename_search_terms).
         self._search_renamed_at_version: Dict[str, int] = {}
+        # The version at which each tab was made: a view's save read before it cannot name it.
+        self._tab_made_at_version: Dict[str, int] = {}
         # Tabs deleted or closed: a view's save made before it heard so may still name them, and
         # is taken without them (update).
         self._gone_tab_ids: Set[str] = set()
@@ -664,6 +666,7 @@ class TabStateStore:
                 self._page_owners[new_tab_id] = view_id
             self._tab_order.append(new_tab_id)
             self._version += 1
+            self._tab_made_at_version[new_tab_id] = self._version
             self._persist_locked(connection=None, encryption_service=None, force_plaintext=False)
             # The browser holds the new tab as the server made it; the others as it had them.
             snapshot = self._snapshot_locked(view_id, tells_searches=False)
@@ -709,6 +712,8 @@ class TabStateStore:
             del self._scroll_restarted_at_version[tab_id]
         if tab_id in self._search_renamed_at_version:
             del self._search_renamed_at_version[tab_id]
+        if tab_id in self._tab_made_at_version:
+            del self._tab_made_at_version[tab_id]
 
     def close_pages_whose_notes_are_gone(self, *, note_exists: Callable[[str], bool]) -> bool:
         """Close each reference page none of whose notes exist any more, in every view, with the
@@ -809,7 +814,13 @@ class TabStateStore:
             incoming = set(normalized_tabs)
             known = place["knownSearch"]
             assert isinstance(known, dict), "a place keeps what it was told"
-            if not incoming <= visible or (visible - incoming) & set(known):
+            # A tab this view made after the save was read is kept (2026-11-15: a save taking another
+            # view's change raced the view's own new tab); one the save had read must be named.
+            left_out = {
+                tab_id for tab_id in (visible - incoming) & set(known)
+                if tab_id not in self._tab_made_at_version or self._tab_made_at_version[tab_id] <= read_at_version
+            }
+            if not incoming <= visible or left_out:
                 raise InputRejected("tab ids mismatch; use tab-state new/delete endpoints")
             for tab_id in normalized_reference_views:
                 if tab_id in self._page_owners and self._page_owners[tab_id] != view_id:

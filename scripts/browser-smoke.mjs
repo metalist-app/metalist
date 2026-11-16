@@ -3,6 +3,7 @@ import {checkAiPrivacyPreview, checkPrivacyRuleEntry} from './browser-ai-privacy
 import {checkAiSelectedNote} from './browser-ai-selected-note-regressions.mjs';
 import {checkAiResponseMenu} from './browser-ai-response-menu-regressions.mjs';
 /** A small real-browser smoke test. Every server run owns a fresh temporary namespace. */
+import {setFirstPasswordAndOpenLogin} from './browser-set-password.mjs';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {spawn} from 'node:child_process';
@@ -1031,13 +1032,7 @@ try {
   console.log('PASS browser attachment round-trip');
 
   const password = 'Smoke-only-password!2026';
-  await page.evaluate(async password => {
-    const {buildSessionHeaders} = await import('/static/js/modules/session-auth.js');
-    const response = await fetch('/api2/auth/settings/password/create', {method:'POST', headers:buildSessionHeaders(true), body:JSON.stringify({password, keeps_window_logged_in: false})});
-    if (!response.ok) throw new Error(`Password setup failed: ${response.status}`);
-  }, password);
-  await page.reload();
-  await page.waitForSelector('#login-panel[data-revealed="true"] #login-password', {visible:true});
+  await setFirstPasswordAndOpenLogin(page, password);
   await page.type('#login-password', password);
   await page.click('#login-form button[type="submit"]');
   await Promise.race([page.waitForSelector('[data-app-ready="true"]', {timeout:30000}), pageFailure]);

@@ -194,6 +194,27 @@ def test_a_failed_turn_stays_in_later_provider_context_with_what_the_user_saw() 
     ]
 
 
+def test_starting_an_unused_chat_does_not_change_its_live_mark() -> None:
+    # Found 2026-11-15: the history meter's read started the empty conversation, the mark went
+    # from "empty" to an empty conversation's, and every view loaded the chat again a second
+    # after it opened (the browser suite ai-response-menu lost its planted answer to that load).
+    store = AiChatSessionStore()
+    unused = store.live_mark()
+
+    store.summary_source()
+
+    assert store.live_mark() == unused
+
+
+def test_the_live_mark_changes_when_a_question_is_asked() -> None:
+    store = AiChatSessionStore()
+    unused = store.live_mark()
+
+    store.start_turn(user_content="What is 2 + 2?", provider="openai", model="gpt-5.6-sol")
+
+    assert store.live_mark() != unused
+
+
 def test_chat_store_rejects_parallel_turns_in_one_session() -> None:
     store = AiChatSessionStore()
     store.start_turn(user_content="First",

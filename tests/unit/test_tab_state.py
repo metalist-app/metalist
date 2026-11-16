@@ -89,6 +89,33 @@ def test_a_new_tab_starts_with_nothing() -> None:
     assert created["untaggedViews"] == [source_tab_id]
 
 
+def test_a_save_read_before_this_view_made_a_tab_keeps_that_tab() -> None:
+    # Found 2026-11-15: a view saved its tabs (taking a change made in another view) while it was
+    # making a new tab; the save, read before the new tab, could not name it and was refused.
+    store = TabStateStore()
+    before = store.snapshot(view_id=VIEW)
+    tab_id = before["activeTabId"]
+    created = store.create_tab(view_id=VIEW, is_page=False, copy_from_tab_id=tab_id, copies_view=False)
+    new_tab_id = created["newTabId"]
+
+    saved = store.update(view_id=VIEW, reference_views={}, active_tab_id=tab_id, tabs=before["tabs"],
+                         tab_order=before["tabOrder"], read_at_version=before["version"])
+
+    assert new_tab_id in saved["tabs"]
+    assert saved["tabOrder"] == [tab_id, new_tab_id]
+
+
+def test_a_save_that_leaves_out_a_tab_it_had_read_is_still_refused() -> None:
+    store = TabStateStore()
+    first = store.snapshot(view_id=VIEW)
+    tab_id = first["activeTabId"]
+    created = store.create_tab(view_id=VIEW, is_page=False, copy_from_tab_id=tab_id, copies_view=False)
+
+    with pytest.raises(InputRejected, match="tab ids mismatch"):
+        store.update(view_id=VIEW, reference_views={}, active_tab_id=tab_id, tabs=first["tabs"],
+                     tab_order=first["tabOrder"], read_at_version=created["version"])
+
+
 def test_a_tab_keeps_its_untagged_view_across_a_reload_and_a_closed_tab_drops_it() -> None:
     store = TabStateStore()
     tab_id = store.snapshot(view_id=VIEW)["activeTabId"]

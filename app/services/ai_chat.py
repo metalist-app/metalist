@@ -581,11 +581,14 @@ class AiChatSessionStore:
             return dict(session.last_request)
 
     def live_mark(self) -> str:
-        """Changes whenever what the chat shows changes: views load it again (step 5)."""
+        """Changes whenever what the chat shows changes: views load it again (step 5). A chat
+        nobody used yet shows what an empty one does, so starting it changes no mark (2026-11-15:
+        the history meter's read started it, and every view loaded the chat again a second after
+        it opened)."""
         with self._lock:
             session = self._existing_session_locked()
             if session is None:
-                return "empty"
+                session = _new_chat_session()
             parts: list[object] = [
                 len(session.messages), len(session.summaries), session.held_back_until, session.history_start,
                 session.is_summarizing,

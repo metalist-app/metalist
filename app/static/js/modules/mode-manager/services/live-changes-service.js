@@ -162,9 +162,7 @@ function applyWhenFree() {
         return;
     }
     moduleState.isApplying = true;
-    // As a command, at once: no command starts beside it (one that did made a tab while this posted
-    // the view's tabs, and the server refused them, 2026-11-15).
-    CommandGate.run('liveChanges.apply', applyChanges)
+    applyChanges()
         .catch((error) => {
             rethrowUnexpectedError(error);
             ErrorHandler.handleApiError(error, null);

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { runThenCleanUp } from './suite-outcome.mjs';
+import { setFirstPasswordAndOpenLogin } from './browser-set-password.mjs';
 
 // The login screen fades out over the notes (docs/ui/login-screen.md, After login; agreed
 // 2026-10-27): the notes show underneath at once; once the progress bar has visibly filled,
@@ -181,12 +182,7 @@ async function fadeCases(page) {
 export async function checkLoginFade(page) {
   await page.setViewport(WINDOW);
   const ids = await seedNotes(page);
-  await page.evaluate(async password => {
-    const {buildSessionHeaders} = await import('/static/js/modules/session-auth.js');
-    const response = await fetch('/api2/auth/settings/password/create', {method: 'POST', headers: buildSessionHeaders(true), body: JSON.stringify({password, keeps_window_logged_in: false})});
-    if (!response.ok) throw new Error(`Password setup failed: ${response.status}`);
-  }, PASSWORD);
-  await page.reload();
+  await setFirstPasswordAndOpenLogin(page, PASSWORD);
   await logIn(page);
   await runThenCleanUp('login fade', () => fadeCases(page), async () => {
     await setAnimatedTransitions(page, true);

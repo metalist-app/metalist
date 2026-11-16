@@ -3,6 +3,7 @@ import { waitForAppQuiet } from './browser-app-idle.mjs';
 
 const BUBBLE_INSET_PX = 8;
 const MENU_QUIET_MS = 100;
+const LOAD_QUIET_MS = 300;
 
 function copiedResponseHtml(paragraph) {
     return '<div class="ai-chat-message-content meta-markdown" data-markdown-rendered="true">'
@@ -43,6 +44,9 @@ export async function checkAiResponseMenu(page) {
         const {AiChatPanel} = await import('/static/js/modules/ai-chat/ai-chat-panel-controller.js');
         return AiChatPanel._liveMark !== '';
     });
+    // The mark is set before the load it starts returns, and that load would drop the answer too
+    // (Firefox, CI, 2026-11-15): the load finishes first.
+    await waitForAppQuiet(page, LOAD_QUIET_MS);
     await page.evaluate(async () => {
         const {AiChatPanel} = await import('/static/js/modules/ai-chat/ai-chat-panel-controller.js');
         AiChatPanel._messages.push({

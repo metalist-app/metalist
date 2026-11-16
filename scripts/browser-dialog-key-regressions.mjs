@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { setFirstPasswordAndOpenLogin } from './browser-set-password.mjs';
 
 // Enter and first focus in dialogs (docs/ui/modals.md, "Dialog and menu conventions",
 // rule 4 and 5; agreed case by case 2026-10-24):
@@ -332,14 +333,7 @@ async function checkRemovePassword(page, password) {
   // Setting a password ends every session, so the page is logged out, as when a person sets
   // one: it logs in again before opening the dialog. Opened in the old page, the dialog went
   // as soon as a background request found the session ended (Firefox in CI, 2026-10-28).
-  await page.evaluate(async secret => {
-    const {buildSessionHeaders} = await import('/static/js/modules/session-auth.js');
-    const response = await fetch('/api2/auth/settings/password/create',
-      {method: 'POST', headers: buildSessionHeaders(true), body: JSON.stringify({password: secret, keeps_window_logged_in: false})});
-    if (!response.ok) throw new Error(`Password setup failed: ${response.status}`);
-  }, password);
-  await page.reload();
-  await page.waitForSelector('#login-panel[data-revealed="true"] #login-password', {visible: true});
+  await setFirstPasswordAndOpenLogin(page, password);
   await page.type('#login-password', password);
   await page.click('#login-form button[type="submit"]');
   await page.waitForSelector('[data-app-ready="true"]');

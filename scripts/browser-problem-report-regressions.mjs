@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { runThenCleanUp } from './suite-outcome.mjs';
 import { waitForAppQuiet } from './browser-app-idle.mjs';
+import { setFirstPasswordAndOpenLogin } from './browser-set-password.mjs';
 
 // Problem reports (docs/ready-to-build/error-reports.md, section 8): Report a Problem… with a
 // typed sentence, Export Report… on the red error, Export Problem Reports…, a report made
@@ -310,16 +311,6 @@ async function keptErrorClasses(page) {
   });
 }
 
-async function setPassword(page) {
-  await page.evaluate(async password => {
-    const {buildSessionHeaders} = await import('/static/js/modules/session-auth.js');
-    const response = await fetch('/api2/auth/settings/password/create', {
-      method: 'POST', headers: buildSessionHeaders(true), body: JSON.stringify({password, keeps_window_logged_in: false}),
-    });
-    if (!response.ok) throw new Error(`Password setup failed: ${response.status}`);
-  }, PASSWORD);
-}
-
 async function typePassword(page, password) {
   await page.click('#login-password', {clickCount: 3});
   await page.keyboard.press('Backspace');
@@ -329,9 +320,7 @@ async function typePassword(page, password) {
 // Check 8: a red error on the login page offers Export Report…, made in memory only; logging
 // in after it, wrong password first, raises none; after login it is kept as before.
 async function checkLoginPageReport(page) {
-  await setPassword(page);
-  await page.reload();
-  await page.waitForSelector('#login-panel[data-revealed="true"] #login-password', {visible: true});
+  await setFirstPasswordAndOpenLogin(page, PASSWORD);
   await catchDownloads(page);
   await typePassword(page, TYPED_AT_LOGIN);
   await failUnhandled(page, LOGIN_PAGE_ERROR);

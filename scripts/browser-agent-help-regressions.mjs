@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import {setFirstPasswordAndOpenLogin} from './browser-set-password.mjs';
 
 // Notes with Files on or off ('any' or 'none'): Sort by File size is offered only while it is on.
 async function setFileFilter(page, kind) {
@@ -111,15 +112,7 @@ async function checkComposerAfterPasswordDialog(page) {
 
 async function checkPasswordLogin(page) {
     const password = 'Agent-help-login-fixture!2026';
-    await page.evaluate(async password => {
-        const {buildSessionHeaders} = await import('/static/js/modules/session-auth.js');
-        const response = await fetch('/api2/auth/settings/password/create', {
-            method: 'POST', headers: buildSessionHeaders(true), body: JSON.stringify({password, keeps_window_logged_in: false}),
-        });
-        if (!response.ok) throw new Error(await response.text());
-    }, password);
-    await page.reload();
-    await page.waitForSelector('#login-panel[data-revealed="true"] #login-password', {visible: true});
+    await setFirstPasswordAndOpenLogin(page, password);
     await page.type('#login-password', password);
     await page.click('#login-form button[type="submit"]');
     await page.waitForSelector('[data-app-ready="true"]', {timeout: 30000});
