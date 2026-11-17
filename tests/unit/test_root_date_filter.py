@@ -90,7 +90,7 @@ def test_a_tab_keeps_its_range_across_a_reload_and_starts_again_at_its_top(memor
     tab_id = initial["activeTabId"]
     initial["tabs"][tab_id]["scrollY"] = 250
     store.update(view_id=VIEW, 
-        reference_views={}, active_tab_id=tab_id, tabs=initial["tabs"], tab_order=initial["tabOrder"],
+        reference_views={}, tabs=initial["tabs"], tab_order=initial["tabOrder"],
         read_at_version=initial["version"],
     )
 

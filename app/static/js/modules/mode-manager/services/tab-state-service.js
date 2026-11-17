@@ -23,6 +23,7 @@ const TAB_STATE_DATE_FILTER_ENDPOINT = CONFIG.API.NOTES.TAB_STATE_DATE_FILTER;
 const TAB_STATE_FILE_FILTER_ENDPOINT = CONFIG.API.NOTES.TAB_STATE_FILE_FILTER;
 const TAB_STATE_UNTAGGED_VIEW_ENDPOINT = CONFIG.API.NOTES.TAB_STATE_UNTAGGED_VIEW;
 const TAB_STATE_SEARCH_ENDPOINT = CONFIG.API.NOTES.TAB_STATE_SEARCH;
+const TAB_STATE_SHOWN_ENDPOINT = CONFIG.API.NOTES.TAB_STATE_SHOWN;
 const FOLDER_CONTEXT_ENDPOINT = CONFIG.API.VIRTUAL_FOLDERS.FOLDER_CONTEXT;
 const TREE_SHOWN_ENDPOINT = CONFIG.API.VIRTUAL_FOLDERS.TREE_SHOWN;
 const SCROLL_POLL_INTERVAL_MS = 1000;
@@ -42,6 +43,8 @@ const moduleState = ApplicationState.createFields('tab-state-service', {
     // The search typed in each tab and not yet sent, newest only (sendPendingSearches).
     pendingSearchByTab: Object.create(null),
     pendingSearchRequest: null,
+    // The tab the server holds as the one this view shows, from its last answer (sendShownTab).
+    tabShownOnServer: null,
     // The page's own changes to the tabs (every request but a reading): how many were sent, how
     // many are unanswered, and, while any is, a promise for the moment none is (changeSent).
     changesSent: 0,
@@ -96,6 +99,23 @@ async function sendPendingSearches() {
     await sendPendingSearches();
 }
 
+// The server owns the tab each view shows (docs/future-plans/one-writer-refactoring.md, idea 1):
+// the page asks for it by name, before its copy of the tabs, which carries no shown tab the
+// server takes. It goes as the snapshot writer's own request, so nothing else is sent meanwhile.
+// A tab deleted elsewhere a moment ago is answered with the tab the server picked; the page
+// hears of it with the contexts (adoptSharedSearchContexts) and asks no more.
+async function sendShownTab() {
+    moduleState.pendingPersistRequest = callTabStateApiAt(TAB_STATE_SHOWN_ENDPOINT, 'POST', { tabId: ModeContext.activeTabId })
+        .then(captureServerSignature)
+        .finally(() => {
+            moduleState.pendingPersistRequest = null;
+        });
+    await moduleState.pendingPersistRequest;
+    while (moduleState.pendingPersistRequest !== null) {
+        await moduleState.pendingPersistRequest;
+    }
+}
+
 export async function persistTabStateSnapshot() {
     // Searches go first, by name: every caller that saves before it reads the tabs again or
     // changes them finds the server holding what was typed. With none waiting, the copy is
@@ -107,6 +127,9 @@ export async function persistTabStateSnapshot() {
     // current payload only after the preceding response has updated its version.
     while (moduleState.pendingPersistRequest !== null) {
         await moduleState.pendingPersistRequest;
+    }
+    if (ModeContext.activeTabId !== moduleState.tabShownOnServer) {
+        await sendShownTab();
     }
     // Which tabs are reference views goes with the tabs (docs/ui/references.md).
     const snapshot = { ...ModeContext.getTabStatePayload(), referenceViews: getReferenceViewsPayload() };
@@ -183,6 +206,9 @@ function recordServerSignature(state) {
     ModeContext.recordUntaggedViewsFromServer(state);
     // Searches other views are typing (multi-view step 4).
     recordSearchLocks(state.searchLocks);
+    if (moduleState.tabShownOnServer !== state.activeTabId) {
+        moduleState.tabShownOnServer = state.activeTabId;
+    }
     const signature = serializeState(canonicalizeState(state));
     if (moduleState.lastSignature !== signature) {
         moduleState.lastSignature = signature;

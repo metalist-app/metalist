@@ -96,7 +96,7 @@ def test_a_save_read_before_this_view_made_a_tab_keeps_that_tab() -> None:
     created = store.create_tab(view_id=VIEW, is_page=False, copy_from_tab_id=tab_id, copies_view=False)
     new_tab_id = created["newTabId"]
 
-    saved = store.update(view_id=VIEW, reference_views={}, active_tab_id=tab_id, tabs=before["tabs"],
+    saved = store.update(view_id=VIEW, reference_views={}, tabs=before["tabs"],
                          tab_order=before["tabOrder"], read_at_version=before["version"])
 
     assert new_tab_id in saved["tabs"]
@@ -112,7 +112,7 @@ def test_a_save_that_leaves_out_a_tab_keeps_it_whatever_version_it_names() -> No
     tab_id = first["activeTabId"]
     created = store.create_tab(view_id=VIEW, is_page=False, copy_from_tab_id=tab_id, copies_view=False)
 
-    saved = store.update(view_id=VIEW, reference_views={}, active_tab_id=tab_id, tabs=first["tabs"],
+    saved = store.update(view_id=VIEW, reference_views={}, tabs=first["tabs"],
                          tab_order=first["tabOrder"], read_at_version=created["version"])
 
     assert saved["tabOrder"] == [tab_id, created["newTabId"]]
@@ -125,15 +125,14 @@ def test_a_save_naming_a_tab_the_server_never_had_is_refused() -> None:
     unknown = "30000000-0000-4000-8000-0000000000c1"
 
     with pytest.raises(InputRejected, match="tab ids mismatch"):
-        store.update(view_id=VIEW, reference_views={}, active_tab_id=tab_id,
-                     tabs={**first["tabs"], unknown: dict(first["tabs"][tab_id])},
+        store.update(view_id=VIEW, reference_views={}, tabs={**first["tabs"], unknown: dict(first["tabs"][tab_id])},
                      tab_order=[tab_id, unknown], read_at_version=first["version"])
 
 
 def test_a_tab_keeps_its_untagged_view_across_a_reload_and_a_closed_tab_drops_it() -> None:
     store = TabStateStore()
     tab_id = store.snapshot(view_id=VIEW)["activeTabId"]
-    store.update(view_id=VIEW, reference_views={}, active_tab_id=tab_id, tabs={tab_id: {**store.snapshot(view_id=VIEW)["tabs"][tab_id], "scrollY": 120}},
+    store.update(view_id=VIEW, reference_views={}, tabs={tab_id: {**store.snapshot(view_id=VIEW)["tabs"][tab_id], "scrollY": 120}},
                  tab_order=[tab_id], read_at_version=store.snapshot(view_id=VIEW)["version"])
 
     result = store.set_untagged_view(view_id=VIEW, tab_id=tab_id, is_untagged_view=True)
@@ -174,7 +173,6 @@ def test_set_sort_mode_resets_scroll_state_and_marks_change() -> None:
         "anchorSortKey": {"domIndex": 0},
     }
     store.update(view_id=VIEW, reference_views={}, 
-        active_tab_id=tab_id,
         tabs=payload,
         tab_order=snapshot["tabOrder"],
         read_at_version=snapshot["version"],
@@ -238,7 +236,6 @@ def test_bootstrap_restores_persisted_tab_state() -> None:
         "anchorSortKey": {"domIndex": 3},
     }
     persisted = store.update(view_id=VIEW, reference_views={}, 
-        active_tab_id=tab_id,
         tabs=payload,
         tab_order=initial["tabOrder"],
         read_at_version=initial["version"],
@@ -336,7 +333,7 @@ def test_snapshot_read_before_a_view_change_keeps_the_new_order_and_its_top(rest
     sort_mode = store.get_sort_mode(tab_id=tab_id)
 
     saved = store.update(view_id=VIEW, 
-        reference_views={}, active_tab_id=tab_id, tabs=stale["tabs"], tab_order=stale["tabOrder"],
+        reference_views={}, tabs=stale["tabs"], tab_order=stale["tabOrder"],
         read_at_version=stale["version"],
     )
 
@@ -349,7 +346,7 @@ def test_snapshot_read_before_a_view_change_keeps_the_new_order_and_its_top(rest
     fresh["tabs"][tab_id].update(_OLD_VIEW_SCROLL)
     fresh["tabs"][tab_id]["sortMode"] = "normal"
     moved = store.update(view_id=VIEW, 
-        reference_views={}, active_tab_id=tab_id, tabs=fresh["tabs"], tab_order=fresh["tabOrder"],
+        reference_views={}, tabs=fresh["tabs"], tab_order=fresh["tabOrder"],
         read_at_version=fresh["version"],
     )
     assert moved["tabs"][tab_id]["sortMode"] == sort_mode
@@ -362,14 +359,14 @@ def test_unchanged_update_keeps_version_and_skips_persistence(monkeypatch: pytes
     tab_id = snapshot["activeTabId"]
     snapshot["tabs"][tab_id]["scrollY"] = 120
     changed = store.update(view_id=VIEW, 
-        reference_views={}, active_tab_id=tab_id, tabs=snapshot["tabs"], tab_order=snapshot["tabOrder"],
+        reference_views={}, tabs=snapshot["tabs"], tab_order=snapshot["tabOrder"],
         read_at_version=snapshot["version"],
     )
     writes: list[bool] = []
     monkeypatch.setattr(store, "_persist_locked", lambda **_kwargs: writes.append(True))
 
     unchanged = store.update(view_id=VIEW, 
-        reference_views={}, active_tab_id=tab_id, tabs=changed["tabs"], tab_order=changed["tabOrder"],
+        reference_views={}, tabs=changed["tabs"], tab_order=changed["tabOrder"],
         read_at_version=changed["version"],
     )
 
@@ -377,7 +374,7 @@ def test_unchanged_update_keeps_version_and_skips_persistence(monkeypatch: pytes
     assert writes == []
     changed["tabs"][tab_id]["scrollY"] = 240
     moved = store.update(view_id=VIEW, 
-        reference_views={}, active_tab_id=tab_id, tabs=changed["tabs"], tab_order=changed["tabOrder"],
+        reference_views={}, tabs=changed["tabs"], tab_order=changed["tabOrder"],
         read_at_version=changed["version"],
     )
     assert moved["version"] == changed["version"] + 1

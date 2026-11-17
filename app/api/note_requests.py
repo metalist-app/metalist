@@ -176,6 +176,12 @@ class CreateNewTabRequest(TypedDict):
     clientId: Identifier
 
 @with_config(ConfigDict(strict=True))
+class ShowTabRequest(TypedDict):
+    # This view now shows tab tabId: the one way a view changes the tab it shows.
+    tabId: Identifier
+
+
+@with_config(ConfigDict(strict=True))
 class UpdateTabSearchRequest(TypedDict):
     # The search of tab tabId is now searchQuery: the one way a view changes a search.
     tabId: Identifier

@@ -91,6 +91,7 @@ export const CONFIG = {
             TAB_STATE_FILE_FILTER: `${API_NOTES_BASE}/tab-state/file-filter`,
             TAB_STATE_UNTAGGED_VIEW: `${API_NOTES_BASE}/tab-state/untagged-view`,
             TAB_STATE_SEARCH: `${API_NOTES_BASE}/tab-state/search`,
+            TAB_STATE_SHOWN: `${API_NOTES_BASE}/tab-state/shown`,
             // Multi-view editing step 4: a search box left, a root taken over from another view.
             TAB_STATE_SEARCH_LOCK_RELEASE: `${API_NOTES_BASE}/tab-state/search-lock/release`,
             TAKE_OVER_EDITING: `${API_NOTES_BASE}/edit-lock/take-over`,

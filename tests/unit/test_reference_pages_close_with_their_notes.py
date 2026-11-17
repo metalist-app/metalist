@@ -72,7 +72,7 @@ def _open_pages(foo_search: str, pages: list[tuple[str, str]]) -> tuple[str, lis
             "originScope": {"scopeTabId": foo, "searchQuery": foo_search, "sortMode": "normal", "isUntaggedView": False},
         }
         from_tab = page_tab
-    tab_state_store.update(view_id=VIEW, active_tab_id=page_tabs[-1], tabs=tabs, tab_order=state["tabOrder"],
+    tab_state_store.update(view_id=VIEW, tabs=tabs, tab_order=state["tabOrder"],
                            reference_views=views, read_at_version=state["version"])
     assert set(tab_state_store.snapshot(view_id=VIEW)["referenceViews"]) == set(page_tabs)
     return foo, page_tabs
@@ -136,7 +136,7 @@ def test_a_save_still_naming_a_closed_page_is_taken_without_it(notes) -> None:
 
     apply_delete_subtree(BAR)
     tab_state_store.update(view_id=VIEW, 
-        active_tab_id=page, tabs=browser_copy["tabs"], tab_order=browser_copy["tabOrder"],
+        tabs=browser_copy["tabs"], tab_order=browser_copy["tabOrder"],
         reference_views=browser_copy["referenceViews"], read_at_version=browser_copy["version"],
     )
 

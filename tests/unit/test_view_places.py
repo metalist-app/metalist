@@ -35,11 +35,13 @@ def _memory_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
 
 
 def _save(store: TabStateStore, view: str, edit) -> dict:
-    """The view's tabs as it has them, changed by `edit`, saved as the browser saves them."""
+    """The view's tabs as it has them, changed by `edit`, saved as the browser saves them: the
+    tab it shows asked for by name, then its copy."""
     state = store.snapshot(view_id=view)
     edit(state)
+    store.show_tab(view_id=view, tab_id=state["activeTabId"])
     return store.update(
-        view_id=view, active_tab_id=state["activeTabId"], tabs=state["tabs"], tab_order=state["tabOrder"],
+        view_id=view, tabs=state["tabs"], tab_order=state["tabOrder"],
         reference_views=state["referenceViews"], read_at_version=state["version"],
     )
 
@@ -101,7 +103,7 @@ def test_a_views_scroll_save_never_puts_back_a_search_another_view_changed() -> 
     # The phone saves its scroll with the tabs it read before the Mac's change.
     phone_had["tabs"][first]["scrollY"] = SCROLLED
     store.update(
-        view_id=PHONE, active_tab_id=phone_had["activeTabId"], tabs=phone_had["tabs"],
+        view_id=PHONE, tabs=phone_had["tabs"],
         tab_order=phone_had["tabOrder"], reference_views=phone_had["referenceViews"],
         read_at_version=phone_had["version"],
     )
@@ -117,7 +119,7 @@ def test_a_save_from_a_view_that_has_not_seen_a_new_context_keeps_it() -> None:
     added = store.create_tab(view_id=MAC, copy_from_tab_id=first, copies_view=False, is_page=False)["newTabId"]
 
     store.update(
-        view_id=PHONE, active_tab_id=phone_had["activeTabId"], tabs=phone_had["tabs"],
+        view_id=PHONE, tabs=phone_had["tabs"],
         tab_order=phone_had["tabOrder"], reference_views=phone_had["referenceViews"],
         read_at_version=phone_had["version"],
     )
@@ -305,7 +307,7 @@ def test_a_view_saving_twice_never_puts_back_a_search_another_view_changed() -> 
     for scrolled_to in (SCROLLED, SCROLLED + 1):
         phone_has["tabs"][first]["scrollY"] = scrolled_to
         store.update(
-            view_id=PHONE, active_tab_id=phone_has["activeTabId"], tabs=phone_has["tabs"],
+            view_id=PHONE, tabs=phone_has["tabs"],
             tab_order=phone_has["tabOrder"], reference_views=phone_has["referenceViews"],
             read_at_version=phone_has["version"],
         )
@@ -365,7 +367,7 @@ def test_after_the_store_loads_again_a_stale_save_still_keeps_another_views_sear
     restarted.set_search(view_id=MAC, tab_id=first, search_query="groceries")
     phone_has["tabs"][first]["scrollY"] = SCROLLED + 1
     restarted.update(
-        view_id=PHONE, active_tab_id=phone_has["activeTabId"], tabs=phone_has["tabs"],
+        view_id=PHONE, tabs=phone_has["tabs"],
         tab_order=phone_has["tabOrder"], reference_views=phone_has["referenceViews"],
         read_at_version=phone_has["version"],
     )

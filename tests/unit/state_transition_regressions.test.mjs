@@ -254,7 +254,7 @@ test('tab-state persistence accepts a server echo of the state it already has', 
         ApplicationState,
         CONFIG: { API: { NOTES: { TAB_STATE: '/tab-state', TAB_STATE_NEW_TAB: '/new', TAB_STATE_DELETE_TAB: '/delete', TAB_STATE_SORT_MODE: '/sort' }, VIRTUAL_FOLDERS: { FOLDER_CONTEXT: '/folder-context', TREE_SHOWN: '/tree-shown' } } },
         ModeContext: {
-            tabStateVersion: 7, setTabStateVersion(version) { this.tabStateVersion = version; }, getTabStatePayload: () => browserState,
+            activeTabId: 'tab-1', tabStateVersion: 7, setTabStateVersion(version) { this.tabStateVersion = version; }, getTabStatePayload: () => browserState,
             recordUntaggedViewsFromServer() {},
         },
         ErrorHandler: { handleApiError() {} },

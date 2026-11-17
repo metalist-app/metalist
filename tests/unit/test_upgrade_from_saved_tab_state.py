@@ -87,7 +87,7 @@ def test_the_browser_saves_them_back_as_this_version_keeps_pages() -> None:
         "fromTabId": CSV_BACKLINKS, "referenceQuery": CSV_NOTE, "viewKind": "source",
         "originScope": copy.deepcopy(views[CSV_BACKLINKS]["originScope"]),
     }
-    store.update(view_id=VIEW, active_tab_id=LEFT_OPEN, tabs=state["tabs"], tab_order=state["tabOrder"],
+    store.update(view_id=VIEW, tabs=state["tabs"], tab_order=state["tabOrder"],
                  reference_views=views, read_at_version=state["version"])
 
     assert store.snapshot(view_id=VIEW)["referenceViews"] == views

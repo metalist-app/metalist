@@ -28,6 +28,7 @@ from app.api.note_requests import (
     UpdateTabDateFilterRequest,
     UpdateTabFileFilterRequest,
     UpdateTabUntaggedViewRequest,
+    ShowTabRequest,
     UpdateTabSearchRequest,
     UpdateTabSortModeRequest,
     CreateNewTabRequest,
@@ -535,7 +536,7 @@ def update_tab_state(payload: UpdateTabStateRequest, view_id: ViewId) -> Dict[st
             status_code=HTTPStatus.BAD_REQUEST,
             detail="activeTabId, tabs, tabOrder, referenceViews, and version are required",
         )
-    active_tab_id = payload["activeTabId"]
+    # The copy's activeTabId is not read: a view asks for the tab it shows by name (show_tab).
     tabs = payload["tabs"]
     tab_order = payload["tabOrder"]
     reference_views = payload["referenceViews"]
@@ -545,7 +546,7 @@ def update_tab_state(payload: UpdateTabStateRequest, view_id: ViewId) -> Dict[st
     capture = CapturedExceptionContext(InputRejected, boundary='app/api/routes/notes.py:update_tab_state:capture')
     with capture:
         response = tab_state_store.update(
-            view_id=view_id, active_tab_id=active_tab_id, tabs=tabs, tab_order=tab_order_list, reference_views=reference_views,
+            view_id=view_id, tabs=tabs, tab_order=tab_order_list, reference_views=reference_views,
             read_at_version=payload["version"],
         )
     # Another view types this search: said calmly, as rejected input (multi-view step 4).
@@ -581,6 +582,13 @@ def update_tab_search(payload: UpdateTabSearchRequest, view_id: ViewId) -> Dict[
     """The search of a tab is now this, as its view typed or chose it. While another view types
     that search it is refused, said calmly as rejected input (multi-view step 4)."""
     return tab_state_store.set_search(view_id=view_id, tab_id=payload["tabId"], search_query=payload["searchQuery"])
+
+
+@router.post("/notes/tab-state/shown")
+@transactional_route
+def show_tab(payload: ShowTabRequest, view_id: ViewId) -> Dict[str, object]:
+    """This view now shows this tab, as it switched to or opened it."""
+    return tab_state_store.show_tab(view_id=view_id, tab_id=payload["tabId"])
 
 
 @router.post("/notes/tab-state/sort-mode")

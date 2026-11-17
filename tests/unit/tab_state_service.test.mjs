@@ -21,6 +21,8 @@ async function harness() {
     let holdsReads = false;
     let timers = 0;
     let serverVersion = 1;
+    // The tab the server holds as shown: only a request to show one changes it.
+    let serverShown = 'first';
     const payload = {
         activeTabId: 'first', tabOrder: ['first', 'second'], version: 1,
         tabs: { first: { scrollY: 0, scrollAnchor: null }, second: { scrollY: 0, scrollAnchor: null } },
@@ -44,7 +46,7 @@ async function harness() {
     };
     const dependencies = {
         ApplicationState, ModeContext: context, window, document: { hidden: false },
-        CONFIG: { API: { NOTES: { TAB_STATE: '/tabs', TAB_STATE_SEARCH: '/tabs/search', TAB_STATE_UNTAGGED_VIEW: '/tabs/untagged' }, VIRTUAL_FOLDERS: { FOLDER_CONTEXT: '/folder-context', TREE_SHOWN: '/tree-shown' } } },
+        CONFIG: { API: { NOTES: { TAB_STATE: '/tabs', TAB_STATE_SEARCH: '/tabs/search', TAB_STATE_SHOWN: '/tabs/shown', TAB_STATE_UNTAGGED_VIEW: '/tabs/untagged' }, VIRTUAL_FOLDERS: { FOLDER_CONTEXT: '/folder-context', TREE_SHOWN: '/tree-shown' } } },
         CommandGate: { isBusy: () => false }, buildSessionHeaders: () => ({}),
         computeScrollAnchor: () => null, areScrollAnchorsEqual: (a, b) => a === b,
         restoreReferenceNavigation: (state) => restoredReferenceTabs.push(state.tabs),
@@ -66,9 +68,11 @@ async function harness() {
             const sent = JSON.parse(options.body);
             // A change asked for by name is answered with the tabs, as every tab-state request is.
             const answered = endpoint === '/tabs' ? sent : structuredClone(payload);
+            if (endpoint === '/tabs/shown') serverShown = sent.tabId;
+            const shownWhenAsked = serverShown;
             return await new Promise((resolve, reject) => requests.push({
                 endpoint, sent, reject,
-                complete: () => resolve({ ok: true, json: async () => ({ ...answered, version: ++serverVersion }) }),
+                complete: () => resolve({ ok: true, json: async () => ({ ...answered, activeTabId: shownWhenAsked, version: ++serverVersion }) }),
                 answer: status => resolve({ ok: false, status, json: async () => ({ detail: 'refused' }) }),
             }));
         },
@@ -85,9 +89,23 @@ async function harness() {
         hooks[0]({ reason: 'searchQuery', payload: structuredClone(payload) });
     };
     taken.length = 0;
+    // The page shows another tab: ModeContext and the copy it would save both say so.
+    const showTab = (tabId) => { context.activeTabId = tabId; payload.activeTabId = tabId; };
+    // Answers every request, and those each answer leads to, until none is left unanswered.
+    let answered = 0;
+    const answerAll = async () => {
+        await new Promise(setImmediate);
+        while (answered < requests.length) {
+            requests[answered].complete();
+            answered += 1;
+            await new Promise(setImmediate);
+        }
+    };
     const holdReads = () => { holdsReads = true; };
-    return { service, requests, context, payload, window, poll: polls[0], apiErrors, typeSearch, reads, taken, holdReads };
+    return { service, requests, context, payload, window, poll: polls[0], apiErrors, typeSearch, reads, taken, holdReads, showTab, answerAll };
 }
+
+const settle = () => new Promise(setImmediate);
 
 test('scroll polls cannot overlap a slow save and write the same tab position twice', async () => {
     const h = await harness();
@@ -145,10 +163,15 @@ test('a tab switch during a pending scroll save preserves each tabs position', a
     h.requests[0].complete();
     await first;
     const second = h.poll();
-    assert.equal(h.requests[1].sent.activeTabId, 'second');
-    assert.equal(h.requests[1].sent.tabs.first.scrollY, 100);
-    assert.equal(h.requests[1].sent.tabs.second.scrollY, 300);
+    await settle();
+    // The tab now shown is asked for by name, then the copy follows.
+    assert.deepEqual([h.requests[1].endpoint, h.requests[1].sent], ['/tabs/shown', { tabId: 'second' }]);
     h.requests[1].complete();
+    await settle();
+    assert.equal(h.requests[2].endpoint, '/tabs');
+    assert.equal(h.requests[2].sent.tabs.first.scrollY, 100);
+    assert.equal(h.requests[2].sent.tabs.second.scrollY, 300);
+    h.requests[2].complete();
     await second;
 });
 
@@ -214,19 +237,16 @@ test('the same search typed again while it waits is sent once', async () => {
 test('a search typed in one tab is still sent after another tab is shown', async () => {
     const h = await harness();
     h.typeSearch('groceries');
-    h.payload.activeTabId = 'second';
+    h.showTab('second');
     h.typeSearch('plants');
     const saved = h.service.persistTabStateSnapshot();
-    await new Promise(setImmediate);
-    h.requests[0].complete();
-    await new Promise(setImmediate);
-    assert.deepEqual(h.requests.slice(0, 2).map(request => request.sent), [
-        { tabId: 'first', searchQuery: 'groceries' }, { tabId: 'second', searchQuery: 'plants' },
-    ]);
-    for (const request of h.requests.slice(1)) request.complete();
-    await new Promise(setImmediate);
-    for (const request of h.requests.slice(2)) request.complete();
+    await h.answerAll();
     await saved;
+    assert.deepEqual(h.requests.map(request => [request.endpoint, request.sent]).slice(0, 3), [
+        ['/tabs/search', { tabId: 'first', searchQuery: 'groceries' }],
+        ['/tabs/search', { tabId: 'second', searchQuery: 'plants' }],
+        ['/tabs/shown', { tabId: 'second' }],
+    ]);
 });
 
 test('a waiting snapshot save reads fresh state after the previous response', async () => {
@@ -278,7 +298,6 @@ test('a scroll save refused for another reason still surfaces its error', async 
 // The page applies the server's answers in order (docs/future-plans/one-writer-refactoring.md,
 // idea 1; cases agreed 2026-11-17). A reading of the tabs asked before a change of the page's own
 // is older than that change: taking it would put the screen back.
-const settle = () => new Promise(setImmediate);
 const VERSION_BEFORE = 1;
 const VERSION_AFTER = 2;
 const VERSION_LATER = 3;
@@ -379,4 +398,52 @@ test('a reading from a server whose version went back is taken: nothing here is 
     await reading;
     assert.equal(h.reads.length, 1);
     assert.deepEqual(h.taken.map(state => state.version), [VERSION_BEFORE]);
+});
+
+// The server owns the tab each view shows (idea 1; cases agreed 2026-11-17): the page asks for it
+// by name, and its copy of the tabs carries none the server takes.
+test('a tab shown is asked for by name, before the copy of the tabs is saved', async () => {
+    const h = await harness();
+    h.showTab('second');
+    const saved = h.service.persistTabStateSnapshot();
+    await h.answerAll();
+    await saved;
+    assert.deepEqual(h.requests.map(request => request.endpoint), ['/tabs/shown', '/tabs']);
+    assert.deepEqual(h.requests[0].sent, { tabId: 'second' });
+});
+
+test('a tab shown and left again before the save is not asked for', async () => {
+    const h = await harness();
+    h.showTab('second');
+    h.showTab('first');
+    const saved = h.service.persistTabStateSnapshot();
+    await h.answerAll();
+    await saved;
+    assert.deepEqual(h.requests.filter(request => request.endpoint === '/tabs/shown'), []);
+});
+
+test('the tab shown when the save is sent is the one asked for', async () => {
+    // Case 2: A, B, A while an earlier save is on its way.
+    const h = await harness();
+    h.window.scrollY = 100;
+    const earlier = h.poll();
+    h.showTab('second');
+    const switched = h.service.persistTabStateSnapshot();
+    h.showTab('first');
+    await h.answerAll();
+    await Promise.all([earlier, switched]);
+    assert.deepEqual(h.requests.filter(request => request.endpoint === '/tabs/shown'), []);
+});
+
+test('the tab shown is asked for once, not again with every save', async () => {
+    const h = await harness();
+    h.showTab('second');
+    const saved = h.service.persistTabStateSnapshot();
+    await h.answerAll();
+    await saved;
+    h.payload.tabs.second.scrollY = 100;
+    const next = h.service.persistTabStateSnapshot();
+    await h.answerAll();
+    await next;
+    assert.deepEqual(h.requests.map(request => request.endpoint), ['/tabs/shown', '/tabs', '/tabs']);
 });

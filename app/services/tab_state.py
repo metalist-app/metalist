@@ -762,17 +762,16 @@ class TabStateStore:
         self,
         *,
         view_id: str,
-        active_tab_id: str,
         tabs: Dict[str, Dict[str, object]],
         tab_order: List[str],
         reference_views: object,
         read_at_version: int,
     ) -> Dict[str, object]:
         """Save a view's copy of its tabs, read when its state was at read_at_version (the last
-        version it received): the tab it shows, its scroll, its reference pages and its order of
-        the tabs. A search in the copy is never taken: the view asks for a search by name
-        (set_search), so no copy, late or stale, can put an old search back. Tabs the copy leaves
-        out are kept."""
+        version it received): its scroll, its reference pages and its order of the tabs. The tab
+        it shows and a search are never taken from the copy: the view asks for each by name
+        (show_tab, set_search), so no copy, late or stale, can move the view back or put an old
+        search back. Tabs the copy leaves out are kept."""
         if not isinstance(read_at_version, int) or read_at_version < 0:
             raise InputRejected("version must be a non-negative integer")
         normalized_tabs = self._normalize_tabs(tabs, from_storage=False)
@@ -780,8 +779,6 @@ class TabStateStore:
         normalized_reference_views = _normalize_reference_views(
             reference_views, normalized_tabs, from_storage=False,
         )
-        if active_tab_id not in normalized_tabs:
-            raise InputRejected("activeTabId must reference an existing tab")
         with self._lock:
             self._try_decrypt_locked(token="", require_success=True)
             place = self._place_locked(view_id)
@@ -793,8 +790,6 @@ class TabStateStore:
                 normalized_reference_views = _normalize_reference_views(
                     normalized_reference_views, normalized_tabs, from_storage=False,
                 )
-                if active_tab_id in gone_meanwhile:
-                    active_tab_id = self._active_tab_of_locked(view_id, place)
             # The tabs are the server's: a copy that leaves one out takes none away (delete_tab
             # does), whatever version it names. A view's version rises with the answers to its own
             # changes, which bring it no tab another view made meanwhile (2026-11-15: a save raced
@@ -818,9 +813,10 @@ class TabStateStore:
                 if tab_id not in self._page_owners:
                     self._page_owners[tab_id] = view_id
             place["referenceViews"] = normalized_reference_views
-            place["activeTabId"] = active_tab_id
-            if active_tab_id not in self._page_owners:
-                self._last_used_tab_id = active_tab_id
+            # A view saving its place is using the context it shows (a new view starts there).
+            shown = self._active_tab_of_locked(view_id, place)
+            if shown not in self._page_owners:
+                self._last_used_tab_id = shown
             now = (
                 self._tabs, self._tab_order, place["scroll"], place["referenceViews"], place["activeTabId"],
                 self._page_owners, self._last_used_tab_id,
@@ -1009,6 +1005,34 @@ class TabStateStore:
                     self._date_filters[tab_id] = next_payload
             if changed:
                 self._restart_tab_scroll_locked(tab_id)
+            snapshot = self._snapshot_locked(view_id)
+            snapshot["changed"] = changed
+            return snapshot
+
+    def show_tab(self, *, view_id: str, tab_id: str) -> Dict[str, object]:
+        """This view now shows tab_id, as it asks: the one way a view changes the tab it shows
+        (docs/future-plans/one-writer-refactoring.md, idea 1). Its scroll in the tab comes with
+        its copy (update), as before."""
+        if not isinstance(tab_id, str) or not tab_id:
+            raise InputRejected("tabId must be a non-empty string")
+        with self._lock:
+            self._try_decrypt_locked(token="", require_success=True)
+            place = self._place_locked(view_id)
+            # Asked before the view heard the tab was deleted or its page closed: nothing to
+            # change, as for a search (set_search); the view shows what the server picked.
+            if tab_id in self._gone_tab_ids:
+                snapshot = self._snapshot_locked(view_id)
+                snapshot["changed"] = False
+                return snapshot
+            if tab_id not in self._visible_tab_ids_locked(view_id):
+                raise InputRejected("tabId must reference an existing tab")
+            changed = self._active_tab_of_locked(view_id, place) != tab_id
+            if changed:
+                place["activeTabId"] = tab_id
+                if tab_id not in self._page_owners:
+                    self._last_used_tab_id = tab_id
+                self._version += 1
+                self._persist_locked(connection=None, encryption_service=None, force_plaintext=False)
             snapshot = self._snapshot_locked(view_id)
             snapshot["changed"] = changed
             return snapshot

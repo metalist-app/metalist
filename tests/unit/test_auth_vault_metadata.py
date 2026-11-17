@@ -443,7 +443,6 @@ def test_password_transitions_rewrite_tab_state_rows(
         payload[tab_id]["scrollY"] = 75
         payload[tab_id]["anchorRootId"] = "root-77"
         store.update(view_id=VIEW, reference_views={}, 
-            active_tab_id=tab_id,
             tabs=payload,
             tab_order=initial["tabOrder"],
             read_at_version=initial["version"],

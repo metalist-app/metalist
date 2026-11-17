@@ -46,7 +46,7 @@ None is a rewrite. Each can be done in pieces while MetaList keeps shipping.
 Finish the move. For each thing still saved as part of the whole copy, the page sends one small request naming what the user did, and gets back exactly what changed:
 
 - set this context's search (**built 2026-11-17**: `POST /notes/tab-state/search`, `TabStateStore.set_search`; the whole-copy save no longer takes a search, and the record of "what each view was last told" is gone; tests in `tests/unit/test_search_text_request.py`);
-- show this context (the active one, per view);
+- show this context in this view (**built 2026-11-17**: `POST /notes/tab-state/shown`, `TabStateStore.show_tab`; the whole-copy save no longer takes the tab shown; tests in `tests/unit/test_shown_context_request.py`);
 - move this context in the order;
 - this context is scrolled to here (per view);
 - open, go back from and close a reference page.

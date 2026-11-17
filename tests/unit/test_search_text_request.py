@@ -41,7 +41,7 @@ def _two_contexts(store: TabStateStore) -> tuple[str, str]:
 def _save_copy(store: TabStateStore, view: str, copy: dict) -> dict:
     """The whole copy of its tabs a view holds, saved as the browser saves it."""
     return store.update(
-        view_id=view, active_tab_id=copy["activeTabId"], tabs=copy["tabs"], tab_order=copy["tabOrder"],
+        view_id=view, tabs=copy["tabs"], tab_order=copy["tabOrder"],
         reference_views=copy["referenceViews"], read_at_version=copy["version"],
     )
 
@@ -73,9 +73,8 @@ def test_a_search_stays_with_its_context_when_another_is_shown() -> None:
     first, second = _two_contexts(store)
     store.set_search(view_id=MAC, tab_id=first, search_query="groceries")
 
-    copy = store.snapshot(view_id=MAC)
-    copy["activeTabId"] = second
-    _save_copy(store, MAC, copy)
+    store.show_tab(view_id=MAC, tab_id=second)
+    _save_copy(store, MAC, store.snapshot(view_id=MAC))
 
     now = store.snapshot(view_id=MAC)
     assert now["activeTabId"] == second

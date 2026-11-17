@@ -51,8 +51,10 @@ def _tabs_shown(store: TabStateStore) -> dict:
 def _save_copy(store: TabStateStore, view: str, change: Callable[[dict], None]) -> None:
     copy = store.snapshot(view_id=view)
     change(copy)
+    # The tab shown is asked for by name; the copy carries the rest.
+    store.show_tab(view_id=view, tab_id=copy["activeTabId"])
     store.update(
-        view_id=view, active_tab_id=copy["activeTabId"], tabs=copy["tabs"], tab_order=copy["tabOrder"],
+        view_id=view, tabs=copy["tabs"], tab_order=copy["tabOrder"],
         reference_views=copy["referenceViews"], read_at_version=copy["version"],
     )
 

@@ -70,7 +70,7 @@ def test_rename_tag_renames_it_in_search_links_and_saved_searches(live_database)
     assert (result["renamedSearchLinkNoteCount"], result["renamedSearchCount"]) == (1, 1)
     # A browser's copy read before the rename doesn't bring the old name back.
     tab_state_store.update(view_id=VIEW, 
-        active_tab_id=tab_id, tabs=browser_copy["tabs"], tab_order=browser_copy["tabOrder"],
+        tabs=browser_copy["tabs"], tab_order=browser_copy["tabOrder"],
         reference_views=browser_copy["referenceViews"], read_at_version=browser_copy["version"],
     )
     assert tab_state_store.get_search_query(tab_id=tab_id) == "job -archive"
@@ -92,7 +92,7 @@ def test_a_search_context_on_a_reference_page_does_not_take_a_search_link(live_d
     state = tab_state_store.snapshot(view_id=VIEW)
     tabs = state["tabs"]
     tab_state_store.update(view_id=VIEW, 
-        active_tab_id=page, tabs=tabs, tab_order=state["tabOrder"], read_at_version=state["version"],
+        tabs=tabs, tab_order=state["tabOrder"], read_at_version=state["version"],
         reference_views={page: {
             "fromTabId": misc, "referenceQuery": "10000000-0000-4000-8000-000000000001", "viewKind": "source",
             "originScope": {"scopeTabId": misc, "searchQuery": "miscellaneous", "sortMode": "normal",
