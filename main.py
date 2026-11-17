@@ -21,7 +21,9 @@ from socketserver import TCPServer
 from app.https_proxy import BoundedProxyServer, make_proxy_handler
 from app.server_runtime import apply_main_cli_args_to_environ
 from app.server_runtime import CHOSEN_BIND_HOST_ENV_NAME
+from app.server_runtime import detect_network_ip
 from app.server_runtime import ensure_default_tls_pair
+from app.server_runtime import load_namespace_network_sharing
 from app.server_runtime import MainCliArgs
 from app.server_runtime import prepare_database_runtime_path
 from app.server_runtime import refuse_retired_host_setting
@@ -45,6 +47,7 @@ from app.startup_console import print_ready_in
 from app.startup_console import print_report
 from app.startup_console import print_shell_enabled
 from app.startup_console import run_check
+from app.startup_console import vault_urls
 from app.startup_console import working
 from app.startup_js_sanity import assert_startup_js_sanity
 from app.startup_js_sanity import collect_startup_js_sanity_violations
@@ -418,13 +421,6 @@ def _bootstrap_default_namespace_if_empty(*, environ: dict[str, str]) -> None:
     )
 
 
-def _build_https_namespace_url(*, host: str, result: NamespaceOpenResult) -> str:
-    https_port = result.saved_profile.https_port
-    if https_port is None:
-        return "disabled"
-    return f"https://{host}:{https_port}"
-
-
 def _print_namespace_bootstrap_results(
     *,
     environ: dict[str, str],
@@ -432,15 +428,20 @@ def _print_namespace_bootstrap_results(
 ) -> None:
     main_server_config = resolve_main_server_config(environ=environ)
     browser_host = resolve_local_browser_host(host=main_server_config.host)
-    rows = [
-        (
+    # Where other devices open a shared vault: it changes when the router hands out a new address.
+    network_ip = detect_network_ip(environ=environ)
+    rows = []
+    for result in launch_results:
+        port = result.saved_profile.port
+        assert port is not None, "a vault that was opened has a port"
+        rows.append((
             result.namespace,
             result.action,
-            result.url,
-            _build_https_namespace_url(host=browser_host, result=result),
-        )
-        for result in launch_results
-    ]
+            vault_urls(
+                local_host=browser_host, port=port, https_port=result.saved_profile.https_port,
+                is_shared=load_namespace_network_sharing(namespace=result.namespace), network_ip=network_ip,
+            ),
+        ))
     console = make_startup_console(environ=os.environ)
     print_namespace_table(console, rows=rows)
     print_ready_in(console, seconds=seconds_since_launch())

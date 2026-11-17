@@ -938,6 +938,11 @@ def _probe_lan_ip() -> str:
         return probe_socket.getsockname()[0]
 
 
+def detect_network_ip(*, environ: Mapping[str, str]) -> str | None:
+    """This computer's address on its network (METALIST_LAN_IP when set), or None without one."""
+    return _detect_lan_ip(environ=environ)
+
+
 def _detect_lan_ip(*, environ: Mapping[str, str]) -> str | None:
     configured_lan_ip = _read_optional_text(environ=environ, name="METALIST_LAN_IP")
     if configured_lan_ip is not None:

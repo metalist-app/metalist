@@ -3,7 +3,7 @@ spinners only on real terminals."""
 
 import io
 
-from app.startup_console import make_startup_console, print_namespace_table, print_report
+from app.startup_console import make_startup_console, print_namespace_table, print_report, vault_urls
 
 
 def test_pycharm_s_run_window_gets_colour_without_spinners() -> None:
@@ -37,8 +37,47 @@ def _table_output(environ: dict[str, str]) -> str:
     # terminal (Windows Terminal, macOS, Linux) is what these tests describe.
     console.legacy_windows = False
     console.file = io.StringIO()
-    print_namespace_table(console, rows=[("default", "restarted", "http://127.0.0.1:8000", "https://127.0.0.1:8443")])
+    print_namespace_table(console, rows=[("default", "restarted", ("http://127.0.0.1:8000", "https://127.0.0.1:8443"))])
     return console.file.getvalue()
+
+
+HTTP_PORT = 8000
+HTTPS_PORT = 8443
+
+
+def test_a_vault_shared_on_the_network_lists_its_network_address_too() -> None:
+    urls = vault_urls(
+        local_host="127.0.0.1", port=HTTP_PORT, https_port=HTTPS_PORT, is_shared=True, network_ip="10.0.0.76",
+    )
+    assert urls == ("http://127.0.0.1:8000", "https://127.0.0.1:8443", "https://10.0.0.76:8443")
+
+
+def test_a_vault_kept_to_this_computer_lists_no_network_address() -> None:
+    urls = vault_urls(
+        local_host="127.0.0.1", port=HTTP_PORT, https_port=HTTPS_PORT, is_shared=False, network_ip="10.0.0.76",
+    )
+    assert urls == ("http://127.0.0.1:8000", "https://127.0.0.1:8443")
+
+
+def test_a_shared_vault_on_a_computer_with_no_network_lists_no_network_address() -> None:
+    urls = vault_urls(local_host="127.0.0.1", port=HTTP_PORT, https_port=HTTPS_PORT, is_shared=True, network_ip=None)
+    assert urls == ("http://127.0.0.1:8000", "https://127.0.0.1:8443")
+
+
+def test_a_shared_vault_without_https_lists_its_plain_network_address() -> None:
+    urls = vault_urls(local_host="127.0.0.1", port=HTTP_PORT, https_port=None, is_shared=True, network_ip="10.0.0.76")
+    assert urls == ("http://127.0.0.1:8000", "disabled", "http://10.0.0.76:8000")
+
+
+def test_the_table_prints_every_address_of_a_vault_on_its_own_line() -> None:
+    console = make_startup_console(environ={"PYCHARM_HOSTED": "1"})
+    console.file = io.StringIO()
+    print_namespace_table(console, rows=[(
+        "default", "restarted", ("http://127.0.0.1:8000", "https://127.0.0.1:8443", "https://10.0.0.76:8443"),
+    )])
+    assert console.file.getvalue().endswith(
+        "   http://127.0.0.1:8000\n   https://127.0.0.1:8443\n   https://10.0.0.76:8443\n"
+    )
 
 
 def test_pycharm_gets_plain_urls_it_can_link_itself_not_terminal_link_codes() -> None:

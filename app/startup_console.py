@@ -82,19 +82,40 @@ def print_audit_namespaces(console: Console, *, statuses: Sequence[tuple[str, st
         console.print(Text.assemble("     ", namespace.ljust(width + _NAMESPACE_COLUMN_GAP), (status, style)))
 
 
-def print_namespace_table(console: Console, *, rows: Sequence[tuple[str, str, str, str]]) -> None:
-    """Per namespace: its name and action, then its HTTP and HTTPS URLs on their own
-    lines, so it fits a narrow window; URLs are terminal links on real terminals."""
+_HTTPS_DISABLED = "disabled"
+
+
+def vault_urls(
+    *, local_host: str, port: int, https_port: int | None, is_shared: bool, network_ip: str | None,
+) -> tuple[str, ...]:
+    """A vault's addresses for the startup table: on this computer over HTTP and HTTPS, and,
+    when the vault is shared on the network and this computer has an address there, the one
+    other devices open (it changes when the router hands out a new address)."""
+    https_url = _HTTPS_DISABLED
+    if https_port is not None:
+        https_url = f"https://{local_host}:{https_port}"
+    urls = [f"http://{local_host}:{port}", https_url]
+    if is_shared and network_ip is not None:
+        if https_port is not None:
+            urls.append(f"https://{network_ip}:{https_port}")
+        else:
+            urls.append(f"http://{network_ip}:{port}")
+    return tuple(urls)
+
+
+def print_namespace_table(console: Console, *, rows: Sequence[tuple[str, str, Sequence[str]]]) -> None:
+    """Per namespace: its name and action, then each of its URLs (vault_urls) on its own
+    line, so it fits a narrow window; URLs are terminal links on real terminals."""
     width = 0
-    for namespace, _action, _http_url, _https_url in rows:
+    for namespace, _action, _urls in rows:
         width = max(width, len(namespace))
     console.print()
-    for namespace, action, http_url, https_url in rows:
+    for namespace, action, urls in rows:
         action_style = ""
         if action in _ACTION_STYLES:
             action_style = _ACTION_STYLES[action]
         console.print(Text.assemble(" ", (namespace.ljust(width + _NAMESPACE_COLUMN_GAP), "bold"), (action, action_style)))
-        for url in (http_url, https_url):
+        for url in urls:
             console.print(Text.assemble("   ", _url_text(url, is_linked=console.is_interactive)))
 
 

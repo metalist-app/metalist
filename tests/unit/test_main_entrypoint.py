@@ -852,6 +852,9 @@ def test_print_namespace_bootstrap_results_shows_http_and_https_urls(monkeypatch
         ),
     )
     monkeypatch.setattr(main_entrypoint, "seconds_since_launch", lambda: 3.4712)
+    # "cla" is shared on the network, "default" kept to this computer.
+    monkeypatch.setattr(main_entrypoint, "load_namespace_network_sharing", lambda *, namespace: namespace == "cla")
+    monkeypatch.setattr(main_entrypoint, "detect_network_ip", lambda *, environ: "10.0.0.76")
     main_entrypoint._print_namespace_bootstrap_results(
         environ={},
         launch_results=[
@@ -893,6 +896,8 @@ def test_print_namespace_bootstrap_results_shows_http_and_https_urls(monkeypatch
         " cla      restarted",
         "   http://127.0.0.1:8001",
         "   disabled",
+        # The address other devices open, for the shared vault only.
+        "   http://10.0.0.76:8001",
         "",
         # Since this process started, every import included, to two decimal places.
         " Ready in 3.47 s",
