@@ -253,10 +253,16 @@ export function captureEditingFocus(noteElement) {
     };
 }
 
-// The node, while it is still in the content; else the content position (a focus
-// recorded as positions only has no node).
-function restoredPoint(content, node, offset, position) {
-    if (node !== null && node.isConnected && content.contains(node)) {
+// How many offsets a node has: characters in a text node, children in an element.
+function offsetsIn(node) {
+    return node.nodeType === Node.TEXT_NODE ? node.data.length : node.childNodes.length;
+}
+
+// The node, while it is still in the content and the offset still fits it (a redraw
+// can keep a node and shorten it); else the content position (a focus recorded as
+// positions only has no node).
+export function restoredPoint(content, node, offset, position) {
+    if (node !== null && node.isConnected && content.contains(node) && offset <= offsetsIn(node)) {
         return { node, offset };
     }
     const point = contentPositionToNodePoint(content, position);
