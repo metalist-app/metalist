@@ -51,10 +51,10 @@ def _bootstrapped_copy() -> TabStateStore:
 
 
 def _save(store: TabStateStore, *, active: str, searches: dict[str, str]) -> dict[str, object]:
-    """The browser's snapshot save: the context shown, and searches typed."""
-    snapshot = store.snapshot(view_id=VIEW)
+    """What the browser sends: each search typed, then its copy with the context shown."""
     for tab_id, search in searches.items():
-        snapshot["tabs"][tab_id]["searchQuery"] = search
+        store.set_search(view_id=VIEW, tab_id=tab_id, search_query=search)
+    snapshot = store.snapshot(view_id=VIEW)
     return store.update(view_id=VIEW, reference_views={}, active_tab_id=active, tabs=snapshot["tabs"],
                         tab_order=snapshot["tabOrder"], read_at_version=snapshot["version"])
 

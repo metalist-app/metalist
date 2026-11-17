@@ -96,12 +96,7 @@ def _store_raw(note_id: str, *, tags: str, proposed_tags: str, prev_id: str | No
 def _search_for(query: str) -> None:
     snapshot = tab_state_store.snapshot(view_id=VIEW)
     tab_id = snapshot["activeTabId"]
-    tabs = snapshot["tabs"]
-    tabs[tab_id]["searchQuery"] = query
-    tab_state_store.update(view_id=VIEW, 
-        active_tab_id=tab_id, tabs=tabs, tab_order=snapshot["tabOrder"], reference_views={},
-        read_at_version=snapshot["version"],
-    )
+    tab_state_store.set_search(view_id=VIEW, tab_id=tab_id, search_query=query)
 
 
 def _unlock() -> None:

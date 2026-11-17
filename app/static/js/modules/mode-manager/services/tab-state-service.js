@@ -22,6 +22,7 @@ const TAB_STATE_SORT_MODE_ENDPOINT = CONFIG.API.NOTES.TAB_STATE_SORT_MODE;
 const TAB_STATE_DATE_FILTER_ENDPOINT = CONFIG.API.NOTES.TAB_STATE_DATE_FILTER;
 const TAB_STATE_FILE_FILTER_ENDPOINT = CONFIG.API.NOTES.TAB_STATE_FILE_FILTER;
 const TAB_STATE_UNTAGGED_VIEW_ENDPOINT = CONFIG.API.NOTES.TAB_STATE_UNTAGGED_VIEW;
+const TAB_STATE_SEARCH_ENDPOINT = CONFIG.API.NOTES.TAB_STATE_SEARCH;
 const FOLDER_CONTEXT_ENDPOINT = CONFIG.API.VIRTUAL_FOLDERS.FOLDER_CONTEXT;
 const TREE_SHOWN_ENDPOINT = CONFIG.API.VIRTUAL_FOLDERS.TREE_SHOWN;
 const SCROLL_POLL_INTERVAL_MS = 1000;
@@ -38,6 +39,9 @@ const moduleState = ApplicationState.createFields('tab-state-service', {
     scrollPollId: null,
     pendingPersistTimeout: null,
     pendingPersistRequest: null,
+    // The search typed in each tab and not yet sent, newest only (sendPendingSearches).
+    pendingSearchByTab: Object.create(null),
+    pendingSearchRequest: null,
     isScrollPersisting: false,
 });
 
@@ -62,8 +66,38 @@ export async function initializeTabStateService() {
     return serverState;
 }
 
+// The server owns each tab's search (docs/future-plans/one-writer-refactoring.md, idea 1): the
+// page asks for a search by name, one request at a time, and its copy of the tabs
+// (persistTabStateSnapshot) carries no search the server takes. Text typed while a request is
+// on its way replaces what waits, so the newest is what is sent last.
+async function sendPendingSearches() {
+    while (moduleState.pendingSearchRequest !== null) {
+        await moduleState.pendingSearchRequest;
+    }
+    const waitingTabIds = Object.keys(moduleState.pendingSearchByTab);
+    if (waitingTabIds.length === 0) {
+        return;
+    }
+    const tabId = waitingTabIds[0];
+    const searchQuery = moduleState.pendingSearchByTab[tabId];
+    delete moduleState.pendingSearchByTab[tabId];
+    moduleState.pendingSearchRequest = callTabStateApiAt(TAB_STATE_SEARCH_ENDPOINT, 'POST', { tabId, searchQuery })
+        .then(captureServerSignature)
+        .finally(() => {
+            moduleState.pendingSearchRequest = null;
+        });
+    await moduleState.pendingSearchRequest;
+    await sendPendingSearches();
+}
+
 export async function persistTabStateSnapshot() {
-    // Search, tab actions, and scroll polling share one snapshot writer. Read the
+    // Searches go first, by name: every caller that saves before it reads the tabs again or
+    // changes them finds the server holding what was typed. With none waiting, the copy is
+    // sent without a pause, as before.
+    if (moduleState.pendingSearchRequest !== null || Object.keys(moduleState.pendingSearchByTab).length > 0) {
+        await sendPendingSearches();
+    }
+    // Tab actions and scroll polling share one snapshot writer. Read the
     // current payload only after the preceding response has updated its version.
     while (moduleState.pendingPersistRequest !== null) {
         await moduleState.pendingPersistRequest;
@@ -103,6 +137,12 @@ function handleTabStateMutation(event) {
     const reason = event.reason;
     if (reason !== 'searchQuery') {
         return;
+    }
+    const tabId = event.payload.activeTabId;
+    const searchQuery = event.payload.tabs[tabId].searchQuery;
+    // The same text can wait already: typed, replaced by the server's, and typed again.
+    if (moduleState.pendingSearchByTab[tabId] !== searchQuery) {
+        moduleState.pendingSearchByTab[tabId] = searchQuery;
     }
     scheduleTabStatePersist();
 }

@@ -14,6 +14,8 @@ async function harness() {
     const polls = [];
     const apiErrors = [];
     const restoredReferenceTabs = [];
+    const hooks = [];
+    let timers = 0;
     let serverVersion = 1;
     const payload = {
         activeTabId: 'first', tabOrder: ['first', 'second'], version: 1,
@@ -21,7 +23,7 @@ async function harness() {
     };
     const context = {
         activeTabId: 'first', tabStateVersion: 0, isLoading: false,
-        hydrateTabState() {}, setTabStateUpdateHook() {}, recordUntaggedViewsFromServer() {},
+        hydrateTabState() {}, setTabStateUpdateHook(hook) { hooks.push(hook); }, recordUntaggedViewsFromServer() {},
         setTabStateVersion(version) { this.tabStateVersion = version; payload.version = version; },
         getTabStatePayload: () => structuredClone(payload),
         shouldIgnoreScrollEvents: () => false,
@@ -33,10 +35,11 @@ async function harness() {
     const window = {
         scrollY: 0, addEventListener() {},
         setInterval(callback) { polls.push(callback); return polls.length; },
+        setTimeout() { timers += 1; return timers; }, clearTimeout() {},
     };
     const dependencies = {
         ApplicationState, ModeContext: context, window, document: { hidden: false },
-        CONFIG: { API: { NOTES: { TAB_STATE: '/tabs' }, VIRTUAL_FOLDERS: { FOLDER_CONTEXT: '/folder-context', TREE_SHOWN: '/tree-shown' } } },
+        CONFIG: { API: { NOTES: { TAB_STATE: '/tabs', TAB_STATE_SEARCH: '/tabs/search' }, VIRTUAL_FOLDERS: { FOLDER_CONTEXT: '/folder-context', TREE_SHOWN: '/tree-shown' } } },
         CommandGate: { isBusy: () => false }, buildSessionHeaders: () => ({}),
         computeScrollAnchor: () => null, areScrollAnchorsEqual: (a, b) => a === b,
         restoreReferenceNavigation: (state) => restoredReferenceTabs.push(state.tabs),
@@ -48,12 +51,14 @@ async function harness() {
         recordSearchLocks: () => {},
         ErrorHandler: { handleApiError(_error, response) { apiErrors.push(response.status); } },
         HttpRequestError, AuthenticationRequiredError,
-        fetch: async (_endpoint, options) => {
+        fetch: async (endpoint, options) => {
             if (options.method === 'GET') return { ok: true, json: async () => structuredClone(payload) };
             const sent = JSON.parse(options.body);
+            // A search asked for by name is answered with the tabs, as every tab-state request is.
+            const answered = endpoint === '/tabs/search' ? structuredClone(payload) : sent;
             return await new Promise((resolve, reject) => requests.push({
-                sent, reject,
-                complete: () => resolve({ ok: true, json: async () => ({ ...sent, version: ++serverVersion }) }),
+                endpoint, sent, reject,
+                complete: () => resolve({ ok: true, json: async () => ({ ...answered, version: ++serverVersion }) }),
                 answer: status => resolve({ ok: false, status, json: async () => ({ detail: 'refused' }) }),
             }));
         },
@@ -64,7 +69,12 @@ async function harness() {
     assert.equal(polls.length, 1);
     // Reference views are restored from the freshly loaded server tab state.
     assert.deepEqual(restoredReferenceTabs, [payload.tabs]);
-    return { service, requests, context, payload, window, poll: polls[0], apiErrors };
+    // What ModeContext tells the service when the search of the tab shown changes.
+    const typeSearch = (text) => {
+        payload.tabs[payload.activeTabId].searchQuery = text;
+        hooks[0]({ reason: 'searchQuery', payload: structuredClone(payload) });
+    };
+    return { service, requests, context, payload, window, poll: polls[0], apiErrors, typeSearch };
 }
 
 test('scroll polls cannot overlap a slow save and write the same tab position twice', async () => {
@@ -141,6 +151,70 @@ test('snapshot persistence waits for an active scroll save and avoids a duplicat
     const results = await settled;
     assert.deepEqual(results.map(result => result.status), ['fulfilled', 'fulfilled']);
     assert.equal(requestCount, 1);
+});
+
+test('a search typed is asked for by name, before the copy of the tabs is saved', async () => {
+    const h = await harness();
+    h.typeSearch('groceries');
+    h.payload.tabs.first.scrollY = 100;
+    const saved = h.service.persistTabStateSnapshot();
+    await new Promise(setImmediate);
+    assert.deepEqual(h.requests.map(request => request.endpoint), ['/tabs/search']);
+    assert.deepEqual(h.requests[0].sent, { tabId: 'first', searchQuery: 'groceries' });
+    h.requests[0].complete();
+    await new Promise(setImmediate);
+    assert.deepEqual(h.requests.map(request => request.endpoint), ['/tabs/search', '/tabs']);
+    h.requests[1].complete();
+    await saved;
+});
+
+test('more typed while a search is on its way is sent after it, newest only', async () => {
+    const h = await harness();
+    h.typeSearch('gro');
+    const saved = h.service.persistTabStateSnapshot();
+    await new Promise(setImmediate);
+    h.typeSearch('groce');
+    h.typeSearch('groceries');
+    h.requests[0].complete();
+    await new Promise(setImmediate);
+    assert.deepEqual(h.requests.map(request => request.sent.searchQuery), ['gro', 'groceries']);
+    h.requests[1].complete();
+    await new Promise(setImmediate);
+    // Then the copy of the tabs, once.
+    assert.deepEqual(h.requests.map(request => request.endpoint), ['/tabs/search', '/tabs/search', '/tabs']);
+    h.requests[2].complete();
+    await saved;
+});
+
+test('the same search typed again while it waits is sent once', async () => {
+    const h = await harness();
+    h.typeSearch('groceries');
+    h.typeSearch('groceries');
+    const saved = h.service.persistTabStateSnapshot();
+    await new Promise(setImmediate);
+    h.requests[0].complete();
+    await new Promise(setImmediate);
+    assert.deepEqual(h.requests.map(request => request.endpoint), ['/tabs/search', '/tabs']);
+    h.requests[1].complete();
+    await saved;
+});
+
+test('a search typed in one tab is still sent after another tab is shown', async () => {
+    const h = await harness();
+    h.typeSearch('groceries');
+    h.payload.activeTabId = 'second';
+    h.typeSearch('plants');
+    const saved = h.service.persistTabStateSnapshot();
+    await new Promise(setImmediate);
+    h.requests[0].complete();
+    await new Promise(setImmediate);
+    assert.deepEqual(h.requests.slice(0, 2).map(request => request.sent), [
+        { tabId: 'first', searchQuery: 'groceries' }, { tabId: 'second', searchQuery: 'plants' },
+    ]);
+    for (const request of h.requests.slice(1)) request.complete();
+    await new Promise(setImmediate);
+    for (const request of h.requests.slice(2)) request.complete();
+    await saved;
 });
 
 test('a waiting snapshot save reads fresh state after the previous response', async () => {

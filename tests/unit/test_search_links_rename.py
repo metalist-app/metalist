@@ -49,12 +49,7 @@ def _note(note_id: str, previous_id: str | None, *, content: str, tags: str) -> 
 def _search_in_active_context(search: str) -> str:
     state = tab_state_store.snapshot(view_id=VIEW)
     tab_id = state["activeTabId"]
-    tabs = state["tabs"]
-    tabs[tab_id]["searchQuery"] = search
-    tab_state_store.update(view_id=VIEW, 
-        active_tab_id=tab_id, tabs=tabs, tab_order=state["tabOrder"], reference_views=state["referenceViews"],
-        read_at_version=state["version"],
-    )
+    tab_state_store.set_search(view_id=VIEW, tab_id=tab_id, search_query=search)
     return tab_id
 
 
@@ -93,9 +88,9 @@ def test_a_search_context_on_a_reference_page_does_not_take_a_search_link(live_d
     _note("10000000-0000-4000-8000-000000000001", None, content="<div>Trip plan</div>", tags="")
     misc = _search_in_active_context("miscellaneous")
     page = tab_state_store.create_tab(view_id=VIEW, is_page=False, copy_from_tab_id=misc, copies_view=False)["newTabId"]
+    tab_state_store.set_search(view_id=VIEW, tab_id=page, search_query="10000000-0000-4000-8000-000000000001")
     state = tab_state_store.snapshot(view_id=VIEW)
     tabs = state["tabs"]
-    tabs[page]["searchQuery"] = "10000000-0000-4000-8000-000000000001"
     tab_state_store.update(view_id=VIEW, 
         active_tab_id=page, tabs=tabs, tab_order=state["tabOrder"], read_at_version=state["version"],
         reference_views={page: {

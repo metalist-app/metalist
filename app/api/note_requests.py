@@ -176,6 +176,13 @@ class CreateNewTabRequest(TypedDict):
     clientId: Identifier
 
 @with_config(ConfigDict(strict=True))
+class UpdateTabSearchRequest(TypedDict):
+    # The search of tab tabId is now searchQuery: the one way a view changes a search.
+    tabId: Identifier
+    searchQuery: Text
+
+
+@with_config(ConfigDict(strict=True))
 class UpdateTabUntaggedViewRequest(TypedDict):
     tabId: Identifier
     isUntaggedView: bool

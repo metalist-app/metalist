@@ -49,9 +49,7 @@ def _store_with_a_narrowed_tab() -> tuple[TabStateStore, str]:
     store = TabStateStore()
     snapshot = store.snapshot(view_id=VIEW)
     tab_id = snapshot["activeTabId"]
-    snapshot["tabs"][tab_id]["searchQuery"] = "journal"
-    store.update(view_id=VIEW, reference_views={}, active_tab_id=tab_id, tabs=snapshot["tabs"],
-                 tab_order=snapshot["tabOrder"], read_at_version=snapshot["version"])
+    store.set_search(view_id=VIEW, tab_id=tab_id, search_query="journal")
     store.set_sort_mode(view_id=VIEW, tab_id=tab_id, sort_mode="created")
     store.set_date_filter(view_id=VIEW, tab_id=tab_id, date_filter=make_root_date_filter(
         field="updated", range_kind="today", from_date="", to_date=""))
@@ -211,8 +209,8 @@ def test_bootstrap_restores_persisted_tab_state() -> None:
     store = TabStateStore()
     initial = store.snapshot(view_id=VIEW)
     tab_id = initial["activeTabId"]
+    initial = store.set_search(view_id=VIEW, tab_id=tab_id, search_query="project-x")
     payload = initial["tabs"]
-    payload[tab_id]["searchQuery"] = "project-x"
     payload[tab_id]["scrollY"] = 180
     payload[tab_id]["anchorRootId"] = "root-1"
     payload[tab_id]["scrollAnchor"] = {
@@ -311,14 +309,13 @@ def _restart_by_date_range(store: TabStateStore, tab_id: str) -> None:
 
 @pytest.mark.parametrize("restart_view", [_restart_by_sort, _restart_by_date_range])
 def test_snapshot_read_before_a_view_change_keeps_the_new_order_and_its_top(restart_view) -> None:
-    # The browser's scroll or search save is read before it is sent, so one read
-    # before a new sort order or date range can reach the server after it. Its sort
-    # order and its place in the old view must not replace the new view's.
+    # The browser's scroll save is read before it is sent, so one read before a new sort
+    # order or date range can reach the server after it. Its sort order and its place in
+    # the old view must not replace the new view's; the search, asked for by name, stays.
     store = TabStateStore()
-    stale = store.snapshot(view_id=VIEW)
-    tab_id = stale["activeTabId"]
+    tab_id = store.snapshot(view_id=VIEW)["activeTabId"]
+    stale = store.set_search(view_id=VIEW, tab_id=tab_id, search_query="typed before")
     stale["tabs"][tab_id].update(_OLD_VIEW_SCROLL)
-    stale["tabs"][tab_id]["searchQuery"] = "typed before"
     restart_view(store, tab_id)
     sort_mode = store.get_sort_mode(tab_id=tab_id)
 

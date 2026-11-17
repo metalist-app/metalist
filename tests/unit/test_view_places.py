@@ -85,9 +85,7 @@ def test_the_contexts_and_their_searches_are_shared() -> None:
     first, second = _two_contexts(store)
     store.snapshot(view_id=PHONE)
 
-    def search(state: dict) -> None:
-        state["tabs"][first]["searchQuery"] = "groceries"
-    _save(store, MAC, search)
+    store.set_search(view_id=MAC, tab_id=first, search_query="groceries")
 
     phone = store.snapshot(view_id=PHONE)
     assert phone["tabOrder"] == [first, second]
@@ -99,9 +97,7 @@ def test_a_views_scroll_save_never_puts_back_a_search_another_view_changed() -> 
     first, _second = _two_contexts(store)
     phone_had = store.snapshot(view_id=PHONE)
 
-    def search(state: dict) -> None:
-        state["tabs"][first]["searchQuery"] = "groceries"
-    _save(store, MAC, search)
+    store.set_search(view_id=MAC, tab_id=first, search_query="groceries")
     # The phone saves its scroll with the tabs it read before the Mac's change.
     phone_had["tabs"][first]["scrollY"] = SCROLLED
     store.update(
@@ -263,9 +259,7 @@ def test_the_shared_revision_rises_when_another_view_changes_a_contexts_search()
     first, _second = _two_contexts(store)
     before = store.shared_revision(view_id=MAC)
 
-    def search(state: dict) -> None:
-        state["tabs"][first]["searchQuery"] = "groceries"
-    _save(store, PHONE, search)
+    store.set_search(view_id=PHONE, tab_id=first, search_query="groceries")
 
     assert store.shared_revision(view_id=MAC) > before
 
@@ -307,9 +301,7 @@ def test_a_view_saving_twice_never_puts_back_a_search_another_view_changed() -> 
     first, _second = _two_contexts(store)
     phone_has = store.snapshot(view_id=PHONE)
 
-    def search(state: dict) -> None:
-        state["tabs"][first]["searchQuery"] = "groceries"
-    _save(store, MAC, search)
+    store.set_search(view_id=MAC, tab_id=first, search_query="groceries")
     for scrolled_to in (SCROLLED, SCROLLED + 1):
         phone_has["tabs"][first]["scrollY"] = scrolled_to
         store.update(
@@ -319,17 +311,18 @@ def test_a_view_saving_twice_never_puts_back_a_search_another_view_changed() -> 
         )
 
     assert store.get_search_query(tab_id=first) == "groceries"
-    # Once the phone takes the tabs again (live changes, step 3), its own searches count again.
-    _save(store, PHONE, lambda state: state["tabs"][first].update(searchQuery="plants"))
+    # The phone's own search is asked for by name, whatever copy it holds.
+    edit_locks.reset()
+    store.set_search(view_id=PHONE, tab_id=first, search_query="plants")
     assert store.get_search_query(tab_id=first) == "plants"
 
 
-def test_what_a_view_holds_survives_the_store_loading_again() -> None:
-    # Found 2026-11-14: a refused change reloads the store (request_recovery.py); without its record
-    # of what each view holds, a view could not change a search until it loaded its tabs again.
+def test_a_view_asks_for_a_search_after_the_store_loads_again() -> None:
+    # Found 2026-11-14: a refused change reloads the store (request_recovery.py), and a view could
+    # not change a search until it loaded its tabs again. A search asked for by name needs no
+    # record of what the view holds.
     store = TabStateStore()
     first, _second = _two_contexts(store)
-    phone_has = store.snapshot(view_id=PHONE)
     _save(store, PHONE, lambda state: state["tabs"][first].update(scrollY=SCROLLED))
 
     restarted = TabStateStore()
@@ -337,34 +330,25 @@ def test_what_a_view_holds_survives_the_store_loading_again() -> None:
     with SafeSession.allow_reads("tests:view_places"):
         restarted.bootstrap(connection=session.connection())
     session.close()
-    phone_has["tabs"][first]["searchQuery"] = "groceries"
-    restarted.update(
-        view_id=PHONE, active_tab_id=phone_has["activeTabId"], tabs=phone_has["tabs"],
-        tab_order=phone_has["tabOrder"], reference_views=phone_has["referenceViews"],
-        read_at_version=phone_has["version"],
-    )
+    restarted.set_search(view_id=PHONE, tab_id=first, search_query="groceries")
 
     assert restarted.get_search_query(tab_id=first) == "groceries"
 
 
-def test_a_place_saved_before_records_were_kept_takes_the_views_search() -> None:
+def test_a_place_saved_by_0_30_1_with_its_record_of_searches_loads_without_it() -> None:
+    # 0.30.0 and 0.30.1 saved, with each view's place, what its browser held of each search.
     store = TabStateStore()
     first = store.snapshot(view_id=PHONE)["activeTabId"]
+    store.set_search(view_id=PHONE, tab_id=first, search_query="groceries")
     saved = json.loads(store._serialize_state_locked())
-    del saved["views"][PHONE]["knownSearch"]
-    older = TabStateStore()
-    older._load_state_json_locked(json.dumps(saved))
+    assert "knownSearch" not in saved["views"][PHONE]
+    saved["views"][PHONE]["knownSearch"] = {first: "groceries"}
 
-    phone_has = older.snapshot(view_id=PHONE)
-    older._views[PHONE]["knownSearch"] = {}
-    phone_has["tabs"][first]["searchQuery"] = "groceries"
-    older.update(
-        view_id=PHONE, active_tab_id=phone_has["activeTabId"], tabs=phone_has["tabs"],
-        tab_order=phone_has["tabOrder"], reference_views=phone_has["referenceViews"],
-        read_at_version=phone_has["version"],
-    )
+    upgraded = TabStateStore()
+    upgraded._load_state_json_locked(json.dumps(saved))
 
-    assert older.get_search_query(tab_id=first) == "groceries"
+    assert upgraded.snapshot(view_id=PHONE)["tabs"][first]["searchQuery"] == "groceries"
+    assert "knownSearch" not in json.loads(upgraded._serialize_state_locked())["views"][PHONE]
 
 
 def test_after_the_store_loads_again_a_stale_save_still_keeps_another_views_search() -> None:
@@ -378,7 +362,7 @@ def test_after_the_store_loads_again_a_stale_save_still_keeps_another_views_sear
     with SafeSession.allow_reads("tests:view_places"):
         restarted.bootstrap(connection=session.connection())
     session.close()
-    _save(restarted, MAC, lambda state: state["tabs"][first].update(searchQuery="groceries"))
+    restarted.set_search(view_id=MAC, tab_id=first, search_query="groceries")
     phone_has["tabs"][first]["scrollY"] = SCROLLED + 1
     restarted.update(
         view_id=PHONE, active_tab_id=phone_has["activeTabId"], tabs=phone_has["tabs"],
@@ -428,9 +412,7 @@ def test_a_save_says_whether_what_is_shared_changed_for_the_view_that_made_it() 
     first, _second = _two_contexts(store)
     seen = store.shared_revision(view_id=MAC)
 
-    def search(state: dict) -> None:
-        state["tabs"][first]["searchQuery"] = "groceries"
-    saved = _save(store, MAC, search)
+    saved = store.set_search(view_id=MAC, tab_id=first, search_query="groceries")
 
     assert saved["searchContextsRevision"]["before"] == seen
     assert saved["searchContextsRevision"]["after"] == store.shared_revision(view_id=MAC) > seen

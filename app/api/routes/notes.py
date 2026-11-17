@@ -28,6 +28,7 @@ from app.api.note_requests import (
     UpdateTabDateFilterRequest,
     UpdateTabFileFilterRequest,
     UpdateTabUntaggedViewRequest,
+    UpdateTabSearchRequest,
     UpdateTabSortModeRequest,
     CreateNewTabRequest,
     SearchContextForSearchRequest,
@@ -572,6 +573,14 @@ def take_over_editing(payload: TakeOverEditingRequest, view_id: ViewId) -> Dict[
     if not note_store.has_note(note_id):
         raise InputRejected("That note is gone.")
     return {"ready": edit_locks.take_over(view_id=view_id, note_id=note_id, is_for_change=payload["isForChange"])}
+
+
+@router.post("/notes/tab-state/search")
+@transactional_route
+def update_tab_search(payload: UpdateTabSearchRequest, view_id: ViewId) -> Dict[str, object]:
+    """The search of a tab is now this, as its view typed or chose it. While another view types
+    that search it is refused, said calmly as rejected input (multi-view step 4)."""
+    return tab_state_store.set_search(view_id=view_id, tab_id=payload["tabId"], search_query=payload["searchQuery"])
 
 
 @router.post("/notes/tab-state/sort-mode")
