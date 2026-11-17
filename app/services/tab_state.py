@@ -384,8 +384,6 @@ class TabStateStore:
         self._unclaimed_place: Optional[Dict[str, object]] = None
         # The version at which each tab's scroll last started again at the top.
         self._scroll_restarted_at_version: Dict[str, int] = {}
-        # The version at which each tab was made: a view's save read before it cannot name it.
-        self._tab_made_at_version: Dict[str, int] = {}
         # Tabs deleted or closed: a view's save made before it heard so may still name them, and
         # is taken without them (update).
         self._gone_tab_ids: Set[str] = set()
@@ -661,7 +659,6 @@ class TabStateStore:
                 self._page_owners[new_tab_id] = view_id
             self._tab_order.append(new_tab_id)
             self._version += 1
-            self._tab_made_at_version[new_tab_id] = self._version
             self._persist_locked(connection=None, encryption_service=None, force_plaintext=False)
             snapshot = self._snapshot_locked(view_id)
             snapshot["newTabId"] = new_tab_id
@@ -701,8 +698,6 @@ class TabStateStore:
         self._untagged_views.discard(tab_id)
         if tab_id in self._scroll_restarted_at_version:
             del self._scroll_restarted_at_version[tab_id]
-        if tab_id in self._tab_made_at_version:
-            del self._tab_made_at_version[tab_id]
 
     def close_pages_whose_notes_are_gone(self, *, note_exists: Callable[[str], bool]) -> bool:
         """Close each reference page none of whose notes exist any more, in every view, with the
@@ -776,8 +771,8 @@ class TabStateStore:
         """Save a view's copy of its tabs, read when its state was at read_at_version (the last
         version it received): the tab it shows, its scroll, its reference pages and its order of
         the tabs. A search in the copy is never taken: the view asks for a search by name
-        (set_search), so no copy, late or stale, can put an old search back. Tabs made by another
-        view since are kept."""
+        (set_search), so no copy, late or stale, can put an old search back. Tabs the copy leaves
+        out are kept."""
         if not isinstance(read_at_version, int) or read_at_version < 0:
             raise InputRejected("version must be a non-negative integer")
         normalized_tabs = self._normalize_tabs(tabs, from_storage=False)
@@ -800,15 +795,12 @@ class TabStateStore:
                 )
                 if active_tab_id in gone_meanwhile:
                     active_tab_id = self._active_tab_of_locked(view_id, place)
-            visible = set(self._visible_tab_ids_locked(view_id))
-            incoming = set(normalized_tabs)
-            # A tab made after the save was read is kept (2026-11-15: a save taking another view's
-            # change raced the view's own new tab); one the save had read must be named.
-            left_out = {
-                tab_id for tab_id in visible - incoming
-                if tab_id not in self._tab_made_at_version or self._tab_made_at_version[tab_id] <= read_at_version
-            }
-            if not incoming <= visible or left_out:
+            # The tabs are the server's: a copy that leaves one out takes none away (delete_tab
+            # does), whatever version it names. A view's version rises with the answers to its own
+            # changes, which bring it no tab another view made meanwhile (2026-11-15: a save raced
+            # the view's own new tab; 2026-11-17: a save after a typed search left out another
+            # view's new context). A tab the server never had is no tab of its.
+            if not set(normalized_tabs) <= set(self._visible_tab_ids_locked(view_id)):
                 raise InputRejected("tab ids mismatch; use tab-state new/delete endpoints")
             for tab_id in normalized_reference_views:
                 if tab_id in self._page_owners and self._page_owners[tab_id] != view_id:

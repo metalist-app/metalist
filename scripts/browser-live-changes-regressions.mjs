@@ -394,7 +394,123 @@ async function typedWhileFetchingCase(here, there, ids, tagged) {
   assert.deepEqual(await labelsShown(here, ids), tagged, 'typed while fetching: the typed search\'s notes should show');
 }
 
-// The context added for the two cases above goes, from the view that made it.
+// Holds the answer to this view's next reading of the search contexts until released: the server
+// has answered it, as the tabs were then, and the page takes it only after what the case does next.
+async function holdContextsAnswer(page) {
+  await page.evaluate(() => {
+    const pageFetch = window.fetch;
+    window.__heldAnswer = {fetched: false, release: null};
+    const released = new Promise(resolve => { window.__heldAnswer.release = resolve; });
+    let isHeld = false;
+    window.fetch = async (resource, options) => {
+      const url = String(resource instanceof Request ? resource.url : resource);
+      const isReading = url.endsWith('/api2/notes/tab-state') && options !== undefined && options.method === 'GET';
+      if (!isReading || isHeld) return pageFetch(resource, options);
+      isHeld = true;
+      const response = await pageFetch(resource, options);
+      window.__heldAnswer.fetched = true;
+      await released;
+      return response;
+    };
+    window.__restoreFetch = () => { window.fetch = pageFetch; window.__heldAnswer = null; };
+  });
+}
+
+async function releaseContextsAnswer(page) {
+  await page.evaluate(() => window.__heldAnswer.release());
+  await idle(page);
+  await pause(SETTLE_MS);
+  await idle(page);
+  await page.evaluate(() => window.__restoreFetch());
+}
+
+// What this view holds of its contexts, and what the server holds for it.
+function contextsState(page, otherContext) {
+  return page.evaluate(async otherContext => {
+    const {ModeContextInstance: mode} = await import('/static/js/modules/mode-manager/mode-context.js');
+    const {buildSessionHeaders} = await import('/static/js/modules/session-auth.js');
+    const response = await fetch('/api2/notes/tab-state', {headers: buildSessionHeaders(false), cache: 'no-store'});
+    if (!response.ok) throw new Error(`tab-state read failed with status ${response.status}`);
+    const server = await response.json();
+    return {
+      active: mode.activeTabId,
+      order: [...mode.tabOrder],
+      serverOrder: server.tabOrder,
+      untagged: [mode.isUntaggedView, server.untaggedViews.includes(mode.activeTabId)],
+      sort: [mode.activeTabSortMode, server.tabs[mode.activeTabId].sortMode],
+      search: mode.searchQuery,
+      otherSearch: mode.tabs[otherContext].searchQuery,
+    };
+  }, otherContext);
+}
+
+// The other view changes the contexts (the search of its own context), this view reads them, and
+// `act` happens here after the server answered that reading and before the page takes the answer.
+async function actWhileAReadingIsAnswered(here, there, otherSearch, act) {
+  await idle(here);
+  await holdContextsAnswer(here);
+  await typeSearchThere(there, otherSearch);
+  await here.waitForFunction(() => window.__heldAnswer.fetched, {timeout: SHOWS_WITHIN_MS});
+  await act();
+  await releaseContextsAnswer(here);
+}
+
+// A change made here while this view reads its contexts again stands, and what the other view
+// changed still arrives (cases agreed 2026-11-17, docs/future-plans/one-writer-refactoring.md,
+// idea 1; principle 2: only the user's action changes the screen). The reading was answered
+// before the change, so it holds the tabs as they were: taken, it put the screen back (found
+// 2026-11-15, the tab-switching suite: Untagged turned on went off again). `other` is the other
+// view's context; this view stays on its own until it opens one.
+async function changedWhileAReadingIsAnsweredCase(here, there, other) {
+  const palette = (name, value) => here.evaluate(async ({name, value}) => {
+    const {CommandPalette} = await import('/static/js/modules/command-palette/command-palette-controller.js');
+    await CommandPalette[name](value);
+  }, {name, value});
+
+  // Case 1: Untagged turned on. Case 7: the other view's search is shown once the tabs are read again.
+  await actWhileAReadingIsAnswered(here, there, 'livechangesovertakenone', () => palette('setIsUntaggedView', true));
+  let state = await contextsState(here, other);
+  assert.deepEqual(state.untagged, [true, true], 'Untagged turned on while the contexts were read: it should stay on');
+  assert.equal(state.search, TAG, 'and its context should keep its search under the Untagged view');
+  assert.equal(state.otherSearch, 'livechangesovertakenone', 'and the other view\'s search should still arrive');
+  await palette('setIsUntaggedView', false);
+  await idle(here);
+
+  // Case 2: the sort order changed.
+  await actWhileAReadingIsAnswered(here, there, 'livechangesovertakentwo', () => palette('setSortMode', 'created'));
+  state = await contextsState(here, other);
+  assert.deepEqual(state.sort, ['created', 'created'], 'the order chosen while the contexts were read: it should stay');
+  assert.equal(state.otherSearch, 'livechangesovertakentwo');
+  await palette('setSortMode', 'normal');
+  await idle(here);
+
+  // Case 5: a context opened here.
+  let opened = null;
+  await actWhileAReadingIsAnswered(here, there, 'livechangesovertakenthree', async () => {
+    opened = await here.evaluate(async () => {
+      const keyboardEvents = await import('/static/js/modules/mode-manager/events/keyboard-events.js');
+      return keyboardEvents.openSearchInNewSearchContext('livechangesopenedhere', 'live-changes-suite');
+    });
+  });
+  state = await contextsState(here, other);
+  assert.equal(state.active, opened, 'a context opened while the contexts were read: it should stay shown');
+  assert.ok(state.order.includes(opened) && state.serverOrder.includes(opened), 'and stay in the row');
+  assert.equal(state.otherSearch, 'livechangesovertakenthree');
+
+  // Case 6: a context deleted here (the one just opened) does not come back.
+  await actWhileAReadingIsAnswered(here, there, 'livechangesovertakenfour', async () => {
+    await here.evaluate(opened => document.querySelector(`.delete-context[data-delete-tab-id="${opened}"]`).click(), opened);
+    await here.waitForFunction(async opened => {
+      const {ModeContextInstance} = await import('/static/js/modules/mode-manager/mode-context.js');
+      return !ModeContextInstance.tabOrder.includes(opened);
+    }, {timeout: SHOWS_WITHIN_MS}, opened);
+  });
+  state = await contextsState(here, other);
+  assert.ok(!state.order.includes(opened) && !state.serverOrder.includes(opened), 'a context deleted while the contexts were read: it should not come back');
+  assert.equal(state.otherSearch, 'livechangesovertakenfour');
+}
+
+// The context added for the cases above goes, from the view that made it.
 async function removeAddedContext(here, there, original, added) {
   await there.evaluate(async ({original, added}) => {
     const keyboardEvents = await import('/static/js/modules/mode-manager/events/keyboard-events.js');
@@ -477,6 +593,7 @@ export async function checkLiveChanges(here, browser) {
     const original = (await contextIds(here)).active;
     const {added, tagged} = await clearedWhileFetchingCase(here, there, ids);
     await typedWhileFetchingCase(here, there, ids, tagged);
+    await changedWhileAReadingIsAnsweredCase(here, there, added);
     await removeAddedContext(here, there, original, added);
     await contextsCase(here, there);
     assert.deepEqual(errors, [], 'the other tab should raise no errors');

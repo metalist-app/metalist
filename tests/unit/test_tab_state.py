@@ -103,15 +103,31 @@ def test_a_save_read_before_this_view_made_a_tab_keeps_that_tab() -> None:
     assert saved["tabOrder"] == [tab_id, new_tab_id]
 
 
-def test_a_save_that_leaves_out_a_tab_it_had_read_is_still_refused() -> None:
+def test_a_save_that_leaves_out_a_tab_keeps_it_whatever_version_it_names() -> None:
+    # The tabs are the server's: a copy takes none away (delete_tab does). Refused until
+    # 2026-11-17, when a view whose version an answer to its own change had raised saved a copy
+    # read before another view made a context (the live-changes suite).
     store = TabStateStore()
     first = store.snapshot(view_id=VIEW)
     tab_id = first["activeTabId"]
     created = store.create_tab(view_id=VIEW, is_page=False, copy_from_tab_id=tab_id, copies_view=False)
 
+    saved = store.update(view_id=VIEW, reference_views={}, active_tab_id=tab_id, tabs=first["tabs"],
+                         tab_order=first["tabOrder"], read_at_version=created["version"])
+
+    assert saved["tabOrder"] == [tab_id, created["newTabId"]]
+
+
+def test_a_save_naming_a_tab_the_server_never_had_is_refused() -> None:
+    store = TabStateStore()
+    first = store.snapshot(view_id=VIEW)
+    tab_id = first["activeTabId"]
+    unknown = "30000000-0000-4000-8000-0000000000c1"
+
     with pytest.raises(InputRejected, match="tab ids mismatch"):
-        store.update(view_id=VIEW, reference_views={}, active_tab_id=tab_id, tabs=first["tabs"],
-                     tab_order=first["tabOrder"], read_at_version=created["version"])
+        store.update(view_id=VIEW, reference_views={}, active_tab_id=tab_id,
+                     tabs={**first["tabs"], unknown: dict(first["tabs"][tab_id])},
+                     tab_order=[tab_id, unknown], read_at_version=first["version"])
 
 
 def test_a_tab_keeps_its_untagged_view_across_a_reload_and_a_closed_tab_drops_it() -> None:

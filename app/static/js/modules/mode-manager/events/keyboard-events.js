@@ -4657,7 +4657,14 @@ export async function adoptSharedSearchContexts() {
     // taken as typing again: the search it holds runs as any typed search does. Found 2026-11-15:
     // the box was cleared while the contexts were fetched after an AI answer, and the list kept
     // the old search under an empty box. A context deleted meanwhile takes its typed text with it.
-    if (!isShowingAnotherTab && searchInput.value !== searchBoxBefore) {
+    // A box that reads as the view now does was changed by a choice, not by typing: Untagged
+    // turned on meanwhile empties it, and taking that for typing turned Untagged off again (the
+    // live-changes suite, 2026-11-17).
+    const boxAsTheViewReads = resolveSearchInputDisplayQuery(
+        ModeContext.searchQuery, ModeContext.isUntaggedView, isViewingReferenceSource(),
+    );
+    const wasTypedMeanwhile = searchInput.value !== searchBoxBefore && searchInput.value !== boxAsTheViewReads;
+    if (!isShowingAnotherTab && wasTypedMeanwhile) {
         searchInput.dispatchEvent(new Event('input', { bubbles: true }));
         return;
     }

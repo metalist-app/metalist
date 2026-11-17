@@ -42,6 +42,12 @@ const moduleState = ApplicationState.createFields('tab-state-service', {
     // The search typed in each tab and not yet sent, newest only (sendPendingSearches).
     pendingSearchByTab: Object.create(null),
     pendingSearchRequest: null,
+    // The page's own changes to the tabs (every request but a reading): how many were sent, how
+    // many are unanswered, and, while any is, a promise for the moment none is (changeSent).
+    changesSent: 0,
+    changesUnanswered: 0,
+    whenChangesAnswered: null,
+    announceChangesAnswered: null,
     isScrollPersisting: false,
 });
 
@@ -186,7 +192,7 @@ function recordServerSignature(state) {
 // The server changed searches itself (Rename tag renamed a tag in them, rename_tag.py): the tabs take
 // its state, and later snapshots are read at its version.
 export async function reloadTabStateFromServer() {
-    const serverState = await fetchTabState();
+    const serverState = await fetchTabStateNotOvertaken();
     // The view keeps its place when the tab shown stays; a page the server closed (its notes
     // deleted) gives way to its search, which brings its own.
     const keepsActiveTab = serverState.activeTabId === ModeContext.activeTabId;
@@ -198,6 +204,51 @@ export async function reloadTabStateFromServer() {
 
 async function fetchTabState() {
     return await callTabStateApi('GET', null);
+}
+
+// The page takes the server's answers in order (docs/future-plans/one-writer-refactoring.md, idea
+// 1; interaction principle 2: only the user's action changes the screen). A reading of the tabs is
+// overtaken when a change of the page's own was sent while it was fetched, or when the page took a
+// newer answer meanwhile: it may hold the tabs as they were before, and taking it would put the
+// screen back (found 2026-11-15, the tab-switching suite: Untagged turned on while the tabs were
+// read went off again). It is not taken; the tabs are read again once the page's changes are
+// answered, so what another view changed still arrives. An older version alone is no sign: a
+// restored backup's is, and nothing here is newer than it.
+async function fetchTabStateNotOvertaken() {
+    while (moduleState.whenChangesAnswered !== null) {
+        await moduleState.whenChangesAnswered;
+    }
+    const changesSentBefore = moduleState.changesSent;
+    const versionBefore = ModeContext.tabStateVersion;
+    const serverState = await fetchTabState();
+    const sentAChange = moduleState.changesSent !== changesSentBefore;
+    const tookANewerAnswer = ModeContext.tabStateVersion > versionBefore
+        && serverState.version < ModeContext.tabStateVersion;
+    if (sentAChange || tookANewerAnswer) {
+        return await fetchTabStateNotOvertaken();
+    }
+    return serverState;
+}
+
+function changeSent() {
+    moduleState.changesSent += 1;
+    moduleState.changesUnanswered += 1;
+    if (moduleState.whenChangesAnswered === null) {
+        moduleState.whenChangesAnswered = new Promise(resolve => {
+            moduleState.announceChangesAnswered = resolve;
+        });
+    }
+}
+
+function changeAnswered() {
+    moduleState.changesUnanswered -= 1;
+    if (moduleState.changesUnanswered > 0) {
+        return;
+    }
+    const announce = moduleState.announceChangesAnswered;
+    moduleState.whenChangesAnswered = null;
+    moduleState.announceChangesAnswered = null;
+    announce();
 }
 
 async function callTabStateApi(method, body) {
@@ -214,6 +265,15 @@ async function callTabStateApiAt(endpoint, method, body) {
     if (typeof endpoint !== 'string' || endpoint.length === 0) {
         throw new Error('tab-state endpoint must be a non-empty string');
     }
+    if (method === 'GET') {
+        return await requestTabState(endpoint, method, body);
+    }
+    // Answered or failed, the change is no longer on its way (fetchTabStateNotOvertaken).
+    changeSent();
+    return await requestTabState(endpoint, method, body).finally(changeAnswered);
+}
+
+async function requestTabState(endpoint, method, body) {
     const response = await fetch(endpoint, {
         method,
         headers: buildSessionHeaders(true),

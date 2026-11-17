@@ -15,6 +15,10 @@ async function harness() {
     const apiErrors = [];
     const restoredReferenceTabs = [];
     const hooks = [];
+    // Readings of the tabs held back by a test (holdReads), and the states the page took.
+    const reads = [];
+    const taken = [];
+    let holdsReads = false;
     let timers = 0;
     let serverVersion = 1;
     const payload = {
@@ -23,7 +27,8 @@ async function harness() {
     };
     const context = {
         activeTabId: 'first', tabStateVersion: 0, isLoading: false,
-        hydrateTabState() {}, setTabStateUpdateHook(hook) { hooks.push(hook); }, recordUntaggedViewsFromServer() {},
+        undoContextEpoch: 0, searchQuery: null, clientId: 'this-page',
+        hydrateTabState(state) { taken.push(state); }, setTabStateUpdateHook(hook) { hooks.push(hook); }, recordUntaggedViewsFromServer() {},
         setTabStateVersion(version) { this.tabStateVersion = version; payload.version = version; },
         getTabStatePayload: () => structuredClone(payload),
         shouldIgnoreScrollEvents: () => false,
@@ -39,7 +44,7 @@ async function harness() {
     };
     const dependencies = {
         ApplicationState, ModeContext: context, window, document: { hidden: false },
-        CONFIG: { API: { NOTES: { TAB_STATE: '/tabs', TAB_STATE_SEARCH: '/tabs/search' }, VIRTUAL_FOLDERS: { FOLDER_CONTEXT: '/folder-context', TREE_SHOWN: '/tree-shown' } } },
+        CONFIG: { API: { NOTES: { TAB_STATE: '/tabs', TAB_STATE_SEARCH: '/tabs/search', TAB_STATE_UNTAGGED_VIEW: '/tabs/untagged' }, VIRTUAL_FOLDERS: { FOLDER_CONTEXT: '/folder-context', TREE_SHOWN: '/tree-shown' } } },
         CommandGate: { isBusy: () => false }, buildSessionHeaders: () => ({}),
         computeScrollAnchor: () => null, areScrollAnchorsEqual: (a, b) => a === b,
         restoreReferenceNavigation: (state) => restoredReferenceTabs.push(state.tabs),
@@ -52,10 +57,15 @@ async function harness() {
         ErrorHandler: { handleApiError(_error, response) { apiErrors.push(response.status); } },
         HttpRequestError, AuthenticationRequiredError,
         fetch: async (endpoint, options) => {
+            if (options.method === 'GET' && holdsReads) {
+                return await new Promise(resolve => reads.push({
+                    answer: version => resolve({ ok: true, json: async () => ({ ...structuredClone(payload), version }) }),
+                }));
+            }
             if (options.method === 'GET') return { ok: true, json: async () => structuredClone(payload) };
             const sent = JSON.parse(options.body);
-            // A search asked for by name is answered with the tabs, as every tab-state request is.
-            const answered = endpoint === '/tabs/search' ? structuredClone(payload) : sent;
+            // A change asked for by name is answered with the tabs, as every tab-state request is.
+            const answered = endpoint === '/tabs' ? sent : structuredClone(payload);
             return await new Promise((resolve, reject) => requests.push({
                 endpoint, sent, reject,
                 complete: () => resolve({ ok: true, json: async () => ({ ...answered, version: ++serverVersion }) }),
@@ -64,7 +74,7 @@ async function harness() {
         },
     };
     const service = new Function(...Object.keys(dependencies), `${source}
-        return { initializeTabStateService, persistTabStateSnapshot };`)(...Object.values(dependencies));
+        return { initializeTabStateService, persistTabStateSnapshot, reloadTabStateFromServer, setTabUntaggedViewOnServer };`)(...Object.values(dependencies));
     await service.initializeTabStateService();
     assert.equal(polls.length, 1);
     // Reference views are restored from the freshly loaded server tab state.
@@ -74,7 +84,9 @@ async function harness() {
         payload.tabs[payload.activeTabId].searchQuery = text;
         hooks[0]({ reason: 'searchQuery', payload: structuredClone(payload) });
     };
-    return { service, requests, context, payload, window, poll: polls[0], apiErrors, typeSearch };
+    taken.length = 0;
+    const holdReads = () => { holdsReads = true; };
+    return { service, requests, context, payload, window, poll: polls[0], apiErrors, typeSearch, reads, taken, holdReads };
 }
 
 test('scroll polls cannot overlap a slow save and write the same tab position twice', async () => {
@@ -261,4 +273,110 @@ test('a scroll save refused for another reason still surfaces its error', async 
     h.requests[0].answer(500);
     await rejected;
     assert.deepEqual(h.apiErrors, [500]);
+});
+
+// The page applies the server's answers in order (docs/future-plans/one-writer-refactoring.md,
+// idea 1; cases agreed 2026-11-17). A reading of the tabs asked before a change of the page's own
+// is older than that change: taking it would put the screen back.
+const settle = () => new Promise(setImmediate);
+const VERSION_BEFORE = 1;
+const VERSION_AFTER = 2;
+const VERSION_LATER = 3;
+
+test('a reading with nothing changed meanwhile is taken as it is', async () => {
+    const h = await harness();
+    h.holdReads();
+    const reading = h.service.reloadTabStateFromServer();
+    await settle();
+    h.reads[0].answer(VERSION_BEFORE);
+    await reading;
+    assert.equal(h.reads.length, 1);
+    assert.deepEqual(h.taken.map(state => state.version), [VERSION_BEFORE]);
+});
+
+test('a reading answered after a change of the page is not taken, and is asked again', async () => {
+    const h = await harness();
+    h.holdReads();
+    const reading = h.service.reloadTabStateFromServer();
+    await settle();
+    const change = h.service.setTabUntaggedViewOnServer('first', true);
+    await settle();
+    h.requests[0].complete();
+    await change;
+    assert.equal(h.context.tabStateVersion, VERSION_AFTER);
+    h.reads[0].answer(VERSION_BEFORE);
+    await settle();
+    assert.deepEqual(h.taken, [], 'the older reading is not taken');
+    assert.equal(h.reads.length, 2, 'the tabs are asked for again');
+    h.reads[1].answer(VERSION_AFTER);
+    await reading;
+    assert.deepEqual(h.taken.map(state => state.version), [VERSION_AFTER]);
+    assert.equal(h.context.tabStateVersion, VERSION_AFTER);
+});
+
+test('a reading answered while a change of the page is on its way waits for the change', async () => {
+    const h = await harness();
+    h.holdReads();
+    const reading = h.service.reloadTabStateFromServer();
+    await settle();
+    const change = h.service.setTabUntaggedViewOnServer('first', true);
+    await settle();
+    h.reads[0].answer(VERSION_BEFORE);
+    await settle();
+    assert.deepEqual(h.taken, [], 'the reading asked before the change is not taken');
+    assert.equal(h.reads.length, 1, 'and is asked again only once the change is answered');
+    h.requests[0].complete();
+    await change;
+    await settle();
+    assert.equal(h.reads.length, 2);
+    h.reads[1].answer(VERSION_AFTER);
+    await reading;
+    assert.deepEqual(h.taken.map(state => state.version), [VERSION_AFTER]);
+});
+
+test('a reading asked while a change of the page is on its way is sent after its answer', async () => {
+    const h = await harness();
+    h.holdReads();
+    const change = h.service.setTabUntaggedViewOnServer('first', true);
+    await settle();
+    const reading = h.service.reloadTabStateFromServer();
+    await settle();
+    assert.equal(h.reads.length, 0);
+    h.requests[0].complete();
+    await change;
+    await settle();
+    assert.equal(h.reads.length, 1);
+    h.reads[0].answer(VERSION_AFTER);
+    await reading;
+    assert.deepEqual(h.taken.map(state => state.version), [VERSION_AFTER]);
+});
+
+test('of two readings, the older answered last is not taken over the newer', async () => {
+    const h = await harness();
+    h.holdReads();
+    const older = h.service.reloadTabStateFromServer();
+    const newer = h.service.reloadTabStateFromServer();
+    await settle();
+    h.reads[1].answer(VERSION_LATER);
+    await newer;
+    h.reads[0].answer(VERSION_AFTER);
+    await settle();
+    assert.deepEqual(h.taken.map(state => state.version), [VERSION_LATER]);
+    assert.equal(h.reads.length, 3);
+    h.reads[2].answer(VERSION_LATER);
+    await older;
+    assert.deepEqual(h.taken.map(state => state.version), [VERSION_LATER, VERSION_LATER]);
+});
+
+test('a reading from a server whose version went back is taken: nothing here is newer', async () => {
+    // A restored backup holds an earlier version; the page took no answer meanwhile.
+    const h = await harness();
+    h.context.setTabStateVersion(VERSION_LATER);
+    h.holdReads();
+    const reading = h.service.reloadTabStateFromServer();
+    await settle();
+    h.reads[0].answer(VERSION_BEFORE);
+    await reading;
+    assert.equal(h.reads.length, 1);
+    assert.deepEqual(h.taken.map(state => state.version), [VERSION_BEFORE]);
 });

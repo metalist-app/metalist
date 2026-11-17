@@ -18,8 +18,8 @@ Each of these was a real bug, found only because a browser suite happened to hit
 | --- | --- |
 | A search typed after an AI answer was thrown away | The user's typing and a re-read of the contexts already under way |
 | The page redrew itself a second after a click into or out of the search box | The view's own search lock, counted as a change made elsewhere |
-| "tab ids mismatch", refused by the server | A whole-copy save read before the view made a new tab |
-| The Untagged view turned itself off (`tab-switching`, not yet fixed) | A setting just changed and a re-read of the contexts begun before it |
+| "tab ids mismatch", refused by the server (ended 2026-11-17: a copy that leaves a tab out keeps it) | A whole-copy save read before the view made a new tab |
+| The Untagged view turned itself off (`tab-switching`; fixed 2026-11-17, idea 4's first part) | A setting just changed and a re-read of the contexts begun before it |
 | A tap on a sort option did nothing | A command arriving while another ran is dropped |
 | The first characters typed after a click in the tag bar were lost | Typing and a tidy-up scheduled by the click |
 
@@ -82,6 +82,8 @@ Run both GitHub workflows on the branch at each checkpoint, before it merges. Th
 ### 4. In the browser: apply the server's answers in order
 
 What is left for the page once the server owns the contexts is a thin rule: answers are applied in the order the server made them, and one that is older than what the page already shows is dropped. Commands wait their turn instead of being dropped when another is running; which commands should not run late (a click meant for a list that has since changed) is decided once, in that rule.
+
+**Built 2026-11-17, for the re-read of the tabs:** a re-read (`reloadTabStateFromServer`) that a change of the page's own overtook, or that is older than an answer the page took meanwhile, is not applied; the tabs are read again once the page's changes are answered (`tab-state-service.js`, `fetchTabStateNotOvertaken`). The server's side of it: every change a view can see raises the version (`tests/unit/test_tab_state_version_rises.py`). Checked in `tests/unit/tab_state_service.test.mjs` and, with the re-read's answer held back, in the `live-changes` browser suite (Untagged, sort order, a context opened, a context deleted). Not yet: the answers to the page's own actions, applied in about ten places, and commands waiting their turn.
 
 Before the second pass this was the main proposal: a queue in the browser through which every change to the page's state passes, with one function applying them. That is still the right shape, but it is now a small piece, days of work, because the conflicts it was meant to referee are gone. The store that refuses a value set twice (`application-state.js`) keeps its purpose for commands; values observed from outside (a clock reading, a server answer) are simply applied.
 
