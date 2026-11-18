@@ -24,7 +24,6 @@ from app.api.note_requests import (
     ViewDiffRequest,
     FindFileSnippetRequest,
     FindInListRequest,
-    UpdateTabStateRequest,
     UpdateTabDateFilterRequest,
     UpdateTabFileFilterRequest,
     UpdateTabUntaggedViewRequest,
@@ -526,38 +525,6 @@ ViewId = Annotated[str, Header(alias="X-Metalist-Tab-Id")]
 @one_step_read_route
 def get_tab_state(view_id: ViewId) -> Dict[str, object]:
     return tab_state_store.snapshot(view_id=view_id)
-
-
-@router.post("/notes/tab-state")
-@transactional_route
-def update_tab_state(payload: UpdateTabStateRequest, view_id: ViewId) -> Dict[str, object]:
-    if (
-        "activeTabId" not in payload or "tabs" not in payload or "tabOrder" not in payload
-        or "referenceViews" not in payload or "version" not in payload
-    ):
-        raise HTTPException(
-            status_code=HTTPStatus.BAD_REQUEST,
-            detail="activeTabId, tabs, tabOrder, referenceViews, and version are required",
-        )
-    # The copy's activeTabId is not read: a view asks for the tab it shows by name (show_tab).
-    tabs = payload["tabs"]
-    tab_order = payload["tabOrder"]
-    reference_views = payload["referenceViews"]
-    if not isinstance(tab_order, list):
-        raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail="tabOrder must be a list")
-    tab_order_list = [str(entry) for entry in tab_order]
-    capture = CapturedExceptionContext(InputRejected, boundary='app/api/routes/notes.py:update_tab_state:capture')
-    with capture:
-        response = tab_state_store.update(
-            view_id=view_id, tabs=tabs, tab_order=tab_order_list, reference_views=reference_views,
-            read_at_version=payload["version"],
-        )
-    # Another view types this search: said calmly, as rejected input (multi-view step 4).
-    if isinstance(capture.captured_exception, SearchLockedElsewhere):
-        raise capture.captured_exception
-    if capture.captured_exception is not None:
-        raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail="Invalid or stale tab state") from capture.captured_exception
-    return response
 
 
 @router.post("/notes/tab-state/search-lock/release")

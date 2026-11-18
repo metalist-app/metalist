@@ -19,7 +19,7 @@ from app.security.encryption import set_encryption_required
 from app.services import tab_state as tab_state_module
 from app.services.input_errors import InputRejected
 from app.services.tab_state import TabStateStore
-from tests.unit.tab_copy_saving import save_as_the_page_does
+from tests.unit.tab_place_saving import save_as_the_page_does
 
 # The view (a browser tab) the tests act in (multi-view editing step 2).
 VIEW = "10000000-0000-4000-8000-0000000000ee"
@@ -52,13 +52,12 @@ def _bootstrapped_copy() -> TabStateStore:
 
 
 def _save(store: TabStateStore, *, active: str, searches: dict[str, str]) -> dict[str, object]:
-    """What the browser sends: each search typed and the context shown, by name, then its copy."""
+    """What the browser sends: each search typed and the context shown, by name, then its scroll."""
     for tab_id, search in searches.items():
         store.set_search(view_id=VIEW, tab_id=tab_id, search_query=search)
     store.show_tab(view_id=VIEW, tab_id=active)
     snapshot = store.snapshot(view_id=VIEW)
-    return save_as_the_page_does(store, view_id=VIEW, reference_views={}, tabs=snapshot["tabs"],
-                        tab_order=snapshot["tabOrder"], read_at_version=snapshot["version"])
+    return save_as_the_page_does(store, view_id=VIEW, reference_views={}, tabs=snapshot["tabs"], read_at_version=snapshot["version"])
 
 
 # §1: the folders tab shows or hides the tree, nothing else; a restart keeps it.

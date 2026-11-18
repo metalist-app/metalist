@@ -394,7 +394,7 @@ test('a reading from a server whose version went back is taken: nothing here is 
 });
 
 // The server owns the tab each view shows (idea 1; cases agreed 2026-11-17): the page asks for it
-// by name, and its copy of the tabs carries none the server takes.
+// by name, and sends no copy of its tabs.
 test('a tab shown is asked for by name, and no copy of the tabs follows', async () => {
     const h = await harness();
     h.showTab('second');
@@ -442,7 +442,7 @@ test('the tab shown is asked for once, not again with every save', async () => {
 });
 
 // The server owns the order of the tabs (idea 1; cases agreed 2026-11-17): the page asks for a
-// move by name, and its copy of the tabs carries no order the server takes.
+// move by name, and sends no copy of its tabs.
 test('a tab moved is asked for by name, once, and no copy of the tabs follows', async () => {
     const h = await harness();
     h.moveTab(['second', 'first']);

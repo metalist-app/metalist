@@ -19,7 +19,7 @@ from app.services.root_date_filter import DATE_RANGE_TODAY, make_root_date_filte
 from app.services.root_date_filter import OPEN_DATE
 from app.services.root_sorting import SORT_MODE_CREATED
 from app.services.tab_state import TabStateStore
-from tests.unit.tab_copy_saving import save_as_the_page_does
+from tests.unit.tab_place_saving import save_as_the_page_does
 
 MAC = "10000000-0000-4000-8000-0000000000b1"
 PHONE = "10000000-0000-4000-8000-0000000000b2"
@@ -54,7 +54,7 @@ def _save_copy(store: TabStateStore, view: str, change: Callable[[dict], None]) 
     change(copy)
     # The tab shown is asked for by name; the copy carries the rest.
     store.show_tab(view_id=view, tab_id=copy["activeTabId"])
-    save_as_the_page_does(store, view_id=view, tabs=copy["tabs"], tab_order=copy["tabOrder"],
+    save_as_the_page_does(store, view_id=view, tabs=copy["tabs"],
         reference_views=copy["referenceViews"], read_at_version=copy["version"],
     )
 

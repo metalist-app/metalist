@@ -486,12 +486,12 @@ ModeContext = {
   state after the preceding response updates the version/signature. Failure
   releases the pending request and still propagates. Scrolling or switching tabs
   during a save is picked up by the next poll, without duplicate completion writes.
-- A snapshot save is read before it is sent, so one read before a sort order, date
+- A scroll is measured before it is sent, so one measured before a sort order, date
   range or Files filter changes can reach the server after it (seen under parallel
-  browser-suite load, 2026-10-25). The snapshot carries the `version` the browser
-  had; `TabStateStore.update` never takes a tab's `sortMode` from it (only the
-  sort-mode endpoint sets it) and drops its scroll (`scrollY`, `scrollAnchor`,
-  `anchorRootId`) for a tab whose scroll restarted at a later version. Without
+  browser-suite load, 2026-10-25). The scroll request carries the `version` the browser
+  had; `TabStateStore.set_scroll` takes no scroll (`scrollY`, `scrollAnchor`,
+  `anchorRootId`) for a tab whose scroll restarted at a later version, and only the
+  sort-mode endpoint sets a tab's `sortMode`. Without
   that, the tab went back to the old order on the server, also after a reload.
 - **Refreshes in flight.** A refresh asked for while another view request is in flight
   waits for it (`waitForViewRequestIdle`, failing loudly after 5 s), then runs:

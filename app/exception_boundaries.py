@@ -82,8 +82,6 @@ CAPTURE_BOUNDARIES = {
     # Translate explicitly validated domain input/resource rejection.
     'app/api/routes/notes.py:update_tab_sort_mode:capture': ('InputRejected',),
     # Translate explicitly validated domain input/resource rejection.
-    'app/api/routes/notes.py:update_tab_state:capture': ('InputRejected',),
-    # Translate explicitly validated domain input/resource rejection.
     'app/api/routes/notes.py:view_diff:capture': ('InputRejected',),
     # Parse external host, URL, IP or date input at the named boundary.
     'app/api/routes/reminders.py:_parse_date_field:capture': ('ValueError',),

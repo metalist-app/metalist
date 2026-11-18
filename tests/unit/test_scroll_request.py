@@ -1,6 +1,6 @@
 """The server takes a view's scroll in a tab by name (docs/future-plans/one-writer-refactoring.md,
-idea 1). A view says "my scroll in tab X is now here" (TabStateStore.set_scroll); the save of its
-whole copy of the tabs (update) carries its reference pages, and never a scroll the server takes.
+idea 1). A view says "my scroll in tab X is now here" (TabStateStore.set_scroll); the server
+takes no copy of a view's tabs, so nothing else changes a scroll.
 The cases agreed 2026-11-17 are numbered in the comments."""
 
 from __future__ import annotations
@@ -17,6 +17,7 @@ from app.services.input_errors import InputRejected
 from app.services.root_date_filter import DATE_RANGE_TODAY, OPEN_DATE, make_root_date_filter
 from app.services.root_sorting import SORT_MODE_CREATED
 from app.services.tab_state import TabStateStore
+from tests.unit.tab_place_saving import save_as_the_page_does
 
 MAC = "10000000-0000-4000-8000-0000000000e1"
 PHONE = "10000000-0000-4000-8000-0000000000e2"
@@ -59,13 +60,6 @@ def _scroll(store: TabStateStore, view: str, tab_id: str, scroll_y: int) -> dict
 
 def _scroll_of(store: TabStateStore, view: str, tab_id: str) -> int:
     return store.snapshot(view_id=view)["tabs"][tab_id]["scrollY"]
-
-
-def _save_copy(store: TabStateStore, view: str, copy: dict) -> dict:
-    return store.update(
-        view_id=view, tabs=copy["tabs"], tab_order=copy["tabOrder"],
-        reference_views=copy["referenceViews"], read_at_version=copy["version"],
-    )
 
 
 def _restarted() -> TabStateStore:
@@ -252,18 +246,6 @@ def test_a_scroll_at_the_top_of_a_context_never_scrolled_changes_nothing() -> No
 
     assert answer["changed"] is False
     assert answer["version"] == version
-
-
-def test_a_scroll_in_a_saved_copy_is_never_taken() -> None:
-    store = TabStateStore()
-    groceries, _recipes = _two_contexts(store)
-    _scroll(store, MAC, groceries, SCROLLED)
-
-    copy = store.snapshot(view_id=MAC)
-    copy["tabs"][groceries]["scrollY"] = SCROLLED_ELSEWHERE
-    _save_copy(store, MAC, copy)
-
-    assert _scroll_of(store, MAC, groceries) == SCROLLED
 
 
 # Case 8: duplicate a context.

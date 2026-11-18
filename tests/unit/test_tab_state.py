@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from app.api.routes import notes as notes_routes
 from app.db.session import begin_writer
 from app.db.tab_state_sql import upsert_tab_state_row
 from app.models.database import SafeSession
@@ -13,7 +14,7 @@ from app.security.encryption import set_encryption_required
 from app.services.input_errors import InputRejected
 from app.services.root_date_filter import make_root_date_filter
 from app.services.tab_state import TabStateStore
-from tests.unit.tab_copy_saving import save_as_the_page_does
+from tests.unit.tab_place_saving import save_as_the_page_does
 
 # The view (a browser tab) the tests act in (multi-view editing step 2).
 VIEW = "10000000-0000-4000-8000-0000000000ee"
@@ -88,53 +89,10 @@ def test_a_new_tab_starts_with_nothing() -> None:
     assert created["untaggedViews"] == [source_tab_id]
 
 
-def test_a_save_read_before_this_view_made_a_tab_keeps_that_tab() -> None:
-    # Found 2026-11-15: a view saved its tabs (taking a change made in another view) while it was
-    # making a new tab; the save, read before the new tab, could not name it and was refused.
-    store = TabStateStore()
-    before = store.snapshot(view_id=VIEW)
-    tab_id = before["activeTabId"]
-    created = store.create_tab(view_id=VIEW, is_page=False, copy_from_tab_id=tab_id, copies_view=False)
-    new_tab_id = created["newTabId"]
-
-    saved = save_as_the_page_does(store, view_id=VIEW, reference_views={}, tabs=before["tabs"],
-                         tab_order=before["tabOrder"], read_at_version=before["version"])
-
-    assert new_tab_id in saved["tabs"]
-    assert saved["tabOrder"] == [tab_id, new_tab_id]
-
-
-def test_a_save_that_leaves_out_a_tab_keeps_it_whatever_version_it_names() -> None:
-    # The tabs are the server's: a copy takes none away (delete_tab does). Refused until
-    # 2026-11-17, when a view whose version an answer to its own change had raised saved a copy
-    # read before another view made a context (the live-changes suite).
-    store = TabStateStore()
-    first = store.snapshot(view_id=VIEW)
-    tab_id = first["activeTabId"]
-    created = store.create_tab(view_id=VIEW, is_page=False, copy_from_tab_id=tab_id, copies_view=False)
-
-    saved = save_as_the_page_does(store, view_id=VIEW, reference_views={}, tabs=first["tabs"],
-                         tab_order=first["tabOrder"], read_at_version=created["version"])
-
-    assert saved["tabOrder"] == [tab_id, created["newTabId"]]
-
-
-def test_a_save_naming_a_tab_the_server_never_had_is_refused() -> None:
-    store = TabStateStore()
-    first = store.snapshot(view_id=VIEW)
-    tab_id = first["activeTabId"]
-    unknown = "30000000-0000-4000-8000-0000000000c1"
-
-    with pytest.raises(InputRejected, match="tab ids mismatch"):
-        store.update(view_id=VIEW, reference_views={}, tabs={**first["tabs"], unknown: dict(first["tabs"][tab_id])},
-                     tab_order=[tab_id, unknown], read_at_version=first["version"])
-
-
 def test_a_tab_keeps_its_untagged_view_across_a_reload_and_a_closed_tab_drops_it() -> None:
     store = TabStateStore()
     tab_id = store.snapshot(view_id=VIEW)["activeTabId"]
-    save_as_the_page_does(store, view_id=VIEW, reference_views={}, tabs={tab_id: {**store.snapshot(view_id=VIEW)["tabs"][tab_id], "scrollY": 120}},
-                 tab_order=[tab_id], read_at_version=store.snapshot(view_id=VIEW)["version"])
+    save_as_the_page_does(store, view_id=VIEW, reference_views={}, tabs={tab_id: {**store.snapshot(view_id=VIEW)["tabs"][tab_id], "scrollY": 120}}, read_at_version=store.snapshot(view_id=VIEW)["version"])
 
     result = store.set_untagged_view(view_id=VIEW, tab_id=tab_id, is_untagged_view=True)
     assert result["changed"] is True
@@ -173,9 +131,8 @@ def test_set_sort_mode_resets_scroll_state_and_marks_change() -> None:
         "beltNext": [],
         "anchorSortKey": {"domIndex": 0},
     }
-    save_as_the_page_does(store, view_id=VIEW, reference_views={}, 
+    save_as_the_page_does(store, view_id=VIEW, reference_views={},
         tabs=payload,
-        tab_order=snapshot["tabOrder"],
         read_at_version=snapshot["version"],
     )
 
@@ -236,9 +193,8 @@ def test_bootstrap_restores_persisted_tab_state() -> None:
         "beltNext": ["root-2"],
         "anchorSortKey": {"domIndex": 3},
     }
-    persisted = save_as_the_page_does(store, view_id=VIEW, reference_views={}, 
+    persisted = save_as_the_page_does(store, view_id=VIEW, reference_views={},
         tabs=payload,
-        tab_order=initial["tabOrder"],
         read_at_version=initial["version"],
     )
 
@@ -333,8 +289,8 @@ def test_snapshot_read_before_a_view_change_keeps_the_new_order_and_its_top(rest
     restart_view(store, tab_id)
     sort_mode = store.get_sort_mode(tab_id=tab_id)
 
-    saved = save_as_the_page_does(store, view_id=VIEW, 
-        reference_views={}, tabs=stale["tabs"], tab_order=stale["tabOrder"],
+    saved = save_as_the_page_does(store, view_id=VIEW,
+        reference_views={}, tabs=stale["tabs"],
         read_at_version=stale["version"],
     )
 
@@ -346,8 +302,8 @@ def test_snapshot_read_before_a_view_change_keeps_the_new_order_and_its_top(rest
     fresh = store.snapshot(view_id=VIEW)
     fresh["tabs"][tab_id].update(_OLD_VIEW_SCROLL)
     fresh["tabs"][tab_id]["sortMode"] = "normal"
-    moved = save_as_the_page_does(store, view_id=VIEW, 
-        reference_views={}, tabs=fresh["tabs"], tab_order=fresh["tabOrder"],
+    moved = save_as_the_page_does(store, view_id=VIEW,
+        reference_views={}, tabs=fresh["tabs"],
         read_at_version=fresh["version"],
     )
     assert moved["tabs"][tab_id]["sortMode"] == sort_mode
@@ -359,23 +315,23 @@ def test_unchanged_update_keeps_version_and_skips_persistence(monkeypatch: pytes
     snapshot = store.snapshot(view_id=VIEW)
     tab_id = snapshot["activeTabId"]
     snapshot["tabs"][tab_id]["scrollY"] = 120
-    changed = save_as_the_page_does(store, view_id=VIEW, 
-        reference_views={}, tabs=snapshot["tabs"], tab_order=snapshot["tabOrder"],
+    changed = save_as_the_page_does(store, view_id=VIEW,
+        reference_views={}, tabs=snapshot["tabs"],
         read_at_version=snapshot["version"],
     )
     writes: list[bool] = []
     monkeypatch.setattr(store, "_persist_locked", lambda **_kwargs: writes.append(True))
 
-    unchanged = save_as_the_page_does(store, view_id=VIEW, 
-        reference_views={}, tabs=changed["tabs"], tab_order=changed["tabOrder"],
+    unchanged = save_as_the_page_does(store, view_id=VIEW,
+        reference_views={}, tabs=changed["tabs"],
         read_at_version=changed["version"],
     )
 
     assert unchanged["version"] == changed["version"]
     assert writes == []
     changed["tabs"][tab_id]["scrollY"] = 240
-    moved = save_as_the_page_does(store, view_id=VIEW, 
-        reference_views={}, tabs=changed["tabs"], tab_order=changed["tabOrder"],
+    moved = save_as_the_page_does(store, view_id=VIEW,
+        reference_views={}, tabs=changed["tabs"],
         read_at_version=changed["version"],
     )
     assert moved["version"] == changed["version"] + 1
@@ -396,3 +352,15 @@ def test_tab_state_saved_before_folders_were_kept_has_none() -> None:
     stored = json.dumps({key: snapshot[key] for key in ("activeTabId", "tabs", "tabOrder", "version")})
     assert store._deserialize_snapshot_json(stored)["folderFilters"] == {}
     assert store._deserialize_snapshot_json(stored)["treeShown"] is False
+
+
+# The server takes no copy of a view's tabs (docs/future-plans/one-writer-refactoring.md, idea 1,
+# removed 2026-11-18): each change of a view's place has its own request, and a copy posted by an
+# older page is refused (405, the path answers GET only).
+def test_the_server_takes_no_copy_of_a_views_tabs() -> None:
+    methods = {
+        method for route in notes_routes.router.routes if route.path == "/notes/tab-state"
+        for method in route.methods
+    }
+    assert methods == {"GET"}
+    assert not hasattr(TabStateStore, "update")

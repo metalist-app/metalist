@@ -1,7 +1,7 @@
 """The server takes a view's reference pages by name (docs/future-plans/one-writer-refactoring.md,
 idea 1). A view says "this tab of mine is a reference page showing R, opened from tab F"
 (TabStateStore.set_reference_page); closing the tab ends the page, and so does another search in
-it. The save of a view's whole copy of the tabs is no longer what carries them. The cases agreed
+it. The server takes no copy of a view's tabs. The cases agreed
 2026-11-18 are numbered in the comments."""
 
 from __future__ import annotations

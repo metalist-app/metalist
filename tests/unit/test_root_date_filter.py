@@ -23,6 +23,7 @@ from app.services.root_date_filter import (
     make_root_date_filter,
 )
 from app.services.tab_state import TabStateStore
+from tests.unit.tab_place_saving import save_as_the_page_does
 
 # The view (a browser tab) the tests act in (multi-view editing step 2).
 VIEW = "10000000-0000-4000-8000-0000000000ee"
@@ -89,8 +90,8 @@ def test_a_tab_keeps_its_range_across_a_reload_and_starts_again_at_its_top(memor
     initial = store.snapshot(view_id=VIEW)
     tab_id = initial["activeTabId"]
     initial["tabs"][tab_id]["scrollY"] = 250
-    store.update(view_id=VIEW, 
-        reference_views={}, tabs=initial["tabs"], tab_order=initial["tabOrder"],
+    save_as_the_page_does(store, view_id=VIEW,
+        reference_views={}, tabs=initial["tabs"],
         read_at_version=initial["version"],
     )
 

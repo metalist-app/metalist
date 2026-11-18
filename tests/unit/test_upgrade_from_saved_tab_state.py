@@ -17,6 +17,7 @@ from app.db.tab_state_sql import upsert_tab_state_row
 from app.models.database import SafeSession
 from app.security.encryption import set_encryption_required
 from app.services.tab_state import TabStateStore
+from tests.unit.tab_place_saving import save_as_the_page_does
 
 # The view (a browser tab) the tests act in (multi-view editing step 2).
 VIEW = "10000000-0000-4000-8000-0000000000ee"
@@ -87,7 +88,7 @@ def test_the_browser_saves_them_back_as_this_version_keeps_pages() -> None:
         "fromTabId": CSV_BACKLINKS, "referenceQuery": CSV_NOTE, "viewKind": "source",
         "originScope": copy.deepcopy(views[CSV_BACKLINKS]["originScope"]),
     }
-    store.update(view_id=VIEW, tabs=state["tabs"], tab_order=state["tabOrder"],
+    save_as_the_page_does(store, view_id=VIEW, tabs=state["tabs"],
                  reference_views=views, read_at_version=state["version"])
 
     assert store.snapshot(view_id=VIEW)["referenceViews"] == views

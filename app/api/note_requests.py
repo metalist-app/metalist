@@ -64,14 +64,6 @@ SortMode = Literal[
 ]
 
 @with_config(ConfigDict(strict=True))
-class Tab(TypedDict):
-    searchQuery: Text
-    scrollY: Nonnegative
-    anchorRootId: Text | None
-    scrollAnchor: ScrollAnchor | None
-    sortMode: SortMode
-
-@with_config(ConfigDict(strict=True))
 class ViewDiffRequest(TypedDict):
     clientId: Identifier
     editingNoteId: Text | None
@@ -107,23 +99,6 @@ class ReferenceOriginScope(TypedDict):
     searchQuery: Text
     sortMode: SortMode
     isUntaggedView: bool
-
-# A tab showing a reference view, opened from another tab (app/services/tab_state.py).
-@with_config(ConfigDict(strict=True))
-class ReferenceView(TypedDict):
-    fromTabId: Identifier
-    referenceQuery: Text
-    viewKind: Literal['source', 'backlinks', 'reference', 'references']
-    originScope: ReferenceOriginScope
-
-@with_config(ConfigDict(strict=True))
-class UpdateTabStateRequest(TypedDict):
-    activeTabId: Identifier
-    tabs: dict[Identifier, Tab]
-    tabOrder: list[Identifier]
-    referenceViews: dict[Identifier, ReferenceView]
-    # The tab-state version the browser had when it read this snapshot.
-    version: Nonnegative
 
 @with_config(ConfigDict(strict=True))
 class UpdateTabSortModeRequest(TypedDict):

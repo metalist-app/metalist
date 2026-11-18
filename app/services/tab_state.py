@@ -758,74 +758,6 @@ class TabStateStore:
         assert contexts, "closing pages leaves the search contexts they were opened from"
         return contexts[0]
 
-    def update(
-        self,
-        *,
-        view_id: str,
-        tabs: Dict[str, Dict[str, object]],
-        tab_order: List[str],
-        reference_views: object,
-        read_at_version: int,
-    ) -> Dict[str, object]:
-        """Save a view's copy of its tabs, read when its state was at read_at_version (the last
-        version it received): its reference pages. The tab it shows, a search, the order of the
-        tabs and its scroll in each are never taken from the copy: the view asks for each by name
-        (show_tab, set_search, move_tab, set_scroll), so no copy, late or stale, can move the view
-        back, put an old search back or undo another view's move. Tabs the copy leaves out are kept."""
-        if not isinstance(read_at_version, int) or read_at_version < 0:
-            raise InputRejected("version must be a non-negative integer")
-        normalized_tabs = self._normalize_tabs(tabs, from_storage=False)
-        # The copy's order is checked as part of the copy, and not taken (move_tab).
-        self._normalize_tab_order(tab_order, normalized_tabs)
-        normalized_reference_views = _normalize_reference_views(
-            reference_views, normalized_tabs, from_storage=False,
-        )
-        with self._lock:
-            self._try_decrypt_locked(token="", require_success=True)
-            place = self._place_locked(view_id)
-            # Saved before the view heard that tabs were deleted or pages closed: taken without them.
-            gone_meanwhile = set(normalized_tabs) & self._gone_tab_ids
-            if gone_meanwhile:
-                normalized_tabs = {tab_id: entry for tab_id, entry in normalized_tabs.items() if tab_id not in gone_meanwhile}
-                normalized_reference_views = _normalize_reference_views(
-                    normalized_reference_views, normalized_tabs, from_storage=False,
-                )
-            # The tabs are the server's: a copy that leaves one out takes none away (delete_tab
-            # does), whatever version it names. A view's version rises with the answers to its own
-            # changes, which bring it no tab another view made meanwhile (2026-11-15: a save raced
-            # the view's own new tab; 2026-11-17: a save after a typed search left out another
-            # view's new context). A tab the server never had is no tab of its.
-            if not set(normalized_tabs) <= set(self._visible_tab_ids_locked(view_id)):
-                raise InputRejected("tab ids mismatch; use tab-state new/delete endpoints")
-            for tab_id in normalized_reference_views:
-                if tab_id in self._page_owners and self._page_owners[tab_id] != view_id:
-                    raise InputRejected("a reference page belongs to another view")
-
-            was = (
-                deepcopy(self._tabs), list(self._tab_order), deepcopy(place["scroll"]),
-                deepcopy(place["referenceViews"]), place["activeTabId"], dict(self._page_owners), self._last_used_tab_id,
-            )
-            # A tab of note ids the view took as a page (adoptOrphanReferenceTabs) becomes its own.
-            for tab_id in normalized_reference_views:
-                if tab_id not in self._page_owners:
-                    self._page_owners[tab_id] = view_id
-            place["referenceViews"] = normalized_reference_views
-            # A view saving its place is using the context it shows (a new view starts there).
-            shown = self._active_tab_of_locked(view_id, place)
-            if shown not in self._page_owners:
-                self._last_used_tab_id = shown
-            now = (
-                self._tabs, self._tab_order, place["scroll"], place["referenceViews"], place["activeTabId"],
-                self._page_owners, self._last_used_tab_id,
-            )
-            # Scroll persistence posts about once a second; unchanged state must not re-encrypt
-            # and rewrite the row. The view accepts the same version.
-            if was == now:
-                return self._snapshot_locked(view_id)
-            self._version += 1
-            self._persist_locked(connection=None, encryption_service=None, force_plaintext=False)
-            return self._snapshot_locked(view_id)
-
     def set_scroll(self, *, view_id: str, tab_id: str, scroll: Dict[str, object], read_at_version: int) -> Dict[str, object]:
         """This view's scroll in tab_id is now scroll (_TAB_SCROLL_KEYS), measured when the view's
         state was at read_at_version: the one way a view's scroll in a tab changes
@@ -1035,8 +967,8 @@ class TabStateStore:
 
     def show_tab(self, *, view_id: str, tab_id: str) -> Dict[str, object]:
         """This view now shows tab_id, as it asks: the one way a view changes the tab it shows
-        (docs/future-plans/one-writer-refactoring.md, idea 1). Its scroll in the tab comes with
-        its copy (update), as before."""
+        (docs/future-plans/one-writer-refactoring.md, idea 1). Its scroll in the tab is asked for by
+        name too (set_scroll)."""
         if not isinstance(tab_id, str) or not tab_id:
             raise InputRejected("tabId must be a non-empty string")
         with self._lock:
@@ -1200,7 +1132,7 @@ class TabStateStore:
         """The search of tab_id is now search_query, as this view asks: the one way a view changes
         a search (docs/future-plans/one-writer-refactoring.md, idea 1). Refused while another view
         types that search, else this view's to type for a few seconds (multi-view step 4, case 10).
-        The view's scroll in the tab comes with its copy (update), as before."""
+        The view's scroll in the tab is asked for by name too (set_scroll)."""
         if not isinstance(tab_id, str) or not tab_id:
             raise InputRejected("tabId must be a non-empty string")
         if not isinstance(search_query, str):

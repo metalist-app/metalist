@@ -16,6 +16,7 @@ from app.services.ontology_rules_store import bootstrap_ontology_rules_store
 from app.services.tab_state import tab_state_store
 from app.usecases.create_note import apply_insert_note
 from app.usecases.delete_subtree import apply_delete_subtree
+from tests.unit.tab_place_saving import save_as_the_page_does
 
 # The view (a browser tab) the tests act in (multi-view editing step 2).
 VIEW = "10000000-0000-4000-8000-0000000000ee"
@@ -59,21 +60,19 @@ def _open_pages(foo_search: str, pages: list[tuple[str, str]]) -> tuple[str, lis
     one shown. Returns foo's tab and the pages' tabs."""
     state = tab_state_store.snapshot(view_id=VIEW)
     foo = state["activeTabId"]
-    page_tabs = [tab_state_store.create_tab(view_id=VIEW, is_page=False, copy_from_tab_id=foo, copies_view=False)["newTabId"] for _ in pages]
+    tab_state_store.set_search(view_id=VIEW, tab_id=foo, search_query=foo_search)
+    page_tabs = [tab_state_store.create_tab(view_id=VIEW, is_page=True, copy_from_tab_id=foo, copies_view=False)["newTabId"] for _ in pages]
     state = tab_state_store.snapshot(view_id=VIEW)
-    tabs = state["tabs"]
-    tabs[foo]["searchQuery"] = foo_search
     views = {}
     from_tab = foo
     for page_tab, (query, kind) in zip(page_tabs, pages):
-        tabs[page_tab]["searchQuery"] = query
         views[page_tab] = {
             "fromTabId": from_tab, "referenceQuery": query, "viewKind": kind,
             "originScope": {"scopeTabId": foo, "searchQuery": foo_search, "sortMode": "normal", "isUntaggedView": False},
         }
         from_tab = page_tab
-    tab_state_store.update(view_id=VIEW, tabs=tabs, tab_order=state["tabOrder"],
-                           reference_views=views, read_at_version=state["version"])
+    save_as_the_page_does(tab_state_store, view_id=VIEW, tabs={}, reference_views=views,
+                          read_at_version=state["version"])
     assert set(tab_state_store.snapshot(view_id=VIEW)["referenceViews"]) == set(page_tabs)
     return foo, page_tabs
 
@@ -135,8 +134,8 @@ def test_a_save_still_naming_a_closed_page_is_taken_without_it(notes) -> None:
     browser_copy = tab_state_store.snapshot(view_id=VIEW)
 
     apply_delete_subtree(BAR)
-    tab_state_store.update(view_id=VIEW, 
-        tabs=browser_copy["tabs"], tab_order=browser_copy["tabOrder"],
+    save_as_the_page_does(tab_state_store, view_id=VIEW,
+        tabs=browser_copy["tabs"],
         reference_views=browser_copy["referenceViews"], read_at_version=browser_copy["version"],
     )
 

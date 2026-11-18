@@ -1,6 +1,6 @@
 """The server owns the order of the tabs (docs/future-plans/one-writer-refactoring.md, idea 1). A
-view says "move tab X to where tab Y is" (TabStateStore.move_tab); the save of its whole copy of
-the tabs (update) carries scroll and reference pages, and never an order the server takes. The
+view says "move tab X to where tab Y is" (TabStateStore.move_tab); the server takes no copy of a
+view's tabs, so nothing else changes the order. The
 cases agreed 2026-11-17 are numbered in the comments."""
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ from app.security.encryption import set_encryption_required
 from app.services.edit_locks import edit_locks
 from app.services.input_errors import InputRejected
 from app.services.tab_state import TabStateStore
-from tests.unit.tab_copy_saving import save_as_the_page_does
+from tests.unit.tab_place_saving import save_as_the_page_does
 
 MAC = "10000000-0000-4000-8000-0000000000c1"
 PHONE = "10000000-0000-4000-8000-0000000000c2"
@@ -53,7 +53,7 @@ def _order(store: TabStateStore, view: str) -> list[str]:
 
 
 def _save_copy(store: TabStateStore, view: str, copy: dict) -> dict:
-    return save_as_the_page_does(store, view_id=view, tabs=copy["tabs"], tab_order=copy["tabOrder"],
+    return save_as_the_page_does(store, view_id=view, tabs=copy["tabs"],
         reference_views=copy["referenceViews"], read_at_version=copy["version"],
     )
 
@@ -147,17 +147,6 @@ def test_a_copy_holding_the_old_order_never_puts_it_back() -> None:
 
     assert _order(store, MAC) == [recipes, travel, groceries]
     assert store.snapshot(view_id=MAC)["tabs"][groceries]["scrollY"] == SCROLLED
-
-
-def test_an_order_in_a_saved_copy_is_never_taken() -> None:
-    store = TabStateStore()
-    groceries, recipes, travel = _three_contexts(store)
-
-    copy = store.snapshot(view_id=MAC)
-    copy["tabOrder"] = [travel, recipes, groceries]
-    _save_copy(store, MAC, copy)
-
-    assert _order(store, MAC) == [groceries, recipes, travel]
 
 
 # Case 6: two views each move a different context at nearly the same time, neither having heard

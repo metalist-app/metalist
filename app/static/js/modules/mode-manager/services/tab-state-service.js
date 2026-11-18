@@ -93,8 +93,7 @@ export async function initializeTabStateService() {
 }
 
 // The server owns each tab's search (docs/future-plans/one-writer-refactoring.md, idea 1): the
-// page asks for a search by name, one request at a time, and its copy of the tabs
-// (persistTabStateSnapshot) carries no search the server takes. Text typed while a request is
+// page asks for a search by name, one request at a time, and sends no copy of its tabs. Text typed while a request is
 // on its way replaces what waits, so the newest is what is sent last.
 async function sendPendingSearches() {
     while (moduleState.pendingSearchRequest !== null) {
@@ -117,8 +116,7 @@ async function sendPendingSearches() {
 }
 
 // The server owns the tab each view shows (docs/future-plans/one-writer-refactoring.md, idea 1):
-// the page asks for it by name, before its copy of the tabs, which carries no shown tab the
-// server takes. It goes as the snapshot writer's own request, so nothing else is sent meanwhile.
+// the page asks for it by name, and sends no copy of its tabs. It goes as the snapshot writer's own request, so nothing else is sent meanwhile.
 // A tab deleted elsewhere a moment ago is answered with the tab the server picked; the page
 // hears of it with the contexts (adoptSharedSearchContexts) and asks no more.
 async function sendShownTab() {
@@ -134,9 +132,8 @@ async function sendShownTab() {
 }
 
 // The server owns the order of the tabs (docs/future-plans/one-writer-refactoring.md, idea 1): the
-// page, having moved a tab in its own list, asks for that move by name, and its copy of the tabs
-// carries no order the server takes, so a copy saved before this view heard of another view's move
-// cannot undo it. It goes as the snapshot writer's own request, like the tab shown. Where the
+// page, having moved a tab in its own list, asks for that move by name, and sends no copy of its tabs, so
+// nothing saved before this view heard of another view's move can undo it. It goes as the snapshot writer's own request, like the tab shown. Where the
 // server's order then differs from this view's (another view moved or made a tab meanwhile), the
 // view hears of it with the contexts (adoptSharedSearchContexts).
 export async function moveTabOnServer(tabId, toTabId) {

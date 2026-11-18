@@ -1,6 +1,6 @@
 """The server owns the context each view shows (docs/future-plans/one-writer-refactoring.md, idea
-1). A view says "I now show tab X" (TabStateStore.show_tab); the save of its whole copy of the tabs
-(update) carries scroll, order and reference pages, and never the tab shown. The cases agreed
+1). A view says "I now show tab X" (TabStateStore.show_tab); the server takes no copy of a
+view's tabs, so nothing else changes the tab shown. The cases agreed
 2026-11-17 are numbered in the comments."""
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ from app.security.encryption import set_encryption_required
 from app.services.edit_locks import edit_locks
 from app.services.input_errors import InputRejected
 from app.services.tab_state import TabStateStore
-from tests.unit.tab_copy_saving import save_as_the_page_does
+from tests.unit.tab_place_saving import save_as_the_page_does
 
 MAC = "10000000-0000-4000-8000-0000000000d1"
 PHONE = "10000000-0000-4000-8000-0000000000d2"
@@ -44,7 +44,7 @@ def _two_contexts(store: TabStateStore) -> tuple[str, str]:
 
 
 def _save_copy(store: TabStateStore, view: str, copy: dict) -> dict:
-    return save_as_the_page_does(store, view_id=view, tabs=copy["tabs"], tab_order=copy["tabOrder"],
+    return save_as_the_page_does(store, view_id=view, tabs=copy["tabs"],
         reference_views=copy["referenceViews"], read_at_version=copy["version"],
     )
 

@@ -1,7 +1,6 @@
 """The server owns each search context's search (docs/future-plans/one-writer-refactoring.md,
-idea 1). A view says "the search of context X is now Y" (TabStateStore.set_search); the save of a
-view's whole copy of its tabs (update) carries scroll, order and the context shown, and never a
-search. The cases agreed 2026-11-17 are numbered in the test names' comments."""
+idea 1). A view says "the search of context X is now Y" (TabStateStore.set_search); the server
+takes no copy of a view's tabs, so nothing else changes a search. The cases agreed 2026-11-17 are numbered in the test names' comments."""
 
 from __future__ import annotations
 
@@ -14,7 +13,7 @@ from app.security.encryption import set_encryption_required
 from app.services.edit_locks import SearchLockedElsewhere, edit_locks
 from app.services.input_errors import InputRejected
 from app.services.tab_state import TabStateStore
-from tests.unit.tab_copy_saving import save_as_the_page_does
+from tests.unit.tab_place_saving import save_as_the_page_does
 
 MAC = "10000000-0000-4000-8000-0000000000a1"
 PHONE = "10000000-0000-4000-8000-0000000000a2"
@@ -40,8 +39,8 @@ def _two_contexts(store: TabStateStore) -> tuple[str, str]:
 
 
 def _save_copy(store: TabStateStore, view: str, copy: dict) -> dict:
-    """The whole copy of its tabs a view holds, saved as the browser saves it."""
-    return save_as_the_page_does(store, view_id=view, tabs=copy["tabs"], tab_order=copy["tabOrder"],
+    """The place a view holds in its tabs, saved as the browser saves it (by name)."""
+    return save_as_the_page_does(store, view_id=view, tabs=copy["tabs"],
         reference_views=copy["referenceViews"], read_at_version=copy["version"],
     )
 
@@ -145,22 +144,6 @@ def test_a_copy_holding_earlier_typing_never_puts_it_back() -> None:
     _save_copy(store, MAC, copy_with_earlier_typing)
 
     assert store.get_search_query(tab_id=first) == "groceries"
-
-
-# Case 8: one view scrolls while another changed the search. The copy's own search is no
-# request, whatever the view was told before.
-def test_a_search_in_a_saved_copy_is_never_taken() -> None:
-    store = TabStateStore()
-    first, _second = _two_contexts(store)
-    store.set_search(view_id=MAC, tab_id=first, search_query="groceries")
-
-    copy = store.snapshot(view_id=PHONE)
-    copy["tabs"][first]["searchQuery"] = "something the phone never asked for"
-    copy["tabs"][first]["scrollY"] = SCROLLED
-    _save_copy(store, PHONE, copy)
-
-    assert store.get_search_query(tab_id=first) == "groceries"
-    assert store.snapshot(view_id=PHONE)["tabs"][first]["scrollY"] == SCROLLED
 
 
 def test_a_search_set_to_what_it_is_changes_nothing() -> None:

@@ -13,6 +13,7 @@ from app.services.ontology_rules_store import bootstrap_ontology_rules_store
 from app.services.tab_state import tab_state_store
 from app.usecases.create_note import apply_insert_note
 from app.usecases.rename_tag import apply_rename_tag_everywhere
+from tests.unit.tab_place_saving import save_as_the_page_does
 
 # The view (a browser tab) the tests act in (multi-view editing step 2).
 VIEW = "10000000-0000-4000-8000-0000000000ee"
@@ -59,7 +60,6 @@ def test_rename_tag_renames_it_in_search_links_and_saved_searches(live_database)
     _note("task", "dash", content="<div>Ship it</div>", tags="work")
     updated_before = store.get_note("dash").updated_at
     tab_id = _search_in_active_context("work -archive")
-    browser_copy = tab_state_store.snapshot(view_id=VIEW)
 
     result = apply_rename_tag_everywhere(old="work", new="job", token="")
 
@@ -68,12 +68,6 @@ def test_rename_tag_renames_it_in_search_links_and_saved_searches(live_database)
     assert store.get_note("dash").updated_at == updated_before
     assert tab_state_store.get_search_query(tab_id=tab_id) == "job -archive"
     assert (result["renamedSearchLinkNoteCount"], result["renamedSearchCount"]) == (1, 1)
-    # A browser's copy read before the rename doesn't bring the old name back.
-    tab_state_store.update(view_id=VIEW, 
-        tabs=browser_copy["tabs"], tab_order=browser_copy["tabOrder"],
-        reference_views=browser_copy["referenceViews"], read_at_version=browser_copy["version"],
-    )
-    assert tab_state_store.get_search_query(tab_id=tab_id) == "job -archive"
 
 
 def test_the_search_context_a_link_opens_has_the_same_terms(live_database) -> None:
@@ -91,8 +85,8 @@ def test_a_search_context_on_a_reference_page_does_not_take_a_search_link(live_d
     tab_state_store.set_search(view_id=VIEW, tab_id=page, search_query="10000000-0000-4000-8000-000000000001")
     state = tab_state_store.snapshot(view_id=VIEW)
     tabs = state["tabs"]
-    tab_state_store.update(view_id=VIEW, 
-        tabs=tabs, tab_order=state["tabOrder"], read_at_version=state["version"],
+    save_as_the_page_does(tab_state_store, view_id=VIEW,
+        tabs=tabs, read_at_version=state["version"],
         reference_views={page: {
             "fromTabId": misc, "referenceQuery": "10000000-0000-4000-8000-000000000001", "viewKind": "source",
             "originScope": {"scopeTabId": misc, "searchQuery": "miscellaneous", "sortMode": "normal",
