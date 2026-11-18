@@ -46,7 +46,7 @@ async function harness() {
     };
     const dependencies = {
         ApplicationState, ModeContext: context, window, document: { hidden: false },
-        CONFIG: { API: { NOTES: { TAB_STATE: '/tabs', TAB_STATE_SEARCH: '/tabs/search', TAB_STATE_SHOWN: '/tabs/shown', TAB_STATE_UNTAGGED_VIEW: '/tabs/untagged' }, VIRTUAL_FOLDERS: { FOLDER_CONTEXT: '/folder-context', TREE_SHOWN: '/tree-shown' } } },
+        CONFIG: { API: { NOTES: { TAB_STATE: '/tabs', TAB_STATE_SEARCH: '/tabs/search', TAB_STATE_SHOWN: '/tabs/shown', TAB_STATE_MOVE: '/tabs/move', TAB_STATE_UNTAGGED_VIEW: '/tabs/untagged' }, VIRTUAL_FOLDERS: { FOLDER_CONTEXT: '/folder-context', TREE_SHOWN: '/tree-shown' } } },
         CommandGate: { isBusy: () => false }, buildSessionHeaders: () => ({}),
         computeScrollAnchor: () => null, areScrollAnchorsEqual: (a, b) => a === b,
         restoreReferenceNavigation: (state) => restoredReferenceTabs.push(state.tabs),
@@ -78,7 +78,7 @@ async function harness() {
         },
     };
     const service = new Function(...Object.keys(dependencies), `${source}
-        return { initializeTabStateService, persistTabStateSnapshot, reloadTabStateFromServer, setTabUntaggedViewOnServer };`)(...Object.values(dependencies));
+        return { initializeTabStateService, persistTabStateSnapshot, moveTabOnServer, reloadTabStateFromServer, setTabUntaggedViewOnServer };`)(...Object.values(dependencies));
     await service.initializeTabStateService();
     assert.equal(polls.length, 1);
     // Reference views are restored from the freshly loaded server tab state.
@@ -102,7 +102,9 @@ async function harness() {
         }
     };
     const holdReads = () => { holdsReads = true; };
-    return { service, requests, context, payload, window, poll: polls[0], apiErrors, typeSearch, reads, taken, holdReads, showTab, answerAll };
+    // The page moves a tab in its own list, as a drag does (ModeContext.moveTabToHoveredSlot).
+    const moveTab = (order) => { payload.tabOrder = order; };
+    return { moveTab, service, requests, context, payload, window, poll: polls[0], apiErrors, typeSearch, reads, taken, holdReads, showTab, answerAll };
 }
 
 const settle = () => new Promise(setImmediate);
@@ -446,4 +448,40 @@ test('the tab shown is asked for once, not again with every save', async () => {
     await h.answerAll();
     await next;
     assert.deepEqual(h.requests.map(request => request.endpoint), ['/tabs/shown', '/tabs', '/tabs']);
+});
+
+// The server owns the order of the tabs (idea 1; cases agreed 2026-11-17): the page asks for a
+// move by name, and its copy of the tabs carries no order the server takes.
+test('a tab moved is asked for by name, once, before the copy of the tabs', async () => {
+    const h = await harness();
+    h.moveTab(['second', 'first']);
+    const moved = h.service.moveTabOnServer('first', 'second').then(() => h.service.persistTabStateSnapshot());
+    await h.answerAll();
+    await moved;
+    assert.deepEqual(h.requests.map(request => request.endpoint), ['/tabs/move', '/tabs']);
+    assert.deepEqual(h.requests[0].sent, { tabId: 'first', toTabId: 'second' });
+});
+
+test('a tab moved with the page scrolled is asked for before the copy that carries the scroll', async () => {
+    const h = await harness();
+    h.moveTab(['second', 'first']);
+    const moved = h.service.moveTabOnServer('first', 'second');
+    h.payload.tabs.first.scrollY = 100;
+    const saved = moved.then(() => h.service.persistTabStateSnapshot());
+    await h.answerAll();
+    await saved;
+    assert.deepEqual(h.requests.map(request => request.endpoint), ['/tabs/move', '/tabs']);
+});
+
+test('a move waits for a save on its way, so the two are never sent together', async () => {
+    const h = await harness();
+    h.window.scrollY = 100;
+    const earlier = h.poll();
+    h.moveTab(['second', 'first']);
+    const moved = h.service.moveTabOnServer('first', 'second');
+    await settle();
+    assert.deepEqual(h.requests.map(request => request.endpoint), ['/tabs']);
+    await h.answerAll();
+    await Promise.all([earlier, moved]);
+    assert.deepEqual(h.requests.map(request => request.endpoint), ['/tabs', '/tabs/move']);
 });

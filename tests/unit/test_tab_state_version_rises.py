@@ -113,10 +113,8 @@ def _scroll(store: TabStateStore, first: str, _second: str) -> None:
     _save_copy(store, MAC, scroll)
 
 
-def _reorder(store: TabStateStore, _first: str, _second: str) -> None:
-    def reorder(copy: dict) -> None:
-        copy["tabOrder"] = list(reversed(copy["tabOrder"]))
-    _save_copy(store, MAC, reorder)
+def _reorder(store: TabStateStore, first: str, second: str) -> None:
+    store.move_tab(view_id=MAC, tab_id=first, to_tab_id=second)
 
 
 def _rename_in_searches(store: TabStateStore, first: str, _second: str) -> None:

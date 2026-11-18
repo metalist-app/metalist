@@ -24,6 +24,7 @@ const TAB_STATE_FILE_FILTER_ENDPOINT = CONFIG.API.NOTES.TAB_STATE_FILE_FILTER;
 const TAB_STATE_UNTAGGED_VIEW_ENDPOINT = CONFIG.API.NOTES.TAB_STATE_UNTAGGED_VIEW;
 const TAB_STATE_SEARCH_ENDPOINT = CONFIG.API.NOTES.TAB_STATE_SEARCH;
 const TAB_STATE_SHOWN_ENDPOINT = CONFIG.API.NOTES.TAB_STATE_SHOWN;
+const TAB_STATE_MOVE_ENDPOINT = CONFIG.API.NOTES.TAB_STATE_MOVE;
 const FOLDER_CONTEXT_ENDPOINT = CONFIG.API.VIRTUAL_FOLDERS.FOLDER_CONTEXT;
 const TREE_SHOWN_ENDPOINT = CONFIG.API.VIRTUAL_FOLDERS.TREE_SHOWN;
 const SCROLL_POLL_INTERVAL_MS = 1000;
@@ -114,6 +115,24 @@ async function sendShownTab() {
     while (moduleState.pendingPersistRequest !== null) {
         await moduleState.pendingPersistRequest;
     }
+}
+
+// The server owns the order of the tabs (docs/future-plans/one-writer-refactoring.md, idea 1): the
+// page, having moved a tab in its own list, asks for that move by name, and its copy of the tabs
+// carries no order the server takes, so a copy saved before this view heard of another view's move
+// cannot undo it. It goes as the snapshot writer's own request, like the tab shown. Where the
+// server's order then differs from this view's (another view moved or made a tab meanwhile), the
+// view hears of it with the contexts (adoptSharedSearchContexts).
+export async function moveTabOnServer(tabId, toTabId) {
+    while (moduleState.pendingPersistRequest !== null) {
+        await moduleState.pendingPersistRequest;
+    }
+    moduleState.pendingPersistRequest = callTabStateApiAt(TAB_STATE_MOVE_ENDPOINT, 'POST', { tabId, toTabId })
+        .then(captureServerSignature)
+        .finally(() => {
+            moduleState.pendingPersistRequest = null;
+        });
+    await moduleState.pendingPersistRequest;
 }
 
 export async function persistTabStateSnapshot() {

@@ -182,6 +182,13 @@ class ShowTabRequest(TypedDict):
 
 
 @with_config(ConfigDict(strict=True))
+class MoveTabRequest(TypedDict):
+    # Tab tabId now sits where toTabId was: the one way the order of the tabs changes.
+    tabId: Identifier
+    toTabId: Identifier
+
+
+@with_config(ConfigDict(strict=True))
 class UpdateTabSearchRequest(TypedDict):
     # The search of tab tabId is now searchQuery: the one way a view changes a search.
     tabId: Identifier

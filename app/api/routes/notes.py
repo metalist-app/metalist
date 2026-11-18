@@ -28,6 +28,7 @@ from app.api.note_requests import (
     UpdateTabDateFilterRequest,
     UpdateTabFileFilterRequest,
     UpdateTabUntaggedViewRequest,
+    MoveTabRequest,
     ShowTabRequest,
     UpdateTabSearchRequest,
     UpdateTabSortModeRequest,
@@ -589,6 +590,13 @@ def update_tab_search(payload: UpdateTabSearchRequest, view_id: ViewId) -> Dict[
 def show_tab(payload: ShowTabRequest, view_id: ViewId) -> Dict[str, object]:
     """This view now shows this tab, as it switched to or opened it."""
     return tab_state_store.show_tab(view_id=view_id, tab_id=payload["tabId"])
+
+
+@router.post("/notes/tab-state/move")
+@transactional_route
+def move_tab(payload: MoveTabRequest, view_id: ViewId) -> Dict[str, object]:
+    """This tab now sits where the other was, as its view dragged it."""
+    return tab_state_store.move_tab(view_id=view_id, tab_id=payload["tabId"], to_tab_id=payload["toTabId"])
 
 
 @router.post("/notes/tab-state/sort-mode")

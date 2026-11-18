@@ -768,14 +768,15 @@ class TabStateStore:
         read_at_version: int,
     ) -> Dict[str, object]:
         """Save a view's copy of its tabs, read when its state was at read_at_version (the last
-        version it received): its scroll, its reference pages and its order of the tabs. The tab
-        it shows and a search are never taken from the copy: the view asks for each by name
-        (show_tab, set_search), so no copy, late or stale, can move the view back or put an old
-        search back. Tabs the copy leaves out are kept."""
+        version it received): its scroll and its reference pages. The tab it shows, a search and
+        the order of the tabs are never taken from the copy: the view asks for each by name
+        (show_tab, set_search, move_tab), so no copy, late or stale, can move the view back, put
+        an old search back or undo another view's move. Tabs the copy leaves out are kept."""
         if not isinstance(read_at_version, int) or read_at_version < 0:
             raise InputRejected("version must be a non-negative integer")
         normalized_tabs = self._normalize_tabs(tabs, from_storage=False)
-        normalized_order = self._normalize_tab_order(tab_order, normalized_tabs)
+        # The copy's order is checked as part of the copy, and not taken (move_tab).
+        self._normalize_tab_order(tab_order, normalized_tabs)
         normalized_reference_views = _normalize_reference_views(
             reference_views, normalized_tabs, from_storage=False,
         )
@@ -786,7 +787,6 @@ class TabStateStore:
             gone_meanwhile = set(normalized_tabs) & self._gone_tab_ids
             if gone_meanwhile:
                 normalized_tabs = {tab_id: entry for tab_id, entry in normalized_tabs.items() if tab_id not in gone_meanwhile}
-                normalized_order = [tab_id for tab_id in normalized_order if tab_id not in gone_meanwhile]
                 normalized_reference_views = _normalize_reference_views(
                     normalized_reference_views, normalized_tabs, from_storage=False,
                 )
@@ -807,7 +807,6 @@ class TabStateStore:
             )
             for tab_id, entry in normalized_tabs.items():
                 self._take_tab_from_view_locked(place, tab_id, entry, read_at_version)
-            self._take_order_from_view_locked(normalized_order)
             # A tab of note ids the view took as a page (adoptOrphanReferenceTabs) becomes its own.
             for tab_id in normalized_reference_views:
                 if tab_id not in self._page_owners:
@@ -841,17 +840,6 @@ class TabStateStore:
         )
         if not restarted_since:
             _place_scroll(place)[tab_id] = {key: entry[key] for key in _TAB_SCROLL_KEYS}
-
-    def _take_order_from_view_locked(self, view_order: List[str]) -> None:
-        """The view's order of the tabs it has: a different one is its reordering, laid over the
-        places those tabs hold, so tabs it does not have keep theirs."""
-        positions = [index for index, tab_id in enumerate(self._tab_order) if tab_id in set(view_order)]
-        if [self._tab_order[index] for index in positions] == view_order:
-            return
-        reordered = list(self._tab_order)
-        for index, tab_id in zip(positions, view_order):
-            reordered[index] = tab_id
-        self._tab_order = reordered
 
     def get_sort_mode(self, *, tab_id: str) -> str:
         if not isinstance(tab_id, str):
@@ -1031,6 +1019,39 @@ class TabStateStore:
                 place["activeTabId"] = tab_id
                 if tab_id not in self._page_owners:
                     self._last_used_tab_id = tab_id
+                self._version += 1
+                self._persist_locked(connection=None, encryption_service=None, force_plaintext=False)
+            snapshot = self._snapshot_locked(view_id)
+            snapshot["changed"] = changed
+            return snapshot
+
+    def move_tab(self, *, view_id: str, tab_id: str, to_tab_id: str) -> Dict[str, object]:
+        """Tab tab_id now sits where to_tab_id was, as this view dragged it: the one way the order
+        of the tabs changes (docs/future-plans/one-writer-refactoring.md, idea 1). Moved down it
+        lands right after to_tab_id, moved up right before it, so the tabs this view does not
+        see (other views' reference pages) and the ones it has not heard of keep their places."""
+        for name, value in (("tabId", tab_id), ("toTabId", to_tab_id)):
+            if not isinstance(value, str) or not value:
+                raise InputRejected(f"{name} must be a non-empty string")
+        with self._lock:
+            self._try_decrypt_locked(token="", require_success=True)
+            self._place_locked(view_id)
+            visible = self._visible_tab_ids_locked(view_id)
+            # Asked before the view heard a tab was deleted or its page closed: nothing to move,
+            # as for a search (set_search).
+            is_gone_meanwhile = bool({tab_id, to_tab_id} & self._gone_tab_ids)
+            for name, value in (("tabId", tab_id), ("toTabId", to_tab_id)):
+                if value not in visible and value not in self._gone_tab_ids:
+                    raise InputRejected(f"{name} must reference an existing tab")
+            changed = not is_gone_meanwhile and tab_id != to_tab_id
+            if changed:
+                is_moved_down = self._tab_order.index(tab_id) < self._tab_order.index(to_tab_id)
+                self._tab_order.remove(tab_id)
+                slot = self._tab_order.index(to_tab_id)
+                if is_moved_down:
+                    slot += 1
+                self._tab_order.insert(slot, tab_id)
+                assert len(set(self._tab_order)) == len(self._tabs), "a move keeps every tab, once"
                 self._version += 1
                 self._persist_locked(connection=None, encryption_service=None, force_plaintext=False)
             snapshot = self._snapshot_locked(view_id)

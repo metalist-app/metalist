@@ -470,8 +470,9 @@ ModeContext = {
   `ModeContext` so the UI mirrors whatever the previous window last displayed.
 - Tab IDs are server-assigned UUIDs and a `tabOrder` array defines display order.
 - The UI reorders tabs by dragging one tab row over another. A drop moves the dragged
-  tab into the hovered tab's former slot, updates `tabOrder`, and persists the updated
-  snapshot back to `/api2/notes/tab-state`. Hovering retains the normal pointer; the
+  tab into the hovered tab's former slot, updates `tabOrder`, and asks the server for
+  that move by name (`POST /api2/notes/tab-state/move`, `TabStateStore.move_tab`; the
+  order in a saved snapshot is never taken, 2026-11-17). Hovering retains the normal pointer; the
   grabbing cursor starts only after the browser begins a drag.
 - The `+` duplicates a tab: the new tab copies its search, scroll and everything it shows (above), then the search field is focused and its copied query text is fully selected so it can be replaced immediately. A blank new tab starts with nothing.
 - If the source tab survives a server restart but its detached DOM cache does not, tab duplication still succeeds: the new tab keeps the duplicated tab-state metadata and the next `/notes/view` response bootstraps its DOM from the server.

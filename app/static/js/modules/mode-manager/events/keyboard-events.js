@@ -63,7 +63,7 @@ import { searchContextLabel } from '../services/search-context-label.js';
 import { checkBackgroundWork } from '../services/background-work-cards.js';
 import { isCopyOfDialogSelection } from '../services/dialog-copy-service.js';
 import {
-    persistTabStateSnapshot, createTabOnServer, deleteTabOnServer, chooseFolderOnServer, setTreeShownOnServer,
+    persistTabStateSnapshot, moveTabOnServer, createTabOnServer, deleteTabOnServer, chooseFolderOnServer, setTreeShownOnServer,
     reloadTabStateFromServer,
 } from '../services/tab-state-service.js';
 import { getActiveDateFilter } from '../services/date-range-filter-service.js';
@@ -4356,6 +4356,8 @@ async function moveTabContext(tabId, hoveredTabId) {
 
     ModeContext.moveTabToHoveredSlot(tabId, hoveredTabId);
     updateSearchContextsList();
+    // The move is asked for by name; the copy that follows carries this view's scroll.
+    await moveTabOnServer(tabId, hoveredTabId);
     await persistTabStateSnapshot();
 }
 
