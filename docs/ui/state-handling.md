@@ -478,7 +478,9 @@ ModeContext = {
 - If the source tab survives a server restart but its detached DOM cache does not, tab duplication still succeeds: the new tab keeps the duplicated tab-state metadata and the next `/notes/view` response bootstraps its DOM from the server.
 - Creating/deleting tabs uses dedicated endpoints so the server remains the source of truth.
 - Scroll/search changes are throttled (≈1 Hz) and POSTed back so the cache stays
-  aligned with the DOM without spamming requests.
+  aligned with the DOM without spamming requests. A scroll goes by name, one request for
+  each tab whose scroll changed (`POST /api2/notes/tab-state/scroll`, `TabStateStore.set_scroll`;
+  the scroll in a saved snapshot is never taken, 2026-11-17).
 - Scroll polls never overlap a pending scroll save. Snapshot saves from scroll,
   search, and tab actions share one request at a time; waiting callers read fresh
   state after the preceding response updates the version/signature. Failure

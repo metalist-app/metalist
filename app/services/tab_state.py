@@ -768,10 +768,10 @@ class TabStateStore:
         read_at_version: int,
     ) -> Dict[str, object]:
         """Save a view's copy of its tabs, read when its state was at read_at_version (the last
-        version it received): its scroll and its reference pages. The tab it shows, a search and
-        the order of the tabs are never taken from the copy: the view asks for each by name
-        (show_tab, set_search, move_tab), so no copy, late or stale, can move the view back, put
-        an old search back or undo another view's move. Tabs the copy leaves out are kept."""
+        version it received): its reference pages. The tab it shows, a search, the order of the
+        tabs and its scroll in each are never taken from the copy: the view asks for each by name
+        (show_tab, set_search, move_tab, set_scroll), so no copy, late or stale, can move the view
+        back, put an old search back or undo another view's move. Tabs the copy leaves out are kept."""
         if not isinstance(read_at_version, int) or read_at_version < 0:
             raise InputRejected("version must be a non-negative integer")
         normalized_tabs = self._normalize_tabs(tabs, from_storage=False)
@@ -805,8 +805,6 @@ class TabStateStore:
                 deepcopy(self._tabs), list(self._tab_order), deepcopy(place["scroll"]),
                 deepcopy(place["referenceViews"]), place["activeTabId"], dict(self._page_owners), self._last_used_tab_id,
             )
-            for tab_id, entry in normalized_tabs.items():
-                self._take_tab_from_view_locked(place, tab_id, entry, read_at_version)
             # A tab of note ids the view took as a page (adoptOrphanReferenceTabs) becomes its own.
             for tab_id in normalized_reference_views:
                 if tab_id not in self._page_owners:
@@ -828,18 +826,56 @@ class TabStateStore:
             self._persist_locked(connection=None, encryption_service=None, force_plaintext=False)
             return self._snapshot_locked(view_id)
 
-    def _take_tab_from_view_locked(
-        self, place: Dict[str, object], tab_id: str, entry: Dict[str, object], read_at_version: int,
-    ) -> None:
-        """The view's scroll in a tab, from its copy. A scroll read before the tab's scroll
-        restarted belongs to the old view. The copy's search and sort order are never taken
-        (set_search, set_sort_mode)."""
-        restarted_since = (
-            tab_id in self._scroll_restarted_at_version
-            and read_at_version < self._scroll_restarted_at_version[tab_id]
-        )
-        if not restarted_since:
-            _place_scroll(place)[tab_id] = {key: entry[key] for key in _TAB_SCROLL_KEYS}
+    def set_scroll(self, *, view_id: str, tab_id: str, scroll: Dict[str, object], read_at_version: int) -> Dict[str, object]:
+        """This view's scroll in tab_id is now scroll (_TAB_SCROLL_KEYS), measured when the view's
+        state was at read_at_version: the one way a view's scroll in a tab changes
+        (docs/future-plans/one-writer-refactoring.md, idea 1). A scroll measured before the tab's
+        scroll restarted (another search, sort order or filter) belongs to the notes it showed
+        then, and is not taken."""
+        if not isinstance(tab_id, str) or not tab_id:
+            raise InputRejected("tabId must be a non-empty string")
+        if not isinstance(read_at_version, int) or read_at_version < 0:
+            raise InputRejected("version must be a non-negative integer")
+        if not isinstance(scroll, dict) or set(scroll) != set(_TAB_SCROLL_KEYS):
+            raise InputRejected("a scroll is its scrollY, scrollAnchor and anchorRootId")
+        with self._lock:
+            self._try_decrypt_locked(token="", require_success=True)
+            place = self._place_locked(view_id)
+            # Measured before the view heard the tab was deleted or its page closed: nothing to
+            # change, as for a search (set_search).
+            if tab_id in self._gone_tab_ids:
+                snapshot = self._snapshot_locked(view_id)
+                snapshot["changed"] = False
+                return snapshot
+            if tab_id not in self._visible_tab_ids_locked(view_id):
+                raise InputRejected("tabId must reference an existing tab")
+            # Checked as a tab's scroll is (the tab's own search and sort order are not read).
+            as_tab = self._normalize_tabs({tab_id: {**self._tabs[tab_id], **scroll}}, from_storage=False)[tab_id]
+            new_scroll = {key: as_tab[key] for key in _TAB_SCROLL_KEYS}
+            is_restarted_since = (
+                tab_id in self._scroll_restarted_at_version
+                and read_at_version < self._scroll_restarted_at_version[tab_id]
+            )
+            scrolls = _place_scroll(place)
+            old_scroll = _blank_scroll()
+            if tab_id in scrolls:
+                old_scroll = scrolls[tab_id]
+            # A view saving its scroll is using the context it shows (a new view starts there).
+            shown = self._active_tab_of_locked(view_id, place)
+            uses_another_context = shown not in self._page_owners and shown != self._last_used_tab_id
+            changed = not is_restarted_since and new_scroll != old_scroll
+            if changed:
+                scrolls[tab_id] = new_scroll
+            if uses_another_context:
+                self._last_used_tab_id = shown
+            # Scroll is saved about once a second: an unchanged one must not re-encrypt and
+            # rewrite the row.
+            if changed or uses_another_context:
+                self._version += 1
+                self._persist_locked(connection=None, encryption_service=None, force_plaintext=False)
+            snapshot = self._snapshot_locked(view_id)
+            snapshot["changed"] = changed
+            return snapshot
 
     def get_sort_mode(self, *, tab_id: str) -> str:
         if not isinstance(tab_id, str):

@@ -19,6 +19,7 @@ from app.security.encryption import set_encryption_required
 from app.services import tab_state as tab_state_module
 from app.services.input_errors import InputRejected
 from app.services.tab_state import TabStateStore
+from tests.unit.tab_copy_saving import save_as_the_page_does
 
 # The view (a browser tab) the tests act in (multi-view editing step 2).
 VIEW = "10000000-0000-4000-8000-0000000000ee"
@@ -56,7 +57,7 @@ def _save(store: TabStateStore, *, active: str, searches: dict[str, str]) -> dic
         store.set_search(view_id=VIEW, tab_id=tab_id, search_query=search)
     store.show_tab(view_id=VIEW, tab_id=active)
     snapshot = store.snapshot(view_id=VIEW)
-    return store.update(view_id=VIEW, reference_views={}, tabs=snapshot["tabs"],
+    return save_as_the_page_does(store, view_id=VIEW, reference_views={}, tabs=snapshot["tabs"],
                         tab_order=snapshot["tabOrder"], read_at_version=snapshot["version"])
 
 

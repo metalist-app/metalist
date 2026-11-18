@@ -93,6 +93,7 @@ export const CONFIG = {
             TAB_STATE_SEARCH: `${API_NOTES_BASE}/tab-state/search`,
             TAB_STATE_SHOWN: `${API_NOTES_BASE}/tab-state/shown`,
             TAB_STATE_MOVE: `${API_NOTES_BASE}/tab-state/move`,
+            TAB_STATE_SCROLL: `${API_NOTES_BASE}/tab-state/scroll`,
             // Multi-view editing step 4: a search box left, a root taken over from another view.
             TAB_STATE_SEARCH_LOCK_RELEASE: `${API_NOTES_BASE}/tab-state/search-lock/release`,
             TAKE_OVER_EDITING: `${API_NOTES_BASE}/edit-lock/take-over`,

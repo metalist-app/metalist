@@ -14,6 +14,7 @@ from app.security.encryption import set_encryption_required
 from app.services.edit_locks import edit_locks
 from app.services.input_errors import InputRejected
 from app.services.tab_state import TabStateStore
+from tests.unit.tab_copy_saving import save_as_the_page_does
 
 MAC = "10000000-0000-4000-8000-0000000000c1"
 PHONE = "10000000-0000-4000-8000-0000000000c2"
@@ -52,8 +53,7 @@ def _order(store: TabStateStore, view: str) -> list[str]:
 
 
 def _save_copy(store: TabStateStore, view: str, copy: dict) -> dict:
-    return store.update(
-        view_id=view, tabs=copy["tabs"], tab_order=copy["tabOrder"],
+    return save_as_the_page_does(store, view_id=view, tabs=copy["tabs"], tab_order=copy["tabOrder"],
         reference_views=copy["referenceViews"], read_at_version=copy["version"],
     )
 

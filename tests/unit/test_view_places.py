@@ -16,6 +16,7 @@ from app.services import tab_state as tab_state_module
 from app.services.edit_locks import edit_locks
 from app.services.input_errors import InputRejected
 from app.services.tab_state import TabStateStore
+from tests.unit.tab_copy_saving import save_as_the_page_does
 
 MAC = "10000000-0000-4000-8000-0000000000a1"
 PHONE = "10000000-0000-4000-8000-0000000000a2"
@@ -40,8 +41,7 @@ def _save(store: TabStateStore, view: str, edit) -> dict:
     state = store.snapshot(view_id=view)
     edit(state)
     store.show_tab(view_id=view, tab_id=state["activeTabId"])
-    return store.update(
-        view_id=view, tabs=state["tabs"], tab_order=state["tabOrder"],
+    return save_as_the_page_does(store, view_id=view, tabs=state["tabs"], tab_order=state["tabOrder"],
         reference_views=state["referenceViews"], read_at_version=state["version"],
     )
 
@@ -102,8 +102,7 @@ def test_a_views_scroll_save_never_puts_back_a_search_another_view_changed() -> 
     store.set_search(view_id=MAC, tab_id=first, search_query="groceries")
     # The phone saves its scroll with the tabs it read before the Mac's change.
     phone_had["tabs"][first]["scrollY"] = SCROLLED
-    store.update(
-        view_id=PHONE, tabs=phone_had["tabs"],
+    save_as_the_page_does(store, view_id=PHONE, tabs=phone_had["tabs"],
         tab_order=phone_had["tabOrder"], reference_views=phone_had["referenceViews"],
         read_at_version=phone_had["version"],
     )
@@ -118,8 +117,7 @@ def test_a_save_from_a_view_that_has_not_seen_a_new_context_keeps_it() -> None:
     phone_had = store.snapshot(view_id=PHONE)
     added = store.create_tab(view_id=MAC, copy_from_tab_id=first, copies_view=False, is_page=False)["newTabId"]
 
-    store.update(
-        view_id=PHONE, tabs=phone_had["tabs"],
+    save_as_the_page_does(store, view_id=PHONE, tabs=phone_had["tabs"],
         tab_order=phone_had["tabOrder"], reference_views=phone_had["referenceViews"],
         read_at_version=phone_had["version"],
     )
@@ -306,8 +304,7 @@ def test_a_view_saving_twice_never_puts_back_a_search_another_view_changed() -> 
     store.set_search(view_id=MAC, tab_id=first, search_query="groceries")
     for scrolled_to in (SCROLLED, SCROLLED + 1):
         phone_has["tabs"][first]["scrollY"] = scrolled_to
-        store.update(
-            view_id=PHONE, tabs=phone_has["tabs"],
+        save_as_the_page_does(store, view_id=PHONE, tabs=phone_has["tabs"],
             tab_order=phone_has["tabOrder"], reference_views=phone_has["referenceViews"],
             read_at_version=phone_has["version"],
         )
@@ -366,8 +363,7 @@ def test_after_the_store_loads_again_a_stale_save_still_keeps_another_views_sear
     session.close()
     restarted.set_search(view_id=MAC, tab_id=first, search_query="groceries")
     phone_has["tabs"][first]["scrollY"] = SCROLLED + 1
-    restarted.update(
-        view_id=PHONE, tabs=phone_has["tabs"],
+    save_as_the_page_does(restarted, view_id=PHONE, tabs=phone_has["tabs"],
         tab_order=phone_has["tabOrder"], reference_views=phone_has["referenceViews"],
         read_at_version=phone_has["version"],
     )

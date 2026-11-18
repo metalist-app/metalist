@@ -29,6 +29,7 @@ from app.api.note_requests import (
     UpdateTabFileFilterRequest,
     UpdateTabUntaggedViewRequest,
     MoveTabRequest,
+    UpdateTabScrollRequest,
     ShowTabRequest,
     UpdateTabSearchRequest,
     UpdateTabSortModeRequest,
@@ -597,6 +598,16 @@ def show_tab(payload: ShowTabRequest, view_id: ViewId) -> Dict[str, object]:
 def move_tab(payload: MoveTabRequest, view_id: ViewId) -> Dict[str, object]:
     """This tab now sits where the other was, as its view dragged it."""
     return tab_state_store.move_tab(view_id=view_id, tab_id=payload["tabId"], to_tab_id=payload["toTabId"])
+
+
+@router.post("/notes/tab-state/scroll")
+@transactional_route
+def update_tab_scroll(payload: UpdateTabScrollRequest, view_id: ViewId) -> Dict[str, object]:
+    """This view's scroll in a tab is now this, as it scrolled there."""
+    scroll = {"scrollY": payload["scrollY"], "anchorRootId": payload["anchorRootId"], "scrollAnchor": payload["scrollAnchor"]}
+    return tab_state_store.set_scroll(
+        view_id=view_id, tab_id=payload["tabId"], scroll=scroll, read_at_version=payload["version"],
+    )
 
 
 @router.post("/notes/tab-state/sort-mode")

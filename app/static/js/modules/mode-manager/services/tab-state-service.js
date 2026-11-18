@@ -25,6 +25,7 @@ const TAB_STATE_UNTAGGED_VIEW_ENDPOINT = CONFIG.API.NOTES.TAB_STATE_UNTAGGED_VIE
 const TAB_STATE_SEARCH_ENDPOINT = CONFIG.API.NOTES.TAB_STATE_SEARCH;
 const TAB_STATE_SHOWN_ENDPOINT = CONFIG.API.NOTES.TAB_STATE_SHOWN;
 const TAB_STATE_MOVE_ENDPOINT = CONFIG.API.NOTES.TAB_STATE_MOVE;
+const TAB_STATE_SCROLL_ENDPOINT = CONFIG.API.NOTES.TAB_STATE_SCROLL;
 const FOLDER_CONTEXT_ENDPOINT = CONFIG.API.VIRTUAL_FOLDERS.FOLDER_CONTEXT;
 const TREE_SHOWN_ENDPOINT = CONFIG.API.VIRTUAL_FOLDERS.TREE_SHOWN;
 const SCROLL_POLL_INTERVAL_MS = 1000;
@@ -46,6 +47,8 @@ const moduleState = ApplicationState.createFields('tab-state-service', {
     pendingSearchRequest: null,
     // The tab the server holds as the one this view shows, from its last answer (sendShownTab).
     tabShownOnServer: null,
+    // This view's scroll in each tab as the server last took or gave it (sendChangedScrolls).
+    scrollSentByTab: Object.create(null),
     // The page's own changes to the tabs (every request but a reading): how many were sent, how
     // many are unanswered, and, while any is, a promise for the moment none is (changeSent).
     changesSent: 0,
@@ -70,6 +73,11 @@ export async function initializeTabStateService() {
     restoreReferenceNavigation(serverState);
     setTabStateVersionFromServer(serverState.version);
     recordServerSignature(serverState);
+    // The scroll just loaded is the server's: nothing to send until the page scrolls.
+    const loadedTabs = ModeContext.getTabStatePayload().tabs;
+    for (const tabId of Object.keys(loadedTabs)) {
+        moduleState.scrollSentByTab[tabId] = serializeScroll(loadedTabs[tabId]);
+    }
     ModeContext.setTabStateUpdateHook(handleTabStateMutation);
     startScrollWatcher();
     startScrollPolling();
@@ -135,6 +143,47 @@ export async function moveTabOnServer(tabId, toTabId) {
     await moduleState.pendingPersistRequest;
 }
 
+function serializeScroll(tab) {
+    return JSON.stringify([tab.scrollY, tab.anchorRootId, tab.scrollAnchor]);
+}
+
+// The server takes this view's scroll in a tab by name (docs/future-plans/one-writer-refactoring.md,
+// idea 1): one request for each tab whose scroll changed since the last one sent, and the page's
+// copy of the tabs carries no scroll the server takes. Each goes as the snapshot writer's own
+// request, so never two at once, and names the version the page holds: a scroll measured before
+// the tab's notes changed is not taken. A tab deleted elsewhere a moment ago is answered with
+// nothing changed, and not asked again.
+async function sendChangedScrolls() {
+    for (const tabId of Object.keys(ModeContext.getTabStatePayload().tabs)) {
+        while (moduleState.pendingPersistRequest !== null) {
+            await moduleState.pendingPersistRequest;
+        }
+        // Read once nothing is on its way: the tab can be gone, or scrolled further, by now.
+        const tabs = ModeContext.getTabStatePayload().tabs;
+        if (!Object.prototype.hasOwnProperty.call(tabs, tabId)) {
+            continue;
+        }
+        const scroll = serializeScroll(tabs[tabId]);
+        if (moduleState.scrollSentByTab[tabId] === scroll) {
+            continue;
+        }
+        const { scrollY, anchorRootId, scrollAnchor } = tabs[tabId];
+        const sent = { tabId, scrollY, anchorRootId, scrollAnchor, version: ModeContext.tabStateVersion };
+        moduleState.pendingPersistRequest = callTabStateApiAt(TAB_STATE_SCROLL_ENDPOINT, 'POST', sent)
+            .then((state) => {
+                captureServerSignature(state);
+                moduleState.scrollSentByTab[tabId] = scroll;
+            })
+            .finally(() => {
+                moduleState.pendingPersistRequest = null;
+            });
+        await moduleState.pendingPersistRequest;
+    }
+    while (moduleState.pendingPersistRequest !== null) {
+        await moduleState.pendingPersistRequest;
+    }
+}
+
 export async function persistTabStateSnapshot() {
     // Searches go first, by name: every caller that saves before it reads the tabs again or
     // changes them finds the server holding what was typed. With none waiting, the copy is
@@ -149,6 +198,12 @@ export async function persistTabStateSnapshot() {
     }
     if (ModeContext.activeTabId !== moduleState.tabShownOnServer) {
         await sendShownTab();
+    }
+    await sendChangedScrolls();
+    // Another caller can have sent its own request while those were answered (a tab moved): the
+    // copy waits its turn, and is read only then.
+    while (moduleState.pendingPersistRequest !== null) {
+        await moduleState.pendingPersistRequest;
     }
     // Which tabs are reference views goes with the tabs (docs/ui/references.md).
     const snapshot = { ...ModeContext.getTabStatePayload(), referenceViews: getReferenceViewsPayload() };

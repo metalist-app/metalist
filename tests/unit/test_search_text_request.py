@@ -14,6 +14,7 @@ from app.security.encryption import set_encryption_required
 from app.services.edit_locks import SearchLockedElsewhere, edit_locks
 from app.services.input_errors import InputRejected
 from app.services.tab_state import TabStateStore
+from tests.unit.tab_copy_saving import save_as_the_page_does
 
 MAC = "10000000-0000-4000-8000-0000000000a1"
 PHONE = "10000000-0000-4000-8000-0000000000a2"
@@ -40,8 +41,7 @@ def _two_contexts(store: TabStateStore) -> tuple[str, str]:
 
 def _save_copy(store: TabStateStore, view: str, copy: dict) -> dict:
     """The whole copy of its tabs a view holds, saved as the browser saves it."""
-    return store.update(
-        view_id=view, tabs=copy["tabs"], tab_order=copy["tabOrder"],
+    return save_as_the_page_does(store, view_id=view, tabs=copy["tabs"], tab_order=copy["tabOrder"],
         reference_views=copy["referenceViews"], read_at_version=copy["version"],
     )
 

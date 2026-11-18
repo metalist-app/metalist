@@ -182,6 +182,17 @@ class ShowTabRequest(TypedDict):
 
 
 @with_config(ConfigDict(strict=True))
+class UpdateTabScrollRequest(TypedDict):
+    # This view's scroll in tab tabId is now this: the one way a view's scroll in a tab changes.
+    tabId: Identifier
+    scrollY: Nonnegative
+    anchorRootId: Text | None
+    scrollAnchor: ScrollAnchor | None
+    # The tab-state version the browser had when it measured the scroll.
+    version: Nonnegative
+
+
+@with_config(ConfigDict(strict=True))
 class MoveTabRequest(TypedDict):
     # Tab tabId now sits where toTabId was: the one way the order of the tabs changes.
     tabId: Identifier

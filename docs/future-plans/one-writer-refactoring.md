@@ -48,7 +48,7 @@ Finish the move. For each thing still saved as part of the whole copy, the page 
 - set this context's search (**built 2026-11-17**: `POST /notes/tab-state/search`, `TabStateStore.set_search`; the whole-copy save no longer takes a search, and the record of "what each view was last told" is gone; tests in `tests/unit/test_search_text_request.py`);
 - show this context in this view (**built 2026-11-17**: `POST /notes/tab-state/shown`, `TabStateStore.show_tab`; the whole-copy save no longer takes the tab shown; tests in `tests/unit/test_shown_context_request.py`);
 - move this context in the order (**built 2026-11-17**: `POST /notes/tab-state/move`, `TabStateStore.move_tab`; the whole-copy save no longer takes an order, so a copy saved before a view heard of another view's move cannot undo it; tests in `tests/unit/test_move_context_request.py`);
-- this context is scrolled to here (per view);
+- this context is scrolled to here (per view) (**built 2026-11-17**: `POST /notes/tab-state/scroll`, `TabStateStore.set_scroll`, one request for each tab whose scroll changed, naming the version the page holds so a scroll measured before the tab's notes changed is not taken; the whole-copy save no longer takes a scroll and now carries only the reference pages; tests in `tests/unit/test_scroll_request.py`);
 - open, go back from and close a reference page.
 
 Then the whole-copy save and the whole-copy re-read are removed, with the merge function and its version comparisons.
