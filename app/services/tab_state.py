@@ -1094,6 +1094,68 @@ class TabStateStore:
             snapshot["changed"] = changed
             return snapshot
 
+    def set_reference_page(
+        self, *, view_id: str, tab_id: str, from_tab_id: str, reference_query: str, view_kind: str,
+        origin_scope: object,
+    ) -> Dict[str, object]:
+        """Tab tab_id of this view is a reference page: it shows reference_query (a view_kind),
+        opened from from_tab_id in the search context of origin_scope. The one way a view opens a
+        page in a tab, changes what a page shows or takes a tab of note ids no view owns as its
+        page (docs/future-plans/one-writer-refactoring.md, idea 1). The page's search becomes the
+        reference, so the two never disagree. Closing the tab ends the page (delete_tab), and so
+        does another search in it (set_search)."""
+        named = (("tabId", tab_id), ("fromTabId", from_tab_id))
+        for name, value in named:
+            if not isinstance(value, str) or not _is_uuid_string(value):
+                raise InputRejected(f"{name} must be a tab id")
+        if not isinstance(reference_query, str) or reference_query == "":
+            raise InputRejected("referenceQuery must be a non-empty string")
+        if view_kind not in REFERENCE_VIEW_KINDS:
+            raise InputRejected("viewKind is not a known kind of view")
+        scope = _normalize_origin_scope(origin_scope, from_storage=False)
+        if from_tab_id == tab_id:
+            raise InputRejected("a reference page is opened from another tab")
+        with self._lock:
+            self._try_decrypt_locked(token="", require_success=True)
+            place = self._place_locked(view_id)
+            visible = set(self._visible_tab_ids_locked(view_id))
+            needed = (*named, ("originScope.scopeTabId", scope["scopeTabId"]))
+            for name, value in needed:
+                if value not in visible and value not in self._gone_tab_ids:
+                    raise InputRejected(f"{name} must reference an existing tab")
+            # Asked before the view heard a tab was deleted or the page closed: nothing to change,
+            # as for a search (set_search).
+            if any(value in self._gone_tab_ids for _name, value in needed):
+                snapshot = self._snapshot_locked(view_id)
+                snapshot["changed"] = False
+                return snapshot
+            # A tab of note ids no view owns (0.29.0 left them, and a place lost with its window)
+            # becomes this view's page; a search context with a search of its own is no page.
+            if tab_id not in self._page_owners:
+                is_unowned_page = _is_note_id_search(self._tabs[tab_id]["searchQuery"]) and (
+                    self._tabs[tab_id]["searchQuery"] == reference_query
+                )
+                if not is_unowned_page or self._context_ids_locked() == [tab_id]:
+                    raise InputRejected("tabId must reference a reference page")
+            page = {
+                "fromTabId": from_tab_id, "referenceQuery": reference_query, "viewKind": view_kind,
+                "originScope": scope,
+            }
+            views = _place_reference_views(place)
+            is_already_this_page = (
+                tab_id in views and views[tab_id] == page
+                and tab_id in self._page_owners and self._tabs[tab_id]["searchQuery"] == reference_query
+            )
+            if not is_already_this_page:
+                self._page_owners[tab_id] = view_id
+                self._tabs[tab_id]["searchQuery"] = reference_query
+                views[tab_id] = page
+                self._version += 1
+                self._persist_locked(connection=None, encryption_service=None, force_plaintext=False)
+            snapshot = self._snapshot_locked(view_id)
+            snapshot["changed"] = not is_already_this_page
+            return snapshot
+
     def get_active_tab_id(self, *, view_id: str) -> str:
         """The tab this view shows."""
         with self._lock:
@@ -1157,6 +1219,8 @@ class TabStateStore:
             if changed:
                 edit_locks.note_search_typed(view_id=view_id, tab_id=tab_id)
                 self._tabs[tab_id]["searchQuery"] = search_query
+                # Another search in a reference page ends its reference view.
+                self._renormalize_reference_views_locked()
                 self._version += 1
                 self._persist_locked(connection=None, encryption_service=None, force_plaintext=False)
             snapshot = self._snapshot_locked(view_id)

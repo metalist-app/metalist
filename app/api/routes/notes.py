@@ -29,6 +29,7 @@ from app.api.note_requests import (
     UpdateTabFileFilterRequest,
     UpdateTabUntaggedViewRequest,
     MoveTabRequest,
+    SetReferencePageRequest,
     UpdateTabScrollRequest,
     ShowTabRequest,
     UpdateTabSearchRequest,
@@ -598,6 +599,17 @@ def show_tab(payload: ShowTabRequest, view_id: ViewId) -> Dict[str, object]:
 def move_tab(payload: MoveTabRequest, view_id: ViewId) -> Dict[str, object]:
     """This tab now sits where the other was, as its view dragged it."""
     return tab_state_store.move_tab(view_id=view_id, tab_id=payload["tabId"], to_tab_id=payload["toTabId"])
+
+
+@router.post("/notes/tab-state/reference-page")
+@transactional_route
+def set_reference_page(payload: SetReferencePageRequest, view_id: ViewId) -> Dict[str, object]:
+    """This tab of the view is a reference page showing this, opened from that tab."""
+    return tab_state_store.set_reference_page(
+        view_id=view_id, tab_id=payload["tabId"], from_tab_id=payload["fromTabId"],
+        reference_query=payload["referenceQuery"], view_kind=payload["viewKind"],
+        origin_scope=payload["originScope"],
+    )
 
 
 @router.post("/notes/tab-state/scroll")

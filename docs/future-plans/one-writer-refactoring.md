@@ -49,7 +49,9 @@ Finish the move. For each thing still saved as part of the whole copy, the page 
 - show this context in this view (**built 2026-11-17**: `POST /notes/tab-state/shown`, `TabStateStore.show_tab`; the whole-copy save no longer takes the tab shown; tests in `tests/unit/test_shown_context_request.py`);
 - move this context in the order (**built 2026-11-17**: `POST /notes/tab-state/move`, `TabStateStore.move_tab`; the whole-copy save no longer takes an order, so a copy saved before a view heard of another view's move cannot undo it; tests in `tests/unit/test_move_context_request.py`);
 - this context is scrolled to here (per view) (**built 2026-11-17**: `POST /notes/tab-state/scroll`, `TabStateStore.set_scroll`, one request for each tab whose scroll changed, naming the version the page holds so a scroll measured before the tab's notes changed is not taken; the whole-copy save no longer takes a scroll and now carries only the reference pages; tests in `tests/unit/test_scroll_request.py`);
-- open, go back from and close a reference page.
+- open, go back from and close a reference page (**built 2026-11-18**: `POST /notes/tab-state/reference-page`, `TabStateStore.set_reference_page`, for a page opened, a page showing something else and a tab of note IDs the view takes as a page; it sets the page's search with its record. Closing is the tab's deletion, and another search in a page ends it on the server. The page now sends no whole copy at all (`persistTabStateSnapshot` sends only requests by name); tests in `tests/unit/test_reference_page_request.py`).
+
+**Left, 2026-11-18:** the server's side of the whole-copy save (`TabStateStore.update`, `POST /notes/tab-state`, and the tests that still save through it) is unused by the page and not yet removed; the whole-copy re-read stays.
 
 Then the whole-copy save and the whole-copy re-read are removed, with the merge function and its version comparisons.
 

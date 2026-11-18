@@ -314,11 +314,11 @@ async function sortWhileViewReachesServerLateCase(page, ids) {
   assert.equal((await rootOrder(page))[0], ids[0], 'the sorted list opens at its top: Sorted root 000 first');
 }
 
-// The tab-state snapshot (the scroll poll's save, the save after a search) is read
-// before the user picks a sort order and reaches the server after it. It carries
-// the old order, which must not replace the new one: the tab reverted, also after
-// a reload, while the menu still ticked the new order. The page holds the snapshot
-// before it is sent until the sort order is saved.
+// A scroll save (the scroll poll's, the save after a search) is measured before the user
+// picks a sort order and reaches the server after it. It belongs to the old order, which it
+// must not put back: the tab reverted, also after a reload, while the menu still ticked the
+// new order (then the save was a copy of the tabs carrying the old order; the scroll goes by
+// name since 2026-11-17). The page holds the save before it is sent until the sort order is saved.
 async function staleSnapshotAfterSortCase(page, ids) {
   await setSortModeAndWait(page, 'normal');
   assert.equal((await rootOrder(page))[0], ids[ids.length - 1], 'normal order: the newest root is first');
@@ -332,14 +332,14 @@ async function staleSnapshotAfterSortCase(page, ids) {
     let snapshotSeen = false;
     window.fetch = async (input, init) => {
       const url = typeof input === 'string' ? input : input.url;
-      if (url.endsWith('/notes/tab-state') && init.method === 'POST' && !snapshotSeen) {
+      if (url.endsWith('/notes/tab-state/scroll') && init.method === 'POST' && !snapshotSeen) {
         snapshotSeen = true;
         await snapshotHeld;
       }
       return pageFetch(input, init);
     };
     try {
-      // A scroll the poll saves: the snapshot differs from the saved one, so it is sent.
+      // A scroll the poll saves: it differs from the one sent last, so it is sent.
       mode.updateActiveTabScroll(1);
       const staleSave = persistTabStateSnapshot();
       while (!snapshotSeen) await new Promise(resolve => setTimeout(resolve, 10));

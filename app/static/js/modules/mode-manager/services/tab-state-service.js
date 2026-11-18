@@ -26,6 +26,7 @@ const TAB_STATE_SEARCH_ENDPOINT = CONFIG.API.NOTES.TAB_STATE_SEARCH;
 const TAB_STATE_SHOWN_ENDPOINT = CONFIG.API.NOTES.TAB_STATE_SHOWN;
 const TAB_STATE_MOVE_ENDPOINT = CONFIG.API.NOTES.TAB_STATE_MOVE;
 const TAB_STATE_SCROLL_ENDPOINT = CONFIG.API.NOTES.TAB_STATE_SCROLL;
+const TAB_STATE_REFERENCE_PAGE_ENDPOINT = CONFIG.API.NOTES.TAB_STATE_REFERENCE_PAGE;
 const FOLDER_CONTEXT_ENDPOINT = CONFIG.API.VIRTUAL_FOLDERS.FOLDER_CONTEXT;
 const TREE_SHOWN_ENDPOINT = CONFIG.API.VIRTUAL_FOLDERS.TREE_SHOWN;
 const SCROLL_POLL_INTERVAL_MS = 1000;
@@ -34,7 +35,6 @@ const TAB_STATE_PERSIST_DEBOUNCE_MS = 300;
 const moduleState = ApplicationState.createFields('tab-state-service', {
     lastPersistedScrollByTab: Object.create(null),
 
-    lastSignature: null,
     scrollListenerAttached: false,
     pendingScrollFrame: null,
     lastScrollY: null,
@@ -49,6 +49,9 @@ const moduleState = ApplicationState.createFields('tab-state-service', {
     tabShownOnServer: null,
     // This view's scroll in each tab as the server last took or gave it (sendChangedScrolls).
     scrollSentByTab: Object.create(null),
+    // What each reference page of this view shows, as the server last took or gave it
+    // (sendChangedReferencePages).
+    referencePageSentByTab: Object.create(null),
     // The page's own changes to the tabs (every request but a reading): how many were sent, how
     // many are unanswered, and, while any is, a promise for the moment none is (changeSent).
     changesSent: 0,
@@ -72,11 +75,16 @@ export async function initializeTabStateService() {
     ModeContext.hydrateTabState(serverState, { emitUpdate: false });
     restoreReferenceNavigation(serverState);
     setTabStateVersionFromServer(serverState.version);
-    recordServerSignature(serverState);
+    recordServerAnswer(serverState);
     // The scroll just loaded is the server's: nothing to send until the page scrolls.
     const loadedTabs = ModeContext.getTabStatePayload().tabs;
     for (const tabId of Object.keys(loadedTabs)) {
         moduleState.scrollSentByTab[tabId] = serializeScroll(loadedTabs[tabId]);
+    }
+    // So are its reference pages; one the page claims as it loads (a tab of note IDs no view's
+    // record names) is not among them, and is sent with the first save.
+    for (const tabId of Object.keys(serverState.referenceViews)) {
+        moduleState.referencePageSentByTab[tabId] = serializeReferencePage(serverState.referenceViews[tabId]);
     }
     ModeContext.setTabStateUpdateHook(handleTabStateMutation);
     startScrollWatcher();
@@ -100,7 +108,7 @@ async function sendPendingSearches() {
     const searchQuery = moduleState.pendingSearchByTab[tabId];
     delete moduleState.pendingSearchByTab[tabId];
     moduleState.pendingSearchRequest = callTabStateApiAt(TAB_STATE_SEARCH_ENDPOINT, 'POST', { tabId, searchQuery })
-        .then(captureServerSignature)
+        .then(takeServerAnswer)
         .finally(() => {
             moduleState.pendingSearchRequest = null;
         });
@@ -115,7 +123,7 @@ async function sendPendingSearches() {
 // hears of it with the contexts (adoptSharedSearchContexts) and asks no more.
 async function sendShownTab() {
     moduleState.pendingPersistRequest = callTabStateApiAt(TAB_STATE_SHOWN_ENDPOINT, 'POST', { tabId: ModeContext.activeTabId })
-        .then(captureServerSignature)
+        .then(takeServerAnswer)
         .finally(() => {
             moduleState.pendingPersistRequest = null;
         });
@@ -136,7 +144,7 @@ export async function moveTabOnServer(tabId, toTabId) {
         await moduleState.pendingPersistRequest;
     }
     moduleState.pendingPersistRequest = callTabStateApiAt(TAB_STATE_MOVE_ENDPOINT, 'POST', { tabId, toTabId })
-        .then(captureServerSignature)
+        .then(takeServerAnswer)
         .finally(() => {
             moduleState.pendingPersistRequest = null;
         });
@@ -171,7 +179,7 @@ async function sendChangedScrolls() {
         const sent = { tabId, scrollY, anchorRootId, scrollAnchor, version: ModeContext.tabStateVersion };
         moduleState.pendingPersistRequest = callTabStateApiAt(TAB_STATE_SCROLL_ENDPOINT, 'POST', sent)
             .then((state) => {
-                captureServerSignature(state);
+                takeServerAnswer(state);
                 moduleState.scrollSentByTab[tabId] = scroll;
             })
             .finally(() => {
@@ -184,6 +192,58 @@ async function sendChangedScrolls() {
     }
 }
 
+function serializeReferencePage(page) {
+    const scope = page.originScope;
+    return JSON.stringify([
+        page.fromTabId, page.referenceQuery, page.viewKind,
+        scope.scopeTabId, scope.searchQuery, scope.sortMode, scope.isUntaggedView,
+    ]);
+}
+
+// The server takes this view's reference pages by name (docs/future-plans/one-writer-refactoring.md,
+// idea 1): one request for each page opened, each page showing something else, and each tab of
+// note IDs the page took as one (adoptOrphanReferenceTabs), in the order they were opened, so a
+// page is known before one opened from it. A page closed needs none: its tab is deleted by name,
+// and another search in it ends it on the server too. Each goes as the snapshot writer's own
+// request.
+async function sendChangedReferencePages() {
+    const pagesNow = getReferenceViewsPayload();
+    for (const tabId of Object.keys(moduleState.referencePageSentByTab)) {
+        if (!Object.prototype.hasOwnProperty.call(pagesNow, tabId)) {
+            delete moduleState.referencePageSentByTab[tabId];
+        }
+    }
+    for (const tabId of Object.keys(pagesNow)) {
+        while (moduleState.pendingPersistRequest !== null) {
+            await moduleState.pendingPersistRequest;
+        }
+        // Read once nothing is on its way: the page can be closed, or show something else, by now.
+        const pages = getReferenceViewsPayload();
+        if (!Object.prototype.hasOwnProperty.call(pages, tabId)) {
+            continue;
+        }
+        const page = serializeReferencePage(pages[tabId]);
+        if (moduleState.referencePageSentByTab[tabId] === page) {
+            continue;
+        }
+        moduleState.pendingPersistRequest = callTabStateApiAt(TAB_STATE_REFERENCE_PAGE_ENDPOINT, 'POST', { tabId, ...pages[tabId] })
+            .then((state) => {
+                takeServerAnswer(state);
+                moduleState.referencePageSentByTab[tabId] = page;
+            })
+            .finally(() => {
+                moduleState.pendingPersistRequest = null;
+            });
+        await moduleState.pendingPersistRequest;
+    }
+    while (moduleState.pendingPersistRequest !== null) {
+        await moduleState.pendingPersistRequest;
+    }
+}
+
+// Everything the page keeps of its place in the tabs, sent to the server by name: the searches
+// typed, the tab shown, the scroll in each tab and the reference pages. No copy of the tabs is
+// sent: nothing is left for one to carry (docs/future-plans/one-writer-refactoring.md, idea 1).
 export async function persistTabStateSnapshot() {
     // Searches go first, by name: every caller that saves before it reads the tabs again or
     // changes them finds the server holding what was typed. With none waiting, the copy is
@@ -200,37 +260,7 @@ export async function persistTabStateSnapshot() {
         await sendShownTab();
     }
     await sendChangedScrolls();
-    // Another caller can have sent its own request while those were answered (a tab moved): the
-    // copy waits its turn, and is read only then.
-    while (moduleState.pendingPersistRequest !== null) {
-        await moduleState.pendingPersistRequest;
-    }
-    // Which tabs are reference views goes with the tabs (docs/ui/references.md).
-    const snapshot = { ...ModeContext.getTabStatePayload(), referenceViews: getReferenceViewsPayload() };
-    const signature = serializeState(canonicalizeState(snapshot));
-    if (signature === moduleState.lastSignature) {
-        return;
-    }
-    moduleState.pendingPersistRequest = callTabStateApi('POST', snapshot).then(response => {
-        setTabStateVersionFromServer(response.version);
-        recordServerSignature(response);
-    }).finally(() => {
-        moduleState.pendingPersistRequest = null;
-    });
-    await moduleState.pendingPersistRequest;
-}
-
-function canonicalizeState(state) {
-    if (!state || typeof state !== 'object') {
-        throw new Error('tab-state payload must be an object');
-    }
-    return {
-        activeTabId: state.activeTabId,
-        tabs: state.tabs,
-        tabOrder: state.tabOrder,
-        referenceViews: state.referenceViews,
-        version: state.version,
-    };
+    await sendChangedReferencePages();
 }
 
 function handleTabStateMutation(event) {
@@ -260,20 +290,17 @@ function scheduleTabStatePersist() {
     }, TAB_STATE_PERSIST_DEBOUNCE_MS);
 }
 
-function captureServerSignature(state) {
+function takeServerAnswer(state) {
     if (!state || typeof state !== 'object') {
         throw new Error('tab-state response missing payload');
     }
     setTabStateVersionFromServer(state.version);
-    recordServerSignature(state);
+    recordServerAnswer(state);
 }
 
-// The server answers a post that changes nothing (e.g. one differing only in
-// what it normalises away) with the state and version it already had, so its
-// signature can equal the recorded one. Every answer also carries the tabs' date
-// range and Files filters, Untagged views and whether the folder tree shows,
-// which only the server changes.
-function recordServerSignature(state) {
+// Every answer carries the tabs' date range and Files filters, Untagged views and whether the
+// folder tree shows, which only the server changes, and the tab it holds as shown here.
+function recordServerAnswer(state) {
     recordDateFiltersFromServer(state);
     recordFileFiltersFromServer(state);
     recordTreeShownFromServer(state);
@@ -282,10 +309,6 @@ function recordServerSignature(state) {
     recordSearchLocks(state.searchLocks);
     if (moduleState.tabShownOnServer !== state.activeTabId) {
         moduleState.tabShownOnServer = state.activeTabId;
-    }
-    const signature = serializeState(canonicalizeState(state));
-    if (moduleState.lastSignature !== signature) {
-        moduleState.lastSignature = signature;
     }
 }
 
@@ -298,7 +321,7 @@ export async function reloadTabStateFromServer() {
     const keepsActiveTab = serverState.activeTabId === ModeContext.activeTabId;
     ModeContext.hydrateTabState(serverState, { preserveActiveRootTracking: keepsActiveTab });
     setTabStateVersionFromServer(serverState.version);
-    recordServerSignature(serverState);
+    recordServerAnswer(serverState);
     return serverState;
 }
 
@@ -412,7 +435,7 @@ export async function createTabOnServer(copyFromTabId, copiesView, isPage) {
         isPage,
         clientId: ModeContext.clientId,
     });
-    captureServerSignature(response);
+    takeServerAnswer(response);
     return response;
 }
 
@@ -421,7 +444,7 @@ export async function deleteTabOnServer(tabId) {
         throw new Error('tabId must be a non-empty string');
     }
     const response = await callTabStateApiAt(TAB_STATE_DELETE_TAB_ENDPOINT, 'POST', { tabId });
-    captureServerSignature(response);
+    takeServerAnswer(response);
     return response;
 }
 
@@ -439,7 +462,7 @@ export async function chooseFolderOnServer(tabId, folder, adds) {
         clientId: ModeContext.clientId,
         undoContext: captureUndoContext(),
     });
-    captureServerSignature(response);
+    takeServerAnswer(response);
     return response;
 }
 
@@ -449,7 +472,7 @@ export async function setTreeShownOnServer(isShown) {
         throw new Error('setTreeShownOnServer requires whether the tree shows');
     }
     const response = await callTabStateApiAt(TREE_SHOWN_ENDPOINT, 'POST', { isShown });
-    captureServerSignature(response);
+    takeServerAnswer(response);
     return response;
 }
 
@@ -485,7 +508,7 @@ export async function setTabSortModeOnServer(tabId, sortMode) {
         clientId: ModeContext.clientId,
         undoContext: captureUndoContext(),
     });
-    captureServerSignature(response);
+    takeServerAnswer(response);
     return response;
 }
 
@@ -506,7 +529,7 @@ export async function setTabDateFilterOnServer(tabId, filter) {
         clientId: ModeContext.clientId,
         undoContext: captureUndoContext(),
     });
-    captureServerSignature(response);
+    takeServerAnswer(response);
     return response;
 }
 
@@ -524,7 +547,7 @@ export async function setTabFileFilterOnServer(tabId, kind) {
         clientId: ModeContext.clientId,
         undoContext: captureUndoContext(),
     });
-    captureServerSignature(response);
+    takeServerAnswer(response);
     return response;
 }
 
@@ -541,7 +564,7 @@ export async function setTabUntaggedViewOnServer(tabId, isUntaggedView) {
         clientId: ModeContext.clientId,
         undoContext: captureUndoContext(),
     });
-    captureServerSignature(response);
+    takeServerAnswer(response);
     return response;
 }
 
@@ -641,9 +664,3 @@ function getCurrentScrollY() {
     return Math.max(0, Math.round(window.scrollY));
 }
 
-function serializeState(state) {
-    if (!state) {
-        return '';
-    }
-    return JSON.stringify(state);
-}

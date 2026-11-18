@@ -23,6 +23,8 @@ async function harness() {
     let serverVersion = 1;
     // The tab the server holds as shown: only a request to show one changes it.
     let serverShown = 'first';
+    // The reference pages the page holds (reference-source-navigation-service.js), by their tab.
+    const referencePages = {};
     const payload = {
         activeTabId: 'first', tabOrder: ['first', 'second'], version: 1,
         tabs: { first: { scrollY: 0, scrollAnchor: null }, second: { scrollY: 0, scrollAnchor: null } },
@@ -46,11 +48,11 @@ async function harness() {
     };
     const dependencies = {
         ApplicationState, ModeContext: context, window, document: { hidden: false },
-        CONFIG: { API: { NOTES: { TAB_STATE: '/tabs', TAB_STATE_SEARCH: '/tabs/search', TAB_STATE_SHOWN: '/tabs/shown', TAB_STATE_MOVE: '/tabs/move', TAB_STATE_SCROLL: '/tabs/scroll', TAB_STATE_UNTAGGED_VIEW: '/tabs/untagged' }, VIRTUAL_FOLDERS: { FOLDER_CONTEXT: '/folder-context', TREE_SHOWN: '/tree-shown' } } },
+        CONFIG: { API: { NOTES: { TAB_STATE: '/tabs', TAB_STATE_SEARCH: '/tabs/search', TAB_STATE_SHOWN: '/tabs/shown', TAB_STATE_MOVE: '/tabs/move', TAB_STATE_SCROLL: '/tabs/scroll', TAB_STATE_REFERENCE_PAGE: '/tabs/reference-page', TAB_STATE_UNTAGGED_VIEW: '/tabs/untagged' }, VIRTUAL_FOLDERS: { FOLDER_CONTEXT: '/folder-context', TREE_SHOWN: '/tree-shown' } } },
         CommandGate: { isBusy: () => false }, buildSessionHeaders: () => ({}),
         computeScrollAnchor: () => null, areScrollAnchorsEqual: (a, b) => a === b,
         restoreReferenceNavigation: (state) => restoredReferenceTabs.push(state.tabs),
-        getReferenceViewsPayload: () => ({}),
+        getReferenceViewsPayload: () => structuredClone(referencePages),
         recordDateFiltersFromServer: () => {},
         recordFileFiltersFromServer: () => {},
         recordTreeShownFromServer: () => {},
@@ -61,10 +63,10 @@ async function harness() {
         fetch: async (endpoint, options) => {
             if (options.method === 'GET' && holdsReads) {
                 return await new Promise(resolve => reads.push({
-                    answer: version => resolve({ ok: true, json: async () => ({ ...structuredClone(payload), version }) }),
+                    answer: version => resolve({ ok: true, json: async () => ({ ...structuredClone(payload), referenceViews: {}, version }) }),
                 }));
             }
-            if (options.method === 'GET') return { ok: true, json: async () => structuredClone(payload) };
+            if (options.method === 'GET') return { ok: true, json: async () => ({ ...structuredClone(payload), referenceViews: {} }) };
             const sent = JSON.parse(options.body);
             // A change asked for by name is answered with the tabs, as every tab-state request is.
             const answered = endpoint === '/tabs' ? sent : structuredClone(payload);
@@ -104,7 +106,7 @@ async function harness() {
     const holdReads = () => { holdsReads = true; };
     // The page moves a tab in its own list, as a drag does (ModeContext.moveTabToHoveredSlot).
     const moveTab = (order) => { payload.tabOrder = order; };
-    return { moveTab, service, requests, context, payload, window, poll: polls[0], apiErrors, typeSearch, reads, taken, holdReads, showTab, answerAll };
+    return { referencePages, moveTab, service, requests, context, payload, window, poll: polls[0], apiErrors, typeSearch, reads, taken, holdReads, showTab, answerAll };
 }
 
 const settle = () => new Promise(setImmediate);
@@ -245,22 +247,17 @@ test('a search typed in one tab is still sent after another tab is shown', async
     ]);
 });
 
-test('a waiting snapshot save reads fresh state after the previous response', async () => {
+test('a save waiting behind another sends what the page holds once its turn comes', async () => {
     const h = await harness();
     h.payload.tabs.first.scrollY = 100;
     const first = h.service.persistTabStateSnapshot();
-    h.payload.tabs.first.searchQuery = 'updated search';
     const next = h.service.persistTabStateSnapshot();
-    const initialCount = h.requests.length;
-    h.requests[0].complete();
-    await new Promise(setImmediate);
-    assert.deepEqual(h.requests.map(request => request.endpoint), ['/tabs/scroll', '/tabs']);
-    h.requests[1].complete();
+    h.payload.tabs.first.scrollY = 250;
+    await h.answerAll();
     await Promise.all([first, next]);
-    assert.equal(initialCount, 1);
-    assert.equal(h.requests.length, 2);
-    assert.equal(h.requests[1].sent.tabs.first.searchQuery, 'updated search');
-    assert.equal(h.requests[1].sent.version, 2);
+    assert.deepEqual(h.requests.map(request => [request.endpoint, request.sent.scrollY, request.sent.version]), [
+        ['/tabs/scroll', 100, 1], ['/tabs/scroll', 250, 2],
+    ]);
 });
 
 test('a scroll save that finds the session ended shows the login screen and is dropped quietly', async () => {
@@ -524,4 +521,86 @@ test('the scroll of a tab left is sent for that tab, after the tab now shown', a
     assert.deepEqual(h.requests.map(request => [request.endpoint, request.sent.tabId]), [
         ['/tabs/shown', 'second'], ['/tabs/scroll', 'first'],
     ]);
+});
+
+// The server takes this view's reference pages by name (idea 1; cases agreed 2026-11-18), and
+// the page sends no copy of the tabs at all.
+const recipePage = () => ({
+    fromTabId: 'first', referenceQuery: 'recipe-note', viewKind: 'source',
+    originScope: { scopeTabId: 'first', searchQuery: '', sortMode: 'normal', isUntaggedView: false },
+});
+
+test('a reference page opened is asked for by name, once', async () => {
+    const h = await harness();
+    h.referencePages.second = recipePage();
+    const saved = h.service.persistTabStateSnapshot();
+    await h.answerAll();
+    await saved;
+    const again = h.service.persistTabStateSnapshot();
+    await h.answerAll();
+    await again;
+    assert.deepEqual(h.requests.map(request => request.endpoint), ['/tabs/reference-page']);
+    assert.deepEqual(h.requests[0].sent, { tabId: 'second', ...recipePage() });
+});
+
+test('a reference page that shows something else is asked for again', async () => {
+    // Case 6: a later AI reference replaces the AI references a page shows.
+    const h = await harness();
+    h.referencePages.second = { ...recipePage(), referenceQuery: 'two-notes', viewKind: 'references' };
+    const opened = h.service.persistTabStateSnapshot();
+    await h.answerAll();
+    await opened;
+    h.referencePages.second = { ...recipePage(), referenceQuery: 'menu-note', viewKind: 'reference' };
+    const replaced = h.service.persistTabStateSnapshot();
+    await h.answerAll();
+    await replaced;
+    assert.deepEqual(h.requests.map(request => [request.endpoint, request.sent.referenceQuery, request.sent.viewKind]), [
+        ['/tabs/reference-page', 'two-notes', 'references'], ['/tabs/reference-page', 'menu-note', 'reference'],
+    ]);
+});
+
+test('a reference page closed asks for nothing, and one opened in its tab again is asked for', async () => {
+    const h = await harness();
+    h.referencePages.second = recipePage();
+    const opened = h.service.persistTabStateSnapshot();
+    await h.answerAll();
+    await opened;
+    delete h.referencePages.second;
+    const closed = h.service.persistTabStateSnapshot();
+    await h.answerAll();
+    await closed;
+    assert.equal(h.requests.length, 1);
+    h.referencePages.second = recipePage();
+    const reopened = h.service.persistTabStateSnapshot();
+    await h.answerAll();
+    await reopened;
+    assert.deepEqual(h.requests.map(request => request.endpoint), ['/tabs/reference-page', '/tabs/reference-page']);
+});
+
+test('pages are asked for in the order they were opened, after the tab shown and its scroll', async () => {
+    const h = await harness();
+    h.referencePages.first = { ...recipePage(), fromTabId: 'second' };
+    h.referencePages.second = recipePage();
+    h.showTab('second');
+    h.payload.tabs.second.scrollY = 100;
+    const saved = h.service.persistTabStateSnapshot();
+    await h.answerAll();
+    await saved;
+    assert.deepEqual(h.requests.map(request => [request.endpoint, request.sent.tabId]), [
+        ['/tabs/shown', 'second'], ['/tabs/scroll', 'second'],
+        ['/tabs/reference-page', 'first'], ['/tabs/reference-page', 'second'],
+    ]);
+});
+
+test('saving sends no copy of the tabs, whatever the page holds', async () => {
+    const h = await harness();
+    h.typeSearch('groceries');
+    h.showTab('second');
+    h.payload.tabs.second.scrollY = 100;
+    h.moveTab(['second', 'first']);
+    h.referencePages.second = recipePage();
+    const saved = h.service.persistTabStateSnapshot();
+    await h.answerAll();
+    await saved;
+    assert.deepEqual(h.requests.filter(request => request.endpoint === '/tabs'), []);
 });

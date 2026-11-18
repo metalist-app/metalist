@@ -182,6 +182,16 @@ class ShowTabRequest(TypedDict):
 
 
 @with_config(ConfigDict(strict=True))
+class SetReferencePageRequest(TypedDict):
+    # Tab tabId of this view is a reference page showing referenceQuery, opened from fromTabId.
+    tabId: Identifier
+    fromTabId: Identifier
+    referenceQuery: Text
+    viewKind: Literal['source', 'backlinks', 'reference', 'references']
+    originScope: ReferenceOriginScope
+
+
+@with_config(ConfigDict(strict=True))
 class UpdateTabScrollRequest(TypedDict):
     # This view's scroll in tab tabId is now this: the one way a view's scroll in a tab changes.
     tabId: Identifier

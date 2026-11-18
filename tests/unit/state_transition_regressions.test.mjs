@@ -268,15 +268,15 @@ test('tab-state persistence accepts a server echo of the state it already has', 
         recordSearchLocks: () => {},
         fetch: async () => ({ ok: true, json: async () => structuredClone(serverState) }),
     };
-    const { captureServerSignature, persistTabStateSnapshot } = new Function(
+    const { takeServerAnswer, persistTabStateSnapshot } = new Function(
         ...Object.keys(dependencies),
-        `${source}\nreturn { captureServerSignature, persistTabStateSnapshot };`,
+        `${source}\nreturn { takeServerAnswer, persistTabStateSnapshot };`,
     )(...Object.values(dependencies));
-    captureServerSignature(structuredClone(serverState));
+    takeServerAnswer(structuredClone(serverState));
     await persistTabStateSnapshot();
     await persistTabStateSnapshot();
     // A later re-read of the same server state is not a change either.
-    captureServerSignature(structuredClone(serverState));
+    takeServerAnswer(structuredClone(serverState));
 });
 
 for (const kind of ['file', 'remote']) {
