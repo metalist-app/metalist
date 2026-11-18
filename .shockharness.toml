@@ -127,6 +127,12 @@ notify_missing = false
 # handlers that open with an instanceof guard. Every entry is a reported deviation.
 
 [[tool.shockharness.rules.exceptions.boundaries]]
+path = "tests/unit/test_tab_state_simulation.py"
+language = "python"
+exception = "app.services.input_errors.InputRejected"
+reason = "the simulation plays stale requests, which the tab store may calmly refuse; a refusal is recorded as no answer and every other exception fails the run"
+
+[[tool.shockharness.rules.exceptions.boundaries]]
 path = "app/api/streaming_upload.py"
 language = "python"
 exception = "starlette.requests.ClientDisconnect"
