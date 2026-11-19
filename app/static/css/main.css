@@ -9873,7 +9873,8 @@ html[data-theme="dark"] .note-embed-node .meta-markdown-task-toggle:hover {
    nothing; they fade rather than slide, so a card stands where it will stay. */
 .floating-messages {
     position: fixed;
-    top: var(--global-controls-top);
+    /* Below the red fatal error when it shows (error-overlay.js sets its height). */
+    top: calc(var(--global-controls-top) + var(--fatal-overlay-height, 0px));
     right: calc(var(--global-controls-right) + var(--floating-button-size) + 8px);
     z-index: 20000; /* above tab overlays and dialogs */
     display: flex;

@@ -1,6 +1,6 @@
 import { CONFIG } from '../config.js';
 import { HTTP_STATUS } from '../http-status.js';
-import { ServerInputRejectedError } from '../expected-errors.js';
+import { HttpRequestError, ServerInputRejectedError } from '../expected-errors.js';
 import { buildSessionHeaders } from '../session-auth.js';
 import { ModeContextInstance as ModeContext } from '../mode-manager/mode-context.js';
 import { recordedTrail } from './input-recorder.js';
@@ -103,19 +103,39 @@ async function answerOf(response) {
         throw new ServerInputRejectedError(body.detail);
     }
     if (!response.ok) {
-        throw new Error(`Problem report failed: ${response.status} ${response.statusText}`);
+        // A request the server refused: the caller says so calmly (the red error's Export Report…
+        // must never put its own failure in place of the error it reports, error-overlay.js).
+        throw new HttpRequestError(`Problem report failed: ${response.status} ${response.statusText}`);
     }
     return body;
 }
 
+// A signed-in page's draft with nothing from the vault, as the login page's: the server, with no
+// vault open, cannot read its notes or tags, so it gets no note, search or input to check.
+function draftWithNothingFromTheVault(draft) {
+    return { ...draft, editingNote: '', search: '', noteIds: [], inputs: [] };
+}
+
+function sendUnsaved(draft) {
+    return fetch(CONFIG.API.PROBLEM_REPORTS.MAKE_UNSAVED, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(draft),
+    });
+}
+
 // Sends the draft; a report made logged in is kept, one from the login page is not.
 export async function makeReport(draft) {
-    const loggedIn = isLoggedIn();
-    const url = loggedIn ? CONFIG.API.PROBLEM_REPORTS.MAKE : CONFIG.API.PROBLEM_REPORTS.MAKE_UNSAVED;
-    const headers = loggedIn ? buildSessionHeaders(true) : { 'Content-Type': 'application/json' };
-    const response = await fetch(url, { method: 'POST', headers, body: JSON.stringify(draft) });
-    const answer = await answerOf(response);
-    return answer.report;
+    if (!isLoggedIn()) {
+        return (await answerOf(await sendUnsaved(draft))).report;
+    }
+    const response = await fetch(CONFIG.API.PROBLEM_REPORTS.MAKE, {
+        method: 'POST', headers: buildSessionHeaders(true), body: JSON.stringify(draft),
+    });
+    // The page shows a vault, but its session has ended (after a restore, the maintainer's dad,
+    // 2026-11-18): the report is made as the login page's, so the error can still be sent.
+    if (response.status === HTTP_STATUS.UNAUTHORIZED) {
+        return (await answerOf(await sendUnsaved(draftWithNothingFromTheVault(draft)))).report;
+    }
+    return (await answerOf(response)).report;
 }
 
 export async function keptReports() {

@@ -1,8 +1,10 @@
 import { ApplicationState } from './application-state.js';
 import { isNetworkTransportError } from './api-failure-classification-service.js';
-import { NoteLockedElsewhereError, ServerInputRejectedError } from './expected-errors.js';
+import { HttpRequestError, NoteLockedElsewhereError, ServerInputRejectedError } from './expected-errors.js';
+import { isRestoringOpenVault } from './restore-session-end.js';
 import { CONFIG } from './config.js';
 import { HTTP_STATUS } from './http-status.js';
+import { settleResult } from './async-result.js';
 
 // The red overlay is drawn above every dialog (.modal, 15000), floating card (20000) and the
 // login cover (21000): under a dialog, an error there looked like a click doing nothing
@@ -17,10 +19,18 @@ const moduleState = ApplicationState.createFields('error-overlay', {
     hasExplainedFatal: false,
     // The error the overlay shows, for Export Report… (docs/ready-to-build/error-reports.md §4).
     shownError: null,
+    // Shows a calm message (installGlobalErrorOverlay): what the overlay's own buttons could not do.
+    showWarning: null,
 });
 
 const OVERLAY_TEXT_ID = 'fatal-error-text';
 const EXPORT_REPORT_ID = 'fatal-error-export-report';
+const COPY_ERROR_ID = 'fatal-error-copy';
+// How tall the red error is, for what floats below it (main.css, .floating-messages).
+const OVERLAY_HEIGHT_PROPERTY = '--fatal-overlay-height';
+const COPY_LABEL = 'Copy';
+const COPIED_LABEL = 'Copied';
+const COPIED_SHOWN_MS = 2000;
 
 // A page newer than its server (the server's Python is read when it starts, the page's
 // files on every load: app/services/server_code.py) fails on answers in the old shape.
@@ -80,8 +90,63 @@ export function isBrowserResizeObserverNote(event) {
   return (event.error === null || event.error === undefined) && RESIZE_OBSERVER_LOOP_NOTES.has(event.message);
 }
 
+// A request the server refused while the page waits to reload after restoring the open vault:
+// the restore ended the session, so every request is refused until the dialog is closed, and
+// the checks a tab runs when shown again (backup, trim, password audit, reminders) each showed
+// a red error (the maintainer's dad, 2026-11-18). Any other error then still shows.
+function isRefusedAfterRestore(reason) {
+  return isRestoringOpenVault() && reason instanceof HttpRequestError;
+}
+
 export function shouldSuppressFatalOverlay(reason) {
-  return isNetworkTransportError(reason);
+  return [isNetworkTransportError(reason), isRefusedAfterRestore(reason)].includes(true);
+}
+
+function overlayButton(id, label) {
+  const button = document.createElement('button');
+  button.id = id;
+  button.type = 'button';
+  button.textContent = label;
+  Object.assign(button.style, {
+    marginTop: '8px',
+    font: 'inherit',
+    color: '#fff',
+    background: 'transparent',
+    border: '1px solid rgba(255, 255, 255, 0.7)',
+    borderRadius: '4px',
+    padding: '3px 10px',
+    cursor: 'pointer',
+  });
+  return button;
+}
+
+function warn(message) {
+  if (moduleState.showWarning === null) throw new Error('The fatal overlay has no way to show a message yet');
+  moduleState.showWarning(message);
+}
+
+// The report maker is loaded when pressed: the overlay stands alone, before the app it reports on
+// has loaded. A report that cannot be made is said calmly, and the error stays as it is shown:
+// thrown, the failure took the error's place on the overlay and in the next report (the
+// maintainer's dad, 2026-11-18, after a restore ended his session).
+async function exportShownError(shownError) {
+  const made = await settleResult(async () => {
+    const { exportOverlayReport } = await import('./problem-reports/report-maker.js');
+    await exportOverlayReport(shownError);
+  });
+  if (!made.ok) warn(`No report was made: ${made.error.message}`);
+}
+
+async function copyShownError(copyButton) {
+  const copied = await settleResult(() => navigator.clipboard.writeText(overlayText().textContent));
+  if (!copied.ok) {
+    // The browser refused the clipboard: the text is selected, for the keyboard's own copy.
+    window.getSelection().selectAllChildren(overlayText());
+    warn('Not copied. The text is selected: press Ctrl+C (⌘C on a Mac).');
+    return;
+  }
+  copyButton.textContent = COPIED_LABEL;
+  window.setTimeout(() => { copyButton.textContent = COPY_LABEL; }, COPIED_SHOWN_MS);
 }
 
 function ensureOverlay() {
@@ -107,29 +172,23 @@ function ensureOverlay() {
     });
     const text = document.createElement('div');
     text.id = OVERLAY_TEXT_ID;
-    const exportButton = document.createElement('button');
-    exportButton.id = EXPORT_REPORT_ID;
-    exportButton.type = 'button';
-    exportButton.textContent = 'Export Report…';
-    Object.assign(exportButton.style, {
-      marginTop: '8px',
-      font: 'inherit',
-      color: '#fff',
-      background: 'transparent',
-      border: '1px solid rgba(255, 255, 255, 0.7)',
-      borderRadius: '4px',
-      padding: '3px 10px',
-      cursor: 'pointer',
-    });
     // A report of what led up to the error, redacted, saved as a file to send.
-    // Loaded when pressed: the overlay stands alone, before the app it reports on has loaded.
+    const exportButton = overlayButton(EXPORT_REPORT_ID, 'Export Report…');
     exportButton.addEventListener('click', () => {
       if (moduleState.shownError === null) throw new Error('Export Report… pressed with no error shown');
-      const shownError = moduleState.shownError;
-      void import('./problem-reports/report-maker.js').then(({ exportOverlayReport }) => exportOverlayReport(shownError));
+      void exportShownError(moduleState.shownError);
     });
-    overlay.append(text, exportButton);
+    // MetaList shows no browser menu on a right-click, so the text has its own Copy.
+    const copyButton = overlayButton(COPY_ERROR_ID, COPY_LABEL);
+    copyButton.style.marginLeft = '8px';
+    copyButton.addEventListener('click', () => { void copyShownError(copyButton); });
+    overlay.append(text, exportButton, copyButton);
     document.body.appendChild(overlay);
+    // Messages float below the red error, never under it: one shown under it could not be read
+    // (the maintainer's dad, 2026-11-18: "MetaList can't reach its server" was half covered).
+    new ResizeObserver(() => {
+      document.documentElement.style.setProperty(OVERLAY_HEIGHT_PROPERTY, `${overlay.offsetHeight}px`);
+    }).observe(overlay);
   }
   return overlay;
 }
@@ -182,6 +241,7 @@ export function installGlobalErrorOverlay(showWarning) {
   }
   if (moduleState.installed) return;
   moduleState.installed = true;
+  moduleState.showWarning = showWarning;
   // Say it before anything fails, too.
   void checkServerCodeIsStale().then((isStale) => {
     if (isStale) {
@@ -221,7 +281,7 @@ export function installGlobalErrorOverlay(showWarning) {
     }
     if (shouldSuppressFatalOverlay(reason)) {
       event.preventDefault();
-      console.info('[ErrorOverlay] Connection failure is already shown in the status banner');
+      console.info('[ErrorOverlay] An expected request failure (no connection, or the session a restore ended)', reason);
       return;
     }
     let msg = null;

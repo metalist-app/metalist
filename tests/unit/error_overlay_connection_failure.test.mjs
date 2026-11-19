@@ -7,6 +7,7 @@ import {
     shouldSuppressFatalOverlay,
 } from '../../app/static/js/modules/error-overlay.js';
 import { HttpRequestError, ServerInputRejectedError } from '../../app/static/js/modules/expected-errors.js';
+import { setRestoringOpenVault } from '../../app/static/js/modules/restore-session-end.js';
 
 
 test('expected connection failures do not become fatal error dumps', () => {
@@ -23,6 +24,20 @@ test('unexpected client failures still reach the fatal error overlay', () => {
         shouldSuppressFatalOverlay(new Error('Malformed response payload')),
         false,
     );
+});
+
+
+// Restoring the open vault ends the session; until its dialog is closed every request is refused
+// (the maintainer's dad, 2026-11-18: the checks a tab runs when shown again each showed a red error).
+test('a request refused while the page waits to reload after a restore is no fatal error', (t) => {
+    const refused = new HttpRequestError('Request failed (401): Not authenticated');
+    assert.equal(shouldSuppressFatalOverlay(refused), false, 'refused at any other time: fatal');
+
+    setRestoringOpenVault(true);
+    t.after(() => setRestoringOpenVault(false));
+
+    assert.equal(shouldSuppressFatalOverlay(refused), true);
+    assert.equal(shouldSuppressFatalOverlay(new Error('Malformed response payload')), false, 'another error still shows');
 });
 
 

@@ -261,6 +261,68 @@ async function checkRedErrorReport(page) {
   assertBusyNumbers(report, 'Export Report…');
 }
 
+// The page shows a vault but its session has ended (the maintainer's dad, 2026-11-18, after a
+// restore): the server refuses the signed-in report with 401. `refused` names the report routes
+// answered so; every other request goes through.
+async function refuseReports(page, refused) {
+  await page.evaluate(refused => {
+    if (window.problemReportFetch === undefined) window.problemReportFetch = window.fetch;
+    const pageFetch = window.problemReportFetch;
+    window.fetch = async (resource, options) => {
+      const path = new URL(String(resource instanceof Request ? resource.url : resource), location.href).pathname;
+      if (refused.includes(path)) {
+        return new Response(JSON.stringify({detail: 'Not authenticated'}), {status: 401, statusText: 'Unauthorized'});
+      }
+      return pageFetch(resource, options);
+    };
+  }, refused);
+}
+
+const overlayText = page => page.$eval('#fatal-error-text', text => text.textContent);
+
+async function checkReportAfterSessionEnded(page) {
+  await failUnhandled(page, 'TypeError');
+  const shown = await overlayText(page);
+
+  // Export Report… still saves a file, with the error and nothing from the vault.
+  await refuseReports(page, ['/api2/problem-reports']);
+  let count = await downloadCount(page);
+  await page.click('#fatal-error-export-report');
+  const report = JSON.parse(await nextDownload(page, count));
+  assert.equal(report.error.class, 'TypeError');
+  assert.equal(report.error.message.redacted, SHAPED_ERROR);
+  assert.deepEqual([report.notes, report.inputs], [[], []], 'a report made after the session ended holds nothing from the vault');
+  assert.equal(await overlayText(page), shown, 'the error shown should stay as it was');
+
+  // No report can be made at all: said calmly, the error still shown, nothing saved.
+  await refuseReports(page, ['/api2/problem-reports', '/api2/problem-reports/unsaved']);
+  count = await downloadCount(page);
+  await page.click('#fatal-error-export-report');
+  await page.waitForFunction(() => [...document.querySelectorAll('.floating-message-text')]
+    .some(text => text.textContent.startsWith('No report was made')));
+  assert.equal(await overlayText(page), shown, 'a report that failed should not take the error\'s place');
+  assert.equal(await downloadCount(page), count, 'nothing should be saved');
+  assert.equal(await page.$$eval('#fatal-error-overlay', overlays => overlays.length), 1, 'one red error');
+
+  // Copy puts the red text on the clipboard.
+  await page.evaluate(() => {
+    window.problemReportCopied = [];
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true, value: {writeText: async text => { window.problemReportCopied.push(text); }},
+    });
+  });
+  await page.click('#fatal-error-copy');
+  await page.waitForFunction(() => document.getElementById('fatal-error-copy').textContent === 'Copied');
+  assert.deepEqual(await page.evaluate(() => window.problemReportCopied), [shown]);
+
+  await page.evaluate(async () => {
+    window.fetch = window.problemReportFetch;
+    document.getElementById('fatal-error-overlay').remove();
+    const {FloatingMessages} = await import('/static/js/modules/floating-messages.js');
+    FloatingMessages.dismissAll();
+  });
+}
+
 async function checkExportList(page) {
   await paletteAction(page, 'exportProblemReports');
   await page.waitForSelector('#problem-reports-export-btn', {visible: true});
@@ -363,6 +425,7 @@ export async function checkProblemReports(page) {
   await runThenCleanUp('problem reports', async () => {
     await checkUserReport(page, ids);
     await checkRedErrorReport(page);
+    await checkReportAfterSessionEnded(page);
     await checkExportList(page);
     await checkReportWithNoVault(page);
     await checkLoginPageReport(page);
