@@ -19,8 +19,11 @@ const JSON_INDENT = 2;
 const SAFE_FILE = /^[A-Za-z0-9_./-]+\.js$/;
 const SAFE_FUNCTION = /^[A-Za-z0-9_$.<>]{1,80}$/;
 // A stack line in Chrome (`at fn (http://host/static/js/modules/x.js:205:12)`) or Firefox
-// (`fn@http://host/static/js/modules/x.js:205:12`).
-const STACK_LINE = /^\s*(?:at\s+)?(?:(?<fn>[^\s(@]+)\s*[(@])?\s*[a-z]+:\/\/[^/]+\/static\/js\/(?<file>[^:)]+):(?<line>\d+)(?::\d+)?\)?\s*$/;
+// (`fn@http://host/static/js/modules/x.js:205:12`). MetaList serves its scripts under the
+// version of its files, `/static/v/<hash>/js/…`: left out of the pattern, every report came
+// with no frames at all (found 2026-11-18 in a report of a failed export).
+// Chrome writes `at async fn (…)` for a frame resumed after an await: `async` is not the function.
+const STACK_LINE = /^\s*(?:at\s+)?(?:async\s+)?(?:(?<fn>[^\s(@]+)\s*[(@])?\s*[a-z]+:\/\/[^/]+\/static\/(?:v\/[0-9a-f]+\/)?js\/(?<file>[^:)]+):(?<line>\d+)(?::\d+)?\)?\s*$/;
 
 export const NO_ERROR = Object.freeze({ className: '', message: '', stack: '' });
 
