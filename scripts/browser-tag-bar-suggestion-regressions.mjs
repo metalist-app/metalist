@@ -167,6 +167,46 @@ async function arrivesWhileTypingCase(page) {
   assert.deepEqual(state.entries, ['zebrafoo'], 'the list shown is the one for what is in the bar');
 }
 
+// A pointer at rest where the list opens highlights no entry (the maintainer, 2026-11-18: typing
+// only, an entry under the pointer lit up as if chosen); once it moves over the list, pointing
+// highlights the entry under it.
+async function restingPointerCase(page) {
+  await clearTagBar(page);
+  await typeAndWaitForList(page, 'qux');
+  const second = await page.evaluate(() => {
+    const entries = document.querySelectorAll('.note.editing .note-tag-suggestion');
+    const box = entries[entries.length - 1].getBoundingClientRect();
+    return {x: box.left + box.width / 2, y: box.top + box.height / 2};
+  });
+  // `qux` has two entries: the first is the selected one, the last a plain one. Put the pointer
+  // where the last entry is, then draw the list again under it by typing.
+  await page.mouse.move(second.x, second.y);
+  await clearTagBar(page);
+  await typeAndWaitForList(page, 'qux');
+  const pointed = () => page.evaluate(() => {
+    const list = document.querySelector('.note.editing .note-tag-suggestions');
+    const hovered = list.querySelector('.note-tag-suggestion:hover');
+    // The entry under the pointer looks pointed at when its colour is not the one it has with
+    // pointing switched off.
+    const isPointed = list.classList.contains('is-pointed');
+    let looksPointedAt = false;
+    if (hovered !== null) {
+      const shown = getComputedStyle(hovered).backgroundColor;
+      list.classList.remove('is-pointed');
+      looksPointedAt = getComputedStyle(hovered).backgroundColor !== shown;
+      list.classList.toggle('is-pointed', isPointed);
+    }
+    return {isPointed, looksPointedAt};
+  });
+  // (A browser under test may not say an entry is under a pointer that never moved; a real one does.)
+  const atRest = await pointed();
+  assert.deepEqual([atRest.isPointed, atRest.looksPointedAt], [false, false], 'a pointer at rest highlights no entry');
+  await page.mouse.move(second.x + 6, second.y, {steps: 3});
+  const moved = await pointed();
+  assert.deepEqual([moved.isPointed, moved.looksPointedAt], [true, true], 'a pointer moved over the list highlights the entry under it');
+  await page.mouse.move(1, 1);
+}
+
 export async function checkTagBarSuggestions(page) {
   const ids = await createNotes(page);
   await page.reload();
@@ -185,6 +225,7 @@ export async function checkTagBarSuggestions(page) {
       ['arrow then Enter on an up-to-date list', freshArrowCase],
       ['arrow on an old list', staleArrowCase],
       ['a list arriving while typing', arrivesWhileTypingCase],
+      ['a pointer at rest', restingPointerCase],
     ]) {
       try {
         await run(page);

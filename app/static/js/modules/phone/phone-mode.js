@@ -23,10 +23,14 @@ import { searchTermsOf, withSearchTerm, withoutSearchTerm } from './phone-search
 import { actionRowHtml } from '../modals/action-row.js';
 
 // The phone prototype (docs/ui/phone.md, docs/ui/phone-mocks.html):
-// under 640 px the body gets .phone-layout and the page becomes a read-only view of the notes
+// on a phone the body gets .phone-layout and the page becomes a read-only view of the notes
 // plus capture. A tap never edits; it shows a note's own tags as pills. Desktop is unchanged.
 
-const PHONE_MEDIA_QUERY = '(max-width: 640px)';
+// A phone: a screen under 640 px wide whose main pointer is a finger. Width alone made any
+// narrow desktop window the read-only phone view (the maintainer, 2026-11-18: "we don't ever
+// want a browser on a desktop to do that"); a desktop's main pointer is a mouse or trackpad,
+// also on a laptop with a touch screen. The same query as main.css's phone layout.
+const PHONE_MEDIA_QUERY = '(max-width: 640px) and (pointer: coarse)';
 const PHONE_CLASS = 'phone-layout';
 const PHONE_FILE_CONTROLS = '.note-file-action, button.note-file-reference-link, .note-file-media-play, .note-file-media-player';
 // Temporary developer switch (not a user setting): what tapping a tag pill does.

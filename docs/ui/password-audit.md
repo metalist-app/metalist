@@ -19,7 +19,7 @@ Every password in the vault: whole `@password` notes, and each `((…))` region 
 
 ## What it shows
 
-- **One summary line:** `42 passwords: 3 leaked, 5 reused, 7 weak, 12 old`. A password can be in more than one group.
+- **One summary line:** `42 passwords tagged @password: 3 leaked, 5 reused, 7 weak, 12 old` (`audit-summary-text.js`), so it says where the passwords come from. A password can be in more than one group. With none: `No passwords: tag a note @password to audit it.`
 - **A group each,** in that order: leaked, reused, weak, old. Each row names its note by its first line and tags, never the password itself.
 - **`Go to`** opens the top-level note the password is in, as following a link to it does: a `Source note` view with the back chip, the notes folded or unfolded as they were. The panel stays open where it is, to pick the next one; back steps through each view to the search. (Changed 2026-11-12 from a floating window, which showed only the hidden password.)
 - **Switching the threshold** regroups from the scores the audit already has, asking the server nothing. Turning `Check leaks` off drops its group; only turning it on asks Have I Been Pwned.

@@ -335,6 +335,24 @@ async function firstPaintCase(browser, origin) {
   }
 }
 
+// A narrow window on a computer is not a phone: with a mouse, the desktop layout stays, however
+// narrow the window (a narrow window once lost its controls and its editing).
+async function narrowDesktopCase(browser, origin) {
+  const desktop = await browser.newPage();
+  try {
+    await desktop.setViewport({width: PHONE.width, height: PHONE.height});
+    await desktop.goto(origin);
+    await desktop.waitForSelector('[data-app-ready="true"]');
+    await waitQuiet(desktop);
+    assert.equal(await desktop.$eval('body', body => body.classList.contains('phone-layout')), false,
+      'a narrow window with a mouse must keep the desktop layout');
+    assert.equal((await box(desktop, '#phone-bar')).shown, false, 'a narrow window with a mouse shows no phone bar');
+    assert.equal((await box(desktop, '.global-controls')).shown, true, 'a narrow window with a mouse keeps its controls');
+  } finally {
+    await desktop.close();
+  }
+}
+
 // Lock and Sign Out log out (each vault has its own address, so the vault stays picked).
 async function signOutCase(page) {
   for (const choice of ['lock', 'sign-out']) {
@@ -371,6 +389,13 @@ export async function checkPhone(browser, page, origin) {
       if (!(error instanceof assert.AssertionError)) throw error;
       failures.push(`first paint: ${error.message}`);
       console.log(`FAIL first paint: ${error.message}`);
+    }
+    try {
+      await narrowDesktopCase(browser, origin);
+    } catch (error) {
+      if (!(error instanceof assert.AssertionError)) throw error;
+      failures.push(`narrow desktop window: ${error.message}`);
+      console.log(`FAIL narrow desktop window: ${error.message}`);
     }
     await phone.setViewport(PHONE);
     await phone.goto(origin);

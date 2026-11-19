@@ -1,6 +1,5 @@
 import { PORT_RANGE_TEXT, isTcpPort } from '../tcp-ports.js';
 import { parseDecimalInteger } from '../decimal-integer.js';
-import { KIB } from '../byte-sizes.js';
 import { isAnsweredStatus } from '../http-status.js';
 import { ApplicationState } from '../application-state.js';
 import { FieldInputRejected, HttpRequestError, rethrowUnexpectedError } from '../expected-errors.js';
@@ -10,6 +9,7 @@ import { ModeContextInstance as ModeContext } from '../mode-manager/mode-context
 import { buildSessionHeaders } from '../session-auth.js';
 import { settleResult } from '../async-result.js';
 import { escapeHtml } from '../html-escape.js';
+import { backupRow } from './backup-list-row.js';
 import { actionRowHtml } from './action-row.js';
 import { failureFieldId, showErrorDialogFor } from './error-dialog.js';
 import { FloatingMessages } from '../floating-messages.js';
@@ -25,7 +25,6 @@ const SERVER_REACHABILITY_REQUEST_TIMEOUT_MS = 1000;
 const RESTORE_RECONNECT_CURSOR_CLASS = 'restore-reconnect-loading';
 // TCP port numbers are 16-bit.
 // The backup list grows with its entries up to this many rows, then scrolls.
-const BACKUP_LIST_MAX_VISIBLE_ROWS = 8;
 
 
 function parseResponseError(responseBody, statusCode) {
@@ -43,15 +42,6 @@ function parseResponseError(responseBody, statusCode) {
     }
     return `Request failed (${statusCode})`;
 }
-
-
-function backupSourceLabel(source) {
-    if (source === 'folder') {
-        return 'Folder';
-    }
-    return 'Local';
-}
-
 
 
 function stringifyPort(portValue) {
@@ -275,30 +265,20 @@ export class BackupRestoreModal extends BaseModal {
         if (typeof selectedBackup === 'undefined') {
             selectedBackup = null;
         }
-        const selectSize = backups.length > 1 ? Math.min(backups.length, BACKUP_LIST_MAX_VISIBLE_ROWS) : 1;
+        // Each backup is a row: its vault, when it was made, its size, where it is kept
+        // (backup-list-row.js). One is chosen with a click or the arrow keys.
+        const reader = { locale: navigator.language, timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone };
+        const isListDisabled = [loading, restoring, confirming].includes(true);
         const optionsHtml = backups.map((backup) => {
-            if (!backup || typeof backup !== 'object') {
-                throw new Error('Invalid backup list entry');
-            }
-            if (typeof backup.backup_id !== 'string' || backup.backup_id.length === 0) {
-                throw new Error('Backup entry missing backup_id');
-            }
-            if (typeof backup.filename !== 'string' || backup.filename.length === 0) {
-                throw new Error('Backup entry missing filename');
-            }
-            if (typeof backup.namespace !== 'string' || backup.namespace.length === 0) {
-                throw new Error('Backup entry missing namespace');
-            }
-            if (typeof backup.created_at !== 'string' || backup.created_at.length === 0) {
-                throw new Error('Backup entry missing created_at');
-            }
-            if (typeof backup.size_bytes !== 'number') {
-                throw new Error('Backup entry missing size_bytes');
-            }
-            const sourceLabel = backupSourceLabel(backup.source);
-            const isSelected = backup.backup_id === selectedBackupId ? 'selected' : '';
-            const label = `${sourceLabel} · ${backup.namespace} · ${backup.filename} (${Math.round(backup.size_bytes / KIB)} KB, ${backup.created_at})`;
-            return `<option value="${escapeHtml(backup.backup_id)}" ${isSelected}>${escapeHtml(label)}</option>`;
+            const row = backupRow(backup, reader);
+            return `
+                <label class="backup-restore-row" title="${escapeHtml(row.fileName)}">
+                    <input type="radio" name="backup-choice" value="${escapeHtml(row.id)}" ${row.id === selectedBackupId ? 'checked' : ''} ${isListDisabled ? 'disabled' : ''}>
+                    <span class="backup-restore-vault">${escapeHtml(row.vault)}</span>
+                    <span class="backup-restore-when">${escapeHtml(row.when)}</span>
+                    <span class="backup-restore-size">${escapeHtml(row.size)}</span>
+                    <span class="backup-restore-source">${escapeHtml(row.source)}</span>
+                </label>`;
         }).join('');
 
         const selectedNamespace = selectedBackup && typeof selectedBackup.namespace === 'string' ? selectedBackup.namespace : '';
@@ -390,10 +370,10 @@ export class BackupRestoreModal extends BaseModal {
                 ${emptyBackupsHtml}
 
                 <div class="form-group">
-                    <label for="backup-select">Available Backups</label>
-                    <select id="backup-select" size="${escapeHtml(String(selectSize))}" ${loading || restoring || confirming || backups.length === 0 ? 'disabled' : ''}>
+                    <span class="backup-restore-list-label" id="backup-list-label">Available backups</span>
+                    <div id="backup-select" class="backup-restore-list" role="radiogroup" aria-labelledby="backup-list-label" tabindex="-1">
                         ${optionsHtml}
-                    </select>
+                    </div>
                 </div>
 
                 <div class="form-group">
@@ -456,19 +436,21 @@ export class BackupRestoreModal extends BaseModal {
         }
 
         const select = document.getElementById('backup-select');
-        if (select instanceof HTMLSelectElement) {
-            select.onchange = () => {
+        if (select instanceof HTMLElement) {
+            select.onchange = (event) => {
+                if (!(event.target instanceof HTMLInputElement) || event.target.name !== 'backup-choice') return;
+                const chosenId = event.target.value;
                 const backups = this.getModalState().backups;
                 let selectedBackup = null;
                 if (Array.isArray(backups)) {
-                    const found = backups.find((backup) => backup.backup_id === select.value);
+                    const found = backups.find((backup) => backup.backup_id === chosenId);
                     if (found !== undefined) selectedBackup = found;
                 }
                 const nextNamespace = selectedBackup && typeof selectedBackup.namespace === 'string'
                     ? selectedBackup.namespace
                     : '';
                 this.updateModalState({
-                    selectedBackupId: select.value,
+                    selectedBackupId: chosenId,
                     targetNamespaceText: nextNamespace,
                     confirming: false,
                     preflight: null,
@@ -476,7 +458,14 @@ export class BackupRestoreModal extends BaseModal {
                     overwriteConfirmText: '',
                     targetPassword: '',
                 });
+// Drawn again with the row chosen: the list keeps its scroll, and the keyboard its row.
+                const scrolledTo = select.scrollTop;
                 this.renderModalContent();
+                const list = document.getElementById('backup-select');
+                if (!(list instanceof HTMLElement)) throw new Error('The backup list is gone after it was drawn again');
+                list.scrollTop = scrolledTo;
+                const chosen = list.querySelector('input[name="backup-choice"]:checked');
+                if (chosen instanceof HTMLInputElement) chosen.focus();
             };
         }
 

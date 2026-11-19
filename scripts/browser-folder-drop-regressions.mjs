@@ -16,6 +16,8 @@ const WIZARD_STEP_TIMEOUT_MS = 20000;
 // The note that makes the folder dropped on.
 const KEPT_FIRST_NOTES = 1;
 const EARLIER_IMPORT_TAG = 'imported:source=files:at=2020-01-02T03:04';
+// The note's own file and the one dropped while it is edited.
+const TOKENS_AFTER_SECOND_DROP = 2;
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 async function idle(page) {
@@ -63,6 +65,30 @@ async function checkFilesOnAFolder(page) {
   assert.deepEqual({isFirst: dropped.isFirst, folders: dropped.folders, isEditing: dropped.isEditing},
     {isFirst: true, folders: [FOLDER], isEditing: false}, 'files dropped on a folder: a new note at the top, in that folder, not left open');
   return dropped.id;
+}
+
+// While a note is being edited, files let go on a folder in the tree go into that note, not into
+// the folder (the maintainer, 2026-11-19).
+async function checkFilesOnAFolderWhileEditing(page, noteId) {
+  const contentSelector = `#notes-container > .note[data-note-id="${noteId}"] > .note-content`;
+  await page.click(contentSelector);
+  await page.waitForFunction(selector => document.querySelector(selector).getAttribute('contenteditable') === 'true', {}, contentSelector);
+  await idle(page);
+  const rootsBefore = await page.$$eval('#notes-container > .note', notes => notes.length);
+  await page.evaluate(folder => {
+    const row = document.querySelector(`#virtual-folders [data-virtual-folder="${folder}"]`);
+    const transfer = new DataTransfer();
+    transfer.items.add(new File(['dropped,while editing'], 'while-editing.csv', {type: 'text/csv'}));
+    const box = row.getBoundingClientRect();
+    row.dispatchEvent(new DragEvent('drop', {clientX: box.left + box.width / 2, clientY: box.top + box.height / 2, bubbles: true, cancelable: true, dataTransfer: transfer}));
+  }, FOLDER);
+  await page.waitForFunction((selector, expected) => [...document.querySelector(selector).innerText.matchAll(/\[\[[0-9a-f-]{36}\]\]/g)].length === expected,
+    {timeout: WIZARD_STEP_TIMEOUT_MS}, contentSelector, TOKENS_AFTER_SECOND_DROP);
+  await idle(page);
+  assert.equal(await page.$$eval('#notes-container > .note', notes => notes.length), rootsBefore,
+    'files on a folder while a note is edited: no new note');
+  await page.keyboard.press('Escape');
+  await idle(page);
 }
 
 // A folder dropped alone, through the walkthrough to its end. prefixText: what the folder field is
@@ -317,7 +343,9 @@ export async function checkFolderDrops(page) {
   const contexts = [];
   await runThenCleanUp('folder drops', async () => {
     await page.waitForSelector(`#virtual-folders [data-virtual-folder="${FOLDER}"]`, {visible: true});
-    created.push(await checkFilesOnAFolder(page));
+    const droppedOnFolderId = await checkFilesOnAFolder(page);
+    created.push(droppedOnFolderId);
+    await checkFilesOnAFolderWhileEditing(page, droppedOnFolderId);
     created.push(...await checkFolderOnAFolder(page));
     await checkWhereEachDropEnds(page, created, contexts);
   }, async () => {

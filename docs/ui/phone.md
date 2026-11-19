@@ -1,6 +1,6 @@
 # Phone
 
-Under 640 px wide MetaList becomes a read-only view of the notes plus capture: a phone on the
+On a touch screen under 640 px wide (a phone; a narrow window on a computer keeps the desktop layout, since 2026-11-19) MetaList becomes a read-only view of the notes plus capture: a phone on the
 local Wi-Fi, opened from its home screen. Desktop is unchanged. Built 2026-10-24 as a prototype,
 "blocked in": what is left is in [phone-later.md](../future-plans/phone-later.md). The decided
 mock: [phone-mocks.html](phone-mocks.html). Agreed, not built (2026-10-27): the phone becomes the desktop app on a smaller screen. It edits (tap a note to edit it, ☰ acts on it, ＋ is Enter), has search contexts and the AI chat on a screen of its own, and capture and `@inbox` go ([phone-same-app.md](../ready-to-build/phone-same-app.md)). It stays signed in beside the desktop, each with its own screen, locked per root note like any view ([multi-view-editing.md](../design/multi-view-editing.md)).
@@ -9,7 +9,8 @@ One screen, search and notes: nothing new is added where an existing piece (tags
 view options) does the job.
 
 ## Layout
-- The layout comes from CSS (`@media (max-width: 640px)` in `main.css`), so it holds from the
+- The layout comes from CSS (`@media (max-width: 640px) and (pointer: coarse)` in `main.css`:
+  narrow and touch, never a narrow window with a mouse), so it holds from the
   first paint; `app/static/js/modules/phone/phone-mode.js` adds the behavior at the same width
   (`PhoneMode.init`, started by both `main.js` and the login path in `auth.js`).
 - **Top:** the search bar alone on a black header. Search terms show as blue pills, each with ×

@@ -1,4 +1,6 @@
-// Files go in a note only when aimed at it: dropped on the note being edited (the maintainer, 2026-11-08).
+// While a note is being edited, dropped files go in it wherever they are let go; with none being
+// edited, each file gets its own note (the maintainer, 2026-11-19; before, only files let go on
+// the note being edited went in it, and a drop a few pixels outside it went to the top level).
 export function shouldCreateTopNoteForFileDrop({
     isEditing,
     currentNoteId,

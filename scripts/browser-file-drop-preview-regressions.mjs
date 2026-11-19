@@ -195,6 +195,61 @@ export async function checkFileDropPreviews(page) {
     }, emptyId);
     assert.ok(dropped.isHeading, `md into an empty note, Note: shown as Markdown (${dropped.text})`);
 
+    // While a note is being edited every dropped file goes into it, wherever it is let go (the
+    // maintainer, 2026-11-19): a .md let go on the parent of the empty child being edited once
+    // went through Import to the top level.
+    const parentId = await page.evaluate(async () => {
+      const {NotesAPI} = await import('/static/js/modules/api-client.js');
+      return (await NotesAPI.createNote(null, '')).id;
+    });
+    createdIds.push(parentId);
+    const childId = await page.evaluate(async id => {
+      const {NotesAPI} = await import('/static/js/modules/api-client.js');
+      return (await NotesAPI.createChild(id, '')).id;
+    }, parentId);
+    await page.reload();
+    await page.waitForSelector('[data-app-ready="true"]');
+    await idle(page);
+    const parentSelector = `.note[data-note-id="${parentId}"] > .note-content`;
+    const childSelector = `.note[data-note-id="${childId}"] > .note-content`;
+    await page.$eval(childSelector, content => content.scrollIntoView({block: 'center'}));
+    await page.click(childSelector);
+    await page.waitForFunction(selector => document.querySelector(selector).getAttribute('contenteditable') === 'true',
+      {timeout: 5000}, childSelector);
+    await settle(page);
+    const rootsBefore = (await noteTexts(page)).length;
+    await drop(page, parentSelector, [{name: 'outside.md', type: 'text/markdown', text: '# Outside\n\n- one'}], 'center');
+    await textDropChoice(page);
+    assert.equal(await page.evaluate(() => [...document.querySelectorAll('#import-wizard')].some(wizard => wizard.style.display === 'block')), false,
+      'md on the parent of the note being edited: the Note or File question, not Import');
+    await page.click('#text-drop-choice-note');
+    await settle(page);
+    const childState = () => page.evaluate(selector => {
+      const content = document.querySelector(selector);
+      return {isEditing: content.getAttribute('contenteditable') === 'true', text: content.innerText,
+        tags: content.closest('.note').querySelector('.note-tag-bar-input').value};
+    }, childSelector);
+    let child = await childState();
+    assert.ok(child.isEditing && child.text.includes('# Outside'), `md on the parent: its text is in the child being edited (${JSON.stringify(child)})`);
+    assert.ok(/(^|\s)@markdown(\s|$)/.test(child.tags), `md on the parent: the child is tagged @markdown (${child.tags})`);
+    assert.equal((await noteTexts(page)).length, rootsBefore, 'md on the parent: no new note at the top');
+    // On another note, and on the gap between notes: into the note being edited, the caret where it was.
+    for (const [where, selector, name] of [
+      ['another note', `.note[data-note-id="${csvNote.id}"] .note-content`, 'on-another.csv'],
+      ['the notes column', '#notes-container', 'on-the-gap.csv'],
+    ]) {
+      await drop(page, selector, [{name, type: 'text/csv', text: 'x,y\n1,2'}], 'end');
+      await settle(page);
+      child = await childState();
+      assert.ok(child.isEditing, `a file on ${where}: the note is still being edited`);
+      assert.equal([...child.text.matchAll(new RegExp(FILE_TOKEN_RE, 'g'))].length, where === 'another note' ? 1 : 2,
+        `a file on ${where}: its card is in the note being edited (${child.text})`);
+      assert.equal((await noteTexts(page)).length, rootsBefore, `a file on ${where}: no new note at the top`);
+    }
+    await leaveEditing(page);
+    assert.deepEqual(byFirstPill(await filesView(page), 'data.csv').pills, [['.CSV', 'data.csv']],
+      'a file on another note: that note is unchanged');
+
     // Dropped into the note being edited: the card goes into it, editing continues, and the
     // note does not move; no preview note.
     const contentSelector = `.note[data-note-id="${csvNote.id}"] .note-content`;

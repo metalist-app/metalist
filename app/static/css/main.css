@@ -1998,6 +1998,86 @@ body.ontology-modal-open #ontology-modal {
     }
 }
 
+/* Restore From Backup's list (backup-list-row.js): a row per backup, its vault, when it was made,
+   its size and where it is kept, each in its own column; eight rows show, the rest scroll. */
+.backup-restore-list-label {
+    display: block;
+    margin-bottom: 6px;
+    font-weight: 600;
+}
+
+.backup-restore-list {
+    display: grid;
+    grid-template-columns: auto auto 1fr auto auto;
+    max-height: 272px;
+    overflow-y: auto;
+    border: 1px solid var(--modal-border);
+    border-radius: 8px;
+}
+
+.modal-content .backup-restore-list .backup-restore-row {
+    display: grid;
+    grid-column: 1 / -1;
+    grid-template-columns: subgrid;
+    align-items: center;
+    column-gap: 14px;
+    margin: 0;
+    padding: 7px 12px;
+    font-weight: normal;
+    cursor: var(--skin-cursor-pointer, pointer);
+    border-bottom: 1px solid var(--modal-border);
+}
+
+.modal-content .backup-restore-list .backup-restore-row:last-child {
+    border-bottom: 0;
+}
+
+.modal-content .backup-restore-list .backup-restore-row:hover {
+    background: var(--modal-quiet-button-hover);
+}
+
+.modal-content .backup-restore-list .backup-restore-row:has(input:checked) {
+    background: var(--modal-selected);
+}
+
+.modal-content .backup-restore-list .backup-restore-row input[type="radio"] {
+    width: 16px;
+    height: 16px;
+    margin: 0;
+    padding: 0;
+}
+
+.backup-restore-vault {
+    font-weight: 600;
+}
+
+.backup-restore-size {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+.backup-restore-size,
+.backup-restore-source {
+    color: var(--modal-text-muted);
+    white-space: nowrap;
+}
+
+.backup-restore-when {
+    white-space: nowrap;
+}
+
+/* Narrow, the date and the place wrap inside their columns so no row is cut off. */
+@media (max-width: 640px) {
+    .modal-content .backup-restore-list .backup-restore-row {
+        column-gap: 10px;
+    }
+
+    .backup-restore-when,
+    .backup-restore-source {
+        white-space: normal;
+    }
+}
+
 .backup-restore-modal-content {
     width: min(760px, 92vw);
 }
@@ -6901,7 +6981,9 @@ body.pref-animated-transitions .note-tag-bar:focus-within::after {
     font-size: 0.9rem;
 }
 
-.note-tag-suggestion:hover {
+/* Pointing highlights an entry only once the pointer has moved over the list
+   (tag-suggestions-service.js): one that opens under a pointer at rest highlights nothing. */
+.note-tag-suggestions.is-pointed .note-tag-suggestion:hover {
     background: var(--modal-quiet-button-hover);
     border-color: var(--modal-border);
 }
@@ -12695,7 +12777,9 @@ suggestions as pills. */
     font-size: 14px;
 }
 
-@media (max-width: 640px) {
+/* The phone layout: a narrow screen whose main pointer is a finger (phone-mode.js, the same
+   query). A narrow window on a desktop keeps the desktop layout. */
+@media (max-width: 640px) and (pointer: coarse) {
     body {
         --phone-bar-height: 56px;
         padding: 0 0 calc(var(--phone-bar-height) + env(safe-area-inset-bottom)) 0;

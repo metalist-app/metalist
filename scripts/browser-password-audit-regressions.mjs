@@ -115,7 +115,7 @@ async function auditCases(page, ids) {
     const {CommandPalette} = await import('/static/js/modules/command-palette/command-palette-controller.js');
     await CommandPalette.openPasswordAudit();
   });
-  await page.waitForFunction(() => document.querySelector('.password-audit-summary')?.textContent.includes('passwords:'));
+  await page.waitForFunction(() => document.querySelector('.password-audit-summary')?.textContent.includes('tagged @password:'));
   await settle(page);
   const before = await read(page);
   assert.equal(before.isReferenceView, false, 'the audit opens on the list as it was');
@@ -167,7 +167,7 @@ async function auditCases(page, ids) {
   const newPassword = await page.$eval('#password-audit-panel .password-audit-new', element => element.textContent);
   assert.ok(newPassword.length >= 16 && newPassword !== 'hunter2', 'a strong new password is offered');
   await page.click(`#password-audit-panel [data-audit-save="${ids.lone}:note:0"]`);
-  await page.waitForFunction(() => document.querySelector('.password-audit-summary').textContent.includes('passwords:')
+  await page.waitForFunction(() => document.querySelector('.password-audit-summary').textContent.includes('tagged @password:')
       && document.querySelector('.password-audit-replacing') === null);
   await settle(page);
   const kept = await page.evaluate(() => [...document.querySelectorAll('.password-audit-group')]
@@ -231,7 +231,7 @@ async function liveUpdateCases(page, ids) {
   // Email's password, reused with the bank's, made strong: neither is reused now, one fewer weak.
   const strong = await nextUpdate(page, () => editNote(page, ids.mail, 'Email login ((Rk7$qPz!w2Lm#9vT))', '((@password)) audit-check'));
   assert.deepEqual(strong.asked, [false], 'one update, which checks only what changed');
-  assert.ok(strong.shown.every(text => text.includes('passwords:')), `no Checking… on the way (${JSON.stringify(strong.shown)})`);
+  assert.ok(strong.shown.every(text => text.includes('tagged @password:')), `no Checking… on the way (${JSON.stringify(strong.shown)})`);
   const afterStrong = await groupLabels(page);
   assert.equal(afterStrong.reused, undefined, 'nothing is reused any more');
   assert.deepEqual(afterStrong.weak, ['Bank of Lisbon'], 'only the bank is weak');

@@ -2220,6 +2220,9 @@ async function attachFilesAsReferenceTokens(files, options) {
     return insertedAnything;
 }
 
+// While a note is being edited, every dropped file goes into it, wherever on the page it is let
+// go: another note, the gap between notes, the folder tree (the maintainer, 2026-11-19; a .md let
+// go a few pixels outside a child note, on its parent, went through Import to the top level).
 function resolveEditingDropTarget(event) {
     if (!event) {
         throw new Error('resolveEditingDropTarget expects event');
@@ -2227,22 +2230,12 @@ function resolveEditingDropTarget(event) {
     if (!ModeContext.isEditing || !ModeContext.currentNoteId) {
         return null;
     }
-
-    const rawTarget = event.target;
-    if (!(rawTarget instanceof Element)) {
-        return null;
-    }
-
-    // Anywhere on the note being edited counts, its margin too.
-    const noteElement = rawTarget.closest('.note');
+    const noteElement = document.querySelector(`.note[data-note-id="${ModeContext.currentNoteId}"]`);
     if (!(noteElement instanceof HTMLElement)) {
         return null;
     }
-    const noteId = noteElement.dataset.noteId;
-    if (!noteId || noteId !== ModeContext.currentNoteId) {
-        return null;
-    }
-    const noteContent = noteElement.querySelector('.note-content');
+    const noteContent = [...noteElement.querySelectorAll('.note-content')]
+        .find((content) => content.closest('.note') === noteElement);
     if (!(noteContent instanceof HTMLElement) || noteContent.getAttribute('contenteditable') !== 'true') {
         return null;
     }
@@ -2282,12 +2275,29 @@ function focusDropTargetForInsertion(target, event) {
         throw new Error('focusDropTargetForInsertion requires HTMLElement target');
     }
 
+    // Let go outside the note's text: the caret stays where it was in the note; with none there,
+    // the end.
+    const caretBefore = caretRangeInside(target);
     target.focus();
     const positioned = placeCaretAtDropPoint(target, event);
     if (!positioned) {
-        placeCaretAtEnd(target);
+        if (caretBefore === null) {
+            placeCaretAtEnd(target);
+        } else {
+            const selection = window.getSelection();
+            selection.removeAllRanges();
+            selection.addRange(caretBefore);
+        }
     }
     captureSelectionSnapshot();
+}
+
+function caretRangeInside(element) {
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0) return null;
+    const range = selection.getRangeAt(0);
+    if (!element.contains(range.startContainer) || !element.contains(range.endContainer)) return null;
+    return range.cloneRange();
 }
 
 function focusCurrentEditableAtEnd() {
@@ -2676,16 +2686,20 @@ function handleDropEvent(event) {
     // is uploaded. With anything else it is refused; alone it is to go through the import
     // walkthrough (docs/ready-to-build/desktop-drops-into-folders.md).
     // On a virtual folder (or the tree's top), what is dropped goes into it.
-    const intoFolder = virtualFolderAt(event.target);
+    const folderUnderDrop = virtualFolderAt(event.target);
     const dropped = describeDroppedItems(event.dataTransfer);
     if (dropped.folderCount > 0) {
         if (dropped.itemCount !== LONE_FILE) {
             ErrorHandler.showInfoBanner(FOLDER_ON_ITS_OWN_TEXT, DROPPED_FOLDER_BANNER_SECONDS * MS_PER_SECOND);
             return;
         }
-        void openDroppedFolder(loneDroppedFolderEntry(event.dataTransfer), importFolderOf(intoFolder));
+        void openDroppedFolder(loneDroppedFolderEntry(event.dataTransfer), importFolderOf(folderUnderDrop));
         return;
     }
+    // Files, while a note is being edited, go into that note, also when let go on the folder tree
+    // (a dropped folder cannot go inside a note, so it went its own way above).
+    let intoFolder = folderUnderDrop;
+    if (resolveEditingDropTarget(event) !== null) intoFolder = null;
 
     const droppedFiles = getFilesFromTransfer(event.dataTransfer);
     if (droppedFiles.length === 0) {
