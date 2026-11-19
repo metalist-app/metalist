@@ -156,6 +156,7 @@ import { CommandPalette } from '../../command-palette/command-palette-controller
 import { hasWebPageName, isBookmarksExportFile } from '../../wizard/bookmarks-file.js';
 import { IMPORT_BOOKMARKS, promptForBookmarksDropChoice } from '../services/bookmarks-drop-choice-modal-service.js';
 import { AS_FILE, promptForTextDropChoice } from '../services/text-drop-choice-modal-service.js';
+import { tagsAfterTextDrop } from '../services/dropped-markdown-tag.js';
 import { CommandGate } from '../services/command-gate-service.js';
 import { unlessDiagramEditorOpen } from '../../excalidraw/excalidraw-editor-state.js';
 import { unlessNoteFullscreenOpen } from '../services/note-fullscreen-service.js';
@@ -2796,6 +2797,15 @@ async function insertTextFilesWhereDropped(event, textFiles) {
             throw new Error('The note a text file was dropped into is no longer being edited');
         }
         focusDropTargetForInsertion(target, event);
+        // A Markdown file into an empty note: the note is tagged @markdown, so it shows as
+        // Markdown (dropped-markdown-tag.js).
+        const noteElement = DOMUtils.getNoteById(ModeContext.currentNoteId);
+        const tagsBefore = getTagBarValue(noteElement);
+        const tagsAfter = tagsAfterTextDrop({
+            tags: tagsBefore, fileNames: textFiles.map((file) => file.name),
+            noteIsEmpty: isCurrentEditingNoteEmptyForPasswordAutoTag(),
+        });
+        if (tagsAfter !== tagsBefore) setTagBarValue(noteElement, tagsAfter);
         insertPlainTextAtCurrentSelection(texts.join(TEXT_FILES_SEPARATOR));
         await actionSaveNote(ModeContext.currentNoteId);
     }, {

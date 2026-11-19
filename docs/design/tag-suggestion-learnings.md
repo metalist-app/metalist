@@ -88,6 +88,14 @@ Hit@5, empty bar with no tags yet / all empty-bar moments / first letter:
   two of three children does not belong on the parent), and the experiment
   found hierarchy signals barely mattered. Not re-measured on the namespace.
 
+- Typed letters order by use (November 18, 2026, at the maintainer's request, not measured here):
+  the narrowed list was the empty bar's, so a rare tag with evidence (`qualia`, used twice beside
+  the note's tag) came before `question`, inherited and used far more. Typed, the order is now
+  the tags the note's text names, the tags that already apply, then the rest, each by use. The
+  empty bar keeps its evidence ranking, where the rare-tag effect remains (improvements 1 and 2
+  below are what would change it). Worth running the experiment's one-, two- and three-letter
+  moments on this order.
+
 ## Possible future improvements
 
 In rough order of value for effort:

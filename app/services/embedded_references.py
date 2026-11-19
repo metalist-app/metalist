@@ -23,7 +23,12 @@ from app.services.content_formatting import render_standalone_link_title_html
 from app.services.content_formatting import showing_sites_above
 from app.services.content_formatting import sites_linked_in
 from app.services.content_formatting import sites_shown_above
-from app.services.file_view import NO_VIEW, VIEW_EMAIL, text_file_badge, view_kind_of
+from app.services.file_view import (
+    NO_VIEW, PREVIEW_CODE, PREVIEW_DATA, PREVIEW_TEXT, STATUS_READY, VIEW_EMAIL, build_file_view, preview_kind_of,
+    text_file_badge, view_kind_of,
+)
+from app.services.file_registry import file_registry
+from app.security.rendered_html import sanitize_rendered_html
 from app.services.email_cards import email_card_name
 from app.services.email_files import email_badge, is_email_file
 from app.services.inline_image_occurrences import annotate_inline_image_occurrences
@@ -395,6 +400,64 @@ def _render_pdf_tile(*, record: object, file_id: str, static_export: bool) -> st
     )
 
 
+# The kinds of file a gallery shows by a picture of its own.
+_TILE_PICTURE_KINDS = frozenset({"image", "excalidraw"})
+# The kinds a tile draws the top of, as the viewer draws the whole file: Markdown and other text,
+# code and data (file_view.py). A Word document or a web page is read whole to be drawn: its
+# tile is its badge and name.
+_TILE_DOCUMENT_KINDS = frozenset({PREVIEW_TEXT, PREVIEW_CODE, PREVIEW_DATA})
+# How much of a file's start a tile draws: about a page, cut after its last whole line.
+_TILE_DOCUMENT_BYTES = 6000
+_LINE_END = b"\n"
+# A tile is a button: nothing in the drawn document may be one (a browser ends the tile at a
+# button inside it, and what follows spills out as tiles of its own).
+_BUTTON_TAG_RE = re.compile(r"<(/?)button\b", re.IGNORECASE)
+_AS_SPAN = r"<\1span"
+
+
+def _render_file_tile(record: object) -> str:
+    """A file with no picture of its own, in a gallery: its badge and name."""
+    title = getattr(record, "title")
+    original_filename = getattr(record, "original_filename")
+    thumbnail_kind = getattr(record, "thumbnail_kind")
+    assert all(isinstance(value, str) and value != "" for value in (title, original_filename, thumbnail_kind))
+    badge = _format_file_badge(thumbnail_kind=thumbnail_kind, original_filename=original_filename)
+    return (
+        '<span class="meta-gallery-file">'
+        f'<span class="note-file-reference-badge">{html.escape(badge)}</span>'
+        f'<span class="meta-gallery-file-name">{html.escape(title)}</span>'
+        "</span>"
+    )
+
+
+def _render_document_tile(*, record: object, file_id: str, context: EmbedRenderContext) -> str:
+    """A Markdown, text, code or data file in a gallery: the top of the file drawn as the viewer
+    draws it, shrunk to a page (the maintainer, 2026-11-18: a Markdown file's card, with its Open
+    and Download, took three tiles). Any other file, or one too large to read: its badge and name."""
+    original_filename = getattr(record, "original_filename")
+    mime_type = getattr(record, "mime_type")
+    assert isinstance(original_filename, str) and isinstance(mime_type, str)
+    is_drawn = preview_kind_of(original_filename) in _TILE_DOCUMENT_KINDS and not is_email_file(
+        mime_type=mime_type, original_filename=original_filename,
+    )
+    if not is_drawn:
+        return _render_file_tile(record)
+    stored = file_registry.read_stored_file(file_id)
+    if stored is None:
+        return _render_file_tile(record)
+    start = getattr(stored, "content_bytes")[:_TILE_DOCUMENT_BYTES]
+    if len(start) == _TILE_DOCUMENT_BYTES and _LINE_END in start:
+        start = start[: start.rindex(_LINE_END)]
+    view = build_file_view(original_filename=original_filename, content_bytes=start)
+    if view.status != STATUS_READY:
+        return _render_file_tile(record)
+    drawn = sanitize_rendered_html(render_note_content_with_embeds(
+        note_id=file_id, content_html=view.content_html, tags=view.render_tag, context=context,
+        static_export=False, credentials=CredentialDisplay.HIDDEN,
+    ))
+    return f'<span class="meta-gallery-document" aria-hidden="true">{_BUTTON_TAG_RE.sub(_AS_SPAN, drawn)}</span>'
+
+
 def _render_note_gallery(*, note_id: str, tags: str, context: EmbedRenderContext, static_export: bool) -> str:
     kinds = gallery_kinds(tags)
     if kinds is None:
@@ -407,9 +470,15 @@ def _render_note_gallery(*, note_id: str, tags: str, context: EmbedRenderContext
 
     def tile_body(file_id: str) -> str:
         record = context.get_file(file_id)
-        if getattr(record, "thumbnail_kind") == _PDF_THUMBNAIL_KIND:
+        thumbnail_kind = getattr(record, "thumbnail_kind")
+        if thumbnail_kind == _PDF_THUMBNAIL_KIND:
             return _render_pdf_tile(record=record, file_id=file_id, static_export=static_export)
-        return _render_file_embed_body(record=record, reference_note_id=file_id, static_export=static_export)
+        if thumbnail_kind in _TILE_PICTURE_KINDS:
+            return _render_file_embed_body(record=record, reference_note_id=file_id, static_export=static_export)
+        # Any other file's card holds buttons (Open, Download), which a tile cannot.
+        if static_export:
+            return _render_file_tile(record)
+        return _render_document_tile(record=record, file_id=file_id, context=context)
 
     def view_kind(file_id: str) -> str:
         return view_kind_of(getattr(context.get_file(file_id), "original_filename"))

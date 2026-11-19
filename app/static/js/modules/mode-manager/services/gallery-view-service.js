@@ -10,12 +10,38 @@ const OUTLINE_CLASS = 'is-gallery-outline';
 const GALLERY_NOTES = '#notes-container .note[data-note-tags*="@gallery"]';
 const SWITCH_SELECTOR = ':scope > .note-content .meta-gallery-switch';
 const SWITCH_LABELS = { grid: 'Show as outline', outline: 'Show as grid' };
+const FOLD_ARROW_SELECTOR = ':scope > .note-collapse-toggle';
+const PLACE_DECIMALS = 2;
 
 const moduleState = ApplicationState.createFields('gallery-view', {
     outlineNoteIds: [],
     observer: null,
     isMarkScheduled: false,
 });
+
+function setPlace(toggle, property, value) {
+    if (toggle.style[property] !== value) {
+        toggle.style[property] = value;
+    }
+}
+
+// The switch sits right under the note's fold arrow, on the arrow's own axis, wherever the arrow
+// is: beside a heading the arrow is lower (fold-arrow-alignment-service.js), and a switch at a
+// fixed height sat on top of it or off to one side (the maintainer, 2026-11-18). With no arrow
+// shown it keeps the stylesheet's place.
+function placeUnderFoldArrow(note, toggle) {
+    const arrow = note.querySelector(FOLD_ARROW_SELECTOR);
+    const parent = toggle.offsetParent;
+    if (arrow === null || arrow.getClientRects().length === 0 || parent === null) {
+        setPlace(toggle, 'left', '');
+        setPlace(toggle, 'top', '');
+        return;
+    }
+    const origin = parent.getBoundingClientRect();
+    const arrowBox = arrow.getBoundingClientRect();
+    setPlace(toggle, 'left', `${(arrowBox.left - origin.left - parent.clientLeft).toFixed(PLACE_DECIMALS)}px`);
+    setPlace(toggle, 'top', `${(arrowBox.bottom - origin.top - parent.clientTop).toFixed(PLACE_DECIMALS)}px`);
+}
 
 function setOutlineClass(note, isOutline) {
     if (note.classList.contains(OUTLINE_CLASS) !== isOutline) {
@@ -25,6 +51,7 @@ function setOutlineClass(note, isOutline) {
     if (toggle === null) {
         return;
     }
+    placeUnderFoldArrow(note, toggle);
     const label = isOutline ? SWITCH_LABELS.outline : SWITCH_LABELS.grid;
     if (toggle.title !== label) {
         toggle.title = label;
@@ -65,7 +92,8 @@ export function receiveGalleryOutlineNotes(savedText) {
             throw new Error('Galleries need #notes-container');
         }
         moduleState.observer = new MutationObserver(markSoon);
-        moduleState.observer.observe(container, { childList: true, subtree: true });
+        // A fold arrow that moves (its `style`) takes its note's switch with it.
+        moduleState.observer.observe(container, { childList: true, subtree: true, attributes: true, attributeFilter: ['style'] });
     }
     markGalleryNotes();
 }

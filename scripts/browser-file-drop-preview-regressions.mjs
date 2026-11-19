@@ -166,6 +166,35 @@ export async function checkFileDropPreviews(page) {
     await page.waitForFunction(() => document.getElementById('import-wizard').style.display !== 'block', {timeout: 10000});
     await idle(page);
 
+    // A .md file dropped into an empty note being edited, made a note: its text goes in and the
+    // note is tagged @markdown, so it shows as Markdown (the maintainer, 2026-11-18).
+    const emptyId = await page.evaluate(async () => {
+      const {NotesAPI} = await import('/static/js/modules/api-client.js');
+      return (await NotesAPI.createNote(null, '')).id;
+    });
+    createdIds.push(emptyId);
+    await page.reload();
+    await page.waitForSelector('[data-app-ready="true"]');
+    await idle(page);
+    const emptySelector = `.note[data-note-id="${emptyId}"] .note-content`;
+    await page.$eval(emptySelector, content => content.scrollIntoView({block: 'center'}));
+    await page.click(emptySelector);
+    await page.waitForFunction(selector => document.querySelector(selector).getAttribute('contenteditable') === 'true',
+      {timeout: 5000}, emptySelector);
+    await settle(page);
+    await drop(page, emptySelector, [{name: 'readme.md', type: 'text/markdown', text: '# Hello\n\n- one\n- two'}], 'center');
+    await textDropChoice(page);
+    await page.click('#text-drop-choice-note');
+    await settle(page);
+    const droppedTags = await page.$eval('.note.editing .note-tag-bar-input', input => input.value);
+    assert.ok(/(^|\s)@markdown(\s|$)/.test(droppedTags), `md into an empty note, Note: tagged @markdown (tags: ${droppedTags})`);
+    await leaveEditing(page);
+    const dropped = await page.evaluate(id => {
+      const content = document.querySelector(`.note[data-note-id="${id}"] .note-content`);
+      return {isHeading: content.querySelector('h1') !== null, text: content.textContent};
+    }, emptyId);
+    assert.ok(dropped.isHeading, `md into an empty note, Note: shown as Markdown (${dropped.text})`);
+
     // Dropped into the note being edited: the card goes into it, editing continues, and the
     // note does not move; no preview note.
     const contentSelector = `.note[data-note-id="${csvNote.id}"] .note-content`;

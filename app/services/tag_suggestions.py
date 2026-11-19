@@ -1375,16 +1375,21 @@ def _typing_basis(
 def _suggest_while_typing(
     *, note_id: str, anchors: List[str], explicit_tags: List[str], prefix: str, content_html: str, limit: int,
 ) -> _RankedSuggestions:
-    """Typing narrows the empty-bar list instead of reordering it, at every length.
+    """The tags that match what is typed, the most used first (the maintainer, 2026-11-18).
 
-    Order: the empty-bar suggestions that have evidence for this note (named in
-    it, going with its tags, similar notes), filtered by what is typed; then
-    matching tags that already apply through inheritance or the rules (the
-    empty bar hides those), by raw usage; then every other matching tag by raw
-    usage. Tags whose name starts with what is typed, and tags the note's text
-    names, come before tags where only a later part matches (`q`: `question`
-    before `security-questions`), each in that order. Measured against ranking each prefix afresh in
-    docs/design/tag-suggestion-learnings.md.
+    Tags whose name starts with what is typed, and tags the note's text names, come before
+    tags where only a later part matches (`q`: `question` before `security-questions`). In each
+    group: the tags the note's text names, in the empty bar's order (a note about Yellowstone
+    wants `yellowstone` however rarely it is used); then the tags that already apply through a
+    note above or the rules, the most used first (2026-10-21: a note under a `question` note
+    is often tagged `question` itself); then every other tag, the most used first. Tags used
+    equally often keep the empty bar's order.
+
+    Before, typing only narrowed the empty-bar list (2026-10-21), which ranks by evidence and
+    puts a tag that already applies after every tag with evidence: `qu` on a note under a
+    `question` note offered `qualia` and `QuantConnect` before `question`, the tag used most
+    by far. The empty bar is unchanged. Not measured on the experiment's namespace
+    (docs/design/tag-suggestion-learnings.md).
     """
     assert prefix != "" and not prefix.startswith("@"), prefix
     # What is typed is the last token the tag bar sends; the empty bar has no such token.
@@ -1414,22 +1419,36 @@ def _suggest_while_typing(
     left_out = {tag.casefold() for tag in explicit_tags if not tag.startswith("@")} | _synonyms_of_written_tags(
         tags=empty_bar_explicit, ontology=basis.ontology,
     )
+    already_applying = frozenset(basis.already_applying_by_use)
     starting: List[str] = []
     later_part: List[str] = []
+    named_in_text: set[str] = set()
     explain_by_term: Dict[str, Callable[[str], Tuple[str, ...]]] = {}
     for term, explain, has_evidence in ordered:
         if term.casefold() in explain_by_term or term.casefold() in left_out:
             continue
         if not _typed_leads_to(term=term, prefix=prefix):
             continue
+        if has_evidence and match_tag_in_note_text(term=term, content_html=content_html, ontology=basis.ontology) is not None:
+            named_in_text.add(term)
         if _keeps_its_place(term=term, prefix=prefix, has_evidence=has_evidence, content_html=content_html, ontology=basis.ontology):
             starting.append(term)
         else:
             later_part.append(term)
         explain_by_term[term.casefold()] = explain
-        if len(starting) == limit:
-            break
-    shown = (starting + later_part)[:limit]
+
+    def most_used_first(terms: List[str]) -> List[str]:
+        """The tags the note's text names as they are, then those that already apply, then the
+        rest, each by use (stable sorts: equally used tags keep the empty bar's order)."""
+        def by_use(group: List[str]) -> List[str]:
+            return sorted(group, key=lambda term: _lookup_count(basis.exact_tag_counts, term), reverse=True)
+
+        named = [term for term in terms if term in named_in_text]
+        applying = [term for term in terms if term not in named_in_text and term in already_applying]
+        others = [term for term in terms if term not in named_in_text and term not in already_applying]
+        return named + by_use(applying) + by_use(others)
+
+    shown = (most_used_first(starting) + most_used_first(later_part))[:limit]
     return _RankedSuggestions(tags=shown, explain=lambda term: explain_by_term[term.casefold()](term))
 
 

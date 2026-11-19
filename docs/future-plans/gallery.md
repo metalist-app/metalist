@@ -44,3 +44,10 @@ Acceptance checks:
 
 - Audio, video and other files in a gallery: left out, shown as tiles with their badge, or a video's first frame.
 - How many columns, and whether the grid follows the note's width or a fixed tile size.
+
+## Changed 2026-11-18 (the maintainer)
+
+- **The switch shows the state, not the action:** four squares while the note shows its grid, lines while it shows its outline, as the fold arrow shows the note's state. Both icons are drawn in one 18px square. The switch sits right under the note's fold arrow, on its axis, wherever the arrow is (`gallery-view-service.js`, `placeUnderFoldArrow`): beside a heading the arrow is lower, and the switch, at a fixed height, sat on top of it.
+- **A file with no picture of its own is one tile.** With `@gallery=markdown` each file's card, whose Open and Download are buttons inside the tile's own button, came apart into three tiles. A Markdown, text, code or data file now shows the top of the file (its first 6,000 bytes, cut at a line) drawn as the viewer draws it and shrunk to a page (`embedded_references.py`, `_render_document_tile`; `.meta-gallery-document`); any other file, and every such file in an export, its badge and name. Tests: `tests/unit/test_gallery_file_tiles.py`.
+- **Not decided:** a tile's caption is still its note's first line, also for a file's page, where the file's name may serve better.
+

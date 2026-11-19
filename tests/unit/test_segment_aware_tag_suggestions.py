@@ -751,7 +751,7 @@ def test_single_letter_prefix_ranks_raw_inherited_usage_without_ontology_implica
     assert suggestions[:3] == ["goat's-milk", "ML3", "math"]
 
 
-def test_single_letter_prefix_prioritizes_inherited_tag_cooccurrence(
+def test_single_letter_prefix_orders_by_use_whatever_goes_with_an_inherited_tag(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     tag_rows = [(f"drinks-{index}", "drinks") for index in range(5)]
@@ -779,11 +779,13 @@ def test_single_letter_prefix_prioritizes_inherited_tag_cooccurrence(
         content_html="<p>nice blocks. woke up very sweaty. vivid</p>",
     )
 
+    # Typed, the most used come first (the maintainer, 2026-11-18): `dreams`, which goes with the
+    # inherited `sleep`, used to lead; the empty bar still ranks it by that.
     assert suggestions[:5] == [
-        "dreams",
         "drinks",
         "diet",
         "days",
+        "dreams",
         "Probability-The-Science-of-Uncertainty-and-Data",
     ]
 

@@ -83,34 +83,30 @@ def _tags(suggestions: list[str]) -> list[str]:
     return [tag for tag in suggestions if not tag.startswith("@")]
 
 
-def _matching(tags: list[str], letter: str) -> list[str]:
-    return [tag for tag in tags if tag.casefold().startswith(letter)]
-
-
-def test_one_letter_keeps_the_empty_bar_order(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_one_letter_puts_the_tag_the_note_names_first_then_the_most_used(monkeypatch: pytest.MonkeyPatch) -> None:
     _use_index(monkeypatch, inherited=frozenset())
     empty_bar = _suggest(bar=["fruit"], prefix="")
-    # Named in the note first, then what goes with "fruit".
+    # The empty bar is as it was: named in the note first, then what goes with "fruit".
     assert empty_bar[:3] == ["mango", "melon", "kiwi"]
     typed = _suggest(bar=["fruit"], prefix="m")
-    # What was on screen keeps its order; tags without the letter drop out.
-    assert typed[:2] == ["mango", "melon"]
-    assert typed[:2] == _matching(empty_bar, "m")[:2]
+    # Typed (the maintainer, 2026-11-18): the tag the note names, then the most used, whatever
+    # goes with the bar's tags. It used to keep the empty bar's order (mango, melon).
+    assert typed[:2] == ["mango", "maple"]
 
 
-def test_one_letter_fills_the_rest_with_the_one_letter_order(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_one_letter_orders_the_rest_by_use(monkeypatch: pytest.MonkeyPatch) -> None:
     _use_index(monkeypatch, inherited=frozenset())
     typed = _suggest(bar=["fruit"], prefix="m")
-    # After the empty-bar matches: the remaining m-tags by raw usage.
-    assert _tags(typed) == ["mango", "melon", "maple", "mint", "moss"]
+    # After the tag the note names: every other m-tag by how often it is used.
+    assert _tags(typed) == ["mango", "maple", "mint", "melon", "moss"]
 
 
-def test_one_letter_puts_matching_inherited_tags_after_the_empty_bar_matches(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_one_letter_puts_matching_inherited_tags_before_the_rest(monkeypatch: pytest.MonkeyPatch) -> None:
     _use_index(monkeypatch, inherited=frozenset({"mint"}))
     typed = _suggest(bar=["fruit"], prefix="m")
     # An inherited tag already applies, so the empty bar hides it; once its letter is typed it comes
-    # right after the empty-bar matches, ahead of the filler.
-    assert _tags(typed) == ["mango", "melon", "mint", "maple", "moss"]
+    # right after the tag the note names, ahead of every other tag however much used.
+    assert _tags(typed) == ["mango", "mint", "maple", "melon", "moss"]
 
 
 def test_one_letter_never_suggests_a_tag_already_in_the_bar(monkeypatch: pytest.MonkeyPatch) -> None:

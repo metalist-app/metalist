@@ -5199,9 +5199,12 @@ html[data-theme="dark"] .note-file-text-snippet {
     display: none;
 }
 
-/* The switch, in the margin below the fold arrow: four squares for the grid, lines for the outline. */
+/* The switch, in the margin below the fold arrow. Its icon shows what the note is showing now,
+   as the fold arrow does (the maintainer, 2026-11-18; it showed what a click would switch to):
+   four squares while it shows the grid, lines while it shows the outline. */
 .meta-gallery-switch {
     position: absolute;
+    /* Under the fold arrow, where gallery-view-service.js keeps it; these are its place with no arrow. */
     top: 32px;
     left: -29px;
     width: 27px;
@@ -5211,36 +5214,44 @@ html[data-theme="dark"] .note-file-text-snippet {
     background: transparent;
     color: rgba(0, 0, 0, 0.35);
     cursor: var(--skin-cursor-pointer, pointer);
-    font-size: 17px;
     line-height: 27px;
     text-align: center;
 }
 
-/* The outline: a line with two lines indented under it, a parent and its children (unlike the
-   menu's three even lines). */
+.meta-gallery-switch:hover {
+    color: #000000;
+}
+
+/* Both icons are drawn in one 18px square, so they are the same size in the same place. The grid:
+   four squares. */
 .meta-gallery-switch::before {
     content: "";
     display: inline-block;
-    width: 15px;
-    height: 12px;
+    width: 18px;
+    height: 18px;
     vertical-align: middle;
     background:
-        linear-gradient(currentColor, currentColor) 0 0 / 100% 2px no-repeat,
-        linear-gradient(currentColor, currentColor) 5px 5px / 10px 2px no-repeat,
-        linear-gradient(currentColor, currentColor) 5px 10px / 10px 2px no-repeat;
+        linear-gradient(currentColor, currentColor) 0 0 / 8px 8px no-repeat,
+        linear-gradient(currentColor, currentColor) 10px 0 / 8px 8px no-repeat,
+        linear-gradient(currentColor, currentColor) 0 10px / 8px 8px no-repeat,
+        linear-gradient(currentColor, currentColor) 10px 10px / 8px 8px no-repeat;
 }
 
+/* The outline: a line with two lines indented under it, a parent and its children (unlike the
+   menu's three even lines). */
 .note.is-gallery-outline > .note-content .meta-gallery-switch::before {
-    content: "▦";
-    display: inline;
-    width: auto;
-    height: auto;
-    background: none;
-    vertical-align: baseline;
+    background:
+        linear-gradient(currentColor, currentColor) 0 2px / 18px 2px no-repeat,
+        linear-gradient(currentColor, currentColor) 6px 8px / 12px 2px no-repeat,
+        linear-gradient(currentColor, currentColor) 6px 14px / 12px 2px no-repeat;
 }
 
 html[data-theme="dark"] .meta-gallery-switch {
     color: rgba(255, 255, 255, 0.4);
+}
+
+html[data-theme="dark"] .meta-gallery-switch:hover {
+    color: #ffffff;
 }
 
 /* Folded, one row of small pictures under the first line, without captions. */
@@ -5354,6 +5365,38 @@ html[data-theme="dark"] .note-file-reference-link.meta-gallery-tile .meta-galler
 
 html[data-theme="dark"] .meta-gallery-picture:has([data-picture-source="first-page"]) {
     outline-color: rgba(255, 255, 255, 0.16);
+}
+
+/* A Markdown, text, code or data file: the top of it, drawn as the viewer draws it at three times
+   the tile's width and shrunk to fit, so it reads as a page (embedded_references.py,
+   _render_document_tile). Always a light page, as a PDF's first page is; a click goes to the tile. */
+.meta-gallery-document {
+    display: block;
+    width: 300%;
+    height: 300%;
+    padding: 28px 32px;
+    box-sizing: border-box;
+    overflow: hidden;
+    transform: scale(calc(1 / 3));
+    transform-origin: top left;
+    background: #ffffff;
+    color: #1f2933;
+    font-size: 16px;
+    line-height: 1.45;
+    text-align: left;
+    white-space: normal;
+    pointer-events: none;
+}
+
+/* The page's thin edge, as a PDF's first page has (a white page would vanish into a white note):
+   drawn on the page itself at three times its width, the shrinking makes it one pixel. */
+.meta-gallery-document {
+    border: 3px solid #d8dde6;
+    border-radius: 24px;
+}
+
+html[data-theme="dark"] .meta-gallery-document {
+    border-color: rgba(255, 255, 255, 0.48);
 }
 
 /* A PDF without its first page drawn (yet): its badge and name in the middle of the square. */

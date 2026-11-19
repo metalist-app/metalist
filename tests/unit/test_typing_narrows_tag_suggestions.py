@@ -1,7 +1,9 @@
 """Typing in the tag bar only narrows the suggestions, at any length (docs/ui/tag-bar.md,
 "Tag Suggestions"): `q` → `qu` → `que` removes the tags that stop matching and keeps
 the rest in order. A tag that already applies (`question`, from the parent) stayed
-first after `q` but dropped to the bottom after `qu` (2026-10-21)."""
+first after `q` but dropped to the bottom after `qu` (2026-10-21). Since 2026-11-18 the typed
+list has its own order: the tags the note's text names, the tags that already apply, then the
+rest, each by how often it is used."""
 
 from __future__ import annotations
 
@@ -104,6 +106,21 @@ def test_a_tag_the_note_names_comes_before_one_that_already_applies_at_every_len
     assert after_quan == ["conditional-quantiles", "Quanta-Magazine"]
     assert after_qu == _narrowed(after_q, "qu")
     assert after_quan == _narrowed(after_qu, "quan")
+
+
+def test_a_rare_tag_that_goes_with_the_notes_tags_no_longer_comes_before_the_tag_that_applies(live_database) -> None:
+    # The maintainer, 2026-11-18: `qu` on a note under a `question` note offered `qualia` and
+    # `QuantConnect`, each used once or twice beside the note's own tag, before `question`.
+    _business_notes(text=_QUESTION)
+    for index in range(2):
+        _note(f"qualia-{index}", None, content="other", tags="ML3-business qualia")
+    assert _typed("")[0] == "qualia", "the empty bar still ranks by what goes with the note's tags"
+
+    after_qu = _typed("qu")
+
+    # The tag that already applies, then the rest by how often each is used.
+    assert after_qu[:4] == ["question", "quote", "questions", "Quanta-Magazine"]
+    assert after_qu.index("qualia") > after_qu.index("Quanta-Magazine")
 
 
 def test_backspacing_gives_the_shorter_list_back(live_database) -> None:
