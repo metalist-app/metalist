@@ -2065,6 +2065,23 @@ body.ontology-modal-open #ontology-modal {
     margin: 10px 0 0;
 }
 
+/* Back Up Now's offer to trim the files no note uses first: a row like Delete Folder's box. */
+.modal-content .form-group.backup-settings-trim-first label {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    font-weight: normal;
+    cursor: var(--skin-cursor-pointer, pointer);
+}
+
+.modal-content .backup-settings-trim-first input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    margin: 0;
+    padding: 0;
+    flex: 0 0 auto;
+}
+
 .backup-result-modal-content {
     width: min(900px, 95vw);
 }

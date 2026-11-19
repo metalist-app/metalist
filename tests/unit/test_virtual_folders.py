@@ -22,6 +22,10 @@ from app.services.image_compression import ImageChoice
 from app.services import note_store as note_store_module
 from app.services import store as store_module
 from app.services.file_registry import file_registry
+from app.services import file_storage as file_storage_module
+from app.services import files_of_deleted_notes as files_of_deleted_notes_module
+from app.services import sync, undo_state
+from app.services import unused_files as unused_files_module
 from app.services.input_errors import InputRejected
 from app.services.note_store import NoteStore
 from app.services.obsidian_import.tree import CONTENT_MARKDOWN, SPLIT_HEADINGS_AND_LISTS
@@ -29,6 +33,8 @@ from app.services.search_index import SearchIndex
 from app.services.search_query import parse_search_query
 from app.services.tag_ontology import TagOntology
 from app.usecases.import_obsidian_vault import CmdImportObsidianVault
+from app.usecases.delete_notes_in_view import CmdDeleteNotesInView, notes_to_delete
+from app.services.snapshot import ResolvedViewScope
 
 TOKEN = "token"
 # Images as they are (the Images screen's first choice).
@@ -61,7 +67,7 @@ def imported_vault(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> NoteStore
     store = NoteStore()
     store._timing_enabled = False
     monkeypatch.setattr(store_module, "_note_store", store)
-    for module in (snapshot_module, virtual_folders, virtual_folder_usecases):
+    for module in (snapshot_module, virtual_folders, virtual_folder_usecases, file_storage_module, files_of_deleted_notes_module):
         monkeypatch.setattr(module, "note_store", store)
     monkeypatch.setattr(virtual_folder_usecases, "search_index", index)
     session = SafeSession()
@@ -165,6 +171,179 @@ def test_deleting_a_folders_notes_is_refused_when_their_count_changed(imported_v
             folder="Projects/", expected_note_count=len(deletion.top_note_ids) + 1, token=TOKEN, client_id="client", undo_context="undo",
         )
     assert all(imported_vault.has_note(note_id) for note_id in deletion.top_note_ids)
+
+
+# The files only a folder's notes use go with them (the maintainer, 2026-11-18; cases agreed that
+# day): Delete Folder with its notes says how many files and how much space, and deletes them
+# in the same step. Folder Projects/ holds the notes Plan, Notes, Budget and Overview; Today
+# and Top are outside it.
+CLIENT = "client-deleting"
+
+
+@pytest.fixture
+def vault_with_files(imported_vault: NoteStore) -> NoteStore:
+    undo_state._clients.clear()
+    sync.reset_state()
+    yield imported_vault
+    undo_state._clients.clear()
+    sync.reset_state()
+
+
+def _attach(store: NoteStore, note_id: str, name: str, content: bytes) -> str:
+    """A file attached to the note: stored, and embedded in the note's text."""
+    file_id = file_storage_module.create_file(original_filename=name, mime_type="application/octet-stream", content_bytes=content, token=TOKEN).id
+    _add_to_text(store, note_id, f"![[{file_id}]]")
+    return file_id
+
+
+def _add_to_text(store: NoteStore, note_id: str, added: str) -> None:
+    note = store.get_note(note_id)
+    store.update_note_content(
+        note_id=note_id, plaintext=f"{note.content}\n{added}", tags=note.tags, proposed_tags=note.proposed_tags,
+        updated_at=IMPORTED_AT,
+    )
+
+
+def _delete_projects_and_notes() -> Dict[str, object]:
+    return virtual_folder_usecases.delete_folder_and_notes(
+        folder="Projects/", expected_note_count=4, token=TOKEN, client_id=CLIENT, undo_context="undo",
+    )
+
+
+def _files_of_projects() -> files_of_deleted_notes_module.FilesOfNotes:
+    notes = virtual_folder_usecases.notes_in_folder("Projects/")
+    return files_of_deleted_notes_module.files_of_notes_to_delete(notes.top_note_ids, client_id=CLIENT)
+
+
+# Cases 1 and 2: the files the folder's notes use are counted, with their size, and deleted.
+def test_a_folders_notes_take_their_files_with_them(vault_with_files: NoteStore) -> None:
+    scan = _attach(vault_with_files, _root_titled(vault_with_files, "Plan"), "scan.pdf", b"s" * 4000)
+    chart = _attach(vault_with_files, _root_titled(vault_with_files, "Budget"), "chart.png", b"c" * 9000)
+
+    counted = _files_of_projects()
+    assert counted.file_ids == {scan, chart}
+    assert counted.size_bytes == file_storage_module.stored_size_of_files({scan, chart}) > 0
+
+    result = _delete_projects_and_notes()
+
+    assert result["deletedFileCount"] == counted.count
+    assert not file_registry.has_file(scan) and not file_registry.has_file(chart)
+    assert unused_files_module.unused_files().count == 0, "nothing is left for Trim Unused Files"
+
+
+# Case 3 (the folder alone comes off; its notes and files stay) is the browser suite's: that
+# deletion reads no file.
+
+
+# Case 4: a file a note outside the folder also uses stays, and is not counted.
+def test_a_file_a_note_that_stays_also_uses_is_kept(vault_with_files: NoteStore) -> None:
+    scan = _attach(vault_with_files, _root_titled(vault_with_files, "Plan"), "scan.pdf", b"scan")
+    chart = _attach(vault_with_files, _root_titled(vault_with_files, "Budget"), "chart.png", b"chart")
+    _add_to_text(vault_with_files, _root_titled(vault_with_files, "Top"), f"[[{chart}]]")
+
+    assert _files_of_projects().file_ids == {scan}
+    assert _delete_projects_and_notes()["deletedFileCount"] == 1
+    assert file_registry.has_file(chart) and not file_registry.has_file(scan)
+
+
+# Case 5: a folder whose notes have no files.
+def test_notes_without_files_take_none(vault_with_files: NoteStore) -> None:
+    counted = _files_of_projects()
+
+    assert (counted.count, counted.size_bytes) == (0, 0)
+    assert _delete_projects_and_notes()["deletedFileCount"] == 0
+
+
+# Case 7: a note under a filed note goes with it, and so does its file.
+def test_a_file_of_a_note_under_a_filed_note_goes_too(vault_with_files: NoteStore) -> None:
+    step = vault_with_files.get_children(_root_titled(vault_with_files, "Plan"))[0]
+    photo = _attach(vault_with_files, step, "photo.jpg", b"photo")
+
+    assert _files_of_projects().file_ids == {photo}
+    _delete_projects_and_notes()
+    assert not file_registry.has_file(photo)
+
+
+# Case 8: a file another tab copied, or holds in its undo history, is kept for its paste or undo.
+@pytest.mark.parametrize("held_as", ["copied", "undo"])
+def test_a_file_another_tab_could_bring_back_is_kept(vault_with_files: NoteStore, held_as: str) -> None:
+    scan = _attach(vault_with_files, _root_titled(vault_with_files, "Plan"), "scan.pdf", b"scan")
+    chart = _attach(vault_with_files, _root_titled(vault_with_files, "Budget"), "chart.png", b"chart")
+    if held_as == "copied":
+        sync.set_clipboard("another-tab", [{"id": "copy", "content": f"<div>![[{scan}]]</div>", "tags": ""}])
+    else:
+        undo_state._ctx("another-tab").history.append({"before": f"<div>![[{scan}]]</div>"})
+
+    assert _files_of_projects().file_ids == {chart}
+    _delete_projects_and_notes()
+    assert file_registry.has_file(scan) and not file_registry.has_file(chart)
+
+
+def test_the_deleting_tabs_own_undo_keeps_no_file(vault_with_files: NoteStore) -> None:
+    scan = _attach(vault_with_files, _root_titled(vault_with_files, "Plan"), "scan.pdf", b"scan")
+    undo_state._ctx(CLIENT).history.append({"before": f"<div>![[{scan}]]</div>"})
+
+    assert _files_of_projects().file_ids == {scan}, "the deletion clears this tab's undo"
+
+
+# Case 9: files unused before the deletion are not its files.
+def test_files_already_unused_are_left_for_trim(vault_with_files: NoteStore) -> None:
+    old = file_storage_module.create_file(original_filename="old.txt", mime_type="text/plain", content_bytes=b"old", token=TOKEN).id
+    scan = _attach(vault_with_files, _root_titled(vault_with_files, "Plan"), "scan.pdf", b"scan")
+
+    assert _files_of_projects().file_ids == {scan}
+    _delete_projects_and_notes()
+
+    assert file_registry.has_file(old)
+    assert unused_files_module.unused_files().count == 1
+
+
+# Case 10: refused when the count changed; no note and no file goes.
+def test_a_refused_deletion_deletes_no_file(vault_with_files: NoteStore) -> None:
+    scan = _attach(vault_with_files, _root_titled(vault_with_files, "Plan"), "scan.pdf", b"scan")
+
+    with pytest.raises(InputRejected, match="now holds"):
+        virtual_folder_usecases.delete_folder_and_notes(
+            folder="Projects/", expected_note_count=5, token=TOKEN, client_id=CLIENT, undo_context="undo",
+        )
+
+    assert file_registry.has_file(scan)
+
+
+# Delete Notes (Current View) takes the files only its notes use with them, as Delete Folder does.
+def _view_finding(note_ids: set[str]) -> ResolvedViewScope:
+    return ResolvedViewScope(
+        filter_active=True, allowed_note_ids=frozenset(note_ids), matched_note_ids=frozenset(note_ids),
+        ordered_root_ids=(), total_root_count=0,
+    )
+
+
+def test_a_views_notes_take_their_files_with_them(vault_with_files: NoteStore) -> None:
+    plan, budget = _root_titled(vault_with_files, "Plan"), _root_titled(vault_with_files, "Budget")
+    scan = _attach(vault_with_files, vault_with_files.get_children(plan)[0], "scan.pdf", b"s" * 4000)
+    chart = _attach(vault_with_files, budget, "chart.png", b"chart")
+    _add_to_text(vault_with_files, _root_titled(vault_with_files, "Top"), f"[[{chart}]]")
+    found = _view_finding({plan, budget})
+
+    counted = files_of_deleted_notes_module.files_of_notes_to_delete(notes_to_delete(found).top_note_ids, client_id=CLIENT)
+    assert counted.file_ids == {scan}
+    assert counted.size_bytes > 0
+
+    result = CmdDeleteNotesInView(scope=found, expected_note_count=2, client_id=CLIENT, undo_context="undo").execute()
+
+    assert result["deletedFileCount"] == 1
+    assert not file_registry.has_file(scan)
+    assert file_registry.has_file(chart), "Top stays and still uses it"
+
+
+def test_a_refused_deletion_in_a_view_deletes_no_file(vault_with_files: NoteStore) -> None:
+    plan = _root_titled(vault_with_files, "Plan")
+    scan = _attach(vault_with_files, plan, "scan.pdf", b"scan")
+
+    with pytest.raises(InputRejected, match="now holds"):
+        CmdDeleteNotesInView(scope=_view_finding({plan}), expected_note_count=3, client_id=CLIENT, undo_context="undo").execute()
+
+    assert file_registry.has_file(scan)
 
 
 # Each tab's folder is kept in tab state; its tests are in test_tab_state.py.

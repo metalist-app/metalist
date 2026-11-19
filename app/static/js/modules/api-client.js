@@ -387,7 +387,7 @@ export const NotesAPI = {
     // server refuses if the count changed since the user confirmed it.
     async countNotesToDeleteInView() {
         return this._apiCall(CONFIG.API.NOTES.DELETE_IN_VIEW_COUNT, {
-            method: 'POST', body: JSON.stringify(this.viewScope()),
+            method: 'POST', body: JSON.stringify({ ...this.viewScope(), clientId: ModeContext.clientId }),
         });
     },
 
@@ -612,9 +612,12 @@ export const NotesAPI = {
         });
     },
 
-    // How many notes deleting the folder's notes would delete (Delete Folder's checkbox).
+    // How many notes deleting the folder's notes would delete, and the files that go with them:
+    // { noteCount, fileCount, fileBytes } (Delete Folder's checkbox).
     async countVirtualFolderNotes(folder) {
-        return this._apiCall(CONFIG.API.VIRTUAL_FOLDERS.NOTES, { method: 'POST', body: JSON.stringify({ folder }) });
+        return this._apiCall(CONFIG.API.VIRTUAL_FOLDERS.NOTES, {
+            method: 'POST', body: JSON.stringify({ folder, clientId: ModeContext.clientId }),
+        });
     },
 
     // A root note dragged onto a folder ('' the tree's top): in exactly that folder, one undo step.

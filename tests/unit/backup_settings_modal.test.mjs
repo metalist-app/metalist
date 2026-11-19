@@ -23,6 +23,8 @@ class TestElement {
 class TestInputElement extends TestElement {}
 class TestButtonElement extends TestElement {}
 
+const MIB = 1024 * 1024;
+
 test('BackupSettingsModal focuses the first enabled control inside the modal', async (t) => {
     const originalSessionStorage = globalThis.sessionStorage;
     const originalDocument = globalThis.document;
@@ -154,7 +156,7 @@ test('BackupSettingsModal opens with the remembered vaults checked', async () =>
     modal.renderModalContent = () => {};
     // Open: settings that arrive after the dialog was left are not drawn.
     modal.isOpen = true;
-    modal._authRequest = async () => ({
+    modal._authRequest = async (url) => (url.endsWith('/unused') ? { count: 212, size_bytes: 1800 * MIB } : {
         folder_path: '/tmp/metalist-backups',
         selected_namespaces: ['default', 'test'],
         available_namespaces: ['default', 'cla', 'test'],
@@ -169,6 +171,29 @@ test('BackupSettingsModal opens with the remembered vaults checked', async () =>
         [state.selectedNamespaces, state.availableNamespaces, state.currentNamespace],
         [['default', 'test'], ['default', 'cla', 'test'], 'default'],
     );
+    // The files no note uses, for the offer to trim them first (the maintainer, 2026-11-18).
+    assert.deepEqual([state.unusedFileCount, state.unusedFileBytes], [212, 1800 * MIB]);
+});
+
+test('BackupSettingsModal says whether to trim unused files first, as ticked', async () => {
+    const { BackupSettingsModal } = await import('../../app/static/js/modules/modals/backup-settings-modal.js');
+    for (const ticked of [true, false]) {
+        const modal = new BackupSettingsModal();
+        const state = {
+            folderPath: '/tmp/metalist-backups', selectedNamespaces: ['default'], retentionCountText: '30',
+            saving: false, trimsUnusedFilesFirst: ticked,
+        };
+        modal.getModalState = () => state;
+        modal.updateModalState = (patch) => Object.assign(state, patch);
+        modal.renderModalContent = () => {};
+        modal._parseRetentionCount = () => 30;
+        modal._decision = { result: { action: 'cancel' } };
+        modal.close = () => {};
+
+        await modal.handleRunBackup();
+
+        assert.equal(modal._decision.result.trimUnusedFilesFirst, ticked);
+    }
 });
 
 test('BackupSettingsModal returns validated settings without a settings-only request', async () => {
@@ -205,6 +230,7 @@ test('BackupSettingsModal returns validated settings without a settings-only req
     assert.equal(closeCount, 1);
     assert.deepEqual(closeResult, {
         action: 'run_backup',
+        trimUnusedFilesFirst: false,
         settings: {
             folder_path: '/tmp/metalist-backups',
             retention_count: 30,
@@ -270,22 +296,24 @@ test('BackupSettingsModal can be left while it reads its settings, and draws non
     const modal = new BackupSettingsModal();
     const state = {};
     let drawn = 0;
-    let arrive = null;
+    const arrivals = [];
     modal.getModalState = () => state;
     modal.updateModalState = (patch) => Object.assign(state, patch);
     modal.renderModalContent = () => { drawn += 1; };
     modal.isOpen = true;
-    modal._authRequest = () => new Promise((resolve) => { arrive = resolve; });
+    modal._authRequest = (url) => new Promise((resolve) => { arrivals.push({ url, resolve }); });
 
     const loading = modal.loadSettings();
     assert.equal(state.loading, true);
     assert.equal(modal.canRequestClose(), true, 'reading the settings is nothing that leaving could lose');
     const drawnWhileLoading = drawn;
     modal.isOpen = false;
-    arrive({
-        folder_path: '', selected_namespaces: ['default'], available_namespaces: ['default'],
-        current_namespace: 'default', suggested_folders: [], retention_count: 30,
-    });
+    for (const { url, resolve } of arrivals) {
+        resolve(url.endsWith('/unused') ? { count: 0, size_bytes: 0 } : {
+            folder_path: '', selected_namespaces: ['default'], available_namespaces: ['default'],
+            current_namespace: 'default', suggested_folders: [], retention_count: 30,
+        });
+    }
     await loading;
 
     assert.equal(drawn, drawnWhileLoading, 'nothing is drawn in a dialog that was left');

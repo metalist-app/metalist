@@ -354,6 +354,8 @@ class CountNotesInViewRequest(TypedDict):
     search: Text
     tabId: Identifier
     isUntaggedView: bool
+    # The tab asking: its own undo history is cleared by the deletion, so it keeps no file.
+    clientId: Identifier
 
 @with_config(ConfigDict(strict=True))
 class DeleteNotesInViewRequest(TypedDict):

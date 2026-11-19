@@ -9,6 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Dict, List
 
+from app.services.files_of_deleted_notes import delete_files_of_deleted_notes, files_of_notes_to_delete
 from app.services.input_errors import InputRejected
 from app.services.snapshot import ResolvedViewScope
 from app.services.store import store
@@ -84,7 +85,13 @@ class CmdDeleteNotesInView(QueryCommand):
                 f"This view now holds {deletion.note_count} notes, not the {self.expected_note_count} you confirmed. "
                 "Nothing was deleted; try again."
             )
+        # The files only these notes use go with them (files_of_deleted_notes.py).
+        files = files_of_notes_to_delete(deletion.top_note_ids, client_id=self.client_id)
         for note_id in deletion.top_note_ids:
             apply_delete_subtree(note_id)
         reset_undo_stack(self.client_id, self.undo_context)
-        return {"status": "success", "deletedCount": deletion.note_count, "updateUUID": generate_new_uuid()}
+        deleted_file_count = delete_files_of_deleted_notes(files)
+        return {
+            "status": "success", "deletedCount": deletion.note_count, "deletedFileCount": deleted_file_count,
+            "updateUUID": generate_new_uuid(),
+        }

@@ -18,6 +18,7 @@ from app.services.virtual_folders import (
     FOLDER_MARK, NO_FOLDER, all_folder_tags, folder_tags_of, is_folder_tag, refile_tag_bar, rename_folder_in_search,
 )
 from app.usecases.delete_notes_in_view import NotesToDelete, topmost_with_subtrees
+from app.services.files_of_deleted_notes import delete_files_of_deleted_notes, files_of_notes_to_delete
 from app.usecases.delete_subtree import apply_delete_subtree
 from app.usecases.delete_tag import apply_delete_tag_everywhere
 from app.usecases.rename_tag import apply_rename_tag_everywhere, rewrite_searches_everywhere
@@ -122,7 +123,8 @@ def delete_folder_and_notes(
 ) -> Dict[str, object]:
     """Delete the notes filed in the folder (notes_in_folder), if still the count the user
     confirmed, then the folder itself. A bulk deletion: it clears undo and redo, as deleting
-    the notes in a view does."""
+    the notes in a view does. The files only those notes use go with them
+    (files_of_deleted_notes.py)."""
     if not is_folder_tag(folder):
         raise InputRejected(f"{folder} is not a folder.")
     deletion = notes_in_folder(folder)
@@ -132,8 +134,13 @@ def delete_folder_and_notes(
             f"{folder} now holds {note_count} notes, not the {expected_note_count} you confirmed. "
             "Nothing was deleted; try again."
         )
+    files = files_of_notes_to_delete(deletion.top_note_ids, client_id=client_id)
     for note_id in deletion.top_note_ids:
         apply_delete_subtree(note_id)
     result = delete_folder(folder=folder, token=token)
     reset_undo_stack(client_id, undo_context)
-    return {**result, "deletedNoteCount": note_count, "updateUUID": generate_new_uuid()}
+    deleted_file_count = delete_files_of_deleted_notes(files)
+    return {
+        **result, "deletedNoteCount": note_count, "deletedFileCount": deleted_file_count,
+        "updateUUID": generate_new_uuid(),
+    }

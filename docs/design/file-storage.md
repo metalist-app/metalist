@@ -76,7 +76,7 @@ One row per item.
 ## 7. Cleanup
 
 - **Crash leftovers, automatic and keyless:** blobs with no catalog row, older than a grace period (1 hour proposed), are deleted.
-- **Files nothing references:** removed only by `Trim Unused Files…`, which a person runs, prompted by the trim reminder (built 2026-10-29: `Trim Reminder` in `docs/ui/command-palette.md`). **Agreed:** no automatic removal of catalog rows nothing references. The trim reminder keeps Trim from being forgotten. Finding those rows also needs the notes' contents, which are encrypted, so a keyless job couldn't do it anyway.
+- **Files nothing references:** removed only by `Trim Unused Files…`, which a person runs, prompted by the trim reminder (built 2026-10-29: `Trim Reminder` in `docs/ui/command-palette.md`). **Agreed:** no automatic removal of catalog rows nothing references. The trim reminder keeps Trim from being forgotten. Finding those rows also needs the notes' contents, which are encrypted, so a keyless job couldn't do it anyway. **Changed 2026-11-18 (the maintainer):** the two bulk deletions, Delete Folder with its notes and Delete Notes (Current View), delete the files only their notes use in the same step (`app/services/files_of_deleted_notes.py`), and Back Up Now offers to trim first; a single deleted note's files still wait for a trim, for ⌘Z.
 - **Hosted backup store:** a blob is deleted once no retained catalog snapshot references it and its retention lock has expired. This works from the plaintext columns, keylessly.
 - **Verification:** every catalog `blob_id` exists live (and, once backed up, in the backup store). Spot-check by decrypting samples and comparing `content_hash`.
 

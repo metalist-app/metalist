@@ -2,12 +2,17 @@ import { ApplicationState } from '../application-state.js';
 import { BaseModal } from './base-modal.js';
 import { actionRowHtml } from './action-row.js';
 import { escapeHtml } from '../html-escape.js';
+import { filesAfterNotesText } from '../files-with-notes-text.js';
 
 // Delete Folder (an experiment: virtual-folders-service.js): the folder comes off its notes,
-// and, only when the box is ticked (unticked at first: the maintainer, 2026-11-01), the notes
-// filed in it go too, each with the notes under it. Escape or Cancel changes nothing.
+// and, while the box is ticked, the notes filed in it go too, each with the notes under it,
+// and the files only those notes use (ticked at first, and the files said with their size:
+// the maintainer, 2026-11-18; it was unticked at first from 2026-11-01, and the files stayed
+// until Trim Unused Files). Escape or Cancel changes nothing.
 
 const SINGLE_NOTE = 1;
+const DELETE_FOLDER_LABEL = 'Delete Folder';
+const DELETE_BOTH_LABEL = 'Delete Folder and Notes';
 
 export class DeleteFolderModal extends BaseModal {
     constructor() {
@@ -25,15 +30,17 @@ export class DeleteFolderModal extends BaseModal {
 
     // Resolves to { deleteNotes } when confirmed, or null when nothing changes.
     // form: { path (the folder), noteCount (the notes filed in it, as the list counts them:
-    // the notes under them go with them, uncounted) }.
-    openFor({ path, noteCount }) {
-        if (typeof path !== 'string' || path === '' || !Number.isInteger(noteCount) || noteCount < 0) {
-            throw new Error('DeleteFolderModal.openFor requires a path and a note count');
+    // the notes under them go with them, uncounted), fileCount and fileBytes (the files that
+    // go with those notes) }.
+    openFor({ path, noteCount, fileCount, fileBytes }) {
+        const counts = [noteCount, fileCount, fileBytes];
+        if (typeof path !== 'string' || path === '' || !counts.every((count) => Number.isInteger(count) && count >= 0)) {
+            throw new Error('DeleteFolderModal.openFor requires a path and the counts of its notes and their files');
         }
         if (this._pendingResolve !== null) {
             throw new Error('DeleteFolderModal already has a pending promise');
         }
-        this._form = { path, noteCount };
+        this._form = { path, noteCount, fileCount, fileBytes };
         this.open();
         return new Promise((resolve) => {
             this._pendingResolve = resolve;
@@ -58,13 +65,15 @@ export class DeleteFolderModal extends BaseModal {
         if (!(modalElement instanceof HTMLElement) || this._form === null) {
             throw new Error('Delete folder modal has no element or form');
         }
-        const { path, noteCount } = this._form;
+        const { path, noteCount, fileCount, fileBytes } = this._form;
         const notesWord = noteCount === SINGLE_NOTE ? 'note' : 'notes';
-        const toggle = noteCount === 0 ? '' : `
+        const files = filesAfterNotesText({ noteCount, fileCount, fileBytes });
+        const hasNotes = noteCount > 0;
+        const toggle = hasNotes ? `
                 <label class="delete-folder-notes-toggle">
-                    <input type="checkbox" id="delete-folder-notes">
-                    <span>Also delete its ${noteCount} ${notesWord}</span>
-                </label>`;
+                    <input type="checkbox" id="delete-folder-notes" checked>
+                    <span>Also delete its ${noteCount} ${notesWord}${escapeHtml(files)}</span>
+                </label>` : '';
         modalElement.innerHTML = `
             <div class="modal-content alphabetize-root-notes-modal-content">
                 <div class="prioritize-modal-header">
@@ -79,7 +88,7 @@ export class DeleteFolderModal extends BaseModal {
                     alternative: null,
                     cancel: { id: 'delete-folder-cancel-btn', label: 'Cancel', disabled: false, attributes: [] },
                     main: {
-                        id: 'delete-folder-submit-btn', label: 'Delete Folder', disabled: false, attributes: [],
+                        id: 'delete-folder-submit-btn', label: hasNotes ? DELETE_BOTH_LABEL : DELETE_FOLDER_LABEL, disabled: false, attributes: [],
                         isDestructive: true, isEnterAction: false, type: 'button',
                     },
                     rowClass: 'alphabetize-root-notes-actions',
@@ -98,7 +107,7 @@ export class DeleteFolderModal extends BaseModal {
         const box = document.getElementById('delete-folder-notes');
         if (box instanceof HTMLInputElement) {
             box.onchange = () => {
-                submit.textContent = box.checked ? 'Delete Folder and Notes' : 'Delete Folder';
+                submit.textContent = box.checked ? DELETE_BOTH_LABEL : DELETE_FOLDER_LABEL;
             };
         }
         submit.onclick = () => {

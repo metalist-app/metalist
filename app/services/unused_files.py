@@ -17,7 +17,7 @@ from app.services.file_storage import (
     unused_file_ids,
 )
 from app.services.sync import all_clipboards
-from app.services.undo_state import undo_history_operations
+from app.services.undo_state import undo_history_operations, undo_history_operations_of_other_clients
 
 
 @dataclass(frozen=True)
@@ -43,8 +43,17 @@ def _texts_in(value: object) -> list[str]:
 def files_undo_or_paste_could_restore() -> frozenset[str]:
     """Ids named by any tab's undo or redo history or copied note: referenced in a text,
     or a text that is itself an id."""
-    texts = _texts_in([undo_history_operations(), all_clipboards()])
+    return _file_ids_named_in(_texts_in([undo_history_operations(), all_clipboards()]))
+
+
+def _file_ids_named_in(texts: list[str]) -> frozenset[str]:
     return frozenset(texts) | frozenset(file_id for text in texts for file_id in referenced_file_ids(text))
+
+
+def files_undo_or_paste_could_restore_once_cleared(client_id: str) -> frozenset[str]:
+    """As files_undo_or_paste_could_restore, once client_id's own undo and redo are cleared
+    (a bulk deletion clears them): what a bulk deletion must keep."""
+    return _file_ids_named_in(_texts_in([undo_history_operations_of_other_clients(client_id), all_clipboards()]))
 
 
 def unused_files() -> UnusedFiles:

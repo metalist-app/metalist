@@ -629,16 +629,18 @@ async function deleteFolder(path) {
         return;
     }
     const counted = await NotesAPI.countVirtualFolderNotes(path);
-    if (!Number.isInteger(counted.noteCount)) {
-        throw new Error('Counting a folder\'s notes answered without a count');
+    if (![counted.noteCount, counted.fileCount, counted.fileBytes].every(Number.isInteger)) {
+        throw new Error('Counting a folder\'s notes answered without its counts');
     }
-    const choice = await handlers.askDeleteFolder({ path, noteCount: counted.noteCount });
+    const choice = await handlers.askDeleteFolder({
+        path, noteCount: counted.noteCount, fileCount: counted.fileCount, fileBytes: counted.fileBytes,
+    });
     if (choice === null) return;
     const expectedNoteCount = choice.deleteNotes ? counted.noteCount : NO_NOTES;
     await NotesAPI.deleteVirtualFolder(path, choice.deleteNotes, expectedNoteCount);
     await handlers.afterChange();
-    // The deleted notes' files may now be unused (deleting them cleared undo): the trim
-    // reminder checks at once instead of at the next click (the maintainer, 2026-11-12).
+    // The deleted notes' files went with them (the maintainer, 2026-11-18). The trim reminder
+    // still checks at once: files unused before, or kept for another tab's undo, may remain.
     await TrimReminder.check();
 }
 

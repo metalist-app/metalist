@@ -106,6 +106,7 @@ from app.services.snapshot import find_in_view
 from app.services.snapshot import resolve_search_scope
 from app.services.snapshot import ResolvedViewScope, resolve_view_scope_membership
 from app.usecases.delete_notes_in_view import CmdDeleteNotesInView, notes_to_delete
+from app.services.files_of_deleted_notes import files_of_notes_to_delete
 from app.usecases.tag_notes_in_view import ADD, CmdTagNotesInView, require_plain_tag, tag_changes_in_view, tags_to_remove_in_view
 from app.usecases.password_audit import CmdReplacePassword, audit_passwords, count_passwords
 from app.services.note_store import store as note_store
@@ -1498,7 +1499,11 @@ def _resolved_view(body: ViewScope) -> ResolvedViewScope:
 @transactional_route
 def count_notes_to_delete_in_view(body: CountNotesInViewRequest) -> dict[str, object]:
     deletion = notes_to_delete(_resolved_view(body))
-    return {"noteCount": deletion.note_count, "isWholeVault": deletion.is_whole_vault}
+    files = files_of_notes_to_delete(deletion.top_note_ids, client_id=body["clientId"])
+    return {
+        "noteCount": deletion.note_count, "isWholeVault": deletion.is_whole_vault,
+        "fileCount": files.count, "fileBytes": files.size_bytes,
+    }
 
 
 @router.post("/notes/view/delete")

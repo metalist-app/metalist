@@ -156,6 +156,7 @@ import {
     wasTabDeletedElsewhere,
 } from '../mode-manager/events/keyboard-events.js';
 import { FolderNameModal } from '../modals/folder-name-modal.js';
+import { deletedNotesAndFilesText, filesDeletedTooSentence } from '../files-with-notes-text.js';
 import { DeleteFolderModal } from '../modals/delete-folder-modal.js';
 import { LogOutModal } from '../modals/log-out-modal.js';
 import {
@@ -2072,25 +2073,7 @@ class CommandPaletteController {
             return;
         }
 
-        const result = await CommandGate.run('commandPalette.trimUnusedFiles', async () => {
-            if (ModeContext.isEditing) {
-                await actionSaveAndExitEditingWithoutRefreshing();
-            }
-
-            const payload = await FilesAPI.trimUnusedFiles();
-            if (!payload || typeof payload !== 'object') {
-                throw new Error('Trim unused files response missing body');
-            }
-            if (!Number.isInteger(payload.deleted_count) || payload.deleted_count < 0) {
-                throw new Error('Trim unused files response missing deleted_count');
-            }
-            if (!Array.isArray(payload.deleted_file_ids)) {
-                throw new Error('Trim unused files response missing deleted_file_ids');
-            }
-
-            await actionRefreshAndMaybeSelect({});
-            return payload;
-        });
+        const result = await CommandGate.run('commandPalette.trimUnusedFiles', () => this._trimUnusedFilesNow());
         if (result === null) {
             return;
         }
@@ -2100,6 +2083,26 @@ class CommandPaletteController {
             `Trimmed ${result.deleted_count} unused file(s).`,
             RESULT_BANNER_SECONDS * MS_PER_SECOND,
         );
+    }
+
+    // Deletes the files no note uses and shows the notes again: inside a command (Trim Unused
+    // Files, or Back Up Now with "Trim … first" ticked).
+    async _trimUnusedFilesNow() {
+        if (ModeContext.isEditing) {
+            await actionSaveAndExitEditingWithoutRefreshing();
+        }
+        const payload = await FilesAPI.trimUnusedFiles();
+        if (!payload || typeof payload !== 'object') {
+            throw new Error('Trim unused files response missing body');
+        }
+        if (!Number.isInteger(payload.deleted_count) || payload.deleted_count < 0) {
+            throw new Error('Trim unused files response missing deleted_count');
+        }
+        if (!Array.isArray(payload.deleted_file_ids)) {
+            throw new Error('Trim unused files response missing deleted_file_ids');
+        }
+        await actionRefreshAndMaybeSelect({});
+        return payload;
     }
 
     // Retry failed link titles (docs/ui/command-palette.md): opens the dialog,
@@ -2299,10 +2302,12 @@ class CommandPaletteController {
         if (!isReady) {
             return;
         }
-        const { noteCount, isWholeVault } = await NotesAPI.countNotesToDeleteInView();
-        if (!Number.isInteger(noteCount) || typeof isWholeVault !== 'boolean') {
+        const { noteCount, isWholeVault, fileCount, fileBytes } = await NotesAPI.countNotesToDeleteInView();
+        if (![noteCount, fileCount, fileBytes].every(Number.isInteger) || typeof isWholeVault !== 'boolean') {
             throw new Error('Delete-in-view count response malformed');
         }
+        // The files only these notes use go with them (the maintainer, 2026-11-18).
+        const filesToo = filesDeletedTooSentence({ noteCount, fileCount, fileBytes });
         if (noteCount === 0) {
             FloatingMessages.show({
                 text: 'This view shows no notes to delete.', type: 'info', detail: '', isClosable: false, isLasting: false, key: null, action: null,
@@ -2318,7 +2323,7 @@ class CommandPaletteController {
         const confirmed = await this._confirmAction('commandPalette.deleteNotesInView.confirm', {
             eyebrow: 'Delete Notes',
             title,
-            description: `${description} ⌘Z can't bring them back, and undo history is cleared; only a backup can.`,
+            description: `${description}${filesToo} ⌘Z can't bring them back, and undo history is cleared; only a backup can.`,
             confirmLabel: `Delete ${noteCount} Notes`,
             isDangerous: true,
         });
@@ -2329,11 +2334,11 @@ class CommandPaletteController {
             const result = await NotesAPI.deleteNotesInView(noteCount);
             await actionRefreshAndMaybeSelect({ startedAt: performance.now(), context: 'deleteNotesInView' });
             FloatingMessages.show({
-                text: `Deleted ${result.deletedCount} notes.`, type: 'success', detail: '', isClosable: false, isLasting: false, key: null, action: null,
+                text: deletedNotesAndFilesText({ noteCount: result.deletedCount, fileCount: result.deletedFileCount }), type: 'success', detail: '', isClosable: false, isLasting: false, key: null, action: null,
             });
         });
-        // The deleted notes' files may now be unused (deleting them cleared undo): the trim
-        // reminder checks at once instead of at the next click (the maintainer, 2026-11-12).
+        // The deleted notes' files went with them. The trim reminder still checks at once: files
+        // unused before, or kept for another tab's undo, may remain.
         await TrimReminder.check();
     }
 
@@ -2688,7 +2693,14 @@ class CommandPaletteController {
             timeoutMs: BACKUP_COMMAND_AVAILABILITY_TIMEOUT_MS,
             pollIntervalMs: BACKUP_COMMAND_AVAILABILITY_POLL_INTERVAL_MS,
         });
+        if (typeof modalResult.trimUnusedFilesFirst !== 'boolean') {
+            throw new Error('Backup settings modal result missing trimUnusedFilesFirst');
+        }
         const backupResult = await CommandGate.run('commandPalette.createBackup', async () => {
+            // Ticked in the dialog: the files no note uses go first, so the backup is without them.
+            if (modalResult.trimUnusedFilesFirst) {
+                await this._trimUnusedFilesNow();
+            }
             const payload = await this._authRequest(CONFIG.API.BACKUP.RUN, 'POST', runSettings);
             if (!payload || typeof payload !== 'object') {
                 throw new Error('Backup run response missing body');
@@ -2707,6 +2719,9 @@ class CommandPaletteController {
             throw new Error('Backup run expected results array from CommandGate');
         }
 
+        if (modalResult.trimUnusedFilesFirst) {
+            void TrimReminder.preferencesChanged();
+        }
         await BackupReminder.backupMade();
         await this._openBackupResultModal({
             results: backupResult,
