@@ -41,6 +41,9 @@ function ensureCleanupHandlerRegistered() {
     moduleState.cleanupRegistered = true;
 }
 
+// An <img>'s loading attribute for a picture whose bytes are already fetched.
+const EAGER = 'eager';
+
 function getImagePreviewTargets(rootNode) {
     if (!rootNode || typeof rootNode.querySelectorAll !== 'function') {
         throw new Error('getImagePreviewTargets expects root node with querySelectorAll');
@@ -82,6 +85,12 @@ function applyPreviewObjectUrl(target, objectUrl) {
             rememberSize(moduleState.previewSizes, fileId, size);
         }
     }, { once: true });
+    // The picture's bytes are already here: it loads now, not when the browser's lazy loading
+    // gets to it. Left lazy (as the server writes the tag, before there is a picture), Firefox
+    // sometimes never loaded one though its address still read: the picture stayed empty, and
+    // the edit-previews suite waited on it until it timed out (GitHub, 2026-11-16 three times
+    // and 2026-11-19).
+    imageElement.loading = EAGER;
     imageElement.src = objectUrl;
     noteObjectUrlShown(imageElement, objectUrl);
     imageElement.hidden = false;
