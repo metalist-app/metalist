@@ -130,6 +130,8 @@ class TabStateUnderSeveralViews(RuleBasedStateMachine):
         self.version = 0
         # What each calm refusal said, for a failing ordering's report.
         self.refusals: List[str] = []
+        # Tabs deleted before a restart: the restarted server never had them, and refuses.
+        self.forgotten: Set[str] = set()
 
     def teardown(self) -> None:
         edit_locks.reset()
@@ -181,9 +183,13 @@ class TabStateUnderSeveralViews(RuleBasedStateMachine):
         order = self.known[view]["tabOrder"]
         return order[index % len(order)]
 
-    def _ask(self, view: str, request: Callable[[], Dict[str, object]], allowed: Allowed) -> Dict[str, object] | None:
-        """view sends request. Returns the answer, or None when it was calmly refused."""
+    def _ask(
+        self, view: str, request: Callable[[], Dict[str, object]], allowed: Allowed, named: Tuple[str, ...],
+    ) -> Dict[str, object] | None:
+        """view sends request about the tabs named. Returns the answer, or None when it was calmly
+        refused."""
         before = self._read_all()
+        gone = [tab_id for tab_id in named if tab_id not in before[view]["tabs"]]
         revisions = {other: self.store.shared_revision(view_id=other) for other in self.joined}
         # Rule 1: a calm refusal (a search typed elsewhere is one) leaves no answer; any other
         # exception fails the run. Boundary (declared in .shockharness.toml): the one request.
@@ -196,6 +202,11 @@ class TabStateUnderSeveralViews(RuleBasedStateMachine):
         changes = {other: _changes(before[other], after[other]) for other in self.joined}
         is_changed = any(changes.values())
 
+        # A tab deleted before the view heard of it: whatever is asked changes nothing and is no
+        # error (agreed 2026-11-18). The server forgets which tabs are gone when it restarts, and
+        # then refuses (a limit left as it is).
+        if gone and not set(gone) & self.forgotten:
+            assert answer is not None and answer["changed"] is False, f"a request naming deleted tabs {gone} was refused or taken"
         if answer is None or ("changed" in answer and answer["changed"] is False):
             assert not is_changed, f"a request refused or answered as no change changed {changes}"
         # Rule 3.
@@ -243,7 +254,7 @@ class TabStateUnderSeveralViews(RuleBasedStateMachine):
     @rule(view=views)
     def reread(self, view: str) -> None:
         if view in self.joined:
-            self._ask(view, lambda: self.store.snapshot(view_id=view), _nothing)
+            self._ask(view, lambda: self.store.snapshot(view_id=view), _nothing, ())
 
     @rule(view=views, index=indexes, copies_view=st.booleans(), is_page=st.booleans())
     def create_tab(self, view: str, index: int, copies_view: bool, is_page: bool) -> None:
@@ -258,10 +269,10 @@ class TabStateUnderSeveralViews(RuleBasedStateMachine):
             is_seen = not (is_page and other != view)
             return is_seen and change[0] in ("added", "dateFilter", "fileFilter", "untagged") and change[1] not in had
 
-        answer = self._ask(view, lambda: self.store.create_tab(view_id=view, copy_from_tab_id=source, copies_view=copies_view, is_page=is_page), allowed)
-        assert (answer is not None) == is_fresh, "a new tab is refused only when its source is gone"
-        if answer is not None:
-            assert answer["newTabId"] in answer["tabs"]
+        answer = self._ask(view, lambda: self.store.create_tab(view_id=view, copy_from_tab_id=source, copies_view=copies_view, is_page=is_page), allowed, (source,))
+        if is_fresh:
+            assert answer is not None and answer["newTabId"] in answer["tabs"], "a new tab is made beside a tab that is there"
+        if answer is not None and answer["changed"]:
             if is_page:
                 self.pages[view].add(answer["newTabId"])
 
@@ -286,8 +297,9 @@ class TabStateUnderSeveralViews(RuleBasedStateMachine):
                 return tab_id in (change[1], page["fromTabId"], page["originScope"]["scopeTabId"])
             return change[0] in ("dateFilter", "fileFilter", "untagged", "lock") and change[1] == tab_id
 
-        answer = self._ask(view, lambda: self.store.delete_tab(view_id=view, tab_id=tab_id), allowed)
-        assert (answer is not None) == (is_fresh and not is_last_context), "a tab shown to the view is deleted, unless it is the last context"
+        answer = self._ask(view, lambda: self.store.delete_tab(view_id=view, tab_id=tab_id), allowed, (tab_id,))
+        if is_fresh:
+            assert (answer is not None) == (not is_last_context), "a tab shown to the view is deleted, unless it is the last context"
         if answer is not None:
             assert tab_id not in answer["tabs"]
 
@@ -297,7 +309,7 @@ class TabStateUnderSeveralViews(RuleBasedStateMachine):
             return
         tab_id = self._tab(view, index)
         is_fresh = self._is_fresh(view, tab_id)
-        answer = self._ask(view, lambda: self.store.show_tab(view_id=view, tab_id=tab_id), lambda other, change: other == view and change == ("active",))
+        answer = self._ask(view, lambda: self.store.show_tab(view_id=view, tab_id=tab_id), lambda other, change: other == view and change == ("active",), (tab_id,))
         if is_fresh:
             assert answer is not None and answer["activeTabId"] == tab_id, "a view shows the tab it asked for"
 
@@ -318,7 +330,7 @@ class TabStateUnderSeveralViews(RuleBasedStateMachine):
                 return True
             return change == ("lock", tab_id) and other != view
 
-        answer = self._ask(view, lambda: self.store.set_search(view_id=view, tab_id=tab_id, search_query=search), allowed)
+        answer = self._ask(view, lambda: self.store.set_search(view_id=view, tab_id=tab_id, search_query=search), allowed, (tab_id,))
         if is_fresh and not (is_typed_elsewhere and reading["tabs"][tab_id]["searchQuery"] != search):
             assert answer is not None and answer["tabs"][tab_id]["searchQuery"] == search, "a view's search is taken"
         if is_fresh and is_typed_elsewhere and reading["tabs"][tab_id]["searchQuery"] != search:
@@ -342,7 +354,7 @@ class TabStateUnderSeveralViews(RuleBasedStateMachine):
         tab_id, to_tab_id = self._tab(view, index), self._tab(view, to_index)
         is_fresh = self._is_fresh(view, tab_id, to_tab_id)
         was = self._read(view)["tabOrder"]
-        answer = self._ask(view, lambda: self.store.move_tab(view_id=view, tab_id=tab_id, to_tab_id=to_tab_id), lambda _other, change: change == ("order",))
+        answer = self._ask(view, lambda: self.store.move_tab(view_id=view, tab_id=tab_id, to_tab_id=to_tab_id), lambda _other, change: change == ("order",), (tab_id, to_tab_id))
         if is_fresh and tab_id != to_tab_id:
             assert answer is not None
             order = answer["tabOrder"]
@@ -365,6 +377,7 @@ class TabStateUnderSeveralViews(RuleBasedStateMachine):
             view,
             lambda: self.store.set_scroll(view_id=view, tab_id=tab_id, scroll=scroll, read_at_version=read_at_version),
             lambda other, change: other == view and change == ("tab", tab_id, "scroll"),
+            (tab_id,),
         )
         if is_fresh and is_heard_of_everything:
             assert answer is not None and answer["tabs"][tab_id]["scrollY"] == scroll_y, "a scroll measured on the notes shown is taken"
@@ -409,6 +422,7 @@ class TabStateUnderSeveralViews(RuleBasedStateMachine):
                 view_id=view, tab_id=tab_id, from_tab_id=from_tab_id, reference_query=note, view_kind=kind, origin_scope=scope,
             ),
             allowed,
+            (tab_id, from_tab_id, scope_tab_id),
         )
         if is_context:
             # Refused, or "no change" when it names a tab deleted a moment ago.
@@ -425,6 +439,7 @@ class TabStateUnderSeveralViews(RuleBasedStateMachine):
         answer = self._ask(
             view, lambda: self.store.set_sort_mode(view_id=view, tab_id=tab_id, sort_mode=sort_mode),
             lambda _other, change: change in (("tab", tab_id, "sortMode"), ("tab", tab_id, "scroll")),
+            (tab_id,),
         )
         if is_fresh:
             assert answer is not None and answer["tabs"][tab_id]["sortMode"] == sort_mode
@@ -440,6 +455,7 @@ class TabStateUnderSeveralViews(RuleBasedStateMachine):
         answer = self._ask(
             view, lambda: self.store.set_file_filter(view_id=view, tab_id=tab_id, file_filter=file_filter),
             lambda _other, change: change in (("fileFilter", tab_id), ("tab", tab_id, "sortMode"), ("tab", tab_id, "scroll")),
+            (tab_id,),
         )
         if is_fresh:
             assert answer is not None and (tab_id in answer["fileFilters"]) == (file_filter is not None)
@@ -455,6 +471,7 @@ class TabStateUnderSeveralViews(RuleBasedStateMachine):
         answer = self._ask(
             view, lambda: self.store.set_untagged_view(view_id=view, tab_id=tab_id, is_untagged_view=is_untagged_view),
             lambda _other, change: change in (("untagged", tab_id), ("tab", tab_id, "scroll")),
+            (tab_id,),
         )
         if is_fresh:
             assert answer is not None and (tab_id in answer["untaggedViews"]) == is_untagged_view
@@ -465,7 +482,7 @@ class TabStateUnderSeveralViews(RuleBasedStateMachine):
     def set_tree_shown(self, view: str, is_shown: bool) -> None:
         if view not in self.joined:
             return
-        answer = self._ask(view, lambda: self.store.set_tree_shown(view_id=view, is_shown=is_shown), lambda other, change: other == view and change == ("tree",))
+        answer = self._ask(view, lambda: self.store.set_tree_shown(view_id=view, is_shown=is_shown), lambda other, change: other == view and change == ("tree",), ())
         assert answer is not None and answer["treeShown"] is is_shown
 
     # Rule 8. The tabs a vault starts with are saved with their first change, so a restart
@@ -483,6 +500,9 @@ class TabStateUnderSeveralViews(RuleBasedStateMachine):
         # Which scrolls were measured on other notes is not kept through a restart.
         self.shows_other_notes_since = {}
         after = self._read_all()
+        # Tabs a view still knows of that are gone: the restarted server never had them.
+        there = {tab_id for reading in after.values() for tab_id in reading["tabs"]}
+        self.forgotten |= {tab_id for known in self.known.values() for tab_id in known["tabs"]} - there
         for view in self.joined:
             assert before[view] == after[view], f"a restart changed {view}'s tabs: {_changes(before[view], after[view])}"
 

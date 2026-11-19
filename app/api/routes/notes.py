@@ -678,8 +678,11 @@ def create_new_tab(payload: CreateNewTabRequest, view_id: ViewId) -> Dict[str, o
         )
     if capture.captured_exception is not None:
         raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail="Invalid or stale tab state") from capture.captured_exception
+    # Asked beside a tab another view deleted a moment ago: nothing was made (tab_state.py).
+    if response["changed"] is False:
+        return response
     new_tab_id = response["newTabId"]
-    assert isinstance(new_tab_id, str), "create_tab always returns the new tab's id as a string"
+    assert isinstance(new_tab_id, str), "a tab made is answered with its id"
     # The browser clones the source tab's DOM into the new tab, so the new tab
     # starts from the source tab's warm view.
     view_cache.copy_tab(

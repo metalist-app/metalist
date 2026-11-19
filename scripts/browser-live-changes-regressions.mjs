@@ -566,6 +566,57 @@ async function contextsCase(here, there) {
   assert.equal((await contextIds(here)).active, added);
 }
 
+// A request this view sends about a context the other view deleted a moment ago, before this view
+// heard: nothing changes and no error shows (agreed 2026-11-18); the view then takes the list.
+async function askedOfADeletedContextCase(here, there) {
+  const asks = {
+    'sort order': () => here.evaluate(async () => {
+      const {CommandPalette} = await import('/static/js/modules/command-palette/command-palette-controller.js');
+      await CommandPalette.setSortMode('created');
+    }),
+    'Untagged': () => here.evaluate(async () => {
+      const {CommandPalette} = await import('/static/js/modules/command-palette/command-palette-controller.js');
+      await CommandPalette.setIsUntaggedView(true);
+    }),
+    'duplicate': gone => here.evaluate(gone => document.querySelector(`.duplicate-context[data-source-tab-id="${gone}"]`).click(), gone),
+    'delete': gone => here.evaluate(gone => document.querySelector(`.delete-context[data-delete-tab-id="${gone}"]`).click(), gone),
+  };
+  const errors = [];
+  const noteError = error => errors.push(error.message);
+  here.on('pageerror', noteError);
+  for (const [name, ask] of Object.entries(asks)) {
+    const kept = (await contextIds(here)).order;
+    const gone = await here.evaluate(async () => {
+      const keyboardEvents = await import('/static/js/modules/mode-manager/events/keyboard-events.js');
+      return keyboardEvents.openSearchInNewSearchContext('livechangesaskedofgone', 'live-changes-suite');
+    });
+    await idle(here);
+    await holdContextsReading(here);
+    await there.evaluate(async gone => {
+      const {deleteTabOnServer} = await import('/static/js/modules/mode-manager/services/tab-state-service.js');
+      await deleteTabOnServer(gone);
+    }, gone);
+    await here.waitForFunction(() => window.__heldReading.asked, {timeout: SHOWS_WITHIN_MS});
+    assert.equal((await contextIds(here)).active, gone, `${name}: this view should not have heard of the delete yet`);
+
+    await ask(gone);
+    await pause(SETTLE_MS);
+    const messages = await here.evaluate(() => [...document.querySelectorAll('.floating-message-error')].map(card => card.textContent));
+    assert.deepEqual(messages, [], `${name} of a context deleted there: no error should show`);
+
+    await releaseContextsReading(here);
+    await here.waitForFunction(async gone => {
+      const {ModeContextInstance} = await import('/static/js/modules/mode-manager/mode-context.js');
+      return !ModeContextInstance.tabOrder.includes(gone);
+    }, {timeout: SHOWS_WITHIN_MS}, gone);
+    await idle(here);
+    await pause(SETTLE_MS);
+    assert.deepEqual((await contextIds(here)).order, kept, `${name} of a context deleted there: the list should be as before it was made`);
+  }
+  here.off('pageerror', noteError);
+  assert.deepEqual(errors, [], 'asking of a context deleted there should raise no errors');
+}
+
 export async function checkLiveChanges(here, browser) {
   await here.bringToFront();
   const there = await browser.newPage();
@@ -596,6 +647,7 @@ export async function checkLiveChanges(here, browser) {
     await changedWhileAReadingIsAnsweredCase(here, there, added);
     await removeAddedContext(here, there, original, added);
     await contextsCase(here, there);
+    await askedOfADeletedContextCase(here, there);
     assert.deepEqual(errors, [], 'the other tab should raise no errors');
   }, async () => {
     await there.close();

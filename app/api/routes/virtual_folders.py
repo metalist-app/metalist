@@ -115,7 +115,8 @@ def choose_folder(request: Request, body: ChooseFolderRequest) -> Dict[str, obje
     snapshot = tab_state_store.choose_folder(
         view_id=request.headers["x-metalist-tab-id"], tab_id=body["tabId"], folder=body["folder"], adds=body["adds"],
     )
-    reset_undo_stack(body["clientId"], body["undoContext"])
+    if snapshot["changed"] is True:
+        reset_undo_stack(body["clientId"], body["undoContext"])
     return snapshot
 
 

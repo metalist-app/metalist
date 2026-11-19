@@ -153,6 +153,7 @@ import { isValidTagToken } from '../tag-token.js';
 import { updateSearchContextsOverlayPlacement } from '../mode-manager/services/search-contexts-overlay-service.js';
 import {
     adoptRenamedSearches, chooseFolder, navigateToReferenceOrigin, openSearchInNewSearchContext, setFoldersTreeShown,
+    wasTabDeletedElsewhere,
 } from '../mode-manager/events/keyboard-events.js';
 import { FolderNameModal } from '../modals/folder-name-modal.js';
 import { DeleteFolderModal } from '../modals/delete-folder-modal.js';
@@ -1643,6 +1644,9 @@ class CommandPaletteController {
 
         ModeContext.bumpUndoContextEpoch(`sortMode.${normalizedSortMode}`);
         const response = await setTabSortModeOnServer(activeTabId, normalizedSortMode);
+        if (wasTabDeletedElsewhere(response, activeTabId)) {
+            return;
+        }
         ModeContext.hydrateTabState(response, { emitUpdate: false });
         ModeContext.clearTabRevealedRedactions(activeTabId);
         ModeContext.resetTabDiffCache(activeTabId, { preserveRootAnchor: false });
@@ -1718,6 +1722,9 @@ class CommandPaletteController {
         }
         ModeContext.bumpUndoContextEpoch(`dateFilter.${filter.rangeKind}`);
         const response = await setTabDateFilterOnServer(activeTabId, filter);
+        if (wasTabDeletedElsewhere(response, activeTabId)) {
+            return;
+        }
         ModeContext.hydrateTabState(response, { emitUpdate: false });
         this._showChangedViewFromTop(activeTabId);
         // As for a sort order: a view request in flight shows the old range.
@@ -1775,6 +1782,9 @@ class CommandPaletteController {
         }
         ModeContext.bumpUndoContextEpoch(`fileFilter.${kind}`);
         const response = await setTabFileFilterOnServer(activeTabId, kind);
+        if (wasTabDeletedElsewhere(response, activeTabId)) {
+            return;
+        }
         ModeContext.hydrateTabState(response, { emitUpdate: false });
         this._showChangedViewFromTop(activeTabId);
         // As for a sort order: a view request in flight shows the old filter.
@@ -1861,6 +1871,9 @@ class CommandPaletteController {
         ModeContext.bumpUndoContextEpoch(`untaggedView.${isUntaggedView ? 'on' : 'off'}`);
         // Each search context keeps its own Untagged view (docs/ui/state-handling.md).
         const response = await setTabUntaggedViewOnServer(activeTabId, isUntaggedView);
+        if (wasTabDeletedElsewhere(response, activeTabId)) {
+            return;
+        }
         ModeContext.hydrateTabState(response, { emitUpdate: false });
         const searchInput = document.getElementById('search-input');
         if (!(searchInput instanceof HTMLInputElement)) {
@@ -2429,7 +2442,12 @@ class CommandPaletteController {
             }
 
             if (ModeContext.isUntaggedView) {
-                const response = await setTabUntaggedViewOnServer(ModeContext.activeTabId, false);
+                const untaggedTabId = ModeContext.activeTabId;
+                const response = await setTabUntaggedViewOnServer(untaggedTabId, false);
+                // Its filters went with it: the context now shown keeps its own.
+                if (wasTabDeletedElsewhere(response, untaggedTabId)) {
+                    return;
+                }
                 ModeContext.hydrateTabState(response, { emitUpdate: false });
             }
 

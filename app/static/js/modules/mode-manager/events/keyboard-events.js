@@ -3898,6 +3898,9 @@ async function duplicateTabContext(sourceTabId, copiesView, animateNoteChanges, 
     }
 
     const response = await createTabOnServer(sourceTabId, copiesView, isPage);
+    if (wasTabDeletedElsewhere(response, sourceTabId)) {
+        return;
+    }
     const newTabId = response?.newTabId;
     if (typeof newTabId !== 'string' || newTabId.length === 0) {
         throw new Error('Server did not return newTabId');
@@ -4019,6 +4022,9 @@ async function openBlankSearchContext() {
     // The server starts it with nothing: no search, Normal order, no filter, all notes. A search
     // context, shared by every view.
     const response = await createTabOnServer(sourceTabId, false, false);
+    if (wasTabDeletedElsewhere(response, sourceTabId)) {
+        return null;
+    }
     const newTabId = response?.newTabId;
     if (typeof newTabId !== 'string' || newTabId.length === 0) {
         throw new Error('Server did not return newTabId');
@@ -4060,6 +4066,9 @@ export async function chooseFolder(folder, adds) {
     }
     await persistTabStateSnapshot();
     const response = await chooseFolderOnServer(folderTabId, folder, adds);
+    if (wasTabDeletedElsewhere(response, folderTabId)) {
+        return;
+    }
     ModeContext.bumpUndoContextEpoch('virtualFolder');
     await settleViewRequestsBeforeTabChange();
     // Its search, now the folder (`Projects/`, '' for `/`), and top scroll come with the answer; it is
@@ -4631,6 +4640,22 @@ function shownContextSettings() {
         files: getActiveFileFilterKind(),
         untagged: ModeContext.isUntaggedView,
     });
+}
+
+/**
+ * Whether the server's answer says tabId was deleted by another view before this one heard of it
+ * (tab_state.py answers such a request "no change", whatever it asked; agreed 2026-11-18). The
+ * caller then does nothing more: there is no error to show for a context the user no longer has,
+ * and this view takes the list within a second, as it hears of any delete (live-changes-service.js).
+ */
+export function wasTabDeletedElsewhere(response, tabId) {
+    if (!response || typeof response !== 'object' || !response.tabs || typeof response.tabs !== 'object') {
+        throw new Error('Server did not return tab-state payload');
+    }
+    if (typeof tabId !== 'string' || tabId.length === 0) {
+        throw new Error('wasTabDeletedElsewhere requires the tab asked about');
+    }
+    return response.changed === false && !Object.hasOwn(response.tabs, tabId);
 }
 
 // Another view changed the search contexts every view shares (multi-view editing step 3, cases 11

@@ -619,6 +619,23 @@ class TabStateStore:
                 place["referenceViews"], self._tabs, from_storage=False,
             )
 
+    def _unchanged_locked(self, view_id: str) -> Dict[str, object]:
+        """The answer to a request that changes nothing: the view's tabs as they are."""
+        snapshot = self._snapshot_locked(view_id)
+        snapshot["changed"] = False
+        return snapshot
+
+    def _is_deleted_meanwhile_locked(self, view_id: str, tab_id: str, *, name: str) -> bool:
+        """Whether tab_id was deleted, or its page closed, before the view asking heard of it:
+        the request then changes nothing and is no error, whatever it asks (agreed 2026-11-18;
+        the view's list catches up by itself). Refused: a tab the server never had, and another
+        view's reference page."""
+        if tab_id in self._gone_tab_ids:
+            return True
+        if tab_id not in self._visible_tab_ids_locked(view_id):
+            raise InputRejected(f"{name} must reference an existing tab")
+        return False
+
     # --- Tabs --------------------------------------------------------------------------------
 
     def create_tab(self, *, view_id: str, copy_from_tab_id: str, copies_view: bool, is_page: bool) -> Dict[str, object]:
@@ -636,8 +653,9 @@ class TabStateStore:
         with self._lock:
             self._try_decrypt_locked(token="", require_success=True)
             place = self._place_locked(view_id)
-            if copy_from_tab_id not in self._visible_tab_ids_locked(view_id):
-                raise InputRejected("copyFromTabId must reference an existing tab")
+            # Nothing is made beside a tab that is gone: the answer carries no newTabId.
+            if self._is_deleted_meanwhile_locked(view_id, copy_from_tab_id, name="copyFromTabId"):
+                return self._unchanged_locked(view_id)
             if len(self._tabs) >= _MAX_TABS:
                 raise InputRejected(f"max tabs reached ({_MAX_TABS})")
 
@@ -665,6 +683,7 @@ class TabStateStore:
             self._persist_locked(connection=None, encryption_service=None, force_plaintext=False)
             snapshot = self._snapshot_locked(view_id)
             snapshot["newTabId"] = new_tab_id
+            snapshot["changed"] = True
             return snapshot
 
     def delete_tab(self, *, view_id: str, tab_id: str) -> Dict[str, object]:
@@ -676,9 +695,10 @@ class TabStateStore:
         with self._lock:
             self._try_decrypt_locked(token="", require_success=True)
             place = self._place_locked(view_id)
+            # Deleted by two views at once: it is gone, as asked.
+            if self._is_deleted_meanwhile_locked(view_id, tab_id, name="tabId"):
+                return self._unchanged_locked(view_id)
             visible = self._visible_tab_ids_locked(view_id)
-            if tab_id not in visible:
-                raise InputRejected("tabId must reference an existing tab")
             if tab_id not in self._page_owners and len(self._context_ids_locked()) <= 1:
                 raise InputRejected("cannot delete the last remaining tab")
 
@@ -690,7 +710,9 @@ class TabStateStore:
             self._renormalize_reference_views_locked()
             self._version += 1
             self._persist_locked(connection=None, encryption_service=None, force_plaintext=False)
-            return self._snapshot_locked(view_id)
+            snapshot = self._snapshot_locked(view_id)
+            snapshot["changed"] = True
+            return snapshot
 
     def _forget_tab_settings_locked(self, tab_id: str) -> None:
         """What is kept beside a tab that is gone."""
@@ -850,8 +872,8 @@ class TabStateStore:
             raise InputRejected("tabId must be a non-empty string")
         with self._lock:
             self._try_decrypt_locked(token="", require_success=True)
-            if tab_id not in self._tabs:
-                raise InputRejected("tabId must reference an existing tab")
+            if self._is_deleted_meanwhile_locked(view_id, tab_id, name="tabId"):
+                return self._unchanged_locked(view_id)
             current = None
             if tab_id in self._file_filters:
                 current = self._file_filters[tab_id]
@@ -896,8 +918,8 @@ class TabStateStore:
             raise InputRejected("adds must be true or false")
         with self._lock:
             self._try_decrypt_locked(token="", require_success=True)
-            if tab_id not in self._tabs:
-                raise InputRejected("tabId must reference an existing tab")
+            if self._is_deleted_meanwhile_locked(view_id, tab_id, name="tabId"):
+                return self._unchanged_locked(view_id)
             search = self._tabs[tab_id]["searchQuery"]
             assert isinstance(search, str), "a tab's search is text"
             chosen = folder
@@ -907,7 +929,9 @@ class TabStateStore:
             # Persists, with the new version.
             self._restart_tab_scroll_locked(tab_id)
             # The browser takes the whole answer (keyboard-events.js, chooseFolder).
-            return self._snapshot_locked(view_id)
+            snapshot = self._snapshot_locked(view_id)
+            snapshot["changed"] = True
+            return snapshot
 
     def set_untagged_view(self, *, view_id: str, tab_id: str, is_untagged_view: bool) -> Dict[str, object]:
         """Show the tab's untagged notes, or (False) its search again. Like a Files filter
@@ -918,8 +942,8 @@ class TabStateStore:
             raise TypeError("is_untagged_view must be a bool")
         with self._lock:
             self._try_decrypt_locked(token="", require_success=True)
-            if tab_id not in self._tabs:
-                raise InputRejected("tabId must reference an existing tab")
+            if self._is_deleted_meanwhile_locked(view_id, tab_id, name="tabId"):
+                return self._unchanged_locked(view_id)
             changed = (tab_id in self._untagged_views) != is_untagged_view
             if changed:
                 if is_untagged_view:
@@ -948,8 +972,8 @@ class TabStateStore:
             raise InputRejected("tabId must be a non-empty string")
         with self._lock:
             self._try_decrypt_locked(token="", require_success=True)
-            if tab_id not in self._tabs:
-                raise InputRejected("tabId must reference an existing tab")
+            if self._is_deleted_meanwhile_locked(view_id, tab_id, name="tabId"):
+                return self._unchanged_locked(view_id)
             had_filter = tab_id in self._date_filters
             if date_filter is None:
                 changed = had_filter
@@ -1166,8 +1190,8 @@ class TabStateStore:
 
         with self._lock:
             self._try_decrypt_locked(token="", require_success=True)
-            if tab_id not in self._tabs:
-                raise InputRejected("tabId must reference an existing tab")
+            if self._is_deleted_meanwhile_locked(view_id, tab_id, name="tabId"):
+                return self._unchanged_locked(view_id)
 
             if base_sort_mode(normalized_sort_mode) == SORT_MODE_FILE_SIZE and tab_id not in self._file_filters:
                 raise InputRejected("File size order needs Notes with Files on. Turn that on first.")
