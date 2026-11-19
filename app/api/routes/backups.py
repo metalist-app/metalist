@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel, Field
 from typing import Annotated
 from pathlib import Path
+from datetime import datetime, timezone
 
 from app.api.transactions import one_step_read_route, transactional_route
 from app.config import ACTIVE_NAMESPACE
@@ -25,6 +26,7 @@ from app.services.backup_service import (
     create_timestamped_backup_for_paths,
     delete_oldest_backups_in_directory,
     list_backups_in_directory,
+    is_backup_filename,
     parse_backup_namespace_from_filename,
     read_backup_launch_profile,
     restore_backup_to_paths,
@@ -41,7 +43,8 @@ from app.server_runtime import resolve_namespaced_database_path
 from app.server_runtime import save_namespace_launch_profile
 from app.server_runtime import save_namespace_network_sharing
 from app.server_runtime import validate_namespace
-from app.services.native_folder_picker import pick_folder
+from app.services.chosen_backup_file import chosen_backup_file
+from app.services.native_folder_picker import pick_file, pick_folder
 from app.services.synced_folders import provider_syncing, suggested_backup_folders
 from app.services.backup_settings_service import (
     acknowledged_unprotected_namespaces,
@@ -55,6 +58,7 @@ from app.services.tokens import token_service
 from app.services.maintenance_mode import maintenance_service
 from app.services.namespace_switcher import stop_namespace_for_restore
 from app.api.routes.auth import _reset_runtime_state_after_restore, _schedule_server_restart_after_restore
+from app.api.routes.auth import _is_from_this_computer
 from app.api.routes.auth import namespaces_shown_to_requester, require_vaults_shown_to_requester
 from app.services.encryption import EncryptionService
 
@@ -63,6 +67,9 @@ router = APIRouter(prefix="/backup", tags=["backup2"])
 _FOLDER_PATH_REQUIRED_MESSAGE = "Folder backups require an absolute folder path."
 # A folder backup id is "folder::<namespace>::<filename>".
 _FOLDER_BACKUP_ID_SEPARATOR = "::"
+# Where a listed backup is: the backup folder, or a file chosen anywhere on this computer.
+_SOURCE_FOLDER = "folder"
+_SOURCE_CHOSEN_FILE = "file"
 _FOLDER_BACKUP_ID_PART_COUNT = 3
 _RESTART_AFTER_RESTORE_DELAY_SECONDS = 0.5
 
@@ -121,6 +128,18 @@ class BackupListEntryResponse(BaseModel):
 
 class BackupListResponse(BaseModel):
     backups: list[BackupListEntryResponse]
+    # Whether Choose File… is offered: only to the computer MetaList runs on, where the file
+    # dialog opens.
+    can_choose_file: bool
+    # The vault in use: its backups are listed first.
+    current_namespace: str
+
+
+class BackupFilePickResponse(BaseModel):
+    selected: bool
+    # The chosen backup, alone; none when the dialog was cancelled.
+    backups: list[BackupListEntryResponse]
+    file_path: str
 
 
 class BackupTimesResponse(BaseModel):
@@ -354,21 +373,59 @@ def _pick_backup_folder_path() -> str | None:
     return pick_folder(prompt="Choose a backup folder for MetaList")
 
 
+def _pick_backup_file_path() -> str | None:
+    return pick_file(prompt="Choose a MetaList backup file to restore")
+
+
 def _folder_backup_id(*, namespace: str, filename: str) -> str:
-    return f"folder::{namespace}::{filename}"
+    return f"{_SOURCE_FOLDER}::{namespace}::{filename}"
 
 
-def _parse_folder_backup_id(backup_id: str) -> tuple[str, str]:
+def _chosen_file_backup_id(*, namespace: str, filename: str) -> str:
+    return f"{_SOURCE_CHOSEN_FILE}::{namespace}::{filename}"
+
+
+def _parse_backup_id(backup_id: str, *, source: str) -> tuple[str, str]:
     if not isinstance(backup_id, str) or backup_id == "":
         raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail="backup_id must be a non-empty string")
     parts = backup_id.split(_FOLDER_BACKUP_ID_SEPARATOR, _FOLDER_BACKUP_ID_PART_COUNT - 1)
-    if len(parts) != _FOLDER_BACKUP_ID_PART_COUNT or parts[0] != "folder":
+    if len(parts) != _FOLDER_BACKUP_ID_PART_COUNT or parts[0] != source:
         raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail="Invalid folder backup_id")
     namespace = validate_namespace(namespace=parts[1])
     filename = parts[-1]
     if filename == "":
         raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail="Invalid folder backup_id filename")
     return namespace, filename
+
+
+def _backup_path_to_restore(*, source: str, backup_id: str, backup_filename: str, backup_namespace: str, token: str) -> Path:
+    """The backup a restore request names: in the backup folder, or the file chosen with Choose
+    File… (chosen_backup_file.py; the request names it, the server remembers where it is)."""
+    if source not in (_SOURCE_FOLDER, _SOURCE_CHOSEN_FILE):
+        raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail="source must be folder or file")
+    id_namespace, id_filename = _parse_backup_id(backup_id, source=source)
+    if id_namespace != backup_namespace:
+        raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail="folder backup vault does not match payload")
+    if id_filename != backup_filename:
+        raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail="folder backup filename does not match payload")
+    if source == _SOURCE_CHOSEN_FILE:
+        chosen_path = chosen_backup_file.path_named(id_filename)
+        if chosen_path is None:
+            raise HTTPException(
+                status_code=HTTPStatus.NOT_FOUND,
+                detail=f"{id_filename} is no longer the chosen backup file: choose it again",
+            )
+        if not chosen_path.is_file():
+            raise HTTPException(status_code=HTTPStatus.NOT_FOUND, detail=f"Backup not found: {chosen_path}")
+        return chosen_path
+    settings = load_backup_settings(token=token)
+    folder_path = settings["folder_path"]
+    if not isinstance(folder_path, str):
+        raise RuntimeError("backup settings folder_path must be a string")
+    backup_path = _normalize_folder_backup_path(folder_path=folder_path) / id_filename
+    if not backup_path.exists():
+        raise HTTPException(status_code=HTTPStatus.NOT_FOUND, detail=f"Backup not found: {id_filename}")
+    return backup_path
 
 
 def _backup_profile_ports(*, profile: BackupLaunchProfile) -> list[tuple[str, int]]:
@@ -836,7 +893,7 @@ def _backups_in_folder(*, token: str) -> list[BackupListEntryResponse]:
             backups.append(
                 _serialize_backup_entry(
                     backup_id=_folder_backup_id(namespace=backup_namespace, filename=backup.filename),
-                    source="folder",
+                    source=_SOURCE_FOLDER,
                     filename=backup.filename,
                     namespace=backup_namespace,
                     created_at=backup.created_at,
@@ -855,7 +912,54 @@ def list_backups(request: Request, token: Annotated[str, Depends(_require_auth)]
     shown = namespaces_shown_to_requester(request)
     if shown is not None:
         backups = [backup for backup in backups if backup.namespace in shown]
-    return BackupListResponse(backups=backups)
+    return BackupListResponse(
+        backups=backups, can_choose_file=_is_from_this_computer(request), current_namespace=ACTIVE_NAMESPACE,
+    )
+
+
+@router.post("/restore/file/pick", response_model=BackupFilePickResponse)
+@transactional_route
+def pick_backup_file(request: Request, token: Annotated[str, Depends(_require_auth)]):
+    """Restore From Backup's Choose File…: a backup kept anywhere on this computer, picked in the
+    system's file dialog. It is remembered for this restore; the backup folder stays as it is."""
+    del token
+    if not _is_from_this_computer(request):
+        raise HTTPException(
+            status_code=HTTPStatus.FORBIDDEN,
+            detail="A backup file is chosen on the computer MetaList runs on",
+        )
+    selected_file_path = _pick_backup_file_path()
+    if selected_file_path is None:
+        return BackupFilePickResponse(selected=False, backups=[], file_path="")
+    chosen_path = Path(selected_file_path)
+    if not is_backup_filename(chosen_path.name):
+        raise HTTPException(
+            status_code=HTTPStatus.BAD_REQUEST,
+            detail=(
+                f"{chosen_path.name} is not a MetaList backup. A backup keeps the name MetaList gave it, "
+                "like default-20261119-064000-123456.metalist-backup.tar.gz"
+            ),
+        )
+    backup_namespace = validate_namespace(namespace=parse_backup_namespace_from_filename(chosen_path.name))
+    if not chosen_path.is_file():
+        raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail=f"Not a file: {chosen_path}")
+    require_vaults_shown_to_requester(request=request, namespaces=[backup_namespace])
+    chosen_backup_file.remember(chosen_path)
+    stat_result = chosen_path.stat()
+    return BackupFilePickResponse(
+        selected=True,
+        backups=[
+            _serialize_backup_entry(
+                backup_id=_chosen_file_backup_id(namespace=backup_namespace, filename=chosen_path.name),
+                source=_SOURCE_CHOSEN_FILE,
+                filename=chosen_path.name,
+                namespace=backup_namespace,
+                created_at=datetime.fromtimestamp(stat_result.st_mtime, tz=timezone.utc).isoformat(),
+                size_bytes=stat_result.st_size,
+            )
+        ],
+        file_path=str(chosen_path),
+    )
 
 
 @router.get("/times", response_model=BackupTimesResponse)
@@ -938,25 +1042,14 @@ def restore_backup_preflight(
     request: Request,
     token: Annotated[str, Depends(_require_auth)],
 ):
-    if payload.source != "folder":
-        raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail="source must be folder")
     backup_namespace = validate_namespace(namespace=payload.backup_namespace)
     target_namespace = validate_namespace(namespace=payload.target_namespace)
     require_vaults_shown_to_requester(request=request, namespaces=[backup_namespace, target_namespace])
 
-    folder_namespace, folder_filename = _parse_folder_backup_id(payload.backup_id)
-    if folder_namespace != backup_namespace:
-        raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail="folder backup vault does not match payload")
-    if folder_filename != payload.backup_filename:
-        raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail="folder backup filename does not match payload")
-    settings = load_backup_settings(token=token)
-    folder_path = settings["folder_path"]
-    if not isinstance(folder_path, str):
-        raise RuntimeError("backup settings folder_path must be a string")
-    folder_directory = _normalize_folder_backup_path(folder_path=folder_path)
-    backup_path = folder_directory / folder_filename
-    if not backup_path.exists():
-        raise HTTPException(status_code=HTTPStatus.NOT_FOUND, detail=f"Backup not found: {folder_filename}")
+    backup_path = _backup_path_to_restore(
+        source=payload.source, backup_id=payload.backup_id, backup_filename=payload.backup_filename,
+        backup_namespace=backup_namespace, token=token,
+    )
 
     restored_profile = read_backup_launch_profile(
         backup_path,
@@ -1002,8 +1095,6 @@ def restore_backup(
     request: Request,
     token: Annotated[str, Depends(_require_auth)],
 ):
-    if payload.source != "folder":
-        raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail="source must be folder")
     backup_namespace = validate_namespace(namespace=payload.backup_namespace)
     target_namespace = validate_namespace(namespace=payload.target_namespace)
     require_vaults_shown_to_requester(request=request, namespaces=[backup_namespace, target_namespace])
@@ -1017,19 +1108,10 @@ def restore_backup(
     active_namespace_restarted = False
     open_namespace_suggested = target_namespace != ACTIVE_NAMESPACE
 
-    folder_namespace, folder_filename = _parse_folder_backup_id(payload.backup_id)
-    if folder_namespace != backup_namespace:
-        raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail="folder backup vault does not match payload")
-    if folder_filename != payload.backup_filename:
-        raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail="folder backup filename does not match payload")
-    settings = load_backup_settings(token=token)
-    folder_path = settings["folder_path"]
-    if not isinstance(folder_path, str):
-        raise RuntimeError("backup settings folder_path must be a string")
-    folder_directory = _normalize_folder_backup_path(folder_path=folder_path)
-    backup_path = folder_directory / folder_filename
-    if not backup_path.exists():
-        raise HTTPException(status_code=HTTPStatus.NOT_FOUND, detail=f"Backup not found: {folder_filename}")
+    backup_path = _backup_path_to_restore(
+        source=payload.source, backup_id=payload.backup_id, backup_filename=payload.backup_filename,
+        backup_namespace=backup_namespace, token=token,
+    )
     target_exists = _restore_target_exists(target_namespace=target_namespace)
     launch_profile = _resolve_same_name_restore_launch_profile(
         backup_path=backup_path,
@@ -1083,8 +1165,6 @@ def import_backup(
     request: Request,
     token: Annotated[str, Depends(_require_auth)],
 ):
-    if payload.source != "folder":
-        raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail="source must be folder")
     backup_namespace = validate_namespace(namespace=payload.backup_namespace)
     target_namespace = validate_namespace(namespace=payload.target_namespace)
     require_vaults_shown_to_requester(request=request, namespaces=[backup_namespace, target_namespace])
@@ -1104,19 +1184,10 @@ def import_backup(
         )
 
     target_database_path = resolve_namespaced_database_path(namespace=target_namespace)
-    folder_namespace, folder_filename = _parse_folder_backup_id(payload.backup_id)
-    if folder_namespace != backup_namespace:
-        raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail="folder backup vault does not match payload")
-    if folder_filename != payload.backup_filename:
-        raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail="folder backup filename does not match payload")
-    settings = load_backup_settings(token=token)
-    folder_path = settings["folder_path"]
-    if not isinstance(folder_path, str):
-        raise RuntimeError("backup settings folder_path must be a string")
-    folder_directory = _normalize_folder_backup_path(folder_path=folder_path)
-    backup_path = folder_directory / folder_filename
-    if not backup_path.exists():
-        raise HTTPException(status_code=HTTPStatus.NOT_FOUND, detail=f"Backup not found: {folder_filename}")
+    backup_path = _backup_path_to_restore(
+        source=payload.source, backup_id=payload.backup_id, backup_filename=payload.backup_filename,
+        backup_namespace=backup_namespace, token=token,
+    )
 
     if target_exists:
         launch_profile = _required_existing_target_launch_profile(

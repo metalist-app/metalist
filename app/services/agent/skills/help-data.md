@@ -23,6 +23,9 @@ default) floats a card when this vault's newest backup is older than that;
 its Back Up Now opens Backup Settings and × hides it for a day.
 Restore from Backup… opens a picker for configured-folder snapshots. The user
 chooses and confirms a restore; success is confirmed with OK before reloading.
+Choose File… under its list restores a backup kept anywhere on this computer
+(Downloads, a USB stick): the file joins the list on top, chosen; the backup
+folder setting stays as it is. The file must keep the name MetaList gave it.
 Opening this picker neither restores data nor changes backups. Existing backup
 files are immutable recovery artifacts: no rewriting/repackaging/migration of
 historical backups, including after password or schema changes. Restore installs

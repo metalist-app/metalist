@@ -5,9 +5,10 @@ import { formatByteSize } from '../byte-sizes.js';
 // it was made in the reader's own time and words, how big it is, and where it is kept. The file
 // name is the row's tooltip.
 
-const SOURCE_FOLDER = 'folder';
-// The backup folder the user chose, or the backups MetaList keeps in the vault's own folder.
-const SOURCE_LABELS = Object.freeze({ folder: 'Backup folder', local: 'Kept by MetaList' });
+// The backup folder the user chose, a file picked with Choose File…, or the backups MetaList
+// keeps in the vault's own folder.
+export const SOURCE_CHOSEN_FILE = 'file';
+const SOURCE_LABELS = Object.freeze({ folder: 'Backup folder', file: 'Chosen file', internal: 'Kept by MetaList' });
 
 // "Nov 18, 2026, 6:49 PM" in the reader's language and time zone.
 export function backupWhenText(createdAt, { locale, timeZone }) {
@@ -19,6 +20,46 @@ export function backupWhenText(createdAt, { locale, timeZone }) {
         throw new Error(`A backup's time is not a date: ${createdAt}`);
     }
     return new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeStyle: 'short', timeZone }).format(made);
+}
+
+function sourceLabel(source) {
+    if (!Object.hasOwn(SOURCE_LABELS, source)) {
+        throw new Error(`A backup is kept somewhere unknown: ${source}`);
+    }
+    return SOURCE_LABELS[source];
+}
+
+// The list with a file picked with Choose File… on top, in place of any picked before.
+export function backupsWithChosenFile(backups, chosen) {
+    if (!Array.isArray(backups) || !chosen || chosen.source !== SOURCE_CHOSEN_FILE) {
+        throw new Error('backupsWithChosenFile requires the list and a chosen file');
+    }
+    return [chosen, ...backups.filter((backup) => backup.source !== SOURCE_CHOSEN_FILE)];
+}
+
+const CHOSEN_FILE_GROUP = 'Chosen file';
+
+// The list in groups, a vault each (the maintainer, 2026-11-19: the vaults' backups were mixed
+// by time): a file picked with Choose File… first, then the open vault, then the other vaults
+// by name. Within a group the backups keep their order, newest first.
+export function backupGroups(backups, openVault) {
+    if (!Array.isArray(backups) || typeof openVault !== 'string') {
+        throw new Error('backupGroups requires the list and the open vault');
+    }
+    const chosen = backups.filter((backup) => backup.source === SOURCE_CHOSEN_FILE);
+    const listed = backups.filter((backup) => backup.source !== SOURCE_CHOSEN_FILE);
+    const otherVaults = [...new Set(listed.map((backup) => backup.namespace))]
+        .filter((vault) => vault !== openVault)
+        .sort((first, second) => first.localeCompare(second));
+    const groups = [];
+    if (chosen.length > 0) {
+        groups.push({ title: `${CHOSEN_FILE_GROUP}: ${chosen[0].namespace}`, backups: chosen });
+    }
+    for (const vault of [openVault, ...otherVaults]) {
+        const ofVault = listed.filter((backup) => backup.namespace === vault);
+        if (ofVault.length > 0) groups.push({ title: vault, backups: ofVault });
+    }
+    return groups;
 }
 
 // The row's four columns and its tooltip.
@@ -39,7 +80,7 @@ export function backupRow(backup, reader) {
         vault: backup.namespace,
         when: backupWhenText(backup.created_at, reader),
         size: formatByteSize(backup.size_bytes),
-        source: backup.source === SOURCE_FOLDER ? SOURCE_LABELS.folder : SOURCE_LABELS.local,
+        source: sourceLabel(backup.source),
         fileName: backup.filename,
     };
 }

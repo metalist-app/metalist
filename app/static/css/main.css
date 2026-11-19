@@ -1999,7 +1999,8 @@ body.ontology-modal-open #ontology-modal {
 }
 
 /* Restore From Backup's list (backup-list-row.js): a row per backup, its vault, when it was made,
-   its size and where it is kept, each in its own column; eight rows show, the rest scroll. */
+   its size and where it is kept, each in its own column, under its vault's name; about eight
+   rows show, the rest scroll. */
 .backup-restore-list-label {
     display: block;
     margin-bottom: 6px;
@@ -2008,7 +2009,7 @@ body.ontology-modal-open #ontology-modal {
 
 .backup-restore-list {
     display: grid;
-    grid-template-columns: auto auto 1fr auto auto;
+    grid-template-columns: auto 1fr auto auto;
     max-height: 272px;
     overflow-y: auto;
     border: 1px solid var(--modal-border);
@@ -2047,8 +2048,27 @@ body.ontology-modal-open #ontology-modal {
     padding: 0;
 }
 
-.backup-restore-vault {
+.modal-content .form-group > .backup-restore-choose-file {
+    margin-top: 8px;
+}
+
+.backup-restore-empty-choices {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 16px;
+}
+
+/* A vault's name over its backups; it stays in sight while its backups scroll under it. */
+.backup-restore-group {
+    grid-column: 1 / -1;
+    position: sticky;
+    top: 0;
+    padding: 6px 12px;
     font-weight: 600;
+    color: var(--modal-text);
+    background: var(--modal-surface-raised);
+    border-bottom: 1px solid var(--modal-border);
 }
 
 .backup-restore-size {

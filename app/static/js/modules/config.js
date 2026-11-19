@@ -169,6 +169,7 @@ export const CONFIG = {
             RESTORE_PREFLIGHT: `${API_BASE}/backup/restore/preflight`,
             RESTORE_IMPORT: `${API_BASE}/backup/restore/import`,
             FOLDER_PICK: `${API_BASE}/backup/folder/pick`,
+            RESTORE_FILE_PICK: `${API_BASE}/backup/restore/file/pick`,
         },
         // The Obsidian import's developer version (PLAN.md): development only.
         IMPORT: {

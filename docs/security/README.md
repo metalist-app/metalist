@@ -844,6 +844,7 @@ Backup:
   - Backup settings are stored per namespace; when namespace encryption is enabled, that settings payload is encrypted at rest too.
   - Manual backup runs now target one selected folder and can include multiple namespaces in the same run.
 - `POST /api2/backup/folder/pick` - Open the native folder picker and return the selected absolute backup path
+- `POST /api2/backup/restore/file/pick` - Open the native file picker (Restore From Backup's Choose File…) and return the chosen backup as a list entry. Answered only for the computer MetaList runs on (`403` otherwise), and only for a file with a backup's name. The server remembers the chosen path (`app/services/chosen_backup_file.py`, one at a time, in memory); a restore names the file by `source: "file"` and its file name, so the browser never sends a path for the server to read. The file is only read.
 
 Notes:
 - `POST /api2/notes/view`
