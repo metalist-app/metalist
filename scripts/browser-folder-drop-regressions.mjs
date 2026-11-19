@@ -42,7 +42,7 @@ async function next(page) {
 
 // §1: files dropped on a folder come in as on the column, in that folder, the note left open no longer.
 async function checkFilesOnAFolder(page) {
-  await page.evaluate(folder => {
+  const markedWithNoNoteOpen = await page.evaluate(folder => {
     const row = document.querySelector(`#virtual-folders [data-virtual-folder="${folder}"]`);
     const transfer = new DataTransfer();
     // Not a text file: a dropped .txt or .md asks first (files-shown-not-copied.md §5).
@@ -50,8 +50,11 @@ async function checkFilesOnAFolder(page) {
     const box = row.getBoundingClientRect();
     const at = {clientX: box.left + box.width / 2, clientY: box.top + box.height / 2, bubbles: true, cancelable: true, dataTransfer: transfer};
     row.dispatchEvent(new DragEvent('dragover', at));
+    const marked = row.classList.contains('is-drop-target');
     row.dispatchEvent(new DragEvent('drop', at));
+    return marked;
   }, FOLDER);
+  assert.equal(markedWithNoNoteOpen, true, 'files over a folder with no note open: that folder is marked');
   await page.waitForFunction(() => [...document.querySelectorAll('#notes-container > .note')]
     .some(note => note.textContent.includes('folder-drop.csv')), {timeout: WIZARD_STEP_TIMEOUT_MS});
   await idle(page);
@@ -75,13 +78,18 @@ async function checkFilesOnAFolderWhileEditing(page, noteId) {
   await page.waitForFunction(selector => document.querySelector(selector).getAttribute('contenteditable') === 'true', {}, contentSelector);
   await idle(page);
   const rootsBefore = await page.$$eval('#notes-container > .note', notes => notes.length);
-  await page.evaluate(folder => {
+  const markedWhileEditing = await page.evaluate(folder => {
     const row = document.querySelector(`#virtual-folders [data-virtual-folder="${folder}"]`);
     const transfer = new DataTransfer();
     transfer.items.add(new File(['dropped,while editing'], 'while-editing.csv', {type: 'text/csv'}));
     const box = row.getBoundingClientRect();
-    row.dispatchEvent(new DragEvent('drop', {clientX: box.left + box.width / 2, clientY: box.top + box.height / 2, bubbles: true, cancelable: true, dataTransfer: transfer}));
+    const at = {clientX: box.left + box.width / 2, clientY: box.top + box.height / 2, bubbles: true, cancelable: true, dataTransfer: transfer};
+    row.dispatchEvent(new DragEvent('dragover', at));
+    const marked = document.querySelectorAll('#virtual-folders .is-drop-target').length;
+    row.dispatchEvent(new DragEvent('drop', at));
+    return marked;
   }, FOLDER);
+  assert.equal(markedWhileEditing, 0, 'files over a folder while a note is edited: no folder is marked');
   await page.waitForFunction((selector, expected) => [...document.querySelector(selector).innerText.matchAll(/\[\[[0-9a-f-]{36}\]\]/g)].length === expected,
     {timeout: WIZARD_STEP_TIMEOUT_MS}, contentSelector, TOKENS_AFTER_SECOND_DROP);
   await idle(page);

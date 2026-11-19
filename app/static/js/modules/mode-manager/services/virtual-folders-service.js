@@ -426,11 +426,16 @@ function onDragOver(event) {
     // Files or a folder from the desktop: the folder they would go into (the top over empty space).
     if (moduleState.draggedPath === '' && event.dataTransfer.types.includes('Files')) {
         clearDropTarget();
-        const into = virtualFolderAt(event.target);
-        const row = into === TOP
-            ? document.querySelector(`#${TREE_ID} [data-virtual-folder-root]`)
-            : event.target.closest('[data-virtual-folder]');
-        row.classList.add(DROP_CLASS);
+        // While a note is being edited dropped files go into it, not into a folder: no folder is
+        // marked (the maintainer, 2026-11-19). A dragged folder would still go into the folder
+        // under it, but the browser does not say what is dragged until it is dropped.
+        if (!ModeContext.isEditing) {
+            const into = virtualFolderAt(event.target);
+            const row = into === TOP
+                ? document.querySelector(`#${TREE_ID} [data-virtual-folder-root]`)
+                : event.target.closest('[data-virtual-folder]');
+            row.classList.add(DROP_CLASS);
+        }
         event.preventDefault();
         event.dataTransfer.dropEffect = 'copy';
         return;
